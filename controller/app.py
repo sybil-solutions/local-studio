@@ -937,3 +937,161 @@ async def list_studio_models():
                 })
     
     return {"models": models}
+
+
+# --- OpenAI Chat Completions Proxy ---
+
+def _find_recipe_by_model(store: RecipeStore, model_name: str) -> Optional[Recipe]:
+    """Find a recipe by served_model_name or id."""
+    if not model_name:
+        return None
+    for recipe in store.list():
+        if recipe.served_model_name == model_name or recipe.id == model_name:
+            return recipe
+    return None
+
+
+async def _ensure_model_running(requested_model: str, store: RecipeStore) -> Optional[str]:
+    """Ensure the requested model is running, auto-switching if needed.
+
+    Returns None if model is ready, or an error message if switch failed.
+    """
+    import time
+    import psutil
+    from .process import launch_model
+
+    if not requested_model:
+        return None
+
+    # Check what's currently running
+    current = find_inference_process(settings.inference_port)
+
+    # If the requested model is already running, we're done
+    if current and current.served_model_name == requested_model:
+        return None
+
+    # Find recipe for the requested model
+    recipe = _find_recipe_by_model(store, requested_model)
+    if not recipe:
+        # No recipe found - let LiteLLM handle it (might be an external model)
+        return None
+
+    # Need to switch models - acquire lock and switch
+    async with _switch_lock:
+        # Double-check after acquiring lock
+        current = find_inference_process(settings.inference_port)
+        if current and current.served_model_name == requested_model:
+            return None
+
+        logger.info(f"Auto-switching model: {current.served_model_name if current else 'none'} -> {requested_model}")
+
+        # Evict current model
+        await evict_model(force=False)
+        await asyncio.sleep(2)
+
+        # Launch new model
+        success, pid, message = await launch_model(recipe)
+        if not success:
+            logger.error(f"Auto-switch failed to launch {requested_model}: {message}")
+            return f"Failed to launch model {requested_model}: {message}"
+
+        # Wait for readiness (up to 5 minutes)
+        start = time.time()
+        timeout = 300
+        ready = False
+
+        while time.time() - start < timeout:
+            # Check if process crashed
+            if pid and not psutil.pid_exists(pid):
+                log_file = Path(f"/tmp/vllm_{recipe.id}.log")
+                error_tail = ""
+                if log_file.exists():
+                    try:
+                        error_tail = log_file.read_text()[-500:]
+                    except Exception:
+                        pass
+                return f"Model {requested_model} crashed during startup: {error_tail[-200:]}"
+
+            try:
+                async with httpx.AsyncClient(timeout=5) as client:
+                    r = await client.get(f"http://localhost:{settings.inference_port}/health")
+                    if r.status_code == 200:
+                        ready = True
+                        break
+            except Exception:
+                pass
+
+            await asyncio.sleep(3)
+
+        if not ready:
+            return f"Model {requested_model} failed to become ready (timeout)"
+
+        logger.info(f"Auto-switch complete: {requested_model} is ready")
+        return None
+
+
+@app.post("/v1/chat/completions", tags=["OpenAI Compatible"])
+async def chat_completions_proxy(request: Request, store: RecipeStore = Depends(get_store)):
+    """Proxy chat completions to LiteLLM backend with auto-eviction support.
+
+    If the requested model differs from the currently running model and a matching
+    recipe exists, the controller will automatically evict the current model and
+    launch the requested one before forwarding the request.
+    """
+    import os
+    try:
+        body = await request.body()
+
+        # Parse request to get model and streaming flag
+        try:
+            data = json.loads(body)
+            requested_model = data.get("model")
+            is_streaming = data.get("stream", False)
+        except Exception:
+            requested_model = None
+            is_streaming = False
+
+        # Auto-switch model if needed
+        if requested_model:
+            switch_error = await _ensure_model_running(requested_model, store)
+            if switch_error:
+                raise HTTPException(status_code=503, detail=switch_error)
+
+        # Use LiteLLM master key for backend auth (controller already validated the request)
+        litellm_key = os.environ.get("LITELLM_MASTER_KEY", "sk-master")
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {litellm_key}",
+        }
+
+        litellm_url = "http://localhost:4100/v1/chat/completions"
+
+        if is_streaming:
+            async def stream_response():
+                async with httpx.AsyncClient(timeout=300) as client:
+                    async with client.stream("POST", litellm_url, content=body, headers=headers) as response:
+                        async for chunk in response.aiter_bytes():
+                            yield chunk
+
+            return StreamingResponse(
+                stream_response(),
+                media_type="text/event-stream",
+                headers={
+                    "Cache-Control": "no-cache",
+                    "Connection": "keep-alive",
+                }
+            )
+        else:
+            async with httpx.AsyncClient(timeout=300) as client:
+                response = await client.post(litellm_url, content=body, headers=headers)
+                return JSONResponse(
+                    content=response.json(),
+                    status_code=response.status_code
+                )
+    except HTTPException:
+        raise
+    except httpx.ConnectError:
+        raise HTTPException(status_code=503, detail="LiteLLM backend unavailable")
+    except Exception as e:
+        logger.error(f"Chat completions proxy error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
