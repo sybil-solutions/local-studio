@@ -119,7 +119,7 @@ def _append_extra_args(cmd: List[str], extra_args: dict) -> None:
             continue
         if value is True:
             cmd.append(flag)
-        elif value not in (False, None):
+        elif value is not False and value is not None:
             if isinstance(value, (dict, list)):
                 cmd.extend([flag, json.dumps(value)])
             else:
