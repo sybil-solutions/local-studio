@@ -82,6 +82,19 @@ export async function POST(req: NextRequest) {
 
     console.log(`[CHAT] ip=${client.ip} | country=${client.country} | model=${model || 'default'} | messages=${messages?.length || 0} | tools=${tools?.length || 0}`);
 
+    // Debug: Log message roles to verify tool results are included
+    const msgRoles = messages?.map((m: any) => `${m.role}${m.tool_call_id ? `(${m.tool_call_id.slice(0,8)})` : m.tool_calls ? `[${m.tool_calls.length} calls]` : ''}`).join(', ');
+    console.log(`[CHAT DEBUG] Message roles: ${msgRoles}`);
+
+    // Check if we have tool results in this request (indicates multi-turn tool calling)
+    const toolMessages = messages?.filter((m: any) => m.role === 'tool') || [];
+    if (toolMessages.length > 0) {
+      console.log(`[CHAT DEBUG] Found ${toolMessages.length} tool result messages:`);
+      for (const tm of toolMessages) {
+        console.log(`  - tool_call_id: ${tm.tool_call_id}, name: ${tm.name}, content_len: ${tm.content?.length || 0}`);
+      }
+    }
+
     if (!messages || !Array.isArray(messages)) {
       return new Response(JSON.stringify({ error: 'Messages required' }), {
         status: 400,
@@ -131,18 +144,35 @@ export async function POST(req: NextRequest) {
     let toolsEmitted = false;
     let assistantContentFull = '';
 
+    // Generate unique fallback IDs for tool calls when provider doesn't supply valid ones
+    const requestId = Math.random().toString(36).slice(2, 10);
+
+    // Filter chatcmpl IDs - some providers incorrectly use the response ID as the tool call ID
+    const isValidToolCallId = (id: string | undefined): boolean => {
+      if (!id) return false;
+      return !id.startsWith('chatcmpl');
+    };
+
     const upsertToolCallDelta = (tc: OpenAIToolCallDelta) => {
       const idx = tc.index;
+
+      // Debug: Log incoming tool call delta
+      if (tc.id) {
+        console.log(`[TOOL DELTA] index=${idx} id=${tc.id} name=${tc.function?.name || 'N/A'} valid=${isValidToolCallId(tc.id)}`);
+      }
+
       const existing =
         toolCallsInProgress.get(idx) ||
         ({
-          id: tc.id || `call_${idx}`,
+          id: isValidToolCallId(tc.id) ? tc.id! : `call_${requestId}_${idx}`,
           type: 'function' as const,
           function: { name: tc.function?.name || '', arguments: tc.function?.arguments || '' },
         } satisfies ToolCall);
 
-      if (tc.id && (existing.id.startsWith('call_') || !existing.id)) {
-        existing.id = tc.id;
+      // Only accept IDs that look like proper tool call IDs (call_xxx or toolu_xxx)
+      // Reject response IDs like chatcmpl-xxx
+      if (isValidToolCallId(tc.id)) {
+        existing.id = tc.id!;
       }
       if (tc.function?.name) {
         existing.function.name = tc.function.name;
@@ -162,6 +192,14 @@ export async function POST(req: NextRequest) {
       const completedTools = Array.from(toolCallsInProgress.entries())
         .sort(([a], [b]) => a - b)
         .map(([, v]) => v);
+
+      // Debug: Log the final tool calls being emitted
+      console.log('[TOOL EMIT] Emitting tool calls to frontend:', completedTools.map(tc => ({
+        id: tc.id,
+        name: tc.function.name,
+        args_preview: tc.function.arguments.slice(0, 100)
+      })));
+
       controller.enqueue(sendEvent({ type: 'tool_calls', tool_calls: completedTools }));
       toolsEmitted = true;
     };
@@ -196,8 +234,25 @@ export async function POST(req: NextRequest) {
                 const delta = chunk.choices[0]?.delta;
                 if (!delta) continue;
 
+                // Handle reasoning content (thinking tokens) - wrap in <think> tags
+                const reasoningText = delta.reasoning || delta.reasoning_content;
+                if (reasoningText) {
+                  // Check if we need to open <think> tag
+                  if (!assistantContentFull.includes('<think>') || assistantContentFull.includes('</think>')) {
+                    controller.enqueue(sendEvent({ type: 'text', content: '<think>' }));
+                    assistantContentFull += '<think>';
+                  }
+                  controller.enqueue(sendEvent({ type: 'text', content: reasoningText }));
+                  assistantContentFull += reasoningText;
+                }
+
                 // Handle regular content
                 if (delta.content) {
+                  // Close thinking tag if we were in thinking mode and now have regular content
+                  if (assistantContentFull.includes('<think>') && !assistantContentFull.includes('</think>')) {
+                    controller.enqueue(sendEvent({ type: 'text', content: '</think>\n\n' }));
+                    assistantContentFull += '</think>\n\n';
+                  }
                   const merged = mergeStreamingText(assistantContentFull, delta.content);
                   assistantContentFull = merged.nextFull;
                   if (merged.emit) controller.enqueue(sendEvent({ type: 'text', content: merged.emit }));

@@ -801,14 +801,33 @@ export default function ChatPage() {
           // tokenization is best-effort
         }
 
+        // Debug: Log message roles for tool call debugging
+        const msgRoles = conversationMessages.map((m: any) =>
+          `${m.role}${m.tool_call_id ? `(${m.tool_call_id.slice(0,8)})` : m.tool_calls ? `[${m.tool_calls.length}]` : ''}`
+        ).join(', ');
+        console.log(`[Tool Loop] ========== ITERATION ${iteration} ==========`);
+        console.log(`[Tool Loop] Sending ${conversationMessages.length} messages: ${msgRoles}`);
+
+        // Log the last few messages to verify tool results are included
+        const lastMsgs = conversationMessages.slice(-5);
+        console.log('[Tool Loop] Last 5 messages being sent:', JSON.stringify(lastMsgs, (key, value) => {
+          // Truncate long content for readability
+          if (key === 'content' && typeof value === 'string' && value.length > 300) {
+            return value.slice(0, 300) + '... [truncated]';
+          }
+          return value;
+        }, 2));
+
+        const requestBody = {
+          messages: conversationMessages,
+          model: activeModelId,
+          tools: getOpenAITools(),
+        };
+
         const response = await fetch('/api/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            messages: conversationMessages,
-            model: activeModelId,
-            tools: getOpenAITools(),
-          }),
+          body: JSON.stringify(requestBody),
           signal: abortControllerRef.current?.signal,
         });
 
@@ -1007,25 +1026,41 @@ export default function ChatPage() {
         // Add assistant message with tool calls to conversation
         // Include cleaned content so model remembers what it said
         const cleanedIterationContent = stripThinkingForModelContext(iterationContent);
-        conversationMessages.push({
-          role: 'assistant',
+        const assistantMsgForConv = {
+          role: 'assistant' as const,
           content: cleanedIterationContent || null,
           tool_calls: toolCalls.map((tc) => ({
             id: tc.id,
-            type: 'function',
+            type: 'function' as const,
             function: { name: tc.function.name, arguments: tc.function.arguments },
           })),
-        });
+        };
+        conversationMessages.push(assistantMsgForConv);
+        console.log('[Tool Loop] Added assistant message with tool_calls:', JSON.stringify(assistantMsgForConv, null, 2));
 
-        // Add tool results to conversation
+        // Add tool results to conversation - MUST follow the assistant message with tool_calls
         for (const result of toolResults) {
-          conversationMessages.push({
-            role: 'tool',
+          const toolName = toolNameByCallId.get(result.tool_call_id) || 'unknown_tool';
+          const toolMsg = {
+            role: 'tool' as const,
             tool_call_id: result.tool_call_id,
-            name: toolNameByCallId.get(result.tool_call_id),
+            name: toolName,
             content: result.content,
+          };
+          conversationMessages.push(toolMsg);
+          console.log(`[Tool Loop] Added tool result for ${toolName}:`, {
+            tool_call_id: result.tool_call_id,
+            content_preview: result.content.slice(0, 200) + (result.content.length > 200 ? '...' : ''),
           });
         }
+
+        // Log the full conversation that will be sent on next iteration
+        const msgSummary = conversationMessages.map((m: any) => {
+          if (m.role === 'tool') return `tool(${m.tool_call_id?.slice(0, 8)})`;
+          if (m.role === 'assistant' && m.tool_calls) return `assistant[${m.tool_calls.length} calls]`;
+          return m.role;
+        }).join(' -> ');
+        console.log(`[Tool Loop] Next iteration will send ${conversationMessages.length} messages: ${msgSummary}`);
       }
 
       // Auto-title new sessions after the final assistant response (best-effort).
