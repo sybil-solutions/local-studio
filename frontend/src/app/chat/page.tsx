@@ -863,6 +863,50 @@ export default function ChatPage() {
           }
         }
 
+        // Parse tool calls from text content (for models that output JSON instead of using function calling)
+        if (toolCalls.length === 0 && mcpEnabled && iterationContent) {
+          const parseTextToolCalls = (text: string): ToolCall[] => {
+            const parsed: ToolCall[] = [];
+            // Match patterns like {"tool_code": "...", "parameters": {...}} or {"tool": "...", "args": {...}}
+            const jsonPatterns = [
+              /\{\s*"tool_code"\s*:\s*"([^"]+)"\s*,\s*"parameters"\s*:\s*(\{[^}]*\})\s*\}/g,
+              /\{\s*"tool"\s*:\s*"([^"]+)"\s*,\s*"(?:args|arguments|parameters)"\s*:\s*(\{[^}]*\})\s*\}/g,
+              /\{\s*"name"\s*:\s*"([^"]+)"\s*,\s*"(?:args|arguments|parameters)"\s*:\s*(\{[^}]*\})\s*\}/g,
+            ];
+            for (const pattern of jsonPatterns) {
+              let match;
+              while ((match = pattern.exec(text)) !== null) {
+                const toolName = match[1];
+                const args = match[2];
+                // Find the matching MCP tool
+                const mcpTool = mcpTools.find(t =>
+                  t.name === toolName ||
+                  t.name.toLowerCase() === toolName.toLowerCase() ||
+                  `${t.server}__${t.name}` === toolName
+                );
+                if (mcpTool) {
+                  parsed.push({
+                    id: `call_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+                    type: 'function',
+                    function: {
+                      name: `${mcpTool.server}__${mcpTool.name}`,
+                      arguments: args,
+                    },
+                  });
+                }
+              }
+            }
+            return parsed;
+          };
+
+          const textToolCalls = parseTextToolCalls(iterationContent);
+          if (textToolCalls.length > 0) {
+            console.log('[Tool Parse] Found tool calls in text output:', textToolCalls);
+            toolCalls = textToolCalls;
+            setMessages((prev) => prev.map((m) => (m.id === assistantMsgId ? { ...m, toolCalls } : m)));
+          }
+        }
+
         // If no tool calls, we're done
         if (toolCalls.length === 0) {
           finalAssistantContent = iterationContent;
