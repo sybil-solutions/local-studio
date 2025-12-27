@@ -220,8 +220,8 @@ export function ToolBelt({
   };
 
   return (
-    <div className="px-3 py-1 bg-[var(--background)]">
-      <div className="max-w-3xl mx-auto">
+    <div className="px-3 py-2 bg-[var(--background)]">
+      <div className="max-w-3xl mx-auto w-full">
         {/* Attachments Preview */}
         {attachments.length > 0 && (
           <div className="flex flex-wrap gap-2 mb-3">

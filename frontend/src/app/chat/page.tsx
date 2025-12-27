@@ -1318,16 +1318,16 @@ export default function ChatPage() {
       />
 
       {/* Main Chat Area */}
-      <div className={`${sidebarCollapsed || isMobile ? '' : 'md:ml-64'}`}>
+      <div className={`${sidebarCollapsed || isMobile ? '' : 'md:ml-64'} w-full overflow-x-hidden`}>
         {/* Chat Header - compact on mobile */}
         <div className="sticky top-12 z-40 bg-[var(--card)] border-b border-[var(--border)]">
-            <div className="flex items-center justify-between gap-1.5 md:gap-3 px-2 md:px-4 py-1.5 md:py-2 border-b border-[var(--border)]">
-            <div className="flex items-center gap-2 min-w-0">
+          <div className="flex items-center justify-between gap-2 px-3 md:px-4 py-2 md:py-2.5">
+            <div className="flex items-center gap-2 min-w-0 flex-1">
               {/* Mobile: History button */}
               {isMobile && (
                 <button
                   onClick={() => setSidebarCollapsed(false)}
-                  className="p-1.5 -ml-1 rounded-lg hover:bg-[var(--accent)] transition-colors"
+                  className="p-2 -ml-2 rounded-lg hover:bg-[var(--accent)] transition-colors flex-shrink-0"
                   title="Chat history"
                 >
                   <MessageSquare className="h-5 w-5" />
@@ -1430,10 +1430,10 @@ export default function ChatPage() {
               {/* Action buttons */}
               <button
                 onClick={() => setChatSettingsOpen(true)}
-                className="p-1.5 md:p-2 rounded md:border border-[var(--border)] hover:bg-[var(--accent)] transition-colors"
+                className="p-2 rounded hover:bg-[var(--accent)] transition-colors"
                 title="Chat settings"
               >
-                <Settings className="h-4 w-4 text-[var(--muted)]" />
+                <Settings className="h-5 w-5 md:h-4 md:w-4 text-[var(--muted)]" />
               </button>
               {!isMobile && (
                 <>
@@ -1455,20 +1455,20 @@ export default function ChatPage() {
               )}
               <button
                 onClick={createSession}
-                className="p-1.5 md:p-2 rounded md:border border-[var(--border)] hover:bg-[var(--accent)] transition-colors"
+                className="p-2 rounded hover:bg-[var(--accent)] transition-colors"
                 title="New chat"
               >
-                <Plus className="h-4 w-4 text-[var(--muted)]" />
+                <Plus className="h-5 w-5 md:h-4 md:w-4 text-[var(--muted)]" />
               </button>
             </div>
           </div>
         </div>
 
         {/* Messages */}
-        <div className="pb-32 md:pb-28">
+        <div className="pb-36 md:pb-32">
           {messages.length === 0 ? (
-            <div className="flex items-center justify-center min-h-[50vh]">
-              <div className="text-center px-6 py-8 animate-fade-in">
+            <div className="flex items-center justify-center min-h-[60vh]">
+              <div className="text-center px-4 py-8 animate-fade-in">
                 <div className="w-12 h-12 rounded-2xl bg-[var(--accent)] flex items-center justify-center mx-auto mb-4">
                   <Sparkles className="h-6 w-6 text-[var(--muted-foreground)]" />
                 </div>
@@ -1481,7 +1481,7 @@ export default function ChatPage() {
               </div>
             </div>
           ) : (
-            <div className="max-w-3xl mx-auto py-4 px-2 md:px-4 space-y-1 w-full">
+            <div className="max-w-3xl mx-auto py-4 px-3 md:px-4 space-y-2">
                 {messages.map((message, index) => (
                   <div
                     key={message.id}
@@ -1491,23 +1491,23 @@ export default function ChatPage() {
                   >
                     <div className="flex gap-3">
                       <div
-                        className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 ${
+                        className={`w-8 h-8 md:w-7 md:h-7 rounded-lg flex items-center justify-center flex-shrink-0 ${
                           message.role === 'user'
                             ? 'bg-[var(--accent)]'
                             : 'bg-[var(--success)]/15'
                         }`}
                       >
                         {message.role === 'user' ? (
-                          <User className="h-3.5 w-3.5" />
+                          <User className="h-4 w-4 md:h-3.5 md:w-3.5" />
                         ) : (
                           <Sparkles
-                            className={`h-3.5 w-3.5 text-[var(--success)] ${
+                            className={`h-4 w-4 md:h-3.5 md:w-3.5 text-[var(--success)] ${
                               message.isStreaming ? 'animate-pulse-soft' : ''
                             }`}
                           />
                         )}
                       </div>
-                      <div className="flex-1 min-w-0 pt-0.5">
+                      <div className="flex-1 min-w-0 overflow-hidden">
                         <div className="flex items-center gap-2 mb-1.5">
                           <span className="text-xs font-medium text-[var(--muted-foreground)]">
                             {message.role === 'user' ? 'You' : (message.model?.split('/').pop() || selectedModel?.split('/').pop() || modelName || 'Assistant')}
@@ -1625,7 +1625,10 @@ export default function ChatPage() {
       </div>
 
       {/* Fixed Input Tool Belt */}
-      <div className={`fixed bottom-[10px] left-0 right-0 z-50 ${sidebarCollapsed || isMobile ? '' : 'md:left-64'}`}>
+      <div
+        className={`fixed left-0 right-0 z-50 ${sidebarCollapsed || isMobile ? '' : 'md:left-64'}`}
+        style={{ bottom: 'max(10px, env(safe-area-inset-bottom, 10px))' }}
+      >
         <ToolBelt
           value={input}
           onChange={setInput}
