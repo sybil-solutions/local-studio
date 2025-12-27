@@ -253,82 +253,95 @@ export function CodeSandbox({
   }, [onError, onOutput]);
 
   return (
-    <div
-      className={`rounded-lg border border-[var(--border)] overflow-hidden ${
-        isFullscreen
-          ? 'fixed inset-4 z-50 bg-[var(--background)]'
-          : ''
-      }`}
-    >
+    <>
+      {/* Fullscreen backdrop */}
+      {isFullscreen && (
+        <div
+          className="fixed inset-0 z-[100] bg-black/80"
+          onClick={() => setIsFullscreen(false)}
+        />
+      )}
+      <div
+        className={`rounded-lg border border-[var(--border)] overflow-hidden ${
+          isFullscreen
+            ? 'fixed inset-0 z-[101] bg-[var(--background)] m-0 rounded-none flex flex-col'
+            : ''
+        }`}
+        style={isFullscreen ? { paddingTop: 'env(safe-area-inset-top, 0)', paddingBottom: 'env(safe-area-inset-bottom, 0)' } : undefined}
+      >
       {/* Header */}
-      <div className="flex items-center justify-between px-3 py-2 bg-[var(--accent)] border-b border-[var(--border)]">
-        <div className="flex items-center gap-2">
-          <span className="text-xs font-medium">
-            {title || `${language.toUpperCase()} Preview`}
-          </span>
-          <span className="text-xs text-[var(--muted)] px-1.5 py-0.5 bg-[var(--background)] rounded">
-            {language}
+      <div className="flex items-center justify-between px-2 md:px-3 py-2 bg-[var(--accent)] border-b border-[var(--border)] flex-shrink-0">
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="text-xs font-medium truncate">
+            {title || `${language.toUpperCase()}`}
           </span>
         </div>
 
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-0.5 md:gap-1">
+          {/* Run/Stop - always visible */}
           {isRunning ? (
             <button
               onClick={stopCode}
-              className="p-1.5 rounded hover:bg-[var(--error)]/20 text-[var(--error)] transition-colors"
+              className="p-2 md:p-1.5 rounded hover:bg-[var(--error)]/20 text-[var(--error)] transition-colors"
               title="Stop"
             >
-              <Square className="h-3.5 w-3.5" />
+              <Square className="h-5 w-5 md:h-4 md:w-4" />
             </button>
           ) : (
             <button
               onClick={runCode}
-              className="p-1.5 rounded hover:bg-[var(--success)]/20 text-[var(--success)] transition-colors"
+              className="p-2 md:p-1.5 rounded hover:bg-[var(--success)]/20 text-[var(--success)] transition-colors"
               title="Run"
             >
-              <Play className="h-3.5 w-3.5" />
+              <Play className="h-5 w-5 md:h-4 md:w-4" />
             </button>
           )}
 
+          {/* Refresh - hidden on mobile */}
           <button
             onClick={runCode}
-            className="p-1.5 rounded hover:bg-[var(--accent)] transition-colors"
+            className="hidden md:block p-1.5 rounded hover:bg-[var(--accent)] transition-colors"
             title="Refresh"
           >
-            <RefreshCw className="h-3.5 w-3.5 text-[var(--muted)]" />
+            <RefreshCw className="h-4 w-4 text-[var(--muted)]" />
           </button>
 
-          <div className="w-px h-4 bg-[var(--border)] mx-1" />
-
+          {/* Copy - hidden on mobile */}
           <button
             onClick={copyCode}
-            className="p-1.5 rounded hover:bg-[var(--accent)] transition-colors"
+            className="hidden md:block p-1.5 rounded hover:bg-[var(--accent)] transition-colors"
             title="Copy code"
           >
             {copied ? (
-              <Check className="h-3.5 w-3.5 text-[var(--success)]" />
+              <Check className="h-4 w-4 text-[var(--success)]" />
             ) : (
-              <Copy className="h-3.5 w-3.5 text-[var(--muted)]" />
+              <Copy className="h-4 w-4 text-[var(--muted)]" />
             )}
           </button>
 
+          {/* Download - hidden on mobile */}
           <button
             onClick={downloadCode}
-            className="p-1.5 rounded hover:bg-[var(--accent)] transition-colors"
+            className="hidden md:block p-1.5 rounded hover:bg-[var(--accent)] transition-colors"
             title="Download"
           >
-            <Download className="h-3.5 w-3.5 text-[var(--muted)]" />
+            <Download className="h-4 w-4 text-[var(--muted)]" />
           </button>
 
+          {/* Fullscreen - ALWAYS visible, larger on mobile */}
           <button
-            onClick={() => setIsFullscreen(!isFullscreen)}
-            className="p-1.5 rounded hover:bg-[var(--accent)] transition-colors"
+            onClick={(e) => {
+              e.stopPropagation();
+              e.preventDefault();
+              setIsFullscreen(!isFullscreen);
+            }}
+            className="p-2 md:p-1.5 rounded bg-[var(--background)] hover:bg-[var(--card-hover)] transition-colors ml-1"
             title={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
           >
             {isFullscreen ? (
-              <Minimize2 className="h-3.5 w-3.5 text-[var(--muted)]" />
+              <Minimize2 className="h-5 w-5 md:h-4 md:w-4" />
             ) : (
-              <Maximize2 className="h-3.5 w-3.5 text-[var(--muted)]" />
+              <Maximize2 className="h-5 w-5 md:h-4 md:w-4" />
             )}
           </button>
         </div>
@@ -336,21 +349,22 @@ export function CodeSandbox({
 
       {/* Error Display */}
       {error && (
-        <div className="flex items-center gap-2 px-3 py-2 bg-[var(--error)]/10 text-[var(--error)] text-xs">
+        <div className="flex items-center gap-2 px-3 py-2 bg-[var(--error)]/10 text-[var(--error)] text-xs flex-shrink-0">
           <AlertTriangle className="h-3.5 w-3.5" />
           {error}
         </div>
       )}
 
       {/* Preview */}
-      <div className={`bg-white ${isFullscreen ? 'h-[calc(100%-48px)]' : 'h-64'}`}>
+      <div className={`bg-white overflow-auto ${isFullscreen ? 'flex-1 min-h-0' : 'h-64'}`}>
         <iframe
           ref={iframeRef}
           className="w-full h-full border-0"
-          sandbox="allow-scripts allow-modals"
+          sandbox="allow-scripts allow-modals allow-same-origin"
           title={title || 'Code Preview'}
         />
       </div>
-    </div>
+      </div>
+    </>
   );
 }

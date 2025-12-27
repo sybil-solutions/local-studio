@@ -20,6 +20,7 @@ services:
       - "4100:4000"
     volumes:
       - ./config/litellm.yaml:/app/config.yaml
+      - ./config/tool_call_handler.py:/app/tool_call_handler.py
       - ./data:/app/data
     environment:
       - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY:-sk-master}

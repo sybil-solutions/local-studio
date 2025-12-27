@@ -7,6 +7,9 @@ import {
   EyeOff,
   FileCode,
   Palette,
+  Maximize2,
+  Minimize2,
+  X,
 } from 'lucide-react';
 import { CodeSandbox } from './code-sandbox';
 import type { Artifact } from '@/lib/types';
@@ -18,6 +21,7 @@ interface ArtifactRendererProps {
 
 export function ArtifactRenderer({ artifact, onRun }: ArtifactRendererProps) {
   const [showPreview, setShowPreview] = useState(true);
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const [showCode, setShowCode] = useState(false);
 
   const language = useMemo(() => {
@@ -55,36 +59,67 @@ export function ArtifactRenderer({ artifact, onRun }: ArtifactRendererProps) {
         ? artifact.code
         : `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">${artifact.code}</svg>`;
     return (
-      <div className="my-2 rounded-lg border border-[var(--border)] overflow-hidden">
-        <div className="flex items-center justify-between px-3 py-2 bg-[var(--accent)] border-b border-[var(--border)]">
-          <div className="flex items-center gap-2">
-            {icon}
-            <span className="text-xs font-medium">{artifact.title || 'SVG'}</span>
+      <>
+        {/* Fullscreen backdrop */}
+        {isFullscreen && (
+          <div
+            className="fixed inset-0 z-[100] bg-black/80"
+            onClick={() => setIsFullscreen(false)}
+          />
+        )}
+        <div className={`my-2 rounded-lg border border-[var(--border)] overflow-hidden ${
+          isFullscreen ? 'fixed inset-0 z-[101] m-0 rounded-none flex flex-col' : ''
+        }`}>
+          <div className="flex items-center justify-between px-2 md:px-3 py-2 bg-[var(--accent)] border-b border-[var(--border)] flex-shrink-0">
+            <div className="flex items-center gap-2">
+              {icon}
+              <span className="text-xs font-medium">{artifact.title || 'SVG'}</span>
+            </div>
+            <div className="flex items-center gap-0.5 md:gap-1">
+              <button
+                onClick={() => setShowCode(!showCode)}
+                className="p-2 md:p-1.5 rounded hover:bg-[var(--background)] transition-colors"
+                title={showCode ? 'Hide code' : 'Show code'}
+              >
+                {showCode ? (
+                  <EyeOff className="h-5 w-5 md:h-4 md:w-4 text-[var(--muted)]" />
+                ) : (
+                  <Eye className="h-5 w-5 md:h-4 md:w-4 text-[var(--muted)]" />
+                )}
+              </button>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setIsFullscreen(!isFullscreen);
+                }}
+                className="p-2 md:p-1.5 rounded bg-[var(--background)] hover:bg-[var(--card-hover)] transition-colors"
+                title={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
+              >
+                {isFullscreen ? (
+                  <Minimize2 className="h-5 w-5 md:h-4 md:w-4" />
+                ) : (
+                  <Maximize2 className="h-5 w-5 md:h-4 md:w-4" />
+                )}
+              </button>
+            </div>
           </div>
-          <div className="flex items-center gap-1">
-            <button
-              onClick={() => setShowCode(!showCode)}
-              className="p-1.5 rounded hover:bg-[var(--background)] transition-colors"
-              title={showCode ? 'Hide code' : 'Show code'}
-            >
-              {showCode ? (
-                <EyeOff className="h-3.5 w-3.5 text-[var(--muted)]" />
-              ) : (
-                <Eye className="h-3.5 w-3.5 text-[var(--muted)]" />
-              )}
-            </button>
+          {showCode && (
+            <pre className="p-3 text-xs bg-[var(--background)] overflow-x-auto border-b border-[var(--border)] flex-shrink-0">
+              <code>{artifact.code}</code>
+            </pre>
+          )}
+          <div
+            className={`p-4 bg-white overflow-auto ${isFullscreen ? 'flex-1 flex items-center justify-center' : ''}`}
+            style={{ maxHeight: isFullscreen ? undefined : '300px' }}
+          >
+            <div
+              className="svg-container"
+              style={{ maxWidth: '100%', overflow: 'hidden' }}
+              dangerouslySetInnerHTML={{ __html: svgMarkup }}
+            />
           </div>
         </div>
-        {showCode && (
-          <pre className="p-3 text-xs bg-[var(--background)] overflow-x-auto border-b border-[var(--border)]">
-            <code>{artifact.code}</code>
-          </pre>
-        )}
-        <div
-          className="p-4 bg-white flex items-center justify-center"
-          dangerouslySetInnerHTML={{ __html: svgMarkup }}
-        />
-      </div>
+      </>
     );
   }
 

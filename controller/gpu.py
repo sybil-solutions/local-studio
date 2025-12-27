@@ -16,6 +16,7 @@ class GPUInfo(BaseModel):
     memory_used: int  # bytes
     memory_free: int  # bytes
     utilization: float  # 0-100
+    temperature: int = 0  # Celsius
 
 
 # Try to import pynvml, fallback to None if not available
@@ -63,6 +64,12 @@ def get_gpu_info() -> List[GPUInfo]:
                 # Some GPUs don't support utilization query
                 utilization = 0.0
 
+            # Get temperature
+            try:
+                temperature = pynvml.nvmlDeviceGetTemperature(handle, pynvml.NVML_TEMPERATURE_GPU)
+            except Exception:
+                temperature = 0
+
             gpus.append(
                 GPUInfo(
                     index=i,
@@ -71,6 +78,7 @@ def get_gpu_info() -> List[GPUInfo]:
                     memory_used=mem_info.used,
                     memory_free=mem_info.free,
                     utilization=utilization,
+                    temperature=temperature,
                 )
             )
 

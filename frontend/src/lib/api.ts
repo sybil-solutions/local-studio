@@ -221,6 +221,45 @@ class APIClient {
     const { recipes } = await this.getRecipes();
     return { content: { recipes } };
   }
+
+  // Benchmarking
+  async runBenchmark(promptTokens = 1000, maxTokens = 100): Promise<{
+    success?: boolean;
+    error?: string;
+    model_id?: string;
+    benchmark?: {
+      prompt_tokens: number;
+      completion_tokens: number;
+      total_time_s: number;
+      prefill_tps: number;
+      generation_tps: number;
+      ttft_ms: number;
+    };
+    peak_metrics?: {
+      prefill_tps: number;
+      generation_tps: number;
+      ttft_ms: number;
+      total_tokens: number;
+      total_requests: number;
+    };
+  }> {
+    return this.request(`/benchmark?prompt_tokens=${promptTokens}&max_tokens=${maxTokens}`, { method: 'POST' });
+  }
+
+  async getPeakMetrics(modelId?: string): Promise<{
+    metrics?: Array<{
+      model_id: string;
+      prefill_tps: number;
+      generation_tps: number;
+      ttft_ms: number;
+      total_tokens: number;
+      total_requests: number;
+    }>;
+    error?: string;
+  }> {
+    const query = modelId ? `?model_id=${modelId}` : '';
+    return this.request(`/peak-metrics${query}`);
+  }
 }
 
 // Singleton for client-side (uses proxy)

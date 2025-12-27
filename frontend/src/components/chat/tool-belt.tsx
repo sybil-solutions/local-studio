@@ -220,7 +220,7 @@ export function ToolBelt({
   };
 
   return (
-    <div className="px-3 py-2 pb-[env(safe-area-inset-bottom,0.5rem)] bg-[var(--background)]">
+    <div className="px-3 py-1 bg-[var(--background)]">
       <div className="max-w-3xl mx-auto">
         {/* Attachments Preview */}
         {attachments.length > 0 && (

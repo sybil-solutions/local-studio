@@ -319,6 +319,8 @@ function CodeBlock({ children, className, artifactsEnabled, isStreaming }: CodeB
 }
 
 export function MessageRenderer({ content, isStreaming, artifactsEnabled }: MessageRendererProps) {
+  // Mermaid uses an internal render ID cache. We need to reset when content changes.
+  // This is done via useId in MermaidDiagram.
   const { thinkingContent, mainContent, isThinkingComplete, artifacts } = useMemo(() => {
     const normalizedContent = normalizeAssistantMarkdownForRender(content);
     // First extract any explicit artifact blocks
@@ -368,7 +370,7 @@ export function MessageRenderer({ content, isStreaming, artifactsEnabled }: Mess
   }, [content, artifactsEnabled]);
 
   return (
-    <div className="message-content">
+    <div className="message-content overflow-hidden max-w-full">
       {thinkingContent && (
         <ThinkingBlock
           content={thinkingContent}

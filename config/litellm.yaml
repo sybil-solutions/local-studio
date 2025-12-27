@@ -2,17 +2,52 @@
 # Handles API routing, format translation, and cost tracking
 
 model_list:
-  # Local vLLM backend (managed by controller)
+  # Wildcard catch-all for any model name -> route to local TabbyAPI/vLLM
   - model_name: "*"
     litellm_params:
-      model: "hosted_vllm/*"
-      api_base: "http://192.168.1.70:8000/v1"
+      model: "openai/*"
+      api_base: "http://172.18.0.1:8000/v1"
+      api_key: "2203f577688173dad689c6f65884778c"
       stream_timeout: 600
       timeout: 600
-      # Support for extended features
       supports_function_calling: true
       supports_vision: true
       supports_response_schema: true
+
+  # Explicit model for health checks (uses currently loaded model)
+  - model_name: "glm-4.6v"
+    litellm_params:
+      model: "openai/glm-4.6v"
+      api_base: "http://172.18.0.1:8000/v1"
+      api_key: "2203f577688173dad689c6f65884778c"
+      stream_timeout: 600
+      timeout: 600
+      supports_function_calling: true
+      supports_vision: true
+
+  # GLM-4.7 on ExLlamaV3/TabbyAPI (via tool call proxy)
+  - model_name: "glm-4.7"
+    litellm_params:
+      model: "openai/glm-4.7"
+      api_base: "http://172.18.0.1:8001/v1"
+      api_key: "2203f577688173dad689c6f65884778c"
+      stream_timeout: 600
+      timeout: 600
+      supports_function_calling: true
+      supports_tool_choice: true
+      # Try to preserve tool_calls from backend
+      custom_llm_provider: openai
+
+  # GLM-4.7 on ExLlamaV3/TabbyAPI (by exact model ID, via proxy)
+  - model_name: "GLM-4.7-EXL3-3bpw_H6"
+    litellm_params:
+      model: "openai/glm-4.7"
+      api_base: "http://172.18.0.1:8001/v1"
+      api_key: "2203f577688173dad689c6f65884778c"
+      stream_timeout: 600
+      timeout: 600
+      supports_function_calling: true
+      custom_llm_provider: openai
 
 # Router settings
 router_settings:
@@ -20,7 +55,7 @@ router_settings:
   num_retries: 3
   timeout: 600
   retry_after: 3
-  enable_pre_call_checks: true
+  enable_pre_call_checks: false
   # Better connection handling
   cooldown_time: 0
   allowed_fails: 3
@@ -29,6 +64,7 @@ router_settings:
 litellm_settings:
   drop_params: true
   set_verbose: false
+  # Tool calls are handled by the proxy on port 8001
   request_timeout: 600
   telemetry: false
   # Enhanced streaming and connection handling
@@ -36,8 +72,8 @@ litellm_settings:
   num_retries: 3
   max_budget: 0
   budget_duration: 0
-  # Format handling
-  modify_params: true
+  # Format handling - keep false to preserve tool_calls from backend
+  modify_params: false
   # Tool calling support
   enable_message_redaction: false
   force_ipv4: true
@@ -73,10 +109,10 @@ general_settings:
   health_check_interval: 30
   disable_end_user_cost_tracking: false
 
-  # Alerting configuration (optional Slack integration)
-  alerting: ["slack"]
-  alerting_threshold: 300  # Alert if request takes >5min
-  slack_webhook_url: os.environ/SLACK_WEBHOOK_URL  # Optional: set in .env
+  # Alerting configuration (disabled - no Slack webhook configured)
+  # alerting: ["slack"]
+  # alerting_threshold: 300
+  # slack_webhook_url: os.environ/SLACK_WEBHOOK_URL
 
   # Performance optimizations
   batch_spend_updates: true
