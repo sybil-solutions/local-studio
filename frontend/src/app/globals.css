@@ -176,3 +176,37 @@ body {
     width: 100%;
   }
 }
+
+/* Message content overflow */
+.message-content {
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  hyphens: auto;
+}
+
+.message-content pre {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.message-content code {
+  word-break: break-all;
+}
+
+/* PWA-specific fixes */
+@supports (padding: env(safe-area-inset-top)) {
+  /* Ensure fullscreen modals cover safe areas */
+  .fullscreen-modal {
+    padding-top: env(safe-area-inset-top, 0);
+    padding-bottom: env(safe-area-inset-bottom, 0);
+    padding-left: env(safe-area-inset-left, 0);
+    padding-right: env(safe-area-inset-right, 0);
+  }
+}
+
+/* SVG artifact scaling */
+.svg-container svg {
+  max-width: 100%;
+  height: auto;
+  display: block;
+}

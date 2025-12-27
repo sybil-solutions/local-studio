@@ -52,7 +52,7 @@ def _build_env(recipe: Recipe) -> Dict[str, str]:
 
 
 def _is_inference_process(cmdline: List[str]) -> Optional[str]:
-    """Check if cmdline is vLLM or SGLang, return backend name."""
+    """Check if cmdline is vLLM, SGLang, or TabbyAPI, return backend name."""
     if not cmdline:
         return None
     joined = " ".join(cmdline)
@@ -63,6 +63,9 @@ def _is_inference_process(cmdline: List[str]) -> Optional[str]:
         return "vllm"
     if "sglang.launch_server" in joined:
         return "sglang"
+    # TabbyAPI / ExLlamaV3 (main.py with --config flag)
+    if "tabbyAPI" in joined or ("main.py" in joined and "--config" in joined):
+        return "tabbyapi"
     return None
 
 
@@ -75,10 +78,16 @@ def find_inference_process(port: int) -> Optional[ProcessInfo]:
             if not backend:
                 continue
             p = _extract_flag(cmdline, "--port")
-            if p is None or int(p) != port:
+            # TabbyAPI doesn't use --port flag, assume default port 8000
+            if backend == "tabbyapi":
+                if port != 8000:
+                    continue
+            elif p is None or int(p) != port:
                 continue
             # Extract model path
             model_path = _extract_flag(cmdline, "--model") or _extract_flag(cmdline, "--model-path")
+            served_model_name = _extract_flag(cmdline, "--served-model-name")
+
             if not model_path:
                 # Find "serve" anywhere in cmdline and get the next non-flag arg
                 try:
@@ -87,12 +96,54 @@ def find_inference_process(port: int) -> Optional[ProcessInfo]:
                         model_path = cmdline[serve_idx + 1]
                 except ValueError:
                     pass
+
+            # TabbyAPI: model info is in config, try to get from /v1/models or config file
+            if backend == "tabbyapi" and not model_path:
+                try:
+                    import httpx
+                    import yaml
+                    # Try to get API key from TabbyAPI config
+                    tabby_dir = "/home/ser/workspace/projects/tabbyAPI"
+                    api_key = None
+                    try:
+                        with open(f"{tabby_dir}/api_tokens.yml") as f:
+                            tokens = yaml.safe_load(f)
+                            api_key = tokens.get("api_key")
+                    except Exception:
+                        pass
+
+                    headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+                    r = httpx.get(f"http://localhost:{port}/v1/models", headers=headers, timeout=2)
+                    if r.status_code == 200:
+                        data = r.json().get("data", [])
+                        if data:
+                            served_model_name = data[0].get("id")
+                            model_path = f"/mnt/llm_models/{served_model_name}"
+
+                    # Fallback: read from config file
+                    if not served_model_name:
+                        config_flag = _extract_flag(cmdline, "--config")
+                        if config_flag:
+                            try:
+                                with open(f"{tabby_dir}/{config_flag}") as f:
+                                    cfg = yaml.safe_load(f)
+                                    served_model_name = cfg.get("model", {}).get("model_name")
+                                    model_path = f"/mnt/llm_models/{served_model_name}"
+                            except Exception:
+                                pass
+                except Exception:
+                    pass
+
+                if not model_path:
+                    model_path = "tabbyapi:unknown"
+                    served_model_name = "GLM-4.7"  # Default fallback
+
             return ProcessInfo(
                 pid=proc.info["pid"],
                 backend=backend,
                 model_path=model_path,
                 port=port,
-                served_model_name=_extract_flag(cmdline, "--served-model-name"),
+                served_model_name=served_model_name,
             )
         except (psutil.NoSuchProcess, psutil.AccessDenied, ValueError):
             continue

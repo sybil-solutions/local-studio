@@ -1293,7 +1293,7 @@ export default function ChatPage() {
 
   if (pageLoading) {
     return (
-      <div className="flex items-center justify-center h-[calc(100vh-4rem)]">
+      <div className="flex items-center justify-center h-full">
         <div className="animate-pulse-soft">
           <Sparkles className="h-8 w-8 text-[var(--muted)]" />
         </div>
@@ -1302,26 +1302,26 @@ export default function ChatPage() {
   }
 
   return (
-    <div className="flex flex-col h-[calc(100vh-3rem)] md:h-[calc(100vh-3.5rem)]">
-      <div className="flex flex-1 min-h-0">
-        {/* Sidebar */}
-        <ChatSidebar
-          sessions={sessions}
-          currentSessionId={currentSessionId}
-          onSelectSession={loadSession}
-          onNewSession={createSession}
-          onDeleteSession={deleteSession}
-          isCollapsed={sidebarCollapsed}
-          onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
-          isLoading={sessionsLoading}
-          isMobile={isMobile}
-        />
+    <>
+    <div className="relative">
+      {/* Sidebar */}
+      <ChatSidebar
+        sessions={sessions}
+        currentSessionId={currentSessionId}
+        onSelectSession={loadSession}
+        onNewSession={createSession}
+        onDeleteSession={deleteSession}
+        isCollapsed={sidebarCollapsed}
+        onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
+        isLoading={sessionsLoading}
+        isMobile={isMobile}
+      />
 
-        {/* Main Chat Area */}
-        <div className="flex-1 flex flex-col min-w-0">
-          {/* Chat Header */}
-          <div className="bg-[var(--card)] pt-[env(safe-area-inset-top,0)] md:pt-0">
-            <div className="flex items-center justify-between gap-2 md:gap-3 px-3 md:px-4 py-2 border-b border-[var(--border)]">
+      {/* Main Chat Area */}
+      <div className={`${sidebarCollapsed || isMobile ? '' : 'md:ml-64'}`}>
+        {/* Chat Header - compact on mobile */}
+        <div className="sticky top-12 z-40 bg-[var(--card)] border-b border-[var(--border)]">
+            <div className="flex items-center justify-between gap-1.5 md:gap-3 px-2 md:px-4 py-1.5 md:py-2 border-b border-[var(--border)]">
             <div className="flex items-center gap-2 min-w-0">
               {/* Mobile: History button */}
               {isMobile && (
@@ -1461,27 +1461,27 @@ export default function ChatPage() {
                 <Plus className="h-4 w-4 text-[var(--muted)]" />
               </button>
             </div>
-            </div>
           </div>
+        </div>
 
-          {/* Messages */}
-          <div className="flex-1 overflow-y-auto">
-            {messages.length === 0 ? (
-              <div className="flex items-center justify-center h-full">
-                <div className="text-center px-6 py-8 animate-fade-in">
-                  <div className="w-12 h-12 rounded-2xl bg-[var(--accent)] flex items-center justify-center mx-auto mb-4">
-                    <Sparkles className="h-6 w-6 text-[var(--muted-foreground)]" />
-                  </div>
-                  <h2 className="text-lg font-medium mb-2">Start a conversation</h2>
-                  <p className="text-sm text-[var(--muted)] max-w-xs mx-auto">
-                    {selectedModel || runningModel
-                      ? 'Send a message to begin chatting with your model.'
-                      : 'Select a model in Settings to get started.'}
-                  </p>
+        {/* Messages */}
+        <div className="pb-32 md:pb-28">
+          {messages.length === 0 ? (
+            <div className="flex items-center justify-center min-h-[50vh]">
+              <div className="text-center px-6 py-8 animate-fade-in">
+                <div className="w-12 h-12 rounded-2xl bg-[var(--accent)] flex items-center justify-center mx-auto mb-4">
+                  <Sparkles className="h-6 w-6 text-[var(--muted-foreground)]" />
                 </div>
+                <h2 className="text-lg font-medium mb-2">Start a conversation</h2>
+                <p className="text-sm text-[var(--muted)] max-w-xs mx-auto">
+                  {selectedModel || runningModel
+                    ? 'Send a message to begin chatting with your model.'
+                    : 'Select a model in Settings to get started.'}
+                </p>
               </div>
-            ) : (
-              <div className="max-w-3xl mx-auto py-4 px-3 md:px-4 space-y-1">
+            </div>
+          ) : (
+            <div className="max-w-3xl mx-auto py-4 px-2 md:px-4 space-y-1 w-full">
                 {messages.map((message, index) => (
                   <div
                     key={message.id}
@@ -1562,9 +1562,9 @@ export default function ChatPage() {
                           </div>
                         )}
 
-                        <div className="text-sm">
+                        <div className="text-sm overflow-hidden break-words">
                           {message.role === 'user' ? (
-                            <p className="whitespace-pre-wrap">{message.content}</p>
+                            <p className="whitespace-pre-wrap break-words">{message.content}</p>
                           ) : (
                             <>
                               <MessageRenderer
@@ -1621,31 +1621,34 @@ export default function ChatPage() {
               </div>
             )}
           </div>
-
-          {/* Input Tool Belt */}
-          <ToolBelt
-            value={input}
-            onChange={setInput}
-            onSubmit={sendMessage}
-            onStop={stopGeneration}
-            disabled={!((selectedModel || runningModel || '').trim())}
-            isLoading={isLoading}
-            modelName={selectedModel || modelName}
-            placeholder={(selectedModel || runningModel) ? 'Message...' : 'Select a model in Settings'}
-            mcpEnabled={mcpEnabled}
-            onMcpToggle={() => setMcpEnabled(!mcpEnabled)}
-            mcpServers={mcpServers.map((s) => ({ name: s.name, enabled: s.enabled }))}
-            artifactsEnabled={artifactsEnabled}
-            onArtifactsToggle={() => setArtifactsEnabled(!artifactsEnabled)}
-            onOpenMcpSettings={() => setMcpSettingsOpen(true)}
-            onOpenChatSettings={() => setChatSettingsOpen(true)}
-            hasSystemPrompt={systemPrompt.trim().length > 0}
-          />
         </div>
+      </div>
 
-        {/* Usage Details Modal */}
-        {usageDetailsOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+      {/* Fixed Input Tool Belt */}
+      <div className={`fixed bottom-[10px] left-0 right-0 z-50 ${sidebarCollapsed || isMobile ? '' : 'md:left-64'}`}>
+        <ToolBelt
+          value={input}
+          onChange={setInput}
+          onSubmit={sendMessage}
+          onStop={stopGeneration}
+          disabled={!((selectedModel || runningModel || '').trim())}
+          isLoading={isLoading}
+          modelName={selectedModel || modelName}
+          placeholder={(selectedModel || runningModel) ? 'Message...' : 'Select a model in Settings'}
+          mcpEnabled={mcpEnabled}
+          onMcpToggle={() => setMcpEnabled(!mcpEnabled)}
+          mcpServers={mcpServers.map((s) => ({ name: s.name, enabled: s.enabled }))}
+          artifactsEnabled={artifactsEnabled}
+          onArtifactsToggle={() => setArtifactsEnabled(!artifactsEnabled)}
+          onOpenMcpSettings={() => setMcpSettingsOpen(true)}
+          onOpenChatSettings={() => setChatSettingsOpen(true)}
+          hasSystemPrompt={systemPrompt.trim().length > 0}
+        />
+      </div>
+
+      {/* Usage Details Modal */}
+      {usageDetailsOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
             <div className="bg-[var(--card)] border border-[var(--border)] rounded-lg w-full max-w-2xl max-h-[80vh] overflow-hidden flex flex-col">
               <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--border)]">
                 <div className="flex items-center gap-2">
@@ -1844,7 +1847,6 @@ export default function ChatPage() {
             }
           }}
         />
-      </div>
-    </div>
+    </>
   );
 }

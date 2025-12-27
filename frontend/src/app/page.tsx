@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Search, Play, Cpu, Zap, HardDrive, Activity, Clock, Hash, Thermometer, MemoryStick, Settings, MessageSquare, FileText, Square, X, Check, Wifi, WifiOff } from 'lucide-react';
+import { Search, Play, Cpu, Zap, HardDrive, Activity, Clock, Hash, Thermometer, MemoryStick, Settings, MessageSquare, FileText, Square, X, Check, Wifi, WifiOff, Gauge } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import api from '@/lib/api';
 import { useRealtimeStatus } from '@/hooks/useRealtimeStatus';
@@ -27,6 +27,7 @@ export default function Dashboard() {
   const [searchResults, setSearchResults] = useState<RecipeWithStatus[]>([]);
   const [loading, setLoading] = useState(true);
   const [launching, setLaunching] = useState(false);
+  const [benchmarking, setBenchmarking] = useState(false);
   const router = useRouter();
 
   // Derived state from real-time data
@@ -112,6 +113,22 @@ export default function Dashboard() {
     }
   };
 
+  const handleBenchmark = async () => {
+    if (benchmarking) return;
+    setBenchmarking(true);
+    try {
+      const result = await api.runBenchmark(1000, 100);
+      if (result.error) {
+        alert('Benchmark error: ' + result.error);
+      }
+      // Peak metrics will be updated via SSE
+    } catch (e) {
+      alert('Benchmark failed: ' + (e as Error).message);
+    } finally {
+      setBenchmarking(false);
+    }
+  };
+
   const getTempColor = (temp: number) => {
     if (temp > 80) return 'text-[var(--error)]';
     if (temp > 60) return 'text-[var(--warning)]';
@@ -157,7 +174,7 @@ export default function Dashboard() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-[calc(100vh-4rem)]">
+      <div className="flex items-center justify-center h-full">
         <div className="animate-pulse-soft">
           <Activity className="h-8 w-8 text-[var(--muted)]" />
         </div>
@@ -244,6 +261,14 @@ export default function Dashboard() {
                     >
                       <FileText className="h-3.5 w-3.5" /> <span className="hidden sm:inline">Logs</span>
                     </button>
+                    <button
+                      onClick={handleBenchmark}
+                      disabled={benchmarking}
+                      className="flex items-center gap-1 px-2 py-1 border border-[var(--border)] rounded text-xs hover:bg-[var(--card-hover)] disabled:opacity-50"
+                      title="Run benchmark to measure peak performance"
+                    >
+                      <Gauge className="h-3.5 w-3.5" /> <span className="hidden sm:inline">{benchmarking ? 'Running...' : 'Benchmark'}</span>
+                    </button>
                     {currentRecipe?.id ? (
                       <button
                         onClick={() => router.push(`/recipes?edit=${currentRecipe.id}`)}
@@ -292,21 +317,21 @@ export default function Dashboard() {
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                   <div className="bg-[var(--background)] rounded-lg p-3 text-center">
                     <div className="text-xl font-mono font-semibold">
-                      {metrics?.avg_ttft_ms ? `${Math.round(metrics.avg_ttft_ms)}ms` : '--'}
+                      {metrics?.peak_ttft_ms ? `${Math.round(metrics.peak_ttft_ms)}ms` : (metrics?.avg_ttft_ms ? `${Math.round(metrics.avg_ttft_ms)}ms` : '--')}
                     </div>
-                    <div className="text-xs text-[var(--muted-foreground)]">TTFT</div>
+                    <div className="text-xs text-[var(--muted-foreground)]">Best TTFT</div>
                   </div>
                   <div className="bg-[var(--background)] rounded-lg p-3 text-center">
                     <div className="text-xl font-mono font-semibold">
-                      {formatNumber(metrics?.generation_throughput)}
+                      {formatNumber(metrics?.peak_generation_tps) !== '--' ? formatNumber(metrics?.peak_generation_tps) : formatNumber(metrics?.generation_throughput)}
                     </div>
-                    <div className="text-xs text-[var(--muted-foreground)]">Gen TPS</div>
+                    <div className="text-xs text-[var(--muted-foreground)]">Peak Gen TPS</div>
                   </div>
                   <div className="bg-[var(--background)] rounded-lg p-3 text-center">
                     <div className="text-xl font-mono font-semibold">
-                      {formatNumber(metrics?.prompt_throughput)}
+                      {formatNumber(metrics?.peak_prefill_tps) !== '--' ? formatNumber(metrics?.peak_prefill_tps) : formatNumber(metrics?.prompt_throughput)}
                     </div>
-                    <div className="text-xs text-[var(--muted-foreground)]">Prefill TPS</div>
+                    <div className="text-xs text-[var(--muted-foreground)]">Peak Prefill TPS</div>
                   </div>
                   <div className="bg-[var(--background)] rounded-lg p-3 text-center">
                     <div className="text-xl font-mono font-semibold">

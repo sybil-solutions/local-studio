@@ -36,6 +36,7 @@ class Recipe(BaseModel):
     # Features
     trust_remote_code: bool = Field(default=True)
     tool_call_parser: Optional[str] = Field(default=None)
+    enable_auto_tool_choice: bool = Field(default=False)
 
     # Quantization
     quantization: Optional[str] = Field(default=None)

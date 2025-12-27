@@ -193,6 +193,12 @@ export interface Metrics {
   generation_tokens_total?: number;
   running_requests?: number;
   pending_requests?: number;
+  // Peak metrics (stored best values)
+  peak_prefill_tps?: number;
+  peak_generation_tps?: number;
+  peak_ttft_ms?: number;
+  total_tokens?: number;
+  total_requests?: number;
 }
 
 // Artifact types for code rendering

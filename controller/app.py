@@ -24,7 +24,7 @@ from .config import settings
 from .gpu import get_gpu_info
 from .models import HealthResponse, LaunchResult, OpenAIModelInfo, OpenAIModelList, Recipe
 from .process import evict_model, find_inference_process, switch_model
-from .store import RecipeStore
+from .store import RecipeStore, ChatStore, PeakMetricsStore
 
 app = FastAPI(
     title="vLLM Studio Controller",
@@ -42,6 +42,8 @@ app.add_middleware(
 
 # Global state
 _store: Optional[RecipeStore] = None
+_chat_store: Optional[ChatStore] = None
+_peak_metrics_store: Optional[PeakMetricsStore] = None
 _switch_lock = asyncio.Lock()
 _broadcast_task: Optional[asyncio.Task] = None
 
@@ -67,6 +69,22 @@ def get_store() -> RecipeStore:
     if _store is None:
         _store = RecipeStore(settings.db_path)
     return _store
+
+
+def get_chat_store() -> ChatStore:
+    global _chat_store
+    if _chat_store is None:
+        chat_db = settings.db_path.parent / "chats.db"
+        _chat_store = ChatStore(chat_db)
+    return _chat_store
+
+
+def get_peak_metrics_store() -> PeakMetricsStore:
+    global _peak_metrics_store
+    if _peak_metrics_store is None:
+        metrics_db = settings.db_path.parent / "metrics.db"
+        _peak_metrics_store = PeakMetricsStore(metrics_db)
+    return _peak_metrics_store
 
 
 # --- Access logging & authentication middleware ---
@@ -184,6 +202,19 @@ async def broadcast_updates():
                         r = await client.get(f"http://localhost:{settings.inference_port}/metrics")
                         if r.status_code == 200:
                             metrics = parse_vllm_metrics(r.text)
+
+                            # Merge peak metrics for the current model
+                            model_id = current.served_model_name or (current.model_path.split('/')[-1] if current.model_path else None)
+                            if model_id:
+                                peak_store = get_peak_metrics_store()
+                                peak = peak_store.get(model_id)
+                                if peak:
+                                    metrics['peak_prefill_tps'] = peak.get('prefill_tps')
+                                    metrics['peak_generation_tps'] = peak.get('generation_tps')
+                                    metrics['peak_ttft_ms'] = peak.get('ttft_ms')
+                                    metrics['total_tokens'] = peak.get('total_tokens', 0)
+                                    metrics['total_requests'] = peak.get('total_requests', 0)
+
                             await event_manager.publish_metrics(metrics)
                 except Exception:
                     pass  # Backend not ready or metrics not available
@@ -202,8 +233,12 @@ def parse_vllm_metrics(prometheus_text: str) -> dict:
     - vllm:num_requests_waiting
     - vllm:avg_generation_throughput_toks_per_s
     - vllm:gpu_cache_usage_perc
+    - vllm:generation_tokens_total
+    - vllm:prompt_tokens_total
+    - vllm:request_success_total
     """
     metrics = {}
+    request_success_total = 0
 
     for line in prometheus_text.split('\n'):
         if line.startswith('#') or not line.strip():
@@ -224,15 +259,27 @@ def parse_vllm_metrics(prometheus_text: str) -> dict:
                     metrics['generation_throughput'] = metric_value
                 elif 'avg_prompt_throughput' in metric_name:
                     metrics['prompt_throughput'] = metric_value
-                elif 'gpu_cache_usage_perc' in metric_name:
-                    metrics['kv_cache_usage'] = metric_value / 100
+                elif 'kv_cache_usage_perc' in metric_name:
+                    metrics['kv_cache_usage'] = metric_value
                 elif 'time_to_first_token' in metric_name:
                     if 'sum' in metric_name:
                         metrics['ttft_sum'] = metric_value
                     elif 'count' in metric_name:
                         metrics['ttft_count'] = int(metric_value)
+                # Token totals (counters)
+                elif 'generation_tokens_total{' in metric_name:
+                    metrics['generation_tokens_total'] = int(metric_value)
+                elif 'prompt_tokens_total{' in metric_name:
+                    metrics['prompt_tokens_total'] = int(metric_value)
+                # Request success (sum all finished_reasons)
+                elif 'request_success_total{' in metric_name:
+                    request_success_total += int(metric_value)
         except Exception:
             continue
+
+    # Set request success total
+    if request_success_total > 0:
+        metrics['request_success'] = request_success_total
 
     # Calculate average TTFT if available
     if 'ttft_sum' in metrics and 'ttft_count' in metrics and metrics['ttft_count'] > 0:
@@ -287,11 +334,25 @@ async def gpus():
 
 
 # --- OpenAI-compatible endpoints ---
-@app.get("/v1/models", response_model=OpenAIModelList, tags=["OpenAI Compatible"])
-async def list_models_openai(store: RecipeStore = Depends(get_store)):
-    """List all models in OpenAI format."""
-    import time
+@app.get("/v1/models", tags=["OpenAI Compatible"])
+async def list_models_openai():
+    """Proxy models list to LiteLLM."""
+    import os
+    litellm_key = os.environ.get("LITELLM_MASTER_KEY", "sk-master")
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            r = await client.get(
+                "http://localhost:4100/v1/models",
+                headers={"Authorization": f"Bearer {litellm_key}"}
+            )
+            return JSONResponse(content=r.json(), status_code=r.status_code)
+    except Exception as e:
+        logger.error(f"Models proxy error: {e}")
+        # Fallback to controller recipes
+        pass
 
+    import time
+    store = get_store()
     recipes = store.list()
     current = find_inference_process(settings.inference_port)
 
@@ -448,6 +509,93 @@ async def delete_recipe(recipe_id: str, store: RecipeStore = Depends(get_store))
     if not store.delete(recipe_id):
         raise HTTPException(status_code=404, detail="Recipe not found")
     return {"success": True}
+
+
+# --- Chat sessions ---
+import uuid
+
+
+@app.get("/chats", tags=["Chats"])
+async def list_chat_sessions(chat_store: ChatStore = Depends(get_chat_store)):
+    """List all chat sessions."""
+    return chat_store.list_sessions()
+
+
+@app.get("/chats/{session_id}", tags=["Chats"])
+async def get_chat_session(session_id: str, chat_store: ChatStore = Depends(get_chat_store)):
+    """Get a chat session with its messages."""
+    session = chat_store.get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    return {"session": session}
+
+
+@app.post("/chats", tags=["Chats"])
+async def create_chat_session(request: Request, chat_store: ChatStore = Depends(get_chat_store)):
+    """Create a new chat session."""
+    body = await request.json()
+    session_id = str(uuid.uuid4())
+    title = body.get("title", "New Chat")
+    model = body.get("model")
+    session = chat_store.create_session(session_id, title, model)
+    return {"session": session}
+
+
+@app.put("/chats/{session_id}", tags=["Chats"])
+async def update_chat_session(session_id: str, request: Request, chat_store: ChatStore = Depends(get_chat_store)):
+    """Update a chat session (title, model)."""
+    body = await request.json()
+    if not chat_store.update_session(session_id, body.get("title"), body.get("model")):
+        raise HTTPException(status_code=404, detail="Session not found")
+    return {"success": True}
+
+
+@app.delete("/chats/{session_id}", tags=["Chats"])
+async def delete_chat_session(session_id: str, chat_store: ChatStore = Depends(get_chat_store)):
+    """Delete a chat session."""
+    if not chat_store.delete_session(session_id):
+        raise HTTPException(status_code=404, detail="Session not found")
+    return {"success": True}
+
+
+@app.post("/chats/{session_id}/messages", tags=["Chats"])
+async def add_chat_message(session_id: str, request: Request, chat_store: ChatStore = Depends(get_chat_store)):
+    """Add a message to a chat session."""
+    body = await request.json()
+    message_id = body.get("id", str(uuid.uuid4()))
+    role = body.get("role", "user")
+    content = body.get("content")
+    model = body.get("model")
+    tool_calls = body.get("tool_calls")
+    request_prompt_tokens = body.get("request_prompt_tokens")
+    request_tools_tokens = body.get("request_tools_tokens")
+    request_total_input_tokens = body.get("request_total_input_tokens")
+    request_completion_tokens = body.get("request_completion_tokens")
+    message = chat_store.add_message(
+        session_id, message_id, role, content, model, tool_calls,
+        request_prompt_tokens, request_tools_tokens, request_total_input_tokens, request_completion_tokens
+    )
+    return message
+
+
+@app.get("/chats/{session_id}/usage", tags=["Chats"])
+async def get_chat_usage(session_id: str, chat_store: ChatStore = Depends(get_chat_store)):
+    """Get token usage for a chat session."""
+    return chat_store.get_usage(session_id)
+
+
+@app.post("/chats/{session_id}/fork", tags=["Chats"])
+async def fork_chat_session(session_id: str, request: Request, chat_store: ChatStore = Depends(get_chat_store)):
+    """Fork a chat session, optionally from a specific message."""
+    body = await request.json()
+    new_id = str(uuid.uuid4())
+    message_id = body.get("message_id")
+    model = body.get("model")
+    title = body.get("title")
+    session = chat_store.fork_session(session_id, new_id, message_id, model, title)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    return {"session": session}
 
 
 # --- Model lifecycle ---
@@ -766,6 +914,112 @@ async def metrics():
     )
 
 
+# --- Peak metrics & benchmark ---
+@app.get("/peak-metrics", tags=["Monitoring"])
+async def get_peak_metrics(
+    model_id: str = None,
+    metrics_store: PeakMetricsStore = Depends(get_peak_metrics_store)
+):
+    """Get stored peak performance metrics."""
+    if model_id:
+        result = metrics_store.get(model_id)
+        return result or {"error": "No metrics for this model"}
+    return {"metrics": metrics_store.get_all()}
+
+
+@app.post("/benchmark", tags=["Monitoring"])
+async def run_benchmark(
+    prompt_tokens: int = 1000,
+    max_tokens: int = 100,
+    metrics_store: PeakMetricsStore = Depends(get_peak_metrics_store)
+):
+    """Run a benchmark and store peak metrics if better than existing.
+
+    Sends a request with ~prompt_tokens input and max_tokens output,
+    measures TTFT, prefill speed, and generation speed.
+    Only updates stored metrics if new values are better.
+    """
+    import time as time_module
+
+    current = find_inference_process(settings.inference_port)
+    if not current:
+        return {"error": "No model running"}
+
+    model_id = current.served_model_name or current.model_path.split('/')[-1]
+
+    # Generate prompt of approximately prompt_tokens tokens (rough estimate: 4 chars per token)
+    prompt = "Please count: " + " ".join([str(i) for i in range(prompt_tokens // 2)])
+
+    try:
+        async with httpx.AsyncClient(timeout=300.0) as client:
+            start_time = time_module.perf_counter()
+
+            response = await client.post(
+                f"http://localhost:{settings.inference_port}/v1/chat/completions",
+                json={
+                    "model": model_id,
+                    "messages": [{"role": "user", "content": prompt}],
+                    "max_tokens": max_tokens,
+                    "stream": False
+                }
+            )
+
+            total_time = time_module.perf_counter() - start_time
+
+            if response.status_code != 200:
+                return {"error": f"Request failed: {response.status_code}"}
+
+            data = response.json()
+            usage = data.get("usage", {})
+            prompt_tokens_actual = usage.get("prompt_tokens", 0)
+            completion_tokens = usage.get("completion_tokens", 0)
+
+            # Calculate metrics
+            # Estimate prefill time as ~10% of total for short outputs, adjust based on ratio
+            if completion_tokens > 0 and prompt_tokens_actual > 0:
+                # Rough estimate: prefill takes prompt_tokens/(prompt_tokens + completion_tokens * gen_ratio) of time
+                # For thinking models, generation is slower, so adjust
+                prefill_ratio = prompt_tokens_actual / (prompt_tokens_actual + completion_tokens * 10)
+                prefill_time = total_time * prefill_ratio
+                generation_time = total_time - prefill_time
+
+                prefill_tps = prompt_tokens_actual / prefill_time if prefill_time > 0 else 0
+                generation_tps = completion_tokens / generation_time if generation_time > 0 else 0
+
+                # TTFT estimate (first token time) - rough approximation
+                ttft_ms = prefill_time * 1000
+
+                # Update if better
+                result = metrics_store.update_if_better(
+                    model_id=model_id,
+                    prefill_tps=prefill_tps,
+                    generation_tps=generation_tps,
+                    ttft_ms=ttft_ms
+                )
+
+                # Add to cumulative totals
+                metrics_store.add_tokens(model_id, completion_tokens, 1)
+
+                return {
+                    "success": True,
+                    "model_id": model_id,
+                    "benchmark": {
+                        "prompt_tokens": prompt_tokens_actual,
+                        "completion_tokens": completion_tokens,
+                        "total_time_s": round(total_time, 2),
+                        "prefill_tps": round(prefill_tps, 1),
+                        "generation_tps": round(generation_tps, 1),
+                        "ttft_ms": round(ttft_ms, 0)
+                    },
+                    "peak_metrics": result
+                }
+            else:
+                return {"error": "No tokens in response"}
+
+    except Exception as e:
+        return {"error": str(e)}
+
+
 # --- MCP (minimal built-in tools) ---
 _MCP_CFG_NAME = "mcp_servers.json"
 
@@ -858,12 +1112,64 @@ async def list_mcp_tools():
                     "additionalProperties": False,
                 },
             },
+            {
+                "server": "exa",
+                "name": "search",
+                "description": "Search the web using Exa AI. Returns relevant results with titles, URLs, and content snippets.",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "query": {"type": "string", "description": "Search query"},
+                        "num_results": {"type": "integer", "description": "Number of results (1-10)", "default": 5},
+                    },
+                    "required": ["query"],
+                    "additionalProperties": False,
+                },
+            },
         ]
     }
 
 
 @app.post("/mcp/tools/{server}/{tool_name}", tags=["MCP"])
 async def call_mcp_tool(server: str, tool_name: str, payload: dict):
+    # Exa search
+    if server == "exa" and tool_name == "search":
+        query = str(payload.get("query") or "").strip()
+        if not query:
+            raise HTTPException(status_code=400, detail="`query` required")
+        num_results = min(10, max(1, int(payload.get("num_results") or 5)))
+
+        # Get API key from MCP config
+        exa_key = None
+        for srv in _read_mcp_servers():
+            if srv.get("name") == "exa":
+                exa_key = srv.get("env", {}).get("EXA_API_KEY")
+                break
+
+        if not exa_key:
+            exa_key = os.environ.get("EXA_API_KEY")
+
+        if not exa_key:
+            raise HTTPException(status_code=500, detail="EXA_API_KEY not configured")
+
+        async with httpx.AsyncClient(timeout=30) as client:
+            r = await client.post(
+                "https://api.exa.ai/search",
+                headers={"x-api-key": exa_key, "Content-Type": "application/json"},
+                json={"query": query, "numResults": num_results, "contents": {"text": {"maxCharacters": 1000}}},
+            )
+            if r.status_code != 200:
+                return {"result": f"Exa API error: {r.status_code} - {r.text[:500]}"}
+            data = r.json()
+            results = []
+            for item in data.get("results", []):
+                results.append({
+                    "title": item.get("title", ""),
+                    "url": item.get("url", ""),
+                    "text": item.get("text", "")[:500],
+                })
+            return {"result": results}
+
     if server != "builtin":
         raise HTTPException(status_code=404, detail="Unknown MCP server")
 
@@ -1071,6 +1377,10 @@ async def chat_completions_proxy(request: Request, store: RecipeStore = Depends(
                 async with httpx.AsyncClient(timeout=300) as client:
                     async with client.stream("POST", litellm_url, content=body, headers=headers) as response:
                         async for chunk in response.aiter_bytes():
+                            # Filter out malformed chunks with role:user (LiteLLM bug)
+                            chunk_str = chunk.decode('utf-8', errors='ignore')
+                            if '"role":"user"' in chunk_str and '"tool_calls":[]' in chunk_str:
+                                continue
                             yield chunk
 
             return StreamingResponse(
