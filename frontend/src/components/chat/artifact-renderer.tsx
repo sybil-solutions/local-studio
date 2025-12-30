@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef, useEffect } from 'react';
 import {
   Code,
   Eye,
@@ -10,9 +10,45 @@ import {
   Maximize2,
   Minimize2,
   X,
+  Download,
+  Share2,
+  Copy,
+  Check,
 } from 'lucide-react';
 import { CodeSandbox } from './code-sandbox';
 import type { Artifact } from '@/lib/types';
+
+// SVG template - wraps SVG in proper HTML document for iframe rendering
+const SVG_TEMPLATE = (svgCode: string) => `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: white;
+      overflow: auto;
+    }
+    svg {
+      max-width: 100%;
+      max-height: 100%;
+      width: auto;
+      height: auto;
+    }
+  </style>
+</head>
+<body>
+  ${svgCode}
+</body>
+</html>
+`;
 
 interface ArtifactRendererProps {
   artifact: Artifact;
@@ -23,6 +59,48 @@ export function ArtifactRenderer({ artifact, onRun }: ArtifactRendererProps) {
   const [showPreview, setShowPreview] = useState(true);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [showCode, setShowCode] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(artifact.code);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (e) {
+      console.error('Failed to copy:', e);
+    }
+  };
+
+  const handleDownload = () => {
+    const ext = artifact.type === 'html' ? '.html' :
+                artifact.type === 'react' || artifact.type === 'javascript' ? '.jsx' :
+                artifact.type === 'svg' ? '.svg' :
+                artifact.type === 'python' ? '.py' : '.txt';
+    const filename = (artifact.title || `artifact-${artifact.id}`).replace(/[^a-z0-9]/gi, '-').toLowerCase() + ext;
+    const blob = new Blob([artifact.code], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleShare = async () => {
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: artifact.title || 'Code Artifact',
+          text: artifact.code,
+        });
+      } catch (e) {
+        // User cancelled or share failed
+        handleCopy(); // Fallback to copy
+      }
+    } else {
+      handleCopy(); // Fallback to copy
+    }
+  };
 
   const language = useMemo(() => {
     switch (artifact.type) {
@@ -52,12 +130,71 @@ export function ArtifactRenderer({ artifact, onRun }: ArtifactRendererProps) {
     }
   }, [artifact.type]);
 
-  // Handle SVG directly
+  // Toolbar buttons for SVG artifacts
+  const SvgToolbarButtons = ({ inFooter = false }: { inFooter?: boolean }) => (
+    <div className={`flex items-center gap-0.5 ${inFooter ? 'justify-center' : ''}`}>
+      <button
+        onClick={handleCopy}
+        className="p-2 md:p-1.5 rounded hover:bg-[var(--background)] transition-colors"
+        title="Copy code"
+      >
+        {copied ? (
+          <Check className="h-5 w-5 md:h-3.5 md:w-3.5 text-[var(--success)]" />
+        ) : (
+          <Copy className="h-5 w-5 md:h-3.5 md:w-3.5 text-[var(--muted)]" />
+        )}
+      </button>
+      <button
+        onClick={handleDownload}
+        className="p-2 md:p-1.5 rounded hover:bg-[var(--background)] transition-colors"
+        title="Download"
+      >
+        <Download className="h-5 w-5 md:h-3.5 md:w-3.5 text-[var(--muted)]" />
+      </button>
+      <button
+        onClick={handleShare}
+        className="p-2 md:p-1.5 rounded hover:bg-[var(--background)] transition-colors"
+        title="Share"
+      >
+        <Share2 className="h-5 w-5 md:h-3.5 md:w-3.5 text-[var(--muted)]" />
+      </button>
+      <button
+        onClick={() => setShowCode(!showCode)}
+        className={`${inFooter ? 'block' : 'hidden md:block'} p-2 md:p-1.5 rounded hover:bg-[var(--background)] transition-colors`}
+        title={showCode ? 'Hide code' : 'Show code'}
+      >
+        {showCode ? (
+          <EyeOff className="h-5 w-5 md:h-3.5 md:w-3.5 text-[var(--muted)]" />
+        ) : (
+          <Eye className="h-5 w-5 md:h-3.5 md:w-3.5 text-[var(--muted)]" />
+        )}
+      </button>
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          setIsFullscreen(!isFullscreen);
+        }}
+        className="p-2 md:p-1.5 rounded hover:bg-[var(--background)] transition-colors"
+        title={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
+      >
+        {isFullscreen ? (
+          <Minimize2 className="h-5 w-5 md:h-3.5 md:w-3.5" />
+        ) : (
+          <Maximize2 className="h-5 w-5 md:h-3.5 md:w-3.5" />
+        )}
+      </button>
+    </div>
+  );
+
+  // Handle SVG via iframe (like ChatGPT-Next-Web approach for proper mobile rendering)
   if (artifact.type === 'svg') {
     const svgMarkup =
       artifact.code.includes('<svg')
         ? artifact.code
         : `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">${artifact.code}</svg>`;
+
+    const svgHtml = SVG_TEMPLATE(svgMarkup);
+
     return (
       <>
         {/* Fullscreen backdrop */}
@@ -67,57 +204,54 @@ export function ArtifactRenderer({ artifact, onRun }: ArtifactRendererProps) {
             onClick={() => setIsFullscreen(false)}
           />
         )}
-        <div className={`my-2 rounded-lg border border-[var(--border)] overflow-hidden ${
-          isFullscreen ? 'fixed inset-0 z-[101] m-0 rounded-none flex flex-col' : ''
-        }`}>
-          <div className="flex items-center justify-between px-2 md:px-3 py-2 bg-[var(--accent)] border-b border-[var(--border)] flex-shrink-0">
-            <div className="flex items-center gap-2">
+        <div className={`my-2 rounded-lg border border-[var(--border)] overflow-hidden artifact-container ${
+          isFullscreen ? 'fixed inset-2 md:inset-4 z-[101] m-0 rounded-lg flex flex-col bg-[var(--background)]' : 'max-w-full'
+        }`}
+        style={isFullscreen ? { paddingTop: 'env(safe-area-inset-top, 0)', paddingBottom: 'env(safe-area-inset-bottom, 0)' } : undefined}
+        >
+          {/* Header - minimal in fullscreen */}
+          <div className="flex items-center justify-between px-2 md:px-3 py-1.5 md:py-2 bg-[var(--accent)] border-b border-[var(--border)] flex-shrink-0">
+            <div className="flex items-center gap-1.5 md:gap-2 min-w-0">
               {icon}
-              <span className="text-xs font-medium">{artifact.title || 'SVG'}</span>
+              <span className="text-xs font-medium truncate">{artifact.title || 'SVG'}</span>
             </div>
-            <div className="flex items-center gap-0.5 md:gap-1">
+
+            {/* Show controls in header only when NOT fullscreen */}
+            {!isFullscreen && <SvgToolbarButtons />}
+
+            {/* In fullscreen, just show minimize button in header */}
+            {isFullscreen && (
               <button
-                onClick={() => setShowCode(!showCode)}
-                className="p-2 md:p-1.5 rounded hover:bg-[var(--background)] transition-colors"
-                title={showCode ? 'Hide code' : 'Show code'}
+                onClick={() => setIsFullscreen(false)}
+                className="p-2 rounded hover:bg-[var(--background)] transition-colors"
+                title="Exit fullscreen"
               >
-                {showCode ? (
-                  <EyeOff className="h-5 w-5 md:h-4 md:w-4 text-[var(--muted)]" />
-                ) : (
-                  <Eye className="h-5 w-5 md:h-4 md:w-4 text-[var(--muted)]" />
-                )}
+                <Minimize2 className="h-5 w-5" />
               </button>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setIsFullscreen(!isFullscreen);
-                }}
-                className="p-2 md:p-1.5 rounded bg-[var(--background)] hover:bg-[var(--card-hover)] transition-colors"
-                title={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
-              >
-                {isFullscreen ? (
-                  <Minimize2 className="h-5 w-5 md:h-4 md:w-4" />
-                ) : (
-                  <Maximize2 className="h-5 w-5 md:h-4 md:w-4" />
-                )}
-              </button>
-            </div>
+            )}
           </div>
           {showCode && (
-            <pre className="p-3 text-xs bg-[var(--background)] overflow-x-auto border-b border-[var(--border)] flex-shrink-0">
+            <pre className="p-2 md:p-3 text-xs bg-[var(--background)] overflow-x-auto border-b border-[var(--border)] flex-shrink-0 max-h-32 md:max-h-48">
               <code>{artifact.code}</code>
             </pre>
           )}
-          <div
-            className={`p-4 bg-white overflow-auto ${isFullscreen ? 'flex-1 flex items-center justify-center' : ''}`}
-            style={{ maxHeight: isFullscreen ? undefined : '300px' }}
-          >
-            <div
-              className="svg-container"
-              style={{ maxWidth: '100%', overflow: 'hidden' }}
-              dangerouslySetInnerHTML={{ __html: svgMarkup }}
+          {/* SVG rendered in iframe for proper mobile support */}
+          <div className={`overflow-hidden ${isFullscreen ? 'flex-1' : ''}`}>
+            <iframe
+              srcDoc={svgHtml}
+              className="w-full border-0 bg-white"
+              style={{ height: isFullscreen ? '100%' : '200px', minHeight: '120px' }}
+              sandbox="allow-scripts"
+              title={artifact.title || 'SVG Preview'}
             />
           </div>
+
+          {/* Footer controls - only in fullscreen mode */}
+          {isFullscreen && (
+            <div className="flex-shrink-0 px-3 py-3 bg-[var(--accent)] border-t border-[var(--border)]">
+              <SvgToolbarButtons inFooter />
+            </div>
+          )}
         </div>
       </>
     );

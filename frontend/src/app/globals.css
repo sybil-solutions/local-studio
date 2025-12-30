@@ -59,6 +59,25 @@ html, body {
   main, article, section, div:not([class*="fixed"]):not([class*="absolute"]) {
     max-width: 100vw;
   }
+
+  /* Constrain all content containers */
+  .max-w-3xl {
+    max-width: calc(100vw - 0.75rem) !important;
+  }
+
+  /* Ensure code blocks don't overflow */
+  pre, code {
+    max-width: 100%;
+    overflow-x: auto;
+    word-break: break-word;
+  }
+
+  /* Constrain artifact and code containers */
+  .artifact-container,
+  .code-sandbox,
+  iframe {
+    max-width: calc(100vw - 1rem) !important;
+  }
 }
 
 body {

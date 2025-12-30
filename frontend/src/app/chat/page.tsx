@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useRef } from 'react';
 import {
-  MessageSquare,
   Sparkles,
   User,
   Copy,
@@ -17,14 +16,21 @@ import {
   X,
   Download,
   BarChart3,
+  ChevronDown,
+  Search,
+  Layers,
 } from 'lucide-react';
+import Link from 'next/link';
 import api from '@/lib/api';
 import type { ChatSession, ToolCall, ToolResult, MCPTool } from '@/lib/types';
 import {
   MessageRenderer, ChatSidebar, ToolBelt, MCPSettingsModal, ChatSettingsModal } from '@/components/chat';
 import {
   ToolCallCard } from '@/components/chat/tool-call-card';
-import type { Attachment, MCPServerConfig } from '@/components/chat';
+import { ResearchProgressIndicator, CitationsPanel } from '@/components/chat/research-progress';
+import type { Attachment, MCPServerConfig, DeepResearchSettings } from '@/components/chat';
+import type { ResearchProgress, ResearchSource } from '@/components/chat/research-progress';
+import { loadState, saveState, debouncedSave } from '@/lib/chat-state-persistence';
 
 interface Message {
   id: string;
@@ -142,6 +148,25 @@ export default function ChatPage() {
   // Chat settings state
   const [systemPrompt, setSystemPrompt] = useState('');
   const [chatSettingsOpen, setChatSettingsOpen] = useState(false);
+
+  // Deep Research state
+  const [deepResearch, setDeepResearch] = useState<DeepResearchSettings>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('vllm-studio-deep-research');
+      if (saved) {
+        try { return JSON.parse(saved); } catch { }
+      }
+    }
+    return {
+      enabled: false,
+      numSources: 5,
+      autoSummarize: true,
+      includeCitations: true,
+      searchDepth: 'normal' as const,
+    };
+  });
+  const [researchProgress, setResearchProgress] = useState<ResearchProgress | null>(null);
+  const [researchSources, setResearchSources] = useState<ResearchSource[]>([]);
   const [currentSessionTitle, setCurrentSessionTitle] = useState<string>('New Chat');
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState('');
@@ -159,6 +184,10 @@ export default function ChatPage() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
 
+  // State for recent chats dropdown on mobile
+  const [recentChatsOpen, setRecentChatsOpen] = useState(false);
+  const [chatSearchQuery, setChatSearchQuery] = useState('');
+
   // Detect mobile viewport
   useEffect(() => {
     const checkMobile = () => {
@@ -173,6 +202,56 @@ export default function ChatPage() {
     window.addEventListener('resize', checkMobile);
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
+
+  // Restore state on mount
+  useEffect(() => {
+    const restored = loadState();
+    if (restored.input) setInput(restored.input);
+    if (restored.mcpEnabled) setMcpEnabled(restored.mcpEnabled);
+    if (restored.artifactsEnabled) setArtifactsEnabled(restored.artifactsEnabled);
+    if (restored.systemPrompt) setSystemPrompt(restored.systemPrompt);
+    if (restored.selectedModel) setSelectedModel(restored.selectedModel);
+    if (restored.currentSessionId) {
+      // Will be loaded by loadSession after sessions are fetched
+      setCurrentSessionId(restored.currentSessionId);
+    }
+  }, []);
+
+  // Page visibility handling - save state when going to background
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        // Save state when going to background
+        saveState({
+          currentSessionId,
+          input,
+          selectedModel,
+          mcpEnabled,
+          artifactsEnabled,
+          systemPrompt,
+          messages: messages.map(m => ({
+            id: m.id,
+            role: m.role,
+            content: m.content,
+            model: m.model,
+          })),
+        });
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [currentSessionId, input, selectedModel, mcpEnabled, artifactsEnabled, systemPrompt, messages]);
+
+  // Debounced save on settings changes
+  useEffect(() => {
+    debouncedSave({
+      mcpEnabled,
+      artifactsEnabled,
+      systemPrompt,
+      selectedModel,
+    }, 1000);
+  }, [mcpEnabled, artifactsEnabled, systemPrompt, selectedModel]);
 
   useEffect(() => {
     loadStatus();
@@ -1301,94 +1380,198 @@ export default function ChatPage() {
     );
   }
 
+  // Filter sessions for search
+  const filteredSessions = chatSearchQuery
+    ? sessions.filter(s => s.title.toLowerCase().includes(chatSearchQuery.toLowerCase()))
+    : sessions;
+
   return (
     <>
-    <div className="relative">
-      {/* Sidebar */}
-      <ChatSidebar
-        sessions={sessions}
-        currentSessionId={currentSessionId}
-        onSelectSession={loadSession}
-        onNewSession={createSession}
-        onDeleteSession={deleteSession}
-        isCollapsed={sidebarCollapsed}
-        onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
-        isLoading={sessionsLoading}
-        isMobile={isMobile}
-      />
+    <div className="relative h-[calc(100dvh-3.5rem)] flex flex-col overflow-hidden">
+      {/* Desktop Sidebar */}
+      {!isMobile && (
+        <ChatSidebar
+          sessions={sessions}
+          currentSessionId={currentSessionId}
+          onSelectSession={loadSession}
+          onNewSession={createSession}
+          onDeleteSession={deleteSession}
+          isCollapsed={sidebarCollapsed}
+          onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
+          isLoading={sessionsLoading}
+          isMobile={false}
+        />
+      )}
+
+      {/* Mobile Sidebar Overlay */}
+      {isMobile && !sidebarCollapsed && (
+        <ChatSidebar
+          sessions={sessions}
+          currentSessionId={currentSessionId}
+          onSelectSession={loadSession}
+          onNewSession={createSession}
+          onDeleteSession={deleteSession}
+          isCollapsed={false}
+          onToggleCollapse={() => setSidebarCollapsed(true)}
+          isLoading={sessionsLoading}
+          isMobile={true}
+        />
+      )}
 
       {/* Main Chat Area */}
-      <div className={`${sidebarCollapsed || isMobile ? '' : 'md:ml-64'} w-full overflow-x-hidden`}>
-        {/* Chat Header - compact on mobile */}
-        <div className="sticky top-12 z-40 bg-[var(--card)] border-b border-[var(--border)]">
-          <div className="flex items-center justify-between gap-2 px-3 md:px-4 py-2 md:py-2.5">
-            <div className="flex items-center gap-2 min-w-0 flex-1">
-              {/* Mobile: History button */}
+      <div className={`flex-1 flex flex-col min-h-0 ${isMobile ? '' : sidebarCollapsed ? 'md:ml-8' : 'md:ml-44'} w-full`}>
+        {/* Unified Header - different layout for mobile vs desktop */}
+        <div className={`sticky top-0 z-40 bg-[var(--card)] border-b border-[var(--border)] flex-shrink-0`}
+          style={isMobile ? { paddingTop: 'env(safe-area-inset-top, 0)' } : undefined}
+        >
+          <div className="flex items-center justify-between gap-2 px-2 md:px-4 py-1.5 md:py-2">
+            <div className="flex items-center gap-1.5 min-w-0 flex-1">
+              {/* Mobile: Logo + Recent Chats Dropdown */}
               {isMobile && (
-                <button
-                  onClick={() => setSidebarCollapsed(false)}
-                  className="p-2 -ml-2 rounded-lg hover:bg-[var(--accent)] transition-colors flex-shrink-0"
-                  title="Chat history"
-                >
-                  <MessageSquare className="h-5 w-5" />
-                </button>
+                <>
+                  <Link href="/" className="p-1.5 -ml-1 rounded-lg hover:bg-[var(--accent)] transition-colors flex-shrink-0">
+                    <Layers className="h-5 w-5 text-[var(--muted)]" />
+                  </Link>
+                  <div className="relative flex-1 min-w-0">
+                    <button
+                      onClick={() => setRecentChatsOpen(!recentChatsOpen)}
+                      className="flex items-center gap-1.5 px-2 py-1 rounded-lg hover:bg-[var(--accent)] transition-colors w-full min-w-0"
+                    >
+                      <span className="text-sm font-medium truncate">{currentSessionTitle || 'New Chat'}</span>
+                      <ChevronDown className={`h-4 w-4 text-[var(--muted)] flex-shrink-0 transition-transform ${recentChatsOpen ? 'rotate-180' : ''}`} />
+                    </button>
+
+                    {/* Recent Chats Dropdown */}
+                    {recentChatsOpen && (
+                      <>
+                        <div className="fixed inset-0 z-40" onClick={() => setRecentChatsOpen(false)} />
+                        <div className="absolute left-0 right-0 top-full mt-1 bg-[var(--card)] border border-[var(--border)] rounded-lg shadow-lg z-50 max-h-[60vh] overflow-hidden flex flex-col">
+                          {/* Search */}
+                          <div className="p-2 border-b border-[var(--border)]">
+                            <div className="relative">
+                              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-[var(--muted)]" />
+                              <input
+                                type="text"
+                                value={chatSearchQuery}
+                                onChange={(e) => setChatSearchQuery(e.target.value)}
+                                placeholder="Search chats..."
+                                className="w-full pl-8 pr-3 py-1.5 text-sm bg-[var(--background)] border border-[var(--border)] rounded-lg focus:outline-none"
+                              />
+                            </div>
+                          </div>
+                          {/* New Chat Button */}
+                          <button
+                            onClick={() => {
+                              createSession();
+                              setRecentChatsOpen(false);
+                            }}
+                            className="flex items-center gap-2 px-3 py-2 hover:bg-[var(--accent)] transition-colors text-sm font-medium border-b border-[var(--border)]"
+                          >
+                            <Plus className="h-4 w-4" />
+                            New Chat
+                          </button>
+                          {/* Recent Chats (top 5 or filtered) */}
+                          <div className="overflow-y-auto flex-1">
+                            {filteredSessions.slice(0, chatSearchQuery ? 20 : 5).map((session) => (
+                              <button
+                                key={session.id}
+                                onClick={() => {
+                                  loadSession(session.id);
+                                  setRecentChatsOpen(false);
+                                  setChatSearchQuery('');
+                                }}
+                                className={`w-full px-3 py-2 text-left hover:bg-[var(--accent)] transition-colors ${
+                                  currentSessionId === session.id ? 'bg-[var(--accent)]' : ''
+                                }`}
+                              >
+                                <div className="text-sm truncate">{session.title}</div>
+                                <div className="text-xs text-[var(--muted)] truncate">
+                                  {session.model?.split('/').pop()} • {new Date(session.updated_at).toLocaleDateString()}
+                                </div>
+                              </button>
+                            ))}
+                            {filteredSessions.length === 0 && (
+                              <div className="px-3 py-4 text-sm text-[var(--muted)] text-center">No chats found</div>
+                            )}
+                            {!chatSearchQuery && sessions.length > 5 && (
+                              <button
+                                onClick={() => {
+                                  setSidebarCollapsed(false);
+                                  setRecentChatsOpen(false);
+                                }}
+                                className="w-full px-3 py-2 text-sm text-[var(--muted)] hover:text-[var(--foreground)] hover:bg-[var(--accent)] transition-colors"
+                              >
+                                View all {sessions.length} chats →
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </>
               )}
 
-              {editingTitle ? (
-                <div className="flex items-center gap-2 min-w-0">
-                  <input
-                    value={titleDraft}
-                    onChange={(e) => setTitleDraft(e.target.value)}
-                    className="px-2 py-1 text-sm bg-[var(--background)] border border-[var(--border)] rounded-lg focus:outline-none focus:border-[var(--foreground)] min-w-0 w-48 md:w-64"
-                    placeholder="Chat title"
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') saveTitle();
-                      if (e.key === 'Escape') setEditingTitle(false);
-                    }}
-                    autoFocus
-                  />
-                  <button
-                    onClick={saveTitle}
-                    className="p-1.5 rounded hover:bg-[var(--accent)] transition-colors"
-                    title="Save title"
-                  >
-                    <CheckCircle2 className="h-4 w-4 text-[var(--success)]" />
-                  </button>
-                  <button
-                    onClick={() => setEditingTitle(false)}
-                    className="p-1.5 rounded hover:bg-[var(--accent)] transition-colors"
-                    title="Cancel"
-                  >
-                    <X className="h-4 w-4 text-[var(--muted)]" />
-                  </button>
-                </div>
-              ) : (
+              {/* Desktop: Title editing */}
+              {!isMobile && (
                 <>
-                  <div className="text-sm font-medium truncate max-w-[120px] md:max-w-none" title={currentSessionTitle}>
-                    {currentSessionTitle || 'Chat'}
-                  </div>
-                  {currentSessionId && !isMobile && (
-                    <button
-                      onClick={() => {
-                        setTitleDraft(currentSessionTitle);
-                        setEditingTitle(true);
-                      }}
-                      className="p-1 rounded hover:bg-[var(--accent)] transition-colors"
-                      title="Rename chat"
-                    >
-                      <Pencil className="h-3.5 w-3.5 text-[var(--muted)]" />
-                    </button>
-                  )}
-                  {selectedModel && !isMobile && (
-                    <span className="text-[10px] font-mono text-[var(--muted)] px-2 py-0.5 border border-[var(--border)] rounded">
-                      {selectedModel.split('/').pop()}
-                    </span>
+                  {editingTitle ? (
+                    <div className="flex items-center gap-2 min-w-0">
+                      <input
+                        value={titleDraft}
+                        onChange={(e) => setTitleDraft(e.target.value)}
+                        className="px-2 py-1 text-sm bg-[var(--background)] border border-[var(--border)] rounded-lg focus:outline-none focus:border-[var(--foreground)] min-w-0 w-64"
+                        placeholder="Chat title"
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') saveTitle();
+                          if (e.key === 'Escape') setEditingTitle(false);
+                        }}
+                        autoFocus
+                      />
+                      <button
+                        onClick={saveTitle}
+                        className="p-1.5 rounded hover:bg-[var(--accent)] transition-colors"
+                        title="Save title"
+                      >
+                        <CheckCircle2 className="h-4 w-4 text-[var(--success)]" />
+                      </button>
+                      <button
+                        onClick={() => setEditingTitle(false)}
+                        className="p-1.5 rounded hover:bg-[var(--accent)] transition-colors"
+                        title="Cancel"
+                      >
+                        <X className="h-4 w-4 text-[var(--muted)]" />
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="text-sm font-medium truncate max-w-none" title={currentSessionTitle}>
+                        {currentSessionTitle || 'Chat'}
+                      </div>
+                      {currentSessionId && (
+                        <button
+                          onClick={() => {
+                            setTitleDraft(currentSessionTitle);
+                            setEditingTitle(true);
+                          }}
+                          className="p-1 rounded hover:bg-[var(--accent)] transition-colors"
+                          title="Rename chat"
+                        >
+                          <Pencil className="h-3.5 w-3.5 text-[var(--muted)]" />
+                        </button>
+                      )}
+                      {selectedModel && (
+                        <span className="text-[10px] font-mono text-[var(--muted)] px-2 py-0.5 border border-[var(--border)] rounded">
+                          {selectedModel.split('/').pop()}
+                        </span>
+                      )}
+                    </>
                   )}
                 </>
               )}
             </div>
 
-            <div className="flex items-center gap-1 md:gap-2 flex-shrink-0">
+            <div className="flex items-center gap-0.5 md:gap-2 flex-shrink-0">
               {/* Usage (desktop only) */}
               {!isMobile && currentSessionId && sessionUsage && (
                 <button
@@ -1430,7 +1613,7 @@ export default function ChatPage() {
               {/* Action buttons */}
               <button
                 onClick={() => setChatSettingsOpen(true)}
-                className="p-2 rounded hover:bg-[var(--accent)] transition-colors"
+                className="p-1.5 md:p-2 rounded hover:bg-[var(--accent)] transition-colors"
                 title="Chat settings"
               >
                 <Settings className="h-5 w-5 md:h-4 md:w-4 text-[var(--muted)]" />
@@ -1455,7 +1638,7 @@ export default function ChatPage() {
               )}
               <button
                 onClick={createSession}
-                className="p-2 rounded hover:bg-[var(--accent)] transition-colors"
+                className="p-1.5 md:p-2 rounded hover:bg-[var(--accent)] transition-colors"
                 title="New chat"
               >
                 <Plus className="h-5 w-5 md:h-4 md:w-4 text-[var(--muted)]" />
@@ -1465,7 +1648,8 @@ export default function ChatPage() {
         </div>
 
         {/* Messages */}
-        <div className="pb-36 md:pb-32">
+        <div className="flex-1 overflow-y-auto overflow-x-hidden">
+          <div className="pb-4">
           {messages.length === 0 ? (
             <div className="flex items-center justify-center min-h-[60vh]">
               <div className="text-center px-4 py-8 animate-fade-in">
@@ -1481,27 +1665,27 @@ export default function ChatPage() {
               </div>
             </div>
           ) : (
-            <div className="max-w-3xl mx-auto py-4 px-3 md:px-4 space-y-2">
+            <div className="max-w-3xl mx-auto py-2 md:py-4 px-1.5 md:px-4 space-y-1 md:space-y-2">
                 {messages.map((message, index) => (
                   <div
                     key={message.id}
-                    className={`px-3 md:px-4 py-3 rounded-xl animate-slide-up ${
+                    className={`px-2 md:px-4 py-2 md:py-3 rounded-lg md:rounded-xl animate-slide-up ${
                       message.role === 'assistant' ? 'bg-[var(--card)]' : ''
                     }`}
                   >
-                    <div className="flex gap-3">
+                    <div className="flex gap-2 md:gap-3">
                       <div
-                        className={`w-8 h-8 md:w-7 md:h-7 rounded-lg flex items-center justify-center flex-shrink-0 ${
+                        className={`w-6 h-6 md:w-7 md:h-7 rounded-md md:rounded-lg flex items-center justify-center flex-shrink-0 ${
                           message.role === 'user'
                             ? 'bg-[var(--accent)]'
                             : 'bg-[var(--success)]/15'
                         }`}
                       >
                         {message.role === 'user' ? (
-                          <User className="h-4 w-4 md:h-3.5 md:w-3.5" />
+                          <User className="h-3.5 w-3.5 md:h-3.5 md:w-3.5" />
                         ) : (
                           <Sparkles
-                            className={`h-4 w-4 md:h-3.5 md:w-3.5 text-[var(--success)] ${
+                            className={`h-3.5 w-3.5 md:h-3.5 md:w-3.5 text-[var(--success)] ${
                               message.isStreaming ? 'animate-pulse-soft' : ''
                             }`}
                           />
@@ -1613,23 +1797,40 @@ export default function ChatPage() {
                   )}
 
                 {error && (
-                  <div className="mx-4 my-2 px-3 py-2 bg-[var(--error)]/10 border border-[var(--error)]/20 rounded text-xs text-[var(--error)] animate-slide-up">
+                  <div className="mx-2 md:mx-4 my-2 px-3 py-2 bg-[var(--error)]/10 border border-[var(--error)]/20 rounded text-xs text-[var(--error)] animate-slide-up">
                     {error}
                   </div>
                 )}
+
+                {/* Research Progress Indicator */}
+                {researchProgress && (
+                  <div className="mx-2 md:mx-4 my-2 animate-slide-up">
+                    <ResearchProgressIndicator
+                      progress={researchProgress}
+                      onCancel={() => setResearchProgress(null)}
+                    />
+                  </div>
+                )}
+
+                {/* Research Sources Citations */}
+                {researchSources.length > 0 && !researchProgress && (
+                  <div className="mx-2 md:mx-4 my-2 animate-slide-up">
+                    <CitationsPanel sources={researchSources} />
+                  </div>
+                )}
+
                 <div ref={messagesEndRef} />
               </div>
             )}
           </div>
         </div>
-      </div>
 
-      {/* Fixed Input Tool Belt */}
-      <div
-        className={`fixed left-0 right-0 z-50 ${sidebarCollapsed || isMobile ? '' : 'md:left-64'}`}
-        style={{ bottom: 'max(10px, env(safe-area-inset-bottom, 10px))' }}
-      >
-        <ToolBelt
+        {/* Input Tool Belt - sticky at bottom */}
+        <div
+          className="flex-shrink-0"
+          style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
+        >
+          <ToolBelt
           value={input}
           onChange={setInput}
           onSubmit={sendMessage}
@@ -1637,7 +1838,7 @@ export default function ChatPage() {
           disabled={!((selectedModel || runningModel || '').trim())}
           isLoading={isLoading}
           modelName={selectedModel || modelName}
-          placeholder={(selectedModel || runningModel) ? 'Message...' : 'Select a model in Settings'}
+          placeholder={(selectedModel || runningModel) ? (deepResearch.enabled ? 'Ask a research question...' : 'Message...') : 'Select a model in Settings'}
           mcpEnabled={mcpEnabled}
           onMcpToggle={() => setMcpEnabled(!mcpEnabled)}
           mcpServers={mcpServers.map((s) => ({ name: s.name, enabled: s.enabled }))}
@@ -1646,8 +1847,12 @@ export default function ChatPage() {
           onOpenMcpSettings={() => setMcpSettingsOpen(true)}
           onOpenChatSettings={() => setChatSettingsOpen(true)}
           hasSystemPrompt={systemPrompt.trim().length > 0}
+          deepResearchEnabled={deepResearch.enabled}
+          onDeepResearchToggle={() => setDeepResearch(prev => ({ ...prev, enabled: !prev.enabled }))}
         />
+        </div>
       </div>
+    </div>
 
       {/* Usage Details Modal */}
       {usageDetailsOpen && (
@@ -1848,6 +2053,11 @@ export default function ChatPage() {
               await loadSessions();
               await loadSession(created[0]);
             }
+          }}
+          deepResearch={deepResearch}
+          onDeepResearchChange={(settings) => {
+            setDeepResearch(settings);
+            localStorage.setItem('vllm-studio-deep-research', JSON.stringify(settings));
           }}
         />
     </>

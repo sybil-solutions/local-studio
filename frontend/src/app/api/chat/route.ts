@@ -1,8 +1,13 @@
 import { NextRequest } from 'next/server';
 import { mergeToolCallArguments } from '@/lib/tool-parsing';
 
+// Route through controller for auto-eviction/launch support, fallback to LiteLLM
+const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:8080';
 const LITELLM_URL = process.env.LITELLM_URL || process.env.NEXT_PUBLIC_LITELLM_URL || 'http://localhost:4000';
 const LITELLM_API_KEY = process.env.LITELLM_MASTER_KEY || process.env.LITELLM_API_KEY || process.env.API_KEY || 'sk-master';
+
+// Use controller endpoint for auto-switch support
+const CHAT_ENDPOINT = `${BACKEND_URL}/v1/chat/completions`;
 
 interface StreamEvent {
   type: 'text' | 'tool_calls' | 'done' | 'error';
@@ -119,8 +124,9 @@ export async function POST(req: NextRequest) {
     const incomingAuth = req.headers.get('authorization');
     const outgoingAuth = incomingAuth || (LITELLM_API_KEY ? `Bearer ${LITELLM_API_KEY}` : undefined);
 
-    // Route all model calls through LiteLLM (provider translation + tool-call handling).
-    const response = await fetch(`${LITELLM_URL}/v1/chat/completions`, {
+    // Route through controller for auto-eviction support (falls back to LiteLLM internally)
+    console.log(`[CHAT] Routing to controller: ${CHAT_ENDPOINT}`);
+    const response = await fetch(CHAT_ENDPOINT, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

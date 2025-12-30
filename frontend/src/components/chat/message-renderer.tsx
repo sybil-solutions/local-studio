@@ -117,26 +117,26 @@ function ThinkingBlock({ content, isStreaming }: ThinkingBlockProps) {
   const [isExpanded, setIsExpanded] = useState(false);
 
   return (
-    <div className="my-3 rounded-lg border border-[var(--border)] overflow-hidden bg-[var(--accent)]/30">
+    <div className="my-2 md:my-3 rounded-md md:rounded-lg border border-[var(--border)] overflow-hidden bg-[var(--accent)]/30">
       <button
         onClick={() => setIsExpanded(!isExpanded)}
-        className="w-full flex items-center gap-2 px-3 py-2 text-xs font-medium text-[var(--muted-foreground)] hover:bg-[var(--accent)]/50 transition-colors"
+        className="w-full flex items-center gap-1.5 md:gap-2 px-2 md:px-3 py-1.5 md:py-2 text-[10px] md:text-xs font-medium text-[var(--muted-foreground)] hover:bg-[var(--accent)]/50 transition-colors"
       >
         {isExpanded ? (
-          <ChevronDown className="h-3.5 w-3.5" />
+          <ChevronDown className="h-3 w-3 md:h-3.5 md:w-3.5 flex-shrink-0" />
         ) : (
-          <ChevronRight className="h-3.5 w-3.5" />
+          <ChevronRight className="h-3 w-3 md:h-3.5 md:w-3.5 flex-shrink-0" />
         )}
-        <Brain className="h-3.5 w-3.5" />
-        <span>Thinking{isStreaming ? '...' : ''}</span>
+        <Brain className="h-3 w-3 md:h-3.5 md:w-3.5 flex-shrink-0" />
+        <span className="flex-shrink-0">Thinking{isStreaming ? '...' : ''}</span>
         {!isExpanded && (
-          <span className="ml-auto text-[var(--muted)] truncate max-w-[200px]">
-            {content.slice(0, 50)}...
+          <span className="ml-auto text-[var(--muted)] truncate max-w-[100px] md:max-w-[200px]">
+            {content.slice(0, 30)}...
           </span>
         )}
       </button>
       {isExpanded && (
-        <div className="px-4 py-3 text-sm text-[var(--muted-foreground)] border-t border-[var(--border)] bg-[var(--background)]/50 whitespace-pre-wrap">
+        <div className="px-2 md:px-4 py-2 md:py-3 text-xs md:text-sm text-[var(--muted-foreground)] border-t border-[var(--border)] bg-[var(--background)]/50 whitespace-pre-wrap max-h-[40vh] overflow-y-auto">
           {content}
         </div>
       )}

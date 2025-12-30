@@ -252,6 +252,78 @@ export function CodeSandbox({
     return () => window.removeEventListener('message', handleMessage);
   }, [onError, onOutput]);
 
+  // Toolbar buttons component to avoid duplication
+  const ToolbarButtons = ({ inFooter = false }: { inFooter?: boolean }) => (
+    <div className={`flex items-center gap-0.5 md:gap-1 ${inFooter ? 'justify-center' : ''}`}>
+      {/* Run/Stop - always visible */}
+      {isRunning ? (
+        <button
+          onClick={stopCode}
+          className="p-2 md:p-1.5 rounded hover:bg-[var(--error)]/20 text-[var(--error)] transition-colors"
+          title="Stop"
+        >
+          <Square className="h-5 w-5 md:h-4 md:w-4" />
+        </button>
+      ) : (
+        <button
+          onClick={runCode}
+          className="p-2 md:p-1.5 rounded hover:bg-[var(--success)]/20 text-[var(--success)] transition-colors"
+          title="Run"
+        >
+          <Play className="h-5 w-5 md:h-4 md:w-4" />
+        </button>
+      )}
+
+      {/* Refresh */}
+      <button
+        onClick={runCode}
+        className={`${inFooter ? 'block' : 'hidden md:block'} p-2 md:p-1.5 rounded hover:bg-[var(--accent)] transition-colors`}
+        title="Refresh"
+      >
+        <RefreshCw className="h-5 w-5 md:h-4 md:w-4 text-[var(--muted)]" />
+      </button>
+
+      {/* Copy */}
+      <button
+        onClick={copyCode}
+        className={`${inFooter ? 'block' : 'hidden md:block'} p-2 md:p-1.5 rounded hover:bg-[var(--accent)] transition-colors`}
+        title="Copy code"
+      >
+        {copied ? (
+          <Check className="h-5 w-5 md:h-4 md:w-4 text-[var(--success)]" />
+        ) : (
+          <Copy className="h-5 w-5 md:h-4 md:w-4 text-[var(--muted)]" />
+        )}
+      </button>
+
+      {/* Download */}
+      <button
+        onClick={downloadCode}
+        className={`${inFooter ? 'block' : 'hidden md:block'} p-2 md:p-1.5 rounded hover:bg-[var(--accent)] transition-colors`}
+        title="Download"
+      >
+        <Download className="h-5 w-5 md:h-4 md:w-4 text-[var(--muted)]" />
+      </button>
+
+      {/* Fullscreen/Minimize - ALWAYS visible */}
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          e.preventDefault();
+          setIsFullscreen(!isFullscreen);
+        }}
+        className="p-2 md:p-1.5 rounded bg-[var(--background)] hover:bg-[var(--card-hover)] transition-colors ml-1"
+        title={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
+      >
+        {isFullscreen ? (
+          <Minimize2 className="h-5 w-5 md:h-4 md:w-4" />
+        ) : (
+          <Maximize2 className="h-5 w-5 md:h-4 md:w-4" />
+        )}
+      </button>
+    </div>
+  );
+
   return (
     <>
       {/* Fullscreen backdrop */}
@@ -262,14 +334,14 @@ export function CodeSandbox({
         />
       )}
       <div
-        className={`rounded-lg border border-[var(--border)] overflow-hidden ${
+        className={`rounded-lg border border-[var(--border)] overflow-hidden code-sandbox ${
           isFullscreen
-            ? 'fixed inset-0 z-[101] bg-[var(--background)] m-0 rounded-none flex flex-col'
-            : ''
+            ? 'fixed inset-2 md:inset-4 z-[101] bg-[var(--background)] rounded-lg flex flex-col'
+            : 'max-w-full'
         }`}
         style={isFullscreen ? { paddingTop: 'env(safe-area-inset-top, 0)', paddingBottom: 'env(safe-area-inset-bottom, 0)' } : undefined}
       >
-      {/* Header */}
+      {/* Header - minimal in fullscreen */}
       <div className="flex items-center justify-between px-2 md:px-3 py-2 bg-[var(--accent)] border-b border-[var(--border)] flex-shrink-0">
         <div className="flex items-center gap-2 min-w-0">
           <span className="text-xs font-medium truncate">
@@ -277,74 +349,19 @@ export function CodeSandbox({
           </span>
         </div>
 
-        <div className="flex items-center gap-0.5 md:gap-1">
-          {/* Run/Stop - always visible */}
-          {isRunning ? (
-            <button
-              onClick={stopCode}
-              className="p-2 md:p-1.5 rounded hover:bg-[var(--error)]/20 text-[var(--error)] transition-colors"
-              title="Stop"
-            >
-              <Square className="h-5 w-5 md:h-4 md:w-4" />
-            </button>
-          ) : (
-            <button
-              onClick={runCode}
-              className="p-2 md:p-1.5 rounded hover:bg-[var(--success)]/20 text-[var(--success)] transition-colors"
-              title="Run"
-            >
-              <Play className="h-5 w-5 md:h-4 md:w-4" />
-            </button>
-          )}
+        {/* Show controls in header only when NOT fullscreen */}
+        {!isFullscreen && <ToolbarButtons />}
 
-          {/* Refresh - hidden on mobile */}
+        {/* In fullscreen, just show minimize button in header */}
+        {isFullscreen && (
           <button
-            onClick={runCode}
-            className="hidden md:block p-1.5 rounded hover:bg-[var(--accent)] transition-colors"
-            title="Refresh"
+            onClick={() => setIsFullscreen(false)}
+            className="p-2 rounded hover:bg-[var(--background)] transition-colors"
+            title="Exit fullscreen"
           >
-            <RefreshCw className="h-4 w-4 text-[var(--muted)]" />
+            <Minimize2 className="h-5 w-5" />
           </button>
-
-          {/* Copy - hidden on mobile */}
-          <button
-            onClick={copyCode}
-            className="hidden md:block p-1.5 rounded hover:bg-[var(--accent)] transition-colors"
-            title="Copy code"
-          >
-            {copied ? (
-              <Check className="h-4 w-4 text-[var(--success)]" />
-            ) : (
-              <Copy className="h-4 w-4 text-[var(--muted)]" />
-            )}
-          </button>
-
-          {/* Download - hidden on mobile */}
-          <button
-            onClick={downloadCode}
-            className="hidden md:block p-1.5 rounded hover:bg-[var(--accent)] transition-colors"
-            title="Download"
-          >
-            <Download className="h-4 w-4 text-[var(--muted)]" />
-          </button>
-
-          {/* Fullscreen - ALWAYS visible, larger on mobile */}
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              e.preventDefault();
-              setIsFullscreen(!isFullscreen);
-            }}
-            className="p-2 md:p-1.5 rounded bg-[var(--background)] hover:bg-[var(--card-hover)] transition-colors ml-1"
-            title={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
-          >
-            {isFullscreen ? (
-              <Minimize2 className="h-5 w-5 md:h-4 md:w-4" />
-            ) : (
-              <Maximize2 className="h-5 w-5 md:h-4 md:w-4" />
-            )}
-          </button>
-        </div>
+        )}
       </div>
 
       {/* Error Display */}
@@ -356,14 +373,21 @@ export function CodeSandbox({
       )}
 
       {/* Preview */}
-      <div className={`bg-white overflow-auto ${isFullscreen ? 'flex-1 min-h-0' : 'h-64'}`}>
+      <div className={`overflow-auto ${isFullscreen ? 'flex-1 min-h-0 bg-[var(--card)]' : 'h-48 md:h-64 bg-[var(--card)]'}`}>
         <iframe
           ref={iframeRef}
-          className="w-full h-full border-0"
+          className="w-full h-full border-0 bg-white"
           sandbox="allow-scripts allow-modals allow-same-origin"
           title={title || 'Code Preview'}
         />
       </div>
+
+      {/* Footer controls - only in fullscreen mode */}
+      {isFullscreen && (
+        <div className="flex-shrink-0 px-3 py-3 bg-[var(--accent)] border-t border-[var(--border)]">
+          <ToolbarButtons inFooter />
+        </div>
+      )}
       </div>
     </>
   );

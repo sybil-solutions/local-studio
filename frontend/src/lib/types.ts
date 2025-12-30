@@ -175,6 +175,8 @@ export interface GPU {
   utilization_pct?: number;
   temperature?: number;
   temp_c?: number;
+  power_draw?: number;  // Watts
+  power_limit?: number;  // Watts
 }
 
 // Metrics
@@ -191,6 +193,7 @@ export interface Metrics {
   prompt_throughput?: number;
   request_success?: number;
   generation_tokens_total?: number;
+  prompt_tokens_total?: number;
   running_requests?: number;
   pending_requests?: number;
   // Peak metrics (stored best values)
@@ -199,6 +202,14 @@ export interface Metrics {
   peak_ttft_ms?: number;
   total_tokens?: number;
   total_requests?: number;
+  // Lifetime metrics (cumulative across all sessions)
+  lifetime_tokens?: number;
+  lifetime_requests?: number;
+  lifetime_energy_wh?: number;
+  lifetime_energy_kwh?: number;
+  lifetime_uptime_hours?: number;
+  kwh_per_million_tokens?: number;
+  current_power_watts?: number;
 }
 
 // Artifact types for code rendering

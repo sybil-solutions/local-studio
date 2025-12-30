@@ -11,6 +11,10 @@ import {
   Globe,
   Clock,
   Search,
+  Maximize2,
+  X,
+  Copy,
+  Check,
 } from 'lucide-react';
 import type { ToolCall, ToolResult } from '@/lib/types';
 
@@ -18,6 +22,70 @@ interface ToolCallCardProps {
   toolCall: ToolCall;
   result?: ToolResult;
   isExecuting?: boolean;
+}
+
+interface ToolResultModalProps {
+  toolName: string;
+  result: ToolResult;
+  onClose: () => void;
+}
+
+function ToolResultModal({ toolName, result, onClose }: ToolResultModalProps) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(result.content);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (e) {
+      console.error('Failed to copy:', e);
+    }
+  };
+
+  return (
+    <>
+      <div className="fixed inset-0 z-[100] bg-black/60" onClick={onClose} />
+      <div className="fixed inset-2 md:inset-8 z-[101] bg-[var(--card)] rounded-lg flex flex-col overflow-hidden">
+        <div className="flex items-center justify-between px-3 md:px-4 py-2 md:py-3 border-b border-[var(--border)] flex-shrink-0">
+          <div className="flex items-center gap-2">
+            <Globe className="h-4 w-4 text-blue-500" />
+            <span className="font-medium text-sm">{toolName} Result</span>
+            <span className="text-xs text-[var(--muted)]">
+              {result.content.length.toLocaleString()} chars
+            </span>
+          </div>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={handleCopy}
+              className="p-2 rounded hover:bg-[var(--accent)] transition-colors"
+              title="Copy"
+            >
+              {copied ? (
+                <Check className="h-4 w-4 text-[var(--success)]" />
+              ) : (
+                <Copy className="h-4 w-4 text-[var(--muted)]" />
+              )}
+            </button>
+            <button
+              onClick={onClose}
+              className="p-2 rounded hover:bg-[var(--accent)] transition-colors"
+              title="Close"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+        <div className="flex-1 overflow-auto p-3 md:p-4">
+          <pre className={`text-xs md:text-sm whitespace-pre-wrap break-words ${
+            result.isError ? 'text-[var(--error)]' : ''
+          }`}>
+            {result.content}
+          </pre>
+        </div>
+      </div>
+    </>
+  );
 }
 
 const TOOL_ICONS: Record<string, React.ReactNode> = {
@@ -30,6 +98,7 @@ const TOOL_ICONS: Record<string, React.ReactNode> = {
 export function ToolCallCard({ toolCall, result, isExecuting }: ToolCallCardProps) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [showResult, setShowResult] = useState(true);
+  const [showModal, setShowModal] = useState(false);
 
   // Parse server__toolname format
   const fullName = toolCall.function.name;
@@ -54,16 +123,26 @@ export function ToolCallCard({ toolCall, result, isExecuting }: ToolCallCardProp
   const truncatedResult = isLongResult ? resultContent.slice(0, 500) + '...' : resultContent;
 
   return (
-    <div className={`my-2 rounded-lg border overflow-hidden ${
-      isError
-        ? 'border-[var(--error)]/30 bg-[var(--error)]/5'
-        : 'border-[var(--border)] bg-[var(--accent)]'
-    }`}>
-      {/* Header */}
-      <button
-        onClick={() => setIsExpanded(!isExpanded)}
-        className="w-full flex items-center gap-2 px-3 py-2 hover:bg-[var(--background)]/50 transition-colors"
-      >
+    <>
+      {/* Result Modal */}
+      {showModal && result && (
+        <ToolResultModal
+          toolName={toolName}
+          result={result}
+          onClose={() => setShowModal(false)}
+        />
+      )}
+
+      <div className={`my-1.5 md:my-2 rounded-md md:rounded-lg border overflow-hidden ${
+        isError
+          ? 'border-[var(--error)]/30 bg-[var(--error)]/5'
+          : 'border-[var(--border)] bg-[var(--accent)]'
+      }`}>
+        {/* Header */}
+        <button
+          onClick={() => setIsExpanded(!isExpanded)}
+          className="w-full flex items-center gap-1.5 md:gap-2 px-2 md:px-3 py-1.5 md:py-2 hover:bg-[var(--background)]/50 transition-colors"
+        >
         {isExpanded ? (
           <ChevronDown className="h-3.5 w-3.5 text-[var(--muted)]" />
         ) : (
@@ -109,13 +188,24 @@ export function ToolCallCard({ toolCall, result, isExecuting }: ToolCallCardProp
           {/* Result */}
           {hasResult && (
             <div>
-              <button
-                onClick={(e) => { e.stopPropagation(); setShowResult(!showResult); }}
-                className="flex items-center gap-1 text-xs text-[var(--muted)] mb-1 hover:text-[var(--foreground)]"
-              >
-                {showResult ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
-                Result {isLongResult && '(truncated)'}
-              </button>
+              <div className="flex items-center justify-between mb-1">
+                <button
+                  onClick={(e) => { e.stopPropagation(); setShowResult(!showResult); }}
+                  className="flex items-center gap-1 text-xs text-[var(--muted)] hover:text-[var(--foreground)]"
+                >
+                  {showResult ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+                  Result {isLongResult && `(${resultContent.length.toLocaleString()} chars)`}
+                </button>
+                {isLongResult && (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setShowModal(true); }}
+                    className="flex items-center gap-1 text-xs text-[var(--muted)] hover:text-[var(--foreground)] px-1.5 py-0.5 rounded hover:bg-[var(--background)]"
+                  >
+                    <Maximize2 className="h-3 w-3" />
+                    <span className="hidden md:inline">View Full</span>
+                  </button>
+                )}
+              </div>
               {showResult && (
                 <pre className={`text-xs rounded p-2 overflow-x-auto whitespace-pre-wrap ${
                   isError
@@ -132,7 +222,7 @@ export function ToolCallCard({ toolCall, result, isExecuting }: ToolCallCardProp
 
       {/* Collapsed Result Preview */}
       {!isExpanded && hasResult && !isError && resultContent.length > 0 && (
-        <div className="px-3 pb-2">
+        <div className="px-2 md:px-3 pb-1.5 md:pb-2">
           <p className="text-xs text-[var(--muted)] truncate">
             {resultContent.slice(0, 100)}
             {resultContent.length > 100 && '...'}
@@ -142,14 +232,15 @@ export function ToolCallCard({ toolCall, result, isExecuting }: ToolCallCardProp
 
       {/* Collapsed Error Preview */}
       {!isExpanded && hasResult && isError && (
-        <div className="px-3 pb-2">
+        <div className="px-2 md:px-3 pb-1.5 md:pb-2">
           <p className="text-xs text-[var(--error)] truncate">
             Error: {resultContent.slice(0, 80)}
             {resultContent.length > 80 && '...'}
           </p>
         </div>
       )}
-    </div>
+      </div>
+    </>
   );
 }
 

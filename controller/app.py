@@ -24,7 +24,7 @@ from .config import settings
 from .gpu import get_gpu_info
 from .models import HealthResponse, LaunchResult, OpenAIModelInfo, OpenAIModelList, Recipe
 from .process import evict_model, find_inference_process, switch_model
-from .store import RecipeStore, ChatStore, PeakMetricsStore
+from .store import RecipeStore, ChatStore, PeakMetricsStore, LifetimeMetricsStore
 
 app = FastAPI(
     title="vLLM Studio Controller",
@@ -44,8 +44,10 @@ app.add_middleware(
 _store: Optional[RecipeStore] = None
 _chat_store: Optional[ChatStore] = None
 _peak_metrics_store: Optional[PeakMetricsStore] = None
+_lifetime_metrics_store: Optional[LifetimeMetricsStore] = None
 _switch_lock = asyncio.Lock()
 _broadcast_task: Optional[asyncio.Task] = None
+_last_power_sample_time: float = 0
 
 import logging
 import time
@@ -85,6 +87,15 @@ def get_peak_metrics_store() -> PeakMetricsStore:
         metrics_db = settings.db_path.parent / "metrics.db"
         _peak_metrics_store = PeakMetricsStore(metrics_db)
     return _peak_metrics_store
+
+
+def get_lifetime_metrics_store() -> LifetimeMetricsStore:
+    global _lifetime_metrics_store
+    if _lifetime_metrics_store is None:
+        lifetime_db = settings.db_path.parent / "lifetime.db"
+        _lifetime_metrics_store = LifetimeMetricsStore(lifetime_db)
+        _lifetime_metrics_store.ensure_first_started()
+    return _lifetime_metrics_store
 
 
 # --- Access logging & authentication middleware ---
@@ -180,8 +191,17 @@ async def shutdown_event():
 
 async def broadcast_updates():
     """Background task to broadcast status/GPU/metrics updates every second."""
+    global _last_power_sample_time
+    _last_power_sample_time = time.time()
+    last_tokens_total = 0
+    last_requests_total = 0
+
     while True:
         try:
+            now = time.time()
+            elapsed_seconds = now - _last_power_sample_time
+            _last_power_sample_time = now
+
             # Broadcast process status
             current = find_inference_process(settings.inference_port)
             status_data = {
@@ -191,9 +211,31 @@ async def broadcast_updates():
             }
             await event_manager.publish_status(status_data)
 
-            # Broadcast GPU metrics
+            # Broadcast GPU metrics and track power
             gpu_list = get_gpu_info()
-            await event_manager.publish_gpu([gpu.model_dump() for gpu in gpu_list])
+            gpu_data = [gpu.model_dump() for gpu in gpu_list]
+            await event_manager.publish_gpu(gpu_data)
+
+            # Track power consumption (always, even when idle)
+            total_power_watts = sum(gpu.power_draw for gpu in gpu_list)
+            if elapsed_seconds > 0 and elapsed_seconds < 10:  # Sanity check
+                watt_hours = (total_power_watts * elapsed_seconds) / 3600.0
+                lifetime_store = get_lifetime_metrics_store()
+                lifetime_store.add_energy(watt_hours)
+
+                # Track uptime (only when model is running)
+                if current:
+                    lifetime_store.add_uptime(elapsed_seconds)
+
+            # Get lifetime metrics for broadcast
+            lifetime_store = get_lifetime_metrics_store()
+            lifetime_data = lifetime_store.get_all()
+
+            # Calculate derived metrics
+            uptime_hours = lifetime_data.get('uptime_seconds', 0) / 3600.0
+            energy_kwh = lifetime_data.get('energy_wh', 0) / 1000.0
+            lifetime_tokens = lifetime_data.get('tokens_total', 0)
+            kwh_per_million_tokens = (energy_kwh / (lifetime_tokens / 1_000_000)) if lifetime_tokens > 0 else 0
 
             # Broadcast vLLM metrics (if backend is running)
             if current:
@@ -215,9 +257,46 @@ async def broadcast_updates():
                                     metrics['total_tokens'] = peak.get('total_tokens', 0)
                                     metrics['total_requests'] = peak.get('total_requests', 0)
 
+                            # Track lifetime tokens from vLLM metrics
+                            current_tokens = metrics.get('generation_tokens_total', 0) + metrics.get('prompt_tokens_total', 0)
+                            current_requests = metrics.get('request_success', 0)
+                            if current_tokens > last_tokens_total:
+                                new_tokens = current_tokens - last_tokens_total
+                                lifetime_store.add_tokens(new_tokens)
+                                last_tokens_total = current_tokens
+                            if current_requests > last_requests_total:
+                                new_requests = current_requests - last_requests_total
+                                lifetime_store.add_requests(new_requests)
+                                last_requests_total = current_requests
+
+                            # Add lifetime metrics to broadcast
+                            metrics['lifetime_tokens'] = int(lifetime_data.get('tokens_total', 0))
+                            metrics['lifetime_requests'] = int(lifetime_data.get('requests_total', 0))
+                            metrics['lifetime_energy_wh'] = lifetime_data.get('energy_wh', 0)
+                            metrics['lifetime_energy_kwh'] = energy_kwh
+                            metrics['lifetime_uptime_hours'] = uptime_hours
+                            metrics['kwh_per_million_tokens'] = kwh_per_million_tokens
+                            metrics['current_power_watts'] = total_power_watts
+
                             await event_manager.publish_metrics(metrics)
                 except Exception:
                     pass  # Backend not ready or metrics not available
+            else:
+                # Reset token tracking when model stops
+                last_tokens_total = 0
+                last_requests_total = 0
+
+                # Still broadcast lifetime metrics even when idle
+                idle_metrics = {
+                    'lifetime_tokens': int(lifetime_data.get('tokens_total', 0)),
+                    'lifetime_requests': int(lifetime_data.get('requests_total', 0)),
+                    'lifetime_energy_wh': lifetime_data.get('energy_wh', 0),
+                    'lifetime_energy_kwh': energy_kwh,
+                    'lifetime_uptime_hours': uptime_hours,
+                    'kwh_per_million_tokens': kwh_per_million_tokens,
+                    'current_power_watts': total_power_watts,
+                }
+                await event_manager.publish_metrics(idle_metrics)
 
         except Exception as e:
             logger.error(f"Error in broadcast_updates: {e}")
@@ -927,6 +1006,43 @@ async def get_peak_metrics(
     return {"metrics": metrics_store.get_all()}
 
 
+@app.get("/lifetime-metrics", tags=["Monitoring"])
+async def get_lifetime_metrics(
+    lifetime_store: LifetimeMetricsStore = Depends(get_lifetime_metrics_store)
+):
+    """Get lifetime/cumulative metrics across all sessions.
+
+    Returns:
+        - tokens_total: Total tokens generated (lifetime)
+        - requests_total: Total requests served (lifetime)
+        - energy_wh: Total energy consumed in Watt-hours
+        - uptime_seconds: Total model uptime in seconds
+        - first_started_at: Unix timestamp of first start
+        - derived metrics: energy_kwh, uptime_hours, kwh_per_million_tokens
+    """
+    data = lifetime_store.get_all()
+    uptime_hours = data.get('uptime_seconds', 0) / 3600.0
+    energy_kwh = data.get('energy_wh', 0) / 1000.0
+    tokens = data.get('tokens_total', 0)
+    kwh_per_million = (energy_kwh / (tokens / 1_000_000)) if tokens > 0 else 0
+
+    # Get current power
+    gpu_list = get_gpu_info()
+    current_power_watts = sum(gpu.power_draw for gpu in gpu_list)
+
+    return {
+        "tokens_total": int(data.get('tokens_total', 0)),
+        "requests_total": int(data.get('requests_total', 0)),
+        "energy_wh": data.get('energy_wh', 0),
+        "energy_kwh": energy_kwh,
+        "uptime_seconds": data.get('uptime_seconds', 0),
+        "uptime_hours": uptime_hours,
+        "first_started_at": data.get('first_started_at', 0),
+        "kwh_per_million_tokens": kwh_per_million,
+        "current_power_watts": current_power_watts,
+    }
+
+
 @app.post("/benchmark", tags=["Monitoring"])
 async def run_benchmark(
     prompt_tokens: int = 1000,
@@ -1381,6 +1497,34 @@ async def chat_completions_proxy(request: Request, store: RecipeStore = Depends(
                             chunk_str = chunk.decode('utf-8', errors='ignore')
                             if '"role":"user"' in chunk_str and '"tool_calls":[]' in chunk_str:
                                 continue
+
+                            # Fix vLLM duplicate reasoning fields bug:
+                            # vLLM outputs both "reasoning" and "reasoning_content" with identical content
+                            # for backwards compatibility. Strip "reasoning" to prevent client duplication.
+                            if '"reasoning":' in chunk_str and '"reasoning_content":' in chunk_str:
+                                try:
+                                    # Process each SSE line
+                                    lines = chunk_str.split('\n')
+                                    fixed_lines = []
+                                    for line in lines:
+                                        if line.startswith('data: ') and line != 'data: [DONE]':
+                                            data_json = line[6:]  # Remove 'data: ' prefix
+                                            if data_json.strip():
+                                                data = json.loads(data_json)
+                                                # Remove duplicate "reasoning" field from delta
+                                                if 'choices' in data:
+                                                    for choice in data['choices']:
+                                                        if 'delta' in choice and 'reasoning' in choice['delta']:
+                                                            del choice['delta']['reasoning']
+                                                fixed_lines.append('data: ' + json.dumps(data))
+                                            else:
+                                                fixed_lines.append(line)
+                                        else:
+                                            fixed_lines.append(line)
+                                    chunk = ('\n'.join(fixed_lines)).encode('utf-8')
+                                except Exception:
+                                    pass  # On parse error, pass through original chunk
+
                             yield chunk
 
             return StreamingResponse(

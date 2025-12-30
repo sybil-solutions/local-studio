@@ -32,6 +32,16 @@ const navItems = [
 export default function Nav() {
   const pathname = usePathname();
   const router = useRouter();
+  const isChatPage = pathname === '/chat';
+  const [isMobile, setIsMobile] = useState(false);
+
+  // Detect mobile
+  useEffect(() => {
+    const checkMobile = () => setIsMobile(window.innerWidth < 768);
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
   const [actionsOpen, setActionsOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [apiKeyOpen, setApiKeyOpen] = useState(false);
@@ -248,6 +258,72 @@ export default function Nav() {
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, []);
+
+  // Hide nav on mobile when on chat page (chat page has its own unified header)
+  if (isChatPage && isMobile) {
+    return (
+      <>
+        <CommandPalette
+          open={paletteOpen}
+          onClose={() => setPaletteOpen(false)}
+          actions={actions}
+          statusText={
+            status.online
+              ? (status.inferenceOnline
+                  ? `Controller online • Inference online • ${status.model || 'model unknown'}`
+                  : `Controller online • Inference offline • ${status.model || 'no model loaded'}`)
+              : 'Controller offline'
+          }
+        />
+        {apiKeyOpen && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4">
+            <div className="w-full max-w-md rounded-lg border border-[var(--border)] bg-[var(--card)] p-4">
+              <div className="flex items-center justify-between">
+                <div className="font-medium">API Key</div>
+                <button
+                  onClick={() => {
+                    setApiKeyOpen(false);
+                    setApiKeyValue('');
+                  }}
+                  className="p-1 rounded hover:bg-[var(--card-hover)]"
+                  aria-label="Close"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+              <p className="mt-2 text-xs text-[var(--muted-foreground)]">
+                Stored locally in your browser and sent as <code className="font-mono">Authorization: Bearer</code>.
+              </p>
+              <input
+                className="mt-3 w-full rounded-md border border-[var(--border)] bg-transparent px-3 py-2 text-sm font-mono"
+                placeholder={apiKeySet ? 'Enter new key (leave blank to clear)' : 'Enter API key'}
+                value={apiKeyValue}
+                onChange={(e) => setApiKeyValue(e.target.value)}
+                type="password"
+                autoFocus
+              />
+              <div className="mt-3 flex items-center justify-between gap-2">
+                <button
+                  onClick={handleApiKeyClear}
+                  className="px-3 py-2 text-sm rounded-md border border-[var(--border)] hover:bg-[var(--card-hover)]"
+                  type="button"
+                >
+                  Clear
+                </button>
+                <button
+                  onClick={handleApiKeySave}
+                  className="px-3 py-2 text-sm rounded-md bg-[var(--accent)] text-[var(--foreground)] hover:opacity-90"
+                  type="button"
+                >
+                  Save
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </>
+    );
+  }
 
   return (
     <>

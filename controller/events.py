@@ -10,7 +10,7 @@ import logging
 from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, AsyncIterator, Dict, List, Set
+from typing import Any, AsyncIterator, Dict, List, Optional, Set
 
 logger = logging.getLogger(__name__)
 
@@ -35,13 +35,7 @@ class Event:
         (blank line to delimit event)
         """
         payload = {"data": self.data, "timestamp": self.timestamp}
-        lines = [
-            f"id: {self.id}",
-            f"event: {self.type}",
-            f"data: {json.dumps(payload)}",
-            "",
-            ""
-        ]
+        lines = [f"id: {self.id}", f"event: {self.type}", f"data: {json.dumps(payload)}", "", ""]
         return "\n".join(lines)
 
 
@@ -70,7 +64,9 @@ class EventManager:
 
         async with self._lock:
             self._subscribers[channel].add(queue)
-            logger.info(f"New subscriber to channel '{channel}' (total: {len(self._subscribers[channel])})")
+            logger.info(
+                f"New subscriber to channel '{channel}' (total: {len(self._subscribers[channel])})"
+            )
 
         try:
             while True:
@@ -83,7 +79,9 @@ class EventManager:
         finally:
             async with self._lock:
                 self._subscribers[channel].discard(queue)
-                logger.info(f"Subscriber left channel '{channel}' (remaining: {len(self._subscribers[channel])})")
+                logger.info(
+                    f"Subscriber left channel '{channel}' (remaining: {len(self._subscribers[channel])})"
+                )
 
     async def publish(self, event: Event, channel: str = "default"):
         """Publish event to all subscribers on a channel.
@@ -106,7 +104,9 @@ class EventManager:
                 try:
                     queue.put_nowait(event)
                 except asyncio.QueueFull:
-                    logger.warning(f"Queue full for channel '{channel}', dropping event (type: {event.type})")
+                    logger.warning(
+                        f"Queue full for channel '{channel}', dropping event (type: {event.type})"
+                    )
                     dead_queues.add(queue)
                 except Exception as e:
                     logger.error(f"Error publishing to subscriber: {e}")
@@ -131,19 +131,17 @@ class EventManager:
         """Publish individual log line to session-specific channel."""
         await self.publish(
             Event(type="log", data={"session_id": session_id, "line": line}),
-            channel=f"logs:{session_id}"
+            channel=f"logs:{session_id}",
         )
 
-    async def publish_launch_progress(self, recipe_id: str, stage: str, message: str, progress: float = None):
+    async def publish_launch_progress(
+        self, recipe_id: str, stage: str, message: str, progress: Optional[float] = None
+    ):
         """Publish model launch progress event.
 
         Stages: evicting, launching, waiting, ready, error
         """
-        data = {
-            "recipe_id": recipe_id,
-            "stage": stage,
-            "message": message
-        }
+        data = {"recipe_id": recipe_id, "stage": stage, "message": message}
         if progress is not None:
             data["progress"] = progress
 
@@ -153,11 +151,8 @@ class EventManager:
         """Get event manager statistics."""
         return {
             "total_events_published": self._event_count,
-            "channels": {
-                channel: len(subs)
-                for channel, subs in self._subscribers.items()
-            },
-            "total_subscribers": sum(len(subs) for subs in self._subscribers.values())
+            "channels": {channel: len(subs) for channel, subs in self._subscribers.items()},
+            "total_subscribers": sum(len(subs) for subs in self._subscribers.values()),
         }
 
 

@@ -17,6 +17,8 @@ class GPUInfo(BaseModel):
     memory_free: int  # bytes
     utilization: float  # 0-100
     temperature: int = 0  # Celsius
+    power_draw: float = 0.0  # Watts
+    power_limit: float = 0.0  # Watts
 
 
 # Try to import pynvml, fallback to None if not available
@@ -70,6 +72,17 @@ def get_gpu_info() -> List[GPUInfo]:
             except Exception:
                 temperature = 0
 
+            # Get power draw and limit
+            try:
+                power_draw = pynvml.nvmlDeviceGetPowerUsage(handle) / 1000.0  # mW to W
+            except Exception:
+                power_draw = 0.0
+
+            try:
+                power_limit = pynvml.nvmlDeviceGetPowerManagementLimit(handle) / 1000.0  # mW to W
+            except Exception:
+                power_limit = 0.0
+
             gpus.append(
                 GPUInfo(
                     index=i,
@@ -79,6 +92,8 @@ def get_gpu_info() -> List[GPUInfo]:
                     memory_free=mem_info.free,
                     utilization=utilization,
                     temperature=temperature,
+                    power_draw=power_draw,
+                    power_limit=power_limit,
                 )
             )
 

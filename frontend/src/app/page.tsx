@@ -1,11 +1,14 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Search, Play, Cpu, Zap, HardDrive, Activity, Clock, Hash, Thermometer, MemoryStick, Settings, MessageSquare, FileText, Square, X, Check, Wifi, WifiOff, Gauge } from 'lucide-react';
+import { Search, Play, Zap, Activity, Clock, Hash, Settings, MessageSquare, FileText, Square, X, Check, WifiOff, Gauge, Battery, TrendingUp, Banknote } from 'lucide-react';
+
+// Warsaw residential electricity price (G-11 tariff, PLN/kWh)
+const ELECTRICITY_PRICE_PLN = 1.20;
 import { useRouter } from 'next/navigation';
 import api from '@/lib/api';
 import { useRealtimeStatus } from '@/hooks/useRealtimeStatus';
-import type { GPU, RecipeWithStatus, ProcessInfo, Metrics } from '@/lib/types';
+import type { RecipeWithStatus } from '@/lib/types';
 
 export default function Dashboard() {
   // Real-time data from SSE (updates every 1 second)
@@ -205,7 +208,7 @@ export default function Dashboard() {
 
       {/* GPU Grid */}
       <section>
-        <h2 className="text-xs font-medium text-[var(--muted-foreground)] uppercase tracking-wide mb-2 sm:mb-3">GPU Status</h2>
+        <h2 className="text-xs font-semibold text-[var(--muted-foreground)] uppercase tracking-wider mb-2 sm:mb-3">GPU Status</h2>
         <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-4 lg:grid-cols-8 gap-2 sm:gap-3">
           {gpus.map((gpu) => {
             const memUsedRaw = gpu.memory_used_mb ?? gpu.memory_used ?? 0;
@@ -216,7 +219,7 @@ export default function Dashboard() {
             const temp = gpu.temp_c ?? gpu.temperature ?? 0;
             const util = gpu.utilization_pct ?? gpu.utilization ?? 0;
             return (
-              <div key={gpu.id ?? gpu.index} className="bg-[var(--card)] border border-[var(--border)] rounded-lg p-2 sm:p-3">
+              <div key={gpu.id ?? gpu.index} className="bg-[var(--card)] border border-[var(--border)] rounded-xl p-2 sm:p-3 hover:border-[var(--ring)]/50 transition-colors">
                 <div className="flex items-center justify-between mb-1 sm:mb-2">
                   <span className="text-[10px] sm:text-xs font-medium text-[var(--muted-foreground)]">GPU {gpu.id ?? gpu.index}</span>
                   <span className={`text-[10px] sm:text-xs font-mono ${getTempColor(temp)}`}>
@@ -230,6 +233,11 @@ export default function Dashboard() {
                   </span>
                   <span className="text-[var(--muted-foreground)]">{util}%</span>
                 </div>
+                {gpu.power_draw !== undefined && (
+                  <div className="text-[9px] sm:text-[10px] text-[var(--muted)] mt-1 text-center">
+                    <Zap className="inline h-2.5 w-2.5 mr-0.5" />{Math.round(gpu.power_draw)}W
+                  </div>
+                )}
               </div>
             );
           })}
@@ -241,9 +249,9 @@ export default function Dashboard() {
         {/* Left Column */}
         <div className="lg:col-span-2 space-y-4 sm:space-y-6 min-w-0">
           {/* Running Model */}
-          <section className="bg-[var(--card)] border border-[var(--border)] rounded-lg p-4 sm:p-6">
+          <section className="bg-[var(--card)] border border-[var(--border)] rounded-xl p-4 sm:p-6 hover:shadow-lg transition-shadow">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-0 mb-4">
-              <h2 className="text-xs font-medium text-[var(--muted-foreground)] uppercase tracking-wide">Running Model</h2>
+              <h2 className="text-xs font-semibold text-[var(--muted-foreground)] uppercase tracking-wider">Running Model</h2>
               <div className="flex items-center gap-1 sm:gap-2 flex-wrap">
                 {currentProcess ? (
                   <>
@@ -370,8 +378,8 @@ export default function Dashboard() {
           </section>
 
           {/* Quick Launch */}
-          <section className="bg-[var(--card)] border border-[var(--border)] rounded-lg p-4 sm:p-6">
-            <h2 className="text-xs font-medium text-[var(--muted-foreground)] uppercase tracking-wide mb-2 sm:mb-3">Quick Launch</h2>
+          <section className="bg-[var(--card)] border border-[var(--border)] rounded-xl p-4 sm:p-6 hover:shadow-lg transition-shadow">
+            <h2 className="text-xs font-semibold text-[var(--muted-foreground)] uppercase tracking-wider mb-2 sm:mb-3">Quick Launch</h2>
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[var(--muted)]" />
               <input
@@ -415,8 +423,8 @@ export default function Dashboard() {
           </section>
 
           {/* Live Logs */}
-          <section className="bg-[var(--card)] border border-[var(--border)] rounded-lg p-4 sm:p-6">
-            <h2 className="text-xs font-medium text-[var(--muted-foreground)] uppercase tracking-wide mb-2 sm:mb-3">Live Logs</h2>
+          <section className="bg-[var(--card)] border border-[var(--border)] rounded-xl p-4 sm:p-6 hover:shadow-lg transition-shadow">
+            <h2 className="text-xs font-semibold text-[var(--muted-foreground)] uppercase tracking-wider mb-2 sm:mb-3">Live Logs</h2>
             <div className="bg-[var(--background)] rounded-lg p-2 sm:p-3 h-48 sm:h-64 overflow-auto font-mono text-[10px] sm:text-xs">
               {logs.length > 0 ? (
                 logs.map((line, i) => (
@@ -436,8 +444,8 @@ export default function Dashboard() {
 
         {/* Right Column */}
         <div className="space-y-4 sm:space-y-6 min-w-0">
-          <section className="bg-[var(--card)] border border-[var(--border)] rounded-lg p-4 sm:p-6">
-            <h2 className="text-xs font-medium text-[var(--muted-foreground)] uppercase tracking-wide mb-2 sm:mb-3">Analytics</h2>
+          <section className="bg-[var(--card)] border border-[var(--border)] rounded-xl p-4 sm:p-6 hover:shadow-lg transition-shadow">
+            <h2 className="text-xs font-semibold text-[var(--muted-foreground)] uppercase tracking-wider mb-2 sm:mb-3">Session Stats</h2>
             <div className="space-y-2 sm:space-y-3">
               <div className="flex items-center justify-between p-2 sm:p-3 bg-[var(--background)] rounded-lg">
                 <div className="flex items-center gap-2">
@@ -462,17 +470,65 @@ export default function Dashboard() {
               </div>
               <div className="flex items-center justify-between p-2 sm:p-3 bg-[var(--background)] rounded-lg">
                 <div className="flex items-center gap-2">
-                  <Clock className="h-3 sm:h-4 w-3 sm:w-4 text-[var(--muted)]" />
-                  <span className="text-xs sm:text-sm">Pending</span>
+                  <Zap className="h-3 sm:h-4 w-3 sm:w-4 text-[var(--warning)]" />
+                  <span className="text-xs sm:text-sm">Power</span>
                 </div>
-                <span className="font-mono font-semibold text-sm">{metrics?.pending_requests || 0}</span>
+                <span className="font-mono font-semibold text-sm">{metrics?.current_power_watts ? `${Math.round(metrics.current_power_watts)}W` : '--'}</span>
               </div>
             </div>
           </section>
 
-          <section className="bg-[var(--card)] border border-[var(--border)] rounded-lg p-4 sm:p-6">
+          <section className="bg-[var(--card)] border border-[var(--border)] rounded-xl p-4 sm:p-6 hover:shadow-lg transition-shadow">
+            <h2 className="text-xs font-semibold text-[var(--muted-foreground)] uppercase tracking-wider mb-2 sm:mb-3">Lifetime Stats</h2>
+            <div className="space-y-2 sm:space-y-3">
+              <div className="flex items-center justify-between p-2 sm:p-3 bg-[var(--background)] rounded-lg">
+                <div className="flex items-center gap-2">
+                  <TrendingUp className="h-3 sm:h-4 w-3 sm:w-4 text-[var(--muted)]" />
+                  <span className="text-xs sm:text-sm">Total Tokens</span>
+                </div>
+                <span className="font-mono font-semibold text-sm">{metrics?.lifetime_tokens?.toLocaleString() || 0}</span>
+              </div>
+              <div className="flex items-center justify-between p-2 sm:p-3 bg-[var(--background)] rounded-lg">
+                <div className="flex items-center gap-2">
+                  <Hash className="h-3 sm:h-4 w-3 sm:w-4 text-[var(--muted)]" />
+                  <span className="text-xs sm:text-sm">Total Requests</span>
+                </div>
+                <span className="font-mono font-semibold text-sm">{metrics?.lifetime_requests?.toLocaleString() || 0}</span>
+              </div>
+              <div className="flex items-center justify-between p-2 sm:p-3 bg-[var(--background)] rounded-lg">
+                <div className="flex items-center gap-2">
+                  <Battery className="h-3 sm:h-4 w-3 sm:w-4 text-[var(--warning)]" />
+                  <span className="text-xs sm:text-sm">Energy</span>
+                </div>
+                <span className="font-mono font-semibold text-sm">{metrics?.lifetime_energy_kwh ? `${metrics.lifetime_energy_kwh.toFixed(2)} kWh` : '--'}</span>
+              </div>
+              <div className="flex items-center justify-between p-2 sm:p-3 bg-[var(--background)] rounded-lg">
+                <div className="flex items-center gap-2">
+                  <Banknote className="h-3 sm:h-4 w-3 sm:w-4 text-[var(--success)]" />
+                  <span className="text-xs sm:text-sm">Cost</span>
+                </div>
+                <span className="font-mono font-semibold text-sm">{metrics?.lifetime_energy_kwh ? `${(metrics.lifetime_energy_kwh * ELECTRICITY_PRICE_PLN).toFixed(2)} PLN` : '--'}</span>
+              </div>
+              <div className="flex items-center justify-between p-2 sm:p-3 bg-[var(--background)] rounded-lg">
+                <div className="flex items-center gap-2">
+                  <Clock className="h-3 sm:h-4 w-3 sm:w-4 text-[var(--muted)]" />
+                  <span className="text-xs sm:text-sm">Uptime</span>
+                </div>
+                <span className="font-mono font-semibold text-sm">{metrics?.lifetime_uptime_hours ? `${metrics.lifetime_uptime_hours.toFixed(1)}h` : '--'}</span>
+              </div>
+              <div className="flex items-center justify-between p-2 sm:p-3 bg-[var(--background)] rounded-lg">
+                <div className="flex items-center gap-2">
+                  <Zap className="h-3 sm:h-4 w-3 sm:w-4 text-[var(--accent)]" />
+                  <span className="text-xs sm:text-sm">kWh/M tok</span>
+                </div>
+                <span className="font-mono font-semibold text-sm">{metrics?.kwh_per_million_tokens ? metrics.kwh_per_million_tokens.toFixed(2) : '--'}</span>
+              </div>
+            </div>
+          </section>
+
+          <section className="bg-[var(--card)] border border-[var(--border)] rounded-xl p-4 sm:p-6 hover:shadow-lg transition-shadow">
             <div className="flex items-center justify-between mb-2 sm:mb-3">
-              <h2 className="text-xs font-medium text-[var(--muted-foreground)] uppercase tracking-wide">Recipes ({recipes.length})</h2>
+              <h2 className="text-xs font-semibold text-[var(--muted-foreground)] uppercase tracking-wider">Recipes ({recipes.length})</h2>
               <button
                 onClick={() => router.push('/recipes?new=1')}
                 className="text-xs text-[var(--accent)] hover:underline"
@@ -514,33 +570,46 @@ export default function Dashboard() {
       </div>
 
       {/* Launch progress toast */}
-      {launchProgress && (
-        <div className="fixed bottom-20 sm:bottom-6 left-4 right-4 sm:left-auto sm:right-6 z-50 px-3 sm:px-4 py-2 sm:py-3 bg-[var(--card)] border border-[var(--border)] rounded-lg shadow-xl sm:max-w-md animate-in slide-in-from-bottom-2 duration-300">
+      {/* Launch Progress Indicator - shows immediately when launching */}
+      {(launching || launchProgress) && (
+        <div className="fixed bottom-20 sm:bottom-6 left-4 right-4 sm:left-auto sm:right-6 z-50 px-4 py-3 bg-[var(--card)] border border-[var(--border)] rounded-xl shadow-2xl sm:max-w-sm animate-in slide-in-from-bottom-2 duration-300">
           <div className="flex items-center gap-3">
-            {launchProgress.stage === 'error' ? (
-              <div className="w-8 h-8 rounded-full bg-red-500/20 flex items-center justify-center flex-shrink-0">
-                <X className="h-4 w-4 text-red-400" />
+            {launchProgress?.stage === 'error' ? (
+              <div className="w-10 h-10 rounded-full bg-red-500/20 flex items-center justify-center flex-shrink-0">
+                <X className="h-5 w-5 text-red-400" />
               </div>
-            ) : launchProgress.stage === 'ready' ? (
-              <div className="w-8 h-8 rounded-full bg-green-500/20 flex items-center justify-center flex-shrink-0">
-                <Check className="h-4 w-4 text-green-400" />
+            ) : launchProgress?.stage === 'ready' ? (
+              <div className="w-10 h-10 rounded-full bg-green-500/20 flex items-center justify-center flex-shrink-0">
+                <Check className="h-5 w-5 text-green-400" />
               </div>
             ) : (
-              <div className="w-8 h-8 rounded-full bg-blue-500/20 flex items-center justify-center flex-shrink-0">
-                <Activity className="h-4 w-4 animate-spin text-blue-400" />
+              <div className="w-10 h-10 rounded-full bg-blue-500/20 flex items-center justify-center flex-shrink-0 animate-pulse">
+                <Play className="h-5 w-5 text-blue-400" />
               </div>
             )}
 
             <div className="flex-1 min-w-0">
-              <div className="text-sm font-medium capitalize">{launchProgress.stage}</div>
-              <div className="text-xs text-[var(--muted-foreground)] mt-0.5 truncate">{launchProgress.message}</div>
+              <div className="text-sm font-semibold capitalize">
+                {launchProgress?.stage === 'error' ? 'Error' : 
+                 launchProgress?.stage === 'ready' ? 'Ready' :
+                 launchProgress?.stage || 'Starting...'}
+              </div>
+              <div className="text-xs text-[var(--muted-foreground)] mt-0.5 truncate">
+                {launchProgress?.message || 'Preparing to launch model...'}
+              </div>
 
-              {launchProgress.progress !== undefined && launchProgress.stage !== 'ready' && launchProgress.stage !== 'error' && (
-                <div className="mt-2 h-1 bg-[var(--border)] rounded-full overflow-hidden">
+              {launchProgress?.progress !== undefined && launchProgress.stage !== 'ready' && launchProgress.stage !== 'error' && (
+                <div className="mt-2 h-1.5 bg-[var(--border)] rounded-full overflow-hidden">
                   <div
-                    className="h-full bg-blue-500 transition-all duration-300"
+                    className="h-full bg-blue-500 transition-all duration-300 rounded-full"
                     style={{ width: `${Math.round(launchProgress.progress * 100)}%` }}
                   />
+                </div>
+              )}
+              
+              {launching && !launchProgress && (
+                <div className="mt-2 h-1.5 bg-[var(--border)] rounded-full overflow-hidden">
+                  <div className="h-full bg-blue-500/50 rounded-full animate-pulse w-1/4" />
                 </div>
               )}
             </div>

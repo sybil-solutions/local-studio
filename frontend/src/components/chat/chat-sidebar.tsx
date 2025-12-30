@@ -44,7 +44,7 @@ export function ChatSidebar({
   // Desktop collapsed state
   if (isCollapsed && !isMobile) {
     return (
-      <div className="w-8 h-full border-r border-[var(--border)] flex flex-col items-center py-2 gap-0.5">
+      <div className="fixed left-0 top-12 md:top-14 bottom-0 w-8 border-r border-[var(--border)] bg-[var(--background)] flex flex-col items-center py-2 gap-0.5 z-30">
         <button
           onClick={onToggleCollapse}
           className="p-1.5 rounded hover:bg-[var(--accent)] transition-colors"
@@ -172,7 +172,7 @@ export function ChatSidebar({
 
   // Desktop expanded state
   return (
-    <div className="w-44 h-full border-r border-[var(--border)] flex flex-col">
+    <div className="fixed left-0 top-12 md:top-14 bottom-0 w-44 border-r border-[var(--border)] bg-[var(--background)] flex flex-col z-30">
       {/* Header */}
       <div className="flex items-center justify-between px-2 py-1.5 border-b border-[var(--border)]">
         <button

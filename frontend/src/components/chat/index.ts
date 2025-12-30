@@ -8,3 +8,4 @@ export { CodeSandbox } from './code-sandbox';
 export { ArtifactRenderer, extractArtifacts, getArtifactType } from './artifact-renderer';
 export type { Attachment, MCPServer } from './tool-belt';
 export type { MCPServerConfig } from './mcp-settings-modal';
+export type { DeepResearchSettings } from './chat-settings-modal';

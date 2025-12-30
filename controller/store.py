@@ -420,3 +420,107 @@ class PeakMetricsStore:
         with self._conn() as conn:
             rows = conn.execute("SELECT * FROM peak_metrics ORDER BY model_id").fetchall()
         return [dict(row) for row in rows]
+
+
+class LifetimeMetricsStore:
+    """SQLite-backed storage for lifetime/cumulative metrics across all sessions."""
+
+    def __init__(self, db_path: Path):
+        self.db_path = db_path
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+        self._migrate()
+
+    @contextmanager
+    def _conn(self) -> Iterator[sqlite3.Connection]:
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        try:
+            yield conn
+            conn.commit()
+        finally:
+            conn.close()
+
+    def _migrate(self) -> None:
+        with self._conn() as conn:
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS lifetime_metrics (
+                    key TEXT PRIMARY KEY,
+                    value REAL NOT NULL DEFAULT 0,
+                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            # Initialize default values if they don't exist
+            defaults = [
+                ('tokens_total', 0),
+                ('energy_wh', 0),
+                ('uptime_seconds', 0),
+                ('requests_total', 0),
+                ('first_started_at', 0),
+            ]
+            for key, default in defaults:
+                conn.execute("""
+                    INSERT OR IGNORE INTO lifetime_metrics (key, value) VALUES (?, ?)
+                """, (key, default))
+
+    def get(self, key: str) -> float:
+        """Get a lifetime metric value."""
+        with self._conn() as conn:
+            row = conn.execute(
+                "SELECT value FROM lifetime_metrics WHERE key = ?", (key,)
+            ).fetchone()
+        return row['value'] if row else 0.0
+
+    def get_all(self) -> Dict[str, float]:
+        """Get all lifetime metrics."""
+        with self._conn() as conn:
+            rows = conn.execute("SELECT key, value FROM lifetime_metrics").fetchall()
+        return {row['key']: row['value'] for row in rows}
+
+    def set(self, key: str, value: float) -> None:
+        """Set a lifetime metric value."""
+        with self._conn() as conn:
+            conn.execute("""
+                INSERT INTO lifetime_metrics (key, value, updated_at)
+                VALUES (?, ?, CURRENT_TIMESTAMP)
+                ON CONFLICT(key) DO UPDATE SET
+                    value = excluded.value,
+                    updated_at = CURRENT_TIMESTAMP
+            """, (key, value))
+
+    def increment(self, key: str, delta: float) -> float:
+        """Increment a lifetime metric and return new value."""
+        with self._conn() as conn:
+            conn.execute("""
+                INSERT INTO lifetime_metrics (key, value, updated_at)
+                VALUES (?, ?, CURRENT_TIMESTAMP)
+                ON CONFLICT(key) DO UPDATE SET
+                    value = value + excluded.value,
+                    updated_at = CURRENT_TIMESTAMP
+            """, (key, delta))
+            row = conn.execute(
+                "SELECT value FROM lifetime_metrics WHERE key = ?", (key,)
+            ).fetchone()
+        return row['value'] if row else delta
+
+    def add_energy(self, watt_hours: float) -> None:
+        """Add energy consumption in Watt-hours."""
+        self.increment('energy_wh', watt_hours)
+
+    def add_tokens(self, tokens: int) -> None:
+        """Add to lifetime token count."""
+        self.increment('tokens_total', tokens)
+
+    def add_uptime(self, seconds: float) -> None:
+        """Add to lifetime uptime."""
+        self.increment('uptime_seconds', seconds)
+
+    def add_requests(self, count: int = 1) -> None:
+        """Add to lifetime request count."""
+        self.increment('requests_total', count)
+
+    def ensure_first_started(self) -> None:
+        """Set first_started_at if not already set."""
+        import time
+        current = self.get('first_started_at')
+        if current == 0:
+            self.set('first_started_at', time.time())

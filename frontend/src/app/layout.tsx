@@ -65,10 +65,10 @@ export default function RootLayout({
         />
       </head>
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased min-h-[100dvh]`}
+        className={`${geistSans.variable} ${geistMono.variable} antialiased min-h-[100dvh] overflow-x-hidden`}
       >
         <Nav />
-        <main>
+        <main className="overflow-x-hidden">
           {children}
         </main>
       </body>

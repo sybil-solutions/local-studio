@@ -16,6 +16,7 @@ import {
   Code,
   Settings,
   SlidersHorizontal,
+  Brain,
 } from 'lucide-react';
 
 export interface Attachment {
@@ -53,6 +54,9 @@ interface ToolBeltProps {
   // Chat settings
   onOpenChatSettings?: () => void;
   hasSystemPrompt?: boolean;
+  // Deep Research
+  deepResearchEnabled?: boolean;
+  onDeepResearchToggle?: () => void;
 }
 
 export function ToolBelt({
@@ -72,6 +76,8 @@ export function ToolBelt({
   onOpenMcpSettings,
   onOpenChatSettings,
   hasSystemPrompt = false,
+  deepResearchEnabled = false,
+  onDeepResearchToggle,
 }: ToolBeltProps) {
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [isRecording, setIsRecording] = useState(false);
@@ -220,8 +226,8 @@ export function ToolBelt({
   };
 
   return (
-    <div className="px-3 py-2 bg-[var(--background)]">
-      <div className="max-w-3xl mx-auto w-full">
+    <div className="px-3 md:px-3 py-3 md:py-2 bg-[var(--background)]">
+      <div className="max-w-4xl mx-auto w-full">
         {/* Attachments Preview */}
         {attachments.length > 0 && (
           <div className="flex flex-wrap gap-2 mb-3">
@@ -291,7 +297,7 @@ export function ToolBelt({
         )}
 
         {/* Main Input Area */}
-        <div className="relative flex flex-col border border-[var(--border)] rounded-xl bg-[var(--card)] shadow-sm">
+        <div className="relative flex flex-col border border-[var(--border)] rounded-2xl md:rounded-xl bg-[var(--card)] shadow-sm">
           {/* Textarea */}
           <textarea
             ref={textareaRef}
@@ -301,8 +307,8 @@ export function ToolBelt({
             placeholder={disabled ? 'No model running' : placeholder}
             disabled={disabled || isLoading}
             rows={1}
-            className="w-full px-4 py-3 bg-transparent text-base md:text-sm resize-none focus:outline-none disabled:opacity-50 placeholder:text-[var(--muted)]"
-            style={{ minHeight: '48px', maxHeight: '200px', fontSize: '16px' }}
+            className="w-full px-4 py-4 md:py-3 bg-transparent text-base md:text-sm resize-none focus:outline-none disabled:opacity-50 placeholder:text-[var(--muted)]"
+            style={{ minHeight: '72px', maxHeight: '200px', fontSize: '16px' }}
           />
 
           {/* Tool Bar */}
@@ -412,6 +418,23 @@ export function ToolBelt({
                 <Code className={`h-4 w-4 md:h-3.5 md:w-3.5 ${artifactsEnabled ? '' : 'text-[var(--muted)]'}`} />
                 <span className={`text-xs ${artifactsEnabled ? '' : 'text-[var(--muted)]'} hidden sm:inline`}>Preview</span>
               </button>
+
+              {/* Deep Research Toggle */}
+              {onDeepResearchToggle && (
+                <button
+                  onClick={onDeepResearchToggle}
+                  disabled={disabled}
+                  className={`flex items-center gap-1 px-2.5 py-1.5 md:px-2 md:py-1 rounded transition-colors disabled:opacity-50 ${
+                    deepResearchEnabled
+                      ? 'bg-gradient-to-r from-blue-500/20 to-purple-500/20 text-blue-400'
+                      : 'hover:bg-[var(--accent)]'
+                  }`}
+                  title={deepResearchEnabled ? 'Deep Research enabled - Multi-step web research' : 'Enable Deep Research mode'}
+                >
+                  <Brain className={`h-4 w-4 md:h-3.5 md:w-3.5 ${deepResearchEnabled ? '' : 'text-[var(--muted)]'}`} />
+                  <span className={`text-xs ${deepResearchEnabled ? '' : 'text-[var(--muted)]'} hidden sm:inline`}>Research</span>
+                </button>
+              )}
 
               {/* Divider */}
               <div className="w-px h-4 bg-[var(--border)] mx-1 hidden sm:block" />
