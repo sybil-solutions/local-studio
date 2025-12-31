@@ -995,7 +995,7 @@ Remember: Plan first, then execute systematically.`,
 
       // Tool calling loop - continues until no more tool calls
       let iteration = 0;
-      const MAX_ITERATIONS = 10;
+      const MAX_ITERATIONS = 50; // Support deep research with many searches
       const cachedToolResultsBySignature = new Map<string, Omit<ToolResult, 'tool_call_id'>>();
 
       while (iteration < MAX_ITERATIONS) {
