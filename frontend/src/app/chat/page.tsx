@@ -518,6 +518,79 @@ export default function ChatPage() {
       });
     }
 
+    // Deep Research system prompt - comprehensive multi-step research guidance
+    if (deepResearch.enabled) {
+      const numSources = deepResearch.numSources || 5;
+      const searchDepth = deepResearch.searchDepth || 'normal';
+      const includeCitations = deepResearch.includeCitations !== false;
+      const autoSummarize = deepResearch.autoSummarize !== false;
+
+      apiMessages.push({
+        role: 'system',
+        content: `You are a Deep Research Assistant. Your task is to conduct thorough, multi-step research to provide comprehensive, well-sourced answers.
+
+## RESEARCH METHODOLOGY
+
+When the user asks a question, follow this systematic research process:
+
+### Step 1: Query Analysis
+- Break down the user's question into 2-4 specific research angles or sub-questions
+- Identify key concepts, entities, and terms to search for
+- Consider different perspectives (technical, practical, historical, current trends)
+
+### Step 2: Multi-Source Search Strategy
+You MUST use the Exa search tool (exa__search or similar) to gather information. Perform ${numSources} separate searches with different queries:
+- Search 1: Direct query for the main topic
+- Search 2: Query for recent developments/news on the topic
+- Search 3: Query for expert opinions or academic perspectives
+- Search 4+: Queries for specific sub-questions or related concepts
+
+For each search, use tool_calls to invoke the Exa search tool with varied queries. Example:
+\`\`\`
+tool_call: exa__search with query="[your search query]" and numResults=5
+\`\`\`
+
+### Step 3: Source Analysis (${searchDepth === 'thorough' ? 'Deep Analysis' : 'Standard Analysis'})
+For each search result:
+- Extract key facts, statistics, and claims
+- Note the source credibility and date
+- Identify agreements and contradictions between sources
+${searchDepth === 'thorough' ? '- Use exa__getContents or fetch tools to read full article content when summaries are insufficient\n- Cross-reference claims across multiple sources' : '- Focus on the most relevant and recent information'}
+
+### Step 4: Synthesis & Response
+${autoSummarize ? `Synthesize your findings into a comprehensive response that:
+- Directly answers the user's question
+- Presents information from multiple angles
+- Highlights key insights and takeaways
+- Notes any controversies or uncertainties in the topic` : 'Present the raw findings organized by source.'}
+
+${includeCitations ? `### Step 5: Citations
+Include citations for all factual claims using this format:
+- Inline: "According to [Source Name], ..." or "Research shows that ... [1]"
+- At the end, provide a "Sources" section listing all references with URLs` : ''}
+
+## IMPORTANT GUIDELINES
+
+1. **Always use tools first** - Do not answer from memory alone. Search for current information.
+2. **Diverse queries** - Use different phrasings and angles for each search to maximize coverage.
+3. **Verify claims** - Cross-reference important facts across multiple sources.
+4. **Acknowledge limitations** - If information is scarce or conflicting, say so.
+5. **Stay current** - Prioritize recent sources when recency matters.
+6. **Be thorough** - This is DEEP research. Take the time to gather comprehensive information.
+
+## TOOL USAGE
+
+You have access to web search and content fetching tools. Use them liberally:
+- \`exa__search\`: Search the web for information (use query parameter)
+- \`exa__findSimilar\`: Find pages similar to a given URL
+- \`exa__getContents\`: Get full content from URLs
+- \`brave-search__brave_web_search\`: Alternative web search
+- \`fetch__fetch\`: Fetch and read webpage content
+
+Start your research immediately when you receive a question. Do not ask for clarification unless the question is truly ambiguous.`,
+      });
+    }
+
     for (const m of msgs) {
       if (m.images && m.images.length > 0) {
         const content: OpenAIContentPart[] = [];
@@ -1372,7 +1445,7 @@ export default function ChatPage() {
 
   if (pageLoading) {
     return (
-      <div className="flex items-center justify-center h-full">
+      <div className="flex items-center justify-center h-[100dvh]">
         <div className="animate-pulse-soft">
           <Sparkles className="h-8 w-8 text-[var(--muted)]" />
         </div>
@@ -1387,7 +1460,7 @@ export default function ChatPage() {
 
   return (
     <>
-    <div className="relative h-[calc(100dvh-3.5rem)] flex flex-col overflow-hidden">
+    <div className="relative h-[100dvh] md:h-[calc(100dvh-3.5rem)] flex flex-col overflow-hidden">
       {/* Desktop Sidebar */}
       {!isMobile && (
         <ChatSidebar
@@ -1649,7 +1722,7 @@ export default function ChatPage() {
 
         {/* Messages */}
         <div className="flex-1 overflow-y-auto overflow-x-hidden">
-          <div className="pb-4">
+          <div className="pb-0">
           {messages.length === 0 ? (
             <div className="flex items-center justify-center min-h-[60vh]">
               <div className="text-center px-4 py-8 animate-fade-in">
@@ -1826,10 +1899,7 @@ export default function ChatPage() {
         </div>
 
         {/* Input Tool Belt - sticky at bottom */}
-        <div
-          className="flex-shrink-0"
-          style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
-        >
+        <div className="flex-shrink-0">
           <ToolBelt
           value={input}
           onChange={setInput}
@@ -1848,7 +1918,14 @@ export default function ChatPage() {
           onOpenChatSettings={() => setChatSettingsOpen(true)}
           hasSystemPrompt={systemPrompt.trim().length > 0}
           deepResearchEnabled={deepResearch.enabled}
-          onDeepResearchToggle={() => setDeepResearch(prev => ({ ...prev, enabled: !prev.enabled }))}
+          onDeepResearchToggle={() => {
+            const newEnabled = !deepResearch.enabled;
+            setDeepResearch(prev => ({ ...prev, enabled: newEnabled }));
+            // Auto-enable MCP tools when Deep Research is turned on (needed for Exa/search tools)
+            if (newEnabled && !mcpEnabled) {
+              setMcpEnabled(true);
+            }
+          }}
         />
         </div>
       </div>
@@ -2058,6 +2135,10 @@ export default function ChatPage() {
           onDeepResearchChange={(settings) => {
             setDeepResearch(settings);
             localStorage.setItem('vllm-studio-deep-research', JSON.stringify(settings));
+            // Auto-enable MCP tools when Deep Research is turned on
+            if (settings.enabled && !mcpEnabled) {
+              setMcpEnabled(true);
+            }
           }}
         />
     </>
