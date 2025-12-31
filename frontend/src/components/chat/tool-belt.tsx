@@ -226,7 +226,7 @@ export function ToolBelt({
   };
 
   return (
-    <div className="px-3 md:px-3 py-3 md:py-2 bg-[var(--background)]">
+    <div className="px-2 md:px-3 pb-[max(4px,env(safe-area-inset-bottom))] bg-[var(--background)]">
       <div className="max-w-4xl mx-auto w-full">
         {/* Attachments Preview */}
         {attachments.length > 0 && (
@@ -307,8 +307,8 @@ export function ToolBelt({
             placeholder={disabled ? 'No model running' : placeholder}
             disabled={disabled || isLoading}
             rows={1}
-            className="w-full px-4 py-4 md:py-3 bg-transparent text-base md:text-sm resize-none focus:outline-none disabled:opacity-50 placeholder:text-[var(--muted)]"
-            style={{ minHeight: '72px', maxHeight: '200px', fontSize: '16px' }}
+            className="w-full px-4 py-3 md:py-3 bg-transparent text-base md:text-sm resize-none focus:outline-none disabled:opacity-50 placeholder:text-[var(--muted)]"
+            style={{ minHeight: '52px', maxHeight: '200px', fontSize: '16px' }}
           />
 
           {/* Tool Bar */}
