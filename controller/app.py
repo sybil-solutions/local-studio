@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import datetime as dt
+import os
 import json
 from collections import deque
 from pathlib import Path
@@ -23,7 +24,7 @@ from .metrics import (
 from .config import settings
 from .gpu import get_gpu_info
 from .models import HealthResponse, LaunchResult, OpenAIModelInfo, OpenAIModelList, Recipe
-from .process import evict_model, find_inference_process, switch_model
+from .process import evict_model, find_inference_process
 from .store import RecipeStore, ChatStore, PeakMetricsStore, LifetimeMetricsStore
 
 app = FastAPI(
@@ -766,7 +767,7 @@ async def launch(recipe_id: str, force: bool = False, store: RecipeStore = Depen
                 except Exception:
                     pass
             await event_manager.publish_launch_progress(
-                recipe_id, "error", f"Model process crashed. Check logs for details.", progress=0.0
+                recipe_id, "error", "Model process crashed. Check logs for details.", progress=0.0
             )
             return LaunchResult(success=False, pid=None, message=f"Process crashed: {error_tail[-200:]}", log_file=str(log_file))
 
