@@ -2,169 +2,17 @@
 # Handles API routing, format translation, and cost tracking
 
 model_list:
-  # Wildcard catch-all for any model name -> route to local vLLM
+  # Wildcard catch-all for any model name -> route to local inference server
   - model_name: "*"
     litellm_params:
       model: "openai/*"
-      api_base: "http://172.18.0.1:8000/v1"
-      api_key: "2203f577688173dad689c6f65884778c"
+      api_base: "${INFERENCE_API_BASE:-http://localhost:8000/v1}"
+      api_key: "${INFERENCE_API_KEY:-sk-placeholder}"
       stream_timeout: 600
       timeout: 600
       supports_function_calling: true
       supports_vision: true
       supports_response_schema: true
-
-  # ============ Recipe Models ============
-
-  - model_name: "bu-30b-a3b"
-    litellm_params:
-      model: "openai/bu-30b-a3b"
-      api_base: "http://172.18.0.1:8000/v1"
-      api_key: "2203f577688173dad689c6f65884778c"
-      stream_timeout: 600
-      timeout: 600
-      supports_function_calling: true
-      supports_vision: true
-
-  - model_name: "devstral-2-123b"
-    litellm_params:
-      model: "openai/devstral-2-123b"
-      api_base: "http://172.18.0.1:8000/v1"
-      api_key: "2203f577688173dad689c6f65884778c"
-      stream_timeout: 600
-      timeout: 600
-      supports_function_calling: true
-
-  - model_name: "glm-4.5-air"
-    litellm_params:
-      model: "openai/glm-4.5-air"
-      api_base: "http://172.18.0.1:8000/v1"
-      api_key: "2203f577688173dad689c6f65884778c"
-      stream_timeout: 600
-      timeout: 600
-      supports_function_calling: true
-
-  - model_name: "glm-4.6"
-    litellm_params:
-      model: "openai/glm-4.6"
-      api_base: "http://172.18.0.1:8000/v1"
-      api_key: "2203f577688173dad689c6f65884778c"
-      stream_timeout: 600
-      timeout: 600
-      supports_function_calling: true
-
-  - model_name: "glm-4.6v"
-    litellm_params:
-      model: "openai/glm-4.6v"
-      api_base: "http://172.18.0.1:8000/v1"
-      api_key: "2203f577688173dad689c6f65884778c"
-      stream_timeout: 600
-      timeout: 600
-      supports_function_calling: true
-      supports_vision: true
-
-  - model_name: "glm-4.7"
-    litellm_params:
-      model: "openai/glm-4.7"
-      api_base: "http://172.18.0.1:8001/v1"
-      api_key: "2203f577688173dad689c6f65884778c"
-      stream_timeout: 600
-      timeout: 600
-      supports_function_calling: true
-      supports_tool_choice: true
-      custom_llm_provider: openai
-
-  - model_name: "GLM-4.7-EXL3-3bpw_H6"
-    litellm_params:
-      model: "openai/glm-4.7"
-      api_base: "http://172.18.0.1:8001/v1"
-      api_key: "2203f577688173dad689c6f65884778c"
-      stream_timeout: 600
-      timeout: 600
-      supports_function_calling: true
-      custom_llm_provider: openai
-
-  - model_name: "hermes-4.3"
-    litellm_params:
-      model: "openai/hermes-4.3"
-      api_base: "http://172.18.0.1:8000/v1"
-      api_key: "2203f577688173dad689c6f65884778c"
-      stream_timeout: 600
-      timeout: 600
-      supports_function_calling: true
-
-  - model_name: "intellect-3"
-    litellm_params:
-      model: "openai/intellect-3"
-      api_base: "http://172.18.0.1:8000/v1"
-      api_key: "2203f577688173dad689c6f65884778c"
-      stream_timeout: 600
-      timeout: 600
-      supports_function_calling: true
-
-  - model_name: "mimo-v2"
-    litellm_params:
-      model: "openai/mimo-v2"
-      api_base: "http://172.18.0.1:8000/v1"
-      api_key: "2203f577688173dad689c6f65884778c"
-      stream_timeout: 600
-      timeout: 600
-      supports_function_calling: true
-
-  - model_name: "minimax-m2"
-    litellm_params:
-      model: "openai/minimax-m2"
-      api_base: "http://172.18.0.1:8000/v1"
-      api_key: "2203f577688173dad689c6f65884778c"
-      stream_timeout: 600
-      timeout: 600
-      supports_function_calling: true
-
-  - model_name: "minimax-m2.1"
-    litellm_params:
-      model: "openai/minimax-m2.1"
-      api_base: "http://172.18.0.1:8000/v1"
-      api_key: "2203f577688173dad689c6f65884778c"
-      stream_timeout: 600
-      timeout: 600
-      supports_function_calling: true
-
-  - model_name: "MiniMax-M2.1"
-    litellm_params:
-      model: "openai/minimax-m2.1"
-      api_base: "http://172.18.0.1:8000/v1"
-      api_key: "2203f577688173dad689c6f65884778c"
-      stream_timeout: 600
-      timeout: 600
-      supports_function_calling: true
-
-  - model_name: "nemotron-nano-30b"
-    litellm_params:
-      model: "openai/nemotron-nano-30b"
-      api_base: "http://172.18.0.1:8000/v1"
-      api_key: "2203f577688173dad689c6f65884778c"
-      stream_timeout: 600
-      timeout: 600
-      supports_function_calling: true
-
-  - model_name: "qwen3-235b"
-    litellm_params:
-      model: "openai/qwen3-235b"
-      api_base: "http://172.18.0.1:8000/v1"
-      api_key: "2203f577688173dad689c6f65884778c"
-      stream_timeout: 600
-      timeout: 600
-      supports_function_calling: true
-
-  - model_name: "qwen3-vl-235b"
-    litellm_params:
-      model: "openai/qwen3-vl-235b"
-      api_base: "http://172.18.0.1:8000/v1"
-      api_key: "2203f577688173dad689c6f65884778c"
-      stream_timeout: 600
-      timeout: 600
-      supports_function_calling: true
-      supports_vision: true
 
 # Router settings
 router_settings:
@@ -190,7 +38,7 @@ litellm_settings:
   enable_message_redaction: false
   force_ipv4: true
 
-  # Redis caching for LLM responses
+  # Redis caching for LLM responses (optional)
   cache: true
   cache_params:
     type: "redis"
@@ -212,7 +60,3 @@ general_settings:
   json_logs: true
   store_model_in_db: true
   health_check_interval: 30
-  disable_end_user_cost_tracking: false
-  batch_spend_updates: true
-  spend_update_interval: 60
-  disable_retry_on_max_parallel_request_limit_error: false

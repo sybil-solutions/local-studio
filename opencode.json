@@ -1,6 +1,0 @@
-{
-  "plugin": [
-    "@0xsero/open-queue"
-  ],
-  "$schema": "https://opencode.ai/config.json"
-}

@@ -3,8 +3,9 @@
 # Run via: nohup ./scripts/watchdog.sh &
 
 LOG="/tmp/vllm-studio-watchdog.log"
-CONTROLLER_PORT=8080
+CONTROLLER_PORT=${VLLM_STUDIO_PORT:-8080}
 CHECK_INTERVAL=30
+PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 
 log() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" >> "$LOG"
@@ -15,8 +16,8 @@ check_controller() {
 }
 
 start_controller() {
-    cd /home/ser/workspace/projects/lmvllm
-    nohup /home/ser/.pyenv/versions/3.11.9/bin/python -m controller.cli --port $CONTROLLER_PORT >> /tmp/controller.log 2>&1 &
+    cd "$PROJECT_DIR"
+    nohup python -m controller.cli --port $CONTROLLER_PORT >> /tmp/controller.log 2>&1 &
     sleep 5
 }
 
@@ -26,15 +27,8 @@ check_frontend() {
 
 restart_frontend() {
     docker start vllm-studio-frontend 2>/dev/null || {
-        docker run -d \
-            --name vllm-studio-frontend \
-            --network host \
-            -e BACKEND_URL=http://localhost:8080 \
-            -e LITELLM_URL=http://localhost:4100 \
-            -e LITELLM_MASTER_KEY=sk-master \
-            -e NEXT_PUBLIC_LITELLM_URL=https://homelabai.org \
-            --restart unless-stopped \
-            vllm-studio-frontend:local
+        cd "$PROJECT_DIR"
+        docker-compose up -d frontend
     }
 }
 

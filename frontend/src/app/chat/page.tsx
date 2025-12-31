@@ -19,6 +19,13 @@ import {
   ChevronDown,
   Search,
   Layers,
+  PanelRightOpen,
+  PanelRightClose,
+  ExternalLink,
+  Loader2,
+  ChevronRight,
+  Brain,
+  Wrench,
 } from 'lucide-react';
 import Link from 'next/link';
 import api from '@/lib/api';
@@ -135,6 +142,7 @@ export default function ChatPage() {
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
+  const [toolPanelOpen, setToolPanelOpen] = useState(true); // Right panel for tool activity
 
   // MCP & Artifacts state
   const [mcpEnabled, setMcpEnabled] = useState(false);
@@ -183,6 +191,14 @@ export default function ChatPage() {
   // Refs
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
+
+  // Computed: Check if there's any tool activity to show in the panel
+  const hasToolActivity = messages.some(m => m.toolCalls && m.toolCalls.length > 0) || executingTools.size > 0 || researchProgress !== null;
+
+  // Get all tool calls from messages for the panel
+  const allToolCalls = messages.flatMap(m =>
+    (m.toolCalls || []).map(tc => ({ ...tc, messageId: m.id, model: m.model }))
+  );
 
   // State for recent chats dropdown on mobile
   const [recentChatsOpen, setRecentChatsOpen] = useState(false);
@@ -1720,118 +1736,119 @@ Start your research immediately when you receive a question. Do not ask for clar
           </div>
         </div>
 
-        {/* Messages */}
-        <div className="flex-1 overflow-y-auto overflow-x-hidden">
-          <div className="pb-0">
-          {messages.length === 0 ? (
-            <div className="flex items-center justify-center min-h-[60vh]">
-              <div className="text-center px-4 py-8 animate-fade-in">
-                <div className="w-12 h-12 rounded-2xl bg-[var(--accent)] flex items-center justify-center mx-auto mb-4">
-                  <Sparkles className="h-6 w-6 text-[var(--muted-foreground)]" />
+        {/* Messages + Tool Panel Container */}
+        <div className="flex-1 flex overflow-hidden">
+          {/* Messages Area */}
+          <div className={`flex-1 overflow-y-auto overflow-x-hidden ${!isMobile && toolPanelOpen && hasToolActivity ? 'lg:mr-80' : ''}`}>
+            <div className="pb-0">
+            {messages.length === 0 ? (
+              <div className="flex items-center justify-center min-h-[60vh]">
+                <div className="text-center px-4 py-8 animate-fade-in">
+                  <div className="w-10 h-10 rounded-full bg-[#363432] flex items-center justify-center mx-auto mb-4">
+                    <Sparkles className="h-5 w-5 text-[#9a9088]" />
+                  </div>
+                  <h2 className="text-base font-medium text-[#f0ebe3] mb-1">Start a conversation</h2>
+                  <p className="text-sm text-[#9a9088] max-w-xs mx-auto">
+                    {selectedModel || runningModel
+                      ? 'Send a message to begin.'
+                      : 'Select a model in Settings.'}
+                  </p>
                 </div>
-                <h2 className="text-lg font-medium mb-2">Start a conversation</h2>
-                <p className="text-sm text-[var(--muted)] max-w-xs mx-auto">
-                  {selectedModel || runningModel
-                    ? 'Send a message to begin chatting with your model.'
-                    : 'Select a model in Settings to get started.'}
-                </p>
               </div>
-            </div>
-          ) : (
-            <div className="max-w-3xl mx-auto py-2 md:py-4 px-1.5 md:px-4 space-y-1 md:space-y-2">
-                {messages.map((message, index) => (
-                  <div
-                    key={message.id}
-                    className={`px-2 md:px-4 py-2 md:py-3 rounded-lg md:rounded-xl animate-slide-up ${
-                      message.role === 'assistant' ? 'bg-[var(--card)]' : ''
-                    }`}
-                  >
-                    <div className="flex gap-2 md:gap-3">
-                      <div
-                        className={`w-6 h-6 md:w-7 md:h-7 rounded-md md:rounded-lg flex items-center justify-center flex-shrink-0 ${
-                          message.role === 'user'
-                            ? 'bg-[var(--accent)]'
-                            : 'bg-[var(--success)]/15'
-                        }`}
-                      >
-                        {message.role === 'user' ? (
-                          <User className="h-3.5 w-3.5 md:h-3.5 md:w-3.5" />
-                        ) : (
-                          <Sparkles
-                            className={`h-3.5 w-3.5 md:h-3.5 md:w-3.5 text-[var(--success)] ${
-                              message.isStreaming ? 'animate-pulse-soft' : ''
-                            }`}
-                          />
-                        )}
-                      </div>
-                      <div className="flex-1 min-w-0 overflow-hidden">
-                        <div className="flex items-center gap-2 mb-1.5">
-                          <span className="text-xs font-medium text-[var(--muted-foreground)]">
-                            {message.role === 'user' ? 'You' : (message.model?.split('/').pop() || selectedModel?.split('/').pop() || modelName || 'Assistant')}
-                          </span>
-                          {(message.total_tokens || message.prompt_tokens || message.completion_tokens) && (
-                            <span className="text-[10px] text-[var(--muted)] font-mono">
-                              {(() => {
-                                const reqPrompt = message.request_total_input_tokens ?? message.request_prompt_tokens;
-                                const reqComp = message.request_completion_tokens;
-                                if (message.role === 'assistant' && (reqPrompt || reqComp)) {
-                                  const total = (reqPrompt || 0) + (reqComp || 0);
-                                  return `${total.toLocaleString()} tok`;
-                                }
-                                const total = (message.total_tokens ?? (message.prompt_tokens || 0) + (message.completion_tokens || 0)) || 0;
-                                return `${total.toLocaleString()} tok`;
-                              })()}
-                              {message.estimated_cost_usd != null ? ` • $${message.estimated_cost_usd.toFixed(4)}` : ''}
-                            </span>
-                          )}
-                          {currentSessionId && (
-                            <button
-                              onClick={() => forkAtMessage(message.id)}
-                              className="p-0.5 rounded hover:bg-[var(--accent)] transition-colors"
-                              title="Fork chat from here"
-                            >
-                              <GitBranch className="h-3 w-3 text-[var(--muted)]" />
-                            </button>
-                          )}
-                          <button
-                            onClick={() => copyToClipboard(message.content, index)}
-                            className="p-0.5 rounded hover:bg-[var(--accent)] transition-colors"
-                          >
-                            {copiedIndex === index ? (
-                              <Check className="h-3 w-3 text-[var(--success)]" />
-                            ) : (
-                              <Copy className="h-3 w-3 text-[var(--muted)]" />
-                            )}
-                          </button>
-                        </div>
-
-                        {/* Show images for user messages */}
-                        {message.images && message.images.length > 0 && (
-                          <div className="flex flex-wrap gap-2 mb-2">
-                            {message.images.map((base64, i) => (
-                              <img
-                                key={i}
-                                src={`data:image/jpeg;base64,${base64}`}
-                                alt={`Uploaded image ${i + 1}`}
-                                className="max-w-[150px] max-h-[150px] rounded border border-[var(--border)]"
-                              />
-                            ))}
+            ) : (
+              <div className="max-w-3xl mx-auto py-4 md:py-6 px-3 md:px-6 space-y-6">
+                  {messages.map((message, index) => (
+                    <div key={message.id} className="animate-slide-up">
+                      {/* User Message - Clean, right-aligned feel */}
+                      {message.role === 'user' ? (
+                        <div className="flex gap-3">
+                          <div className="w-6 h-6 rounded-full bg-[#363432] flex items-center justify-center flex-shrink-0 mt-0.5">
+                            <User className="h-3 w-3 text-[#9a9088]" />
                           </div>
-                        )}
-
-                        <div className="text-sm overflow-hidden break-words">
-                          {message.role === 'user' ? (
-                            <p className="whitespace-pre-wrap break-words">{message.content}</p>
-                          ) : (
-                            <>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className="text-xs font-medium text-[#9a9088]">You</span>
+                              <button
+                                onClick={() => copyToClipboard(message.content, index)}
+                                className="p-0.5 rounded hover:bg-[#363432] transition-colors opacity-0 group-hover:opacity-100"
+                              >
+                                {copiedIndex === index ? (
+                                  <Check className="h-3 w-3 text-[#7d9a6a]" />
+                                ) : (
+                                  <Copy className="h-3 w-3 text-[#9a9088]" />
+                                )}
+                              </button>
+                            </div>
+                            {/* User images */}
+                            {message.images && message.images.length > 0 && (
+                              <div className="flex flex-wrap gap-2 mb-2">
+                                {message.images.map((base64, i) => (
+                                  <img
+                                    key={i}
+                                    src={`data:image/jpeg;base64,${base64}`}
+                                    alt={`Uploaded image ${i + 1}`}
+                                    className="max-w-[120px] max-h-[120px] rounded-lg border border-[#363432]"
+                                  />
+                                ))}
+                              </div>
+                            )}
+                            <p className="text-sm text-[#f0ebe3] whitespace-pre-wrap break-words leading-relaxed">{message.content}</p>
+                          </div>
+                        </div>
+                      ) : (
+                        /* Assistant Message - Clean with subtle separator */
+                        <div className="flex gap-3">
+                          <div className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5 ${message.isStreaming ? 'bg-[#7d9a6a]/20' : 'bg-[#1e1e1e]'}`}>
+                            <Sparkles className={`h-3 w-3 ${message.isStreaming ? 'text-[#7d9a6a] animate-pulse' : 'text-[#8b7355]'}`} />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className="text-xs font-medium text-[#8b7355]">
+                                {message.model?.split('/').pop() || selectedModel?.split('/').pop() || modelName || 'Assistant'}
+                              </span>
+                              {(message.total_tokens || message.prompt_tokens || message.completion_tokens) && (
+                                <span className="text-[10px] text-[#9a9088]/60 font-mono">
+                                  {(() => {
+                                    const reqPrompt = message.request_total_input_tokens ?? message.request_prompt_tokens;
+                                    const reqComp = message.request_completion_tokens;
+                                    if (reqPrompt || reqComp) {
+                                      const total = (reqPrompt || 0) + (reqComp || 0);
+                                      return `${total.toLocaleString()} tok`;
+                                    }
+                                    const total = (message.total_tokens ?? (message.prompt_tokens || 0) + (message.completion_tokens || 0)) || 0;
+                                    return `${total.toLocaleString()} tok`;
+                                  })()}
+                                </span>
+                              )}
+                              {currentSessionId && (
+                                <button
+                                  onClick={() => forkAtMessage(message.id)}
+                                  className="p-0.5 rounded hover:bg-[#363432] transition-colors"
+                                  title="Fork"
+                                >
+                                  <GitBranch className="h-3 w-3 text-[#9a9088]" />
+                                </button>
+                              )}
+                              <button
+                                onClick={() => copyToClipboard(message.content, index)}
+                                className="p-0.5 rounded hover:bg-[#363432] transition-colors"
+                              >
+                                {copiedIndex === index ? (
+                                  <Check className="h-3 w-3 text-[#7d9a6a]" />
+                                ) : (
+                                  <Copy className="h-3 w-3 text-[#9a9088]" />
+                                )}
+                              </button>
+                            </div>
+                            <div className="text-sm text-[#f0ebe3] overflow-hidden break-words leading-relaxed">
                               <MessageRenderer
                                 content={message.content}
                                 isStreaming={message.isStreaming}
                                 artifactsEnabled={artifactsEnabled}
                               />
-                              {/* Tool Calls Display */}
-                              {message.toolCalls && message.toolCalls.length > 0 && (
-                                <div className="mt-2 space-y-1">
+                              {/* Tool Calls - Only show inline on mobile */}
+                              {isMobile && message.toolCalls && message.toolCalls.length > 0 && (
+                                <div className="mt-3 space-y-2">
                                   {message.toolCalls.map((toolCall) => (
                                     <ToolCallCard
                                       key={toolCall.id}
@@ -1842,42 +1859,39 @@ Start your research immediately when you receive a question. Do not ask for clar
                                   ))}
                                 </div>
                               )}
-                            </>
-                          )}
+                            </div>
+                          </div>
                         </div>
-                      </div>
+                      )}
                     </div>
-                  </div>
-                ))}
+                  ))}
 
                 {isLoading &&
                   messages[messages.length - 1]?.role === 'assistant' &&
                   messages[messages.length - 1]?.content === '' && (
-                    <div className="px-3 md:px-4 py-3 rounded-xl bg-[var(--card)]">
-                      <div className="flex gap-3">
-                        <div className="w-7 h-7 rounded-lg bg-[var(--success)]/15 flex items-center justify-center">
-                          <Sparkles className="h-3.5 w-3.5 text-[var(--success)] animate-pulse-soft" />
-                        </div>
-                        <div className="flex items-center pt-1">
-                          <div className="flex gap-1.5">
-                            <span className="w-2 h-2 rounded-full bg-[var(--muted)] animate-pulse-soft" />
-                            <span className="w-2 h-2 rounded-full bg-[var(--muted)] animate-pulse-soft" style={{ animationDelay: '150ms' }} />
-                            <span className="w-2 h-2 rounded-full bg-[var(--muted)] animate-pulse-soft" style={{ animationDelay: '300ms' }} />
-                          </div>
+                    <div className="flex gap-3 animate-slide-up">
+                      <div className="w-6 h-6 rounded-full bg-[#7d9a6a]/20 flex items-center justify-center flex-shrink-0">
+                        <Sparkles className="h-3 w-3 text-[#7d9a6a] animate-pulse" />
+                      </div>
+                      <div className="flex items-center pt-1.5">
+                        <div className="flex gap-1">
+                          <span className="w-1.5 h-1.5 rounded-full bg-[#8b7355] animate-pulse" />
+                          <span className="w-1.5 h-1.5 rounded-full bg-[#8b7355] animate-pulse" style={{ animationDelay: '150ms' }} />
+                          <span className="w-1.5 h-1.5 rounded-full bg-[#8b7355] animate-pulse" style={{ animationDelay: '300ms' }} />
                         </div>
                       </div>
                     </div>
                   )}
 
                 {error && (
-                  <div className="mx-2 md:mx-4 my-2 px-3 py-2 bg-[var(--error)]/10 border border-[var(--error)]/20 rounded text-xs text-[var(--error)] animate-slide-up">
+                  <div className="px-3 py-2 bg-[#c97a6b]/10 border border-[#c97a6b]/20 rounded-lg text-xs text-[#c97a6b] animate-slide-up">
                     {error}
                   </div>
                 )}
 
-                {/* Research Progress Indicator */}
-                {researchProgress && (
-                  <div className="mx-2 md:mx-4 my-2 animate-slide-up">
+                {/* Research Progress Indicator - Only on mobile, desktop shows in panel */}
+                {isMobile && researchProgress && (
+                  <div className="animate-slide-up">
                     <ResearchProgressIndicator
                       progress={researchProgress}
                       onCancel={() => setResearchProgress(null)}
@@ -1885,9 +1899,9 @@ Start your research immediately when you receive a question. Do not ask for clar
                   </div>
                 )}
 
-                {/* Research Sources Citations */}
-                {researchSources.length > 0 && !researchProgress && (
-                  <div className="mx-2 md:mx-4 my-2 animate-slide-up">
+                {/* Research Sources Citations - Only on mobile */}
+                {isMobile && researchSources.length > 0 && !researchProgress && (
+                  <div className="animate-slide-up">
                     <CitationsPanel sources={researchSources} />
                   </div>
                 )}
@@ -1895,7 +1909,145 @@ Start your research immediately when you receive a question. Do not ask for clar
                 <div ref={messagesEndRef} />
               </div>
             )}
+            </div>
           </div>
+
+          {/* Tool Activity Panel - Desktop Only */}
+          {!isMobile && hasToolActivity && toolPanelOpen && (
+            <div className="fixed right-0 top-0 bottom-0 w-80 bg-[#1b1b1b] border-l border-[#363432] flex flex-col z-30">
+              {/* Panel Header */}
+              <div className="flex items-center justify-between px-4 py-3 border-b border-[#363432]">
+                <div className="flex items-center gap-2">
+                  <Brain className="h-4 w-4 text-[#8b7355]" />
+                  <span className="text-sm font-medium text-[#f0ebe3]">Activity</span>
+                  {executingTools.size > 0 && (
+                    <span className="flex items-center gap-1 px-1.5 py-0.5 bg-[#7d9a6a]/20 rounded text-[10px] text-[#7d9a6a]">
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                      {executingTools.size}
+                    </span>
+                  )}
+                </div>
+                <button
+                  onClick={() => setToolPanelOpen(false)}
+                  className="p-1 rounded hover:bg-[#363432] transition-colors"
+                >
+                  <PanelRightClose className="h-4 w-4 text-[#9a9088]" />
+                </button>
+              </div>
+
+              {/* Panel Content */}
+              <div className="flex-1 overflow-y-auto p-3 space-y-3">
+                {/* Research Progress */}
+                {researchProgress && (
+                  <div className="p-3 bg-[#1e1e1e] rounded-lg border border-[#363432]">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Brain className="h-3.5 w-3.5 text-blue-400" />
+                      <span className="text-xs font-medium text-[#f0ebe3]">Research in Progress</span>
+                    </div>
+                    <div className="text-xs text-[#9a9088]">{researchProgress.message || 'Searching...'}</div>
+                    {researchProgress.totalSteps > 0 && (
+                      <div className="mt-2 h-1 bg-[#363432] rounded-full overflow-hidden">
+                        <div className="h-full bg-blue-500 rounded-full transition-all" style={{ width: `${(researchProgress.currentStep / researchProgress.totalSteps) * 100}%` }} />
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Tool Calls */}
+                {allToolCalls.length > 0 && (
+                  <div className="space-y-2">
+                    <div className="text-[10px] uppercase tracking-wider text-[#9a9088] px-1">Tool Calls ({allToolCalls.length})</div>
+                    {allToolCalls.map((tc) => {
+                      const result = toolResultsMap.get(tc.id);
+                      const isExecuting = executingTools.has(tc.id);
+                      let args: Record<string, unknown> = {};
+                      try { args = JSON.parse(tc.function.arguments || '{}'); } catch {}
+
+                      return (
+                        <div key={tc.id} className="p-2.5 bg-[#1e1e1e] rounded-lg border border-[#363432]">
+                          <div className="flex items-start gap-2">
+                            <div className={`w-5 h-5 rounded flex items-center justify-center flex-shrink-0 ${
+                              isExecuting ? 'bg-[#c9a66b]/20' : result ? 'bg-[#7d9a6a]/20' : 'bg-[#363432]'
+                            }`}>
+                              {isExecuting ? (
+                                <Loader2 className="h-3 w-3 text-[#c9a66b] animate-spin" />
+                              ) : result ? (
+                                <Check className="h-3 w-3 text-[#7d9a6a]" />
+                              ) : (
+                                <Wrench className="h-3 w-3 text-[#9a9088]" />
+                              )}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="text-xs font-medium text-[#f0ebe3] truncate">{tc.function.name}</div>
+                              {/* Show key args */}
+                              {Object.keys(args).length > 0 && (
+                                <div className="mt-1 space-y-0.5">
+                                  {Object.entries(args).slice(0, 3).map(([k, v]) => (
+                                    <div key={k} className="text-[10px] text-[#9a9088] truncate">
+                                      <span className="text-[#8b7355]">{k}:</span> {String(v).slice(0, 50)}{String(v).length > 50 ? '...' : ''}
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                              {/* Show result summary */}
+                              {result && (
+                                <div className="mt-2 pt-2 border-t border-[#363432]/50">
+                                  <div className="text-[10px] text-[#7d9a6a] mb-1">Result</div>
+                                  <div className="text-[10px] text-[#9a9088] line-clamp-3 font-mono">
+                                    {result.content.slice(0, 200)}{result.content.length > 200 ? '...' : ''}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* Research Sources */}
+                {researchSources.length > 0 && (
+                  <div className="space-y-2">
+                    <div className="text-[10px] uppercase tracking-wider text-[#9a9088] px-1">Sources ({researchSources.length})</div>
+                    {researchSources.map((source, i) => (
+                      <a
+                        key={i}
+                        href={source.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="block p-2.5 bg-[#1e1e1e] rounded-lg border border-[#363432] hover:border-[#8b7355]/50 transition-colors"
+                      >
+                        <div className="flex items-start gap-2">
+                          <ExternalLink className="h-3 w-3 text-[#8b7355] flex-shrink-0 mt-0.5" />
+                          <div className="min-w-0">
+                            <div className="text-xs font-medium text-[#f0ebe3] line-clamp-2">{source.title}</div>
+                            <div className="text-[10px] text-[#9a9088] truncate mt-0.5">{source.url}</div>
+                          </div>
+                        </div>
+                      </a>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Panel Toggle Button - When panel is closed */}
+          {!isMobile && hasToolActivity && !toolPanelOpen && (
+            <button
+              onClick={() => setToolPanelOpen(true)}
+              className="fixed right-4 bottom-24 p-2.5 bg-[#1e1e1e] border border-[#363432] rounded-lg shadow-lg hover:bg-[#363432] transition-colors z-30"
+              title="Show activity panel"
+            >
+              <PanelRightOpen className="h-4 w-4 text-[#8b7355]" />
+              {executingTools.size > 0 && (
+                <span className="absolute -top-1 -right-1 w-4 h-4 bg-[#7d9a6a] rounded-full flex items-center justify-center text-[10px] text-white font-medium">
+                  {executingTools.size}
+                </span>
+              )}
+            </button>
+          )}
         </div>
 
         {/* Input Tool Belt - sticky at bottom */}

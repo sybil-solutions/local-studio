@@ -25,6 +25,8 @@ services:
     environment:
       - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY:-sk-master}
       - DATABASE_URL=postgresql://postgres:postgres@vllm-studio-postgres:5432/litellm
+      - INFERENCE_API_BASE=${INFERENCE_API_BASE:-http://host.docker.internal:8000/v1}
+      - INFERENCE_API_KEY=${INFERENCE_API_KEY:-sk-placeholder}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     command: ["--config", "/app/config.yaml", "--port", "4000"]
@@ -32,7 +34,7 @@ services:
     depends_on:
       - postgres
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS -H \"Authorization: Bearer ${LITELLM_MASTER_KEY:-sk-master}\" http://localhost:4000/health >/dev/null"]
+      test: ["CMD-SHELL", "curl -fsS -H 'Authorization: Bearer ${LITELLM_MASTER_KEY:-sk-master}' http://localhost:4000/health >/dev/null"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -92,9 +94,8 @@ services:
       - prometheus
       - redis
 
-  # Frontend (uses host network to reach controller on localhost:8080)
+  # Frontend - Next.js web UI
   frontend:
-    image: ghcr.io/0xsero/vllmstudio/frontend:latest
     build:
       context: ./frontend
       args:
@@ -102,11 +103,9 @@ services:
     container_name: vllm-studio-frontend
     network_mode: host
     environment:
-      # Backend URL for server-side API routes (localhost via host network)
       - BACKEND_URL=http://localhost:8080
       - LITELLM_URL=http://localhost:4100
       - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY:-sk-master}
       - API_KEY=${VLLM_STUDIO_API_KEY:-}
-      # LiteLLM for chat (client-side, via tunnel)
-      - NEXT_PUBLIC_LITELLM_URL=${NEXT_PUBLIC_LITELLM_URL:-https://homelabai.org}
+      - NEXT_PUBLIC_LITELLM_URL=${NEXT_PUBLIC_LITELLM_URL:-http://localhost:4100}
     restart: unless-stopped

@@ -393,30 +393,30 @@ export function ToolBelt({
               <button
                 onClick={onMcpToggle}
                 disabled={disabled}
-                className={`flex items-center gap-1 px-2.5 py-1.5 md:px-2 md:py-1 rounded transition-colors disabled:opacity-50 ${
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 md:px-2.5 md:py-1 rounded-lg transition-all disabled:opacity-50 ${
                   mcpEnabled
-                    ? 'bg-blue-500/20 text-blue-500'
-                    : 'hover:bg-[var(--accent)]'
+                    ? 'bg-blue-500/15 text-blue-400 border border-blue-500/30 shadow-sm shadow-blue-500/10'
+                    : 'hover:bg-[var(--accent)] text-[var(--muted)]'
                 }`}
                 title={mcpEnabled ? 'Disable web search & tools' : 'Enable web search & tools'}
               >
-                <Globe className={`h-4 w-4 md:h-3.5 md:w-3.5 ${mcpEnabled ? '' : 'text-[var(--muted)]'}`} />
-                <span className={`text-xs ${mcpEnabled ? '' : 'text-[var(--muted)]'} hidden sm:inline`}>Tools</span>
+                <Globe className="h-4 w-4 md:h-3.5 md:w-3.5" />
+                <span className="text-xs font-medium hidden sm:inline">Tools</span>
               </button>
 
               {/* Artifacts/Code Execution Toggle */}
               <button
                 onClick={onArtifactsToggle}
                 disabled={disabled}
-                className={`flex items-center gap-1 px-2.5 py-1.5 md:px-2 md:py-1 rounded transition-colors disabled:opacity-50 ${
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 md:px-2.5 md:py-1 rounded-lg transition-all disabled:opacity-50 ${
                   artifactsEnabled
-                    ? 'bg-purple-500/20 text-purple-500'
-                    : 'hover:bg-[var(--accent)]'
+                    ? 'bg-purple-500/15 text-purple-400 border border-purple-500/30 shadow-sm shadow-purple-500/10'
+                    : 'hover:bg-[var(--accent)] text-[var(--muted)]'
                 }`}
                 title={artifactsEnabled ? 'Disable code preview' : 'Enable code preview & sandbox'}
               >
-                <Code className={`h-4 w-4 md:h-3.5 md:w-3.5 ${artifactsEnabled ? '' : 'text-[var(--muted)]'}`} />
-                <span className={`text-xs ${artifactsEnabled ? '' : 'text-[var(--muted)]'} hidden sm:inline`}>Preview</span>
+                <Code className="h-4 w-4 md:h-3.5 md:w-3.5" />
+                <span className="text-xs font-medium hidden sm:inline">Preview</span>
               </button>
 
               {/* Deep Research Toggle */}
@@ -424,15 +424,15 @@ export function ToolBelt({
                 <button
                   onClick={onDeepResearchToggle}
                   disabled={disabled}
-                  className={`flex items-center gap-1 px-2.5 py-1.5 md:px-2 md:py-1 rounded transition-colors disabled:opacity-50 ${
+                  className={`flex items-center gap-1.5 px-2.5 py-1.5 md:px-2.5 md:py-1 rounded-lg transition-all disabled:opacity-50 ${
                     deepResearchEnabled
-                      ? 'bg-gradient-to-r from-blue-500/20 to-purple-500/20 text-blue-400'
-                      : 'hover:bg-[var(--accent)]'
+                      ? 'bg-gradient-to-r from-emerald-500/15 to-blue-500/15 text-emerald-400 border border-emerald-500/30 shadow-sm shadow-emerald-500/10'
+                      : 'hover:bg-[var(--accent)] text-[var(--muted)]'
                   }`}
                   title={deepResearchEnabled ? 'Deep Research enabled - Multi-step web research' : 'Enable Deep Research mode'}
                 >
-                  <Brain className={`h-4 w-4 md:h-3.5 md:w-3.5 ${deepResearchEnabled ? '' : 'text-[var(--muted)]'}`} />
-                  <span className={`text-xs ${deepResearchEnabled ? '' : 'text-[var(--muted)]'} hidden sm:inline`}>Research</span>
+                  <Brain className="h-4 w-4 md:h-3.5 md:w-3.5" />
+                  <span className="text-xs font-medium hidden sm:inline">Research</span>
                 </button>
               )}
 
@@ -443,26 +443,26 @@ export function ToolBelt({
               <button
                 onClick={onOpenMcpSettings}
                 disabled={disabled}
-                className="flex items-center gap-1 px-2 py-1 rounded hover:bg-[var(--accent)] transition-colors disabled:opacity-50 hidden sm:inline-flex"
+                className="flex items-center gap-1.5 px-2 py-1 rounded-lg hover:bg-[var(--accent)] transition-colors disabled:opacity-50 hidden sm:inline-flex text-[var(--muted)]"
                 title="Configure MCP servers (web search, fetch, etc.)"
               >
-                <Settings className="h-3.5 w-3.5 text-[var(--muted)]" />
-                <span className="text-xs text-[var(--muted)]">MCP</span>
+                <Settings className="h-3.5 w-3.5" />
+                <span className="text-xs">MCP</span>
               </button>
 
               {/* Chat Settings (System Prompt) */}
               <button
                 onClick={onOpenChatSettings}
                 disabled={disabled}
-                className={`flex items-center gap-1 px-2 py-1 rounded transition-colors disabled:opacity-50 ${
+                className={`flex items-center gap-1.5 px-2 py-1 rounded-lg transition-all disabled:opacity-50 ${
                   hasSystemPrompt
-                    ? 'bg-amber-500/20 text-amber-500'
-                    : 'hover:bg-[var(--accent)]'
+                    ? 'bg-amber-500/15 text-amber-400 border border-amber-500/30'
+                    : 'hover:bg-[var(--accent)] text-[var(--muted)]'
                 }`}
                 title={hasSystemPrompt ? 'System prompt active - Click to edit' : 'Configure system prompt'}
               >
-                <SlidersHorizontal className={`h-3.5 w-3.5 ${hasSystemPrompt ? '' : 'text-[var(--muted)]'}`} />
-                <span className={`text-xs ${hasSystemPrompt ? '' : 'text-[var(--muted)]'} hidden sm:inline`}>System</span>
+                <SlidersHorizontal className="h-3.5 w-3.5" />
+                <span className="text-xs font-medium hidden sm:inline">System</span>
               </button>
             </div>
 

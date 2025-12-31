@@ -18,7 +18,7 @@ pip install httpx pyyaml
 ### Run Full Validation
 
 ```bash
-cd /home/ser/workspace/projects/lmvllm
+cd /path/to/vllm-studio
 
 # Run all tests (including restart)
 python tests/test_model_validation.py

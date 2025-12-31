@@ -1,7 +1,8 @@
-# Environment
+# Environment files
 .env
 .env.*
 *.local
+!.env.example
 
 # Python
 __pycache__/
@@ -12,10 +13,13 @@ venv/
 *.egg-info/
 dist/
 build/
+.pytest_cache/
+.coverage
 
-# Data (local)
+# Data directories
 data/
 *.db
+*.sqlite
 
 # Logs
 *.log
@@ -24,9 +28,10 @@ logs/
 # Recipes (user-specific)
 recipes/
 
-# Node
+# Node.js
 node_modules/
 .next/
+.turbo/
 
 # IDE
 .idea/
@@ -36,7 +41,20 @@ node_modules/
 
 # OS
 .DS_Store
+Thumbs.db
 
-# Test
-.pytest_cache/
-.coverage
+# Build artifacts
+*.tar.gz
+*.zip
+
+# Local config
+.claude/
+.opencode/
+.osgrep/
+opencode.json
+
+# MCP servers config (contains API keys)
+data/mcp_servers.json
+
+# Local scripts (user-specific)
+scripts/*.local.sh

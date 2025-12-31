@@ -103,7 +103,7 @@ def find_inference_process(port: int) -> Optional[ProcessInfo]:
                     import httpx
                     import yaml
                     # Try to get API key from TabbyAPI config
-                    tabby_dir = "/home/ser/workspace/projects/tabbyAPI"
+                    tabby_dir = settings.tabby_api_dir or "/opt/tabbyAPI"
                     api_key = None
                     try:
                         with open(f"{tabby_dir}/api_tokens.yml") as f:
@@ -118,7 +118,7 @@ def find_inference_process(port: int) -> Optional[ProcessInfo]:
                         data = r.json().get("data", [])
                         if data:
                             served_model_name = data[0].get("id")
-                            model_path = f"/mnt/llm_models/{served_model_name}"
+                            model_path = str(settings.models_dir / served_model_name)
 
                     # Fallback: read from config file
                     if not served_model_name:
@@ -128,7 +128,7 @@ def find_inference_process(port: int) -> Optional[ProcessInfo]:
                                 with open(f"{tabby_dir}/{config_flag}") as f:
                                     cfg = yaml.safe_load(f)
                                     served_model_name = cfg.get("model", {}).get("model_name")
-                                    model_path = f"/mnt/llm_models/{served_model_name}"
+                                    model_path = str(settings.models_dir / served_model_name)
                             except Exception:
                                 pass
                 except Exception:

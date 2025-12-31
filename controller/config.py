@@ -25,12 +25,18 @@ class Settings(BaseSettings):
     db_path: Path = Field(default=Path("./data/controller.db"))
 
     # Models
-    models_dir: Path = Field(default=Path("/mnt/llm_models"))
+    models_dir: Path = Field(default=Path("/models"), description="Directory containing model weights")
 
-    # SGLang
+    # SGLang (optional - only needed if using SGLang backend)
     sglang_python: Optional[str] = Field(
-        default="/opt/venvs/frozen/sglang-prod/bin/python",
-        description="Python path for SGLang",
+        default=None,
+        description="Python path for SGLang (e.g., /path/to/sglang/venv/bin/python)",
+    )
+
+    # TabbyAPI (optional - only needed if using TabbyAPI/ExLlamaV3 backend)
+    tabby_api_dir: Optional[str] = Field(
+        default=None,
+        description="TabbyAPI installation directory",
     )
 
     model_config = {
