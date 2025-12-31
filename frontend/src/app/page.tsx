@@ -277,6 +277,25 @@ export default function Dashboard() {
                       );
                     })}
                   </tbody>
+                  {gpus.length > 0 && (
+                    <tfoot>
+                      <tr className="border-t border-[#363432] text-xs text-[#9a9088]">
+                        <td className="py-2.5 px-4 font-medium">Total</td>
+                        <td className="py-2.5 px-4">
+                          {Math.round(gpus.reduce((sum, g) => sum + (g.utilization_pct ?? g.utilization ?? 0), 0) / gpus.length)}% avg
+                        </td>
+                        <td className="py-2.5 px-4">
+                          {totalMem.toFixed(1)}/{totalMemMax.toFixed(0)}G
+                        </td>
+                        <td className="py-2.5 px-4">
+                          {Math.round(gpus.reduce((sum, g) => sum + (g.temp_c ?? g.temperature ?? 0), 0) / gpus.length)}° avg
+                        </td>
+                        <td className="py-2.5 px-4 font-medium text-[#f0ebe3]">
+                          {Math.round(totalPower)}W
+                        </td>
+                      </tr>
+                    </tfoot>
+                  )}
                 </table>
               </div>
             </div>
