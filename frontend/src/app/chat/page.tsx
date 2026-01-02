@@ -188,6 +188,14 @@ export default function ChatPage() {
   const [exportOpen, setExportOpen] = useState(false);
   const usageRefreshTimerRef = useRef<number | null>(null);
 
+  // Context management state - tracks token usage for compaction
+  const [contextUsage, setContextUsage] = useState<{
+    currentTokens: number;
+    maxTokens: number;
+    compactionCount: number;
+    lastCompactedAt: number | null;
+  }>({ currentTokens: 0, maxTokens: 200000, compactionCount: 0, lastCompactedAt: null });
+
   // Refs
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -656,6 +664,113 @@ Start your research immediately when you receive a question. Do not ask for clar
     return apiMessages;
   };
 
+  // Context compaction - summarizes old tool results when approaching context limit
+  const compactContext = async (
+    messages: OpenAIMessage[],
+    modelId: string,
+    maxContextTokens: number,
+  ): Promise<{ compacted: OpenAIMessage[]; wasCompacted: boolean; tokensBefore: number; tokensAfter: number }> => {
+    // Get current token count
+    let tokensBefore = 0;
+    try {
+      const tok = await api.tokenizeChatCompletions({
+        model: modelId,
+        messages: messages as unknown[],
+        tools: getOpenAITools() as unknown[] | undefined,
+      });
+      tokensBefore = tok.input_tokens ?? 0;
+    } catch {
+      // If tokenization fails, assume we're fine
+      return { compacted: messages, wasCompacted: false, tokensBefore: 0, tokensAfter: 0 };
+    }
+
+    // Check if we need compaction (80% threshold)
+    const threshold = maxContextTokens * 0.8;
+    if (tokensBefore < threshold) {
+      setContextUsage(prev => ({ ...prev, currentTokens: tokensBefore }));
+      return { compacted: messages, wasCompacted: false, tokensBefore, tokensAfter: tokensBefore };
+    }
+
+    console.log(`[Compaction] Context at ${tokensBefore}/${maxContextTokens} tokens (${((tokensBefore/maxContextTokens)*100).toFixed(1)}%), triggering compaction...`);
+
+    // Find tool result messages to summarize (keep recent ones)
+    const systemMsg = messages.find(m => m.role === 'system');
+    const userMessages = messages.filter(m => m.role === 'user');
+    const lastUserMsg = userMessages[userMessages.length - 1];
+
+    // Split messages: keep system, find tool call/result pairs to compact
+    const toolRelatedMsgs: OpenAIMessage[] = [];
+    const recentMsgs: OpenAIMessage[] = [];
+
+    // Keep last 4 messages as recent (they're likely the active conversation)
+    const recentCount = 4;
+    const msgsWithoutSystem = messages.filter(m => m.role !== 'system');
+
+    for (let i = 0; i < msgsWithoutSystem.length; i++) {
+      if (i >= msgsWithoutSystem.length - recentCount) {
+        recentMsgs.push(msgsWithoutSystem[i]);
+      } else {
+        toolRelatedMsgs.push(msgsWithoutSystem[i]);
+      }
+    }
+
+    // Create a summary of the tool interactions
+    const toolSummaries: string[] = [];
+    for (const msg of toolRelatedMsgs) {
+      if (msg.role === 'assistant' && 'tool_calls' in msg && msg.tool_calls) {
+        const calls = msg.tool_calls.map((tc: OpenAIToolCall) => `Called ${tc.function.name}`).join(', ');
+        if (calls) toolSummaries.push(calls);
+      }
+      if (msg.role === 'tool' && 'content' in msg) {
+        const content = String(msg.content || '');
+        // Truncate long tool results to first 500 chars
+        const preview = content.length > 500 ? content.slice(0, 500) + '...' : content;
+        toolSummaries.push(`Result: ${preview}`);
+      }
+      if (msg.role === 'assistant' && !('tool_calls' in msg)) {
+        const content = String(('content' in msg ? msg.content : '') || '');
+        if (content) toolSummaries.push(`Assistant: ${content.slice(0, 200)}...`);
+      }
+    }
+
+    // Create compacted message set
+    const summaryContent = toolSummaries.length > 0
+      ? `[Previous conversation context - ${toolRelatedMsgs.length} messages compacted]\n${toolSummaries.slice(-10).join('\n')}`
+      : '';
+
+    const compacted: OpenAIMessage[] = [];
+    if (systemMsg) compacted.push(systemMsg);
+    if (summaryContent) {
+      compacted.push({ role: 'user', content: `Context from earlier in conversation:\n${summaryContent}` });
+      compacted.push({ role: 'assistant', content: 'Understood, I have context from our earlier conversation.' });
+    }
+    compacted.push(...recentMsgs);
+
+    // Verify compaction worked
+    let tokensAfter = 0;
+    try {
+      const tok = await api.tokenizeChatCompletions({
+        model: modelId,
+        messages: compacted as unknown[],
+        tools: getOpenAITools() as unknown[] | undefined,
+      });
+      tokensAfter = tok.input_tokens ?? 0;
+    } catch {
+      tokensAfter = tokensBefore / 2; // Estimate
+    }
+
+    console.log(`[Compaction] Reduced from ${tokensBefore} to ${tokensAfter} tokens (saved ${tokensBefore - tokensAfter})`);
+
+    setContextUsage(prev => ({
+      ...prev,
+      currentTokens: tokensAfter,
+      compactionCount: prev.compactionCount + 1,
+      lastCompactedAt: Date.now(),
+    }));
+
+    return { compacted, wasCompacted: true, tokensBefore, tokensAfter };
+  };
+
   // Convert MCP tools to OpenAI function format
   const getOpenAITools = () => {
     if (!mcpEnabled || mcpTools.length === 0) return undefined;
@@ -878,7 +993,7 @@ Start your research immediately when you receive a question. Do not ask for clar
     abortControllerRef.current = new AbortController();
 
     // Track conversation for tool calling loop
-    const conversationMessages = buildAPIMessages([...messages, userMessage]);
+    let conversationMessages = buildAPIMessages([...messages, userMessage]);
     let sessionId = currentSessionId;
     const isNewSession = !sessionId;
     let finalAssistantContent = '';
@@ -951,6 +1066,22 @@ Start your research immediately when you receive a question. Do not ask for clar
       while (iteration < MAX_ITERATIONS) {
         iteration++;
 
+        // Check and compact context if needed (80% threshold)
+        const modelInfo = availableModels.find(m => m.id === activeModelId);
+        const maxContextTokens = modelInfo?.max_model_len || 200000;
+        setContextUsage(prev => ({ ...prev, maxTokens: maxContextTokens }));
+
+        const { compacted, wasCompacted, tokensBefore, tokensAfter } = await compactContext(
+          conversationMessages,
+          activeModelId,
+          maxContextTokens
+        );
+        if (wasCompacted) {
+          conversationMessages = compacted as typeof conversationMessages;
+          console.log(`[Tool Loop] Context compacted: ${tokensBefore} → ${tokensAfter} tokens`);
+        }
+
+
         // Estimate prompt tokens for this model call (messages + tools).
         let requestPromptTokens: number | null = null;
         let requestToolsTokens: number | null = null;
@@ -963,6 +1094,8 @@ Start your research immediately when you receive a question. Do not ask for clar
             tools: toolsForTokenize as unknown[] | undefined,
           });
           requestTotalInputTokens = tok.input_tokens ?? null;
+          // Update context usage display
+          if (tok.input_tokens) setContextUsage(prev => ({ ...prev, currentTokens: tok.input_tokens! }));
           requestPromptTokens = tok.breakdown?.messages ?? null;
           requestToolsTokens = tok.breakdown?.tools ?? null;
         } catch (e) {
@@ -1673,6 +1806,28 @@ Start your research immediately when you receive a question. Do not ask for clar
                 </button>
               )}
 
+
+              {/* Context Usage Meter */}
+              {!isMobile && contextUsage.currentTokens > 0 && (
+                <div className="flex items-center gap-2 text-[10px] font-mono text-[var(--muted)]" title={`Context: ${contextUsage.currentTokens.toLocaleString()} / ${contextUsage.maxTokens.toLocaleString()} tokens${contextUsage.compactionCount > 0 ? ` (compacted ${contextUsage.compactionCount}x)` : ""}`}>
+                  <div className="w-16 h-1.5 bg-[var(--border)] rounded-full overflow-hidden">
+                    <div
+                      className={`h-full rounded-full transition-all ${
+                        contextUsage.currentTokens / contextUsage.maxTokens > 0.8
+                          ? "bg-orange-500"
+                          : contextUsage.currentTokens / contextUsage.maxTokens > 0.6
+                          ? "bg-yellow-500"
+                          : "bg-emerald-500"
+                      }`}
+                      style={{ width: `${Math.min(100, (contextUsage.currentTokens / contextUsage.maxTokens) * 100)}%` }}
+                    />
+                  </div>
+                  <span>{Math.round((contextUsage.currentTokens / contextUsage.maxTokens) * 100)}%</span>
+                  {contextUsage.compactionCount > 0 && (
+                    <span className="text-orange-400">⚡{contextUsage.compactionCount}</span>
+                  )}
+                </div>
+              )}
               {/* Toggle buttons (desktop only) */}
               {!isMobile && (
                 <>
