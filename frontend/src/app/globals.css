@@ -86,10 +86,10 @@ body {
   font-family: var(--font-sans), system-ui, sans-serif;
 }
 
-/* Scrollbar */
+/* Scrollbar - Premium thin design */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
 }
 
 ::-webkit-scrollbar-track {
@@ -103,6 +103,35 @@ body {
 
 ::-webkit-scrollbar-thumb:hover {
   background: var(--muted);
+}
+
+/* Thin scrollbar variant */
+.scrollbar-thin::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.scrollbar-thin::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+/* Hide scrollbar but keep functionality */
+.scrollbar-hidden {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.scrollbar-hidden::-webkit-scrollbar {
+  display: none;
+}
+
+/* Smooth scrolling */
+.scroll-smooth {
+  scroll-behavior: smooth;
 }
 
 /* Focus */
@@ -182,6 +211,59 @@ body {
 
 .animate-slide-in-right {
   animation: slide-in-right 0.2s ease-out;
+}
+
+/* Premium spring animation for messages */
+@keyframes message-appear {
+  0% {
+    opacity: 0;
+    transform: translateY(12px) scale(0.98);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.animate-message-appear {
+  animation: message-appear 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Subtle glow for active elements */
+@keyframes subtle-glow {
+  0%, 100% { box-shadow: 0 0 0 rgba(139, 115, 85, 0); }
+  50% { box-shadow: 0 0 20px rgba(139, 115, 85, 0.1); }
+}
+
+.animate-subtle-glow {
+  animation: subtle-glow 3s ease-in-out infinite;
+}
+
+/* Scroll shadow indicators */
+.scroll-shadow-top {
+  box-shadow: inset 0 10px 10px -10px rgba(0, 0, 0, 0.3);
+}
+
+.scroll-shadow-bottom {
+  box-shadow: inset 0 -10px 10px -10px rgba(0, 0, 0, 0.3);
+}
+
+.scroll-shadow-both {
+  box-shadow:
+    inset 0 10px 10px -10px rgba(0, 0, 0, 0.3),
+    inset 0 -10px 10px -10px rgba(0, 0, 0, 0.3);
+}
+
+/* Gradient fade for text overflow */
+.text-fade-right::after {
+  content: '';
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: 40px;
+  background: linear-gradient(to right, transparent, var(--card));
+  pointer-events: none;
 }
 
 /* Prevent zoom on input focus for iOS */
