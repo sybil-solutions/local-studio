@@ -3,7 +3,7 @@
 import { useState, useMemo, useEffect, useRef, useId } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { ChevronDown, ChevronRight, Copy, Check, AlertCircle, Play } from 'lucide-react';
+import { ChevronDown, ChevronRight, Brain, Copy, Check, AlertCircle, Play } from 'lucide-react';
 import mermaid from 'mermaid';
 import { CodeSandbox } from './code-sandbox';
 import { ArtifactRenderer, extractArtifacts, getArtifactType } from './artifact-renderer';
@@ -34,7 +34,8 @@ interface ThinkingBlockProps {
 const BOX_TAGS_PATTERN = /<\|(?:begin|end)_of_box\|>/g;
 const stripBoxTags = (text: string) => (text ? text.replace(BOX_TAGS_PATTERN, '') : text);
 
-function splitThinking(content: string): {
+// Export for use in chat page (thinking panel)
+export function splitThinking(content: string): {
   thinkingContent: string | null;
   mainContent: string;
   isThinkingComplete: boolean;
@@ -115,26 +116,23 @@ function splitThinking(content: string): {
 
 function ThinkingBlock({ content, isStreaming }: ThinkingBlockProps) {
   const [isExpanded, setIsExpanded] = useState(false);
-  const wordCount = content.split(/\s+/).filter(Boolean).length;
+  const wordCount = content.trim().split(/\s+/).filter(Boolean).length;
 
   return (
-    <div className="mb-3">
+    <div className="my-2 md:my-3">
       <button
         onClick={() => setIsExpanded(!isExpanded)}
-        className="group flex items-center gap-2 text-[11px] text-[#9a9088] hover:text-[#c9a66b] transition-colors"
+        className="flex items-center gap-1.5 text-xs text-[#9a9088] hover:text-[#c9a66b] transition-colors"
       >
-        <span className={`transition-transform duration-200 ${isExpanded ? 'rotate-90' : ''}`}>
-          <ChevronRight className="h-3 w-3" />
-        </span>
-        <span className="font-medium">
-          {isStreaming ? 'reasoning' : `reasoned for ${wordCount} words`}
-        </span>
-        {isStreaming && (
-          <span className="w-1.5 h-1.5 rounded-full bg-[#c9a66b] animate-pulse" />
+        {isExpanded ? (
+          <ChevronDown className="h-3.5 w-3.5" />
+        ) : (
+          <ChevronRight className="h-3.5 w-3.5" />
         )}
+        <span>reasoned for {wordCount} words{isStreaming ? '...' : ''}</span>
       </button>
       {isExpanded && (
-        <div className="mt-2 pl-5 border-l-2 border-[#363432] text-[13px] text-[#9a9088] leading-relaxed whitespace-pre-wrap max-h-[50vh] overflow-y-auto">
+        <div className="mt-2 pl-4 border-l-2 border-[#363432] text-sm text-[#9a9088] whitespace-pre-wrap max-h-[40vh] overflow-y-auto">
           {content}
         </div>
       )}

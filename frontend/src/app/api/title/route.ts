@@ -38,7 +38,7 @@ export async function POST(req: NextRequest) {
           {
             role: 'system',
             content:
-              'Generate a short, specific chat title (max 6 words). Return ONLY the title, no quotes, no punctuation at the end.',
+              'Generate a short, specific chat title (max 6 words). Return ONLY the title text. No reasoning, no explanations, no quotes, no punctuation at the end. Just the title.',
           },
           {
             role: 'user',
@@ -54,7 +54,19 @@ export async function POST(req: NextRequest) {
     }
 
     const data = (await response.json().catch(() => null)) as any;
-    const titleRaw = data?.choices?.[0]?.message?.content ?? '';
+    let titleRaw = data?.choices?.[0]?.message?.content ?? '';
+    
+    // Strip any reasoning/thinking content that might be included
+    titleRaw = String(titleRaw)
+      .replace(/<think[^>]*>[\s\S]*?<\/think[^>]*>/gi, '')
+      .replace(/\*\*.*?\*\*/g, '')
+      .replace(/^\d+\.\s*/gm, '')
+      .replace(/^[\s\S]*?Title:\s*/i, '');
+    
+    // Get the last non-empty line without asterisks
+    const lines = titleRaw.split('\n').filter((line: string) => line.trim() && !line.includes('*'));
+    titleRaw = lines.pop() || titleRaw;
+    
     const title = String(titleRaw).trim().replace(/^["']|["']$/g, '').slice(0, 80);
 
     return NextResponse.json({ title: title || 'New Chat' });

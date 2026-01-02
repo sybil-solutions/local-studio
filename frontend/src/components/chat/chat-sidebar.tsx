@@ -172,7 +172,7 @@ export function ChatSidebar({
 
   // Desktop expanded state
   return (
-    <div className="fixed left-0 top-12 md:top-14 bottom-0 w-44 border-r border-[var(--border)] bg-[var(--background)] flex flex-col z-30">
+    <div className="fixed left-0 top-12 md:top-14 bottom-0 w-56 border-r border-[var(--border)] bg-[var(--background)] flex flex-col z-30">
       {/* Header */}
       <div className="flex items-center justify-between px-2 py-1.5 border-b border-[var(--border)]">
         <button

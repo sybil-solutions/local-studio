@@ -299,37 +299,6 @@ export default function ChatPage() {
     }
   }, [mcpEnabled]);
 
-  // Prevent stream death when PWA goes to background
-  useEffect(() => {
-    let wakeLock: WakeLockSentinel | null = null;
-
-    const requestWakeLock = async () => {
-      if ('wakeLock' in navigator && isLoading) {
-        try {
-          wakeLock = await navigator.wakeLock.request('screen');
-        } catch (e) {
-          // Wake lock not supported or failed
-        }
-      }
-    };
-
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible' && isLoading) {
-        requestWakeLock();
-      }
-    };
-
-    if (isLoading) {
-      requestWakeLock();
-    }
-
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    return () => {
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-      wakeLock?.release();
-    };
-  }, [isLoading]);
-
   const loadMCPServers = async () => {
     try {
       const servers = await api.getMCPServers();
@@ -576,45 +545,26 @@ export default function ChatPage() {
         role: 'system',
         content: `You are a Deep Research Assistant. Your task is to conduct thorough, multi-step research to provide comprehensive, well-sourced answers.
 
-## CRITICAL: ALWAYS PLAN FIRST
-
-Before making ANY tool calls, you MUST output a research plan. This is non-negotiable.
-
-**Your first response to any research question must be:**
-1. A brief restatement of what you're researching
-2. Your research plan with numbered steps
-3. The specific queries you'll run
-
-Example format:
-\`\`\`
-**Research Goal:** [What you're investigating]
-
-**Plan:**
-1. Search for [topic] - understand the basics
-2. Search for [recent developments] - get current state
-3. Search for [specific aspect] - deep dive on key area
-4. Search for [contrasting view] - get alternative perspectives
-5. Synthesize findings into comprehensive answer
-
-**Starting research...**
-\`\`\`
-
-Only AFTER outputting this plan should you begin making tool calls.
-
 ## RESEARCH METHODOLOGY
 
-### Step 1: Query Analysis & Planning
-- Break down the user's question into 2-4 specific research angles
+When the user asks a question, follow this systematic research process:
+
+### Step 1: Query Analysis
+- Break down the user's question into 2-4 specific research angles or sub-questions
 - Identify key concepts, entities, and terms to search for
 - Consider different perspectives (technical, practical, historical, current trends)
-- OUTPUT YOUR PLAN before proceeding
 
 ### Step 2: Multi-Source Search Strategy
-Perform ${numSources} separate searches with different queries:
+You MUST use the Exa search tool (exa__search or similar) to gather information. Perform ${numSources} separate searches with different queries:
 - Search 1: Direct query for the main topic
-- Search 2: Query for recent developments/news
+- Search 2: Query for recent developments/news on the topic
 - Search 3: Query for expert opinions or academic perspectives
-- Search 4+: Queries for specific sub-questions
+- Search 4+: Queries for specific sub-questions or related concepts
+
+For each search, use tool_calls to invoke the Exa search tool with varied queries. Example:
+\`\`\`
+tool_call: exa__search with query="[your search query]" and numResults=5
+\`\`\`
 
 ### Step 3: Source Analysis (${searchDepth === 'thorough' ? 'Deep Analysis' : 'Standard Analysis'})
 For each search result:
@@ -637,23 +587,23 @@ Include citations for all factual claims using this format:
 
 ## IMPORTANT GUIDELINES
 
-1. **PLAN FIRST** - Always output your research plan before making any tool calls.
-2. **Always use tools** - Do not answer from memory alone. Search for current information.
-3. **Diverse queries** - Use different phrasings and angles for each search.
-4. **Verify claims** - Cross-reference important facts across multiple sources.
-5. **Acknowledge limitations** - If information is scarce or conflicting, say so.
+1. **Always use tools first** - Do not answer from memory alone. Search for current information.
+2. **Diverse queries** - Use different phrasings and angles for each search to maximize coverage.
+3. **Verify claims** - Cross-reference important facts across multiple sources.
+4. **Acknowledge limitations** - If information is scarce or conflicting, say so.
+5. **Stay current** - Prioritize recent sources when recency matters.
 6. **Be thorough** - This is DEEP research. Take the time to gather comprehensive information.
 
 ## TOOL USAGE
 
-You have access to web search and content fetching tools:
+You have access to web search and content fetching tools. Use them liberally:
 - \`exa__search\`: Search the web for information (use query parameter)
 - \`exa__findSimilar\`: Find pages similar to a given URL
 - \`exa__getContents\`: Get full content from URLs
 - \`brave-search__brave_web_search\`: Alternative web search
 - \`fetch__fetch\`: Fetch and read webpage content
 
-Remember: Plan first, then execute systematically.`,
+Start your research immediately when you receive a question. Do not ask for clarification unless the question is truly ambiguous.`,
       });
     }
 
@@ -995,7 +945,7 @@ Remember: Plan first, then execute systematically.`,
 
       // Tool calling loop - continues until no more tool calls
       let iteration = 0;
-      const MAX_ITERATIONS = 50; // Support deep research with many searches
+      const MAX_ITERATIONS = 25;
       const cachedToolResultsBySignature = new Map<string, Omit<ToolResult, 'tool_call_id'>>();
 
       while (iteration < MAX_ITERATIONS) {
@@ -1526,7 +1476,7 @@ Remember: Plan first, then execute systematically.`,
 
   return (
     <>
-    <div className="relative h-[100dvh] md:h-[calc(100dvh-3.5rem)] flex flex-col overflow-hidden">
+    <div className="relative h-[100dvh] md:h-[calc(100dvh-3.5rem)] flex flex-col overflow-hidden w-full max-w-full">
       {/* Desktop Sidebar */}
       {!isMobile && (
         <ChatSidebar
@@ -1558,12 +1508,12 @@ Remember: Plan first, then execute systematically.`,
       )}
 
       {/* Main Chat Area */}
-      <div className={`flex-1 flex flex-col min-h-0 ${isMobile ? '' : sidebarCollapsed ? 'md:ml-8' : 'md:ml-44'} w-full`}>
+      <div className={`flex-1 flex flex-col min-h-0 ${isMobile ? '' : sidebarCollapsed ? 'md:ml-8' : 'md:ml-44'} `}>
         {/* Unified Header - different layout for mobile vs desktop */}
-        <div className={`sticky top-0 z-40 bg-[var(--card)] border-b border-[var(--border)] flex-shrink-0`}
+        <div className={`sticky top-0 z-40 bg-[var(--card)] border-b border-[var(--border)] flex-shrink-0 w-full overflow-hidden`}
           style={isMobile ? { paddingTop: 'env(safe-area-inset-top, 0)' } : undefined}
         >
-          <div className="flex items-center justify-between gap-2 px-2 md:px-4 py-1.5 md:py-2">
+          <div className="flex items-center justify-between gap-2 px-2 md:px-4 py-1.5 md:py-2 w-full">
             <div className="flex items-center gap-1.5 min-w-0 flex-1">
               {/* Mobile: Logo + Recent Chats Dropdown */}
               {isMobile && (
@@ -1711,43 +1661,17 @@ Remember: Plan first, then execute systematically.`,
             </div>
 
             <div className="flex items-center gap-0.5 md:gap-2 flex-shrink-0">
-              {/* Context usage indicator (desktop only) */}
-              {!isMobile && currentSessionId && sessionUsage && (() => {
-                const currentModel = availableModels.find(m => m.id === selectedModel || m.id === runningModel);
-                const maxContext = currentModel?.max_model_len || 128000;
-                const usedTokens = sessionUsage.total_tokens || 0;
-                const usagePercent = Math.min((usedTokens / maxContext) * 100, 100);
-                const isWarning = usagePercent > 70;
-                const isCritical = usagePercent > 90;
-                return (
-                  <button
-                    onClick={() => setUsageDetailsOpen(true)}
-                    className="flex items-center gap-2 group"
-                    title={`${usedTokens.toLocaleString()} / ${maxContext.toLocaleString()} tokens (${usagePercent.toFixed(1)}%)`}
-                  >
-                    <div className="flex items-center gap-1.5">
-                      <div className="w-16 h-1.5 bg-[#363432] rounded-full overflow-hidden">
-                        <div
-                          className={`h-full rounded-full transition-all ${
-                            isCritical ? 'bg-[#c97a6b]' : isWarning ? 'bg-[#c9a66b]' : 'bg-[#7d9a6a]'
-                          }`}
-                          style={{ width: `${usagePercent}%` }}
-                        />
-                      </div>
-                      <span className={`text-[10px] font-mono ${
-                        isCritical ? 'text-[#c97a6b]' : isWarning ? 'text-[#c9a66b]' : 'text-[#9a9088]'
-                      }`}>
-                        {usagePercent < 1 ? '<1%' : `${Math.round(usagePercent)}%`}
-                      </span>
-                    </div>
-                    {sessionUsage.estimated_cost_usd != null && (
-                      <span className="text-[10px] font-mono text-[#9a9088] opacity-0 group-hover:opacity-100 transition-opacity">
-                        ${sessionUsage.estimated_cost_usd.toFixed(4)}
-                      </span>
-                    )}
-                  </button>
-                );
-              })()}
+              {/* Usage (desktop only) */}
+              {!isMobile && currentSessionId && sessionUsage && (
+                <button
+                  onClick={() => setUsageDetailsOpen(true)}
+                  className="text-[10px] font-mono text-[var(--muted)] hover:text-[var(--foreground)] transition-colors"
+                  title="Usage details"
+                >
+                  {sessionUsage.total_tokens.toLocaleString()} tok
+                  {sessionUsage.estimated_cost_usd != null ? ` • $${sessionUsage.estimated_cost_usd.toFixed(4)}` : ''}
+                </button>
+              )}
 
               {/* Toggle buttons (desktop only) */}
               {!isMobile && (
@@ -1813,70 +1737,77 @@ Remember: Plan first, then execute systematically.`,
         </div>
 
         {/* Messages + Tool Panel Container */}
-        <div className="flex-1 flex overflow-hidden">
-          {/* Messages Area */}
-          <div className={`flex-1 overflow-y-auto overflow-x-hidden ${!isMobile && toolPanelOpen && hasToolActivity ? 'lg:mr-80' : ''}`}>
-            <div className="pb-0">
+        <div className={`flex-1 flex overflow-hidden ${!isMobile && hasToolActivity && toolPanelOpen ? "md:mr-80" : ""}`}>
+          {/* Messages Area - Premium scrolling */}
+          <div className="flex-1 overflow-y-auto overflow-x-hidden scroll-smooth">
+            <div className="pb-4">
             {messages.length === 0 ? (
               <div className="flex items-center justify-center min-h-[60vh]">
                 <div className="text-center px-4 py-8 animate-fade-in">
-                  <div className="w-10 h-10 rounded-full bg-[#363432] flex items-center justify-center mx-auto mb-4">
-                    <Sparkles className="h-5 w-5 text-[#9a9088]" />
+                  <div className="w-12 h-12 rounded-full bg-gradient-to-br from-[#363432] to-[#2a2826] flex items-center justify-center mx-auto mb-5 shadow-lg">
+                    <Sparkles className="h-5 w-5 text-[#8b7355]" />
                   </div>
-                  <h2 className="text-base font-medium text-[#f0ebe3] mb-1">Start a conversation</h2>
-                  <p className="text-sm text-[#9a9088] max-w-xs mx-auto">
+                  <h2 className="text-lg font-medium text-[#f0ebe3] mb-2">Start a conversation</h2>
+                  <p className="text-sm text-[#6a6560] max-w-xs mx-auto leading-relaxed">
                     {selectedModel || runningModel
-                      ? 'Send a message to begin.'
-                      : 'Select a model in Settings.'}
+                      ? 'Send a message to begin chatting.'
+                      : 'Select a model in Settings to get started.'}
                   </p>
                 </div>
               </div>
             ) : (
-              <div className="max-w-3xl mx-auto py-4 md:py-6 px-3 md:px-6 space-y-4">
+              <div className="max-w-3xl mx-auto py-6 md:py-8 px-4 md:px-6 space-y-8">
                   {messages.map((message, index) => (
-                    <div key={message.id} className="animate-slide-up">
-                      {/* User Message - Right aligned, minimal */}
+                    <div key={message.id} className="animate-message-appear" style={{ animationDelay: `${Math.min(index * 50, 200)}ms` }}>
+                      {/* User Message - Premium clean design */}
                       {message.role === 'user' ? (
-                        <div className="flex justify-end">
-                          <div className="max-w-[85%] md:max-w-[75%]">
+                        <div className="flex gap-4 group">
+                          <div className="w-7 h-7 rounded-full bg-gradient-to-br from-[#3d3b38] to-[#2d2b29] flex items-center justify-center flex-shrink-0 mt-0.5 shadow-sm">
+                            <User className="h-3.5 w-3.5 text-[#9a9088]" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-1.5">
+                              <span className="text-xs font-medium text-[#8a8580]">You</span>
+                              <button
+                                onClick={() => copyToClipboard(message.content, index)}
+                                className="p-1 rounded hover:bg-[#363432] transition-all opacity-0 group-hover:opacity-100"
+                              >
+                                {copiedIndex === index ? (
+                                  <Check className="h-3 w-3 text-[#7d9a6a]" />
+                                ) : (
+                                  <Copy className="h-3 w-3 text-[#6a6560]" />
+                                )}
+                              </button>
+                            </div>
                             {/* User images */}
                             {message.images && message.images.length > 0 && (
-                              <div className="flex flex-wrap gap-2 mb-2 justify-end">
+                              <div className="flex flex-wrap gap-2 mb-3">
                                 {message.images.map((base64, i) => (
                                   <img
                                     key={i}
                                     src={`data:image/jpeg;base64,${base64}`}
                                     alt={`Uploaded image ${i + 1}`}
-                                    className="max-w-[120px] max-h-[120px] rounded-lg border border-[#363432]"
+                                    className="max-w-[140px] max-h-[140px] rounded-xl border border-[#363432] shadow-sm"
                                   />
                                 ))}
                               </div>
                             )}
-                            <div className="group relative">
-                              <div className="bg-[#2a2826] rounded-2xl rounded-tr-sm px-4 py-2.5">
-                                <p className="text-sm text-[#f0ebe3] whitespace-pre-wrap break-words leading-relaxed">{message.content}</p>
-                              </div>
-                              <button
-                                onClick={() => copyToClipboard(message.content, index)}
-                                className="absolute -left-8 top-1/2 -translate-y-1/2 p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-[#363432] transition-all"
-                              >
-                                {copiedIndex === index ? (
-                                  <Check className="h-3 w-3 text-[#7d9a6a]" />
-                                ) : (
-                                  <Copy className="h-3 w-3 text-[#9a9088]" />
-                                )}
-                              </button>
-                            </div>
+                            <p className="text-[15px] text-[#e8e4dd] whitespace-pre-wrap break-words leading-relaxed">{message.content}</p>
                           </div>
                         </div>
                       ) : (
-                        /* Assistant Message - Left aligned, clean */
-                        <div className="flex justify-start">
-                          <div className="max-w-[95%] md:max-w-[85%] group">
-                            {/* Token count and actions */}
-                            <div className="flex items-center gap-2 mb-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        /* Assistant Message - Premium with streaming indicator */
+                        <div className="flex gap-4 group">
+                          <div className={`w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5 shadow-sm transition-all duration-300 ${message.isStreaming ? 'bg-gradient-to-br from-[#7d9a6a]/30 to-[#5a7a4a]/20 ring-2 ring-[#7d9a6a]/20' : 'bg-gradient-to-br from-[#2a2826] to-[#1e1c1a]'}`}>
+                            <Sparkles className={`h-3.5 w-3.5 transition-all ${message.isStreaming ? 'text-[#7d9a6a] animate-pulse scale-110' : 'text-[#8b7355]'}`} />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-1.5">
+                              <span className="text-xs font-medium text-[#9a8570]">
+                                {message.model?.split('/').pop() || selectedModel?.split('/').pop() || modelName || 'Assistant'}
+                              </span>
                               {(message.total_tokens || message.prompt_tokens || message.completion_tokens) && (
-                                <span className="text-[10px] text-[#9a9088]/60 font-mono">
+                                <span className="text-[10px] text-[#6a6560] font-mono tabular-nums">
                                   {(() => {
                                     const reqPrompt = message.request_total_input_tokens ?? message.request_prompt_tokens;
                                     const reqComp = message.request_completion_tokens;
@@ -1892,32 +1823,32 @@ Remember: Plan first, then execute systematically.`,
                               {currentSessionId && (
                                 <button
                                   onClick={() => forkAtMessage(message.id)}
-                                  className="p-0.5 rounded hover:bg-[#363432] transition-colors"
-                                  title="Fork"
+                                  className="p-1 rounded hover:bg-[#363432] transition-all opacity-0 group-hover:opacity-100"
+                                  title="Fork conversation from here"
                                 >
-                                  <GitBranch className="h-3 w-3 text-[#9a9088]" />
+                                  <GitBranch className="h-3 w-3 text-[#6a6560]" />
                                 </button>
                               )}
                               <button
                                 onClick={() => copyToClipboard(message.content, index)}
-                                className="p-0.5 rounded hover:bg-[#363432] transition-colors"
+                                className="p-1 rounded hover:bg-[#363432] transition-all opacity-0 group-hover:opacity-100"
                               >
                                 {copiedIndex === index ? (
                                   <Check className="h-3 w-3 text-[#7d9a6a]" />
                                 ) : (
-                                  <Copy className="h-3 w-3 text-[#9a9088]" />
+                                  <Copy className="h-3 w-3 text-[#6a6560]" />
                                 )}
                               </button>
                             </div>
-                            <div className="text-sm text-[#f0ebe3] overflow-hidden break-words leading-relaxed">
+                            <div className="text-[15px] text-[#e8e4dd] overflow-hidden break-words leading-relaxed">
                               <MessageRenderer
                                 content={message.content}
                                 isStreaming={message.isStreaming}
                                 artifactsEnabled={artifactsEnabled}
                               />
-                              {/* Tool Calls */}
-                              {message.toolCalls && message.toolCalls.length > 0 && (
-                                <div className="mt-3 space-y-1.5">
+                              {/* Tool Calls - Only show inline on mobile */}
+                              {isMobile && message.toolCalls && message.toolCalls.length > 0 && (
+                                <div className="mt-3 space-y-2">
                                   {message.toolCalls.map((toolCall) => (
                                     <ToolCallCard
                                       key={toolCall.id}
@@ -1938,11 +1869,16 @@ Remember: Plan first, then execute systematically.`,
                 {isLoading &&
                   messages[messages.length - 1]?.role === 'assistant' &&
                   messages[messages.length - 1]?.content === '' && (
-                    <div className="flex justify-start animate-slide-up">
-                      <div className="flex items-center gap-1.5 text-[#9a9088]">
-                        <span className="w-1.5 h-1.5 rounded-full bg-[#8b7355] animate-pulse" />
-                        <span className="w-1.5 h-1.5 rounded-full bg-[#8b7355] animate-pulse" style={{ animationDelay: '150ms' }} />
-                        <span className="w-1.5 h-1.5 rounded-full bg-[#8b7355] animate-pulse" style={{ animationDelay: '300ms' }} />
+                    <div className="flex gap-3 animate-slide-up">
+                      <div className="w-6 h-6 rounded-full bg-[#7d9a6a]/20 flex items-center justify-center flex-shrink-0">
+                        <Sparkles className="h-3 w-3 text-[#7d9a6a] animate-pulse" />
+                      </div>
+                      <div className="flex items-center pt-1.5">
+                        <div className="flex gap-1">
+                          <span className="w-1.5 h-1.5 rounded-full bg-[#8b7355] animate-pulse" />
+                          <span className="w-1.5 h-1.5 rounded-full bg-[#8b7355] animate-pulse" style={{ animationDelay: '150ms' }} />
+                          <span className="w-1.5 h-1.5 rounded-full bg-[#8b7355] animate-pulse" style={{ animationDelay: '300ms' }} />
+                        </div>
                       </div>
                     </div>
                   )}
@@ -1978,32 +1914,34 @@ Remember: Plan first, then execute systematically.`,
 
           {/* Tool Activity Panel - Desktop Only */}
           {!isMobile && hasToolActivity && toolPanelOpen && (
-            <div className="fixed right-0 top-0 bottom-0 w-80 bg-[#1b1b1b] border-l border-[#363432] flex flex-col z-30">
-              {/* Panel Header */}
-              <div className="flex items-center justify-between px-4 py-3 border-b border-[#363432]">
-                <div className="flex items-center gap-2">
-                  <Brain className="h-4 w-4 text-[#8b7355]" />
-                  <span className="text-sm font-medium text-[#f0ebe3]">Activity</span>
+            <div className="fixed right-0 top-0 bottom-0 w-80 bg-gradient-to-b from-[#1a1918] to-[#151413] border-l border-[#2a2826] flex flex-col z-30 shadow-2xl">
+              {/* Panel Header - Premium glass effect */}
+              <div className="flex items-center justify-between px-4 py-3.5 border-b border-[#2a2826] bg-[#1a1918]/80 backdrop-blur-sm">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-6 h-6 rounded-md bg-gradient-to-br from-[#8b7355]/20 to-[#6a5540]/10 flex items-center justify-center">
+                    <Brain className="h-3.5 w-3.5 text-[#a08060]" />
+                  </div>
+                  <span className="text-sm font-medium text-[#e8e4dd]">Activity</span>
                   {executingTools.size > 0 && (
-                    <span className="flex items-center gap-1 px-1.5 py-0.5 bg-[#7d9a6a]/20 rounded text-[10px] text-[#7d9a6a]">
+                    <span className="flex items-center gap-1.5 px-2 py-0.5 bg-[#7d9a6a]/15 rounded-full text-[10px] text-[#7d9a6a] font-medium">
                       <Loader2 className="h-3 w-3 animate-spin" />
-                      {executingTools.size}
+                      {executingTools.size} running
                     </span>
                   )}
                 </div>
                 <button
                   onClick={() => setToolPanelOpen(false)}
-                  className="p-1 rounded hover:bg-[#363432] transition-colors"
+                  className="p-1.5 rounded-md hover:bg-[#2a2826] transition-all"
                 >
-                  <PanelRightClose className="h-4 w-4 text-[#9a9088]" />
+                  <PanelRightClose className="h-4 w-4 text-[#6a6560]" />
                 </button>
               </div>
 
               {/* Panel Content */}
-              <div className="flex-1 overflow-y-auto p-3 space-y-3">
+              <div className="flex-1 overflow-y-auto p-3 space-y-4 scrollbar-thin">
                 {/* Research Progress */}
                 {researchProgress && (
-                  <div className="p-3 bg-[#1e1e1e] rounded-lg border border-[#363432]">
+                  <div className="p-3 bg-[#1e1e1e] rounded-lg border border-[#363432] animate-fade-in">
                     <div className="flex items-center gap-2 mb-2">
                       <Brain className="h-3.5 w-3.5 text-blue-400" />
                       <span className="text-xs font-medium text-[#f0ebe3]">Research in Progress</span>
@@ -2020,7 +1958,10 @@ Remember: Plan first, then execute systematically.`,
                 {/* Tool Calls */}
                 {allToolCalls.length > 0 && (
                   <div className="space-y-2">
-                    <div className="text-[10px] uppercase tracking-wider text-[#9a9088] px-1">Tool Calls ({allToolCalls.length})</div>
+                    <div className="text-[10px] uppercase tracking-wider text-[#6a6560] px-1 flex items-center gap-2">
+                      <Wrench className="h-3 w-3" />
+                      Tool Calls ({allToolCalls.length})
+                    </div>
                     {allToolCalls.map((tc) => {
                       const result = toolResultsMap.get(tc.id);
                       const isExecuting = executingTools.has(tc.id);
@@ -2028,42 +1969,45 @@ Remember: Plan first, then execute systematically.`,
                       try { args = JSON.parse(tc.function.arguments || '{}'); } catch {}
 
                       return (
-                        <div key={tc.id} className="p-2.5 bg-[#1e1e1e] rounded-lg border border-[#363432]">
-                          <div className="flex items-start gap-2">
-                            <div className={`w-5 h-5 rounded flex items-center justify-center flex-shrink-0 ${
-                              isExecuting ? 'bg-[#c9a66b]/20' : result ? 'bg-[#7d9a6a]/20' : 'bg-[#363432]'
+                        <div key={tc.id} className={`rounded-lg border overflow-hidden transition-all duration-200 ${
+                          isExecuting ? 'bg-[#1e1c1a] border-[#c9a66b]/30 shadow-[0_0_12px_rgba(201,166,107,0.1)]' :
+                          result ? 'bg-[#1a1918] border-[#2a2826]' : 'bg-[#1a1918] border-[#2a2826]'
+                        }`}>
+                          <div className="flex items-center gap-2.5 px-3 py-2.5">
+                            <div className={`w-5 h-5 rounded-md flex items-center justify-center flex-shrink-0 ${
+                              isExecuting ? 'bg-[#c9a66b]/20' : result ? 'bg-[#7d9a6a]/20' : 'bg-[#2a2826]'
                             }`}>
                               {isExecuting ? (
                                 <Loader2 className="h-3 w-3 text-[#c9a66b] animate-spin" />
                               ) : result ? (
                                 <Check className="h-3 w-3 text-[#7d9a6a]" />
                               ) : (
-                                <Wrench className="h-3 w-3 text-[#9a9088]" />
+                                <Wrench className="h-3 w-3 text-[#6a6560]" />
                               )}
                             </div>
                             <div className="flex-1 min-w-0">
-                              <div className="text-xs font-medium text-[#f0ebe3] truncate">{tc.function.name}</div>
-                              {/* Show key args */}
-                              {Object.keys(args).length > 0 && (
-                                <div className="mt-1 space-y-0.5">
-                                  {Object.entries(args).slice(0, 3).map(([k, v]) => (
-                                    <div key={k} className="text-[10px] text-[#9a9088] truncate">
-                                      <span className="text-[#8b7355]">{k}:</span> {String(v).slice(0, 50)}{String(v).length > 50 ? '...' : ''}
-                                    </div>
-                                  ))}
-                                </div>
-                              )}
-                              {/* Show result summary */}
-                              {result && (
-                                <div className="mt-2 pt-2 border-t border-[#363432]/50">
-                                  <div className="text-[10px] text-[#7d9a6a] mb-1">Result</div>
-                                  <div className="text-[10px] text-[#9a9088] line-clamp-3 font-mono">
-                                    {result.content.slice(0, 200)}{result.content.length > 200 ? '...' : ''}
-                                  </div>
-                                </div>
-                              )}
+                              <div className="text-[11px] font-medium text-[#e8e4dd] truncate">{tc.function.name}</div>
                             </div>
                           </div>
+                          {/* Show key args */}
+                          {Object.keys(args).length > 0 && (
+                            <div className="px-3 pb-2.5 space-y-0.5">
+                              {Object.entries(args).slice(0, 3).map(([k, v]) => (
+                                <div key={k} className="text-[10px] text-[#6a6560] truncate">
+                                  <span className="text-[#8b7355]">{k}:</span> {String(v).slice(0, 50)}{String(v).length > 50 ? '...' : ''}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                          {/* Show result summary */}
+                          {result && (
+                            <div className="px-3 pb-2.5 pt-2 border-t border-[#2a2826]/50">
+                              <div className="text-[9px] uppercase tracking-wider text-[#7d9a6a] mb-1">Result</div>
+                              <div className="text-[10px] text-[#8a8580] line-clamp-3 font-mono leading-relaxed">
+                                {result.content.slice(0, 200)}{result.content.length > 200 ? '...' : ''}
+                              </div>
+                            </div>
+                          )}
                         </div>
                       );
                     })}
@@ -2073,14 +2017,17 @@ Remember: Plan first, then execute systematically.`,
                 {/* Research Sources */}
                 {researchSources.length > 0 && (
                   <div className="space-y-2">
-                    <div className="text-[10px] uppercase tracking-wider text-[#9a9088] px-1">Sources ({researchSources.length})</div>
+                    <div className="text-[10px] uppercase tracking-wider text-[#6a6560] px-1 flex items-center gap-2">
+                      <ExternalLink className="h-3 w-3" />
+                      Sources ({researchSources.length})
+                    </div>
                     {researchSources.map((source, i) => (
                       <a
                         key={i}
                         href={source.url}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="block p-2.5 bg-[#1e1e1e] rounded-lg border border-[#363432] hover:border-[#8b7355]/50 transition-colors"
+                        className="block p-2.5 bg-[#1a1918] rounded-lg border border-[#2a2826] hover:border-[#8b7355]/40 hover:bg-[#1e1c1a] transition-all duration-200"
                       >
                         <div className="flex items-start gap-2">
                           <ExternalLink className="h-3 w-3 text-[#8b7355] flex-shrink-0 mt-0.5" />
@@ -2115,7 +2062,7 @@ Remember: Plan first, then execute systematically.`,
         </div>
 
         {/* Input Tool Belt - sticky at bottom */}
-        <div className="flex-shrink-0">
+        <div className={`flex-shrink-0 ${!isMobile && hasToolActivity && toolPanelOpen ? "md:mr-80" : ""}`}>
           <ToolBelt
           value={input}
           onChange={setInput}

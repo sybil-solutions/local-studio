@@ -259,6 +259,7 @@ export async function POST(req: NextRequest) {
                     controller.enqueue(sendEvent({ type: 'text', content: '</think>\n\n' }));
                     assistantContentFull += '</think>\n\n';
                   }
+
                   const merged = mergeStreamingText(assistantContentFull, delta.content);
                   assistantContentFull = merged.nextFull;
                   if (merged.emit) controller.enqueue(sendEvent({ type: 'text', content: merged.emit }));
