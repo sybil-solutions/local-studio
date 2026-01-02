@@ -61,13 +61,19 @@ export async function POST(req: NextRequest) {
       .replace(/<think[^>]*>[\s\S]*?<\/think[^>]*>/gi, '')
       .replace(/\*\*.*?\*\*/g, '')
       .replace(/^\d+\.\s*/gm, '')
-      .replace(/^[\s\S]*?Title:\s*/i, '');
+      .replace(/^[\s\S]*?Title:\s*/i, '')
+      .replace(/^(User|Assistant|User message|Assistant reply):\s*/gi, '');
     
     // Get the last non-empty line without asterisks
     const lines = titleRaw.split('\n').filter((line: string) => line.trim() && !line.includes('*'));
     titleRaw = lines.pop() || titleRaw;
     
-    const title = String(titleRaw).trim().replace(/^["']|["']$/g, '').slice(0, 80);
+    // Final cleanup: strip quotes and truncate
+    const title = String(titleRaw)
+      .trim()
+      .replace(/^["'`]+|["'`]+$/g, '')
+      .replace(/^(User|Assistant|User message|Assistant reply):\s*/gi, '')
+      .slice(0, 80);
 
     return NextResponse.json({ title: title || 'New Chat' });
   } catch (error) {
