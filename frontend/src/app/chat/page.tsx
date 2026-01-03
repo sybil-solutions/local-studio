@@ -359,7 +359,8 @@ export default function ChatPage() {
         if (found?.title) setCurrentSessionTitle(found.title);
       }
     } catch (e) {
-      console.log('Chat sessions API not available', e);
+      console.error('Chat sessions API error:', e);
+      setSessions([]);
       setSessionsAvailable(false);
     } finally {
       setSessionsLoading(false);
@@ -1783,7 +1784,7 @@ Start your research immediately when you receive a question. Do not ask for clar
                         </button>
                       )}
                       {selectedModel && (
-                        <span className="text-[10px] font-mono text-[var(--muted)] px-2 py-0.5 border border-[var(--border)] rounded">
+                        <span className="text-[11px] text-[var(--muted)] px-2 py-0.5 border border-[var(--border)] rounded">
                           {selectedModel.split('/').pop()}
                         </span>
                       )}
