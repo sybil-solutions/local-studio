@@ -1578,12 +1578,18 @@ async def list_studio_models(store: RecipeStore = Depends(get_store)):
 # --- OpenAI Chat Completions Proxy ---
 
 def _find_recipe_by_model(store: RecipeStore, model_name: str) -> Optional[Recipe]:
-    """Find a recipe by served_model_name or id."""
+    """Find a recipe by served_model_name or id (case-insensitive)."""
     if not model_name:
         return None
-    for recipe in store.list():
-        if recipe.served_model_name == model_name or recipe.id == model_name:
+    recipes = store.list()
+    model_lower = model_name.lower()
+    for recipe in recipes:
+        served_lower = (recipe.served_model_name or "").lower()
+        id_lower = recipe.id.lower()
+        if served_lower == model_lower or id_lower == model_lower:
+            logger.info(f"_find_recipe_by_model: matched '{model_name}' to recipe id='{recipe.id}'")
             return recipe
+    logger.warning(f"_find_recipe_by_model: no recipe found for '{model_name}'")
     return None
 
 
@@ -1597,26 +1603,34 @@ async def _ensure_model_running(requested_model: str, store: RecipeStore) -> Opt
     from .process import launch_model
 
     if not requested_model:
+        logger.debug("_ensure_model_running: no requested_model provided")
         return None
+
+    requested_lower = requested_model.lower()
 
     # Check what's currently running
     current = find_inference_process(settings.inference_port)
+    current_name = current.served_model_name if current else None
+    logger.info(f"_ensure_model_running: requested='{requested_model}', current='{current_name}'")
 
-    # If the requested model is already running, we're done
-    if current and current.served_model_name == requested_model:
+    # If the requested model is already running, we're done (case-insensitive)
+    if current_name and current_name.lower() == requested_lower:
+        logger.debug(f"_ensure_model_running: model '{requested_model}' already running")
         return None
 
     # Find recipe for the requested model
     recipe = _find_recipe_by_model(store, requested_model)
     if not recipe:
         # No recipe found - let LiteLLM handle it (might be an external model)
+        logger.warning(f"_ensure_model_running: no recipe found for '{requested_model}', passing through to LiteLLM")
         return None
 
     # Need to switch models - acquire lock and switch
     async with _switch_lock:
-        # Double-check after acquiring lock
+        # Double-check after acquiring lock (case-insensitive)
         current = find_inference_process(settings.inference_port)
-        if current and current.served_model_name == requested_model:
+        current_name = current.served_model_name if current else None
+        if current_name and current_name.lower() == requested_lower:
             return None
 
         logger.info(f"Auto-switching model: {current.served_model_name if current else 'none'} -> {requested_model}")
