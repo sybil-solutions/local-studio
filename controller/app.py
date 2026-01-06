@@ -24,7 +24,7 @@ from .metrics import (
 from .config import settings
 from .gpu import get_gpu_info
 from .models import HealthResponse, LaunchResult, OpenAIModelInfo, OpenAIModelList, Recipe
-from .process import evict_model, find_inference_process
+from .process import evict_model, find_inference_process, kill_process
 from .store import RecipeStore, ChatStore, PeakMetricsStore, LifetimeMetricsStore
 
 app = FastAPI(
@@ -49,6 +49,8 @@ _lifetime_metrics_store: Optional[LifetimeMetricsStore] = None
 _switch_lock = asyncio.Lock()
 _broadcast_task: Optional[asyncio.Task] = None
 _last_power_sample_time: float = 0
+_launching_recipe_id: Optional[str] = None  # Currently launching recipe (for preemption)
+_launch_cancel_events: dict[str, asyncio.Event] = {}  # Per-recipe cancellation signals
 
 import logging
 import time
@@ -187,7 +189,7 @@ async def shutdown_event():
             await _broadcast_task
         except asyncio.CancelledError:
             pass
-    logger.info("Stopped background SSE broadcast task")
+    logger.info("Stopped background tasks")
 
 
 async def broadcast_updates():
@@ -195,6 +197,8 @@ async def broadcast_updates():
     global _last_power_sample_time
     _last_power_sample_time = time.time()
     last_tokens_total = 0
+    last_prompt_tokens_total = 0
+    last_completion_tokens_total = 0
     last_requests_total = 0
 
     while True:
@@ -258,25 +262,62 @@ async def broadcast_updates():
                                     metrics['total_tokens'] = peak.get('total_tokens', 0)
                                     metrics['total_requests'] = peak.get('total_requests', 0)
 
-                            # Track lifetime tokens from vLLM metrics
-                            current_tokens = metrics.get('generation_tokens_total', 0) + metrics.get('prompt_tokens_total', 0)
+                            # Track lifetime tokens from vLLM metrics (total and breakdown)
+                            current_prompt_tokens = metrics.get('prompt_tokens_total', 0)
+                            current_completion_tokens = metrics.get('generation_tokens_total', 0)
+                            current_tokens = current_prompt_tokens + current_completion_tokens
                             current_requests = metrics.get('request_success', 0)
+
                             if current_tokens > last_tokens_total:
                                 new_tokens = current_tokens - last_tokens_total
                                 lifetime_store.add_tokens(new_tokens)
                                 last_tokens_total = current_tokens
+
+                            if current_prompt_tokens > last_prompt_tokens_total:
+                                new_prompt_tokens = current_prompt_tokens - last_prompt_tokens_total
+                                lifetime_store.add_prompt_tokens(new_prompt_tokens)
+                                last_prompt_tokens_total = current_prompt_tokens
+
+                            if current_completion_tokens > last_completion_tokens_total:
+                                new_completion_tokens = current_completion_tokens - last_completion_tokens_total
+                                lifetime_store.add_completion_tokens(new_completion_tokens)
+                                last_completion_tokens_total = current_completion_tokens
+
                             if current_requests > last_requests_total:
                                 new_requests = current_requests - last_requests_total
                                 lifetime_store.add_requests(new_requests)
                                 last_requests_total = current_requests
 
+                            # Calculate detailed cost metrics
+                            lifetime_prompt_tokens = lifetime_data.get('prompt_tokens_total', 0)
+                            lifetime_completion_tokens = lifetime_data.get('completion_tokens_total', 0)
+
+                            # kWh per million tokens - estimate energy split based on compute ratios
+                            # Output tokens cost ~10x more compute than input tokens per token
+                            OUTPUT_COMPUTE_RATIO = 10  # Generation is ~10x more expensive per token
+                            weighted_total = lifetime_prompt_tokens + (lifetime_completion_tokens * OUTPUT_COMPUTE_RATIO)
+                            if weighted_total > 0 and lifetime_prompt_tokens > 0 and lifetime_completion_tokens > 0:
+                                input_energy_fraction = lifetime_prompt_tokens / weighted_total
+                                output_energy_fraction = (lifetime_completion_tokens * OUTPUT_COMPUTE_RATIO) / weighted_total
+                                input_energy_kwh = energy_kwh * input_energy_fraction
+                                output_energy_kwh = energy_kwh * output_energy_fraction
+                                kwh_per_million_input = input_energy_kwh / (lifetime_prompt_tokens / 1_000_000)
+                                kwh_per_million_output = output_energy_kwh / (lifetime_completion_tokens / 1_000_000)
+                            else:
+                                kwh_per_million_input = 0
+                                kwh_per_million_output = 0
+
                             # Add lifetime metrics to broadcast
                             metrics['lifetime_tokens'] = int(lifetime_data.get('tokens_total', 0))
+                            metrics['lifetime_prompt_tokens'] = int(lifetime_prompt_tokens)
+                            metrics['lifetime_completion_tokens'] = int(lifetime_completion_tokens)
                             metrics['lifetime_requests'] = int(lifetime_data.get('requests_total', 0))
                             metrics['lifetime_energy_wh'] = lifetime_data.get('energy_wh', 0)
                             metrics['lifetime_energy_kwh'] = energy_kwh
                             metrics['lifetime_uptime_hours'] = uptime_hours
                             metrics['kwh_per_million_tokens'] = kwh_per_million_tokens
+                            metrics['kwh_per_million_input'] = kwh_per_million_input
+                            metrics['kwh_per_million_output'] = kwh_per_million_output
                             metrics['current_power_watts'] = total_power_watts
 
                             await event_manager.publish_metrics(metrics)
@@ -285,16 +326,38 @@ async def broadcast_updates():
             else:
                 # Reset token tracking when model stops
                 last_tokens_total = 0
+                last_prompt_tokens_total = 0
+                last_completion_tokens_total = 0
                 last_requests_total = 0
+
+                # Calculate detailed cost metrics using compute-weighted energy split
+                lifetime_prompt_tokens = lifetime_data.get('prompt_tokens_total', 0)
+                lifetime_completion_tokens = lifetime_data.get('completion_tokens_total', 0)
+                OUTPUT_COMPUTE_RATIO = 10  # Generation is ~10x more expensive per token
+                weighted_total = lifetime_prompt_tokens + (lifetime_completion_tokens * OUTPUT_COMPUTE_RATIO)
+                if weighted_total > 0 and lifetime_prompt_tokens > 0 and lifetime_completion_tokens > 0:
+                    input_energy_fraction = lifetime_prompt_tokens / weighted_total
+                    output_energy_fraction = (lifetime_completion_tokens * OUTPUT_COMPUTE_RATIO) / weighted_total
+                    input_energy_kwh = energy_kwh * input_energy_fraction
+                    output_energy_kwh = energy_kwh * output_energy_fraction
+                    kwh_per_million_input = input_energy_kwh / (lifetime_prompt_tokens / 1_000_000)
+                    kwh_per_million_output = output_energy_kwh / (lifetime_completion_tokens / 1_000_000)
+                else:
+                    kwh_per_million_input = 0
+                    kwh_per_million_output = 0
 
                 # Still broadcast lifetime metrics even when idle
                 idle_metrics = {
                     'lifetime_tokens': int(lifetime_data.get('tokens_total', 0)),
+                    'lifetime_prompt_tokens': int(lifetime_prompt_tokens),
+                    'lifetime_completion_tokens': int(lifetime_completion_tokens),
                     'lifetime_requests': int(lifetime_data.get('requests_total', 0)),
                     'lifetime_energy_wh': lifetime_data.get('energy_wh', 0),
                     'lifetime_energy_kwh': energy_kwh,
                     'lifetime_uptime_hours': uptime_hours,
                     'kwh_per_million_tokens': kwh_per_million_tokens,
+                    'kwh_per_million_input': kwh_per_million_input,
+                    'kwh_per_million_output': kwh_per_million_output,
                     'current_power_watts': total_power_watts,
                 }
                 await event_manager.publish_metrics(idle_metrics)
@@ -394,12 +457,13 @@ async def health():
 
 @app.get("/status", tags=["System"])
 async def status():
-    """Detailed status."""
+    """Detailed status including launch-in-progress info."""
     current = find_inference_process(settings.inference_port)
     return {
         "running": current is not None,
         "process": current.model_dump() if current else None,
         "inference_port": settings.inference_port,
+        "launching": _launching_recipe_id,  # Recipe ID if launch in progress, else None
     }
 
 
@@ -416,20 +480,8 @@ async def gpus():
 # --- OpenAI-compatible endpoints ---
 @app.get("/v1/models", tags=["OpenAI Compatible"])
 async def list_models_openai():
-    """Proxy models list to LiteLLM."""
-    import os
-    litellm_key = os.environ.get("LITELLM_MASTER_KEY", "sk-master")
-    try:
-        async with httpx.AsyncClient(timeout=10) as client:
-            r = await client.get(
-                "http://localhost:4100/v1/models",
-                headers={"Authorization": f"Bearer {litellm_key}"}
-            )
-            return JSONResponse(content=r.json(), status_code=r.status_code)
-    except Exception as e:
-        logger.error(f"Models proxy error: {e}")
-        # Fallback to controller recipes
-        pass
+    """List available models from recipes and running inference."""
+    # Skip LiteLLM proxy - go directly to recipes/inference for accurate model names
 
     import time
     store = get_store()
@@ -543,6 +595,8 @@ async def list_recipes(store: RecipeStore = Depends(get_store)):
     result = []
     for r in recipes:
         status = "stopped"
+        if _launching_recipe_id == r.id:
+            status = "starting"
         if current:
             # Match by served_model_name first (most reliable)
             if current.served_model_name and r.served_model_name == current.served_model_name:
@@ -683,109 +737,204 @@ async def fork_chat_session(session_id: str, request: Request, chat_store: ChatS
 async def launch(recipe_id: str, force: bool = False, store: RecipeStore = Depends(get_store)):
     """Launch a model by recipe ID with real-time progress updates.
 
+    Supports preemption: if another model is loading, it will be cancelled
+    and VRAM cleared before starting the new model.
+
     Progress events are emitted via SSE:
+    - preempting: Cancelling in-progress launch
     - evicting: Stopping current model
     - launching: Starting new model
     - waiting: Waiting for model to be ready
     - ready: Model is ready to serve
+    - cancelled: Launch was preempted by another request
     - error: Launch failed
     """
+    global _launching_recipe_id, _launch_cancel_events
     import time
+    import psutil
 
     recipe = store.get(recipe_id)
     if not recipe:
         raise HTTPException(status_code=404, detail="Recipe not found")
 
-    async with _switch_lock:
-        # Stage 1: Evict current model
+    # Check if another launch is in progress and preempt it
+    if _launching_recipe_id and _launching_recipe_id != recipe_id:
+        preempted_recipe_id = _launching_recipe_id
+        logger.info(f"Preempting launch of {preempted_recipe_id} for {recipe_id}")
         await event_manager.publish_launch_progress(
-            recipe_id, "evicting", "Stopping current model...", progress=0.0
+            recipe_id, "preempting", f"Cancelling {preempted_recipe_id}...", progress=0.0
         )
-        await evict_model(force=force)
-        await asyncio.sleep(2)
-
-        # Stage 2: Launch new model
         await event_manager.publish_launch_progress(
-            recipe_id, "launching", f"Starting {recipe.name}...", progress=0.25
+            preempted_recipe_id, "cancelled", f"Preempted by {recipe_id}", progress=0.0
         )
 
-        # Import launch_model from process module
-        from .process import launch_model
-        success, pid, message = await launch_model(recipe)
+        # Signal cancellation to the in-progress launch
+        cancel_event = _launch_cancel_events.get(preempted_recipe_id)
+        if cancel_event:
+            cancel_event.set()
 
-        if not success:
+        # Force kill any running/loading process immediately
+        await evict_model(force=True)
+        await asyncio.sleep(1)
+
+    # Create new cancellation event for this launch
+    cancel_event = asyncio.Event()
+    _launch_cancel_events[recipe_id] = cancel_event
+    _launching_recipe_id = recipe_id
+
+    try:
+        # Use timeout on lock acquisition - don't wait forever
+        try:
+            await asyncio.wait_for(_switch_lock.acquire(), timeout=2.0)
+        except asyncio.TimeoutError:
+            # Lock held by another launch - force preemption
+            logger.info(f"Lock contention - force preempting for {recipe_id}")
+            await evict_model(force=True)
+            await asyncio.sleep(1)
+            await _switch_lock.acquire()
+
+        try:
+            # Stage 1: Evict current model (force kill for faster switch)
             await event_manager.publish_launch_progress(
-                recipe_id, "error", message, progress=0.0
+                recipe_id, "evicting", "Clearing VRAM...", progress=0.0
             )
-            return LaunchResult(success=False, pid=None, message=message, log_file=None)
+            await evict_model(force=True)
+            await asyncio.sleep(1)
 
-        # Stage 3: Wait for readiness
-        await event_manager.publish_launch_progress(
-            recipe_id, "waiting", "Waiting for model to load...", progress=0.5
-        )
+            # Check for preemption
+            if cancel_event.is_set():
+                await event_manager.publish_launch_progress(
+                    recipe_id, "cancelled", "Preempted by another launch", progress=0.0
+                )
+                return LaunchResult(success=False, pid=None, message="Launch cancelled", log_file=None)
 
-        # Poll health endpoint (up to 5 minutes)
-        start = time.time()
-        timeout = 300
-        ready = False
-        crashed = False
-
-        while time.time() - start < timeout:
-            # Check if process has crashed
-            try:
-                import psutil
-                if pid and not psutil.pid_exists(pid):
-                    crashed = True
-                    break
-            except Exception:
-                pass
-
-            try:
-                async with httpx.AsyncClient(timeout=5) as client:
-                    r = await client.get(f"http://localhost:{settings.inference_port}/health")
-                    if r.status_code == 200:
-                        ready = True
-                        break
-            except Exception:
-                pass
-
-            elapsed = int(time.time() - start)
+            # Stage 2: Launch new model
             await event_manager.publish_launch_progress(
-                recipe_id, "waiting",
-                f"Loading model... ({elapsed}s)",
-                progress=0.5 + (elapsed / timeout) * 0.5
+                recipe_id, "launching", f"Starting {recipe.name}...", progress=0.25
             )
-            await asyncio.sleep(3)
 
-        if crashed:
-            # Read the last lines from the log file for error context
-            log_file = Path(f"/tmp/vllm_{recipe_id}.log")
-            error_tail = ""
-            if log_file.exists():
+            # Import launch_model from process module
+            from .process import launch_model
+            success, pid, message = await launch_model(recipe)
+
+            if not success:
+                await event_manager.publish_launch_progress(
+                    recipe_id, "error", message, progress=0.0
+                )
+                return LaunchResult(success=False, pid=None, message=message, log_file=None)
+
+            # Stage 3: Wait for readiness (with preemption checks)
+            await event_manager.publish_launch_progress(
+                recipe_id, "waiting", "Waiting for model to load...", progress=0.5
+            )
+
+            # Poll health endpoint (up to 5 minutes, but check for preemption)
+            start = time.time()
+            timeout = 300
+            ready = False
+            crashed = False
+
+            while time.time() - start < timeout:
+                # Check for preemption FIRST
+                if cancel_event.is_set():
+                    logger.info(f"Launch of {recipe_id} cancelled during load")
+                    await event_manager.publish_launch_progress(
+                        recipe_id, "cancelled", "Preempted by another launch", progress=0.0
+                    )
+                    # Kill the process we just started
+                    if pid:
+                        try:
+                            proc = psutil.Process(pid)
+                            for child in proc.children(recursive=True):
+                                child.kill()
+                            proc.kill()
+                        except psutil.NoSuchProcess:
+                            pass
+                    return LaunchResult(success=False, pid=None, message="Launch cancelled", log_file=None)
+
+                # Check if process has crashed
                 try:
-                    error_tail = log_file.read_text()[-1000:]
+                    if pid and not psutil.pid_exists(pid):
+                        crashed = True
+                        break
                 except Exception:
                     pass
-            await event_manager.publish_launch_progress(
-                recipe_id, "error", "Model process crashed. Check logs for details.", progress=0.0
-            )
-            return LaunchResult(success=False, pid=None, message=f"Process crashed: {error_tail[-200:]}", log_file=str(log_file))
 
-        if ready:
-            await event_manager.publish_launch_progress(
-                recipe_id, "ready", "Model is ready!", progress=1.0
-            )
-        else:
-            await event_manager.publish_launch_progress(
-                recipe_id, "error", "Model failed to become ready (timeout)", progress=0.0
-            )
+                try:
+                    async with httpx.AsyncClient(timeout=5) as client:
+                        r = await client.get(f"http://localhost:{settings.inference_port}/health")
+                        if r.status_code == 200:
+                            ready = True
+                            break
+                except Exception:
+                    pass
 
-    return LaunchResult(
-        success=success,
-        pid=pid,
-        message=message,
-        log_file=f"/tmp/vllm_{recipe_id}.log" if success else None,
-    )
+                elapsed = int(time.time() - start)
+                await event_manager.publish_launch_progress(
+                    recipe_id, "waiting",
+                    f"Loading model... ({elapsed}s)",
+                    progress=0.5 + (elapsed / timeout) * 0.5
+                )
+                await asyncio.sleep(2)  # Reduced from 3s for more responsive preemption
+
+            if crashed:
+                # Read the last lines from the log file for error context
+                log_file = Path(f"/tmp/vllm_{recipe_id}.log")
+                error_tail = ""
+                if log_file.exists():
+                    try:
+                        error_tail = log_file.read_text()[-1000:]
+                    except Exception:
+                        pass
+                await event_manager.publish_launch_progress(
+                    recipe_id, "error", "Model process crashed. Check logs for details.", progress=0.0
+                )
+                return LaunchResult(success=False, pid=None, message=f"Process crashed: {error_tail[-200:]}", log_file=str(log_file))
+
+            if ready:
+                await event_manager.publish_launch_progress(
+                    recipe_id, "ready", "Model is ready!", progress=1.0
+                )
+                logger.info(f"Model {recipe_id} is ready, watchdog tracking active")
+                return LaunchResult(
+                    success=True,
+                    pid=pid,
+                    message="Model is ready",
+                    log_file=f"/tmp/vllm_{recipe_id}.log",
+                )
+            else:
+                # On timeout, stop the process to avoid leaving a hung backend around.
+                try:
+                    if pid:
+                        await kill_process(pid, force=True)
+                except Exception:
+                    pass
+
+                log_file = Path(f"/tmp/vllm_{recipe_id}.log")
+                error_tail = ""
+                if log_file.exists():
+                    try:
+                        error_tail = log_file.read_text()[-1000:]
+                    except Exception:
+                        pass
+                await event_manager.publish_launch_progress(
+                    recipe_id, "error", "Model failed to become ready (timeout)", progress=0.0
+                )
+                return LaunchResult(
+                    success=False,
+                    pid=None,
+                    message=f"Model failed to become ready (timeout): {error_tail[-200:]}",
+                    log_file=str(log_file),
+                )
+        finally:
+            _switch_lock.release()
+    finally:
+        # Clear launching state when done
+        if _launching_recipe_id == recipe_id:
+            _launching_recipe_id = None
+        # Clear cancellation event when done (avoid cross-launch cancellation bugs)
+        if _launch_cancel_events.get(recipe_id) is cancel_event:
+            del _launch_cancel_events[recipe_id]
 
 
 @app.post("/evict", tags=["Lifecycle"])
@@ -793,6 +942,7 @@ async def evict(force: bool = False):
     """Stop the running model."""
     async with _switch_lock:
         pid = await evict_model(force=force)
+    logger.info(f"Model evicted (pid={pid})")
     return {"success": True, "evicted_pid": pid}
 
 
@@ -1322,44 +1472,107 @@ async def call_mcp_tool(server: str, tool_name: str, payload: dict):
     raise HTTPException(status_code=404, detail="Unknown MCP tool")
 
 @app.get("/v1/studio/models", tags=["OpenAI Compatible"])
-async def list_studio_models():
-    """List available models from the models directory."""
+async def list_studio_models(store: RecipeStore = Depends(get_store)):
+    """List available local model weight directories.
+
+    This is a UX helper endpoint for the Studio UI. It scans:
+
+    - `VLLM_STUDIO_MODELS_DIR` (if set and exists)
+    - Parent directories of any *local* recipe `model_path` entries
+
+    Each returned model includes lightweight metadata and the list of recipe IDs
+    that reference it.
+    """
+    from collections import defaultdict
     from pathlib import Path
-    
+
+    from .browser import build_model_info, discover_model_dirs
+
+    recipes = store.list()
+
+    # Index recipes by canonical local path and basename.
+    recipes_by_path: dict[str, list[str]] = defaultdict(list)
+    recipes_by_basename: dict[str, list[str]] = defaultdict(list)
+
+    for r in recipes:
+        model_path = (r.model_path or "").strip()
+        if not model_path:
+            continue
+        try:
+            recipes_by_basename[Path(model_path).name].append(r.id)
+        except Exception:
+            recipes_by_basename[model_path.split("/")[-1]].append(r.id)
+
+        if model_path.startswith("/"):
+            try:
+                canonical = str(Path(model_path).expanduser().resolve())
+            except Exception:
+                canonical = model_path.rstrip("/")
+            recipes_by_path[canonical].append(r.id)
+
+    # Choose scan roots: configured models_dir + parents of recipe paths.
+    root_index: dict[str, dict] = {}
+
+    def add_root(path: Path, *, source: str, recipe_id: str | None = None) -> None:
+        try:
+            resolved = str(path.expanduser().resolve())
+        except Exception:
+            resolved = str(path)
+        entry = root_index.get(resolved)
+        if not entry:
+            entry = {"path": resolved, "exists": path.exists(), "sources": set(), "recipe_ids": set()}
+            root_index[resolved] = entry
+        entry["sources"].add(source)
+        if recipe_id:
+            entry["recipe_ids"].add(recipe_id)
+
+    configured_root = Path(settings.models_dir)
+    add_root(configured_root, source="config")
+
+    for r in recipes:
+        model_path = (r.model_path or "").strip()
+        if not model_path.startswith("/"):
+            continue
+        parent = Path(model_path).expanduser().resolve().parent
+        if parent == Path("/"):
+            continue
+        add_root(parent, source="recipe_parent", recipe_id=r.id)
+
+    roots = sorted(root_index.values(), key=lambda x: x["path"])
+    scan_roots = [Path(r["path"]) for r in roots if r.get("exists")]
+
+    model_dirs = discover_model_dirs(scan_roots, max_depth=2, max_models=1000)
     models = []
-    models_dir = Path(settings.models_dir)
-    
-    if models_dir.exists():
-        for item in models_dir.iterdir():
-            if item.is_dir() and not item.name.startswith("."):
-                # Skip non-model directories
-                if any(item.name.startswith(x) for x in ["FLUX", "playground", "Hunyuan", "whisper", "Vibe"]):
-                    continue
-                    
-                # Get size
-                size_bytes = 0
-                try:
-                    for f in item.rglob("*.safetensors"):
-                        size_bytes += f.stat().st_size
-                    for f in item.rglob("*.bin"):
-                        size_bytes += f.stat().st_size
-                except:
-                    pass
-                
-                # Get modified time
-                try:
-                    modified_at = item.stat().st_mtime
-                except:
-                    modified_at = None
-                
-                models.append({
-                    "path": str(item),
-                    "name": item.name,
-                    "size_bytes": size_bytes if size_bytes > 0 else None,
-                    "modified_at": modified_at,
-                })
-    
-    return {"models": models}
+    for d in model_dirs:
+        try:
+            canonical = str(d.expanduser().resolve())
+        except Exception:
+            canonical = str(d).rstrip("/")
+
+        recipe_ids = list(recipes_by_path.get(canonical, []))
+        if not recipe_ids:
+            # Conservative fallback: only basename match if it uniquely identifies a recipe.
+            by_name = recipes_by_basename.get(d.name, [])
+            if len(by_name) == 1:
+                recipe_ids = list(by_name)
+
+        models.append(build_model_info(d, recipe_ids=recipe_ids).model_dump())
+
+    models.sort(key=lambda m: (m.get("name") or "").lower())
+
+    # Serialize roots (sets -> lists)
+    roots_payload = []
+    for r in roots:
+        roots_payload.append(
+            {
+                "path": r["path"],
+                "exists": bool(r.get("exists")),
+                "sources": sorted(r.get("sources") or []),
+                "recipe_ids": sorted(r.get("recipe_ids") or []),
+            }
+        )
+
+    return {"models": models, "roots": roots_payload, "configured_models_dir": str(settings.models_dir)}
 
 
 # --- OpenAI Chat Completions Proxy ---
@@ -1490,6 +1703,75 @@ async def chat_completions_proxy(request: Request, store: RecipeStore = Depends(
         litellm_url = "http://localhost:4100/v1/chat/completions"
 
         if is_streaming:
+            # Track thinking state for <think> tag parsing across chunks
+            think_state = {"in_thinking": False}
+
+            def parse_think_tags_from_content(data: dict) -> dict:
+                """Parse <think>...</think> from content and convert to reasoning_content."""
+                if 'choices' not in data:
+                    return data
+
+                for choice in data['choices']:
+                    delta = choice.get('delta', {})
+                    content = delta.get('content')
+
+                    if not content:
+                        continue
+
+                    # Already has reasoning_content, skip parsing
+                    if delta.get('reasoning_content'):
+                        continue
+
+                    # Handle </think> without opening tag (vLLM sometimes strips <think>)
+                    # If we see </think> but aren't in thinking mode and no <think>, assume everything before is thinking
+                    if '</think>' in content and '<think>' not in content and not think_state["in_thinking"]:
+                        parts = content.split('</think>', 1)
+                        reasoning = parts[0]
+                        remaining = parts[1] if len(parts) > 1 else ''
+                        delta['reasoning_content'] = reasoning
+                        delta['content'] = remaining.strip() or None
+                        continue
+
+                    # Handle <think> and </think> tags in content
+                    if '<think>' in content:
+                        # Split on <think> tag
+                        parts = content.split('<think>', 1)
+                        before = parts[0]
+                        after = parts[1] if len(parts) > 1 else ''
+
+                        think_state["in_thinking"] = True
+
+                        # Check if </think> is also in this chunk
+                        if '</think>' in after:
+                            think_parts = after.split('</think>', 1)
+                            reasoning = think_parts[0]
+                            remaining = think_parts[1] if len(think_parts) > 1 else ''
+                            think_state["in_thinking"] = False
+
+                            delta['reasoning_content'] = reasoning
+                            delta['content'] = (before + remaining).strip() or None
+                        else:
+                            delta['reasoning_content'] = after
+                            delta['content'] = before.strip() or None
+
+                    elif think_state["in_thinking"]:
+                        # We're in thinking mode from a previous chunk
+                        if '</think>' in content:
+                            # End of thinking
+                            parts = content.split('</think>', 1)
+                            reasoning = parts[0]
+                            remaining = parts[1] if len(parts) > 1 else ''
+                            think_state["in_thinking"] = False
+
+                            delta['reasoning_content'] = reasoning
+                            delta['content'] = remaining.strip() or None
+                        else:
+                            # Still in thinking - all content is reasoning
+                            delta['reasoning_content'] = content
+                            delta['content'] = None
+
+                return data
+
             async def stream_response():
                 async with httpx.AsyncClient(timeout=300) as client:
                     async with client.stream("POST", litellm_url, content=body, headers=headers) as response:
@@ -1526,6 +1808,28 @@ async def chat_completions_proxy(request: Request, store: RecipeStore = Depends(
                                 except Exception:
                                     pass  # On parse error, pass through original chunk
 
+                            # Parse <think>...</think> tags from content to reasoning_content
+                            # This handles models that output thinking in content (e.g., GLM-4.7-reap-50)
+                            if '<think>' in chunk_str or think_state["in_thinking"]:
+                                try:
+                                    lines = chunk_str.split('\n')
+                                    fixed_lines = []
+                                    for line in lines:
+                                        if line.startswith('data: ') and line != 'data: [DONE]':
+                                            data_json = line[6:]
+                                            if data_json.strip():
+                                                data = json.loads(data_json)
+                                                data = parse_think_tags_from_content(data)
+                                                fixed_lines.append('data: ' + json.dumps(data))
+                                            else:
+                                                fixed_lines.append(line)
+                                        else:
+                                            fixed_lines.append(line)
+                                    chunk = ('\n'.join(fixed_lines)).encode('utf-8')
+                                except Exception as e:
+                                    logger.warning(f"Think tag parsing error: {e}")
+                                    pass
+
                             yield chunk
 
             return StreamingResponse(
@@ -1549,4 +1853,118 @@ async def chat_completions_proxy(request: Request, store: RecipeStore = Depends(
         raise HTTPException(status_code=503, detail="LiteLLM backend unavailable")
     except Exception as e:
         logger.error(f"Chat completions proxy error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# --- Usage Analytics (LiteLLM Spend Logs) ---
+@app.get("/usage", tags=["Analytics"])
+async def get_usage_stats():
+    """Get token usage statistics from LiteLLM spend logs."""
+    import asyncpg
+
+    import os
+    # Use localhost for host-based controller
+    db_url = "postgresql://postgres:postgres@127.0.0.1:5432/litellm"
+    logger.info(f"[USAGE] Connecting to: {db_url}")
+
+    try:
+        conn = await asyncpg.connect(db_url)
+        
+        # Totals
+        totals = await conn.fetchrow('''
+            SELECT 
+                COALESCE(SUM(total_tokens), 0) as total_tokens,
+                COALESCE(SUM(prompt_tokens), 0) as prompt_tokens,
+                COALESCE(SUM(completion_tokens), 0) as completion_tokens,
+                COUNT(*) as total_requests
+            FROM "LiteLLM_SpendLogs"
+        ''')
+        
+        # Cache stats
+        cache_stats = await conn.fetch('''
+            SELECT 
+                cache_hit,
+                COUNT(*) as count,
+                COALESCE(SUM(total_tokens), 0) as tokens
+            FROM "LiteLLM_SpendLogs"
+            GROUP BY cache_hit
+        ''')
+        
+        # By model
+        by_model = await conn.fetch('''
+            SELECT 
+                model,
+                COALESCE(SUM(total_tokens), 0) as total_tokens,
+                COALESCE(SUM(prompt_tokens), 0) as prompt_tokens,
+                COALESCE(SUM(completion_tokens), 0) as completion_tokens,
+                COUNT(*) as requests
+            FROM "LiteLLM_SpendLogs"
+            WHERE model != '' AND model IS NOT NULL
+            GROUP BY model
+            ORDER BY total_tokens DESC
+            LIMIT 20
+        ''')
+        
+        # Daily breakdown (last 14 days)
+        daily = await conn.fetch('''
+            SELECT 
+                DATE("startTime") as date,
+                COALESCE(SUM(total_tokens), 0) as total_tokens,
+                COALESCE(SUM(prompt_tokens), 0) as prompt_tokens,
+                COALESCE(SUM(completion_tokens), 0) as completion_tokens,
+                COUNT(*) as requests
+            FROM "LiteLLM_SpendLogs"
+            WHERE "startTime" >= CURRENT_DATE - INTERVAL '14 days'
+            GROUP BY DATE("startTime")
+            ORDER BY date DESC
+        ''')
+        
+        await conn.close()
+        
+        # Format cache stats
+        cache_formatted = {
+            "hits": 0,
+            "misses": 0,
+            "hit_tokens": 0,
+            "miss_tokens": 0
+        }
+        for row in cache_stats:
+            if row["cache_hit"] == "True":
+                cache_formatted["hits"] = row["count"]
+                cache_formatted["hit_tokens"] = row["tokens"]
+            elif row["cache_hit"] == "False":
+                cache_formatted["misses"] = row["count"]
+                cache_formatted["miss_tokens"] = row["tokens"]
+        
+        return {
+            "totals": {
+                "total_tokens": totals["total_tokens"],
+                "prompt_tokens": totals["prompt_tokens"],
+                "completion_tokens": totals["completion_tokens"],
+                "total_requests": totals["total_requests"]
+            },
+            "cache": cache_formatted,
+            "by_model": [
+                {
+                    "model": row["model"],
+                    "total_tokens": row["total_tokens"],
+                    "prompt_tokens": row["prompt_tokens"],
+                    "completion_tokens": row["completion_tokens"],
+                    "requests": row["requests"]
+                }
+                for row in by_model
+            ],
+            "daily": [
+                {
+                    "date": row["date"].isoformat(),
+                    "total_tokens": row["total_tokens"],
+                    "prompt_tokens": row["prompt_tokens"],
+                    "completion_tokens": row["completion_tokens"],
+                    "requests": row["requests"]
+                }
+                for row in daily
+            ]
+        }
+    except Exception as e:
+        logger.error(f"Failed to fetch usage stats: {e}")
         raise HTTPException(status_code=500, detail=str(e))

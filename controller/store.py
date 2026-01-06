@@ -452,6 +452,8 @@ class LifetimeMetricsStore:
             # Initialize default values if they don't exist
             defaults = [
                 ('tokens_total', 0),
+                ('prompt_tokens_total', 0),
+                ('completion_tokens_total', 0),
                 ('energy_wh', 0),
                 ('uptime_seconds', 0),
                 ('requests_total', 0),
@@ -509,6 +511,14 @@ class LifetimeMetricsStore:
     def add_tokens(self, tokens: int) -> None:
         """Add to lifetime token count."""
         self.increment('tokens_total', tokens)
+
+    def add_prompt_tokens(self, tokens: int) -> None:
+        """Add to lifetime prompt token count."""
+        self.increment('prompt_tokens_total', tokens)
+
+    def add_completion_tokens(self, tokens: int) -> None:
+        """Add to lifetime completion token count."""
+        self.increment('completion_tokens_total', tokens)
 
     def add_uptime(self, seconds: float) -> None:
         """Add to lifetime uptime."""

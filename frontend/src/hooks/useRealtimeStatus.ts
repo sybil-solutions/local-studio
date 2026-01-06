@@ -15,7 +15,7 @@ interface GPUData {
 
 interface LaunchProgressData {
   recipe_id: string;
-  stage: 'evicting' | 'launching' | 'waiting' | 'ready' | 'error';
+  stage: 'preempting' | 'evicting' | 'launching' | 'waiting' | 'ready' | 'cancelled' | 'error';
   message: string;
   progress?: number;
 }
@@ -70,7 +70,7 @@ export function useRealtimeStatus(apiBaseUrl: string = '/api/proxy') {
           setLaunchProgress(progressData);
 
           // Auto-clear progress after success/error
-          if (progressData.stage === 'ready' || progressData.stage === 'error') {
+          if (progressData.stage === 'ready' || progressData.stage === 'error' || progressData.stage === 'cancelled') {
             setTimeout(() => setLaunchProgress(null), 5000);
           }
           break;

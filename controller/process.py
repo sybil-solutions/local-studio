@@ -13,6 +13,7 @@ import psutil
 from .backends import build_sglang_command, build_vllm_command
 from .config import settings
 from .models import Backend, ProcessInfo, Recipe
+from .backends import build_transformers_command
 
 
 def _extract_flag(cmdline: List[str], flag: str) -> Optional[str]:
@@ -29,12 +30,19 @@ def _build_env(recipe: Recipe) -> Dict[str, str]:
     # Bypass flashinfer version check (common issue with vLLM)
     env["FLASHINFER_DISABLE_VERSION_CHECK"] = "1"
 
-    env_vars = (
+    env_vars = {}
+    if isinstance(recipe.env_vars, dict):
+        env_vars.update(recipe.env_vars)
+
+    extra_env_vars = (
         recipe.extra_args.get("env_vars")
         or recipe.extra_args.get("env-vars")
         or recipe.extra_args.get("envVars")
     )
-    if isinstance(env_vars, dict):
+    if isinstance(extra_env_vars, dict):
+        env_vars.update(extra_env_vars)
+
+    if env_vars:
         for k, v in env_vars.items():
             if v is None:
                 continue
@@ -63,6 +71,10 @@ def _is_inference_process(cmdline: List[str]) -> Optional[str]:
         return "vllm"
     if "sglang.launch_server" in joined:
         return "sglang"
+    if "scripts.deepseek.transformers_server:app" in joined:
+        return "transformers"
+    if "scripts.deepseek.transformers_server" in joined and "uvicorn" in joined:
+        return "transformers"
     # TabbyAPI / ExLlamaV3 (main.py with --config flag)
     if "tabbyAPI" in joined or ("main.py" in joined and "--config" in joined):
         return "tabbyapi"
@@ -151,30 +163,46 @@ def find_inference_process(port: int) -> Optional[ProcessInfo]:
 
 
 async def kill_process(pid: int, force: bool = False) -> bool:
-    """Kill process and its children."""
+    """Kill process and its children.
+
+    If force=True, uses SIGKILL immediately for faster cleanup.
+    """
     try:
         proc = psutil.Process(pid)
     except psutil.NoSuchProcess:
         return True
 
-    # Kill children first
-    for child in proc.children(recursive=True):
+    # Get all children before killing parent
+    children = proc.children(recursive=True)
+
+    if force:
+        # Force mode: SIGKILL everything immediately
+        for child in children:
+            try:
+                child.kill()
+            except psutil.NoSuchProcess:
+                pass
         try:
-            child.kill()
+            proc.kill()
+        except psutil.NoSuchProcess:
+            pass
+    else:
+        # Graceful mode: SIGTERM first, then SIGKILL
+        for child in children:
+            try:
+                child.terminate()
+            except psutil.NoSuchProcess:
+                pass
+        try:
+            proc.terminate()
+            proc.wait(timeout=10)
+        except psutil.TimeoutExpired:
+            proc.kill()
         except psutil.NoSuchProcess:
             pass
 
-    # Terminate main process
-    try:
-        proc.terminate()
-        proc.wait(timeout=10)
-    except psutil.TimeoutExpired:
-        if force:
-            proc.kill()
-    except psutil.NoSuchProcess:
-        pass
-
-    await asyncio.sleep(1)
+    # Brief wait for cleanup
+    await asyncio.sleep(0.5 if force else 1)
     return True
 
 
@@ -184,6 +212,8 @@ async def launch_model(recipe: Recipe) -> Tuple[bool, Optional[int], str]:
 
     if recipe.backend == Backend.SGLANG:
         cmd = build_sglang_command(recipe)
+    elif recipe.backend == Backend.TRANSFORMERS:
+        cmd = build_transformers_command(recipe)
     else:
         cmd = build_vllm_command(recipe)
 

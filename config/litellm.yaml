@@ -2,11 +2,60 @@
 # Handles API routing, format translation, and cost tracking
 
 model_list:
+  # GLM-4.7 - reasoning support with glm45 parser
+  - model_name: "glm-4.7"
+    litellm_params:
+      model: "openai/glm-4.7"
+      api_base: "http://host.docker.internal:8000/v1"
+      api_key: "${INFERENCE_API_KEY:-sk-placeholder}"
+      stream_timeout: 600
+      timeout: 600
+      supports_function_calling: true
+      supports_vision: false
+      supports_reasoning: true
+
+  # GLM-4.7-REAP-50 - 4xTP 2xPP, 200K context, FP8 KV, reasoning support
+  - model_name: "GLM-4.7-REAP-50"
+    litellm_params:
+      model: "openai/GLM-4.7-REAP-50"
+      api_base: "http://host.docker.internal:8000/v1"
+      api_key: "${INFERENCE_API_KEY:-sk-placeholder}"
+      stream_timeout: 600
+      timeout: 600
+      supports_function_calling: true
+      supports_vision: false
+      supports_reasoning: true
+
+  # MiniMax-M2.1
+  - model_name: "MiniMax-M2.1"
+    litellm_params:
+      model: "openai/minimax-m2.1"
+      api_base: "http://host.docker.internal:8000/v1"
+      api_key: "${INFERENCE_API_KEY:-sk-placeholder}"
+      stream_timeout: 600
+      timeout: 600
+      supports_function_calling: true
+      supports_vision: true
+      supports_response_schema: true
+      supports_reasoning: true
+
+  - model_name: "MiniMax-M2.1-REAP-50"
+    litellm_params:
+      model: "openai/minimax-m2.1-reap-50"
+      api_base: "http://host.docker.internal:8000/v1"
+      api_key: "${INFERENCE_API_KEY:-sk-placeholder}"
+      stream_timeout: 600
+      timeout: 600
+      supports_function_calling: true
+      supports_vision: true
+      supports_response_schema: true
+      supports_reasoning: true
+
   # Wildcard catch-all for any model name -> route to local inference server
   - model_name: "*"
     litellm_params:
       model: "openai/*"
-      api_base: "${INFERENCE_API_BASE:-http://localhost:8000/v1}"
+      api_base: "http://host.docker.internal:8000/v1"
       api_key: "${INFERENCE_API_KEY:-sk-placeholder}"
       stream_timeout: 600
       timeout: 600
@@ -26,7 +75,8 @@ router_settings:
 
 # LiteLLM settings
 litellm_settings:
-  drop_params: true
+  callbacks: tool_call_handler.proxy_handler_instance
+  drop_params: false
   set_verbose: false
   request_timeout: 600
   telemetry: false

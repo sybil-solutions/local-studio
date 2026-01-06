@@ -131,6 +131,13 @@ export default function ChatPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Timer state - tracks elapsed time during streaming
+  const [streamingStartTime, setStreamingStartTime] = useState<number | null>(null);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+
+  // Queued context - allows typing additional context while streaming
+  const [queuedContext, setQueuedContext] = useState('');
+
   // Model state
   const [runningModel, setRunningModel] = useState<string | null>(null);
   const [modelName, setModelName] = useState<string>('');
@@ -242,10 +249,12 @@ export default function ChatPage() {
   }, []);
 
   // Page visibility handling - save state when going to background
+  // NOTE: We do NOT abort the streaming request when backgrounded - this prevents 524 timeouts
+  // The stream will continue in the background and update the UI when the user returns
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (document.hidden) {
-        // Save state when going to background
+        // Save state when going to background (but don't abort streams)
         saveState({
           currentSessionId,
           input,
@@ -263,8 +272,30 @@ export default function ChatPage() {
       }
     };
 
+    // Handle page unload - save final state
+    const handleBeforeUnload = () => {
+      saveState({
+        currentSessionId,
+        input,
+        selectedModel,
+        mcpEnabled,
+        artifactsEnabled,
+        systemPrompt,
+        messages: messages.map(m => ({
+          id: m.id,
+          role: m.role,
+          content: m.content,
+          model: m.model,
+        })),
+      });
+    };
+
     document.addEventListener('visibilitychange', handleVisibilityChange);
-    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
   }, [currentSessionId, input, selectedModel, mcpEnabled, artifactsEnabled, systemPrompt, messages]);
 
   // Debounced save on settings changes
@@ -306,6 +337,46 @@ export default function ChatPage() {
       setMcpTools([]);
     }
   }, [mcpEnabled]);
+
+  // Timer effect - updates elapsed time every second during streaming
+  useEffect(() => {
+    let intervalId: NodeJS.Timeout | null = null;
+
+    if (isLoading && streamingStartTime) {
+      intervalId = setInterval(() => {
+        setElapsedSeconds(Math.floor((Date.now() - streamingStartTime) / 1000));
+      }, 1000);
+    } else if (!isLoading) {
+      // Keep showing the final time for a moment, then reset
+      const timeoutId = setTimeout(() => {
+        if (!isLoading) {
+          setStreamingStartTime(null);
+          setElapsedSeconds(0);
+        }
+      }, 3000); // Keep showing time for 3s after completion
+      return () => clearTimeout(timeoutId);
+    }
+
+    return () => {
+      if (intervalId) clearInterval(intervalId);
+    };
+  }, [isLoading, streamingStartTime]);
+
+  // Track previous loading state for queued context handling
+  const prevIsLoadingRef = useRef(isLoading);
+  useEffect(() => {
+    // When loading ends (true -> false), prepend queued context to input
+    if (prevIsLoadingRef.current && !isLoading && queuedContext.trim()) {
+      setInput((prev) => {
+        const context = queuedContext.trim();
+        const currentInput = prev.trim();
+        // Prepend context with newline if there's existing input
+        return currentInput ? `${context}\n\n${currentInput}` : context;
+      });
+      setQueuedContext('');
+    }
+    prevIsLoadingRef.current = isLoading;
+  }, [isLoading, queuedContext]);
 
   const loadMCPServers = async () => {
     try {
@@ -989,6 +1060,8 @@ Start your research immediately when you receive a question. Do not ask for clar
     setMessages((prev) => [...prev, userMessage]);
     setInput('');
     setIsLoading(true);
+    setStreamingStartTime(Date.now());
+    setElapsedSeconds(0);
     setError(null);
 
     abortControllerRef.current = new AbortController();
@@ -1120,11 +1193,18 @@ Start your research immediately when you receive a question. Do not ask for clar
           return value;
         }, 2));
 
-        const requestBody = {
+        const requestBody: Record<string, unknown> = {
           messages: conversationMessages,
           model: activeModelId,
           tools: getOpenAITools(),
         };
+
+        // MiniMax recommended sampling params: temperature=1.0, top_p=0.95, top_k=40
+        if (activeModelId.toLowerCase().includes('minimax')) {
+          requestBody.temperature = 1.0;
+          requestBody.top_p = 0.95;
+          requestBody.top_k = 40;
+        }
 
         const response = await fetch('/api/chat', {
           method: 'POST',
@@ -1642,9 +1722,9 @@ Start your research immediately when you receive a question. Do not ask for clar
       )}
 
       {/* Main Chat Area */}
-      <div className={`flex-1 flex flex-col min-h-0 ${isMobile ? '' : sidebarCollapsed ? 'md:ml-8' : 'md:ml-44'} `}>
+      <div className={`flex-1 flex flex-col min-h-0 overflow-x-hidden ${isMobile ? '' : sidebarCollapsed ? 'md:ml-8' : 'md:ml-56'} `}>
         {/* Unified Header - different layout for mobile vs desktop */}
-        <div className={`sticky top-0 z-40 bg-[var(--card)] border-b border-[var(--border)] flex-shrink-0 w-full overflow-hidden`}
+        <div className={`relative z-40 bg-[var(--card)] border-b border-[var(--border)] flex-shrink-0`}
           style={isMobile ? { paddingTop: 'env(safe-area-inset-top, 0)' } : undefined}
         >
           <div className="flex items-center justify-between gap-2 px-2 md:px-4 py-1.5 md:py-2 w-full">
@@ -1768,7 +1848,7 @@ Start your research immediately when you receive a question. Do not ask for clar
                     </div>
                   ) : (
                     <>
-                      <div className="text-sm font-medium truncate max-w-none" title={currentSessionTitle}>
+                      <div className="text-sm font-medium truncate" title={currentSessionTitle}>
                         {currentSessionTitle || 'Chat'}
                       </div>
                       {currentSessionId && (
@@ -1892,19 +1972,18 @@ Start your research immediately when you receive a question. Do not ask for clar
           </div>
         </div>
 
-        {/* Messages + Tool Panel Container */}
-        <div className={`flex-1 flex overflow-hidden ${!isMobile && hasToolActivity && toolPanelOpen ? "md:mr-80" : ""}`}>
-          {/* Messages Area - Premium scrolling */}
-          <div className="flex-1 overflow-y-auto overflow-x-hidden scroll-smooth">
+        {/* Main Content + Tool Panel Container */}
+        <div className="flex-1 flex overflow-hidden">
+          {/* Left side: Messages + Input */}
+          <div className="flex-1 flex flex-col overflow-hidden relative">
+            {/* Messages Area */}
+            <div className="flex-1 overflow-y-auto overflow-x-hidden">
             <div className="pb-4">
             {messages.length === 0 ? (
               <div className="flex items-center justify-center min-h-[60vh]">
-                <div className="text-center px-4 py-8 animate-fade-in">
-                  <div className="w-12 h-12 rounded-full bg-gradient-to-br from-[#363432] to-[#2a2826] flex items-center justify-center mx-auto mb-5 shadow-lg">
-                    <Sparkles className="h-5 w-5 text-[#8b7355]" />
-                  </div>
-                  <h2 className="text-lg font-medium text-[#f0ebe3] mb-2">Start a conversation</h2>
-                  <p className="text-sm text-[#6a6560] max-w-xs mx-auto leading-relaxed">
+                <div className="text-center px-4 py-8">
+                  <h2 className="text-base font-medium mb-2">Start a conversation</h2>
+                  <p className="text-sm text-[var(--muted)] max-w-xs mx-auto">
                     {selectedModel || runningModel
                       ? 'Send a message to begin chatting.'
                       : 'Select a model in Settings to get started.'}
@@ -1912,15 +1991,12 @@ Start your research immediately when you receive a question. Do not ask for clar
                 </div>
               </div>
             ) : (
-              <div className="max-w-3xl mx-auto py-6 md:py-8 px-4 md:px-6 space-y-8">
+              <div className="max-w-4xl mx-auto py-6 px-4 md:px-6 space-y-6">
                   {messages.map((message, index) => (
                     <div key={message.id} className="animate-message-appear" style={{ animationDelay: `${Math.min(index * 50, 200)}ms` }}>
                       {/* User Message - Premium clean design */}
                       {message.role === 'user' ? (
-                        <div className="flex gap-4 group">
-                          <div className="w-7 h-7 rounded-full bg-gradient-to-br from-[#3d3b38] to-[#2d2b29] flex items-center justify-center flex-shrink-0 mt-0.5 shadow-sm">
-                            <User className="h-3.5 w-3.5 text-[#9a9088]" />
-                          </div>
+                        <div className="group">
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2 mb-1.5">
                               <span className="text-xs font-medium text-[#8a8580]">You</span>
@@ -1953,10 +2029,7 @@ Start your research immediately when you receive a question. Do not ask for clar
                         </div>
                       ) : (
                         /* Assistant Message - Premium with streaming indicator */
-                        <div className="flex gap-4 group">
-                          <div className={`w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5 shadow-sm transition-all duration-300 ${message.isStreaming ? 'bg-gradient-to-br from-[#7d9a6a]/30 to-[#5a7a4a]/20 ring-2 ring-[#7d9a6a]/20' : 'bg-gradient-to-br from-[#2a2826] to-[#1e1c1a]'}`}>
-                            <Sparkles className={`h-3.5 w-3.5 transition-all ${message.isStreaming ? 'text-[#7d9a6a] animate-pulse scale-110' : 'text-[#8b7355]'}`} />
-                          </div>
+                        <div className="group">
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2 mb-1.5">
                               <span className="text-xs font-medium text-[#9a8570]">
@@ -2068,43 +2141,92 @@ Start your research immediately when you receive a question. Do not ask for clar
             </div>
           </div>
 
-          {/* Tool Activity Panel - Desktop Only */}
+            {/* Panel Toggle Button - When panel is closed */}
+            {!isMobile && hasToolActivity && !toolPanelOpen && (
+              <button
+                onClick={() => setToolPanelOpen(true)}
+                className="absolute right-3 top-3 p-1.5 bg-[var(--card)] border border-[var(--border)] rounded hover:bg-[var(--accent)] transition-colors z-10"
+                title="Show tools"
+              >
+                <PanelRightOpen className="h-4 w-4 text-[var(--muted)]" />
+                {executingTools.size > 0 && (
+                  <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-[var(--success)] rounded-full flex items-center justify-center text-[9px] text-white font-medium">
+                    {executingTools.size}
+                  </span>
+                )}
+              </button>
+            )}
+
+            {/* Input Tool Belt */}
+            <div className="flex-shrink-0">
+              <ToolBelt
+                value={input}
+                onChange={setInput}
+                onSubmit={sendMessage}
+                onStop={stopGeneration}
+                disabled={!((selectedModel || runningModel || '').trim())}
+                isLoading={isLoading}
+                modelName={selectedModel || modelName}
+                placeholder={(selectedModel || runningModel) ? (deepResearch.enabled ? 'Ask a research question...' : 'Message...') : 'Select a model in Settings'}
+                mcpEnabled={mcpEnabled}
+                onMcpToggle={() => setMcpEnabled(!mcpEnabled)}
+                mcpServers={mcpServers.map((s) => ({ name: s.name, enabled: s.enabled }))}
+                artifactsEnabled={artifactsEnabled}
+                onArtifactsToggle={() => setArtifactsEnabled(!artifactsEnabled)}
+                onOpenMcpSettings={() => setMcpSettingsOpen(true)}
+                onOpenChatSettings={() => setChatSettingsOpen(true)}
+                hasSystemPrompt={systemPrompt.trim().length > 0}
+                deepResearchEnabled={deepResearch.enabled}
+                onDeepResearchToggle={() => {
+                  const newEnabled = !deepResearch.enabled;
+                  setDeepResearch(prev => ({ ...prev, enabled: newEnabled }));
+                  if (newEnabled && !mcpEnabled) {
+                    setMcpEnabled(true);
+                  }
+                }}
+                elapsedSeconds={elapsedSeconds}
+                queuedContext={queuedContext}
+                onQueuedContextChange={setQueuedContext}
+              />
+            </div>
+          </div>
+
+          {/* Tool Activity Panel - Desktop Only - Full height sidebar */}
           {!isMobile && hasToolActivity && toolPanelOpen && (
-            <div className="fixed right-0 top-0 bottom-0 w-80 bg-gradient-to-b from-[#1a1918] to-[#151413] border-l border-[#2a2826] flex flex-col z-30 shadow-2xl">
-              {/* Panel Header - Premium glass effect */}
-              <div className="flex items-center justify-between px-4 py-3.5 border-b border-[#2a2826] bg-[#1a1918]/80 backdrop-blur-sm">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-6 h-6 rounded-md bg-gradient-to-br from-[#8b7355]/20 to-[#6a5540]/10 flex items-center justify-center">
-                    <Brain className="h-3.5 w-3.5 text-[#a08060]" />
-                  </div>
-                  <span className="text-sm font-medium text-[#e8e4dd]">Activity</span>
+            <div className="w-72 flex-shrink-0 border-l border-[var(--border)] bg-[var(--background)] flex flex-col overflow-hidden">
+              {/* Panel Header */}
+              <div className="flex items-center justify-between px-3 py-2 border-b border-[var(--border)]">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-medium text-[var(--muted)]">Tools</span>
                   {executingTools.size > 0 && (
-                    <span className="flex items-center gap-1.5 px-2 py-0.5 bg-[#7d9a6a]/15 rounded-full text-[10px] text-[#7d9a6a] font-medium">
-                      <Loader2 className="h-3 w-3 animate-spin" />
-                      {executingTools.size} running
+                    <span className="flex items-center gap-1 text-[10px] text-[var(--success)]">
+                      <span className="relative flex h-1.5 w-1.5">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[var(--success)] opacity-75"></span>
+                        <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-[var(--success)]"></span>
+                      </span>
+                      {executingTools.size}
                     </span>
                   )}
                 </div>
                 <button
                   onClick={() => setToolPanelOpen(false)}
-                  className="p-1.5 rounded-md hover:bg-[#2a2826] transition-all"
+                  className="p-1 rounded hover:bg-[var(--accent)] transition-colors"
                 >
-                  <PanelRightClose className="h-4 w-4 text-[#6a6560]" />
+                  <X className="h-3.5 w-3.5 text-[var(--muted)]" />
                 </button>
               </div>
 
               {/* Panel Content */}
-              <div className="flex-1 overflow-y-auto p-3 space-y-4 scrollbar-thin">
+              <div className="flex-1 overflow-y-auto text-sm">
                 {/* Research Progress */}
                 {researchProgress && (
-                  <div className="p-3 bg-[#1e1e1e] rounded-lg border border-[#363432] animate-fade-in">
-                    <div className="flex items-center gap-2 mb-2">
-                      <Brain className="h-3.5 w-3.5 text-blue-400" />
-                      <span className="text-xs font-medium text-[#f0ebe3]">Research in Progress</span>
+                  <div className="px-3 py-2 border-b border-[var(--border)] bg-blue-500/5">
+                    <div className="flex items-center gap-2">
+                      <Loader2 className="h-3 w-3 text-blue-500 animate-spin" />
+                      <span className="text-xs">{researchProgress.message || 'Researching...'}</span>
                     </div>
-                    <div className="text-xs text-[#9a9088]">{researchProgress.message || 'Searching...'}</div>
                     {researchProgress.totalSteps > 0 && (
-                      <div className="mt-2 h-1 bg-[#363432] rounded-full overflow-hidden">
+                      <div className="mt-2 h-1 bg-[var(--border)] rounded-full overflow-hidden">
                         <div className="h-full bg-blue-500 rounded-full transition-all" style={{ width: `${(researchProgress.currentStep / researchProgress.totalSteps) * 100}%` }} />
                       </div>
                     )}
@@ -2112,70 +2234,55 @@ Start your research immediately when you receive a question. Do not ask for clar
                 )}
 
                 {/* Tool Calls */}
-                {allToolCalls.length > 0 && (
-                  <div className="space-y-2">
-                    <div className="text-[10px] uppercase tracking-wider text-[#6a6560] px-1 flex items-center gap-2">
-                      <Wrench className="h-3 w-3" />
-                      Tool Calls ({allToolCalls.length})
-                    </div>
-                    {allToolCalls.map((tc) => {
-                      const result = toolResultsMap.get(tc.id);
-                      const isExecuting = executingTools.has(tc.id);
-                      let args: Record<string, unknown> = {};
-                      try { args = JSON.parse(tc.function.arguments || '{}'); } catch {}
+                {allToolCalls.map((tc) => {
+                  const result = toolResultsMap.get(tc.id);
+                  const isExecuting = executingTools.has(tc.id);
+                  let args: Record<string, unknown> = {};
+                  try { args = JSON.parse(tc.function.arguments || '{}'); } catch {}
+                  const mainArg = args.query || args.url || args.text || Object.values(args)[0];
+                  const argPreview = typeof mainArg === 'string' ? mainArg : JSON.stringify(mainArg || '');
+                  const parts = tc.function.name.split('__');
+                  const toolName = parts.length > 1 ? parts.slice(1).join('__') : tc.function.name;
 
-                      return (
-                        <div key={tc.id} className={`rounded-lg border overflow-hidden transition-all duration-200 ${
-                          isExecuting ? 'bg-[#1e1c1a] border-[#c9a66b]/30 shadow-[0_0_12px_rgba(201,166,107,0.1)]' :
-                          result ? 'bg-[#1a1918] border-[#2a2826]' : 'bg-[#1a1918] border-[#2a2826]'
-                        }`}>
-                          <div className="flex items-center gap-2.5 px-3 py-2.5">
-                            <div className={`w-5 h-5 rounded-md flex items-center justify-center flex-shrink-0 ${
-                              isExecuting ? 'bg-[#c9a66b]/20' : result ? 'bg-[#7d9a6a]/20' : 'bg-[#2a2826]'
-                            }`}>
-                              {isExecuting ? (
-                                <Loader2 className="h-3 w-3 text-[#c9a66b] animate-spin" />
-                              ) : result ? (
-                                <Check className="h-3 w-3 text-[#7d9a6a]" />
-                              ) : (
-                                <Wrench className="h-3 w-3 text-[#6a6560]" />
-                              )}
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <div className="text-[11px] font-medium text-[#e8e4dd] truncate">{tc.function.name}</div>
-                            </div>
-                          </div>
-                          {/* Show key args */}
-                          {Object.keys(args).length > 0 && (
-                            <div className="px-3 pb-2.5 space-y-0.5">
-                              {Object.entries(args).slice(0, 3).map(([k, v]) => (
-                                <div key={k} className="text-[10px] text-[#6a6560] truncate">
-                                  <span className="text-[#8b7355]">{k}:</span> {String(v).slice(0, 50)}{String(v).length > 50 ? '...' : ''}
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                          {/* Show result summary */}
-                          {result && (
-                            <div className="px-3 pb-2.5 pt-2 border-t border-[#2a2826]/50">
-                              <div className="text-[9px] uppercase tracking-wider text-[#7d9a6a] mb-1">Result</div>
-                              <div className="text-[10px] text-[#8a8580] line-clamp-3 font-mono leading-relaxed">
-                                {result.content.slice(0, 200)}{result.content.length > 200 ? '...' : ''}
-                              </div>
-                            </div>
-                          )}
+                  return (
+                    <div key={tc.id} className={`px-3 py-2 border-b border-[var(--border)] ${isExecuting ? 'bg-[var(--warning)]/5' : ''}`}>
+                      <div className="flex items-center gap-2">
+                        {isExecuting ? (
+                          <Loader2 className="h-3 w-3 text-[var(--warning)] animate-spin flex-shrink-0" />
+                        ) : result ? (
+                          result.isError ? (
+                            <X className="h-3 w-3 text-[var(--error)] flex-shrink-0" />
+                          ) : (
+                            <Check className="h-3 w-3 text-[var(--success)] flex-shrink-0" />
+                          )
+                        ) : (
+                          <Wrench className="h-3 w-3 text-[var(--muted)] flex-shrink-0" />
+                        )}
+                        <span className="text-xs font-medium truncate">{toolName}</span>
+                      </div>
+
+                      {argPreview && (
+                        <p className="text-[11px] text-[var(--muted)] mt-1 line-clamp-2 break-all pl-5">
+                          {String(argPreview).slice(0, 80)}
+                        </p>
+                      )}
+
+                      {result && !isExecuting && (
+                        <div className="mt-1.5 pl-5">
+                          <p className={`text-[11px] font-mono line-clamp-3 ${result.isError ? 'text-[var(--error)]' : 'text-[var(--muted)]'}`}>
+                            {result.content.slice(0, 150)}
+                          </p>
                         </div>
-                      );
-                    })}
-                  </div>
-                )}
+                      )}
+                    </div>
+                  );
+                })}
 
                 {/* Research Sources */}
                 {researchSources.length > 0 && (
-                  <div className="space-y-2">
-                    <div className="text-[10px] uppercase tracking-wider text-[#6a6560] px-1 flex items-center gap-2">
-                      <ExternalLink className="h-3 w-3" />
-                      Sources ({researchSources.length})
+                  <>
+                    <div className="px-3 py-1.5 text-[10px] uppercase tracking-wider text-[var(--muted)] bg-[var(--accent)]/50 border-b border-[var(--border)]">
+                      Sources
                     </div>
                     {researchSources.map((source, i) => (
                       <a
@@ -2183,69 +2290,23 @@ Start your research immediately when you receive a question. Do not ask for clar
                         href={source.url}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="block p-2.5 bg-[#1a1918] rounded-lg border border-[#2a2826] hover:border-[#8b7355]/40 hover:bg-[#1e1c1a] transition-all duration-200"
+                        className="block px-3 py-2 border-b border-[var(--border)] hover:bg-[var(--accent)] transition-colors"
                       >
-                        <div className="flex items-start gap-2">
-                          <ExternalLink className="h-3 w-3 text-[#8b7355] flex-shrink-0 mt-0.5" />
-                          <div className="min-w-0">
-                            <div className="text-xs font-medium text-[#f0ebe3] line-clamp-2">{source.title}</div>
-                            <div className="text-[10px] text-[#9a9088] truncate mt-0.5">{source.url}</div>
-                          </div>
-                        </div>
+                        <div className="text-xs line-clamp-1">{source.title}</div>
+                        <div className="text-[10px] text-[var(--muted)] truncate">{source.url}</div>
                       </a>
                     ))}
+                  </>
+                )}
+
+                {allToolCalls.length === 0 && !researchProgress && researchSources.length === 0 && (
+                  <div className="px-3 py-6 text-center text-xs text-[var(--muted)]">
+                    No activity yet
                   </div>
                 )}
               </div>
             </div>
           )}
-
-          {/* Panel Toggle Button - When panel is closed */}
-          {!isMobile && hasToolActivity && !toolPanelOpen && (
-            <button
-              onClick={() => setToolPanelOpen(true)}
-              className="fixed right-4 bottom-24 p-2.5 bg-[#1e1e1e] border border-[#363432] rounded-lg shadow-lg hover:bg-[#363432] transition-colors z-30"
-              title="Show activity panel"
-            >
-              <PanelRightOpen className="h-4 w-4 text-[#8b7355]" />
-              {executingTools.size > 0 && (
-                <span className="absolute -top-1 -right-1 w-4 h-4 bg-[#7d9a6a] rounded-full flex items-center justify-center text-[10px] text-white font-medium">
-                  {executingTools.size}
-                </span>
-              )}
-            </button>
-          )}
-        </div>
-
-        {/* Input Tool Belt - sticky at bottom */}
-        <div className={`flex-shrink-0 ${!isMobile && hasToolActivity && toolPanelOpen ? "md:mr-80" : ""}`}>
-          <ToolBelt
-          value={input}
-          onChange={setInput}
-          onSubmit={sendMessage}
-          onStop={stopGeneration}
-          disabled={!((selectedModel || runningModel || '').trim())}
-          isLoading={isLoading}
-          modelName={selectedModel || modelName}
-          placeholder={(selectedModel || runningModel) ? (deepResearch.enabled ? 'Ask a research question...' : 'Message...') : 'Select a model in Settings'}
-          mcpEnabled={mcpEnabled}
-          onMcpToggle={() => setMcpEnabled(!mcpEnabled)}
-          mcpServers={mcpServers.map((s) => ({ name: s.name, enabled: s.enabled }))}
-          artifactsEnabled={artifactsEnabled}
-          onArtifactsToggle={() => setArtifactsEnabled(!artifactsEnabled)}
-          onOpenMcpSettings={() => setMcpSettingsOpen(true)}
-          onOpenChatSettings={() => setChatSettingsOpen(true)}
-          hasSystemPrompt={systemPrompt.trim().length > 0}
-          deepResearchEnabled={deepResearch.enabled}
-          onDeepResearchToggle={() => {
-            const newEnabled = !deepResearch.enabled;
-            setDeepResearch(prev => ({ ...prev, enabled: newEnabled }));
-            // Auto-enable MCP tools when Deep Research is turned on (needed for Exa/search tools)
-            if (newEnabled && !mcpEnabled) {
-              setMcpEnabled(true);
-            }
-          }}
-        />
         </div>
       </div>
     </div>

@@ -4,6 +4,8 @@ services:
   postgres:
     image: postgres:16
     container_name: vllm-studio-postgres
+    ports:
+      - "5432:5432"
     environment:
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=postgres
@@ -11,6 +13,11 @@ services:
     volumes:
       - ./data/postgres:/var/lib/postgresql/data
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   # LiteLLM - API gateway (handles routing, format translation, cost tracking)
   litellm:
@@ -24,20 +31,23 @@ services:
       - ./data:/app/data
     environment:
       - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY:-sk-master}
-      - DATABASE_URL=postgresql://postgres:postgres@vllm-studio-postgres:5432/litellm
+      - DATABASE_URL=postgresql://postgres:postgres@vllm-studio-postgres:5432/litellm?connect_timeout=10&pool_pre_ping=true&pool_size=5&max_overflow=10
       - INFERENCE_API_BASE=${INFERENCE_API_BASE:-http://host.docker.internal:8000/v1}
       - INFERENCE_API_KEY=${INFERENCE_API_KEY:-sk-placeholder}
+      - PYTHONPATH=/app
     extra_hosts:
       - "host.docker.internal:host-gateway"
     command: ["--config", "/app/config.yaml", "--port", "4000"]
     restart: unless-stopped
     depends_on:
-      - postgres
+      postgres:
+        condition: service_started
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS -H 'Authorization: Bearer ${LITELLM_MASTER_KEY:-sk-master}' http://localhost:4000/health >/dev/null"]
+      test: ["CMD-SHELL", "python -c \"import urllib.request, os; req = urllib.request.Request('http://localhost:4000/health'); req.add_header('Authorization', 'Bearer ' + os.environ.get('LITELLM_MASTER_KEY', 'sk-master')); urllib.request.urlopen(req)\""]
       interval: 30s
       timeout: 10s
       retries: 3
+      start_period: 40s
 
   # Redis - Caching and rate limiting for LiteLLM
   redis:

@@ -6,6 +6,50 @@ const API_KEY = process.env.API_KEY || '';
 const BOX_TAGS_PATTERN = /<\|(?:begin|end)_of_box\|>/g;
 const stripBoxTags = (text: string) => (text ? text.replace(BOX_TAGS_PATTERN, '') : text);
 
+function cleanTitle(raw: string): string {
+  let title = String(raw || '');
+  
+  // Remove thinking tags and their content (greedy)
+  title = title.replace(/<think[^>]*>[\s\S]*?<\/think[^>]*>/gi, '');
+  title = title.replace(/<\/?think[^>]*>/gi, '');
+  
+  // Remove any remaining XML-like tags
+  title = title.replace(/<[^>]+>/g, '');
+  
+  // Remove code blocks
+  title = title.replace(/```[\s\S]*?```/g, '');
+  title = title.replace(/`[^`]+`/g, '');
+  
+  // Remove markdown formatting
+  title = title.replace(/\*\*([^*]+)\*\*/g, '$1');
+  title = title.replace(/\*([^*]+)\*/g, '$1');
+  title = title.replace(/^#+\s*/gm, '');
+  
+  // Remove common prefixes
+  title = title.replace(/^(Title|Chat Title|Suggested Title|Here'?s? ?(a |the )?title):\s*/gi, '');
+  title = title.replace(/^(User|Assistant|User message|Assistant reply):\s*/gi, '');
+  
+  // Remove quotes
+  title = title.replace(/^["'`]+|["'`]+$/g, '');
+  
+  // Remove numbered list prefixes
+  title = title.replace(/^\d+\.\s*/gm, '');
+  
+  // Get first non-empty line
+  const lines = title.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+  title = lines[0] || title;
+  
+  // Final trim and length limit
+  title = title.trim().slice(0, 60);
+  
+  // If still looks like garbage, return empty
+  if (title.startsWith('<') || title.startsWith('`') || title.length < 2) {
+    return '';
+  }
+  
+  return title;
+}
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => ({}));
@@ -17,8 +61,14 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'User text required' }, { status: 400 });
     }
 
-    const promptUser = stripBoxTags(user).slice(0, 800);
-    const promptAssistant = stripBoxTags(assistant).slice(0, 800);
+    // Clean input text
+    let promptUser = stripBoxTags(user);
+    promptUser = promptUser.replace(/<think[^>]*>[\s\S]*?<\/think[^>]*>/gi, '').trim();
+    promptUser = promptUser.slice(0, 500);
+    
+    let promptAssistant = stripBoxTags(assistant);
+    promptAssistant = promptAssistant.replace(/<think[^>]*>[\s\S]*?<\/think[^>]*>/gi, '').trim();
+    promptAssistant = promptAssistant.slice(0, 500);
 
     const incomingAuth = req.headers.get('authorization');
     const outgoingAuth = incomingAuth || (API_KEY ? `Bearer ${API_KEY}` : undefined);
@@ -32,17 +82,18 @@ export async function POST(req: NextRequest) {
       body: JSON.stringify({
         model,
         stream: false,
-        temperature: 0.2,
-        max_tokens: 24,
+        temperature: 0.3,
+        max_tokens: 15,
         messages: [
           {
-            role: 'system',
-            content:
-              'Generate a short, specific chat title (max 6 words). Return ONLY the title text. No reasoning, no explanations, no quotes, no punctuation at the end. Just the title.',
-          },
-          {
             role: 'user',
-            content: `User message:\n${promptUser}\n\nAssistant reply:\n${promptAssistant}`.trim(),
+            content: `Generate a 3-5 word title for this conversation. Reply with ONLY the title words, no quotes, no punctuation, no explanation.
+
+User said: ${promptUser}
+
+Assistant replied: ${promptAssistant.slice(0, 200)}
+
+Title:`,
           },
         ],
       }),
@@ -50,36 +101,20 @@ export async function POST(req: NextRequest) {
 
     if (!response.ok) {
       const errorText = await response.text();
-      return NextResponse.json({ error: errorText || `HTTP ${response.status}` }, { status: 500 });
+      console.error('Title API error:', errorText);
+      return NextResponse.json({ title: 'New Chat' });
     }
 
     const data = (await response.json().catch(() => null)) as any;
-    let titleRaw = data?.choices?.[0]?.message?.content ?? '';
+    const rawContent = data?.choices?.[0]?.message?.content ?? '';
     
-    // Strip any reasoning/thinking content that might be included
-    titleRaw = String(titleRaw)
-      .replace(/<think[^>]*>[\s\S]*?<\/think[^>]*>/gi, '')
-      .replace(/\*\*.*?\*\*/g, '')
-      .replace(/^\d+\.\s*/gm, '')
-      .replace(/^[\s\S]*?Title:\s*/i, '')
-      .replace(/^(User|Assistant|User message|Assistant reply):\s*/gi, '');
+    const title = cleanTitle(rawContent);
     
-    // Get the last non-empty line without asterisks
-    const lines = titleRaw.split('\n').filter((line: string) => line.trim() && !line.includes('*'));
-    titleRaw = lines.pop() || titleRaw;
-    
-    // Final cleanup: strip quotes and truncate
-    const title = String(titleRaw)
-      .trim()
-      .replace(/^["'`]+|["'`]+$/g, '')
-      .replace(/^(User|Assistant|User message|Assistant reply):\s*/gi, '')
-      .slice(0, 80);
+    console.log('Title generation:', { raw: rawContent.slice(0, 100), cleaned: title });
 
     return NextResponse.json({ title: title || 'New Chat' });
   } catch (error) {
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : String(error) },
-      { status: 500 }
-    );
+    console.error('Title generation error:', error);
+    return NextResponse.json({ title: 'New Chat' });
   }
 }

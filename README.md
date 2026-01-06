@@ -5,8 +5,10 @@ Model lifecycle management for vLLM and SGLang inference servers.
 ## What It Does
 
 - **Launch/evict models** on vLLM or SGLang backends
-- **Save recipes** - reusable model configurations
-- **Web UI** for chat and model management
+- **Save recipes** - reusable model configurations with full parameter support
+- **Reasoning support** - auto-detection for GLM (`glm45`) and MiniMax (`minimax_m2_append_think`) parsers
+- **Tool calling** - native function calling with auto tool choice
+- **Web UI** for chat, model management, and usage analytics
 - **LiteLLM integration** for API gateway features (optional)
 
 ## Architecture
@@ -129,6 +131,8 @@ VLLM_STUDIO_API_KEY=your-key    # Optional auth
 | `dtype` | string | Model dtype |
 | `served_model_name` | string | Name exposed via API |
 | `tool_call_parser` | string | Tool calling parser |
+| `reasoning_parser` | string | Reasoning/thinking parser (auto-detected for GLM, MiniMax) |
+| `enable_auto_tool_choice` | bool | Enable automatic tool selection |
 | `trust_remote_code` | bool | Allow remote code |
 | `extra_args` | object | Additional CLI args |
 

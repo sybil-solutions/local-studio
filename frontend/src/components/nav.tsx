@@ -17,6 +17,7 @@ import {
   Upload,
   Search,
   ChevronRight,
+  BarChart3,
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import api from '@/lib/api';
@@ -27,6 +28,7 @@ const navItems = [
   { href: '/chat', label: 'Chat', icon: MessageSquare, description: 'Talk to your models' },
   { href: '/recipes', label: 'Recipes', icon: Settings, description: 'Model configurations' },
   { href: '/logs', label: 'Logs', icon: FileText, description: 'View backend logs' },
+  { href: '/usage', label: 'Usage', icon: BarChart3, description: 'Token analytics' },
 ];
 
 export default function Nav() {
@@ -189,6 +191,13 @@ export default function Nav() {
       hint: '/recipes',
       keywords: ['launch', 'config'],
       run: () => router.push('/recipes'),
+    },
+    {
+      id: 'go-usage',
+      label: 'Go to Usage',
+      hint: '/usage',
+      keywords: ['analytics', 'tokens', 'stats'],
+      run: () => router.push('/usage'),
     },
     {
       id: 'go-logs',

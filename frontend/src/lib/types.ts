@@ -139,7 +139,19 @@ export interface ModelInfo {
   path: string;
   name: string;
   size_bytes?: number;
-  modified_at?: string;
+  modified_at?: number;
+  architecture?: string | null;
+  quantization?: string | null;
+  context_length?: number | null;
+  recipe_ids?: string[];
+  has_recipe?: boolean;
+}
+
+export interface StudioModelsRoot {
+  path: string;
+  exists: boolean;
+  sources?: string[];
+  recipe_ids?: string[];
 }
 
 // VRAM calculation
@@ -204,11 +216,15 @@ export interface Metrics {
   total_requests?: number;
   // Lifetime metrics (cumulative across all sessions)
   lifetime_tokens?: number;
+  lifetime_prompt_tokens?: number;
+  lifetime_completion_tokens?: number;
   lifetime_requests?: number;
   lifetime_energy_wh?: number;
   lifetime_energy_kwh?: number;
   lifetime_uptime_hours?: number;
   kwh_per_million_tokens?: number;
+  kwh_per_million_input?: number;
+  kwh_per_million_output?: number;
   current_power_watts?: number;
 }
 

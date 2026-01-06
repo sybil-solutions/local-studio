@@ -17,6 +17,8 @@ import {
   Settings,
   SlidersHorizontal,
   Brain,
+  Clock,
+  Plus,
 } from 'lucide-react';
 
 export interface Attachment {
@@ -57,6 +59,11 @@ interface ToolBeltProps {
   // Deep Research
   deepResearchEnabled?: boolean;
   onDeepResearchToggle?: () => void;
+  // Timer for streaming duration
+  elapsedSeconds?: number;
+  // Queued context - additional input while streaming
+  queuedContext?: string;
+  onQueuedContextChange?: (value: string) => void;
 }
 
 export function ToolBelt({
@@ -78,6 +85,9 @@ export function ToolBelt({
   hasSystemPrompt = false,
   deepResearchEnabled = false,
   onDeepResearchToggle,
+  elapsedSeconds = 0,
+  queuedContext = '',
+  onQueuedContextChange,
 }: ToolBeltProps) {
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [isRecording, setIsRecording] = useState(false);
@@ -293,6 +303,52 @@ export function ToolBelt({
               <StopCircle className="h-4 w-4" />
               Stop
             </button>
+          </div>
+        )}
+
+        {/* Streaming Timer & Queued Context Input */}
+        {isLoading && (
+          <div className="mb-3 space-y-2">
+            {/* Timer Display */}
+            <div className="flex items-center gap-2 px-3 py-2 bg-blue-500/10 border border-blue-500/20 rounded-lg">
+              <Clock className="h-4 w-4 text-blue-400 animate-pulse" />
+              <span className="text-sm text-blue-400">Processing</span>
+              <span className="text-sm font-mono text-blue-300 tabular-nums">
+                {formatDuration(elapsedSeconds)}
+              </span>
+              {elapsedSeconds >= 60 && (
+                <span className="ml-auto text-xs text-blue-400/70">
+                  Long-running task
+                </span>
+              )}
+            </div>
+
+            {/* Queued Context Input - Type while waiting */}
+            {onQueuedContextChange && (
+              <div className="relative">
+                <div className="flex items-center gap-2 px-3 py-2 bg-[var(--card)] border border-[var(--border)] rounded-lg">
+                  <Plus className="h-4 w-4 text-[var(--muted)]" />
+                  <input
+                    type="text"
+                    value={queuedContext}
+                    onChange={(e) => onQueuedContextChange(e.target.value)}
+                    placeholder="Add context for next message..."
+                    className="flex-1 bg-transparent text-sm focus:outline-none placeholder:text-[var(--muted)]"
+                  />
+                  {queuedContext && (
+                    <button
+                      onClick={() => onQueuedContextChange('')}
+                      className="p-1 rounded hover:bg-[var(--accent)] transition-colors"
+                    >
+                      <X className="h-3 w-3 text-[var(--muted)]" />
+                    </button>
+                  )}
+                </div>
+                <p className="mt-1 text-[10px] text-[var(--muted)] px-3">
+                  This will be included in your next message
+                </p>
+              </div>
+            )}
           </div>
         )}
 

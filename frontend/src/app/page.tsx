@@ -58,7 +58,7 @@ export default function Dashboard() {
 
   useEffect(() => { loadRecipes(); }, [loadRecipes]);
   useEffect(() => {
-    if (launchProgress?.stage === 'ready' || launchProgress?.stage === 'error') loadRecipes();
+    if (launchProgress?.stage === 'ready' || launchProgress?.stage === 'error' || launchProgress?.stage === 'cancelled') loadRecipes();
   }, [launchProgress?.stage, loadRecipes]);
 
   useEffect(() => {
@@ -166,9 +166,21 @@ export default function Dashboard() {
         {currentProcess && (
           <div className="grid grid-cols-3 sm:grid-cols-6 gap-4 sm:gap-8 mb-6 sm:mb-10">
             <Metric label="Requests" value={metrics?.running_requests || 0} sub={`${metrics?.pending_requests || 0} pending`} />
-            <Metric label="Gen" value={metrics?.peak_generation_tps?.toFixed(1) || metrics?.generation_throughput?.toFixed(1) || '--'} sub="tok/s" />
-            <Metric label="Prefill" value={metrics?.peak_prefill_tps?.toFixed(1) || metrics?.prompt_throughput?.toFixed(1) || '--'} sub="tok/s" />
-            <Metric label="TTFT" value={metrics?.peak_ttft_ms ? Math.round(metrics.peak_ttft_ms) : metrics?.avg_ttft_ms ? Math.round(metrics.avg_ttft_ms) : '--'} sub="ms" />
+            <Metric
+              label="Gen"
+              value={metrics?.generation_throughput?.toFixed(1) || '--'}
+              sub={metrics?.peak_generation_tps ? `peak ${metrics.peak_generation_tps.toFixed(1)}` : 'tok/s'}
+            />
+            <Metric
+              label="Prefill"
+              value={metrics?.prompt_throughput?.toFixed(1) || '--'}
+              sub={metrics?.peak_prefill_tps ? `peak ${metrics.peak_prefill_tps.toFixed(1)}` : 'tok/s'}
+            />
+            <Metric
+              label="TTFT"
+              value={metrics?.avg_ttft_ms ? Math.round(metrics.avg_ttft_ms) : '--'}
+              sub={metrics?.peak_ttft_ms ? `best ${Math.round(metrics.peak_ttft_ms)}ms` : 'ms'}
+            />
             <Metric label="KV Cache" value={metrics?.kv_cache_usage != null ? `${Math.round(metrics.kv_cache_usage * 100)}%` : '--'} />
             <Metric label="Power" value={`${Math.round(totalPower)}W`} sub={`${totalMem.toFixed(0)}/${totalMemMax.toFixed(0)}G`} />
           </div>
@@ -362,9 +374,9 @@ export default function Dashboard() {
                 <div className="text-xs text-[#9a9088] uppercase tracking-wider mb-3">Session</div>
                 <div className="space-y-1.5 sm:space-y-2">
                   <Row label="Requests" value={metrics?.request_success || 0} />
-                  <Row label="Tokens" value={metrics?.generation_tokens_total?.toLocaleString() || 0} />
+                  <Row label="Input" value={metrics?.prompt_tokens_total?.toLocaleString() || 0} />
+                  <Row label="Output" value={metrics?.generation_tokens_total?.toLocaleString() || 0} />
                   <Row label="Running" value={metrics?.running_requests || 0} />
-                  <Row label="Pending" value={metrics?.pending_requests || 0} />
                 </div>
               </div>
 
@@ -372,11 +384,58 @@ export default function Dashboard() {
               <div>
                 <div className="text-xs text-[#9a9088] uppercase tracking-wider mb-3">Lifetime</div>
                 <div className="space-y-1.5 sm:space-y-2">
-                  <Row label="Tokens" value={metrics?.lifetime_tokens?.toLocaleString() || 0} />
+                  <Row label="Input" value={metrics?.lifetime_prompt_tokens?.toLocaleString() || 0} />
+                  <Row label="Output" value={metrics?.lifetime_completion_tokens?.toLocaleString() || 0} />
                   <Row label="Requests" value={metrics?.lifetime_requests?.toLocaleString() || 0} />
                   <Row label="Energy" value={metrics?.lifetime_energy_kwh ? `${metrics.lifetime_energy_kwh.toFixed(2)} kWh` : '--'} />
-                  <Row label="Cost" value={metrics?.lifetime_energy_kwh ? `${(metrics.lifetime_energy_kwh * ELECTRICITY_PRICE_PLN).toFixed(2)} PLN` : '--'} accent />
                   <Row label="Uptime" value={metrics?.lifetime_uptime_hours ? `${metrics.lifetime_uptime_hours.toFixed(1)}h` : '--'} />
+                </div>
+              </div>
+            </div>
+
+            {/* Cost Analytics */}
+            <div>
+              <div className="text-xs text-[#9a9088] uppercase tracking-wider mb-3">Cost Analytics</div>
+              <div className="bg-[#1e1e1e] rounded-lg p-3 space-y-3">
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-[#9a9088]">Total Cost</span>
+                  <span className="text-lg font-medium text-[#7d9a6a]">
+                    {metrics?.lifetime_energy_kwh ? `${(metrics.lifetime_energy_kwh * ELECTRICITY_PRICE_PLN).toFixed(2)} PLN` : '--'}
+                  </span>
+                </div>
+                <div className="border-t border-[#363432] pt-2 space-y-1.5">
+                  <div className="flex justify-between text-xs">
+                    <span className="text-[#9a9088]">kWh/M Input</span>
+                    <span className="text-[#6b9ac9]">
+                      {metrics?.kwh_per_million_input ? metrics.kwh_per_million_input.toFixed(3) : '--'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between text-xs">
+                    <span className="text-[#9a9088]">kWh/M Output</span>
+                    <span className="text-[#7d9a6a]">
+                      {metrics?.kwh_per_million_output ? metrics.kwh_per_million_output.toFixed(3) : '--'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between text-xs">
+                    <span className="text-[#9a9088]">PLN/M Input</span>
+                    <span className="text-[#6b9ac9]">
+                      {metrics?.kwh_per_million_input ? (metrics.kwh_per_million_input * ELECTRICITY_PRICE_PLN).toFixed(2) : '--'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between text-xs">
+                    <span className="text-[#9a9088]">PLN/M Output</span>
+                    <span className="text-[#7d9a6a]">
+                      {metrics?.kwh_per_million_output ? (metrics.kwh_per_million_output * ELECTRICITY_PRICE_PLN).toFixed(2) : '--'}
+                    </span>
+                  </div>
+                </div>
+                <div className="border-t border-[#363432] pt-2">
+                  <div className="flex justify-between text-xs">
+                    <span className="text-[#9a9088]">Current Draw</span>
+                    <span className="text-[#f0ebe3]">
+                      {metrics?.current_power_watts ? `${Math.round(metrics.current_power_watts)}W` : '--'}
+                    </span>
+                  </div>
                 </div>
               </div>
             </div>
@@ -416,7 +475,7 @@ export default function Dashboard() {
       {(launching || launchProgress) && (
         <div className="fixed bottom-4 left-4 right-4 sm:left-auto sm:right-6 sm:bottom-6 z-50 px-4 py-3 bg-[#1e1e1e] rounded-lg shadow-2xl sm:max-w-xs border border-[#363432]" style={{ marginBottom: 'env(safe-area-inset-bottom)' }}>
           <div className="flex items-center gap-3">
-            {launchProgress?.stage === 'error' ? (
+            {launchProgress?.stage === 'error' || launchProgress?.stage === 'cancelled' ? (
               <X className="h-4 w-4 text-[#c97a6b] flex-shrink-0" />
             ) : launchProgress?.stage === 'ready' ? (
               <Check className="h-4 w-4 text-[#7d9a6a] flex-shrink-0" />
@@ -428,7 +487,7 @@ export default function Dashboard() {
               <div className="text-xs text-[#9a9088] truncate">{launchProgress?.message || 'Preparing...'}</div>
             </div>
           </div>
-          {launchProgress?.progress != null && launchProgress.stage !== 'ready' && launchProgress.stage !== 'error' && (
+          {launchProgress?.progress != null && launchProgress.stage !== 'ready' && launchProgress.stage !== 'error' && launchProgress.stage !== 'cancelled' && (
             <div className="mt-2 h-1.5 sm:h-1 bg-[#363432] rounded-full overflow-hidden">
               <div className="h-full bg-[#8b7355] rounded-full transition-all" style={{ width: `${Math.round(launchProgress.progress * 100)}%` }} />
             </div>
