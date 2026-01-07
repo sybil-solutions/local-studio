@@ -2115,7 +2115,8 @@ async def get_usage_stats():
         success_rate = round(totals["successful_requests"] / totals["total_requests"] * 100, 2) if totals["total_requests"] else 0
 
         return {
-            "summary": {
+            # Keep "totals" for backward compatibility with frontend
+            "totals": {
                 "total_tokens": totals["total_tokens"],
                 "prompt_tokens": totals["prompt_tokens"],
                 "completion_tokens": totals["completion_tokens"],
