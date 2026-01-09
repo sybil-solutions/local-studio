@@ -76,11 +76,11 @@ export function ResearchProgressIndicator({
           </div>
           <div className="text-left">
             <div className="text-sm font-medium">{stageLabels[progress.stage]}</div>
-            <div className="text-xs text-[var(--muted)]">{progress.message}</div>
+            <div className="text-xs text-[#9a9590]">{progress.message}</div>
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <span className="text-xs font-mono text-[var(--muted)]">
+          <span className="text-xs font-mono text-[#9a9590]">
             {progress.sources.filter(s => s.status === 'done').length}/{progress.sources.length} sources
           </span>
           {!isDone && onCancel && (
@@ -112,7 +112,7 @@ export function ResearchProgressIndicator({
           {/* Search Queries */}
           {progress.searchQueries && progress.searchQueries.length > 0 && (
             <div>
-              <div className="text-[10px] uppercase text-[var(--muted)] font-medium mb-2">Search Queries</div>
+              <div className="text-[10px] uppercase text-[#9a9590] font-medium mb-2">Search Queries</div>
               <div className="flex flex-wrap gap-1.5">
                 {progress.searchQueries.map((query, i) => (
                   <span
@@ -128,7 +128,7 @@ export function ResearchProgressIndicator({
 
           {/* Sources */}
           <div>
-            <div className="text-[10px] uppercase text-[var(--muted)] font-medium mb-2">Sources</div>
+            <div className="text-[10px] uppercase text-[#9a9590] font-medium mb-2">Sources</div>
             <div className="space-y-1.5 max-h-48 overflow-y-auto">
               {progress.sources.map((source, i) => (
                 <div
@@ -151,7 +151,7 @@ export function ResearchProgressIndicator({
                         <span className={`text-[10px] px-1.5 py-0.5 rounded ${
                           source.relevance > 70 ? 'bg-green-500/10 text-green-400' :
                           source.relevance > 40 ? 'bg-yellow-500/10 text-yellow-400' :
-                          'bg-[var(--muted)]/10 text-[var(--muted)]'
+                          'bg-[var(--muted)]/10 text-[#9a9590]'
                         }`}>
                           {source.relevance}%
                         </span>
@@ -162,7 +162,7 @@ export function ResearchProgressIndicator({
                         href={source.url}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="text-[10px] text-[var(--muted)] hover:text-[var(--accent)] truncate flex items-center gap-1"
+                        className="text-[10px] text-[#9a9590] hover:text-[var(--accent)] truncate flex items-center gap-1"
                       >
                         <Globe className="h-2.5 w-2.5 flex-shrink-0" />
                         <span className="truncate">{new URL(source.url).hostname}</span>
@@ -170,7 +170,7 @@ export function ResearchProgressIndicator({
                       </a>
                     )}
                     {source.snippet && (
-                      <p className="text-[10px] text-[var(--muted)] mt-1 line-clamp-2">{source.snippet}</p>
+                      <p className="text-[10px] text-[#9a9590] mt-1 line-clamp-2">{source.snippet}</p>
                     )}
                   </div>
                 </div>
@@ -206,8 +206,8 @@ export function CitationsPanel({ sources, className = '' }: CitationsPanelProps)
   return (
     <div className={`bg-[var(--card)] border border-[var(--border)] rounded-lg p-3 ${className}`}>
       <div className="flex items-center gap-2 mb-3">
-        <BookOpen className="h-4 w-4 text-[var(--muted)]" />
-        <span className="text-xs font-medium uppercase text-[var(--muted)]">
+        <BookOpen className="h-4 w-4 text-[#9a9590]" />
+        <span className="text-xs font-medium uppercase text-[#9a9590]">
           Sources ({completedSources.length})
         </span>
       </div>
@@ -221,19 +221,19 @@ export function CitationsPanel({ sources, className = '' }: CitationsPanelProps)
             rel="noopener noreferrer"
             className="flex items-start gap-2 p-2 bg-[var(--background)] rounded-lg hover:bg-[var(--accent)] transition-colors group"
           >
-            <span className="flex-shrink-0 w-5 h-5 flex items-center justify-center text-[10px] font-mono bg-[var(--muted)]/10 rounded text-[var(--muted)]">
+            <span className="flex-shrink-0 w-5 h-5 flex items-center justify-center text-[10px] font-mono bg-[var(--muted)]/10 rounded text-[#9a9590]">
               {i + 1}
             </span>
             <div className="flex-1 min-w-0">
               <div className="text-xs font-medium truncate group-hover:text-[var(--accent)]">
                 {source.title}
               </div>
-              <div className="text-[10px] text-[var(--muted)] truncate flex items-center gap-1">
+              <div className="text-[10px] text-[#9a9590] truncate flex items-center gap-1">
                 <Globe className="h-2.5 w-2.5 flex-shrink-0" />
                 {new URL(source.url).hostname}
               </div>
             </div>
-            <ExternalLink className="h-3 w-3 text-[var(--muted)] opacity-0 group-hover:opacity-100 transition-opacity" />
+            <ExternalLink className="h-3 w-3 text-[#9a9590] opacity-0 group-hover:opacity-100 transition-opacity" />
           </a>
         ))}
       </div>

@@ -257,7 +257,7 @@ export function ToolBelt({
                     )}
                     <div className="text-xs">
                       <p className="font-medium truncate max-w-[100px]">{attachment.name}</p>
-                      <p className="text-[var(--muted)]">{formatFileSize(attachment.size)}</p>
+                      <p className="text-[#9a9590]">{formatFileSize(attachment.size)}</p>
                     </div>
                   </div>
                 ) : attachment.type === 'audio' ? (
@@ -265,15 +265,15 @@ export function ToolBelt({
                     <Mic className="h-4 w-4 text-[var(--success)]" />
                     <div className="text-xs">
                       <p className="font-medium">{attachment.name}</p>
-                      <p className="text-[var(--muted)]">{formatFileSize(attachment.size)}</p>
+                      <p className="text-[#9a9590]">{formatFileSize(attachment.size)}</p>
                     </div>
                   </div>
                 ) : (
                   <div className="flex items-center gap-2">
-                    <FileText className="h-4 w-4 text-[var(--muted)]" />
+                    <FileText className="h-4 w-4 text-[#9a9590]" />
                     <div className="text-xs">
                       <p className="font-medium truncate max-w-[100px]">{attachment.name}</p>
-                      <p className="text-[var(--muted)]">{formatFileSize(attachment.size)}</p>
+                      <p className="text-[#9a9590]">{formatFileSize(attachment.size)}</p>
                     </div>
                   </div>
                 )}
@@ -293,7 +293,7 @@ export function ToolBelt({
           <div className="flex items-center gap-3 mb-3 px-3 py-2 bg-[var(--error)]/10 border border-[var(--error)]/20 rounded-lg">
             <div className="w-2 h-2 rounded-full bg-[var(--error)] animate-pulse" />
             <span className="text-sm text-[var(--error)]">Recording</span>
-            <span className="text-sm font-mono text-[var(--muted)]">
+            <span className="text-sm font-mono text-[#9a9590]">
               {formatDuration(recordingDuration)}
             </span>
             <button
@@ -306,70 +306,34 @@ export function ToolBelt({
           </div>
         )}
 
-        {/* Streaming Timer & Queued Context Input */}
-        {isLoading && (
-          <div className="mb-3 space-y-2">
-            {/* Timer Display */}
-            <div className="flex items-center gap-2 px-3 py-2 bg-blue-500/10 border border-blue-500/20 rounded-lg">
-              <Clock className="h-4 w-4 text-blue-400 animate-pulse" />
-              <span className="text-sm text-blue-400">Processing</span>
-              <span className="text-sm font-mono text-blue-300 tabular-nums">
-                {formatDuration(elapsedSeconds)}
-              </span>
-              {elapsedSeconds >= 60 && (
-                <span className="ml-auto text-xs text-blue-400/70">
-                  Long-running task
-                </span>
-              )}
-            </div>
-
-            {/* Queued Context Input - Type while waiting */}
-            {onQueuedContextChange && (
-              <div className="relative">
-                <div className="flex items-center gap-2 px-3 py-2 bg-[var(--card)] border border-[var(--border)] rounded-lg">
-                  <Plus className="h-4 w-4 text-[var(--muted)]" />
-                  <input
-                    type="text"
-                    value={queuedContext}
-                    onChange={(e) => onQueuedContextChange(e.target.value)}
-                    placeholder="Add context for next message..."
-                    className="flex-1 bg-transparent text-sm focus:outline-none placeholder:text-[var(--muted)]"
-                  />
-                  {queuedContext && (
-                    <button
-                      onClick={() => onQueuedContextChange('')}
-                      className="p-1 rounded hover:bg-[var(--accent)] transition-colors"
-                    >
-                      <X className="h-3 w-3 text-[var(--muted)]" />
-                    </button>
-                  )}
-                </div>
-                <p className="mt-1 text-[10px] text-[var(--muted)] px-3">
-                  This will be included in your next message
-                </p>
-              </div>
-            )}
-          </div>
-        )}
 
         {/* Main Input Area */}
-        <div className="relative flex flex-col border border-[var(--border)] rounded-2xl md:rounded-xl bg-[var(--card)] shadow-sm">
-          {/* Textarea */}
+        <div className={`relative flex flex-col border rounded-2xl md:rounded-xl bg-[var(--card)] shadow-sm ${isLoading ? 'border-blue-500/30' : 'border-[var(--border)]'}`}>
+          {/* Textarea - switches to queued context while loading */}
           <textarea
             ref={textareaRef}
-            value={value}
-            onChange={(e) => onChange(e.target.value)}
+            value={isLoading && onQueuedContextChange ? queuedContext : value}
+            onChange={(e) => isLoading && onQueuedContextChange ? onQueuedContextChange(e.target.value) : onChange(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder={disabled ? 'No model running' : placeholder}
-            disabled={disabled || isLoading}
+            placeholder={disabled ? 'No model running' : (isLoading ? 'Type here to queue for next message...' : placeholder)}
+            disabled={disabled}
             rows={1}
-            className="w-full px-4 py-3 md:py-3 bg-transparent text-base md:text-sm resize-none focus:outline-none disabled:opacity-50 placeholder:text-[var(--muted)]"
+            className="w-full px-4 py-3 md:py-3 bg-transparent text-base md:text-sm resize-none focus:outline-none disabled:opacity-50 placeholder:text-[#9a9590]"
             style={{ minHeight: '52px', maxHeight: '200px', fontSize: '16px' }}
           />
 
           {/* Tool Bar */}
           <div className="flex items-center justify-between px-2 py-1.5 border-t border-[var(--border)]">
             <div className="flex items-center gap-0.5">
+              {/* Streaming Timer - shows in toolbar when loading */}
+              {isLoading && elapsedSeconds !== undefined && (
+                <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-blue-500/10 border border-blue-500/20 mr-1">
+                  <Clock className="h-3.5 w-3.5 text-blue-400 animate-pulse" />
+                  <span className="text-xs font-mono text-blue-400">
+                    {Math.floor(elapsedSeconds / 60)}:{(elapsedSeconds % 60).toString().padStart(2, '0')}
+                  </span>
+                </div>
+              )}
               {/* File Upload */}
               <input
                 ref={fileInputRef}
@@ -385,7 +349,7 @@ export function ToolBelt({
                 className="p-2 md:p-1.5 rounded hover:bg-[var(--accent)] transition-colors disabled:opacity-50"
                 title="Attach file"
               >
-                <Paperclip className="h-4 w-4 md:h-3.5 md:w-3.5 text-[var(--muted)]" />
+                <Paperclip className="h-4 w-4 md:h-3.5 md:w-3.5 text-[#9a9590]" />
               </button>
 
               {/* Image Upload */}
@@ -403,7 +367,7 @@ export function ToolBelt({
                 className="p-2 md:p-1.5 rounded hover:bg-[var(--accent)] transition-colors disabled:opacity-50"
                 title="Attach image"
               >
-                <ImageIcon className="h-4 w-4 md:h-3.5 md:w-3.5 text-[var(--muted)]" />
+                <ImageIcon className="h-4 w-4 md:h-3.5 md:w-3.5 text-[#9a9590]" />
               </button>
 
               {/* Audio Recording */}
@@ -420,7 +384,7 @@ export function ToolBelt({
                 {isRecording ? (
                   <MicOff className="h-3.5 w-3.5" />
                 ) : (
-                  <Mic className="h-3.5 w-3.5 text-[var(--muted)]" />
+                  <Mic className="h-3.5 w-3.5 text-[#9a9590]" />
                 )}
               </button>
 
@@ -438,7 +402,7 @@ export function ToolBelt({
                 {isTTSEnabled ? (
                   <Volume2 className="h-3.5 w-3.5" />
                 ) : (
-                  <VolumeX className="h-3.5 w-3.5 text-[var(--muted)]" />
+                  <VolumeX className="h-3.5 w-3.5 text-[#9a9590]" />
                 )}
               </button>
 
@@ -452,7 +416,7 @@ export function ToolBelt({
                 className={`flex items-center gap-1.5 px-2.5 py-1.5 md:px-2.5 md:py-1 rounded-lg transition-all disabled:opacity-50 ${
                   mcpEnabled
                     ? 'bg-blue-500/15 text-blue-400 border border-blue-500/30 shadow-sm shadow-blue-500/10'
-                    : 'hover:bg-[var(--accent)] text-[var(--muted)]'
+                    : 'hover:bg-[var(--accent)] text-[#9a9590]'
                 }`}
                 title={mcpEnabled ? 'Disable web search & tools' : 'Enable web search & tools'}
               >
@@ -467,7 +431,7 @@ export function ToolBelt({
                 className={`flex items-center gap-1.5 px-2.5 py-1.5 md:px-2.5 md:py-1 rounded-lg transition-all disabled:opacity-50 ${
                   artifactsEnabled
                     ? 'bg-purple-500/15 text-purple-400 border border-purple-500/30 shadow-sm shadow-purple-500/10'
-                    : 'hover:bg-[var(--accent)] text-[var(--muted)]'
+                    : 'hover:bg-[var(--accent)] text-[#9a9590]'
                 }`}
                 title={artifactsEnabled ? 'Disable code preview' : 'Enable code preview & sandbox'}
               >
@@ -483,7 +447,7 @@ export function ToolBelt({
                   className={`flex items-center gap-1.5 px-2.5 py-1.5 md:px-2.5 md:py-1 rounded-lg transition-all disabled:opacity-50 ${
                     deepResearchEnabled
                       ? 'bg-gradient-to-r from-emerald-500/15 to-blue-500/15 text-emerald-400 border border-emerald-500/30 shadow-sm shadow-emerald-500/10'
-                      : 'hover:bg-[var(--accent)] text-[var(--muted)]'
+                      : 'hover:bg-[var(--accent)] text-[#9a9590]'
                   }`}
                   title={deepResearchEnabled ? 'Deep Research enabled - Multi-step web research' : 'Enable Deep Research mode'}
                 >
@@ -499,7 +463,7 @@ export function ToolBelt({
               <button
                 onClick={onOpenMcpSettings}
                 disabled={disabled}
-                className="flex items-center gap-1.5 px-2 py-1 rounded-lg hover:bg-[var(--accent)] transition-colors disabled:opacity-50 hidden sm:inline-flex text-[var(--muted)]"
+                className="flex items-center gap-1.5 px-2 py-1 rounded-lg hover:bg-[var(--accent)] transition-colors disabled:opacity-50 hidden sm:inline-flex text-[#9a9590]"
                 title="Configure MCP servers (web search, fetch, etc.)"
               >
                 <Settings className="h-3.5 w-3.5" />
@@ -513,7 +477,7 @@ export function ToolBelt({
                 className={`flex items-center gap-1.5 px-2 py-1 rounded-lg transition-all disabled:opacity-50 ${
                   hasSystemPrompt
                     ? 'bg-amber-500/15 text-amber-400 border border-amber-500/30'
-                    : 'hover:bg-[var(--accent)] text-[var(--muted)]'
+                    : 'hover:bg-[var(--accent)] text-[#9a9590]'
                 }`}
                 title={hasSystemPrompt ? 'System prompt active - Click to edit' : 'Configure system prompt'}
               >

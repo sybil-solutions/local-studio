@@ -150,10 +150,10 @@ export function MCPSettingsModal({
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--border)]">
           <div className="flex items-center gap-2">
-            <Server className="h-4 w-4 text-[var(--muted)]" />
+            <Server className="h-4 w-4 text-[#9a9590]" />
             <div>
               <h2 className="font-medium">MCP Servers</h2>
-              <p className="text-xs text-[var(--muted)]">Configure tools like web search, fetch, etc.</p>
+              <p className="text-xs text-[#9a9590]">Configure tools like web search, fetch, etc.</p>
             </div>
           </div>
           <button
@@ -197,18 +197,18 @@ export function MCPSettingsModal({
                     {server.name === 'brave-search' ? (
                       <Globe className="h-3.5 w-3.5 text-blue-500" />
                     ) : (
-                      <Terminal className="h-3.5 w-3.5 text-[var(--muted)]" />
+                      <Terminal className="h-3.5 w-3.5 text-[#9a9590]" />
                     )}
                     <span className="text-sm font-medium">{server.name}</span>
                   </div>
-                  <p className="text-xs text-[var(--muted)]">
+                  <p className="text-xs text-[#9a9590]">
                     {server.command} {server.args?.join(' ')}
                   </p>
                 </div>
               </div>
               <button
                 onClick={() => removeServer(server.name)}
-                className="p-1.5 rounded hover:bg-[var(--error)]/20 text-[var(--muted)] hover:text-[var(--error)] transition-colors"
+                className="p-1.5 rounded hover:bg-[var(--error)]/20 text-[#9a9590] hover:text-[var(--error)] transition-colors"
               >
                 <Trash2 className="h-3.5 w-3.5" />
               </button>
@@ -216,7 +216,7 @@ export function MCPSettingsModal({
           ))}
 
           {localServers.length === 0 && !isAdding && (
-            <div className="text-center py-8 text-[var(--muted)] text-sm space-y-2">
+            <div className="text-center py-8 text-[#9a9590] text-sm space-y-2">
               <p>No MCP servers configured</p>
               <p className="text-xs">Add servers like brave-search, fetch, or time to enable tools</p>
             </div>
@@ -224,7 +224,7 @@ export function MCPSettingsModal({
 
           {/* Help text */}
           {localServers.length > 0 && (
-            <div className="text-xs text-[var(--muted)] bg-[var(--background)] p-3 rounded-lg border border-[var(--border)]">
+            <div className="text-xs text-[#9a9590] bg-[var(--background)] p-3 rounded-lg border border-[var(--border)]">
               <p className="font-medium mb-1">How to use:</p>
               <ol className="list-decimal list-inside space-y-1">
                 <li>Enable servers you want to use (toggle on)</li>
@@ -262,7 +262,7 @@ export function MCPSettingsModal({
               {/* Environment Variables */}
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <span className="text-xs text-[var(--muted)]">Environment Variables</span>
+                  <span className="text-xs text-[#9a9590]">Environment Variables</span>
                   <button
                     onClick={addEnvPair}
                     className="text-xs text-blue-500 hover:underline"
@@ -288,7 +288,7 @@ export function MCPSettingsModal({
                     />
                     <button
                       onClick={() => removeEnvPair(index)}
-                      className="p-1 text-[var(--muted)] hover:text-[var(--error)]"
+                      className="p-1 text-[#9a9590] hover:text-[var(--error)]"
                     >
                       <X className="h-3 w-3" />
                     </button>

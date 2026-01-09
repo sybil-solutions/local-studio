@@ -34,7 +34,8 @@ Important fields:
 - `id`, `name`, `model_path`, `backend`
 - Parallelism: `tensor_parallel_size` (`tp`), `pipeline_parallel_size` (`pp`)
 - vLLM knobs: `max_model_len`, `gpu_memory_utilization`, `max_num_seqs`, `kv_cache_dtype`, `dtype`, `quantization`, `tool_call_parser`, `reasoning_parser`, `enable_auto_tool_choice`, etc.
-- Reasoning parsers: auto-detected based on model name/path (GLM → `glm45`, MiniMax M2 → `minimax_m2_append_think`)
+- Tool call parsers: auto-detected based on model name/path (GLM → `glm45`, INTELLECT-3 → `glm45`)
+- Reasoning parsers: auto-detected based on model name/path (GLM → `glm45`, INTELLECT-3 → `deepseek_r1`, MiniMax M2 → `minimax_m2_append_think`)
 - Runtime selection:
   - `python_path` (explicit interpreter) **or**
   - `extra_args.venv_path` (venv directory; controller uses `<venv>/bin/vllm` or `<venv>/bin/python` if present)

@@ -6,8 +6,8 @@ Model lifecycle management for vLLM and SGLang inference servers.
 
 - **Launch/evict models** on vLLM or SGLang backends
 - **Save recipes** - reusable model configurations with full parameter support
-- **Reasoning support** - auto-detection for GLM (`glm45`) and MiniMax (`minimax_m2_append_think`) parsers
-- **Tool calling** - native function calling with auto tool choice
+- **Reasoning support** - auto-detection for GLM (`glm45`), INTELLECT-3 (`deepseek_r1`), and MiniMax (`minimax_m2_append_think`) parsers
+- **Tool calling** - native function calling with auto tool choice (auto-detected for GLM and INTELLECT-3 models)
 - **Web UI** for chat, model management, and usage analytics
 - **LiteLLM integration** for API gateway features (optional)
 

@@ -62,7 +62,7 @@ export function CommandPalette({
         onMouseDown={(e) => e.stopPropagation()}
       >
         <div className="flex items-center gap-2 px-4 py-3 border-b border-[var(--border)] bg-[var(--card)]">
-          <Search className="h-4 w-4 text-[var(--muted)]" />
+          <Search className="h-4 w-4 text-[#9a9590]" />
           <input
             ref={inputRef}
             value={query}
@@ -91,7 +91,7 @@ export function CommandPalette({
               }
             }}
           />
-          <div className="flex items-center gap-1 text-[10px] text-[var(--muted)]">
+          <div className="flex items-center gap-1 text-[10px] text-[#9a9590]">
             <CornerDownLeft className="h-3 w-3" />
             Enter
           </div>
@@ -99,7 +99,7 @@ export function CommandPalette({
 
         <div className="max-h-80 overflow-y-auto">
           {filtered.length === 0 ? (
-            <div className="px-4 py-6 text-sm text-[var(--muted)]">No matching commands.</div>
+            <div className="px-4 py-6 text-sm text-[#9a9590]">No matching commands.</div>
           ) : (
             filtered.map((a, idx) => (
               <button
@@ -116,16 +116,16 @@ export function CommandPalette({
                 <div className="flex items-center justify-between gap-3">
                   <div className="min-w-0">
                     <div className="text-sm font-medium truncate">{a.label}</div>
-                    {a.hint && <div className="text-xs text-[var(--muted)] truncate">{a.hint}</div>}
+                    {a.hint && <div className="text-xs text-[#9a9590] truncate">{a.hint}</div>}
                   </div>
-                  <div className="text-[10px] text-[var(--muted)] font-mono flex-shrink-0">{a.id}</div>
+                  <div className="text-[10px] text-[#9a9590] font-mono flex-shrink-0">{a.id}</div>
                 </div>
               </button>
             ))
           )}
         </div>
 
-        <div className="px-4 py-2 border-t border-[var(--border)] text-xs text-[var(--muted)] flex items-center justify-between">
+        <div className="px-4 py-2 border-t border-[var(--border)] text-xs text-[#9a9590] flex items-center justify-between">
           <span>{statusText || 'Ctrl/⌘K to open'}</span>
           <button
             onClick={onClose}

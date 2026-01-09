@@ -109,7 +109,7 @@ export function ChatSettingsModal({
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--border)]">
           <div className="flex items-center gap-2">
-            <Settings className="h-4 w-4 text-[var(--muted)]" />
+            <Settings className="h-4 w-4 text-[#9a9590]" />
             <h2 className="font-medium">Chat Settings</h2>
           </div>
           <button
@@ -132,7 +132,7 @@ export function ChatSettingsModal({
                   </div>
                   <div>
                     <label className="text-sm font-medium">Deep Research Mode</label>
-                    <p className="text-[10px] text-[var(--muted)]">Multi-step web research with source synthesis</p>
+                    <p className="text-[10px] text-[#9a9590]">Multi-step web research with source synthesis</p>
                   </div>
                 </div>
                 <button
@@ -151,7 +151,7 @@ export function ChatSettingsModal({
                 <div className="space-y-3 pt-2 border-t border-[var(--border)]">
                   {/* Search Depth */}
                   <div className="space-y-1">
-                    <label className="text-xs font-medium text-[var(--muted-foreground)]">Research Depth</label>
+                    <label className="text-xs font-medium text-[#b0a8a0]">Research Depth</label>
                     <div className="grid grid-cols-3 gap-2">
                       {(['quick', 'normal', 'thorough'] as const).map((depth) => (
                         <button
@@ -170,7 +170,7 @@ export function ChatSettingsModal({
                         </button>
                       ))}
                     </div>
-                    <p className="text-[10px] text-[var(--muted)]">
+                    <p className="text-[10px] text-[#9a9590]">
                       {localDeepResearch.searchDepth === 'quick' && 'Fast search with 3-5 sources (~30s)'}
                       {localDeepResearch.searchDepth === 'normal' && 'Balanced search with 5-10 sources (~1-2min)'}
                       {localDeepResearch.searchDepth === 'thorough' && 'Deep research with 10-20 sources (~3-5min)'}
@@ -180,7 +180,7 @@ export function ChatSettingsModal({
                   {/* Number of Sources */}
                   <div className="space-y-1">
                     <div className="flex items-center justify-between">
-                      <label className="text-xs font-medium text-[var(--muted-foreground)]">Max Sources</label>
+                      <label className="text-xs font-medium text-[#b0a8a0]">Max Sources</label>
                       <span className="text-xs font-mono text-[var(--foreground)]">{localDeepResearch.numSources}</span>
                     </div>
                     <input
@@ -224,7 +224,7 @@ export function ChatSettingsModal({
           {/* Model Section */}
           <div className="space-y-2">
             <label className="text-sm font-medium">Chat Model</label>
-            <p className="text-xs text-[var(--muted)]">
+            <p className="text-xs text-[#9a9590]">
               Each chat can target a different model. Sending a message will auto-switch the backend if needed.
             </p>
             <select
@@ -249,13 +249,13 @@ export function ChatSettingsModal({
               <label className="text-sm font-medium">System Prompt</label>
               <button
                 onClick={handleClear}
-                className="flex items-center gap-1 text-xs text-[var(--muted)] hover:text-[var(--error)] transition-colors"
+                className="flex items-center gap-1 text-xs text-[#9a9590] hover:text-[var(--error)] transition-colors"
               >
                 <Trash2 className="h-3 w-3" />
                 Clear
               </button>
             </div>
-            <p className="text-xs text-[var(--muted)]">
+            <p className="text-xs text-[#9a9590]">
               The system prompt is sent at the start of every conversation to guide the model&apos;s behavior.
             </p>
             <textarea
@@ -264,7 +264,7 @@ export function ChatSettingsModal({
               placeholder="Enter a system prompt... (e.g., You are a helpful coding assistant.)"
               className="w-full h-64 px-3 py-2 text-sm bg-[var(--background)] border border-[var(--border)] rounded-lg resize-none focus:outline-none focus:border-[var(--foreground)] font-mono"
             />
-            <div className="flex items-center gap-2 text-xs text-[var(--muted)]">
+            <div className="flex items-center gap-2 text-xs text-[#9a9590]">
               <Info className="h-3 w-3" />
               <span>{localPrompt.length} characters</span>
             </div>
@@ -274,7 +274,7 @@ export function ChatSettingsModal({
           {onForkModels && availableModels.length > 0 && (
             <div className="space-y-2">
               <label className="text-sm font-medium">Fork Chat (Split)</label>
-              <p className="text-xs text-[var(--muted)]">
+              <p className="text-xs text-[#9a9590]">
                 Create parallel chats with the same history, each using a different model.
               </p>
               <div className="max-h-40 overflow-y-auto border border-[var(--border)] rounded-lg bg-[var(--background)]">
@@ -289,7 +289,7 @@ export function ChatSettingsModal({
                       onChange={() => toggleForkModel(m.id)}
                       disabled={m.id === selectedModel}
                     />
-                    <span className={`font-mono text-xs ${m.id === selectedModel ? 'text-[var(--muted)]' : ''}`}>
+                    <span className={`font-mono text-xs ${m.id === selectedModel ? 'text-[#9a9590]' : ''}`}>
                       {m.id}
                     </span>
                   </label>

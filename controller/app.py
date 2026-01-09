@@ -6,6 +6,7 @@ import asyncio
 import datetime as dt
 import os
 import json
+import re
 from collections import deque
 from pathlib import Path
 from typing import Optional
@@ -203,6 +204,12 @@ async def broadcast_updates():
     last_prompt_tokens_total = 0
     last_completion_tokens_total = 0
     last_requests_total = 0
+    # For throughput calculation
+    last_sample_time = time.time()
+    prev_prompt_tokens = 0
+    prev_completion_tokens = 0
+    last_prompt_throughput = 0.0
+    last_generation_throughput = 0.0
 
     while True:
         try:
@@ -270,6 +277,26 @@ async def broadcast_updates():
                             current_completion_tokens = metrics.get('generation_tokens_total', 0)
                             current_tokens = current_prompt_tokens + current_completion_tokens
                             current_requests = metrics.get('request_success', 0)
+
+                            # Calculate real-time throughput from token deltas
+                            sample_elapsed = now - last_sample_time
+                            if sample_elapsed > 0.5:  # At least 0.5s between samples
+                                # Skip first calculation (prev values are 0 on startup)
+                                if prev_prompt_tokens > 0 or prev_completion_tokens > 0:
+                                    prompt_delta = current_prompt_tokens - prev_prompt_tokens
+                                    completion_delta = current_completion_tokens - prev_completion_tokens
+                                    if prompt_delta > 0:
+                                        last_prompt_throughput = prompt_delta / sample_elapsed
+                                    if completion_delta > 0:
+                                        last_generation_throughput = completion_delta / sample_elapsed
+                                # Update previous values
+                                prev_prompt_tokens = current_prompt_tokens
+                                prev_completion_tokens = current_completion_tokens
+                                last_sample_time = now
+
+                            # Always include throughput values (last calculated or 0)
+                            metrics['prompt_throughput'] = last_prompt_throughput
+                            metrics['generation_throughput'] = last_generation_throughput
 
                             if current_tokens > last_tokens_total:
                                 new_tokens = current_tokens - last_tokens_total
@@ -542,9 +569,22 @@ async def get_config():
     # LiteLLM
     litellm_status = "unknown"
     try:
-        async with httpx.AsyncClient(timeout=2) as client:
-            r = await client.get("http://localhost:4100/health")
-            litellm_status = "running" if r.status_code == 200 else "error"
+        async with httpx.AsyncClient(timeout=10) as client:
+            # Try with master key (from environment)
+            import os
+            master_key = os.environ.get("LITELLM_MASTER_KEY", "sk-master")
+            headers = {"Authorization": f"Bearer {master_key}"}
+            r = await client.get("http://localhost:4100/health", headers=headers)
+            if r.status_code == 200:
+                # Check if any backends are healthy
+                data = r.json()
+                healthy_count = data.get("healthy_count", 0)
+                if healthy_count > 0:
+                    litellm_status = "running"
+                else:
+                    litellm_status = "degraded"  # Running but no healthy backends
+            else:
+                litellm_status = "error"
     except Exception:
         litellm_status = "stopped"
 
@@ -1853,6 +1893,86 @@ async def _ensure_model_running(requested_model: str, store: RecipeStore) -> Opt
         return None
 
 
+def parse_tool_calls_from_content(content: str) -> list:
+    """Parse tool calls from content when vLLM returns empty tool_calls array.
+
+    Handles various malformed patterns:
+    - MCP-style <use_mcp_tool> tags (with missing opening <)
+    - Malformed </tool_call> without opening <tool_call>
+    - Complete <tool_call>...</tool_call> tags
+    - Raw JSON with name/arguments
+    """
+    import uuid
+    tool_calls = []
+
+    # Pattern 0: MCP-style use_mcp_tool format (handles missing opening <)
+    mcp_pattern = r'<?use_mcp_tool>\s*<?server_name>([^<]*)</server_name>\s*<?tool_name>([^<]*)</tool_name>\s*<?arguments>\s*(\{.*?\})\s*</arguments>\s*</use_mcp_tool>'
+    mcp_matches = re.findall(mcp_pattern, content, re.DOTALL)
+    for server_name, tool_name, args_json in mcp_matches:
+        try:
+            tool_calls.append({
+                "index": len(tool_calls),
+                "id": f"call_{uuid.uuid4().hex[:9]}",
+                "type": "function",
+                "function": {"name": tool_name.strip(), "arguments": args_json.strip()}
+            })
+            logger.info(f"Parsed MCP tool call: {tool_name.strip()}")
+        except Exception:
+            continue
+    if tool_calls:
+        return tool_calls
+
+    # Pattern 1: Malformed </tool_call> without <tool_call>
+    # Handles: <think>\n{"name": "...", "arguments": {...}}\n</tool_call>
+    if '</tool_call>' in content:
+        pattern = r'\{"name"\s*:\s*"([^"]+)"\s*,\s*"arguments"\s*:\s*(\{[^}]*\})\s*\}\s*</tool_call>'
+        matches = re.findall(pattern, content, re.DOTALL)
+        for name, args in matches:
+            try:
+                tool_calls.append({
+                    "index": len(tool_calls),
+                    "id": f"call_{uuid.uuid4().hex[:9]}",
+                    "type": "function",
+                    "function": {"name": name, "arguments": args}
+                })
+                logger.info(f"Parsed tool call from content: {name}")
+            except Exception:
+                continue
+
+    # Pattern 2: Complete <tool_call>...</tool_call>
+    if not tool_calls and '<tool_call>' in content:
+        pattern = r'<tool_call>\s*(\{.*?\})\s*</tool_call>'
+        matches = re.findall(pattern, content, re.DOTALL)
+        for json_str in matches:
+            try:
+                data = json.loads(json_str)
+                tool_calls.append({
+                    "index": len(tool_calls),
+                    "id": f"call_{uuid.uuid4().hex[:9]}",
+                    "type": "function",
+                    "function": {
+                        "name": data.get("name"),
+                        "arguments": json.dumps(data.get("arguments", {}))
+                    }
+                })
+            except Exception:
+                continue
+
+    # Pattern 3: Raw JSON with name/arguments at end
+    if not tool_calls and '"name"' in content and '"arguments"' in content:
+        pattern = r'\{"name"\s*:\s*"([^"]+)"\s*,\s*"arguments"\s*:\s*(\{[^}]*\})\s*\}'
+        matches = re.findall(pattern, content, re.DOTALL)
+        for name, args in matches:
+            tool_calls.append({
+                "index": len(tool_calls),
+                "id": f"call_{uuid.uuid4().hex[:9]}",
+                "type": "function",
+                "function": {"name": name, "arguments": args}
+            })
+
+    return tool_calls
+
+
 @app.post("/v1/chat/completions", tags=["OpenAI Compatible"])
 async def chat_completions_proxy(request: Request, store: RecipeStore = Depends(get_store)):
     """Proxy chat completions to LiteLLM backend with auto-eviction support.
@@ -1959,6 +2079,57 @@ async def chat_completions_proxy(request: Request, store: RecipeStore = Depends(
 
                 return data
 
+            # Buffer for accumulating tool call content across chunks
+            tool_call_buffer = {
+                "content": "",  # Content from content/reasoning_content fields
+                "tool_args": "",  # Arguments from streamed tool_calls with empty names
+                "tool_name": "",  # Name from streamed tool_calls (may come late)
+                "has_malformed_tool_calls": False,
+                "tool_calls_found": False
+            }
+
+            def fix_malformed_tool_calls(data: dict) -> dict:
+                """Fix tool calls with empty function names by re-parsing from content."""
+                if 'choices' not in data:
+                    return data
+
+                for choice in data['choices']:
+                    delta = choice.get('delta', {})
+                    message = choice.get('message', delta)  # Handle both streaming and non-streaming
+
+                    # Check for content that might contain tool call data
+                    content = message.get('content', '') or ''
+                    if content:
+                        tool_call_buffer["content"] += content
+
+                    tool_calls = message.get('tool_calls', [])
+                    if not tool_calls:
+                        continue
+
+                    # Check for malformed tool calls (empty function name)
+                    fixed_tool_calls = []
+                    for tc in tool_calls:
+                        func = tc.get('function', {})
+                        name = func.get('name', '')
+                        if not name or name.strip() == '':
+                            tool_call_buffer["has_malformed_tool_calls"] = True
+                            logger.warning(f"Detected malformed tool call with empty name: {tc}")
+                            # Try to extract from buffered content
+                            buffered = tool_call_buffer["content"]
+                            if '<tool_call>' in buffered or '"name"' in buffered:
+                                # Simple extraction: find first "name": "xxx" pattern
+                                name_match = re.search(r'"name"\s*:\s*"([^"]+)"', buffered)
+                                if name_match:
+                                    extracted_name = name_match.group(1)
+                                    func['name'] = extracted_name
+                                    logger.info(f"Fixed malformed tool call: extracted name={extracted_name}")
+                        fixed_tool_calls.append(tc)
+
+                    if tool_calls:
+                        message['tool_calls'] = fixed_tool_calls
+
+                return data
+
             async def stream_response():
                 async with httpx.AsyncClient(timeout=300) as client:
                     async with client.stream("POST", litellm_url, content=body, headers=headers) as response:
@@ -2017,7 +2188,117 @@ async def chat_completions_proxy(request: Request, store: RecipeStore = Depends(
                                     logger.warning(f"Think tag parsing error: {e}")
                                     pass
 
+                            # Fix malformed tool calls with empty function names
+                            # This handles cases where vLLM's glm45 parser fails to extract names
+                            if '"tool_calls"' in chunk_str or '<tool_call>' in chunk_str or '"name"' in chunk_str:
+                                try:
+                                    lines = chunk_str.split('\n')
+                                    fixed_lines = []
+                                    for line in lines:
+                                        if line.startswith('data: ') and line != 'data: [DONE]':
+                                            data_json = line[6:]
+                                            if data_json.strip():
+                                                data = json.loads(data_json)
+                                                data = fix_malformed_tool_calls(data)
+                                                fixed_lines.append('data: ' + json.dumps(data))
+                                            else:
+                                                fixed_lines.append(line)
+                                        else:
+                                            fixed_lines.append(line)
+                                    chunk = ('\n'.join(fixed_lines)).encode('utf-8')
+                                except Exception as e:
+                                    logger.warning(f"Tool call fix error: {e}")
+                                    pass
+
+                            # Track content for tool call parsing (both content and reasoning_content)
+                            # Also track tool_calls arguments when streaming with empty names
+                            try:
+                                for line in chunk_str.split('\n'):
+                                    if line.startswith('data: ') and line != 'data: [DONE]':
+                                        data = json.loads(line[6:])
+                                        if 'choices' in data:
+                                            for choice in data['choices']:
+                                                delta = choice.get('delta', {})
+                                                # Buffer both content and reasoning_content
+                                                content = delta.get('content', '') or ''
+                                                reasoning = delta.get('reasoning_content', '') or ''
+                                                if content:
+                                                    tool_call_buffer["content"] += content
+                                                if reasoning:
+                                                    tool_call_buffer["content"] += reasoning
+                                                # Track tool_calls - capture arguments even if name is empty
+                                                tc = delta.get('tool_calls', [])
+                                                if tc and len(tc) > 0:
+                                                    for tool_call in tc:
+                                                        func = tool_call.get('function', {})
+                                                        name = func.get('name', '')
+                                                        args = func.get('arguments', '')
+                                                        if name:
+                                                            tool_call_buffer["tool_name"] = name
+                                                            tool_call_buffer["tool_calls_found"] = True
+                                                        if args:
+                                                            tool_call_buffer["tool_args"] += args
+                            except Exception:
+                                pass
+
                             yield chunk
+
+                        # After stream ends, check if we need to emit tool calls from content or buffered args
+                        import uuid as uuid_mod
+                        print(f"[TOOL PARSE DEBUG] Stream ended, content_len={len(tool_call_buffer['content'])}, args_len={len(tool_call_buffer['tool_args'])}, name={tool_call_buffer['tool_name']}, found={tool_call_buffer['tool_calls_found']}", flush=True)
+
+                        parsed_tools = []
+
+                        # Case 1: Tool args were streamed with empty names - reconstruct from buffered args
+                        if not tool_call_buffer["tool_calls_found"] and tool_call_buffer["tool_args"]:
+                            args_str = tool_call_buffer["tool_args"].strip()
+                            name = tool_call_buffer["tool_name"]
+
+                            # Try to parse name from content if not captured
+                            if not name:
+                                content = tool_call_buffer["content"]
+                                # Look for "calculator" function name pattern in reasoning
+                                name_match = re.search(r'use the (\w+) (?:tool|function)', content, re.IGNORECASE)
+                                if name_match:
+                                    name = name_match.group(1)
+                                # Also try to find from tool call JSON in content
+                                if not name:
+                                    json_name_match = re.search(r'"name"\s*:\s*"([^"]+)"', content)
+                                    if json_name_match:
+                                        name = json_name_match.group(1)
+
+                            if args_str.startswith('{') and args_str.endswith('}') and name:
+                                parsed_tools.append({
+                                    "index": 0,
+                                    "id": f"call_{uuid_mod.uuid4().hex[:9]}",
+                                    "type": "function",
+                                    "function": {"name": name, "arguments": args_str}
+                                })
+                                logger.info(f"[TOOL PARSE] Reconstructed tool call from streamed args: {name}")
+
+                        # Case 2: Parse tool calls from content/reasoning buffer
+                        if not parsed_tools and not tool_call_buffer["tool_calls_found"] and tool_call_buffer["content"]:
+                            content = tool_call_buffer["content"]
+                            print(f"[TOOL PARSE DEBUG] Checking buffer: {content[:300]}...", flush=True)
+                            if ('</tool_call>' in content or '<tool_call>' in content or
+                                '</use_mcp_tool>' in content or 'use_mcp_tool>' in content or
+                                ('"name"' in content and '"arguments"' in content)):
+                                logger.info(f"[TOOL PARSE] Pattern matched, parsing...")
+                                parsed_tools = parse_tool_calls_from_content(content)
+                                logger.info(f"[TOOL PARSE] Parsed {len(parsed_tools)} tools: {parsed_tools}")
+
+                        # Emit final tool_calls chunk if we parsed any
+                        if parsed_tools:
+                            logger.info(f"Emitting {len(parsed_tools)} tool calls parsed from stream")
+                            final_chunk = {
+                                "id": f"chatcmpl-{uuid_mod.uuid4().hex[:8]}",
+                                "choices": [{
+                                    "index": 0,
+                                    "delta": {"tool_calls": parsed_tools},
+                                    "finish_reason": "tool_calls"
+                                }]
+                            }
+                            yield f"data: {json.dumps(final_chunk)}\n\n".encode('utf-8')
 
             return StreamingResponse(
                 stream_response(),
@@ -2028,10 +2309,41 @@ async def chat_completions_proxy(request: Request, store: RecipeStore = Depends(
                 }
             )
         else:
+            # Non-streaming: parse tool calls from content if needed
             async with httpx.AsyncClient(timeout=300) as client:
                 response = await client.post(litellm_url, content=body, headers=headers)
+                result = response.json()
+
+                # Check if we need to parse tool calls from content
+                if 'choices' in result and result['choices']:
+                    choice = result['choices'][0]
+                    message = choice.get('message', {})
+                    tool_calls = message.get('tool_calls')
+                    content = message.get('content', '') or ''
+                    reasoning = message.get('reasoning_content', '') or ''
+
+                    # Combine content and reasoning for tool call detection
+                    full_content = content + reasoning
+
+                    # If no tool_calls but content has tool call patterns, parse them
+                    if (not tool_calls or tool_calls == []) and full_content:
+                        has_tool_pattern = (
+                            '</tool_call>' in full_content or
+                            '<tool_call>' in full_content or
+                            '</use_mcp_tool>' in full_content or
+                            'use_mcp_tool>' in full_content or
+                            ('"name"' in full_content and '"arguments"' in full_content)
+                        )
+
+                        if has_tool_pattern:
+                            parsed_tools = parse_tool_calls_from_content(full_content)
+                            if parsed_tools:
+                                logger.info(f"Non-streaming: Parsed {len(parsed_tools)} tool calls from content")
+                                result['choices'][0]['message']['tool_calls'] = parsed_tools
+                                result['choices'][0]['finish_reason'] = 'tool_calls'
+
                 return JSONResponse(
-                    content=response.json(),
+                    content=result,
                     status_code=response.status_code
                 )
     except HTTPException:

@@ -46,6 +46,8 @@ function getStatusColor(status: string): string {
       return 'text-[#363432]';
     case 'error':
       return 'text-[#c97a6b]';
+    case 'degraded':
+      return 'text-[#c9a66b]';
     default:
       return 'text-[#c9a66b]';
   }
@@ -59,6 +61,8 @@ function getStatusBg(status: string): string {
       return 'bg-[#363432]';
     case 'error':
       return 'bg-[#c97a6b]';
+    case 'degraded':
+      return 'bg-[#c9a66b]';
     default:
       return 'bg-[#c9a66b]';
   }

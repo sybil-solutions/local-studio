@@ -68,7 +68,7 @@ export function MiniChart({
   if (points.length < 2) {
     return (
       <div className={`flex items-center justify-center ${className}`} style={{ height, width }}>
-        <span className="text-[10px] text-[var(--muted)]">--</span>
+        <span className="text-[10px] text-[#9a9590]">--</span>
       </div>
     );
   }
@@ -166,7 +166,7 @@ export function MiniBarChart({
   if (bars.length === 0) {
     return (
       <div className={`flex items-center justify-center ${className}`} style={{ height, width }}>
-        <span className="text-[10px] text-[var(--muted)]">--</span>
+        <span className="text-[10px] text-[#9a9590]">--</span>
       </div>
     );
   }
@@ -258,7 +258,7 @@ export function MiniGauge({
       {showValue && (
         <div className="absolute inset-0 flex flex-col items-center justify-center">
           <span className="text-xs font-mono font-semibold">{Math.round(percentage)}%</span>
-          {label && <span className="text-[8px] text-[var(--muted)]">{label}</span>}
+          {label && <span className="text-[8px] text-[#9a9590]">{label}</span>}
         </div>
       )}
     </div>

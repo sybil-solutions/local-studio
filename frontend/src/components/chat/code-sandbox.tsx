@@ -280,7 +280,7 @@ export function CodeSandbox({
         className={`${inFooter ? 'block' : 'hidden md:block'} p-2 md:p-1.5 rounded hover:bg-[var(--accent)] transition-colors`}
         title="Refresh"
       >
-        <RefreshCw className="h-5 w-5 md:h-4 md:w-4 text-[var(--muted)]" />
+        <RefreshCw className="h-5 w-5 md:h-4 md:w-4 text-[#9a9590]" />
       </button>
 
       {/* Copy */}
@@ -292,7 +292,7 @@ export function CodeSandbox({
         {copied ? (
           <Check className="h-5 w-5 md:h-4 md:w-4 text-[var(--success)]" />
         ) : (
-          <Copy className="h-5 w-5 md:h-4 md:w-4 text-[var(--muted)]" />
+          <Copy className="h-5 w-5 md:h-4 md:w-4 text-[#9a9590]" />
         )}
       </button>
 
@@ -302,7 +302,7 @@ export function CodeSandbox({
         className={`${inFooter ? 'block' : 'hidden md:block'} p-2 md:p-1.5 rounded hover:bg-[var(--accent)] transition-colors`}
         title="Download"
       >
-        <Download className="h-5 w-5 md:h-4 md:w-4 text-[var(--muted)]" />
+        <Download className="h-5 w-5 md:h-4 md:w-4 text-[#9a9590]" />
       </button>
 
       {/* Fullscreen/Minimize - ALWAYS visible */}

@@ -26,6 +26,7 @@ import {
   ChevronRight,
   Brain,
   Wrench,
+  Clock,
 } from 'lucide-react';
 import Link from 'next/link';
 import api from '@/lib/api';
@@ -35,6 +36,8 @@ import {
 import {
   ToolCallCard } from '@/components/chat/tool-call-card';
 import { ResearchProgressIndicator, CitationsPanel } from '@/components/chat/research-progress';
+import { MessageSearch } from '@/components/chat/message-search';
+import { ThemeToggle } from '@/components/chat/theme-toggle';
 import type { Attachment, MCPServerConfig, DeepResearchSettings } from '@/components/chat';
 import type { ResearchProgress, ResearchSource } from '@/components/chat/research-progress';
 import { loadState, saveState, debouncedSave } from '@/lib/chat-state-persistence';
@@ -218,6 +221,8 @@ export default function ChatPage() {
   // State for recent chats dropdown on mobile
   const [recentChatsOpen, setRecentChatsOpen] = useState(false);
   const [chatSearchQuery, setChatSearchQuery] = useState('');
+  const [messageSearchOpen, setMessageSearchOpen] = useState(false);
+  const [bookmarkedMessages, setBookmarkedMessages] = useState<Set<string>>(new Set());
 
   // Detect mobile viewport
   useEffect(() => {
@@ -234,18 +239,19 @@ export default function ChatPage() {
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
-  // Restore state on mount
+  // Restore settings on mount - but always start with a NEW session
   useEffect(() => {
     const restored = loadState();
+    // Restore input draft if any
     if (restored.input) setInput(restored.input);
+    // Restore UI preferences
     if (restored.mcpEnabled) setMcpEnabled(restored.mcpEnabled);
     if (restored.artifactsEnabled) setArtifactsEnabled(restored.artifactsEnabled);
     if (restored.systemPrompt) setSystemPrompt(restored.systemPrompt);
     if (restored.selectedModel) setSelectedModel(restored.selectedModel);
-    if (restored.currentSessionId) {
-      // Will be loaded by loadSession after sessions are fetched
-      setCurrentSessionId(restored.currentSessionId);
-    }
+    // NOTE: We intentionally do NOT restore currentSessionId
+    // Every visit to /chat starts a fresh session with the current model
+    // Previous sessions are accessible via the sidebar
   }, []);
 
   // Page visibility handling - save state when going to background
@@ -254,20 +260,15 @@ export default function ChatPage() {
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (document.hidden) {
-        // Save state when going to background (but don't abort streams)
+        // Save settings when going to background (but don't save session - always fresh on visit)
         saveState({
-          currentSessionId,
+          // Don't save currentSessionId - each visit starts fresh
           input,
           selectedModel,
           mcpEnabled,
           artifactsEnabled,
           systemPrompt,
-          messages: messages.map(m => ({
-            id: m.id,
-            role: m.role,
-            content: m.content,
-            model: m.model,
-          })),
+          messages: [], // Don't persist messages locally - server handles persistence
         });
       }
     };
@@ -275,18 +276,13 @@ export default function ChatPage() {
     // Handle page unload - save final state
     const handleBeforeUnload = () => {
       saveState({
-        currentSessionId,
+        // Don't save currentSessionId - each visit starts fresh
         input,
         selectedModel,
         mcpEnabled,
         artifactsEnabled,
         systemPrompt,
-        messages: messages.map(m => ({
-          id: m.id,
-          role: m.role,
-          content: m.content,
-          model: m.model,
-        })),
+        messages: [], // Don't persist messages locally - server handles persistence
       });
     };
 
@@ -603,7 +599,7 @@ export default function ChatPage() {
       apiMessages.push({
         role: 'system',
         content:
-          'When you need a tool, emit tool_calls immediately (no preface). Do not repeat the same tool call with identical arguments; use tool results and then answer.',
+          'When you need a tool, emit tool_calls immediately (no preface). Do not repeat the same tool call with identical arguments; use tool results and then answer. IMPORTANT: Always provide valid JSON arguments for tool calls - never use empty objects {} as arguments.',
       });
     }
     if (artifactsEnabled) {
@@ -1052,7 +1048,7 @@ Start your research immediately when you receive a question. Do not ask for clar
     const userMessage: Message = {
       id: Date.now().toString(),
       role: 'user',
-      content: userContent || (imageAttachments.length > 0 ? '[Image]' : ''),
+      content: userContent || (imageAttachments.length > 0 ? '[Image]' : '...'),
       images: imageAttachments.map((a) => a.base64!),
       model: activeModelId,
     };
@@ -1677,7 +1673,7 @@ Start your research immediately when you receive a question. Do not ask for clar
     return (
       <div className="flex items-center justify-center h-[100dvh]">
         <div className="animate-pulse-soft">
-          <Sparkles className="h-8 w-8 text-[var(--muted)]" />
+          <Sparkles className="h-8 w-8 text-[#9a9590]" />
         </div>
       </div>
     );
@@ -1733,7 +1729,7 @@ Start your research immediately when you receive a question. Do not ask for clar
               {isMobile && (
                 <>
                   <Link href="/" className="p-1.5 -ml-1 rounded-lg hover:bg-[var(--accent)] transition-colors flex-shrink-0">
-                    <Layers className="h-5 w-5 text-[var(--muted)]" />
+                    <Layers className="h-5 w-5 text-[#9a9590]" />
                   </Link>
                   <div className="relative flex-1 min-w-0">
                     <button
@@ -1741,7 +1737,7 @@ Start your research immediately when you receive a question. Do not ask for clar
                       className="flex items-center gap-1.5 px-2 py-1 rounded-lg hover:bg-[var(--accent)] transition-colors w-full min-w-0"
                     >
                       <span className="text-sm font-medium truncate">{currentSessionTitle || 'New Chat'}</span>
-                      <ChevronDown className={`h-4 w-4 text-[var(--muted)] flex-shrink-0 transition-transform ${recentChatsOpen ? 'rotate-180' : ''}`} />
+                      <ChevronDown className={`h-4 w-4 text-[#9a9590] flex-shrink-0 transition-transform ${recentChatsOpen ? 'rotate-180' : ''}`} />
                     </button>
 
                     {/* Recent Chats Dropdown */}
@@ -1752,7 +1748,7 @@ Start your research immediately when you receive a question. Do not ask for clar
                           {/* Search */}
                           <div className="p-2 border-b border-[var(--border)]">
                             <div className="relative">
-                              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-[var(--muted)]" />
+                              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-[#9a9590]" />
                               <input
                                 type="text"
                                 value={chatSearchQuery}
@@ -1788,13 +1784,13 @@ Start your research immediately when you receive a question. Do not ask for clar
                                 }`}
                               >
                                 <div className="text-sm truncate">{session.title}</div>
-                                <div className="text-xs text-[var(--muted)] truncate">
+                                <div className="text-xs text-[#9a9590] truncate">
                                   {session.model?.split('/').pop()} • {new Date(session.updated_at).toLocaleDateString()}
                                 </div>
                               </button>
                             ))}
                             {filteredSessions.length === 0 && (
-                              <div className="px-3 py-4 text-sm text-[var(--muted)] text-center">No chats found</div>
+                              <div className="px-3 py-4 text-sm text-[#9a9590] text-center">No chats found</div>
                             )}
                             {!chatSearchQuery && sessions.length > 5 && (
                               <button
@@ -1802,7 +1798,7 @@ Start your research immediately when you receive a question. Do not ask for clar
                                   setSidebarCollapsed(false);
                                   setRecentChatsOpen(false);
                                 }}
-                                className="w-full px-3 py-2 text-sm text-[var(--muted)] hover:text-[var(--foreground)] hover:bg-[var(--accent)] transition-colors"
+                                className="w-full px-3 py-2 text-sm text-[#9a9590] hover:text-[var(--foreground)] hover:bg-[var(--accent)] transition-colors"
                               >
                                 View all {sessions.length} chats →
                               </button>
@@ -1843,7 +1839,7 @@ Start your research immediately when you receive a question. Do not ask for clar
                         className="p-1.5 rounded hover:bg-[var(--accent)] transition-colors"
                         title="Cancel"
                       >
-                        <X className="h-4 w-4 text-[var(--muted)]" />
+                        <X className="h-4 w-4 text-[#9a9590]" />
                       </button>
                     </div>
                   ) : (
@@ -1860,11 +1856,11 @@ Start your research immediately when you receive a question. Do not ask for clar
                           className="p-1 rounded hover:bg-[var(--accent)] transition-colors"
                           title="Rename chat"
                         >
-                          <Pencil className="h-3.5 w-3.5 text-[var(--muted)]" />
+                          <Pencil className="h-3.5 w-3.5 text-[#9a9590]" />
                         </button>
                       )}
                       {selectedModel && (
-                        <span className="text-[11px] text-[var(--muted)] px-2 py-0.5 border border-[var(--border)] rounded">
+                        <span className="text-[11px] text-[#9a9590] px-2 py-0.5 border border-[var(--border)] rounded">
                           {selectedModel.split('/').pop()}
                         </span>
                       )}
@@ -1875,11 +1871,23 @@ Start your research immediately when you receive a question. Do not ask for clar
             </div>
 
             <div className="flex items-center gap-0.5 md:gap-2 flex-shrink-0">
+              {/* Message Search */}
+              <button
+                onClick={() => setMessageSearchOpen(!messageSearchOpen)}
+                className="p-1.5 md:p-2 rounded hover:bg-[var(--accent)] transition-colors"
+                title="Search messages"
+              >
+                <Search className="h-5 w-5 md:h-4 md:w-4 text-[#9a9590]" />
+              </button>
+
+              {/* Theme Toggle */}
+              <ThemeToggle />
+
               {/* Usage (desktop only) */}
               {!isMobile && currentSessionId && sessionUsage && (
                 <button
                   onClick={() => setUsageDetailsOpen(true)}
-                  className="text-[10px] font-mono text-[var(--muted)] hover:text-[var(--foreground)] transition-colors"
+                  className="text-[10px] font-mono text-[#9a9590] hover:text-[var(--foreground)] transition-colors"
                   title="Usage details"
                 >
                   {sessionUsage.total_tokens.toLocaleString()} tok
@@ -1890,7 +1898,7 @@ Start your research immediately when you receive a question. Do not ask for clar
 
               {/* Context Usage Meter */}
               {!isMobile && contextUsage.currentTokens > 0 && (
-                <div className="flex items-center gap-2 text-[10px] font-mono text-[var(--muted)]" title={`Context: ${contextUsage.currentTokens.toLocaleString()} / ${contextUsage.maxTokens.toLocaleString()} tokens${contextUsage.compactionCount > 0 ? ` (compacted ${contextUsage.compactionCount}x)` : ""}`}>
+                <div className="flex items-center gap-2 text-[10px] font-mono text-[#9a9590]" title={`Context: ${contextUsage.currentTokens.toLocaleString()} / ${contextUsage.maxTokens.toLocaleString()} tokens${contextUsage.compactionCount > 0 ? ` (compacted ${contextUsage.compactionCount}x)` : ""}`}>
                   <div className="w-16 h-1.5 bg-[var(--border)] rounded-full overflow-hidden">
                     <div
                       className={`h-full rounded-full transition-all ${
@@ -1915,7 +1923,7 @@ Start your research immediately when you receive a question. Do not ask for clar
                   <button
                     onClick={() => setMcpEnabled((v) => !v)}
                     className={`flex items-center gap-1 px-2 py-1 rounded border text-xs transition-colors ${
-                      mcpEnabled ? 'border-blue-500/40 bg-blue-500/10 text-blue-400' : 'border-[var(--border)] text-[var(--muted)] hover:bg-[var(--accent)]'
+                      mcpEnabled ? 'border-blue-500/40 bg-blue-500/10 text-blue-400' : 'border-[var(--border)] text-[#9a9590] hover:bg-[var(--accent)]'
                     }`}
                     title="Toggle tools"
                   >
@@ -1925,7 +1933,7 @@ Start your research immediately when you receive a question. Do not ask for clar
                   <button
                     onClick={() => setArtifactsEnabled((v) => !v)}
                     className={`flex items-center gap-1 px-2 py-1 rounded border text-xs transition-colors ${
-                      artifactsEnabled ? 'border-purple-500/40 bg-purple-500/10 text-purple-400' : 'border-[var(--border)] text-[var(--muted)] hover:bg-[var(--accent)]'
+                      artifactsEnabled ? 'border-purple-500/40 bg-purple-500/10 text-purple-400' : 'border-[var(--border)] text-[#9a9590] hover:bg-[var(--accent)]'
                     }`}
                     title="Toggle previews"
                   >
@@ -1941,7 +1949,7 @@ Start your research immediately when you receive a question. Do not ask for clar
                 className="p-1.5 md:p-2 rounded hover:bg-[var(--accent)] transition-colors"
                 title="Chat settings"
               >
-                <Settings className="h-5 w-5 md:h-4 md:w-4 text-[var(--muted)]" />
+                <Settings className="h-5 w-5 md:h-4 md:w-4 text-[#9a9590]" />
               </button>
               {!isMobile && (
                 <>
@@ -1950,14 +1958,14 @@ Start your research immediately when you receive a question. Do not ask for clar
                     className="p-2 rounded border border-[var(--border)] hover:bg-[var(--accent)] transition-colors"
                     title="Export chat"
                   >
-                    <Download className="h-4 w-4 text-[var(--muted)]" />
+                    <Download className="h-4 w-4 text-[#9a9590]" />
                   </button>
                   <button
                     onClick={() => setUsageDetailsOpen(true)}
                     className="p-2 rounded border border-[var(--border)] hover:bg-[var(--accent)] transition-colors"
                     title="Usage details"
                   >
-                    <BarChart3 className="h-4 w-4 text-[var(--muted)]" />
+                    <BarChart3 className="h-4 w-4 text-[#9a9590]" />
                   </button>
                 </>
               )}
@@ -1966,14 +1974,41 @@ Start your research immediately when you receive a question. Do not ask for clar
                 className="p-1.5 md:p-2 rounded hover:bg-[var(--accent)] transition-colors"
                 title="New chat"
               >
-                <Plus className="h-5 w-5 md:h-4 md:w-4 text-[var(--muted)]" />
+                <Plus className="h-5 w-5 md:h-4 md:w-4 text-[#9a9590]" />
               </button>
             </div>
           </div>
         </div>
 
         {/* Main Content + Tool Panel Container */}
-        <div className="flex-1 flex overflow-hidden">
+        <div className="flex-1 flex overflow-hidden relative">
+          {/* Message Search Panel */}
+          {messageSearchOpen && (
+            <div className="absolute inset-0 z-50 bg-[var(--background)]/95 backdrop-blur-sm animate-in fade-in slide-in-from-top-2">
+              <div className="h-full flex flex-col max-w-2xl mx-auto">
+                <div className="flex items-center justify-between p-4 border-b border-[var(--border)]">
+                  <h2 className="text-lg font-semibold">Search Messages</h2>
+                  <button
+                    onClick={() => setMessageSearchOpen(false)}
+                    className="p-2 rounded hover:bg-[var(--accent)] transition-colors"
+                  >
+                    <X className="h-5 w-5" />
+                  </button>
+                </div>
+                <div className="flex-1 overflow-hidden">
+                  <MessageSearch
+                    messages={messages}
+                    onResultClick={(messageId) => {
+                      const element = document.getElementById(`message-${messageId}`);
+                      element?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                      setMessageSearchOpen(false);
+                    }}
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Left side: Messages + Input */}
           <div className="flex-1 flex flex-col overflow-hidden relative">
             {/* Messages Area */}
@@ -1983,7 +2018,7 @@ Start your research immediately when you receive a question. Do not ask for clar
               <div className="flex items-center justify-center min-h-[60vh]">
                 <div className="text-center px-4 py-8">
                   <h2 className="text-base font-medium mb-2">Start a conversation</h2>
-                  <p className="text-sm text-[var(--muted)] max-w-xs mx-auto">
+                  <p className="text-sm text-[#9a9590] max-w-xs mx-auto">
                     {selectedModel || runningModel
                       ? 'Send a message to begin chatting.'
                       : 'Select a model in Settings to get started.'}
@@ -1993,7 +2028,7 @@ Start your research immediately when you receive a question. Do not ask for clar
             ) : (
               <div className="max-w-4xl mx-auto py-6 px-4 md:px-6 space-y-6">
                   {messages.map((message, index) => (
-                    <div key={message.id} className="animate-message-appear" style={{ animationDelay: `${Math.min(index * 50, 200)}ms` }}>
+                    <div key={message.id} id={`message-${message.id}`} className="animate-message-appear" style={{ animationDelay: `${Math.min(index * 50, 200)}ms` }}>
                       {/* User Message - Premium clean design */}
                       {message.role === 'user' ? (
                         <div className="group">
@@ -2074,6 +2109,8 @@ Start your research immediately when you receive a question. Do not ask for clar
                                 content={message.content}
                                 isStreaming={message.isStreaming}
                                 artifactsEnabled={artifactsEnabled}
+                                messageId={message.id}
+                                showActions={message.role === 'assistant'}
                               />
                               {/* Tool Calls - Only show inline on mobile */}
                               {isMobile && message.toolCalls && message.toolCalls.length > 0 && (
@@ -2148,7 +2185,7 @@ Start your research immediately when you receive a question. Do not ask for clar
                 className="absolute right-3 top-3 p-1.5 bg-[var(--card)] border border-[var(--border)] rounded hover:bg-[var(--accent)] transition-colors z-10"
                 title="Show tools"
               >
-                <PanelRightOpen className="h-4 w-4 text-[var(--muted)]" />
+                <PanelRightOpen className="h-4 w-4 text-[#9a9590]" />
                 {executingTools.size > 0 && (
                   <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-[var(--success)] rounded-full flex items-center justify-center text-[9px] text-white font-medium">
                     {executingTools.size}
@@ -2197,7 +2234,7 @@ Start your research immediately when you receive a question. Do not ask for clar
               {/* Panel Header */}
               <div className="flex items-center justify-between px-3 py-2 border-b border-[var(--border)]">
                 <div className="flex items-center gap-2">
-                  <span className="text-xs font-medium text-[var(--muted)]">Tools</span>
+                  <span className="text-xs font-medium text-[#9a9590]">Tools</span>
                   {executingTools.size > 0 && (
                     <span className="flex items-center gap-1 text-[10px] text-[var(--success)]">
                       <span className="relative flex h-1.5 w-1.5">
@@ -2212,7 +2249,7 @@ Start your research immediately when you receive a question. Do not ask for clar
                   onClick={() => setToolPanelOpen(false)}
                   className="p-1 rounded hover:bg-[var(--accent)] transition-colors"
                 >
-                  <X className="h-3.5 w-3.5 text-[var(--muted)]" />
+                  <X className="h-3.5 w-3.5 text-[#9a9590]" />
                 </button>
               </div>
 
@@ -2256,20 +2293,20 @@ Start your research immediately when you receive a question. Do not ask for clar
                             <Check className="h-3 w-3 text-[var(--success)] flex-shrink-0" />
                           )
                         ) : (
-                          <Wrench className="h-3 w-3 text-[var(--muted)] flex-shrink-0" />
+                          <Wrench className="h-3 w-3 text-[#9a9590] flex-shrink-0" />
                         )}
                         <span className="text-xs font-medium truncate">{toolName}</span>
                       </div>
 
                       {argPreview && (
-                        <p className="text-[11px] text-[var(--muted)] mt-1 line-clamp-2 break-all pl-5">
+                        <p className="text-[11px] text-[#9a9590] mt-1 line-clamp-2 break-all pl-5">
                           {String(argPreview).slice(0, 80)}
                         </p>
                       )}
 
                       {result && !isExecuting && (
                         <div className="mt-1.5 pl-5">
-                          <p className={`text-[11px] font-mono line-clamp-3 ${result.isError ? 'text-[var(--error)]' : 'text-[var(--muted)]'}`}>
+                          <p className={`text-[11px] font-mono line-clamp-3 ${result.isError ? 'text-[var(--error)]' : 'text-[#9a9590]'}`}>
                             {result.content.slice(0, 150)}
                           </p>
                         </div>
@@ -2281,7 +2318,7 @@ Start your research immediately when you receive a question. Do not ask for clar
                 {/* Research Sources */}
                 {researchSources.length > 0 && (
                   <>
-                    <div className="px-3 py-1.5 text-[10px] uppercase tracking-wider text-[var(--muted)] bg-[var(--accent)]/50 border-b border-[var(--border)]">
+                    <div className="px-3 py-1.5 text-[10px] uppercase tracking-wider text-[#9a9590] bg-[var(--accent)]/50 border-b border-[var(--border)]">
                       Sources
                     </div>
                     {researchSources.map((source, i) => (
@@ -2293,14 +2330,14 @@ Start your research immediately when you receive a question. Do not ask for clar
                         className="block px-3 py-2 border-b border-[var(--border)] hover:bg-[var(--accent)] transition-colors"
                       >
                         <div className="text-xs line-clamp-1">{source.title}</div>
-                        <div className="text-[10px] text-[var(--muted)] truncate">{source.url}</div>
+                        <div className="text-[10px] text-[#9a9590] truncate">{source.url}</div>
                       </a>
                     ))}
                   </>
                 )}
 
                 {allToolCalls.length === 0 && !researchProgress && researchSources.length === 0 && (
-                  <div className="px-3 py-6 text-center text-xs text-[var(--muted)]">
+                  <div className="px-3 py-6 text-center text-xs text-[#9a9590]">
                     No activity yet
                   </div>
                 )}
@@ -2317,7 +2354,7 @@ Start your research immediately when you receive a question. Do not ask for clar
             <div className="bg-[var(--card)] border border-[var(--border)] rounded-lg w-full max-w-2xl max-h-[80vh] overflow-hidden flex flex-col">
               <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--border)]">
                 <div className="flex items-center gap-2">
-                  <BarChart3 className="h-4 w-4 text-[var(--muted)]" />
+                  <BarChart3 className="h-4 w-4 text-[#9a9590]" />
                   <h2 className="font-medium">Usage</h2>
                 </div>
                 <button
@@ -2332,37 +2369,37 @@ Start your research immediately when you receive a question. Do not ask for clar
               <div className="flex-1 overflow-y-auto p-4 space-y-4">
                 <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
                   <div className="bg-[var(--background)] rounded-lg p-3">
-                    <div className="text-xs text-[var(--muted)]">Input</div>
+                    <div className="text-xs text-[#9a9590]">Input</div>
                     <div className="text-lg font-mono font-semibold">
                       {(sessionUsage?.prompt_tokens ?? 0).toLocaleString()}
                     </div>
                   </div>
                   <div className="bg-[var(--background)] rounded-lg p-3">
-                    <div className="text-xs text-[var(--muted)]">Output</div>
+                    <div className="text-xs text-[#9a9590]">Output</div>
                     <div className="text-lg font-mono font-semibold">
                       {(sessionUsage?.completion_tokens ?? 0).toLocaleString()}
                     </div>
                   </div>
                   <div className="bg-[var(--background)] rounded-lg p-3">
-                    <div className="text-xs text-[var(--muted)]">Total</div>
+                    <div className="text-xs text-[#9a9590]">Total</div>
                     <div className="text-lg font-mono font-semibold">
                       {(sessionUsage?.total_tokens ?? 0).toLocaleString()}
                     </div>
                   </div>
                   <div className="bg-[var(--background)] rounded-lg p-3">
-                    <div className="text-xs text-[var(--muted)]">Cost</div>
+                    <div className="text-xs text-[#9a9590]">Cost</div>
                     <div className="text-lg font-mono font-semibold">
                       {sessionUsage?.estimated_cost_usd != null ? `$${sessionUsage.estimated_cost_usd.toFixed(4)}` : '--'}
                     </div>
                   </div>
                 </div>
 
-                <div className="text-xs text-[var(--muted)]">
+                <div className="text-xs text-[#9a9590]">
                   Request-level token accounting is stored on assistant turns (`request_*` fields) when available.
                 </div>
 
                 <div className="border border-[var(--border)] rounded-lg overflow-hidden">
-                  <div className="px-3 py-2 bg-[var(--accent)] text-xs font-medium text-[var(--muted-foreground)]">
+                  <div className="px-3 py-2 bg-[var(--accent)] text-xs font-medium text-[#b0a8a0]">
                     Recent assistant turns
                   </div>
                   <div className="max-h-64 overflow-y-auto">
@@ -2377,21 +2414,21 @@ Start your research immediately when you receive a question. Do not ask for clar
                         return (
                           <div key={m.id} className="px-3 py-2 border-t border-[var(--border)] flex items-center gap-3">
                             <div className="min-w-0 flex-1">
-                              <div className="text-xs text-[var(--muted)] font-mono truncate">
+                              <div className="text-xs text-[#9a9590] font-mono truncate">
                                 {m.model || selectedModel || 'assistant'} • {m.id}
                               </div>
-                              <div className="text-xs text-[var(--muted-foreground)] truncate">
+                              <div className="text-xs text-[#b0a8a0] truncate">
                                 {(m.content || '').replace(/\s+/g, ' ').slice(0, 80)}
                               </div>
                             </div>
-                            <div className="text-[10px] font-mono text-[var(--muted)] text-right">
+                            <div className="text-[10px] font-mono text-[#9a9590] text-right">
                               {total ? `${total.toLocaleString()} tok` : '--'}
                             </div>
                           </div>
                         );
                       })}
                     {messages.filter((m) => m.role === 'assistant').length === 0 && (
-                      <div className="px-3 py-4 text-sm text-[var(--muted)]">No assistant messages yet.</div>
+                      <div className="px-3 py-4 text-sm text-[#9a9590]">No assistant messages yet.</div>
                     )}
                   </div>
                 </div>
@@ -2415,7 +2452,7 @@ Start your research immediately when you receive a question. Do not ask for clar
             <div className="bg-[var(--card)] border border-[var(--border)] rounded-lg w-full max-w-lg overflow-hidden flex flex-col">
               <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--border)]">
                 <div className="flex items-center gap-2">
-                  <Download className="h-4 w-4 text-[var(--muted)]" />
+                  <Download className="h-4 w-4 text-[#9a9590]" />
                   <h2 className="font-medium">Export chat</h2>
                 </div>
                 <button
@@ -2428,7 +2465,7 @@ Start your research immediately when you receive a question. Do not ask for clar
               </div>
 
               <div className="p-4 space-y-3">
-                <div className="text-xs text-[var(--muted)]">
+                <div className="text-xs text-[#9a9590]">
                   Exports use the current UI state (including tool calls/results if present).
                 </div>
                 <button

@@ -308,7 +308,7 @@ export default function Nav() {
                   <X className="h-4 w-4" />
                 </button>
               </div>
-              <p className="mt-2 text-xs text-[var(--muted-foreground)]">
+              <p className="mt-2 text-xs text-[#b0a8a0]">
                 Stored locally in your browser and sent as <code className="font-mono">Authorization: Bearer</code>.
               </p>
               <input
@@ -373,7 +373,7 @@ export default function Nav() {
                 <X className="h-4 w-4" />
               </button>
             </div>
-            <p className="mt-2 text-xs text-[var(--muted-foreground)]">
+            <p className="mt-2 text-xs text-[#b0a8a0]">
               Stored locally in your browser and sent as <code className="font-mono">Authorization: Bearer</code>.
             </p>
             <input
@@ -434,7 +434,7 @@ export default function Nav() {
                     className={`flex items-center gap-2 px-3 py-2 rounded-md text-sm transition-colors ${
                       isActive
                         ? 'bg-[var(--card-hover)] text-[var(--foreground)]'
-                        : 'text-[var(--muted-foreground)] hover:text-[var(--foreground)] hover:bg-[var(--card-hover)]'
+                        : 'text-[#b0a8a0] hover:text-[var(--foreground)] hover:bg-[var(--card-hover)]'
                     }`}
                   >
                     <Icon className="h-4 w-4" />
@@ -450,7 +450,7 @@ export default function Nav() {
             {/* Status - shown on all screens */}
             <div className="flex items-center gap-1.5 md:gap-2 text-xs md:text-sm">
               <div className={`w-2 h-2 rounded-full flex-shrink-0 ${status.online ? 'bg-[var(--success)]' : 'bg-[var(--error)]'}`} />
-              <span className="text-[var(--muted-foreground)] truncate max-w-[100px] md:max-w-none">
+              <span className="text-[#b0a8a0] truncate max-w-[100px] md:max-w-none">
                 {status.inferenceOnline ? (status.model || 'Ready') : status.online ? 'No model' : 'Offline'}
               </span>
             </div>
@@ -469,7 +469,7 @@ export default function Nav() {
               className="p-2 md:hidden rounded-md hover:bg-[var(--card-hover)] transition-colors"
               title="Search"
             >
-              <Search className="h-4 w-4 text-[var(--muted-foreground)]" />
+              <Search className="h-4 w-4 text-[#b0a8a0]" />
             </button>
 
             <button
@@ -478,8 +478,8 @@ export default function Nav() {
               title="Command palette (Ctrl/⌘K)"
             >
               <Search className="h-4 w-4" />
-              <span className="text-[var(--muted-foreground)]">Search</span>
-              <span className="ml-1 text-[10px] font-mono text-[var(--muted)] border border-[var(--border)] rounded px-1.5 py-0.5">
+              <span className="text-[#b0a8a0]">Search</span>
+              <span className="ml-1 text-[10px] font-mono text-[#9a9590] border border-[var(--border)] rounded px-1.5 py-0.5">
                 ⌘K
               </span>
             </button>
@@ -559,7 +559,7 @@ export default function Nav() {
             <div className="px-4 py-3 border-b border-[var(--border)]">
               <div className="flex items-center gap-2">
                 <div className={`w-2 h-2 rounded-full ${status.online ? 'bg-[var(--success)]' : 'bg-[var(--error)]'}`} />
-                <span className="text-sm text-[var(--muted-foreground)]">
+                <span className="text-sm text-[#b0a8a0]">
                   {status.inferenceOnline ? (status.model || 'No model') : status.online ? 'Inference offline' : 'Offline'}
                 </span>
               </div>
@@ -578,15 +578,15 @@ export default function Nav() {
                     className={`flex items-center gap-3 px-3 py-3 rounded-lg transition-colors ${
                       isActive
                         ? 'bg-[var(--accent)] text-[var(--foreground)]'
-                        : 'text-[var(--muted-foreground)] hover:bg-[var(--card-hover)] hover:text-[var(--foreground)]'
+                        : 'text-[#b0a8a0] hover:bg-[var(--card-hover)] hover:text-[var(--foreground)]'
                     }`}
                   >
                     <Icon className="h-5 w-5" />
                     <div className="flex-1">
                       <div className="font-medium">{item.label}</div>
-                      <div className="text-xs text-[var(--muted)]">{item.description}</div>
+                      <div className="text-xs text-[#9a9590]">{item.description}</div>
                     </div>
-                    <ChevronRight className="h-4 w-4 text-[var(--muted)]" />
+                    <ChevronRight className="h-4 w-4 text-[#9a9590]" />
                   </Link>
                 );
               })}

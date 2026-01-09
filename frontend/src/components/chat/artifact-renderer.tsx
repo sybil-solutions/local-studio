@@ -141,7 +141,7 @@ export function ArtifactRenderer({ artifact, onRun }: ArtifactRendererProps) {
         {copied ? (
           <Check className="h-5 w-5 md:h-3.5 md:w-3.5 text-[var(--success)]" />
         ) : (
-          <Copy className="h-5 w-5 md:h-3.5 md:w-3.5 text-[var(--muted)]" />
+          <Copy className="h-5 w-5 md:h-3.5 md:w-3.5 text-[#9a9590]" />
         )}
       </button>
       <button
@@ -149,14 +149,14 @@ export function ArtifactRenderer({ artifact, onRun }: ArtifactRendererProps) {
         className="p-2 md:p-1.5 rounded hover:bg-[var(--background)] transition-colors"
         title="Download"
       >
-        <Download className="h-5 w-5 md:h-3.5 md:w-3.5 text-[var(--muted)]" />
+        <Download className="h-5 w-5 md:h-3.5 md:w-3.5 text-[#9a9590]" />
       </button>
       <button
         onClick={handleShare}
         className="p-2 md:p-1.5 rounded hover:bg-[var(--background)] transition-colors"
         title="Share"
       >
-        <Share2 className="h-5 w-5 md:h-3.5 md:w-3.5 text-[var(--muted)]" />
+        <Share2 className="h-5 w-5 md:h-3.5 md:w-3.5 text-[#9a9590]" />
       </button>
       <button
         onClick={() => setShowCode(!showCode)}
@@ -164,9 +164,9 @@ export function ArtifactRenderer({ artifact, onRun }: ArtifactRendererProps) {
         title={showCode ? 'Hide code' : 'Show code'}
       >
         {showCode ? (
-          <EyeOff className="h-5 w-5 md:h-3.5 md:w-3.5 text-[var(--muted)]" />
+          <EyeOff className="h-5 w-5 md:h-3.5 md:w-3.5 text-[#9a9590]" />
         ) : (
-          <Eye className="h-5 w-5 md:h-3.5 md:w-3.5 text-[var(--muted)]" />
+          <Eye className="h-5 w-5 md:h-3.5 md:w-3.5 text-[#9a9590]" />
         )}
       </button>
       <button
@@ -274,7 +274,7 @@ export function ArtifactRenderer({ artifact, onRun }: ArtifactRendererProps) {
           <div className="flex items-center gap-2">
             <Code className="h-3.5 w-3.5" />
             <span className="text-xs font-medium">{artifact.title || 'Python'}</span>
-            <span className="text-xs text-[var(--muted)] px-1.5 py-0.5 bg-[var(--background)] rounded">
+            <span className="text-xs text-[#9a9590] px-1.5 py-0.5 bg-[var(--background)] rounded">
               python
             </span>
           </div>
@@ -284,7 +284,7 @@ export function ArtifactRenderer({ artifact, onRun }: ArtifactRendererProps) {
         </pre>
         {artifact.output && (
           <div className="p-3 border-t border-[var(--border)] bg-[var(--card)]">
-            <p className="text-xs text-[var(--muted)] mb-1">Output:</p>
+            <p className="text-xs text-[#9a9590] mb-1">Output:</p>
             <pre className="text-xs whitespace-pre-wrap">{artifact.output}</pre>
           </div>
         )}

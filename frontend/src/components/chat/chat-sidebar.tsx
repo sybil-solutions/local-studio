@@ -79,7 +79,7 @@ export function ChatSidebar({
           {/* Header */}
           <div className="flex items-center justify-between px-4 py-3 pt-[calc(0.75rem+env(safe-area-inset-top,0))] border-b border-[var(--border)]">
             <div className="flex items-center gap-2">
-              <MessageSquare className="h-4 w-4 text-[var(--muted)]" />
+              <MessageSquare className="h-4 w-4 text-[#9a9590]" />
               <span className="font-medium">Conversations</span>
             </div>
             <button
@@ -116,9 +116,9 @@ export function ChatSidebar({
               </div>
             ) : sessions.length === 0 ? (
               <div className="text-center py-12">
-                <MessageSquare className="h-8 w-8 text-[var(--muted)] mx-auto mb-3 opacity-50" />
-                <p className="text-sm text-[var(--muted)]">No conversations yet</p>
-                <p className="text-xs text-[var(--muted)] mt-1">Start a new chat to begin</p>
+                <MessageSquare className="h-8 w-8 text-[#9a9590] mx-auto mb-3 opacity-50" />
+                <p className="text-sm text-[#9a9590]">No conversations yet</p>
+                <p className="text-xs text-[#9a9590] mt-1">Start a new chat to begin</p>
               </div>
             ) : (
               <div className="space-y-1">
@@ -141,11 +141,11 @@ export function ChatSidebar({
                       <span className="text-sm font-medium truncate block">{session.title}</span>
                       <div className="flex items-center gap-2 mt-0.5">
                         {session.model && (
-                          <span className="text-xs text-[var(--muted)] font-mono truncate">
+                          <span className="text-xs text-[#9a9590] font-mono truncate">
                             {session.parent_id ? '↳ ' : ''}{session.model.split('/').pop()}
                           </span>
                         )}
-                        <span className="text-xs text-[var(--muted)]">
+                        <span className="text-xs text-[#9a9590]">
                           {new Date(session.updated_at).toLocaleDateString()}
                         </span>
                       </div>
@@ -156,7 +156,7 @@ export function ChatSidebar({
                         e.stopPropagation();
                         onDeleteSession(session.id);
                       }}
-                      className="absolute right-2 top-1/2 -translate-y-1/2 p-2 rounded-lg hover:bg-[var(--error)]/20 text-[var(--muted)] hover:text-[var(--error)] transition-all opacity-0 group-hover:opacity-100"
+                      className="absolute right-2 top-1/2 -translate-y-1/2 p-2 rounded-lg hover:bg-[var(--error)]/20 text-[#9a9590] hover:text-[var(--error)] transition-all opacity-0 group-hover:opacity-100"
                     >
                       <Trash2 className="h-4 w-4" />
                     </button>
@@ -203,7 +203,7 @@ export function ChatSidebar({
             </div>
           </div>
         ) : sessions.length === 0 ? (
-          <div className="text-center py-4 text-xs text-[var(--muted)]">
+          <div className="text-center py-4 text-xs text-[#9a9590]">
             No chats
           </div>
         ) : (
@@ -224,7 +224,7 @@ export function ChatSidebar({
               >
                 <span className="text-xs truncate block">{session.title}</span>
                 {session.model && (
-                  <span className="text-[10px] text-[var(--muted)] font-mono truncate block">
+                  <span className="text-[10px] text-[#9a9590] font-mono truncate block">
                     {session.parent_id ? '↳ ' : ''}{session.model}
                   </span>
                 )}
@@ -236,7 +236,7 @@ export function ChatSidebar({
                     e.stopPropagation();
                     onDeleteSession(session.id);
                   }}
-                  className="absolute right-1 top-1/2 -translate-y-1/2 p-0.5 rounded hover:bg-[var(--error)]/20 text-[var(--muted)] hover:text-[var(--error)] transition-colors"
+                  className="absolute right-1 top-1/2 -translate-y-1/2 p-0.5 rounded hover:bg-[var(--error)]/20 text-[#9a9590] hover:text-[var(--error)] transition-colors"
                 >
                   <Trash2 className="h-3 w-3" />
                 </button>

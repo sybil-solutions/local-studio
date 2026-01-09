@@ -292,6 +292,27 @@ body {
   word-wrap: break-word;
   overflow-wrap: break-word;
   hyphens: auto;
+  color: #e8e4dd !important;
+}
+
+.message-content p,
+.message-content li,
+.message-content ul,
+.message-content ol,
+.message-content h1,
+.message-content h2,
+.message-content h3,
+.message-content h4,
+.message-content h5,
+.message-content h6,
+.message-content span:not([class*="hljs"]),
+.message-content strong,
+.message-content em,
+.message-content blockquote,
+.message-content td,
+.message-content th,
+.message-content div:not([class]) {
+  color: #e8e4dd !important;
 }
 
 .message-content pre {

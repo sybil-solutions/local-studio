@@ -7,6 +7,9 @@ import { ChevronDown, ChevronRight, Brain, Copy, Check, AlertCircle, Play } from
 import mermaid from 'mermaid';
 import { CodeSandbox } from './code-sandbox';
 import { ArtifactRenderer, extractArtifacts, getArtifactType } from './artifact-renderer';
+import { EnhancedCodeBlock } from './enhanced-code-block';
+import { TypingIndicator, StreamingCursor } from './typing-indicator';
+import { MessageActions } from './message-actions';
 import type { Artifact } from '@/lib/types';
 import { normalizeAssistantMarkdownForRender } from '@/lib/chat-markdown';
 
@@ -24,6 +27,8 @@ interface MessageRendererProps {
   content: string;
   isStreaming?: boolean;
   artifactsEnabled?: boolean;
+  messageId?: string;
+  showActions?: boolean;
 }
 
 interface ThinkingBlockProps {
@@ -33,6 +38,21 @@ interface ThinkingBlockProps {
 
 const BOX_TAGS_PATTERN = /<\|(?:begin|end)_of_box\|>/g;
 const stripBoxTags = (text: string) => (text ? text.replace(BOX_TAGS_PATTERN, '') : text);
+
+// Strip MCP tool call XML from content (MiroThinker/Qwen3 models)
+// Handles various malformations: missing <, space in closing tag, etc.
+const MCP_TOOL_PATTERN = /<?use_mcp_tool>[\s\S]*?<\/use_mcp[_ ]?tool>/gi;
+const MCP_INCOMPLETE_PATTERN = /<use_mcp_tool>[\s\S]*$/gi;
+const stripMcpXml = (text: string): string => {
+  if (!text) return text;
+  // Remove complete MCP tool blocks
+  let result = text.replace(MCP_TOOL_PATTERN, '');
+  // Remove incomplete MCP blocks at end of stream
+  result = result.replace(MCP_INCOMPLETE_PATTERN, '');
+  // Clean up any orphaned fragments
+  result = result.replace(/use_mcp_tool>[\s\S]*?<\/use_mcp[_ ]?tool>/gi, '');
+  return result.trim();
+};
 
 // Export for use in chat page (thinking panel)
 export function splitThinking(content: string): {
@@ -122,7 +142,7 @@ function ThinkingBlock({ content, isStreaming }: ThinkingBlockProps) {
     <div className="my-2 md:my-3">
       <button
         onClick={() => setIsExpanded(!isExpanded)}
-        className="flex items-center gap-1.5 text-xs text-[#9a9088] hover:text-[#c9a66b] transition-colors"
+        className="flex items-center gap-1.5 text-xs text-[#b8b4ad] hover:text-[#e8e4dd] transition-colors"
       >
         {isExpanded ? (
           <ChevronDown className="h-3.5 w-3.5" />
@@ -132,7 +152,7 @@ function ThinkingBlock({ content, isStreaming }: ThinkingBlockProps) {
         <span>reasoned for {wordCount} words{isStreaming ? '...' : ''}</span>
       </button>
       {isExpanded && (
-        <div className="mt-2 pl-4 border-l-2 border-[#363432] text-sm text-[#9a9088] whitespace-pre-wrap max-h-[40vh] overflow-y-auto">
+        <div className="mt-2 pl-4 border-l-2 border-[#363432] text-sm text-[#c8c4bd] whitespace-pre-wrap max-h-[40vh] overflow-y-auto">
           {content}
         </div>
       )}
@@ -192,7 +212,7 @@ function MermaidDiagram({ code }: { code: string }) {
           <span>Diagram Error</span>
         </div>
         <div className="text-xs text-red-300 mb-2 break-words">{error}</div>
-        <pre className="text-xs text-[var(--muted-foreground)] overflow-x-auto">{code}</pre>
+        <pre className="text-xs text-[#d8d4cd] overflow-x-auto">{code}</pre>
       </div>
     );
   }
@@ -211,114 +231,45 @@ interface CodeBlockProps {
   className?: string;
   artifactsEnabled?: boolean;
   isStreaming?: boolean;
+  language?: string;
 }
 
-function CodeBlock({ children, className, artifactsEnabled, isStreaming }: CodeBlockProps) {
-  const [copied, setCopied] = useState(false);
-  const [showPreview, setShowPreview] = useState(false);
-  const language = className?.replace('language-', '') || '';
+function CodeBlock({ children, className, artifactsEnabled, isStreaming, language }: CodeBlockProps) {
+  const lang = language || className?.replace('language-', '') || '';
 
   // Check if this is a mermaid diagram
-  if (language === 'mermaid') {
+  if (lang === 'mermaid') {
     // Avoid spamming mermaid parser while a streamed response is still changing.
     if (isStreaming) {
       return (
-        <div className="my-3 p-4 rounded-lg border border-[var(--border)] bg-[var(--card)]">
-          <div className="text-xs text-[var(--muted)] mb-2">Mermaid preview renders after streaming completes.</div>
-          <pre className="text-xs text-[var(--muted-foreground)] overflow-x-auto">{children}</pre>
+        <div className="my-3 p-4 rounded-lg border border-[var(--border)] bg-[var(--card)] animate-in fade-in">
+          <div className="text-xs text-[#b8b4ad] mb-2">Mermaid preview renders after streaming completes.</div>
+          <pre className="text-xs text-[#d8d4cd] overflow-x-auto">{children}</pre>
         </div>
       );
     }
-    return <MermaidDiagram code={children} />;
+    return <MermaidDiagram code={String(children)} />;
   }
 
-  // Check if this should be rendered as an artifact
-  const artifactType = getArtifactType(language);
-  const canPreview = artifactsEnabled && artifactType && ['html', 'react', 'javascript', 'svg'].includes(artifactType);
-
-  const copyCode = () => {
-    navigator.clipboard.writeText(children);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
-
-  // If showing preview, render CodeSandbox
-  if (showPreview && canPreview && artifactType) {
-    if (artifactType === 'svg') {
-      return (
-        <div className="my-3">
-          <ArtifactRenderer
-            artifact={{ id: 'inline-svg', type: 'svg', title: `${language} Preview`, code: children }}
-          />
-          <button
-            onClick={() => setShowPreview(false)}
-            className="mt-2 text-xs text-[var(--muted)] hover:text-[var(--foreground)]"
-          >
-            Show code
-          </button>
-        </div>
-      );
-    }
-
-    return (
-      <div className="my-3">
-        <CodeSandbox
-          code={children}
-          language={artifactType as 'html' | 'react' | 'javascript'}
-          title={`${language} Preview`}
-          autoRun={true}
-        />
-        <button
-          onClick={() => setShowPreview(false)}
-          className="mt-2 text-xs text-[var(--muted)] hover:text-[var(--foreground)]"
-        >
-          Show code
-        </button>
-      </div>
-    );
-  }
-
+  // Use enhanced code block for everything else
   return (
-    <div className="my-3 rounded-lg overflow-hidden border border-[var(--border)] group">
-      <div className="flex items-center justify-between bg-[var(--accent)] px-4 py-2">
-        <span className="text-xs font-mono text-[var(--muted-foreground)]">
-          {language || 'code'}
-        </span>
-        <div className="flex items-center gap-1">
-          {canPreview && (
-            <button
-              onClick={() => setShowPreview(true)}
-              className="p-1 rounded hover:bg-[var(--accent-hover)] transition-colors flex items-center gap-1"
-              title="Run preview"
-            >
-              <Play className="h-3.5 w-3.5 text-[var(--success)]" />
-              <span className="text-xs text-[var(--muted)]">Preview</span>
-            </button>
-          )}
-          <button
-            onClick={copyCode}
-            className="p-1 rounded hover:bg-[var(--accent-hover)] transition-colors"
-          >
-            {copied ? (
-              <Check className="h-3.5 w-3.5 text-[var(--success)]" />
-            ) : (
-              <Copy className="h-3.5 w-3.5 text-[var(--muted)]" />
-            )}
-          </button>
-        </div>
-      </div>
-      <pre className="bg-[var(--card)] p-4 overflow-x-auto">
-        <code className="text-sm font-mono">{children}</code>
-      </pre>
-    </div>
+    <EnhancedCodeBlock
+      language={lang}
+      artifactsEnabled={artifactsEnabled}
+      isStreaming={isStreaming}
+    >
+      {String(children)}
+    </EnhancedCodeBlock>
   );
 }
 
-export function MessageRenderer({ content, isStreaming, artifactsEnabled }: MessageRendererProps) {
+export function MessageRenderer({ content, isStreaming, artifactsEnabled, messageId, showActions = true }: MessageRendererProps) {
   // Mermaid uses an internal render ID cache. We need to reset when content changes.
   // This is done via useId in MermaidDiagram.
   const { thinkingContent, mainContent, isThinkingComplete, artifacts } = useMemo(() => {
-    const normalizedContent = normalizeAssistantMarkdownForRender(content);
+    // First strip any MCP XML tool calls that leaked through streaming
+    const contentWithoutMcp = stripMcpXml(content);
+    const normalizedContent = normalizeAssistantMarkdownForRender(contentWithoutMcp);
     // First extract any explicit artifact blocks
     const { text: contentWithoutArtifacts, artifacts: extractedArtifacts } = extractArtifacts(normalizedContent);
 
@@ -366,7 +317,14 @@ export function MessageRenderer({ content, isStreaming, artifactsEnabled }: Mess
   }, [content, artifactsEnabled]);
 
   return (
-    <div className="message-content overflow-hidden max-w-full">
+    <div className="message-content overflow-hidden max-w-full group relative text-inherit">
+      {/* Message Actions */}
+      {showActions && messageId && content && (
+        <div className="absolute -top-2 right-0 z-10">
+          <MessageActions content={content} messageId={messageId} />
+        </div>
+      )}
+
       {thinkingContent && (
         <ThinkingBlock
           content={thinkingContent}
@@ -375,12 +333,15 @@ export function MessageRenderer({ content, isStreaming, artifactsEnabled }: Mess
       )}
 
       {mainContent && (
+        <div style={{ color: '#e8e4dd' }}>
         <ReactMarkdown
           remarkPlugins={[remarkGfm]}
           components={{
             code({ className, children, ...props }) {
               const isInline = !className;
               const codeContent = String(children).replace(/\n$/, '');
+              const langMatch = className?.match(/language-(\w+)/);
+              const language = langMatch?.[1];
 
               if (isInline) {
               return (
@@ -394,13 +355,18 @@ export function MessageRenderer({ content, isStreaming, artifactsEnabled }: Mess
             }
 
               return (
-                <CodeBlock className={className} artifactsEnabled={artifactsEnabled} isStreaming={isStreaming}>
+                <CodeBlock
+                  className={className}
+                  artifactsEnabled={artifactsEnabled}
+                  isStreaming={isStreaming}
+                  language={language}
+                >
                   {codeContent}
                 </CodeBlock>
               );
             },
             p({ children }) {
-              return <p className="mb-3 last:mb-0 leading-relaxed">{children}</p>;
+              return <p className="mb-3 last:mb-0 leading-relaxed text-[#e8e4dd]">{children}</p>;
             },
             ul({ children }) {
               return <ul className="mb-3 pl-4 space-y-1 list-disc">{children}</ul>;
@@ -409,20 +375,20 @@ export function MessageRenderer({ content, isStreaming, artifactsEnabled }: Mess
               return <ol className="mb-3 pl-4 space-y-1 list-decimal">{children}</ol>;
             },
             li({ children }) {
-              return <li className="leading-relaxed">{children}</li>;
+              return <li className="leading-relaxed text-[#e8e4dd]">{children}</li>;
             },
             h1({ children }) {
-              return <h1 className="text-xl font-semibold mb-3 mt-4 first:mt-0">{children}</h1>;
+              return <h1 className="text-xl font-semibold mb-3 mt-4 first:mt-0 text-[#e8e4dd]">{children}</h1>;
             },
             h2({ children }) {
-              return <h2 className="text-lg font-semibold mb-2 mt-4 first:mt-0">{children}</h2>;
+              return <h2 className="text-lg font-semibold mb-2 mt-4 first:mt-0 text-[#e8e4dd]">{children}</h2>;
             },
             h3({ children }) {
-              return <h3 className="text-base font-semibold mb-2 mt-3 first:mt-0">{children}</h3>;
+              return <h3 className="text-base font-semibold mb-2 mt-3 first:mt-0 text-[#e8e4dd]">{children}</h3>;
             },
             blockquote({ children }) {
               return (
-                <blockquote className="border-l-2 border-[var(--border)] pl-4 my-3 text-[var(--muted-foreground)] italic">
+                <blockquote className="border-l-2 border-[var(--border)] pl-4 my-3 text-[#c8c4bd] italic">
                   {children}
                 </blockquote>
               );
@@ -456,7 +422,7 @@ export function MessageRenderer({ content, isStreaming, artifactsEnabled }: Mess
             },
             th({ children }) {
               return (
-                <th className="px-4 py-2 text-left text-xs font-medium text-[var(--muted-foreground)] uppercase tracking-wider border-b border-[var(--border)]">
+                <th className="px-4 py-2 text-left text-xs font-medium text-[#d8d4cd] uppercase tracking-wider border-b border-[var(--border)]">
                   {children}
                 </th>
               );
@@ -481,6 +447,7 @@ export function MessageRenderer({ content, isStreaming, artifactsEnabled }: Mess
         >
           {mainContent}
         </ReactMarkdown>
+        </div>
       )}
 
       {/* Render explicit artifacts */}
@@ -495,8 +462,15 @@ export function MessageRenderer({ content, isStreaming, artifactsEnabled }: Mess
         </div>
       )}
 
+      {/* Streaming indicators */}
       {!mainContent && !thinkingContent && isStreaming && (
-        <span className="inline-block w-2 h-4 bg-[var(--foreground)] animate-pulse" />
+        <div className="flex items-center gap-2">
+          <TypingIndicator size="md" />
+        </div>
+      )}
+
+      {mainContent && isStreaming && (
+        <StreamingCursor />
       )}
     </div>
   );

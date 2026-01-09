@@ -118,4 +118,5 @@ services:
       - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY:-sk-master}
       - API_KEY=${VLLM_STUDIO_API_KEY:-}
       - NEXT_PUBLIC_LITELLM_URL=${NEXT_PUBLIC_LITELLM_URL:-http://localhost:4100}
+      - EXA_API_KEY=${EXA_API_KEY:-}
     restart: unless-stopped

@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Optional
 
 from .config import settings
 from .models import Recipe
+from .thinking_config import get_chat_template_kwargs
 
 
 def _normalize_json_arg(value: Any) -> Any:
@@ -63,9 +64,49 @@ def _get_default_reasoning_parser(recipe: Recipe) -> Optional[str]:
     if "minimax" in model_id and ("m2" in model_id or "m-2" in model_id):
         return "minimax_m2_append_think"
 
+    # INTELLECT-3 uses deepseek_r1 reasoning parser
+    if "intellect" in model_id and "3" in model_id:
+        return "deepseek_r1"
+
     # GLM-4.5/4.6/4.7 models use glm45 parser
     if "glm" in model_id and any(v in model_id for v in ("4.5", "4.6", "4.7", "4-5", "4-6", "4-7")):
         return "glm45"
+
+    # MiroThinker (based on Qwen3-Thinking-2507) - MUST use deepseek_r1
+    # The qwen3 parser is too strict and causes <think> tag corruption in tool calls
+    # See: https://github.com/vllm-project/vllm/issues/27118
+    if "mirothinker" in model_id:
+        return "deepseek_r1"
+
+    # Qwen3-Thinking-2507 models - use deepseek_r1 (only expects </think> closing tag)
+    if "qwen3" in model_id and "thinking" in model_id:
+        return "deepseek_r1"
+
+    # Standard Qwen3 models (non-Thinking) - use qwen3 parser
+    if "qwen3" in model_id:
+        return "qwen3"
+
+    return None
+
+
+def _get_default_tool_call_parser(recipe: Recipe) -> Optional[str]:
+    """Auto-detect tool call parser based on model name/path."""
+    # Check model_path and served_model_name for model identification
+    model_id = (recipe.served_model_name or recipe.model_path or "").lower()
+
+    # MiroThinker uses MCP format (<use_mcp_tool>) - parsed by LiteLLM callback, not vLLM
+    # Do NOT use any vLLM tool parser for MiroThinker
+    if "mirothinker" in model_id:
+        return None
+
+    # GLM-4.5/4.6/4.7 models use glm45 parser (native GLM format with <arg_key>/<arg_value> tags)
+    if "glm" in model_id and any(v in model_id for v in ("4.5", "4.6", "4.7", "4-5", "4-6", "4-7")):
+        return "glm45"
+
+    # INTELLECT-3 uses hermes parser - outputs JSON inside <tool_call> tags
+    # NOT glm45 which expects <arg_key>/<arg_value> format
+    if "intellect" in model_id and "3" in model_id:
+        return "hermes"
 
     return None
 
@@ -105,8 +146,9 @@ def build_vllm_command(recipe: Recipe) -> List[str]:
         cmd.extend(["--kv-cache-dtype", recipe.kv_cache_dtype])
     if recipe.trust_remote_code:
         cmd.append("--trust-remote-code")
-    if recipe.tool_call_parser:
-        cmd.extend(["--tool-call-parser", recipe.tool_call_parser, "--enable-auto-tool-choice"])
+    tool_call_parser = recipe.tool_call_parser or _get_default_tool_call_parser(recipe)
+    if tool_call_parser:
+        cmd.extend(["--tool-call-parser", tool_call_parser, "--enable-auto-tool-choice"])
     reasoning_parser = recipe.reasoning_parser or _get_default_reasoning_parser(recipe)
     if reasoning_parser:
         cmd.extend(["--reasoning-parser", reasoning_parser])
@@ -114,6 +156,11 @@ def build_vllm_command(recipe: Recipe) -> List[str]:
         cmd.extend(["--quantization", recipe.quantization])
     if recipe.dtype:
         cmd.extend(["--dtype", recipe.dtype])
+
+    # Add chat template kwargs for reasoning models (max_thinking_tokens, etc.)
+    chat_kwargs = get_chat_template_kwargs(recipe)
+    if chat_kwargs:
+        cmd.extend(["--default-chat-template-kwargs", json.dumps(chat_kwargs)])
 
     _append_extra_args(cmd, recipe.extra_args)
     return cmd
