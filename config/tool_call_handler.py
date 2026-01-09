@@ -117,6 +117,89 @@ REMINDER: Only use the tools listed above. Use the exact server_name and tool_na
         model_lower = (model or "").lower()
         return "mirothinker" in model_lower
 
+    def _convert_tool_history_to_mcp(self, messages: List[dict]) -> List[dict]:
+        """Convert OpenAI-style tool call history back to MCP format for MiroThinker.
+
+        This ensures the model sees its own tool calls in the same format it's supposed to use.
+        OpenAI format: assistant message with tool_calls array, followed by tool role messages
+        MCP format: assistant content with <use_mcp_tool> XML, followed by user messages with results
+        """
+        converted = []
+        i = 0
+        while i < len(messages):
+            msg = messages[i]
+
+            # Handle assistant messages with tool_calls - convert to MCP XML in content
+            if msg.get("role") == "assistant" and msg.get("tool_calls"):
+                tool_calls = msg["tool_calls"]
+                content_parts = []
+
+                # Keep any existing content
+                if msg.get("content"):
+                    content_parts.append(msg["content"])
+
+                # Convert each tool call to MCP XML
+                for tc in tool_calls:
+                    func = tc.get("function", {})
+                    name = func.get("name", "")
+                    args = func.get("arguments", "{}")
+
+                    # Parse server__tool format back to MCP
+                    if "__" in name:
+                        server, tool_name = name.split("__", 1)
+                    else:
+                        server, tool_name = "default", name
+
+                    # Format as MCP XML
+                    mcp_xml = f"""<use_mcp_tool>
+<server_name>{server}</server_name>
+<tool_name>{tool_name}</tool_name>
+<arguments>
+{args}
+</arguments>
+</use_mcp_tool>"""
+                    content_parts.append(mcp_xml)
+
+                converted.append({
+                    "role": "assistant",
+                    "content": "\n\n".join(content_parts)
+                })
+
+                # Now collect all following tool results and combine into a user message
+                tool_results = []
+                j = i + 1
+                while j < len(messages) and messages[j].get("role") == "tool":
+                    tool_msg = messages[j]
+                    tool_call_id = tool_msg.get("tool_call_id", "")
+                    tool_name = tool_msg.get("name", "unknown")
+                    tool_content = tool_msg.get("content", "")
+
+                    # Find the matching tool call to get server/tool name
+                    for tc in tool_calls:
+                        if tc.get("id") == tool_call_id:
+                            func = tc.get("function", {})
+                            tool_name = func.get("name", tool_name)
+                            break
+
+                    tool_results.append(f"Tool result for {tool_name}:\n{tool_content}")
+                    j += 1
+
+                if tool_results:
+                    # Add tool results as a user message (how MCP models expect to see them)
+                    converted.append({
+                        "role": "user",
+                        "content": "Here are the tool results:\n\n" + "\n\n---\n\n".join(tool_results)
+                    })
+
+                i = j  # Skip past all the tool messages we processed
+                continue
+
+            # Pass through other messages unchanged
+            converted.append(msg)
+            i += 1
+
+        return converted
+
     async def async_pre_call_hook(
         self,
         user_api_key_dict,
@@ -145,13 +228,23 @@ REMINDER: Only use the tools listed above. Use the exact server_name and tool_na
 
         # For MCP models (MiroThinker): convert tools to system prompt, remove from request
         model = data.get("model", "")
-        if self._is_mcp_model(model) and "tools" in data:
+        if self._is_mcp_model(model):
             tools = data.pop("tools", [])
             data.pop("tool_choice", None)  # Remove tool_choice too
+            messages = data.get("messages", [])
+
+            # CRITICAL: Convert any OpenAI-style tool call history back to MCP format
+            # This ensures the model sees its own tool calls in the format it expects
+            has_tool_history = any(
+                (m.get("role") == "assistant" and m.get("tool_calls")) or m.get("role") == "tool"
+                for m in messages
+            )
+            if has_tool_history:
+                messages = self._convert_tool_history_to_mcp(messages)
+                logger.info(f"[PRE-CALL] Converted tool call history to MCP format for {model}")
 
             if tools:
                 mcp_prompt = self._tools_to_mcp_prompt(tools)
-                messages = data.get("messages", [])
 
                 # Prepend MCP tool docs to system message or add new system message
                 if messages and messages[0].get("role") == "system":
@@ -159,8 +252,9 @@ REMINDER: Only use the tools listed above. Use the exact server_name and tool_na
                 else:
                     messages.insert(0, {"role": "system", "content": mcp_prompt})
 
-                data["messages"] = messages
                 logger.info(f"[PRE-CALL] Converted {len(tools)} tools to MCP prompt for {model}")
+
+            data["messages"] = messages
 
         return data
 
