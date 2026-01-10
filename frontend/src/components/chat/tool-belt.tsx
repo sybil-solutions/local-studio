@@ -19,6 +19,7 @@ import {
   Brain,
   Clock,
   Plus,
+  Loader2,
 } from 'lucide-react';
 
 export interface Attachment {
@@ -91,6 +92,7 @@ export function ToolBelt({
 }: ToolBeltProps) {
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [isRecording, setIsRecording] = useState(false);
+  const [isTranscribing, setIsTranscribing] = useState(false);
   const [isTTSEnabled, setIsTTSEnabled] = useState(false);
   const [recordingDuration, setRecordingDuration] = useState(0);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -162,6 +164,41 @@ export function ToolBelt({
     });
   };
 
+  const transcribeAudio = async (audioBlob: Blob): Promise<string | null> => {
+    try {
+      setIsTranscribing(true);
+
+      // Get API key from localStorage
+      const apiKey = typeof window !== 'undefined'
+        ? window.localStorage.getItem('vllmstudio_api_key') || ''
+        : '';
+
+      const formData = new FormData();
+      formData.append('file', audioBlob, 'recording.webm');
+      formData.append('model', 'whisper-1');
+
+      const response = await fetch('https://voice.homelabai.org/v1/audio/transcriptions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+        },
+        body: formData,
+      });
+
+      if (!response.ok) {
+        throw new Error(`Transcription failed: ${response.status}`);
+      }
+
+      const data = await response.json();
+      return data.text || null;
+    } catch (err) {
+      console.error('Transcription error:', err);
+      return null;
+    } finally {
+      setIsTranscribing(false);
+    }
+  };
+
   const startRecording = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -173,18 +210,17 @@ export function ToolBelt({
         audioChunksRef.current.push(e.data);
       };
 
-      mediaRecorder.onstop = () => {
+      mediaRecorder.onstop = async () => {
         const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-        const attachment: Attachment = {
-          id: `${Date.now()}-audio`,
-          type: 'audio',
-          name: `Recording ${new Date().toLocaleTimeString()}`,
-          size: audioBlob.size,
-          url: URL.createObjectURL(audioBlob),
-          file: new File([audioBlob], 'recording.webm', { type: 'audio/webm' }),
-        };
-        setAttachments((prev) => [...prev, attachment]);
         stream.getTracks().forEach((track) => track.stop());
+
+        // Transcribe the audio and insert text
+        const transcript = await transcribeAudio(audioBlob);
+        if (transcript) {
+          onChange(value ? `${value} ${transcript}` : transcript);
+          // Focus the textarea after transcription
+          textareaRef.current?.focus();
+        }
       };
 
       mediaRecorder.start();
@@ -370,18 +406,22 @@ export function ToolBelt({
                 <ImageIcon className="h-4 w-4 md:h-3.5 md:w-3.5 text-[#9a9590]" />
               </button>
 
-              {/* Audio Recording */}
+              {/* Audio Recording / Speech-to-Text */}
               <button
                 onClick={isRecording ? stopRecording : startRecording}
-                disabled={disabled}
+                disabled={disabled || isTranscribing}
                 className={`p-1.5 rounded transition-colors disabled:opacity-50 hidden md:inline-flex ${
                   isRecording
                     ? 'bg-[var(--error)]/20 text-[var(--error)]'
+                    : isTranscribing
+                    ? 'bg-[var(--link)]/20 text-[var(--link)]'
                     : 'hover:bg-[var(--accent)]'
                 }`}
-                title={isRecording ? 'Stop recording' : 'Record audio'}
+                title={isTranscribing ? 'Transcribing...' : isRecording ? 'Stop recording' : 'Voice input (speech-to-text)'}
               >
-                {isRecording ? (
+                {isTranscribing ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : isRecording ? (
                   <MicOff className="h-3.5 w-3.5" />
                 ) : (
                   <Mic className="h-3.5 w-3.5 text-[#9a9590]" />
