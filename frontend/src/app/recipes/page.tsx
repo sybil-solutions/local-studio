@@ -17,6 +17,9 @@ import {
   Trash2,
   Check,
   X,
+  Pin,
+  PinOff,
+  MoreVertical,
 } from 'lucide-react';
 import api from '@/lib/api';
 import type { ModelInfo, Recipe, RecipeWithStatus, VRAMCalculation, ProcessInfo, StudioModelsRoot } from '@/lib/types';
@@ -63,6 +66,9 @@ function RecipesContent() {
   const [modelFilter, setModelFilter] = useState('');
   const [onlyUnconfiguredModels, setOnlyUnconfiguredModels] = useState(false);
   const [modelRecipeChoice, setModelRecipeChoice] = useState<Record<string, string>>({});
+  const [pinnedRecipes, setPinnedRecipes] = useState<Set<string>>(new Set());
+  const [recipeMenuOpen, setRecipeMenuOpen] = useState<string | null>(null);
+  const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [draft, setDraft] = useState<Recipe>({ ...DEFAULT_RECIPE });
   const [isDirty, setIsDirty] = useState(false);
@@ -83,6 +89,44 @@ function RecipesContent() {
   const [calculating, setCalculating] = useState(false);
 
   const { launchProgress } = useRealtimeStatus();
+
+  // Load pinned recipes from localStorage
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('vllm-studio-pinned-recipes');
+      if (saved) {
+        setPinnedRecipes(new Set(JSON.parse(saved)));
+      }
+    } catch {
+      // Ignore parse errors
+    }
+  }, []);
+
+  // Toggle pin for a recipe
+  const togglePin = useCallback((recipeId: string) => {
+    setPinnedRecipes(prev => {
+      const next = new Set(prev);
+      if (next.has(recipeId)) {
+        next.delete(recipeId);
+      } else {
+        next.add(recipeId);
+      }
+      localStorage.setItem('vllm-studio-pinned-recipes', JSON.stringify([...next]));
+      return next;
+    });
+  }, []);
+
+  // Close recipe menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = () => {
+      setRecipeMenuOpen(null);
+      setDeleteConfirm(null);
+    };
+    if (recipeMenuOpen) {
+      document.addEventListener('click', handleClickOutside);
+      return () => document.removeEventListener('click', handleClickOutside);
+    }
+  }, [recipeMenuOpen]);
 
   const loadData = useCallback(async () => {
     const [modelsData, recipesData, statusData] = await Promise.all([
@@ -133,6 +177,21 @@ function RecipesContent() {
     setEnvVarsText('{}');
     setJsonError(null);
   }, []);
+
+  // Delete a recipe by ID directly (inline confirmation in UI)
+  const deleteRecipeById = useCallback(async (recipeId: string) => {
+    try {
+      await api.deleteRecipe(recipeId);
+      await loadData();
+      if ((selectedId || draft.id) === recipeId) {
+        startNewRecipe();
+      }
+      setDeleteConfirm(null);
+      setRecipeMenuOpen(null);
+    } catch (e) {
+      alert('Failed to delete: ' + (e as Error).message);
+    }
+  }, [loadData, selectedId, draft.id, startNewRecipe]);
 
   const startNewRecipeFromModel = useCallback((model: ModelInfo) => {
     router.replace('/recipes?new=1');
@@ -195,16 +254,28 @@ function RecipesContent() {
   }, [editRecipeId, recipes, selectRecipe]);
 
   const filteredRecipes = useMemo(() => {
-    if (!filter.trim()) return recipes;
-    const q = filter.toLowerCase();
-    return recipes.filter((r) => {
-      return (
-        r.id.toLowerCase().includes(q) ||
-        r.name.toLowerCase().includes(q) ||
-        r.model_path.toLowerCase().includes(q)
-      );
+    let list = recipes;
+    if (filter.trim()) {
+      const q = filter.toLowerCase();
+      list = recipes.filter((r) => {
+        return (
+          r.id.toLowerCase().includes(q) ||
+          r.name.toLowerCase().includes(q) ||
+          r.model_path.toLowerCase().includes(q)
+        );
+      });
+    }
+    // Sort: pinned first, then running, then alphabetical
+    return [...list].sort((a, b) => {
+      const aPinned = pinnedRecipes.has(a.id);
+      const bPinned = pinnedRecipes.has(b.id);
+      if (aPinned !== bPinned) return aPinned ? -1 : 1;
+      const aRunning = a.status === 'running';
+      const bRunning = b.status === 'running';
+      if (aRunning !== bRunning) return aRunning ? -1 : 1;
+      return a.name.localeCompare(b.name);
     });
-  }, [filter, recipes]);
+  }, [filter, recipes, pinnedRecipes]);
 
   const filteredModels = useMemo(() => {
     let list = models;
@@ -653,38 +724,138 @@ function RecipesContent() {
                   filteredRecipes.length === 0 ? (
                     <div className="p-6 text-sm text-center text-[#9a9088]">No recipes found</div>
                   ) : (
-                    filteredRecipes.map((r) => (
-                      <button
-                        key={r.id}
-                        onClick={() => {
-                          router.replace(`/recipes?edit=${encodeURIComponent(r.id)}`);
-                          selectRecipe(r);
-                        }}
-                        className={`w-full text-left p-3 border-b border-[#363432]/50 transition-colors ${
-                          (selectedId || draft.id) === r.id ? 'bg-[#2a2826]' : 'hover:bg-[#1e1e1e]'
-                        }`}
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="min-w-0">
-                            <div className="text-sm font-medium text-[#f0ebe3] truncate">{r.name}</div>
-                            <div className="text-xs text-[#9a9088] truncate">{r.id}</div>
-                          </div>
-                          <div className="flex items-center gap-2 flex-shrink-0">
-                            {r.status === 'running' && (
-                              <span className="px-1.5 py-0.5 bg-[#7d9a6a]/10 text-[#7d9a6a] rounded text-[10px]">
-                                Running
-                              </span>
-                            )}
-                            <span className={`px-1.5 py-0.5 rounded text-[10px] ${
-                              r.backend === 'vllm' ? 'bg-[#6b9ac9]/10 text-[#6b9ac9]' : 'bg-[#9a6bc9]/10 text-[#9a6bc9]'
-                            }`}>
-                              {r.backend}
-                            </span>
-                          </div>
+                    filteredRecipes.map((r) => {
+                      const isPinned = pinnedRecipes.has(r.id);
+                      const isSelected = (selectedId || draft.id) === r.id;
+                      const isMenuOpen = recipeMenuOpen === r.id;
+                      const isConfirmingDelete = deleteConfirm === r.id;
+                      const isRunning = r.status === 'running';
+
+                      return (
+                        <div
+                          key={r.id}
+                          className={`relative group border-b border-[#363432]/50 transition-colors ${
+                            isSelected ? 'bg-[#2a2826]' : 'hover:bg-[#1e1e1e]'
+                          }`}
+                        >
+                          <button
+                            onClick={() => {
+                              router.replace(`/recipes?edit=${encodeURIComponent(r.id)}`);
+                              selectRecipe(r);
+                              setRecipeMenuOpen(null);
+                            }}
+                            className="w-full text-left p-3 pr-10"
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="min-w-0 flex items-center gap-2">
+                                {isPinned && <Pin className="h-3 w-3 text-[#8b7355] flex-shrink-0" />}
+                                <div className="min-w-0">
+                                  <div className="text-sm font-medium text-[#f0ebe3] truncate">{r.name}</div>
+                                  <div className="text-xs text-[#9a9088] truncate">{r.id}</div>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-2 flex-shrink-0">
+                                {isRunning && (
+                                  <span className="px-1.5 py-0.5 bg-[#7d9a6a]/10 text-[#7d9a6a] rounded text-[10px]">
+                                    Running
+                                  </span>
+                                )}
+                                <span className={`px-1.5 py-0.5 rounded text-[10px] ${
+                                  r.backend === 'vllm' ? 'bg-[#6b9ac9]/10 text-[#6b9ac9]' : 'bg-[#9a6bc9]/10 text-[#9a6bc9]'
+                                }`}>
+                                  {r.backend}
+                                </span>
+                              </div>
+                            </div>
+                            <div className="text-xs text-[#9a9088]/70 mt-1 truncate">{r.model_path}</div>
+                          </button>
+
+                          {/* Actions menu button */}
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setRecipeMenuOpen(isMenuOpen ? null : r.id);
+                              setDeleteConfirm(null);
+                            }}
+                            className="absolute right-2 top-3 p-1.5 rounded hover:bg-[#363432] opacity-0 group-hover:opacity-100 transition-opacity"
+                          >
+                            <MoreVertical className="h-4 w-4 text-[#9a9088]" />
+                          </button>
+
+                          {/* Dropdown menu */}
+                          {isMenuOpen && (
+                            <div className="absolute right-2 top-10 z-20 bg-[#1e1e1e] border border-[#363432] rounded-lg shadow-xl py-1 min-w-[140px]">
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  launchRecipeById(r.id);
+                                  setRecipeMenuOpen(null);
+                                }}
+                                disabled={launching}
+                                className="w-full px-3 py-2 text-left text-sm hover:bg-[#2a2826] flex items-center gap-2 text-[#f0ebe3]"
+                              >
+                                <Play className="h-3.5 w-3.5 text-[#7d9a6a]" /> Launch
+                              </button>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  togglePin(r.id);
+                                  setRecipeMenuOpen(null);
+                                }}
+                                className="w-full px-3 py-2 text-left text-sm hover:bg-[#2a2826] flex items-center gap-2 text-[#f0ebe3]"
+                              >
+                                {isPinned ? (
+                                  <><PinOff className="h-3.5 w-3.5 text-[#9a9088]" /> Unpin</>
+                                ) : (
+                                  <><Pin className="h-3.5 w-3.5 text-[#8b7355]" /> Pin</>
+                                )}
+                              </button>
+                              <div className="border-t border-[#363432] my-1" />
+                              {isConfirmingDelete ? (
+                                <div className="px-3 py-2 space-y-2">
+                                  <div className="text-xs text-[#c97a6b]">Delete this recipe?</div>
+                                  <div className="flex gap-2">
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        deleteRecipeById(r.id);
+                                      }}
+                                      disabled={isRunning}
+                                      className="px-2 py-1 text-xs bg-[#c97a6b] text-white rounded hover:bg-[#c97a6b]/90 disabled:opacity-50"
+                                    >
+                                      Delete
+                                    </button>
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setDeleteConfirm(null);
+                                      }}
+                                      className="px-2 py-1 text-xs border border-[#363432] rounded hover:bg-[#2a2826] text-[#9a9088]"
+                                    >
+                                      Cancel
+                                    </button>
+                                  </div>
+                                </div>
+                              ) : (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    if (isRunning) {
+                                      alert('Stop the model before deleting this recipe.');
+                                      return;
+                                    }
+                                    setDeleteConfirm(r.id);
+                                  }}
+                                  className="w-full px-3 py-2 text-left text-sm hover:bg-[#2a2826] flex items-center gap-2 text-[#c97a6b]"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" /> Delete
+                                </button>
+                              )}
+                            </div>
+                          )}
                         </div>
-                        <div className="text-xs text-[#9a9088]/70 mt-1 truncate">{r.model_path}</div>
-                      </button>
-                    ))
+                      );
+                    })
                   )
                 ) : (
                   filteredModels.length === 0 ? (
@@ -794,16 +965,46 @@ function RecipesContent() {
             {/* Recipe Editor */}
             <section className="lg:col-span-2 bg-[#1e1e1e] border border-[#363432] rounded-lg">
               <div className="p-4 border-b border-[#363432] flex items-center justify-between gap-3">
-                <div className="min-w-0">
-                  <div className="font-medium text-[#f0ebe3] truncate">
-                    {draft.name || (draft.model_path ? draft.model_path.split('/').pop() : 'New Recipe')}
-                  </div>
-                  <div className="text-xs text-[#9a9088] truncate">
-                    {draft.id ? `ID: ${draft.id}` : 'Not saved yet'}
-                    {selectedIsRunning ? ' • running' : ''}
+                <div className="min-w-0 flex items-center gap-2">
+                  {draft.id && pinnedRecipes.has(draft.id) && (
+                    <Pin className="h-4 w-4 text-[#8b7355] flex-shrink-0" />
+                  )}
+                  <div className="min-w-0">
+                    <div className="font-medium text-[#f0ebe3] truncate">
+                      {draft.name || (draft.model_path ? draft.model_path.split('/').pop() : 'New Recipe')}
+                    </div>
+                    <div className="text-xs text-[#9a9088] truncate">
+                      {draft.id ? `ID: ${draft.id}` : 'Not saved yet'}
+                      {selectedIsRunning ? ' • running' : ''}
+                    </div>
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
+                  {/* Pin toggle */}
+                  {draft.id && (
+                    <button
+                      onClick={() => togglePin(draft.id)}
+                      className={`p-2 border rounded-lg transition-colors ${
+                        pinnedRecipes.has(draft.id)
+                          ? 'border-[#8b7355] bg-[#8b7355]/10 text-[#8b7355]'
+                          : 'border-[#363432] text-[#9a9088] hover:bg-[#2a2826]'
+                      }`}
+                      title={pinnedRecipes.has(draft.id) ? 'Unpin recipe' : 'Pin recipe'}
+                    >
+                      {pinnedRecipes.has(draft.id) ? <PinOff className="h-4 w-4" /> : <Pin className="h-4 w-4" />}
+                    </button>
+                  )}
+                  {/* Delete button */}
+                  {draft.id && (
+                    <button
+                      onClick={deleteSelected}
+                      disabled={selectedIsRunning}
+                      className="p-2 border border-[#363432] rounded-lg hover:bg-[#2a2826] text-[#c97a6b] disabled:opacity-50"
+                      title={selectedIsRunning ? 'Stop model first' : 'Delete recipe'}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  )}
                   {runningProcess && (
                     <button
                       onClick={stopRunning}
@@ -1047,233 +1248,431 @@ function RecipesContent() {
                 )}
 
                 {advancedOpen && (
-                  <div className="space-y-4">
-                    <div className="grid md:grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-sm text-[#9a9088] mb-1">Tool call parser</label>
-                        <input
-                          value={draft.tool_call_parser || ''}
-                          onChange={(e) => setDraftField('tool_call_parser', e.target.value || undefined)}
-                          placeholder="e.g. glm4, hermes"
-                          className="w-full px-3 py-2 bg-[#1b1b1b] border border-[#363432] rounded-lg text-sm font-mono text-[#f0ebe3] placeholder-[#9a9088]/50 focus:outline-none focus:border-[#8b7355]"
-                        />
-                        <label className="mt-2 flex items-center gap-2 text-sm text-[#9a9088]">
-                          <input
-                            type="checkbox"
-                            checked={!!draft.enable_auto_tool_choice}
-                            onChange={(e) => setDraftField('enable_auto_tool_choice', e.target.checked)}
-                            className="rounded border-[#363432] bg-[#1b1b1b] text-[#7d9a6a]"
-                          />
-                          Enable auto tool choice
+                  <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-2">
+                    {/* Reasoning & Tool Calling */}
+                    <div className="p-3 bg-[#1b1b1b] border border-[#363432] rounded-lg">
+                      <h4 className="text-xs font-medium text-[#8b7355] uppercase tracking-wider mb-3">Reasoning & Tool Calling</h4>
+                      <div className="grid md:grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-xs text-[#9a9088] mb-1">Reasoning parser</label>
+                          <select value={draft.reasoning_parser || ''} onChange={(e) => setDraftField('reasoning_parser', e.target.value || undefined)} className="w-full px-2 py-1.5 bg-[#1e1e1e] border border-[#363432] rounded text-sm text-[#f0ebe3]">
+                            <option value="">None</option>
+                            <option value="deepseek_r1">DeepSeek R1</option>
+                            <option value="qwen3">Qwen3</option>
+                            <option value="granite">Granite</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-xs text-[#9a9088] mb-1">Tool call parser</label>
+                          <select value={draft.tool_call_parser || ''} onChange={(e) => setDraftField('tool_call_parser', e.target.value || undefined)} className="w-full px-2 py-1.5 bg-[#1e1e1e] border border-[#363432] rounded text-sm text-[#f0ebe3]">
+                            <option value="">Auto-detect</option>
+                            <option value="hermes">Hermes</option>
+                            <option value="llama3_json">Llama 3 JSON</option>
+                            <option value="mistral">Mistral</option>
+                            <option value="internlm">InternLM</option>
+                            <option value="jamba">Jamba</option>
+                            <option value="pythonic">Pythonic</option>
+                            <option value="glm4">GLM-4</option>
+                            <option value="granite-20b-fc">Granite 20B FC</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-xs text-[#9a9088] mb-1">Guided decoding</label>
+                          <select value={draft.guided_decoding_backend || ''} onChange={(e) => setDraftField('guided_decoding_backend', e.target.value || undefined)} className="w-full px-2 py-1.5 bg-[#1e1e1e] border border-[#363432] rounded text-sm text-[#f0ebe3]">
+                            <option value="">Default</option>
+                            <option value="outlines">Outlines</option>
+                            <option value="lm-format-enforcer">LM Format Enforcer</option>
+                            <option value="xgrammar">XGrammar</option>
+                          </select>
+                        </div>
+                        <div className="flex flex-col gap-1.5 pt-1">
+                          <label className="flex items-center gap-2 text-xs text-[#9a9088]">
+                            <input type="checkbox" checked={!!draft.enable_thinking} onChange={(e) => setDraftField('enable_thinking', e.target.checked)} className="rounded border-[#363432] bg-[#1b1b1b] text-[#7d9a6a]" />
+                            Enable thinking blocks
+                          </label>
+                          <label className="flex items-center gap-2 text-xs text-[#9a9088]">
+                            <input type="checkbox" checked={!!draft.enable_auto_tool_choice} onChange={(e) => setDraftField('enable_auto_tool_choice', e.target.checked)} className="rounded border-[#363432] bg-[#1b1b1b] text-[#7d9a6a]" />
+                            Auto tool choice
+                          </label>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Model Loading */}
+                    <div className="p-3 bg-[#1b1b1b] border border-[#363432] rounded-lg">
+                      <h4 className="text-xs font-medium text-[#8b7355] uppercase tracking-wider mb-3">Model Loading</h4>
+                      <div className="grid md:grid-cols-3 gap-3">
+                        <div>
+                          <label className="block text-xs text-[#9a9088] mb-1">Served model name</label>
+                          <input value={draft.served_model_name || ''} onChange={(e) => setDraftField('served_model_name', e.target.value || undefined)} placeholder="Override name" className="w-full px-2 py-1.5 bg-[#1e1e1e] border border-[#363432] rounded text-sm font-mono text-[#f0ebe3] placeholder-[#9a9088]/50" />
+                        </div>
+                        <div>
+                          <label className="block text-xs text-[#9a9088] mb-1">Tokenizer</label>
+                          <input value={draft.tokenizer || ''} onChange={(e) => setDraftField('tokenizer', e.target.value || undefined)} placeholder="Default: model path" className="w-full px-2 py-1.5 bg-[#1e1e1e] border border-[#363432] rounded text-sm font-mono text-[#f0ebe3] placeholder-[#9a9088]/50" />
+                        </div>
+                        <div>
+                          <label className="block text-xs text-[#9a9088] mb-1">Tokenizer mode</label>
+                          <select value={draft.tokenizer_mode || 'auto'} onChange={(e) => setDraftField('tokenizer_mode', e.target.value as 'auto' | 'slow' | 'mistral')} className="w-full px-2 py-1.5 bg-[#1e1e1e] border border-[#363432] rounded text-sm text-[#f0ebe3]">
+                            <option value="auto">Auto</option>
+                            <option value="slow">Slow</option>
+                            <option value="mistral">Mistral</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-xs text-[#9a9088] mb-1">Dtype</label>
+                          <select value={draft.dtype || ''} onChange={(e) => setDraftField('dtype', e.target.value || undefined)} className="w-full px-2 py-1.5 bg-[#1e1e1e] border border-[#363432] rounded text-sm text-[#f0ebe3]">
+                            <option value="">Auto</option>
+                            <option value="auto">auto</option>
+                            <option value="float16">float16</option>
+                            <option value="bfloat16">bfloat16</option>
+                            <option value="float32">float32</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-xs text-[#9a9088] mb-1">Load format</label>
+                          <select value={draft.load_format || ''} onChange={(e) => setDraftField('load_format', e.target.value || undefined)} className="w-full px-2 py-1.5 bg-[#1e1e1e] border border-[#363432] rounded text-sm text-[#f0ebe3]">
+                            <option value="">Auto</option>
+                            <option value="auto">auto</option>
+                            <option value="pt">pt (PyTorch)</option>
+                            <option value="safetensors">safetensors</option>
+                            <option value="npcache">npcache</option>
+                            <option value="dummy">dummy</option>
+                            <option value="tensorizer">tensorizer</option>
+                            <option value="bitsandbytes">bitsandbytes</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-xs text-[#9a9088] mb-1">Seed</label>
+                          <input type="number" value={draft.seed || ''} onChange={(e) => setDraftField('seed', e.target.value ? parseInt(e.target.value) : undefined)} placeholder="0" className="w-full px-2 py-1.5 bg-[#1e1e1e] border border-[#363432] rounded text-sm text-[#f0ebe3] placeholder-[#9a9088]/50" />
+                        </div>
+                        <div>
+                          <label className="block text-xs text-[#9a9088] mb-1">Revision</label>
+                          <input value={draft.revision || ''} onChange={(e) => setDraftField('revision', e.target.value || undefined)} placeholder="main" className="w-full px-2 py-1.5 bg-[#1e1e1e] border border-[#363432] rounded text-sm font-mono text-[#f0ebe3] placeholder-[#9a9088]/50" />
+                        </div>
+                        <div className="flex items-end">
+                          <label className="flex items-center gap-2 text-xs text-[#9a9088]">
+                            <input type="checkbox" checked={draft.trust_remote_code !== false} onChange={(e) => setDraftField('trust_remote_code', e.target.checked)} className="rounded border-[#363432] bg-[#1b1b1b] text-[#7d9a6a]" />
+                            Trust remote code
+                          </label>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Quantization */}
+                    <div className="p-3 bg-[#1b1b1b] border border-[#363432] rounded-lg">
+                      <h4 className="text-xs font-medium text-[#8b7355] uppercase tracking-wider mb-3">Quantization</h4>
+                      <div className="grid md:grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-xs text-[#9a9088] mb-1">Method</label>
+                          <select value={draft.quantization || ''} onChange={(e) => setDraftField('quantization', e.target.value || undefined)} className="w-full px-2 py-1.5 bg-[#1e1e1e] border border-[#363432] rounded text-sm text-[#f0ebe3]">
+                            <option value="">None</option>
+                            <option value="awq">AWQ</option>
+                            <option value="gptq">GPTQ</option>
+                            <option value="gptq_marlin">GPTQ Marlin</option>
+                            <option value="awq_marlin">AWQ Marlin</option>
+                            <option value="squeezellm">SqueezeLLM</option>
+                            <option value="fp8">FP8</option>
+                            <option value="fbgemm_fp8">FBGEMM FP8</option>
+                            <option value="marlin">Marlin</option>
+                            <option value="bitsandbytes">BitsAndBytes</option>
+                            <option value="gguf">GGUF</option>
+                            <option value="experts_int8">Experts INT8</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-xs text-[#9a9088] mb-1">Quantization param path</label>
+                          <input value={draft.quantization_param_path || ''} onChange={(e) => setDraftField('quantization_param_path', e.target.value || undefined)} placeholder="Optional JSON path" className="w-full px-2 py-1.5 bg-[#1e1e1e] border border-[#363432] rounded text-sm font-mono text-[#f0ebe3] placeholder-[#9a9088]/50" />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Parallelism */}
+                    <div className="p-3 bg-[#1b1b1b] border border-[#363432] rounded-lg">
+                      <h4 className="text-xs font-medium text-[#8b7355] uppercase tracking-wider mb-3">Parallelism</h4>
+                      <div className="grid md:grid-cols-4 gap-3">
+                        <div>
+                          <label className="block text-xs text-[#9a9088] mb-1">Tensor parallel (TP)</label>
+                          <input type="number" value={draft.tp || draft.tensor_parallel_size || 1} onChange={(e) => setDraftField('tp', Math.max(1, parseInt(e.target.value) || 1))} className="w-full px-2 py-1.5 bg-[#1e1e1e] border border-[#363432] rounded text-sm text-[#f0ebe3]" />
+                        </div>
+                        <div>
+                          <label className="block text-xs text-[#9a9088] mb-1">Pipeline parallel (PP)</label>
+                          <input type="number" value={draft.pp || draft.pipeline_parallel_size || 1} onChange={(e) => setDraftField('pp', Math.max(1, parseInt(e.target.value) || 1))} className="w-full px-2 py-1.5 bg-[#1e1e1e] border border-[#363432] rounded text-sm text-[#f0ebe3]" />
+                        </div>
+                        <div>
+                          <label className="block text-xs text-[#9a9088] mb-1">Data parallel (DP)</label>
+                          <input type="number" value={draft.data_parallel_size || ''} onChange={(e) => setDraftField('data_parallel_size', e.target.value ? parseInt(e.target.value) : undefined)} placeholder="1" className="w-full px-2 py-1.5 bg-[#1e1e1e] border border-[#363432] rounded text-sm text-[#f0ebe3] placeholder-[#9a9088]/50" />
+                        </div>
+                        <div>
+                          <label className="block text-xs text-[#9a9088] mb-1">Executor backend</label>
+                          <select value={draft.distributed_executor_backend || ''} onChange={(e) => setDraftField('distributed_executor_backend', e.target.value as 'ray' | 'mp' | undefined)} className="w-full px-2 py-1.5 bg-[#1e1e1e] border border-[#363432] rounded text-sm text-[#f0ebe3]">
+                            <option value="">Auto</option>
+                            <option value="mp">Multiprocessing</option>
+                            <option value="ray">Ray</option>
+                          </select>
+                        </div>
+                      </div>
+                      <label className="mt-2 flex items-center gap-2 text-xs text-[#9a9088]">
+                        <input type="checkbox" checked={!!draft.enable_expert_parallel} onChange={(e) => setDraftField('enable_expert_parallel', e.target.checked)} className="rounded border-[#363432] bg-[#1b1b1b] text-[#7d9a6a]" />
+                        Expert parallel (MoE models)
+                      </label>
+                    </div>
+
+                    {/* Memory & KV Cache */}
+                    <div className="p-3 bg-[#1b1b1b] border border-[#363432] rounded-lg">
+                      <h4 className="text-xs font-medium text-[#8b7355] uppercase tracking-wider mb-3">Memory & KV Cache</h4>
+                      <div className="grid md:grid-cols-4 gap-3">
+                        <div>
+                          <label className="block text-xs text-[#9a9088] mb-1">KV cache dtype</label>
+                          <select value={draft.kv_cache_dtype || 'auto'} onChange={(e) => setDraftField('kv_cache_dtype', e.target.value)} className="w-full px-2 py-1.5 bg-[#1e1e1e] border border-[#363432] rounded text-sm text-[#f0ebe3]">
+                            <option value="auto">Auto</option>
+                            <option value="fp8">FP8</option>
+                            <option value="fp8_e5m2">FP8 E5M2</option>
+                            <option value="fp8_e4m3">FP8 E4M3</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-xs text-[#9a9088] mb-1">Block size</label>
+                          <select value={draft.block_size || ''} onChange={(e) => setDraftField('block_size', e.target.value ? parseInt(e.target.value) : undefined)} className="w-full px-2 py-1.5 bg-[#1e1e1e] border border-[#363432] rounded text-sm text-[#f0ebe3]">
+                            <option value="">Auto</option>
+                            <option value="8">8</option>
+                            <option value="16">16</option>
+                            <option value="32">32</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-xs text-[#9a9088] mb-1">Swap space (GB)</label>
+                          <input type="number" step="0.5" value={draft.swap_space || ''} onChange={(e) => setDraftField('swap_space', e.target.value ? parseFloat(e.target.value) : undefined)} placeholder="4" className="w-full px-2 py-1.5 bg-[#1e1e1e] border border-[#363432] rounded text-sm text-[#f0ebe3] placeholder-[#9a9088]/50" />
+                        </div>
+                        <div>
+                          <label className="block text-xs text-[#9a9088] mb-1">CPU offload (GB)</label>
+                          <input type="number" step="0.5" value={draft.cpu_offload_gb || ''} onChange={(e) => setDraftField('cpu_offload_gb', e.target.value ? parseFloat(e.target.value) : undefined)} placeholder="0" className="w-full px-2 py-1.5 bg-[#1e1e1e] border border-[#363432] rounded text-sm text-[#f0ebe3] placeholder-[#9a9088]/50" />
+                        </div>
+                        <div>
+                          <label className="block text-xs text-[#9a9088] mb-1">GPU blocks override</label>
+                          <input type="number" value={draft.num_gpu_blocks_override || ''} onChange={(e) => setDraftField('num_gpu_blocks_override', e.target.value ? parseInt(e.target.value) : undefined)} placeholder="Auto" className="w-full px-2 py-1.5 bg-[#1e1e1e] border border-[#363432] rounded text-sm text-[#f0ebe3] placeholder-[#9a9088]/50" />
+                        </div>
+                        <div className="md:col-span-3 flex items-end gap-4">
+                          <label className="flex items-center gap-2 text-xs text-[#9a9088]">
+                            <input type="checkbox" checked={!!draft.enable_prefix_caching} onChange={(e) => setDraftField('enable_prefix_caching', e.target.checked)} className="rounded border-[#363432] bg-[#1b1b1b] text-[#7d9a6a]" />
+                            Prefix caching
+                          </label>
+                          <label className="flex items-center gap-2 text-xs text-[#9a9088]">
+                            <input type="checkbox" checked={!!draft.use_v2_block_manager} onChange={(e) => setDraftField('use_v2_block_manager', e.target.checked)} className="rounded border-[#363432] bg-[#1b1b1b] text-[#7d9a6a]" />
+                            V2 block manager
+                          </label>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Scheduler & Batching */}
+                    <div className="p-3 bg-[#1b1b1b] border border-[#363432] rounded-lg">
+                      <h4 className="text-xs font-medium text-[#8b7355] uppercase tracking-wider mb-3">Scheduler & Batching</h4>
+                      <div className="grid md:grid-cols-4 gap-3">
+                        <div>
+                          <label className="block text-xs text-[#9a9088] mb-1">Max seqs</label>
+                          <input type="number" value={draft.max_num_seqs || ''} onChange={(e) => setDraftField('max_num_seqs', e.target.value ? parseInt(e.target.value) : undefined)} placeholder="256" className="w-full px-2 py-1.5 bg-[#1e1e1e] border border-[#363432] rounded text-sm text-[#f0ebe3] placeholder-[#9a9088]/50" />
+                        </div>
+                        <div>
+                          <label className="block text-xs text-[#9a9088] mb-1">Max batched tokens</label>
+                          <input type="number" value={draft.max_num_batched_tokens || ''} onChange={(e) => setDraftField('max_num_batched_tokens', e.target.value ? parseInt(e.target.value) : undefined)} placeholder="Auto" className="w-full px-2 py-1.5 bg-[#1e1e1e] border border-[#363432] rounded text-sm text-[#f0ebe3] placeholder-[#9a9088]/50" />
+                        </div>
+                        <div>
+                          <label className="block text-xs text-[#9a9088] mb-1">Scheduling policy</label>
+                          <select value={draft.scheduling_policy || 'fcfs'} onChange={(e) => setDraftField('scheduling_policy', e.target.value as 'fcfs' | 'priority')} className="w-full px-2 py-1.5 bg-[#1e1e1e] border border-[#363432] rounded text-sm text-[#f0ebe3]">
+                            <option value="fcfs">FCFS</option>
+                            <option value="priority">Priority</option>
+                          </select>
+                        </div>
+                        <div className="flex items-end">
+                          <label className="flex items-center gap-2 text-xs text-[#9a9088]">
+                            <input type="checkbox" checked={!!draft.enable_chunked_prefill} onChange={(e) => setDraftField('enable_chunked_prefill', e.target.checked)} className="rounded border-[#363432] bg-[#1b1b1b] text-[#7d9a6a]" />
+                            Chunked prefill
+                          </label>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Performance Tuning */}
+                    <div className="p-3 bg-[#1b1b1b] border border-[#363432] rounded-lg">
+                      <h4 className="text-xs font-medium text-[#8b7355] uppercase tracking-wider mb-3">Performance</h4>
+                      <div className="grid md:grid-cols-3 gap-3">
+                        <div>
+                          <label className="block text-xs text-[#9a9088] mb-1">CUDA graph max batch</label>
+                          <input type="number" value={draft.cuda_graph_max_bs || ''} onChange={(e) => setDraftField('cuda_graph_max_bs', e.target.value ? parseInt(e.target.value) : undefined)} placeholder="Auto" className="w-full px-2 py-1.5 bg-[#1e1e1e] border border-[#363432] rounded text-sm text-[#f0ebe3] placeholder-[#9a9088]/50" />
+                        </div>
+                        <div className="md:col-span-2 flex items-end gap-4 flex-wrap">
+                          <label className="flex items-center gap-2 text-xs text-[#9a9088]">
+                            <input type="checkbox" checked={!!draft.enforce_eager} onChange={(e) => setDraftField('enforce_eager', e.target.checked)} className="rounded border-[#363432] bg-[#1b1b1b] text-[#7d9a6a]" />
+                            Enforce eager
+                          </label>
+                          <label className="flex items-center gap-2 text-xs text-[#9a9088]">
+                            <input type="checkbox" checked={!!draft.disable_cuda_graph} onChange={(e) => setDraftField('disable_cuda_graph', e.target.checked)} className="rounded border-[#363432] bg-[#1b1b1b] text-[#7d9a6a]" />
+                            Disable CUDA graph
+                          </label>
+                          <label className="flex items-center gap-2 text-xs text-[#9a9088]">
+                            <input type="checkbox" checked={!!draft.disable_custom_all_reduce} onChange={(e) => setDraftField('disable_custom_all_reduce', e.target.checked)} className="rounded border-[#363432] bg-[#1b1b1b] text-[#7d9a6a]" />
+                            Disable custom all-reduce
+                          </label>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Speculative Decoding */}
+                    <div className="p-3 bg-[#1b1b1b] border border-[#363432] rounded-lg">
+                      <h4 className="text-xs font-medium text-[#8b7355] uppercase tracking-wider mb-3">Speculative Decoding</h4>
+                      <div className="grid md:grid-cols-3 gap-3">
+                        <div>
+                          <label className="block text-xs text-[#9a9088] mb-1">Speculative model</label>
+                          <input value={draft.speculative_model || ''} onChange={(e) => setDraftField('speculative_model', e.target.value || undefined)} placeholder="Path or [ngram]" className="w-full px-2 py-1.5 bg-[#1e1e1e] border border-[#363432] rounded text-sm font-mono text-[#f0ebe3] placeholder-[#9a9088]/50" />
+                        </div>
+                        <div>
+                          <label className="block text-xs text-[#9a9088] mb-1">Num spec tokens</label>
+                          <input type="number" value={draft.num_speculative_tokens || ''} onChange={(e) => setDraftField('num_speculative_tokens', e.target.value ? parseInt(e.target.value) : undefined)} placeholder="5" className="w-full px-2 py-1.5 bg-[#1e1e1e] border border-[#363432] rounded text-sm text-[#f0ebe3] placeholder-[#9a9088]/50" />
+                        </div>
+                        <div>
+                          <label className="block text-xs text-[#9a9088] mb-1">Draft TP size</label>
+                          <input type="number" value={draft.speculative_draft_tensor_parallel_size || ''} onChange={(e) => setDraftField('speculative_draft_tensor_parallel_size', e.target.value ? parseInt(e.target.value) : undefined)} placeholder="1" className="w-full px-2 py-1.5 bg-[#1e1e1e] border border-[#363432] rounded text-sm text-[#f0ebe3] placeholder-[#9a9088]/50" />
+                        </div>
+                        <div>
+                          <label className="block text-xs text-[#9a9088] mb-1">Spec quant</label>
+                          <input value={draft.speculative_model_quantization || ''} onChange={(e) => setDraftField('speculative_model_quantization', e.target.value || undefined)} placeholder="None" className="w-full px-2 py-1.5 bg-[#1e1e1e] border border-[#363432] rounded text-sm text-[#f0ebe3] placeholder-[#9a9088]/50" />
+                        </div>
+                        <div>
+                          <label className="block text-xs text-[#9a9088] mb-1">Acceptance method</label>
+                          <select value={draft.spec_decoding_acceptance_method || ''} onChange={(e) => setDraftField('spec_decoding_acceptance_method', e.target.value as 'rejection_sampler' | 'typical_acceptance_sampler' | undefined)} className="w-full px-2 py-1.5 bg-[#1e1e1e] border border-[#363432] rounded text-sm text-[#f0ebe3]">
+                            <option value="">Default</option>
+                            <option value="rejection_sampler">Rejection sampler</option>
+                            <option value="typical_acceptance_sampler">Typical acceptance</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-xs text-[#9a9088] mb-1">Ngram lookup max</label>
+                          <input type="number" value={draft.ngram_prompt_lookup_max || ''} onChange={(e) => setDraftField('ngram_prompt_lookup_max', e.target.value ? parseInt(e.target.value) : undefined)} placeholder="4" className="w-full px-2 py-1.5 bg-[#1e1e1e] border border-[#363432] rounded text-sm text-[#f0ebe3] placeholder-[#9a9088]/50" />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* LoRA */}
+                    <div className="p-3 bg-[#1b1b1b] border border-[#363432] rounded-lg">
+                      <h4 className="text-xs font-medium text-[#8b7355] uppercase tracking-wider mb-3">LoRA Adapters</h4>
+                      <div className="grid md:grid-cols-4 gap-3">
+                        <div className="flex items-end">
+                          <label className="flex items-center gap-2 text-xs text-[#9a9088]">
+                            <input type="checkbox" checked={!!draft.enable_lora} onChange={(e) => setDraftField('enable_lora', e.target.checked)} className="rounded border-[#363432] bg-[#1b1b1b] text-[#7d9a6a]" />
+                            Enable LoRA
+                          </label>
+                        </div>
+                        <div>
+                          <label className="block text-xs text-[#9a9088] mb-1">Max LoRAs</label>
+                          <input type="number" value={draft.max_loras || ''} onChange={(e) => setDraftField('max_loras', e.target.value ? parseInt(e.target.value) : undefined)} placeholder="1" className="w-full px-2 py-1.5 bg-[#1e1e1e] border border-[#363432] rounded text-sm text-[#f0ebe3] placeholder-[#9a9088]/50" />
+                        </div>
+                        <div>
+                          <label className="block text-xs text-[#9a9088] mb-1">Max rank</label>
+                          <input type="number" value={draft.max_lora_rank || ''} onChange={(e) => setDraftField('max_lora_rank', e.target.value ? parseInt(e.target.value) : undefined)} placeholder="16" className="w-full px-2 py-1.5 bg-[#1e1e1e] border border-[#363432] rounded text-sm text-[#f0ebe3] placeholder-[#9a9088]/50" />
+                        </div>
+                        <div>
+                          <label className="block text-xs text-[#9a9088] mb-1">Extra vocab size</label>
+                          <input type="number" value={draft.lora_extra_vocab_size || ''} onChange={(e) => setDraftField('lora_extra_vocab_size', e.target.value ? parseInt(e.target.value) : undefined)} placeholder="256" className="w-full px-2 py-1.5 bg-[#1e1e1e] border border-[#363432] rounded text-sm text-[#f0ebe3] placeholder-[#9a9088]/50" />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Chat & Templates */}
+                    <div className="p-3 bg-[#1b1b1b] border border-[#363432] rounded-lg">
+                      <h4 className="text-xs font-medium text-[#8b7355] uppercase tracking-wider mb-3">Chat & Templates</h4>
+                      <div className="grid md:grid-cols-3 gap-3">
+                        <div className="md:col-span-2">
+                          <label className="block text-xs text-[#9a9088] mb-1">Chat template path</label>
+                          <input value={draft.chat_template || ''} onChange={(e) => setDraftField('chat_template', e.target.value || undefined)} placeholder="Optional Jinja2 template path" className="w-full px-2 py-1.5 bg-[#1e1e1e] border border-[#363432] rounded text-sm font-mono text-[#f0ebe3] placeholder-[#9a9088]/50" />
+                        </div>
+                        <div>
+                          <label className="block text-xs text-[#9a9088] mb-1">Content format</label>
+                          <select value={draft.chat_template_content_format || 'auto'} onChange={(e) => setDraftField('chat_template_content_format', e.target.value as 'auto' | 'string' | 'openai')} className="w-full px-2 py-1.5 bg-[#1e1e1e] border border-[#363432] rounded text-sm text-[#f0ebe3]">
+                            <option value="auto">Auto</option>
+                            <option value="string">String</option>
+                            <option value="openai">OpenAI</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-xs text-[#9a9088] mb-1">Response role</label>
+                          <input value={draft.response_role || ''} onChange={(e) => setDraftField('response_role', e.target.value || undefined)} placeholder="assistant" className="w-full px-2 py-1.5 bg-[#1e1e1e] border border-[#363432] rounded text-sm text-[#f0ebe3] placeholder-[#9a9088]/50" />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Multimodal */}
+                    <div className="p-3 bg-[#1b1b1b] border border-[#363432] rounded-lg">
+                      <h4 className="text-xs font-medium text-[#8b7355] uppercase tracking-wider mb-3">Multimodal</h4>
+                      <div className="grid md:grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-xs text-[#9a9088] mb-1">Allowed local media path</label>
+                          <input value={draft.allowed_local_media_path || ''} onChange={(e) => setDraftField('allowed_local_media_path', e.target.value || undefined)} placeholder="/path/to/media" className="w-full px-2 py-1.5 bg-[#1e1e1e] border border-[#363432] rounded text-sm font-mono text-[#f0ebe3] placeholder-[#9a9088]/50" />
+                        </div>
+                        <div>
+                          <label className="block text-xs text-[#9a9088] mb-1">Limit MM per prompt</label>
+                          <input value={draft.limit_mm_per_prompt || ''} onChange={(e) => setDraftField('limit_mm_per_prompt', e.target.value || undefined)} placeholder='{"image": 1}' className="w-full px-2 py-1.5 bg-[#1e1e1e] border border-[#363432] rounded text-sm font-mono text-[#f0ebe3] placeholder-[#9a9088]/50" />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Logging */}
+                    <div className="p-3 bg-[#1b1b1b] border border-[#363432] rounded-lg">
+                      <h4 className="text-xs font-medium text-[#8b7355] uppercase tracking-wider mb-3">Logging & Server</h4>
+                      <div className="grid md:grid-cols-3 gap-3">
+                        <div>
+                          <label className="block text-xs text-[#9a9088] mb-1">Log level</label>
+                          <select value={draft.uvicorn_log_level || 'info'} onChange={(e) => setDraftField('uvicorn_log_level', e.target.value)} className="w-full px-2 py-1.5 bg-[#1e1e1e] border border-[#363432] rounded text-sm text-[#f0ebe3]">
+                            <option value="debug">Debug</option>
+                            <option value="info">Info</option>
+                            <option value="warning">Warning</option>
+                            <option value="error">Error</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-xs text-[#9a9088] mb-1">Max log length</label>
+                          <input type="number" value={draft.max_log_len || ''} onChange={(e) => setDraftField('max_log_len', e.target.value ? parseInt(e.target.value) : undefined)} placeholder="Unlimited" className="w-full px-2 py-1.5 bg-[#1e1e1e] border border-[#363432] rounded text-sm text-[#f0ebe3] placeholder-[#9a9088]/50" />
+                        </div>
+                        <div className="flex items-end gap-4 flex-wrap">
+                          <label className="flex items-center gap-2 text-xs text-[#9a9088]">
+                            <input type="checkbox" checked={!!draft.disable_log_requests} onChange={(e) => setDraftField('disable_log_requests', e.target.checked)} className="rounded border-[#363432] bg-[#1b1b1b] text-[#7d9a6a]" />
+                            Disable request logs
+                          </label>
+                          <label className="flex items-center gap-2 text-xs text-[#9a9088]">
+                            <input type="checkbox" checked={!!draft.disable_log_stats} onChange={(e) => setDraftField('disable_log_stats', e.target.checked)} className="rounded border-[#363432] bg-[#1b1b1b] text-[#7d9a6a]" />
+                            Disable stats logs
+                          </label>
+                        </div>
+                      </div>
+                      <div className="mt-3 flex gap-4 flex-wrap">
+                        <label className="flex items-center gap-2 text-xs text-[#9a9088]">
+                          <input type="checkbox" checked={!!draft.disable_frontend_multiprocessing} onChange={(e) => setDraftField('disable_frontend_multiprocessing', e.target.checked)} className="rounded border-[#363432] bg-[#1b1b1b] text-[#7d9a6a]" />
+                          Disable frontend multiprocessing
+                        </label>
+                        <label className="flex items-center gap-2 text-xs text-[#9a9088]">
+                          <input type="checkbox" checked={!!draft.disable_fastapi_docs} onChange={(e) => setDraftField('disable_fastapi_docs', e.target.checked)} className="rounded border-[#363432] bg-[#1b1b1b] text-[#7d9a6a]" />
+                          Disable FastAPI docs
+                        </label>
+                        <label className="flex items-center gap-2 text-xs text-[#9a9088]">
+                          <input type="checkbox" checked={!!draft.enable_request_id_headers} onChange={(e) => setDraftField('enable_request_id_headers', e.target.checked)} className="rounded border-[#363432] bg-[#1b1b1b] text-[#7d9a6a]" />
+                          Request ID headers
                         </label>
                       </div>
-                      <div>
-                        <label className="block text-sm text-[#9a9088] mb-1">Served model name</label>
-                        <input
-                          value={draft.served_model_name || ''}
-                          onChange={(e) => setDraftField('served_model_name', e.target.value || undefined)}
-                          placeholder="Optional (overrides model name)"
-                          className="w-full px-3 py-2 bg-[#1b1b1b] border border-[#363432] rounded-lg text-sm font-mono text-[#f0ebe3] placeholder-[#9a9088]/50 focus:outline-none focus:border-[#8b7355]"
-                        />
-                      </div>
                     </div>
 
-                    {/* Speculative Decoding / MTP */}
-                    <div className="grid md:grid-cols-3 gap-4">
-                      <div>
-                        <label className="block text-sm text-[#9a9088] mb-1">Speculative tokens (MTP)</label>
-                        <input
-                          type="number"
-                          value={(draft.extra_args as Record<string, unknown>)?.num_speculative_tokens as number || ''}
-                          onChange={(e) => {
-                            const val = e.target.value ? parseInt(e.target.value) : undefined;
-                            const newExtra = { ...(draft.extra_args || {}) };
-                            if (val) (newExtra as Record<string, unknown>).num_speculative_tokens = val;
-                            else delete (newExtra as Record<string, unknown>).num_speculative_tokens;
-                            setDraftField('extra_args', newExtra);
-                            setExtraArgsText(JSON.stringify(newExtra, null, 2));
-                          }}
-                          placeholder="e.g. 1"
-                          className="w-full px-3 py-2 bg-[#1b1b1b] border border-[#363432] rounded-lg text-sm text-[#f0ebe3] placeholder-[#9a9088]/50 focus:outline-none focus:border-[#8b7355]"
-                        />
+                    {/* Extra Args / Env Vars */}
+                    <div className="p-3 bg-[#1b1b1b] border border-[#363432] rounded-lg">
+                      <h4 className="text-xs font-medium text-[#8b7355] uppercase tracking-wider mb-3">Custom Arguments</h4>
+                      <div className="grid md:grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-xs text-[#9a9088] mb-1">Environment variables (JSON)</label>
+                          <textarea value={envVarsText} onChange={(e) => { setEnvVarsText(e.target.value); setIsDirty(true); }} rows={4} placeholder='{"CUDA_VISIBLE_DEVICES": "0,1"}' className="w-full px-2 py-1.5 bg-[#1e1e1e] border border-[#363432] rounded text-xs font-mono text-[#f0ebe3] placeholder-[#9a9088]/50" />
+                        </div>
+                        <div>
+                          <label className="block text-xs text-[#9a9088] mb-1">Extra args (JSON)</label>
+                          <textarea value={extraArgsText} onChange={(e) => { setExtraArgsText(e.target.value); setIsDirty(true); }} rows={4} placeholder='{"--custom-arg": "value"}' className="w-full px-2 py-1.5 bg-[#1e1e1e] border border-[#363432] rounded text-xs font-mono text-[#f0ebe3] placeholder-[#9a9088]/50" />
+                        </div>
                       </div>
-                      <div>
-                        <label className="block text-sm text-[#9a9088] mb-1">Speculative model</label>
-                        <input
-                          value={(draft.extra_args as Record<string, unknown>)?.speculative_model as string || ''}
-                          onChange={(e) => {
-                            const newExtra = { ...(draft.extra_args || {}) };
-                            if (e.target.value) (newExtra as Record<string, unknown>).speculative_model = e.target.value;
-                            else delete (newExtra as Record<string, unknown>).speculative_model;
-                            setDraftField('extra_args', newExtra);
-                            setExtraArgsText(JSON.stringify(newExtra, null, 2));
-                          }}
-                          placeholder="Path or [ngram]"
-                          className="w-full px-3 py-2 bg-[#1b1b1b] border border-[#363432] rounded-lg text-sm font-mono text-[#f0ebe3] placeholder-[#9a9088]/50 focus:outline-none focus:border-[#8b7355]"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm text-[#9a9088] mb-1">Spec draft TP</label>
-                        <input
-                          type="number"
-                          value={(draft.extra_args as Record<string, unknown>)?.speculative_draft_tensor_parallel_size as number || ''}
-                          onChange={(e) => {
-                            const val = e.target.value ? parseInt(e.target.value) : undefined;
-                            const newExtra = { ...(draft.extra_args || {}) };
-                            if (val) (newExtra as Record<string, unknown>).speculative_draft_tensor_parallel_size = val;
-                            else delete (newExtra as Record<string, unknown>).speculative_draft_tensor_parallel_size;
-                            setDraftField('extra_args', newExtra);
-                            setExtraArgsText(JSON.stringify(newExtra, null, 2));
-                          }}
-                          placeholder="1"
-                          className="w-full px-3 py-2 bg-[#1b1b1b] border border-[#363432] rounded-lg text-sm text-[#f0ebe3] placeholder-[#9a9088]/50 focus:outline-none focus:border-[#8b7355]"
-                        />
-                      </div>
-                    </div>
-
-                    {/* Performance tuning */}
-                    <div className="grid md:grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-sm text-[#9a9088] mb-1">GPU blocks override</label>
-                        <input
-                          type="number"
-                          value={(draft.extra_args as Record<string, unknown>)?.num_gpu_blocks_override as number || ''}
-                          onChange={(e) => {
-                            const val = e.target.value ? parseInt(e.target.value) : undefined;
-                            const newExtra = { ...(draft.extra_args || {}) };
-                            if (val) (newExtra as Record<string, unknown>).num_gpu_blocks_override = val;
-                            else delete (newExtra as Record<string, unknown>).num_gpu_blocks_override;
-                            setDraftField('extra_args', newExtra);
-                            setExtraArgsText(JSON.stringify(newExtra, null, 2));
-                          }}
-                          placeholder="Auto"
-                          className="w-full px-3 py-2 bg-[#1b1b1b] border border-[#363432] rounded-lg text-sm text-[#f0ebe3] placeholder-[#9a9088]/50 focus:outline-none focus:border-[#8b7355]"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm text-[#9a9088] mb-1">Max batched tokens</label>
-                        <input
-                          type="number"
-                          value={(draft.extra_args as Record<string, unknown>)?.max_num_batched_tokens as number || ''}
-                          onChange={(e) => {
-                            const val = e.target.value ? parseInt(e.target.value) : undefined;
-                            const newExtra = { ...(draft.extra_args || {}) };
-                            if (val) (newExtra as Record<string, unknown>).max_num_batched_tokens = val;
-                            else delete (newExtra as Record<string, unknown>).max_num_batched_tokens;
-                            setDraftField('extra_args', newExtra);
-                            setExtraArgsText(JSON.stringify(newExtra, null, 2));
-                          }}
-                          placeholder="Auto"
-                          className="w-full px-3 py-2 bg-[#1b1b1b] border border-[#363432] rounded-lg text-sm text-[#f0ebe3] placeholder-[#9a9088]/50 focus:outline-none focus:border-[#8b7355]"
-                        />
-                      </div>
-                    </div>
-
-                    {/* Boolean flags */}
-                    <div className="flex flex-wrap gap-4">
-                      <label className="flex items-center gap-2 text-sm text-[#9a9088]">
-                        <input
-                          type="checkbox"
-                          checked={!!(draft.extra_args as Record<string, unknown>)?.enforce_eager}
-                          onChange={(e) => {
-                            const newExtra = { ...(draft.extra_args || {}) };
-                            if (e.target.checked) (newExtra as Record<string, unknown>).enforce_eager = true;
-                            else delete (newExtra as Record<string, unknown>).enforce_eager;
-                            setDraftField('extra_args', newExtra);
-                            setExtraArgsText(JSON.stringify(newExtra, null, 2));
-                          }}
-                          className="rounded border-[#363432] bg-[#1b1b1b] text-[#7d9a6a]"
-                        />
-                        Enforce eager
-                      </label>
-                      <label className="flex items-center gap-2 text-sm text-[#9a9088]">
-                        <input
-                          type="checkbox"
-                          checked={!!(draft.extra_args as Record<string, unknown>)?.enable_expert_parallel}
-                          onChange={(e) => {
-                            const newExtra = { ...(draft.extra_args || {}) };
-                            if (e.target.checked) (newExtra as Record<string, unknown>).enable_expert_parallel = true;
-                            else delete (newExtra as Record<string, unknown>).enable_expert_parallel;
-                            setDraftField('extra_args', newExtra);
-                            setExtraArgsText(JSON.stringify(newExtra, null, 2));
-                          }}
-                          className="rounded border-[#363432] bg-[#1b1b1b] text-[#7d9a6a]"
-                        />
-                        Expert parallel (MoE)
-                      </label>
-                      <label className="flex items-center gap-2 text-sm text-[#9a9088]">
-                        <input
-                          type="checkbox"
-                          checked={!!(draft.extra_args as Record<string, unknown>)?.enable_chunked_prefill}
-                          onChange={(e) => {
-                            const newExtra = { ...(draft.extra_args || {}) };
-                            if (e.target.checked) (newExtra as Record<string, unknown>).enable_chunked_prefill = true;
-                            else delete (newExtra as Record<string, unknown>).enable_chunked_prefill;
-                            setDraftField('extra_args', newExtra);
-                            setExtraArgsText(JSON.stringify(newExtra, null, 2));
-                          }}
-                          className="rounded border-[#363432] bg-[#1b1b1b] text-[#7d9a6a]"
-                        />
-                        Chunked prefill
-                      </label>
-                      <label className="flex items-center gap-2 text-sm text-[#9a9088]">
-                        <input
-                          type="checkbox"
-                          checked={!!(draft.extra_args as Record<string, unknown>)?.enable_prefix_caching}
-                          onChange={(e) => {
-                            const newExtra = { ...(draft.extra_args || {}) };
-                            if (e.target.checked) (newExtra as Record<string, unknown>).enable_prefix_caching = true;
-                            else delete (newExtra as Record<string, unknown>).enable_prefix_caching;
-                            setDraftField('extra_args', newExtra);
-                            setExtraArgsText(JSON.stringify(newExtra, null, 2));
-                          }}
-                          className="rounded border-[#363432] bg-[#1b1b1b] text-[#7d9a6a]"
-                        />
-                        Prefix caching
-                      </label>
-                    </div>
-
-                    <div className="grid md:grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-sm text-[#9a9088] mb-1">env_vars (JSON)</label>
-                        <textarea
-                          value={envVarsText}
-                          onChange={(e) => {
-                            setEnvVarsText(e.target.value);
-                            setIsDirty(true);
-                          }}
-                          rows={6}
-                          className="w-full px-3 py-2 bg-[#1b1b1b] border border-[#363432] rounded-lg text-xs font-mono text-[#f0ebe3] focus:outline-none focus:border-[#8b7355]"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm text-[#9a9088] mb-1">extra_args (JSON)</label>
-                        <textarea
-                          value={extraArgsText}
-                          onChange={(e) => {
-                            setExtraArgsText(e.target.value);
-                            setIsDirty(true);
-                          }}
-                          rows={6}
-                          className="w-full px-3 py-2 bg-[#1b1b1b] border border-[#363432] rounded-lg text-xs font-mono text-[#f0ebe3] focus:outline-none focus:border-[#8b7355]"
-                        />
-                      </div>
-                    </div>
-
-                    {jsonError && <div className="text-sm text-[#c97a6b]">{jsonError}</div>}
-
-                    <div className="flex items-center justify-between pt-2 border-t border-[#363432]">
-                      <button
-                        onClick={deleteSelected}
-                        className="flex items-center gap-1 px-3 py-2 text-sm text-[#c97a6b] border border-[#363432] rounded-lg hover:bg-[#2a2826]"
-                        disabled={selectedIsRunning}
-                        title={selectedIsRunning ? 'Stop the model before deleting this recipe.' : 'Delete recipe'}
-                      >
-                        <Trash2 className="h-4 w-4" /> Delete
-                      </button>
-                      <div className="text-xs text-[#9a9088]">
-                        {isDirty ? 'Unsaved changes' : 'Saved'}
-                      </div>
+                      {jsonError && <div className="mt-2 text-xs text-[#c97a6b]">{jsonError}</div>}
                     </div>
                   </div>
                 )}
