@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import asyncio
 import datetime as dt
+import logging
 import os
 import json
 import re
+import time
+import uuid
 from collections import deque
 from pathlib import Path
 from typing import Optional
@@ -55,9 +58,6 @@ _broadcast_task: Optional[asyncio.Task] = None
 _last_power_sample_time: float = 0
 _launching_recipe_id: Optional[str] = None  # Currently launching recipe (for preemption)
 _launch_cancel_events: dict[str, asyncio.Event] = {}  # Per-recipe cancellation signals
-
-import logging
-import time
 
 logger = logging.getLogger(__name__)
 access_logger = logging.getLogger("vllm_studio.access")
@@ -867,7 +867,6 @@ async def delete_recipe(recipe_id: str, store: RecipeStore = Depends(get_store))
 
 
 # --- Chat sessions ---
-import uuid
 
 
 @app.get("/chats", tags=["Chats"])
@@ -2283,7 +2282,7 @@ async def chat_completions_proxy(request: Request, store: RecipeStore = Depends(
                             if ('</tool_call>' in content or '<tool_call>' in content or
                                 '</use_mcp_tool>' in content or 'use_mcp_tool>' in content or
                                 ('"name"' in content and '"arguments"' in content)):
-                                logger.info(f"[TOOL PARSE] Pattern matched, parsing...")
+                                logger.info("[TOOL PARSE] Pattern matched, parsing...")
                                 parsed_tools = parse_tool_calls_from_content(content)
                                 logger.info(f"[TOOL PARSE] Parsed {len(parsed_tools)} tools: {parsed_tools}")
 

@@ -4,7 +4,6 @@ This module provides Prometheus metrics for monitoring the controller,
 GPU status, and model lifecycle events.
 """
 
-import time
 from typing import Dict, List, Any, Optional
 
 # Try to import prometheus_client, fall back to mock if not available
