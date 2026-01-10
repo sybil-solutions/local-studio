@@ -170,30 +170,19 @@ export function ToolBelt({
       setIsTranscribing(true);
       setTranscriptionError(null);
 
-      // Get API key from localStorage (same key used for <your-api-domain>)
-      const apiKey = typeof window !== 'undefined'
-        ? window.localStorage.getItem('vllmstudio_api_key') || ''
-        : '';
-
       const formData = new FormData();
       formData.append('file', audioBlob, 'recording.webm');
       formData.append('model', 'whisper-1');
 
-      // Build headers - include auth if API key is set
-      const headers: Record<string, string> = {};
-      if (apiKey) {
-        headers['Authorization'] = `Bearer ${apiKey}`;
-      }
-
-      const response = await fetch('https://voice.homelabai.org/v1/audio/transcriptions', {
+      // Use local proxy which handles auth via server-side API_KEY env var
+      const response = await fetch('/api/voice/transcribe', {
         method: 'POST',
-        headers,
         body: formData,
       });
 
       if (!response.ok) {
-        const errorText = await response.text().catch(() => '');
-        throw new Error(`Transcription failed (${response.status})${errorText ? `: ${errorText}` : ''}`);
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.details || errorData.error || `Transcription failed (${response.status})`);
       }
 
       const data = await response.json();
