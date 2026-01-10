@@ -93,6 +93,7 @@ export function ToolBelt({
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [isRecording, setIsRecording] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
+  const [transcriptionError, setTranscriptionError] = useState<string | null>(null);
   const [isTTSEnabled, setIsTTSEnabled] = useState(false);
   const [recordingDuration, setRecordingDuration] = useState(0);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -167,11 +168,16 @@ export function ToolBelt({
   const transcribeAudio = async (audioBlob: Blob): Promise<string | null> => {
     try {
       setIsTranscribing(true);
+      setTranscriptionError(null);
 
       // Get API key from localStorage
       const apiKey = typeof window !== 'undefined'
         ? window.localStorage.getItem('vllmstudio_api_key') || ''
         : '';
+
+      if (!apiKey) {
+        throw new Error('No API key configured');
+      }
 
       const formData = new FormData();
       formData.append('file', audioBlob, 'recording.webm');
@@ -186,13 +192,21 @@ export function ToolBelt({
       });
 
       if (!response.ok) {
-        throw new Error(`Transcription failed: ${response.status}`);
+        const errorText = await response.text().catch(() => '');
+        throw new Error(`Transcription failed (${response.status})${errorText ? `: ${errorText}` : ''}`);
       }
 
       const data = await response.json();
-      return data.text || null;
+      if (!data.text) {
+        throw new Error('No transcription returned');
+      }
+      return data.text;
     } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Transcription failed';
       console.error('Transcription error:', err);
+      setTranscriptionError(errorMessage);
+      // Auto-clear error after 5 seconds
+      setTimeout(() => setTranscriptionError(null), 5000);
       return null;
     } finally {
       setIsTranscribing(false);
@@ -342,6 +356,26 @@ export function ToolBelt({
           </div>
         )}
 
+        {/* Transcribing Indicator */}
+        {isTranscribing && (
+          <div className="flex items-center gap-3 mb-3 px-3 py-2 bg-[var(--link)]/10 border border-[var(--link)]/20 rounded-lg">
+            <Loader2 className="h-4 w-4 text-[var(--link)] animate-spin" />
+            <span className="text-sm text-[var(--link)]">Transcribing audio...</span>
+          </div>
+        )}
+
+        {/* Transcription Error */}
+        {transcriptionError && (
+          <div className="flex items-center gap-3 mb-3 px-3 py-2 bg-[var(--error)]/10 border border-[var(--error)]/20 rounded-lg">
+            <span className="text-sm text-[var(--error)]">{transcriptionError}</span>
+            <button
+              onClick={() => setTranscriptionError(null)}
+              className="ml-auto p-1 hover:bg-[var(--error)]/20 rounded"
+            >
+              <X className="h-3.5 w-3.5 text-[var(--error)]" />
+            </button>
+          </div>
+        )}
 
         {/* Main Input Area */}
         <div className={`relative flex flex-col border rounded-2xl md:rounded-xl bg-[var(--card)] shadow-sm ${isLoading ? 'border-blue-500/30' : 'border-[var(--border)]'}`}>
