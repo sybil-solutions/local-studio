@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { Search, RefreshCw, Trash2, Download, ChevronRight } from 'lucide-react';
+import { Search, RefreshCw, Trash2, Download, ChevronRight, ChevronLeft, Menu } from 'lucide-react';
 import api from '@/lib/api';
 import type { LogSession } from '@/lib/types';
 
@@ -15,6 +15,7 @@ export default function LogsPage() {
   const [loadingContent, setLoadingContent] = useState(false);
   const [autoScroll, setAutoScroll] = useState(true);
   const [autoRefresh, setAutoRefresh] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const logRef = useRef<HTMLDivElement>(null);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -114,6 +115,12 @@ export default function LogsPage() {
     ));
   };
 
+  // Close sidebar when selecting a session on mobile
+  const handleSelectSession = (sessionId: string) => {
+    setSelectedSession(sessionId);
+    setSidebarOpen(false);
+  };
+
   if (loading) return (
     <div className="flex items-center justify-center h-full bg-[#1b1b1b]">
       <div className="flex items-center gap-2 text-[#9a9088]">
@@ -124,11 +131,32 @@ export default function LogsPage() {
   );
 
   return (
-    <div className="flex h-full bg-[#1b1b1b] text-[#f0ebe3]">
-      {/* Sidebar */}
-      <div className="w-72 border-r border-[#363432] flex flex-col">
+    <div className="flex h-full bg-[#1b1b1b] text-[#f0ebe3] relative">
+      {/* Mobile Overlay */}
+      {sidebarOpen && (
+        <div
+          className="fixed inset-0 bg-black/50 z-20 md:hidden"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
+
+      {/* Sidebar - hidden on mobile by default, shown when sidebarOpen */}
+      <div className={`
+        fixed md:relative inset-y-0 left-0 z-30
+        w-72 border-r border-[#363432] flex flex-col bg-[#1b1b1b]
+        transform transition-transform duration-200 ease-in-out
+        ${sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
+      `}>
         <div className="p-4 border-b border-[#363432]">
-          <h1 className="text-sm font-medium text-[#9a9088] uppercase tracking-wider mb-3">Log Sessions</h1>
+          <div className="flex items-center justify-between mb-3">
+            <h1 className="text-sm font-medium text-[#9a9088] uppercase tracking-wider">Log Sessions</h1>
+            <button
+              onClick={() => setSidebarOpen(false)}
+              className="md:hidden p-1 hover:bg-[#2a2826] rounded"
+            >
+              <ChevronLeft className="h-4 w-4 text-[#9a9088]" />
+            </button>
+          </div>
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-[#9a9088]" />
             <input
@@ -148,7 +176,7 @@ export default function LogsPage() {
             filteredSessions.map((s) => (
               <button
                 key={s.id}
-                onClick={() => setSelectedSession(s.id)}
+                onClick={() => handleSelectSession(s.id)}
                 className={`w-full text-left p-3 border-b border-[#363432]/50 transition-colors group ${
                   selectedSession === s.id ? 'bg-[#2a2826]' : 'hover:bg-[#1e1e1e]'
                 }`}
@@ -187,17 +215,23 @@ export default function LogsPage() {
       </div>
 
       {/* Main Content */}
-      <div className="flex-1 flex flex-col">
+      <div className="flex-1 flex flex-col min-w-0">
         {selectedSession ? (
           <>
             {/* Header */}
-            <div className="flex items-center justify-between px-4 py-3 border-b border-[#363432]">
-              <div className="flex items-center gap-2 text-sm">
-                <ChevronRight className="h-3.5 w-3.5 text-[#9a9088]" />
-                <span className="text-[#f0ebe3] font-mono">{selectedSession}</span>
+            <div className="flex items-center justify-between px-3 sm:px-4 py-3 border-b border-[#363432] gap-2">
+              <div className="flex items-center gap-2 text-sm min-w-0 flex-1">
+                <button
+                  onClick={() => setSidebarOpen(true)}
+                  className="md:hidden p-1 hover:bg-[#2a2826] rounded flex-shrink-0"
+                >
+                  <Menu className="h-4 w-4 text-[#9a9088]" />
+                </button>
+                <ChevronRight className="h-3.5 w-3.5 text-[#9a9088] hidden sm:block flex-shrink-0" />
+                <span className="text-[#f0ebe3] font-mono truncate text-xs sm:text-sm">{selectedSession}</span>
               </div>
-              <div className="flex items-center gap-3">
-                <label className="flex items-center gap-1.5 text-[11px] text-[#9a9088] cursor-pointer">
+              <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
+                <label className="hidden sm:flex items-center gap-1.5 text-[11px] text-[#9a9088] cursor-pointer">
                   <input
                     type="checkbox"
                     checked={autoRefresh}
@@ -206,7 +240,7 @@ export default function LogsPage() {
                   />
                   Auto-refresh
                 </label>
-                <label className="flex items-center gap-1.5 text-[11px] text-[#9a9088] cursor-pointer">
+                <label className="hidden sm:flex items-center gap-1.5 text-[11px] text-[#9a9088] cursor-pointer">
                   <input
                     type="checkbox"
                     checked={autoScroll}
@@ -215,13 +249,13 @@ export default function LogsPage() {
                   />
                   Auto-scroll
                 </label>
-                <div className="w-px h-4 bg-[#363432]" />
+                <div className="w-px h-4 bg-[#363432] hidden sm:block" />
                 <input
                   type="text"
                   value={contentFilter}
                   onChange={(e) => setContentFilter(e.target.value)}
-                  placeholder="Filter lines..."
-                  className="px-2.5 py-1.5 text-xs bg-[#1e1e1e] border border-[#363432] rounded text-[#f0ebe3] placeholder-[#9a9088]/50 focus:outline-none focus:border-[#8b7355] w-40"
+                  placeholder="Filter..."
+                  className="px-2.5 py-1.5 text-xs bg-[#1e1e1e] border border-[#363432] rounded text-[#f0ebe3] placeholder-[#9a9088]/50 focus:outline-none focus:border-[#8b7355] w-24 sm:w-40"
                 />
                 <button
                   onClick={() => loadLogContent(selectedSession!)}
@@ -243,7 +277,7 @@ export default function LogsPage() {
             {/* Log Content */}
             <div
               ref={logRef}
-              className="flex-1 overflow-auto p-4 font-mono text-xs bg-[#1b1b1b] leading-relaxed"
+              className="flex-1 overflow-auto p-2 sm:p-4 font-mono text-[10px] sm:text-xs bg-[#1b1b1b] leading-relaxed"
             >
               {loadingContent ? (
                 <div className="flex items-center justify-center h-full">
@@ -260,7 +294,14 @@ export default function LogsPage() {
             </div>
           </>
         ) : (
-          <div className="flex-1 flex items-center justify-center">
+          <div className="flex-1 flex flex-col items-center justify-center gap-4">
+            <button
+              onClick={() => setSidebarOpen(true)}
+              className="md:hidden flex items-center gap-2 px-4 py-2 bg-[#363432] rounded-lg text-[#f0ebe3] text-sm"
+            >
+              <Menu className="h-4 w-4" />
+              View Sessions
+            </button>
             <div className="text-center text-[#9a9088]">
               <p className="text-sm">Select a log session to view</p>
             </div>

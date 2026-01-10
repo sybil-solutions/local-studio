@@ -12,6 +12,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Wrench,
+  Compass,
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import api from '@/lib/api';
@@ -20,6 +21,7 @@ const navItems = [
   { href: '/', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/chat', label: 'Chat', icon: MessageSquare },
   { href: '/recipes', label: 'Recipes', icon: Wrench },
+  { href: '/discover', label: 'Discover', icon: Compass },
   { href: '/logs', label: 'Logs', icon: FileText },
   { href: '/usage', label: 'Usage', icon: BarChart3 },
   { href: '/configs', label: 'Configs', icon: Settings },
