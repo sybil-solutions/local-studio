@@ -115,7 +115,7 @@ export default function LogsPage() {
   };
 
   if (loading) return (
-    <div className="flex items-center justify-center h-[100dvh] bg-[#1b1b1b]">
+    <div className="flex items-center justify-center h-full bg-[#1b1b1b]">
       <div className="flex items-center gap-2 text-[#9a9088]">
         <RefreshCw className="h-4 w-4 animate-spin" />
         <span className="text-sm">Loading logs...</span>
@@ -124,7 +124,7 @@ export default function LogsPage() {
   );
 
   return (
-    <div className="flex h-[100dvh] bg-[#1b1b1b] text-[#f0ebe3]">
+    <div className="flex h-full bg-[#1b1b1b] text-[#f0ebe3]">
       {/* Sidebar */}
       <div className="w-72 border-r border-[#363432] flex flex-col">
         <div className="p-4 border-b border-[#363432]">

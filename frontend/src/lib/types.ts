@@ -325,3 +325,30 @@ export interface Artifact {
   message_id?: string;
   created_at?: string;
 }
+
+// RAG (Retrieval Augmented Generation) types
+export interface RAGSettings {
+  enabled: boolean;
+  endpoint: string;
+  apiKey?: string;
+  topK: number;
+  minScore: number;
+  includeMetadata: boolean;
+  contextPosition: 'before' | 'after' | 'system';
+  useProxy: boolean; // Use frontend proxy for remote access
+}
+
+export interface RAGDocument {
+  id: string;
+  content: string;
+  score: number;
+  metadata?: Record<string, unknown>;
+  source?: string;
+}
+
+export interface RAGQueryResponse {
+  documents: RAGDocument[];
+  query: string;
+  total_results?: number;
+  latency_ms?: number;
+}

@@ -395,6 +395,126 @@ class APIClient {
   }
 }
 
+// RAG API client - separate from main API since it connects to a custom endpoint
+// Supports proxy mode for accessing local RAG via the frontend server
+export class RAGClient {
+  private endpoint: string;
+  private apiKey?: string;
+  private useProxy: boolean;
+
+  constructor(endpoint: string, apiKey?: string, useProxy = false) {
+    this.endpoint = endpoint.replace(/\/$/, ''); // Remove trailing slash
+    this.apiKey = apiKey;
+    this.useProxy = useProxy;
+  }
+
+  setConfig(endpoint: string, apiKey?: string, useProxy = false) {
+    this.endpoint = endpoint.replace(/\/$/, '');
+    this.apiKey = apiKey;
+    this.useProxy = useProxy;
+  }
+
+  async query(
+    query: string,
+    options: { topK?: number; minScore?: number; includeMetadata?: boolean } = {}
+  ): Promise<{
+    documents: Array<{
+      id: string;
+      content: string;
+      score: number;
+      metadata?: Record<string, unknown>;
+      source?: string;
+    }>;
+    query: string;
+    total_results?: number;
+    latency_ms?: number;
+  }> {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000);
+
+    try {
+      let response: Response;
+
+      if (this.useProxy) {
+        // Use frontend proxy to reach local RAG (for remote access via Cloudflare etc)
+        response = await fetch('/api/rag', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'query',
+            query,
+            top_k: options.topK || 5,
+            min_score: options.minScore || 0.0,
+            include_metadata: options.includeMetadata ?? true,
+          }),
+          signal: controller.signal,
+        });
+      } else {
+        // Direct connection to RAG endpoint
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+        if (this.apiKey) {
+          headers['Authorization'] = `Bearer ${this.apiKey}`;
+        }
+
+        response = await fetch(`${this.endpoint}/query`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            query,
+            top_k: options.topK || 5,
+            min_score: options.minScore || 0.0,
+            include_metadata: options.includeMetadata ?? true,
+          }),
+          signal: controller.signal,
+        });
+      }
+
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        const errorBody = await response.json().catch(() => ({ detail: 'RAG query failed' }));
+        throw new Error(errorBody.detail || errorBody.error || `RAG HTTP ${response.status}`);
+      }
+
+      return response.json();
+    } catch (error) {
+      clearTimeout(timeoutId);
+      if (error instanceof Error && error.name === 'AbortError') {
+        throw new Error('RAG query timeout');
+      }
+      throw error;
+    }
+  }
+
+  async health(): Promise<{ status: string; documents_count?: number }> {
+    try {
+      let response: Response;
+
+      if (this.useProxy) {
+        response = await fetch('/api/rag', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'health' }),
+        });
+      } else {
+        const headers: Record<string, string> = {};
+        if (this.apiKey) {
+          headers['Authorization'] = `Bearer ${this.apiKey}`;
+        }
+        response = await fetch(`${this.endpoint}/health`, { headers });
+      }
+
+      if (!response.ok) {
+        return { status: 'offline' };
+      }
+
+      return response.json();
+    } catch {
+      return { status: 'offline' };
+    }
+  }
+}
+
 export const api = new APIClient('/api/proxy', true);
 
 export function createServerAPI(backendUrl?: string) {

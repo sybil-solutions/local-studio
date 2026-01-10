@@ -91,7 +91,7 @@ export default function UsagePage() {
 
   if (loading && !stats) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-[#1b1b1b]">
+      <div className="flex items-center justify-center h-full bg-[#1b1b1b]">
         <Activity className="h-5 w-5 text-[#9a9088] animate-pulse" />
       </div>
     );
@@ -99,7 +99,7 @@ export default function UsagePage() {
 
   if (error && !stats) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-[#1b1b1b]">
+      <div className="flex items-center justify-center h-full bg-[#1b1b1b]">
         <div className="text-center">
           <p className="text-[#c97a6b] mb-4">{error}</p>
           <button
@@ -119,8 +119,8 @@ export default function UsagePage() {
   const completionPct = stats ? ((stats.totals.completion_tokens / stats.totals.total_tokens) * 100).toFixed(1) : '0';
 
   return (
-    <div className="min-h-screen bg-[#1b1b1b] text-[#f0ebe3] overflow-x-hidden">
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 py-4 sm:py-6 pb-[calc(1rem+env(safe-area-inset-bottom))] overflow-x-hidden">
+    <div className="h-full overflow-auto bg-[#1b1b1b] text-[#f0ebe3]">
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 py-4 sm:py-6 pb-[calc(1rem+env(safe-area-inset-bottom))]">
         
         {/* Header */}
         <div className="flex items-center justify-between mb-6 sm:mb-8">

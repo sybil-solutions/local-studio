@@ -32,8 +32,8 @@ import {
   BookmarkCheck,
 } from 'lucide-react';
 import Link from 'next/link';
-import api from '@/lib/api';
-import type { ChatSession, ToolCall, ToolResult, MCPTool, Artifact } from '@/lib/types';
+import api, { RAGClient } from '@/lib/api';
+import type { ChatSession, ToolCall, ToolResult, MCPTool, Artifact, RAGDocument } from '@/lib/types';
 import {
   MessageRenderer, ChatSidebar, ToolBelt, MCPSettingsModal, ChatSettingsModal, extractArtifacts, ArtifactPanel } from '@/components/chat';
 import {
@@ -41,7 +41,7 @@ import {
 import { ResearchProgressIndicator, CitationsPanel } from '@/components/chat/research-progress';
 import { MessageSearch } from '@/components/chat/message-search';
 import { ThemeToggle } from '@/components/chat/theme-toggle';
-import type { Attachment, MCPServerConfig, DeepResearchSettings } from '@/components/chat';
+import type { Attachment, MCPServerConfig, DeepResearchSettings, RAGSettings } from '@/components/chat';
 import type { ResearchProgress, ResearchSource } from '@/components/chat/research-progress';
 import { loadState, saveState, debouncedSave } from '@/lib/chat-state-persistence';
 
@@ -190,6 +190,29 @@ export default function ChatPage() {
   });
   const [researchProgress, setResearchProgress] = useState<ResearchProgress | null>(null);
   const [researchSources, setResearchSources] = useState<ResearchSource[]>([]);
+
+  // RAG (Retrieval Augmented Generation) state
+  const [ragSettings, setRagSettings] = useState<RAGSettings>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('vllm-studio-rag-settings');
+      if (saved) {
+        try { return JSON.parse(saved); } catch { }
+      }
+    }
+    return {
+      enabled: false,
+      endpoint: 'http://localhost:3002',
+      topK: 5,
+      minScore: 0.0,
+      includeMetadata: true,
+      contextPosition: 'system' as const,
+      useProxy: true, // Default to proxy for remote access
+    };
+  });
+  const [ragStatus, setRagStatus] = useState<'online' | 'offline' | 'checking'>('offline');
+  const [ragContext, setRagContext] = useState<RAGDocument[]>([]);
+  const ragClientRef = useRef<RAGClient | null>(null);
+
   const [currentSessionTitle, setCurrentSessionTitle] = useState<string>('New Chat');
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState('');
@@ -321,6 +344,39 @@ export default function ChatPage() {
     loadMCPServers();
     loadAvailableModels();
   }, []);
+
+  // Initialize RAG client and check health
+  useEffect(() => {
+    if (ragSettings.endpoint) {
+      ragClientRef.current = new RAGClient(ragSettings.endpoint, ragSettings.apiKey, ragSettings.useProxy);
+    }
+  }, [ragSettings.endpoint, ragSettings.apiKey, ragSettings.useProxy]);
+
+  // Check RAG health when enabled or settings change
+  useEffect(() => {
+    if (!ragSettings.enabled || (!ragSettings.endpoint && !ragSettings.useProxy)) {
+      setRagStatus('offline');
+      return;
+    }
+
+    const checkRagHealth = async () => {
+      setRagStatus('checking');
+      try {
+        if (!ragClientRef.current) {
+          ragClientRef.current = new RAGClient(ragSettings.endpoint, ragSettings.apiKey, ragSettings.useProxy);
+        }
+        const health = await ragClientRef.current.health();
+        setRagStatus(health.status === 'ok' || health.status === 'healthy' ? 'online' : 'offline');
+      } catch {
+        setRagStatus('offline');
+      }
+    };
+
+    checkRagHealth();
+    // Periodically check health every 30 seconds when enabled
+    const interval = setInterval(checkRagHealth, 30000);
+    return () => clearInterval(interval);
+  }, [ragSettings.enabled, ragSettings.endpoint, ragSettings.apiKey, ragSettings.useProxy]);
 
   const loadAvailableModels = async () => {
     try {
@@ -697,13 +753,65 @@ export default function ChatPage() {
     }
   };
 
+  // Query RAG for relevant context
+  const queryRAG = async (query: string): Promise<RAGDocument[]> => {
+    if (!ragSettings.enabled || ragStatus !== 'online' || !ragClientRef.current) {
+      return [];
+    }
+
+    try {
+      const result = await ragClientRef.current.query(query, {
+        topK: ragSettings.topK,
+        minScore: ragSettings.minScore,
+        includeMetadata: ragSettings.includeMetadata,
+      });
+      return result.documents || [];
+    } catch (error) {
+      console.error('RAG query failed:', error);
+      return [];
+    }
+  };
+
+  // Format RAG context for injection into conversation
+  const formatRAGContext = (documents: RAGDocument[]): string => {
+    if (documents.length === 0) return '';
+
+    const contextParts = documents.map((doc, index) => {
+      let entry = `[${index + 1}] ${doc.content}`;
+      if (ragSettings.includeMetadata && doc.metadata) {
+        const metaStr = Object.entries(doc.metadata)
+          .filter(([k, v]) => v !== undefined && v !== null)
+          .map(([k, v]) => `${k}: ${v}`)
+          .join(', ');
+        if (metaStr) {
+          entry += `\n   (${metaStr})`;
+        }
+      }
+      if (doc.source) {
+        entry += `\n   Source: ${doc.source}`;
+      }
+      return entry;
+    });
+
+    return `\n\n---\n**Relevant Knowledge Base Context:**\n${contextParts.join('\n\n')}\n---\n\n`;
+  };
+
   // Build API messages with system prompt
-  const buildAPIMessages = (msgs: Message[]) => {
+  const buildAPIMessages = (msgs: Message[], ragDocs: RAGDocument[] = []) => {
     const apiMessages: OpenAIMessage[] = [];
+    const ragContextStr = formatRAGContext(ragDocs);
 
     // Prepend system prompt if set
     if (systemPrompt.trim()) {
-      apiMessages.push({ role: 'system', content: systemPrompt.trim() });
+      let sysContent = systemPrompt.trim();
+      // Inject RAG context into system prompt if configured
+      if (ragContextStr && ragSettings.contextPosition === 'system') {
+        sysContent += ragContextStr;
+      }
+      apiMessages.push({ role: 'system', content: sysContent });
+    } else if (ragContextStr && ragSettings.contextPosition === 'system') {
+      // If no system prompt but RAG context should go in system
+      apiMessages.push({ role: 'system', content: `Use the following context to help answer questions:${ragContextStr}` });
     }
     if (mcpEnabled) {
       apiMessages.push({
@@ -834,8 +942,18 @@ Start your research immediately when you receive a question. Do not ask for clar
         continue;
       }
 
-      const content =
+      let content =
         m.role === 'assistant' ? stripThinkingForModelContext(m.content) : m.content;
+
+      // Inject RAG context for user messages (only for the last user message which is the current query)
+      if (m.role === 'user' && ragContextStr && m === msgs[msgs.length - 1]) {
+        if (ragSettings.contextPosition === 'before') {
+          content = `${ragContextStr}${content}`;
+        } else if (ragSettings.contextPosition === 'after') {
+          content = `${content}${ragContextStr}`;
+        }
+      }
+
       apiMessages.push({ role: m.role, content });
     }
 
@@ -1172,8 +1290,19 @@ Start your research immediately when you receive a question. Do not ask for clar
 
     abortControllerRef.current = new AbortController();
 
+    // Query RAG for context if enabled
+    let ragDocs: RAGDocument[] = [];
+    if (ragSettings.enabled && ragStatus === 'online') {
+      try {
+        ragDocs = await queryRAG(userContent);
+        setRagContext(ragDocs);
+      } catch (error) {
+        console.error('RAG query failed:', error);
+      }
+    }
+
     // Track conversation for tool calling loop
-    let conversationMessages = buildAPIMessages([...messages, userMessage]);
+    let conversationMessages = buildAPIMessages([...messages, userMessage], ragDocs);
     let sessionId = currentSessionId;
     const isNewSession = !sessionId;
     let finalAssistantContent = '';
@@ -2268,6 +2397,13 @@ Start your research immediately when you receive a question. Do not ask for clar
                     setMcpEnabled(true);
                   }
                 }}
+                ragEnabled={ragSettings.enabled}
+                onRagToggle={() => {
+                  const newEnabled = !ragSettings.enabled;
+                  setRagSettings(prev => ({ ...prev, enabled: newEnabled }));
+                  localStorage.setItem('vllm-studio-rag-settings', JSON.stringify({ ...ragSettings, enabled: newEnabled }));
+                }}
+                ragStatus={ragStatus}
                 elapsedSeconds={elapsedSeconds}
                 queuedContext={queuedContext}
                 onQueuedContextChange={setQueuedContext}
@@ -2646,6 +2782,17 @@ Start your research immediately when you receive a question. Do not ask for clar
             if (settings.enabled && !mcpEnabled) {
               setMcpEnabled(true);
             }
+          }}
+          ragSettings={ragSettings}
+          onRagSettingsChange={(settings) => {
+            setRagSettings(settings);
+            localStorage.setItem('vllm-studio-rag-settings', JSON.stringify(settings));
+          }}
+          onTestRagConnection={async () => {
+            if (!ragClientRef.current) {
+              ragClientRef.current = new RAGClient(ragSettings.endpoint, ragSettings.apiKey, ragSettings.useProxy);
+            }
+            return ragClientRef.current.health();
           }}
         />
     </>

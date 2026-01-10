@@ -488,7 +488,7 @@ function RecipesContent() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-[100dvh] bg-[#1b1b1b]">
+      <div className="flex items-center justify-center h-full bg-[#1b1b1b]">
         <div className="flex items-center gap-2 text-[#9a9088]">
           <RefreshCw className="h-4 w-4 animate-spin" />
           <span className="text-sm">Loading recipes...</span>
@@ -498,7 +498,7 @@ function RecipesContent() {
   }
 
   return (
-    <div className="min-h-[100dvh] bg-[#1b1b1b] text-[#f0ebe3] p-4 md:p-6">
+    <div className="h-full overflow-auto bg-[#1b1b1b] text-[#f0ebe3] p-4 md:p-6">
       <div className="max-w-7xl mx-auto space-y-4">
         {/* Header */}
         <div className="flex items-center justify-between gap-3">
@@ -1721,7 +1721,7 @@ export default function RecipesPage() {
   return (
     <Suspense
       fallback={
-        <div className="flex items-center justify-center h-[100dvh] bg-[#1b1b1b]">
+        <div className="flex items-center justify-center h-full bg-[#1b1b1b]">
           <div className="flex items-center gap-2 text-[#9a9088]">
             <RefreshCw className="h-4 w-4 animate-spin" />
             <span className="text-sm">Loading...</span>

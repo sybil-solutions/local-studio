@@ -116,7 +116,7 @@ export default function Dashboard() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-[#1b1b1b]">
+      <div className="flex items-center justify-center h-full bg-[#1b1b1b]">
         <Activity className="h-5 w-5 text-[#9a9088] animate-pulse" />
       </div>
     );
@@ -127,7 +127,7 @@ export default function Dashboard() {
   const totalMemMax = gpus.reduce((sum, g) => sum + toGB(g.memory_total_mb ?? g.memory_total ?? 0), 0);
 
   return (
-    <div className="min-h-screen bg-[#1b1b1b] text-[#f0ebe3]">
+    <div className="h-full overflow-auto bg-[#1b1b1b] text-[#f0ebe3]">
       {/* Connection Warning */}
       {!isConnected && (
         <div className="fixed top-4 right-4 z-50 px-3 py-1.5 bg-[#c9a66b]/10 text-[#c9a66b] text-sm rounded">

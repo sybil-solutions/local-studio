@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { X, Settings, Trash2, Info, Search, Globe, Zap, FileText, BookOpen, Sparkles, Brain } from 'lucide-react';
+import { X, Settings, Trash2, Info, Search, Globe, Zap, FileText, BookOpen, Sparkles, Brain, Database, CheckCircle2, XCircle, Loader2 } from 'lucide-react';
 
 export interface DeepResearchSettings {
   enabled: boolean;
@@ -9,6 +9,17 @@ export interface DeepResearchSettings {
   autoSummarize: boolean;
   includeCitations: boolean;
   searchDepth: 'quick' | 'normal' | 'thorough';
+}
+
+export interface RAGSettings {
+  enabled: boolean;
+  endpoint: string;
+  apiKey?: string;
+  topK: number;
+  minScore: number;
+  includeMetadata: boolean;
+  contextPosition: 'before' | 'after' | 'system';
+  useProxy: boolean; // Use frontend proxy for remote access (Cloudflare etc)
 }
 
 interface ChatSettingsModalProps {
@@ -23,6 +34,10 @@ interface ChatSettingsModalProps {
   // Deep Research settings
   deepResearch?: DeepResearchSettings;
   onDeepResearchChange?: (settings: DeepResearchSettings) => void;
+  // RAG settings
+  ragSettings?: RAGSettings;
+  onRagSettingsChange?: (settings: RAGSettings) => void;
+  onTestRagConnection?: () => Promise<{ status: string; documents_count?: number }>;
 }
 
 const STORAGE_KEY = 'vllm-studio-system-prompt';
@@ -33,6 +48,16 @@ const DEFAULT_DEEP_RESEARCH: DeepResearchSettings = {
   autoSummarize: true,
   includeCitations: true,
   searchDepth: 'normal',
+};
+
+const DEFAULT_RAG_SETTINGS: RAGSettings = {
+  enabled: false,
+  endpoint: 'http://localhost:3002',
+  topK: 5,
+  minScore: 0.0,
+  includeMetadata: true,
+  contextPosition: 'system',
+  useProxy: true, // Default to proxy mode for remote access
 };
 
 export function ChatSettingsModal({
@@ -46,10 +71,16 @@ export function ChatSettingsModal({
   onForkModels,
   deepResearch = DEFAULT_DEEP_RESEARCH,
   onDeepResearchChange,
+  ragSettings = DEFAULT_RAG_SETTINGS,
+  onRagSettingsChange,
+  onTestRagConnection,
 }: ChatSettingsModalProps) {
   const [localPrompt, setLocalPrompt] = useState(systemPrompt);
   const [forkSelection, setForkSelection] = useState<Record<string, boolean>>({});
   const [localDeepResearch, setLocalDeepResearch] = useState(deepResearch);
+  const [localRagSettings, setLocalRagSettings] = useState(ragSettings);
+  const [ragTestStatus, setRagTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
+  const [ragTestResult, setRagTestResult] = useState<string | null>(null);
 
   useEffect(() => {
     setLocalPrompt(systemPrompt);
@@ -58,6 +89,10 @@ export function ChatSettingsModal({
   useEffect(() => {
     setLocalDeepResearch(deepResearch);
   }, [deepResearch]);
+
+  useEffect(() => {
+    setLocalRagSettings(ragSettings);
+  }, [ragSettings]);
 
   useEffect(() => {
     // Load from localStorage on mount
@@ -76,7 +111,38 @@ export function ChatSettingsModal({
       onDeepResearchChange(localDeepResearch);
       localStorage.setItem('vllm-studio-deep-research', JSON.stringify(localDeepResearch));
     }
+    if (onRagSettingsChange) {
+      onRagSettingsChange(localRagSettings);
+      localStorage.setItem('vllm-studio-rag-settings', JSON.stringify(localRagSettings));
+    }
     onClose();
+  };
+
+  const handleTestRagConnection = async () => {
+    if (!onTestRagConnection) return;
+    setRagTestStatus('testing');
+    setRagTestResult(null);
+    try {
+      const result = await onTestRagConnection();
+      if (result.status === 'ok' || result.status === 'healthy') {
+        setRagTestStatus('success');
+        setRagTestResult(result.documents_count !== undefined
+          ? `Connected (${result.documents_count} documents)`
+          : 'Connected');
+      } else {
+        setRagTestStatus('error');
+        setRagTestResult(result.status || 'Connection failed');
+      }
+    } catch (error) {
+      setRagTestStatus('error');
+      setRagTestResult(error instanceof Error ? error.message : 'Connection failed');
+    }
+  };
+
+  const updateRagSettings = (updates: Partial<RAGSettings>) => {
+    setLocalRagSettings(prev => ({ ...prev, ...updates }));
+    setRagTestStatus('idle');
+    setRagTestResult(null);
   };
 
   const updateDeepResearch = (updates: Partial<DeepResearchSettings>) => {
@@ -216,6 +282,165 @@ export function ChatSettingsModal({
                       Include citations
                     </label>
                   </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* RAG Section */}
+          {onRagSettingsChange && (
+            <div className="space-y-3 p-4 bg-gradient-to-br from-green-500/5 to-emerald-500/5 border border-green-500/20 rounded-lg">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="p-1.5 bg-green-500/10 rounded-lg">
+                    <Database className="h-4 w-4 text-green-400" />
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium">RAG Knowledge Base</label>
+                    <p className="text-[10px] text-[#9a9590]">Connect to your own retrieval-augmented generation service</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => updateRagSettings({ enabled: !localRagSettings.enabled })}
+                  className={`relative w-11 h-6 rounded-full transition-colors ${
+                    localRagSettings.enabled ? 'bg-green-500' : 'bg-[var(--border)]'
+                  }`}
+                >
+                  <span className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-transform ${
+                    localRagSettings.enabled ? 'left-6' : 'left-1'
+                  }`} />
+                </button>
+              </div>
+
+              {localRagSettings.enabled && (
+                <div className="space-y-3 pt-2 border-t border-[var(--border)]">
+                  {/* Endpoint URL */}
+                  <div className="space-y-1">
+                    <label className="text-xs font-medium text-[#b0a8a0]">RAG Endpoint</label>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={localRagSettings.endpoint}
+                        onChange={(e) => updateRagSettings({ endpoint: e.target.value })}
+                        placeholder="http://localhost:3002"
+                        className="flex-1 px-3 py-2 text-sm bg-[var(--background)] border border-[var(--border)] rounded-lg focus:outline-none focus:border-green-500/50 font-mono"
+                      />
+                      <button
+                        onClick={handleTestRagConnection}
+                        disabled={ragTestStatus === 'testing' || !localRagSettings.endpoint}
+                        className="px-3 py-2 text-xs bg-green-500/10 border border-green-500/30 rounded-lg hover:bg-green-500/20 disabled:opacity-50 flex items-center gap-1.5"
+                      >
+                        {ragTestStatus === 'testing' ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin text-green-400" />
+                        ) : ragTestStatus === 'success' ? (
+                          <CheckCircle2 className="h-3.5 w-3.5 text-green-400" />
+                        ) : ragTestStatus === 'error' ? (
+                          <XCircle className="h-3.5 w-3.5 text-red-400" />
+                        ) : (
+                          <Database className="h-3.5 w-3.5 text-green-400" />
+                        )}
+                        Test
+                      </button>
+                    </div>
+                    {ragTestResult && (
+                      <p className={`text-xs ${ragTestStatus === 'success' ? 'text-green-400' : 'text-red-400'}`}>
+                        {ragTestResult}
+                      </p>
+                    )}
+                  </div>
+
+                  {/* API Key (optional) */}
+                  <div className="space-y-1">
+                    <label className="text-xs font-medium text-[#b0a8a0]">API Key (optional)</label>
+                    <input
+                      type="password"
+                      value={localRagSettings.apiKey || ''}
+                      onChange={(e) => updateRagSettings({ apiKey: e.target.value || undefined })}
+                      placeholder="Leave empty if not required"
+                      className="w-full px-3 py-2 text-sm bg-[var(--background)] border border-[var(--border)] rounded-lg focus:outline-none focus:border-green-500/50"
+                    />
+                  </div>
+
+                  {/* Top K Results */}
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-medium text-[#b0a8a0]">Results to Retrieve (Top K)</label>
+                      <span className="text-xs font-mono text-[var(--foreground)]">{localRagSettings.topK}</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="1"
+                      max="20"
+                      value={localRagSettings.topK}
+                      onChange={(e) => updateRagSettings({ topK: parseInt(e.target.value) })}
+                      className="w-full h-1.5 bg-[var(--border)] rounded-full appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-green-500"
+                    />
+                  </div>
+
+                  {/* Min Score */}
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-medium text-[#b0a8a0]">Minimum Relevance Score</label>
+                      <span className="text-xs font-mono text-[var(--foreground)]">{localRagSettings.minScore.toFixed(2)}</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="0"
+                      max="100"
+                      value={localRagSettings.minScore * 100}
+                      onChange={(e) => updateRagSettings({ minScore: parseInt(e.target.value) / 100 })}
+                      className="w-full h-1.5 bg-[var(--border)] rounded-full appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-green-500"
+                    />
+                  </div>
+
+                  {/* Context Position */}
+                  <div className="space-y-1">
+                    <label className="text-xs font-medium text-[#b0a8a0]">Context Injection Position</label>
+                    <div className="grid grid-cols-3 gap-2">
+                      {(['system', 'before', 'after'] as const).map((pos) => (
+                        <button
+                          key={pos}
+                          onClick={() => updateRagSettings({ contextPosition: pos })}
+                          className={`px-3 py-1.5 text-xs rounded-lg border transition-colors ${
+                            localRagSettings.contextPosition === pos
+                              ? 'bg-green-500/10 border-green-500/40 text-green-400'
+                              : 'border-[var(--border)] hover:bg-[var(--accent)]'
+                          }`}
+                        >
+                          {pos === 'system' ? 'System Prompt' : pos === 'before' ? 'Before Query' : 'After Query'}
+                        </button>
+                      ))}
+                    </div>
+                    <p className="text-[10px] text-[#9a9590]">
+                      {localRagSettings.contextPosition === 'system' && 'RAG context added to system prompt'}
+                      {localRagSettings.contextPosition === 'before' && 'RAG context prepended to user message'}
+                      {localRagSettings.contextPosition === 'after' && 'RAG context appended to user message'}
+                    </p>
+                  </div>
+
+                  {/* Include Metadata */}
+                  <label className="flex items-center gap-2 px-3 py-2 text-xs border border-[var(--border)] rounded-lg cursor-pointer hover:bg-[var(--accent)]">
+                    <input
+                      type="checkbox"
+                      checked={localRagSettings.includeMetadata}
+                      onChange={(e) => updateRagSettings({ includeMetadata: e.target.checked })}
+                      className="w-3.5 h-3.5 rounded"
+                    />
+                    <FileText className="h-3 w-3 text-green-400" />
+                    Include source metadata in context
+                  </label>
+
+                  {/* Use Proxy Mode */}
+                  <label className="flex items-center gap-2 px-3 py-2 text-xs border border-[var(--border)] rounded-lg cursor-pointer hover:bg-[var(--accent)]">
+                    <input
+                      type="checkbox"
+                      checked={localRagSettings.useProxy}
+                      onChange={(e) => updateRagSettings({ useProxy: e.target.checked })}
+                      className="w-3.5 h-3.5 rounded"
+                    />
+                    <Globe className="h-3 w-3 text-green-400" />
+                    Use server proxy (for remote access via Cloudflare)
+                  </label>
                 </div>
               )}
             </div>

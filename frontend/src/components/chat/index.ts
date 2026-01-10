@@ -9,4 +9,4 @@ export { ArtifactRenderer, extractArtifacts, getArtifactType } from './artifact-
 export { ArtifactViewer, ArtifactPanel, MiniArtifactCard } from './artifact-panel';
 export type { Attachment, MCPServer } from './tool-belt';
 export type { MCPServerConfig } from './mcp-settings-modal';
-export type { DeepResearchSettings } from './chat-settings-modal';
+export type { DeepResearchSettings, RAGSettings } from './chat-settings-modal';
