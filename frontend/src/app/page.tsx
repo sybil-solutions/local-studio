@@ -130,7 +130,7 @@ export default function Dashboard() {
     <div className="min-h-screen bg-[#1b1b1b] text-[#f0ebe3]">
       {/* Connection Warning */}
       {!isConnected && (
-        <div className="fixed top-14 right-4 z-50 px-3 py-1.5 bg-[#c9a66b]/10 text-[#c9a66b] text-sm rounded">
+        <div className="fixed top-4 right-4 z-50 px-3 py-1.5 bg-[#c9a66b]/10 text-[#c9a66b] text-sm rounded">
           Reconnecting... ({reconnectAttempts})
         </div>
       )}
