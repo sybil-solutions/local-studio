@@ -27,6 +27,7 @@ import {
   Brain,
   Wrench,
   Clock,
+  Menu,
 } from 'lucide-react';
 import Link from 'next/link';
 import api from '@/lib/api';
@@ -208,7 +209,9 @@ export default function ChatPage() {
 
   // Refs
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const [userScrolledUp, setUserScrolledUp] = useState(false);
 
   // Computed: Check if there's any tool activity to show in the panel
   const hasToolActivity = messages.some(m => m.toolCalls && m.toolCalls.length > 0) || executingTools.size > 0 || researchProgress !== null;
@@ -324,9 +327,36 @@ export default function ChatPage() {
     }
   };
 
+  // Auto-scroll only if user hasn't scrolled up
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+    if (!userScrolledUp) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [messages, userScrolledUp]);
+
+  // Track user scroll position
+  const handleScroll = () => {
+    const container = messagesContainerRef.current;
+    if (!container) return;
+
+    const { scrollTop, scrollHeight, clientHeight } = container;
+    const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
+
+    // If user is within 100px of bottom, they're "at bottom"
+    if (distanceFromBottom < 100) {
+      setUserScrolledUp(false);
+    } else {
+      setUserScrolledUp(true);
+    }
+  };
+
+  // Reset scroll state when loading new session or sending new message
+  useEffect(() => {
+    if (isLoading) {
+      // When starting to load, scroll to bottom
+      setUserScrolledUp(false);
+    }
+  }, [currentSessionId]);
 
   useEffect(() => {
     if (mcpEnabled) {
@@ -1721,18 +1751,17 @@ Start your research immediately when you receive a question. Do not ask for clar
 
       {/* Main Chat Area */}
       <div className={`flex-1 flex flex-col min-h-0 overflow-x-hidden ${isMobile ? '' : sidebarCollapsed ? 'md:ml-12' : 'md:ml-60'} `}>
-        {/* Unified Header - different layout for mobile vs desktop */}
+        {/* Mobile Header only - Desktop has everything in sidebar */}
+        {isMobile && (
         <div className={`relative z-40 bg-[var(--card)] border-b border-[var(--border)] flex-shrink-0`}
-          style={isMobile ? { paddingTop: 'env(safe-area-inset-top, 0)' } : undefined}
+          style={{ paddingTop: 'env(safe-area-inset-top, 0)' }}
         >
-          <div className="flex items-center justify-between gap-2 px-2 md:px-4 py-1.5 md:py-2 w-full">
+          <div className="flex items-center justify-between gap-2 px-2 py-1.5 w-full">
             <div className="flex items-center gap-1.5 min-w-0 flex-1">
-              {/* Mobile: Logo + Recent Chats Dropdown */}
-              {isMobile && (
-                <>
-                  <Link href="/" className="p-1.5 -ml-1 rounded-lg hover:bg-[var(--accent)] transition-colors flex-shrink-0">
-                    <Layers className="h-5 w-5 text-[#9a9590]" />
-                  </Link>
+              {/* Logo + Recent Chats Dropdown */}
+              <Link href="/" className="p-1.5 -ml-1 rounded-lg hover:bg-[var(--accent)] transition-colors flex-shrink-0">
+                <Layers className="h-5 w-5 text-[#9a9590]" />
+              </Link>
                   <div className="relative flex-1 min-w-0">
                     <button
                       onClick={() => setRecentChatsOpen(!recentChatsOpen)}
@@ -1810,210 +1839,21 @@ Start your research immediately when you receive a question. Do not ask for clar
                       </>
                     )}
                   </div>
-                </>
-              )}
-
-              {/* Desktop: Title editing */}
-              {!isMobile && (
-                <>
-                  {editingTitle ? (
-                    <div className="flex items-center gap-2 min-w-0">
-                      <input
-                        value={titleDraft}
-                        onChange={(e) => setTitleDraft(e.target.value)}
-                        className="px-2 py-1 text-sm bg-[var(--background)] border border-[var(--border)] rounded-lg focus:outline-none focus:border-[var(--foreground)] min-w-0 w-64"
-                        placeholder="Chat title"
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') saveTitle();
-                          if (e.key === 'Escape') setEditingTitle(false);
-                        }}
-                        autoFocus
-                      />
-                      <button
-                        onClick={saveTitle}
-                        className="p-1.5 rounded hover:bg-[var(--accent)] transition-colors"
-                        title="Save title"
-                      >
-                        <CheckCircle2 className="h-4 w-4 text-[var(--success)]" />
-                      </button>
-                      <button
-                        onClick={() => setEditingTitle(false)}
-                        className="p-1.5 rounded hover:bg-[var(--accent)] transition-colors"
-                        title="Cancel"
-                      >
-                        <X className="h-4 w-4 text-[#9a9590]" />
-                      </button>
-                    </div>
-                  ) : (
-                    <>
-                      <div className="text-sm font-medium truncate" title={currentSessionTitle}>
-                        {currentSessionTitle || 'Chat'}
-                      </div>
-                      {currentSessionId && (
-                        <button
-                          onClick={() => {
-                            setTitleDraft(currentSessionTitle);
-                            setEditingTitle(true);
-                          }}
-                          className="p-1 rounded hover:bg-[var(--accent)] transition-colors"
-                          title="Rename chat"
-                        >
-                          <Pencil className="h-3.5 w-3.5 text-[#9a9590]" />
-                        </button>
-                      )}
-
-                      {/* Model Selector Dropdown */}
-                      {availableModels.length > 0 && (
-                        <div className="relative">
-                          <button
-                            onClick={() => setModelSelectorOpen(!modelSelectorOpen)}
-                            className="flex items-center gap-1.5 px-2 py-1 text-xs border border-[var(--border)] rounded hover:bg-[var(--accent)] transition-colors"
-                          >
-                            <span className="font-medium">
-                              {selectedModel?.split('/').pop() || runningModel?.split('/').pop() || 'Select Model'}
-                            </span>
-                            <ChevronDown className="h-3 w-3 text-[#9a9590]" />
-                          </button>
-
-                          {modelSelectorOpen && (
-                            <>
-                              <div className="fixed inset-0 z-40" onClick={() => setModelSelectorOpen(false)} />
-                              <div className="absolute left-0 top-full mt-1 w-64 bg-[var(--card)] border border-[var(--border)] rounded-lg shadow-lg z-50 max-h-80 overflow-hidden flex flex-col">
-                                <div className="p-2 border-b border-[var(--border)]">
-                                  <input
-                                    type="text"
-                                    placeholder="Search models..."
-                                    value={modelSearchQuery}
-                                    onChange={(e) => setModelSearchQuery(e.target.value)}
-                                    className="w-full px-2 py-1 text-xs bg-[var(--background)] border border-[var(--border)] rounded focus:outline-none focus:border-[var(--foreground)]"
-                                  />
-                                </div>
-                                <div className="overflow-y-auto flex-1 p-1">
-                                  {availableModels
-                                    .filter(m => 
-                                      m.id.toLowerCase().includes(modelSearchQuery.toLowerCase()) ||
-                                      (m.root && m.root.toLowerCase().includes(modelSearchQuery.toLowerCase()))
-                                    )
-                                    .map((model) => (
-                                      <button
-                                        key={model.id}
-                                        onClick={() => {
-                                          setSelectedModel(model.id);
-                                          setModelSelectorOpen(false);
-                                          setModelSearchQuery('');
-                                        }}
-                                        className={`w-full px-3 py-2 text-left rounded transition-colors ${
-                                          selectedModel === model.id
-                                            ? 'bg-[var(--accent)] text-[var(--foreground)]'
-                                            : 'hover:bg-[var(--card-hover)]'
-                                        }`}
-                                      >
-                                        <div className="text-xs font-medium truncate">
-                                          {model.id.split('/').pop()}
-                                        </div>
-                                        {model.root && (
-                                          <div className="text-[10px] text-[#9a9590] truncate">
-                                            {model.root}
-                                          </div>
-                                        )}
-                                      </button>
-                                    ))}
-                                </div>
-                              </div>
-                            </>
-                          )}
-                        </div>
-                      )}
-                    </>
-                  )}
-                </>
-              )}
             </div>
 
-            <div className="flex items-center gap-0.5 md:gap-2 flex-shrink-0">
-              {/* Message Search */}
-              <button
-                onClick={() => setMessageSearchOpen(!messageSearchOpen)}
-                className="p-1.5 md:p-2 rounded hover:bg-[var(--accent)] transition-colors"
-                title="Search messages"
-              >
-                <Search className="h-5 w-5 md:h-4 md:w-4 text-[#9a9590]" />
-              </button>
-
-              {/* Theme Toggle */}
+            <div className="flex items-center gap-1 flex-shrink-0">
               <ThemeToggle />
-
-              {/* Usage (desktop only) */}
-              {!isMobile && currentSessionId && sessionUsage && (
-                <button
-                  onClick={() => setUsageDetailsOpen(true)}
-                  className="text-[10px] font-mono text-[#9a9590] hover:text-[var(--foreground)] transition-colors"
-                  title="Usage details"
-                >
-                  {sessionUsage.total_tokens.toLocaleString()} tok
-                  {sessionUsage.estimated_cost_usd != null ? ` • $${sessionUsage.estimated_cost_usd.toFixed(4)}` : ''}
-                </button>
-              )}
-
-
-              {/* Context Usage Meter */}
-              {!isMobile && contextUsage.currentTokens > 0 && (
-                <div className="flex items-center gap-2 text-[10px] font-mono text-[#9a9590]" title={`Context: ${contextUsage.currentTokens.toLocaleString()} / ${contextUsage.maxTokens.toLocaleString()} tokens${contextUsage.compactionCount > 0 ? ` (compacted ${contextUsage.compactionCount}x)` : ""}`}>
-                  <div className="w-16 h-1.5 bg-[var(--border)] rounded-full overflow-hidden">
-                    <div
-                      className={`h-full rounded-full transition-all ${
-                        contextUsage.currentTokens / contextUsage.maxTokens > 0.8
-                          ? "bg-orange-500"
-                          : contextUsage.currentTokens / contextUsage.maxTokens > 0.6
-                          ? "bg-yellow-500"
-                          : "bg-emerald-500"
-                      }`}
-                      style={{ width: `${Math.min(100, (contextUsage.currentTokens / contextUsage.maxTokens) * 100)}%` }}
-                    />
-                  </div>
-                  <span>{Math.round((contextUsage.currentTokens / contextUsage.maxTokens) * 100)}%</span>
-                  {contextUsage.compactionCount > 0 && (
-                    <span className="text-orange-400">⚡{contextUsage.compactionCount}</span>
-                  )}
-                </div>
-              )}
-
-              {/* Action buttons */}
               <button
-                onClick={() => setChatSettingsOpen(true)}
-                className="p-1.5 md:p-2 rounded hover:bg-[var(--accent)] transition-colors"
-                title="Chat settings"
+                onClick={() => setSidebarCollapsed(false)}
+                className="p-1.5 rounded hover:bg-[var(--accent)] transition-colors"
+                title="Open sidebar"
               >
-                <Settings className="h-5 w-5 md:h-4 md:w-4 text-[#9a9590]" />
-              </button>
-              {!isMobile && (
-                <>
-                  <button
-                    onClick={() => setExportOpen(true)}
-                    className="p-2 rounded border border-[var(--border)] hover:bg-[var(--accent)] transition-colors"
-                    title="Export chat"
-                  >
-                    <Download className="h-4 w-4 text-[#9a9590]" />
-                  </button>
-                  <button
-                    onClick={() => setUsageDetailsOpen(true)}
-                    className="p-2 rounded border border-[var(--border)] hover:bg-[var(--accent)] transition-colors"
-                    title="Usage details"
-                  >
-                    <BarChart3 className="h-4 w-4 text-[#9a9590]" />
-                  </button>
-                </>
-              )}
-              <button
-                onClick={createSession}
-                className="p-1.5 md:p-2 rounded hover:bg-[var(--accent)] transition-colors"
-                title="New chat"
-              >
-                <Plus className="h-5 w-5 md:h-4 md:w-4 text-[#9a9590]" />
+                <Menu className="h-5 w-5 text-[#9a9590]" />
               </button>
             </div>
           </div>
         </div>
+        )}
 
         {/* Main Content + Tool Panel Container */}
         <div className="flex-1 flex overflow-hidden relative">
@@ -2047,7 +1887,11 @@ Start your research immediately when you receive a question. Do not ask for clar
           {/* Left side: Messages + Input */}
           <div className="flex-1 flex flex-col overflow-hidden relative">
             {/* Messages Area */}
-            <div className="flex-1 overflow-y-auto overflow-x-hidden">
+            <div
+              ref={messagesContainerRef}
+              onScroll={handleScroll}
+              className="flex-1 overflow-y-auto overflow-x-hidden"
+            >
             <div className="pb-4">
             {messages.length === 0 ? (
               <div className="flex items-center justify-center min-h-[60vh]">

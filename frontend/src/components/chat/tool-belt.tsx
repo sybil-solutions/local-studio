@@ -236,7 +236,7 @@ export function ToolBelt({
   };
 
   return (
-    <div className="px-2 md:px-3 pb-[max(4px,env(safe-area-inset-bottom))] bg-[var(--background)]">
+    <div className="px-2 md:px-3 pb-[env(safe-area-inset-bottom)] md:pb-0 bg-[var(--background)]">
       <div className="max-w-4xl mx-auto w-full">
         {/* Attachments Preview */}
         {attachments.length > 0 && (
@@ -412,7 +412,7 @@ export function ToolBelt({
                 disabled={disabled}
                 className={`flex items-center gap-1.5 px-2 py-1.5 md:px-2 md:py-1 rounded-lg transition-all disabled:opacity-50 ${
                   mcpEnabled
-                    ? 'bg-[var(--accent)] text-[var(--foreground)]'
+                    ? 'bg-purple-500/10 text-purple-400 dark:text-purple-300'
                     : 'hover:bg-[var(--accent)] text-[#9a9590]'
                 }`}
                 title={mcpEnabled ? 'Disable web search & tools' : 'Enable web search & tools'}
@@ -427,7 +427,7 @@ export function ToolBelt({
                 disabled={disabled}
                 className={`flex items-center gap-1.5 px-2 py-1.5 md:px-2 md:py-1 rounded-lg transition-all disabled:opacity-50 ${
                   artifactsEnabled
-                    ? 'bg-[var(--accent)] text-[var(--foreground)]'
+                    ? 'bg-purple-500/10 text-purple-400 dark:text-purple-300'
                     : 'hover:bg-[var(--accent)] text-[#9a9590]'
                 }`}
                 title={artifactsEnabled ? 'Disable code preview' : 'Enable code preview & sandbox'}
@@ -443,7 +443,7 @@ export function ToolBelt({
                   disabled={disabled}
                   className={`flex items-center gap-1.5 px-2 py-1.5 md:px-2 md:py-1 rounded-lg transition-all disabled:opacity-50 ${
                     deepResearchEnabled
-                      ? 'bg-[var(--accent)] text-[var(--foreground)]'
+                      ? 'bg-purple-500/10 text-purple-400 dark:text-purple-300'
                       : 'hover:bg-[var(--accent)] text-[#9a9590]'
                   }`}
                   title={deepResearchEnabled ? 'Deep Research enabled' : 'Enable Deep Research mode'}
@@ -467,11 +467,7 @@ export function ToolBelt({
               <button
                 onClick={onOpenChatSettings}
                 disabled={disabled}
-                className={`flex items-center gap-1.5 px-2 py-1 rounded-lg transition-all disabled:opacity-50 ${
-                  hasSystemPrompt
-                    ? 'bg-[var(--accent)] text-[var(--foreground)]'
-                    : 'hover:bg-[var(--accent)] text-[#9a9590]'
-                }`}
+                className="flex items-center gap-1.5 px-2 py-1 rounded-lg transition-all disabled:opacity-50 hover:bg-[var(--accent)] text-[#9a9590]"
                 title={hasSystemPrompt ? 'System prompt active' : 'Configure system prompt'}
               >
                 <SlidersHorizontal className="h-3.5 w-3.5" />

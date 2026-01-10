@@ -252,7 +252,7 @@ export function ChatSidebar({
 
           {/* Navigation */}
           <div className="px-2 py-2 border-b border-[var(--border)]">
-            <div className="grid grid-cols-3 gap-1">
+            <div className="space-y-0.5">
               {navItems.map((item) => {
                 const Icon = item.icon;
                 const isActive = pathname === item.href;
@@ -261,14 +261,14 @@ export function ChatSidebar({
                     key={item.href}
                     href={item.href}
                     onClick={onToggleCollapse}
-                    className={`flex flex-col items-center gap-1 px-2 py-2 rounded-lg transition-colors ${
+                    className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-colors ${
                       isActive
                         ? 'bg-[var(--accent)] text-[var(--foreground)]'
                         : 'text-[#9a9590] hover:text-[var(--foreground)] hover:bg-[var(--accent)]'
                     }`}
                   >
                     <Icon className="h-4 w-4" />
-                    <span className="text-[10px] font-medium">{item.label}</span>
+                    <span className="text-sm font-medium">{item.label}</span>
                   </Link>
                 );
               })}

@@ -1,25 +1,25 @@
 @import "tailwindcss";
 
 :root {
-  /* Warm Paper Design v2 - Light Mode (Improved Readability) */
-  --background: hsl(40, 25%, 94%);
-  --foreground: hsl(30, 10%, 20%);
-  --muted: hsl(35, 15%, 50%);
-  --muted-foreground: hsl(35, 12%, 40%);
-  --border: hsl(35, 15%, 82%);
-  --card: hsl(40, 20%, 92%);
-  --card-hover: hsl(40, 15%, 88%);
-  --accent: hsl(35, 15%, 85%);
-  --accent-hover: hsl(35, 20%, 80%);
-  --accent-foreground: hsl(30, 15%, 15%);
-  --success: hsl(142, 50%, 40%);
-  --warning: hsl(38, 92%, 50%);
-  --error: hsl(0, 65%, 50%);
+  /* Warm Paper Design v2 - Light Mode (High Readability) */
+  --background: hsl(40, 20%, 96%);
+  --foreground: hsl(30, 15%, 12%);
+  --muted: hsl(35, 10%, 35%);
+  --muted-foreground: hsl(35, 10%, 30%);
+  --border: hsl(35, 12%, 80%);
+  --card: hsl(40, 15%, 94%);
+  --card-hover: hsl(40, 12%, 90%);
+  --accent: hsl(35, 12%, 88%);
+  --accent-hover: hsl(35, 15%, 82%);
+  --accent-foreground: hsl(30, 15%, 10%);
+  --success: hsl(142, 50%, 35%);
+  --warning: hsl(38, 90%, 45%);
+  --error: hsl(0, 65%, 45%);
   --ring: hsl(30, 20%, 25%);
-  --link: hsl(270, 30%, 45%);
-  --link-hover: hsl(270, 35%, 40%);
-  --accent-purple: hsl(270, 25%, 92%);
-  --accent-purple-shine: hsl(270, 30%, 88%);
+  --link: hsl(270, 35%, 40%);
+  --link-hover: hsl(270, 40%, 35%);
+  --accent-purple: hsl(270, 20%, 94%);
+  --accent-purple-shine: hsl(270, 25%, 90%);
 }
 
 .dark {
