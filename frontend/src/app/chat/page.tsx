@@ -1718,7 +1718,7 @@ Start your research immediately when you receive a question. Do not ask for clar
 
   return (
     <>
-    <div className="relative h-[100dvh] md:h-[calc(100dvh-3.5rem)] flex flex-col overflow-hidden w-full max-w-full">
+    <div className="relative h-[100dvh] flex flex-col overflow-hidden w-full max-w-full">
       {/* Desktop Sidebar */}
       {!isMobile && (
         <ChatSidebar
