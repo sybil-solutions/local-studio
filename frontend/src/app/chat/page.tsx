@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import {
   Sparkles,
   User,
@@ -44,6 +44,9 @@ import { ThemeToggle } from '@/components/chat/theme-toggle';
 import type { Attachment, MCPServerConfig, DeepResearchSettings, RAGSettings } from '@/components/chat';
 import type { ResearchProgress, ResearchSource } from '@/components/chat/research-progress';
 import { loadState, saveState, debouncedSave } from '@/lib/chat-state-persistence';
+import { useContextManager } from '@/hooks/useContextManager';
+import { ContextIndicator } from '@/components/chat/context-indicator';
+import type { CompactionEvent } from '@/lib/context-manager';
 
 interface Message {
   id: string;
@@ -226,13 +229,35 @@ export default function ChatPage() {
   const [exportOpen, setExportOpen] = useState(false);
   const usageRefreshTimerRef = useRef<number | null>(null);
 
-  // Context management state - tracks token usage for compaction
-  const [contextUsage, setContextUsage] = useState<{
-    currentTokens: number;
-    maxTokens: number;
-    compactionCount: number;
-    lastCompactedAt: number | null;
-  }>({ currentTokens: 0, maxTokens: 200000, compactionCount: 0, lastCompactedAt: null });
+  // Get max context from selected model
+  const maxContext = useMemo(() => {
+    const model = availableModels.find(m => m.id === selectedModel || m.id === runningModel);
+    return model?.max_model_len || 200000;
+  }, [availableModels, selectedModel, runningModel]);
+
+  // Context management hook
+  const contextMessages = useMemo(() =>
+    messages.map(m => ({ role: m.role, content: m.content })),
+    [messages]
+  );
+
+  const handleContextCompact = useCallback((newMessages: Array<{ role: string; content: string }>, event: CompactionEvent) => {
+    // Update messages with compacted version
+    const compactedIds = new Set(
+      newMessages.map((m, i) => messages[messages.length - newMessages.length + i]?.id).filter(Boolean)
+    );
+    setMessages(prev => prev.filter(m => compactedIds.has(m.id) || prev.indexOf(m) >= prev.length - newMessages.length));
+    console.log(`Context compacted: ${event.beforeTokens} → ${event.afterTokens} tokens (${event.messagesRemoved} messages removed)`);
+  }, [messages]);
+
+  const contextManager = useContextManager({
+    messages: contextMessages,
+    maxContext,
+    systemPrompt,
+    tools: mcpEnabled ? mcpTools : undefined,
+    onCompact: handleContextCompact,
+    enabled: true,
+  });
 
   // Refs
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -469,11 +494,7 @@ export default function ChatPage() {
   }, [isLoading, queuedContext]);
 
   // Recalculate context tokens when messages change (after streaming completes)
-  useEffect(() => {
-    if (!isLoading && messages.length > 0) {
-      recalculateContextTokens(messages);
-    }
-  }, [messages, isLoading]);
+  // Context is now tracked automatically by useContextManager hook
 
   // Extract artifacts from messages when they change
   useEffect(() => {
@@ -582,41 +603,6 @@ export default function ChatPage() {
     }, 350);
   };
 
-  // Recalculate context tokens from current messages
-  // Uses stored token values from API responses, falls back to character-based estimate
-  const recalculateContextTokens = (msgs: Message[]) => {
-    if (msgs.length === 0) {
-      setContextUsage(prev => ({ ...prev, currentTokens: 0 }));
-      return;
-    }
-
-    let totalTokens = 0;
-    let hasStoredTokens = false;
-
-    for (const m of msgs) {
-      // Prefer stored token values from API responses
-      const msgTokens = m.request_total_input_tokens ?? m.request_prompt_tokens ?? m.total_tokens ?? m.prompt_tokens;
-      if (msgTokens && msgTokens > 0) {
-        // For assistant messages, add completion tokens too
-        if (m.role === 'assistant') {
-          const compTokens = m.request_completion_tokens ?? m.completion_tokens ?? 0;
-          totalTokens += compTokens;
-        }
-        hasStoredTokens = true;
-      }
-    }
-
-    // If we have stored tokens, use them. Otherwise estimate from content.
-    if (hasStoredTokens && totalTokens > 0) {
-      setContextUsage(prev => ({ ...prev, currentTokens: totalTokens }));
-    } else {
-      // Rough estimate: ~4 characters per token (common for English text)
-      const totalChars = msgs.reduce((sum, m) => sum + (m.content?.length || 0), 0);
-      const estimatedTokens = Math.ceil(totalChars / 4);
-      setContextUsage(prev => ({ ...prev, currentTokens: estimatedTokens }));
-    }
-  };
-
   const loadSession = async (sessionId: string) => {
     try {
       const data = await api.getChatSession(sessionId);
@@ -688,8 +674,7 @@ export default function ChatPage() {
       setEditingTitle(false);
       setTitleDraft(session.title || '');
       refreshUsage(sessionId);
-      // Recalculate context tokens for loaded messages
-      recalculateContextTokens(loadedMessages);
+      // Context tokens are now tracked automatically by useContextManager
     } catch (e) {
       console.error('Failed to load session:', e);
       setError('Failed to load conversation');
@@ -703,7 +688,7 @@ export default function ChatPage() {
     setSelectedModel(runningModel || availableModels[0]?.id || '');
     setCurrentSessionTitle('New Chat');
     setSessionUsage(null);
-    setContextUsage(prev => ({ ...prev, currentTokens: 0 }));
+    // Context is reset automatically when messages are cleared
     setEditingTitle(false);
     setTitleDraft('');
     setTimeout(() => {
@@ -983,7 +968,7 @@ Start your research immediately when you receive a question. Do not ask for clar
     // Check if we need compaction (80% threshold)
     const threshold = maxContextTokens * 0.8;
     if (tokensBefore < threshold) {
-      setContextUsage(prev => ({ ...prev, currentTokens: tokensBefore }));
+      // Context tracking is handled by useContextManager hook
       return { compacted: messages, wasCompacted: false, tokensBefore, tokensAfter: tokensBefore };
     }
 
@@ -1056,13 +1041,7 @@ Start your research immediately when you receive a question. Do not ask for clar
     }
 
     console.log(`[Compaction] Reduced from ${tokensBefore} to ${tokensAfter} tokens (saved ${tokensBefore - tokensAfter})`);
-
-    setContextUsage(prev => ({
-      ...prev,
-      currentTokens: tokensAfter,
-      compactionCount: prev.compactionCount + 1,
-      lastCompactedAt: Date.now(),
-    }));
+    // Context tracking is handled by useContextManager hook
 
     return { compacted, wasCompacted: true, tokensBefore, tokensAfter };
   };
@@ -1378,7 +1357,6 @@ Start your research immediately when you receive a question. Do not ask for clar
         // Check and compact context if needed (80% threshold)
         const modelInfo = availableModels.find(m => m.id === activeModelId);
         const maxContextTokens = modelInfo?.max_model_len || 200000;
-        setContextUsage(prev => ({ ...prev, maxTokens: maxContextTokens }));
 
         const { compacted, wasCompacted, tokensBefore, tokensAfter } = await compactContext(
           conversationMessages,
@@ -1403,8 +1381,6 @@ Start your research immediately when you receive a question. Do not ask for clar
             tools: toolsForTokenize as unknown[] | undefined,
           });
           requestTotalInputTokens = tok.input_tokens ?? null;
-          // Update context usage display
-          if (tok.input_tokens) setContextUsage(prev => ({ ...prev, currentTokens: tok.input_tokens! }));
           requestPromptTokens = tok.breakdown?.messages ?? null;
           requestToolsTokens = tok.breakdown?.tools ?? null;
         } catch (e) {
@@ -2320,14 +2296,18 @@ Start your research immediately when you receive a question. Do not ask for clar
                       )}
                     </div>
 
-                    {/* Token usage */}
-                    <div className="flex items-center gap-2 text-[10px] text-[#6a6560] font-mono tabular-nums">
-                      <div className="flex items-center gap-1" title="Context tokens used / available">
-                        <Layers className="h-3 w-3" />
-                        <span>{contextUsage.currentTokens.toLocaleString()}</span>
-                        <span>/</span>
-                        <span>{contextUsage.maxTokens.toLocaleString()}</span>
-                      </div>
+                    {/* Context usage indicator */}
+                    <div className="flex items-center gap-2">
+                      <ContextIndicator
+                        stats={contextManager.stats}
+                        config={contextManager.config}
+                        onCompact={contextManager.compact}
+                        onUpdateConfig={contextManager.updateConfig}
+                        isWarning={contextManager.isWarning}
+                        isCritical={contextManager.isCritical}
+                        canSendMessage={contextManager.canSendMessage}
+                        utilizationLevel={contextManager.utilizationLevel}
+                      />
                       {sessionUsage && (
                         <>
                           <span className="text-[#4a4540]">•</span>
