@@ -33,9 +33,9 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import api from '@/lib/api';
-import type { ChatSession, ToolCall, ToolResult, MCPTool } from '@/lib/types';
+import type { ChatSession, ToolCall, ToolResult, MCPTool, Artifact } from '@/lib/types';
 import {
-  MessageRenderer, ChatSidebar, ToolBelt, MCPSettingsModal, ChatSettingsModal } from '@/components/chat';
+  MessageRenderer, ChatSidebar, ToolBelt, MCPSettingsModal, ChatSettingsModal, extractArtifacts, ArtifactPanel } from '@/components/chat';
 import {
   ToolCallCard } from '@/components/chat/tool-call-card';
 import { ResearchProgressIndicator, CitationsPanel } from '@/components/chat/research-progress';
@@ -156,6 +156,8 @@ export default function ChatPage() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const [toolPanelOpen, setToolPanelOpen] = useState(true); // Right panel for tool activity
+  const [activePanel, setActivePanel] = useState<'tools' | 'artifacts'>('tools'); // Tab for right panel
+  const [sessionArtifacts, setSessionArtifacts] = useState<Artifact[]>([]); // All artifacts in session
 
   // MCP & Artifacts state
   const [mcpEnabled, setMcpEnabled] = useState(false);
@@ -217,6 +219,8 @@ export default function ChatPage() {
 
   // Computed: Check if there's any tool activity to show in the panel
   const hasToolActivity = messages.some(m => m.toolCalls && m.toolCalls.length > 0) || executingTools.size > 0 || researchProgress !== null;
+  const hasArtifacts = sessionArtifacts.length > 0;
+  const hasSidePanelContent = hasToolActivity || hasArtifacts;
 
   // Get all tool calls from messages for the panel
   const allToolCalls = messages.flatMap(m =>
@@ -414,6 +418,33 @@ export default function ChatPage() {
       recalculateContextTokens(messages);
     }
   }, [messages, isLoading]);
+
+  // Extract artifacts from messages when they change
+  useEffect(() => {
+    if (!artifactsEnabled || messages.length === 0) {
+      setSessionArtifacts([]);
+      return;
+    }
+    // Extract artifacts from all assistant messages
+    const artifacts: Artifact[] = [];
+    messages.forEach((msg) => {
+      if (msg.role === 'assistant' && msg.content) {
+        const { artifacts: extracted } = extractArtifacts(msg.content);
+        extracted.forEach((artifact) => {
+          artifacts.push({
+            ...artifact,
+            message_id: msg.id,
+            session_id: currentSessionId || undefined,
+          });
+        });
+      }
+    });
+    setSessionArtifacts(artifacts);
+    // Auto-switch to artifacts panel if artifacts detected and none before
+    if (artifacts.length > 0 && sessionArtifacts.length === 0) {
+      setActivePanel('artifacts');
+    }
+  }, [messages, artifactsEnabled, currentSessionId]);
 
   const loadMCPServers = async () => {
     try {
@@ -2195,7 +2226,7 @@ Start your research immediately when you receive a question. Do not ask for clar
           </div>
 
             {/* Panel Toggle Button - When panel is closed */}
-            {!isMobile && hasToolActivity && !toolPanelOpen && (
+            {!isMobile && hasSidePanelContent && !toolPanelOpen && (
               <button
                 onClick={() => setToolPanelOpen(true)}
                 className="absolute right-3 top-3 p-1.5 bg-[var(--card)] border border-[var(--border)] rounded hover:bg-[var(--accent)] transition-colors z-10"
@@ -2244,22 +2275,51 @@ Start your research immediately when you receive a question. Do not ask for clar
             </div>
           </div>
 
-          {/* Tool Activity Panel - Desktop Only - Full height sidebar */}
-          {!isMobile && hasToolActivity && toolPanelOpen && (
-            <div className="w-72 flex-shrink-0 border-l border-[var(--border)] bg-[var(--background)] flex flex-col overflow-hidden">
-              {/* Panel Header */}
-              <div className="flex items-center justify-between px-3 py-2 border-b border-[var(--border)]">
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-medium text-[#9a9590]">Tools</span>
-                  {executingTools.size > 0 && (
-                    <span className="flex items-center gap-1 text-[10px] text-[var(--success)]">
-                      <span className="relative flex h-1.5 w-1.5">
-                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[var(--success)] opacity-75"></span>
-                        <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-[var(--success)]"></span>
+          {/* Side Panel - Desktop Only - Tools & Artifacts */}
+          {!isMobile && hasSidePanelContent && toolPanelOpen && (
+            <div className="w-80 flex-shrink-0 border-l border-[var(--border)] bg-[var(--background)] flex flex-col overflow-hidden">
+              {/* Panel Header with Tabs */}
+              <div className="flex items-center justify-between px-2 py-1.5 border-b border-[var(--border)]">
+                <div className="flex items-center gap-1">
+                  {/* Tools Tab */}
+                  <button
+                    onClick={() => setActivePanel('tools')}
+                    className={`flex items-center gap-1.5 px-2 py-1 rounded text-xs font-medium transition-colors ${
+                      activePanel === 'tools'
+                        ? 'bg-[var(--accent)] text-[var(--foreground)]'
+                        : 'text-[#9a9590] hover:text-[var(--foreground)] hover:bg-[var(--accent)]/50'
+                    }`}
+                  >
+                    <Wrench className="h-3 w-3" />
+                    <span>Tools</span>
+                    {executingTools.size > 0 && (
+                      <span className="flex items-center gap-1 text-[10px] text-[var(--success)]">
+                        <span className="relative flex h-1.5 w-1.5">
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[var(--success)] opacity-75"></span>
+                          <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-[var(--success)]"></span>
+                        </span>
                       </span>
-                      {executingTools.size}
-                    </span>
-                  )}
+                    )}
+                    {allToolCalls.length > 0 && (
+                      <span className="text-[10px] bg-[var(--background)] px-1 rounded">{allToolCalls.length}</span>
+                    )}
+                  </button>
+
+                  {/* Artifacts Tab */}
+                  <button
+                    onClick={() => setActivePanel('artifacts')}
+                    className={`flex items-center gap-1.5 px-2 py-1 rounded text-xs font-medium transition-colors ${
+                      activePanel === 'artifacts'
+                        ? 'bg-[var(--accent)] text-[var(--foreground)]'
+                        : 'text-[#9a9590] hover:text-[var(--foreground)] hover:bg-[var(--accent)]/50'
+                    }`}
+                  >
+                    <Layers className="h-3 w-3" />
+                    <span>Artifacts</span>
+                    {sessionArtifacts.length > 0 && (
+                      <span className="text-[10px] bg-[var(--background)] px-1 rounded">{sessionArtifacts.length}</span>
+                    )}
+                  </button>
                 </div>
                 <button
                   onClick={() => setToolPanelOpen(false)}
@@ -2271,91 +2331,105 @@ Start your research immediately when you receive a question. Do not ask for clar
 
               {/* Panel Content */}
               <div className="flex-1 overflow-y-auto text-sm">
-                {/* Research Progress */}
-                {researchProgress && (
-                  <div className="px-3 py-2 border-b border-[var(--border)] bg-blue-500/5">
-                    <div className="flex items-center gap-2">
-                      <Loader2 className="h-3 w-3 text-blue-500 animate-spin" />
-                      <span className="text-xs">{researchProgress.message || 'Researching...'}</span>
-                    </div>
-                    {researchProgress.totalSteps > 0 && (
-                      <div className="mt-2 h-1 bg-[var(--border)] rounded-full overflow-hidden">
-                        <div className="h-full bg-blue-500 rounded-full transition-all" style={{ width: `${(researchProgress.currentStep / researchProgress.totalSteps) * 100}%` }} />
+                {/* Tools Tab Content */}
+                {activePanel === 'tools' && (
+                  <>
+                    {/* Research Progress */}
+                    {researchProgress && (
+                      <div className="px-3 py-2 border-b border-[var(--border)] bg-blue-500/5">
+                        <div className="flex items-center gap-2">
+                          <Loader2 className="h-3 w-3 text-blue-500 animate-spin" />
+                          <span className="text-xs">{researchProgress.message || 'Researching...'}</span>
+                        </div>
+                        {researchProgress.totalSteps > 0 && (
+                          <div className="mt-2 h-1 bg-[var(--border)] rounded-full overflow-hidden">
+                            <div className="h-full bg-blue-500 rounded-full transition-all" style={{ width: `${(researchProgress.currentStep / researchProgress.totalSteps) * 100}%` }} />
+                          </div>
+                        )}
                       </div>
                     )}
-                  </div>
-                )}
 
-                {/* Tool Calls */}
-                {allToolCalls.map((tc) => {
-                  const result = toolResultsMap.get(tc.id);
-                  const isExecuting = executingTools.has(tc.id);
-                  let args: Record<string, unknown> = {};
-                  try { args = JSON.parse(tc.function.arguments || '{}'); } catch {}
-                  const mainArg = args.query || args.url || args.text || Object.values(args)[0];
-                  const argPreview = typeof mainArg === 'string' ? mainArg : JSON.stringify(mainArg || '');
-                  const parts = tc.function.name.split('__');
-                  const toolName = parts.length > 1 ? parts.slice(1).join('__') : tc.function.name;
+                    {/* Tool Calls */}
+                    {allToolCalls.map((tc) => {
+                      const result = toolResultsMap.get(tc.id);
+                      const isExecuting = executingTools.has(tc.id);
+                      let args: Record<string, unknown> = {};
+                      try { args = JSON.parse(tc.function.arguments || '{}'); } catch {}
+                      const mainArg = args.query || args.url || args.text || Object.values(args)[0];
+                      const argPreview = typeof mainArg === 'string' ? mainArg : JSON.stringify(mainArg || '');
+                      const parts = tc.function.name.split('__');
+                      const toolName = parts.length > 1 ? parts.slice(1).join('__') : tc.function.name;
 
-                  return (
-                    <div key={tc.id} className={`px-3 py-2 border-b border-[var(--border)] ${isExecuting ? 'bg-[var(--warning)]/5' : ''}`}>
-                      <div className="flex items-center gap-2">
-                        {isExecuting ? (
-                          <Loader2 className="h-3 w-3 text-[var(--warning)] animate-spin flex-shrink-0" />
-                        ) : result ? (
-                          result.isError ? (
-                            <X className="h-3 w-3 text-[var(--error)] flex-shrink-0" />
-                          ) : (
-                            <Check className="h-3 w-3 text-[var(--success)] flex-shrink-0" />
-                          )
-                        ) : (
-                          <Wrench className="h-3 w-3 text-[#9a9590] flex-shrink-0" />
-                        )}
-                        <span className="text-xs font-medium truncate">{toolName}</span>
-                      </div>
+                      return (
+                        <div key={tc.id} className={`px-3 py-2 border-b border-[var(--border)] ${isExecuting ? 'bg-[var(--warning)]/5' : ''}`}>
+                          <div className="flex items-center gap-2">
+                            {isExecuting ? (
+                              <Loader2 className="h-3 w-3 text-[var(--warning)] animate-spin flex-shrink-0" />
+                            ) : result ? (
+                              result.isError ? (
+                                <X className="h-3 w-3 text-[var(--error)] flex-shrink-0" />
+                              ) : (
+                                <Check className="h-3 w-3 text-[var(--success)] flex-shrink-0" />
+                              )
+                            ) : (
+                              <Wrench className="h-3 w-3 text-[#9a9590] flex-shrink-0" />
+                            )}
+                            <span className="text-xs font-medium truncate">{toolName}</span>
+                          </div>
 
-                      {argPreview && (
-                        <p className="text-[11px] text-[#9a9590] mt-1 line-clamp-2 break-all pl-5">
-                          {String(argPreview).slice(0, 80)}
-                        </p>
-                      )}
+                          {argPreview && (
+                            <p className="text-[11px] text-[#9a9590] mt-1 line-clamp-2 break-all pl-5">
+                              {String(argPreview).slice(0, 80)}
+                            </p>
+                          )}
 
-                      {result && !isExecuting && (
-                        <div className="mt-1.5 pl-5">
-                          <p className={`text-[11px] font-mono line-clamp-3 ${result.isError ? 'text-[var(--error)]' : 'text-[#9a9590]'}`}>
-                            {result.content.slice(0, 150)}
-                          </p>
+                          {result && !isExecuting && (
+                            <div className="mt-1.5 pl-5">
+                              <p className={`text-[11px] font-mono line-clamp-3 ${result.isError ? 'text-[var(--error)]' : 'text-[#9a9590]'}`}>
+                                {result.content.slice(0, 150)}
+                              </p>
+                            </div>
+                          )}
                         </div>
-                      )}
-                    </div>
-                  );
-                })}
+                      );
+                    })}
 
-                {/* Research Sources */}
-                {researchSources.length > 0 && (
-                  <>
-                    <div className="px-3 py-1.5 text-[10px] uppercase tracking-wider text-[#9a9590] bg-[var(--accent)]/50 border-b border-[var(--border)]">
-                      Sources
-                    </div>
-                    {researchSources.map((source, i) => (
-                      <a
-                        key={i}
-                        href={source.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="block px-3 py-2 border-b border-[var(--border)] hover:bg-[var(--accent)] transition-colors"
-                      >
-                        <div className="text-xs line-clamp-1">{source.title}</div>
-                        <div className="text-[10px] text-[#9a9590] truncate">{source.url}</div>
-                      </a>
-                    ))}
+                    {/* Research Sources */}
+                    {researchSources.length > 0 && (
+                      <>
+                        <div className="px-3 py-1.5 text-[10px] uppercase tracking-wider text-[#9a9590] bg-[var(--accent)]/50 border-b border-[var(--border)]">
+                          Sources
+                        </div>
+                        {researchSources.map((source, i) => (
+                          <a
+                            key={i}
+                            href={source.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="block px-3 py-2 border-b border-[var(--border)] hover:bg-[var(--accent)] transition-colors"
+                          >
+                            <div className="text-xs line-clamp-1">{source.title}</div>
+                            <div className="text-[10px] text-[#9a9590] truncate">{source.url}</div>
+                          </a>
+                        ))}
+                      </>
+                    )}
+
+                    {allToolCalls.length === 0 && !researchProgress && researchSources.length === 0 && (
+                      <div className="px-3 py-6 text-center text-xs text-[#9a9590]">
+                        No tool activity yet
+                      </div>
+                    )}
                   </>
                 )}
 
-                {allToolCalls.length === 0 && !researchProgress && researchSources.length === 0 && (
-                  <div className="px-3 py-6 text-center text-xs text-[#9a9590]">
-                    No activity yet
-                  </div>
+                {/* Artifacts Tab Content */}
+                {activePanel === 'artifacts' && (
+                  <ArtifactPanel
+                    artifacts={sessionArtifacts}
+                    isOpen={true}
+                    onClose={() => setActivePanel('tools')}
+                  />
                 )}
               </div>
             </div>

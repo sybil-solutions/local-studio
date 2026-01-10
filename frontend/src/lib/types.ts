@@ -237,4 +237,8 @@ export interface Artifact {
   output?: string;
   error?: string;
   isRunning?: boolean;
+  // For database storage
+  session_id?: string;
+  message_id?: string;
+  created_at?: string;
 }

@@ -6,6 +6,7 @@ export { ChatSettingsModal } from './chat-settings-modal';
 export { ToolCallCard, ToolCallsDisplay } from './tool-call-card';
 export { CodeSandbox } from './code-sandbox';
 export { ArtifactRenderer, extractArtifacts, getArtifactType } from './artifact-renderer';
+export { ArtifactViewer, ArtifactPanel, MiniArtifactCard } from './artifact-panel';
 export type { Attachment, MCPServer } from './tool-belt';
 export type { MCPServerConfig } from './mcp-settings-modal';
 export type { DeepResearchSettings } from './chat-settings-modal';
