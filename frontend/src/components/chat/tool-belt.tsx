@@ -170,24 +170,24 @@ export function ToolBelt({
       setIsTranscribing(true);
       setTranscriptionError(null);
 
-      // Get API key from localStorage
+      // Get API key from localStorage (same key used for api.homelabai.org)
       const apiKey = typeof window !== 'undefined'
         ? window.localStorage.getItem('vllmstudio_api_key') || ''
         : '';
-
-      if (!apiKey) {
-        throw new Error('No API key configured');
-      }
 
       const formData = new FormData();
       formData.append('file', audioBlob, 'recording.webm');
       formData.append('model', 'whisper-1');
 
+      // Build headers - include auth if API key is set
+      const headers: Record<string, string> = {};
+      if (apiKey) {
+        headers['Authorization'] = `Bearer ${apiKey}`;
+      }
+
       const response = await fetch('REDACTED/v1/audio/transcriptions', {
         method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${apiKey}`,
-        },
+        headers,
         body: formData,
       });
 
