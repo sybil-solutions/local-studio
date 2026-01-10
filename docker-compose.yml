@@ -119,4 +119,5 @@ services:
       - API_KEY=${VLLM_STUDIO_API_KEY:-}
       - NEXT_PUBLIC_LITELLM_URL=${NEXT_PUBLIC_LITELLM_URL:-http://localhost:4100}
       - EXA_API_KEY=${EXA_API_KEY:-}
+      - RAG_ENDPOINT=${RAG_ENDPOINT:-http://localhost:3002}
     restart: unless-stopped
