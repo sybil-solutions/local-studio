@@ -6,8 +6,10 @@ import {
   Activity,
   Calculator,
   ChevronDown,
+  ChevronLeft,
   ChevronRight,
   Copy,
+  Menu,
   Plus,
   RefreshCw,
   Save,
@@ -48,6 +50,7 @@ function RecipesContent() {
   const startNew = searchParams.get('new') === '1';
   const [tab, setTab] = useState<Tab>('recipes');
   const [sidebarView, setSidebarView] = useState<'recipes' | 'models'>('recipes');
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -165,6 +168,7 @@ function RecipesContent() {
     setExtraArgsText(JSON.stringify(recipe.extra_args || {}, null, 2));
     setEnvVarsText(JSON.stringify(recipe.env_vars || {}, null, 2));
     setJsonError(null);
+    setSidebarOpen(false); // Close sidebar on mobile when selecting
   }, []);
 
   const startNewRecipe = useCallback(() => {
@@ -176,6 +180,7 @@ function RecipesContent() {
     setExtraArgsText('{}');
     setEnvVarsText('{}');
     setJsonError(null);
+    setSidebarOpen(false); // Close sidebar on mobile
   }, []);
 
   // Delete a recipe by ID directly (inline confirmation in UI)
@@ -498,7 +503,8 @@ function RecipesContent() {
   }
 
   return (
-    <div className="h-full overflow-auto bg-[#1b1b1b] text-[#f0ebe3] p-4 md:p-6">
+    <div className="h-full overflow-hidden bg-[#1b1b1b] text-[#f0ebe3] flex flex-col">
+      <div className="flex-1 overflow-auto p-3 sm:p-4 md:p-6 pb-[calc(1rem+env(safe-area-inset-bottom))]">
       <div className="max-w-7xl mx-auto space-y-4">
         {/* Header */}
         <div className="flex items-center justify-between gap-3">
@@ -626,15 +632,30 @@ function RecipesContent() {
             </div>
           </div>
         ) : (
-          <div className="grid lg:grid-cols-3 gap-4">
-            {/* Recipe List */}
-            <section className="lg:col-span-1 bg-[#1e1e1e] border border-[#363432] rounded-lg overflow-hidden">
+          <div className="flex gap-4 relative">
+            {/* Mobile Overlay */}
+            {sidebarOpen && (
+              <div
+                className="fixed inset-0 bg-black/50 z-20 lg:hidden"
+                onClick={() => setSidebarOpen(false)}
+              />
+            )}
+
+            {/* Recipe List Sidebar */}
+            <section className={`
+              fixed lg:relative inset-y-0 left-0 z-30 lg:z-auto
+              w-80 lg:w-80 lg:flex-shrink-0
+              bg-[#1e1e1e] border-r lg:border border-[#363432] lg:rounded-lg overflow-hidden
+              transform transition-transform duration-200 ease-in-out
+              ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
+              flex flex-col
+            `}>
               <div className="p-3 border-b border-[#363432] space-y-2">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-1">
                     <button
                       onClick={() => setSidebarView('recipes')}
-                      className={`px-2 py-1 rounded text-xs transition-colors ${
+                      className={`px-2 py-1.5 rounded text-xs transition-colors ${
                         sidebarView === 'recipes'
                           ? 'bg-[#2a2826] text-[#f0ebe3]'
                           : 'text-[#9a9088] hover:bg-[#1b1b1b]'
@@ -644,7 +665,7 @@ function RecipesContent() {
                     </button>
                     <button
                       onClick={() => setSidebarView('models')}
-                      className={`px-2 py-1 rounded text-xs transition-colors ${
+                      className={`px-2 py-1.5 rounded text-xs transition-colors ${
                         sidebarView === 'models'
                           ? 'bg-[#2a2826] text-[#f0ebe3]'
                           : 'text-[#9a9088] hover:bg-[#1b1b1b]'
@@ -653,15 +674,23 @@ function RecipesContent() {
                       Models ({models.length})
                     </button>
                   </div>
-                  <button
-                    onClick={() => {
-                      router.replace('/recipes?new=1');
-                      startNewRecipe();
-                    }}
-                    className="flex items-center gap-1 px-2 py-1 text-xs bg-[#8b7355] text-white rounded hover:bg-[#8b7355]/90"
-                  >
-                    <Plus className="h-3 w-3" /> New
-                  </button>
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => {
+                        router.replace('/recipes?new=1');
+                        startNewRecipe();
+                      }}
+                      className="flex items-center gap-1 px-2.5 py-1.5 text-xs bg-[#8b7355] text-white rounded hover:bg-[#8b7355]/90"
+                    >
+                      <Plus className="h-3 w-3" /> New
+                    </button>
+                    <button
+                      onClick={() => setSidebarOpen(false)}
+                      className="lg:hidden p-1.5 hover:bg-[#2a2826] rounded"
+                    >
+                      <ChevronLeft className="h-4 w-4 text-[#9a9088]" />
+                    </button>
+                  </div>
                 </div>
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-[#9a9088]" />
@@ -719,7 +748,7 @@ function RecipesContent() {
                   </div>
                 )}
               </div>
-              <div className="max-h-[calc(100vh-16rem)] overflow-auto">
+              <div className="flex-1 overflow-auto">
                 {sidebarView === 'recipes' ? (
                   filteredRecipes.length === 0 ? (
                     <div className="p-6 text-sm text-center text-[#9a9088]">No recipes found</div>
@@ -744,7 +773,7 @@ function RecipesContent() {
                               selectRecipe(r);
                               setRecipeMenuOpen(null);
                             }}
-                            className="w-full text-left p-3 pr-10"
+                            className="w-full text-left p-3 sm:p-3 pr-12"
                           >
                             <div className="flex items-center justify-between gap-2">
                               <div className="min-w-0 flex items-center gap-2">
@@ -770,21 +799,21 @@ function RecipesContent() {
                             <div className="text-xs text-[#9a9088]/70 mt-1 truncate">{r.model_path}</div>
                           </button>
 
-                          {/* Actions menu button */}
+                          {/* Actions menu button - always visible on mobile, hover on desktop */}
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
                               setRecipeMenuOpen(isMenuOpen ? null : r.id);
                               setDeleteConfirm(null);
                             }}
-                            className="absolute right-2 top-3 p-1.5 rounded hover:bg-[#363432] opacity-0 group-hover:opacity-100 transition-opacity"
+                            className="absolute right-2 top-3 p-2 rounded hover:bg-[#363432] sm:opacity-0 sm:group-hover:opacity-100 transition-opacity"
                           >
                             <MoreVertical className="h-4 w-4 text-[#9a9088]" />
                           </button>
 
                           {/* Dropdown menu */}
                           {isMenuOpen && (
-                            <div className="absolute right-2 top-10 z-20 bg-[#1e1e1e] border border-[#363432] rounded-lg shadow-xl py-1 min-w-[140px]">
+                            <div className="absolute right-2 top-12 z-20 bg-[#1e1e1e] border border-[#363432] rounded-lg shadow-xl py-1 min-w-[160px]">
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation();
@@ -792,9 +821,9 @@ function RecipesContent() {
                                   setRecipeMenuOpen(null);
                                 }}
                                 disabled={launching}
-                                className="w-full px-3 py-2 text-left text-sm hover:bg-[#2a2826] flex items-center gap-2 text-[#f0ebe3]"
+                                className="w-full px-4 py-3 text-left text-sm hover:bg-[#2a2826] flex items-center gap-3 text-[#f0ebe3]"
                               >
-                                <Play className="h-3.5 w-3.5 text-[#7d9a6a]" /> Launch
+                                <Play className="h-4 w-4 text-[#7d9a6a]" /> Launch
                               </button>
                               <button
                                 onClick={(e) => {
@@ -802,18 +831,18 @@ function RecipesContent() {
                                   togglePin(r.id);
                                   setRecipeMenuOpen(null);
                                 }}
-                                className="w-full px-3 py-2 text-left text-sm hover:bg-[#2a2826] flex items-center gap-2 text-[#f0ebe3]"
+                                className="w-full px-4 py-3 text-left text-sm hover:bg-[#2a2826] flex items-center gap-3 text-[#f0ebe3]"
                               >
                                 {isPinned ? (
-                                  <><PinOff className="h-3.5 w-3.5 text-[#9a9088]" /> Unpin</>
+                                  <><PinOff className="h-4 w-4 text-[#9a9088]" /> Unpin</>
                                 ) : (
-                                  <><Pin className="h-3.5 w-3.5 text-[#8b7355]" /> Pin</>
+                                  <><Pin className="h-4 w-4 text-[#8b7355]" /> Pin</>
                                 )}
                               </button>
                               <div className="border-t border-[#363432] my-1" />
                               {isConfirmingDelete ? (
-                                <div className="px-3 py-2 space-y-2">
-                                  <div className="text-xs text-[#c97a6b]">Delete this recipe?</div>
+                                <div className="px-4 py-3 space-y-3">
+                                  <div className="text-sm text-[#c97a6b]">Delete this recipe?</div>
                                   <div className="flex gap-2">
                                     <button
                                       onClick={(e) => {
@@ -821,7 +850,7 @@ function RecipesContent() {
                                         deleteRecipeById(r.id);
                                       }}
                                       disabled={isRunning}
-                                      className="px-2 py-1 text-xs bg-[#c97a6b] text-white rounded hover:bg-[#c97a6b]/90 disabled:opacity-50"
+                                      className="px-4 py-2 text-sm bg-[#c97a6b] text-white rounded-lg hover:bg-[#c97a6b]/90 disabled:opacity-50"
                                     >
                                       Delete
                                     </button>
@@ -830,7 +859,7 @@ function RecipesContent() {
                                         e.stopPropagation();
                                         setDeleteConfirm(null);
                                       }}
-                                      className="px-2 py-1 text-xs border border-[#363432] rounded hover:bg-[#2a2826] text-[#9a9088]"
+                                      className="px-4 py-2 text-sm border border-[#363432] rounded-lg hover:bg-[#2a2826] text-[#9a9088]"
                                     >
                                       Cancel
                                     </button>
@@ -846,9 +875,9 @@ function RecipesContent() {
                                     }
                                     setDeleteConfirm(r.id);
                                   }}
-                                  className="w-full px-3 py-2 text-left text-sm hover:bg-[#2a2826] flex items-center gap-2 text-[#c97a6b]"
+                                  className="w-full px-4 py-3 text-left text-sm hover:bg-[#2a2826] flex items-center gap-3 text-[#c97a6b]"
                                 >
-                                  <Trash2 className="h-3.5 w-3.5" /> Delete
+                                  <Trash2 className="h-4 w-4" /> Delete
                                 </button>
                               )}
                             </div>
@@ -884,10 +913,10 @@ function RecipesContent() {
                             if (chosenRecipe) openRecipeById(chosenRecipe.id);
                             else startNewRecipeFromModel(m);
                           }}
-                          className="p-3 border-b border-[#363432]/50 hover:bg-[#1e1e1e] cursor-pointer transition-colors"
+                          className="p-3 sm:p-3 border-b border-[#363432]/50 hover:bg-[#1e1e1e] cursor-pointer transition-colors"
                         >
                           <div className="flex items-start justify-between gap-3">
-                            <div className="min-w-0">
+                            <div className="min-w-0 flex-1">
                               <div className="text-sm font-medium text-[#f0ebe3] truncate">{m.name}</div>
                               <div className="text-[10px] text-[#9a9088] truncate" title={m.path}>{m.path}</div>
                               {meta && <div className="text-[10px] text-[#9a9088]/70 mt-1 truncate">{meta}</div>}
@@ -904,7 +933,7 @@ function RecipesContent() {
                                   value={chosenRecipeId}
                                   onClick={(e) => e.stopPropagation()}
                                   onChange={(e) => setModelRecipeChoice((prev) => ({ ...prev, [m.path]: e.target.value }))}
-                                  className="px-2 py-1 bg-[#1b1b1b] border border-[#363432] rounded text-[10px] text-[#f0ebe3] focus:outline-none focus:border-[#8b7355]"
+                                  className="px-2.5 py-1.5 bg-[#1b1b1b] border border-[#363432] rounded text-xs text-[#f0ebe3] focus:outline-none focus:border-[#8b7355]"
                                   title="Choose recipe"
                                 >
                                   {recipeIds.map((id) => (
@@ -916,17 +945,17 @@ function RecipesContent() {
                               )}
 
                               {recipeIds.length > 0 ? (
-                                <div className="flex items-center gap-1">
+                                <div className="flex items-center gap-1.5">
                                   <button
                                     onClick={(e) => {
                                       e.stopPropagation();
                                       if (chosenRecipeId) void launchRecipeById(chosenRecipeId);
                                     }}
                                     disabled={launching || !chosenRecipeId}
-                                    className="p-2 bg-[#7d9a6a] text-white rounded-lg hover:bg-[#7d9a6a]/90 disabled:opacity-50"
+                                    className="p-2.5 bg-[#7d9a6a] text-white rounded-lg hover:bg-[#7d9a6a]/90 disabled:opacity-50"
                                     title="Launch"
                                   >
-                                    <Play className="h-3.5 w-3.5" />
+                                    <Play className="h-4 w-4" />
                                   </button>
                                   <button
                                     onClick={(e) => {
@@ -934,10 +963,10 @@ function RecipesContent() {
                                       if (chosenRecipeId) openRecipeById(chosenRecipeId);
                                     }}
                                     disabled={!chosenRecipeId}
-                                    className="p-2 border border-[#363432] rounded-lg hover:bg-[#2a2826] text-[#9a9088] disabled:opacity-50"
+                                    className="p-2.5 border border-[#363432] rounded-lg hover:bg-[#2a2826] text-[#9a9088] disabled:opacity-50"
                                     title="Open recipe"
                                   >
-                                    <ChevronRight className="h-3.5 w-3.5" />
+                                    <ChevronRight className="h-4 w-4" />
                                   </button>
                                 </div>
                               ) : (
@@ -946,10 +975,10 @@ function RecipesContent() {
                                     e.stopPropagation();
                                     startNewRecipeFromModel(m);
                                   }}
-                                  className="flex items-center gap-1 px-2.5 py-2 text-xs bg-[#8b7355] text-white rounded-lg hover:bg-[#8b7355]/90"
+                                  className="flex items-center gap-1.5 px-3 py-2.5 text-sm bg-[#8b7355] text-white rounded-lg hover:bg-[#8b7355]/90"
                                   title="Create recipe"
                                 >
-                                  <Plus className="h-3.5 w-3.5" /> Create
+                                  <Plus className="h-4 w-4" /> Create
                                 </button>
                               )}
                             </div>
@@ -963,28 +992,35 @@ function RecipesContent() {
             </section>
 
             {/* Recipe Editor */}
-            <section className="lg:col-span-2 bg-[#1e1e1e] border border-[#363432] rounded-lg">
-              <div className="p-4 border-b border-[#363432] flex items-center justify-between gap-3">
+            <section className="flex-1 min-w-0 bg-[#1e1e1e] border border-[#363432] rounded-lg flex flex-col">
+              <div className="p-3 sm:p-4 border-b border-[#363432] flex items-center justify-between gap-2 sm:gap-3">
                 <div className="min-w-0 flex items-center gap-2">
+                  {/* Mobile menu button */}
+                  <button
+                    onClick={() => setSidebarOpen(true)}
+                    className="lg:hidden p-2 -ml-1 hover:bg-[#2a2826] rounded flex-shrink-0"
+                  >
+                    <Menu className="h-4 w-4 text-[#9a9088]" />
+                  </button>
                   {draft.id && pinnedRecipes.has(draft.id) && (
-                    <Pin className="h-4 w-4 text-[#8b7355] flex-shrink-0" />
+                    <Pin className="h-4 w-4 text-[#8b7355] flex-shrink-0 hidden sm:block" />
                   )}
                   <div className="min-w-0">
-                    <div className="font-medium text-[#f0ebe3] truncate">
+                    <div className="font-medium text-[#f0ebe3] truncate text-sm sm:text-base">
                       {draft.name || (draft.model_path ? draft.model_path.split('/').pop() : 'New Recipe')}
                     </div>
-                    <div className="text-xs text-[#9a9088] truncate">
+                    <div className="text-[10px] sm:text-xs text-[#9a9088] truncate">
                       {draft.id ? `ID: ${draft.id}` : 'Not saved yet'}
                       {selectedIsRunning ? ' • running' : ''}
                     </div>
                   </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  {/* Pin toggle */}
+                <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
+                  {/* Pin toggle - hidden on mobile */}
                   {draft.id && (
                     <button
                       onClick={() => togglePin(draft.id)}
-                      className={`p-2 border rounded-lg transition-colors ${
+                      className={`hidden sm:flex p-2 border rounded-lg transition-colors ${
                         pinnedRecipes.has(draft.id)
                           ? 'border-[#8b7355] bg-[#8b7355]/10 text-[#8b7355]'
                           : 'border-[#363432] text-[#9a9088] hover:bg-[#2a2826]'
@@ -994,12 +1030,12 @@ function RecipesContent() {
                       {pinnedRecipes.has(draft.id) ? <PinOff className="h-4 w-4" /> : <Pin className="h-4 w-4" />}
                     </button>
                   )}
-                  {/* Delete button */}
+                  {/* Delete button - hidden on mobile */}
                   {draft.id && (
                     <button
                       onClick={deleteSelected}
                       disabled={selectedIsRunning}
-                      className="p-2 border border-[#363432] rounded-lg hover:bg-[#2a2826] text-[#c97a6b] disabled:opacity-50"
+                      className="hidden sm:flex p-2 border border-[#363432] rounded-lg hover:bg-[#2a2826] text-[#c97a6b] disabled:opacity-50"
                       title={selectedIsRunning ? 'Stop model first' : 'Delete recipe'}
                     >
                       <Trash2 className="h-4 w-4" />
@@ -1008,32 +1044,36 @@ function RecipesContent() {
                   {runningProcess && (
                     <button
                       onClick={stopRunning}
-                      className="flex items-center gap-1 px-3 py-1.5 text-sm border border-[#363432] rounded-lg hover:bg-[#2a2826] text-[#9a9088]"
+                      className="flex items-center gap-1 p-2 sm:px-3 sm:py-1.5 text-sm border border-[#363432] rounded-lg hover:bg-[#2a2826] text-[#9a9088]"
                       title="Stop running model"
                     >
-                      <Square className="h-3.5 w-3.5" /> Stop
+                      <Square className="h-3.5 w-3.5" />
+                      <span className="hidden sm:inline">Stop</span>
                     </button>
                   )}
                   <button
                     onClick={launchSelected}
                     disabled={launching || saving || !draft.model_path}
-                    className="flex items-center gap-1 px-3 py-1.5 text-sm bg-[#7d9a6a] text-white rounded-lg hover:bg-[#7d9a6a]/90 disabled:opacity-50"
+                    className="flex items-center gap-1 p-2 sm:px-3 sm:py-1.5 text-sm bg-[#7d9a6a] text-white rounded-lg hover:bg-[#7d9a6a]/90 disabled:opacity-50"
                     title="Save and launch"
                   >
-                    <Play className="h-3.5 w-3.5" /> {launching ? 'Launching...' : 'Launch'}
+                    <Play className="h-3.5 w-3.5" />
+                    <span className="hidden sm:inline">{launching ? 'Launching...' : 'Launch'}</span>
                   </button>
                   <button
                     onClick={async () => { await saveRecipe(); }}
                     disabled={saving || !isDirty}
-                    className="flex items-center gap-1 px-3 py-1.5 text-sm border border-[#363432] rounded-lg hover:bg-[#2a2826] disabled:opacity-50 text-[#9a9088]"
+                    className="flex items-center gap-1 p-2 sm:px-3 sm:py-1.5 text-sm border border-[#363432] rounded-lg hover:bg-[#2a2826] disabled:opacity-50 text-[#9a9088]"
+                    title="Save recipe"
                   >
-                    <Save className="h-3.5 w-3.5" /> {saving ? 'Saving...' : 'Save'}
+                    <Save className="h-3.5 w-3.5" />
+                    <span className="hidden sm:inline">{saving ? 'Saving...' : 'Save'}</span>
                   </button>
                 </div>
               </div>
 
-              <div className="p-4 space-y-4">
-                <div className="grid md:grid-cols-2 gap-4">
+              <div className="flex-1 overflow-auto p-3 sm:p-4 space-y-4 pb-[calc(1rem+env(safe-area-inset-bottom))]">
+                <div className="grid md:grid-cols-2 gap-3 sm:gap-4">
                   <div>
                     <label className="block text-sm text-[#9a9088] mb-1">Model path</label>
                     <input
@@ -1079,7 +1119,7 @@ function RecipesContent() {
                   </div>
                 </div>
 
-                <div className="grid md:grid-cols-2 gap-4">
+                <div className="grid md:grid-cols-2 gap-3 sm:gap-4">
                   <div>
                     <label className="block text-sm text-[#9a9088] mb-1">Recipe name</label>
                     <input
@@ -1100,14 +1140,14 @@ function RecipesContent() {
                   </div>
                 </div>
 
-                <div className="grid md:grid-cols-4 gap-4">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
                   <div>
                     <label className="block text-sm text-[#9a9088] mb-1">TP</label>
                     <input
                       type="number"
                       value={draft.tp || draft.tensor_parallel_size || 1}
                       onChange={(e) => setDraftField('tp', Math.max(1, parseInt(e.target.value) || 1))}
-                      className="w-full px-3 py-2 bg-[#1b1b1b] border border-[#363432] rounded-lg text-sm text-[#f0ebe3] focus:outline-none focus:border-[#8b7355]"
+                      className="w-full px-3 py-2.5 bg-[#1b1b1b] border border-[#363432] rounded-lg text-sm text-[#f0ebe3] focus:outline-none focus:border-[#8b7355]"
                     />
                   </div>
                   <div>
@@ -1143,7 +1183,7 @@ function RecipesContent() {
                   </div>
                 </div>
 
-                <div className="grid md:grid-cols-4 gap-4">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
                   <div>
                     <label className="block text-sm text-[#9a9088] mb-1">Max seqs</label>
                     <input
@@ -1688,6 +1728,7 @@ function RecipesContent() {
             </option>
           ))}
         </datalist>
+      </div>
       </div>
 
       {/* Launch Toast */}

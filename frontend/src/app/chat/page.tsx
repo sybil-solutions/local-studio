@@ -2371,7 +2371,7 @@ Start your research immediately when you receive a question. Do not ask for clar
             )}
 
             {/* Input Tool Belt */}
-            <div className="flex-shrink-0">
+            <div className="flex-shrink-0 pb-2 md:pb-3">
               <ToolBelt
                 value={input}
                 onChange={setInput}
