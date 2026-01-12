@@ -127,7 +127,7 @@ export default function Dashboard() {
   const totalMemMax = gpus.reduce((sum, g) => sum + toGB(g.memory_total_mb ?? g.memory_total ?? 0), 0);
 
   return (
-    <div className="h-full overflow-y-auto overflow-x-hidden bg-[#1b1b1b] text-[#f0ebe3]">
+    <div className="min-h-full bg-[#1b1b1b] text-[#f0ebe3]">
       {/* Connection Warning */}
       {!isConnected && (
         <div className="fixed top-4 right-4 z-50 px-3 py-1.5 bg-[#c9a66b]/10 text-[#c9a66b] text-sm rounded">
@@ -135,7 +135,7 @@ export default function Dashboard() {
         </div>
       )}
 
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 py-4 sm:py-6 pb-[calc(1rem+env(safe-area-inset-bottom))] w-full">
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 py-4 sm:py-6 pb-[calc(1rem+env(safe-area-inset-bottom))]">
 
         {/* Model Status */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6 sm:mb-8">

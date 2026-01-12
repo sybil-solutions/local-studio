@@ -195,7 +195,7 @@ export function AppSidebar({ children }: AppSidebarProps) {
       </aside>
 
       {/* Main content */}
-      <main className="flex-1 overflow-auto bg-[var(--background)]">
+      <main className="flex-1 h-full overflow-y-auto overflow-x-hidden bg-[var(--background)]">
         {/* Mobile header */}
         {isMobile && (
           <div className="sticky top-0 z-30 bg-[var(--card)] border-b border-[var(--border)] px-4 py-3 flex items-center gap-3"

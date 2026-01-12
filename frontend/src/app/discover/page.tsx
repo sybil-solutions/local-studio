@@ -134,8 +134,8 @@ export default function DiscoverPage() {
   };
 
   return (
-    <div className="h-full overflow-y-auto overflow-x-hidden bg-[#1b1b1b] text-[#f0ebe3]">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 sm:py-6 pb-[calc(1rem+env(safe-area-inset-bottom))] w-full">
+    <div className="min-h-full bg-[#1b1b1b] text-[#f0ebe3]">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 sm:py-6 pb-[calc(1rem+env(safe-area-inset-bottom))]">
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
           <div>
@@ -353,14 +353,14 @@ export default function DiscoverPage() {
                     </div>
 
                     {/* Stats & Actions */}
-                    <div className="flex items-center gap-4 text-xs text-[#9a9088] flex-shrink-0">
+                    <div className="flex items-center gap-2 sm:gap-4 text-xs text-[#9a9088] flex-shrink-0">
                       <div className="flex items-center gap-1" title="Downloads">
-                        <Download className="h-3.5 w-3.5" />
-                        <span>{formatNumber(model.downloads)}</span>
+                        <Download className="h-3.5 w-3.5 flex-shrink-0" />
+                        <span className="hidden sm:inline">{formatNumber(model.downloads)}</span>
                       </div>
                       <div className="flex items-center gap-1" title="Likes">
-                        <Heart className="h-3.5 w-3.5" />
-                        <span>{formatNumber(model.likes)}</span>
+                        <Heart className="h-3.5 w-3.5 flex-shrink-0" />
+                        <span className="hidden sm:inline">{formatNumber(model.likes)}</span>
                       </div>
                       {model.lastModified && (
                         <span className="hidden sm:inline text-[#9a9088]/70">
