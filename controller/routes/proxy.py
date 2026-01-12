@@ -127,8 +127,8 @@ def parse_tool_calls_from_content(content: str) -> list:
     import uuid
     tool_calls = []
 
-    # Pattern 0: MCP-style use_mcp_tool format (handles missing opening <)
-    mcp_pattern = r'<?use_mcp_tool>\s*<?server_name>([^<]*)</server_name>\s*<?tool_name>([^<]*)</tool_name>\s*<?arguments>\s*(\{.*?\})\s*</arguments>\s*</use_mcp_tool>'
+    # Pattern 0: MCP-style use_mcp_tool format (handles missing opening <, extra spaces)
+    mcp_pattern = r'<?use_mcp_tool>\s*<?server_name>([^<]*)</server_name>\s*<?tool_name>([^<]*)</tool_name>\s*<?arguments>\s*(\{.*?\})\s*</arguments>\s*</use_mcp[\s_]*tool>'
     mcp_matches = re.findall(mcp_pattern, content, re.DOTALL)
     for server_name, tool_name, args_json in mcp_matches:
         try:

@@ -131,7 +131,7 @@ export default function LogsPage() {
   );
 
   return (
-    <div className="flex min-h-full bg-[#1b1b1b] text-[#f0ebe3] relative">
+    <div className="flex h-full bg-[#1b1b1b] text-[#f0ebe3] relative">
       {/* Mobile Overlay */}
       {sidebarOpen && (
         <div

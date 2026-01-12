@@ -304,7 +304,13 @@ export default function ChatPage() {
   const getOpenAITools = () => { if (!mcpEnabled || !mcpTools.length) return []; return mcpTools.map(tool => ({ type: 'function', function: { name: `${tool.server}__${tool.name}`, description: tool.description || `Tool ${tool.name} from ${tool.server}`, parameters: tool.inputSchema || { type: 'object', properties: {} } } })); };
 
   const executeMCPTool = async (toolCall: ToolCall): Promise<ToolResult> => {
-    const funcName = toolCall.function?.name || ''; const parts = funcName.split('__'); const server = parts.length > 1 ? parts[0] : ''; const toolName = parts.length > 1 ? parts.slice(1).join('__') : funcName;
+    const funcName = toolCall.function?.name || ''; const parts = funcName.split('__'); let server = parts.length > 1 ? parts[0] : ''; let toolName = parts.length > 1 ? parts.slice(1).join('__') : funcName;
+    // Fallback: if no server prefix, try to find the tool by name in mcpTools
+    if (!server && mcpTools.length > 0) {
+      const matchingTool = mcpTools.find(t => t.name === funcName || t.name === toolName);
+      if (matchingTool) { server = matchingTool.server; toolName = matchingTool.name; }
+    }
+    if (!server) { return { tool_call_id: toolCall.id, content: `Error: Could not determine MCP server for tool "${funcName}"`, isError: true }; }
     try { let args: Record<string, unknown> = {}; const rawArgs = (toolCall.function?.arguments || '').trim(); if (rawArgs) { try { args = JSON.parse(rawArgs); } catch { args = { raw: rawArgs }; } } const result = await api.callMCPTool(server, toolName, args); return { tool_call_id: toolCall.id, content: typeof result.result === 'string' ? result.result : JSON.stringify(result.result) }; }
     catch (error) { return { tool_call_id: toolCall.id, content: `Error: ${error instanceof Error ? error.message : String(error)}`, isError: true }; }
   };

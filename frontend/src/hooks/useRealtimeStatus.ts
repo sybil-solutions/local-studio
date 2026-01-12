@@ -101,46 +101,80 @@ export function useRealtimeStatus(apiBaseUrl: string = '/api/proxy') {
     }
   );
 
+  // Fetch status immediately (used on mount and visibility change)
+  const fetchStatusNow = useCallback(async () => {
+    try {
+      const [statusRes] = await Promise.all([
+        fetch(`${apiBaseUrl}/status`).then(r => r.json()),
+        fetch(`${apiBaseUrl}/health`).then(r => r.json()),
+      ]);
+
+      // Update status from polling
+      if (statusRes) {
+        setStatus({
+          running: statusRes.running ?? !!statusRes.process,
+          process: statusRes.process ?? null,
+          inference_port: statusRes.inference_port || 8000,
+        });
+      }
+
+      // Try to get GPU data from a separate endpoint if available
+      try {
+        const gpuRes = await fetch(`${apiBaseUrl}/gpus`).then(r => r.json());
+        if (gpuRes?.gpus) {
+          setGpus(gpuRes.gpus);
+        }
+      } catch {
+        // GPU endpoint might not exist, ignore
+      }
+    } catch (e) {
+      console.error('[Status] Failed to fetch status:', e);
+    }
+  }, [apiBaseUrl]);
+
   // Polling fallback when SSE is not working
   useEffect(() => {
     const pollData = async () => {
       // Skip if SSE updated recently (within last 10 seconds)
       if (Date.now() - lastSSEUpdate.current < 10000) return;
-
-      try {
-        const [statusRes, healthRes] = await Promise.all([
-          fetch(`${apiBaseUrl}/status`).then(r => r.json()),
-          fetch(`${apiBaseUrl}/health`).then(r => r.json()),
-        ]);
-
-        // Update status from polling
-        if (statusRes) {
-          setStatus({
-            running: statusRes.running ?? !!statusRes.process,
-            process: statusRes.process ?? null,
-            inference_port: statusRes.inference_port || 8000,
-          });
-        }
-
-        // Try to get GPU data from a separate endpoint if available
-        try {
-          const gpuRes = await fetch(`${apiBaseUrl}/gpu`).then(r => r.json());
-          if (gpuRes?.gpus) {
-            setGpus(gpuRes.gpus);
-          }
-        } catch {
-          // GPU endpoint might not exist, ignore
-        }
-      } catch (e) {
-        console.error('[Polling] Failed to fetch status:', e);
-      }
+      await fetchStatusNow();
     };
 
     // Poll immediately on mount and every 5 seconds
     pollData();
     const interval = setInterval(pollData, 5000);
     return () => clearInterval(interval);
-  }, [apiBaseUrl]);
+  }, [fetchStatusNow]);
+
+  // Force refresh when page becomes visible (mobile PWA support)
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        console.log('[Status] Page became visible, fetching fresh status...');
+        // Reset last SSE update to force a poll
+        lastSSEUpdate.current = 0;
+        fetchStatusNow();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    // Also handle pageshow for bfcache
+    const handlePageShow = (event: PageTransitionEvent) => {
+      if (event.persisted) {
+        console.log('[Status] Page restored from bfcache, fetching status...');
+        lastSSEUpdate.current = 0;
+        fetchStatusNow();
+      }
+    };
+
+    window.addEventListener('pageshow', handlePageShow);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('pageshow', handlePageShow);
+    };
+  }, [fetchStatusNow]);
 
   return {
     // Data

@@ -135,7 +135,7 @@ export default function DiscoverPage() {
 
   return (
     <div className="min-h-full bg-[#1b1b1b] text-[#f0ebe3]">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 sm:py-6 pb-[calc(1rem+env(safe-area-inset-bottom))]">
+      <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 py-4 sm:py-6 pb-[calc(1rem+env(safe-area-inset-bottom))]">
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
           <div>
@@ -296,22 +296,77 @@ export default function DiscoverPage() {
             <div className="text-xs text-[#9a9088] mb-3">
               {models.length} models
             </div>
-            <div className="grid gap-3">
+            <div className="grid gap-3 w-full overflow-hidden">
               {models.map((model) => (
                 <div
                   key={model._id}
-                  className="bg-[#1e1e1e] rounded-lg p-4 border border-[#363432] hover:border-[#4a4846] transition-colors"
+                  className="bg-[#1e1e1e] rounded-lg p-3 sm:p-4 border border-[#363432] hover:border-[#4a4846] transition-colors w-full overflow-hidden"
                 >
-                  <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
-                    {/* Model info */}
+                  {/* Mobile: stacked layout */}
+                  <div className="sm:hidden w-full">
+                    <div className="flex items-center justify-between gap-2 mb-2 w-full">
+                      <h3 className="text-sm font-medium text-[#f0ebe3] truncate flex-1 min-w-0">
+                        {model.modelId}
+                      </h3>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <button
+                          onClick={() => copyModelId(model.modelId)}
+                          className="p-1.5 hover:bg-[#363432] rounded transition-colors"
+                          title="Copy model ID"
+                        >
+                          {copiedId === model.modelId ? (
+                            <Check className="h-4 w-4 text-[#7d9a6a]" />
+                          ) : (
+                            <Copy className="h-4 w-4 text-[#9a9088]" />
+                          )}
+                        </button>
+                        <a
+                          href={`https://huggingface.co/${model.modelId}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="p-1.5 hover:bg-[#363432] rounded transition-colors"
+                          title="View on Hugging Face"
+                        >
+                          <ExternalLink className="h-4 w-4 text-[#9a9088]" />
+                        </a>
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-between gap-2 w-full">
+                      <div className="flex flex-wrap gap-1.5 flex-1 min-w-0">
+                        {model.pipeline_tag && (
+                          <span className={`px-2 py-0.5 rounded text-[10px] ${getTaskBadgeColor(model.pipeline_tag)}`}>
+                            {model.pipeline_tag}
+                          </span>
+                        )}
+                        {model.library_name && (
+                          <span className={`px-2 py-0.5 rounded text-[10px] ${getLibraryBadgeColor(model.library_name)}`}>
+                            {model.library_name}
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-3 text-xs text-[#9a9088] shrink-0">
+                        <span className="flex items-center gap-1">
+                          <Download className="h-3 w-3 shrink-0" />
+                          {formatNumber(model.downloads)}
+                        </span>
+                        <span className="flex items-center gap-1">
+                          <Heart className="h-3 w-3 shrink-0" />
+                          {formatNumber(model.likes)}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Desktop: row layout */}
+                  <div className="hidden sm:flex sm:items-start justify-between gap-3">
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
+                      <div className="flex items-center gap-2">
                         <h3 className="text-sm font-medium text-[#f0ebe3] truncate">
                           {model.modelId}
                         </h3>
                         <button
                           onClick={() => copyModelId(model.modelId)}
-                          className="p-1 hover:bg-[#363432] rounded transition-colors"
+                          className="p-1 hover:bg-[#363432] rounded transition-colors shrink-0"
                           title="Copy model ID"
                         >
                           {copiedId === model.modelId ? (
@@ -321,8 +376,6 @@ export default function DiscoverPage() {
                           )}
                         </button>
                       </div>
-
-                      {/* Badges */}
                       <div className="flex flex-wrap gap-1.5 mt-2">
                         {model.pipeline_tag && (
                           <span className={`px-2 py-0.5 rounded text-[10px] ${getTaskBadgeColor(model.pipeline_tag)}`}>
@@ -351,19 +404,17 @@ export default function DiscoverPage() {
                         )}
                       </div>
                     </div>
-
-                    {/* Stats & Actions */}
-                    <div className="flex items-center gap-2 sm:gap-4 text-xs text-[#9a9088] flex-shrink-0">
+                    <div className="flex items-center gap-4 text-xs text-[#9a9088] shrink-0">
                       <div className="flex items-center gap-1" title="Downloads">
-                        <Download className="h-3.5 w-3.5 flex-shrink-0" />
-                        <span className="hidden sm:inline">{formatNumber(model.downloads)}</span>
+                        <Download className="h-3.5 w-3.5" />
+                        <span>{formatNumber(model.downloads)}</span>
                       </div>
                       <div className="flex items-center gap-1" title="Likes">
-                        <Heart className="h-3.5 w-3.5 flex-shrink-0" />
-                        <span className="hidden sm:inline">{formatNumber(model.likes)}</span>
+                        <Heart className="h-3.5 w-3.5" />
+                        <span>{formatNumber(model.likes)}</span>
                       </div>
                       {model.lastModified && (
-                        <span className="hidden sm:inline text-[#9a9088]/70">
+                        <span className="text-[#9a9088]/70">
                           {formatDate(model.lastModified)}
                         </span>
                       )}

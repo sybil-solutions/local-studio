@@ -59,11 +59,16 @@
   border-color: var(--border);
 }
 
-html, body {
-  overflow-x: hidden;
+html {
+  overflow: hidden;
+  height: 100%;
+}
+
+body {
+  overflow: hidden;
+  height: 100%;
   max-width: 100vw;
   width: 100%;
-  position: relative;
 }
 
 /* Mobile viewport fix */

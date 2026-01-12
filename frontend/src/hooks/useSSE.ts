@@ -136,6 +136,57 @@ export function useSSE(
     };
   }, [connect, enabled, url]);
 
+  // Reconnect when page becomes visible again (mobile PWA support)
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && enabled && url) {
+        console.log('[SSE] Page became visible, checking connection...');
+
+        // Check if connection is dead
+        if (!eventSourceRef.current || eventSourceRef.current.readyState === EventSource.CLOSED) {
+          console.log('[SSE] Connection dead, reconnecting...');
+          setReconnectAttempts(0); // Reset attempts on visibility change
+
+          // Clear any pending reconnect
+          if (reconnectTimeoutRef.current) {
+            clearTimeout(reconnectTimeoutRef.current);
+            reconnectTimeoutRef.current = null;
+          }
+
+          // Force reconnect
+          eventSourceRef.current = null;
+          connect();
+        }
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    // Also handle pageshow for bfcache (back-forward cache)
+    const handlePageShow = (event: PageTransitionEvent) => {
+      if (event.persisted && enabled && url) {
+        console.log('[SSE] Page restored from bfcache, reconnecting...');
+        setReconnectAttempts(0);
+        if (reconnectTimeoutRef.current) {
+          clearTimeout(reconnectTimeoutRef.current);
+          reconnectTimeoutRef.current = null;
+        }
+        if (eventSourceRef.current) {
+          eventSourceRef.current.close();
+        }
+        eventSourceRef.current = null;
+        connect();
+      }
+    };
+
+    window.addEventListener('pageshow', handlePageShow);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('pageshow', handlePageShow);
+    };
+  }, [connect, enabled, url]);
+
   return {
     isConnected,
     error,
