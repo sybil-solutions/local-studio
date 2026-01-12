@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { useSSE } from './useSSE';
 import type { GPU, Metrics, ProcessInfo } from '@/lib/types';
 
@@ -26,13 +26,15 @@ interface SSEEvent {
 }
 
 /**
- * Hook for real-time status updates via SSE.
+ * Hook for real-time status updates via SSE with polling fallback.
  *
  * Subscribes to:
  * - status: Process running state
  * - gpu: GPU metrics
  * - metrics: vLLM performance metrics
  * - launch_progress: Model launch progress
+ *
+ * Falls back to polling /status every 5 seconds when SSE fails.
  *
  * @param apiBaseUrl - Base URL for the API (default: empty for relative URLs)
  *
@@ -44,6 +46,7 @@ export function useRealtimeStatus(apiBaseUrl: string = '/api/proxy') {
   const [gpus, setGpus] = useState<GPU[]>([]);
   const [metrics, setMetrics] = useState<Metrics | null>(null);
   const [launchProgress, setLaunchProgress] = useState<LaunchProgressData | null>(null);
+  const lastSSEUpdate = useRef<number>(0);
 
   const handleMessage = useCallback((event: MessageEvent) => {
     try {
@@ -54,20 +57,24 @@ export function useRealtimeStatus(apiBaseUrl: string = '/api/proxy') {
       switch (eventType) {
         case 'status':
           setStatus(payload.data as StatusData);
+          lastSSEUpdate.current = Date.now();
           break;
 
         case 'gpu':
           const gpuData = payload.data as GPUData;
           setGpus(gpuData.gpus || []);
+          lastSSEUpdate.current = Date.now();
           break;
 
         case 'metrics':
           setMetrics(payload.data as Metrics);
+          lastSSEUpdate.current = Date.now();
           break;
 
         case 'launch_progress':
           const progressData = payload.data as LaunchProgressData;
           setLaunchProgress(progressData);
+          lastSSEUpdate.current = Date.now();
 
           // Auto-clear progress after success/error
           if (progressData.stage === 'ready' || progressData.stage === 'error' || progressData.stage === 'cancelled') {
@@ -76,6 +83,7 @@ export function useRealtimeStatus(apiBaseUrl: string = '/api/proxy') {
           break;
 
         default:
+          // Don't update lastSSEUpdate for unknown events - keep polling active
           console.log('[SSE] Unknown event type:', eventType);
       }
     } catch (e) {
@@ -92,6 +100,47 @@ export function useRealtimeStatus(apiBaseUrl: string = '/api/proxy') {
       maxReconnectAttempts: 10,
     }
   );
+
+  // Polling fallback when SSE is not working
+  useEffect(() => {
+    const pollData = async () => {
+      // Skip if SSE updated recently (within last 10 seconds)
+      if (Date.now() - lastSSEUpdate.current < 10000) return;
+
+      try {
+        const [statusRes, healthRes] = await Promise.all([
+          fetch(`${apiBaseUrl}/status`).then(r => r.json()),
+          fetch(`${apiBaseUrl}/health`).then(r => r.json()),
+        ]);
+
+        // Update status from polling
+        if (statusRes) {
+          setStatus({
+            running: statusRes.running ?? !!statusRes.process,
+            process: statusRes.process ?? null,
+            inference_port: statusRes.inference_port || 8000,
+          });
+        }
+
+        // Try to get GPU data from a separate endpoint if available
+        try {
+          const gpuRes = await fetch(`${apiBaseUrl}/gpu`).then(r => r.json());
+          if (gpuRes?.gpus) {
+            setGpus(gpuRes.gpus);
+          }
+        } catch {
+          // GPU endpoint might not exist, ignore
+        }
+      } catch (e) {
+        console.error('[Polling] Failed to fetch status:', e);
+      }
+    };
+
+    // Poll immediately on mount and every 5 seconds
+    pollData();
+    const interval = setInterval(pollData, 5000);
+    return () => clearInterval(interval);
+  }, [apiBaseUrl]);
 
   return {
     // Data

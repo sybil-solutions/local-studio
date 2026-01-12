@@ -208,3 +208,33 @@ class SystemConfigResponse(BaseModel):
     config: SystemConfig
     services: List[ServiceInfo]
     environment: EnvironmentInfo
+
+
+class MCPServer(BaseModel):
+    """MCP (Model Context Protocol) server configuration."""
+
+    id: str = Field(..., description="Unique identifier (e.g., 'exa', 'filesystem')")
+    name: str = Field(..., description="Display name")
+    enabled: bool = Field(default=True, description="Whether this server is enabled")
+
+    # MCP standard fields
+    command: str = Field(..., description="Command to run (e.g., 'npx', 'python')")
+    args: List[str] = Field(default_factory=list, description="Command arguments")
+    env: Dict[str, str] = Field(default_factory=dict, description="Environment variables")
+
+    # Optional metadata
+    description: Optional[str] = Field(default=None, description="Server description")
+    url: Optional[str] = Field(default=None, description="Documentation or homepage URL")
+
+    model_config = {"populate_by_name": True}
+
+
+class MCPTool(BaseModel):
+    """Tool exposed by an MCP server."""
+
+    name: str
+    description: Optional[str] = None
+    inputSchema: Optional[Dict[str, Any]] = Field(default=None, alias="input_schema")
+    server: str = Field(..., description="Server ID this tool belongs to")
+
+    model_config = {"populate_by_name": True}

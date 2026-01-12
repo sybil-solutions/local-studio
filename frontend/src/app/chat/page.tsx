@@ -2,45 +2,17 @@
 
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import {
-  Sparkles,
-  User,
-  Copy,
-  Check,
-  Plus,
-  GitBranch,
-  Settings,
-  Globe,
-  Code,
-  Pencil,
-  CheckCircle2,
-  X,
-  Download,
-  BarChart3,
-  ChevronDown,
-  Search,
-  Layers,
-  PanelRightOpen,
-  PanelRightClose,
-  ExternalLink,
-  Loader2,
-  ChevronRight,
-  Brain,
-  Wrench,
-  Clock,
-  Menu,
-  Bookmark,
-  BookmarkCheck,
+  Sparkles, Copy, Check, Plus, GitBranch, X, BarChart3,
+  PanelRightOpen, Bookmark, BookmarkCheck,
 } from 'lucide-react';
 import Link from 'next/link';
-import api, { RAGClient } from '@/lib/api';
-import type { ChatSession, ToolCall, ToolResult, MCPTool, Artifact, RAGDocument } from '@/lib/types';
+import { api, RAGClient } from '@/lib/api';
+import type { ChatSession, ToolCall, ToolResult, Artifact, RAGDocument } from '@/lib/types';
 import {
-  MessageRenderer, ChatSidebar, ToolBelt, MCPSettingsModal, ChatSettingsModal, extractArtifacts, ArtifactPanel } from '@/components/chat';
-import {
-  ToolCallCard } from '@/components/chat/tool-call-card';
+  MessageRenderer, ChatSidebar, ToolBelt, MCPSettingsModal, ChatSettingsModal, extractArtifacts, ArtifactPanel,
+} from '@/components/chat';
 import { ResearchProgressIndicator, CitationsPanel } from '@/components/chat/research-progress';
 import { MessageSearch } from '@/components/chat/message-search';
-import { ThemeToggle } from '@/components/chat/theme-toggle';
 import type { Attachment, MCPServerConfig, DeepResearchSettings, RAGSettings } from '@/components/chat';
 import type { ResearchProgress, ResearchSource } from '@/components/chat/research-progress';
 import { loadState, saveState, debouncedSave } from '@/lib/chat-state-persistence';
@@ -48,11 +20,17 @@ import { useContextManager } from '@/hooks/useContextManager';
 import { ContextIndicator } from '@/components/chat/context-indicator';
 import type { CompactionEvent } from '@/lib/context-manager';
 
+// Local components, hooks and utils
+import { ChatMobileHeader, UsageModal, ExportModal, ChatMessageList, ChatSidePanel } from './components';
+import { stripThinkingForModelContext, parseSSEEvents, downloadTextFile } from './utils';
+import type { StreamEvent } from './utils';
+
+// Types
 interface Message {
   id: string;
   role: 'user' | 'assistant';
   content: string;
-  images?: string[]; // base64 images for display
+  images?: string[];
   isStreaming?: boolean;
   toolCalls?: ToolCall[];
   toolResults?: ToolResult[];
@@ -67,70 +45,24 @@ interface Message {
   estimated_cost_usd?: number | null;
 }
 
-interface StreamEvent {
-  type: 'text' | 'tool_calls' | 'done' | 'error';
-  content?: string;
-  tool_calls?: ToolCall[];
-  error?: string;
+interface MCPTool {
+  server: string;
+  name: string;
+  description?: string;
+  inputSchema?: Record<string, unknown>;
 }
 
-type OpenAIContentPart =
-  | { type: 'text'; text: string }
-  | { type: 'image_url'; image_url: { url: string } };
-
-type OpenAIToolCall = {
-  id: string;
-  type: 'function';
-  function: { name: string; arguments: string };
-};
-
+type OpenAIContentPart = { type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } };
+type OpenAIToolCall = { id: string; type: 'function'; function: { name: string; arguments: string } };
 type OpenAIMessage =
-  | {
-      role: 'user' | 'assistant' | 'system';
-      content: string | null | OpenAIContentPart[];
-      tool_calls?: OpenAIToolCall[];
-    }
-  | {
-      role: 'tool';
-      tool_call_id: string;
-      name?: string;
-      content: string;
-    };
-
-const BOX_TAGS_PATTERN = /<\|(?:begin|end)_of_box\|>/g;
-const stripThinkingForModelContext = (text: string) => {
-  if (!text) return text;
-  let cleaned = text.replace(BOX_TAGS_PATTERN, '');
-  // Preserve any "renderable" code fences that were placed inside <think> blocks (models sometimes do this),
-  // but strip the rest of the thinking content so we don't feed back chain-of-thought.
-  const preservedBlocks: string[] = [];
-  cleaned = cleaned.replace(/<think(?:ing)?>[\s\S]*?<\/think(?:ing)?>/gi, (block) => {
-    const fenceRegex = /```([a-zA-Z0-9_-]+)?\s*\n([\s\S]*?)```/g;
-    let m: RegExpExecArray | null;
-    while ((m = fenceRegex.exec(block)) !== null) {
-      const lang = (m[1] || '').toLowerCase();
-      const isRenderable =
-        ['html', 'svg', 'javascript', 'js', 'react', 'jsx', 'tsx'].includes(lang) ||
-        lang.startsWith('artifact-');
-      if (isRenderable) {
-        preservedBlocks.push(`\n\n\`\`\`${lang}\n${m[2].trim()}\n\`\`\``);
-      }
-    }
-    return '';
-  });
-  cleaned = cleaned.replace(/<\/?think(?:ing)?>/gi, '');
-  return (cleaned.trim() + preservedBlocks.join('')).trim();
-};
-
-const stripThinkTagsKeepText = (text: string) => {
-  if (!text) return text;
-  return text.replace(/<\/?think(?:ing)?>/gi, '');
-};
+  | { role: 'user' | 'assistant' | 'system'; content: string | null | OpenAIContentPart[]; tool_calls?: OpenAIToolCall[] }
+  | { role: 'tool'; tool_call_id: string; name?: string; content: string };
 
 export default function ChatPage() {
   // Session state
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
+  const [currentSessionTitle, setCurrentSessionTitle] = useState('New Chat');
   const [sessionsLoading, setSessionsLoading] = useState(true);
   const [sessionsAvailable, setSessionsAvailable] = useState(true);
 
@@ -140,17 +72,15 @@ export default function ChatPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Timer state - tracks elapsed time during streaming
+  // Timer state
   const [streamingStartTime, setStreamingStartTime] = useState<number | null>(null);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
-
-  // Queued context - allows typing additional context while streaming
   const [queuedContext, setQueuedContext] = useState('');
 
   // Model state
   const [runningModel, setRunningModel] = useState<string | null>(null);
-  const [modelName, setModelName] = useState<string>('');
-  const [selectedModel, setSelectedModel] = useState<string>('');
+  const [modelName, setModelName] = useState('');
+  const [selectedModel, setSelectedModel] = useState('');
   const [availableModels, setAvailableModels] = useState<Array<{ id: string; root?: string; max_model_len?: number }>>([]);
   const [pageLoading, setPageLoading] = useState(true);
 
@@ -158,11 +88,11 @@ export default function ChatPage() {
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
-  const [toolPanelOpen, setToolPanelOpen] = useState(true); // Right panel for tool activity
-  const [activePanel, setActivePanel] = useState<'tools' | 'artifacts'>('tools'); // Tab for right panel
-  const [sessionArtifacts, setSessionArtifacts] = useState<Artifact[]>([]); // All artifacts in session
+  const [toolPanelOpen, setToolPanelOpen] = useState(true);
+  const [activePanel, setActivePanel] = useState<'tools' | 'artifacts'>('tools');
+  const [sessionArtifacts, setSessionArtifacts] = useState<Artifact[]>([]);
 
-  // MCP & Artifacts state
+  // MCP state
   const [mcpEnabled, setMcpEnabled] = useState(false);
   const [artifactsEnabled, setArtifactsEnabled] = useState(false);
   const [mcpServers, setMcpServers] = useState<MCPServerConfig[]>([]);
@@ -171,93 +101,37 @@ export default function ChatPage() {
   const [executingTools, setExecutingTools] = useState<Set<string>>(new Set());
   const [toolResultsMap, setToolResultsMap] = useState<Map<string, ToolResult>>(new Map());
 
-  // Chat settings state
+  // Chat settings
   const [systemPrompt, setSystemPrompt] = useState('');
   const [chatSettingsOpen, setChatSettingsOpen] = useState(false);
 
-  // Deep Research state
-  const [deepResearch, setDeepResearch] = useState<DeepResearchSettings>(() => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('vllm-studio-deep-research');
-      if (saved) {
-        try { return JSON.parse(saved); } catch { }
-      }
-    }
-    return {
-      enabled: false,
-      numSources: 5,
-      autoSummarize: true,
-      includeCitations: true,
-      searchDepth: 'normal' as const,
-    };
+  // Deep Research
+  const [deepResearch, setDeepResearch] = useState<DeepResearchSettings>({
+    enabled: false, numSources: 5, autoSummarize: true, includeCitations: true, searchDepth: 'normal',
   });
   const [researchProgress, setResearchProgress] = useState<ResearchProgress | null>(null);
   const [researchSources, setResearchSources] = useState<ResearchSource[]>([]);
 
-  // RAG (Retrieval Augmented Generation) state
-  const [ragSettings, setRagSettings] = useState<RAGSettings>(() => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('vllm-studio-rag-settings');
-      if (saved) {
-        try { return JSON.parse(saved); } catch { }
-      }
-    }
-    return {
-      enabled: false,
-      endpoint: 'http://localhost:3002',
-      topK: 5,
-      minScore: 0.0,
-      includeMetadata: true,
-      contextPosition: 'system' as const,
-      useProxy: true, // Default to proxy for remote access
-    };
+  // RAG state
+  const [ragSettings, setRagSettings] = useState<RAGSettings>({
+    enabled: false, endpoint: 'http://localhost:3002', topK: 5, minScore: 0.0,
+    includeMetadata: true, contextPosition: 'system', useProxy: true,
   });
   const [ragStatus, setRagStatus] = useState<'online' | 'offline' | 'checking'>('offline');
   const [ragContext, setRagContext] = useState<RAGDocument[]>([]);
   const ragClientRef = useRef<RAGClient | null>(null);
 
-  const [currentSessionTitle, setCurrentSessionTitle] = useState<string>('New Chat');
-  const [editingTitle, setEditingTitle] = useState(false);
-  const [titleDraft, setTitleDraft] = useState('');
-  const [sessionUsage, setSessionUsage] = useState<{
-    prompt_tokens: number;
-    completion_tokens: number;
-    total_tokens: number;
-    estimated_cost_usd?: number | null;
-  } | null>(null);
+  // Usage state
+  const [sessionUsage, setSessionUsage] = useState<{ prompt_tokens: number; completion_tokens: number; total_tokens: number; estimated_cost_usd?: number | null } | null>(null);
   const [usageDetailsOpen, setUsageDetailsOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const usageRefreshTimerRef = useRef<number | null>(null);
 
-  // Get max context from selected model
-  const maxContext = useMemo(() => {
-    const model = availableModels.find(m => m.id === selectedModel || m.id === runningModel);
-    return model?.max_model_len || 200000;
-  }, [availableModels, selectedModel, runningModel]);
-
-  // Context management hook
-  const contextMessages = useMemo(() =>
-    messages.map(m => ({ role: m.role, content: m.content })),
-    [messages]
-  );
-
-  const handleContextCompact = useCallback((newMessages: Array<{ role: string; content: string }>, event: CompactionEvent) => {
-    // Update messages with compacted version
-    const compactedIds = new Set(
-      newMessages.map((m, i) => messages[messages.length - newMessages.length + i]?.id).filter(Boolean)
-    );
-    setMessages(prev => prev.filter(m => compactedIds.has(m.id) || prev.indexOf(m) >= prev.length - newMessages.length));
-    console.log(`Context compacted: ${event.beforeTokens} → ${event.afterTokens} tokens (${event.messagesRemoved} messages removed)`);
-  }, [messages]);
-
-  const contextManager = useContextManager({
-    messages: contextMessages,
-    maxContext,
-    systemPrompt,
-    tools: mcpEnabled ? mcpTools : undefined,
-    onCompact: handleContextCompact,
-    enabled: true,
-  });
+  // Other UI state
+  const [messageSearchOpen, setMessageSearchOpen] = useState(false);
+  const [bookmarkedMessages, setBookmarkedMessages] = useState<Set<string>>(new Set());
+  const [editingTitle, setEditingTitle] = useState(false);
+  const [titleDraft, setTitleDraft] = useState('');
 
   // Refs
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -265,2516 +139,301 @@ export default function ChatPage() {
   const abortControllerRef = useRef<AbortController | null>(null);
   const [userScrolledUp, setUserScrolledUp] = useState(false);
 
-  // Computed: Check if there's any tool activity to show in the panel
-  const hasToolActivity = messages.some(m => m.toolCalls && m.toolCalls.length > 0) || executingTools.size > 0 || researchProgress !== null;
+  // Context management
+  const maxContext = useMemo(() => {
+    const model = availableModels.find(m => m.id === selectedModel || m.id === runningModel);
+    return model?.max_model_len || 200000;
+  }, [availableModels, selectedModel, runningModel]);
+
+  const contextMessages = useMemo(() => messages.map(m => ({ role: m.role, content: m.content })), [messages]);
+
+  const handleContextCompact = useCallback((newMessages: Array<{ role: string; content: string }>, event: CompactionEvent) => {
+    const compactedIds = new Set(newMessages.map((m, i) => messages[messages.length - newMessages.length + i]?.id).filter(Boolean));
+    setMessages(prev => prev.filter(m => compactedIds.has(m.id) || prev.indexOf(m) >= prev.length - newMessages.length));
+  }, [messages]);
+
+  const contextManager = useContextManager({
+    messages: contextMessages, maxContext, systemPrompt,
+    tools: mcpEnabled ? mcpTools : undefined, onCompact: handleContextCompact, enabled: true,
+  });
+
+  // Computed values
+  const hasToolActivity = messages.some(m => m.toolCalls?.length) || executingTools.size > 0 || researchProgress !== null;
   const hasArtifacts = sessionArtifacts.length > 0;
   const hasSidePanelContent = hasToolActivity || hasArtifacts;
+  const allToolCalls = messages.flatMap(m => (m.toolCalls || []).map(tc => ({ ...tc, messageId: m.id, model: m.model })));
 
-  // Get all tool calls from messages for the panel
-  const allToolCalls = messages.flatMap(m =>
-    (m.toolCalls || []).map(tc => ({ ...tc, messageId: m.id, model: m.model }))
-  );
-
-  // State for recent chats dropdown on mobile
-  const [recentChatsOpen, setRecentChatsOpen] = useState(false);
-  const [chatSearchQuery, setChatSearchQuery] = useState('');
-  const [messageSearchOpen, setMessageSearchOpen] = useState(false);
-  const [bookmarkedMessages, setBookmarkedMessages] = useState<Set<string>>(new Set());
-  const [modelSelectorOpen, setModelSelectorOpen] = useState(false);
-  const [modelSearchQuery, setModelSearchQuery] = useState('');
-
-  // Detect mobile viewport
+  // Effects
   useEffect(() => {
-    const checkMobile = () => {
-      const mobile = window.innerWidth < 768;
-      setIsMobile(mobile);
-      if (mobile) {
-        setSidebarCollapsed(true);
-      }
-    };
-
+    const checkMobile = () => { const mobile = window.innerWidth < 768; setIsMobile(mobile); if (mobile) setSidebarCollapsed(true); };
     checkMobile();
     window.addEventListener('resize', checkMobile);
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
-  // Restore settings on mount - but always start with a NEW session
   useEffect(() => {
     const restored = loadState();
-    // Restore input draft if any
     if (restored.input) setInput(restored.input);
-    // Restore UI preferences
     if (restored.mcpEnabled) setMcpEnabled(restored.mcpEnabled);
     if (restored.artifactsEnabled) setArtifactsEnabled(restored.artifactsEnabled);
     if (restored.systemPrompt) setSystemPrompt(restored.systemPrompt);
     if (restored.selectedModel) setSelectedModel(restored.selectedModel);
-    // NOTE: We intentionally do NOT restore currentSessionId
-    // Every visit to /chat starts a fresh session with the current model
-    // Previous sessions are accessible via the sidebar
+    try {
+      const dr = localStorage.getItem('vllm-studio-deep-research');
+      if (dr) setDeepResearch(JSON.parse(dr));
+      const rag = localStorage.getItem('vllm-studio-rag-settings');
+      if (rag) setRagSettings(JSON.parse(rag));
+    } catch {}
   }, []);
 
-  // Page visibility handling - save state when going to background
-  // NOTE: We do NOT abort the streaming request when backgrounded - this prevents 524 timeouts
-  // The stream will continue in the background and update the UI when the user returns
-  useEffect(() => {
-    const handleVisibilityChange = () => {
-      if (document.hidden) {
-        // Save settings when going to background (but don't save session - always fresh on visit)
-        saveState({
-          // Don't save currentSessionId - each visit starts fresh
-          input,
-          selectedModel,
-          mcpEnabled,
-          artifactsEnabled,
-          systemPrompt,
-          messages: [], // Don't persist messages locally - server handles persistence
-        });
-      }
-    };
-
-    // Handle page unload - save final state
-    const handleBeforeUnload = () => {
-      saveState({
-        // Don't save currentSessionId - each visit starts fresh
-        input,
-        selectedModel,
-        mcpEnabled,
-        artifactsEnabled,
-        systemPrompt,
-        messages: [], // Don't persist messages locally - server handles persistence
-      });
-    };
-
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    window.addEventListener('beforeunload', handleBeforeUnload);
-    return () => {
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-      window.removeEventListener('beforeunload', handleBeforeUnload);
-    };
-  }, [currentSessionId, input, selectedModel, mcpEnabled, artifactsEnabled, systemPrompt, messages]);
-
-  // Debounced save on settings changes
-  useEffect(() => {
-    debouncedSave({
-      mcpEnabled,
-      artifactsEnabled,
-      systemPrompt,
-      selectedModel,
-    }, 1000);
-  }, [mcpEnabled, artifactsEnabled, systemPrompt, selectedModel]);
+  useEffect(() => { debouncedSave({ mcpEnabled, artifactsEnabled, systemPrompt, selectedModel }, 1000); }, [mcpEnabled, artifactsEnabled, systemPrompt, selectedModel]);
+  useEffect(() => { loadStatus(); loadSessions(); loadMCPServers(); loadAvailableModels(); }, []);
+  useEffect(() => { if (ragSettings.endpoint) ragClientRef.current = new RAGClient(ragSettings.endpoint, ragSettings.apiKey, ragSettings.useProxy); }, [ragSettings.endpoint, ragSettings.apiKey, ragSettings.useProxy]);
 
   useEffect(() => {
-    loadStatus();
-    loadSessions();
-    loadMCPServers();
-    loadAvailableModels();
-  }, []);
-
-  // Initialize RAG client and check health
-  useEffect(() => {
-    if (ragSettings.endpoint) {
-      ragClientRef.current = new RAGClient(ragSettings.endpoint, ragSettings.apiKey, ragSettings.useProxy);
-    }
-  }, [ragSettings.endpoint, ragSettings.apiKey, ragSettings.useProxy]);
-
-  // Check RAG health when enabled or settings change
-  useEffect(() => {
-    if (!ragSettings.enabled || (!ragSettings.endpoint && !ragSettings.useProxy)) {
-      setRagStatus('offline');
-      return;
-    }
-
-    const checkRagHealth = async () => {
+    if (!ragSettings.enabled) { setRagStatus('offline'); return; }
+    const check = async () => {
       setRagStatus('checking');
       try {
-        if (!ragClientRef.current) {
-          ragClientRef.current = new RAGClient(ragSettings.endpoint, ragSettings.apiKey, ragSettings.useProxy);
-        }
+        if (!ragClientRef.current) ragClientRef.current = new RAGClient(ragSettings.endpoint, ragSettings.apiKey, ragSettings.useProxy);
         const health = await ragClientRef.current.health();
         setRagStatus(health.status === 'ok' || health.status === 'healthy' ? 'online' : 'offline');
-      } catch {
-        setRagStatus('offline');
-      }
+      } catch { setRagStatus('offline'); }
     };
-
-    checkRagHealth();
-    // Periodically check health every 30 seconds when enabled
-    const interval = setInterval(checkRagHealth, 30000);
+    check();
+    const interval = setInterval(check, 30000);
     return () => clearInterval(interval);
   }, [ragSettings.enabled, ragSettings.endpoint, ragSettings.apiKey, ragSettings.useProxy]);
 
-  const loadAvailableModels = async () => {
-    try {
-      const res = await api.getOpenAIModels();
-      const data = Array.isArray(res.data) ? res.data : [];
-      setAvailableModels(data.map((m) => ({ id: m.id, root: m.root, max_model_len: m.max_model_len })));
-    } catch (e) {
-      console.log('OpenAI models endpoint not available:', e);
-      setAvailableModels([]);
-    }
-  };
+  useEffect(() => { if (!userScrolledUp) messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages, userScrolledUp]);
+  useEffect(() => { if (mcpEnabled) loadMCPTools(); else setMcpTools([]); }, [mcpEnabled]);
 
-  // Auto-scroll only if user hasn't scrolled up
-  useEffect(() => {
-    if (!userScrolledUp) {
-      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-    }
-  }, [messages, userScrolledUp]);
-
-  // Track user scroll position
-  const handleScroll = () => {
-    const container = messagesContainerRef.current;
-    if (!container) return;
-
-    const { scrollTop, scrollHeight, clientHeight } = container;
-    const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
-
-    // If user is within 100px of bottom, they're "at bottom"
-    if (distanceFromBottom < 100) {
-      setUserScrolledUp(false);
-    } else {
-      setUserScrolledUp(true);
-    }
-  };
-
-  // Reset scroll state when loading new session or sending new message
-  useEffect(() => {
-    if (isLoading) {
-      // When starting to load, scroll to bottom
-      setUserScrolledUp(false);
-    }
-  }, [currentSessionId]);
-
-  useEffect(() => {
-    if (mcpEnabled) {
-      loadMCPTools();
-    } else {
-      setMcpTools([]);
-    }
-  }, [mcpEnabled]);
-
-  // Timer effect - updates elapsed time every second during streaming
   useEffect(() => {
     let intervalId: NodeJS.Timeout | null = null;
-
     if (isLoading && streamingStartTime) {
-      intervalId = setInterval(() => {
-        setElapsedSeconds(Math.floor((Date.now() - streamingStartTime) / 1000));
-      }, 1000);
+      intervalId = setInterval(() => setElapsedSeconds(Math.floor((Date.now() - streamingStartTime) / 1000)), 1000);
     } else if (!isLoading) {
-      // Keep showing the final time for a moment, then reset
-      const timeoutId = setTimeout(() => {
-        if (!isLoading) {
-          setStreamingStartTime(null);
-          setElapsedSeconds(0);
-        }
-      }, 3000); // Keep showing time for 3s after completion
+      const timeoutId = setTimeout(() => { if (!isLoading) { setStreamingStartTime(null); setElapsedSeconds(0); } }, 3000);
       return () => clearTimeout(timeoutId);
     }
-
-    return () => {
-      if (intervalId) clearInterval(intervalId);
-    };
+    return () => { if (intervalId) clearInterval(intervalId); };
   }, [isLoading, streamingStartTime]);
 
-  // Track previous loading state for queued context handling
-  const prevIsLoadingRef = useRef(isLoading);
   useEffect(() => {
-    // When loading ends (true -> false), prepend queued context to input
-    if (prevIsLoadingRef.current && !isLoading && queuedContext.trim()) {
-      setInput((prev) => {
-        const context = queuedContext.trim();
-        const currentInput = prev.trim();
-        // Prepend context with newline if there's existing input
-        return currentInput ? `${context}\n\n${currentInput}` : context;
-      });
-      setQueuedContext('');
-    }
-    prevIsLoadingRef.current = isLoading;
-  }, [isLoading, queuedContext]);
-
-  // Recalculate context tokens when messages change (after streaming completes)
-  // Context is now tracked automatically by useContextManager hook
-
-  // Extract artifacts from messages when they change
-  useEffect(() => {
-    if (!artifactsEnabled || messages.length === 0) {
-      setSessionArtifacts([]);
-      return;
-    }
-    // Extract artifacts from all assistant messages
+    if (!artifactsEnabled || !messages.length) { setSessionArtifacts([]); return; }
     const artifacts: Artifact[] = [];
-    messages.forEach((msg) => {
+    messages.forEach(msg => {
       if (msg.role === 'assistant' && msg.content) {
         const { artifacts: extracted } = extractArtifacts(msg.content);
-        extracted.forEach((artifact) => {
-          artifacts.push({
-            ...artifact,
-            message_id: msg.id,
-            session_id: currentSessionId || undefined,
-          });
-        });
+        extracted.forEach(a => artifacts.push({ ...a, message_id: msg.id, session_id: currentSessionId || undefined }));
       }
     });
     setSessionArtifacts(artifacts);
-    // Auto-switch to artifacts panel if artifacts detected and none before
-    if (artifacts.length > 0 && sessionArtifacts.length === 0) {
-      setActivePanel('artifacts');
-    }
+    if (artifacts.length > 0 && sessionArtifacts.length === 0) setActivePanel('artifacts');
   }, [messages, artifactsEnabled, currentSessionId]);
 
-  const loadMCPServers = async () => {
-    try {
-      const servers = await api.getMCPServers();
-      setMcpServers(servers.map((s) => ({ ...s, args: s.args || [], env: s.env || {}, enabled: s.enabled ?? true })));
-    } catch (e) {
-      console.log('MCP servers not available:', e);
-    }
-  };
-
-  const loadMCPTools = async () => {
-    try {
-      const response = await api.getMCPTools();
-      setMcpTools(response.tools || []);
-      console.log('[MCP] Loaded tools:', response.tools?.length || 0);
-    } catch (e) {
-      console.log('MCP tools not available:', e);
-      setMcpTools([]);
-    }
-  };
+  // Load functions
+  const loadAvailableModels = async () => { try { const res = await api.getOpenAIModels(); setAvailableModels((res.data || []).map((m: any) => ({ id: m.id, root: m.root, max_model_len: m.max_model_len }))); } catch { setAvailableModels([]); } };
+  const loadMCPServers = async () => { try { const servers = await api.getMCPServers(); setMcpServers(servers.map((s: any) => ({ ...s, args: s.args || [], env: s.env || {}, enabled: s.enabled ?? true }))); } catch {} };
+  const loadMCPTools = async () => { try { const response = await api.getMCPTools(); setMcpTools(response.tools || []); } catch { setMcpTools([]); } };
 
   const loadStatus = async () => {
     try {
       const status = await api.getStatus();
       if (status.process) {
-        const modelId =
-          status.process.served_model_name ||
-          status.process.model_path ||
-          'default';
-        setRunningModel(modelId);
-        setModelName(
-          status.process.model_path?.split('/').pop() ||
-            'Model'
-        );
-        setSelectedModel((prev) => prev || modelId);
+        const modelId = status.process.served_model_name || status.process.model_path || 'default';
+        setRunningModel(modelId); setModelName(status.process.model_path?.split('/').pop() || 'Model'); setSelectedModel(prev => prev || modelId);
       }
-    } catch (e) {
-      console.error('Failed to load status:', e);
-    } finally {
-      setPageLoading(false);
-    }
+    } catch {} finally { setPageLoading(false); }
   };
 
   const loadSessions = async () => {
-    try {
-      const data = await api.getChatSessions();
-      setSessions(data.sessions);
-      setSessionsAvailable(true);
-      if (currentSessionId) {
-        const found = data.sessions.find((s) => s.id === currentSessionId);
-        if (found?.title) setCurrentSessionTitle(found.title);
-      }
-    } catch (e) {
-      console.error('Chat sessions API error:', e);
-      setSessions([]);
-      setSessionsAvailable(false);
-    } finally {
-      setSessionsLoading(false);
-    }
-  };
-
-  const refreshUsage = (sessionId: string) => {
-    if (!sessionId) return;
-    if (usageRefreshTimerRef.current) {
-      window.clearTimeout(usageRefreshTimerRef.current);
-    }
-    usageRefreshTimerRef.current = window.setTimeout(async () => {
-      try {
-        const usage = await api.getChatUsage(sessionId);
-        setSessionUsage({
-          prompt_tokens: usage.prompt_tokens,
-          completion_tokens: usage.completion_tokens,
-          total_tokens: usage.total_tokens,
-          estimated_cost_usd: usage.estimated_cost_usd ?? null,
-        });
-      } catch {
-        // ignore
-      }
-    }, 350);
+    try { const data = await api.getChatSessions(); setSessions(data.sessions); setSessionsAvailable(true); if (currentSessionId) { const found = data.sessions.find((s: any) => s.id === currentSessionId); if (found?.title) setCurrentSessionTitle(found.title); } } catch { setSessions([]); setSessionsAvailable(false); } finally { setSessionsLoading(false); }
   };
 
   const loadSession = async (sessionId: string) => {
     try {
-      const data = await api.getChatSession(sessionId);
-      const session = data.session;
-      const loadedToolResults = new Map<string, ToolResult>();
-      const loadedMessages: Message[] = (session.messages || [])
-        .filter((m: any) => m.role === 'user' || m.role === 'assistant')
-        .map((m: any) => {
-          const base: Message = {
-            id: m.id,
-            role: m.role as 'user' | 'assistant',
-            content: m.content,
-            model: m.model,
-            prompt_tokens: (m as any).prompt_tokens,
-            completion_tokens: (m as any).completion_tokens,
-            total_tokens: (m as any).total_tokens,
-            request_prompt_tokens: (m as any).request_prompt_tokens ?? null,
-            request_tools_tokens: (m as any).request_tools_tokens ?? null,
-            request_total_input_tokens: (m as any).request_total_input_tokens ?? null,
-            request_completion_tokens: (m as any).request_completion_tokens ?? null,
-            estimated_cost_usd: (m as any).estimated_cost_usd ?? null,
-          };
-
-          if (m.role === 'assistant' && Array.isArray(m.tool_calls)) {
-            const toolCalls: ToolCall[] = [];
-            const toolResults: ToolResult[] = [];
-
-            for (const entry of m.tool_calls) {
-              const tc = entry as any;
-              if (!tc || typeof tc !== 'object') continue;
-              if (typeof tc.id !== 'string' || !tc.function || typeof tc.function.name !== 'string') continue;
-              toolCalls.push({
-                id: tc.id,
-                type: 'function',
-                function: {
-                  name: String(tc.function.name),
-                  arguments: typeof tc.function.arguments === 'string' ? tc.function.arguments : JSON.stringify(tc.function.arguments ?? ''),
-                },
-              });
-
-              const res = tc.result as any;
-              if (res && typeof res === 'object' && typeof res.content === 'string') {
-                const toolResult: ToolResult = {
-                  tool_call_id: tc.id,
-                  content: res.content,
-                  isError: Boolean(res.isError),
-                };
-                toolResults.push(toolResult);
-                loadedToolResults.set(tc.id, toolResult);
-              }
-            }
-
-            if (toolCalls.length > 0) {
-              base.toolCalls = toolCalls;
-            }
-            if (toolResults.length > 0) {
-              base.toolResults = toolResults;
-            }
-          }
-
-          return base;
-        });
-      setMessages(loadedMessages);
-      setToolResultsMap(loadedToolResults);
-      setExecutingTools(new Set());
-      setCurrentSessionId(sessionId);
+      const { session } = await api.getChatSession(sessionId);
+      setCurrentSessionId(session.id); setCurrentSessionTitle(session.title); setTitleDraft(session.title);
       if (session.model) setSelectedModel(session.model);
-      setCurrentSessionTitle(session.title || 'Chat');
-      setEditingTitle(false);
-      setTitleDraft(session.title || '');
-      refreshUsage(sessionId);
-      // Context tokens are now tracked automatically by useContextManager
-    } catch (e) {
-      console.error('Failed to load session:', e);
-      setError('Failed to load conversation');
-    }
+      const msgs: Message[] = (session.messages || []).map((m: any) => ({ id: m.id, role: m.role, content: m.content, model: m.model, toolCalls: m.tool_calls, toolResults: m.tool_results, prompt_tokens: m.prompt_tokens, completion_tokens: m.completion_tokens, total_tokens: m.total_tokens, request_prompt_tokens: m.request_prompt_tokens, request_tools_tokens: m.request_tools_tokens, request_total_input_tokens: m.request_total_input_tokens, request_completion_tokens: m.request_completion_tokens, estimated_cost_usd: m.estimated_cost_usd }));
+      setMessages(msgs); setToolResultsMap(new Map()); refreshUsage(session.id); setSidebarCollapsed(isMobile);
+    } catch { console.log('Failed to load session'); }
   };
 
-  const createSession = () => {
-    setMessages([]);
-    setCurrentSessionId(null);
-    setError(null);
-    setSelectedModel(runningModel || availableModels[0]?.id || '');
-    setCurrentSessionTitle('New Chat');
-    setSessionUsage(null);
-    // Context is reset automatically when messages are cleared
-    setEditingTitle(false);
-    setTitleDraft('');
-    setTimeout(() => {
-      const inputEl = document.querySelector('textarea');
-      inputEl?.focus();
-    }, 100);
+  const createSession = () => { setCurrentSessionId(null); setCurrentSessionTitle('New Chat'); setTitleDraft(''); setMessages([]); setToolResultsMap(new Map()); setSessionUsage(null); setRagContext([]); setResearchSources([]); setSidebarCollapsed(isMobile); };
+  const deleteSession = async (sessionId: string) => { try { await api.deleteChatSession(sessionId); setSessions(prev => prev.filter(s => s.id !== sessionId)); if (currentSessionId === sessionId) createSession(); } catch {} };
+
+  const refreshUsage = async (sessionId: string) => {
+    if (!sessionId) return;
+    if (usageRefreshTimerRef.current) window.clearTimeout(usageRefreshTimerRef.current);
+    usageRefreshTimerRef.current = window.setTimeout(async () => { try { const usage = await api.getChatUsage(sessionId); setSessionUsage({ prompt_tokens: usage.prompt_tokens, completion_tokens: usage.completion_tokens, total_tokens: usage.total_tokens, estimated_cost_usd: usage.estimated_cost_usd ?? null }); } catch {} }, 500);
   };
 
-  const deleteSession = async (sessionId: string) => {
-    try {
-      await api.deleteChatSession(sessionId);
-      setSessions((prev) => prev.filter((s) => s.id !== sessionId));
-      if (currentSessionId === sessionId) {
-        setCurrentSessionId(null);
-        setMessages([]);
-      }
-    } catch (e) {
-      console.error('Failed to delete session:', e);
-    }
-  };
+  const handleScroll = () => { const container = messagesContainerRef.current; if (!container) return; const { scrollTop, scrollHeight, clientHeight } = container; setUserScrolledUp(scrollHeight - scrollTop - clientHeight >= 100); };
 
-  // Parse SSE events from the stream
-  const parseSSEEvents = async function* (reader: ReadableStreamDefaultReader<Uint8Array>) {
-    const decoder = new TextDecoder();
-    let buffer = '';
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split('\n');
-      buffer = lines.pop() || '';
-
-      for (const line of lines) {
-        if (line.startsWith('data: ')) {
-          const data = line.slice(6).trim();
-          if (data) {
-            try {
-              yield JSON.parse(data) as StreamEvent;
-            } catch {
-              // Skip malformed JSON
-            }
-          }
-        }
-      }
-    }
-  };
-
-  // Query RAG for relevant context
-  const queryRAG = async (query: string): Promise<RAGDocument[]> => {
-    if (!ragSettings.enabled || ragStatus !== 'online' || !ragClientRef.current) {
-      return [];
-    }
-
-    try {
-      const result = await ragClientRef.current.query(query, {
-        topK: ragSettings.topK,
-        minScore: ragSettings.minScore,
-        includeMetadata: ragSettings.includeMetadata,
-      });
-      return result.documents || [];
-    } catch (error) {
-      console.error('RAG query failed:', error);
-      return [];
-    }
-  };
-
-  // Format RAG context for injection into conversation
-  const formatRAGContext = (documents: RAGDocument[]): string => {
-    if (documents.length === 0) return '';
-
-    const contextParts = documents.map((doc, index) => {
-      let entry = `[${index + 1}] ${doc.content}`;
-      if (ragSettings.includeMetadata && doc.metadata) {
-        const metaStr = Object.entries(doc.metadata)
-          .filter(([k, v]) => v !== undefined && v !== null)
-          .map(([k, v]) => `${k}: ${v}`)
-          .join(', ');
-        if (metaStr) {
-          entry += `\n   (${metaStr})`;
-        }
-      }
-      if (doc.source) {
-        entry += `\n   Source: ${doc.source}`;
-      }
-      return entry;
-    });
-
-    return `\n\n---\n**Relevant Knowledge Base Context:**\n${contextParts.join('\n\n')}\n---\n\n`;
-  };
-
-  // Build API messages with system prompt
-  const buildAPIMessages = (msgs: Message[], ragDocs: RAGDocument[] = []) => {
+  // Build API messages
+  const buildAPIMessages = (msgs: Message[], ragDocs: RAGDocument[] = []): OpenAIMessage[] => {
     const apiMessages: OpenAIMessage[] = [];
-    const ragContextStr = formatRAGContext(ragDocs);
-
-    // Prepend system prompt if set
-    if (systemPrompt.trim()) {
-      let sysContent = systemPrompt.trim();
-      // Inject RAG context into system prompt if configured
-      if (ragContextStr && ragSettings.contextPosition === 'system') {
-        sysContent += ragContextStr;
-      }
-      apiMessages.push({ role: 'system', content: sysContent });
-    } else if (ragContextStr && ragSettings.contextPosition === 'system') {
-      // If no system prompt but RAG context should go in system
-      apiMessages.push({ role: 'system', content: `Use the following context to help answer questions:${ragContextStr}` });
+    let sysContent = systemPrompt.trim();
+    if (ragDocs.length > 0 && ragSettings.contextPosition === 'system') { const ragText = ragDocs.map(d => d.content).join('\n\n---\n\n'); sysContent = sysContent ? `${sysContent}\n\n## Retrieved Context:\n${ragText}` : `## Retrieved Context:\n${ragText}`; }
+    if (sysContent) apiMessages.push({ role: 'system', content: sysContent });
+    if (mcpEnabled && mcpTools.length > 0) { const toolsList = mcpTools.map(t => `- ${t.server}__${t.name}: ${t.description || 'No description'}`).join('\n'); apiMessages.push({ role: 'system', content: `Available tools:\n${toolsList}` }); }
+    for (const msg of msgs) {
+      if (msg.role === 'user') { const parts: OpenAIContentPart[] = []; if (msg.content) parts.push({ type: 'text', text: msg.content }); if (msg.images?.length) msg.images.forEach(img => parts.push({ type: 'image_url', image_url: { url: `data:image/jpeg;base64,${img}` } })); apiMessages.push({ role: 'user', content: parts.length === 1 && parts[0].type === 'text' ? parts[0].text : parts }); }
+      else { const cleanContent = stripThinkingForModelContext(msg.content); if (msg.toolCalls?.length) { apiMessages.push({ role: 'assistant', content: cleanContent || null, tool_calls: msg.toolCalls.map(tc => ({ id: tc.id, type: 'function', function: { name: tc.function.name, arguments: tc.function.arguments } })) }); msg.toolResults?.forEach(tr => apiMessages.push({ role: 'tool', tool_call_id: tr.tool_call_id, content: tr.content })); } else { apiMessages.push({ role: 'assistant', content: cleanContent || '' }); } }
     }
-    if (mcpEnabled) {
-      apiMessages.push({
-        role: 'system',
-        content:
-          'When you need a tool, emit tool_calls immediately (no preface). Do not repeat the same tool call with identical arguments; use tool results and then answer. IMPORTANT: Always provide valid JSON arguments for tool calls - never use empty objects {} as arguments.',
-      });
-    }
-    if (artifactsEnabled) {
-      apiMessages.push({
-        role: 'system',
-        content:
-          'If you output code intended for preview (HTML/SVG/JS/JSX/TSX), put it in the normal response (not inside <think> blocks) and wrap it in a fenced code block (```lang ... ```).',
-      });
-    }
-
-    // Deep Research system prompt - comprehensive multi-step research guidance
-    if (deepResearch.enabled) {
-      const numSources = deepResearch.numSources || 5;
-      const searchDepth = deepResearch.searchDepth || 'normal';
-      const includeCitations = deepResearch.includeCitations !== false;
-      const autoSummarize = deepResearch.autoSummarize !== false;
-
-      apiMessages.push({
-        role: 'system',
-        content: `You are a Deep Research Assistant. Your task is to conduct thorough, multi-step research to provide comprehensive, well-sourced answers.
-
-## RESEARCH METHODOLOGY
-
-When the user asks a question, follow this systematic research process:
-
-### Step 1: Query Analysis
-- Break down the user's question into 2-4 specific research angles or sub-questions
-- Identify key concepts, entities, and terms to search for
-- Consider different perspectives (technical, practical, historical, current trends)
-
-### Step 2: Multi-Source Search Strategy
-You MUST use the Exa search tool (exa__search or similar) to gather information. Perform ${numSources} separate searches with different queries:
-- Search 1: Direct query for the main topic
-- Search 2: Query for recent developments/news on the topic
-- Search 3: Query for expert opinions or academic perspectives
-- Search 4+: Queries for specific sub-questions or related concepts
-
-For each search, use tool_calls to invoke the Exa search tool with varied queries. Example:
-\`\`\`
-tool_call: exa__search with query="[your search query]" and numResults=5
-\`\`\`
-
-### Step 3: Source Analysis (${searchDepth === 'thorough' ? 'Deep Analysis' : 'Standard Analysis'})
-For each search result:
-- Extract key facts, statistics, and claims
-- Note the source credibility and date
-- Identify agreements and contradictions between sources
-${searchDepth === 'thorough' ? '- Use exa__getContents or fetch tools to read full article content when summaries are insufficient\n- Cross-reference claims across multiple sources' : '- Focus on the most relevant and recent information'}
-
-### Step 4: Synthesis & Response
-${autoSummarize ? `Synthesize your findings into a comprehensive response that:
-- Directly answers the user's question
-- Presents information from multiple angles
-- Highlights key insights and takeaways
-- Notes any controversies or uncertainties in the topic` : 'Present the raw findings organized by source.'}
-
-${includeCitations ? `### Step 5: Citations
-Include citations for all factual claims using this format:
-- Inline: "According to [Source Name], ..." or "Research shows that ... [1]"
-- At the end, provide a "Sources" section listing all references with URLs` : ''}
-
-## IMPORTANT GUIDELINES
-
-1. **Always use tools first** - Do not answer from memory alone. Search for current information.
-2. **Diverse queries** - Use different phrasings and angles for each search to maximize coverage.
-3. **Verify claims** - Cross-reference important facts across multiple sources.
-4. **Acknowledge limitations** - If information is scarce or conflicting, say so.
-5. **Stay current** - Prioritize recent sources when recency matters.
-6. **Be thorough** - This is DEEP research. Take the time to gather comprehensive information.
-
-## TOOL USAGE
-
-You have access to web search and content fetching tools. Use them liberally:
-- \`exa__search\`: Search the web for information (use query parameter)
-- \`exa__findSimilar\`: Find pages similar to a given URL
-- \`exa__getContents\`: Get full content from URLs
-- \`brave-search__brave_web_search\`: Alternative web search
-- \`fetch__fetch\`: Fetch and read webpage content
-
-Start your research immediately when you receive a question. Do not ask for clarification unless the question is truly ambiguous.`,
-      });
-    }
-
-    for (const m of msgs) {
-      if (m.images && m.images.length > 0) {
-        const content: OpenAIContentPart[] = [];
-        if (m.content) {
-          content.push({ type: 'text', text: m.content });
-        }
-        for (const base64 of m.images) {
-          content.push({
-            type: 'image_url',
-            image_url: { url: `data:image/jpeg;base64,${base64}` },
-          });
-        }
-        apiMessages.push({ role: m.role, content });
-        continue;
-      }
-
-      if (m.role === 'assistant' && m.toolCalls && m.toolCalls.length > 0) {
-        // Include content (stripped of thinking) so model remembers context
-        const cleanedContent = stripThinkingForModelContext(m.content);
-        apiMessages.push({
-          role: 'assistant',
-          content: cleanedContent || null,
-          tool_calls: m.toolCalls.map((tc) => ({
-            id: tc.id,
-            type: 'function',
-            function: { name: tc.function.name, arguments: tc.function.arguments },
-          })),
-        });
-
-        const nameById = new Map(m.toolCalls.map((tc) => [tc.id, tc.function.name]));
-        for (const result of m.toolResults || []) {
-          apiMessages.push({
-            role: 'tool',
-            tool_call_id: result.tool_call_id,
-            name: nameById.get(result.tool_call_id),
-            content: result.content,
-          });
-        }
-        continue;
-      }
-
-      let content =
-        m.role === 'assistant' ? stripThinkingForModelContext(m.content) : m.content;
-
-      // Inject RAG context for user messages (only for the last user message which is the current query)
-      if (m.role === 'user' && ragContextStr && m === msgs[msgs.length - 1]) {
-        if (ragSettings.contextPosition === 'before') {
-          content = `${ragContextStr}${content}`;
-        } else if (ragSettings.contextPosition === 'after') {
-          content = `${content}${ragContextStr}`;
-        }
-      }
-
-      apiMessages.push({ role: m.role, content });
-    }
-
     return apiMessages;
   };
 
-  // Context compaction - summarizes old tool results when approaching context limit
-  const compactContext = async (
-    messages: OpenAIMessage[],
-    modelId: string,
-    maxContextTokens: number,
-  ): Promise<{ compacted: OpenAIMessage[]; wasCompacted: boolean; tokensBefore: number; tokensAfter: number }> => {
-    // Get current token count
-    let tokensBefore = 0;
-    try {
-      const tok = await api.tokenizeChatCompletions({
-        model: modelId,
-        messages: messages as unknown[],
-        tools: getOpenAITools() as unknown[] | undefined,
-      });
-      tokensBefore = tok.input_tokens ?? 0;
-    } catch {
-      // If tokenization fails, assume we're fine
-      return { compacted: messages, wasCompacted: false, tokensBefore: 0, tokensAfter: 0 };
-    }
+  const getOpenAITools = () => { if (!mcpEnabled || !mcpTools.length) return []; return mcpTools.map(tool => ({ type: 'function', function: { name: `${tool.server}__${tool.name}`, description: tool.description || `Tool ${tool.name} from ${tool.server}`, parameters: tool.inputSchema || { type: 'object', properties: {} } } })); };
 
-    // Check if we need compaction (80% threshold)
-    const threshold = maxContextTokens * 0.8;
-    if (tokensBefore < threshold) {
-      // Context tracking is handled by useContextManager hook
-      return { compacted: messages, wasCompacted: false, tokensBefore, tokensAfter: tokensBefore };
-    }
-
-    console.log(`[Compaction] Context at ${tokensBefore}/${maxContextTokens} tokens (${((tokensBefore/maxContextTokens)*100).toFixed(1)}%), triggering compaction...`);
-
-    // Find tool result messages to summarize (keep recent ones)
-    const systemMsg = messages.find(m => m.role === 'system');
-    const userMessages = messages.filter(m => m.role === 'user');
-    const lastUserMsg = userMessages[userMessages.length - 1];
-
-    // Split messages: keep system, find tool call/result pairs to compact
-    const toolRelatedMsgs: OpenAIMessage[] = [];
-    const recentMsgs: OpenAIMessage[] = [];
-
-    // Keep last 4 messages as recent (they're likely the active conversation)
-    const recentCount = 4;
-    const msgsWithoutSystem = messages.filter(m => m.role !== 'system');
-
-    for (let i = 0; i < msgsWithoutSystem.length; i++) {
-      if (i >= msgsWithoutSystem.length - recentCount) {
-        recentMsgs.push(msgsWithoutSystem[i]);
-      } else {
-        toolRelatedMsgs.push(msgsWithoutSystem[i]);
-      }
-    }
-
-    // Create a summary of the tool interactions
-    const toolSummaries: string[] = [];
-    for (const msg of toolRelatedMsgs) {
-      if (msg.role === 'assistant' && 'tool_calls' in msg && msg.tool_calls) {
-        const calls = msg.tool_calls.map((tc: OpenAIToolCall) => `Called ${tc.function.name}`).join(', ');
-        if (calls) toolSummaries.push(calls);
-      }
-      if (msg.role === 'tool' && 'content' in msg) {
-        const content = String(msg.content || '');
-        // Truncate long tool results to first 500 chars
-        const preview = content.length > 500 ? content.slice(0, 500) + '...' : content;
-        toolSummaries.push(`Result: ${preview}`);
-      }
-      if (msg.role === 'assistant' && !('tool_calls' in msg)) {
-        const content = String(('content' in msg ? msg.content : '') || '');
-        if (content) toolSummaries.push(`Assistant: ${content.slice(0, 200)}...`);
-      }
-    }
-
-    // Create compacted message set
-    const summaryContent = toolSummaries.length > 0
-      ? `[Previous conversation context - ${toolRelatedMsgs.length} messages compacted]\n${toolSummaries.slice(-10).join('\n')}`
-      : '';
-
-    const compacted: OpenAIMessage[] = [];
-    if (systemMsg) compacted.push(systemMsg);
-    if (summaryContent) {
-      compacted.push({ role: 'user', content: `Context from earlier in conversation:\n${summaryContent}` });
-      compacted.push({ role: 'assistant', content: 'Understood, I have context from our earlier conversation.' });
-    }
-    compacted.push(...recentMsgs);
-
-    // Verify compaction worked
-    let tokensAfter = 0;
-    try {
-      const tok = await api.tokenizeChatCompletions({
-        model: modelId,
-        messages: compacted as unknown[],
-        tools: getOpenAITools() as unknown[] | undefined,
-      });
-      tokensAfter = tok.input_tokens ?? 0;
-    } catch {
-      tokensAfter = tokensBefore / 2; // Estimate
-    }
-
-    console.log(`[Compaction] Reduced from ${tokensBefore} to ${tokensAfter} tokens (saved ${tokensBefore - tokensAfter})`);
-    // Context tracking is handled by useContextManager hook
-
-    return { compacted, wasCompacted: true, tokensBefore, tokensAfter };
-  };
-
-  // Convert MCP tools to OpenAI function format
-  const getOpenAITools = () => {
-    if (!mcpEnabled || mcpTools.length === 0) return undefined;
-    return mcpTools.map((tool) => ({
-      type: 'function' as const,
-      function: {
-        name: `${tool.server}__${tool.name}`,
-        description: tool.description,
-        parameters: tool.input_schema,
-      },
-    }));
-  };
-
-  // Execute an MCP tool call
   const executeMCPTool = async (toolCall: ToolCall): Promise<ToolResult> => {
-    const funcName = toolCall.function.name;
-
-    const resolveMcpTool = (name: string): { server: string; toolName: string; schema?: MCPTool } | null => {
-      const trimmed = (name || '').trim();
-      if (!trimmed) return null;
-
-      // Preferred format: `${server}__${tool}`
-      if (trimmed.includes('__')) {
-        const [server, ...nameParts] = trimmed.split('__');
-        const toolName = nameParts.join('__');
-        if (!server || !toolName) return null;
-        const schema = mcpTools.find((t) => t.server === server && t.name === toolName);
-        return { server, toolName, schema };
-      }
-
-      // Some models output only the tool name; try exact match across servers.
-      const exact = mcpTools.find((t) => t.name === trimmed);
-      if (exact) return { server: exact.server, toolName: exact.name, schema: exact };
-
-      const lower = trimmed.toLowerCase();
-      const haystack = (t: MCPTool) => `${t.name} ${t.description || ''}`.toLowerCase();
-
-      // Common aliases
-      const isSearch = /(^|_|\b)(search|web|browse|brave)(\b|_)/.test(lower);
-      const isFetch = /(^|_|\b)(fetch|http|url|download|read)(\b|_)/.test(lower);
-
-      let candidates = mcpTools;
-      if (isSearch) {
-        candidates = candidates.filter((t) => /search|brave|web/.test(haystack(t)));
-      } else if (isFetch) {
-        candidates = candidates.filter((t) => /fetch|http|url|download|read/.test(haystack(t)));
-      }
-
-      return candidates.length > 0 ? { server: candidates[0].server, toolName: candidates[0].name, schema: candidates[0] } : null;
-    };
-
-    const resolved = resolveMcpTool(funcName);
-    const server = resolved?.server || '';
-    const toolName = resolved?.toolName || '';
-
-    const parseToolArgs = (raw: string | undefined): Record<string, unknown> => {
-      const text = (raw || '').trim();
-      if (!text) return {};
-      try {
-        const parsed = JSON.parse(text) as unknown;
-        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed as Record<string, unknown>;
-        return { input: parsed };
-      } catch {
-        // Try to extract the last valid JSON object/array from a concatenated string
-        let lastParsed: unknown = undefined;
-        for (let start = 0; start < text.length; start++) {
-          const startChar = text[start];
-          if (startChar !== '{' && startChar !== '[') continue;
-          const endChar = startChar === '{' ? '}' : ']';
-          let depth = 0;
-          let inString = false;
-          let escape = false;
-
-          for (let i = start; i < text.length; i++) {
-            const ch = text[i];
-            if (inString) {
-              if (escape) {
-                escape = false;
-              } else if (ch === '\\\\') {
-                escape = true;
-              } else if (ch === '"') {
-                inString = false;
-              }
-              continue;
-            }
-
-            if (ch === '"') {
-              inString = true;
-              continue;
-            }
-
-            if (ch === startChar) depth++;
-            if (ch === endChar) depth--;
-
-            if (depth === 0) {
-              const candidate = text.slice(start, i + 1);
-              try {
-                lastParsed = JSON.parse(candidate);
-              } catch {
-                // ignore
-              }
-              break;
-            }
-          }
-        }
-
-        if (lastParsed !== undefined) {
-          if (lastParsed && typeof lastParsed === 'object' && !Array.isArray(lastParsed)) {
-            return lastParsed as Record<string, unknown>;
-          }
-          return { input: lastParsed };
-        }
-
-        return { raw: text };
-      }
-    };
-
-    try {
-      if (!resolved) {
-        const available = mcpTools.slice(0, 12).map((t) => `${t.server}__${t.name}`).join(', ');
-        return {
-          tool_call_id: toolCall.id,
-          content: `Error: Unknown tool "${funcName}". Available tools include: ${available}${mcpTools.length > 12 ? ', ...' : ''}`,
-          isError: true,
-        };
-      }
-
-      let args = parseToolArgs(toolCall.function.arguments);
-
-      // Heuristic coercions for common "input" shapes.
-      const schema = resolved.schema;
-      const schemaProps = (schema?.input_schema as any)?.properties as Record<string, any> | undefined;
-      const wantsQuery = !!schemaProps && Object.prototype.hasOwnProperty.call(schemaProps, 'query');
-      const wantsUrl = !!schemaProps && (Object.prototype.hasOwnProperty.call(schemaProps, 'url') || Object.prototype.hasOwnProperty.call(schemaProps, 'uri'));
-
-      const tryParseNestedJsonString = (value: unknown): Record<string, unknown> | null => {
-        if (typeof value !== 'string') return null;
-        const nested = parseToolArgs(value);
-        if (nested && typeof nested === 'object') return nested;
-        return null;
-      };
-
-      if (args && typeof args === 'object' && 'input' in args) {
-        const input = (args as any).input;
-        if (wantsQuery && (typeof input === 'string' || Array.isArray(input))) {
-          const query = Array.isArray(input) ? String(input[0] ?? '') : String(input);
-          args = { query, ...(typeof (args as any).count === 'number' ? { count: (args as any).count } : { count: 5 }) };
-        } else if (wantsUrl && (typeof input === 'string' || Array.isArray(input))) {
-          const url = Array.isArray(input) ? String(input[0] ?? '') : String(input);
-          args = { url };
-        }
-      }
-
-      // Some models stuff the real args into a `raw` string (sometimes even concatenated JSON).
-      if (args && typeof args === 'object' && 'raw' in args && typeof (args as any).raw === 'string') {
-        const nested = tryParseNestedJsonString((args as any).raw);
-        if (nested) {
-          if (wantsQuery && !('query' in args) && ('query' in nested || 'input' in nested)) {
-            const query =
-              typeof (nested as any).query === 'string'
-                ? (nested as any).query
-                : typeof (nested as any).input === 'string'
-                  ? (nested as any).input
-                  : '';
-            const count = typeof (nested as any).count === 'number' ? (nested as any).count : 5;
-            if (query) args = { query, count };
-          } else if (wantsUrl && !('url' in args) && !('uri' in args) && ('url' in nested || 'uri' in nested || 'input' in nested)) {
-            const url =
-              typeof (nested as any).url === 'string'
-                ? (nested as any).url
-                : typeof (nested as any).uri === 'string'
-                  ? (nested as any).uri
-                  : typeof (nested as any).input === 'string'
-                    ? (nested as any).input
-                    : '';
-            if (url) args = { url };
-          }
-        }
-      }
-
-      console.log(`[MCP] Calling ${server}/${toolName}`, args);
-      const result = await api.callMCPTool(server, toolName, args);
-      return {
-        tool_call_id: toolCall.id,
-        content: typeof result.result === 'string' ? result.result : JSON.stringify(result.result),
-      };
-    } catch (error) {
-      console.error(`[MCP] Tool error:`, error);
-      return {
-        tool_call_id: toolCall.id,
-        content: `Error: ${error instanceof Error ? error.message : String(error)}`,
-        isError: true,
-      };
-    }
+    const funcName = toolCall.function?.name || ''; const parts = funcName.split('__'); const server = parts.length > 1 ? parts[0] : ''; const toolName = parts.length > 1 ? parts.slice(1).join('__') : funcName;
+    try { let args: Record<string, unknown> = {}; const rawArgs = (toolCall.function?.arguments || '').trim(); if (rawArgs) { try { args = JSON.parse(rawArgs); } catch { args = { raw: rawArgs }; } } const result = await api.callMCPTool(server, toolName, args); return { tool_call_id: toolCall.id, content: typeof result.result === 'string' ? result.result : JSON.stringify(result.result) }; }
+    catch (error) { return { tool_call_id: toolCall.id, content: `Error: ${error instanceof Error ? error.message : String(error)}`, isError: true }; }
   };
 
+  const queryRAG = async (text: string): Promise<RAGDocument[]> => {
+    if (!ragSettings.enabled || ragStatus !== 'online' || !ragClientRef.current) return [];
+    try {
+      const result = await ragClientRef.current.query(text, { topK: ragSettings.topK });
+      return (result.documents || []).map(d => ({ id: d.id, content: d.content, score: d.score, metadata: d.metadata, source: d.source }));
+    } catch { return []; }
+  };
+
+  // Send message
   const sendMessage = async (attachments?: Attachment[]) => {
-    const hasText = input.trim().length > 0;
-    const hasAttachments = attachments && attachments.length > 0;
-
-    const activeModelId = (selectedModel || runningModel || '').trim();
+    const hasText = input.trim().length > 0; const hasAttachments = attachments?.length; const activeModelId = (selectedModel || runningModel || '').trim();
     if ((!hasText && !hasAttachments) || !activeModelId || isLoading) return;
-
-    const userContent = input.trim();
-    const imageAttachments = attachments?.filter((a) => a.type === 'image' && a.base64) || [];
-
-    const userMessage: Message = {
-      id: Date.now().toString(),
-      role: 'user',
-      content: userContent || (imageAttachments.length > 0 ? '[Image]' : '...'),
-      images: imageAttachments.map((a) => a.base64!),
-      model: activeModelId,
-    };
-
-    setMessages((prev) => [...prev, userMessage]);
-    setInput('');
-    setIsLoading(true);
-    setStreamingStartTime(Date.now());
-    setElapsedSeconds(0);
-    setError(null);
-
+    const userContent = input.trim(); const imageAttachments = attachments?.filter(a => a.type === 'image' && a.base64) || [];
+    const userMessage: Message = { id: Date.now().toString(), role: 'user', content: userContent || (imageAttachments.length ? '[Image]' : '...'), images: imageAttachments.map(a => a.base64!), model: activeModelId };
+    setMessages(prev => [...prev, userMessage]); setInput(''); setIsLoading(true); setStreamingStartTime(Date.now()); setElapsedSeconds(0); setError(null);
     abortControllerRef.current = new AbortController();
-
-    // Query RAG for context if enabled
-    let ragDocs: RAGDocument[] = [];
-    if (ragSettings.enabled && ragStatus === 'online') {
-      try {
-        ragDocs = await queryRAG(userContent);
-        setRagContext(ragDocs);
-      } catch (error) {
-        console.error('RAG query failed:', error);
-      }
-    }
-
-    // Track conversation for tool calling loop
-    let conversationMessages = buildAPIMessages([...messages, userMessage], ragDocs);
-    let sessionId = currentSessionId;
-    const isNewSession = !sessionId;
-    let finalAssistantContent = '';
-
-    const bumpSessionUpdatedAt = () => {
-      if (!sessionId) return;
-      setSessions((prev) => {
-        const now = new Date().toISOString();
-        const existing = prev.find((s) => s.id === sessionId);
-        const updated = existing ? { ...existing, updated_at: now } : undefined;
-        const rest = prev.filter((s) => s.id !== sessionId);
-        return updated ? [updated, ...rest] : prev;
-      });
-    };
+    let ragDocs: RAGDocument[] = []; if (ragSettings.enabled && ragStatus === 'online') { try { ragDocs = await queryRAG(userContent); setRagContext(ragDocs); } catch {} }
+    let conversationMessages = buildAPIMessages([...messages, userMessage], ragDocs); let sessionId = currentSessionId; let finalAssistantContent = '';
+    const bumpSessionUpdatedAt = () => { if (!sessionId) return; setSessions(prev => { const existing = prev.find(s => s.id === sessionId); const updated = existing ? { ...existing, updated_at: new Date().toISOString() } : undefined; return updated ? [updated, ...prev.filter(s => s.id !== sessionId)] : prev; }); };
 
     try {
-      // Create session early so it shows in the sidebar immediately.
-      if (!sessionId) {
-        try {
-          const { session } = await api.createChatSession({ title: 'New Chat', model: activeModelId || undefined });
-          sessionId = session.id;
-          setCurrentSessionId(sessionId);
-          setSessions((prev) => [session, ...prev]);
-          setSessionsAvailable(true);
-        } catch (e) {
-          console.log('Failed to create chat session (continuing without persistence):', e);
-        }
-      }
+      if (!sessionId) { try { const { session } = await api.createChatSession({ title: 'New Chat', model: activeModelId || undefined }); sessionId = session.id; setCurrentSessionId(sessionId); setSessions(prev => [session, ...prev]); setSessionsAvailable(true); } catch {} }
+      if (sessionId) { try { const persisted = await api.addChatMessage(sessionId, { id: userMessage.id, role: 'user', content: userContent, model: activeModelId }); setMessages(prev => prev.map(m => m.id === persisted.id ? { ...m, ...persisted } : m)); bumpSessionUpdatedAt(); refreshUsage(sessionId); } catch {} }
 
-      // Persist the user message up-front (best-effort).
-      if (sessionId) {
-        try {
-          const persisted = await api.addChatMessage(sessionId, {
-            id: userMessage.id,
-            role: 'user',
-            content: userContent,
-            model: activeModelId || undefined,
-          });
-          setMessages((prev) =>
-            prev.map((m) =>
-              m.id === persisted.id
-                ? {
-                    ...m,
-                    model: persisted.model || m.model,
-                    prompt_tokens: (persisted as any).prompt_tokens,
-                    completion_tokens: (persisted as any).completion_tokens,
-                    total_tokens: (persisted as any).total_tokens,
-                    request_prompt_tokens: (persisted as any).request_prompt_tokens ?? null,
-                    request_tools_tokens: (persisted as any).request_tools_tokens ?? null,
-                    request_total_input_tokens: (persisted as any).request_total_input_tokens ?? null,
-                    request_completion_tokens: (persisted as any).request_completion_tokens ?? null,
-                    estimated_cost_usd: (persisted as any).estimated_cost_usd ?? null,
-                  }
-                : m
-            )
-          );
-          bumpSessionUpdatedAt();
-          setSessionsAvailable(true);
-          refreshUsage(sessionId);
-        } catch (e) {
-          console.log('Failed to persist user message:', e);
-        }
-      }
-
-      // Tool calling loop - continues until no more tool calls
-      let iteration = 0;
-      const MAX_ITERATIONS = 25;
-      const cachedToolResultsBySignature = new Map<string, Omit<ToolResult, 'tool_call_id'>>();
-
+      let iteration = 0; const MAX_ITERATIONS = 25; const cachedToolResultsBySignature = new Map<string, Omit<ToolResult, 'tool_call_id'>>();
       while (iteration < MAX_ITERATIONS) {
         iteration++;
-
-        // Check and compact context if needed (80% threshold)
-        const modelInfo = availableModels.find(m => m.id === activeModelId);
-        const maxContextTokens = modelInfo?.max_model_len || 200000;
-
-        const { compacted, wasCompacted, tokensBefore, tokensAfter } = await compactContext(
-          conversationMessages,
-          activeModelId,
-          maxContextTokens
-        );
-        if (wasCompacted) {
-          conversationMessages = compacted as typeof conversationMessages;
-          console.log(`[Tool Loop] Context compacted: ${tokensBefore} → ${tokensAfter} tokens`);
-        }
-
-
-        // Estimate prompt tokens for this model call (messages + tools).
-        let requestPromptTokens: number | null = null;
-        let requestToolsTokens: number | null = null;
-        let requestTotalInputTokens: number | null = null;
-        try {
-          const toolsForTokenize = getOpenAITools();
-          const tok = await api.tokenizeChatCompletions({
-            model: activeModelId,
-            messages: conversationMessages as unknown[],
-            tools: toolsForTokenize as unknown[] | undefined,
-          });
-          requestTotalInputTokens = tok.input_tokens ?? null;
-          requestPromptTokens = tok.breakdown?.messages ?? null;
-          requestToolsTokens = tok.breakdown?.tools ?? null;
-        } catch (e) {
-          // tokenization is best-effort
-        }
-
-        // Debug: Log message roles for tool call debugging
-        const msgRoles = conversationMessages.map((m: any) =>
-          `${m.role}${m.tool_call_id ? `(${m.tool_call_id.slice(0,8)})` : m.tool_calls ? `[${m.tool_calls.length}]` : ''}`
-        ).join(', ');
-        console.log(`[Tool Loop] ========== ITERATION ${iteration} ==========`);
-        console.log(`[Tool Loop] Sending ${conversationMessages.length} messages: ${msgRoles}`);
-
-        // Log the last few messages to verify tool results are included
-        const lastMsgs = conversationMessages.slice(-5);
-        console.log('[Tool Loop] Last 5 messages being sent:', JSON.stringify(lastMsgs, (key, value) => {
-          // Truncate long content for readability
-          if (key === 'content' && typeof value === 'string' && value.length > 300) {
-            return value.slice(0, 300) + '... [truncated]';
-          }
-          return value;
-        }, 2));
-
-        const requestBody: Record<string, unknown> = {
-          messages: conversationMessages,
-          model: activeModelId,
-          tools: getOpenAITools(),
-        };
-
-        // MiniMax recommended sampling params: temperature=1.0, top_p=0.95, top_k=40
-        if (activeModelId.toLowerCase().includes('minimax')) {
-          requestBody.temperature = 1.0;
-          requestBody.top_p = 0.95;
-          requestBody.top_k = 40;
-        }
-
-        const response = await fetch('/api/chat', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(requestBody),
-          signal: abortControllerRef.current?.signal,
-        });
-
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-        }
-
-        const reader = response.body?.getReader();
-        if (!reader) throw new Error('No response body');
-
-        // Create a new assistant message per iteration (tool loops are multiple assistant turns).
+        const requestBody: Record<string, unknown> = { messages: conversationMessages, model: activeModelId, tools: getOpenAITools() };
+        if (activeModelId.toLowerCase().includes('minimax')) { requestBody.temperature = 1.0; requestBody.top_p = 0.95; requestBody.top_k = 40; }
+        const response = await fetch('/api/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(requestBody), signal: abortControllerRef.current?.signal });
+        if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        const reader = response.body?.getReader(); if (!reader) throw new Error('No response body');
         const assistantMsgId = (Date.now() + iteration).toString();
-        setMessages((prev) => [...prev, { id: assistantMsgId, role: 'assistant', content: '', isStreaming: true, model: activeModelId }]);
-
-        let iterationContent = '';
-        let toolCalls: ToolCall[] = [];
-
-        // Process SSE events
+        setMessages(prev => [...prev, { id: assistantMsgId, role: 'assistant', content: '', isStreaming: true, model: activeModelId }]);
+        let iterationContent = ''; let toolCalls: ToolCall[] = [];
         for await (const event of parseSSEEvents(reader)) {
-          if (event.type === 'text' && event.content) {
-            iterationContent += event.content;
-            setMessages((prev) => {
-              return prev.map((m) => (m.id === assistantMsgId ? { ...m, content: iterationContent } : m));
-            });
-          } else if (event.type === 'tool_calls' && event.tool_calls) {
-            toolCalls = event.tool_calls;
-            // Update message with tool calls
-            setMessages((prev) => {
-              return prev.map((m) => (m.id === assistantMsgId ? { ...m, toolCalls } : m));
-            });
-          } else if (event.type === 'error') {
-            throw new Error(event.error || 'Stream error');
-          }
+          if (event.type === 'text' && event.content) { iterationContent += event.content; setMessages(prev => prev.map(m => m.id === assistantMsgId ? { ...m, content: iterationContent } : m)); }
+          else if (event.type === 'tool_calls' && event.tool_calls) { toolCalls = event.tool_calls as ToolCall[]; setMessages(prev => prev.map(m => m.id === assistantMsgId ? { ...m, toolCalls } : m)); }
+          else if (event.type === 'error') { throw new Error(event.error || 'Stream error'); }
         }
-
-        // Parse tool calls from text content (for models that output JSON instead of using function calling)
-        if (toolCalls.length === 0 && mcpEnabled && iterationContent) {
-          const parseTextToolCalls = (text: string): ToolCall[] => {
-            const parsed: ToolCall[] = [];
-            // Match patterns like {"tool_code": "...", "parameters": {...}} or {"tool": "...", "args": {...}}
-            const jsonPatterns = [
-              /\{\s*"tool_code"\s*:\s*"([^"]+)"\s*,\s*"parameters"\s*:\s*(\{[^}]*\})\s*\}/g,
-              /\{\s*"tool"\s*:\s*"([^"]+)"\s*,\s*"(?:args|arguments|parameters)"\s*:\s*(\{[^}]*\})\s*\}/g,
-              /\{\s*"name"\s*:\s*"([^"]+)"\s*,\s*"(?:args|arguments|parameters)"\s*:\s*(\{[^}]*\})\s*\}/g,
-            ];
-            for (const pattern of jsonPatterns) {
-              let match;
-              while ((match = pattern.exec(text)) !== null) {
-                const toolName = match[1];
-                const args = match[2];
-                // Find the matching MCP tool
-                const mcpTool = mcpTools.find(t =>
-                  t.name === toolName ||
-                  t.name.toLowerCase() === toolName.toLowerCase() ||
-                  `${t.server}__${t.name}` === toolName
-                );
-                if (mcpTool) {
-                  parsed.push({
-                    id: `call_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
-                    type: 'function',
-                    function: {
-                      name: `${mcpTool.server}__${mcpTool.name}`,
-                      arguments: args,
-                    },
-                  });
-                }
-              }
-            }
-            return parsed;
-          };
-
-          const textToolCalls = parseTextToolCalls(iterationContent);
-          if (textToolCalls.length > 0) {
-            console.log('[Tool Parse] Found tool calls in text output:', textToolCalls);
-            toolCalls = textToolCalls;
-            setMessages((prev) => prev.map((m) => (m.id === assistantMsgId ? { ...m, toolCalls } : m)));
-          }
-        }
-
-        // If no tool calls, we're done
-        if (toolCalls.length === 0) {
-          finalAssistantContent = iterationContent;
-          setMessages((prev) => {
-            return prev.map((m) => (m.id === assistantMsgId ? { ...m, isStreaming: false } : m));
-          });
-
-          // Persist final assistant message (best-effort).
-          if (sessionId) {
-            try {
-              let requestCompletionTokens: number | null = null;
-              try {
-                const counted = await api.countTextTokens({ model: activeModelId, text: stripThinkTagsKeepText(iterationContent) });
-                requestCompletionTokens = counted.num_tokens ?? null;
-              } catch {
-                // ignore
-              }
-
-              const persisted = await api.addChatMessage(sessionId, {
-                id: assistantMsgId,
-                role: 'assistant',
-                content: iterationContent,
-                model: activeModelId || undefined,
-                request_prompt_tokens: requestPromptTokens,
-                request_tools_tokens: requestToolsTokens,
-                request_total_input_tokens: requestTotalInputTokens,
-                request_completion_tokens: requestCompletionTokens,
-              });
-              setMessages((prev) =>
-                prev.map((m) =>
-                  m.id === persisted.id
-                    ? {
-                        ...m,
-                        model: persisted.model || m.model,
-                        prompt_tokens: (persisted as any).prompt_tokens,
-                        completion_tokens: (persisted as any).completion_tokens,
-                        total_tokens: (persisted as any).total_tokens,
-                        request_prompt_tokens: (persisted as any).request_prompt_tokens ?? null,
-                        request_tools_tokens: (persisted as any).request_tools_tokens ?? null,
-                        request_total_input_tokens: (persisted as any).request_total_input_tokens ?? null,
-                        request_completion_tokens: (persisted as any).request_completion_tokens ?? null,
-                        estimated_cost_usd: (persisted as any).estimated_cost_usd ?? null,
-                      }
-                    : m
-                )
-              );
-              bumpSessionUpdatedAt();
-              setSessionsAvailable(true);
-              refreshUsage(sessionId);
-            } catch (e) {
-              console.log('Failed to persist assistant message:', e);
-            }
-          }
+        if (!toolCalls.length) {
+          finalAssistantContent = iterationContent; setMessages(prev => prev.map(m => m.id === assistantMsgId ? { ...m, isStreaming: false } : m));
+          if (sessionId) { try { const persisted = await api.addChatMessage(sessionId, { id: assistantMsgId, role: 'assistant', content: iterationContent, model: activeModelId }); setMessages(prev => prev.map(m => m.id === persisted.id ? { ...m, ...persisted } : m)); bumpSessionUpdatedAt(); refreshUsage(sessionId); } catch {} }
           break;
         }
-
-        // Execute tool calls
-        console.log(`[MCP] Executing ${toolCalls.length} tool call(s)`);
-        const toolResults: ToolResult[] = [];
-        const toolNameByCallId = new Map<string, string>();
-
+        const toolResults: ToolResult[] = []; const toolNameByCallId = new Map<string, string>();
         for (const tc of toolCalls) {
-          const signature = (() => {
-            const name = tc.function?.name || '';
-            const rawArgs = (tc.function?.arguments || '').trim();
-            try {
-              const parsed = rawArgs ? JSON.parse(rawArgs) : {};
-              return `${name}:${JSON.stringify(parsed)}`;
-            } catch {
-              return `${name}:${rawArgs}`;
-            }
-          })();
-
-          toolNameByCallId.set(tc.id, tc.function.name);
-
-          // If the model repeats the exact same call, don't re-run it; return a cached result so it can proceed.
-          if (cachedToolResultsBySignature.has(signature)) {
-            const cached = cachedToolResultsBySignature.get(signature)!;
-            const result: ToolResult = {
-              tool_call_id: tc.id,
-              content: cached.content,
-              isError: cached.isError,
-            };
-            toolResults.push(result);
-            setToolResultsMap((prev) => new Map(prev).set(tc.id, result));
-            continue;
-          }
-
-          setExecutingTools((prev) => new Set(prev).add(tc.id));
-          const result = await executeMCPTool(tc);
-          cachedToolResultsBySignature.set(signature, { content: result.content, isError: result.isError });
-          toolResults.push(result);
-          setToolResultsMap((prev) => new Map(prev).set(tc.id, result));
-          setExecutingTools((prev) => {
-            const next = new Set(prev);
-            next.delete(tc.id);
-            return next;
-          });
+          const signature = `${tc.function?.name}:${tc.function?.arguments}`; toolNameByCallId.set(tc.id, tc.function.name);
+          if (cachedToolResultsBySignature.has(signature)) { const cached = cachedToolResultsBySignature.get(signature)!; toolResults.push({ tool_call_id: tc.id, ...cached }); setToolResultsMap(prev => new Map(prev).set(tc.id, { tool_call_id: tc.id, ...cached })); continue; }
+          setExecutingTools(prev => new Set(prev).add(tc.id)); const result = await executeMCPTool(tc); cachedToolResultsBySignature.set(signature, { content: result.content, isError: result.isError }); toolResults.push(result); setToolResultsMap(prev => new Map(prev).set(tc.id, result)); setExecutingTools(prev => { const next = new Set(prev); next.delete(tc.id); return next; });
         }
-
-        // Update message with results
-        setMessages((prev) => {
-          return prev.map((m) =>
-            m.id === assistantMsgId ? { ...m, toolResults, isStreaming: false } : m
-          );
-        });
-
-        // Persist the tool-call assistant turn (best-effort).
-        if (sessionId) {
-          try {
-            const toolCallsForPersistence = toolCalls.map((tc) => {
-              const result = toolResults.find((r) => r.tool_call_id === tc.id);
-              return { ...tc, result: result || null };
-            });
-
-            let requestCompletionTokens: number | null = null;
-            try {
-              const counted = await api.countTextTokens({ model: activeModelId, text: stripThinkTagsKeepText(iterationContent) });
-              requestCompletionTokens = counted.num_tokens ?? null;
-            } catch {
-              // ignore
-            }
-
-            const persisted = await api.addChatMessage(sessionId, {
-              id: assistantMsgId,
-              role: 'assistant',
-              content: iterationContent,
-              model: activeModelId || undefined,
-              tool_calls: toolCallsForPersistence,
-              request_prompt_tokens: requestPromptTokens,
-              request_tools_tokens: requestToolsTokens,
-              request_total_input_tokens: requestTotalInputTokens,
-              request_completion_tokens: requestCompletionTokens,
-            });
-            setMessages((prev) =>
-              prev.map((m) =>
-                m.id === persisted.id
-                  ? {
-                      ...m,
-                      model: persisted.model || m.model,
-                      prompt_tokens: (persisted as any).prompt_tokens,
-                      completion_tokens: (persisted as any).completion_tokens,
-                      total_tokens: (persisted as any).total_tokens,
-                      request_prompt_tokens: (persisted as any).request_prompt_tokens ?? null,
-                      request_tools_tokens: (persisted as any).request_tools_tokens ?? null,
-                      request_total_input_tokens: (persisted as any).request_total_input_tokens ?? null,
-                      request_completion_tokens: (persisted as any).request_completion_tokens ?? null,
-                      estimated_cost_usd: (persisted as any).estimated_cost_usd ?? null,
-                    }
-                  : m
-              )
-            );
-            bumpSessionUpdatedAt();
-            setSessionsAvailable(true);
-            refreshUsage(sessionId);
-          } catch (e) {
-            console.log('Failed to persist tool-call turn:', e);
-          }
-        }
-
-        // Add assistant message with tool calls to conversation
-        // Include cleaned content so model remembers what it said
-        const cleanedIterationContent = stripThinkingForModelContext(iterationContent);
-        const assistantMsgForConv = {
-          role: 'assistant' as const,
-          content: cleanedIterationContent || null,
-          tool_calls: toolCalls.map((tc) => ({
-            id: tc.id,
-            type: 'function' as const,
-            function: { name: tc.function.name, arguments: tc.function.arguments },
-          })),
-        };
-        conversationMessages.push(assistantMsgForConv);
-        console.log('[Tool Loop] Added assistant message with tool_calls:', JSON.stringify(assistantMsgForConv, null, 2));
-
-        // Add tool results to conversation - MUST follow the assistant message with tool_calls
-        for (const result of toolResults) {
-          const toolName = toolNameByCallId.get(result.tool_call_id) || 'unknown_tool';
-          const toolMsg = {
-            role: 'tool' as const,
-            tool_call_id: result.tool_call_id,
-            name: toolName,
-            content: result.content,
-          };
-          conversationMessages.push(toolMsg);
-          console.log(`[Tool Loop] Added tool result for ${toolName}:`, {
-            tool_call_id: result.tool_call_id,
-            content_preview: result.content.slice(0, 200) + (result.content.length > 200 ? '...' : ''),
-          });
-        }
-
-        // Log the full conversation that will be sent on next iteration
-        const msgSummary = conversationMessages.map((m: any) => {
-          if (m.role === 'tool') return `tool(${m.tool_call_id?.slice(0, 8)})`;
-          if (m.role === 'assistant' && m.tool_calls) return `assistant[${m.tool_calls.length} calls]`;
-          return m.role;
-        }).join(' -> ');
-        console.log(`[Tool Loop] Next iteration will send ${conversationMessages.length} messages: ${msgSummary}`);
+        setMessages(prev => prev.map(m => m.id === assistantMsgId ? { ...m, toolResults, isStreaming: false } : m));
+        if (sessionId) { try { await api.addChatMessage(sessionId, { id: assistantMsgId, role: 'assistant', content: iterationContent, model: activeModelId, tool_calls: toolCalls.map(tc => ({ ...tc, result: toolResults.find(r => r.tool_call_id === tc.id) || null })) }); bumpSessionUpdatedAt(); refreshUsage(sessionId); } catch {} }
+        const cleanedContent = stripThinkingForModelContext(iterationContent);
+        conversationMessages.push({ role: 'assistant', content: cleanedContent || null, tool_calls: toolCalls.map(tc => ({ id: tc.id, type: 'function', function: { name: tc.function.name, arguments: tc.function.arguments } })) });
+        toolResults.forEach(r => conversationMessages.push({ role: 'tool', tool_call_id: r.tool_call_id, name: toolNameByCallId.get(r.tool_call_id), content: r.content }));
       }
-
-      // Auto-title new sessions after the final assistant response (best-effort).
-      if (isNewSession && sessionId && finalAssistantContent.trim()) {
-        try {
-          const res = await fetch('/api/title', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ model: activeModelId, user: userContent, assistant: finalAssistantContent }),
-          });
-          if (res.ok) {
-            const data = (await res.json().catch(() => null)) as { title?: string } | null;
-            const title = (data?.title || '').trim();
-            if (title) {
-              await api.updateChatSession(sessionId, { title });
-              setSessions((prev) => prev.map((s) => (s.id === sessionId ? { ...s, title } : s)));
-              setCurrentSessionTitle(title);
-              setTitleDraft(title);
-            }
-          }
-        } catch (titleError) {
-          console.log('Auto-title failed:', titleError);
-        }
-      }
+      if (!currentSessionId && sessionId && finalAssistantContent.trim()) { try { const res = await fetch('/api/title', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model: activeModelId, user: userContent, assistant: finalAssistantContent }) }); if (res.ok) { const data = await res.json(); if (data.title) { await api.updateChatSession(sessionId, { title: data.title }); setSessions(prev => prev.map(s => s.id === sessionId ? { ...s, title: data.title } : s)); setCurrentSessionTitle(data.title); setTitleDraft(data.title); } } } catch {} }
     } catch (err) {
-      if (err instanceof Error && err.name === 'AbortError') {
-        setMessages((prev) => {
-          const last = prev[prev.length - 1];
-          if (last?.role === 'assistant') {
-            return prev.map((m) => (m.id === last.id ? { ...m, isStreaming: false } : m));
-          }
-          return prev;
-        });
-      } else {
-        setError(err instanceof Error ? err.message : 'Failed to send message');
-        setMessages((prev) => {
-          if (prev[prev.length - 1]?.role === 'assistant' && prev[prev.length - 1]?.content === '') {
-            return prev.slice(0, -1);
-          }
-          return prev;
-        });
-      }
-    } finally {
-      setIsLoading(false);
-      abortControllerRef.current = null;
-    }
+      if (err instanceof Error && err.name === 'AbortError') { setMessages(prev => { const last = prev[prev.length - 1]; return last?.role === 'assistant' ? prev.map(m => m.id === last.id ? { ...m, isStreaming: false } : m) : prev; }); }
+      else { setError(err instanceof Error ? err.message : 'Failed to send message'); setMessages(prev => prev[prev.length - 1]?.role === 'assistant' && !prev[prev.length - 1]?.content ? prev.slice(0, -1) : prev); }
+    } finally { setIsLoading(false); abortControllerRef.current = null; }
   };
 
-  const stopGeneration = () => {
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
-    }
-  };
+  const stopGeneration = () => abortControllerRef.current?.abort();
+  const copyToClipboard = (text: string, index: number) => { navigator.clipboard.writeText(text); setCopiedIndex(index); setTimeout(() => setCopiedIndex(null), 2000); };
+  const forkAtMessage = async (messageId: string) => { if (!currentSessionId) return; try { const { session } = await api.forkChatSession(currentSessionId, { message_id: messageId, model: selectedModel || undefined }); setSessions(prev => [session, ...prev]); await loadSession(session.id); } catch {} };
+  const toggleBookmark = (messageId: string) => { setBookmarkedMessages(prev => { const next = new Set(prev); next.has(messageId) ? next.delete(messageId) : next.add(messageId); return next; }); };
+  const copyLastResponse = () => { const last = [...messages].reverse().find(m => m.role === 'assistant'); if (last) copyToClipboard(last.content, messages.indexOf(last)); };
 
-  const copyToClipboard = (text: string, index: number) => {
-    navigator.clipboard.writeText(text);
-    setCopiedIndex(index);
-    setTimeout(() => setCopiedIndex(null), 2000);
-  };
+  // Export functions
+  const buildChatExport = () => ({ title: currentSessionTitle || 'Chat', session_id: currentSessionId, model: selectedModel || runningModel || null, messages: messages.map(m => ({ id: m.id, role: m.role, model: m.model ?? null, content: m.content, tool_calls: m.toolCalls ?? null, tool_results: m.toolResults ?? null })), session_usage: sessionUsage });
+  const exportAsJson = () => { const payload = buildChatExport(); const name = (currentSessionTitle || 'chat').replace(/[^\w.-]+/g, '_').slice(0, 80); downloadTextFile(`${name}.json`, JSON.stringify(payload, null, 2), 'application/json'); };
+  const exportAsMarkdown = () => { const payload = buildChatExport(); const lines = [`# ${payload.title}`, '']; if (payload.model) lines.push(`- Model: \`${payload.model}\``); lines.push(''); payload.messages.forEach(m => { lines.push(`## ${m.role === 'user' ? 'User' : 'Assistant'}`, '', m.content || '', ''); }); const name = (currentSessionTitle || 'chat').replace(/[^\w.-]+/g, '_').slice(0, 80); downloadTextFile(`${name}.md`, lines.join('\n'), 'text/markdown'); };
 
-  const forkAtMessage = async (messageId: string) => {
-    if (!currentSessionId) return;
-    try {
-      const { session } = await api.forkChatSession(currentSessionId, {
-        message_id: messageId,
-        model: (selectedModel || undefined) as string | undefined,
-      });
-      setSessions((prev) => [session, ...prev]);
-      await loadSession(session.id);
-    } catch (e) {
-      console.log('Fork failed:', e);
-      alert('Failed to fork chat');
-    }
-  };
-
-  const toggleBookmark = (messageId: string) => {
-    setBookmarkedMessages(prev => {
-      const next = new Set(prev);
-      if (next.has(messageId)) {
-        next.delete(messageId);
-      } else {
-        next.add(messageId);
-      }
-      return next;
-    });
-  };
-
-  const copyLastResponse = () => {
-    const lastAssistantMsg = [...messages].reverse().find(m => m.role === 'assistant');
-    if (lastAssistantMsg) {
-      navigator.clipboard.writeText(lastAssistantMsg.content);
-      setCopiedIndex(messages.indexOf(lastAssistantMsg));
-      setTimeout(() => setCopiedIndex(null), 2000);
-    }
-  };
-
-  const saveTitle = async () => {
-    if (!currentSessionId) {
-      setEditingTitle(false);
-      return;
-    }
-    const next = titleDraft.trim();
-    if (!next) {
-      setEditingTitle(false);
-      return;
-    }
-    try {
-      await api.updateChatSession(currentSessionId, { title: next });
-      setSessions((prev) => prev.map((s) => (s.id === currentSessionId ? { ...s, title: next } : s)));
-      setCurrentSessionTitle(next);
-    } catch (e) {
-      console.log('Failed to update title:', e);
-    } finally {
-      setEditingTitle(false);
-    }
-  };
-
-  const buildChatExport = () => {
-    const title = currentSessionTitle || 'Chat';
-    const exported = {
-      title,
-      session_id: currentSessionId,
-      model: selectedModel || runningModel || null,
-      created_at: sessions.find((s) => s.id === currentSessionId)?.created_at ?? null,
-      updated_at: sessions.find((s) => s.id === currentSessionId)?.updated_at ?? null,
-      messages: messages.map((m) => ({
-        id: m.id,
-        role: m.role,
-        model: m.model ?? null,
-        content: m.content,
-        tool_calls: m.toolCalls ?? null,
-        tool_results: m.toolResults ?? null,
-        usage: {
-          prompt_tokens: m.prompt_tokens ?? null,
-          completion_tokens: m.completion_tokens ?? null,
-          total_tokens: m.total_tokens ?? null,
-          request_prompt_tokens: m.request_prompt_tokens ?? null,
-          request_tools_tokens: m.request_tools_tokens ?? null,
-          request_total_input_tokens: m.request_total_input_tokens ?? null,
-          request_completion_tokens: m.request_completion_tokens ?? null,
-          estimated_cost_usd: m.estimated_cost_usd ?? null,
-        },
-      })),
-      session_usage: sessionUsage,
-    };
-    return exported;
-  };
-
-  const downloadText = (filename: string, content: string, mime = 'text/plain') => {
-    const blob = new Blob([content], { type: mime });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  };
-
-  const exportAsJson = () => {
-    const payload = buildChatExport();
-    const name = (currentSessionTitle || 'chat').replace(/[^\w.-]+/g, '_').slice(0, 80);
-    downloadText(`${name}.json`, JSON.stringify(payload, null, 2), 'application/json');
-  };
-
-  const exportAsMarkdown = () => {
-    const payload = buildChatExport();
-    const lines: string[] = [];
-    lines.push(`# ${payload.title}`);
-    if (payload.model) lines.push(`- Model: \`${payload.model}\``);
-    if (payload.session_id) lines.push(`- Session: \`${payload.session_id}\``);
-    if (payload.session_usage) {
-      const cost =
-        payload.session_usage.estimated_cost_usd != null
-          ? ` • $${payload.session_usage.estimated_cost_usd.toFixed(4)}`
-          : '';
-      lines.push(`- Usage: ${payload.session_usage.total_tokens.toLocaleString()} tok${cost}`);
-    }
-    lines.push('');
-
-    for (const m of payload.messages) {
-      const who = m.role === 'user' ? 'User' : `Assistant${m.model ? ` (${m.model})` : ''}`;
-      lines.push(`## ${who}`);
-      lines.push('');
-      lines.push(m.content || '');
-      lines.push('');
-      if (m.tool_calls && Array.isArray(m.tool_calls) && m.tool_calls.length > 0) {
-        lines.push('### Tool calls');
-        lines.push('```json');
-        lines.push(JSON.stringify(m.tool_calls, null, 2));
-        lines.push('```');
-        lines.push('');
-      }
-      if (m.tool_results && Array.isArray(m.tool_results) && m.tool_results.length > 0) {
-        lines.push('### Tool results');
-        lines.push('```json');
-        lines.push(JSON.stringify(m.tool_results, null, 2));
-        lines.push('```');
-        lines.push('');
-      }
-    }
-
-    const name = (currentSessionTitle || 'chat').replace(/[^\w.-]+/g, '_').slice(0, 80);
-    downloadText(`${name}.md`, lines.join('\n'), 'text/markdown');
-  };
-
-  if (pageLoading) {
-    return (
-      <div className="flex items-center justify-center h-[100dvh]">
-        <div className="animate-pulse-soft">
-          <Sparkles className="h-8 w-8 text-[#9a9590]" />
-        </div>
-      </div>
-    );
-  }
-
-  // Filter sessions for search
-  const filteredSessions = chatSearchQuery
-    ? sessions.filter(s => s.title.toLowerCase().includes(chatSearchQuery.toLowerCase()))
-    : sessions;
+  // Render
+  if (pageLoading) { return <div className="flex items-center justify-center h-[100dvh]"><div className="animate-pulse-soft"><Sparkles className="h-8 w-8 text-[#9a9590]" /></div></div>; }
 
   return (
     <>
-    <div className="relative h-[100dvh] flex flex-col overflow-hidden w-full max-w-full">
-      {/* Desktop Sidebar */}
-      {!isMobile && (
-        <ChatSidebar
-          sessions={sessions}
-          currentSessionId={currentSessionId}
-          onSelectSession={loadSession}
-          onNewSession={createSession}
-          onDeleteSession={deleteSession}
-          isCollapsed={sidebarCollapsed}
-          onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
-          isLoading={sessionsLoading}
-          isMobile={false}
-        />
-      )}
+      <div className="relative h-[100dvh] flex flex-col overflow-hidden w-full max-w-full">
+        {!isMobile && <ChatSidebar sessions={sessions} currentSessionId={currentSessionId} onSelectSession={loadSession} onNewSession={createSession} onDeleteSession={deleteSession} isCollapsed={sidebarCollapsed} onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)} isLoading={sessionsLoading} isMobile={false} />}
+        {isMobile && !sidebarCollapsed && <ChatSidebar sessions={sessions} currentSessionId={currentSessionId} onSelectSession={loadSession} onNewSession={createSession} onDeleteSession={deleteSession} isCollapsed={false} onToggleCollapse={() => setSidebarCollapsed(true)} isLoading={sessionsLoading} isMobile={true} />}
 
-      {/* Mobile Sidebar Overlay */}
-      {isMobile && !sidebarCollapsed && (
-        <ChatSidebar
-          sessions={sessions}
-          currentSessionId={currentSessionId}
-          onSelectSession={loadSession}
-          onNewSession={createSession}
-          onDeleteSession={deleteSession}
-          isCollapsed={false}
-          onToggleCollapse={() => setSidebarCollapsed(true)}
-          isLoading={sessionsLoading}
-          isMobile={true}
-        />
-      )}
+        <div className={`flex-1 flex flex-col min-h-0 overflow-x-hidden ${isMobile ? '' : sidebarCollapsed ? 'md:ml-12' : 'md:ml-60'}`}>
+          {isMobile && <ChatMobileHeader currentSessionTitle={currentSessionTitle} currentSessionId={currentSessionId} sessions={sessions} onSelectSession={loadSession} onNewSession={createSession} onOpenSidebar={() => setSidebarCollapsed(false)} />}
 
-      {/* Main Chat Area */}
-      <div className={`flex-1 flex flex-col min-h-0 overflow-x-hidden ${isMobile ? '' : sidebarCollapsed ? 'md:ml-12' : 'md:ml-60'} `}>
-        {/* Mobile Header only - Desktop has everything in sidebar */}
-        {isMobile && (
-        <div className={`relative z-40 bg-[var(--card)] border-b border-[var(--border)] flex-shrink-0`}
-          style={{ paddingTop: 'env(safe-area-inset-top, 0)' }}
-        >
-          <div className="flex items-center justify-between gap-2 px-2 py-1.5 w-full">
-            <div className="flex items-center gap-1.5 min-w-0 flex-1">
-              {/* Logo + Recent Chats Dropdown */}
-              <Link href="/" className="p-1.5 -ml-1 rounded-lg hover:bg-[var(--accent)] transition-colors flex-shrink-0">
-                <Layers className="h-5 w-5 text-[#9a9590]" />
-              </Link>
-                  <div className="relative flex-1 min-w-0">
-                    <button
-                      onClick={() => setRecentChatsOpen(!recentChatsOpen)}
-                      className="flex items-center gap-1.5 px-2 py-1 rounded-lg hover:bg-[var(--accent)] transition-colors w-full min-w-0"
-                    >
-                      <span className="text-sm font-medium truncate">{currentSessionTitle || 'New Chat'}</span>
-                      <ChevronDown className={`h-4 w-4 text-[#9a9590] flex-shrink-0 transition-transform ${recentChatsOpen ? 'rotate-180' : ''}`} />
-                    </button>
-
-                    {/* Recent Chats Dropdown */}
-                    {recentChatsOpen && (
-                      <>
-                        <div className="fixed inset-0 z-40" onClick={() => setRecentChatsOpen(false)} />
-                        <div className="absolute left-0 right-0 top-full mt-1 bg-[var(--card)] border border-[var(--border)] rounded-lg shadow-lg z-50 max-h-[60vh] overflow-hidden flex flex-col">
-                          {/* Search */}
-                          <div className="p-2 border-b border-[var(--border)]">
-                            <div className="relative">
-                              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-[#9a9590]" />
-                              <input
-                                type="text"
-                                value={chatSearchQuery}
-                                onChange={(e) => setChatSearchQuery(e.target.value)}
-                                placeholder="Search chats..."
-                                className="w-full pl-8 pr-3 py-1.5 text-sm bg-[var(--background)] border border-[var(--border)] rounded-lg focus:outline-none"
-                              />
-                            </div>
-                          </div>
-                          {/* New Chat Button */}
-                          <button
-                            onClick={() => {
-                              createSession();
-                              setRecentChatsOpen(false);
-                            }}
-                            className="flex items-center gap-2 px-3 py-2 hover:bg-[var(--accent)] transition-colors text-sm font-medium border-b border-[var(--border)]"
-                          >
-                            <Plus className="h-4 w-4" />
-                            New Chat
-                          </button>
-                          {/* Recent Chats (top 5 or filtered) */}
-                          <div className="overflow-y-auto flex-1">
-                            {filteredSessions.slice(0, chatSearchQuery ? 20 : 5).map((session) => (
-                              <button
-                                key={session.id}
-                                onClick={() => {
-                                  loadSession(session.id);
-                                  setRecentChatsOpen(false);
-                                  setChatSearchQuery('');
-                                }}
-                                className={`w-full px-3 py-2 text-left hover:bg-[var(--accent)] transition-colors ${
-                                  currentSessionId === session.id ? 'bg-[var(--accent)]' : ''
-                                }`}
-                              >
-                                <div className="text-sm truncate">{session.title}</div>
-                                <div className="text-xs text-[#9a9590] truncate">
-                                  {session.model?.split('/').pop()} • {new Date(session.updated_at).toLocaleDateString()}
-                                </div>
-                              </button>
-                            ))}
-                            {filteredSessions.length === 0 && (
-                              <div className="px-3 py-4 text-sm text-[#9a9590] text-center">No chats found</div>
-                            )}
-                            {!chatSearchQuery && sessions.length > 5 && (
-                              <button
-                                onClick={() => {
-                                  setSidebarCollapsed(false);
-                                  setRecentChatsOpen(false);
-                                }}
-                                className="w-full px-3 py-2 text-sm text-[#9a9590] hover:text-[var(--foreground)] hover:bg-[var(--accent)] transition-colors"
-                              >
-                                View all {sessions.length} chats →
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                      </>
-                    )}
-                  </div>
-            </div>
-
-            <div className="flex items-center gap-1 flex-shrink-0">
-              <ThemeToggle />
-              <button
-                onClick={() => setSidebarCollapsed(false)}
-                className="p-1.5 rounded hover:bg-[var(--accent)] transition-colors"
-                title="Open sidebar"
-              >
-                <Menu className="h-5 w-5 text-[#9a9590]" />
-              </button>
-            </div>
-          </div>
-        </div>
-        )}
-
-        {/* Main Content + Tool Panel Container */}
-        <div className="flex-1 flex overflow-hidden relative">
-          {/* Message Search Panel */}
-          {messageSearchOpen && (
-            <div className="absolute inset-0 z-50 bg-[var(--background)]/95 backdrop-blur-sm animate-in fade-in slide-in-from-top-2">
-              <div className="h-full flex flex-col max-w-2xl mx-auto">
-                <div className="flex items-center justify-between p-4 border-b border-[var(--border)]">
-                  <h2 className="text-lg font-semibold">Search Messages</h2>
-                  <button
-                    onClick={() => setMessageSearchOpen(false)}
-                    className="p-2 rounded hover:bg-[var(--accent)] transition-colors"
-                  >
-                    <X className="h-5 w-5" />
-                  </button>
-                </div>
-                <div className="flex-1 overflow-hidden">
-                  <MessageSearch
-                    messages={messages}
-                    onResultClick={(messageId) => {
-                      const element = document.getElementById(`message-${messageId}`);
-                      element?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                      setMessageSearchOpen(false);
-                    }}
-                  />
+          <div className="flex-1 flex overflow-hidden relative">
+            {messageSearchOpen && (
+              <div className="absolute inset-0 z-50 bg-[var(--background)]/95 backdrop-blur-sm">
+                <div className="h-full flex flex-col max-w-2xl mx-auto">
+                  <div className="flex items-center justify-between p-4 border-b border-[var(--border)]"><h2 className="text-lg font-semibold">Search Messages</h2><button onClick={() => setMessageSearchOpen(false)} className="p-2 rounded hover:bg-[var(--accent)]"><X className="h-5 w-5" /></button></div>
+                  <div className="flex-1 overflow-hidden"><MessageSearch messages={messages} onResultClick={(messageId) => { document.getElementById(`message-${messageId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }); setMessageSearchOpen(false); }} /></div>
                 </div>
               </div>
-            </div>
-          )}
+            )}
 
-          {/* Left side: Messages + Input */}
-          <div className="flex-1 flex flex-col overflow-hidden relative">
-            {/* Messages Area */}
-            <div
-              ref={messagesContainerRef}
-              onScroll={handleScroll}
-              className="flex-1 overflow-y-auto overflow-x-hidden"
-            >
-            <div className="pb-4">
-            {messages.length === 0 ? (
-              <div className="flex items-center justify-center min-h-[60vh]">
-                <div className="text-center px-4 py-8">
-                  <h2 className="text-base font-medium mb-2">Start a conversation</h2>
-                  <p className="text-sm text-[#9a9590] max-w-xs mx-auto">
-                    {selectedModel || runningModel
-                      ? 'Send a message to begin chatting.'
-                      : 'Select a model in Settings to get started.'}
-                  </p>
-                </div>
-              </div>
-            ) : (
-              <div className="max-w-4xl mx-auto py-6 px-4 md:px-6 space-y-6">
-                  {messages.map((message, index) => (
-                    <div key={message.id} id={`message-${message.id}`} className="animate-message-appear" style={{ animationDelay: `${Math.min(index * 50, 200)}ms` }}>
-                      {/* User Message - Premium clean design */}
-                      {message.role === 'user' ? (
-                        <div className="group">
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 mb-1.5">
-                              <span className="text-xs font-medium text-[#8a8580]">You</span>
-                              <button
-                                onClick={() => copyToClipboard(message.content, index)}
-                                className="p-1 rounded hover:bg-[#363432] transition-all opacity-0 group-hover:opacity-100"
-                              >
-                                {copiedIndex === index ? (
-                                  <Check className="h-3 w-3 text-[#7d9a6a]" />
-                                ) : (
-                                  <Copy className="h-3 w-3 text-[#6a6560]" />
-                                )}
-                              </button>
-                            </div>
-                            {/* User images */}
-                            {message.images && message.images.length > 0 && (
-                              <div className="flex flex-wrap gap-2 mb-3">
-                                {message.images.map((base64, i) => (
-                                  <img
-                                    key={i}
-                                    src={`data:image/jpeg;base64,${base64}`}
-                                    alt={`Uploaded image ${i + 1}`}
-                                    className="max-w-[140px] max-h-[140px] rounded-xl border border-[#363432] shadow-sm"
-                                  />
-                                ))}
-                              </div>
-                            )}
-                            <p className="text-[15px] text-[#e8e4dd] whitespace-pre-wrap break-words leading-relaxed">{message.content}</p>
-                          </div>
-                        </div>
-                      ) : (
-                        /* Assistant Message - Premium with streaming indicator */
-                        <div className="group">
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 mb-1.5">
-                              <span className="text-xs font-medium text-[#9a8570]">
-                                {message.model?.split('/').pop() || selectedModel?.split('/').pop() || modelName || 'Assistant'}
-                              </span>
-                              {(message.total_tokens || message.prompt_tokens || message.completion_tokens) && (
-                                <span className="text-[10px] text-[#6a6560] font-mono tabular-nums">
-                                  {(() => {
-                                    const reqPrompt = message.request_total_input_tokens ?? message.request_prompt_tokens;
-                                    const reqComp = message.request_completion_tokens;
-                                    if (reqPrompt || reqComp) {
-                                      const total = (reqPrompt || 0) + (reqComp || 0);
-                                      return `${total.toLocaleString()} tok`;
-                                    }
-                                    const total = (message.total_tokens ?? (message.prompt_tokens || 0) + (message.completion_tokens || 0)) || 0;
-                                    return `${total.toLocaleString()} tok`;
-                                  })()}
-                                </span>
-                              )}
-                              {currentSessionId && (
-                                <button
-                                  onClick={() => forkAtMessage(message.id)}
-                                  className="p-1 rounded hover:bg-[#363432] transition-all opacity-0 group-hover:opacity-100"
-                                  title="Fork conversation from here"
-                                >
-                                  <GitBranch className="h-3 w-3 text-[#6a6560]" />
-                                </button>
-                              )}
-                              <button
-                                onClick={() => copyToClipboard(message.content, index)}
-                                className="p-1 rounded hover:bg-[#363432] transition-all opacity-0 group-hover:opacity-100"
-                              >
-                                {copiedIndex === index ? (
-                                  <Check className="h-3 w-3 text-[#7d9a6a]" />
-                                ) : (
-                                  <Copy className="h-3 w-3 text-[#6a6560]" />
-                                )}
-                              </button>
-                            </div>
-                            <div className="text-[15px] text-[#e8e4dd] overflow-hidden break-words leading-relaxed">
-                              <MessageRenderer
-                                content={message.content}
-                                isStreaming={message.isStreaming}
-                                artifactsEnabled={artifactsEnabled}
-                                messageId={message.id}
-                                showActions={message.role === 'assistant'}
-                              />
-                              {/* Tool Calls - Only show inline on mobile */}
-                              {isMobile && message.toolCalls && message.toolCalls.length > 0 && (
-                                <div className="mt-3 space-y-2">
-                                  {message.toolCalls.map((toolCall) => (
-                                    <ToolCallCard
-                                      key={toolCall.id}
-                                      toolCall={toolCall}
-                                      result={toolResultsMap.get(toolCall.id)}
-                                      isExecuting={executingTools.has(toolCall.id)}
-                                    />
-                                  ))}
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  ))}
+            <div className="flex-1 flex flex-col overflow-hidden relative">
+              <div ref={messagesContainerRef} onScroll={handleScroll} className="flex-1 overflow-y-auto overflow-x-hidden">
+                <div className="pb-4">
+                  <ChatMessageList messages={messages} selectedModel={selectedModel || runningModel || undefined} modelName={modelName} currentSessionId={currentSessionId} artifactsEnabled={artifactsEnabled} isMobile={isMobile} isLoading={isLoading} error={error} copiedIndex={copiedIndex} toolResultsMap={toolResultsMap} executingTools={executingTools} onCopy={copyToClipboard} onFork={forkAtMessage} />
 
-                {isLoading &&
-                  messages[messages.length - 1]?.role === 'assistant' &&
-                  messages[messages.length - 1]?.content === '' && (
-                    <div className="flex gap-3 animate-slide-up">
-                      <div className="w-6 h-6 rounded-full bg-[#7d9a6a]/20 flex items-center justify-center flex-shrink-0">
-                        <Sparkles className="h-3 w-3 text-[#7d9a6a] animate-pulse" />
-                      </div>
-                      <div className="flex items-center pt-1.5">
-                        <div className="flex gap-1">
-                          <span className="w-1.5 h-1.5 rounded-full bg-[#8b7355] animate-pulse" />
-                          <span className="w-1.5 h-1.5 rounded-full bg-[#8b7355] animate-pulse" style={{ animationDelay: '150ms' }} />
-                          <span className="w-1.5 h-1.5 rounded-full bg-[#8b7355] animate-pulse" style={{ animationDelay: '300ms' }} />
+                  {isMobile && researchProgress && <ResearchProgressIndicator progress={researchProgress} onCancel={() => setResearchProgress(null)} />}
+                  {isMobile && researchSources.length > 0 && !researchProgress && <CitationsPanel sources={researchSources} />}
+
+                  {messages.length > 0 && messages[messages.length - 1]?.role === 'assistant' && !isLoading && (
+                    <div className="max-w-4xl mx-auto px-4 md:px-6">
+                      <div className="mt-4 pt-3 border-t border-[var(--border)] flex items-center justify-between gap-4">
+                        <div className="flex items-center gap-1">
+                          <button onClick={copyLastResponse} className="flex items-center gap-1.5 px-2 py-1 rounded hover:bg-[var(--accent)] text-[#8a8580]">{copiedIndex === messages.length - 1 ? <Check className="h-3.5 w-3.5 text-[var(--success)]" /> : <Copy className="h-3.5 w-3.5" />}<span className="text-xs">Copy</span></button>
+                          <button onClick={() => toggleBookmark(messages[messages.length - 1].id)} className="flex items-center gap-1.5 px-2 py-1 rounded hover:bg-[var(--accent)] text-[#8a8580]">{bookmarkedMessages.has(messages[messages.length - 1].id) ? <BookmarkCheck className="h-3.5 w-3.5 text-[var(--link)]" /> : <Bookmark className="h-3.5 w-3.5" />}<span className="text-xs">Bookmark</span></button>
+                          {currentSessionId && <button onClick={() => forkAtMessage(messages[messages.length - 1].id)} className="flex items-center gap-1.5 px-2 py-1 rounded hover:bg-[var(--accent)] text-[#8a8580]"><GitBranch className="h-3.5 w-3.5" /><span className="text-xs">Fork</span></button>}
+                        </div>
+                        <div className="flex items-center gap-2 text-xs text-[#6a6560]">
+                          <ContextIndicator stats={contextManager.stats} config={contextManager.config} onCompact={contextManager.compact} onUpdateConfig={contextManager.updateConfig} isWarning={contextManager.isWarning} isCritical={contextManager.isCritical} canSendMessage={contextManager.canSendMessage} utilizationLevel={contextManager.utilizationLevel} />
+                          {sessionUsage && (<><span className="text-[#4a4540]">•</span><div className="flex items-center gap-1 cursor-pointer hover:text-[#9a9590]" onClick={() => setUsageDetailsOpen(true)}><BarChart3 className="h-3 w-3" /><span>{sessionUsage.total_tokens.toLocaleString()} total</span>{sessionUsage.estimated_cost_usd != null && <span className="text-[#8a8580]">(${sessionUsage.estimated_cost_usd.toFixed(4)})</span>}</div></>)}
                         </div>
                       </div>
                     </div>
                   )}
-
-                {error && (
-                  <div className="px-3 py-2 bg-[#c97a6b]/10 border border-[#c97a6b]/20 rounded-lg text-xs text-[#c97a6b] animate-slide-up">
-                    {error}
-                  </div>
-                )}
-
-                {/* Research Progress Indicator - Only on mobile, desktop shows in panel */}
-                {isMobile && researchProgress && (
-                  <div className="animate-slide-up">
-                    <ResearchProgressIndicator
-                      progress={researchProgress}
-                      onCancel={() => setResearchProgress(null)}
-                    />
-                  </div>
-                )}
-
-                {/* Research Sources Citations - Only on mobile */}
-                {isMobile && researchSources.length > 0 && !researchProgress && (
-                  <div className="animate-slide-up">
-                    <CitationsPanel sources={researchSources} />
-                  </div>
-                )}
-
-                {/* Response Footer - Actions & Token Usage */}
-                {messages.length > 0 && messages[messages.length - 1]?.role === 'assistant' && !isLoading && (
-                  <div className="mt-4 pt-3 border-t border-[var(--border)] flex items-center justify-between gap-4 animate-fade-in">
-                    {/* Action buttons */}
-                    <div className="flex items-center gap-1">
-                      <button
-                        onClick={copyLastResponse}
-                        className="flex items-center gap-1.5 px-2 py-1 rounded hover:bg-[var(--accent)] transition-colors text-[#8a8580]"
-                        title="Copy response"
-                      >
-                        {copiedIndex === messages.length - 1 ? (
-                          <Check className="h-3.5 w-3.5 text-[var(--success)]" />
-                        ) : (
-                          <Copy className="h-3.5 w-3.5" />
-                        )}
-                        <span className="text-xs">Copy</span>
-                      </button>
-                      <button
-                        onClick={() => toggleBookmark(messages[messages.length - 1].id)}
-                        className="flex items-center gap-1.5 px-2 py-1 rounded hover:bg-[var(--accent)] transition-colors text-[#8a8580]"
-                        title={bookmarkedMessages.has(messages[messages.length - 1].id) ? 'Remove bookmark' : 'Bookmark'}
-                      >
-                        {bookmarkedMessages.has(messages[messages.length - 1].id) ? (
-                          <BookmarkCheck className="h-3.5 w-3.5 text-[var(--link)]" />
-                        ) : (
-                          <Bookmark className="h-3.5 w-3.5" />
-                        )}
-                        <span className="text-xs">Bookmark</span>
-                      </button>
-                      {currentSessionId && (
-                        <button
-                          onClick={() => forkAtMessage(messages[messages.length - 1].id)}
-                          className="flex items-center gap-1.5 px-2 py-1 rounded hover:bg-[var(--accent)] transition-colors text-[#8a8580]"
-                          title="Fork conversation from here"
-                        >
-                          <GitBranch className="h-3.5 w-3.5" />
-                          <span className="text-xs">Fork</span>
-                        </button>
-                      )}
-                    </div>
-
-                    {/* Context usage indicator */}
-                    <div className="flex items-center gap-2">
-                      <ContextIndicator
-                        stats={contextManager.stats}
-                        config={contextManager.config}
-                        onCompact={contextManager.compact}
-                        onUpdateConfig={contextManager.updateConfig}
-                        isWarning={contextManager.isWarning}
-                        isCritical={contextManager.isCritical}
-                        canSendMessage={contextManager.canSendMessage}
-                        utilizationLevel={contextManager.utilizationLevel}
-                      />
-                      {sessionUsage && (
-                        <>
-                          <span className="text-[#4a4540]">•</span>
-                          <div
-                            className="flex items-center gap-1 cursor-pointer hover:text-[#9a9590] transition-colors"
-                            onClick={() => setUsageDetailsOpen(true)}
-                            title="Session total (click for details)"
-                          >
-                            <BarChart3 className="h-3 w-3" />
-                            <span>{sessionUsage.total_tokens.toLocaleString()} total</span>
-                            {sessionUsage.estimated_cost_usd != null && (
-                              <span className="text-[#8a8580]">(${sessionUsage.estimated_cost_usd.toFixed(4)})</span>
-                            )}
-                          </div>
-                        </>
-                      )}
-                    </div>
-                  </div>
-                )}
-
-                <div ref={messagesEndRef} />
-              </div>
-            )}
-            </div>
-          </div>
-
-            {/* Panel Toggle Button - When panel is closed */}
-            {!isMobile && hasSidePanelContent && !toolPanelOpen && (
-              <button
-                onClick={() => setToolPanelOpen(true)}
-                className="absolute right-3 top-3 p-1.5 bg-[var(--card)] border border-[var(--border)] rounded hover:bg-[var(--accent)] transition-colors z-10"
-                title="Show tools"
-              >
-                <PanelRightOpen className="h-4 w-4 text-[#9a9590]" />
-                {executingTools.size > 0 && (
-                  <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-[var(--success)] rounded-full flex items-center justify-center text-[9px] text-white font-medium">
-                    {executingTools.size}
-                  </span>
-                )}
-              </button>
-            )}
-
-            {/* Input Tool Belt */}
-            <div className="flex-shrink-0 pb-2 md:pb-3">
-              <ToolBelt
-                value={input}
-                onChange={setInput}
-                onSubmit={sendMessage}
-                onStop={stopGeneration}
-                disabled={!((selectedModel || runningModel || '').trim())}
-                isLoading={isLoading}
-                modelName={selectedModel || modelName}
-                placeholder={(selectedModel || runningModel) ? (deepResearch.enabled ? 'Ask a research question...' : 'Message...') : 'Select a model in Settings'}
-                mcpEnabled={mcpEnabled}
-                onMcpToggle={() => setMcpEnabled(!mcpEnabled)}
-                mcpServers={mcpServers.map((s) => ({ name: s.name, enabled: s.enabled }))}
-                artifactsEnabled={artifactsEnabled}
-                onArtifactsToggle={() => setArtifactsEnabled(!artifactsEnabled)}
-                onOpenMcpSettings={() => setMcpSettingsOpen(true)}
-                onOpenChatSettings={() => setChatSettingsOpen(true)}
-                hasSystemPrompt={systemPrompt.trim().length > 0}
-                deepResearchEnabled={deepResearch.enabled}
-                onDeepResearchToggle={() => {
-                  const newEnabled = !deepResearch.enabled;
-                  setDeepResearch(prev => ({ ...prev, enabled: newEnabled }));
-                  if (newEnabled && !mcpEnabled) {
-                    setMcpEnabled(true);
-                  }
-                }}
-                ragEnabled={ragSettings.enabled}
-                onRagToggle={() => {
-                  const newEnabled = !ragSettings.enabled;
-                  setRagSettings(prev => ({ ...prev, enabled: newEnabled }));
-                  localStorage.setItem('vllm-studio-rag-settings', JSON.stringify({ ...ragSettings, enabled: newEnabled }));
-                }}
-                ragStatus={ragStatus}
-                elapsedSeconds={elapsedSeconds}
-                queuedContext={queuedContext}
-                onQueuedContextChange={setQueuedContext}
-              />
-            </div>
-          </div>
-
-          {/* Side Panel - Desktop Only - Tools & Artifacts */}
-          {!isMobile && hasSidePanelContent && toolPanelOpen && (
-            <div className="w-80 flex-shrink-0 border-l border-[var(--border)] bg-[var(--background)] flex flex-col overflow-hidden">
-              {/* Panel Header with Tabs */}
-              <div className="flex items-center justify-between px-2 py-1.5 border-b border-[var(--border)]">
-                <div className="flex items-center gap-1">
-                  {/* Tools Tab */}
-                  <button
-                    onClick={() => setActivePanel('tools')}
-                    className={`flex items-center gap-1.5 px-2 py-1 rounded text-xs font-medium transition-colors ${
-                      activePanel === 'tools'
-                        ? 'bg-[var(--accent)] text-[var(--foreground)]'
-                        : 'text-[#9a9590] hover:text-[var(--foreground)] hover:bg-[var(--accent)]/50'
-                    }`}
-                  >
-                    <Wrench className="h-3 w-3" />
-                    <span>Tools</span>
-                    {executingTools.size > 0 && (
-                      <span className="flex items-center gap-1 text-[10px] text-[var(--success)]">
-                        <span className="relative flex h-1.5 w-1.5">
-                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[var(--success)] opacity-75"></span>
-                          <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-[var(--success)]"></span>
-                        </span>
-                      </span>
-                    )}
-                    {allToolCalls.length > 0 && (
-                      <span className="text-[10px] bg-[var(--background)] px-1 rounded">{allToolCalls.length}</span>
-                    )}
-                  </button>
-
-                  {/* Artifacts Tab */}
-                  <button
-                    onClick={() => setActivePanel('artifacts')}
-                    className={`flex items-center gap-1.5 px-2 py-1 rounded text-xs font-medium transition-colors ${
-                      activePanel === 'artifacts'
-                        ? 'bg-[var(--accent)] text-[var(--foreground)]'
-                        : 'text-[#9a9590] hover:text-[var(--foreground)] hover:bg-[var(--accent)]/50'
-                    }`}
-                  >
-                    <Layers className="h-3 w-3" />
-                    <span>Artifacts</span>
-                    {sessionArtifacts.length > 0 && (
-                      <span className="text-[10px] bg-[var(--background)] px-1 rounded">{sessionArtifacts.length}</span>
-                    )}
-                  </button>
+                  <div ref={messagesEndRef} />
                 </div>
-                <button
-                  onClick={() => setToolPanelOpen(false)}
-                  className="p-1 rounded hover:bg-[var(--accent)] transition-colors"
-                >
-                  <X className="h-3.5 w-3.5 text-[#9a9590]" />
-                </button>
               </div>
 
-              {/* Panel Content */}
-              <div className="flex-1 overflow-y-auto text-sm">
-                {/* Tools Tab Content */}
-                {activePanel === 'tools' && (
-                  <>
-                    {/* Research Progress */}
-                    {researchProgress && (
-                      <div className="px-3 py-2 border-b border-[var(--border)] bg-blue-500/5">
-                        <div className="flex items-center gap-2">
-                          <Loader2 className="h-3 w-3 text-blue-500 animate-spin" />
-                          <span className="text-xs">{researchProgress.message || 'Researching...'}</span>
-                        </div>
-                        {researchProgress.totalSteps > 0 && (
-                          <div className="mt-2 h-1 bg-[var(--border)] rounded-full overflow-hidden">
-                            <div className="h-full bg-blue-500 rounded-full transition-all" style={{ width: `${(researchProgress.currentStep / researchProgress.totalSteps) * 100}%` }} />
-                          </div>
-                        )}
-                      </div>
-                    )}
+              {!isMobile && hasSidePanelContent && !toolPanelOpen && <button onClick={() => setToolPanelOpen(true)} className="absolute right-3 top-3 p-1.5 bg-[var(--card)] border border-[var(--border)] rounded hover:bg-[var(--accent)] z-10" title="Show tools"><PanelRightOpen className="h-4 w-4 text-[#9a9590]" />{executingTools.size > 0 && <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-[var(--success)] rounded-full text-[9px] text-white font-medium">{executingTools.size}</span>}</button>}
 
-                    {/* Tool Calls */}
-                    {allToolCalls.map((tc) => {
-                      const result = toolResultsMap.get(tc.id);
-                      const isExecuting = executingTools.has(tc.id);
-                      let args: Record<string, unknown> = {};
-                      try { args = JSON.parse(tc.function.arguments || '{}'); } catch {}
-                      const mainArg = args.query || args.url || args.text || Object.values(args)[0];
-                      const argPreview = typeof mainArg === 'string' ? mainArg : JSON.stringify(mainArg || '');
-                      const parts = tc.function.name.split('__');
-                      const toolName = parts.length > 1 ? parts.slice(1).join('__') : tc.function.name;
-
-                      return (
-                        <div key={tc.id} className={`px-3 py-2 border-b border-[var(--border)] ${isExecuting ? 'bg-[var(--warning)]/5' : ''}`}>
-                          <div className="flex items-center gap-2">
-                            {isExecuting ? (
-                              <Loader2 className="h-3 w-3 text-[var(--warning)] animate-spin flex-shrink-0" />
-                            ) : result ? (
-                              result.isError ? (
-                                <X className="h-3 w-3 text-[var(--error)] flex-shrink-0" />
-                              ) : (
-                                <Check className="h-3 w-3 text-[var(--success)] flex-shrink-0" />
-                              )
-                            ) : (
-                              <Wrench className="h-3 w-3 text-[#9a9590] flex-shrink-0" />
-                            )}
-                            <span className="text-xs font-medium truncate">{toolName}</span>
-                          </div>
-
-                          {argPreview && (
-                            <p className="text-[11px] text-[#9a9590] mt-1 line-clamp-2 break-all pl-5">
-                              {String(argPreview).slice(0, 80)}
-                            </p>
-                          )}
-
-                          {result && !isExecuting && (
-                            <div className="mt-1.5 pl-5">
-                              <p className={`text-[11px] font-mono line-clamp-3 ${result.isError ? 'text-[var(--error)]' : 'text-[#9a9590]'}`}>
-                                {result.content.slice(0, 150)}
-                              </p>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-
-                    {/* Research Sources */}
-                    {researchSources.length > 0 && (
-                      <>
-                        <div className="px-3 py-1.5 text-[10px] uppercase tracking-wider text-[#9a9590] bg-[var(--accent)]/50 border-b border-[var(--border)]">
-                          Sources
-                        </div>
-                        {researchSources.map((source, i) => (
-                          <a
-                            key={i}
-                            href={source.url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="block px-3 py-2 border-b border-[var(--border)] hover:bg-[var(--accent)] transition-colors"
-                          >
-                            <div className="text-xs line-clamp-1">{source.title}</div>
-                            <div className="text-[10px] text-[#9a9590] truncate">{source.url}</div>
-                          </a>
-                        ))}
-                      </>
-                    )}
-
-                    {allToolCalls.length === 0 && !researchProgress && researchSources.length === 0 && (
-                      <div className="px-3 py-6 text-center text-xs text-[#9a9590]">
-                        No tool activity yet
-                      </div>
-                    )}
-                  </>
-                )}
-
-                {/* Artifacts Tab Content */}
-                {activePanel === 'artifacts' && (
-                  <ArtifactPanel
-                    artifacts={sessionArtifacts}
-                    isOpen={true}
-                    onClose={() => setActivePanel('tools')}
-                  />
-                )}
+              <div className="flex-shrink-0 pb-2 md:pb-3">
+                <ToolBelt value={input} onChange={setInput} onSubmit={sendMessage} onStop={stopGeneration} disabled={!((selectedModel || runningModel || '').trim())} isLoading={isLoading} modelName={selectedModel || modelName} placeholder={(selectedModel || runningModel) ? 'Message...' : 'Select a model in Settings'} mcpEnabled={mcpEnabled} onMcpToggle={() => setMcpEnabled(!mcpEnabled)} mcpServers={mcpServers.map(s => ({ name: s.name, enabled: s.enabled }))} artifactsEnabled={artifactsEnabled} onArtifactsToggle={() => setArtifactsEnabled(!artifactsEnabled)} onOpenMcpSettings={() => setMcpSettingsOpen(true)} onOpenChatSettings={() => setChatSettingsOpen(true)} hasSystemPrompt={systemPrompt.trim().length > 0} deepResearchEnabled={deepResearch.enabled} onDeepResearchToggle={() => { setDeepResearch(p => ({ ...p, enabled: !p.enabled })); if (!deepResearch.enabled && !mcpEnabled) setMcpEnabled(true); }} ragEnabled={ragSettings.enabled} onRagToggle={() => { setRagSettings(p => ({ ...p, enabled: !p.enabled })); localStorage.setItem('vllm-studio-rag-settings', JSON.stringify({ ...ragSettings, enabled: !ragSettings.enabled })); }} ragStatus={ragStatus} elapsedSeconds={elapsedSeconds} queuedContext={queuedContext} onQueuedContextChange={setQueuedContext} />
               </div>
             </div>
-          )}
+
+            {!isMobile && hasSidePanelContent && toolPanelOpen && <ChatSidePanel isOpen={toolPanelOpen} onClose={() => setToolPanelOpen(false)} activePanel={activePanel} onSetActivePanel={setActivePanel} allToolCalls={allToolCalls} toolResultsMap={toolResultsMap} executingTools={executingTools} sessionArtifacts={sessionArtifacts} researchProgress={researchProgress} researchSources={researchSources} />}
+          </div>
         </div>
       </div>
-    </div>
 
-      {/* Usage Details Modal */}
-      {usageDetailsOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-            <div className="bg-[var(--card)] border border-[var(--border)] rounded-lg w-full max-w-2xl max-h-[80vh] overflow-hidden flex flex-col">
-              <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--border)]">
-                <div className="flex items-center gap-2">
-                  <BarChart3 className="h-4 w-4 text-[#9a9590]" />
-                  <h2 className="font-medium">Usage</h2>
-                </div>
-                <button
-                  onClick={() => setUsageDetailsOpen(false)}
-                  className="p-1 rounded hover:bg-[var(--accent)] transition-colors"
-                  title="Close"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              </div>
-
-              <div className="flex-1 overflow-y-auto p-4 space-y-4">
-                <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
-                  <div className="bg-[var(--background)] rounded-lg p-3">
-                    <div className="text-xs text-[#9a9590]">Input</div>
-                    <div className="text-lg font-mono font-semibold">
-                      {(sessionUsage?.prompt_tokens ?? 0).toLocaleString()}
-                    </div>
-                  </div>
-                  <div className="bg-[var(--background)] rounded-lg p-3">
-                    <div className="text-xs text-[#9a9590]">Output</div>
-                    <div className="text-lg font-mono font-semibold">
-                      {(sessionUsage?.completion_tokens ?? 0).toLocaleString()}
-                    </div>
-                  </div>
-                  <div className="bg-[var(--background)] rounded-lg p-3">
-                    <div className="text-xs text-[#9a9590]">Total</div>
-                    <div className="text-lg font-mono font-semibold">
-                      {(sessionUsage?.total_tokens ?? 0).toLocaleString()}
-                    </div>
-                  </div>
-                  <div className="bg-[var(--background)] rounded-lg p-3">
-                    <div className="text-xs text-[#9a9590]">Cost</div>
-                    <div className="text-lg font-mono font-semibold">
-                      {sessionUsage?.estimated_cost_usd != null ? `$${sessionUsage.estimated_cost_usd.toFixed(4)}` : '--'}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="text-xs text-[#9a9590]">
-                  Request-level token accounting is stored on assistant turns (`request_*` fields) when available.
-                </div>
-
-                <div className="border border-[var(--border)] rounded-lg overflow-hidden">
-                  <div className="px-3 py-2 bg-[var(--accent)] text-xs font-medium text-[#b0a8a0]">
-                    Recent assistant turns
-                  </div>
-                  <div className="max-h-64 overflow-y-auto">
-                    {messages
-                      .filter((m) => m.role === 'assistant')
-                      .slice(-20)
-                      .reverse()
-                      .map((m) => {
-                        const inTok = (m.request_total_input_tokens ?? m.request_prompt_tokens ?? null) as number | null;
-                        const outTok = (m.request_completion_tokens ?? null) as number | null;
-                        const total = (inTok || 0) + (outTok || 0);
-                        return (
-                          <div key={m.id} className="px-3 py-2 border-t border-[var(--border)] flex items-center gap-3">
-                            <div className="min-w-0 flex-1">
-                              <div className="text-xs text-[#9a9590] font-mono truncate">
-                                {m.model || selectedModel || 'assistant'} • {m.id}
-                              </div>
-                              <div className="text-xs text-[#b0a8a0] truncate">
-                                {(m.content || '').replace(/\s+/g, ' ').slice(0, 80)}
-                              </div>
-                            </div>
-                            <div className="text-[10px] font-mono text-[#9a9590] text-right">
-                              {total ? `${total.toLocaleString()} tok` : '--'}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    {messages.filter((m) => m.role === 'assistant').length === 0 && (
-                      <div className="px-3 py-4 text-sm text-[#9a9590]">No assistant messages yet.</div>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex justify-end gap-2 px-4 py-3 border-t border-[var(--border)]">
-                <button
-                  onClick={() => setUsageDetailsOpen(false)}
-                  className="px-4 py-1.5 text-sm border border-[var(--border)] rounded hover:bg-[var(--accent)] transition-colors"
-                >
-                  Close
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Export Modal */}
-        {exportOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-            <div className="bg-[var(--card)] border border-[var(--border)] rounded-lg w-full max-w-lg overflow-hidden flex flex-col">
-              <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--border)]">
-                <div className="flex items-center gap-2">
-                  <Download className="h-4 w-4 text-[#9a9590]" />
-                  <h2 className="font-medium">Export chat</h2>
-                </div>
-                <button
-                  onClick={() => setExportOpen(false)}
-                  className="p-1 rounded hover:bg-[var(--accent)] transition-colors"
-                  title="Close"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              </div>
-
-              <div className="p-4 space-y-3">
-                <div className="text-xs text-[#9a9590]">
-                  Exports use the current UI state (including tool calls/results if present).
-                </div>
-                <button
-                  onClick={() => {
-                    exportAsMarkdown();
-                    setExportOpen(false);
-                  }}
-                  className="w-full px-3 py-2 text-sm bg-[var(--foreground)] text-[var(--background)] rounded hover:opacity-90"
-                >
-                  Download Markdown
-                </button>
-                <button
-                  onClick={() => {
-                    exportAsJson();
-                    setExportOpen(false);
-                  }}
-                  className="w-full px-3 py-2 text-sm border border-[var(--border)] rounded hover:bg-[var(--accent)]"
-                >
-                  Download JSON
-                </button>
-              </div>
-
-              <div className="flex justify-end gap-2 px-4 py-3 border-t border-[var(--border)]">
-                <button
-                  onClick={() => setExportOpen(false)}
-                  className="px-4 py-1.5 text-sm border border-[var(--border)] rounded hover:bg-[var(--accent)] transition-colors"
-                >
-                  Close
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* MCP Settings Modal */}
-        <MCPSettingsModal
-          isOpen={mcpSettingsOpen}
-          onClose={() => setMcpSettingsOpen(false)}
-          servers={mcpServers}
-          onServersChange={(newServers) => {
-            setMcpServers(newServers);
-          }}
-        />
-
-        {/* Chat Settings Modal */}
-        <ChatSettingsModal
-          isOpen={chatSettingsOpen}
-          onClose={() => setChatSettingsOpen(false)}
-          systemPrompt={systemPrompt}
-          onSystemPromptChange={setSystemPrompt}
-          availableModels={availableModels}
-          selectedModel={selectedModel}
-          onSelectedModelChange={async (modelId) => {
-            const next = (modelId || '').trim();
-            setSelectedModel(next);
-            if (currentSessionId) {
-              try {
-                await api.updateChatSession(currentSessionId, { model: next || undefined });
-                setSessions((prev) => prev.map((s) => (s.id === currentSessionId ? { ...s, model: next } : s)));
-              } catch (e) {
-                console.log('Failed to persist chat model:', e);
-              }
-            }
-          }}
-          onForkModels={async (modelIds) => {
-            const baseId = currentSessionId;
-            if (!baseId) return;
-            const created: string[] = [];
-            for (const m of modelIds) {
-              try {
-                const { session } = await api.forkChatSession(baseId, { model: m, title: undefined });
-                created.push(session.id);
-                setSessions((prev) => [session, ...prev]);
-              } catch (e) {
-                console.log('Fork failed:', e);
-              }
-            }
-            if (created.length > 0) {
-              await loadSessions();
-              await loadSession(created[0]);
-            }
-          }}
-          deepResearch={deepResearch}
-          onDeepResearchChange={(settings) => {
-            setDeepResearch(settings);
-            localStorage.setItem('vllm-studio-deep-research', JSON.stringify(settings));
-            // Auto-enable MCP tools when Deep Research is turned on
-            if (settings.enabled && !mcpEnabled) {
-              setMcpEnabled(true);
-            }
-          }}
-          ragSettings={ragSettings}
-          onRagSettingsChange={(settings) => {
-            setRagSettings(settings);
-            localStorage.setItem('vllm-studio-rag-settings', JSON.stringify(settings));
-          }}
-          onTestRagConnection={async () => {
-            if (!ragClientRef.current) {
-              ragClientRef.current = new RAGClient(ragSettings.endpoint, ragSettings.apiKey, ragSettings.useProxy);
-            }
-            return ragClientRef.current.health();
-          }}
-        />
+      <UsageModal isOpen={usageDetailsOpen} onClose={() => setUsageDetailsOpen(false)} sessionUsage={sessionUsage} messages={messages} selectedModel={selectedModel} />
+      <ExportModal isOpen={exportOpen} onClose={() => setExportOpen(false)} onExportMarkdown={exportAsMarkdown} onExportJson={exportAsJson} />
+      <MCPSettingsModal isOpen={mcpSettingsOpen} onClose={() => setMcpSettingsOpen(false)} servers={mcpServers} onServersChange={setMcpServers} />
+      <ChatSettingsModal isOpen={chatSettingsOpen} onClose={() => setChatSettingsOpen(false)} systemPrompt={systemPrompt} onSystemPromptChange={setSystemPrompt} availableModels={availableModels} selectedModel={selectedModel} onSelectedModelChange={async (modelId) => { setSelectedModel((modelId || '').trim()); if (currentSessionId) { try { await api.updateChatSession(currentSessionId, { model: modelId || undefined }); setSessions(p => p.map(s => s.id === currentSessionId ? { ...s, model: modelId } : s)); } catch {} } }} onForkModels={async (modelIds) => { if (!currentSessionId) return; for (const m of modelIds) { try { const { session } = await api.forkChatSession(currentSessionId, { model: m }); setSessions(p => [session, ...p]); } catch {} } await loadSessions(); }} deepResearch={deepResearch} onDeepResearchChange={s => { setDeepResearch(s); localStorage.setItem('vllm-studio-deep-research', JSON.stringify(s)); if (s.enabled && !mcpEnabled) setMcpEnabled(true); }} ragSettings={ragSettings} onRagSettingsChange={s => { setRagSettings(s); localStorage.setItem('vllm-studio-rag-settings', JSON.stringify(s)); }} onTestRagConnection={async () => { if (!ragClientRef.current) ragClientRef.current = new RAGClient(ragSettings.endpoint, ragSettings.apiKey, ragSettings.useProxy); return ragClientRef.current.health(); }} />
     </>
   );
 }

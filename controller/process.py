@@ -13,7 +13,6 @@ import psutil
 from .backends import build_sglang_command, build_vllm_command
 from .config import settings
 from .models import Backend, ProcessInfo, Recipe
-from .backends import build_transformers_command
 
 
 def _extract_flag(cmdline: List[str], flag: str) -> Optional[str]:
@@ -71,10 +70,6 @@ def _is_inference_process(cmdline: List[str]) -> Optional[str]:
         return "vllm"
     if "sglang.launch_server" in joined:
         return "sglang"
-    if "scripts.deepseek.transformers_server:app" in joined:
-        return "transformers"
-    if "scripts.deepseek.transformers_server" in joined and "uvicorn" in joined:
-        return "transformers"
     # TabbyAPI / ExLlamaV3 (main.py with --config flag)
     if "tabbyAPI" in joined or ("main.py" in joined and "--config" in joined):
         return "tabbyapi"
@@ -212,8 +207,6 @@ async def launch_model(recipe: Recipe) -> Tuple[bool, Optional[int], str]:
 
     if recipe.backend == Backend.SGLANG:
         cmd = build_sglang_command(recipe)
-    elif recipe.backend == Backend.TRANSFORMERS:
-        cmd = build_transformers_command(recipe)
     else:
         cmd = build_vllm_command(recipe)
 

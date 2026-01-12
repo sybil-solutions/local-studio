@@ -129,4 +129,5 @@ general_settings:
   ui_access_mode: "admin_only"
   json_logs: true
   store_model_in_db: true
-  health_check_interval: 30
+  background_health_checks: false  # Disable - single model backend
+  health_check_interval: null  # No health checks

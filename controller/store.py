@@ -8,7 +8,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator, List, Optional, Dict, Any
 
-from .models import Recipe
+from .models import Recipe, MCPServer
 
 
 class RecipeStore:
@@ -534,3 +534,170 @@ class LifetimeMetricsStore:
         current = self.get('first_started_at')
         if current == 0:
             self.set('first_started_at', time.time())
+
+
+class MCPStore:
+    """SQLite-backed MCP server configuration storage."""
+
+    def __init__(self, db_path: Path):
+        self.db_path = db_path
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+        self._migrate()
+
+    @contextmanager
+    def _conn(self) -> Iterator[sqlite3.Connection]:
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        try:
+            yield conn
+            conn.commit()
+        finally:
+            conn.close()
+
+    def _migrate(self) -> None:
+        with self._conn() as conn:
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS mcp_servers (
+                    id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    enabled INTEGER NOT NULL DEFAULT 1,
+                    command TEXT NOT NULL,
+                    args TEXT NOT NULL DEFAULT '[]',
+                    env TEXT NOT NULL DEFAULT '{}',
+                    description TEXT,
+                    url TEXT,
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+
+            # Seed default Exa MCP server if not exists
+            import os
+            import shutil
+            exa_api_key = os.environ.get("EXA_API_KEY", "")
+
+            # Find the best way to run exa-mcp-server
+            # Priority: 1) global install via node, 2) npx
+            exa_command = "npx"
+            exa_args = ["-y", "exa-mcp-server"]
+
+            # Check for global npm install path
+            npm_global_root = os.path.expanduser("~/.nvm/versions/node")
+            if os.path.isdir(npm_global_root):
+                # Find any node version with exa-mcp-server installed
+                for version_dir in os.listdir(npm_global_root):
+                    exa_path = os.path.join(
+                        npm_global_root, version_dir,
+                        "lib/node_modules/exa-mcp-server/.smithery/stdio/index.cjs"
+                    )
+                    if os.path.isfile(exa_path):
+                        node_bin = shutil.which("node")
+                        if node_bin:
+                            exa_command = node_bin
+                            exa_args = [exa_path]
+                        break
+
+            conn.execute("""
+                INSERT OR IGNORE INTO mcp_servers (id, name, enabled, command, args, env, description, url)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                "exa",
+                "Exa Search",
+                1,
+                exa_command,
+                json.dumps(exa_args),
+                json.dumps({"EXA_API_KEY": exa_api_key}),
+                "Web search and content retrieval via Exa AI",
+                "https://exa.ai",
+            ))
+
+    def list(self, enabled_only: bool = False) -> List[MCPServer]:
+        """List all MCP servers, optionally filtered to enabled only."""
+        with self._conn() as conn:
+            if enabled_only:
+                rows = conn.execute(
+                    "SELECT * FROM mcp_servers WHERE enabled = 1 ORDER BY name"
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT * FROM mcp_servers ORDER BY name"
+                ).fetchall()
+
+        servers = []
+        for row in rows:
+            servers.append(MCPServer(
+                id=row['id'],
+                name=row['name'],
+                enabled=bool(row['enabled']),
+                command=row['command'],
+                args=json.loads(row['args']),
+                env=json.loads(row['env']),
+                description=row['description'],
+                url=row['url'],
+            ))
+        return servers
+
+    def get(self, server_id: str) -> Optional[MCPServer]:
+        """Get a single MCP server by ID."""
+        with self._conn() as conn:
+            row = conn.execute(
+                "SELECT * FROM mcp_servers WHERE id = ?", (server_id,)
+            ).fetchone()
+
+        if not row:
+            return None
+
+        return MCPServer(
+            id=row['id'],
+            name=row['name'],
+            enabled=bool(row['enabled']),
+            command=row['command'],
+            args=json.loads(row['args']),
+            env=json.loads(row['env']),
+            description=row['description'],
+            url=row['url'],
+        )
+
+    def save(self, server: MCPServer) -> MCPServer:
+        """Create or update an MCP server."""
+        with self._conn() as conn:
+            conn.execute("""
+                INSERT INTO mcp_servers (id, name, enabled, command, args, env, description, url, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                ON CONFLICT(id) DO UPDATE SET
+                    name = excluded.name,
+                    enabled = excluded.enabled,
+                    command = excluded.command,
+                    args = excluded.args,
+                    env = excluded.env,
+                    description = excluded.description,
+                    url = excluded.url,
+                    updated_at = CURRENT_TIMESTAMP
+            """, (
+                server.id,
+                server.name,
+                1 if server.enabled else 0,
+                server.command,
+                json.dumps(server.args),
+                json.dumps(server.env),
+                server.description,
+                server.url,
+            ))
+        return server
+
+    def delete(self, server_id: str) -> bool:
+        """Delete an MCP server."""
+        with self._conn() as conn:
+            cursor = conn.execute(
+                "DELETE FROM mcp_servers WHERE id = ?", (server_id,)
+            )
+        return cursor.rowcount > 0
+
+    def set_enabled(self, server_id: str, enabled: bool) -> bool:
+        """Enable or disable an MCP server."""
+        with self._conn() as conn:
+            cursor = conn.execute(
+                "UPDATE mcp_servers SET enabled = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                (1 if enabled else 0, server_id)
+            )
+        return cursor.rowcount > 0

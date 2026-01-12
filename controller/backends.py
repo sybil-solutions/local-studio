@@ -196,32 +196,6 @@ def build_sglang_command(recipe: Recipe) -> List[str]:
     return cmd
 
 
-def build_transformers_command(recipe: Recipe) -> List[str]:
-    """Build Transformers (uvicorn) launch command.
-
-    This backend is intended for cases where vLLM/SGLang cannot serve a checkpoint
-    (e.g. 3-bit MoE variants). It launches an OpenAI-compatible server implemented
-    in this repo (scripts/deepseek/transformers_server.py).
-    """
-    python = _get_python_path(recipe) or "python"
-    repo_root = Path(__file__).resolve().parent.parent
-
-    cmd = [
-        python,
-        "-m",
-        "uvicorn",
-        "--app-dir",
-        str(repo_root),
-        "scripts.deepseek.transformers_server:app",
-        "--host",
-        recipe.host,
-        "--port",
-        str(recipe.port),
-    ]
-    _append_extra_args(cmd, recipe.extra_args)
-    return cmd
-
-
 def _append_extra_args(cmd: List[str], extra_args: dict) -> None:
     """Append extra CLI arguments to command.
 
