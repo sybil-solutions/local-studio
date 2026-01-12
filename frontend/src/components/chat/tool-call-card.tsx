@@ -46,32 +46,34 @@ function ToolResultModal({ toolName, result, onClose }: ToolResultModalProps) {
   return (
     <>
       <div className="fixed inset-0 z-[100] bg-black/70" onClick={onClose} />
-      <div className="fixed inset-4 md:inset-12 z-[101] bg-[#1e1e1e] rounded-lg flex flex-col overflow-hidden border border-[#363432]">
-        <div className="flex items-center justify-between px-4 py-3 border-b border-[#363432] flex-shrink-0">
-          <div className="flex items-center gap-2">
-            <span className="font-medium text-sm text-[#f0ebe3]">{toolName}</span>
-            <span className="text-xs text-[#9a9088]">
+      <div className="fixed inset-0 md:inset-12 z-[101] bg-[#1e1e1e] md:rounded-lg flex flex-col overflow-hidden border border-[#363432] max-w-full">
+        <div className="sticky top-0 z-10 flex items-center justify-between px-4 py-3 border-b border-[#363432] bg-[#1e1e1e]">
+          <div className="flex items-center gap-2 flex-1 min-w-0">
+            <span className="font-medium text-sm text-[#f0ebe3] truncate">{toolName}</span>
+            <span className="text-xs text-[#9a9088] flex-shrink-0">
               {result.content.length.toLocaleString()} chars
             </span>
           </div>
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-1 flex-shrink-0">
             <button
               onClick={handleCopy}
-              className="p-2 rounded hover:bg-[#363432] transition-colors"
+              className="p-2 rounded hover:bg-[#363432] transition-colors touch-manipulation"
               title="Copy"
+              aria-label="Copy"
             >
               {copied ? (
-                <Check className="h-4 w-4 text-[#7d9a6a]" />
+                <Check className="h-5 w-5 text-[#7d9a6a]" />
               ) : (
-                <Copy className="h-4 w-4 text-[#9a9088]" />
+                <Copy className="h-5 w-5 text-[#9a9088]" />
               )}
             </button>
             <button
               onClick={onClose}
-              className="p-2 rounded hover:bg-[#363432] transition-colors"
+              className="p-2 rounded hover:bg-[#363432] transition-colors touch-manipulation"
               title="Close"
+              aria-label="Close"
             >
-              <X className="h-4 w-4 text-[#9a9088]" />
+              <X className="h-5 w-5 text-[#9a9088]" />
             </button>
           </div>
         </div>

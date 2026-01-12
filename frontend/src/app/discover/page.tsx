@@ -101,7 +101,7 @@ export default function DiscoverPage() {
       params.set('limit', '50');
       params.set('full', 'false');
 
-      const response = await fetch(`https://huggingface.co/api/models?${params.toString()}`);
+      const response = await fetch(`/api/proxy/v1/huggingface/models?${params.toString()}`);
       if (!response.ok) throw new Error('Failed to fetch models');
       const data = await response.json();
       setModels(data);
@@ -126,31 +126,11 @@ export default function DiscoverPage() {
   };
 
   const getTaskBadgeColor = (tag?: string) => {
-    switch (tag) {
-      case 'text-generation':
-        return 'bg-[#6b9ac9]/15 text-[#6b9ac9]';
-      case 'text2text-generation':
-        return 'bg-[#9a6bc9]/15 text-[#9a6bc9]';
-      case 'conversational':
-        return 'bg-[#7d9a6a]/15 text-[#7d9a6a]';
-      case 'fill-mask':
-        return 'bg-[#c9a66b]/15 text-[#c9a66b]';
-      default:
-        return 'bg-[#363432] text-[#9a9088]';
-    }
+    return 'bg-[var(--highlight-bg)] text-[var(--accent-purple)]';
   };
 
   const getLibraryBadgeColor = (lib?: string) => {
-    switch (lib) {
-      case 'transformers':
-        return 'bg-[#ff9d00]/15 text-[#ff9d00]';
-      case 'pytorch':
-        return 'bg-[#ee4c2c]/15 text-[#ee4c2c]';
-      case 'safetensors':
-        return 'bg-[#7d9a6a]/15 text-[#7d9a6a]';
-      default:
-        return 'bg-[#363432] text-[#9a9088]';
-    }
+    return 'bg-[var(--highlight-bg)] text-[var(--accent-purple)]';
   };
 
   return (
@@ -169,7 +149,7 @@ export default function DiscoverPage() {
             <button
               onClick={() => setShowFilters(!showFilters)}
               className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors ${
-                showFilters ? 'bg-[#8b7355] text-[#f0ebe3]' : 'bg-[#363432] text-[#9a9088] hover:text-[#f0ebe3]'
+                showFilters ? 'bg-[var(--accent-purple)] text-[#f0ebe3]' : 'bg-[#363432] text-[#9a9088] hover:text-[#f0ebe3]'
               }`}
             >
               <Filter className="h-4 w-4" />
@@ -195,7 +175,7 @@ export default function DiscoverPage() {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search models..."
-              className="w-full pl-10 pr-4 py-2.5 bg-[#1e1e1e] border border-[#363432] rounded-lg text-sm text-[#f0ebe3] placeholder-[#9a9088]/50 focus:outline-none focus:border-[#8b7355]"
+              className="w-full pl-10 pr-4 py-2.5 bg-[#1e1e1e] border border-[#363432] rounded-lg text-sm text-[#f0ebe3] placeholder-[#9a9088]/50 focus:outline-none focus:border-[var(--accent-purple)]"
             />
             {search && (
               <button
@@ -217,7 +197,7 @@ export default function DiscoverPage() {
                   <select
                     value={task}
                     onChange={(e) => setTask(e.target.value)}
-                    className="w-full px-3 py-2 bg-[#1b1b1b] border border-[#363432] rounded-lg text-sm text-[#f0ebe3] focus:outline-none focus:border-[#8b7355] appearance-none cursor-pointer"
+                    className="w-full px-3 py-2 bg-[#1b1b1b] border border-[#363432] rounded-lg text-sm text-[#f0ebe3] focus:outline-none focus:border-[var(--accent-purple)] appearance-none cursor-pointer"
                   >
                     {TASKS.map((t) => (
                       <option key={t.value} value={t.value}>
@@ -236,7 +216,7 @@ export default function DiscoverPage() {
                   <select
                     value={library}
                     onChange={(e) => setLibrary(e.target.value)}
-                    className="w-full px-3 py-2 bg-[#1b1b1b] border border-[#363432] rounded-lg text-sm text-[#f0ebe3] focus:outline-none focus:border-[#8b7355] appearance-none cursor-pointer"
+                    className="w-full px-3 py-2 bg-[#1b1b1b] border border-[#363432] rounded-lg text-sm text-[#f0ebe3] focus:outline-none focus:border-[var(--accent-purple)] appearance-none cursor-pointer"
                   >
                     {LIBRARY_FILTERS.map((l) => (
                       <option key={l.value} value={l.value}>
@@ -255,7 +235,7 @@ export default function DiscoverPage() {
                   <select
                     value={sort}
                     onChange={(e) => setSort(e.target.value)}
-                    className="w-full px-3 py-2 bg-[#1b1b1b] border border-[#363432] rounded-lg text-sm text-[#f0ebe3] focus:outline-none focus:border-[#8b7355] appearance-none cursor-pointer"
+                    className="w-full px-3 py-2 bg-[#1b1b1b] border border-[#363432] rounded-lg text-sm text-[#f0ebe3] focus:outline-none focus:border-[var(--accent-purple)] appearance-none cursor-pointer"
                   >
                     {SORT_OPTIONS.map((s) => (
                       <option key={s.value} value={s.value}>
@@ -279,7 +259,7 @@ export default function DiscoverPage() {
                   onClick={() => setSort(opt.value)}
                   className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs transition-colors ${
                     sort === opt.value
-                      ? 'bg-[#8b7355] text-[#f0ebe3]'
+                      ? 'bg-[var(--accent-purple)] text-[#f0ebe3]'
                       : 'bg-[#363432] text-[#9a9088] hover:text-[#f0ebe3]'
                   }`}
                 >
@@ -355,17 +335,17 @@ export default function DiscoverPage() {
                           </span>
                         )}
                         {model.tags?.includes('gguf') && (
-                          <span className="px-2 py-0.5 rounded text-[10px] bg-[#9a6bc9]/15 text-[#9a6bc9]">
+                          <span className="px-2 py-0.5 rounded text-[10px] bg-[var(--highlight-bg)] text-[var(--accent-purple)]">
                             GGUF
                           </span>
                         )}
                         {model.tags?.includes('exl2') && (
-                          <span className="px-2 py-0.5 rounded text-[10px] bg-[#c9a66b]/15 text-[#c9a66b]">
+                          <span className="px-2 py-0.5 rounded text-[10px] bg-[var(--highlight-bg)] text-[var(--accent-purple)]">
                             EXL2
                           </span>
                         )}
                         {model.tags?.includes('awq') && (
-                          <span className="px-2 py-0.5 rounded text-[10px] bg-[#6b9ac9]/15 text-[#6b9ac9]">
+                          <span className="px-2 py-0.5 rounded text-[10px] bg-[var(--highlight-bg)] text-[var(--accent-purple)]">
                             AWQ
                           </span>
                         )}

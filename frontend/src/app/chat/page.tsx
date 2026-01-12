@@ -256,7 +256,22 @@ export default function ChatPage() {
       const { session } = await api.getChatSession(sessionId);
       setCurrentSessionId(session.id); setCurrentSessionTitle(session.title); setTitleDraft(session.title);
       if (session.model) setSelectedModel(session.model);
-      const msgs: Message[] = (session.messages || []).map((m: any) => ({ id: m.id, role: m.role, content: m.content, model: m.model, toolCalls: m.tool_calls, toolResults: m.tool_results, prompt_tokens: m.prompt_tokens, completion_tokens: m.completion_tokens, total_tokens: m.total_tokens, request_prompt_tokens: m.request_prompt_tokens, request_tools_tokens: m.request_tools_tokens, request_total_input_tokens: m.request_total_input_tokens, request_completion_tokens: m.request_completion_tokens, estimated_cost_usd: m.estimated_cost_usd }));
+      const msgs: Message[] = (session.messages || []).map((m: any) => {
+        const toolCalls = m.tool_calls || [];
+        // Extract tool results from embedded tc.result (how they're stored in DB)
+        const toolResults = toolCalls
+          .filter((tc: any) => tc.result)
+          .map((tc: any) => ({ tool_call_id: tc.id, content: tc.result.content || tc.result, isError: tc.result.isError }));
+        return {
+          id: m.id, role: m.role, content: m.content, model: m.model,
+          toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+          toolResults: toolResults.length > 0 ? toolResults : undefined,
+          prompt_tokens: m.prompt_tokens, completion_tokens: m.completion_tokens, total_tokens: m.total_tokens,
+          request_prompt_tokens: m.request_prompt_tokens, request_tools_tokens: m.request_tools_tokens,
+          request_total_input_tokens: m.request_total_input_tokens, request_completion_tokens: m.request_completion_tokens,
+          estimated_cost_usd: m.estimated_cost_usd,
+        };
+      });
       setMessages(msgs); setToolResultsMap(new Map()); refreshUsage(session.id); setSidebarCollapsed(isMobile);
     } catch { console.log('Failed to load session'); }
   };
@@ -420,7 +435,7 @@ export default function ChatPage() {
 
               {!isMobile && hasSidePanelContent && !toolPanelOpen && <button onClick={() => setToolPanelOpen(true)} className="absolute right-3 top-3 p-1.5 bg-[var(--card)] border border-[var(--border)] rounded hover:bg-[var(--accent)] z-10" title="Show tools"><PanelRightOpen className="h-4 w-4 text-[#9a9590]" />{executingTools.size > 0 && <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-[var(--success)] rounded-full text-[9px] text-white font-medium">{executingTools.size}</span>}</button>}
 
-              <div className="flex-shrink-0 pb-2 md:pb-3">
+              <div className="flex-shrink-0 pb-0 md:pb-3">
                 <ToolBelt value={input} onChange={setInput} onSubmit={sendMessage} onStop={stopGeneration} disabled={!((selectedModel || runningModel || '').trim())} isLoading={isLoading} modelName={selectedModel || modelName} placeholder={(selectedModel || runningModel) ? 'Message...' : 'Select a model in Settings'} mcpEnabled={mcpEnabled} onMcpToggle={() => setMcpEnabled(!mcpEnabled)} mcpServers={mcpServers.map(s => ({ name: s.name, enabled: s.enabled }))} artifactsEnabled={artifactsEnabled} onArtifactsToggle={() => setArtifactsEnabled(!artifactsEnabled)} onOpenMcpSettings={() => setMcpSettingsOpen(true)} onOpenChatSettings={() => setChatSettingsOpen(true)} hasSystemPrompt={systemPrompt.trim().length > 0} deepResearchEnabled={deepResearch.enabled} onDeepResearchToggle={() => { setDeepResearch(p => ({ ...p, enabled: !p.enabled })); if (!deepResearch.enabled && !mcpEnabled) setMcpEnabled(true); }} ragEnabled={ragSettings.enabled} onRagToggle={() => { setRagSettings(p => ({ ...p, enabled: !p.enabled })); localStorage.setItem('vllm-studio-rag-settings', JSON.stringify({ ...ragSettings, enabled: !ragSettings.enabled })); }} ragStatus={ragStatus} elapsedSeconds={elapsedSeconds} queuedContext={queuedContext} onQueuedContextChange={setQueuedContext} />
               </div>
             </div>
