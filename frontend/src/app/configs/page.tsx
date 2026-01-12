@@ -121,7 +121,7 @@ export default function ConfigsPage() {
         {/* Header */}
         <div className="flex items-center justify-between mb-6 sm:mb-8">
           <div className="flex items-center gap-3">
-            <Settings className="h-5 w-5 text-[#8b7355]" />
+            <Settings className="h-5 w-5 text-[var(--accent-purple)]" />
             <h1 className="text-lg font-medium">System Configuration</h1>
           </div>
           <button
@@ -231,10 +231,10 @@ export default function ConfigsPage() {
                   <div className="sm:hidden space-y-3">
                     {[
                       { name: 'Client', port: '3000', color: 'bg-[#363432]' },
-                      { name: 'UI', port: '8080', color: 'bg-[#8b7355]' },
-                      { name: 'API', port: '4100', color: 'bg-[#6b9ac9]' },
-                      { name: 'LiteLLM', port: '8000', color: 'bg-[#7d9a6a]' },
-                      { name: 'vLLM', port: '', color: 'bg-[#c9a66b]' },
+                      { name: 'UI', port: '8080', color: 'bg-[var(--accent-purple)]' },
+                      { name: 'API', port: '4100', color: 'bg-[var(--accent-purple)]' },
+                      { name: 'LiteLLM', port: '8000', color: 'bg-[var(--accent-purple)]' },
+                      { name: 'vLLM', port: '', color: 'bg-[var(--accent-purple)]' },
                     ].map((item, i, arr) => (
                       <div key={item.name} className="flex items-center gap-3">
                         <div className={`w-12 h-12 rounded-lg ${item.color} flex items-center justify-center text-[#f0ebe3] text-xs font-medium`}>
@@ -262,7 +262,7 @@ export default function ConfigsPage() {
                       <span className="text-[#9a9088] text-xs px-1">:3000</span>
                     </div>
                     <div className="flex flex-col items-center gap-2">
-                      <div className="w-16 h-16 rounded-lg bg-[#8b7355] flex items-center justify-center text-[#f0ebe3] font-medium">
+                      <div className="w-16 h-16 rounded-lg bg-[var(--accent-purple)] flex items-center justify-center text-[#f0ebe3] font-medium">
                         UI
                       </div>
                     </div>
@@ -271,7 +271,7 @@ export default function ConfigsPage() {
                       <span className="text-[#9a9088] text-xs px-1">:8080</span>
                     </div>
                     <div className="flex flex-col items-center gap-2">
-                      <div className="w-16 h-16 rounded-lg bg-[#6b9ac9] flex items-center justify-center text-[#f0ebe3] font-medium">
+                      <div className="w-16 h-16 rounded-lg bg-[var(--accent-purple)] flex items-center justify-center text-[#f0ebe3] font-medium">
                         API
                       </div>
                     </div>
@@ -280,7 +280,7 @@ export default function ConfigsPage() {
                       <span className="text-[#9a9088] text-xs px-1">:4100</span>
                     </div>
                     <div className="flex flex-col items-center gap-2">
-                      <div className="w-16 h-16 rounded-lg bg-[#7d9a6a] flex items-center justify-center text-[#f0ebe3] font-medium">
+                      <div className="w-16 h-16 rounded-lg bg-[var(--accent-purple)] flex items-center justify-center text-[#f0ebe3] font-medium">
                         LLM
                       </div>
                     </div>
@@ -289,7 +289,7 @@ export default function ConfigsPage() {
                       <span className="text-[#9a9088] text-xs px-1">:8000</span>
                     </div>
                     <div className="flex flex-col items-center gap-2">
-                      <div className="w-16 h-16 rounded-lg bg-[#c9a66b] flex items-center justify-center text-[#f0ebe3] font-medium">
+                      <div className="w-16 h-16 rounded-lg bg-[var(--accent-purple)] flex items-center justify-center text-[#f0ebe3] font-medium">
                         vLLM
                       </div>
                     </div>

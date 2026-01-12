@@ -9,17 +9,19 @@
   --border: hsl(35, 12%, 80%);
   --card: hsl(40, 15%, 94%);
   --card-hover: hsl(40, 12%, 90%);
-  --accent: hsl(35, 12%, 88%);
-  --accent-hover: hsl(35, 15%, 82%);
+  --accent: hsl(270, 20%, 94%);
+  --accent-hover: hsl(270, 25%, 88%);
   --accent-foreground: hsl(30, 15%, 10%);
   --success: hsl(142, 50%, 35%);
   --warning: hsl(38, 90%, 45%);
   --error: hsl(0, 65%, 45%);
-  --ring: hsl(30, 20%, 25%);
-  --link: hsl(270, 35%, 40%);
-  --link-hover: hsl(270, 40%, 35%);
-  --accent-purple: hsl(270, 20%, 94%);
-  --accent-purple-shine: hsl(270, 25%, 90%);
+  --ring: hsl(270, 60%, 50%);
+  --link: hsl(270, 50%, 50%);
+  --link-hover: hsl(270, 60%, 45%);
+  --accent-purple: hsl(270, 50%, 55%);
+  --accent-purple-shine: hsl(270, 60%, 60%);
+  --highlight: hsl(270, 50%, 55%);
+  --highlight-bg: hsl(270, 50%, 95%);
 }
 
 .dark {
@@ -31,17 +33,19 @@
   --border: hsl(30, 5%, 20%);
   --card: hsl(30, 5%, 12%);
   --card-hover: hsl(30, 5%, 15%);
-  --accent: hsl(35, 8%, 18%);
-  --accent-hover: hsl(35, 10%, 22%);
+  --accent: hsl(270, 25%, 22%);
+  --accent-hover: hsl(270, 30%, 28%);
   --accent-foreground: hsl(40, 20%, 92%);
   --success: hsl(142, 45%, 45%);
   --warning: hsl(38, 85%, 55%);
   --error: hsl(0, 60%, 55%);
-  --ring: hsl(35, 15%, 70%);
-  --link: hsl(270, 40%, 70%);
-  --link-hover: hsl(270, 45%, 75%);
-  --accent-purple: hsl(270, 20%, 18%);
-  --accent-purple-shine: hsl(270, 25%, 22%);
+  --ring: hsl(270, 60%, 60%);
+  --link: hsl(270, 60%, 70%);
+  --link-hover: hsl(270, 65%, 75%);
+  --accent-purple: hsl(270, 50%, 55%);
+  --accent-purple-shine: hsl(270, 60%, 60%);
+  --highlight: hsl(270, 60%, 65%);
+  --highlight-bg: hsl(270, 30%, 18%);
 }
 
 @theme inline {
@@ -59,23 +63,36 @@ html, body {
   overflow-x: hidden;
   max-width: 100vw;
   width: 100%;
+  position: relative;
 }
 
 /* Mobile viewport fix */
 @media (max-width: 768px) {
-  /* Prevent horizontal overflow on mobile */
-  main, article, section, div:not([class*="fixed"]):not([class*="absolute"]) {
+  /* Force everything to respect 100vw */
+  * {
     max-width: 100vw;
   }
 
+  /* Prevent horizontal overflow on mobile */
+  main, article, section, div {
+    max-width: 100vw !important;
+  }
+
+  /* Fixed and absolute positioned elements */
+  [class*="fixed"], [class*="absolute"] {
+    max-width: 100vw !important;
+  }
+
   /* Constrain all content containers */
-  .max-w-3xl {
-    max-width: calc(100vw - 0.75rem) !important;
+  .max-w-3xl, .max-w-4xl, .max-w-5xl, .max-w-6xl, .max-w-7xl {
+    max-width: 100vw !important;
+    padding-left: 1rem !important;
+    padding-right: 1rem !important;
   }
 
   /* Ensure code blocks don't overflow */
   pre, code {
-    max-width: 100%;
+    max-width: 100% !important;
     overflow-x: auto;
     word-break: break-word;
   }
@@ -84,7 +101,14 @@ html, body {
   .artifact-container,
   .code-sandbox,
   iframe {
-    max-width: calc(100vw - 1rem) !important;
+    max-width: calc(100vw - 2rem) !important;
+  }
+
+  /* Tables must respect viewport */
+  table {
+    max-width: 100% !important;
+    overflow-x: auto;
+    display: block;
   }
 }
 
