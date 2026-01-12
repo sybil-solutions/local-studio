@@ -408,7 +408,7 @@ export default function ChatPage() {
 
             <div className="flex-1 flex flex-col overflow-hidden relative">
               <div ref={messagesContainerRef} onScroll={handleScroll} className="flex-1 overflow-y-auto overflow-x-hidden">
-                <div className="pb-4">
+                <div className="pb-0 md:pb-4">
                   <ChatMessageList messages={messages} selectedModel={selectedModel || runningModel || undefined} modelName={modelName} currentSessionId={currentSessionId} artifactsEnabled={artifactsEnabled} isMobile={isMobile} isLoading={isLoading} error={error} copiedIndex={copiedIndex} toolResultsMap={toolResultsMap} executingTools={executingTools} onCopy={copyToClipboard} onFork={forkAtMessage} />
 
                   {isMobile && researchProgress && <ResearchProgressIndicator progress={researchProgress} onCancel={() => setResearchProgress(null)} />}
