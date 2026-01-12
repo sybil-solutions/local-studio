@@ -202,3 +202,40 @@ async def list_studio_models(store: RecipeStore = Depends(get_store)):
         )
 
     return {"models": models, "roots": roots_payload, "configured_models_dir": str(settings.models_dir)}
+
+
+@router.get("/v1/huggingface/models")
+async def proxy_huggingface_models(
+    search: Optional[str] = None,
+    filter: Optional[str] = None,
+    sort: Optional[str] = "trending",
+    limit: int = 50,
+):
+    """Proxy requests to HuggingFace Hub API to avoid CORS issues."""
+    # Map frontend sort options to HuggingFace API parameters
+    sort_mapping = {
+        "trending": "trendingScore",
+        "downloads": "downloads",
+        "likes": "likes",
+        "modified": "lastModified",
+    }
+    hf_sort = sort_mapping.get(sort, "trendingScore")
+
+    params = {"limit": limit, "full": "false", "sort": hf_sort}
+    if search:
+        params["search"] = search
+    if filter:
+        params["filter"] = filter
+
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            response = await client.get(
+                "https://huggingface.co/api/models",
+                params=params,
+            )
+            response.raise_for_status()
+            return response.json()
+    except httpx.HTTPStatusError as e:
+        raise HTTPException(status_code=e.response.status_code, detail=f"HuggingFace API error: {e}")
+    except httpx.RequestError as e:
+        raise HTTPException(status_code=503, detail=f"Failed to reach HuggingFace API: {e}")
