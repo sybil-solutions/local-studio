@@ -1,13 +1,9 @@
 import { NextRequest } from 'next/server';
 import { mergeToolCallArguments } from '@/lib/tool-parsing';
+import { getApiSettings } from '@/lib/api-settings';
 
-// Route through controller for auto-eviction/launch support, fallback to LiteLLM
-const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:8080';
-const LITELLM_URL = process.env.LITELLM_URL || process.env.NEXT_PUBLIC_LITELLM_URL || 'http://localhost:4000';
+// Fallback API key (from env if not configured in settings)
 const LITELLM_API_KEY = process.env.LITELLM_MASTER_KEY || process.env.LITELLM_API_KEY || process.env.API_KEY || 'sk-master';
-
-// Use controller endpoint for auto-switch support
-const CHAT_ENDPOINT = `${BACKEND_URL}/v1/chat/completions`;
 
 interface StreamEvent {
   type: 'text' | 'tool_calls' | 'done' | 'error';
@@ -45,6 +41,14 @@ interface OpenAIChunk {
     finish_reason: string | null;
   }>;
 }
+
+// Clean GLM-4.6V box tokens from content
+const cleanGLMBoxTokens = (text: string): string => {
+  return text
+    .replace(/<\|begin_of_box\|>/g, '')
+    .replace(/<\|end_of_box\|>/g, '')
+    .replace(/^\n+/, ''); // Clean leading newlines that GLM adds before content
+};
 
 const mergeStreamingText = (prevFull: string, incoming: string): { nextFull: string; emit: string } => {
   const prev = prevFull || '';
@@ -121,8 +125,14 @@ export async function POST(req: NextRequest) {
       requestBody.tool_choice = 'auto';
     }
 
+    // Get dynamic settings
+    const settings = await getApiSettings();
+    const BACKEND_URL = settings.backendUrl;
+    const API_KEY = settings.apiKey;
+    const CHAT_ENDPOINT = `${BACKEND_URL}/v1/chat/completions`;
+
     const incomingAuth = req.headers.get('authorization');
-    const outgoingAuth = incomingAuth || (LITELLM_API_KEY ? `Bearer ${LITELLM_API_KEY}` : undefined);
+    const outgoingAuth = incomingAuth || (API_KEY ? `Bearer ${API_KEY}` : LITELLM_API_KEY ? `Bearer ${LITELLM_API_KEY}` : undefined);
 
     // Route through controller for auto-eviction support (falls back to LiteLLM internally)
     console.log(`[CHAT] Routing to controller: ${CHAT_ENDPOINT}`);
@@ -260,9 +270,13 @@ export async function POST(req: NextRequest) {
                     assistantContentFull += '</think>\n\n';
                   }
 
-                  const merged = mergeStreamingText(assistantContentFull, delta.content);
-                  assistantContentFull = merged.nextFull;
-                  if (merged.emit) controller.enqueue(sendEvent({ type: 'text', content: merged.emit }));
+                  // Clean GLM-4.6V box tokens from streaming content
+                  const cleanedContent = cleanGLMBoxTokens(delta.content);
+                  if (cleanedContent) {
+                    const merged = mergeStreamingText(assistantContentFull, cleanedContent);
+                    assistantContentFull = merged.nextFull;
+                    if (merged.emit) controller.enqueue(sendEvent({ type: 'text', content: merged.emit }));
+                  }
                 }
 
                 // Handle tool calls
@@ -283,15 +297,17 @@ export async function POST(req: NextRequest) {
           }
 
           emitCompletedToolsIfAny(controller);
-          controller.enqueue(sendEvent({ type: 'done' }));
+          try { controller.enqueue(sendEvent({ type: 'done' })); } catch {}
         } catch (error) {
           console.error('[Chat API] Stream error:', error);
-          controller.enqueue(sendEvent({
-            type: 'error',
-            error: error instanceof Error ? error.message : String(error)
-          }));
+          try {
+            controller.enqueue(sendEvent({
+              type: 'error',
+              error: error instanceof Error ? error.message : String(error)
+            }));
+          } catch {}
         } finally {
-          controller.close();
+          try { controller.close(); } catch {}
         }
       },
     });

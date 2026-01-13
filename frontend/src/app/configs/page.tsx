@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Settings, Activity, Server, Database, Globe, FolderOpen, Key, RefreshCw } from 'lucide-react';
+import { Settings, Activity, Server, Database, Globe, FolderOpen, Key, RefreshCw, Link, Eye, EyeOff, Check, X, Loader2 } from 'lucide-react';
 import api from '@/lib/api';
 
 interface ServiceInfo {
@@ -68,10 +68,114 @@ function getStatusBg(status: string): string {
   }
 }
 
+interface ApiConnectionSettings {
+  backendUrl: string;
+  litellmUrl: string;
+  apiKey: string;
+  hasApiKey: boolean;
+}
+
 export default function ConfigsPage() {
   const [data, setData] = useState<ConfigData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // API Connection settings state
+  const [apiSettings, setApiSettings] = useState<ApiConnectionSettings>({
+    backendUrl: 'http://localhost:8080',
+    litellmUrl: 'http://localhost:4100',
+    apiKey: '',
+    hasApiKey: false,
+  });
+  const [apiSettingsLoading, setApiSettingsLoading] = useState(true);
+  const [showApiKey, setShowApiKey] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [connectionStatus, setConnectionStatus] = useState<'unknown' | 'connected' | 'error'>('unknown');
+  const [statusMessage, setStatusMessage] = useState<string>('');
+
+  // Load API connection settings
+  const loadApiSettings = async () => {
+    try {
+      setApiSettingsLoading(true);
+      const res = await fetch('/api/settings');
+      if (res.ok) {
+        const settings = await res.json();
+        setApiSettings({
+          backendUrl: settings.backendUrl || 'http://localhost:8080',
+          litellmUrl: settings.litellmUrl || 'http://localhost:4100',
+          apiKey: settings.apiKey || '',
+          hasApiKey: settings.hasApiKey || false,
+        });
+      }
+    } catch (e) {
+      console.error('Failed to load API settings:', e);
+    } finally {
+      setApiSettingsLoading(false);
+    }
+  };
+
+  // Save API connection settings
+  const saveApiSettings = async () => {
+    try {
+      setSaving(true);
+      setStatusMessage('');
+      const res = await fetch('/api/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          backendUrl: apiSettings.backendUrl,
+          litellmUrl: apiSettings.litellmUrl,
+          apiKey: apiSettings.apiKey,
+        }),
+      });
+      if (res.ok) {
+        const updated = await res.json();
+        setApiSettings({
+          backendUrl: updated.backendUrl,
+          litellmUrl: updated.litellmUrl,
+          apiKey: updated.apiKey,
+          hasApiKey: updated.hasApiKey,
+        });
+        setStatusMessage('Settings saved');
+        // Reload system config with new settings
+        loadConfig();
+      } else {
+        const err = await res.json();
+        setStatusMessage(err.error || 'Failed to save');
+        setConnectionStatus('error');
+      }
+    } catch (e) {
+      setStatusMessage('Failed to save settings');
+      setConnectionStatus('error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // Test connection to backend
+  const testConnection = async () => {
+    try {
+      setTesting(true);
+      setConnectionStatus('unknown');
+      setStatusMessage('Testing...');
+
+      // Try to reach the backend health endpoint through the proxy
+      const res = await fetch('/api/proxy/health');
+      if (res.ok) {
+        setConnectionStatus('connected');
+        setStatusMessage('Connected');
+      } else {
+        setConnectionStatus('error');
+        setStatusMessage(`Error: ${res.status}`);
+      }
+    } catch (e) {
+      setConnectionStatus('error');
+      setStatusMessage('Connection failed');
+    } finally {
+      setTesting(false);
+    }
+  };
 
   const loadConfig = async () => {
     try {
@@ -88,6 +192,7 @@ export default function ConfigsPage() {
 
   useEffect(() => {
     loadConfig();
+    loadApiSettings();
   }, []);
 
   if (loading && !data) {
@@ -116,7 +221,7 @@ export default function ConfigsPage() {
 
   return (
     <div className="h-full overflow-y-auto overflow-x-hidden bg-[#1b1b1b] text-[#f0ebe3]">
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 py-4 sm:py-6 pb-[calc(1rem+env(safe-area-inset-bottom))] w-full">
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 py-4 sm:py-6 w-full">
 
         {/* Header */}
         <div className="flex items-center justify-between mb-6 sm:mb-8">
@@ -131,6 +236,99 @@ export default function ConfigsPage() {
           >
             <RefreshCw className={`h-4 w-4 text-[#9a9088] ${loading ? 'animate-spin' : ''}`} />
           </button>
+        </div>
+
+        {/* API Connection Settings */}
+        <div className="mb-6 sm:mb-8">
+          <div className="text-xs text-[#9a9088] uppercase tracking-wider mb-3">API Connection</div>
+          <div className="bg-[#1e1e1e] rounded-lg p-4 sm:p-6">
+            {apiSettingsLoading ? (
+              <div className="flex items-center justify-center py-4">
+                <Activity className="h-5 w-5 text-[#9a9088] animate-pulse" />
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {/* Backend URL */}
+                <div>
+                  <label className="block text-xs text-[#9a9088] mb-1.5">Backend URL</label>
+                  <input
+                    type="text"
+                    value={apiSettings.backendUrl}
+                    onChange={(e) => setApiSettings({ ...apiSettings, backendUrl: e.target.value })}
+                    placeholder="http://localhost:8080"
+                    className="w-full px-3 py-2 bg-[#1b1b1b] border border-[#363432] rounded-lg text-sm text-[#f0ebe3] placeholder-[#9a9088]/50 focus:outline-none focus:border-[var(--accent-purple)]"
+                  />
+                </div>
+
+                {/* LiteLLM URL */}
+                <div>
+                  <label className="block text-xs text-[#9a9088] mb-1.5">LiteLLM URL</label>
+                  <input
+                    type="text"
+                    value={apiSettings.litellmUrl}
+                    onChange={(e) => setApiSettings({ ...apiSettings, litellmUrl: e.target.value })}
+                    placeholder="http://localhost:4100"
+                    className="w-full px-3 py-2 bg-[#1b1b1b] border border-[#363432] rounded-lg text-sm text-[#f0ebe3] placeholder-[#9a9088]/50 focus:outline-none focus:border-[var(--accent-purple)]"
+                  />
+                </div>
+
+                {/* API Key */}
+                <div>
+                  <label className="block text-xs text-[#9a9088] mb-1.5">API Key</label>
+                  <div className="relative">
+                    <input
+                      type={showApiKey ? 'text' : 'password'}
+                      value={apiSettings.apiKey}
+                      onChange={(e) => setApiSettings({ ...apiSettings, apiKey: e.target.value })}
+                      placeholder={apiSettings.hasApiKey ? '••••••••' : 'Optional'}
+                      className="w-full px-3 py-2 pr-10 bg-[#1b1b1b] border border-[#363432] rounded-lg text-sm text-[#f0ebe3] placeholder-[#9a9088]/50 focus:outline-none focus:border-[var(--accent-purple)]"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowApiKey(!showApiKey)}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-[#9a9088] hover:text-[#f0ebe3]"
+                    >
+                      {showApiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Actions */}
+                <div className="flex items-center justify-between pt-2">
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={testConnection}
+                      disabled={testing}
+                      className="px-3 py-1.5 bg-[#363432] rounded-lg text-xs text-[#f0ebe3] hover:bg-[#4a4846] disabled:opacity-50 flex items-center gap-1.5"
+                    >
+                      {testing ? <Loader2 className="h-3 w-3 animate-spin" /> : <Link className="h-3 w-3" />}
+                      Test
+                    </button>
+                    <button
+                      onClick={saveApiSettings}
+                      disabled={saving}
+                      className="px-3 py-1.5 bg-[var(--accent-purple)] rounded-lg text-xs text-[#f0ebe3] hover:opacity-90 disabled:opacity-50 flex items-center gap-1.5"
+                    >
+                      {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
+                      Save
+                    </button>
+                  </div>
+                  {/* Status */}
+                  {statusMessage && (
+                    <div className={`flex items-center gap-1.5 text-xs ${
+                      connectionStatus === 'connected' ? 'text-[#7d9a6a]' :
+                      connectionStatus === 'error' ? 'text-[#c97a6b]' :
+                      'text-[#9a9088]'
+                    }`}>
+                      {connectionStatus === 'connected' && <div className="w-2 h-2 rounded-full bg-[#7d9a6a]" />}
+                      {connectionStatus === 'error' && <X className="h-3 w-3" />}
+                      {statusMessage}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
         </div>
 
         {data && (

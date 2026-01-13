@@ -1,7 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-
-const BACKEND_URL = process.env.BACKEND_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
-const API_KEY = process.env.API_KEY || '';
+import { getApiSettings } from '@/lib/api-settings';
 
 export async function GET(
   request: NextRequest,
@@ -50,12 +48,17 @@ async function handleRequest(request: NextRequest, method: string, path: string[
   const client = getClientInfo(request);
 
   try {
+    // Get dynamic settings
+    const settings = await getApiSettings();
+    const BACKEND_URL = settings.backendUrl;
+    const API_KEY = settings.apiKey;
+
     const url = new URL(request.url);
     const searchParams = url.searchParams.toString();
     const targetUrl = `${BACKEND_URL}/${path.join('/')}${searchParams ? `?${searchParams}` : ''}`;
     const hasAuth = Boolean(request.headers.get('authorization'));
 
-    console.log(`[PROXY] ip=${client.ip} | country=${client.country} | method=${method} | path=/${path.join('/')} | auth=${hasAuth ? 'present' : 'none'}`);
+    console.log(`[PROXY] ip=${client.ip} | country=${client.country} | method=${method} | path=/${path.join('/')} | backend=${BACKEND_URL} | auth=${hasAuth ? 'present' : 'none'}`);
 
     const headers: HeadersInit = {
       ...(request.headers.get('accept') ? { Accept: request.headers.get('accept') as string } : {}),
@@ -64,7 +67,7 @@ async function handleRequest(request: NextRequest, method: string, path: string[
     const incomingContentType = request.headers.get('content-type');
     if (incomingContentType) headers['Content-Type'] = incomingContentType;
 
-    // Prefer per-user Authorization header passed from the browser; fallback to server env API_KEY for local/dev.
+    // Prefer per-user Authorization header passed from the browser; fallback to configured API key.
     const incomingAuth = request.headers.get('authorization');
     if (incomingAuth) {
       headers['Authorization'] = incomingAuth;
