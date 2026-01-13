@@ -39,6 +39,12 @@ class Settings(BaseSettings):
         description="TabbyAPI installation directory",
     )
 
+    # Analytics (optional - only needed if using LiteLLM with PostgreSQL)
+    postgres_url: Optional[str] = Field(
+        default=None,
+        description="PostgreSQL URL for LiteLLM spend logs (e.g., postgresql://user:pass@localhost:5432/litellm)",
+    )
+
     model_config = {
         "env_prefix": "VLLM_STUDIO_",
         "env_file": ".env",

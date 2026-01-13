@@ -6,6 +6,16 @@ import logging
 
 from fastapi import APIRouter, HTTPException
 
+from controller.config import settings
+
+# Optional dependency - only needed when using LiteLLM with PostgreSQL
+try:
+    import asyncpg
+    ASYNCPG_AVAILABLE = True
+except ImportError:
+    asyncpg = None
+    ASYNCPG_AVAILABLE = False
+
 router = APIRouter(tags=["Analytics"])
 logger = logging.getLogger(__name__)
 
@@ -23,11 +33,26 @@ async def get_usage_stats():
     - Cache efficiency stats
     - Session and user counts
     - Peak usage periods
+
+    Requires:
+    - asyncpg package: pip install vllm-studio[analytics]
+    - PostgreSQL with LiteLLM spend logs
+    - VLLM_STUDIO_POSTGRES_URL environment variable
     """
-    import asyncpg
     from decimal import Decimal
 
-    db_url = "postgresql://postgres:postgres@127.0.0.1:5432/litellm"
+    # Check if analytics are available
+    if not ASYNCPG_AVAILABLE:
+        raise HTTPException(
+            status_code=503,
+            detail="Analytics unavailable: asyncpg not installed. Install with: pip install vllm-studio[analytics]"
+        )
+
+    if not settings.postgres_url:
+        raise HTTPException(
+            status_code=503,
+            detail="Analytics unavailable: VLLM_STUDIO_POSTGRES_URL not configured"
+        )
 
     def to_float(val):
         """Convert Decimal/None to float for JSON serialization."""
@@ -36,7 +61,7 @@ async def get_usage_stats():
         return float(val) if isinstance(val, Decimal) else val
 
     try:
-        conn = await asyncpg.connect(db_url)
+        conn = await asyncpg.connect(settings.postgres_url)
 
         # === SUMMARY TOTALS ===
         totals = await conn.fetchrow('''
@@ -335,6 +360,17 @@ async def get_usage_stats():
                 for row in hourly
             ]
         }
+    except OSError as e:
+        logger.error(f"Failed to connect to PostgreSQL: {e}")
+        raise HTTPException(
+            status_code=503,
+            detail="Analytics unavailable: Cannot connect to PostgreSQL. Is the database running?"
+        )
+    except asyncpg.exceptions.UndefinedTableError:
+        raise HTTPException(
+            status_code=503,
+            detail="Analytics unavailable: No usage data yet. LiteLLM spend logs table will be created after first API request through LiteLLM."
+        )
     except Exception as e:
         logger.error(f"Failed to fetch usage stats: {e}")
         raise HTTPException(status_code=500, detail=str(e))
