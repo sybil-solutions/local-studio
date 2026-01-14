@@ -1,7 +1,7 @@
 'use client';
 
-import { useMemo, useState } from 'react';
-import { X, Wrench, Layers, Loader2, Check, ChevronDown } from 'lucide-react';
+import { useMemo } from 'react';
+import { X, Wrench, Layers, Loader2, Check } from 'lucide-react';
 import { ArtifactPanel } from '@/components/chat';
 import type { ToolCall, ToolResult, Artifact } from '@/lib/types';
 import type { ResearchProgress, ResearchSource } from '@/components/chat/research-progress';
@@ -145,34 +145,30 @@ function ToolsPanel({
   thinkingActive,
   activityItems,
 }: ToolsPanelProps) {
-  const [toolsOpen, setToolsOpen] = useState(true);
-  const [sourcesOpen, setSourcesOpen] = useState(true);
-
   const toolCount = allToolCalls.length;
 
   const activityRows = useMemo(() => activityItems.map((item) => {
     if (item.type === 'thinking') {
       const label = item.isComplete ? 'Thinking' : 'Thinking...';
       return (
-        <details key={item.id} className="border-b border-[var(--border)]" open={item.isStreaming}>
-          <summary className="px-3 py-2 flex items-center justify-between text-xs font-medium text-[#b0a8a0] bg-[var(--accent)]/40 cursor-pointer">
-            <span className="flex items-center gap-2">
-              <span className="uppercase tracking-wider">{label}</span>
-              {item.isStreaming && (
-                <span className="flex items-center gap-1">
-                  <span className="relative flex h-1.5 w-1.5">
-                    <span className="animate-ping absolute h-full w-full rounded-full bg-[var(--warning)] opacity-75" />
-                    <span className="relative h-1.5 w-1.5 rounded-full bg-[var(--warning)]" />
-                  </span>
-                  <span className="text-[10px] text-[#9a9590]">working</span>
+        <div key={item.id} className="px-3 py-2 border-b border-[var(--border)]">
+          <div className="flex items-center gap-2 text-xs font-medium text-[#b0a8a0]">
+            <span className="h-1.5 w-1.5 rounded-full bg-[var(--warning)]" />
+            <span className="uppercase tracking-wider">{label}</span>
+            {item.isStreaming && (
+              <span className="flex items-center gap-1 text-[10px] text-[#9a9590]">
+                <span className="relative flex h-1.5 w-1.5">
+                  <span className="animate-ping absolute h-full w-full rounded-full bg-[var(--warning)] opacity-75" />
+                  <span className="relative h-1.5 w-1.5 rounded-full bg-[var(--warning)]" />
                 </span>
-              )}
-            </span>
-          </summary>
-          <div className="px-3 py-2 text-[11px] text-[#9a9590] whitespace-pre-wrap break-words max-h-[50vh] overflow-y-auto">
+                working
+              </span>
+            )}
+          </div>
+          <div className="mt-2 pl-4 border-l border-[var(--border)] text-[11px] text-[#9a9590] whitespace-pre-wrap break-words">
             {item.content}
           </div>
-        </details>
+        </div>
       );
     }
 
@@ -192,7 +188,7 @@ function ToolsPanel({
         key={item.id}
         className={`px-3 py-2 border-b border-[var(--border)] ${isExecuting ? 'bg-[var(--warning)]/5' : ''}`}
       >
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 text-xs font-medium text-[#b0a8a0]">
           {isExecuting ? (
             <Loader2 className="h-3 w-3 text-[var(--warning)] animate-spin" />
           ) : result ? (
@@ -204,20 +200,22 @@ function ToolsPanel({
           ) : (
             <Wrench className="h-3 w-3 text-[#9a9590]" />
           )}
-          <span className="text-xs font-medium truncate">{toolName}</span>
+          <span className="truncate">{toolName}</span>
         </div>
-        {mainArg != null && (
-          <p className="text-[11px] text-[#9a9590] mt-1 line-clamp-2 pl-5">{String(mainArg as string | number | boolean).slice(0, 80)}</p>
-        )}
-        {result && !isExecuting && (
-          <p
-            className={`text-[11px] font-mono line-clamp-3 mt-1.5 pl-5 ${
-              result.isError ? 'text-[var(--error)]' : 'text-[#9a9590]'
-            }`}
-          >
-            {result.content.slice(0, 150)}
-          </p>
-        )}
+        <div className="mt-2 pl-4 border-l border-[var(--border)] text-[11px] text-[#9a9590]">
+          {mainArg != null && (
+            <p className="line-clamp-2">{String(mainArg as string | number | boolean).slice(0, 120)}</p>
+          )}
+          {result && !isExecuting && (
+            <p
+              className={`mt-1.5 font-mono line-clamp-3 ${
+                result.isError ? 'text-[var(--error)]' : 'text-[#9a9590]'
+              }`}
+            >
+              {result.content.slice(0, 200)}
+            </p>
+          )}
+        </div>
       </div>
     );
   }), [activityItems, executingTools, toolResultsMap]);
@@ -234,17 +232,11 @@ function ToolsPanel({
       )}
 
       <div className="border-b border-[var(--border)]">
-        <button
-          onClick={() => setToolsOpen(!toolsOpen)}
-          className="w-full px-3 py-2 flex items-center justify-between text-xs font-medium text-[#b0a8a0] bg-[var(--accent)]/40"
-        >
-          <span className="uppercase tracking-wider">Tool Calls</span>
-          <span className="flex items-center gap-2">
-            <span className="text-[10px] text-[#9a9590]">{toolCount}</span>
-            <ChevronDown className={`h-3 w-3 transition-transform ${toolsOpen ? '' : '-rotate-90'}`} />
-          </span>
-        </button>
-        <div className={`transition-all duration-200 ${toolsOpen ? 'max-h-[60vh] overflow-y-auto opacity-100' : 'max-h-0 opacity-0 overflow-hidden'}`}>
+        <div className="w-full px-3 py-2 flex items-center justify-between text-xs font-medium text-[#b0a8a0] bg-[var(--accent)]/40">
+          <span className="uppercase tracking-wider">Activity</span>
+          <span className="text-[10px] text-[#9a9590]">{toolCount}</span>
+        </div>
+        <div>
           {activityRows}
           {activityRows.length === 0 && !researchProgress && !researchSources.length && !thinkingActive && !thinkingContent && (
             <div className="px-3 py-6 text-center text-xs text-[#9a9590]">No tool activity yet</div>
@@ -254,14 +246,10 @@ function ToolsPanel({
 
       {researchSources.length > 0 && (
         <div className="border-b border-[var(--border)]">
-          <button
-            onClick={() => setSourcesOpen(!sourcesOpen)}
-            className="w-full px-3 py-2 flex items-center justify-between text-xs font-medium text-[#b0a8a0] bg-[var(--accent)]/40"
-          >
+          <div className="w-full px-3 py-2 text-xs font-medium text-[#b0a8a0] bg-[var(--accent)]/40">
             <span className="uppercase tracking-wider">Sources</span>
-            <ChevronDown className={`h-3 w-3 transition-transform ${sourcesOpen ? '' : '-rotate-90'}`} />
-          </button>
-          <div className={`transition-all duration-200 ${sourcesOpen ? 'max-h-64 opacity-100' : 'max-h-0 opacity-0 overflow-hidden'}`}>
+          </div>
+          <div>
             {researchSources.map((source, i) => (
               <a
                 key={i}

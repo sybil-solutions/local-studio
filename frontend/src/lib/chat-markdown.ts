@@ -81,23 +81,42 @@ export function normalizeAssistantMarkdownForRender(content: string): string {
     }
 
     if (!inFence) {
-      if (trimmed && isHeading(trimmed)) {
-        const prev = out[out.length - 1]?.trim() ?? '';
-        if (prev) out.push('');
+      let normalized = raw;
+
+      if (/^\s*#{1,6}(?=\S)/.test(normalized)) {
+        normalized = normalized.replace(/^(\s*#{1,6})(?=\S)/, '$1 ');
       }
 
-      if (trimmed && (isTableRow(trimmed) || isTableDivider(trimmed))) {
+      if (/(\S)(#{2,6})(?=[A-Za-z])/.test(normalized)) {
+        normalized = normalized.replace(/(\S)(#{2,6})(?=[A-Za-z])/g, '$1\n\n$2 ');
+      }
+
+      const normalizedTrimmed = normalized.trim();
+
+      if (normalizedTrimmed && isHeading(normalizedTrimmed)) {
+        const prev = out[out.length - 1]?.trim() ?? '';
+        if (prev) out.push('');
+        out.push(normalizedTrimmed);
+        i++;
+        continue;
+      }
+
+      if (normalizedTrimmed && (isTableRow(normalizedTrimmed) || isTableDivider(normalizedTrimmed))) {
         const prev = out[out.length - 1]?.trim() ?? '';
         if (prev && !(isTableRow(prev) || isTableDivider(prev))) {
           out.push('');
         }
-        let tableLine = trimmed;
+        let tableLine = normalizedTrimmed;
         if (!tableLine.startsWith('|')) tableLine = `| ${tableLine}`;
         if (!tableLine.endsWith('|')) tableLine = `${tableLine} |`;
         out.push(tableLine);
         i++;
         continue;
       }
+
+      out.push(normalized);
+      i++;
+      continue;
     }
 
     out.push(raw);

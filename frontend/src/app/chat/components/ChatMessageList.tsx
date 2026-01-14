@@ -110,6 +110,13 @@ export function ChatMessageList({
         </div>
       )}
 
+      {isLoading && messages[messages.length - 1]?.role === 'assistant' && messages[messages.length - 1]?.content && (
+        <div className="flex items-center gap-2 text-xs text-[#9a9590]">
+          <span className="inline-flex h-2 w-2 rounded-full bg-[var(--warning)] animate-pulse" />
+          <span>Model is working…</span>
+        </div>
+      )}
+
       {/* Error message */}
       {error && (
         <div className="px-3 py-2 bg-[#c97a6b]/10 border border-[#c97a6b]/20 rounded-lg text-xs text-[#c97a6b]">
