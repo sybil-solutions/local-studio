@@ -11,6 +11,22 @@ interface ExtendedToolCall extends ToolCall {
   model?: string;
 }
 
+interface ThinkingActivityItem {
+  type: 'thinking';
+  id: string;
+  content: string;
+  isComplete: boolean;
+  isStreaming: boolean;
+}
+
+interface ToolActivityItem {
+  type: 'tool';
+  id: string;
+  toolCall: ExtendedToolCall;
+}
+
+type ActivityItem = ThinkingActivityItem | ToolActivityItem;
+
 interface ChatSidePanelProps {
   isOpen: boolean;
   onClose: () => void;
@@ -24,7 +40,7 @@ interface ChatSidePanelProps {
   researchSources: ResearchSource[];
   thinkingContent: string | null;
   thinkingActive: boolean;
-  thinkingComplete: boolean;
+  activityItems: ActivityItem[];
 }
 
 export function ChatSidePanel({
@@ -40,7 +56,7 @@ export function ChatSidePanel({
   researchSources,
   thinkingContent,
   thinkingActive,
-  thinkingComplete,
+  activityItems,
 }: ChatSidePanelProps) {
   if (!isOpen) return null;
 
@@ -96,7 +112,7 @@ export function ChatSidePanel({
             researchSources={researchSources}
             thinkingContent={thinkingContent}
             thinkingActive={thinkingActive}
-            thinkingComplete={thinkingComplete}
+            activityItems={activityItems}
           />
         )}
         {activePanel === 'artifacts' && (
@@ -116,7 +132,7 @@ interface ToolsPanelProps {
   researchSources: ResearchSource[];
   thinkingContent: string | null;
   thinkingActive: boolean;
-  thinkingComplete: boolean;
+  activityItems: ActivityItem[];
 }
 
 function ToolsPanel({
@@ -127,17 +143,40 @@ function ToolsPanel({
   researchSources,
   thinkingContent,
   thinkingActive,
-  thinkingComplete,
+  activityItems,
 }: ToolsPanelProps) {
-  const [thinkingOpen, setThinkingOpen] = useState(true);
   const [toolsOpen, setToolsOpen] = useState(true);
   const [sourcesOpen, setSourcesOpen] = useState(true);
 
-  const showThinking = Boolean(thinkingContent || thinkingActive);
-  const thinkingLabel = thinkingComplete ? 'Thinking' : 'Thinking...';
   const toolCount = allToolCalls.length;
 
-  const toolItems = useMemo(() => allToolCalls.map((tc) => {
+  const activityRows = useMemo(() => activityItems.map((item) => {
+    if (item.type === 'thinking') {
+      const label = item.isComplete ? 'Thinking' : 'Thinking...';
+      return (
+        <details key={item.id} className="border-b border-[var(--border)]" open={item.isStreaming}>
+          <summary className="px-3 py-2 flex items-center justify-between text-xs font-medium text-[#b0a8a0] bg-[var(--accent)]/40 cursor-pointer">
+            <span className="flex items-center gap-2">
+              <span className="uppercase tracking-wider">{label}</span>
+              {item.isStreaming && (
+                <span className="flex items-center gap-1">
+                  <span className="relative flex h-1.5 w-1.5">
+                    <span className="animate-ping absolute h-full w-full rounded-full bg-[var(--warning)] opacity-75" />
+                    <span className="relative h-1.5 w-1.5 rounded-full bg-[var(--warning)]" />
+                  </span>
+                  <span className="text-[10px] text-[#9a9590]">working</span>
+                </span>
+              )}
+            </span>
+          </summary>
+          <div className="px-3 py-2 text-[11px] text-[#9a9590] whitespace-pre-wrap break-words max-h-[50vh] overflow-y-auto">
+            {item.content}
+          </div>
+        </details>
+      );
+    }
+
+    const tc = item.toolCall;
     const result = toolResultsMap.get(tc.id);
     const isExecuting = executingTools.has(tc.id);
     let args: Record<string, unknown> = {};
@@ -150,7 +189,7 @@ function ToolsPanel({
 
     return (
       <div
-        key={tc.id}
+        key={item.id}
         className={`px-3 py-2 border-b border-[var(--border)] ${isExecuting ? 'bg-[var(--warning)]/5' : ''}`}
       >
         <div className="flex items-center gap-2">
@@ -181,36 +220,10 @@ function ToolsPanel({
         )}
       </div>
     );
-  }), [allToolCalls, executingTools, toolResultsMap]);
+  }), [activityItems, executingTools, toolResultsMap]);
 
   return (
     <>
-      {showThinking && (
-        <div className="border-b border-[var(--border)]">
-          <button
-            onClick={() => setThinkingOpen(!thinkingOpen)}
-            className="w-full px-3 py-2 flex items-center justify-between text-xs font-medium text-[#b0a8a0] bg-[var(--accent)]/40"
-          >
-            <span className="flex items-center gap-2">
-              <span className="uppercase tracking-wider">{thinkingLabel}</span>
-              {thinkingActive && (
-                <span className="flex items-center gap-1">
-                  <span className="relative flex h-1.5 w-1.5">
-                    <span className="animate-ping absolute h-full w-full rounded-full bg-[var(--warning)] opacity-75" />
-                    <span className="relative h-1.5 w-1.5 rounded-full bg-[var(--warning)]" />
-                  </span>
-                  <span className="text-[10px] text-[#9a9590]">working</span>
-                </span>
-              )}
-            </span>
-            <ChevronDown className={`h-3 w-3 transition-transform ${thinkingOpen ? '' : '-rotate-90'}`} />
-          </button>
-          <div className={`px-3 py-2 text-[11px] text-[#9a9590] whitespace-pre-wrap break-words transition-all duration-200 ${thinkingOpen ? 'max-h-[60vh] overflow-y-auto opacity-100' : 'max-h-0 opacity-0 overflow-hidden'}`}>
-            {thinkingContent || 'Thinking…'}
-          </div>
-        </div>
-      )}
-
       {researchProgress && (
         <div className="px-3 py-2 border-b border-[var(--border)] bg-blue-500/5">
           <div className="flex items-center gap-2">
@@ -232,8 +245,8 @@ function ToolsPanel({
           </span>
         </button>
         <div className={`transition-all duration-200 ${toolsOpen ? 'max-h-[60vh] overflow-y-auto opacity-100' : 'max-h-0 opacity-0 overflow-hidden'}`}>
-          {toolItems}
-          {toolItems.length === 0 && !researchProgress && !researchSources.length && !thinkingActive && !thinkingContent && (
+          {activityRows}
+          {activityRows.length === 0 && !researchProgress && !researchSources.length && !thinkingActive && !thinkingContent && (
             <div className="px-3 py-6 text-center text-xs text-[#9a9590]">No tool activity yet</div>
           )}
         </div>

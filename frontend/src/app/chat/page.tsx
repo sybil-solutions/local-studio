@@ -273,26 +273,79 @@ export default function ChatPage() {
       | { type: 'thinking'; id: string; content: string; isComplete: boolean; isStreaming: boolean }
       | { type: 'tool'; id: string; toolCall: ToolCall & { messageId: string; model?: string } }
     > = [];
+
+    const extractThinkingBlocks = (content: string) => {
+      const blocks: Array<{ content: string; isComplete: boolean }> = [];
+      const openTags = ['<think>', '<thinking>'];
+      const closeTags = ['</think>', '</thinking>'];
+      let remaining = content;
+
+      while (remaining) {
+        const lower = remaining.toLowerCase();
+        const openIdxs = openTags
+          .map((t) => lower.indexOf(t))
+          .filter((i) => i !== -1);
+        if (!openIdxs.length) break;
+        const openIdx = Math.min(...openIdxs);
+        const matchedOpen = openTags.find((t) => lower.startsWith(t, openIdx))!;
+        const afterOpen = remaining.slice(openIdx + matchedOpen.length);
+        const lowerAfter = afterOpen.toLowerCase();
+        const closeIdxs = closeTags
+          .map((t) => lowerAfter.indexOf(t))
+          .filter((i) => i !== -1);
+        if (!closeIdxs.length) {
+          const contentBlock = afterOpen.replace(/<\|(?:begin|end)_of_box\|>/g, '').trim();
+          if (contentBlock) blocks.push({ content: contentBlock, isComplete: false });
+          break;
+        }
+        const closeIdx = Math.min(...closeIdxs);
+        const matchedClose = closeTags.find((t) => lowerAfter.startsWith(t, closeIdx))!;
+        const contentBlock = afterOpen.slice(0, closeIdx).replace(/<\|(?:begin|end)_of_box\|>/g, '').trim();
+        if (contentBlock) blocks.push({ content: contentBlock, isComplete: true });
+        remaining = afterOpen.slice(closeIdx + matchedClose.length);
+      }
+
+      return blocks;
+    };
+
     messages.forEach((msg) => {
       if (msg.role !== 'assistant' || !msg.content) return;
-      const { thinkingContent, isThinkingComplete } = splitThinking(msg.content);
-      if (thinkingContent) {
+      const blocks = extractThinkingBlocks(msg.content);
+      const toolCalls = msg.toolCalls || [];
+      let toolIndex = 0;
+
+      if (blocks.length === 0 && toolCalls.length === 0) return;
+
+      blocks.forEach((block, idx) => {
         items.push({
           type: 'thinking',
-          id: `thinking-${msg.id}`,
-          content: thinkingContent,
-          isComplete: isThinkingComplete,
-          isStreaming: Boolean(msg.isStreaming),
+          id: `thinking-${msg.id}-${idx}`,
+          content: block.content,
+          isComplete: block.isComplete,
+          isStreaming: Boolean(msg.isStreaming) && !block.isComplete,
         });
-      }
-      msg.toolCalls?.forEach((toolCall) => {
+        if (toolIndex < toolCalls.length) {
+          const toolCall = toolCalls[toolIndex];
+          items.push({
+            type: 'tool',
+            id: `tool-${msg.id}-${toolCall.id}`,
+            toolCall: { ...toolCall, messageId: msg.id, model: msg.model },
+          });
+          toolIndex += 1;
+        }
+      });
+
+      while (toolIndex < toolCalls.length) {
+        const toolCall = toolCalls[toolIndex];
         items.push({
           type: 'tool',
           id: `tool-${msg.id}-${toolCall.id}`,
           toolCall: { ...toolCall, messageId: msg.id, model: msg.model },
         });
-      });
+        toolIndex += 1;
+      }
     });
+
     return items;
   }, [messages]);
   const sessionArtifacts = useMemo(() => {
@@ -588,7 +641,35 @@ export default function ChatPage() {
         conversationMessages.push({ role: 'assistant', content: cleanedContent || null, tool_calls: toolCalls.map(tc => ({ id: tc.id, type: 'function', function: { name: tc.function.name, arguments: tc.function.arguments } })) });
         toolResults.forEach(r => conversationMessages.push({ role: 'tool', tool_call_id: r.tool_call_id, name: toolNameByCallId.get(r.tool_call_id), content: r.content }));
       }
-      if (!currentSessionId && sessionId && finalAssistantContent.trim()) { try { const res = await fetch('/api/title', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model: activeModelId, user: userContent, assistant: finalAssistantContent }) }); if (res.ok) { const data = await res.json(); if (data.title) { await api.updateChatSession(sessionId, { title: data.title }); updateSessions(prev => prev.map(s => s.id === sessionId ? { ...s, title: data.title } : s)); setCurrentSessionTitle(data.title); setTitleDraft(data.title); } } } catch {} }
+      const shouldUpdateTitle = currentSessionTitle.trim() === '' || currentSessionTitle === 'New Chat';
+      if (sessionId && finalAssistantContent.trim() && (shouldUpdateTitle || !currentSessionId)) {
+        const fallbackTitle = userContent.trim().split(/\s+/).slice(0, 6).join(' ');
+        try {
+          const res = await fetch('/api/title', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model: activeModelId, user: userContent, assistant: finalAssistantContent }) });
+          let nextTitle = fallbackTitle;
+          if (res.ok) {
+            const data = await res.json();
+            if (data.title && data.title !== 'New Chat') {
+              nextTitle = data.title;
+            }
+          }
+          if (nextTitle) {
+            await api.updateChatSession(sessionId, { title: nextTitle });
+            updateSessions(prev => prev.map(s => s.id === sessionId ? { ...s, title: nextTitle } : s));
+            setCurrentSessionTitle(nextTitle);
+            setTitleDraft(nextTitle);
+          }
+        } catch {
+          if (fallbackTitle) {
+            try {
+              await api.updateChatSession(sessionId, { title: fallbackTitle });
+              updateSessions(prev => prev.map(s => s.id === sessionId ? { ...s, title: fallbackTitle } : s));
+              setCurrentSessionTitle(fallbackTitle);
+              setTitleDraft(fallbackTitle);
+            } catch {}
+          }
+        }
+      }
     } catch (err) {
       if (err instanceof Error && err.name === 'AbortError') { updateMessages(prev => { const last = prev[prev.length - 1]; return last?.role === 'assistant' ? prev.map(m => m.id === last.id ? { ...m, isStreaming: false } : m) : prev; }); }
       else { setError(err instanceof Error ? err.message : 'Failed to send message'); updateMessages(prev => prev[prev.length - 1]?.role === 'assistant' && !prev[prev.length - 1]?.content ? prev.slice(0, -1) : prev); }
@@ -671,7 +752,7 @@ export default function ChatPage() {
               </div>
             </div>
 
-            {!isMobile && hasSidePanelContent && toolPanelOpen && <ChatSidePanel isOpen={toolPanelOpen} onClose={() => setToolPanelOpen(false)} activePanel={activePanel} onSetActivePanel={setActivePanel} allToolCalls={allToolCalls} toolResultsMap={toolResultsMap} executingTools={executingTools} sessionArtifacts={sessionArtifacts} researchProgress={researchProgress} researchSources={researchSources} thinkingContent={thinkingState.content} thinkingActive={thinkingActive} thinkingComplete={thinkingState.isComplete} activityItems={activityItems} />}
+            {!isMobile && hasSidePanelContent && toolPanelOpen && <ChatSidePanel isOpen={toolPanelOpen} onClose={() => setToolPanelOpen(false)} activePanel={activePanel} onSetActivePanel={setActivePanel} allToolCalls={allToolCalls} toolResultsMap={toolResultsMap} executingTools={executingTools} sessionArtifacts={sessionArtifacts} researchProgress={researchProgress} researchSources={researchSources} thinkingContent={thinkingState.content} thinkingActive={thinkingActive} activityItems={activityItems} />}
           </div>
         </div>
       </div>

@@ -4,7 +4,7 @@ import { useState, useMemo, useEffect, useRef, useId } from 'react';
 import Image from 'next/image';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { ChevronDown, ChevronRight, AlertCircle } from 'lucide-react';
+import { AlertCircle } from 'lucide-react';
 import mermaid from 'mermaid';
 import { ArtifactRenderer, extractArtifacts, getArtifactType } from './artifact-renderer';
 import { EnhancedCodeBlock } from './enhanced-code-block';
@@ -12,7 +12,6 @@ import { TypingIndicator, StreamingCursor } from './typing-indicator';
 import { MessageActions } from './message-actions';
 import type { Artifact } from '@/lib/types';
 import { normalizeAssistantMarkdownForRender } from '@/lib/chat-markdown';
-import { stripThinkTagsKeepText } from '@/lib/chat-markdown';
 
 // Initialize mermaid with dark theme
 mermaid.initialize({
@@ -30,11 +29,6 @@ interface MessageRendererProps {
   artifactsEnabled?: boolean;
   messageId?: string;
   showActions?: boolean;
-}
-
-interface ThinkingBlockProps {
-  content: string;
-  isStreaming?: boolean;
 }
 
 const BOX_TAGS_PATTERN = /<\|(?:begin|end)_of_box\|>/g;
@@ -135,31 +129,6 @@ export function splitThinking(content: string): {
   };
 }
 
-function ThinkingBlock({ content, isStreaming }: ThinkingBlockProps) {
-  const [isExpanded, setIsExpanded] = useState(false);
-  const wordCount = content.trim().split(/\s+/).filter(Boolean).length;
-
-  return (
-    <div className="my-2 md:my-3">
-      <button
-        onClick={() => setIsExpanded(!isExpanded)}
-        className="flex items-center gap-1.5 text-xs text-[#b8b4ad] hover:text-[#e8e4dd] transition-colors"
-      >
-        {isExpanded ? (
-          <ChevronDown className="h-3.5 w-3.5" />
-        ) : (
-          <ChevronRight className="h-3.5 w-3.5" />
-        )}
-        <span>reasoned for {wordCount} words{isStreaming ? '...' : ''}</span>
-      </button>
-      {isExpanded && (
-        <div className="mt-2 pl-4 border-l-2 border-[#363432] text-sm text-[#c8c4bd] whitespace-pre-wrap max-h-[40vh] overflow-y-auto">
-          {content}
-        </div>
-      )}
-    </div>
-  );
-}
 
 function MermaidDiagram({ code }: { code: string }) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -267,7 +236,7 @@ function CodeBlock({ children, className, artifactsEnabled, isStreaming, languag
 export function MessageRenderer({ content, isStreaming, artifactsEnabled, messageId, showActions = true }: MessageRendererProps) {
   // Mermaid uses an internal render ID cache. We need to reset when content changes.
   // This is done via useId in MermaidDiagram.
-  const { thinkingContent, mainContent, isThinkingComplete, artifacts } = useMemo(() => {
+  const { thinkingContent, mainContent, artifacts } = useMemo(() => {
     // First strip any MCP XML tool calls that leaked through streaming
     const contentWithoutMcp = stripMcpXml(content);
     const normalizedContent = normalizeAssistantMarkdownForRender(contentWithoutMcp);
@@ -275,16 +244,8 @@ export function MessageRenderer({ content, isStreaming, artifactsEnabled, messag
     const { text: contentWithoutArtifacts, artifacts: extractedArtifacts } = extractArtifacts(normalizedContent);
 
     const split = splitThinking(contentWithoutArtifacts);
-    let visibleContent = split.mainContent;
+    const visibleContent = split.mainContent;
     let updatedThinking = split.thinkingContent;
-
-    if (!visibleContent.trim() && updatedThinking) {
-      const fallback = stripThinkTagsKeepText(contentWithoutArtifacts).trim();
-      if (fallback) {
-        visibleContent = fallback;
-        updatedThinking = null;
-      }
-    }
 
     // If the model placed renderable code fences inside <think>, surface them as artifacts
     // so users can still preview them without expanding the thinking panel.
@@ -321,7 +282,6 @@ export function MessageRenderer({ content, isStreaming, artifactsEnabled, messag
     return {
       thinkingContent: updatedThinking,
       mainContent: visibleContent,
-      isThinkingComplete: split.isThinkingComplete,
       artifacts: [...extractedArtifacts, ...additionalArtifacts],
     };
   }, [content, artifactsEnabled]);
@@ -333,13 +293,6 @@ export function MessageRenderer({ content, isStreaming, artifactsEnabled, messag
         <div className="absolute -top-2 right-0 z-10">
           <MessageActions content={content} messageId={messageId} />
         </div>
-      )}
-
-      {thinkingContent && (
-        <ThinkingBlock
-          content={thinkingContent}
-          isStreaming={isStreaming && !isThinkingComplete}
-        />
       )}
 
       {mainContent && (
