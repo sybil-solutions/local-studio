@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Search, X, Check, Activity, ChevronRight, Settings } from 'lucide-react';
+import { ChevronDown, ChevronUp } from 'lucide-react';
 
 const ELECTRICITY_PRICE_PLN = 1.20;
 import { useRouter } from 'next/navigation';
@@ -27,6 +27,7 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [launching, setLaunching] = useState(false);
   const [benchmarking, setBenchmarking] = useState(false);
+  const [quickLaunchExpanded, setQuickLaunchExpanded] = useState(true);
   const router = useRouter();
 
   const gpus = realtimeGpus.length > 0 ? realtimeGpus : [];
@@ -116,8 +117,8 @@ export default function Dashboard() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-full bg-[#1b1b1b]">
-        <Activity className="h-5 w-5 text-[#9a9088] animate-pulse" />
+      <div className="flex items-center justify-center h-full bg-[var(--background)]">
+        <div className="text-[var(--muted-foreground)] animate-pulse">Loading...</div>
       </div>
     );
   }
@@ -127,369 +128,465 @@ export default function Dashboard() {
   const totalMemMax = gpus.reduce((sum, g) => sum + toGB(g.memory_total_mb ?? g.memory_total ?? 0), 0);
 
   return (
-    <div className="min-h-full bg-[#1b1b1b] text-[#f0ebe3]">
+    <div className="min-h-full bg-[var(--background)] text-[var(--foreground)]">
       {/* Connection Warning */}
       {!isConnected && (
-        <div className="fixed top-4 right-4 z-50 px-3 py-1.5 bg-[#c9a66b]/10 text-[#c9a66b] text-sm rounded">
+        <div className="fixed top-4 right-4 z-50 px-3 py-1.5 text-xs text-[var(--muted-foreground)] bg-[var(--card)] border border-[var(--border)]">
           Reconnecting... ({reconnectAttempts})
         </div>
       )}
 
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 py-4 sm:py-6 pb-[calc(1rem+env(safe-area-inset-bottom))]">
+      <div className="max-w-6xl mx-auto px-6 sm:px-8 py-6 sm:py-8 pb-[calc(1.5rem+env(safe-area-inset-bottom))]">
 
-        {/* Model Status */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6 sm:mb-8">
-          <div className="flex items-center gap-3 min-w-0">
-            <span className={`w-2 h-2 rounded-full flex-shrink-0 ${currentProcess ? 'bg-[#7d9a6a]' : 'bg-[#363432]'}`} />
-            {currentProcess ? (
-              <div className="flex items-center gap-2 min-w-0">
-                <span className="text-[#f0ebe3] font-medium truncate">{currentRecipe?.name || currentProcess.model_path?.split('/').pop()}</span>
-                <span className="text-[#9a9088] text-sm flex-shrink-0 hidden sm:inline">pid {currentProcess.pid}</span>
-              </div>
-            ) : (
-              <span className="text-[#9a9088]">No model running</span>
+        {/* Header Section */}
+        <header className="mb-6 pb-4 border-b border-[var(--border)]/40">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-5">
+            <div className="space-y-2">
+              {currentProcess ? (
+                <>
+                  <div className="flex items-center gap-3">
+                    <div className="relative">
+                      <div className="w-2.5 h-2.5 rounded-full bg-[var(--success)]"></div>
+                      <div className="absolute inset-0 w-2.5 h-2.5 rounded-full bg-[var(--success)] animate-ping opacity-75"></div>
+                    </div>
+                    <h1 className="text-2xl sm:text-3xl font-light tracking-tight text-[var(--foreground)]">
+                      {currentRecipe?.name || currentProcess.model_path?.split('/').pop()}
+                    </h1>
+                  </div>
+                  <div className="flex items-center gap-3 text-xs text-[var(--muted-foreground)] pl-5">
+                    <span className="font-medium">{currentProcess.backend}</span>
+                    <span className="opacity-40">·</span>
+                    <span>pid {currentProcess.pid}</span>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="flex items-center gap-3">
+                    <div className="w-2.5 h-2.5 rounded-full bg-[var(--muted)]/60"></div>
+                    <h1 className="text-2xl sm:text-3xl font-light tracking-tight text-[var(--muted-foreground)]">
+                      No model running
+                    </h1>
+                  </div>
+                  <p className="text-xs text-[var(--muted-foreground)]/80 pl-5">Select a recipe to launch</p>
+                </>
+              )}
+            </div>
+            {currentProcess && (
+              <nav className="flex items-center gap-5 text-xs">
+                <button 
+                  onClick={() => router.push('/chat')} 
+                  className="text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition-colors duration-200"
+                >
+                  chat
+                </button>
+                <button 
+                  onClick={() => router.push('/logs')} 
+                  className="text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition-colors duration-200"
+                >
+                  logs
+                </button>
+                <button 
+                  onClick={handleBenchmark} 
+                  disabled={benchmarking} 
+                  className="text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition-colors duration-200 disabled:opacity-30 disabled:cursor-not-allowed hidden sm:block"
+                >
+                  {benchmarking ? 'running...' : 'benchmark'}
+                </button>
+                <span className="text-[var(--border)]/40">·</span>
+                <button 
+                  onClick={handleStop} 
+                  className="text-[var(--muted-foreground)] hover:text-[var(--error)] transition-colors duration-200"
+                >
+                  stop
+                </button>
+              </nav>
             )}
           </div>
-          {currentProcess && (
-            <div className="flex items-center gap-3 sm:gap-4 text-sm ml-5 sm:ml-0">
-              <button onClick={() => router.push('/chat')} className="text-[#9a9088] hover:text-[#f0ebe3] active:text-[#f0ebe3] transition-colors py-1">chat</button>
-              <button onClick={() => router.push('/logs')} className="text-[#9a9088] hover:text-[#f0ebe3] active:text-[#f0ebe3] transition-colors py-1">logs</button>
-              <button onClick={handleBenchmark} disabled={benchmarking} className="text-[#9a9088] hover:text-[#f0ebe3] active:text-[#f0ebe3] transition-colors disabled:text-[#363432] py-1 hidden sm:block">
-                {benchmarking ? 'running...' : 'benchmark'}
-              </button>
-              <button onClick={handleStop} className="text-[#c97a6b] hover:text-[#c97a6b]/80 active:text-[#c97a6b]/80 transition-colors py-1">stop</button>
-            </div>
-          )}
-        </div>
+        </header>
 
-        {/* Metrics Row */}
+        {/* Metrics Section */}
         {currentProcess && (
-          <div className="grid grid-cols-3 sm:grid-cols-6 gap-4 sm:gap-8 mb-6 sm:mb-10">
-            <Metric label="Requests" value={metrics?.running_requests || 0} sub={`${metrics?.pending_requests || 0} pending`} />
-            <Metric
-              label="Gen"
-              value={metrics?.generation_throughput?.toFixed(1) || '--'}
-              sub={metrics?.peak_generation_tps ? `peak ${metrics.peak_generation_tps.toFixed(1)}` : 'tok/s'}
-            />
-            <Metric
-              label="Prefill"
-              value={metrics?.prompt_throughput?.toFixed(1) || '--'}
-              sub={metrics?.peak_prefill_tps ? `peak ${metrics.peak_prefill_tps.toFixed(1)}` : 'tok/s'}
-            />
-            <Metric
-              label="TTFT"
-              value={metrics?.avg_ttft_ms ? Math.round(metrics.avg_ttft_ms) : '--'}
-              sub={metrics?.peak_ttft_ms ? `best ${Math.round(metrics.peak_ttft_ms)}ms` : 'ms'}
-            />
-            <Metric label="KV Cache" value={metrics?.kv_cache_usage != null ? `${Math.round(metrics.kv_cache_usage * 100)}%` : '--'} />
-            <Metric label="Power" value={`${Math.round(totalPower)}W`} sub={`${totalMem.toFixed(0)}/${totalMemMax.toFixed(0)}G`} />
-          </div>
+          <section className="mb-6 pb-5 border-b border-[var(--border)]/40">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4 sm:gap-6">
+              <Metric 
+                label="Requests" 
+                value={metrics?.running_requests || 0} 
+                sub={metrics?.pending_requests ? `${metrics.pending_requests} pending` : undefined}
+              />
+              <Metric
+                label="Generation"
+                value={metrics?.generation_throughput?.toFixed(1) || '--'}
+                sub={metrics?.peak_generation_tps ? `peak ${metrics.peak_generation_tps.toFixed(1)}` : undefined}
+              />
+              <Metric
+                label="Prefill"
+                value={metrics?.prompt_throughput?.toFixed(1) || '--'}
+                sub={metrics?.peak_prefill_tps ? `peak ${metrics.peak_prefill_tps.toFixed(1)}` : undefined}
+              />
+              <Metric
+                label="TTFT"
+                value={metrics?.avg_ttft_ms ? Math.round(metrics.avg_ttft_ms) : '--'}
+                sub={metrics?.peak_ttft_ms ? `best ${Math.round(metrics.peak_ttft_ms)}ms` : undefined}
+              />
+              <Metric 
+                label="KV Cache" 
+                value={metrics?.kv_cache_usage != null ? `${Math.round(metrics.kv_cache_usage * 100)}%` : '--'} 
+              />
+              <Metric 
+                label="Power" 
+                value={`${Math.round(totalPower)}W`} 
+                sub={`${totalMem.toFixed(0)}/${totalMemMax.toFixed(0)}G`} 
+              />
+            </div>
+          </section>
         )}
 
-        {/* Main Grid */}
-        <div className="grid lg:grid-cols-3 gap-6 sm:gap-10">
+        {/* Main Content */}
+        <div className="grid lg:grid-cols-3 gap-6 lg:gap-8">
 
           {/* Left Column */}
-          <div className="lg:col-span-2 space-y-6 sm:space-y-8">
+          <div className="lg:col-span-2 space-y-6">
 
-            {/* GPU Status - Card layout on mobile, table on desktop */}
-            <div>
-              <div className="text-xs text-[#9a9088] uppercase tracking-wider mb-3">GPU Status</div>
+            {/* GPU Status */}
+            <section>
+              <h2 className="text-xs uppercase tracking-wider text-[var(--muted-foreground)] mb-3 font-medium">GPU Status</h2>
 
-              {/* Mobile: Card Layout */}
-              <div className="sm:hidden space-y-2">
-                {gpus.map((gpu) => {
-                  const memUsed = toGB(gpu.memory_used_mb ?? gpu.memory_used ?? 0);
-                  const memTotal = toGB(gpu.memory_total_mb ?? gpu.memory_total ?? 1);
-                  const memPct = (memUsed / memTotal) * 100;
-                  const temp = gpu.temp_c ?? gpu.temperature ?? 0;
-                  const util = gpu.utilization_pct ?? gpu.utilization ?? 0;
-                  return (
-                    <div key={gpu.id ?? gpu.index} className="bg-[#1e1e1e] rounded-lg p-4">
-                      <div className="flex items-center justify-between mb-3">
-                        <span className="text-[#f0ebe3] font-medium">GPU {gpu.id ?? gpu.index}</span>
-                        <div className="flex items-center gap-3">
-                          <span className={`text-sm ${temp > 80 ? 'text-[#c97a6b]' : temp > 65 ? 'text-[#c9a66b]' : 'text-[#7d9a6a]'}`}>{temp}°</span>
-                          <span className="text-[#9a9088] text-sm">{gpu.power_draw ? `${Math.round(gpu.power_draw)}W` : '--'}</span>
-                        </div>
-                      </div>
-                      <div className="space-y-2">
-                        <div>
-                          <div className="flex items-center justify-between text-xs text-[#9a9088] mb-1">
-                            <span>Util</span>
-                            <span>{util}%</span>
+              {gpus.length === 0 ? (
+                <p className="text-sm text-[var(--muted-foreground)]">No GPU data available</p>
+              ) : (
+                <div className="space-y-0.5">
+                  {gpus.map((gpu, i) => {
+                    const memUsed = toGB(gpu.memory_used_mb ?? gpu.memory_used ?? 0);
+                    const memTotal = toGB(gpu.memory_total_mb ?? gpu.memory_total ?? 1);
+                    const memPct = (memUsed / memTotal) * 100;
+                    const temp = gpu.temp_c ?? gpu.temperature ?? 0;
+                    const util = gpu.utilization_pct ?? gpu.utilization ?? 0;
+                    return (
+                      <div 
+                        key={gpu.id ?? gpu.index} 
+                        className={`py-2.5 px-3 -mx-3 rounded-lg hover:bg-[var(--card)]/50 transition-all duration-200 ${
+                          i < gpus.length - 1 ? 'mb-1' : ''
+                        }`}
+                      >
+                        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 items-center">
+                          <div className="text-sm text-[var(--foreground)]">
+                            GPU {gpu.id ?? gpu.index}
                           </div>
-                          <div className="h-1.5 bg-[#363432] rounded-full overflow-hidden">
-                            <div className="h-full bg-[#8b7355] rounded-full" style={{ width: `${util}%` }} />
-                          </div>
-                        </div>
-                        <div>
-                          <div className="flex items-center justify-between text-xs text-[#9a9088] mb-1">
-                            <span>Memory</span>
-                            <span>{memUsed.toFixed(1)}/{memTotal.toFixed(0)}G</span>
-                          </div>
-                          <div className="h-1.5 bg-[#363432] rounded-full overflow-hidden">
-                            <div className={`h-full rounded-full ${memPct > 90 ? 'bg-[#c97a6b]' : memPct > 70 ? 'bg-[#c9a66b]' : 'bg-[#7d9a6a]'}`} style={{ width: `${memPct}%` }} />
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-
-              {/* Desktop: Table Layout */}
-              <div className="hidden sm:block bg-[#1e1e1e] rounded-lg overflow-hidden">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="text-[#9a9088] text-xs border-b border-[#363432]">
-                      <th className="text-left py-3 px-4 font-normal">#</th>
-                      <th className="text-left py-3 px-4 font-normal">Util</th>
-                      <th className="text-left py-3 px-4 font-normal">Memory</th>
-                      <th className="text-left py-3 px-4 font-normal">Temp</th>
-                      <th className="text-left py-3 px-4 font-normal">Power</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {gpus.map((gpu, i) => {
-                      const memUsed = toGB(gpu.memory_used_mb ?? gpu.memory_used ?? 0);
-                      const memTotal = toGB(gpu.memory_total_mb ?? gpu.memory_total ?? 1);
-                      const memPct = (memUsed / memTotal) * 100;
-                      const temp = gpu.temp_c ?? gpu.temperature ?? 0;
-                      const util = gpu.utilization_pct ?? gpu.utilization ?? 0;
-                      return (
-                        <tr key={gpu.id ?? gpu.index} className={i > 0 ? 'border-t border-[#363432]/50' : ''}>
-                          <td className="py-3 px-4 text-[#9a9088]">{gpu.id ?? gpu.index}</td>
-                          <td className="py-3 px-4">
-                            <div className="flex items-center gap-3">
-                              <div className="w-16 h-1 bg-[#363432] rounded-full overflow-hidden">
-                                <div className="h-full bg-[#8b7355] rounded-full" style={{ width: `${util}%` }} />
+                          <div className="text-xs">
+                            <div className="flex items-center gap-2 mb-1">
+                              <div className="flex-1 h-1 bg-[var(--muted)]/20 rounded-full overflow-hidden">
+                                <div className="h-full bg-[var(--foreground)]/50 rounded-full transition-all duration-500" style={{ width: `${util}%` }} />
                               </div>
-                              <span className="text-[#9a9088] text-xs w-8">{util}%</span>
+                              <span className="text-[var(--muted-foreground)] w-10 text-right tabular-nums font-medium">{util}%</span>
                             </div>
-                          </td>
-                          <td className="py-3 px-4">
-                            <div className="flex items-center gap-3">
-                              <div className="w-20 h-1 bg-[#363432] rounded-full overflow-hidden">
-                                <div
-                                  className={`h-full rounded-full ${memPct > 90 ? 'bg-[#c97a6b]' : memPct > 70 ? 'bg-[#c9a66b]' : 'bg-[#7d9a6a]'}`}
+                          </div>
+                          <div className="text-xs">
+                            <div className="flex items-center gap-2 mb-1">
+                              <div className="flex-1 h-1 bg-[var(--muted)]/20 rounded-full overflow-hidden">
+                                <div 
+                                  className={`h-full rounded-full transition-all duration-500 ${
+                                    memPct > 90 ? 'bg-[var(--error)]/70' : 
+                                    memPct > 70 ? 'bg-[var(--warning)]/70' : 
+                                    'bg-[var(--success)]/70'
+                                  }`}
                                   style={{ width: `${memPct}%` }}
                                 />
                               </div>
-                              <span className="text-[#9a9088] text-xs">{memUsed.toFixed(1)}/{memTotal.toFixed(0)}G</span>
+                              <span className="text-[var(--muted-foreground)] text-right tabular-nums font-medium">
+                                {memUsed.toFixed(1)}/{memTotal.toFixed(0)}G
+                              </span>
                             </div>
-                          </td>
-                          <td className={`py-3 px-4 text-sm ${temp > 80 ? 'text-[#c97a6b]' : temp > 65 ? 'text-[#c9a66b]' : 'text-[#7d9a6a]'}`}>
-                            {temp}°
-                          </td>
-                          <td className="py-3 px-4 text-[#9a9088] text-sm">
+                          </div>
+                          <div className="text-xs">
+                            <div className={`inline-flex items-center gap-1 px-2 py-0.5 rounded font-medium ${
+                              temp > 80 ? 'bg-[var(--error)]/15 text-[var(--error)]' : 
+                              temp > 65 ? 'bg-[var(--warning)]/15 text-[var(--warning)]' : 
+                              'bg-[var(--success)]/15 text-[var(--success)]'
+                            }`}>
+                              <span className="tabular-nums">{temp}°</span>
+                            </div>
+                          </div>
+                          <div className="text-xs text-[var(--muted-foreground)] tabular-nums">
                             {gpu.power_draw ? `${Math.round(gpu.power_draw)}W` : '--'}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                  {gpus.length > 0 && (
-                    <tfoot>
-                      <tr className="border-t border-[#363432] text-xs text-[#9a9088]">
-                        <td className="py-2.5 px-4 font-medium">Total</td>
-                        <td className="py-2.5 px-4">
-                          {Math.round(gpus.reduce((sum, g) => sum + (g.utilization_pct ?? g.utilization ?? 0), 0) / gpus.length)}% avg
-                        </td>
-                        <td className="py-2.5 px-4">
-                          {totalMem.toFixed(1)}/{totalMemMax.toFixed(0)}G
-                        </td>
-                        <td className="py-2.5 px-4">
-                          {Math.round(gpus.reduce((sum, g) => sum + (g.temp_c ?? g.temperature ?? 0), 0) / gpus.length)}° avg
-                        </td>
-                        <td className="py-2.5 px-4 font-medium text-[#f0ebe3]">
-                          {Math.round(totalPower)}W
-                        </td>
-                      </tr>
-                    </tfoot>
-                  )}
-                </table>
-              </div>
-            </div>
-
-            {/* Search */}
-            <div>
-              <div className="text-xs text-[#9a9088] uppercase tracking-wider mb-3">Quick Launch</div>
-              <div className="relative">
-                <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-[#9a9088]" />
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Search recipes..."
-                  className="w-full pl-11 pr-4 py-3.5 sm:py-3 bg-[#1e1e1e] rounded-lg text-base sm:text-sm text-[#f0ebe3] placeholder:text-[#9a9088]/50 focus:outline-none focus:ring-2 focus:ring-[#5a4a3a] transition-shadow"
-                />
-              </div>
-              {searchResults.length > 0 && (
-                <div className="mt-2 bg-[#1e1e1e] rounded-lg overflow-hidden">
-                  {searchResults.map((recipe, i) => (
-                    <div
-                      key={recipe.id}
-                      onClick={() => !launching && recipe.status !== 'running' && handleLaunch(recipe.id)}
-                      className={`flex items-center justify-between px-4 py-3.5 sm:py-3 hover:bg-[#363432]/50 active:bg-[#363432]/70 cursor-pointer transition-colors ${i > 0 ? 'border-t border-[#363432]/50' : ''}`}
-                    >
-                      <div className="flex items-center gap-3 min-w-0">
-                        <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${recipe.status === 'running' ? 'bg-[#7d9a6a]' : 'bg-[#363432]'}`} />
-                        <div className="min-w-0">
-                          <div className="text-[#f0ebe3] truncate">{recipe.name}</div>
-                          <div className="text-xs text-[#9a9088]">TP{recipe.tp || recipe.tensor_parallel_size} · {recipe.backend}</div>
+                          </div>
                         </div>
                       </div>
-                      {recipe.status !== 'running' && <ChevronRight className="h-4 w-4 text-[#363432] flex-shrink-0" />}
+                    );
+                  })}
+                  {gpus.length > 0 && (
+                    <div className="pt-3 mt-3">
+                      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 text-xs">
+                        <div className="text-[var(--muted-foreground)] font-medium">Total</div>
+                        <div className="text-[var(--foreground)] tabular-nums font-medium">
+                          {Math.round(gpus.reduce((sum, g) => sum + (g.utilization_pct ?? g.utilization ?? 0), 0) / gpus.length)}% avg
+                        </div>
+                        <div className="text-[var(--foreground)] tabular-nums font-medium">
+                          {totalMem.toFixed(1)}/{totalMemMax.toFixed(0)}G
+                        </div>
+                        <div className="text-[var(--foreground)] tabular-nums font-medium">
+                          {Math.round(gpus.reduce((sum, g) => sum + (g.temp_c ?? g.temperature ?? 0), 0) / gpus.length)}° avg
+                        </div>
+                        <div className="text-[var(--foreground)] tabular-nums font-medium">
+                          {Math.round(totalPower)}W
+                        </div>
+                      </div>
                     </div>
-                  ))}
+                  )}
                 </div>
               )}
-            </div>
+            </section>
+
+            {/* Quick Launch */}
+            <section>
+              <div className="flex items-center justify-between mb-3">
+                <button
+                  onClick={() => setQuickLaunchExpanded(!quickLaunchExpanded)}
+                  className="flex items-center gap-2 text-xs uppercase tracking-wider text-[var(--muted-foreground)] font-medium hover:text-[var(--foreground)] transition-colors"
+                >
+                  {quickLaunchExpanded ? (
+                    <ChevronDown className="h-3 w-3" />
+                  ) : (
+                    <ChevronUp className="h-3 w-3" />
+                  )}
+                  Quick Launch
+                </button>
+                <button 
+                  onClick={() => router.push('/recipes?new=1')} 
+                  className="text-xs text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition-colors duration-200"
+                >
+                  new
+                </button>
+              </div>
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search recipes..."
+                className="w-full px-3 py-2 bg-[var(--card)]/50 border border-[var(--border)]/40 rounded-lg text-sm text-[var(--foreground)] placeholder:text-[var(--muted-foreground)]/50 focus:outline-none focus:border-[var(--border)] focus:bg-[var(--card)] transition-all duration-200 mb-3"
+              />
+              {quickLaunchExpanded && (
+                <>
+                  {searchQuery.trim() ? (
+                    searchResults.length > 0 ? (
+                      <div className="space-y-0.5">
+                        {searchResults.map((recipe) => (
+                          <div
+                            key={recipe.id}
+                            onClick={() => !launching && recipe.status !== 'running' && handleLaunch(recipe.id)}
+                            className={`px-3 py-2 -mx-3 rounded-lg cursor-pointer transition-all duration-200 hover:bg-[var(--card)]/50 ${
+                              recipe.status === 'running' ? 'opacity-50 cursor-not-allowed' : ''
+                            }`}
+                          >
+                            <div className="flex items-center gap-2">
+                              <div className={`w-1.5 h-1.5 rounded-full ${recipe.status === 'running' ? 'bg-[var(--success)]' : 'bg-[var(--muted)]/60'}`}></div>
+                              <div className="min-w-0 flex-1">
+                                <div className="text-sm text-[var(--foreground)] truncate font-medium">{recipe.name}</div>
+                                <div className="text-xs text-[var(--muted-foreground)]">
+                                  TP{recipe.tp || recipe.tensor_parallel_size} · {recipe.backend || 'vllm'}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-xs text-[var(--muted-foreground)]/60 px-3">No recipes found</p>
+                    )
+                  ) : (
+                    <div className="space-y-0.5">
+                      {recipes.slice(0, 8).map((recipe) => (
+                        <div
+                          key={recipe.id}
+                          onClick={() => !launching && recipe.status !== 'running' && handleLaunch(recipe.id)}
+                          className={`group px-3 py-2 -mx-3 rounded-lg cursor-pointer transition-all duration-200 hover:bg-[var(--card)]/50 ${
+                            recipe.status === 'running' ? 'opacity-50 cursor-not-allowed' : ''
+                          }`}
+                        >
+                          <div className="flex items-center gap-2">
+                            <div className={`w-1.5 h-1.5 rounded-full ${recipe.status === 'running' ? 'bg-[var(--success)]' : 'bg-[var(--muted)]/60'}`}></div>
+                            <div className="min-w-0 flex-1">
+                              <div className="text-sm text-[var(--foreground)] truncate font-medium">{recipe.name}</div>
+                              <div className="text-xs text-[var(--muted-foreground)]">
+                                TP{recipe.tp || recipe.tensor_parallel_size} · {recipe.backend || 'vllm'}
+                              </div>
+                            </div>
+                            <button
+                              onClick={(e) => { 
+                                e.stopPropagation(); 
+                                router.push(`/recipes?edit=${recipe.id}`); 
+                              }}
+                              className="text-xs text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition-colors duration-200 opacity-0 group-hover:opacity-100"
+                            >
+                              edit
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                      {recipes.length > 8 && (
+                        <button
+                          onClick={() => router.push('/recipes')}
+                          className="w-full px-3 py-1.5 text-xs text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition-colors duration-200"
+                        >
+                          View all {recipes.length} recipes →
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </>
+              )}
+            </section>
 
             {/* Logs */}
-            <div>
-              <div className="text-xs text-[#9a9088] uppercase tracking-wider mb-3">Logs</div>
-              <div className="bg-[#1e1e1e] rounded-lg p-3 sm:p-4 h-64 sm:h-80 overflow-auto font-mono text-xs leading-relaxed">
-                {logs.length > 0 ? logs.map((line, i) => (
-                  <div key={i} className={`py-0.5 break-all ${
-                    line.includes('ERROR') ? 'text-[#c97a6b]' :
-                    line.includes('WARNING') ? 'text-[#c9a66b]' :
-                    'text-[#9a9088]'
-                  }`}>{line}</div>
-                )) : (
-                  <div className="text-[#9a9088]/50">No logs available</div>
-                )}
-              </div>
-            </div>
+            <section>
+              <h2 className="text-xs uppercase tracking-wider text-[var(--muted-foreground)] mb-3 font-medium">Recent Logs</h2>
+              {logs.length > 0 ? (
+                <div className="h-48 sm:h-64 overflow-auto font-mono text-xs leading-relaxed border border-[var(--border)]/30 rounded-lg p-3 bg-[var(--card)]/30 backdrop-blur-sm">
+                  <div className="space-y-1">
+                    {logs.map((line, i) => {
+                      const isError = line.includes('ERROR');
+                      const isWarning = line.includes('WARNING');
+                      return (
+                        <div 
+                          key={i} 
+                          className={`break-all ${
+                            isError ? 'text-[var(--error)]' :
+                            isWarning ? 'text-[var(--warning)]' :
+                            'text-[var(--muted-foreground)]'
+                          }`}
+                        >
+                          {line}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : (
+                <div className="h-48 sm:h-64 flex items-center justify-center border border-[var(--border)]/30 rounded-lg bg-[var(--card)]/20">
+                  <p className="text-xs text-[var(--muted-foreground)]/50">No logs available</p>
+                </div>
+              )}
+            </section>
           </div>
 
           {/* Right Column */}
-          <div className="space-y-6 sm:space-y-8">
+          <div className="space-y-6">
 
-            {/* Stats Grid - Side by side on mobile */}
-            <div className="grid grid-cols-2 lg:grid-cols-1 gap-4 sm:gap-6">
-              {/* Session */}
-              <div>
-                <div className="text-xs text-[#9a9088] uppercase tracking-wider mb-3">Session</div>
-                <div className="space-y-1.5 sm:space-y-2">
-                  <Row label="Requests" value={metrics?.request_success || 0} />
-                  <Row label="Input" value={metrics?.prompt_tokens_total?.toLocaleString() || 0} />
-                  <Row label="Output" value={metrics?.generation_tokens_total?.toLocaleString() || 0} />
-                  <Row label="Running" value={metrics?.running_requests || 0} />
+            {/* Session Stats */}
+            {(metrics?.request_success || metrics?.prompt_tokens_total || metrics?.generation_tokens_total || metrics?.running_requests) ? (
+              <section>
+                <h2 className="text-xs uppercase tracking-wider text-[var(--muted-foreground)] mb-3 font-medium">Session</h2>
+                <div className="space-y-2">
+                  {metrics?.request_success !== undefined && (
+                    <StatRow label="Requests" value={metrics.request_success} />
+                  )}
+                  {metrics?.prompt_tokens_total !== undefined && (
+                    <StatRow label="Input Tokens" value={metrics.prompt_tokens_total.toLocaleString()} />
+                  )}
+                  {metrics?.generation_tokens_total !== undefined && (
+                    <StatRow label="Output Tokens" value={metrics.generation_tokens_total.toLocaleString()} />
+                  )}
+                  {metrics?.running_requests !== undefined && (
+                    <StatRow label="Running" value={metrics.running_requests} accent />
+                  )}
                 </div>
-              </div>
+              </section>
+            ) : null}
 
-              {/* Lifetime */}
-              <div>
-                <div className="text-xs text-[#9a9088] uppercase tracking-wider mb-3">Lifetime</div>
-                <div className="space-y-1.5 sm:space-y-2">
-                  <Row label="Input" value={metrics?.lifetime_prompt_tokens?.toLocaleString() || 0} />
-                  <Row label="Output" value={metrics?.lifetime_completion_tokens?.toLocaleString() || 0} />
-                  <Row label="Requests" value={metrics?.lifetime_requests?.toLocaleString() || 0} />
-                  <Row label="Energy" value={metrics?.lifetime_energy_kwh ? `${metrics.lifetime_energy_kwh.toFixed(2)} kWh` : '--'} />
-                  <Row label="Uptime" value={metrics?.lifetime_uptime_hours ? `${metrics.lifetime_uptime_hours.toFixed(1)}h` : '--'} />
+            {/* Lifetime Stats */}
+            {(metrics?.lifetime_prompt_tokens || metrics?.lifetime_completion_tokens || metrics?.lifetime_requests || metrics?.lifetime_energy_kwh || metrics?.lifetime_uptime_hours) ? (
+              <section>
+                <h2 className="text-xs uppercase tracking-wider text-[var(--muted-foreground)] mb-3 font-medium">Lifetime</h2>
+                <div className="space-y-2">
+                  {metrics?.lifetime_prompt_tokens !== undefined && (
+                    <StatRow label="Input Tokens" value={metrics.lifetime_prompt_tokens.toLocaleString()} />
+                  )}
+                  {metrics?.lifetime_completion_tokens !== undefined && (
+                    <StatRow label="Output Tokens" value={metrics.lifetime_completion_tokens.toLocaleString()} />
+                  )}
+                  {metrics?.lifetime_requests !== undefined && (
+                    <StatRow label="Total Requests" value={metrics.lifetime_requests.toLocaleString()} />
+                  )}
+                  {metrics?.lifetime_energy_kwh !== undefined && (
+                    <StatRow label="Energy" value={`${metrics.lifetime_energy_kwh.toFixed(2)} kWh`} />
+                  )}
+                  {metrics?.lifetime_uptime_hours !== undefined && (
+                    <StatRow label="Uptime" value={`${metrics.lifetime_uptime_hours.toFixed(1)}h`} />
+                  )}
                 </div>
-              </div>
-            </div>
+              </section>
+            ) : null}
 
             {/* Cost Analytics */}
-            <div>
-              <div className="text-xs text-[#9a9088] uppercase tracking-wider mb-3">Cost Analytics</div>
-              <div className="bg-[#1e1e1e] rounded-lg p-3 space-y-3">
-                <div className="flex justify-between items-center">
-                  <span className="text-sm text-[#9a9088]">Total Cost</span>
-                  <span className="text-lg font-medium text-[#7d9a6a]">
-                    {metrics?.lifetime_energy_kwh ? `${(metrics.lifetime_energy_kwh * ELECTRICITY_PRICE_PLN).toFixed(2)} PLN` : '--'}
-                  </span>
-                </div>
-                <div className="border-t border-[#363432] pt-2 space-y-1.5">
-                  <div className="flex justify-between text-xs">
-                    <span className="text-[#9a9088]">kWh/M Input</span>
-                    <span className="text-[#6b9ac9]">
-                      {metrics?.kwh_per_million_input ? metrics.kwh_per_million_input.toFixed(3) : '--'}
-                    </span>
-                  </div>
-                  <div className="flex justify-between text-xs">
-                    <span className="text-[#9a9088]">kWh/M Output</span>
-                    <span className="text-[#7d9a6a]">
-                      {metrics?.kwh_per_million_output ? metrics.kwh_per_million_output.toFixed(3) : '--'}
-                    </span>
-                  </div>
-                  <div className="flex justify-between text-xs">
-                    <span className="text-[#9a9088]">PLN/M Input</span>
-                    <span className="text-[#6b9ac9]">
-                      {metrics?.kwh_per_million_input ? (metrics.kwh_per_million_input * ELECTRICITY_PRICE_PLN).toFixed(2) : '--'}
-                    </span>
-                  </div>
-                  <div className="flex justify-between text-xs">
-                    <span className="text-[#9a9088]">PLN/M Output</span>
-                    <span className="text-[#7d9a6a]">
-                      {metrics?.kwh_per_million_output ? (metrics.kwh_per_million_output * ELECTRICITY_PRICE_PLN).toFixed(2) : '--'}
-                    </span>
-                  </div>
-                </div>
-                <div className="border-t border-[#363432] pt-2">
-                  <div className="flex justify-between text-xs">
-                    <span className="text-[#9a9088]">Current Draw</span>
-                    <span className="text-[#f0ebe3]">
-                      {metrics?.current_power_watts ? `${Math.round(metrics.current_power_watts)}W` : '--'}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Recipes */}
-            <div>
-              <div className="flex items-center justify-between mb-3">
-                <div className="text-xs text-[#9a9088] uppercase tracking-wider">Recipes ({recipes.length})</div>
-                <button onClick={() => router.push('/recipes?new=1')} className="text-xs text-[#9a9088] hover:text-[#f0ebe3] active:text-[#f0ebe3] transition-colors py-1 px-2 -mr-2">+ new</button>
-              </div>
-              <div className="space-y-0.5 max-h-48 sm:max-h-64 overflow-y-auto -mx-1">
-                {recipes.map((recipe) => (
-                  <div
-                    key={recipe.id}
-                    onClick={() => !launching && recipe.status !== 'running' && handleLaunch(recipe.id)}
-                    className="flex items-center justify-between py-2.5 sm:py-2 px-3 mx-1 rounded hover:bg-[#363432]/30 active:bg-[#363432]/50 cursor-pointer transition-colors group"
-                  >
-                    <div className="flex items-center gap-2 min-w-0">
-                      <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${recipe.status === 'running' ? 'bg-[#7d9a6a]' : 'bg-[#363432]'}`} />
-                      <span className="text-[#f0ebe3] text-sm truncate">{recipe.name}</span>
+            {metrics?.lifetime_energy_kwh || metrics?.current_power_watts ? (
+              <section>
+                <h2 className="text-xs uppercase tracking-wider text-[var(--muted-foreground)] mb-3 font-medium">Cost Analytics</h2>
+                <div className="space-y-3">
+                  {metrics?.lifetime_energy_kwh && (
+                    <div className="pb-3">
+                      <div className="text-xs text-[var(--muted-foreground)] mb-1">Total Cost</div>
+                      <div className="text-sm font-medium text-[var(--success)]">
+                        {(metrics.lifetime_energy_kwh * ELECTRICITY_PRICE_PLN).toFixed(2)} PLN
+                      </div>
                     </div>
-                    <button
-                      onClick={(e) => { e.stopPropagation(); router.push(`/recipes?edit=${recipe.id}`); }}
-                      className="opacity-100 sm:opacity-0 group-hover:opacity-100 text-[#9a9088] hover:text-[#f0ebe3] active:text-[#f0ebe3] transition-all p-1.5 -mr-1.5"
-                    >
-                      <Settings className="h-4 w-4 sm:h-3.5 sm:w-3.5" />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            </div>
+                  )}
+                  {metrics?.kwh_per_million_input || metrics?.kwh_per_million_output ? (
+                    <div className="space-y-2">
+                      {metrics?.kwh_per_million_input && (
+                        <CostRow label="kWh/M Input" value={metrics.kwh_per_million_input.toFixed(3)} />
+                      )}
+                      {metrics?.kwh_per_million_output && (
+                        <CostRow label="kWh/M Output" value={metrics.kwh_per_million_output.toFixed(3)} />
+                      )}
+                      {metrics?.kwh_per_million_input && (
+                        <CostRow label="PLN/M Input" value={(metrics.kwh_per_million_input * ELECTRICITY_PRICE_PLN).toFixed(2)} />
+                      )}
+                      {metrics?.kwh_per_million_output && (
+                        <CostRow label="PLN/M Output" value={(metrics.kwh_per_million_output * ELECTRICITY_PRICE_PLN).toFixed(2)} />
+                      )}
+                    </div>
+                  ) : null}
+                  {metrics?.current_power_watts && (
+                    <div className={`${metrics?.lifetime_energy_kwh || metrics?.kwh_per_million_input || metrics?.kwh_per_million_output ? 'pt-3' : ''}`}>
+                      <div className="text-xs text-[var(--muted-foreground)] mb-1">Current Draw</div>
+                      <div className="text-sm font-medium text-[var(--foreground)]">
+                        {Math.round(metrics.current_power_watts)}W
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </section>
+            ) : null}
+
           </div>
         </div>
       </div>
 
       {/* Launch Toast */}
       {(launching || launchProgress) && (
-        <div className="fixed bottom-4 left-4 right-4 sm:left-auto sm:right-6 sm:bottom-6 z-50 px-4 py-3 bg-[#1e1e1e] rounded-lg shadow-2xl sm:max-w-xs border border-[#363432]" style={{ marginBottom: 'env(safe-area-inset-bottom)' }}>
-          <div className="flex items-center gap-3">
-            {launchProgress?.stage === 'error' || launchProgress?.stage === 'cancelled' ? (
-              <X className="h-4 w-4 text-[#c97a6b] flex-shrink-0" />
-            ) : launchProgress?.stage === 'ready' ? (
-              <Check className="h-4 w-4 text-[#7d9a6a] flex-shrink-0" />
-            ) : (
-              <Activity className="h-4 w-4 text-[#8b7355] animate-pulse flex-shrink-0" />
-            )}
-            <div className="min-w-0 flex-1">
-              <div className="text-sm text-[#f0ebe3] capitalize">{launchProgress?.stage || 'Starting...'}</div>
-              <div className="text-xs text-[#9a9088] truncate">{launchProgress?.message || 'Preparing...'}</div>
+        <div 
+          className="fixed bottom-4 left-4 right-4 sm:left-auto sm:right-6 sm:bottom-6 z-50 px-4 py-3 bg-[var(--card)] border border-[var(--border)]/50 rounded sm:max-w-xs" 
+          style={{ marginBottom: 'env(safe-area-inset-bottom)' }}
+        >
+          <div className="space-y-1.5">
+            <div className="text-xs font-medium text-[var(--foreground)] capitalize">
+              {launchProgress?.stage === 'error' || launchProgress?.stage === 'cancelled' ? (
+                <span className="text-[var(--error)]">{launchProgress.stage}</span>
+              ) : launchProgress?.stage === 'ready' ? (
+                <span className="text-[var(--success)]">{launchProgress.stage}</span>
+              ) : (
+                launchProgress?.stage || 'Starting...'
+              )}
+            </div>
+            <div className="text-xs text-[var(--muted-foreground)]">
+              {launchProgress?.message || 'Preparing model launch...'}
             </div>
           </div>
           {launchProgress?.progress != null && launchProgress.stage !== 'ready' && launchProgress.stage !== 'error' && launchProgress.stage !== 'cancelled' && (
-            <div className="mt-2 h-1.5 sm:h-1 bg-[#363432] rounded-full overflow-hidden">
-              <div className="h-full bg-[#8b7355] rounded-full transition-all" style={{ width: `${Math.round(launchProgress.progress * 100)}%` }} />
+            <div className="mt-3 h-0.5 bg-[var(--muted)]/30 rounded-full overflow-hidden">
+              <div 
+                className="h-full bg-[var(--foreground)]/40 rounded-full transition-all duration-300" 
+                style={{ width: `${Math.round(launchProgress.progress * 100)}%` }} 
+              />
             </div>
           )}
         </div>
@@ -501,18 +598,29 @@ export default function Dashboard() {
 function Metric({ label, value, sub }: { label: string; value: string | number; sub?: string }) {
   return (
     <div>
-      <div className="text-[10px] sm:text-xs text-[#9a9088] mb-0.5 sm:mb-1">{label}</div>
-      <div className="text-lg sm:text-2xl text-[#f0ebe3] font-light tracking-tight">{value}</div>
-      {sub && <div className="text-[10px] sm:text-xs text-[#9a9088]/60 mt-0.5">{sub}</div>}
+      <div className="text-xs uppercase tracking-wider text-[var(--muted-foreground)] mb-1 font-medium">{label}</div>
+      <div className="text-base sm:text-lg text-[var(--foreground)] font-normal tracking-tight tabular-nums">{value}</div>
+      {sub && <div className="text-xs text-[var(--muted-foreground)]/70 mt-0.5">{sub}</div>}
     </div>
   );
 }
 
-function Row({ label, value, accent }: { label: string; value: string | number; accent?: boolean }) {
+function StatRow({ label, value, accent }: { label: string; value: string | number; accent?: boolean }) {
   return (
-    <div className="flex items-center justify-between py-1">
-      <span className="text-[#9a9088] text-sm">{label}</span>
-      <span className={`text-sm ${accent ? 'text-[#7d9a6a]' : 'text-[#f0ebe3]'}`}>{value}</span>
+    <div className="flex items-baseline justify-between py-1">
+      <span className="text-xs text-[var(--muted-foreground)]">{label}</span>
+      <span className={`text-xs font-medium tabular-nums ${accent ? 'text-[var(--success)]' : 'text-[var(--foreground)]'}`}>
+        {value}
+      </span>
+    </div>
+  );
+}
+
+function CostRow({ label, value }: { label: string; value: string | number }) {
+  return (
+    <div className="flex justify-between text-xs py-1">
+      <span className="text-[var(--muted-foreground)]">{label}</span>
+      <span className="text-[var(--foreground)] font-medium tabular-nums">{value}</span>
     </div>
   );
 }

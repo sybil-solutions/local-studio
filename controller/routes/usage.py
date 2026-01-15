@@ -111,6 +111,7 @@ async def get_usage_stats():
                 AVG(CASE WHEN status = 'success' THEN total_tokens END) as avg_tokens,
                 AVG(CASE WHEN status = 'success' THEN EXTRACT(EPOCH FROM ("endTime" - "startTime")) END) as avg_latency_sec,
                 AVG(CASE WHEN status = 'success' THEN EXTRACT(EPOCH FROM ("completionStartTime" - "startTime")) END) as avg_ttft_sec,
+                AVG(CASE WHEN status = 'success' THEN EXTRACT(EPOCH FROM ("endTime" - "completionStartTime")) END) as avg_generation_time_sec,
                 PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY CASE WHEN status = 'success' THEN EXTRACT(EPOCH FROM ("endTime" - "startTime")) END) as p50_latency_sec
             FROM "LiteLLM_SpendLogs"
             WHERE model != '' AND model IS NOT NULL
@@ -133,6 +134,23 @@ async def get_usage_stats():
             WHERE "startTime" >= CURRENT_DATE - INTERVAL '14 days'
             GROUP BY DATE("startTime")
             ORDER BY date DESC
+        ''')
+
+        # === DAILY BREAKDOWN BY MODEL (last 14 days) ===
+        daily_by_model = await conn.fetch('''
+            SELECT
+                DATE("startTime") as date,
+                model,
+                COUNT(*) as requests,
+                SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) as successful,
+                COALESCE(SUM(total_tokens), 0) as total_tokens,
+                COALESCE(SUM(prompt_tokens), 0) as prompt_tokens,
+                COALESCE(SUM(completion_tokens), 0) as completion_tokens
+            FROM "LiteLLM_SpendLogs"
+            WHERE "startTime" >= CURRENT_DATE - INTERVAL '14 days'
+                AND model != '' AND model IS NOT NULL
+            GROUP BY DATE("startTime"), model
+            ORDER BY date DESC, total_tokens DESC
         ''')
 
         # === HOURLY PATTERN (aggregated across all days) ===
@@ -237,11 +255,28 @@ async def get_usage_stats():
         models_formatted = []
         for row in by_model:
             avg_latency = to_float(row["avg_latency_sec"])
+            avg_ttft = to_float(row["avg_ttft_sec"])
+            avg_generation_time = to_float(row["avg_generation_time_sec"])
             completion_tokens = row["completion_tokens"] or 0
+            prompt_tokens = row["prompt_tokens"] or 0
+            
+            # Calculate prefill speed (prompt tokens / TTFT)
+            prefill_tps = None
+            if avg_ttft and avg_ttft > 0 and row["successful"] and row["successful"] > 0:
+                avg_prompt = prompt_tokens / row["successful"]
+                prefill_tps = round(avg_prompt / avg_ttft, 1) if avg_prompt else None
+            
+            # Calculate generation speed (completion tokens / generation time)
+            generation_tps = None
+            if avg_generation_time and avg_generation_time > 0 and row["successful"] and row["successful"] > 0:
+                avg_completion = completion_tokens / row["successful"]
+                generation_tps = round(avg_completion / avg_generation_time, 1) if avg_completion else None
+            
+            # Combined speed (weighted average or total tokens / total latency)
             tokens_per_sec = None
             if avg_latency and avg_latency > 0 and row["successful"] and row["successful"] > 0:
-                avg_completion = completion_tokens / row["successful"]
-                tokens_per_sec = round(avg_completion / avg_latency, 1) if avg_completion else None
+                avg_total = (prompt_tokens + completion_tokens) / row["successful"]
+                tokens_per_sec = round(avg_total / avg_latency, 1) if avg_total else None
 
             models_formatted.append({
                 "model": row["model"],
@@ -255,7 +290,9 @@ async def get_usage_stats():
                 "avg_latency_ms": round((to_float(row["avg_latency_sec"]) or 0) * 1000),
                 "p50_latency_ms": round((to_float(row["p50_latency_sec"]) or 0) * 1000),
                 "avg_ttft_ms": round((to_float(row["avg_ttft_sec"]) or 0) * 1000),
-                "tokens_per_sec": tokens_per_sec
+                "tokens_per_sec": tokens_per_sec,
+                "prefill_tps": prefill_tps,
+                "generation_tps": generation_tps
             })
 
         success_rate = round(totals["successful_requests"] / totals["total_requests"] * 100, 2) if totals["total_requests"] else 0
@@ -324,6 +361,19 @@ async def get_usage_stats():
                     "avg_latency_ms": round(to_float(row["avg_latency_ms"]) or 0)
                 }
                 for row in daily
+            ],
+            "daily_by_model": [
+                {
+                    "date": row["date"].isoformat(),
+                    "model": row["model"],
+                    "requests": row["requests"],
+                    "successful": row["successful"],
+                    "success_rate": round(row["successful"] / row["requests"] * 100, 1) if row["requests"] else 0,
+                    "total_tokens": row["total_tokens"],
+                    "prompt_tokens": row["prompt_tokens"],
+                    "completion_tokens": row["completion_tokens"]
+                }
+                for row in daily_by_model
             ],
             "hourly_pattern": [
                 {
