@@ -3,7 +3,23 @@
  * Robust client with retry logic, timeouts, and comprehensive error handling
  */
 
-import type { Recipe, RecipeWithStatus, HealthResponse, ProcessInfo, ModelInfo, StudioModelsRoot } from './types';
+import type {
+  Recipe,
+  RecipeWithStatus,
+  HealthResponse,
+  ProcessInfo,
+  ModelInfo,
+  StudioModelsRoot,
+  ChatSession,
+  ChatSessionDetail,
+  StoredMessage,
+  LogSession,
+  MCPServer,
+  MCPTool,
+  GPU,
+  Metrics,
+  VRAMCalculation,
+} from './types';
 
 const API_KEY_STORAGE = 'vllmstudio_api_key';
 const DEFAULT_TIMEOUT = 30000; // 30 seconds
@@ -11,6 +27,11 @@ const DEFAULT_RETRIES = 3;
 const RETRY_DELAY = 1000; // 1 second base delay
 
 function getStoredApiKey(): string {
+  // Prefer env var if available (build-time or runtime)
+  const envKey = process.env.NEXT_PUBLIC_VLLM_STUDIO_API_KEY || process.env.VLLM_STUDIO_API_KEY;
+  if (envKey) return envKey;
+
+  // Fallback to localStorage
   if (typeof window === 'undefined') return '';
   try {
     return window.localStorage.getItem(API_KEY_STORAGE) || '';
@@ -182,16 +203,16 @@ class APIClient {
     return this.request('/v1/models');
   }
 
-  async getChatSessions(): Promise<{ sessions: Array<{ id: string; title: string; model?: string; created_at: string; updated_at: string }> }> {
-    const data = await this.request<Array<{ id: string; title: string; model?: string; created_at: string; updated_at: string }>>('/chats');
+  async getChatSessions(): Promise<{ sessions: ChatSession[] }> {
+    const data = await this.request<ChatSession[]>('/chats');
     return { sessions: Array.isArray(data) ? data : [] };
   }
 
-  async getChatSession(id: string): Promise<{ session: unknown }> {
+  async getChatSession(id: string): Promise<{ session: ChatSessionDetail }> {
     return this.request(`/chats/${id}`);
   }
 
-  async createChatSession(data: { title?: string; model?: string }): Promise<{ session: unknown }> {
+  async createChatSession(data: { title?: string; model?: string }): Promise<{ session: ChatSessionDetail }> {
     return this.request('/chats', { method: 'POST', body: JSON.stringify(data) });
   }
 
@@ -203,11 +224,11 @@ class APIClient {
     return this.request(`/chats/${id}`, { method: 'DELETE' });
   }
 
-  async forkChatSession(id: string, data: { message_id?: string; model?: string; title?: string }): Promise<{ session: unknown }> {
+  async forkChatSession(id: string, data: { message_id?: string; model?: string; title?: string }): Promise<{ session: ChatSessionDetail }> {
     return this.request(`/chats/${id}/fork`, { method: 'POST', body: JSON.stringify(data) });
   }
 
-  async addChatMessage(sessionId: string, message: unknown): Promise<unknown> {
+  async addChatMessage(sessionId: string, message: StoredMessage): Promise<StoredMessage> {
     return this.request(`/chats/${sessionId}/messages`, { method: 'POST', body: JSON.stringify(message) });
   }
 
@@ -215,12 +236,22 @@ class APIClient {
     return this.request(`/chats/${sessionId}/usage`);
   }
 
-  async getMCPServers(): Promise<Array<{ name: string; command: string; args?: string[]; env?: Record<string, string>; enabled?: boolean }>> {
-    return this.request('/mcp/servers');
+  async getMCPServers(): Promise<MCPServer[]> {
+    const data = await this.request<MCPServer[]>('/mcp/servers');
+    return Array.isArray(data) ? data : [];
   }
 
-  async getMCPTools(): Promise<{ tools: Array<{ name: string; description?: string; input_schema?: unknown; server: string }> }> {
-    return this.request('/mcp/tools');
+  async getMCPTools(): Promise<{ tools: MCPTool[] }> {
+    const data = await this.request<{ tools?: Array<{ name: string; description?: string; input_schema?: unknown; inputSchema?: unknown; server: string }> }>('/mcp/tools');
+    const tools = Array.isArray(data?.tools)
+      ? data.tools.map((tool) => ({
+        name: tool.name,
+        description: tool.description,
+        server: tool.server,
+        inputSchema: (tool.inputSchema ?? tool.input_schema) as Record<string, unknown> | undefined,
+      }))
+      : [];
+    return { tools };
   }
 
   async callMCPTool(server: string, tool: string, args: Record<string, unknown>): Promise<{ result: unknown }> {
@@ -235,8 +266,9 @@ class APIClient {
     return this.request('/v1/tokens/count', { method: 'POST', body: JSON.stringify(data) });
   }
 
-  async getLogSessions(): Promise<{ sessions: unknown[] }> {
-    return this.request('/logs');
+  async getLogSessions(): Promise<{ sessions: LogSession[] }> {
+    const data = await this.request<LogSession[]>('/logs');
+    return { sessions: Array.isArray(data) ? data : [] };
   }
 
   async getLogContent(sessionId: string, limit?: number): Promise<{ content: string }> {
@@ -257,15 +289,15 @@ class APIClient {
     return this.request('/v1/studio/models');
   }
 
-  async getGPUs(): Promise<{ gpus: unknown[] }> {
+  async getGPUs(): Promise<{ gpus: GPU[] }> {
     return this.request('/gpus');
   }
 
-  async calculateVRAM(data: unknown): Promise<unknown> {
+  async calculateVRAM(data: { model: string; context_length: number; tp_size: number; kv_dtype: string }): Promise<VRAMCalculation> {
     return this.request('/vram-calculator', { method: 'POST', body: JSON.stringify(data) });
   }
 
-  async getMetrics(): Promise<unknown> {
+  async getMetrics(): Promise<Metrics> {
     return this.request('/v1/metrics/vllm');
   }
 
@@ -395,7 +427,13 @@ class APIClient {
   }
 }
 
-export const api = new APIClient('/api/proxy', true);
+export const api = new APIClient(
+  process.env.BACKEND_URL ||
+  process.env.NEXT_PUBLIC_BACKEND_URL ||
+  process.env.VLLM_STUDIO_BACKEND_URL ||
+  'https://api.homelabai.org',
+  false
+);
 
 export function createServerAPI(backendUrl?: string) {
   return new APIClient(backendUrl || process.env.BACKEND_URL || 'http://localhost:8080');

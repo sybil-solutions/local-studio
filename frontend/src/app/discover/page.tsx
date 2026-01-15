@@ -101,7 +101,8 @@ export default function DiscoverPage() {
       params.set('limit', '50');
       params.set('full', 'false');
 
-      const response = await fetch(`/api/proxy/v1/huggingface/models?${params.toString()}`);
+      const baseUrl = process.env.BACKEND_URL || process.env.NEXT_PUBLIC_BACKEND_URL || process.env.VLLM_STUDIO_BACKEND_URL || 'https://api.homelabai.org';
+      const response = await fetch(`${baseUrl}/v1/huggingface/models?${params.toString()}`);
       if (!response.ok) throw new Error('Failed to fetch models');
       const data = await response.json();
       setModels(data);
@@ -125,11 +126,11 @@ export default function DiscoverPage() {
     setTimeout(() => setCopiedId(null), 2000);
   };
 
-  const getTaskBadgeColor = () => {
+  const getTaskBadgeColor = (_task?: string) => {
     return 'bg-[var(--highlight-bg)] text-[var(--accent-purple)]';
   };
 
-  const getLibraryBadgeColor = () => {
+  const getLibraryBadgeColor = (_library?: string) => {
     return 'bg-[var(--highlight-bg)] text-[var(--accent-purple)]';
   };
 

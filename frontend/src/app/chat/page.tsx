@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useMemo, useCallback } from 'react';
+import { useEffect, useRef, useMemo, useCallback, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import {
   Sparkles, Copy, Check, GitBranch, X, BarChart3,
@@ -9,7 +9,7 @@ import {
 import { shallow } from 'zustand/shallow';
 import { api } from '@/lib/api';
 import { useAppStore, type ChatMessage } from '@/store';
-import type { ToolCall, ToolResult, Artifact } from '@/lib/types';
+import type { ToolCall, ToolResult, Artifact, StoredMessage, StoredToolCall, ChatSessionDetail } from '@/lib/types';
 import {
  ToolBelt, MCPSettingsModal, ChatSettingsModal, extractArtifacts, splitThinking,
 } from '@/components/chat';
@@ -27,32 +27,6 @@ import { stripThinkingForModelContext, parseSSEEvents, downloadTextFile } from '
 // Types
 type Message = ChatMessage;
 
-interface StoredToolCall extends ToolCall {
-  result?: { content?: string; isError?: boolean } | string | null;
-}
-
-interface StoredMessage {
-  id: string;
-  role: 'user' | 'assistant';
-  content: string;
-  model?: string;
-  tool_calls?: StoredToolCall[];
-  prompt_tokens?: number;
-  completion_tokens?: number;
-  total_tokens?: number;
-  request_prompt_tokens?: number | null;
-  request_tools_tokens?: number | null;
-  request_total_input_tokens?: number | null;
-  request_completion_tokens?: number | null;
-  estimated_cost_usd?: number | null;
-}
-
-interface ChatSessionDetail {
-  id: string;
-  title: string;
-  model?: string;
-  messages?: StoredMessage[];
-}
 
 type OpenAIContentPart = { type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } };
 type OpenAIToolCall = { id: string; type: 'function'; function: { name: string; arguments: string } };
@@ -60,7 +34,47 @@ type OpenAIMessage =
   | { role: 'user' | 'assistant' | 'system'; content: string | null | OpenAIContentPart[]; tool_calls?: OpenAIToolCall[] }
   | { role: 'tool'; tool_call_id: string; name?: string; content: string };
 
-export default function ChatPage() {
+const extractToolResults = (toolCalls: StoredToolCall[] = []): ToolResult[] => {
+  return toolCalls
+    .filter((tc) => tc.result)
+    .map((tc) => {
+      const rawResult = tc.result;
+      const content = typeof rawResult === 'string'
+        ? rawResult
+        : rawResult && typeof rawResult === 'object' && 'content' in rawResult
+          ? String(rawResult.content ?? '')
+          : rawResult != null
+            ? JSON.stringify(rawResult)
+            : '';
+      const isError = rawResult && typeof rawResult === 'object' && 'isError' in rawResult
+        ? Boolean((rawResult as { isError?: boolean }).isError)
+        : undefined;
+      return { tool_call_id: tc.id, content, isError };
+    });
+};
+
+const normalizeStoredMessage = (message: StoredMessage): Message => {
+  const toolCalls = message.tool_calls || [];
+  const toolResults = extractToolResults(toolCalls);
+  return {
+    id: message.id,
+    role: message.role,
+    content: message.content,
+    model: message.model,
+    toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+    toolResults: toolResults.length > 0 ? toolResults : undefined,
+    prompt_tokens: message.prompt_tokens,
+    completion_tokens: message.completion_tokens,
+    total_tokens: message.total_tokens,
+    request_prompt_tokens: message.request_prompt_tokens,
+    request_tools_tokens: message.request_tools_tokens,
+    request_total_input_tokens: message.request_total_input_tokens,
+    request_completion_tokens: message.request_completion_tokens,
+    estimated_cost_usd: message.estimated_cost_usd,
+  };
+};
+
+function ChatPageContent() {
   const {
     currentSessionId,
     currentSessionTitle,
@@ -251,7 +265,7 @@ export default function ChatPage() {
 
   const handleContextCompact = useCallback((newMessages: Array<{ role: string; content: string }>) => {
     const compactedIds = new Set(newMessages.map((m, i) => messages[messages.length - newMessages.length + i]?.id).filter(Boolean));
-    updateMessages(prev => prev.filter(m => compactedIds.has(m.id) || prev.indexOf(m) >= prev.length - newMessages.length));
+    updateMessages((prev: Message[]) => prev.filter(m => compactedIds.has(m.id) || prev.indexOf(m) >= prev.length - newMessages.length));
   }, [messages, updateMessages]);
 
   const contextManager = useContextManager({
@@ -439,41 +453,13 @@ export default function ChatPage() {
     if (!sessionId || loadingSessionRef.current) return;
     loadingSessionRef.current = true;
     try {
-      const { session } = await api.getChatSession(sessionId) as { session: ChatSessionDetail };
+      const { session } = await api.getChatSession(sessionId);
       if (activeSessionRef.current && activeSessionRef.current !== session.id) return;
       setCurrentSessionId(session.id);
       setCurrentSessionTitle(session.title);
       setTitleDraft(session.title);
       if (session.model) setSelectedModel(session.model);
-      const msgs: Message[] = (session.messages || []).map((m) => {
-        const toolCalls = m.tool_calls || [];
-        // Extract tool results from embedded tc.result (how they're stored in DB)
-        const toolResults = toolCalls
-          .filter((tc) => tc.result)
-          .map((tc) => {
-            const rawResult = tc.result;
-            const content = typeof rawResult === 'string'
-              ? rawResult
-              : rawResult && typeof rawResult === 'object' && 'content' in rawResult
-                ? String(rawResult.content ?? '')
-                : rawResult != null
-                  ? JSON.stringify(rawResult)
-                  : '';
-            const isError = rawResult && typeof rawResult === 'object' && 'isError' in rawResult
-              ? Boolean((rawResult as { isError?: boolean }).isError)
-              : undefined;
-            return { tool_call_id: tc.id, content, isError };
-          });
-        return {
-          id: m.id, role: m.role, content: m.content, model: m.model,
-          toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
-          toolResults: toolResults.length > 0 ? toolResults : undefined,
-          prompt_tokens: m.prompt_tokens, completion_tokens: m.completion_tokens, total_tokens: m.total_tokens,
-          request_prompt_tokens: m.request_prompt_tokens, request_tools_tokens: m.request_tools_tokens,
-          request_total_input_tokens: m.request_total_input_tokens, request_completion_tokens: m.request_completion_tokens,
-          estimated_cost_usd: m.estimated_cost_usd,
-        };
-      });
+      const msgs: Message[] = (session.messages || []).map(normalizeStoredMessage);
       setMessages(msgs);
       setToolResultsMap(new Map());
       refreshUsage(session.id);
@@ -593,7 +579,7 @@ export default function ChatPage() {
 
     try {
       if (!sessionId) { try { const { session } = await api.createChatSession({ title: 'New Chat', model: activeModelId || undefined }); sessionId = session.id; setCurrentSessionId(sessionId); updateSessions(prev => [session, ...prev]); setSessionsAvailable(true); } catch {} }
-      if (sessionId) { try { const persisted = await api.addChatMessage(sessionId, { id: userMessage.id, role: 'user', content: userContent, model: activeModelId }); updateMessages(prev => prev.map(m => m.id === persisted.id ? { ...m, ...persisted } : m)); bumpSessionUpdatedAt(); refreshUsage(sessionId); } catch {} }
+      if (sessionId) { try { const persisted = await api.addChatMessage(sessionId, { id: userMessage.id, role: 'user', content: userContent, model: activeModelId }); const normalized = normalizeStoredMessage(persisted); updateMessages(prev => prev.map(m => m.id === normalized.id ? { ...m, ...normalized } : m)); bumpSessionUpdatedAt(); refreshUsage(sessionId); } catch {} }
 
       let iteration = 0; const MAX_ITERATIONS = 25; const cachedToolResultsBySignature = new Map<string, Omit<ToolResult, 'tool_call_id'>>();
       while (iteration < MAX_ITERATIONS) {
@@ -626,7 +612,7 @@ export default function ChatPage() {
         flushAssistantUpdate(true);
         if (!toolCalls.length) {
           finalAssistantContent = iterationContent; updateMessages(prev => prev.map(m => m.id === assistantMsgId ? { ...m, isStreaming: false } : m));
-          if (sessionId) { try { const persisted = await api.addChatMessage(sessionId, { id: assistantMsgId, role: 'assistant', content: iterationContent, model: activeModelId }); updateMessages(prev => prev.map(m => m.id === persisted.id ? { ...m, ...persisted } : m)); bumpSessionUpdatedAt(); refreshUsage(sessionId); } catch {} }
+          if (sessionId) { try { const persisted = await api.addChatMessage(sessionId, { id: assistantMsgId, role: 'assistant', content: iterationContent, model: activeModelId }); const normalized = normalizeStoredMessage(persisted); updateMessages(prev => prev.map(m => m.id === normalized.id ? { ...m, ...normalized } : m)); bumpSessionUpdatedAt(); refreshUsage(sessionId); } catch {} }
           break;
         }
         const toolResults: ToolResult[] = []; const toolNameByCallId = new Map<string, string>();
@@ -710,9 +696,9 @@ export default function ChatPage() {
         <div className="flex-1 flex flex-col min-h-0 overflow-x-hidden">
           <div className="flex-1 flex overflow-hidden relative">
             {messageSearchOpen && (
-              <div className="absolute inset-0 z-50 bg-[var(--background)]/95 backdrop-blur-sm">
+              <div className="absolute inset-0 z-50 bg-(--background)/95 backdrop-blur-sm">
                 <div className="h-full flex flex-col max-w-2xl mx-auto">
-                  <div className="flex items-center justify-between p-4 border-b border-[var(--border)]"><h2 className="text-lg font-semibold">Search Messages</h2><button onClick={() => setMessageSearchOpen(false)} className="p-2 rounded hover:bg-[var(--accent)]"><X className="h-5 w-5" /></button></div>
+                  <div className="flex items-center justify-between p-4 border-b border-(--border)"><h2 className="text-lg font-semibold">Search Messages</h2><button onClick={() => setMessageSearchOpen(false)} className="p-2 rounded hover:bg-(--accent)"><X className="h-5 w-5" /></button></div>
                   <div className="flex-1 overflow-hidden"><MessageSearch messages={messages} onResultClick={(messageId) => { document.getElementById(`message-${messageId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }); setMessageSearchOpen(false); }} /></div>
                 </div>
               </div>
@@ -728,11 +714,11 @@ export default function ChatPage() {
 
                   {messages.length > 0 && messages[messages.length - 1]?.role === 'assistant' && !isLoading && (
                     <div className="max-w-4xl mx-auto px-4 md:px-6">
-                      <div className="mt-4 pt-3 border-t border-[var(--border)] flex items-center justify-between gap-4">
+                      <div className="mt-4 pt-3 border-t border-(--border) flex items-center justify-between gap-4">
                         <div className="flex items-center gap-1">
-                          <button onClick={copyLastResponse} className="flex items-center gap-1.5 px-2 py-1 rounded hover:bg-[var(--accent)] text-[#8a8580]">{copiedIndex === messages.length - 1 ? <Check className="h-3.5 w-3.5 text-[var(--success)]" /> : <Copy className="h-3.5 w-3.5" />}<span className="text-xs">Copy</span></button>
-                          <button onClick={() => toggleBookmark(messages[messages.length - 1].id)} className="flex items-center gap-1.5 px-2 py-1 rounded hover:bg-[var(--accent)] text-[#8a8580]">{bookmarkedMessages.has(messages[messages.length - 1].id) ? <BookmarkCheck className="h-3.5 w-3.5 text-[var(--link)]" /> : <Bookmark className="h-3.5 w-3.5" />}<span className="text-xs">Bookmark</span></button>
-                          {currentSessionId && <button onClick={() => forkAtMessage(messages[messages.length - 1].id)} className="flex items-center gap-1.5 px-2 py-1 rounded hover:bg-[var(--accent)] text-[#8a8580]"><GitBranch className="h-3.5 w-3.5" /><span className="text-xs">Fork</span></button>}
+                          <button onClick={copyLastResponse} className="flex items-center gap-1.5 px-2 py-1 rounded hover:bg-(--accent) text-[#8a8580]">{copiedIndex === messages.length - 1 ? <Check className="h-3.5 w-3.5 text-(--success)" /> : <Copy className="h-3.5 w-3.5" />}<span className="text-xs">Copy</span></button>
+                          <button onClick={() => toggleBookmark(messages[messages.length - 1].id)} className="flex items-center gap-1.5 px-2 py-1 rounded hover:bg-(--accent) text-[#8a8580]">{bookmarkedMessages.has(messages[messages.length - 1].id) ? <BookmarkCheck className="h-3.5 w-3.5 text-(--link)" /> : <Bookmark className="h-3.5 w-3.5" />}<span className="text-xs">Bookmark</span></button>
+                          {currentSessionId && <button onClick={() => forkAtMessage(messages[messages.length - 1].id)} className="flex items-center gap-1.5 px-2 py-1 rounded hover:bg-(--accent) text-[#8a8580]"><GitBranch className="h-3.5 w-3.5" /><span className="text-xs">Fork</span></button>}
                         </div>
                         <div className="flex items-center gap-2 text-xs text-[#6a6560]">
                           <ContextIndicator stats={contextManager.stats} config={contextManager.config} onCompact={contextManager.compact} onUpdateConfig={contextManager.updateConfig} isWarning={contextManager.isWarning} canSendMessage={contextManager.canSendMessage} utilizationLevel={contextManager.utilizationLevel} />
@@ -745,9 +731,9 @@ export default function ChatPage() {
                 </div>
               </div>
 
-              {!isMobile && hasSidePanelContent && !toolPanelOpen && <button onClick={() => setToolPanelOpen(true)} className="absolute right-3 top-3 p-1.5 bg-[var(--card)] border border-[var(--border)] rounded hover:bg-[var(--accent)] z-10" title="Show tools"><PanelRightOpen className="h-4 w-4 text-[#9a9590]" />{(executingTools.size > 0 || thinkingActive) && <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-[var(--success)] rounded-full text-[9px] text-white font-medium">{executingTools.size || '•'}</span>}</button>}
+              {!isMobile && hasSidePanelContent && !toolPanelOpen && <button onClick={() => setToolPanelOpen(true)} className="absolute right-3 top-3 p-1.5 bg-(--card) border border-(--border) rounded hover:bg-(--accent) z-10" title="Show tools"><PanelRightOpen className="h-4 w-4 text-[#9a9590]" />{(executingTools.size > 0 || thinkingActive) && <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-(--success) rounded-full text-[9px] text-white font-medium">{executingTools.size || '•'}</span>}</button>}
 
-              <div className="flex-shrink-0 pb-0 md:pb-3">
+              <div className="shrink-0 pb-0 md:pb-3">
                 <ToolBelt value={input} onChange={setInput} onSubmit={sendMessage} onStop={stopGeneration} disabled={!((selectedModel || runningModel || '').trim())} isLoading={isLoading} placeholder={(selectedModel || runningModel) ? 'Message...' : 'Select a model in Settings'} mcpEnabled={mcpEnabled} onMcpToggle={() => setMcpEnabled(!mcpEnabled)} artifactsEnabled={artifactsEnabled} onArtifactsToggle={() => setArtifactsEnabled(!artifactsEnabled)} onOpenMcpSettings={() => setMcpSettingsOpen(true)} onOpenChatSettings={() => setChatSettingsOpen(true)} hasSystemPrompt={systemPrompt.trim().length > 0} deepResearchEnabled={deepResearch.enabled} onDeepResearchToggle={() => { const nextEnabled = !deepResearch.enabled; setDeepResearch({ ...deepResearch, enabled: nextEnabled }); if (nextEnabled && !mcpEnabled) setMcpEnabled(true); }} elapsedSeconds={elapsedSeconds} queuedContext={queuedContext} onQueuedContextChange={setQueuedContext} />
               </div>
             </div>
@@ -762,5 +748,13 @@ export default function ChatPage() {
       <MCPSettingsModal isOpen={mcpSettingsOpen} onClose={() => setMcpSettingsOpen(false)} servers={mcpServers} onServersChange={setMcpServers} />
       <ChatSettingsModal isOpen={chatSettingsOpen} onClose={() => setChatSettingsOpen(false)} systemPrompt={systemPrompt} onSystemPromptChange={setSystemPrompt} availableModels={availableModels} selectedModel={selectedModel} onSelectedModelChange={async (modelId) => { setSelectedModel((modelId || '').trim()); if (currentSessionId) { try { await api.updateChatSession(currentSessionId, { model: modelId || undefined }); updateSessions(p => p.map(s => s.id === currentSessionId ? { ...s, model: modelId } : s)); } catch {} } }} onForkModels={async (modelIds) => { if (!currentSessionId) return; for (const m of modelIds) { try { const { session } = await api.forkChatSession(currentSessionId, { model: m }); updateSessions(p => [session, ...p]); } catch {} } await loadSessions(); }} deepResearch={deepResearch} onDeepResearchChange={s => { setDeepResearch(s); localStorage.setItem('vllm-studio-deep-research', JSON.stringify(s)); if (s.enabled && !mcpEnabled) setMcpEnabled(true); }} />
     </>
+  );
+}
+
+export default function ChatPage() {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center h-full"><div className="animate-pulse-soft"><Sparkles className="h-8 w-8 text-[#9a9590]" /></div></div>}>
+      <ChatPageContent />
+    </Suspense>
   );
 }

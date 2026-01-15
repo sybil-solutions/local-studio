@@ -165,8 +165,9 @@ export default function ConfigsPage() {
       setConnectionStatus('unknown');
       setStatusMessage('Testing...');
 
-      // Try to reach the backend health endpoint through the proxy
-      const res = await fetch('/api/proxy/health');
+      // Try to reach the backend health endpoint directly
+      const baseUrl = process.env.BACKEND_URL || process.env.NEXT_PUBLIC_BACKEND_URL || process.env.VLLM_STUDIO_BACKEND_URL || 'https://api.homelabai.org';
+      const res = await fetch(`${baseUrl}/health`);
       if (res.ok) {
         setConnectionStatus('connected');
         setStatusMessage('Connected');

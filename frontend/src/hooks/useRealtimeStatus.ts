@@ -2,6 +2,17 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import { useSSE } from './useSSE';
 import type { GPU, Metrics, ProcessInfo } from '@/lib/types';
 
+function getApiKey(): string {
+  const envKey = process.env.NEXT_PUBLIC_VLLM_STUDIO_API_KEY || process.env.VLLM_STUDIO_API_KEY;
+  if (envKey) return envKey;
+  if (typeof window === 'undefined') return '';
+  try {
+    return window.localStorage.getItem('vllmstudio_api_key') || '';
+  } catch {
+    return '';
+  }
+}
+
 interface StatusData {
   running: boolean;
   process: ProcessInfo | null;
@@ -41,7 +52,13 @@ interface SSEEvent {
  * @example
  * const { status, gpus, metrics, launchProgress } = useRealtimeStatus();
  */
-export function useRealtimeStatus(apiBaseUrl: string = '/api/proxy') {
+// eslint-disable-next-line import/no-default
+export function useRealtimeStatus(apiBaseUrl: string = (
+  process.env.BACKEND_URL ||
+  process.env.NEXT_PUBLIC_BACKEND_URL ||
+  process.env.VLLM_STUDIO_BACKEND_URL ||
+  'https://api.homelabai.org'
+)) {
   const [status, setStatus] = useState<StatusData | null>(null);
   const [gpus, setGpus] = useState<GPU[]>([]);
   const [metrics, setMetrics] = useState<Metrics | null>(null);
@@ -91,8 +108,14 @@ export function useRealtimeStatus(apiBaseUrl: string = '/api/proxy') {
     }
   }, []);
 
+  // Build SSE URL with API key as query param (EventSource doesn't support headers)
+  const apiKey = getApiKey();
+  const sseUrl = apiKey
+    ? `${apiBaseUrl}/events?api_key=${encodeURIComponent(apiKey)}`
+    : `${apiBaseUrl}/events`;
+
   const { isConnected, error, reconnectAttempts } = useSSE(
-    `${apiBaseUrl}/events`,
+    sseUrl,
     true,  // Always enabled
     {
       onMessage: handleMessage,
@@ -103,10 +126,16 @@ export function useRealtimeStatus(apiBaseUrl: string = '/api/proxy') {
 
   // Fetch status immediately (used on mount and visibility change)
   const fetchStatusNow = useCallback(async () => {
+    const headers: Record<string, string> = {};
+    const key = getApiKey();
+    if (key) {
+      headers['Authorization'] = `Bearer ${key}`;
+    }
+
     try {
       const [statusRes] = await Promise.all([
-        fetch(`${apiBaseUrl}/status`).then(r => r.json()),
-        fetch(`${apiBaseUrl}/health`).then(r => r.json()),
+        fetch(`${apiBaseUrl}/status`, { headers }).then(r => r.json()),
+        fetch(`${apiBaseUrl}/health`, { headers }).then(r => r.json()),
       ]);
 
       // Update status from polling
@@ -120,7 +149,7 @@ export function useRealtimeStatus(apiBaseUrl: string = '/api/proxy') {
 
       // Try to get GPU data from a separate endpoint if available
       try {
-        const gpuRes = await fetch(`${apiBaseUrl}/gpus`).then(r => r.json());
+        const gpuRes = await fetch(`${apiBaseUrl}/gpus`, { headers }).then(r => r.json());
         if (gpuRes?.gpus) {
           setGpus(gpuRes.gpus);
         }

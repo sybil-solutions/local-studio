@@ -11,6 +11,7 @@ interface EnhancedCodeBlockProps {
   children: string;
   className?: string;
   artifactsEnabled?: boolean;
+  isStreaming?: boolean;
   language?: string;
 }
 
@@ -18,6 +19,7 @@ export function EnhancedCodeBlock({
   children,
   className,
   artifactsEnabled,
+  isStreaming,
   language
 }: EnhancedCodeBlockProps) {
   const [copied, setCopied] = useState(false);

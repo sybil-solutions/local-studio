@@ -171,11 +171,35 @@ export interface ToolCall {
   server?: string;
 }
 
+export interface StoredToolCall extends ToolCall {
+  result?: { content?: string; isError?: boolean } | string | null;
+}
+
 export interface ToolResult {
   tool_call_id: string;
   content: string;
   name?: string;
   isError?: boolean;
+}
+
+export interface StoredMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  model?: string;
+  tool_calls?: StoredToolCall[];
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  total_tokens?: number;
+  request_prompt_tokens?: number | null;
+  request_tools_tokens?: number | null;
+  request_total_input_tokens?: number | null;
+  request_completion_tokens?: number | null;
+  estimated_cost_usd?: number | null;
+}
+
+export interface ChatSessionDetail extends ChatSession {
+  messages?: StoredMessage[];
 }
 
 // MCP types

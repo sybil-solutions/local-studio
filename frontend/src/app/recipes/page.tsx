@@ -156,7 +156,7 @@ function RecipesContent() {
   const handleLaunchRecipe = async (recipeId: string) => {
     setLaunching(true);
     try {
-      await api.launchRecipe(recipeId);
+      await api.launch(recipeId);
       // Wait for launch to complete
       await new Promise(resolve => setTimeout(resolve, 2000));
       await loadRecipes();
@@ -180,7 +180,12 @@ function RecipesContent() {
     if (!vramModel.trim()) return;
     setCalculating(true);
     try {
-      const result = await api.calculateVRAM(vramModel, contextLength, tpSize, kvDtype);
+      const result = await api.calculateVRAM({
+        model: vramModel,
+        context_length: contextLength,
+        tp_size: tpSize,
+        kv_dtype: kvDtype,
+      });
       setVramResult(result);
     } catch (e) {
       alert('Failed to calculate: ' + (e as Error).message);
@@ -278,8 +283,8 @@ function RecipesContent() {
                     <div className="text-sm font-medium text-[#4ade80]">
                       Model Running: {recipes.find(r => r.id === runningRecipeId)?.name}
                     </div>
-                    {launchProgress && (
-                      <div className="text-xs text-[#9a9088] mt-1">{launchProgress}</div>
+                    {launchProgress?.message && (
+                      <div className="text-xs text-[#9a9088] mt-1">{launchProgress.message}</div>
                     )}
                   </div>
                   <button

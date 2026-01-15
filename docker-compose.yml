@@ -113,10 +113,11 @@ services:
     container_name: vllm-studio-frontend
     network_mode: host
     environment:
-      - BACKEND_URL=http://localhost:8080
-      - LITELLM_URL=http://localhost:4100
-      - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY:-sk-master}
+      - VLLM_STUDIO_BACKEND_URL=${VLLM_STUDIO_BACKEND_URL:-https://api.homelabai.org}
+      - VLLM_STUDIO_API_KEY=${VLLM_STUDIO_API_KEY:-}
+      - BACKEND_URL=${VLLM_STUDIO_BACKEND_URL:-https://api.homelabai.org}
       - API_KEY=${VLLM_STUDIO_API_KEY:-}
+      - LITELLM_URL=${NEXT_PUBLIC_LITELLM_URL:-http://localhost:4100}
       - NEXT_PUBLIC_LITELLM_URL=${NEXT_PUBLIC_LITELLM_URL:-http://localhost:4100}
       - EXA_API_KEY=${EXA_API_KEY:-}
     restart: unless-stopped

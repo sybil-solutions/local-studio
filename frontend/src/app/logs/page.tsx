@@ -19,30 +19,6 @@ export default function LogsPage() {
   const logRef = useRef<HTMLDivElement>(null);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
 
-  useEffect(() => {
-    loadSessions();
-  }, [loadSessions]);
-
-  useEffect(() => {
-    if (selectedSession) loadLogContent(selectedSession);
-  }, [loadLogContent, selectedSession]);
-
-  useEffect(() => {
-    if (autoRefresh && selectedSession) {
-      intervalRef.current = setInterval(() => loadLogContent(selectedSession, true), 2000);
-    } else if (intervalRef.current) {
-      clearInterval(intervalRef.current);
-      intervalRef.current = null;
-    }
-    return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
-  }, [autoRefresh, loadLogContent, selectedSession]);
-
-  useEffect(() => {
-    if (autoScroll && logRef.current) {
-      logRef.current.scrollTop = logRef.current.scrollHeight;
-    }
-  }, [logContent, autoScroll]);
-
   const loadSessions = useCallback(async () => {
     try {
       const data = await api.getLogSessions();
@@ -67,6 +43,30 @@ export default function LogsPage() {
       if (!silent) setLoadingContent(false);
     }
   }, []);
+
+  useEffect(() => {
+    loadSessions();
+  }, [loadSessions]);
+
+  useEffect(() => {
+    if (selectedSession) loadLogContent(selectedSession);
+  }, [loadLogContent, selectedSession]);
+
+  useEffect(() => {
+    if (autoRefresh && selectedSession) {
+      intervalRef.current = setInterval(() => loadLogContent(selectedSession, true), 2000);
+    } else if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
+    return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
+  }, [autoRefresh, loadLogContent, selectedSession]);
+
+  useEffect(() => {
+    if (autoScroll && logRef.current) {
+      logRef.current.scrollTop = logRef.current.scrollHeight;
+    }
+  }, [logContent, autoScroll]);
 
   const deleteSession = async (sessionId: string) => {
     if (!confirm('Delete this log session?')) return;
