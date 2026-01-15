@@ -140,22 +140,11 @@ export default function LogsPage() {
         />
       )}
 
-      {/* Sidebar - hidden on mobile by default, shown when sidebarOpen */}
-      <div className={`
-        fixed md:relative inset-y-0 left-0 z-30
-        w-72 border-r border-[#363432] flex flex-col bg-[#1b1b1b]
-        transform transition-transform duration-200 ease-in-out
-        ${sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
-      `}>
+      {/* Sidebar - Desktop: relative position, Mobile: fixed with toggle */}
+      <div className="w-72 border-r border-[#363432] flex-col bg-[#1b1b1b] shrink-0 hidden md:flex">
         <div className="p-4 border-b border-[#363432]">
           <div className="flex items-center justify-between mb-3">
             <h1 className="text-sm font-medium text-[#9a9088] uppercase tracking-wider">Log Sessions</h1>
-            <button
-              onClick={() => setSidebarOpen(false)}
-              className="md:hidden p-1 hover:bg-[#2a2826] rounded"
-            >
-              <ChevronLeft className="h-4 w-4 text-[#9a9088]" />
-            </button>
           </div>
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-[#9a9088]" />
@@ -168,7 +157,6 @@ export default function LogsPage() {
             />
           </div>
         </div>
-
         <div className="flex-1 overflow-y-auto">
           {filteredSessions.length === 0 ? (
             <div className="p-4 text-center text-[#9a9088] text-sm">No log files found</div>
@@ -183,32 +171,79 @@ export default function LogsPage() {
               >
                 <div className="flex items-start justify-between gap-2">
                   <div className="flex-1 min-w-0">
-                    <div className="text-sm font-medium text-[#f0ebe3] truncate">
-                      {s.model || s.id}
-                    </div>
-                    <div className="text-[11px] text-[#9a9088] mt-1">
-                      {formatDateTime(s.created_at)}
-                    </div>
+                    <div className="text-sm font-medium text-[#f0ebe3] truncate">{s.model || s.id}</div>
+                    <div className="text-[11px] text-[#9a9088] mt-1">{formatDateTime(s.created_at)}</div>
                     {s.backend && (
                       <span className={`inline-block mt-1.5 px-1.5 py-0.5 rounded text-[10px] ${
                         s.backend === 'vllm' ? 'bg-[#6b9ac9]/10 text-[#6b9ac9]' : 'bg-[#9a6bc9]/10 text-[#9a6bc9]'
-                      }`}>
-                        {s.backend}
-                      </span>
+                      }`}>{s.backend}</span>
                     )}
                   </div>
                   <button
                     onClick={(e) => { e.stopPropagation(); deleteSession(s.id); }}
                     className="p-1 text-[#9a9088] opacity-0 group-hover:opacity-100 hover:text-[#c97a6b] transition-all"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </button>
+                  ><Trash2 className="h-3.5 w-3.5" /></button>
                 </div>
               </button>
             ))
           )}
         </div>
+        <div className="p-3 border-t border-[#363432] text-[11px] text-[#9a9088]">
+          {sessions.length} session{sessions.length !== 1 ? 's' : ''}
+        </div>
+      </div>
 
+      {/* Mobile Sidebar */}
+      <div className={`fixed inset-y-0 left-0 z-30 w-72 border-r border-[#363432] flex flex-col bg-[#1b1b1b] transform transition-transform duration-200 ease-in-out md:hidden ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+        <div className="p-4 border-b border-[#363432]">
+          <div className="flex items-center justify-between mb-3">
+            <h1 className="text-sm font-medium text-[#9a9088] uppercase tracking-wider">Log Sessions</h1>
+            <button onClick={() => setSidebarOpen(false)} className="p-1 hover:bg-[#2a2826] rounded">
+              <ChevronLeft className="h-4 w-4 text-[#9a9088]" />
+            </button>
+          </div>
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-[#9a9088]" />
+            <input
+              type="text"
+              value={filter}
+              onChange={(e) => setFilter(e.target.value)}
+              placeholder="Filter..."
+              className="w-full pl-9 pr-3 py-2 bg-[#1e1e1e] border border-[#363432] rounded-lg text-sm text-[#f0ebe3] placeholder-[#9a9088]/50 focus:outline-none focus:border-[#8b7355]"
+            />
+          </div>
+        </div>
+        <div className="flex-1 overflow-y-auto">
+          {filteredSessions.length === 0 ? (
+            <div className="p-4 text-center text-[#9a9088] text-sm">No log files found</div>
+          ) : (
+            filteredSessions.map((s) => (
+              <button
+                key={s.id}
+                onClick={() => handleSelectSession(s.id)}
+                className={`w-full text-left p-3 border-b border-[#363432]/50 transition-colors group ${
+                  selectedSession === s.id ? 'bg-[#2a2826]' : 'hover:bg-[#1e1e1e]'
+                }`}
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-medium text-[#f0ebe3] truncate">{s.model || s.id}</div>
+                    <div className="text-[11px] text-[#9a9088] mt-1">{formatDateTime(s.created_at)}</div>
+                    {s.backend && (
+                      <span className={`inline-block mt-1.5 px-1.5 py-0.5 rounded text-[10px] ${
+                        s.backend === 'vllm' ? 'bg-[#6b9ac9]/10 text-[#6b9ac9]' : 'bg-[#9a6bc9]/10 text-[#9a6bc9]'
+                      }`}>{s.backend}</span>
+                    )}
+                  </div>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); deleteSession(s.id); }}
+                    className="p-1 text-[#9a9088] opacity-0 group-hover:opacity-100 hover:text-[#c97a6b] transition-all"
+                  ><Trash2 className="h-3.5 w-3.5" /></button>
+                </div>
+              </button>
+            ))
+          )}
+        </div>
         <div className="p-3 border-t border-[#363432] text-[11px] text-[#9a9088]">
           {sessions.length} session{sessions.length !== 1 ? 's' : ''}
         </div>

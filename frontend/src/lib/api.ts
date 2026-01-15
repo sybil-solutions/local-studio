@@ -427,13 +427,17 @@ class APIClient {
   }
 }
 
-export const api = new APIClient(
+// For client-side calls, use the proxy which handles authentication
+// The proxy adds the API key server-side, avoiding CORS and auth issues
+const isClient = typeof window !== 'undefined';
+const clientBaseUrl = isClient ? '/api/proxy' : (
   process.env.BACKEND_URL ||
   process.env.NEXT_PUBLIC_BACKEND_URL ||
   process.env.VLLM_STUDIO_BACKEND_URL ||
-  'https://api.homelabai.org',
-  false
+  'https://api.homelabai.org'
 );
+
+export const api = new APIClient(clientBaseUrl, isClient);
 
 export function createServerAPI(backendUrl?: string) {
   return new APIClient(backendUrl || process.env.BACKEND_URL || 'http://localhost:8080');
