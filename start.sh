@@ -37,14 +37,11 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# Activate venv if exists
-[ -d ".venv" ] && source .venv/bin/activate
-
 # Start
 if [ "$DEV_MODE" = true ]; then
     echo -e "${GREEN}Starting in dev mode...${NC}"
-    python -m controller.cli --port "$PORT" --reload
+    VLLM_STUDIO_PORT="$PORT" bun --watch controller/src/main.ts
 else
     echo -e "${GREEN}Starting controller on port $PORT...${NC}"
-    python -m controller.cli --port "$PORT"
+    VLLM_STUDIO_PORT="$PORT" bun controller/src/main.ts
 fi

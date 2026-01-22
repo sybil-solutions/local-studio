@@ -1,5 +1,5 @@
 {
-  "name": "vllm-studio-controller-new",
+  "name": "vllm-studio-controller",
   "version": "0.3.0",
   "type": "module",
   "private": true,

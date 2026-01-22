@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "vllm-studio-controller-new",
+      "name": "vllm-studio-controller",
       "dependencies": {
         "dotenv": "16.6.1",
         "hono": "4.6.12",

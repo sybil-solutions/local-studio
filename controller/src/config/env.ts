@@ -47,14 +47,14 @@ export const createConfig = (): Config => {
   const localDataDirectory = resolve(cwd, "data");
   const parentDataDirectory = resolve(cwd, "..", "data");
   const defaultDataDirectory =
-    basename(cwd) === "controller-new" && existsSync(parentDataDirectory)
+    basename(cwd) === "controller" && existsSync(parentDataDirectory)
       ? parentDataDirectory
       : localDataDirectory;
   const defaultDatabasePath = resolve(defaultDataDirectory, "controller.db");
 
   const schema = z.object({
     VLLM_STUDIO_HOST: z.string().default("0.0.0.0"),
-    VLLM_STUDIO_PORT: z.coerce.number().int().positive().default(8002),
+    VLLM_STUDIO_PORT: z.coerce.number().int().positive().default(8080),
     VLLM_STUDIO_API_KEY: z.string().optional(),
     VLLM_STUDIO_INFERENCE_PORT: z.coerce.number().int().positive().default(8000),
     VLLM_STUDIO_DATA_DIR: z.string().default(defaultDataDirectory),

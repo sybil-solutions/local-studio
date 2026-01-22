@@ -43,7 +43,7 @@ pip install -e .
 
 # Run controller
 ./start.sh              # Production
-python -m controller.cli --reload  # Development with reload
+bun --watch controller/src/main.ts  # Development with reload
 
 # Run all services
 docker compose up -d
