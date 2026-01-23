@@ -159,6 +159,20 @@ function ChatMessageItemBase({
   // For assistant messages, parse thinking content and get mainContent without <think> tags
   const parsedThinking = !isUser ? thinkingParser.parse(rawTextContent) : null;
   const textContent = isUser ? rawTextContent : parsedThinking?.mainContent || "";
+
+  // DEBUG: Log if </think> tag appears in textContent (should never happen)
+  if (!isUser && textContent.includes("</think>")) {
+    console.error("[THINKING BUG] </think> tag found in textContent!", {
+      messageId: message.id,
+      rawTextContent: rawTextContent.substring(0, 500),
+      textContent: textContent.substring(0, 500),
+      parsedThinking,
+      partsTypes: message.parts.map((p) => p.type),
+      textParts: message.parts
+        .filter((p) => p.type === "text")
+        .map((p) => ({ text: (p as { text: string }).text.substring(0, 200) })),
+    });
+  }
   const thinkingContent = parsedThinking?.thinkingContent || "";
   const isThinkingActive = isStreaming && !textContent && !!thinkingContent;
 

@@ -9,6 +9,7 @@ import { registerMcpRoutes } from "../routes/mcp";
 import { registerModelsRoutes } from "../routes/models";
 import { registerMonitoringRoutes } from "../routes/monitoring";
 import { registerProxyRoutes } from "../routes/proxy";
+import { registerProxyRoutesDebug } from "../routes/proxy-debug";
 import { registerSystemRoutes } from "../routes/system";
 import { registerUsageRoutes } from "../routes/usage";
 import { registerTokenizationRoutes } from "../routes/tokenization";
@@ -43,6 +44,7 @@ export const createApp = (context: AppContext): Hono => {
   registerMonitoringRoutes(app, context);
   registerMcpRoutes(app, context);
   registerProxyRoutes(app, context);
+  registerProxyRoutesDebug(app, context);
   registerUsageRoutes(app, context);
   registerTokenizationRoutes(app, context);
 
