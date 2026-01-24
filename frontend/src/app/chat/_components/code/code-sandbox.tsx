@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useRef, useEffect, useCallback, useId } from "react";
 import {
   Play,
   Square,
@@ -12,6 +12,7 @@ import {
   RefreshCw,
   AlertTriangle,
 } from "lucide-react";
+import { useAppStore } from "@/store";
 
 interface CodeSandboxProps {
   code: string;
@@ -169,10 +170,21 @@ export function CodeSandbox({
   onOutput,
   onError,
 }: CodeSandboxProps) {
-  const [isRunning, setIsRunning] = useState(false);
-  const [isFullscreen, setIsFullscreen] = useState(false);
-  const [copied, setCopied] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const sandboxId = useId();
+  const sandboxState = useAppStore(
+    (state) =>
+      state.codeSandboxState[sandboxId] ?? {
+        isRunning: false,
+        isFullscreen: false,
+        copied: false,
+        error: null,
+      },
+  );
+  const updateCodeSandboxState = useAppStore((state) => state.updateCodeSandboxState);
+  const { isRunning, isFullscreen, copied, error } = sandboxState;
+  const updateState = (partial: Partial<typeof sandboxState>) => {
+    updateCodeSandboxState(sandboxId, (prev) => ({ ...prev, ...partial }));
+  };
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
   const getSrcDoc = useCallback(() => {
@@ -189,32 +201,31 @@ export function CodeSandbox({
   }, [code, language]);
 
   const runCode = useCallback(() => {
-    setIsRunning(true);
-    setError(null);
+    updateState({ isRunning: true, error: null });
 
     if (iframeRef.current) {
       try {
         iframeRef.current.srcdoc = getSrcDoc();
       } catch (e) {
         const errorMsg = e instanceof Error ? e.message : "Failed to run code";
-        setError(errorMsg);
+        updateState({ error: errorMsg });
         onError?.(errorMsg);
       }
     }
-  }, [getSrcDoc, onError]);
+  }, [getSrcDoc, onError, updateState]);
 
   const stopCode = useCallback(() => {
-    setIsRunning(false);
+    updateState({ isRunning: false });
     if (iframeRef.current) {
       iframeRef.current.srcdoc = "";
     }
-  }, []);
+  }, [updateState]);
 
   const copyCode = useCallback(() => {
     navigator.clipboard.writeText(code);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  }, [code]);
+    updateState({ copied: true });
+    setTimeout(() => updateState({ copied: false }), 2000);
+  }, [code, updateState]);
 
   const downloadCode = useCallback(() => {
     const blob = new Blob([getSrcDoc()], { type: "text/html" });
@@ -241,7 +252,7 @@ export function CodeSandbox({
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
       if (event.data?.type === "error") {
-        setError(event.data.message);
+        updateState({ error: event.data.message });
         onError?.(event.data.message);
       } else if (event.data?.type === "output") {
         onOutput?.(event.data.message);
@@ -250,7 +261,7 @@ export function CodeSandbox({
 
     window.addEventListener("message", handleMessage);
     return () => window.removeEventListener("message", handleMessage);
-  }, [onError, onOutput]);
+  }, [onError, onOutput, updateState]);
 
   // Toolbar buttons component to avoid duplication
   const renderToolbarButtons = (inFooter = false) => (
@@ -310,7 +321,7 @@ export function CodeSandbox({
         onClick={(e) => {
           e.stopPropagation();
           e.preventDefault();
-          setIsFullscreen(!isFullscreen);
+          updateState({ isFullscreen: !isFullscreen });
         }}
         className="p-2 md:p-1.5 rounded bg-(--background) hover:bg-(--card-hover) transition-colors ml-1"
         title={isFullscreen ? "Exit fullscreen" : "Fullscreen"}
@@ -328,7 +339,10 @@ export function CodeSandbox({
     <>
       {/* Fullscreen backdrop */}
       {isFullscreen && (
-        <div className="fixed inset-0 z-[100] bg-black/80" onClick={() => setIsFullscreen(false)} />
+        <div
+          className="fixed inset-0 z-[100] bg-black/80"
+          onClick={() => updateState({ isFullscreen: false })}
+        />
       )}
       <div
         className={`rounded-lg border border-(--border) overflow-hidden code-sandbox ${
@@ -359,7 +373,7 @@ export function CodeSandbox({
           {/* In fullscreen, just show minimize button in header */}
           {isFullscreen && (
             <button
-              onClick={() => setIsFullscreen(false)}
+              onClick={() => updateState({ isFullscreen: false })}
               className="p-2 rounded hover:bg-(--background) transition-colors"
               title="Exit fullscreen"
             >

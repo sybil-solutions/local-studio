@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useRef, useEffect, useCallback } from 'react';
 import {
   Code,
   Eye,
@@ -26,6 +26,7 @@ import {
   Layers,
 } from 'lucide-react';
 import type { Artifact } from '@/lib/types';
+import { useAppStore } from '@/store';
 
 // ============================================================================
 // ARTIFACT VIEWER - Full-featured viewer with pan/zoom/interact
@@ -219,14 +220,33 @@ const HTML_TEMPLATE = (code: string) => {
 };
 
 export function ArtifactViewer({ artifact, isActive = true, onClose }: ArtifactViewerProps) {
-  const [isFullscreen, setIsFullscreen] = useState(false);
-  const [showCode, setShowCode] = useState(false);
-  const [copied, setCopied] = useState(false);
-  const [scale, setScale] = useState(1);
-  const [position, setPosition] = useState({ x: 0, y: 0 });
-  const [isDragging, setIsDragging] = useState(false);
-  const [isRunning, setIsRunning] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const viewerState = useAppStore(
+    (state) =>
+      state.artifactViewerState[artifact.id] ?? {
+        isFullscreen: false,
+        showCode: false,
+        copied: false,
+        scale: 1,
+        position: { x: 0, y: 0 },
+        isDragging: false,
+        isRunning: true,
+        error: null,
+      },
+  );
+  const updateArtifactViewerState = useAppStore((state) => state.updateArtifactViewerState);
+  const {
+    isFullscreen,
+    showCode,
+    copied,
+    scale,
+    position,
+    isDragging,
+    isRunning,
+    error,
+  } = viewerState;
+  const updateState = (partial: Partial<typeof viewerState>) => {
+    updateArtifactViewerState(artifact.id, (prev) => ({ ...prev, ...partial }));
+  };
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const dragStartRef = useRef({ x: 0, y: 0, posX: 0, posY: 0 });
@@ -253,19 +273,18 @@ export function ArtifactViewer({ artifact, isActive = true, onClose }: ArtifactV
 
   // Run/refresh the artifact
   const runArtifact = useCallback(() => {
-    setIsRunning(true);
-    setError(null);
+    updateState({ isRunning: true, error: null });
     if (iframeRef.current) {
       iframeRef.current.srcdoc = getSrcDoc();
     }
-  }, [getSrcDoc]);
+  }, [getSrcDoc, updateState]);
 
   const stopArtifact = useCallback(() => {
-    setIsRunning(false);
+    updateState({ isRunning: false });
     if (iframeRef.current) {
       iframeRef.current.srcdoc = '';
     }
-  }, []);
+  }, [updateState]);
 
   // Auto-run on mount and when artifact changes
   useEffect(() => {
@@ -278,7 +297,7 @@ export function ArtifactViewer({ artifact, isActive = true, onClose }: ArtifactV
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
       if (event.data?.type === 'error') {
-        setError(event.data.message);
+        updateState({ error: event.data.message });
       }
     };
     window.addEventListener('message', handleMessage);
@@ -286,14 +305,14 @@ export function ArtifactViewer({ artifact, isActive = true, onClose }: ArtifactV
   }, []);
 
   // Zoom controls
-  const zoomIn = () => setScale(s => Math.min(s + 0.25, 3));
-  const zoomOut = () => setScale(s => Math.max(s - 0.25, 0.25));
-  const resetView = () => { setScale(1); setPosition({ x: 0, y: 0 }); };
+  const zoomIn = () => updateState({ scale: Math.min(scale + 0.25, 3) });
+  const zoomOut = () => updateState({ scale: Math.max(scale - 0.25, 0.25) });
+  const resetView = () => updateState({ scale: 1, position: { x: 0, y: 0 } });
 
   // Drag/pan handling
   const handleMouseDown = (e: React.MouseEvent) => {
     if (e.button !== 0) return; // Only left click
-    setIsDragging(true);
+    updateState({ isDragging: true });
     dragStartRef.current = { x: e.clientX, y: e.clientY, posX: position.x, posY: position.y };
   };
 
@@ -301,12 +320,12 @@ export function ArtifactViewer({ artifact, isActive = true, onClose }: ArtifactV
     if (!isDragging) return;
     const dx = e.clientX - dragStartRef.current.x;
     const dy = e.clientY - dragStartRef.current.y;
-    setPosition({ x: dragStartRef.current.posX + dx, y: dragStartRef.current.posY + dy });
-  }, [isDragging]);
+    updateState({ position: { x: dragStartRef.current.posX + dx, y: dragStartRef.current.posY + dy } });
+  }, [isDragging, updateState]);
 
   const handleMouseUp = useCallback(() => {
-    setIsDragging(false);
-  }, []);
+    updateState({ isDragging: false });
+  }, [updateState]);
 
   useEffect(() => {
     if (isDragging) {
@@ -324,14 +343,14 @@ export function ArtifactViewer({ artifact, isActive = true, onClose }: ArtifactV
     if (e.ctrlKey || e.metaKey) {
       e.preventDefault();
       const delta = e.deltaY > 0 ? -0.1 : 0.1;
-      setScale(s => Math.max(0.25, Math.min(3, s + delta)));
+      updateState({ scale: Math.max(0.25, Math.min(3, scale + delta)) });
     }
   };
 
   const handleCopy = async () => {
     await navigator.clipboard.writeText(artifact.code);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    updateState({ copied: true });
+    setTimeout(() => updateState({ copied: false }), 2000);
   };
 
   const handleDownload = () => {
@@ -381,7 +400,7 @@ export function ArtifactViewer({ artifact, isActive = true, onClose }: ArtifactV
           <button onClick={runArtifact} className="p-1.5 rounded hover:bg-[var(--background)]" title="Refresh">
             <RefreshCw className="h-3.5 w-3.5 text-[#9a9590]" />
           </button>
-          <button onClick={() => setShowCode(!showCode)} className="p-1.5 rounded hover:bg-[var(--background)]" title={showCode ? 'Hide code' : 'Show code'}>
+          <button onClick={() => updateState({ showCode: !showCode })} className="p-1.5 rounded hover:bg-[var(--background)]" title={showCode ? 'Hide code' : 'Show code'}>
             {showCode ? <EyeOff className="h-3.5 w-3.5 text-[#9a9590]" /> : <Eye className="h-3.5 w-3.5 text-[#9a9590]" />}
           </button>
           <button onClick={handleCopy} className="p-1.5 rounded hover:bg-[var(--background)]" title="Copy">
@@ -394,7 +413,7 @@ export function ArtifactViewer({ artifact, isActive = true, onClose }: ArtifactV
             <ExternalLink className="h-3.5 w-3.5 text-[#9a9590]" />
           </button>
           {!inModal && (
-            <button onClick={() => setIsFullscreen(true)} className="p-1.5 rounded hover:bg-[var(--background)]" title="Fullscreen">
+            <button onClick={() => updateState({ isFullscreen: true })} className="p-1.5 rounded hover:bg-[var(--background)]" title="Fullscreen">
               <Maximize2 className="h-3.5 w-3.5" />
             </button>
           )}
@@ -477,9 +496,12 @@ export function ArtifactViewer({ artifact, isActive = true, onClose }: ArtifactV
       {/* Fullscreen modal */}
       {isFullscreen && (
         <>
-          <div className="fixed inset-0 z-[100] bg-black/80" onClick={() => setIsFullscreen(false)} />
+          <div
+            className="fixed inset-0 z-[100] bg-black/80"
+            onClick={() => updateState({ isFullscreen: false })}
+          />
           <div className="fixed inset-3 md:inset-6 z-[101] bg-[var(--card)] rounded-xl border border-[var(--border)] overflow-hidden flex flex-col">
-            <ViewerContent inModal onClose={() => setIsFullscreen(false)} />
+            <ViewerContent inModal onClose={() => updateState({ isFullscreen: false })} />
           </div>
         </>
       )}
@@ -498,7 +520,8 @@ interface ArtifactPanelProps {
 }
 
 export function ArtifactPanel({ artifacts, onClose, isOpen }: ArtifactPanelProps) {
-  const [selectedArtifactId, setSelectedArtifactId] = useState<string | null>(null);
+  const selectedArtifactId = useAppStore((state) => state.artifactPanelSelectedId);
+  const setSelectedArtifactId = useAppStore((state) => state.setArtifactPanelSelectedId);
 
   // Auto-select latest artifact when artifacts change
   useEffect(() => {

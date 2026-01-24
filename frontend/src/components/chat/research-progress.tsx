@@ -1,7 +1,8 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useEffect } from 'react';
 import { Search, Globe, FileText, CheckCircle, XCircle, Loader2, ExternalLink, BookOpen, Brain, Sparkles } from 'lucide-react';
+import { useAppStore } from '@/store';
 
 export interface ResearchSource {
   title: string;
@@ -36,7 +37,8 @@ export function ResearchProgressIndicator({
   onCancel,
   className = '',
 }: ResearchProgressProps) {
-  const [expanded, setExpanded] = useState(true);
+  const expanded = useAppStore((state) => state.legacyThinkingExpanded["research-progress"] ?? true);
+  const setLegacyThinkingExpanded = useAppStore((state) => state.setLegacyThinkingExpanded);
 
   if (!progress) return null;
 
@@ -63,7 +65,7 @@ export function ResearchProgressIndicator({
     <div className={`bg-[var(--card)] border border-[var(--border)] rounded-lg overflow-hidden ${className}`}>
       {/* Header */}
       <button
-        onClick={() => setExpanded(!expanded)}
+        onClick={() => setLegacyThinkingExpanded("research-progress", !expanded)}
         className="w-full px-4 py-3 flex items-center justify-between hover:bg-[var(--accent)] transition-colors"
       >
         <div className="flex items-center gap-3">

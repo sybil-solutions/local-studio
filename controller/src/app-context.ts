@@ -31,7 +31,7 @@ export const createAppContext = (): AppContext => {
   const eventManager = createEventManager();
   const launchState = createLaunchState();
   const { registry: metricsRegistry, metrics } = createMetrics();
-  const processManager = createProcessManager(config, logger);
+  const processManager = createProcessManager(config, logger, eventManager);
 
   lifetimeMetricsStore.ensureFirstStarted();
 

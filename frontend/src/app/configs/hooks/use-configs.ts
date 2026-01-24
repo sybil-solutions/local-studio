@@ -24,7 +24,7 @@ export function useConfigs() {
     apiKey: "",
     hasApiKey: false,
     voiceUrl: "",
-    voiceModel: "whisper-1",
+    voiceModel: "whisper-large-v3-turbo",
   });
   const [apiSettingsLoading, setApiSettingsLoading] = useState(true);
   const [showApiKey, setShowApiKey] = useState(false);
@@ -44,7 +44,7 @@ export function useConfigs() {
           apiKey: settings.apiKey || "",
           hasApiKey: settings.hasApiKey || false,
           voiceUrl: settings.voiceUrl || "",
-          voiceModel: settings.voiceModel || "whisper-1",
+          voiceModel: settings.voiceModel || "whisper-large-v3-turbo",
         });
       }
     } catch (e) {

@@ -1,6 +1,5 @@
 'use client';
 
-import { useState } from 'react';
 import {
   ChevronRight,
   Loader2,
@@ -16,6 +15,7 @@ import {
   ExternalLink,
 } from 'lucide-react';
 import type { ToolCall, ToolResult } from '@/lib/types';
+import { useAppStore } from '@/store';
 
 interface ToolCallCardProps {
   toolCall: ToolCall;
@@ -25,19 +25,25 @@ interface ToolCallCardProps {
 }
 
 interface ToolResultModalProps {
+  toolCallId: string;
   toolName: string;
   result: ToolResult;
   onClose: () => void;
 }
 
-function ToolResultModal({ toolName, result, onClose }: ToolResultModalProps) {
-  const [copied, setCopied] = useState(false);
+function ToolResultModal({ toolCallId, toolName, result, onClose }: ToolResultModalProps) {
+  const modalKey = `${toolCallId}-modal`;
+  const modalState = useAppStore(
+    (state) => state.legacyToolCallCardState[modalKey] ?? { isExpanded: false, showModal: false, modalCopied: false },
+  );
+  const setLegacyToolCallCardState = useAppStore((state) => state.setLegacyToolCallCardState);
+  const copied = modalState.modalCopied;
 
   const handleCopy = async () => {
     try {
       await navigator.clipboard.writeText(result.content);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      setLegacyToolCallCardState(modalKey, { modalCopied: true });
+      setTimeout(() => setLegacyToolCallCardState(modalKey, { modalCopied: false }), 2000);
     } catch (e) {
       console.error('Failed to copy:', e);
     }
@@ -100,8 +106,16 @@ const TOOL_ICONS: Record<string, React.ReactNode> = {
 };
 
 export function ToolCallCard({ toolCall, result, isExecuting, compact = false }: ToolCallCardProps) {
-  const [isExpanded, setIsExpanded] = useState(false);
-  const [showModal, setShowModal] = useState(false);
+  const cardState = useAppStore(
+    (state) =>
+      state.legacyToolCallCardState[toolCall.id] ?? {
+        isExpanded: false,
+        showModal: false,
+        modalCopied: false,
+      },
+  );
+  const setLegacyToolCallCardState = useAppStore((state) => state.setLegacyToolCallCardState);
+  const { isExpanded, showModal } = cardState;
 
   // Parse server__toolname format
   const fullName = toolCall.function.name;
@@ -157,16 +171,17 @@ export function ToolCallCard({ toolCall, result, isExecuting, compact = false }:
     <>
       {showModal && result && (
         <ToolResultModal
+          toolCallId={toolCall.id}
           toolName={toolName}
           result={result}
-          onClose={() => setShowModal(false)}
+          onClose={() => setLegacyToolCallCardState(toolCall.id, { showModal: false })}
         />
       )}
 
       <div className="group">
         {/* Minimal header */}
         <button
-          onClick={() => setIsExpanded(!isExpanded)}
+          onClick={() => setLegacyToolCallCardState(toolCall.id, { isExpanded: !isExpanded })}
           className="flex items-center gap-2 text-[11px] text-[#9a9088] hover:text-[#c9a66b] transition-colors w-full text-left"
         >
           <span className={`transition-transform duration-200 ${isExpanded ? 'rotate-90' : ''}`}>
@@ -209,7 +224,10 @@ export function ToolCallCard({ toolCall, result, isExecuting, compact = false }:
                   </span>
                   {isLongResult && (
                     <button
-                      onClick={(e) => { e.stopPropagation(); setShowModal(true); }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setLegacyToolCallCardState(toolCall.id, { showModal: true });
+                      }}
                       className="flex items-center gap-1 text-[10px] text-[#9a9088] hover:text-[#c9a66b]"
                     >
                       <Maximize2 className="h-3 w-3" />

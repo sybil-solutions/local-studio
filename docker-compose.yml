@@ -91,6 +91,8 @@ services:
         NEXT_PUBLIC_API_URL: ""
     container_name: vllm-studio-frontend
     network_mode: host
+    volumes:
+      - ./data:/app/data
     environment:
       - BACKEND_URL=http://localhost:8080
       - LITELLM_URL=http://localhost:4100

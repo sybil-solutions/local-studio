@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
+import { useAppStore } from "@/store";
 
 // Simplified splash canvas for chat-v2
 // Full animation code from original component
@@ -367,7 +368,8 @@ const drawRings = (ctx: CanvasRenderingContext2D, geometry: SplashGeometry, time
 export function ChatSplashCanvas({ active }: { active: boolean }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const wrapperRef = useRef<HTMLDivElement | null>(null);
-  const [isMobile, setIsMobile] = useState(false);
+  const isMobile = useAppStore((state) => state.splashIsMobile);
+  const setIsMobile = useAppStore((state) => state.setSplashIsMobile);
 
   useEffect(() => {
     // Check if mobile on mount and resize
@@ -375,7 +377,7 @@ export function ChatSplashCanvas({ active }: { active: boolean }) {
     checkMobile();
     window.addEventListener("resize", checkMobile);
     return () => window.removeEventListener("resize", checkMobile);
-  }, []);
+  }, [setIsMobile]);
 
   useEffect(() => {
     // Skip canvas animation on mobile

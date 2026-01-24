@@ -1,10 +1,10 @@
 'use client';
 
-import { useState } from 'react';
 import Link from 'next/link';
 import { Layers, ChevronDown, Plus, Search, Menu } from 'lucide-react';
 import { ThemeToggle } from '@/components/chat/theme-toggle';
 import type { ChatSession } from '@/lib/types';
+import { useAppStore } from '@/store';
 
 interface ChatMobileHeaderProps {
   currentSessionTitle: string;
@@ -23,8 +23,10 @@ export function ChatMobileHeader({
   onNewSession,
   onOpenSidebar,
 }: ChatMobileHeaderProps) {
-  const [recentChatsOpen, setRecentChatsOpen] = useState(false);
-  const [chatSearchQuery, setChatSearchQuery] = useState('');
+  const recentChatsOpen = useAppStore((state) => state.recentChatsOpen);
+  const setRecentChatsOpen = useAppStore((state) => state.setRecentChatsOpen);
+  const chatSearchQuery = useAppStore((state) => state.chatSearchQuery);
+  const setChatSearchQuery = useAppStore((state) => state.setChatSearchQuery);
 
   const filteredSessions = chatSearchQuery
     ? sessions.filter((s) => s.title.toLowerCase().includes(chatSearchQuery.toLowerCase()))

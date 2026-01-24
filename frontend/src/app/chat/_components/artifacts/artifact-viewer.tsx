@@ -1,7 +1,6 @@
 "use client";
 
 import {
-  useState,
   useRef,
   useEffect,
   useCallback,
@@ -31,6 +30,7 @@ import {
   ExternalLink,
 } from "lucide-react";
 import type { Artifact } from "@/lib/types";
+import { useAppStore } from "@/store";
 
 // SVG template - wraps SVG in proper HTML document for iframe rendering
 const SVG_TEMPLATE = (svgCode: string, scale: number = 1) => `
@@ -436,14 +436,33 @@ function ArtifactViewerContent({
 }
 
 export function ArtifactViewer({ artifact, isActive = true }: ArtifactViewerProps) {
-  const [isFullscreen, setIsFullscreen] = useState(false);
-  const [showCode, setShowCode] = useState(false);
-  const [copied, setCopied] = useState(false);
-  const [scale, setScale] = useState(1);
-  const [position, setPosition] = useState({ x: 0, y: 0 });
-  const [isDragging, setIsDragging] = useState(false);
-  const [isRunning, setIsRunning] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const viewerState = useAppStore(
+    (state) =>
+      state.artifactViewerState[artifact.id] ?? {
+        isFullscreen: false,
+        showCode: false,
+        copied: false,
+        scale: 1,
+        position: { x: 0, y: 0 },
+        isDragging: false,
+        isRunning: true,
+        error: null,
+      },
+  );
+  const updateArtifactViewerState = useAppStore((state) => state.updateArtifactViewerState);
+  const {
+    isFullscreen,
+    showCode,
+    copied,
+    scale,
+    position,
+    isDragging,
+    isRunning,
+    error,
+  } = viewerState;
+  const updateState = (partial: Partial<typeof viewerState>) => {
+    updateArtifactViewerState(artifact.id, (prev) => ({ ...prev, ...partial }));
+  };
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const dragStartRef = useRef({ x: 0, y: 0, posX: 0, posY: 0 });
@@ -470,19 +489,18 @@ export function ArtifactViewer({ artifact, isActive = true }: ArtifactViewerProp
   }, [artifact, scale]);
 
   const runArtifact = useCallback(() => {
-    setIsRunning(true);
-    setError(null);
+    updateState({ isRunning: true, error: null });
     if (iframeRef.current) {
       iframeRef.current.srcdoc = getSrcDoc();
     }
-  }, [getSrcDoc]);
+  }, [getSrcDoc, updateState]);
 
   const stopArtifact = useCallback(() => {
-    setIsRunning(false);
+    updateState({ isRunning: false });
     if (iframeRef.current) {
       iframeRef.current.srcdoc = "";
     }
-  }, []);
+  }, [updateState]);
 
   useEffect(() => {
     if (!isActive) return;
@@ -495,23 +513,26 @@ export function ArtifactViewer({ artifact, isActive = true }: ArtifactViewerProp
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
       if (event.data?.type === "error") {
-        setError(event.data.message);
+        updateState({ error: event.data.message });
       }
     };
     window.addEventListener("message", handleMessage);
     return () => window.removeEventListener("message", handleMessage);
-  }, []);
+  }, [updateState]);
 
-  const zoomIn = () => setScale((s) => Math.min(s + 0.25, 3));
-  const zoomOut = () => setScale((s) => Math.max(s - 0.25, 0.25));
+  const zoomIn = () => {
+    updateState({ scale: Math.min(scale + 0.25, 3) });
+  };
+  const zoomOut = () => {
+    updateState({ scale: Math.max(scale - 0.25, 0.25) });
+  };
   const resetView = () => {
-    setScale(1);
-    setPosition({ x: 0, y: 0 });
+    updateState({ scale: 1, position: { x: 0, y: 0 } });
   };
 
   const handleMouseDown = (e: ReactMouseEvent) => {
     if (e.button !== 0) return;
-    setIsDragging(true);
+    updateState({ isDragging: true });
     dragStartRef.current = { x: e.clientX, y: e.clientY, posX: position.x, posY: position.y };
   };
 
@@ -520,14 +541,16 @@ export function ArtifactViewer({ artifact, isActive = true }: ArtifactViewerProp
       if (!isDragging) return;
       const dx = e.clientX - dragStartRef.current.x;
       const dy = e.clientY - dragStartRef.current.y;
-      setPosition({ x: dragStartRef.current.posX + dx, y: dragStartRef.current.posY + dy });
+      updateState({
+        position: { x: dragStartRef.current.posX + dx, y: dragStartRef.current.posY + dy },
+      });
     },
-    [isDragging],
+    [isDragging, updateState],
   );
 
   const handleMouseUp = useCallback(() => {
-    setIsDragging(false);
-  }, []);
+    updateState({ isDragging: false });
+  }, [updateState]);
 
   useEffect(() => {
     if (isDragging) {
@@ -544,14 +567,14 @@ export function ArtifactViewer({ artifact, isActive = true }: ArtifactViewerProp
     if (e.ctrlKey || e.metaKey) {
       e.preventDefault();
       const delta = e.deltaY > 0 ? -0.1 : 0.1;
-      setScale((s) => Math.max(0.25, Math.min(3, s + delta)));
+      updateState({ scale: Math.max(0.25, Math.min(3, scale + delta)) });
     }
   };
 
   const handleCopy = async () => {
     await navigator.clipboard.writeText(artifact.code);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    updateState({ copied: true });
+    setTimeout(() => updateState({ copied: false }), 2000);
   };
 
   const handleDownload = () => {
@@ -599,11 +622,11 @@ export function ArtifactViewer({ artifact, isActive = true }: ArtifactViewerProp
     onRun: runArtifact,
     onStop: stopArtifact,
     onRefresh: runArtifact,
-    onToggleCode: () => setShowCode((prev) => !prev),
+    onToggleCode: () => updateState({ showCode: !showCode }),
     onCopy: handleCopy,
     onDownload: handleDownload,
     onOpenExternal: handleOpenExternal,
-    onEnterFullscreen: () => setIsFullscreen(true),
+    onEnterFullscreen: () => updateState({ isFullscreen: true }),
     zoomIn,
     zoomOut,
     resetView,
@@ -624,12 +647,15 @@ export function ArtifactViewer({ artifact, isActive = true }: ArtifactViewerProp
 
       {isFullscreen && (
         <>
-          <div className="fixed inset-0 z-[100] bg-black/80" onClick={() => setIsFullscreen(false)} />
+          <div
+            className="fixed inset-0 z-[100] bg-black/80"
+            onClick={() => updateState({ isFullscreen: false })}
+          />
           <div className="fixed inset-3 md:inset-6 z-[101] bg-(--card) rounded-xl border border-(--border) overflow-hidden flex flex-col">
             <ArtifactViewerContent
               {...viewerContentProps}
               inModal
-              onClose={() => setIsFullscreen(false)}
+              onClose={() => updateState({ isFullscreen: false })}
             />
           </div>
         </>

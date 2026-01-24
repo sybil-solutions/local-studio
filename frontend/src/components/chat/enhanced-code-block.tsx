@@ -1,11 +1,12 @@
 'use client';
 
-import { useState } from 'react';
+import { useId } from 'react';
 import { Copy, Check, Play, Code2, Maximize2, Minimize2 } from 'lucide-react';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus, vs } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { CodeSandbox } from './code-sandbox';
 import { ArtifactRenderer, getArtifactType } from './artifact-renderer';
+import { useAppStore } from '@/store';
 
 interface EnhancedCodeBlockProps {
   children: string;
@@ -22,16 +23,27 @@ export function EnhancedCodeBlock({
   isStreaming,
   language
 }: EnhancedCodeBlockProps) {
-  const [copied, setCopied] = useState(false);
-  const [showPreview, setShowPreview] = useState(false);
-  const [isExpanded, setIsExpanded] = useState(false);
+  const blockId = useId();
+  const blockState = useAppStore(
+    (state) =>
+      state.codeBlockState[blockId] ?? {
+        copied: false,
+        showPreview: false,
+        isExpanded: false,
+      },
+  );
+  const updateCodeBlockState = useAppStore((state) => state.updateCodeBlockState);
+  const { copied, showPreview, isExpanded } = blockState;
+  const updateState = (partial: Partial<typeof blockState>) => {
+    updateCodeBlockState(blockId, (prev) => ({ ...prev, ...partial }));
+  };
   const lang = language || className?.replace('language-', '') || 'text';
   const code = String(children).replace(/\n$/, '');
 
   const copyCode = () => {
     navigator.clipboard.writeText(code);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    updateState({ copied: true });
+    setTimeout(() => updateState({ copied: false }), 2000);
   };
 
   // Check if this should be rendered as an artifact
@@ -48,7 +60,7 @@ export function EnhancedCodeBlock({
             artifact={{ id: 'inline-svg', type: 'svg', title: `${lang} Preview`, code }}
           />
           <button
-            onClick={() => setShowPreview(false)}
+            onClick={() => updateState({ showPreview: false })}
             className="mt-2 text-xs text-[#9a9590] hover:text-[var(--foreground)] transition-colors flex items-center gap-1"
           >
             <Code2 className="h-3 w-3" />
@@ -67,7 +79,7 @@ export function EnhancedCodeBlock({
           autoRun={true}
         />
         <button
-          onClick={() => setShowPreview(false)}
+          onClick={() => updateState({ showPreview: false })}
           className="mt-2 text-xs text-[#9a9590] hover:text-[var(--foreground)] transition-colors flex items-center gap-1"
         >
           <Code2 className="h-3 w-3" />
@@ -104,7 +116,7 @@ export function EnhancedCodeBlock({
         <div className="flex items-center gap-1">
           {canPreview && (
             <button
-              onClick={() => setShowPreview(true)}
+              onClick={() => updateState({ showPreview: true })}
               className="p-1.5 rounded-lg hover:bg-[var(--accent)] transition-all duration-200 flex items-center gap-1.5 text-xs font-medium text-[var(--success)] hover:text-[var(--success)]"
               title="Run preview"
             >
@@ -115,7 +127,7 @@ export function EnhancedCodeBlock({
 
           {isLongCode && (
             <button
-              onClick={() => setIsExpanded(!isExpanded)}
+              onClick={() => updateState({ isExpanded: !isExpanded })}
               className="p-1.5 rounded-lg hover:bg-[var(--accent)] transition-all duration-200 text-[#9a9590] hover:text-[var(--foreground)]"
               title={isExpanded ? 'Collapse' : 'Expand'}
             >
@@ -170,7 +182,7 @@ export function EnhancedCodeBlock({
         {shouldCollapse && (
           <div className="absolute bottom-0 left-0 right-0 h-24 bg-gradient-to-t from-[var(--card)] to-transparent flex items-end justify-center pb-3">
             <button
-              onClick={() => setIsExpanded(true)}
+              onClick={() => updateState({ isExpanded: true })}
               className="text-xs text-[#b0a8a0] hover:text-[var(--foreground)] transition-colors flex items-center gap-1"
             >
               Expand full code

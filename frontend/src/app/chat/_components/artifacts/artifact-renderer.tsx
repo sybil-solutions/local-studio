@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useMemo } from "react";
 import {
   Code,
   Eye,
@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { CodeSandbox } from "../code/code-sandbox";
 import type { Artifact } from "@/lib/types";
+import { useAppStore } from "@/store";
 
 // SVG template - wraps SVG in proper HTML document for iframe rendering
 const SVG_TEMPLATE = (svgCode: string) => `
@@ -66,15 +67,25 @@ interface ArtifactRendererProps {
 
 export function ArtifactRenderer({ artifact }: ArtifactRendererProps) {
   const showPreview = true;
-  const [isFullscreen, setIsFullscreen] = useState(false);
-  const [showCode, setShowCode] = useState(false);
-  const [copied, setCopied] = useState(false);
+  const artifactState = useAppStore(
+    (state) =>
+      state.artifactRendererState[artifact.id] ?? {
+        isFullscreen: false,
+        showCode: false,
+        copied: false,
+      },
+  );
+  const updateArtifactRendererState = useAppStore((state) => state.updateArtifactRendererState);
+  const { isFullscreen, showCode, copied } = artifactState;
+  const updateState = (partial: Partial<typeof artifactState>) => {
+    updateArtifactRendererState(artifact.id, (prev) => ({ ...prev, ...partial }));
+  };
 
   const handleCopy = async () => {
     try {
       await navigator.clipboard.writeText(artifact.code);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      updateState({ copied: true });
+      setTimeout(() => updateState({ copied: false }), 2000);
     } catch (e) {
       console.error("Failed to copy:", e);
     }
@@ -175,7 +186,7 @@ export function ArtifactRenderer({ artifact }: ArtifactRendererProps) {
         <Share2 className="h-5 w-5 md:h-3.5 md:w-3.5 text-[#9a9590]" />
       </button>
       <button
-        onClick={() => setShowCode(!showCode)}
+        onClick={() => updateState({ showCode: !showCode })}
         className={`${inFooter ? "block" : "hidden md:block"} p-2 md:p-1.5 rounded hover:bg-(--background) transition-colors`}
         title={showCode ? "Hide code" : "Show code"}
       >
@@ -188,7 +199,7 @@ export function ArtifactRenderer({ artifact }: ArtifactRendererProps) {
       <button
         onClick={(e) => {
           e.stopPropagation();
-          setIsFullscreen(!isFullscreen);
+          updateState({ isFullscreen: !isFullscreen });
         }}
         className="p-2 md:p-1.5 rounded hover:bg-(--background) transition-colors"
         title={isFullscreen ? "Exit fullscreen" : "Fullscreen"}
@@ -216,7 +227,7 @@ export function ArtifactRenderer({ artifact }: ArtifactRendererProps) {
         {isFullscreen && (
           <div
             className="fixed inset-0 z-[100] bg-black/80"
-            onClick={() => setIsFullscreen(false)}
+            onClick={() => updateState({ isFullscreen: false })}
           />
         )}
         <div
@@ -247,7 +258,7 @@ export function ArtifactRenderer({ artifact }: ArtifactRendererProps) {
             {/* In fullscreen, just show minimize button in header */}
             {isFullscreen && (
               <button
-                onClick={() => setIsFullscreen(false)}
+                onClick={() => updateState({ isFullscreen: false })}
                 className="p-2 rounded hover:bg-(--background) transition-colors"
                 title="Exit fullscreen"
               >

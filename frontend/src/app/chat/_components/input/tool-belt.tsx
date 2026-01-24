@@ -1,11 +1,12 @@
 "use client";
 
-import { useState, useRef, useEffect, type ChangeEvent, type KeyboardEvent } from "react";
+import { useRef, useEffect, type ChangeEvent, type KeyboardEvent } from "react";
 import { AttachmentsPreview } from "./attachments-preview";
 import { RecordingIndicator } from "./recording-indicator";
 import { TranscriptionStatus } from "./transcription-status";
 import { ToolBeltToolbar } from "./tool-belt-toolbar";
 import type { Attachment, ModelOption } from "../../types";
+import { useAppStore } from "@/store";
 
 interface ToolBeltProps {
   value: string;
@@ -56,11 +57,19 @@ export function ToolBelt({
   queuedContext = "",
   onQueuedContextChange,
 }: ToolBeltProps) {
-  const [attachments, setAttachments] = useState<Attachment[]>([]);
-  const [isRecording, setIsRecording] = useState(false);
-  const [isTranscribing, setIsTranscribing] = useState(false);
-  const [transcriptionError, setTranscriptionError] = useState<string | null>(null);
-  const [recordingDuration, setRecordingDuration] = useState(0);
+  const attachments = useAppStore((state) => state.attachments);
+  const setAttachments = useAppStore((state) => state.setAttachments);
+  const updateAttachments = useAppStore((state) => state.updateAttachments);
+  const isRecording = useAppStore((state) => state.isRecording);
+  const setIsRecording = useAppStore((state) => state.setIsRecording);
+  const isTranscribing = useAppStore((state) => state.isTranscribing);
+  const setIsTranscribing = useAppStore((state) => state.setIsTranscribing);
+  const transcriptionError = useAppStore((state) => state.transcriptionError);
+  const setTranscriptionError = useAppStore((state) => state.setTranscriptionError);
+  const recordingDuration = useAppStore((state) => state.recordingDuration);
+  const setRecordingDuration = useAppStore((state) => state.setRecordingDuration);
+  const isTTSEnabled = useAppStore((state) => state.isTTSEnabled);
+  const setIsTTSEnabled = useAppStore((state) => state.setIsTTSEnabled);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
@@ -70,11 +79,19 @@ export function ToolBelt({
 
   useEffect(() => {
     if (textareaRef.current) {
-      textareaRef.current.style.height = "44px";
+      textareaRef.current.style.height = "auto";
       const scrollHeight = textareaRef.current.scrollHeight;
-      const newHeight = Math.min(scrollHeight, 200);
+      const minHeight = Number.parseFloat(
+        window.getComputedStyle(textareaRef.current).minHeight,
+      );
+      const baseHeight = Number.isFinite(minHeight) && minHeight > 0 ? minHeight : 44;
+      const shouldCap = window.innerWidth >= 768;
+      const newHeight = shouldCap
+        ? Math.min(Math.max(scrollHeight, baseHeight), 200)
+        : Math.max(scrollHeight, baseHeight);
       textareaRef.current.style.height = newHeight + "px";
-      textareaRef.current.style.overflowY = scrollHeight > 200 ? "auto" : "hidden";
+      textareaRef.current.style.overflowY =
+        shouldCap && scrollHeight > 200 ? "auto" : "hidden";
     }
   }, [value, isLoading, queuedContext]);
 
@@ -116,12 +133,12 @@ export function ToolBelt({
       newAttachments.push(attachment);
     }
 
-    setAttachments((prev) => [...prev, ...newAttachments]);
+    updateAttachments((prev) => [...prev, ...newAttachments]);
     e.target.value = "";
   };
 
   const removeAttachment = (id: string) => {
-    setAttachments((prev) => {
+    updateAttachments((prev) => {
       const attachment = prev.find((a) => a.id === id);
       if (attachment?.url) {
         URL.revokeObjectURL(attachment.url);
@@ -194,7 +211,7 @@ export function ToolBelt({
       setRecordingDuration(0);
 
       recordingIntervalRef.current = setInterval(() => {
-        setRecordingDuration((prev) => prev + 1);
+        setRecordingDuration(useAppStore.getState().recordingDuration + 1);
       }, 1000);
     } catch (err) {
       console.error("Failed to start recording:", err);
@@ -286,8 +303,8 @@ export function ToolBelt({
             }
             disabled={disabled}
             rows={1}
-            className="w-full px-3 py-2 md:px-4 md:py-3 bg-transparent text-[15px] md:text-sm resize-none focus:outline-none disabled:opacity-50 placeholder:text-[#9a9590] overflow-y-hidden"
-            style={{ height: "44px", maxHeight: "200px", fontSize: "16px", lineHeight: "1.5" }}
+            className="w-full px-3 py-2 md:px-4 md:py-3 bg-transparent text-[15px] md:text-sm resize-none focus:outline-none disabled:opacity-50 placeholder:text-[#9a9590] overflow-y-hidden min-h-[52px] md:min-h-[44px]"
+            style={{ fontSize: "16px", lineHeight: "1.5" }}
           />
 
           <input
@@ -319,6 +336,7 @@ export function ToolBelt({
             mcpEnabled={mcpEnabled}
             artifactsEnabled={artifactsEnabled}
             deepResearchEnabled={deepResearchEnabled}
+            isTTSEnabled={isTTSEnabled}
             availableModels={availableModels}
             selectedModel={selectedModel}
             onModelChange={onModelChange}
@@ -327,6 +345,7 @@ export function ToolBelt({
             onMcpToggle={onMcpToggle}
             onArtifactsToggle={onArtifactsToggle}
             onDeepResearchToggle={onDeepResearchToggle}
+            onTTSToggle={() => setIsTTSEnabled(!isTTSEnabled)}
             onAttachFile={() => fileInputRef.current?.click()}
             onAttachImage={() => imageInputRef.current?.click()}
             onStartRecording={startRecording}

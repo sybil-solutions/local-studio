@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useMemo } from 'react';
 import {
   Activity,
   AlertTriangle,
@@ -20,6 +20,7 @@ import {
   CompactionStrategy,
   formatTokenCount,
 } from '@/lib/context-manager';
+import { useAppStore } from '@/store';
 
 interface ContextIndicatorProps {
   stats: ContextStats;
@@ -49,9 +50,10 @@ export function ContextIndicator({
   canSendMessage,
   utilizationLevel,
 }: ContextIndicatorProps) {
-  const [showDetails, setShowDetails] = useState(false);
-  const [showHistory, setShowHistory] = useState(false);
-  const [showSettings, setShowSettings] = useState(false);
+  const { showDetails, showHistory, showSettings } = useAppStore(
+    (state) => state.legacyContextIndicator,
+  );
+  const setLegacyContextIndicator = useAppStore((state) => state.setLegacyContextIndicator);
 
   const colors = LEVEL_COLORS[utilizationLevel];
   const percentage = Math.round(stats.utilization * 100);
@@ -60,7 +62,7 @@ export function ContextIndicator({
     <div className="relative">
       {/* Compact indicator */}
       <button
-        onClick={() => setShowDetails(!showDetails)}
+        onClick={() => setLegacyContextIndicator({ showDetails: !showDetails })}
         className={`flex items-center gap-2 px-2 py-1 rounded-lg transition-colors ${colors.bg} hover:opacity-80`}
         title={`Context: ${formatTokenCount(stats.currentTokens)} / ${formatTokenCount(stats.maxContext)} tokens (${percentage}%)`}
       >
@@ -95,21 +97,21 @@ export function ContextIndicator({
             </div>
             <div className="flex items-center gap-1">
               <button
-                onClick={() => setShowHistory(!showHistory)}
+                onClick={() => setLegacyContextIndicator({ showHistory: !showHistory })}
                 className="p-1.5 hover:bg-[#363432] rounded"
                 title="Compaction history"
               >
                 <History className="h-4 w-4 text-[#9a9088]" />
               </button>
               <button
-                onClick={() => setShowSettings(!showSettings)}
+                onClick={() => setLegacyContextIndicator({ showSettings: !showSettings })}
                 className="p-1.5 hover:bg-[#363432] rounded"
                 title="Settings"
               >
                 <Settings className="h-4 w-4 text-[#9a9088]" />
               </button>
               <button
-                onClick={() => setShowDetails(false)}
+                onClick={() => setLegacyContextIndicator({ showDetails: false })}
                 className="p-1.5 hover:bg-[#363432] rounded"
               >
                 <X className="h-4 w-4 text-[#9a9088]" />

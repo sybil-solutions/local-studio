@@ -1,14 +1,20 @@
 "use client";
 
-import { useState, useCallback, useRef } from "react";
+import { useCallback, useRef } from "react";
 import { api } from "@/lib/api";
 import type { ChatSession } from "@/lib/types";
+import { useAppStore } from "@/store";
 
 export function useChatSessions() {
-  const [sessions, setSessions] = useState<ChatSession[]>([]);
-  const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
-  const [currentSessionTitle, setCurrentSessionTitle] = useState<string>("New Chat");
-  const [sessionsLoading, setSessionsLoading] = useState(false);
+  const sessions = useAppStore((state) => state.sessions);
+  const currentSessionId = useAppStore((state) => state.currentSessionId);
+  const currentSessionTitle = useAppStore((state) => state.currentSessionTitle);
+  const sessionsLoading = useAppStore((state) => state.sessionsLoading);
+  const setSessions = useAppStore((state) => state.setSessions);
+  const updateSessions = useAppStore((state) => state.updateSessions);
+  const setCurrentSessionId = useAppStore((state) => state.setCurrentSessionId);
+  const setCurrentSessionTitle = useAppStore((state) => state.setCurrentSessionTitle);
+  const setSessionsLoading = useAppStore((state) => state.setSessionsLoading);
   const activeSessionRef = useRef<string | null>(null);
 
   const loadSessions = useCallback(async () => {
@@ -21,7 +27,7 @@ export function useChatSessions() {
     } finally {
       setSessionsLoading(false);
     }
-  }, []);
+  }, [setSessions, setSessionsLoading]);
 
   const loadSession = useCallback(async (sessionId: string) => {
     if (activeSessionRef.current === sessionId) return;
@@ -35,13 +41,13 @@ export function useChatSessions() {
     } catch (err) {
       console.error("Failed to load session:", err);
     }
-  }, []);
+  }, [setCurrentSessionId, setCurrentSessionTitle]);
 
   const startNewSession = useCallback(() => {
     activeSessionRef.current = null;
     setCurrentSessionId(null);
     setCurrentSessionTitle("New Chat");
-  }, []);
+  }, [setCurrentSessionId, setCurrentSessionTitle]);
 
   const createSession = useCallback(async (title: string, model?: string) => {
     try {
@@ -49,7 +55,7 @@ export function useChatSessions() {
         title,
         model,
       });
-      setSessions((prev) => [session, ...prev]);
+      updateSessions((prev) => [session, ...prev]);
       setCurrentSessionId(session.id);
       setCurrentSessionTitle(session.title);
       activeSessionRef.current = session.id;
@@ -58,13 +64,13 @@ export function useChatSessions() {
       console.error("Failed to create session:", err);
       return null;
     }
-  }, []);
+  }, [setCurrentSessionId, setCurrentSessionTitle, updateSessions]);
 
   const updateSessionTitle = useCallback(
     async (sessionId: string, title: string) => {
       try {
         await api.updateChatSession(sessionId, { title });
-        setSessions((prev) => prev.map((s) => (s.id === sessionId ? { ...s, title } : s)));
+        updateSessions((prev) => prev.map((s) => (s.id === sessionId ? { ...s, title } : s)));
         if (currentSessionId === sessionId) {
           setCurrentSessionTitle(title);
         }
@@ -72,14 +78,14 @@ export function useChatSessions() {
         console.error("Failed to update session title:", err);
       }
     },
-    [currentSessionId],
+    [currentSessionId, setCurrentSessionTitle, updateSessions],
   );
 
   const deleteSession = useCallback(
     async (sessionId: string) => {
       try {
         await api.deleteChatSession(sessionId);
-        setSessions((prev) => prev.filter((s) => s.id !== sessionId));
+        updateSessions((prev) => prev.filter((s) => s.id !== sessionId));
         if (currentSessionId === sessionId) {
           startNewSession();
         }
@@ -87,7 +93,7 @@ export function useChatSessions() {
         console.error("Failed to delete session:", err);
       }
     },
-    [currentSessionId, startNewSession],
+    [currentSessionId, startNewSession, updateSessions],
   );
 
   return {

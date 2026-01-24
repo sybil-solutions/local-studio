@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useEffect, useRef, useId } from 'react';
+import { useMemo, useEffect, useRef, useId } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { ChevronDown, ChevronRight, Brain, Copy, Check, AlertCircle, Play } from 'lucide-react';
@@ -12,6 +12,7 @@ import { TypingIndicator, StreamingCursor } from './typing-indicator';
 import { MessageActions } from './message-actions';
 import type { Artifact } from '@/lib/types';
 import { normalizeAssistantMarkdownForRender } from '@/lib/chat-markdown';
+import { useAppStore } from '@/store';
 
 // Initialize mermaid with dark theme
 mermaid.initialize({
@@ -135,13 +136,15 @@ export function splitThinking(content: string): {
 }
 
 function ThinkingBlock({ content, isStreaming }: ThinkingBlockProps) {
-  const [isExpanded, setIsExpanded] = useState(false);
+  const blockId = useId();
+  const isExpanded = useAppStore((state) => state.legacyThinkingExpanded[blockId] ?? false);
+  const setLegacyThinkingExpanded = useAppStore((state) => state.setLegacyThinkingExpanded);
   const wordCount = content.trim().split(/\s+/).filter(Boolean).length;
 
   return (
     <div className="my-2 md:my-3">
       <button
-        onClick={() => setIsExpanded(!isExpanded)}
+        onClick={() => setLegacyThinkingExpanded(blockId, !isExpanded)}
         className="flex items-center gap-1.5 text-xs text-[#b8b4ad] hover:text-[#e8e4dd] transition-colors"
       >
         {isExpanded ? (
@@ -162,9 +165,10 @@ function ThinkingBlock({ content, isStreaming }: ThinkingBlockProps) {
 
 function MermaidDiagram({ code }: { code: string }) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const [svg, setSvg] = useState<string>('');
-  const [error, setError] = useState<string | null>(null);
   const id = useId().replace(/:/g, '_');
+  const mermaidState = useAppStore((state) => state.mermaidState[id] ?? { svg: '', error: null });
+  const setMermaidState = useAppStore((state) => state.setMermaidState);
+  const { svg, error } = mermaidState;
   const renderSeqRef = useRef(0);
 
   useEffect(() => {
@@ -180,8 +184,11 @@ function MermaidDiagram({ code }: { code: string }) {
         );
       if (!looksLikeMermaid) {
         // Avoid spamming mermaid with obviously non-mermaid content.
-        setSvg('');
-        setError('Not a valid Mermaid diagram (missing diagram header like `graph TD` or `sequenceDiagram`).');
+        setMermaidState(
+          id,
+          '',
+          'Not a valid Mermaid diagram (missing diagram header like `graph TD` or `sequenceDiagram`).'
+        );
         return;
       }
 
@@ -189,12 +196,10 @@ function MermaidDiagram({ code }: { code: string }) {
         // Mermaid can behave badly when re-rendered with the same id; include a monotonically increasing suffix.
         const { svg } = await mermaid.render(`mermaid_${id}_${seq}`, code.trim());
         if (seq !== renderSeqRef.current) return;
-        setSvg(svg);
-        setError(null);
+        setMermaidState(id, svg, null);
       } catch (e) {
         if (seq !== renderSeqRef.current) return;
-        setError(e instanceof Error ? e.message : 'Failed to render diagram');
-        setSvg('');
+        setMermaidState(id, '', e instanceof Error ? e.message : 'Failed to render diagram');
       }
     };
 
@@ -202,7 +207,7 @@ function MermaidDiagram({ code }: { code: string }) {
       renderDiagram();
     }, 250);
     return () => window.clearTimeout(handle);
-  }, [code, id]);
+  }, [code, id, setMermaidState]);
 
   if (error) {
     return (

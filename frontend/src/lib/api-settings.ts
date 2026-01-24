@@ -13,7 +13,7 @@ const DEFAULT_SETTINGS: ApiSettings = {
   backendUrl: process.env.BACKEND_URL || process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080",
   apiKey: process.env.API_KEY || "",
   voiceUrl: process.env.VOICE_URL || process.env.NEXT_PUBLIC_VOICE_URL || "",
-  voiceModel: process.env.VOICE_MODEL || process.env.NEXT_PUBLIC_VOICE_MODEL || "whisper-1",
+  voiceModel: process.env.VOICE_MODEL || process.env.NEXT_PUBLIC_VOICE_MODEL || "whisper-large-v3-turbo",
 };
 
 // Settings file path - try multiple locations to support dev, monorepo, and standalone builds

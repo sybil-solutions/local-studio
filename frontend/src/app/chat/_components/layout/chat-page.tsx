@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useCallback, useState, useMemo } from "react";
+import { useEffect, useRef, useCallback, useMemo } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport, lastAssistantMessageIsCompleteWithToolCalls } from "ai";
@@ -18,12 +18,11 @@ import { useChatTools } from "../../hooks/use-chat-tools";
 import { useChatUsage } from "../../hooks/use-chat-usage";
 import { useChatDerived } from "../../hooks/use-chat-derived";
 import { useChatTransport } from "../../hooks/use-chat-transport";
-import type { ActivePanel, DeepResearchConfig, SessionUsage } from "@/lib/types";
 import type { UIMessage } from "@ai-sdk/react";
 import type { Artifact } from "@/lib/types";
 import { useContextManagement } from "@/lib/services/context-management";
 import { useAppStore } from "@/store";
-import type { Attachment, ModelOption } from "../../types";
+import type { Attachment } from "../../types";
 
 export function ChatPage() {
   const searchParams = useSearchParams();
@@ -31,33 +30,44 @@ export function ChatPage() {
   const sessionFromUrl = searchParams.get("session");
   const newChatFromUrl = searchParams.get("new") === "1";
 
-  // Local UI state
-  const [input, setInput] = useState("");
-  const [selectedModel, setSelectedModel] = useState<string>("");
-  const [systemPrompt, setSystemPrompt] = useState<string>("");
-  const [toolPanelOpen, setToolPanelOpen] = useState(false);
-  const [activePanel, setActivePanel] = useState<ActivePanel>("activity");
-  const [mcpEnabled, setMcpEnabled] = useState(false);
-  const [artifactsEnabled, setArtifactsEnabled] = useState(false);
-  const [deepResearch, setDeepResearch] = useState<DeepResearchConfig>({
-    enabled: false,
-    maxSources: 10,
-    searchDepth: "medium",
-    autoSummarize: true,
-    includeCitations: true,
-  });
-  const [elapsedSeconds, setElapsedSeconds] = useState(0);
-  const [streamingStartTime, setStreamingStartTime] = useState<number | null>(null);
-  const [queuedContext, setQueuedContext] = useState("");
-  const [userScrolledUp, setUserScrolledUp] = useState(false);
+  // Local UI state (sourced from Zustand)
+  const input = useAppStore((state) => state.input);
+  const setInput = useAppStore((state) => state.setInput);
+  const selectedModel = useAppStore((state) => state.selectedModel);
+  const setSelectedModel = useAppStore((state) => state.setSelectedModel);
+  const systemPrompt = useAppStore((state) => state.systemPrompt);
+  const setSystemPrompt = useAppStore((state) => state.setSystemPrompt);
+  const toolPanelOpen = useAppStore((state) => state.toolPanelOpen);
+  const setToolPanelOpen = useAppStore((state) => state.setToolPanelOpen);
+  const activePanel = useAppStore((state) => state.activePanel);
+  const setActivePanel = useAppStore((state) => state.setActivePanel);
+  const mcpEnabled = useAppStore((state) => state.mcpEnabled);
+  const setMcpEnabled = useAppStore((state) => state.setMcpEnabled);
+  const artifactsEnabled = useAppStore((state) => state.artifactsEnabled);
+  const setArtifactsEnabled = useAppStore((state) => state.setArtifactsEnabled);
+  const deepResearch = useAppStore((state) => state.deepResearch);
+  const setDeepResearch = useAppStore((state) => state.setDeepResearch);
+  const elapsedSeconds = useAppStore((state) => state.elapsedSeconds);
+  const setElapsedSeconds = useAppStore((state) => state.setElapsedSeconds);
+  const streamingStartTime = useAppStore((state) => state.streamingStartTime);
+  const setStreamingStartTime = useAppStore((state) => state.setStreamingStartTime);
+  const queuedContext = useAppStore((state) => state.queuedContext);
+  const setQueuedContext = useAppStore((state) => state.setQueuedContext);
+  const userScrolledUp = useAppStore((state) => state.userScrolledUp);
+  const setUserScrolledUp = useAppStore((state) => state.setUserScrolledUp);
 
-  // Modal state
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [mcpSettingsOpen, setMcpSettingsOpen] = useState(false);
-  const [usageOpen, setUsageOpen] = useState(false);
-  const [exportOpen, setExportOpen] = useState(false);
-  const [availableModels, setAvailableModels] = useState<ModelOption[]>([]);
-  const [sessionUsage, setSessionUsage] = useState<SessionUsage | null>(null);
+  // Modal state (Zustand)
+  const settingsOpen = useAppStore((state) => state.chatSettingsOpen);
+  const setSettingsOpen = useAppStore((state) => state.setChatSettingsOpen);
+  const mcpSettingsOpen = useAppStore((state) => state.mcpSettingsOpen);
+  const setMcpSettingsOpen = useAppStore((state) => state.setMcpSettingsOpen);
+  const usageOpen = useAppStore((state) => state.usageDetailsOpen);
+  const setUsageOpen = useAppStore((state) => state.setUsageDetailsOpen);
+  const exportOpen = useAppStore((state) => state.exportOpen);
+  const setExportOpen = useAppStore((state) => state.setExportOpen);
+  const availableModels = useAppStore((state) => state.availableModels);
+  const setAvailableModels = useAppStore((state) => state.setAvailableModels);
+  const sessionUsage = useAppStore((state) => state.sessionUsage);
 
   // Refs
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -90,7 +100,7 @@ export function ChatPage() {
   } = useChatTools({ mcpEnabled });
 
   // Usage hook
-  const { refreshUsage } = useChatUsage({ setSessionUsage });
+  const { refreshUsage } = useChatUsage();
 
   // Transport hook for persistence
   const { persistMessage, createSessionWithMessage, generateTitle, sessionIdRef } =
@@ -303,7 +313,7 @@ export function ChatPage() {
       }, 0);
       return () => window.clearTimeout(timeoutId);
     }
-  }, [sessionArtifacts.length]);
+  }, [sessionArtifacts.length, setActivePanel]);
 
   const showEmptyState = messages.length === 0 && !isLoading && !error;
 
@@ -314,7 +324,7 @@ export function ChatPage() {
     const { scrollTop, scrollHeight, clientHeight } = container;
     const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
     setUserScrolledUp(distanceFromBottom >= 160);
-  }, []);
+  }, [setUserScrolledUp]);
 
   // Auto-scroll to bottom
   useEffect(() => {
@@ -345,7 +355,7 @@ export function ChatPage() {
     return () => {
       if (intervalId) clearInterval(intervalId);
     };
-  }, [isLoading, streamingStartTime]);
+  }, [isLoading, setElapsedSeconds, setStreamingStartTime, streamingStartTime]);
 
   // Load sessions on mount
   useEffect(() => {
@@ -372,48 +382,63 @@ export function ChatPage() {
     }
   }, [mcpEnabled, loadMCPServers, loadMCPTools]);
 
-  // Load available models from recipes on mount
+  // Load available models from OpenAI-compatible endpoint on mount
   useEffect(() => {
     const loadModels = async () => {
       try {
-        const data = await api.getRecipes();
-        // Map recipes to model options - ONLY use served_model_name
-        const mappedModels = (data.recipes || [])
-          .filter((recipe) => recipe.served_model_name) // Only recipes with served_model_name
-          .map((recipe) => ({
-            id: recipe.served_model_name!,
-            name: recipe.served_model_name!,
-            maxModelLen: recipe.max_model_len,
-          }))
-          .sort((a, b) => a.name.localeCompare(b.name));
+        const data = await api.getOpenAIModels();
+        const rawModels = Array.isArray(data)
+          ? data
+          : Array.isArray(data?.data)
+            ? data.data
+            : Array.isArray((data as { models?: unknown }).models)
+              ? (data as { models: unknown[] }).models
+              : [];
+        const mappedModels = rawModels
+          .map((model) => {
+            if (!model || typeof model !== "object") return null;
+            const record = model as { id?: string; model?: string; name?: string; max_model_len?: number };
+            const id = record.id ?? record.model ?? record.name;
+            if (!id) return null;
+            return {
+              id,
+              name: id,
+              maxModelLen: record.max_model_len,
+            };
+          })
+          .filter((model): model is { id: string; name?: string; maxModelLen?: number } => Boolean(model))
+          .sort((a, b) => a.id.localeCompare(b.id));
 
         setAvailableModels(mappedModels);
 
-        // Try to restore last used model from localStorage
         const lastModel = localStorage.getItem("vllm-studio-last-model");
         const fallbackModel = mappedModels[0]?.id || "";
+        let next = selectedModel;
 
-        setSelectedModel((current) => {
-          let next = current;
-          if (lastModel && mappedModels.some((m) => m.id === lastModel)) {
-            next = lastModel;
-          } else if (!current || !mappedModels.some((m) => m.id === current)) {
-            // Auto-select first model if none selected or selection is invalid
-            next = fallbackModel;
+        if (mappedModels.length === 0) {
+          if (lastModel && !next) {
+            setSelectedModel(lastModel);
           }
+          return;
+        }
 
-          if (next && next !== current) {
-            localStorage.setItem("vllm-studio-last-model", next);
-          }
+        if (next && mappedModels.some((model) => model.id === next)) {
+          // keep selected model
+        } else if (lastModel && mappedModels.some((model) => model.id === lastModel)) {
+          next = lastModel;
+        } else if (!next || !mappedModels.some((model) => model.id === next)) {
+          next = fallbackModel;
+        }
 
-          return next;
-        });
+        if (next && next !== selectedModel) {
+          setSelectedModel(next);
+        }
       } catch (err) {
         console.error("Failed to load models:", err);
       }
     };
     loadModels();
-  }, []);
+  }, [selectedModel, setAvailableModels, setSelectedModel]);
 
   // Load MCP servers when settings modal opens
   useEffect(() => {
@@ -575,6 +600,10 @@ export function ChatPage() {
       systemPrompt,
       messages.length,
       mcpEnabled,
+      setToolPanelOpen,
+      setActivePanel,
+      setStreamingStartTime,
+      setInput,
     ],
   );
 
@@ -638,13 +667,16 @@ export function ChatPage() {
     stop();
     setStreamingStartTime(null);
     setElapsedSeconds(0);
-  }, [stop]);
+  }, [setElapsedSeconds, setStreamingStartTime, stop]);
 
   // Handle model change and persist to localStorage
-  const handleModelChange = useCallback((modelId: string) => {
-    setSelectedModel(modelId);
-    localStorage.setItem("vllm-studio-last-model", modelId);
-  }, []);
+  const handleModelChange = useCallback(
+    (modelId: string) => {
+      setSelectedModel(modelId);
+      localStorage.setItem("vllm-studio-last-model", modelId);
+    },
+    [setSelectedModel],
+  );
 
   const toolBelt = (
     <ToolBelt
@@ -652,19 +684,26 @@ export function ChatPage() {
       onChange={setInput}
       onSubmit={handleSend}
       onStop={handleStop}
-      disabled={!selectedModel}
+      disabled={false}
       isLoading={isLoading}
       placeholder={selectedModel ? "Message..." : "Select a model"}
       selectedModel={selectedModel}
       availableModels={availableModels}
       onModelChange={handleModelChange}
       mcpEnabled={mcpEnabled}
-      onMcpToggle={() => setMcpEnabled(!mcpEnabled)}
+      onMcpToggle={() => {
+        console.log("[ChatPage] MCP toggle:", !mcpEnabled);
+        setMcpEnabled(!mcpEnabled);
+      }}
       artifactsEnabled={artifactsEnabled}
-      onArtifactsToggle={() => setArtifactsEnabled(!artifactsEnabled)}
+      onArtifactsToggle={() => {
+        console.log("[ChatPage] Artifacts toggle:", !artifactsEnabled);
+        setArtifactsEnabled(!artifactsEnabled);
+      }}
       deepResearchEnabled={deepResearch.enabled}
       onDeepResearchToggle={() => {
         const nextEnabled = !deepResearch.enabled;
+        console.log("[ChatPage] Deep Research toggle:", nextEnabled);
         setDeepResearch({ ...deepResearch, enabled: nextEnabled });
         if (nextEnabled && !mcpEnabled) setMcpEnabled(true);
       }}

@@ -1,8 +1,9 @@
 "use client";
 
-import { memo, useState } from "react";
+import { memo } from "react";
 import type { UIMessage } from "@ai-sdk/react";
 import type { LanguageModelUsage } from "ai";
+import { useAppStore } from "@/store";
 import {
   Loader2,
   Copy,
@@ -42,14 +43,28 @@ type MessageMetadata = {
 };
 
 // Inline thinking component for mobile - minimal style
-function InlineThinking({ content, isActive }: { content: string; isActive: boolean }) {
-  const [expanded, setExpanded] = useState(false);
+function InlineThinking({
+  messageId,
+  content,
+  isActive,
+}: {
+  messageId: string;
+  content: string;
+  isActive: boolean;
+}) {
+  const expanded = useAppStore(
+    (state) => state.messageInlineThinkingExpanded[messageId] ?? false,
+  );
+  const setExpanded = useAppStore((state) => state.setMessageInlineThinkingExpanded);
 
   if (!content && !isActive) return null;
 
   return (
     <div className="md:hidden mb-2">
-      <button onClick={() => setExpanded(!expanded)} className="flex items-center gap-2 text-left">
+      <button
+        onClick={() => setExpanded(messageId, !expanded)}
+        className="flex items-center gap-2 text-left"
+      >
         {isActive ? (
           <Loader2 className="h-3 w-3 text-blue-400 animate-spin" />
         ) : (
@@ -74,8 +89,10 @@ function InlineThinking({ content, isActive }: { content: string; isActive: bool
 
 // Inline tool calls component for mobile - minimal style
 function InlineToolCalls({
+  messageId,
   toolParts,
 }: {
+  messageId: string;
   toolParts: Array<{
     type: string;
     toolCallId: string;
@@ -84,7 +101,8 @@ function InlineToolCalls({
     output?: unknown;
   }>;
 }) {
-  const [expanded, setExpanded] = useState(false);
+  const expanded = useAppStore((state) => state.messageInlineToolsExpanded[messageId] ?? false);
+  const setExpanded = useAppStore((state) => state.setMessageInlineToolsExpanded);
 
   if (toolParts.length === 0) return null;
 
@@ -93,7 +111,10 @@ function InlineToolCalls({
 
   return (
     <div className="md:hidden mb-2">
-      <button onClick={() => setExpanded(!expanded)} className="flex items-center gap-2 text-left">
+      <button
+        onClick={() => setExpanded(messageId, !expanded)}
+        className="flex items-center gap-2 text-left"
+      >
         {hasActiveTools ? (
           <Loader2 className="h-3 w-3 text-amber-400 animate-spin" />
         ) : (
@@ -330,10 +351,14 @@ function ChatMessageItemBase({
         </div>
 
         {/* Mobile inline thinking */}
-        <InlineThinking content={thinkingContent} isActive={isThinkingActive} />
+        <InlineThinking
+          messageId={message.id}
+          content={thinkingContent}
+          isActive={isThinkingActive}
+        />
 
         {/* Mobile inline tool calls */}
-        <InlineToolCalls toolParts={toolParts} />
+        <InlineToolCalls messageId={message.id} toolParts={toolParts} />
 
         {/* Text content with MessageRenderer */}
         {textContent ? (

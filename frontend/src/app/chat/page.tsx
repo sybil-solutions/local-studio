@@ -1,8 +1,5 @@
-"use client";
-
-import { Suspense } from "react";
+import dynamic from "next/dynamic";
 import { Sparkles } from "lucide-react";
-import { ChatPage } from "./_components/layout/chat-page";
 
 function LoadingSpinner() {
   return (
@@ -14,10 +11,11 @@ function LoadingSpinner() {
   );
 }
 
+const ChatPage = dynamic(() => import("./_components/layout/chat-page").then((mod) => mod.ChatPage), {
+  ssr: false,
+  loading: () => <LoadingSpinner />,
+});
+
 export default function ChatV2Page() {
-  return (
-    <Suspense fallback={<LoadingSpinner />}>
-      <ChatPage />
-    </Suspense>
-  );
+  return <ChatPage />;
 }

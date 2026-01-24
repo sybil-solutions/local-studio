@@ -1,21 +1,25 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useEffect } from 'react';
 import { Moon, Sun, Monitor } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useAppStore } from '@/store';
 
 type Theme = 'light' | 'dark' | 'system';
 
 export function ThemeToggle() {
-  const [theme, setTheme] = useState<Theme>('dark');
-  const [resolvedTheme, setResolvedTheme] = useState<'light' | 'dark'>('dark');
-  const [isOpen, setIsOpen] = useState(false);
+  const theme = useAppStore((state) => state.themeMode) as Theme;
+  const setThemeMode = useAppStore((state) => state.setThemeMode);
+  const resolvedTheme = useAppStore((state) => state.resolvedTheme);
+  const setResolvedTheme = useAppStore((state) => state.setResolvedTheme);
+  const isOpen = useAppStore((state) => state.themeMenuOpen);
+  const setThemeMenuOpen = useAppStore((state) => state.setThemeMenuOpen);
 
   useEffect(() => {
     // Load saved theme preference
     const saved = localStorage.getItem('theme') as Theme | null;
     if (saved) {
-      setTheme(saved);
+      setThemeMode(saved);
     }
 
     // Determine initial resolved theme
@@ -23,7 +27,7 @@ export function ThemeToggle() {
     const initialTheme = saved === 'system' ? systemTheme : (saved || systemTheme);
     setResolvedTheme(initialTheme);
     applyTheme(initialTheme);
-  }, []);
+  }, [setResolvedTheme, setThemeMode]);
 
   useEffect(() => {
     // Listen for system theme changes
@@ -38,7 +42,7 @@ export function ThemeToggle() {
 
     mediaQuery.addEventListener('change', handleChange);
     return () => mediaQuery.removeEventListener('change', handleChange);
-  }, [theme]);
+  }, [setResolvedTheme, theme]);
 
   const applyTheme = (newTheme: 'light' | 'dark') => {
     const root = document.documentElement;
@@ -91,9 +95,9 @@ export function ThemeToggle() {
   };
 
   const changeTheme = (newTheme: Theme) => {
-    setTheme(newTheme);
+    setThemeMode(newTheme);
     localStorage.setItem('theme', newTheme);
-    setIsOpen(false);
+    setThemeMenuOpen(false);
 
     const systemTheme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
     const newResolvedTheme = newTheme === 'system' ? systemTheme : newTheme;
@@ -114,7 +118,7 @@ export function ThemeToggle() {
       <motion.button
         whileHover={{ scale: 1.05 }}
         whileTap={{ scale: 0.95 }}
-        onClick={() => setIsOpen(!isOpen)}
+        onClick={() => setThemeMenuOpen(!isOpen)}
         className="p-2 rounded-lg hover:bg-[var(--accent)] transition-colors text-[#b0a8a0] hover:text-[var(--foreground)]"
         title="Toggle theme"
       >
@@ -135,7 +139,7 @@ export function ThemeToggle() {
             {/* Backdrop */}
             <div
               className="fixed inset-0 z-40"
-              onClick={() => setIsOpen(false)}
+              onClick={() => setThemeMenuOpen(false)}
             />
 
             {/* Menu */}

@@ -1,2 +1,3 @@
 export { useAppStore } from "./app-store";
-export type { ChatMessage, MCPTool, SessionUsage } from "./chat-slice";
+export type { ChatMessage } from "./chat-slice";
+export type { MCPTool, SessionUsage } from "@/lib/types";

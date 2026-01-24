@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useRef, useEffect } from 'react';
 import {
   Paperclip,
   Image as ImageIcon,
@@ -22,6 +22,7 @@ import {
   Loader2,
   Database,
 } from 'lucide-react';
+import { useAppStore } from '@/store';
 
 export interface Attachment {
   id: string;
@@ -98,12 +99,16 @@ export function ToolBelt({
   queuedContext = '',
   onQueuedContextChange,
 }: ToolBeltProps) {
-  const [attachments, setAttachments] = useState<Attachment[]>([]);
-  const [isRecording, setIsRecording] = useState(false);
-  const [isTranscribing, setIsTranscribing] = useState(false);
-  const [transcriptionError, setTranscriptionError] = useState<string | null>(null);
-  const [isTTSEnabled, setIsTTSEnabled] = useState(false);
-  const [recordingDuration, setRecordingDuration] = useState(0);
+  const legacyToolBelt = useAppStore((state) => state.legacyToolBelt);
+  const setLegacyToolBelt = useAppStore((state) => state.setLegacyToolBelt);
+  const {
+    attachments,
+    isRecording,
+    isTranscribing,
+    transcriptionError,
+    isTTSEnabled,
+    recordingDuration,
+  } = legacyToolBelt;
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
@@ -159,24 +164,21 @@ export function ToolBelt({
       newAttachments.push(attachment);
     }
 
-    setAttachments((prev) => [...prev, ...newAttachments]);
+    setLegacyToolBelt({ attachments: [...attachments, ...newAttachments] });
     e.target.value = '';
   };
 
   const removeAttachment = (id: string) => {
-    setAttachments((prev) => {
-      const attachment = prev.find((a) => a.id === id);
-      if (attachment?.url) {
-        URL.revokeObjectURL(attachment.url);
-      }
-      return prev.filter((a) => a.id !== id);
-    });
+    const attachment = attachments.find((a) => a.id === id);
+    if (attachment?.url) {
+      URL.revokeObjectURL(attachment.url);
+    }
+    setLegacyToolBelt({ attachments: attachments.filter((a) => a.id !== id) });
   };
 
   const transcribeAudio = async (audioBlob: Blob): Promise<string | null> => {
     try {
-      setIsTranscribing(true);
-      setTranscriptionError(null);
+      setLegacyToolBelt({ isTranscribing: true, transcriptionError: null });
 
       const formData = new FormData();
       formData.append('file', audioBlob, 'recording.webm');
@@ -201,12 +203,12 @@ export function ToolBelt({
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Transcription failed';
       console.error('Transcription error:', err);
-      setTranscriptionError(errorMessage);
+      setLegacyToolBelt({ transcriptionError: errorMessage });
       // Auto-clear error after 5 seconds
-      setTimeout(() => setTranscriptionError(null), 5000);
+      setTimeout(() => setLegacyToolBelt({ transcriptionError: null }), 5000);
       return null;
     } finally {
-      setIsTranscribing(false);
+      setLegacyToolBelt({ isTranscribing: false });
     }
   };
 
@@ -235,11 +237,10 @@ export function ToolBelt({
       };
 
       mediaRecorder.start();
-      setIsRecording(true);
-      setRecordingDuration(0);
+      setLegacyToolBelt({ isRecording: true, recordingDuration: 0 });
 
       recordingIntervalRef.current = setInterval(() => {
-        setRecordingDuration((prev) => prev + 1);
+        setLegacyToolBelt({ recordingDuration: useAppStore.getState().legacyToolBelt.recordingDuration + 1 });
       }, 1000);
     } catch (err) {
       console.error('Failed to start recording:', err);
@@ -249,7 +250,7 @@ export function ToolBelt({
   const stopRecording = () => {
     if (mediaRecorderRef.current && isRecording) {
       mediaRecorderRef.current.stop();
-      setIsRecording(false);
+      setLegacyToolBelt({ isRecording: false });
       if (recordingIntervalRef.current) {
         clearInterval(recordingIntervalRef.current);
         recordingIntervalRef.current = null;
@@ -272,7 +273,7 @@ export function ToolBelt({
   const handleSubmit = () => {
     if ((!value.trim() && attachments.length === 0) || disabled) return;
     onSubmit(attachments.length > 0 ? [...attachments] : undefined);
-    setAttachments([]);
+    setLegacyToolBelt({ attachments: [] });
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -366,7 +367,7 @@ export function ToolBelt({
           <div className="flex items-center gap-3 mb-3 px-3 py-2 bg-[var(--error)]/10 border border-[var(--error)]/20 rounded-lg">
             <span className="text-sm text-[var(--error)]">{transcriptionError}</span>
             <button
-              onClick={() => setTranscriptionError(null)}
+              onClick={() => setLegacyToolBelt({ transcriptionError: null })}
               className="ml-auto p-1 hover:bg-[var(--error)]/20 rounded"
             >
               <X className="h-3.5 w-3.5 text-[var(--error)]" />
@@ -461,7 +462,7 @@ export function ToolBelt({
 
               {/* TTS Toggle */}
               <button
-                onClick={() => setIsTTSEnabled(!isTTSEnabled)}
+                onClick={() => setLegacyToolBelt({ isTTSEnabled: !isTTSEnabled })}
                 disabled={disabled}
                 className={`p-1.5 rounded transition-colors disabled:opacity-50 hidden md:inline-flex ${
                   isTTSEnabled

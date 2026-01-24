@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useMemo } from "react";
 import { Code, FileCode, Palette, Layers } from "lucide-react";
 import type { Artifact } from "@/lib/types";
 import { ArtifactViewer } from "./artifact-viewer";
+import { useAppStore } from "@/store";
 
 interface ArtifactPanelProps {
   artifacts: Artifact[];
@@ -11,7 +12,8 @@ interface ArtifactPanelProps {
 }
 
 export function ArtifactPanel({ artifacts, isOpen }: ArtifactPanelProps) {
-  const [selectedArtifactId, setSelectedArtifactId] = useState<string | null>(null);
+  const selectedArtifactId = useAppStore((state) => state.artifactPanelSelectedId);
+  const setSelectedArtifactId = useAppStore((state) => state.setArtifactPanelSelectedId);
 
   const resolvedSelectedId = useMemo(() => {
     if (selectedArtifactId && artifacts.some((a) => a.id === selectedArtifactId)) {

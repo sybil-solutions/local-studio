@@ -1,4 +1,4 @@
-import { spawnSync } from "node:child_process";
+import { execSync } from "node:child_process";
 import type { GpuInfo } from "../types/models";
 
 /**
@@ -18,16 +18,12 @@ export const getGpuInfo = (): GpuInfo[] => {
   ].join(",");
 
   try {
-    const result = spawnSync("nvidia-smi", [
-      `--query-gpu=${query}`,
-      "--format=csv,noheader,nounits",
-    ]);
+    // Use execSync with shell - use command name without full path for compatibility
+    const output = execSync(
+      `nvidia-smi --query-gpu=${query} --format=csv,noheader,nounits`,
+      { encoding: "utf-8", timeout: 5000 }
+    ).trim();
 
-    if (result.status !== 0) {
-      return [];
-    }
-
-    const output = result.stdout.toString("utf-8").trim();
     if (!output) {
       return [];
     }

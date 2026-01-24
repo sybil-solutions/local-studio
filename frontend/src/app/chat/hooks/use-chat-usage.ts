@@ -2,13 +2,10 @@
 
 import { useCallback } from "react";
 import { api } from "@/lib/api";
-import type { SessionUsage } from "@/lib/types";
+import { useAppStore } from "@/store";
 
-interface UseChatUsageOptions {
-  setSessionUsage: (usage: SessionUsage | null) => void;
-}
-
-export function useChatUsage({ setSessionUsage }: UseChatUsageOptions) {
+export function useChatUsage() {
+  const setSessionUsage = useAppStore((state) => state.setSessionUsage);
   const refreshUsage = useCallback(
     async (sessionId: string) => {
       try {

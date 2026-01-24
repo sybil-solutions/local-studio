@@ -1,8 +1,9 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useMemo } from 'react';
 import { Search, X, Filter, ChevronDown } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useAppStore } from '@/store';
 
 interface Message {
   id: string;
@@ -18,10 +19,10 @@ interface MessageSearchProps {
 type FilterType = 'all' | 'user' | 'assistant' | 'bookmarked' | 'hasCode';
 
 export function MessageSearch({ messages, onResultClick }: MessageSearchProps) {
-  const [searchQuery, setSearchQuery] = useState('');
-  const [filterType, setFilterType] = useState<FilterType>('all');
-  const [isFilterOpen, setIsFilterOpen] = useState(false);
-  const [selectedIndex, setSelectedIndex] = useState(0);
+  const { query: searchQuery, filterType, isFilterOpen, selectedIndex } = useAppStore(
+    (state) => state.legacyMessageSearch,
+  );
+  const setLegacyMessageSearch = useAppStore((state) => state.setLegacyMessageSearch);
 
   const filteredMessages = useMemo(() => {
     let results = messages;
@@ -82,12 +83,12 @@ export function MessageSearch({ messages, onResultClick }: MessageSearchProps) {
             type="text"
             placeholder="Search messages..."
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={(e) => setLegacyMessageSearch({ query: e.target.value })}
             className="w-full pl-9 pr-8 py-2 bg-[var(--background)] border border-[var(--border)] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[var(--primary)] focus:border-transparent"
           />
           {searchQuery && (
             <button
-              onClick={() => setSearchQuery('')}
+              onClick={() => setLegacyMessageSearch({ query: '' })}
               className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded-full hover:bg-[var(--accent)] transition-colors"
             >
               <X className="h-3 w-3 text-[#9a9590]" />
@@ -98,7 +99,7 @@ export function MessageSearch({ messages, onResultClick }: MessageSearchProps) {
         {/* Filter Dropdown */}
         <div className="relative">
           <button
-            onClick={() => setIsFilterOpen(!isFilterOpen)}
+            onClick={() => setLegacyMessageSearch({ isFilterOpen: !isFilterOpen })}
             className="flex items-center gap-1.5 px-3 py-2 bg-[var(--background)] border border-[var(--border)] rounded-lg text-sm hover:bg-[var(--accent)] transition-colors"
           >
             <Filter className="h-3.5 w-3.5 text-[#9a9590]" />
@@ -119,8 +120,7 @@ export function MessageSearch({ messages, onResultClick }: MessageSearchProps) {
                   <button
                     key={filter}
                     onClick={() => {
-                      setFilterType(filter);
-                      setIsFilterOpen(false);
+                      setLegacyMessageSearch({ filterType: filter, isFilterOpen: false });
                     }}
                     className={`w-full px-3 py-2 text-left text-sm hover:bg-[var(--accent)] transition-colors ${
                       filterType === filter ? 'bg-[var(--accent)] text-[var(--primary)]' : 'text-[var(--foreground)]'

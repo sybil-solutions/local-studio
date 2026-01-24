@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useMemo } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
@@ -20,6 +20,7 @@ import {
   Layers,
 } from 'lucide-react';
 import type { ChatSession } from '@/lib/types';
+import { useAppStore } from '@/store';
 
 // Navigation items
 const navItems = [
@@ -117,9 +118,10 @@ export function ChatSidebar({
   isMobile = false,
 }: ChatSidebarProps) {
   const pathname = usePathname();
-  const [hoveredId, setHoveredId] = useState<string | null>(null);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [visibleCount, setVisibleCount] = useState(CHATS_PER_PAGE);
+  const { hoveredId, searchQuery, visibleCount } = useAppStore(
+    (state) => state.legacyChatSidebar,
+  );
+  const setLegacyChatSidebar = useAppStore((state) => state.setLegacyChatSidebar);
 
   const filteredSessions = useMemo(() => {
     if (!searchQuery.trim()) return sessions;
@@ -143,7 +145,7 @@ export function ChatSidebar({
   const hasMore = filteredSessions.length > visibleCount;
 
   const loadMore = () => {
-    setVisibleCount((prev) => prev + CHATS_PER_PAGE);
+    setLegacyChatSidebar({ visibleCount: visibleCount + CHATS_PER_PAGE });
   };
 
   // On mobile, if collapsed, don't render anything
@@ -282,7 +284,7 @@ export function ChatSidebar({
               <input
                 type="text"
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                onChange={(e) => setLegacyChatSidebar({ searchQuery: e.target.value })}
                 placeholder="Search conversations..."
                 className="w-full pl-9 pr-3 py-2 text-sm bg-[var(--background)] border border-[var(--border)] rounded-lg focus:outline-none focus:border-[var(--muted)]"
               />
@@ -449,7 +451,7 @@ export function ChatSidebar({
             <input
               type="text"
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              onChange={(e) => setLegacyChatSidebar({ searchQuery: e.target.value })}
               placeholder="Search chats..."
               className="w-full pl-8 pr-2 py-1.5 text-xs bg-[var(--background)] border border-[var(--border)] rounded-lg focus:outline-none focus:border-[var(--muted)]"
             />
@@ -486,8 +488,8 @@ export function ChatSidebar({
                 {group.sessions.map((session) => (
                   <div
                     key={session.id}
-                    onMouseEnter={() => setHoveredId(session.id)}
-                    onMouseLeave={() => setHoveredId(null)}
+                    onMouseEnter={() => setLegacyChatSidebar({ hoveredId: session.id })}
+                    onMouseLeave={() => setLegacyChatSidebar({ hoveredId: null })}
                     className={`group relative mb-0.5 rounded-lg cursor-pointer transition-colors ${
                       currentSessionId === session.id
                         ? 'bg-[var(--accent)]'

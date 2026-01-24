@@ -1,9 +1,9 @@
 "use client";
 
-import { useState } from "react";
 import { X, Server, RefreshCw, Trash2 } from "lucide-react";
 import type { MCPServer } from "@/lib/types";
 import { McpServerForm, type McpServerFormPayload } from "@/components/mcp";
+import { useAppStore } from "@/store";
 
 interface MCPSettingsModalProps {
   isOpen: boolean;
@@ -24,8 +24,10 @@ export function MCPSettingsModal({
   onRemoveServer,
   onRefresh,
 }: MCPSettingsModalProps) {
-  const [pendingServer, setPendingServer] = useState<string | null>(null);
-  const [actionError, setActionError] = useState<string | null>(null);
+  const pendingServer = useAppStore((state) => state.mcpPendingServer);
+  const setPendingServer = useAppStore((state) => state.setMcpPendingServer);
+  const actionError = useAppStore((state) => state.mcpActionError);
+  const setActionError = useAppStore((state) => state.setMcpActionError);
   if (!isOpen) return null;
 
   const handleAddServer = async (payload: McpServerFormPayload) => {

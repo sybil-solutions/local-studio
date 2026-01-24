@@ -1,19 +1,25 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useCallback } from "react";
 import { api } from "@/lib/api";
-import type { MCPTool, MCPServer } from "@/lib/types";
-import type { ToolResult } from "@/lib/types";
+import type { MCPTool, MCPServer, ToolResult } from "@/lib/types";
+import { useAppStore } from "@/store";
 
 interface UseChatToolsOptions {
   mcpEnabled: boolean;
 }
 
 export function useChatTools({ mcpEnabled }: UseChatToolsOptions) {
-  const [mcpTools, setMcpTools] = useState<MCPTool[]>([]);
-  const [mcpServers, setMcpServers] = useState<MCPServer[]>([]);
-  const [executingTools, setExecutingTools] = useState<Set<string>>(new Set());
-  const [toolResultsMap, setToolResultsMap] = useState<Map<string, ToolResult>>(new Map());
+  const mcpTools = useAppStore((state) => state.mcpTools);
+  const mcpServers = useAppStore((state) => state.mcpServers);
+  const executingTools = useAppStore((state) => state.executingTools);
+  const toolResultsMap = useAppStore((state) => state.toolResultsMap);
+  const setMcpTools = useAppStore((state) => state.setMcpTools);
+  const setMcpServers = useAppStore((state) => state.setMcpServers);
+  const setExecutingTools = useAppStore((state) => state.setExecutingTools);
+  const updateExecutingTools = useAppStore((state) => state.updateExecutingTools);
+  const setToolResultsMap = useAppStore((state) => state.setToolResultsMap);
+  const updateToolResultsMap = useAppStore((state) => state.updateToolResultsMap);
 
   const loadMCPServers = useCallback(async () => {
     try {
@@ -30,7 +36,7 @@ export function useChatTools({ mcpEnabled }: UseChatToolsOptions) {
     } catch (err) {
       console.error("Failed to load MCP servers:", err);
     }
-  }, []);
+  }, [setMcpServers]);
 
   const loadMCPTools = useCallback(async (): Promise<MCPTool[]> => {
     if (!mcpEnabled) {
@@ -89,7 +95,7 @@ export function useChatTools({ mcpEnabled }: UseChatToolsOptions) {
       console.error("Failed to load MCP tools:", err);
       return [];
     }
-  }, [mcpEnabled, mcpServers]);
+  }, [mcpEnabled, mcpServers, setMcpTools]);
 
   const getToolDefinitions = useCallback(
     (toolsOverride?: MCPTool[]): MCPTool[] => {
@@ -126,7 +132,7 @@ export function useChatTools({ mcpEnabled }: UseChatToolsOptions) {
     async (toolCall: { toolCallId: string; toolName: string; args?: Record<string, unknown> }) => {
       const { toolCallId, toolName: rawToolName, args } = toolCall;
 
-      setExecutingTools((prev) => new Set(prev).add(toolCallId));
+      updateExecutingTools((prev) => new Set(prev).add(toolCallId));
 
       try {
         const nameParts = rawToolName.split("__");
@@ -146,7 +152,7 @@ export function useChatTools({ mcpEnabled }: UseChatToolsOptions) {
           isError: false,
         };
 
-        setToolResultsMap((prev) => new Map(prev).set(toolCallId, toolResult));
+        updateToolResultsMap((prev) => new Map(prev).set(toolCallId, toolResult));
         return toolResult;
       } catch (err) {
         const errorResult: ToolResult = {
@@ -154,17 +160,17 @@ export function useChatTools({ mcpEnabled }: UseChatToolsOptions) {
           content: err instanceof Error ? err.message : "Tool execution failed",
           isError: true,
         };
-        setToolResultsMap((prev) => new Map(prev).set(toolCallId, errorResult));
+        updateToolResultsMap((prev) => new Map(prev).set(toolCallId, errorResult));
         return errorResult;
       } finally {
-        setExecutingTools((prev) => {
+        updateExecutingTools((prev) => {
           const next = new Set(prev);
           next.delete(toolCallId);
           return next;
         });
       }
     },
-    [mcpTools],
+    [mcpTools, updateExecutingTools, updateToolResultsMap],
   );
 
   const addMcpServer = useCallback(
@@ -194,7 +200,7 @@ export function useChatTools({ mcpEnabled }: UseChatToolsOptions) {
   const clearToolResults = useCallback(() => {
     setToolResultsMap(new Map());
     setExecutingTools(new Set());
-  }, []);
+  }, [setExecutingTools, setToolResultsMap]);
 
   return {
     mcpTools,

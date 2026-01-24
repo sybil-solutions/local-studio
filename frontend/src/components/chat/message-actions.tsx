@@ -1,8 +1,8 @@
 'use client';
 
-import { useState } from 'react';
 import { Bookmark, BookmarkCheck, ThumbsUp, ThumbsDown, Copy, Check, MoreVertical } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useAppStore } from '@/store';
 
 interface MessageActionsProps {
   content: string;
@@ -17,26 +17,38 @@ interface Reaction {
 }
 
 export function MessageActions({ content, messageId, onBookmark, onReact }: MessageActionsProps) {
-  const [copied, setCopied] = useState(false);
-  const [bookmarked, setBookmarked] = useState(false);
-  const [reaction, setReaction] = useState<Reaction | null>(null);
-  const [showMenu, setShowMenu] = useState(false);
+  const messageState = useAppStore(
+    (state) =>
+      state.legacyMessageActions[messageId] ?? {
+        copied: false,
+        bookmarked: false,
+        reaction: null,
+        showMenu: false,
+      },
+  );
+  const setLegacyMessageActions = useAppStore((state) => state.setLegacyMessageActions);
+  const { copied, bookmarked, reaction, showMenu } = messageState as {
+    copied: boolean;
+    bookmarked: boolean;
+    reaction: Reaction | null;
+    showMenu: boolean;
+  };
 
   const handleCopy = () => {
     navigator.clipboard.writeText(content);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    setLegacyMessageActions(messageId, { copied: true });
+    setTimeout(() => setLegacyMessageActions(messageId, { copied: false }), 2000);
   };
 
   const handleBookmark = () => {
     const newState = !bookmarked;
-    setBookmarked(newState);
+    setLegacyMessageActions(messageId, { bookmarked: newState });
     onBookmark?.(messageId, newState);
   };
 
   const handleReaction = (type: 'up' | 'down') => {
     const newReaction = reaction?.type === type ? null : { type, count: (reaction?.type === type ? reaction.count - 1 : reaction?.count || 0) + 1 };
-    setReaction(newReaction);
+    setLegacyMessageActions(messageId, { reaction: newReaction });
     onReact?.(messageId, newReaction?.type || null);
   };
 

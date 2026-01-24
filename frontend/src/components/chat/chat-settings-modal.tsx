@@ -1,7 +1,8 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useEffect } from 'react';
 import { X, Settings, Trash2, Info, Search, Globe, Zap, FileText, BookOpen, Sparkles, Brain, Database, CheckCircle2, XCircle, Loader2 } from 'lucide-react';
+import { useAppStore } from '@/store';
 
 export interface DeepResearchSettings {
   enabled: boolean;
@@ -75,24 +76,28 @@ export function ChatSettingsModal({
   onRagSettingsChange,
   onTestRagConnection,
 }: ChatSettingsModalProps) {
-  const [localPrompt, setLocalPrompt] = useState(systemPrompt);
-  const [forkSelection, setForkSelection] = useState<Record<string, boolean>>({});
-  const [localDeepResearch, setLocalDeepResearch] = useState(deepResearch);
-  const [localRagSettings, setLocalRagSettings] = useState(ragSettings);
-  const [ragTestStatus, setRagTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
-  const [ragTestResult, setRagTestResult] = useState<string | null>(null);
+  const legacyChatSettings = useAppStore((state) => state.legacyChatSettings);
+  const setLegacyChatSettings = useAppStore((state) => state.setLegacyChatSettings);
+  const {
+    localPrompt,
+    forkSelection,
+    localDeepResearch,
+    localRagSettings,
+    ragTestStatus,
+    ragTestResult,
+  } = legacyChatSettings;
 
   useEffect(() => {
-    setLocalPrompt(systemPrompt);
-  }, [systemPrompt]);
+    setLegacyChatSettings({ localPrompt: systemPrompt });
+  }, [setLegacyChatSettings, systemPrompt]);
 
   useEffect(() => {
-    setLocalDeepResearch(deepResearch);
-  }, [deepResearch]);
+    setLegacyChatSettings({ localDeepResearch: deepResearch });
+  }, [deepResearch, setLegacyChatSettings]);
 
   useEffect(() => {
-    setLocalRagSettings(ragSettings);
-  }, [ragSettings]);
+    setLegacyChatSettings({ localRagSettings: ragSettings });
+  }, [ragSettings, setLegacyChatSettings]);
 
   useEffect(() => {
     // Load from localStorage on mount
@@ -100,7 +105,7 @@ export function ChatSettingsModal({
     if (saved && !systemPrompt) {
       onSystemPromptChange(saved);
     }
-  }, []);
+  }, [onSystemPromptChange, systemPrompt]);
 
   if (!isOpen) return null;
 
@@ -120,41 +125,51 @@ export function ChatSettingsModal({
 
   const handleTestRagConnection = async () => {
     if (!onTestRagConnection) return;
-    setRagTestStatus('testing');
-    setRagTestResult(null);
+    setLegacyChatSettings({ ragTestStatus: 'testing', ragTestResult: null });
     try {
       const result = await onTestRagConnection();
       if (result.status === 'ok' || result.status === 'healthy') {
-        setRagTestStatus('success');
-        setRagTestResult(result.documents_count !== undefined
-          ? `Connected (${result.documents_count} documents)`
-          : 'Connected');
+        setLegacyChatSettings({
+          ragTestStatus: 'success',
+          ragTestResult:
+            result.documents_count !== undefined
+              ? `Connected (${result.documents_count} documents)`
+              : 'Connected',
+        });
       } else {
-        setRagTestStatus('error');
-        setRagTestResult(result.status || 'Connection failed');
+        setLegacyChatSettings({
+          ragTestStatus: 'error',
+          ragTestResult: result.status || 'Connection failed',
+        });
       }
     } catch (error) {
-      setRagTestStatus('error');
-      setRagTestResult(error instanceof Error ? error.message : 'Connection failed');
+      setLegacyChatSettings({
+        ragTestStatus: 'error',
+        ragTestResult: error instanceof Error ? error.message : 'Connection failed',
+      });
     }
   };
 
   const updateRagSettings = (updates: Partial<RAGSettings>) => {
-    setLocalRagSettings(prev => ({ ...prev, ...updates }));
-    setRagTestStatus('idle');
-    setRagTestResult(null);
+    setLegacyChatSettings({
+      localRagSettings: { ...localRagSettings, ...updates },
+      ragTestStatus: 'idle',
+      ragTestResult: null,
+    });
   };
 
   const updateDeepResearch = (updates: Partial<DeepResearchSettings>) => {
-    setLocalDeepResearch(prev => ({ ...prev, ...updates }));
+    setLegacyChatSettings({ localDeepResearch: { ...localDeepResearch, ...updates } });
   };
 
   const handleClear = () => {
-    setLocalPrompt('');
+    setLegacyChatSettings({ localPrompt: '' });
   };
 
   const toggleForkModel = (id: string) => {
-    setForkSelection((prev) => ({ ...prev, [id]: !prev[id] }));
+    setLegacyChatSettings({
+      forkSelection: { ...forkSelection, [id]: !forkSelection[id] },
+    });
   };
 
   const forkSelected = () => {
@@ -165,7 +180,7 @@ export function ChatSettingsModal({
       .filter((id) => id && id !== selectedModel);
     if (selected.length === 0) return;
     onForkModels(selected);
-    setForkSelection({});
+    setLegacyChatSettings({ forkSelection: {} });
     onClose();
   };
 
@@ -486,7 +501,7 @@ export function ChatSettingsModal({
             </p>
             <textarea
               value={localPrompt}
-              onChange={(e) => setLocalPrompt(e.target.value)}
+              onChange={(e) => setLegacyChatSettings({ localPrompt: e.target.value })}
               placeholder="Enter a system prompt... (e.g., You are a helpful coding assistant.)"
               className="w-full h-64 px-3 py-2 text-sm bg-[var(--background)] border border-[var(--border)] rounded-lg resize-none focus:outline-none focus:border-[var(--foreground)] font-mono"
             />

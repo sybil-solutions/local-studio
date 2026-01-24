@@ -15,6 +15,8 @@ import {
   Loader2,
   Wrench,
   ArrowUp,
+  Volume2,
+  VolumeX,
 } from "lucide-react";
 import { ToolDropdown, DropdownItem } from "./tool-dropdown";
 import type { ModelOption } from "../../types";
@@ -31,6 +33,7 @@ interface ToolBeltToolbarProps {
   mcpEnabled?: boolean;
   artifactsEnabled?: boolean;
   deepResearchEnabled?: boolean;
+  isTTSEnabled?: boolean;
   availableModels?: ModelOption[];
   selectedModel?: string;
   onModelChange?: (modelId: string) => void;
@@ -39,6 +42,7 @@ interface ToolBeltToolbarProps {
   onMcpToggle?: () => void;
   onArtifactsToggle?: () => void;
   onDeepResearchToggle?: () => void;
+  onTTSToggle?: () => void;
   onAttachFile?: () => void;
   onAttachImage?: () => void;
   onStartRecording?: () => void;
@@ -59,6 +63,7 @@ export function ToolBeltToolbar({
   mcpEnabled,
   artifactsEnabled,
   deepResearchEnabled,
+  isTTSEnabled,
   availableModels = [],
   selectedModel,
   onModelChange,
@@ -67,6 +72,7 @@ export function ToolBeltToolbar({
   onMcpToggle,
   onArtifactsToggle,
   onDeepResearchToggle,
+  onTTSToggle,
   onAttachFile,
   onAttachImage,
   onStartRecording,
@@ -130,6 +136,25 @@ export function ToolBeltToolbar({
             <Mic className="h-4 w-4" />
           )}
         </button>
+
+        {onTTSToggle && (
+          <button
+            onClick={onTTSToggle}
+            disabled={disabled}
+            className={`hidden md:flex items-center justify-center p-2 rounded-lg transition-all disabled:opacity-50 ${
+              isTTSEnabled
+                ? "bg-(--success)/20 text-(--success)"
+                : "hover:bg-(--accent) text-[#9a9590]"
+            }`}
+            title={isTTSEnabled ? "Disable TTS" : "Enable TTS"}
+          >
+            {isTTSEnabled ? (
+              <Volume2 className="h-4 w-4" />
+            ) : (
+              <VolumeX className="h-4 w-4" />
+            )}
+          </button>
+        )}
 
         <ToolDropdown icon={Wrench} label="Tools" isActive={hasActiveTools} disabled={disabled}>
           <DropdownItem

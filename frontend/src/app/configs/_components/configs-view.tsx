@@ -178,7 +178,7 @@ function ApiConnectionSection({
             <ApiField
               label="Voice Model"
               value={apiSettings.voiceModel}
-              placeholder="whisper-1"
+              placeholder="whisper-large-v3-turbo"
               onChange={(voiceModel) => onApiSettingsChange({ ...apiSettings, voiceModel })}
             />
 

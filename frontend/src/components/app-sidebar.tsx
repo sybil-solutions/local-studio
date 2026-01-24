@@ -66,6 +66,12 @@ export function AppSidebar({ children }: AppSidebarProps) {
   const chatSessions = useAppStore((state) => state.sessions);
   const setSessions = useAppStore((state) => state.setSessions);
 
+  useEffect(() => {
+    if (!useAppStore.persist.hasHydrated()) {
+      void useAppStore.persist.rehydrate();
+    }
+  }, []);
+
   // Detect mobile
   useEffect(() => {
     const checkMobile = () => {

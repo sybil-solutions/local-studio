@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useId } from "react";
+import { useEffect, useRef, useId } from "react";
 import { AlertCircle } from "lucide-react";
 import mermaid from "mermaid";
 import { EnhancedCodeBlock } from "../code/enhanced-code-block";
@@ -11,6 +11,7 @@ import {
   thinkingParser,
 } from "@/lib/services/message-parsing";
 import type { MarkdownSegment, ThinkingResult } from "@/lib/services/message-parsing";
+import { useAppStore } from "@/store";
 
 // Shared thinking parser exports
 export { thinkingParser };
@@ -36,9 +37,10 @@ interface MessageRendererProps {
 
 function MermaidDiagram({ code }: { code: string }) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const [svg, setSvg] = useState<string>("");
-  const [error, setError] = useState<string | null>(null);
   const id = useId().replace(/:/g, "_");
+  const mermaidState = useAppStore((state) => state.mermaidState[id] ?? { svg: "", error: null });
+  const setMermaidState = useAppStore((state) => state.setMermaidState);
+  const { svg, error } = mermaidState;
   const renderSeqRef = useRef(0);
 
   useEffect(() => {
@@ -52,8 +54,9 @@ function MermaidDiagram({ code }: { code: string }) {
           code.trim(),
         );
       if (!looksLikeMermaid) {
-        setSvg("");
-        setError(
+        setMermaidState(
+          id,
+          "",
           "Not a valid Mermaid diagram (missing diagram header like `graph TD` or `sequenceDiagram`).",
         );
         return;
@@ -62,12 +65,14 @@ function MermaidDiagram({ code }: { code: string }) {
       try {
         const { svg } = await mermaid.render(`mermaid_${id}_${seq}`, code.trim());
         if (seq !== renderSeqRef.current) return;
-        setSvg(svg);
-        setError(null);
+        setMermaidState(id, svg, null);
       } catch (e) {
         if (seq !== renderSeqRef.current) return;
-        setError(e instanceof Error ? e.message : "Failed to render diagram");
-        setSvg("");
+        setMermaidState(
+          id,
+          "",
+          e instanceof Error ? e.message : "Failed to render diagram",
+        );
       }
     };
 
@@ -75,7 +80,7 @@ function MermaidDiagram({ code }: { code: string }) {
       renderDiagram();
     }, 250);
     return () => window.clearTimeout(handle);
-  }, [code, id]);
+  }, [code, id, setMermaidState]);
 
   if (error) {
     return (

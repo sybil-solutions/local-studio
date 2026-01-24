@@ -1,9 +1,10 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback } from "react";
 import type { UIMessage } from "@ai-sdk/react";
 import { Loader2 } from "lucide-react";
 import { ChatMessageItem } from "./chat-message-item";
+import { useAppStore } from "@/store";
 
 interface ChatMessageListProps {
   messages: UIMessage[];
@@ -26,7 +27,8 @@ export function ChatMessageList({
   onFork,
   onReprompt,
 }: ChatMessageListProps) {
-  const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
+  const copiedMessageId = useAppStore((state) => state.copiedMessageId);
+  const setCopiedMessageId = useAppStore((state) => state.setCopiedMessageId);
   const lastMessage = messages[messages.length - 1];
   const showLoadingIndicator = isLoading && lastMessage?.role === "user";
 
@@ -36,12 +38,15 @@ export function ChatMessageList({
       await navigator.clipboard.writeText(text);
       setCopiedMessageId(messageId);
       window.setTimeout(() => {
-        setCopiedMessageId((current) => (current === messageId ? null : current));
+        const current = useAppStore.getState().copiedMessageId;
+        if (current === messageId) {
+          setCopiedMessageId(null);
+        }
       }, 2000);
     } catch (err) {
       console.error("Failed to copy message:", err);
     }
-  }, []);
+  }, [setCopiedMessageId]);
 
   const handleExport = useCallback(
     (payload: {
