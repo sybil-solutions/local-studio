@@ -10,5 +10,10 @@ export default {
   ],
   ignoreDependencies: [
     '@types/*',
+    // Used for lint-staged hooks
+    'lint-staged',
+    // Bun types used in tsconfig
+    'bun-types',
   ],
+  ignoreExportsUsedInFile: true,
 };

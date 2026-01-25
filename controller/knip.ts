@@ -9,8 +9,23 @@ export default {
     'dist/**',
     'runtime/**',
     '.husky/**',
+    // Barrel/index files for module exports
+    'src/**/index.ts',
+    'src/**/external.ts',
+    // Schemas used by OpenAPI
+    'src/types/schemas.ts',
+    // OpenAPI routes (experimental)
+    'src/routes/system-openapi.ts',
   ],
   ignoreDependencies: [
     '@types/*',
+    // Used in OpenAPI routes
+    '@hono/zod-openapi',
+    'swagger-ui-dist',
+    // Used for PostgreSQL analytics (optional feature)
+    'pg',
+    // Used for lint-staged hooks
+    'lint-staged',
   ],
+  ignoreExportsUsedInFile: true,
 };
