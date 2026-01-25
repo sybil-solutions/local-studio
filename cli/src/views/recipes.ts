@@ -12,20 +12,18 @@ export function renderRecipes(state: AppState): string {
     return lines.join('\n');
   }
 
-  const running = state.status.recipe_id;
+  const { running, launching, model } = state.status;
 
   state.recipes.forEach((recipe, i) => {
     const isSelected = i === state.selectedIndex;
-    const isRunning = recipe.id === running;
+    const isActive = model && recipe.name.includes(model);
 
     let prefix = '  ';
     if (isSelected) prefix = c.cyan('▶ ');
 
     let status = '';
-    if (isRunning) {
-      status = state.status.status === 'running'
-        ? c.green(' [RUNNING]')
-        : c.yellow(` [${state.status.status.toUpperCase()}]`);
+    if (isActive) {
+      status = launching ? c.yellow(' [LAUNCHING]') : c.green(' [RUNNING]');
     }
 
     const name = isSelected ? c.bold(recipe.name) : recipe.name;
