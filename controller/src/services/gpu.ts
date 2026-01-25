@@ -20,13 +20,13 @@ export const getGpuInfo = (): GpuInfo[] => {
 
   try {
     // Use full path to nvidia-smi with explicit env to ensure it can find CUDA libs
-    const nvidiaSmi = process.env.NVIDIA_SMI_PATH || "/usr/bin/nvidia-smi";
+    const nvidiaSmi = process.env["NVIDIA_SMI_PATH"] || "/usr/bin/nvidia-smi";
     const output = execSync(
       `${nvidiaSmi} --query-gpu=${query} --format=csv,noheader,nounits`,
       {
         encoding: "utf-8",
         timeout: 5000,
-        env: { ...process.env, PATH: `/usr/bin:/usr/local/bin:${process.env.PATH || ""}` },
+        env: { ...process.env, PATH: `/usr/bin:/usr/local/bin:${process.env["PATH"] || ""}` },
       }
     ).trim();
 

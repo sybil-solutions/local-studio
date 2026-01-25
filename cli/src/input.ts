@@ -21,7 +21,7 @@ export function setupInput(onKey: KeyHandler): () => void {
   stdin.resume();
   stdin.setEncoding('utf8');
 
-  const handler = (data: string) => onKey(KEY_MAP[data] || data);
+  const handler = (data: string): void => { onKey(KEY_MAP[data] || data); };
   stdin.on('data', handler);
 
   return () => {

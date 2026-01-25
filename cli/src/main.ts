@@ -1,5 +1,5 @@
-// CRITICAL
 #!/usr/bin/env bun
+// CRITICAL
 import { hideCursor, showCursor } from './ansi';
 import { setupInput } from './input';
 import { render } from './render';
@@ -35,7 +35,7 @@ async function refresh(): Promise<void> {
 }
 
 const VIEWS: View[] = ['dashboard', 'recipes', 'status', 'config'];
-let cleanupInput: () => void;
+let cleanupInput: () => void = (): void => { /* no-op */ };
 
 function cleanup(): void {
   cleanupInput?.(); showCursor(); process.exit(0);

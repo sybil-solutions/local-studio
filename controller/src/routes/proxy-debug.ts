@@ -6,7 +6,6 @@ import { HttpStatus, serviceUnavailable } from "../core/errors";
 import type { AppContext } from "../types/context";
 import type { Recipe } from "../types/models";
 import type { ToolCallBuffer, ThinkState } from "../services/proxy-parsers";
-import { parseToolCallsFromContent } from "../services/proxy-parsers";
 import { createProxyStreamDebug } from "../services/proxy-streamer-debug";
 
 const switchLock = new AsyncLock();

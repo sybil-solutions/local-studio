@@ -1,7 +1,5 @@
 // CRITICAL
-import type { Hono } from "hono";
-import { OpenAPIHono } from "@hono/zod-openapi";
-import { connect } from "node:net";
+import type { OpenAPIHono } from "@hono/zod-openapi";
 import type { AppContext } from "../types/context";
 import {
   HealthResponseSchema,
@@ -17,32 +15,6 @@ import { getGpuInfo } from "../services/gpu";
  * @param context - App context.
  */
 export const registerSystemRoutes = (app: OpenAPIHono, context: AppContext): void => {
-  /**
-   * Check if a TCP service is reachable.
-   * @param host - Hostname.
-   * @param port - Port number.
-   * @param timeoutMs - Timeout in ms.
-   * @returns Promise resolving to availability.
-   */
-  const checkService = (host: string, port: number, timeoutMs = 1000): Promise<boolean> => {
-    return new Promise((resolve) => {
-      const socket = connect(port, host);
-      const timer = setTimeout(() => {
-        socket.destroy();
-        resolve(false);
-      }, timeoutMs);
-      socket.once("connect", () => {
-        clearTimeout(timer);
-        socket.end();
-        resolve(true);
-      });
-      socket.once("error", () => {
-        clearTimeout(timer);
-        resolve(false);
-      });
-    });
-  };
-
   // GET /health - Health check endpoint
   app.openapi(
     {
@@ -106,11 +78,21 @@ export const registerSystemRoutes = (app: OpenAPIHono, context: AppContext): voi
     },
     async (ctx) => {
       const current = await context.processManager.findInferenceProcess(context.config.inference_port);
+
+      // Transform process to match schema (narrowing backend type and ensuring model_path is string)
+      const processInfo = current ? {
+        pid: current.pid,
+        backend: current.backend as "vllm" | "sglang" | "tabby",
+        model_path: current.model_path ?? "",
+        port: current.port,
+        served_model_name: current.served_model_name ?? undefined,
+      } : undefined;
+
       return ctx.json({
         running: Boolean(current),
-        process: current,
+        process: processInfo,
         inference_port: context.config.inference_port,
-        launching: context.launchState.getLaunchingRecipeId(),
+        launching: context.launchState.getLaunchingRecipeId() ?? undefined,
       });
     }
   );

@@ -6,8 +6,14 @@
   "scripts": {
     "start": "bun src/main.ts",
     "dev": "bun --watch src/main.ts",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
     "typecheck": "tsc --noEmit",
-    "build": "bun build src/main.ts --compile --outfile vllm-studio"
+    "build": "bun build src/main.ts --compile --outfile vllm-studio",
+    "prepare": "cd ../.. && husky cli/.husky",
+    "test": "vitest run",
+    "check": "knip && jscpd src && depcheck",
+    "check:fix": "knip --fix"
   },
   "bin": {
     "vllm-studio": "src/main.ts"
@@ -25,18 +31,6 @@
     "prettier": "3.4.2",
     "typescript": "^5.4.0",
     "vitest": "3.2.4"
-  },
-  "scripts": {
-    "start": "bun src/main.ts",
-    "dev": "bun --watch src/main.ts",
-    "lint": "eslint .",
-    "lint:fix": "eslint . --fix",
-    "typecheck": "tsc --noEmit",
-    "build": "bun build src/main.ts --compile --outfile vllm-studio",
-    "prepare": "cd ../.. && husky cli/.husky",
-    "test": "vitest run",
-    "check": "knip && jscpd src && depcheck",
-    "check:fix": "knip --fix"
   },
   "engines": {
     "bun": ">=1.0.0"

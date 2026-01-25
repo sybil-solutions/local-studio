@@ -7,7 +7,7 @@ import tsParser from "@typescript-eslint/parser";
 /** @type {import("eslint").Linter.FlatConfig[]} */
 const config = [
   {
-    ignores: ["bun.lockb", "dist", "node_modules", "runtime"],
+    ignores: ["bun.lockb", "dist", "node_modules", "runtime", "knip.ts", "vitest.config.ts"],
   },
   {
     files: ["**/*.ts"],

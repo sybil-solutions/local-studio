@@ -46,7 +46,7 @@ jobs:
         run: bunx jscpd src
       - name: Unused dependencies
         working-directory: ./controller
-        run: bunx depcheck
+        run: bunx depcheck --ignores=lint-staged,pg,swagger-ui-dist,@hono/zod-openapi,bun:sqlite,@npmcli/config,@types/pg,@types/bun-types,@types/bun,prettier
       - name: Test
         working-directory: ./controller
         run: bun test
@@ -75,7 +75,7 @@ jobs:
         run: bunx jscpd src
       - name: Unused dependencies
         working-directory: ./cli
-        run: bunx depcheck
+        run: bunx depcheck --ignores=lint-staged,prettier,husky,@types/bun,bun-types,@types/bun-types
       - name: Test
         working-directory: ./cli
         run: bun test
@@ -101,7 +101,7 @@ jobs:
         run: npx jscpd src
       - name: Unused dependencies
         working-directory: ./frontend
-        run: npx depcheck --ignores=@types/react,@types/react-dom,@types/node,@types/react-syntax-highlighter,eslint-config-next,tailwindcss,@tailwindcss/postcss,prettier,@ai-sdk/openai,@ai-sdk/openai-compatible,@ai-sdk/react,ai,rehype-highlight,zod
+        run: npx depcheck --ignores=@types/react,@types/react-dom,@types/node,@types/react-syntax-highlighter,eslint-config-next,tailwindcss,@tailwindcss/postcss,prettier,@ai-sdk/openai,@ai-sdk/openai-compatible,@ai-sdk/react,ai,rehype-highlight,zod,lint-staged,husky,jscpd,depcheck,knip
       - name: Test
         working-directory: ./frontend
         run: npm test

@@ -1,8 +1,8 @@
 export const ESC = '\x1b[';
-export const clear = () => process.stdout.write(`${ESC}2J${ESC}H`);
-export const hideCursor = () => process.stdout.write(`${ESC}?25l`);
-export const showCursor = () => process.stdout.write(`${ESC}?25h`);
-export const moveTo = (row: number, col: number) => `${ESC}${row};${col}H`;
+export const clear = (): boolean => process.stdout.write(`${ESC}2J${ESC}H`);
+export const hideCursor = (): boolean => process.stdout.write(`${ESC}?25l`);
+export const showCursor = (): boolean => process.stdout.write(`${ESC}?25h`);
+export const moveTo = (row: number, col: number): string => `${ESC}${row};${col}H`;
 
 export const colors = {
   reset: `${ESC}0m`,
@@ -18,13 +18,13 @@ export const colors = {
 };
 
 export const c = {
-  red: (s: string) => `${colors.red}${s}${colors.reset}`,
-  green: (s: string) => `${colors.green}${s}${colors.reset}`,
-  yellow: (s: string) => `${colors.yellow}${s}${colors.reset}`,
-  blue: (s: string) => `${colors.blue}${s}${colors.reset}`,
-  cyan: (s: string) => `${colors.cyan}${s}${colors.reset}`,
-  bold: (s: string) => `${colors.bold}${s}${colors.reset}`,
-  dim: (s: string) => `${colors.dim}${s}${colors.reset}`,
+  red: (s: string): string => `${colors.red}${s}${colors.reset}`,
+  green: (s: string): string => `${colors.green}${s}${colors.reset}`,
+  yellow: (s: string): string => `${colors.yellow}${s}${colors.reset}`,
+  blue: (s: string): string => `${colors.blue}${s}${colors.reset}`,
+  cyan: (s: string): string => `${colors.cyan}${s}${colors.reset}`,
+  bold: (s: string): string => `${colors.bold}${s}${colors.reset}`,
+  dim: (s: string): string => `${colors.dim}${s}${colors.reset}`,
 };
 
 export function pad(s: string, len: number, align: 'l' | 'r' = 'l'): string {
@@ -35,7 +35,7 @@ export function pad(s: string, len: number, align: 'l' | 'r' = 'l'): string {
 
 export function table(headers: string[], rows: string[][], widths: number[]): string {
   const sep = widths.map(w => '─'.repeat(w + 2)).join('┼');
-  const line = (cells: string[]) =>
+  const line = (cells: string[]): string =>
     '│ ' + cells.map((c, i) => pad(c, widths[i])).join(' │ ') + ' │';
 
   return [

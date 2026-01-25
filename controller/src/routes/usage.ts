@@ -26,8 +26,9 @@ export const registerUsageRoutes = (app: Hono, context: AppContext): void => {
 
   /**
    * Create empty usage stats response.
+   * @returns Empty usage response object.
    */
-  const emptyResponse = () => ({
+  const emptyResponse = (): Record<string, unknown> => ({
     totals: {
       total_tokens: 0,
       prompt_tokens: 0,
@@ -152,8 +153,8 @@ export const registerUsageRoutes = (app: Hono, context: AppContext): void => {
 
       const getPercentile = (sorted: { latency_ms: number }[], p: number): number => {
         if (sorted.length === 0) return 0;
-        const idx = Math.floor(sorted.length * p);
-        return Math.round(sorted[Math.min(idx, sorted.length - 1)]?.latency_ms ?? 0);
+        const index = Math.floor(sorted.length * p);
+        return Math.round(sorted[Math.min(index, sorted.length - 1)]?.latency_ms ?? 0);
       };
 
       // TTFT stats

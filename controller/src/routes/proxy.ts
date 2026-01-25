@@ -3,6 +3,7 @@ import type { Hono } from "hono";
 import { readFileSync } from "node:fs";
 import { AsyncLock, delay } from "../core/async";
 import { HttpStatus, serviceUnavailable } from "../core/errors";
+import { buildSseHeaders } from "../http/sse";
 import type { AppContext } from "../types/context";
 import type { Recipe } from "../types/models";
 import type { ToolCallBuffer, ThinkState, Utf8State } from "../services/proxy-parsers";
@@ -169,6 +170,8 @@ IMPORTANT: Do not use emoji, Unicode symbols, or decorative box-drawing characte
 
   /**
    * Check if model has known UTF-8 streaming issues.
+   * @param model - Model name.
+   * @returns True if model has UTF-8 issues.
    */
   const hasUtf8Issues = (model: string): boolean => {
     const lower = model.toLowerCase();
@@ -209,10 +212,10 @@ IMPORTANT: Do not use emoji, Unicode symbols, or decorative box-drawing characte
       if (requestedModel && hasUtf8Issues(requestedModel)) {
         const messages = parsed["messages"];
         if (Array.isArray(messages) && messages.length > 0) {
-          const firstMsg = messages[0] as Record<string, unknown>;
-          if (firstMsg["role"] === "system" && typeof firstMsg["content"] === "string") {
+          const firstMessage = messages[0] as Record<string, unknown>;
+          if (firstMessage["role"] === "system" && typeof firstMessage["content"] === "string") {
             // Append to existing system message
-            firstMsg["content"] = firstMsg["content"] + UTF8_AVOIDANCE_PROMPT;
+            firstMessage["content"] = firstMessage["content"] + UTF8_AVOIDANCE_PROMPT;
           } else {
             // Prepend new system message
             messages.unshift({ role: "system", content: UTF8_AVOIDANCE_PROMPT.trim() });
@@ -296,6 +299,15 @@ IMPORTANT: Do not use emoji, Unicode symbols, or decorative box-drawing characte
     }
 
     const litellmResponse = await fetch(litellmUrl, { method: "POST", headers, body: finalBody });
+    if (!litellmResponse.ok) {
+      const errorText = await litellmResponse.text();
+      return new Response(errorText, {
+        status: litellmResponse.status,
+        headers: {
+          "Content-Type": litellmResponse.headers.get("Content-Type") ?? "application/json",
+        },
+      });
+    }
     const reader = litellmResponse.body?.getReader();
     if (!reader) {
       throw serviceUnavailable("LiteLLM backend unavailable");
@@ -332,11 +344,6 @@ IMPORTANT: Do not use emoji, Unicode symbols, or decorative box-drawing characte
       },
     });
 
-    return new Response(stream, {
-      headers: {
-        "Cache-Control": "no-cache",
-        Connection: "keep-alive",
-      },
-    });
+    return new Response(stream, { headers: buildSseHeaders() });
   });
 };

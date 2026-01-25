@@ -28,9 +28,71 @@ export const createProxyStreamDebug = (options: ProxyStreamOptionsDebug): Readab
     if (onChunk) onChunk(stage, data);
   };
 
+  const shouldSkipUserEcho = (payload: Record<string, unknown>): boolean => {
+    const choices = payload["choices"];
+    if (!Array.isArray(choices) || choices.length === 0) {
+      return false;
+    }
+    for (const choice of choices) {
+      const choiceRecord = choice as Record<string, unknown>;
+      const delta = (choiceRecord["delta"] ?? choiceRecord["message"]) as
+        | Record<string, unknown>
+        | undefined;
+      if (!delta || delta["role"] !== "user") {
+        continue;
+      }
+      const toolCalls = delta["tool_calls"];
+      if (!Array.isArray(toolCalls) || toolCalls.length !== 0) {
+        continue;
+      }
+      const content = typeof delta["content"] === "string" ? delta["content"].trim() : "";
+      const reasoning =
+        typeof delta["reasoning_content"] === "string" ? delta["reasoning_content"].trim() : "";
+      if (!content && !reasoning) {
+        return true;
+      }
+    }
+    return false;
+  };
+
+  const stripUserEchoLines = (chunk: string): string => {
+    let skipped = false;
+    const lines = chunk.split("\n");
+    const filtered = lines.map((line) => {
+      if (line.startsWith("data: ") && line !== "data: [DONE]") {
+        const dataJson = line.slice(6);
+        if (!dataJson.trim()) return line;
+        try {
+          const data = JSON.parse(dataJson) as Record<string, unknown>;
+          if (shouldSkipUserEcho(data)) {
+            skipped = true;
+            return "";
+          }
+        } catch {
+          return line;
+        }
+      }
+      return line;
+    });
+    if (skipped) {
+      log(`SKIP_USER_ECHO_${chunkIndex}`, "Removed user role echo line(s)");
+    }
+    return filtered.join("\n");
+  };
+
   return new ReadableStream<Uint8Array>({
     async pull(controller): Promise<void> {
-      const { value, done } = await reader.read();
+      let value: Uint8Array | undefined;
+      let done: boolean;
+      try {
+        const result = await reader.read();
+        value = result.value;
+        done = result.done;
+      } catch {
+        log("STREAM_READ_ERROR", "Upstream stream errored; closing");
+        controller.close();
+        return;
+      }
       
       if (done) {
         log("STREAM_DONE", { toolCallBuffer, thinkState });
@@ -78,11 +140,8 @@ export const createProxyStreamDebug = (options: ProxyStreamOptionsDebug): Readab
       
       log(`RAW_CHUNK_${chunkIndex}`, { raw: chunk.slice(0, 500), thinkState: { ...thinkState } });
 
-      // Skip user role echoes
-      if (chunk.includes("\"role\":\"user\"") && chunk.includes("\"tool_calls\":[]")) {
-        log(`SKIP_USER_ECHO_${chunkIndex}`, "Skipping user role echo");
-        return;
-      }
+      // Strip user role echoes safely at the line level
+      chunk = stripUserEchoLines(chunk);
 
       // Remove duplicate reasoning field
       if (chunk.includes("\"reasoning\":") && chunk.includes("\"reasoning_content\":")) {
@@ -129,20 +188,24 @@ export const createProxyStreamDebug = (options: ProxyStreamOptionsDebug): Readab
             if (!dataJson.trim()) return line;
             try {
               const dataBefore = JSON.parse(dataJson) as Record<string, unknown>;
-              log(`THINK_BEFORE_${chunkIndex}`, { 
-                content: (dataBefore["choices"] as any)?.[0]?.delta?.content,
-                reasoning_content: (dataBefore["choices"] as any)?.[0]?.delta?.reasoning_content,
+              const choicesBefore = Array.isArray(dataBefore["choices"]) ? dataBefore["choices"] as Record<string, unknown>[] : [];
+              const deltaBefore = (choicesBefore[0]?.["delta"] ?? {}) as Record<string, unknown>;
+              log(`THINK_BEFORE_${chunkIndex}`, {
+                content: deltaBefore["content"],
+                reasoning_content: deltaBefore["reasoning_content"],
                 thinkState: { ...thinkState }
               });
-              
+
               const dataAfter = parseThinkTagsFromContent(dataBefore, thinkState);
-              
-              log(`THINK_AFTER_${chunkIndex}`, { 
-                content: (dataAfter["choices"] as any)?.[0]?.delta?.content,
-                reasoning_content: (dataAfter["choices"] as any)?.[0]?.delta?.reasoning_content,
+              const choicesAfter = Array.isArray(dataAfter["choices"]) ? dataAfter["choices"] as Record<string, unknown>[] : [];
+              const deltaAfter = (choicesAfter[0]?.["delta"] ?? {}) as Record<string, unknown>;
+
+              log(`THINK_AFTER_${chunkIndex}`, {
+                content: deltaAfter["content"],
+                reasoning_content: deltaAfter["reasoning_content"],
                 thinkState: { ...thinkState }
               });
-              
+
               return `data: ${JSON.stringify(dataAfter)}`;
             } catch { return line; }
           }
