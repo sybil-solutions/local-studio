@@ -46,7 +46,7 @@ jobs:
         run: bunx jscpd src
       - name: Unused dependencies
         working-directory: ./controller
-        run: bunx depcheck --ignores=lint-staged,pg,swagger-ui-dist,@hono/zod-openapi,bun:sqlite,@npmcli/config,@types/pg
+        run: bunx depcheck --ignores=lint-staged,pg,swagger-ui-dist,@hono/zod-openapi,bun:sqlite,@npmcli/config,@types/pg,@types/bun-types,@types/bun,prettier
       - name: Test
         working-directory: ./controller
         run: bun test
@@ -75,7 +75,7 @@ jobs:
         run: bunx jscpd src
       - name: Unused dependencies
         working-directory: ./cli
-        run: bunx depcheck --ignores=lint-staged,prettier,husky,@types/bun,bun-types
+        run: bunx depcheck --ignores=lint-staged,prettier,husky,@types/bun,bun-types,@types/bun-types
       - name: Test
         working-directory: ./cli
         run: bun test

@@ -1,5 +1,5 @@
 // CRITICAL
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { Hono } from "hono";
 import { registerSystemRoutes } from "./system";
 import type { AppContext } from "../types/context";
@@ -7,8 +7,12 @@ import type { Config } from "../config/env";
 
 describe("System Routes", () => {
   let app: Hono;
+  const originalFetch = globalThis.fetch;
 
   beforeEach(() => {
+    // Mock fetch to avoid real network requests in tests
+    globalThis.fetch = vi.fn().mockRejectedValue(new Error("Network unavailable")) as unknown as typeof fetch;
+
     app = new Hono();
 
     // Create minimal mock context
@@ -87,6 +91,10 @@ describe("System Routes", () => {
     registerSystemRoutes(app, mockContext);
   });
 
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+  });
+
   describe("GET /health", () => {
     it("returns health status", async () => {
       const res = await app.request("/health");
@@ -114,8 +122,11 @@ describe("System Routes", () => {
       expect(res.status).toBe(200);
 
       const json = await res.json();
-      expect(json).toHaveProperty("port");
-      expect(json).toHaveProperty("inference_port");
+      expect(json).toHaveProperty("config");
+      expect(json.config).toHaveProperty("port");
+      expect(json.config).toHaveProperty("inference_port");
+      expect(json).toHaveProperty("services");
+      expect(json).toHaveProperty("environment");
     });
   });
 });
