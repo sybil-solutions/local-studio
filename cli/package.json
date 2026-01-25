@@ -1,0 +1,22 @@
+{
+  "name": "vllm-studio-cli",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "src/main.ts",
+  "scripts": {
+    "start": "bun src/main.ts",
+    "dev": "bun --watch src/main.ts",
+    "typecheck": "tsc --noEmit",
+    "build": "bun build src/main.ts --compile --outfile vllm-studio"
+  },
+  "bin": {
+    "vllm-studio": "src/main.ts"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.1.0",
+    "typescript": "^5.4.0"
+  },
+  "engines": {
+    "bun": ">=1.0.0"
+  }
+}
