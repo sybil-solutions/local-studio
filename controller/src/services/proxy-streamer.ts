@@ -1,3 +1,4 @@
+// CRITICAL
 import { randomUUID } from "node:crypto";
 import type {
   ToolCall,
@@ -33,6 +34,55 @@ export interface ProxyStreamOptions {
   onUsage?: (usage: StreamUsage) => void;
 }
 
+const shouldSkipUserEcho = (payload: Record<string, unknown>): boolean => {
+  const choices = payload["choices"];
+  if (!Array.isArray(choices) || choices.length === 0) {
+    return false;
+  }
+  for (const choice of choices) {
+    const choiceRecord = choice as Record<string, unknown>;
+    const delta = (choiceRecord["delta"] ?? choiceRecord["message"]) as
+      | Record<string, unknown>
+      | undefined;
+    if (!delta || delta["role"] !== "user") {
+      continue;
+    }
+    const toolCalls = delta["tool_calls"];
+    if (!Array.isArray(toolCalls) || toolCalls.length !== 0) {
+      continue;
+    }
+    const content = typeof delta["content"] === "string" ? delta["content"].trim() : "";
+    const reasoning =
+      typeof delta["reasoning_content"] === "string" ? delta["reasoning_content"].trim() : "";
+    if (!content && !reasoning) {
+      return true;
+    }
+  }
+  return false;
+};
+
+const stripUserEchoLines = (chunk: string): string => {
+  const lines = chunk.split("\n");
+  const filtered = lines.map((line) => {
+    if (line.startsWith("data: ") && line !== "data: [DONE]") {
+      const dataJson = line.slice(6);
+      if (!dataJson.trim()) {
+        return line;
+      }
+      try {
+        const data = JSON.parse(dataJson) as Record<string, unknown>;
+        if (shouldSkipUserEcho(data)) {
+          return "";
+        }
+      } catch {
+        return line;
+      }
+    }
+    return line;
+  });
+  return filtered.join("\n");
+};
+
 /**
  * Create a transformed streaming response for LiteLLM output.
  * @param options - Streaming options.
@@ -46,7 +96,14 @@ export const createProxyStream = (options: ProxyStreamOptions): ReadableStream<U
 
   return new ReadableStream<Uint8Array>({
     async pull(controller): Promise<void> {
-      const { value, done } = await reader.read();
+      let result: ReadableStreamReadResult<Uint8Array>;
+      try {
+        result = await reader.read();
+      } catch {
+        controller.close();
+        return;
+      }
+      const { value, done } = result;
       if (done) {
         const parsedTools: ToolCall[] = [];
         if (!toolCallBuffer.tool_calls_found && toolCallBuffer.tool_args) {
@@ -92,9 +149,7 @@ export const createProxyStream = (options: ProxyStreamOptions): ReadableStream<U
       }
 
       let chunk = decoder.decode(value, { stream: true });
-      if (chunk.includes("\"role\":\"user\"") && chunk.includes("\"tool_calls\":[]")) {
-        return;
-      }
+      chunk = stripUserEchoLines(chunk);
 
       if (chunk.includes("\"reasoning\":") && chunk.includes("\"reasoning_content\":")) {
         const lines = chunk.split("\n");

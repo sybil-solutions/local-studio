@@ -3,6 +3,7 @@ import type { Hono } from "hono";
 import { readFileSync } from "node:fs";
 import { AsyncLock, delay } from "../core/async";
 import { HttpStatus, serviceUnavailable } from "../core/errors";
+import { buildSseHeaders } from "../http/sse";
 import type { AppContext } from "../types/context";
 import type { Recipe } from "../types/models";
 import type { ToolCallBuffer, ThinkState, Utf8State } from "../services/proxy-parsers";
@@ -296,6 +297,15 @@ IMPORTANT: Do not use emoji, Unicode symbols, or decorative box-drawing characte
     }
 
     const litellmResponse = await fetch(litellmUrl, { method: "POST", headers, body: finalBody });
+    if (!litellmResponse.ok) {
+      const errorText = await litellmResponse.text();
+      return new Response(errorText, {
+        status: litellmResponse.status,
+        headers: {
+          "Content-Type": litellmResponse.headers.get("Content-Type") ?? "application/json",
+        },
+      });
+    }
     const reader = litellmResponse.body?.getReader();
     if (!reader) {
       throw serviceUnavailable("LiteLLM backend unavailable");
@@ -332,11 +342,6 @@ IMPORTANT: Do not use emoji, Unicode symbols, or decorative box-drawing characte
       },
     });
 
-    return new Response(stream, {
-      headers: {
-        "Cache-Control": "no-cache",
-        Connection: "keep-alive",
-      },
-    });
+    return new Response(stream, { headers: buildSseHeaders() });
   });
 };

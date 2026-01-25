@@ -28,9 +28,69 @@ export const createProxyStreamDebug = (options: ProxyStreamOptionsDebug): Readab
     if (onChunk) onChunk(stage, data);
   };
 
+  const shouldSkipUserEcho = (payload: Record<string, unknown>): boolean => {
+    const choices = payload["choices"];
+    if (!Array.isArray(choices) || choices.length === 0) {
+      return false;
+    }
+    for (const choice of choices) {
+      const choiceRecord = choice as Record<string, unknown>;
+      const delta = (choiceRecord["delta"] ?? choiceRecord["message"]) as
+        | Record<string, unknown>
+        | undefined;
+      if (!delta || delta["role"] !== "user") {
+        continue;
+      }
+      const toolCalls = delta["tool_calls"];
+      if (!Array.isArray(toolCalls) || toolCalls.length !== 0) {
+        continue;
+      }
+      const content = typeof delta["content"] === "string" ? delta["content"].trim() : "";
+      const reasoning =
+        typeof delta["reasoning_content"] === "string" ? delta["reasoning_content"].trim() : "";
+      if (!content && !reasoning) {
+        return true;
+      }
+    }
+    return false;
+  };
+
+  const stripUserEchoLines = (chunk: string): string => {
+    let skipped = false;
+    const lines = chunk.split("\n");
+    const filtered = lines.map((line) => {
+      if (line.startsWith("data: ") && line !== "data: [DONE]") {
+        const dataJson = line.slice(6);
+        if (!dataJson.trim()) return line;
+        try {
+          const data = JSON.parse(dataJson) as Record<string, unknown>;
+          if (shouldSkipUserEcho(data)) {
+            skipped = true;
+            return "";
+          }
+        } catch {
+          return line;
+        }
+      }
+      return line;
+    });
+    if (skipped) {
+      log(`SKIP_USER_ECHO_${chunkIndex}`, "Removed user role echo line(s)");
+    }
+    return filtered.join("\n");
+  };
+
   return new ReadableStream<Uint8Array>({
     async pull(controller): Promise<void> {
-      const { value, done } = await reader.read();
+      let result: ReadableStreamReadResult<Uint8Array>;
+      try {
+        result = await reader.read();
+      } catch {
+        log("STREAM_READ_ERROR", "Upstream stream errored; closing");
+        controller.close();
+        return;
+      }
+      const { value, done } = result;
       
       if (done) {
         log("STREAM_DONE", { toolCallBuffer, thinkState });
@@ -78,11 +138,8 @@ export const createProxyStreamDebug = (options: ProxyStreamOptionsDebug): Readab
       
       log(`RAW_CHUNK_${chunkIndex}`, { raw: chunk.slice(0, 500), thinkState: { ...thinkState } });
 
-      // Skip user role echoes
-      if (chunk.includes("\"role\":\"user\"") && chunk.includes("\"tool_calls\":[]")) {
-        log(`SKIP_USER_ECHO_${chunkIndex}`, "Skipping user role echo");
-        return;
-      }
+      // Strip user role echoes safely at the line level
+      chunk = stripUserEchoLines(chunk);
 
       // Remove duplicate reasoning field
       if (chunk.includes("\"reasoning\":") && chunk.includes("\"reasoning_content\":")) {
