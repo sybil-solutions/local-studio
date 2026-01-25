@@ -163,7 +163,7 @@ export function AppSidebar({ children }: AppSidebarProps) {
   };
 
   return (
-    <div className="flex h-[100dvh] overflow-hidden">
+    <div className="flex h-dvh overflow-hidden">
       {/* Mobile overlay */}
       {isMobile && mobileOpen && (
         <div
@@ -178,7 +178,7 @@ export function AppSidebar({ children }: AppSidebarProps) {
           ${isMobile ? "fixed left-0 top-0 bottom-0 z-50" : "relative"}
           ${isMobile && !mobileOpen ? "-translate-x-full" : "translate-x-0"}
           ${collapsed && !isMobile ? "w-16" : "w-56"}
-          flex-shrink-0 bg-[#1a1917] border-r border-[#2a2725]
+          shrink-0 bg-[#1a1917] border-r border-[#2a2725]
           flex flex-col transition-all duration-200 ease-out
         `}
         style={{ paddingTop: "env(safe-area-inset-top, 0)" }}
@@ -192,7 +192,7 @@ export function AppSidebar({ children }: AppSidebarProps) {
             alt="vLLM"
             width={28}
             height={28}
-            className="rounded flex-shrink-0"
+            className="rounded shrink-0"
           />
           {(!collapsed || isMobile) && (
             <span className="font-semibold text-sm truncate">vLLM Studio</span>
@@ -217,14 +217,14 @@ export function AppSidebar({ children }: AppSidebarProps) {
                     flex items-center gap-3 px-3 py-2.5 rounded-lg mb-1 transition-colors
                     ${
                       isActive
-                        ? "bg-(--accent) text-(--foreground)"
-                        : "text-[#9a9590] hover:text-(--foreground) hover:bg-(--accent)/50"
+                        ? "bg-(--accent) text-foreground"
+                        : "text-[#9a9590] hover:text-foreground hover:bg-(--accent)/50"
                     }
                     ${collapsed && !isMobile ? "justify-center" : ""}
                   `}
                   title={collapsed && !isMobile ? item.label : undefined}
                 >
-                  <Icon className="h-5 w-5 flex-shrink-0" />
+                  <Icon className="h-5 w-5 shrink-0" />
                   {(!collapsed || isMobile) && (
                     <span className="text-sm font-medium">{item.label}</span>
                   )}
@@ -288,7 +288,7 @@ export function AppSidebar({ children }: AppSidebarProps) {
         >
           <div className={`flex items-center gap-2 ${collapsed && !isMobile ? "" : ""}`}>
             <div
-              className={`w-2 h-2 rounded-full flex-shrink-0 ${
+              className={`w-2 h-2 rounded-full shrink-0 ${
                 status.inferenceOnline
                   ? "bg-(--success)"
                   : status.online
@@ -324,7 +324,7 @@ export function AppSidebar({ children }: AppSidebarProps) {
       </aside>
 
       {/* Main content */}
-      <main className="flex-1 min-w-0 h-full overflow-y-auto overflow-x-hidden bg-(--background)">
+      <main className="flex-1 min-w-0 h-full overflow-y-auto overflow-x-hidden bg-background">
         {/* Mobile header */}
         {isMobile && pathname !== "/chat" && (
           <div
@@ -335,13 +335,7 @@ export function AppSidebar({ children }: AppSidebarProps) {
               onClick={() => setMobileOpen(true)}
               className="p-1 -ml-1 rounded hover:bg-(--accent)"
             >
-              <Image
-                src="/vllm-logo.jpg"
-                alt="vLLM"
-                width={20}
-                height={20}
-                className="rounded"
-              />
+              <Image src="/vllm-logo.jpg" alt="vLLM" width={20} height={20} className="rounded" />
             </button>
             <span className="font-medium text-xs">
               {navItems.find((item) => item.href === pathname)?.label || "vLLM Studio"}

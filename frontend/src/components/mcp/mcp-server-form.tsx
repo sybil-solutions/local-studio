@@ -121,7 +121,8 @@ export function McpServerForm({
     [name, command, args, env, icon, enabled, onSubmit, resetForm],
   );
 
-  const containerClass = `space-y-4 rounded-lg border border-(--border) bg-(--background) p-4 ${className}`.trim();
+  const containerClass =
+    `space-y-4 rounded-lg border border-(--border) bg-(--background) p-4 ${className}`.trim();
 
   return (
     <form onSubmit={handleSubmit} className={containerClass}>
@@ -137,7 +138,7 @@ export function McpServerForm({
             value={name}
             onChange={(event) => setName(event.target.value)}
             placeholder="exa"
-            className="mt-1 w-full rounded-md border border-(--border) bg-(--card) px-3 py-2 text-sm text-(--foreground) focus:outline-none focus:ring-1 focus:ring-(--accent-purple)"
+            className="mt-1 w-full rounded-md border border-(--border) bg-(--card) px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-(--accent-purple)"
             data-testid={`${testIdPrefix}-name`}
           />
         </label>
@@ -149,7 +150,7 @@ export function McpServerForm({
             value={command}
             onChange={(event) => setCommand(event.target.value)}
             placeholder="npx -y exa-mcp-server"
-            className="mt-1 w-full rounded-md border border-(--border) bg-(--card) px-3 py-2 text-sm text-(--foreground) focus:outline-none focus:ring-1 focus:ring-(--accent-purple)"
+            className="mt-1 w-full rounded-md border border-(--border) bg-(--card) px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-(--accent-purple)"
             data-testid={`${testIdPrefix}-command`}
           />
         </label>
@@ -161,7 +162,7 @@ export function McpServerForm({
             value={args}
             onChange={(event) => setArgs(event.target.value)}
             placeholder="--foo bar"
-            className="mt-1 w-full rounded-md border border-(--border) bg-(--card) px-3 py-2 text-sm text-(--foreground) focus:outline-none focus:ring-1 focus:ring-(--accent-purple)"
+            className="mt-1 w-full rounded-md border border-(--border) bg-(--card) px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-(--accent-purple)"
             data-testid={`${testIdPrefix}-args`}
           />
         </label>
@@ -174,7 +175,7 @@ export function McpServerForm({
             onChange={(event) => setEnv(event.target.value)}
             placeholder="EXA_API_KEY=..."
             rows={3}
-            className="mt-1 w-full rounded-md border border-(--border) bg-(--card) px-3 py-2 text-sm text-(--foreground) focus:outline-none focus:ring-1 focus:ring-(--accent-purple)"
+            className="mt-1 w-full rounded-md border border-(--border) bg-(--card) px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-(--accent-purple)"
             data-testid={`${testIdPrefix}-env`}
           />
         </label>
@@ -186,7 +187,7 @@ export function McpServerForm({
             value={icon}
             onChange={(event) => setIcon(event.target.value)}
             placeholder="🔎"
-            className="mt-1 w-full rounded-md border border-(--border) bg-(--card) px-3 py-2 text-sm text-(--foreground) focus:outline-none focus:ring-1 focus:ring-(--accent-purple)"
+            className="mt-1 w-full rounded-md border border-(--border) bg-(--card) px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-(--accent-purple)"
             data-testid={`${testIdPrefix}-icon`}
           />
         </label>
@@ -209,7 +210,7 @@ export function McpServerForm({
         type="button"
         onClick={handleSubmit}
         disabled={isSubmitting}
-        className="inline-flex items-center gap-2 rounded-md bg-(--accent-purple) px-3 py-2 text-xs font-semibold text-(--foreground) transition-colors hover:bg-(--card) disabled:opacity-60"
+        className="inline-flex items-center gap-2 rounded-md bg-(--accent-purple) px-3 py-2 text-xs font-semibold text-foreground transition-colors hover:bg-(--card) disabled:opacity-60"
         data-testid={`${testIdPrefix}-submit`}
       >
         {isSubmitting ? submittingLabel : submitLabel}
