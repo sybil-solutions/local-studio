@@ -1,0 +1,57 @@
+name: CI Metrics
+
+on:
+  workflow_run:
+    workflows: ['CI']
+    types: [completed]
+    branches: [main]
+
+permissions:
+  actions: read
+  checks: read
+  contents: read
+
+jobs:
+  track-metrics:
+    name: Track CI Performance
+    runs-on: ubuntu-latest
+    if: github.event.workflow_run.conclusion != 'skipped'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download workflow artifacts
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const artifacts = await github.rest.actions.listWorkflowRunArtifacts({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              run_id: context.event.workflow_run.id,
+            });
+
+            // Extract timing data
+            const run = context.event.workflow_run;
+            const duration = Math.floor((new Date(run.updated_at) - new Date(run.created_at)) / 1000 / 60); // minutes
+
+            console.log(`::notice::CI Duration: ${duration} minutes`);
+            console.log(`::notice::Conclusion: ${run.conclusion}`);
+            console.log(`::notice::Event: ${run.event}`);
+
+            // Post as comment on relevant PR if triggered by PR
+            if (run.event === 'pull_request') {
+              const { data: prs } = await github.rest.pulls.list({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                state: 'open',
+                head: run.head_branch,
+              });
+
+              if (prs.length > 0) {
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: prs[0].number,
+                  body: `### 📊 CI Metrics\n\n- **Duration**: ${duration} minutes\n- **Status**: ${run.conclusion}\n- **Workflow**: ${run.name}`,
+                });
+              }
+            }

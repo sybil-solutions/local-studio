@@ -1,0 +1,25 @@
+name: Sync Labels
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/labels.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  sync-labels:
+    name: Sync Labels
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: EndBug/label-sync@v2
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          config-file: |
+            https://raw.githubusercontent.com/0xSero/vllm-studio/main/.github/labels.yml
+          delete-other-labels: false

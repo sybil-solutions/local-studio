@@ -10,6 +10,7 @@ Briefly describe the changes in this PR.
 - [ ] Documentation update
 - [ ] Refactoring (no functional changes)
 - [ ] CI/CD changes
+- [ ] Performance improvements
 
 ## Related Issues
 
@@ -19,9 +20,12 @@ Related to #
 ## Testing
 
 Describe the testing performed for this PR:
-- [ ] Unit tests pass
-- [ ] Integration tests pass
+- [ ] Unit tests pass (`bun test` / `npm test` / `pytest`)
+- [ ] Integration tests pass (Playwright)
 - [ ] Manual testing performed
+- [ ] All linting passes (`bun run lint` / `npm run lint`)
+- [ ] Type checking passes (`bun run typecheck`)
+- [ ] Dead code check passes (`bun run check`)
 
 Include specific test scenarios or commands used.
 
@@ -34,6 +38,15 @@ Include specific test scenarios or commands used.
 - [ ] My changes generate no new warnings
 - [ ] I have tested my changes locally
 - [ ] I have updated AGENTS.md if needed (for architectural changes)
+- [ ] I have added appropriate labels (Priority, Type, Area)
+- [ ] No new security vulnerabilities introduced
+
+## Performance & Security
+
+- [ ] Performance impact considered (no significant regressions)
+- [ ] Dependencies audited (no known vulnerabilities)
+- [ ] Secrets not exposed
+- [ ] Error handling implemented appropriately
 
 ## Screenshots (if applicable)
 

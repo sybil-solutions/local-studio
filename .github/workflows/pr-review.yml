@@ -1,0 +1,50 @@
+name: CodeRabbit
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - 'controller/**'
+      - 'cli/**'
+      - 'frontend/**'
+      - 'tests/**'
+
+permissions:
+  pull-requests: read
+  contents: read
+  issues: read
+
+jobs:
+  coderabbit:
+    name: CodeRabbit PR Review
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: coderabbitai/assistant@latest
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          language: en-US
+          review_summary: true
+          high_level_summary: true
+          title_explanation: true
+          detect_duplicate_title: true
+          commit_status: true
+          enable_commit_fixer: false
+          # Customize review focus for this monorepo
+          instructions: |
+            This is a vLLM Studio monorepo with:
+            - controller: TypeScript/Bun backend API
+            - cli: TypeScript CLI tool
+            - frontend: Next.js web application
+            - tests: Python test suite
+
+            Focus on:
+            - Type safety and strict TypeScript compliance
+            - Code quality and maintainability
+            - Performance considerations
+            - Security best practices
+            - Breaking changes in API contracts
+            - Proper error handling

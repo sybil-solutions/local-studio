@@ -1,0 +1,102 @@
+# Repository Issue Labels
+
+# Priority Labels
+- name: "Priority: Critical"
+  color: "#b60205"
+  description: "Critical priority - blocks release or major functionality"
+
+- name: "Priority: High"
+  color: "#d93f0b"
+  description: "High priority - important but not blocking"
+
+- name: "Priority: Medium"
+  color: "#fbca04"
+  description: "Medium priority - normal priority"
+
+- name: "Priority: Low"
+  color: "#7057ff"
+  description: "Low priority - nice to have"
+
+# Type Labels
+- name: "Type: Bug"
+  color: "#d73a4a"
+  description: "Something isn't working"
+
+- name: "Type: Feature"
+  color: "#a2eeef"
+  description: "New feature or request"
+
+- name: "Type: Enhancement"
+  color: "#84b6eb"
+  description: "Improvement to existing functionality"
+
+- name: "Type: Documentation"
+  color: "#0075ca"
+  description: "Documentation improvements"
+
+- name: "Type: Performance"
+  color: "#fbca04"
+  description: "Performance improvements"
+
+- name: "Type: Security"
+  color: "#d93f0b"
+  description: "Security issues or fixes"
+
+# Area Labels
+- name: "Area: Controller"
+  color: "#006b75"
+  description: "Related to controller/backend"
+
+- name: "Area: Frontend"
+  color: "#5319e7"
+  description: "Related to frontend/Next.js"
+
+- name: "Area: CLI"
+  color: "#238636"
+  description: "Related to CLI tool"
+
+- name: "Area: Infrastructure"
+  color: "#1d76db"
+  description: "Related to CI/CD, Docker, infrastructure"
+
+- name: "Area: Tests"
+  color: "#bfd4f2"
+  description: "Related to testing"
+
+# Status Labels
+- name: "Status: Ready"
+  color: "#2da44e"
+  description: "Ready to work on"
+
+- name: "Status: In Progress"
+  color: "#ffab00"
+  description: "Currently being worked on"
+
+- name: "Status: Blocked"
+  color: "#b60205"
+  description: "Blocked by something"
+
+- name: "Status: Needs Review"
+  color: "#5319e7"
+  description: "Needs review"
+
+# Other Labels
+- name: "Good First Issue"
+  color: "#7057ff"
+  description: "Good for newcomers"
+
+- name: "Help Wanted"
+  color: "#008672"
+  description: "Help wanted"
+
+- name: "Dependencies"
+  color: "#0366d6"
+  description: "Pull requests that update dependencies"
+
+- name: "Duplicate"
+  color: "#cfd3d7"
+  description: "Duplicate issue"
+
+- name: "Wontfix"
+  color: "#ffffff"
+  description: "Will not be fixed"
