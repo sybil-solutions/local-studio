@@ -393,10 +393,17 @@ export function ChatPage() {
     }
   }, [isLoading, messages, userScrolledUp]);
 
+  // Ensure a start time exists for any streaming session
+  useEffect(() => {
+    if (isLoading && streamingStartTime == null) {
+      setStreamingStartTime(Date.now());
+    }
+  }, [isLoading, setStreamingStartTime, streamingStartTime]);
+
   // Elapsed time timer
   useEffect(() => {
     let intervalId: ReturnType<typeof setInterval> | null = null;
-    if (isLoading && streamingStartTime) {
+    if (isLoading && streamingStartTime != null) {
       intervalId = setInterval(
         () => setElapsedSeconds(Math.floor((Date.now() - streamingStartTime) / 1000)),
         1000,

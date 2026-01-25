@@ -4,7 +4,7 @@ import { AsyncLock, delay } from "../core/async";
 import { HttpStatus, serviceUnavailable } from "../core/errors";
 import type { AppContext } from "../types/context";
 import type { Recipe } from "../types/models";
-import type { ToolCallBuffer, ThinkState } from "../services/proxy-parsers";
+import type { ToolCallBuffer, ThinkState, Utf8State } from "../services/proxy-parsers";
 import { parseToolCallsFromContent } from "../services/proxy-parsers";
 import { createProxyStream } from "../services/proxy-streamer";
 
@@ -229,6 +229,7 @@ export const registerProxyRoutes = (app: Hono, context: AppContext): void => {
     }
 
     const thinkState: ThinkState = { inThinking: false };
+    const utf8State: Utf8State = { pendingContent: "", pendingReasoning: "" };
     const toolCallBuffer: ToolCallBuffer = {
       content: "",
       tool_args: "",
@@ -240,6 +241,7 @@ export const registerProxyRoutes = (app: Hono, context: AppContext): void => {
       reader,
       toolCallBuffer,
       thinkState,
+      utf8State,
       extractToolName,
       onUsage: (usage) => {
         // Track streaming tokens to lifetime metrics

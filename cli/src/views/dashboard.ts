@@ -15,7 +15,7 @@ export function renderDashboard(state: AppState): string {
     lines.push(c.dim('  No GPUs detected'));
   } else {
     const headers = ['ID', 'Name', 'VRAM', 'Util', 'Temp', 'Power'];
-    const widths = [3, 20, 12, 6, 6, 8];
+    const widths = [2, 18, 15, 5, 5, 6];
     const rows = state.gpus.map(gpu => {
       const vram = `${formatBytes(gpu.memory_used)}/${formatBytes(gpu.memory_total)}`;
       const util = gpuColor(gpu.utilization)(`${gpu.utilization}%`);
@@ -45,10 +45,9 @@ export function renderDashboard(state: AppState): string {
 
   lines.push('');
   const st = state.status;
-  const statusColor = st.status === 'running' ? c.green
-    : st.status === 'launching' ? c.yellow
-    : st.status === 'error' ? c.red : c.dim;
-  lines.push(`  Status: ${statusColor(st.status)}` +
+  const statusText = st.launching ? 'launching' : st.running ? 'running' : 'idle';
+  const statusColor = st.launching ? c.yellow : st.running ? c.green : c.dim;
+  lines.push(`  Status: ${statusColor(statusText)}` +
     (st.model ? ` (${c.cyan(st.model)})` : ''));
 
   return lines.join('\n');

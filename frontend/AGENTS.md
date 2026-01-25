@@ -13,6 +13,11 @@ Recommended commands:
   - `npm run build`
   - `PORT=3002 npm run start`
 
+Quick rebuild (when port 3002 looks stale or broken):
+
+- `npm run build`
+- `PORT=3002 npm run start`
+
 ## Standalone server note
 
 If you run the standalone server directly (`node .next/standalone/server.js`), you must copy static assets after each build or the UI will be unstyled and non-interactive:

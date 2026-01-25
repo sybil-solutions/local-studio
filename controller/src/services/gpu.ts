@@ -18,10 +18,15 @@ export const getGpuInfo = (): GpuInfo[] => {
   ].join(",");
 
   try {
-    // Use execSync with shell - use command name without full path for compatibility
+    // Use full path to nvidia-smi with explicit env to ensure it can find CUDA libs
+    const nvidiaSmi = process.env.NVIDIA_SMI_PATH || "/usr/bin/nvidia-smi";
     const output = execSync(
-      `nvidia-smi --query-gpu=${query} --format=csv,noheader,nounits`,
-      { encoding: "utf-8", timeout: 5000 }
+      `${nvidiaSmi} --query-gpu=${query} --format=csv,noheader,nounits`,
+      {
+        encoding: "utf-8",
+        timeout: 5000,
+        env: { ...process.env, PATH: `/usr/bin:/usr/local/bin:${process.env.PATH || ""}` },
+      }
     ).trim();
 
     if (!output) {

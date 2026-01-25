@@ -35,12 +35,30 @@ export async function fetchRecipes(): Promise<Recipe[]> {
   return (await get<Recipe[]>('/recipes')) || [];
 }
 
+interface RawStatus {
+  running: boolean;
+  launching: unknown;
+  process?: { pid: number; backend: string; served_model_name?: string; port: number };
+  error?: string;
+}
+
 export async function fetchStatus(): Promise<Status> {
-  return (await get<Status>('/status')) || { status: 'idle' };
+  const data = await get<RawStatus>('/status');
+  if (!data) return { running: false, launching: false };
+  return {
+    running: data.running,
+    launching: !!data.launching,
+    model: data.process?.served_model_name,
+    backend: data.process?.backend,
+    pid: data.process?.pid,
+    port: data.process?.port,
+    error: data.error,
+  };
 }
 
 export async function fetchConfig(): Promise<Config | null> {
-  return get<Config>('/config');
+  const data = await get<{ config: Config }>('/config');
+  return data?.config || null;
 }
 
 export async function fetchLifetimeMetrics(): Promise<LifetimeMetrics> {

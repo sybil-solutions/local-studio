@@ -29,6 +29,85 @@ export interface ToolCallBuffer {
 }
 
 /**
+ * UTF-8 streaming state for handling incomplete multi-byte sequences.
+ * Some tokenizers (like GLM) split Unicode characters across tokens,
+ * causing replacement characters (U+FFFD) in streaming output.
+ */
+export interface Utf8State {
+  /** Buffered content ending with replacement character */
+  pendingContent: string;
+  /** Buffered reasoning ending with replacement character */
+  pendingReasoning: string;
+}
+
+/** Unicode replacement character */
+const REPLACEMENT_CHAR = "\uFFFD";
+const BOX_DRAWING_RANGE = "[\\u2500-\\u257F\\u2580-\\u259F]";
+const BOX_DRAWING_REGEX = new RegExp(BOX_DRAWING_RANGE);
+
+/**
+ * Clean streaming content that may have UTF-8 corruption from tokenizer byte fallback.
+ * This handles cases where multi-byte Unicode characters are split across tokens,
+ * causing replacement characters to appear in the stream.
+ *
+ * @param content - The content string to clean.
+ * @param state - UTF-8 streaming state.
+ * @returns Cleaned content string.
+ */
+export const cleanUtf8StreamContent = (
+  content: string,
+  state: Utf8State,
+): string => {
+  if (!content) return content;
+
+  // Prepend any pending content from previous chunk
+  let result = state.pendingContent + content;
+  state.pendingContent = "";
+
+  // Drop trailing replacement chars if they sit after box-drawing characters.
+  result = result.replace(new RegExp(`(${BOX_DRAWING_RANGE})\\uFFFD+$`, "g"), "$1");
+
+  // If result still ends with replacement char, buffer it for next chunk
+  if (result.endsWith(REPLACEMENT_CHAR)) {
+    state.pendingContent = result;
+    return "";
+  }
+
+  // Remove replacement characters in common corruption patterns:
+
+  // 1. Before box-drawing characters (e.g., "�─" should be just "─" or the corner was lost)
+  result = result.replace(new RegExp(`\\uFFFD+(?=${BOX_DRAWING_RANGE})`, "g"), "");
+
+  // 2. After box-drawing characters (e.g., "─�" where corner/tee was corrupted)
+  result = result.replace(new RegExp(`(${BOX_DRAWING_RANGE})\\uFFFD+`, "g"), "$1");
+
+  // 3. Inside backticks (code context) - e.g., "`�`" should become "``"
+  result = result.replace(/`\uFFFD`/g, "``");
+  result = result.replace(/`\uFFFD,/g, "`,");
+  result = result.replace(/`\uFFFD\)/g, "`)");
+  result = result.replace(/\uFFFD`/g, "`");  // �` at start of corner char followed by backtick
+
+  // 4. Space + replacement patterns
+  result = result.replace(new RegExp(` \\uFFFD+(?=${BOX_DRAWING_RANGE}|[ ,\`])`, "g"), " ");
+  result = result.replace(/ \uFFFD+ /g, "  ");
+
+  // 5. After common ASCII punctuation followed by box context
+  result = result.replace(/([,.:;])\uFFFD+/g, "$1");
+
+  // 6. If we still have replacement chars and there are box-drawing chars nearby,
+  // remove the remaining ones as they're almost certainly corruption artifacts
+  if (result.includes(REPLACEMENT_CHAR)) {
+    // Only do aggressive cleanup if we have box-drawing context
+    const hasBoxContext = BOX_DRAWING_REGEX.test(result);
+    if (hasBoxContext) {
+      result = result.replace(/\uFFFD/g, "");
+    }
+  }
+
+  return result;
+};
+
+/**
  * Build a tool call id.
  * @returns Tool call id.
  */

@@ -3,12 +3,14 @@ import type {
   ToolCall,
   ToolCallBuffer,
   ThinkState,
+  Utf8State,
 } from "./proxy-parsers";
 import {
   createToolCallId,
   fixMalformedToolCalls,
   parseThinkTagsFromContent,
   parseToolCallsFromContent,
+  cleanUtf8StreamContent,
 } from "./proxy-parsers";
 
 /**
@@ -26,6 +28,7 @@ export interface ProxyStreamOptions {
   reader: ReadableStreamDefaultReader<Uint8Array>;
   toolCallBuffer: ToolCallBuffer;
   thinkState: ThinkState;
+  utf8State: Utf8State;
   extractToolName: (content: string) => string;
   onUsage?: (usage: StreamUsage) => void;
 }
@@ -36,7 +39,7 @@ export interface ProxyStreamOptions {
  * @returns ReadableStream with transformed SSE chunks.
  */
 export const createProxyStream = (options: ProxyStreamOptions): ReadableStream<Uint8Array> => {
-  const { reader, toolCallBuffer, thinkState, extractToolName, onUsage } = options;
+  const { reader, toolCallBuffer, thinkState, utf8State, extractToolName, onUsage } = options;
   const decoder = new TextDecoder();
   const encoder = new TextEncoder();
   let usageTracked = false;
@@ -156,6 +159,50 @@ export const createProxyStream = (options: ProxyStreamOptions): ReadableStream<U
               const data = JSON.parse(dataJson) as Record<string, unknown>;
               const updated = fixMalformedToolCalls(data, toolCallBuffer);
               return `data: ${JSON.stringify(updated)}`;
+            } catch {
+              return line;
+            }
+          }
+          return line;
+        });
+        chunk = fixed.join("\n");
+      }
+
+      // Clean UTF-8 corruption from streaming tokenizer byte fallback
+      // This handles GLM and other models that split Unicode chars across tokens
+      if (chunk.includes("\uFFFD") || utf8State.pendingContent || utf8State.pendingReasoning) {
+        const lines = chunk.split("\n");
+        const fixed = lines.map((line) => {
+          if (line.startsWith("data: ") && line !== "data: [DONE]") {
+            const dataJson = line.slice(6);
+            if (!dataJson.trim()) {
+              return line;
+            }
+            try {
+              const data = JSON.parse(dataJson) as Record<string, unknown>;
+              const choices = data["choices"];
+              if (Array.isArray(choices)) {
+                for (const choice of choices) {
+                  const choiceRecord = choice as Record<string, unknown>;
+                  const delta = choiceRecord["delta"] as Record<string, unknown> | undefined;
+                  if (delta) {
+                    // Clean content field
+                    if (typeof delta["content"] === "string") {
+                      const cleaned = cleanUtf8StreamContent(delta["content"] as string, utf8State);
+                      delta["content"] = cleaned || null;
+                    }
+                    // Clean reasoning_content field
+                    if (typeof delta["reasoning_content"] === "string") {
+                      // Use a separate state for reasoning to avoid cross-contamination
+                      const reasoningState = { pendingContent: utf8State.pendingReasoning, pendingReasoning: "" };
+                      const cleaned = cleanUtf8StreamContent(delta["reasoning_content"] as string, reasoningState);
+                      utf8State.pendingReasoning = reasoningState.pendingContent;
+                      delta["reasoning_content"] = cleaned || null;
+                    }
+                  }
+                }
+              }
+              return `data: ${JSON.stringify(data)}`;
             } catch {
               return line;
             }

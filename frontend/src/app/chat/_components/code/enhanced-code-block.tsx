@@ -33,6 +33,7 @@ export function EnhancedCodeBlock({
   className,
   artifactsEnabled,
   language,
+  isStreaming,
 }: EnhancedCodeBlockProps) {
   const blockId = useId();
   const blockState = useAppStore(
@@ -57,11 +58,14 @@ export function EnhancedCodeBlock({
 
   // Get artifact type - either from explicit artifact- prefix or implicit mapping
   const artifactType = useMemo(() => {
+    if (isStreaming) {
+      return null;
+    }
     if (isExplicitArtifact) {
       return getArtifactType(lang);
     }
     return artifactsEnabled ? IMPLICIT_ARTIFACT_MAP[lang.toLowerCase()] : null;
-  }, [isExplicitArtifact, getArtifactType, lang, artifactsEnabled]);
+  }, [isStreaming, isExplicitArtifact, getArtifactType, lang, artifactsEnabled]);
 
   const canPreview =
     artifactsEnabled &&
@@ -73,6 +77,43 @@ export function EnhancedCodeBlock({
     updateState({ copied: true });
     setTimeout(() => updateState({ copied: false }), 2000);
   };
+
+  if (isStreaming) {
+    return (
+      <div className="my-3 rounded-xl overflow-hidden border border-(--border) bg-(--card)/90 shadow-sm">
+        <div className="flex items-center justify-between bg-(--card-hover)/80 backdrop-blur-sm px-4 py-2.5 border-b border-(--border)">
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5">
+              <div className="w-2.5 h-2.5 rounded-full bg-red-400/80" />
+              <div className="w-2.5 h-2.5 rounded-full bg-yellow-400/80" />
+              <div className="w-2.5 h-2.5 rounded-full bg-green-400/80" />
+            </div>
+            <span className="text-xs font-mono font-medium text-[#b0a8a0] bg-(--background) px-2 py-0.5 rounded">
+              {lang || "code"}
+            </span>
+          </div>
+
+          <div className="flex items-center gap-1">
+            <button
+              onClick={copyCode}
+              className="p-1.5 rounded-lg hover:bg-(--card-hover) transition-all duration-200 text-[#9a9590] hover:text-(--foreground)"
+              title="Copy code"
+            >
+              {copied ? (
+                <Check className="h-3.5 w-3.5 text-(--success)" />
+              ) : (
+                <Copy className="h-3.5 w-3.5" />
+              )}
+            </button>
+          </div>
+        </div>
+
+        <pre className="px-4 py-3 text-sm leading-relaxed font-mono text-[#e8e4dd] bg-transparent overflow-x-auto whitespace-pre">
+          {code}
+        </pre>
+      </div>
+    );
+  }
 
   // If showing preview, render CodeSandbox
   if (showPreview && canPreview && artifactType) {

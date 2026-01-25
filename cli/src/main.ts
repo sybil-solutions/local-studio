@@ -6,7 +6,7 @@ import type { AppState, View } from './types';
 
 const state: AppState = {
   view: 'dashboard', selectedIndex: 0, gpus: [], recipes: [],
-  status: { status: 'idle' }, config: null,
+  status: { running: false, launching: false }, config: null,
   lifetime: { total_tokens: 0, total_requests: 0, total_energy_kwh: 0 },
   error: null,
 };
@@ -44,7 +44,7 @@ function handleKey(key: string): void {
   if (key === 'enter' && state.view === 'recipes' && state.recipes[state.selectedIndex]) {
     api.launchRecipe(state.recipes[state.selectedIndex].id).then(refresh);
   }
-  if (key === 'e' && state.status.status === 'running') api.evictModel().then(refresh);
+  if (key === 'e' && state.status.running) api.evictModel().then(refresh);
   render(state);
 }
 

@@ -1,15 +1,6 @@
 import { c } from '../ansi';
 import type { AppState } from '../types';
 
-function formatUptime(seconds: number): string {
-  const h = Math.floor(seconds / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  const s = seconds % 60;
-  if (h > 0) return `${h}h ${m}m`;
-  if (m > 0) return `${m}m ${s}s`;
-  return `${s}s`;
-}
-
 export function renderStatus(state: AppState): string {
   const lines: string[] = [];
   const st = state.status;
@@ -17,34 +8,25 @@ export function renderStatus(state: AppState): string {
   lines.push(c.bold('═══ Model Status ═══'));
   lines.push('');
 
-  const statusColors: Record<string, (s: string) => string> = {
-    running: c.green,
-    launching: c.yellow,
-    error: c.red,
-    idle: c.dim,
-  };
-  const colorFn = statusColors[st.status] || c.dim;
+  const statusText = st.launching ? 'LAUNCHING' : st.running ? 'RUNNING' : 'IDLE';
+  const colorFn = st.launching ? c.yellow : st.running ? c.green : c.dim;
 
-  lines.push(`  Status:    ${colorFn(st.status.toUpperCase())}`);
+  lines.push(`  Status:  ${colorFn(statusText)}`);
 
-  if (st.model) {
-    lines.push(`  Model:     ${c.cyan(st.model)}`);
-  }
-  if (st.recipe_id) {
-    lines.push(`  Recipe ID: ${c.dim(st.recipe_id)}`);
-  }
-  if (st.uptime !== undefined) {
-    lines.push(`  Uptime:    ${formatUptime(st.uptime)}`);
-  }
+  if (st.model) lines.push(`  Model:   ${c.cyan(st.model)}`);
+  if (st.backend) lines.push(`  Backend: ${c.dim(st.backend)}`);
+  if (st.pid) lines.push(`  PID:     ${c.dim(st.pid.toString())}`);
+  if (st.port) lines.push(`  Port:    ${c.dim(st.port.toString())}`);
+
   if (st.error) {
     lines.push('');
     lines.push(c.red(`  Error: ${st.error}`));
   }
 
-  if (st.status === 'idle') {
+  if (!st.running && !st.launching) {
     lines.push('');
     lines.push(c.dim('  No model currently loaded.'));
-    lines.push(c.dim('  Go to Recipes [2] to launch a model.'));
+    lines.push(c.dim('  Go to Recipes [2] to launch one.'));
   }
 
   return lines.join('\n');

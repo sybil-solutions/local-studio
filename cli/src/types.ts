@@ -20,15 +20,17 @@ export interface Recipe {
 }
 
 export interface Status {
-  status: 'idle' | 'launching' | 'running' | 'error';
+  running: boolean;
+  launching: boolean;
   model?: string;
-  recipe_id?: string;
-  uptime?: number;
+  backend?: string;
+  pid?: number;
+  port?: number;
   error?: string;
 }
 
 export interface Config {
-  controller_port: number;
+  port: number;
   inference_port: number;
   models_dir: string;
   data_dir: string;

@@ -16,7 +16,7 @@ export function renderConfig(state: AppState): string {
   const cfg = state.config;
 
   lines.push(c.bold('  Ports'));
-  lines.push(`    Controller: ${c.cyan(cfg.controller_port.toString())}`);
+  lines.push(`    Controller: ${c.cyan(cfg.port.toString())}`);
   lines.push(`    Inference:  ${c.cyan(cfg.inference_port.toString())}`);
   lines.push('');
 
@@ -26,7 +26,8 @@ export function renderConfig(state: AppState): string {
   lines.push('');
 
   lines.push(c.bold('  Environment'));
-  lines.push(`    VLLM_STUDIO_URL: ${c.dim(process.env.VLLM_STUDIO_URL || 'http://localhost:8080')}`);
+  const url = process.env.VLLM_STUDIO_URL || 'http://localhost:8080';
+  lines.push(`    VLLM_STUDIO_URL: ${c.dim(url)}`);
 
   return lines.join('\n');
 }
