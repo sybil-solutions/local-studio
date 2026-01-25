@@ -1,3 +1,4 @@
+// CRITICAL
 /**
  * Delay execution for a given number of milliseconds.
  * @param milliseconds - Duration to wait.

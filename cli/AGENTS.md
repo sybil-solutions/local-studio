@@ -1,3 +1,4 @@
+<!-- CRITICAL -->
 # vLLM Studio CLI - Agent Interface
 
 Headless CLI for AI agents to manage vLLM/SGLang inference servers.

@@ -1,3 +1,4 @@
+// CRITICAL
 /**
  * Logging levels.
  */

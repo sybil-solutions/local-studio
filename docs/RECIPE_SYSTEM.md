@@ -1,3 +1,4 @@
+<!-- CRITICAL -->
 # Recipe System (Frontend <-> Controller <-> Database)
 
 This document maps the end-to-end "recipe system" in this repo: where recipes are stored, how they are edited in the UI, how the controller turns them into actual startup commands, and how model switching works via `/launch/*` and `/v1/chat/completions`.

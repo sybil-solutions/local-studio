@@ -1,3 +1,4 @@
+// CRITICAL
 import type { Hono } from "hono";
 import { readFileSync } from "node:fs";
 import { AsyncLock, delay } from "../core/async";

@@ -1,3 +1,4 @@
+// CRITICAL
 /**
  * API client for vLLM Studio Controller
  * Robust client with retry logic, timeouts, and comprehensive error handling

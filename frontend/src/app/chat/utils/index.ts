@@ -1,3 +1,4 @@
+// CRITICAL
 'use client';
 
 // Types

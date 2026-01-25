@@ -1,3 +1,4 @@
+// CRITICAL
 import type { StateCreator } from "zustand";
 
 interface Reaction {

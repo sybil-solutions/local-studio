@@ -1,3 +1,4 @@
+// CRITICAL
 "use client";
 
 import { useRef, useEffect, type ChangeEvent, type KeyboardEvent } from "react";

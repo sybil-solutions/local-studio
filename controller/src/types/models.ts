@@ -1,3 +1,4 @@
+// CRITICAL
 import type { RecipeId } from "./brand";
 
 /**

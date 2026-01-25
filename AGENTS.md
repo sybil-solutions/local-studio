@@ -1,6 +1,16 @@
+<!-- CRITICAL -->
 # AGENTS.md
 
 Comprehensive module mapping, state machines, and architectural patterns for vLLM Studio.
+
+## Repo Conventions (Strict)
+
+- All files must be **60 LOC or less** unless explicitly critical; prefer splitting into subdirectories.
+- Any file that exceeds 60 LOC must start with a **CRITICAL** marker (e.g., `// CRITICAL`, `# CRITICAL`, or `<!-- CRITICAL -->`).
+- Files that cannot accept comment markers (e.g., lockfiles, LICENSE, `.gitignore`, `.env.example`) are **implicitly critical**.
+- For shebang scripts, place the **CRITICAL** marker on the **second** line.
+- **Never use camelCase or PascalCase** for file or directory names; use **kebab-case** only.
+- Keep **≤20 files per directory**; create subdirectories when needed.
 
 ## Module Dependency Graph
 

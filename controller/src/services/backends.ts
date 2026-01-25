@@ -1,3 +1,4 @@
+// CRITICAL
 import { existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import type { Recipe } from "../types/models";

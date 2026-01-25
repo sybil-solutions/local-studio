@@ -1,3 +1,4 @@
+// CRITICAL
 import { Database } from "bun:sqlite";
 import { readFileSync } from "node:fs";
 import { parseRecipe } from "./recipe-serializer";

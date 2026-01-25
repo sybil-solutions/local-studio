@@ -1,3 +1,4 @@
+// CRITICAL
 import type { Recipe } from "./types";
 
 function safeNumber(value: unknown): number | undefined {

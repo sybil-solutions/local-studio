@@ -1,3 +1,4 @@
+// CRITICAL
 "use client";
 
 import { X, Settings } from "lucide-react";

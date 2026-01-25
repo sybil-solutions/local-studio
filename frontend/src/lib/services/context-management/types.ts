@@ -1,3 +1,4 @@
+// CRITICAL
 /**
  * Context Management Service Types
  * Defines all types for context/token management

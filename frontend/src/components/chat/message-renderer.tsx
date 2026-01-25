@@ -1,3 +1,4 @@
+// CRITICAL
 'use client';
 
 import { useMemo, useEffect, useRef, useId } from 'react';

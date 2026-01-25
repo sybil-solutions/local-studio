@@ -1,3 +1,4 @@
+// CRITICAL
 import { NextRequest, NextResponse } from "next/server";
 import { getMessageParsingService } from "@/lib/services/message-parsing";
 import { getApiSettings } from "@/lib/api-settings";

@@ -1,3 +1,4 @@
+// CRITICAL
 import { streamText, jsonSchema, convertToModelMessages } from "ai";
 import type { UIMessage, ToolSet } from "ai";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";

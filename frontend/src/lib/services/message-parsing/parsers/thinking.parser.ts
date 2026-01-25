@@ -1,3 +1,4 @@
+// CRITICAL
 /**
  * Thinking Parser
  * Extracts <think>/<thinking> content from messages

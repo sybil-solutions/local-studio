@@ -1,3 +1,4 @@
+// CRITICAL
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 import { setTimeout as delayTimeout } from "node:timers/promises";

@@ -1,3 +1,4 @@
+// CRITICAL
 import type { Hono } from "hono";
 import Database from "bun:sqlite";
 import type { AppContext } from "../types/context";

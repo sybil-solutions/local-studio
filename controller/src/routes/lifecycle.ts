@@ -1,3 +1,4 @@
+// CRITICAL
 import type { Hono } from "hono";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";

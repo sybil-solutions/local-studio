@@ -1,3 +1,4 @@
+// CRITICAL
 /**
  * Context Management System
  * Prevents model crashes by tracking and compacting conversation context

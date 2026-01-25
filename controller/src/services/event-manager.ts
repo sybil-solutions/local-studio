@@ -1,3 +1,4 @@
+// CRITICAL
 import { AsyncLock, AsyncQueue } from "../core/async";
 
 /**

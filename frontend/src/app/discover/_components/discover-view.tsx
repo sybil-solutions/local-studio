@@ -1,3 +1,4 @@
+// CRITICAL
 import {
   Check,
   CheckCircle2,

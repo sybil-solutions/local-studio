@@ -1,3 +1,4 @@
+// CRITICAL
 import { randomUUID } from "node:crypto";
 
 /**

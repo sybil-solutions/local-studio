@@ -1,3 +1,4 @@
+// CRITICAL
 import { NextRequest, NextResponse } from 'next/server';
 
 // RAG proxy - forwards requests to the configured RAG endpoint

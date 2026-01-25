@@ -1,3 +1,4 @@
+<!-- CRITICAL -->
 ---
 name: vllm-studio
 description: Manage vLLM/SGLang inference servers. Use for checking GPU status, listing/launching/evicting models, and viewing metrics. Requires vllm-studio CLI installed.

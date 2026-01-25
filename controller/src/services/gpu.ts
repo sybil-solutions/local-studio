@@ -1,3 +1,4 @@
+// CRITICAL
 import { execSync } from "node:child_process";
 import type { GpuInfo } from "../types/models";
 

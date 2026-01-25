@@ -1,3 +1,4 @@
+// CRITICAL
 'use client';
 
 import { Bookmark, BookmarkCheck, ThumbsUp, ThumbsDown, Copy, Check, MoreVertical } from 'lucide-react';

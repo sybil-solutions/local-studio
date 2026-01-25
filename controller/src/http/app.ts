@@ -1,3 +1,4 @@
+// CRITICAL
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import type { AppContext } from "../types/context";

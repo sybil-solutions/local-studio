@@ -1,3 +1,4 @@
+<!-- CRITICAL -->
 # CLAUDE.md
 
 ## Project Overview

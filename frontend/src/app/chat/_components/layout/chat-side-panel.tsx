@@ -1,3 +1,4 @@
+// CRITICAL
 "use client";
 
 import { X, Loader2, Globe } from "lucide-react";

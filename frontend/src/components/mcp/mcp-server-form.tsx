@@ -1,3 +1,4 @@
+// CRITICAL
 "use client";
 
 import { useCallback, useState, type SyntheticEvent } from "react";

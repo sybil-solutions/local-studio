@@ -1,3 +1,4 @@
+// CRITICAL
 "use client";
 
 import { PanelRightOpen, Settings, BarChart3, Download, Server } from "lucide-react";

@@ -1,3 +1,4 @@
+# CRITICAL
 """Test auto-detection of tool call and reasoning parsers for different models."""
 
 from controller.backends import build_vllm_command

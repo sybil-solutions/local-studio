@@ -1,3 +1,4 @@
+// CRITICAL
 "use client";
 
 import { X, Download, FileJson, FileText } from "lucide-react";

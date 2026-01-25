@@ -1,3 +1,4 @@
+// CRITICAL
 /**
  * Markdown Parser
  * Segments markdown content and renders to HTML

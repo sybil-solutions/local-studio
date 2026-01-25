@@ -1,3 +1,4 @@
+// CRITICAL
 /**
  * Message Parsing Service Types
  * Defines all types specific to message parsing functionality

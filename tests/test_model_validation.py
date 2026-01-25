@@ -1,3 +1,4 @@
+# CRITICAL
 """Test harness for validating model deployments.
 
 This module provides comprehensive validation tests for deployed models including:

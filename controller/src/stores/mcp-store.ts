@@ -1,3 +1,4 @@
+// CRITICAL
 import { Database } from "bun:sqlite";
 import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";

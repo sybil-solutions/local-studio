@@ -1,3 +1,4 @@
+// CRITICAL
 /**
  * Context Management Service
  * Handles token estimation, compaction, and context management

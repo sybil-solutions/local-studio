@@ -1,3 +1,4 @@
+// CRITICAL
 "use client";
 
 import { formatNumber, formatDate } from "@/lib/formatters";

@@ -1,3 +1,4 @@
+<!-- CRITICAL -->
 # GLM-4.7 Output Corruption: Technical Analysis
 
 ## Executive Summary

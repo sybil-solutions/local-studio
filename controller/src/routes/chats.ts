@@ -1,3 +1,4 @@
+// CRITICAL
 import type { Hono } from "hono";
 import { randomUUID } from "node:crypto";
 import type { AppContext } from "../types/context";

@@ -1,3 +1,4 @@
+// CRITICAL
 "use client";
 
 import type { UIMessage } from "@ai-sdk/react";

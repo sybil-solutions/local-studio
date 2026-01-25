@@ -1,3 +1,4 @@
+// CRITICAL
 "use client";
 
 import type { PeakMetrics } from "@/lib/types";

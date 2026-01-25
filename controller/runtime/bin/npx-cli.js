@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+// CRITICAL
 
 const cli = require('../lib/cli.js')
 

@@ -1,3 +1,4 @@
+// CRITICAL
 "use client";
 
 import { X, BarChart3 } from "lucide-react";

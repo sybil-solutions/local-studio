@@ -1,3 +1,4 @@
+// CRITICAL
 "use client";
 
 import { RefreshButton, PageState } from "@/components/shared";

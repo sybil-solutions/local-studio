@@ -1,3 +1,4 @@
+# CRITICAL
 """
 Custom LiteLLM callback handler for tool call handling and think tag parsing.
 

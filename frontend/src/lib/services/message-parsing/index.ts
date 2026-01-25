@@ -1,3 +1,4 @@
+// CRITICAL
 /**
  * Message Parsing Service Module
  *

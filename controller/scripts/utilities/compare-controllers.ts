@@ -1,3 +1,4 @@
+// CRITICAL
 /**
  * Canary comparison harness for controller endpoints.
  */

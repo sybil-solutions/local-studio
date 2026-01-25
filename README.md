@@ -1,3 +1,4 @@
+<!-- CRITICAL -->
 # vLLM Studio
 
 Model lifecycle management for vLLM and SGLang inference servers.

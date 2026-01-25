@@ -1,3 +1,4 @@
+// CRITICAL
 /**
  * Type definitions for vLLM Studio
  */

@@ -1,3 +1,4 @@
+// CRITICAL
 "use client";
 
 import type { UsageStats } from "@/lib/types";

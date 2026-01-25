@@ -1,3 +1,4 @@
+// CRITICAL
 import { randomUUID } from "node:crypto";
 import type { ToolCall, ToolCallBuffer, ThinkState } from "./proxy-parsers";
 import { createToolCallId, fixMalformedToolCalls, parseThinkTagsFromContent, parseToolCallsFromContent } from "./proxy-parsers";

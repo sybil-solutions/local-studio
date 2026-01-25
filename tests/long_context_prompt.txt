@@ -1,3 +1,4 @@
+# CRITICAL
 SYSTEM ARCHITECTURE DOCUMENTATION - DISTRIBUTED MICROSERVICES PLATFORM
 
 =================================================================================

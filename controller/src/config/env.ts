@@ -1,3 +1,4 @@
+// CRITICAL
 import { config as loadEnvironment } from "dotenv";
 import { z } from "zod";
 import { existsSync } from "node:fs";

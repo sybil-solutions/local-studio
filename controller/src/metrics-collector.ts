@@ -1,3 +1,4 @@
+// CRITICAL
 import type { AppContext } from "./types/context";
 import { getGpuInfo } from "./services/gpu";
 import { delay } from "./core/async";

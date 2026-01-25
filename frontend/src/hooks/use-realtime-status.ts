@@ -1,3 +1,4 @@
+// CRITICAL
 import { useState, useCallback, useEffect, useRef } from "react";
 import type { GPU, Metrics, ProcessInfo } from "@/lib/types";
 import { getApiKey } from "@/lib/api-key";

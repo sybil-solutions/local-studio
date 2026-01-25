@@ -1,3 +1,4 @@
+// CRITICAL
 /**
  * Message Parsing Service
  * Orchestrates all parsing operations with caching

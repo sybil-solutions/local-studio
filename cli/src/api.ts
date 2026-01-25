@@ -1,3 +1,4 @@
+// CRITICAL
 import type { GPU, Recipe, Status, Config, LifetimeMetrics } from './types';
 
 const BASE_URL = process.env.VLLM_STUDIO_URL || 'http://localhost:8080';

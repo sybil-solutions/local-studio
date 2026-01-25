@@ -1,3 +1,4 @@
+// CRITICAL
 import {
   Activity,
   Check,

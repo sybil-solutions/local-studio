@@ -1,3 +1,4 @@
+// CRITICAL
 import { statSync, existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 

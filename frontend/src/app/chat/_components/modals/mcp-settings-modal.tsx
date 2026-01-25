@@ -1,3 +1,4 @@
+// CRITICAL
 "use client";
 
 import { X, Server, RefreshCw, Trash2 } from "lucide-react";

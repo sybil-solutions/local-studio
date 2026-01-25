@@ -1,3 +1,4 @@
+// CRITICAL
 /**
  * Artifacts Parser
  * Extracts artifact blocks from message content
