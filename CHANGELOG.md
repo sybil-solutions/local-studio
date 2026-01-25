@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-01-25
+
+### Added
+- **Branch Protection**: Configured strict branch protection rules for main branch
+  - Requires 1 approval before merge
+  - Requires all CI checks to pass
+  - Blocks force pushes and deletions
+- **Dependency Automation**: Added Dependabot for automated dependency updates
+  - Weekly updates for npm (controller, cli, frontend)
+  - Weekly updates for pip (python)
+  - Weekly updates for GitHub Actions
+- **Security Scanning**: Added comprehensive security workflow
+  - TruffleHog secret scanning
+  - CodeQL static analysis for JS/TS/Python
+  - Dependency review with vulnerability checks
+- **Automated PR Reviews**: Integrated CodeRabbit AI for code review
+  - Custom instructions for this monorepo
+  - Focus on type safety, performance, and security
+- **CI/CD Metrics**: Added workflow to track CI performance
+  - Posts duration metrics to PRs
+  - Tracks deployment frequency
+- **Deployment Automation**: Added deployment workflow for main branch
+- **Issue Labels**: Created comprehensive label schema
+  - Priority levels (Critical, High, Medium, Low)
+  - Type labels (Bug, Feature, Enhancement, etc.)
+  - Area labels (Controller, Frontend, CLI, Infrastructure)
+  - Status labels (Ready, In Progress, Blocked, Needs Review)
+- **Enhanced PR Template**: Updated with:
+  - Performance & Security section
+  - Enhanced testing checklist
+  - Label requirements
+
+### Changed
+- Significantly improved agent readiness score (Level 3 → Level 4)
+- All future changes to main must go through PR review process
+
 ## [0.3.1] - 2026-01-24
 
 ### Added
