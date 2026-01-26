@@ -24,7 +24,7 @@ export interface ContextConfig {
 }
 
 export const DEFAULT_CONTEXT_CONFIG: ContextConfig = {
-  compactionThreshold: 0.85,
+  compactionThreshold: 0.8,
   targetAfterCompaction: 0.5,
   preserveRecentMessages: 4,
   autoCompact: true,

@@ -1,11 +1,12 @@
 // CRITICAL
 "use client";
 
-import { PanelRightOpen, Settings, BarChart3, Download, Server } from "lucide-react";
+import { PanelRightOpen, Settings, BarChart3, Download, Server, Layers } from "lucide-react";
 
 interface ChatActionButtonsProps {
   activityCount: number;
   onOpenActivity: () => void;
+  onOpenContext: () => void;
   onOpenSettings: () => void;
   onOpenMcpSettings: () => void;
   onOpenUsage: () => void;
@@ -15,6 +16,7 @@ interface ChatActionButtonsProps {
 export function ChatActionButtons({
   activityCount,
   onOpenActivity,
+  onOpenContext,
   onOpenSettings,
   onOpenMcpSettings,
   onOpenUsage,
@@ -33,6 +35,13 @@ export function ChatActionButtons({
             {activityCount}
           </span>
         )}
+      </button>
+      <button
+        onClick={onOpenContext}
+        className="p-1.5 bg-(--card) border border-(--border) rounded hover:bg-(--accent)"
+        title="Context"
+      >
+        <Layers className="h-4 w-4 text-[#9a9590]" />
       </button>
       <button
         onClick={onOpenSettings}

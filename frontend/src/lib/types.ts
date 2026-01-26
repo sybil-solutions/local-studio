@@ -545,7 +545,7 @@ export interface ConfigData {
 }
 
 // Chat UI types
-export type ActivePanel = "activity" | "artifacts";
+export type ActivePanel = "activity" | "artifacts" | "context";
 
 export interface DeepResearchConfig {
   enabled: boolean;

@@ -1,3 +1,4 @@
+<!-- CRITICAL -->
 # Changelog
 
 All notable changes to vLLM Studio will be documented in this file.
@@ -6,6 +7,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [0.4.1] - 2026-01-26
+
+### Added
+- Chat: Automatic context compaction when near max context, with summary + preserved messages
+- Chat: Context panel showing usage breakdown and compaction history
+
+### Fixed
+- Chat: Artifacts tab now lists HTML/SVG artifacts extracted from code blocks
+- Chat: Artifact previews render centered and fill the panel without clipping
+
+### Changed
+- Context compaction threshold adjusted to 80% utilization
+
+### Removed
+- Obsolete test fixtures and legacy skill file no longer in use
 
 ## [0.4.0] - 2026-01-25
 

@@ -37,7 +37,7 @@ export function useContextManagementConfig(): ContextConfig {
 
   if (!context) {
     return {
-      compactionThreshold: 0.85,
+      compactionThreshold: 0.8,
       targetAfterCompaction: 0.5,
       preserveRecentMessages: 4,
       autoCompact: true,
