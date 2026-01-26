@@ -19,7 +19,7 @@
   "dependencies": {
     "@hono/swagger-ui": "^0.5.3",
     "@hono/zod-openapi": "0.18.4",
-    "dotenv": "16.6.1",
+    "dotenv": "17.2.3",
     "hono": "4.6.12",
     "pg": "8.13.3",
     "prom-client": "15.1.3",
