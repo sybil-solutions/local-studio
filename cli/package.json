@@ -28,7 +28,7 @@
     "knip": "5.44.2",
     "lint-staged": "15.2.11",
     "depcheck": "1.4.7",
-    "prettier": "3.4.2",
+    "prettier": "3.8.1",
     "typescript": "^5.4.0",
     "vitest": "3.2.4"
   },
