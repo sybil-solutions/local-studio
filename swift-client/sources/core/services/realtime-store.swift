@@ -13,12 +13,20 @@ final class RealtimeStore: ObservableObject {
 
   func start(api: ApiClient) {
     task?.cancel()
-    task = Task { await run(api: api) }
+    task = Task {
+      await loadInitial(api: api)
+      await run(api: api)
+    }
   }
 
   func stop() {
     task?.cancel()
     task = nil
+  }
+
+  private func loadInitial(api: ApiClient) async {
+    status = try? await api.getStatus()
+    if let response = try? await api.getGpus() { gpus = response.gpus }
   }
 
   private func run(api: ApiClient) async {

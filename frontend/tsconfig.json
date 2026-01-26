@@ -14,8 +14,7 @@
     "jsx": "react-jsx",
     "incremental": true,
     "types": [
-      "node",
-      "sarif"
+      "node"
     ],
     "typeRoots": [
       "./node_modules/@types"

@@ -9,9 +9,16 @@ struct DiscoverFiltersView: View {
   var body: some View {
     VStack(spacing: 8) {
       TextField("Search models", text: $search)
-        .textFieldStyle(.roundedBorder)
-      HStack {
-        TextField("Task", text: $task).textFieldStyle(.roundedBorder)
+        .textFieldStyle(.plain)
+        .padding(10)
+        .background(AppTheme.card)
+        .cornerRadius(10)
+      HStack(spacing: 8) {
+        TextField("Task", text: $task)
+          .textFieldStyle(.plain)
+          .padding(10)
+          .background(AppTheme.card)
+          .cornerRadius(10)
         Picker("Sort", selection: $sort) {
           Text("Trending").tag("trending")
           Text("Downloads").tag("downloads")
@@ -20,7 +27,9 @@ struct DiscoverFiltersView: View {
         }
         .pickerStyle(.menu)
       }
-      Button("Refresh", action: onRefresh).buttonStyle(.bordered)
+      Button("Refresh", action: onRefresh)
+        .buttonStyle(.borderedProminent)
+        .tint(AppTheme.accentStrong)
     }
   }
 }

@@ -1,481 +1,204 @@
-<!-- CRITICAL -->
 # AGENTS.md
 
-Comprehensive module mapping, state machines, and architectural patterns for vLLM Studio.
+## CRITICAL SWIFT BUILD REQUIREMENTS
 
-## Repo Conventions (Strict)
+**BEFORE MAKING ANY SWIFT CHANGES, READ THIS ENTIRE SECTION.**
 
-- All files must be **60 LOC or less** unless explicitly critical; prefer splitting into subdirectories.
-- Any file that exceeds 60 LOC must start with a **CRITICAL** marker (e.g., `// CRITICAL`, `# CRITICAL`, or `<!-- CRITICAL -->`).
-- Files that cannot accept comment markers (e.g., lockfiles, LICENSE, `.gitignore`, `.env.example`) are **implicitly critical**.
-- For shebang scripts, place the **CRITICAL** marker on the **second** line.
-- **Never use camelCase or PascalCase** for file or directory names; use **kebab-case** only.
-- Keep **≤20 files per directory**; create subdirectories when needed.
+### MANDATORY PRE-COMMIT CHECKS
 
-## Module Dependency Graph
+1. **REGENERATE XCODE PROJECT AFTER ANY FILE CHANGES**
+   ```bash
+   cd swift-client
+   ./setup.sh
+   ```
+   - New files are NOT automatically included in the Xcode project
+   - Moving files breaks references
+   - The project MUST be regenerated after adding/moving/renaming Swift files
 
-```
-                              ┌─────────────┐
-                              │   cli.py    │
-                              └──────┬──────┘
-                                     │
-                              ┌──────▼──────┐
-                              │   app.py    │ ◄── Entry point, lifespan
-                              └──────┬──────┘
-                                     │
-        ┌────────────────────────────┼────────────────────────────┐
-        │                            │                            │
-        ▼                            ▼                            ▼
-┌───────────────┐           ┌───────────────┐           ┌───────────────┐
-│   config.py   │           │   events.py   │           │   store.py    │
-│   Settings    │           │ EventManager  │           │  *Store       │
-└───────────────┘           └───────────────┘           └───────────────┘
-        │                            │                            │
-        │                            │                            │
-        ▼                            ▼                            ▼
-┌───────────────┐           ┌───────────────┐           ┌───────────────┐
-│  models.py    │           │  routes/*     │◄──────────│  models.py    │
-│ Recipe, MCP   │◄──────────│  API handlers │           │ Pydantic      │
-└───────────────┘           └───────┬───────┘           └───────────────┘
-        │                           │
-        │                           │
-        ▼                           ▼
-┌───────────────┐           ┌───────────────┐
-│ backends.py   │◄──────────│  process.py   │
-│ Cmd builders  │           │ Launch/Evict  │
-└───────────────┘           └───────────────┘
-                                    │
-                                    ▼
-                            ┌───────────────┐
-                            │   gpu.py      │
-                            │ GPU detection │
-                            └───────────────┘
-```
+2. **VERIFY BUILD COMPILES (TERMINAL)**
+   ```bash
+   cd swift-client
+   xcodebuild -project vllm-studio.xcodeproj -scheme vllm-studio -destination 'platform=iOS Simulator,name=iPhone 15' clean build
+   echo $?  # MUST be 0 (success)
+   ```
+   - **DO NOT COMMIT CHANGES THAT DO NOT BUILD**
+   - Fix ALL compilation errors before proceeding
+   - Check for warnings that may indicate runtime issues
 
-## State Machines
+3. **COMMON SWIFT BUILD ERRORS TO AVOID**
 
-### 1. Model Launch State Machine
+   ❌ **WRONG**: Using undefined functions across file boundaries
+   ```swift
+   // File A
+   extension MyClass {
+     func helperMethod() -> String { ... }
+   }
+   
+   // File B - WILL NOT COMPILE
+   extension MyClass {
+     func caller() {
+       let x = helperMethod() // ERROR: Cannot find 'helperMethod' in scope
+     }
+   }
+   ```
+   
+   ✅ **CORRECT**: Keep related functions in the same file or mark as public
+   ```swift
+   // CRITICAL marker if file exceeds 60 lines
+   extension MyClass {
+     func caller() {
+       let x = helperMethod()
+     }
+     
+     func helperMethod() -> String { ... }
+   }
+   ```
 
-```
-                    ┌─────────────────┐
-                    │      IDLE       │
-                    └────────┬────────┘
-                             │ POST /launch/{recipe_id}
-                             ▼
-                    ┌─────────────────┐
-             ┌──────│  CHECK_LOCK     │──────┐
-             │      └─────────────────┘      │
-             │ locked                        │ available
-             ▼                               ▼
-    ┌─────────────────┐             ┌─────────────────┐
-    │ WAIT_LOCK (2s)  │────────────▶│  ACQUIRE_LOCK   │
-    └────────┬────────┘ timeout     └────────┬────────┘
-             │ preempt                       │
-             ▼                               ▼
-    ┌─────────────────┐             ┌─────────────────┐
-    │ CANCEL_OTHER    │             │   EVICTING      │ ◄── Progress: 0%
-    └────────┬────────┘             └────────┬────────┘
-             │                               │ kill process, wait 1s
-             └──────────────┬────────────────┘
-                            ▼
-                   ┌─────────────────┐
-                   │  CHECK_CANCEL   │──────────────┐
-                   └────────┬────────┘              │ cancelled
-                            │ continue              ▼
-                            ▼                ┌─────────────┐
-                   ┌─────────────────┐       │ CANCELLED   │
-                   │   LAUNCHING     │ ◄──   └─────────────┘
-                   │  Progress: 25%  │
-                   └────────┬────────┘
-                            │ subprocess.Popen, wait 3s
-                            ▼
-                   ┌─────────────────┐
-                   │ CHECK_STABILITY │
-                   └────────┬────────┘
-                            │
-             ┌──────────────┴──────────────┐
-             │ crashed                     │ stable
-             ▼                             ▼
-    ┌─────────────────┐           ┌─────────────────┐
-    │  READ_LOGS      │           │    WAITING      │ ◄── Progress: 50%
-    └────────┬────────┘           └────────┬────────┘
-             │                             │ poll /health (300s timeout)
-             ▼                             │
-    ┌─────────────────┐           ┌────────┴────────┐
-    │     ERROR       │           │                 │
-    └─────────────────┘           ▼                 ▼
-                         ┌─────────────┐   ┌─────────────────┐
-                         │   READY     │   │    TIMEOUT      │
-                         │ Progress:   │   └─────────────────┘
-                         │   100%      │
-                         └─────────────┘
-```
+   ❌ **WRONG**: Using enum cases without full qualification
+   ```swift
+   .preferredColorScheme(.dark) // ERROR in some contexts
+   ```
+   
+   ✅ **CORRECT**: Use full type name
+   ```swift
+   .preferredColorScheme(ColorScheme.dark)
+   ```
 
-**Events emitted:**
-- `launch_progress` at each state transition (0%, 25%, 50%, 100%)
-- `status` when model becomes ready
-- `error` on failure
+   ❌ **WRONG**: Adding initializers in separate files causing ambiguity
+   ```swift
+   // File: struct definition
+   struct MyStruct {
+     init(a: String) { ... }
+   }
+   
+   // File: extension
+   extension MyStruct {
+     init(a: String, b: Int) { ... } // May cause "Extra arguments" errors
+   }
+   ```
+   
+   ✅ **CORRECT**: Add optional parameters to original init
+   ```swift
+   struct MyStruct {
+     init(a: String, b: Int? = nil) { ... }
+   }
+   ```
 
-### 2. Chat Message Flow
+4. **SWIFT IMPORT REQUIREMENTS**
+   - **UIKit**: Required for `UIImage`, `UIApplication`, `UIResponder`
+   - **SwiftUI**: Required for all views
+   - **Foundation**: Required for `URL`, `Data`, `UUID`, etc.
+   - **AVFoundation**: Required for audio recording
+   - **PhotosUI**: Required for `PhotosPicker`
+   
+   **DO NOT ASSUME TRANSITIVE IMPORTS** - explicitly import what you use.
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                      FRONTEND (React)                           │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│  User Input ──▶ buildAPIMessages() ──▶ getOpenAITools()        │
-│       │                                       │                 │
-│       ▼                                       ▼                 │
-│  ┌─────────────────────────────────────────────────┐           │
-│  │              POST /api/chat                     │           │
-│  │  { messages, model, tools }                     │           │
-│  └───────────────────────┬─────────────────────────┘           │
-│                          │                                      │
-└──────────────────────────┼──────────────────────────────────────┘
-                           │
-                           ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                    NEXT.JS API ROUTE                            │
-├─────────────────────────────────────────────────────────────────┤
-│  /api/chat/route.ts                                            │
-│       │                                                         │
-│       ▼                                                         │
-│  Stream to LiteLLM:4100/v1/chat/completions                    │
-└───────────────────────┬─────────────────────────────────────────┘
-                        │
-                        ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                      LITELLM (4100)                             │
-├─────────────────────────────────────────────────────────────────┤
-│  config/litellm.yaml routing                                   │
-│       │                                                         │
-│       ├──▶ GLM models      ──▶ vLLM with glm45 parser          │
-│       ├──▶ MiniMax models  ──▶ vLLM with minimax parser        │
-│       ├──▶ INTELLECT-3     ──▶ vLLM with hermes parser         │
-│       └──▶ * (wildcard)    ──▶ vLLM default                    │
-│                                                                 │
-│  Callbacks:                                                     │
-│    - tool_call_handler (MCP processing)                        │
-│    - prometheus_callback (metrics)                             │
-│    - spend_logs (PostgreSQL)                                   │
-└───────────────────────┬─────────────────────────────────────────┘
-                        │
-                        ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                    vLLM/SGLang (8000)                          │
-├─────────────────────────────────────────────────────────────────┤
-│  Inference with:                                               │
-│    - Tool call parsing (function calling)                      │
-│    - Reasoning token extraction                                │
-│    - Streaming response                                        │
-└───────────────────────┬─────────────────────────────────────────┘
-                        │
-                        ▼ SSE Stream
-┌─────────────────────────────────────────────────────────────────┐
-│                      FRONTEND                                   │
-├─────────────────────────────────────────────────────────────────┤
-│  parseSSEEvents() processes:                                   │
-│    │                                                            │
-│    ├──▶ type: "text"       ──▶ Append to message content       │
-│    ├──▶ type: "tool_calls" ──▶ Display in ToolBelt             │
-│    ├──▶ type: "thinking"   ──▶ Show in thinking modal          │
-│    └──▶ type: "error"      ──▶ Display error                   │
-│                                                                 │
-│  If tool_calls present:                                        │
-│    └──▶ executeMCPTool() ──▶ Loop back with tool results       │
-│                                                                 │
-│  Save to ChatStore via POST /chats/{id}/messages               │
-└─────────────────────────────────────────────────────────────────┘
-```
+5. **FILE ORGANIZATION RULES**
+   - Files ≤60 lines: No marker needed
+   - Files >60 lines: **MUST** start with `// CRITICAL`
+   - Max 20 files per directory: Create subdirectories if needed
+   - Use kebab-case for file/directory names: `my-view.swift` NOT `MyView.swift`
+   - After moving files to subdirectories, **REGENERATE THE PROJECT**
 
-### 3. MCP Tool Execution Flow
+6. **SCOPE AND VISIBILITY**
+   - Swift extensions in separate files can access public/internal members
+   - Private members are file-scoped and NOT accessible across extensions
+   - When splitting a file, either:
+     - Move related private methods together
+     - Change visibility to internal
+     - Consolidate into one file with `// CRITICAL` marker
 
-```
-┌─────────────────┐
-│  Model Request  │
-│  tool_call:     │
-│  {              │
-│   name: "exa__  │
-│    web_search"  │
-│   arguments:{}  │
-│  }              │
-└────────┬────────┘
-         │
-         ▼
-┌─────────────────┐
-│ Parse Tool Name │
-│ server = "exa"  │
-│ tool = "web_    │
-│        search"  │
-└────────┬────────┘
-         │
-         ▼
-┌─────────────────┐     POST /mcp/tools/{server}/{tool}
-│  API Request    │────────────────────────────────────▶
-└─────────────────┘
-                                                        │
-                        ┌───────────────────────────────┘
-                        │
-                        ▼
-               ┌─────────────────┐
-               │  Controller     │
-               │  routes/mcp.py  │
-               └────────┬────────┘
-                        │
-                        ▼
-               ┌─────────────────┐
-               │  Load MCPServer │
-               │  from MCPStore  │
-               └────────┬────────┘
-                        │
-                        ▼
-               ┌─────────────────────────────────────────┐
-               │           _run_mcp_command()            │
-               ├─────────────────────────────────────────┤
-               │                                         │
-               │  1. spawn subprocess (node/npx)         │
-               │     stdin=PIPE, stdout=PIPE             │
-               │                                         │
-               │  2. Initialize (JSON-RPC 2.0):          │
-               │     ──▶ {"method": "initialize",        │
-               │          "params": {                    │
-               │            "protocolVersion":           │
-               │              "2024-11-05"}}             │
-               │     ◀── {"result": {serverInfo}}        │
-               │                                         │
-               │  3. Send initialized notification:      │
-               │     ──▶ {"method":                      │
-               │          "notifications/initialized"}   │
-               │                                         │
-               │  4. Call tool:                          │
-               │     ──▶ {"method": "tools/call",        │
-               │          "params": {                    │
-               │            "name": "web_search",        │
-               │            "arguments": {...}}}         │
-               │     ◀── {"result": {content: [...]}}    │
-               │                                         │
-               │  5. Terminate subprocess                │
-               └────────┬────────────────────────────────┘
-                        │
-                        ▼
-               ┌─────────────────┐
-               │  Return Result  │
-               │  to Frontend    │
-               └────────┬────────┘
-                        │
-                        ▼
-               ┌─────────────────┐
-               │  Add to Message │
-               │  tool_results[] │
-               └────────┬────────┘
-                        │
-                        ▼
-               ┌─────────────────┐
-               │ Resubmit to LLM │
-               │ with results    │
-               └─────────────────┘
-```
+### VERIFICATION WORKFLOW
 
-### 4. SSE Event Broadcasting
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                    BACKGROUND TASK                              │
-│               _collect_and_broadcast_metrics()                  │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│  Every 5 seconds:                                               │
-│                                                                 │
-│  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐      │
-│  │find_inference│    │  get_gpus()  │    │scrape vLLM   │      │
-│  │  _process()  │    │              │    │  /metrics    │      │
-│  └──────┬───────┘    └──────┬───────┘    └──────┬───────┘      │
-│         │                   │                   │               │
-│         └───────────────────┴───────────────────┘               │
-│                             │                                   │
-│                             ▼                                   │
-│                   ┌──────────────────┐                          │
-│                   │ Calculate rates  │                          │
-│                   │ Update lifetime  │                          │
-│                   │ Update peak      │                          │
-│                   └────────┬─────────┘                          │
-│                            │                                    │
-└────────────────────────────┼────────────────────────────────────┘
-                             │
-                             ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                      EVENT MANAGER                              │
-│                       events.py                                 │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│  Channels:                                                      │
-│    "default"           ──▶ status, gpu, metrics events          │
-│    "logs:{session_id}" ──▶ log line events                      │
-│                                                                 │
-│  ┌─────────────────┐                                            │
-│  │   publish()     │                                            │
-│  └────────┬────────┘                                            │
-│           │                                                     │
-│           ▼                                                     │
-│  ┌─────────────────────────────────────────┐                    │
-│  │         For each subscriber:            │                    │
-│  │                                         │                    │
-│  │  ┌──────────┐  ┌──────────┐  ┌────────┐│                    │
-│  │  │ Queue 1  │  │ Queue 2  │  │Queue N ││                    │
-│  │  │(max 100) │  │(max 100) │  │        ││                    │
-│  │  └──────────┘  └──────────┘  └────────┘│                    │
-│  │                                         │                    │
-│  │  If queue full: drop oldest event       │                    │
-│  └─────────────────────────────────────────┘                    │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
-                             │
-                             ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                      FRONTEND                                   │
-│                     useSSE.ts                                   │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│  EventSource connection to /events                             │
-│                                                                 │
-│  onmessage:                                                     │
-│    │                                                            │
-│    ├──▶ event.type = "status"                                  │
-│    │    └── Update running model, inference_ready              │
-│    │                                                            │
-│    ├──▶ event.type = "gpu"                                     │
-│    │    └── Update GPU cards display                           │
-│    │                                                            │
-│    ├──▶ event.type = "metrics"                                 │
-│    │    └── Update throughput, cache, energy stats             │
-│    │                                                            │
-│    ├──▶ event.type = "launch_progress"                         │
-│    │    └── Update progress bar (0-100%)                       │
-│    │                                                            │
-│    └──▶ event.type = "log"                                     │
-│         └── Append to log viewer                               │
-│                                                                 │
-│  Reconnection: exponential backoff (1s, 2s, 4s, 8s, 16s)       │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-## Module Reference
-
-### Controller Core
-
-| Module | Purpose | Key Functions |
-|--------|---------|---------------|
-| `app.py` | FastAPI app, lifespan, singletons | `lifespan()`, `get_*_store()` |
-| `config.py` | Settings with env vars | `Settings` class |
-| `models.py` | Pydantic data models | `Recipe`, `MCPServer`, `ProcessInfo` |
-| `backends.py` | Build vLLM/SGLang commands | `build_vllm_command()`, `build_sglang_command()` |
-| `process.py` | Process management | `find_inference_process()`, `launch_model()`, `evict_model()` |
-| `store.py` | SQLite persistence | `RecipeStore`, `ChatStore`, `MCPStore`, `PeakMetricsStore` |
-| `events.py` | SSE broadcasting | `EventManager.publish()`, `subscribe()` |
-| `thinking_config.py` | Reasoning tokens | `calculate_thinking_tokens()` |
-| `metrics.py` | Prometheus export | Counters, Gauges, Histograms |
-| `gpu.py` | GPU info | `get_gpu_list()` |
-
-### Routes
-
-| Route File | Endpoints | Purpose |
-|------------|-----------|---------|
-| `system.py` | `/health`, `/status`, `/gpus`, `/config` | System info & health |
-| `lifecycle.py` | `/recipes/*`, `/launch/*`, `/evict` | Model lifecycle |
-| `models.py` | `/v1/models`, `/v1/studio/models` | OpenAI compatibility |
-| `chats.py` | `/chats/*` | Chat session CRUD |
-| `logs.py` | `/logs/*`, `/events` | Logs & SSE stream |
-| `monitoring.py` | `/metrics`, `/peak-metrics` | Prometheus & benchmarks |
-| `usage.py` | `/usage` | Analytics dashboard |
-| `proxy.py` | Chat completions proxy | Auto-model-switching |
-| `mcp.py` | `/mcp/*` | MCP server & tool management |
-
-### Frontend
-
-| Module | Purpose |
-|--------|---------|
-| `lib/api.ts` | APIClient with retry logic |
-| `lib/types.ts` | TypeScript interfaces |
-| `hooks/useSSE.ts` | SSE connection with reconnection |
-| `hooks/useContextManager.ts` | Token tracking & compaction |
-| `app/chat/page.tsx` | Main chat interface |
-| `app/chat/utils/index.ts` | SSE parsing, helpers |
-| `components/chat/*` | Chat UI components |
-
-## Configuration Reference
-
-### LiteLLM (`config/litellm.yaml`)
-
-```yaml
-model_list:
-  - model_name: "model-alias"
-    litellm_params:
-      model: "openai/model-id"
-      api_base: "http://localhost:8000/v1"
-
-litellm_settings:
-  callbacks:
-    - tool_call_handler  # MCP integration
-    - prometheus_callback
-  cache: true
-  cache_params:
-    type: "redis"
-    ttl: 3600
-```
-
-### Database Seeding
-
-On first run, `MCPStore._migrate()` seeds:
-- **Exa Search** server (if `exa-mcp-server` is installed globally)
-  - Falls back to `npx -y exa-mcp-server` if not found
-  - Requires `EXA_API_KEY` environment variable
-
-## Docker Deployment
-
-### Frontend Production Server
-
-The frontend runs on **port 3000** inside Docker. After making any frontend changes, you **must rebuild** the container:
+**MANDATORY STEPS BEFORE COMPLETING SWIFT WORK:**
 
 ```bash
-# Rebuild and restart frontend container
-docker compose up -d --build frontend
+# 1. Regenerate project
+cd swift-client
+./setup.sh
 
-# Or rebuild all services
-docker compose up -d --build
+# 2. Build in Xcode (opens automatically) or CLI:
+xcodebuild -project vllm-studio.xcodeproj -scheme vllm-studio \
+  -destination 'platform=iOS Simulator,name=iPhone 15' clean build
+
+# 3. Check exit code
+echo $?  # MUST be 0 (success)
+
+# 4. If errors, READ THE ERROR MESSAGES and fix them
+# Common patterns:
+# - "Cannot find X in scope" → Missing import or wrong file
+# - "Extra arguments" → Init signature mismatch
+# - "Cannot infer contextual base" → Missing type qualification
 ```
 
-**Important:**
-- The frontend is built at container creation time (not hot-reloaded)
-- Changes to `frontend/src/**` require a container rebuild
-- Running `npm run dev` locally does NOT update the Docker container
-- Always verify changes are deployed by checking `docker compose ps`
+### DEBUGGING BUILD ERRORS
 
-### Service Ports
+When Xcode shows compilation errors:
 
-| Service | Container Port | Host Port |
-|---------|---------------|-----------|
-| Frontend | 3000 | 3000 |
-| Controller | 8080 | 8080 |
-| LiteLLM | 4000 | 4100 |
-| vLLM/SGLang | 8000 | 8000 |
-| PostgreSQL | 5432 | 5432 |
-| Redis | 6379 | 6379 |
-| Prometheus | 9090 | 9090 |
+1. **Read the actual error message** - don't guess
+2. **Check the file path** - is the file in the project?
+3. **Verify imports** - does the file import required frameworks?
+4. **Check scope** - are you calling private methods from another file?
+5. **Validate extensions** - are all extension members accessible?
 
-## Error Handling Patterns
+### COMMON FIX PATTERNS
 
-### Launch Failure Recovery
-1. Check process crashed → Read last 100 lines of log
-2. Timeout waiting for ready → Report timeout with log path
-3. Lock contention → Preempt existing launch after 2s
+| Error | Fix |
+|-------|-----|
+| Cannot find 'FunctionName' in scope | Move function to same file OR make it public |
+| Cannot find type 'DrawerShell' | Run `./setup.sh` to regenerate project |
+| Cannot infer contextual base in reference to member 'dark' | Use `ColorScheme.dark` instead of `.dark` |
+| Extra arguments at positions #X, #Y | Check init signature - may have duplicate inits |
+| Value of type 'X' has no member 'Y' | Add missing import (UIKit, SwiftUI, etc.) |
 
-### SSE Reconnection
-1. Connection lost → Exponential backoff retry
-2. Max reconnects reached → Show reconnect button
-3. Server restart → Auto-reconnect on next event
+---
 
-### MCP Tool Errors
-1. Server not found → Return 404 with server ID
-2. Tool execution timeout → 30s timeout, return error
-3. JSON-RPC error → Extract message, return to model
+## Frontend (Next.js/React)
+
+### Build Verification
+```bash
+cd frontend
+npm run build  # MUST succeed before committing
+npm run lint   # Fix all linting errors
+```
+
+### Docker Rebuild Required
+After frontend changes:
+```bash
+docker compose up -d --build frontend
+```
+
+---
+
+## Controller (Bun/TypeScript)
+
+### Type Checking
+```bash
+cd controller
+bun run typecheck  # Verify TypeScript types
+bun test           # Run test suite
+```
+
+---
+
+## Repository Conventions
+
+- **60 LOC limit**: Files >60 lines MUST have `// CRITICAL`, `# CRITICAL`, or `<!-- CRITICAL -->`
+- **20 files per directory**: Create subdirectories when exceeded
+- **kebab-case naming**: ALL files/directories use kebab-case
+- **No camelCase/PascalCase in filenames**: `my-component.tsx` NOT `MyComponent.tsx`
+
+---
+
+## FINAL CHECKLIST BEFORE COMPLETING WORK
+
+- [ ] All Swift files compile without errors
+- [ ] Xcode project regenerated with `./setup.sh`
+- [ ] Test build succeeds: `xcodebuild ... clean build`
+- [ ] No files exceed 60 LOC without `// CRITICAL` marker
+- [ ] No directories exceed 20 files
+- [ ] All filenames use kebab-case
+- [ ] Required imports added (UIKit, AVFoundation, etc.)
+- [ ] No scope errors (functions accessible where called)
+
+**IF ANY ITEM FAILS, FIX IT BEFORE CLAIMING COMPLETION.**

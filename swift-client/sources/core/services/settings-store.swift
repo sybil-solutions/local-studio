@@ -11,9 +11,13 @@ final class SettingsStore: ObservableObject {
     let defaults = UserDefaults.standard
     backendUrl = defaults.string(forKey: "backend-url") ?? "http://localhost:8080"
     apiKey = defaults.string(forKey: "api-key") ?? ""
-    voiceUrl = defaults.string(forKey: "voice-url") ?? ""
-    voiceModel = defaults.string(forKey: "voice-model") ?? ""
-    mcpEnabled = defaults.bool(forKey: "mcp-enabled")
+    voiceUrl = defaults.string(forKey: "voice-url") ?? "https://voice.homelabai.org"
+    voiceModel = defaults.string(forKey: "voice-model") ?? "whisper-large-v3-turbo"
+    mcpEnabled = defaults.object(forKey: "mcp-enabled") as? Bool ?? true
+  }
+
+  func saveNow() {
+    save()
   }
 
   private func save() {

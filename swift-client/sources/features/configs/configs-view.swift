@@ -15,8 +15,20 @@ struct ConfigsView: View {
         Task { for index in indexSet { await model.delete(server: model.servers[index]) } }
       })
     }
+    .scrollContentBackground(.hidden)
+    .background(AppTheme.background)
+    .onTapGesture { hideKeyboard() }
     .navigationTitle("Configs")
-    .toolbar { Button("Add Server") { showAdd = true } }
+    .toolbar {
+      ToolbarItemGroup(placement: .navigationBarTrailing) {
+        Button("Save") { container.settings.saveNow() }
+        Button("Add Server") { showAdd = true }
+      }
+      ToolbarItemGroup(placement: .keyboard) {
+        Spacer()
+        Button("Done") { hideKeyboard() }
+      }
+    }
     .sheet(isPresented: $showAdd) {
       NavigationStack { McpServerEditorView(server: McpServer(id: "", name: "", enabled: true, command: "", args: [], env: [:], description: nil, url: nil)) }
     }

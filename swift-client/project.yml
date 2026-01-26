@@ -6,6 +6,11 @@ options:
   xcodeVersion: "15.0"
   generateEmptyDirectories: false
 
+packages:
+  MacPawOpenAI:
+    url: https://github.com/MacPaw/OpenAI.git
+    branch: main
+
 targets:
   vllm-studio:
     type: application
@@ -13,6 +18,9 @@ targets:
     sources:
       - path: sources
         type: group
+    dependencies:
+      - package: MacPawOpenAI
+        product: OpenAI
     info:
       path: resources/info.plist
       properties:
@@ -28,6 +36,6 @@ targets:
       MARKETING_VERSION: "0.1"
       CURRENT_PROJECT_VERSION: 1
       SWIFT_VERSION: "5.9"
-      DEVELOPMENT_TEAM: ""
+      DEVELOPMENT_TEAM: 2RQ2839U69
       CODE_SIGN_STYLE: Automatic
       INFOPLIST_FILE: resources/info.plist

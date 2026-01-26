@@ -6,6 +6,8 @@ final class DashboardViewModel: ObservableObject {
   @Published var loading = false
   @Published var error: String?
   @Published var benchmark: BenchmarkResult?
+  @Published var logSession: LogSession?
+  @Published var logLines: [String] = []
 
   private var api: ApiClient?
 
@@ -18,8 +20,15 @@ final class DashboardViewModel: ObservableObject {
     guard let api else { return }
     loading = true
     defer { loading = false }
-    do { recipes = try await api.getRecipes() }
-    catch { self.error = error.localizedDescription }
+    do {
+      recipes = try await api.getRecipes()
+      let sessions = try await api.getLogSessions().sessions
+      logSession = sessions.first
+      if let session = logSession {
+        let logs = try await api.getLogs(sessionId: session.id, limit: 200)
+        logLines = logs.logs ?? logs.content?.split(separator: "\n").map(String.init) ?? []
+      }
+    } catch { self.error = error.localizedDescription }
   }
 
   func launch(recipeId: String) async {

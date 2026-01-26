@@ -12,8 +12,13 @@ struct DashboardView: View {
         if let progress = realtime.launchProgress { LaunchProgressCard(progress: progress) }
         GpuStatusSection(gpus: realtime.gpus)
         if let metrics = realtime.metrics { MetricsCard(metrics: metrics) }
+        DashboardLogsCard(session: model.logSession, lines: model.logLines)
         QuickActionsCard { Task { await model.benchmark(prompt: 1000, max: 100) } }
-        RecipeSection(recipes: model.recipes, onLaunch: model.launch(recipeId:), onEvict: model.evict)
+        RecipeSection(
+          recipes: model.recipes,
+          onLaunch: { id in Task { await model.launch(recipeId: id) } },
+          onEvict: { Task { await model.evict() } }
+        )
         if let benchmark = model.benchmark { BenchmarkCard(result: benchmark) }
       }
       .padding(16)

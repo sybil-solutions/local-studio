@@ -7,29 +7,29 @@ struct UsageView: View {
   var body: some View {
     ScrollView {
       VStack(alignment: .leading, spacing: 12) {
-        if let totals = model.stats?.totals {
-          HStack {
-            UsageMetricCard(title: "Total Tokens", value: "\(totals.totalTokens)", subtitle: "Requests \(totals.totalRequests)")
-            UsageMetricCard(title: "Success", value: "\(totals.successRate)%", subtitle: "Failures \(totals.failedRequests)")
-          }
-        }
-        if let latency = model.stats?.latency {
-          UsageMetricCard(title: "Latency", value: "\(Int(latency.avgMs)) ms", subtitle: "P95 \(Int(latency.p95Ms)) ms")
-        }
+        if let totals = model.stats?.totals { UsageSummaryCard(totals: totals) }
+        if let latency = model.stats?.latency { UsageLatencyCard(latency: latency, title: "Latency") }
+        if let ttft = model.stats?.ttft { UsageLatencyCard(latency: ttft, title: "TTFT") }
+        if let tokens = model.stats?.tokensPerRequest { UsageTokensCard(tokens: tokens) }
+        if let cache = model.stats?.cache { UsageCacheCard(cache: cache) }
         if let rows = model.stats?.byModel, !rows.isEmpty {
           CardView {
             VStack(alignment: .leading, spacing: 8) {
               Text("Top Models").font(AppTheme.titleFont)
-              ForEach(rows.prefix(5)) { row in
+              ForEach(Array(rows.prefix(5))) { row in
                 UsageModelRowView(row: row)
-                if row.id != rows.prefix(5).last?.id { Divider() }
+                if row.id != Array(rows.prefix(5)).last?.id { Divider() }
               }
             }
           }
         }
+        if let daily = model.stats?.daily, let hourly = model.stats?.hourlyPattern {
+          UsageActivityCard(daily: daily, hourly: hourly)
+        }
       }
       .padding(16)
     }
+    .background(AppTheme.background)
     .navigationTitle("Usage")
     .onAppear { model.connect(api: container.api) }
     .overlay(model.loading ? LoadingView() : nil)

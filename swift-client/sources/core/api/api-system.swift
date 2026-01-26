@@ -16,4 +16,8 @@ extension ApiClient {
   func getSystemConfig() async throws -> SystemConfigResponse {
     try await request("/config")
   }
+
+  func getServedModels() async throws -> OpenAIModelList {
+    try await request("/v1/models")
+  }
 }
