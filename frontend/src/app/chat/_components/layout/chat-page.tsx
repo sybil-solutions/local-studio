@@ -445,80 +445,19 @@ export function ChatPage() {
     }
   }, [activeArtifact, activeArtifactId, setActiveArtifactId]);
 
-  const readUiMessageStream = useCallback(async (response: Response) => {
-    const reader = response.body?.getReader();
-    if (!reader) return "";
-    const decoder = new TextDecoder();
-    let buffer = "";
-    let text = "";
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split("\n");
-      buffer = lines.pop() || "";
-      for (const line of lines) {
-        if (!line.startsWith("data:")) continue;
-        const payload = line.slice(5).trim();
-        if (!payload || payload === "[DONE]") continue;
-        try {
-          const chunk = JSON.parse(payload) as { type?: string; delta?: string; errorText?: string };
-          if (chunk.type === "text-delta" && chunk.delta) {
-            text += chunk.delta;
-          } else if (chunk.type === "error") {
-            throw new Error(chunk.errorText || "Compaction stream error");
-          }
-        } catch (err) {
-          console.error("Failed to parse compaction chunk:", err);
-        }
+  const requestCompaction = useCallback(
+    async (title: string) => {
+      if (!currentSessionId) {
+        throw new Error("No active session for compaction");
       }
-    }
-    return text.trim();
-  }, []);
-
-  const requestCompactionSummary = useCallback(async () => {
-    if (!selectedModel || contextMessages.length === 0) return "";
-    const summarySystemPrompt = [
-      "You are a context-compaction assistant.",
-      "Summarize the conversation so it can replace the full history.",
-      "The original first user message and the latest message will be preserved separately.",
-      "Do not repeat those messages verbatim; focus on key facts, decisions, preferences, and open tasks.",
-      "Include important tool outputs, artifacts, and code references when relevant.",
-      "Keep the summary under 10k tokens and use concise bullets and short sections.",
-      systemPrompt?.trim() ? `Original system prompt:\n${systemPrompt.trim()}` : "",
-    ]
-      .filter(Boolean)
-      .join("\n\n");
-
-    const summaryMessages: UIMessage[] = contextMessages.map((message, index) => ({
-      id: `ctx-${index}`,
-      role: message.role,
-      parts: [{ type: "text", text: message.content }],
-    }));
-
-    summaryMessages.push({
-      id: `ctx-summary-${Date.now()}`,
-      role: "user",
-      parts: [{ type: "text", text: "Summarize the conversation above for context compaction." }],
-    });
-
-    const response = await fetch("/api/chat", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: selectedModel,
-        system: summarySystemPrompt,
-        messages: summaryMessages,
-      }),
-    });
-
-    if (!response.ok) {
-      throw new Error(`Compaction request failed (${response.status})`);
-    }
-
-    return readUiMessageStream(response);
-  }, [contextMessages, readUiMessageStream, selectedModel, systemPrompt]);
+      return api.compactChatSession(currentSessionId, {
+        model: selectedModel || undefined,
+        system: systemPrompt?.trim() || undefined,
+        title,
+      });
+    },
+    [currentSessionId, selectedModel, systemPrompt],
+  );
 
   const runAutoCompaction = useCallback(async () => {
     if (!contextStats || !maxContext) return;
@@ -526,6 +465,7 @@ export function ChatPage() {
     if (compacting || isLoading) return;
     if (contextStats.utilization < contextConfig.compactionThreshold) return;
     if (!selectedModel || messages.length < 2) return;
+    if (!currentSessionId) return;
 
     const signature = `${currentSessionId || "new"}-${messages.length}-${contextStats.currentTokens}`;
     if (lastCompactionSignatureRef.current === signature) return;
@@ -535,59 +475,40 @@ export function ChatPage() {
     setCompactionError(null);
 
     try {
-      const summaryText = await requestCompactionSummary();
-      if (!summaryText) {
-        throw new Error("Empty compaction summary");
-      }
-
-      const firstUser = messages.find((message) => message.role === "user") ?? null;
-      const lastMessage = messages[messages.length - 1] ?? null;
-      if (!lastMessage) return;
-
-      const summaryMessage: UIMessage = {
-        id: `compaction-summary-${Date.now()}`,
-        role: "assistant",
-        parts: [
-          {
-            type: "text",
-            text: `Context summary (auto-compacted on ${new Date().toLocaleString()}):\n\n${summaryText}`,
-          },
-        ],
-        metadata: { model: selectedModel },
-      };
-
-      const cloneMessage = (message: UIMessage, suffix: string): UIMessage => ({
-        ...message,
-        id: `${message.role}-${Date.now()}-${suffix}`,
-        parts: message.parts.map((part) => ({ ...part })),
-      });
-
-      const compactedMessages: UIMessage[] = [];
-      if (firstUser) {
-        compactedMessages.push(cloneMessage(firstUser, "first"));
-      }
-      compactedMessages.push(summaryMessage);
-      if (!firstUser || firstUser.id !== lastMessage.id) {
-        compactedMessages.push(cloneMessage(lastMessage, "last"));
-      }
-
       const compactedTitle =
         currentSessionTitle && !["New Chat", "Chat"].includes(currentSessionTitle)
           ? `${currentSessionTitle} (Compacted)`
           : "Compacted Chat";
 
-      const session = await createSession(compactedTitle, selectedModel);
-      if (!session) {
-        throw new Error("Failed to create compacted session");
+      const beforeTokens = calculateMessageTokens(contextMessages);
+      const result = await requestCompaction(compactedTitle);
+
+      if (!result?.summary) {
+        throw new Error("Empty compaction summary");
       }
 
-      for (const message of compactedMessages) {
-        await persistMessage(session.id, message);
+      const compactedSession = result.session;
+      const storedMessages = compactedSession.messages ?? [];
+      if (storedMessages.length === 0) {
+        throw new Error("Compaction returned empty session");
       }
 
+      const compactedMessages = mapStoredMessages(storedMessages);
+
+      updateSessions((sessions) => {
+        if (sessions.some((existing) => existing.id === compactedSession.id)) {
+          return sessions.map((existing) =>
+            existing.id === compactedSession.id ? compactedSession : existing,
+          );
+        }
+        return [compactedSession, ...sessions];
+      });
+
+      setCurrentSessionId(compactedSession.id);
+      setCurrentSessionTitle(compactedSession.title || compactedTitle);
+      sessionIdRef.current = compactedSession.id;
       setMessages(compactedMessages);
 
-      const beforeTokens = calculateMessageTokens(contextMessages);
       const afterTokens = calculateMessageTokens(
         compactedMessages.map((message) => {
           const textContent = message.parts
@@ -638,7 +559,7 @@ export function ChatPage() {
           utilizationBefore: beforeTokens / maxContext,
           utilizationAfter: afterTokens / maxContext,
           strategy: "summarize",
-          summary: summaryText,
+          summary: result.summary,
         },
       ]);
     } catch (err) {
@@ -655,16 +576,18 @@ export function ChatPage() {
     contextConfig.compactionThreshold,
     contextMessages,
     contextStats,
-    createSession,
     currentSessionId,
     currentSessionTitle,
     isLoading,
     maxContext,
+    mapStoredMessages,
     messages,
-    persistMessage,
-    requestCompactionSummary,
+    requestCompaction,
     selectedModel,
+    setCurrentSessionId,
+    setCurrentSessionTitle,
     setMessages,
+    updateSessions,
   ]);
 
   useEffect(() => {

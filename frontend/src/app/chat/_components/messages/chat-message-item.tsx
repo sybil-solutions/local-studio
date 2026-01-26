@@ -176,6 +176,8 @@ function ChatMessageItemBase({
 }: ChatMessageItemProps) {
   const isUser = message.role === "user";
   const setActiveArtifactId = useAppStore((state) => state.setActiveArtifactId);
+  const setToolPanelOpen = useAppStore((state) => state.setToolPanelOpen);
+  const setActivePanel = useAppStore((state) => state.setActivePanel);
 
   // Extract text content from parts
   const rawTextContent = message.parts
@@ -305,9 +307,15 @@ function ChatMessageItemBase({
             </span>
           )}
           {contextUsageLabel && (
-            <span className="hidden md:inline text-[10px] text-[#6a6560] font-mono">
+            <button
+              onClick={() => {
+                setToolPanelOpen(true);
+                setActivePanel("context");
+              }}
+              className="hidden md:inline text-[10px] text-[#6a6560] font-mono hover:text-[#9a9590] transition-colors cursor-pointer"
+            >
               ctx {contextUsageLabel}
-            </span>
+            </button>
           )}
           {/* Desktop actions */}
           <div className="hidden md:flex ml-auto items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
