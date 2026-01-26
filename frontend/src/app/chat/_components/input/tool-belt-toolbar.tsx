@@ -85,7 +85,7 @@ export function ToolBeltToolbar({
 
   return (
     <div className="flex items-center justify-between px-2 py-1.5 border-t border-(--border)">
-      <div className="flex items-center gap-1">
+      <div className="flex items-center gap-1 min-w-0">
         {isLoading && elapsedSeconds !== undefined && (
           <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-blue-500/10 border border-blue-500/20">
             <Clock className="h-3.5 w-3.5 text-blue-400 animate-pulse" />
@@ -196,47 +196,43 @@ export function ToolBeltToolbar({
           )}
         </ToolDropdown>
 
-        <ToolDropdown
-          icon={SlidersHorizontal}
-          label="Configuration"
-          isActive={hasSystemPrompt}
-          disabled={disabled}
-        >
-          <DropdownItem
-            icon={SlidersHorizontal}
-            label={hasSystemPrompt ? "System prompt (active)" : "System prompt"}
-            isActive={hasSystemPrompt}
+        {onOpenChatSettings && (
+          <button
             onClick={onOpenChatSettings}
             disabled={disabled}
-          />
-          {availableModels.length > 0 && onModelChange && (
-            <>
-              <div className="h-px bg-(--border) my-1" />
-              <div className="px-3 py-2">
-                <label className="block text-xs text-[#9a9590] mb-1">Model</label>
-                <select
-                  value={selectedModel || ""}
-                  onChange={(e) => onModelChange(e.target.value)}
-                  disabled={disabled || isLoading}
-                  className="w-full px-2 py-1 text-xs bg-(--background) border border-(--border) rounded text-[#9a9590] focus:outline-none disabled:opacity-50"
-                >
-                  {availableModels.map((model) => (
-                    <option key={model.id} value={model.id}>
-                      {model.id}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </>
-          )}
-        </ToolDropdown>
+            className={`flex items-center gap-1 px-2 py-1.5 rounded-lg transition-all disabled:opacity-50 ${
+              hasSystemPrompt
+                ? "bg-(--card-hover) text-[#e8e4dd] border border-(--border)/50"
+                : "hover:bg-(--accent) text-[#9a9590]"
+            }`}
+            title={hasSystemPrompt ? "System prompt (active)" : "System prompt"}
+          >
+            <SlidersHorizontal className="h-4 w-4" />
+          </button>
+        )}
       </div>
 
-      <div className="flex items-center">
+      <div className="flex items-center gap-2">
+        {availableModels.length > 0 && onModelChange && (
+          <select
+            value={selectedModel || ""}
+            onChange={(e) => onModelChange(e.target.value)}
+            disabled={disabled || isLoading}
+            className="max-w-[140px] md:max-w-[180px] px-2 py-1 text-xs bg-transparent border border-(--border) rounded-lg text-[#9a9590] focus:outline-none disabled:opacity-50 truncate appearance-none cursor-pointer hover:border-[#4a4745] transition-colors"
+            title={selectedModel || "Select model"}
+          >
+            {availableModels.map((model) => (
+              <option key={model.id} value={model.id}>
+                {model.id}
+              </option>
+            ))}
+          </select>
+        )}
+
         {isLoading ? (
           <button
             onClick={onStop}
-            className="h-8 w-8 flex items-center justify-center rounded-full bg-(--error) text-white hover:bg-(--error)/90 transition-colors"
+            className="h-8 w-8 flex items-center justify-center rounded-full bg-(--error) text-white hover:bg-(--error)/90 transition-colors flex-shrink-0"
             title="Stop"
           >
             <Square className="h-3.5 w-3.5 fill-current" />
@@ -245,7 +241,7 @@ export function ToolBeltToolbar({
           <button
             onClick={onSubmit}
             disabled={!canSend}
-            className={`h-8 w-8 flex items-center justify-center rounded-full transition-colors ${
+            className={`h-8 w-8 flex items-center justify-center rounded-full transition-colors flex-shrink-0 ${
               canSend
                 ? "bg-[#e8e4dd] text-[#1a1918] hover:bg-[#d4d0c9]"
                 : "bg-(--accent) text-[#9a9590]/50 cursor-not-allowed"

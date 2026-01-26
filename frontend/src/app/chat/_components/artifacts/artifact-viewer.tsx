@@ -472,33 +472,47 @@ export function ArtifactViewer({ artifact, isActive = true }: ArtifactViewerProp
     isRunning,
     error,
   } = viewerState;
-  const updateState = (partial: Partial<typeof viewerState>) => {
-    updateArtifactViewerState(artifact.id, (prev) => ({ ...prev, ...partial }));
-  };
+  const artifactIdRef = useRef(artifact.id);
+  artifactIdRef.current = artifact.id;
+
+  const updateState = useCallback(
+    (partial: Partial<typeof viewerState>) => {
+      updateArtifactViewerState(artifactIdRef.current, (prev) => ({ ...prev, ...partial }));
+    },
+    [updateArtifactViewerState],
+  );
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const dragStartRef = useRef({ x: 0, y: 0, posX: 0, posY: 0 });
 
+  // Use refs for artifact content to avoid re-running the iframe on every streaming update
+  const artifactCodeRef = useRef(artifact.code);
+  const artifactTypeRef = useRef(artifact.type);
+  artifactCodeRef.current = artifact.code;
+  artifactTypeRef.current = artifact.type;
+
   const getSrcDoc = useCallback(() => {
-    switch (artifact.type) {
+    const code = artifactCodeRef.current;
+    const type = artifactTypeRef.current;
+    switch (type) {
       case "svg": {
-        const svgMarkup = artifact.code.includes("<svg")
-          ? artifact.code
-          : `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">${artifact.code}</svg>`;
+        const svgMarkup = code.includes("<svg")
+          ? code
+          : `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">${code}</svg>`;
         return SVG_TEMPLATE(svgMarkup, scale);
       }
       case "react":
-        return REACT_TEMPLATE(artifact.code);
+        return REACT_TEMPLATE(code);
       case "javascript":
-        return JS_TEMPLATE(artifact.code);
+        return JS_TEMPLATE(code);
       case "html":
-        return HTML_TEMPLATE(artifact.code);
+        return HTML_TEMPLATE(code);
       default:
         return HTML_TEMPLATE(
-          `<pre style="padding:16px;font-family:monospace;">${artifact.code}</pre>`,
+          `<pre style="padding:16px;font-family:monospace;">${code}</pre>`,
         );
     }
-  }, [artifact, scale]);
+  }, [scale]);
 
   const runArtifact = useCallback(() => {
     updateState({ isRunning: true, error: null });
@@ -514,13 +528,18 @@ export function ArtifactViewer({ artifact, isActive = true }: ArtifactViewerProp
     }
   }, [updateState]);
 
+  // Auto-run only when artifact ID changes or becomes active, not on every rerender
+  const runArtifactRef = useRef(runArtifact);
+  runArtifactRef.current = runArtifact;
+
   useEffect(() => {
     if (!isActive) return;
     const timeoutId = window.setTimeout(() => {
-      runArtifact();
+      runArtifactRef.current();
     }, 0);
     return () => window.clearTimeout(timeoutId);
-  }, [isActive, artifact.id, runArtifact]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isActive, artifact.id]);
 
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {

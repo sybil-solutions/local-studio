@@ -13,6 +13,7 @@ import type {
   StudioModelsRoot,
   ChatSession,
   ChatSessionDetail,
+  ChatCompactionResponse,
   StoredMessage,
   LogSession,
   MCPServer,
@@ -238,6 +239,19 @@ class APIClient {
     data: { message_id?: string; model?: string; title?: string },
   ): Promise<{ session: ChatSessionDetail }> {
     return this.request(`/chats/${id}/fork`, { method: "POST", body: JSON.stringify(data) });
+  }
+
+  async compactChatSession(
+    id: string,
+    data: {
+      model?: string;
+      system?: string;
+      title?: string;
+      preserve_first?: boolean;
+      preserve_last?: boolean;
+    },
+  ): Promise<ChatCompactionResponse> {
+    return this.request(`/chats/${id}/compact`, { method: "POST", body: JSON.stringify(data) });
   }
 
   async addChatMessage(sessionId: string, message: StoredMessage): Promise<StoredMessage> {

@@ -203,6 +203,11 @@ export interface ChatSessionDetail extends ChatSession {
   messages?: StoredMessage[];
 }
 
+export interface ChatCompactionResponse {
+  session: ChatSessionDetail;
+  summary: string;
+}
+
 // MCP types
 export interface MCPServer {
   name: string;
