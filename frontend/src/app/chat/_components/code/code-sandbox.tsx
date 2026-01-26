@@ -324,7 +324,7 @@ export function CodeSandbox({
           e.preventDefault();
           updateState({ isFullscreen: !isFullscreen });
         }}
-        className="p-2 md:p-1.5 rounded bg-(--background) hover:bg-(--card-hover) transition-colors ml-1"
+        className="p-2 md:p-1.5 rounded bg-background hover:bg-(--card-hover) transition-colors ml-1"
         title={isFullscreen ? "Exit fullscreen" : "Fullscreen"}
       >
         {isFullscreen ? (
@@ -341,14 +341,14 @@ export function CodeSandbox({
       {/* Fullscreen backdrop */}
       {isFullscreen && (
         <div
-          className="fixed inset-0 z-[100] bg-black/80"
+          className="fixed inset-0 z-100 bg-black/80"
           onClick={() => updateState({ isFullscreen: false })}
         />
       )}
       <div
         className={`rounded-lg border border-(--border) overflow-hidden code-sandbox ${
           isFullscreen
-            ? "fixed inset-2 md:inset-4 z-[101] bg-(--background) rounded-lg flex flex-col"
+            ? "fixed inset-2 md:inset-4 z-101 bg-background rounded-lg flex flex-col"
             : "max-w-full"
         }`}
         style={
@@ -361,7 +361,7 @@ export function CodeSandbox({
         }
       >
         {/* Header - minimal in fullscreen */}
-        <div className="flex items-center justify-between px-2 md:px-3 py-2 bg-(--card) border-b border-(--border) flex-shrink-0">
+        <div className="flex items-center justify-between px-2 md:px-3 py-2 bg-(--card) border-b border-(--border) shrink-0">
           <div className="flex items-center gap-2 min-w-0">
             <span className="text-xs font-medium truncate">
               {title || `${language.toUpperCase()}`}
@@ -375,7 +375,7 @@ export function CodeSandbox({
           {isFullscreen && (
             <button
               onClick={() => updateState({ isFullscreen: false })}
-              className="p-2 rounded hover:bg-(--background) transition-colors"
+              className="p-2 rounded hover:bg-background transition-colors"
               title="Exit fullscreen"
             >
               <Minimize2 className="h-5 w-5" />
@@ -385,7 +385,7 @@ export function CodeSandbox({
 
         {/* Error Display */}
         {error && (
-          <div className="flex items-center gap-2 px-3 py-2 bg-(--error)/10 text-(--error) text-xs flex-shrink-0">
+          <div className="flex items-center gap-2 px-3 py-2 bg-error/10 text-(--error) text-xs shrink-0">
             <AlertTriangle className="h-3.5 w-3.5" />
             {error}
           </div>
@@ -405,7 +405,7 @@ export function CodeSandbox({
 
         {/* Footer controls - only in fullscreen mode */}
         {isFullscreen && (
-          <div className="flex-shrink-0 px-3 py-3 bg-(--card) border-t border-(--border)">
+          <div className="shrink-0 px-3 py-3 bg-(--card) border-t border-(--border)">
             {renderToolbarButtons(true)}
           </div>
         )}
