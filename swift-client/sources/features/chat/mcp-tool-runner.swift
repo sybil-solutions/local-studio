@@ -8,11 +8,16 @@ struct McpToolRunner {
     for call in calls {
       let parts = call.function.name.split(separator: "__", maxSplits: 1)
       let server = String(parts.first ?? "")
-      let tool = String(parts.dropFirst().first ?? call.function.name)
+      let tool = parts.dropFirst().first.map(String.init) ?? call.function.name
       let args = parseArgs(call.function.arguments)
-      let response = try? await api.callMcpTool(serverId: server, toolName: tool, args: args)
-      let content = response?.result ?? ""
-      results.append(StoredMessage(id: UUID().uuidString, role: "tool", content: content, model: nil, toolCalls: nil, toolCallId: call.id))
+      do {
+        let response = try await api.callMcpTool(serverId: server, toolName: tool, args: args)
+        let content = formatResult(response.result)
+        results.append(StoredMessage(id: UUID().uuidString, role: "tool", content: content, model: nil, toolCalls: nil, toolCallId: call.id))
+      } catch {
+        let content = "MCP error: \(error.localizedDescription)"
+        results.append(StoredMessage(id: UUID().uuidString, role: "tool", content: content, model: nil, toolCalls: nil, toolCallId: call.id))
+      }
     }
     return results
   }
@@ -21,5 +26,17 @@ struct McpToolRunner {
     guard let data = raw.data(using: .utf8) else { return [:] }
     guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return [:] }
     return json.mapValues { String(describing: $0) }
+  }
+
+  private func formatResult(_ result: AnyCodable?) -> String {
+    switch result {
+    case .string(let value): return value
+    case .int(let value): return String(value)
+    case .double(let value): return String(value)
+    case .bool(let value): return String(value)
+    case .object(let value): return encodeJson(value)
+    case .array(let value): return encodeJson(["result": .array(value)])
+    case .null, .none: return ""
+    }
   }
 }

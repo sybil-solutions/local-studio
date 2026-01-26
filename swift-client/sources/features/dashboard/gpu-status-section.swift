@@ -8,7 +8,9 @@ struct GpuStatusSection: View {
       VStack(alignment: .leading, spacing: 12) {
         Text("GPUs").font(AppTheme.titleFont)
         if gpus.isEmpty {
-          Text("No GPUs detected").foregroundColor(AppTheme.muted)
+          Text("No GPUs detected")
+            .font(AppTheme.captionFont)
+            .foregroundColor(AppTheme.muted)
         } else {
           ForEach(gpus) { gpu in
             GpuRowView(gpu: gpu)

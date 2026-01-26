@@ -12,13 +12,19 @@ struct DiscoverView: View {
       List {
         ForEach(model.models) { item in
           DiscoverRowView(model: item, isLocal: isLocal(item))
+            .listRowBackground(AppTheme.card)
         }
         if model.hasMore {
           Button("Load More") { Task { await model.loadMore() } }
+            .listRowBackground(AppTheme.card)
         }
       }
+      .listStyle(.plain)
+      .scrollContentBackground(.hidden)
+      .background(AppTheme.background)
     }
     .padding(12)
+    .background(AppTheme.background)
     .navigationTitle("Discover")
     .onAppear { model.connect(api: container.api) }
   }

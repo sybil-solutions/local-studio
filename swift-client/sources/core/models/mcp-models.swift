@@ -29,5 +29,5 @@ struct McpToolError: Codable {
 }
 
 struct McpToolResult: Codable {
-  let result: String?
+  let result: AnyCodable?
 }

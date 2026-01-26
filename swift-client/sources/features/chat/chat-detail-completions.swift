@@ -1,34 +1,27 @@
+// CRITICAL
 import Foundation
 
 extension ChatDetailViewModel {
-  func completeChat(api: ApiClient) async -> ChatCompletionResponse? {
+  func makeCompletionPayload(stream: Bool) -> ChatCompletionRequest {
     let model = sessionModel ?? messages.first(where: { $0.model != nil })?.model ?? "default"
-    let openaiMessages = buildOpenAIMessages(from: messages)
+    let openaiMessages = buildPromptMessages()
     let toolDefs = settings?.mcpEnabled == true ? tools.map { toolDef(for: $0) } : nil
-    let payload = ChatCompletionRequest(model: model, messages: openaiMessages, tools: toolDefs, stream: false, temperature: 0.7)
-    return try? await api.chatCompletion(payload)
+    return ChatCompletionRequest(model: model, messages: openaiMessages, tools: toolDefs, stream: stream, temperature: 0.7)
   }
 
-  func handleResponse(_ response: ChatCompletionResponse, api: ApiClient, userContent: String) async {
-    guard let message = response.choices.first?.message else { return }
-    let assistant = StoredMessage(id: UUID().uuidString, role: "assistant", content: message.content, model: nil, toolCalls: message.toolCalls)
-    messages.append(assistant)
-    _ = try? await api.addMessage(sessionId: sessionId, message: assistant)
-
-    if let toolCalls = message.toolCalls, !toolCalls.isEmpty {
-      let results = await McpToolRunner(api: api).run(calls: toolCalls)
-      for toolMessage in results {
-        messages.append(toolMessage)
-        _ = try? await api.addMessage(sessionId: sessionId, message: toolMessage)
-      }
-      if let final = await completeChat(api: api), let finalMessage = final.choices.first?.message {
-        let finalStored = StoredMessage(id: UUID().uuidString, role: "assistant", content: finalMessage.content, model: nil, toolCalls: finalMessage.toolCalls)
-        messages.append(finalStored)
-        _ = try? await api.addMessage(sessionId: sessionId, message: finalStored)
-        await updateTitle(user: userContent, assistant: finalMessage.content ?? "", api: api)
-      }
-    } else {
-      await updateTitle(user: userContent, assistant: message.content ?? "", api: api)
+  func buildPromptMessages() -> [OpenAIMessage] {
+    var promptMessages: [OpenAIMessage] = []
+    if let prompt = combinedPrompt {
+      promptMessages.append(OpenAIMessage(role: "system", content: prompt, toolCalls: nil, toolCallId: nil, name: nil))
     }
+    promptMessages.append(contentsOf: buildOpenAIMessages(from: messages))
+    return promptMessages
+  }
+
+  private var combinedPrompt: String? {
+    let base = systemPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
+    let research = deepResearchEnabled ? "\n\nUse web search tools before responding." : ""
+    let combined = base + research
+    return combined.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : combined
   }
 }

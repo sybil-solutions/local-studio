@@ -6,7 +6,7 @@ struct BadgeView: View {
 
   var body: some View {
     Text(text)
-      .font(.caption.weight(.semibold))
+      .font(AppTheme.captionFont.weight(.semibold))
       .padding(.horizontal, 8)
       .padding(.vertical, 4)
       .background(color.opacity(0.15))
