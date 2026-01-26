@@ -1,0 +1,33 @@
+name: vllm-studio
+options:
+  bundleIdPrefix: com.vllm
+  deploymentTarget:
+    iOS: "17.0"
+  xcodeVersion: "15.0"
+  generateEmptyDirectories: false
+
+targets:
+  vllm-studio:
+    type: application
+    platform: iOS
+    sources:
+      - path: sources
+        type: group
+    info:
+      path: resources/info.plist
+      properties:
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        NSAppTransportSecurity:
+          NSAllowsArbitraryLoads: true
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: com.vllm.studio
+      MARKETING_VERSION: "0.1"
+      CURRENT_PROJECT_VERSION: 1
+      SWIFT_VERSION: "5.9"
+      DEVELOPMENT_TEAM: ""
+      CODE_SIGN_STYLE: Automatic
+      INFOPLIST_FILE: resources/info.plist
