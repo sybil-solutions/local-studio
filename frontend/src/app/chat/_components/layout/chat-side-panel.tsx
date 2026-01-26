@@ -5,6 +5,7 @@ import { X, Loader2, Globe } from "lucide-react";
 import { ArtifactPanel } from "../artifacts/artifact-panel";
 import type { ActivePanel, Artifact } from "@/lib/types";
 import type { ActivityGroup, ActivityItem } from "../../types";
+import type { CompactionEvent, ContextStats } from "@/lib/services/context-management";
 
 interface ChatSidePanelProps {
   isOpen: boolean;
@@ -16,6 +17,23 @@ interface ChatSidePanelProps {
   executingTools: Set<string>;
   artifacts: Artifact[];
   elapsedTime?: number;
+  contextStats?: Omit<
+    ContextStats,
+    "compactionHistory" | "lastCompaction" | "totalCompactions" | "totalTokensCompacted"
+  > | null;
+  contextBreakdown?: {
+    messages: number;
+    userMessages: number;
+    assistantMessages: number;
+    toolCalls: number;
+    userTokens: number;
+    assistantTokens: number;
+    thinkingTokens: number;
+  } | null;
+  compactionHistory?: CompactionEvent[];
+  compacting?: boolean;
+  compactionError?: string | null;
+  formatTokenCount?: (tokens: number) => string;
 }
 
 export function ChatSidePanel({
@@ -28,6 +46,12 @@ export function ChatSidePanel({
   executingTools,
   artifacts,
   elapsedTime,
+  contextStats,
+  contextBreakdown,
+  compactionHistory = [],
+  compacting = false,
+  compactionError = null,
+  formatTokenCount,
 }: ChatSidePanelProps) {
   if (!isOpen) return null;
 
@@ -51,6 +75,14 @@ export function ChatSidePanel({
             }`}
           >
             Activity
+          </button>
+          <button
+            onClick={() => onSetActivePanel("context")}
+            className={`text-sm transition-colors ${
+              activePanel === "context" ? "text-[#e8e4dd]" : "text-[#6a6560] hover:text-[#9a9590]"
+            }`}
+          >
+            Context
           </button>
           {showPing && (
             <span className="relative flex h-1.5 w-1.5">
@@ -80,6 +112,16 @@ export function ChatSidePanel({
       {/* Panel content */}
       <div className="flex-1 overflow-y-auto scrollbar-thin px-4 pb-4">
         {activePanel === "activity" && <ActivityPanel activityGroups={activityGroups} />}
+        {activePanel === "context" && (
+          <ContextPanel
+            stats={contextStats}
+            breakdown={contextBreakdown}
+            compactionHistory={compactionHistory}
+            compacting={compacting}
+            compactionError={compactionError}
+            formatTokenCount={formatTokenCount}
+          />
+        )}
         {activePanel === "artifacts" && <ArtifactPanel artifacts={artifacts} isOpen={true} />}
       </div>
 
@@ -216,6 +258,97 @@ function ThinkingContent({ content }: { content: string }) {
           </div>
         </div>
       ))}
+    </div>
+  );
+}
+
+interface ContextPanelProps {
+  stats?: Omit<
+    ContextStats,
+    "compactionHistory" | "lastCompaction" | "totalCompactions" | "totalTokensCompacted"
+  > | null;
+  breakdown?: {
+    messages: number;
+    userMessages: number;
+    assistantMessages: number;
+    toolCalls: number;
+    userTokens: number;
+    assistantTokens: number;
+    thinkingTokens: number;
+  } | null;
+  compactionHistory: CompactionEvent[];
+  compacting: boolean;
+  compactionError: string | null;
+  formatTokenCount?: (tokens: number) => string;
+}
+
+function ContextPanel({
+  stats,
+  breakdown,
+  compactionHistory,
+  compacting,
+  compactionError,
+  formatTokenCount,
+}: ContextPanelProps) {
+  if (!stats || !breakdown) {
+    return <div className="py-8 text-center text-sm text-[#6a6560]">Context stats unavailable</div>;
+  }
+
+  const fmt = formatTokenCount ?? ((value: number) => value.toString());
+  const utilizationPct = Math.round(stats.utilization * 100);
+  const recentCompactions = compactionHistory.slice(-3).reverse();
+
+  return (
+    <div className="space-y-4 text-xs text-[#c8c4bd]">
+      <div className="rounded-lg border border-[#2a2725] bg-[#1c1b1a] p-3">
+        <div className="flex items-center justify-between">
+          <span className="text-[#e8e4dd]">Context Usage</span>
+          <span className="text-[#9a9590]">{utilizationPct}%</span>
+        </div>
+        <div className="mt-2 text-[11px] text-[#9a9590]">
+          {fmt(stats.currentTokens)} / {fmt(stats.maxContext)} tokens • headroom {fmt(stats.headroom)}
+        </div>
+        <div className="mt-2 h-1.5 w-full rounded-full bg-[#2a2725]">
+          <div
+            className="h-full rounded-full bg-[#88b57f]"
+            style={{ width: `${Math.min(100, utilizationPct)}%` }}
+          />
+        </div>
+      </div>
+
+      <div className="rounded-lg border border-[#2a2725] bg-[#1c1b1a] p-3 space-y-2">
+        <div className="text-[#e8e4dd]">Breakdown</div>
+        <div className="grid grid-cols-2 gap-2 text-[11px] text-[#9a9590]">
+          <div>Messages: {breakdown.messages}</div>
+          <div>Tool calls: {breakdown.toolCalls}</div>
+          <div>User tokens: {fmt(breakdown.userTokens)}</div>
+          <div>Assistant tokens: {fmt(breakdown.assistantTokens)}</div>
+          <div>Thinking tokens: {fmt(breakdown.thinkingTokens)}</div>
+          <div>System+tools: {fmt(stats.systemPromptTokens + stats.toolsTokens)}</div>
+        </div>
+      </div>
+
+      <div className="rounded-lg border border-[#2a2725] bg-[#1c1b1a] p-3 space-y-2">
+        <div className="flex items-center justify-between text-[#e8e4dd]">
+          <span>Compaction</span>
+          {compacting && <span className="text-[#9a9590]">Running…</span>}
+        </div>
+        {compactionError && <div className="text-[11px] text-red-400">{compactionError}</div>}
+        {recentCompactions.length === 0 ? (
+          <div className="text-[11px] text-[#9a9590]">No compactions yet</div>
+        ) : (
+          <div className="space-y-2 text-[11px] text-[#9a9590]">
+            {recentCompactions.map((event) => (
+              <div key={event.id} className="flex items-center justify-between">
+                <span>{new Date(event.timestamp).toLocaleTimeString()}</span>
+                <span>
+                  {fmt(event.beforeTokens)} → {fmt(event.afterTokens)}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

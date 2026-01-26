@@ -6,7 +6,7 @@ import { ContextManagementService } from "./service";
 import type { IContextManagementService, ContextConfig } from "./types";
 
 const DEFAULT_CONTEXT_MANAGEMENT_CONFIG: ContextConfig = {
-  compactionThreshold: 0.85,
+  compactionThreshold: 0.8,
   targetAfterCompaction: 0.5,
   preserveRecentMessages: 4,
   autoCompact: true,

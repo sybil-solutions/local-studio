@@ -268,7 +268,7 @@ export default function Nav() {
           }
         />
         {apiKeyOpen && (
-          <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4">
+          <div className="fixed inset-0 z-60 flex items-center justify-center bg-black/60 p-4">
             <div className="w-full max-w-md rounded-lg border border-(--border) bg-(--card) p-4">
               <div className="flex items-center justify-between">
                 <div className="font-medium">API Key</div>
@@ -305,7 +305,7 @@ export default function Nav() {
                 </button>
                 <button
                   onClick={handleApiKeySave}
-                  className="px-3 py-2 text-sm rounded-md bg-(--accent) text-(--foreground) hover:opacity-90"
+                  className="px-3 py-2 text-sm rounded-md bg-(--accent) text-foreground hover:opacity-90"
                   type="button"
                 >
                   Save
@@ -334,7 +334,7 @@ export default function Nav() {
       />
 
       {apiKeyOpen ? (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4">
+        <div className="fixed inset-0 z-60 flex items-center justify-center bg-black/60 p-4">
           <div className="w-full max-w-md rounded-lg border border-(--border) bg-(--card) p-4">
             <div className="flex items-center justify-between">
               <div className="font-medium">API Key</div>
@@ -371,7 +371,7 @@ export default function Nav() {
               </button>
               <button
                 onClick={handleApiKeySave}
-                className="px-3 py-2 text-sm rounded-md bg-(--accent) text-(--foreground) hover:opacity-90"
+                className="px-3 py-2 text-sm rounded-md bg-(--accent) text-foreground hover:opacity-90"
                 type="button"
               >
                 Save
@@ -410,8 +410,8 @@ export default function Nav() {
                     href={item.href}
                     className={`flex items-center gap-2 px-3 py-2 rounded-md text-sm transition-colors ${
                       isActive
-                        ? "bg-(--card-hover) text-(--foreground)"
-                        : "text-[#b0a8a0] hover:text-(--foreground) hover:bg-(--card-hover)"
+                        ? "bg-(--card-hover) text-foreground"
+                        : "text-[#b0a8a0] hover:text-foreground hover:bg-(--card-hover)"
                     }`}
                   >
                     <Icon className="h-4 w-4" />
@@ -427,9 +427,9 @@ export default function Nav() {
             {/* Status - shown on all screens */}
             <div className="flex items-center gap-1.5 md:gap-2 text-xs md:text-sm">
               <div
-                className={`w-2 h-2 rounded-full flex-shrink-0 ${status.online ? "bg-(--success)" : "bg-(--error)"}`}
+                className={`w-2 h-2 rounded-full shrink-0 ${status.online ? "bg-(--success)" : "bg-(--error)"}`}
               />
-              <span className="text-[#b0a8a0] truncate max-w-[100px] md:max-w-none">
+              <span className="text-[#b0a8a0] truncate max-w-25 md:max-w-none">
                 {status.inferenceOnline
                   ? status.model || "Ready"
                   : status.online
@@ -516,7 +516,7 @@ export default function Nav() {
 
       {/* Mobile Slide-out Menu */}
       {mobileMenuOpen && (
-        <div className="md:hidden fixed inset-0 z-[60]">
+        <div className="md:hidden fixed inset-0 z-60">
           {/* Backdrop */}
           <div
             className="absolute inset-0 bg-black/60 animate-fade-in"
@@ -566,8 +566,8 @@ export default function Nav() {
                     onClick={() => setMobileMenuOpen(false)}
                     className={`flex items-center gap-3 px-3 py-3 rounded-lg transition-colors ${
                       isActive
-                        ? "bg-(--accent) text-(--foreground)"
-                        : "text-[#b0a8a0] hover:bg-(--card-hover) hover:text-(--foreground)"
+                        ? "bg-(--accent) text-foreground"
+                        : "text-[#b0a8a0] hover:bg-(--card-hover) hover:text-foreground"
                     }`}
                   >
                     <Icon className="h-5 w-5" />

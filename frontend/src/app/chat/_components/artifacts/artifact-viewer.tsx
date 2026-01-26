@@ -46,7 +46,7 @@ const SVG_TEMPLATE = (svgCode: string, scale: number = 1) => `
       width: 100%;
       height: 100%;
       overflow: hidden;
-      background: #1a1918;
+      background: transparent;
     }
     .container {
       width: 100%;
@@ -54,17 +54,24 @@ const SVG_TEMPLATE = (svgCode: string, scale: number = 1) => `
       display: flex;
       align-items: center;
       justify-content: center;
-      overflow: auto;
+      overflow: hidden;
     }
     .svg-wrapper {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
       transform: scale(${scale});
       transform-origin: center center;
       transition: transform 0.2s ease;
     }
     svg {
       display: block;
-      max-width: none;
-      max-height: none;
+      width: 100%;
+      height: 100%;
+      max-width: 100%;
+      max-height: 100%;
     }
   </style>
 </head>
@@ -94,8 +101,8 @@ const REACT_TEMPLATE = (code: string) => `
     html, body, #root {
       width: 100%;
       height: 100%;
-      background: white;
-      overflow: auto;
+      background: transparent;
+      overflow: hidden;
     }
     .error {
       color: #b91c1c;
@@ -162,7 +169,8 @@ const JS_TEMPLATE = (code: string) => `
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: system-ui, sans-serif; padding: 16px; background: white; min-height: 100vh; }
+    html, body { width: 100%; height: 100%; }
+    body { font-family: system-ui, sans-serif; padding: 16px; background: transparent; min-height: 100vh; }
     #output { white-space: pre-wrap; font-family: monospace; }
   </style>
 </head>
@@ -206,7 +214,8 @@ const HTML_TEMPLATE = (code: string) => {
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: system-ui, sans-serif; background: white; min-height: 100vh; }
+    html, body { width: 100%; height: 100%; }
+    body { font-family: system-ui, sans-serif; background: transparent; min-height: 100vh; }
   </style>
 </head>
 <body>
@@ -407,7 +416,9 @@ function ArtifactViewerContent({
 
       <div
         ref={containerRef}
-        className={`relative overflow-hidden bg-white ${inModal ? "flex-1 min-h-0" : "h-[400px]"}`}
+        className={`relative overflow-hidden bg-[#0f0f10] ${
+          inModal ? "flex-1 min-h-0" : "h-[400px]"
+        }`}
         style={inModal && scale !== 1 ? { cursor: isDragging ? "grabbing" : "grab" } : undefined}
         onMouseDown={inModal ? onMouseDown : undefined}
         onWheel={inModal ? onWheel : undefined}
@@ -426,7 +437,7 @@ function ArtifactViewerContent({
         >
           <iframe
             ref={iframeRef}
-            className="w-full h-full border-0"
+            className="block w-full h-full border-0"
             sandbox="allow-scripts allow-modals allow-same-origin allow-forms allow-popups"
             title={artifact.title || "Artifact Preview"}
           />

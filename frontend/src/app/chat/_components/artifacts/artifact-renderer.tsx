@@ -348,7 +348,10 @@ export function ArtifactRenderer({ artifact }: ArtifactRendererProps) {
 }
 
 // Utility to extract artifacts from message content
-export function extractArtifacts(content: string): { text: string; artifacts: Artifact[] } {
+export function extractArtifacts(
+  content: string,
+  options?: { includeImplicit?: boolean },
+): { text: string; artifacts: Artifact[] } {
   const artifacts: Artifact[] = [];
   let text = content;
 
@@ -392,7 +395,20 @@ export function extractArtifacts(content: string): { text: string; artifacts: Ar
   }
 
   // Pattern 3: Regular HTML code blocks (```html) when artifacts mode is enabled
-  // This is handled by the parent component by checking if artifactsEnabled
+  if (options?.includeImplicit) {
+    const implicitCodeBlockRegex = /```(html|svg)\s*\n([\s\S]*?)```/g;
+    while ((match = implicitCodeBlockRegex.exec(content)) !== null) {
+      const type = match[1] as Artifact["type"];
+      const code = match[2].trim();
+      artifacts.push({
+        id: `artifact-${artifacts.length}-${Date.now()}`,
+        type,
+        title: "",
+        code,
+      });
+      text = text.replace(match[0], `[Artifact: ${type}]`);
+    }
+  }
 
   return { text, artifacts };
 }

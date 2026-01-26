@@ -1,7 +1,7 @@
 // CRITICAL
 "use client";
 
-import { useEffect, useRef, useCallback, useMemo } from "react";
+import { useEffect, useRef, useCallback, useMemo, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport, lastAssistantMessageIsCompleteWithToolCalls } from "ai";
@@ -21,10 +21,11 @@ import { useChatDerived } from "../../hooks/use-chat-derived";
 import { useChatTransport } from "../../hooks/use-chat-transport";
 import type { UIMessage } from "@ai-sdk/react";
 import type { Artifact, StoredMessage, StoredToolCall } from "@/lib/types";
-import { useContextManagement } from "@/lib/services/context-management";
+import { useContextManagement, type CompactionEvent } from "@/lib/services/context-management";
+import { useMessageParsing } from "@/lib/services/message-parsing";
 import { useAppStore } from "@/store";
 import type { Attachment } from "../../types";
-import { tryParseNestedJsonString } from "../../utils";
+import { stripThinkingForModelContext, tryParseNestedJsonString } from "../../utils";
 
 export function ChatPage() {
   const searchParams = useSearchParams();
@@ -82,6 +83,7 @@ export function ChatPage() {
     loadSessions,
     loadSession,
     startNewSession,
+    createSession,
     setCurrentSessionId,
     setCurrentSessionTitle,
   } = useChatSessions();
@@ -113,12 +115,23 @@ export function ChatPage() {
       selectedModel,
     });
 
-  const { calculateStats, formatTokenCount } = useContextManagement();
+  const {
+    calculateStats,
+    formatTokenCount,
+    calculateMessageTokens,
+    estimateTokens,
+    config: contextConfig,
+  } = useContextManagement();
+  const { parseThinking } = useMessageParsing();
   const updateSessions = useAppStore((state) => state.updateSessions);
 
   // Track the last user input for title generation
   const lastUserInputRef = useRef<string>("");
   const autoArtifactSwitchRef = useRef(false);
+  const [compactionHistory, setCompactionHistory] = useState<CompactionEvent[]>([]);
+  const [compacting, setCompacting] = useState(false);
+  const [compactionError, setCompactionError] = useState<string | null>(null);
+  const lastCompactionSignatureRef = useRef<string | null>(null);
 
   const mapStoredToolCalls = useCallback((toolCalls?: StoredToolCall[]) => {
     if (!toolCalls || toolCalls.length === 0) return [];
@@ -277,15 +290,15 @@ export function ChatPage() {
 
   const maxContext = selectedModel ? (selectedModelMeta?.maxModelLen ?? 32768) : undefined;
 
-  const contextStats = useMemo(() => {
-    if (!maxContext) return null;
-
-    const contextMessages = messages
+  const contextMessages = useMemo(() => {
+    return messages
       .map((message) => {
         const textContent = message.parts
           .filter((part): part is { type: "text"; text: string } => part.type === "text")
           .map((part) => part.text)
           .join("");
+
+        const cleanedText = stripThinkingForModelContext(textContent);
 
         const toolContent = message.parts
           .filter(
@@ -310,7 +323,7 @@ export function ChatPage() {
           .filter((value) => value.length > 0)
           .join("\n");
 
-        const combined = [textContent, toolContent].filter(Boolean).join("\n");
+        const combined = [cleanedText, toolContent].filter(Boolean).join("\n");
 
         return {
           role: message.role,
@@ -318,11 +331,13 @@ export function ChatPage() {
         };
       })
       .filter((message) => message.content.trim().length > 0);
+  }, [messages]);
 
+  const contextStats = useMemo(() => {
+    if (!maxContext) return null;
     const tools = getToolDefinitions?.() ?? [];
-
     return calculateStats(contextMessages, maxContext, systemPrompt, tools);
-  }, [messages, maxContext, systemPrompt, getToolDefinitions, calculateStats]);
+  }, [contextMessages, maxContext, systemPrompt, getToolDefinitions, calculateStats]);
 
   const contextUsageLabel = useMemo(() => {
     if (!contextStats) return null;
@@ -330,6 +345,53 @@ export function ChatPage() {
       contextStats.maxContext,
     )}`;
   }, [contextStats, formatTokenCount]);
+
+  const contextBreakdown = useMemo(() => {
+    if (!contextStats) return null;
+    let userTokens = 0;
+    let assistantTokens = 0;
+    let thinkingTokens = 0;
+    let userMessages = 0;
+    let assistantMessages = 0;
+    let toolCalls = 0;
+
+    messages.forEach((message) => {
+      const textContent = message.parts
+        .filter((part): part is { type: "text"; text: string } => part.type === "text")
+        .map((part) => part.text)
+        .join("");
+
+      const cleaned = stripThinkingForModelContext(textContent);
+      const tokens = estimateTokens(cleaned);
+
+      if (message.role === "user") {
+        userMessages += 1;
+        userTokens += tokens;
+      } else {
+        assistantMessages += 1;
+        assistantTokens += tokens;
+      }
+
+      const thinking = parseThinking(textContent).thinkingContent;
+      if (thinking) {
+        thinkingTokens += estimateTokens(thinking);
+      }
+
+      toolCalls += message.parts.filter(
+        (part) => typeof part.type === "string" && part.type.startsWith("tool-"),
+      ).length;
+    });
+
+    return {
+      messages: messages.length,
+      userMessages,
+      assistantMessages,
+      toolCalls,
+      userTokens,
+      assistantTokens,
+      thinkingTokens,
+    };
+  }, [contextStats, estimateTokens, messages, parseThinking]);
 
   const sessionArtifacts = useMemo(() => {
     if (!artifactsEnabled || messages.length === 0) return [];
@@ -345,7 +407,7 @@ export function ChatPage() {
 
       if (!textContent) return;
 
-      const { artifacts: extracted } = extractArtifacts(textContent);
+      const { artifacts: extracted } = extractArtifacts(textContent, { includeImplicit: true });
       extracted.forEach((artifact, index) => {
         artifacts.push({
           ...artifact,
@@ -358,6 +420,238 @@ export function ChatPage() {
 
     return artifacts;
   }, [messages, artifactsEnabled, currentSessionId]);
+
+  const readUiMessageStream = useCallback(async (response: Response) => {
+    const reader = response.body?.getReader();
+    if (!reader) return "";
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let text = "";
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() || "";
+      for (const line of lines) {
+        if (!line.startsWith("data:")) continue;
+        const payload = line.slice(5).trim();
+        if (!payload || payload === "[DONE]") continue;
+        try {
+          const chunk = JSON.parse(payload) as { type?: string; delta?: string; errorText?: string };
+          if (chunk.type === "text-delta" && chunk.delta) {
+            text += chunk.delta;
+          } else if (chunk.type === "error") {
+            throw new Error(chunk.errorText || "Compaction stream error");
+          }
+        } catch (err) {
+          console.error("Failed to parse compaction chunk:", err);
+        }
+      }
+    }
+    return text.trim();
+  }, []);
+
+  const requestCompactionSummary = useCallback(async () => {
+    if (!selectedModel || contextMessages.length === 0) return "";
+    const summarySystemPrompt = [
+      "You are a context-compaction assistant.",
+      "Summarize the conversation so it can replace the full history.",
+      "The original first user message and the latest message will be preserved separately.",
+      "Do not repeat those messages verbatim; focus on key facts, decisions, preferences, and open tasks.",
+      "Include important tool outputs, artifacts, and code references when relevant.",
+      "Keep the summary under 10k tokens and use concise bullets and short sections.",
+      systemPrompt?.trim() ? `Original system prompt:\n${systemPrompt.trim()}` : "",
+    ]
+      .filter(Boolean)
+      .join("\n\n");
+
+    const summaryMessages: UIMessage[] = contextMessages.map((message, index) => ({
+      id: `ctx-${index}`,
+      role: message.role,
+      parts: [{ type: "text", text: message.content }],
+    }));
+
+    summaryMessages.push({
+      id: `ctx-summary-${Date.now()}`,
+      role: "user",
+      parts: [{ type: "text", text: "Summarize the conversation above for context compaction." }],
+    });
+
+    const response = await fetch("/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: selectedModel,
+        system: summarySystemPrompt,
+        messages: summaryMessages,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Compaction request failed (${response.status})`);
+    }
+
+    return readUiMessageStream(response);
+  }, [contextMessages, readUiMessageStream, selectedModel, systemPrompt]);
+
+  const runAutoCompaction = useCallback(async () => {
+    if (!contextStats || !maxContext) return;
+    if (!contextConfig.autoCompact) return;
+    if (compacting || isLoading) return;
+    if (contextStats.utilization < contextConfig.compactionThreshold) return;
+    if (!selectedModel || messages.length < 2) return;
+
+    const signature = `${currentSessionId || "new"}-${messages.length}-${contextStats.currentTokens}`;
+    if (lastCompactionSignatureRef.current === signature) return;
+    lastCompactionSignatureRef.current = signature;
+
+    setCompacting(true);
+    setCompactionError(null);
+
+    try {
+      const summaryText = await requestCompactionSummary();
+      if (!summaryText) {
+        throw new Error("Empty compaction summary");
+      }
+
+      const firstUser = messages.find((message) => message.role === "user") ?? null;
+      const lastMessage = messages[messages.length - 1] ?? null;
+      if (!lastMessage) return;
+
+      const summaryMessage: UIMessage = {
+        id: `compaction-summary-${Date.now()}`,
+        role: "assistant",
+        parts: [
+          {
+            type: "text",
+            text: `Context summary (auto-compacted on ${new Date().toLocaleString()}):\n\n${summaryText}`,
+          },
+        ],
+        metadata: { model: selectedModel },
+      };
+
+      const cloneMessage = (message: UIMessage, suffix: string): UIMessage => ({
+        ...message,
+        id: `${message.role}-${Date.now()}-${suffix}`,
+        parts: message.parts.map((part) => ({ ...part })),
+      });
+
+      const compactedMessages: UIMessage[] = [];
+      if (firstUser) {
+        compactedMessages.push(cloneMessage(firstUser, "first"));
+      }
+      compactedMessages.push(summaryMessage);
+      if (!firstUser || firstUser.id !== lastMessage.id) {
+        compactedMessages.push(cloneMessage(lastMessage, "last"));
+      }
+
+      const compactedTitle =
+        currentSessionTitle && !["New Chat", "Chat"].includes(currentSessionTitle)
+          ? `${currentSessionTitle} (Compacted)`
+          : "Compacted Chat";
+
+      const session = await createSession(compactedTitle, selectedModel);
+      if (!session) {
+        throw new Error("Failed to create compacted session");
+      }
+
+      for (const message of compactedMessages) {
+        await persistMessage(session.id, message);
+      }
+
+      setMessages(compactedMessages);
+
+      const beforeTokens = calculateMessageTokens(contextMessages);
+      const afterTokens = calculateMessageTokens(
+        compactedMessages.map((message) => {
+          const textContent = message.parts
+            .filter((part): part is { type: "text"; text: string } => part.type === "text")
+            .map((part) => part.text)
+            .join("");
+          const cleanedText = stripThinkingForModelContext(textContent);
+          const toolContent = message.parts
+            .filter(
+              (
+                part,
+              ): part is UIMessage["parts"][number] & {
+                input?: unknown;
+                output?: unknown;
+                errorText?: string;
+              } => {
+                if (typeof part.type !== "string") return false;
+                return part.type === "dynamic-tool" || part.type.startsWith("tool-");
+              },
+            )
+            .map((part) => {
+              const input = "input" in part && part.input != null ? JSON.stringify(part.input) : "";
+              const output =
+                "output" in part && part.output != null ? JSON.stringify(part.output) : "";
+              const errorText = "errorText" in part && part.errorText ? part.errorText : "";
+              return [input, output, errorText].filter(Boolean).join("\n");
+            })
+            .filter((value) => value.length > 0)
+            .join("\n");
+
+          return {
+            role: message.role,
+            content: [cleanedText, toolContent].filter(Boolean).join("\n"),
+          };
+        }),
+      );
+
+      setCompactionHistory((prev) => [
+        ...prev,
+        {
+          id: `compact-${Date.now()}`,
+          timestamp: new Date(),
+          beforeTokens,
+          afterTokens,
+          messagesRemoved: Math.max(0, messages.length - compactedMessages.length),
+          messagesKept: compactedMessages.length,
+          maxContext,
+          utilizationBefore: beforeTokens / maxContext,
+          utilizationAfter: afterTokens / maxContext,
+          strategy: "summarize",
+          summary: summaryText,
+        },
+      ]);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Compaction failed";
+      console.error(message);
+      setCompactionError(message);
+    } finally {
+      setCompacting(false);
+    }
+  }, [
+    calculateMessageTokens,
+    compacting,
+    contextConfig.autoCompact,
+    contextConfig.compactionThreshold,
+    contextMessages,
+    contextStats,
+    createSession,
+    currentSessionId,
+    currentSessionTitle,
+    isLoading,
+    maxContext,
+    messages,
+    persistMessage,
+    requestCompactionSummary,
+    selectedModel,
+    setMessages,
+  ]);
+
+  useEffect(() => {
+    lastCompactionSignatureRef.current = null;
+    setCompactionError(null);
+    setCompactionHistory([]);
+  }, [currentSessionId]);
+
+  useEffect(() => {
+    void runAutoCompaction();
+  }, [runAutoCompaction]);
 
   useEffect(() => {
     if (sessionArtifacts.length === 0) {
@@ -869,7 +1163,14 @@ export function ChatPage() {
 
             <ChatActionButtons
               activityCount={activityCount}
-              onOpenActivity={() => setToolPanelOpen(true)}
+              onOpenActivity={() => {
+                setToolPanelOpen(true);
+                setActivePanel("activity");
+              }}
+              onOpenContext={() => {
+                setToolPanelOpen(true);
+                setActivePanel("context");
+              }}
               onOpenSettings={() => setSettingsOpen(true)}
               onOpenMcpSettings={() => setMcpSettingsOpen(true)}
               onOpenUsage={() => setUsageOpen(true)}
@@ -889,6 +1190,12 @@ export function ChatPage() {
               thinkingActive={thinkingActive}
               executingTools={executingTools}
               artifacts={sessionArtifacts}
+              contextStats={contextStats}
+              contextBreakdown={contextBreakdown}
+              compactionHistory={compactionHistory}
+              compacting={compacting}
+              compactionError={compactionError}
+              formatTokenCount={formatTokenCount}
             />
           )}
         </div>

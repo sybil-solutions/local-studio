@@ -58,7 +58,7 @@ export function CommandPalette({
 
   return (
     <div
-      className="fixed inset-0 z-[60] flex items-start justify-center pt-24 bg-black/60"
+      className="fixed inset-0 z-60 flex items-start justify-center pt-24 bg-black/60"
       onMouseDown={onClose}
     >
       <div
@@ -122,7 +122,7 @@ export function CommandPalette({
                     <div className="text-sm font-medium truncate">{a.label}</div>
                     {a.hint && <div className="text-xs text-[#9a9590] truncate">{a.hint}</div>}
                   </div>
-                  <div className="text-[10px] text-[#9a9590] font-mono flex-shrink-0">{a.id}</div>
+                  <div className="text-[10px] text-[#9a9590] font-mono shrink-0">{a.id}</div>
                 </div>
               </button>
             ))

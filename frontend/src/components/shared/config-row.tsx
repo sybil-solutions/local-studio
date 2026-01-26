@@ -17,7 +17,7 @@ interface ConfigRowOptions {
 function ConfigRow({ label, value, icon, truncate = false, accent = false }: ConfigRowOptions) {
   return (
     <div className="flex items-start justify-between gap-2">
-      <div className="flex items-center gap-2 text-[#9a9088] text-sm min-w-0 flex-shrink-0">
+      <div className="flex items-center gap-2 text-[#9a9088] text-sm min-w-0 shrink-0">
         {icon}
         <span>{label}</span>
       </div>
