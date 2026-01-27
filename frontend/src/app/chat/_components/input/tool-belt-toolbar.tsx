@@ -20,6 +20,7 @@ import {
   VolumeX,
 } from "lucide-react";
 import { ToolDropdown, DropdownItem } from "./tool-dropdown";
+import { AgentModeToggle } from "../agent";
 import type { ModelOption } from "../../types";
 
 interface ToolBeltToolbarProps {
@@ -50,6 +51,8 @@ interface ToolBeltToolbarProps {
   onStopRecording?: () => void;
   onStop?: () => void;
   onSubmit?: () => void;
+  agentMode?: boolean;
+  onAgentModeToggle?: () => void;
 }
 
 export function ToolBeltToolbar({
@@ -80,6 +83,8 @@ export function ToolBeltToolbar({
   onStopRecording,
   onStop,
   onSubmit,
+  agentMode,
+  onAgentModeToggle,
 }: ToolBeltToolbarProps) {
   const hasActiveTools = Boolean(mcpEnabled || artifactsEnabled || deepResearchEnabled);
 
@@ -195,6 +200,10 @@ export function ToolBeltToolbar({
             </>
           )}
         </ToolDropdown>
+
+        {onAgentModeToggle && (
+          <AgentModeToggle enabled={agentMode || false} onToggle={onAgentModeToggle} />
+        )}
 
         {onOpenChatSettings && (
           <button

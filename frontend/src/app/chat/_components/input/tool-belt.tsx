@@ -32,6 +32,8 @@ interface ToolBeltProps {
   elapsedSeconds?: number;
   queuedContext?: string;
   onQueuedContextChange?: (value: string) => void;
+  agentMode?: boolean;
+  onAgentModeToggle?: () => void;
 }
 
 export function ToolBelt({
@@ -56,6 +58,8 @@ export function ToolBelt({
   elapsedSeconds = 0,
   queuedContext = "",
   onQueuedContextChange,
+  agentMode = false,
+  onAgentModeToggle,
 }: ToolBeltProps) {
   const isDisabled = false;
   const attachments = useAppStore((state) => state.attachments);
@@ -353,6 +357,8 @@ export function ToolBelt({
             onStopRecording={stopRecording}
             onStop={onStop}
             onSubmit={handleSubmit}
+            agentMode={agentMode}
+            onAgentModeToggle={onAgentModeToggle}
           />
         </div>
       </div>

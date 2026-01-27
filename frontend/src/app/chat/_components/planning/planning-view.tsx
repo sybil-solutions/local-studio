@@ -14,7 +14,7 @@ import {
   ChevronUp,
 } from "lucide-react";
 
-export type PlanStepStatus = "pending" | "in-progress" | "completed" | "error";
+export type PlanStepStatus = "pending" | "in-progress" | "completed" | "error" | "failed" | "skipped";
 
 export interface PlanStep {
   id: string;
@@ -29,7 +29,10 @@ export interface Plan {
   id: string;
   title: string;
   steps: PlanStep[];
-  isActive: boolean;
+  isActive?: boolean;
+  description?: string;
+  status?: string;
+  progress?: number;
 }
 
 interface PlanningViewProps {
@@ -73,9 +76,16 @@ function StatusIcon({ status }: { status: PlanStepStatus }) {
         </div>
       );
     case "error":
+    case "failed":
       return (
         <div className="w-5 h-5 rounded-full bg-red-500/20 flex items-center justify-center">
           <Circle className="h-3 w-3 text-red-400" />
+        </div>
+      );
+    case "skipped":
+      return (
+        <div className="w-5 h-5 rounded-full border border-white/10 flex items-center justify-center">
+          <Circle className="h-3 w-3 text-[#444]" />
         </div>
       );
     default:

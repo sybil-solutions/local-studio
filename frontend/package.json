@@ -22,6 +22,7 @@
     "@ai-sdk/openai-compatible": "^2.0.13",
     "@ai-sdk/react": "^3.0.43",
     "ai": "^6.0.41",
+    "clsx": "^2.1.1",
     "framer-motion": "^12.24.10",
     "lucide-react": "^0.561.0",
     "markdown-it": "^14.1.0",
@@ -30,6 +31,7 @@
     "react": "19.2.1",
     "react-dom": "19.2.1",
     "react-syntax-highlighter": "^16.1.0",
+    "tailwind-merge": "^3.4.0",
     "zod": "^4.2.1",
     "zustand": "^4.5.4"
   },

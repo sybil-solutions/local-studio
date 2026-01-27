@@ -12,6 +12,7 @@ import type {
   ActivePanel,
 } from "@/lib/types";
 import type { ModelOption, Attachment } from "@/app/chat/types";
+import type { FileNode, Plan } from "@/app/chat/_components/agent";
 
 export interface ChatMessage {
   id: string;
@@ -155,6 +156,14 @@ export interface ChatState {
   themeMode: "light" | "dark" | "system";
   resolvedTheme: "light" | "dark";
   themeMenuOpen: boolean;
+
+  // Agent mode state
+  agentMode: boolean;
+  agentFiles: FileNode[];
+  agentPlans: Plan[];
+  agentActivePlanId: string | null;
+  agentSelectedFilePath: string | null;
+  agentWorkingDirectory: string;
 }
 
 export interface ChatActions {
@@ -306,6 +315,15 @@ export interface ChatActions {
   setThemeMode: (themeMode: "light" | "dark" | "system") => void;
   setResolvedTheme: (resolvedTheme: "light" | "dark") => void;
   setThemeMenuOpen: (themeMenuOpen: boolean) => void;
+
+  // Agent mode actions
+  setAgentMode: (enabled: boolean) => void;
+  setAgentFiles: (files: FileNode[]) => void;
+  setAgentPlans: (plans: Plan[]) => void;
+  setAgentActivePlanId: (planId: string | null) => void;
+  setAgentSelectedFilePath: (path: string | null) => void;
+  setAgentWorkingDirectory: (path: string) => void;
+  updateAgentPlan: (planId: string, updates: Partial<Plan>) => void;
 }
 
 export type ChatSlice = ChatState & ChatActions;
@@ -405,6 +423,14 @@ export const createChatSlice: StateCreator<ChatSlice, [], [], ChatSlice> = (set)
   themeMode: "dark",
   resolvedTheme: "dark",
   themeMenuOpen: false,
+
+  // Agent mode state
+  agentMode: false,
+  agentFiles: [],
+  agentPlans: [],
+  agentActivePlanId: null,
+  agentSelectedFilePath: null,
+  agentWorkingDirectory: "~/agent-workspace",
 
   setSessions: (sessions) => set({ sessions }),
   updateSessions: (updater) => set((state) => ({ sessions: updater(state.sessions) })),
@@ -585,4 +611,19 @@ export const createChatSlice: StateCreator<ChatSlice, [], [], ChatSlice> = (set)
   setThemeMode: (themeMode) => set({ themeMode }),
   setResolvedTheme: (resolvedTheme) => set({ resolvedTheme }),
   setThemeMenuOpen: (themeMenuOpen) => set({ themeMenuOpen }),
+
+  // Agent mode actions
+  setAgentMode: (enabled) => set({ agentMode: enabled }),
+  setAgentFiles: (files) => set({ agentFiles: files }),
+  setAgentPlans: (plans) => set({ agentPlans: plans }),
+  setAgentActivePlanId: (planId) => set({ agentActivePlanId: planId }),
+  setAgentSelectedFilePath: (path) => set({ agentSelectedFilePath: path }),
+  setAgentWorkingDirectory: (path) => set({ agentWorkingDirectory: path }),
+  updateAgentPlan: (planId, updates) =>
+    set((state) => ({
+      agentPlans: state.agentPlans.map((plan) =>
+        plan.id === planId ? { ...plan, ...updates, updatedAt: new Date().toISOString() } : plan
+      ),
+    })),
 });
+

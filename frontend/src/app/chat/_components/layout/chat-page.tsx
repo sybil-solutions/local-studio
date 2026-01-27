@@ -10,7 +10,7 @@ import { safeJsonStringify } from "@/lib/safe-json";
 import { extractArtifacts } from "../artifacts/artifact-renderer";
 import { ArtifactModal } from "../artifacts/artifact-modal";
 import { ArtifactPreviewPanel } from "../artifacts/artifact-preview-panel";
-import { PlanningView, type Plan, type PlanStep } from "../planning/planning-view";
+import { PlanningView, type Plan as PlanningViewPlan, type PlanStep } from "../planning/planning-view";
 import { ToolBelt } from "../input/tool-belt";
 import { ResizablePanel } from "./resizable-panel";
 import { ChatSidePanel } from "./chat-side-panel";
@@ -31,6 +31,7 @@ import { useMessageParsing } from "@/lib/services/message-parsing";
 import { useAppStore } from "@/store";
 import type { Attachment } from "../../types";
 import { stripThinkingForModelContext, tryParseNestedJsonString } from "../../utils";
+import { AgentWorkspace, AgentModeToggle, type FileNode, type Plan } from "../agent";
 
 export function ChatPage() {
   const searchParams = useSearchParams();
@@ -78,6 +79,20 @@ export function ChatPage() {
   const availableModels = useAppStore((state) => state.availableModels);
   const setAvailableModels = useAppStore((state) => state.setAvailableModels);
   const sessionUsage = useAppStore((state) => state.sessionUsage);
+
+  // Agent mode state
+  const agentMode = useAppStore((state) => state.agentMode);
+  const setAgentMode = useAppStore((state) => state.setAgentMode);
+  const agentFiles = useAppStore((state) => state.agentFiles);
+  const setAgentFiles = useAppStore((state) => state.setAgentFiles);
+  const agentPlans = useAppStore((state) => state.agentPlans);
+  const setAgentPlans = useAppStore((state) => state.setAgentPlans);
+  const agentActivePlanId = useAppStore((state) => state.agentActivePlanId);
+  const setAgentActivePlanId = useAppStore((state) => state.setAgentActivePlanId);
+  const agentSelectedFilePath = useAppStore((state) => state.agentSelectedFilePath);
+  const setAgentSelectedFilePath = useAppStore((state) => state.setAgentSelectedFilePath);
+  const agentWorkingDirectory = useAppStore((state) => state.agentWorkingDirectory);
+  const updateAgentPlan = useAppStore((state) => state.updateAgentPlan);
 
   // Refs
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -1068,11 +1083,13 @@ export function ChatPage() {
       onOpenMcpSettings={() => setMcpSettingsOpen(true)}
       onOpenChatSettings={() => setSettingsOpen(true)}
       hasSystemPrompt={systemPrompt.trim().length > 0}
+      agentMode={agentMode}
+      onAgentModeToggle={() => setAgentMode(!agentMode)}
     />
   );
 
   // Generate planning view from tool calls and thinking
-  const activePlan: Plan | undefined = useMemo(() => {
+  const activePlan: PlanningViewPlan | undefined = useMemo(() => {
     if (!mcpEnabled && activityGroups.length === 0) return undefined;
 
     const steps: PlanStep[] = [];
@@ -1115,6 +1132,80 @@ export function ChatPage() {
 
   return (
     <div className="relative h-full flex overflow-hidden w-full max-w-full bg-[#0a0a0a]">
+      {/* Agent Workspace Panel */}
+      {agentMode && (
+        <div className="hidden lg:flex w-80 flex-shrink-0 border-l border-white/[0.06]">
+          <AgentWorkspace
+            files={agentFiles}
+            plans={agentPlans}
+            activePlanId={agentActivePlanId ?? undefined}
+            selectedFilePath={agentSelectedFilePath ?? undefined}
+            isAgentMode={agentMode}
+            onToggleAgentMode={() => setAgentMode(!agentMode)}
+            onSelectFile={setAgentSelectedFilePath}
+            onCreateFile={(path) => {
+              const newFile: FileNode = {
+                id: `${path}/new-file-${Date.now()}.txt`,
+                name: "new-file.txt",
+                type: "file",
+              };
+              setAgentFiles([...agentFiles, newFile]);
+            }}
+            onCreateFolder={(path) => {
+              const newFolder: FileNode = {
+                id: `${path}/new-folder-${Date.now()}`,
+                name: "new-folder",
+                type: "directory",
+                children: [],
+              };
+              setAgentFiles([...agentFiles, newFolder]);
+            }}
+            onDeleteFile={(path) => {
+              setAgentFiles(agentFiles.filter((f) => f.id !== path));
+            }}
+            onRefreshFiles={() => {
+              console.log("Refreshing files...");
+            }}
+            onCreatePlan={(plan) => {
+              const newPlan: Plan = {
+                ...plan,
+                id: `plan-${Date.now()}`,
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString(),
+                progress: 0,
+              };
+              setAgentPlans([...agentPlans, newPlan]);
+            }}
+            onUpdatePlan={(id, updates) => {
+              updateAgentPlan(id, updates);
+            }}
+            onDeletePlan={(id) => {
+              setAgentPlans(agentPlans.filter((p) => p.id !== id));
+            }}
+            onSelectPlan={(id) => {
+              setAgentActivePlanId(id);
+            }}
+            onUpdateStep={(planId, stepId, updates) => {
+              const plan = agentPlans.find((p) => p.id === planId);
+              if (plan) {
+                const updatedSteps = plan.steps.map((s) =>
+                  s.id === stepId ? { ...s, ...updates } : s
+                );
+                const completedCount = updatedSteps.filter(
+                  (s) => s.status === "completed"
+                ).length;
+                const progress =
+                  updatedSteps.length > 0
+                    ? Math.round((completedCount / updatedSteps.length) * 100)
+                    : 0;
+                updateAgentPlan(planId, { steps: updatedSteps, progress });
+              }
+            }}
+            workingDirectory={agentWorkingDirectory}
+          />
+        </div>
+      )}
+
       <ResizablePanel
         isOpen={artifactsEnabled && sessionArtifacts.length > 0}
         onToggle={() => setArtifactsEnabled(!artifactsEnabled)}
@@ -1125,9 +1216,17 @@ export function ChatPage() {
       >
         <div className="flex-1 flex flex-col min-h-0 min-w-0 overflow-x-hidden">
           {/* Agentic planning view */}
-          {activePlan && (
+          {(activePlan || agentActivePlanId) && (
             <div className="px-4 pt-4 max-w-3xl mx-auto w-full">
-              <PlanningView plan={activePlan} />
+              {agentActivePlanId ? (
+                <PlanningView
+                  plan={
+                    agentPlans.find((p) => p.id === agentActivePlanId) || activePlan
+                  }
+                />
+              ) : (
+                activePlan && <PlanningView plan={activePlan} />
+              )}
             </div>
           )}
 
