@@ -117,17 +117,6 @@ export function UnifiedSidebar({
         {children}
       </div>
 
-      {/* Toggle button when closed */}
-      {!isOpen && (
-        <button
-          onClick={onToggle}
-          className="hidden md:flex items-center justify-center w-8 h-8 mt-4 mr-2 rounded-lg bg-white/[0.03] hover:bg-white/[0.06] border border-white/[0.06] text-[#666] hover:text-[#888] transition-colors flex-shrink-0"
-          title="Open sidebar"
-        >
-          <PanelRightOpen className="h-4 w-4" />
-        </button>
-      )}
-
       {/* Resizable sidebar */}
       {isOpen && (
         <div
