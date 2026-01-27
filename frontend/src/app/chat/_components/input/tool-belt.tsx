@@ -2,6 +2,7 @@
 "use client";
 
 import { useRef, useEffect, type ChangeEvent, type KeyboardEvent } from "react";
+import type { ReactNode } from "react";
 import { AttachmentsPreview } from "./attachments-preview";
 import { RecordingIndicator } from "./recording-indicator";
 import { TranscriptionStatus } from "./transcription-status";
@@ -34,6 +35,7 @@ interface ToolBeltProps {
   onQueuedContextChange?: (value: string) => void;
   agentMode?: boolean;
   onAgentModeToggle?: () => void;
+  planDrawer?: ReactNode;
 }
 
 export function ToolBelt({
@@ -60,6 +62,7 @@ export function ToolBelt({
   onQueuedContextChange,
   agentMode = false,
   onAgentModeToggle,
+  planDrawer,
 }: ToolBeltProps) {
   const isDisabled = false;
   const attachments = useAppStore((state) => state.attachments);
@@ -286,13 +289,14 @@ export function ToolBelt({
         />
 
         <div
-          className={`relative flex flex-col bg-[#1a1a1a] rounded-xl border border-white/[0.08] shadow-lg ${
+          className={`relative flex flex-col bg-[#1a1a1a] rounded-xl border border-white/[0.08] shadow-lg overflow-hidden ${
             isLoading ? "ring-1 ring-blue-500/30" : ""
           }`}
           style={{
             boxShadow: "0 0 0 1px rgba(255,255,255,0.03), 0 4px 20px rgba(0,0,0,0.4)"
           }}
         >
+          {planDrawer}
           <textarea
             ref={textareaRef}
             value={isLoading && onQueuedContextChange ? queuedContext : value}

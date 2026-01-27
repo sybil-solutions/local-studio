@@ -4,7 +4,7 @@
 import { useState, useRef, useEffect, useCallback, type ReactNode } from "react";
 import { PanelRightClose, Sparkles } from "lucide-react";
 
-type SidebarTab = "activity" | "context" | "artifacts";
+export type SidebarTab = "activity" | "context" | "artifacts" | "files";
 
 interface UnifiedSidebarProps {
   children: ReactNode;
@@ -17,6 +17,7 @@ interface UnifiedSidebarProps {
   activityContent: ReactNode;
   contextContent: ReactNode;
   artifactsContent: ReactNode;
+  filesContent?: ReactNode;
   defaultWidth?: number;
   minWidth?: number;
   maxWidth?: number;
@@ -34,6 +35,7 @@ export function UnifiedSidebar({
   activityContent,
   contextContent,
   artifactsContent,
+  filesContent,
   defaultWidth = 380,
   minWidth = 280,
   maxWidth = 600,
@@ -92,30 +94,17 @@ export function UnifiedSidebar({
         return contextContent;
       case "artifacts":
         return artifactsContent;
+      case "files":
+        return filesContent ?? null;
       default:
         return activityContent;
     }
   };
 
-  const getTabLabel = (tab: SidebarTab) => {
-    switch (tab) {
-      case "activity":
-        return "Activity";
-      case "context":
-        return "Context";
-      case "artifacts":
-        return "Preview";
-      default:
-        return tab;
-    }
-  };
-
   return (
     <div ref={containerRef} className="flex h-full w-full overflow-hidden">
-      {/* Main content */}
       <div className="flex-1 min-w-0 flex flex-col">{children}</div>
 
-      {/* Resizable sidebar */}
       {isOpen && (
         <div
           className="hidden md:flex flex-shrink-0 flex-col h-full border-l border-white/[0.06] bg-[#0a0a0a] relative"
@@ -127,9 +116,9 @@ export function UnifiedSidebar({
             onMouseDown={handleMouseDown}
           />
 
-          {/* Header with tabs */}
+          {/* Header */}
           <div className="flex items-center justify-between px-3 py-2 border-b border-white/[0.06]">
-            <div className="flex items-center gap-0.5">
+            <div className="flex items-center gap-0.5 overflow-x-auto scrollbar-hide">
               <TabButton
                 active={activeTab === "activity"}
                 onClick={() => onSetActiveTab("activity")}
@@ -146,6 +135,17 @@ export function UnifiedSidebar({
                   onClick={() => onSetActiveTab("artifacts")}
                   label="Preview"
                 />
+              )}
+              {agentMode && (
+                <>
+                  <div className="w-px h-4 bg-white/[0.06] mx-1" />
+                  <TabButton
+                    active={activeTab === "files"}
+                    onClick={() => onSetActiveTab("files")}
+                    label="Files"
+                    accent
+                  />
+                </>
               )}
             </div>
 
@@ -177,7 +177,9 @@ export function UnifiedSidebar({
 
           {/* Footer */}
           <div className="px-3 py-2 border-t border-white/[0.06] flex items-center justify-between">
-            <span className="text-[10px] text-[#555]">{getTabLabel(activeTab)}</span>
+            <span className="text-[10px] text-[#555]">
+              {activeTab === "files" ? "Agent Files" : activeTab.charAt(0).toUpperCase() + activeTab.slice(1)}
+            </span>
             <span className="text-[10px] text-[#444]">{width}px</span>
           </div>
         </div>
@@ -190,18 +192,24 @@ function TabButton({
   active,
   onClick,
   label,
+  accent,
 }: {
   active: boolean;
   onClick: () => void;
   label: string;
+  accent?: boolean;
 }) {
   return (
     <button
       onClick={onClick}
       className={`px-2.5 py-1.5 rounded-md text-[11px] font-medium transition-colors whitespace-nowrap ${
         active
-          ? "bg-white/[0.08] text-foreground"
-          : "text-[#666] hover:text-[#888] hover:bg-white/[0.03]"
+          ? accent
+            ? "bg-violet-500/15 text-violet-300"
+            : "bg-white/[0.08] text-foreground"
+          : accent
+            ? "text-violet-400/50 hover:text-violet-300/70 hover:bg-violet-500/5"
+            : "text-[#666] hover:text-[#888] hover:bg-white/[0.03]"
       }`}
     >
       {label}

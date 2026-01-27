@@ -8,6 +8,7 @@ export {
   type PlanStatus,
 } from "./agent-plan-manager";
 export { AgentPlanDrawer } from "./agent-plan-drawer";
+export { AgentFilesPanel, type AgentFileEntry } from "./agent-files-panel";
 export type {
   AgentPlan,
   AgentPlanStep,

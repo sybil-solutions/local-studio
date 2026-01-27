@@ -163,11 +163,13 @@ export function ActivityPanel({ activityGroups }: ActivityPanelProps) {
       <div className="space-y-4">
         {activityGroups.map((group) => (
           <div key={group.id}>
-            {/* Thinking section */}
+            {/* Thinking section with tool badges */}
             {(group.thinkingActive || group.thinkingContent) && (
               <ThinkingSection
                 content={group.thinkingContent}
                 isActive={group.thinkingActive}
+                toolCount={group.toolItems.length}
+                toolNames={group.toolItems.map((t) => t.toolName).filter(Boolean) as string[]}
               />
             )}
 
@@ -182,16 +184,28 @@ export function ActivityPanel({ activityGroups }: ActivityPanelProps) {
   );
 }
 
-function ThinkingSection({ content, isActive }: { content?: string; isActive?: boolean }) {
+function ThinkingSection({
+  content,
+  isActive,
+  toolCount,
+  toolNames,
+}: {
+  content?: string;
+  isActive?: boolean;
+  toolCount?: number;
+  toolNames?: string[];
+}) {
   const [expanded, setExpanded] = useState(true);
   const contentRef = useRef<HTMLDivElement>(null);
 
-  // Auto-scroll to bottom of thinking content while streaming
   useEffect(() => {
     if (isActive && expanded && contentRef.current) {
       contentRef.current.scrollTop = contentRef.current.scrollHeight;
     }
   }, [content, isActive, expanded]);
+
+  // Deduplicate and format tool names for badges
+  const uniqueTools = [...new Set(toolNames || [])].slice(0, 4);
 
   return (
     <div className="relative pl-5 mb-3">
@@ -208,16 +222,38 @@ function ThinkingSection({ content, isActive }: { content?: string; isActive?: b
       >
         {isActive ? (
           <Loader2 className="h-3 w-3 text-[#9a9590] animate-spin flex-shrink-0" />
+        ) : expanded ? (
+          <ChevronDown className="h-3 w-3 text-[#666] flex-shrink-0" />
         ) : (
-          expanded ? (
-            <ChevronDown className="h-3 w-3 text-[#666] flex-shrink-0" />
-          ) : (
-            <ChevronRight className="h-3 w-3 text-[#666] flex-shrink-0" />
-          )
+          <ChevronRight className="h-3 w-3 text-[#666] flex-shrink-0" />
         )}
         <span className="text-xs text-[#9a9590] group-hover:text-[#bbb] transition-colors">
           Thinking
         </span>
+
+        {/* Tool call badges on the right */}
+        {uniqueTools.length > 0 && (
+          <div className="flex items-center gap-1 ml-auto flex-shrink-0">
+            {uniqueTools.map((name) => {
+              const short = name.includes("__")
+                ? name.split("__").slice(1).join("__")
+                : name;
+              return (
+                <span
+                  key={name}
+                  className="px-1.5 py-0.5 rounded bg-[#1e1d1c] border border-white/[0.06] text-[9px] text-[#777] font-mono truncate max-w-[80px]"
+                >
+                  {short}
+                </span>
+              );
+            })}
+            {(toolCount ?? 0) > uniqueTools.length && (
+              <span className="text-[9px] text-[#555]">
+                +{(toolCount ?? 0) - uniqueTools.length}
+              </span>
+            )}
+          </div>
+        )}
       </button>
 
       {expanded && content && (

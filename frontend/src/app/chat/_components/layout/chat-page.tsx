@@ -30,7 +30,8 @@ import type { Attachment } from "../../types";
 import { stripThinkingForModelContext, tryParseNestedJsonString } from "../../utils";
 import { useAgentTools } from "../../hooks/use-agent-tools";
 import { AgentPlanDrawer } from "../agent/agent-plan-drawer";
-import { UnifiedSidebar } from "./unified-sidebar";
+import { AgentFilesPanel } from "../agent/agent-files-panel";
+import { UnifiedSidebar, type SidebarTab } from "./unified-sidebar";
 import { ActivityPanel, ContextPanel } from "./chat-side-panel";
 
 
@@ -782,6 +783,7 @@ export function ChatPage() {
     if (newChatFromUrl) {
       startNewSession();
       setMessages([]);
+      clearPlan();
       return;
     }
     if (sessionFromUrl) {
@@ -1153,14 +1155,24 @@ export function ChatPage() {
       onOpenMcpSettings={() => setMcpSettingsOpen(true)}
       onOpenChatSettings={() => setSettingsOpen(true)}
       hasSystemPrompt={systemPrompt.trim().length > 0}
-
+      agentMode={agentMode}
+      onAgentModeToggle={() => {
+        const next = !agentMode;
+        setAgentMode(next);
+        if (next && !mcpEnabled) setMcpEnabled(true);
+      }}
+      planDrawer={
+        agentPlan ? (
+          <AgentPlanDrawer plan={agentPlan} onClear={clearPlan} />
+        ) : null
+      }
     />
   );
 
   // (plan processing removed — activity panel shows thinking + tool calls directly)
 
   // Sidebar state
-  const [sidebarTab, setSidebarTab] = useState<"activity" | "context" | "artifacts">("activity");
+  const [sidebarTab, setSidebarTab] = useState<SidebarTab>("activity");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const autoOpenedActivityRef = useRef(false);
 
@@ -1186,6 +1198,13 @@ export function ChatPage() {
         onToggle={() => setSidebarOpen(!sidebarOpen)}
         activeTab={sidebarTab}
         onSetActiveTab={setSidebarTab}
+        agentMode={agentMode}
+        onToggleAgentMode={() => {
+          const next = !agentMode;
+          setAgentMode(next);
+          // Auto-enable MCP when turning agent mode on
+          if (next && !mcpEnabled) setMcpEnabled(true);
+        }}
         hasArtifacts={sessionArtifacts.length > 0}
         defaultWidth={360}
         minWidth={280}
@@ -1208,6 +1227,9 @@ export function ChatPage() {
           </div>
         }
         artifactsContent={<ArtifactPreviewPanel artifacts={sessionArtifacts} />}
+        filesContent={
+          <AgentFilesPanel files={[]} plan={agentPlan} />
+        }
       >
         <div className="flex-1 flex flex-col min-h-0 min-w-0 overflow-x-hidden">
           <div className="flex-1 flex flex-col overflow-hidden relative min-w-0 bg-[hsl(30,5%,10.5%)]">
