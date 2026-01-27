@@ -286,7 +286,7 @@ export function ToolBelt({
         />
 
         <div
-          className={`relative flex flex-col rounded-xl bg-[#141414] ${
+          className={`relative flex flex-col ${
             isLoading ? "ring-1 ring-blue-500/30" : ""
           }`}
         >
