@@ -165,10 +165,15 @@ export interface GpuInfo {
   index: number;
   name: string;
   memory_total: number;
+  memory_total_mb: number;
   memory_used: number;
+  memory_used_mb: number;
   memory_free: number;
+  memory_free_mb: number;
   utilization: number;
+  utilization_pct: number;
   temperature: number;
+  temp_c: number;
   power_draw: number;
   power_limit: number;
 }

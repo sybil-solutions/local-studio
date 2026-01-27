@@ -1,7 +1,8 @@
 // CRITICAL
 "use client";
 
-import { X, Loader2, Globe } from "lucide-react";
+import { useEffect, useMemo, useState, useRef } from "react";
+import { X, Loader2, Globe, ChevronDown, ChevronRight } from "lucide-react";
 import { ArtifactPanel } from "../artifacts/artifact-panel";
 import { safeJsonStringify } from "@/lib/safe-json";
 import type { ActivePanel, Artifact } from "@/lib/types";
@@ -150,9 +151,7 @@ export interface ActivityPanelProps {
 }
 
 export function ActivityPanel({ activityGroups }: ActivityPanelProps) {
-  const activityEmpty = activityGroups.length === 0;
-
-  if (activityEmpty) {
+  if (activityGroups.length === 0) {
     return <div className="py-8 text-center text-sm text-[#6a6560]">No activity yet</div>;
   }
 
@@ -166,23 +165,10 @@ export function ActivityPanel({ activityGroups }: ActivityPanelProps) {
           <div key={group.id}>
             {/* Thinking section */}
             {(group.thinkingActive || group.thinkingContent) && (
-              <div className="relative pl-5 mb-3">
-                {/* Node */}
-                <div className="absolute left-0 top-1 w-[11px] h-[11px] rounded-full border-2 border-[#2a2725] bg-[#1a1918] flex items-center justify-center">
-                  {group.thinkingActive && (
-                    <div className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />
-                  )}
-                </div>
-
-                <div className="flex items-center gap-2 mb-2">
-                  {group.thinkingActive && (
-                    <Loader2 className="h-3 w-3 text-[#9a9590] animate-spin" />
-                  )}
-                  <span className="text-xs text-[#9a9590]">Thinking</span>
-                </div>
-
-                {group.thinkingContent && <ThinkingContent content={group.thinkingContent} />}
-              </div>
+              <ThinkingSection
+                content={group.thinkingContent}
+                isActive={group.thinkingActive}
+              />
             )}
 
             {/* Tool calls */}
@@ -196,69 +182,52 @@ export function ActivityPanel({ activityGroups }: ActivityPanelProps) {
   );
 }
 
-function ThinkingContent({ content }: { content: string }) {
-  // Strip markdown formatting
-  const stripMarkdown = (text: string) => {
-    return text
-      .replace(/\*\*([^*]+)\*\*/g, "$1") // **bold**
-      .replace(/\*([^*]+)\*/g, "$1") // *italic*
-      .replace(/__([^_]+)__/g, "$1") // __bold__
-      .replace(/_([^_]+)_/g, "$1") // _italic_
-      .replace(/`([^`]+)`/g, "$1") // `code`
-      .replace(/```[\s\S]*?```/g, "") // code blocks
-      .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1") // [links](url)
-      .replace(/^#+\s*/gm, "") // # headers
-      .replace(/^[-*+]\s+/gm, "") // list items
-      .replace(/^\d+\.\s+/gm, "") // numbered lists
-      .replace(/^>\s*/gm, "") // blockquotes
-      .trim();
-  };
+function ThinkingSection({ content, isActive }: { content?: string; isActive?: boolean }) {
+  const [expanded, setExpanded] = useState(true);
+  const contentRef = useRef<HTMLDivElement>(null);
 
-  const cleanContent = stripMarkdown(content);
-
-  const lines = cleanContent
-    .split(/\n+/)
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0);
-
-  const bulletPoints: { title: string; body?: string }[] = [];
-
-  for (const line of lines) {
-    // Check if line looks like a section header
-    const isTitle =
-      (line.endsWith(":") && line.length < 60) ||
-      (line.length < 50 && /^[A-Z]/.test(line) && !/[.!?]$/.test(line));
-
-    if (isTitle || bulletPoints.length === 0) {
-      bulletPoints.push({ title: line.replace(/:$/, "") });
-    } else {
-      const last = bulletPoints[bulletPoints.length - 1];
-      if (last.body) {
-        last.body += " " + line;
-      } else {
-        last.body = line;
-      }
+  // Auto-scroll to bottom of thinking content while streaming
+  useEffect(() => {
+    if (isActive && expanded && contentRef.current) {
+      contentRef.current.scrollTop = contentRef.current.scrollHeight;
     }
-  }
-
-  const displayPoints = bulletPoints.slice(0, 8);
+  }, [content, isActive, expanded]);
 
   return (
-    <div className="space-y-2">
-      {displayPoints.map((point, index) => (
-        <div key={index} className="flex gap-2">
-          <span className="mt-[7px] h-1 w-1 rounded-full bg-[#4a4745] shrink-0" />
-          <div className="min-w-0 text-xs leading-relaxed">
-            <span className="text-[#c8c4bd]">{point.title}</span>
-            {point.body && (
-              <span className="text-[#7a7570]">
-                {" "}
-                {point.body.length > 150 ? point.body.slice(0, 150) + "..." : point.body}
-              </span>
-            )}
-          </div>
+    <div className="relative pl-5 mb-3">
+      {/* Timeline node */}
+      <div className="absolute left-0 top-1 w-[11px] h-[11px] rounded-full border-2 border-[#2a2725] bg-[#1a1918] flex items-center justify-center">
+        {isActive && (
+          <div className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />
+        )}
+      </div>
+
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="flex items-center gap-2 mb-1.5 w-full text-left group"
+      >
+        {isActive ? (
+          <Loader2 className="h-3 w-3 text-[#9a9590] animate-spin flex-shrink-0" />
+        ) : (
+          expanded ? (
+            <ChevronDown className="h-3 w-3 text-[#666] flex-shrink-0" />
+          ) : (
+            <ChevronRight className="h-3 w-3 text-[#666] flex-shrink-0" />
+          )
+        )}
+        <span className="text-xs text-[#9a9590] group-hover:text-[#bbb] transition-colors">
+          Thinking
+        </span>
+      </button>
+
+      {expanded && content && (
+        <div
+          ref={contentRef}
+          className="max-h-[300px] overflow-y-auto text-xs leading-relaxed text-[#8a8580] whitespace-pre-wrap break-words pr-1 scrollbar-thin"
+        >
+          {content}
         </div>
-      ))}
+      )}
     </div>
   );
 }

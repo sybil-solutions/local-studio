@@ -10,10 +10,7 @@ import { safeJsonStringify } from "@/lib/safe-json";
 import { extractArtifacts } from "../artifacts/artifact-renderer";
 import { ArtifactModal } from "../artifacts/artifact-modal";
 import { ArtifactPreviewPanel } from "../artifacts/artifact-preview-panel";
-import { PlanningView, type Plan as PlanningViewPlan, type PlanStep } from "../planning/planning-view";
 import { ToolBelt } from "../input/tool-belt";
-import { ResizablePanel } from "./resizable-panel";
-import { ChatSidePanel } from "./chat-side-panel";
 import { ChatConversation } from "./chat-conversation";
 import { ChatTopControls } from "./chat-top-controls";
 import { ChatActionButtons } from "./chat-action-buttons";
@@ -31,7 +28,8 @@ import { useMessageParsing } from "@/lib/services/message-parsing";
 import { useAppStore } from "@/store";
 import type { Attachment } from "../../types";
 import { stripThinkingForModelContext, tryParseNestedJsonString } from "../../utils";
-import { AgentFileExplorer, AgentPlanManager, type FileNode, type Plan } from "../agent";
+import { useAgentTools } from "../../hooks/use-agent-tools";
+import { AgentPlanDrawer } from "../agent/agent-plan-drawer";
 import { UnifiedSidebar } from "./unified-sidebar";
 import { ActivityPanel, ContextPanel } from "./chat-side-panel";
 
@@ -83,19 +81,25 @@ export function ChatPage() {
   const setAvailableModels = useAppStore((state) => state.setAvailableModels);
   const sessionUsage = useAppStore((state) => state.sessionUsage);
 
-  // Agent mode state
+  // Agent mode
   const agentMode = useAppStore((state) => state.agentMode);
   const setAgentMode = useAppStore((state) => state.setAgentMode);
-  const agentFiles = useAppStore((state) => state.agentFiles);
-  const setAgentFiles = useAppStore((state) => state.setAgentFiles);
-  const agentPlans = useAppStore((state) => state.agentPlans);
-  const setAgentPlans = useAppStore((state) => state.setAgentPlans);
-  const agentActivePlanId = useAppStore((state) => state.agentActivePlanId);
-  const setAgentActivePlanId = useAppStore((state) => state.setAgentActivePlanId);
-  const agentSelectedFilePath = useAppStore((state) => state.agentSelectedFilePath);
-  const setAgentSelectedFilePath = useAppStore((state) => state.setAgentSelectedFilePath);
-  const agentWorkingDirectory = useAppStore((state) => state.agentWorkingDirectory);
-  const updateAgentPlan = useAppStore((state) => state.updateAgentPlan);
+
+  const {
+    agentToolDefs,
+    executeAgentTool,
+    isAgentTool,
+    buildAgentSystemPrompt,
+    agentPlan,
+    clearPlan,
+  } = useAgentTools();
+
+  const effectiveSystemPrompt = useMemo(() => {
+    const base = systemPrompt.trim();
+    if (!agentMode) return base;
+    const agentBlock = buildAgentSystemPrompt();
+    return base ? `${base}\n\n${agentBlock}` : agentBlock;
+  }, [systemPrompt, agentMode, buildAgentSystemPrompt]);
 
   // Refs
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -216,14 +220,22 @@ export function ChatPage() {
   }, [mapStoredToolCalls]);
 
   const resolveToolDefinitions = useCallback(async () => {
-    if (!mcpEnabled) return [];
-    if (mcpTools.length > 0) {
-      return getToolDefinitions?.(mcpTools) ?? [];
+    const mcpDefs: typeof mcpTools = [];
+    if (mcpEnabled) {
+      if (mcpTools.length > 0) {
+        mcpDefs.push(...(getToolDefinitions?.(mcpTools) ?? []));
+      } else {
+        const loadedTools = await loadMCPTools();
+        const tools = loadedTools.length > 0 ? loadedTools : mcpTools;
+        mcpDefs.push(...(getToolDefinitions?.(tools) ?? []));
+      }
     }
-    const loadedTools = await loadMCPTools();
-    const tools = loadedTools.length > 0 ? loadedTools : mcpTools;
-    return getToolDefinitions?.(tools) ?? [];
-  }, [mcpEnabled, mcpTools, loadMCPTools, getToolDefinitions]);
+    // Inject synthetic agent tools when agent mode is on
+    if (agentMode) {
+      return [...mcpDefs, ...agentToolDefs];
+    }
+    return mcpDefs;
+  }, [mcpEnabled, mcpTools, loadMCPTools, getToolDefinitions, agentMode, agentToolDefs]);
 
   // Create transport for useChat (static; request-level body passed on send)
   const transport = useMemo(
@@ -241,10 +253,27 @@ export function ChatPage() {
     onToolCall: async ({ toolCall }) => {
       const toolCallId = toolCall.toolCallId;
       const toolName = toolCall.toolName;
+      const args = (toolCall as { input?: unknown }).input as Record<string, unknown>;
+
+      // Handle synthetic agent tools locally (no MCP round-trip)
+      const agentResult = isAgentTool(toolName)
+        ? executeAgentTool(toolName, args || {})
+        : null;
+
+      if (agentResult !== null) {
+        addToolOutput({
+          tool: toolName as never,
+          toolCallId,
+          output: agentResult as never,
+        });
+        return;
+      }
+
+      // Regular MCP tool
       const result = await executeTool({
         toolCallId,
         toolName,
-        args: (toolCall as { input?: unknown }).input as Record<string, unknown>,
+        args,
       });
       if (result.isError) {
         addToolOutput({
@@ -362,8 +391,8 @@ export function ChatPage() {
   const contextStats = useMemo(() => {
     if (!maxContext) return null;
     const tools = getToolDefinitions?.() ?? [];
-    return calculateStats(contextMessages, maxContext, systemPrompt, tools);
-  }, [contextMessages, maxContext, systemPrompt, getToolDefinitions, calculateStats]);
+    return calculateStats(contextMessages, maxContext, effectiveSystemPrompt, tools);
+  }, [contextMessages, maxContext, effectiveSystemPrompt, getToolDefinitions, calculateStats]);
 
   const contextUsageLabel = useMemo(() => {
     if (!contextStats) return null;
@@ -475,11 +504,11 @@ export function ChatPage() {
       }
       return api.compactChatSession(currentSessionId, {
         model: selectedModel || undefined,
-        system: systemPrompt?.trim() || undefined,
+        system: effectiveSystemPrompt?.trim() || undefined,
         title,
       });
     },
-    [currentSessionId, selectedModel, systemPrompt],
+    [currentSessionId, selectedModel, effectiveSystemPrompt],
   );
 
   const runAutoCompaction = useCallback(async () => {
@@ -620,9 +649,46 @@ export function ChatPage() {
     setCompactionHistory([]);
   }, [currentSessionId]);
 
+  // Auto-compaction effect - only runs when key values change
+  // Uses ref to prevent duplicate calls with same signature
+  const compactionAttemptedRef = useRef(false);
   useEffect(() => {
+    // Skip if already attempted this render cycle
+    if (compactionAttemptedRef.current) return;
+    
+    // Only run when messages or utilization changes significantly
+    if (!contextStats || !maxContext) return;
+    if (!contextConfig.autoCompact) return;
+    if (compacting || isLoading) return;
+    if (contextStats.utilization < contextConfig.compactionThreshold) return;
+    if (!selectedModel || messages.length < 2) return;
+    if (!currentSessionId) return;
+
+    const signature = `${currentSessionId}-${messages.length}-${contextStats.currentTokens}`;
+    if (lastCompactionSignatureRef.current === signature) return;
+    
+    lastCompactionSignatureRef.current = signature;
+    compactionAttemptedRef.current = true;
+    
     void runAutoCompaction();
-  }, [runAutoCompaction]);
+    
+    // Reset the flag after the async operation completes
+    return () => {
+      compactionAttemptedRef.current = false;
+    };
+  }, [
+    messages.length,
+    contextStats?.utilization,
+    contextStats?.currentTokens,
+    currentSessionId,
+    isLoading,
+    compacting,
+    maxContext,
+    contextConfig.autoCompact,
+    contextConfig.compactionThreshold,
+    selectedModel,
+    runAutoCompaction,
+  ]);
 
   const showEmptyState = messages.length === 0 && !isLoading && !error;
 
@@ -938,7 +1004,7 @@ export function ChatPage() {
       }
 
       const toolDefinitions = await resolveToolDefinitions();
-      const trimmedSystem = systemPrompt?.trim() || undefined;
+      const trimmedSystem = effectiveSystemPrompt?.trim() || undefined;
 
       console.info("[CHAT UI] context", {
         model: selectedModel,
@@ -960,6 +1026,7 @@ export function ChatPage() {
             model: selectedModel || undefined,
             system: trimmedSystem,
             tools: toolDefinitions,
+            toolChoice: "auto",
           },
         },
       );
@@ -972,7 +1039,7 @@ export function ChatPage() {
       persistMessage,
       selectedModel,
       resolveToolDefinitions,
-      systemPrompt,
+      effectiveSystemPrompt,
       messages.length,
       mcpEnabled,
       setToolPanelOpen,
@@ -1086,56 +1153,31 @@ export function ChatPage() {
       onOpenMcpSettings={() => setMcpSettingsOpen(true)}
       onOpenChatSettings={() => setSettingsOpen(true)}
       hasSystemPrompt={systemPrompt.trim().length > 0}
-      agentMode={agentMode}
-      onAgentModeToggle={() => setAgentMode(!agentMode)}
+
     />
   );
 
-  // Generate planning view from tool calls and thinking
-  const activePlan: PlanningViewPlan | undefined = useMemo(() => {
-    if (!mcpEnabled && activityGroups.length === 0) return undefined;
+  // (plan processing removed — activity panel shows thinking + tool calls directly)
 
-    const steps: PlanStep[] = [];
-
-    // Add thinking step if active
-    const activeThinking = activityGroups.find((g) => g.thinkingActive)?.thinkingContent;
-    if (thinkingActive || activeThinking) {
-      steps.push({
-        id: "thinking",
-        title: "Analyzing request",
-        description: activeThinking?.slice(0, 200),
-        status: thinkingActive ? "in-progress" : "completed",
-        tool: "thinking",
-      });
-    }
-
-    // Add tool execution steps
-    activityGroups.forEach((group) => {
-      group.toolItems.forEach((item, idx) => {
-        steps.push({
-          id: `${group.id}-${idx}`,
-          title: item.toolName?.replace(/_/g, " ") || "Tool execution",
-          description: item.input ? JSON.stringify(item.input).slice(0, 100) : undefined,
-          status: item.state === "running" ? "in-progress" : item.state === "error" ? "error" : "completed",
-          tool: item.toolName,
-          result: item.output ? String(item.output).slice(0, 100) : undefined,
-        });
-      });
-    });
-
-    if (steps.length === 0) return undefined;
-
-    return {
-      id: "current",
-      title: isLoading ? "Processing..." : "Completed",
-      steps,
-      isActive: isLoading,
-    };
-  }, [activityGroups, thinkingActive, isLoading, mcpEnabled]);
-
-  // Determine active sidebar tab
-  const [sidebarTab, setSidebarTab] = useState<"activity" | "context" | "artifacts" | "agent-files" | "agent-plans" | "agent-settings">("activity");
+  // Sidebar state
+  const [sidebarTab, setSidebarTab] = useState<"activity" | "context" | "artifacts">("activity");
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const autoOpenedActivityRef = useRef(false);
+
+  useEffect(() => {
+    autoOpenedActivityRef.current = false;
+  }, [currentSessionId]);
+
+  useEffect(() => {
+    if (autoOpenedActivityRef.current) return;
+    if (sidebarOpen) return;
+
+    if (thinkingActive || executingTools.size > 0 || activityGroups.length > 0) {
+      setSidebarOpen(true);
+      setSidebarTab("activity");
+      autoOpenedActivityRef.current = true;
+    }
+  }, [activityGroups.length, executingTools.size, thinkingActive, sidebarOpen]);
 
   return (
     <div className="relative h-full flex overflow-hidden w-full max-w-full bg-[#0a0a0a]">
@@ -1144,19 +1186,17 @@ export function ChatPage() {
         onToggle={() => setSidebarOpen(!sidebarOpen)}
         activeTab={sidebarTab}
         onSetActiveTab={setSidebarTab}
-        agentMode={agentMode}
-        onToggleAgentMode={() => setAgentMode(!agentMode)}
         hasArtifacts={sessionArtifacts.length > 0}
         defaultWidth={360}
         minWidth={280}
         maxWidth={500}
         activityContent={
-          <div className="p-4 text-sm text-[#666]">
+          <div className="p-4 overflow-y-auto h-full">
             <ActivityPanel activityGroups={activityGroups} />
           </div>
         }
         contextContent={
-          <div className="p-4">
+          <div className="p-4 overflow-y-auto h-full">
             <ContextPanel
               stats={contextStats}
               breakdown={contextBreakdown}
@@ -1168,98 +1208,8 @@ export function ChatPage() {
           </div>
         }
         artifactsContent={<ArtifactPreviewPanel artifacts={sessionArtifacts} />}
-        agentFilesContent={
-          <AgentFileExplorer
-            files={agentFiles}
-            selectedPath={agentSelectedFilePath ?? undefined}
-            onSelect={setAgentSelectedFilePath}
-            onCreateFile={(path) => {
-              const newFile: FileNode = {
-                id: `${path}/new-file-${Date.now()}.txt`,
-                name: "new-file.txt",
-                type: "file",
-              };
-              setAgentFiles([...agentFiles, newFile]);
-            }}
-            onCreateFolder={(path) => {
-              const newFolder: FileNode = {
-                id: `${path}/new-folder-${Date.now()}`,
-                name: "new-folder",
-                type: "directory",
-                children: [],
-              };
-              setAgentFiles([...agentFiles, newFolder]);
-            }}
-            onDelete={(path) => setAgentFiles(agentFiles.filter((f) => f.id !== path))}
-            onRefresh={() => console.log("Refreshing files...")}
-          />
-        }
-        agentPlansContent={
-          <AgentPlanManager
-            plans={agentPlans}
-            activePlanId={agentActivePlanId ?? undefined}
-            onCreatePlan={(plan) => {
-              const newPlan: Plan = {
-                ...plan,
-                id: `plan-${Date.now()}`,
-                createdAt: new Date().toISOString(),
-                updatedAt: new Date().toISOString(),
-                progress: 0,
-              };
-              setAgentPlans([...agentPlans, newPlan]);
-            }}
-            onUpdatePlan={updateAgentPlan}
-            onDeletePlan={(id) => setAgentPlans(agentPlans.filter((p) => p.id !== id))}
-            onSelectPlan={setAgentActivePlanId}
-            onUpdateStep={(planId, stepId, updates) => {
-              const plan = agentPlans.find((p) => p.id === planId);
-              if (plan) {
-                const updatedSteps = plan.steps.map((s) =>
-                  s.id === stepId ? { ...s, ...updates } : s
-                );
-                const completedCount = updatedSteps.filter((s) => s.status === "completed").length;
-                const progress = updatedSteps.length > 0 ? Math.round((completedCount / updatedSteps.length) * 100) : 0;
-                updateAgentPlan(planId, { steps: updatedSteps, progress });
-              }
-            }}
-          />
-        }
-        agentSettingsContent={
-          <div className="p-4 text-sm text-[#888]">
-            <div className="space-y-4">
-              <div>
-                <h4 className="text-xs font-medium text-foreground mb-2">Workspace</h4>
-                <div className="p-2 bg-white/[0.03] rounded text-xs font-mono text-[#666]">
-                  {agentWorkingDirectory}
-                </div>
-              </div>
-              <div>
-                <h4 className="text-xs font-medium text-foreground mb-2">Capabilities</h4>
-                <div className="space-y-1">
-                  {["File Operations", "Code Execution", "Plan Management", "Web Search"].map((cap) => (
-                    <div key={cap} className="flex items-center gap-2 text-[11px] text-[#666]">
-                      <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                      {cap}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </div>
-        }
       >
         <div className="flex-1 flex flex-col min-h-0 min-w-0 overflow-x-hidden">
-          {/* Planning view */}
-          {(activePlan || agentActivePlanId) && (
-            <div className="px-4 pt-4 max-w-3xl mx-auto w-full">
-              {agentActivePlanId ? (
-                <PlanningView plan={agentPlans.find((p) => p.id === agentActivePlanId) || activePlan} />
-              ) : (
-                activePlan && <PlanningView plan={activePlan} />
-              )}
-            </div>
-          )}
-
           <div className="flex-1 flex flex-col overflow-hidden relative min-w-0 bg-[hsl(30,5%,10.5%)]">
             <ChatConversation
               messages={messages}

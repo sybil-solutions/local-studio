@@ -49,14 +49,21 @@ export const getGpuInfo = (): GpuInfo[] => {
       ] = parts;
       const toBytes = (megabytes: string | undefined): number =>
         Math.max(0, Math.round(Number(megabytes ?? 0) * 1024 * 1024));
+      const toMB = (mib: string | undefined): number =>
+        Math.max(0, Math.round(Number(mib ?? 0)));
       return {
         index,
         name: name ?? "Unknown",
         memory_total: toBytes(memoryTotal),
+        memory_total_mb: toMB(memoryTotal),
         memory_used: toBytes(memoryUsed),
+        memory_used_mb: toMB(memoryUsed),
         memory_free: toBytes(memoryFree),
+        memory_free_mb: toMB(memoryFree),
         utilization: Number(utilization ?? 0),
+        utilization_pct: Number(utilization ?? 0),
         temperature: Number(temperature ?? 0),
+        temp_c: Number(temperature ?? 0),
         power_draw: Number(powerDraw ?? 0),
         power_limit: Number(powerLimit ?? 0),
       };

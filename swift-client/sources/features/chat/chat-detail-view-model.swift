@@ -21,13 +21,22 @@ final class ChatDetailViewModel: ObservableObject {
   var settings: SettingsStore?
   var sessionId: String = ""
   var tools: [McpTool] = []
-  let openAIService = OpenAIChatService()
+  let openAIService: OpenAIChatService
   private var cancellables: Set<AnyCancellable> = []
 
   init() {
-    // Only forward streaming state changes (start/stop), not every content chunk
-    openAIService.$isStreaming
+    let service = OpenAIChatService()
+    openAIService = service
+    service.$isStreaming
       .removeDuplicates()
+      .sink { [weak self] _ in self?.objectWillChange.send() }
+      .store(in: &cancellables)
+    service.$streamingContent
+      .throttle(for: .milliseconds(100), scheduler: RunLoop.main, latest: true)
+      .sink { [weak self] _ in self?.objectWillChange.send() }
+      .store(in: &cancellables)
+    service.$streamingReasoning
+      .throttle(for: .milliseconds(100), scheduler: RunLoop.main, latest: true)
       .sink { [weak self] _ in self?.objectWillChange.send() }
       .store(in: &cancellables)
   }
@@ -71,6 +80,21 @@ final class ChatDetailViewModel: ObservableObject {
 
   func copyTranscript() {
     UIPasteboard.general.string = buildTranscript()
+  }
+
+  func copyMessage(_ message: StoredMessage) {
+    let content = cleanedContent(for: message)
+    guard !content.isEmpty else { return }
+    UIPasteboard.general.string = content
+  }
+
+  func cleanedContent(for message: StoredMessage) -> String {
+    var content = message.content ?? ""
+    if message.role == "assistant" {
+      content = ThinkingParser.stripThinkingBlocks(content)
+      content = ArtifactParser.stripArtifactBlocks(content)
+    }
+    return content.trimmingCharacters(in: .whitespacesAndNewlines)
   }
 
   func buildTranscript(includeToolMessages: Bool = true) -> String {

@@ -29,69 +29,97 @@ struct ChatDetailView: View {
             .padding(.bottom, 4)
           }
           if let error = model.error {
-            HStack {
-              Image(systemName: "exclamationmark.triangle")
-              Text(error).font(AppTheme.captionFont)
-              Spacer()
-              Button("Dismiss") { model.error = nil }
-                .font(AppTheme.captionFont)
+            VStack(alignment: .leading, spacing: 8) {
+              HStack(spacing: 8) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                Text("Error")
+                  .font(AppTheme.sectionFont)
+                Spacer()
+                Button(action: { model.error = nil }) {
+                  Image(systemName: "xmark.circle.fill")
+                    .foregroundColor(AppTheme.muted)
+                }
+              }
+              Text(error)
+                .font(AppTheme.bodyFont)
             }
             .foregroundColor(AppTheme.error)
-            .padding(10)
-            .background(AppTheme.error.opacity(0.1))
-            .cornerRadius(8)
+            .padding(12)
+            .background(AppTheme.error.opacity(0.15))
+            .cornerRadius(12)
+            .overlay(
+              RoundedRectangle(cornerRadius: 12)
+                .stroke(AppTheme.error.opacity(0.3), lineWidth: 1)
+            )
           }
-          if model.visibleMessages.isEmpty && !model.openAIService.isStreaming {
+          // Messages or empty state
+          let hasContent = !model.visibleMessages.isEmpty || model.openAIService.isStreaming
+          if !hasContent {
             EmptyChatWelcome()
           } else {
-            ChatUsageBar(usage: model.chatUsage)
-            ChatActionBar(
-              onCopy: { model.copyTranscript() },
-              onContext: { showContext = true },
-              onFork: {
-                Task {
-                  if let forked = await model.forkSession(messageId: nil, title: nil) {
-                    forkedSessionId = forked.id
+            ForEach(model.visibleMessages) { message in
+              let actions = message.role == "assistant" ? MessageActionHandlers(
+                onCopy: { model.copyMessage(message) },
+                onContext: { showContext = true },
+                onFork: {
+                  Task {
+                    if let forked = await model.forkSession(messageId: message.id, title: nil) {
+                      forkedSessionId = forked.id
+                    }
+                  }
+                },
+                onRetry: {
+                  Task {
+                    if let forked = await model.forkSession(messageId: message.id, title: "Retry") {
+                      forkedSessionId = forked.id
+                    }
                   }
                 }
-              },
-              onRetry: {
-                Task {
-                  if let forked = await model.retryFromLastUser() {
-                    forkedSessionId = forked.id
-                  }
+              ) : nil
+              ChatMessageRow(
+                message: message,
+                isStreaming: false,
+                meta: model.meta(for: message),
+                onShowActions: { meta in
+                  activeActions = ChatAgentActions(id: message.id, title: "Agent actions", meta: meta, startedAt: nil, isStreaming: false)
+                },
+                actions: actions
+              )
+              .equatable()
+              .id(message.id)
+            }
+            
+            // Streaming response appears as the last message
+            if model.openAIService.isStreaming {
+              ChatStreamingMessageView(
+                service: model.openAIService,
+                scrollProxy: proxy,
+                onShowActions: { meta in
+                  activeActions = ChatAgentActions(id: "streaming", title: "Model is thinking", meta: meta, startedAt: model.openAIService.streamStart, isStreaming: true)
                 }
-              },
-              transcript: model.buildTranscript()
-            )
-          }
-          ForEach(model.visibleMessages) { message in
-            ChatMessageRow(
-              message: message,
-              isStreaming: false,
-              meta: model.meta(for: message),
-              onShowActions: { meta in
-                activeActions = ChatAgentActions(id: message.id, title: "Agent actions", meta: meta, startedAt: nil, isStreaming: false)
-              }
-            )
-            .equatable()
-            .id(message.id)
-          }
-          if model.openAIService.isStreaming {
-            ChatStreamingMessageView(
-              service: model.openAIService,
-              scrollProxy: proxy,
-              onShowActions: { meta in
-                activeActions = ChatAgentActions(id: "streaming", title: "Model is thinking", meta: meta, startedAt: model.openAIService.streamStart, isStreaming: true)
-              }
-            )
+              )
+            }
+            
+            if !model.visibleMessages.isEmpty {
+              ChatUsageBar(usage: model.chatUsage)
+                .padding(.top, 8)
+            }
           }
         }
         .padding(16)
         .padding(.bottom, 80)
       }
       .onChange(of: model.messages.count) { _, _ in
-        if let last = model.messages.last?.id { proxy.scrollTo(last, anchor: .bottom) }
+        withAnimation(.easeOut(duration: 0.2)) {
+          if let last = model.messages.last?.id { proxy.scrollTo(last, anchor: .bottom) }
+        }
+      }
+      .onChange(of: model.openAIService.isStreaming) { _, isStreaming in
+        if isStreaming {
+          withAnimation(.easeOut(duration: 0.2)) {
+            proxy.scrollTo("streaming", anchor: .bottom)
+          }
+        }
       }
     }
     .safeAreaInset(edge: .bottom) {
@@ -216,47 +244,6 @@ private struct SuggestionChip: View {
       .background(AppTheme.card)
       .cornerRadius(16)
       .overlay(RoundedRectangle(cornerRadius: 16).stroke(AppTheme.border, lineWidth: 1))
-  }
-}
-
-private struct ChatActionBar: View {
-  let onCopy: () -> Void
-  let onContext: () -> Void
-  let onFork: () -> Void
-  let onRetry: () -> Void
-  let transcript: String
-
-  var body: some View {
-    ScrollView(.horizontal, showsIndicators: false) {
-      HStack(spacing: 8) {
-        actionButton("Copy", systemImage: "doc.on.doc", action: onCopy)
-        actionButton("Context", systemImage: "rectangle.and.text.magnifyingglass", action: onContext)
-        actionButton("Fork", systemImage: "arrow.branch", action: onFork)
-        actionButton("Retry", systemImage: "arrow.clockwise", action: onRetry)
-        ShareLink(item: transcript) {
-          actionLabel("Export", systemImage: "square.and.arrow.up")
-        }
-      }
-      .padding(.vertical, 4)
-    }
-  }
-
-  private func actionButton(_ title: String, systemImage: String, action: @escaping () -> Void) -> some View {
-    Button(action: action) {
-      actionLabel(title, systemImage: systemImage)
-    }
-    .buttonStyle(.plain)
-  }
-
-  private func actionLabel(_ title: String, systemImage: String) -> some View {
-    Label(title, systemImage: systemImage)
-      .font(AppTheme.captionFont)
-      .foregroundColor(AppTheme.foreground)
-      .padding(.horizontal, 10)
-      .padding(.vertical, 6)
-      .background(AppTheme.card)
-      .cornerRadius(999)
-      .overlay(RoundedRectangle(cornerRadius: 999).stroke(AppTheme.border, lineWidth: 1))
   }
 }
 

@@ -13,6 +13,7 @@ import type {
 } from "@/lib/types";
 import type { ModelOption, Attachment } from "@/app/chat/types";
 import type { FileNode, Plan } from "@/app/chat/_components/agent";
+import type { AgentPlan } from "@/app/chat/_components/agent/agent-types";
 
 export interface ChatMessage {
   id: string;
@@ -159,6 +160,7 @@ export interface ChatState {
 
   // Agent mode state
   agentMode: boolean;
+  agentPlan: AgentPlan | null;
   agentFiles: FileNode[];
   agentPlans: Plan[];
   agentActivePlanId: string | null;
@@ -318,6 +320,7 @@ export interface ChatActions {
 
   // Agent mode actions
   setAgentMode: (enabled: boolean) => void;
+  setAgentPlan: (plan: AgentPlan | null) => void;
   setAgentFiles: (files: FileNode[]) => void;
   setAgentPlans: (plans: Plan[]) => void;
   setAgentActivePlanId: (planId: string | null) => void;
@@ -426,6 +429,7 @@ export const createChatSlice: StateCreator<ChatSlice, [], [], ChatSlice> = (set)
 
   // Agent mode state
   agentMode: false,
+  agentPlan: null,
   agentFiles: [],
   agentPlans: [],
   agentActivePlanId: null,
@@ -614,6 +618,7 @@ export const createChatSlice: StateCreator<ChatSlice, [], [], ChatSlice> = (set)
 
   // Agent mode actions
   setAgentMode: (enabled) => set({ agentMode: enabled }),
+  setAgentPlan: (plan) => set({ agentPlan: plan }),
   setAgentFiles: (files) => set({ agentFiles: files }),
   setAgentPlans: (plans) => set({ agentPlans: plans }),
   setAgentActivePlanId: (planId) => set({ agentActivePlanId: planId }),

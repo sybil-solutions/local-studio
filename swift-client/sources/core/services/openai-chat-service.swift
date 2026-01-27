@@ -26,26 +26,56 @@ final class OpenAIChatService: ObservableObject {
     let usage: CompletionUsage?
   }
 
+  // MARK: - Non-streaming completion (reliable fallback)
+
+  func nonStreamingChat(messages: [OpenAIMessage], model: String, tools: [ToolDefinition]?) async throws -> StreamResult {
+    let payload = ChatCompletionRequest(
+      model: model, messages: messages, tools: tools,
+      stream: false, temperature: 0.7
+    )
+    let request = try buildRequest(payload)
+
+    isStreaming = true
+    streamStart = Date()
+    streamingContent = ""
+    streamingReasoning = ""
+    streamingToolCalls = []
+    defer { isStreaming = false }
+
+    let (data, response) = try await URLSession.shared.data(for: request)
+    if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+      throw StreamError.httpError(http.statusCode, String(data: data, encoding: .utf8) ?? "Unknown error")
+    }
+
+    let completion = try ApiCodec.decoder.decode(ChatCompletionResponse.self, from: data)
+    let msg = completion.choices.first?.message
+    let content = msg?.content ?? ""
+    streamingContent = content
+    return StreamResult(
+      content: content, reasoning: "",
+      toolCalls: msg?.toolCalls ?? [],
+      finishReason: nil, usage: completion.usage
+    )
+  }
+
+  // MARK: - Streaming completion
+
   func streamChat(messages: [OpenAIMessage], model: String, tools: [ToolDefinition]?) async throws -> StreamResult {
     let payload = ChatCompletionRequest(
-      model: model,
-      messages: messages,
-      tools: tools,
-      stream: true,
-      temperature: 0.7,
+      model: model, messages: messages, tools: tools,
+      stream: true, temperature: 0.7,
       streamOptions: StreamOptions(includeUsage: true)
     )
+    let request = try buildRequest(payload)
 
-    let request = try buildStreamRequest(payload)
-
-    var accumulatedContent = ""
-    var accumulatedReasoning = ""
-    var parsedContent = ""
-    var parsedReasoning = ""
+    var accContent = ""
+    var accReasoning = ""
     var toolBuffer: [Int: ToolBuffer] = [:]
     var finishReason: String?
     var latestUsage: CompletionUsage?
     var receivedReasoning = false
+    var rawLines: [String] = []
+    var decodedAnyChunk = false
 
     isStreaming = true
     streamStart = Date()
@@ -59,94 +89,111 @@ final class OpenAIChatService: ObservableObject {
     let (bytes, response) = try await URLSession.shared.bytes(for: request)
 
     if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
-      // Read error body
       var errorBody = ""
-      for try await line in bytes.lines {
-        errorBody += line
-      }
+      for try await line in bytes.lines { errorBody += line }
       throw StreamError.httpError(http.statusCode, errorBody)
     }
 
     var parser = SseParser()
     for try await line in bytes.lines {
+      rawLines.append(line)
       let events = parser.ingest(line + "\n")
       for event in events {
         guard event.data != "[DONE]" else { continue }
         guard let data = event.data.data(using: .utf8) else { continue }
-        guard let chunk = try? ApiCodec.decoder.decode(StreamChunk.self, from: data) else { continue }
+        guard let chunk = try? ApiCodec.decoder.decode(StreamChunk.self, from: data) else {
+          continue
+        }
+        decodedAnyChunk = true
 
         if let usage = chunk.usage {
           latestUsage = usage
           streamingUsage = usage
         }
-
         guard let choices = chunk.choices else { continue }
         for choice in choices {
           guard let delta = choice.delta else { continue }
 
           if let text = delta.content, !text.isEmpty {
-            accumulatedContent.append(text)
+            accContent.append(text)
           }
-
-          let deltaReasoning = delta.reasoningContent ?? delta.reasoning
-          if let reasoning = deltaReasoning, !reasoning.isEmpty {
+          let dr = delta.reasoningContent ?? delta.reasoning
+          if let reasoning = dr, !reasoning.isEmpty {
             receivedReasoning = true
-            accumulatedReasoning.append(reasoning)
-            streamingReasoning = accumulatedReasoning
+            accReasoning.append(reasoning)
+            streamingReasoning = accReasoning
           }
 
+          // Update live streaming content
           if receivedReasoning {
-            streamingContent = ThinkingParser.stripThinkingBlocks(accumulatedContent)
+            streamingContent = ThinkingParser.stripThinkingBlocks(accContent)
           } else {
-            let parsed = ThinkingParser.parse(accumulatedContent)
-            parsedContent = parsed.main
-            parsedReasoning = parsed.thinking ?? ""
-            streamingContent = parsedContent
-            streamingReasoning = parsedReasoning
+            let parsed = ThinkingParser.parse(accContent)
+            streamingContent = parsed.main
+            streamingReasoning = parsed.thinking ?? ""
           }
 
           if let tools = delta.toolCalls {
             for tool in tools {
               let index = tool.index ?? 0
-              var buffer = toolBuffer[index] ?? ToolBuffer(id: tool.id, type: tool.type, name: "", arguments: "")
-              if let name = tool.function?.name { buffer.name = name }
-              if let args = tool.function?.arguments { buffer.arguments += args }
-              if buffer.id == nil { buffer.id = tool.id }
-              buffer.type = buffer.type ?? tool.type
-              toolBuffer[index] = buffer
+              var buf = toolBuffer[index] ?? ToolBuffer(id: tool.id, type: tool.type, name: "", arguments: "")
+              if let name = tool.function?.name { buf.name = name }
+              if let args = tool.function?.arguments { buf.arguments += args }
+              if buf.id == nil { buf.id = tool.id }
+              buf.type = buf.type ?? tool.type
+              toolBuffer[index] = buf
             }
             streamingToolCalls = finalizeBuffers(toolBuffer)
           }
-
-          if let reason = choice.finishReason {
-            finishReason = reason
-          }
+          if let reason = choice.finishReason { finishReason = reason }
         }
       }
     }
 
+    // Fallback: if no SSE chunks decoded, try parsing as plain JSON response
+    if !decodedAnyChunk {
+      let raw = rawLines.joined(separator: "\n")
+      if let data = raw.data(using: .utf8),
+         let completion = try? ApiCodec.decoder.decode(ChatCompletionResponse.self, from: data),
+         let msg = completion.choices.first?.message {
+        let content = msg.content ?? ""
+        return StreamResult(
+          content: content, reasoning: "",
+          toolCalls: msg.toolCalls ?? [],
+          finishReason: nil, usage: completion.usage
+        )
+      }
+    }
+
     let finalTools = finalizeBuffers(toolBuffer)
-    let finalContent: String
-    let finalReasoning: String
+    var finalContent: String
+    var finalReasoning: String
     if receivedReasoning {
-      finalContent = ThinkingParser.stripThinkingBlocks(accumulatedContent)
-      finalReasoning = accumulatedReasoning
+      finalContent = ThinkingParser.stripThinkingBlocks(accContent)
+      finalReasoning = accReasoning
     } else {
-      let parsed = ThinkingParser.parse(accumulatedContent)
+      let parsed = ThinkingParser.parse(accContent)
       finalContent = parsed.main
       finalReasoning = parsed.thinking ?? ""
     }
 
+    // If content is empty but reasoning isn't, use reasoning as content
+    if finalContent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+       !finalReasoning.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+      finalContent = finalReasoning
+      finalReasoning = ""
+    }
+
     return StreamResult(
-      content: finalContent,
-      reasoning: finalReasoning,
-      toolCalls: finalTools,
-      finishReason: finishReason,
+      content: finalContent, reasoning: finalReasoning,
+      toolCalls: finalTools, finishReason: finishReason,
       usage: latestUsage
     )
   }
 
-  private func buildStreamRequest(_ payload: ChatCompletionRequest) throws -> URLRequest {
+  // MARK: - Request building
+
+  private func buildRequest(_ payload: ChatCompletionRequest) throws -> URLRequest {
     let trimmed = baseURL.trimmingCharacters(in: .whitespacesAndNewlines)
     let base = trimmed.isEmpty ? "http://localhost:8080" : trimmed
     let normalized = base.hasSuffix("/") ? String(base.dropLast()) : base
@@ -157,7 +204,7 @@ final class OpenAIChatService: ObservableObject {
     request.httpMethod = "POST"
     request.httpBody = try ApiCodec.encoder.encode(payload)
     request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-    request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
+    if payload.stream { request.setValue("text/event-stream", forHTTPHeaderField: "Accept") }
     request.timeoutInterval = 300
     if !apiKey.isEmpty {
       request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")

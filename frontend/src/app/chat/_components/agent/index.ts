@@ -7,3 +7,9 @@ export {
   type PlanStep,
   type PlanStatus,
 } from "./agent-plan-manager";
+export { AgentPlanDrawer } from "./agent-plan-drawer";
+export type {
+  AgentPlan,
+  AgentPlanStep,
+  AgentPlanStepStatus,
+} from "./agent-types";

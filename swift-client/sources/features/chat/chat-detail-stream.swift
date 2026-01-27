@@ -22,13 +22,23 @@ extension ChatDetailViewModel {
       let promptMessages = buildPromptMessages()
       let tokenization = await tokenizePrompt(api: api, model: model, messages: promptMessages, tools: activeTools)
 
-      let result: OpenAIChatService.StreamResult
+      var result: OpenAIChatService.StreamResult
       do {
         result = try await openAIService.streamChat(
           messages: promptMessages,
           model: model,
           tools: activeTools
         )
+        // If streaming returned nothing, fall back to non-streaming
+        let hasContent = !result.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let hasReasoning = !result.reasoning.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        if !hasContent && !hasReasoning && result.toolCalls.isEmpty {
+          result = try await openAIService.nonStreamingChat(
+            messages: promptMessages,
+            model: model,
+            tools: activeTools
+          )
+        }
       } catch {
         self.error = error.localizedDescription
         return

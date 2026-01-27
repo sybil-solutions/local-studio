@@ -1,3 +1,4 @@
+// CRITICAL
 import SwiftUI
 
 struct MarkdownText: View {

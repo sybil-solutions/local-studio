@@ -1,9 +1,11 @@
+// CRITICAL
 import SwiftUI
 
 struct ChatListView: View {
   @EnvironmentObject private var container: AppContainer
   @StateObject private var model = ChatListViewModel()
   @State private var newSessionId: String?
+  @State private var navigateToNew = false
 
   var body: some View {
     List {
@@ -13,7 +15,9 @@ struct ChatListView: View {
             Text(session.title.isEmpty ? "New chat" : session.title)
               .font(AppTheme.bodyFont.weight(.semibold))
               .lineLimit(1)
-            Text(session.updatedAt).font(AppTheme.captionFont).foregroundColor(AppTheme.muted)
+            Text(session.updatedAt)
+              .font(AppTheme.captionFont)
+              .foregroundColor(AppTheme.muted)
           }
         }
         .listRowBackground(AppTheme.card)
@@ -31,28 +35,12 @@ struct ChatListView: View {
     .toolbar {
       Button("New") { Task { await createSession() } }
     }
-    .onAppear { model.connect(api: container.api) }
-    .background(navigationLink)
-  }
-
-  @ViewBuilder
-  private var navigationLink: some View {
-    NavigationLink(
-      destination: Group {
-        if let newSessionId {
-          ChatDetailView(sessionId: newSessionId)
-        } else {
-          EmptyView()
-        }
-      },
-      isActive: Binding(
-        get: { newSessionId != nil },
-        set: { if !$0 { newSessionId = nil } }
-      )
-    ) {
-      EmptyView()
+    .navigationDestination(isPresented: $navigateToNew) {
+      if let newSessionId {
+        ChatDetailView(sessionId: newSessionId)
+      }
     }
-    .hidden()
+    .onAppear { model.connect(api: container.api) }
   }
 
   @MainActor
@@ -60,5 +48,6 @@ struct ChatListView: View {
     guard let session = await model.createSession() else { return }
     newSessionId = session.id
     await model.load()
+    navigateToNew = true
   }
 }
