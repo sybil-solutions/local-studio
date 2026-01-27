@@ -1301,7 +1301,9 @@ export function ChatPage() {
               onOpenExport={() => setExportOpen(true)}
             />
 
-            <ChatToolbeltDock toolBelt={toolBelt} showEmptyState={showEmptyState} />
+            <div className="bg-[hsl(30,5%,10.5%)]">
+              <ChatToolbeltDock toolBelt={toolBelt} showEmptyState={showEmptyState} />
+            </div>
           </div>
         </div>
       </UnifiedSidebar>

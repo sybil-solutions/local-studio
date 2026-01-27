@@ -263,7 +263,7 @@ export function ToolBelt({
   const canSend = value.trim() || attachments.length > 0;
 
   return (
-    <div className="px-2 md:px-3 pb-0 bg-[hsl(30,5%,10.5%)]">
+    <div className="px-2 md:px-3 pb-0">
       <div className="w-full max-w-none md:max-w-4xl md:mx-auto px-0 md:px-0">
         <AttachmentsPreview
           attachments={attachments}
@@ -286,9 +286,12 @@ export function ToolBelt({
         />
 
         <div
-          className={`relative flex flex-col bg-[#0a0a0a] rounded-xl ${
+          className={`relative flex flex-col bg-[#1a1a1a] rounded-xl border border-white/[0.08] shadow-lg ${
             isLoading ? "ring-1 ring-blue-500/30" : ""
           }`}
+          style={{
+            boxShadow: "0 0 0 1px rgba(255,255,255,0.03), 0 4px 20px rgba(0,0,0,0.4)"
+          }}
         >
           <textarea
             ref={textareaRef}
