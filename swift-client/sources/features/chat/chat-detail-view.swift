@@ -16,11 +16,17 @@ struct ChatDetailView: View {
       ScrollView {
         VStack(spacing: 12) {
           if let modelId = model.sessionModel {
-            HStack {
-              Text(modelId).font(AppTheme.captionFont).foregroundColor(AppTheme.muted)
+            HStack(spacing: 6) {
+              Image(systemName: "cpu")
+                .font(.system(size: 10))
+                .foregroundColor(AppTheme.accentStrong)
+              Text(modelId)
+                .font(AppTheme.captionFont.weight(.medium))
+                .foregroundColor(AppTheme.muted)
               Spacer()
             }
             .padding(.horizontal, 4)
+            .padding(.bottom, 4)
           }
           if let error = model.error {
             HStack {

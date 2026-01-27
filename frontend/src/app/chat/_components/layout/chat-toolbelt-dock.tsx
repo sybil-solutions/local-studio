@@ -11,7 +11,7 @@ export function ChatToolbeltDock({ toolBelt, showEmptyState }: ChatToolbeltDockP
   return (
     <div className="fixed left-0 right-0 bottom-0 z-20 md:static">
       {/* Mobile: flush to bottom, no extra padding */}
-      <div className="md:hidden bg-[hsl(30,5%,10.5%)]">
+      <div className="md:hidden">
         {toolBelt}
       </div>
       {!showEmptyState && (

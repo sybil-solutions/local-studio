@@ -1,3 +1,4 @@
+// CRITICAL
 import SwiftUI
 
 struct ChatUsageBar: View {
@@ -5,12 +6,12 @@ struct ChatUsageBar: View {
 
   var body: some View {
     if let usage {
-      HStack(spacing: 12) {
-        UsagePill(label: "Prompt", value: usage.promptTokens)
-        UsagePill(label: "Completion", value: usage.completionTokens)
-        UsagePill(label: "Total", value: usage.totalTokens)
+      HStack(spacing: 8) {
+        UsagePill(label: "Input", value: usage.promptTokens, color: AppTheme.accentStrong)
+        UsagePill(label: "Output", value: usage.completionTokens, color: AppTheme.success)
+        UsagePill(label: "Total", value: usage.totalTokens, color: AppTheme.foreground)
       }
-      .padding(.horizontal, 16)
+      .padding(.horizontal, 4)
     }
   }
 }
@@ -18,15 +19,24 @@ struct ChatUsageBar: View {
 struct UsagePill: View {
   let label: String
   let value: Int
+  let color: Color
 
   var body: some View {
-    VStack(spacing: 2) {
-      Text(label).font(AppTheme.captionFont).foregroundColor(AppTheme.muted)
-      Text("\(value)").font(AppTheme.monoFont)
+    HStack(spacing: 4) {
+      Text(label)
+        .font(AppTheme.captionFont)
+        .foregroundColor(AppTheme.muted)
+      Text("\(value)")
+        .font(AppTheme.monoFont.weight(.medium))
+        .foregroundColor(color)
     }
     .padding(.vertical, 6)
     .padding(.horizontal, 10)
     .background(AppTheme.card)
-    .cornerRadius(10)
+    .cornerRadius(8)
+    .overlay(
+      RoundedRectangle(cornerRadius: 8)
+        .stroke(AppTheme.border, lineWidth: 1)
+    )
   }
 }

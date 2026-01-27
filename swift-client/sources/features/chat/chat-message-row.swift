@@ -27,10 +27,14 @@ struct ChatMessageRow: View {
       Text(message.content ?? "")
         .font(AppTheme.bodyFont)
         .foregroundColor(AppTheme.foreground)
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
-        .background(AppTheme.card)
-        .cornerRadius(16)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .background(AppTheme.accent.opacity(0.25))
+        .cornerRadius(18)
+        .overlay(
+          RoundedRectangle(cornerRadius: 18)
+            .stroke(AppTheme.accent.opacity(0.4), lineWidth: 1)
+        )
     }
   }
 
