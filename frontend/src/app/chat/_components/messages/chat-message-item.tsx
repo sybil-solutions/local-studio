@@ -94,20 +94,23 @@ function InlineThinking({
 // Desktop: single-line tool summary
 function ToolCallSummary({
   toolParts,
+  isStreaming,
 }: {
   toolParts: Array<{
     type: string;
     toolCallId: string;
     state?: string;
   }>;
+  isStreaming?: boolean;
 }) {
-  const active = toolParts.filter(
+  const hasError = toolParts.some(
+    (t) => t.state === "output-error" || t.state === "error",
+  );
+  // Only "running" if this message is still streaming AND has pending calls
+  const hasPendingCalls = toolParts.some(
     (t) => t.state === "call" || t.state === "input-streaming",
   );
-  const completed = toolParts.filter(
-    (t) => t.state === "result" || t.state === "output-available",
-  );
-  const isRunning = active.length > 0;
+  const isRunning = Boolean(isStreaming) && hasPendingCalls;
   const total = toolParts.length;
 
   // Last tool name (strip server__ prefix)
@@ -117,14 +120,18 @@ function ToolCallSummary({
     ? lastToolRaw.split("__").slice(1).join("__")
     : lastToolRaw;
 
+  const label = hasError ? "error" : isRunning ? "running" : "done";
+
   return (
     <div className="hidden md:flex items-center gap-2 mt-3 pt-3 border-t border-(--border) text-xs text-[#6a6560]">
       {isRunning ? (
         <Loader2 className="h-3 w-3 text-[#6a6560] animate-spin flex-shrink-0" />
+      ) : hasError ? (
+        <span className="w-3 h-3 flex items-center justify-center flex-shrink-0 text-red-400 text-[10px]">✕</span>
       ) : (
         <Check className="h-3 w-3 text-emerald-500/70 flex-shrink-0" />
       )}
-      <span>{isRunning ? "running" : "done"}</span>
+      <span className={hasError ? "text-red-400/70" : ""}>{label}</span>
       <span className="text-[#3a3735]">·</span>
       <span>{total} tool call{total !== 1 ? "s" : ""}</span>
       {lastToolName && (
@@ -444,7 +451,7 @@ function ChatMessageItemBase({
 
         {/* Desktop tool summary — single line */}
         {toolParts.length > 0 && (
-          <ToolCallSummary toolParts={toolParts} />
+          <ToolCallSummary toolParts={toolParts} isStreaming={isStreaming} />
         )}
       </div>
     </div>
