@@ -118,27 +118,19 @@ function ToolCallSummary({
     : lastToolRaw;
 
   return (
-    <div className="hidden md:flex items-center gap-2 mt-3 pt-3 border-t border-(--border) text-xs">
+    <div className="hidden md:flex items-center gap-2 mt-3 pt-3 border-t border-(--border) text-xs text-[#6a6560]">
       {isRunning ? (
-        <Loader2 className="h-3 w-3 text-amber-400 animate-spin flex-shrink-0" />
+        <Loader2 className="h-3 w-3 text-[#6a6560] animate-spin flex-shrink-0" />
       ) : (
-        <Check className="h-3 w-3 text-emerald-500 flex-shrink-0" />
+        <Check className="h-3 w-3 text-emerald-500/70 flex-shrink-0" />
       )}
-      <span className={isRunning ? "text-amber-400/80" : "text-[#6a6560]"}>
-        {isRunning ? "running" : "complete"}
-      </span>
-      <span className="text-[#4a4745]">·</span>
-      <span className="text-[#6a6560]">
-        {isRunning
-          ? `${completed.length}/${total} tool calls`
-          : `${total} tool call${total !== 1 ? "s" : ""}`}
-      </span>
+      <span>{isRunning ? "running" : "done"}</span>
+      <span className="text-[#3a3735]">·</span>
+      <span>{total} tool call{total !== 1 ? "s" : ""}</span>
       {lastToolName && (
         <>
-          <span className="text-[#4a4745]">·</span>
-          <span className="font-mono text-[#6a6560] truncate max-w-[160px]">
-            {lastToolName}
-          </span>
+          <span className="text-[#3a3735]">·</span>
+          <span className="font-mono truncate max-w-[160px]">{lastToolName}</span>
         </>
       )}
     </div>

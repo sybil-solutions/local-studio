@@ -160,9 +160,20 @@ export function ActivityPanel({ activityGroups }: ActivityPanelProps) {
       {/* Vertical timeline line */}
       <div className="absolute left-[5px] top-2 bottom-2 w-px bg-[#2a2725]" />
 
-      <div className="space-y-4">
-        {activityGroups.map((group) => (
+      <div>
+        {activityGroups.map((group, groupIdx) => (
           <div key={group.id}>
+            {/* Turn separator between groups */}
+            {groupIdx > 0 && (
+              <div className="flex items-center gap-2 my-3 pl-5">
+                <div className="flex-1 h-px bg-[#2a2725]" />
+                <span className="text-[9px] text-[#4a4745] uppercase tracking-wider flex-shrink-0">
+                  {group.title}
+                </span>
+                <div className="flex-1 h-px bg-[#2a2725]" />
+              </div>
+            )}
+
             {/* Thinking section with tool badges */}
             {(group.thinkingActive || group.thinkingContent) && (
               <ThinkingSection

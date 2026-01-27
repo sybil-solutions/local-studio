@@ -84,6 +84,10 @@ export function useChatDerived({
         const result = toolResultsMap.get(toolCallId);
         const isExecuting = executingTools.has(toolCallId);
 
+        // Check the part's own state (important for restored messages)
+        const partState = "state" in part ? (part as { state?: string }).state : undefined;
+        const partHasOutput = "output" in part && (part as { output?: unknown }).output != null;
+
         const rawToolName =
           part.type === "dynamic-tool"
             ? "toolName" in part
@@ -94,21 +98,25 @@ export function useChatDerived({
           ? rawToolName.split("__").slice(1).join("__")
           : rawToolName;
 
+        // Determine state: prefer live ephemeral data, fall back to part state
+        let itemState: "pending" | "running" | "complete" | "error" = "pending";
+        if (isExecuting) {
+          itemState = "running";
+        } else if (result) {
+          itemState = result.isError ? "error" : "complete";
+        } else if (partState === "result" || partState === "output-available" || partHasOutput) {
+          itemState = "complete";
+        }
+
         toolItems.push({
           id: `activity-${msg.id}-${toolCallId}`,
           type: "tool-call",
           timestamp: Date.now(),
           toolName,
           toolCallId,
-          state: isExecuting
-            ? "running"
-            : result
-              ? result.isError
-                ? "error"
-                : "complete"
-              : "pending",
+          state: itemState,
           input: "input" in part ? part.input : undefined,
-          output: result?.content,
+          output: result?.content ?? (partHasOutput ? (part as { output: unknown }).output : undefined),
         });
       });
 
