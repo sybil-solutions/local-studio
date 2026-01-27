@@ -1260,7 +1260,7 @@ export function ChatPage() {
             </div>
           )}
 
-          <div className="flex-1 flex flex-col overflow-hidden relative min-w-0">
+          <div className="flex-1 flex flex-col overflow-hidden relative min-w-0 bg-[hsl(30,5%,10.5%)]">
             <ChatConversation
               messages={messages}
               isLoading={isLoading}
@@ -1301,9 +1301,7 @@ export function ChatPage() {
               onOpenExport={() => setExportOpen(true)}
             />
 
-            <div className="bg-[hsl(30,5%,10.5%)]">
-              <ChatToolbeltDock toolBelt={toolBelt} showEmptyState={showEmptyState} />
-            </div>
+            <ChatToolbeltDock toolBelt={toolBelt} showEmptyState={showEmptyState} />
           </div>
         </div>
       </UnifiedSidebar>
