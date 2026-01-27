@@ -9,7 +9,7 @@ interface ChatToolbeltDockProps {
 
 export function ChatToolbeltDock({ toolBelt, showEmptyState }: ChatToolbeltDockProps) {
   return (
-    <div className="fixed left-0 right-0 bottom-0 z-20 md:static">
+    <div className="fixed left-0 right-0 bottom-0 z-20 md:static bg-[hsl(30,5%,10.5%)]">
       {/* Mobile: flush to bottom, no extra padding */}
       <div className="md:hidden">
         {toolBelt}
