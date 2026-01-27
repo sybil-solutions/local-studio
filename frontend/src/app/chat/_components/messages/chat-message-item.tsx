@@ -91,6 +91,60 @@ function InlineThinking({
   );
 }
 
+// Desktop: single-line tool summary
+function ToolCallSummary({
+  toolParts,
+}: {
+  toolParts: Array<{
+    type: string;
+    toolCallId: string;
+    state?: string;
+  }>;
+}) {
+  const active = toolParts.filter(
+    (t) => t.state === "call" || t.state === "input-streaming",
+  );
+  const completed = toolParts.filter(
+    (t) => t.state === "result" || t.state === "output-available",
+  );
+  const isRunning = active.length > 0;
+  const total = toolParts.length;
+
+  // Last tool name (strip server__ prefix)
+  const lastTool = toolParts[toolParts.length - 1];
+  const lastToolRaw = lastTool?.type.replace(/^tool-/, "") ?? "";
+  const lastToolName = lastToolRaw.includes("__")
+    ? lastToolRaw.split("__").slice(1).join("__")
+    : lastToolRaw;
+
+  return (
+    <div className="hidden md:flex items-center gap-2 mt-3 pt-3 border-t border-(--border) text-xs">
+      {isRunning ? (
+        <Loader2 className="h-3 w-3 text-amber-400 animate-spin flex-shrink-0" />
+      ) : (
+        <Check className="h-3 w-3 text-emerald-500 flex-shrink-0" />
+      )}
+      <span className={isRunning ? "text-amber-400/80" : "text-[#6a6560]"}>
+        {isRunning ? "running" : "complete"}
+      </span>
+      <span className="text-[#4a4745]">·</span>
+      <span className="text-[#6a6560]">
+        {isRunning
+          ? `${completed.length}/${total} tool calls`
+          : `${total} tool call${total !== 1 ? "s" : ""}`}
+      </span>
+      {lastToolName && (
+        <>
+          <span className="text-[#4a4745]">·</span>
+          <span className="font-mono text-[#6a6560] truncate max-w-[160px]">
+            {lastToolName}
+          </span>
+        </>
+      )}
+    </div>
+  );
+}
+
 // Inline tool calls component for mobile - minimal style
 function InlineToolCalls({
   messageId,
@@ -396,26 +450,9 @@ function ChatMessageItemBase({
           </div>
         )}
 
-        {/* Desktop tool invocations preview */}
+        {/* Desktop tool summary — single line */}
         {toolParts.length > 0 && (
-          <div className="hidden md:block mt-3 pt-3 border-t border-(--border)">
-            {toolParts.map((tool) => {
-              const toolName = tool.type.replace(/^tool-/, "");
-              const state = tool.state;
-              return (
-                <div
-                  key={tool.toolCallId}
-                  className="flex items-center gap-2 text-xs text-[#9a9590]"
-                >
-                  <span className="font-mono">{toolName}</span>
-                  <span className="text-[#6a6560]">
-                    {state === "call" || state === "input-streaming" ? "calling..." : ""}
-                    {state === "result" || state === "output-available" ? "complete" : ""}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
+          <ToolCallSummary toolParts={toolParts} />
         )}
       </div>
     </div>
