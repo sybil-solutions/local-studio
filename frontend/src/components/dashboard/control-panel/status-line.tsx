@@ -1,3 +1,4 @@
+// CRITICAL
 "use client";
 
 import type { ProcessInfo, RecipeWithStatus, Metrics, GPU } from "@/lib/types";
@@ -61,7 +62,7 @@ export function StatusLine({
           
           {isRunning && (
             <div className="mt-2 text-sm text-foreground/50 font-mono">
-              {currentProcess.backend} // PID {currentProcess.pid}
+              {currentProcess.backend} {/* PID */} {currentProcess.pid}
             </div>
           )}
         </div>

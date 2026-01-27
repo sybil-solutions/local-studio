@@ -262,7 +262,7 @@ export function ChatPage() {
         : null;
 
       if (agentResult !== null) {
-        addToolOutput({
+        await addToolOutput({
           tool: toolName as never,
           toolCallId,
           output: agentResult as never,
@@ -277,14 +277,14 @@ export function ChatPage() {
         args,
       });
       if (result.isError) {
-        addToolOutput({
+        await addToolOutput({
           tool: toolName as never,
           toolCallId,
           state: "output-error",
           errorText: result.content || "Tool execution failed",
         });
       } else {
-        addToolOutput({
+        await addToolOutput({
           tool: toolName as never,
           toolCallId,
           output: result.content as never,

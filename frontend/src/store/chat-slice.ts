@@ -12,7 +12,6 @@ import type {
   ActivePanel,
 } from "@/lib/types";
 import type { ModelOption, Attachment } from "@/app/chat/types";
-import type { FileNode, Plan } from "@/app/chat/_components/agent";
 import type { AgentPlan } from "@/app/chat/_components/agent/agent-types";
 
 export interface ChatMessage {
@@ -34,53 +33,33 @@ export interface ChatMessage {
   estimated_cost_usd?: number | null;
 }
 
-export interface ResearchSource {
-  title: string;
-  url: string;
-  snippet?: string;
-  status: "pending" | "fetching" | "done" | "error";
-  relevance?: number;
-}
-
-export interface ResearchProgress {
-  stage: "searching" | "analyzing" | "synthesizing" | "done" | "error";
-  message: string;
-  sources: ResearchSource[];
-  totalSteps: number;
-  currentStep: number;
-  searchQueries?: string[];
-  error?: string;
-}
-
 export interface ChatState {
+  // Sessions
   sessions: ChatSession[];
   currentSessionId: string | null;
   currentSessionTitle: string;
   sessionsLoading: boolean;
-  sessionsAvailable: boolean;
 
-  messages: ChatMessage[];
+  // Messages & input
   input: string;
-  isLoading: boolean;
   error: string | null;
 
+  // Streaming
   streamingStartTime: number | null;
   elapsedSeconds: number;
   queuedContext: string;
 
-  runningModel: string | null;
-  modelName: string;
+  // Model
   selectedModel: string;
   availableModels: ModelOption[];
-  pageLoading: boolean;
 
-  copiedIndex: number | null;
-  sidebarCollapsed: boolean;
+  // Layout
   isMobile: boolean;
   toolPanelOpen: boolean;
   activePanel: ActivePanel;
-  historyDropdownOpen: boolean;
+  userScrolledUp: boolean;
 
+  // MCP & tools
   mcpEnabled: boolean;
   artifactsEnabled: boolean;
   mcpServers: MCPServer[];
@@ -89,27 +68,17 @@ export interface ChatState {
   executingTools: Set<string>;
   toolResultsMap: Map<string, ToolResult>;
 
+  // Settings
   systemPrompt: string;
   chatSettingsOpen: boolean;
-
   deepResearch: DeepResearchConfig;
-  researchProgress: ResearchProgress | null;
-  researchSources: ResearchSource[];
 
+  // Usage & export
   sessionUsage: SessionUsage | null;
   usageDetailsOpen: boolean;
   exportOpen: boolean;
 
-  messageSearchOpen: boolean;
-  bookmarkedMessages: Set<string>;
-  editingTitle: boolean;
-  titleDraft: string;
-  userScrolledUp: boolean;
-
-  recentChatsOpen: boolean;
-  chatSearchQuery: string;
-  toolDropdownOpen: Record<string, boolean>;
-
+  // Attachments & recording
   attachments: Attachment[];
   isRecording: boolean;
   isTranscribing: boolean;
@@ -117,13 +86,16 @@ export interface ChatState {
   recordingDuration: number;
   isTTSEnabled: boolean;
 
+  // MCP action state
   mcpPendingServer: string | null;
   mcpActionError: string | null;
 
+  // Message UI state
   copiedMessageId: string | null;
   messageInlineThinkingExpanded: Record<string, boolean>;
   messageInlineToolsExpanded: Record<string, boolean>;
 
+  // Artifacts
   artifactPanelSelectedId: string | null;
   activeArtifactId: string | null;
   artifactRendererState: Record<
@@ -144,62 +116,50 @@ export interface ChatState {
     }
   >;
 
+  // Code blocks & sandboxes
   codeBlockState: Record<string, { copied: boolean; isExpanded: boolean }>;
   codeSandboxState: Record<
     string,
     { isRunning: boolean; isFullscreen: boolean; copied: boolean; error: string | null }
   >;
-
   mermaidState: Record<string, { svg: string; error: string | null }>;
 
+  // Splash
   splashIsMobile: boolean;
 
-  themeMode: "light" | "dark" | "system";
-  resolvedTheme: "light" | "dark";
-  themeMenuOpen: boolean;
-
-  // Agent mode state
+  // Agent mode
   agentMode: boolean;
   agentPlan: AgentPlan | null;
-  agentFiles: FileNode[];
-  agentPlans: Plan[];
-  agentActivePlanId: string | null;
-  agentSelectedFilePath: string | null;
-  agentWorkingDirectory: string;
 }
 
 export interface ChatActions {
+  // Sessions
   setSessions: (sessions: ChatSession[]) => void;
   updateSessions: (updater: (sessions: ChatSession[]) => ChatSession[]) => void;
   setCurrentSessionId: (currentSessionId: string | null) => void;
   setCurrentSessionTitle: (currentSessionTitle: string) => void;
   setSessionsLoading: (sessionsLoading: boolean) => void;
-  setSessionsAvailable: (sessionsAvailable: boolean) => void;
 
-  setMessages: (messages: ChatMessage[]) => void;
-  updateMessages: (updater: (messages: ChatMessage[]) => ChatMessage[]) => void;
-
+  // Input
   setInput: (input: string) => void;
-  setIsLoading: (isLoading: boolean) => void;
   setError: (error: string | null) => void;
 
+  // Streaming
   setStreamingStartTime: (streamingStartTime: number | null) => void;
   setElapsedSeconds: (elapsedSeconds: number) => void;
   setQueuedContext: (queuedContext: string) => void;
 
-  setRunningModel: (runningModel: string | null) => void;
-  setModelName: (modelName: string) => void;
+  // Model
   setSelectedModel: (selectedModel: string) => void;
   setAvailableModels: (availableModels: ModelOption[]) => void;
-  setPageLoading: (pageLoading: boolean) => void;
 
-  setCopiedIndex: (copiedIndex: number | null) => void;
-  setSidebarCollapsed: (sidebarCollapsed: boolean) => void;
+  // Layout
   setIsMobile: (isMobile: boolean) => void;
   setToolPanelOpen: (toolPanelOpen: boolean) => void;
   setActivePanel: (activePanel: ActivePanel) => void;
-  setHistoryDropdownOpen: (historyDropdownOpen: boolean) => void;
+  setUserScrolledUp: (userScrolledUp: boolean) => void;
 
+  // MCP & tools
   setMcpEnabled: (mcpEnabled: boolean) => void;
   setArtifactsEnabled: (artifactsEnabled: boolean) => void;
   setActiveArtifactId: (artifactId: string | null) => void;
@@ -213,28 +173,17 @@ export interface ChatActions {
     updater: (toolResultsMap: Map<string, ToolResult>) => Map<string, ToolResult>,
   ) => void;
 
+  // Settings
   setSystemPrompt: (systemPrompt: string) => void;
   setChatSettingsOpen: (chatSettingsOpen: boolean) => void;
-
   setDeepResearch: (deepResearch: DeepResearchConfig) => void;
-  setResearchProgress: (researchProgress: ResearchProgress | null) => void;
-  setResearchSources: (researchSources: ResearchSource[]) => void;
 
+  // Usage & export
   setSessionUsage: (sessionUsage: SessionUsage | null) => void;
   setUsageDetailsOpen: (usageDetailsOpen: boolean) => void;
   setExportOpen: (exportOpen: boolean) => void;
 
-  setMessageSearchOpen: (messageSearchOpen: boolean) => void;
-  setBookmarkedMessages: (bookmarkedMessages: Set<string>) => void;
-  updateBookmarkedMessages: (updater: (bookmarkedMessages: Set<string>) => Set<string>) => void;
-  setEditingTitle: (editingTitle: boolean) => void;
-  setTitleDraft: (titleDraft: string) => void;
-  setUserScrolledUp: (userScrolledUp: boolean) => void;
-
-  setRecentChatsOpen: (recentChatsOpen: boolean) => void;
-  setChatSearchQuery: (chatSearchQuery: string) => void;
-  setToolDropdownOpen: (key: string, open: boolean) => void;
-
+  // Attachments & recording
   setAttachments: (attachments: Attachment[]) => void;
   updateAttachments: (updater: (attachments: Attachment[]) => Attachment[]) => void;
   setIsRecording: (isRecording: boolean) => void;
@@ -243,13 +192,16 @@ export interface ChatActions {
   setRecordingDuration: (recordingDuration: number) => void;
   setIsTTSEnabled: (isTTSEnabled: boolean) => void;
 
+  // MCP action state
   setMcpPendingServer: (mcpPendingServer: string | null) => void;
   setMcpActionError: (mcpActionError: string | null) => void;
 
+  // Message UI state
   setCopiedMessageId: (copiedMessageId: string | null) => void;
   setMessageInlineThinkingExpanded: (messageId: string, expanded: boolean) => void;
   setMessageInlineToolsExpanded: (messageId: string, expanded: boolean) => void;
 
+  // Artifacts
   setArtifactPanelSelectedId: (artifactId: string | null) => void;
   updateArtifactRendererState: (
     artifactId: string,
@@ -288,6 +240,7 @@ export interface ChatActions {
     },
   ) => void;
 
+  // Code blocks & sandboxes
   updateCodeBlockState: (
     blockId: string,
     updater: (prev: { copied: boolean; isExpanded: boolean }) => {
@@ -309,24 +262,14 @@ export interface ChatActions {
       error: string | null;
     },
   ) => void;
-
   setMermaidState: (id: string, svg: string, error: string | null) => void;
 
+  // Splash
   setSplashIsMobile: (splashIsMobile: boolean) => void;
 
-  setThemeMode: (themeMode: "light" | "dark" | "system") => void;
-  setResolvedTheme: (resolvedTheme: "light" | "dark") => void;
-  setThemeMenuOpen: (themeMenuOpen: boolean) => void;
-
-  // Agent mode actions
+  // Agent mode
   setAgentMode: (enabled: boolean) => void;
   setAgentPlan: (plan: AgentPlan | null) => void;
-  setAgentFiles: (files: FileNode[]) => void;
-  setAgentPlans: (plans: Plan[]) => void;
-  setAgentActivePlanId: (planId: string | null) => void;
-  setAgentSelectedFilePath: (path: string | null) => void;
-  setAgentWorkingDirectory: (path: string) => void;
-  updateAgentPlan: (planId: string, updates: Partial<Plan>) => void;
 }
 
 export type ChatSlice = ChatState & ChatActions;
@@ -340,34 +283,32 @@ const DEFAULT_DEEP_RESEARCH: DeepResearchConfig = {
 };
 
 export const createChatSlice: StateCreator<ChatSlice, [], [], ChatSlice> = (set) => ({
+  // Sessions
   sessions: [],
   currentSessionId: null,
   currentSessionTitle: "New Chat",
   sessionsLoading: true,
-  sessionsAvailable: true,
 
-  messages: [],
+  // Input
   input: "",
-  isLoading: false,
   error: null,
 
+  // Streaming
   streamingStartTime: null,
   elapsedSeconds: 0,
   queuedContext: "",
 
-  runningModel: null,
-  modelName: "",
+  // Model
   selectedModel: "",
   availableModels: [],
-  pageLoading: true,
 
-  copiedIndex: null,
-  sidebarCollapsed: false,
+  // Layout
   isMobile: false,
   toolPanelOpen: false,
   activePanel: "activity",
-  historyDropdownOpen: false,
+  userScrolledUp: false,
 
+  // MCP & tools
   mcpEnabled: false,
   artifactsEnabled: false,
   mcpServers: [],
@@ -376,27 +317,17 @@ export const createChatSlice: StateCreator<ChatSlice, [], [], ChatSlice> = (set)
   executingTools: new Set(),
   toolResultsMap: new Map(),
 
+  // Settings
   systemPrompt: "",
   chatSettingsOpen: false,
-
   deepResearch: DEFAULT_DEEP_RESEARCH,
-  researchProgress: null,
-  researchSources: [],
 
+  // Usage & export
   sessionUsage: null,
   usageDetailsOpen: false,
   exportOpen: false,
 
-  messageSearchOpen: false,
-  bookmarkedMessages: new Set(),
-  editingTitle: false,
-  titleDraft: "",
-  userScrolledUp: false,
-
-  recentChatsOpen: false,
-  chatSearchQuery: "",
-  toolDropdownOpen: {},
-
+  // Attachments & recording
   attachments: [],
   isRecording: false,
   isTranscribing: false,
@@ -404,69 +335,62 @@ export const createChatSlice: StateCreator<ChatSlice, [], [], ChatSlice> = (set)
   recordingDuration: 0,
   isTTSEnabled: false,
 
+  // MCP action state
   mcpPendingServer: null,
   mcpActionError: null,
 
+  // Message UI state
   copiedMessageId: null,
   messageInlineThinkingExpanded: {},
   messageInlineToolsExpanded: {},
 
+  // Artifacts
   artifactPanelSelectedId: null,
   activeArtifactId: null,
   artifactRendererState: {},
   artifactViewerState: {},
 
+  // Code blocks & sandboxes
   codeBlockState: {},
   codeSandboxState: {},
-
   mermaidState: {},
 
+  // Splash
   splashIsMobile: false,
 
-  themeMode: "dark",
-  resolvedTheme: "dark",
-  themeMenuOpen: false,
-
-  // Agent mode state
+  // Agent mode
   agentMode: false,
   agentPlan: null,
-  agentFiles: [],
-  agentPlans: [],
-  agentActivePlanId: null,
-  agentSelectedFilePath: null,
-  agentWorkingDirectory: "~/agent-workspace",
 
+  // --- Actions ---
+
+  // Sessions
   setSessions: (sessions) => set({ sessions }),
   updateSessions: (updater) => set((state) => ({ sessions: updater(state.sessions) })),
   setCurrentSessionId: (currentSessionId) => set({ currentSessionId }),
   setCurrentSessionTitle: (currentSessionTitle) => set({ currentSessionTitle }),
   setSessionsLoading: (sessionsLoading) => set({ sessionsLoading }),
-  setSessionsAvailable: (sessionsAvailable) => set({ sessionsAvailable }),
 
-  setMessages: (messages) => set({ messages }),
-  updateMessages: (updater) => set((state) => ({ messages: updater(state.messages) })),
-
+  // Input
   setInput: (input) => set({ input }),
-  setIsLoading: (isLoading) => set({ isLoading }),
   setError: (error) => set({ error }),
 
+  // Streaming
   setStreamingStartTime: (streamingStartTime) => set({ streamingStartTime }),
   setElapsedSeconds: (elapsedSeconds) => set({ elapsedSeconds }),
   setQueuedContext: (queuedContext) => set({ queuedContext }),
 
-  setRunningModel: (runningModel) => set({ runningModel }),
-  setModelName: (modelName) => set({ modelName }),
+  // Model
   setSelectedModel: (selectedModel) => set({ selectedModel }),
   setAvailableModels: (availableModels) => set({ availableModels }),
-  setPageLoading: (pageLoading) => set({ pageLoading }),
 
-  setCopiedIndex: (copiedIndex) => set({ copiedIndex }),
-  setSidebarCollapsed: (sidebarCollapsed) => set({ sidebarCollapsed }),
+  // Layout
   setIsMobile: (isMobile) => set({ isMobile }),
   setToolPanelOpen: (toolPanelOpen) => set({ toolPanelOpen }),
   setActivePanel: (activePanel) => set({ activePanel }),
-  setHistoryDropdownOpen: (historyDropdownOpen) => set({ historyDropdownOpen }),
+  setUserScrolledUp: (userScrolledUp) => set({ userScrolledUp }),
 
+  // MCP & tools
   setMcpEnabled: (mcpEnabled) => set({ mcpEnabled }),
   setArtifactsEnabled: (artifactsEnabled) => set({ artifactsEnabled }),
   setActiveArtifactId: (activeArtifactId) => set({ activeArtifactId }),
@@ -480,35 +404,17 @@ export const createChatSlice: StateCreator<ChatSlice, [], [], ChatSlice> = (set)
   updateToolResultsMap: (updater) =>
     set((state) => ({ toolResultsMap: updater(state.toolResultsMap) })),
 
+  // Settings
   setSystemPrompt: (systemPrompt) => set({ systemPrompt }),
   setChatSettingsOpen: (chatSettingsOpen) => set({ chatSettingsOpen }),
-
   setDeepResearch: (deepResearch) => set({ deepResearch }),
-  setResearchProgress: (researchProgress) => set({ researchProgress }),
-  setResearchSources: (researchSources) => set({ researchSources }),
 
+  // Usage & export
   setSessionUsage: (sessionUsage) => set({ sessionUsage }),
   setUsageDetailsOpen: (usageDetailsOpen) => set({ usageDetailsOpen }),
   setExportOpen: (exportOpen) => set({ exportOpen }),
 
-  setMessageSearchOpen: (messageSearchOpen) => set({ messageSearchOpen }),
-  setBookmarkedMessages: (bookmarkedMessages) => set({ bookmarkedMessages }),
-  updateBookmarkedMessages: (updater) =>
-    set((state) => ({ bookmarkedMessages: updater(state.bookmarkedMessages) })),
-  setEditingTitle: (editingTitle) => set({ editingTitle }),
-  setTitleDraft: (titleDraft) => set({ titleDraft }),
-  setUserScrolledUp: (userScrolledUp) => set({ userScrolledUp }),
-
-  setRecentChatsOpen: (recentChatsOpen) => set({ recentChatsOpen }),
-  setChatSearchQuery: (chatSearchQuery) => set({ chatSearchQuery }),
-  setToolDropdownOpen: (key, open) =>
-    set((state) => ({
-      toolDropdownOpen: {
-        ...state.toolDropdownOpen,
-        [key]: open,
-      },
-    })),
-
+  // Attachments & recording
   setAttachments: (attachments) => set({ attachments }),
   updateAttachments: (updater) =>
     set((state) => ({ attachments: updater(state.attachments) })),
@@ -518,9 +424,11 @@ export const createChatSlice: StateCreator<ChatSlice, [], [], ChatSlice> = (set)
   setRecordingDuration: (recordingDuration) => set({ recordingDuration }),
   setIsTTSEnabled: (isTTSEnabled) => set({ isTTSEnabled }),
 
+  // MCP action state
   setMcpPendingServer: (mcpPendingServer) => set({ mcpPendingServer }),
   setMcpActionError: (mcpActionError) => set({ mcpActionError }),
 
+  // Message UI state
   setCopiedMessageId: (copiedMessageId) => set({ copiedMessageId }),
   setMessageInlineThinkingExpanded: (messageId, expanded) =>
     set((state) => ({
@@ -537,6 +445,7 @@ export const createChatSlice: StateCreator<ChatSlice, [], [], ChatSlice> = (set)
       },
     })),
 
+  // Artifacts
   setArtifactPanelSelectedId: (artifactId) => set({ artifactPanelSelectedId: artifactId }),
   updateArtifactRendererState: (artifactId, updater) =>
     set((state) => {
@@ -573,6 +482,7 @@ export const createChatSlice: StateCreator<ChatSlice, [], [], ChatSlice> = (set)
       };
     }),
 
+  // Code blocks & sandboxes
   updateCodeBlockState: (blockId, updater) =>
     set((state) => {
       const prev = state.codeBlockState[blockId] ?? {
@@ -601,7 +511,6 @@ export const createChatSlice: StateCreator<ChatSlice, [], [], ChatSlice> = (set)
         },
       };
     }),
-
   setMermaidState: (id, svg, error) =>
     set((state) => ({
       mermaidState: {
@@ -610,25 +519,10 @@ export const createChatSlice: StateCreator<ChatSlice, [], [], ChatSlice> = (set)
       },
     })),
 
+  // Splash
   setSplashIsMobile: (splashIsMobile) => set({ splashIsMobile }),
 
-  setThemeMode: (themeMode) => set({ themeMode }),
-  setResolvedTheme: (resolvedTheme) => set({ resolvedTheme }),
-  setThemeMenuOpen: (themeMenuOpen) => set({ themeMenuOpen }),
-
-  // Agent mode actions
+  // Agent mode
   setAgentMode: (enabled) => set({ agentMode: enabled }),
   setAgentPlan: (plan) => set({ agentPlan: plan }),
-  setAgentFiles: (files) => set({ agentFiles: files }),
-  setAgentPlans: (plans) => set({ agentPlans: plans }),
-  setAgentActivePlanId: (planId) => set({ agentActivePlanId: planId }),
-  setAgentSelectedFilePath: (path) => set({ agentSelectedFilePath: path }),
-  setAgentWorkingDirectory: (path) => set({ agentWorkingDirectory: path }),
-  updateAgentPlan: (planId, updates) =>
-    set((state) => ({
-      agentPlans: state.agentPlans.map((plan) =>
-        plan.id === planId ? { ...plan, ...updates, updatedAt: new Date().toISOString() } : plan
-      ),
-    })),
 });
-
