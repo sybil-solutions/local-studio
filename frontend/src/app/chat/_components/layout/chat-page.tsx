@@ -31,7 +31,10 @@ import { useMessageParsing } from "@/lib/services/message-parsing";
 import { useAppStore } from "@/store";
 import type { Attachment } from "../../types";
 import { stripThinkingForModelContext, tryParseNestedJsonString } from "../../utils";
-import { AgentWorkspace, AgentModeToggle, type FileNode, type Plan } from "../agent";
+import { AgentFileExplorer, AgentPlanManager, type FileNode, type Plan } from "../agent";
+import { UnifiedSidebar } from "./unified-sidebar";
+import { ActivityPanel, ContextPanel } from "./chat-side-panel";
+
 
 export function ChatPage() {
   const searchParams = useSearchParams();
@@ -1130,19 +1133,46 @@ export function ChatPage() {
     };
   }, [activityGroups, thinkingActive, isLoading, mcpEnabled]);
 
+  // Determine active sidebar tab
+  const [sidebarTab, setSidebarTab] = useState<"activity" | "context" | "artifacts" | "agent-files" | "agent-plans" | "agent-settings">("activity");
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+
   return (
     <div className="relative h-full flex overflow-hidden w-full max-w-full bg-[#0a0a0a]">
-      {/* Agent Workspace Panel */}
-      {agentMode && (
-        <div className="hidden lg:flex w-80 flex-shrink-0 border-l border-white/[0.06]">
-          <AgentWorkspace
+      <UnifiedSidebar
+        isOpen={sidebarOpen}
+        onToggle={() => setSidebarOpen(!sidebarOpen)}
+        activeTab={sidebarTab}
+        onSetActiveTab={setSidebarTab}
+        agentMode={agentMode}
+        onToggleAgentMode={() => setAgentMode(!agentMode)}
+        hasArtifacts={sessionArtifacts.length > 0}
+        defaultWidth={360}
+        minWidth={280}
+        maxWidth={500}
+        activityContent={
+          <div className="p-4 text-sm text-[#666]">
+            <ActivityPanel activityGroups={activityGroups} />
+          </div>
+        }
+        contextContent={
+          <div className="p-4">
+            <ContextPanel
+              stats={contextStats}
+              breakdown={contextBreakdown}
+              compactionHistory={compactionHistory}
+              compacting={compacting}
+              compactionError={compactionError}
+              formatTokenCount={formatTokenCount}
+            />
+          </div>
+        }
+        artifactsContent={<ArtifactPreviewPanel artifacts={sessionArtifacts} />}
+        agentFilesContent={
+          <AgentFileExplorer
             files={agentFiles}
-            plans={agentPlans}
-            activePlanId={agentActivePlanId ?? undefined}
-            selectedFilePath={agentSelectedFilePath ?? undefined}
-            isAgentMode={agentMode}
-            onToggleAgentMode={() => setAgentMode(!agentMode)}
-            onSelectFile={setAgentSelectedFilePath}
+            selectedPath={agentSelectedFilePath ?? undefined}
+            onSelect={setAgentSelectedFilePath}
             onCreateFile={(path) => {
               const newFile: FileNode = {
                 id: `${path}/new-file-${Date.now()}.txt`,
@@ -1160,12 +1190,14 @@ export function ChatPage() {
               };
               setAgentFiles([...agentFiles, newFolder]);
             }}
-            onDeleteFile={(path) => {
-              setAgentFiles(agentFiles.filter((f) => f.id !== path));
-            }}
-            onRefreshFiles={() => {
-              console.log("Refreshing files...");
-            }}
+            onDelete={(path) => setAgentFiles(agentFiles.filter((f) => f.id !== path))}
+            onRefresh={() => console.log("Refreshing files...")}
+          />
+        }
+        agentPlansContent={
+          <AgentPlanManager
+            plans={agentPlans}
+            activePlanId={agentActivePlanId ?? undefined}
             onCreatePlan={(plan) => {
               const newPlan: Plan = {
                 ...plan,
@@ -1176,128 +1208,103 @@ export function ChatPage() {
               };
               setAgentPlans([...agentPlans, newPlan]);
             }}
-            onUpdatePlan={(id, updates) => {
-              updateAgentPlan(id, updates);
-            }}
-            onDeletePlan={(id) => {
-              setAgentPlans(agentPlans.filter((p) => p.id !== id));
-            }}
-            onSelectPlan={(id) => {
-              setAgentActivePlanId(id);
-            }}
+            onUpdatePlan={updateAgentPlan}
+            onDeletePlan={(id) => setAgentPlans(agentPlans.filter((p) => p.id !== id))}
+            onSelectPlan={setAgentActivePlanId}
             onUpdateStep={(planId, stepId, updates) => {
               const plan = agentPlans.find((p) => p.id === planId);
               if (plan) {
                 const updatedSteps = plan.steps.map((s) =>
                   s.id === stepId ? { ...s, ...updates } : s
                 );
-                const completedCount = updatedSteps.filter(
-                  (s) => s.status === "completed"
-                ).length;
-                const progress =
-                  updatedSteps.length > 0
-                    ? Math.round((completedCount / updatedSteps.length) * 100)
-                    : 0;
+                const completedCount = updatedSteps.filter((s) => s.status === "completed").length;
+                const progress = updatedSteps.length > 0 ? Math.round((completedCount / updatedSteps.length) * 100) : 0;
                 updateAgentPlan(planId, { steps: updatedSteps, progress });
               }
             }}
-            workingDirectory={agentWorkingDirectory}
           />
-        </div>
-      )}
-
-      <ResizablePanel
-        isOpen={artifactsEnabled && sessionArtifacts.length > 0}
-        onToggle={() => setArtifactsEnabled(!artifactsEnabled)}
-        sidePanel={<ArtifactPreviewPanel artifacts={sessionArtifacts} />}
-        defaultWidth={420}
-        minWidth={320}
-        maxWidth={800}
+        }
+        agentSettingsContent={
+          <div className="p-4 text-sm text-[#888]">
+            <div className="space-y-4">
+              <div>
+                <h4 className="text-xs font-medium text-foreground mb-2">Workspace</h4>
+                <div className="p-2 bg-white/[0.03] rounded text-xs font-mono text-[#666]">
+                  {agentWorkingDirectory}
+                </div>
+              </div>
+              <div>
+                <h4 className="text-xs font-medium text-foreground mb-2">Capabilities</h4>
+                <div className="space-y-1">
+                  {["File Operations", "Code Execution", "Plan Management", "Web Search"].map((cap) => (
+                    <div key={cap} className="flex items-center gap-2 text-[11px] text-[#666]">
+                      <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                      {cap}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        }
       >
         <div className="flex-1 flex flex-col min-h-0 min-w-0 overflow-x-hidden">
-          {/* Agentic planning view */}
+          {/* Planning view */}
           {(activePlan || agentActivePlanId) && (
             <div className="px-4 pt-4 max-w-3xl mx-auto w-full">
               {agentActivePlanId ? (
-                <PlanningView
-                  plan={
-                    agentPlans.find((p) => p.id === agentActivePlanId) || activePlan
-                  }
-                />
+                <PlanningView plan={agentPlans.find((p) => p.id === agentActivePlanId) || activePlan} />
               ) : (
                 activePlan && <PlanningView plan={activePlan} />
               )}
             </div>
           )}
 
-          <div className="flex-1 flex overflow-hidden relative min-w-0">
-            <div className="flex-1 flex flex-col overflow-hidden relative min-w-0">
-              <ChatConversation
-                messages={messages}
-                isLoading={isLoading}
-                error={error?.message}
-                artifactsEnabled={artifactsEnabled}
-                artifactsByMessage={artifactsByMessage}
-                selectedModel={selectedModel}
-                contextUsageLabel={contextUsageLabel}
-                onFork={handleForkMessage}
-                onReprompt={handleReprompt}
-                showEmptyState={showEmptyState}
-                toolBelt={toolBelt}
-                onScroll={handleScroll}
-                messagesContainerRef={messagesContainerRef}
-                messagesEndRef={messagesEndRef}
-              />
+          <div className="flex-1 flex flex-col overflow-hidden relative min-w-0">
+            <ChatConversation
+              messages={messages}
+              isLoading={isLoading}
+              error={error?.message}
+              artifactsEnabled={artifactsEnabled}
+              artifactsByMessage={artifactsByMessage}
+              selectedModel={selectedModel}
+              contextUsageLabel={contextUsageLabel}
+              onFork={handleForkMessage}
+              onReprompt={handleReprompt}
+              showEmptyState={showEmptyState}
+              toolBelt={toolBelt}
+              onScroll={handleScroll}
+              messagesContainerRef={messagesContainerRef}
+              messagesEndRef={messagesEndRef}
+            />
 
-              <ChatTopControls
-                onOpenSidebar={() => {
-                  window.dispatchEvent(
-                    new CustomEvent("vllm:toggle-sidebar", { detail: { open: true } }),
-                  );
-                }}
-                onOpenSettings={() => setSettingsOpen(true)}
-              />
+            <ChatTopControls
+              onOpenSidebar={() => {
+                window.dispatchEvent(new CustomEvent("vllm:toggle-sidebar", { detail: { open: true } }));
+              }}
+              onOpenSettings={() => setSettingsOpen(true)}
+            />
 
-              <ChatActionButtons
-                activityCount={activityCount}
-                onOpenActivity={() => {
-                  setToolPanelOpen(true);
-                  setActivePanel("activity");
-                }}
-                onOpenContext={() => {
-                  setToolPanelOpen(true);
-                  setActivePanel("context");
-                }}
-                onOpenSettings={() => setSettingsOpen(true)}
-                onOpenMcpSettings={() => setMcpSettingsOpen(true)}
-                onOpenUsage={() => setUsageOpen(true)}
-                onOpenExport={() => setExportOpen(true)}
-              />
+            <ChatActionButtons
+              activityCount={activityCount}
+              onOpenActivity={() => {
+                setSidebarOpen(true);
+                setSidebarTab("activity");
+              }}
+              onOpenContext={() => {
+                setSidebarOpen(true);
+                setSidebarTab("context");
+              }}
+              onOpenSettings={() => setSettingsOpen(true)}
+              onOpenMcpSettings={() => setMcpSettingsOpen(true)}
+              onOpenUsage={() => setUsageOpen(true)}
+              onOpenExport={() => setExportOpen(true)}
+            />
 
-              <ChatToolbeltDock toolBelt={toolBelt} showEmptyState={showEmptyState} />
-            </div>
-
-            {toolPanelOpen && (
-              <ChatSidePanel
-                isOpen={toolPanelOpen}
-                onClose={() => setToolPanelOpen(false)}
-                activePanel={activePanel}
-                onSetActivePanel={setActivePanel}
-                activityGroups={activityGroups}
-                thinkingActive={thinkingActive}
-                executingTools={executingTools}
-                artifacts={sessionArtifacts}
-                contextStats={contextStats}
-                contextBreakdown={contextBreakdown}
-                compactionHistory={compactionHistory}
-                compacting={compacting}
-                compactionError={compactionError}
-                formatTokenCount={formatTokenCount}
-              />
-            )}
+            <ChatToolbeltDock toolBelt={toolBelt} showEmptyState={showEmptyState} />
           </div>
         </div>
-      </ResizablePanel>
+      </UnifiedSidebar>
 
       <ChatModals
         settingsOpen={settingsOpen}

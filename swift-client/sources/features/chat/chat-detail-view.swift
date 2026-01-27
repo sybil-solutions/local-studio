@@ -35,26 +35,30 @@ struct ChatDetailView: View {
             .background(AppTheme.error.opacity(0.1))
             .cornerRadius(8)
           }
-          ChatUsageBar(usage: model.chatUsage)
-          ChatActionBar(
-            onCopy: { model.copyTranscript() },
-            onContext: { showContext = true },
-            onFork: {
-              Task {
-                if let forked = await model.forkSession(messageId: nil, title: nil) {
-                  forkedSessionId = forked.id
+          if model.visibleMessages.isEmpty && !model.openAIService.isStreaming {
+            EmptyChatWelcome()
+          } else {
+            ChatUsageBar(usage: model.chatUsage)
+            ChatActionBar(
+              onCopy: { model.copyTranscript() },
+              onContext: { showContext = true },
+              onFork: {
+                Task {
+                  if let forked = await model.forkSession(messageId: nil, title: nil) {
+                    forkedSessionId = forked.id
+                  }
                 }
-              }
-            },
-            onRetry: {
-              Task {
-                if let forked = await model.retryFromLastUser() {
-                  forkedSessionId = forked.id
+              },
+              onRetry: {
+                Task {
+                  if let forked = await model.retryFromLastUser() {
+                    forkedSessionId = forked.id
+                  }
                 }
-              }
-            },
-            transcript: model.buildTranscript()
-          )
+              },
+              transcript: model.buildTranscript()
+            )
+          }
           ForEach(model.visibleMessages) { message in
             ChatMessageRow(
               message: message,
@@ -138,6 +142,74 @@ struct ChatDetailView: View {
       if let forkedSessionId { ChatDetailView(sessionId: forkedSessionId) }
     }
     .onAppear { model.connect(api: container.api, settings: container.settings, sessionId: sessionId) }
+  }
+}
+
+private struct EmptyChatWelcome: View {
+  @State private var isAnimating = false
+  
+  var body: some View {
+    VStack(spacing: 24) {
+      Spacer().frame(height: 40)
+      
+      // Animated icon
+      ZStack {
+        Circle()
+          .fill(AppTheme.accent.opacity(0.2))
+          .frame(width: 120, height: 120)
+          .scaleEffect(isAnimating ? 1.05 : 1.0)
+          .animation(.easeInOut(duration: 2).repeatForever(autoreverses: true), value: isAnimating)
+        
+        Circle()
+          .fill(AppTheme.accent.opacity(0.3))
+          .frame(width: 90, height: 90)
+          .scaleEffect(isAnimating ? 1.08 : 1.0)
+          .animation(.easeInOut(duration: 2).delay(0.3).repeatForever(autoreverses: true), value: isAnimating)
+        
+        Image(systemName: "bubble.left.and.bubble.right.fill")
+          .font(.system(size: 40))
+          .foregroundColor(AppTheme.accentStrong)
+      }
+      
+      VStack(spacing: 8) {
+        Text("Start a conversation")
+          .font(AppTheme.titleFont)
+          .foregroundColor(AppTheme.foreground)
+        
+        Text("Ask anything, upload files, or enable tools to get started")
+          .font(AppTheme.bodyFont)
+          .foregroundColor(AppTheme.muted)
+          .multilineTextAlignment(.center)
+          .padding(.horizontal, 32)
+      }
+      
+      // Quick suggestion chips
+      HStack(spacing: 8) {
+        SuggestionChip(text: "Help me code")
+        SuggestionChip(text: "Explain a concept")
+        SuggestionChip(text: "Analyze data")
+      }
+      .padding(.top, 8)
+      
+      Spacer()
+    }
+    .frame(maxWidth: .infinity)
+    .onAppear { isAnimating = true }
+  }
+}
+
+private struct SuggestionChip: View {
+  let text: String
+  
+  var body: some View {
+    Text(text)
+      .font(AppTheme.captionFont)
+      .foregroundColor(AppTheme.muted)
+      .padding(.horizontal, 12)
+      .padding(.vertical, 6)
+      .background(AppTheme.card)
+      .cornerRadius(16)
+      .overlay(RoundedRectangle(cornerRadius: 16).stroke(AppTheme.border, lineWidth: 1))
   }
 }
 

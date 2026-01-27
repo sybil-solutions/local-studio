@@ -12,9 +12,9 @@ enum AppTheme {
   static let warning = Color(hex: 0xeea62b)
   static let error = Color(hex: 0xd14747)
 
-  static let titleFont = Font.system(size: 20, weight: .semibold)
-  static let sectionFont = Font.system(size: 16, weight: .semibold)
-  static let bodyFont = Font.system(size: 14, weight: .regular)
-  static let captionFont = Font.system(size: 12, weight: .regular)
-  static let monoFont = Font.system(size: 12, weight: .regular, design: .monospaced)
+  static let titleFont = Font.system(size: 22, weight: .semibold)
+  static let sectionFont = Font.system(size: 17, weight: .semibold)
+  static let bodyFont = Font.system(size: 16, weight: .regular)
+  static let captionFont = Font.system(size: 13, weight: .regular)
+  static let monoFont = Font.system(size: 13, weight: .regular, design: .monospaced)
 }

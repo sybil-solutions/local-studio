@@ -145,11 +145,11 @@ export function ChatSidePanel({
   );
 }
 
-interface ActivityPanelProps {
+export interface ActivityPanelProps {
   activityGroups: ActivityGroup[];
 }
 
-function ActivityPanel({ activityGroups }: ActivityPanelProps) {
+export function ActivityPanel({ activityGroups }: ActivityPanelProps) {
   const activityEmpty = activityGroups.length === 0;
 
   if (activityEmpty) {
@@ -263,7 +263,7 @@ function ThinkingContent({ content }: { content: string }) {
   );
 }
 
-interface ContextPanelProps {
+export interface ContextPanelProps {
   stats?: Omit<
     ContextStats,
     "compactionHistory" | "lastCompaction" | "totalCompactions" | "totalTokensCompacted"
@@ -283,7 +283,7 @@ interface ContextPanelProps {
   formatTokenCount?: (tokens: number) => string;
 }
 
-function ContextPanel({
+export function ContextPanel({
   stats,
   breakdown,
   compactionHistory,

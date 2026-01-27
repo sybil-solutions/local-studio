@@ -286,8 +286,8 @@ export function ToolBelt({
         />
 
         <div
-          className={`relative flex flex-col border rounded-2xl md:rounded-xl bg-(--card) shadow-sm ${
-            isLoading ? "border-blue-500/30" : "border-(--border)"
+          className={`relative flex flex-col rounded-xl bg-[#141414] ${
+            isLoading ? "ring-1 ring-blue-500/30" : ""
           }`}
         >
           <textarea

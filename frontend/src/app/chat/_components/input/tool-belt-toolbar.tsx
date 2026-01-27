@@ -89,7 +89,7 @@ export function ToolBeltToolbar({
   const hasActiveTools = Boolean(mcpEnabled || artifactsEnabled || deepResearchEnabled);
 
   return (
-    <div className="flex items-center justify-between px-2 py-1.5 border-t border-(--border)">
+    <div className="flex items-center justify-between px-3 py-2">
       <div className="flex items-center gap-1 min-w-0">
         {isLoading && elapsedSeconds !== undefined && (
           <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-blue-500/10 border border-blue-500/20">
