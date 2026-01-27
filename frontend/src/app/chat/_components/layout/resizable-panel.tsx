@@ -1,3 +1,4 @@
+// CRITICAL
 "use client";
 
 import { useState, useRef, useEffect, useCallback, type ReactNode } from "react";

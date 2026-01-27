@@ -39,12 +39,11 @@ export function ArtifactPreviewPanel({ artifacts }: ArtifactPreviewPanelProps) {
 
   const selectedArtifact = artifacts.find((a) => a.id === resolvedSelectedId);
 
-  // Auto-select latest artifact
-  useEffect(() => {
-    if (artifacts.length > 0 && !selectedId) {
-      setSelectedId(artifacts[artifacts.length - 1].id);
-    }
-  }, [artifacts, selectedId]);
+  // Auto-select latest artifact (only when artifact list changes)
+  const latestId = artifacts.length > 0 ? artifacts[artifacts.length - 1].id : null;
+  if (latestId && !selectedId) {
+    setSelectedId(latestId);
+  }
 
   const handlePrev = useCallback(() => {
     if (artifacts.length <= 1) return;

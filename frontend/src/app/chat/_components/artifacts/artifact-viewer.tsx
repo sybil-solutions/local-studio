@@ -472,14 +472,11 @@ export function ArtifactViewer({ artifact, isActive = true }: ArtifactViewerProp
     isRunning,
     error,
   } = viewerState;
-  const artifactIdRef = useRef(artifact.id);
-  artifactIdRef.current = artifact.id;
-
   const updateState = useCallback(
     (partial: Partial<typeof viewerState>) => {
-      updateArtifactViewerState(artifactIdRef.current, (prev) => ({ ...prev, ...partial }));
+      updateArtifactViewerState(artifact.id, (prev) => ({ ...prev, ...partial }));
     },
-    [updateArtifactViewerState],
+    [updateArtifactViewerState, artifact.id],
   );
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -488,8 +485,10 @@ export function ArtifactViewer({ artifact, isActive = true }: ArtifactViewerProp
   // Use refs for artifact content to avoid re-running the iframe on every streaming update
   const artifactCodeRef = useRef(artifact.code);
   const artifactTypeRef = useRef(artifact.type);
-  artifactCodeRef.current = artifact.code;
-  artifactTypeRef.current = artifact.type;
+  useEffect(() => {
+    artifactCodeRef.current = artifact.code;
+    artifactTypeRef.current = artifact.type;
+  }, [artifact.code, artifact.type]);
 
   const getSrcDoc = useCallback(() => {
     const code = artifactCodeRef.current;
@@ -528,18 +527,14 @@ export function ArtifactViewer({ artifact, isActive = true }: ArtifactViewerProp
     }
   }, [updateState]);
 
-  // Auto-run only when artifact ID changes or becomes active, not on every rerender
-  const runArtifactRef = useRef(runArtifact);
-  runArtifactRef.current = runArtifact;
-
+  // Auto-run only when artifact ID changes or becomes active
   useEffect(() => {
     if (!isActive) return;
     const timeoutId = window.setTimeout(() => {
-      runArtifactRef.current();
+      runArtifact();
     }, 0);
     return () => window.clearTimeout(timeoutId);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isActive, artifact.id]);
+  }, [isActive, artifact.id, runArtifact]);
 
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {

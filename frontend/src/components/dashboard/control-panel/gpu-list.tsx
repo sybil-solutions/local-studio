@@ -1,3 +1,4 @@
+// CRITICAL
 "use client";
 
 import { useRealtimeStatus } from "@/hooks/use-realtime-status";
