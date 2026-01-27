@@ -97,7 +97,7 @@ struct ChatMessageMetaDropdown: View {
     .foregroundColor(AppTheme.muted)
     .padding(.horizontal, 8)
     .padding(.vertical, 4)
-    .background(AppTheme.background)
+    .background(AppTheme.card)
     .cornerRadius(999)
     .overlay(RoundedRectangle(cornerRadius: 999).stroke(AppTheme.border, lineWidth: 1))
   }
