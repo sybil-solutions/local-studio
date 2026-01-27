@@ -10,15 +10,32 @@ struct MarkdownText: View {
       options: .init(interpretedSyntax: .full, failurePolicy: .returnPartiallyParsedIfPossible)
     ) {
       Text(attributed)
-        .font(AppTheme.bodyFont)
+        .textSelection(.enabled)
     } else {
       Text(normalized)
-        .font(AppTheme.bodyFont)
+        .textSelection(.enabled)
     }
   }
 
   private func preserveLineBreaks(in input: String) -> String {
-    input.replacingOccurrences(of: "\r\n", with: "\n")
-      .replacingOccurrences(of: "\n", with: "  \n")
+    let normalized = input.replacingOccurrences(of: "\r\n", with: "\n")
+    var output: [String] = []
+    var inFence = false
+    let lines = normalized.split(separator: "\n", omittingEmptySubsequences: false)
+    for line in lines {
+      let lineText = String(line)
+      let trimmed = lineText.trimmingCharacters(in: .whitespaces)
+      if trimmed.hasPrefix("```") {
+        inFence.toggle()
+        output.append(lineText)
+        continue
+      }
+      if inFence || lineText.isEmpty {
+        output.append(lineText)
+      } else {
+        output.append(lineText + "  ")
+      }
+    }
+    return output.joined(separator: "\n")
   }
 }

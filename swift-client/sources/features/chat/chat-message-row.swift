@@ -40,8 +40,7 @@ struct ChatMessageRow: View {
     VStack(alignment: .leading, spacing: 10) {
       // Message text
       if isStreaming {
-        Text(parsed.main)
-          .font(AppTheme.bodyFont)
+        MarkdownText(content: parsed.main)
           .foregroundColor(AppTheme.foreground)
       } else {
         MarkdownText(content: artifactResult.text)

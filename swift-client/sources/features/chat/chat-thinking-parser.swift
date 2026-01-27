@@ -6,9 +6,12 @@ struct ThinkingResult {
 }
 
 enum ThinkingParser {
-  private static let openTags = ["<think>", "<thinking>"]
-  private static let closeTags = ["</think>", "</thinking>"]
-  private static let regex = try? NSRegularExpression(pattern: "<think(?:ing)?>[\\s\\S]*?</think(?:ing)?>", options: [.caseInsensitive])
+  private static let openTags = ["<think>", "<thinking>", "<analysis>"]
+  private static let closeTags = ["</think>", "</thinking>", "</analysis>"]
+  private static let regex = try? NSRegularExpression(
+    pattern: "<(think|thinking|analysis)>[\\s\\S]*?</(think|thinking|analysis)>",
+    options: [.caseInsensitive]
+  )
 
   static func parse(_ input: String) -> ThinkingResult {
     let lower = input.lowercased()
@@ -44,6 +47,8 @@ enum ThinkingParser {
         .replacingOccurrences(of: "</think>", with: "")
         .replacingOccurrences(of: "<thinking>", with: "")
         .replacingOccurrences(of: "</thinking>", with: "")
+        .replacingOccurrences(of: "<analysis>", with: "")
+        .replacingOccurrences(of: "</analysis>", with: "")
         .trimmingCharacters(in: .whitespacesAndNewlines)
     }
   }

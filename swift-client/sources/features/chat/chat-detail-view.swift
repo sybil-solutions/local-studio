@@ -36,6 +36,25 @@ struct ChatDetailView: View {
             .cornerRadius(8)
           }
           ChatUsageBar(usage: model.chatUsage)
+          ChatActionBar(
+            onCopy: { model.copyTranscript() },
+            onContext: { showContext = true },
+            onFork: {
+              Task {
+                if let forked = await model.forkSession(messageId: nil, title: nil) {
+                  forkedSessionId = forked.id
+                }
+              }
+            },
+            onRetry: {
+              Task {
+                if let forked = await model.retryFromLastUser() {
+                  forkedSessionId = forked.id
+                }
+              }
+            },
+            transcript: model.buildTranscript()
+          )
           ForEach(model.visibleMessages) { message in
             ChatMessageRow(
               message: message,
@@ -96,33 +115,7 @@ struct ChatDetailView: View {
     }
     .background(AppTheme.background)
     .navigationTitle(model.title.isEmpty ? "Chat" : model.title)
-    .toolbar {
-      ToolbarItem(placement: .navigationBarTrailing) {
-        Menu {
-          Button("Copy", systemImage: "doc.on.doc") { model.copyTranscript() }
-          Button("Context", systemImage: "rectangle.and.text.magnifyingglass") { showContext = true }
-          Button("Fork", systemImage: "arrow.branch") {
-            Task {
-              if let forked = await model.forkSession(messageId: nil, title: nil) {
-                forkedSessionId = forked.id
-              }
-            }
-          }
-          Button("Retry", systemImage: "arrow.clockwise") {
-            Task {
-              if let forked = await model.retryFromLastUser() {
-                forkedSessionId = forked.id
-              }
-            }
-          }
-          ShareLink(item: model.buildTranscript()) {
-            Label("Export", systemImage: "square.and.arrow.up")
-          }
-        } label: {
-          Image(systemName: "ellipsis.circle")
-        }
-      }
-    }
+    .navigationBarTitleDisplayMode(.inline)
     .sheet(isPresented: $showTools) { ChatToolsSheet(tools: model.tools) }
     .sheet(isPresented: $showContext) {
       ChatContextSheet(
@@ -145,6 +138,47 @@ struct ChatDetailView: View {
       if let forkedSessionId { ChatDetailView(sessionId: forkedSessionId) }
     }
     .onAppear { model.connect(api: container.api, settings: container.settings, sessionId: sessionId) }
+  }
+}
+
+private struct ChatActionBar: View {
+  let onCopy: () -> Void
+  let onContext: () -> Void
+  let onFork: () -> Void
+  let onRetry: () -> Void
+  let transcript: String
+
+  var body: some View {
+    ScrollView(.horizontal, showsIndicators: false) {
+      HStack(spacing: 8) {
+        actionButton("Copy", systemImage: "doc.on.doc", action: onCopy)
+        actionButton("Context", systemImage: "rectangle.and.text.magnifyingglass", action: onContext)
+        actionButton("Fork", systemImage: "arrow.branch", action: onFork)
+        actionButton("Retry", systemImage: "arrow.clockwise", action: onRetry)
+        ShareLink(item: transcript) {
+          actionLabel("Export", systemImage: "square.and.arrow.up")
+        }
+      }
+      .padding(.vertical, 4)
+    }
+  }
+
+  private func actionButton(_ title: String, systemImage: String, action: @escaping () -> Void) -> some View {
+    Button(action: action) {
+      actionLabel(title, systemImage: systemImage)
+    }
+    .buttonStyle(.plain)
+  }
+
+  private func actionLabel(_ title: String, systemImage: String) -> some View {
+    Label(title, systemImage: systemImage)
+      .font(AppTheme.captionFont)
+      .foregroundColor(AppTheme.foreground)
+      .padding(.horizontal, 10)
+      .padding(.vertical, 6)
+      .background(AppTheme.card)
+      .cornerRadius(999)
+      .overlay(RoundedRectangle(cornerRadius: 999).stroke(AppTheme.border, lineWidth: 1))
   }
 }
 

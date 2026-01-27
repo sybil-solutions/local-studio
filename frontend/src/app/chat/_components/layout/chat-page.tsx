@@ -9,7 +9,10 @@ import { api } from "@/lib/api";
 import { safeJsonStringify } from "@/lib/safe-json";
 import { extractArtifacts } from "../artifacts/artifact-renderer";
 import { ArtifactModal } from "../artifacts/artifact-modal";
+import { ArtifactPreviewPanel } from "../artifacts/artifact-preview-panel";
+import { PlanningView, type Plan, type PlanStep } from "../planning/planning-view";
 import { ToolBelt } from "../input/tool-belt";
+import { ResizablePanel } from "./resizable-panel";
 import { ChatSidePanel } from "./chat-side-panel";
 import { ChatConversation } from "./chat-conversation";
 import { ChatTopControls } from "./chat-top-controls";
@@ -1068,76 +1071,134 @@ export function ChatPage() {
     />
   );
 
+  // Generate planning view from tool calls and thinking
+  const activePlan: Plan | undefined = useMemo(() => {
+    if (!mcpEnabled && activityGroups.length === 0) return undefined;
+
+    const steps: PlanStep[] = [];
+
+    // Add thinking step if active
+    const activeThinking = activityGroups.find((g) => g.thinkingActive)?.thinkingContent;
+    if (thinkingActive || activeThinking) {
+      steps.push({
+        id: "thinking",
+        title: "Analyzing request",
+        description: activeThinking?.slice(0, 200),
+        status: thinkingActive ? "in-progress" : "completed",
+        tool: "thinking",
+      });
+    }
+
+    // Add tool execution steps
+    activityGroups.forEach((group) => {
+      group.toolItems.forEach((item, idx) => {
+        steps.push({
+          id: `${group.id}-${idx}`,
+          title: item.toolName?.replace(/_/g, " ") || "Tool execution",
+          description: item.input ? JSON.stringify(item.input).slice(0, 100) : undefined,
+          status: item.state === "running" ? "in-progress" : item.state === "error" ? "error" : "completed",
+          tool: item.toolName,
+          result: item.output ? String(item.output).slice(0, 100) : undefined,
+        });
+      });
+    });
+
+    if (steps.length === 0) return undefined;
+
+    return {
+      id: "current",
+      title: isLoading ? "Processing..." : "Completed",
+      steps,
+      isActive: isLoading,
+    };
+  }, [activityGroups, thinkingActive, isLoading, mcpEnabled]);
+
   return (
-    <div className="relative h-full flex overflow-hidden w-full max-w-full">
-      <div className="flex-1 flex flex-col min-h-0 min-w-0 overflow-x-hidden">
-        <div className="flex-1 flex overflow-hidden relative min-w-0">
-          <div className="flex-1 flex flex-col overflow-hidden relative min-w-0">
-            <ChatConversation
-              messages={messages}
-              isLoading={isLoading}
-              error={error?.message}
-              artifactsEnabled={artifactsEnabled}
-              artifactsByMessage={artifactsByMessage}
-              selectedModel={selectedModel}
-              contextUsageLabel={contextUsageLabel}
-              onFork={handleForkMessage}
-              onReprompt={handleReprompt}
-              showEmptyState={showEmptyState}
-              toolBelt={toolBelt}
-              onScroll={handleScroll}
-              messagesContainerRef={messagesContainerRef}
-              messagesEndRef={messagesEndRef}
-            />
-
-            <ChatTopControls
-              onOpenSidebar={() => {
-                window.dispatchEvent(
-                  new CustomEvent("vllm:toggle-sidebar", { detail: { open: true } }),
-                );
-              }}
-              onOpenSettings={() => setSettingsOpen(true)}
-            />
-
-            <ChatActionButtons
-              activityCount={activityCount}
-              onOpenActivity={() => {
-                setToolPanelOpen(true);
-                setActivePanel("activity");
-              }}
-              onOpenContext={() => {
-                setToolPanelOpen(true);
-                setActivePanel("context");
-              }}
-              onOpenSettings={() => setSettingsOpen(true)}
-              onOpenMcpSettings={() => setMcpSettingsOpen(true)}
-              onOpenUsage={() => setUsageOpen(true)}
-              onOpenExport={() => setExportOpen(true)}
-            />
-
-            <ChatToolbeltDock toolBelt={toolBelt} showEmptyState={showEmptyState} />
-          </div>
-
-          {toolPanelOpen && (
-            <ChatSidePanel
-              isOpen={toolPanelOpen}
-              onClose={() => setToolPanelOpen(false)}
-              activePanel={activePanel}
-              onSetActivePanel={setActivePanel}
-              activityGroups={activityGroups}
-              thinkingActive={thinkingActive}
-              executingTools={executingTools}
-              artifacts={sessionArtifacts}
-              contextStats={contextStats}
-              contextBreakdown={contextBreakdown}
-              compactionHistory={compactionHistory}
-              compacting={compacting}
-              compactionError={compactionError}
-              formatTokenCount={formatTokenCount}
-            />
+    <div className="relative h-full flex overflow-hidden w-full max-w-full bg-[#0a0a0a]">
+      <ResizablePanel
+        isOpen={artifactsEnabled && sessionArtifacts.length > 0}
+        onToggle={() => setArtifactsEnabled(!artifactsEnabled)}
+        sidePanel={<ArtifactPreviewPanel artifacts={sessionArtifacts} />}
+        defaultWidth={420}
+        minWidth={320}
+        maxWidth={800}
+      >
+        <div className="flex-1 flex flex-col min-h-0 min-w-0 overflow-x-hidden">
+          {/* Agentic planning view */}
+          {activePlan && (
+            <div className="px-4 pt-4 max-w-3xl mx-auto w-full">
+              <PlanningView plan={activePlan} />
+            </div>
           )}
+
+          <div className="flex-1 flex overflow-hidden relative min-w-0">
+            <div className="flex-1 flex flex-col overflow-hidden relative min-w-0">
+              <ChatConversation
+                messages={messages}
+                isLoading={isLoading}
+                error={error?.message}
+                artifactsEnabled={artifactsEnabled}
+                artifactsByMessage={artifactsByMessage}
+                selectedModel={selectedModel}
+                contextUsageLabel={contextUsageLabel}
+                onFork={handleForkMessage}
+                onReprompt={handleReprompt}
+                showEmptyState={showEmptyState}
+                toolBelt={toolBelt}
+                onScroll={handleScroll}
+                messagesContainerRef={messagesContainerRef}
+                messagesEndRef={messagesEndRef}
+              />
+
+              <ChatTopControls
+                onOpenSidebar={() => {
+                  window.dispatchEvent(
+                    new CustomEvent("vllm:toggle-sidebar", { detail: { open: true } }),
+                  );
+                }}
+                onOpenSettings={() => setSettingsOpen(true)}
+              />
+
+              <ChatActionButtons
+                activityCount={activityCount}
+                onOpenActivity={() => {
+                  setToolPanelOpen(true);
+                  setActivePanel("activity");
+                }}
+                onOpenContext={() => {
+                  setToolPanelOpen(true);
+                  setActivePanel("context");
+                }}
+                onOpenSettings={() => setSettingsOpen(true)}
+                onOpenMcpSettings={() => setMcpSettingsOpen(true)}
+                onOpenUsage={() => setUsageOpen(true)}
+                onOpenExport={() => setExportOpen(true)}
+              />
+
+              <ChatToolbeltDock toolBelt={toolBelt} showEmptyState={showEmptyState} />
+            </div>
+
+            {toolPanelOpen && (
+              <ChatSidePanel
+                isOpen={toolPanelOpen}
+                onClose={() => setToolPanelOpen(false)}
+                activePanel={activePanel}
+                onSetActivePanel={setActivePanel}
+                activityGroups={activityGroups}
+                thinkingActive={thinkingActive}
+                executingTools={executingTools}
+                artifacts={sessionArtifacts}
+                contextStats={contextStats}
+                contextBreakdown={contextBreakdown}
+                compactionHistory={compactionHistory}
+                compacting={compacting}
+                compactionError={compactionError}
+                formatTokenCount={formatTokenCount}
+              />
+            )}
+          </div>
         </div>
-      </div>
+      </ResizablePanel>
 
       <ChatModals
         settingsOpen={settingsOpen}

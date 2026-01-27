@@ -13,15 +13,20 @@ struct ChatMessageMetaDropdown: View {
       EmptyView()
     } else {
       VStack(alignment: .leading, spacing: 8) {
-        Button(action: { isExpanded.toggle() }) {
-          HStack(spacing: 6) {
-            Text(summary).font(AppTheme.captionFont).foregroundColor(AppTheme.muted)
-            Spacer()
-            Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
-              .font(.system(size: 10))
-              .foregroundColor(AppTheme.muted)
+        HStack(spacing: 8) {
+          ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+              if !thinkingBlocks.isEmpty { metaChip("Thinking", icon: "brain") }
+              if !toolCalls.isEmpty { metaChip("\(toolCalls.count) tools", icon: "wrench.and.screwdriver") }
+              if !toolResults.isEmpty { metaChip("Results", icon: "checkmark.circle") }
+            }
           }
+          Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+            .font(.system(size: 10))
+            .foregroundColor(AppTheme.muted)
         }
+        .contentShape(Rectangle())
+        .onTapGesture { isExpanded.toggle() }
 
         if isExpanded {
           VStack(alignment: .leading, spacing: 10) {
@@ -80,15 +85,20 @@ struct ChatMessageMetaDropdown: View {
     }
   }
 
-  private var summary: String {
-    var parts: [String] = []
-    if !thinkingBlocks.isEmpty { parts.append("Thinking") }
-    if !toolCalls.isEmpty { parts.append("\(toolCalls.count) tools") }
-    if !toolResults.isEmpty { parts.append("Results") }
-    return parts.isEmpty ? "Details" : parts.joined(separator: " • ")
-  }
-
   private func sectionTitle(_ text: String) -> some View {
     Text(text).font(AppTheme.captionFont).foregroundColor(AppTheme.muted)
+  }
+
+  private func metaChip(_ text: String, icon: String) -> some View {
+    HStack(spacing: 4) {
+      Image(systemName: icon).font(.system(size: 10))
+      Text(text).font(AppTheme.captionFont)
+    }
+    .foregroundColor(AppTheme.muted)
+    .padding(.horizontal, 8)
+    .padding(.vertical, 4)
+    .background(AppTheme.background)
+    .cornerRadius(999)
+    .overlay(RoundedRectangle(cornerRadius: 999).stroke(AppTheme.border, lineWidth: 1))
   }
 }
