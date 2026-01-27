@@ -15,6 +15,7 @@ struct McpTool: Codable, Identifiable {
   var id: String { name + ":" + server }
   let name: String
   let description: String?
+  let inputSchema: AnyCodable?
   let server: String
 }
 

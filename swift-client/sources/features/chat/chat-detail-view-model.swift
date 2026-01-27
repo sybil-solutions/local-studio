@@ -1,6 +1,7 @@
 // CRITICAL
 import Combine
 import Foundation
+import UIKit
 
 @MainActor
 final class ChatDetailViewModel: ObservableObject {
@@ -15,6 +16,7 @@ final class ChatDetailViewModel: ObservableObject {
   @Published var deepResearchEnabled = false
   @Published var error: String?
   @Published var agentMeta: [String: AgentMeta] = [:]
+  @Published var currentPlan: [PlanTask]?
   var api: ApiClient?
   var settings: SettingsStore?
   var sessionId: String = ""
@@ -23,7 +25,9 @@ final class ChatDetailViewModel: ObservableObject {
   private var cancellables: Set<AnyCancellable> = []
 
   init() {
-    openAIService.objectWillChange
+    // Only forward streaming state changes (start/stop), not every content chunk
+    openAIService.$isStreaming
+      .removeDuplicates()
       .sink { [weak self] _ in self?.objectWillChange.send() }
       .store(in: &cancellables)
   }
@@ -45,6 +49,7 @@ final class ChatDetailViewModel: ObservableObject {
       title = session.title
       sessionModel = session.model
       messages = session.messages
+      refreshUsageSnapshot()
       tools = (try? await api.getMcpTools().tools) ?? []
       rebuildAgentMeta()
       availableModels = await fetchModels(api: api)
@@ -54,6 +59,7 @@ final class ChatDetailViewModel: ObservableObject {
         if let defaultModel { _ = try? await api.updateChatSession(id: sessionId, title: nil, model: defaultModel) }
       }
       chatUsage = try? await api.getChatUsage(sessionId: sessionId)
+      if chatUsage == nil { refreshUsageSnapshot() }
     } catch { self.error = error.localizedDescription }
   }
 
@@ -63,11 +69,46 @@ final class ChatDetailViewModel: ObservableObject {
     _ = try? await api.updateChatSession(id: sessionId, title: nil, model: model)
   }
 
-  var isStreaming: Bool { openAIService.isStreaming }
-  var streamStart: Date? { openAIService.streamStart }
-  var streamingContent: String { openAIService.streamingContent }
-  var streamingReasoning: String { openAIService.streamingReasoning }
-  var streamingToolCalls: [ToolCall] { openAIService.streamingToolCalls }
+  func copyTranscript() {
+    UIPasteboard.general.string = buildTranscript()
+  }
+
+  func buildTranscript(includeToolMessages: Bool = true) -> String {
+    var lines: [String] = []
+    for message in messages {
+      if message.role == "tool", !includeToolMessages { continue }
+      let label = message.role == "assistant" ? "Assistant" : message.role.capitalized
+      var content = message.content ?? ""
+      if message.role == "assistant" {
+        content = ThinkingParser.stripThinkingBlocks(content)
+        content = ArtifactParser.stripArtifactBlocks(content)
+      }
+      lines.append("**\(label):**\n\(content)")
+    }
+    return lines.joined(separator: "\n\n")
+  }
+
+  func forkSession(messageId: String?, title: String?) async -> ChatSessionDetail? {
+    guard let api else { return nil }
+    return try? await api.forkSession(id: sessionId, messageId: messageId, model: sessionModel, title: title)
+  }
+
+  func retryFromLastUser() async -> ChatSessionDetail? {
+    let lastUser = messages.last(where: { $0.role == "user" })
+    let retryTitle = title.isEmpty ? "Retry" : "\(title) (Retry)"
+    return await forkSession(messageId: lastUser?.id, title: retryTitle)
+  }
+
+  func refreshUsageSnapshot() {
+    let promptTokens = messages.compactMap { $0.requestPromptTokens }.reduce(0, +)
+    let toolTokens = messages.compactMap { $0.requestToolsTokens }.reduce(0, +)
+    let completionTokens = messages.compactMap { $0.requestCompletionTokens }.reduce(0, +)
+    let totalInput = messages.compactMap { $0.requestTotalInputTokens }.reduce(0, +)
+    let inputTokens = totalInput > 0 ? totalInput : promptTokens + toolTokens
+    let totalTokens = inputTokens + completionTokens
+    guard totalTokens > 0 else { return }
+    chatUsage = ChatUsage(promptTokens: promptTokens + toolTokens, completionTokens: completionTokens, totalTokens: totalTokens)
+  }
 
   private func fetchModels(api: ApiClient) async -> [OpenAIModelInfo] {
     guard let list = try? await api.getServedModels() else { return [] }

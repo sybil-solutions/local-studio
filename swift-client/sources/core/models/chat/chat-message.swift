@@ -14,7 +14,7 @@ struct StoredMessage: Codable, Identifiable {
   let requestCompletionTokens: Int?
   let createdAt: String?
 
-  init(id: String, role: String, content: String?, model: String?, toolCalls: [ToolCall]?, toolCallId: String? = nil, promptTokens: Int? = nil, completionTokens: Int? = nil) {
+  init(id: String, role: String, content: String?, model: String?, toolCalls: [ToolCall]?, toolCallId: String? = nil, promptTokens: Int? = nil, toolsTokens: Int? = nil, totalInputTokens: Int? = nil, completionTokens: Int? = nil) {
     self.id = id
     self.role = role
     self.content = content
@@ -23,8 +23,14 @@ struct StoredMessage: Codable, Identifiable {
     self.toolCallId = toolCallId
     name = nil
     requestPromptTokens = promptTokens
-    requestToolsTokens = nil
-    requestTotalInputTokens = promptTokens
+    requestToolsTokens = toolsTokens
+    let computedTotal = totalInputTokens ?? {
+      if let promptTokens, let toolsTokens { return promptTokens + toolsTokens }
+      if let promptTokens { return promptTokens }
+      if let toolsTokens { return toolsTokens }
+      return nil
+    }()
+    requestTotalInputTokens = computedTotal
     requestCompletionTokens = completionTokens
     createdAt = nil
   }

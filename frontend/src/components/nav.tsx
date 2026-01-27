@@ -7,8 +7,8 @@ import {
   LayoutDashboard,
   Layers,
   FileText,
-  Settings,
-  MessageSquare,
+  Settings2,
+  MessageSquareText,
   Key,
   Menu,
   X,
@@ -19,6 +19,12 @@ import {
   Search,
   ChevronRight,
   BarChart3,
+  Cpu,
+  ScrollText,
+  Sparkles,
+  Zap,
+  Compass,
+  Terminal,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import api from "@/lib/api";
@@ -26,12 +32,12 @@ import { getApiKey, setApiKey, clearApiKey } from "@/lib/api-key";
 import { CommandPalette, type CommandPaletteAction } from "@/components/command-palette";
 
 const navItems = [
-  { href: "/", label: "Dashboard", icon: LayoutDashboard, description: "System status & overview" },
-  { href: "/chat", label: "Chat", icon: MessageSquare, description: "Talk to your models" },
-  { href: "/recipes", label: "Recipes", icon: Settings, description: "Model configurations" },
-  { href: "/logs", label: "Logs", icon: FileText, description: "View backend logs" },
-  { href: "/usage", label: "Usage", icon: BarChart3, description: "Token analytics" },
-  { href: "/configs", label: "Configs", icon: Settings, description: "System configuration" },
+  { href: "/", label: "Dashboard", icon: LayoutDashboard, description: "Overview & status", color: "from-blue-500/20 to-cyan-500/20" },
+  { href: "/chat", label: "Chat", icon: MessageSquareText, description: "Talk to models", color: "from-violet-500/20 to-purple-500/20" },
+  { href: "/recipes", label: "Recipes", icon: Sparkles, description: "Model configs", color: "from-amber-500/20 to-orange-500/20" },
+  { href: "/logs", label: "Logs", icon: ScrollText, description: "Backend logs", color: "from-emerald-500/20 to-teal-500/20" },
+  { href: "/usage", label: "Usage", icon: BarChart3, description: "Token analytics", color: "from-pink-500/20 to-rose-500/20" },
+  { href: "/configs", label: "Configs", icon: Settings2, description: "System settings", color: "from-slate-500/20 to-gray-500/20" },
 ];
 
 export default function Nav() {
@@ -382,25 +388,30 @@ export default function Nav() {
       ) : null}
 
       {/* Header */}
-      <header className="sticky top-0 z-50 bg-(--card) pt-[env(safe-area-inset-top,0)]">
-        <div className="flex h-12 md:h-14 items-center justify-between px-3 md:px-4 border-b border-(--border)">
+      <header className="sticky top-0 z-50 bg-[#0a0a0a]/80 backdrop-blur-xl pt-[env(safe-area-inset-top,0)] border-b border-white/[0.06]">
+        <div className="flex h-12 md:h-14 items-center justify-between px-3 md:px-4">
           {/* Logo & Nav Links */}
-          <div className="flex items-center gap-3 md:gap-6">
+          <div className="flex items-center gap-3 md:gap-5">
             {/* Mobile Menu Button */}
             <button
               onClick={() => setMobileMenuOpen(true)}
-              className="md:hidden p-1.5 -ml-1.5 rounded-lg hover:bg-(--accent) transition-colors"
+              className="md:hidden p-2 -ml-1.5 rounded-xl hover:bg-white/[0.08] transition-colors"
               aria-label="Open menu"
             >
               <Menu className="h-5 w-5" />
             </button>
 
-            <Link href="/" className="flex items-center gap-2 font-semibold">
-              <Layers className="h-5 w-5 text-(--accent)" />
-              <span className="hidden sm:inline">vLLM Studio</span>
+            <Link href="/" className="flex items-center gap-2.5 font-semibold group">
+              <div className="relative">
+                <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-violet-500 via-purple-500 to-fuchsia-500 flex items-center justify-center shadow-lg shadow-purple-500/20 group-hover:shadow-purple-500/30 transition-shadow">
+                  <Layers className="h-4 w-4 text-white" />
+                </div>
+                <div className="absolute -inset-0.5 bg-gradient-to-br from-violet-500 to-fuchsia-500 rounded-lg blur opacity-20 group-hover:opacity-30 transition-opacity" />
+              </div>
+              <span className="hidden sm:inline text-foreground">vLLM Studio</span>
             </Link>
 
-            <nav className="hidden md:flex items-center gap-1">
+            <nav className="hidden md:flex items-center gap-0.5">
               {navItems.map((item) => {
                 const Icon = item.icon;
                 const isActive = pathname === item.href;
@@ -408,14 +419,21 @@ export default function Nav() {
                   <Link
                     key={item.href}
                     href={item.href}
-                    className={`flex items-center gap-2 px-3 py-2 rounded-md text-sm transition-colors ${
+                    className={`relative flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-all duration-200 group ${
                       isActive
-                        ? "bg-(--card-hover) text-foreground"
-                        : "text-[#b0a8a0] hover:text-foreground hover:bg-(--card-hover)"
+                        ? "text-foreground"
+                        : "text-[#a0a0a0] hover:text-foreground"
                     }`}
                   >
-                    <Icon className="h-4 w-4" />
-                    {item.label}
+                    {/* Active background */}
+                    {isActive && (
+                      <>
+                        <div className={`absolute inset-0 bg-gradient-to-r ${item.color} rounded-lg opacity-60`} />
+                        <div className="absolute inset-0 bg-white/[0.05] backdrop-blur-sm rounded-lg" />
+                      </>
+                    )}
+                    <Icon className={`h-4 w-4 relative z-10 transition-transform duration-200 ${isActive ? 'scale-110' : 'group-hover:scale-105'}`} />
+                    <span className="relative z-10 font-medium">{item.label}</span>
                   </Link>
                 );
               })}
@@ -423,13 +441,16 @@ export default function Nav() {
           </div>
 
           {/* Right Side */}
-          <div className="flex items-center gap-2 md:gap-3">
+          <div className="flex items-center gap-1.5 md:gap-2">
             {/* Status - shown on all screens */}
-            <div className="flex items-center gap-1.5 md:gap-2 text-xs md:text-sm">
-              <div
-                className={`w-2 h-2 rounded-full shrink-0 ${status.online ? "bg-(--success)" : "bg-(--error)"}`}
-              />
-              <span className="text-[#b0a8a0] truncate max-w-25 md:max-w-none">
+            <div className="flex items-center gap-2 text-xs md:text-sm px-2 py-1.5 rounded-lg bg-white/[0.03] border border-white/[0.06]">
+              <div className={`relative flex items-center justify-center ${status.inferenceOnline ? 'text-emerald-400' : status.online ? 'text-amber-400' : 'text-red-400'}`}>
+                <div className={`w-2 h-2 rounded-full ${status.inferenceOnline ? 'bg-emerald-400' : status.online ? 'bg-amber-400' : 'bg-red-400'} ${status.inferenceOnline ? 'animate-pulse' : ''}`} />
+                {status.inferenceOnline && (
+                  <div className="absolute inset-0 w-2 h-2 rounded-full bg-emerald-400 animate-ping opacity-30" />
+                )}
+              </div>
+              <span className="text-[#a0a0a0] truncate max-w-24 md:max-w-32 font-medium">
                 {status.inferenceOnline
                   ? status.model || "Ready"
                   : status.online
@@ -440,29 +461,29 @@ export default function Nav() {
 
             <button
               onClick={() => setApiKeyOpen(true)}
-              className="hidden md:flex items-center gap-2 px-3 py-1.5 text-sm border border-(--border) rounded-md hover:bg-(--card-hover) transition-colors"
+              className="hidden md:flex items-center gap-2 px-3 py-1.5 text-sm bg-white/[0.03] hover:bg-white/[0.08] border border-white/[0.08] hover:border-white/[0.12] rounded-lg transition-all duration-200"
               title={apiKeySet ? "API key set (click to update)" : "Set API key"}
             >
-              <Key className="h-4 w-4" />
-              {apiKeySet ? "Key" : "Set Key"}
+              <Key className="h-4 w-4 text-[#a0a0a0]" />
+              <span className="text-[#a0a0a0]">{apiKeySet ? "Key" : "Set Key"}</span>
             </button>
 
             <button
               onClick={() => setPaletteOpen(true)}
-              className="p-2 md:hidden rounded-md hover:bg-(--card-hover) transition-colors"
+              className="p-2 md:hidden rounded-lg hover:bg-white/[0.08] transition-colors"
               title="Search"
             >
-              <Search className="h-4 w-4 text-[#b0a8a0]" />
+              <Search className="h-4 w-4 text-[#888]" />
             </button>
 
             <button
               onClick={() => setPaletteOpen(true)}
-              className="hidden md:flex items-center gap-2 px-3 py-1.5 text-sm border border-(--border) rounded-md hover:bg-(--card-hover) transition-colors"
+              className="hidden md:flex items-center gap-2 px-3 py-1.5 text-sm bg-white/[0.03] hover:bg-white/[0.08] border border-white/[0.08] hover:border-white/[0.12] rounded-lg transition-all duration-200"
               title="Command palette (Ctrl/⌘K)"
             >
-              <Search className="h-4 w-4" />
-              <span className="text-[#b0a8a0]">Search</span>
-              <span className="ml-1 text-[10px] font-mono text-[#9a9590] border border-(--border) rounded px-1.5 py-0.5">
+              <Search className="h-4 w-4 text-[#a0a0a0]" />
+              <span className="text-[#a0a0a0]">Search</span>
+              <span className="ml-1 text-[10px] font-mono text-[#666] bg-white/[0.05] border border-white/[0.08] rounded px-1.5 py-0.5">
                 ⌘K
               </span>
             </button>
@@ -471,40 +492,44 @@ export default function Nav() {
             <div className="relative hidden md:block">
               <button
                 onClick={() => setActionsOpen(!actionsOpen)}
-                className="flex items-center gap-2 px-3 py-2 text-sm border border-(--border) rounded-md hover:bg-(--card-hover) transition-colors"
+                className="flex items-center gap-2 px-3 py-1.5 text-sm bg-white/[0.03] hover:bg-white/[0.08] border border-white/[0.08] hover:border-white/[0.12] rounded-lg transition-all duration-200"
               >
-                Actions
-                <Menu className="h-4 w-4" />
+                <span className="text-[#a0a0a0]">Actions</span>
+                <Menu className="h-4 w-4 text-[#888]" />
               </button>
 
               {actionsOpen && (
                 <>
                   <div className="fixed inset-0" onClick={() => setActionsOpen(false)} />
-                  <div className="absolute right-0 mt-2 w-48 bg-(--card) border border-(--border) rounded-md shadow-lg z-50">
+                  <div className="absolute right-0 mt-2 w-52 bg-[#111111]/95 backdrop-blur-xl border border-white/[0.08] rounded-xl shadow-2xl shadow-black/50 z-50 overflow-hidden py-1">
                     <button
                       onClick={handleRefresh}
-                      className="flex items-center gap-2 w-full px-4 py-2 text-sm hover:bg-(--card-hover)"
+                      className="flex items-center gap-3 w-full px-4 py-2.5 text-sm hover:bg-white/[0.05] transition-colors group"
                     >
-                      <RefreshCw className="h-4 w-4" /> Refresh
+                      <RefreshCw className="h-4 w-4 text-[#666] group-hover:text-[#888]" /> 
+                      <span className="text-[#a0a0a0] group-hover:text-foreground">Refresh</span>
                     </button>
                     <button
                       onClick={handleEvict}
-                      className="flex items-center gap-2 w-full px-4 py-2 text-sm hover:bg-(--card-hover)"
+                      className="flex items-center gap-3 w-full px-4 py-2.5 text-sm hover:bg-white/[0.05] transition-colors group"
                     >
-                      <Square className="h-4 w-4" /> Stop Model
+                      <Square className="h-4 w-4 text-red-400/70 group-hover:text-red-400" /> 
+                      <span className="text-red-400/70 group-hover:text-red-400">Stop Model</span>
                     </button>
-                    <div className="border-t border-(--border)" />
+                    <div className="border-t border-white/[0.06] my-1" />
                     <button
                       onClick={handleExport}
-                      className="flex items-center gap-2 w-full px-4 py-2 text-sm hover:bg-(--card-hover)"
+                      className="flex items-center gap-3 w-full px-4 py-2.5 text-sm hover:bg-white/[0.05] transition-colors group"
                     >
-                      <Download className="h-4 w-4" /> Export Recipes
+                      <Download className="h-4 w-4 text-[#666] group-hover:text-[#888]" /> 
+                      <span className="text-[#a0a0a0] group-hover:text-foreground">Export Recipes</span>
                     </button>
                     <button
                       onClick={handleImport}
-                      className="flex items-center gap-2 w-full px-4 py-2 text-sm hover:bg-(--card-hover)"
+                      className="flex items-center gap-3 w-full px-4 py-2.5 text-sm hover:bg-white/[0.05] transition-colors group"
                     >
-                      <Upload className="h-4 w-4" /> Import Recipes
+                      <Upload className="h-4 w-4 text-[#666] group-hover:text-[#888]" /> 
+                      <span className="text-[#a0a0a0] group-hover:text-foreground">Import Recipes</span>
                     </button>
                   </div>
                 </>
@@ -523,39 +548,55 @@ export default function Nav() {
             onClick={() => setMobileMenuOpen(false)}
           />
           {/* Drawer */}
-          <div className="absolute left-0 top-0 bottom-0 w-72 bg-(--card) border-r border-(--border) animate-slide-in-left">
+          <div className="absolute left-0 top-0 bottom-0 w-72 bg-[#0a0a0a]/95 backdrop-blur-xl border-r border-white/[0.06] animate-slide-in-left shadow-2xl">
             {/* Header */}
-            <div className="flex items-center justify-between p-4 pt-[calc(1rem+env(safe-area-inset-top,0))] border-b border-(--border)">
-              <div className="flex items-center gap-2">
-                <Layers className="h-5 w-5 text-(--accent)" />
-                <span className="font-semibold">vLLM Studio</span>
+            <div className="flex items-center justify-between p-4 pt-[calc(1rem+env(safe-area-inset-top,0))] border-b border-white/[0.06]">
+              <div className="flex items-center gap-3">
+                <div className="relative">
+                  <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-violet-500 via-purple-500 to-fuchsia-500 flex items-center justify-center shadow-lg shadow-purple-500/20">
+                    <Layers className="h-5 w-5 text-white" />
+                  </div>
+                  <div className="absolute -inset-0.5 bg-gradient-to-br from-violet-500 to-fuchsia-500 rounded-xl blur opacity-30" />
+                </div>
+                <div>
+                  <span className="font-semibold text-foreground">vLLM Studio</span>
+                  <div className="text-[10px] text-[#666] font-medium tracking-wide">AI INFERENCE</div>
+                </div>
               </div>
               <button
                 onClick={() => setMobileMenuOpen(false)}
-                className="p-2 rounded-lg hover:bg-(--accent) transition-colors"
+                className="p-2 rounded-xl hover:bg-white/[0.08] transition-colors"
               >
-                <X className="h-5 w-5" />
+                <X className="h-5 w-5 text-[#888]" />
               </button>
             </div>
 
             {/* Status */}
-            <div className="px-4 py-3 border-b border-(--border)">
-              <div className="flex items-center gap-2">
-                <div
-                  className={`w-2 h-2 rounded-full ${status.online ? "bg-(--success)" : "bg-(--error)"}`}
-                />
-                <span className="text-sm text-[#b0a8a0]">
-                  {status.inferenceOnline
-                    ? status.model || "No model"
-                    : status.online
-                      ? "Inference offline"
-                      : "Offline"}
-                </span>
+            <div className="px-4 py-3 border-b border-white/[0.06]">
+              <div className="flex items-center gap-3">
+                <div className={`relative flex items-center justify-center ${status.inferenceOnline ? 'text-emerald-400' : status.online ? 'text-amber-400' : 'text-red-400'}`}>
+                  <div className={`w-2.5 h-2.5 rounded-full ${status.inferenceOnline ? 'bg-emerald-400' : status.online ? 'bg-amber-400' : 'bg-red-400'} ${status.inferenceOnline ? 'animate-pulse' : ''}`} />
+                  {status.inferenceOnline && (
+                    <div className="absolute inset-0 w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping opacity-30" />
+                  )}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-medium text-foreground truncate">
+                    {status.inferenceOnline
+                      ? status.model || "Ready"
+                      : status.online
+                        ? "Inference offline"
+                        : "Offline"}
+                  </div>
+                  <div className="text-xs text-[#666]">
+                    {status.online ? "Controller online" : "Controller offline"}
+                  </div>
+                </div>
               </div>
             </div>
 
             {/* Navigation */}
-            <nav className="p-2">
+            <nav className="p-3 space-y-1">
               {navItems.map((item) => {
                 const Icon = item.icon;
                 const isActive = pathname === item.href;
@@ -564,18 +605,29 @@ export default function Nav() {
                     key={item.href}
                     href={item.href}
                     onClick={() => setMobileMenuOpen(false)}
-                    className={`flex items-center gap-3 px-3 py-3 rounded-lg transition-colors ${
+                    className={`group flex items-center gap-3.5 px-3 py-3 rounded-xl transition-all duration-200 relative overflow-hidden ${
                       isActive
-                        ? "bg-(--accent) text-foreground"
-                        : "text-[#b0a8a0] hover:bg-(--card-hover) hover:text-foreground"
+                        ? "text-foreground"
+                        : "text-[#a0a0a0] hover:text-foreground hover:bg-white/[0.03]"
                     }`}
                   >
-                    <Icon className="h-5 w-5" />
-                    <div className="flex-1">
-                      <div className="font-medium">{item.label}</div>
-                      <div className="text-xs text-[#9a9590]">{item.description}</div>
+                    {/* Active background gradient */}
+                    {isActive && (
+                      <>
+                        <div className={`absolute inset-0 bg-gradient-to-r ${item.color} opacity-50`} />
+                        <div className="absolute inset-0 bg-white/[0.05] backdrop-blur-sm" />
+                        <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-6 bg-gradient-to-b from-white/80 to-white/40 rounded-r-full" />
+                      </>
+                    )}
+                    
+                    <span className="relative z-10">
+                      <Icon className={`h-5 w-5 transition-transform duration-200 ${isActive ? 'scale-110' : 'group-hover:scale-105'}`} />
+                    </span>
+                    <div className="flex-1 relative z-10">
+                      <div className="font-medium text-sm">{item.label}</div>
+                      <div className={`text-xs ${isActive ? 'text-white/60' : 'text-[#666]'}`}>{item.description}</div>
                     </div>
-                    <ChevronRight className="h-4 w-4 text-[#9a9590]" />
+                    <ChevronRight className={`h-4 w-4 transition-all duration-200 relative z-10 ${isActive ? 'text-white/60 translate-x-0.5' : 'text-[#444] group-hover:text-[#666] group-hover:translate-x-0.5'}`} />
                   </Link>
                 );
               })}

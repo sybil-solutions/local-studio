@@ -5,6 +5,7 @@ import { useCallback, useRef, useEffect } from "react";
 import { useAppStore } from "@/store";
 import type { LanguageModelUsage } from "ai";
 import { api } from "@/lib/api";
+import { safeJsonStringify } from "@/lib/safe-json";
 import type { UIMessage } from "@ai-sdk/react";
 
 interface UseChatTransportOptions {
@@ -57,7 +58,7 @@ export function useChatTransport({
             type: "function" as const,
             function: {
               name: p.type.replace(/^tool-/, ""),
-              arguments: "input" in p ? JSON.stringify(p.input) : "{}",
+              arguments: "input" in p ? safeJsonStringify(p.input, "{}") : "{}",
             },
           }));
 

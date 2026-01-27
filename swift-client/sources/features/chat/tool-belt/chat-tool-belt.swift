@@ -44,6 +44,8 @@ struct ChatToolBelt: View {
           onMcpToggle: { settings.mcpEnabled.toggle() },
           deepResearchEnabled: deepResearchEnabled,
           onDeepResearchToggle: { deepResearchEnabled.toggle() },
+          planModeEnabled: settings.planModeEnabled,
+          onPlanModeToggle: { settings.planModeEnabled.toggle() },
           isRecording: recorder.isRecording,
           onAddFile: { showFilePicker = true },
           onAddImage: { showImagePicker = true },

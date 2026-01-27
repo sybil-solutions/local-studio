@@ -28,6 +28,18 @@ enum AnyCodable: Codable {
     }
   }
 
+  var anyValue: Any {
+    switch self {
+    case .string(let value): return value
+    case .int(let value): return value
+    case .double(let value): return value
+    case .bool(let value): return value
+    case .array(let value): return value.map { $0.anyValue }
+    case .object(let value): return value.mapValues { $0.anyValue }
+    case .null: return NSNull()
+    }
+  }
+
   var stringValue: String {
     switch self {
     case .string(let v): return v

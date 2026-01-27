@@ -3,14 +3,24 @@
  */
 
 /**
- * Convert bytes/MB/GB values to GB for display
- * Handles inconsistent API responses that may be in bytes, MB, or GB
+ * Safely convert a value to a valid number, returning default if invalid
  */
-function toGB(value: number): number {
-  if (value > 1e10) return value / (1024 * 1024 * 1024); // Bytes
-  if (value > 1e8) return value / (1024 * 1024 * 1024); // Bytes (smaller)
-  if (value > 1000) return value / 1024; // MB
-  return value; // Already GB
+function safeNumber(value: unknown, defaultValue = 0): number {
+  if (value === null || value === undefined) return defaultValue;
+  const num = Number(value);
+  if (!Number.isFinite(num) || Number.isNaN(num) || num < 0) return defaultValue;
+  return num;
+}
+
+/**
+ * Convert MB values to GB for display
+ * The API returns memory in MB (memory_used_mb, memory_total_mb fields)
+ * This consistently divides by 1024 to convert MB -> GB
+ */
+function toGB(value: number | null | undefined): number {
+  const safe = safeNumber(value, 0);
+  // Always treat as MB and convert to GB
+  return Math.round((safe / 1024) * 10) / 10;
 }
 
 function formatNumber(n: number): string {

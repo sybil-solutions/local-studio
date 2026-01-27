@@ -3,6 +3,7 @@ import type { Hono } from "hono";
 import { randomUUID } from "node:crypto";
 import type { AppContext } from "../types/context";
 import { notFound } from "../core/errors";
+import { compactChatSession } from "../services/chat-compaction";
 
 /**
  * Register chat session routes.
@@ -21,6 +22,31 @@ export const registerChatsRoutes = (app: Hono, context: AppContext): void => {
       throw notFound("Session not found");
     }
     return ctx.json({ session });
+  });
+
+  app.post("/chats/:sessionId/compact", async (ctx) => {
+    const sessionId = ctx.req.param("sessionId");
+    let body: Record<string, unknown> = {};
+    try {
+      body = (await ctx.req.json()) as Record<string, unknown>;
+    } catch {
+      body = {};
+    }
+
+    const model = typeof body["model"] === "string" ? body["model"] : undefined;
+    const systemPrompt = typeof body["system"] === "string" ? body["system"] : undefined;
+    const title = typeof body["title"] === "string" ? body["title"] : undefined;
+    const preserveFirst = body["preserve_first"] !== false;
+    const preserveLast = body["preserve_last"] !== false;
+
+    const result = await compactChatSession(context, sessionId, {
+      model,
+      systemPrompt,
+      title,
+      preserveFirst,
+      preserveLast,
+    });
+    return ctx.json(result);
   });
 
   app.post("/chats", async (ctx) => {

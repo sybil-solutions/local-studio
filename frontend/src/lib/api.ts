@@ -342,7 +342,7 @@ class APIClient {
     messages: unknown[];
     tools?: unknown[];
   }): Promise<{ input_tokens?: number; breakdown?: { messages?: number; tools?: number } }> {
-    return this.request("/v1/chat/completions/tokenize", {
+    return this.request("/v1/tokenize-chat-completions", {
       method: "POST",
       body: JSON.stringify(data),
     });

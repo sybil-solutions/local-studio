@@ -1,29 +1,78 @@
+// CRITICAL
 import SwiftUI
 
 struct ChatMessageMetaDropdown: View {
-  let thinking: String?
+  let thinkingBlocks: [String]
   let toolCalls: [ToolCall]
-  let tokenCount: Int?
+  let toolResults: [String]
+  let onShowActions: () -> Void
   @State private var isExpanded = false
 
   var body: some View {
-    if thinking == nil && toolCalls.isEmpty { EmptyView() } else {
-      VStack(alignment: .leading, spacing: 6) {
+    if thinkingBlocks.isEmpty && toolCalls.isEmpty && toolResults.isEmpty {
+      EmptyView()
+    } else {
+      VStack(alignment: .leading, spacing: 8) {
         Button(action: { isExpanded.toggle() }) {
           HStack(spacing: 6) {
             Text(summary).font(AppTheme.captionFont).foregroundColor(AppTheme.muted)
             Spacer()
             Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
-              .font(.system(size: 10)).foregroundColor(AppTheme.muted)
+              .font(.system(size: 10))
+              .foregroundColor(AppTheme.muted)
           }
         }
+
         if isExpanded {
-          LazyVGrid(columns: [GridItem(.adaptive(minimum: 90), spacing: 6)], spacing: 6) {
-            if let seconds = thoughtSeconds {
-              chip("Thought • \(seconds)s", icon: "brain")
+          VStack(alignment: .leading, spacing: 10) {
+            if !thinkingBlocks.isEmpty {
+              sectionTitle("Thinking")
+              ForEach(thinkingBlocks, id: \.self) { block in
+                Text(block)
+                  .font(AppTheme.monoFont)
+                  .foregroundColor(AppTheme.foreground)
+                  .padding(8)
+                  .background(AppTheme.card)
+                  .cornerRadius(8)
+              }
             }
-            ForEach(toolCalls) { call in
-              chip(call.function.name, icon: "wrench")
+
+            if !toolCalls.isEmpty {
+              sectionTitle("Tool calls")
+              ForEach(toolCalls) { call in
+                VStack(alignment: .leading, spacing: 4) {
+                  Text(call.function.name)
+                    .font(AppTheme.captionFont.weight(.semibold))
+                    .foregroundColor(AppTheme.foreground)
+                  Text(call.function.arguments)
+                    .font(AppTheme.monoFont)
+                    .foregroundColor(AppTheme.muted)
+                }
+                .padding(8)
+                .background(AppTheme.card)
+                .cornerRadius(8)
+              }
+            }
+
+            if !toolResults.isEmpty {
+              sectionTitle("Tool results")
+              ForEach(Array(toolResults.enumerated()), id: \.offset) { _, result in
+                Text(result)
+                  .font(AppTheme.monoFont)
+                  .foregroundColor(AppTheme.muted)
+                  .padding(8)
+                  .background(AppTheme.card)
+                  .cornerRadius(8)
+              }
+            }
+
+            Button(action: onShowActions) {
+              HStack(spacing: 6) {
+                Text("Open full log").font(AppTheme.captionFont)
+                Image(systemName: "chevron.right")
+                  .font(.system(size: 10, weight: .semibold))
+              }
+              .foregroundColor(AppTheme.muted)
             }
           }
         }
@@ -33,28 +82,13 @@ struct ChatMessageMetaDropdown: View {
 
   private var summary: String {
     var parts: [String] = []
-    if thinking != nil { parts.append("Thought") }
+    if !thinkingBlocks.isEmpty { parts.append("Thinking") }
     if !toolCalls.isEmpty { parts.append("\(toolCalls.count) tools") }
+    if !toolResults.isEmpty { parts.append("Results") }
     return parts.isEmpty ? "Details" : parts.joined(separator: " • ")
   }
 
-  private var thoughtSeconds: Int? {
-    guard thinking != nil else { return nil }
-    let base = Double(tokenCount ?? max(1, (thinking?.count ?? 0) / 4))
-    return max(1, Int(ceil(base / 25)))
-  }
-
-  @ViewBuilder
-  private func chip(_ label: String, icon: String) -> some View {
-    HStack(spacing: 4) {
-      Image(systemName: icon).font(.system(size: 10))
-      Text(label).font(AppTheme.captionFont)
-    }
-    .foregroundColor(AppTheme.muted)
-    .padding(.horizontal, 8)
-    .padding(.vertical, 4)
-    .background(AppTheme.background)
-    .cornerRadius(999)
-    .overlay(RoundedRectangle(cornerRadius: 999).stroke(AppTheme.border, lineWidth: 1))
+  private func sectionTitle(_ text: String) -> some View {
+    Text(text).font(AppTheme.captionFont).foregroundColor(AppTheme.muted)
   }
 }

@@ -7,77 +7,152 @@ extension ChatDetailViewModel {
       apiKey: settings?.apiKey ?? "",
       baseURL: settings?.backendUrl ?? "http://localhost:8080"
     )
-    let messages = buildPromptMessages()
-    let toolDefs = settings?.mcpEnabled == true ? tools.map { toolDef(for: $0) } : nil
     let model = sessionModel ?? "default"
+    let maxToolRounds = 10
+    var rounds = 0
+    var finalAssistantContent = ""
 
-    guard let result = try? await openAIService.streamChat(
-      messages: messages,
-      model: model,
-      tools: toolDefs
-    ) else { return }
+    while true {
+      // Build tools: MCP defs (if enabled) + plan defs (if enabled)
+      var toolDefs: [ToolDefinition] = []
+      if settings?.mcpEnabled == true { toolDefs.append(contentsOf: tools.map { toolDef(for: $0) }) }
+      if settings?.planModeEnabled == true { toolDefs.append(contentsOf: PlanTools.definitions) }
+      let activeTools = toolDefs.isEmpty ? nil : toolDefs
 
-    let content = wrapThinking(result.reasoning, content: result.content)
-    let assistantId = UUID().uuidString
-    let assistant = StoredMessage(
-      id: assistantId,
-      role: "assistant",
-      content: content,
-      model: nil,
-      toolCalls: result.toolCalls.isEmpty ? nil : result.toolCalls
-    )
-    self.messages.append(assistant)
-    _ = try? await api.addMessage(sessionId: sessionId, message: assistant)
-    agentMeta[assistantId] = AgentMeta(
-      thinkingBlocks: thinkingBlocks(from: result.reasoning),
-      toolCalls: result.toolCalls,
-      toolResults: []
-    )
+      let promptMessages = buildPromptMessages()
+      let tokenization = await tokenizePrompt(api: api, model: model, messages: promptMessages, tools: activeTools)
 
-    if !result.toolCalls.isEmpty {
-      let results = await McpToolRunner(api: api).run(calls: result.toolCalls)
-      for toolMessage in results {
-        self.messages.append(toolMessage)
-        _ = try? await api.addMessage(sessionId: sessionId, message: toolMessage)
-      }
-      if var meta = agentMeta[assistantId] {
-        meta.toolResults.append(contentsOf: results.compactMap { $0.content })
-        agentMeta[assistantId] = meta
+      let result: OpenAIChatService.StreamResult
+      do {
+        result = try await openAIService.streamChat(
+          messages: promptMessages,
+          model: model,
+          tools: activeTools
+        )
+      } catch {
+        self.error = error.localizedDescription
+        return
       }
 
-      guard let final = try? await openAIService.streamChat(
-        messages: buildPromptMessages(),
-        model: model,
-        tools: nil
-      ) else { return }
-
-      let finalContent = wrapThinking(final.reasoning, content: final.content)
-      let finalMsg = StoredMessage(
-        id: UUID().uuidString,
+      let content = wrapThinking(result.reasoning, content: result.content)
+      let assistantId = UUID().uuidString
+      let tokenSnapshot = mergeTokenUsage(tokenization: tokenization, usage: result.usage)
+      let assistant = StoredMessage(
+        id: assistantId,
         role: "assistant",
-        content: finalContent,
-        model: nil,
-        toolCalls: final.toolCalls.isEmpty ? nil : final.toolCalls
+        content: content,
+        model: model,
+        toolCalls: result.toolCalls.isEmpty ? nil : result.toolCalls,
+        promptTokens: tokenSnapshot.promptTokens,
+        toolsTokens: tokenSnapshot.toolsTokens,
+        totalInputTokens: tokenSnapshot.totalInputTokens,
+        completionTokens: tokenSnapshot.completionTokens
       )
-      self.messages.append(finalMsg)
-      _ = try? await api.addMessage(sessionId: sessionId, message: finalMsg)
-      agentMeta[finalMsg.id] = AgentMeta(
-        thinkingBlocks: thinkingBlocks(from: final.reasoning),
-        toolCalls: final.toolCalls,
+      self.messages.append(assistant)
+      refreshUsageSnapshot()
+      _ = try? await api.addMessage(sessionId: sessionId, message: assistant)
+      agentMeta[assistantId] = AgentMeta(
+        thinkingBlocks: thinkingBlocks(from: result.reasoning, content: content),
+        toolCalls: result.toolCalls,
         toolResults: []
       )
-      await updateTitle(user: userContent, assistant: final.content, api: api)
-    } else {
-      await updateTitle(user: userContent, assistant: result.content, api: api)
+
+      // No tool calls — done
+      if result.toolCalls.isEmpty {
+        finalAssistantContent = result.content
+        break
+      }
+
+      // Split calls: plan vs MCP
+      let planCalls = result.toolCalls.filter { PlanTools.names.contains($0.function.name) }
+      let mcpCalls = result.toolCalls.filter { !PlanTools.names.contains($0.function.name) }
+
+      // Handle plan calls locally
+      for call in planCalls {
+        let planResult = PlanToolHandler.handle(call: call, currentPlan: currentPlan)
+        currentPlan = planResult.plan
+        let toolMsg = StoredMessage(
+          id: UUID().uuidString, role: "tool", content: planResult.resultContent,
+          model: nil, toolCalls: nil, toolCallId: call.id
+        )
+        self.messages.append(toolMsg)
+        _ = try? await api.addMessage(sessionId: sessionId, message: toolMsg)
+      }
+
+      // Handle MCP calls via runner
+      if !mcpCalls.isEmpty {
+        let mcpResults = await McpToolRunner(api: api).run(calls: mcpCalls)
+        for toolMessage in mcpResults {
+          self.messages.append(toolMessage)
+          _ = try? await api.addMessage(sessionId: sessionId, message: toolMessage)
+        }
+        if var meta = agentMeta[assistantId] {
+          meta.toolResults.append(contentsOf: mcpResults.compactMap { $0.content })
+          agentMeta[assistantId] = meta
+        }
+      }
+
+      rounds += 1
+      if rounds >= maxToolRounds {
+        finalAssistantContent = result.content
+        break
+      }
+    }
+
+    if !finalAssistantContent.isEmpty {
+      await updateTitle(user: userContent, assistant: finalAssistantContent, api: api)
     }
   }
 
-  private func thinkingBlocks(from thinking: String) -> [String] {
-    thinking.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? [] : [thinking]
+  private func tokenizePrompt(
+    api: ApiClient,
+    model: String,
+    messages: [OpenAIMessage],
+    tools: [ToolDefinition]?
+  ) async -> TokenizeChatResponse? {
+    do {
+      return try await api.tokenizeChatCompletions(model: model, messages: messages, tools: tools)
+    } catch {
+      return nil
+    }
+  }
+
+  private func mergeTokenUsage(
+    tokenization: TokenizeChatResponse?,
+    usage: CompletionUsage?
+  ) -> TokenUsageSnapshot {
+    let promptTokens = tokenization?.breakdown?.messages ?? usage?.promptTokens
+    let toolsTokens = tokenization?.breakdown?.tools
+    let totalInputTokens = tokenization?.inputTokens ?? usage?.promptTokens
+    let completionTokens = usage?.completionTokens
+    return TokenUsageSnapshot(
+      promptTokens: promptTokens,
+      toolsTokens: toolsTokens,
+      totalInputTokens: totalInputTokens,
+      completionTokens: completionTokens
+    )
+  }
+
+  private struct TokenUsageSnapshot {
+    let promptTokens: Int?
+    let toolsTokens: Int?
+    let totalInputTokens: Int?
+    let completionTokens: Int?
+  }
+
+  private func thinkingBlocks(from thinking: String, content: String) -> [String] {
+    let trimmed = thinking.trimmingCharacters(in: .whitespacesAndNewlines)
+    if !trimmed.isEmpty { return [trimmed] }
+    return ThinkingParser.extractAllBlocks(content)
   }
 
   private func wrapThinking(_ thinking: String, content: String) -> String {
     let trimmed = thinking.trimmingCharacters(in: .whitespacesAndNewlines)
-    return trimmed.isEmpty ? content : "<think>\(trimmed)</think>\n\(content)"
+    guard !trimmed.isEmpty else { return content }
+    let lowerContent = content.lowercased()
+    if lowerContent.contains("<think>") || lowerContent.contains("<thinking>") {
+      return content
+    }
+    return "<think>\(trimmed)</think>\n\(content)"
   }
 }

@@ -1,3 +1,4 @@
+// CRITICAL
 import SwiftUI
 
 struct ChatMessageRow: View {
@@ -6,32 +7,70 @@ struct ChatMessageRow: View {
   let meta: AgentMeta?
   let onShowActions: (AgentMeta) -> Void
 
+  @State private var selectedArtifact: Artifact?
+
+  private var isUser: Bool { message.role == "user" }
+
   var body: some View {
-    HStack(alignment: .top) {
-      if message.role == "assistant" { Spacer() }
-      VStack(alignment: .leading, spacing: 8) {
-        Text(message.role.capitalized).font(AppTheme.captionFont).foregroundColor(AppTheme.muted)
-        if isStreaming {
-          Text(parsed.main).font(AppTheme.bodyFont).foregroundColor(AppTheme.foreground)
-        } else {
-          MarkdownText(content: parsed.main).font(AppTheme.bodyFont).foregroundColor(AppTheme.foreground)
-        }
-        if let meta, message.role == "assistant" {
-          Button(action: { onShowActions(meta) }) {
-            HStack(spacing: 6) {
-              Image(systemName: "brain")
-              Text(summary(for: meta))
-              Image(systemName: "chevron.up")
+    if isUser {
+      userBubble
+    } else {
+      assistantBlock
+    }
+  }
+
+  // MARK: - User message: right-aligned bubble
+
+  private var userBubble: some View {
+    HStack {
+      Spacer(minLength: 60)
+      Text(message.content ?? "")
+        .font(AppTheme.bodyFont)
+        .foregroundColor(AppTheme.foreground)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .background(AppTheme.card)
+        .cornerRadius(16)
+    }
+  }
+
+  // MARK: - Assistant message: full-width, no bubble
+
+  private var assistantBlock: some View {
+    VStack(alignment: .leading, spacing: 10) {
+      // Message text
+      if isStreaming {
+        Text(parsed.main)
+          .font(AppTheme.bodyFont)
+          .foregroundColor(AppTheme.foreground)
+      } else {
+        MarkdownText(content: artifactResult.text)
+          .foregroundColor(AppTheme.foreground)
+
+        // Artifact cards
+        if !artifactResult.artifacts.isEmpty {
+          ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 10) {
+              ForEach(artifactResult.artifacts) { artifact in
+                ArtifactCard(artifact: artifact) { selectedArtifact = artifact }
+              }
             }
-            .font(AppTheme.captionFont)
-            .foregroundColor(AppTheme.muted)
           }
         }
       }
-      .padding(12)
-      .background(message.role == "assistant" ? AppTheme.accent : AppTheme.card)
-      .cornerRadius(12)
-      if message.role == "user" { Spacer() }
+
+      if let meta, !meta.thinkingBlocks.isEmpty || !meta.toolCalls.isEmpty || !meta.toolResults.isEmpty {
+        ChatMessageMetaDropdown(
+          thinkingBlocks: meta.thinkingBlocks,
+          toolCalls: meta.toolCalls,
+          toolResults: meta.toolResults,
+          onShowActions: { onShowActions(meta) }
+        )
+      }
+    }
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .sheet(item: $selectedArtifact) { artifact in
+      ArtifactViewerSheet(artifact: artifact)
     }
   }
 
@@ -39,10 +78,19 @@ struct ChatMessageRow: View {
     ThinkingParser.parse(message.content ?? "")
   }
 
-  private func summary(for meta: AgentMeta) -> String {
-    var parts: [String] = []
-    if !meta.thinkingBlocks.isEmpty { parts.append("Thinking") }
-    if !meta.toolCalls.isEmpty { parts.append("\(meta.toolCalls.count) tools") }
-    return parts.isEmpty ? "Actions" : parts.joined(separator: " • ")
+  private var artifactResult: ArtifactParseResult {
+    guard message.role == "assistant" else {
+      return ArtifactParseResult(text: parsed.main, artifacts: [])
+    }
+    return ArtifactParser.parse(parsed.main)
+  }
+
+}
+
+extension ChatMessageRow: Equatable {
+  static func == (lhs: ChatMessageRow, rhs: ChatMessageRow) -> Bool {
+    lhs.message.id == rhs.message.id
+      && lhs.message.content == rhs.message.content
+      && lhs.isStreaming == rhs.isStreaming
   }
 }

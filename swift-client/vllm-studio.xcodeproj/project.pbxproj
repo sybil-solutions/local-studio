@@ -3,7 +3,7 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 77;
+	objectVersion = 63;
 	objects = {
 
 /* Begin PBXBuildFile section */
@@ -13,10 +13,13 @@
 		0EBF6895EC3FB17821EEA0A2 /* mcp-tool-runner.swift in Sources */ = {isa = PBXBuildFile; fileRef = D107A8CE0BB8F52CEFC09CBC /* mcp-tool-runner.swift */; };
 		0F2F8613733F2EFE6289A042 /* usage-metric-row.swift in Sources */ = {isa = PBXBuildFile; fileRef = E084A8C833C638B842E5D51D /* usage-metric-row.swift */; };
 		10D1918CCDECE0A3A956FCFE /* chat-detail-view.swift in Sources */ = {isa = PBXBuildFile; fileRef = D50417FB0D172F747EC287C5 /* chat-detail-view.swift */; };
+		11F04054DC3B9DE869BDDFF1 /* artifact-web-view.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E3E9F7C13E606B971BF21DF /* artifact-web-view.swift */; };
 		143FE9A90C4AB8A43235C933 /* chat-attachment.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8FC78042A6C16E5CAC61D128 /* chat-attachment.swift */; };
 		14D2B007048D3571948CADEB /* api-usage.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC6FCD2B8E335A9B3150B522 /* api-usage.swift */; };
 		156D069F5083F8289A31DA08 /* metrics-models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 347555203324D0A8350B9457 /* metrics-models.swift */; };
+		15EB1358F5077C00AC898E70 /* artifact-viewer-sheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = F27D80AC9A52738D43E76817 /* artifact-viewer-sheet.swift */; };
 		182C83527EB6E59080E4A134 /* discover-filters-view.swift in Sources */ = {isa = PBXBuildFile; fileRef = 891A7E6D9A1EED201369EF4F /* discover-filters-view.swift */; };
+		18AB81ABA4975636F2ECA438 /* artifact-card.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE8030C9A4BA18F04B99A6BC /* artifact-card.swift */; };
 		1B4DCC3C9B9C4350475955F0 /* any-encodable.swift in Sources */ = {isa = PBXBuildFile; fileRef = 306F2C505FC1C0859959B6C4 /* any-encodable.swift */; };
 		1D33AA3298691DAB05115156 /* api-mcp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 83713DF1555EF243005AF9A7 /* api-mcp.swift */; };
 		224A4CE904520340106F24EC /* progress-bar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D941089FD6714CC74F3E2B3 /* progress-bar.swift */; };
@@ -34,6 +37,8 @@
 		3DE1E277742C0260E33AF2AB /* chat-thinking-parser.swift in Sources */ = {isa = PBXBuildFile; fileRef = BAEDF980EDAB619A40B57BC2 /* chat-thinking-parser.swift */; };
 		3E6CB2084B073AFC61C89E75 /* usage-rows.swift in Sources */ = {isa = PBXBuildFile; fileRef = 69F96F8ABC0C6C4B414F6B69 /* usage-rows.swift */; };
 		406B881BB4D90AFE96CCEC6B /* api-client.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E3797978315AD9DB9FCE4CE /* api-client.swift */; };
+		412EAB8151D5C73CE83D4354 /* artifact-detail-ext.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B2C09DF65FDDCC6E48A75A9 /* artifact-detail-ext.swift */; };
+		44BEEFDF174895A70EA15364 /* artifact-parser.swift in Sources */ = {isa = PBXBuildFile; fileRef = B41BA16DDE8988868AB2E04B /* artifact-parser.swift */; };
 		475DA2798EF025BC47098A53 /* settings-store.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE173E02AF24324E11B7DA66 /* settings-store.swift */; };
 		4928928E8DBBF92F9752492A /* logs-view-model.swift in Sources */ = {isa = PBXBuildFile; fileRef = BE08B3247AE6D19FCAE9100B /* logs-view-model.swift */; };
 		498ACAB0D621BC0871C24467 /* api-stream.swift in Sources */ = {isa = PBXBuildFile; fileRef = DEB6D6D2E0E38741C0DB978E /* api-stream.swift */; };
@@ -50,6 +55,7 @@
 		5808BA6D532B9F489AEEAD1D /* chat-tool-belt.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0FDB56C3EAD259DF8737F26 /* chat-tool-belt.swift */; };
 		584022B7AA1012B9AD95A2C4 /* openai-models.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA3C4DE8073E499328AB0EE2 /* openai-models.swift */; };
 		6078174594DC812D7A312842 /* discover-view.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8DF6507AD9F1645B93E706BF /* discover-view.swift */; };
+		669CC3AA968173408D80F6F6 /* artifact-model.swift in Sources */ = {isa = PBXBuildFile; fileRef = F40F3716FE802C63EA8AFE9D /* artifact-model.swift */; };
 		688D521A4DF2CE71A481692F /* api-codec.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8638C6AF81398A72EF5F03C3 /* api-codec.swift */; };
 		68F757AFA2C4C5B80A9D2927 /* chat-detail-completions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E175D285743C42061CE614E /* chat-detail-completions.swift */; };
 		6A30D7A8E4EB70256013CD8A /* gpu-models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9893EC661511D08EFC140DF0 /* gpu-models.swift */; };
@@ -69,6 +75,7 @@
 		80F765E98C3C609B916086E2 /* binding-optional.swift in Sources */ = {isa = PBXBuildFile; fileRef = 712146A1223BAE10F9ECF721 /* binding-optional.swift */; };
 		8483A8B9DB328FCF398EF274 /* dashboard-logs-card.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C9ED58645B2DD15FF9B0E7F /* dashboard-logs-card.swift */; };
 		85A9E5575645D538BB4BE7BC /* api-logs.swift in Sources */ = {isa = PBXBuildFile; fileRef = 573D80AF65D371EE00048574 /* api-logs.swift */; };
+		886B7A01386DB6BFE2BE5BA6 /* artifact-templates.swift in Sources */ = {isa = PBXBuildFile; fileRef = 960A2AEBB4535180A0B67842 /* artifact-templates.swift */; };
 		8A42905C368599D25713C9EA /* log-models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9BECD79B9AF7AF7B9C240E96 /* log-models.swift */; };
 		8C2D2366D35A7280F384CEA5 /* chat-agent-meta.swift in Sources */ = {isa = PBXBuildFile; fileRef = E53FAE8F64214EE141EFD025 /* chat-agent-meta.swift */; };
 		8ED4C597F727299D04CF1386 /* metrics-card.swift in Sources */ = {isa = PBXBuildFile; fileRef = 550751242F5784F776A48F8A /* metrics-card.swift */; };
@@ -77,6 +84,7 @@
 		91BD631AD4178A7B74144143 /* tab-shell.swift in Sources */ = {isa = PBXBuildFile; fileRef = 027E03DB29E8FC47B0AC4365 /* tab-shell.swift */; };
 		91EB63BCF5BC6638991F7112 /* chat-detail-title.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1882F9EF50283EF679C33C86 /* chat-detail-title.swift */; };
 		945EDE76969AD399449C4E7C /* chat-processing-bar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 613891A9AA4A8BD63D853252 /* chat-processing-bar.swift */; };
+		94EAD5ACEBCD5B1B44ABC581 /* chat-streaming-message-view.swift in Sources */ = {isa = PBXBuildFile; fileRef = C74927CEC78B99E7963A573C /* chat-streaming-message-view.swift */; };
 		94F9AB002CD9DF9589AF866D /* configs-mcp-section.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1DE8A013A1CC0D4714932633 /* configs-mcp-section.swift */; };
 		969EF819229EBBE385CCFFBC /* chat-session.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF664A7E4EB17B881FF9FA46 /* chat-session.swift */; };
 		9908CE031AD6D287E913A522 /* usage-view.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF8F621E24F789DE8776E5BB /* usage-view.swift */; };
@@ -89,7 +97,6 @@
 		AD3D60A449B1C84550EF6C23 /* chat-detail-stream.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45C341B50F73CB6A5138C58F /* chat-detail-stream.swift */; };
 		B0691D379A267DBE0574B48B /* dashboard-status-card.swift in Sources */ = {isa = PBXBuildFile; fileRef = 513B175DAFD6AD4BB53AD492 /* dashboard-status-card.swift */; };
 		B2B9333940B086BF0E5A101C /* realtime-store-handler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5815AFD1A3C52DF8B62AC276 /* realtime-store-handler.swift */; };
-		B34F4BDA39AA8739C0B7EFC1 /* OpenAI in Frameworks */ = {isa = PBXBuildFile; productRef = 1B588D11B315F2AE5E5A9191 /* OpenAI */; };
 		B73771CC293D513AB0E91640 /* drawer-menu-item.swift in Sources */ = {isa = PBXBuildFile; fileRef = F39AED0A427EA95AD654ACBC /* drawer-menu-item.swift */; };
 		B77738831F5B1001D6FE6F54 /* loading-view.swift in Sources */ = {isa = PBXBuildFile; fileRef = E56D50EBF3F672778253F8ED /* loading-view.swift */; };
 		B7F288F64812C1E495100686 /* chat-tool-belt-toolbar.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAA2B51F27F5DCE98838CF35 /* chat-tool-belt-toolbar.swift */; };
@@ -123,6 +130,7 @@
 		ED74C1BA758778D34BBEF21F /* sse-parser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 876CF92AB1281FDB646002AB /* sse-parser.swift */; };
 		EF7AF26AF339CAB03FEB68F9 /* chat-message-row.swift in Sources */ = {isa = PBXBuildFile; fileRef = 225750EE8CEA837070360293 /* chat-message-row.swift */; };
 		F0CFC14408C4BC3C8A35BA75 /* chat-input-bar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1510ABAD234068463F9E7CC7 /* chat-input-bar.swift */; };
+		F0E83025717916C0F05E8957 /* chat-plan-tools.swift in Sources */ = {isa = PBXBuildFile; fileRef = 694E08832E70D5756D1BE253 /* chat-plan-tools.swift */; };
 		F2785BB135D8695DBEA04AB8 /* quick-actions-card.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D162F32DDEE3188B88F79FB /* quick-actions-card.swift */; };
 		F4EFEC79D94DE03AC30CAC96 /* launch-progress-card.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0393432662AB595DCBA3BED6 /* launch-progress-card.swift */; };
 		FB7FA2C7CAAC2AD3D0101B3E /* chat-message-builder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 688B2E002EFC20A2D3305C83 /* chat-message-builder.swift */; };
@@ -159,11 +167,13 @@
 		347555203324D0A8350B9457 /* metrics-models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "metrics-models.swift"; sourceTree = "<group>"; };
 		37866AE0A87C117BD01E9716 /* drawer-menu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "drawer-menu.swift"; sourceTree = "<group>"; };
 		37B7CB90D28F6EFCA66E339D /* metric-row.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "metric-row.swift"; sourceTree = "<group>"; };
+		3B2C09DF65FDDCC6E48A75A9 /* artifact-detail-ext.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "artifact-detail-ext.swift"; sourceTree = "<group>"; };
 		416475D5A0DEE461E918EA86 /* configs-api-section.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "configs-api-section.swift"; sourceTree = "<group>"; };
 		42519DE2FA2958B83EA520D8 /* process-info.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "process-info.swift"; sourceTree = "<group>"; };
 		45C341B50F73CB6A5138C58F /* chat-detail-stream.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "chat-detail-stream.swift"; sourceTree = "<group>"; };
 		4B03F732527E991FEA9C0401 /* recipe-row-view.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "recipe-row-view.swift"; sourceTree = "<group>"; };
 		4DC1852D1FB598DE32EF63D4 /* root-view.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "root-view.swift"; sourceTree = "<group>"; };
+		4E3E9F7C13E606B971BF21DF /* artifact-web-view.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "artifact-web-view.swift"; sourceTree = "<group>"; };
 		5024BF18816EB8504C38B60F /* recipe-models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "recipe-models.swift"; sourceTree = "<group>"; };
 		513B175DAFD6AD4BB53AD492 /* dashboard-status-card.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "dashboard-status-card.swift"; sourceTree = "<group>"; };
 		51A9C72B2C235AC74B009DAD /* api-chat-completions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "api-chat-completions.swift"; sourceTree = "<group>"; };
@@ -179,6 +189,7 @@
 		66EB4831A47C5A389AB88201 /* recipes-view.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "recipes-view.swift"; sourceTree = "<group>"; };
 		68409965210C2DD617989D2C /* usage-tokens-card.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "usage-tokens-card.swift"; sourceTree = "<group>"; };
 		688B2E002EFC20A2D3305C83 /* chat-message-builder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "chat-message-builder.swift"; sourceTree = "<group>"; };
+		694E08832E70D5756D1BE253 /* chat-plan-tools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "chat-plan-tools.swift"; sourceTree = "<group>"; };
 		69F96F8ABC0C6C4B414F6B69 /* usage-rows.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "usage-rows.swift"; sourceTree = "<group>"; };
 		6B38A0E11709C8DF5E5743F6 /* api-system.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "api-system.swift"; sourceTree = "<group>"; };
 		6BF49DBB456DBA41395025DC /* chat-detail-send.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "chat-detail-send.swift"; sourceTree = "<group>"; };
@@ -204,6 +215,7 @@
 		8FC78042A6C16E5CAC61D128 /* chat-attachment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "chat-attachment.swift"; sourceTree = "<group>"; };
 		90AD4314C60A3B52A9477F6F /* audio-recorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "audio-recorder.swift"; sourceTree = "<group>"; };
 		94FFD2D7AA1B71D5FFD6774A /* usage-latency-card.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "usage-latency-card.swift"; sourceTree = "<group>"; };
+		960A2AEBB4535180A0B67842 /* artifact-templates.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "artifact-templates.swift"; sourceTree = "<group>"; };
 		9893EC661511D08EFC140DF0 /* gpu-models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "gpu-models.swift"; sourceTree = "<group>"; };
 		9BECD79B9AF7AF7B9C240E96 /* log-models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "log-models.swift"; sourceTree = "<group>"; };
 		9D941089FD6714CC74F3E2B3 /* progress-bar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "progress-bar.swift"; sourceTree = "<group>"; };
@@ -217,6 +229,7 @@
 		AAA2B51F27F5DCE98838CF35 /* chat-tool-belt-toolbar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "chat-tool-belt-toolbar.swift"; sourceTree = "<group>"; };
 		AC6FCD2B8E335A9B3150B522 /* api-usage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "api-usage.swift"; sourceTree = "<group>"; };
 		AD5F9792DC08E3078F37D7DD /* chat-tools-sheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "chat-tools-sheet.swift"; sourceTree = "<group>"; };
+		B41BA16DDE8988868AB2E04B /* artifact-parser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "artifact-parser.swift"; sourceTree = "<group>"; };
 		BAEDF980EDAB619A40B57BC2 /* chat-thinking-parser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "chat-thinking-parser.swift"; sourceTree = "<group>"; };
 		BAF707CA60583AA8C9BAA79F /* usage-model-row-view.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "usage-model-row-view.swift"; sourceTree = "<group>"; };
 		BAFDB544C086737DEA8FE78B /* system-models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "system-models.swift"; sourceTree = "<group>"; };
@@ -225,6 +238,7 @@
 		BF664A7E4EB17B881FF9FA46 /* chat-session.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "chat-session.swift"; sourceTree = "<group>"; };
 		C3F0DF311EBF37E6DA5D06C6 /* api-chat-sessions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "api-chat-sessions.swift"; sourceTree = "<group>"; };
 		C6CAE4CD14A94107C96012E2 /* chat-detail-meta.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "chat-detail-meta.swift"; sourceTree = "<group>"; };
+		C74927CEC78B99E7963A573C /* chat-streaming-message-view.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "chat-streaming-message-view.swift"; sourceTree = "<group>"; };
 		C888D0B971933A16B4A16CA6 /* benchmark-card.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "benchmark-card.swift"; sourceTree = "<group>"; };
 		CAF0D148215303BA113A934A /* usage-view-model.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "usage-view-model.swift"; sourceTree = "<group>"; };
 		CDC7681775BA8DD4A7C555E5 /* chat-agent-actions-sheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "chat-agent-actions-sheet.swift"; sourceTree = "<group>"; };
@@ -242,32 +256,38 @@
 		E10840B86185C3842321BBDE /* chat-detail-view-model.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "chat-detail-view-model.swift"; sourceTree = "<group>"; };
 		E53FAE8F64214EE141EFD025 /* chat-agent-meta.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "chat-agent-meta.swift"; sourceTree = "<group>"; };
 		E56D50EBF3F672778253F8ED /* loading-view.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "loading-view.swift"; sourceTree = "<group>"; };
-		E58F22CE7A699B7BC5FD5289 /* vllm-studio.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = "vllm-studio.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		E58F22CE7A699B7BC5FD5289 /* vllm-studio.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "vllm-studio.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		E5B60B59FE3E9FAC9694E952 /* usage-summary-card.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "usage-summary-card.swift"; sourceTree = "<group>"; };
 		E5F12CBEE23D311F903C389C /* chat-message.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "chat-message.swift"; sourceTree = "<group>"; };
 		E84EDF77A0A9EB0C83854237 /* api-discover.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "api-discover.swift"; sourceTree = "<group>"; };
 		EC7A1B18CD89345CD46B10C0 /* realtime-store.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "realtime-store.swift"; sourceTree = "<group>"; };
+		EE8030C9A4BA18F04B99A6BC /* artifact-card.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "artifact-card.swift"; sourceTree = "<group>"; };
 		EF8F621E24F789DE8776E5BB /* usage-view.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "usage-view.swift"; sourceTree = "<group>"; };
 		F0FDB56C3EAD259DF8737F26 /* chat-tool-belt.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "chat-tool-belt.swift"; sourceTree = "<group>"; };
 		F1EC390F1F778F0A11690F36 /* usage-metric-card.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "usage-metric-card.swift"; sourceTree = "<group>"; };
+		F27D80AC9A52738D43E76817 /* artifact-viewer-sheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "artifact-viewer-sheet.swift"; sourceTree = "<group>"; };
 		F39AED0A427EA95AD654ACBC /* drawer-menu-item.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "drawer-menu-item.swift"; sourceTree = "<group>"; };
+		F40F3716FE802C63EA8AFE9D /* artifact-model.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "artifact-model.swift"; sourceTree = "<group>"; };
 		F8AF25C22CFC8ED12645DE1A /* badge-view.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "badge-view.swift"; sourceTree = "<group>"; };
 		FD41DFFE24B50B09DE1125FC /* gpu-row-view.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "gpu-row-view.swift"; sourceTree = "<group>"; };
 		FE173E02AF24324E11B7DA66 /* settings-store.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "settings-store.swift"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
-/* Begin PBXFrameworksBuildPhase section */
-		63B056D19FEBB387EC271937 /* Frameworks */ = {
-			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-				B34F4BDA39AA8739C0B7EFC1 /* OpenAI in Frameworks */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-/* End PBXFrameworksBuildPhase section */
-
 /* Begin PBXGroup section */
+		081C99D38F4BB8C2A4180767 /* artifacts */ = {
+			isa = PBXGroup;
+			children = (
+				EE8030C9A4BA18F04B99A6BC /* artifact-card.swift */,
+				3B2C09DF65FDDCC6E48A75A9 /* artifact-detail-ext.swift */,
+				F40F3716FE802C63EA8AFE9D /* artifact-model.swift */,
+				B41BA16DDE8988868AB2E04B /* artifact-parser.swift */,
+				960A2AEBB4535180A0B67842 /* artifact-templates.swift */,
+				F27D80AC9A52738D43E76817 /* artifact-viewer-sheet.swift */,
+				4E3E9F7C13E606B971BF21DF /* artifact-web-view.swift */,
+			);
+			path = artifacts;
+			sourceTree = "<group>";
+		};
 		108CDD1AC7C15DF2CB9D3670 /* dashboard */ = {
 			isa = PBXGroup;
 			children = (
@@ -477,12 +497,15 @@
 				688B2E002EFC20A2D3305C83 /* chat-message-builder.swift */,
 				8D4C20D41ACB1557CC2F90D9 /* chat-message-meta-dropdown.swift */,
 				225750EE8CEA837070360293 /* chat-message-row.swift */,
+				694E08832E70D5756D1BE253 /* chat-plan-tools.swift */,
 				613891A9AA4A8BD63D853252 /* chat-processing-bar.swift */,
+				C74927CEC78B99E7963A573C /* chat-streaming-message-view.swift */,
 				070C950B36EC3BBA60E7FD0A /* chat-thinking-block.swift */,
 				BAEDF980EDAB619A40B57BC2 /* chat-thinking-parser.swift */,
 				AD5F9792DC08E3078F37D7DD /* chat-tools-sheet.swift */,
 				19BC5E2C2B791DFA74C9DF5D /* chat-usage-bar.swift */,
 				D107A8CE0BB8F52CEFC09CBC /* mcp-tool-runner.swift */,
+				081C99D38F4BB8C2A4180767 /* artifacts */,
 				129BE53D89FFFA7EF2521C42 /* tool-belt */,
 			);
 			path = chat;
@@ -556,7 +579,6 @@
 			buildConfigurationList = EE9D0BDE82A653F8B384455D /* Build configuration list for PBXNativeTarget "vllm-studio" */;
 			buildPhases = (
 				4C1F985E74A764D738FAAEE6 /* Sources */,
-				63B056D19FEBB387EC271937 /* Frameworks */,
 			);
 			buildRules = (
 			);
@@ -564,7 +586,6 @@
 			);
 			name = "vllm-studio";
 			packageProductDependencies = (
-				1B588D11B315F2AE5E5A9191 /* OpenAI */,
 			);
 			productName = "vllm-studio";
 			productReference = E58F22CE7A699B7BC5FD5289 /* vllm-studio.app */;
@@ -580,7 +601,6 @@
 				LastUpgradeCheck = 1500;
 				TargetAttributes = {
 					EFAD6D5743E25E3ADBC96EE1 = {
-						DevelopmentTeam = 2RQ2839U69;
 						ProvisioningStyle = Automatic;
 					};
 				};
@@ -595,10 +615,6 @@
 			);
 			mainGroup = 2F4E998621E9EBDFE6CD5A46;
 			minimizedProjectReferenceProxies = 1;
-			packageReferences = (
-				27809AA68C1FA4FC2BF01F8C /* XCRemoteSwiftPackageReference "OpenAI" */,
-			);
-			preferredProjectObjectVersion = 77;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
@@ -628,6 +644,13 @@
 				14D2B007048D3571948CADEB /* api-usage.swift in Sources */,
 				74AE3FA356CA2FBA444D8BF0 /* app-container.swift in Sources */,
 				0D06501DA6E2838BE6BF4179 /* app-entry.swift in Sources */,
+				18AB81ABA4975636F2ECA438 /* artifact-card.swift in Sources */,
+				412EAB8151D5C73CE83D4354 /* artifact-detail-ext.swift in Sources */,
+				669CC3AA968173408D80F6F6 /* artifact-model.swift in Sources */,
+				44BEEFDF174895A70EA15364 /* artifact-parser.swift in Sources */,
+				886B7A01386DB6BFE2BE5BA6 /* artifact-templates.swift in Sources */,
+				15EB1358F5077C00AC898E70 /* artifact-viewer-sheet.swift in Sources */,
+				11F04054DC3B9DE869BDDFF1 /* artifact-web-view.swift in Sources */,
 				D838B870DD859A0CB7CE82E8 /* audio-recorder.swift in Sources */,
 				FDB22C3D80EAB4C989248138 /* badge-view.swift in Sources */,
 				0C8017AF3CA8C084308AC24B /* benchmark-card.swift in Sources */,
@@ -654,8 +677,10 @@
 				504CA385AA6C34ABCCCFA73F /* chat-message-meta-dropdown.swift in Sources */,
 				EF7AF26AF339CAB03FEB68F9 /* chat-message-row.swift in Sources */,
 				A525A676BB7AB9641A5F92CD /* chat-message.swift in Sources */,
+				F0E83025717916C0F05E8957 /* chat-plan-tools.swift in Sources */,
 				945EDE76969AD399449C4E7C /* chat-processing-bar.swift in Sources */,
 				969EF819229EBBE385CCFFBC /* chat-session.swift in Sources */,
+				94EAD5ACEBCD5B1B44ABC581 /* chat-streaming-message-view.swift in Sources */,
 				6AE0BF7F723F601656D396E6 /* chat-thinking-block.swift in Sources */,
 				3DE1E277742C0260E33AF2AB /* chat-thinking-parser.swift in Sources */,
 				B7F288F64812C1E495100686 /* chat-tool-belt-toolbar.swift in Sources */,
@@ -746,7 +771,7 @@
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 2RQ2839U69;
+				DEVELOPMENT_TEAM = 953GG2G474;
 				INFOPLIST_FILE = resources/info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -886,7 +911,7 @@
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 2RQ2839U69;
+				DEVELOPMENT_TEAM = 953GG2G474;
 				INFOPLIST_FILE = resources/info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -922,25 +947,6 @@
 			defaultConfigurationName = Debug;
 		};
 /* End XCConfigurationList section */
-
-/* Begin XCRemoteSwiftPackageReference section */
-		27809AA68C1FA4FC2BF01F8C /* XCRemoteSwiftPackageReference "OpenAI" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/MacPaw/OpenAI.git";
-			requirement = {
-				branch = main;
-				kind = branch;
-			};
-		};
-/* End XCRemoteSwiftPackageReference section */
-
-/* Begin XCSwiftPackageProductDependency section */
-		1B588D11B315F2AE5E5A9191 /* OpenAI */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 27809AA68C1FA4FC2BF01F8C /* XCRemoteSwiftPackageReference "OpenAI" */;
-			productName = OpenAI;
-		};
-/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 32B6044E0CB9285400B517F3 /* Project object */;
 }

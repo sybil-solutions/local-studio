@@ -6,17 +6,17 @@ import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import {
   LayoutDashboard,
-  Layers,
   FileText,
-  Settings,
-  MessageSquare,
+  Settings2,
+  MessageSquareText,
   BarChart3,
   ChevronLeft,
   ChevronRight,
   ChevronDown,
-  Wrench,
+  Sparkles,
   Compass,
   Plus,
+  ScrollText,
 } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
 import api from "@/lib/api";
@@ -24,12 +24,12 @@ import { useAppStore } from "@/store";
 
 const navItems = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/chat", label: "Chat", icon: MessageSquare },
-  { href: "/recipes", label: "Recipes", icon: Wrench },
+  { href: "/chat", label: "Chat", icon: MessageSquareText },
+  { href: "/recipes", label: "Recipes", icon: Sparkles },
   { href: "/discover", label: "Discover", icon: Compass },
-  { href: "/logs", label: "Logs", icon: FileText },
+  { href: "/logs", label: "Logs", icon: ScrollText },
   { href: "/usage", label: "Usage", icon: BarChart3 },
-  { href: "/configs", label: "Configs", icon: Settings },
+  { href: "/configs", label: "Configs", icon: Settings2 },
 ];
 
 interface AppSidebarProps {
@@ -178,14 +178,14 @@ export function AppSidebar({ children }: AppSidebarProps) {
           ${isMobile ? "fixed left-0 top-0 bottom-0 z-50" : "relative"}
           ${isMobile && !mobileOpen ? "-translate-x-full" : "translate-x-0"}
           ${collapsed && !isMobile ? "w-16" : "w-56"}
-          shrink-0 bg-[#1a1917] border-r border-[#2a2725]
+          shrink-0 bg-[#0a0a0a]/95 backdrop-blur-xl border-r border-white/[0.06]
           flex flex-col transition-all duration-200 ease-out
         `}
         style={{ paddingTop: "env(safe-area-inset-top, 0)" }}
       >
         {/* Logo */}
         <div
-          className={`flex items-center h-14 px-3 border-b border-[#2a2725] ${collapsed && !isMobile ? "justify-center" : "gap-2"}`}
+          className={`flex items-center h-14 px-3 border-b border-white/[0.06] ${collapsed && !isMobile ? "justify-center" : "gap-3"}`}
         >
           <Image
             src="/vllm-logo.jpg"
@@ -214,17 +214,16 @@ export function AppSidebar({ children }: AppSidebarProps) {
                     if (isMobile) setMobileOpen(false);
                   }}
                   className={`
-                    flex items-center gap-3 px-3 py-2.5 rounded-lg mb-1 transition-colors
-                    ${
-                      isActive
-                        ? "bg-(--accent) text-foreground"
-                        : "text-[#9a9590] hover:text-foreground hover:bg-(--accent)/50"
+                    flex items-center gap-3 px-3 py-2.5 rounded-lg mb-0.5 transition-colors
+                    ${isActive
+                      ? "bg-white/[0.08] text-foreground"
+                      : "text-[#9a9590] hover:text-foreground hover:bg-white/[0.04]"
                     }
                     ${collapsed && !isMobile ? "justify-center" : ""}
                   `}
                   title={collapsed && !isMobile ? item.label : undefined}
                 >
-                  <Icon className="h-5 w-5 shrink-0" />
+                  <Icon className="h-5 w-5 shrink-0" strokeWidth={1.5} />
                   {(!collapsed || isMobile) && (
                     <span className="text-sm font-medium">{item.label}</span>
                   )}
@@ -284,20 +283,17 @@ export function AppSidebar({ children }: AppSidebarProps) {
 
         {/* Status */}
         <div
-          className={`px-3 py-3 border-t border-[#2a2725] ${collapsed && !isMobile ? "flex justify-center" : ""}`}
+          className={`px-3 py-3 border-t border-white/[0.06] ${collapsed && !isMobile ? "flex justify-center" : ""}`}
         >
           <div className={`flex items-center gap-2 ${collapsed && !isMobile ? "" : ""}`}>
-            <div
-              className={`w-2 h-2 rounded-full shrink-0 ${
-                status.inferenceOnline
-                  ? "bg-(--success)"
-                  : status.online
-                    ? "bg-yellow-500"
-                    : "bg-(--error)"
-              }`}
-            />
+            <div className={`relative flex items-center justify-center ${status.inferenceOnline ? 'text-emerald-400' : status.online ? 'text-amber-400' : 'text-red-400'}`}>
+              <div className={`w-2 h-2 rounded-full ${status.inferenceOnline ? 'bg-emerald-400' : status.online ? 'bg-amber-400' : 'bg-red-400'} ${status.inferenceOnline ? 'animate-pulse' : ''}`} />
+              {status.inferenceOnline && (
+                <div className="absolute inset-0 w-2 h-2 rounded-full bg-emerald-400 animate-ping opacity-30" />
+              )}
+            </div>
             {(!collapsed || isMobile) && (
-              <span className="text-xs text-[#9a9590] truncate">
+              <span className="text-xs text-[#a0a0a0] truncate font-medium">
                 {status.inferenceOnline
                   ? status.model || "Ready"
                   : status.online
@@ -312,12 +308,12 @@ export function AppSidebar({ children }: AppSidebarProps) {
         {!isMobile && (
           <button
             onClick={toggleCollapsed}
-            className="absolute -right-3 top-20 w-6 h-6 bg-[#1a1917] border border-[#2a2725] rounded-full flex items-center justify-center hover:bg-[#2a2725] transition-colors shadow-lg"
+            className="absolute -right-3 top-20 w-6 h-6 bg-[#111] border border-white/[0.08] rounded-full flex items-center justify-center hover:bg-white/[0.08] hover:border-white/[0.12] transition-colors shadow-lg shadow-black/50"
           >
             {collapsed ? (
-              <ChevronRight className="h-3.5 w-3.5 text-[#9a9590]" />
+              <ChevronRight className="h-3.5 w-3.5 text-[#888]" />
             ) : (
-              <ChevronLeft className="h-3.5 w-3.5 text-[#9a9590]" />
+              <ChevronLeft className="h-3.5 w-3.5 text-[#888]" />
             )}
           </button>
         )}

@@ -3,6 +3,7 @@
 
 import { X, Loader2, Globe } from "lucide-react";
 import { ArtifactPanel } from "../artifacts/artifact-panel";
+import { safeJsonStringify } from "@/lib/safe-json";
 import type { ActivePanel, Artifact } from "@/lib/types";
 import type { ActivityGroup, ActivityItem } from "../../types";
 import type { CompactionEvent, ContextStats } from "@/lib/services/context-management";
@@ -385,7 +386,7 @@ function ToolItem({ item }: ToolItemProps) {
 
   const getSources = (output?: unknown): string[] => {
     if (!output) return [];
-    const text = typeof output === "string" ? output : JSON.stringify(output);
+    const text = typeof output === "string" ? output : safeJsonStringify(output, "");
     const urlMatches = text.match(/https?:\/\/[^\s"'<>]+/g) || [];
     const domains = [
       ...new Set(

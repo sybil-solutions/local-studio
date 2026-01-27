@@ -3,6 +3,7 @@
 
 import { useCallback } from "react";
 import { api } from "@/lib/api";
+import { safeJsonStringify } from "@/lib/safe-json";
 import type { MCPTool, MCPServer, ToolResult } from "@/lib/types";
 import { useAppStore } from "@/store";
 
@@ -149,7 +150,7 @@ export function useChatTools({ mcpEnabled }: UseChatToolsOptions) {
         const toolResult: ToolResult = {
           tool_call_id: toolCallId,
           content:
-            typeof result.result === "string" ? result.result : JSON.stringify(result.result),
+            typeof result.result === "string" ? result.result : safeJsonStringify(result.result, ""),
           isError: false,
         };
 

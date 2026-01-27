@@ -27,8 +27,8 @@ extension ApiClient {
     try await requestVoid("/mcp/servers/\(id)", method: "DELETE")
   }
 
-  func callMcpTool(serverId: String, toolName: String, args: [String: String]) async throws -> McpToolResult {
-    let data = try ApiCodec.encoder.encode(args)
+  func callMcpTool(serverId: String, toolName: String, args: [String: Any]) async throws -> McpToolResult {
+    let data = try ApiCodec.encoder.encode(AnyEncodable(args))
     return try await request("/mcp/tools/\(serverId)/\(toolName)", method: "POST", body: data)
   }
 }

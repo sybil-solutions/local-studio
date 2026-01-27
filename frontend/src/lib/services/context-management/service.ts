@@ -4,6 +4,7 @@
  * Handles token estimation, compaction, and context management
  */
 
+import { safeJsonStringify } from "@/lib/safe-json";
 import type {
   IContextManagementService,
   ContextConfig,
@@ -36,7 +37,8 @@ export class ContextManagementService implements IContextManagementService {
    */
   calculateMessageTokens(messages: ContextMessage[]): number {
     return messages.reduce((total, msg) => {
-      const content = typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content);
+      const content =
+        typeof msg.content === "string" ? msg.content : safeJsonStringify(msg.content, "");
       return total + this.estimateTokens(content) + 4; // +4 for role/formatting overhead
     }, 0);
   }
@@ -135,7 +137,9 @@ export class ContextManagementService implements IContextManagementService {
     "compactionHistory" | "lastCompaction" | "totalCompactions" | "totalTokensCompacted"
   > {
     const systemPromptTokens = systemPrompt ? this.estimateTokens(systemPrompt) : 0;
-    const toolsTokens = tools?.length ? this.estimateTokens(JSON.stringify(tools)) : 0;
+    const toolsTokens = tools?.length
+      ? this.estimateTokens(safeJsonStringify(tools, ""))
+      : 0;
     const conversationTokens = this.calculateMessageTokens(messages);
     const currentTokens = systemPromptTokens + toolsTokens + conversationTokens;
     const utilization = maxContext > 0 ? currentTokens / maxContext : 0;
@@ -223,7 +227,7 @@ export class ContextManagementService implements IContextManagementService {
         const content =
           typeof m.content === "string"
             ? m.content.slice(0, 200)
-            : JSON.stringify(m.content).slice(0, 200);
+            : safeJsonStringify(m.content, "").slice(0, 200);
         return `${role}: ${content}${m.content.length > 200 ? "..." : ""}`;
       })
       .join("\n");

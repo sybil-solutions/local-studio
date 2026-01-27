@@ -1,6 +1,5 @@
 // CRITICAL
 import Foundation
-import OpenAI
 
 @MainActor
 final class OpenAIChatService: ObservableObject {
@@ -9,6 +8,7 @@ final class OpenAIChatService: ObservableObject {
   @Published var streamingContent = ""
   @Published var streamingReasoning = ""
   @Published var streamingToolCalls: [ToolCall] = []
+  @Published var streamingUsage: CompletionUsage?
 
   private var apiKey = ""
   private var baseURL = ""
@@ -23,145 +23,146 @@ final class OpenAIChatService: ObservableObject {
     let reasoning: String
     let toolCalls: [ToolCall]
     let finishReason: String?
+    let usage: CompletionUsage?
   }
 
   func streamChat(messages: [OpenAIMessage], model: String, tools: [ToolDefinition]?) async throws -> StreamResult {
-    let query = ChatQuery(
-      messages: convertMessages(messages),
+    let payload = ChatCompletionRequest(
       model: model,
-      tools: tools?.map { convertTool($0) },
+      messages: messages,
+      tools: tools,
       stream: true,
-      streamOptions: .init(includeUsage: true)
+      temperature: 0.7,
+      streamOptions: StreamOptions(includeUsage: true)
     )
+
+    let request = try buildStreamRequest(payload)
 
     var accumulatedContent = ""
     var accumulatedReasoning = ""
+    var parsedContent = ""
+    var parsedReasoning = ""
     var toolBuffer: [Int: ToolBuffer] = [:]
     var finishReason: String?
+    var latestUsage: CompletionUsage?
+    var receivedReasoning = false
 
     isStreaming = true
     streamStart = Date()
     streamingContent = ""
     streamingReasoning = ""
     streamingToolCalls = []
+    streamingUsage = nil
 
     defer { isStreaming = false }
 
-    for try await result in openAI.chatsStream(query: query) {
-      for choice in result.choices {
-        if let text = choice.delta.content, !text.isEmpty {
-          accumulatedContent.append(text)
-          streamingContent = accumulatedContent
-        }
+    let (bytes, response) = try await URLSession.shared.bytes(for: request)
 
-        if let reasoning = choice.delta.reasoning, !reasoning.isEmpty {
-          accumulatedReasoning.append(reasoning)
-          streamingReasoning = accumulatedReasoning
-        }
-
-        if let tools = choice.delta.toolCalls {
-          for tool in tools {
-            let index = tool.index ?? 0
-            var buffer = toolBuffer[index] ?? ToolBuffer(id: tool.id, type: tool.type, name: "", arguments: "")
-            if let name = tool.function?.name { buffer.name = name }
-            if let args = tool.function?.arguments { buffer.arguments += args }
-            if buffer.id == nil { buffer.id = tool.id }
-            buffer.type = buffer.type ?? tool.type
-            toolBuffer[index] = buffer
-          }
-          streamingToolCalls = finalizeBuffers(toolBuffer)
-        }
-
-        if let reason = choice.finishReason?.rawValue {
-          finishReason = reason
-        }
+    if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+      // Read error body
+      var errorBody = ""
+      for try await line in bytes.lines {
+        errorBody += line
       }
+      throw StreamError.httpError(http.statusCode, errorBody)
+    }
 
-      if finishReason != nil {
-        break
+    var parser = SseParser()
+    for try await line in bytes.lines {
+      let events = parser.ingest(line + "\n")
+      for event in events {
+        guard event.data != "[DONE]" else { continue }
+        guard let data = event.data.data(using: .utf8) else { continue }
+        guard let chunk = try? ApiCodec.decoder.decode(StreamChunk.self, from: data) else { continue }
+
+        if let usage = chunk.usage {
+          latestUsage = usage
+          streamingUsage = usage
+        }
+
+        guard let choices = chunk.choices else { continue }
+        for choice in choices {
+          guard let delta = choice.delta else { continue }
+
+          if let text = delta.content, !text.isEmpty {
+            accumulatedContent.append(text)
+          }
+
+          let deltaReasoning = delta.reasoningContent ?? delta.reasoning
+          if let reasoning = deltaReasoning, !reasoning.isEmpty {
+            receivedReasoning = true
+            accumulatedReasoning.append(reasoning)
+            streamingReasoning = accumulatedReasoning
+          }
+
+          if receivedReasoning {
+            streamingContent = ThinkingParser.stripThinkingBlocks(accumulatedContent)
+          } else {
+            let parsed = ThinkingParser.parse(accumulatedContent)
+            parsedContent = parsed.main
+            parsedReasoning = parsed.thinking ?? ""
+            streamingContent = parsedContent
+            streamingReasoning = parsedReasoning
+          }
+
+          if let tools = delta.toolCalls {
+            for tool in tools {
+              let index = tool.index ?? 0
+              var buffer = toolBuffer[index] ?? ToolBuffer(id: tool.id, type: tool.type, name: "", arguments: "")
+              if let name = tool.function?.name { buffer.name = name }
+              if let args = tool.function?.arguments { buffer.arguments += args }
+              if buffer.id == nil { buffer.id = tool.id }
+              buffer.type = buffer.type ?? tool.type
+              toolBuffer[index] = buffer
+            }
+            streamingToolCalls = finalizeBuffers(toolBuffer)
+          }
+
+          if let reason = choice.finishReason {
+            finishReason = reason
+          }
+        }
       }
     }
 
     let finalTools = finalizeBuffers(toolBuffer)
+    let finalContent: String
+    let finalReasoning: String
+    if receivedReasoning {
+      finalContent = ThinkingParser.stripThinkingBlocks(accumulatedContent)
+      finalReasoning = accumulatedReasoning
+    } else {
+      let parsed = ThinkingParser.parse(accumulatedContent)
+      finalContent = parsed.main
+      finalReasoning = parsed.thinking ?? ""
+    }
 
     return StreamResult(
-      content: accumulatedContent,
-      reasoning: accumulatedReasoning,
+      content: finalContent,
+      reasoning: finalReasoning,
       toolCalls: finalTools,
-      finishReason: finishReason
+      finishReason: finishReason,
+      usage: latestUsage
     )
   }
 
-  private var openAI: OpenAI {
-    OpenAI(configuration: makeConfiguration())
-  }
-
-  private func makeConfiguration() -> OpenAI.Configuration {
+  private func buildStreamRequest(_ payload: ChatCompletionRequest) throws -> URLRequest {
     let trimmed = baseURL.trimmingCharacters(in: .whitespacesAndNewlines)
-    let raw = trimmed.isEmpty ? "http://localhost:8080" : trimmed
-    let normalized = raw.contains("://") ? raw : "http://\(raw)"
-    let components = URLComponents(string: normalized)
-    let scheme = components?.scheme ?? "http"
-    let host = components?.host ?? raw
-    let path = components?.path ?? ""
-    let basePath = path.isEmpty || path == "/" ? "/v1" : path
-    let port = components?.port ?? (scheme == "https" ? 443 : 80)
-    let token = apiKey.isEmpty ? nil : apiKey
-    return OpenAI.Configuration(
-      token: token,
-      host: host,
-      port: port,
-      scheme: scheme,
-      basePath: basePath,
-      timeoutInterval: 60,
-      customHeaders: [:],
-      parsingOptions: .relaxed
-    )
-  }
-
-  private func convertMessages(_ messages: [OpenAIMessage]) -> [ChatQuery.ChatCompletionMessageParam] {
-    messages.compactMap { msg in
-      switch msg.role {
-      case "system":
-        guard let content = msg.content else { return nil }
-        return .system(.init(content: .textContent(content), name: msg.name))
-      case "developer":
-        guard let content = msg.content else { return nil }
-        return .developer(.init(content: .textContent(content), name: msg.name))
-      case "user":
-        guard let content = msg.content else { return nil }
-        return .user(.init(content: .string(content), name: msg.name))
-      case "assistant":
-        let toolCalls = msg.toolCalls?.map { convertToolCall($0) }
-        let assistantContent = msg.content.map { ChatQuery.ChatCompletionMessageParam.TextOrRefusalContent.textContent($0) }
-        return .assistant(.init(content: assistantContent, name: msg.name, toolCalls: toolCalls))
-      case "tool":
-        guard let content = msg.content, let toolCallId = msg.toolCallId else { return nil }
-        return .tool(.init(content: .textContent(content), toolCallId: toolCallId))
-      default:
-        guard let content = msg.content else { return nil }
-        return .user(.init(content: .string(content), name: msg.name))
-      }
+    let base = trimmed.isEmpty ? "http://localhost:8080" : trimmed
+    let normalized = base.hasSuffix("/") ? String(base.dropLast()) : base
+    guard let url = URL(string: "\(normalized)/v1/chat/completions") else {
+      throw StreamError.invalidURL
     }
-  }
-
-  private func convertToolCall(_ call: ToolCall) -> ChatQuery.ChatCompletionMessageParam.AssistantMessageParam.ToolCallParam {
-    .init(id: call.id, function: .init(arguments: call.function.arguments, name: call.function.name))
-  }
-
-  private func convertTool(_ tool: ToolDefinition) -> ChatQuery.ChatCompletionToolParam {
-    .init(function: .init(
-      name: tool.function.name,
-      description: tool.function.description,
-      parameters: convertSchema(tool.function.parameters)
-    ))
-  }
-
-  private func convertSchema(_ parameters: AnyEncodable?) -> JSONSchema? {
-    guard let parameters else { return nil }
-    let encoder = JSONEncoder()
-    guard let data = try? encoder.encode(parameters) else { return nil }
-    return try? JSONDecoder().decode(JSONSchema.self, from: data)
+    var request = URLRequest(url: url)
+    request.httpMethod = "POST"
+    request.httpBody = try ApiCodec.encoder.encode(payload)
+    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+    request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
+    request.timeoutInterval = 300
+    if !apiKey.isEmpty {
+      request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+    }
+    return request
   }
 
   private func finalizeBuffers(_ buffers: [Int: ToolBuffer]) -> [ToolCall] {
@@ -181,4 +182,16 @@ private struct ToolBuffer {
   var type: String?
   var name: String
   var arguments: String
+}
+
+enum StreamError: LocalizedError {
+  case invalidURL
+  case httpError(Int, String)
+
+  var errorDescription: String? {
+    switch self {
+    case .invalidURL: return "Invalid backend URL"
+    case .httpError(let code, let body): return "HTTP \(code): \(body.prefix(200))"
+    }
+  }
 }

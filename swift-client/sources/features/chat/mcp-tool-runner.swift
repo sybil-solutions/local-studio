@@ -22,10 +22,10 @@ struct McpToolRunner {
     return results
   }
 
-  private func parseArgs(_ raw: String) -> [String: String] {
+  private func parseArgs(_ raw: String) -> [String: Any] {
     guard let data = raw.data(using: .utf8) else { return [:] }
     guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return [:] }
-    return json.mapValues { String(describing: $0) }
+    return json
   }
 
   private func formatResult(_ result: AnyCodable?) -> String {

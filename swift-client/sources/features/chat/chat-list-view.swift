@@ -3,14 +3,20 @@ import SwiftUI
 struct ChatListView: View {
   @EnvironmentObject private var container: AppContainer
   @StateObject private var model = ChatListViewModel()
-  @State private var newSessionId: String?
+  @State private var selectedSessionId: String?
 
   var body: some View {
     List {
       ForEach(model.sessions) { session in
-        NavigationLink(destination: ChatDetailView(sessionId: session.id)) {
+        NavigationLink(
+          destination: ChatDetailView(sessionId: session.id),
+          tag: session.id,
+          selection: $selectedSessionId
+        ) {
           VStack(alignment: .leading, spacing: 4) {
-            Text(session.title).font(AppTheme.sectionFont)
+            Text(session.title.isEmpty ? "New chat" : session.title)
+              .font(AppTheme.bodyFont.weight(.semibold))
+              .lineLimit(1)
             Text(session.updatedAt).font(AppTheme.captionFont).foregroundColor(AppTheme.muted)
           }
         }
@@ -29,14 +35,11 @@ struct ChatListView: View {
       Button("New") { Task { await createSession() } }
     }
     .onAppear { model.connect(api: container.api) }
-    .navigationDestination(isPresented: Binding(get: { newSessionId != nil }, set: { if !$0 { newSessionId = nil } })) {
-      if let sessionId = newSessionId { ChatDetailView(sessionId: sessionId) }
-    }
   }
 
   private func createSession() async {
     guard let session = await model.createSession() else { return }
-    newSessionId = session.id
+    selectedSessionId = session.id
     await model.load()
   }
 }

@@ -8,6 +8,8 @@ struct ChatToolBeltToolbar: View {
   let onMcpToggle: () -> Void
   let deepResearchEnabled: Bool
   let onDeepResearchToggle: () -> Void
+  let planModeEnabled: Bool
+  let onPlanModeToggle: () -> Void
   let isRecording: Bool
   let onAddFile: () -> Void
   let onAddImage: () -> Void
@@ -45,6 +47,7 @@ struct ChatToolBeltToolbar: View {
       Menu {
         Button(action: onMcpToggle) { Label(mcpEnabled ? "MCP On" : "MCP Off", systemImage: mcpEnabled ? "bolt.fill" : "bolt") }
         Button(action: onDeepResearchToggle) { Label(deepResearchEnabled ? "Deep On" : "Deep Off", systemImage: deepResearchEnabled ? "globe.americas.fill" : "globe") }
+        Button(action: onPlanModeToggle) { Label(planModeEnabled ? "Plan On" : "Plan Off", systemImage: planModeEnabled ? "list.bullet.clipboard.fill" : "list.bullet.clipboard") }
         Button(action: onShowTools) { Label("Tools", systemImage: "wrench") }
       } label: {
         Image(systemName: "slider.horizontal.3")

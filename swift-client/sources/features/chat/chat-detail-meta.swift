@@ -7,6 +7,7 @@ extension ChatDetailViewModel {
 
   func meta(for message: StoredMessage) -> AgentMeta? {
     if let meta = agentMeta[message.id] { return meta }
+    guard message.role == "assistant" else { return nil }
     let thinking = ThinkingParser.extractAllBlocks(message.content ?? "")
     let calls = message.toolCalls ?? []
     let results = toolResults(for: calls)

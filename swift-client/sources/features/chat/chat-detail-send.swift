@@ -12,7 +12,11 @@ extension ChatDetailViewModel {
     messages.append(user)
     _ = try? await api.addMessage(sessionId: sessionId, message: user)
     await streamTurn(api: api, userContent: combined)
-    chatUsage = try? await api.getChatUsage(sessionId: sessionId)
+    if let usage = try? await api.getChatUsage(sessionId: sessionId) {
+      chatUsage = usage
+    } else {
+      refreshUsageSnapshot()
+    }
   }
 
   private func formatAttachments(_ attachments: [ChatAttachment]) -> String {

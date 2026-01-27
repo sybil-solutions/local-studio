@@ -6,6 +6,7 @@ import { useSearchParams, useRouter } from "next/navigation";
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport, lastAssistantMessageIsCompleteWithToolCalls } from "ai";
 import { api } from "@/lib/api";
+import { safeJsonStringify } from "@/lib/safe-json";
 import { extractArtifacts } from "../artifacts/artifact-renderer";
 import { ArtifactModal } from "../artifacts/artifact-modal";
 import { ToolBelt } from "../input/tool-belt";
@@ -317,9 +318,10 @@ export function ChatPage() {
             },
           )
           .map((part) => {
-            const input = "input" in part && part.input != null ? JSON.stringify(part.input) : "";
+            const input =
+              "input" in part && part.input != null ? safeJsonStringify(part.input, "") : "";
             const output =
-              "output" in part && part.output != null ? JSON.stringify(part.output) : "";
+              "output" in part && part.output != null ? safeJsonStringify(part.output, "") : "";
             const errorText = "errorText" in part && part.errorText ? part.errorText : "";
             return [input, output, errorText].filter(Boolean).join("\n");
           })
@@ -530,9 +532,10 @@ export function ChatPage() {
               },
             )
             .map((part) => {
-              const input = "input" in part && part.input != null ? JSON.stringify(part.input) : "";
+              const input =
+                "input" in part && part.input != null ? safeJsonStringify(part.input, "") : "";
               const output =
-                "output" in part && part.output != null ? JSON.stringify(part.output) : "";
+                "output" in part && part.output != null ? safeJsonStringify(part.output, "") : "";
               const errorText = "errorText" in part && part.errorText ? part.errorText : "";
               return [input, output, errorText].filter(Boolean).join("\n");
             })
