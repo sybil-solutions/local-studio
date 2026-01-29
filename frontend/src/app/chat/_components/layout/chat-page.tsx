@@ -341,7 +341,7 @@ export function ChatPage() {
       const toolCallId = toolCall.toolCallId;
       const toolName = toolCall.toolName;
       // AI SDK v6+ uses toolCall.input for the tool arguments
-      const tcAny = toolCall as Record<string, unknown>;
+      const tcAny = toolCall as unknown as Record<string, unknown>;
       const rawArgs = tcAny.input ?? tcAny.args ?? tcAny.arguments;
       let args: Record<string, unknown> = {};
       if (rawArgs && typeof rawArgs === "object" && !Array.isArray(rawArgs)) {
@@ -1417,9 +1417,6 @@ export function ChatPage() {
           if (next && !mcpEnabled) setMcpEnabled(true);
         }}
         hasArtifacts={sessionArtifacts.length > 0}
-        defaultWidth={360}
-        minWidth={280}
-        maxWidth={500}
         activityContent={
           <div className="p-4 overflow-y-auto h-full">
             <ActivityPanel activityGroups={activityGroups} />

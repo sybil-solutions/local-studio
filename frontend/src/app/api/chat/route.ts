@@ -1,5 +1,5 @@
 // CRITICAL
-import { streamText, jsonSchema, convertToModelMessages, tool, stepCountIs } from "ai";
+import { streamText, jsonSchema, convertToModelMessages, stepCountIs } from "ai";
 import type { UIMessage } from "ai";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { getApiSettings } from "@/lib/api-settings";
@@ -21,11 +21,6 @@ interface PostBody {
   system?: string;
 }
 
-// Agent state stored per-request (stateless - client manages persistence)
-type AgentPlan = {
-  steps: Array<{ title: string; status: string; notes?: string }>;
-};
-
 function getClientInfo(req: Request) {
   const ip =
     req.headers.get("CF-Connecting-IP") ||
@@ -34,102 +29,6 @@ function getClientInfo(req: Request) {
     "unknown";
   const country = req.headers.get("CF-IPCountry") || "-";
   return { ip, country };
-}
-
-// Agent tool definitions
-const AGENT_TOOL_DEFS = [
-  {
-    name: "set_plan",
-    description:
-      "Create the execution plan. Call this FIRST before doing any work. " +
-      "Each step should be a concrete, actionable task. After creating the plan, proceed to execute step 0.",
-    input_schema: {
-      type: "object" as const,
-      properties: {
-        steps: {
-          type: "array" as const,
-          description: "Array of plan steps (3-8 steps)",
-          items: {
-            type: "object" as const,
-            properties: { title: { type: "string" as const, description: "Step description" } },
-            required: ["title"] as const,
-          },
-        },
-      },
-      required: ["steps"] as const,
-    },
-  },
-  {
-    name: "update_plan",
-    description: "Update a plan step's status. Call after completing each step to mark it done.",
-    input_schema: {
-      type: "object" as const,
-      properties: {
-        step_index: { type: "number" as const, description: "Zero-based index of the step" },
-        status: { type: "string" as const, enum: ["done", "running", "blocked"] as const, description: "New status" },
-        notes: { type: "string" as const, description: "Optional notes" },
-      },
-      required: ["step_index", "status"] as const,
-    },
-  },
-];
-
-// Execute agent tool and return result
-function executeAgentTool(
-  name: string,
-  args: Record<string, unknown>,
-  planRef: { current: AgentPlan | null },
-): unknown {
-  if (name === "set_plan") {
-    const steps = (args.steps as Array<{ title: string }>) || [];
-    planRef.current = { steps: steps.map((s) => ({ title: s.title, status: "pending" })) };
-    return {
-      success: true,
-      message: `Plan created with ${steps.length} steps. Now execute step 0: "${steps[0]?.title}"`,
-      plan: planRef.current,
-    };
-  }
-
-  if (name === "update_plan") {
-    if (!planRef.current) {
-      return { success: false, error: "No plan exists. Call set_plan first." };
-    }
-    const idx = args.step_index as number;
-    const step = planRef.current.steps[idx];
-    if (!step) {
-      return { success: false, error: `Invalid step_index: ${idx}` };
-    }
-    step.status = args.status as string;
-    if (args.notes) step.notes = args.notes as string;
-
-    const done = planRef.current.steps.filter((s) => s.status === "done").length;
-    const total = planRef.current.steps.length;
-    const next = planRef.current.steps.find((s) => s.status === "pending");
-
-    return {
-      success: true,
-      message: next
-        ? `Step ${idx} marked ${args.status}. Progress: ${done}/${total}. Next: "${next.title}"`
-        : `Step ${idx} marked ${args.status}. All steps complete (${done}/${total}).`,
-      plan: planRef.current,
-    };
-  }
-
-  return { success: false, error: `Unknown agent tool: ${name}` };
-}
-
-// Build server-side agent tools with execute functions
-function buildAgentTools(planRef: { current: AgentPlan | null }) {
-  const entries = AGENT_TOOL_DEFS.map((def) => [
-    def.name,
-    tool({
-      description: def.description,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      inputSchema: jsonSchema(def.input_schema as any),
-      execute: async (args) => executeAgentTool(def.name, args as Record<string, unknown>, planRef),
-    }),
-  ]);
-  return Object.fromEntries(entries);
 }
 
 export async function POST(req: Request) {
@@ -161,38 +60,25 @@ export async function POST(req: Request) {
     });
     const modelInstance = openaiCompatible(resolvedModel);
 
-    // Core agent tools (server-executed with multi-step loop)
-    const agentToolNames = new Set(["set_plan", "update_plan"]);
-    const mcpTools = (tools || []).filter((t) => !agentToolNames.has(t.name));
-    const hasAgentTools = (tools || []).some((t) => agentToolNames.has(t.name));
-
-    // Build tool set
-    const planRef = { current: null as AgentPlan | null };
-    const agentTools = hasAgentTools ? buildAgentTools(planRef) : {};
-
-    // MCP tools without execute (client-side)
-    const mcpToolSet = mcpTools.reduce<Record<string, { description?: string; parameters: unknown }>>((acc, t) => {
-      acc[t.name] = {
-        description: t.description,
-        parameters: jsonSchema(t.inputSchema || { type: "object", properties: {} }),
-      };
-      return acc;
-    }, {});
-
-    const allTools = { ...agentTools, ...mcpToolSet };
+    // Tools are executed client-side (MCP + synthetic agent tools).
+    const allTools = (tools || []).reduce<Record<string, { description?: string; inputSchema: ReturnType<typeof jsonSchema> }>>(
+      (acc, t) => {
+        acc[t.name] = {
+          description: t.description,
+          inputSchema: jsonSchema(t.inputSchema || { type: "object", properties: {} }),
+        };
+        return acc;
+      },
+      {},
+    );
     const modelMessages = await convertToModelMessages(messages);
-
-    // Note: When only agent tools are used, we can do multi-step. But if MCP tools
-    // are present, we need single-step so the client can execute MCP tools.
-    const hasMcpTools = mcpTools.length > 0;
-    const useMultiStep = hasAgentTools && !hasMcpTools;
 
     const result = streamText({
       model: modelInstance,
       messages: modelMessages,
       system: system?.trim() || undefined,
       tools: allTools,
-      stopWhen: useMultiStep ? stepCountIs(25) : stepCountIs(1),
+      stopWhen: stepCountIs(1),
       temperature: 0.7,
     });
 

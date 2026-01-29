@@ -112,29 +112,28 @@ export function AppSidebar({ children }: AppSidebarProps) {
     }
   };
 
-  // Route users to setup wizard on first launch
-  useEffect(() => {
-    if (pathname.startsWith("/setup")) {
-      return;
-    }
-    if (typeof window === "undefined") {
-      return;
-    }
-    const completed = localStorage.getItem("vllm-studio-setup-complete");
-    if (!completed) {
-      router.push("/setup");
-    }
-  }, [pathname, router]);
+
 
   // Check status
   useEffect(() => {
     const checkStatus = async () => {
       try {
-        const health = await api.getHealth();
+        // Use both health and status endpoints for accurate info
+        const [health, statusData] = await Promise.all([
+          api.getHealth(),
+          api.getStatus(),
+        ]);
+        
+        // Determine if inference is running from status endpoint (more reliable)
+        const isRunning = statusData.running || !!statusData.process;
+        const modelName = statusData.process?.served_model_name 
+          || statusData.process?.model_path?.split("/").pop()
+          || health.running_model?.split("/").pop();
+        
         setStatus({
           online: health.status === "ok",
-          inferenceOnline: health.backend_reachable,
-          model: health.running_model?.split("/").pop(),
+          inferenceOnline: isRunning || health.backend_reachable,
+          model: modelName,
         });
       } catch {
         setStatus({ online: false, inferenceOnline: false });

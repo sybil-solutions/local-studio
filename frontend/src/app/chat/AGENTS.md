@@ -25,7 +25,7 @@ Non-goals:
 - **Controller**: vLLM Studio backend that stores sessions/messages, MCP config, runs tools, etc. Accessed from browser via `/api/proxy/...` (not in scope, but critical dependency).
 - **Inference backend**: OpenAI-compatible `/v1` endpoint (vLLM/LiteLLM/etc). Used by `src/app/api/chat/route.ts`.
 - **Artifacts**: Code/UI snippets extracted from assistant text (` ```artifact-* ``` ` or `<artifact ...>`), shown in preview UI.
-- **Agent Plan**: Synthetic tools `set_plan` + `update_plan` that let the model maintain a checklist in agent mode.
+- **Agent Plan**: Synthetic tools `create_plan` + `update_plan` that let the model maintain a checklist in agent mode.
 
 ---
 
@@ -119,7 +119,7 @@ Notes:
 - Tool calls are **not executed on the server** in `/api/chat`. They are emitted to the client.
 - The client’s `onToolCall` decides how to execute:
   - MCP tool → controller `/mcp/tools/{server}/{tool}`
-  - Agent synthetic tool (`set_plan`, `update_plan`) → local state update
+  - Agent synthetic tool (`create_plan`, `update_plan`) → local state update
 
 ### 2.2 End-to-end sequence diagram (user message)
 
@@ -162,7 +162,7 @@ sequenceDiagram
 stateDiagram-v2
   [*] --> NoPlan
 
-  NoPlan --> Planned: set_plan(steps)
+  NoPlan --> Planned: create_plan(tasks)
   Planned --> Executing: update_plan(step, running)
   Executing --> Planned: update_plan(step, done)\n(next step becomes current)
 
@@ -331,7 +331,7 @@ Legend:
 | Audio recording | 🟡 | `tool-belt.tsx`, `/api/voice/transcribe` (external) | Records audio, transcribes to text, appends to input. Not sent as audio part. |
 | Deep Research | 🔴/🟡 | `chat-settings-modal.tsx`, `tool-belt-toolbar.tsx`, `chat-slice.ts` | Toggle exists; no observable effect in chat send pipeline in this directory. |
 | Agent Files / virtual filesystem | 🔴 | `agent-files-panel.tsx` | UI placeholder; ChatPage passes `files={[]}`. No backend wiring here. |
-| Agent planning tools (`set_plan`, `update_plan`) | ✅ | `use-agent-tools.ts`, `agent-plan-drawer.tsx`, `chat-page.tsx` | Synthetic tools merged into tool list when agent mode is on. |
+| Agent planning tools (`create_plan`, `update_plan`) | ✅ | `use-agent-tools.ts`, `agent-plan-drawer.tsx`, `chat-page.tsx` | Synthetic tools merged into tool list when agent mode is on. |
 | TTS | 🔴/🟡 | `tool-belt.tsx`, `tool-belt-toolbar.tsx`, store | Toggle exists; no speech synthesis in chat rendering here. |
 | Queue next message while streaming | 🟡 | `tool-belt.tsx`, store `queuedContext` | UI supports entering `queuedContext` during streaming; no auto-submit logic found in this directory. |
 
@@ -552,7 +552,7 @@ Calls controller:
 ### hooks/use-agent-tools.ts (✅ ACTIVE)
 
 **Role:** Implements synthetic agent tools:
-- Tool defs: `set_plan`, `update_plan`
+- Tool defs: `create_plan`, `update_plan`
 - `executeAgentTool()` updates Zustand `agentPlan` and returns JSON tool output.
 - `buildAgentSystemPrompt()` generates `<agent_mode>` block, optionally with `<current_plan>`.
 
