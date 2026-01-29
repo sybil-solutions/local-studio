@@ -17,7 +17,42 @@ export function normalizePlanSteps(
   input: unknown,
   maxSteps = 12,
 ): AgentPlanStep[] {
-  const rawSteps = Array.isArray(input) ? input : [];
+  console.log("[normalizePlanSteps] Input:", input, "type:", typeof input, "isArray:", Array.isArray(input));
+
+  // Handle various input formats
+  let rawSteps: unknown[] = [];
+
+  if (Array.isArray(input)) {
+    rawSteps = input;
+  } else if (input && typeof input === "object") {
+    const obj = input as Record<string, unknown>;
+    // Maybe it's an object with numeric keys like { "0": {...}, "1": {...} }
+    const keys = Object.keys(obj);
+    if (keys.length > 0 && keys.every(k => !isNaN(parseInt(k, 10)))) {
+      rawSteps = keys.sort((a, b) => parseInt(a, 10) - parseInt(b, 10)).map(k => obj[k]);
+      console.log("[normalizePlanSteps] Converted object to array:", rawSteps);
+    } else if ("tasks" in obj && Array.isArray(obj.tasks)) {
+      // Nested tasks array
+      rawSteps = obj.tasks as unknown[];
+      console.log("[normalizePlanSteps] Extracted nested tasks:", rawSteps);
+    } else if ("steps" in obj && Array.isArray(obj.steps)) {
+      // Nested steps array
+      rawSteps = obj.steps as unknown[];
+      console.log("[normalizePlanSteps] Extracted nested steps:", rawSteps);
+    }
+  } else if (typeof input === "string") {
+    // Maybe it's a JSON string
+    try {
+      const parsed = JSON.parse(input);
+      if (Array.isArray(parsed)) {
+        rawSteps = parsed;
+        console.log("[normalizePlanSteps] Parsed JSON string to array:", rawSteps);
+      }
+    } catch {
+      // Not valid JSON, ignore
+    }
+  }
+
   const normalized: AgentPlanStep[] = [];
 
   for (const step of rawSteps) {

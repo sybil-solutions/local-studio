@@ -23,22 +23,28 @@ export function useAgentFiles() {
       recursive?: boolean;
     }): Promise<AgentFileEntry[]> => {
       const sessionId = resolveSessionId(options?.sessionId);
+      console.log("[loadAgentFiles] sessionId:", sessionId, "options:", options);
       if (!sessionId) {
+        console.log("[loadAgentFiles] No sessionId, returning empty");
         setAgentFiles([]);
         setAgentFilesLoading(false);
         return [];
       }
       setAgentFilesLoading(true);
       try {
+        console.log("[loadAgentFiles] Calling API...");
         const data = await api.getAgentFiles(sessionId, {
           path: options?.path,
           recursive: options?.recursive,
         });
+        console.log("[loadAgentFiles] API response:", data);
         const files = Array.isArray(data.files) ? data.files : [];
+        console.log("[loadAgentFiles] Setting files in store:", files.length, "files");
         setAgentFiles(files);
         return files;
-      } catch {
-        // Silently fail - agent files are optional
+      } catch (err) {
+        // Log error for debugging
+        console.error("[loadAgentFiles] Error:", err);
         setAgentFiles([]);
         return [];
       } finally {
@@ -62,11 +68,17 @@ export function useAgentFiles() {
   const writeAgentFile = useCallback(
     async (path: string, content: string, sessionIdOverride?: string | null) => {
       const sessionId = resolveSessionId(sessionIdOverride);
+      console.log("[writeAgentFile] sessionId:", sessionId, "path:", path, "content length:", content.length);
       if (!sessionId) {
+        console.error("[writeAgentFile] No active session!");
         throw new Error("No active session");
       }
+      console.log("[writeAgentFile] Calling API...");
       const result = await api.writeAgentFile(sessionId, path, { content });
-      await loadAgentFiles({ sessionId });
+      console.log("[writeAgentFile] API result:", result);
+      console.log("[writeAgentFile] Reloading files...");
+      const files = await loadAgentFiles({ sessionId });
+      console.log("[writeAgentFile] Files after reload:", files);
       return result;
     },
     [currentSessionId, loadAgentFiles],
