@@ -121,11 +121,11 @@ const READ_FILE_TOOL = {
 const WRITE_FILE_TOOL = {
   name: "write_file",
   server: "__agent__",
-  description: "Write or overwrite a file in the agent workspace.",
+  description: "Write or overwrite a file in the agent workspace. Parent directories are created automatically - no need to call make_directory first.",
   inputSchema: {
     type: "object" as const,
     properties: {
-      path: { type: "string" as const, description: "Relative path" },
+      path: { type: "string" as const, description: "Relative path (e.g. 'research/notes.md')" },
       content: { type: "string" as const, description: "File contents" },
     },
     required: ["path", "content"],
@@ -170,6 +170,26 @@ const MOVE_FILE_TOOL = {
     },
     required: ["from", "to"],
   },
+};
+
+/**
+ * Extract a string argument from various possible locations in the args object.
+ * Models may put arguments in different places depending on the provider.
+ */
+const extractStringArg = (args: Record<string, unknown>, ...keys: string[]): string => {
+  for (const key of keys) {
+    const val = args[key];
+    if (typeof val === "string" && val.trim()) return val.trim();
+  }
+  // Try looking in nested 'arguments' or 'input' objects
+  const nested = args.arguments ?? args.input;
+  if (nested && typeof nested === "object") {
+    for (const key of keys) {
+      const val = (nested as Record<string, unknown>)[key];
+      if (typeof val === "string" && val.trim()) return val.trim();
+    }
+  }
+  return "";
 };
 
 const normalizePlanStatus = (value: unknown): AgentPlanStep["status"] => {
@@ -495,9 +515,15 @@ export function useAgentTools() {
       }
 
       if (toolName === "read_file") {
-        const path = typeof args.path === "string" ? args.path : "";
+        console.log("[read_file] Raw args:", JSON.stringify(args, null, 2));
+        const path = extractStringArg(args, "path", "filepath", "file_path", "filename", "file");
         if (!path) {
-          return JSON.stringify({ success: false, error: "path is required" });
+          return JSON.stringify({
+            success: false,
+            error: "path is required",
+            hint: 'Example: read_file({ path: "notes.md" })',
+            received: Object.keys(args),
+          });
         }
         try {
           const result = await readAgentFile(path, options?.sessionId ?? undefined);
@@ -507,6 +533,7 @@ export function useAgentTools() {
             content: result.content,
           });
         } catch (err) {
+          console.error("[read_file] FAILED:", err);
           return JSON.stringify({
             success: false,
             error: err instanceof Error ? err.message : String(err),
@@ -516,17 +543,22 @@ export function useAgentTools() {
 
       if (toolName === "write_file") {
         console.log("[write_file] Raw args:", JSON.stringify(args, null, 2));
-        const path = typeof args.path === "string" ? args.path : "";
-        const content = typeof args.content === "string" ? args.content : "";
+        const path = extractStringArg(args, "path", "filepath", "file_path", "filename", "file");
+        const content = extractStringArg(args, "content", "contents", "text", "data", "body");
         console.log("[write_file] path:", path, "content length:", content.length, "sessionId:", options?.sessionId);
         if (!path) {
-          return JSON.stringify({ success: false, error: "path is required" });
+          return JSON.stringify({
+            success: false,
+            error: "path is required",
+            hint: 'Example: write_file({ path: "notes.md", content: "# Notes\\n..." })',
+            received: Object.keys(args),
+          });
         }
         try {
           console.log("[write_file] Calling writeAgentFile...");
           await writeAgentFile(path, content, options?.sessionId ?? undefined);
           console.log("[write_file] SUCCESS! File written and files reloaded");
-          return JSON.stringify({ success: true, path });
+          return JSON.stringify({ success: true, path, message: "File written successfully. Parent directories created automatically." });
         } catch (err) {
           console.error("[write_file] FAILED:", err);
           return JSON.stringify({
@@ -537,14 +569,21 @@ export function useAgentTools() {
       }
 
       if (toolName === "delete_file") {
-        const path = typeof args.path === "string" ? args.path : "";
+        console.log("[delete_file] Raw args:", JSON.stringify(args, null, 2));
+        const path = extractStringArg(args, "path", "filepath", "file_path", "filename", "file");
         if (!path) {
-          return JSON.stringify({ success: false, error: "path is required" });
+          return JSON.stringify({
+            success: false,
+            error: "path is required",
+            hint: 'Example: delete_file({ path: "old_notes.md" })',
+            received: Object.keys(args),
+          });
         }
         try {
           await deleteAgentFile(path, options?.sessionId ?? undefined);
           return JSON.stringify({ success: true, path });
         } catch (err) {
+          console.error("[delete_file] FAILED:", err);
           return JSON.stringify({
             success: false,
             error: err instanceof Error ? err.message : String(err),
@@ -553,14 +592,21 @@ export function useAgentTools() {
       }
 
       if (toolName === "make_directory") {
-        const path = typeof args.path === "string" ? args.path : "";
+        console.log("[make_directory] Raw args:", JSON.stringify(args, null, 2));
+        const path = extractStringArg(args, "path", "directory", "dir", "dirname", "folder");
         if (!path) {
-          return JSON.stringify({ success: false, error: "path is required" });
+          return JSON.stringify({
+            success: false,
+            error: "path is required",
+            hint: 'Example: make_directory({ path: "research" }). Note: write_file creates parent directories automatically.',
+            received: Object.keys(args),
+          });
         }
         try {
           await createAgentDirectory(path, options?.sessionId ?? undefined);
-          return JSON.stringify({ success: true, path });
+          return JSON.stringify({ success: true, path, message: "Directory created. Note: write_file creates parent directories automatically." });
         } catch (err) {
+          console.error("[make_directory] FAILED:", err);
           return JSON.stringify({
             success: false,
             error: err instanceof Error ? err.message : String(err),
@@ -569,18 +615,22 @@ export function useAgentTools() {
       }
 
       if (toolName === "move_file") {
-        const from = typeof args.from === "string" ? args.from : "";
-        const to = typeof args.to === "string" ? args.to : "";
+        console.log("[move_file] Raw args:", JSON.stringify(args, null, 2));
+        const from = extractStringArg(args, "from", "source", "src", "old_path", "oldPath");
+        const to = extractStringArg(args, "to", "destination", "dest", "new_path", "newPath", "target");
         if (!from || !to) {
           return JSON.stringify({
             success: false,
             error: "from and to are required",
+            hint: 'Example: move_file({ from: "old.md", to: "new.md" })',
+            received: Object.keys(args),
           });
         }
         try {
           await moveAgentFile(from, to, options?.sessionId ?? undefined);
           return JSON.stringify({ success: true, from, to });
         } catch (err) {
+          console.error("[move_file] FAILED:", err);
           return JSON.stringify({
             success: false,
             error: err instanceof Error ? err.message : String(err),
