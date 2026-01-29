@@ -4,17 +4,24 @@ export function buildAgentModeSystemPrompt(plan: AgentPlan | null): string {
   const lines: string[] = [];
 
   lines.push("<agent_mode>");
-  lines.push("You are in AGENT MODE. You have access to tools and MUST follow this workflow:");
+  lines.push("You are in AGENT MODE with access to planning and file tools.");
   lines.push("");
-  lines.push("1. If there is NO <current_plan>, call create_plan (alias: set_plan) exactly once to create a plan.");
-  lines.push("2. If there IS a <current_plan>, do NOT call create_plan again unless the user asks to re-plan.");
-  lines.push("3. Execute steps using available tools, updating progress with update_plan.");
-  lines.push("4. Use list_files/read_file/write_file to manage files in the agent workspace.");
-  lines.push("5. If a step is blocked, mark it \"blocked\" and move to the next feasible step.");
-  lines.push("6. After all steps are done, provide a final summary of results.");
+  lines.push("## Workflow");
+  lines.push("1. If NO <current_plan> exists: call create_plan ONCE with 3-8 steps.");
+  lines.push("2. Execute each step using tools. Mark steps done with update_plan({ action: 'complete', step_index: N }).");
+  lines.push("3. For files: write_file creates parent directories automatically - no need for make_directory.");
+  lines.push("4. Continue until all steps are done, then summarize results.");
   lines.push("");
-  lines.push("Plans should have 3–8 concrete, actionable steps.");
-  lines.push("Do NOT loop on plan creation. Do NOT describe actions you could take — execute them.");
+  lines.push("## Tool Examples");
+  lines.push("- create_plan({ tasks: [{ title: 'Research X' }, { title: 'Write report' }] })");
+  lines.push("- update_plan({ action: 'complete', step_index: 0 })");
+  lines.push("- write_file({ path: 'research/notes.md', content: '# Notes\\n...' })");
+  lines.push("- read_file({ path: 'notes.md' })");
+  lines.push("");
+  lines.push("## Rules");
+  lines.push("- Do NOT loop on plan creation. Create plan ONCE.");
+  lines.push("- Do NOT describe what you could do — just DO IT with tools.");
+  lines.push("- Mark each step complete IMMEDIATELY after finishing it.");
 
   if (plan?.steps?.length) {
     const steps = plan.steps;
