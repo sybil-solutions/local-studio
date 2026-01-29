@@ -33,8 +33,15 @@ export function ChatMessageList({
 }: ChatMessageListProps) {
   const copiedMessageId = useAppStore((state) => state.copiedMessageId);
   const setCopiedMessageId = useAppStore((state) => state.setCopiedMessageId);
-  const lastMessage = messages[messages.length - 1];
-  const showLoadingIndicator = isLoading && lastMessage?.role === "user";
+
+  // Filter out internal/continuation messages from display
+  const visibleMessages = messages.filter((m) => {
+    const metadata = m.metadata as { internal?: boolean } | undefined;
+    return !metadata?.internal;
+  });
+
+  const lastMessage = visibleMessages[visibleMessages.length - 1];
+  const showLoadingIndicator = isLoading && messages[messages.length - 1]?.role === "user";
 
   const handleCopy = useCallback(async (text: string, messageId: string) => {
     if (!text.trim()) return;
@@ -85,11 +92,11 @@ export function ChatMessageList({
 
   return (
     <div className="flex flex-col gap-4 px-4 md:px-6 py-4 max-w-4xl mx-auto w-full">
-      {messages.map((message, index) => (
+      {visibleMessages.map((message, index) => (
         <ChatMessageItem
           key={message.id}
           message={message}
-          isStreaming={isLoading && index === messages.length - 1 && message.role === "assistant"}
+          isStreaming={isLoading && index === visibleMessages.length - 1 && message.role === "assistant"}
           artifactsEnabled={artifactsEnabled}
           artifacts={artifactsByMessage?.get(message.id)}
           selectedModel={selectedModel}

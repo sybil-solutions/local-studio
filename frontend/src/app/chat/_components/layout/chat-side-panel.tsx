@@ -148,54 +148,94 @@ export function ChatSidePanel({
 
 export interface ActivityPanelProps {
   activityGroups: ActivityGroup[];
+  agentPlan?: { steps: Array<{ status: string; title: string }> } | null;
+  isLoading?: boolean;
 }
 
-export function ActivityPanel({ activityGroups }: ActivityPanelProps) {
+export function ActivityPanel({ activityGroups, agentPlan, isLoading }: ActivityPanelProps) {
   if (activityGroups.length === 0) {
     return <div className="py-8 text-center text-sm text-[#6a6560]">No activity yet</div>;
   }
 
+  // Calculate agent progress
+  const totalSteps = agentPlan?.steps.length ?? 0;
+  const doneSteps = agentPlan?.steps.filter((s) => s.status === "done").length ?? 0;
+  const currentStep = agentPlan?.steps.find((s) => s.status === "running");
+  const hasIncomplete = doneSteps < totalSteps;
+
   return (
-    <div className="relative">
-      {/* Vertical timeline line */}
-      <div className="absolute left-[11px] top-2 bottom-2 w-px bg-[#2a2725]" />
-
-      <div className="space-y-1">
-        {activityGroups.map((group, groupIdx) => (
-          <div key={group.id}>
-            {/* Turn header */}
-            <div className="flex items-center gap-2 py-2 pl-1">
-              <div className="w-5 h-5 rounded-full bg-[#1c1b1a] border border-[#2a2725] flex items-center justify-center z-10">
-                <span className="text-[9px] text-[#666] font-medium">{groupIdx + 1}</span>
-              </div>
-              <span className="text-[10px] text-[#555] uppercase tracking-wider">
-                {group.isLatest ? "Current" : "Turn"}
-              </span>
-              {group.isLatest && group.thinkingActive && (
-                <span className="relative flex h-1.5 w-1.5 ml-auto mr-2">
-                  <span className="animate-ping absolute h-full w-full rounded-full bg-blue-400 opacity-75" />
-                  <span className="relative h-1.5 w-1.5 rounded-full bg-blue-400" />
-                </span>
-              )}
-            </div>
-
-            {/* Interleaved thinking and tool calls */}
-            <div className="space-y-1">
-              {/* Thinking comes first in a turn */}
-              {(group.thinkingActive || group.thinkingContent) && (
-                <ThinkingItem
-                  content={group.thinkingContent}
-                  isActive={group.thinkingActive}
-                />
-              )}
-
-              {/* Tool calls follow */}
-              {group.toolItems.map((item) => (
-                <ToolItem key={item.id} item={item} />
-              ))}
-            </div>
+    <div className="h-full flex flex-col">
+      {/* Progress Header - shows when agent is active */}
+      {totalSteps > 0 && (
+        <div className="px-3 py-3 border-b border-[#2a2725] mb-2">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-[11px] text-[#aaa]">Plan Progress</span>
+            <span className="text-[10px] text-[#666] font-mono">
+              {doneSteps}/{totalSteps}
+            </span>
           </div>
-        ))}
+          <div className="h-1 w-full rounded-full bg-[#2a2725] overflow-hidden">
+            <div
+              className="h-full rounded-full bg-violet-500/60 transition-all duration-300"
+              style={{ width: `${totalSteps > 0 ? (doneSteps / totalSteps) * 100 : 0}%` }}
+            />
+          </div>
+          {currentStep && isLoading && (
+            <div className="flex items-center gap-2 mt-2">
+              <Loader2 className="h-3 w-3 text-violet-400 animate-spin" />
+              <span className="text-[11px] text-violet-300 truncate">{currentStep.title}</span>
+            </div>
+          )}
+          {!currentStep && hasIncomplete && isLoading && (
+            <div className="flex items-center gap-2 mt-2">
+              <Loader2 className="h-3 w-3 text-blue-400 animate-spin" />
+              <span className="text-[11px] text-blue-300">Working...</span>
+            </div>
+          )}
+        </div>
+      )}
+
+      <div className="relative flex-1 overflow-y-auto px-2">
+        {/* Vertical timeline line */}
+        <div className="absolute left-[19px] top-2 bottom-2 w-px bg-[#2a2725]" />
+
+        <div className="space-y-1 pb-4">
+          {activityGroups.map((group, groupIdx) => (
+            <div key={group.id}>
+              {/* Turn header */}
+              <div className="flex items-center gap-2 py-2 pl-1">
+                <div className="w-5 h-5 rounded-full bg-[#1c1b1a] border border-[#2a2725] flex items-center justify-center z-10">
+                  <span className="text-[9px] text-[#666] font-medium">{groupIdx + 1}</span>
+                </div>
+                <span className="text-[10px] text-[#555] uppercase tracking-wider">
+                  {group.isLatest ? "Current" : "Turn"}
+                </span>
+                {group.isLatest && group.thinkingActive && (
+                  <span className="relative flex h-1.5 w-1.5 ml-auto mr-2">
+                    <span className="animate-ping absolute h-full w-full rounded-full bg-blue-400 opacity-75" />
+                    <span className="relative h-1.5 w-1.5 rounded-full bg-blue-400" />
+                  </span>
+                )}
+              </div>
+
+              {/* Interleaved thinking and tool calls */}
+              <div className="space-y-1">
+                {/* Thinking comes first in a turn */}
+                {(group.thinkingActive || group.thinkingContent) && (
+                  <ThinkingItem
+                    content={group.thinkingContent}
+                    isActive={group.thinkingActive}
+                  />
+                )}
+
+                {/* Tool calls follow */}
+                {group.toolItems.map((item) => (
+                  <ToolItem key={item.id} item={item} />
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );
@@ -414,7 +454,8 @@ function ToolItem({ item }: ToolItemProps) {
   return (
     <div className="relative pl-7 pr-2 py-2 bg-white/[0.01] rounded">
       {/* Timeline node - status indicator */}
-      <div className="absolute left-[7px] top-3 w-[9px] h-[9px] rounded-full border flex items-center justify-center"
+      <div
+        className="absolute left-[7px] top-3 w-[9px] h-[9px] rounded-full border flex items-center justify-center"
         style={{
           borderColor: isExecuting ? "#f59e0b40" : isError ? "#ef444440" : hasResult ? "#22c55e40" : "#3a3735",
           backgroundColor: isExecuting ? "#1c1917" : isError ? "#1c1917" : hasResult ? "#1c1917" : "#1c1b1a"
