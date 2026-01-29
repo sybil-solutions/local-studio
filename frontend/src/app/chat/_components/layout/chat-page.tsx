@@ -1137,13 +1137,13 @@ export function ChatPage() {
   }, [currentSessionId, currentSessionTitle, selectedModel, messages]);
 
   const sendUserMessage = useCallback(
-    async (text: string, attachments?: Attachment[], options?: { clearInput?: boolean }) => {
+    async (text: string, attachments?: Attachment[], options?: { clearInput?: boolean; internal?: boolean }) => {
       if (!selectedModel) return;
       if (!text.trim() && (!attachments || attachments.length === 0)) return;
       if (isLoading) return;
 
-      // Only open side panel on desktop
-      if (window.innerWidth >= 768) {
+      // Only open side panel on desktop (but not for internal/continuation messages)
+      if (!options?.internal && window.innerWidth >= 768) {
         setToolPanelOpen(true);
         setActivePanel("activity");
       }
@@ -1153,11 +1153,15 @@ export function ChatPage() {
         setInput("");
       }
 
-      // Store for title generation
-      lastUserInputRef.current = text;
+      // Store for title generation (only for user-visible messages)
+      if (!options?.internal) {
+        lastUserInputRef.current = text;
+      }
 
-      // Reset agent continuation counter on manual user send
-      agentContinuationRef.current = 0;
+      // Reset agent continuation counter on manual user send (not internal)
+      if (!options?.internal) {
+        agentContinuationRef.current = 0;
+      }
 
       // Build message parts including attachments
       const parts: UIMessage["parts"] = [];
@@ -1189,6 +1193,7 @@ export function ChatPage() {
         id: messageId,
         role: "user",
         parts,
+        metadata: options?.internal ? { internal: true } : undefined,
       };
 
       // Create session if needed, then persist user message
@@ -1200,7 +1205,7 @@ export function ChatPage() {
       }
 
       // Send the message via AI SDK — transport body provides system, model, tools
-      sendMessage({ parts });
+      sendMessage({ parts, metadata: userMessage.metadata });
     },
     [
       isLoading,
@@ -1241,14 +1246,15 @@ export function ChatPage() {
     const lastMsg = messages[messages.length - 1];
     if (lastMsg?.role !== "assistant") return;
 
-    // Schedule continuation
+    // Schedule continuation - send internal message (not visible in chat)
     agentContinuationTimerRef.current = setTimeout(() => {
       agentContinuationRef.current += 1;
       const done = agentPlan.steps.filter((s) => s.status === "done").length;
       const next = incomplete[0];
-      const prompt = `Continue: ${next?.title ?? "next step"} (${done}/${agentPlan.steps.length} complete)`;
-      console.info("[Agent] Continuing:", prompt);
-      void sendUserMessage(prompt);
+      // Use a minimal internal prompt - the system prompt has all the context
+      const prompt = next?.title ? `Proceed with: ${next.title}` : "Continue";
+      console.info("[Agent] Continuing step:", `${done + 1}/${agentPlan.steps.length}`, next?.title);
+      void sendUserMessage(prompt, undefined, { internal: true });
     }, 1000);
 
     return () => {
@@ -1418,8 +1424,12 @@ export function ChatPage() {
         }}
         hasArtifacts={sessionArtifacts.length > 0}
         activityContent={
-          <div className="p-4 overflow-y-auto h-full">
-            <ActivityPanel activityGroups={activityGroups} />
+          <div className="h-full flex flex-col">
+            <ActivityPanel
+              activityGroups={activityGroups}
+              agentPlan={agentPlan}
+              isLoading={isLoading}
+            />
           </div>
         }
         contextContent={
