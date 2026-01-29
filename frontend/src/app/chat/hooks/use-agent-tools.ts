@@ -3,88 +3,41 @@
 
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import { useAppStore } from "@/store";
-import { normalizePlanSteps, normalizeTasks } from "../_components/agent/agent-types";
-import type { AgentPlan, AgentPlanStep, AgentTask } from "../_components/agent/agent-types";
+import { normalizePlanSteps } from "../_components/agent/agent-types";
+import type { AgentPlan, AgentPlanStep } from "../_components/agent/agent-types";
 import { useAgentFiles } from "./use-agent-files";
 
 /**
  * Synthetic tool definitions injected when agent mode is on.
- * The model calls set_plan to create a checklist, then update_plan
+ * The model calls create_plan to create a checklist, then update_plan
  * to mark each step done/running/blocked as it works.
  */
-const SET_PLAN_TOOL = {
-  name: "set_plan",
+const CREATE_PLAN_TOOL = {
+  name: "create_plan",
   server: "__agent__",
   description:
     "Create or replace the execution plan. Call this BEFORE doing any work. " +
-    "Each step should be a concrete, actionable task. " +
-    "After creating the plan, proceed to execute step 0.",
-  inputSchema: {
-    type: "object" as const,
-    properties: {
-      steps: {
-        type: "array" as const,
-        description: "Array of plan steps",
-        items: {
-          type: "object" as const,
-          properties: {
-            title: {
-              type: "string" as const,
-              description: "Short description of this step",
-            },
-          },
-          required: ["title"],
-        },
-      },
-    },
-    required: ["steps"],
-  },
-};
-
-const UPDATE_PLAN_TOOL = {
-  name: "update_plan",
-  server: "__agent__",
-  description:
-    "Update a plan step's status. Call this after completing each step " +
-    'to mark it "done", or "blocked" if it cannot proceed. ' +
-    "Always update the current step before moving to the next one.",
-  inputSchema: {
-    type: "object" as const,
-    properties: {
-      step_index: {
-        type: "number" as const,
-        description: "Zero-based index of the step to update",
-      },
-      status: {
-        type: "string" as const,
-        enum: ["done", "running", "blocked"],
-        description: "New status for the step",
-      },
-      notes: {
-        type: "string" as const,
-        description: "Optional notes about the result of this step",
-      },
-    },
-    required: ["step_index", "status"],
-  },
-};
-
-const SET_TASKS_TOOL = {
-  name: "set_tasks",
-  server: "__agent__",
-  description:
-    "Create or replace the task list. Use this to track TODOs that are " +
-    "separate from the execution plan.",
+    "Provide an ordered list of tasks. After creating the plan, proceed to execute step 0.",
   inputSchema: {
     type: "object" as const,
     properties: {
       tasks: {
         type: "array" as const,
-        description: "Array of task items",
+        description: "Ordered list of plan tasks",
         items: {
           type: "object" as const,
           properties: {
-            title: { type: "string" as const },
+            title: {
+              type: "string" as const,
+              description: "Short description of this task",
+            },
+            status: {
+              type: "string" as const,
+              enum: ["pending", "running", "done", "blocked"] as const,
+            },
+            notes: {
+              type: "string" as const,
+            },
           },
           required: ["title"],
         },
@@ -94,51 +47,48 @@ const SET_TASKS_TOOL = {
   },
 };
 
-const ADD_TASK_TOOL = {
-  name: "add_task",
-  server: "__agent__",
-  description: "Append a new task to the task list.",
-  inputSchema: {
-    type: "object" as const,
-    properties: {
-      title: { type: "string" as const },
-    },
-    required: ["title"],
-  },
+// Backwards-compatible alias. Some models/prompts may call `set_plan`.
+const SET_PLAN_TOOL = {
+  ...CREATE_PLAN_TOOL,
+  name: "set_plan",
+  description:
+    "Alias for create_plan. Create or replace the execution plan. " +
+    "Provide an ordered list of tasks. After creating the plan, proceed to execute step 0.",
 };
 
-const UPDATE_TASK_TOOL = {
-  name: "update_task",
+const UPDATE_PLAN_TOOL = {
+  name: "update_plan",
   server: "__agent__",
-  description: "Update a task status or notes.",
+  description:
+    "Update the plan by adding, editing, completing, or deleting a task. " +
+    "Always keep the plan current.",
   inputSchema: {
     type: "object" as const,
     properties: {
-      task_index: {
+      action: {
+        type: "string" as const,
+        enum: ["add", "edit", "update", "delete", "complete", "status"] as const,
+        description: "Action to perform on the plan",
+      },
+      step_index: {
         type: "number" as const,
-        description: "Zero-based index of the task to update",
+        description: "Zero-based index of the task to modify",
+      },
+      title: {
+        type: "string" as const,
+        description: "Task title (for add/edit)",
       },
       status: {
         type: "string" as const,
-        enum: ["done", "running", "blocked"],
-        description: "New status for the task",
+        enum: ["pending", "running", "done", "blocked"] as const,
+        description: "New status (for status/edit)",
       },
-      notes: { type: "string" as const },
+      notes: {
+        type: "string" as const,
+        description: "Optional notes",
+      },
     },
-    required: ["task_index", "status"],
-  },
-};
-
-const REMOVE_TASK_TOOL = {
-  name: "remove_task",
-  server: "__agent__",
-  description: "Remove a task from the task list.",
-  inputSchema: {
-    type: "object" as const,
-    properties: {
-      task_index: { type: "number" as const },
-    },
-    required: ["task_index"],
+    required: ["action"],
   },
 };
 
@@ -222,11 +172,27 @@ const MOVE_FILE_TOOL = {
   },
 };
 
+const normalizePlanStatus = (value: unknown): AgentPlanStep["status"] => {
+  if (typeof value !== "string") return "pending";
+  const normalized = value.toLowerCase().trim();
+  if (normalized === "complete" || normalized === "completed" || normalized === "done" || normalized === "finished") {
+    return "done";
+  }
+  if (normalized === "running" || normalized === "in_progress" || normalized === "in-progress" || normalized === "active" || normalized === "working") {
+    return "running";
+  }
+  if (normalized === "blocked" || normalized === "failed" || normalized === "error") {
+    return "blocked";
+  }
+  if (normalized === "pending" || normalized === "waiting" || normalized === "queued" || normalized === "todo") {
+    return "pending";
+  }
+  return "pending";
+};
+
 export function useAgentTools() {
   const agentPlan = useAppStore((s) => s.agentPlan);
   const setAgentPlan = useAppStore((s) => s.setAgentPlan);
-  const agentTasks = useAppStore((s) => s.agentTasks);
-  const setAgentTasks = useAppStore((s) => s.setAgentTasks);
 
   const {
     loadAgentFiles,
@@ -242,19 +208,12 @@ export function useAgentTools() {
   // before React re-renders.
   const planRef = useRef<AgentPlan | null>(agentPlan);
   useEffect(() => { planRef.current = agentPlan; }, [agentPlan]);
-
-  const tasksRef = useRef<AgentTask[]>(agentTasks);
-  useEffect(() => { tasksRef.current = agentTasks; }, [agentTasks]);
-
   /** The tool defs to merge into the tool list */
   const agentToolDefs = useMemo(
     () => [
+      CREATE_PLAN_TOOL,
       SET_PLAN_TOOL,
       UPDATE_PLAN_TOOL,
-      SET_TASKS_TOOL,
-      ADD_TASK_TOOL,
-      UPDATE_TASK_TOOL,
-      REMOVE_TASK_TOOL,
       LIST_FILES_TOOL,
       READ_FILE_TOOL,
       WRITE_FILE_TOOL,
@@ -272,14 +231,85 @@ export function useAgentTools() {
       args: Record<string, unknown>,
       options?: { sessionId?: string | null },
     ): Promise<string | null> => {
-      if (toolName === "set_plan") {
-        const steps = normalizePlanSteps(args.steps);
+      const normalizedToolName = toolName === "set_plan" ? "create_plan" : toolName;
+
+      if (normalizedToolName === "create_plan") {
+        console.log("[create_plan] Raw args:", JSON.stringify(args, null, 2));
+        const planArg = args.plan as Record<string, unknown> | undefined;
+
+        // Try multiple ways to extract tasks
+        let rawTasks: unknown = args.tasks ?? args.steps ?? planArg?.tasks ?? planArg?.steps;
+
+        // If args itself is an array, it might be the tasks directly
+        if (!rawTasks && Array.isArray(args)) {
+          console.log("[create_plan] args is an array, using directly");
+          rawTasks = args;
+        }
+
+        // Check if args has a nested 'arguments' wrapper (some models do this)
+        if (!rawTasks && args.arguments) {
+          const nested = args.arguments as Record<string, unknown>;
+          rawTasks = nested.tasks ?? nested.steps;
+          console.log("[create_plan] Found nested arguments:", nested);
+        }
+
+        // If rawTasks is still a string, try parsing it
+        if (typeof rawTasks === "string") {
+          try {
+            rawTasks = JSON.parse(rawTasks);
+            console.log("[create_plan] Parsed string tasks:", rawTasks);
+          } catch {
+            // ignore
+          }
+        }
+
+        // Last resort: look for any array property in args
+        if (!rawTasks || (Array.isArray(rawTasks) && rawTasks.length === 0)) {
+          for (const [key, value] of Object.entries(args)) {
+            if (Array.isArray(value) && value.length > 0) {
+              console.log(`[create_plan] Found array in args.${key}:`, value);
+              // Check if it looks like tasks (has objects with title or string elements)
+              const firstItem = value[0];
+              if (
+                typeof firstItem === "string" ||
+                (typeof firstItem === "object" && firstItem !== null && ("title" in firstItem || "name" in firstItem))
+              ) {
+                rawTasks = value;
+                break;
+              }
+            }
+          }
+        }
+
+        // Handle case where items have "name" instead of "title"
+        if (Array.isArray(rawTasks)) {
+          rawTasks = rawTasks.map((item) => {
+            if (typeof item === "object" && item !== null) {
+              const obj = item as Record<string, unknown>;
+              if (!obj.title && obj.name && typeof obj.name === "string") {
+                return { ...obj, title: obj.name };
+              }
+            }
+            return item;
+          });
+        }
+
+        console.log("[create_plan] Final rawTasks:", rawTasks, "type:", typeof rawTasks, "isArray:", Array.isArray(rawTasks));
+        const steps = normalizePlanSteps(rawTasks);
         if (steps.length === 0) {
+          const receivedKeys = Object.keys(args);
+          console.error("[create_plan] Failed to extract tasks. Args keys:", receivedKeys);
           return JSON.stringify({
             success: false,
             error:
-              "Plan must include a steps array with a title for each step.",
-            hint: 'Example: set_plan({ steps: [{ title: "Research topic" }, { title: "Draft outline" }] })',
+              "Plan must include a tasks array with a title for each task.",
+            hint: 'Example: create_plan({ tasks: [{ title: "Research topic" }, { title: "Draft outline" }] })',
+            received: {
+              keys: receivedKeys,
+              hasTasksKey: "tasks" in args,
+              tasksType: typeof args.tasks,
+              rawArgs: args,
+            },
           });
         }
         const plan: AgentPlan = {
@@ -287,8 +317,10 @@ export function useAgentTools() {
           createdAt: Date.now(),
           updatedAt: Date.now(),
         };
+        console.log("[create_plan] SUCCESS! Setting plan:", plan);
         planRef.current = plan;
         setAgentPlan(plan);
+        console.log("[create_plan] Plan set in Zustand. planRef.current:", planRef.current);
         return JSON.stringify({
           success: true,
           plan: { steps: plan.steps },
@@ -296,23 +328,73 @@ export function useAgentTools() {
         });
       }
 
-      if (toolName === "update_plan") {
+      if (normalizedToolName === "update_plan") {
+        console.log("[update_plan] Raw args:", JSON.stringify(args, null, 2));
         const live = planRef.current;
         if (!live) {
+          console.error("[update_plan] No active plan!");
           return JSON.stringify({
             success: false,
-            error: "No active plan. Call set_plan first.",
+            error: "No active plan. Call create_plan first.",
           });
         }
-        const rawIdx = args.step_index;
-        const idx =
+        console.log("[update_plan] Current plan has", live.steps.length, "steps");
+
+        // Flexible action extraction
+        let rawAction = typeof args.action === "string" ? args.action.toLowerCase() : "";
+        // Infer action from status if not provided
+        const rawStatus = typeof args.status === "string" ? args.status.toLowerCase() : "";
+        if (!rawAction && rawStatus) {
+          if (rawStatus === "done" || rawStatus === "complete" || rawStatus === "completed") {
+            rawAction = "complete";
+          } else if (rawStatus === "running" || rawStatus === "in_progress") {
+            rawAction = "status";
+          } else {
+            rawAction = "status";
+          }
+        }
+        if (!rawAction) rawAction = "status";
+
+        console.log("[update_plan] Action:", rawAction, "step_index:", args.step_index, "index:", args.index, "status:", args.status, "task_index:", args.task_index);
+
+        const action =
+          rawAction === "update" || rawAction === "edit" || rawAction === "add" || rawAction === "delete" ||
+          rawAction === "complete" || rawAction === "status" || rawAction === "done"
+            ? (rawAction === "done" ? "complete" : rawAction)
+            : "status";
+
+        // Flexible index extraction - try multiple property names
+        const rawIdx = args.step_index ?? args.index ?? args.task_index ?? args.stepIndex ?? args.taskIndex ?? args.step ?? args.task;
+        let idx =
           typeof rawIdx === "number"
             ? rawIdx
             : typeof rawIdx === "string"
               ? parseInt(rawIdx, 10)
               : -1;
+
+        // If no index provided but we want to complete, try to find the current running step
+        if (idx < 0 && (action === "complete" || action === "status")) {
+          const runningIdx = live.steps.findIndex((s) => s.status === "running");
+          const pendingIdx = live.steps.findIndex((s) => s.status === "pending");
+          if (runningIdx >= 0) {
+            idx = runningIdx;
+            console.log("[update_plan] Auto-selected running step:", idx);
+          } else if (pendingIdx >= 0 && action === "status") {
+            idx = pendingIdx;
+            console.log("[update_plan] Auto-selected pending step:", idx);
+          }
+        }
+
+        console.log("[update_plan] Final idx:", idx, "action:", action);
         const maxIdx = live.steps.length - 1;
-        if (!Number.isFinite(idx) || idx < 0 || idx > maxIdx) {
+        const title = typeof args.title === "string" ? args.title.trim() : "";
+        const status = normalizePlanStatus(args.status);
+        const notes =
+          typeof args.notes === "string" && args.notes.trim()
+            ? args.notes.trim()
+            : undefined;
+
+        if (action !== "add" && (!Number.isFinite(idx) || idx < 0 || idx > maxIdx)) {
           return JSON.stringify({
             success: false,
             error: `Invalid step_index: ${idx}. Valid range is 0–${maxIdx}.`,
@@ -321,28 +403,60 @@ export function useAgentTools() {
             ),
           });
         }
-        const rawStatus =
-          typeof args.status === "string" ? args.status : "done";
-        const status: AgentPlanStep["status"] =
-          rawStatus === "running" || rawStatus === "done" || rawStatus === "blocked"
-            ? rawStatus
-            : "done";
 
-        const notes =
-          typeof args.notes === "string" && args.notes.trim()
-            ? args.notes.trim()
-            : undefined;
+        let updatedSteps = [...live.steps];
 
-        const updatedSteps = live.steps.map((s, i) =>
-          i === idx ? { ...s, status, ...(notes ? { notes } : {}) } : s,
-        );
+        if (action === "add") {
+          if (!title) {
+            return JSON.stringify({
+              success: false,
+              error: "title is required to add a task.",
+            });
+          }
+          updatedSteps = [
+            ...updatedSteps,
+            {
+              id: `step-${Date.now()}`,
+              title,
+              status,
+              ...(notes ? { notes } : {}),
+            },
+          ];
+        } else if (action === "delete") {
+          updatedSteps = updatedSteps.filter((_, i) => i !== idx);
+        } else if (action === "complete") {
+          updatedSteps = updatedSteps.map((s, i) =>
+            i === idx ? { ...s, status: "done", ...(notes ? { notes } : {}) } : s,
+          );
+        } else {
+          const hasEdits = Boolean(title || notes || args.status);
+          if (!hasEdits) {
+            return JSON.stringify({
+              success: false,
+              error: "Provide title, status, or notes to edit.",
+            });
+          }
+          updatedSteps = updatedSteps.map((s, i) =>
+            i === idx
+              ? {
+                  ...s,
+                  ...(title ? { title } : {}),
+                  ...(args.status ? { status } : {}),
+                  ...(notes ? { notes } : {}),
+                }
+              : s,
+          );
+        }
+
         const updated: AgentPlan = {
           ...live,
           steps: updatedSteps,
           updatedAt: Date.now(),
         };
+        console.log("[update_plan] SUCCESS! Updated steps:", updatedSteps.map(s => `${s.title}: ${s.status}`));
         planRef.current = updated;
         setAgentPlan(updated);
+        console.log("[update_plan] Plan updated in Zustand");
 
         const doneCount = updatedSteps.filter(
           (s) => s.status === "done",
@@ -353,115 +467,12 @@ export function useAgentTools() {
 
         return JSON.stringify({
           success: true,
-          step: idx,
-          status,
+          action,
+          step: action === "add" ? updatedSteps.length - 1 : idx,
           progress: `${doneCount}/${updatedSteps.length}`,
           ...(nextIdx >= 0
             ? { nextStep: nextIdx, nextTitle: updatedSteps[nextIdx].title }
             : { allDone: true }),
-        });
-      }
-
-      if (toolName === "set_tasks") {
-        const tasks = normalizeTasks(args.tasks);
-        if (tasks.length === 0) {
-          return JSON.stringify({
-            success: false,
-            error: "Tasks must include a list of titles.",
-          });
-        }
-        tasksRef.current = tasks;
-        setAgentTasks(tasks);
-        return JSON.stringify({
-          success: true,
-          tasks,
-          message: `Task list replaced with ${tasks.length} items.`,
-        });
-      }
-
-      if (toolName === "add_task") {
-        const title = typeof args.title === "string" ? args.title.trim() : "";
-        if (!title) {
-          return JSON.stringify({
-            success: false,
-            error: "Task title is required.",
-          });
-        }
-        const current = tasksRef.current ?? [];
-        const next: AgentTask[] = [
-          ...current,
-          {
-            id: `task-${current.length}`,
-            title,
-            status: "pending",
-          },
-        ];
-        tasksRef.current = next;
-        setAgentTasks(next);
-        return JSON.stringify({
-          success: true,
-          tasks: next,
-          message: `Task added: ${title}`,
-        });
-      }
-
-      if (toolName === "update_task") {
-        const current = tasksRef.current ?? [];
-        const rawIdx = args.task_index;
-        const idx =
-          typeof rawIdx === "number"
-            ? rawIdx
-            : typeof rawIdx === "string"
-              ? parseInt(rawIdx, 10)
-              : -1;
-        if (!Number.isFinite(idx) || idx < 0 || idx >= current.length) {
-          return JSON.stringify({
-            success: false,
-            error: `Invalid task_index: ${idx}.`,
-          });
-        }
-        const rawStatus = typeof args.status === "string" ? args.status : "done";
-        const status: AgentTask["status"] =
-          rawStatus === "running" || rawStatus === "done" || rawStatus === "blocked"
-            ? rawStatus
-            : "done";
-        const notes =
-          typeof args.notes === "string" && args.notes.trim()
-            ? args.notes.trim()
-            : undefined;
-        const next = current.map((task, i) =>
-          i === idx ? { ...task, status, ...(notes ? { notes } : {}) } : task,
-        );
-        tasksRef.current = next;
-        setAgentTasks(next);
-        return JSON.stringify({
-          success: true,
-          task: idx,
-          status,
-        });
-      }
-
-      if (toolName === "remove_task") {
-        const current = tasksRef.current ?? [];
-        const rawIdx = args.task_index;
-        const idx =
-          typeof rawIdx === "number"
-            ? rawIdx
-            : typeof rawIdx === "string"
-              ? parseInt(rawIdx, 10)
-              : -1;
-        if (!Number.isFinite(idx) || idx < 0 || idx >= current.length) {
-          return JSON.stringify({
-            success: false,
-            error: `Invalid task_index: ${idx}.`,
-          });
-        }
-        const next = current.filter((_, i) => i !== idx);
-        tasksRef.current = next;
-        setAgentTasks(next);
-        return JSON.stringify({
-          success: true,
-          tasks: next,
         });
       }
 
@@ -504,15 +515,20 @@ export function useAgentTools() {
       }
 
       if (toolName === "write_file") {
+        console.log("[write_file] Raw args:", JSON.stringify(args, null, 2));
         const path = typeof args.path === "string" ? args.path : "";
         const content = typeof args.content === "string" ? args.content : "";
+        console.log("[write_file] path:", path, "content length:", content.length, "sessionId:", options?.sessionId);
         if (!path) {
           return JSON.stringify({ success: false, error: "path is required" });
         }
         try {
+          console.log("[write_file] Calling writeAgentFile...");
           await writeAgentFile(path, content, options?.sessionId ?? undefined);
+          console.log("[write_file] SUCCESS! File written and files reloaded");
           return JSON.stringify({ success: true, path });
         } catch (err) {
+          console.error("[write_file] FAILED:", err);
           return JSON.stringify({
             success: false,
             error: err instanceof Error ? err.message : String(err),
@@ -576,7 +592,6 @@ export function useAgentTools() {
     },
     [
       setAgentPlan,
-      setAgentTasks,
       loadAgentFiles,
       readAgentFile,
       writeAgentFile,
@@ -589,12 +604,9 @@ export function useAgentTools() {
   /** Check if a tool name is a synthetic agent tool */
   const isAgentTool = useCallback(
     (toolName: string) =>
+      toolName === "create_plan" ||
       toolName === "set_plan" ||
       toolName === "update_plan" ||
-      toolName === "set_tasks" ||
-      toolName === "add_task" ||
-      toolName === "update_task" ||
-      toolName === "remove_task" ||
       toolName === "list_files" ||
       toolName === "read_file" ||
       toolName === "write_file" ||
@@ -604,88 +616,14 @@ export function useAgentTools() {
     [],
   );
 
-  /** Build the agent system-prompt section injected when agent mode is on */
-  const buildAgentSystemPrompt = useCallback((): string => {
-    const lines: string[] = [];
-
-    lines.push("<agent_mode>");
-    lines.push("You are in AGENT MODE. You have access to tools and MUST follow this workflow:");
-    lines.push("");
-    lines.push("1. ALWAYS call set_plan first to create a step-by-step plan before doing any work.");
-    lines.push("2. Execute each step using available tools.");
-    lines.push('3. After completing each step, call update_plan to mark it "done".');
-    lines.push("4. Use set_tasks/add_task/update_task to maintain a TODO list separate from the plan.");
-    lines.push("5. Use list_files/read_file/write_file to manage files in the agent workspace.");
-    lines.push("6. If a step is blocked, mark it \"blocked\" and move to the next feasible step.");
-    lines.push("7. After all steps are done, provide a final summary of results.");
-    lines.push("");
-    lines.push("Plans should have 3–8 concrete, actionable steps.");
-    lines.push("Do NOT skip calling set_plan. Do NOT describe actions you could take — execute them.");
-
-    if (agentPlan && agentPlan.steps.length > 0) {
-      const steps = agentPlan.steps;
-      const doneCount = steps.filter((s) => s.status === "done").length;
-      const currentIdx = steps.findIndex((s) => s.status !== "done");
-      const planLines = steps.map((s, i) => {
-        const marker =
-          s.status === "done"
-            ? "[x]"
-            : i === currentIdx
-              ? "[>]"
-              : s.status === "blocked"
-                ? "[!]"
-                : "[ ]";
-        return `  ${marker} ${i}: ${s.title}`;
-      });
-
-      lines.push("");
-      lines.push("<current_plan>");
-      lines.push(`Progress: ${doneCount}/${steps.length}`);
-      lines.push(...planLines);
-      if (currentIdx >= 0) {
-        lines.push(`Current step: ${currentIdx} — ${steps[currentIdx].title}`);
-      } else {
-        lines.push("All steps complete. Provide final summary.");
-      }
-      lines.push("</current_plan>");
-    }
-
-    if (agentTasks && agentTasks.length > 0) {
-      const taskLines = agentTasks.map((task, i) => {
-        const marker =
-          task.status === "done"
-            ? "[x]"
-            : task.status === "running"
-              ? "[>]"
-              : task.status === "blocked"
-                ? "[!]"
-                : "[ ]";
-        return `  ${marker} ${i}: ${task.title}`;
-      });
-      lines.push("");
-      lines.push("<current_tasks>");
-      lines.push(...taskLines);
-      lines.push("</current_tasks>");
-    }
-
-    lines.push("</agent_mode>");
-    return lines.join("\n");
-  }, [agentPlan, agentTasks]);
-
   return {
     agentToolDefs,
     executeAgentTool,
     isAgentTool,
-    buildAgentSystemPrompt,
     agentPlan,
-    agentTasks,
     clearPlan: useCallback(() => {
       planRef.current = null;
       setAgentPlan(null);
     }, [setAgentPlan]),
-    clearTasks: useCallback(() => {
-      tasksRef.current = [];
-      setAgentTasks([]);
-    }, [setAgentTasks]),
   };
 }

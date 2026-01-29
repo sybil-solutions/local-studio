@@ -33,10 +33,9 @@ import { useAgentFiles } from "../../hooks/use-agent-files";
 import { useAgentState } from "../../hooks/use-agent-state";
 import { AgentPlanDrawer } from "../agent/agent-plan-drawer";
 import { AgentFilesPanel } from "../agent/agent-files-panel";
-import { AgentTasksPanel } from "../agent/agent-tasks-panel";
 import { UnifiedSidebar, type SidebarTab } from "./unified-sidebar";
 import { ActivityPanel, ContextPanel } from "./chat-side-panel";
-
+import { buildAgentModeSystemPrompt } from "../../utils/agent-system-prompt";
 
 export function ChatPage() {
   const searchParams = useSearchParams();
@@ -51,9 +50,7 @@ export function ChatPage() {
   const setSelectedModel = useAppStore((state) => state.setSelectedModel);
   const systemPrompt = useAppStore((state) => state.systemPrompt);
   const setSystemPrompt = useAppStore((state) => state.setSystemPrompt);
-  const toolPanelOpen = useAppStore((state) => state.toolPanelOpen);
   const setToolPanelOpen = useAppStore((state) => state.setToolPanelOpen);
-  const activePanel = useAppStore((state) => state.activePanel);
   const setActivePanel = useAppStore((state) => state.setActivePanel);
   const mcpEnabled = useAppStore((state) => state.mcpEnabled);
   const setMcpEnabled = useAppStore((state) => state.setMcpEnabled);
@@ -93,31 +90,20 @@ export function ChatPage() {
     agentToolDefs,
     executeAgentTool,
     isAgentTool,
-    buildAgentSystemPrompt,
     agentPlan,
-    agentTasks,
     clearPlan,
-    clearTasks,
   } = useAgentTools();
 
-  const {
-    agentFiles,
-    loadAgentFiles,
-    clearAgentFiles,
-  } = useAgentFiles();
+  const { agentFiles, loadAgentFiles, clearAgentFiles } = useAgentFiles();
 
-  const {
-    hydrateAgentState,
-    persistAgentState,
-    buildAgentState,
-  } = useAgentState();
+  const { hydrateAgentState, persistAgentState, buildAgentState } = useAgentState();
 
   const effectiveSystemPrompt = useMemo(() => {
     const base = systemPrompt.trim();
     if (!agentMode) return base;
-    const agentBlock = buildAgentSystemPrompt();
+    const agentBlock = buildAgentModeSystemPrompt(agentPlan);
     return base ? `${base}\n\n${agentBlock}` : agentBlock;
-  }, [systemPrompt, agentMode, buildAgentSystemPrompt]);
+  }, [systemPrompt, agentMode, agentPlan]);
 
   // Refs
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -153,7 +139,9 @@ export function ChatPage() {
 
   // Ref to avoid contextStats recalculating when getToolDefinitions changes
   const getToolDefinitionsRef = useRef(getToolDefinitions);
-  useEffect(() => { getToolDefinitionsRef.current = getToolDefinitions; }, [getToolDefinitions]);
+  useEffect(() => {
+    getToolDefinitionsRef.current = getToolDefinitions;
+  }, [getToolDefinitions]);
 
   // Usage hook
   const { refreshUsage } = useChatUsage();
@@ -193,11 +181,11 @@ export function ChatPage() {
     return toolCalls.map((tc) => {
       const name = tc.function?.name || "tool";
       const args = tc.function?.arguments;
-      const input = typeof args === "string" ? tryParseNestedJsonString(args) ?? args : args;
+      const input = typeof args === "string" ? (tryParseNestedJsonString(args) ?? args) : args;
       const result = tc.result as { content?: unknown; isError?: boolean } | string | undefined;
       const hasResult = result != null;
       const isError = typeof result === "object" && result?.isError === true;
-      const content = typeof result === "object" ? result?.content ?? result : result;
+      const content = typeof result === "object" ? (result?.content ?? result) : result;
 
       return {
         type: tc.dynamic ? "dynamic-tool" : `tool-${name}`,
@@ -206,92 +194,105 @@ export function ChatPage() {
         state: hasResult ? (isError ? "output-error" : "output-available") : "input-available",
         input,
         output: isError ? undefined : content,
-        errorText: isError ? (typeof content === "string" ? content : safeJsonStringify(content, "")) : undefined,
+        errorText: isError
+          ? typeof content === "string"
+            ? content
+            : safeJsonStringify(content, "")
+          : undefined,
         providerExecuted: tc.providerExecuted,
       };
     });
   }, []);
 
-  const mapStoredMessages = useCallback((storedMessages: StoredMessage[]) => {
-    return storedMessages.map((message) => {
-      const storedParts = message.parts as UIMessage["parts"] | undefined;
-      const hasStoredParts = Array.isArray(storedParts) && storedParts.length > 0;
-      const parts: UIMessage["parts"] = hasStoredParts ? [...storedParts] : [];
+  const mapStoredMessages = useCallback(
+    (storedMessages: StoredMessage[]) => {
+      return storedMessages.map((message) => {
+        const storedParts = message.parts as UIMessage["parts"] | undefined;
+        const hasStoredParts = Array.isArray(storedParts) && storedParts.length > 0;
+        const parts: UIMessage["parts"] = hasStoredParts ? [...storedParts] : [];
 
-      if (!hasStoredParts && message.content) {
-        parts.push({ type: "text", text: message.content });
-      }
-
-      if (!hasStoredParts) {
-        const toolParts = mapStoredToolCalls(message.tool_calls);
-        for (const toolPart of toolParts) {
-          parts.push(toolPart as UIMessage["parts"][number]);
+        if (!hasStoredParts && message.content) {
+          parts.push({ type: "text", text: message.content });
         }
-      }
 
-      const inputTokens = message.prompt_tokens ?? undefined;
-      const outputTokens = message.completion_tokens ?? undefined;
-      const totalTokens =
-        message.total_tokens ??
-        (inputTokens != null || outputTokens != null
-          ? (inputTokens ?? 0) + (outputTokens ?? 0)
-          : undefined);
+        if (!hasStoredParts) {
+          const toolParts = mapStoredToolCalls(message.tool_calls);
+          for (const toolPart of toolParts) {
+            parts.push(toolPart as UIMessage["parts"][number]);
+          }
+        }
 
-      const metadata = message.metadata as UIMessage["metadata"] | undefined;
+        const inputTokens = message.prompt_tokens ?? undefined;
+        const outputTokens = message.completion_tokens ?? undefined;
+        const totalTokens =
+          message.total_tokens ??
+          (inputTokens != null || outputTokens != null
+            ? (inputTokens ?? 0) + (outputTokens ?? 0)
+            : undefined);
 
-      return {
-        id: message.id,
-        role: message.role,
-        parts,
-        metadata: metadata ?? {
-          model: message.model,
-          usage:
-            inputTokens != null || outputTokens != null || totalTokens != null
-              ? {
-                  inputTokens,
-                  outputTokens,
-                  totalTokens,
-                }
-              : undefined,
-        },
-      } satisfies UIMessage;
-    });
-  }, [mapStoredToolCalls]);
+        const metadata = message.metadata as UIMessage["metadata"] | undefined;
+
+        return {
+          id: message.id,
+          role: message.role,
+          parts,
+          metadata: metadata ?? {
+            model: message.model,
+            usage:
+              inputTokens != null || outputTokens != null || totalTokens != null
+                ? {
+                    inputTokens,
+                    outputTokens,
+                    totalTokens,
+                  }
+                : undefined,
+          },
+        } satisfies UIMessage;
+      });
+    },
+    [mapStoredToolCalls],
+  );
 
   const resolveToolDefinitions = useCallback(async () => {
-    console.log("[resolveToolDefinitions] agentMode:", agentMode, "agentToolDefs:", agentToolDefs.length);
+    console.log(
+      "[resolveToolDefinitions] agentMode:",
+      agentMode,
+      "agentToolDefs:",
+      agentToolDefs.length,
+    );
     const mcpDefs: typeof mcpTools = [];
     if (mcpEnabled) {
       if (mcpTools.length > 0) {
         mcpDefs.push(...(getToolDefinitions?.(mcpTools) ?? []));
-      } else {
-        const loadedTools = await loadMCPTools();
-        const tools = loadedTools.length > 0 ? loadedTools : mcpTools;
-        mcpDefs.push(...(getToolDefinitions?.(tools) ?? []));
       }
     }
     // Inject synthetic agent tools when agent mode is on
     if (agentMode) {
       const allTools = [...mcpDefs, ...agentToolDefs];
-      console.log("[resolveToolDefinitions] Returning agent tools:", allTools.map(t => t.name));
+      console.log(
+        "[resolveToolDefinitions] Returning agent tools:",
+        allTools.map((t) => t.name),
+      );
       return allTools;
     }
     return mcpDefs;
-  }, [mcpEnabled, mcpTools, loadMCPTools, getToolDefinitions, agentMode, agentToolDefs]);
+  }, [mcpEnabled, mcpTools, getToolDefinitions, agentMode, agentToolDefs]);
 
-  // Refs so the transport body always has the latest values on every request
-  const systemRef = useRef<string | undefined>(undefined);
-  const modelRef = useRef<string | undefined>(selectedModel || undefined);
-  const toolsRef = useRef<Array<{ name: string; server?: string; description?: string; inputSchema?: unknown }>>([]);
+  const toolsRef = useRef<
+    Array<{ name: string; server?: string; description?: string; inputSchema?: unknown }>
+  >([]);
 
-  useEffect(() => { systemRef.current = effectiveSystemPrompt?.trim() || undefined; }, [effectiveSystemPrompt]);
-  useEffect(() => { modelRef.current = selectedModel || undefined; }, [selectedModel]);
   // Keep tools ref updated whenever agent mode or MCP tools change
   useEffect(() => {
     const updateTools = async () => {
       const tools = await resolveToolDefinitions();
       toolsRef.current = tools;
-      console.log("[Tools] Updated:", tools.map(t => t.name), "agentMode:", agentMode);
+      console.log(
+        "[Tools] Updated:",
+        tools.map((t) => t.name),
+        "agentMode:",
+        agentMode,
+      );
     };
     void updateTools();
   }, [resolveToolDefinitions, agentMode]);
@@ -303,18 +304,30 @@ export function ChatPage() {
         api: "/api/chat",
         body: async () => {
           // Ensure tools are resolved before sending
-          if (toolsRef.current.length === 0) {
-            const tools = await resolveToolDefinitions();
-            toolsRef.current = tools;
-          }
-          console.log("[Transport] Sending with tools:", toolsRef.current.map(t => t.name));
-          return {
-            system: systemRef.current,
-            model: modelRef.current,
-            tools: toolsRef.current,
-            toolChoice: toolsRef.current.length > 0 ? "auto" : undefined,
-          };
-        },
+        if (toolsRef.current.length === 0) {
+          const tools = await resolveToolDefinitions();
+          toolsRef.current = tools;
+        }
+        const state = useAppStore.getState();
+        const baseSystem = state.systemPrompt?.trim() || "";
+        const system = state.agentMode
+          ? (() => {
+              const agentBlock = buildAgentModeSystemPrompt(state.agentPlan);
+              return baseSystem ? `${baseSystem}\n\n${agentBlock}` : agentBlock;
+            })()
+          : baseSystem || undefined;
+        const model = state.selectedModel || undefined;
+        console.log(
+          "[Transport] Sending with tools:",
+          toolsRef.current.map((t) => t.name),
+        );
+        return {
+          system,
+          model,
+          tools: toolsRef.current,
+          toolChoice: toolsRef.current.length > 0 ? "auto" : undefined,
+        };
+      },
       }),
     [resolveToolDefinitions],
   );
@@ -324,28 +337,75 @@ export function ChatPage() {
     transport,
     sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithToolCalls,
     onToolCall: async ({ toolCall }) => {
+      console.log("[onToolCall] Full toolCall object:", JSON.stringify(toolCall, null, 2));
       const toolCallId = toolCall.toolCallId;
       const toolName = toolCall.toolName;
-      const args = (toolCall as { input?: unknown }).input as Record<string, unknown>;
+      // AI SDK v6+ uses toolCall.input for the tool arguments
+      const tcAny = toolCall as Record<string, unknown>;
+      const rawArgs = tcAny.input ?? tcAny.args ?? tcAny.arguments;
+      let args: Record<string, unknown> = {};
+      if (rawArgs && typeof rawArgs === "object" && !Array.isArray(rawArgs)) {
+        args = rawArgs as Record<string, unknown>;
+      } else if (typeof rawArgs === "string") {
+        try {
+          const parsed = JSON.parse(rawArgs) as Record<string, unknown>;
+          if (parsed && typeof parsed === "object") {
+            args = parsed;
+          }
+        } catch {
+          args = {};
+        }
+      } else if (Array.isArray(rawArgs)) {
+        // Some models might send an array directly (unlikely but handle it)
+        args = { tasks: rawArgs };
+      }
 
-      console.log("[onToolCall] Tool:", toolName);
+      // If args is empty but rawArgs has content, try harder to parse it
+      if (Object.keys(args).length === 0 && rawArgs) {
+        console.log("[onToolCall] args is empty, attempting deeper parse of rawArgs");
+        if (typeof rawArgs === "object") {
+          // Maybe the entire toolCall.input is the args
+          args = rawArgs as Record<string, unknown>;
+        }
+      }
 
-      // Agent tools are executed on the server - skip
+      console.log("[onToolCall] Tool:", toolName, "rawArgs type:", typeof rawArgs, "rawArgs:", rawArgs, "args:", JSON.stringify(args, null, 2));
+
       if (isAgentTool(toolName)) {
+        try {
+          const sessionId = sessionIdRef.current ?? currentSessionId;
+          const output = await executeAgentTool(toolName, args, { sessionId });
+          if (output == null) return;
+          // Don't await - causes deadlock with sendAutomaticallyWhen
+          addToolOutput({
+            tool: toolName as never,
+            toolCallId,
+            output: output as never,
+          });
+        } catch (err) {
+          // Don't await - causes deadlock with sendAutomaticallyWhen
+          addToolOutput({
+            tool: toolName as never,
+            toolCallId,
+            state: "output-error",
+            errorText: err instanceof Error ? err.message : "Agent tool execution failed",
+          });
+        }
         return;
       }
 
       // MCP tools - execute locally
       const result = await executeTool({ toolCallId, toolName, args });
+      // Don't await - causes deadlock with sendAutomaticallyWhen
       if (result.isError) {
-        await addToolOutput({
+        addToolOutput({
           tool: toolName as never,
           toolCallId,
           state: "output-error",
           errorText: result.content || "Tool execution failed",
         });
       } else {
-        await addToolOutput({
+        addToolOutput({
           tool: toolName as never,
           toolCallId,
           output: result.content as never,
@@ -386,12 +446,12 @@ export function ChatPage() {
 
   useEffect(() => {
     if (!currentSessionId) return;
-    const agentState = buildAgentState(agentPlan, agentTasks);
+    const agentState = buildAgentState(agentPlan);
     const signature = safeJsonStringify(agentState, "");
     if (signature === agentStateSignatureRef.current) return;
     agentStateSignatureRef.current = signature;
     void persistAgentState(currentSessionId, agentState);
-  }, [currentSessionId, agentPlan, agentTasks, buildAgentState, persistAgentState]);
+  }, [currentSessionId, agentPlan, buildAgentState, persistAgentState]);
 
   // Derived state from messages
   const { thinkingActive, activityGroups } = useChatDerived({
@@ -749,11 +809,11 @@ export function ChatPage() {
       wasLoadingRef.current = true;
       return;
     }
-    
+
     // Only check compaction when streaming just finished
     if (!wasLoadingRef.current) return;
     wasLoadingRef.current = false;
-    
+
     // Skip if already attempted
     if (compactionAttemptedRef.current) return;
     if (!contextStats || !maxContext) return;
@@ -765,12 +825,12 @@ export function ChatPage() {
 
     const signature = `${currentSessionId}-${messages.length}-${contextStats.currentTokens}`;
     if (lastCompactionSignatureRef.current === signature) return;
-    
+
     lastCompactionSignatureRef.current = signature;
     compactionAttemptedRef.current = true;
-    
+
     void runAutoCompaction();
-    
+
     return () => {
       compactionAttemptedRef.current = false;
     };
@@ -805,7 +865,7 @@ export function ChatPage() {
     // Only scroll when message count changes (new message added) or loading state changes
     if (messages.length === prevMessageCountRef.current && isLoading) return;
     prevMessageCountRef.current = messages.length;
-    
+
     if (!userScrolledUp) {
       messagesEndRef.current?.scrollIntoView({
         behavior: isLoading ? "auto" : "smooth",
@@ -848,10 +908,9 @@ export function ChatPage() {
   useEffect(() => {
     if (!currentSessionId) {
       clearPlan();
-      clearTasks();
       clearAgentFiles();
     }
-  }, [currentSessionId, clearPlan, clearTasks, clearAgentFiles]);
+  }, [currentSessionId, clearPlan, clearAgentFiles]);
 
   // Handle PWA resume - reload session when app becomes visible again
   useEffect(() => {
@@ -882,7 +941,14 @@ export function ChatPage() {
 
     document.addEventListener("visibilitychange", handleVisibilityChange);
     return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
-  }, [loadSession, mapStoredMessages, sessionIdRef, setMessages, hydrateAgentState, loadAgentFiles]);
+  }, [
+    loadSession,
+    mapStoredMessages,
+    sessionIdRef,
+    setMessages,
+    hydrateAgentState,
+    loadAgentFiles,
+  ]);
 
   // Handle URL session/new params
   useEffect(() => {
@@ -890,7 +956,6 @@ export function ChatPage() {
       startNewSession();
       setMessages([]);
       clearPlan();
-      clearTasks();
       clearAgentFiles();
       return;
     }
@@ -918,7 +983,6 @@ export function ChatPage() {
     selectedModel,
     setSelectedModel,
     clearPlan,
-    clearTasks,
     clearAgentFiles,
     hydrateAgentState,
     loadAgentFiles,
@@ -943,7 +1007,7 @@ export function ChatPage() {
   useEffect(() => {
     if (modelsLoadedRef.current) return;
     modelsLoadedRef.current = true;
-    
+
     const loadModels = async () => {
       try {
         const data = await api.getOpenAIModels();
@@ -1304,11 +1368,7 @@ export function ChatPage() {
         setAgentMode(next);
         if (next && !mcpEnabled) setMcpEnabled(true);
       }}
-      planDrawer={
-        agentPlan ? (
-          <AgentPlanDrawer plan={agentPlan} onClear={clearPlan} />
-        ) : null
-      }
+      planDrawer={agentPlan ? <AgentPlanDrawer plan={agentPlan} onClear={clearPlan} /> : null}
     />
   );
 
@@ -1378,7 +1438,6 @@ export function ChatPage() {
           </div>
         }
         artifactsContent={<ArtifactPreviewPanel artifacts={sessionArtifacts} />}
-        tasksContent={<AgentTasksPanel tasks={agentTasks} />}
         filesContent={<AgentFilesPanel files={agentFiles} plan={agentPlan} />}
       >
         <div className="flex-1 flex flex-col min-h-0 min-w-0 overflow-x-hidden">
@@ -1402,7 +1461,9 @@ export function ChatPage() {
 
             <ChatTopControls
               onOpenSidebar={() => {
-                window.dispatchEvent(new CustomEvent("vllm:toggle-sidebar", { detail: { open: true } }));
+                window.dispatchEvent(
+                  new CustomEvent("vllm:toggle-sidebar", { detail: { open: true } }),
+                );
               }}
               onOpenSettings={() => setSettingsOpen(true)}
             />
@@ -1454,10 +1515,7 @@ export function ChatPage() {
         onExportJson={handleExportJson}
         onExportMarkdown={handleExportMarkdown}
       />
-      <ArtifactModal
-        artifact={activeArtifact}
-        onClose={() => setActiveArtifactId(null)}
-      />
+      <ArtifactModal artifact={activeArtifact} onClose={() => setActiveArtifactId(null)} />
     </div>
   );
 }
