@@ -1,10 +1,10 @@
 // CRITICAL
 "use client";
 
-import { useState, useRef, useEffect, useCallback, type ReactNode } from "react";
+import { type ReactNode } from "react";
 import { PanelRightClose, Sparkles } from "lucide-react";
 
-export type SidebarTab = "activity" | "context" | "artifacts" | "tasks" | "files";
+export type SidebarTab = "activity" | "context" | "artifacts" | "files";
 
 interface UnifiedSidebarProps {
   children: ReactNode;
@@ -17,11 +17,7 @@ interface UnifiedSidebarProps {
   activityContent: ReactNode;
   contextContent: ReactNode;
   artifactsContent: ReactNode;
-  tasksContent?: ReactNode;
   filesContent?: ReactNode;
-  defaultWidth?: number;
-  minWidth?: number;
-  maxWidth?: number;
   hasArtifacts: boolean;
 }
 
@@ -36,57 +32,11 @@ export function UnifiedSidebar({
   activityContent,
   contextContent,
   artifactsContent,
-  tasksContent,
   filesContent,
-  defaultWidth = 380,
-  minWidth = 280,
-  maxWidth = 600,
   hasArtifacts,
 }: UnifiedSidebarProps) {
-  const [width, setWidth] = useState(defaultWidth);
-  const [isResizing, setIsResizing] = useState(false);
-  const containerRef = useRef<HTMLDivElement>(null);
-  const startXRef = useRef(0);
-  const startWidthRef = useRef(width);
-
-  const handleMouseDown = useCallback(
-    (e: React.MouseEvent) => {
-      e.preventDefault();
-      setIsResizing(true);
-      startXRef.current = e.clientX;
-      startWidthRef.current = width;
-      document.body.style.cursor = "ew-resize";
-      document.body.style.userSelect = "none";
-    },
-    [width],
-  );
-
-  const handleMouseMove = useCallback(
-    (e: MouseEvent) => {
-      if (!isResizing) return;
-      const delta = startXRef.current - e.clientX;
-      const newWidth = Math.max(minWidth, Math.min(maxWidth, startWidthRef.current + delta));
-      setWidth(newWidth);
-    },
-    [isResizing, minWidth, maxWidth],
-  );
-
-  const handleMouseUp = useCallback(() => {
-    setIsResizing(false);
-    document.body.style.cursor = "";
-    document.body.style.userSelect = "";
-  }, []);
-
-  useEffect(() => {
-    if (isResizing) {
-      window.addEventListener("mousemove", handleMouseMove);
-      window.addEventListener("mouseup", handleMouseUp);
-      return () => {
-        window.removeEventListener("mousemove", handleMouseMove);
-        window.removeEventListener("mouseup", handleMouseUp);
-      };
-    }
-  }, [isResizing, handleMouseMove, handleMouseUp]);
+  // Fixed width for consistent layout - no resizing
+  const width = 340;
 
   const getActiveContent = () => {
     switch (activeTab) {
@@ -96,8 +46,6 @@ export function UnifiedSidebar({
         return contextContent;
       case "artifacts":
         return artifactsContent;
-      case "tasks":
-        return tasksContent ?? null;
       case "files":
         return filesContent ?? null;
       default:
@@ -106,19 +54,14 @@ export function UnifiedSidebar({
   };
 
   return (
-    <div ref={containerRef} className="flex h-full w-full overflow-hidden">
+    <div className="flex h-full w-full overflow-hidden">
       <div className="flex-1 min-w-0 flex flex-col">{children}</div>
 
       {isOpen && (
         <div
-          className="hidden md:flex flex-shrink-0 flex-col h-full border-l border-white/[0.06] bg-[#0a0a0a] relative"
+          className="hidden md:flex flex-shrink-0 flex-col h-full border-l border-white/[0.06] bg-[#0a0a0a]"
           style={{ width: `${width}px` }}
         >
-          {/* Resize handle */}
-          <div
-            className="absolute left-0 top-0 bottom-0 w-1 cursor-ew-resize hover:bg-white/10 transition-colors z-10"
-            onMouseDown={handleMouseDown}
-          />
 
           {/* Header */}
           <div className="flex items-center justify-between px-3 py-2 border-b border-white/[0.06]">
@@ -143,12 +86,6 @@ export function UnifiedSidebar({
               {agentMode && (
                 <>
                   <div className="w-px h-4 bg-white/[0.06] mx-1" />
-                  <TabButton
-                    active={activeTab === "tasks"}
-                    onClick={() => onSetActiveTab("tasks")}
-                    label="Tasks"
-                    accent
-                  />
                   <TabButton
                     active={activeTab === "files"}
                     onClick={() => onSetActiveTab("files")}
@@ -186,15 +123,12 @@ export function UnifiedSidebar({
           <div className="flex-1 overflow-hidden">{getActiveContent()}</div>
 
           {/* Footer */}
-          <div className="px-3 py-2 border-t border-white/[0.06] flex items-center justify-between">
+          <div className="px-3 py-2 border-t border-white/[0.06] flex items-center justify-center">
             <span className="text-[10px] text-[#555]">
               {activeTab === "files"
                 ? "Agent Files"
-                : activeTab === "tasks"
-                  ? "Agent Tasks"
-                  : activeTab.charAt(0).toUpperCase() + activeTab.slice(1)}
+                : activeTab.charAt(0).toUpperCase() + activeTab.slice(1)}
             </span>
-            <span className="text-[10px] text-[#444]">{width}px</span>
           </div>
         </div>
       )}

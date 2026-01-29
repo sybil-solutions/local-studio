@@ -19,6 +19,7 @@ export function useConfigs() {
   const [data, setData] = useState<ConfigData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [backendOnline, setBackendOnline] = useState<boolean | null>(null);
 
   const [apiSettings, setApiSettings] = useState<ApiConnectionSettings>({
     backendUrl: "http://localhost:8080",
@@ -55,14 +56,28 @@ export function useConfigs() {
     }
   };
 
+  const checkBackendHealth = async () => {
+    try {
+      const health = await api.getHealth();
+      setBackendOnline(health.status === "ok");
+      return health.status === "ok";
+    } catch {
+      setBackendOnline(false);
+      return false;
+    }
+  };
+
   const loadConfig = async () => {
     try {
       setLoading(true);
       setError(null);
       const configData = await api.getSystemConfig();
       setData(configData);
+      setBackendOnline(true);
     } catch (e) {
       setError((e as Error).message);
+      // Config failed, but check if backend is actually online
+      await checkBackendHealth();
     } finally {
       setLoading(false);
     }
@@ -156,5 +171,6 @@ export function useConfigs() {
     testConnection,
     hasConfigData: Boolean(data),
     isInitialLoading: loading && !data,
+    backendOnline,
   };
 }

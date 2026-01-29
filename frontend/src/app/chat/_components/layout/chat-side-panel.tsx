@@ -158,36 +158,42 @@ export function ActivityPanel({ activityGroups }: ActivityPanelProps) {
   return (
     <div className="relative">
       {/* Vertical timeline line */}
-      <div className="absolute left-[5px] top-2 bottom-2 w-px bg-[#2a2725]" />
+      <div className="absolute left-[11px] top-2 bottom-2 w-px bg-[#2a2725]" />
 
-      <div>
+      <div className="space-y-1">
         {activityGroups.map((group, groupIdx) => (
           <div key={group.id}>
-            {/* Turn separator between groups */}
-            {groupIdx > 0 && (
-              <div className="flex items-center gap-2 my-3 pl-5">
-                <div className="flex-1 h-px bg-[#2a2725]" />
-                <span className="text-[9px] text-[#4a4745] uppercase tracking-wider flex-shrink-0">
-                  {group.title}
-                </span>
-                <div className="flex-1 h-px bg-[#2a2725]" />
+            {/* Turn header */}
+            <div className="flex items-center gap-2 py-2 pl-1">
+              <div className="w-5 h-5 rounded-full bg-[#1c1b1a] border border-[#2a2725] flex items-center justify-center z-10">
+                <span className="text-[9px] text-[#666] font-medium">{groupIdx + 1}</span>
               </div>
-            )}
+              <span className="text-[10px] text-[#555] uppercase tracking-wider">
+                {group.isLatest ? "Current" : "Turn"}
+              </span>
+              {group.isLatest && group.thinkingActive && (
+                <span className="relative flex h-1.5 w-1.5 ml-auto mr-2">
+                  <span className="animate-ping absolute h-full w-full rounded-full bg-blue-400 opacity-75" />
+                  <span className="relative h-1.5 w-1.5 rounded-full bg-blue-400" />
+                </span>
+              )}
+            </div>
 
-            {/* Thinking section with tool badges */}
-            {(group.thinkingActive || group.thinkingContent) && (
-              <ThinkingSection
-                content={group.thinkingContent}
-                isActive={group.thinkingActive}
-                toolCount={group.toolItems.length}
-                toolNames={group.toolItems.map((t) => t.toolName).filter(Boolean) as string[]}
-              />
-            )}
+            {/* Interleaved thinking and tool calls */}
+            <div className="space-y-1">
+              {/* Thinking comes first in a turn */}
+              {(group.thinkingActive || group.thinkingContent) && (
+                <ThinkingItem
+                  content={group.thinkingContent}
+                  isActive={group.thinkingActive}
+                />
+              )}
 
-            {/* Tool calls */}
-            {group.toolItems.map((item) => (
-              <ToolItem key={item.id} item={item} />
-            ))}
+              {/* Tool calls follow */}
+              {group.toolItems.map((item) => (
+                <ToolItem key={item.id} item={item} />
+              ))}
+            </div>
           </div>
         ))}
       </div>
@@ -195,16 +201,12 @@ export function ActivityPanel({ activityGroups }: ActivityPanelProps) {
   );
 }
 
-function ThinkingSection({
+function ThinkingItem({
   content,
   isActive,
-  toolCount,
-  toolNames,
 }: {
   content?: string;
   isActive?: boolean;
-  toolCount?: number;
-  toolNames?: string[];
 }) {
   const [expanded, setExpanded] = useState(true);
   const contentRef = useRef<HTMLDivElement>(null);
@@ -215,67 +217,50 @@ function ThinkingSection({
     }
   }, [content, isActive, expanded]);
 
-  // Deduplicate and format tool names for badges
-  const uniqueTools = [...new Set(toolNames || [])].slice(0, 4);
-
   return (
-    <div className="relative pl-5 mb-3">
-      {/* Timeline node */}
-      <div className="absolute left-0 top-1 w-[11px] h-[11px] rounded-full border-2 border-[#2a2725] bg-[#1a1918] flex items-center justify-center">
-        {isActive && (
-          <div className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />
-        )}
+    <div className="relative pl-7 pr-2 py-2">
+      {/* Timeline node - brain/think icon */}
+      <div className="absolute left-[7px] top-2.5 w-[9px] h-[9px] rounded-full border border-[#3a3735] bg-[#1c1b1a] flex items-center justify-center">
+        {isActive && <div className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />}
       </div>
 
       <button
         onClick={() => setExpanded(!expanded)}
-        className="flex items-center gap-2 mb-1.5 w-full text-left group"
+        className="flex items-center gap-2 w-full text-left group"
       >
         {isActive ? (
-          <Loader2 className="h-3 w-3 text-[#9a9590] animate-spin flex-shrink-0" />
-        ) : expanded ? (
-          <ChevronDown className="h-3 w-3 text-[#666] flex-shrink-0" />
+          <Loader2 className="h-3 w-3 text-blue-400 animate-spin flex-shrink-0" />
         ) : (
-          <ChevronRight className="h-3 w-3 text-[#666] flex-shrink-0" />
+          <BrainIcon className="h-3 w-3 text-[#666] flex-shrink-0" />
         )}
-        <span className="text-xs text-[#9a9590] group-hover:text-[#bbb] transition-colors">
-          Thinking
+        <span className={`text-[11px] ${isActive ? "text-blue-300" : "text-[#888]"} group-hover:text-[#bbb] transition-colors`}>
+          {isActive ? "Thinking..." : "Thought"}
         </span>
-
-        {/* Tool call badges on the right */}
-        {uniqueTools.length > 0 && (
-          <div className="flex items-center gap-1 ml-auto flex-shrink-0">
-            {uniqueTools.map((name) => {
-              const short = name.includes("__")
-                ? name.split("__").slice(1).join("__")
-                : name;
-              return (
-                <span
-                  key={name}
-                  className="px-1.5 py-0.5 rounded bg-[#1e1d1c] border border-white/[0.06] text-[9px] text-[#777] font-mono truncate max-w-[80px]"
-                >
-                  {short}
-                </span>
-              );
-            })}
-            {(toolCount ?? 0) > uniqueTools.length && (
-              <span className="text-[9px] text-[#555]">
-                +{(toolCount ?? 0) - uniqueTools.length}
-              </span>
-            )}
-          </div>
+        {content && (
+          <span className="ml-auto text-[9px] text-[#555]">
+            {expanded ? "−" : "+"}
+          </span>
         )}
       </button>
 
       {expanded && content && (
         <div
           ref={contentRef}
-          className="max-h-[300px] overflow-y-auto text-xs leading-relaxed text-[#8a8580] whitespace-pre-wrap break-words pr-1 scrollbar-thin"
+          className="mt-2 max-h-[200px] overflow-y-auto text-[11px] leading-relaxed text-[#777] whitespace-pre-wrap break-words scrollbar-thin"
         >
           {content}
         </div>
       )}
     </div>
+  );
+}
+
+function BrainIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96.44 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 1.98-3A2.5 2.5 0 0 1 9.5 2Z" />
+      <path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96.44 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-1.98-3A2.5 2.5 0 0 0 14.5 2Z" />
+    </svg>
   );
 }
 
@@ -381,7 +366,9 @@ function ToolItem({ item }: ToolItemProps) {
 
   const getToolDisplayName = (name?: string) => {
     if (!name) return "Tool";
-    return name
+    // Strip server__ prefix if present
+    const cleanName = name.includes("__") ? name.split("__").slice(1).join("__") : name;
+    return cleanName
       .replace(/_/g, " ")
       .replace(/([a-z])([A-Z])/g, "$1 $2")
       .split(" ")
@@ -394,7 +381,7 @@ function ToolItem({ item }: ToolItemProps) {
     if (typeof input === "string") return input;
     if (typeof input === "object") {
       const record = input as Record<string, unknown>;
-      const candidate = record.query ?? record.url ?? record.text ?? record.input;
+      const candidate = record.query ?? record.url ?? record.text ?? record.input ?? record.path ?? record.command;
       return candidate != null ? String(candidate) : undefined;
     }
     return undefined;
@@ -425,47 +412,67 @@ function ToolItem({ item }: ToolItemProps) {
   const toolName = getToolDisplayName(item.toolName);
 
   return (
-    <div className="relative pl-5 mb-3">
-      {/* Node */}
-      <div className="absolute left-0 top-1 w-[11px] h-[11px] rounded-full border-2 border-[#2a2725] bg-[#1a1918] flex items-center justify-center">
+    <div className="relative pl-7 pr-2 py-2 bg-white/[0.01] rounded">
+      {/* Timeline node - status indicator */}
+      <div className="absolute left-[7px] top-3 w-[9px] h-[9px] rounded-full border flex items-center justify-center"
+        style={{
+          borderColor: isExecuting ? "#f59e0b40" : isError ? "#ef444440" : hasResult ? "#22c55e40" : "#3a3735",
+          backgroundColor: isExecuting ? "#1c1917" : isError ? "#1c1917" : hasResult ? "#1c1917" : "#1c1b1a"
+        }}
+      >
+        {isExecuting && <div className="w-1 h-1 rounded-full bg-amber-400 animate-pulse" />}
+        {isError && <div className="w-1 h-1 rounded-full bg-red-400" />}
+        {hasResult && !isError && <div className="w-1 h-1 rounded-full bg-emerald-400" />}
+      </div>
+
+      {/* Tool name row */}
+      <div className="flex items-center gap-2">
         {isExecuting ? (
-          <div className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+          <Loader2 className="h-3 w-3 text-amber-400 animate-spin flex-shrink-0" />
+        ) : isError ? (
+          <WrenchIcon className="h-3 w-3 text-red-400 flex-shrink-0" />
         ) : hasResult ? (
-          <div className={`w-1.5 h-1.5 rounded-full ${isError ? "bg-red-400" : "bg-green-500"}`} />
-        ) : null}
-      </div>
-
-      <div className="flex items-center gap-2 mb-1">
-        {isExecuting ? (
-          <Globe className="h-3 w-3 text-amber-400" />
+          <WrenchIcon className="h-3 w-3 text-emerald-400 flex-shrink-0" />
         ) : (
-          <Globe className="h-3 w-3 text-[#6a6560]" />
+          <WrenchIcon className="h-3 w-3 text-[#555] flex-shrink-0" />
         )}
-        <span className="text-xs text-[#9a9590]">{toolName}</span>
+        <span className={`text-[11px] truncate ${isExecuting ? "text-amber-300" : isError ? "text-red-300" : hasResult ? "text-emerald-300" : "text-[#888]"}`}>
+          {toolName}
+        </span>
       </div>
 
+      {/* Arguments preview */}
       {mainArg && (
-        <p className="text-xs text-[#6a6560] mb-1.5 line-clamp-1">{mainArg.slice(0, 60)}</p>
+        <p className="mt-1 text-[10px] text-[#555] line-clamp-1 pl-5">{mainArg.slice(0, 80)}</p>
       )}
 
+      {/* Sources from output */}
       {sources.length > 0 && (
-        <div className="flex flex-wrap gap-1.5">
+        <div className="flex flex-wrap gap-1 mt-1.5 pl-5">
           {sources.map((domain, i) => (
             <span
               key={i}
-              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-[#252321] text-[10px] text-[#7a7570]"
+              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-[#252321] text-[9px] text-[#777]"
             >
-              <span className="w-2 h-2 rounded-full bg-[#3a3735]" />
+              <span className="w-1.5 h-1.5 rounded-full bg-[#444]" />
               {domain}
             </span>
           ))}
           {sources.length === 4 && (
-            <span className="px-1.5 py-0.5 rounded bg-[#252321] text-[10px] text-[#5a5550]">
+            <span className="px-1.5 py-0.5 rounded bg-[#252321] text-[9px] text-[#555]">
               +more
             </span>
           )}
         </div>
       )}
     </div>
+  );
+}
+
+function WrenchIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
+    </svg>
   );
 }

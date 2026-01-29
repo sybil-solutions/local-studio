@@ -14,21 +14,22 @@ function safeNumber(value: unknown, defaultValue = 0): number {
 
 /**
  * Convert a memory value to GB for display.
- * Auto-detects the input unit based on magnitude since the backend
- * may send bytes, KiB, or MiB depending on the field / version.
- * GPU VRAM is typically 4–192 GB, so:
- *   > 1 billion  → bytes  (÷ 1024³)
- *   > 1 million  → KiB    (÷ 1024²)
- *   > 10,000     → MiB    (÷ 1024)
- *   ≤ 10,000     → already GB
+ *
+ * The GPU API returns values in bytes. Other APIs may return MiB.
+ * We detect based on magnitude:
+ *   > 1 million → bytes (even 1MB = 1M bytes, smallest realistic GPU memory query)
+ *   > 1,000     → MiB (1000 MiB = ~1GB, smallest realistic GPU)
+ *   ≤ 1,000     → already GB
  */
 function toGB(value: number | null | undefined): number {
   const safe = safeNumber(value, 0);
   if (safe === 0) return 0;
-  if (safe > 1_000_000_000) return Math.round((safe / (1024 * 1024 * 1024)) * 10) / 10;
-  if (safe > 1_000_000) return Math.round((safe / (1024 * 1024)) * 10) / 10;
-  if (safe > 10_000) return Math.round((safe / 1024) * 10) / 10;
-  return Math.round(safe * 10) / 10;
+  // 1 million+ is definitely bytes (API returns bytes for GPU memory)
+  if (safe > 1_000_000) return Math.round((safe / (1024 * 1024 * 1024)) * 100) / 100;
+  // 1000-1M range is MiB (no GPU has less than 1GB)
+  if (safe > 1_000) return Math.round((safe / 1024) * 100) / 100;
+  // Small values assumed to already be in GB
+  return Math.round(safe * 100) / 100;
 }
 
 function formatNumber(n: number): string {
