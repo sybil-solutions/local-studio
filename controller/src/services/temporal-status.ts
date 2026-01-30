@@ -51,7 +51,7 @@ export const checkTemporalStatus = async (address: string, timeoutMs = 1500): Pr
     socket.setTimeout(timeoutMs);
     socket.once("connect", () => finalize(true));
     socket.once("timeout", () => finalize(false, "timeout"));
-    socket.once("error", (err) => finalize(false, err.message));
+    socket.once("error", (error) => finalize(false, error.message));
     socket.connect(parsed.port, parsed.host);
   });
 };

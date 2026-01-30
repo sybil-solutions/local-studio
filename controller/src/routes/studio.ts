@@ -114,11 +114,11 @@ export const registerStudioRoutes = (app: Hono, context: AppContext): void => {
     if (body && typeof body !== "object") {
       throw badRequest("Invalid payload");
     }
-    const modelsDir = typeof body?.models_dir === "string" ? body.models_dir.trim() : "";
-    if (!modelsDir) {
+    const modelsDirectory = typeof body?.models_dir === "string" ? body.models_dir.trim() : "";
+    if (!modelsDirectory) {
       throw badRequest("models_dir is required");
     }
-    const saved = savePersistedConfig(context.config.data_dir, { models_dir: modelsDir });
+    const saved = savePersistedConfig(context.config.data_dir, { models_dir: modelsDirectory });
     context.config.models_dir = resolve(saved.models_dir ?? context.config.models_dir);
     return ctx.json({
       success: true,
@@ -170,7 +170,7 @@ export const registerStudioRoutes = (app: Hono, context: AppContext): void => {
   app.get("/studio/storage", async (ctx) => {
     const modelRoots = [context.config.models_dir];
     const directories = discoverModelDirectories(modelRoots, 2, 200);
-    const sizes = directories.map((dir) => estimateWeightsSizeBytes(dir, false) ?? 0);
+    const sizes = directories.map((directory) => estimateWeightsSizeBytes(directory, false) ?? 0);
     const totalModelBytes = sizes.reduce((total, value) => total + value, 0);
     return ctx.json({
       models_dir: context.config.models_dir,

@@ -38,9 +38,9 @@ const buildTree = async (
   const fsPath = toFsPath(relativePath);
   const entries = await fs.readdirPlus(fsPath);
   const mapped = await Promise.all(entries.map(async (entry) => {
-    const isDir = entry.stats.isDirectory();
+    const isDirectory = entry.stats.isDirectory();
     const nextRelative = relativePath ? posix.join(relativePath, entry.name) : entry.name;
-    if (isDir) {
+    if (isDirectory) {
       return {
         name: entry.name,
         type: "dir" as const,
@@ -59,16 +59,16 @@ const buildTree = async (
   });
 };
 
-const mkdirp = async (fs: AgentFsApi, relativePath: string) => {
+const mkdirp = async (fs: AgentFsApi, relativePath: string): Promise<void> => {
   const segments = relativePath.split("/").filter(Boolean);
   let current = "";
   for (const segment of segments) {
     current = current ? `${current}/${segment}` : segment;
     try {
       await fs.mkdir(toFsPath(current));
-    } catch (err) {
-      const code = (err as { code?: string } | null)?.code;
-      if (code !== "EEXIST") throw err;
+    } catch (error) {
+      const code = (error as { code?: string } | null)?.code;
+      if (code !== "EEXIST") throw error;
     }
   }
 };
@@ -77,9 +77,9 @@ export const registerAgentFilesRoutes = (app: Hono, context: AppContext): void =
   app.get("/chats/:sessionId/files", async (ctx) => {
     const sessionId = ctx.req.param("sessionId");
     const agent = await getAgentFs(context, sessionId);
-    const pathParam = ctx.req.query("path") ?? "";
+    const pathParameter = ctx.req.query("path") ?? "";
     const recursive = ctx.req.query("recursive") !== "false";
-    const normalized = normalizeAgentPath(pathParam);
+    const normalized = normalizeAgentPath(pathParameter);
     try {
       const files = await buildTree(agent.fs, normalized, recursive);
       await context.eventManager.publish(new Event("agent_files_listed", {
@@ -89,10 +89,10 @@ export const registerAgentFilesRoutes = (app: Hono, context: AppContext): void =
         files,
       }));
       return ctx.json({ files, path: normalized || undefined });
-    } catch (err) {
-      const code = (err as { code?: string } | null)?.code;
+    } catch (error) {
+      const code = (error as { code?: string } | null)?.code;
       if (code === "ENOENT") throw notFound("Path not found");
-      throw err;
+      throw error;
     }
   });
 
@@ -113,10 +113,10 @@ export const registerAgentFilesRoutes = (app: Hono, context: AppContext): void =
         bytes: Buffer.byteLength(content, "utf8"),
       }));
       return ctx.json({ path: normalized, content });
-    } catch (err) {
-      const code = (err as { code?: string } | null)?.code;
+    } catch (error) {
+      const code = (error as { code?: string } | null)?.code;
       if (code === "ENOENT") throw notFound("File not found");
-      throw err;
+      throw error;
     }
   });
 
@@ -175,9 +175,9 @@ export const registerAgentFilesRoutes = (app: Hono, context: AppContext): void =
     const agent = await getAgentFs(context, sessionId);
     const normalizedFrom = normalizeAgentPath(from);
     const normalizedTo = normalizeAgentPath(to);
-    const targetDir = posix.dirname(normalizedTo);
-    if (targetDir && targetDir !== ".") {
-      await mkdirp(agent.fs, targetDir);
+    const targetDirectory = posix.dirname(normalizedTo);
+    if (targetDirectory && targetDirectory !== ".") {
+      await mkdirp(agent.fs, targetDirectory);
     }
     await agent.fs.rename(toFsPath(normalizedFrom), toFsPath(normalizedTo));
     await context.eventManager.publish(new Event("agent_file_moved", {

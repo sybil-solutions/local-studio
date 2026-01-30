@@ -18,9 +18,9 @@ export const getAgentFs = (context: AppContext, sessionId: string): Promise<Agen
   const cached = agentFsCache.get(dbPath);
   if (cached) return cached;
 
-  const opened = AgentFS.open({ id: sessionId, path: dbPath }).catch((err) => {
+  const opened = AgentFS.open({ id: sessionId, path: dbPath }).catch((error) => {
     agentFsCache.delete(dbPath);
-    throw err;
+    throw error;
   });
   agentFsCache.set(dbPath, opened);
   return opened;

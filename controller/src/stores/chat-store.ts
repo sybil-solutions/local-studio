@@ -57,6 +57,12 @@ export class ChatStore {
     this.ensureColumn("chat_messages", "metadata", "TEXT");
   }
 
+  /**
+   * Ensures a column exists in a table, adding it if missing.
+   * @param table - Table name.
+   * @param column - Column name.
+   * @param type - SQLite column type.
+   */
   private ensureColumn(table: string, column: string, type: string): void {
     const columns = this.db.query(`PRAGMA table_info(${table})`).all() as Array<Record<string, unknown>>;
     const exists = columns.some((entry) => entry["name"] === column);
@@ -163,6 +169,7 @@ export class ChatStore {
    * @param title - Session title.
    * @param model - Model name.
    * @param parentId - Parent session id.
+   * @param agentState
    * @returns Created session.
    */
   public createSession(
@@ -196,6 +203,7 @@ export class ChatStore {
    * @param sessionId - Session identifier.
    * @param title - New title.
    * @param model - New model.
+   * @param agentState
    * @returns True if updated.
    */
   public updateSession(
@@ -252,6 +260,8 @@ export class ChatStore {
    * @param toolsTokens - Tools token count.
    * @param totalInputTokens - Total input tokens.
    * @param completionTokens - Completion tokens.
+   * @param parts
+   * @param metadata
    * @returns Stored message.
    */
   public addMessage(
@@ -393,7 +403,7 @@ export class ChatStore {
     const newTitle = title ?? `${String(original["title"])} (fork)`;
     const newModel = model ?? (original["model"] ? String(original["model"]) : undefined);
     const agentState = original["agent_state"] ?? null;
-    const agentStateJson = agentState != null ? JSON.stringify(agentState) : null;
+    const agentStateJson = agentState !== null ? JSON.stringify(agentState) : null;
 
     this.db.query("INSERT INTO chat_sessions (id, title, model, parent_id, agent_state) VALUES (?, ?, ?, ?, ?)")
       .run(newId, newTitle, newModel ?? null, sessionId, agentStateJson);

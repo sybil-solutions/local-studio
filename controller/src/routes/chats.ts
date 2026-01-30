@@ -7,7 +7,9 @@ import { compactChatSession } from "../services/chat-compaction";
 import { Event } from "../services/event-manager";
 
 /**
- * Generate a simple title from the first few words of a message
+ * Generate a simple title from the first few words of a message.
+ * @param content - The message content to generate title from.
+ * @returns A generated title string.
  */
 function generateTitleFromMessage(content: string): string {
   if (!content || !content.trim()) {
@@ -28,7 +30,7 @@ function generateTitleFromMessage(content: string): string {
   }
 
   const title = titleWords
-    .map((w, i) => (i === 0 ? w.charAt(0).toUpperCase() + w.slice(1) : w))
+    .map((w, index) => (index === 0 ? w.charAt(0).toUpperCase() + w.slice(1) : w))
     .join(" ");
 
   return title.length > 50 ? title.slice(0, 47) + "..." : title;

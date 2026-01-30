@@ -106,9 +106,19 @@ const sumTotalBytes = (files: DownloadFileInfo[]): number | null => {
   return known.reduce((total, file) => total + file.size_bytes, 0);
 };
 
+/**
+ *
+ */
 export class DownloadManager {
   private readonly active = new Map<string, ActiveDownload>();
 
+  /**
+   * Creates a new DownloadManager instance.
+   * @param config - Application configuration.
+   * @param store - Download persistence store.
+   * @param eventManager - Event broadcasting manager.
+   * @param logger - Logger instance.
+   */
   public constructor(
     private readonly config: Config,
     private readonly store: DownloadStore,
@@ -161,7 +171,7 @@ export class DownloadManager {
     }
     const allowPatterns = (request.allow_patterns ?? []).filter(Boolean);
     const ignorePatterns = [...DEFAULT_IGNORE, ...(request.ignore_patterns ?? []).filter(Boolean)];
-    const targetDir = resolveDownloadRoot(this.config, modelId, request.destination_dir);
+    const targetDirectory = resolveDownloadRoot(this.config, modelId, request.destination_dir);
     const hfToken = request.hf_token ?? null;
 
     const info = await this.fetchModelInfo(modelId, request.revision, hfToken);
@@ -178,7 +188,7 @@ export class DownloadManager {
       status: "queued",
       created_at: now,
       updated_at: now,
-      target_dir: targetDir,
+      target_dir: targetDirectory,
       total_bytes: sumTotalBytes(files),
       downloaded_bytes: 0,
       files,
@@ -211,6 +221,7 @@ export class DownloadManager {
   /**
    * Resume a download.
    * @param id - Download id.
+   * @param hfToken
    * @returns Updated download.
    */
   public resume(id: string, hfToken: string | null = null): ModelDownload {
@@ -248,6 +259,10 @@ export class DownloadManager {
     return download;
   }
 
+  /**
+   * Aborts an active download by id.
+   * @param id - Download id to abort.
+   */
   private abortActive(id: string): void {
     const active = this.active.get(id);
     if (active) {
@@ -256,6 +271,13 @@ export class DownloadManager {
     }
   }
 
+  /**
+   * Fetches model information from HuggingFace API.
+   * @param modelId - The model id to fetch info for.
+   * @param revision - Optional revision/branch.
+   * @param hfToken - Optional HuggingFace token.
+   * @returns Model information from HuggingFace.
+   */
   private async fetchModelInfo(modelId: string, revision?: string | null, hfToken?: string | null): Promise<HuggingFaceModelInfo> {
     const url = new URL(`https://huggingface.co/api/models/${encodeURIComponent(modelId)}`);
     if (revision) {
@@ -273,6 +295,11 @@ export class DownloadManager {
     return (await response.json()) as HuggingFaceModelInfo;
   }
 
+  /**
+   * Runs the download process for a given download id.
+   * @param id - Download id to process.
+   * @param hfToken - Optional HuggingFace token.
+   */
   private async runDownload(id: string, hfToken: string | null): Promise<void> {
     const download = this.store.get(id);
     if (!download || download.status === "completed" || download.status === "canceled") {
@@ -337,6 +364,13 @@ export class DownloadManager {
     }
   }
 
+  /**
+   * Downloads a single file from HuggingFace.
+   * @param download - The parent download record.
+   * @param file - File information to download.
+   * @param controller - Abort controller for cancellation.
+   * @param hfToken - Optional HuggingFace token.
+   */
   private async downloadFile(
     download: ModelDownload,
     file: DownloadFileInfo,
@@ -345,7 +379,7 @@ export class DownloadManager {
   ): Promise<void> {
     let currentDownload = download;
     const localPath = resolve(download.target_dir, ...sanitizePathSegments(file.path));
-    const tempPath = `${localPath}.part`;
+    const temporaryPath = `${localPath}.part`;
     mkdirSync(dirname(localPath), { recursive: true });
 
     const existingFinal = existsSync(localPath) ? statSync(localPath).size : 0;
@@ -356,7 +390,7 @@ export class DownloadManager {
       return;
     }
 
-    const existing = existsSync(tempPath) ? statSync(tempPath).size : 0;
+    const existing = existsSync(temporaryPath) ? statSync(temporaryPath).size : 0;
     const headers: Record<string, string> = {};
     if (hfToken) {
       headers["Authorization"] = `Bearer ${hfToken}`;
@@ -373,7 +407,7 @@ export class DownloadManager {
     const response = await fetch(url, { headers, signal: controller.signal });
     if (response.status === 416) {
       if (file.size_bytes && existing >= file.size_bytes) {
-        renameSync(tempPath, localPath);
+        renameSync(temporaryPath, localPath);
         file.status = "completed";
         file.downloaded_bytes = file.size_bytes;
         currentDownload = this.persistFileUpdate(currentDownload, file);
@@ -395,7 +429,7 @@ export class DownloadManager {
       file.downloaded_bytes = 0;
       currentDownload = this.persistFileUpdate(currentDownload, file);
     }
-    const writer = createWriteStream(tempPath, { flags: shouldAppend ? "a" : "w" });
+    const writer = createWriteStream(temporaryPath, { flags: shouldAppend ? "a" : "w" });
     const reader = response.body?.getReader();
     if (!reader) {
       writer.close();
@@ -432,12 +466,18 @@ export class DownloadManager {
       throw new Error(`Incomplete download for ${file.path}`);
     }
 
-    renameSync(tempPath, localPath);
+    renameSync(temporaryPath, localPath);
     file.status = "completed";
     currentDownload = this.persistFileUpdate(currentDownload, file);
     this.publishProgress(currentDownload, file);
   }
 
+  /**
+   * Persists file download progress to the store.
+   * @param download - The parent download record.
+   * @param file - Updated file information.
+   * @returns Updated download record.
+   */
   private persistFileUpdate(download: ModelDownload, file: DownloadFileInfo): ModelDownload {
     const latest = this.store.get(download.id) ?? download;
     const updatedFiles = latest.files.map((entry) => (entry.path === file.path ? { ...file } : entry));
@@ -452,6 +492,11 @@ export class DownloadManager {
     return updated;
   }
 
+  /**
+   * Publishes download progress event.
+   * @param download - The download record.
+   * @param file - Current file being processed.
+   */
   private publishProgress(download: ModelDownload, file: DownloadFileInfo): void {
     const payload = {
       id: download.id,
@@ -469,6 +514,11 @@ export class DownloadManager {
     void this.eventManager.publish(new Event("download_progress", payload));
   }
 
+  /**
+   * Publishes download state change event.
+   * @param download - The download record.
+   * @param status - New status value.
+   */
   private publishState(download: ModelDownload, status: DownloadStatus): void {
     const payload = {
       id: download.id,
