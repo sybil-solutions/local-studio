@@ -41,7 +41,7 @@ function FileTreeNode({ entry, depth }: { entry: AgentFileEntry; depth: number }
     <div>
       <button
         onClick={() => isDir && setOpen(!open)}
-        className={`w-full flex items-center gap-1.5 py-1 hover:bg-white/[0.03] transition-colors text-left ${
+        className={`w-full flex items-center gap-1.5 py-1 hover:bg-white/3 transition-colors text-left ${
           isDir ? "cursor-pointer" : "cursor-default"
         }`}
         style={{ paddingLeft: `${depth * 14 + 8}px` }}
@@ -83,7 +83,7 @@ export function AgentFilesPanel({ files, plan }: AgentFilesPanelProps) {
   return (
     <div className="flex flex-col h-full">
       {/* Working directory */}
-      <div className="px-3 py-2.5 border-b border-white/[0.06] flex items-center gap-2">
+      <div className="px-3 py-2.5 border-b border-white/6 flex items-center gap-2">
         <Terminal className="h-3.5 w-3.5 text-violet-400" />
         <span className="text-[10px] text-[#666] font-mono truncate">~/agent-workspace</span>
       </div>
@@ -96,7 +96,7 @@ export function AgentFilesPanel({ files, plan }: AgentFilesPanelProps) {
           <div className="flex flex-col items-center justify-center py-12 text-center px-4">
             <Folder className="h-8 w-8 text-[#2a2725] mb-3" />
             <p className="text-xs text-[#555] mb-1">No files yet</p>
-            <p className="text-[10px] text-[#444] max-w-[180px] leading-relaxed">
+            <p className="text-[10px] text-[#444] max-w-45 leading-relaxed">
               Files created by the agent during execution will appear here.
             </p>
           </div>
@@ -104,7 +104,7 @@ export function AgentFilesPanel({ files, plan }: AgentFilesPanelProps) {
       </div>
 
       {/* Footer stats */}
-      <div className="px-3 py-2 border-t border-white/[0.06] flex items-center justify-between">
+      <div className="px-3 py-2 border-t border-white/6 flex items-center justify-between">
         <span className="text-[10px] text-[#555]">
           {hasFiles ? `${countFiles(files)} files` : "Empty"}
         </span>

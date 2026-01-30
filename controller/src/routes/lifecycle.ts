@@ -7,6 +7,7 @@ import type { LaunchResult, Recipe } from "../types/models";
 import { AsyncLock, delay } from "../core/async";
 import { badRequest, notFound } from "../core/errors";
 import { parseRecipe } from "../stores/recipe-serializer";
+import { Event } from "../services/event-manager";
 
 const switchLock = new AsyncLock();
 const launchCancelControllers = new Map<string, AbortController>();
@@ -101,6 +102,7 @@ export const registerLifecycleRoutes = (app: Hono, context: AppContext): void =>
     try {
       const recipe = parseRecipe(body);
       context.stores.recipeStore.save(recipe);
+      await context.eventManager.publish(new Event("recipe_created", { recipe }));
       return ctx.json({ success: true, id: recipe.id });
     } catch (error) {
       throw badRequest(String(error));
@@ -113,6 +115,7 @@ export const registerLifecycleRoutes = (app: Hono, context: AppContext): void =>
     try {
       const recipe = parseRecipe({ ...body, id: recipeId });
       context.stores.recipeStore.save(recipe);
+      await context.eventManager.publish(new Event("recipe_updated", { recipe }));
       return ctx.json({ success: true, id: recipe.id });
     } catch (error) {
       throw badRequest(String(error));
@@ -125,6 +128,7 @@ export const registerLifecycleRoutes = (app: Hono, context: AppContext): void =>
     if (!deleted) {
       throw notFound("Recipe not found");
     }
+    await context.eventManager.publish(new Event("recipe_deleted", { recipe_id: recipeId }));
     return ctx.json({ success: true });
   });
 

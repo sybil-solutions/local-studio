@@ -20,6 +20,7 @@ describe("System Routes", () => {
       host: "0.0.0.0",
       port: 8080,
       inference_port: 8000,
+      temporal_address: "localhost:7233",
       data_dir: "./data",
       db_path: ":memory:",
       models_dir: "/models",

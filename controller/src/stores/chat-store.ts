@@ -77,6 +77,30 @@ export class ChatStore {
   }
 
   /**
+   * Get a session summary without messages.
+   * @param sessionId - Session identifier.
+   * @returns Session summary or null.
+   */
+  public getSessionSummary(sessionId: string): Record<string, unknown> | null {
+    const session = this.db
+      .query("SELECT id, title, model, parent_id, agent_state, created_at, updated_at FROM chat_sessions WHERE id = ?")
+      .get(sessionId) as Record<string, unknown> | null;
+    if (!session) {
+      return null;
+    }
+
+    if (typeof session["agent_state"] === "string") {
+      try {
+        session["agent_state"] = JSON.parse(String(session["agent_state"]));
+      } catch {
+        session["agent_state"] = null;
+      }
+    }
+
+    return { ...session };
+  }
+
+  /**
    * Get a session and its messages.
    * @param sessionId - Session identifier.
    * @returns Session object or null.

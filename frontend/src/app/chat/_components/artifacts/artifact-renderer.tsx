@@ -151,7 +151,7 @@ export function ArtifactRenderer({ artifact }: ArtifactRendererProps) {
     <div className={`flex items-center gap-0.5 ${inFooter ? "justify-center" : ""}`}>
       <button
         onClick={handleCopy}
-        className="p-2 md:p-1.5 rounded hover:bg-(--background) transition-colors"
+        className="p-2 md:p-1.5 rounded hover:bg-background transition-colors"
         title="Copy code"
       >
         {copied ? (
@@ -162,21 +162,21 @@ export function ArtifactRenderer({ artifact }: ArtifactRendererProps) {
       </button>
       <button
         onClick={handleDownload}
-        className="p-2 md:p-1.5 rounded hover:bg-(--background) transition-colors"
+        className="p-2 md:p-1.5 rounded hover:bg-background transition-colors"
         title="Download"
       >
         <Icons.Download className="h-5 w-5 md:h-3.5 md:w-3.5 text-[#9a9590]" />
       </button>
       <button
         onClick={handleShare}
-        className="p-2 md:p-1.5 rounded hover:bg-(--background) transition-colors"
+        className="p-2 md:p-1.5 rounded hover:bg-background transition-colors"
         title="Share"
       >
         <Icons.Share className="h-5 w-5 md:h-3.5 md:w-3.5 text-[#9a9590]" />
       </button>
       <button
         onClick={() => updateState({ showCode: !showCode })}
-        className={`${inFooter ? "block" : "hidden md:block"} p-2 md:p-1.5 rounded hover:bg-(--background) transition-colors`}
+        className={`${inFooter ? "block" : "hidden md:block"} p-2 md:p-1.5 rounded hover:bg-background transition-colors`}
         title={showCode ? "Hide code" : "Show code"}
       >
         {showCode ? (
@@ -190,7 +190,7 @@ export function ArtifactRenderer({ artifact }: ArtifactRendererProps) {
           e.stopPropagation();
           updateState({ isFullscreen: !isFullscreen });
         }}
-        className="p-2 md:p-1.5 rounded hover:bg-(--background) transition-colors"
+        className="p-2 md:p-1.5 rounded hover:bg-background transition-colors"
         title={isFullscreen ? "Exit fullscreen" : "Fullscreen"}
       >
         {isFullscreen ? (
@@ -215,14 +215,14 @@ export function ArtifactRenderer({ artifact }: ArtifactRendererProps) {
         {/* Fullscreen backdrop */}
         {isFullscreen && (
           <div
-            className="fixed inset-0 z-[100] bg-black/80"
+            className="fixed inset-0 z-100 bg-black/80"
             onClick={() => updateState({ isFullscreen: false })}
           />
         )}
         <div
           className={`my-2 rounded-lg border border-(--border) overflow-hidden artifact-container ${
             isFullscreen
-              ? "fixed inset-2 md:inset-4 z-[101] m-0 rounded-lg flex flex-col bg-(--background)"
+              ? "fixed inset-2 md:inset-4 z-101 m-0 rounded-lg flex flex-col bg-background"
               : "max-w-full"
           }`}
           style={
@@ -248,7 +248,7 @@ export function ArtifactRenderer({ artifact }: ArtifactRendererProps) {
             {isFullscreen && (
               <button
                 onClick={() => updateState({ isFullscreen: false })}
-                className="p-2 rounded hover:bg-(--background) transition-colors"
+                className="p-2 rounded hover:bg-background transition-colors"
                 title="Exit fullscreen"
               >
                 <Icons.Minimize2 className="h-5 w-5" />
@@ -256,7 +256,7 @@ export function ArtifactRenderer({ artifact }: ArtifactRendererProps) {
             )}
           </div>
           {showCode && (
-            <pre className="p-2 md:p-3 text-xs bg-(--background) overflow-x-auto border-b border-(--border) shrink-0 max-h-32 md:max-h-48">
+            <pre className="p-2 md:p-3 text-xs bg-background overflow-x-auto border-b border-(--border) shrink-0 max-h-32 md:max-h-48">
               <code>{artifact.code}</code>
             </pre>
           )}
@@ -299,12 +299,12 @@ export function ArtifactRenderer({ artifact }: ArtifactRendererProps) {
           <div className="flex items-center gap-2">
             <Icons.Code className="h-3.5 w-3.5" />
             <span className="text-xs font-medium">{artifact.title || "Python"}</span>
-            <span className="text-xs text-[#9a9590] px-1.5 py-0.5 bg-(--background) rounded">
+            <span className="text-xs text-[#9a9590] px-1.5 py-0.5 bg-background rounded">
               python
             </span>
           </div>
         </div>
-        <pre className="p-3 text-xs bg-(--background) overflow-x-auto">
+        <pre className="p-3 text-xs bg-background overflow-x-auto">
           <code>{artifact.code}</code>
         </pre>
         {artifact.output && (

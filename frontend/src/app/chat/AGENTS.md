@@ -330,7 +330,7 @@ Legend:
 | Image attachments | 🟡 | `tool-belt.tsx` | Base64 is computed for images, but not passed to model in current send path. |
 | Audio recording | 🟡 | `tool-belt.tsx`, `/api/voice/transcribe` (external) | Records audio, transcribes to text, appends to input. Not sent as audio part. |
 | Deep Research | 🔴/🟡 | `chat-settings-modal.tsx`, `tool-belt-toolbar.tsx`, `chat-slice.ts` | Toggle exists; no observable effect in chat send pipeline in this directory. |
-| Agent Files / virtual filesystem | 🔴 | `agent-files-panel.tsx` | UI placeholder; ChatPage passes `files={[]}`. No backend wiring here. |
+| Agent Files / virtual filesystem | 🟡 | `agent-files-panel.tsx`, `use-agent-files.ts` | Wired to `/chats/:sessionId/files` via `use-agent-files`; panel lists the workspace tree but has no inline editor. |
 | Agent planning tools (`create_plan`, `update_plan`) | ✅ | `use-agent-tools.ts`, `agent-plan-drawer.tsx`, `chat-page.tsx` | Synthetic tools merged into tool list when agent mode is on. |
 | TTS | 🔴/🟡 | `tool-belt.tsx`, `tool-belt-toolbar.tsx`, store | Toggle exists; no speech synthesis in chat rendering here. |
 | Queue next message while streaming | 🟡 | `tool-belt.tsx`, store `queuedContext` | UI supports entering `queuedContext` during streaming; no auto-submit logic found in this directory. |
@@ -828,12 +828,12 @@ Only referenced by dead `ChatSidePanel`.
 
 ---
 
-### _components/agent/agent-files-panel.tsx (🔴 UI stub)
+### _components/agent/agent-files-panel.tsx (🟡 PARTIAL)
 
-**Role:** Placeholder “Agent Files” panel.
+**Role:** Agent workspace tree viewer.
 
-- Takes `files: AgentFileEntry[]` but ChatPage currently passes `[]`.
-- No file open/edit flow exists here.
+- Receives `files: AgentFileEntry[]` from ChatPage (loaded via `use-agent-files`).
+- Read-only UI: no open/edit flow; edits happen through tools + backend.
 
 ---
 

@@ -4,6 +4,7 @@ import type { AppContext } from "../types/context";
 import type { McpServer } from "../types/models";
 import { badRequest, notFound, HttpStatus } from "../core/errors";
 import { runMcpCommand } from "../services/mcp-runner";
+import { Event } from "../services/event-manager";
 
 /**
  * Register MCP routes.
@@ -61,6 +62,7 @@ export const registerMcpRoutes = (app: Hono, context: AppContext): void => {
       url: typeof body["url"] === "string" ? body["url"] : null,
     };
     context.stores.mcpStore.save(server);
+    await context.eventManager.publish(new Event("mcp_server_created", { server }));
     return ctx.json(server);
   });
 
@@ -84,6 +86,7 @@ export const registerMcpRoutes = (app: Hono, context: AppContext): void => {
       url: typeof body["url"] === "string" ? body["url"] : existing.url,
     };
     context.stores.mcpStore.save(updated);
+    await context.eventManager.publish(new Event("mcp_server_updated", { server: updated }));
     return ctx.json(updated);
   });
 
@@ -93,6 +96,7 @@ export const registerMcpRoutes = (app: Hono, context: AppContext): void => {
     if (!deleted) {
       throw notFound(`Server '${serverId}' not found`);
     }
+    await context.eventManager.publish(new Event("mcp_server_deleted", { server_id: serverId }));
     return ctx.json({ status: "deleted", id: serverId });
   });
 
@@ -102,6 +106,7 @@ export const registerMcpRoutes = (app: Hono, context: AppContext): void => {
     if (!updated) {
       throw notFound(`Server '${serverId}' not found`);
     }
+    await context.eventManager.publish(new Event("mcp_server_enabled", { server_id: serverId }));
     return ctx.json({ status: "enabled", id: serverId });
   });
 
@@ -111,6 +116,7 @@ export const registerMcpRoutes = (app: Hono, context: AppContext): void => {
     if (!updated) {
       throw notFound(`Server '${serverId}' not found`);
     }
+    await context.eventManager.publish(new Event("mcp_server_disabled", { server_id: serverId }));
     return ctx.json({ status: "disabled", id: serverId });
   });
 
@@ -156,6 +162,7 @@ export const registerMcpRoutes = (app: Hono, context: AppContext): void => {
     toolName: string,
     body: Record<string, unknown>,
   ): Promise<Record<string, unknown>> => {
+    const start = Date.now();
     const server = context.stores.mcpStore.get(serverId);
     if (!server) {
       throw notFound(`Server '${serverId}' not found`);
@@ -167,6 +174,12 @@ export const registerMcpRoutes = (app: Hono, context: AppContext): void => {
     try {
       const result = await runMcpCommand(server, "tools/call", { name: toolName, arguments: sanitized });
       const content = Array.isArray(result["content"]) ? result["content"] : [];
+      await context.eventManager.publish(new Event("mcp_tool_called", {
+        server_id: serverId,
+        tool_name: toolName,
+        success: true,
+        duration_ms: Date.now() - start,
+      }));
       if (content.length > 0) {
         const textParts: string[] = [];
         for (const item of content) {
@@ -180,6 +193,13 @@ export const registerMcpRoutes = (app: Hono, context: AppContext): void => {
       }
       return { result };
     } catch (error) {
+      await context.eventManager.publish(new Event("mcp_tool_called", {
+        server_id: serverId,
+        tool_name: toolName,
+        success: false,
+        duration_ms: Date.now() - start,
+        error: String(error),
+      }));
       throw new HttpStatus(500, String(error));
     }
   };

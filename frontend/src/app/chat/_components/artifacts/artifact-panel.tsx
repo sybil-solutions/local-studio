@@ -73,7 +73,7 @@ export function ArtifactPanel({ artifacts, isOpen }: ArtifactPanelProps) {
               className={`flex items-center gap-1.5 px-2 py-1 rounded text-[10px] whitespace-nowrap transition-colors shrink-0 ${
                 artifact.id === resolvedSelectedId
                   ? "bg-(--link)/20 text-(--link)"
-                  : "bg-(--accent) text-[#9a9590] hover:text-(--foreground)"
+                  : "bg-(--accent) text-[#9a9590] hover:text-foreground"
               }`}
             >
               {getIcon(artifact.type)}

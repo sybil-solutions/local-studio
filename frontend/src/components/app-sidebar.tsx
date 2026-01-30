@@ -21,6 +21,7 @@ import {
 import { useState, useEffect, useRef } from "react";
 import api from "@/lib/api";
 import { useAppStore } from "@/store";
+import { useControllerEvents } from "@/hooks/use-controller-events";
 
 const navItems = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
@@ -37,6 +38,7 @@ interface AppSidebarProps {
 }
 
 export function AppSidebar({ children }: AppSidebarProps) {
+  useControllerEvents();
   const pathname = usePathname();
   // Use consistent defaults for SSR to avoid hydration mismatch
   const [hydrationState] = useState(() => {
@@ -153,6 +155,30 @@ export function AppSidebar({ children }: AppSidebarProps) {
     return () => {
       clearInterval(interval);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, []);
+
+  useEffect(() => {
+    const handler = (event: Event) => {
+      const custom = event as CustomEvent<{ type?: string; data?: Record<string, unknown> }>;
+      if (custom.detail?.type !== "status") return;
+      const payload = custom.detail?.data ?? {};
+      const process = payload["process"] as Record<string, unknown> | null | undefined;
+      const running = Boolean(payload["running"] ?? process);
+      const modelName =
+        (process?.["served_model_name"] as string | undefined) ||
+        (typeof process?.["model_path"] === "string"
+          ? String(process?.["model_path"]).split("/").pop()
+          : undefined);
+      setStatus((prev) => ({
+        online: true,
+        inferenceOnline: running,
+        model: modelName ?? prev.model,
+      }));
+    };
+    window.addEventListener("vllm:controller-event", handler as EventListener);
+    return () => {
+      window.removeEventListener("vllm:controller-event", handler as EventListener);
     };
   }, []);
 

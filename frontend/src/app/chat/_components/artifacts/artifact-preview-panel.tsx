@@ -1,10 +1,9 @@
 // CRITICAL
 "use client";
 
-import { useMemo, useState, useCallback, useEffect, useRef } from "react";
+import { useMemo, useState, useCallback, useRef } from "react";
 import * as Icons from "../icons";
 import type { Artifact } from "@/lib/types";
-import { useAppStore } from "@/store";
 
 interface ArtifactPreviewPanelProps {
   artifacts: Artifact[];
@@ -49,11 +48,11 @@ export function ArtifactPreviewPanel({ artifacts }: ArtifactPreviewPanelProps) {
   if (artifacts.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center h-full p-6 text-center">
-        <div className="w-12 h-12 rounded-xl bg-white/[0.03] flex items-center justify-center mb-4">
+        <div className="w-12 h-12 rounded-xl bg-white/3 flex items-center justify-center mb-4">
           <Icons.Layers className="h-6 w-6 text-[#444]" />
         </div>
         <p className="text-sm text-[#666] mb-1">No artifacts yet</p>
-        <p className="text-xs text-[#444] max-w-[200px]">
+        <p className="text-xs text-[#444] max-w-50">
           Artifacts will appear here when the model generates code, SVGs, or HTML previews
         </p>
       </div>
@@ -63,13 +62,13 @@ export function ArtifactPreviewPanel({ artifacts }: ArtifactPreviewPanelProps) {
   return (
     <div className="flex flex-col h-full">
       {/* Toolbar */}
-      <div className="flex items-center justify-between px-3 py-2 border-b border-white/[0.06]">
+      <div className="flex items-center justify-between px-3 py-2 border-b border-white/6">
         <div className="flex items-center gap-1">
           <button
             onClick={() => setActiveTab("preview")}
             className={`px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors ${
               activeTab === "preview"
-                ? "bg-white/[0.08] text-foreground"
+                ? "bg-white/8 text-foreground"
                 : "text-[#666] hover:text-[#888]"
             }`}
           >
@@ -78,9 +77,7 @@ export function ArtifactPreviewPanel({ artifacts }: ArtifactPreviewPanelProps) {
           <button
             onClick={() => setActiveTab("code")}
             className={`px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors ${
-              activeTab === "code"
-                ? "bg-white/[0.08] text-foreground"
-                : "text-[#666] hover:text-[#888]"
+              activeTab === "code" ? "bg-white/8 text-foreground" : "text-[#666] hover:text-[#888]"
             }`}
           >
             Code
@@ -90,19 +87,13 @@ export function ArtifactPreviewPanel({ artifacts }: ArtifactPreviewPanelProps) {
         <div className="flex items-center gap-1">
           {artifacts.length > 1 && (
             <>
-              <button
-                onClick={handlePrev}
-                className="p-1.5 rounded hover:bg-white/[0.06] text-[#666]"
-              >
+              <button onClick={handlePrev} className="p-1.5 rounded hover:bg-white/6 text-[#666]">
                 <Icons.ChevronLeft className="h-4 w-4" />
               </button>
               <span className="text-xs text-[#666] tabular-nums">
                 {selectedIndex + 1}/{artifacts.length}
               </span>
-              <button
-                onClick={handleNext}
-                className="p-1.5 rounded hover:bg-white/[0.06] text-[#666]"
-              >
+              <button onClick={handleNext} className="p-1.5 rounded hover:bg-white/6 text-[#666]">
                 <Icons.ChevronRight className="h-4 w-4" />
               </button>
             </>
@@ -112,7 +103,7 @@ export function ArtifactPreviewPanel({ artifacts }: ArtifactPreviewPanelProps) {
 
       {/* Artifact selector */}
       {artifacts.length > 1 && (
-        <div className="flex gap-1 p-2 border-b border-white/[0.06] overflow-x-auto">
+        <div className="flex gap-1 p-2 border-b border-white/6 overflow-x-auto">
           {artifacts.map((artifact) => (
             <ArtifactPill
               key={artifact.id}
@@ -138,7 +129,7 @@ export function ArtifactPreviewPanel({ artifacts }: ArtifactPreviewPanelProps) {
 
       {/* Bottom bar */}
       {selectedArtifact && (
-        <div className="flex items-center justify-between px-3 py-2 border-t border-white/[0.06]">
+        <div className="flex items-center justify-between px-3 py-2 border-t border-white/6">
           <div className="flex items-center gap-2 min-w-0">
             <ArtifactTypeIcon type={selectedArtifact.type} />
             <span className="text-xs text-[#888] truncate">
@@ -151,7 +142,7 @@ export function ArtifactPreviewPanel({ artifacts }: ArtifactPreviewPanelProps) {
           <div className="flex items-center gap-1">
             <button
               onClick={() => setIsPlaying(!isPlaying)}
-              className="p-1.5 rounded hover:bg-white/[0.06] text-[#666]"
+              className="p-1.5 rounded hover:bg-white/6 text-[#666]"
               title={isPlaying ? "Pause" : "Play"}
             >
               {isPlaying ? (
@@ -183,14 +174,12 @@ function ArtifactPill({
       onClick={onClick}
       className={`flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-[11px] whitespace-nowrap transition-colors shrink-0 ${
         isSelected
-          ? "bg-white/[0.08] text-foreground border border-white/[0.08]"
-          : "bg-transparent text-[#666] hover:bg-white/[0.04] border border-transparent"
+          ? "bg-white/8 text-foreground border border-white/8"
+          : "bg-transparent text-[#666] hover:bg-white/4 border border-transparent"
       }`}
     >
       <ArtifactTypeIcon type={artifact.type} className="h-3 w-3" />
-      <span className="max-w-[100px] truncate">
-        {artifact.title?.slice(0, 20) || artifact.type}
-      </span>
+      <span className="max-w-25 truncate">{artifact.title?.slice(0, 20) || artifact.type}</span>
       {versionLabel && (
         <span className="rounded-full border border-violet-500/30 bg-violet-500/10 px-1.5 py-0.5 text-[9px] text-violet-300">
           {versionLabel}

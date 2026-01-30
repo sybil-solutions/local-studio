@@ -212,6 +212,20 @@ export function useChatTools({ mcpEnabled }: UseChatToolsOptions) {
     setExecutingTools(new Set());
   }, [setExecutingTools, setToolResultsMap]);
 
+  useEffect(() => {
+    const handler = () => {
+      void loadMCPServers().then(() => {
+        if (mcpEnabled) {
+          void loadMCPTools();
+        }
+      });
+    };
+    window.addEventListener("vllm:mcp-event", handler as EventListener);
+    return () => {
+      window.removeEventListener("vllm:mcp-event", handler as EventListener);
+    };
+  }, [loadMCPServers, loadMCPTools, mcpEnabled]);
+
   return {
     mcpTools,
     mcpServers,

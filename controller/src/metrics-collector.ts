@@ -2,6 +2,7 @@
 import type { AppContext } from "./types/context";
 import { getGpuInfo } from "./services/gpu";
 import { delay } from "./core/async";
+import { checkTemporalStatus } from "./services/temporal-status";
 
 /**
  * Start background metrics collection.
@@ -12,6 +13,7 @@ export const startMetricsCollector = (context: AppContext): (() => void) => {
   let running = true;
   let lastVllmMetrics: Record<string, number> = {};
   let lastMetricsTime = 0;
+  let lastTemporalCheck = 0;
 
   /**
    * Scrape Prometheus metrics from vLLM.
@@ -56,6 +58,7 @@ export const startMetricsCollector = (context: AppContext): (() => void) => {
     try {
       const current = await context.processManager.findInferenceProcess(context.config.inference_port);
       const gpuList = getGpuInfo();
+      const nowMs = Date.now();
 
       if (current) {
         context.metrics.updateActiveModel(current.model_path, current.backend, current.served_model_name);
@@ -78,6 +81,18 @@ export const startMetricsCollector = (context: AppContext): (() => void) => {
         inference_port: context.config.inference_port,
       });
       await context.eventManager.publishGpu(gpuList.map((gpu) => ({ ...gpu })));
+
+      if (nowMs - lastTemporalCheck > 15000) {
+        lastTemporalCheck = nowMs;
+        const temporalStatus = await checkTemporalStatus(context.config.temporal_address, 1500);
+        await context.eventManager.publishTemporalStatus({
+          address: temporalStatus.address,
+          available: temporalStatus.available,
+          latency_ms: temporalStatus.latency_ms,
+          error: temporalStatus.error ?? null,
+          checked_at: new Date().toISOString(),
+        });
+      }
 
       // Always publish basic metrics (lifetime, power) even when idle
       const lifetimeData = lifetimeStore.getAll();

@@ -2,16 +2,7 @@
 "use client";
 
 import { useState } from "react";
-import {
-  Check,
-  Circle,
-  Loader2,
-  Ban,
-  ChevronDown,
-  ChevronRight,
-  X,
-  ListChecks,
-} from "lucide-react";
+import { Ban, ListChecks } from "lucide-react";
 import * as Icons from "../icons";
 import type { AgentPlan, AgentPlanStep } from "./agent-types";
 
@@ -24,25 +15,25 @@ function StepIcon({ status }: { status: AgentPlanStep["status"] }) {
   switch (status) {
     case "done":
       return (
-        <div className="w-[18px] h-[18px] rounded bg-emerald-500/20 flex items-center justify-center shrink-0">
+        <div className="w-4.5 h-4.5 rounded bg-emerald-500/20 flex items-center justify-center shrink-0">
           <Icons.Check className="h-3 w-3 text-emerald-400" strokeWidth={2.5} />
         </div>
       );
     case "running":
       return (
-        <div className="w-[18px] h-[18px] rounded bg-blue-500/20 flex items-center justify-center shrink-0">
+        <div className="w-4.5 h-4.5 rounded bg-blue-500/20 flex items-center justify-center shrink-0">
           <Icons.Loader2 className="h-3 w-3 text-blue-400 animate-spin" />
         </div>
       );
     case "blocked":
       return (
-        <div className="w-[18px] h-[18px] rounded bg-red-500/15 flex items-center justify-center shrink-0">
+        <div className="w-4.5 h-4.5 rounded bg-red-500/15 flex items-center justify-center shrink-0">
           <Ban className="h-2.5 w-2.5 text-red-400" />
         </div>
       );
     default:
       return (
-        <div className="w-[18px] h-[18px] rounded border border-white/[0.08] flex items-center justify-center shrink-0">
+        <div className="w-4.5 h-4.5 rounded border border-white/8 flex items-center justify-center shrink-0">
           <Icons.Circle className="h-2 w-2 text-[#444]" />
         </div>
       );
@@ -58,11 +49,11 @@ export function AgentPlanDrawer({ plan, onClear }: AgentPlanDrawerProps) {
   const currentIndex = steps.findIndex((s) => s.status !== "done");
 
   return (
-    <div className="border-b border-white/[0.06] bg-[#111] overflow-hidden">
+    <div className="border-b border-white/6 bg-[#111] overflow-hidden">
       {/* Header */}
       <button
         onClick={() => setCollapsed(!collapsed)}
-        className="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-white/[0.02] transition-colors"
+        className="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-white/2 transition-colors"
       >
         {collapsed ? (
           <Icons.ChevronRight className="h-3 w-3 text-[#555] shrink-0" />
@@ -79,7 +70,7 @@ export function AgentPlanDrawer({ plan, onClear }: AgentPlanDrawerProps) {
         </span>
 
         {/* Mini progress dots */}
-        <div className="flex gap-[3px] ml-auto mr-1">
+        <div className="flex gap-0.75 ml-auto mr-1">
           {steps.map((s, i) => (
             <div
               key={i}
@@ -90,7 +81,7 @@ export function AgentPlanDrawer({ plan, onClear }: AgentPlanDrawerProps) {
                     ? "bg-blue-400 animate-pulse"
                     : s.status === "blocked"
                       ? "bg-red-400"
-                      : "bg-white/[0.08]"
+                      : "bg-white/8"
               }`}
             />
           ))}
@@ -109,7 +100,7 @@ export function AgentPlanDrawer({ plan, onClear }: AgentPlanDrawerProps) {
               onClear();
             }
           }}
-          className="p-0.5 rounded hover:bg-white/[0.06] text-[#444] hover:text-[#888] shrink-0 cursor-pointer"
+          className="p-0.5 rounded hover:bg-white/6 text-[#444] hover:text-[#888] shrink-0 cursor-pointer"
           title="Clear plan"
         >
           <Icons.X className="h-3 w-3" />
@@ -118,14 +109,14 @@ export function AgentPlanDrawer({ plan, onClear }: AgentPlanDrawerProps) {
 
       {/* Steps */}
       {!collapsed && (
-        <div className="px-3 pb-2 space-y-[2px]">
+        <div className="px-3 pb-2 space-y-0.5">
           {steps.map((step, i) => {
             const isCurrent = i === currentIndex && step.status !== "blocked";
             return (
               <div
                 key={step.id}
                 className={`flex items-center gap-2 py-1 px-1.5 rounded transition-colors ${
-                  isCurrent ? "bg-white/[0.03]" : ""
+                  isCurrent ? "bg-white/3" : ""
                 }`}
               >
                 <StepIcon status={step.status} />
@@ -141,7 +132,7 @@ export function AgentPlanDrawer({ plan, onClear }: AgentPlanDrawerProps) {
                   {step.title}
                 </span>
                 {step.notes && (
-                  <span className="text-[10px] text-[#444] truncate ml-auto shrink-0 max-w-[120px]">
+                  <span className="text-[10px] text-[#444] truncate ml-auto shrink-0 max-w-30">
                     {step.notes}
                   </span>
                 )}

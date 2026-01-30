@@ -98,6 +98,7 @@ cd frontend && npm install && npm run dev
 VLLM_STUDIO_PORT=8080           # Controller port
 VLLM_STUDIO_INFERENCE_PORT=8000 # vLLM/SGLang port
 VLLM_STUDIO_API_KEY=your-key    # Optional auth
+VLLM_STUDIO_TEMPORAL_ADDRESS=localhost:7233 # Temporal server address
 ```
 
 ### Recipe Example
@@ -164,6 +165,16 @@ docker compose up litellm
 ```
 
 Then use `http://localhost:4100` as your API endpoint with any OpenAI-compatible client.
+
+## Temporal (Local, OSS)
+
+The Docker bundle includes a local Temporal dev server for workflows.
+
+```bash
+docker compose up temporal
+```
+
+Temporal listens on port 7233 (gRPC) and exposes the UI on port 8233.
 
 ## License
 

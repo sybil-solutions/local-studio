@@ -66,6 +66,18 @@ services:
       timeout: 5s
       retries: 3
 
+  # Temporal - Local workflow engine (open source)
+  temporal:
+    image: temporalio/temporal:latest
+    container_name: vllm-studio-temporal
+    ports:
+      - "7233:7233"
+      - "8233:8233"
+    volumes:
+      - ./data/temporal:/var/lib/temporal
+    command: ["server", "start-dev", "--ip", "0.0.0.0", "--db-filename", "/var/lib/temporal/temporal.db"]
+    restart: unless-stopped
+
   # Prometheus - Time-series metrics collection
   prometheus:
     image: prom/prometheus:latest

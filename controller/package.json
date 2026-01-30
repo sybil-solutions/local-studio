@@ -19,6 +19,7 @@
   "dependencies": {
     "@hono/swagger-ui": "^0.5.3",
     "@hono/zod-openapi": "0.18.4",
+    "agentfs-sdk": "^0.5.3",
     "dotenv": "16.6.1",
     "hono": "4.6.12",
     "pg": "8.13.3",

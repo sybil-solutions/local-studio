@@ -152,6 +152,15 @@ export class EventManager {
   }
 
   /**
+   * Publish Temporal connection status updates.
+   * @param statusData - Temporal status payload.
+   * @returns Promise that resolves after publish.
+   */
+  public async publishTemporalStatus(statusData: Record<string, unknown>): Promise<void> {
+    await this.publish(new Event("temporal_status", statusData));
+  }
+
+  /**
    * Publish log line updates to a session channel.
    * @param sessionId - Log session identifier.
    * @param line - Log line contents.

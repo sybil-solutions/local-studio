@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import type { AppContext } from "../types/context";
 import { notFound } from "../core/errors";
 import { compactChatSession } from "../services/chat-compaction";
+import { Event } from "../services/event-manager";
 
 /**
  * Generate a simple title from the first few words of a message
@@ -74,6 +75,15 @@ export const registerChatsRoutes = (app: Hono, context: AppContext): void => {
       preserveFirst,
       preserveLast,
     });
+    const newSessionId = typeof result.session["id"] === "string" ? String(result.session["id"]) : undefined;
+    const compactedSession = newSessionId
+      ? context.stores.chatStore.getSessionSummary(newSessionId) ?? result.session
+      : result.session;
+    await context.eventManager.publish(new Event("chat_session_compacted", {
+      source_id: sessionId,
+      session: compactedSession,
+      summary: result.summary,
+    }));
     return ctx.json(result);
   });
 
@@ -84,6 +94,7 @@ export const registerChatsRoutes = (app: Hono, context: AppContext): void => {
     const model = typeof body["model"] === "string" ? body["model"] : undefined;
     const agentState = body["agent_state"];
     const session = context.stores.chatStore.createSession(sessionId, title, model, undefined, agentState);
+    await context.eventManager.publish(new Event("chat_session_created", { session }));
     return ctx.json({ session });
   });
 
@@ -98,6 +109,16 @@ export const registerChatsRoutes = (app: Hono, context: AppContext): void => {
     if (!updated) {
       throw notFound("Session not found");
     }
+    const session = context.stores.chatStore.getSessionSummary(sessionId);
+    await context.eventManager.publish(new Event("chat_session_updated", {
+      session_id: sessionId,
+      session,
+      changes: {
+        ...(title !== undefined ? { title } : {}),
+        ...(model !== undefined ? { model } : {}),
+        ...(hasAgentState ? { agent_state: agentState } : {}),
+      },
+    }));
     return ctx.json({ success: true });
   });
 
@@ -107,6 +128,7 @@ export const registerChatsRoutes = (app: Hono, context: AppContext): void => {
     if (!deleted) {
       throw notFound("Session not found");
     }
+    await context.eventManager.publish(new Event("chat_session_deleted", { session_id: sessionId }));
     return ctx.json({ success: true });
   });
 
@@ -139,6 +161,14 @@ export const registerChatsRoutes = (app: Hono, context: AppContext): void => {
       parts,
       metadata,
     );
+    const session = context.stores.chatStore.getSessionSummary(sessionId);
+    await context.eventManager.publish(new Event("chat_message_upserted", {
+      session_id: sessionId,
+      message,
+      session,
+    }));
+    const usage = context.stores.chatStore.getUsage(sessionId);
+    await context.eventManager.publish(new Event("chat_usage_updated", { session_id: sessionId, usage }));
     return ctx.json(message);
   });
 
@@ -170,6 +200,12 @@ export const registerChatsRoutes = (app: Hono, context: AppContext): void => {
 
       const newTitle = generateTitleFromMessage(String(firstUserMessage["content"]));
       context.stores.chatStore.updateSession(sessionId, newTitle);
+      const summary = context.stores.chatStore.getSessionSummary(sessionId);
+      await context.eventManager.publish(new Event("chat_session_updated", {
+        session_id: sessionId,
+        session: summary,
+        changes: { title: newTitle },
+      }));
       updated++;
     }
 
@@ -187,6 +223,8 @@ export const registerChatsRoutes = (app: Hono, context: AppContext): void => {
     if (!session) {
       throw notFound("Session not found");
     }
+    const summary = context.stores.chatStore.getSessionSummary(newId) ?? session;
+    await context.eventManager.publish(new Event("chat_session_forked", { source_id: sessionId, session: summary }));
     return ctx.json({ session });
   });
 };

@@ -281,7 +281,7 @@ function ArtifactViewerContent({
           {isRunning ? (
             <button
               onClick={onStop}
-              className="p-1.5 rounded hover:bg-(--background) text-(--error)"
+              className="p-1.5 rounded hover:bg-background text-(--error)"
               title="Stop"
             >
               <Icons.Square className="h-3.5 w-3.5" />
@@ -289,22 +289,18 @@ function ArtifactViewerContent({
           ) : (
             <button
               onClick={onRun}
-              className="p-1.5 rounded hover:bg-(--background) text-(--success)"
+              className="p-1.5 rounded hover:bg-background text-(--success)"
               title="Run"
             >
               <Icons.Play className="h-3.5 w-3.5" />
             </button>
           )}
-          <button
-            onClick={onRefresh}
-            className="p-1.5 rounded hover:bg-(--background)"
-            title="Refresh"
-          >
+          <button onClick={onRefresh} className="p-1.5 rounded hover:bg-background" title="Refresh">
             <Icons.RefreshCw className="h-3.5 w-3.5 text-[#9a9590]" />
           </button>
           <button
             onClick={onToggleCode}
-            className="p-1.5 rounded hover:bg-(--background)"
+            className="p-1.5 rounded hover:bg-background"
             title={showCode ? "Hide code" : "Show code"}
           >
             {showCode ? (
@@ -313,7 +309,7 @@ function ArtifactViewerContent({
               <Icons.Eye className="h-3.5 w-3.5 text-[#9a9590]" />
             )}
           </button>
-          <button onClick={onCopy} className="p-1.5 rounded hover:bg-(--background)" title="Copy">
+          <button onClick={onCopy} className="p-1.5 rounded hover:bg-background" title="Copy">
             {copied ? (
               <Icons.Check className="h-3.5 w-3.5 text-(--success)" />
             ) : (
@@ -322,14 +318,14 @@ function ArtifactViewerContent({
           </button>
           <button
             onClick={onDownload}
-            className="p-1.5 rounded hover:bg-(--background)"
+            className="p-1.5 rounded hover:bg-background"
             title="Download"
           >
             <Icons.Download className="h-3.5 w-3.5 text-[#9a9590]" />
           </button>
           <button
             onClick={onOpenExternal}
-            className="p-1.5 rounded hover:bg-(--background)"
+            className="p-1.5 rounded hover:bg-background"
             title="Open in new tab"
           >
             <Icons.ExternalLink className="h-3.5 w-3.5 text-[#9a9590]" />
@@ -337,18 +333,14 @@ function ArtifactViewerContent({
           {!inModal && onEnterFullscreen && (
             <button
               onClick={onEnterFullscreen}
-              className="p-1.5 rounded hover:bg-(--background)"
+              className="p-1.5 rounded hover:bg-background"
               title="Fullscreen"
             >
               <Icons.Maximize2 className="h-3.5 w-3.5" />
             </button>
           )}
           {inModal && onClose && (
-            <button
-              onClick={onClose}
-              className="p-1.5 rounded hover:bg-(--background)"
-              title="Close"
-            >
+            <button onClick={onClose} className="p-1.5 rounded hover:bg-background" title="Close">
               <Icons.X className="h-3.5 w-3.5" />
             </button>
           )}
@@ -356,7 +348,7 @@ function ArtifactViewerContent({
       </div>
 
       {inModal && (
-        <div className="flex items-center justify-center gap-2 px-3 py-1.5 bg-(--background) border-b border-(--border) shrink-0">
+        <div className="flex items-center justify-center gap-2 px-3 py-1.5 bg-background border-b border-(--border) shrink-0">
           <button onClick={zoomOut} className="p-1 rounded hover:bg-(--accent)" title="Zoom out">
             <Icons.ZoomOut className="h-3.5 w-3.5 text-[#9a9590]" />
           </button>
@@ -397,9 +389,7 @@ function ArtifactViewerContent({
 
       <div
         ref={containerRef}
-        className={`relative overflow-hidden bg-[#0f0f10] ${
-          inModal ? "flex-1 min-h-0" : "h-[400px]"
-        }`}
+        className={`relative overflow-hidden bg-[#0f0f10] ${inModal ? "flex-1 min-h-0" : "h-100"}`}
         style={inModal && scale !== 1 ? { cursor: isDragging ? "grabbing" : "grab" } : undefined}
         onMouseDown={inModal ? onMouseDown : undefined}
         onWheel={inModal ? onWheel : undefined}
@@ -645,10 +635,10 @@ export function ArtifactViewer({ artifact, isActive = true }: ArtifactViewerProp
       {isFullscreen && (
         <>
           <div
-            className="fixed inset-0 z-[100] bg-black/80"
+            className="fixed inset-0 z-100 bg-black/80"
             onClick={() => updateState({ isFullscreen: false })}
           />
-          <div className="fixed inset-3 md:inset-6 z-[101] bg-(--card) rounded-xl border border-(--border) overflow-hidden flex flex-col">
+          <div className="fixed inset-3 md:inset-6 z-101 bg-(--card) rounded-xl border border-(--border) overflow-hidden flex flex-col">
             <ArtifactViewerContent
               {...viewerContentProps}
               inModal

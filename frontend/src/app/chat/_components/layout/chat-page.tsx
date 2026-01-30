@@ -18,7 +18,7 @@ import { ChatToolbeltDock } from "./chat-toolbelt-dock";
 import { ChatModals } from "./chat-modals";
 import * as Hooks from "../../hooks";
 import type { UIMessage } from "@ai-sdk/react";
-import type { Artifact, StoredMessage, StoredToolCall } from "@/lib/types";
+import type { Artifact, ChatSessionDetail, StoredMessage, StoredToolCall } from "@/lib/types";
 import { useContextManagement, type CompactionEvent } from "@/lib/services/context-management";
 import { useMessageParsing } from "@/lib/services/message-parsing";
 import { useAppStore } from "@/store";
@@ -98,6 +98,7 @@ export function ChatPage() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const messagesLengthRef = useRef(0);
+  const messagesRef = useRef<UIMessage[]>([]);
 
   // Sessions hook
   const {
@@ -489,6 +490,61 @@ export function ChatPage() {
     agentStateSignatureRef.current = signature;
     void persistAgentState(currentSessionId, agentState);
   }, [currentSessionId, agentPlan, buildAgentState, persistAgentState]);
+
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
+
+  useEffect(() => {
+    const handler = (event: Event) => {
+      const custom = event as CustomEvent<{ type?: string; data?: Record<string, unknown> }>;
+      const type = custom.detail?.type;
+      const data = custom.detail?.data ?? {};
+      if (!type || !data) return;
+
+      switch (type) {
+        case "chat_message_upserted": {
+          const sessionId = String(data["session_id"] ?? "");
+          if (!currentSessionId || sessionId !== currentSessionId) return;
+          const message = data["message"] as StoredMessage | undefined;
+          if (!message) return;
+          const mapped = mapStoredMessages([message])[0];
+          if (!mapped) return;
+          const current = messagesRef.current;
+          const index = current.findIndex((entry) => entry.id === mapped.id);
+          const next = index >= 0
+            ? [...current.slice(0, index), mapped, ...current.slice(index + 1)]
+            : [...current, mapped];
+          setMessages(next);
+          break;
+        }
+        case "chat_session_deleted": {
+          const sessionId = String(data["session_id"] ?? "");
+          if (currentSessionId && sessionId === currentSessionId) {
+            setMessages([]);
+            startNewSession();
+          }
+          break;
+        }
+        case "chat_session_updated": {
+          const sessionId = String(data["session_id"] ?? "");
+          if (currentSessionId && sessionId === currentSessionId) {
+            const session = data["session"] as Record<string, unknown> | undefined;
+            if (session) {
+              hydrateAgentState(session as unknown as ChatSessionDetail);
+            }
+          }
+          break;
+        }
+        default:
+          break;
+      }
+    };
+    window.addEventListener("vllm:chat-event", handler as EventListener);
+    return () => {
+      window.removeEventListener("vllm:chat-event", handler as EventListener);
+    };
+  }, [currentSessionId, hydrateAgentState, mapStoredMessages, setMessages, startNewSession]);
 
   // Derived state from messages
   const { thinkingActive, activityGroups } = Hooks.useChatDerived({

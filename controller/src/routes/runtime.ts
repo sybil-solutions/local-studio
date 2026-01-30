@@ -3,8 +3,9 @@ import type { Hono } from "hono";
 import type { AppContext } from "../types/context";
 import { badRequest } from "../core/errors";
 import { getVllmConfigHelp, getVllmRuntimeInfo, upgradeVllmRuntime } from "../services/vllm-runtime";
+import { Event } from "../services/event-manager";
 
-export const registerRuntimeRoutes = (app: Hono, _context: AppContext): void => {
+export const registerRuntimeRoutes = (app: Hono, context: AppContext): void => {
   app.get("/runtime/vllm", async (ctx) => {
     const info = await getVllmRuntimeInfo();
     return ctx.json(info);
@@ -22,6 +23,11 @@ export const registerRuntimeRoutes = (app: Hono, _context: AppContext): void => 
     }
     const preferBundled = body?.prefer_bundled !== false;
     const result = await upgradeVllmRuntime(preferBundled);
+    await context.eventManager.publish(new Event("runtime_vllm_upgraded", {
+      success: result.success,
+      version: result.version,
+      used_wheel: result.used_wheel,
+    }));
     return ctx.json(result);
   });
 };

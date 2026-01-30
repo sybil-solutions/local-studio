@@ -59,5 +59,15 @@ export function useDashboardRecipes(currentProcess: ProcessInfo | null) {
     reload();
   }, [reload]);
 
+  useEffect(() => {
+    const handler = () => {
+      void reload();
+    };
+    window.addEventListener("vllm:recipe-event", handler as EventListener);
+    return () => {
+      window.removeEventListener("vllm:recipe-event", handler as EventListener);
+    };
+  }, [reload]);
+
   return { recipes, currentRecipe, logs, loading, reload };
 }
