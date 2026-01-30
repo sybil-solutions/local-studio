@@ -59,10 +59,9 @@ export function UnifiedSidebar({
 
       {isOpen && (
         <div
-          className="hidden md:flex flex-shrink-0 flex-col h-full border-l border-white/[0.06] bg-[#0a0a0a]"
+          className="hidden md:flex shrink-0 flex-col h-full border-l border-white/[0.06] bg-[#0a0a0a]"
           style={{ width: `${width}px` }}
         >
-
           {/* Header */}
           <div className="flex items-center justify-between px-3 py-2 border-b border-white/[0.06]">
             <div className="flex items-center gap-0.5 overflow-x-auto scrollbar-hide">
@@ -96,7 +95,7 @@ export function UnifiedSidebar({
               )}
             </div>
 
-            <div className="flex items-center gap-1 flex-shrink-0 ml-2">
+            <div className="flex items-center gap-1 shrink-0 ml-2">
               <button
                 onClick={onToggleAgentMode}
                 className={`flex items-center gap-1 px-2 py-1 rounded text-[10px] font-medium transition-colors ${

@@ -16,11 +16,7 @@ import { ChatTopControls } from "./chat-top-controls";
 import { ChatActionButtons } from "./chat-action-buttons";
 import { ChatToolbeltDock } from "./chat-toolbelt-dock";
 import { ChatModals } from "./chat-modals";
-import { useChatSessions } from "../../hooks/use-chat-sessions";
-import { useChatTools } from "../../hooks/use-chat-tools";
-import { useChatUsage } from "../../hooks/use-chat-usage";
-import { useChatDerived } from "../../hooks/use-chat-derived";
-import { useChatTransport } from "../../hooks/use-chat-transport";
+import * as Hooks from "../../hooks";
 import type { UIMessage } from "@ai-sdk/react";
 import type { Artifact, StoredMessage, StoredToolCall } from "@/lib/types";
 import { useContextManagement, type CompactionEvent } from "@/lib/services/context-management";
@@ -28,9 +24,7 @@ import { useMessageParsing } from "@/lib/services/message-parsing";
 import { useAppStore } from "@/store";
 import type { Attachment } from "../../types";
 import { stripThinkingForModelContext, tryParseNestedJsonString } from "../../utils";
-import { useAgentTools } from "../../hooks/use-agent-tools";
-import { useAgentFiles } from "../../hooks/use-agent-files";
-import { useAgentState } from "../../hooks/use-agent-state";
+
 import { AgentPlanDrawer } from "../agent/agent-plan-drawer";
 import { AgentFilesPanel } from "../agent/agent-files-panel";
 import { UnifiedSidebar, type SidebarTab } from "./unified-sidebar";
@@ -86,17 +80,12 @@ export function ChatPage() {
   const agentMode = useAppStore((state) => state.agentMode);
   const setAgentMode = useAppStore((state) => state.setAgentMode);
 
-  const {
-    agentToolDefs,
-    executeAgentTool,
-    isAgentTool,
-    agentPlan,
-    clearPlan,
-  } = useAgentTools();
+  const { agentToolDefs, executeAgentTool, isAgentTool, agentPlan, clearPlan } =
+    Hooks.useAgentTools();
 
-  const { agentFiles, loadAgentFiles, clearAgentFiles } = useAgentFiles();
+  const { agentFiles, loadAgentFiles, clearAgentFiles } = Hooks.useAgentFiles();
 
-  const { hydrateAgentState, persistAgentState, buildAgentState } = useAgentState();
+  const { hydrateAgentState, persistAgentState, buildAgentState } = Hooks.useAgentState();
 
   const effectiveSystemPrompt = useMemo(() => {
     const base = systemPrompt.trim();
@@ -120,7 +109,7 @@ export function ChatPage() {
     createSession,
     setCurrentSessionId,
     setCurrentSessionTitle,
-  } = useChatSessions();
+  } = Hooks.useChatSessions();
 
   // Tools hook
   const {
@@ -135,7 +124,7 @@ export function ChatPage() {
     addMcpServer,
     updateMcpServer,
     removeMcpServer,
-  } = useChatTools({ mcpEnabled });
+  } = Hooks.useChatTools({ mcpEnabled });
 
   // Ref to avoid contextStats recalculating when getToolDefinitions changes
   const getToolDefinitionsRef = useRef(getToolDefinitions);
@@ -144,11 +133,11 @@ export function ChatPage() {
   }, [getToolDefinitions]);
 
   // Usage hook
-  const { refreshUsage } = useChatUsage();
+  const { refreshUsage } = Hooks.useChatUsage();
 
   // Transport hook for persistence
   const { persistMessage, createSessionWithMessage, generateTitle, sessionIdRef } =
-    useChatTransport({
+    Hooks.useChatTransport({
       currentSessionId,
       setCurrentSessionId,
       setCurrentSessionTitle,
@@ -304,33 +293,37 @@ export function ChatPage() {
         api: "/api/chat",
         body: async () => {
           // Ensure tools are resolved before sending
-        if (toolsRef.current.length === 0) {
-          const tools = await resolveToolDefinitions();
-          toolsRef.current = tools;
-        }
-        const state = useAppStore.getState();
-        const baseSystem = state.systemPrompt?.trim() || "";
-        const system = state.agentMode
-          ? (() => {
-              const agentBlock = buildAgentModeSystemPrompt(state.agentPlan);
-              return baseSystem ? `${baseSystem}\n\n${agentBlock}` : agentBlock;
-            })()
-          : baseSystem || undefined;
-        const model = state.selectedModel || undefined;
-        console.log(
-          "[Transport] Sending with tools:",
-          toolsRef.current.map((t) => t.name),
-        );
-        return {
-          system,
-          model,
-          tools: toolsRef.current,
-          toolChoice: toolsRef.current.length > 0 ? "auto" : undefined,
-        };
-      },
+          if (toolsRef.current.length === 0) {
+            const tools = await resolveToolDefinitions();
+            toolsRef.current = tools;
+          }
+          const state = useAppStore.getState();
+          const baseSystem = state.systemPrompt?.trim() || "";
+          const system = state.agentMode
+            ? (() => {
+                const agentBlock = buildAgentModeSystemPrompt(state.agentPlan);
+                return baseSystem ? `${baseSystem}\n\n${agentBlock}` : agentBlock;
+              })()
+            : baseSystem || undefined;
+          const model = state.selectedModel || undefined;
+          console.log(
+            "[Transport] Sending with tools:",
+            toolsRef.current.map((t) => t.name),
+          );
+          return {
+            system,
+            model,
+            tools: toolsRef.current,
+            toolChoice: toolsRef.current.length > 0 ? "auto" : undefined,
+          };
+        },
       }),
     [resolveToolDefinitions],
   );
+
+  // When AI SDK tool outputs are added client-side, the assistant message is mutated AFTER onFinish fires.
+  // Track toolCallIds that need a follow-up persistence pass so stored sessions include tool result traces.
+  const pendingToolOutputPersistenceRef = useRef<Set<string>>(new Set());
 
   // AI SDK useChat - the source of truth for messages
   const { messages, sendMessage, stop, status, error, setMessages, addToolOutput } = useChat({
@@ -369,7 +362,16 @@ export function ChatPage() {
         }
       }
 
-      console.log("[onToolCall] Tool:", toolName, "rawArgs type:", typeof rawArgs, "rawArgs:", rawArgs, "args:", JSON.stringify(args, null, 2));
+      console.log(
+        "[onToolCall] Tool:",
+        toolName,
+        "rawArgs type:",
+        typeof rawArgs,
+        "rawArgs:",
+        rawArgs,
+        "args:",
+        JSON.stringify(args, null, 2),
+      );
 
       if (isAgentTool(toolName)) {
         try {
@@ -382,6 +384,7 @@ export function ChatPage() {
             toolCallId,
             output: output as never,
           });
+          pendingToolOutputPersistenceRef.current.add(toolCallId);
         } catch (err) {
           // Don't await - causes deadlock with sendAutomaticallyWhen
           addToolOutput({
@@ -390,6 +393,7 @@ export function ChatPage() {
             state: "output-error",
             errorText: err instanceof Error ? err.message : "Agent tool execution failed",
           });
+          pendingToolOutputPersistenceRef.current.add(toolCallId);
         }
         return;
       }
@@ -404,12 +408,14 @@ export function ChatPage() {
           state: "output-error",
           errorText: result.content || "Tool execution failed",
         });
+        pendingToolOutputPersistenceRef.current.add(toolCallId);
       } else {
         addToolOutput({
           tool: toolName as never,
           toolCallId,
           output: result.content as never,
         });
+        pendingToolOutputPersistenceRef.current.add(toolCallId);
       }
     },
     onFinish: async ({ message }) => {
@@ -444,6 +450,37 @@ export function ChatPage() {
 
   const isLoading = status === "streaming" || status === "submitted";
 
+  // Persist assistant message updates after tool outputs are injected.
+  // Without this, stored sessions will show tool calls but miss the tool results on reload.
+  useEffect(() => {
+    const pending = pendingToolOutputPersistenceRef.current;
+    if (pending.size === 0) return;
+    const activeSessionId = sessionIdRef.current ?? currentSessionId;
+    if (!activeSessionId) return;
+
+    for (const toolCallId of Array.from(pending)) {
+      const message = [...messages].reverse().find((m) => {
+        if (m.role !== "assistant") return false;
+        return m.parts.some((part) => {
+          if (typeof part.type !== "string") return false;
+          if (!("toolCallId" in part)) return false;
+          const id = String((part as { toolCallId: string }).toolCallId);
+          if (id !== toolCallId) return false;
+
+          const partOutput = "output" in part ? (part as { output?: unknown }).output : undefined;
+          const partError =
+            "errorText" in part ? (part as { errorText?: unknown }).errorText : undefined;
+          if (partOutput != null) return true;
+          return typeof partError === "string" && partError.length > 0;
+        });
+      });
+      if (!message) continue;
+
+      pending.delete(toolCallId);
+      void persistMessage(activeSessionId, message);
+    }
+  }, [messages, currentSessionId, persistMessage, sessionIdRef]);
+
   useEffect(() => {
     if (!currentSessionId) return;
     const agentState = buildAgentState(agentPlan);
@@ -454,7 +491,7 @@ export function ChatPage() {
   }, [currentSessionId, agentPlan, buildAgentState, persistAgentState]);
 
   // Derived state from messages
-  const { thinkingActive, activityGroups } = useChatDerived({
+  const { thinkingActive, activityGroups } = Hooks.useChatDerived({
     messages,
     isLoading,
     executingTools,
@@ -462,10 +499,7 @@ export function ChatPage() {
   });
 
   const activityCount = useMemo(() => {
-    return activityGroups.reduce(
-      (sum, group) => sum + group.toolItems.length + (group.thinkingContent ? 1 : 0),
-      0,
-    );
+    return activityGroups.reduce((sum, group) => sum + group.items.length, 0);
   }, [activityGroups]);
 
   const selectedModelMeta = useMemo(
@@ -906,6 +940,10 @@ export function ChatPage() {
   }, [messages.length]);
 
   useEffect(() => {
+    pendingToolOutputPersistenceRef.current.clear();
+  }, [currentSessionId]);
+
+  useEffect(() => {
     if (!currentSessionId) {
       clearPlan();
       clearAgentFiles();
@@ -1020,6 +1058,58 @@ export function ChatPage() {
             : Array.isArray(modelsField)
               ? modelsField
               : [];
+        // Common model context lengths as fallback
+        const KNOWN_CONTEXT_LENGTHS: Record<string, number> = {
+          // OpenAI models
+          "gpt-4": 8192,
+          "gpt-4-32k": 32768,
+          "gpt-4-turbo": 128000,
+          "gpt-4o": 128000,
+          "gpt-4o-mini": 128000,
+          "gpt-3.5-turbo": 4096,
+          // Anthropic models
+          "claude-3-opus": 200000,
+          "claude-3-sonnet": 200000,
+          "claude-3-haiku": 200000,
+          "claude-3-5-sonnet": 200000,
+          // Google models
+          "gemini-pro": 32768,
+          "gemini-1.5-pro": 1048576,
+          "gemini-1.5-flash": 1048576,
+          // Common vLLM/SGLang model patterns
+          qwen: 32768,
+          qwen2: 131072,
+          llama: 8192,
+          "llama-2": 4096,
+          "llama-3": 8192,
+          "llama-3.1": 131072,
+          mistral: 32768,
+          mixtral: 32768,
+          phi: 2048,
+          "phi-3": 131072,
+          yi: 32768,
+          glm: 32768,
+          "glm-4": 131072,
+          deepseek: 65536,
+          "command-r": 128000,
+          "command-r-plus": 128000,
+        };
+
+        const getContextLength = (id: string, apiMaxLen?: number): number => {
+          if (apiMaxLen && apiMaxLen > 0) return apiMaxLen;
+
+          // Check against known patterns
+          const lowerId = id.toLowerCase();
+          for (const [pattern, length] of Object.entries(KNOWN_CONTEXT_LENGTHS)) {
+            if (lowerId.includes(pattern.toLowerCase())) {
+              return length;
+            }
+          }
+
+          // Default fallback
+          return 32768;
+        };
+
         const mappedModels = rawModels
           .flatMap((model) => {
             if (!model || typeof model !== "object") return [];
@@ -1035,7 +1125,7 @@ export function ChatPage() {
               {
                 id,
                 name: id,
-                maxModelLen: record.max_model_len ?? undefined,
+                maxModelLen: getContextLength(id, record.max_model_len),
               },
             ];
           })
@@ -1137,7 +1227,11 @@ export function ChatPage() {
   }, [currentSessionId, currentSessionTitle, selectedModel, messages]);
 
   const sendUserMessage = useCallback(
-    async (text: string, attachments?: Attachment[], options?: { clearInput?: boolean; internal?: boolean }) => {
+    async (
+      text: string,
+      attachments?: Attachment[],
+      options?: { clearInput?: boolean; internal?: boolean },
+    ) => {
       if (!selectedModel) return;
       if (!text.trim() && (!attachments || attachments.length === 0)) return;
       if (isLoading) return;
@@ -1253,7 +1347,11 @@ export function ChatPage() {
       const next = incomplete[0];
       // Use a minimal internal prompt - the system prompt has all the context
       const prompt = next?.title ? `Proceed with: ${next.title}` : "Continue";
-      console.info("[Agent] Continuing step:", `${done + 1}/${agentPlan.steps.length}`, next?.title);
+      console.info(
+        "[Agent] Continuing step:",
+        `${done + 1}/${agentPlan.steps.length}`,
+        next?.title,
+      );
       void sendUserMessage(prompt, undefined, { internal: true });
     }, 1000);
 

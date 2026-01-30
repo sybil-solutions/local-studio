@@ -5,18 +5,7 @@ import { memo } from "react";
 import type { UIMessage } from "@ai-sdk/react";
 import type { LanguageModelUsage } from "ai";
 import { useAppStore } from "@/store";
-import {
-  Loader2,
-  Copy,
-  Check,
-  GitBranch,
-  RotateCcw,
-  Download,
-  ChevronDown,
-  ChevronUp,
-  Brain,
-  Wrench,
-} from "lucide-react";
+import * as Icons from "../icons";
 import { MessageRenderer, thinkingParser } from "./message-renderer";
 import { MiniArtifactCard } from "../artifacts/mini-artifact-card";
 import type { Artifact } from "@/lib/types";
@@ -56,9 +45,7 @@ function InlineThinking({
   content: string;
   isActive: boolean;
 }) {
-  const expanded = useAppStore(
-    (state) => state.messageInlineThinkingExpanded[messageId] ?? false,
-  );
+  const expanded = useAppStore((state) => state.messageInlineThinkingExpanded[messageId] ?? false);
   const setExpanded = useAppStore((state) => state.setMessageInlineThinkingExpanded);
 
   if (!content && !isActive) return null;
@@ -70,20 +57,20 @@ function InlineThinking({
         className="flex items-center gap-2 text-left"
       >
         {isActive ? (
-          <Loader2 className="h-3 w-3 text-blue-400 animate-spin" />
+          <Icons.Loader2 className="h-3 w-3 text-blue-400 animate-spin" />
         ) : (
-          <Brain className="h-3 w-3 text-[#6a6560]" />
+          <Icons.Brain className="h-3 w-3 text-[#6a6560]" />
         )}
         <span className="text-xs text-[#6a6560]">{isActive ? "Thinking..." : "Reasoning"}</span>
         {content &&
           (expanded ? (
-            <ChevronUp className="h-3 w-3 text-[#6a6560]" />
+            <Icons.ChevronUp className="h-3 w-3 text-[#6a6560]" />
           ) : (
-            <ChevronDown className="h-3 w-3 text-[#6a6560]" />
+            <Icons.ChevronDown className="h-3 w-3 text-[#6a6560]" />
           ))}
       </button>
       {content && expanded && (
-        <p className="mt-1 text-xs text-[#6a6560] whitespace-pre-wrap break-words max-h-40 overflow-auto pl-5">
+        <p className="mt-1 text-xs text-[#6a6560] whitespace-pre-wrap wrap-break-word max-h-40 overflow-auto pl-5">
           {content}
         </p>
       )}
@@ -130,15 +117,19 @@ function ToolCallSummary({
   return (
     <div className="hidden md:flex items-center gap-2 mt-3 pt-3 border-t border-(--border) text-xs text-[#6a6560]">
       {isRunning ? (
-        <Loader2 className="h-3 w-3 text-[#6a6560] animate-spin flex-shrink-0" />
+        <Icons.Loader2 className="h-3 w-3 text-[#6a6560] animate-spin shrink-0" />
       ) : hasError ? (
-        <span className="w-3 h-3 flex items-center justify-center flex-shrink-0 text-red-400 text-[10px]">✕</span>
+        <span className="w-3 h-3 flex items-center justify-center shrink-0 text-red-400 text-[10px]">
+          ✕
+        </span>
       ) : (
-        <Check className="h-3 w-3 text-emerald-500/70 flex-shrink-0" />
+        <Icons.Check className="h-3 w-3 text-emerald-500/70 shrink-0" />
       )}
       <span className={hasError ? "text-red-400/70" : ""}>{label}</span>
       <span className="text-[#3a3735]">·</span>
-      <span>{total} tool call{total !== 1 ? "s" : ""}</span>
+      <span>
+        {total} tool call{total !== 1 ? "s" : ""}
+      </span>
       {lastToolName && (
         <>
           <span className="text-[#3a3735]">·</span>
@@ -175,12 +166,7 @@ function InlineToolCalls({
     "approval-requested",
     "approval-responded",
   ]);
-  const completeStates = new Set([
-    "output-available",
-    "output-error",
-    "output-denied",
-    "result",
-  ]);
+  const completeStates = new Set(["output-available", "output-error", "output-denied", "result"]);
 
   const activeTools = toolParts.filter((t) => t.state && pendingStates.has(t.state));
   const hasActiveTools = activeTools.length > 0;
@@ -192,9 +178,9 @@ function InlineToolCalls({
         className="flex items-center gap-2 text-left"
       >
         {hasActiveTools ? (
-          <Loader2 className="h-3 w-3 text-amber-400 animate-spin" />
+          <Icons.Loader2 className="h-3 w-3 text-amber-400 animate-spin" />
         ) : (
-          <Wrench className="h-3 w-3 text-[#6a6560]" />
+          <Icons.Wrench className="h-3 w-3 text-[#6a6560]" />
         )}
         <span className="text-xs text-[#6a6560]">
           {hasActiveTools
@@ -202,9 +188,9 @@ function InlineToolCalls({
             : `${toolParts.length} tool${toolParts.length > 1 ? "s" : ""}`}
         </span>
         {expanded ? (
-          <ChevronUp className="h-3 w-3 text-[#6a6560]" />
+          <Icons.ChevronUp className="h-3 w-3 text-[#6a6560]" />
         ) : (
-          <ChevronDown className="h-3 w-3 text-[#6a6560]" />
+          <Icons.ChevronDown className="h-3 w-3 text-[#6a6560]" />
         )}
       </button>
       {expanded && (
@@ -217,9 +203,9 @@ function InlineToolCalls({
             return (
               <div key={tool.toolCallId} className="flex items-center gap-2 text-xs text-[#6a6560]">
                 {isRunning ? (
-                  <Loader2 className="h-2.5 w-2.5 text-amber-400 animate-spin" />
+                  <Icons.Loader2 className="h-2.5 w-2.5 text-amber-400 animate-spin" />
                 ) : isComplete ? (
-                  <Check className="h-2.5 w-2.5 text-green-500" />
+                  <Icons.Check className="h-2.5 w-2.5 text-green-500" />
                 ) : (
                   <span className="w-2.5 h-2.5 rounded-full bg-[#6a6560]/50" />
                 )}
@@ -287,7 +273,9 @@ function ChatMessageItemBase({
         toolName?: string;
       } => {
         if (part.type === "dynamic-tool") return "toolCallId" in part;
-        return typeof part.type === "string" && part.type.startsWith("tool-") && "toolCallId" in part;
+        return (
+          typeof part.type === "string" && part.type.startsWith("tool-") && "toolCallId" in part
+        );
       },
     )
     .map((part) => {
@@ -295,9 +283,7 @@ function ChatMessageItemBase({
         return { ...part, toolName: "toolName" in part ? String(part.toolName) : "tool" };
       }
       const rawName = part.type.replace(/^tool-/, "");
-      const toolName = rawName.includes("__")
-        ? rawName.split("__").slice(1).join("__")
-        : rawName;
+      const toolName = rawName.includes("__") ? rawName.split("__").slice(1).join("__") : rawName;
       return { ...part, toolName };
     });
 
@@ -355,9 +341,9 @@ function ChatMessageItemBase({
                   title="Copy"
                 >
                   {copied ? (
-                    <Check className="h-3.5 w-3.5 text-(--success)" />
+                    <Icons.Check className="h-3.5 w-3.5 text-(--success)" />
                   ) : (
-                    <Copy className="h-3.5 w-3.5 text-[#9a9590]" />
+                    <Icons.Copy className="h-3.5 w-3.5 text-[#9a9590]" />
                   )}
                 </button>
                 <button
@@ -366,7 +352,7 @@ function ChatMessageItemBase({
                   className={actionButtonClassName}
                   title="Export"
                 >
-                  <Download className="h-3.5 w-3.5 text-[#9a9590]" />
+                  <Icons.Download className="h-3.5 w-3.5 text-[#9a9590]" />
                 </button>
               </div>
             </div>
@@ -413,7 +399,7 @@ function ChatMessageItemBase({
                 className={actionButtonClassName}
                 title="Reprompt"
               >
-                <RotateCcw className="h-3.5 w-3.5 text-[#9a9590]" />
+                <Icons.RotateCcw className="h-3.5 w-3.5 text-[#9a9590]" />
               </button>
             )}
             {onFork && (
@@ -422,7 +408,7 @@ function ChatMessageItemBase({
                 className={actionButtonClassName}
                 title="Fork"
               >
-                <GitBranch className="h-3.5 w-3.5 text-[#9a9590]" />
+                <Icons.GitBranch className="h-3.5 w-3.5 text-[#9a9590]" />
               </button>
             )}
             <button
@@ -432,9 +418,9 @@ function ChatMessageItemBase({
               title="Copy"
             >
               {copied ? (
-                <Check className="h-3.5 w-3.5 text-(--success)" />
+                <Icons.Check className="h-3.5 w-3.5 text-(--success)" />
               ) : (
-                <Copy className="h-3.5 w-3.5 text-[#9a9590]" />
+                <Icons.Copy className="h-3.5 w-3.5 text-[#9a9590]" />
               )}
             </button>
             <button
@@ -443,7 +429,7 @@ function ChatMessageItemBase({
               className={actionButtonClassName}
               title="Export"
             >
-              <Download className="h-3.5 w-3.5 text-[#9a9590]" />
+              <Icons.Download className="h-3.5 w-3.5 text-[#9a9590]" />
             </button>
           </div>
         </div>
@@ -460,13 +446,10 @@ function ChatMessageItemBase({
 
         {/* Text content with MessageRenderer */}
         {textContent ? (
-          <MessageRenderer
-            content={textContent}
-            isStreaming={isStreaming}
-          />
+          <MessageRenderer content={textContent} isStreaming={isStreaming} />
         ) : isStreaming && !thinkingContent ? (
           <div className="flex items-center gap-2 text-[#6a6560]">
-            <Loader2 className="h-4 w-4 animate-spin" />
+            <Icons.Loader2 className="h-4 w-4 animate-spin" />
             <span className="text-sm">Thinking...</span>
           </div>
         ) : null}

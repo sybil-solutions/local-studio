@@ -3,7 +3,7 @@
 
 import { useCallback } from "react";
 import type { UIMessage } from "@ai-sdk/react";
-import { Loader2 } from "lucide-react";
+import * as Icons from "../icons";
 import { ChatMessageItem } from "./chat-message-item";
 import { useAppStore } from "@/store";
 import type { Artifact } from "@/lib/types";
@@ -110,7 +110,7 @@ export function ChatMessageList({
       ))}
       {showLoadingIndicator && (
         <div className="flex items-center gap-2 text-[#9a9590]">
-          <Loader2 className="h-4 w-4 animate-spin" />
+          <Icons.Loader2 className="h-4 w-4 animate-spin" />
           <span className="text-sm">Generating response...</span>
         </div>
       )}

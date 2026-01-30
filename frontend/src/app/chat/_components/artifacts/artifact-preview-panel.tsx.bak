@@ -50,7 +50,7 @@ export function ArtifactPreviewPanel({ artifacts }: ArtifactPreviewPanelProps) {
     return (
       <div className="flex flex-col items-center justify-center h-full p-6 text-center">
         <div className="w-12 h-12 rounded-xl bg-white/[0.03] flex items-center justify-center mb-4">
-          <Icons.Layers className="h-6 w-6 text-[#444]" />
+          <Layers className="h-6 w-6 text-[#444]" />
         </div>
         <p className="text-sm text-[#666] mb-1">No artifacts yet</p>
         <p className="text-xs text-[#444] max-w-[200px]">
@@ -94,7 +94,7 @@ export function ArtifactPreviewPanel({ artifacts }: ArtifactPreviewPanelProps) {
                 onClick={handlePrev}
                 className="p-1.5 rounded hover:bg-white/[0.06] text-[#666]"
               >
-                <Icons.ChevronLeft className="h-4 w-4" />
+                <ChevronLeft className="h-4 w-4" />
               </button>
               <span className="text-xs text-[#666] tabular-nums">
                 {selectedIndex + 1}/{artifacts.length}
@@ -103,7 +103,7 @@ export function ArtifactPreviewPanel({ artifacts }: ArtifactPreviewPanelProps) {
                 onClick={handleNext}
                 className="p-1.5 rounded hover:bg-white/[0.06] text-[#666]"
               >
-                <Icons.ChevronRight className="h-4 w-4" />
+                <ChevronRight className="h-4 w-4" />
               </button>
             </>
           )}
@@ -154,11 +154,7 @@ export function ArtifactPreviewPanel({ artifacts }: ArtifactPreviewPanelProps) {
               className="p-1.5 rounded hover:bg-white/[0.06] text-[#666]"
               title={isPlaying ? "Pause" : "Play"}
             >
-              {isPlaying ? (
-                <Icons.Pause className="h-3.5 w-3.5" />
-              ) : (
-                <Icons.Play className="h-3.5 w-3.5" />
-              )}
+              {isPlaying ? <Pause className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5" />}
             </button>
           </div>
         </div>
@@ -209,15 +205,15 @@ function ArtifactTypeIcon({
 }) {
   switch (type) {
     case "svg":
-      return <Icons.Palette className={`${className} text-pink-400`} />;
+      return <Palette className={`${className} text-pink-400`} />;
     case "html":
-      return <Icons.FileCode className={`${className} text-blue-400`} />;
+      return <FileCode className={`${className} text-blue-400`} />;
     case "react":
-      return <Icons.Code className={`${className} text-cyan-400`} />;
+      return <Code className={`${className} text-cyan-400`} />;
     case "javascript":
-      return <Icons.Code className={`${className} text-yellow-400`} />;
+      return <Code className={`${className} text-yellow-400`} />;
     default:
-      return <Icons.Code className={`${className} text-[#666]`} />;
+      return <Code className={`${className} text-[#666]`} />;
   }
 }
 

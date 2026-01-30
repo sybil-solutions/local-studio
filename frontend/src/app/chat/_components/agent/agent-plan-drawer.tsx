@@ -12,6 +12,7 @@ import {
   X,
   ListChecks,
 } from "lucide-react";
+import * as Icons from "../icons";
 import type { AgentPlan, AgentPlanStep } from "./agent-types";
 
 interface AgentPlanDrawerProps {
@@ -23,26 +24,26 @@ function StepIcon({ status }: { status: AgentPlanStep["status"] }) {
   switch (status) {
     case "done":
       return (
-        <div className="w-[18px] h-[18px] rounded bg-emerald-500/20 flex items-center justify-center flex-shrink-0">
-          <Check className="h-3 w-3 text-emerald-400" strokeWidth={2.5} />
+        <div className="w-[18px] h-[18px] rounded bg-emerald-500/20 flex items-center justify-center shrink-0">
+          <Icons.Check className="h-3 w-3 text-emerald-400" strokeWidth={2.5} />
         </div>
       );
     case "running":
       return (
-        <div className="w-[18px] h-[18px] rounded bg-blue-500/20 flex items-center justify-center flex-shrink-0">
-          <Loader2 className="h-3 w-3 text-blue-400 animate-spin" />
+        <div className="w-[18px] h-[18px] rounded bg-blue-500/20 flex items-center justify-center shrink-0">
+          <Icons.Loader2 className="h-3 w-3 text-blue-400 animate-spin" />
         </div>
       );
     case "blocked":
       return (
-        <div className="w-[18px] h-[18px] rounded bg-red-500/15 flex items-center justify-center flex-shrink-0">
+        <div className="w-[18px] h-[18px] rounded bg-red-500/15 flex items-center justify-center shrink-0">
           <Ban className="h-2.5 w-2.5 text-red-400" />
         </div>
       );
     default:
       return (
-        <div className="w-[18px] h-[18px] rounded border border-white/[0.08] flex items-center justify-center flex-shrink-0">
-          <Circle className="h-2 w-2 text-[#444]" />
+        <div className="w-[18px] h-[18px] rounded border border-white/[0.08] flex items-center justify-center shrink-0">
+          <Icons.Circle className="h-2 w-2 text-[#444]" />
         </div>
       );
   }
@@ -64,19 +65,17 @@ export function AgentPlanDrawer({ plan, onClear }: AgentPlanDrawerProps) {
         className="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-white/[0.02] transition-colors"
       >
         {collapsed ? (
-          <ChevronRight className="h-3 w-3 text-[#555] flex-shrink-0" />
+          <Icons.ChevronRight className="h-3 w-3 text-[#555] shrink-0" />
         ) : (
-          <ChevronDown className="h-3 w-3 text-[#555] flex-shrink-0" />
+          <Icons.ChevronDown className="h-3 w-3 text-[#555] shrink-0" />
         )}
 
-        <ListChecks className="h-3.5 w-3.5 text-violet-400 flex-shrink-0" />
+        <ListChecks className="h-3.5 w-3.5 text-violet-400 shrink-0" />
 
         <span className="text-[11px] font-medium text-[#aaa]">Plan</span>
 
         <span className="text-[10px] text-[#555] font-mono">
-          {allDone
-            ? `${steps.length} steps · Done`
-            : `${doneCount}/${steps.length} steps`}
+          {allDone ? `${steps.length} steps · Done` : `${doneCount}/${steps.length} steps`}
         </span>
 
         {/* Mini progress dots */}
@@ -104,11 +103,16 @@ export function AgentPlanDrawer({ plan, onClear }: AgentPlanDrawerProps) {
             e.stopPropagation();
             onClear();
           }}
-          onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.stopPropagation(); onClear(); } }}
-          className="p-0.5 rounded hover:bg-white/[0.06] text-[#444] hover:text-[#888] flex-shrink-0 cursor-pointer"
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.stopPropagation();
+              onClear();
+            }
+          }}
+          className="p-0.5 rounded hover:bg-white/[0.06] text-[#444] hover:text-[#888] shrink-0 cursor-pointer"
           title="Clear plan"
         >
-          <X className="h-3 w-3" />
+          <Icons.X className="h-3 w-3" />
         </span>
       </button>
 
@@ -137,7 +141,7 @@ export function AgentPlanDrawer({ plan, onClear }: AgentPlanDrawerProps) {
                   {step.title}
                 </span>
                 {step.notes && (
-                  <span className="text-[10px] text-[#444] truncate ml-auto flex-shrink-0 max-w-[120px]">
+                  <span className="text-[10px] text-[#444] truncate ml-auto shrink-0 max-w-[120px]">
                     {step.notes}
                   </span>
                 )}

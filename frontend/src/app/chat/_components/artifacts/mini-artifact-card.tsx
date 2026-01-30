@@ -1,6 +1,6 @@
 "use client";
 
-import { Code, FileCode, Palette } from "lucide-react";
+import * as Icons from "../icons";
 import type { Artifact } from "@/lib/types";
 
 interface MiniArtifactCardProps {
@@ -11,11 +11,11 @@ interface MiniArtifactCardProps {
 export function MiniArtifactCard({ artifact, onClick }: MiniArtifactCardProps) {
   const icon =
     artifact.type === "svg" ? (
-      <Palette className="h-4 w-4" />
+      <Icons.Palette className="h-4 w-4" />
     ) : artifact.type === "html" ? (
-      <FileCode className="h-4 w-4" />
+      <Icons.FileCode className="h-4 w-4" />
     ) : (
-      <Code className="h-4 w-4" />
+      <Icons.Code className="h-4 w-4" />
     );
 
   const lines = artifact.code.split("\n").length;

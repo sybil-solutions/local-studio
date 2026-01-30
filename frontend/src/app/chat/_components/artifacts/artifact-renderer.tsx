@@ -2,20 +2,8 @@
 "use client";
 
 import { useMemo } from "react";
-import {
-  Code,
-  Eye,
-  EyeOff,
-  FileCode,
-  Palette,
-  Maximize2,
-  Minimize2,
-  Download,
-  Share2,
-  Copy,
-  Check,
-} from "lucide-react";
-import { CodeSandbox } from "../code/code-sandbox";
+import * as Icons from "../icons";
+import { CodeSandbox } from "../code";
 import type { Artifact } from "@/lib/types";
 import { useAppStore } from "@/store";
 
@@ -148,13 +136,13 @@ export function ArtifactRenderer({ artifact }: ArtifactRendererProps) {
   const icon = useMemo(() => {
     switch (artifact.type) {
       case "html":
-        return <FileCode className="h-3.5 w-3.5" />;
+        return <Icons.FileCode className="h-3.5 w-3.5" />;
       case "react":
-        return <Code className="h-3.5 w-3.5" />;
+        return <Icons.Code className="h-3.5 w-3.5" />;
       case "svg":
-        return <Palette className="h-3.5 w-3.5" />;
+        return <Icons.Palette className="h-3.5 w-3.5" />;
       default:
-        return <Code className="h-3.5 w-3.5" />;
+        return <Icons.Code className="h-3.5 w-3.5" />;
     }
   }, [artifact.type]);
 
@@ -167,9 +155,9 @@ export function ArtifactRenderer({ artifact }: ArtifactRendererProps) {
         title="Copy code"
       >
         {copied ? (
-          <Check className="h-5 w-5 md:h-3.5 md:w-3.5 text-(--success)" />
+          <Icons.Check className="h-5 w-5 md:h-3.5 md:w-3.5 text-(--success)" />
         ) : (
-          <Copy className="h-5 w-5 md:h-3.5 md:w-3.5 text-[#9a9590]" />
+          <Icons.Copy className="h-5 w-5 md:h-3.5 md:w-3.5 text-[#9a9590]" />
         )}
       </button>
       <button
@@ -177,14 +165,14 @@ export function ArtifactRenderer({ artifact }: ArtifactRendererProps) {
         className="p-2 md:p-1.5 rounded hover:bg-(--background) transition-colors"
         title="Download"
       >
-        <Download className="h-5 w-5 md:h-3.5 md:w-3.5 text-[#9a9590]" />
+        <Icons.Download className="h-5 w-5 md:h-3.5 md:w-3.5 text-[#9a9590]" />
       </button>
       <button
         onClick={handleShare}
         className="p-2 md:p-1.5 rounded hover:bg-(--background) transition-colors"
         title="Share"
       >
-        <Share2 className="h-5 w-5 md:h-3.5 md:w-3.5 text-[#9a9590]" />
+        <Icons.Share className="h-5 w-5 md:h-3.5 md:w-3.5 text-[#9a9590]" />
       </button>
       <button
         onClick={() => updateState({ showCode: !showCode })}
@@ -192,9 +180,9 @@ export function ArtifactRenderer({ artifact }: ArtifactRendererProps) {
         title={showCode ? "Hide code" : "Show code"}
       >
         {showCode ? (
-          <EyeOff className="h-5 w-5 md:h-3.5 md:w-3.5 text-[#9a9590]" />
+          <Icons.EyeOff className="h-5 w-5 md:h-3.5 md:w-3.5 text-[#9a9590]" />
         ) : (
-          <Eye className="h-5 w-5 md:h-3.5 md:w-3.5 text-[#9a9590]" />
+          <Icons.Eye className="h-5 w-5 md:h-3.5 md:w-3.5 text-[#9a9590]" />
         )}
       </button>
       <button
@@ -206,9 +194,9 @@ export function ArtifactRenderer({ artifact }: ArtifactRendererProps) {
         title={isFullscreen ? "Exit fullscreen" : "Fullscreen"}
       >
         {isFullscreen ? (
-          <Minimize2 className="h-5 w-5 md:h-3.5 md:w-3.5" />
+          <Icons.Minimize2 className="h-5 w-5 md:h-3.5 md:w-3.5" />
         ) : (
-          <Maximize2 className="h-5 w-5 md:h-3.5 md:w-3.5" />
+          <Icons.Maximize2 className="h-5 w-5 md:h-3.5 md:w-3.5" />
         )}
       </button>
     </div>
@@ -247,7 +235,7 @@ export function ArtifactRenderer({ artifact }: ArtifactRendererProps) {
           }
         >
           {/* Header - minimal in fullscreen */}
-          <div className="flex items-center justify-between px-2 md:px-3 py-1.5 md:py-2 bg-(--card) border-b border-(--border) flex-shrink-0">
+          <div className="flex items-center justify-between px-2 md:px-3 py-1.5 md:py-2 bg-(--card) border-b border-(--border) shrink-0">
             <div className="flex items-center gap-1.5 md:gap-2 min-w-0">
               {icon}
               <span className="text-xs font-medium truncate">{artifact.title || "SVG"}</span>
@@ -263,12 +251,12 @@ export function ArtifactRenderer({ artifact }: ArtifactRendererProps) {
                 className="p-2 rounded hover:bg-(--background) transition-colors"
                 title="Exit fullscreen"
               >
-                <Minimize2 className="h-5 w-5" />
+                <Icons.Minimize2 className="h-5 w-5" />
               </button>
             )}
           </div>
           {showCode && (
-            <pre className="p-2 md:p-3 text-xs bg-(--background) overflow-x-auto border-b border-(--border) flex-shrink-0 max-h-32 md:max-h-48">
+            <pre className="p-2 md:p-3 text-xs bg-(--background) overflow-x-auto border-b border-(--border) shrink-0 max-h-32 md:max-h-48">
               <code>{artifact.code}</code>
             </pre>
           )}
@@ -285,7 +273,7 @@ export function ArtifactRenderer({ artifact }: ArtifactRendererProps) {
 
           {/* Footer controls - only in fullscreen mode */}
           {isFullscreen && (
-            <div className="flex-shrink-0 px-3 py-3 bg-(--accent) border-t border-(--border)">
+            <div className="shrink-0 px-3 py-3 bg-(--accent) border-t border-(--border)">
               {renderSvgToolbarButtons(true)}
             </div>
           )}
@@ -309,7 +297,7 @@ export function ArtifactRenderer({ artifact }: ArtifactRendererProps) {
       <div className="my-2 rounded-lg border border-(--border) overflow-hidden">
         <div className="flex items-center justify-between px-3 py-2 bg-(--accent) border-b border-(--border)">
           <div className="flex items-center gap-2">
-            <Code className="h-3.5 w-3.5" />
+            <Icons.Code className="h-3.5 w-3.5" />
             <span className="text-xs font-medium">{artifact.title || "Python"}</span>
             <span className="text-xs text-[#9a9590] px-1.5 py-0.5 bg-(--background) rounded">
               python

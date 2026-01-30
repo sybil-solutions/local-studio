@@ -1,6 +1,6 @@
 "use client";
 
-import { X } from "lucide-react";
+import * as Icons from "../icons";
 import type { Artifact } from "@/lib/types";
 import { ArtifactViewer } from "./artifact-viewer";
 
@@ -20,7 +20,7 @@ export function ArtifactModal({ artifact, onClose }: ArtifactModalProps) {
           className="absolute right-2 top-2 z-10 p-1.5 rounded-full bg-(--background) border border-(--border) hover:bg-(--accent)"
           title="Close"
         >
-          <X className="h-4 w-4" />
+          <Icons.X className="h-4 w-4" />
         </button>
         <div className="p-3">
           <ArtifactViewer artifact={artifact} isActive />

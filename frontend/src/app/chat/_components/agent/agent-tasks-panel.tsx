@@ -1,13 +1,7 @@
 // CRITICAL
 "use client";
 
-import {
-  Check,
-  Circle,
-  Loader2,
-  Ban,
-  ClipboardList,
-} from "lucide-react";
+import { Ban, Check, ClipboardList, Circle, Loader2 } from "lucide-react";
 import type { AgentTask } from "@/lib/types";
 
 interface AgentTasksPanelProps {
@@ -18,25 +12,25 @@ function TaskIcon({ status }: { status: AgentTask["status"] }) {
   switch (status) {
     case "done":
       return (
-        <div className="w-[18px] h-[18px] rounded bg-emerald-500/20 flex items-center justify-center flex-shrink-0">
+        <div className="w-[18px] h-[18px] rounded bg-emerald-500/20 flex items-center justify-center shrink-0">
           <Check className="h-3 w-3 text-emerald-400" strokeWidth={2.5} />
         </div>
       );
     case "running":
       return (
-        <div className="w-[18px] h-[18px] rounded bg-blue-500/20 flex items-center justify-center flex-shrink-0">
+        <div className="w-[18px] h-[18px] rounded bg-blue-500/20 flex items-center justify-center shrink-0">
           <Loader2 className="h-3 w-3 text-blue-400 animate-spin" />
         </div>
       );
     case "blocked":
       return (
-        <div className="w-[18px] h-[18px] rounded bg-red-500/15 flex items-center justify-center flex-shrink-0">
+        <div className="w-[18px] h-[18px] rounded bg-red-500/15 flex items-center justify-center shrink-0">
           <Ban className="h-2.5 w-2.5 text-red-400" />
         </div>
       );
     default:
       return (
-        <div className="w-[18px] h-[18px] rounded border border-white/[0.08] flex items-center justify-center flex-shrink-0">
+        <div className="w-[18px] h-[18px] rounded border border-white/[0.08] flex items-center justify-center shrink-0">
           <Circle className="h-2 w-2 text-[#444]" />
         </div>
       );
@@ -70,13 +64,12 @@ export function AgentTasksPanel({ tasks }: AgentTasksPanelProps) {
       </div>
       <div className="flex-1 overflow-y-auto px-3 py-2 space-y-2">
         {tasks.map((task) => (
-          <div
-            key={task.id}
-            className="flex items-start gap-2 rounded bg-white/[0.02] px-2.5 py-2"
-          >
+          <div key={task.id} className="flex items-start gap-2 rounded bg-white/[0.02] px-2.5 py-2">
             <TaskIcon status={task.status} />
             <div className="min-w-0">
-              <p className={`text-[12px] leading-snug ${task.status === "done" ? "text-[#666] line-through" : "text-[#ccc]"}`}>
+              <p
+                className={`text-[12px] leading-snug ${task.status === "done" ? "text-[#666] line-through" : "text-[#ccc]"}`}
+              >
                 {task.title}
               </p>
               {task.notes && (
