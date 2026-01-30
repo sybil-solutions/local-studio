@@ -6,12 +6,12 @@ export interface PersistedConfig {
   models_dir?: string;
 }
 
-export const getPersistedConfigPath = (dataDir: string): string => {
-  return resolve(dataDir, "studio-settings.json");
+export const getPersistedConfigPath = (dataDirectory: string): string => {
+  return resolve(dataDirectory, "studio-settings.json");
 };
 
-export const loadPersistedConfig = (dataDir: string): PersistedConfig => {
-  const path = getPersistedConfigPath(dataDir);
+export const loadPersistedConfig = (dataDirectory: string): PersistedConfig => {
+  const path = getPersistedConfigPath(dataDirectory);
   if (!existsSync(path)) {
     return {};
   }
@@ -24,14 +24,14 @@ export const loadPersistedConfig = (dataDir: string): PersistedConfig => {
   }
 };
 
-export const savePersistedConfig = (dataDir: string, updates: PersistedConfig): PersistedConfig => {
-  const path = getPersistedConfigPath(dataDir);
-  const current = loadPersistedConfig(dataDir);
+export const savePersistedConfig = (dataDirectory: string, updates: PersistedConfig): PersistedConfig => {
+  const path = getPersistedConfigPath(dataDirectory);
+  const current = loadPersistedConfig(dataDirectory);
   const next: PersistedConfig = {
     ...current,
     ...updates,
   };
-  mkdirSync(dataDir, { recursive: true });
+  mkdirSync(dataDirectory, { recursive: true });
   writeFileSync(path, JSON.stringify(next, null, 2));
   return next;
 };

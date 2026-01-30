@@ -6,6 +6,11 @@
 import { Database } from "bun:sqlite";
 import path from "node:path";
 
+/**
+ * Generates a short title from user message content.
+ * @param content - User message content.
+ * @returns Generated title string.
+ */
 function generateTitleFromMessage(content: string): string {
   if (!content || !content.trim()) {
     return "New Chat";
@@ -25,15 +30,18 @@ function generateTitleFromMessage(content: string): string {
   }
 
   const title = titleWords
-    .map((w, i) => (i === 0 ? w.charAt(0).toUpperCase() + w.slice(1) : w))
+    .map((w, index) => (index === 0 ? w.charAt(0).toUpperCase() + w.slice(1) : w))
     .join(" ");
 
   return title.length > 50 ? title.slice(0, 47) + "..." : title;
 }
 
-async function main() {
-  const dataDir = process.env["VLLM_STUDIO_DATA_DIR"] || path.join(process.cwd(), "..", "data");
-  const dbPath = path.join(dataDir, "chats.db");
+/**
+ * Main script entry point for retitling chat sessions.
+ */
+async function main(): Promise<void> {
+  const dataDirectory = process.env["VLLM_STUDIO_DATA_DIR"] || path.join(process.cwd(), "..", "data");
+  const dbPath = path.join(dataDirectory, "chats.db");
 
   console.log(`Opening database: ${dbPath}`);
 

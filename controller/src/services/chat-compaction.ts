@@ -40,9 +40,9 @@ const formatToolCalls = (toolCalls: unknown[]): string => {
     .map((call) => {
       if (!call || typeof call !== "object") return null;
       const record = call as Record<string, unknown>;
-      const fn = record["function"] as Record<string, unknown> | undefined;
-      const name = getString(fn?.["name"]) ?? "tool";
-      const args = getString(fn?.["arguments"]);
+      const function_ = record["function"] as Record<string, unknown> | undefined;
+      const name = getString(function_?.["name"]) ?? "tool";
+      const args = getString(function_?.["arguments"]);
       const callLabel = args ? `${name}(${args})` : `${name}()`;
       const rawResult = record["result"];
       if (rawResult === undefined || rawResult === null) {

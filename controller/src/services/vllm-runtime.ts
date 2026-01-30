@@ -97,17 +97,17 @@ const resolvePythonBinary = (): string | null => {
 };
 
 const resolveBundledWheel = (): { path: string; version: string | null } | null => {
-  const runtimeDir = resolve(process.cwd(), "runtime", "wheels");
-  if (!existsSync(runtimeDir)) {
+  const runtimeDirectory = resolve(process.cwd(), "runtime", "wheels");
+  if (!existsSync(runtimeDirectory)) {
     return null;
   }
-  const candidates = readdirSync(runtimeDir).filter((file) => file.startsWith("vllm-") && file.endsWith(".whl"));
+  const candidates = readdirSync(runtimeDirectory).filter((file) => file.startsWith("vllm-") && file.endsWith(".whl"));
   if (candidates.length === 0) {
     return null;
   }
   const withStats = candidates
     .map((file) => {
-      const fullPath = join(runtimeDir, file);
+      const fullPath = join(runtimeDirectory, file);
       return { file, fullPath, mtime: statSync(fullPath).mtimeMs };
     })
     .sort((a, b) => b.mtime - a.mtime);
