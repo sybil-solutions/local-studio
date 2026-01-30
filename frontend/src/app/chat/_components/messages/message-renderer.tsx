@@ -15,6 +15,7 @@ import { useAppStore } from "@/store";
 
 // Shared thinking parser exports
 export { thinkingParser };
+export type { ThinkingResult };
 export function splitThinking(content: string): ThinkingResult {
   return thinkingParser.parse(content);
 }
@@ -46,29 +47,23 @@ function sanitizeMermaidCode(code: string): string {
 
     // Match node definitions like: A[Some Text (with parens)]
     // and convert problematic parens inside labels to escaped form
-    line = line.replace(
-      /(\w+)\[([^\]]*)\]/g,
-      (match, nodeId, content) => {
-        // If content has unbalanced or problematic parens, quote it
-        if (/\([^)]*\)/.test(content) && !content.startsWith('"')) {
-          // Escape quotes in content and wrap in quotes
-          const escaped = content.replace(/"/g, "'");
-          return `${nodeId}["${escaped}"]`;
-        }
-        return match;
+    line = line.replace(/(\w+)\[([^\]]*)\]/g, (match, nodeId, content) => {
+      // If content has unbalanced or problematic parens, quote it
+      if (/\([^)]*\)/.test(content) && !content.startsWith('"')) {
+        // Escape quotes in content and wrap in quotes
+        const escaped = content.replace(/"/g, "'");
+        return `${nodeId}["${escaped}"]`;
       }
-    );
+      return match;
+    });
 
     // Fix stadium shapes with parens inside: A(Text (thing))
     // Convert inner parens to brackets or escape
-    line = line.replace(
-      /(\w+)\(([^)]*\([^)]*\)[^)]*)\)/g,
-      (match, nodeId, content) => {
-        // Replace inner parens with brackets
-        const fixed = content.replace(/\(([^)]*)\)/g, "[$1]");
-        return `${nodeId}(${fixed})`;
-      }
-    );
+    line = line.replace(/(\w+)\(([^)]*\([^)]*\)[^)]*)\)/g, (match, nodeId, content) => {
+      // Replace inner parens with brackets
+      const fixed = content.replace(/\(([^)]*)\)/g, "[$1]");
+      return `${nodeId}(${fixed})`;
+    });
 
     return line;
   });
@@ -139,11 +134,7 @@ function MermaidDiagram({ code }: { code: string }) {
         setMermaidState(id, svg, null);
       } catch (e) {
         if (seq !== renderSeqRef.current) return;
-        setMermaidState(
-          id,
-          "",
-          e instanceof Error ? e.message : "Failed to render diagram",
-        );
+        setMermaidState(id, "", e instanceof Error ? e.message : "Failed to render diagram");
       }
     };
 
@@ -200,10 +191,7 @@ function CodeBlock({ segment, isStreaming }: CodeBlockProps) {
 
   // Use enhanced code block for everything else
   return (
-    <EnhancedCodeBlock
-      language={lang}
-      isStreaming={isStreaming}
-    >
+    <EnhancedCodeBlock language={lang} isStreaming={isStreaming}>
       {segment.content}
     </EnhancedCodeBlock>
   );
@@ -246,11 +234,7 @@ export function MessageRenderer({ content, isStreaming }: MessageRendererProps) 
             segments.map((segment, index) => {
               if (segment.type === "code") {
                 return (
-                  <CodeBlock
-                    key={`code-${index}`}
-                    segment={segment}
-                    isStreaming={isStreaming}
-                  />
+                  <CodeBlock key={`code-${index}`} segment={segment} isStreaming={isStreaming} />
                 );
               }
 

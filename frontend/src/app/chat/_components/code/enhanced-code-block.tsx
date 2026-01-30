@@ -2,11 +2,10 @@
 "use client";
 
 import { useId } from "react";
-import { Copy, Check, Maximize2, Minimize2 } from "lucide-react";
+import * as Icons from "../icons";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism";
 import { useAppStore } from "@/store";
-
 
 interface EnhancedCodeBlockProps {
   children: string;
@@ -65,9 +64,9 @@ export function EnhancedCodeBlock({
               title="Copy code"
             >
               {copied ? (
-                <Check className="h-3.5 w-3.5 text-(--success)" />
+                <Icons.Check className="h-3.5 w-3.5 text-(--success)" />
               ) : (
-                <Copy className="h-3.5 w-3.5" />
+                <Icons.Copy className="h-3.5 w-3.5" />
               )}
             </button>
           </div>
@@ -108,9 +107,9 @@ export function EnhancedCodeBlock({
               title={isExpanded ? "Collapse" : "Expand"}
             >
               {isExpanded ? (
-                <Minimize2 className="h-3.5 w-3.5" />
+                <Icons.Minimize2 className="h-3.5 w-3.5" />
               ) : (
-                <Maximize2 className="h-3.5 w-3.5" />
+                <Icons.Maximize2 className="h-3.5 w-3.5" />
               )}
             </button>
           )}
@@ -121,9 +120,9 @@ export function EnhancedCodeBlock({
             title="Copy code"
           >
             {copied ? (
-              <Check className="h-3.5 w-3.5 text-(--success)" />
+              <Icons.Check className="h-3.5 w-3.5 text-(--success)" />
             ) : (
-              <Copy className="h-3.5 w-3.5" />
+              <Icons.Copy className="h-3.5 w-3.5" />
             )}
           </button>
         </div>
@@ -162,7 +161,7 @@ export function EnhancedCodeBlock({
               className="text-xs text-[#b0a8a0] hover:text-(--foreground) transition-colors flex items-center gap-1"
             >
               Expand full code
-              <Maximize2 className="h-3 w-3" />
+              <Icons.Maximize2 className="h-3 w-3" />
             </button>
           </div>
         )}

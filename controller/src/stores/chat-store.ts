@@ -101,7 +101,7 @@ export class ChatStore {
     const messages = this.db
       .query(`SELECT id, role, content, model, tool_calls, parts, metadata, request_prompt_tokens, request_tools_tokens,
               request_total_input_tokens, request_completion_tokens, created_at
-              FROM chat_messages WHERE session_id = ? ORDER BY created_at`)
+              FROM chat_messages WHERE session_id = ? ORDER BY created_at, rowid`)
       .all(sessionId) as Array<Record<string, unknown>>;
 
     const hydrated = messages.map((message) => {

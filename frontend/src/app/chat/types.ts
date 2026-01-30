@@ -16,7 +16,7 @@ export interface ModelOption {
 
 export interface ActivityItem {
   id: string;
-  type: "tool-call" | "reasoning" | "research";
+  type: "tool-call" | "thinking" | "research";
   timestamp: number;
   toolName?: string;
   toolCallId?: string;
@@ -24,6 +24,7 @@ export interface ActivityItem {
   input?: unknown;
   output?: unknown;
   content?: string;
+  isActive?: boolean;
 }
 
 export interface ActivityGroup {
@@ -31,9 +32,7 @@ export interface ActivityGroup {
   messageId: string;
   title: string;
   isLatest: boolean;
-  thinkingContent?: string;
-  thinkingActive?: boolean;
-  toolItems: ActivityItem[];
+  items: ActivityItem[];
 }
 
 export interface ThinkingState {

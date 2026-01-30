@@ -510,7 +510,7 @@ Main functions:
 - `createSessionWithMessage(userMessage)`
 - `generateTitle(sessionId, userContent, assistantContent)` via `/api/title`.
 
-**Important limitation:** tool *outputs* are not explicitly persisted here (only tool call inputs).
+**Note:** tool outputs are persisted by a follow-up update in `chat-page.tsx` after `addToolOutput()` mutates the assistant message.
 
 ---
 

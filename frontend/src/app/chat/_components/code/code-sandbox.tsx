@@ -2,17 +2,7 @@
 "use client";
 
 import { useRef, useEffect, useCallback, useId } from "react";
-import {
-  Play,
-  Square,
-  Copy,
-  Check,
-  Download,
-  Maximize2,
-  Minimize2,
-  RefreshCw,
-  AlertTriangle,
-} from "lucide-react";
+import * as Icons from "../icons";
 import { useAppStore } from "@/store";
 
 interface CodeSandboxProps {
@@ -274,7 +264,7 @@ export function CodeSandbox({
           className="p-2 md:p-1.5 rounded hover:bg-(--error)/20 text-(--error) transition-colors"
           title="Stop"
         >
-          <Square className="h-5 w-5 md:h-4 md:w-4" />
+          <Icons.Square className="h-5 w-5 md:h-4 md:w-4" />
         </button>
       ) : (
         <button
@@ -282,7 +272,7 @@ export function CodeSandbox({
           className="p-2 md:p-1.5 rounded hover:bg-(--success)/20 text-(--success) transition-colors"
           title="Run"
         >
-          <Play className="h-5 w-5 md:h-4 md:w-4" />
+          <Icons.Play className="h-5 w-5 md:h-4 md:w-4" />
         </button>
       )}
 
@@ -292,7 +282,7 @@ export function CodeSandbox({
         className={`${inFooter ? "block" : "hidden md:block"} p-2 md:p-1.5 rounded hover:bg-(--accent) transition-colors`}
         title="Refresh"
       >
-        <RefreshCw className="h-5 w-5 md:h-4 md:w-4 text-[#9a9590]" />
+        <Icons.RefreshCw className="h-5 w-5 md:h-4 md:w-4 text-[#9a9590]" />
       </button>
 
       {/* Copy */}
@@ -302,9 +292,9 @@ export function CodeSandbox({
         title="Copy code"
       >
         {copied ? (
-          <Check className="h-5 w-5 md:h-4 md:w-4 text-(--success)" />
+          <Icons.Check className="h-5 w-5 md:h-4 md:w-4 text-(--success)" />
         ) : (
-          <Copy className="h-5 w-5 md:h-4 md:w-4 text-[#9a9590]" />
+          <Icons.Copy className="h-5 w-5 md:h-4 md:w-4 text-[#9a9590]" />
         )}
       </button>
 
@@ -314,7 +304,7 @@ export function CodeSandbox({
         className={`${inFooter ? "block" : "hidden md:block"} p-2 md:p-1.5 rounded hover:bg-(--accent) transition-colors`}
         title="Download"
       >
-        <Download className="h-5 w-5 md:h-4 md:w-4 text-[#9a9590]" />
+        <Icons.Download className="h-5 w-5 md:h-4 md:w-4 text-[#9a9590]" />
       </button>
 
       {/* Fullscreen/Minimize - ALWAYS visible */}
@@ -328,9 +318,9 @@ export function CodeSandbox({
         title={isFullscreen ? "Exit fullscreen" : "Fullscreen"}
       >
         {isFullscreen ? (
-          <Minimize2 className="h-5 w-5 md:h-4 md:w-4" />
+          <Icons.Minimize2 className="h-5 w-5 md:h-4 md:w-4" />
         ) : (
-          <Maximize2 className="h-5 w-5 md:h-4 md:w-4" />
+          <Icons.Maximize2 className="h-5 w-5 md:h-4 md:w-4" />
         )}
       </button>
     </div>
@@ -378,7 +368,7 @@ export function CodeSandbox({
               className="p-2 rounded hover:bg-background transition-colors"
               title="Exit fullscreen"
             >
-              <Minimize2 className="h-5 w-5" />
+              <Icons.Minimize2 className="h-5 w-5" />
             </button>
           )}
         </div>
@@ -386,7 +376,7 @@ export function CodeSandbox({
         {/* Error Display */}
         {error && (
           <div className="flex items-center gap-2 px-3 py-2 bg-error/10 text-(--error) text-xs shrink-0">
-            <AlertTriangle className="h-3.5 w-3.5" />
+            <Icons.AlertTriangle className="h-3.5 w-3.5" />
             {error}
           </div>
         )}

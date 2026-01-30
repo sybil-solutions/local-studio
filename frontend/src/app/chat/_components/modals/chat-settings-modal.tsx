@@ -44,10 +44,7 @@ export function ChatSettingsModal({
             <Settings className="h-5 w-5 text-[#9a9590]" />
             <h2 className="text-lg font-semibold">Chat Settings</h2>
           </div>
-          <button
-            onClick={onClose}
-            className="p-1.5 rounded hover:bg-(--accent)"
-          >
+          <button onClick={onClose} className="p-1.5 rounded hover:bg-(--accent)">
             <X className="h-5 w-5 text-[#9a9590]" />
           </button>
         </div>
@@ -56,13 +53,11 @@ export function ChatSettingsModal({
         <div className="p-6 space-y-6 max-h-[70vh] overflow-y-auto">
           {/* Model Selection */}
           <div>
-            <label className="block text-sm font-medium text-[#c8c4bd] mb-2">
-              Model
-            </label>
+            <label className="block text-sm font-medium text-[#c8c4bd] mb-2">Model</label>
             <select
               value={selectedModel}
               onChange={(e) => onSelectedModelChange(e.target.value)}
-              className="w-full px-3 py-2 bg-(--background) border border-(--border) rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-(--link)/50"
+              className="w-full px-3 py-2 bg-background border border-(--border) rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-(--link)/50"
             >
               <option value="">Select a model</option>
               {availableModels.map((model) => (
@@ -75,15 +70,13 @@ export function ChatSettingsModal({
 
           {/* System Prompt */}
           <div>
-            <label className="block text-sm font-medium text-[#c8c4bd] mb-2">
-              System Prompt
-            </label>
+            <label className="block text-sm font-medium text-[#c8c4bd] mb-2">System Prompt</label>
             <textarea
               value={systemPrompt}
               onChange={(e) => onSystemPromptChange(e.target.value)}
               rows={4}
               placeholder="Enter a system prompt..."
-              className="w-full px-3 py-2 bg-(--background) border border-(--border) rounded-lg text-sm resize-none focus:outline-none focus:ring-2 focus:ring-(--link)/50"
+              className="w-full px-3 py-2 bg-background border border-(--border) rounded-lg text-sm resize-none focus:outline-none focus:ring-2 focus:ring-(--link)/50"
             />
           </div>
 
@@ -96,11 +89,9 @@ export function ChatSettingsModal({
                 onChange={(e) =>
                   onDeepResearchChange({ ...deepResearch, enabled: e.target.checked })
                 }
-                className="w-4 h-4 rounded border-(--border) bg-(--background)"
+                className="w-4 h-4 rounded border-(--border) bg-background"
               />
-              <span className="text-sm font-medium text-[#c8c4bd]">
-                Enable Deep Research
-              </span>
+              <span className="text-sm font-medium text-[#c8c4bd]">Enable Deep Research</span>
             </label>
             <p className="text-xs text-[#6a6560] mt-1 ml-6">
               Uses web search to gather context before responding

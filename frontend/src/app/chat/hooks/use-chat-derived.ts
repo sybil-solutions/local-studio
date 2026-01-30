@@ -65,7 +65,7 @@ export function useChatDerived({
     };
   }, [systemPrompt]);
 
-  // Build activity groups from assistant messages (newest first)
+  // Build activity groups from assistant messages with chronologically interleaved items
   const activityGroups = useMemo<ActivityGroup[]>(() => {
     const assistantMessages = messages.filter((m) => m.role === "assistant");
     if (assistantMessages.length === 0) return [];
@@ -74,17 +74,30 @@ export function useChatDerived({
     const groups: ActivityGroup[] = [];
 
     assistantMessages.forEach((msg, index) => {
-      const thinking = extractThinking(msg);
-      const toolItems: ActivityItem[] = [];
+      const isLatest = msg.id === lastAssistantId;
+      const items: ActivityItem[] = [];
 
-      msg.parts.forEach((part) => {
+      // Process parts in chronological order to interleave thinking and tool calls
+      msg.parts.forEach((part, partIndex) => {
+        // Handle reasoning/thinking parts
+        if (part.type === "reasoning" && "text" in part && part.text) {
+          items.push({
+            id: `activity-${msg.id}-thinking-${partIndex}`,
+            type: "thinking",
+            timestamp: Date.now() - (msg.parts.length - partIndex) * 10,
+            content: part.text,
+            isActive: isLatest && isLoading && partIndex === msg.parts.length - 1,
+          });
+          return;
+        }
+
+        // Handle tool parts
         if (!isToolPart(part)) return;
 
         const toolCallId = String(part.toolCallId);
         const result = toolResultsMap.get(toolCallId);
         const isExecuting = executingTools.has(toolCallId);
 
-        // Check the part's own state (important for restored messages)
         const partState = "state" in part ? (part as { state?: string }).state : undefined;
         const partHasOutput = "output" in part && (part as { output?: unknown }).output != null;
 
@@ -98,7 +111,7 @@ export function useChatDerived({
           ? rawToolName.split("__").slice(1).join("__")
           : rawToolName;
 
-        // Determine state: prefer live ephemeral data, fall back to part state
+        // Determine state
         let itemState: "pending" | "running" | "complete" | "error" = "pending";
         const pendingStates = new Set([
           "input-streaming",
@@ -120,10 +133,10 @@ export function useChatDerived({
           itemState = "running";
         }
 
-        toolItems.push({
+        items.push({
           id: `activity-${msg.id}-${toolCallId}`,
           type: "tool-call",
-          timestamp: Date.now(),
+          timestamp: Date.now() - (msg.parts.length - partIndex) * 10,
           toolName,
           toolCallId,
           state: itemState,
@@ -132,22 +145,26 @@ export function useChatDerived({
         });
       });
 
-      const isLatest = msg.id === lastAssistantId;
-      const hasThinking = Boolean(thinking.content);
-      const hasTools = toolItems.length > 0;
-
-      if (!hasThinking && !hasTools) {
-        return;
+      // Also extract thinking from text content (think tags) as a fallback
+      const textThinking = extractThinking(msg);
+      if (textThinking.content && !items.some(i => i.type === "thinking")) {
+        items.unshift({
+          id: `activity-${msg.id}-thinking-text`,
+          type: "thinking",
+          timestamp: Date.now() - 1000,
+          content: textThinking.content,
+          isActive: isLatest && isLoading,
+        });
       }
+
+      if (items.length === 0) return;
 
       groups.push({
         id: `activity-group-${msg.id}`,
         messageId: msg.id,
         title: isLatest ? `Latest (Turn ${index + 1})` : `Turn ${index + 1}`,
         isLatest,
-        thinkingContent: hasThinking ? thinking.content : undefined,
-        thinkingActive: isLatest && isLoading && hasThinking,
-        toolItems,
+        items,
       });
     });
 
@@ -155,19 +172,23 @@ export function useChatDerived({
   }, [messages, extractThinking, executingTools, toolResultsMap, isLoading]);
 
   const hasToolActivity =
-    activityGroups.some((group) => group.toolItems.length > 0) || executingTools.size > 0;
+    activityGroups.some((group) => group.items.some(i => i.type === "tool-call")) || executingTools.size > 0;
 
   const thinkingState = useMemo<ThinkingState>(() => {
     const latestGroup = activityGroups[0];
     if (!latestGroup) return { content: "", isComplete: true };
 
+    // Find the latest thinking item
+    const thinkingItems = latestGroup.items.filter(i => i.type === "thinking");
+    const latestThinking = thinkingItems[thinkingItems.length - 1];
+
     return {
-      content: latestGroup.thinkingContent || "",
+      content: latestThinking?.content || "",
       isComplete: !isLoading,
     };
   }, [activityGroups, isLoading]);
 
-  const thinkingActive = Boolean(activityGroups[0]?.thinkingActive);
+  const thinkingActive = Boolean(activityGroups[0]?.items.some(i => i.type === "thinking" && i.isActive));
 
   const hasSidePanelContent =
     activityGroups.length > 0 || hasToolActivity || thinkingState.content.length > 0;

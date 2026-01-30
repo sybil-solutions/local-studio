@@ -241,7 +241,7 @@ export function ToolBeltToolbar({
         {isLoading ? (
           <button
             onClick={onStop}
-            className="h-8 w-8 flex items-center justify-center rounded-full bg-(--error) text-white transition-colors:ease-in:200ms flex-shrink-0"
+            className="h-8 w-8 flex items-center justify-center rounded-full bg-(--error) text-white transition-colors:ease-in:200ms shrink-0"
             title="Stop"
           >
             <Square className="h-3 w-3 fill-current" />
@@ -250,7 +250,7 @@ export function ToolBeltToolbar({
           <button
             onClick={onSubmit}
             disabled={!canSend}
-            className={`h-8 w-8 flex items-center justify-center rounded-full transition-colors:ease-in:200ms flex-shrink-0 ${
+            className={`h-8 w-8 flex items-center justify-center rounded-full transition-colors:ease-in:200ms shrink-0 ${
               canSend
                 ? "bg-[#e8e4dd] text-[#1a1918]"
                 : "bg-(--accent) text-[#9a9590]/50 cursor-not-allowed"

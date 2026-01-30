@@ -3,7 +3,6 @@
 
 import { useCallback, useRef } from "react";
 import { api } from "@/lib/api";
-import type { ChatSession } from "@/lib/types";
 import { useAppStore } from "@/store";
 
 export function useChatSessions() {
@@ -30,21 +29,24 @@ export function useChatSessions() {
     }
   }, [setSessions, setSessionsLoading]);
 
-  const loadSession = useCallback(async (sessionId: string) => {
-    if (activeSessionRef.current === sessionId) return;
-    activeSessionRef.current = sessionId;
+  const loadSession = useCallback(
+    async (sessionId: string) => {
+      if (activeSessionRef.current === sessionId) return;
+      activeSessionRef.current = sessionId;
 
-    try {
-      const data = await api.getChatSession(sessionId);
-      setCurrentSessionId(sessionId);
-      setCurrentSessionTitle(data.session?.title || "Chat");
-      // Messages are managed by useChat, we just load metadata
-      return data.session ?? null;
-    } catch (err) {
-      console.error("Failed to load session:", err);
-      return null;
-    }
-  }, [setCurrentSessionId, setCurrentSessionTitle]);
+      try {
+        const data = await api.getChatSession(sessionId);
+        setCurrentSessionId(sessionId);
+        setCurrentSessionTitle(data.session?.title || "Chat");
+        // Messages are managed by useChat, we just load metadata
+        return data.session ?? null;
+      } catch (err) {
+        console.error("Failed to load session:", err);
+        return null;
+      }
+    },
+    [setCurrentSessionId, setCurrentSessionTitle],
+  );
 
   const startNewSession = useCallback(() => {
     activeSessionRef.current = null;
@@ -52,22 +54,25 @@ export function useChatSessions() {
     setCurrentSessionTitle("New Chat");
   }, [setCurrentSessionId, setCurrentSessionTitle]);
 
-  const createSession = useCallback(async (title: string, model?: string) => {
-    try {
-      const { session } = await api.createChatSession({
-        title,
-        model,
-      });
-      updateSessions((prev) => [session, ...prev]);
-      setCurrentSessionId(session.id);
-      setCurrentSessionTitle(session.title);
-      activeSessionRef.current = session.id;
-      return session;
-    } catch (err) {
-      console.error("Failed to create session:", err);
-      return null;
-    }
-  }, [setCurrentSessionId, setCurrentSessionTitle, updateSessions]);
+  const createSession = useCallback(
+    async (title: string, model?: string) => {
+      try {
+        const { session } = await api.createChatSession({
+          title,
+          model,
+        });
+        updateSessions((prev) => [session, ...prev]);
+        setCurrentSessionId(session.id);
+        setCurrentSessionTitle(session.title);
+        activeSessionRef.current = session.id;
+        return session;
+      } catch (err) {
+        console.error("Failed to create session:", err);
+        return null;
+      }
+    },
+    [setCurrentSessionId, setCurrentSessionTitle, updateSessions],
+  );
 
   const updateSessionTitle = useCallback(
     async (sessionId: string, title: string) => {

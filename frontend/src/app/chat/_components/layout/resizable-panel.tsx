@@ -30,21 +30,27 @@ export function ResizablePanel({
   const startXRef = useRef(0);
   const startWidthRef = useRef(width);
 
-  const handleMouseDown = useCallback((e: React.MouseEvent) => {
-    e.preventDefault();
-    setIsResizing(true);
-    startXRef.current = e.clientX;
-    startWidthRef.current = width;
-    document.body.style.cursor = "ew-resize";
-    document.body.style.userSelect = "none";
-  }, [width]);
+  const handleMouseDown = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault();
+      setIsResizing(true);
+      startXRef.current = e.clientX;
+      startWidthRef.current = width;
+      document.body.style.cursor = "ew-resize";
+      document.body.style.userSelect = "none";
+    },
+    [width],
+  );
 
-  const handleMouseMove = useCallback((e: MouseEvent) => {
-    if (!isResizing) return;
-    const delta = startXRef.current - e.clientX;
-    const newWidth = Math.max(minWidth, Math.min(maxWidth, startWidthRef.current + delta));
-    setWidth(newWidth);
-  }, [isResizing, minWidth, maxWidth]);
+  const handleMouseMove = useCallback(
+    (e: MouseEvent) => {
+      if (!isResizing) return;
+      const delta = startXRef.current - e.clientX;
+      const newWidth = Math.max(minWidth, Math.min(maxWidth, startWidthRef.current + delta));
+      setWidth(newWidth);
+    },
+    [isResizing, minWidth, maxWidth],
+  );
 
   const handleMouseUp = useCallback(() => {
     setIsResizing(false);
@@ -66,9 +72,7 @@ export function ResizablePanel({
   return (
     <div ref={containerRef} className="flex h-full w-full overflow-hidden">
       {/* Main content */}
-      <div className="flex-1 min-w-0 flex flex-col">
-        {children}
-      </div>
+      <div className="flex-1 min-w-0 flex flex-col">{children}</div>
 
       {/* Toggle button when closed */}
       {!isOpen && (
@@ -84,7 +88,7 @@ export function ResizablePanel({
       {/* Resizable side panel */}
       {isOpen && (
         <div
-          className="hidden md:flex flex-shrink-0 flex-col h-full border-l border-white/[0.06] bg-[#0a0a0a]/95 backdrop-blur-xl"
+          className="hidden md:flex shrink-0 flex-col h-full border-l border-white/[0.06] bg-[#0a0a0a]/95 backdrop-blur-xl"
           style={{ width: `${width}px` }}
         >
           {/* Header with close */}
@@ -100,9 +104,7 @@ export function ResizablePanel({
           </div>
 
           {/* Panel content */}
-          <div className="flex-1 overflow-hidden">
-            {sidePanel}
-          </div>
+          <div className="flex-1 overflow-hidden">{sidePanel}</div>
 
           {/* Resize handle */}
           <div
