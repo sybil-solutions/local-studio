@@ -133,6 +133,10 @@ export interface ChatState {
   agentPlan: AgentPlan | null;
   agentFiles: AgentFileEntry[];
   agentFilesLoading: boolean;
+  selectedAgentFilePath: string | null;
+  selectedAgentFileContent: string | null;
+  selectedAgentFileLoading: boolean;
+  sidebarWidth: number;
 }
 
 export interface ChatActions {
@@ -275,6 +279,10 @@ export interface ChatActions {
   setAgentPlan: (plan: AgentPlan | null) => void;
   setAgentFiles: (files: AgentFileEntry[]) => void;
   setAgentFilesLoading: (loading: boolean) => void;
+  setSelectedAgentFilePath: (path: string | null) => void;
+  setSelectedAgentFileContent: (content: string | null) => void;
+  setSelectedAgentFileLoading: (loading: boolean) => void;
+  setSidebarWidth: (width: number) => void;
 }
 
 export type ChatSlice = ChatState & ChatActions;
@@ -368,6 +376,10 @@ export const createChatSlice: StateCreator<ChatSlice, [], [], ChatSlice> = (set)
   agentPlan: null,
   agentFiles: [],
   agentFilesLoading: false,
+  selectedAgentFilePath: null,
+  selectedAgentFileContent: null,
+  selectedAgentFileLoading: false,
+  sidebarWidth: 400,
 
   // --- Actions ---
 
@@ -534,4 +546,8 @@ export const createChatSlice: StateCreator<ChatSlice, [], [], ChatSlice> = (set)
   setAgentPlan: (plan) => set({ agentPlan: plan }),
   setAgentFiles: (files) => set({ agentFiles: files }),
   setAgentFilesLoading: (loading) => set({ agentFilesLoading: loading }),
+  setSelectedAgentFilePath: (path) => set({ selectedAgentFilePath: path }),
+  setSelectedAgentFileContent: (content) => set({ selectedAgentFileContent: content }),
+  setSelectedAgentFileLoading: (loading) => set({ selectedAgentFileLoading: loading }),
+  setSidebarWidth: (width) => set({ sidebarWidth: width }),
 });

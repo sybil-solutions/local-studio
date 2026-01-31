@@ -1,10 +1,14 @@
 // CRITICAL
 "use client";
 
-import { type ReactNode } from "react";
-import { PanelRightClose, Sparkles } from "lucide-react";
+import { type ReactNode, useCallback, useRef, useEffect, useState } from "react";
+import { PanelRightClose, Sparkles, GripVertical } from "lucide-react";
 
 export type SidebarTab = "activity" | "context" | "artifacts" | "files";
+
+const MIN_WIDTH = 280;
+const MAX_WIDTH = 700;
+const DEFAULT_WIDTH = 400;
 
 interface UnifiedSidebarProps {
   children: ReactNode;
@@ -19,6 +23,8 @@ interface UnifiedSidebarProps {
   artifactsContent: ReactNode;
   filesContent?: ReactNode;
   hasArtifacts: boolean;
+  width?: number;
+  onWidthChange?: (width: number) => void;
 }
 
 export function UnifiedSidebar({
@@ -34,9 +40,59 @@ export function UnifiedSidebar({
   artifactsContent,
   filesContent,
   hasArtifacts,
+  width: controlledWidth,
+  onWidthChange,
 }: UnifiedSidebarProps) {
-  // Fixed width for consistent layout - no resizing
-  const width = 340;
+  // Use controlled width if provided, otherwise use local state
+  const [localWidth, setLocalWidth] = useState(DEFAULT_WIDTH);
+  const width = controlledWidth ?? localWidth;
+  const setWidth = useCallback(
+    (newWidth: number) => {
+      if (onWidthChange) {
+        onWidthChange(newWidth);
+      } else {
+        setLocalWidth(newWidth);
+      }
+    },
+    [onWidthChange],
+  );
+
+  // Resize state
+  const [isResizing, setIsResizing] = useState(false);
+  const resizeRef = useRef<{ startX: number; startWidth: number } | null>(null);
+
+  const handleResizeStart = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault();
+      setIsResizing(true);
+      resizeRef.current = { startX: e.clientX, startWidth: width };
+    },
+    [width],
+  );
+
+  useEffect(() => {
+    if (!isResizing) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!resizeRef.current) return;
+      // Dragging left increases width, dragging right decreases
+      const delta = resizeRef.current.startX - e.clientX;
+      const newWidth = Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, resizeRef.current.startWidth + delta));
+      setWidth(newWidth);
+    };
+
+    const handleMouseUp = () => {
+      setIsResizing(false);
+      resizeRef.current = null;
+    };
+
+    document.addEventListener("mousemove", handleMouseMove);
+    document.addEventListener("mouseup", handleMouseUp);
+    return () => {
+      document.removeEventListener("mousemove", handleMouseMove);
+      document.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, [isResizing, setWidth]);
 
   const getActiveContent = () => {
     switch (activeTab) {
@@ -59,9 +115,23 @@ export function UnifiedSidebar({
 
       {isOpen && (
         <div
-          className="hidden md:flex shrink-0 flex-col h-full border-l border-white/[0.06] bg-[#0a0a0a]"
+          className="hidden md:flex shrink-0 flex-col h-full border-l border-white/[0.06] bg-[#0a0a0a] relative"
           style={{ width: `${width}px` }}
         >
+          {/* Resize handle */}
+          <div
+            className={`absolute left-0 top-0 bottom-0 w-1 cursor-col-resize z-10 group flex items-center justify-center
+              ${isResizing ? "bg-violet-500/30" : "hover:bg-violet-500/20"}`}
+            onMouseDown={handleResizeStart}
+          >
+            <div
+              className={`absolute left-0 w-4 h-12 flex items-center justify-center rounded-r transition-opacity
+                ${isResizing ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
+            >
+              <GripVertical className="h-4 w-4 text-violet-400/50" />
+            </div>
+          </div>
+
           {/* Header */}
           <div className="flex items-center justify-between px-3 py-2 border-b border-white/[0.06]">
             <div className="flex items-center gap-0.5 overflow-x-auto scrollbar-hide">
@@ -130,6 +200,16 @@ export function UnifiedSidebar({
             </span>
           </div>
         </div>
+      )}
+
+      {/* Global resize cursor when dragging */}
+      {isResizing && (
+        <style jsx global>{`
+          body {
+            cursor: col-resize !important;
+            user-select: none !important;
+          }
+        `}</style>
       )}
     </div>
   );

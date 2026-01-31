@@ -39,6 +39,9 @@ node_modules/
 *.swp
 *~
 
+# Xcode user data
+**/xcuserdata/
+
 # OS
 .DS_Store
 Thumbs.db

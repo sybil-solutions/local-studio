@@ -172,24 +172,60 @@ const MOVE_FILE_TOOL = {
   },
 };
 
+const ARG_WRAPPER_KEYS = ["arguments", "input", "args", "params", "payload", "data"] as const;
+
+const parseArgsObject = (value: unknown): Record<string, unknown> | null => {
+  if (!value) return null;
+  if (typeof value === "object" && !Array.isArray(value)) {
+    return value as Record<string, unknown>;
+  }
+  if (typeof value !== "string") return null;
+  let current: unknown = value.trim();
+  for (let i = 0; i < 2; i += 1) {
+    if (typeof current !== "string") break;
+    const trimmed = current.trim();
+    if (!trimmed || (!trimmed.startsWith("{") && !trimmed.startsWith("["))) return null;
+    try {
+      current = JSON.parse(trimmed);
+    } catch {
+      return null;
+    }
+  }
+  return current && typeof current === "object" && !Array.isArray(current)
+    ? (current as Record<string, unknown>)
+    : null;
+};
+
+const findStringArg = (value: unknown, keys: string[], depth: number): string => {
+  const argsObj = parseArgsObject(value);
+  if (!argsObj) return "";
+
+  for (const key of keys) {
+    const val = argsObj[key];
+    if (typeof val === "string" && val.trim()) {
+      return val.trim();
+    }
+  }
+
+  if (depth <= 0) return "";
+
+  for (const wrapperKey of ARG_WRAPPER_KEYS) {
+    if (!(wrapperKey in argsObj)) continue;
+    const nested = argsObj[wrapperKey];
+    const found = findStringArg(nested, keys, depth - 1);
+    if (found) return found;
+  }
+
+  return "";
+};
+
 /**
  * Extract a string argument from various possible locations in the args object.
  * Models may put arguments in different places depending on the provider.
  */
-const extractStringArg = (args: Record<string, unknown>, ...keys: string[]): string => {
-  for (const key of keys) {
-    const val = args[key];
-    if (typeof val === "string" && val.trim()) return val.trim();
-  }
-  // Try looking in nested 'arguments' or 'input' objects
-  const nested = args.arguments ?? args.input;
-  if (nested && typeof nested === "object") {
-    for (const key of keys) {
-      const val = (nested as Record<string, unknown>)[key];
-      if (typeof val === "string" && val.trim()) return val.trim();
-    }
-  }
-  return "";
+const extractStringArg = (args: unknown, ...keys: string[]): string => {
+  const found = findStringArg(args, keys, 2);
+  return found;
 };
 
 const normalizePlanStatus = (value: unknown): AgentPlanStep["status"] => {
@@ -254,7 +290,6 @@ export function useAgentTools() {
       const normalizedToolName = toolName === "set_plan" ? "create_plan" : toolName;
 
       if (normalizedToolName === "create_plan") {
-        console.log("[create_plan] Raw args:", JSON.stringify(args, null, 2));
         const planArg = args.plan as Record<string, unknown> | undefined;
 
         // Try multiple ways to extract tasks
@@ -262,7 +297,6 @@ export function useAgentTools() {
 
         // If args itself is an array, it might be the tasks directly
         if (!rawTasks && Array.isArray(args)) {
-          console.log("[create_plan] args is an array, using directly");
           rawTasks = args;
         }
 
@@ -270,14 +304,12 @@ export function useAgentTools() {
         if (!rawTasks && args.arguments) {
           const nested = args.arguments as Record<string, unknown>;
           rawTasks = nested.tasks ?? nested.steps;
-          console.log("[create_plan] Found nested arguments:", nested);
         }
 
         // If rawTasks is still a string, try parsing it
         if (typeof rawTasks === "string") {
           try {
             rawTasks = JSON.parse(rawTasks);
-            console.log("[create_plan] Parsed string tasks:", rawTasks);
           } catch {
             // ignore
           }
@@ -287,7 +319,6 @@ export function useAgentTools() {
         if (!rawTasks || (Array.isArray(rawTasks) && rawTasks.length === 0)) {
           for (const [key, value] of Object.entries(args)) {
             if (Array.isArray(value) && value.length > 0) {
-              console.log(`[create_plan] Found array in args.${key}:`, value);
               // Check if it looks like tasks (has objects with title or string elements)
               const firstItem = value[0];
               if (
@@ -314,11 +345,9 @@ export function useAgentTools() {
           });
         }
 
-        console.log("[create_plan] Final rawTasks:", rawTasks, "type:", typeof rawTasks, "isArray:", Array.isArray(rawTasks));
         const steps = normalizePlanSteps(rawTasks);
         if (steps.length === 0) {
           const receivedKeys = Object.keys(args);
-          console.error("[create_plan] Failed to extract tasks. Args keys:", receivedKeys);
           return JSON.stringify({
             success: false,
             error:
@@ -337,10 +366,8 @@ export function useAgentTools() {
           createdAt: Date.now(),
           updatedAt: Date.now(),
         };
-        console.log("[create_plan] SUCCESS! Setting plan:", plan);
         planRef.current = plan;
         setAgentPlan(plan);
-        console.log("[create_plan] Plan set in Zustand. planRef.current:", planRef.current);
         return JSON.stringify({
           success: true,
           plan: { steps: plan.steps },
@@ -349,16 +376,13 @@ export function useAgentTools() {
       }
 
       if (normalizedToolName === "update_plan") {
-        console.log("[update_plan] Raw args:", JSON.stringify(args, null, 2));
         const live = planRef.current;
         if (!live) {
-          console.error("[update_plan] No active plan!");
           return JSON.stringify({
             success: false,
             error: "No active plan. Call create_plan first.",
           });
         }
-        console.log("[update_plan] Current plan has", live.steps.length, "steps");
 
         // Flexible action extraction
         let rawAction = typeof args.action === "string" ? args.action.toLowerCase() : "";
@@ -375,7 +399,6 @@ export function useAgentTools() {
         }
         if (!rawAction) rawAction = "status";
 
-        console.log("[update_plan] Action:", rawAction, "step_index:", args.step_index, "index:", args.index, "status:", args.status, "task_index:", args.task_index);
 
         const action =
           rawAction === "update" || rawAction === "edit" || rawAction === "add" || rawAction === "delete" ||
@@ -398,14 +421,11 @@ export function useAgentTools() {
           const pendingIdx = live.steps.findIndex((s) => s.status === "pending");
           if (runningIdx >= 0) {
             idx = runningIdx;
-            console.log("[update_plan] Auto-selected running step:", idx);
           } else if (pendingIdx >= 0 && action === "status") {
             idx = pendingIdx;
-            console.log("[update_plan] Auto-selected pending step:", idx);
           }
         }
 
-        console.log("[update_plan] Final idx:", idx, "action:", action);
         const maxIdx = live.steps.length - 1;
         const title = typeof args.title === "string" ? args.title.trim() : "";
         const status = normalizePlanStatus(args.status);
@@ -473,10 +493,8 @@ export function useAgentTools() {
           steps: updatedSteps,
           updatedAt: Date.now(),
         };
-        console.log("[update_plan] SUCCESS! Updated steps:", updatedSteps.map(s => `${s.title}: ${s.status}`));
         planRef.current = updated;
         setAgentPlan(updated);
-        console.log("[update_plan] Plan updated in Zustand");
 
         const doneCount = updatedSteps.filter(
           (s) => s.status === "done",
@@ -515,14 +533,27 @@ export function useAgentTools() {
       }
 
       if (toolName === "read_file") {
-        console.log("[read_file] Raw args:", JSON.stringify(args, null, 2));
-        const path = extractStringArg(args, "path", "filepath", "file_path", "filename", "file");
+        let path = extractStringArg(args, "path", "filepath", "file_path", "filename", "file");
+
+        // Fallback: direct parse if extractStringArg failed
+        if (!path && typeof args === "object" && args !== null) {
+          for (const [key, value] of Object.entries(args)) {
+            const lowerKey = key.toLowerCase();
+            if ((lowerKey === "path" || lowerKey === "filepath" || lowerKey === "file_path" || lowerKey === "filename" || lowerKey === "file")
+                && typeof value === "string") {
+              path = value;
+              break;
+            }
+          }
+        }
+
         if (!path) {
           return JSON.stringify({
             success: false,
             error: "path is required",
             hint: 'Example: read_file({ path: "notes.md" })',
             received: Object.keys(args),
+            argsReceived: args,
           });
         }
         try {
@@ -533,7 +564,6 @@ export function useAgentTools() {
             content: result.content,
           });
         } catch (err) {
-          console.error("[read_file] FAILED:", err);
           return JSON.stringify({
             success: false,
             error: err instanceof Error ? err.message : String(err),
@@ -542,25 +572,44 @@ export function useAgentTools() {
       }
 
       if (toolName === "write_file") {
-        console.log("[write_file] Raw args:", JSON.stringify(args, null, 2));
-        const path = extractStringArg(args, "path", "filepath", "file_path", "filename", "file");
-        const content = extractStringArg(args, "content", "contents", "text", "data", "body");
-        console.log("[write_file] path:", path, "content length:", content.length, "sessionId:", options?.sessionId);
+        let path = extractStringArg(args, "path", "filepath", "file_path", "filename", "file");
+        let content = extractStringArg(args, "content", "contents", "text", "data", "body");
+
+        // Fallback: if extractStringArg returned empty, try parsing the entire args object directly
         if (!path) {
+          // Try treating the entire args object as the parameters
+          if (typeof args === "object" && args !== null) {
+            for (const [key, value] of Object.entries(args)) {
+              const lowerKey = key.toLowerCase();
+              if (lowerKey === "path" || lowerKey === "filepath" || lowerKey === "file_path" || lowerKey === "filename" || lowerKey === "file") {
+                if (typeof value === "string") {
+                  path = value;
+                }
+              }
+              if (lowerKey === "content" || lowerKey === "contents" || lowerKey === "text" || lowerKey === "data" || lowerKey === "body") {
+                if (typeof value === "string") {
+                  content = value;
+                }
+              }
+            }
+          }
+        }
+
+        // Normalize path - remove leading/trailing slashes, collapse multiple slashes
+        path = path?.trim().replace(/^\/+|\/+$/g, "").replace(/\/+/g, "/") || "";
+        if (!path || path.length === 0) {
           return JSON.stringify({
             success: false,
             error: "path is required",
             hint: 'Example: write_file({ path: "notes.md", content: "# Notes\\n..." })',
             received: Object.keys(args),
+            argsReceived: args,
           });
         }
         try {
-          console.log("[write_file] Calling writeAgentFile...");
           await writeAgentFile(path, content, options?.sessionId ?? undefined);
-          console.log("[write_file] SUCCESS! File written and files reloaded");
           return JSON.stringify({ success: true, path, message: "File written successfully. Parent directories created automatically." });
         } catch (err) {
-          console.error("[write_file] FAILED:", err);
           return JSON.stringify({
             success: false,
             error: err instanceof Error ? err.message : String(err),
@@ -569,21 +618,33 @@ export function useAgentTools() {
       }
 
       if (toolName === "delete_file") {
-        console.log("[delete_file] Raw args:", JSON.stringify(args, null, 2));
-        const path = extractStringArg(args, "path", "filepath", "file_path", "filename", "file");
+        let path = extractStringArg(args, "path", "filepath", "file_path", "filename", "file");
+
+        // Fallback: direct parse if extractStringArg failed
+        if (!path && typeof args === "object" && args !== null) {
+          for (const [key, value] of Object.entries(args)) {
+            const lowerKey = key.toLowerCase();
+            if ((lowerKey === "path" || lowerKey === "filepath" || lowerKey === "file_path" || lowerKey === "filename" || lowerKey === "file")
+                && typeof value === "string") {
+              path = value;
+              break;
+            }
+          }
+        }
+
         if (!path) {
           return JSON.stringify({
             success: false,
             error: "path is required",
             hint: 'Example: delete_file({ path: "old_notes.md" })',
             received: Object.keys(args),
+            argsReceived: args,
           });
         }
         try {
           await deleteAgentFile(path, options?.sessionId ?? undefined);
           return JSON.stringify({ success: true, path });
         } catch (err) {
-          console.error("[delete_file] FAILED:", err);
           return JSON.stringify({
             success: false,
             error: err instanceof Error ? err.message : String(err),
@@ -592,21 +653,33 @@ export function useAgentTools() {
       }
 
       if (toolName === "make_directory") {
-        console.log("[make_directory] Raw args:", JSON.stringify(args, null, 2));
-        const path = extractStringArg(args, "path", "directory", "dir", "dirname", "folder");
+        let path = extractStringArg(args, "path", "directory", "dir", "dirname", "folder");
+
+        // Fallback: direct parse if extractStringArg failed
+        if (!path && typeof args === "object" && args !== null) {
+          for (const [key, value] of Object.entries(args)) {
+            const lowerKey = key.toLowerCase();
+            if ((lowerKey === "path" || lowerKey === "directory" || lowerKey === "dir" || lowerKey === "dirname" || lowerKey === "folder")
+                && typeof value === "string") {
+              path = value;
+              break;
+            }
+          }
+        }
+
         if (!path) {
           return JSON.stringify({
             success: false,
             error: "path is required",
             hint: 'Example: make_directory({ path: "research" }). Note: write_file creates parent directories automatically.',
             received: Object.keys(args),
+            argsReceived: args,
           });
         }
         try {
           await createAgentDirectory(path, options?.sessionId ?? undefined);
           return JSON.stringify({ success: true, path, message: "Directory created. Note: write_file creates parent directories automatically." });
         } catch (err) {
-          console.error("[make_directory] FAILED:", err);
           return JSON.stringify({
             success: false,
             error: err instanceof Error ? err.message : String(err),
@@ -615,22 +688,37 @@ export function useAgentTools() {
       }
 
       if (toolName === "move_file") {
-        console.log("[move_file] Raw args:", JSON.stringify(args, null, 2));
-        const from = extractStringArg(args, "from", "source", "src", "old_path", "oldPath");
-        const to = extractStringArg(args, "to", "destination", "dest", "new_path", "newPath", "target");
+        let from = extractStringArg(args, "from", "source", "src", "old_path", "oldPath");
+        let to = extractStringArg(args, "to", "destination", "dest", "new_path", "newPath", "target");
+
+        // Fallback: direct parse if extractStringArg failed
+        if ((!from || !to) && typeof args === "object" && args !== null) {
+          for (const [key, value] of Object.entries(args)) {
+            const lowerKey = key.toLowerCase();
+            if (!from && (lowerKey === "from" || lowerKey === "source" || lowerKey === "src" || lowerKey === "old_path" || lowerKey === "oldpath")
+                && typeof value === "string") {
+              from = value;
+            }
+            if (!to && (lowerKey === "to" || lowerKey === "destination" || lowerKey === "dest" || lowerKey === "new_path" || lowerKey === "newpath" || lowerKey === "target")
+                && typeof value === "string") {
+              to = value;
+            }
+          }
+        }
+
         if (!from || !to) {
           return JSON.stringify({
             success: false,
             error: "from and to are required",
             hint: 'Example: move_file({ from: "old.md", to: "new.md" })',
             received: Object.keys(args),
+            argsReceived: args,
           });
         }
         try {
           await moveAgentFile(from, to, options?.sessionId ?? undefined);
           return JSON.stringify({ success: true, from, to });
         } catch (err) {
-          console.error("[move_file] FAILED:", err);
           return JSON.stringify({
             success: false,
             error: err instanceof Error ? err.message : String(err),
