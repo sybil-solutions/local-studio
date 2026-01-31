@@ -1,3 +1,4 @@
+// CRITICAL
 /**
  * Formatting utilities for display purposes
  */
@@ -32,6 +33,12 @@ function toGB(value: number | null | undefined): number {
   return Math.round(safe * 100) / 100;
 }
 
+function toGBFromMB(value: number | null | undefined): number {
+  const safe = safeNumber(value, 0);
+  if (safe === 0) return 0;
+  return Math.round((safe / 1024) * 100) / 100;
+}
+
 function formatNumber(n: number): string {
   if (n >= 1_000_000_000) return (n / 1_000_000_000).toFixed(2) + "B";
   if (n >= 1_000_000) return (n / 1_000_000).toFixed(2) + "M";
@@ -55,4 +62,4 @@ function formatHour(hour: number): string {
   return `${displayHour}${period}`;
 }
 
-export { toGB, formatNumber, formatDuration, formatDate, formatHour };
+export { toGB, toGBFromMB, formatNumber, formatDuration, formatDate, formatHour };

@@ -2,7 +2,7 @@
 "use client";
 
 import { useRealtimeStatus } from "@/hooks/use-realtime-status";
-import { toGB } from "@/lib/formatters";
+import { toGB, toGBFromMB } from "@/lib/formatters";
 import type { GPU } from "@/lib/types";
 
 interface GpuListProps {
@@ -51,8 +51,14 @@ export function GpuList({ gpus: staticGpus }: GpuListProps) {
 }
 
 function GpuRow({ gpu }: { gpu: GPU }) {
-  const memUsed = toGB(gpu.memory_used_mb ?? gpu.memory_used);
-  const memTotal = toGB(gpu.memory_total_mb ?? gpu.memory_total);
+  const memUsed =
+    gpu.memory_used_mb !== undefined && gpu.memory_used_mb !== null
+      ? toGBFromMB(gpu.memory_used_mb)
+      : toGB(gpu.memory_used);
+  const memTotal =
+    gpu.memory_total_mb !== undefined && gpu.memory_total_mb !== null
+      ? toGBFromMB(gpu.memory_total_mb)
+      : toGB(gpu.memory_total);
   // Guard against divide by zero or invalid total
   const memPct = memTotal > 0 ? Math.min((memUsed / memTotal) * 100, 100) : 0;
   const temp = gpu.temp_c ?? gpu.temperature ?? 0;

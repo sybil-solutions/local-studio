@@ -34,6 +34,7 @@ import type {
   StudioDiagnostics,
 } from "./types";
 import { getApiKey } from "./api-key";
+import { getStoredBackendUrl } from "./backend-url";
 
 const DEFAULT_TIMEOUT = 30000; // 30 seconds
 const DEFAULT_RETRIES = 3;
@@ -83,6 +84,10 @@ class APIClient {
     } = options;
 
     const headers: Record<string, string> = { "Content-Type": "application/json" };
+    const storedBackendUrl = getStoredBackendUrl();
+    if (this.useProxy && storedBackendUrl) {
+      headers["X-Backend-Url"] = storedBackendUrl;
+    }
 
     const storedKey = getApiKey();
     if (storedKey) {
@@ -316,6 +321,9 @@ class APIClient {
     path: string,
     data: { content: string; encoding?: "utf8" | "base64" },
   ): Promise<{ success: boolean }> {
+    if (!path || path.trim() === "") {
+      throw new Error("Path is required");
+    }
     const encoded = encodePathSegments(path);
     return this.request(`/chats/${sessionId}/files/${encoded}`, {
       method: "PUT",
@@ -665,7 +673,7 @@ const clientBaseUrl = isClient
   : process.env.BACKEND_URL ||
     process.env.NEXT_PUBLIC_BACKEND_URL ||
     process.env.VLLM_STUDIO_BACKEND_URL ||
-    "https://<your-api-domain>";
+    "http://localhost:8080";
 
 export const api = new APIClient(clientBaseUrl, isClient);
 

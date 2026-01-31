@@ -28,6 +28,27 @@ const normalizeAgentPath = (rawPath: string): string => {
 const toFsPath = (relativePath: string): string =>
   relativePath ? `/${relativePath}` : "/";
 
+/**
+ * Extract the wildcard path from the URL.
+ * Hono's param("*") doesn't work reliably with certain route patterns,
+ * so we manually extract the path after /files/.
+ * @param urlPath - The full URL path from the request
+ * @param sessionId - The chat session ID
+ * @returns The extracted file path, or empty string if not found
+ */
+const extractFilePath = (urlPath: string, sessionId: string): string => {
+  const prefix = `/chats/${sessionId}/files/`;
+  const prefixIndex = urlPath.indexOf(prefix);
+  if (prefixIndex === -1) return "";
+  const rest = urlPath.slice(prefixIndex + prefix.length);
+  // Decode URI components to handle encoded characters
+  try {
+    return decodeURIComponent(rest);
+  } catch {
+    return rest;
+  }
+};
+
 type AgentFsApi = Pick<FileSystem, "readdirPlus" | "mkdir" | "rename" | "stat" | "readFile" | "writeFile" | "rm">;
 
 const buildTree = async (
@@ -98,7 +119,7 @@ export const registerAgentFilesRoutes = (app: Hono, context: AppContext): void =
 
   app.get("/chats/:sessionId/files/*", async (ctx) => {
     const sessionId = ctx.req.param("sessionId");
-    const rawPath = ctx.req.param("*");
+    const rawPath = extractFilePath(ctx.req.path, sessionId) || ctx.req.query("path") || "";
     if (!rawPath) throw badRequest("Path is required");
     const agent = await getAgentFs(context, sessionId);
     const normalized = normalizeAgentPath(rawPath);
@@ -122,9 +143,13 @@ export const registerAgentFilesRoutes = (app: Hono, context: AppContext): void =
 
   app.put("/chats/:sessionId/files/*", async (ctx) => {
     const sessionId = ctx.req.param("sessionId");
-    const rawPath = ctx.req.param("*");
-    if (!rawPath) throw badRequest("Path is required");
     const body = (await ctx.req.json()) as Record<string, unknown>;
+    const rawPath =
+      extractFilePath(ctx.req.path, sessionId) ||
+      (typeof body["path"] === "string" ? String(body["path"]) : "") ||
+      ctx.req.query("path") ||
+      "";
+    if (!rawPath) throw badRequest("Path is required");
     const content = typeof body["content"] === "string" ? body["content"] : "";
     const encoding = body["encoding"] === "base64" ? "base64" : "utf8";
     const agent = await getAgentFs(context, sessionId);
@@ -144,7 +169,7 @@ export const registerAgentFilesRoutes = (app: Hono, context: AppContext): void =
 
   app.delete("/chats/:sessionId/files/*", async (ctx) => {
     const sessionId = ctx.req.param("sessionId");
-    const rawPath = ctx.req.param("*");
+    const rawPath = extractFilePath(ctx.req.path, sessionId) || ctx.req.query("path") || "";
     if (!rawPath) throw badRequest("Path is required");
     const agent = await getAgentFs(context, sessionId);
     const normalized = normalizeAgentPath(rawPath);

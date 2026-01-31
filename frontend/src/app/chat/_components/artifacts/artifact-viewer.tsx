@@ -10,7 +10,26 @@ import {
   type MouseEvent as ReactMouseEvent,
   type WheelEvent as ReactWheelEvent,
 } from "react";
-import * as Icons from "../icons";
+import {
+  Code,
+  Eye,
+  EyeOff,
+  FileCode,
+  Palette,
+  Maximize2,
+  X,
+  Download,
+  Copy,
+  Check,
+  ZoomIn,
+  ZoomOut,
+  Move,
+  RotateCcw,
+  Play,
+  Square,
+  RefreshCw,
+  ExternalLink,
+} from "lucide-react";
 import type { Artifact } from "@/lib/types";
 import { useAppStore } from "@/store";
 
@@ -26,7 +45,7 @@ const SVG_TEMPLATE = (svgCode: string, scale: number = 1) => `
     html, body {
       width: 100%;
       height: 100%;
-      overflow: auto;
+      overflow: hidden;
       background: transparent;
     }
     .container {
@@ -83,7 +102,7 @@ const REACT_TEMPLATE = (code: string) => `
       width: 100%;
       height: 100%;
       background: transparent;
-      overflow: auto;
+      overflow: hidden;
     }
     .error {
       color: #b91c1c;
@@ -284,7 +303,7 @@ function ArtifactViewerContent({
               className="p-1.5 rounded hover:bg-background text-(--error)"
               title="Stop"
             >
-              <Icons.Square className="h-3.5 w-3.5" />
+              <Square className="h-3.5 w-3.5" />
             </button>
           ) : (
             <button
@@ -292,11 +311,15 @@ function ArtifactViewerContent({
               className="p-1.5 rounded hover:bg-background text-(--success)"
               title="Run"
             >
-              <Icons.Play className="h-3.5 w-3.5" />
+              <Play className="h-3.5 w-3.5" />
             </button>
           )}
-          <button onClick={onRefresh} className="p-1.5 rounded hover:bg-background" title="Refresh">
-            <Icons.RefreshCw className="h-3.5 w-3.5 text-[#9a9590]" />
+          <button
+            onClick={onRefresh}
+            className="p-1.5 rounded hover:bg-background"
+            title="Refresh"
+          >
+            <RefreshCw className="h-3.5 w-3.5 text-[#9a9590]" />
           </button>
           <button
             onClick={onToggleCode}
@@ -304,16 +327,16 @@ function ArtifactViewerContent({
             title={showCode ? "Hide code" : "Show code"}
           >
             {showCode ? (
-              <Icons.EyeOff className="h-3.5 w-3.5 text-[#9a9590]" />
+              <EyeOff className="h-3.5 w-3.5 text-[#9a9590]" />
             ) : (
-              <Icons.Eye className="h-3.5 w-3.5 text-[#9a9590]" />
+              <Eye className="h-3.5 w-3.5 text-[#9a9590]" />
             )}
           </button>
           <button onClick={onCopy} className="p-1.5 rounded hover:bg-background" title="Copy">
             {copied ? (
-              <Icons.Check className="h-3.5 w-3.5 text-(--success)" />
+              <Check className="h-3.5 w-3.5 text-(--success)" />
             ) : (
-              <Icons.Copy className="h-3.5 w-3.5 text-[#9a9590]" />
+              <Copy className="h-3.5 w-3.5 text-[#9a9590]" />
             )}
           </button>
           <button
@@ -321,14 +344,14 @@ function ArtifactViewerContent({
             className="p-1.5 rounded hover:bg-background"
             title="Download"
           >
-            <Icons.Download className="h-3.5 w-3.5 text-[#9a9590]" />
+            <Download className="h-3.5 w-3.5 text-[#9a9590]" />
           </button>
           <button
             onClick={onOpenExternal}
             className="p-1.5 rounded hover:bg-background"
             title="Open in new tab"
           >
-            <Icons.ExternalLink className="h-3.5 w-3.5 text-[#9a9590]" />
+            <ExternalLink className="h-3.5 w-3.5 text-[#9a9590]" />
           </button>
           {!inModal && onEnterFullscreen && (
             <button
@@ -336,12 +359,16 @@ function ArtifactViewerContent({
               className="p-1.5 rounded hover:bg-background"
               title="Fullscreen"
             >
-              <Icons.Maximize2 className="h-3.5 w-3.5" />
+              <Maximize2 className="h-3.5 w-3.5" />
             </button>
           )}
           {inModal && onClose && (
-            <button onClick={onClose} className="p-1.5 rounded hover:bg-background" title="Close">
-              <Icons.X className="h-3.5 w-3.5" />
+            <button
+              onClick={onClose}
+              className="p-1.5 rounded hover:bg-background"
+              title="Close"
+            >
+              <X className="h-3.5 w-3.5" />
             </button>
           )}
         </div>
@@ -350,13 +377,13 @@ function ArtifactViewerContent({
       {inModal && (
         <div className="flex items-center justify-center gap-2 px-3 py-1.5 bg-background border-b border-(--border) shrink-0">
           <button onClick={zoomOut} className="p-1 rounded hover:bg-(--accent)" title="Zoom out">
-            <Icons.ZoomOut className="h-3.5 w-3.5 text-[#9a9590]" />
+            <ZoomOut className="h-3.5 w-3.5 text-[#9a9590]" />
           </button>
           <span className="text-xs text-[#9a9590] tabular-nums w-12 text-center">
             {Math.round(scale * 100)}%
           </span>
           <button onClick={zoomIn} className="p-1 rounded hover:bg-(--accent)" title="Zoom in">
-            <Icons.ZoomIn className="h-3.5 w-3.5 text-[#9a9590]" />
+            <ZoomIn className="h-3.5 w-3.5 text-[#9a9590]" />
           </button>
           <div className="w-px h-4 bg-(--border) mx-1" />
           <button
@@ -364,13 +391,13 @@ function ArtifactViewerContent({
             className="p-1 rounded hover:bg-(--accent)"
             title="Reset view"
           >
-            <Icons.RotateCcw className="h-3.5 w-3.5 text-[#9a9590]" />
+            <RotateCcw className="h-3.5 w-3.5 text-[#9a9590]" />
           </button>
           <button
             className={`p-1 rounded ${isDragging ? "bg-(--accent)" : "hover:bg-(--accent)"}`}
             title="Pan (drag)"
           >
-            <Icons.Move className="h-3.5 w-3.5 text-[#9a9590]" />
+            <Move className="h-3.5 w-3.5 text-[#9a9590]" />
           </button>
         </div>
       )}
@@ -389,7 +416,9 @@ function ArtifactViewerContent({
 
       <div
         ref={containerRef}
-        className={`relative overflow-hidden bg-[#0f0f10] ${inModal ? "flex-1 min-h-0" : "h-100"}`}
+        className={`relative overflow-hidden bg-[#0f0f10] ${
+          inModal ? "flex-1 min-h-0" : "h-100"
+        }`}
         style={inModal && scale !== 1 ? { cursor: isDragging ? "grabbing" : "grab" } : undefined}
         onMouseDown={inModal ? onMouseDown : undefined}
         onWheel={inModal ? onWheel : undefined}
@@ -435,44 +464,33 @@ export function ArtifactViewer({ artifact, isActive = true }: ArtifactViewerProp
   const updateArtifactViewerState = useAppStore((state) => state.updateArtifactViewerState);
   const { isFullscreen, showCode, copied, scale, position, isDragging, isRunning, error } =
     viewerState;
-  const updateState = useCallback(
-    (partial: Partial<typeof viewerState>) => {
-      updateArtifactViewerState(artifact.id, (prev) => ({ ...prev, ...partial }));
-    },
-    [updateArtifactViewerState, artifact.id],
-  );
+  const updateState = (partial: Partial<typeof viewerState>) => {
+    updateArtifactViewerState(artifact.id, (prev) => ({ ...prev, ...partial }));
+  };
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const dragStartRef = useRef({ x: 0, y: 0, posX: 0, posY: 0 });
 
-  // Use refs for artifact content to avoid re-running the iframe on every streaming update
-  const artifactCodeRef = useRef(artifact.code);
-  const artifactTypeRef = useRef(artifact.type);
-  useEffect(() => {
-    artifactCodeRef.current = artifact.code;
-    artifactTypeRef.current = artifact.type;
-  }, [artifact.code, artifact.type]);
-
   const getSrcDoc = useCallback(() => {
-    const code = artifactCodeRef.current;
-    const type = artifactTypeRef.current;
-    switch (type) {
+    switch (artifact.type) {
       case "svg": {
-        const svgMarkup = code.includes("<svg")
-          ? code
-          : `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">${code}</svg>`;
+        const svgMarkup = artifact.code.includes("<svg")
+          ? artifact.code
+          : `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">${artifact.code}</svg>`;
         return SVG_TEMPLATE(svgMarkup, scale);
       }
       case "react":
-        return REACT_TEMPLATE(code);
+        return REACT_TEMPLATE(artifact.code);
       case "javascript":
-        return JS_TEMPLATE(code);
+        return JS_TEMPLATE(artifact.code);
       case "html":
-        return HTML_TEMPLATE(code);
+        return HTML_TEMPLATE(artifact.code);
       default:
-        return HTML_TEMPLATE(`<pre style="padding:16px;font-family:monospace;">${code}</pre>`);
+        return HTML_TEMPLATE(
+          `<pre style="padding:16px;font-family:monospace;">${artifact.code}</pre>`,
+        );
     }
-  }, [scale]);
+  }, [artifact, scale]);
 
   const runArtifact = useCallback(() => {
     updateState({ isRunning: true, error: null });
@@ -488,7 +506,6 @@ export function ArtifactViewer({ artifact, isActive = true }: ArtifactViewerProp
     }
   }, [updateState]);
 
-  // Auto-run only when artifact ID changes or becomes active
   useEffect(() => {
     if (!isActive) return;
     const timeoutId = window.setTimeout(() => {
@@ -592,11 +609,11 @@ export function ArtifactViewer({ artifact, isActive = true }: ArtifactViewerProp
 
   const icon =
     artifact.type === "svg" ? (
-      <Icons.Palette className="h-3.5 w-3.5" />
+      <Palette className="h-3.5 w-3.5" />
     ) : artifact.type === "html" ? (
-      <Icons.FileCode className="h-3.5 w-3.5" />
+      <FileCode className="h-3.5 w-3.5" />
     ) : (
-      <Icons.Code className="h-3.5 w-3.5" />
+      <Code className="h-3.5 w-3.5" />
     );
 
   const viewerContentProps = {

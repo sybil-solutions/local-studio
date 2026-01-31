@@ -12,9 +12,21 @@ export function useAgentFiles() {
   const agentFilesLoading = useAppStore((state) => state.agentFilesLoading);
   const setAgentFiles = useAppStore((state) => state.setAgentFiles);
   const setAgentFilesLoading = useAppStore((state) => state.setAgentFilesLoading);
+  const selectedAgentFilePath = useAppStore((state) => state.selectedAgentFilePath);
+  const selectedAgentFileContent = useAppStore((state) => state.selectedAgentFileContent);
+  const selectedAgentFileLoading = useAppStore((state) => state.selectedAgentFileLoading);
+  const setSelectedAgentFilePath = useAppStore((state) => state.setSelectedAgentFilePath);
+  const setSelectedAgentFileContent = useAppStore((state) => state.setSelectedAgentFileContent);
+  const setSelectedAgentFileLoading = useAppStore((state) => state.setSelectedAgentFileLoading);
 
-  const resolveSessionId = (sessionIdOverride?: string | null) =>
-    sessionIdOverride ?? currentSessionId;
+  // Read session ID at execution time to avoid stale closure issues.
+  // When tools are called during streaming, the closure value may be stale
+  // even though the store has been updated.
+  const resolveSessionId = (sessionIdOverride?: string | null) => {
+    // Read fresh from store to handle cases where session was just created
+    const freshSessionId = useAppStore.getState().currentSessionId;
+    return sessionIdOverride || freshSessionId || currentSessionId;
+  };
 
   const loadAgentFiles = useCallback(
     async (options?: {
@@ -23,23 +35,18 @@ export function useAgentFiles() {
       recursive?: boolean;
     }): Promise<AgentFileEntry[]> => {
       const sessionId = resolveSessionId(options?.sessionId);
-      console.log("[loadAgentFiles] sessionId:", sessionId, "options:", options);
       if (!sessionId) {
-        console.log("[loadAgentFiles] No sessionId, returning empty");
         setAgentFiles([]);
         setAgentFilesLoading(false);
         return [];
       }
       setAgentFilesLoading(true);
       try {
-        console.log("[loadAgentFiles] Calling API...");
         const data = await api.getAgentFiles(sessionId, {
           path: options?.path,
           recursive: options?.recursive,
         });
-        console.log("[loadAgentFiles] API response:", data);
         const files = Array.isArray(data.files) ? data.files : [];
-        console.log("[loadAgentFiles] Setting files in store:", files.length, "files");
         setAgentFiles(files);
         return files;
       } catch (err) {
@@ -60,6 +67,9 @@ export function useAgentFiles() {
       if (!sessionId) {
         throw new Error("No active session");
       }
+      if (!path || path.trim() === "") {
+        throw new Error("Path is required");
+      }
       return api.readAgentFile(sessionId, path);
     },
     [currentSessionId],
@@ -68,17 +78,11 @@ export function useAgentFiles() {
   const writeAgentFile = useCallback(
     async (path: string, content: string, sessionIdOverride?: string | null) => {
       const sessionId = resolveSessionId(sessionIdOverride);
-      console.log("[writeAgentFile] sessionId:", sessionId, "path:", path, "content length:", content.length);
       if (!sessionId) {
-        console.error("[writeAgentFile] No active session!");
         throw new Error("No active session");
       }
-      console.log("[writeAgentFile] Calling API...");
       const result = await api.writeAgentFile(sessionId, path, { content });
-      console.log("[writeAgentFile] API result:", result);
-      console.log("[writeAgentFile] Reloading files...");
       const files = await loadAgentFiles({ sessionId });
-      console.log("[writeAgentFile] Files after reload:", files);
       return result;
     },
     [currentSessionId, loadAgentFiles],
@@ -126,7 +130,50 @@ export function useAgentFiles() {
   const clearAgentFiles = useCallback(() => {
     setAgentFiles([]);
     setAgentFilesLoading(false);
-  }, [setAgentFiles, setAgentFilesLoading]);
+    setSelectedAgentFilePath(null);
+    setSelectedAgentFileContent(null);
+  }, [setAgentFiles, setAgentFilesLoading, setSelectedAgentFilePath, setSelectedAgentFileContent]);
+
+  const selectAgentFile = useCallback(
+    async (path: string | null, sessionIdOverride?: string | null) => {
+      // Deselect if null
+      if (!path) {
+        setSelectedAgentFilePath(null);
+        setSelectedAgentFileContent(null);
+        return;
+      }
+
+      const sessionId = resolveSessionId(sessionIdOverride);
+      if (!sessionId) {
+        // No session - just show the file is selected but can't load content
+        console.warn("[selectAgentFile] No active session, cannot load file content");
+        setSelectedAgentFilePath(path);
+        setSelectedAgentFileContent(null);
+        setSelectedAgentFileLoading(false);
+        return;
+      }
+
+      // Set path immediately for UI feedback
+      setSelectedAgentFilePath(path);
+      setSelectedAgentFileLoading(true);
+
+      try {
+        const data = await api.readAgentFile(sessionId, path);
+        setSelectedAgentFileContent(data.content);
+      } catch (err) {
+        console.error("[selectAgentFile] Error reading file:", err);
+        setSelectedAgentFileContent(null);
+      } finally {
+        setSelectedAgentFileLoading(false);
+      }
+    },
+    [currentSessionId, setSelectedAgentFilePath, setSelectedAgentFileContent, setSelectedAgentFileLoading],
+  );
+
+  const clearSelectedFile = useCallback(() => {
+    setSelectedAgentFilePath(null);
+    setSelectedAgentFileContent(null);
+  }, [setSelectedAgentFilePath, setSelectedAgentFileContent]);
 
   return {
     agentFiles,
@@ -138,5 +185,11 @@ export function useAgentFiles() {
     createAgentDirectory,
     moveAgentFile,
     clearAgentFiles,
+    // File selection
+    selectedAgentFilePath,
+    selectedAgentFileContent,
+    selectedAgentFileLoading,
+    selectAgentFile,
+    clearSelectedFile,
   };
 }

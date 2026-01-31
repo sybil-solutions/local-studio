@@ -2,7 +2,7 @@
 "use client";
 
 import type { ProcessInfo, RecipeWithStatus, Metrics, GPU } from "@/lib/types";
-import { toGB } from "@/lib/formatters";
+import { toGB, toGBFromMB } from "@/lib/formatters";
 
 interface StatusLineProps {
   currentProcess: ProcessInfo | null;
@@ -35,7 +35,12 @@ export function StatusLine({
   const isRunning = !!currentProcess;
 
   const totalPower = gpus.reduce((sum, g) => sum + (g.power_draw || 0), 0);
-  const totalMemUsed = gpus.reduce((sum, g) => sum + toGB(g.memory_used_mb ?? g.memory_used ?? 0), 0);
+  const totalMemUsed = gpus.reduce((sum, g) => {
+    if (g.memory_used_mb !== undefined && g.memory_used_mb !== null) {
+      return sum + toGBFromMB(g.memory_used_mb);
+    }
+    return sum + toGB(g.memory_used ?? 0);
+  }, 0);
   
   const totalCost = metrics?.lifetime_energy_kwh ? (metrics.lifetime_energy_kwh * 0.5).toFixed(2) : null;
   const sessionInput = metrics?.prompt_tokens_total || 0;
