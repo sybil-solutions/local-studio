@@ -60,8 +60,8 @@ export function ConfigsView({
   onSaveSettings,
 }: ConfigsViewProps) {
   return (
-    <div className="h-full overflow-y-auto overflow-x-hidden bg-[#1b1b1b] text-[#f0ebe3]">
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 py-4 sm:py-6 w-full">
+    <div className="h-full overflow-y-auto overflow-x-hidden bg-[#1b1b1b] text-[#f0ebe3] w-full">
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 py-4 sm:py-6 w-full min-w-0">
         <ConfigsHeader loading={loading} onReload={onReload} />
 
         <ApiConnectionSection
@@ -525,7 +525,7 @@ function ConnectionFlow() {
 
 function ConfigCards({ data }: { data: ConfigData }) {
   return (
-    <div className="space-y-6 sm:space-y-8">
+    <div className="space-y-6 sm:space-y-8 min-w-0 overflow-hidden">
       <ConfigSection title="Network">
         <ConfigRow label="Host" value={data.config.host} icon={<Server className="h-3 w-3" />} />
         <ConfigRow
@@ -614,9 +614,9 @@ function ConfigCards({ data }: { data: ConfigData }) {
 
 function ConfigSection({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div>
+    <div className="min-w-0 overflow-hidden">
       <div className="text-xs text-[#9a9088] uppercase tracking-wider mb-3">{title}</div>
-      <div className="bg-[#1e1e1e] rounded-lg p-3 sm:p-4 space-y-3">{children}</div>
+      <div className="bg-[#1e1e1e] rounded-lg p-3 sm:p-4 space-y-3 min-w-0 overflow-hidden">{children}</div>
     </div>
   );
 }
