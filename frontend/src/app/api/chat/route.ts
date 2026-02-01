@@ -31,6 +31,14 @@ function getClientInfo(req: Request) {
   return { ip, country };
 }
 
+function normalizeBaseUrl(url: string) {
+  const trimmed = url.trim().replace(/\/+$/, "");
+  if (trimmed.endsWith("/v1")) {
+    return trimmed.slice(0, -3);
+  }
+  return trimmed;
+}
+
 export async function POST(req: Request) {
   const client = getClientInfo(req);
 
@@ -53,10 +61,12 @@ export async function POST(req: Request) {
     }
 
     const settings = await getApiSettings();
+    const inferenceBaseUrl = normalizeBaseUrl(settings.inferenceUrl || settings.backendUrl);
+    const inferenceApiKey = settings.inferenceApiKey || settings.apiKey || "sk-master";
     const openaiCompatible = createOpenAICompatible({
-      name: "vllm-studio",
-      baseURL: `${settings.backendUrl}/v1`,
-      apiKey: settings.apiKey || "sk-master",
+      name: "inference-backend",
+      baseURL: `${inferenceBaseUrl}/v1`,
+      apiKey: inferenceApiKey,
     });
     const modelInstance = openaiCompatible(resolvedModel);
 

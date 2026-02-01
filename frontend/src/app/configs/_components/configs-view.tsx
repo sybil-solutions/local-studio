@@ -162,11 +162,30 @@ function ApiConnectionSection({
             />
 
             <ApiKeyField
+              label="API Key"
               apiKey={apiSettings.apiKey}
               hasApiKey={apiSettings.hasApiKey}
               showApiKey={showApiKey}
               onToggle={onToggleApiKey}
               onChange={(apiKey) => onApiSettingsChange({ ...apiSettings, apiKey })}
+            />
+
+            <ApiField
+              label="Inference URL"
+              value={apiSettings.inferenceUrl}
+              placeholder="https://inference.example.com"
+              onChange={(inferenceUrl) => onApiSettingsChange({ ...apiSettings, inferenceUrl })}
+            />
+
+            <ApiKeyField
+              label="Inference API Key"
+              apiKey={apiSettings.inferenceApiKey}
+              hasApiKey={apiSettings.hasInferenceApiKey}
+              showApiKey={showApiKey}
+              onToggle={onToggleApiKey}
+              onChange={(inferenceApiKey) =>
+                onApiSettingsChange({ ...apiSettings, inferenceApiKey })
+              }
             />
 
             <ApiField
@@ -245,12 +264,14 @@ function ApiField({
 }
 
 function ApiKeyField({
+  label,
   apiKey,
   hasApiKey,
   showApiKey,
   onToggle,
   onChange,
 }: {
+  label: string;
   apiKey: string;
   hasApiKey: boolean;
   showApiKey: boolean;
@@ -259,7 +280,7 @@ function ApiKeyField({
 }) {
   return (
     <div>
-      <label className="block text-xs text-[#9a9088] mb-1.5">API Key</label>
+      <label className="block text-xs text-[#9a9088] mb-1.5">{label}</label>
       <div className="relative">
         <input
           type={showApiKey ? "text" : "password"}

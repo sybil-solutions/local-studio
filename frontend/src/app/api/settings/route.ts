@@ -10,6 +10,9 @@ export async function GET() {
       backendUrl: settings.backendUrl,
       apiKey: maskApiKey(settings.apiKey),
       hasApiKey: Boolean(settings.apiKey),
+      inferenceUrl: settings.inferenceUrl,
+      inferenceApiKey: maskApiKey(settings.inferenceApiKey),
+      hasInferenceApiKey: Boolean(settings.inferenceApiKey),
       voiceUrl: settings.voiceUrl,
       voiceModel: settings.voiceModel,
     });
@@ -24,11 +27,16 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { backendUrl, apiKey, voiceUrl, voiceModel } = body as Partial<ApiSettings>;
+    const { backendUrl, apiKey, inferenceUrl, inferenceApiKey, voiceUrl, voiceModel } =
+      body as Partial<ApiSettings>;
 
     // Validate URL
     if (backendUrl && !isValidUrl(backendUrl)) {
       return NextResponse.json({ error: "Invalid backend URL format" }, { status: 400 });
+    }
+
+    if (inferenceUrl && !isValidUrl(inferenceUrl)) {
+      return NextResponse.json({ error: "Invalid inference URL format" }, { status: 400 });
     }
 
     if (voiceUrl && !isValidUrl(voiceUrl)) {
@@ -42,6 +50,11 @@ export async function POST(request: NextRequest) {
       backendUrl: backendUrl || current.backendUrl,
       // Only update API key if explicitly provided (not masked value)
       apiKey: apiKey && !apiKey.includes("••••") ? apiKey : current.apiKey,
+      inferenceUrl: inferenceUrl || current.inferenceUrl,
+      inferenceApiKey:
+        inferenceApiKey && !inferenceApiKey.includes("••••")
+          ? inferenceApiKey
+          : current.inferenceApiKey,
       voiceUrl: voiceUrl || current.voiceUrl,
       voiceModel: voiceModel || current.voiceModel,
     };
@@ -53,6 +66,9 @@ export async function POST(request: NextRequest) {
       backendUrl: newSettings.backendUrl,
       apiKey: maskApiKey(newSettings.apiKey),
       hasApiKey: Boolean(newSettings.apiKey),
+      inferenceUrl: newSettings.inferenceUrl,
+      inferenceApiKey: maskApiKey(newSettings.inferenceApiKey),
+      hasInferenceApiKey: Boolean(newSettings.inferenceApiKey),
       voiceUrl: newSettings.voiceUrl,
       voiceModel: newSettings.voiceModel,
     });

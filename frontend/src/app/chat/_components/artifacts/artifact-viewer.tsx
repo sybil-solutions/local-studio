@@ -477,7 +477,7 @@ export function ArtifactViewer({ artifact, isActive = true }: ArtifactViewerProp
         const svgMarkup = artifact.code.includes("<svg")
           ? artifact.code
           : `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">${artifact.code}</svg>`;
-        return SVG_TEMPLATE(svgMarkup, scale);
+        return SVG_TEMPLATE(svgMarkup, 1); // Scale via CSS instead
       }
       case "react":
         return REACT_TEMPLATE(artifact.code);
@@ -490,7 +490,7 @@ export function ArtifactViewer({ artifact, isActive = true }: ArtifactViewerProp
           `<pre style="padding:16px;font-family:monospace;">${artifact.code}</pre>`,
         );
     }
-  }, [artifact, scale]);
+  }, [artifact.id, artifact.code, artifact.type]);
 
   const runArtifact = useCallback(() => {
     updateState({ isRunning: true, error: null });
@@ -512,7 +512,7 @@ export function ArtifactViewer({ artifact, isActive = true }: ArtifactViewerProp
       runArtifact();
     }, 0);
     return () => window.clearTimeout(timeoutId);
-  }, [isActive, artifact.id, runArtifact]);
+  }, [isActive, artifact.id, artifact.code]);
 
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {

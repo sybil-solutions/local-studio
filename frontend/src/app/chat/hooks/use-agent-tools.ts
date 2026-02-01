@@ -202,7 +202,9 @@ const findStringArg = (value: unknown, keys: string[], depth: number): string =>
 
   for (const key of keys) {
     const val = argsObj[key];
+    console.log(`[extractStringArg] Checking key "${key}":`, val, "type:", typeof val);
     if (typeof val === "string" && val.trim()) {
+      console.log(`[extractStringArg] Found in key "${key}":`, val.trim());
       return val.trim();
     }
   }
@@ -212,6 +214,7 @@ const findStringArg = (value: unknown, keys: string[], depth: number): string =>
   for (const wrapperKey of ARG_WRAPPER_KEYS) {
     if (!(wrapperKey in argsObj)) continue;
     const nested = argsObj[wrapperKey];
+    console.log(`[extractStringArg] Trying nested "${wrapperKey}":`, nested);
     const found = findStringArg(nested, keys, depth - 1);
     if (found) return found;
   }
@@ -224,7 +227,11 @@ const findStringArg = (value: unknown, keys: string[], depth: number): string =>
  * Models may put arguments in different places depending on the provider.
  */
 const extractStringArg = (args: unknown, ...keys: string[]): string => {
+  console.log("[extractStringArg] Looking for keys:", keys, "in args:", args);
   const found = findStringArg(args, keys, 2);
+  if (!found) {
+    console.log("[extractStringArg] Not found, returning empty string");
+  }
   return found;
 };
 
@@ -290,6 +297,7 @@ export function useAgentTools() {
       const normalizedToolName = toolName === "set_plan" ? "create_plan" : toolName;
 
       if (normalizedToolName === "create_plan") {
+        console.log("[create_plan] Raw args:", JSON.stringify(args, null, 2));
         const planArg = args.plan as Record<string, unknown> | undefined;
 
         // Try multiple ways to extract tasks
@@ -297,6 +305,7 @@ export function useAgentTools() {
 
         // If args itself is an array, it might be the tasks directly
         if (!rawTasks && Array.isArray(args)) {
+          console.log("[create_plan] args is an array, using directly");
           rawTasks = args;
         }
 
@@ -304,12 +313,14 @@ export function useAgentTools() {
         if (!rawTasks && args.arguments) {
           const nested = args.arguments as Record<string, unknown>;
           rawTasks = nested.tasks ?? nested.steps;
+          console.log("[create_plan] Found nested arguments:", nested);
         }
 
         // If rawTasks is still a string, try parsing it
         if (typeof rawTasks === "string") {
           try {
             rawTasks = JSON.parse(rawTasks);
+            console.log("[create_plan] Parsed string tasks:", rawTasks);
           } catch {
             // ignore
           }
@@ -319,6 +330,7 @@ export function useAgentTools() {
         if (!rawTasks || (Array.isArray(rawTasks) && rawTasks.length === 0)) {
           for (const [key, value] of Object.entries(args)) {
             if (Array.isArray(value) && value.length > 0) {
+              console.log(`[create_plan] Found array in args.${key}:`, value);
               // Check if it looks like tasks (has objects with title or string elements)
               const firstItem = value[0];
               if (
@@ -345,9 +357,11 @@ export function useAgentTools() {
           });
         }
 
+        console.log("[create_plan] Final rawTasks:", rawTasks, "type:", typeof rawTasks, "isArray:", Array.isArray(rawTasks));
         const steps = normalizePlanSteps(rawTasks);
         if (steps.length === 0) {
           const receivedKeys = Object.keys(args);
+          console.error("[create_plan] Failed to extract tasks. Args keys:", receivedKeys);
           return JSON.stringify({
             success: false,
             error:
@@ -366,8 +380,10 @@ export function useAgentTools() {
           createdAt: Date.now(),
           updatedAt: Date.now(),
         };
+        console.log("[create_plan] SUCCESS! Setting plan:", plan);
         planRef.current = plan;
         setAgentPlan(plan);
+        console.log("[create_plan] Plan set in Zustand. planRef.current:", planRef.current);
         return JSON.stringify({
           success: true,
           plan: { steps: plan.steps },
@@ -376,13 +392,16 @@ export function useAgentTools() {
       }
 
       if (normalizedToolName === "update_plan") {
+        console.log("[update_plan] Raw args:", JSON.stringify(args, null, 2));
         const live = planRef.current;
         if (!live) {
+          console.error("[update_plan] No active plan!");
           return JSON.stringify({
             success: false,
             error: "No active plan. Call create_plan first.",
           });
         }
+        console.log("[update_plan] Current plan has", live.steps.length, "steps");
 
         // Flexible action extraction
         let rawAction = typeof args.action === "string" ? args.action.toLowerCase() : "";
@@ -399,6 +418,7 @@ export function useAgentTools() {
         }
         if (!rawAction) rawAction = "status";
 
+        console.log("[update_plan] Action:", rawAction, "step_index:", args.step_index, "index:", args.index, "status:", args.status, "task_index:", args.task_index);
 
         const action =
           rawAction === "update" || rawAction === "edit" || rawAction === "add" || rawAction === "delete" ||
@@ -421,11 +441,14 @@ export function useAgentTools() {
           const pendingIdx = live.steps.findIndex((s) => s.status === "pending");
           if (runningIdx >= 0) {
             idx = runningIdx;
+            console.log("[update_plan] Auto-selected running step:", idx);
           } else if (pendingIdx >= 0 && action === "status") {
             idx = pendingIdx;
+            console.log("[update_plan] Auto-selected pending step:", idx);
           }
         }
 
+        console.log("[update_plan] Final idx:", idx, "action:", action);
         const maxIdx = live.steps.length - 1;
         const title = typeof args.title === "string" ? args.title.trim() : "";
         const status = normalizePlanStatus(args.status);
@@ -493,8 +516,10 @@ export function useAgentTools() {
           steps: updatedSteps,
           updatedAt: Date.now(),
         };
+        console.log("[update_plan] SUCCESS! Updated steps:", updatedSteps.map(s => `${s.title}: ${s.status}`));
         planRef.current = updated;
         setAgentPlan(updated);
+        console.log("[update_plan] Plan updated in Zustand");
 
         const doneCount = updatedSteps.filter(
           (s) => s.status === "done",
@@ -533,6 +558,7 @@ export function useAgentTools() {
       }
 
       if (toolName === "read_file") {
+        console.log("[read_file] Raw args:", JSON.stringify(args, null, 2));
         let path = extractStringArg(args, "path", "filepath", "file_path", "filename", "file");
 
         // Fallback: direct parse if extractStringArg failed
@@ -542,6 +568,7 @@ export function useAgentTools() {
             if ((lowerKey === "path" || lowerKey === "filepath" || lowerKey === "file_path" || lowerKey === "filename" || lowerKey === "file")
                 && typeof value === "string") {
               path = value;
+              console.log("[read_file] Found path via direct parse:", path);
               break;
             }
           }
@@ -564,6 +591,7 @@ export function useAgentTools() {
             content: result.content,
           });
         } catch (err) {
+          console.error("[read_file] FAILED:", err);
           return JSON.stringify({
             success: false,
             error: err instanceof Error ? err.message : String(err),
@@ -572,11 +600,13 @@ export function useAgentTools() {
       }
 
       if (toolName === "write_file") {
+        console.log("[write_file] Raw args:", JSON.stringify(args, null, 2));
         let path = extractStringArg(args, "path", "filepath", "file_path", "filename", "file");
         let content = extractStringArg(args, "content", "contents", "text", "data", "body");
 
         // Fallback: if extractStringArg returned empty, try parsing the entire args object directly
         if (!path) {
+          console.log("[write_file] extractStringArg failed, trying direct parse");
           // Try treating the entire args object as the parameters
           if (typeof args === "object" && args !== null) {
             for (const [key, value] of Object.entries(args)) {
@@ -584,11 +614,13 @@ export function useAgentTools() {
               if (lowerKey === "path" || lowerKey === "filepath" || lowerKey === "file_path" || lowerKey === "filename" || lowerKey === "file") {
                 if (typeof value === "string") {
                   path = value;
+                  console.log("[write_file] Found path via direct parse:", path);
                 }
               }
               if (lowerKey === "content" || lowerKey === "contents" || lowerKey === "text" || lowerKey === "data" || lowerKey === "body") {
                 if (typeof value === "string") {
                   content = value;
+                  console.log("[write_file] Found content via direct parse, length:", content.length);
                 }
               }
             }
@@ -597,6 +629,7 @@ export function useAgentTools() {
 
         // Normalize path - remove leading/trailing slashes, collapse multiple slashes
         path = path?.trim().replace(/^\/+|\/+$/g, "").replace(/\/+/g, "/") || "";
+        console.log("[write_file] Final path:", JSON.stringify(path), "content length:", content.length, "sessionId:", options?.sessionId);
         if (!path || path.length === 0) {
           return JSON.stringify({
             success: false,
@@ -607,9 +640,12 @@ export function useAgentTools() {
           });
         }
         try {
+          console.log("[write_file] Calling writeAgentFile...");
           await writeAgentFile(path, content, options?.sessionId ?? undefined);
+          console.log("[write_file] SUCCESS! File written and files reloaded");
           return JSON.stringify({ success: true, path, message: "File written successfully. Parent directories created automatically." });
         } catch (err) {
+          console.error("[write_file] FAILED:", err);
           return JSON.stringify({
             success: false,
             error: err instanceof Error ? err.message : String(err),
@@ -618,6 +654,7 @@ export function useAgentTools() {
       }
 
       if (toolName === "delete_file") {
+        console.log("[delete_file] Raw args:", JSON.stringify(args, null, 2));
         let path = extractStringArg(args, "path", "filepath", "file_path", "filename", "file");
 
         // Fallback: direct parse if extractStringArg failed
@@ -627,6 +664,7 @@ export function useAgentTools() {
             if ((lowerKey === "path" || lowerKey === "filepath" || lowerKey === "file_path" || lowerKey === "filename" || lowerKey === "file")
                 && typeof value === "string") {
               path = value;
+              console.log("[delete_file] Found path via direct parse:", path);
               break;
             }
           }
@@ -645,6 +683,7 @@ export function useAgentTools() {
           await deleteAgentFile(path, options?.sessionId ?? undefined);
           return JSON.stringify({ success: true, path });
         } catch (err) {
+          console.error("[delete_file] FAILED:", err);
           return JSON.stringify({
             success: false,
             error: err instanceof Error ? err.message : String(err),
@@ -653,6 +692,7 @@ export function useAgentTools() {
       }
 
       if (toolName === "make_directory") {
+        console.log("[make_directory] Raw args:", JSON.stringify(args, null, 2));
         let path = extractStringArg(args, "path", "directory", "dir", "dirname", "folder");
 
         // Fallback: direct parse if extractStringArg failed
@@ -662,6 +702,7 @@ export function useAgentTools() {
             if ((lowerKey === "path" || lowerKey === "directory" || lowerKey === "dir" || lowerKey === "dirname" || lowerKey === "folder")
                 && typeof value === "string") {
               path = value;
+              console.log("[make_directory] Found path via direct parse:", path);
               break;
             }
           }
@@ -680,6 +721,7 @@ export function useAgentTools() {
           await createAgentDirectory(path, options?.sessionId ?? undefined);
           return JSON.stringify({ success: true, path, message: "Directory created. Note: write_file creates parent directories automatically." });
         } catch (err) {
+          console.error("[make_directory] FAILED:", err);
           return JSON.stringify({
             success: false,
             error: err instanceof Error ? err.message : String(err),
@@ -688,6 +730,7 @@ export function useAgentTools() {
       }
 
       if (toolName === "move_file") {
+        console.log("[move_file] Raw args:", JSON.stringify(args, null, 2));
         let from = extractStringArg(args, "from", "source", "src", "old_path", "oldPath");
         let to = extractStringArg(args, "to", "destination", "dest", "new_path", "newPath", "target");
 
@@ -698,10 +741,12 @@ export function useAgentTools() {
             if (!from && (lowerKey === "from" || lowerKey === "source" || lowerKey === "src" || lowerKey === "old_path" || lowerKey === "oldpath")
                 && typeof value === "string") {
               from = value;
+              console.log("[move_file] Found from via direct parse:", from);
             }
             if (!to && (lowerKey === "to" || lowerKey === "destination" || lowerKey === "dest" || lowerKey === "new_path" || lowerKey === "newpath" || lowerKey === "target")
                 && typeof value === "string") {
               to = value;
+              console.log("[move_file] Found to via direct parse:", to);
             }
           }
         }
@@ -719,6 +764,7 @@ export function useAgentTools() {
           await moveAgentFile(from, to, options?.sessionId ?? undefined);
           return JSON.stringify({ success: true, from, to });
         } catch (err) {
+          console.error("[move_file] FAILED:", err);
           return JSON.stringify({
             success: false,
             error: err instanceof Error ? err.message : String(err),

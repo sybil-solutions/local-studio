@@ -1,26 +1,8 @@
 // CRITICAL
 "use client";
 
-import {
-  Paperclip,
-  Image as ImageIcon,
-  Mic,
-  MicOff,
-  Square,
-  Globe,
-  Code,
-  Brain,
-  Settings,
-  SlidersHorizontal,
-  Clock,
-  Loader2,
-  Wrench,
-  ArrowUp,
-  Volume2,
-  VolumeX,
-} from "lucide-react";
-import { ToolDropdown, DropdownItem } from "./tool-dropdown";
-import { AgentModeToggle } from "../agent";
+import { Plus, Mic, MicOff, Square, Loader2, ArrowUp } from "lucide-react";
+import { useState, useRef, useEffect } from "react";
 import type { ModelOption } from "../../types";
 
 interface ToolBeltToolbarProps {
@@ -57,28 +39,20 @@ interface ToolBeltToolbarProps {
 
 export function ToolBeltToolbar({
   isLoading,
-  elapsedSeconds,
   isRecording,
   isTranscribing,
   attachmentsCount,
   disabled,
   canSend,
-  hasSystemPrompt,
   mcpEnabled,
-  artifactsEnabled,
-  deepResearchEnabled,
-  isTTSEnabled,
+  hasSystemPrompt,
   availableModels = [],
   selectedModel,
   onModelChange,
-  onOpenChatSettings,
-  onOpenMcpSettings,
   onMcpToggle,
-  onArtifactsToggle,
-  onDeepResearchToggle,
-  onTTSToggle,
   onAttachFile,
   onAttachImage,
+  onOpenChatSettings,
   onStartRecording,
   onStopRecording,
   onStop,
@@ -86,181 +60,108 @@ export function ToolBeltToolbar({
   agentMode,
   onAgentModeToggle,
 }: ToolBeltToolbarProps) {
-  const hasActiveTools = Boolean(mcpEnabled || artifactsEnabled || deepResearchEnabled);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  const hasActiveFeatures = mcpEnabled || agentMode || hasSystemPrompt || attachmentsCount > 0;
 
   return (
-    <div className="flex items-center justify-between px-3 py-2">
-      <div className="flex items-center gap-1 min-w-0">
-        {isLoading && elapsedSeconds !== undefined && (
-          <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg border border-blue-500/30">
-            <Clock className="h-3 w-3 text-blue-400 animate-pulse" />
-            <span className="text-xs font-mono font-medium text-blue-400">
-              {Math.floor(elapsedSeconds / 60)}:{(elapsedSeconds % 60).toString().padStart(2, "0")}
-            </span>
+    <div className="flex items-center gap-1.5 px-2 py-1.5">
+      {/* Plus menu */}
+      <div ref={menuRef} className="relative">
+        <button
+          onClick={() => setMenuOpen(!menuOpen)}
+          disabled={disabled}
+          className={`w-7 h-7 flex items-center justify-center rounded-full transition-colors ${
+            hasActiveFeatures ? "bg-[#333] text-green-400" : "bg-[#252525] text-[#777] hover:text-white"
+          }`}
+        >
+          <Plus className="h-4 w-4" />
+        </button>
+        {menuOpen && (
+          <div className="absolute bottom-full left-0 mb-2 w-52 bg-[#1c1c1c] border border-[#333] rounded-xl shadow-2xl py-1.5 z-50">
+            <button onClick={() => { onAttachImage?.(); setMenuOpen(false); }} className="w-full px-4 py-2.5 text-left text-sm text-[#ddd] hover:bg-[#2a2a2a] flex items-center gap-3">
+              <span>📷</span> Photo / Video
+            </button>
+            <button onClick={() => { onAttachFile?.(); setMenuOpen(false); }} className="w-full px-4 py-2.5 text-left text-sm text-[#ddd] hover:bg-[#2a2a2a] flex items-center gap-3">
+              <span>📎</span> File
+              {attachmentsCount > 0 && <span className="ml-auto text-xs text-blue-400">{attachmentsCount}</span>}
+            </button>
+            <div className="h-px bg-[#333] my-1.5" />
+            <button onClick={() => { onMcpToggle?.(); }} className="w-full px-4 py-2.5 text-left text-sm text-[#ddd] hover:bg-[#2a2a2a] flex items-center gap-3">
+              <span>🔧</span> Web Tools
+              {mcpEnabled && <span className="ml-auto w-2 h-2 rounded-full bg-green-500" />}
+            </button>
+            <button onClick={() => { onAgentModeToggle?.(); }} className="w-full px-4 py-2.5 text-left text-sm text-[#ddd] hover:bg-[#2a2a2a] flex items-center gap-3">
+              <span>🤖</span> Agent Mode
+              {agentMode && <span className="ml-auto w-2 h-2 rounded-full bg-violet-500" />}
+            </button>
+            <div className="h-px bg-[#333] my-1.5" />
+            <button onClick={() => { onOpenChatSettings?.(); setMenuOpen(false); }} className="w-full px-4 py-2.5 text-left text-sm text-[#ddd] hover:bg-[#2a2a2a] flex items-center gap-3">
+              <span>⚙️</span> Settings
+              {hasSystemPrompt && <span className="ml-auto w-2 h-2 rounded-full bg-yellow-500" />}
+            </button>
           </div>
         )}
+      </div>
 
-        <ToolDropdown
-          icon={Paperclip}
-          label="Attach media"
-          isActive={attachmentsCount > 0}
-          disabled={disabled}
-        >
-          <DropdownItem
-            icon={Paperclip}
-            label="Attach file"
-            onClick={onAttachFile}
-            disabled={disabled}
-          />
-          <DropdownItem
-            icon={ImageIcon}
-            label="Attach image"
-            onClick={onAttachImage}
-            disabled={disabled}
-          />
-        </ToolDropdown>
+      {/* Voice */}
+      <button
+        onClick={isRecording ? onStopRecording : onStartRecording}
+        disabled={disabled || isTranscribing}
+        className={`w-7 h-7 flex items-center justify-center rounded-full transition-colors ${
+          isRecording ? "bg-red-500/20 text-red-400" : isTranscribing ? "text-blue-400" : "text-[#777] hover:text-white"
+        }`}
+      >
+        {isTranscribing ? <Loader2 className="h-4 w-4 animate-spin" /> : isRecording ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+      </button>
 
-        <button
-          onClick={isRecording ? onStopRecording : onStartRecording}
-          disabled={disabled || isTranscribing}
-          className={`flex items-center justify-center p-2 rounded-lg transition-all:ease-in:200ms disabled:opacity-50 ${
-            isRecording
-              ? "bg-(--error) text-(--error)"
-              : isTranscribing
-                ? "bg-(--link) text-(--link)"
-                : "hover:bg-(--accent) text-[#9a9590]"
-          }`}
-          title={
-            isTranscribing ? "Transcribing..." : isRecording ? "Stop recording" : "Voice input"
-          }
+      {/* Model selector */}
+      {availableModels.length > 0 && onModelChange && (
+        <select
+          value={selectedModel || ""}
+          onChange={(e) => onModelChange(e.target.value)}
+          disabled={disabled || isLoading}
+          title={selectedModel || "Select model"}
+          className="flex-1 min-w-0 max-w-[120px] px-2 py-1 text-xs font-medium bg-[#252525] border border-[#333] rounded-lg text-[#999] focus:outline-none truncate"
         >
-          {isTranscribing ? (
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-          ) : isRecording ? (
-            <MicOff className="h-3.5 w-3.5" />
-          ) : (
-            <Mic className="h-3.5 w-3.5" />
-          )}
+          {availableModels.map((model, idx) => (
+            <option key={`${model.id}-${idx}`} value={model.id}>
+              {model.id.split("/").pop()?.slice(0, 12) || model.id}
+            </option>
+          ))}
+        </select>
+      )}
+
+      {/* Spacer */}
+      <div className="flex-1" />
+
+      {/* Send/Stop */}
+      {isLoading ? (
+        <button onClick={onStop} className="w-8 h-8 flex items-center justify-center rounded-full bg-[#e8e4dd] text-black">
+          <Square className="h-3.5 w-3.5 fill-current" />
         </button>
-
-        {onTTSToggle && (
-          <button
-            onClick={onTTSToggle}
-            disabled={disabled}
-            className={`hidden md:flex items-center justify-center p-2 rounded-lg transition-all:ease-in:200ms disabled:opacity-50 ${
-              isTTSEnabled
-                ? "bg-(--success) text-(--success)"
-                : "hover:bg-(--accent) text-[#9a9590]"
-            }`}
-            title={isTTSEnabled ? "Disable TTS" : "Enable TTS"}
-          >
-            {isTTSEnabled ? (
-              <Volume2 className="h-3.5 w-3.5" />
-            ) : (
-              <VolumeX className="h-3.5 w-3.5" />
-            )}
-          </button>
-        )}
-
-        <ToolDropdown icon={Wrench} label="Tools" isActive={hasActiveTools} disabled={disabled}>
-          <DropdownItem
-            icon={Globe}
-            label="Web search & tools"
-            isActive={mcpEnabled}
-            onClick={onMcpToggle}
-            disabled={disabled}
-          />
-          {onArtifactsToggle && (
-            <DropdownItem
-              icon={Code}
-              label="Code preview"
-              isActive={artifactsEnabled}
-              onClick={onArtifactsToggle}
-              disabled={disabled}
-            />
-          )}
-          {onDeepResearchToggle && (
-            <DropdownItem
-              icon={Brain}
-              label="Deep Research"
-              isActive={deepResearchEnabled}
-              onClick={onDeepResearchToggle}
-              disabled={disabled}
-            />
-          )}
-          {onOpenMcpSettings && (
-            <>
-              <div className="h-px bg-(--border) my-1" />
-              <DropdownItem
-                icon={Settings}
-                label="MCP servers"
-                onClick={onOpenMcpSettings}
-                disabled={disabled}
-              />
-            </>
-          )}
-        </ToolDropdown>
-
-        {onAgentModeToggle && (
-          <AgentModeToggle enabled={agentMode || false} onToggle={onAgentModeToggle} />
-        )}
-
-        {onOpenChatSettings && (
-          <button
-            onClick={onOpenChatSettings}
-            disabled={disabled}
-            className={`flex items-center gap-1 px-2 py-1.5 rounded-lg transition-all:ease-in:200ms disabled:opacity-50 ${
-              hasSystemPrompt
-                ? "bg-(--card-hover) text-[#e8e4dd] border border-(--border)"
-                : "hover:bg-(--accent) text-[#9a9590]"
-            }`}
-            title={hasSystemPrompt ? "System prompt (active)" : "System prompt"}
-          >
-            <SlidersHorizontal className="h-3.5 w-3.5" />
-          </button>
-        )}
-      </div>
-
-      <div className="flex items-center gap-2">
-        {availableModels.length > 0 && onModelChange && (
-          <select
-            value={selectedModel || ""}
-            onChange={(e) => onModelChange(e.target.value)}
-            disabled={disabled || isLoading}
-            className="max-w-35 md:max-w-45 px-2 py-1 font-sans font-medium text-xs bg-transparent border border-(--border) rounded-lg text-[#9a9590] focus:outline-none disabled:opacity-50 truncate appearance-none cursor-pointer hover:border-[#4a4745] transition-colors:ease-in:200ms"
-            title={selectedModel || "Select model"}
-          >
-            {availableModels.map((model, idx) => (
-              <option key={`${model.id}-${idx}`} value={model.id}>
-                {model.id}
-              </option>
-            ))}
-          </select>
-        )}
-
-        {isLoading ? (
-          <button
-            onClick={onStop}
-            className="h-8 w-8 flex items-center justify-center rounded-full bg-(--error) text-white transition-colors:ease-in:200ms shrink-0"
-            title="Stop"
-          >
-            <Square className="h-3 w-3 fill-current" />
-          </button>
-        ) : (
-          <button
-            onClick={onSubmit}
-            disabled={!canSend}
-            className={`h-8 w-8 flex items-center justify-center rounded-full transition-colors:ease-in:200ms shrink-0 ${
-              canSend
-                ? "bg-[#e8e4dd] text-[#1a1918]"
-                : "bg-(--accent) text-[#9a9590]/50 cursor-not-allowed"
-            }`}
-            title="Send"
-          >
-            <ArrowUp className="h-3.5 w-3.5" strokeWidth={2.5} />
-          </button>
-        )}
-      </div>
+      ) : (
+        <button
+          onClick={onSubmit}
+          disabled={!canSend}
+          className={`w-8 h-8 flex items-center justify-center rounded-full transition-all ${
+            canSend ? "bg-[#e8e4dd] text-black" : "bg-[#333] text-[#555]"
+          }`}
+        >
+          <ArrowUp className="h-4 w-4" strokeWidth={2.5} />
+        </button>
+      )}
     </div>
   );
 }

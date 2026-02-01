@@ -6,6 +6,8 @@ import path from "path";
 export interface ApiSettings {
   backendUrl: string;
   apiKey: string;
+  inferenceUrl: string;
+  inferenceApiKey: string;
   voiceUrl: string;
   voiceModel: string;
 }
@@ -13,6 +15,16 @@ export interface ApiSettings {
 const DEFAULT_SETTINGS: ApiSettings = {
   backendUrl: process.env.BACKEND_URL || process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080",
   apiKey: process.env.API_KEY || "",
+  inferenceUrl:
+    process.env.INFERENCE_URL ||
+    process.env.NEXT_PUBLIC_INFERENCE_URL ||
+    process.env.INFERENCE_API_BASE ||
+    "",
+  inferenceApiKey:
+    process.env.INFERENCE_API_KEY ||
+    process.env.NEXT_PUBLIC_INFERENCE_API_KEY ||
+    process.env.OPENAI_API_KEY ||
+    "",
   voiceUrl: process.env.VOICE_URL || process.env.NEXT_PUBLIC_VOICE_URL || "",
   voiceModel: process.env.VOICE_MODEL || process.env.NEXT_PUBLIC_VOICE_MODEL || "whisper-large-v3-turbo",
 };
@@ -47,9 +59,14 @@ export async function getApiSettings(): Promise<ApiSettings> {
       const content = await readFile(settingsFile, "utf-8");
       const saved = JSON.parse(content) as Partial<ApiSettings>;
       // Merge with defaults (env vars still take precedence if settings file has empty values)
+      const resolvedBackendUrl = saved.backendUrl || DEFAULT_SETTINGS.backendUrl;
+      const resolvedInferenceUrl =
+        saved.inferenceUrl || DEFAULT_SETTINGS.inferenceUrl || resolvedBackendUrl;
       return {
-        backendUrl: saved.backendUrl || DEFAULT_SETTINGS.backendUrl,
+        backendUrl: resolvedBackendUrl,
         apiKey: saved.apiKey || DEFAULT_SETTINGS.apiKey,
+        inferenceUrl: resolvedInferenceUrl,
+        inferenceApiKey: saved.inferenceApiKey || DEFAULT_SETTINGS.inferenceApiKey,
         voiceUrl: saved.voiceUrl || DEFAULT_SETTINGS.voiceUrl,
         voiceModel: saved.voiceModel || DEFAULT_SETTINGS.voiceModel,
       };
@@ -57,7 +74,10 @@ export async function getApiSettings(): Promise<ApiSettings> {
   } catch (error) {
     console.error("[API Settings] Failed to read settings file:", error);
   }
-  return DEFAULT_SETTINGS;
+  return {
+    ...DEFAULT_SETTINGS,
+    inferenceUrl: DEFAULT_SETTINGS.inferenceUrl || DEFAULT_SETTINGS.backendUrl,
+  };
 }
 
 export async function saveApiSettings(settings: ApiSettings): Promise<void> {

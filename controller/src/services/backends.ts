@@ -312,3 +312,62 @@ export const buildSglangCommand = (recipe: Recipe, config: Config): string[] => 
 
   return appendExtraArguments(command, recipe.extra_args);
 };
+
+/**
+ * Build a llama.cpp server launch command.
+ * llama.cpp uses underscores in args, not dashes.
+ * @param recipe - Recipe data.
+ * @returns CLI command array.
+ */
+export const buildLlamaCppCommand = (recipe: Recipe): string[] => {
+  const pythonPath = getPythonPath(recipe) || "/home/ser/.pyenv/versions/3.11.9/bin/python";
+  const command = [pythonPath, "-m", "llama_cpp.server"];
+
+  command.push("--model", recipe.model_path);
+  command.push("--host", recipe.host);
+  command.push("--port", String(recipe.port));
+
+  // GPU layers - offload all by default for full GPU acceleration
+  const nGpuLayers = getExtraArgument(recipe.extra_args, "n_gpu_layers") ?? -1;
+  command.push("--n_gpu_layers", String(nGpuLayers));
+
+  // Context length
+  command.push("--n_ctx", String(recipe.max_model_len));
+
+  // Batch sizes for better throughput
+  const nBatch = getExtraArgument(recipe.extra_args, "n_batch") ?? 2048;
+  command.push("--n_batch", String(nBatch));
+
+  // Flash attention if available
+  const flashAttn = getExtraArgument(recipe.extra_args, "flash_attn");
+  if (flashAttn === true) {
+    command.push("--flash_attn", "True");
+  }
+
+  // KV cache quantization (requires flash_attn)
+  const typeK = getExtraArgument(recipe.extra_args, "type_k");
+  if (typeK !== undefined) {
+    command.push("--type_k", String(typeK));
+  }
+  const typeV = getExtraArgument(recipe.extra_args, "type_v");
+  if (typeV !== undefined) {
+    command.push("--type_v", String(typeV));
+  }
+
+  // Tensor split for multi-GPU (pass as separate values)
+  if (recipe.tensor_parallel_size > 1) {
+    const tensorSplit = getExtraArgument(recipe.extra_args, "tensor_split");
+    if (tensorSplit) {
+      const splits = String(tensorSplit).split(",").map(s => s.trim());
+      command.push("--tensor_split", ...splits);
+    }
+  }
+
+  // Model alias for API compatibility
+  if (recipe.served_model_name) {
+    command.push("--model_alias", recipe.served_model_name);
+  }
+
+  // Don't use appendExtraArguments - llama.cpp uses underscores, not dashes
+  return command;
+};

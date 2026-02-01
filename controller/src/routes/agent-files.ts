@@ -32,15 +32,12 @@ const toFsPath = (relativePath: string): string =>
  * Extract the wildcard path from the URL.
  * Hono's param("*") doesn't work reliably with certain route patterns,
  * so we manually extract the path after /files/.
- * @param urlPath - The full URL path from the request
- * @param sessionId - The chat session ID
- * @returns The extracted file path, or empty string if not found
  */
 const extractFilePath = (urlPath: string, sessionId: string): string => {
   const prefix = `/chats/${sessionId}/files/`;
-  const prefixIndex = urlPath.indexOf(prefix);
-  if (prefixIndex === -1) return "";
-  const rest = urlPath.slice(prefixIndex + prefix.length);
+  const idx = urlPath.indexOf(prefix);
+  if (idx === -1) return "";
+  const rest = urlPath.slice(idx + prefix.length);
   // Decode URI components to handle encoded characters
   try {
     return decodeURIComponent(rest);

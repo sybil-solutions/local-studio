@@ -63,26 +63,6 @@ export function ChatPage() {
   const sessionFromUrl = searchParams.get("session");
   const newChatFromUrl = searchParams.get("new") === "1";
 
-  const LAST_SESSION_STORAGE_KEY = "vllm-studio-last-session-id";
-  const getLastSessionId = (): string | null => {
-    if (typeof window === "undefined") return null;
-    try {
-      const value = window.localStorage.getItem(LAST_SESSION_STORAGE_KEY);
-      return value && value.trim() ? value.trim() : null;
-    } catch {
-      return null;
-    }
-  };
-
-  const setLastSessionId = (sessionId: string): void => {
-    if (typeof window === "undefined") return;
-    try {
-      window.localStorage.setItem(LAST_SESSION_STORAGE_KEY, sessionId);
-    } catch {
-      // ignore
-    }
-  };
-
   // Local UI state (sourced from Zustand)
   const input = useAppStore((state) => state.input);
   const setInput = useAppStore((state) => state.setInput);
@@ -127,20 +107,7 @@ export function ChatPage() {
   const { agentToolDefs, executeAgentTool, isAgentTool, agentPlan, clearPlan } =
     Hooks.useAgentTools();
 
-  const {
-    agentFiles,
-    loadAgentFiles,
-    clearAgentFiles,
-    selectedAgentFilePath,
-    selectedAgentFileContent,
-    selectedAgentFileLoading,
-    selectAgentFile,
-    clearSelectedFile,
-  } = Hooks.useAgentFiles();
-
-  // Sidebar width from store
-  const sidebarWidth = useAppStore((state) => state.sidebarWidth);
-  const setSidebarWidth = useAppStore((state) => state.setSidebarWidth);
+  const { agentFiles, loadAgentFiles, clearAgentFiles, selectedAgentFilePath, selectedAgentFileContent, selectedAgentFileLoading, selectAgentFile } = Hooks.useAgentFiles();
 
   const { hydrateAgentState, persistAgentState, buildAgentState } = Hooks.useAgentState();
 
@@ -220,12 +187,6 @@ export function ChatPage() {
   const agentStateSignatureRef = useRef<string | null>(null);
   // Track when user manually stops - prevents auto-continuation
   const userStoppedRef = useRef<boolean>(false);
-
-  // Promise that resolves when session is ready - used to make tools wait for session creation
-  const sessionReadyPromiseRef = useRef<{
-    promise: Promise<string | null>;
-    resolve: (sessionId: string | null) => void;
-  } | null>(null);
   const [compactionHistory, setCompactionHistory] = useState<CompactionEvent[]>([]);
   const [compacting, setCompacting] = useState(false);
   const [compactionError, setCompactionError] = useState<string | null>(null);
@@ -456,15 +417,7 @@ export function ChatPage() {
 
       if (isAgentTool(toolName)) {
         try {
-          // Read session ID fresh from store, or wait for session creation if needed
-          let sessionId =
-            sessionIdRef.current ?? useAppStore.getState().currentSessionId ?? currentSessionId;
-
-          // If session ID is still null, wait for session to be created
-          if (!sessionId && sessionReadyPromiseRef.current) {
-            sessionId = await sessionReadyPromiseRef.current.promise;
-          }
-
+          const sessionId = sessionIdRef.current ?? currentSessionId;
           const output = await executeAgentTool(toolName, args, { sessionId });
           if (output == null) return;
           // Don't await - causes deadlock with sendAutomaticallyWhen
@@ -600,10 +553,9 @@ export function ChatPage() {
           if (!mapped) return;
           const current = messagesRef.current;
           const index = current.findIndex((entry) => entry.id === mapped.id);
-          const next =
-            index >= 0
-              ? [...current.slice(0, index), mapped, ...current.slice(index + 1)]
-              : [...current, mapped];
+          const next = index >= 0
+            ? [...current.slice(0, index), mapped, ...current.slice(index + 1)]
+            : [...current, mapped];
           setMessages(next);
           break;
         }
@@ -1081,13 +1033,6 @@ export function ChatPage() {
     loadSessions();
   }, [loadSessions]);
 
-  // Remember the active session (URL-based navigation will update this too)
-  useEffect(() => {
-    if (currentSessionId) {
-      setLastSessionId(currentSessionId);
-    }
-  }, [currentSessionId]);
-
   useEffect(() => {
     messagesLengthRef.current = messages.length;
   }, [messages.length]);
@@ -1141,7 +1086,7 @@ export function ChatPage() {
     loadAgentFiles,
   ]);
 
-  // Handle URL session/new params and restore last session if needed
+  // Handle URL session/new params
   useEffect(() => {
     if (newChatFromUrl) {
       startNewSession();
@@ -1150,30 +1095,20 @@ export function ChatPage() {
       clearAgentFiles();
       return;
     }
-
-    const targetSessionId = sessionFromUrl || getLastSessionId();
-    if (!targetSessionId) return;
-
-    // Avoid re-loading the same session repeatedly
-    if (targetSessionId === currentSessionId) return;
-
-    // If the URL is missing session but we have a remembered one, reflect it in the URL
-    if (!sessionFromUrl) {
-      router.replace(`/chat?session=${encodeURIComponent(targetSessionId)}`);
-    }
-
-    void (async () => {
-      const session = await loadSession(targetSessionId);
-      if (session) {
-        if (session.model && session.model !== selectedModel) {
-          setSelectedModel(session.model);
+    if (sessionFromUrl) {
+      void (async () => {
+        const session = await loadSession(sessionFromUrl);
+        if (session) {
+          if (session.model && session.model !== selectedModel) {
+            setSelectedModel(session.model);
+          }
+          const storedMessages = session.messages ?? [];
+          setMessages(mapStoredMessages(storedMessages));
+          hydrateAgentState(session);
+          void loadAgentFiles({ sessionId: session.id });
         }
-        const storedMessages = session.messages ?? [];
-        setMessages(mapStoredMessages(storedMessages));
-        hydrateAgentState(session);
-        void loadAgentFiles({ sessionId: session.id });
-      }
-    })();
+      })();
+    }
   }, [
     newChatFromUrl,
     sessionFromUrl,
@@ -1187,8 +1122,6 @@ export function ChatPage() {
     clearAgentFiles,
     hydrateAgentState,
     loadAgentFiles,
-    currentSessionId,
-    router,
   ]);
 
   // Load MCP servers/tools when enabled
@@ -1458,33 +1391,14 @@ export function ChatPage() {
       // Create session if needed, then persist user message
       let sessionId = currentSessionId;
       if (!sessionId) {
-        // Set up a promise that tools can await while session is being created
-        let resolveSessionReady: (sessionId: string | null) => void;
-        const sessionReadyPromise = new Promise<string | null>((resolve) => {
-          resolveSessionReady = resolve;
-        });
-        sessionReadyPromiseRef.current = {
-          promise: sessionReadyPromise,
-          resolve: resolveSessionReady!,
-        };
-
-        // Create the session
         sessionId = await createSessionWithMessage(userMessage);
-
-        // Reflect created session in URL so reload/navigation keeps it
-        if (sessionId) {
-          setLastSessionId(sessionId);
-          router.replace(`/chat?session=${encodeURIComponent(sessionId)}`);
-        }
-
-        // Resolve the promise so waiting tools can proceed
-        resolveSessionReady!(sessionId);
       } else {
         await persistMessage(sessionId, userMessage);
       }
 
       // Send the message via AI SDK — transport body provides system, model, tools
-      sendMessage({ parts, metadata: userMessage.metadata });
+      // Use the same message id so controller upserts don't duplicate messages in UI.
+      sendMessage({ id: messageId, parts, metadata: userMessage.metadata });
     },
     [
       isLoading,
@@ -1728,19 +1642,7 @@ export function ChatPage() {
           </div>
         }
         artifactsContent={<ArtifactPreviewPanel artifacts={sessionArtifacts} />}
-        filesContent={
-          <AgentFilesPanel
-            files={agentFiles}
-            plan={agentPlan}
-            selectedFilePath={selectedAgentFilePath}
-            selectedFileContent={selectedAgentFileContent}
-            selectedFileLoading={selectedAgentFileLoading}
-            onSelectFile={(path) => selectAgentFile(path, sessionFromUrl || currentSessionId)}
-            hasSession={!!(sessionFromUrl || currentSessionId)}
-          />
-        }
-        width={sidebarWidth}
-        onWidthChange={setSidebarWidth}
+        filesContent={<AgentFilesPanel files={agentFiles} plan={agentPlan} selectedFilePath={selectedAgentFilePath} selectedFileContent={selectedAgentFileContent} selectedFileLoading={selectedAgentFileLoading} onSelectFile={selectAgentFile} hasSession={!!currentSessionId} />}
       >
         <div className="flex-1 flex flex-col min-h-0 min-w-0 overflow-x-hidden">
           <div className="flex-1 flex flex-col overflow-hidden relative min-w-0 bg-[hsl(30,5%,10.5%)]">

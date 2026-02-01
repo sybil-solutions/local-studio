@@ -11,12 +11,59 @@ import { boxTagsParser } from "./box-tags.parser";
 const OPEN_TAGS = ["<think>", "<thinking>"];
 const CLOSE_TAGS = ["</think>", "</thinking>"];
 
+const HARMONY_ANALYSIS_RE =
+  /<\|channel\|>\s*analysis\s*(?:<\|message\|>)?([\s\S]*?)(?=<\|end\|>|<\|return\|>|<\|channel\|>|$)/gi;
+const HARMONY_FINAL_RE =
+  /<\|channel\|>\s*final\s*(?:<\|message\|>)?([\s\S]*?)(?=<\|end\|>|<\|return\|>|$)/gi;
+const HARMONY_FINAL_TAG_RE = /<\|channel\|>\s*final\s*<\|message\|>/i;
+const HARMONY_FINAL_COMPLETE_RE =
+  /<\|channel\|>\s*final\s*<\|message\|>[\s\S]*?(<\|end\|>|<\|return\|>)/i;
+
+const extractHarmonyBlocks = (input: string, pattern: RegExp): string[] => {
+  const blocks: string[] = [];
+  pattern.lastIndex = 0;
+  for (const match of input.matchAll(pattern)) {
+    const block = match[1];
+    if (block != null && block.length > 0) {
+      blocks.push(block);
+    }
+  }
+  pattern.lastIndex = 0;
+  return blocks;
+};
+
 export class ThinkingParser implements IThinkingParser {
   readonly name = "thinking" as const;
 
   parse(input: string): ThinkingResult {
     if (!input) {
       return { thinkingContent: null, mainContent: "", isThinkingComplete: true };
+    }
+
+    if (input.includes("<|channel|>")) {
+      const analysisBlocks = extractHarmonyBlocks(input, HARMONY_ANALYSIS_RE);
+      const finalBlocks = extractHarmonyBlocks(input, HARMONY_FINAL_RE);
+      const hasHarmony = analysisBlocks.length > 0 || finalBlocks.length > 0 || HARMONY_FINAL_TAG_RE.test(input);
+
+      if (hasHarmony) {
+        const thinkingText = boxTagsParser.parse(analysisBlocks.join("\n")).trim();
+        const finalText = boxTagsParser.parse(finalBlocks.join("\n")).trim();
+        const hasFinalTag = HARMONY_FINAL_TAG_RE.test(input);
+        const lower = input.toLowerCase();
+        const lastChannelIdx = lower.lastIndexOf("<|channel|>");
+        const lastChannelIsFinal =
+          lastChannelIdx >= 0 &&
+          /<\|channel\|>\s*final\b/.test(lower.slice(lastChannelIdx, lastChannelIdx + 80));
+        const isComplete =
+          HARMONY_FINAL_COMPLETE_RE.test(input) ||
+          (hasFinalTag && finalText.length > 0 && lastChannelIsFinal);
+
+        return {
+          thinkingContent: thinkingText || null,
+          mainContent: finalText,
+          isThinkingComplete: isComplete,
+        };
+      }
     }
 
     const reasoningParts: string[] = [];
@@ -89,6 +136,24 @@ export class ThinkingParser implements IThinkingParser {
    */
   extractAllBlocks(input: string): Array<{ content: string; isComplete: boolean }> {
     if (!input) return [];
+
+    if (input.includes("<|channel|>")) {
+      const analysisBlocks = extractHarmonyBlocks(input, HARMONY_ANALYSIS_RE);
+      if (analysisBlocks.length > 0) {
+        const hasFinalTag = HARMONY_FINAL_TAG_RE.test(input);
+        const lower = input.toLowerCase();
+        const lastChannelIdx = lower.lastIndexOf("<|channel|>");
+        const lastChannelIsFinal =
+          lastChannelIdx >= 0 &&
+          /<\|channel\|>\s*final\b/.test(lower.slice(lastChannelIdx, lastChannelIdx + 80));
+        const isComplete =
+          HARMONY_FINAL_COMPLETE_RE.test(input) || (hasFinalTag && lastChannelIsFinal);
+        return analysisBlocks
+          .map((content) => boxTagsParser.parse(content).trim())
+          .filter((content) => content.length > 0)
+          .map((content) => ({ content, isComplete }));
+      }
+    }
 
     const blocks: Array<{ content: string; isComplete: boolean }> = [];
     let remaining = input;

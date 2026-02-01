@@ -52,6 +52,9 @@ export const detectBackend = (args: string[]): string | null => {
   if (joined.includes("tabbyAPI") || (joined.includes("main.py") && joined.includes("--config"))) {
     return "tabbyapi";
   }
+  if (joined.includes("llama_cpp.server")) {
+    return "llamacpp";
+  }
   return null;
 };
 

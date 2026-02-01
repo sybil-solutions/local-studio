@@ -3,40 +3,20 @@
 
 import { useEffect, useState } from "react";
 import api from "@/lib/api";
-import { getApiKey, setApiKey, clearApiKey } from "@/lib/api-key";
-import { getStoredBackendUrl, setStoredBackendUrl, clearStoredBackendUrl } from "@/lib/backend-url";
 import type { ConfigData } from "@/lib/types";
 
 export interface ApiConnectionSettings {
   backendUrl: string;
   apiKey: string;
   hasApiKey: boolean;
+  inferenceUrl: string;
+  inferenceApiKey: string;
+  hasInferenceApiKey: boolean;
   voiceUrl: string;
   voiceModel: string;
 }
 
 export type ConnectionStatus = "unknown" | "connected" | "error";
-
-const DEFAULT_API_SETTINGS: ApiConnectionSettings = {
-  backendUrl: "http://localhost:8080",
-  apiKey: "",
-  hasApiKey: false,
-  voiceUrl: "",
-  voiceModel: "whisper-large-v3-turbo",
-};
-
-const mergeApiSettings = (server?: Partial<ApiConnectionSettings>): ApiConnectionSettings => {
-  const localBackendUrl = getStoredBackendUrl();
-  const localApiKey = getApiKey();
-
-  return {
-    backendUrl: localBackendUrl || server?.backendUrl || DEFAULT_API_SETTINGS.backendUrl,
-    apiKey: localApiKey || server?.apiKey || "",
-    hasApiKey: Boolean(localApiKey) || Boolean(server?.hasApiKey),
-    voiceUrl: server?.voiceUrl || DEFAULT_API_SETTINGS.voiceUrl,
-    voiceModel: server?.voiceModel || DEFAULT_API_SETTINGS.voiceModel,
-  };
-};
 
 export function useConfigs() {
   const [data, setData] = useState<ConfigData | null>(null);
@@ -44,7 +24,16 @@ export function useConfigs() {
   const [error, setError] = useState<string | null>(null);
   const [backendOnline, setBackendOnline] = useState<boolean | null>(null);
 
-  const [apiSettings, setApiSettings] = useState<ApiConnectionSettings>(DEFAULT_API_SETTINGS);
+  const [apiSettings, setApiSettings] = useState<ApiConnectionSettings>({
+    backendUrl: "http://localhost:8080",
+    apiKey: "",
+    hasApiKey: false,
+    inferenceUrl: "http://localhost:8080",
+    inferenceApiKey: "",
+    hasInferenceApiKey: false,
+    voiceUrl: "",
+    voiceModel: "whisper-large-v3-turbo",
+  });
   const [apiSettingsLoading, setApiSettingsLoading] = useState(true);
   const [showApiKey, setShowApiKey] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -57,58 +46,22 @@ export function useConfigs() {
       setApiSettingsLoading(true);
       const res = await fetch("/api/settings");
       if (res.ok) {
-        const settings = (await res.json()) as Partial<ApiConnectionSettings>;
-        setApiSettings(mergeApiSettings(settings));
-        return;
+        const settings = await res.json();
+        setApiSettings({
+          backendUrl: settings.backendUrl || "http://localhost:8080",
+          apiKey: settings.apiKey || "",
+          hasApiKey: settings.hasApiKey || false,
+          inferenceUrl: settings.inferenceUrl || settings.backendUrl || "http://localhost:8080",
+          inferenceApiKey: settings.inferenceApiKey || "",
+          hasInferenceApiKey: settings.hasInferenceApiKey || false,
+          voiceUrl: settings.voiceUrl || "",
+          voiceModel: settings.voiceModel || "whisper-large-v3-turbo",
+        });
       }
     } catch (e) {
       console.error("Failed to load API settings:", e);
     } finally {
       setApiSettingsLoading(false);
-    }
-    setApiSettings(mergeApiSettings());
-  };
-
-  const persistLocalApiSettings = () => {
-    const backendUrl = apiSettings.backendUrl?.trim() || "";
-    if (backendUrl) {
-      setStoredBackendUrl(backendUrl);
-    } else {
-      clearStoredBackendUrl();
-    }
-    const apiKey = apiSettings.apiKey?.trim() || "";
-    if (apiKey && !apiKey.includes("••••")) {
-      setApiKey(apiKey);
-    } else if (!apiKey) {
-      clearApiKey();
-    }
-  };
-
-  const testConnection = async () => {
-    try {
-      setTesting(true);
-      setConnectionStatus("unknown");
-      setStatusMessage("Testing...");
-
-      const baseUrl = apiSettings.backendUrl?.trim() || "";
-      if (!baseUrl) {
-        setConnectionStatus("error");
-        setStatusMessage("Missing API URL");
-        return;
-      }
-      const res = await fetch(`${baseUrl.replace(/\/+$/, "")}/health`);
-      if (res.ok) {
-        setConnectionStatus("connected");
-        setStatusMessage("Connected");
-      } else {
-        setConnectionStatus("error");
-        setStatusMessage(`Error: ${res.status}`);
-      }
-    } catch {
-      setConnectionStatus("error");
-      setStatusMessage("Connection failed");
-    } finally {
-      setTesting(false);
     }
   };
 
@@ -140,7 +93,6 @@ export function useConfigs() {
   };
 
   const saveApiSettings = async () => {
-    persistLocalApiSettings();
     try {
       setSaving(true);
       setStatusMessage("");
@@ -150,25 +102,63 @@ export function useConfigs() {
         body: JSON.stringify({
           backendUrl: apiSettings.backendUrl,
           apiKey: apiSettings.apiKey,
+          inferenceUrl: apiSettings.inferenceUrl,
+          inferenceApiKey: apiSettings.inferenceApiKey,
           voiceUrl: apiSettings.voiceUrl,
           voiceModel: apiSettings.voiceModel,
         }),
       });
       if (res.ok) {
-        const updated = (await res.json()) as Partial<ApiConnectionSettings>;
-        setApiSettings(mergeApiSettings(updated));
+        const updated = await res.json();
+        setApiSettings({
+          backendUrl: updated.backendUrl,
+          apiKey: updated.apiKey,
+          hasApiKey: updated.hasApiKey,
+          inferenceUrl: updated.inferenceUrl || apiSettings.inferenceUrl,
+          inferenceApiKey: updated.inferenceApiKey || apiSettings.inferenceApiKey,
+          hasInferenceApiKey: updated.hasInferenceApiKey,
+          voiceUrl: updated.voiceUrl || apiSettings.voiceUrl,
+          voiceModel: updated.voiceModel || apiSettings.voiceModel,
+        });
         setStatusMessage("Settings saved");
         loadConfig();
       } else {
         const err = await res.json();
-        setStatusMessage(err.error || "Saved locally, but failed to save on server");
+        setStatusMessage(err.error || "Failed to save");
         setConnectionStatus("error");
       }
     } catch {
-      setStatusMessage("Saved locally, but failed to save on server");
+      setStatusMessage("Failed to save settings");
       setConnectionStatus("error");
     } finally {
       setSaving(false);
+    }
+  };
+
+  const testConnection = async () => {
+    try {
+      setTesting(true);
+      setConnectionStatus("unknown");
+      setStatusMessage("Testing...");
+
+      const baseUrl =
+        process.env.BACKEND_URL ||
+        process.env.NEXT_PUBLIC_BACKEND_URL ||
+        process.env.VLLM_STUDIO_BACKEND_URL ||
+        "https://api.homelabai.org";
+      const res = await fetch(`${baseUrl}/health`);
+      if (res.ok) {
+        setConnectionStatus("connected");
+        setStatusMessage("Connected");
+      } else {
+        setConnectionStatus("error");
+        setStatusMessage(`Error: ${res.status}`);
+      }
+    } catch {
+      setConnectionStatus("error");
+      setStatusMessage("Connection failed");
+    } finally {
+      setTesting(false);
     }
   };
 
