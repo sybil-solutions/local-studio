@@ -50,11 +50,13 @@ final class OpenAIChatService: ObservableObject {
     let completion = try ApiCodec.decoder.decode(ChatCompletionResponse.self, from: data)
     let msg = completion.choices.first?.message
     var content = msg?.content ?? ""
-    var reasoning = msg?.reasoningContent ?? msg?.reasoning ?? ""
+    let reasoning = msg?.reasoningContent ?? msg?.reasoning ?? ""
     if content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
        !reasoning.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+      // Some backends return all text in `reasoning_content`.
+      // Surface it in `content` so the chat isn't blank, but preserve it as reasoning
+      // so trace/thinking UIs can still render it.
       content = reasoning
-      reasoning = ""
     }
     let toolCalls = msg?.toolCalls ?? []
     streamingToolCalls = toolCalls
@@ -198,7 +200,6 @@ final class OpenAIChatService: ObservableObject {
     if finalContent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
        !finalReasoning.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
       finalContent = finalReasoning
-      finalReasoning = ""
     }
 
     return StreamResult(

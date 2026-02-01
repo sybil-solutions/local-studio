@@ -9,7 +9,10 @@ struct SseParser {
     buffer += chunk
     var events: [SseEvent] = []
     while let range = buffer.range(of: "\n") {
-      let line = String(buffer[..<range.lowerBound])
+      // Normalize CRLF (\r\n) so blank lines terminate events correctly.
+      // Some servers send event separators as "\r\n\r\n" which otherwise produces a
+      // line containing only "\r" when consuming via `bytes.lines`.
+      let line = String(buffer[..<range.lowerBound]).trimmingCharacters(in: .newlines)
       buffer.removeSubrange(..<range.upperBound)
       if line.isEmpty {
         if !currentData.isEmpty {
