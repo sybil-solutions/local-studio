@@ -1,9 +1,9 @@
 # Ralph State
 
-- iteration: 1
-- task: "Phase 1.2: Add run persistence schema + tool linkage fixes"
+- iteration: 2
+- task: "Phase 2: Finalize PR merge, deploy, and verify APIs"
 - completion_criteria:
-  - chat_messages has tool_call_id + name columns
-  - chat_runs, chat_run_events, chat_tool_executions tables exist
-  - routes accept tool_call_id + name and persist correctly
-  - controller tests added and passing for new schema
+  - PR #31 merged to main (requires external approval)
+  - Backend deployed on server (controller running new code)
+  - Frontend rebuilt and restarted on :3000
+  - Health + chat run SSE verified
