@@ -9,6 +9,7 @@ import type { AppContext } from "../../types/context";
 import { createOpenAiCompatibleModel } from "./model-factory";
 import { buildAgentTools } from "./tool-registry";
 import { mapAgentMessagesToLlm, mapStoredMessagesToAgentMessages } from "./message-mapper";
+import { streamOpenAiCompletionsSafe } from "./stream-openai-completions-safe";
 
 export interface ChatRunOptions {
   sessionId: string;
@@ -128,6 +129,7 @@ export class ChatRunManager {
         messages: agentMessages,
       },
       convertToLlm: mapAgentMessagesToLlm,
+      streamFn: streamOpenAiCompletionsSafe,
       getApiKey: (): string => this.resolveApiKey(),
       maxRetryDelayMs: 60_000,
     });

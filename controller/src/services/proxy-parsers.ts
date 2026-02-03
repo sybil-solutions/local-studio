@@ -158,8 +158,9 @@ const parseHermesToolCalls = (content: string): ToolCall[] => {
   const toolCalls: ToolCall[] = [];
   const toolCallPattern = /<tool_call>([\s\S]*?)<\/tool_call>/gi;
   const functionPattern = /<function=([^>\s]+)>/i;
-  const paramEqualsPattern = /<parameter=([^>\s]+)>([\s\S]*?)<\/parameter>/gi;
-  const paramNamePattern = /<parameter\s+name=[\"']?([^>\"'\s]+)[\"']?>([\s\S]*?)<\/parameter>/gi;
+  const parameterEqualsPattern = /<parameter=([^>\s]+)>([\s\S]*?)<\/parameter>/gi;
+  const parameterNamePattern =
+    /<parameter\s+name=[\"']?([^>\"'\s]+)[\"']?>([\s\S]*?)<\/parameter>/gi;
   const argsPattern = /<arguments>([\s\S]*?)<\/arguments>/i;
 
   for (const match of content.matchAll(toolCallPattern)) {
@@ -171,13 +172,13 @@ const parseHermesToolCalls = (content: string): ToolCall[] => {
     }
 
     const args: Record<string, unknown> = {};
-    let hasParams = false;
+    let hasParameters = false;
 
-    for (const paramMatch of block.matchAll(paramEqualsPattern)) {
-      const paramName = String(paramMatch[1] ?? "").trim();
-      if (!paramName) continue;
-      hasParams = true;
-      const rawValue = String(paramMatch[2] ?? "").trim();
+    for (const parameterMatch of block.matchAll(parameterEqualsPattern)) {
+      const parameterName = String(parameterMatch[1] ?? "").trim();
+      if (!parameterName) continue;
+      hasParameters = true;
+      const rawValue = String(parameterMatch[2] ?? "").trim();
       let value: unknown = rawValue;
       if (rawValue && (rawValue.startsWith("{") || rawValue.startsWith("["))) {
         try {
@@ -186,15 +187,15 @@ const parseHermesToolCalls = (content: string): ToolCall[] => {
           value = rawValue;
         }
       }
-      args[paramName] = value;
+      args[parameterName] = value;
     }
 
-    if (!hasParams) {
-      for (const paramMatch of block.matchAll(paramNamePattern)) {
-        const paramName = String(paramMatch[1] ?? "").trim();
-        if (!paramName) continue;
-        hasParams = true;
-        const rawValue = String(paramMatch[2] ?? "").trim();
+    if (!hasParameters) {
+      for (const parameterMatch of block.matchAll(parameterNamePattern)) {
+        const parameterName = String(parameterMatch[1] ?? "").trim();
+        if (!parameterName) continue;
+        hasParameters = true;
+        const rawValue = String(parameterMatch[2] ?? "").trim();
         let value: unknown = rawValue;
         if (rawValue && (rawValue.startsWith("{") || rawValue.startsWith("["))) {
           try {
@@ -203,22 +204,22 @@ const parseHermesToolCalls = (content: string): ToolCall[] => {
             value = rawValue;
           }
         }
-        args[paramName] = value;
+        args[parameterName] = value;
       }
     }
 
-    if (!hasParams) {
+    if (!hasParameters) {
       const argsMatch = block.match(argsPattern);
       if (argsMatch && argsMatch[1]) {
-        const rawArgs = argsMatch[1].trim();
-        if (rawArgs) {
+        const rawArguments = argsMatch[1].trim();
+        if (rawArguments) {
           try {
-            const parsed = JSON.parse(rawArgs);
+            const parsed = JSON.parse(rawArguments);
             if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
               Object.assign(args, parsed as Record<string, unknown>);
             }
           } catch {
-            args["raw"] = rawArgs;
+            args["raw"] = rawArguments;
           }
         }
       }

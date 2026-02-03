@@ -25,7 +25,7 @@ export function useChatDerived({
     const reasoningParts = message.parts.filter(
       (part): part is { type: "reasoning"; text: string } => part.type === "reasoning",
     );
-    const aiSdkReasoning = reasoningParts
+    const reasoningFromParts = reasoningParts
       .map((p) => p.text)
       .filter(Boolean)
       .join("\n");
@@ -39,7 +39,7 @@ export function useChatDerived({
     const thinkTagContent = parsed.thinkingContent || "";
 
     // 3. Combine both sources
-    const combined = [aiSdkReasoning, thinkTagContent].filter(Boolean).join("\n\n");
+    const combined = [reasoningFromParts, thinkTagContent].filter(Boolean).join("\n\n");
 
     return {
       content: combined,

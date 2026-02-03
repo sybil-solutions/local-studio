@@ -239,7 +239,7 @@ function ChatMessageItemBase({
     .join("");
 
   // Extract reasoning parts (type: "reasoning")
-  const aiSdkReasoning = message.parts
+  const reasoningFromParts = message.parts
     .filter(
       (part): part is { type: "reasoning"; text: string } =>
         part.type === "reasoning" && "text" in part,
@@ -252,7 +252,7 @@ function ChatMessageItemBase({
   const textContent = isUser ? rawTextContent : parsedThinking?.mainContent || "";
 
   // Combine parsed <think> tags with reasoning parts
-  const thinkingContent = aiSdkReasoning || parsedThinking?.thinkingContent || "";
+  const thinkingContent = reasoningFromParts || parsedThinking?.thinkingContent || "";
   const isThinkingActive = isStreaming && !textContent && !!thinkingContent;
 
   // Extract tool parts (static + dynamic tools)
