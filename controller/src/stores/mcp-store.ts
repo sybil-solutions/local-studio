@@ -42,6 +42,7 @@ export class McpStore {
 
     const exaApiKey = process.env["EXA_API_KEY"] ?? "";
     const seed = this.resolveExaCommand();
+    const exaEnabled = exaApiKey.trim().length > 0 ? 1 : 0;
 
     this.db.query(`
       INSERT OR IGNORE INTO mcp_servers (id, name, enabled, command, args, env, description, url)
@@ -49,13 +50,29 @@ export class McpStore {
     `).run(
       "exa",
       "Exa Search",
-      1,
+      exaEnabled,
       seed.command,
       JSON.stringify(seed.args),
       JSON.stringify({ EXA_API_KEY: exaApiKey }),
       "Web search and content retrieval via Exa AI",
       "https://exa.ai",
     );
+
+    if (!exaEnabled) {
+      const row = this.db.query("SELECT env, enabled FROM mcp_servers WHERE id = ?").get("exa") as
+        | { env?: string; enabled?: number }
+        | undefined;
+      if (row?.enabled) {
+        try {
+          const env = row.env ? (JSON.parse(row.env) as Record<string, string>) : {};
+          if (!env["EXA_API_KEY"]) {
+            this.db.query("UPDATE mcp_servers SET enabled = 0 WHERE id = ?").run("exa");
+          }
+        } catch {
+          this.db.query("UPDATE mcp_servers SET enabled = 0 WHERE id = ?").run("exa");
+        }
+      }
+    }
   }
 
   /**
@@ -109,16 +126,18 @@ export class McpStore {
       ? (this.db.query("SELECT * FROM mcp_servers WHERE enabled = 1 ORDER BY name").all() as Array<Record<string, unknown>>)
       : (this.db.query("SELECT * FROM mcp_servers ORDER BY name").all() as Array<Record<string, unknown>>);
 
-    return rows.map((row) => ({
-      id: String(row["id"]),
-      name: String(row["name"]),
-      enabled: Boolean(row["enabled"]),
-      command: String(row["command"]),
-      args: JSON.parse(String(row["args"])),
-      env: JSON.parse(String(row["env"])),
-      description: row["description"] ? String(row["description"]) : null,
-      url: row["url"] ? String(row["url"]) : null,
-    }));
+    return rows
+      .map((row) => ({
+        id: String(row["id"]),
+        name: String(row["name"]),
+        enabled: Boolean(row["enabled"]),
+        command: String(row["command"]),
+        args: JSON.parse(String(row["args"])),
+        env: JSON.parse(String(row["env"])),
+        description: row["description"] ? String(row["description"]) : null,
+        url: row["url"] ? String(row["url"]) : null,
+      }))
+      .filter((server) => server.id.trim().length > 0 && server.name.trim().length > 0 && server.command.trim().length > 0);
   }
 
   /**

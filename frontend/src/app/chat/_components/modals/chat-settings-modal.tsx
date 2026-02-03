@@ -33,11 +33,11 @@ export function ChatSettingsModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <button
-        className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+        className="absolute inset-0 z-0 bg-black/50 backdrop-blur-sm"
         onClick={onClose}
         aria-label="Close"
       />
-      <div className="relative w-full max-w-lg mx-4 bg-(--card) border border-(--border) rounded-xl shadow-xl">
+      <div className="relative z-10 w-full max-w-lg mx-4 bg-(--card) border border-(--border) rounded-xl shadow-xl">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-(--border)">
           <div className="flex items-center gap-2">

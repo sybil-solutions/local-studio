@@ -25,7 +25,9 @@ export function useChatTools({ mcpEnabled }: UseChatToolsOptions) {
 
   // Use ref to avoid re-creating loadMCPTools when mcpServers changes
   const mcpServersRef = useRef(mcpServers);
+  const warnedNoEnabledServersRef = useRef(false);
   useEffect(() => { mcpServersRef.current = mcpServers; }, [mcpServers]);
+  useEffect(() => { warnedNoEnabledServersRef.current = false; }, [mcpEnabled, mcpServers]);
 
   const loadMCPServers = useCallback(async () => {
     try {
@@ -120,7 +122,10 @@ export function useChatTools({ mcpEnabled }: UseChatToolsOptions) {
         ? toolsList.filter((tool) => enabledServers.has(tool.server))
         : toolsList;
       if (shouldFilter && filteredTools.length === 0 && toolsList.length > 0) {
-        console.warn("[MCP] no enabled servers matched tools; using all tools");
+        if (!warnedNoEnabledServersRef.current) {
+          console.warn("[MCP] no enabled servers matched tools; using all tools");
+          warnedNoEnabledServersRef.current = true;
+        }
         return toolsList.map((tool: MCPTool) => ({
           name: `${tool.server}__${tool.name}`,
           server: tool.server,

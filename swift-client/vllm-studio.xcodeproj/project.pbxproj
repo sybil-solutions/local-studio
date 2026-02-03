@@ -3,7 +3,7 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 63;
+	objectVersion = 77;
 	objects = {
 
 /* Begin PBXBuildFile section */
@@ -256,7 +256,7 @@
 		E10840B86185C3842321BBDE /* chat-detail-view-model.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "chat-detail-view-model.swift"; sourceTree = "<group>"; };
 		E53FAE8F64214EE141EFD025 /* chat-agent-meta.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "chat-agent-meta.swift"; sourceTree = "<group>"; };
 		E56D50EBF3F672778253F8ED /* loading-view.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "loading-view.swift"; sourceTree = "<group>"; };
-		E58F22CE7A699B7BC5FD5289 /* vllm-studio.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "vllm-studio.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		E58F22CE7A699B7BC5FD5289 /* vllm-studio.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = "vllm-studio.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		E5B60B59FE3E9FAC9694E952 /* usage-summary-card.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "usage-summary-card.swift"; sourceTree = "<group>"; };
 		E5F12CBEE23D311F903C389C /* chat-message.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "chat-message.swift"; sourceTree = "<group>"; };
 		E84EDF77A0A9EB0C83854237 /* api-discover.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "api-discover.swift"; sourceTree = "<group>"; };
@@ -601,6 +601,7 @@
 				LastUpgradeCheck = 1500;
 				TargetAttributes = {
 					EFAD6D5743E25E3ADBC96EE1 = {
+						DevelopmentTeam = 2RQ2839U69;
 						ProvisioningStyle = Automatic;
 					};
 				};
@@ -615,6 +616,7 @@
 			);
 			mainGroup = 2F4E998621E9EBDFE6CD5A46;
 			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
@@ -771,7 +773,7 @@
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 953GG2G474;
+				DEVELOPMENT_TEAM = 2RQ2839U69;
 				INFOPLIST_FILE = resources/info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -911,7 +913,7 @@
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 953GG2G474;
+				DEVELOPMENT_TEAM = 2RQ2839U69;
 				INFOPLIST_FILE = resources/info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",

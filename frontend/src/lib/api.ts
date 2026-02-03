@@ -412,9 +412,17 @@ class APIClient {
   }
 
   async abortChatRun(sessionId: string, runId: string): Promise<{ success: boolean }> {
-    return this.request(`/chats/${sessionId}/runs/${runId}/abort`, {
-      method: "POST",
-    });
+    try {
+      return await this.request(`/chats/${sessionId}/runs/${runId}/abort`, {
+        method: "POST",
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message.includes("Run not found") || message.includes("HTTP 404")) {
+        return { success: false };
+      }
+      throw error;
+    }
   }
 
   async getChatUsage(sessionId: string): Promise<{

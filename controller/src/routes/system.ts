@@ -142,7 +142,7 @@ export const registerSystemRoutes = (app: Hono, context: AppContext): void => {
       return undefined;
     };
 
-    const numLayers =
+    const layerCount =
       getNumber(config["num_hidden_layers"]) ??
       getNumber(config["n_layer"]) ??
       getNumber(config["num_layers"]);
@@ -151,22 +151,22 @@ export const registerSystemRoutes = (app: Hono, context: AppContext): void => {
       getNumber(config["n_embd"]) ??
       getNumber(config["d_model"]) ??
       getNumber(config["dim"]);
-    const numHeads =
+    const headCount =
       getNumber(config["num_attention_heads"]) ??
       getNumber(config["n_head"]) ??
       getNumber(config["num_heads"]);
-    const numKvHeads =
+    const keyValueHeadCount =
       getNumber(config["num_key_value_heads"]) ??
       getNumber(config["num_kv_heads"]) ??
-      numHeads;
+      headCount;
     const headDim =
       getNumber(config["head_dim"]) ??
-      (hiddenSize && numHeads ? hiddenSize / numHeads : undefined);
+      (hiddenSize && headCount ? hiddenSize / headCount : undefined);
 
     const kvBytesPerValue = kvDtype.toLowerCase() === "fp8" ? 1 : 2;
     let kvCacheBytes = 0;
-    if (numLayers && numKvHeads && headDim) {
-      kvCacheBytes = contextLength * numLayers * numKvHeads * headDim * 2 * kvBytesPerValue;
+    if (layerCount && keyValueHeadCount && headDim) {
+      kvCacheBytes = contextLength * layerCount * keyValueHeadCount * headDim * 2 * kvBytesPerValue;
     }
 
     const weightsTotalGb = weightsBytes / 1024 ** 3;

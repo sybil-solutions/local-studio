@@ -23,7 +23,7 @@ data/
 docs
 # Logs
 *.log
-logs/
+/logs/
 
 # Recipes (user-specific)
 recipes/
