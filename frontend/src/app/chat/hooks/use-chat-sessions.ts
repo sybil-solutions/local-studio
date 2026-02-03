@@ -61,7 +61,12 @@ export function useChatSessions() {
           title,
           model,
         });
-        updateSessions((prev) => [session, ...prev]);
+        updateSessions((prev) => {
+          if (prev.some((existing) => existing.id === session.id)) {
+            return prev.map((existing) => (existing.id === session.id ? session : existing));
+          }
+          return [session, ...prev];
+        });
         setCurrentSessionId(session.id);
         setCurrentSessionTitle(session.title);
         activeSessionRef.current = session.id;
