@@ -13,7 +13,7 @@
     "script:util:compare": "bun scripts/utilities/compare-controllers.ts",
     "prepare": "cd ../.. && husky controller/.husky",
     "test": "bun test",
-    "check": "knip && jscpd src && depcheck --ignores=\"swagger-ui-dist,lint-staged\" --skip-missing",
+    "check": "knip && jscpd src && depcheck --ignores=\"swagger-ui-dist,lint-staged,bun:test\" --skip-missing",
     "check:fix": "knip --fix"
   },
   "dependencies": {
