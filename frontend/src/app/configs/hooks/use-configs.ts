@@ -17,8 +17,13 @@ export interface ApiConnectionSettings {
 
 export type ConnectionStatus = "unknown" | "connected" | "error";
 
+const DEFAULT_BACKEND_URL =
+  process.env.NEXT_PUBLIC_API_URL ||
+  process.env.NEXT_PUBLIC_BACKEND_URL ||
+  "http://localhost:8080";
+
 const DEFAULT_API_SETTINGS: ApiConnectionSettings = {
-  backendUrl: "http://localhost:8080",
+  backendUrl: DEFAULT_BACKEND_URL,
   apiKey: "",
   hasApiKey: false,
   voiceUrl: "",
@@ -140,7 +145,10 @@ export function useConfigs() {
   };
 
   const saveApiSettings = async () => {
+    const backendUrl = apiSettings.backendUrl?.trim() || "";
     persistLocalApiSettings();
+
+    let savedRemotely = false;
     try {
       setSaving(true);
       setStatusMessage("");
@@ -158,17 +166,25 @@ export function useConfigs() {
         const updated = (await res.json()) as Partial<ApiConnectionSettings>;
         setApiSettings(mergeApiSettings(updated));
         setStatusMessage("Settings saved");
-        loadConfig();
+        savedRemotely = true;
       } else {
-        const err = await res.json();
-        setStatusMessage(err.error || "Saved locally, but failed to save on server");
-        setConnectionStatus("error");
+        const err = await res.json().catch(() => ({}));
+        setStatusMessage(err.error || "Saved locally");
       }
     } catch {
-      setStatusMessage("Saved locally, but failed to save on server");
-      setConnectionStatus("error");
+      setStatusMessage("Saved locally");
     } finally {
       setSaving(false);
+    }
+
+    // Always attempt to refresh config when a backend URL is present.
+    if (backendUrl) {
+      loadConfig();
+    }
+
+    // Avoid showing a hard error when only the server-side save failed.
+    if (!savedRemotely) {
+      setConnectionStatus("unknown");
     }
   };
 

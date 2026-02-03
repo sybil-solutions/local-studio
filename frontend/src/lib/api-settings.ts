@@ -11,8 +11,14 @@ export interface ApiSettings {
   voiceModel: string;
 }
 
+const DEFAULT_BACKEND_URL =
+  process.env.BACKEND_URL ||
+  process.env.NEXT_PUBLIC_API_URL ||
+  process.env.NEXT_PUBLIC_BACKEND_URL ||
+  "http://localhost:8080";
+
 const DEFAULT_SETTINGS: ApiSettings = {
-  backendUrl: process.env.BACKEND_URL || process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080",
+  backendUrl: DEFAULT_BACKEND_URL,
   apiKey: process.env.API_KEY || "",
   voiceUrl: process.env.VOICE_URL || process.env.NEXT_PUBLIC_VOICE_URL || "",
   voiceModel: process.env.VOICE_MODEL || process.env.NEXT_PUBLIC_VOICE_MODEL || "whisper-large-v3-turbo",
