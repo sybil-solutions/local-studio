@@ -2,8 +2,12 @@
 import type { Hono } from "hono";
 import { connect } from "node:net";
 import { hostname } from "node:os";
+import { existsSync, readFileSync } from "node:fs";
+import { join, resolve, sep } from "node:path";
 import type { AppContext } from "../types/context";
 import type { HealthResponse, SystemConfigResponse } from "../types/models";
+import { badRequest, notFound } from "../core/errors";
+import { estimateWeightsSizeBytes } from "../services/model-browser";
 import { getGpuInfo } from "../services/gpu";
 
 /**
@@ -80,6 +84,127 @@ export const registerSystemRoutes = (app: Hono, context: AppContext): void => {
     return ctx.json({
       count: gpus.length,
       gpus,
+    });
+  });
+
+  app.post("/vram-calculator", async (ctx) => {
+    const body = await ctx.req.json().catch(() => ({}));
+    if (!body || typeof body !== "object") {
+      throw badRequest("Invalid payload");
+    }
+
+    const model = typeof body["model"] === "string" ? body["model"].trim() : "";
+    const contextLength = Number(body["context_length"] ?? 0);
+    const tpSize = Number(body["tp_size"] ?? 1);
+    const kvDtype = typeof body["kv_dtype"] === "string" ? body["kv_dtype"] : "auto";
+
+    if (!model) {
+      throw badRequest("model is required");
+    }
+    if (!Number.isFinite(contextLength) || contextLength <= 0) {
+      throw badRequest("context_length must be a positive number");
+    }
+    if (!Number.isFinite(tpSize) || tpSize <= 0) {
+      throw badRequest("tp_size must be a positive number");
+    }
+
+    const resolved = resolve(model);
+    const modelsRoot = resolve(context.config.models_dir);
+    const rootPrefix = modelsRoot.endsWith(sep) ? modelsRoot : modelsRoot + sep;
+    if (!resolved.startsWith(rootPrefix)) {
+      throw badRequest("model must be inside models_dir");
+    }
+    if (!existsSync(resolved)) {
+      throw notFound("Model path not found");
+    }
+
+    const weightsBytes = estimateWeightsSizeBytes(resolved, false);
+    if (!weightsBytes || weightsBytes <= 0) {
+      throw notFound("Model weights not found");
+    }
+
+    let config: Record<string, unknown> = {};
+    const configPath = join(resolved, "config.json");
+    if (existsSync(configPath)) {
+      try {
+        const raw = readFileSync(configPath, "utf-8");
+        config = JSON.parse(raw) as Record<string, unknown>;
+      } catch {
+        config = {};
+      }
+    }
+
+    const getNumber = (value: unknown): number | undefined => {
+      if (typeof value === "number" && Number.isFinite(value)) return value;
+      if (typeof value === "string" && value.trim() && !Number.isNaN(Number(value))) {
+        return Number(value);
+      }
+      return undefined;
+    };
+
+    const numLayers =
+      getNumber(config["num_hidden_layers"]) ??
+      getNumber(config["n_layer"]) ??
+      getNumber(config["num_layers"]);
+    const hiddenSize =
+      getNumber(config["hidden_size"]) ??
+      getNumber(config["n_embd"]) ??
+      getNumber(config["d_model"]) ??
+      getNumber(config["dim"]);
+    const numHeads =
+      getNumber(config["num_attention_heads"]) ??
+      getNumber(config["n_head"]) ??
+      getNumber(config["num_heads"]);
+    const numKvHeads =
+      getNumber(config["num_key_value_heads"]) ??
+      getNumber(config["num_kv_heads"]) ??
+      numHeads;
+    const headDim =
+      getNumber(config["head_dim"]) ??
+      (hiddenSize && numHeads ? hiddenSize / numHeads : undefined);
+
+    const kvBytesPerValue = kvDtype.toLowerCase() === "fp8" ? 1 : 2;
+    let kvCacheBytes = 0;
+    if (numLayers && numKvHeads && headDim) {
+      kvCacheBytes = contextLength * numLayers * numKvHeads * headDim * 2 * kvBytesPerValue;
+    }
+
+    const weightsTotalGb = weightsBytes / 1024 ** 3;
+    const weightsPerGpuGb = weightsTotalGb / tpSize;
+    const kvCachePerGpuGb = kvCacheBytes > 0 ? kvCacheBytes / 1024 ** 3 / tpSize : 0;
+    const activationsPerGpuGb = Math.max(0.5, weightsPerGpuGb * 0.1);
+    const overheadPerGpuGb = 2.0;
+    const perGpuGb = weightsPerGpuGb + kvCachePerGpuGb + activationsPerGpuGb + overheadPerGpuGb;
+    const totalGb = perGpuGb * tpSize;
+
+    const gpus = getGpuInfo();
+    let perGpuCapacityGb = 0;
+    if (gpus.length >= tpSize && tpSize > 0) {
+      const candidates = gpus.slice(0, tpSize).map((gpu) => {
+        if (gpu.memory_total_mb) return gpu.memory_total_mb / 1024;
+        return gpu.memory_total / 1024 ** 3;
+      });
+      perGpuCapacityGb = Math.min(...candidates);
+    }
+
+    const fits = perGpuCapacityGb > 0 ? perGpuGb <= perGpuCapacityGb : true;
+    const utilizationPercent = perGpuCapacityGb > 0 ? (perGpuGb / perGpuCapacityGb) * 100 : 0;
+
+    return ctx.json({
+      model_size_gb: weightsTotalGb,
+      context_memory_gb: kvCachePerGpuGb * tpSize,
+      overhead_gb: overheadPerGpuGb,
+      total_gb: totalGb,
+      fits_in_vram: fits,
+      fits,
+      utilization_percent: utilizationPercent,
+      breakdown: {
+        model_weights_gb: weightsPerGpuGb,
+        kv_cache_gb: kvCachePerGpuGb,
+        activations_gb: activationsPerGpuGb,
+        per_gpu_gb: perGpuGb,
+        total_gb: totalGb,
+      },
     });
   });
 
