@@ -31,3 +31,10 @@
 - Eliminated /chat hydration mismatch by deferring sidebar layout state to mount.
 - Rebuilt and redeployed frontend + restarted controller on server.
 - Verified chat + agent plan tool calls in browser; hit API /health and /v1/models.
+
+## Iteration 6
+- Fixed config settings save by retrying unwritable files and ensuring writable targets.
+- Added frontend container user mapping + documented UID/GID env for data writes.
+- Rebuilt frontend, redeployed on server, and verified POST /api/settings updates data file.
+- Re-ran controller lint/typecheck/tests and frontend lint/build.
+- Confirmed API health + /v1/models responses.

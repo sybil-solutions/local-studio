@@ -19,3 +19,8 @@
 - Trigger: using window/localStorage during initial render
 - Instruction: initialize deterministic defaults and apply window/localStorage in useEffect after mount
 - Added after: React #418 hydration failure on /chat
+
+## Sign: Handle settings file ownership mismatch
+- Trigger: API settings save fails with EACCES/EPERM on existing file
+- Instruction: if file exists but is unwritable, unlink and rewrite in a writable directory
+- Added after: Config save failed on server-mounted data volume

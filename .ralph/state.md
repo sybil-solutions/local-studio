@@ -1,10 +1,10 @@
 # Ralph State
 
-- iteration: 5
-- task: "Phase 3: Recover tool-call parse errors and fix frontend hydration issues"
+- iteration: 6
+- task: "Fix config settings save failure and persist API settings"
 - completion_criteria:
-  - Tool-call JSON parse errors recover gracefully in controller streams
-  - Frontend UUID generation works without crypto.randomUUID
-  - Sidebar hydration mismatch eliminated on /chat load
-  - Backend and frontend deployed on server
-  - Browser + API tests pass for chat + agent plan flow
+  - POST /api/settings succeeds without 500s
+  - data/api-settings.json updates on save
+  - Frontend container writes settings on server
+  - Lint/typecheck/build pass
+  - Backend + frontend deployed; API health checks pass
