@@ -23,6 +23,9 @@ describe("System Routes", () => {
       data_dir: "./data",
       db_path: ":memory:",
       models_dir: "/models",
+      direct_mode: false,
+      litellm_url: "http://localhost:4100",
+      inference_url: "http://localhost:8000",
     };
 
     const mockContext = {

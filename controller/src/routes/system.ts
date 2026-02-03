@@ -38,6 +38,24 @@ export const registerSystemRoutes = (app: Hono, context: AppContext): void => {
     });
   };
 
+  const parsePort = (urlValue: string, fallbackPort: number): number => {
+    try {
+      const parsed = new URL(urlValue);
+      return parsed.port ? Number(parsed.port) : fallbackPort;
+    } catch {
+      return fallbackPort;
+    }
+  };
+
+  const parseProtocol = (urlValue: string, fallbackProtocol: string): string => {
+    try {
+      const parsed = new URL(urlValue);
+      return parsed.protocol.replace(":", "") || fallbackProtocol;
+    } catch {
+      return fallbackProtocol;
+    }
+  };
+
   app.get("/health", async (ctx) => {
     const current = await context.processManager.findInferenceProcess(context.config.inference_port);
     let inferenceReady = false;
@@ -85,6 +103,11 @@ export const registerSystemRoutes = (app: Hono, context: AppContext): void => {
 
   app.get("/config", async (ctx) => {
     const services: Array<{ name: string; port: number; internal_port: number; protocol: string; status: string; description?: string | null }> = [];
+    const inferencePort = parsePort(context.config.inference_url, context.config.inference_port);
+    const inferenceProtocol = parseProtocol(context.config.inference_url, "http");
+    const litellmPort = parsePort(context.config.litellm_url, 4100);
+    const litellmProtocol = parseProtocol(context.config.litellm_url, "http");
+
     services.push({
       name: "Controller",
       port: context.config.port,
@@ -100,7 +123,7 @@ export const registerSystemRoutes = (app: Hono, context: AppContext): void => {
       if (current) {
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), 2000);
-        const response = await fetch(`http://localhost:${context.config.inference_port}/health`, {
+        const response = await fetch(`${context.config.inference_url}/health`, {
           signal: controller.signal,
         });
         clearTimeout(timeout);
@@ -114,9 +137,9 @@ export const registerSystemRoutes = (app: Hono, context: AppContext): void => {
 
     services.push({
       name: "vLLM/SGLang",
-      port: context.config.inference_port,
-      internal_port: context.config.inference_port,
-      protocol: "http",
+      port: inferencePort,
+      internal_port: inferencePort,
+      protocol: inferenceProtocol,
       status: inferenceStatus,
       description: "Inference backend (vLLM or SGLang)",
     });
@@ -126,7 +149,7 @@ export const registerSystemRoutes = (app: Hono, context: AppContext): void => {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 10_000);
       const masterKey = process.env["LITELLM_MASTER_KEY"] ?? "sk-master";
-      const response = await fetch("http://localhost:4100/health", {
+      const response = await fetch(`${context.config.litellm_url}/health`, {
         headers: { Authorization: `Bearer ${masterKey}` },
         signal: controller.signal,
       });
@@ -143,9 +166,9 @@ export const registerSystemRoutes = (app: Hono, context: AppContext): void => {
 
     services.push({
       name: "LiteLLM",
-      port: 4100,
-      internal_port: 4000,
-      protocol: "http",
+      port: litellmPort,
+      internal_port: litellmPort,
+      protocol: litellmProtocol,
       status: litellmStatus,
       description: "API gateway and load balancer",
     });
@@ -214,8 +237,8 @@ export const registerSystemRoutes = (app: Hono, context: AppContext): void => {
       services,
       environment: {
         controller_url: `http://${hostname()}:${context.config.port}`,
-        inference_url: `http://${hostname()}:${context.config.inference_port}`,
-        litellm_url: `http://${hostname()}:4100`,
+        inference_url: context.config.inference_url,
+        litellm_url: context.config.litellm_url,
         frontend_url: `http://${hostname()}:3000`,
       },
     };

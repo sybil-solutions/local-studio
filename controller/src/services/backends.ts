@@ -108,21 +108,24 @@ export const getPythonPath = (recipe: Recipe): string | undefined => {
  */
 export const getDefaultReasoningParser = (recipe: Recipe): string | undefined => {
   const modelId = (recipe.served_model_name || recipe.model_path || "").toLowerCase();
+  const isGguf = modelId.endsWith(".gguf");
 
   if (modelId.includes("minimax") && (modelId.includes("m2") || modelId.includes("m-2"))) {
     return "minimax_m2_append_think";
   }
-  if (modelId.includes("intellect") && modelId.includes("3")) {
+
+  const deepseekCandidates = [
+    modelId.includes("deepseek") && modelId.includes("r1"),
+    modelId.includes("intellect") && modelId.includes("3"),
+    modelId.includes("mirothinker"),
+    modelId.includes("qwen3") && modelId.includes("thinking"),
+  ];
+  if (!isGguf && deepseekCandidates.some(Boolean)) {
     return "deepseek_r1";
   }
+
   if (modelId.includes("glm") && ["4.5", "4.6", "4.7", "4-5", "4-6", "4-7"].some((tag) => modelId.includes(tag))) {
     return "glm45";
-  }
-  if (modelId.includes("mirothinker")) {
-    return "deepseek_r1";
-  }
-  if (modelId.includes("qwen3") && modelId.includes("thinking")) {
-    return "deepseek_r1";
   }
   if (modelId.includes("qwen3")) {
     return "qwen3";
@@ -259,9 +262,15 @@ export const buildVllmCommand = (recipe: Recipe): string[] => {
   if (toolCallParser) {
     command.push("--tool-call-parser", toolCallParser, "--enable-auto-tool-choice");
   }
-  const reasoningParser = recipe.reasoning_parser || getDefaultReasoningParser(recipe);
+  // Only use auto-detection if reasoning_parser is not explicitly set to null
+  const reasoningParser = recipe.reasoning_parser ?? undefined;
   if (reasoningParser) {
     command.push("--reasoning-parser", reasoningParser);
+  } else if (recipe.reasoning_parser === undefined) {
+    const autoParser = getDefaultReasoningParser(recipe);
+    if (autoParser) {
+      command.push("--reasoning-parser", autoParser);
+    }
   }
   if (recipe.quantization) {
     command.push("--quantization", recipe.quantization);

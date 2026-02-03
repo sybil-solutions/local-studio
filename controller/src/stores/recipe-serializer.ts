@@ -132,7 +132,7 @@ export const parseRecipe = (raw: unknown): Recipe => {
     id: asRecipeId(parsed.id),
     env_vars: environmentVariables,
     tool_call_parser: parsed.tool_call_parser ?? null,
-    reasoning_parser: parsed.reasoning_parser ?? null,
+    reasoning_parser: parsed.reasoning_parser === undefined ? undefined : parsed.reasoning_parser,
     quantization: parsed.quantization ?? null,
     dtype: parsed.dtype ?? null,
     served_model_name: parsed.served_model_name ?? null,

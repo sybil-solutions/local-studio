@@ -15,6 +15,9 @@ export interface ModelInfo {
   context_length: number | null;
   recipe_ids: string[];
   has_recipe: boolean;
+  // Hotswap support: indicates this model is currently running
+  running?: boolean;
+  served_model_name?: string | null;
 }
 
 const WEIGHT_EXTS = [".safetensors", ".bin", ".gguf"] as const;

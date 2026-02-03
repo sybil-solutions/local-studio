@@ -181,6 +181,8 @@ export const registerModelsRoutes = (app: Hono, context: AppContext): void => {
     const scanRoots = roots.filter((root) => root.exists).map((root) => root.path);
 
     const modelDirectories = discoverModelDirectories(scanRoots, 2, 1000);
+    const discoveredPaths = new Set<string>(modelDirectories);
+
     const models = [];
     for (const directory of modelDirectories) {
       const canonical = resolve(directory);
@@ -194,6 +196,66 @@ export const registerModelsRoutes = (app: Hono, context: AppContext): void => {
       const info = await buildModelInfo(directory, recipeIds);
       models.push(info);
     }
+
+    // HOTSWAP: Add currently running model that might not be in discovered paths
+    const current = await context.processManager.findInferenceProcess(context.config.inference_port);
+    if (current && current.model_path) {
+      const runningPath = current.model_path;
+      // Check if the running model is already in the discovered list
+      const canonicalRunningPath = resolve(runningPath);
+      const runningBasename = basename(runningPath);
+
+      // Check if already discovered (either by path or basename)
+      const alreadyDiscovered = discoveredPaths.has(canonicalRunningPath) ||
+        models.some((m: typeof models[0]) => basename(m.path) === runningBasename);
+
+      if (!alreadyDiscovered && existsSync(runningPath)) {
+        // Get associated recipe IDs
+        let recipeIds = recipesByPath.get(canonicalRunningPath) ?? [];
+        if (recipeIds.length === 0) {
+          const byName = recipesByBasename.get(runningBasename) ?? [];
+          recipeIds = byName.length === 1 ? [...byName] : [];
+        }
+
+        // Get file stats for size and modified time
+        const { statSync } = await import("node:fs");
+        let sizeBytes: number | null = null;
+        let modifiedAt: number | null = null;
+        try {
+          const stats = statSync(runningPath);
+          sizeBytes = stats.size;
+          modifiedAt = stats.mtimeMs;
+        } catch {
+          // Ignore stat errors
+        }
+
+        // Create a model info entry for the running file-based model
+        const runningInfo = {
+          name: runningBasename,
+          path: runningPath,
+          size_bytes: sizeBytes,
+          modified_at: modifiedAt,
+          architecture: null,
+          quantization: runningBasename.toLowerCase().includes("gguf") ? "gguf" : null,
+          context_length: null,
+          recipe_ids: recipeIds,
+          has_recipe: recipeIds.length > 0,
+          running: true,
+          served_model_name: current.served_model_name,
+        };
+        models.push(runningInfo);
+      } else {
+        // Model is in discovered list, update its running status
+        for (const model of models) {
+          if (resolve(model.path) === canonicalRunningPath || basename(model.path) === runningBasename) {
+            (model as unknown as { running: boolean }).running = true;
+            (model as unknown as { served_model_name: string | null }).served_model_name = current.served_model_name;
+            break;
+          }
+        }
+      }
+    }
+
     models.sort((left, right) => String(left.name).toLowerCase().localeCompare(String(right.name).toLowerCase()));
 
     const rootsPayload = roots.map((root) => ({

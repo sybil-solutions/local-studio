@@ -22,6 +22,7 @@ import {
     listProcesses,
     pidExists,
     buildProcessTree,
+    isProcessListeningOnPort,
 } from "./process-utilities";
 
 /**
@@ -65,8 +66,17 @@ export const createProcessManager = (
                 if (port !== 8000) {
                     continue;
                 }
-            } else if (!flagPort || Number(flagPort) !== port) {
-                continue;
+            } else if (flagPort) {
+                // If --port flag is present, verify it matches
+                if (Number(flagPort) !== port) {
+                    continue;
+                }
+            } else {
+                // If --port flag is absent, verify the process is actually listening on the expected port
+                // This handles cases where vLLM/SGLang are started with default ports
+                if (!isProcessListeningOnPort(proc.pid, port)) {
+                    continue;
+                }
             }
             let modelPath =
                 extractFlag(proc.args, "--model") ||

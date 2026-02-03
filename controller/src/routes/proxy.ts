@@ -5,10 +5,11 @@ import { AsyncLock, delay } from "../core/async";
 import { HttpStatus, serviceUnavailable } from "../core/errors";
 import { buildSseHeaders } from "../http/sse";
 import type { AppContext } from "../types/context";
-import type { Recipe } from "../types/models";
+import type { BackendTarget, Recipe } from "../types/models";
 import type { ToolCallBuffer, ThinkState, Utf8State } from "../services/proxy-parsers";
 import { parseToolCallsFromContent } from "../services/proxy-parsers";
 import { createProxyStream } from "../services/proxy-streamer";
+import { detectAvailableBackends, selectBackend } from "../services/backend-health.js";
 
 const switchLock = new AsyncLock();
 
@@ -241,15 +242,98 @@ IMPORTANT: Do not use emoji, Unicode symbols, or decorative box-drawing characte
       }
     }
 
+    // Detect available backends and select target
+    let availability;
+    try {
+      availability = await detectAvailableBackends(context.config);
+    } catch (error) {
+      throw serviceUnavailable(`Failed to check backend health: ${String(error)}`);
+    }
+
+    let backend: BackendTarget;
+    try {
+      backend = selectBackend(context.config, availability);
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : "No inference backend available";
+      throw serviceUnavailable(detail);
+    }
+
+    // Log the selected backend mode
+    context.logger.info(`Chat completions routing: ${backend.name} (${backend.mode})`, {
+      mode: backend.mode,
+      url: backend.url,
+      direct_mode: context.config.direct_mode,
+      litellm_available: availability.litellm_available,
+      inference_available: availability.inference_available,
+    });
+
     const masterKey = process.env["LITELLM_MASTER_KEY"] ?? "sk-master";
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
       Authorization: `Bearer ${masterKey}`,
     };
-    const litellmUrl = "http://localhost:4100/v1/chat/completions";
+    const fallbackTarget: BackendTarget = {
+      mode: "direct",
+      url: context.config.inference_url,
+      name: "Direct Inference (fallback)",
+    };
+
+    const shouldFallback = (target: BackendTarget, response: Response | null, error: string | null): boolean => {
+      if (target.mode !== "litellm" || !availability.inference_available) {
+        return false;
+      }
+      if (error) {
+        return true;
+      }
+      return Boolean(response && response.status >= 500);
+    };
+
+    const requestBackend = async (target: BackendTarget): Promise<{ response: Response | null; error: string | null }> => {
+      try {
+        const response = await fetch(`${target.url}/v1/chat/completions`, { method: "POST", headers, body: finalBody });
+        return { response, error: null };
+      } catch (error) {
+        return { response: null, error: `Failed to reach ${target.name}: ${String(error)}` };
+      }
+    };
+
+    const requestWithFallback = async (): Promise<{ response: Response; backend: BackendTarget }> => {
+      const primary = await requestBackend(backend);
+      if (shouldFallback(backend, primary.response, primary.error)) {
+        context.logger.warn("LiteLLM request failed, falling back to direct inference", {
+          error: primary.error,
+          status: primary.response?.status,
+        });
+        const fallback = await requestBackend(fallbackTarget);
+        if (fallback.error) {
+          const primaryMessage = primary.error ?? `LiteLLM responded with ${primary.response?.status}`;
+          throw serviceUnavailable(`${primaryMessage}. Fallback to direct inference failed: ${fallback.error}`);
+        }
+        if (!fallback.response) {
+          throw serviceUnavailable("Direct inference unavailable");
+        }
+        return { response: fallback.response, backend: fallbackTarget };
+      }
+      if (primary.error) {
+        throw serviceUnavailable(primary.error);
+      }
+      if (!primary.response) {
+        throw serviceUnavailable(`${backend.name} unavailable`);
+      }
+      return { response: primary.response, backend };
+    };
 
     if (!isStreaming) {
-      const response = await fetch(litellmUrl, { method: "POST", headers, body: finalBody });
+      const { response } = await requestWithFallback();
+      if (!response.ok) {
+        const errorText = await response.text();
+        return new Response(errorText, {
+          status: response.status,
+          headers: {
+            "Content-Type": response.headers.get("Content-Type") ?? "application/json",
+          },
+        });
+      }
       const result = (await response.json()) as Record<string, unknown>;
 
       // Track token usage to lifetime metrics
@@ -298,19 +382,19 @@ IMPORTANT: Do not use emoji, Unicode symbols, or decorative box-drawing characte
       return ctx.json(result, { status: response.status });
     }
 
-    const litellmResponse = await fetch(litellmUrl, { method: "POST", headers, body: finalBody });
-    if (!litellmResponse.ok) {
-      const errorText = await litellmResponse.text();
+    const { response: backendResponse, backend: activeBackend } = await requestWithFallback();
+    if (!backendResponse.ok) {
+      const errorText = await backendResponse.text();
       return new Response(errorText, {
-        status: litellmResponse.status,
+        status: backendResponse.status,
         headers: {
-          "Content-Type": litellmResponse.headers.get("Content-Type") ?? "application/json",
+          "Content-Type": backendResponse.headers.get("Content-Type") ?? "application/json",
         },
       });
     }
-    const reader = litellmResponse.body?.getReader();
+    const reader = backendResponse.body?.getReader();
     if (!reader) {
-      throw serviceUnavailable("LiteLLM backend unavailable");
+      throw serviceUnavailable(`${activeBackend.name} unavailable`);
     }
 
     const thinkState: ThinkState = { inThinking: false };

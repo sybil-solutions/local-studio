@@ -1,12 +1,165 @@
 // CRITICAL
-import { execSync } from "node:child_process";
+import { execSync, spawnSync } from "node:child_process";
 import type { GpuInfo } from "../types/models";
 
 /**
- * Query GPU info from nvidia-smi.
+ * Detect the GPU type available on the system.
+ * @returns "nvidia", "amd", or null if no GPU detected.
+ */
+export const detectGpuType = (): "nvidia" | "amd" | null => {
+  // Check for NVIDIA GPUs
+  try {
+    const nvidiaSmi = process.env["NVIDIA_SMI_PATH"] || "nvidia-smi";
+    execSync(`${nvidiaSmi} --query-gpu=name --format=csv,noheader,nounits`, {
+      encoding: "utf-8",
+      timeout: 5000,
+      stdio: "pipe",
+    });
+    return "nvidia";
+  } catch {
+    // NVIDIA not available
+  }
+
+  // Check for AMD GPUs
+  try {
+    execSync("rocm-smi --showproductname", {
+      encoding: "utf-8",
+      timeout: 5000,
+      stdio: "pipe",
+    });
+    return "amd";
+  } catch {
+    // AMD not available
+  }
+
+  return null;
+};
+
+/**
+ * Parse CSV output from rocm-smi.
+ * @param output - CSV output string.
+ * @returns Array of objects keyed by column name.
+ */
+const parseRocmCsv = (output: string): Record<string, string>[] => {
+  if (!output || output.trim().length === 0) {
+    return [];
+  }
+  const lines = output.trim().split("\n");
+  if (lines.length < 2) {
+    return [];
+  }
+
+  // Parse header (skipping device column which is first)
+  const headers = lines[0].split(",").slice(1);
+  const result: Record<string, string>[] = [];
+
+  for (let i = 1; i < lines.length; i++) {
+    const values = lines[i].split(",").slice(1);
+    const record: Record<string, string> = {};
+    for (let j = 0; j < headers.length; j++) {
+      record[headers[j] ?? `col${j}`] = values[j]?.trim() ?? "";
+    }
+    result.push(record);
+  }
+
+  return result;
+};
+
+/**
+ * Query GPU info from rocm-smi (AMD GPUs).
  * @returns List of GPU info objects.
  */
-export const getGpuInfo = (): GpuInfo[] => {
+export const getAmdGpuInfo = (): GpuInfo[] => {
+  try {
+    const runRocm = (args: string[]): string => {
+      const result = spawnSync("rocm-smi", args, {
+        encoding: "utf-8",
+        timeout: 5000,
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+      if (result.status !== 0 || !result.stdout) {
+        return "";
+      }
+      return result.stdout.toString();
+    };
+
+    const [productOutput, memOutput, useOutput, tempOutput, powerOutput] = [
+      runRocm(["--showproductname", "--csv"]),
+      runRocm(["--showmeminfo", "vram", "--csv"]),
+      runRocm(["--showuse", "--csv"]),
+      runRocm(["-t", "--csv"]),
+      runRocm(["--showpower", "--csv"]),
+    ];
+
+    // Parse each CSV output
+    const products = parseRocmCsv(productOutput);
+    const mems = parseRocmCsv(memOutput);
+    const uses = parseRocmCsv(useOutput);
+    const temps = parseRocmCsv(tempOutput);
+    const powers = parseRocmCsv(powerOutput);
+
+    // Determine GPU count (all should have same length)
+    const gpuCount = Math.max(products.length, mems.length, uses.length, temps.length, powers.length);
+
+    if (gpuCount === 0) {
+      return [];
+    }
+
+    const gpus: GpuInfo[] = [];
+
+    for (let i = 0; i < gpuCount; i++) {
+      const product = products[i] ?? {};
+      const mem = mems[i] ?? {};
+      const use = uses[i] ?? {};
+      const temp = temps[i] ?? {};
+      const power = powers[i] ?? {};
+
+      // Extract GPU name from product info
+      const name = product["Card Series"] || product["Device Name"] || "AMD GPU";
+
+      // Extract memory info (in bytes for rocm-smi)
+      const memTotal = Number(mem["VRAM Total Memory (B)"] ?? 0);
+      const memUsed = Number(mem["VRAM Total Used Memory (B)"] ?? 0);
+      const memFree = Math.max(0, memTotal - memUsed);
+
+      // Extract utilization (percentage)
+      const utilization = Number(use["GPU use (%)"] ?? 0);
+
+      // Extract temperature (edge sensor)
+      const temperature = Number(temp["Temperature (Sensor edge) (C)"] ?? 0);
+
+      // Extract power draw (watts)
+      const powerDraw = Number(power["Average Graphics Package Power (W)"] ?? 0);
+
+      // Power limit - AMD doesn't easily expose this via rocm-smi
+      // We can use the Max Graphics Package Power from full info if needed
+      // For now, set to 0 to indicate unavailable
+      const powerLimit = 0;
+
+      gpus.push({
+        index: i,
+        name,
+        memory_total: memTotal,
+        memory_used: memUsed,
+        memory_free: memFree,
+        utilization,
+        temperature,
+        power_draw: powerDraw,
+        power_limit: powerLimit,
+      });
+    }
+
+    return gpus;
+  } catch {
+    return [];
+  }
+};
+
+/**
+ * Query GPU info from nvidia-smi (NVIDIA GPUs).
+ * @returns List of GPU info objects.
+ */
+export const getNvidiaGpuInfo = (): GpuInfo[] => {
   const query = [
     "name",
     "memory.total",
@@ -64,6 +217,24 @@ export const getGpuInfo = (): GpuInfo[] => {
   } catch {
     return [];
   }
+};
+
+/**
+ * Query GPU info from available GPU vendor (NVIDIA or AMD).
+ * @returns List of GPU info objects.
+ */
+export const getGpuInfo = (): GpuInfo[] => {
+  const gpuType = detectGpuType();
+
+  if (gpuType === "amd") {
+    return getAmdGpuInfo();
+  }
+
+  if (gpuType === "nvidia") {
+    return getNvidiaGpuInfo();
+  }
+
+  return [];
 };
 
 /**

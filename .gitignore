@@ -24,6 +24,8 @@ docs
 # Logs
 *.log
 logs/
+!frontend/src/app/logs/
+!frontend/src/app/logs/**
 
 # Recipes (user-specific)
 recipes/

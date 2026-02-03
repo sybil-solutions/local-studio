@@ -17,6 +17,9 @@ export interface Config {
   models_dir: string;
   sglang_python?: string;
   tabby_api_dir?: string;
+  direct_mode: boolean;
+  litellm_url: string;
+  inference_url: string;
 }
 
 /**
@@ -63,6 +66,12 @@ export const createConfig = (): Config => {
     VLLM_STUDIO_MODELS_DIR: z.string().default("/models"),
     VLLM_STUDIO_SGLANG_PYTHON: z.string().optional(),
     VLLM_STUDIO_TABBY_API_DIR: z.string().optional(),
+    VLLM_STUDIO_DIRECT_MODE: z.preprocess(
+      (value) => value === "true" || value === true,
+      z.boolean().default(false)
+    ),
+    VLLM_STUDIO_LITELLM_URL: z.string().default("http://localhost:4100"),
+    VLLM_STUDIO_INFERENCE_URL: z.string().default("http://localhost:8000"),
   });
 
   const parsed = schema.parse(process.env);
@@ -74,6 +83,9 @@ export const createConfig = (): Config => {
     data_dir: resolve(parsed.VLLM_STUDIO_DATA_DIR),
     db_path: resolve(parsed.VLLM_STUDIO_DB_PATH),
     models_dir: resolve(parsed.VLLM_STUDIO_MODELS_DIR),
+    direct_mode: parsed.VLLM_STUDIO_DIRECT_MODE,
+    litellm_url: parsed.VLLM_STUDIO_LITELLM_URL,
+    inference_url: parsed.VLLM_STUDIO_INFERENCE_URL,
   };
 
   if (parsed.VLLM_STUDIO_API_KEY) {

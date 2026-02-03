@@ -40,6 +40,18 @@ function resolveSettingsFile() {
   };
 }
 
+/**
+ * Normalize a backend URL for client-side use.
+ * Converts 0.0.0.0 to localhost since browsers cannot connect to 0.0.0.0.
+ * @param url - The backend URL to normalize.
+ * @returns Normalized URL.
+ */
+function normalizeBackendUrl(url: string): string {
+  if (!url) return DEFAULT_SETTINGS.backendUrl;
+  // Replace 0.0.0.0 with localhost for browser compatibility
+  return url.replace(/:\/\/0\.0\.0\.0:/, "://localhost:");
+}
+
 export async function getApiSettings(): Promise<ApiSettings> {
   try {
     const { settingsFile } = resolveSettingsFile();
@@ -48,7 +60,7 @@ export async function getApiSettings(): Promise<ApiSettings> {
       const saved = JSON.parse(content) as Partial<ApiSettings>;
       // Merge with defaults (env vars still take precedence if settings file has empty values)
       return {
-        backendUrl: saved.backendUrl || DEFAULT_SETTINGS.backendUrl,
+        backendUrl: normalizeBackendUrl(saved.backendUrl || DEFAULT_SETTINGS.backendUrl),
         apiKey: saved.apiKey || DEFAULT_SETTINGS.apiKey,
         voiceUrl: saved.voiceUrl || DEFAULT_SETTINGS.voiceUrl,
         voiceModel: saved.voiceModel || DEFAULT_SETTINGS.voiceModel,
@@ -57,7 +69,7 @@ export async function getApiSettings(): Promise<ApiSettings> {
   } catch (error) {
     console.error("[API Settings] Failed to read settings file:", error);
   }
-  return DEFAULT_SETTINGS;
+  return { ...DEFAULT_SETTINGS, backendUrl: normalizeBackendUrl(DEFAULT_SETTINGS.backendUrl) };
 }
 
 export async function saveApiSettings(settings: ApiSettings): Promise<void> {

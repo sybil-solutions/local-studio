@@ -40,10 +40,15 @@ export const detectBackend = (args: string[]): string | null => {
     return null;
   }
   const joined = args.join(" ");
+  // Check for vLLM - multiple invocation patterns
   if (joined.includes("vllm.entrypoints.openai.api_server")) {
     return "vllm";
   }
   if (joined.includes("vllm") && joined.includes("serve")) {
+    return "vllm";
+  }
+  // Also catch just "-m vllm" pattern
+  if (joined.includes("-m") && joined.includes("vllm")) {
     return "vllm";
   }
   if (joined.includes("sglang.launch_server")) {
@@ -194,6 +199,78 @@ export const pidExists = (pid: number): boolean => {
   try {
     process.kill(pid, 0);
     return true;
+  } catch {
+    return false;
+  }
+};
+
+/**
+ * Check if a process is listening on a specific port.
+ * Parses /proc/net/tcp for the given PID to find listening ports.
+ * @param pid - Process id.
+ * @param port - Port to check.
+ * @returns True if process is listening on the port.
+ */
+export const isProcessListeningOnPort = (pid: number, port: number): boolean => {
+  try {
+    // Read /proc/net/tcp to find which processes are listening on which ports
+    const result = spawnSync("cat", ["/proc/net/tcp"], { encoding: "utf-8" });
+    if (result.status !== 0) {
+      return false;
+    }
+
+    // Convert port to hex format used in /proc/net/tcp (little-endian)
+    // Port 8000 = 0x1F40 -> stored as 401F0000 in the file
+    const portHex = port.toString(16).toUpperCase().padStart(4, "0");
+    const portHexLE = portHex.substring(2, 4) + portHex.substring(0, 2) + "0000";
+
+    const lines = result.stdout.split("\n");
+    for (const line of lines) {
+      // Skip header and empty lines
+      if (line.startsWith("  sl") || !line.trim()) {
+        continue;
+      }
+
+      // Format: sl  local_address rem_address   st tx_queue rx_queue ...
+      // local_address format: hex:port (little endian hex)
+      const parts = line.trim().split(/\s+/);
+      if (parts.length < 10) {
+        continue;
+      }
+
+      const localAddress = parts[1];
+      const inode = parts[9];
+
+      // Check if this is a listening entry (state 0A = LISTEN)
+      // And if the port matches
+      if (localAddress.endsWith(`:${portHexLE}`)) {
+        // Now check if this inode belongs to our PID
+        try {
+          const fdPath = `/proc/${pid}/fd`;
+          if (existsSync(fdPath)) {
+            // Check if any file descriptor points to a socket with this inode
+            const fds = spawnSync("ls", ["-la", fdPath], { encoding: "utf-8" });
+            if (fds.stdout.includes(`socket:[${inode}]`)) {
+              return true;
+            }
+          }
+        } catch {
+          // Fall through to try lsof as backup
+        }
+      }
+    }
+
+    // Fallback: try using ss or lsof if available
+    try {
+      const ssResult = spawnSync("ss", ["-tlnp", `sport = :${port}`], { encoding: "utf-8" });
+      if (ssResult.stdout.includes(`pid=${pid}`)) {
+        return true;
+      }
+    } catch {
+      // ss command not available or failed
+    }
+
+    return false;
   } catch {
     return false;
   }

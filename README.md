@@ -157,13 +157,30 @@ vllm-studio/
 
 ## With LiteLLM (Optional)
 
-For OpenAI/Anthropic API compatibility:
+For OpenAI/Anthropic API compatibility and advanced routing features:
 
 ```bash
 docker compose up litellm
 ```
 
 Then use `http://localhost:4100` as your API endpoint with any OpenAI-compatible client.
+
+**Note:** LiteLLM is optional for chat. The controller will automatically fall back to direct vLLM/SGLang connection if LiteLLM is not running. To force direct mode (bypassing LiteLLM entirely), set `VLLM_STUDIO_DIRECT_MODE=true`.
+
+## Chat Without LiteLLM
+
+Chat works directly with vLLM/SGLang without LiteLLM:
+
+```bash
+# Just start the controller and vLLM
+vllm-studio
+
+# Or start vLLM manually, then the controller
+vllm serve <model_name>
+vllm-studio
+```
+
+The web UI chat will connect directly to vLLM on port 8000 by default, with automatic fallback if LiteLLM is unavailable.
 
 ## License
 
