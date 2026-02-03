@@ -40,20 +40,8 @@ interface AppSidebarProps {
 export function AppSidebar({ children }: AppSidebarProps) {
   useControllerEvents();
   const pathname = usePathname();
-  // Use consistent defaults for SSR to avoid hydration mismatch
-  const [hydrationState] = useState(() => {
-    if (typeof window === "undefined") {
-      return { mobile: false, collapsed: false };
-    }
-    const mobile = window.innerWidth < 768;
-    if (mobile) {
-      return { mobile, collapsed: true };
-    }
-    const saved = localStorage.getItem("app-sidebar-collapsed");
-    return { mobile, collapsed: saved === "true" };
-  });
-  const [collapsed, setCollapsed] = useState(hydrationState.collapsed);
-  const [isMobile, setIsMobile] = useState(hydrationState.mobile);
+  const [collapsed, setCollapsed] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [status, setStatus] = useState<{
     online: boolean;
@@ -75,17 +63,21 @@ export function AppSidebar({ children }: AppSidebarProps) {
     }
   }, []);
 
-  // Detect mobile
+  // Detect mobile and restore collapsed state after mount
   useEffect(() => {
-    const checkMobile = () => {
+    const applyLayout = () => {
       const mobile = window.innerWidth < 768;
       setIsMobile(mobile);
       if (mobile) {
         setCollapsed(true);
+        return;
       }
+      const saved = localStorage.getItem("app-sidebar-collapsed");
+      setCollapsed(saved === "true");
     };
-    window.addEventListener("resize", checkMobile);
-    return () => window.removeEventListener("resize", checkMobile);
+    applyLayout();
+    window.addEventListener("resize", applyLayout);
+    return () => window.removeEventListener("resize", applyLayout);
   }, []);
 
   // Allow mobile sidebar control from chat page
