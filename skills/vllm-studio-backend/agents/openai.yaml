@@ -1,0 +1,4 @@
+interface:
+  display_name: "vLLM Studio Backend"
+  short_description: "Backend architecture + OpenAI compatibility"
+  default_prompt: "Explain vLLM Studio backend flows, endpoints, and runtime."

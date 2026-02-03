@@ -1,0 +1,4 @@
+interface:
+  display_name: "vLLM Studio Ops"
+  short_description: "Setup and deploy vLLM Studio"
+  default_prompt: "Guide me through vLLM Studio setup/deploy and env keys."

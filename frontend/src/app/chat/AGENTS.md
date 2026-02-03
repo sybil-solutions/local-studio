@@ -854,3 +854,10 @@ These are *organizational* recommendations to reduce confusion:
 ---
 
 If you want, next step can be: generate a **“delete/merge plan”** as a concrete checklist that keeps the UI identical while reducing files and removing dead code.
+
+---
+
+## Codex Skills
+
+- `skills/vllm-studio` — ops/deploy/env keys.
+- `skills/vllm-studio-backend` — backend architecture + OpenAI compatibility.
