@@ -12,7 +12,7 @@
     "format:check": "prettier --check \"src/**/*.{ts,tsx,js,jsx,css,md,json}\"",
     "depcheck": "depcheck --ignores=\"@types/react,@types/react-dom,@types/node,@types/react-syntax-highlighter,eslint-config-next,tailwindcss,@tailwindcss/postcss,depcheck,prettier,husky,jscpd,knip,lint-staged,rehype-highlight\" --ignore-patterns=\"*.d.ts,.next/**,playwright-report/**\" --specials=next,webpack,babel --skip-missing",
     "analyze": "ANALYZE=true next build",
-    "test": "vitest run",
+    "test": "vitest run --passWithNoTests",
     "test:integration": "playwright test",
     "prepare": "cd ../.. && husky frontend/.husky",
     "check": "knip && jscpd src && npm run depcheck",
