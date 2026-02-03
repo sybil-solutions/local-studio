@@ -5,6 +5,7 @@ import { useEffect, useRef, useCallback, useMemo, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { api, type ChatRunStreamEvent } from "@/lib/api";
 import { safeJsonStringify } from "@/lib/safe-json";
+import { createUuid } from "@/lib/uuid";
 import { extractArtifacts } from "../artifacts/artifact-renderer";
 import { ArtifactModal } from "../artifacts/artifact-modal";
 import { ArtifactPreviewPanel } from "../artifacts/artifact-preview-panel";
@@ -522,7 +523,7 @@ export function ChatPage() {
       const role = rawMessage["role"];
       if (role !== "user" && role !== "assistant") return null;
       const id = messageId
-        ?? (typeof rawMessage["id"] === "string" ? rawMessage["id"] : crypto.randomUUID());
+        ?? (typeof rawMessage["id"] === "string" ? rawMessage["id"] : createUuid());
       const content = rawMessage["content"];
       const parts = role === "assistant"
         ? mapAgentContentToParts(content)
@@ -1651,7 +1652,7 @@ export function ChatPage() {
               attachment.name || `attachment-${index + 1}`,
             );
             const { content, encoding } = await readAttachmentContent(attachment);
-            const fileName = `${crypto.randomUUID()}-${safeName}${
+            const fileName = `${createUuid()}-${safeName}${
               encoding === "base64" ? ".base64" : ""
             }`;
             const path = `${baseDir}/${fileName}`;
@@ -1723,7 +1724,7 @@ export function ChatPage() {
         }
       }
 
-      const messageId = crypto.randomUUID();
+      const messageId = createUuid();
       const userMessage: ChatMessage = {
         id: messageId,
         role: "user",
