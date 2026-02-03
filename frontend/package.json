@@ -29,7 +29,7 @@
     "markdown-it": "^14.1.0",
     "mermaid": "^11.12.2",
     "next": "16.0.10",
-    "react": "19.2.1",
+    "react": "19.2.4",
     "react-dom": "19.2.1",
     "react-markdown": "^10.1.0",
     "react-syntax-highlighter": "^16.1.0",
