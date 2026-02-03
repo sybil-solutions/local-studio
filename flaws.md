@@ -4,13 +4,14 @@
 ## Test Coverage Performed
 - Atlas reload of `http://localhost:3000/chat` (tab focused + reload).
 - Local UI availability via `curl -sI http://localhost:3000/chat` (200 OK).
-- Production API: `GET https://<your-api-domain>/v1/models` (success; returned model id).
-- Production API: attempted `POST /v1/chat/completions` (streaming + non-streaming).
+- Production API: `GET https://<your-api-domain>/health` (success).
+- Production API: `GET https://<your-api-domain>/v1/models` (success).
+- Production API: attempted `POST /v1/chat/completions` (non-streaming).
 
 ## Findings (Actionable)
 1. Production `/v1/chat/completions` did not return a response in a reasonable time during manual curl tests.
-   Impact: OpenAI-compatible client calls may hang or appear unresponsive.
-   Evidence: `curl -N` streaming and non-streaming requests showed no output and required termination.
+   Impact: OpenAI-compatible client calls may hang when no model is running.
+   Evidence: `/health` reports `inference_ready: false`; non-streaming request stalled.
 
 2. Local controller not reachable on `http://localhost:8080`.
    Impact: Local API testing (OpenAI compatibility, health, tool calls) could not be performed.
