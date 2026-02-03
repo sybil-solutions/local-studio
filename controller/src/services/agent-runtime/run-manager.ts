@@ -18,6 +18,7 @@ export interface ChatRunOptions {
   systemPrompt?: string;
   mcpEnabled?: boolean;
   agentMode?: boolean;
+  agentFiles?: boolean;
   deepResearch?: boolean;
   thinkingLevel?: ThinkingLevel;
 }
@@ -111,7 +112,7 @@ export class ChatRunManager {
       model: modelId,
       status: "running",
       ...(systemPrompt ? { system: systemPrompt } : {}),
-      ...(options.mcpEnabled || options.agentMode ? { toolsetId: "agent" } : {}),
+      ...(options.mcpEnabled || options.agentMode || options.agentFiles ? { toolsetId: "agent" } : {}),
     };
 
     this.context.stores.chatStore.createRun(runId, sessionId, runOptions);
@@ -161,6 +162,7 @@ export class ChatRunManager {
       sessionId,
       mcpEnabled: Boolean(options.mcpEnabled),
       agentMode: Boolean(options.agentMode),
+      agentFiles: Boolean(options.agentFiles),
       emitEvent: publishPlanEvent,
     });
 

@@ -93,6 +93,8 @@ export const registerProxyRoutesDebug = (app: Hono, context: AppContext): void =
   const extractToolName = (content: string): string => {
     const nameMatch = content.match(/use the (\w+) (?:tool|function)/i);
     if (nameMatch) return nameMatch[1] ?? "";
+    const functionMatch = content.match(/<function=([^>\s]+)>/i);
+    if (functionMatch) return functionMatch[1] ?? "";
     const jsonNameMatch = content.match(/"name"\s*:\s*"([^"]+)"/);
     return jsonNameMatch?.[1] ?? "";
   };

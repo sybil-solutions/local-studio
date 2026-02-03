@@ -223,6 +223,7 @@ export const registerChatsRoutes = (app: Hono, context: AppContext): void => {
     const systemPrompt = typeof body["system"] === "string" ? body["system"] : undefined;
     const mcpEnabled = body["mcp_enabled"] === true;
     const agentMode = body["agent_mode"] === true;
+    const agentFiles = body["agent_files"] === true;
     const deepResearch = body["deep_research"] === true;
     const thinkingLevel = toThinkingLevel(body["thinking_level"]);
 
@@ -231,6 +232,7 @@ export const registerChatsRoutes = (app: Hono, context: AppContext): void => {
       content,
       mcpEnabled,
       agentMode,
+      agentFiles,
       deepResearch,
       ...(messageId ? { messageId } : {}),
       ...(model ? { model } : {}),

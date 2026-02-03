@@ -154,6 +154,87 @@ export const cleanUtf8StreamContent = (
  */
 export const createToolCallId = (): string => `call_${randomUUID().replace(/-/g, "").slice(0, 9)}`;
 
+const parseHermesToolCalls = (content: string): ToolCall[] => {
+  const toolCalls: ToolCall[] = [];
+  const toolCallPattern = /<tool_call>([\s\S]*?)<\/tool_call>/gi;
+  const functionPattern = /<function=([^>\s]+)>/i;
+  const paramEqualsPattern = /<parameter=([^>\s]+)>([\s\S]*?)<\/parameter>/gi;
+  const paramNamePattern = /<parameter\s+name=[\"']?([^>\"'\s]+)[\"']?>([\s\S]*?)<\/parameter>/gi;
+  const argsPattern = /<arguments>([\s\S]*?)<\/arguments>/i;
+
+  for (const match of content.matchAll(toolCallPattern)) {
+    const block = String(match[1] ?? "");
+    const functionMatch = block.match(functionPattern);
+    const toolName = functionMatch?.[1]?.trim() ?? "";
+    if (!toolName) {
+      continue;
+    }
+
+    const args: Record<string, unknown> = {};
+    let hasParams = false;
+
+    for (const paramMatch of block.matchAll(paramEqualsPattern)) {
+      const paramName = String(paramMatch[1] ?? "").trim();
+      if (!paramName) continue;
+      hasParams = true;
+      const rawValue = String(paramMatch[2] ?? "").trim();
+      let value: unknown = rawValue;
+      if (rawValue && (rawValue.startsWith("{") || rawValue.startsWith("["))) {
+        try {
+          value = JSON.parse(rawValue);
+        } catch {
+          value = rawValue;
+        }
+      }
+      args[paramName] = value;
+    }
+
+    if (!hasParams) {
+      for (const paramMatch of block.matchAll(paramNamePattern)) {
+        const paramName = String(paramMatch[1] ?? "").trim();
+        if (!paramName) continue;
+        hasParams = true;
+        const rawValue = String(paramMatch[2] ?? "").trim();
+        let value: unknown = rawValue;
+        if (rawValue && (rawValue.startsWith("{") || rawValue.startsWith("["))) {
+          try {
+            value = JSON.parse(rawValue);
+          } catch {
+            value = rawValue;
+          }
+        }
+        args[paramName] = value;
+      }
+    }
+
+    if (!hasParams) {
+      const argsMatch = block.match(argsPattern);
+      if (argsMatch && argsMatch[1]) {
+        const rawArgs = argsMatch[1].trim();
+        if (rawArgs) {
+          try {
+            const parsed = JSON.parse(rawArgs);
+            if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+              Object.assign(args, parsed as Record<string, unknown>);
+            }
+          } catch {
+            args["raw"] = rawArgs;
+          }
+        }
+      }
+    }
+
+    toolCalls.push({
+      index: toolCalls.length,
+      id: createToolCallId(),
+      type: "function",
+      function: { name: toolName, arguments: JSON.stringify(args) },
+    });
+  }
+
+  return toolCalls;
+};
+
 /**
  * Parse tool calls from a text payload.
  * @param content - Raw model content.
@@ -175,6 +256,13 @@ export const parseToolCallsFromContent = (content: string): ToolCall[] => {
   }
   if (toolCalls.length > 0) {
     return toolCalls;
+  }
+
+  if (content.includes("<tool_call>") && content.includes("<function=")) {
+    const hermesToolCalls = parseHermesToolCalls(content);
+    if (hermesToolCalls.length > 0) {
+      return hermesToolCalls;
+    }
   }
 
   if (content.includes("</tool_call>")) {
@@ -336,8 +424,13 @@ export const fixMalformedToolCalls = (
       if (!name || String(name).trim() === "") {
         buffer.has_malformed_tool_calls = true;
         const nameMatch = buffer.content.match(/"name"\s*:\s*"([^"]+)"/);
-        if (nameMatch && functionRecord) {
-          functionRecord["name"] = nameMatch[1] ?? "";
+        const functionMatch = buffer.content.match(/<function=([^>\s]+)>/i);
+        if (functionRecord) {
+          if (nameMatch) {
+            functionRecord["name"] = nameMatch[1] ?? "";
+          } else if (functionMatch) {
+            functionRecord["name"] = functionMatch[1] ?? "";
+          }
         }
       }
       return toolRecord;

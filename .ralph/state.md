@@ -1,9 +1,10 @@
 # Ralph State
 
-- iteration: 2
-- task: "Phase 2: Finalize PR merge, deploy, and verify APIs"
+- iteration: 3
+- task: "Phase 2: Fix Hermes tool calls, deploy, and verify end-to-end chat"
 - completion_criteria:
-  - PR #31 merged to main (requires external approval)
-  - Backend deployed on server (controller running new code)
+  - Hermes tool call parsing enabled (proxy + LiteLLM handler)
+  - Intellect-3 tool_call_parser set to hermes and model relaunched
+  - Backend deployed on server with new parsers
   - Frontend rebuilt and restarted on :3000
-  - Health + chat run SSE verified
+  - Tool calls resolve with valid names + args in SSE runs

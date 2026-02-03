@@ -38,6 +38,116 @@ import { UnifiedSidebar, type SidebarTab } from "./unified-sidebar";
 import { ActivityPanel, ContextPanel } from "./chat-side-panel";
 import { buildAgentModeSystemPrompt } from "../../utils/agent-system-prompt";
 
+type UploadedAttachment = {
+  name: string;
+  path: string;
+  size: number;
+  type: Attachment["type"];
+  encoding: "utf8" | "base64";
+};
+
+const TEXT_MIME_TYPES = new Set([
+  "application/json",
+  "application/xml",
+  "application/yaml",
+  "application/x-yaml",
+  "application/csv",
+  "application/markdown",
+]);
+
+const TEXT_EXTENSIONS = [
+  ".txt",
+  ".md",
+  ".markdown",
+  ".json",
+  ".csv",
+  ".yaml",
+  ".yml",
+  ".log",
+];
+
+const sanitizeAttachmentName = (value: string): string => {
+  const cleaned = value.replace(/[\\/]/g, "_").replace(/[^\w.\-]+/g, "_");
+  const normalized = cleaned.replace(/_+/g, "_").replace(/^_+|_+$/g, "");
+  return normalized || "attachment";
+};
+
+const isTextAttachment = (attachment: Attachment): boolean => {
+  const file = attachment.file;
+  if (!file) return false;
+  const type = file.type.toLowerCase();
+  if (type.startsWith("text/")) return true;
+  if (TEXT_MIME_TYPES.has(type)) return true;
+  const name = attachment.name.toLowerCase();
+  return TEXT_EXTENSIONS.some((ext) => name.endsWith(ext));
+};
+
+const readFileAsBase64 = (file: File): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = typeof reader.result === "string" ? reader.result : "";
+      const base64 = result.includes(",") ? result.split(",")[1] ?? "" : result;
+      resolve(base64);
+    };
+    reader.onerror = () => reject(reader.error ?? new Error("Failed to read file"));
+    reader.readAsDataURL(file);
+  });
+};
+
+const readAttachmentContent = async (
+  attachment: Attachment,
+): Promise<{ content: string; encoding: "utf8" | "base64" }> => {
+  if (attachment.type === "image" || attachment.type === "audio") {
+    if (attachment.base64) {
+      return { content: attachment.base64, encoding: "base64" };
+    }
+    if (!attachment.file) {
+      throw new Error("Attachment file missing");
+    }
+    const base64 = await readFileAsBase64(attachment.file);
+    return { content: base64, encoding: "base64" };
+  }
+
+  if (!attachment.file) {
+    throw new Error("Attachment file missing");
+  }
+
+  if (isTextAttachment(attachment)) {
+    const content = await attachment.file.text();
+    return { content, encoding: "utf8" };
+  }
+
+  const base64 = await readFileAsBase64(attachment.file);
+  return { content: base64, encoding: "base64" };
+};
+
+const buildAttachmentsBlock = (attachments: UploadedAttachment[]): string => {
+  if (attachments.length === 0) return "";
+  const lines: string[] = [];
+  lines.push("<attachments>");
+  lines.push("The user uploaded files into the agent filesystem for this run.");
+  lines.push("Use read_file/list_files to access them.");
+  for (const attachment of attachments) {
+    lines.push(`- name: ${attachment.name}`);
+    lines.push(`  path: ${attachment.path}`);
+    lines.push(`  type: ${attachment.type}`);
+    lines.push(`  size: ${attachment.size} bytes`);
+    if (attachment.encoding === "base64") {
+      lines.push("  encoding: base64 (decode before interpreting)");
+    }
+  }
+  lines.push("</attachments>");
+  return lines.join("\n");
+};
+
+const buildRunSystemPrompt = (basePrompt: string, attachmentsBlock?: string): string | undefined => {
+  const trimmed = basePrompt.trim();
+  const blocks = [trimmed, attachmentsBlock?.trim()].filter((block) => block && block.length > 0) as string[];
+  if (blocks.length === 0) return undefined;
+  return blocks.join("\n\n");
+};
+
 export function ChatPage() {
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -186,6 +296,18 @@ export function ChatPage() {
   useEffect(() => {
     sessionIdRef.current = currentSessionId;
   }, [currentSessionId]);
+
+  useEffect(() => {
+    return () => {
+      runAbortControllerRef.current?.abort();
+      const runId = activeRunIdRef.current;
+      const sessionId = sessionIdRef.current;
+      if (runId && sessionId) {
+        void api.abortChatRun(sessionId, runId).catch(() => {});
+      }
+      activeRunIdRef.current = null;
+    };
+  }, []);
 
   const {
     calculateStats,
@@ -1468,6 +1590,7 @@ export function ChatPage() {
         system?: string;
         mcp_enabled?: boolean;
         agent_mode?: boolean;
+        agent_files?: boolean;
         deep_research?: boolean;
         thinking_level?: string;
       },
@@ -1504,6 +1627,67 @@ export function ChatPage() {
       }
     },
     [handleRunEvent, setExecutingTools, setToolResultsMap],
+  );
+
+  const uploadAttachments = useCallback(
+    async (
+      sessionId: string,
+      attachments: Attachment[],
+    ): Promise<{
+      uploaded: UploadedAttachment[];
+      failures: Array<{ name: string; error: string }>;
+    }> => {
+      if (attachments.length === 0) {
+        return { uploaded: [], failures: [] };
+      }
+
+      const datePrefix = new Date().toISOString().slice(0, 10);
+      const baseDir = `uploads/${datePrefix}`;
+
+      const results = await Promise.all(
+        attachments.map(async (attachment, index) => {
+          try {
+            const safeName = sanitizeAttachmentName(
+              attachment.name || `attachment-${index + 1}`,
+            );
+            const { content, encoding } = await readAttachmentContent(attachment);
+            const fileName = `${crypto.randomUUID()}-${safeName}${
+              encoding === "base64" ? ".base64" : ""
+            }`;
+            const path = `${baseDir}/${fileName}`;
+            await api.writeAgentFile(sessionId, path, { content });
+            return {
+              ok: true as const,
+              entry: {
+                name: attachment.name || safeName,
+                path,
+                size: attachment.size,
+                type: attachment.type,
+                encoding,
+              },
+            };
+          } catch (error) {
+            return {
+              ok: false as const,
+              name: attachment.name || `attachment-${index + 1}`,
+              error: error instanceof Error ? error.message : String(error),
+            };
+          }
+        }),
+      );
+
+      const uploaded = results.flatMap((result) => (result.ok ? [result.entry] : []));
+      const failures = results.flatMap((result) =>
+        result.ok ? [] : [{ name: result.name, error: result.error }],
+      );
+
+      if (uploaded.length > 0) {
+        void loadAgentFiles({ sessionId });
+      }
+
+      return { uploaded, failures };
+    },
+    [loadAgentFiles],
   );
 
   const sendUserMessage = useCallback(
@@ -1547,6 +1731,9 @@ export function ChatPage() {
       };
 
       setMessages((prev) => [...prev, userMessage]);
+      const removeLocalMessage = () => {
+        setMessages((prev) => prev.filter((msg) => msg.id !== messageId));
+      };
 
       let sessionId = currentSessionId;
       if (!sessionId) {
@@ -1557,13 +1744,36 @@ export function ChatPage() {
         router.replace(`/chat?session=${encodeURIComponent(sessionId)}`);
       }
 
+      let attachmentsBlock: string | undefined;
+      let agentFilesEnabled = false;
+      if (attachments && attachments.length > 0) {
+        const { uploaded, failures } = await uploadAttachments(sessionId, attachments);
+        if (uploaded.length > 0) {
+          attachmentsBlock = buildAttachmentsBlock(uploaded);
+          agentFilesEnabled = true;
+        }
+        if (failures.length > 0) {
+          const names = failures.map((failure) => failure.name).join(", ");
+          setStreamError(`Failed to upload ${failures.length} attachment(s): ${names}`);
+          if (uploaded.length === 0) {
+            removeLocalMessage();
+            return;
+          }
+        }
+      }
+
+      const runSystemPrompt = attachmentsBlock
+        ? buildRunSystemPrompt(systemPrompt, attachmentsBlock)
+        : systemPrompt.trim() || undefined;
+
       await startRunStream(sessionId, {
         content: text,
         message_id: messageId,
         model: selectedModel,
-        system: systemPrompt.trim() || undefined,
+        system: runSystemPrompt,
         mcp_enabled: mcpEnabled,
         agent_mode: agentMode,
+        agent_files: agentFilesEnabled,
         deep_research: deepResearch.enabled,
       });
     },
@@ -1580,6 +1790,7 @@ export function ChatPage() {
       setStreamingStartTime,
       startRunStream,
       systemPrompt,
+      uploadAttachments,
     ],
   );
 

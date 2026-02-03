@@ -373,6 +373,74 @@ REMINDER: Only use the tools listed above. Use the exact server_name and tool_na
         if tool_calls:
             return tool_calls
 
+        # Pattern 0.75: Hermes-style tool calls
+        # <tool_call><function=read_file><parameter=path>...</parameter></function></tool_call>
+        hermes_blocks = re.findall(r'<tool_call>(.*?)</tool_call>', content, re.DOTALL)
+        for block in hermes_blocks:
+            func_match = re.search(r'<function=([^>\s]+)>', block)
+            if not func_match:
+                continue
+            function_name = func_match.group(1).strip()
+            if not function_name:
+                continue
+            arguments: Dict[str, Any] = {}
+
+            # parameter=value format
+            param_matches = re.findall(r'<parameter=([^>\s]+)>(.*?)</parameter>', block, re.DOTALL)
+            for param_name, raw_value in param_matches:
+                name = param_name.strip()
+                if not name:
+                    continue
+                value = self._clean_think_tags_from_content(raw_value.strip())
+                # Try JSON parse for structured values
+                if value.startswith("{") or value.startswith("["):
+                    try:
+                        value = json.loads(value)
+                    except json.JSONDecodeError:
+                        pass
+                arguments[name] = value
+
+            # parameter name="value" format
+            if not arguments:
+                param_matches = re.findall(r'<parameter\\s+name=[\"\\\']?([^>\"\\\'\\s]+)[\"\\\']?>(.*?)</parameter>', block, re.DOTALL)
+                for param_name, raw_value in param_matches:
+                    name = param_name.strip()
+                    if not name:
+                        continue
+                    value = self._clean_think_tags_from_content(raw_value.strip())
+                    if value.startswith("{") or value.startswith("["):
+                        try:
+                            value = json.loads(value)
+                        except json.JSONDecodeError:
+                            pass
+                    arguments[name] = value
+
+            # arguments JSON block
+            if not arguments:
+                args_match = re.search(r'<arguments>(.*?)</arguments>', block, re.DOTALL)
+                if args_match:
+                    raw_args = self._clean_think_tags_from_content(args_match.group(1).strip())
+                    try:
+                        parsed = json.loads(raw_args)
+                        if isinstance(parsed, dict):
+                            arguments.update(parsed)
+                    except json.JSONDecodeError:
+                        if raw_args:
+                            arguments["raw"] = raw_args
+
+            tool_calls.append({
+                "id": f"call_{uuid.uuid4().hex[:9]}",
+                "type": "function",
+                "function": {
+                    "name": function_name,
+                    "arguments": json.dumps(arguments)
+                }
+            })
+            logger.info(f"[PARSE] Extracted Hermes tool call: name={function_name}")
+
+        if tool_calls:
+            return tool_calls
+
         # Pattern 0.5: Malformed </tool_call> without <tool_call> - extract JSON before it
         # Handles: <think>\n{"name": "...", "arguments": {...}}\n</tool_call>
         if '</tool_call>' in content and '<tool_call>' not in content:

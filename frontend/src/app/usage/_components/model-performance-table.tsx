@@ -2,6 +2,7 @@
 "use client";
 
 import type { PeakMetrics } from "@/lib/types";
+import { Fragment } from "react";
 import { ChevronDown, ChevronUp, ArrowUpDown } from "lucide-react";
 import { formatNumber, formatDuration } from "@/lib/formatters";
 import { getModelColor } from "@/lib/colors";
@@ -135,9 +136,8 @@ export function ModelPerformanceTable(
                 const modelColor = getModelColor(model.model);
 
                 return (
-                  <>
+                  <Fragment key={model.model}>
                     <tr
-                      key={model.model}
                       className={`cursor-pointer hover:bg-[#363432]/30 transition-colors ${
                         i > 0 ? "border-t border-[#363432]/30" : ""
                       } ${isExpanded ? "bg-[#363432]/20" : ""}`}
@@ -259,7 +259,7 @@ export function ModelPerformanceTable(
                         </td>
                       </tr>
                     )}
-                  </>
+                  </Fragment>
                 );
               })}
             </tbody>

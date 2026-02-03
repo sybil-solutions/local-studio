@@ -14,6 +14,7 @@ export interface AgentToolRegistryOptions {
   sessionId: string;
   mcpEnabled: boolean;
   agentMode: boolean;
+  agentFiles?: boolean;
   emitEvent?: (type: string, data: Record<string, unknown>) => void;
 }
 
@@ -130,9 +131,27 @@ const normalizePlanSteps = (tasks: unknown): Array<Record<string, unknown>> => {
   if (!Array.isArray(tasks)) return [];
   const steps: Array<Record<string, unknown>> = [];
   for (const task of tasks) {
-    if (!task || typeof task !== "object") continue;
+    if (!task) continue;
+    if (typeof task === "string") {
+      const title = task.trim();
+      if (!title) continue;
+      steps.push({
+        id: randomUUID(),
+        title,
+        status: "pending",
+      });
+      continue;
+    }
+    if (typeof task !== "object") continue;
     const record = task as Record<string, unknown>;
-    const title = typeof record["title"] === "string" ? record["title"].trim() : "";
+    const titleCandidate = (
+      record["title"] ??
+      record["name"] ??
+      record["step"] ??
+      record["task"] ??
+      record["description"]
+    );
+    const title = typeof titleCandidate === "string" ? titleCandidate.trim() : "";
     if (!title) continue;
     steps.push({
       id: typeof record["id"] === "string" ? record["id"] : randomUUID(),
@@ -535,6 +554,8 @@ export const buildAgentTools = async (
   }
   if (options.agentMode) {
     tools.push(...buildPlanTools(context, options));
+  }
+  if (options.agentMode || options.agentFiles) {
     tools.push(...buildAgentFsTools(context, options));
   }
   return tools;
