@@ -201,4 +201,18 @@ bun test           # Run test suite
 - [ ] Required imports added (UIKit, AVFoundation, etc.)
 - [ ] No scope errors (functions accessible where called)
 
+---
+
+## Codex Skills (Repo-Scoped)
+
+Use these skills when working on operations or backend architecture:
+- `skills/vllm-studio` — setup, deployment, env keys, releases.
+- `skills/vllm-studio-backend` — controller/runtime architecture + OpenAI-compatible endpoints.
+
+To install into Codex skills:
+```
+cp -R skills/vllm-studio ~/.codex/skills/
+cp -R skills/vllm-studio-backend ~/.codex/skills/
+```
+
 **IF ANY ITEM FAILS, FIX IT BEFORE CLAIMING COMPLETION.**

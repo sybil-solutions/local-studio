@@ -60,7 +60,7 @@ export function ConfigsView({
   onSaveSettings,
 }: ConfigsViewProps) {
   return (
-    <div className="h-full overflow-y-auto overflow-x-hidden bg-[#1b1b1b] text-[#f0ebe3]">
+    <div className="min-h-full overflow-y-auto overflow-x-hidden bg-[#1b1b1b] text-[#f0ebe3]">
       <div className="max-w-6xl mx-auto px-4 sm:px-6 py-4 sm:py-6 w-full">
         <ConfigsHeader loading={loading} onReload={onReload} />
 

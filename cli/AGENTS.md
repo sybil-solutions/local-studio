@@ -168,3 +168,10 @@ vllm-studio
 ```
 
 Navigation: `1-4` views, `↑↓` select, `Enter` launch, `e` evict, `q` quit.
+
+---
+
+## Codex Skills
+
+- `skills/vllm-studio` — ops/deploy/env keys.
+- `skills/vllm-studio-backend` — backend architecture + OpenAI compatibility.

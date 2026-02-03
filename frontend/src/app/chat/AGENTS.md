@@ -303,7 +303,7 @@ Legend:
 | Session history (list/load/fork) | ✅ | `use-chat-sessions.ts`, `chat-page.tsx` | Uses controller `/chats`. Messages loaded into local state via `setMessages()`. |
 | System prompt editing | ✅ | `chat-settings-modal.tsx`, `chat-page.tsx` | Stored in Zustand, sent in run payload to controller. |
 | MCP tools execution | ✅ | `use-chat-tools.ts`, `chat-page.tsx` | Tools execute on the controller; UI renders `tool_execution_*` events. |
-| Activity view (thinking + tools timeline) | ✅ | `use-chat-derived.ts`, `chat-side-panel.tsx` (ActivityPanel) | Shows tool calls + thinking extraction. |
+| Activity view (thinking + tools timeline) | ✅ | `use-chat-derived.ts`, `chat-side-panel.tsx` (ActivityPanel) | Groups by run (one user prompt), showing tool calls + thinking extraction. |
 | Context stats + auto-compaction | ✅/🟡 | `chat-page.tsx` + `src/lib/services/context-management/*` | Auto-compaction is implemented and updates session/messages; heavy coupling in ChatPage. |
 | Artifact extraction + preview UI | ✅/🟡 | `artifact-renderer.tsx` (extract), `artifact-preview-panel.tsx`, `artifact-modal.tsx`, `artifact-viewer.tsx` | Uses `extractArtifacts` + preview panel + modal viewer; legacy sandbox removed. |
 | File attachments | 🟡 | `tool-belt.tsx` | UI supports adding files/images. **Sending to model is currently text placeholders** (not actual file parts). |
@@ -854,3 +854,10 @@ These are *organizational* recommendations to reduce confusion:
 ---
 
 If you want, next step can be: generate a **“delete/merge plan”** as a concrete checklist that keeps the UI identical while reducing files and removing dead code.
+
+---
+
+## Codex Skills
+
+- `skills/vllm-studio` — ops/deploy/env keys.
+- `skills/vllm-studio-backend` — backend architecture + OpenAI compatibility.

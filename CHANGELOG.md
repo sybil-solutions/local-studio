@@ -8,6 +8,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-02-03
+
+### Added
+- Skills: Added `skills/vllm-studio` and `skills/vllm-studio-backend` for ops + backend architecture guidance
+- Docs: `possibility.md`, `comparison.md`, and `flaws.md` for roadmap, competitor analysis, and test notes
+
+### Changed
+- Chat: Activity timeline grouping now uses run-level metadata (one user prompt = one turn)
+- Run stream: Added `runId`/`turnIndex` metadata to streamed/persisted messages
+
+### Removed
+- Debug proxy routes/streamer and dependabot configuration
+
 ## [0.4.1] - 2026-01-26
 
 ### Added

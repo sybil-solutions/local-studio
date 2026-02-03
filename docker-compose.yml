@@ -103,6 +103,7 @@ services:
       args:
         NEXT_PUBLIC_API_URL: ""
     container_name: vllm-studio-frontend
+    user: "${VLLM_STUDIO_UID:-1000}:${VLLM_STUDIO_GID:-1000}"
     network_mode: host
     volumes:
       - ./data:/app/data

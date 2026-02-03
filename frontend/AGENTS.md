@@ -24,3 +24,10 @@ If you run the standalone server directly (`node .next/standalone/server.js`), y
 
 - Copy `.next/static` → `.next/standalone/.next/static`
 - Copy `public` → `.next/standalone/public`
+
+---
+
+## Codex Skills
+
+- `skills/vllm-studio` — ops/deploy/env keys.
+- `skills/vllm-studio-backend` — backend architecture + OpenAI compatibility.

@@ -48,3 +48,10 @@ Logs come from:
 - **LogLine** - Individual log entry with level coloring
 - **LogFilter** - Level and search filters
 - **LogControls** - Auto-scroll, download, clear
+
+---
+
+## Codex Skills
+
+- `skills/vllm-studio` — ops/deploy/env keys.
+- `skills/vllm-studio-backend` — backend architecture + OpenAI compatibility.
