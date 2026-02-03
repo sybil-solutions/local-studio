@@ -54,7 +54,7 @@
     "jsdom": "^26.1.0",
     "knip": "^5.44.2",
     "lint-staged": "15.2.11",
-    "prettier": "^3.8.0",
+    "prettier": "^3.8.1",
     "tailwindcss": "^4",
     "typescript": "^5",
     "vitest": "^3.2.4"
