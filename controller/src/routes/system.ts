@@ -9,6 +9,7 @@ import type { HealthResponse, SystemConfigResponse } from "../types/models";
 import { badRequest, notFound } from "../core/errors";
 import { estimateWeightsSizeBytes } from "../services/model-browser";
 import { getGpuInfo } from "../services/gpu";
+import { getSystemRuntimeInfo } from "../services/runtime-info";
 
 /**
  * Register system routes.
@@ -243,7 +244,7 @@ export const registerSystemRoutes = (app: Hono, context: AppContext): void => {
       internal_port: context.config.inference_port,
       protocol: "http",
       status: inferenceStatus,
-      description: "Inference backend (vLLM or SGLang)",
+      description: "Inference backend (vLLM, SGLang, or llama.cpp)",
     });
 
     let litellmStatus = "unknown";
@@ -324,6 +325,8 @@ export const registerSystemRoutes = (app: Hono, context: AppContext): void => {
       description: "Next.js web UI",
     });
 
+    const runtime = await getSystemRuntimeInfo(context.config);
+
     const payload: SystemConfigResponse = {
       config: {
         host: context.config.host,
@@ -335,6 +338,7 @@ export const registerSystemRoutes = (app: Hono, context: AppContext): void => {
         db_path: context.config.db_path,
         sglang_python: context.config.sglang_python ?? null,
         tabby_api_dir: context.config.tabby_api_dir ?? null,
+        llama_bin: context.config.llama_bin ?? null,
       },
       services,
       environment: {
@@ -343,6 +347,7 @@ export const registerSystemRoutes = (app: Hono, context: AppContext): void => {
         litellm_url: `http://${hostname()}:4100`,
         frontend_url: `http://${hostname()}:3000`,
       },
+      runtime,
     };
 
     return ctx.json(payload);

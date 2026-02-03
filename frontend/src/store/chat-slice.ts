@@ -10,6 +10,7 @@ import type {
   DeepResearchConfig,
   SessionUsage,
   AgentFileEntry,
+  AgentFileVersion,
 } from "@/lib/types";
 import type { ModelOption, Attachment } from "@/app/chat/types";
 import type { AgentPlan } from "@/app/chat/_components/agent/agent-types";
@@ -124,6 +125,7 @@ export interface ChatState {
   selectedAgentFilePath: string | null;
   selectedAgentFileContent: string | null;
   selectedAgentFileLoading: boolean;
+  agentFileVersions: Record<string, AgentFileVersion[]>;
   sidebarWidth: number;
 }
 
@@ -239,6 +241,9 @@ export interface ChatActions {
   setSelectedAgentFilePath: (path: string | null) => void;
   setSelectedAgentFileContent: (content: string | null) => void;
   setSelectedAgentFileLoading: (loading: boolean) => void;
+  addAgentFileVersion: (path: string, content: string) => void;
+  moveAgentFileVersions: (from: string, to: string) => void;
+  clearAgentFileVersions: () => void;
   setSidebarWidth: (width: number) => void;
 }
 
@@ -331,6 +336,7 @@ export const createChatSlice: StateCreator<ChatSlice, [], [], ChatSlice> = (set)
   selectedAgentFilePath: null,
   selectedAgentFileContent: null,
   selectedAgentFileLoading: false,
+  agentFileVersions: {},
   sidebarWidth: 400,
 
   // --- Actions ---
@@ -468,5 +474,34 @@ export const createChatSlice: StateCreator<ChatSlice, [], [], ChatSlice> = (set)
   setSelectedAgentFilePath: (path) => set({ selectedAgentFilePath: path }),
   setSelectedAgentFileContent: (content) => set({ selectedAgentFileContent: content }),
   setSelectedAgentFileLoading: (loading) => set({ selectedAgentFileLoading: loading }),
+  addAgentFileVersion: (path, content) =>
+    set((state) => {
+      const existing = state.agentFileVersions[path] ?? [];
+      const last = existing[existing.length - 1];
+      if (last?.content === content) return state;
+      const nextVersion = (last?.version ?? 0) + 1;
+      const nextEntry: AgentFileVersion = {
+        version: nextVersion,
+        content,
+        timestamp: Date.now(),
+      };
+      return {
+        agentFileVersions: {
+          ...state.agentFileVersions,
+          [path]: [...existing, nextEntry],
+        },
+      };
+    }),
+  moveAgentFileVersions: (from, to) =>
+    set((state) => {
+      if (from === to) return state;
+      const existing = state.agentFileVersions[from];
+      if (!existing) return state;
+      const next = { ...state.agentFileVersions };
+      delete next[from];
+      next[to] = existing;
+      return { agentFileVersions: next };
+    }),
+  clearAgentFileVersions: () => set({ agentFileVersions: {} }),
   setSidebarWidth: (width) => set({ sidebarWidth: width }),
 });

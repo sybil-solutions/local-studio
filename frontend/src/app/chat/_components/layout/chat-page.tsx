@@ -224,13 +224,16 @@ export function ChatPage() {
 
   const {
     agentFiles,
+    agentFileVersions,
     loadAgentFiles,
+    readAgentFile,
     clearAgentFiles,
     selectedAgentFilePath,
     selectedAgentFileContent,
     selectedAgentFileLoading,
     selectAgentFile,
     clearSelectedFile,
+    moveAgentFileVersions,
   } = Hooks.useAgentFiles();
 
   // Sidebar width from store
@@ -556,27 +559,96 @@ export function ChatPage() {
   const upsertMessage = useCallback(
     (message: ChatMessage) => {
       setMessages((prev) => {
-        const index = prev.findIndex((entry) => entry.id === message.id);
-        if (index === -1) {
-          return [...prev, message];
+        const hasTextPart = message.parts.some(
+          (part) => part.type === "text" && typeof part.text === "string" && part.text.trim(),
+        );
+        const hasToolParts = message.parts.some((part) => isToolPart(part));
+        const toolOnly = message.role === "assistant" && hasToolParts && !hasTextPart;
+
+        if (toolOnly) {
+          const runId = (message.metadata as { runId?: string } | undefined)?.runId;
+          let targetIndex = -1;
+          for (let i = prev.length - 1; i >= 0; i -= 1) {
+            const candidate = prev[i];
+            if (candidate.role !== "assistant") continue;
+            const candidateRunId = (candidate.metadata as { runId?: string } | undefined)?.runId;
+            if (runId && candidateRunId && runId !== candidateRunId) continue;
+            targetIndex = i;
+            break;
+          }
+
+          if (targetIndex !== -1) {
+            const target = prev[targetIndex];
+            const mergedParts = mergeToolParts(target.parts, message.parts);
+            const mergedMetadata = message.metadata
+              ? { ...(target.metadata ?? {}), ...message.metadata }
+              : target.metadata;
+            const updated: ChatMessage = {
+              ...target,
+              parts: mergedParts,
+              metadata: mergedMetadata,
+              tool_calls: message.tool_calls ?? target.tool_calls,
+            };
+            return [...prev.slice(0, targetIndex), updated, ...prev.slice(targetIndex + 1)];
+          }
+
+          const internal = {
+            ...message,
+            metadata: { ...(message.metadata ?? {}), internal: true },
+          };
+          return [...prev, internal];
         }
-        const existing = prev[index];
-        const mergedParts = mergeToolParts(existing.parts, message.parts);
-        const mergedMetadata = message.metadata
-          ? { ...(existing.metadata ?? {}), ...message.metadata }
+
+        let nextMessage: ChatMessage = message;
+        let nextPrev = prev;
+        if (message.role === "assistant") {
+          const runId = (message.metadata as { runId?: string } | undefined)?.runId;
+          if (runId) {
+            const toolOnlyMessages = prev.filter((entry) => {
+              if (entry.role !== "assistant") return false;
+              const entryRunId = (entry.metadata as { runId?: string } | undefined)?.runId;
+              if (entryRunId !== runId) return false;
+              const entryHasText = entry.parts.some(
+                (part) => part.type === "text" && typeof part.text === "string" && part.text.trim(),
+              );
+              const entryHasTool = entry.parts.some((part) => isToolPart(part));
+              const isInternal = Boolean((entry.metadata as { internal?: boolean } | undefined)?.internal);
+              return isInternal && entryHasTool && !entryHasText;
+            });
+
+            if (toolOnlyMessages.length > 0) {
+              const mergedParts = toolOnlyMessages.reduce(
+                (acc, entry) => mergeToolParts(acc, entry.parts),
+                message.parts,
+              );
+              nextMessage = { ...message, parts: mergedParts };
+              const toolOnlyIds = new Set(toolOnlyMessages.map((entry) => entry.id));
+              nextPrev = prev.filter((entry) => !toolOnlyIds.has(entry.id));
+            }
+          }
+        }
+
+        const index = nextPrev.findIndex((entry) => entry.id === nextMessage.id);
+        if (index === -1) {
+          return [...nextPrev, nextMessage];
+        }
+        const existing = nextPrev[index];
+        const mergedParts = mergeToolParts(existing.parts, nextMessage.parts);
+        const mergedMetadata = nextMessage.metadata
+          ? { ...(existing.metadata ?? {}), ...nextMessage.metadata }
           : existing.metadata;
         const updated: ChatMessage = {
           ...existing,
-          ...message,
+          ...nextMessage,
           parts: mergedParts,
           metadata: mergedMetadata,
-          tool_calls: message.tool_calls ?? existing.tool_calls,
-          content: message.content ?? existing.content,
+          tool_calls: nextMessage.tool_calls ?? existing.tool_calls,
+          content: nextMessage.content ?? existing.content,
         };
-        return [...prev.slice(0, index), updated, ...prev.slice(index + 1)];
+        return [...nextPrev.slice(0, index), updated, ...nextPrev.slice(index + 1)];
       });
     },
-    [mergeToolParts],
+    [mergeToolParts, isToolPart],
   );
 
   const extractToolResultText = useCallback((result: unknown): string => {
@@ -777,12 +849,31 @@ export function ChatPage() {
           }
           return;
         }
-        case "agent_file_written":
+        case "agent_file_written": {
+          if (typeof data["session_id"] === "string" && data["session_id"] === currentSessionId) {
+            void loadAgentFiles({ sessionId: currentSessionId });
+            const path = typeof data["path"] === "string" ? data["path"] : "";
+            if (path) {
+              void readAgentFile(path, currentSessionId).catch(() => {});
+            }
+          }
+          return;
+        }
         case "agent_file_deleted":
-        case "agent_directory_created":
+        case "agent_directory_created": {
+          if (typeof data["session_id"] === "string" && data["session_id"] === currentSessionId) {
+            void loadAgentFiles({ sessionId: currentSessionId });
+          }
+          return;
+        }
         case "agent_file_moved": {
           if (typeof data["session_id"] === "string" && data["session_id"] === currentSessionId) {
             void loadAgentFiles({ sessionId: currentSessionId });
+            const from = typeof data["from"] === "string" ? data["from"] : "";
+            const to = typeof data["to"] === "string" ? data["to"] : "";
+            if (from && to) {
+              moveAgentFileVersions(from, to);
+            }
           }
           return;
         }
@@ -817,7 +908,9 @@ export function ChatPage() {
       extractToolResultText,
       generateTitle,
       loadAgentFiles,
+      readAgentFile,
       mapAgentMessageToChatMessage,
+      moveAgentFileVersions,
       recordToolResult,
       setAgentPlan,
       setIsLoading,
@@ -2027,6 +2120,7 @@ export function ChatPage() {
             selectedFilePath={selectedAgentFilePath}
             selectedFileContent={selectedAgentFileContent}
             selectedFileLoading={selectedAgentFileLoading}
+            fileVersions={agentFileVersions}
             onSelectFile={(path) => selectAgentFile(path, sessionFromUrl || currentSessionId)}
             hasSession={!!(sessionFromUrl || currentSessionId)}
           />

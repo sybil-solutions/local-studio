@@ -18,7 +18,7 @@ export interface Recipe {
   id: string;
   name: string;
   model_path: string;
-  backend?: "vllm" | "sglang";
+  backend?: "vllm" | "sglang" | "llamacpp";
 
   // Server settings
   host?: string;
@@ -172,6 +172,12 @@ export interface AgentFileEntry {
   type: "file" | "dir";
   size?: number;
   children?: AgentFileEntry[];
+}
+
+export interface AgentFileVersion {
+  version: number;
+  content: string;
+  timestamp: number;
 }
 
 export interface AgentState {
@@ -716,6 +722,7 @@ export interface SystemConfig {
   db_path: string;
   sglang_python: string | null;
   tabby_api_dir: string | null;
+  llama_bin: string | null;
 }
 
 export interface EnvironmentInfo {
@@ -729,6 +736,34 @@ export interface ConfigData {
   config: SystemConfig;
   services: ServiceInfo[];
   environment: EnvironmentInfo;
+  runtime: SystemRuntimeInfo;
+}
+
+export interface RuntimeBackendInfo {
+  installed: boolean;
+  version: string | null;
+  python_path?: string | null;
+  binary_path?: string | null;
+}
+
+export interface RuntimeCudaInfo {
+  driver_version: string | null;
+  cuda_version: string | null;
+}
+
+export interface RuntimeGpuInfoSummary {
+  count: number;
+  types: string[];
+}
+
+export interface SystemRuntimeInfo {
+  cuda: RuntimeCudaInfo;
+  gpus: RuntimeGpuInfoSummary;
+  backends: {
+    vllm: RuntimeBackendInfo;
+    sglang: RuntimeBackendInfo;
+    llamacpp: RuntimeBackendInfo;
+  };
 }
 
 export interface VllmRuntimeInfo {

@@ -2,6 +2,7 @@
 import type { Hono } from "hono";
 import type { AppContext } from "../types/context";
 import { badRequest } from "../core/errors";
+import { getLlamacppConfigHelp } from "../services/llamacpp-runtime";
 import { getVllmConfigHelp, getVllmRuntimeInfo, upgradeVllmRuntime } from "../services/vllm-runtime";
 import { Event } from "../services/event-manager";
 
@@ -13,6 +14,11 @@ export const registerRuntimeRoutes = (app: Hono, context: AppContext): void => {
 
   app.get("/runtime/vllm/config", async (ctx) => {
     const config = await getVllmConfigHelp();
+    return ctx.json(config);
+  });
+
+  app.get("/runtime/llamacpp/config", async (ctx) => {
+    const config = await getLlamacppConfigHelp(context.config);
     return ctx.json(config);
   });
 

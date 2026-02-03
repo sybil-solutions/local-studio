@@ -227,9 +227,32 @@ export function MessageRenderer({ content, isStreaming }: MessageRendererProps) 
       {mainContent && (
         <div style={{ color: "#e8e4dd" }}>
           {isStreaming ? (
-            <div className="whitespace-pre-wrap break-words text-[15px] leading-relaxed">
-              {mainContent}
-            </div>
+            (() => {
+              const lineCount = mainContent.split("\n").length;
+              const isCodeLike =
+                mainContent.includes("```") ||
+                mainContent.includes("<artifact") ||
+                mainContent.includes("</artifact>");
+              const shouldClamp = lineCount > 8 || mainContent.length > 800 || isCodeLike;
+              return (
+                <div
+                  className={`rounded-xl border border-(--border) bg-(--card)/70 p-3 ${
+                    shouldClamp ? "max-h-64 overflow-auto" : ""
+                  }`}
+                >
+                  <div className="text-[10px] uppercase tracking-[0.2em] text-[#6a6560] mb-2">
+                    Streaming
+                  </div>
+                  <div
+                    className={`whitespace-pre-wrap break-words ${
+                      isCodeLike ? "font-mono text-[13px]" : "text-[15px] leading-relaxed"
+                    }`}
+                  >
+                    {mainContent}
+                  </div>
+                </div>
+              );
+            })()
           ) : (
             segments.map((segment, index) => {
               if (segment.type === "code") {

@@ -20,6 +20,7 @@ export interface Config {
   models_dir: string;
   sglang_python?: string;
   tabby_api_dir?: string;
+  llama_bin?: string;
 }
 
 /**
@@ -70,6 +71,7 @@ export const createConfig = (): Config => {
     DATABASE_URL: z.string().optional(),
     VLLM_STUDIO_SGLANG_PYTHON: z.string().optional(),
     VLLM_STUDIO_TABBY_API_DIR: z.string().optional(),
+    VLLM_STUDIO_LLAMA_BIN: z.string().optional(),
   });
 
   const parsed = schema.parse(process.env);
@@ -100,6 +102,9 @@ export const createConfig = (): Config => {
   }
   if (parsed.VLLM_STUDIO_TABBY_API_DIR) {
     config.tabby_api_dir = parsed.VLLM_STUDIO_TABBY_API_DIR;
+  }
+  if (parsed.VLLM_STUDIO_LLAMA_BIN) {
+    config.llama_bin = parsed.VLLM_STUDIO_LLAMA_BIN;
   }
 
   const persisted = loadPersistedConfig(config.data_dir);

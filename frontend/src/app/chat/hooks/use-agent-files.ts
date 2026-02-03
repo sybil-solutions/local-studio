@@ -18,6 +18,10 @@ export function useAgentFiles() {
   const setSelectedAgentFilePath = useAppStore((state) => state.setSelectedAgentFilePath);
   const setSelectedAgentFileContent = useAppStore((state) => state.setSelectedAgentFileContent);
   const setSelectedAgentFileLoading = useAppStore((state) => state.setSelectedAgentFileLoading);
+  const agentFileVersions = useAppStore((state) => state.agentFileVersions);
+  const addAgentFileVersion = useAppStore((state) => state.addAgentFileVersion);
+  const moveAgentFileVersions = useAppStore((state) => state.moveAgentFileVersions);
+  const clearAgentFileVersions = useAppStore((state) => state.clearAgentFileVersions);
 
   // Read session ID at execution time to avoid stale closure issues.
   // When tools are called during streaming, the closure value may be stale
@@ -70,9 +74,13 @@ export function useAgentFiles() {
       if (!path || path.trim() === "") {
         throw new Error("Path is required");
       }
-      return api.readAgentFile(sessionId, path);
+      const data = await api.readAgentFile(sessionId, path);
+      if (typeof data.content === "string") {
+        addAgentFileVersion(path, data.content);
+      }
+      return data;
     },
-    [currentSessionId],
+    [currentSessionId, addAgentFileVersion],
   );
 
   const writeAgentFile = useCallback(
@@ -82,10 +90,13 @@ export function useAgentFiles() {
         throw new Error("No active session");
       }
       const result = await api.writeAgentFile(sessionId, path, { content });
+      if (typeof content === "string") {
+        addAgentFileVersion(path, content);
+      }
       const files = await loadAgentFiles({ sessionId });
       return result;
     },
-    [currentSessionId, loadAgentFiles],
+    [currentSessionId, loadAgentFiles, addAgentFileVersion],
   );
 
   const deleteAgentFile = useCallback(
@@ -121,10 +132,11 @@ export function useAgentFiles() {
         throw new Error("No active session");
       }
       const result = await api.moveAgentFile(sessionId, from, to);
+      moveAgentFileVersions(from, to);
       await loadAgentFiles({ sessionId });
       return result;
     },
-    [currentSessionId, loadAgentFiles],
+    [currentSessionId, loadAgentFiles, moveAgentFileVersions],
   );
 
   const clearAgentFiles = useCallback(() => {
@@ -132,7 +144,14 @@ export function useAgentFiles() {
     setAgentFilesLoading(false);
     setSelectedAgentFilePath(null);
     setSelectedAgentFileContent(null);
-  }, [setAgentFiles, setAgentFilesLoading, setSelectedAgentFilePath, setSelectedAgentFileContent]);
+    clearAgentFileVersions();
+  }, [
+    setAgentFiles,
+    setAgentFilesLoading,
+    setSelectedAgentFilePath,
+    setSelectedAgentFileContent,
+    clearAgentFileVersions,
+  ]);
 
   const selectAgentFile = useCallback(
     async (path: string | null, sessionIdOverride?: string | null) => {
@@ -160,6 +179,9 @@ export function useAgentFiles() {
       try {
         const data = await api.readAgentFile(sessionId, path);
         setSelectedAgentFileContent(data.content);
+        if (typeof data.content === "string") {
+          addAgentFileVersion(path, data.content);
+        }
       } catch (err) {
         console.error("[selectAgentFile] Error reading file:", err);
         setSelectedAgentFileContent(null);
@@ -167,7 +189,13 @@ export function useAgentFiles() {
         setSelectedAgentFileLoading(false);
       }
     },
-    [currentSessionId, setSelectedAgentFilePath, setSelectedAgentFileContent, setSelectedAgentFileLoading],
+    [
+      currentSessionId,
+      setSelectedAgentFilePath,
+      setSelectedAgentFileContent,
+      setSelectedAgentFileLoading,
+      addAgentFileVersion,
+    ],
   );
 
   const clearSelectedFile = useCallback(() => {
@@ -178,6 +206,7 @@ export function useAgentFiles() {
   return {
     agentFiles,
     agentFilesLoading,
+    agentFileVersions,
     loadAgentFiles,
     readAgentFile,
     writeAgentFile,
@@ -191,5 +220,7 @@ export function useAgentFiles() {
     selectedAgentFileLoading,
     selectAgentFile,
     clearSelectedFile,
+    addAgentFileVersion,
+    moveAgentFileVersions,
   };
 }

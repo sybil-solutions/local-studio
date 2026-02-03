@@ -12,7 +12,7 @@ import { delay } from "../core/async";
 import type { Logger } from "../core/logger";
 import type { LaunchResult, ProcessInfo, Recipe } from "../types/models";
 import type { EventManager } from "./event-manager";
-import { buildSglangCommand, buildVllmCommand } from "./backends";
+import { buildLlamacppCommand, buildSglangCommand, buildVllmCommand } from "./backends";
 import {
     buildEnvironment,
     collectChildren,
@@ -70,8 +70,12 @@ export const createProcessManager = (
             }
             let modelPath =
                 extractFlag(proc.args, "--model") ||
-                extractFlag(proc.args, "--model-path");
-            let servedModelName = extractFlag(proc.args, "--served-model-name");
+                extractFlag(proc.args, "--model-path") ||
+                extractFlag(proc.args, "-m");
+            let servedModelName =
+                extractFlag(proc.args, "--served-model-name") ||
+                extractFlag(proc.args, "--alias") ||
+                extractFlag(proc.args, "-a");
 
             if (!modelPath) {
                 const serveIndex = proc.args.indexOf("serve");
@@ -211,7 +215,9 @@ export const createProcessManager = (
         const command =
             updatedRecipe.backend === "sglang"
                 ? buildSglangCommand(updatedRecipe, config)
-                : buildVllmCommand(updatedRecipe);
+                : updatedRecipe.backend === "llamacpp"
+                  ? buildLlamacppCommand(updatedRecipe, config)
+                  : buildVllmCommand(updatedRecipe);
 
         const logFile = resolve("/tmp", `vllm_${updatedRecipe.id}.log`);
         const env = buildEnvironment(updatedRecipe);

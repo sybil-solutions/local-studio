@@ -273,6 +273,82 @@ export const buildVllmCommand = (recipe: Recipe): string[] => {
   return appendExtraArguments(command, recipe.extra_args);
 };
 
+const resolveLlamaBinary = (recipe: Recipe, config: Config): string => {
+  const override = getExtraArgument(recipe.extra_args, "llama_bin") ?? config.llama_bin;
+  if (typeof override === "string" && override.trim()) {
+    if (override.includes("/") && existsSync(override)) {
+      return resolve(override);
+    }
+    const resolved = resolveBinary(override);
+    if (resolved) {
+      return resolved;
+    }
+    return override;
+  }
+  return resolveBinary("llama-server") ?? "llama-server";
+};
+
+const appendLlamacppArguments = (command: string[], extraArguments: Record<string, unknown>): string[] => {
+  const internalKeys = new Set(["venv_path", "env_vars", "cuda_visible_devices", "description", "tags", "status"]);
+
+  for (const [key, value] of Object.entries(extraArguments)) {
+    const normalizedKey = key.replace(/-/g, "_").toLowerCase();
+    if (internalKeys.has(normalizedKey)) {
+      continue;
+    }
+    const flag = `--${key.replace(/_/g, "-")}`;
+    if (command.includes(flag)) {
+      continue;
+    }
+    if (value === true) {
+      command.push(flag);
+      continue;
+    }
+    if (value === false) {
+      continue;
+    }
+    if (value === undefined || value === null || value === "") {
+      continue;
+    }
+    if (Array.isArray(value)) {
+      for (const entry of value) {
+        if (entry === undefined || entry === null || entry === "") {
+          continue;
+        }
+        command.push(flag, String(entry));
+      }
+      continue;
+    }
+    if (typeof value === "object") {
+      command.push(flag, JSON.stringify(value));
+      continue;
+    }
+    command.push(flag, String(value));
+  }
+  return command;
+};
+
+/**
+ * Build a llama.cpp launch command.
+ * @param recipe - Recipe data.
+ * @param config - Runtime config.
+ * @returns CLI command array.
+ */
+export const buildLlamacppCommand = (recipe: Recipe, config: Config): string[] => {
+  const command: string[] = [resolveLlamaBinary(recipe, config)];
+  command.push("--model", recipe.model_path, "--host", recipe.host, "--port", String(recipe.port));
+
+  if (recipe.served_model_name) {
+    command.push("--alias", recipe.served_model_name);
+  }
+  const ctxOverride = getExtraArgument(recipe.extra_args, "ctx-size");
+  if (!ctxOverride && recipe.max_model_len > 0) {
+    command.push("--ctx-size", String(recipe.max_model_len));
+  }
+
+  return appendLlamacppArguments(command, recipe.extra_args);
+};
+
 /**
  * Build an SGLang launch command.
  * @param recipe - Recipe data.

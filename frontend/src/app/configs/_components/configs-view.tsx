@@ -2,6 +2,7 @@
 import {
   Activity,
   Check,
+  Cpu,
   Database,
   Eye,
   EyeOff,
@@ -524,6 +525,15 @@ function ConnectionFlow() {
 }
 
 function ConfigCards({ data }: { data: ConfigData }) {
+  const formatRuntime = (
+    info: ConfigData["runtime"]["backends"][keyof ConfigData["runtime"]["backends"]],
+  ) => {
+    if (!info.installed) {
+      return "Not installed";
+    }
+    return info.version ? info.version : "Installed";
+  };
+
   return (
     <div className="space-y-6 sm:space-y-8">
       <ConfigSection title="Network">
@@ -579,6 +589,54 @@ function ConfigCards({ data }: { data: ConfigData }) {
           value={data.config.tabby_api_dir || "Not configured"}
           icon={<Settings className="h-3 w-3" />}
           truncate
+        />
+        <ConfigRow
+          label="llama.cpp"
+          value={data.config.llama_bin || "Not configured"}
+          icon={<Settings className="h-3 w-3" />}
+          truncate
+        />
+      </ConfigSection>
+
+      <ConfigSection title="Runtime Versions">
+        <ConfigRow
+          label="vLLM"
+          value={formatRuntime(data.runtime.backends.vllm)}
+          icon={<Server className="h-3 w-3" />}
+        />
+        <ConfigRow
+          label="SGLang"
+          value={formatRuntime(data.runtime.backends.sglang)}
+          icon={<Server className="h-3 w-3" />}
+        />
+        <ConfigRow
+          label="llama.cpp"
+          value={formatRuntime(data.runtime.backends.llamacpp)}
+          icon={<Server className="h-3 w-3" />}
+        />
+      </ConfigSection>
+
+      <ConfigSection title="Hardware">
+        <ConfigRow
+          label="GPU Count"
+          value={data.runtime.gpus.count ? data.runtime.gpus.count.toString() : "None detected"}
+          icon={<Cpu className="h-3 w-3" />}
+        />
+        <ConfigRow
+          label="GPU Types"
+          value={data.runtime.gpus.types.length ? data.runtime.gpus.types.join(", ") : "Unknown"}
+          icon={<Cpu className="h-3 w-3" />}
+          truncate
+        />
+        <ConfigRow
+          label="CUDA Driver"
+          value={data.runtime.cuda.driver_version || "Unknown"}
+          icon={<Cpu className="h-3 w-3" />}
+        />
+        <ConfigRow
+          label="CUDA Runtime"
+          value={data.runtime.cuda.cuda_version || "Unknown"}
+          icon={<Cpu className="h-3 w-3" />}
         />
       </ConfigSection>
 

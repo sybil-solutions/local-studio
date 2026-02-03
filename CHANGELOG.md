@@ -8,6 +8,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.4] - 2026-02-03
+
+### Added
+- Backend: llama.cpp engine support (recipes, launch commands, runtime config)
+- Configs: runtime version + GPU/CUDA info surfaced in `/config`
+- Chat: Artifact preview grouping/version selector + shared code highlighting
+- Agent: File preview sandbox + per-file version history
+
+### Changed
+- Chat: Tool-only assistant messages collapse into the nearest assistant response
+- Chat: Streaming output renders in a capped container to reduce vertical spam
+- Chat: Improved automatic title generation using user + assistant context
+
+## [0.4.3] - 2026-02-03
+
+### Fixed
+- Add missing Prometheus scrape config required by docker-compose
+
 ## [0.4.2] - 2026-02-03
 
 ### Added

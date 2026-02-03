@@ -3,8 +3,7 @@
 
 import { useId } from "react";
 import * as Icons from "../icons";
-import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
-import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism";
+import { CodePreview } from "./code-preview";
 import { useAppStore } from "@/store";
 
 interface EnhancedCodeBlockProps {
@@ -130,29 +129,7 @@ export function EnhancedCodeBlock({
 
       {/* Code */}
       <div className={shouldCollapse ? "max-h-[300px] overflow-hidden relative" : ""}>
-        <SyntaxHighlighter
-          language={lang}
-          style={vscDarkPlus}
-          customStyle={{
-            margin: 0,
-            padding: "1rem",
-            background: "transparent",
-            fontSize: "0.875rem",
-            lineHeight: "1.6",
-          }}
-          showLineNumbers
-          lineNumberStyle={{
-            color: "var(--muted)",
-            fontSize: "0.75rem",
-            paddingRight: "1rem",
-            minWidth: "2.5rem",
-            textAlign: "right",
-            userSelect: "none",
-          }}
-          wrapLongLines
-        >
-          {code}
-        </SyntaxHighlighter>
+        <CodePreview code={code} language={lang} />
 
         {shouldCollapse && (
           <div className="absolute bottom-0 left-0 right-0 h-24 bg-gradient-to-t from-(--card) to-transparent flex items-end justify-center pb-3">

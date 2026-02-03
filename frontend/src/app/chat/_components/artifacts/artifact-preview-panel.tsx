@@ -4,46 +4,99 @@
 import { useMemo, useState, useCallback, useRef } from "react";
 import * as Icons from "../icons";
 import type { Artifact } from "@/lib/types";
+import { CodePreview } from "../code";
+import {
+  buildSvgDocument,
+  buildReactDocument,
+  buildJsDocument,
+  buildHtmlDocument,
+  buildTextDocument,
+} from "./artifact-templates";
 
 interface ArtifactPreviewPanelProps {
   artifacts: Artifact[];
 }
 
+interface ArtifactGroup {
+  id: string;
+  label: string;
+  artifacts: Artifact[];
+  lastIndex: number;
+}
+
 export function ArtifactPreviewPanel({ artifacts }: ArtifactPreviewPanelProps) {
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
+  const [selectedVersionId, setSelectedVersionId] = useState<string | null>(null);
   const [isPlaying, setIsPlaying] = useState(true);
   const [activeTab, setActiveTab] = useState<"preview" | "code">("preview");
 
-  const resolvedSelectedId = useMemo(() => {
-    if (selectedId && artifacts.some((a) => a.id === selectedId)) {
-      return selectedId;
-    }
-    return artifacts[artifacts.length - 1]?.id ?? null;
-  }, [selectedId, artifacts]);
+  const groups = useMemo<ArtifactGroup[]>(() => {
+    const map = new Map<string, ArtifactGroup>();
+    artifacts.forEach((artifact, index) => {
+      const titleKey = (artifact.title || artifact.type).trim().toLowerCase();
+      const groupId = artifact.groupId || `${artifact.type}:${titleKey || artifact.type}`;
+      const label = (artifact.title || artifact.type).trim() || artifact.type.toUpperCase();
+      const existing = map.get(groupId);
+      if (existing) {
+        existing.artifacts.push(artifact);
+        existing.lastIndex = index;
+      } else {
+        map.set(groupId, {
+          id: groupId,
+          label,
+          artifacts: [artifact],
+          lastIndex: index,
+        });
+      }
+    });
+
+    return Array.from(map.values())
+      .map((group) => ({
+        ...group,
+        artifacts: [...group.artifacts].sort(
+          (a, b) => (a.version ?? 0) - (b.version ?? 0),
+        ),
+      }))
+      .sort((a, b) => a.lastIndex - b.lastIndex);
+  }, [artifacts]);
+
+  const resolvedGroupId =
+    selectedGroupId && groups.some((group) => group.id === selectedGroupId)
+      ? selectedGroupId
+      : groups[groups.length - 1]?.id ?? null;
+
+  const activeGroup = useMemo(() => {
+    if (!resolvedGroupId) return null;
+    return groups.find((group) => group.id === resolvedGroupId) ?? null;
+  }, [groups, resolvedGroupId]);
+
+  const versions = activeGroup?.artifacts ?? [];
+  const resolvedVersionId =
+    selectedVersionId && versions.some((artifact) => artifact.id === selectedVersionId)
+      ? selectedVersionId
+      : versions[versions.length - 1]?.id ?? null;
+
+  const activeArtifact = useMemo(() => {
+    if (!resolvedVersionId) return null;
+    return versions.find((artifact) => artifact.id === resolvedVersionId) ?? null;
+  }, [versions, resolvedVersionId]);
 
   const selectedIndex = useMemo(() => {
-    return artifacts.findIndex((a) => a.id === resolvedSelectedId);
-  }, [artifacts, resolvedSelectedId]);
-
-  const selectedArtifact = artifacts.find((a) => a.id === resolvedSelectedId);
-
-  // Auto-select latest artifact (only when artifact list changes)
-  const latestId = artifacts.length > 0 ? artifacts[artifacts.length - 1].id : null;
-  if (latestId && !selectedId) {
-    setSelectedId(latestId);
-  }
+    if (!activeArtifact || versions.length === 0) return 0;
+    return versions.findIndex((artifact) => artifact.id === activeArtifact.id);
+  }, [versions, activeArtifact]);
 
   const handlePrev = useCallback(() => {
-    if (artifacts.length <= 1) return;
-    const newIndex = selectedIndex <= 0 ? artifacts.length - 1 : selectedIndex - 1;
-    setSelectedId(artifacts[newIndex].id);
-  }, [artifacts, selectedIndex]);
+    if (versions.length <= 1) return;
+    const newIndex = selectedIndex <= 0 ? versions.length - 1 : selectedIndex - 1;
+    setSelectedVersionId(versions[newIndex].id);
+  }, [versions, selectedIndex]);
 
   const handleNext = useCallback(() => {
-    if (artifacts.length <= 1) return;
-    const newIndex = selectedIndex >= artifacts.length - 1 ? 0 : selectedIndex + 1;
-    setSelectedId(artifacts[newIndex].id);
-  }, [artifacts, selectedIndex]);
+    if (versions.length <= 1) return;
+    const newIndex = selectedIndex >= versions.length - 1 ? 0 : selectedIndex + 1;
+    setSelectedVersionId(versions[newIndex].id);
+  }, [versions, selectedIndex]);
 
   if (artifacts.length === 0) {
     return (
@@ -85,13 +138,13 @@ export function ArtifactPreviewPanel({ artifacts }: ArtifactPreviewPanelProps) {
         </div>
 
         <div className="flex items-center gap-1">
-          {artifacts.length > 1 && (
+          {versions.length > 1 && (
             <>
               <button onClick={handlePrev} className="p-1.5 rounded hover:bg-white/6 text-[#666]">
                 <Icons.ChevronLeft className="h-4 w-4" />
               </button>
               <span className="text-xs text-[#666] tabular-nums">
-                {selectedIndex + 1}/{artifacts.length}
+                {selectedIndex + 1}/{versions.length}
               </span>
               <button onClick={handleNext} className="p-1.5 rounded hover:bg-white/6 text-[#666]">
                 <Icons.ChevronRight className="h-4 w-4" />
@@ -101,15 +154,32 @@ export function ArtifactPreviewPanel({ artifacts }: ArtifactPreviewPanelProps) {
         </div>
       </div>
 
-      {/* Artifact selector */}
-      {artifacts.length > 1 && (
+      {/* Group selector */}
+      {groups.length > 1 && (
         <div className="flex gap-1 p-2 border-b border-white/6 overflow-x-auto">
-          {artifacts.map((artifact) => (
-            <ArtifactPill
+          {groups.map((group) => (
+            <ArtifactGroupPill
+              key={group.id}
+              group={group}
+              isSelected={group.id === activeGroup?.id}
+              onClick={() => {
+                setSelectedGroupId(group.id);
+                setSelectedVersionId(group.artifacts[group.artifacts.length - 1]?.id ?? null);
+              }}
+            />
+          ))}
+        </div>
+      )}
+
+      {/* Version selector */}
+      {activeGroup && activeGroup.artifacts.length > 1 && (
+        <div className="flex gap-1 px-3 py-2 border-b border-white/6 overflow-x-auto">
+          {activeGroup.artifacts.map((artifact) => (
+            <ArtifactVersionPill
               key={artifact.id}
               artifact={artifact}
-              isSelected={artifact.id === resolvedSelectedId}
-              onClick={() => setSelectedId(artifact.id)}
+              isSelected={artifact.id === activeArtifact?.id}
+              onClick={() => setSelectedVersionId(artifact.id)}
             />
           ))}
         </div>
@@ -117,26 +187,36 @@ export function ArtifactPreviewPanel({ artifacts }: ArtifactPreviewPanelProps) {
 
       {/* Content */}
       <div className="flex-1 overflow-hidden">
-        {selectedArtifact && activeTab === "preview" && (
-          <ArtifactPreviewIframe artifact={selectedArtifact} isPlaying={isPlaying} />
+        {activeArtifact && activeTab === "preview" && (
+          <ArtifactPreviewIframe artifact={activeArtifact} isPlaying={isPlaying} />
         )}
-        {selectedArtifact && activeTab === "code" && (
-          <pre className="h-full overflow-auto p-4 text-xs font-mono text-[#888] leading-relaxed">
-            <code>{selectedArtifact.code}</code>
-          </pre>
+        {activeArtifact && activeTab === "code" && (
+          <CodePreview
+            code={activeArtifact.code}
+            language={
+              activeArtifact.type === "react"
+                ? "jsx"
+                : activeArtifact.type === "javascript"
+                  ? "javascript"
+                  : activeArtifact.type === "python"
+                    ? "python"
+                    : activeArtifact.type
+            }
+            className="h-full text-[#e6e2dd]"
+          />
         )}
       </div>
 
       {/* Bottom bar */}
-      {selectedArtifact && (
+      {activeArtifact && (
         <div className="flex items-center justify-between px-3 py-2 border-t border-white/6">
           <div className="flex items-center gap-2 min-w-0">
-            <ArtifactTypeIcon type={selectedArtifact.type} />
+            <ArtifactTypeIcon type={activeArtifact.type} />
             <span className="text-xs text-[#888] truncate">
-              {selectedArtifact.title || `${selectedArtifact.type.toUpperCase()}`}
+              {activeArtifact.title || `${activeArtifact.type.toUpperCase()}`}
             </span>
-            {selectedArtifact.version && (
-              <span className="text-[10px] text-violet-300">v{selectedArtifact.version}</span>
+            {activeArtifact.version && (
+              <span className="text-[10px] text-violet-300">v{activeArtifact.version}</span>
             )}
           </div>
           <div className="flex items-center gap-1">
@@ -145,11 +225,7 @@ export function ArtifactPreviewPanel({ artifacts }: ArtifactPreviewPanelProps) {
               className="p-1.5 rounded hover:bg-white/6 text-[#666]"
               title={isPlaying ? "Pause" : "Play"}
             >
-              {isPlaying ? (
-                <Icons.Pause className="h-3.5 w-3.5" />
-              ) : (
-                <Icons.Play className="h-3.5 w-3.5" />
-              )}
+              {isPlaying ? <Icons.Pause className="h-3.5 w-3.5" /> : <Icons.Play className="h-3.5 w-3.5" />}
             </button>
           </div>
         </div>
@@ -158,16 +234,16 @@ export function ArtifactPreviewPanel({ artifacts }: ArtifactPreviewPanelProps) {
   );
 }
 
-function ArtifactPill({
-  artifact,
+function ArtifactGroupPill({
+  group,
   isSelected,
   onClick,
 }: {
-  artifact: Artifact;
+  group: ArtifactGroup;
   isSelected: boolean;
   onClick: () => void;
 }) {
-  const versionLabel = artifact.version ? `v${artifact.version}` : null;
+  const latestVersion = group.artifacts[group.artifacts.length - 1]?.version;
 
   return (
     <button
@@ -178,13 +254,38 @@ function ArtifactPill({
           : "bg-transparent text-[#666] hover:bg-white/4 border border-transparent"
       }`}
     >
-      <ArtifactTypeIcon type={artifact.type} className="h-3 w-3" />
-      <span className="max-w-25 truncate">{artifact.title?.slice(0, 20) || artifact.type}</span>
-      {versionLabel && (
+      <ArtifactTypeIcon type={group.artifacts[0]?.type ?? "html"} className="h-3 w-3" />
+      <span className="max-w-30 truncate">{group.label}</span>
+      {latestVersion && (
         <span className="rounded-full border border-violet-500/30 bg-violet-500/10 px-1.5 py-0.5 text-[9px] text-violet-300">
-          {versionLabel}
+          v{latestVersion}
         </span>
       )}
+    </button>
+  );
+}
+
+function ArtifactVersionPill({
+  artifact,
+  isSelected,
+  onClick,
+}: {
+  artifact: Artifact;
+  isSelected: boolean;
+  onClick: () => void;
+}) {
+  const versionLabel = artifact.version ? `v${artifact.version}` : "v1";
+
+  return (
+    <button
+      onClick={onClick}
+      className={`px-2 py-1 rounded-md text-[10px] font-mono transition-colors ${
+        isSelected
+          ? "bg-violet-500/15 text-violet-300 border border-violet-500/30"
+          : "bg-white/2 text-[#666] hover:text-[#888] border border-white/5"
+      }`}
+    >
+      {versionLabel}
     </button>
   );
 }
@@ -210,7 +311,6 @@ function ArtifactTypeIcon({
   }
 }
 
-// Simple iframe preview without the full artifact viewer complexity
 function ArtifactPreviewIframe({
   artifact,
   isPlaying,
@@ -221,23 +321,23 @@ function ArtifactPreviewIframe({
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
   const srcDoc = useMemo(() => {
-    if (!isPlaying) return "<!DOCTYPE html><html><body style='background:#0a0a0a'></body></html>";
+    if (!isPlaying) return buildTextDocument("");
 
     switch (artifact.type) {
       case "svg": {
         const svgCode = artifact.code.includes("<svg")
           ? artifact.code
           : `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">${artifact.code}</svg>`;
-        return `<!DOCTYPE html>
-<html><head><style>*{margin:0;padding:0}body{width:100vw;height:100vh;display:flex;align-items:center;justify-content:center;background:#0a0a0a}</style></head>
-<body>${svgCode}</body></html>`;
+        return buildSvgDocument(svgCode, 1);
       }
       case "html":
-        return artifact.code.includes("<!DOCTYPE") || artifact.code.includes("<html")
-          ? artifact.code
-          : `<!DOCTYPE html><html><head><script src="https://cdn.tailwindcss.com"></script><style>*{margin:0;padding:0}body{background:#0a0a0a}</style></head><body>${artifact.code}</body></html>`;
+        return buildHtmlDocument(artifact.code);
+      case "javascript":
+        return buildJsDocument(artifact.code);
+      case "react":
+        return buildReactDocument(artifact.code);
       default:
-        return `<!DOCTYPE html><html><body style="background:#0a0a0a;padding:20px"><pre style="color:#888;font-family:monospace;font-size:12px;white-space:pre-wrap">${artifact.code}</pre></body></html>`;
+        return buildTextDocument(artifact.code);
     }
   }, [artifact, isPlaying]);
 

@@ -769,6 +769,7 @@ class APIClient {
       db_path: string;
       sglang_python: string | null;
       tabby_api_dir: string | null;
+      llama_bin: string | null;
     };
     services: Array<{
       name: string;
@@ -784,6 +785,15 @@ class APIClient {
       litellm_url: string;
       frontend_url: string;
     };
+    runtime: {
+      cuda: { driver_version: string | null; cuda_version: string | null };
+      gpus: { count: number; types: string[] };
+      backends: {
+        vllm: { installed: boolean; version: string | null; python_path?: string | null; binary_path?: string | null };
+        sglang: { installed: boolean; version: string | null; python_path?: string | null; binary_path?: string | null };
+        llamacpp: { installed: boolean; version: string | null; python_path?: string | null; binary_path?: string | null };
+      };
+    };
   }> {
     return this.request("/config");
   }
@@ -794,6 +804,10 @@ class APIClient {
 
   async getVllmRuntimeConfig(): Promise<VllmRuntimeConfig> {
     return this.request("/runtime/vllm/config");
+  }
+
+  async getLlamacppRuntimeConfig(): Promise<{ config: string | null; error?: string | null }> {
+    return this.request("/runtime/llamacpp/config");
   }
 
   async upgradeVllmRuntime(preferBundled = true): Promise<VllmUpgradeResult> {

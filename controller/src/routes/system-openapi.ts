@@ -8,6 +8,7 @@ import {
   SystemConfigResponseSchema,
 } from "../types/schemas";
 import { getGpuInfo } from "../services/gpu";
+import { getSystemRuntimeInfo } from "../services/runtime-info";
 
 /**
  * Register system routes with OpenAPI.
@@ -82,7 +83,7 @@ export const registerSystemRoutes = (app: OpenAPIHono, context: AppContext): voi
       // Transform process to match schema (narrowing backend type and ensuring model_path is string)
       const processInfo = current ? {
         pid: current.pid,
-        backend: current.backend as "vllm" | "sglang" | "tabby",
+        backend: current.backend as "vllm" | "sglang" | "llamacpp" | "tabbyapi",
         model_path: current.model_path ?? "",
         port: current.port,
         served_model_name: current.served_model_name ?? undefined,
@@ -182,15 +183,32 @@ export const registerSystemRoutes = (app: OpenAPIHono, context: AppContext): voi
         internal_port: context.config.inference_port,
         protocol: "http",
         status: inferenceStatus,
-        description: "Inference backend (vLLM or SGLang)",
+        description: "Inference backend (vLLM, SGLang, or llama.cpp)",
       });
 
+      const runtime = await getSystemRuntimeInfo(context.config);
+
       return ctx.json({
-        port: context.config.port,
-        inference_port: context.config.inference_port,
-        models_dir: context.config.models_dir,
-        data_dir: context.config.data_dir,
+        config: {
+          host: context.config.host,
+          port: context.config.port,
+          inference_port: context.config.inference_port,
+          api_key_configured: Boolean(context.config.api_key),
+          models_dir: context.config.models_dir,
+          data_dir: context.config.data_dir,
+          db_path: context.config.db_path,
+          sglang_python: context.config.sglang_python ?? null,
+          tabby_api_dir: context.config.tabby_api_dir ?? null,
+          llama_bin: context.config.llama_bin ?? null,
+        },
         services,
+        environment: {
+          controller_url: `http://${context.config.host}:${context.config.port}`,
+          inference_url: `http://${context.config.host}:${context.config.inference_port}`,
+          litellm_url: `http://${context.config.host}:4100`,
+          frontend_url: `http://${context.config.host}:3000`,
+        },
+        runtime,
       });
     }
   );

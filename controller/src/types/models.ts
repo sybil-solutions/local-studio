@@ -4,7 +4,7 @@ import type { RecipeId } from "./brand";
 /**
  * Supported inference backends.
  */
-export type Backend = "vllm" | "sglang" | "transformers" | "tabbyapi";
+export type Backend = "vllm" | "sglang" | "llamacpp" | "transformers" | "tabbyapi";
 
 /**
  * Model launch configuration.
@@ -113,6 +113,7 @@ export interface SystemConfig {
   db_path: string;
   sglang_python: string | null;
   tabby_api_dir: string | null;
+  llama_bin: string | null;
 }
 
 /**
@@ -126,12 +127,52 @@ export interface EnvironmentInfo {
 }
 
 /**
+ * Runtime backend version info.
+ */
+export interface RuntimeBackendInfo {
+  installed: boolean;
+  version: string | null;
+  python_path?: string | null;
+  binary_path?: string | null;
+}
+
+/**
+ * CUDA runtime info.
+ */
+export interface RuntimeCudaInfo {
+  driver_version: string | null;
+  cuda_version: string | null;
+}
+
+/**
+ * GPU summary info.
+ */
+export interface RuntimeGpuInfoSummary {
+  count: number;
+  types: string[];
+}
+
+/**
+ * Runtime information for the system.
+ */
+export interface SystemRuntimeInfo {
+  cuda: RuntimeCudaInfo;
+  gpus: RuntimeGpuInfoSummary;
+  backends: {
+    vllm: RuntimeBackendInfo;
+    sglang: RuntimeBackendInfo;
+    llamacpp: RuntimeBackendInfo;
+  };
+}
+
+/**
  * Full configuration response payload.
  */
 export interface SystemConfigResponse {
   config: SystemConfig;
   services: ServiceInfo[];
   environment: EnvironmentInfo;
+  runtime: SystemRuntimeInfo;
 }
 
 /**

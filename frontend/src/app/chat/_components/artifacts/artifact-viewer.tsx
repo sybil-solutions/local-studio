@@ -32,198 +32,13 @@ import {
 } from "lucide-react";
 import type { Artifact } from "@/lib/types";
 import { useAppStore } from "@/store";
-
-// SVG template - wraps SVG in proper HTML document for iframe rendering
-const SVG_TEMPLATE = (svgCode: string, scale: number = 1) => `
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    html, body {
-      width: 100%;
-      height: 100%;
-      overflow: hidden;
-      background: transparent;
-    }
-    .container {
-      width: 100%;
-      height: 100%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      overflow: hidden;
-    }
-    .svg-wrapper {
-      width: 100%;
-      height: 100%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      transform: scale(${scale});
-      transform-origin: center center;
-      transition: transform 0.2s ease;
-    }
-    svg {
-      display: block;
-      width: 100%;
-      height: 100%;
-      max-width: 100%;
-      max-height: 100%;
-    }
-  </style>
-</head>
-<body>
-  <div class="container">
-    <div class="svg-wrapper">
-      ${svgCode}
-    </div>
-  </div>
-</body>
-</html>
-`;
-
-// React/HTML template with full viewport
-const REACT_TEMPLATE = (code: string) => `
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
-  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
-  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    html, body, #root {
-      width: 100%;
-      height: 100%;
-      background: transparent;
-      overflow: hidden;
-    }
-    .error {
-      color: #b91c1c;
-      font-family: ui-monospace, monospace;
-      white-space: pre-wrap;
-      padding: 16px;
-    }
-  </style>
-</head>
-<body>
-  <div id="root"></div>
-  <div id="error" class="error" style="display:none;"></div>
-  <script type="text/babel" data-presets="react,typescript">
-    (() => {
-      const send = (type, message) => {
-        try { window.parent?.postMessage({ type, message }, '*'); } catch {}
-      };
-      const showError = (message) => {
-        const el = document.getElementById('error');
-        if (el) { el.style.display = 'block'; el.textContent = message; }
-      };
-      window.addEventListener('error', (event) => {
-        const msg = event?.error?.stack || event?.message || 'Unknown error';
-        send('error', msg);
-        showError(msg);
-      });
-      try {
-        window.__DEFAULT_EXPORT__ = undefined;
-        const { useState, useEffect, useMemo, useRef, useCallback, createContext, useContext } = React;
-
-        // Strip imports/exports for iframe execution
-        ${code
-          .replace(/^\s*import\s+.*?;?\s*$/gm, "")
-          .replace(/^\s*export\s+\{[^}]+\}\s*;?\s*$/gm, "")
-          .replace(/^\s*export\s+(const|let|var|function|class)\s+/gm, "$1 ")
-          .replace(/\bexport\s+default\s+/g, "window.__DEFAULT_EXPORT__ = ")}
-
-        const container = document.getElementById('root');
-        const root = ReactDOM.createRoot(container);
-        const candidate = (typeof App !== 'undefined' && App) || window.__DEFAULT_EXPORT__ || null;
-        if (!candidate) {
-          showError('Define an App component or use export default.');
-          return;
-        }
-        const element = React.isValidElement(candidate) ? candidate : React.createElement(candidate);
-        root.render(element);
-      } catch (e) {
-        const msg = e?.stack || e?.message || 'Failed to render';
-        send('error', msg);
-        showError(msg);
-      }
-    })();
-  </script>
-</body>
-</html>
-`;
-
-// JavaScript template
-const JS_TEMPLATE = (code: string) => `
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    html, body { width: 100%; height: 100%; }
-    body { font-family: system-ui, sans-serif; padding: 16px; background: transparent; min-height: 100vh; }
-    #output { white-space: pre-wrap; font-family: monospace; }
-  </style>
-</head>
-<body>
-  <div id="output"></div>
-  <script>
-    const output = document.getElementById('output');
-    const send = (type, message) => {
-      try { window.parent?.postMessage({ type, message }, '*'); } catch {}
-    };
-    const log = (...args) => {
-      const line = args.map(a => typeof a === 'object' ? JSON.stringify(a, null, 2) : String(a)).join(' ') + '\\n';
-      output.textContent += line;
-      send('output', line);
-    };
-    console.log = log;
-    console.info = log;
-    console.warn = log;
-    console.error = (...args) => { log(...args); send('error', args.map(String).join(' ')); };
-    window.addEventListener('error', (e) => send('error', e?.error?.stack || e?.message || 'Error'));
-    try { ${code} } catch (e) { output.textContent = 'Error: ' + e.message; send('error', e?.stack || String(e)); }
-  </script>
-</body>
-</html>
-`;
-
-// HTML passthrough (already complete)
-const HTML_TEMPLATE = (code: string) => {
-  if (
-    code.trim().toLowerCase().startsWith("<!doctype") ||
-    code.trim().toLowerCase().startsWith("<html")
-  ) {
-    return code;
-  }
-  return `
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <script src="https://cdn.tailwindcss.com"></script>
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    html, body { width: 100%; height: 100%; }
-    body { font-family: system-ui, sans-serif; background: transparent; min-height: 100vh; }
-  </style>
-</head>
-<body>
-  ${code}
-</body>
-</html>
-`;
-};
+import {
+  buildSvgDocument,
+  buildReactDocument,
+  buildJsDocument,
+  buildHtmlDocument,
+  buildTextDocument,
+} from "./artifact-templates";
 
 interface ArtifactViewerProps {
   artifact: Artifact;
@@ -477,18 +292,16 @@ export function ArtifactViewer({ artifact, isActive = true }: ArtifactViewerProp
         const svgMarkup = artifact.code.includes("<svg")
           ? artifact.code
           : `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">${artifact.code}</svg>`;
-        return SVG_TEMPLATE(svgMarkup, scale);
+        return buildSvgDocument(svgMarkup, scale);
       }
       case "react":
-        return REACT_TEMPLATE(artifact.code);
+        return buildReactDocument(artifact.code);
       case "javascript":
-        return JS_TEMPLATE(artifact.code);
+        return buildJsDocument(artifact.code);
       case "html":
-        return HTML_TEMPLATE(artifact.code);
+        return buildHtmlDocument(artifact.code);
       default:
-        return HTML_TEMPLATE(
-          `<pre style="padding:16px;font-family:monospace;">${artifact.code}</pre>`,
-        );
+        return buildTextDocument(artifact.code);
     }
   }, [artifact, scale]);
 

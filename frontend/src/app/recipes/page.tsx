@@ -52,6 +52,7 @@ import {
   normalizeRecipeForEditor,
   prepareRecipeForSave,
 } from "./recipe-utils";
+import { LLAMACPP_OPTIONS } from "./llamacpp-options";
 
 type Tab = "recipes" | "tools" | "runtime";
 
@@ -72,6 +73,19 @@ const DEFAULT_RECIPE: Recipe = {
   kv_cache_dtype: "auto",
   trust_remote_code: true,
   extra_args: {},
+};
+
+const BACKEND_LABELS: Record<string, string> = {
+  vllm: "vLLM",
+  sglang: "SGLang",
+  llamacpp: "llama.cpp",
+  transformers: "Transformers",
+  tabbyapi: "TabbyAPI",
+};
+
+const formatBackendLabel = (backend?: string | null): string => {
+  if (!backend) return BACKEND_LABELS.vllm;
+  return BACKEND_LABELS[backend] ?? backend;
 };
 
 function RecipesContent() {
@@ -519,7 +533,7 @@ function RecipesContent() {
                         </td>
                         <td className="px-4 py-3 text-sm">
                           <span className="px-2 py-1 bg-[#1b1b1b] border border-[#363432] rounded text-xs">
-                            {recipe.backend || "vllm"}
+                            {formatBackendLabel(recipe.backend)}
                           </span>
                         </td>
                         <td className="px-4 py-3 text-sm text-[#9a9088]">
@@ -940,6 +954,49 @@ const appendExtraArgsToCommand = (
   return args;
 };
 
+const appendLlamacppArgsToCommand = (
+  args: string[],
+  extraArgs: Record<string, unknown>,
+): string[] => {
+  const internalKeys = new Set(["venv_path", "env_vars", "cuda_visible_devices", "description", "tags", "status"]);
+
+  for (const [key, value] of Object.entries(extraArgs)) {
+    const normalizedKey = key.replace(/-/g, "_").toLowerCase();
+    if (internalKeys.has(normalizedKey)) {
+      continue;
+    }
+    const flag = `--${key.replace(/_/g, "-")}`;
+    if (args.some((entry) => entry.startsWith(flag))) {
+      continue;
+    }
+    if (value === true) {
+      args.push(flag);
+      continue;
+    }
+    if (value === false) {
+      continue;
+    }
+    if (value === undefined || value === null || value === "") {
+      continue;
+    }
+    if (Array.isArray(value)) {
+      for (const entry of value) {
+        if (entry === undefined || entry === null || entry === "") {
+          continue;
+        }
+        args.push(`${flag} ${entry}`);
+      }
+      continue;
+    }
+    if (typeof value === "object") {
+      args.push(`${flag} '${JSON.stringify(value)}'`);
+      continue;
+    }
+    args.push(`${flag} ${value}`);
+  }
+  return args;
+};
+
 // Generate command from recipe
 function generateCommand(recipe: Recipe): string {
   const payload = prepareRecipeForSave(recipe);
@@ -949,57 +1006,80 @@ function generateCommand(recipe: Recipe): string {
   // Base command
   if (backend === "vllm") {
     args.push("vllm serve");
+  } else if (backend === "llamacpp") {
+    args.push("llama-server");
   } else {
     args.push("python -m sglang.launch_server");
   }
 
   // Model path (required)
   if (payload.model_path) {
-    args.push(payload.model_path);
+    if (backend === "llamacpp") {
+      args.push(`--model ${payload.model_path}`);
+    } else {
+      args.push(payload.model_path);
+    }
   }
 
   // Server settings
   if (payload.host && payload.host !== "0.0.0.0") args.push(`--host ${payload.host}`);
   if (payload.port && payload.port !== 8000) args.push(`--port ${payload.port}`);
-  if (payload.served_model_name) args.push(`--served-model-name ${payload.served_model_name}`);
+  if (payload.served_model_name) {
+    args.push(
+      backend === "llamacpp"
+        ? `--alias ${payload.served_model_name}`
+        : `--served-model-name ${payload.served_model_name}`,
+    );
+  }
 
   // Parallelism
-  if (payload.tensor_parallel_size && payload.tensor_parallel_size > 1) {
-    args.push(`--tensor-parallel-size ${payload.tensor_parallel_size}`);
-  }
-  if (payload.pipeline_parallel_size && payload.pipeline_parallel_size > 1) {
-    args.push(`--pipeline-parallel-size ${payload.pipeline_parallel_size}`);
-  }
-
-  // Memory
-  if (payload.max_model_len) args.push(`--max-model-len ${payload.max_model_len}`);
-  if (payload.max_num_seqs) args.push(`--max-num-seqs ${payload.max_num_seqs}`);
-  if (payload.gpu_memory_utilization !== undefined && payload.gpu_memory_utilization !== null) {
-    args.push(`--gpu-memory-utilization ${payload.gpu_memory_utilization}`);
-  }
-  if (payload.kv_cache_dtype && payload.kv_cache_dtype !== "auto") {
-    args.push(`--kv-cache-dtype ${payload.kv_cache_dtype}`);
+  if (backend !== "llamacpp") {
+    if (payload.tensor_parallel_size && payload.tensor_parallel_size > 1) {
+      args.push(`--tensor-parallel-size ${payload.tensor_parallel_size}`);
+    }
+    if (payload.pipeline_parallel_size && payload.pipeline_parallel_size > 1) {
+      args.push(`--pipeline-parallel-size ${payload.pipeline_parallel_size}`);
+    }
   }
 
-  // Quantization
-  if (payload.quantization) args.push(`--quantization ${payload.quantization}`);
-  if (payload.dtype && payload.dtype !== "auto") args.push(`--dtype ${payload.dtype}`);
-
-  // Flags
-  if (payload.trust_remote_code) args.push("--trust-remote-code");
-
-  // Tool calling
-  if (payload.tool_call_parser) {
-    args.push(`--tool-call-parser ${payload.tool_call_parser}`);
-    args.push("--enable-auto-tool-choice");
-  } else if (payload.enable_auto_tool_choice) {
-    args.push("--enable-auto-tool-choice");
+  // Memory / context
+  const ctxOverride = payload.extra_args?.["ctx-size"] ?? payload.extra_args?.["ctx_size"];
+  if (backend === "llamacpp") {
+    if (!ctxOverride && payload.max_model_len) args.push(`--ctx-size ${payload.max_model_len}`);
+  } else {
+    if (payload.max_model_len) args.push(`--max-model-len ${payload.max_model_len}`);
+    if (payload.max_num_seqs) args.push(`--max-num-seqs ${payload.max_num_seqs}`);
+    if (payload.gpu_memory_utilization !== undefined && payload.gpu_memory_utilization !== null) {
+      args.push(`--gpu-memory-utilization ${payload.gpu_memory_utilization}`);
+    }
+    if (payload.kv_cache_dtype && payload.kv_cache_dtype !== "auto") {
+      args.push(`--kv-cache-dtype ${payload.kv_cache_dtype}`);
+    }
   }
 
-  // Reasoning
-  if (payload.reasoning_parser) args.push(`--reasoning-parser ${payload.reasoning_parser}`);
+  if (backend !== "llamacpp") {
+    // Quantization
+    if (payload.quantization) args.push(`--quantization ${payload.quantization}`);
+    if (payload.dtype && payload.dtype !== "auto") args.push(`--dtype ${payload.dtype}`);
 
-  appendExtraArgsToCommand(args, payload.extra_args ?? {});
+    // Flags
+    if (payload.trust_remote_code) args.push("--trust-remote-code");
+
+    // Tool calling
+    if (payload.tool_call_parser) {
+      args.push(`--tool-call-parser ${payload.tool_call_parser}`);
+      args.push("--enable-auto-tool-choice");
+    } else if (payload.enable_auto_tool_choice) {
+      args.push("--enable-auto-tool-choice");
+    }
+
+    // Reasoning
+    if (payload.reasoning_parser) args.push(`--reasoning-parser ${payload.reasoning_parser}`);
+
+    appendExtraArgsToCommand(args, payload.extra_args ?? {});
+  } else {
+    appendLlamacppArgsToCommand(args, payload.extra_args ?? {});
+  }
 
   return args.join(" \\\n  ");
 }
@@ -1036,6 +1116,155 @@ function RecipeModal({
     }));
     return entries.length ? entries : [{ key: "", value: "" }];
   });
+  const [llamaConfigHelp, setLlamaConfigHelp] = useState<{ config: string | null; error?: string | null } | null>(
+    null,
+  );
+  const backend = recipe.backend ?? "vllm";
+  const isLlamacpp = backend === "llamacpp";
+  const llamaConfigLoading = isLlamacpp && !llamaConfigHelp;
+
+  useEffect(() => {
+    if (!isLlamacpp) {
+      return;
+    }
+    if (llamaConfigHelp) {
+      return;
+    }
+    let cancelled = false;
+    api.getLlamacppRuntimeConfig()
+      .then((result) => {
+        if (!cancelled) {
+          setLlamaConfigHelp(result);
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setLlamaConfigHelp({ config: null, error: (error as Error).message });
+        }
+      })
+    return () => {
+      cancelled = true;
+    };
+  }, [isLlamacpp, llamaConfigHelp]);
+
+  const getExtraArgValueForKey = (key: string): unknown => {
+    const extraArgs = recipe.extra_args ?? {};
+    const candidates = new Set<string>();
+    candidates.add(key);
+    candidates.add(key.replace(/-/g, "_"));
+    candidates.add(key.replace(/_/g, "-"));
+    for (const candidate of candidates) {
+      if (Object.prototype.hasOwnProperty.call(extraArgs, candidate)) {
+        return extraArgs[candidate];
+      }
+    }
+    return undefined;
+  };
+
+  const setExtraArgValueForKey = (key: string, value: unknown) => {
+    const extraArgs = { ...(recipe.extra_args ?? {}) } as Record<string, unknown>;
+    const candidates = new Set<string>();
+    candidates.add(key);
+    candidates.add(key.replace(/-/g, "_"));
+    candidates.add(key.replace(/_/g, "-"));
+    for (const candidate of candidates) {
+      delete extraArgs[candidate];
+    }
+    if (value !== undefined && value !== null && value !== "") {
+      extraArgs[key] = value;
+    }
+    onChange({ ...recipe, extra_args: extraArgs });
+  };
+
+  const coerceBooleanValue = (value: unknown): boolean => {
+    if (typeof value === "boolean") return value;
+    if (typeof value === "number") return value !== 0;
+    if (typeof value === "string") {
+      const normalized = value.toLowerCase().trim();
+      if (["true", "1", "yes", "y"].includes(normalized)) return true;
+      if (["false", "0", "no", "n"].includes(normalized)) return false;
+    }
+    return false;
+  };
+
+  const renderLlamacppOptions = (tab: "model" | "resources" | "performance" | "features") => {
+    const options = LLAMACPP_OPTIONS.filter((option) => option.tab === tab);
+    if (options.length === 0) {
+      return null;
+    }
+    return (
+      <div className="space-y-4">
+        <div className="flex items-center gap-2 text-[#e8e6e3] pb-2 border-b border-[#363432]/50">
+          <Settings className="w-4 h-4 text-[#d97706]" />
+          <span className="text-sm font-medium">llama.cpp Options</span>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          {options.map((option) => {
+            const value = getExtraArgValueForKey(option.key);
+            const wide = option.type === "text" && /prompt|template|grammar|control|model/.test(option.key);
+            if (option.type === "boolean") {
+              return (
+                <label
+                  key={option.key}
+                  className={`flex items-center gap-2 px-3 py-2 bg-[#0d0d0d] border border-[#363432] rounded-lg text-xs text-[#9a9088] ${
+                    wide ? "col-span-2" : ""
+                  }`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={coerceBooleanValue(value)}
+                    onChange={(e) => setExtraArgValueForKey(option.key, e.target.checked ? true : undefined)}
+                    className="accent-[#d97706]"
+                  />
+                  {option.label}
+                </label>
+              );
+            }
+            if (option.type === "select") {
+              return (
+                <div key={option.key} className={wide ? "col-span-2" : ""}>
+                  <label className="block text-xs font-medium text-[#9a9088] mb-2">{option.label}</label>
+                  <select
+                    value={value ? String(value) : ""}
+                    onChange={(e) => setExtraArgValueForKey(option.key, e.target.value || undefined)}
+                    className="w-full px-3 py-2 bg-[#0d0d0d] border border-[#363432] rounded-lg text-sm focus:outline-none focus:border-[#d97706]"
+                  >
+                    <option value="">Default</option>
+                    {option.options?.map((entry) => (
+                      <option key={entry} value={entry}>
+                        {entry}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              );
+            }
+            const inputType = option.type === "number" ? "number" : "text";
+            return (
+              <div key={option.key} className={wide ? "col-span-2" : ""}>
+                <label className="block text-xs font-medium text-[#9a9088] mb-2">{option.label}</label>
+                <input
+                  type={inputType}
+                  value={value !== undefined && value !== null ? String(value) : ""}
+                  onChange={(e) =>
+                    setExtraArgValueForKey(
+                      option.key,
+                      inputType === "number" ? (e.target.value ? Number(e.target.value) : undefined) : e.target.value,
+                    )
+                  }
+                  placeholder={option.placeholder}
+                  className="w-full px-3 py-2 bg-[#0d0d0d] border border-[#363432] rounded-lg text-sm focus:outline-none focus:border-[#d97706]"
+                />
+              </div>
+            );
+          })}
+        </div>
+        <p className="text-xs text-[#6a6560]">
+          All llama.cpp flags are supported via Extra CLI Arguments. These fields cover the most-used options.
+        </p>
+      </div>
+    );
+  };
 
   // Build a lookup: model_path -> served_model_name (from first recipe that uses it)
   const modelServedNames = useMemo(() => {
@@ -1193,11 +1422,12 @@ function RecipeModal({
                   <label className="block text-xs font-medium text-[#9a9088] mb-2">Backend</label>
                   <select
                     value={recipe.backend ?? "vllm"}
-                    onChange={(e) => onChange({ ...recipe, backend: e.target.value as "vllm" | "sglang" })}
+                    onChange={(e) => onChange({ ...recipe, backend: e.target.value as "vllm" | "sglang" | "llamacpp" })}
                     className="w-full px-3 py-2 bg-[#0d0d0d] border border-[#363432] rounded-lg text-sm focus:outline-none focus:border-[#d97706]"
                   >
                     <option value="vllm">vLLM</option>
                     <option value="sglang">SGLang</option>
+                    <option value="llamacpp">llama.cpp</option>
                   </select>
                 </div>
                 <div>
@@ -1236,6 +1466,43 @@ function RecipeModal({
         );
 
       case "model":
+        if (isLlamacpp) {
+          return (
+            <div className="space-y-5">
+              <div className="space-y-4">
+                <div className="flex items-center gap-2 text-[#e8e6e3] pb-2 border-b border-[#363432]/50">
+                  <Layers className="w-4 h-4 text-[#d97706]" />
+                  <span className="text-sm font-medium">Model & Context</span>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-[#9a9088] mb-2">Context Size</label>
+                    <input
+                      type="number"
+                      value={recipe.max_model_len || ""}
+                      onChange={(e) => onChange({ ...recipe, max_model_len: Number(e.target.value) || undefined })}
+                      placeholder="8192"
+                      className="w-full px-3 py-2 bg-[#0d0d0d] border border-[#363432] rounded-lg text-sm focus:outline-none focus:border-[#d97706]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-[#9a9088] mb-2">Seed</label>
+                    <input
+                      type="number"
+                      value={recipe.seed || ""}
+                      onChange={(e) => onChange({ ...recipe, seed: Number(e.target.value) || undefined })}
+                      placeholder="Random"
+                      className="w-full px-3 py-2 bg-[#0d0d0d] border border-[#363432] rounded-lg text-sm focus:outline-none focus:border-[#d97706]"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {renderLlamacppOptions("model")}
+            </div>
+          );
+        }
         return (
           <div className="space-y-5">
             {/* Model Loading */}
@@ -1381,6 +1648,13 @@ function RecipeModal({
         );
 
       case "resources":
+        if (isLlamacpp) {
+          return (
+            <div className="space-y-5">
+              {renderLlamacppOptions("resources")}
+            </div>
+          );
+        }
         return (
           <div className="space-y-5">
             {/* Parallelism */}
@@ -1536,6 +1810,13 @@ function RecipeModal({
         );
 
       case "performance":
+        if (isLlamacpp) {
+          return (
+            <div className="space-y-5">
+              {renderLlamacppOptions("performance")}
+            </div>
+          );
+        }
         return (
           <div className="space-y-5">
             {/* CUDA Graphs */}
@@ -1762,6 +2043,13 @@ function RecipeModal({
         );
 
       case "features":
+        if (isLlamacpp) {
+          return (
+            <div className="space-y-5">
+              {renderLlamacppOptions("features")}
+            </div>
+          );
+        }
         return (
           <div className="space-y-5">
             {/* Tool Calling */}
@@ -1956,24 +2244,31 @@ function RecipeModal({
       case "environment":
         return (
           <div className="space-y-5">
-            {/* Runtime */}
-            <div className="space-y-4">
-              <div className="flex items-center gap-2 text-[#e8e6e3] pb-2 border-b border-[#363432]/50">
-                <Terminal className="w-4 h-4 text-[#d97706]" />
-                <span className="text-sm font-medium">Runtime Configuration</span>
-              </div>
+            {!isLlamacpp && (
+              <div className="space-y-4">
+                <div className="flex items-center gap-2 text-[#e8e6e3] pb-2 border-b border-[#363432]/50">
+                  <Terminal className="w-4 h-4 text-[#d97706]" />
+                  <span className="text-sm font-medium">Runtime Configuration</span>
+                </div>
 
-              <div>
-                <label className="block text-xs font-medium text-[#9a9088] mb-2">Python Path</label>
-                <input
-                  type="text"
-                  value={recipe.python_path || ""}
-                  onChange={(e) => onChange({ ...recipe, python_path: e.target.value || undefined })}
-                  placeholder="/usr/bin/python or venv/bin/python"
-                  className="w-full px-3 py-2 bg-[#0d0d0d] border border-[#363432] rounded-lg text-sm focus:outline-none focus:border-[#d97706]"
-                />
+                <div>
+                  <label className="block text-xs font-medium text-[#9a9088] mb-2">Python Path</label>
+                  <input
+                    type="text"
+                    value={recipe.python_path || ""}
+                    onChange={(e) => onChange({ ...recipe, python_path: e.target.value || undefined })}
+                    placeholder="/usr/bin/python or venv/bin/python"
+                    className="w-full px-3 py-2 bg-[#0d0d0d] border border-[#363432] rounded-lg text-sm focus:outline-none focus:border-[#d97706]"
+                  />
+                </div>
               </div>
-            </div>
+            )}
+            {isLlamacpp && (
+              <p className="text-xs text-[#6a6560]">
+                llama.cpp uses the configured server binary. Set <span className="font-mono">VLLM_STUDIO_LLAMA_BIN</span> if
+                you need a custom path.
+              </p>
+            )}
 
             {/* Environment Variables */}
             <div className="space-y-4">
@@ -2046,6 +2341,27 @@ function RecipeModal({
                 Extra arguments are passed directly to the CLI. These override form fields.
               </p>
             </div>
+
+            {isLlamacpp && (
+              <details className="bg-[#0d0d0d] border border-[#363432] rounded-lg overflow-hidden">
+                <summary className="cursor-pointer px-3 py-2 text-xs text-[#9a9088] bg-[#1b1b1b] border-b border-[#363432]">
+                  llama.cpp CLI Reference
+                </summary>
+                <div className="px-3 py-2">
+                  {llamaConfigLoading && (
+                    <div className="text-xs text-[#9a9088]">Loading llama.cpp config…</div>
+                  )}
+                  {!llamaConfigLoading && llamaConfigHelp?.error && (
+                    <div className="text-xs text-[#fca5a5]">{llamaConfigHelp.error}</div>
+                  )}
+                  {!llamaConfigLoading && !llamaConfigHelp?.error && (
+                    <pre className="text-xs text-[#9a9088] whitespace-pre-wrap">
+                      {llamaConfigHelp?.config ?? "No config data returned."}
+                    </pre>
+                  )}
+                </div>
+              </details>
+            )}
           </div>
         );
 
@@ -2103,7 +2419,12 @@ function RecipeModal({
             </div>
             <div>
               <h3 className="text-lg font-semibold">{recipe.id ? "Edit Recipe" : "New Recipe"}</h3>
-              <p className="text-xs text-[#6a6560]">{recipe.backend === "vllm" ? "vLLM" : "SGLang"} configuration</p>
+              <div className="flex items-center gap-2 text-xs text-[#6a6560]">
+                <span>Engine</span>
+                <span className="px-2 py-0.5 rounded-full bg-[#1b1b1b] border border-[#363432] text-[#d97706]">
+                  {formatBackendLabel(recipe.backend)}
+                </span>
+              </div>
             </div>
           </div>
           <button onClick={onClose} className="p-2 hover:bg-[#363432] rounded-lg transition-colors">
