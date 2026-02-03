@@ -22,6 +22,7 @@
     "agentfs-sdk": "^0.5.3",
     "@mariozechner/pi-agent-core": "^0.50.9",
     "@mariozechner/pi-ai": "^0.50.9",
+    "@sinclair/typebox": "^0.34.41",
     "dotenv": "16.6.1",
     "hono": "4.6.12",
     "pg": "8.13.3",

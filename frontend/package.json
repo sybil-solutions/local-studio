@@ -10,7 +10,7 @@
     "lint:fix": "eslint --fix",
     "format": "prettier --write \"src/**/*.{ts,tsx,js,jsx,css,md,json}\"",
     "format:check": "prettier --check \"src/**/*.{ts,tsx,js,jsx,css,md,json}\"",
-    "depcheck": "depcheck --ignores=\"@types/react,@types/react-dom,@types/node,@types/react-syntax-highlighter,eslint-config-next,tailwindcss,@tailwindcss/postcss,depcheck,prettier,husky,jscpd,knip,lint-staged,rehype-highlight,zod\" --ignore-patterns=\"*.d.ts,.next/**,playwright-report/**\" --specials=next,webpack,babel --skip-missing",
+    "depcheck": "depcheck --ignores=\"@types/react,@types/react-dom,@types/node,@types/react-syntax-highlighter,eslint-config-next,tailwindcss,@tailwindcss/postcss,depcheck,prettier,husky,jscpd,knip,lint-staged,rehype-highlight\" --ignore-patterns=\"*.d.ts,.next/**,playwright-report/**\" --specials=next,webpack,babel --skip-missing",
     "analyze": "ANALYZE=true next build",
     "test": "vitest run",
     "test:integration": "playwright test",
@@ -29,7 +29,6 @@
     "react-dom": "19.2.1",
     "react-syntax-highlighter": "^16.1.0",
     "tailwind-merge": "^3.4.0",
-    "zod": "^4.2.1",
     "zustand": "^4.5.4"
   },
   "devDependencies": {
