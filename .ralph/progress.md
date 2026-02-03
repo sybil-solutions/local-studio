@@ -11,4 +11,4 @@
 - Created PR #31 and closed all other open PRs.
 - Deployed backend to server (controller running new code) and rebuilt frontend.
 - Verified API health + chat run SSE; abort returns not found when run ends immediately.
-- Blockers: PR merge requires external approval; frontend restart needs permission to stop existing next-server (UID 1001).
+- Blocker: PR merge requires external approval.
