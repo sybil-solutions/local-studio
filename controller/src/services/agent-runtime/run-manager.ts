@@ -93,6 +93,7 @@ export class ChatRunManager {
 
     const runId = randomUUID();
     const userMessageId = options.messageId ?? randomUUID();
+    const userMetadata = { runId };
     this.context.stores.chatStore.addMessage(
       sessionId,
       userMessageId,
@@ -105,7 +106,7 @@ export class ChatRunManager {
       undefined,
       undefined,
       [{ type: "text", text: content }],
-      undefined,
+      userMetadata,
     );
 
     const runOptions = {
@@ -144,6 +145,7 @@ export class ChatRunManager {
     let eventSeq = 0;
     let runStatus: "completed" | "error" | "aborted" = "completed";
     let runError: string | null = null;
+    let turnIndex = -1;
 
     const publish = (type: string, data: Record<string, unknown>): void => {
       eventSeq += 1;
@@ -182,6 +184,8 @@ export class ChatRunManager {
         setLastAssistantId: (id) => { lastAssistantMessageId = id; },
         getAssistantId: () => currentAssistantMessageId,
         getLastAssistantId: () => lastAssistantMessageId,
+        getTurnIndex: () => turnIndex,
+        setTurnIndex: (value) => { turnIndex = value; },
         markError: (message, status) => {
           runStatus = status;
           runError = message;
@@ -284,52 +288,69 @@ export class ChatRunManager {
       setLastAssistantId: (id: string | null) => void;
       getAssistantId: () => string | null;
       getLastAssistantId: () => string | null;
+      getTurnIndex: () => number;
+      setTurnIndex: (value: number) => void;
       markError: (message: string, status: "error" | "aborted") => void;
     },
   ): void {
     switch (event.type) {
+      case "turn_start": {
+        const nextIndex = helpers.getTurnIndex() + 1;
+        helpers.setTurnIndex(nextIndex);
+        helpers.publish("turn_start", { ...(event as Record<string, unknown>), turn_index: nextIndex });
+        return;
+      }
       case "message_start": {
         const message = event.message as AgentMessage;
+        const turnIndex = helpers.getTurnIndex();
+        const turnPayload = turnIndex >= 0 ? { turn_index: turnIndex } : {};
         if (message.role === "assistant") {
           const id = randomUUID();
           helpers.setAssistantId(id);
-          helpers.publish("message_start", { message_id: id, message });
+          helpers.publish("message_start", { message_id: id, message, ...turnPayload });
           return;
         }
         if (message.role === "user") {
-          helpers.publish("message_start", { message_id: helpers.userMessageId, message });
+          helpers.publish("message_start", { message_id: helpers.userMessageId, message, ...turnPayload });
           return;
         }
-        helpers.publish("message_start", { message });
+        helpers.publish("message_start", { message, ...turnPayload });
         return;
       }
       case "message_update": {
         const message = event.message as AgentMessage;
         const messageId = message.role === "assistant" ? helpers.getAssistantId() : undefined;
+        const turnIndex = helpers.getTurnIndex();
+        const turnPayload = turnIndex >= 0 ? { turn_index: turnIndex } : {};
         helpers.publish("message_update", {
           ...(messageId ? { message_id: messageId } : {}),
           message,
           assistantMessageEvent: event.assistantMessageEvent,
+          ...turnPayload,
         });
         return;
       }
       case "message_end": {
         const message = event.message as AgentMessage;
+        const turnIndex = helpers.getTurnIndex();
+        const turnPayload = turnIndex >= 0 ? { turn_index: turnIndex } : {};
         if (message.role === "assistant") {
           const messageId = helpers.getAssistantId();
           helpers.setLastAssistantId(messageId);
           this.mapToolCallsToMessage(message as AssistantMessage, messageId, helpers.toolCallToMessageId);
-          helpers.publish("message_end", { ...(messageId ? { message_id: messageId } : {}), message });
+          helpers.publish("message_end", { ...(messageId ? { message_id: messageId } : {}), message, ...turnPayload });
           return;
         }
         if (message.role === "user") {
-          helpers.publish("message_end", { message_id: helpers.userMessageId, message });
+          helpers.publish("message_end", { message_id: helpers.userMessageId, message, ...turnPayload });
           return;
         }
-        helpers.publish("message_end", { message });
+        helpers.publish("message_end", { message, ...turnPayload });
         return;
       }
       case "tool_execution_start": {
+        const turnIndex = helpers.getTurnIndex();
+        const turnPayload = turnIndex >= 0 ? { turn_index: turnIndex } : {};
         helpers.toolExecutionStarts.set(event.toolCallId, {
           toolName: event.toolName,
           args: event.args ?? {},
@@ -340,20 +361,26 @@ export class ChatRunManager {
           toolName: event.toolName,
           args: event.args,
           message_id: helpers.toolCallToMessageId.get(event.toolCallId),
+          ...turnPayload,
         });
         return;
       }
       case "tool_execution_update": {
+        const turnIndex = helpers.getTurnIndex();
+        const turnPayload = turnIndex >= 0 ? { turn_index: turnIndex } : {};
         helpers.publish("tool_execution_update", {
           toolCallId: event.toolCallId,
           toolName: event.toolName,
           args: event.args,
           partialResult: event.partialResult,
           message_id: helpers.toolCallToMessageId.get(event.toolCallId),
+          ...turnPayload,
         });
         return;
       }
       case "tool_execution_end": {
+        const turnIndex = helpers.getTurnIndex();
+        const turnPayload = turnIndex >= 0 ? { turn_index: turnIndex } : {};
         const started = helpers.toolExecutionStarts.get(event.toolCallId);
         const finishedAt = new Date().toISOString();
         const toolServer = this.parseToolServer(event.toolName);
@@ -378,24 +405,38 @@ export class ChatRunManager {
           result: event.result,
           isError: event.isError,
           message_id: helpers.toolCallToMessageId.get(event.toolCallId),
+          ...turnPayload,
         });
         return;
       }
       case "turn_end": {
         const assistant = event.message as AssistantMessage;
         const messageId = helpers.getLastAssistantId();
+        const turnIndex = helpers.getTurnIndex();
+        const turnPayload = turnIndex >= 0 ? { turn_index: turnIndex } : {};
         if (assistant.stopReason === "error" || assistant.stopReason === "aborted") {
           helpers.markError(assistant.errorMessage ?? "Agent error", assistant.stopReason === "aborted" ? "aborted" : "error");
         }
         if (messageId) {
-          this.persistAssistantMessage(helpers.sessionId, messageId, assistant, event.toolResults ?? []);
+          this.persistAssistantMessage(
+            helpers.sessionId,
+            messageId,
+            assistant,
+            event.toolResults ?? [],
+            helpers.runId,
+            turnIndex >= 0 ? turnIndex : undefined,
+          );
         }
-        helpers.publish("turn_end", { message: assistant, toolResults: event.toolResults ?? [], message_id: messageId });
+        helpers.publish("turn_end", {
+          message: assistant,
+          toolResults: event.toolResults ?? [],
+          message_id: messageId,
+          ...turnPayload,
+        });
         return;
       }
       case "agent_end":
       case "agent_start":
-      case "turn_start":
       default:
         helpers.publish(event.type, { ...(event as Record<string, unknown>) });
     }
@@ -432,6 +473,8 @@ export class ChatRunManager {
     messageId: string,
     assistant: AssistantMessage,
     toolResults: ToolResultMessage[],
+    runId: string,
+    turnIndex?: number,
   ): void {
     const contentText = assistant.content
       .filter((block): block is TextContent => block.type === "text")
@@ -497,10 +540,14 @@ export class ChatRunManager {
     }
 
     const usage = this.toLanguageUsage(assistant.usage);
-    const metadata = {
+    const metadata: Record<string, unknown> = {
       model: assistant.model,
       usage,
+      runId,
     };
+    if (typeof turnIndex === "number") {
+      metadata["turnIndex"] = turnIndex;
+    }
 
     this.context.stores.chatStore.addMessage(
       sessionId,

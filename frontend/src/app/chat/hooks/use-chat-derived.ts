@@ -55,16 +55,37 @@ export function useChatDerived({
     return part.type.startsWith("tool-") && "toolCallId" in part;
   };
 
-  // Build activity groups from assistant messages with chronologically interleaved items
+  // Build activity groups by run (one user prompt) with chronologically interleaved items
   const activityGroups = useMemo<ActivityGroup[]>(() => {
     const assistantMessages = messages.filter((m) => m.role === "assistant");
     if (assistantMessages.length === 0) return [];
 
-    const lastAssistantId = assistantMessages[assistantMessages.length - 1]?.id;
-    const groups: ActivityGroup[] = [];
+    const getRunKey = (message: ChatMessage): string | null => {
+      const metadata = message.metadata as Record<string, unknown> | undefined;
+      if (metadata && typeof metadata["runId"] === "string") {
+        return metadata["runId"] as string;
+      }
+      return null;
+    };
 
-    assistantMessages.forEach((msg, index) => {
-      const isLatest = msg.id === lastAssistantId;
+    const lastAssistantId = assistantMessages[assistantMessages.length - 1]?.id;
+    let lastAssistantKey: string | null = null;
+    let currentRunKey: string | null = null;
+
+    // First pass: resolve the run key for the last assistant message
+    for (const msg of messages) {
+      if (msg.role === "user") {
+        currentRunKey = getRunKey(msg) ?? msg.id;
+        continue;
+      }
+      if (msg.role !== "assistant") continue;
+      const key = getRunKey(msg) ?? currentRunKey ?? msg.id;
+      if (msg.id === lastAssistantId) {
+        lastAssistantKey = key;
+      }
+    }
+
+    const buildItemsForMessage = (msg: ChatMessage, isLatestMessage: boolean): ActivityItem[] => {
       const items: ActivityItem[] = [];
 
       // Process parts in chronological order to interleave thinking and tool calls
@@ -76,7 +97,7 @@ export function useChatDerived({
             type: "thinking",
             timestamp: Date.now() - (msg.parts.length - partIndex) * 10,
             content: part.text,
-            isActive: isLatest && isLoading && partIndex === msg.parts.length - 1,
+            isActive: isLatestMessage && isLoading && partIndex === msg.parts.length - 1,
           });
           return;
         }
@@ -143,19 +164,48 @@ export function useChatDerived({
           type: "thinking",
           timestamp: Date.now() - 1000,
           content: textThinking.content,
-          isActive: isLatest && isLoading,
+          isActive: isLatestMessage && isLoading,
         });
       }
 
-      if (items.length === 0) return;
+      return items;
+    };
 
-      groups.push({
-        id: `activity-group-${msg.id}`,
-        messageId: msg.id,
-        title: isLatest ? `Latest (Turn ${index + 1})` : `Turn ${index + 1}`,
-        isLatest,
-        items,
-      });
+    const groups: ActivityGroup[] = [];
+    const groupsByKey = new Map<string, ActivityGroup>();
+    currentRunKey = null;
+
+    for (const msg of messages) {
+      if (msg.role === "user") {
+        currentRunKey = getRunKey(msg) ?? msg.id;
+        continue;
+      }
+      if (msg.role !== "assistant") continue;
+
+      const key = getRunKey(msg) ?? currentRunKey ?? msg.id;
+      const isLatestMessage = msg.id === lastAssistantId;
+      const items = buildItemsForMessage(msg, isLatestMessage);
+      if (items.length === 0) continue;
+
+      let group = groupsByKey.get(key);
+      if (!group) {
+        group = {
+          id: `activity-group-${key}`,
+          messageId: msg.id,
+          title: "",
+          isLatest: false,
+          items: [],
+        };
+        groupsByKey.set(key, group);
+        groups.push(group);
+      }
+      group.items.push(...items);
+    }
+
+    groups.forEach((group, index) => {
+      const isLatest = group.id === (lastAssistantKey ? `activity-group-${lastAssistantKey}` : "");
+      group.isLatest = isLatest;
+      group.title = isLatest ? `Latest (Turn ${index + 1})` : `Turn ${index + 1}`;
     });
 
     return groups.reverse();

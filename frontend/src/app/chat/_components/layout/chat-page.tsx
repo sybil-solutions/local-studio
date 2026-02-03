@@ -519,7 +519,11 @@ export function ChatPage() {
   }, []);
 
   const mapAgentMessageToChatMessage = useCallback(
-    (rawMessage: Record<string, unknown>, messageId?: string): ChatMessage | null => {
+    (
+      rawMessage: Record<string, unknown>,
+      messageId?: string,
+      runMeta?: { runId?: string; turnIndex?: number },
+    ): ChatMessage | null => {
       const role = rawMessage["role"];
       if (role !== "user" && role !== "assistant") return null;
       const id = messageId
@@ -528,15 +532,22 @@ export function ChatPage() {
       const parts = role === "assistant"
         ? mapAgentContentToParts(content)
         : mapUserContentToParts(content);
-      const metadata =
+      const baseMetadata =
         role === "assistant"
           ? buildMetadataFromAgent(rawMessage)
           : (rawMessage["metadata"] as ChatMessageMetadata | undefined);
+      const mergedMetadata = (runMeta?.runId || typeof runMeta?.turnIndex === "number")
+        ? {
+            ...(baseMetadata ?? {}),
+            ...(runMeta?.runId ? { runId: runMeta.runId } : {}),
+            ...(typeof runMeta?.turnIndex === "number" ? { turnIndex: runMeta.turnIndex } : {}),
+          }
+        : baseMetadata;
       return {
         id,
         role,
         parts,
-        metadata,
+        metadata: mergedMetadata,
       };
     },
     [buildMetadataFromAgent, mapAgentContentToParts, mapUserContentToParts],
@@ -667,6 +678,11 @@ export function ChatPage() {
   const handleRunEvent = useCallback(
     (event: ChatRunStreamEvent) => {
       const { event: eventType, data } = event;
+      const runId = typeof data["run_id"] === "string" ? data["run_id"] : undefined;
+      const turnIndex = typeof data["turn_index"] === "number" ? data["turn_index"] : undefined;
+      const runMeta = runId || typeof turnIndex === "number"
+        ? { runId, turnIndex }
+        : undefined;
 
       switch (eventType) {
         case "run_start": {
@@ -681,7 +697,11 @@ export function ChatPage() {
           const rawMessage = data["message"];
           if (!rawMessage || typeof rawMessage !== "object") return;
           const messageId = typeof data["message_id"] === "string" ? data["message_id"] : undefined;
-          const mapped = mapAgentMessageToChatMessage(rawMessage as Record<string, unknown>, messageId);
+          const mapped = mapAgentMessageToChatMessage(
+            rawMessage as Record<string, unknown>,
+            messageId,
+            runMeta,
+          );
           if (mapped) {
             upsertMessage(mapped);
           }
@@ -691,7 +711,11 @@ export function ChatPage() {
           const rawMessage = data["message"];
           const messageId = typeof data["message_id"] === "string" ? data["message_id"] : undefined;
           if (rawMessage && typeof rawMessage === "object") {
-            const mapped = mapAgentMessageToChatMessage(rawMessage as Record<string, unknown>, messageId);
+            const mapped = mapAgentMessageToChatMessage(
+              rawMessage as Record<string, unknown>,
+              messageId,
+              runMeta,
+            );
             if (mapped) {
               upsertMessage(mapped);
               const assistantText = mapped.parts
