@@ -692,12 +692,12 @@ class APIClient {
     return this.request("/mcp/servers", { method: "POST", body: JSON.stringify(server) });
   }
 
-  async updateMCPServer(name: string, server: unknown): Promise<void> {
-    return this.request(`/mcp/servers/${name}`, { method: "PUT", body: JSON.stringify(server) });
+  async updateMCPServer(serverId: string, server: unknown): Promise<void> {
+    return this.request(`/mcp/servers/${serverId}`, { method: "PUT", body: JSON.stringify(server) });
   }
 
-  async removeMCPServer(name: string): Promise<void> {
-    return this.request(`/mcp/servers/${name}`, { method: "DELETE" });
+  async removeMCPServer(serverId: string): Promise<void> {
+    return this.request(`/mcp/servers/${serverId}`, { method: "DELETE" });
   }
 
   async evictModel(force = false): Promise<{ success: boolean }> {

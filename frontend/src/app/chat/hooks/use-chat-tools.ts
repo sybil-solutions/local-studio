@@ -29,10 +29,20 @@ export function useChatTools({ mcpEnabled }: UseChatToolsOptions) {
   useEffect(() => { mcpServersRef.current = mcpServers; }, [mcpServers]);
   useEffect(() => { warnedNoEnabledServersRef.current = false; }, [mcpEnabled, mcpServers]);
 
+  const normalizeServerId = useCallback((server: MCPServer) => {
+    const base = (server.id ?? server.name).trim();
+    const normalized = base
+      .toLowerCase()
+      .replace(/[^a-z0-9_-]+/g, "-")
+      .replace(/^-+|-+$/g, "");
+    return normalized || base;
+  }, []);
+
   const loadMCPServers = useCallback(async () => {
     try {
       const { servers } = await api.getMCPServers();
       const normalizedServers: MCPServer[] = servers.map((server: MCPServer) => ({
+        id: server.id ?? normalizeServerId(server),
         name: server.name,
         enabled: server.enabled ?? true,
         icon: server.icon,
@@ -44,7 +54,7 @@ export function useChatTools({ mcpEnabled }: UseChatToolsOptions) {
     } catch (err) {
       console.error("Failed to load MCP servers:", err);
     }
-  }, [setMcpServers]);
+  }, [normalizeServerId, setMcpServers]);
 
   const loadMCPTools = useCallback(async (): Promise<MCPTool[]> => {
     if (!mcpEnabled) {
@@ -60,11 +70,12 @@ export function useChatTools({ mcpEnabled }: UseChatToolsOptions) {
       if (enabledServers.length > 0) {
         const serverTools = await Promise.all(
           enabledServers.map(async (server) => {
+            const serverId = server.id ?? server.name;
             try {
-              const result = await api.getMCPServerTools(server.name);
+              const result = await api.getMCPServerTools(serverId);
               return result.tools;
             } catch (err) {
-              console.warn(`[MCP] failed to load tools from ${server.name}`, err);
+              console.warn(`[MCP] failed to load tools from ${serverId}`, err);
               return [];
             }
           }),
@@ -85,11 +96,12 @@ export function useChatTools({ mcpEnabled }: UseChatToolsOptions) {
           const enabledFromApi = servers.filter((server) => server.enabled ?? true);
           const serverTools = await Promise.all(
             enabledFromApi.map(async (server) => {
+              const serverId = server.id ?? server.name;
               try {
-                const result = await api.getMCPServerTools(server.name);
+                const result = await api.getMCPServerTools(serverId);
                 return result.tools;
               } catch (err) {
-                console.warn(`[MCP] failed to load tools from ${server.name}`, err);
+                console.warn(`[MCP] failed to load tools from ${serverId}`, err);
                 return [];
               }
             }),
@@ -115,7 +127,11 @@ export function useChatTools({ mcpEnabled }: UseChatToolsOptions) {
       const currentServers = mcpServersRef.current;
       const enabledServers =
         currentServers.length > 0
-          ? new Set(currentServers.filter((server) => server.enabled).map((server) => server.name))
+          ? new Set(
+              currentServers
+                .filter((server) => server.enabled)
+                .map((server) => server.id ?? server.name),
+            )
           : new Set<string>();
       const shouldFilter = enabledServers.size > 0;
       const filteredTools = shouldFilter
@@ -190,23 +206,25 @@ export function useChatTools({ mcpEnabled }: UseChatToolsOptions) {
 
   const addMcpServer = useCallback(
     async (server: MCPServer) => {
-      await api.addMCPServer(server);
+      const serverId = normalizeServerId(server);
+      await api.addMCPServer({ ...server, id: serverId });
       await loadMCPServers();
     },
-    [loadMCPServers],
+    [loadMCPServers, normalizeServerId],
   );
 
   const updateMcpServer = useCallback(
     async (server: MCPServer) => {
-      await api.updateMCPServer(server.name, server);
+      const serverId = server.id ?? server.name;
+      await api.updateMCPServer(serverId, server);
       await loadMCPServers();
     },
     [loadMCPServers],
   );
 
   const removeMcpServer = useCallback(
-    async (name: string) => {
-      await api.removeMCPServer(name);
+    async (serverId: string) => {
+      await api.removeMCPServer(serverId);
       await loadMCPServers();
     },
     [loadMCPServers],

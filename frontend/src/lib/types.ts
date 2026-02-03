@@ -301,6 +301,7 @@ export interface ChatCompactionResponse {
 
 // MCP types
 export interface MCPServer {
+  id?: string;
   name: string;
   command: string;
   args?: string[];
