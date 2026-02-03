@@ -1347,6 +1347,7 @@ export function ChatPage() {
               model?: string;
               name?: string;
               max_model_len?: number;
+              active?: boolean;
             };
             const id = record.id ?? record.model ?? record.name;
             if (!id) return [];
@@ -1355,6 +1356,7 @@ export function ChatPage() {
                 id,
                 name: id,
                 maxModelLen: getContextLength(id, record.max_model_len),
+                active: record.active === true,
               },
             ];
           })
@@ -1363,7 +1365,8 @@ export function ChatPage() {
         setAvailableModels(mappedModels);
 
         const lastModel = localStorage.getItem("vllm-studio-last-model");
-        const fallbackModel = mappedModels[0]?.id || "";
+        const activeModel = mappedModels.find((model) => model.active)?.id;
+        const fallbackModel = activeModel ?? mappedModels[0]?.id ?? "";
         const currentModel = selectedModel;
 
         if (mappedModels.length === 0) {

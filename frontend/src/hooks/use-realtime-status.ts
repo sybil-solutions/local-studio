@@ -42,13 +42,15 @@ interface SSEEvent {
  * @example
  * const { status, gpus, metrics, launchProgress } = useRealtimeStatus();
  */
-export function useRealtimeStatus(
-  apiBaseUrl: string =
-    process.env.NEXT_PUBLIC_BACKEND_URL ||
-    process.env.VLLM_STUDIO_BACKEND_URL ||
-    process.env.BACKEND_URL ||
-    "/api/proxy",
-) {
+const defaultApiBaseUrl =
+  typeof window === "undefined"
+    ? process.env.NEXT_PUBLIC_BACKEND_URL ||
+      process.env.VLLM_STUDIO_BACKEND_URL ||
+      process.env.BACKEND_URL ||
+      "/api/proxy"
+    : "/api/proxy";
+
+export function useRealtimeStatus(apiBaseUrl: string = defaultApiBaseUrl) {
   const [status, setStatus] = useState<StatusData | null>(null);
   const [gpus, setGpus] = useState<GPU[]>([]);
   const [metrics, setMetrics] = useState<Metrics | null>(null);

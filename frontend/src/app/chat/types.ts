@@ -12,6 +12,7 @@ export interface ModelOption {
   id: string;
   name?: string;
   maxModelLen?: number;
+  active?: boolean;
 }
 
 export interface ActivityItem {
