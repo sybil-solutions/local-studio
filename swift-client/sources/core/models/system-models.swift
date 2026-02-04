@@ -1,3 +1,4 @@
+// CRITICAL
 import Foundation
 
 struct HealthResponse: Codable {
@@ -19,6 +20,7 @@ struct SystemConfigResponse: Codable {
   let config: SystemConfig
   let services: [ServiceInfo]
   let environment: EnvironmentInfo
+  let runtime: SystemRuntimeInfo?
 }
 
 struct SystemConfig: Codable {
@@ -31,6 +33,7 @@ struct SystemConfig: Codable {
   let dbPath: String
   let sglangPython: String?
   let tabbyApiDir: String?
+  let llamaBin: String?
 }
 
 struct ServiceInfo: Codable {
@@ -52,4 +55,33 @@ struct EnvironmentInfo: Codable {
   let inferenceUrl: String
   let litellmUrl: String
   let frontendUrl: String
+}
+
+struct RuntimeCudaInfo: Codable {
+  let driverVersion: String?
+  let cudaVersion: String?
+}
+
+struct RuntimeGpuSummary: Codable {
+  let count: Int
+  let types: [String]
+}
+
+struct RuntimeBackendInfo: Codable {
+  let installed: Bool
+  let version: String?
+  let pythonPath: String?
+  let binaryPath: String?
+}
+
+struct RuntimeBackendsInfo: Codable {
+  let vllm: RuntimeBackendInfo
+  let sglang: RuntimeBackendInfo
+  let llamacpp: RuntimeBackendInfo
+}
+
+struct SystemRuntimeInfo: Codable {
+  let cuda: RuntimeCudaInfo
+  let gpus: RuntimeGpuSummary
+  let backends: RuntimeBackendsInfo
 }

@@ -9,6 +9,7 @@ struct ConfigsView: View {
     Form {
       ConfigsApiSection(settings: container.settings)
       ConfigsServicesSection(services: model.config?.services)
+      ConfigsRuntimeSection(runtime: model.config?.runtime, llamaBin: model.config?.config.llamaBin)
       ConfigsMcpSection(servers: model.servers, onToggle: { server in
         Task { await model.toggle(server: server) }
       }, onDelete: { indexSet in
