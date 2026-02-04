@@ -62,3 +62,6 @@ data/mcp_servers.json
 # Local scripts (user-specific)
 scripts/*.local.sh
 .worktree/
+
+# Sensitive data - do not commit specific IPs or domains
+# Use environment variables or config files instead

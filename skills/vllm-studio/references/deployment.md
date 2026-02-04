@@ -20,7 +20,7 @@ docker compose up -d --build frontend
 
 ## Server deploy (example)
 ```
-ssh -i ~/.ssh/linux-ai ser@<your-server-ip>
+ssh -i ~/.ssh/linux-ai user@<your-server-ip>
 cd /workspace/projects/lmvllm
 
 git fetch origin

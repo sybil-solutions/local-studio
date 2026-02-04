@@ -382,11 +382,11 @@ Verification:
 
 ## Phase 6 — Deployment (GPU server) + smoke tests
 
-> Note: I can’t reach `<your-server-ip>` from this environment, so these steps must be executed on your network.
+> Note: These steps must be executed on your GPU server.
 
 On the server:
 1. SSH:
-   - `ssh -i ~/.ssh/linux-ai ser@<your-server-ip>`
+   - `ssh -i ~/.ssh/linux-ai user@<your-server-ip>`
 2. Pull latest `main` in your prod directory:
    - `cd /workspace/projects/lmvllm`
    - `git fetch origin && git checkout main && git pull --ff-only`
