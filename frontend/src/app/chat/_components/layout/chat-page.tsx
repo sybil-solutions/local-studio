@@ -1974,7 +1974,9 @@ export function ChatPage() {
       }
 
       let attachmentsBlock: string | undefined;
-      let agentFilesEnabled = false;
+      const hasAgentFiles =
+        agentFiles.length > 0 || Object.keys(agentFileVersions).length > 0;
+      let agentFilesEnabled = hasAgentFiles;
       if (attachments && attachments.length > 0) {
         const { uploaded, failures } = await uploadAttachments(sessionId, attachments);
         if (uploaded.length > 0) {
@@ -2008,6 +2010,8 @@ export function ChatPage() {
     },
     [
       agentMode,
+      agentFileVersions,
+      agentFiles,
       createSession,
       currentSessionId,
       deepResearch.enabled,
