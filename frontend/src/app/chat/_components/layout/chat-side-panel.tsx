@@ -29,19 +29,19 @@ export function ActivityPanel({ activityGroups, agentPlan, isLoading }: Activity
   const hasActiveThinking = latestGroup?.items.some((i) => i.type === "thinking" && i.isActive);
 
   return (
-    <div className="h-full flex flex-col">
+    <div className="h-full flex flex-col bg-[linear-gradient(180deg,#0b0b0b,rgba(6,6,6,0.98))]">
       {/* Progress Header - shows when agent is active */}
       {totalSteps > 0 && (
-        <div className="px-3 py-3 border-b border-[#252321] mb-2">
+        <div className="px-3 py-3 border-b border-[#1c1b1a] mb-2 bg-[#0d0d0d]/80">
           <div className="flex items-center justify-between mb-2">
             <span className="text-[11px] text-[#777]">Plan Progress</span>
             <span className="text-[10px] text-[#444] font-mono">
               {doneSteps}/{totalSteps}
             </span>
           </div>
-          <div className="h-1 w-full rounded-full bg-[#252321] overflow-hidden">
+          <div className="h-1 w-full rounded-full bg-[#1b1a19] overflow-hidden">
             <div
-              className="h-full rounded-full bg-[#555] transition-all duration-300"
+              className="h-full rounded-full bg-[#6a6a6a] transition-all duration-300"
               style={{ width: `${totalSteps > 0 ? (doneSteps / totalSteps) * 100 : 0}%` }}
             />
           </div>
@@ -62,14 +62,14 @@ export function ActivityPanel({ activityGroups, agentPlan, isLoading }: Activity
 
       <div className="relative flex-1 overflow-y-auto px-2">
         {/* Vertical timeline line */}
-        <div className="absolute left-4.75 top-2 bottom-2 w-px bg-[#252321]" />
+        <div className="absolute left-4.75 top-2 bottom-2 w-px bg-[#1e1d1c]" />
 
         <div className="space-y-1 pb-4">
           {activityGroups.map((group, groupIdx) => (
             <div key={group.id}>
               {/* Turn header */}
               <div className="flex items-center gap-2 py-2 pl-1">
-                <div className="w-5 h-5 rounded-full bg-[#1c1b1a] border border-[#252321] flex items-center justify-center z-10">
+                <div className="w-5 h-5 rounded-full bg-[#0f0f0f] border border-[#1c1b1a] flex items-center justify-center z-10">
                   <span className="text-[9px] text-[#444] font-medium">{groupIdx + 1}</span>
                 </div>
                 <span className="text-[10px] text-[#333] uppercase tracking-wider">
@@ -182,6 +182,8 @@ export interface ContextPanelProps {
   compacting: boolean;
   compactionError: string | null;
   formatTokenCount?: (tokens: number) => string;
+  onCompact?: () => void;
+  canCompact?: boolean;
 }
 
 export function ContextPanel({
@@ -191,6 +193,8 @@ export function ContextPanel({
   compacting,
   compactionError,
   formatTokenCount,
+  onCompact,
+  canCompact = false,
 }: ContextPanelProps) {
   if (!stats || !breakdown) {
     return <div className="py-8 text-center text-sm text-[#555]">Context stats unavailable</div>;
@@ -200,11 +204,13 @@ export function ContextPanel({
   const utilizationPct = Math.round(stats.utilization * 100);
   const eightyPercentMax = Math.floor(stats.maxContext * 0.8);
   const isOverEighty = stats.currentTokens > eightyPercentMax;
+  const headroom = Math.max(0, stats.maxContext - stats.currentTokens);
   const recentCompactions = compactionHistory.slice(-3).reverse();
+  const lastCompaction = compactionHistory[compactionHistory.length - 1];
 
   return (
     <div className="space-y-4 text-xs text-[#888]">
-      <div className="rounded-lg border border-[#252321] bg-[#1c1b1a] p-3">
+      <div className="rounded-lg border border-[#1c1b1a] bg-[#0d0d0d]/90 p-3">
         <div className="flex items-center justify-between">
           <span className="text-[#aaa]">Context Usage</span>
           <span className={`${isOverEighty ? "text-[#755]" : "text-[#666]"}`}>
@@ -212,8 +218,7 @@ export function ContextPanel({
           </span>
         </div>
         <div className="mt-2 text-[11px] text-[#555]">
-          {fmt(stats.currentTokens)} / {fmt(eightyPercentMax)} tokens (80% max) • headroom{" "}
-          {fmt(eightyPercentMax - stats.currentTokens)}
+          {fmt(stats.currentTokens)} / {fmt(stats.maxContext)} tokens • headroom {fmt(headroom)}
         </div>
         <div className="mt-2 h-1.5 w-full rounded-full bg-[#252321] relative">
           {/* 80% threshold marker */}
@@ -230,7 +235,7 @@ export function ContextPanel({
         </div>
       </div>
 
-      <div className="rounded-lg border border-[#252321] bg-[#1c1b1a] p-3 space-y-2">
+      <div className="rounded-lg border border-[#1c1b1a] bg-[#0d0d0d]/90 p-3 space-y-2">
         <div className="text-[#aaa]">Breakdown</div>
         <div className="grid grid-cols-2 gap-2 text-[11px] text-[#555]">
           <div>Messages: {breakdown.messages}</div>
@@ -242,12 +247,32 @@ export function ContextPanel({
         </div>
       </div>
 
-      <div className="rounded-lg border border-[#252321] bg-[#1c1b1a] p-3 space-y-2">
+      <div className="rounded-lg border border-[#1c1b1a] bg-[#0d0d0d]/90 p-3 space-y-2">
         <div className="flex items-center justify-between text-[#aaa]">
           <span>Compaction</span>
-          {compacting && <span className="text-[#555]">Running…</span>}
+          <div className="flex items-center gap-2">
+            {compacting && <span className="text-[#555]">Running…</span>}
+            {onCompact && (
+              <button
+                onClick={onCompact}
+                disabled={!canCompact || compacting}
+                className="px-2 py-1 rounded border border-white/10 text-[10px] uppercase tracking-[0.2em] text-[#c8c4bd] hover:text-white hover:border-white/30 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                Compact Now
+              </button>
+            )}
+          </div>
         </div>
         {compactionError && <div className="text-[11px] text-[#633]">{compactionError}</div>}
+        {lastCompaction && (
+          <div className="text-[11px] text-[#555] flex items-center justify-between">
+            <span>Last</span>
+            <span>
+              {fmt(lastCompaction.beforeTokens)} → {fmt(lastCompaction.afterTokens)} • saved{" "}
+              {fmt(Math.max(0, lastCompaction.beforeTokens - lastCompaction.afterTokens))}
+            </span>
+          </div>
+        )}
         {recentCompactions.length === 0 ? (
           <div className="text-[11px] text-[#444]">No compactions yet</div>
         ) : (

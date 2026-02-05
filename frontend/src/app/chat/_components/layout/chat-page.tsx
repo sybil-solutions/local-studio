@@ -1219,111 +1219,129 @@ export function ChatPage() {
     [currentSessionId, selectedModel, effectiveSystemPrompt],
   );
 
-  const runAutoCompaction = useCallback(async () => {
-    if (!contextStats || !maxContext) return;
-    if (!contextConfig.autoCompact) return;
-    if (compacting || isLoading) return;
-    if (contextStats.utilization < contextConfig.compactionThreshold) return;
-    if (!selectedModel || messages.length < 2) return;
-    if (!currentSessionId) return;
+  const performCompaction = useCallback(
+    async ({
+      reason,
+      requireThreshold,
+    }: {
+      reason: "auto" | "manual";
+      requireThreshold: boolean;
+    }) => {
+      if (!contextStats || !maxContext) return;
+      if (compacting || isLoading) return;
+      if (requireThreshold && contextStats.utilization < contextConfig.compactionThreshold) return;
+      if (!selectedModel || messages.length < 2) return;
+      if (!currentSessionId) return;
 
-    const signature = `${currentSessionId || "new"}-${messages.length}-${contextStats.currentTokens}`;
-    if (lastCompactionSignatureRef.current === signature) return;
-    lastCompactionSignatureRef.current = signature;
-
-    setCompacting(true);
-    setCompactionError(null);
-
-    try {
-      const compactedTitle =
-        currentSessionTitle && !["New Chat", "Chat"].includes(currentSessionTitle)
-          ? `${currentSessionTitle} (Compacted)`
-          : "Compacted Chat";
-
-      const beforeTokens = calculateMessageTokens(contextMessages);
-      const result = await requestCompaction(compactedTitle);
-
-      if (!result?.summary) {
-        throw new Error("Empty compaction summary");
+      const signature = `${currentSessionId || "new"}-${messages.length}-${contextStats.currentTokens}`;
+      if (reason === "auto") {
+        if (lastCompactionSignatureRef.current === signature) return;
+        lastCompactionSignatureRef.current = signature;
       }
 
-      const compactedSession = result.session;
-      const storedMessages = compactedSession.messages ?? [];
-      if (storedMessages.length === 0) {
-        throw new Error("Compaction returned empty session");
-      }
+      setCompacting(true);
+      setCompactionError(null);
 
-      const compactedMessages = mapStoredMessages(storedMessages);
+      try {
+        const compactedTitle =
+          currentSessionTitle && !["New Chat", "Chat"].includes(currentSessionTitle)
+            ? `${currentSessionTitle} (Compacted)`
+            : "Compacted Chat";
 
-      updateSessions((sessions) => {
-        if (sessions.some((existing) => existing.id === compactedSession.id)) {
-          return sessions.map((existing) =>
-            existing.id === compactedSession.id ? compactedSession : existing,
-          );
+        const beforeTokens = calculateMessageTokens(contextMessages);
+        const result = await requestCompaction(compactedTitle);
+
+        if (!result?.summary) {
+          throw new Error("Empty compaction summary");
         }
-        return [compactedSession, ...sessions];
-      });
 
-      setCurrentSessionId(compactedSession.id);
-      setCurrentSessionTitle(compactedSession.title || compactedTitle);
-      sessionIdRef.current = compactedSession.id;
-      setMessages(compactedMessages);
-      hydrateAgentState(compactedSession);
-      void loadAgentFiles({ sessionId: compactedSession.id });
+        const compactedSession = result.session;
+        const storedMessages = compactedSession.messages ?? [];
+        if (storedMessages.length === 0) {
+          throw new Error("Compaction returned empty session");
+        }
 
-      const afterTokens = calculateMessageTokens(
-        compactedMessages.map((message) => ({
-          role: message.role,
-          content: buildContextContent(message),
-        })),
-      );
+        const compactedMessages = mapStoredMessages(storedMessages);
 
-      setCompactionHistory((prev) => [
-        ...prev,
-        {
-          id: `compact-${Date.now()}`,
-          timestamp: new Date(),
-          beforeTokens,
-          afterTokens,
-          messagesRemoved: Math.max(0, messages.length - compactedMessages.length),
-          messagesKept: compactedMessages.length,
-          maxContext,
-          utilizationBefore: beforeTokens / maxContext,
-          utilizationAfter: afterTokens / maxContext,
-          strategy: "summarize",
-          summary: result.summary,
-        },
-      ]);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "Compaction failed";
-      console.error(message);
-      setCompactionError(message);
-    } finally {
-      setCompacting(false);
-    }
-  }, [
-    buildContextContent,
-    calculateMessageTokens,
-    compacting,
-    contextConfig.autoCompact,
-    contextConfig.compactionThreshold,
-    contextMessages,
-    contextStats,
-    currentSessionId,
-    currentSessionTitle,
-    isLoading,
-    maxContext,
-    mapStoredMessages,
-    messages,
-    requestCompaction,
-    selectedModel,
-    setCurrentSessionId,
-    setCurrentSessionTitle,
-    setMessages,
-    updateSessions,
-    hydrateAgentState,
-    loadAgentFiles,
-  ]);
+        updateSessions((sessions) => {
+          if (sessions.some((existing) => existing.id === compactedSession.id)) {
+            return sessions.map((existing) =>
+              existing.id === compactedSession.id ? compactedSession : existing,
+            );
+          }
+          return [compactedSession, ...sessions];
+        });
+
+        setCurrentSessionId(compactedSession.id);
+        setCurrentSessionTitle(compactedSession.title || compactedTitle);
+        sessionIdRef.current = compactedSession.id;
+        setMessages(compactedMessages);
+        hydrateAgentState(compactedSession);
+        void loadAgentFiles({ sessionId: compactedSession.id });
+
+        const afterTokens = calculateMessageTokens(
+          compactedMessages.map((message) => ({
+            role: message.role,
+            content: buildContextContent(message),
+          })),
+        );
+
+        setCompactionHistory((prev) => [
+          ...prev,
+          {
+            id: `compact-${Date.now()}`,
+            timestamp: new Date(),
+            beforeTokens,
+            afterTokens,
+            messagesRemoved: Math.max(0, messages.length - compactedMessages.length),
+            messagesKept: compactedMessages.length,
+            maxContext,
+            utilizationBefore: beforeTokens / maxContext,
+            utilizationAfter: afterTokens / maxContext,
+            strategy: "summarize",
+            summary: result.summary,
+          },
+        ]);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Compaction failed";
+        console.error(message);
+        setCompactionError(message);
+      } finally {
+        setCompacting(false);
+      }
+    },
+    [
+      buildContextContent,
+      calculateMessageTokens,
+      compacting,
+      contextConfig.compactionThreshold,
+      contextMessages,
+      contextStats,
+      currentSessionId,
+      currentSessionTitle,
+      hydrateAgentState,
+      isLoading,
+      loadAgentFiles,
+      mapStoredMessages,
+      maxContext,
+      messages.length,
+      requestCompaction,
+      selectedModel,
+      setCurrentSessionId,
+      setCurrentSessionTitle,
+      setMessages,
+      updateSessions,
+    ],
+  );
+
+  const runAutoCompaction = useCallback(async () => {
+    if (!contextConfig.autoCompact) return;
+    await performCompaction({ reason: "auto", requireThreshold: true });
+  }, [contextConfig.autoCompact, performCompaction]);
+
+  const runManualCompaction = useCallback(async () => {
+    await performCompaction({ reason: "manual", requireThreshold: false });
+  }, [performCompaction]);
 
   useEffect(() => {
     lastCompactionSignatureRef.current = null;
@@ -1379,6 +1397,13 @@ export function ChatPage() {
     runAutoCompaction,
   ]);
 
+  const canManualCompact =
+    Boolean(currentSessionId) &&
+    Boolean(selectedModel) &&
+    messages.length > 1 &&
+    !compacting &&
+    !isLoading;
+
   const showEmptyState = messages.length === 0 && !isLoading && !streamError;
 
   // Scroll handling
@@ -1428,16 +1453,24 @@ export function ChatPage() {
     return () => clearTimeout(timeoutId);
   }, [isLoading, setElapsedSeconds, setStreamingStartTime, streamingStartTime]);
 
-  // Stream stall detection - warn user if no events for 30+ seconds while loading
+  // Stream stall detection - warn user if no events for a while while loading (skip when tools run)
   useEffect(() => {
     if (!isLoading) {
       setStreamStalled(false);
       return;
     }
+    if (executingTools.size > 0) {
+      setStreamStalled(false);
+      return;
+    }
 
-    const STALL_THRESHOLD_MS = 30000; // 30 seconds
+    const STALL_THRESHOLD_MS = 60000; // 60 seconds
     const checkInterval = setInterval(() => {
-      if (lastEventTimeRef.current > 0) {
+      if (executingTools.size > 0) {
+        setStreamStalled(false);
+        return;
+      }
+      if (lastEventTimeRef.current > 0 && activeRunIdRef.current) {
         const timeSinceLastEvent = Date.now() - lastEventTimeRef.current;
         if (timeSinceLastEvent >= STALL_THRESHOLD_MS) {
           setStreamStalled(true);
@@ -1446,7 +1479,7 @@ export function ChatPage() {
     }, 5000);
 
     return () => clearInterval(checkInterval);
-  }, [isLoading]);
+  }, [executingTools.size, isLoading]);
 
   // Load sessions on mount
   useEffect(() => {
@@ -1586,7 +1619,10 @@ export function ChatPage() {
 
     const loadModels = async () => {
       try {
-        const data = await api.getOpenAIModels();
+        const [data, recipesResult] = await Promise.all([
+          api.getOpenAIModels(),
+          api.getRecipes().catch(() => ({ recipes: [] })),
+        ]);
         const dataModels = (data as { data?: unknown[] }).data;
         const modelsField = (data as { models?: unknown[] }).models;
         const rawModels = Array.isArray(data)
@@ -1596,6 +1632,15 @@ export function ChatPage() {
             : Array.isArray(modelsField)
               ? modelsField
               : [];
+        const recipeMaxById = new Map<string, number>();
+        for (const recipe of recipesResult.recipes ?? []) {
+          if (!recipe || typeof recipe !== "object") continue;
+          const record = recipe as { id?: string; served_model_name?: string; max_model_len?: number };
+          const maxLen = record.max_model_len ?? 0;
+          if (!maxLen || maxLen <= 0) continue;
+          if (record.id) recipeMaxById.set(record.id, maxLen);
+          if (record.served_model_name) recipeMaxById.set(record.served_model_name, maxLen);
+        }
         // Common model context lengths as fallback
         const KNOWN_CONTEXT_LENGTHS: Record<string, number> = {
           // OpenAI models
@@ -1660,11 +1705,12 @@ export function ChatPage() {
             };
             const id = record.id ?? record.model ?? record.name;
             if (!id) return [];
+            const recipeMaxLen = recipeMaxById.get(id);
             return [
               {
                 id,
                 name: id,
-                maxModelLen: getContextLength(id, record.max_model_len),
+                maxModelLen: getContextLength(id, record.max_model_len ?? recipeMaxLen),
                 active: record.active === true,
               },
             ];
@@ -2167,6 +2213,8 @@ export function ChatPage() {
                 compacting={compacting}
                 compactionError={compactionError}
                 formatTokenCount={formatTokenCount}
+                onCompact={runManualCompaction}
+                canCompact={canManualCompact}
               />
             </PerfProfiler>
           </div>

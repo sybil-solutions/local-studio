@@ -126,9 +126,11 @@ export function UnifiedSidebar({
 
       {isOpen && (
         <div
-          className="hidden md:flex shrink-0 flex-col h-full border-l border-white/[0.06] bg-[#0a0a0a] relative"
+          className="hidden md:flex shrink-0 flex-col h-full border-l border-white/[0.06] bg-[#050505] relative shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
           style={{ width: `${width}px` }}
         >
+          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(120%_70%_at_10%_-10%,rgba(90,255,214,0.08),transparent_55%),radial-gradient(140%_80%_at_90%_-20%,rgba(126,141,255,0.10),transparent_60%),linear-gradient(180deg,rgba(10,10,10,0.9),rgba(4,4,4,0.9))]" />
+          <div className="absolute inset-0 border-l border-white/[0.02]" />
           {/* Resize handle */}
           <div
             className={`absolute left-0 top-0 bottom-0 w-1 cursor-col-resize z-10 group flex items-center justify-center
@@ -144,7 +146,7 @@ export function UnifiedSidebar({
           </div>
 
           {/* Header */}
-          <div className="flex items-center justify-between px-3 py-2 border-b border-white/[0.06]">
+          <div className="relative flex items-center justify-between px-3 py-2 border-b border-white/[0.06]">
             <div className="flex items-center gap-0.5 overflow-x-auto scrollbar-hide">
               <TabButton
                 active={activeTab === "activity"}
@@ -184,10 +186,10 @@ export function UnifiedSidebar({
           </div>
 
           {/* Content */}
-          <div className="flex-1 overflow-hidden">{getActiveContent()}</div>
+          <div className="relative flex-1 overflow-hidden">{getActiveContent()}</div>
 
           {/* Footer */}
-          <div className="px-3 py-2 border-t border-white/[0.06] flex items-center justify-center">
+          <div className="relative px-3 py-2 border-t border-white/[0.06] flex items-center justify-center">
             <span className="text-[10px] text-[#555]">
               {activeTab === "files"
                 ? "Agent Files"
