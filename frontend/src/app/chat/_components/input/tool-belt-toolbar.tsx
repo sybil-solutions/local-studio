@@ -403,10 +403,10 @@ export function ToolBeltToolbar({
           <button
             onClick={onSubmit}
             disabled={!canSend}
-            className={`h-8 w-8 flex items-center justify-center rounded-full transition-all:ease-in:200ms shrink-0 ${
+            className={`h-8 w-8 flex items-center justify-center rounded-full transition-colors:ease-in:200ms shrink-0 ${
               canSend
-                ? "bg-[linear-gradient(135deg,#5cf2d6,#6aa2ff)] text-[#0b0c0f] shadow-[0_6px_14px_rgba(0,0,0,0.35)] hover:brightness-110"
-                : "bg-[#111318] text-[#4e5663] cursor-not-allowed"
+                ? "bg-[#e8e4dd] text-[#1a1918]"
+                : "bg-(--accent) text-[#9a9590]/50 cursor-not-allowed"
             }`}
             title="Send"
           >

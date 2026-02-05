@@ -1,7 +1,7 @@
 // CRITICAL
 "use client";
 
-import { useRef, useEffect, useState, type ChangeEvent, type KeyboardEvent } from "react";
+import { useRef, useEffect, type ChangeEvent, type KeyboardEvent } from "react";
 import type { ReactNode } from "react";
 import { AttachmentsPreview } from "./attachments-preview";
 import { RecordingIndicator } from "./recording-indicator";
@@ -75,7 +75,6 @@ export function ToolBelt({
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recordingIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
-  const [isFocused, setIsFocused] = useState(false);
 
   useEffect(() => {
     if (textareaRef.current) {
@@ -256,7 +255,6 @@ export function ToolBelt({
   };
 
   const canSend = value.trim() || attachments.length > 0;
-  const hasQueuedText = isLoading && queuedContext.trim().length > 0;
 
   return (
     <div className="px-2 md:px-3 pb-0">
@@ -282,17 +280,13 @@ export function ToolBelt({
         />
 
         <div
-          className={`relative flex flex-col rounded-2xl border shadow-lg overflow-hidden ${
-            isFocused
-              ? "border-[#5cf2d6]/40 ring-1 ring-[#5cf2d6]/30"
-              : "border-white/[0.08]"
-          } ${isLoading ? "ring-1 ring-[#6aa2ff]/30" : ""}`}
+          className={`relative flex flex-col bg-[#1a1a1a] rounded-xl border border-white/[0.08] shadow-lg ${
+            isLoading ? "ring-1 ring-blue-500/30" : ""
+          }`}
           style={{
-            boxShadow: "0 0 0 1px rgba(255,255,255,0.03), 0 8px 28px rgba(0,0,0,0.45)",
+            boxShadow: "0 0 0 1px rgba(255,255,255,0.03), 0 4px 20px rgba(0,0,0,0.4)"
           }}
         >
-          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(120%_90%_at_10%_-20%,rgba(92,242,214,0.12),transparent_55%),radial-gradient(140%_90%_at_90%_-30%,rgba(106,162,255,0.15),transparent_60%),linear-gradient(180deg,#0f1116,#0a0b0f)]" />
-          <div className="pointer-events-none absolute inset-0 border border-white/[0.04] rounded-2xl" />
           {planDrawer}
           <textarea
             ref={textareaRef}
@@ -301,8 +295,6 @@ export function ToolBelt({
               isLoading ? setQueuedContext(e.target.value) : setInput(e.target.value)
             }
             onKeyDown={handleKeyDown}
-            onFocus={() => setIsFocused(true)}
-            onBlur={() => setIsFocused(false)}
             placeholder={
               isDisabled
                 ? "No model running"
@@ -312,29 +304,9 @@ export function ToolBelt({
             }
             disabled={isDisabled}
             rows={1}
-            className="relative w-full px-3 py-3 md:px-4 md:py-3 bg-transparent text-[15px] md:text-sm resize-none focus:outline-none disabled:opacity-50 placeholder:text-[#7b8594] text-[#e3e9f4] overflow-y-hidden min-h-[52px] md:min-h-[44px]"
+            className="w-full px-3 py-2 md:px-4 md:py-3 bg-transparent text-[15px] md:text-sm resize-none focus:outline-none disabled:opacity-50 placeholder:text-[#9a9590] overflow-y-hidden min-h-[52px] md:min-h-[44px]"
             style={{ fontSize: "16px", lineHeight: "1.5" }}
           />
-
-          <div className="relative flex items-center justify-between px-3 pb-2 text-[10px] text-[#7b8594]">
-            <div className="flex items-center gap-2">
-              {isLoading && (
-                <span className="px-2 py-0.5 rounded-full border border-[#6aa2ff]/30 text-[#93b6ff] bg-[#0d1016]/70">
-                  Streaming
-                </span>
-              )}
-              {hasQueuedText && (
-                <span className="px-2 py-0.5 rounded-full border border-[#5cf2d6]/30 text-[#7debd6] bg-[#0d1016]/70">
-                  Queued
-                </span>
-              )}
-            </div>
-            <div className="hidden md:flex items-center gap-2">
-              <span>Enter to send</span>
-              <span className="text-[#4e5663]">·</span>
-              <span>Shift+Enter newline</span>
-            </div>
-          </div>
 
           <input
             ref={fileInputRef}
