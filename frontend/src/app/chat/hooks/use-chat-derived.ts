@@ -184,16 +184,27 @@ export function useChatDerived({
 
     const groups: ActivityGroup[] = [];
     const groupsByKey = new Map<string, ActivityGroup>();
+    const runKeyToTurn = new Map<string, number>();
+    let currentTurnNumber = 0;
     currentRunKey = null;
 
     for (const msg of messages) {
       if (msg.role === "user") {
         currentRunKey = getRunKey(msg) ?? msg.id;
+        if (!runKeyToTurn.has(currentRunKey)) {
+          currentTurnNumber += 1;
+          runKeyToTurn.set(currentRunKey, currentTurnNumber);
+        }
         continue;
       }
       if (msg.role !== "assistant") continue;
 
       const key = getRunKey(msg) ?? currentRunKey ?? msg.id;
+      if (!runKeyToTurn.has(key)) {
+        currentTurnNumber += 1;
+        runKeyToTurn.set(key, currentTurnNumber);
+      }
+      const turnNumber = runKeyToTurn.get(key) ?? currentTurnNumber;
       const isLatestMessage = msg.id === lastAssistantId;
       const items = buildItemsForMessage(msg, isLatestMessage);
       if (items.length === 0) continue;
@@ -205,6 +216,7 @@ export function useChatDerived({
           messageId: msg.id,
           title: "",
           isLatest: false,
+          turnNumber,
           items: [],
         };
         groupsByKey.set(key, group);
@@ -216,7 +228,8 @@ export function useChatDerived({
     groups.forEach((group, index) => {
       const isLatest = group.id === (lastAssistantKey ? `activity-group-${lastAssistantKey}` : "");
       group.isLatest = isLatest;
-      group.title = isLatest ? `Latest (Turn ${index + 1})` : `Turn ${index + 1}`;
+      const label = group.turnNumber > 0 ? `Turn ${group.turnNumber}` : "Turn";
+      group.title = isLatest ? `Current (${label})` : label;
     });
 
     return groups.reverse();

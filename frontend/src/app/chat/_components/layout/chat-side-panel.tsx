@@ -15,7 +15,7 @@ export interface ActivityPanelProps {
 
 export function ActivityPanel({ activityGroups, agentPlan, isLoading }: ActivityPanelProps) {
   if (activityGroups.length === 0) {
-    return <div className="py-8 text-center text-sm text-[#555]">No activity yet</div>;
+    return <div className="py-8 text-center text-sm text-[#8a93a5]">No activity yet</div>;
   }
 
   // Calculate agent progress
@@ -29,32 +29,32 @@ export function ActivityPanel({ activityGroups, agentPlan, isLoading }: Activity
   const hasActiveThinking = latestGroup?.items.some((i) => i.type === "thinking" && i.isActive);
 
   return (
-    <div className="h-full flex flex-col bg-[linear-gradient(180deg,#0b0b0b,rgba(6,6,6,0.98))]">
+    <div className="h-full flex flex-col bg-[radial-gradient(140%_70%_at_12%_-10%,rgba(45,255,199,0.08),transparent_55%),radial-gradient(130%_80%_at_90%_-20%,rgba(108,140,255,0.12),transparent_60%),linear-gradient(180deg,#07080a,rgba(4,4,6,0.98))]">
       {/* Progress Header - shows when agent is active */}
       {totalSteps > 0 && (
-        <div className="px-3 py-3 border-b border-[#1c1b1a] mb-2 bg-[#0d0d0d]/80">
+        <div className="px-3 py-3 border-b border-white/[0.08] mb-2 bg-[#08090b]/90">
           <div className="flex items-center justify-between mb-2">
-            <span className="text-[11px] text-[#777]">Plan Progress</span>
-            <span className="text-[10px] text-[#444] font-mono">
+            <span className="text-[11px] text-[#9aa3b2]">Plan Progress</span>
+            <span className="text-[10px] text-[#6f7785] font-mono">
               {doneSteps}/{totalSteps}
             </span>
           </div>
-          <div className="h-1 w-full rounded-full bg-[#1b1a19] overflow-hidden">
+          <div className="h-1 w-full rounded-full bg-[#101114] overflow-hidden">
             <div
-              className="h-full rounded-full bg-[#6a6a6a] transition-all duration-300"
+              className="h-full rounded-full bg-[linear-gradient(90deg,#32f2c2,#6aa2ff)] transition-all duration-300"
               style={{ width: `${totalSteps > 0 ? (doneSteps / totalSteps) * 100 : 0}%` }}
             />
           </div>
           {currentStep && isLoading && (
             <div className="flex items-center gap-2 mt-2">
-              <Loader2 className="h-3 w-3 text-[#666] animate-spin" />
-              <span className="text-[11px] text-[#777] truncate">{currentStep.title}</span>
+              <Loader2 className="h-3 w-3 text-[#7aa6ff] animate-spin" />
+              <span className="text-[11px] text-[#9aa3b2] truncate">{currentStep.title}</span>
             </div>
           )}
           {!currentStep && hasIncomplete && isLoading && (
             <div className="flex items-center gap-2 mt-2">
-              <Loader2 className="h-3 w-3 text-[#666] animate-spin" />
-              <span className="text-[11px] text-[#777]">Working...</span>
+              <Loader2 className="h-3 w-3 text-[#7aa6ff] animate-spin" />
+              <span className="text-[11px] text-[#9aa3b2]">Working...</span>
             </div>
           )}
         </div>
@@ -62,23 +62,25 @@ export function ActivityPanel({ activityGroups, agentPlan, isLoading }: Activity
 
       <div className="relative flex-1 overflow-y-auto px-2">
         {/* Vertical timeline line */}
-        <div className="absolute left-4.75 top-2 bottom-2 w-px bg-[#1e1d1c]" />
+        <div className="absolute left-4.75 top-2 bottom-2 w-px bg-white/[0.08]" />
 
         <div className="space-y-1 pb-4">
-          {activityGroups.map((group, groupIdx) => (
+          {activityGroups.map((group) => (
             <div key={group.id}>
               {/* Turn header */}
               <div className="flex items-center gap-2 py-2 pl-1">
-                <div className="w-5 h-5 rounded-full bg-[#0f0f0f] border border-[#1c1b1a] flex items-center justify-center z-10">
-                  <span className="text-[9px] text-[#444] font-medium">{groupIdx + 1}</span>
+                <div className="w-5 h-5 rounded-full bg-[#0b0c0f] border border-white/[0.12] flex items-center justify-center z-10">
+                  <span className="text-[9px] text-[#9aa3b2] font-medium">
+                    {group.turnNumber || 1}
+                  </span>
                 </div>
-                <span className="text-[10px] text-[#333] uppercase tracking-wider">
+                <span className="text-[10px] text-[#8b93a5] uppercase tracking-wider">
                   {group.isLatest ? "Current" : "Turn"}
                 </span>
                 {group.isLatest && hasActiveThinking && (
                   <span className="relative flex h-1.5 w-1.5 ml-auto mr-2">
-                    <span className="animate-ping absolute h-full w-full rounded-full bg-[#444] opacity-75" />
-                    <span className="relative h-1.5 w-1.5 rounded-full bg-[#444]" />
+                    <span className="animate-ping absolute h-full w-full rounded-full bg-[#5cf2d6] opacity-60" />
+                    <span className="relative h-1.5 w-1.5 rounded-full bg-[#5cf2d6]" />
                   </span>
                 )}
               </div>
@@ -114,8 +116,8 @@ function ThinkingItem({ content, isActive }: { content?: string; isActive?: bool
   return (
     <div className="relative pl-7 pr-2 py-2">
       {/* Timeline node - subtle dot */}
-      <div className="absolute left-1.75 top-2.5 w-2.25 h-2.25 rounded-full border border-[#333] bg-[#1c1b1a] flex items-center justify-center">
-        {isActive && <div className="w-1.5 h-1.5 rounded-full bg-[#555] animate-pulse" />}
+      <div className="absolute left-1.75 top-2.5 w-2.25 h-2.25 rounded-full border border-white/[0.16] bg-[#111217] flex items-center justify-center">
+        {isActive && <div className="w-1.5 h-1.5 rounded-full bg-[#5cf2d6] animate-pulse" />}
       </div>
 
       <button
@@ -123,22 +125,24 @@ function ThinkingItem({ content, isActive }: { content?: string; isActive?: bool
         className="flex items-center gap-2 w-full text-left group"
       >
         {isActive ? (
-          <Loader2 className="h-3 w-3 text-[#555] animate-spin shrink-0" />
+          <Loader2 className="h-3 w-3 text-[#7aa6ff] animate-spin shrink-0" />
         ) : (
-          <BrainIcon className="h-3 w-3 text-[#444] shrink-0" />
+          <BrainIcon className="h-3 w-3 text-[#8b93a5] shrink-0" />
         )}
         <span
-          className={`text-[11px] ${isActive ? "text-[#777]" : "text-[#555]"} group-hover:text-[#888] transition-colors`}
+          className={`text-[11px] ${isActive ? "text-[#b8c3d8]" : "text-[#9aa3b2]"} group-hover:text-[#d1d9e8] transition-colors`}
         >
           {isActive ? "Thinking..." : "Thought"}
         </span>
-        {content && <span className="ml-auto text-[9px] text-[#333]">{expanded ? "−" : "+"}</span>}
+        {content && (
+          <span className="ml-auto text-[9px] text-[#6f7785]">{expanded ? "−" : "+"}</span>
+        )}
       </button>
 
       {expanded && content && (
         <div
           ref={contentRef}
-          className="mt-2 max-h-50 overflow-y-auto text-[11px] leading-relaxed text-[#444] whitespace-pre-wrap wrap-break-word scrollbar-thin"
+          className="mt-2 max-h-50 overflow-y-auto text-[11px] leading-relaxed text-[#9aa3b2] whitespace-pre-wrap wrap-break-word scrollbar-thin"
         >
           {content}
         </div>

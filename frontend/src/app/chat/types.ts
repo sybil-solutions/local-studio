@@ -33,6 +33,7 @@ export interface ActivityGroup {
   messageId: string;
   title: string;
   isLatest: boolean;
+  turnNumber: number;
   items: ActivityItem[];
 }
 
