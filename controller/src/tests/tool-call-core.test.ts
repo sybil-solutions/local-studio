@@ -37,7 +37,7 @@ describe("tool-call-core", () => {
   it("injects tool_calls before [DONE] for streaming XML", async () => {
     const encoder = new TextEncoder();
     const source = new ReadableStream<Uint8Array>({
-      start(controller) {
+      start(controller): void {
         controller.enqueue(encoder.encode(
           "data: {\"choices\":[{\"delta\":{\"content\":\"<tool_call><function=calc><arguments>{\\\"x\\\":1}</arguments></tool_call>\"}}]}\n\n",
         ));

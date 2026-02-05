@@ -23,7 +23,7 @@ const safeJsonParse = (value: string): unknown | null => {
   }
 };
 
-const coerceArgs = (value: unknown): string => {
+const coerceArguments = (value: unknown): string => {
   if (typeof value === "string") {
     return value.trim();
   }
@@ -56,14 +56,14 @@ const buildToolCall = (name: string, args: unknown, index: number): ToolCall => 
   index,
   id: createToolCallId(),
   type: "function",
-  function: { name, arguments: coerceArgs(args) },
+  function: { name, arguments: coerceArguments(args) },
 });
 
 export const normalizeToolRequest = (payload: Record<string, unknown>): Record<string, unknown> => {
   if (payload["functions"] && !payload["tools"] && Array.isArray(payload["functions"])) {
-    payload["tools"] = (payload["functions"] as Array<Record<string, unknown>>).map((fn) => ({
+    payload["tools"] = (payload["functions"] as Array<Record<string, unknown>>).map((functionDefinition) => ({
       type: "function",
-      function: fn,
+      function: functionDefinition,
     }));
     delete payload["functions"];
   }
@@ -121,9 +121,9 @@ export const parseToolCallsFromContent = (content: string): ToolCall[] => {
     for (const match of content.matchAll(jsonPattern)) {
       const name = String(match[1] ?? "").trim();
       const argsRaw = String(match[2] ?? "").trim();
-      const parsedArgs = argsRaw ? safeJsonParse(argsRaw) ?? argsRaw : {};
+      const parsedArguments = argsRaw ? safeJsonParse(argsRaw) ?? argsRaw : {};
       if (name) {
-        toolCalls.push(buildToolCall(name, parsedArgs, toolCalls.length));
+        toolCalls.push(buildToolCall(name, parsedArguments, toolCalls.length));
       }
     }
   }

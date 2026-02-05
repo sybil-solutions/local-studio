@@ -273,6 +273,8 @@ export class ChatRunManager {
    * @param helpers.setLastAssistantId - Setter for last assistant message id.
    * @param helpers.getAssistantId - Getter for active assistant message id.
    * @param helpers.getLastAssistantId - Getter for last assistant message id.
+   * @param helpers.getTurnIndex - Getter for the current turn index.
+   * @param helpers.setTurnIndex - Setter for the current turn index.
    * @param helpers.markError - Mark run error and status.
    */
   private handleAgentEvent(
@@ -467,6 +469,8 @@ export class ChatRunManager {
    * @param messageId - Message identifier.
    * @param assistant - Assistant message payload.
    * @param toolResults - Tool results for the turn.
+   * @param runId - Run identifier.
+   * @param turnIndex - Optional turn index for the message.
    */
   private persistAssistantMessage(
     sessionId: string,
