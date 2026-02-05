@@ -175,6 +175,14 @@ const buildToolResults = (message: StoredMessageRecord): ToolResultMessage[] => 
   const calls = Array.isArray(message["tool_calls"]) ? message["tool_calls"] : parseJson(message["tool_calls"]);
   const toolCallsArray: unknown[] = Array.isArray(calls) ? calls : [];
   const results: ToolResultMessage[] = [];
+  const agentFsTools = new Set([
+    "list_files",
+    "read_file",
+    "write_file",
+    "delete_file",
+    "make_directory",
+    "move_file",
+  ]);
 
   for (const call of toolCallsArray) {
     if (!call || typeof call !== "object") continue;
@@ -182,6 +190,7 @@ const buildToolResults = (message: StoredMessageRecord): ToolResultMessage[] => 
     const id = getString(record["id"]) ?? "";
     const functionPayload = record["function"] as Record<string, unknown> | undefined;
     const name = getString(functionPayload?.["name"]) ?? "tool";
+    if (agentFsTools.has(name)) continue;
     const result = extractToolResult(record["result"]);
     if (!id || !result) continue;
     results.push({
