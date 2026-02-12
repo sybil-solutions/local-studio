@@ -4,6 +4,7 @@
 import { useEffect, useState } from "react";
 import api from "@/lib/api";
 import { getApiKey, setApiKey, clearApiKey } from "@/lib/api-key";
+import { resolveSettingsDefaultBackendUrl } from "@/lib/backend-config";
 import { getStoredBackendUrl, setStoredBackendUrl, clearStoredBackendUrl } from "@/lib/backend-url";
 import type { ConfigData } from "@/lib/types";
 
@@ -17,10 +18,7 @@ export interface ApiConnectionSettings {
 
 export type ConnectionStatus = "unknown" | "connected" | "error";
 
-const DEFAULT_BACKEND_URL =
-  process.env.NEXT_PUBLIC_API_URL ||
-  process.env.NEXT_PUBLIC_BACKEND_URL ||
-  "http://localhost:8080";
+const DEFAULT_BACKEND_URL = resolveSettingsDefaultBackendUrl();
 
 const DEFAULT_API_SETTINGS: ApiConnectionSettings = {
   backendUrl: DEFAULT_BACKEND_URL,

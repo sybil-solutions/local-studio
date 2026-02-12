@@ -3,6 +3,7 @@ import { readFile, writeFile, mkdir, unlink } from "fs/promises";
 import { accessSync, constants, existsSync } from "fs";
 import { homedir, tmpdir } from "node:os";
 import path from "path";
+import { resolveSettingsDefaultBackendUrl } from "./backend-config";
 
 export interface ApiSettings {
   backendUrl: string;
@@ -11,11 +12,7 @@ export interface ApiSettings {
   voiceModel: string;
 }
 
-const DEFAULT_BACKEND_URL =
-  process.env.BACKEND_URL ||
-  process.env.NEXT_PUBLIC_API_URL ||
-  process.env.NEXT_PUBLIC_BACKEND_URL ||
-  "http://localhost:8080";
+const DEFAULT_BACKEND_URL = resolveSettingsDefaultBackendUrl();
 
 const DEFAULT_SETTINGS: ApiSettings = {
   backendUrl: DEFAULT_BACKEND_URL,
