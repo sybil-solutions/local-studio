@@ -9,6 +9,7 @@ import { parseRecipe } from "../stores/recipe-serializer";
 import { Event } from "../services/event-manager";
 import { pidExists } from "../services/process-utilities";
 import { fetchInference } from "../services/inference/inference-client";
+import { isRecipeRunning } from "../services/recipe-matching";
 
 const switchLock = new AsyncLock();
 const launchCancelControllers = new Map<string, AbortController>();
@@ -50,18 +51,8 @@ export const registerLifecycleRoutes = (app: Hono, context: AppContext): void =>
       if (launchingId === recipe.id) {
         status = "starting";
       }
-      if (current) {
-        if (current.served_model_name && recipe.served_model_name === current.served_model_name) {
-          status = "running";
-        } else if (current.model_path) {
-          // Compare normalized paths (exact match)
-          const normalize = (p: string): string => p.replace(/\/+$/, "");
-          if (normalize(recipe.model_path) === normalize(current.model_path)) {
-            status = "running";
-          } else if (current.model_path.split("/").pop() === recipe.model_path.split("/").pop()) {
-            status = "running";
-          }
-        }
+      if (current && isRecipeRunning(recipe, current)) {
+        status = "running";
       }
       return { ...recipe, status };
     });

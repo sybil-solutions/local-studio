@@ -5,6 +5,7 @@ import type { AppContext } from "../types/context";
 import { badRequest, notFound } from "../core/errors";
 import { streamAsyncStrings, buildSseHeaders } from "../http/sse";
 import { Event } from "../services/event-manager";
+import { isRecipeRunning } from "../services/recipe-matching";
 import {
   cleanupLogFiles,
   fallbackLogPathFor,
@@ -63,9 +64,11 @@ export const registerLogsRoutes = (app: Hono, context: AppContext): void => {
       const recipe = context.stores.recipeStore.get(sessionId);
       const modifiedAt = new Date(entry.mtimeMs).toISOString();
       let status = "stopped";
-      if (current && recipe && current.model_path && recipe.model_path && current.model_path.includes(recipe.model_path)) {
-        status = "running";
-      } else if (current && recipe && current.served_model_name && recipe.served_model_name === current.served_model_name) {
+      if (
+        current
+        && recipe
+        && isRecipeRunning(recipe, current, { allowCurrentContainsRecipePath: true })
+      ) {
         status = "running";
       }
       const row = {

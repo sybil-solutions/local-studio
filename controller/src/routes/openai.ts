@@ -5,7 +5,7 @@ import { HttpStatus, serviceUnavailable } from "../core/errors";
 import { primaryLogPathFor, readFileTailBytes, sanitizeLogSessionId } from "../core/log-files";
 import { buildSseHeaders } from "../http/sse";
 import type { AppContext } from "../types/context";
-import type { ProcessInfo, Recipe } from "../types/models";
+import type { Recipe } from "../types/models";
 import {
   createToolCallStream,
   normalizeToolCallsInMessage,
@@ -13,6 +13,7 @@ import {
 } from "../services/tool-call-core";
 import { buildInferenceUrl, fetchInference } from "../services/inference/inference-client";
 import { pidExists } from "../services/process-utilities";
+import { isRecipeRunning } from "../services/recipe-matching";
 
 const switchLock = new AsyncLock();
 
@@ -30,23 +31,6 @@ export const registerOpenAIRoutes = (app: Hono, context: AppContext): void => {
       }
     }
     return null;
-  };
-
-  const isRecipeRunning = (recipe: Recipe, current: ProcessInfo): boolean => {
-    const canonical = (recipe.served_model_name ?? "").toLowerCase();
-    if (canonical && current.served_model_name && current.served_model_name.toLowerCase() === canonical) {
-      return true;
-    }
-    if (current.model_path) {
-      const normalize = (p: string): string => p.replace(/\/+$/, "");
-      if (normalize(recipe.model_path) === normalize(current.model_path)) {
-        return true;
-      }
-      if (current.model_path.split("/").pop() === recipe.model_path.split("/").pop()) {
-        return true;
-      }
-    }
-    return false;
   };
 
   const readLogTail = (path: string, limit: number): string => {
