@@ -31,14 +31,17 @@ Model lifecycle management for vLLM and SGLang inference servers.
 ## Quick Start
 
 ```bash
-# Install controller
-pip install -e .
+# Install controller deps
+cd controller && bun install
 
 # Run controller
-vllm-studio
+cd controller && bun src/main.ts
 
 # (Optional) Run frontend
 cd frontend && npm install && npm run dev
+
+# Or use the repo helper (starts optional Docker services too):
+./start.sh --dev
 ```
 
 ## API Reference
@@ -143,14 +146,11 @@ VLLM_STUDIO_TEMPORAL_ADDRESS=localhost:7233 # Temporal server address
 ```
 vllm-studio/
 ├── controller/
-│   ├── app.py         # FastAPI endpoints
-│   ├── process.py     # Process management
-│   ├── backends.py    # vLLM/SGLang command builders
-│   ├── models.py      # Pydantic models
-│   ├── store.py       # SQLite storage
-│   ├── config.py      # Settings
-│   └── cli.py         # Entry point
+│   └── src/main.ts    # Bun + Hono controller entrypoint
 ├── frontend/          # Next.js web UI
+├── cli/               # CLI / TUI client
+├── swift-client/      # SwiftUI client
+├── shared/            # Shared TS types (wire shapes)
 ├── config/
 │   └── litellm.yaml   # LiteLLM config (optional)
 └── docker-compose.yml
