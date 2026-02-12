@@ -214,7 +214,7 @@ export const registerSystemRoutes = (app: Hono, context: AppContext): void => {
       internal_port: context.config.port,
       protocol: "http",
       status: "running",
-      description: "FastAPI model lifecycle manager",
+      description: "Controller service (Bun/Hono)",
     });
 
     let inferenceStatus = "unknown";
