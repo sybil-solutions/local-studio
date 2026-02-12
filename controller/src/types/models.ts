@@ -1,6 +1,6 @@
 // CRITICAL
 import type { RecipeId } from "./brand";
-import type { Backend as SharedBackend, RecipeBase } from "../../../shared/src/recipe";
+import type { Backend as SharedBackend, RecipeBase } from "../../../shared/src";
 
 /**
  * Supported inference backends.
