@@ -3,7 +3,7 @@
  * Recipe types (model launch configuration).
  */
 
-import type { Backend as SharedBackend, RecipeBase, RecipePayload } from "../../../../../shared/src/recipe";
+import type { Backend as SharedBackend, RecipeBase, RecipePayload } from "../../../../../shared/src";
 
 export type Backend = SharedBackend;
 
