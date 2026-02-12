@@ -6,6 +6,7 @@
  */
 
 import { createApiClient } from "./api/create-api-client";
+import { resolveApiServerBaseUrl } from "./backend-config";
 export type { ChatRunStreamEvent } from "./api/core";
 
 // For client-side calls, use the proxy which handles authentication
@@ -13,10 +14,7 @@ export type { ChatRunStreamEvent } from "./api/core";
 const isClient = typeof window !== "undefined";
 const clientBaseUrl = isClient
   ? "/api/proxy"
-  : process.env.BACKEND_URL ||
-    process.env.NEXT_PUBLIC_BACKEND_URL ||
-    process.env.VLLM_STUDIO_BACKEND_URL ||
-    "http://localhost:8080";
+  : resolveApiServerBaseUrl();
 
 const api = createApiClient({ baseUrl: clientBaseUrl, useProxy: isClient });
 export default api;

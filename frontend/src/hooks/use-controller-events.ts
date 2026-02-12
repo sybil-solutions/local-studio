@@ -4,6 +4,7 @@
 import { useCallback, useEffect, useRef } from "react";
 import { getApiKey } from "@/lib/api-key";
 import api from "@/lib/api";
+import { resolveControllerEventsBaseUrl } from "@/lib/backend-config";
 import type { AgentState, ChatSession, StoredMessage } from "@/lib/types";
 import { useAppStore } from "@/store";
 import { CONTROLLER_EVENT_TYPES } from "./use-controller-events/event-types";
@@ -15,11 +16,7 @@ interface SSEPayload<T = unknown> {
 }
 
 export function useControllerEvents(
-  apiBaseUrl: string =
-    process.env.NEXT_PUBLIC_BACKEND_URL ||
-    process.env.VLLM_STUDIO_BACKEND_URL ||
-    process.env.BACKEND_URL ||
-    "/api/proxy",
+  apiBaseUrl: string = resolveControllerEventsBaseUrl(),
 ) {
   const updateSessions = useAppStore((state) => state.updateSessions);
   const setCurrentSessionId = useAppStore((state) => state.setCurrentSessionId);
