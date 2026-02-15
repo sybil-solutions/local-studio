@@ -50,10 +50,22 @@ model_list:
       supports_vision: false
       supports_reasoning: true
 
-  # MiniMax-M2.1
-  - model_name: "MiniMax-M2.1"
+  # Step-3.5-Flash (vLLM with step3p5 tool parser)
+  - model_name: "step-3.5-flash"
     litellm_params:
-      model: "openai/minimax-m2.1"
+      model: "openai/step-3.5-flash"
+      api_base: "http://host.docker.internal:8000/v1"
+      api_key: "${INFERENCE_API_KEY:-sk-placeholder}"
+      stream_timeout: 600
+      timeout: 600
+      supports_function_calling: true
+      supports_vision: false
+      supports_reasoning: true
+
+  # MiniMax-M2.5 (BF16+INT4 AWQ, tool parser: minimax-m2, reasoning parser: minimax)
+  - model_name: "MiniMax-M2.5"
+    litellm_params:
+      model: "openai/minimax-m2.5"
       api_base: "http://host.docker.internal:8000/v1"
       api_key: "${INFERENCE_API_KEY:-sk-placeholder}"
       stream_timeout: 600
@@ -63,9 +75,10 @@ model_list:
       supports_response_schema: true
       supports_reasoning: true
 
-  - model_name: "MiniMax-M2.1-REAP-50"
+  # Alias: common lowercase / hyphenated spelling -> canonical vLLM served model name
+  - model_name: "minimax-m2.5"
     litellm_params:
-      model: "openai/minimax-m2.1-reap-50"
+      model: "openai/minimax-m2.5"
       api_base: "http://host.docker.internal:8000/v1"
       api_key: "${INFERENCE_API_KEY:-sk-placeholder}"
       stream_timeout: 600
@@ -140,6 +153,9 @@ litellm_settings:
     ttl: 3600
     namespace: "litellm:cache"
     supported_call_types: ["acompletion", "completion", "embedding"]
+
+  # Custom callback: extract <think> blocks into reasoning_content
+  callbacks: think_parser.think_parser
 
   # Prometheus metrics collection
   success_callback: ["prometheus"]

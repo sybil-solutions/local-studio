@@ -141,6 +141,9 @@ export const getDefaultToolCallParser = (recipe: Recipe): string | undefined => 
   if (modelId.includes("mirothinker")) {
     return undefined;
   }
+  if (modelId.includes("minimax") && (modelId.includes("m2") || modelId.includes("m-2"))) {
+    return "minimax-m2";
+  }
   if (modelId.includes("glm") && ["4.5", "4.6", "4.7", "4-5", "4-6", "4-7"].some((tag) => modelId.includes(tag))) {
     return "glm45";
   }

@@ -28,6 +28,7 @@ services:
       - "4100:4000"
     volumes:
       - ./config/litellm.yaml:/app/config.yaml
+      - ./config/think_parser.py:/app/think_parser.py
       - ./data:/app/data
     environment:
       - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY:-sk-master}

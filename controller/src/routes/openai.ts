@@ -9,6 +9,7 @@ import type { Recipe } from "../types/models";
 import {
   createToolCallStream,
   normalizeToolCallsInMessage,
+  normalizeReasoningAndContentInMessage,
   normalizeToolRequest,
 } from "../services/tool-call-core";
 import { buildInferenceUrl, fetchInference } from "../services/inference/inference-client";
@@ -170,9 +171,11 @@ export const registerOpenAIRoutes = (app: Hono, context: AppContext): void => {
         for (const choice of choices) {
           const choiceRecord = choice as Record<string, unknown>;
           const message = choiceRecord["message"] as Record<string, unknown> | undefined;
-          if (message && normalizeToolCallsInMessage(message)) {
-            choiceRecord["finish_reason"] = "tool_calls";
-          }
+          if (!message) continue;
+          // 1) If the backend emitted tool-call XML, extract `tool_calls` before stripping it.
+          if (normalizeToolCallsInMessage(message)) choiceRecord["finish_reason"] = "tool_calls";
+          // 2) Move <think>...</think> to `reasoning_content` and strip tool-call XML wrappers from visible content.
+          normalizeReasoningAndContentInMessage(message);
         }
       }
 
