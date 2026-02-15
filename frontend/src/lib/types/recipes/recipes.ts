@@ -3,19 +3,48 @@
  * Recipe types (model launch configuration).
  */
 
-import type { Backend as SharedBackend, RecipeBase, RecipePayload } from "../../../../../shared/src";
-
-export type Backend = SharedBackend;
+export type Backend = "vllm" | "sglang" | "llamacpp" | "transformers" | "tabbyapi";
 
 /**
  * Canonical recipe shape as returned by the controller API (stored/normalized).
+ *
+ * Note: this file must be self-contained for the frontend Docker build context (which may not
+ * include repo-root shared types).
  */
-export type RecipeStored = RecipeBase;
+export interface RecipeStored {
+  id: string;
+  name: string;
+  model_path: string;
+  backend: Backend;
+  env_vars: Record<string, string> | null;
+  tensor_parallel_size: number;
+  pipeline_parallel_size: number;
+  max_model_len: number;
+  gpu_memory_utilization: number;
+  kv_cache_dtype: string;
+  max_num_seqs: number;
+  trust_remote_code: boolean;
+  tool_call_parser: string | null;
+  reasoning_parser: string | null;
+  enable_auto_tool_choice: boolean;
+  quantization: string | null;
+  dtype: string | null;
+  host: string;
+  port: number;
+  served_model_name: string | null;
+  python_path: string | null;
+  extra_args: Record<string, unknown>;
+  max_thinking_tokens: number | null;
+  thinking_mode: string;
+}
 
 /**
  * Recipe payload shape accepted by the controller for create/update.
+ * Only `id`, `name`, and `model_path` are required; everything else can be omitted.
  */
-export type Recipe = RecipePayload;
+export type Recipe =
+  & Pick<RecipeStored, "id" | "name" | "model_path">
+  & Partial<Omit<RecipeStored, "id" | "name" | "model_path">>;
 
 /**
  * Recipe shape used by the UI/editor. This intentionally supports top-level convenience fields
