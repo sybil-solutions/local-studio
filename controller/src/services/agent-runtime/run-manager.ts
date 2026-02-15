@@ -15,11 +15,18 @@ import { buildSystemPrompt } from "./system-prompt-builder";
 import { persistAssistantMessage, extractToolResultText } from "./run-manager-persistence";
 import { createRunPublisher, createSseStream } from "./run-manager-sse";
 
+type ResolvedModelSelection = {
+  requestModel: string;
+  storedModel: string;
+  provider: string;
+};
+
 export interface ChatRunOptions {
   sessionId: string;
   messageId?: string;
   content: string;
   model?: string;
+  provider?: string;
   systemPrompt?: string;
   mcpEnabled?: boolean;
   agentMode?: boolean;
@@ -84,11 +91,17 @@ export class ChatRunManager {
       return this.startMockRun(session, options, content);
     }
 
-    const modelId = await this.resolveModelId(session, options.model);
+    const modelSelection = await this.resolveModel(
+      session,
+      options.model,
+      options.provider,
+    );
+    const requestModel = modelSelection.requestModel;
+    const storedModel = modelSelection.storedModel;
     const systemPrompt = buildSystemPrompt(session, options.systemPrompt, options.agentMode ?? false);
     const thinkingLevel = options.thinkingLevel ?? (options.deepResearch ? "high" : "off");
     const baseUrl = `http://localhost:${this.context.config.port}/v1`;
-    const model = createOpenAiCompatibleModel(modelId, baseUrl);
+    const model = createOpenAiCompatibleModel(requestModel, baseUrl, modelSelection.provider);
 
     const history = Array.isArray(session["messages"]) ? (session["messages"] as Array<Record<string, unknown>>) : [];
     const agentMessages = mapStoredMessagesToAgentMessages(history, model);
@@ -101,7 +114,7 @@ export class ChatRunManager {
       userMessageId,
       "user",
       content,
-      modelId,
+      storedModel,
       undefined,
       undefined,
       undefined,
@@ -113,7 +126,7 @@ export class ChatRunManager {
 
     const runOptions = {
       userMessageId,
-      model: modelId,
+      model: storedModel,
       status: "running",
       ...(systemPrompt ? { system: systemPrompt } : {}),
       ...(options.mcpEnabled || options.agentMode || options.agentFiles ? { toolsetId: "agent" } : {}),
@@ -240,7 +253,7 @@ export class ChatRunManager {
 
     publish("run_start", {
       user_message_id: userMessageId,
-      model: modelId,
+      model: storedModel,
     });
 
     const runPromise = agent
@@ -283,7 +296,13 @@ export class ChatRunManager {
     content: string,
   ): Promise<ChatRunStream> {
     const sessionId = options.sessionId;
-    const modelId = await this.resolveModelId(session, options.model);
+    const modelSelection = await this.resolveModel(
+      session,
+      options.model,
+      options.provider,
+    );
+    const requestModel = modelSelection.requestModel;
+    const storedModel = modelSelection.storedModel;
     const systemPrompt = buildSystemPrompt(session, options.systemPrompt, options.agentMode ?? false);
 
     const runId = randomUUID();
@@ -294,7 +313,7 @@ export class ChatRunManager {
       userMessageId,
       "user",
       content,
-      modelId,
+      storedModel,
       undefined,
       undefined,
       undefined,
@@ -306,7 +325,7 @@ export class ChatRunManager {
 
     const runOptions = {
       userMessageId,
-      model: modelId,
+      model: storedModel,
       status: "running",
       ...(systemPrompt ? { system: systemPrompt } : {}),
       ...(options.mcpEnabled || options.agentMode || options.agentFiles ? { toolsetId: "agent" } : {}),
@@ -319,7 +338,7 @@ export class ChatRunManager {
     const { publish } = createRunPublisher(this.context, { runId, sessionId, queue });
 
     const runPromise = (async (): Promise<void> => {
-      publish("run_start", { user_message_id: userMessageId, model: modelId });
+      publish("run_start", { user_message_id: userMessageId, model: storedModel });
       publish("turn_start", { turn_index: 0 });
 
       const assistantMessageId = randomUUID();
@@ -327,7 +346,7 @@ export class ChatRunManager {
         role: "assistant",
         api: "mock",
         provider: "mock",
-        model: modelId,
+        model: requestModel,
         stopReason: "stop",
         usage: {
           input: 0,
@@ -349,7 +368,7 @@ export class ChatRunManager {
             text:
               `Mock response (no inference):\\n\\n` +
               `You said: ${content}\\n\\n` +
-              `Model: ${modelId}` +
+              `Model: ${requestModel}` +
               (systemPrompt ? `\\nSystem prompt bytes: ${Buffer.byteLength(systemPrompt, "utf8")}` : ""),
           },
         ],
@@ -438,23 +457,96 @@ export class ChatRunManager {
    * Resolve model id from override, session, or running process.
    * @param session - Session record.
    * @param override - Optional model override.
-   * @returns Model identifier.
+   * @param overrideProvider - Optional provider override.
+   * @returns Model identity for API calls and storage metadata.
    */
-  private async resolveModelId(
+  private async resolveModel(
     session: Record<string, unknown>,
     override?: string,
-  ): Promise<string> {
-    if (override) return override;
+    overrideProvider?: string,
+  ): Promise<ResolvedModelSelection> {
+    const providerFromOverride = typeof overrideProvider === "string" ? overrideProvider.trim() : "";
+
+    const parsedOverride = this.parseModelWithProvider(override);
+    if (parsedOverride.modelId) {
+      const provider =
+        providerFromOverride.length > 0 ? providerFromOverride : parsedOverride.provider;
+      const storedModel = provider === "openai" ? parsedOverride.modelId : `${provider}/${parsedOverride.modelId}`;
+      return {
+        requestModel: parsedOverride.modelId,
+        provider,
+        storedModel,
+      };
+    }
+
     const sessionModel = typeof session["model"] === "string" ? session["model"] : undefined;
-    if (sessionModel) return sessionModel;
+    const parsedSessionModel = this.parseModelWithProvider(sessionModel);
+    if (parsedSessionModel.modelId) {
+      return {
+        requestModel: parsedSessionModel.modelId,
+        provider: parsedSessionModel.provider,
+        storedModel:
+          parsedSessionModel.provider === "openai"
+            ? parsedSessionModel.modelId
+            : `${parsedSessionModel.provider}/${parsedSessionModel.modelId}`,
+      };
+    }
+
     const current = await this.context.processManager.findInferenceProcess(this.context.config.inference_port);
-    if (current?.served_model_name) return current.served_model_name;
+    if (current?.served_model_name) {
+      const parsedCurrent = this.parseModelWithProvider(current.served_model_name);
+      if (parsedCurrent.modelId) {
+        return {
+          requestModel: parsedCurrent.modelId,
+          provider: parsedCurrent.provider,
+	          storedModel:
+	            parsedCurrent.provider === "openai"
+	              ? parsedCurrent.modelId
+	              : `${parsedCurrent.provider}/${parsedCurrent.modelId}`,
+        };
+      }
+    }
     if (current?.model_path) {
       const parts = current.model_path.split("/");
       const tail = parts[parts.length - 1];
-      if (tail) return tail;
+      const parsedCurrent = this.parseModelWithProvider(tail);
+      if (parsedCurrent.modelId) {
+        return {
+          requestModel: parsedCurrent.modelId,
+          provider: parsedCurrent.provider,
+          storedModel:
+            parsedCurrent.provider === "openai"
+              ? parsedCurrent.modelId
+              : `${parsedCurrent.provider}/${parsedCurrent.modelId}`,
+        };
+      }
     }
-    return "default";
+    return { requestModel: "default", provider: "openai", storedModel: "default" };
+  }
+
+  /**
+   * Parse model identifier with optional `provider/model` prefix.
+   * @param raw - Raw model string.
+   * @returns Parsed model identifier and provider.
+   */
+  private parseModelWithProvider(raw?: string): { provider: string; modelId: string } {
+    if (typeof raw !== "string") {
+      return { provider: "openai", modelId: "" };
+    }
+    const trimmed = raw.trim();
+    if (!trimmed) {
+      return { provider: "openai", modelId: "" };
+    }
+
+    const delimiter = trimmed.indexOf("/");
+    if (delimiter > 0 && delimiter < trimmed.length - 1) {
+      const provider = trimmed.slice(0, delimiter).trim();
+      const modelId = trimmed.slice(delimiter + 1).trim();
+      if (modelId.length > 0) {
+        return { provider: provider || "openai", modelId };
+      }
+    }
+    return { provider: "openai", modelId: trimmed };
   }
 
   /**

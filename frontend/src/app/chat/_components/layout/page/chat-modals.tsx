@@ -23,6 +23,9 @@ interface ChatModalsProps {
   selectedModel: string;
   onSelectedModelChange: (model: string) => void;
   availableModels: ModelOption[];
+  customChatModels: string[];
+  onAddCustomChatModel: (modelId: string) => void;
+  onRemoveCustomChatModel: (modelId: string) => void;
   deepResearch: DeepResearchConfig;
   onDeepResearchChange: (config: DeepResearchConfig) => void;
   mcpServers: MCPServer[];
@@ -50,6 +53,9 @@ function ChatModalsBase({
   selectedModel,
   onSelectedModelChange,
   availableModels,
+  customChatModels,
+  onAddCustomChatModel,
+  onRemoveCustomChatModel,
   deepResearch,
   onDeepResearchChange,
   mcpServers,
@@ -72,6 +78,9 @@ function ChatModalsBase({
         selectedModel={selectedModel}
         onSelectedModelChange={onSelectedModelChange}
         availableModels={availableModels}
+        customChatModels={customChatModels}
+        onAddCustomChatModel={onAddCustomChatModel}
+        onRemoveCustomChatModel={onRemoveCustomChatModel}
         deepResearch={deepResearch}
         onDeepResearchChange={onDeepResearchChange}
       />
@@ -116,15 +125,18 @@ function areChatModalsPropsEqual(prev: ChatModalsProps, next: ChatModalsProps): 
   if (prev.usageOpen !== next.usageOpen) return false;
   if (prev.exportOpen !== next.exportOpen) return false;
 
-  if (next.settingsOpen) {
-    if (prev.systemPrompt !== next.systemPrompt) return false;
-    if (prev.onSystemPromptChange !== next.onSystemPromptChange) return false;
-    if (prev.selectedModel !== next.selectedModel) return false;
-    if (prev.onSelectedModelChange !== next.onSelectedModelChange) return false;
-    if (prev.availableModels !== next.availableModels) return false;
-    if (prev.deepResearch !== next.deepResearch) return false;
-    if (prev.onDeepResearchChange !== next.onDeepResearchChange) return false;
-    if (prev.onCloseSettings !== next.onCloseSettings) return false;
+    if (next.settingsOpen) {
+      if (prev.systemPrompt !== next.systemPrompt) return false;
+      if (prev.onSystemPromptChange !== next.onSystemPromptChange) return false;
+      if (prev.selectedModel !== next.selectedModel) return false;
+      if (prev.onSelectedModelChange !== next.onSelectedModelChange) return false;
+      if (prev.availableModels !== next.availableModels) return false;
+      if (prev.customChatModels !== next.customChatModels) return false;
+      if (prev.onAddCustomChatModel !== next.onAddCustomChatModel) return false;
+      if (prev.onRemoveCustomChatModel !== next.onRemoveCustomChatModel) return false;
+      if (prev.deepResearch !== next.deepResearch) return false;
+      if (prev.onDeepResearchChange !== next.onDeepResearchChange) return false;
+      if (prev.onCloseSettings !== next.onCloseSettings) return false;
   }
 
   if (next.mcpSettingsOpen) {

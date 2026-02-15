@@ -16,6 +16,10 @@ const normalizeModelPath = (path: string): string => path.replace(/\/+$/, "");
  * 2) normalized exact model path
  * 3) optional contains-style path match (route-specific)
  * 4) model path basename
+ * @param recipe - Recipe to match against.
+ * @param current - Current process info.
+ * @param options - Matching options.
+ * @returns True if the process matches the recipe.
  */
 export const isRecipeRunning = (
   recipe: Recipe,

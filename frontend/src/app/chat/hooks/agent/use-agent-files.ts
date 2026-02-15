@@ -152,12 +152,34 @@ export function useAgentFiles() {
   );
 
   const clearAgentFiles = useCallback(() => {
-    setAgentFiles([]);
-    setAgentFilesLoading(false);
-    setSelectedAgentFilePath(null);
-    setSelectedAgentFileContent(null);
-    clearAgentFileVersions();
+    if (agentFiles.length === 0) {
+      if (!agentFilesLoading && selectedAgentFilePath === null && selectedAgentFileContent === null) {
+        if (Object.keys(agentFileVersions).length === 0) {
+          return;
+        }
+      }
+    } else {
+      setAgentFiles([]);
+    }
+
+    if (agentFilesLoading) {
+      setAgentFilesLoading(false);
+    }
+    if (selectedAgentFilePath !== null) {
+      setSelectedAgentFilePath(null);
+    }
+    if (selectedAgentFileContent !== null) {
+      setSelectedAgentFileContent(null);
+    }
+    if (Object.keys(agentFileVersions).length > 0) {
+      clearAgentFileVersions();
+    }
   }, [
+    agentFiles.length,
+    agentFilesLoading,
+    agentFileVersions,
+    selectedAgentFilePath,
+    selectedAgentFileContent,
     setAgentFiles,
     setAgentFilesLoading,
     setSelectedAgentFilePath,

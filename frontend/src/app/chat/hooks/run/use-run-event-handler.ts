@@ -40,6 +40,7 @@ export function useRunEventHandler(args: UseRunEventHandlerArgs) {
       const { event: eventType, data } = event;
       const runId = typeof data["run_id"] === "string" ? data["run_id"] : undefined;
       const turnIndex = typeof data["turn_index"] === "number" ? data["turn_index"] : undefined;
+      const eventSessionId = typeof data["session_id"] === "string" ? data["session_id"] : currentSessionId;
       const runMeta = runId || typeof turnIndex === "number" ? { runId, turnIndex } : undefined;
 
       switch (eventType) {
@@ -139,36 +140,36 @@ export function useRunEventHandler(args: UseRunEventHandlerArgs) {
           return;
         }
         case "agent_files_listed": {
-          if (typeof data["session_id"] === "string" && data["session_id"] === currentSessionId) {
-            void loadAgentFiles({ sessionId: currentSessionId });
-          }
+          if (!eventSessionId) return;
+          if (currentSessionId && eventSessionId !== currentSessionId) return;
+          void loadAgentFiles({ sessionId: eventSessionId });
           return;
         }
         case "agent_file_written": {
-          if (typeof data["session_id"] === "string" && data["session_id"] === currentSessionId) {
-            void loadAgentFiles({ sessionId: currentSessionId });
-            const path = typeof data["path"] === "string" ? data["path"] : "";
-            if (path) {
-              void readAgentFile(path, currentSessionId).catch(() => {});
-            }
+          if (!eventSessionId) return;
+          if (currentSessionId && eventSessionId !== currentSessionId) return;
+          void loadAgentFiles({ sessionId: eventSessionId });
+          const path = typeof data["path"] === "string" ? data["path"] : "";
+          if (path) {
+            void readAgentFile(path, eventSessionId).catch(() => {});
           }
           return;
         }
         case "agent_file_deleted":
         case "agent_directory_created": {
-          if (typeof data["session_id"] === "string" && data["session_id"] === currentSessionId) {
-            void loadAgentFiles({ sessionId: currentSessionId });
-          }
+          if (!eventSessionId) return;
+          if (currentSessionId && eventSessionId !== currentSessionId) return;
+          void loadAgentFiles({ sessionId: eventSessionId });
           return;
         }
         case "agent_file_moved": {
-          if (typeof data["session_id"] === "string" && data["session_id"] === currentSessionId) {
-            void loadAgentFiles({ sessionId: currentSessionId });
-            const from = typeof data["from"] === "string" ? data["from"] : "";
-            const to = typeof data["to"] === "string" ? data["to"] : "";
-            if (from && to) {
-              moveAgentFileVersions(from, to);
-            }
+          if (!eventSessionId) return;
+          if (currentSessionId && eventSessionId !== currentSessionId) return;
+          void loadAgentFiles({ sessionId: eventSessionId });
+          const from = typeof data["from"] === "string" ? data["from"] : "";
+          const to = typeof data["to"] === "string" ? data["to"] : "";
+          if (from && to) {
+            moveAgentFileVersions(from, to);
           }
           return;
         }

@@ -76,6 +76,8 @@ export function useChatPageLifecycle({
   getLastSessionId,
   setLastSessionId,
 }: UseChatPageLifecycleArgs) {
+  const { clearAgentFiles, loadAgentFiles } = agentFiles;
+
   useEffect(() => {
     messagesRef.current = messages;
   }, [messages, messagesRef]);
@@ -92,9 +94,9 @@ export function useChatPageLifecycle({
   useEffect(() => {
     if (!sessions.currentSessionId) {
       clearPlan();
-      agentFiles.clearAgentFiles();
+      clearAgentFiles();
     }
-  }, [agentFiles, clearPlan, sessions.currentSessionId]);
+  }, [clearPlan, clearAgentFiles, sessions.currentSessionId]);
 
   useChatPageTimers({
     isLoading,
@@ -120,9 +122,9 @@ export function useChatPageLifecycle({
     setMessages,
     mapStoredMessages: messageMapping.mapStoredMessages,
     hydrateAgentState: agentState.hydrateAgentState,
-    loadAgentFiles: agentFiles.loadAgentFiles,
+    loadAgentFiles,
     clearPlan,
-    clearAgentFiles: agentFiles.clearAgentFiles,
+    clearAgentFiles,
     messagesLengthRef,
     sessionIdRef,
     getLastSessionId,
@@ -140,8 +142,8 @@ export function useChatPageLifecycle({
   // Load agent files when agent mode is enabled
   useEffect(() => {
     if (!store.agentMode || !sessions.currentSessionId) return;
-    void agentFiles.loadAgentFiles({ sessionId: sessions.currentSessionId });
-  }, [agentFiles, sessions.currentSessionId, store.agentMode]);
+    void loadAgentFiles({ sessionId: sessions.currentSessionId });
+  }, [loadAgentFiles, sessions.currentSessionId, store.agentMode]);
 
   // Load MCP servers when settings modal opens
   useEffect(() => {

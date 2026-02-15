@@ -220,6 +220,7 @@ export const registerChatsRoutes = (app: Hono, context: AppContext): void => {
 
     const messageId = typeof body["message_id"] === "string" ? body["message_id"] : undefined;
     const model = typeof body["model"] === "string" ? body["model"] : undefined;
+    const provider = typeof body["provider"] === "string" ? body["provider"] : undefined;
     const systemPrompt = typeof body["system"] === "string" ? body["system"] : undefined;
     const mcpEnabled = body["mcp_enabled"] === true;
     const agentMode = body["agent_mode"] === true;
@@ -236,6 +237,7 @@ export const registerChatsRoutes = (app: Hono, context: AppContext): void => {
       deepResearch,
       ...(messageId ? { messageId } : {}),
       ...(model ? { model } : {}),
+      ...(provider ? { provider } : {}),
       ...(systemPrompt ? { systemPrompt } : {}),
       ...(thinkingLevel ? { thinkingLevel } : {}),
     };

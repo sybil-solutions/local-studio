@@ -20,7 +20,7 @@ import {
   VolumeX,
 } from "lucide-react";
 import { ToolDropdown, DropdownItem } from "../tool-dropdown";
-import type { ModelOption } from "../../../types";
+import { buildDisplayModelLabel, type ModelOption } from "../../../types";
 
 type Props = {
   isLoading?: boolean;
@@ -186,19 +186,19 @@ export function ToolBeltToolbarDesktop({
 
       <div className="flex items-center gap-2">
         {availableModels.length > 0 && onModelChange && (
-          <select
+            <select
             value={selectedModel || ""}
             onChange={(e) => onModelChange(e.target.value)}
             disabled={disabled || isLoading}
             className="max-w-[180px] px-2 py-1 font-sans font-medium text-xs bg-transparent border border-(--border) rounded-lg text-[#9a9590] focus:outline-none disabled:opacity-50 truncate appearance-none cursor-pointer hover:border-[#4a4745] transition-colors:ease-in:200ms"
             title={selectedModel || "Select model"}
-          >
+            >
             {availableModels.map((model, idx) => (
               <option key={`${model.id}-${idx}`} value={model.id}>
-                {model.id}
+                {buildDisplayModelLabel(model.id, model.provider)}
               </option>
             ))}
-          </select>
+            </select>
         )}
 
         {isLoading ? (
@@ -225,4 +225,3 @@ export function ToolBeltToolbarDesktop({
     </div>
   );
 }
-

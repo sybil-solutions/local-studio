@@ -99,6 +99,9 @@ export interface ChatPageViewProps {
   setSystemPrompt: (value: string) => void;
   setSelectedModel: (modelId: string) => void;
   availableModels: ModelOption[];
+  customChatModels: string[];
+  onAddCustomChatModel: (modelId: string) => void;
+  onRemoveCustomChatModel: (modelId: string) => void;
   deepResearch: DeepResearchConfig;
   setDeepResearch: (next: DeepResearchConfig) => void;
   mcpServers: MCPServer[];

@@ -3,6 +3,7 @@
 
 import { useMemo } from "react";
 import { thinkingParser } from "../message-renderer";
+import { isToolCallOnlyText, isToolPartType } from "@/app/chat/hooks/chat/use-chat-message-mapping/helpers";
 import type { ChatMessage } from "@/lib/types";
 import type { ToolPart } from "./constants";
 
@@ -27,7 +28,7 @@ export function useMessageDerived({
     for (const part of parts) {
       if (part.type === "text") {
         const text = (part as { text?: unknown }).text;
-        if (typeof text === "string" && text) rawTextContent += text;
+        if (typeof text === "string" && text && !isToolCallOnlyText(text)) rawTextContent += text;
         continue;
       }
       if (part.type === "reasoning") {
@@ -37,7 +38,7 @@ export function useMessageDerived({
       }
       const type = (part as { type?: unknown }).type;
       const isDynamicTool = type === "dynamic-tool";
-      const isStaticTool = typeof type === "string" && type.startsWith("tool-");
+      const isStaticTool = isToolPartType(type) && !isDynamicTool;
       if (!isDynamicTool && !isStaticTool) continue;
       if (!("toolCallId" in (part as object))) continue;
 
@@ -47,7 +48,8 @@ export function useMessageDerived({
           toolName: "toolName" in (part as object) ? String((part as { toolName?: unknown }).toolName) : "tool",
         });
       } else {
-        const rawName = String(type).replace(/^tool-/, "");
+        const toolType = String(type);
+        const rawName = toolType === "tool-call" || toolType === "tool_call" ? "tool" : toolType.replace(/^tool-/, "");
         const toolName = rawName.includes("__") ? rawName.split("__").slice(1).join("__") : rawName;
         toolParts.push({
           ...(part as ToolPart),
@@ -74,4 +76,3 @@ export function useMessageDerived({
     return { textContent, thinkingContent, toolParts };
   }, [isUser, parts]);
 }
-

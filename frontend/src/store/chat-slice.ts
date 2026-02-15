@@ -56,6 +56,33 @@ export const createChatSlice: StateCreator<ChatSlice, [], [], ChatSlice> = (set)
   // Model
   setSelectedModel: (selectedModel) => set({ selectedModel }),
   setAvailableModels: (availableModels) => set({ availableModels }),
+  setCustomChatModels: (customChatModels) =>
+    set((state) => {
+      const next = Array.isArray(customChatModels) ? customChatModels : [];
+      if (state.customChatModels.length === next.length && state.customChatModels.every((model, index) => model === next[index])) {
+        return state;
+      }
+      return { customChatModels: next };
+    }),
+  addCustomChatModel: (modelId) => {
+    const normalized = String(modelId).trim();
+    if (!normalized) return;
+    set((state) => {
+      if (state.customChatModels.includes(normalized)) {
+        return state;
+      }
+      return { customChatModels: [...state.customChatModels, normalized] };
+    });
+  },
+  removeCustomChatModel: (modelId) => {
+    const normalized = String(modelId).trim();
+    if (!normalized) return;
+    set((state) => {
+      const next = state.customChatModels.filter((model) => model !== normalized);
+      if (next.length === state.customChatModels.length) return state;
+      return { customChatModels: next };
+    });
+  },
 
   // Layout
   setIsMobile: (isMobile) => set({ isMobile }),

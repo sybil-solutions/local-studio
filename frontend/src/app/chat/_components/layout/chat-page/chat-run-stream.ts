@@ -10,6 +10,7 @@ export interface ChatRunStreamPayload {
   content: string;
   message_id: string;
   model?: string;
+  provider?: string;
   system?: string;
   mcp_enabled?: boolean;
   agent_mode?: boolean;

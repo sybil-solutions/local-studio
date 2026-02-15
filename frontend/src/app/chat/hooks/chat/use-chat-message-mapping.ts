@@ -10,6 +10,7 @@ import type {
 } from "@/lib/types";
 import {
   isToolPart,
+  isToolCallOnlyText,
   mapAgentMessageToChatMessageImpl,
   mapStoredMessagesImpl,
   mergeToolParts,
@@ -34,11 +35,17 @@ export function useChatMessageMapping({ setMessages }: UseChatMessageMappingArgs
   const upsertMessage = useCallback(
     (message: ChatMessage) => {
       setMessages((prev) => {
-        const hasTextPart = message.parts.some(
-          (part) => part.type === "text" && typeof part.text === "string" && part.text.trim(),
-        );
+        const hasVisibleTextPart = (parts: ChatMessagePart[]) =>
+          parts.some(
+            (part) =>
+              part.type === "text" &&
+              typeof part.text === "string" &&
+              part.text.trim() &&
+              !isToolCallOnlyText(part.text)
+          );
+        const hasVisibleText = hasVisibleTextPart(message.parts);
         const hasToolParts = message.parts.some((part) => isToolPart(part));
-        const toolOnly = message.role === "assistant" && hasToolParts && !hasTextPart;
+        const toolOnly = message.role === "assistant" && hasToolParts && !hasVisibleText;
 
         if (toolOnly) {
           const runId = (message.metadata as { runId?: string } | undefined)?.runId;
@@ -83,9 +90,7 @@ export function useChatMessageMapping({ setMessages }: UseChatMessageMappingArgs
               if (entry.role !== "assistant") return false;
               const entryRunId = (entry.metadata as { runId?: string } | undefined)?.runId;
               if (entryRunId !== runId) return false;
-              const entryHasText = entry.parts.some(
-                (part) => part.type === "text" && typeof part.text === "string" && part.text.trim(),
-              );
+              const entryHasText = hasVisibleTextPart(entry.parts);
               const entryHasTool = entry.parts.some((part) => isToolPart(part));
               const isInternal = Boolean(
                 (entry.metadata as { internal?: boolean } | undefined)?.internal,

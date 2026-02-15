@@ -2,7 +2,7 @@
 "use client";
 
 import { ArrowUp, PanelRightOpen, Square } from "lucide-react";
-import type { ModelOption } from "../../../types";
+import { buildDisplayModelLabel, type ModelOption } from "../../../types";
 import { ToolBeltToolbarMobileMenu } from "./tool-belt-toolbar-mobile-menu";
 
 type Props = {
@@ -115,10 +115,10 @@ export function ToolBeltToolbarMobile({
             disabled={disabled || isLoading}
             className="h-10 w-full px-3 font-mono text-[12px] bg-white/5 border border-white/10 rounded-full text-[#d9d4cb] focus:outline-none disabled:opacity-50 truncate appearance-none cursor-pointer hover:bg-white/7 transition-colors"
             title={selectedModel || "Select model"}
-          >
+            >
             {availableModels.map((model, idx) => (
               <option key={`${model.id}-${idx}`} value={model.id}>
-                {model.id}
+                {buildDisplayModelLabel(model.id, model.provider)}
               </option>
             ))}
           </select>

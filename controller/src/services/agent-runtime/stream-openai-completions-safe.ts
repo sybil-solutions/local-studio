@@ -23,9 +23,98 @@ const isToolCallParseError = (message: AssistantMessage): boolean => {
     return false;
   }
   const lower = message.errorMessage.toLowerCase();
-  return lower.includes("unexpected token") ||
+  // pi-ai may surface JSON parsing failures using different phrasing depending on provider/runtime.
+  // Example: "JSON Parse error: Expected '}'" (MiniMax M2.*).
+  return lower.includes("json parse error") ||
+    lower.includes("unexpected token") ||
     lower.includes("unexpected identifier") ||
-    lower.includes("unexpected end of json");
+    lower.includes("unexpected end of json") ||
+    lower.includes("expected '}'") ||
+    lower.includes("expected ']'") ||
+    (lower.includes("parse error") && lower.includes("json"));
+};
+
+const coerceArgsObject = (value: unknown, raw: string): Record<string, unknown> => {
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    return value as Record<string, unknown>;
+  }
+  return { value, raw };
+};
+
+const tryParseJsonObjectFromString = (raw: string): Record<string, unknown> | null => {
+  const trimmed = raw.trim();
+  const firstBrace = trimmed.indexOf("{");
+  const firstBracket = trimmed.indexOf("[");
+  const start =
+    firstBrace === -1 ? firstBracket : firstBracket === -1 ? firstBrace : Math.min(firstBrace, firstBracket);
+  if (start === -1) return null;
+
+  const input = trimmed.slice(start);
+  const stack: string[] = [];
+  let inString = false;
+  let escaped = false;
+  let lastCompleteIndex = -1;
+
+  for (let i = 0; i < input.length; i++) {
+    const c = input[i]!;
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+      if (c === "\\") {
+        escaped = true;
+        continue;
+      }
+      if (c === "\"") {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (c === "\"") {
+      inString = true;
+      continue;
+    }
+    if (c === "{") {
+      stack.push("}");
+      continue;
+    }
+    if (c === "[") {
+      stack.push("]");
+      continue;
+    }
+    if (c === "}" || c === "]") {
+      const expected = stack[stack.length - 1];
+      if (expected === c) {
+        stack.pop();
+        if (stack.length === 0) {
+          lastCompleteIndex = i + 1;
+        }
+      }
+    }
+  }
+
+  const tryParse = (candidate: string): Record<string, unknown> | null => {
+    try {
+      return coerceArgsObject(JSON.parse(candidate), raw);
+    } catch {
+      return null;
+    }
+  };
+
+  if (lastCompleteIndex > 0) {
+    const parsed = tryParse(input.slice(0, lastCompleteIndex));
+    if (parsed) return parsed;
+  }
+
+  if (stack.length > 0) {
+    const balanced = `${input}${stack.slice().reverse().join("")}`;
+    const parsed = tryParse(balanced);
+    if (parsed) return parsed;
+  }
+
+  return null;
 };
 
 const buildToolCallEndEvents = (
@@ -40,7 +129,13 @@ const buildToolCallEndEvents = (
     if (!toolBlock.partialArgs || toolBlock.partialArgs.trim().length === 0) {
       return;
     }
-    toolBlock.arguments = parseStreamingJson(toolBlock.partialArgs);
+    try {
+      toolBlock.arguments = coerceArgsObject(parseStreamingJson(toolBlock.partialArgs), toolBlock.partialArgs);
+    } catch {
+      // If the provider stream ended mid-JSON (common with tool calling), salvage what we can so the
+      // agent can proceed and surface tool errors as tool failures instead of aborting the run.
+      toolBlock.arguments = tryParseJsonObjectFromString(toolBlock.partialArgs) ?? { raw: toolBlock.partialArgs };
+    }
     const toolBlockRecord = toolBlock as unknown as Record<string, unknown>;
     delete toolBlockRecord["partialArgs"];
     events.push({
@@ -141,7 +236,9 @@ export const streamOpenAiCompletionsSafe: StreamFn = (
       stream.push({ type: "error", reason: "error", error: fallback });
       stream.end();
     }
-  })();
+  })().catch((error) => {
+    console.error("[stream-openai-completions-safe] Unhandled error in stream:", error);
+  });
 
   return stream;
 };

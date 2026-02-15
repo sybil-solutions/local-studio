@@ -30,6 +30,7 @@ export interface ChatState {
 
   selectedModel: string;
   availableModels: ModelOption[];
+  customChatModels: string[];
 
   isMobile: boolean;
   userScrolledUp: boolean;
@@ -128,6 +129,9 @@ export interface ChatActions {
 
   setSelectedModel: (selectedModel: string) => void;
   setAvailableModels: (availableModels: ModelOption[]) => void;
+  setCustomChatModels: (customChatModels: ChatSlice["customChatModels"]) => void;
+  addCustomChatModel: (modelId: string) => void;
+  removeCustomChatModel: (modelId: string) => void;
 
   setIsMobile: (isMobile: boolean) => void;
   setUserScrolledUp: (userScrolledUp: boolean) => void;

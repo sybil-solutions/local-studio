@@ -6,6 +6,57 @@ import { createUuid } from "@/lib/uuid";
 import type { ChatMessage, ChatMessageMetadata, ChatMessagePart, StoredMessage, StoredToolCall } from "@/lib/types";
 import { tryParseNestedJsonString } from "../../../utils";
 
+function asText(value: unknown): string | undefined {
+  return typeof value === "string" ? value : undefined;
+}
+
+function stripToolCallOnlyText(text: string): string {
+  let remaining = text;
+  let foundToolText = false;
+
+  const xmlPatterns = [
+    /<use_mcp_tool[\s\S]*?<\/use_mcp[\s_]*tool>/gi,
+    /<tool_call>[\s\S]*?<\/tool_call>/gi,
+    /\{"name"\s*:\s*"[^"]+"\s*,\s*"arguments"\s*:\s*(?:\{[\s\S]*?\}|\[[\s\S]*?\]|".*?")\s*\}/gi,
+  ];
+
+  for (const pattern of xmlPatterns) {
+    const next = remaining.replace(pattern, "");
+    if (next !== remaining) {
+      foundToolText = true;
+    }
+    remaining = next;
+  }
+
+  remaining = remaining.trim();
+  return foundToolText && !remaining ? "" : remaining;
+}
+
+function isToolDebugText(text: string): boolean {
+  if (!text) return false;
+  const normalized = text.toLowerCase();
+  if (!normalized.startsWith("json parse error")) return false;
+  if (!normalized.includes("session_id:") || !normalized.includes("run_id:")) return false;
+  if (!normalized.includes("in model response")) return false;
+  return true;
+}
+
+export function isToolCallOnlyText(text: string): boolean {
+  if (isToolDebugText(text)) return true;
+  const stripped = stripToolCallOnlyText(text);
+  return stripped.length === 0 && text.trim().length > 0;
+}
+
+export function isToolPartType(partType: unknown): partType is "dynamic-tool" | string {
+  return (
+    partType === "dynamic-tool" ||
+    partType === "toolCall" ||
+    partType === "tool-call" ||
+    partType === "tool_call" ||
+    (typeof partType === "string" && partType.startsWith("tool-"))
+  );
+}
+
 export function mapStoredToolCallsImpl(toolCalls?: StoredToolCall[]): ChatMessagePart[] {
   if (!toolCalls?.length) return [];
   return toolCalls.map((tc) => {
@@ -81,7 +132,8 @@ export function mapStoredMessagesImpl(storedMessages: StoredMessage[]): ChatMess
 }
 
 export function isToolPart(part: ChatMessagePart): part is Extract<ChatMessagePart, { toolCallId: string }> {
-  return part.type === "dynamic-tool" || (typeof part.type === "string" && part.type.startsWith("tool-"));
+  // Check for toolCallId property which only exists on tool parts
+  return "toolCallId" in part && typeof part.toolCallId === "string" && part.toolCallId.length > 0;
 }
 
 export function mergeToolParts(previous: ChatMessagePart[], next: ChatMessagePart[]): ChatMessagePart[] {
@@ -112,17 +164,25 @@ export function mergeToolParts(previous: ChatMessagePart[], next: ChatMessagePar
 
 function mapAgentContentToParts(content: unknown): ChatMessagePart[] {
   if (typeof content === "string") {
-    return content.trim() ? [{ type: "text", text: content }] : [];
+    if (!content.trim()) {
+      return [];
+    }
+    if (isToolCallOnlyText(content)) {
+      return [];
+    }
+    return [{ type: "text", text: content }];
   }
   if (!Array.isArray(content)) return [];
   const parts: ChatMessagePart[] = [];
   for (const block of content) {
     if (!block || typeof block !== "object") continue;
     const record = block as Record<string, unknown>;
-    const type = record["type"];
+    const type = asText(record["type"]) ?? "";
     if (type === "text") {
       const text = typeof record["text"] === "string" ? record["text"] : "";
-      if (text) parts.push({ type: "text", text });
+      if (text && !isToolCallOnlyText(text)) {
+        parts.push({ type: "text", text });
+      }
       continue;
     }
     if (type === "thinking") {
@@ -130,15 +190,24 @@ function mapAgentContentToParts(content: unknown): ChatMessagePart[] {
       if (thinking) parts.push({ type: "reasoning", text: thinking });
       continue;
     }
-    if (type === "toolCall") {
-      const toolCallId = typeof record["id"] === "string" ? record["id"] : "";
+    if (isToolPartType(type) || typeof record["toolCallId"] === "string" || typeof record["id"] === "string") {
+      const toolCallId = asText(record["id"]) || asText(record["toolCallId"]) || asText(record["tool_call_id"]) || "";
       if (!toolCallId) continue;
+
+      const functionPayload = record["function"] as Record<string, unknown> | undefined;
+      const toolNameFromType =
+        type === "tool-call" || type === "tool_call" ? "tool" : type.replace(/^tool-/, "");
+      const toolName =
+        asText(record["toolName"]) || asText(record["name"]) || asText(functionPayload?.["name"]) || toolNameFromType;
+      const input = "input" in record ? record["input"] : record["arguments"] ?? {};
+      const state = asText(record["state"]) ?? "input-available";
+
       parts.push({
         type: "dynamic-tool",
         toolCallId,
-        toolName: typeof record["name"] === "string" ? record["name"] : "tool",
-        input: record["arguments"] ?? {},
-        state: "input-available",
+        toolName,
+        input,
+        state,
       });
     }
   }

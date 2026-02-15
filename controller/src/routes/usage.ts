@@ -31,7 +31,9 @@ export const registerUsageRoutes = (app: Hono, context: AppContext): void => {
       try {
         const chatUsage = getUsageFromChatDatabase(context.config.data_dir);
         if (chatUsage) return ctx.json(chatUsage);
-      } catch {}
+      } catch (fallbackError) {
+        console.error("[Usage] Fallback also failed:", fallbackError);
+      }
       return ctx.json(emptyResponse());
     }
   });

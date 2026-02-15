@@ -7,6 +7,7 @@ import api from "@/lib/api";
 import { createUuid } from "@/lib/uuid";
 import type { ChatMessage, ChatMessagePart } from "@/lib/types";
 import type { Attachment } from "@/app/chat/types";
+import { parseChatModelId } from "@/app/chat/types";
 import {
   buildAttachmentsBlock,
   readAttachmentContent,
@@ -41,6 +42,7 @@ export interface UseChatSendUserMessageArgs {
       content: string;
       message_id: string;
       model?: string;
+      provider?: string;
       system?: string;
       mcp_enabled?: boolean;
       agent_mode?: boolean;
@@ -208,11 +210,13 @@ export function useChatSendUserMessage({
       const runSystemPrompt = attachmentsBlock
         ? buildRunSystemPrompt(systemPrompt, attachmentsBlock)
         : systemPrompt.trim() || undefined;
+      const parsedModel = parseChatModelId(selectedModel);
 
       await startRunStream(sessionId, {
         content: text,
         message_id: messageId,
-        model: selectedModel,
+        model: parsedModel.id || selectedModel,
+        provider: parsedModel.provider,
         system: runSystemPrompt,
         mcp_enabled: mcpEnabled,
         agent_mode: agentMode,

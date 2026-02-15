@@ -1,3 +1,4 @@
+// CRITICAL
 export interface Attachment {
   id: string;
   type: "file" | "image" | "audio";
@@ -10,9 +11,38 @@ export interface Attachment {
 
 export interface ModelOption {
   id: string;
+  provider: string;
   name?: string;
   maxModelLen?: number;
   active?: boolean;
+}
+
+export interface ParsedChatModel {
+  id: string;
+  provider: string;
+}
+
+export const DEFAULT_CHAT_PROVIDER = "openai";
+
+export function parseChatModelId(rawModelId: string): ParsedChatModel {
+  const trimmed = rawModelId.trim();
+  const delimiterIndex = trimmed.indexOf("/");
+  if (delimiterIndex <= 0 || delimiterIndex === trimmed.length - 1) {
+    return { id: trimmed, provider: DEFAULT_CHAT_PROVIDER };
+  }
+
+  const provider = trimmed.slice(0, delimiterIndex).trim();
+  const model = trimmed.slice(delimiterIndex + 1).trim();
+  return {
+    id: model.length > 0 ? model : trimmed,
+    provider: provider || DEFAULT_CHAT_PROVIDER,
+  };
+}
+
+export function buildDisplayModelLabel(modelId: string, provider: string): string {
+  if (!provider || provider === DEFAULT_CHAT_PROVIDER) return modelId;
+  if (modelId.startsWith(`${provider}/`)) return modelId;
+  return `${provider}/${modelId}`;
 }
 
 export interface ActivityItem {

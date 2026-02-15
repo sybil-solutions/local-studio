@@ -23,6 +23,7 @@ export const initialChatState: ChatState = {
   // Model
   selectedModel: "",
   availableModels: [],
+  customChatModels: [],
 
   // Layout
   isMobile: false,
@@ -92,4 +93,3 @@ export const initialChatState: ChatState = {
   // Toasts (ephemeral UI; not persisted)
   toasts: [],
 };
-

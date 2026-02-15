@@ -54,7 +54,6 @@ export async function getMermaid() {
       securityLevel: "loose",
       fontFamily: "inherit",
       logLevel: "fatal",
-      suppressErrorRendering: true,
     });
     mermaidInitialized = true;
   }

@@ -49,6 +49,7 @@ export function useChatPageContext({
     selectedModel: store.selectedModel,
     setSelectedModel: store.setSelectedModel,
     setAvailableModels: store.setAvailableModels,
+    customChatModels: store.customChatModels,
   });
 
   const { messagesContainerRef, messagesEndRef, handleScroll } = Hooks.useChatScroll({

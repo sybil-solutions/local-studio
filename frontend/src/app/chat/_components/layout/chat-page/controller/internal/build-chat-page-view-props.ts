@@ -155,6 +155,9 @@ export function buildChatPageViewProps(args: {
     setSystemPrompt: store.setSystemPrompt,
     setSelectedModel: store.setSelectedModel,
     availableModels: store.availableModels,
+    customChatModels: store.customChatModels,
+    onAddCustomChatModel: store.addCustomChatModel,
+    onRemoveCustomChatModel: store.removeCustomChatModel,
     deepResearch: store.deepResearch,
     setDeepResearch: store.setDeepResearch,
 

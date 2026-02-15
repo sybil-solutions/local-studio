@@ -18,7 +18,7 @@ export default {
     // OpenAPI routes (experimental)
     'src/routes/system-openapi.ts',
   ],
-  ignoreDependencies: ['@hono/zod-openapi', 'swagger-ui-dist', 'lint-staged'],
+  ignoreDependencies: ['swagger-ui-dist', 'lint-staged'],
   ignoreExportsUsedInFile: true,
   // Exports that are part of public API but not used internally
   ignoreWorkspaces: [],

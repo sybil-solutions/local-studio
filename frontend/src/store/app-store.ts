@@ -26,6 +26,7 @@ export const useAppStore = create<AppStore>()(
       partialize: (state) => ({
         selectedModel: state.selectedModel,
         systemPrompt: state.systemPrompt,
+        customChatModels: state.customChatModels,
         mcpEnabled: state.mcpEnabled,
         artifactsEnabled: state.artifactsEnabled,
         deepResearch: state.deepResearch,
