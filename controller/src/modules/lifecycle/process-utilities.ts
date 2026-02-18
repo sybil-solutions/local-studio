@@ -179,17 +179,62 @@ export const buildEnvironment = (recipe: Recipe): Record<string, string> => {
     env[key] = value;
   }
 
-  const cudaVisibleDevices =
-    recipe.extra_args["cuda_visible_devices"] ||
-    recipe.extra_args["cuda-visible-devices"] ||
-    recipe.extra_args["CUDA_VISIBLE_DEVICES"];
+  const readExtraArgument = (key: string): unknown => {
+    if (Object.prototype.hasOwnProperty.call(recipe.extra_args, key)) {
+      return recipe.extra_args[key];
+    }
+    const kebab = key.replace(/_/g, "-");
+    if (Object.prototype.hasOwnProperty.call(recipe.extra_args, kebab)) {
+      return recipe.extra_args[kebab];
+    }
+    const snake = key.replace(/-/g, "_");
+    if (Object.prototype.hasOwnProperty.call(recipe.extra_args, snake)) {
+      return recipe.extra_args[snake];
+    }
+    return undefined;
+  };
 
-  if (
-    cudaVisibleDevices !== undefined &&
-    cudaVisibleDevices !== null &&
-    cudaVisibleDevices !== false
-  ) {
-    env["CUDA_VISIBLE_DEVICES"] = String(cudaVisibleDevices);
+  const isDefined = (value: unknown): boolean => {
+    return value !== undefined && value !== null && value !== false;
+  };
+
+  const visibleDevices =
+    readExtraArgument("visible_devices") ??
+    readExtraArgument("VISIBLE_DEVICES") ??
+    readExtraArgument("CUDA_VISIBLE_DEVICES") ??
+    readExtraArgument("cuda_visible_devices") ??
+    readExtraArgument("cuda-visible-devices");
+  const hipVisibleDevices = readExtraArgument("hip_visible_devices") ?? readExtraArgument("HIP_VISIBLE_DEVICES");
+  const rocrVisibleDevices =
+    readExtraArgument("rocr_visible_devices") ?? readExtraArgument("ROCR_VISIBLE_DEVICES");
+
+  const forcedTool = (process.env["VLLM_STUDIO_GPU_SMI_TOOL"] ?? "").trim().toLowerCase();
+  const platform =
+    forcedTool === "nvidia-smi"
+      ? "cuda"
+      : forcedTool === "amd-smi" || forcedTool === "rocm-smi"
+        ? "rocm"
+        : "unknown";
+
+  if (isDefined(visibleDevices)) {
+    const value = String(visibleDevices);
+    if (platform === "cuda") {
+      env["CUDA_VISIBLE_DEVICES"] = value;
+    } else if (platform === "rocm") {
+      env["HIP_VISIBLE_DEVICES"] = value;
+      env["ROCR_VISIBLE_DEVICES"] = value;
+    } else {
+      env["CUDA_VISIBLE_DEVICES"] = value;
+      env["HIP_VISIBLE_DEVICES"] = value;
+      env["ROCR_VISIBLE_DEVICES"] = value;
+    }
+  }
+
+  if (isDefined(hipVisibleDevices)) {
+    env["HIP_VISIBLE_DEVICES"] = String(hipVisibleDevices);
+  }
+  if (isDefined(rocrVisibleDevices)) {
+    env["ROCR_VISIBLE_DEVICES"] = String(rocrVisibleDevices);
   }
 
   return env;

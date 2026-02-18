@@ -77,7 +77,7 @@ struct MarkdownText: View {
         .padding(.bottom, lang.isEmpty ? 0 : 4)
     }
     .frame(maxWidth: .infinity, alignment: .leading)
-    .background(Color(hex: 0x161514))
+    .background(AppTheme.chromePanel)
     .cornerRadius(8)
     .overlay(RoundedRectangle(cornerRadius: 8).stroke(AppTheme.border, lineWidth: 1))
   }

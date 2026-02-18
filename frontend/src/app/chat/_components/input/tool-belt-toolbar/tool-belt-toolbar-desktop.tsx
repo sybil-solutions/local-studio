@@ -18,6 +18,8 @@ import {
   ArrowUp,
   Volume2,
   VolumeX,
+  Phone,
+  PhoneOff,
 } from "lucide-react";
 import { ToolDropdown, DropdownItem } from "../tool-dropdown";
 import { buildDisplayModelLabel, type ModelOption } from "../../../types";
@@ -51,6 +53,8 @@ type Props = {
   onStopRecording?: () => void;
   onStop?: () => void;
   onSubmit?: () => void;
+  callModeEnabled?: boolean;
+  onCallModeToggle?: () => void;
 };
 
 export function ToolBeltToolbarDesktop({
@@ -82,6 +86,8 @@ export function ToolBeltToolbarDesktop({
   onStopRecording,
   onStop,
   onSubmit,
+  callModeEnabled,
+  onCallModeToggle,
 }: Props) {
   const hasActiveTools = Boolean(mcpEnabled || artifactsEnabled || deepResearchEnabled);
 
@@ -148,6 +154,25 @@ export function ToolBeltToolbarDesktop({
               <Volume2 className="h-3.5 w-3.5" />
             ) : (
               <VolumeX className="h-3.5 w-3.5" />
+            )}
+          </button>
+        )}
+
+        {onCallModeToggle && (
+          <button
+            onClick={onCallModeToggle}
+            disabled={disabled || isTranscribing}
+            className={`flex items-center justify-center p-2 rounded-lg transition-all:ease-in:200ms disabled:opacity-50 ${
+              callModeEnabled
+                ? "bg-green-500/20 text-green-400 ring-1 ring-green-500/40"
+                : "hover:bg-(--accent) text-(--dim)"
+            }`}
+            title={callModeEnabled ? "End call mode" : "Start call mode (hands-free)"}
+          >
+            {callModeEnabled ? (
+              <PhoneOff className="h-3.5 w-3.5" />
+            ) : (
+              <Phone className="h-3.5 w-3.5" />
             )}
           </button>
         )}

@@ -369,6 +369,7 @@ export const createToolCallStream = (
   let usageTracked = false;
   let thinkCarry = "";
   let inThink = false;
+  let emittedLines = 0;
   const thinkingOpenPrefixes = ["<thinking", "<analysis", "<think"];
   const thinkingClosePrefixes = ["</thinking", "</analysis", "</think"];
   const thinkingAllPrefixes = [...thinkingOpenPrefixes, ...thinkingClosePrefixes];
@@ -468,6 +469,7 @@ export const createToolCallStream = (
 
   const enqueueLine = (controller: ReadableStreamDefaultController<Uint8Array>, line: string): void => {
     controller.enqueue(encoder.encode(`${line}\n`));
+    emittedLines += 1;
   };
 
   const buildToolCallChunk = (toolCalls: ToolCall[]): string => {
@@ -645,45 +647,49 @@ export const createToolCallStream = (
         enqueueLine(controller, `data: ${JSON.stringify(parsed)}`);
       };
 
-      let result: ReaderResult;
-      try {
-        result = await reader.read();
-      } catch {
-        controller.close();
-        return;
-      }
-      if (result.done) {
-        if (buffer) {
-          const trailing = buffer.endsWith("\r") ? buffer.slice(0, -1) : buffer;
-          if (trailing.length > 0) {
-            pendingEventLines.push(trailing);
+      const emittedBeforePull = emittedLines;
+
+      while (emittedLines === emittedBeforePull) {
+        let result: ReaderResult;
+        try {
+          result = await reader.read();
+        } catch {
+          controller.close();
+          return;
+        }
+        if (result.done) {
+          if (buffer) {
+            const trailing = buffer.endsWith("\r") ? buffer.slice(0, -1) : buffer;
+            if (trailing.length > 0) {
+              pendingEventLines.push(trailing);
+            }
+            buffer = "";
           }
-          buffer = "";
+          if (pendingEventLines.length > 0) {
+            flushEvent(pendingEventLines);
+            pendingEventLines = [];
+          }
+          maybeInjectToolCalls(controller);
+          flushThinkCarry(controller);
+          controller.close();
+          return;
         }
-        if (pendingEventLines.length > 0) {
-          flushEvent(pendingEventLines);
-          pendingEventLines = [];
-        }
-        maybeInjectToolCalls(controller);
-        flushThinkCarry(controller);
-        controller.close();
-        return;
-      }
 
-      const chunk = result.value ?? new Uint8Array();
-      buffer += decoder.decode(chunk, { stream: true });
-      const lines = buffer.split("\n");
-      buffer = lines.pop() ?? "";
+        const chunk = result.value ?? new Uint8Array();
+        buffer += decoder.decode(chunk, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
 
-      for (const line of lines) {
-        const normalized = line.endsWith("\r") ? line.slice(0, -1) : line;
-        if (normalized === "") {
-          flushEvent(pendingEventLines);
-          pendingEventLines = [];
-          enqueueLine(controller, "");
-          continue;
+        for (const line of lines) {
+          const normalized = line.endsWith("\r") ? line.slice(0, -1) : line;
+          if (normalized === "") {
+            flushEvent(pendingEventLines);
+            pendingEventLines = [];
+            enqueueLine(controller, "");
+            continue;
+          }
+          pendingEventLines.push(normalized);
         }
-        pendingEventLines.push(normalized);
       }
     },
     async cancel(): Promise<void> {

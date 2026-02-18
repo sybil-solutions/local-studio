@@ -11,6 +11,10 @@ import type { DownloadStore } from "../modules/downloads/store";
 import type { LifetimeMetricsStore, PeakMetricsStore } from "../modules/monitoring/metrics-store";
 import type { McpStore } from "../modules/mcp/store";
 import type { RecipeStore } from "../modules/lifecycle/recipe-store";
+import type { JobStore } from "../stores/job-store";
+import type { JobManager } from "../modules/jobs/job-manager";
+import type { DistributedStore } from "../stores/distributed-store";
+import type { DistributedClusterManager } from "../modules/distributed/cluster-manager";
 
 /**
  * Application-wide dependency container.
@@ -25,6 +29,8 @@ export interface AppContext {
   processManager: ProcessManager;
   downloadManager: DownloadManager;
   runManager: ChatRunManager;
+  jobManager: JobManager;
+  distributedManager: DistributedClusterManager;
   stores: {
     recipeStore: RecipeStore;
     chatStore: ChatStore;
@@ -32,5 +38,7 @@ export interface AppContext {
     peakMetricsStore: PeakMetricsStore;
     lifetimeMetricsStore: LifetimeMetricsStore;
     mcpStore: McpStore;
+    jobStore: JobStore;
+    distributedStore: DistributedStore;
   };
 }

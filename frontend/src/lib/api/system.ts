@@ -1,5 +1,7 @@
 // CRITICAL
 import type {
+  CompatibilityReport,
+  ConfigData,
   GPU,
   HealthResponse,
   Metrics,
@@ -120,57 +122,8 @@ export function createSystemApi(core: ApiCore) {
 
     getUsageStats: (): Promise<UsageStats> => core.request("/usage"),
 
-    getSystemConfig: (): Promise<{
-      config: {
-        host: string;
-        port: number;
-        inference_port: number;
-        api_key_configured: boolean;
-        models_dir: string;
-        data_dir: string;
-        db_path: string;
-        sglang_python: string | null;
-        tabby_api_dir: string | null;
-        llama_bin: string | null;
-      };
-      services: Array<{
-        name: string;
-        port: number;
-        internal_port: number;
-        protocol: string;
-        status: string;
-        description: string | null;
-      }>;
-      environment: {
-        controller_url: string;
-        inference_url: string;
-        litellm_url: string;
-        frontend_url: string;
-      };
-      runtime: {
-        cuda: { driver_version: string | null; cuda_version: string | null };
-        gpus: { count: number; types: string[] };
-        backends: {
-          vllm: {
-            installed: boolean;
-            version: string | null;
-            python_path?: string | null;
-            binary_path?: string | null;
-          };
-          sglang: {
-            installed: boolean;
-            version: string | null;
-            python_path?: string | null;
-            binary_path?: string | null;
-          };
-          llamacpp: {
-            installed: boolean;
-            version: string | null;
-            python_path?: string | null;
-            binary_path?: string | null;
-          };
-        };
-      };
-    }> => core.request("/config"),
+    getSystemConfig: (): Promise<ConfigData> => core.request("/config"),
+
+    getCompatibility: (): Promise<CompatibilityReport> => core.request("/compat"),
   };
 }

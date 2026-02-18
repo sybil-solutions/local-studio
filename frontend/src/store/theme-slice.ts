@@ -18,12 +18,12 @@ export const createThemeSlice: StateCreator<ThemeSlice, [], [], ThemeSlice> = (s
     const theme = THEME_BY_ID.get(themeId);
     const fallbackTheme = THEME_BY_ID.get("warm-paper");
     const nextTheme = theme ?? fallbackTheme;
-    document.documentElement.setAttribute("data-theme", nextTheme.id);
-
     if (!nextTheme) {
       set({ themeId });
       return;
     }
+
+    document.documentElement.setAttribute("data-theme", nextTheme.id);
 
     Object.entries(nextTheme.tokens).forEach(([key, value]) => {
       document.documentElement.style.setProperty(`--${key}`, value);

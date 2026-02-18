@@ -116,7 +116,6 @@ export function useChatPageController(): ChatPageViewProps {
   const thinkingSnippet = useThinkingSnippet({
     isLoading,
     streamStalled,
-    elapsedSeconds: store.elapsedSeconds,
     executingTools: tools.executingTools,
     toolResultsMap: tools.toolResultsMap,
     thinkingStateContent: thinkingState.content,
@@ -127,7 +126,6 @@ export function useChatPageController(): ChatPageViewProps {
     streamError,
     currentSessionId: sessions.currentSessionId,
     selectedModel: store.selectedModel || "",
-    elapsedSeconds: store.elapsedSeconds,
     executingTools: tools.executingTools,
     lastEventTimeRef,
     activeRunIdRef,
@@ -181,6 +179,7 @@ export function useChatPageController(): ChatPageViewProps {
     clearPlan,
     executingToolsSize: tools.executingTools.size,
     activeRunIdRef,
+    runAbortControllerRef,
     lastEventTimeRef,
     setStreamStalled,
     getLastSessionId,

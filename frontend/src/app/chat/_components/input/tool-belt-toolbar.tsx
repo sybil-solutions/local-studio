@@ -37,6 +37,8 @@ export interface ToolBeltToolbarProps {
   onStopRecording?: () => void;
   onStop?: () => void;
   onSubmit?: () => void;
+  callModeEnabled?: boolean;
+  onCallModeToggle?: () => void;
 }
 
 export const ToolBeltToolbar = memo(function ToolBeltToolbar(props: ToolBeltToolbarProps) {

@@ -32,6 +32,9 @@ export interface UseChatToolBeltArgs {
 
   onSubmit: (text: string, attachments?: Attachment[]) => Promise<void>;
   onStop: () => Promise<void>;
+
+  callModeEnabled: boolean;
+  onCallModeToggle: () => void;
 }
 
 export function useChatToolBelt({
@@ -54,6 +57,8 @@ export function useChatToolBelt({
   clearPlan,
   onSubmit,
   onStop,
+  callModeEnabled,
+  onCallModeToggle,
 }: UseChatToolBeltArgs) {
   return useMemo(() => {
     return (
@@ -78,17 +83,21 @@ export function useChatToolBelt({
         onOpenChatSettings={onOpenChatSettings}
         hasSystemPrompt={systemPrompt.trim().length > 0}
         planDrawer={agentPlan ? <AgentPlanDrawer plan={agentPlan} onClear={clearPlan} /> : null}
+        callModeEnabled={callModeEnabled}
+        onCallModeToggle={onCallModeToggle}
       />
     );
   }, [
     agentPlan,
     artifactsEnabled,
     availableModels,
+    callModeEnabled,
     clearPlan,
     deepResearch.enabled,
     isLoading,
     mcpEnabled,
     onArtifactsToggle,
+    onCallModeToggle,
     onDeepResearchToggle,
     onMcpToggle,
     onModelChange,

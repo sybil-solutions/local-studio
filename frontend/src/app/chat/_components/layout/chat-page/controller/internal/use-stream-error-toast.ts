@@ -8,7 +8,6 @@ export interface UseStreamErrorToastArgs {
   streamError: string | null;
   currentSessionId: string | null;
   selectedModel: string;
-  elapsedSeconds: number;
   executingTools: Set<string>;
   lastEventTimeRef: MutableRefObject<number>;
   activeRunIdRef: MutableRefObject<string | null>;
@@ -18,12 +17,12 @@ export function useStreamErrorToast({
   streamError,
   currentSessionId,
   selectedModel,
-  elapsedSeconds,
   executingTools,
   lastEventTimeRef,
   activeRunIdRef,
 }: UseStreamErrorToastArgs) {
   const pushToast = useAppStore((s) => s.pushToast);
+  const elapsedSeconds = useAppStore((s) => s.elapsedSeconds);
   const lastPushedStreamErrorKeyRef = useRef<string>("");
 
   useEffect(() => {

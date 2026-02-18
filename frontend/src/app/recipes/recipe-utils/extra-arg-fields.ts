@@ -91,10 +91,34 @@ export const EXTRA_ARG_FIELDS: ExtraArgField[] = [
   { field: "disable_fastapi_docs", key: "disable-fastapi-docs", type: "boolean" },
   { field: "return_tokens_as_token_ids", key: "return-tokens-as-token-ids", type: "boolean" },
   {
+    field: "visible_devices",
+    key: "visible-devices",
+    type: "string",
+    aliases: [
+      "VISIBLE_DEVICES",
+      "visible_devices",
+      "CUDA_VISIBLE_DEVICES",
+      "cuda_visible_devices",
+      "cuda-visible-devices",
+    ],
+  },
+  {
     field: "cuda_visible_devices",
     key: "cuda-visible-devices",
     type: "string",
     aliases: ["CUDA_VISIBLE_DEVICES", "cuda_visible_devices"],
+  },
+  {
+    field: "hip_visible_devices",
+    key: "hip-visible-devices",
+    type: "string",
+    aliases: ["HIP_VISIBLE_DEVICES", "hip_visible_devices"],
+  },
+  {
+    field: "rocr_visible_devices",
+    key: "rocr-visible-devices",
+    type: "string",
+    aliases: ["ROCR_VISIBLE_DEVICES", "rocr_visible_devices"],
   },
 ];
 

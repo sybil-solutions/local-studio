@@ -59,6 +59,7 @@ export { StopCircle } from "lucide-react";
 export { Trash, Trash2 } from "lucide-react";
 export { Wrench } from "lucide-react";
 export { X } from "lucide-react";
+export { Volume2 } from "lucide-react";
 export { Zap } from "lucide-react";
 export { ZoomIn } from "lucide-react";
 export { ZoomOut } from "lucide-react";

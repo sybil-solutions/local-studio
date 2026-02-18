@@ -40,8 +40,14 @@ export function useRunEventHandler(args: UseRunEventHandlerArgs) {
       const { event: eventType, data } = event;
       const runId = typeof data["run_id"] === "string" ? data["run_id"] : undefined;
       const turnIndex = typeof data["turn_index"] === "number" ? data["turn_index"] : undefined;
-      const eventSessionId = typeof data["session_id"] === "string" ? data["session_id"] : currentSessionId;
+      const eventSessionId =
+        typeof data["session_id"] === "string" ? data["session_id"] : undefined;
       const runMeta = runId || typeof turnIndex === "number" ? { runId, turnIndex } : undefined;
+
+      if (!activeRunIdRef.current && runId) return;
+      if (runId && activeRunIdRef.current && runId !== activeRunIdRef.current) return;
+      if (!activeRunIdRef.current && !currentSessionId) return;
+      if (eventSessionId && currentSessionId && eventSessionId !== currentSessionId) return;
 
       switch (eventType) {
         case "run_start": {
@@ -179,6 +185,9 @@ export function useRunEventHandler(args: UseRunEventHandlerArgs) {
           runCompletedRef.current = true;
           setIsLoading(false);
 
+          // Always clear executing tools on run end — prevents stuck amber spinners.
+          updateExecutingTools(() => new Set());
+
           // Persist the last run duration for UI (mobile wants "how long the agent loop took").
           const start = useAppStore.getState().streamingStartTime;
           if (typeof start === "number" && start > 0) {
@@ -192,13 +201,14 @@ export function useRunEventHandler(args: UseRunEventHandlerArgs) {
           if (data["status"] && data["status"] !== "completed") {
             setStreamError(typeof data["error"] === "string" ? data["error"] : "Run failed");
           }
+          const titleSessionId = currentSessionId || eventSessionId;
           if (
-            currentSessionId &&
+            titleSessionId &&
             (currentSessionTitle === "New Chat" || currentSessionTitle === "Chat") &&
             lastUserInputRef.current
           ) {
             void generateTitle(
-              currentSessionId,
+              titleSessionId,
               lastUserInputRef.current,
               lastAssistantContentRef.current || "",
             );

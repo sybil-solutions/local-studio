@@ -24,7 +24,6 @@ type DerivedSlice = Pick<
   | "isLoading"
   | "streamError"
   | "streamStalled"
-  | "thinkingSnippet"
   | "showEmptyState"
 >;
 
@@ -63,6 +62,9 @@ type ChatSlice = Pick<
   | "messages"
   | "onForkMessage"
   | "onReprompt"
+  | "onListenMessage"
+  | "listeningMessageId"
+  | "listeningPending"
   | "openActivityPanel"
   | "openContextPanel"
 >;
@@ -102,8 +104,6 @@ export function buildChatPageViewProps(args: {
     isLoading: derived.isLoading,
     streamError: derived.streamError,
     streamStalled: derived.streamStalled,
-    thinkingSnippet: derived.thinkingSnippet,
-
     contextStats: context.contextStats,
     contextBreakdown: context.contextBreakdown,
     contextUsageLabel: context.contextUsageLabel,
@@ -134,6 +134,9 @@ export function buildChatPageViewProps(args: {
     showEmptyState: derived.showEmptyState,
     onForkMessage: chat.onForkMessage,
     onReprompt: chat.onReprompt,
+    onListenMessage: chat.onListenMessage,
+    listeningMessageId: chat.listeningMessageId,
+    listeningPending: chat.listeningPending,
     openActivityPanel: chat.openActivityPanel,
     openContextPanel: chat.openContextPanel,
 

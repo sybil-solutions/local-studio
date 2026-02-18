@@ -24,6 +24,9 @@ interface ChatMessageItemProps {
   onOpenContext?: () => void;
   onFork?: (messageId: string) => void;
   onReprompt?: (messageId: string) => void;
+  onListen?: (messageId: string) => void;
+  isListening?: boolean;
+  isListenPending?: boolean;
   onExport: (payload: {
     messageId: string;
     role: "user" | "assistant";
@@ -44,6 +47,9 @@ function ChatMessageItemBase({
   contextUsageLabel,
   onFork,
   onReprompt,
+  onListen,
+  isListening = false,
+  isListenPending = false,
   onExport,
   onOpenContext,
 }: ChatMessageItemProps) {
@@ -186,6 +192,22 @@ function ChatMessageItemBase({
             {onFork && (
               <button onClick={() => onFork(messageId)} className={actionButtonClassName} title="Fork">
                 <Icons.GitBranch className="h-3.5 w-3.5 text-(--dim)" />
+              </button>
+            )}
+            {onListen && (
+              <button
+                onClick={() => onListen(messageId)}
+                disabled={!canActOnContent && !isListening}
+                className={actionButtonClassName}
+                title={isListening ? "Stop" : "Listen"}
+              >
+                {isListenPending ? (
+                  <Icons.Loader2 className="h-3.5 w-3.5 text-(--hl1) animate-spin" />
+                ) : isListening ? (
+                  <Icons.StopCircle className="h-3.5 w-3.5 text-(--hl1)" />
+                ) : (
+                  <Icons.Volume2 className="h-3.5 w-3.5 text-(--dim)" />
+                )}
               </button>
             )}
             <button

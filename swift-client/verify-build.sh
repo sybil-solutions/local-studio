@@ -1,46 +1,57 @@
 #!/bin/bash
 # CRITICAL
-# Build verification script for Swift client
-set -e
+# Build verification script for Swift client (iOS + macOS)
+set -euo pipefail
 
 cd "$(dirname "$0")"
 
-echo "🔧 Step 1/3: Regenerating Xcode project..."
 if ! command -v xcodegen &> /dev/null; then
   echo "❌ XcodeGen not installed. Run: brew install xcodegen"
   exit 1
 fi
+
+echo "🔧 Step 1/3: Regenerating Xcode project..."
 xcodegen generate
 
-echo "🏗️  Step 2/3: Building project..."
-xcodebuild -project vllm-studio.xcodeproj \
-  -scheme vllm-studio \
-  -destination 'platform=iOS Simulator,name=iPhone 15' \
-  clean build \
-  | tee /tmp/swift-build.log \
-  | grep -E "^(Build|==|/Users|error:|warning:)" || true
+run_build() {
+  local label="$1"
+  local command="$2"
+  local log_file="$3"
 
-BUILD_EXIT_CODE=${PIPESTATUS[0]}
+  echo "🏗️  Building $label..."
+  set +e
+  eval "$command" | tee "$log_file" | grep -E "^(Build|==|/Users|error:|warning:)" || true
+  local exit_code=${PIPESTATUS[0]}
+  set -e
+
+  local error_count
+  local warning_count
+  error_count=$(grep -c "error:" "$log_file" || echo "0")
+  warning_count=$(grep -c "warning:" "$log_file" || echo "0")
+
+  if [ "$exit_code" -ne 0 ]; then
+    echo "❌ $label build failed"
+    echo "   Errors: $error_count"
+    echo "   Warnings: $warning_count"
+    echo "   Full log: $log_file"
+    exit "$exit_code"
+  fi
+
+  echo "✅ $label build passed (warnings: $warning_count)"
+}
+
+echo "📱 Step 2/3: Validating app targets..."
+run_build \
+  "iOS Simulator" \
+  "xcodebuild -project vllm-studio.xcodeproj -scheme vllm-studio -destination 'platform=iOS Simulator,name=iPhone 15,OS=18.1' clean build" \
+  "/tmp/swift-build-ios.log"
+
+run_build \
+  "macOS" \
+  "xcodebuild -project vllm-studio.xcodeproj -scheme vllm-studio-mac -destination 'platform=macOS' clean build" \
+  "/tmp/swift-build-mac.log"
 
 echo ""
-echo "📊 Step 3/3: Checking results..."
-ERROR_COUNT=$(grep -c "error:" /tmp/swift-build.log || echo "0")
-WARNING_COUNT=$(grep -c "warning:" /tmp/swift-build.log || echo "0")
-
-if [ $BUILD_EXIT_CODE -eq 0 ]; then
-  echo "✅ BUILD SUCCESSFUL"
-  echo "   Warnings: $WARNING_COUNT"
-  exit 0
-else
-  echo "❌ BUILD FAILED"
-  echo "   Errors: $ERROR_COUNT"
-  echo "   Warnings: $WARNING_COUNT"
-  echo ""
-  echo "Full build log: /tmp/swift-build.log"
-  echo ""
-  echo "Common fixes:"
-  echo "  - Missing imports: Add 'import UIKit' or 'import Foundation'"
-  echo "  - Scope errors: Move related functions to same file"
-  echo "  - Type errors: Use full qualification (e.g., ColorScheme.dark)"
-  exit 1
-fi
+echo "✅ Step 3/3: All Swift builds succeeded"
+echo "   iOS log: /tmp/swift-build-ios.log"
+echo "   macOS log: /tmp/swift-build-mac.log"

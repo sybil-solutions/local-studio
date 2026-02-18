@@ -7,25 +7,34 @@ final class ThemeManager: ObservableObject {
     @Published var currentTheme: AppTheme
     
     init(settingsStore: SettingsStore) {
-        self.currentTheme = AppTheme.all.first { $0.id == settingsStore.themeId } ?? AppTheme.default
+        let selectedTheme = AppTheme.all.first { $0.id == settingsStore.themeId } ?? AppTheme.default
+        self.currentTheme = selectedTheme
+        AppTheme.current = selectedTheme
     }
     
     func setTheme(byId id: String) {
         if let theme = AppTheme.all.first(where: { $0.id == id }) {
-            self.currentTheme = theme
+            updateTheme(theme)
         } else {
-            self.currentTheme = AppTheme.default
+            updateTheme(AppTheme.default)
         }
     }
     
     func setTheme(_ theme: AppTheme) {
-        self.currentTheme = theme
+        updateTheme(theme)
+    }
+    
+    private func updateTheme(_ theme: AppTheme) {
+        currentTheme = theme
+        AppTheme.current = theme
     }
 }
 
 /// Environment key for theme
 struct ThemeKey: EnvironmentKey {
-    static let defaultValue: ThemeManager = ThemeManager(settingsStore: SettingsStore())
+    static let defaultValue: ThemeManager = MainActor.assumeIsolated {
+        ThemeManager(settingsStore: SettingsStore())
+    }
 }
 
 extension EnvironmentValues {

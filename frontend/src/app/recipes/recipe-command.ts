@@ -6,7 +6,10 @@ const appendExtraArgsToCommand = (args: string[], extraArgs: Record<string, unkn
   const internalKeys = new Set([
     "venv_path",
     "env_vars",
+    "visible_devices",
     "cuda_visible_devices",
+    "hip_visible_devices",
+    "rocr_visible_devices",
     "description",
     "tags",
     "status",
@@ -63,7 +66,10 @@ const appendLlamacppArgsToCommand = (args: string[], extraArgs: Record<string, u
   const internalKeys = new Set([
     "venv_path",
     "env_vars",
+    "visible_devices",
     "cuda_visible_devices",
+    "hip_visible_devices",
+    "rocr_visible_devices",
     "description",
     "tags",
     "status",

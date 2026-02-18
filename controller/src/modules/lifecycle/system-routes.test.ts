@@ -119,6 +119,18 @@ describe("System Routes", () => {
     });
   });
 
+  describe("GET /compat", () => {
+    it("returns a compatibility report", async () => {
+      const res = await app.request("/compat");
+      expect(res.status).toBe(200);
+
+      const json = await res.json();
+      expect(json).toHaveProperty("platform");
+      expect(json).toHaveProperty("gpu_monitoring");
+      expect(Array.isArray(json.checks)).toBe(true);
+    });
+  });
+
   describe("GET /config", () => {
     it("returns system configuration", async () => {
       const res = await app.request("/config");

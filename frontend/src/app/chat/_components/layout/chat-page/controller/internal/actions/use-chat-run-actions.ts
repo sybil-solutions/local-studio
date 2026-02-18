@@ -174,7 +174,9 @@ export function useChatRunActions({
     store.setStreamingStartTime(null);
     store.setElapsedSeconds(0);
     setIsLoading(false);
-  }, [activeRunIdRef, runAbortControllerRef, sessions.currentSessionId, setIsLoading, store]);
+    // Clear tool execution state so amber spinners don't get stuck
+    setExecutingTools(new Set());
+  }, [activeRunIdRef, runAbortControllerRef, sessions.currentSessionId, setIsLoading, setExecutingTools, store]);
 
   return { handleSend, handleReprompt, handleForkMessage, handleStop };
 }

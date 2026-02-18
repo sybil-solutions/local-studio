@@ -1,11 +1,22 @@
 // CRITICAL
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
+import type {
+  RuntimeBackendInfo,
+  RuntimeCudaInfo,
+  RuntimePlatformInfo,
+  RuntimePlatformKind,
+  RuntimeTorchBuildInfo,
+  SystemRuntimeInfo,
+} from "./types";
 import type { Config } from "../../config/env";
-import type { RuntimeBackendInfo, RuntimeCudaInfo, SystemRuntimeInfo } from "./types";
+import { resolveBinary, runCommand } from "../../core/command";
 import { getGpuInfo } from "./gpu";
 import { getVllmRuntimeInfo } from "./vllm-runtime";
-import { resolveBinary, runCommand } from "../../core/command";
+import { probeGpuMonitoring } from "./platform/compatibility-report";
+import { getRocmInfo, resolveRocmSmiTool } from "./platform/rocm-info";
+import { resolveNvidiaSmiBinary } from "./platform/smi-tools";
+import { getTorchBuildInfo } from "./platform/torch-info";
 
 const extractCudaVersion = (output: string): string | null => {
   const match = output.match(/CUDA Version\s*:\s*([0-9.]+)/i);
@@ -52,6 +63,24 @@ export const getCudaInfo = (): RuntimeCudaInfo => {
     driver_version: driverVersion,
     cuda_version: cudaVersion,
   };
+};
+
+export const detectPlatformKind = (args: {
+  forcedSmiTool: string | undefined;
+  torch: RuntimeTorchBuildInfo;
+  hasNvidiaSmi: boolean;
+  hasRocmSmi: boolean;
+}): RuntimePlatformKind => {
+  const forced = args.forcedSmiTool?.trim();
+  if (forced === "nvidia-smi") return "cuda";
+  if (forced === "amd-smi" || forced === "rocm-smi") return "rocm";
+
+  if (args.torch.torch_hip) return "rocm";
+  if (args.torch.torch_cuda) return "cuda";
+
+  if (args.hasNvidiaSmi) return "cuda";
+  if (args.hasRocmSmi) return "rocm";
+  return "unknown";
 };
 
 const getSglangRuntimeInfo = (config: Config): RuntimeBackendInfo => {
@@ -117,8 +146,7 @@ const getLlamacppRuntimeInfo = (config: Config): RuntimeBackendInfo => {
     };
   }
 
-  const version =
-    parseLlamaVersion(versionResult.stdout) ?? parseLlamaVersion(versionResult.stderr);
+  const version = parseLlamaVersion(versionResult.stdout) ?? parseLlamaVersion(versionResult.stderr);
   return {
     installed: Boolean(version),
     version,
@@ -139,8 +167,28 @@ export const getSystemRuntimeInfo = async (config: Config): Promise<SystemRuntim
 
   const llamaInfo = getLlamacppRuntimeInfo(config);
 
+  const pythonForTorch = config.sglang_python || vllmInfo.python_path || "python3";
+  const torch = getTorchBuildInfo(pythonForTorch);
+
+  const forcedSmiTool = process.env["VLLM_STUDIO_GPU_SMI_TOOL"];
+  const hasNvidiaSmi = Boolean(resolveNvidiaSmiBinary());
+  const rocmSmiTool = resolveRocmSmiTool();
+  const hasRocmSmi = Boolean(rocmSmiTool);
+  const kind = detectPlatformKind({ forcedSmiTool, torch, hasNvidiaSmi, hasRocmSmi });
+
+  const platform: RuntimePlatformInfo = {
+    kind,
+    vendor: kind === "cuda" ? "nvidia" : kind === "rocm" ? "amd" : null,
+    rocm: kind === "rocm" ? getRocmInfo(rocmSmiTool) : null,
+    torch,
+  };
+
+  const gpuMonitoring = probeGpuMonitoring(kind, rocmSmiTool);
+
   return {
-    cuda: getCudaInfo(),
+    platform,
+    gpu_monitoring: gpuMonitoring,
+    cuda: kind === "cuda" ? getCudaInfo() : { driver_version: null, cuda_version: null },
     gpus: {
       count: gpus.length,
       types,

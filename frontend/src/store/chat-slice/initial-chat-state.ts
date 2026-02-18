@@ -56,6 +56,9 @@ export const initialChatState: ChatState = {
   recordingDuration: 0,
   isTTSEnabled: false,
 
+  callModeEnabled: false,
+  callModeSpeakingMessageId: null,
+
   // MCP action state
   mcpPendingServer: null,
   mcpActionError: null,

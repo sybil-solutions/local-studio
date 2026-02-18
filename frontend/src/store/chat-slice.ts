@@ -142,6 +142,9 @@ export const createChatSlice: StateCreator<ChatSlice, [], [], ChatSlice> = (set)
   setRecordingDuration: (recordingDuration) => set({ recordingDuration }),
   setIsTTSEnabled: (isTTSEnabled) => set({ isTTSEnabled }),
 
+  setCallModeEnabled: (callModeEnabled) => set({ callModeEnabled }),
+  setCallModeSpeakingMessageId: (callModeSpeakingMessageId) => set({ callModeSpeakingMessageId }),
+
   // MCP action state
   setMcpPendingServer: (mcpPendingServer) => set({ mcpPendingServer }),
   setMcpActionError: (mcpActionError) => set({ mcpActionError }),

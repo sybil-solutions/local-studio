@@ -12,6 +12,9 @@ import { registerModelsRoutes } from "../modules/models/routes";
 import { registerAllMonitoringRoutes } from "../modules/monitoring/routes";
 import { registerAllProxyRoutes } from "../modules/proxy/routes";
 import { registerStudioRoutes } from "../modules/studio/routes";
+import { registerAudioRoutes } from "../modules/audio/routes";
+import { registerJobsRoutes } from "../modules/jobs/routes";
+import { registerDistributedRoutes } from "../modules/distributed/routes";
 import { createOpenApiSpec } from "./openapi-spec";
 
 /**
@@ -47,6 +50,9 @@ export const createApp = (context: AppContext): Hono => {
   registerAllChatRoutes(app, context);
   registerAllMonitoringRoutes(app, context);
   registerMcpRoutes(app, context);
+  registerAudioRoutes(app, context);
+  registerJobsRoutes(app, context, context.jobManager);
+  registerDistributedRoutes(app, context.distributedManager);
   registerAllProxyRoutes(app, context);
 
   // OpenAPI documentation endpoints

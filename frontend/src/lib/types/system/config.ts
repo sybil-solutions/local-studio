@@ -1,8 +1,4 @@
 // CRITICAL
-/**
- * Controller/system configuration types.
- */
-
 export interface ServiceInfo {
   name: string;
   port: number;
@@ -39,9 +35,40 @@ export interface RuntimeBackendInfo {
   binary_path?: string | null;
 }
 
+export type RuntimePlatformKind = "cuda" | "rocm" | "unknown";
+
+export type RuntimeRocmSmiTool = "amd-smi" | "rocm-smi";
+
+export type RuntimeGpuMonitoringTool = "nvidia-smi" | RuntimeRocmSmiTool;
+
 export interface RuntimeCudaInfo {
   driver_version: string | null;
   cuda_version: string | null;
+}
+
+export interface RuntimeRocmInfo {
+  rocm_version: string | null;
+  hip_version: string | null;
+  smi_tool: RuntimeRocmSmiTool | null;
+  gpu_arch: string[];
+}
+
+export interface RuntimeTorchBuildInfo {
+  torch_version: string | null;
+  torch_cuda: string | null;
+  torch_hip: string | null;
+}
+
+export interface RuntimePlatformInfo {
+  kind: RuntimePlatformKind;
+  vendor: "nvidia" | "amd" | null;
+  rocm: RuntimeRocmInfo | null;
+  torch: RuntimeTorchBuildInfo;
+}
+
+export interface RuntimeGpuMonitoringInfo {
+  available: boolean;
+  tool: RuntimeGpuMonitoringTool | null;
 }
 
 export interface RuntimeGpuInfoSummary {
@@ -50,6 +77,8 @@ export interface RuntimeGpuInfoSummary {
 }
 
 export interface SystemRuntimeInfo {
+  platform: RuntimePlatformInfo;
+  gpu_monitoring: RuntimeGpuMonitoringInfo;
   cuda: RuntimeCudaInfo;
   gpus: RuntimeGpuInfoSummary;
   backends: {
@@ -66,6 +95,26 @@ export interface ConfigData {
   runtime: SystemRuntimeInfo;
 }
 
+export type CompatibilitySeverity = "info" | "warn" | "error";
+
+export interface CompatibilityCheck {
+  id: string;
+  severity: CompatibilitySeverity;
+  message: string;
+  evidence: string | null;
+  suggested_fix: string | null;
+}
+
+export interface CompatibilityReport {
+  platform: {
+    kind: RuntimePlatformKind;
+  };
+  gpu_monitoring: RuntimeGpuMonitoringInfo;
+  torch: RuntimeTorchBuildInfo;
+  backends: SystemRuntimeInfo["backends"];
+  checks: CompatibilityCheck[];
+}
+
 export interface DeepResearchConfig {
   enabled: boolean;
   maxSources: number;
@@ -73,4 +122,3 @@ export interface DeepResearchConfig {
   autoSummarize: boolean;
   includeCitations: boolean;
 }
-

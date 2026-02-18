@@ -149,11 +149,16 @@ export function RecipeModalTabResources({
         </div>
 
         <div>
-          <label className="block text-xs font-medium text-(--dim) mb-2">CUDA Visible Devices</label>
+          <label className="block text-xs font-medium text-(--dim) mb-2">Visible Devices</label>
           <input
             type="text"
-            value={recipe.cuda_visible_devices || ""}
-            onChange={(e) => onChange({ ...recipe, cuda_visible_devices: e.target.value || undefined })}
+            value={recipe.visible_devices ?? recipe.cuda_visible_devices ?? ""}
+            onChange={(e) =>
+              onChange({
+                ...recipe,
+                visible_devices: e.target.value || undefined,
+                cuda_visible_devices: undefined,
+              })}
             placeholder="0,1,2,3 or all"
             className="w-full px-3 py-2 bg-(--bg) border border-(--border) rounded-lg text-sm focus:outline-none focus:border-(--accent)"
           />

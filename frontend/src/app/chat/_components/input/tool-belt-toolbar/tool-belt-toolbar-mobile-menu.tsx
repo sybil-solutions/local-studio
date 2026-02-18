@@ -18,6 +18,8 @@ import {
   PanelRightOpen,
   Mic,
   MicOff,
+  Phone,
+  PhoneOff,
 } from "lucide-react";
 import { ToolDropdown, DropdownItem } from "../tool-dropdown";
 
@@ -49,6 +51,8 @@ type Props = {
   onAttachImage?: () => void;
   onStartRecording?: () => void;
   onStopRecording?: () => void;
+  callModeEnabled?: boolean;
+  onCallModeToggle?: () => void;
 };
 
 export function ToolBeltToolbarMobileMenu({
@@ -75,6 +79,8 @@ export function ToolBeltToolbarMobileMenu({
   onAttachImage,
   onStartRecording,
   onStopRecording,
+  callModeEnabled,
+  onCallModeToggle,
 }: Props) {
   const hasActiveTools = Boolean(mcpEnabled || artifactsEnabled || deepResearchEnabled);
   const hasMobileMenuActive = Boolean(
@@ -83,7 +89,8 @@ export function ToolBeltToolbarMobileMenu({
       hasSystemPrompt ||
       isRecording ||
       isTranscribing ||
-      isTTSEnabled,
+      isTTSEnabled ||
+      callModeEnabled,
   );
 
   const showAttachmentSection = Boolean(onAttachFile || onAttachImage);
@@ -162,6 +169,16 @@ export function ToolBeltToolbarMobileMenu({
               isActive={isTTSEnabled}
               onClick={onTTSToggle}
               disabled={disabled}
+              closeOnClick
+            />
+          )}
+          {onCallModeToggle && (
+            <DropdownItem
+              icon={callModeEnabled ? PhoneOff : Phone}
+              label={callModeEnabled ? "End call mode" : "Call mode (hands-free)"}
+              isActive={callModeEnabled}
+              onClick={onCallModeToggle}
+              disabled={disabled || isTranscribing}
               closeOnClick
             />
           )}

@@ -52,6 +52,7 @@ struct ColorCircle: View {
 struct ThemeSelector_Previews: PreviewProvider {
     static var previews: some View {
         ThemeSelector()
+            .environmentObject(AppContainer())
             .environmentObject(ThemeManager(settingsStore: SettingsStore()))
     }
 }

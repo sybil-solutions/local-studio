@@ -29,6 +29,9 @@ export interface UseChatUiActionsArgs {
   thinkingActive: boolean;
   executingToolsSize: number;
   activityGroupsLength: number;
+
+  callModeEnabled: boolean;
+  onCallModeToggle: () => void;
 }
 
 export function useChatUiActions({
@@ -48,6 +51,8 @@ export function useChatUiActions({
   thinkingActive,
   executingToolsSize,
   activityGroupsLength,
+  callModeEnabled,
+  onCallModeToggle,
 }: UseChatUiActionsArgs) {
   const handleModelChange = useCallback(
     (modelId: string) => {
@@ -112,6 +117,8 @@ export function useChatUiActions({
     clearPlan,
     onSubmit,
     onStop,
+    callModeEnabled,
+    onCallModeToggle,
   });
 
   const { openActivityPanel, openContextPanel, handleOpenAgentFile } = useChatSidebarController({

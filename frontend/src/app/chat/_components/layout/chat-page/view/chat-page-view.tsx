@@ -81,7 +81,6 @@ export const ChatPageView = memo(function ChatPageView(props: ChatPageViewProps)
             <ChatConversation
               messages={props.messages}
               isLoading={props.isLoading}
-              thinkingSnippet={props.thinkingSnippet}
               artifactsEnabled={props.artifactsEnabled}
               artifactsByMessage={props.artifactsByMessage}
               selectedModel={props.selectedModel}
@@ -91,6 +90,9 @@ export const ChatPageView = memo(function ChatPageView(props: ChatPageViewProps)
               onOpenAgentFile={props.onOpenAgentFile}
               onFork={props.onForkMessage}
               onReprompt={props.onReprompt}
+              onListen={props.onListenMessage}
+              listeningMessageId={props.listeningMessageId}
+              listeningPending={props.listeningPending}
               onOpenContext={props.openContextPanel}
               showEmptyState={props.showEmptyState}
               toolBelt={props.toolBelt}

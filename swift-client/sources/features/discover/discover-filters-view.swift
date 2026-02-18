@@ -73,7 +73,7 @@ struct DiscoverFiltersView: View {
           Button(action: onRefresh) {
             Image(systemName: "arrow.clockwise")
               .font(.system(size: 13, weight: .semibold))
-              .foregroundColor(.white)
+              .foregroundColor(AppTheme.foreground)
               .frame(width: 36, height: 32)
               .background(AppTheme.accentStrong)
               .cornerRadius(10)

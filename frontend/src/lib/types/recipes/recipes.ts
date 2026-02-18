@@ -172,7 +172,10 @@ export interface RecipeEditor {
 
   // Other
   python_path?: string | null;
+  visible_devices?: string;
   cuda_visible_devices?: string;
+  hip_visible_devices?: string;
+  rocr_visible_devices?: string;
   extra_args?: Record<string, unknown>;
   env_vars?: Record<string, string> | null;
 }

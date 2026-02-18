@@ -1,0 +1,42 @@
+# CRITICAL
+name: Swift Client CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "swift-client/**"
+      - ".github/workflows/swift-client.yml"
+  pull_request:
+    paths:
+      - "swift-client/**"
+      - ".github/workflows/swift-client.yml"
+
+jobs:
+  swift-client:
+    runs-on: macos-15
+    defaults:
+      run:
+        working-directory: swift-client
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Build iOS (simulator)
+        run: >-
+          xcodebuild -project vllm-studio.xcodeproj
+          -scheme vllm-studio
+          -destination 'platform=iOS Simulator,name=iPhone 15,OS=18.1'
+          clean build
+
+      - name: Build macOS app
+        run: >-
+          xcodebuild -project vllm-studio.xcodeproj
+          -scheme vllm-studio-mac
+          -destination 'platform=macOS'
+          clean build

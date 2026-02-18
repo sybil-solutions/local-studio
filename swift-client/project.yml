@@ -32,6 +32,7 @@ targets:
       DEVELOPMENT_TEAM: 953GG2G474
       CODE_SIGN_STYLE: Automatic
       INFOPLIST_FILE: resources/info.plist
+      SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD: NO
 
   vllm-studio-mac:
     type: application

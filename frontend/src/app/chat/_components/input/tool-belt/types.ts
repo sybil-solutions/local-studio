@@ -22,5 +22,7 @@ export interface ToolBeltProps {
   deepResearchEnabled?: boolean;
   onDeepResearchToggle?: () => void;
   planDrawer?: ReactNode;
+  callModeEnabled?: boolean;
+  onCallModeToggle?: () => void;
 }
 

@@ -9,17 +9,16 @@ import { useSetup } from "../setup/hooks/use-setup";
 export default function ConfigsPage() {
   const configs = useConfigs();
   const setup = useSetup();
-  const [setupComplete, setSetupComplete] = useState(false);
-
-  useEffect(() => {
-    const completed = localStorage.getItem("vllm-studio-setup-complete") === "true";
-    setSetupComplete(completed);
-  }, []);
+  const [setupComplete] = useState(() => {
+    if (typeof window === "undefined") {
+      return false;
+    }
+    return localStorage.getItem("vllm-studio-setup-complete") === "true";
+  });
 
   useEffect(() => {
     if (configs.hasConfigData && !setupComplete) {
       localStorage.setItem("vllm-studio-setup-complete", "true");
-      setSetupComplete(true);
     }
   }, [configs.hasConfigData, setupComplete]);
 
@@ -33,6 +32,7 @@ export default function ConfigsPage() {
   return (
     <ConfigsView
       data={configs.data}
+      compatibilityReport={configs.compatibilityReport}
       loading={configs.loading}
       error={configs.error}
       apiSettings={configs.apiSettings}

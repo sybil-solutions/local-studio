@@ -137,7 +137,10 @@ export const appendExtraArguments = (
   const internalKeys = new Set([
     "venv_path",
     "env_vars",
+    "visible_devices",
     "cuda_visible_devices",
+    "hip_visible_devices",
+    "rocr_visible_devices",
     "description",
     "tags",
     "status",
@@ -280,7 +283,10 @@ const appendLlamacppArguments = (
   const internalKeys = new Set([
     "venv_path",
     "env_vars",
+    "visible_devices",
     "cuda_visible_devices",
+    "hip_visible_devices",
+    "rocr_visible_devices",
     "description",
     "tags",
     "status",

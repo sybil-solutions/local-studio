@@ -21,7 +21,6 @@ export function useChatPageStore() {
       setActiveArtifactId: state.setActiveArtifactId,
       deepResearch: state.deepResearch,
       setDeepResearch: state.setDeepResearch,
-      elapsedSeconds: state.elapsedSeconds,
       setElapsedSeconds: state.setElapsedSeconds,
       streamingStartTime: state.streamingStartTime,
       setStreamingStartTime: state.setStreamingStartTime,

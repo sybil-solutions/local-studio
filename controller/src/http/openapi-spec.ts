@@ -62,6 +62,17 @@ export const createOpenApiSpec = (context: AppContext): Record<string, unknown> 
         },
       },
     },
+    "/compat": {
+      get: {
+        summary: "Compatibility report",
+        description: "Get platform/runtime/tooling checks with actionable fixes",
+        responses: {
+          "200": {
+            description: "Compatibility report",
+          },
+        },
+      },
+    },
     "/recipes": {
       get: {
         summary: "List recipes",
@@ -119,6 +130,93 @@ export const createOpenApiSpec = (context: AppContext): Record<string, unknown> 
         },
       },
     },
+    "/distributed/nodes/register": {
+      post: {
+        summary: "Register distributed node",
+        description: "Register or update a node that can host model layers",
+        responses: {
+          "201": {
+            description: "Node registered",
+          },
+        },
+      },
+    },
+    "/distributed/nodes/{node_id}/heartbeat": {
+      post: {
+        summary: "Distributed heartbeat",
+        description: "Update heartbeat/metrics for a registered node",
+        parameters: [
+          {
+            name: "node_id",
+            in: "path",
+            required: true,
+            schema: { type: "string" },
+          },
+        ],
+        responses: {
+          "200": {
+            description: "Heartbeat accepted",
+          },
+          "404": {
+            description: "Node not found",
+          },
+        },
+      },
+    },
+    "/distributed/allocations/{node_id}": {
+      put: {
+        summary: "Assign manual layer range",
+        description: "Set manual [start_layer, end_layer) for one model/node pair",
+        parameters: [
+          {
+            name: "node_id",
+            in: "path",
+            required: true,
+            schema: { type: "string" },
+          },
+        ],
+        responses: {
+          "200": {
+            description: "Allocation updated",
+          },
+        },
+      },
+      delete: {
+        summary: "Clear manual layer range",
+        description: "Delete manual layer allocation for one model/node pair",
+        parameters: [
+          {
+            name: "node_id",
+            in: "path",
+            required: true,
+            schema: { type: "string" },
+          },
+        ],
+        responses: {
+          "200": {
+            description: "Allocation removed",
+          },
+        },
+      },
+    },
+    "/distributed/topology/{model_id}": {
+      get: {
+        summary: "Validate model topology",
+        description: "Inspect gaps/overlaps across manual layer assignments",
+        parameters: [
+          {
+            name: "model_id",
+            in: "path",
+            required: true,
+            schema: { type: "string" },
+          },
+        ],
+        responses: {
+          "200": {
+            description: "Topology report",
+          },
+        },
+      },
+    },
   },
 });
-

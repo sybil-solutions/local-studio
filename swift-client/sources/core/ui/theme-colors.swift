@@ -25,7 +25,7 @@ struct ThemeFontsModifier: ViewModifier {
     
     func body(content: Content) -> some View {
         content
-            .font(fonts.body)
+            .font(fonts.bodyFont)
     }
 }
 

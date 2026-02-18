@@ -1,6 +1,6 @@
 // CRITICAL
-import type { GPU, LaunchProgressData, Metrics, ProcessInfo } from "@/lib/types";
-import type { StatusData } from "./types";
+import type { GPU, LaunchProgressData, Metrics, ProcessInfo, RuntimePlatformKind } from "@/lib/types";
+import type { JobEntry, LeaseInfo, RuntimeSummaryData, ServiceEntry, StatusData } from "./types";
 
 function areProcessInfosEqual(a: ProcessInfo | null, b: ProcessInfo | null) {
   if (a === b) return true;
@@ -48,6 +48,10 @@ export function areGpusEqual(a: GPU[], b: GPU[]) {
   return true;
 }
 
+export function arePlatformKindsEqual(a: RuntimePlatformKind | null, b: RuntimePlatformKind | null) {
+  return a === b;
+}
+
 export function areMetricsEqual(a: Metrics | null, b: Metrics | null) {
   if (a === b) return true;
   if (!a || !b) return false;
@@ -73,5 +77,46 @@ export function areLaunchProgressEqual(a: LaunchProgressData | null, b: LaunchPr
     a.message === b.message &&
     (a.progress ?? null) === (b.progress ?? null)
   );
+}
+
+export function areRuntimeSummariesEqual(a: RuntimeSummaryData | null, b: RuntimeSummaryData | null) {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  if (a.platform.kind !== b.platform.kind) return false;
+  if (a.gpu_monitoring.available !== b.gpu_monitoring.available) return false;
+  if (a.gpu_monitoring.tool !== b.gpu_monitoring.tool) return false;
+  for (const key of ["vllm", "sglang", "llamacpp"] as const) {
+    if (a.backends[key].installed !== b.backends[key].installed) return false;
+    if (a.backends[key].version !== b.backends[key].version) return false;
+  }
+  return true;
+}
+
+export function areServicesEqual(a: ServiceEntry[], b: ServiceEntry[]) {
+  if (a === b) return true;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    const l = a[i]!;
+    const r = b[i]!;
+    if (l.id !== r.id || l.kind !== r.kind || l.status !== r.status) return false;
+  }
+  return true;
+}
+
+export function areLeasesEqual(a: LeaseInfo | null, b: LeaseInfo | null) {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  return a.holder === b.holder;
+}
+
+export function areJobsEqual(a: JobEntry[], b: JobEntry[]) {
+  if (a === b) return true;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    const l = a[i]!;
+    const r = b[i]!;
+    if (l.id !== r.id || l.status !== r.status || l.progress !== r.progress) return false;
+  }
+  return true;
 }
 

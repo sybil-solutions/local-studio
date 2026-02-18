@@ -97,6 +97,20 @@ export function ConfigCards({ data }: { data: ConfigData }) {
 
       <ConfigSection title="Hardware">
         <ConfigRow
+          label="Platform"
+          value={data.runtime.platform.kind}
+          icon={<Cpu className="h-3 w-3" />}
+        />
+        <ConfigRow
+          label="GPU Monitoring"
+          value={
+            data.runtime.gpu_monitoring.available
+              ? data.runtime.gpu_monitoring.tool || "available"
+              : `unavailable (${data.runtime.gpu_monitoring.tool || "none"})`
+          }
+          icon={<Cpu className="h-3 w-3" />}
+        />
+        <ConfigRow
           label="GPU Count"
           value={data.runtime.gpus.count ? data.runtime.gpus.count.toString() : "None detected"}
           icon={<Cpu className="h-3 w-3" />}
@@ -104,6 +118,22 @@ export function ConfigCards({ data }: { data: ConfigData }) {
         <ConfigRow
           label="GPU Types"
           value={data.runtime.gpus.types.length ? data.runtime.gpus.types.join(", ") : "Unknown"}
+          icon={<Cpu className="h-3 w-3" />}
+          truncate
+        />
+        <ConfigRow
+          label="ROCm Version"
+          value={data.runtime.platform.rocm?.rocm_version || "Unknown"}
+          icon={<Cpu className="h-3 w-3" />}
+        />
+        <ConfigRow
+          label="HIP Version"
+          value={data.runtime.platform.rocm?.hip_version || "Unknown"}
+          icon={<Cpu className="h-3 w-3" />}
+        />
+        <ConfigRow
+          label="ROCm Arch"
+          value={data.runtime.platform.rocm?.gpu_arch?.join(", ") || "Unknown"}
           icon={<Cpu className="h-3 w-3" />}
           truncate
         />

@@ -137,7 +137,7 @@ struct DesktopShell: View {
               .foregroundColor(AppTheme.foreground)
               .padding(.horizontal, 14)
               .padding(.vertical, 10)
-              .background(Color.white.opacity(0.10))
+              .background(AppTheme.foreground.opacity(0.10))
               .clipShape(RoundedRectangle(cornerRadius: 12))
           }
           .buttonStyle(.plain)

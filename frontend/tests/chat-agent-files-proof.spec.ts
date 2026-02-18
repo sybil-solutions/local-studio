@@ -1,15 +1,19 @@
 // CRITICAL
 import { test, expect } from "@playwright/test";
 
+const BASE = process.env.PLAYWRIGHT_BASE_URL ?? "http://localhost:3000";
 const BACKEND_URL = process.env.PLAYWRIGHT_BACKEND_URL ?? "http://localhost:8080";
 
 test("chat: multi-step + agent files panel shows file content", async ({ page, request }, testInfo) => {
   test.setTimeout(120_000);
   const backendOverride = BACKEND_URL;
+  const health = await request.get(`${backendOverride}/health`).catch(() => null);
+  test.skip(!health || !health.ok(), `Backend unavailable at ${backendOverride}`);
+
   await page.context().addCookies([{
     name: "vllmstudio_backend_url",
     value: backendOverride,
-    url: "http://localhost:3000",
+    url: BASE,
   }]);
   await page.addInitScript((url) => {
     window.localStorage.setItem("vllmstudio_backend_url", String(url));
@@ -19,6 +23,7 @@ test("chat: multi-step + agent files panel shows file content", async ({ page, r
   const created = await request.post(`${BACKEND_URL}/chats`, {
     data: { title: "Playwright Chat", model: null },
   });
+  test.skip(!created.ok(), `Chat session API unavailable (${created.status()})`);
   const createdJson = await created.json() as { session?: { id: string } };
   const sessionId = createdJson.session?.id;
   expect(sessionId).toBeTruthy();

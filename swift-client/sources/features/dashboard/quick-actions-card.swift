@@ -17,7 +17,7 @@ struct QuickActionsCard: View {
               Text("Run Benchmark")
             }
             .font(AppTheme.bodyFont.weight(.medium))
-            .foregroundColor(.white)
+            .foregroundColor(AppTheme.foreground)
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
             .background(connected ? AppTheme.accentStrong : AppTheme.muted)

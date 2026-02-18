@@ -3,6 +3,7 @@ export const CONTROLLER_EVENT_TYPES = [
   "status",
   "gpu",
   "metrics",
+  "runtime_summary",
   "launch_progress",
   "download_progress",
   "download_state",
@@ -31,5 +32,6 @@ export const CONTROLLER_EVENT_TYPES = [
   "mcp_server_disabled",
   "mcp_tool_called",
   "runtime_vllm_upgraded",
+  "job_updated",
 ] as const;
 

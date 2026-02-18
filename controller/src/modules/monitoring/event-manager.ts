@@ -152,6 +152,24 @@ export class EventManager {
   }
 
   /**
+   * Publish runtime summary updates (platform/tooling/backends).
+   * @param summaryData - Runtime summary payload.
+   * @returns Promise that resolves after publish.
+   */
+  public async publishRuntimeSummary(summaryData: Record<string, unknown>): Promise<void> {
+    await this.publish(new Event("runtime_summary", summaryData));
+  }
+
+  /**
+   * Publish job lifecycle updates.
+   * @param jobData - Job record payload.
+   * @returns Promise that resolves after publish.
+   */
+  public async publishJobUpdated(jobData: Record<string, unknown>): Promise<void> {
+    await this.publish(new Event("job_updated", jobData));
+  }
+
+  /**
    * Publish log line updates to a session channel.
    * @param sessionId - Log session identifier.
    * @param line - Log line contents.

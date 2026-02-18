@@ -48,7 +48,7 @@ struct LogDetailView: View {
           .foregroundColor(AppTheme.foreground)
           .padding(.horizontal, 10)
           .padding(.vertical, 8)
-          .background(Color.white.opacity(0.06))
+           .background(AppTheme.foreground.opacity(0.06))
           .clipShape(RoundedRectangle(cornerRadius: 10))
       }
       .buttonStyle(.plain)

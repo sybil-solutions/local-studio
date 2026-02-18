@@ -27,7 +27,7 @@ struct ChatRightPanel: View {
         .ignoresSafeArea()
       // A light "aura" similar to the web app's unified sidebar.
       LinearGradient(
-        colors: [Color.white.opacity(0.02), Color.clear],
+         colors: [AppTheme.foreground.opacity(0.02), Color.clear],
         startPoint: .top,
         endPoint: .bottom
       )
@@ -66,7 +66,7 @@ struct ChatRightPanel: View {
             .font(.system(size: 13, weight: .semibold))
             .foregroundColor(AppTheme.muted)
             .frame(width: 28, height: 28)
-            .background(Color.white.opacity(0.06))
+             .background(AppTheme.foreground.opacity(0.06))
             .clipShape(RoundedRectangle(cornerRadius: 8))
         }
         .buttonStyle(.plain)
@@ -117,7 +117,7 @@ private struct TabButton: View {
         .foregroundColor(isActive ? AppTheme.foreground : AppTheme.muted)
         .padding(.horizontal, 10)
         .padding(.vertical, 6)
-        .background(isActive ? Color.white.opacity(0.10) : Color.white.opacity(0.04))
+         .background(isActive ? AppTheme.foreground.opacity(0.10) : AppTheme.foreground.opacity(0.04))
         .clipShape(RoundedRectangle(cornerRadius: 10))
     }
     .buttonStyle(.plain)

@@ -1,25 +1,11 @@
 // CRITICAL
-import { existsSync } from "node:fs";
-import { resolve } from "node:path";
-import type { GpuInfo } from "./types";
-import { resolveBinary, runCommand } from "../../core/command";
+import type { GpuInfo, RuntimeGpuMonitoringTool } from "./types";
+import { runCommand } from "../../core/command";
+import { getGpuInfoFromAmdSmi, getGpuInfoFromRocmSmi } from "./platform/amd-gpu";
+import { resolveRocmSmiTool } from "./platform/rocm-info";
+import { resolveForcedGpuMonitoringTool, resolveNvidiaSmiBinary } from "./platform/smi-tools";
 
-const resolveNvidiaSmiBinary = (): string | null => {
-  const configured = process.env["NVIDIA_SMI_PATH"] || "nvidia-smi";
-  const resolved = resolveBinary(configured);
-  if (resolved) return resolved;
-  if (configured.includes("/")) {
-    const abs = resolve(configured);
-    return existsSync(abs) ? abs : null;
-  }
-  return null;
-};
-
-/**
- * Query GPU info from nvidia-smi.
- * @returns List of GPU info objects.
- */
-export const getGpuInfo = (): GpuInfo[] => {
+export const getGpuInfoFromNvidiaSmi = (): GpuInfo[] => {
   const query = [
     "name",
     "memory.total",
@@ -42,13 +28,12 @@ export const getGpuInfo = (): GpuInfo[] => {
     );
     if (result.status !== 0 || !result.stdout) return [];
 
-    const output = result.stdout.trim();
+    const lines = result.stdout
+      .trim()
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean);
 
-    if (!output) {
-      return [];
-    }
-
-    const lines = output.split("\n");
     return lines.map((line, index) => {
       const parts = line.split(",").map((value) => value.trim());
       const [
@@ -63,16 +48,17 @@ export const getGpuInfo = (): GpuInfo[] => {
       ] = parts;
       const toBytes = (megabytes: string | undefined): number =>
         Math.max(0, Math.round(Number(megabytes ?? 0) * 1024 * 1024));
-      const toMB = (mib: string | undefined): number => Math.max(0, Math.round(Number(mib ?? 0)));
+      const toMb = (megabytes: string | undefined): number =>
+        Math.max(0, Math.round(Number(megabytes ?? 0)));
       return {
         index,
         name: name ?? "Unknown",
         memory_total: toBytes(memoryTotal),
-        memory_total_mb: toMB(memoryTotal),
+        memory_total_mb: toMb(memoryTotal),
         memory_used: toBytes(memoryUsed),
-        memory_used_mb: toMB(memoryUsed),
+        memory_used_mb: toMb(memoryUsed),
         memory_free: toBytes(memoryFree),
-        memory_free_mb: toMB(memoryFree),
+        memory_free_mb: toMb(memoryFree),
         utilization: Number(utilization ?? 0),
         utilization_pct: Number(utilization ?? 0),
         temperature: Number(temperature ?? 0),
@@ -86,14 +72,54 @@ export const getGpuInfo = (): GpuInfo[] => {
   }
 };
 
-/**
- * Estimate VRAM needed for a model in GB.
- * @param modelSizeGb - Base model size in GB.
- * @param quantization - Quantization method.
- * @param dtype - Data type.
- * @param tensorParallel - Number of GPUs for tensor parallelism.
- * @returns Estimated VRAM needed per GPU in GB.
- */
+export const resolveGpuMonitoringTool = (): RuntimeGpuMonitoringTool | null => {
+  const forced = resolveForcedGpuMonitoringTool();
+  if (forced === "nvidia-smi") {
+    return "nvidia-smi";
+  }
+  if (forced === "amd-smi" || forced === "rocm-smi") {
+    return forced;
+  }
+
+  if (resolveNvidiaSmiBinary()) {
+    return "nvidia-smi";
+  }
+
+  return resolveRocmSmiTool();
+};
+
+export const getGpuInfo = (): GpuInfo[] => {
+  const forced = resolveForcedGpuMonitoringTool();
+  if (forced === "nvidia-smi") {
+    return getGpuInfoFromNvidiaSmi();
+  }
+  if (forced === "amd-smi") {
+    return getGpuInfoFromAmdSmi();
+  }
+  if (forced === "rocm-smi") {
+    return getGpuInfoFromRocmSmi();
+  }
+
+  const nvidia = getGpuInfoFromNvidiaSmi();
+  if (nvidia.length > 0) {
+    return nvidia;
+  }
+
+  const rocmTool = resolveRocmSmiTool();
+  if (rocmTool === "amd-smi") {
+    const amd = getGpuInfoFromAmdSmi();
+    if (amd.length > 0) return amd;
+    return getGpuInfoFromRocmSmi();
+  }
+  if (rocmTool === "rocm-smi") {
+    const rocm = getGpuInfoFromRocmSmi();
+    if (rocm.length > 0) return rocm;
+    return getGpuInfoFromAmdSmi();
+  }
+
+  return [];
+};
+
 export const estimateModelMemory = (
   modelSizeGb: number,
   quantization?: string,
@@ -135,14 +161,6 @@ export const estimateModelMemory = (
   return memoryGb;
 };
 
-/**
- * Check if a model can fit on available GPUs.
- * @param modelSizeGb - Base model size in GB.
- * @param quantization - Quantization method.
- * @param dtype - Data type.
- * @param tensorParallel - Number of GPUs.
- * @returns True if the model can fit on GPUs.
- */
 export const canFitModel = (
   modelSizeGb: number,
   quantization?: string,
@@ -153,16 +171,20 @@ export const canFitModel = (
   if (gpus.length === 0) {
     return true;
   }
+
   const requiredGb = estimateModelMemory(modelSizeGb, quantization, dtype, tensorParallel);
   const requiredBytes = requiredGb * 1024 ** 3;
+
   if (gpus.length < tensorParallel) {
     return false;
   }
+
   for (let index = 0; index < tensorParallel; index += 1) {
     const gpu = gpus[index];
     if (!gpu || gpu.memory_free < requiredBytes) {
       return false;
     }
   }
+
   return true;
 };

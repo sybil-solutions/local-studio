@@ -66,6 +66,7 @@
 		2E8F43AAC11704C7F5F6B9B7 /* sse-parser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 876CF92AB1281FDB646002AB /* sse-parser.swift */; };
 		2EE8D4F61AA87345FF8788F5 /* markdown-block-parser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9233F40BC951AF0771ACA75C /* markdown-block-parser.swift */; };
 		2F4594D590721174E34D8AF7 /* openai-chat-service.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0354FD701795DB9206D7829 /* openai-chat-service.swift */; };
+		3025D1F8D4D1830EC750BFFB /* app-theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 44F08F7296A25247178241D8 /* app-theme.swift */; };
 		30C5CEA00FF184A52C716CEC /* voice-transcriber.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7FBBCB9C9FF666F71C7DF98D /* voice-transcriber.swift */; };
 		3171F5D77026A5448781347F /* chat-attachment.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8FC78042A6C16E5CAC61D128 /* chat-attachment.swift */; };
 		33174AF145E712BD3866C757 /* artifact-viewer-sheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = F27D80AC9A52738D43E76817 /* artifact-viewer-sheet.swift */; };
@@ -111,7 +112,6 @@
 		52A4536C337B7D02AEDAD2FF /* recipe-editor-view-model.swift in Sources */ = {isa = PBXBuildFile; fileRef = F8043A66C3545522EEDF0D1A /* recipe-editor-view-model.swift */; };
 		53EEA18E8D96132AEB2A312B /* gpu-row-view.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD41DFFE24B50B09DE1125FC /* gpu-row-view.swift */; };
 		546CA7E591E5DAE9BD79A920 /* chat-agent-actions-sheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F4E46FDAD9DBD2F81D12ED3 /* chat-agent-actions-sheet.swift */; };
-		54B82A7FBD70155693166219 /* app-theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE71B511BF896BF6C76C77FF /* app-theme.swift */; };
 		57044E8D2433A871F0EDDCA7 /* configs-api-section.swift in Sources */ = {isa = PBXBuildFile; fileRef = 416475D5A0DEE461E918EA86 /* configs-api-section.swift */; };
 		5808BA6D532B9F489AEEAD1D /* chat-tool-belt.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0FDB56C3EAD259DF8737F26 /* chat-tool-belt.swift */; };
 		584022B7AA1012B9AD95A2C4 /* openai-models.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA3C4DE8073E499328AB0EE2 /* openai-models.swift */; };
@@ -137,7 +137,6 @@
 		685DC048AACB15782044C3BB /* usage-top-models-card.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA3A8DAC5E4D312FEAB1F0C1 /* usage-top-models-card.swift */; };
 		688D521A4DF2CE71A481692F /* api-codec.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8638C6AF81398A72EF5F03C3 /* api-codec.swift */; };
 		68C9B14C4D48E466A7B6A0F6 /* json-utils.swift in Sources */ = {isa = PBXBuildFile; fileRef = 32CA3019FF374A6EAEFA2BC7 /* json-utils.swift */; };
-		6925130A573A0F3F62FC8F16 /* app-theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE71B511BF896BF6C76C77FF /* app-theme.swift */; };
 		69666E477524CF092820CD40 /* sse-envelope.swift in Sources */ = {isa = PBXBuildFile; fileRef = 79D23B51749081D017DE584A /* sse-envelope.swift */; };
 		6A30D7A8E4EB70256013CD8A /* gpu-models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9893EC661511D08EFC140DF0 /* gpu-models.swift */; };
 		6B260C975A3760CCC58D1021 /* usage-metric-row.swift in Sources */ = {isa = PBXBuildFile; fileRef = E084A8C833C638B842E5D51D /* usage-metric-row.swift */; };
@@ -320,6 +319,7 @@
 		F5EDB9C4200BD7528B927F2F /* api-system.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B38A0E11709C8DF5E5743F6 /* api-system.swift */; };
 		F8DEAB4015345247AF92EC2D /* recipe-basic-section.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41CC4D1DC8054795EE73B1D8 /* recipe-basic-section.swift */; };
 		FB8DB34FB632EA4E90A15B3E /* theme-manager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 31AFEAE139672E2EB6355B84 /* theme-manager.swift */; };
+		FD132391BA727C129AE86DF5 /* app-theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 44F08F7296A25247178241D8 /* app-theme.swift */; };
 		FDB22C3D80EAB4C989248138 /* badge-view.swift in Sources */ = {isa = PBXBuildFile; fileRef = F8AF25C22CFC8ED12645DE1A /* badge-view.swift */; };
 		FE473726BE13602FC44A2E30 /* discover-view-model.swift in Sources */ = {isa = PBXBuildFile; fileRef = 848DF49B8DE17EF518A4BB49 /* discover-view-model.swift */; };
 		FE7455C14F83076A320D7A6E /* chat-usage-bar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9042B50DACBFB1698712AB9D /* chat-usage-bar.swift */; };
@@ -367,6 +367,7 @@
 		41CC4D1DC8054795EE73B1D8 /* recipe-basic-section.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "recipe-basic-section.swift"; sourceTree = "<group>"; };
 		42519DE2FA2958B83EA520D8 /* process-info.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "process-info.swift"; sourceTree = "<group>"; };
 		44EC274D3007998759225097 /* mcp-tool-runner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "mcp-tool-runner.swift"; sourceTree = "<group>"; };
+		44F08F7296A25247178241D8 /* app-theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "app-theme.swift"; sourceTree = "<group>"; };
 		472C00BB9131A4A3AE27503D /* chat-detail-send.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "chat-detail-send.swift"; sourceTree = "<group>"; };
 		4A4D5B61BCD31B96CD598796 /* chat-tools-sheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "chat-tools-sheet.swift"; sourceTree = "<group>"; };
 		4B03F732527E991FEA9C0401 /* recipe-row-view.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "recipe-row-view.swift"; sourceTree = "<group>"; };
@@ -491,7 +492,6 @@
 		F8AF25C22CFC8ED12645DE1A /* badge-view.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "badge-view.swift"; sourceTree = "<group>"; };
 		FD41DFFE24B50B09DE1125FC /* gpu-row-view.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "gpu-row-view.swift"; sourceTree = "<group>"; };
 		FE173E02AF24324E11B7DA66 /* settings-store.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "settings-store.swift"; sourceTree = "<group>"; };
-		FE71B511BF896BF6C76C77FF /* app-theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "app-theme.swift"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -692,7 +692,6 @@
 				CF916898E7B2D5C91752793F /* agent-files.swift */,
 				8798C6BC941AD39BE1BBA093 /* any-codable.swift */,
 				306F2C505FC1C0859959B6C4 /* any-encodable.swift */,
-				FE71B511BF896BF6C76C77FF /* app-theme.swift */,
 				9893EC661511D08EFC140DF0 /* gpu-models.swift */,
 				333A653F83FF5FBB65DA5728 /* log-line.swift */,
 				9BECD79B9AF7AF7B9C240E96 /* log-models.swift */,
@@ -753,6 +752,7 @@
 		BE05DFDDE2A0ECFD9F5024DE /* ui */ = {
 			isa = PBXGroup;
 			children = (
+				44F08F7296A25247178241D8 /* app-theme.swift */,
 				F8AF25C22CFC8ED12645DE1A /* badge-view.swift */,
 				712146A1223BAE10F9ECF721 /* binding-optional.swift */,
 				E018C4F63E6C899ACA05BD96 /* card-view.swift */,
@@ -983,7 +983,7 @@
 				14D2B007048D3571948CADEB /* api-usage.swift in Sources */,
 				74AE3FA356CA2FBA444D8BF0 /* app-container.swift in Sources */,
 				0D06501DA6E2838BE6BF4179 /* app-entry.swift in Sources */,
-				6925130A573A0F3F62FC8F16 /* app-theme.swift in Sources */,
+				3025D1F8D4D1830EC750BFFB /* app-theme.swift in Sources */,
 				18AB81ABA4975636F2ECA438 /* artifact-card.swift in Sources */,
 				412EAB8151D5C73CE83D4354 /* artifact-detail-ext.swift in Sources */,
 				669CC3AA968173408D80F6F6 /* artifact-model.swift in Sources */,
@@ -1150,7 +1150,7 @@
 				B727CD71E378C2EDC59150D7 /* api-usage.swift in Sources */,
 				840590C76F365B61356732BE /* app-container.swift in Sources */,
 				5A8CBC638E7A047B982AAF49 /* app-entry.swift in Sources */,
-				54B82A7FBD70155693166219 /* app-theme.swift in Sources */,
+				FD132391BA727C129AE86DF5 /* app-theme.swift in Sources */,
 				FFD97E681B2FCAB46DC13640 /* artifact-card.swift in Sources */,
 				1999477903EFAA3402B10F8D /* artifact-detail-ext.swift in Sources */,
 				3B916032DE525B8F019C2C21 /* artifact-model.swift in Sources */,
@@ -1309,6 +1309,7 @@
 				MARKETING_VERSION = 0.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.sero.vllmstudio;
 				SDKROOT = iphoneos;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SWIFT_VERSION = 5.9;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
@@ -1449,6 +1450,7 @@
 				MARKETING_VERSION = 0.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.sero.vllmstudio;
 				SDKROOT = iphoneos;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SWIFT_VERSION = 5.9;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};

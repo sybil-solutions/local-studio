@@ -58,6 +58,9 @@ export interface ChatState {
   recordingDuration: number;
   isTTSEnabled: boolean;
 
+  callModeEnabled: boolean;
+  callModeSpeakingMessageId: string | null;
+
   mcpPendingServer: string | null;
   mcpActionError: string | null;
 
@@ -164,6 +167,9 @@ export interface ChatActions {
   setTranscriptionError: (transcriptionError: string | null) => void;
   setRecordingDuration: (recordingDuration: number) => void;
   setIsTTSEnabled: (isTTSEnabled: boolean) => void;
+
+  setCallModeEnabled: (callModeEnabled: boolean) => void;
+  setCallModeSpeakingMessageId: (id: string | null) => void;
 
   setMcpPendingServer: (mcpPendingServer: string | null) => void;
   setMcpActionError: (mcpActionError: string | null) => void;

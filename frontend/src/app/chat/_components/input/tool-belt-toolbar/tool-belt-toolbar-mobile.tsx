@@ -35,6 +35,8 @@ type Props = {
   onStopRecording?: () => void;
   onStop?: () => void;
   onSubmit?: () => void;
+  callModeEnabled?: boolean;
+  onCallModeToggle?: () => void;
 };
 
 export function ToolBeltToolbarMobile({
@@ -67,6 +69,8 @@ export function ToolBeltToolbarMobile({
   onStopRecording,
   onStop,
   onSubmit,
+  callModeEnabled,
+  onCallModeToggle,
 }: Props) {
   return (
     <div className="md:hidden flex items-center gap-2">
@@ -94,6 +98,8 @@ export function ToolBeltToolbarMobile({
         onAttachImage={onAttachImage}
         onStartRecording={onStartRecording}
         onStopRecording={onStopRecording}
+        callModeEnabled={callModeEnabled}
+        onCallModeToggle={onCallModeToggle}
       />
 
       {onOpenResults && (

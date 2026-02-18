@@ -21,7 +21,7 @@ struct RecipesView: View {
         Button(action: { }) {
           Text("New Recipe")
             .font(AppTheme.bodyFont.weight(.medium))
-            .foregroundColor(.white)
+            .foregroundColor(AppTheme.foreground)
             .padding(.horizontal, 20)
             .padding(.vertical, 12)
             .background(AppTheme.accentStrong)

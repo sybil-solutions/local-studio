@@ -50,7 +50,7 @@ struct ChatToolBeltToolbar: View {
           .foregroundColor(AppTheme.muted)
           .padding(.horizontal, 10)
           .frame(height: 28)
-          .background(Color.clear)
+           .background(Color.clear)
           .overlay(RoundedRectangle(cornerRadius: 10).stroke(AppTheme.border))
           .clipShape(RoundedRectangle(cornerRadius: 10))
         }
@@ -74,12 +74,12 @@ private struct CircleIcon: View {
   let systemName: String
 
   var body: some View {
-    Image(systemName: systemName)
-      .font(.system(size: 13, weight: .semibold))
-      .foregroundColor(AppTheme.muted)
-      .frame(width: 28, height: 28)
-      .background(Color.white.opacity(0.04))
-      .overlay(Circle().stroke(AppTheme.border))
-      .clipShape(Circle())
+      Image(systemName: systemName)
+        .font(.system(size: 13, weight: .semibold))
+        .foregroundColor(AppTheme.muted)
+        .frame(width: 28, height: 28)
+        .background(AppTheme.foreground.opacity(0.04))
+        .overlay(Circle().stroke(AppTheme.border))
+        .clipShape(Circle())
   }
 }

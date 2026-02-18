@@ -187,10 +187,12 @@ export function useControllerEvents(
           case "status":
           case "gpu":
           case "metrics":
+          case "runtime_summary":
           case "launch_progress":
           case "download_progress":
           case "download_state":
-          case "temporal_status": {
+          case "temporal_status":
+          case "job_updated": {
             dispatchCustomEvent("vllm:controller-event", { type: eventType, data });
             break;
           }

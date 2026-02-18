@@ -10,6 +10,7 @@ import { badRequest, notFound } from "../../core/errors";
 import { estimateWeightsSizeBytes } from "../models/model-browser";
 import { getGpuInfo } from "./gpu";
 import { getSystemRuntimeInfo } from "./runtime-info";
+import { buildCompatibilityReport } from "./platform/compatibility-report";
 import { fetchInference } from "../../services/inference/inference-client";
 import { fetchLocal } from "../../http/local-fetch";
 
@@ -87,6 +88,22 @@ export const registerSystemRoutes = (app: Hono, context: AppContext): void => {
       count: gpus.length,
       gpus,
     });
+  });
+
+  app.get("/compat", async (ctx) => {
+    const runtime = await getSystemRuntimeInfo(context.config);
+    const known = await context.processManager.findInferenceProcess(context.config.inference_port);
+    const portOpen = await checkService("127.0.0.1", context.config.inference_port, 500);
+
+    const report = buildCompatibilityReport({
+      runtime,
+      inference_port: context.config.inference_port,
+      inference_port_open: portOpen,
+      inference_process_known: Boolean(known),
+      gpu_monitoring: runtime.gpu_monitoring,
+    });
+
+    return ctx.json(report);
   });
 
   app.post("/vram-calculator", async (ctx) => {

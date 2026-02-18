@@ -1,21 +1,13 @@
+// CRITICAL
 import type { RecipeId } from "../../types/brand";
 import type { Backend as SharedBackend, RecipeBase } from "../../../../shared/src";
 
-/**
- * Supported inference backends.
- */
 export type Backend = SharedBackend;
 
-/**
- * Model launch configuration.
- */
 export interface Recipe extends Omit<RecipeBase, "id"> {
   id: RecipeId;
 }
 
-/**
- * Running inference process info.
- */
 export interface ProcessInfo {
   pid: number;
   backend: string;
@@ -24,9 +16,6 @@ export interface ProcessInfo {
   served_model_name: string | null;
 }
 
-/**
- * Result of launching a model.
- */
 export interface LaunchResult {
   success: boolean;
   pid: number | null;
@@ -34,9 +23,6 @@ export interface LaunchResult {
   log_file: string | null;
 }
 
-/**
- * Health check response payload.
- */
 export interface HealthResponse {
   status: string;
   version: string;
@@ -45,9 +31,6 @@ export interface HealthResponse {
   running_model: string | null;
 }
 
-/**
- * GPU information payload.
- */
 export interface GpuInfo {
   index: number;
   name: string;
@@ -65,9 +48,6 @@ export interface GpuInfo {
   power_limit: number;
 }
 
-/**
- * Information about a service in the system topology.
- */
 export interface ServiceInfo {
   name: string;
   port: number;
@@ -77,9 +57,6 @@ export interface ServiceInfo {
   description?: string | null;
 }
 
-/**
- * System configuration settings.
- */
 export interface SystemConfig {
   host: string;
   port: number;
@@ -93,9 +70,6 @@ export interface SystemConfig {
   llama_bin: string | null;
 }
 
-/**
- * Environment URLs and connection info.
- */
 export interface EnvironmentInfo {
   controller_url: string;
   inference_url: string;
@@ -103,9 +77,6 @@ export interface EnvironmentInfo {
   frontend_url: string;
 }
 
-/**
- * Runtime backend version info.
- */
 export interface RuntimeBackendInfo {
   installed: boolean;
   version: string | null;
@@ -113,26 +84,50 @@ export interface RuntimeBackendInfo {
   binary_path?: string | null;
 }
 
-/**
- * CUDA runtime info.
- */
+export type RuntimePlatformKind = "cuda" | "rocm" | "unknown";
+
+export type RuntimeRocmSmiTool = "amd-smi" | "rocm-smi";
+
+export type RuntimeGpuMonitoringTool = "nvidia-smi" | RuntimeRocmSmiTool;
+
 export interface RuntimeCudaInfo {
   driver_version: string | null;
   cuda_version: string | null;
 }
 
-/**
- * GPU summary info.
- */
+export interface RuntimeRocmInfo {
+  rocm_version: string | null;
+  hip_version: string | null;
+  smi_tool: RuntimeRocmSmiTool | null;
+  gpu_arch: string[];
+}
+
+export interface RuntimeTorchBuildInfo {
+  torch_version: string | null;
+  torch_cuda: string | null;
+  torch_hip: string | null;
+}
+
+export interface RuntimePlatformInfo {
+  kind: RuntimePlatformKind;
+  vendor: "nvidia" | "amd" | null;
+  rocm: RuntimeRocmInfo | null;
+  torch: RuntimeTorchBuildInfo;
+}
+
+export interface RuntimeGpuMonitoringInfo {
+  available: boolean;
+  tool: RuntimeGpuMonitoringTool | null;
+}
+
 export interface RuntimeGpuInfoSummary {
   count: number;
   types: string[];
 }
 
-/**
- * Runtime information for the system.
- */
 export interface SystemRuntimeInfo {
+  platform: RuntimePlatformInfo;
+  gpu_monitoring: RuntimeGpuMonitoringInfo;
   cuda: RuntimeCudaInfo;
   gpus: RuntimeGpuInfoSummary;
   backends: {
@@ -142,12 +137,29 @@ export interface SystemRuntimeInfo {
   };
 }
 
-/**
- * Full configuration response payload.
- */
 export interface SystemConfigResponse {
   config: SystemConfig;
   services: ServiceInfo[];
   environment: EnvironmentInfo;
   runtime: SystemRuntimeInfo;
+}
+
+export type CompatibilitySeverity = "info" | "warn" | "error";
+
+export interface CompatibilityCheck {
+  id: string;
+  severity: CompatibilitySeverity;
+  message: string;
+  evidence: string | null;
+  suggested_fix: string | null;
+}
+
+export interface CompatibilityReport {
+  platform: {
+    kind: RuntimePlatformKind;
+  };
+  gpu_monitoring: RuntimeGpuMonitoringInfo;
+  torch: RuntimeTorchBuildInfo;
+  backends: SystemRuntimeInfo["backends"];
+  checks: CompatibilityCheck[];
 }

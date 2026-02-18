@@ -1,6 +1,7 @@
 // CRITICAL
 import type { AppContext } from "../../types/context";
 import { getGpuInfo } from "./gpu";
+import { getSystemRuntimeInfo } from "./runtime-info";
 import { delay } from "../../core/async";
 import { fetchLocal } from "../../http/local-fetch";
 
@@ -13,6 +14,7 @@ export const startMetricsCollector = (context: AppContext): (() => void) => {
   let running = true;
   let lastVllmMetrics: Record<string, number> = {};
   let lastMetricsTime = 0;
+  let lastRuntimeSummaryAt = 0;
 
   /**
    * Scrape Prometheus metrics from vLLM.
@@ -82,6 +84,24 @@ export const startMetricsCollector = (context: AppContext): (() => void) => {
         inference_port: context.config.inference_port,
       });
       await context.eventManager.publishGpu(gpuList.map((gpu) => ({ ...gpu })));
+
+      if (Date.now() - lastRuntimeSummaryAt > 30_000) {
+        try {
+          const runtime = await getSystemRuntimeInfo(context.config);
+          const leaseHolder = current
+            ? (current.served_model_name ?? current.model_path?.split("/").pop() ?? "inference")
+            : null;
+          await context.eventManager.publishRuntimeSummary({
+            platform: runtime.platform,
+            gpu_monitoring: runtime.gpu_monitoring,
+            backends: runtime.backends,
+            lease: { holder: leaseHolder, since: leaseHolder ? new Date().toISOString() : null },
+          });
+          lastRuntimeSummaryAt = Date.now();
+        } catch (error) {
+          context.logger.debug("Runtime summary publish failed", { error: String(error) });
+        }
+      }
 
       // Always publish basic metrics (lifetime, power) even when idle
       const lifetimeData = lifetimeStore.getAll();

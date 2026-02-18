@@ -58,7 +58,7 @@ struct LogsView: View {
           .font(.system(size: 13, weight: .semibold))
           .foregroundColor(AppTheme.muted)
           .frame(width: 32, height: 32)
-          .background(Color.white.opacity(0.04))
+           .background(AppTheme.foreground.opacity(0.06))
           .overlay(RoundedRectangle(cornerRadius: 10).stroke(AppTheme.border))
           .clipShape(RoundedRectangle(cornerRadius: 10))
       }
@@ -112,7 +112,7 @@ struct LogsView: View {
               }
               .padding(.horizontal, 16)
               .padding(.vertical, 12)
-              .background(selected?.id == session.id ? AppTheme.cardHover : Color.clear)
+             .background(selected?.id == session.id ? AppTheme.cardHover : Color.clear)
               .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -149,7 +149,7 @@ struct LogsView: View {
           .font(.system(size: 13, weight: .semibold))
           .foregroundColor(AppTheme.foreground)
           .frame(width: 32, height: 32)
-          .background(Color.white.opacity(0.04))
+           .background(AppTheme.foreground.opacity(0.06))
           .overlay(RoundedRectangle(cornerRadius: 10).stroke(AppTheme.border))
           .clipShape(RoundedRectangle(cornerRadius: 10))
       }
@@ -172,4 +172,3 @@ struct LogsView: View {
     }
   }
 }
-

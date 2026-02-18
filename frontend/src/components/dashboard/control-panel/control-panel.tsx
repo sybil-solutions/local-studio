@@ -1,3 +1,4 @@
+// CRITICAL
 "use client";
 
 import type { DashboardLayoutProps } from "../layout/dashboard-types";
@@ -6,6 +7,7 @@ import { GpuList } from "./gpu-list";
 import { RecipeList } from "./recipe-list";
 import { LogStream } from "./log-stream";
 import { MetricBar } from "./metric-bar";
+import { RuntimesPanel } from "./runtimes-panel";
 
 export function ControlPanel(props: DashboardLayoutProps) {
   const { currentProcess, currentRecipe, metrics, gpus, recipes, logs } = props;
@@ -19,6 +21,7 @@ export function ControlPanel(props: DashboardLayoutProps) {
         isConnected={props.isConnected}
         metrics={metrics}
         gpus={gpus}
+        platformKind={props.platformKind}
         inferencePort={props.inferencePort}
         onNavigateChat={props.onNavigateChat}
         onNavigateLogs={props.onNavigateLogs}
@@ -39,8 +42,8 @@ export function ControlPanel(props: DashboardLayoutProps) {
           <GpuList gpus={gpus} />
         </div>
 
-        {/* Right - Recipes */}
-        <div className="min-w-0">
+        {/* Right - Recipes + Runtimes */}
+        <div className="min-w-0 space-y-8">
           <RecipeList
             recipes={recipes}
             launching={props.launching}
@@ -48,6 +51,11 @@ export function ControlPanel(props: DashboardLayoutProps) {
             onNewRecipe={props.onNewRecipe}
             onViewAll={props.onViewAll}
             currentRecipeId={currentRecipe?.id}
+          />
+          <RuntimesPanel
+            runtimeSummary={props.runtimeSummary}
+            services={props.services}
+            lease={props.lease}
           />
         </div>
       </div>

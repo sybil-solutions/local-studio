@@ -32,6 +32,9 @@ interface ChatMessageListProps {
   messagesEndRef?: RefObject<HTMLDivElement | null>;
   onFork?: (messageId: string) => void;
   onReprompt?: (messageId: string) => void;
+  onListen?: (messageId: string) => void;
+  listeningMessageId?: string | null;
+  listeningPending?: boolean;
   onOpenContext?: () => void;
 }
 
@@ -57,6 +60,9 @@ export function ChatMessageList({
   messagesEndRef,
   onFork,
   onReprompt,
+  onListen,
+  listeningMessageId,
+  listeningPending,
   onOpenContext,
 }: ChatMessageListProps) {
   const lastRawMessageId = messages[messages.length - 1]?.id;
@@ -147,6 +153,9 @@ export function ChatMessageList({
           onOpenContext={onOpenContext}
           onFork={message.role === "assistant" ? onFork : undefined}
           onReprompt={message.role === "assistant" ? onReprompt : undefined}
+          onListen={message.role === "assistant" ? onListen : undefined}
+          isListening={message.id === listeningMessageId}
+          isListenPending={message.id === listeningMessageId && Boolean(listeningPending)}
           onExport={handleExport}
         />
       );
@@ -158,9 +167,12 @@ export function ChatMessageList({
       handleExport,
       isLoading,
       onFork,
+      onListen,
       onOpenContext,
       onReprompt,
       selectedModel,
+      listeningMessageId,
+      listeningPending,
       visibleMessages.length,
     ],
   );

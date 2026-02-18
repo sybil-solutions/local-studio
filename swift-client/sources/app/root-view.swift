@@ -7,7 +7,7 @@ struct RootView: View {
 
   var body: some View {
     Group {
-      if horizontalSizeClass == .regular {
+      if shouldUseDesktopShell {
         DesktopShell()
       } else {
         DrawerShell()
@@ -16,5 +16,13 @@ struct RootView: View {
     .theme(themeManager.currentTheme)
     .accentTint(themeManager.currentTheme)
     .preferredColorScheme(.dark)
+  }
+
+  private var shouldUseDesktopShell: Bool {
+    #if os(macOS)
+    true
+    #else
+    horizontalSizeClass == .regular
+    #endif
   }
 }

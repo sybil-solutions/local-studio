@@ -5,6 +5,7 @@ import { useCallback, useRef, type KeyboardEvent } from "react";
 import { AttachmentsPreview } from "./attachments-preview";
 import { RecordingIndicator } from "./recording-indicator";
 import { TranscriptionStatus } from "./transcription-status";
+import { CallModeIndicator } from "./call-mode-indicator";
 import { useAppStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { ToolBeltToolbarContainer } from "./tool-belt/tool-belt-toolbar-container";
@@ -35,6 +36,8 @@ export function ToolBelt({
   deepResearchEnabled = false,
   onDeepResearchToggle,
   planDrawer,
+  callModeEnabled = false,
+  onCallModeToggle,
 }: ToolBeltProps) {
   const rootRef = useRef<HTMLDivElement>(null);
   const isDisabled = false;
@@ -56,6 +59,7 @@ export function ToolBelt({
     setRecordingDuration,
     isTTSEnabled,
     setIsTTSEnabled,
+    callModeSpeakingMessageId,
   } = useAppStore(
     useShallow((state) => ({
       value: state.input,
@@ -75,6 +79,7 @@ export function ToolBelt({
       setRecordingDuration: state.setRecordingDuration,
       isTTSEnabled: state.isTTSEnabled,
       setIsTTSEnabled: state.setIsTTSEnabled,
+      callModeSpeakingMessageId: state.callModeSpeakingMessageId,
     })),
   );
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -156,8 +161,15 @@ export function ToolBelt({
         {isRecording && (
           <RecordingIndicator
             duration={recordingDuration}
-            onStop={stopRecording}
+            onStop={callModeEnabled ? (onCallModeToggle ?? stopRecording) : stopRecording}
             formatDuration={formatDuration}
+          />
+        )}
+
+        {callModeEnabled && !isRecording && !isTranscribing && (
+          <CallModeIndicator
+            isSpeaking={callModeSpeakingMessageId !== null}
+            onDisable={onCallModeToggle ?? (() => {})}
           />
         )}
 
@@ -240,6 +252,8 @@ export function ToolBelt({
             onStopRecording={stopRecording}
             onStop={onStop}
             onSubmit={handleSubmit}
+            callModeEnabled={callModeEnabled}
+            onCallModeToggle={onCallModeToggle}
           />
         </div>
       </div>

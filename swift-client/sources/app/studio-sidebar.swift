@@ -40,7 +40,7 @@ struct StudioSidebar: View {
     HStack(spacing: collapsed ? 0 : 10) {
       ZStack {
         RoundedRectangle(cornerRadius: 7)
-          .fill(Color.white.opacity(0.08))
+        .fill(AppTheme.foreground.opacity(0.08))
           .frame(width: 28, height: 28)
         Image(systemName: "hexagon.fill")
           .font(.system(size: 14, weight: .semibold))
@@ -104,7 +104,7 @@ struct StudioSidebar: View {
               .font(.system(size: 12, weight: .semibold))
               .foregroundColor(AppTheme.foreground)
               .frame(width: 28, height: 28)
-              .background(Color.white.opacity(0.08))
+            .background(AppTheme.foreground.opacity(0.08))
               .clipShape(RoundedRectangle(cornerRadius: 10))
           }
           .buttonStyle(.plain)
@@ -117,7 +117,7 @@ struct StudioSidebar: View {
             .font(.system(size: 12, weight: .semibold))
             .foregroundColor(AppTheme.foreground)
             .frame(width: 40, height: 34)
-            .background(Color.white.opacity(0.06))
+            .background(AppTheme.foreground.opacity(0.06))
             .clipShape(RoundedRectangle(cornerRadius: 12))
         }
         .buttonStyle(.plain)
@@ -168,7 +168,7 @@ struct StudioSidebar: View {
           .font(.system(size: 12, weight: .semibold))
           .foregroundColor(AppTheme.muted)
           .frame(width: 28, height: 28)
-          .background(Color(hex: 0x111111, alpha: 0.9))
+           .background(AppTheme.chromeSidebar.opacity(0.9))
           .overlay(RoundedRectangle(cornerRadius: 999).stroke(AppTheme.chromeBorderStrong))
           .clipShape(Circle())
       }
@@ -204,7 +204,7 @@ private struct NavRow: View {
       .padding(.horizontal, collapsed ? 0 : 10)
       .frame(height: 36)
       .frame(maxWidth: .infinity, alignment: collapsed ? .center : .leading)
-      .background(isActive ? Color.white.opacity(0.08) : Color.clear)
+      .background(isActive ? AppTheme.foreground.opacity(0.08) : Color.clear)
       .clipShape(RoundedRectangle(cornerRadius: 10))
     }
     .buttonStyle(.plain)
@@ -227,7 +227,7 @@ private struct ChatRow: View {
             .font(.system(size: 12, weight: .medium))
             .foregroundColor(isActive ? AppTheme.foreground : AppTheme.muted)
             .frame(width: 40, height: 32)
-            .background(isActive ? Color.white.opacity(0.08) : Color.clear)
+            .background(isActive ? AppTheme.foreground.opacity(0.08) : Color.clear)
             .clipShape(RoundedRectangle(cornerRadius: 10))
         } else {
           VStack(alignment: .leading, spacing: 2) {
@@ -246,7 +246,7 @@ private struct ChatRow: View {
       .padding(.horizontal, collapsed ? 0 : 10)
       .frame(height: collapsed ? 34 : 44)
       .frame(maxWidth: .infinity, alignment: collapsed ? .center : .leading)
-      .background(!collapsed && isActive ? Color.white.opacity(0.06) : Color.clear)
+      .background(!collapsed && isActive ? AppTheme.foreground.opacity(0.06) : Color.clear)
       .clipShape(RoundedRectangle(cornerRadius: 10))
     }
     .buttonStyle(.plain)
@@ -255,4 +255,3 @@ private struct ChatRow: View {
     }
   }
 }
-

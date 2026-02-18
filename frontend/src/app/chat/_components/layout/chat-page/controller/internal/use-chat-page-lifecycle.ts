@@ -44,6 +44,7 @@ export interface UseChatPageLifecycleArgs {
   clearPlan: () => void;
   executingToolsSize: number;
   activeRunIdRef: MutableRefObject<string | null>;
+  runAbortControllerRef: MutableRefObject<AbortController | null>;
   lastEventTimeRef: MutableRefObject<number>;
   setStreamStalled: (next: boolean) => void;
 
@@ -71,6 +72,7 @@ export function useChatPageLifecycle({
   clearPlan,
   executingToolsSize,
   activeRunIdRef,
+  runAbortControllerRef,
   lastEventTimeRef,
   setStreamStalled,
   getLastSessionId,
@@ -127,6 +129,8 @@ export function useChatPageLifecycle({
     clearAgentFiles,
     messagesLengthRef,
     sessionIdRef,
+    activeRunIdRef,
+    runAbortControllerRef,
     getLastSessionId,
     setLastSessionId,
   });

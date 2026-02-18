@@ -2,7 +2,8 @@
 "use client";
 
 import { useState } from "react";
-import type { ConfigData } from "@/lib/types";
+import type { CompatibilityReport, ConfigData } from "@/lib/types";
+import { CompatibilityPanel } from "@/components/compatibility/compatibility-panel";
 import type { ApiConnectionSettings, ConnectionStatus } from "../hooks/use-configs";
 import { ApiConnectionSection } from "./api-connection-section";
 import { ConfigCards } from "./config-cards";
@@ -15,6 +16,7 @@ import { ThemeSelector } from "./theme-selector";
 
 interface ConfigsViewProps {
   data: ConfigData | null;
+  compatibilityReport: CompatibilityReport | null;
   loading: boolean;
   error: string | null;
   apiSettings: ApiConnectionSettings;
@@ -35,6 +37,7 @@ interface ConfigsViewProps {
 
 export function ConfigsView({
   data,
+  compatibilityReport,
   loading,
   error,
   apiSettings,
@@ -107,7 +110,10 @@ export function ConfigsView({
           {activeTab === "system" && (
             <section className="space-y-6">
               {data ? (
-                <ConfigCards data={data} />
+                <>
+                  <CompatibilityPanel report={compatibilityReport} />
+                  <ConfigCards data={data} />
+                </>
               ) : (
                 buildNoBackendState("Connect to the backend in the Connection tab and retry to load system details.")
               )}

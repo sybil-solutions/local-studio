@@ -23,6 +23,8 @@ export interface UseChatSessionBootstrapArgs {
   clearAgentFiles: () => void;
   messagesLengthRef: MutableRefObject<number>;
   sessionIdRef: MutableRefObject<string | null>;
+  activeRunIdRef: MutableRefObject<string | null>;
+  runAbortControllerRef: MutableRefObject<AbortController | null>;
   getLastSessionId: () => string | null;
   setLastSessionId: (sessionId: string) => void;
 }
@@ -45,9 +47,24 @@ export function useChatSessionBootstrap({
   clearAgentFiles,
   messagesLengthRef,
   sessionIdRef,
+  activeRunIdRef,
+  runAbortControllerRef,
   getLastSessionId,
   setLastSessionId,
 }: UseChatSessionBootstrapArgs) {
+  const clearActiveRun = () => {
+    if (runAbortControllerRef.current) {
+      runAbortControllerRef.current.abort();
+      runAbortControllerRef.current = null;
+    }
+    activeRunIdRef.current = null;
+  };
+
+  const resetActiveSession = () => {
+    startNewSession();
+    clearActiveRun();
+  };
+
   // Load sessions on mount
   useEffect(() => {
     loadSessions();
@@ -100,7 +117,7 @@ export function useChatSessionBootstrap({
   // Handle URL session/new params and restore last session if needed
   useEffect(() => {
     if (newChatFromUrl) {
-      startNewSession();
+      resetActiveSession();
       setMessages([]);
       clearPlan();
       clearAgentFiles();
@@ -113,6 +130,8 @@ export function useChatSessionBootstrap({
     // Avoid re-loading the same session repeatedly
     if (targetSessionId === currentSessionId) return;
 
+    resetActiveSession();
+
     // If the URL is missing session but we have a remembered one, reflect it in the URL
     if (!sessionFromUrl) {
       router.replace(`/chat?session=${encodeURIComponent(targetSessionId)}`);
@@ -123,7 +142,7 @@ export function useChatSessionBootstrap({
       if (!session) {
         // Stale session ID in URL or localStorage: reset to a new chat so navigation doesn't feel "stuck".
         setLastSessionId("");
-        startNewSession();
+        resetActiveSession();
         setMessages([]);
         clearPlan();
         clearAgentFiles();
@@ -151,11 +170,11 @@ export function useChatSessionBootstrap({
     loadSession,
     mapStoredMessages,
     newChatFromUrl,
+    resetActiveSession,
     router,
     selectedModel,
     sessionFromUrl,
     setMessages,
     setSelectedModel,
-    startNewSession,
   ]);
 }

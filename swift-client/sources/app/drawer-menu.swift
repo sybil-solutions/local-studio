@@ -14,7 +14,7 @@ struct DrawerMenu: View {
 
   var body: some View {
     ZStack(alignment: .leading) {
-      Color.black.opacity(0.35)
+      AppTheme.background.opacity(0.65)
         .ignoresSafeArea()
         .onTapGesture { withAnimation { isOpen = false } }
       DrawerMenuContent(isOpen: $isOpen, selection: $selection)
