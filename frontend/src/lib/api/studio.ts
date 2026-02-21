@@ -95,15 +95,28 @@ export function createStudioApi(core: ApiCore) {
 
     getRocmRuntime: (): Promise<RuntimeRocmInfo> => core.request("/runtime/rocm"),
 
-    upgradeVllmRuntime: (preferBundled = true): Promise<VllmUpgradeResult> =>
+    upgradeVllmRuntime: (
+      payload: {
+        preferBundled?: boolean;
+        command?: string;
+        args?: string[];
+        version?: string;
+      } = {},
+    ): Promise<VllmUpgradeResult> =>
       core.request("/runtime/vllm/upgrade", {
         method: "POST",
-        body: JSON.stringify({ prefer_bundled: preferBundled }),
+        body: JSON.stringify({
+          prefer_bundled: payload.preferBundled ?? true,
+          command: payload.command,
+          args: payload.args,
+          version: payload.version,
+        }),
       }),
 
-    upgradeSglangRuntime: (): Promise<RuntimeUpgradeResult> =>
+    upgradeSglangRuntime: (payload: RuntimeCommandPayload = {}): Promise<RuntimeUpgradeResult> =>
       core.request("/runtime/sglang/upgrade", {
         method: "POST",
+        body: JSON.stringify(payload),
       }),
 
     upgradeLlamacppRuntime: (payload: RuntimeCommandPayload = {}): Promise<RuntimeUpgradeResult> =>

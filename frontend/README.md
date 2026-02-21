@@ -36,3 +36,5 @@ npm test
 - The UI calls `frontend/src/lib/api/studio.ts` routes (e.g., `GET /runtime/vllm`, `/runtime/sglang`, `/runtime/llamacpp`, `/runtime/cuda`, `/runtime/rocm`) to hydrate versions, paths, and tooling status for vLLM, SGLang, llama.cpp, CUDA, and ROCm.
 - Upgrade buttons POST to `/runtime/<backend>/upgrade` (see `frontend/src/lib/api/studio.ts` and `controller/src/modules/lifecycle/runtime-routes.ts`), so backend-side command hooks must stay in sync with this panel.
 - Anytime controller runtime upgrade behavior changes, refresh the panel UI and document the expected payload/response shapes in these files to keep the README and AGENTS guidance aligned.
+- `/runtime/vllm/upgrade` supports `prefer_bundled` (default `true`), optional `command`, `args`, and optional `version`.
+- SGLang/CUDA/ROCm/llama.cpp upgrades keep `command` and `args` payload fields.

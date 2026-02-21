@@ -61,6 +61,7 @@ recipes/
 
 - Runtime discovery and upgrades live in `src/app/recipes/_components/vllm-runtime-panel.tsx` and call `src/lib/api/studio.ts` runtime endpoints under `/runtime/*`.
 - Keep this panel aligned with `controller/src/modules/lifecycle/runtime-routes.ts` and `controller/src/modules/lifecycle/runtime-info.ts` whenever upgrade behavior or payload shapes change.
+- vLLM upgrades now support `prefer_bundled` + optional explicit payload (`command`, `args`, `version`) to control `/runtime/vllm/upgrade`; SGLang and platform upgrades keep `command`/`args` payloads.
 
 ## Status Colors
 

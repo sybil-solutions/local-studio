@@ -4,6 +4,7 @@ import { existsSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { resolveBinary } from "../../core/command";
 import { resolveVllmPythonPath } from "./vllm-python-path";
+import { getUpgradeCommandFromEnvironment, getVllmUpgradeVersion, VLLM_UPGRADE_ENV } from "./runtime-upgrade-config";
 
 type CommandResult = {
   code: number | null;
@@ -12,6 +13,56 @@ type CommandResult = {
 };
 
 const DEFAULT_TIMEOUT_MS = 10_000;
+const UPGRADE_TIMEOUT_MS = 600_000;
+
+const parseCommandInput = (args: unknown): string[] | null => {
+  if (!Array.isArray(args)) {
+    return null;
+  }
+  const parsed = args.map((item) => (typeof item === "string" ? item.trim() : "")).filter((item) => item.length > 0);
+  return parsed.length > 0 ? parsed : null;
+};
+
+const resolveVllmUpgradeTarget = (version?: string): string => {
+  const configured = version && version.trim().length > 0 ? version.trim() : getVllmUpgradeVersion();
+  const normalized = configured.trim();
+  if (!normalized) {
+    return "vllm";
+  }
+  return normalized.includes("==") || normalized.endsWith(".whl") ? normalized : `vllm==${normalized}`;
+};
+
+const resolveVllmUpgradeCommand = (
+  pythonPath: string,
+  version: string,
+  preferBundled: boolean,
+  bundledWheel: { path: string; version: string | null } | null,
+): { command: string; args: string[] } => {
+  if (preferBundled) {
+    if (bundledWheel) {
+      if (resolveBinary("uv")) {
+        return {
+          command: "uv",
+          args: ["pip", "install", "--python", pythonPath, "--upgrade", bundledWheel.path],
+        };
+      }
+      return { command: pythonPath, args: ["-m", "pip", "install", "--upgrade", bundledWheel.path] };
+    }
+  }
+
+  const packageSpec = resolveVllmUpgradeTarget(version);
+  if (resolveBinary("uv")) {
+    return {
+      command: "uv",
+      args: ["pip", "install", "--python", pythonPath, "--upgrade", packageSpec],
+    };
+  }
+
+  return {
+    command: pythonPath,
+    args: ["-m", "pip", "install", "--upgrade", packageSpec],
+  };
+};
 
 const runCommand = (
   command: string,
@@ -136,14 +187,14 @@ export const getVllmRuntimeInfo = async (): Promise<{
   ]);
 
   if (result.code !== 0) {
-  return {
-    installed: false,
-    version: null,
-    python_path: pythonPath,
-    vllm_bin: vllmBin,
-    upgrade_command_available: false,
-    bundled_wheel: bundledWheel,
-  };
+    return {
+      installed: false,
+      version: null,
+      python_path: pythonPath,
+      vllm_bin: vllmBin,
+      upgrade_command_available: false,
+      bundled_wheel: bundledWheel,
+    };
   }
 
   let parsed: { version?: string | null; python?: string | null } | null = null;
@@ -189,8 +240,15 @@ export const getVllmConfigHelp = async (): Promise<{
   return { config: result.stdout || null, error: null };
 };
 
+type VllmUpgradeOptions = {
+  preferBundled?: boolean;
+  command?: string;
+  args?: string[];
+  version?: string;
+};
+
 export const upgradeVllmRuntime = async (
-  preferBundled = true
+  options: VllmUpgradeOptions = {}
 ): Promise<{
   success: boolean;
   version: string | null;
@@ -209,10 +267,44 @@ export const upgradeVllmRuntime = async (
     };
   }
 
-  const bundledWheel = resolveBundledWheel();
-  const wheelPath = preferBundled && bundledWheel ? bundledWheel.path : null;
-  const args = ["-m", "pip", "install", "--upgrade", wheelPath ?? "vllm"];
-  const result = await runCommand(pythonPath, args, 600_000);
+  const preferredCommand = options.command?.trim() ?? getUpgradeCommandFromEnvironment(VLLM_UPGRADE_ENV);
+  const command = preferredCommand;
+  const parsedArguments = parseCommandInput(options.args);
+  const preferBundled = options.preferBundled !== false;
+  if (!command) {
+      const version = resolveVllmUpgradeTarget(options.version);
+    const bundledWheel = resolveBundledWheel();
+    const resolvedCommand = resolveVllmUpgradeCommand(
+      pythonPath,
+      version,
+      preferBundled,
+      bundledWheel,
+    );
+    const result = await runCommand(resolvedCommand.command, resolvedCommand.args, UPGRADE_TIMEOUT_MS);
+    if (result.code !== 0) {
+      const usedWheel = preferBundled ? bundledWheel?.path ?? null : null;
+      return {
+        success: false,
+        version: null,
+        output: result.stdout || null,
+        error: result.stderr || "Upgrade failed",
+        used_wheel: usedWheel,
+      };
+    }
+
+    const runtimeInfo = await getVllmRuntimeInfo();
+    const usedWheel = preferBundled ? bundledWheel?.path ?? null : null;
+    return {
+      success: true,
+      version: runtimeInfo.version,
+      output: result.stdout || null,
+      error: result.stderr || null,
+      used_wheel: usedWheel,
+    };
+  }
+
+  const customArguments = parsedArguments ?? [];
+  const result = await runCommand(command, customArguments, UPGRADE_TIMEOUT_MS);
 
   if (result.code !== 0) {
     return {
@@ -220,7 +312,7 @@ export const upgradeVllmRuntime = async (
       version: null,
       output: result.stdout || null,
       error: result.stderr || "Upgrade failed",
-      used_wheel: wheelPath,
+      used_wheel: null,
     };
   }
 
@@ -230,6 +322,6 @@ export const upgradeVllmRuntime = async (
     version: runtimeInfo.version,
     output: result.stdout || null,
     error: result.stderr || null,
-    used_wheel: wheelPath,
+    used_wheel: null,
   };
 };

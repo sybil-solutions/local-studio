@@ -127,10 +127,25 @@ VLLM_STUDIO_INFERENCE_PORT=8000 # vLLM/SGLang port
 VLLM_STUDIO_API_KEY=your-key    # Optional auth
 VLLM_STUDIO_TEMPORAL_ADDRESS=localhost:7233 # Temporal server address
 VLLM_STUDIO_RUNTIME_PYTHON=/opt/venvs/active/vllm-latest/bin/python # Canonical runtime python (optional)
+VLLM_STUDIO_VLLM_UPGRADE_CMD=uv # Optional custom vLLM upgrade command
+VLLM_STUDIO_VLLM_UPGRADE_VERSION=0.15.1 # Optional pinned vLLM target version
 VLLM_STUDIO_LLAMACPP_UPGRADE_CMD=llamacpp-upgrade # Optional llama.cpp upgrade command
+VLLM_STUDIO_SGLANG_UPGRADE_CMD=sglang-upgrade # Optional SGLang upgrade command
 VLLM_STUDIO_CUDA_UPGRADE_CMD=apt # Optional CUDA upgrade command
 VLLM_STUDIO_ROCM_UPGRADE_CMD=rocminfo # Optional ROCm upgrade command
 ```
+
+Runtime upgrade endpoints consume the payload shapes documented in `frontend/src/lib/api/studio.ts`:
+
+- `POST /runtime/vllm/upgrade`
+  - Payload: `prefer_bundled`, `command`, `args`, `version`.
+  - Defaults to `vllm==0.15.1` when `version` is absent.
+- `POST /runtime/sglang/upgrade`
+  - Payload: `command`, `args`.
+- `POST /runtime/llamacpp/upgrade`, `POST /runtime/cuda/upgrade`, `POST /runtime/rocm/upgrade`
+  - Payload: `command`, `args`.
+
+When `uv` is available, runtime upgrades prefer the `uv` path for vLLM and SGLang.
 
 ### Recipe Example
 

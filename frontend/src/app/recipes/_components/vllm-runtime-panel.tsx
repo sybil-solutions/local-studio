@@ -96,7 +96,7 @@ export function VllmRuntimePanel() {
         let result: VllmUpgradeResult | RuntimeUpgradeResult;
         switch (backend) {
           case "vllm":
-            result = await api.upgradeVllmRuntime(true);
+            result = await api.upgradeVllmRuntime({ preferBundled: true });
             break;
           case "sglang":
             result = await api.upgradeSglangRuntime();

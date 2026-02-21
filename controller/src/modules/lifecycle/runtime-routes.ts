@@ -51,15 +51,25 @@ export const registerRuntimeRoutes = (app: Hono, context: AppContext): void => {
   });
 
   app.post("/runtime/sglang/upgrade", async (ctx) => {
-    const result = await upgradeSglangRuntime(context.config);
+    const body = await ctx.req.json().catch(() => ({}));
+    const command = typeof body?.command === "string" ? body.command : undefined;
+    const parsedArguments = Array.isArray(body?.args) ? body.args : [];
+    if (parsedArguments.some((value: unknown) => typeof value !== "string")) {
+      throw badRequest("args must be an array of strings");
+    }
+
+    const finalResult = await upgradeSglangRuntime(context.config, {
+      command,
+      ...(parsedArguments.length > 0 ? { args: parsedArguments as string[] } : {}),
+    });
     await context.eventManager.publish(
       new Event("runtime_sglang_upgraded", {
-        success: result.success,
-        version: result.version,
-        used_command: result.used_command,
+        success: finalResult.success,
+        version: finalResult.version,
+        used_command: finalResult.used_command,
       })
     );
-    return ctx.json(result);
+    return ctx.json(finalResult);
   });
 
   app.post("/runtime/llamacpp/upgrade", async (ctx) => {
@@ -132,7 +142,18 @@ export const registerRuntimeRoutes = (app: Hono, context: AppContext): void => {
       throw badRequest("Invalid payload");
     }
     const preferBundled = body?.prefer_bundled !== false;
-    const result = await upgradeVllmRuntime(preferBundled);
+    const command = typeof body?.command === "string" ? body.command : undefined;
+    const parsedArguments = Array.isArray(body?.args) ? body.args : [];
+    const requestedVersion = typeof body?.version === "string" ? body.version.trim() : undefined;
+    if (parsedArguments.some((value: unknown) => typeof value !== "string")) {
+      throw badRequest("args must be an array of strings");
+    }
+    const result = await upgradeVllmRuntime({
+      command,
+      preferBundled,
+      ...(parsedArguments.length > 0 ? { args: parsedArguments as string[] } : {}),
+      ...(requestedVersion ? { version: requestedVersion } : {}),
+    });
     await context.eventManager.publish(
       new Event("runtime_vllm_upgraded", {
         success: result.success,

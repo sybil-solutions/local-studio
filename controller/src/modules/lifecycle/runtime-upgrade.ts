@@ -1,6 +1,6 @@
 // CRITICAL
 import type { Config } from "../../config/env";
-import { runCommand } from "../../core/command";
+import { resolveBinary, runCommand } from "../../core/command";
 import { getLlamacppRuntimeInfo, getSglangRuntimeInfo } from "./runtime-info";
 import { getCudaInfo } from "./runtime-info";
 import { getRocmInfo, resolveRocmSmiTool } from "./platform/rocm-info";
@@ -8,8 +8,9 @@ import { resolveVllmPythonPath } from "./vllm-python-path";
 import {
   CUDA_UPGRADE_ENV,
   LLAMACPP_UPGRADE_ENV,
+  SGLANG_UPGRADE_ENV,
   ROCM_UPGRADE_ENV,
-  getUpgradeCommandFromEnv,
+  getUpgradeCommandFromEnvironment,
 } from "./runtime-upgrade-config";
 
 export interface RuntimeUpgradeResult {
@@ -23,6 +24,7 @@ export interface RuntimeUpgradeResult {
 export interface RuntimeUpgradeOptions {
   command?: string;
   args?: string[];
+  version?: string;
 }
 
 const DEFAULT_TIMEOUT_MS = 10 * 60_000;
@@ -31,7 +33,7 @@ const resolveCommand = (command: string | undefined, envKey: string): string | n
   if (command?.trim()) {
     return command.trim();
   }
-  return getUpgradeCommandFromEnv(envKey);
+  return getUpgradeCommandFromEnvironment(envKey);
 };
 
 const parseCommandInput = (args: unknown): string[] | null => {
@@ -60,11 +62,25 @@ export const getSglangRuntimePython = (config: Config): string => {
   return config.sglang_python || resolveVllmPythonPath() || "python3";
 };
 
-export const upgradeSglangRuntime = async (config: Config): Promise<RuntimeUpgradeResult> => {
+export const upgradeSglangRuntime = async (
+  config: Config,
+  options: RuntimeUpgradeOptions = {},
+): Promise<RuntimeUpgradeResult> => {
+  const command = resolveCommand(options.command, SGLANG_UPGRADE_ENV);
+  const parsedArguments = parseCommandInput(options.args);
   const python = getSglangRuntimePython(config);
+  if (command) {
+    return runCommandUpgrade(command, parsedArguments ?? []);
+  }
+
+  const useUv = Boolean(resolveBinary("uv"));
+  const args = useUv
+    ? ["pip", "install", "--python", python, "--upgrade", "sglang"]
+    : ["-m", "pip", "install", "--upgrade", "sglang"];
+
   const commandResult = runCommand(
     python,
-    ["-m", "pip", "install", "--upgrade", "sglang"],
+    args,
     DEFAULT_TIMEOUT_MS,
   );
   const runtime = await getSglangRuntimeInfo(config);
@@ -74,7 +90,9 @@ export const upgradeSglangRuntime = async (config: Config): Promise<RuntimeUpgra
       version: runtime.version,
       output: commandResult.stdout || null,
       error: commandResult.stderr || "Failed to upgrade SGLang",
-      used_command: `${python} -m pip install --upgrade sglang`,
+      used_command: useUv
+        ? `uv ${args.join(" ")}`
+        : `${python} ${args.join(" ")}`,
     };
   }
 
@@ -83,7 +101,7 @@ export const upgradeSglangRuntime = async (config: Config): Promise<RuntimeUpgra
     version: runtime.version,
     output: commandResult.stdout || null,
     error: runtime.installed ? null : "Version check failed after upgrade",
-    used_command: `${python} -m pip install --upgrade sglang`,
+    used_command: useUv ? `uv ${args.join(" ")}` : `${python} ${args.join(" ")}`,
   };
 };
 
