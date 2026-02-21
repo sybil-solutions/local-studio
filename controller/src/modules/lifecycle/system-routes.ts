@@ -29,20 +29,19 @@ export const registerSystemRoutes = (app: Hono, context: AppContext): void => {
    */
   const checkService = (host: string, port: number, timeoutMs = 1000): Promise<boolean> => {
     return new Promise((resolve) => {
-      const socket = connect(port, host);
-      const timer = setTimeout(() => {
+      const socket = connect({ port, host });
+      let settled = false;
+      const finalize = (result: boolean): void => {
+        if (settled) return;
+        settled = true;
         socket.destroy();
-        resolve(false);
-      }, timeoutMs);
-      socket.once("connect", () => {
-        clearTimeout(timer);
-        socket.end();
-        resolve(true);
-      });
-      socket.once("error", () => {
-        clearTimeout(timer);
-        resolve(false);
-      });
+        resolve(result);
+      };
+
+      socket.setTimeout(timeoutMs);
+      socket.once("connect", () => finalize(true));
+      socket.once("timeout", () => finalize(false));
+      socket.once("error", () => finalize(false));
     });
   };
 

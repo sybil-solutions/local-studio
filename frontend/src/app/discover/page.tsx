@@ -23,6 +23,7 @@ export default function DiscoverPage() {
     providers,
     recommendations,
     maxVramGb,
+    selectedVramGb,
     excludedQuantizations,
     setSearch,
     setTask,
@@ -31,6 +32,7 @@ export default function DiscoverPage() {
     setShowFilters,
     setProviderFilter,
     setExcludedQuantizations,
+    setSelectedVramGb,
     copyModelId,
     loadMore,
     refreshModels,
@@ -83,6 +85,7 @@ export default function DiscoverPage() {
       providers={providers}
       recommendations={recommendations}
       maxVramGb={maxVramGb}
+      selectedVramGb={selectedVramGb}
       excludedQuantizations={excludedQuantizations}
       onSearchChange={setSearch}
       onTaskChange={setTask}
@@ -91,6 +94,7 @@ export default function DiscoverPage() {
       onToggleFilters={() => setShowFilters(!showFilters)}
       onProviderFilterChange={setProviderFilter}
       onExcludedQuantizationsChange={setExcludedQuantizations}
+      onSelectedVramChange={setSelectedVramGb}
       onCopyModelId={copyModelId}
       onLoadMore={loadMore}
       onRefresh={refreshModels}

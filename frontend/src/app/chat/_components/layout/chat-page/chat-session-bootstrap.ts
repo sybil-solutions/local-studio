@@ -1,7 +1,7 @@
 // CRITICAL
 "use client";
 
-import { useEffect } from "react";
+import { useCallback, useEffect } from "react";
 import type { MutableRefObject } from "react";
 import type { ChatMessage, ChatSessionDetail, StoredMessage } from "@/lib/types";
 
@@ -52,18 +52,18 @@ export function useChatSessionBootstrap({
   getLastSessionId,
   setLastSessionId,
 }: UseChatSessionBootstrapArgs) {
-  const clearActiveRun = () => {
+  const clearActiveRun = useCallback(() => {
     if (runAbortControllerRef.current) {
       runAbortControllerRef.current.abort();
       runAbortControllerRef.current = null;
     }
     activeRunIdRef.current = null;
-  };
+  }, [activeRunIdRef, runAbortControllerRef]);
 
-  const resetActiveSession = () => {
+  const resetActiveSession = useCallback(() => {
     startNewSession();
     clearActiveRun();
-  };
+  }, [startNewSession, clearActiveRun]);
 
   // Load sessions on mount
   useEffect(() => {

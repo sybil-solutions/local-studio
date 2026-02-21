@@ -32,6 +32,8 @@ cd /home/ser/workspace/projects/lmvllm
 ```bash
 # Controller (native bun - NOT snap bun)
 cd /home/ser/workspace/projects/lmvllm
+# If 8080 is already bound, stop old controllers first:
+pkill -f "[b]un controller/src/main.ts" || true
 nohup ~/.bun/bin/bun run controller/src/main.ts > /tmp/controller-stdout.log 2>&1 &
 
 # Frontend (Docker)
@@ -146,6 +148,7 @@ xcodebuild -project vllm-studio.xcodeproj -scheme vllm-studio \
 - [ ] No files >60 LOC without a CRITICAL marker
 - [ ] No directories >20 files
 - [ ] All filenames use kebab-case
+- [ ] Runtime docs and API references include `/runtime/*` and upgrade payload guidance
 
 **IF ANY ITEM FAILS, FIX IT BEFORE CLAIMING COMPLETION.**
 

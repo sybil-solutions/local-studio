@@ -4,6 +4,7 @@ import { dirname, join, resolve } from "node:path";
 import type { Recipe } from "./types";
 import type { Config } from "../../config/env";
 import { resolveBinary } from "../../core/command";
+import { resolveVllmRecipePythonPath } from "./vllm-python-path";
 
 /**
  * Normalize JSON-like arguments for CLI flags.
@@ -53,7 +54,7 @@ export const getExtraArgument = (extraArguments: Record<string, unknown>, key: s
  * @returns Python executable path if resolved.
  */
 export const getPythonPath = (recipe: Recipe): string | undefined => {
-  if (recipe.python_path) {
+  if (recipe.python_path && existsSync(recipe.python_path)) {
     return recipe.python_path;
   }
   const venvPath = getExtraArgument(recipe.extra_args, "venv_path");
@@ -64,6 +65,10 @@ export const getPythonPath = (recipe: Recipe): string | undefined => {
     }
   }
   return undefined;
+};
+
+const getVllmPythonPath = (recipe: Recipe): string | undefined => {
+  return resolveVllmRecipePythonPath(recipe.python_path) ?? undefined;
 };
 
 /**
@@ -200,7 +205,7 @@ export const appendExtraArguments = (
  * @returns CLI command array.
  */
 export const buildVllmCommand = (recipe: Recipe): string[] => {
-  const pythonPath = getPythonPath(recipe);
+  const pythonPath = getVllmPythonPath(recipe);
   let command: string[];
   if (pythonPath) {
     const vllmBin = join(dirname(pythonPath), "vllm");

@@ -40,8 +40,10 @@ export const registerJobsRoutes = (
   });
 
   app.get("/jobs", (ctx) => {
-    const limit = Number(ctx.req.query("limit") ?? 50);
-    const jobs = jobManager.listJobs(Math.min(limit, 200));
+    const limitRaw = ctx.req.query("limit");
+    const parsedLimit = limitRaw === undefined ? Number.NaN : Number.parseInt(limitRaw, 10);
+    const safeLimit = Number.isFinite(parsedLimit) && parsedLimit > 0 ? parsedLimit : 50;
+    const jobs = jobManager.listJobs(Math.min(safeLimit, 200));
     return ctx.json({ jobs });
   });
 

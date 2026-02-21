@@ -11,6 +11,7 @@ export function useDiscover() {
   const [localModels, setLocalModels] = useState<ModelInfo[]>([]);
   const [recommendations, setRecommendations] = useState<ModelRecommendation[]>([]);
   const [maxVramGb, setMaxVramGb] = useState(0);
+  const [selectedVramGb, setSelectedVramGb] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
@@ -30,10 +31,17 @@ export function useDiscover() {
     try {
       const data = await api.getModelRecommendations();
       setRecommendations(data.recommendations ?? []);
-      setMaxVramGb(typeof data.max_vram_gb === "number" ? data.max_vram_gb : 0);
+      const nextMaxVramGb = typeof data.max_vram_gb === "number" ? data.max_vram_gb : 0;
+      setMaxVramGb(nextMaxVramGb);
+      setSelectedVramGb((previous) => {
+        if (nextMaxVramGb <= 0) return 0;
+        if (previous <= 0) return nextMaxVramGb;
+        return Math.min(previous, nextMaxVramGb);
+      });
     } catch {
       setRecommendations([]);
       setMaxVramGb(0);
+      setSelectedVramGb(0);
     }
   }, []);
 
@@ -174,6 +182,7 @@ export function useDiscover() {
     filteredModels,
     recommendations,
     maxVramGb,
+    selectedVramGb,
     loading,
     error,
     search,
@@ -193,6 +202,7 @@ export function useDiscover() {
     setShowFilters,
     setProviderFilter,
     setExcludedQuantizations,
+    setSelectedVramGb,
     copyModelId,
     loadMore,
     refreshModels,

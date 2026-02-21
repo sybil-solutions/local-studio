@@ -5,6 +5,8 @@ import { memo, useMemo } from "react";
 import {
   Check,
   CheckCircle2,
+  ChevronDown,
+  ChevronRight,
   Copy,
   Download,
   DownloadCloud,
@@ -26,6 +28,10 @@ export const ModelRow = memo(function ModelRow({
   onStartDownload,
   onPauseDownload,
   onResumeDownload,
+  variantCount = 1,
+  expanded = false,
+  onToggleExpand,
+  child = false,
 }: {
   model: HuggingFaceModel;
   copied: boolean;
@@ -35,14 +41,36 @@ export const ModelRow = memo(function ModelRow({
   onStartDownload: (params: { model_id: string }) => Promise<void>;
   onPauseDownload: (downloadId: string) => Promise<void>;
   onResumeDownload: (downloadId: string) => Promise<void>;
+  variantCount?: number;
+  expanded?: boolean;
+  onToggleExpand?: () => void;
+  child?: boolean;
 }) {
   const provider = useMemo(() => extractProvider(model.modelId), [model.modelId]);
   const quantizations = useMemo(() => extractQuantizations(model.tags), [model.tags]);
+  const hasVariants = variantCount > 1;
+  const rowClasses = child
+    ? "bg-(--surface)/15 hover:bg-(--surface)/25 transition-colors"
+    : "hover:bg-(--surface)/30 transition-colors";
 
   return (
-    <tr className="hover:bg-(--surface)/30 transition-colors">
+    <tr className={rowClasses}>
       <td className="px-4 py-3">
-        <div className="flex items-center gap-2">
+        <div className={`flex items-center gap-2 ${child ? "pl-5" : ""}`}>
+          {hasVariants && !child && (
+            <button
+              type="button"
+              onClick={onToggleExpand}
+              className="p-1 rounded hover:bg-(--surface) transition-colors shrink-0"
+              title={expanded ? "Collapse variants" : "Expand variants"}
+            >
+              {expanded ? (
+                <ChevronDown className="h-3.5 w-3.5 text-(--dim)" />
+              ) : (
+                <ChevronRight className="h-3.5 w-3.5 text-(--dim)" />
+              )}
+            </button>
+          )}
           <div className="text-sm font-medium text-(--fg) truncate max-w-xs" title={model.modelId}>
             {model.modelId}
           </div>
@@ -54,6 +82,11 @@ export const ModelRow = memo(function ModelRow({
             {copied ? <Check className="h-3 w-3 text-(--hl2)" /> : <Copy className="h-3 w-3 text-(--dim)" />}
           </button>
         </div>
+        {!child && hasVariants && (
+          <div className="text-[11px] text-(--dim) mt-1 pl-7">
+            {variantCount} quantization variants
+          </div>
+        )}
       </td>
       <td className="px-4 py-3">
         <span className="px-2 py-1 bg-(--surface) border border-(--border) rounded text-xs text-(--fg)">{provider}</span>
@@ -160,4 +193,3 @@ export const ModelRow = memo(function ModelRow({
     </tr>
   );
 });
-

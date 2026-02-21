@@ -44,6 +44,30 @@ cd frontend && npm install && npm run dev
 ./start.sh --dev
 ```
 
+### Runtime Management (vLLM, SGLang, llama.cpp)
+
+vLLM Studio exposes runtime discovery and upgrade endpoints for inference stacks:
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/runtime/vllm` | GET | Get installed vLLM version + paths |
+| `/runtime/vllm/config` | GET | Show vLLM config/help text |
+| `/runtime/sglang` | GET | Get SGLang version + active python |
+| `/runtime/llamacpp` | GET | Get llama.cpp version/path |
+| `/runtime/cuda` | GET | Get CUDA driver/runtime versions |
+| `/runtime/rocm` | GET | Get ROCm/HIP tool versions |
+| `/runtime/vllm/upgrade` | POST | Upgrade vLLM runtime |
+| `/runtime/sglang/upgrade` | POST | Upgrade SGLang runtime |
+| `/runtime/llamacpp/upgrade` | POST | Upgrade llama.cpp runtime |
+| `/runtime/cuda/upgrade` | POST | Run CUDA upgrade command |
+| `/runtime/rocm/upgrade` | POST | Run ROCm upgrade command |
+
+Upgrade payloads are optional: `{ "command": "...", "args": ["--foo"] }`.
+
+If `command` is omitted, vLLM/SGLang use the active runtime python path and
+`VLLM_STUDIO_RUNTIME_PYTHON`/recipe python fallback, while other runtimes use
+`VLLM_STUDIO_*_UPGRADE_CMD` env overrides.
+
 ## API Reference
 
 ### Health & Status
@@ -102,6 +126,10 @@ VLLM_STUDIO_PORT=8080           # Controller port
 VLLM_STUDIO_INFERENCE_PORT=8000 # vLLM/SGLang port
 VLLM_STUDIO_API_KEY=your-key    # Optional auth
 VLLM_STUDIO_TEMPORAL_ADDRESS=localhost:7233 # Temporal server address
+VLLM_STUDIO_RUNTIME_PYTHON=/opt/venvs/active/vllm-latest/bin/python # Canonical runtime python (optional)
+VLLM_STUDIO_LLAMACPP_UPGRADE_CMD=llamacpp-upgrade # Optional llama.cpp upgrade command
+VLLM_STUDIO_CUDA_UPGRADE_CMD=apt # Optional CUDA upgrade command
+VLLM_STUDIO_ROCM_UPGRADE_CMD=rocminfo # Optional ROCm upgrade command
 ```
 
 ### Recipe Example

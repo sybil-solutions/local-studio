@@ -24,6 +24,7 @@ interface DiscoverViewProps {
   providers: string[];
   recommendations: ModelRecommendation[];
   maxVramGb: number;
+  selectedVramGb: number;
   excludedQuantizations: string[];
   downloads: ModelDownload[];
   getDownloadForModel: (modelId: string) => ModelDownload | null;
@@ -34,6 +35,7 @@ interface DiscoverViewProps {
   onToggleFilters: () => void;
   onProviderFilterChange: (value: string) => void;
   onExcludedQuantizationsChange: (value: string[]) => void;
+  onSelectedVramChange: (value: number) => void;
   onCopyModelId: (modelId: string) => void;
   onLoadMore: () => void;
   onRefresh: () => void;
@@ -60,6 +62,7 @@ export function DiscoverView({
   providers,
   recommendations,
   maxVramGb,
+  selectedVramGb,
   excludedQuantizations,
   downloads,
   getDownloadForModel,
@@ -70,6 +73,7 @@ export function DiscoverView({
   onToggleFilters,
   onProviderFilterChange,
   onExcludedQuantizationsChange,
+  onSelectedVramChange,
   onCopyModelId,
   onLoadMore,
   onRefresh,
@@ -79,6 +83,15 @@ export function DiscoverView({
   onResumeDownload,
   onCancelDownload,
 }: DiscoverViewProps) {
+  const effectiveVramGb = selectedVramGb > 0 ? selectedVramGb : maxVramGb;
+  const visibleRecommendations = recommendations.filter((recommendation) => {
+    if (typeof recommendation.min_vram_gb !== "number") return true;
+    if (effectiveVramGb <= 0) return true;
+    return recommendation.min_vram_gb <= effectiveVramGb;
+  });
+  const sliderMax = Math.max(1, Math.round(maxVramGb));
+  const sliderValue = Math.max(1, Math.min(sliderMax, Math.round(effectiveVramGb || sliderMax)));
+
   return (
     <div className="flex flex-col h-full bg-(--bg) text-(--fg)">
       <DiscoverHeader showFilters={showFilters} onToggleFilters={onToggleFilters} onRefresh={onRefresh} loading={loading} />
@@ -122,11 +135,28 @@ export function DiscoverView({
               <div className="flex items-baseline justify-between gap-3 mb-2">
                 <h3 className="text-sm font-semibold text-(--fg)">VRAM-aware Recommendations</h3>
                 <div className="text-xs text-(--dim)">
-                  {maxVramGb > 0 ? `Max VRAM ${Math.round(maxVramGb)} GB` : "VRAM unknown"}
+                  {maxVramGb > 0 ? `Available VRAM ${Math.round(maxVramGb)} GB` : "VRAM unknown"}
                 </div>
               </div>
+              {maxVramGb > 0 && (
+                <div className="mb-3">
+                  <div className="flex items-center justify-between text-xs text-(--dim) mb-1">
+                    <span>Recommendation budget</span>
+                    <span>{Math.round(effectiveVramGb)} GB</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={1}
+                    max={sliderMax}
+                    value={sliderValue}
+                    onChange={(event) => onSelectedVramChange(Number(event.target.value))}
+                    className="w-full accent-(--hl1)"
+                    aria-label="VRAM recommendation budget"
+                  />
+                </div>
+              )}
               <div className="space-y-2">
-                {recommendations.slice(0, 5).map((rec) => (
+                {visibleRecommendations.slice(0, 5).map((rec) => (
                   <div key={rec.id} className="flex items-center justify-between gap-4">
                     <div className="min-w-0">
                       <div className="text-sm text-(--fg) truncate">{rec.name}</div>
@@ -136,7 +166,7 @@ export function DiscoverView({
                       <div
                         className={
                           "shrink-0 text-xs px-2 py-1 rounded-md border " +
-                          ((maxVramGb === 0 || rec.min_vram_gb <= maxVramGb)
+                          ((effectiveVramGb === 0 || rec.min_vram_gb <= effectiveVramGb)
                             ? "text-(--hl2) border-(--hl2)/30 bg-(--hl2)/10"
                             : "text-(--err) border-(--err)/30 bg-(--err)/10")
                         }
@@ -146,6 +176,11 @@ export function DiscoverView({
                     )}
                   </div>
                 ))}
+                {visibleRecommendations.length === 0 && (
+                  <div className="text-xs text-(--dim)">
+                    No recommendations fit the current VRAM budget. Increase the slider.
+                  </div>
+                )}
               </div>
             </div>
           )}

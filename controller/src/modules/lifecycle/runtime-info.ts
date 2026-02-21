@@ -17,6 +17,7 @@ import { probeGpuMonitoring } from "./platform/compatibility-report";
 import { getRocmInfo, resolveRocmSmiTool } from "./platform/rocm-info";
 import { resolveNvidiaSmiBinary } from "./platform/smi-tools";
 import { getTorchBuildInfo } from "./platform/torch-info";
+import { resolveVllmPythonPath } from "./vllm-python-path";
 
 const extractCudaVersion = (output: string): string | null => {
   const match = output.match(/CUDA Version\s*:\s*([0-9.]+)/i);
@@ -83,8 +84,8 @@ export const detectPlatformKind = (args: {
   return "unknown";
 };
 
-const getSglangRuntimeInfo = (config: Config): RuntimeBackendInfo => {
-  const python = config.sglang_python || "python3";
+export const getSglangRuntimeInfo = (config: Config): RuntimeBackendInfo => {
+  const python = config.sglang_python || resolveVllmPythonPath() || "python3";
   const result = runCommand(python, [
     "-c",
     "import json, sys\ntry:\n import sglang\n print(json.dumps({'version': getattr(sglang, '__version__', None), 'python': sys.executable}))\nexcept Exception:\n print(json.dumps({'version': None, 'python': sys.executable}))",
@@ -122,7 +123,7 @@ const parseLlamaVersion = (output: string): string | null => {
   return fallback || null;
 };
 
-const getLlamacppRuntimeInfo = (config: Config): RuntimeBackendInfo => {
+export const getLlamacppRuntimeInfo = (config: Config): RuntimeBackendInfo => {
   const configured = config.llama_bin || "llama-server";
   const resolved =
     resolveBinary(configured) ?? (existsSync(configured) ? resolve(configured) : null);

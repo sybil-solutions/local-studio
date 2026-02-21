@@ -73,6 +73,127 @@ export const createOpenApiSpec = (context: AppContext): Record<string, unknown> 
         },
       },
     },
+    "/runtime/vllm": {
+      get: {
+        summary: "vLLM runtime info",
+        description: "Get vLLM version, install status, and python path",
+        responses: {
+          "200": {
+            description: "Runtime info",
+          },
+        },
+      },
+    },
+    "/runtime/vllm/config": {
+      get: {
+        summary: "vLLM runtime config",
+        description: "Get vLLM launch and dependency configuration help",
+        responses: {
+          "200": {
+            description: "Runtime config",
+          },
+        },
+      },
+    },
+    "/runtime/sglang": {
+      get: {
+        summary: "SGLang runtime info",
+        description: "Get SGLang version and python runtime path",
+        responses: {
+          "200": {
+            description: "Runtime info",
+          },
+        },
+      },
+    },
+    "/runtime/llamacpp": {
+      get: {
+        summary: "llama.cpp runtime info",
+        description: "Get llama.cpp install status and binary/version",
+        responses: {
+          "200": {
+            description: "Runtime info",
+          },
+        },
+      },
+    },
+    "/runtime/cuda": {
+      get: {
+        summary: "CUDA info",
+        description: "Get NVIDIA driver and CUDA version information",
+        responses: {
+          "200": {
+            description: "Runtime info",
+          },
+        },
+      },
+    },
+    "/runtime/rocm": {
+      get: {
+        summary: "ROCm info",
+        description: "Get ROCm/HIP version and tool information",
+        responses: {
+          "200": {
+            description: "Runtime info",
+          },
+        },
+      },
+    },
+    "/runtime/vllm/upgrade": {
+      post: {
+        summary: "Upgrade vLLM runtime",
+        description: "Trigger vLLM runtime upgrade",
+        responses: {
+          "200": {
+            description: "Upgrade result",
+          },
+        },
+      },
+    },
+    "/runtime/sglang/upgrade": {
+      post: {
+        summary: "Upgrade SGLang runtime",
+        description: "Trigger SGLang runtime upgrade",
+        responses: {
+          "200": {
+            description: "Upgrade result",
+          },
+        },
+      },
+    },
+    "/runtime/llamacpp/upgrade": {
+      post: {
+        summary: "Upgrade llama.cpp runtime",
+        description: "Run llama.cpp upgrade command",
+        responses: {
+          "200": {
+            description: "Upgrade result",
+          },
+        },
+      },
+    },
+    "/runtime/cuda/upgrade": {
+      post: {
+        summary: "Upgrade CUDA stack",
+        description: "Run configured CUDA upgrade command",
+        responses: {
+          "200": {
+            description: "Upgrade result",
+          },
+        },
+      },
+    },
+    "/runtime/rocm/upgrade": {
+      post: {
+        summary: "Upgrade ROCm stack",
+        description: "Run configured ROCm upgrade command",
+        responses: {
+          "200": {
+            description: "Upgrade result",
+          },
+        },
+      },
+    },
     "/recipes": {
       get: {
         summary: "List recipes",
@@ -141,6 +262,17 @@ export const createOpenApiSpec = (context: AppContext): Record<string, unknown> 
         },
       },
     },
+    "/distributed/nodes": {
+      get: {
+        summary: "List distributed nodes",
+        description: "List all registered distributed nodes and current heartbeat state",
+        responses: {
+          "200": {
+            description: "Node list",
+          },
+        },
+      },
+    },
     "/distributed/nodes/{node_id}/heartbeat": {
       post: {
         summary: "Distributed heartbeat",
@@ -159,6 +291,17 @@ export const createOpenApiSpec = (context: AppContext): Record<string, unknown> 
           },
           "404": {
             description: "Node not found",
+          },
+        },
+      },
+    },
+    "/distributed/allocations": {
+      get: {
+        summary: "List manual layer allocations",
+        description: "List all manual allocations, optionally filtered by model_id",
+        responses: {
+          "200": {
+            description: "Allocation list",
           },
         },
       },
@@ -214,6 +357,17 @@ export const createOpenApiSpec = (context: AppContext): Record<string, unknown> 
         responses: {
           "200": {
             description: "Topology report",
+          },
+        },
+      },
+    },
+    "/distributed/status": {
+      get: {
+        summary: "Get distributed cluster status",
+        description: "Return a summary of online/stale nodes and model coverage",
+        responses: {
+          "200": {
+            description: "Distributed cluster status",
           },
         },
       },

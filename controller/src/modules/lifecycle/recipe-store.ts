@@ -1,8 +1,9 @@
 // CRITICAL
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { parseRecipe } from "./recipe-serializer";
 import type { Recipe } from "./types";
 import { openSqliteDatabase } from "../../stores/sqlite";
+import { resolveVllmRecipePythonPath } from "./vllm-python-path";
 
 /**
  * SQLite-backed recipe storage.
@@ -18,6 +19,7 @@ export class RecipeStore {
   public constructor(dbPath: string) {
     this.db = openSqliteDatabase(dbPath);
     this.migrate();
+    this.normalizeVllmRecipes();
   }
 
   /**
@@ -48,6 +50,48 @@ export class RecipeStore {
       )
     `);
     this.useJsonColumn = false;
+  }
+
+  private normalizeVllmRecipes(): void {
+    const update = this.db.prepare(
+      `UPDATE recipes SET ${this.useJsonColumn ? "json" : "data"} = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`
+    );
+    const column = this.useJsonColumn ? "json" : "data";
+    const rows = this.db.query(`SELECT id, ${column} FROM recipes`).all() as Array<{
+      id: string;
+      json?: string;
+      data?: string;
+    }>;
+
+    for (const row of rows) {
+      const raw = row[column];
+      if (typeof raw !== "string") {
+        continue;
+      }
+      try {
+        const parsed = JSON.parse(raw) as Record<string, unknown>;
+        if (parsed["backend"] !== "vllm") {
+          continue;
+        }
+        const currentPythonPath = resolveVllmRecipePythonPath(
+          typeof parsed["python_path"] === "string" ? String(parsed["python_path"]) : null
+        );
+        if (
+          typeof parsed["python_path"] === "string" &&
+          existsSync(parsed["python_path"]) &&
+          parsed["python_path"] === currentPythonPath
+        ) {
+          continue;
+        }
+        if (parsed["python_path"] === null && currentPythonPath === null) {
+          continue;
+        }
+        parsed["python_path"] = currentPythonPath;
+        update.run(JSON.stringify(parsed), row.id);
+      } catch {
+        continue;
+      }
+    }
   }
 
   /**
@@ -106,7 +150,12 @@ export class RecipeStore {
    * @returns void
    */
   public save(recipe: Recipe): void {
-    const data = JSON.stringify(recipe);
+    const normalizedRecipe = {
+      ...recipe,
+      python_path:
+        recipe.backend === "vllm" ? resolveVllmRecipePythonPath(recipe.python_path) : recipe.python_path,
+    };
+    const data = JSON.stringify(normalizedRecipe);
     const column = this.useJsonColumn ? "json" : "data";
     if (this.useJsonColumn) {
       this.db

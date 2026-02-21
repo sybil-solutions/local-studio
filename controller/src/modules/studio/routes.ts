@@ -15,6 +15,7 @@ import { basename, resolve, sep } from "node:path";
 import { badRequest, notFound } from "../../core/errors";
 import type { AppContext } from "../../types/context";
 import { getGpuInfo } from "../lifecycle/gpu";
+import type { GpuInfo } from "../lifecycle/types";
 import { discoverModelDirectories, estimateWeightsSizeBytes } from "../models/model-browser";
 import {
   getPersistedConfigPath,
@@ -112,6 +113,19 @@ const copyDirectory = (source: string, target: string): void => {
   }
 };
 
+export const deriveRecommendationVramGb = (gpus: GpuInfo[]): number => {
+  if (gpus.length === 0) return 0;
+  return gpus.reduce((max, gpu) => {
+    const next =
+      gpu.memory_total_mb > 0
+        ? gpu.memory_total_mb / 1024
+        : gpu.memory_total > 0
+          ? gpu.memory_total / 1024 ** 3
+          : 0;
+    return Math.max(max, next);
+  }, 0);
+};
+
 /**
  * Register studio routes.
  * @param app - Hono app.
@@ -202,8 +216,7 @@ export const registerStudioRoutes = (app: Hono, context: AppContext): void => {
 
   app.get("/studio/recommendations", async (ctx) => {
     const gpus = getGpuInfo();
-    const maxVramGb =
-      gpus.length > 0 ? Math.max(...gpus.map((gpu) => gpu.memory_total_mb / 1024)) : 0;
+    const maxVramGb = deriveRecommendationVramGb(gpus);
     const recommendations = MODEL_RECOMMENDATIONS.filter((model) => {
       if (!model.min_vram_gb) return true;
       if (maxVramGb === 0) {

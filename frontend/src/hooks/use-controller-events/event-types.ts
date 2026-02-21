@@ -32,6 +32,11 @@ export const CONTROLLER_EVENT_TYPES = [
   "mcp_server_disabled",
   "mcp_tool_called",
   "runtime_vllm_upgraded",
+  "runtime_sglang_upgraded",
+  "runtime_llamacpp_upgraded",
+  "runtime_cuda_upgraded",
+  "runtime_rocm_upgraded",
   "job_updated",
+  "distributed_node_updated",
+  "distributed_topology_updated",
 ] as const;
-

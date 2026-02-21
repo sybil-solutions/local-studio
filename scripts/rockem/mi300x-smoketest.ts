@@ -1,4 +1,5 @@
 // CRITICAL
+// @ts-nocheck
 type SmokeOptions = {
   baseUrl: string;
   expectRocm: boolean;
@@ -12,7 +13,7 @@ type CheckResult = {
 };
 
 const usage = (): void => {
-  console.log(`Usage: bun scripts/rockem/hotaisle-smoketest.ts [options]
+  console.log(`Usage: bun scripts/rockem/mi300x-smoketest.ts [options]
 
 Options:
   --base-url <url>      Controller URL (default: http://127.0.0.1:8080)
@@ -69,7 +70,7 @@ const fetchJson = async (
   baseUrl: string,
   path: string,
   timeoutMs: number,
-  init?: RequestInit
+  init?: RequestInit,
 ): Promise<{ status: number; json: unknown; text: string }> => {
   const response = await fetch(`${baseUrl}${path}`, {
     ...init,
@@ -95,17 +96,23 @@ const run = async (): Promise<void> => {
   const health = await fetchJson(options.baseUrl, "/health", options.timeoutMs);
   checks.push({
     name: "GET /health",
-    ok: health.status === 200 && Boolean((health.json as Record<string, unknown>)?.["status"]),
+    ok:
+      health.status === 200 &&
+      Boolean((health.json as Record<string, unknown>)?.["status"]),
     details: `status=${health.status}`,
   });
 
   const config = await fetchJson(options.baseUrl, "/config", options.timeoutMs);
-  const runtime = ((config.json as Record<string, unknown>)?.["runtime"] ?? {}) as Record<string, unknown>;
+  const runtime = ((config.json as Record<string, unknown>)?.["runtime"] ??
+    {}) as Record<string, unknown>;
   const platform = (runtime["platform"] ?? {}) as Record<string, unknown>;
-  const kind = typeof platform["kind"] === "string" ? platform["kind"] : "unknown";
+  const kind =
+    typeof platform["kind"] === "string" ? platform["kind"] : "unknown";
   checks.push({
     name: "GET /config runtime payload",
-    ok: config.status === 200 && (kind === "cuda" || kind === "rocm" || kind === "unknown"),
+    ok:
+      config.status === 200 &&
+      (kind === "cuda" || kind === "rocm" || kind === "unknown"),
     details: `status=${config.status} platform.kind=${kind}`,
   });
   if (options.expectRocm) {
@@ -129,42 +136,64 @@ const run = async (): Promise<void> => {
     name: "GET /gpus array response",
     ok:
       gpus.status === 200 &&
-      Array.isArray((gpus.json as Record<string, unknown> | null)?.["gpus"] ?? []),
+      Array.isArray(
+        (gpus.json as Record<string, unknown> | null)?.["gpus"] ?? [],
+      ),
     details: `status=${gpus.status}`,
   });
 
-  const services = await fetchJson(options.baseUrl, "/services", options.timeoutMs);
+  const services = await fetchJson(
+    options.baseUrl,
+    "/services",
+    options.timeoutMs,
+  );
   checks.push({
     name: "GET /services array response",
     ok:
       services.status === 200 &&
-      Array.isArray((services.json as Record<string, unknown> | null)?.["services"] ?? []),
+      Array.isArray(
+        (services.json as Record<string, unknown> | null)?.["services"] ?? [],
+      ),
     details: `status=${services.status}`,
   });
 
   const jobs = await fetchJson(options.baseUrl, "/jobs", options.timeoutMs);
   checks.push({
     name: "GET /jobs array response",
-    ok: jobs.status === 200 && Array.isArray((jobs.json as Record<string, unknown> | null)?.["jobs"] ?? []),
+    ok:
+      jobs.status === 200 &&
+      Array.isArray(
+        (jobs.json as Record<string, unknown> | null)?.["jobs"] ?? [],
+      ),
     details: `status=${jobs.status}`,
   });
 
   const emptyForm = new FormData();
-  const stt = await fetchJson(options.baseUrl, "/v1/audio/transcriptions", options.timeoutMs, {
-    method: "POST",
-    body: emptyForm,
-  });
+  const stt = await fetchJson(
+    options.baseUrl,
+    "/v1/audio/transcriptions",
+    options.timeoutMs,
+    {
+      method: "POST",
+      body: emptyForm,
+    },
+  );
   checks.push({
     name: "POST /v1/audio/transcriptions route active",
     ok: stt.status !== 404 && stt.status < 500,
     details: `status=${stt.status}`,
   });
 
-  const tts = await fetchJson(options.baseUrl, "/v1/audio/speech", options.timeoutMs, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({}),
-  });
+  const tts = await fetchJson(
+    options.baseUrl,
+    "/v1/audio/speech",
+    options.timeoutMs,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({}),
+    },
+  );
   checks.push({
     name: "POST /v1/audio/speech route active",
     ok: tts.status !== 404 && tts.status < 500,

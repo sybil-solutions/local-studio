@@ -3,13 +3,13 @@
 
 This is a practical bring-up checklist for an AMD Instinct MI300X host running ROCm, using the vLLM Studio controller and UI.
 
-## Automated Bring-Up (Hot Aisle MI300X)
+## Automated Bring-Up (MI300X)
 
-If you're using the Hot Aisle MI300X VM and want a reproducible "real GPU, real models" bring-up without manual copy/paste, run:
+If you want a reproducible "real GPU, real models" bring-up without manual copy/paste, run:
 
 ```bash
-bun scripts/rockem/hotaisle-setup.ts
-bun scripts/rockem/hotaisle-smoketest.ts --expect-rocm
+bun scripts/rockem/mi300x-setup.ts
+bun scripts/rockem/mi300x-smoketest.ts --expect-rocm
 ```
 
 These scripts:
@@ -22,7 +22,7 @@ These scripts:
 Example dry run:
 
 ```bash
-bun scripts/rockem/hotaisle-setup.ts --dry-run --workspace ~/rockem --models-dir /models
+bun scripts/rockem/mi300x-setup.ts --dry-run --workspace ~/rockem --models-dir /models
 ```
 
 ## 0. Host Sanity (ROCm + GPU Visibility)
@@ -192,7 +192,7 @@ Then in your local browser:
    - Compatibility panel warnings (actionable)
 4. Runtimes (Rock-Em) panel shows services and the current GPU lease holder.
 
-## 6. Teardown / Cost Control (Hot Aisle or Any Rented GPU VM)
+## 6. Teardown / Cost Control (Any Rented GPU VM)
 
 If you're renting a large GPU VM, do a clean shutdown so you don't keep burning money.
 
@@ -226,7 +226,7 @@ fi
 
 Stopping processes is not the same as deprovisioning the VM. For cost control:
 
-1. Terminate/deprovision the VM from your cloud/provider control plane (Hot Aisle portal or your provisioning CLI).
+1. Terminate/deprovision the VM from your cloud/provider control plane.
 2. Confirm the instance is gone (not just powered off), so GPU billing stops.
 
 If you need an emergency stop and don't care about preserving state:

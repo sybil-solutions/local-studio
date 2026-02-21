@@ -95,6 +95,7 @@ export function useSetup() {
         output: null,
         error: err instanceof Error ? err.message : "Upgrade failed",
         used_wheel: null,
+        used_command: null,
       });
     } finally {
       setUpgrading(false);

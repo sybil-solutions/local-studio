@@ -180,8 +180,17 @@ export function useControllerEvents(
             dispatchCustomEvent("vllm:mcp-event", { type: eventType, data });
             break;
           }
-          case "runtime_vllm_upgraded": {
+          case "runtime_vllm_upgraded":
+          case "runtime_sglang_upgraded":
+          case "runtime_llamacpp_upgraded":
+          case "runtime_cuda_upgraded":
+          case "runtime_rocm_upgraded": {
             dispatchCustomEvent("vllm:runtime-event", { type: eventType, data });
+            break;
+          }
+          case "distributed_node_updated":
+          case "distributed_topology_updated": {
+            dispatchCustomEvent("vllm:distributed-event", { type: eventType, data });
             break;
           }
           case "status":

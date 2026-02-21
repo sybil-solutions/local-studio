@@ -3,6 +3,7 @@ import { spawn, spawnSync } from "node:child_process";
 import { existsSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { resolveBinary } from "../../core/command";
+import { resolveVllmPythonPath } from "./vllm-python-path";
 
 type CommandResult = {
   code: number | null;
@@ -44,6 +45,10 @@ const runCommand = (
 
 const resolvePythonBinary = (): string | null => {
   const candidates: string[] = [];
+  const runtimePython = resolveVllmPythonPath();
+  if (runtimePython) {
+    candidates.push(runtimePython);
+  }
   const override = process.env["VLLM_STUDIO_RUNTIME_PYTHON"];
   if (override) {
     candidates.push(override);

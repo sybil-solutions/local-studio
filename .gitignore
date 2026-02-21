@@ -55,6 +55,8 @@ Thumbs.db
 .tmp/
 frontend/playwright-report/
 frontend/test-results/
+frontend/test-output/
+controller/test-output/
 
 # Local proofs / scratch
 proof-*.png

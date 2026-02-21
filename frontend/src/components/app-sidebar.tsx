@@ -22,7 +22,7 @@ export function AppSidebar({ children }: AppSidebarProps) {
   const [collapsed, setCollapsed] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [chatHistoryOpen, setChatHistoryOpen] = useState(true);
+  const [chatHistoryOpen, setChatHistoryOpen] = useState(pathname === "/chat");
   const [hydrated, setHydrated] = useState(useAppStore.persist.hasHydrated());
   const loadingSessionsRef = useRef(false);
   const router = useRouter();
@@ -81,20 +81,23 @@ export function AppSidebar({ children }: AppSidebarProps) {
     }
   };
 
-  // Load chat sessions once when on chat page
+  useEffect(() => {
+    setChatHistoryOpen(pathname === "/chat");
+  }, [pathname]);
+
+  // Load chat sessions once after hydration so sidebar search/list is available across pages.
   useEffect(() => {
     if (!hydrated) return;
-    if (pathname === "/chat" && !loadingSessionsRef.current) {
-      loadingSessionsRef.current = true;
-      api
-        .getChatSessions()
-        .then((result) => setSessions(result.sessions || []))
-        .catch(() => setSessions([]))
-        .finally(() => {
-          loadingSessionsRef.current = false;
-        });
-    }
-  }, [hydrated, pathname, setSessions]);
+    if (loadingSessionsRef.current) return;
+    loadingSessionsRef.current = true;
+    api
+      .getChatSessions()
+      .then((result) => setSessions(result.sessions || []))
+      .catch(() => setSessions([]))
+      .finally(() => {
+        loadingSessionsRef.current = false;
+      });
+  }, [hydrated, setSessions]);
 
   const createNewChat = () => {
     setMobileOpen(false);
@@ -141,7 +144,6 @@ export function AppSidebar({ children }: AppSidebarProps) {
           {navItems.map((item) => {
             const Icon = item.icon;
             const isActive = pathname === item.href;
-            const isChat = item.href === "/chat";
 
             return (
               <div key={item.href}>
@@ -166,21 +168,23 @@ export function AppSidebar({ children }: AppSidebarProps) {
                     <span className="text-sm font-medium">{item.label}</span>
                   )}
                 </Link>
-
-                {/* Chat sessions section */}
-                {isChat && pathname === "/chat" && (!collapsed || isMobile) && (
-                  <ChatSessionsSection
-                    sessions={chatSessions}
-                    open={chatHistoryOpen}
-                    setOpen={setChatHistoryOpen}
-                    isMobile={isMobile}
-                    onCloseMobile={() => setMobileOpen(false)}
-                    onNewChat={createNewChat}
-                  />
-                )}
               </div>
             );
           })}
+
+          {/* Chat sessions section (after nav items) */}
+          {(!collapsed || isMobile) && (
+            <div className="mt-3 pt-2 border-t border-(--border)/50">
+              <ChatSessionsSection
+                sessions={chatSessions}
+                open={chatHistoryOpen}
+                setOpen={setChatHistoryOpen}
+                isMobile={isMobile}
+                onCloseMobile={() => setMobileOpen(false)}
+                onNewChat={createNewChat}
+              />
+            </div>
+          )}
         </nav>
 
         {/* Status */}

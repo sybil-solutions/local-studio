@@ -7,6 +7,9 @@ import type {
   StudioDiagnostics,
   StudioModelsRoot,
   StudioSettings,
+  RuntimeBackendInfo,
+  RuntimeCommandPayload,
+  RuntimeUpgradeResult,
   VllmRuntimeConfig,
   VllmRuntimeInfo,
   VllmUpgradeResult,
@@ -79,13 +82,50 @@ export function createStudioApi(core: ApiCore) {
 
     getVllmRuntimeConfig: (): Promise<VllmRuntimeConfig> => core.request("/runtime/vllm/config"),
 
+    getSglangRuntime: (): Promise<RuntimeBackendInfo> => core.request("/runtime/sglang"),
+
+    getLlamacppRuntime: (): Promise<RuntimeBackendInfo> => core.request("/runtime/llamacpp"),
+
     getLlamacppRuntimeConfig: (): Promise<{ config: string | null; error?: string | null }> =>
       core.request("/runtime/llamacpp/config"),
+
+    getCudaRuntime: (): Promise<{ driver_version: string | null; cuda_version: string | null }> =>
+      core.request("/runtime/cuda"),
+
+    getRocmRuntime: (): Promise<{
+      rocm_version: string | null;
+      hip_version: string | null;
+      smi_tool: string | null;
+      gpu_arch: string[];
+    }> => core.request("/runtime/rocm"),
 
     upgradeVllmRuntime: (preferBundled = true): Promise<VllmUpgradeResult> =>
       core.request("/runtime/vllm/upgrade", {
         method: "POST",
         body: JSON.stringify({ prefer_bundled: preferBundled }),
+      }),
+
+    upgradeSglangRuntime: (): Promise<RuntimeUpgradeResult> =>
+      core.request("/runtime/sglang/upgrade", {
+        method: "POST",
+      }),
+
+    upgradeLlamacppRuntime: (payload: RuntimeCommandPayload = {}): Promise<RuntimeUpgradeResult> =>
+      core.request("/runtime/llamacpp/upgrade", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }),
+
+    upgradeCudaRuntime: (payload: RuntimeCommandPayload = {}): Promise<RuntimeUpgradeResult> =>
+      core.request("/runtime/cuda/upgrade", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }),
+
+    upgradeRocmRuntime: (payload: RuntimeCommandPayload = {}): Promise<RuntimeUpgradeResult> =>
+      core.request("/runtime/rocm/upgrade", {
+        method: "POST",
+        body: JSON.stringify(payload),
       }),
   };
 }

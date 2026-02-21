@@ -1,112 +1,56 @@
 <!-- CRITICAL -->
-# Quick Start: Dependency & Code Quality Tools
+# Quick Start
 
-This repository now has **comprehensive dependency and code quality detection**.
+Use these commands before merging changes for each package.
 
 ## Installation
-
-First, install the new dependencies in each app:
 
 ```bash
 # Controller
 cd controller && bun install
-
-# CLI
 cd cli && bun install
-
-# Frontend
 cd frontend && npm install
 ```
 
-## Run All Checks
+## Core validation commands
 
 ```bash
-# Controller (6 checks total)
-cd controller && bun run check
-# ✅ Type check (tsc)
-# ✅ Lint (ESLint)
-# ✅ Dead code detection (knip)
-# ✅ Duplicate code detection (jscpd)
-# ✅ Unused dependencies (depcheck)
-# ✅ Tests (vitest)
-
-# CLI (6 checks total)
-cd cli && bun run check
-# Same 6 checks
-
-# Frontend (4 checks)
-cd frontend && npm run check
-# ✅ Type check (Next.js)
-# ✅ Dead code detection (knip)
-# ✅ Duplicate code detection (jscpd)
-# ✅ Unused dependencies (depcheck)
-# Tests run separately: npm test
-```
-
-## What Each Tool Does
-
-| Tool | Detects | Auto-Fix |
-|------|---------|----------|
-| **knip** | Unused files, exports, dependencies | ✅ `knip --fix` |
-| **depcheck** | Unused npm packages | ❌ Manual removal |
-| **jscpd** | Duplicate code blocks | ❌ Refactor needed |
-| **ESLint** | Code quality issues | ✅ `lint:fix` |
-
-## CI Pipeline
-
-All checks run automatically on every PR:
-
-```
-Pull Request → CI Pipeline → 6 Checks → Pass/Fail
-                                    ↓
-                        2-3 minutes (parallel jobs)
-```
-
-## Quick Commands
-
-```bash
-# Check for issues before committing
+cd controller
+bun run typecheck
+bun run lint
 bun run check
+bun test
 
-# Auto-fix what's possible
-bun run check:fix
+cd ../cli
+bun run typecheck
+bun run lint
+bun run check
+bun run test
 
-# Run specific tools
-bunx knip           # Dead code
-bunx depcheck        # Unused deps
-bunx jscpd src       # Duplication
-bun run lint:fix     # Code style
+cd ../frontend
+npm run lint
+npm run build
+npm run check
+npm test
 ```
 
-## What Gets Checked
+## Check command details
 
-### Dead Code (knip)
-- Unused exports
-- Unused files
-- Unused dependencies
-- Unlisted dependencies (used but not in package.json)
+- `bun run check` (controller): `knip`, `jscpd src`, `depcheck`
+- `bun run check` (cli): `knip`, `jscpd src`, `depcheck`
+- `npm run check` (frontend): `knip`, `jscpd src`, `depcheck`
 
-### Unused Dependencies (depcheck)
-- npm packages not imported in code
-- Missing dependencies (used but not listed)
+## Optional focused checks
 
-### Duplicate Code (jscpd)
-- Copy-pasted functions
-- Similar logic blocks
-- Repeated patterns
+- `bun run lint:fix` (controller, CLI)
+- `bunx depcheck`
+- `npm run lint:fix`
 
-## Stats
+## Recommended order
 
-**Before**: No automated dependency detection
-**After**: 3 tools, 6 checks per app, 100% coverage
+1. Type checks and lint (`typecheck`, `lint`)
+2. `check` command for stale code/dependency debt
+3. Targeted tests (`test`)
+4. Frontend full build
 
-## Next Steps
-
-1. Install dependencies: `cd controller && bun install`
-2. Run checks: `bun run check`
-3. Fix any issues found
-4. Commit with confidence! 🚀
-
----
-
-*Generated: 2025-01-25*
+Avoid claiming production readiness until all checks are green.

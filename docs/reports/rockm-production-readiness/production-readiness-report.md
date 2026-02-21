@@ -21,8 +21,8 @@ Confirmed in `docs/workpacks/`:
 
 ### Implemented
 - Added missing MI300X automation scripts referenced by the playbook:
-  - `scripts/rockem/hotaisle-setup.ts`
-  - `scripts/rockem/hotaisle-smoketest.ts`
+  - `scripts/rockem/mi300x-setup.ts`
+  - `scripts/rockem/mi300x-smoketest.ts`
 - Updated playbook commands and behavior documentation:
   - `docs/rocm-mi300x-playbook.md`
 - Removed duplicated SMI tool resolution logic and centralized it:
@@ -85,8 +85,8 @@ Note: repeated Playwright reruns in this environment can be flaky because of ser
 - Call-mode control is present on toolbar and can be toggled through UI proof tests.
 
 4. MI300X day-0 flow
-- Operator runs `bun scripts/rockem/hotaisle-setup.ts` to prepare tooling/models/services.
-- Operator runs `bun scripts/rockem/hotaisle-smoketest.ts --expect-rocm` for health/route checks.
+- Operator runs `bun scripts/rockem/mi300x-setup.ts` to prepare tooling/models/services.
+- Operator runs `bun scripts/rockem/mi300x-smoketest.ts --expect-rocm` for health/route checks.
 
 ## 6. What We Did Right
 
@@ -106,11 +106,11 @@ Note: repeated Playwright reruns in this environment can be flaky because of ser
 
 - No true on-hardware MI300X execution evidence in this run (local environment only).
 - `chat-agent-files-proof` remains backend-gated and skips when backend is unavailable.
-- Need one dedicated end-to-end rented GPU validation pass that includes real STT/TTS/image workloads and lease contention behavior.
+- Need one dedicated end-to-end MI300X validation pass that includes real STT/TTS/image workloads and lease contention behavior.
 
 ## 9. Recommended Action Plan
 
-1. Run the new Hot Aisle setup/smoke scripts on an actual rented MI300X node and capture outputs/logs.
+1. Run the new MI300X setup/smoke scripts on an actual MI300X host and capture outputs/logs.
 2. Add CI-safe mocked backend fixtures for Playwright so proofs are deterministic without external API dependence.
 3. Add one nightly hardware-backed ROCm smoke workflow (ROCm detection + GPU telemetry + voice routes + runtime summary).
 4. Extend smoketest script with optional stricter checks for image generation and jobs orchestration once those endpoints are fully wired in the target environment.

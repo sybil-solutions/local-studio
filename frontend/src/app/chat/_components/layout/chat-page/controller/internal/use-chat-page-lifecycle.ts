@@ -136,12 +136,13 @@ export function useChatPageLifecycle({
   });
 
   // Load MCP servers/tools when enabled
+  const { loadMCPServers, loadMCPTools } = tools;
   useEffect(() => {
     if (!store.mcpEnabled) return;
-    void tools.loadMCPServers().then(() => {
-      void tools.loadMCPTools();
+    void loadMCPServers().then(() => {
+      void loadMCPTools();
     });
-  }, [store.mcpEnabled, tools]);
+  }, [store.mcpEnabled, loadMCPServers, loadMCPTools]);
 
   // Load agent files when agent mode is enabled
   useEffect(() => {
@@ -152,9 +153,9 @@ export function useChatPageLifecycle({
   // Load MCP servers when settings modal opens
   useEffect(() => {
     if (store.mcpSettingsOpen) {
-      tools.loadMCPServers();
+      loadMCPServers();
     }
-  }, [store.mcpSettingsOpen, tools]);
+  }, [store.mcpSettingsOpen, loadMCPServers]);
 
   // Refresh usage when modal opens
   useEffect(() => {
