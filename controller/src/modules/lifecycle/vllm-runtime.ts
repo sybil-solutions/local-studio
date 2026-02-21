@@ -112,6 +112,7 @@ export const getVllmRuntimeInfo = async (): Promise<{
   version: string | null;
   python_path: string | null;
   vllm_bin: string | null;
+  upgrade_command_available: boolean;
   bundled_wheel: { path: string; version: string | null } | null;
 }> => {
   const pythonPath = resolvePythonBinary();
@@ -124,6 +125,7 @@ export const getVllmRuntimeInfo = async (): Promise<{
       version: null,
       python_path: null,
       vllm_bin: vllmBin,
+      upgrade_command_available: false,
       bundled_wheel: bundledWheel,
     };
   }
@@ -134,13 +136,14 @@ export const getVllmRuntimeInfo = async (): Promise<{
   ]);
 
   if (result.code !== 0) {
-    return {
-      installed: false,
-      version: null,
-      python_path: pythonPath,
-      vllm_bin: vllmBin,
-      bundled_wheel: bundledWheel,
-    };
+  return {
+    installed: false,
+    version: null,
+    python_path: pythonPath,
+    vllm_bin: vllmBin,
+    upgrade_command_available: false,
+    bundled_wheel: bundledWheel,
+  };
   }
 
   let parsed: { version?: string | null; python?: string | null } | null = null;
@@ -155,6 +158,7 @@ export const getVllmRuntimeInfo = async (): Promise<{
     version: parsed?.version ?? null,
     python_path: parsed?.python ?? pythonPath,
     vllm_bin: vllmBin,
+    upgrade_command_available: true,
     bundled_wheel: bundledWheel,
   };
 };

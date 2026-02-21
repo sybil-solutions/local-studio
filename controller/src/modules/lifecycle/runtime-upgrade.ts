@@ -5,6 +5,12 @@ import { getLlamacppRuntimeInfo, getSglangRuntimeInfo } from "./runtime-info";
 import { getCudaInfo } from "./runtime-info";
 import { getRocmInfo, resolveRocmSmiTool } from "./platform/rocm-info";
 import { resolveVllmPythonPath } from "./vllm-python-path";
+import {
+  CUDA_UPGRADE_ENV,
+  LLAMACPP_UPGRADE_ENV,
+  ROCM_UPGRADE_ENV,
+  getUpgradeCommandFromEnv,
+} from "./runtime-upgrade-config";
 
 export interface RuntimeUpgradeResult {
   success: boolean;
@@ -25,8 +31,7 @@ const resolveCommand = (command: string | undefined, envKey: string): string | n
   if (command?.trim()) {
     return command.trim();
   }
-  const envCommand = process.env[envKey]?.trim();
-  return envCommand || null;
+  return getUpgradeCommandFromEnv(envKey);
 };
 
 const parseCommandInput = (args: unknown): string[] | null => {
@@ -86,7 +91,7 @@ export const upgradeLlamacppRuntime = async (
   config: Config,
   options: RuntimeUpgradeOptions,
 ): Promise<RuntimeUpgradeResult> => {
-  const command = resolveCommand(options.command, "VLLM_STUDIO_LLAMACPP_UPGRADE_CMD");
+  const command = resolveCommand(options.command, LLAMACPP_UPGRADE_ENV);
   if (!command) {
     return {
       success: false,
@@ -113,7 +118,7 @@ export const runPlatformUpgrade = (
   platform: "cuda" | "rocm",
   options: RuntimeUpgradeOptions,
 ): RuntimeUpgradeResult => {
-  const envKey = platform === "cuda" ? "VLLM_STUDIO_CUDA_UPGRADE_CMD" : "VLLM_STUDIO_ROCM_UPGRADE_CMD";
+  const envKey = platform === "cuda" ? CUDA_UPGRADE_ENV : ROCM_UPGRADE_ENV;
   const command = resolveCommand(options.command, envKey);
   if (!command) {
     return {

@@ -1,4 +1,0 @@
-[submodule "external/parallax"]
-	path = external/parallax
-	url = https://github.com/GradientHQ/parallax.git
-	branch = main

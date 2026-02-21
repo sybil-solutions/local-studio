@@ -17,6 +17,7 @@ const baseRuntime = (overrides: Partial<SystemRuntimeInfo>): SystemRuntimeInfo =
   cuda: {
     driver_version: null,
     cuda_version: null,
+    upgrade_command_available: false,
   },
   gpus: {
     count: 0,
@@ -37,7 +38,13 @@ describe("compatibility report", () => {
         platform: {
           kind: "rocm",
           vendor: "amd",
-          rocm: { rocm_version: "7.1.1", hip_version: "7.1.1", smi_tool: "amd-smi", gpu_arch: [] },
+          rocm: {
+            rocm_version: "7.1.1",
+            hip_version: "7.1.1",
+            smi_tool: "amd-smi",
+            gpu_arch: [],
+            upgrade_command_available: true,
+          },
           torch: { torch_version: "2.6.0", torch_cuda: null, torch_hip: null },
         },
         gpus: { count: 1, types: ["AMD Instinct MI300X"] },
@@ -57,7 +64,13 @@ describe("compatibility report", () => {
         platform: {
           kind: "rocm",
           vendor: "amd",
-          rocm: { rocm_version: "7.1.1", hip_version: "7.1.1", smi_tool: "amd-smi", gpu_arch: [] },
+          rocm: {
+            rocm_version: "7.1.1",
+            hip_version: "7.1.1",
+            smi_tool: "amd-smi",
+            gpu_arch: [],
+            upgrade_command_available: true,
+          },
           torch: { torch_version: "2.6.0", torch_cuda: null, torch_hip: "7.1.1" },
         },
         gpus: { count: 1, types: ["AMD Instinct MI300X"] },

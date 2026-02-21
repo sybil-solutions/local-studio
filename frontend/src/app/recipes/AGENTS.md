@@ -57,6 +57,11 @@ recipes/
 | `POST /launch/:id` | Launch model |
 | `POST /evict` | Stop running model |
 
+## Runtime Management
+
+- Runtime discovery and upgrades live in `src/app/recipes/_components/vllm-runtime-panel.tsx` and call `src/lib/api/studio.ts` runtime endpoints under `/runtime/*`.
+- Keep this panel aligned with `controller/src/modules/lifecycle/runtime-routes.ts` and `controller/src/modules/lifecycle/runtime-info.ts` whenever upgrade behavior or payload shapes change.
+
 ## Status Colors
 
 - 🟢 **running** - Model is active and ready

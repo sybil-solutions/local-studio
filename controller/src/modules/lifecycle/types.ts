@@ -82,6 +82,7 @@ export interface RuntimeBackendInfo {
   version: string | null;
   python_path?: string | null;
   binary_path?: string | null;
+  upgrade_command_available?: boolean;
 }
 
 export type RuntimePlatformKind = "cuda" | "rocm" | "unknown";
@@ -93,6 +94,7 @@ export type RuntimeGpuMonitoringTool = "nvidia-smi" | RuntimeRocmSmiTool;
 export interface RuntimeCudaInfo {
   driver_version: string | null;
   cuda_version: string | null;
+  upgrade_command_available: boolean;
 }
 
 export interface RuntimeRocmInfo {
@@ -100,6 +102,7 @@ export interface RuntimeRocmInfo {
   hip_version: string | null;
   smi_tool: RuntimeRocmSmiTool | null;
   gpu_arch: string[];
+  upgrade_command_available: boolean;
 }
 
 export interface RuntimeTorchBuildInfo {

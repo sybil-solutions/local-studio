@@ -3,6 +3,7 @@ export interface VllmRuntimeInfo {
   version: string | null;
   python_path: string | null;
   vllm_bin: string | null;
+  upgrade_command_available?: boolean;
   bundled_wheel: {
     path: string;
     version: string | null;

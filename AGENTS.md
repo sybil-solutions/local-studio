@@ -83,7 +83,7 @@ npx tsc --noEmit  # MUST pass with no type errors
 cd swift-client
 ./setup.sh  # Regenerate Xcode project
 xcodebuild -project vllm-studio.xcodeproj -scheme vllm-studio \
-  -destination 'platform=iOS Simulator,name=iPhone 15,OS=18.1' clean build
+  -destination 'generic/platform=iOS Simulator' clean build
 # Exit code MUST be 0
 ```
 
@@ -149,6 +149,7 @@ xcodebuild -project vllm-studio.xcodeproj -scheme vllm-studio \
 - [ ] No directories >20 files
 - [ ] All filenames use kebab-case
 - [ ] Runtime docs and API references include `/runtime/*` and upgrade payload guidance
+- [ ] Keep runtime UI and controller upgrade route contracts in lock-step (`/runtime/*`).
 
 **IF ANY ITEM FAILS, FIX IT BEFORE CLAIMING COMPLETION.**
 

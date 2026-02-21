@@ -9,6 +9,8 @@ import type {
   StudioSettings,
   RuntimeBackendInfo,
   RuntimeCommandPayload,
+  RuntimeCudaInfo,
+  RuntimeRocmInfo,
   RuntimeUpgradeResult,
   VllmRuntimeConfig,
   VllmRuntimeInfo,
@@ -89,15 +91,9 @@ export function createStudioApi(core: ApiCore) {
     getLlamacppRuntimeConfig: (): Promise<{ config: string | null; error?: string | null }> =>
       core.request("/runtime/llamacpp/config"),
 
-    getCudaRuntime: (): Promise<{ driver_version: string | null; cuda_version: string | null }> =>
-      core.request("/runtime/cuda"),
+    getCudaRuntime: (): Promise<RuntimeCudaInfo> => core.request("/runtime/cuda"),
 
-    getRocmRuntime: (): Promise<{
-      rocm_version: string | null;
-      hip_version: string | null;
-      smi_tool: string | null;
-      gpu_arch: string[];
-    }> => core.request("/runtime/rocm"),
+    getRocmRuntime: (): Promise<RuntimeRocmInfo> => core.request("/runtime/rocm"),
 
     upgradeVllmRuntime: (preferBundled = true): Promise<VllmUpgradeResult> =>
       core.request("/runtime/vllm/upgrade", {

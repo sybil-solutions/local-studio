@@ -6,6 +6,8 @@ import api from "@/lib/api";
 import type {
   RuntimeBackendInfo,
   RuntimeCommandPayload,
+  RuntimeCudaInfo,
+  RuntimeRocmInfo,
   RuntimeUpgradeResult,
   VllmRuntimeConfig,
   VllmRuntimeInfo,
@@ -23,6 +25,7 @@ type RuntimeCard = {
   pathValue: string | null;
   canUpgrade: boolean;
   upgrading: boolean;
+  disabledReason?: string;
 };
 
 type UpgradeResultState = {
@@ -34,15 +37,8 @@ export function VllmRuntimePanel() {
   const [vllmRuntime, setVllmRuntime] = useState<VllmRuntimeInfo | null>(null);
   const [sglangRuntime, setSglangRuntime] = useState<RuntimeBackendInfo | null>(null);
   const [llamacppRuntime, setLlamacppRuntime] = useState<RuntimeBackendInfo | null>(null);
-  const [cudaRuntime, setCudaRuntime] = useState<{ driver_version: string | null; cuda_version: string | null } | null>(
-    null
-  );
-  const [rocmRuntime, setRocmRuntime] = useState<{
-    rocm_version: string | null;
-    hip_version: string | null;
-    smi_tool: string | null;
-    gpu_arch: string[];
-  } | null>(null);
+  const [cudaRuntime, setCudaRuntime] = useState<RuntimeCudaInfo | null>(null);
+  const [rocmRuntime, setRocmRuntime] = useState<RuntimeRocmInfo | null>(null);
   const [runtimeConfig, setRuntimeConfig] = useState<VllmRuntimeConfig | null>(null);
   const [runtimeError, setRuntimeError] = useState<string | null>(null);
   const [runtimeLoading, setRuntimeLoading] = useState(false);
@@ -145,6 +141,15 @@ export function VllmRuntimePanel() {
     handleRefresh();
   }, [handleRefresh]);
 
+  const getDisabledReason = (flag: boolean | undefined, message: string): string | undefined =>
+    flag === false ? message : undefined;
+
+  const vllmUpgradeConfigured = vllmRuntime?.upgrade_command_available;
+  const sglangUpgradeConfigured = sglangRuntime?.upgrade_command_available;
+  const llamaUpgradeConfigured = llamacppRuntime?.upgrade_command_available;
+  const cudaUpgradeConfigured = cudaRuntime?.upgrade_command_available;
+  const rocmUpgradeConfigured = rocmRuntime?.upgrade_command_available;
+
   const vllmCards: RuntimeCard[] = [
     {
       backend: "vllm",
@@ -153,7 +158,11 @@ export function VllmRuntimePanel() {
       version: vllmRuntime?.version ?? null,
       pathLabel: "Python Runtime",
       pathValue: vllmRuntime?.python_path ?? "Not detected",
-      canUpgrade: true,
+      canUpgrade: vllmUpgradeConfigured === true,
+      disabledReason: getDisabledReason(
+        vllmUpgradeConfigured,
+        "Set a valid VLLM runtime Python path to enable vLLM upgrades."
+      ),
       upgrading: upgrading === "vllm",
     },
     {
@@ -163,7 +172,11 @@ export function VllmRuntimePanel() {
       version: sglangRuntime?.version ?? null,
       pathLabel: "Python Runtime",
       pathValue: sglangRuntime?.python_path ?? "Not detected",
-      canUpgrade: true,
+      canUpgrade: sglangUpgradeConfigured === true,
+      disabledReason: getDisabledReason(
+        sglangUpgradeConfigured,
+        "Set a valid SGLang Python path to enable sGLang upgrades."
+      ),
       upgrading: upgrading === "sglang",
     },
     {
@@ -173,7 +186,11 @@ export function VllmRuntimePanel() {
       version: llamacppRuntime?.version ?? null,
       pathLabel: "Binary",
       pathValue: llamacppRuntime?.binary_path ?? "Not detected",
-      canUpgrade: true,
+      canUpgrade: llamaUpgradeConfigured === true,
+      disabledReason: getDisabledReason(
+        llamaUpgradeConfigured,
+        "Set VLLM_STUDIO_LLAMACPP_UPGRADE_CMD on the controller to enable upgrades."
+      ),
       upgrading: upgrading === "llamacpp",
     },
   ];
@@ -186,7 +203,11 @@ export function VllmRuntimePanel() {
       version: cudaRuntime?.cuda_version ?? null,
       pathLabel: "Driver",
       pathValue: cudaRuntime?.driver_version ?? "Not detected",
-      canUpgrade: true,
+      canUpgrade: cudaUpgradeConfigured === true,
+      disabledReason: getDisabledReason(
+        cudaUpgradeConfigured,
+        "Set VLLM_STUDIO_CUDA_UPGRADE_CMD on the controller to enable upgrades."
+      ),
       upgrading: upgrading === "cuda",
     },
     {
@@ -196,7 +217,11 @@ export function VllmRuntimePanel() {
       version: rocmRuntime?.rocm_version ?? null,
       pathLabel: "SMI Tool",
       pathValue: rocmRuntime?.smi_tool ?? "Not detected",
-      canUpgrade: true,
+      canUpgrade: rocmUpgradeConfigured === true,
+      disabledReason: getDisabledReason(
+        rocmUpgradeConfigured,
+        "Set VLLM_STUDIO_ROCM_UPGRADE_CMD on the controller to enable upgrades."
+      ),
       upgrading: upgrading === "rocm",
     },
   ];
@@ -242,14 +267,19 @@ export function VllmRuntimePanel() {
                       {card.pathLabel}: {card.pathValue}
                     </div>
                   </div>
-                  <button
-                    onClick={() => void triggerUpgrade(card.backend)}
-                    disabled={card.upgrading || !card.canUpgrade}
-                    className="flex items-center gap-2 px-3 py-2 bg-(--accent) hover:bg-(--accent) text-white rounded-lg text-sm transition-colors disabled:opacity-50"
-                  >
-                    <ArrowUpCircle className="w-4 h-4" />
-                    {card.upgrading ? "Upgrading..." : "Upgrade"}
-                  </button>
+                  <div className="flex flex-col items-end gap-1">
+                    <button
+                      onClick={() => void triggerUpgrade(card.backend)}
+                      disabled={card.upgrading || !card.canUpgrade}
+                      className="flex items-center gap-2 px-3 py-2 bg-(--accent) hover:bg-(--accent) text-white rounded-lg text-sm transition-colors disabled:opacity-50"
+                    >
+                      <ArrowUpCircle className="w-4 h-4" />
+                      {card.upgrading ? "Upgrading..." : "Upgrade"}
+                    </button>
+                    {card.disabledReason && (
+                      <span className="text-xs text-(--dim) text-right max-w-[12rem]">{card.disabledReason}</span>
+                    )}
+                  </div>
                 </div>
               </div>
             );
@@ -273,14 +303,19 @@ export function VllmRuntimePanel() {
                       {card.pathLabel}: {card.pathValue}
                     </div>
                   </div>
-                  <button
-                    onClick={() => void triggerUpgrade(card.backend)}
-                    disabled={card.upgrading || !card.canUpgrade}
-                    className="flex items-center gap-2 px-3 py-2 bg-(--accent) hover:bg-(--accent) text-white rounded-lg text-sm transition-colors disabled:opacity-50"
-                  >
-                    <ArrowUpCircle className="w-4 h-4" />
-                    {card.upgrading ? "Upgrading..." : "Upgrade"}
-                  </button>
+                  <div className="flex flex-col items-end gap-1">
+                    <button
+                      onClick={() => void triggerUpgrade(card.backend)}
+                      disabled={card.upgrading || !card.canUpgrade}
+                      className="flex items-center gap-2 px-3 py-2 bg-(--accent) hover:bg-(--accent) text-white rounded-lg text-sm transition-colors disabled:opacity-50"
+                    >
+                      <ArrowUpCircle className="w-4 h-4" />
+                      {card.upgrading ? "Upgrading..." : "Upgrade"}
+                    </button>
+                    {card.disabledReason && (
+                      <span className="text-xs text-(--dim) text-right max-w-[12rem]">{card.disabledReason}</span>
+                    )}
+                  </div>
                 </div>
               </div>
             );

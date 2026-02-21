@@ -27,6 +27,14 @@ If you run the standalone server directly (`node .next/standalone/server.js`), y
 
 ---
 
+## Runtime Upgrade Panel
+
+- The `Recipes → Runtime` screen (`frontend/src/app/recipes/_components/vllm-runtime-panel.tsx`) is the canonical UI for checking vLLM/SGLang/llama.cpp plus CUDA/ROCm versions and kicking off upgrades.
+- Changes to the upgrade flow should stay in sync with `frontend/src/lib/api/studio.ts` routes (`/runtime/*` and `/runtime/*/upgrade`) and the controller runtime handlers in `controller/src/modules/lifecycle/runtime-routes.ts`.
+- When infrastructure or runtime upgrade payloads change, update this AGENTS file and `README.md` so the team knows which endpoints the frontend consumes for runtime coordination.
+
+---
+
 ## Codex Skills
 
 - `skills/vllm-studio` — ops/deploy/env keys.

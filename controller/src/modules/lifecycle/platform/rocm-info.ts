@@ -4,6 +4,7 @@ import { resolve } from "node:path";
 import type { RuntimeRocmInfo, RuntimeRocmSmiTool } from "../types";
 import { runCommand } from "../../../core/command";
 import { resolveAmdSmiBinary, resolveForcedRocmTool, resolveRocmSmiBinary } from "./smi-tools";
+import { ROCM_UPGRADE_ENV, isUpgradeCommandConfigured } from "../runtime-upgrade-config";
 
 const parseHipccVersion = (output: string): string | null => {
   const match = output.match(/HIP version\s*:\s*([0-9.]+)/i);
@@ -89,5 +90,6 @@ export const getRocmInfo = (smiTool: RuntimeRocmSmiTool | null): RuntimeRocmInfo
     hip_version: hipVersion,
     smi_tool: smiTool,
     gpu_arch: Array.from(gpuArch),
+    upgrade_command_available: isUpgradeCommandConfigured(ROCM_UPGRADE_ENV),
   };
 };

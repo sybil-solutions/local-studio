@@ -31,7 +31,7 @@ jobs:
         run: >-
           xcodebuild -project vllm-studio.xcodeproj
           -scheme vllm-studio
-          -destination 'platform=iOS Simulator,name=iPhone 15,OS=18.1'
+          -destination 'generic/platform=iOS Simulator'
           clean build
 
       - name: Build macOS app

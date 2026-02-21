@@ -18,6 +18,7 @@ import { getRocmInfo, resolveRocmSmiTool } from "./platform/rocm-info";
 import { resolveNvidiaSmiBinary } from "./platform/smi-tools";
 import { getTorchBuildInfo } from "./platform/torch-info";
 import { resolveVllmPythonPath } from "./vllm-python-path";
+import { isUpgradeCommandConfigured, CUDA_UPGRADE_ENV, LLAMACPP_UPGRADE_ENV } from "./runtime-upgrade-config";
 
 const extractCudaVersion = (output: string): string | null => {
   const match = output.match(/CUDA Version\s*:\s*([0-9.]+)/i);
@@ -63,6 +64,7 @@ export const getCudaInfo = (): RuntimeCudaInfo => {
   return {
     driver_version: driverVersion,
     cuda_version: cudaVersion,
+    upgrade_command_available: isUpgradeCommandConfigured(CUDA_UPGRADE_ENV),
   };
 };
 
@@ -86,6 +88,7 @@ export const detectPlatformKind = (args: {
 
 export const getSglangRuntimeInfo = (config: Config): RuntimeBackendInfo => {
   const python = config.sglang_python || resolveVllmPythonPath() || "python3";
+  const pythonAvailable = runCommand(python, ["-V"]).status === 0;
   const result = runCommand(python, [
     "-c",
     "import json, sys\ntry:\n import sglang\n print(json.dumps({'version': getattr(sglang, '__version__', None), 'python': sys.executable}))\nexcept Exception:\n print(json.dumps({'version': None, 'python': sys.executable}))",
@@ -96,6 +99,7 @@ export const getSglangRuntimeInfo = (config: Config): RuntimeBackendInfo => {
       installed: false,
       version: null,
       python_path: config.sglang_python ?? null,
+      upgrade_command_available: pythonAvailable,
     };
   }
 
@@ -110,6 +114,7 @@ export const getSglangRuntimeInfo = (config: Config): RuntimeBackendInfo => {
     installed: Boolean(parsed?.version),
     version: parsed?.version ?? null,
     python_path: parsed?.python ?? config.sglang_python ?? null,
+    upgrade_command_available: pythonAvailable,
   };
 };
 
@@ -137,6 +142,7 @@ export const getLlamacppRuntimeInfo = (config: Config): RuntimeBackendInfo => {
         installed: false,
         version: null,
         binary_path: resolved,
+        upgrade_command_available: isUpgradeCommandConfigured(LLAMACPP_UPGRADE_ENV),
       };
     }
     const version = parseLlamaVersion(helpResult.stdout) ?? parseLlamaVersion(helpResult.stderr);
@@ -144,6 +150,7 @@ export const getLlamacppRuntimeInfo = (config: Config): RuntimeBackendInfo => {
       installed: Boolean(version),
       version,
       binary_path: resolved,
+      upgrade_command_available: isUpgradeCommandConfigured(LLAMACPP_UPGRADE_ENV),
     };
   }
 
@@ -152,6 +159,7 @@ export const getLlamacppRuntimeInfo = (config: Config): RuntimeBackendInfo => {
     installed: Boolean(version),
     version,
     binary_path: resolved,
+    upgrade_command_available: isUpgradeCommandConfigured(LLAMACPP_UPGRADE_ENV),
   };
 };
 
@@ -189,7 +197,10 @@ export const getSystemRuntimeInfo = async (config: Config): Promise<SystemRuntim
   return {
     platform,
     gpu_monitoring: gpuMonitoring,
-    cuda: kind === "cuda" ? getCudaInfo() : { driver_version: null, cuda_version: null },
+    cuda:
+      kind === "cuda"
+        ? getCudaInfo()
+        : { driver_version: null, cuda_version: null, upgrade_command_available: false },
     gpus: {
       count: gpus.length,
       types,
@@ -200,6 +211,7 @@ export const getSystemRuntimeInfo = async (config: Config): Promise<SystemRuntim
         version: vllmInfo.version,
         python_path: vllmInfo.python_path,
         binary_path: vllmInfo.vllm_bin,
+        upgrade_command_available: Boolean(vllmInfo.python_path),
       },
       sglang: sglangInfo,
       llamacpp: llamaInfo,
