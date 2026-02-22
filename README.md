@@ -1,45 +1,156 @@
 <!-- CRITICAL -->
 # vLLM Studio
 
-Model lifecycle management for vLLM and SGLang inference servers.
+Model lifecycle management for vLLM, SGLang, TabbyAPI, and llama.cpp inference servers.
 
 ## What It Does
 
-- **Launch/evict models** on vLLM or SGLang backends
-- **Save recipes** - reusable model configurations with full parameter support
-- **Reasoning support** - auto-detection for GLM (`glm45`), INTELLECT-3 (`deepseek_r1`), and MiniMax (`minimax_m2_append_think`) parsers
-- **Tool calling** - native function calling with auto tool choice (auto-detected for GLM and INTELLECT-3 models)
+- **Launch/evict models** on vLLM, SGLang, TabbyAPI, or llama.cpp backends
+- **Save recipes** — reusable model configurations with full parameter support
+- **Reasoning support** — auto-detection for DeepSeek-R1, GLM, MiniMax, and other reasoning parsers
+- **Tool calling** — native function calling with MCP server integration
+- **Agent mode** — multi-turn tool-use agent with plan/execute workflow
 - **Web UI** for chat, model management, and usage analytics
+- **CLI** — terminal UI for managing models and monitoring
+- **iOS client** — native Swift client
 - **LiteLLM integration** for API gateway features (optional)
+
+## Prerequisites
+
+| Tool | Version | Required |
+|------|---------|----------|
+| [Bun](https://bun.sh) | >= 1.0 | Yes |
+| [Node.js](https://nodejs.org) | >= 20 | Yes (frontend) |
+| [Docker](https://docs.docker.com/get-docker/) | Latest | No — only for LiteLLM, Postgres, Redis |
+| GPU | CUDA-capable | No — mock inference works without one |
+
+## Quick Start (No GPU Required)
+
+Get the UI running in under 2 minutes with mock inference:
+
+```bash
+# Clone and install
+git clone https://github.com/0xSero/vllm-studio.git
+cd vllm-studio
+cd controller && bun install && cd ..
+cd frontend && npm install && cd ..
+
+# Start controller (mock inference, no Docker)
+./start.sh --direct
+
+# In a separate terminal — start frontend
+cd frontend && npm run dev
+```
+
+Open [http://localhost:3000](http://localhost:3000). The controller API runs on `http://localhost:8080`.
+
+## Full Setup (GPU Server)
+
+For real inference with a GPU:
+
+```bash
+# 1. Install dependencies (same as above)
+cd controller && bun install && cd ..
+cd frontend && npm install && cd ..
+
+# 2. Configure environment
+cp .env.example .env
+# Edit .env — set VLLM_STUDIO_MODELS_DIR to your model weights directory
+
+# 3. Start controller (connects to real inference backend)
+VLLM_STUDIO_MOCK_INFERENCE=0 ./start.sh --direct
+
+# 4. Start frontend
+cd frontend && npm run dev
+```
+
+To also run Docker services (LiteLLM, Postgres, Redis, Prometheus):
+
+```bash
+./start.sh   # Without --direct, starts Docker Compose automatically
+```
+
+## Docker Services
+
+All optional. Only needed for specific features:
+
+| Service | Port | Purpose |
+|---------|------|---------|
+| LiteLLM | 4100 | API gateway, OpenAI format translation |
+| PostgreSQL | 5432 | Usage analytics (LiteLLM) |
+| Redis | 6379 | Response caching |
+| Prometheus | 9090 | Metrics collection |
+| Temporal | 7233 | Workflow orchestration |
 
 ## Architecture
 
 ```
-┌──────────┐      ┌────────────┐      ┌─────────────┐
-│  Client  │─────▶│ Controller │─────▶│ vLLM/SGLang │
-│          │      │   :8080    │      │    :8000    │
-└──────────┘      └────────────┘      └─────────────┘
-                        │
-                  ┌─────┴─────┐
-                  │  Web UI   │
-                  │   :3000   │
-                  └───────────┘
+┌──────────────┐     ┌─────────────────────┐     ┌──────────────────────┐
+│   Frontend   │────▶│     Controller      │────▶│  vLLM / SGLang /     │
+│  Next.js     │     │  Bun + Hono + SQLite│     │  TabbyAPI / llama.cpp│
+│  :3000       │     │  :8080              │     │  :8000               │
+└──────────────┘     └─────────┬───────────┘     └──────────────────────┘
+                               │
+                    ┌──────────┼──────────┐
+                    ▼          ▼          ▼
+               LiteLLM    Postgres     Redis
+               (opt)      (opt)        (opt)
 ```
 
-**Optional:** Add LiteLLM as an API gateway for OpenAI/Anthropic format translation, cost tracking, and routing.
+## Project Structure
 
-## Quick Start
+```
+vllm-studio/
+├── controller/          # API server (Bun + Hono + SQLite)
+│   └── src/
+│       ├── main.ts              # Entry point
+│       ├── config/              # Environment & persisted settings
+│       ├── core/                # Logger, errors, async utilities
+│       ├── http/                # Hono app, SSE
+│       ├── routes/              # API route handlers
+│       ├── services/            # Backends, GPU, process management, agent runtime
+│       ├── stores/              # SQLite stores (recipes, chats, MCP, metrics)
+│       └── types/               # Zod schemas, branded types
+├── cli/                 # Terminal UI (Bun)
+│   └── src/
+│       ├── main.ts              # Entry point
+│       └── views/               # Dashboard, recipes, config, status
+├── frontend/            # Web UI (Next.js + React + TypeScript)
+│   └── src/
+│       ├── app/                 # Pages (chat, recipes, logs, discover, usage)
+│       ├── components/          # React components
+│       ├── hooks/               # useSSE, useContextManager
+│       └── lib/                 # API client, types, utilities
+├── swift-client/        # iOS client (Swift)
+├── desktop/             # Desktop application
+├── config/              # Service configs (litellm.yaml, prometheus.yml)
+├── start.sh             # Launch script
+└── docker-compose.yml   # Optional service orchestration
+```
+
+## `start.sh` Reference
 
 ```bash
-# Install controller
-pip install -e .
-
-# Run controller
-vllm-studio
-
-# (Optional) Run frontend
-cd frontend && npm install && npm run dev
+./start.sh                # Start controller + Docker services
+./start.sh --direct       # Controller only, no Docker (mock inference auto-enabled)
+./start.sh --dev          # Development mode with auto-reload
+./start.sh --port 9090    # Custom controller port
 ```
+
+## Configuration
+
+Copy `.env.example` to `.env` and uncomment what you need. See [`.env.example`](.env.example) for all options.
+
+Key variables:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `VLLM_STUDIO_PORT` | `8080` | Controller port |
+| `VLLM_STUDIO_INFERENCE_PORT` | `8000` | Backend inference port |
+| `VLLM_STUDIO_MODELS_DIR` | `/models` | Model weights directory |
+| `VLLM_STUDIO_MOCK_INFERENCE` | `true` (in `--direct` mode) | Enable mock inference |
+| `VLLM_STUDIO_API_KEY` | — | Optional API authentication |
+| `VLLM_STUDIO_DATA_DIR` | `./data` | SQLite database and logs |
 
 ## API Reference
 
@@ -50,6 +161,7 @@ cd frontend && npm install && npm run dev
 | `/health` | GET | Health check with backend status |
 | `/status` | GET | Running process details |
 | `/gpus` | GET | GPU info (memory, utilization) |
+| `/config` | GET | System topology and service discovery |
 
 ### Recipes
 
@@ -90,18 +202,15 @@ cd frontend && npm install && npm run dev
 | `/mcp/tools` | GET | List available tools |
 | `/mcp/tools/{server}/{tool}` | POST | Call tool |
 
-## Configuration
+### Monitoring
 
-### Environment Variables
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/events` | GET | SSE stream (status, GPU, metrics, logs) |
+| `/metrics` | GET | Prometheus metrics |
+| `/usage` | GET | Usage analytics |
 
-```bash
-VLLM_STUDIO_PORT=8080           # Controller port
-VLLM_STUDIO_INFERENCE_PORT=8000 # vLLM/SGLang port
-VLLM_STUDIO_API_KEY=your-key    # Optional auth
-VLLM_STUDIO_TEMPORAL_ADDRESS=localhost:7233 # Temporal server address
-```
-
-### Recipe Example
+## Recipe Example
 
 ```json
 {
@@ -123,7 +232,7 @@ VLLM_STUDIO_TEMPORAL_ADDRESS=localhost:7233 # Temporal server address
 | `id` | string | Unique identifier |
 | `name` | string | Display name |
 | `model_path` | string | Path to model weights |
-| `backend` | string | `vllm` or `sglang` |
+| `backend` | string | `vllm`, `sglang`, `tabbyapi`, or `llamacpp` |
 | `tensor_parallel_size` | int | GPU parallelism |
 | `pipeline_parallel_size` | int | Pipeline parallelism |
 | `max_model_len` | int | Max context length |
@@ -133,48 +242,10 @@ VLLM_STUDIO_TEMPORAL_ADDRESS=localhost:7233 # Temporal server address
 | `dtype` | string | Model dtype |
 | `served_model_name` | string | Name exposed via API |
 | `tool_call_parser` | string | Tool calling parser |
-| `reasoning_parser` | string | Reasoning/thinking parser (auto-detected for GLM, MiniMax) |
+| `reasoning_parser` | string | Reasoning/thinking parser (auto-detected) |
 | `enable_auto_tool_choice` | bool | Enable automatic tool selection |
 | `trust_remote_code` | bool | Allow remote code |
 | `extra_args` | object | Additional CLI args |
-
-## Directory Structure
-
-```
-vllm-studio/
-├── controller/
-│   ├── app.py         # FastAPI endpoints
-│   ├── process.py     # Process management
-│   ├── backends.py    # vLLM/SGLang command builders
-│   ├── models.py      # Pydantic models
-│   ├── store.py       # SQLite storage
-│   ├── config.py      # Settings
-│   └── cli.py         # Entry point
-├── frontend/          # Next.js web UI
-├── config/
-│   └── litellm.yaml   # LiteLLM config (optional)
-└── docker-compose.yml
-```
-
-## With LiteLLM (Optional)
-
-For OpenAI/Anthropic API compatibility:
-
-```bash
-docker compose up litellm
-```
-
-Then use `http://localhost:4100` as your API endpoint with any OpenAI-compatible client.
-
-## Temporal (Local, OSS)
-
-The Docker bundle includes a local Temporal dev server for workflows.
-
-```bash
-docker compose up temporal
-```
-
-Temporal listens on port 7233 (gRPC) and exposes the UI on port 8233.
 
 ## License
 

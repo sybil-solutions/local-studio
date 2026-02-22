@@ -7,22 +7,6 @@ on:
     branches: [main]
 
 jobs:
-  python:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-      - name: Install
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install -e ".[dev]"
-      - name: Compile
-        run: python -m compileall -q controller
-      - name: Lint
-        run: ruff check controller
-
   controller:
     runs-on: ubuntu-latest
     steps:

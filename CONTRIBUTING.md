@@ -1,53 +1,93 @@
 # Contributing to vLLM Studio
 
-Thank you for your interest in contributing to vLLM Studio!
+Thank you for your interest in contributing!
+
+## Prerequisites
+
+| Tool | Version | Install |
+|------|---------|---------|
+| Bun | >= 1.0 | `curl -fsSL https://bun.sh/install \| bash` |
+| Node.js | >= 20 | [nodejs.org](https://nodejs.org) |
+| Docker | Latest (optional) | [docker.com](https://docs.docker.com/get-docker/) |
 
 ## Getting Started
 
-1. Fork the repository
-2. Clone your fork: `git clone https://github.com/YOUR_USERNAME/vllm-studio.git`
-3. Create a branch: `git checkout -b feature/your-feature`
-4. Make your changes
-5. Run tests: `pytest tests/`
-6. Commit: `git commit -m "Add your feature"`
-7. Push: `git push origin feature/your-feature`
-8. Open a Pull Request
-
-## Development Setup
-
-### Controller (Python)
-
 ```bash
-# Create virtual environment
-python -m venv .venv
-source .venv/bin/activate
+# Clone
+git clone https://github.com/0xSero/vllm-studio.git
+cd vllm-studio
 
-# Install in development mode
-pip install -e ".[dev]"
+# Install dependencies
+cd controller && bun install && cd ..
+cd cli && bun install && cd ..
+cd frontend && npm install && cd ..
 
-# Run with auto-reload
-./start.sh --dev
+# Run controller (mock inference, no GPU needed)
+./start.sh --direct
+
+# Run frontend (separate terminal)
+cd frontend && npm run dev
 ```
 
-### Frontend (Next.js)
+Open [http://localhost:3000](http://localhost:3000) — the controller runs on port 8080.
+
+## Development Commands
+
+### Controller (`controller/`)
 
 ```bash
-cd frontend
-npm install
-npm run dev
+bun run dev          # Start with auto-reload
+bun run typecheck    # Type check
+bun run lint         # ESLint
+bun run lint:fix     # ESLint auto-fix
+bun test             # Run tests
+bun run check        # All checks (knip, jscpd, depcheck)
+```
+
+### CLI (`cli/`)
+
+```bash
+bun run dev          # Start with auto-reload
+bun run typecheck    # Type check
+bun run lint         # ESLint
+bun test             # Run tests
+bun run check        # All checks
+```
+
+### Frontend (`frontend/`)
+
+```bash
+npm run dev          # Start dev server
+npm run lint         # ESLint
+npm test             # Vitest
+npm run check        # All checks (knip, jscpd, depcheck)
 ```
 
 ## Code Style
 
-- **Python**: We use `ruff` for linting and formatting
-- **TypeScript**: We use ESLint and Prettier
+- **Linting**: ESLint + Prettier in all workspaces
+- **Pre-commit**: Husky runs lint-staged on commit
+- **Commits**: Use [conventional commits](https://www.conventionalcommits.org/) (`feat:`, `fix:`, `chore:`, etc.)
+
+## Project Structure
+
+| Directory | Runtime | Description |
+|-----------|---------|-------------|
+| `controller/` | Bun + Hono | API server, process management, SQLite stores |
+| `cli/` | Bun | Terminal UI for managing models |
+| `frontend/` | Node + Next.js | Web UI (chat, recipes, analytics) |
+| `swift-client/` | Swift | iOS client |
+| `desktop/` | — | Desktop application |
 
 ## Pull Request Guidelines
 
-1. Keep PRs focused on a single feature or fix
-2. Write clear commit messages
-3. Update documentation if needed
-4. Add tests for new functionality
+1. Fork the repository
+2. Create a branch: `git checkout -b feat/your-feature`
+3. Make changes and run checks: `bun run check` / `npm run check`
+4. Commit with a conventional commit message
+5. Open a Pull Request
+
+Keep PRs focused on a single feature or fix. Update documentation if needed.
 
 ## Questions?
 

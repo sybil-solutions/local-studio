@@ -39,11 +39,14 @@ vLLM Studio - Model lifecycle management for vLLM, SGLang, and TabbyAPI inferenc
 ## Commands
 
 ```bash
-# Install
-pip install -e .
+# Install dependencies
+cd controller && bun install && cd ..
+cd cli && bun install && cd ..
+cd frontend && npm install && cd ..
 
 # Run controller (IMPORTANT: use start.sh or native bun, NOT snap bun)
-./start.sh                                    # Recommended - uses native bun
+./start.sh                                    # Recommended - starts Docker services too
+./start.sh --direct                           # Controller only, no Docker (mock inference)
 ./start.sh --dev                              # Development with auto-reload
 ~/.bun/bin/bun run controller/src/main.ts     # Direct with native bun
 
@@ -53,7 +56,7 @@ pip install -e .
 # Install native bun if needed:
 curl -fsSL https://bun.sh/install | bash
 
-# Run all services
+# Run all Docker services
 docker compose up -d
 
 # Run frontend
@@ -75,41 +78,59 @@ Environment variables (prefix `VLLM_STUDIO_`):
 ## Project Structure
 
 ```
-lmvllm/
-├── controller/           # Python FastAPI backend
-│   ├── app.py           # Application entry, lifespan, singletons
-│   ├── config.py        # Pydantic settings
-│   ├── models.py        # Data models (Recipe, MCPServer, etc.)
-│   ├── backends.py      # Command builders for vLLM/SGLang
-│   ├── process.py       # Process management (launch/evict)
-│   ├── store.py         # SQLite stores (Recipe, Chat, MCP, Metrics)
-│   ├── events.py        # SSE event manager
-│   ├── thinking_config.py  # Reasoning token allocation
-│   ├── metrics.py       # Prometheus metrics exporter
-│   ├── gpu.py           # GPU detection
-│   ├── browser.py       # Model directory discovery
-│   ├── cli.py           # CLI entry point
-│   └── routes/          # API route handlers
-│       ├── system.py    # /health, /status, /gpus, /config
-│       ├── lifecycle.py # /recipes, /launch, /evict
-│       ├── models.py    # /v1/models, /v1/studio/models
-│       ├── chats.py     # /chats CRUD
-│       ├── logs.py      # /logs, /events (SSE)
-│       ├── monitoring.py # /metrics, /peak-metrics
-│       ├── usage.py     # /usage analytics
-│       ├── proxy.py     # Chat completions proxy
-│       └── mcp.py       # /mcp/servers, /mcp/tools
-├── frontend/            # Next.js frontend
+vllm-studio/
+├── controller/              # API server (Bun + Hono + SQLite)
 │   └── src/
-│       ├── app/         # Pages (chat, recipes, configs, logs, discover, usage)
-│       ├── components/  # React components
-│       ├── hooks/       # Custom hooks (useSSE, useContextManager)
-│       └── lib/         # API client, types, utilities
-├── config/              # Service configurations
-│   ├── litellm.yaml    # LiteLLM routing config
-│   └── prometheus.yml  # Prometheus scrape config
-├── data/               # Runtime data (SQLite DB, logs)
-└── docker-compose.yml  # Service orchestration
+│       ├── main.ts              # Entry point
+│       ├── config/              # Environment & persisted settings
+│       ├── core/                # Logger, errors, async utilities
+│       ├── http/                # Hono app, SSE
+│       ├── routes/              # API route handlers
+│       │   ├── system.ts        # /health, /status, /gpus, /config
+│       │   ├── lifecycle.ts     # /recipes, /launch, /evict
+│       │   ├── models.ts        # /v1/models, /v1/studio/models
+│       │   ├── chats.ts         # /chats CRUD
+│       │   ├── openai.ts        # Chat completions proxy
+│       │   ├── logs.ts          # /logs, /events (SSE)
+│       │   ├── monitoring.ts    # /metrics, /peak-metrics
+│       │   ├── usage.ts         # /usage analytics
+│       │   ├── mcp.ts           # /mcp/servers, /mcp/tools
+│       │   ├── downloads.ts     # Model downloads
+│       │   └── studio.ts        # Studio-specific routes
+│       ├── services/            # Business logic
+│       │   ├── backends.ts          # vLLM/SGLang/TabbyAPI/llama.cpp command builders
+│       │   ├── process-manager.ts   # Process management (launch/evict)
+│       │   ├── event-manager.ts     # SSE event broadcasting
+│       │   ├── gpu.ts               # GPU detection
+│       │   ├── metrics.ts           # Prometheus metrics exporter
+│       │   ├── model-browser.ts     # Model directory discovery
+│       │   ├── mcp-runner.ts        # MCP server lifecycle
+│       │   ├── download-manager.ts  # HuggingFace model downloads
+│       │   └── agent-runtime/       # Multi-turn agent with tool use
+│       ├── stores/              # SQLite persistence
+│       │   ├── recipe-store.ts      # Recipe CRUD
+│       │   ├── chat-store.ts        # Chat sessions & messages
+│       │   ├── mcp-store.ts         # MCP server configs
+│       │   └── metrics-store.ts     # Peak & lifetime metrics
+│       └── types/               # Zod schemas, branded types, models
+├── cli/                     # Terminal UI (Bun)
+│   └── src/
+│       ├── main.ts              # Entry point
+│       └── views/               # Dashboard, recipes, config, status
+├── frontend/                # Web UI (Next.js + React + TypeScript)
+│   └── src/
+│       ├── app/                 # Pages (chat, recipes, logs, discover, usage)
+│       ├── components/          # React components
+│       ├── hooks/               # Custom hooks (useSSE, useContextManager)
+│       └── lib/                 # API client, types, utilities
+├── swift-client/            # iOS client (Swift)
+├── desktop/                 # Desktop application
+├── config/                  # Service configurations
+│   ├── litellm.yaml             # LiteLLM routing config
+│   └── prometheus.yml           # Prometheus scrape config
+├── start.sh                 # Launch script
+├── data/                    # Runtime data (SQLite DB, logs)
+└── docker-compose.yml       # Optional service orchestration
 ```
 
 ## Database Schema
@@ -218,9 +239,10 @@ CREATE TABLE lifetime_metrics (
 
 ## Key Files
 
-- `controller/backends.py` - vLLM/SGLang command construction with auto-detection of reasoning/tool parsers
-- `controller/process.py` - Process detection, launch with stability checks, eviction
-- `controller/routes/lifecycle.py` - Launch state machine with preemption, cancellation, progress events
-- `controller/events.py` - SSE event broadcasting to multiple subscribers
-- `controller/store.py` - SQLite stores with migrations and seeding
+- `controller/src/services/backends.ts` - vLLM/SGLang/TabbyAPI/llama.cpp command construction with auto-detection of reasoning/tool parsers
+- `controller/src/services/process-manager.ts` - Process detection, launch with stability checks, eviction
+- `controller/src/routes/lifecycle.ts` - Launch state machine with preemption, cancellation, progress events
+- `controller/src/services/event-manager.ts` - SSE event broadcasting to multiple subscribers
+- `controller/src/stores/recipe-store.ts` - Recipe SQLite store with migrations and seeding
+- `controller/src/services/agent-runtime/` - Multi-turn agent with tool use, plan/execute workflow
 - `config/litellm.yaml` - Model routing, callbacks, caching configuration
