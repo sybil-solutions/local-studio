@@ -184,6 +184,8 @@ export const registerModelsRoutes = (app: Hono, context: AppContext): void => {
       return resolve(pathValue);
     };
 
+    const recipesByParentDir = new Map<string, string[]>();
+
     for (const recipe of recipes) {
       const modelPath = recipe.model_path?.trim();
       if (!modelPath) {
@@ -198,6 +200,11 @@ export const registerModelsRoutes = (app: Hono, context: AppContext): void => {
         const existingPaths = recipesByPath.get(canonical) ?? [];
         existingPaths.push(recipe.id);
         recipesByPath.set(canonical, existingPaths);
+        // Also index by parent directory so GGUF file paths match their containing directory
+        const parentDir = dirname(canonical);
+        const existingParentPaths = recipesByParentDir.get(parentDir) ?? [];
+        existingParentPaths.push(recipe.id);
+        recipesByParentDir.set(parentDir, existingParentPaths);
       }
     }
 
@@ -245,6 +252,9 @@ export const registerModelsRoutes = (app: Hono, context: AppContext): void => {
     for (const directory of modelDirectories) {
       const canonical = resolve(directory);
       let recipeIds = recipesByPath.get(canonical) ?? [];
+      if (recipeIds.length === 0) {
+        recipeIds = recipesByParentDir.get(canonical) ?? [];
+      }
       if (recipeIds.length === 0) {
         const byName = recipesByBasename.get(basename(directory)) ?? [];
         if (byName.length === 1) {

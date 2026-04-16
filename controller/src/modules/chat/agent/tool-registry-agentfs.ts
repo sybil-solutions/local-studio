@@ -56,18 +56,23 @@ export const buildAgentFsTools = (
       const raw = params as Record<string, unknown>;
       const normalized = normalizeAgentPath(typeof raw["path"] === "string" ? raw["path"] : "");
       const recursive = raw["recursive"] !== false;
-      const files = await withAgentFs((fs) => buildAgentFileTree(fs, normalized, recursive));
-      await publishAgentFsEvent(AGENT_FILE_EVENT_TYPES.AGENT_FILES_LISTED, {
-        session_id: sessionId,
-        path: normalized || null,
-        recursive,
-        files,
-      });
-      return createTextResult(JSON.stringify(files, null, 2), {
-        files,
-        path: normalized,
-        recursive,
-      });
+      try {
+        const files = await withAgentFs((fs) => buildAgentFileTree(fs, normalized, recursive));
+        await publishAgentFsEvent(AGENT_FILE_EVENT_TYPES.AGENT_FILES_LISTED, {
+          session_id: sessionId,
+          path: normalized || null,
+          recursive,
+          files,
+        });
+        return createTextResult(JSON.stringify(files, null, 2), {
+          files,
+          path: normalized,
+          recursive,
+        });
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        return createTextResult(`Error listing files at "${normalized || "/"}": ${message}`, { path: normalized, error: true });
+      }
     },
   };
 
@@ -84,14 +89,19 @@ export const buildAgentFsTools = (
       const raw = params as Record<string, unknown>;
       const path = normalizeAgentPath(typeof raw["path"] === "string" ? raw["path"] : "");
       if (!path) throw new Error("Path is required.");
-      const content = await withAgentFs((fs) => fs.readFile(toFsPath(path), "utf8"));
-      const bytes = Buffer.byteLength(content, "utf8");
-      await publishAgentFsEvent(AGENT_FILE_EVENT_TYPES.AGENT_FILE_READ, {
-        session_id: sessionId,
-        path,
-        bytes,
-      });
-      return createTextResult(content, { path });
+      try {
+        const content = await withAgentFs((fs) => fs.readFile(toFsPath(path), "utf8"));
+        const bytes = Buffer.byteLength(content, "utf8");
+        await publishAgentFsEvent(AGENT_FILE_EVENT_TYPES.AGENT_FILE_READ, {
+          session_id: sessionId,
+          path,
+          bytes,
+        });
+        return createTextResult(content, { path });
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        return createTextResult(`Error reading file "${path}": ${message}`, { path, error: true });
+      }
     },
   };
 

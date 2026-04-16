@@ -171,7 +171,7 @@ const resolveSandboxedCwd = (sessionRoot: string, cwd?: string): string => {
 };
 
 const ensureCommandAllowed = (command: string): void => {
-  if (command.length > 8000) {
+  if (command.length > 32000) {
     throw new Error("command is too large");
   }
   for (const pattern of BLOCKED_COMMAND_PATTERNS) {
@@ -338,22 +338,27 @@ export const buildLocalTools = (context: AppContext, options: LocalToolOptions):
   const runCommandTool = async (
     params: unknown
   ): Promise<AgentToolResult<Record<string, unknown>>> => {
-    const raw = asRecord(params);
-    const payload = parseCommandPayload(raw);
-    ensureCommandAllowed(payload.command);
-    const cwd = resolveSandboxedCwd(sessionRoot, payload.cwd);
-    const timeoutSeconds = clampTimeoutSeconds(payload.timeout, DEFAULT_TIMEOUT_SECONDS);
+    try {
+      const raw = asRecord(params);
+      const payload = parseCommandPayload(raw);
+      ensureCommandAllowed(payload.command);
+      const cwd = resolveSandboxedCwd(sessionRoot, payload.cwd);
+      const timeoutSeconds = clampTimeoutSeconds(payload.timeout, DEFAULT_TIMEOUT_SECONDS);
 
-    const result = await executeLocal(payload.command, {
-      cwd,
-      timeoutSeconds,
-    });
-    const text = truncateText(result.result, MAX_OUTPUT_CHARS);
-    return createTextResult(text, {
-      exitCode: result.exitCode,
-      signal: result.signal,
-      cwd,
-    });
+      const result = await executeLocal(payload.command, {
+        cwd,
+        timeoutSeconds,
+      });
+      const text = truncateText(result.result, MAX_OUTPUT_CHARS);
+      return createTextResult(text, {
+        exitCode: result.exitCode,
+        signal: result.signal,
+        cwd,
+      });
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      return createTextResult(`Error: ${message}`, { exitCode: 1, error: true });
+    }
   };
 
   const executeCommand: AgentTool = {
