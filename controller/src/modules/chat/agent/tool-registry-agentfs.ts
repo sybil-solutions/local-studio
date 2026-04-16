@@ -142,6 +142,92 @@ export const buildAgentFsTools = (
     },
   };
 
+  const editFile: AgentTool = {
+    name: AGENT_TOOL_NAMES.EDIT_FILE,
+    label: AGENT_TOOL_NAMES.EDIT_FILE,
+    description:
+      "Replace a specific string in a file. Use this instead of write_file for small edits.",
+    parameters: {
+      type: "object",
+      properties: {
+        path: { type: "string", description: "File path" },
+        old_string: { type: "string", description: "Exact text to find and replace" },
+        new_string: { type: "string", description: "Replacement text" },
+        replace_all: { type: "boolean", description: "Replace all occurrences (default: false)" },
+      },
+      required: ["path", "old_string", "new_string"],
+    } as unknown as TSchema,
+    execute: async (_toolCallId, params): Promise<AgentToolResult<Record<string, unknown>>> => {
+      const raw = params as Record<string, unknown>;
+      const path = normalizeAgentPath(typeof raw["path"] === "string" ? raw["path"] : "");
+      if (!path) return createTextResult("Error: path is required.", { error: true });
+      const oldString = typeof raw["old_string"] === "string" ? raw["old_string"] : "";
+      const newString = typeof raw["new_string"] === "string" ? raw["new_string"] : "";
+      if (!oldString) return createTextResult("Error: old_string is required.", { error: true });
+      if (oldString === newString) return createTextResult("Error: old_string and new_string are identical.", { error: true });
+      const replaceAll = raw["replace_all"] === true;
+
+      try {
+        const content = await withAgentFs((fs) => fs.readFile(toFsPath(path), "utf8"));
+
+        // Count occurrences
+        let count = 0;
+        let searchStart = 0;
+        while (true) {
+          const idx = content.indexOf(oldString, searchStart);
+          if (idx === -1) break;
+          count++;
+          searchStart = idx + oldString.length;
+        }
+
+        if (count === 0) {
+          return createTextResult(`Error: old_string not found in "${path}".`, { path, error: true });
+        }
+        if (count > 1 && !replaceAll) {
+          return createTextResult(
+            `Error: old_string found ${count} times in "${path}". Set replace_all=true to replace all occurrences, or provide a more specific old_string.`,
+            { path, error: true, matchCount: count }
+          );
+        }
+
+        const updatedContent = replaceAll
+          ? content.replaceAll(oldString, newString)
+          : content.replace(oldString, newString);
+
+        await withAgentFs((fs) => fs.writeFile(toFsPath(path), updatedContent));
+
+        context.stores.chatStore.addAgentFileVersion(
+          sessionId,
+          path,
+          updatedContent,
+          Buffer.byteLength(updatedContent, "utf8")
+        );
+
+        const oldLines = oldString.split("\n").length;
+        const newLines = newString.split("\n").length;
+        const linesAdded = Math.max(0, newLines - oldLines);
+        const linesRemoved = Math.max(0, oldLines - newLines);
+        const replacements = replaceAll ? count : 1;
+
+        await publishAgentFsEvent(AGENT_FILE_EVENT_TYPES.AGENT_FILE_EDITED, {
+          session_id: sessionId,
+          path,
+          replacements,
+          linesAdded,
+          linesRemoved,
+        });
+
+        const summary = replaceAll && count > 1
+          ? `Edited ${path}: replaced ${count} occurrences (+${linesAdded} -${linesRemoved} lines)`
+          : `Edited ${path} (+${linesAdded} -${linesRemoved} lines)`;
+        return createTextResult(summary, { path, replacements, linesAdded, linesRemoved });
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        return createTextResult(`Error editing file "${path}": ${message}`, { path, error: true });
+      }
+    },
+  };
+
   const deleteFile: AgentTool = {
     name: AGENT_TOOL_NAMES.DELETE_FILE,
     label: AGENT_TOOL_NAMES.DELETE_FILE,
@@ -213,5 +299,5 @@ export const buildAgentFsTools = (
     },
   };
 
-  return [listFiles, readFile, writeFile, deleteFile, makeDirectory, moveFile];
+  return [listFiles, readFile, writeFile, editFile, deleteFile, makeDirectory, moveFile];
 };

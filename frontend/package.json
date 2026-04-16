@@ -30,6 +30,8 @@
     "desktop:pack": "npm run desktop:build && electron-builder --dir --config desktop/electron-builder.yml"
   },
   "dependencies": {
+    "@types/diff": "^8.0.0",
+    "diff": "^9.0.0",
     "electron-updater": "^6.6.2",
     "framer-motion": "^12.24.10",
     "lucide-react": "^0.561.0",

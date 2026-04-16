@@ -2,7 +2,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Check, Copy, File, FileCode, Image as ImageIcon, Loader2, X } from "lucide-react";
+import { Check, Copy, File, FileCode, GitCompareArrows, Image as ImageIcon, Loader2, X } from "lucide-react";
 import type { AgentFileVersion } from "@/lib/types";
 import { useMessageParsing } from "@/lib/services/message-parsing";
 import {
@@ -14,6 +14,7 @@ import {
 } from "./agent-file-metadata";
 import { buildPreviewDocumentWithImports } from "./agent-file-previewer";
 import { CodePreview } from "../code";
+import { DiffViewer } from "../code/diff-viewer";
 import { EnhancedCodeBlock } from "../code/enhanced-code-block";
 import { MermaidDiagram } from "./agent-file-content-viewer/mermaid-diagram";
 
@@ -45,12 +46,43 @@ export function AgentFileContentViewer({
   const versionList = versions ?? [];
   const [activeTab, setActiveTab] = useState<"code" | "preview">(previewable ? "preview" : "code");
   const [selectedVersion, setSelectedVersion] = useState<number | null>(null);
+  const [showDiff, setShowDiff] = useState<boolean | null>(null);
 
   const activeVersion =
     (selectedVersion != null
       ? versionList.find((version) => version.version === selectedVersion)
       : null) ?? versionList[versionList.length - 1] ?? null;
   const displayContent = activeVersion?.content ?? content ?? "";
+
+  const diffPair = useMemo((): { oldContent: string; newContent: string; label: string } | null => {
+    if (isImage) return null;
+    // If viewing a specific version (not the latest), diff against its predecessor
+    if (activeVersion && versionList.length >= 2) {
+      const idx = versionList.findIndex((v) => v.version === activeVersion.version);
+      if (idx > 0) {
+        const prev = versionList[idx - 1];
+        return {
+          oldContent: prev.content,
+          newContent: activeVersion.content,
+          label: `v${prev.version} → v${activeVersion.version}`,
+        };
+      }
+    }
+    // If live content differs from the last saved version, diff live vs saved
+    const lastVersion = versionList[versionList.length - 1];
+    if (lastVersion && content != null && content !== lastVersion.content) {
+      return {
+        oldContent: lastVersion.content,
+        newContent: content,
+        label: `v${lastVersion.version} → current`,
+      };
+    }
+    return null;
+  }, [activeVersion, versionList, content, isImage]);
+
+  const canShowDiff = diffPair != null;
+  // Auto-enable diff when changes are detected and user hasn't explicitly toggled
+  const effectiveShowDiff = showDiff === null ? canShowDiff : showDiff;
 
   const handleCopy = async () => {
     if (!displayContent) return;
@@ -118,6 +150,19 @@ export function AgentFileContentViewer({
               </button>
             </div>
           )}
+          {canShowDiff && (
+            <button
+              onClick={() => setShowDiff(!effectiveShowDiff)}
+              className={`p-1 rounded transition-colors ${
+                effectiveShowDiff
+                  ? "bg-violet-500/15 text-violet-300"
+                  : "hover:bg-(--border) text-(--dim) hover:text-(--dim)"
+              }`}
+              title={effectiveShowDiff ? "Show full code" : "Show diff with previous version"}
+            >
+              <GitCompareArrows className="h-3.5 w-3.5" />
+            </button>
+          )}
           {!loading && displayContent && !isImage && (
             <button
               onClick={handleCopy}
@@ -153,6 +198,11 @@ export function AgentFileContentViewer({
               v{version.version}
             </button>
           ))}
+          {effectiveShowDiff && diffPair && (
+            <span className="text-[9px] text-(--dim) ml-auto shrink-0">
+              {diffPair.label}
+            </span>
+          )}
         </div>
       )}
 
@@ -215,6 +265,12 @@ export function AgentFileContentViewer({
               title={`${fileName} preview`}
             />
           </div>
+        ) : effectiveShowDiff && diffPair ? (
+          <DiffViewer
+            oldContent={diffPair.oldContent}
+            newContent={diffPair.newContent}
+            language={language}
+          />
         ) : (
           <CodePreview code={displayContent} language={language} className="text-[11px] text-(--fg)" />
         )}

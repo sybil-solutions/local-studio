@@ -41,6 +41,7 @@ export type AgentEventHandlerOptions = {
     toolResults: ToolResultMessage[],
     runId: string,
     turnIndex?: number,
+    toolArgs?: Map<string, { toolName: string; args: Record<string, unknown> }>,
   ) => void;
   addToolExecution: (
     runId: string,
@@ -219,6 +220,7 @@ export function handleAgentEvent(
           event.toolResults ?? [],
           helpers.runId,
           turnIndex >= 0 ? turnIndex : undefined,
+          helpers.toolExecutionStarts,
         );
       }
       helpers.publish(AGENT_RUN_EVENT_TYPES.TURN_END, {

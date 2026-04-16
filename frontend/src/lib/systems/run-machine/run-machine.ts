@@ -109,7 +109,7 @@ function shouldRefreshAgentFilesForTool(toolName: unknown): boolean {
   const normalized = toolName.includes("__") ? toolName.split("__").slice(1).join("__") : toolName;
   const lower = normalized.trim().toLowerCase();
   if (!lower) return false;
-  return lower.includes("execute_command") || lower.includes("computer_use");
+  return lower.includes("execute_command") || lower.includes("computer_use") || lower.includes("edit_file");
 }
 
 function normalizeToolNameForBrowser(toolName: unknown): string {

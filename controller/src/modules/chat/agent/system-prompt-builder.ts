@@ -54,6 +54,7 @@ export function buildAgentModePrompt(session: Record<string, unknown>): string |
   lines.push("- list_files({ path?, recursive? })");
   lines.push("- read_file({ path })");
   lines.push("- write_file({ path, content })");
+  lines.push("- edit_file({ path, old_string, new_string, replace_all? })");
   lines.push("- delete_file({ path })");
   lines.push("- make_directory({ path })");
   lines.push("- move_file({ from, to })");
@@ -76,7 +77,13 @@ export function buildAgentModePrompt(session: Record<string, unknown>): string |
     "- write_file creates parent directories automatically. Only call make_directory when you need an empty directory."
   );
   lines.push(
-    "- Prefer editing existing files over creating new ones. If you need to revise, read_file then write_file to the same path."
+    "- ALWAYS use edit_file to modify existing files. NEVER use execute_command with sed/awk/echo to edit files."
+  );
+  lines.push(
+    "- edit_file is the ONLY correct way to change file content. It shows the user a diff of exactly what changed."
+  );
+  lines.push(
+    "- Use write_file only for creating new files or complete rewrites. Use execute_command only for non-file-editing shell tasks."
   );
 
   if (steps.length > 0) {

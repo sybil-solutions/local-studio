@@ -11,6 +11,7 @@ import type { AgentFileEntry, Artifact, ChatMessage, ChatMessageMetadata } from 
 import { useMessageDerived } from "./use-message-derived";
 import { UserMessage } from "./user-message";
 import { ReferencedAgentFilePreviews } from "../referenced-agent-file-previews";
+import { InlineToolBlock, type ToolPart } from "./inline-tool-block";
 
 interface ChatMessageItemProps {
   message: ChatMessage;
@@ -70,6 +71,13 @@ function ChatMessageItemBase({
     role: message.role,
     parts: message.parts,
   });
+
+  const toolParts = useMemo(() => {
+    if (isUser) return [];
+    return message.parts.filter(
+      (p) => p.type === "dynamic-tool" || p.type.startsWith("tool-")
+    );
+  }, [isUser, message.parts]);
 
   // For streaming messages, subscribe reactively; for completed ones, snapshot is enough
   const imageParts = useMemo(() => {
@@ -138,10 +146,20 @@ function ChatMessageItemBase({
   }
 
   // ── Assistant ──
-  // Reasoning + tool execution UI lives in Activity / Computer; main thread stays readable.
 
   return (
     <div id={`message-${messageId}`} className="group py-1.5">
+      {toolParts.length > 0 && (
+        <div className="mb-1.5">
+          {toolParts.map((part, i) => (
+            <InlineToolBlock
+              key={(part as { toolCallId?: string }).toolCallId ?? `tool-${i}`}
+              part={part as ToolPart}
+            />
+          ))}
+        </div>
+      )}
+
       {textContent ? (
         <PerfProfiler id={`message-renderer:${messageId}`}>
           <MessageRenderer content={textContent} isStreaming={isStreaming} />

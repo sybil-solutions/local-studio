@@ -184,7 +184,7 @@ export async function createChatRun(
         mapToolCallsToMessage: (assistant, messageId, mapping) => {
           mapToolCallsToMessage(assistant, messageId, mapping);
         },
-        persistAssistantMessage: (sid, mid, assistant, toolResults, rid, tIndex) => {
+        persistAssistantMessage: (sid, mid, assistant, toolResults, rid, tIndex, toolArgsMap) => {
           persistAssistantMessage(context, {
             sessionId: sid,
             messageId: mid,
@@ -192,6 +192,7 @@ export async function createChatRun(
             toolResults,
             runId: rid,
             ...(typeof tIndex === "number" ? { turnIndex: tIndex } : {}),
+            toolArgs: toolArgsMap,
           });
         },
         addToolExecution: (rid, toolCallId, toolName, toolExecutionOptions) => {

@@ -41,9 +41,10 @@ export function persistAssistantMessage(
     toolResults: ToolResultMessage[];
     runId: string;
     turnIndex?: number;
+    toolArgs?: Map<string, { toolName: string; args: Record<string, unknown> }>;
   }
 ): void {
-  const { sessionId, messageId, assistant, toolResults, runId, turnIndex } = params;
+  const { sessionId, messageId, assistant, toolResults, runId, turnIndex, toolArgs } = params;
 
   const contentText = assistant.content
     .filter((block) => block.type === "text")
@@ -109,6 +110,36 @@ export function persistAssistantMessage(
               },
             }
           : {}),
+      });
+    }
+  }
+
+  // Fallback: if content had no toolCall blocks but toolResults exist,
+  // inject tool parts from toolResults (common with llama.cpp/Qwen models)
+  const hasToolCallBlocks = parts.some((p) => p["type"] === "dynamic-tool");
+  if (!hasToolCallBlocks && toolResults.length > 0) {
+    for (const result of toolResults) {
+      const toolCallId = result.toolCallId;
+      const toolName = result.toolName ?? "tool";
+      const resultText = extractToolResultText(result.content);
+      const isError = result.isError;
+      const argsInfo = toolArgs?.get(toolCallId);
+      const input = argsInfo?.args ?? {};
+
+      parts.push({
+        type: "dynamic-tool",
+        toolCallId,
+        toolName: argsInfo?.toolName ?? toolName,
+        input,
+        state: isError ? "output-error" : "output-available",
+        ...(isError ? { errorText: resultText } : { output: resultText }),
+      });
+
+      toolCalls.push({
+        id: toolCallId,
+        type: "function",
+        function: { name: argsInfo?.toolName ?? toolName, arguments: JSON.stringify(input) },
+        result: { content: resultText, isError },
       });
     }
   }
