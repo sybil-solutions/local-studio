@@ -145,8 +145,8 @@ export class MarkdownParser implements IMarkdownParser {
     text = text.replace(/```mermaid\s*(?:graph\s+)?(?=[A-Z]{1,3}\b)/gi, "```mermaid\ngraph ");
 
     // Protect fenced code blocks and inline code spans from the whitespace
-    // heuristics below — otherwise identifiers like `AccountController` get
-    // shattered into `Account\n\nController` by the camelCase-split rule.
+    // heuristics below — list/header fixes shouldn't rewrite content inside
+    // code either.
     const CODE_FENCE_PLACEHOLDER = "\u0000F";
     const INLINE_CODE_PLACEHOLDER = "\u0000I";
     const fences: string[] = [];
@@ -162,16 +162,12 @@ export class MarkdownParser implements IMarkdownParser {
       return `${INLINE_CODE_PLACEHOLDER}${i}${INLINE_CODE_PLACEHOLDER}`;
     });
 
-    // Fix missing newlines where lowercase immediately precedes uppercase
-    // This catches "OptionsMarkdown" -> "Options\n\nMarkdown" (sentence breaks)
-    // But skip common patterns like "JavaScript", "TypeScript", etc.
-    const skipWords =
-      /(?:JavaScript|TypeScript|GitHub|LinkedIn|YouTube|WordPress|iPhone|iPad|MacBook|PowerPoint|PlayStation|OneDrive|OneNote|OutLook)/;
-    text = text.replace(/([a-z])([A-Z][a-z])/g, (match, lower, upper) => {
-      // Don't split known camelCase/PascalCase words
-      if (skipWords.test(lower + upper)) return match;
-      return `${lower}\n\n${upper}`;
-    });
+    // (Previously there was a camelCase-split rule here that turned
+    //  "OptionsMarkdown" into "Options\n\nMarkdown". Modern LLMs don't emit
+    //  smashed-together output like that, but they do emit identifiers like
+    //  `AzureEmailNovastorm` or `AccountController` in prose — and the rule
+    //  shattered those across paragraphs, breaking bold/header markers. It
+    //  caused more harm than it fixed, so it's been removed.)
 
     // Fix headers without newlines before them
     // Pattern: text followed by # header marker

@@ -86,12 +86,64 @@
 
 .chat-markdown ul,
 .chat-markdown ol {
-  margin-bottom: 0.75rem;
+  margin: 0.5rem 0 0.75rem;
   padding-left: 1.25rem;
 }
 
+.chat-markdown ul {
+  list-style: none;
+  padding-left: 0.25rem;
+}
+
+.chat-markdown ol {
+  list-style: decimal;
+  padding-left: 1.5rem;
+}
+
 .chat-markdown li {
+  margin-bottom: 0.35rem;
+  line-height: 1.55;
+}
+
+.chat-markdown ul > li {
+  position: relative;
+  padding-left: 1.1rem;
+}
+
+.chat-markdown ul > li::before {
+  content: "";
+  position: absolute;
+  left: 0.25rem;
+  top: 0.65em;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--fg) 45%, transparent);
+}
+
+/* Nested unordered lists: slightly indented, hollow marker to distinguish. */
+.chat-markdown ul ul {
+  margin: 0.25rem 0 0.25rem;
+  padding-left: 0.5rem;
+}
+
+.chat-markdown ul ul > li::before {
+  background: transparent;
+  border: 1px solid color-mix(in srgb, var(--fg) 45%, transparent);
+  width: 5px;
+  height: 5px;
+}
+
+.chat-markdown ol > li {
+  padding-left: 0.25rem;
+}
+
+.chat-markdown li > p {
   margin-bottom: 0.25rem;
+}
+
+.chat-markdown li > p:last-child {
+  margin-bottom: 0;
 }
 
 .chat-markdown h1,
