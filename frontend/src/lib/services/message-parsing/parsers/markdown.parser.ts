@@ -135,6 +135,33 @@ export class MarkdownParser implements IMarkdownParser {
 
     let text = content;
 
+    // Fix language tags without newlines — must happen before we protect code
+    // fences below, since it reshapes the ``` token itself.
+    text = text.replace(
+      /```(html|svg|jsx|tsx|react|javascript|js|typescript|ts|json|jsonc|bash|sh|shell|python|py|sql|yaml|yml|md|markdown|css|scss|sass|xml)(?=\S)/gi,
+      "```$1\n",
+    );
+    text = text.replace(/```mermaidgraph\b/gi, "```mermaid");
+    text = text.replace(/```mermaid\s*(?:graph\s+)?(?=[A-Z]{1,3}\b)/gi, "```mermaid\ngraph ");
+
+    // Protect fenced code blocks and inline code spans from the whitespace
+    // heuristics below — otherwise identifiers like `AccountController` get
+    // shattered into `Account\n\nController` by the camelCase-split rule.
+    const CODE_FENCE_PLACEHOLDER = "\u0000F";
+    const INLINE_CODE_PLACEHOLDER = "\u0000I";
+    const fences: string[] = [];
+    const inlines: string[] = [];
+    text = text.replace(/```[\s\S]*?```/g, (match) => {
+      const i = fences.length;
+      fences.push(match);
+      return `${CODE_FENCE_PLACEHOLDER}${i}${CODE_FENCE_PLACEHOLDER}`;
+    });
+    text = text.replace(/`[^`\n]+`/g, (match) => {
+      const i = inlines.length;
+      inlines.push(match);
+      return `${INLINE_CODE_PLACEHOLDER}${i}${INLINE_CODE_PLACEHOLDER}`;
+    });
+
     // Fix missing newlines where lowercase immediately precedes uppercase
     // This catches "OptionsMarkdown" -> "Options\n\nMarkdown" (sentence breaks)
     // But skip common patterns like "JavaScript", "TypeScript", etc.
@@ -159,17 +186,15 @@ export class MarkdownParser implements IMarkdownParser {
     // e.g., "1. First2. Second" -> "1. First\n2. Second"
     text = text.replace(/([^\n])(\d+\.\s+\S)/g, "$1\n$2");
 
-    // Fix language tags without newlines
+    // Restore protected code regions.
     text = text.replace(
-      /```(html|svg|jsx|tsx|react|javascript|js|typescript|ts|json|jsonc|bash|sh|shell|python|py|sql|yaml|yml|md|markdown|css|scss|sass|xml)(?=\S)/gi,
-      "```$1\n",
+      new RegExp(`${INLINE_CODE_PLACEHOLDER}(\\d+)${INLINE_CODE_PLACEHOLDER}`, "g"),
+      (_, i) => inlines[Number(i)] ?? "",
     );
-
-    // Normalize mermaidgraph to mermaid
-    text = text.replace(/```mermaidgraph\b/gi, "```mermaid");
-
-    // Fix mermaid without proper graph declaration
-    text = text.replace(/```mermaid\s*(?:graph\s+)?(?=[A-Z]{1,3}\b)/gi, "```mermaid\ngraph ");
+    text = text.replace(
+      new RegExp(`${CODE_FENCE_PLACEHOLDER}(\\d+)${CODE_FENCE_PLACEHOLDER}`, "g"),
+      (_, i) => fences[Number(i)] ?? "",
+    );
 
     this.normalizedCache.set(key, text);
     return text;
