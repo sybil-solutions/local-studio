@@ -164,11 +164,36 @@ function InlineToolBlockBase({ part }: { part: ToolPart }) {
 
   const hasDiff = diffs.length > 0;
 
-  // Expanded follows `hasDiff` by default so a late-arriving diff (from
-  // tool_execution_end or chat_message_upserted) auto-opens the block — but
-  // once the user clicks, their choice wins.
+  // Cheap estimate of changed lines for the header badge and auto-expand gate.
+  // A precise count would re-run the LCS used by DiffViewer; for these purposes
+  // the difference in total line counts is close enough without the cost.
+  const diffStats = useMemo(() => {
+    let added = 0;
+    let removed = 0;
+    for (const d of diffs) {
+      const oldLines = d.oldContent ? d.oldContent.split("\n").length : 0;
+      const newLines = d.newContent ? d.newContent.split("\n").length : 0;
+      if (newLines > oldLines) added += newLines - oldLines;
+      if (oldLines > newLines) removed += oldLines - newLines;
+      if (oldLines === newLines && d.oldContent !== d.newContent) {
+        // Same line count but content differs — at least one line changed.
+        added += 1;
+        removed += 1;
+      }
+    }
+    return { added, removed, total: added + removed };
+  }, [diffs]);
+  // A large diff (e.g. `cat > file << EOF ...` dumping a whole config) would
+  // auto-expand and flood the thread. Cap the auto-open by total changed
+  // lines; the user can still click to see it.
+  const AUTO_EXPAND_LINE_LIMIT = 20;
+  const autoExpand = hasDiff && diffStats.total <= AUTO_EXPAND_LINE_LIMIT;
+
+  // Expanded follows the auto-open rule until the user explicitly clicks; then
+  // their choice wins. This keeps late-arriving small diffs (file edits) open
+  // but big file dumps collapsed.
   const [userOverride, setUserOverride] = useState<boolean | null>(null);
-  const expanded = userOverride ?? hasDiff;
+  const expanded = userOverride ?? autoExpand;
   const toggleExpanded = () => setUserOverride(!expanded);
 
   const outputText = useMemo(() => {
@@ -222,7 +247,13 @@ function InlineToolBlockBase({ part }: { part: ToolPart }) {
         )}
         <span className="ml-auto shrink-0 flex items-center gap-1">
           {hasDiff && state === "complete" && (
-            <span className="text-[10px] text-green-400/70 font-mono">changed</span>
+            <span className="text-[10px] font-mono flex items-center gap-1">
+              {diffStats.added > 0 && <span className="text-green-400">+{diffStats.added}</span>}
+              {diffStats.removed > 0 && <span className="text-red-400">-{diffStats.removed}</span>}
+              {diffStats.added === 0 && diffStats.removed === 0 && (
+                <span className="text-green-400/70">changed</span>
+              )}
+            </span>
           )}
           {state === "running" && <Icons.Loader2 className="h-3 w-3 text-violet-400 animate-spin" />}
           {state === "complete" && <Icons.CircleCheck className="h-3 w-3 text-green-400" />}
