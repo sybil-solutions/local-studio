@@ -164,8 +164,12 @@ function InlineToolBlockBase({ part }: { part: ToolPart }) {
 
   const hasDiff = diffs.length > 0;
 
-  // Auto-expand if there's a diff to show
-  const [expanded, setExpanded] = useState(hasDiff);
+  // Expanded follows `hasDiff` by default so a late-arriving diff (from
+  // tool_execution_end or chat_message_upserted) auto-opens the block — but
+  // once the user clicks, their choice wins.
+  const [userOverride, setUserOverride] = useState<boolean | null>(null);
+  const expanded = userOverride ?? hasDiff;
+  const toggleExpanded = () => setUserOverride(!expanded);
 
   const outputText = useMemo(() => {
     if (part.errorText) return part.errorText;
@@ -195,7 +199,7 @@ function InlineToolBlockBase({ part }: { part: ToolPart }) {
   return (
     <div className={`my-1.5 rounded-md border ${borderClass} overflow-hidden`}>
       <button
-        onClick={() => setExpanded(!expanded)}
+        onClick={toggleExpanded}
         className={`w-full flex items-center gap-2 px-2.5 py-1.5 text-left ${headerBg} hover:bg-(--surface) transition-colors`}
       >
         {expanded

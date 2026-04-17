@@ -99,11 +99,19 @@ export function useChatMessageMapping({ setMessages }: UseChatMessageMappingArgs
             });
 
             if (toolOnlyMessages.length > 0) {
-              const mergedParts = toolOnlyMessages.reduce(
-                (acc, entry) => mergeToolParts(acc, entry.parts),
-                message.parts,
+              // Carry the tool parts from prior tool-only internal messages
+              // into this text message so the inline diff stays visible once
+              // the final text lands. Text / reasoning must come from
+              // `message.parts` (the latest content), not from mergeToolParts
+              // — that helper is intended for streaming updates of the same
+              // message and drops non-tool parts that aren't in `next`.
+              const collectedToolParts = toolOnlyMessages.flatMap((entry) =>
+                entry.parts.filter((p) => isToolPart(p)),
               );
-              nextMessage = { ...message, parts: mergedParts };
+              nextMessage = {
+                ...message,
+                parts: [...message.parts, ...collectedToolParts],
+              };
               const toolOnlyIds = new Set(toolOnlyMessages.map((entry) => entry.id));
               nextPrev = prev.filter((entry) => !toolOnlyIds.has(entry.id));
             }

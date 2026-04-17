@@ -3,6 +3,7 @@
 
 import { useEffect } from "react";
 import type { ChatMessage, ChatSessionDetail, StoredMessage } from "@/lib/types";
+import { mergeToolParts } from "../../../../hooks/chat/use-chat-message-mapping/helpers";
 
 export interface UseChatPageEventsArgs {
   currentSessionId: string | null;
@@ -36,9 +37,17 @@ export function useChatPageEvents({
           if (!mapped) return;
           updateMessages((current) => {
             const index = current.findIndex((entry) => entry.id === mapped.id);
-            return index >= 0
-              ? [...current.slice(0, index), mapped, ...current.slice(index + 1)]
-              : [...current, mapped];
+            if (index < 0) return [...current, mapped];
+            // Preserve tool parts already merged into the streaming version of
+            // this message (e.g. from a collapsed tool-only sibling) — the
+            // persisted DB record for a text reply doesn't include them, so a
+            // naive replace wipes the inline diff.
+            const existing = current[index];
+            const merged: ChatMessage = {
+              ...mapped,
+              parts: mergeToolParts(existing.parts, mapped.parts),
+            };
+            return [...current.slice(0, index), merged, ...current.slice(index + 1)];
           });
           break;
         }

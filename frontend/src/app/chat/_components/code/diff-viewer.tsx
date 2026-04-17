@@ -150,33 +150,39 @@ export function DiffViewer({ oldContent, newContent, className }: DiffViewerProp
             const { line } = item;
             const bgClass =
               line.type === "add"
-                ? "bg-green-500/8"
+                ? "bg-green-500/20"
                 : line.type === "remove"
-                  ? "bg-red-500/8"
+                  ? "bg-red-500/20"
                   : "";
-            const prefix = line.type === "add" ? "+" : line.type === "remove" ? "−" : " ";
+            const gutterBgClass =
+              line.type === "add"
+                ? "bg-green-500/30"
+                : line.type === "remove"
+                  ? "bg-red-500/30"
+                  : "";
+            const prefix = line.type === "add" ? "+" : line.type === "remove" ? "-" : " ";
             const prefixClass =
               line.type === "add"
-                ? "text-green-400"
+                ? "text-green-300 font-bold"
                 : line.type === "remove"
-                  ? "text-red-400"
+                  ? "text-red-300 font-bold"
                   : "text-transparent";
             const contentClass =
               line.type === "add"
-                ? "text-green-300"
+                ? "text-green-100"
                 : line.type === "remove"
-                  ? "text-red-300"
+                  ? "text-red-100"
                   : "text-(--fg)";
 
             return (
               <tr key={`l-${i}`} className={bgClass}>
-                <td className="select-none text-right pr-1 pl-2 text-[10px] w-8 text-(--dim) align-top">
+                <td className={`select-none text-right pr-1 pl-2 text-[10px] w-8 text-(--dim) align-top ${gutterBgClass}`}>
                   {line.oldLineNo ?? ""}
                 </td>
-                <td className="select-none text-right pr-1 text-[10px] w-8 text-(--dim) align-top">
+                <td className={`select-none text-right pr-1 text-[10px] w-8 text-(--dim) align-top ${gutterBgClass}`}>
                   {line.newLineNo ?? ""}
                 </td>
-                <td className={`select-none w-4 text-center align-top ${prefixClass}`}>
+                <td className={`select-none w-4 text-center align-top ${prefixClass} ${gutterBgClass}`}>
                   {prefix}
                 </td>
                 <td className={`pr-4 whitespace-pre-wrap break-all ${contentClass}`}>

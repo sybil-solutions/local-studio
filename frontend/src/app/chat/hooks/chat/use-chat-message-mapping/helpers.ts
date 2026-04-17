@@ -160,8 +160,10 @@ export function mergeToolParts(previous: ChatMessagePart[], next: ChatMessagePar
       previousById.set(part.toolCallId, part);
     }
   }
-  return next.map((part) => {
+  const seenToolIds = new Set<string>();
+  const mapped = next.map((part) => {
     if (!isToolPart(part)) return part;
+    seenToolIds.add(part.toolCallId);
     const prior = previousById.get(part.toolCallId);
     if (!prior) return part;
     const merged = {
@@ -176,6 +178,15 @@ export function mergeToolParts(previous: ChatMessagePart[], next: ChatMessagePar
     } satisfies Extract<ChatMessagePart, { toolCallId: string }>;
     return merged;
   });
+  // Preserve tool parts from `previous` that `next` didn't mention. Text /
+  // reasoning streaming updates don't re-emit earlier tool calls, so without
+  // this they'd be dropped and the user would see the inline diff flash and
+  // disappear when the final text message lands.
+  const orphans: ChatMessagePart[] = [];
+  for (const [id, part] of previousById) {
+    if (!seenToolIds.has(id)) orphans.push(part);
+  }
+  return orphans.length > 0 ? [...mapped, ...orphans] : mapped;
 }
 
 function mapAgentContentToParts(content: unknown): ChatMessagePart[] {
