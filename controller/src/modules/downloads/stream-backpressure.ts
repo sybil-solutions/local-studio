@@ -11,12 +11,7 @@ type WriterFailureTracker = {
 const toError = (error: unknown): Error =>
   error instanceof Error ? error : new Error(String(error));
 
-/**
- * Wait for a write stream to become writable again without leaking listeners
- * across repeated backpressure cycles.
- * @param writer - Writable stream currently under backpressure.
- * @returns A promise that resolves on `drain` or rejects on `error`.
- */
+/** Wait for a writer to drain without leaving listeners behind. */
 export const waitForWriterDrain = (writer: DrainAwareWriter): Promise<void> =>
   new Promise((resolve, reject) => {
     const cleanup = (): void => {
@@ -38,11 +33,7 @@ export const waitForWriterDrain = (writer: DrainAwareWriter): Promise<void> =>
     writer.once("error", onError);
   });
 
-/**
- * Track write-stream failures across the lifetime of a transfer.
- * @param writer - Writable stream for the current download.
- * @returns Helpers to surface and clean up writer failures.
- */
+/** Keep the latest writer error available until cleanup. */
 export const trackWriterFailure = (writer: ErrorAwareWriter): WriterFailureTracker => {
   let failure: Error | null = null;
 

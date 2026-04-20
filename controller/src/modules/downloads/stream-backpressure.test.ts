@@ -19,7 +19,7 @@ describe("waitForWriterDrain", () => {
     }
   });
 
-  it("cleans up drain listeners when the writer errors", async () => {
+  it("removes listeners when the writer errors", async () => {
     const writer = new PassThrough();
     const pending = waitForWriterDrain(writer);
     const error = new Error("writer failed");
@@ -31,7 +31,7 @@ describe("waitForWriterDrain", () => {
     expect(writer.listenerCount("error")).toBe(0);
   });
 
-  it("keeps writer error handling active after drain resolves", async () => {
+  it("still surfaces writer errors after drain", async () => {
     const writer = new PassThrough();
     const writerFailure = trackWriterFailure(writer);
     const pending = waitForWriterDrain(writer);
