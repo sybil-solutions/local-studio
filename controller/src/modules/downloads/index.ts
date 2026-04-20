@@ -3,7 +3,6 @@ export * from "./download-globs";
 export * from "./download-math";
 export * from "./download-paths";
 export * from "./huggingface-api";
-export * from "./interfaces";
 export * from "./manager";
 export * from "./routes";
 export * from "./store";
