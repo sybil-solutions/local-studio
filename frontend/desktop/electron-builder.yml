@@ -16,11 +16,11 @@ extraResources:
     filter:
       - "**/*"
   - from: .next/static
-    to: app/frontend/.next/static
+    to: app/frontend/.next/standalone/frontend/.next/static
     filter:
       - "**/*"
   - from: public
-    to: app/frontend/public
+    to: app/frontend/.next/standalone/frontend/public
     filter:
       - "**/*"
 
@@ -52,4 +52,3 @@ win:
 linux:
   target:
     - AppImage
-

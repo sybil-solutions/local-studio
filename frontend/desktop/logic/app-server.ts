@@ -1,3 +1,4 @@
+import { app } from "electron";
 import { cpSync, existsSync, mkdirSync } from "node:fs";
 import path from "node:path";
 import { fork, type ChildProcess } from "node:child_process";
@@ -63,8 +64,20 @@ export async function startFrontendServer(): Promise<ServerHandle> {
   }
 
   const { staticDir, publicDir } = resolveStaticAssetsSource();
-  copyDirectory(staticDir, path.join(serverRoot, ".next", "static"));
-  copyDirectory(publicDir, path.join(serverRoot, "public"));
+  const targetStaticDir = path.join(serverRoot, ".next", "static");
+  const targetPublicDir = path.join(serverRoot, "public");
+
+  if (app.isPackaged) {
+    if (!existsSync(targetStaticDir)) {
+      throw new Error(`Missing packaged static assets: ${targetStaticDir}`);
+    }
+    if (!existsSync(targetPublicDir)) {
+      throw new Error(`Missing packaged public assets: ${targetPublicDir}`);
+    }
+  } else {
+    copyDirectory(staticDir, targetStaticDir);
+    copyDirectory(publicDir, targetPublicDir);
+  }
 
   const port = await allocatePort();
   const url = `http://127.0.0.1:${port}`;
