@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Check, Eye, EyeOff, Loader2, Plus, Power, PowerOff, Trash2, X } from "lucide-react";
+import { Check, Eye, EyeOff, Loader2, Pencil, Plus, Power, PowerOff, Trash2, X } from "lucide-react";
 import api from "@/lib/api";
 
 interface ProviderEntry {
@@ -13,8 +13,8 @@ interface ProviderEntry {
 }
 
 const WELL_KNOWN_PROVIDERS: Record<string, { name: string; baseUrl: string }> = {
-  openai: { name: "OpenAI", baseUrl: "https://api.openai.com" },
-  anthropic: { name: "Anthropic", baseUrl: "https://api.anthropic.com" },
+  openai: { name: "OpenAI", baseUrl: "https://api.openai.com/v1/models" },
+  anthropic: { name: "Anthropic", baseUrl: "https://api.anthropic.com/v1/models" },
 };
 
 const WELL_KNOWN_IDS = Object.keys(WELL_KNOWN_PROVIDERS);
@@ -33,6 +33,7 @@ export function ProvidersSection() {
   const [showFormApiKey, setShowFormApiKey] = useState(false);
 
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingProvider, setEditingProvider] = useState<ProviderEntry | null>(null);
   const [editApiKey, setEditApiKey] = useState("");
   const [showEditApiKey, setShowEditApiKey] = useState(false);
   const [editSaving, setEditSaving] = useState(false);
@@ -61,6 +62,7 @@ export function ProvidersSection() {
     setFormApiKey("");
     setShowFormApiKey(false);
     setAdding(false);
+    setEditingProvider(null);
   };
 
   const handleQuickAdd = (knownId: string) => {
@@ -78,13 +80,16 @@ export function ProvidersSection() {
     try {
       setSaving(true);
       setError(null);
-      await api.createProvider({
-        id: formId.trim().toLowerCase(),
-        name: formName.trim(),
-        base_url: formBaseUrl.trim(),
-        api_key: formApiKey.trim(),
-      });
+      await api.updateProvider(
+        formId.trim().toLowerCase(),
+        {
+          name: formName.trim(),
+          base_url: formBaseUrl.trim(),
+          api_key: formApiKey.trim(),
+        }
+      );
       resetForm();
+      setEditingProvider(null);
       await loadProviders();
     } catch (e) {
       setError((e as Error).message);
@@ -109,6 +114,15 @@ export function ProvidersSection() {
     } catch (e) {
       setError((e as Error).message);
     }
+  };
+
+  const handleEdit = (provider: ProviderEntry) => {
+    setFormId(provider.id);
+    setFormName(provider.name);
+    setFormBaseUrl(provider.base_url);
+    setFormApiKey("");
+    setAdding(true);
+    setEditingProvider(provider);
   };
 
   const handleUpdateApiKey = async (id: string) => {
@@ -238,6 +252,13 @@ export function ProvidersSection() {
                   {provider.enabled ? <Power className="h-3.5 w-3.5" /> : <PowerOff className="h-3.5 w-3.5" />}
                 </button>
                 <button
+                  onClick={() => handleEdit(provider)}
+                  title="Edit"
+                  className="p-1.5 rounded hover:bg-(--border) text-(--dim) hover:text-(--fg)"
+                >
+                  <Pencil className="h-3.5 w-3.5" />
+                </button>
+                <button
                   onClick={() => handleDelete(provider.id)}
                   title="Remove"
                   className="p-1.5 rounded hover:bg-(--err)/10 text-(--dim) hover:text-(--err)"
@@ -250,7 +271,9 @@ export function ProvidersSection() {
 
         {adding && (
           <div className="bg-(--bg) border border-(--hl1)/30 rounded-lg p-4 space-y-3">
-            <div className="text-xs font-medium text-(--fg) mb-2">Add Provider</div>
+            <div className="text-xs font-medium text-(--fg) mb-2">
+              {editingProvider ? `Edit Provider: ${editingProvider.name}` : "Add Provider"}
+            </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block text-[11px] text-(--dim) mb-1">Provider ID</label>
@@ -274,12 +297,12 @@ export function ProvidersSection() {
               </div>
             </div>
             <div>
-              <label className="block text-[11px] text-(--dim) mb-1">Base URL</label>
+              <label className="block text-[11px] text-(--dim) mb-1">API Models URL</label>
               <input
                 type="text"
                 value={formBaseUrl}
                 onChange={(e) => setFormBaseUrl(e.target.value)}
-                placeholder="https://api.openai.com"
+                placeholder="https://api.openai.com/v1/models"
                 className="w-full px-2 py-1.5 bg-(--surface) border border-(--border) rounded text-xs text-(--fg) placeholder-(--dim)/50 focus:outline-none focus:border-(--hl1)"
               />
             </div>
@@ -309,7 +332,7 @@ export function ProvidersSection() {
                 className="px-3 py-1.5 bg-(--hl1) rounded-lg text-xs text-(--fg) hover:opacity-90 disabled:opacity-50 flex items-center gap-1.5"
               >
                 {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
-                Add
+                {editingProvider ? "Save" : "Add"}
               </button>
               <button
                 onClick={resetForm}

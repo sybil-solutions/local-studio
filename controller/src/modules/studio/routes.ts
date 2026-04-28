@@ -376,7 +376,8 @@ export const registerStudioRoutes = (app: Hono, context: AppContext): void => {
     await Promise.all(
       enabledProviders.map(async (provider) => {
         try {
-          const url = `${provider.base_url.replace(/\/+$/, "")}/v1/models`;
+          // Removed hardcoded 'v1/models' to allow flexibility in provider API structure
+          const url = provider.base_url.replace(/\/+$/, "");
           const res = await fetch(url, {
             headers: { Authorization: `Bearer ${provider.api_key}` },
             signal: AbortSignal.timeout(10_000),
