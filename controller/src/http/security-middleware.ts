@@ -4,7 +4,7 @@ import type { MiddlewareHandler } from "hono";
 import type { AppContext } from "../types/context";
 
 const MUTATING_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
-const PUBLIC_PATHS = new Set<string>();
+const PUBLIC_PATHS = new Set(["/health", "/healthz", "/ready", "/live"]);
 const DEFAULT_RATE_LIMIT_WINDOW_MS = 60_000;
 const DEFAULT_RATE_LIMIT_MAX_REQUESTS = 120;
 
