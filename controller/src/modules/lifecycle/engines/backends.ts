@@ -364,6 +364,18 @@ const appendRuntimeCoreArguments = (command: string[], recipe: Recipe): string[]
  * @param config - Runtime config.
  * @returns CLI command array.
  */
+const ALLOWED_EXLLAMA_BINARIES = [
+  "exllama-server",
+  "exllamav3-server",
+  "exllama",
+  "exllamav3",
+  "llama-server",
+  "llama-cli",
+];
+
+/** Regex to detect shell metacharacters that could enable command injection */
+const SHELL_METACHARACTERS = /[;&|`$()\\]/;
+
 export const buildExllamav3Command = (recipe: Recipe, config: Config): string[] | null => {
   const commandTemplate = String(
     getExtraArgument(recipe.extra_args, "exllama_command") ??
@@ -375,9 +387,45 @@ export const buildExllamav3Command = (recipe: Recipe, config: Config): string[] 
   if (!commandTemplate) {
     return null;
   }
+
+  // Security: Block shell metacharacters to prevent command injection attacks
+  // Characters like ; | & $ ` ( ) \ could allow command chaining
+  if (SHELL_METACHARACTERS.test(commandTemplate)) {
+    throw new Error(
+      "Invalid exllama_command: shell metacharacters (; & | ` $ ( ) \\) are not allowed"
+    );
+  }
+
+  // Security: Ensure the command doesn't start with a flag (would indicate user accidentally passed args as binary)
+  if (commandTemplate.includes(" --")) {
+    const firstToken = commandTemplate.split(" ")[0] ?? "";
+    if (firstToken.startsWith("-")) {
+      throw new Error(
+        "Invalid exllama_command: binary name cannot start with '-'. Did you mean to set VLLM_STUDIO_EXLLAMAV3_COMMAND env var?"
+      );
+    }
+  }
+
   const command = splitCommand(commandTemplate);
   if (command.length === 0) {
     return null;
+  }
+
+  // Security: Validate the binary name against an allowlist to prevent arbitrary command execution
+  const binary = command[0] ?? "";
+  const binaryName = binary.split("/").pop() ?? binary;
+  if (!ALLOWED_EXLLAMA_BINARIES.includes(binaryName)) {
+    throw new Error(
+      `Invalid exllama_command: binary '${binaryName}' not allowed. Allowed: ${ALLOWED_EXLLAMA_BINARIES.join(", ")}`
+    );
+  }
+
+  // Security: Verify the binary actually exists in PATH before allowing launch
+  const binaryPath = resolveBinary(binary);
+  if (!binaryPath) {
+    throw new Error(
+      `Invalid exllama_command: binary '${binary}' not found. Set VLLM_STUDIO_EXLLAMAV3_COMMAND env var with a valid exllama-server binary path, or ensure exllama-server is in PATH.`
+    );
   }
   const commandWithDefaults = appendRuntimeCoreArguments([...command], recipe);
   if (
