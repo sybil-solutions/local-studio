@@ -1,6 +1,5 @@
 import { app, shell, BrowserWindow, type WebContents } from "electron";
 import { isHttpUrl } from "../helpers/url";
-import { log } from "../helpers/logger";
 
 export function hardenWebContents(window: BrowserWindow, appOrigin: string): void {
   window.webContents.setWindowOpenHandler(({ url }) => {
@@ -24,9 +23,11 @@ export function hardenWebContents(window: BrowserWindow, appOrigin: string): voi
 
 export function registerNavigationPolicy(appOrigin: string): void {
   app.on("web-contents-created", (_, contents: WebContents) => {
-    contents.on("will-attach-webview", (event) => {
-      event.preventDefault();
-      log.warn("Blocked webview attach attempt");
+    contents.on("will-attach-webview", (_event, webPreferences, _params) => {
+      delete webPreferences.preload;
+      webPreferences.nodeIntegration = false;
+      webPreferences.contextIsolation = true;
+      webPreferences.sandbox = true;
     });
 
     contents.on("will-navigate", (event) => {

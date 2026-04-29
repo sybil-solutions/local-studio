@@ -3,25 +3,33 @@
 import Link from "next/link";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import {
+  ArrowLeft,
+  ArrowRight,
   Archive,
   Bot,
   ChevronDown,
   Diff,
-  FileText,
   FolderOpen,
   GitBranch,
+  Globe,
   Home,
   Loader2,
   MessageSquare,
-  PanelRight,
   Plus,
+  RotateCcw,
   Search,
   Send,
   Settings,
   Square,
   Terminal,
-  Wrench,
 } from "lucide-react";
+
+type WebviewElement = HTMLElement & {
+  goBack: () => void;
+  goForward: () => void;
+  reload: () => void;
+  src: string;
+};
 
 type AgentModel = {
   id: string;
@@ -66,12 +74,6 @@ function nowLabel() {
   );
 }
 
-function compactNumber(value: number) {
-  if (value >= 1_000_000) return `${Math.round(value / 1_000) / 1_000}M`;
-  if (value >= 1_000) return `${Math.round(value / 100) / 10}k`;
-  return String(value);
-}
-
 function pathLabel(value: string) {
   const clean = value.replace(/\/+$/, "");
   return clean.split("/").filter(Boolean).pop() || clean || "/";
@@ -106,8 +108,13 @@ export function AgentWorkspace() {
   const [modelFilter, setModelFilter] = useState("");
   const [rightPanelOpen, setRightPanelOpen] = useState(true);
   const [isMultiline, setIsMultiline] = useState(false);
+  const [browserUrl, setBrowserUrl] = useState("https://duckduckgo.com");
+  const [browserInput, setBrowserInput] = useState("https://duckduckgo.com");
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const webviewRef = useRef<WebviewElement | null>(null);
+  const iframeRef = useRef<HTMLIFrameElement | null>(null);
+  const isElectron = typeof window !== "undefined" && /electron/i.test(navigator.userAgent);
 
   const activeModel = useMemo(
     () => models.find((model) => model.id === selectedModel),
@@ -119,7 +126,6 @@ export function AgentWorkspace() {
     return models.filter((model) => `${model.name} ${model.id}`.toLowerCase().includes(query));
   }, [models, modelFilter]);
   const running = status === "running" || status === "starting";
-  const latestAssistant = [...messages].reverse().find((message) => message.role === "assistant");
   const toolCount = messages.reduce((sum, message) => sum + (message.tools?.length || 0), 0);
 
   useEffect(() => {
@@ -335,6 +341,51 @@ export function AgentWorkspace() {
       body: JSON.stringify({ sessionId: SESSION_ID }),
     }).catch(() => undefined);
     setStatus("idle");
+  }
+
+  function normalizeBrowserInput(raw: string): string {
+    const value = raw.trim();
+    if (!value) return "https://duckduckgo.com";
+    if (/^https?:\/\//i.test(value)) return value;
+    if (/^[\w-]+(\.[\w-]+)+([/:?#].*)?$/.test(value) || /^localhost(:\d+)?/i.test(value)) {
+      return `https://${value}`;
+    }
+    return `https://duckduckgo.com/?q=${encodeURIComponent(value)}`;
+  }
+
+  function submitBrowserUrl(event: FormEvent) {
+    event.preventDefault();
+    const next = normalizeBrowserInput(browserInput);
+    setBrowserInput(next);
+    setBrowserUrl(next);
+  }
+
+  function browserBack() {
+    if (isElectron && webviewRef.current) {
+      webviewRef.current.goBack();
+    }
+  }
+
+  function browserForward() {
+    if (isElectron && webviewRef.current) {
+      webviewRef.current.goForward();
+    }
+  }
+
+  function browserReload() {
+    if (isElectron && webviewRef.current) {
+      webviewRef.current.reload();
+      return;
+    }
+    if (iframeRef.current) {
+      try {
+        iframeRef.current.contentWindow?.location.reload();
+      } catch {
+        // Cross-origin reload via src reset
+        const current = iframeRef.current.src;
+        iframeRef.current.src = current;
+      }
+    }
   }
 
   function newThread() {
@@ -557,10 +608,10 @@ export function AgentWorkspace() {
           </section>
 
           {rightPanelOpen ? (
-            <aside className="hidden w-[320px] shrink-0 border-l border-[var(--agent-border)] bg-[var(--agent-card)] xl:flex xl:flex-col">
+            <aside className="hidden w-[480px] shrink-0 border-l border-[var(--agent-border)] bg-[var(--agent-card)] xl:flex xl:flex-col">
               <div className="flex h-12 items-center justify-between border-b border-[var(--agent-border)] px-3">
                 <div className="flex items-center gap-2 text-sm font-medium">
-                  <PanelRight className="size-4" /> Workspace
+                  <Globe className="size-4" /> Browser
                 </div>
                 <button
                   className="agent-toolbar-icon"
@@ -570,45 +621,69 @@ export function AgentWorkspace() {
                   <ChevronDown className="size-4 rotate-[-90deg]" />
                 </button>
               </div>
-              <div className="min-h-0 flex-1 overflow-y-auto p-3">
-                <PanelCard title="Directory" icon={FolderOpen}>
-                  <p className="break-all font-mono text-xs leading-5 text-[var(--agent-muted)]">
-                    {agentCwd}
-                  </p>
-                </PanelCard>
-                <PanelCard title="Model" icon={Bot}>
-                  <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs">
-                    <dt className="text-[var(--agent-muted)]">id</dt>
-                    <dd className="truncate font-mono">{activeModel?.id || "none"}</dd>
-                    <dt className="text-[var(--agent-muted)]">context</dt>
-                    <dd>{activeModel ? compactNumber(activeModel.contextWindow) : "—"}</dd>
-                    <dt className="text-[var(--agent-muted)]">max output</dt>
-                    <dd>{activeModel ? compactNumber(activeModel.maxTokens) : "—"}</dd>
-                  </dl>
-                </PanelCard>
-                <PanelCard title="Activity" icon={Wrench}>
-                  <div className="space-y-2 text-xs">
-                    <div className="flex items-center justify-between">
-                      <span>Messages</span>
-                      <span>{messages.length}</span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span>Tool calls</span>
-                      <span>{toolCount}</span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span>Status</span>
-                      <span>{status}</span>
-                    </div>
-                  </div>
-                </PanelCard>
-                <PanelCard title="Last response" icon={FileText}>
-                  <p className="line-clamp-6 text-xs leading-5 text-[var(--agent-muted)]">
-                    {latestAssistant?.text ||
-                      latestAssistant?.thinking ||
-                      "No assistant output yet."}
-                  </p>
-                </PanelCard>
+              <form
+                onSubmit={submitBrowserUrl}
+                className="flex shrink-0 items-center gap-1 border-b border-[var(--agent-border)] bg-[var(--agent-bg)] px-2 py-2"
+              >
+                <button
+                  type="button"
+                  onClick={browserBack}
+                  className="agent-toolbar-icon"
+                  title="Back"
+                >
+                  <ArrowLeft className="size-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={browserForward}
+                  className="agent-toolbar-icon"
+                  title="Forward"
+                >
+                  <ArrowRight className="size-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={browserReload}
+                  className="agent-toolbar-icon"
+                  title="Reload"
+                >
+                  <RotateCcw className="size-4" />
+                </button>
+                <input
+                  value={browserInput}
+                  onChange={(event) => setBrowserInput(event.target.value)}
+                  spellCheck={false}
+                  placeholder="Search or enter URL"
+                  className="min-w-0 flex-1 rounded-md border border-[var(--agent-border)] bg-[var(--agent-bg)] px-2 py-1 font-mono text-[11px] text-[var(--agent-fg)] outline-none placeholder:text-[var(--agent-muted)]"
+                  aria-label="Browser address"
+                />
+                <button
+                  type="submit"
+                  className="h-7 rounded-md bg-[var(--agent-primary)] px-2 text-xs font-medium text-white hover:opacity-95"
+                >
+                  Go
+                </button>
+              </form>
+              <div className="min-h-0 flex-1 bg-white">
+                {isElectron ? (
+                  <webview
+                    ref={(node) => {
+                      webviewRef.current = (node as unknown as WebviewElement) ?? null;
+                    }}
+                    src={browserUrl}
+                    allowpopups={true}
+                    className="size-full"
+                    style={{ width: "100%", height: "100%", display: "flex" }}
+                  />
+                ) : (
+                  <iframe
+                    ref={iframeRef}
+                    src={browserUrl}
+                    className="size-full"
+                    sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+                    title="Agent browser"
+                  />
+                )}
               </div>
             </aside>
           ) : null}
@@ -730,24 +805,5 @@ function WorkingRow({ status }: { status: string }) {
       </div>
       <div className="pt-1.5">Pi agent is {status}…</div>
     </div>
-  );
-}
-
-function PanelCard({
-  title,
-  icon: Icon,
-  children,
-}: {
-  title: string;
-  icon: React.ComponentType<{ className?: string }>;
-  children: React.ReactNode;
-}) {
-  return (
-    <section className="mb-3 rounded-lg border border-[var(--agent-border)] bg-[var(--agent-bg)]">
-      <div className="flex items-center gap-2 border-b border-[var(--agent-border)] px-3 py-2 text-xs font-medium">
-        <Icon className="size-3.5 text-[var(--agent-muted)]" /> {title}
-      </div>
-      <div className="p-3">{children}</div>
-    </section>
   );
 }
