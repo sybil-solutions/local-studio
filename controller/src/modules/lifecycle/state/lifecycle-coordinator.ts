@@ -292,7 +292,7 @@ export const createLifecycleCoordinator = (args: {
     recipe: Recipe,
     logFilePath: string | null,
     cancelController: AbortController
-  ): Promise<void> => {
+  ): Promise<{ pid: number | null; ready: boolean; error: string | null }> => {
     const startTs = Date.now();
     const release = await switchLock.acquire();
     try {
@@ -307,7 +307,7 @@ export const createLifecycleCoordinator = (args: {
           "Preempted by another launch",
           0
         );
-        return;
+        return { pid: null, ready: false, error: "Launch preempted by another recipe" };
       }
 
       await deps.eventManager.publishLaunchProgress(
@@ -319,7 +319,7 @@ export const createLifecycleCoordinator = (args: {
       const launch = await deps.processManager.launchModel(recipe);
       if (!launch.success) {
         await deps.eventManager.publishLaunchProgress(recipe.id, "error", launch.message, 0);
-        return;
+        return { pid: null, ready: false, error: launch.message };
       }
 
       await deps.eventManager.publishLaunchProgress(
@@ -343,7 +343,7 @@ export const createLifecycleCoordinator = (args: {
 
       if (!logFilePath) {
         await deps.eventManager.publishLaunchProgress(recipe.id, "error", "Invalid recipe id", 0);
-        return;
+        return { pid: launch.pid, ready: false, error: "Invalid recipe id" };
       }
 
       const ready = await waitForReady({
@@ -371,7 +371,7 @@ export const createLifecycleCoordinator = (args: {
           (Date.now() - startTs) / 1000,
           true
         );
-        return;
+        return { pid: launch.pid, ready: true, error: null };
       }
 
       if (launch.pid) {
@@ -386,10 +386,12 @@ export const createLifecycleCoordinator = (args: {
         false
       );
       deps.logger.error(`Launch failed for ${recipe.id}: ${ready.message}: ${errorTail.slice(-200)}`);
+      return { pid: launch.pid, ready: false, error: ready.message };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       await deps.eventManager.publishLaunchProgress(recipe.id, "error", message, 0);
       deps.logger.error(`Launch background error for ${recipe.id}: ${message}`);
+      return { pid: null, ready: false, error: message };
     } finally {
       release();
       if (deps.launchState.getLaunchingRecipeId() === recipe.id) {
@@ -441,16 +443,25 @@ export const createLifecycleCoordinator = (args: {
     launchCancelControllers.set(recipe.id, cancelController);
     deps.launchState.markLaunching(recipe.id);
 
-    // Fire-and-forget: run the long launch process in the background.
-    // Progress is reported via WebSocket launch_progress events.
-    runLaunchInBackground(recipe, logFilePath, cancelController).catch((error) => {
-      deps.logger.error(`Unhandled launch error for ${recipe.id}: ${error}`);
-    });
+    // Fire-and-forget: run the long launch process in background.
+    // But now we capture the result to report actual success/failure to API caller.
+    const backgroundResult = await runLaunchInBackground(recipe, logFilePath, cancelController);
+
+    // Return actual result based on background launch outcome
+    if (backgroundResult.error) {
+      deps.launchState.markIdle();
+      return {
+        success: false,
+        pid: null,
+        message: backgroundResult.error,
+        log_file: logFilePath,
+      };
+    }
 
     return {
       success: true,
-      pid: null,
-      message: "Launch started",
+      pid: backgroundResult.pid,
+      message: backgroundResult.ready ? "Model is ready" : "Launch started",
       log_file: logFilePath,
     };
   };
