@@ -427,8 +427,22 @@ export const buildBackendCommand = (recipe: Recipe, config: Config): string[] =>
 const resolveLlamaBinary = (recipe: Recipe, config: Config): string => {
   const override = getExtraArgument(recipe.extra_args, "llama_bin") ?? config.llama_bin;
   if (typeof override === "string" && override.trim()) {
+    // Security: Block path traversal patterns to prevent accessing files outside expected directories
+    if (override.includes("..")) {
+      throw new Error(
+        "Invalid llama_bin: path traversal '..' is not allowed. Use a binary name or a path within the project directory."
+      );
+    }
+    // Security: Only allow absolute paths that are verified to exist and be executable
     if (override.includes("/") && existsSync(override)) {
-      return resolve(override);
+      const resolved = resolve(override);
+      const binaryPath = resolveBinary(resolved);
+      if (!binaryPath) {
+        throw new Error(
+          `Invalid llama_bin: '${override}' is not a valid executable. Ensure it exists and is executable.`
+        );
+      }
+      return binaryPath;
     }
     const resolved = resolveBinary(override);
     if (resolved) {
