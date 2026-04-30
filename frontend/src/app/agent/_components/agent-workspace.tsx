@@ -142,6 +142,10 @@ type PaneState = {
   tabs: SessionTab[];
   activeTabId: string;
   runtimeSessionId: string;
+  // Optional pi session UUID to replay into the active tab on the next
+  // render of the corresponding ChatPane. ChatPane consumes-and-clears it
+  // via onInitialSessionConsumed so subsequent re-renders don't replay.
+  initialSessionId?: string | null;
 };
 
 export function AgentWorkspace() {
@@ -194,15 +198,17 @@ export function AgentWorkspace() {
     [models, selectedModel],
   );
 
-  // Map of paneId → loader callback registered by each ChatPane on mount, so
-  // the workspace can request a session replay (URL params or split-drop).
-  const paneLoadersRef = useRef<Map<PaneId, (piSessionId: string) => void>>(new Map());
-  const registerPaneLoader = useCallback(
-    (paneId: PaneId, loader: (piSessionId: string) => void) => {
-      paneLoadersRef.current.set(paneId, loader);
-    },
-    [],
-  );
+  // Mark a pane's pending initialSessionId as consumed so we never replay
+  // a session twice. The actual loading happens inside ChatPane.
+  const consumeInitialSessionId = useCallback((paneId: PaneId) => {
+    setPanesById((current) => {
+      const cur = current.get(paneId);
+      if (!cur || !cur.initialSessionId) return current;
+      const next = new Map(current);
+      next.set(paneId, { ...cur, initialSessionId: null });
+      return next;
+    });
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -591,16 +597,15 @@ export function AgentWorkspace() {
     }
 
     if (sessionParam) {
-      const tryLoad = (attempt: number) => {
-        const loader = paneLoadersRef.current.get(focusedPaneId);
-        if (loader) {
-          loader(sessionParam);
-        } else if (attempt < 30) {
-          setTimeout(() => tryLoad(attempt + 1), 50);
-        }
-      };
-      // Defer so a freshly selected project has a tick to reset panes.
-      setTimeout(() => tryLoad(0), 50);
+      // Stamp the session id onto the focused pane state. ChatPane will pick
+      // it up on its next render and replay it without any timer-based race.
+      setPanesById((current) => {
+        const cur = current.get(focusedPaneId);
+        if (!cur) return current;
+        const next = new Map(current);
+        next.set(focusedPaneId, { ...cur, initialSessionId: sessionParam });
+        return next;
+      });
     }
   }, [searchParams, projects, selectedProjectId, selectProject, focusedPaneId]);
 
@@ -877,7 +882,6 @@ export function AgentWorkspace() {
                                 next.delete(paneId);
                                 return next;
                               });
-                              paneLoadersRef.current.delete(paneId);
                               if (focusedPaneId === paneId) {
                                 const remaining = collectLeaves(layout).filter(
                                   (id) => id !== paneId,
@@ -886,14 +890,16 @@ export function AgentWorkspace() {
                               }
                             }
                       }
-                      registerExternalLoader={(loader) => registerPaneLoader(paneId, loader)}
+                      initialSessionId={pane.initialSessionId ?? null}
+                      onInitialSessionConsumed={() => consumeInitialSessionId(paneId)}
                     />
                   );
                 }}
                 onSplit={(paneId, direction, side, payload) => {
                   // Create a new pane next to the drop target. If a session
-                  // payload is included, pre-load that session into the new
-                  // pane's tab on next tick (after registerExternalLoader fires).
+                  // payload is included, stamp it as the new pane's
+                  // initialSessionId so its ChatPane replays the session on
+                  // first render — no loader-registration race.
                   const id = newPaneId();
                   const runtime = newRuntimeId();
                   const baseTab = makeFreshTab();
@@ -903,26 +909,12 @@ export function AgentWorkspace() {
                       tabs: [baseTab],
                       activeTabId: baseTab.id,
                       runtimeSessionId: runtime,
+                      initialSessionId: payload.piSessionId ?? null,
                     });
                     return next;
                   });
                   setLayout((prev) => splitLeaf(prev, paneId, id, direction, side));
                   setFocusedPaneId(id);
-
-                  if (payload.piSessionId) {
-                    const target = payload.piSessionId;
-                    // Wait until the new ChatPane has mounted and registered
-                    // its loader before requesting the replay.
-                    const tryLoad = () => {
-                      const loader = paneLoadersRef.current.get(id);
-                      if (loader) {
-                        loader(target);
-                      } else {
-                        setTimeout(tryLoad, 16);
-                      }
-                    };
-                    setTimeout(tryLoad, 0);
-                  }
                 }}
                 onResize={(path, ratio) => {
                   setLayout((prev) => setSplitRatio(prev, path, ratio));

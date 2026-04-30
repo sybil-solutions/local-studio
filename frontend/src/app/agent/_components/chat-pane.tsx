@@ -80,9 +80,13 @@ type Props = {
   activeTabId: string;
   onTabsChange: (tabs: SessionTab[] | ((tabs: SessionTab[]) => SessionTab[])) => void;
   onClose?: () => void;
-  // External request to load and replay a session (e.g. user clicked a row in
-  // the sidebar). Returns the events as a side effect via tab updates.
-  registerExternalLoader?: (loader: (piSessionId: string) => void) => void;
+  // When non-null, the pane should replay this pi session into the active tab
+  // on its next render. After replay starts, ChatPane calls
+  // onInitialSessionConsumed so the parent clears the field and we never
+  // replay twice. This replaces the older loader-registration pattern (which
+  // raced against component mount).
+  initialSessionId?: string | null;
+  onInitialSessionConsumed?: () => void;
 };
 
 function newId(prefix: string) {
@@ -497,7 +501,8 @@ export function ChatPane({
   tabs,
   activeTabId,
   onTabsChange,
-  registerExternalLoader,
+  initialSessionId,
+  onInitialSessionConsumed,
 }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const stickToBottomRef = useRef(true);
@@ -835,16 +840,23 @@ export function ChatPane({
     [cwd, activeTab, updateTab],
   );
 
-  // Expose loader to the parent so the sessions sidebar can call it on click.
+  // Replay the pending initialSessionId (set by parent for split-drop or
+  // sidebar navigation). Each id is consumed exactly once via
+  // onInitialSessionConsumed.
   useEffect(() => {
-    registerExternalLoader?.(loadAndReplay);
-  }, [registerExternalLoader, loadAndReplay]);
+    if (!initialSessionId) return;
+    if (!cwd) return;
+    void loadAndReplay(initialSessionId);
+    onInitialSessionConsumed?.();
+  }, [initialSessionId, cwd, loadAndReplay, onInitialSessionConsumed]);
 
   return (
     <section
       onMouseDownCapture={onFocus}
       data-pane-id={paneId}
-      className={`flex min-w-0 min-h-0 flex-1 flex-col bg-(--bg) ${isFocused ? "" : "opacity-95"}`}
+      className={`flex min-w-0 min-h-0 flex-1 flex-col bg-(--bg) ${
+        isFocused ? "ring-1 ring-inset ring-(--accent)/40" : "opacity-95"
+      }`}
     >
       {activeTab?.error ? (
         <div className="border-b border-(--border) bg-(--err)/10 px-4 py-2 text-xs text-(--err)">
