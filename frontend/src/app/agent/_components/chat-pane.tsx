@@ -58,7 +58,7 @@ type Props = {
   // and rehydrate it.
   tabs: SessionTab[];
   activeTabId: string;
-  onTabsChange: (tabs: SessionTab[]) => void;
+  onTabsChange: (tabs: SessionTab[] | ((tabs: SessionTab[]) => SessionTab[])) => void;
   onActiveTabChange: (tabId: string) => void;
   onClose?: () => void;
   // External request to load and replay a session (e.g. user clicked a row in
@@ -81,9 +81,7 @@ function extractToolText(value: unknown): string {
   const result = value as { content?: Array<{ type?: string; text?: string }> };
   if (!Array.isArray(result.content)) return "";
   return result.content
-    .map((item) =>
-      item && item.type === "text" && typeof item.text === "string" ? item.text : "",
-    )
+    .map((item) => (item && item.type === "text" && typeof item.text === "string" ? item.text : ""))
     .filter(Boolean)
     .join("\n");
 }
@@ -157,9 +155,11 @@ export function ChatPane({
 
   const updateTab = useCallback(
     (tabId: string, patch: (tab: SessionTab) => SessionTab) => {
-      onTabsChange(tabs.map((tab) => (tab.id === tabId ? patch(tab) : tab)));
+      onTabsChange((currentTabs) =>
+        currentTabs.map((tab) => (tab.id === tabId ? patch(tab) : tab)),
+      );
     },
-    [tabs, onTabsChange],
+    [onTabsChange],
   );
 
   useEffect(() => {
@@ -282,33 +282,27 @@ export function ChatPane({
       const userText = text;
 
       // Optimistic update: show the user's turn + a blank assistant message.
-      onTabsChange(
-        tabs.map((tab) =>
-          tab.id !== tabId
-            ? tab
-            : {
-                ...tab,
-                input: "",
-                error: "",
-                status: "starting",
-                title:
-                  tab.messages.filter((m) => m.role === "user").length === 0
-                    ? userText.slice(0, 40)
-                    : tab.title,
-                messages: [
-                  ...tab.messages,
-                  { id: userId, role: "user", text: userText, timestamp: nowLabel() },
-                  {
-                    id: assistantId,
-                    role: "assistant",
-                    text: "",
-                    blocks: [],
-                    timestamp: nowLabel(),
-                  },
-                ],
-              },
-        ),
-      );
+      updateTab(tabId, (tab) => ({
+        ...tab,
+        input: "",
+        error: "",
+        status: "starting",
+        title:
+          tab.messages.filter((m) => m.role === "user").length === 0
+            ? userText.slice(0, 40)
+            : tab.title,
+        messages: [
+          ...tab.messages,
+          { id: userId, role: "user", text: userText, timestamp: nowLabel() },
+          {
+            id: assistantId,
+            role: "assistant",
+            text: "",
+            blocks: [],
+            timestamp: nowLabel(),
+          },
+        ],
+      }));
       setIsMultiline(false);
       if (textareaRef.current) textareaRef.current.style.height = "";
 
@@ -376,8 +370,6 @@ export function ChatPane({
       activeTab,
       modelId,
       running,
-      tabs,
-      onTabsChange,
       runtimeSessionId,
       cwd,
       browserToolEnabled,
@@ -599,9 +591,7 @@ export function ChatPane({
     <section
       onMouseDownCapture={onFocus}
       data-pane-id={paneId}
-      className={`flex min-w-0 min-h-0 flex-1 flex-col bg-(--bg) ${
-        isFocused ? "" : "opacity-95"
-      }`}
+      className={`flex min-w-0 min-h-0 flex-1 flex-col bg-(--bg) ${isFocused ? "" : "opacity-95"}`}
     >
       <div className="flex h-9 shrink-0 items-center gap-1 border-b border-(--border) bg-(--surface) px-1">
         <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
@@ -707,7 +697,11 @@ export function ChatPane({
               type="button"
               onClick={onToggleBrowserTool}
               aria-pressed={browserToolEnabled}
-              title={browserToolEnabled ? "Browser tool: ON — agent can drive the browser" : "Browser tool: OFF — click to let the agent navigate, click, fill, and read pages"}
+              title={
+                browserToolEnabled
+                  ? "Browser tool: ON — agent can drive the browser"
+                  : "Browser tool: OFF — click to let the agent navigate, click, fill, and read pages"
+              }
               className={`inline-flex h-7 w-7 items-center justify-center rounded border ${
                 browserToolEnabled
                   ? "border-(--accent) bg-(--accent)/10 text-(--accent)"
@@ -786,7 +780,9 @@ function TimelineMessage({ message }: { message: ChatMessage }) {
   if (isUser) {
     return (
       <article className="flex flex-col gap-1">
-        <div className="text-[10px] font-semibold uppercase tracking-[0.08em] text-(--dim)">You</div>
+        <div className="text-[10px] font-semibold uppercase tracking-[0.08em] text-(--dim)">
+          You
+        </div>
         <div className="whitespace-pre-wrap break-words text-sm leading-6 text-(--fg)">
           {message.text}
         </div>

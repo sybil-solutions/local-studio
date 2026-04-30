@@ -674,10 +674,14 @@ export function AgentWorkspace() {
                       onFocus={() => setFocusedPaneId(paneId)}
                       tabs={pane.tabs}
                       activeTabId={pane.activeTabId}
-                      onTabsChange={(nextTabs) => {
+                      onTabsChange={(nextTabsOrUpdater) => {
                         setPanesById((current) => {
                           const cur = current.get(paneId);
                           if (!cur) return current;
+                          const nextTabs =
+                            typeof nextTabsOrUpdater === "function"
+                              ? nextTabsOrUpdater(cur.tabs)
+                              : nextTabsOrUpdater;
                           const next = new Map(current);
                           next.set(paneId, { ...cur, tabs: nextTabs });
                           return next;
