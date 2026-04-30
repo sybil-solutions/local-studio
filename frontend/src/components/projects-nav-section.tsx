@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { ChangeEvent } from "react";
 import { ChevronDown, ChevronRight, Folder, FolderOpen, MessageSquare, Plus } from "lucide-react";
 
 type ProjectEntry = {
@@ -27,6 +28,19 @@ type SessionSummary = {
 };
 
 const SESSIONS_PER_PROJECT = 10;
+const DIRECTORY_PICKER_PROPS = { webkitdirectory: "" } as Record<string, string>;
+
+type DesktopBridge = {
+  openDirectory: () => Promise<ProjectEntry | null>;
+};
+
+function getDesktopBridge(): DesktopBridge | null {
+  if (typeof window === "undefined") return null;
+  const candidate = (window as unknown as { vllmStudioDesktop?: Partial<DesktopBridge> })
+    .vllmStudioDesktop;
+  if (!candidate || typeof candidate.openDirectory !== "function") return null;
+  return candidate as DesktopBridge;
+}
 
 function formatRelative(isoString: string): string {
   const then = new Date(isoString).getTime();
@@ -55,9 +69,25 @@ function formatRelative(isoString: string): string {
 export function ProjectsNavSection({ expanded }: { expanded: boolean }) {
   const [projects, setProjects] = useState<ProjectEntry[]>([]);
   const [openIds, setOpenIds] = useState<Set<string>>(new Set());
+  const [addError, setAddError] = useState("");
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const loadProjects = useCallback(async () => {
+    try {
+      const response = await fetch("/api/agent/projects", { cache: "no-store" });
+      const payload = (await response.json()) as { projects?: ProjectEntry[] };
+      setProjects(payload.projects ?? []);
+    } catch {
+      setProjects([]);
+    }
+  }, []);
+
+  const upsertProject = useCallback((project: ProjectEntry) => {
+    setProjects((current) => [project, ...current.filter((entry) => entry.id !== project.id)]);
+  }, []);
 
   useEffect(() => {
-    if (!expanded) return;
+    if (!expanded) return undefined;
     let cancelled = false;
     (async () => {
       try {
@@ -75,6 +105,58 @@ export function ProjectsNavSection({ expanded }: { expanded: boolean }) {
 
   if (!expanded) return null;
 
+  const addProjectFromPath = async (directoryPath: string): Promise<ProjectEntry> => {
+    const response = await fetch("/api/agent/projects", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: directoryPath }),
+    });
+    const payload = (await response.json()) as { project?: ProjectEntry; error?: string };
+    if (!response.ok || !payload.project) {
+      throw new Error(payload.error || "Failed to add project");
+    }
+    return payload.project;
+  };
+
+  const handleAddProject = async () => {
+    setAddError("");
+    const desktopBridge = getDesktopBridge();
+    if (desktopBridge) {
+      try {
+        const project = await desktopBridge.openDirectory();
+        if (project) upsertProject(project);
+      } catch (error) {
+        setAddError(error instanceof Error ? error.message : "Failed to add project");
+      }
+      return;
+    }
+    fileInputRef.current?.click();
+  };
+
+  const handleFolderSelection = async (event: ChangeEvent<HTMLInputElement>) => {
+    setAddError("");
+    const firstFile = event.target.files?.[0];
+    event.target.value = "";
+    if (!firstFile) return;
+    const selectedPath = (firstFile as File & { path?: string }).path;
+    const relativeRoot = firstFile.webkitRelativePath.split("/")[0] ?? "";
+    const directoryPath =
+      selectedPath && relativeRoot
+        ? selectedPath.slice(0, selectedPath.lastIndexOf(relativeRoot) + relativeRoot.length)
+        : selectedPath;
+    if (!directoryPath) {
+      setAddError("This browser does not expose a selectable folder path.");
+      return;
+    }
+    try {
+      const project = await addProjectFromPath(directoryPath);
+      upsertProject(project);
+      void loadProjects();
+    } catch (error) {
+      setAddError(error instanceof Error ? error.message : "Failed to add project");
+    }
+  };
+
   const toggle = (id: string) =>
     setOpenIds((current) => {
       const next = new Set(current);
@@ -88,8 +170,29 @@ export function ProjectsNavSection({ expanded }: { expanded: boolean }) {
       <div className="mt-2 flex h-7 items-center px-3 text-[10px] font-medium uppercase tracking-wide text-(--dim)">
         Projects
       </div>
+      <input
+        {...DIRECTORY_PICKER_PROPS}
+        ref={fileInputRef}
+        type="file"
+        className="hidden"
+        onChange={handleFolderSelection}
+      />
+      <button
+        type="button"
+        onClick={handleAddProject}
+        className="h-9 flex items-center gap-2 px-3 text-(--dim) hover:text-(--fg) hover:bg-(--surface) transition-colors"
+      >
+        <Plus className="w-4 h-4 shrink-0" />
+        <span className="truncate text-sm font-medium text-(--fg)">Add project</span>
+      </button>
       {projects.length === 0 ? (
-        <div className="px-3 py-1.5 text-[11px] text-(--dim)">No projects yet.</div>
+        <button
+          type="button"
+          onClick={handleAddProject}
+          className="px-3 py-1.5 text-left text-[11px] text-(--dim) hover:text-(--fg)"
+        >
+          No projects yet — pick a folder to get started.
+        </button>
       ) : (
         projects.map((project) => (
           <ProjectRow
@@ -100,6 +203,7 @@ export function ProjectsNavSection({ expanded }: { expanded: boolean }) {
           />
         ))
       )}
+      {addError ? <div className="px-3 py-1 text-[11px] text-red-400">{addError}</div> : null}
     </div>
   );
 }
@@ -139,10 +243,9 @@ function ProjectSessions({ project }: { project: ProjectEntry }) {
   const reload = useCallback(async () => {
     setLoading(true);
     try {
-      const response = await fetch(
-        `/api/agent/sessions?cwd=${encodeURIComponent(project.path)}`,
-        { cache: "no-store" },
-      );
+      const response = await fetch(`/api/agent/sessions?cwd=${encodeURIComponent(project.path)}`, {
+        cache: "no-store",
+      });
       const payload = (await response.json()) as { sessions?: SessionSummary[] };
       setSessions(payload.sessions ?? []);
     } catch {
