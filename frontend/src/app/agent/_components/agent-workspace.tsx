@@ -9,13 +9,20 @@ import {
   GitBranch,
   Plus,
   RotateCcw,
-  Send,
-  Square,
   Trash2,
   X,
 } from "lucide-react";
-import { AssistantMarkdown } from "./assistant-markdown";
+import { ChatPane, makeFreshTab, type SessionTab } from "./chat-pane";
 import { FilesystemPanel } from "./filesystem-panel";
+import { PaneGrid } from "./pane-grid";
+import {
+  collectLeaves,
+  removeLeaf,
+  setSplitRatio,
+  splitLeaf,
+  type Layout,
+  type PaneId,
+} from "./pane-layout";
 import { SessionsSidebar } from "./sessions-sidebar";
 
 type WebviewElement = HTMLElement & {
@@ -41,35 +48,6 @@ type AgentModel = {
   reasoning: boolean;
 };
 
-type ToolBlock = {
-  kind: "tool";
-  id: string; // toolCallId
-  name: string;
-  status: "running" | "done" | "error";
-  text: string;
-};
-
-type TextBlock = { kind: "text"; id: string; text: string };
-type ThinkingBlock = { kind: "thinking"; id: string; text: string };
-
-type AssistantBlock = TextBlock | ThinkingBlock | ToolBlock;
-
-type ChatMessage = {
-  id: string;
-  role: "user" | "assistant" | "system";
-  // For user/system messages, plain text is enough.
-  text: string;
-  // For assistant messages, blocks preserves the temporal order of
-  // thinking / text / tool events as they arrive from the pi RPC stream.
-  blocks?: AssistantBlock[];
-  timestamp?: string;
-};
-
-type StreamPayload =
-  | { type: "status"; phase: string; [key: string]: unknown }
-  | { type: "error"; error: string }
-  | { type: "pi"; event: Record<string, unknown> };
-
 type ProjectEntry = {
   id: string;
   name: string;
@@ -87,13 +65,12 @@ type DesktopBridge = {
   removeProject: (id: string) => Promise<{ ok: true }>;
 };
 
-const SESSION_ID = "vllm-studio-agent";
 const DEFAULT_AGENT_CWD = "";
 const SELECTED_PROJECT_KEY = "vllm-studio.agent.selectedProjectId";
 const SESSIONS_COLLAPSED_KEY = "vllm-studio.agent.sessionsCollapsed";
-const ACTIVE_PI_SESSION_KEY = "vllm-studio.agent.activePiSessionId";
 const BROWSER_TOOL_KEY = "vllm-studio.agent.browserToolEnabled";
 const RIGHT_TOP_HEIGHT_KEY = "vllm-studio.agent.rightTopHeightPct";
+const PANE_LAYOUT_KEY = "vllm-studio.agent.paneLayout";
 
 function getDesktopBridge(): DesktopBridge | null {
   if (typeof window === "undefined") return null;
@@ -111,73 +88,29 @@ function getDesktopBridge(): DesktopBridge | null {
   return candidate as DesktopBridge;
 }
 
-function newId(prefix: string) {
-  return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+function newPaneId(): PaneId {
+  return `p-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
 }
 
-function nowLabel() {
-  return new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit" }).format(
-    new Date(),
-  );
+function newRuntimeId(): string {
+  return `rt-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
 }
 
-function extractToolText(value: unknown): string {
-  if (!value || typeof value !== "object") return "";
-  const result = value as { content?: Array<{ type?: string; text?: string }> };
-  if (!Array.isArray(result.content)) return "";
-  return result.content
-    .map((item) => (item && item.type === "text" && typeof item.text === "string" ? item.text : ""))
-    .filter(Boolean)
-    .join("\n");
-}
+type PaneState = {
+  tabs: SessionTab[];
+  activeTabId: string;
+  runtimeSessionId: string;
+};
 
-// Append a delta to the last block of `kind` if it's currently at the end of
-// the timeline; otherwise start a fresh block. This preserves the temporal
-// order in which Pi emits thinking / text / tool events.
-function appendDelta(
-  blocks: AssistantBlock[],
-  kind: "text" | "thinking",
-  delta: string,
-): AssistantBlock[] {
-  const last = blocks[blocks.length - 1];
-  if (last && last.kind === kind) {
-    const updated: AssistantBlock = { ...last, text: last.text + delta };
-    return [...blocks.slice(0, -1), updated];
-  }
-  return [...blocks, { kind, id: newId(kind), text: delta }];
-}
 
-function upsertTool(
-  blocks: AssistantBlock[],
-  toolCallId: string,
-  patch: (tool: ToolBlock) => ToolBlock,
-  fallback: () => ToolBlock,
-): AssistantBlock[] {
-  const idx = blocks.findIndex((b) => b.kind === "tool" && b.id === toolCallId);
-  if (idx === -1) return [...blocks, fallback()];
-  const next = blocks.slice();
-  next[idx] = patch(next[idx] as ToolBlock);
-  return next;
-}
 
 export function AgentWorkspace() {
   const [models, setModels] = useState<AgentModel[]>([]);
   const [selectedModel, setSelectedModel] = useState("");
   const [agentCwd, setAgentCwd] = useState(DEFAULT_AGENT_CWD);
-  const [messages, setMessages] = useState<ChatMessage[]>([
-    {
-      id: "intro",
-      role: "system",
-      timestamp: nowLabel(),
-      text: "T3 Code shell mounted inside vLLM Studio. The only provider is Pi coding-agent, configured from the active backend /v1/models.",
-    },
-  ]);
-  const [input, setInput] = useState("");
-  const [status, setStatus] = useState("idle");
   const [error, setError] = useState("");
   const [loadingModels, setLoadingModels] = useState(true);
   const [rightPanelOpen, setRightPanelOpen] = useState(true);
-  const [isMultiline, setIsMultiline] = useState(false);
   const [browserUrl, setBrowserUrl] = useState("https://www.google.com");
   const [browserInput, setBrowserInput] = useState("https://www.google.com");
   const [projects, setProjects] = useState<ProjectEntry[]>([]);
@@ -185,12 +118,31 @@ export function AgentWorkspace() {
   const [projectPickerOpen, setProjectPickerOpen] = useState(false);
   const [projectPickerInput, setProjectPickerInput] = useState("");
   const [projectPickerError, setProjectPickerError] = useState("");
-  const [activePiSessionId, setActivePiSessionId] = useState<string | null>(null);
   const [sessionsCollapsed, setSessionsCollapsed] = useState(false);
   const [browserToolEnabled, setBrowserToolEnabled] = useState(false);
   const [rightTopHeightPct, setRightTopHeightPct] = useState(60);
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Pane state: a tree-shaped Layout where each leaf is identified by a
+  // PaneId and points into panesById, which holds tabs + the per-pane
+  // runtime session id used to scope the pi child process and the
+  // /api/agent/turn calls. Each tab inside a pane has its own piSessionId
+  // (loaded from the sidebar or assigned by pi after the first turn).
+  const [layout, setLayout] = useState<Layout>(() => ({ kind: "leaf", paneId: "p-init" }));
+  const [panesById, setPanesById] = useState<Map<PaneId, PaneState>>(() => {
+    const tab = makeFreshTab();
+    return new Map([
+      [
+        "p-init",
+        {
+          tabs: [tab],
+          activeTabId: tab.id,
+          runtimeSessionId: `rt-${Math.random().toString(36).slice(2, 9)}`,
+        },
+      ],
+    ]);
+  });
+  const [focusedPaneId, setFocusedPaneId] = useState<PaneId>("p-init");
+
   const webviewRef = useRef<WebviewElement | null>(null);
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const isElectron = typeof window !== "undefined" && /electron/i.test(navigator.userAgent);
@@ -200,7 +152,24 @@ export function AgentWorkspace() {
     () => models.find((model) => model.id === selectedModel),
     [models, selectedModel],
   );
-  const running = status === "running" || status === "starting";
+
+  // The focused tab's piSessionId drives the sessions sidebar highlight.
+  const focusedPiSessionId = useMemo(() => {
+    const pane = panesById.get(focusedPaneId);
+    if (!pane) return null;
+    const tab = pane.tabs.find((t) => t.id === pane.activeTabId);
+    return tab?.piSessionId ?? null;
+  }, [panesById, focusedPaneId]);
+
+  // Map of paneId → loader callback registered by each ChatPane on mount, so
+  // the workspace can request a session replay (sidebar click or split-drop).
+  const paneLoadersRef = useRef<Map<PaneId, (piSessionId: string) => void>>(new Map());
+  const registerPaneLoader = useCallback(
+    (paneId: PaneId, loader: (piSessionId: string) => void) => {
+      paneLoadersRef.current.set(paneId, loader);
+    },
+    [],
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -226,10 +195,6 @@ export function AgentWorkspace() {
       cancelled = true;
     };
   }, []);
-
-  useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
-  }, [messages, status]);
 
   // Run a browser command issued by the agent against the embedded webview.
   // In dev (iframe) we can only do limited operations because of cross-origin
@@ -343,30 +308,58 @@ export function AgentWorkspace() {
   }, [browserToolEnabled, runBrowserCommand]);
 
   // Restore preferences across reloads (sessions sidebar collapsed,
-  // last-resumed pi session, browser-tool toggle).
+  // browser-tool toggle, right-pane split ratio, multiplex layout shape).
   useEffect(() => {
     if (typeof window === "undefined") return;
     const collapsed = window.localStorage.getItem(SESSIONS_COLLAPSED_KEY);
     if (collapsed === "1") setSessionsCollapsed(true);
-    const last = window.localStorage.getItem(ACTIVE_PI_SESSION_KEY);
-    if (last) setActivePiSessionId(last);
     const browserOn = window.localStorage.getItem(BROWSER_TOOL_KEY);
     if (browserOn === "1") setBrowserToolEnabled(true);
     const heightPct = Number(window.localStorage.getItem(RIGHT_TOP_HEIGHT_KEY) ?? "");
     if (Number.isFinite(heightPct) && heightPct >= 20 && heightPct <= 80) {
       setRightTopHeightPct(heightPct);
     }
+    // Restore the pane layout shape only (split ratios + leaf placement). Each
+    // referenced pane gets a fresh PaneState — we don't persist tab content
+    // because pi sessions live in their own files and are picked from the
+    // sidebar after restore.
+    try {
+      const raw = window.localStorage.getItem(PANE_LAYOUT_KEY);
+      if (!raw) return;
+      const restored = JSON.parse(raw) as Layout;
+      if (!restored || typeof restored !== "object") return;
+      const leaves = collectLeaves(restored);
+      if (leaves.length === 0) return;
+      const next = new Map<PaneId, PaneState>();
+      for (const id of leaves) {
+        const tab = makeFreshTab();
+        next.set(id, {
+          tabs: [tab],
+          activeTabId: tab.id,
+          runtimeSessionId: newRuntimeId(),
+        });
+      }
+      setPanesById(next);
+      setLayout(restored);
+      setFocusedPaneId(leaves[0]);
+    } catch {
+      // ignore — fresh state
+    }
   }, []);
+
+  // Persist layout shape whenever it changes.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      window.localStorage.setItem(PANE_LAYOUT_KEY, JSON.stringify(layout));
+    } catch {
+      // ignore quota errors
+    }
+  }, [layout]);
 
   const persistSessionsCollapsed = useCallback((value: boolean) => {
     if (typeof window === "undefined") return;
     window.localStorage.setItem(SESSIONS_COLLAPSED_KEY, value ? "1" : "0");
-  }, []);
-
-  const persistActivePiSessionId = useCallback((id: string | null) => {
-    if (typeof window === "undefined") return;
-    if (id) window.localStorage.setItem(ACTIVE_PI_SESSION_KEY, id);
-    else window.localStorage.removeItem(ACTIVE_PI_SESSION_KEY);
   }, []);
 
   const toggleBrowserTool = useCallback(() => {
@@ -428,13 +421,24 @@ export function AgentWorkspace() {
       setSelectedProjectId(project.id);
       setAgentCwd(project.path);
       persistSelectedProjectId(project.id);
-      // A different project has its own session pool — clear the active pi
-      // session so the next turn starts a fresh one in the new project.
-      setActivePiSessionId(null);
-      persistActivePiSessionId(null);
-      setMessages([]);
+      // A different project has its own session pool — reset every pane to a
+      // fresh tab so the next turn starts a brand-new pi session in the new
+      // project. Each pane keeps its runtimeSessionId so the pi child gets
+      // a clean restart on the next /api/agent/turn.
+      setPanesById((current) => {
+        const next = new Map<PaneId, PaneState>();
+        for (const [paneId, pane] of current.entries()) {
+          const tab = makeFreshTab();
+          next.set(paneId, {
+            tabs: [tab],
+            activeTabId: tab.id,
+            runtimeSessionId: pane.runtimeSessionId,
+          });
+        }
+        return next;
+      });
     },
-    [persistActivePiSessionId, persistSelectedProjectId],
+    [persistSelectedProjectId],
   );
 
   const addProjectFromPath = useCallback(
@@ -543,373 +547,6 @@ export function AgentWorkspace() {
     [persistSelectedProjectId, projects, selectedProjectId],
   );
 
-  function patchAssistant(id: string, patch: (message: ChatMessage) => ChatMessage) {
-    setMessages((current) =>
-      current.map((message) => (message.id === id ? patch(message) : message)),
-    );
-  }
-
-  function applyPiEvent(assistantId: string, event: Record<string, unknown>) {
-    const eventType = event.type;
-
-    if (eventType === "message_update") {
-      const assistantMessageEvent = event.assistantMessageEvent as
-        | Record<string, unknown>
-        | undefined;
-      const updateType = assistantMessageEvent?.type;
-
-      if (updateType === "text_delta" && typeof assistantMessageEvent?.delta === "string") {
-        const delta = assistantMessageEvent.delta;
-        patchAssistant(assistantId, (message) => ({
-          ...message,
-          blocks: appendDelta(message.blocks ?? [], "text", delta),
-        }));
-        return;
-      }
-
-      if (updateType === "thinking_delta" && typeof assistantMessageEvent?.delta === "string") {
-        const delta = assistantMessageEvent.delta;
-        patchAssistant(assistantId, (message) => ({
-          ...message,
-          blocks: appendDelta(message.blocks ?? [], "thinking", delta),
-        }));
-        return;
-      }
-
-      if (updateType === "toolcall_end") {
-        const toolCall = assistantMessageEvent?.toolCall as
-          | { id?: string; name?: string; arguments?: unknown }
-          | undefined;
-        if (!toolCall) return;
-        const id = toolCall.id || newId("tool");
-        const name = toolCall.name || "tool";
-        const text = JSON.stringify(toolCall.arguments ?? {}, null, 2);
-        patchAssistant(assistantId, (message) => ({
-          ...message,
-          blocks: upsertTool(
-            message.blocks ?? [],
-            id,
-            (existing) => ({ ...existing, text: existing.text || text }),
-            () => ({ kind: "tool", id, name, status: "running", text }),
-          ),
-        }));
-        return;
-      }
-    }
-
-    if (eventType === "tool_execution_start") {
-      const id = String(event.toolCallId || newId("tool"));
-      const name = String(event.toolName || "tool");
-      patchAssistant(assistantId, (message) => ({
-        ...message,
-        blocks: upsertTool(
-          message.blocks ?? [],
-          id,
-          (existing) => existing,
-          () => ({ kind: "tool", id, name, status: "running", text: "" }),
-        ),
-      }));
-      return;
-    }
-
-    if (eventType === "tool_execution_update" || eventType === "tool_execution_end") {
-      const id = String(event.toolCallId || "");
-      if (!id) return;
-      const resultText = extractToolText(event.partialResult || event.result);
-      patchAssistant(assistantId, (message) => ({
-        ...message,
-        blocks: upsertTool(
-          message.blocks ?? [],
-          id,
-          (existing) => ({
-            ...existing,
-            status:
-              eventType === "tool_execution_end"
-                ? ((event.isError ? "error" : "done") as ToolBlock["status"])
-                : existing.status,
-            text: resultText || existing.text,
-          }),
-          () => ({
-            kind: "tool",
-            id,
-            name: "tool",
-            status:
-              eventType === "tool_execution_end"
-                ? ((event.isError ? "error" : "done") as ToolBlock["status"])
-                : "running",
-            text: resultText,
-          }),
-        ),
-      }));
-      return;
-    }
-
-    // message_end is intentionally a no-op for assistant content. We've already
-    // streamed all blocks in order via the deltas above; reapplying flattened
-    // text/thinking from the final payload would re-collapse them and lose the
-    // interleaved order.
-  }
-
-  // Replay a past pi session into the renderer by hydrating user messages
-  // (recorded as message_end events with role=user) and walking every other
-  // event through applyPiEvent so the same block-ordered timeline used for
-  // live turns is reused for replay.
-  const loadAndReplaySession = useCallback(
-    async (cwd: string, piSessionId: string) => {
-      setError("");
-      setStatus("loading");
-      try {
-        const response = await fetch(
-          `/api/agent/sessions/${encodeURIComponent(piSessionId)}?cwd=${encodeURIComponent(cwd)}`,
-          { cache: "no-store" },
-        );
-        const payload = (await response.json()) as { events?: Record<string, unknown>[]; error?: string };
-        if (!response.ok) throw new Error(payload.error || "Failed to load session");
-
-        const replayed: ChatMessage[] = [];
-        let pendingAssistantId: string | null = null;
-        const ensureAssistant = () => {
-          if (pendingAssistantId) return pendingAssistantId;
-          const id = newId("assistant");
-          replayed.push({ id, role: "assistant", text: "", blocks: [], timestamp: nowLabel() });
-          pendingAssistantId = id;
-          return id;
-        };
-        const flushAssistant = () => {
-          pendingAssistantId = null;
-        };
-
-        // We mutate `replayed` in place by reusing applyPiEvent's logic on a
-        // local working set rather than going through React state for each of
-        // potentially thousands of events.
-        const localPatch = (assistantId: string, patch: (msg: ChatMessage) => ChatMessage) => {
-          const idx = replayed.findIndex((m) => m.id === assistantId);
-          if (idx !== -1) replayed[idx] = patch(replayed[idx]);
-        };
-
-        for (const event of payload.events ?? []) {
-          const type = event.type;
-          if (type === "message_end") {
-            const message = event.message as
-              | {
-                  role?: string;
-                  content?: Array<{ type?: string; text?: string; thinking?: string }>;
-                }
-              | undefined;
-            if (message?.role === "user") {
-              flushAssistant();
-              const text = Array.isArray(message.content)
-                ? message.content
-                    .filter((part) => part?.type === "text" && typeof part.text === "string")
-                    .map((part) => part.text)
-                    .join("\n")
-                : "";
-              if (text) {
-                replayed.push({
-                  id: newId("user"),
-                  role: "user",
-                  text,
-                  timestamp: nowLabel(),
-                });
-              }
-              continue;
-            }
-            if (message?.role === "assistant" && pendingAssistantId) {
-              flushAssistant();
-              continue;
-            }
-          }
-
-          // Everything else (text_delta, thinking_delta, toolcall_end,
-          // tool_execution_*) feeds into the active assistant turn.
-          const assistantId = ensureAssistant();
-          const before = replayed.find((m) => m.id === assistantId);
-          if (!before) continue;
-          // Apply the same logic locally. This intentionally duplicates a tiny
-          // portion of applyPiEvent because it operates on the local array
-          // rather than React state.
-          const eventType = event.type;
-          if (eventType === "message_update") {
-            const ame = event.assistantMessageEvent as Record<string, unknown> | undefined;
-            const updateType = ame?.type;
-            if (updateType === "text_delta" && typeof ame?.delta === "string") {
-              const delta = ame.delta;
-              localPatch(assistantId, (msg) => ({
-                ...msg,
-                blocks: appendDelta(msg.blocks ?? [], "text", delta),
-              }));
-            } else if (updateType === "thinking_delta" && typeof ame?.delta === "string") {
-              const delta = ame.delta;
-              localPatch(assistantId, (msg) => ({
-                ...msg,
-                blocks: appendDelta(msg.blocks ?? [], "thinking", delta),
-              }));
-            } else if (updateType === "toolcall_end") {
-              const toolCall = ame?.toolCall as
-                | { id?: string; name?: string; arguments?: unknown }
-                | undefined;
-              if (toolCall) {
-                const id = toolCall.id || newId("tool");
-                const name = toolCall.name || "tool";
-                const text = JSON.stringify(toolCall.arguments ?? {}, null, 2);
-                localPatch(assistantId, (msg) => ({
-                  ...msg,
-                  blocks: upsertTool(
-                    msg.blocks ?? [],
-                    id,
-                    (existing) => ({ ...existing, text: existing.text || text }),
-                    () => ({ kind: "tool", id, name, status: "running", text }),
-                  ),
-                }));
-              }
-            }
-          } else if (eventType === "tool_execution_start") {
-            const id = String(event.toolCallId || newId("tool"));
-            const name = String(event.toolName || "tool");
-            localPatch(assistantId, (msg) => ({
-              ...msg,
-              blocks: upsertTool(
-                msg.blocks ?? [],
-                id,
-                (existing) => existing,
-                () => ({ kind: "tool", id, name, status: "running", text: "" }),
-              ),
-            }));
-          } else if (eventType === "tool_execution_update" || eventType === "tool_execution_end") {
-            const id = String(event.toolCallId || "");
-            if (id) {
-              const resultText = extractToolText(event.partialResult || event.result);
-              localPatch(assistantId, (msg) => ({
-                ...msg,
-                blocks: upsertTool(
-                  msg.blocks ?? [],
-                  id,
-                  (existing) => ({
-                    ...existing,
-                    status:
-                      eventType === "tool_execution_end"
-                        ? ((event.isError ? "error" : "done") as ToolBlock["status"])
-                        : existing.status,
-                    text: resultText || existing.text,
-                  }),
-                  () => ({
-                    kind: "tool",
-                    id,
-                    name: "tool",
-                    status:
-                      eventType === "tool_execution_end"
-                        ? ((event.isError ? "error" : "done") as ToolBlock["status"])
-                        : "running",
-                    text: resultText,
-                  }),
-                ),
-              }));
-            }
-          }
-        }
-
-        setMessages(replayed);
-        setActivePiSessionId(piSessionId);
-        persistActivePiSessionId(piSessionId);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to load session");
-      } finally {
-        setStatus("idle");
-      }
-    },
-    [persistActivePiSessionId],
-  );
-
-  async function sendMessage(event: FormEvent) {
-    event.preventDefault();
-    const text = input.trim();
-    if (!text || !selectedModel || running) return;
-
-    const userId = newId("user");
-    const assistantId = newId("assistant");
-    setInput("");
-    setIsMultiline(false);
-    if (textareaRef.current) {
-      textareaRef.current.style.height = "";
-    }
-    setError("");
-    setStatus("starting");
-    setMessages((current) => [
-      ...current,
-      { id: userId, role: "user", text, timestamp: nowLabel() },
-      { id: assistantId, role: "assistant", text: "", blocks: [], timestamp: nowLabel() },
-    ]);
-
-    try {
-      const response = await fetch("/api/agent/turn", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          sessionId: SESSION_ID,
-          modelId: selectedModel,
-          message: text,
-          // Send undefined (not empty string) when no project picked so the
-          // server-side resolver can fall back to the last-used project / $HOME.
-          cwd: agentCwd.trim() || undefined,
-          piSessionId: activePiSessionId,
-          browserToolEnabled,
-        }),
-      });
-      if (!response.ok || !response.body) {
-        const payload = (await response.json().catch(() => ({}))) as { error?: string };
-        throw new Error(payload.error || `Agent request failed: ${response.status}`);
-      }
-
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const chunks = buffer.split("\n\n");
-        buffer = chunks.pop() || "";
-        for (const chunk of chunks) {
-          const line = chunk.split("\n").find((entry) => entry.startsWith("data: "));
-          if (!line) continue;
-          const payload = JSON.parse(line.slice(6)) as StreamPayload;
-          if (payload.type === "status")
-            setStatus(payload.phase === "done" ? "idle" : payload.phase);
-          if (payload.type === "error") {
-            setError(payload.error);
-            setStatus("idle");
-          }
-          if (payload.type === "pi") {
-            const piEvent = payload.event;
-            // Capture the session id pi assigns when starting fresh. Subsequent
-            // turns will pass this back in `piSessionId` so the same session
-            // continues, and the sidebar can highlight the active row.
-            const eventId = piEvent.id;
-            if (piEvent.type === "session" && typeof eventId === "string") {
-              if (activePiSessionId !== eventId) {
-                setActivePiSessionId(eventId);
-                persistActivePiSessionId(eventId);
-              }
-            }
-            applyPiEvent(assistantId, piEvent);
-          }
-        }
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Agent request failed");
-    } finally {
-      setStatus("idle");
-    }
-  }
-
-  async function abortTurn() {
-    await fetch("/api/agent/abort", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ sessionId: SESSION_ID }),
-    }).catch(() => undefined);
-    setStatus("idle");
-  }
 
   function normalizeBrowserInput(raw: string): string {
     const value = raw.trim();
@@ -956,24 +593,22 @@ export function AgentWorkspace() {
     }
   }
 
-  function newThread() {
-    setMessages([
-      {
-        id: newId("system"),
-        role: "system",
-        timestamp: nowLabel(),
-        text: "New Pi agent thread. The Project directory field is applied to each Pi turn; models are still sourced from /v1/models.",
-      },
-    ]);
-    setInput("");
-    setIsMultiline(false);
-    if (textareaRef.current) {
-      textareaRef.current.style.height = "";
-    }
+  // Open a fresh tab in the focused pane (same project, new pi session).
+  const newThreadInFocusedPane = useCallback(() => {
+    setPanesById((current) => {
+      const pane = current.get(focusedPaneId);
+      if (!pane) return current;
+      const tab = makeFreshTab();
+      const next = new Map(current);
+      next.set(focusedPaneId, {
+        ...pane,
+        tabs: [...pane.tabs, tab],
+        activeTabId: tab.id,
+      });
+      return next;
+    });
     setError("");
-    setActivePiSessionId(null);
-    persistActivePiSessionId(null);
-  }
+  }, [focusedPaneId]);
 
   const activeProject = useMemo(
     () => projects.find((entry) => entry.id === selectedProjectId) || null,
@@ -1020,14 +655,14 @@ export function AgentWorkspace() {
           }}
           cwd={agentCwd}
           onCwdChange={handleCwdInputChange}
-          running={running}
+          running={false}
         />
 
         <button
           type="button"
-          onClick={newThread}
+          onClick={newThreadInFocusedPane}
           className="inline-flex h-7 items-center gap-1.5 rounded border border-(--border) bg-(--surface) px-2 text-xs text-(--fg) hover:bg-(--bg)"
-          title="Start a fresh thread"
+          title="Start a fresh thread in the focused pane"
         >
           <Plus className="h-3.5 w-3.5" /> New thread
         </button>
@@ -1078,13 +713,16 @@ export function AgentWorkspace() {
       <div className="flex min-h-0 flex-1">
         <SessionsSidebar
           cwd={activeProject?.path ?? null}
-          activeSessionId={activePiSessionId}
+          activeSessionId={focusedPiSessionId}
           onSelect={(id) => {
-            const cwd = activeProject?.path;
-            if (!cwd) return;
-            void loadAndReplaySession(cwd, id);
+            // Hand the session id to the focused pane's registered loader,
+            // which performs the GET /api/agent/sessions/:id replay into its
+            // active tab.
+            const loader = paneLoadersRef.current.get(focusedPaneId);
+            if (!loader) return;
+            loader(id);
           }}
-          onNew={newThread}
+          onNew={newThreadInFocusedPane}
           collapsed={sessionsCollapsed}
           onToggleCollapsed={() => {
             const next = !sessionsCollapsed;
@@ -1093,106 +731,113 @@ export function AgentWorkspace() {
           }}
         />
         <section className="flex min-w-0 flex-1 flex-col">
-          <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-6 py-8">
-            <div className="mx-auto w-full max-w-2xl">
-              {(() => {
-                const visible = messages.filter((message) => message.role !== "system");
-                if (visible.length === 0 && !running) {
-                  return <ChatEmptyState />;
-                }
-                return (
-                  <div className="space-y-6">
-                    {visible.map((message) => (
-                      <TimelineMessage key={message.id} message={message} />
-                    ))}
-                    {running ? <WorkingRow status={status} /> : null}
-                  </div>
-                );
-              })()}
-            </div>
-          </div>
-
           {!selectedProjectId && projects.length === 0 ? (
-            <div className="shrink-0 border-t border-(--border) bg-(--surface) px-6 py-2 text-[11px] text-(--dim)">
+            <div className="shrink-0 border-b border-(--border) bg-(--surface) px-6 py-2 text-[11px] text-(--dim)">
               No project selected — agent runs in your home directory. Pick a project from the
               header to scope it.
             </div>
           ) : null}
+          <div className="min-h-0 flex-1">
+            <PaneGrid
+              layout={layout}
+              renderPane={(paneId) => {
+                const pane = panesById.get(paneId);
+                if (!pane) return null;
+                const onlyOne = collectLeaves(layout).length === 1;
+                return (
+                  <ChatPane
+                    key={paneId}
+                    paneId={paneId}
+                    runtimeSessionId={pane.runtimeSessionId}
+                    modelId={selectedModel}
+                    modelName={activeModel?.name ?? null}
+                    modelsLoading={loadingModels}
+                    cwd={agentCwd}
+                    browserToolEnabled={browserToolEnabled}
+                    isFocused={focusedPaneId === paneId}
+                    onFocus={() => setFocusedPaneId(paneId)}
+                    tabs={pane.tabs}
+                    activeTabId={pane.activeTabId}
+                    onTabsChange={(nextTabs) => {
+                      setPanesById((current) => {
+                        const cur = current.get(paneId);
+                        if (!cur) return current;
+                        const next = new Map(current);
+                        next.set(paneId, { ...cur, tabs: nextTabs });
+                        return next;
+                      });
+                    }}
+                    onActiveTabChange={(tabId) => {
+                      setPanesById((current) => {
+                        const cur = current.get(paneId);
+                        if (!cur) return current;
+                        const next = new Map(current);
+                        next.set(paneId, { ...cur, activeTabId: tabId });
+                        return next;
+                      });
+                    }}
+                    onClose={
+                      onlyOne
+                        ? undefined
+                        : () => {
+                            setLayout((prev) => removeLeaf(prev, paneId) ?? prev);
+                            setPanesById((current) => {
+                              const next = new Map(current);
+                              next.delete(paneId);
+                              return next;
+                            });
+                            paneLoadersRef.current.delete(paneId);
+                            if (focusedPaneId === paneId) {
+                              const remaining = collectLeaves(layout).filter(
+                                (id) => id !== paneId,
+                              );
+                              if (remaining[0]) setFocusedPaneId(remaining[0]);
+                            }
+                          }
+                    }
+                    registerExternalLoader={(loader) => registerPaneLoader(paneId, loader)}
+                  />
+                );
+              }}
+              onSplit={(paneId, direction, side, payload) => {
+                // Create a new pane next to the drop target. If a session
+                // payload is included, pre-load that session into the new
+                // pane's tab on next tick (after registerExternalLoader fires).
+                const id = newPaneId();
+                const runtime = newRuntimeId();
+                const baseTab = makeFreshTab();
+                setPanesById((current) => {
+                  const next = new Map(current);
+                  next.set(id, {
+                    tabs: [baseTab],
+                    activeTabId: baseTab.id,
+                    runtimeSessionId: runtime,
+                  });
+                  return next;
+                });
+                setLayout((prev) => splitLeaf(prev, paneId, id, direction, side));
+                setFocusedPaneId(id);
 
-          <form
-            onSubmit={sendMessage}
-            className="shrink-0 border-t border-(--border) bg-(--bg) px-6 py-3"
-          >
-            <div
-              className={`mx-auto max-w-2xl rounded-lg border bg-(--surface) ${
-                isMultiline ? "border-(--accent)/60 ring-1 ring-(--accent)/30" : "border-(--border)"
-              }`}
-            >
-              <textarea
-                ref={textareaRef}
-                value={input}
-                onChange={(event) => {
-                  const value = event.target.value;
-                  setInput(value);
-                  const element = event.currentTarget;
-                  if (!value) {
-                    element.style.height = "";
-                    setIsMultiline(false);
-                    return;
-                  }
-                  element.style.height = "auto";
-                  element.style.height = `${element.scrollHeight}px`;
-                  setIsMultiline(element.scrollHeight > 44);
-                }}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" && !event.shiftKey) {
-                    event.preventDefault();
-                    event.currentTarget.form?.requestSubmit();
-                  }
-                }}
-                placeholder={
-                  activeModel
-                    ? `Ask ${activeModel.name}…`
-                    : loadingModels
-                      ? "Loading models…"
-                      : "No models available — check /v1/models"
+                if (payload.piSessionId) {
+                  const target = payload.piSessionId;
+                  // Wait until the new ChatPane has mounted and registered
+                  // its loader before requesting the replay.
+                  const tryLoad = () => {
+                    const loader = paneLoadersRef.current.get(id);
+                    if (loader) {
+                      loader(target);
+                    } else {
+                      setTimeout(tryLoad, 16);
+                    }
+                  };
+                  setTimeout(tryLoad, 0);
                 }
-                className="min-h-[40px] max-h-[240px] w-full resize-none overflow-y-auto bg-transparent px-3 py-2 text-sm leading-6 text-(--fg) outline-none placeholder:text-(--dim)"
-              />
-              <div className="flex items-center gap-2 border-t border-(--border) px-2 py-1.5">
-                <select
-                  className="h-7 max-w-[280px] rounded border border-(--border) bg-(--bg) px-2 text-xs text-(--fg) outline-none"
-                  value={selectedModel}
-                  onChange={(event) => setSelectedModel(event.target.value)}
-                  disabled={loadingModels || running}
-                >
-                  {models.map((model) => (
-                    <option key={model.id} value={model.id}>
-                      {model.name}
-                    </option>
-                  ))}
-                </select>
-                <div className="flex-1" />
-                {running ? (
-                  <button
-                    type="button"
-                    onClick={() => void abortTurn()}
-                    className="inline-flex h-7 items-center gap-1.5 rounded border border-(--border) bg-(--bg) px-2 text-xs text-(--dim) hover:text-(--fg)"
-                  >
-                    <Square className="h-3 w-3" /> Stop
-                  </button>
-                ) : (
-                  <button
-                    type="submit"
-                    disabled={!input.trim() || !selectedModel}
-                    className="inline-flex h-7 items-center gap-1.5 rounded bg-(--fg) px-2.5 text-xs font-medium text-(--bg) disabled:opacity-30"
-                  >
-                    <Send className="h-3 w-3" /> Send
-                  </button>
-                )}
-              </div>
-            </div>
-          </form>
+              }}
+              onResize={(path, ratio) => {
+                setLayout((prev) => setSplitRatio(prev, path, ratio));
+              }}
+            />
+          </div>
         </section>
 
         {rightPanelOpen ? (
@@ -1304,74 +949,6 @@ export function AgentWorkspace() {
           </aside>
         ) : null}
       </div>
-    </div>
-  );
-}
-
-function TimelineMessage({ message }: { message: ChatMessage }) {
-  const isUser = message.role === "user";
-  if (isUser) {
-    return (
-      <article className="flex flex-col gap-1">
-        <div className="text-[11px] font-medium uppercase tracking-wide text-(--dim)">You</div>
-        <div className="whitespace-pre-wrap break-words text-sm leading-6 text-(--fg)">
-          {message.text}
-        </div>
-      </article>
-    );
-  }
-  const blocks = message.blocks ?? [];
-  return (
-    <article className="flex flex-col gap-1">
-      <div className="text-[11px] font-medium uppercase tracking-wide text-(--dim)">Pi</div>
-      {blocks.length === 0 ? (
-        <div className="text-sm leading-6 text-(--dim)">…</div>
-      ) : (
-        <div className="flex flex-col gap-2">
-          {blocks.map((block) => {
-            if (block.kind === "thinking") {
-              return (
-                <details key={block.id} className="text-xs">
-                  <summary className="cursor-pointer list-none text-[11px] italic text-(--dim) hover:text-(--fg)">
-                    Show thinking
-                  </summary>
-                  <pre className="mt-2 whitespace-pre-wrap border-l-2 border-(--border) pl-3 font-mono text-[11px] leading-5 text-(--dim)">
-                    {block.text}
-                  </pre>
-                </details>
-              );
-            }
-            if (block.kind === "text") {
-              return <AssistantMarkdown key={block.id} text={block.text} />;
-            }
-            return (
-              <details
-                key={block.id}
-                className="rounded border border-(--border)"
-                open={block.status === "running"}
-              >
-                <summary className="flex cursor-pointer list-none items-center gap-2 px-2 py-1 text-[11px] text-(--dim) hover:text-(--fg)">
-                  <span className="font-mono font-medium">{block.name}</span>
-                  <span className="opacity-70">· {block.status}</span>
-                </summary>
-                {block.text ? (
-                  <pre className="overflow-x-auto whitespace-pre-wrap border-t border-(--border) p-2 font-mono text-[11px] leading-5 text-(--fg)">
-                    {block.text}
-                  </pre>
-                ) : null}
-              </details>
-            );
-          })}
-        </div>
-      )}
-    </article>
-  );
-}
-
-function ChatEmptyState() {
-  return (
-    <div className="flex min-h-[40vh] items-center justify-center text-center">
-      <p className="text-sm text-(--dim)">Ask the agent to edit, inspect, or run something.</p>
     </div>
   );
 }
@@ -1616,11 +1193,4 @@ function PaneSplitter({
   );
 }
 
-function WorkingRow({ status }: { status: string }) {
-  return (
-    <div className="flex items-center gap-2 text-xs text-(--dim)">
-      <span className="inline-flex h-1.5 w-1.5 animate-pulse rounded-full bg-(--dim)" />
-      <span>Pi is {status}…</span>
-    </div>
-  );
-}
+
