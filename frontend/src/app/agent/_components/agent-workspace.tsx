@@ -5,6 +5,8 @@ import {
   ArrowLeft,
   ArrowRight,
   ChevronDown,
+  ChevronRight,
+  Cpu,
   Folder,
   GitBranch,
   Plus,
@@ -69,7 +71,10 @@ const DEFAULT_AGENT_CWD = "";
 const SELECTED_PROJECT_KEY = "vllm-studio.agent.selectedProjectId";
 const SESSIONS_COLLAPSED_KEY = "vllm-studio.agent.sessionsCollapsed";
 const BROWSER_TOOL_KEY = "vllm-studio.agent.browserToolEnabled";
-const RIGHT_TOP_HEIGHT_KEY = "vllm-studio.agent.rightTopHeightPct";
+const BROWSER_TOOL_DEFAULT_OFF_MIGRATION_KEY =
+  "vllm-studio.agent.browserToolDefaultOffMigration.v1";
+const COMPUTER_BROWSER_OPEN_KEY = "vllm-studio.agent.computer.browserOpen";
+const COMPUTER_FILES_OPEN_KEY = "vllm-studio.agent.computer.filesOpen";
 const PANE_LAYOUT_KEY = "vllm-studio.agent.paneLayout";
 
 function getDesktopBridge(): DesktopBridge | null {
@@ -120,7 +125,8 @@ export function AgentWorkspace() {
   const [projectPickerError, setProjectPickerError] = useState("");
   const [sessionsCollapsed, setSessionsCollapsed] = useState(false);
   const [browserToolEnabled, setBrowserToolEnabled] = useState(false);
-  const [rightTopHeightPct, setRightTopHeightPct] = useState(60);
+  const [browserOpen, setBrowserOpen] = useState(true);
+  const [filesOpen, setFilesOpen] = useState(true);
 
   // Pane state: a tree-shaped Layout where each leaf is identified by a
   // PaneId and points into panesById, which holds tabs + the per-pane
@@ -313,12 +319,19 @@ export function AgentWorkspace() {
     if (typeof window === "undefined") return;
     const collapsed = window.localStorage.getItem(SESSIONS_COLLAPSED_KEY);
     if (collapsed === "1") setSessionsCollapsed(true);
+    // One-time migration: reset stale ON state so the browser tool defaults
+    // to OFF for existing users. New users naturally default to OFF.
+    const migrated = window.localStorage.getItem(BROWSER_TOOL_DEFAULT_OFF_MIGRATION_KEY);
+    if (!migrated) {
+      window.localStorage.setItem(BROWSER_TOOL_KEY, "0");
+      window.localStorage.setItem(BROWSER_TOOL_DEFAULT_OFF_MIGRATION_KEY, "1");
+    }
     const browserOn = window.localStorage.getItem(BROWSER_TOOL_KEY);
     if (browserOn === "1") setBrowserToolEnabled(true);
-    const heightPct = Number(window.localStorage.getItem(RIGHT_TOP_HEIGHT_KEY) ?? "");
-    if (Number.isFinite(heightPct) && heightPct >= 20 && heightPct <= 80) {
-      setRightTopHeightPct(heightPct);
-    }
+    const browserOpenStored = window.localStorage.getItem(COMPUTER_BROWSER_OPEN_KEY);
+    if (browserOpenStored === "0") setBrowserOpen(false);
+    const filesOpenStored = window.localStorage.getItem(COMPUTER_FILES_OPEN_KEY);
+    if (filesOpenStored === "0") setFilesOpen(false);
     // Restore the pane layout shape only (split ratios + leaf placement). Each
     // referenced pane gets a fresh PaneState — we don't persist tab content
     // because pi sessions live in their own files and are picked from the
@@ -669,28 +682,6 @@ export function AgentWorkspace() {
 
         <button
           type="button"
-          onClick={toggleBrowserTool}
-          aria-pressed={browserToolEnabled}
-          title={
-            browserToolEnabled
-              ? "Browser tool: ON — agent can drive the browser"
-              : "Browser tool: OFF — toggle on to let the agent navigate, click, fill, and read pages"
-          }
-          className={`hidden h-7 items-center gap-1.5 rounded border px-2 text-xs xl:inline-flex ${
-            browserToolEnabled
-              ? "border-(--accent) bg-(--accent)/10 text-(--accent)"
-              : "border-transparent text-(--dim) hover:text-(--fg) hover:bg-(--surface)"
-          }`}
-        >
-          Browser tool
-          <span
-            aria-hidden
-            className={`ml-1 inline-block h-1.5 w-1.5 rounded-full ${browserToolEnabled ? "bg-(--accent)" : "bg-(--dim)"}`}
-          />
-        </button>
-
-        <button
-          type="button"
           onClick={() => setRightPanelOpen((value) => !value)}
           aria-pressed={rightPanelOpen}
           className={`hidden h-7 items-center gap-1.5 rounded border px-2 text-xs xl:inline-flex ${
@@ -754,6 +745,7 @@ export function AgentWorkspace() {
                     modelsLoading={loadingModels}
                     cwd={agentCwd}
                     browserToolEnabled={browserToolEnabled}
+                    onToggleBrowserTool={toggleBrowserTool}
                     isFocused={focusedPaneId === paneId}
                     onFocus={() => setFocusedPaneId(paneId)}
                     tabs={pane.tabs}

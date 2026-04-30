@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Plus, Send, Square, X } from "lucide-react";
+import { Globe, Plus, Send, Square, X } from "lucide-react";
 import { AssistantMarkdown } from "./assistant-markdown";
 
 export type ToolBlock = {
@@ -46,7 +46,9 @@ type Props = {
   modelName: string | null;
   modelsLoading: boolean;
   cwd: string;
+  projectName: string | null;
   browserToolEnabled: boolean;
+  onToggleBrowserTool: () => void;
   isFocused: boolean;
   onFocus: () => void;
   // Notify parent that we picked up a fresh pi session id (so the sidebar can
@@ -130,7 +132,9 @@ export function ChatPane({
   modelName,
   modelsLoading,
   cwd,
+  projectName,
   browserToolEnabled,
+  onToggleBrowserTool,
   isFocused,
   onFocus,
   onPiSessionIdChange,
@@ -629,10 +633,13 @@ export function ChatPane({
       ) : null}
 
       <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-6 py-8">
-        <div className="mx-auto w-full max-w-2xl">
+        <div className="mx-auto w-full max-w-3xl">
           {activeTab && activeTab.messages.length === 0 && !running ? (
-            <div className="flex min-h-[40vh] items-center justify-center text-center">
-              <p className="text-sm text-(--dim)">
+            <div className="flex min-h-[40vh] flex-col items-center justify-center text-center gap-2">
+              <h1 className="text-xl font-semibold tracking-tight text-(--fg)">
+                What should we work on{projectName ? ` in ${projectName}` : ""}?
+              </h1>
+              <p className="text-xs text-(--dim)">
                 Ask the agent to edit, inspect, or run something.
               </p>
             </div>
@@ -656,11 +663,11 @@ export function ChatPane({
 
       <form
         onSubmit={sendMessage}
-        className="shrink-0 border-t border-(--border) bg-(--bg) px-6 py-3"
+        className="shrink-0 border-t border-(--border) bg-(--bg) px-6 py-4"
       >
         <div
-          className={`mx-auto max-w-2xl rounded-lg border bg-(--surface) ${
-            isMultiline ? "border-(--accent)/60 ring-1 ring-(--accent)/30" : "border-(--border)"
+          className={`mx-auto max-w-3xl rounded-xl border bg-(--surface) ${
+            isMultiline ? "border-(--accent)/40 ring-1 ring-(--accent)/15" : "border-(--border)"
           }`}
         >
           <textarea
@@ -696,6 +703,19 @@ export function ChatPane({
             className="min-h-[40px] max-h-[240px] w-full resize-none overflow-y-auto bg-transparent px-3 py-2 text-sm leading-6 text-(--fg) outline-none placeholder:text-(--dim)"
           />
           <div className="flex items-center gap-2 border-t border-(--border) px-2 py-1.5">
+            <button
+              type="button"
+              onClick={onToggleBrowserTool}
+              aria-pressed={browserToolEnabled}
+              title={browserToolEnabled ? "Browser tool: ON — agent can drive the browser" : "Browser tool: OFF — click to let the agent navigate, click, fill, and read pages"}
+              className={`inline-flex h-7 w-7 items-center justify-center rounded border ${
+                browserToolEnabled
+                  ? "border-(--accent) bg-(--accent)/10 text-(--accent)"
+                  : "border-transparent text-(--dim) hover:bg-(--bg) hover:text-(--fg)"
+              }`}
+            >
+              <Globe className="h-3.5 w-3.5" />
+            </button>
             <div className="flex-1" />
             {running ? (
               <button
@@ -738,7 +758,7 @@ function TabPill({
       aria-selected={active}
       onClick={onSelect}
       title={tab.title}
-      className={`group flex h-7 max-w-[200px] shrink-0 cursor-pointer items-center gap-1 rounded border px-2 text-xs ${
+      className={`group flex h-7 max-w-[200px] shrink-0 cursor-pointer items-center gap-1 rounded-md border px-2 text-xs ${
         active
           ? "border-(--border) bg-(--bg) text-(--fg)"
           : "border-transparent text-(--dim) hover:bg-(--bg) hover:text-(--fg)"
@@ -766,7 +786,7 @@ function TimelineMessage({ message }: { message: ChatMessage }) {
   if (isUser) {
     return (
       <article className="flex flex-col gap-1">
-        <div className="text-[11px] font-medium uppercase tracking-wide text-(--dim)">You</div>
+        <div className="text-[10px] font-semibold uppercase tracking-[0.08em] text-(--dim)">You</div>
         <div className="whitespace-pre-wrap break-words text-sm leading-6 text-(--fg)">
           {message.text}
         </div>
@@ -776,7 +796,7 @@ function TimelineMessage({ message }: { message: ChatMessage }) {
   const blocks = message.blocks ?? [];
   return (
     <article className="flex flex-col gap-1">
-      <div className="text-[11px] font-medium uppercase tracking-wide text-(--dim)">Pi</div>
+      <div className="text-[10px] font-semibold uppercase tracking-[0.08em] text-(--dim)">Pi</div>
       {blocks.length === 0 ? (
         <div className="text-sm leading-6 text-(--dim)">…</div>
       ) : (
