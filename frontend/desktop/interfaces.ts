@@ -21,6 +21,7 @@ export interface DesktopBridge {
   getUpdateStatus(): Promise<DesktopUpdateSnapshot>;
   checkForUpdates(): Promise<DesktopUpdateSnapshot>;
   openDirectory(): Promise<ProjectEntry | null>;
+  getPathForFile(file: File): string;
   listProjects(): Promise<ProjectEntry[]>;
   addProject(directoryPath: string): Promise<ProjectEntry>;
   removeProject(id: string): Promise<{ ok: true }>;

@@ -52,6 +52,7 @@ function notifyProjectsChanged() {
 
 type DesktopBridge = {
   openDirectory?: () => Promise<ProjectEntry | null>;
+  getPathForFile?: (file: File) => string;
   listProjects?: () => Promise<ProjectEntry[]>;
   removeProject?: (id: string) => Promise<{ ok: true }>;
 };
@@ -63,6 +64,7 @@ function getDesktopBridge(): DesktopBridge | null {
   if (!candidate) return null;
   const hasBridgeMethod =
     typeof candidate.openDirectory === "function" ||
+    typeof candidate.getPathForFile === "function" ||
     typeof candidate.listProjects === "function" ||
     typeof candidate.removeProject === "function";
   if (!hasBridgeMethod) return null;
@@ -195,7 +197,9 @@ export function ProjectsNavSection({ expanded }: { expanded: boolean }) {
     const firstFile = event.target.files?.[0];
     event.target.value = "";
     if (!firstFile) return;
-    const selectedPath = (firstFile as File & { path?: string }).path;
+    const desktopBridge = getDesktopBridge();
+    const selectedPath =
+      desktopBridge?.getPathForFile?.(firstFile) || (firstFile as File & { path?: string }).path;
     const relativeRoot = firstFile.webkitRelativePath.split("/")[0] ?? "";
     const directoryPath =
       selectedPath && relativeRoot
