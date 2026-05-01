@@ -10,11 +10,3 @@ export interface ProcessInfo {
   port: number;
   served_model_name?: string | null;
 }
-
-export interface HealthResponse {
-  status: string;
-  version: string;
-  backend_reachable: boolean;
-  running_model: string | null;
-}
-

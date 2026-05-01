@@ -1,9 +1,4 @@
 // CRITICAL
-import type mermaidType from "mermaid";
-
-let mermaidInstance: typeof mermaidType | null = null;
-let mermaidInitialized = false;
-
 const MERMAID_DIAGRAM_PATTERN =
   /^(?:graph|flowchart|sequenceDiagram|classDiagram|stateDiagram|stateDiagram-v2|erDiagram|journey|gantt|pie|mindmap|timeline|gitGraph|C4Context|C4Container|C4Component|C4Dynamic|C4Deployment)\b/;
 
@@ -100,24 +95,4 @@ export function summarizeMermaidError(error: unknown): string {
   }
 
   return `${normalized.slice(0, MERMAID_MAX_ERROR_LENGTH - 1)}…`;
-}
-
-export async function getMermaid() {
-  if (!mermaidInstance) {
-    const mod = await import("mermaid");
-    mermaidInstance = mod.default;
-  }
-
-  if (!mermaidInitialized && mermaidInstance) {
-    mermaidInstance.initialize({
-      startOnLoad: false,
-      theme: "dark",
-      securityLevel: "loose",
-      fontFamily: "inherit",
-      logLevel: "fatal",
-    });
-    mermaidInitialized = true;
-  }
-
-  return mermaidInstance;
 }

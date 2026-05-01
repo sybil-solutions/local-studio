@@ -35,19 +35,19 @@ async function callBrowserAction(
   }
   const result = (await response.json()) as { ok: boolean; data?: unknown; error?: string };
   if (!result.ok) throw new Error(result.error || `browser_${verb} failed`);
-  const text =
-    typeof result.data === "string" ? result.data : JSON.stringify(result.data, null, 2);
+  const text = typeof result.data === "string" ? result.data : JSON.stringify(result.data, null, 2);
   return {
     content: [{ type: "text", text }],
     details: { verb, payload, data: result.data },
   };
 }
 
-export default function (pi: ExtensionAPI) {
+export default function registerBrowserExtension(pi: ExtensionAPI) {
   pi.registerTool({
     name: "browser_navigate",
     label: "Browser: Navigate",
-    description: "Navigate the embedded browser to a URL. Use this to open a webpage before reading or interacting with it.",
+    description:
+      "Navigate the embedded browser to a URL. Use this to open a webpage before reading or interacting with it.",
     parameters: Type.Object({
       url: Type.String({ description: "Absolute http(s) URL to load" }),
     }),
@@ -69,7 +69,8 @@ export default function (pi: ExtensionAPI) {
   pi.registerTool({
     name: "browser_get_text",
     label: "Browser: Get Text",
-    description: "Return the visible text of the current page (innerText of <body>). Use after navigating to read page contents.",
+    description:
+      "Return the visible text of the current page (innerText of <body>). Use after navigating to read page contents.",
     parameters: Type.Object({}),
     async execute(_id, _params, signal) {
       return callBrowserAction("get-text", {}, signal);
@@ -79,7 +80,8 @@ export default function (pi: ExtensionAPI) {
   pi.registerTool({
     name: "browser_get_html",
     label: "Browser: Get HTML",
-    description: "Return the rendered HTML of the current page. Useful when text alone isn't enough.",
+    description:
+      "Return the rendered HTML of the current page. Useful when text alone isn't enough.",
     parameters: Type.Object({}),
     async execute(_id, _params, signal) {
       return callBrowserAction("get-html", {}, signal);
@@ -123,17 +125,14 @@ export default function (pi: ExtensionAPI) {
   pi.registerTool({
     name: "browser_fill",
     label: "Browser: Fill Field",
-    description: "Set the value of an input/textarea matching a CSS selector and dispatch input/change events.",
+    description:
+      "Set the value of an input/textarea matching a CSS selector and dispatch input/change events.",
     parameters: Type.Object({
       selector: Type.String({ description: "CSS selector for the input/textarea" }),
       value: Type.String({ description: "Value to set" }),
     }),
     async execute(_id, params, signal) {
-      return callBrowserAction(
-        "fill",
-        { selector: params.selector, value: params.value },
-        signal,
-      );
+      return callBrowserAction("fill", { selector: params.selector, value: params.value }, signal);
     },
   });
 }

@@ -40,13 +40,7 @@ export { DEFAULT_CONTEXT_CONFIG } from "./types";
 export { ContextManagementService } from "./service";
 
 // Factory
-export {
-  ContextManagementServiceFactory,
-  contextManagementServiceFactory,
-} from "./factory";
+export { ContextManagementServiceFactory, contextManagementServiceFactory } from "./factory";
 
 // Context
 export { ContextManagementContext, ContextManagementProvider } from "./context";
-
-// Hooks
-export { useContextManagement } from "./hooks";

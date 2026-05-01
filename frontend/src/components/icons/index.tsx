@@ -135,14 +135,6 @@ export function StopIcon(props: IconProps) {
   );
 }
 
-export function PauseIcon(props: IconProps) {
-  return (
-    <Svg {...props}>
-      <path d="M3 3h3.5v10H3V3zm6.5 0H13v10H9.5V3z" />
-    </Svg>
-  );
-}
-
 export function AttachIcon(props: IconProps) {
   return (
     <Svg {...props}>
@@ -171,14 +163,6 @@ export function GitBranchIcon(props: IconProps) {
   return (
     <Svg {...props}>
       <path d="M4 2a2 2 0 0 1 .8 3.8v4.4a2 2 0 1 1-1.6 0V5.8A2 2 0 0 1 4 2zm8 0a2 2 0 0 1 .8 3.8C12.6 8.5 10.5 9 8.8 9.2A2 2 0 1 1 7.4 7.7c1.5-.2 3.2-.6 3.7-2A2 2 0 0 1 12 2z" />
-    </Svg>
-  );
-}
-
-export function PanelIcon(props: IconProps) {
-  return (
-    <Svg {...props}>
-      <path d="M2 2.5h12v11H2v-11zm1.5 1.5v8h3v-8h-3z" />
     </Svg>
   );
 }

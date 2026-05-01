@@ -27,9 +27,6 @@ export const CONTROLLER_EVENTS = {
   LOG: "log",
 } as const;
 
-export type ControllerEventType =
-  (typeof CONTROLLER_EVENTS)[keyof typeof CONTROLLER_EVENTS];
-
 export const CONTROLLER_STREAM_EVENT_TYPES = [
   CONTROLLER_EVENTS.STATUS,
   CONTROLLER_EVENTS.GPU,
@@ -56,14 +53,9 @@ export const CONTROLLER_STREAM_EVENT_TYPES = [
   CONTROLLER_EVENTS.JOB_UPDATED,
 ] as const;
 
-export type ControllerStreamEventType =
-  (typeof CONTROLLER_STREAM_EVENT_TYPES)[number];
+export type ControllerStreamEventType = (typeof CONTROLLER_STREAM_EVENT_TYPES)[number];
 
-export type ControllerEventDomain =
-  | "recipe"
-  | "runtime"
-  | "controller"
-  | "mcp";
+export type ControllerEventDomain = "recipe" | "runtime" | "controller" | "mcp";
 
 export const CONTROLLER_BROWSER_EVENT_CHANNEL = {
   recipe: "vllm:recipe-event",
@@ -75,10 +67,7 @@ export const CONTROLLER_BROWSER_EVENT_CHANNEL = {
 export type ControllerBrowserEventChannel =
   (typeof CONTROLLER_BROWSER_EVENT_CHANNEL)[ControllerEventDomain];
 
-const CONTROLLER_EVENT_DOMAIN_MAP: Record<
-  ControllerStreamEventType,
-  ControllerEventDomain
-> = {
+const CONTROLLER_EVENT_DOMAIN_MAP: Record<ControllerStreamEventType, ControllerEventDomain> = {
   [CONTROLLER_EVENTS.STATUS]: "controller",
   [CONTROLLER_EVENTS.GPU]: "controller",
   [CONTROLLER_EVENTS.METRICS]: "controller",
@@ -104,9 +93,7 @@ const CONTROLLER_EVENT_DOMAIN_MAP: Record<
   [CONTROLLER_EVENTS.JOB_UPDATED]: "controller",
 };
 
-const CONTROLLER_STREAM_EVENT_SET = new Set<string>(
-  CONTROLLER_STREAM_EVENT_TYPES,
-);
+const CONTROLLER_STREAM_EVENT_SET = new Set<string>(CONTROLLER_STREAM_EVENT_TYPES);
 
 export const isControllerStreamEventType = (
   eventType: string,
@@ -114,9 +101,7 @@ export const isControllerStreamEventType = (
   return CONTROLLER_STREAM_EVENT_SET.has(eventType);
 };
 
-export const getControllerEventDomain = (
-  eventType: string,
-): ControllerEventDomain | null => {
+export const getControllerEventDomain = (eventType: string): ControllerEventDomain | null => {
   if (!isControllerStreamEventType(eventType)) {
     return null;
   }

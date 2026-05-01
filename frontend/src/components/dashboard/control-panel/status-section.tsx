@@ -171,20 +171,6 @@ export function StatusSection({
   );
 }
 
-/* Section card kept for backwards compatibility (gpu/log sections still use it). */
-export function SectionCard({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="border border-(--border) bg-(--surface)">
-      <div className="border-b border-(--border) px-3 py-1.5">
-        <span className="font-mono text-[10px] uppercase tracking-[0.2em] text-(--dim)">
-          {label}
-        </span>
-      </div>
-      <div className="px-3 py-3">{children}</div>
-    </div>
-  );
-}
-
 function StatusDot({ running }: { running: boolean }) {
   return <span className={`h-2 w-2 shrink-0 ${running ? "bg-(--fg)" : "bg-(--dim)/55"}`} />;
 }

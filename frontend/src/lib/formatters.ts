@@ -73,21 +73,4 @@ function formatBytes(bytes: number | null): string {
   return `${value.toFixed(value >= 10 ? 0 : 1)} ${units[unitIndex]}`;
 }
 
-/**
- * Format seconds as mm:ss (e.g. recording/timer display).
- */
-function formatDurationMmSs(seconds: number): string {
-  const mins = Math.floor(seconds / 60);
-  const secs = seconds % 60;
-  return `${mins}:${secs.toString().padStart(2, "0")}`;
-}
-
-export {
-  toGB,
-  toGBFromMB,
-  formatNumber,
-  formatDuration,
-  formatDate,
-  formatBytes,
-  formatDurationMmSs,
-};
+export { toGB, toGBFromMB, formatNumber, formatDuration, formatDate, formatBytes };

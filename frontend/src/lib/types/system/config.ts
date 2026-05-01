@@ -127,11 +127,3 @@ export interface ConfigData {
   environment: EnvironmentInfo;
   runtime: SystemRuntimeInfo;
 }
-
-export interface DeepResearchConfig {
-  enabled: boolean;
-  maxSources: number;
-  searchDepth: "shallow" | "medium" | "deep";
-  autoSummarize: boolean;
-  includeCitations: boolean;
-}
