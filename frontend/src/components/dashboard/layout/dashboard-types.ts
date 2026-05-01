@@ -6,7 +6,11 @@ import type {
   RecipeWithStatus,
   RuntimePlatformKind,
 } from "@/lib/types";
-import type { LeaseInfo, RuntimeSummaryData, ServiceEntry } from "@/hooks/realtime-status-store/types";
+import type {
+  LeaseInfo,
+  RuntimeSummaryData,
+  ServiceEntry,
+} from "@/hooks/realtime-status-store/types";
 
 export interface DashboardLayoutProps {
   currentProcess: ProcessInfo | null;
@@ -16,6 +20,7 @@ export interface DashboardLayoutProps {
   recipes: RecipeWithStatus[];
   logs: string[];
   launching: boolean;
+  lifecycleStatus: "idle" | "starting" | "ready" | "error";
   benchmarking: boolean;
   launchProgress: LaunchProgress | null;
   platformKind: RuntimePlatformKind | null;
@@ -24,10 +29,8 @@ export interface DashboardLayoutProps {
   lease?: LeaseInfo | null;
   isConnected: boolean;
   inferencePort?: number;
-  onNavigateChat: () => void;
   onNavigateLogs: () => void;
   onBenchmark: () => void;
-  onStop: () => void;
   onLaunch: (recipeId: string) => Promise<void>;
   onNewRecipe: () => void;
   onViewAll: () => void;

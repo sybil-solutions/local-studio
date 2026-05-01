@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from "electron";
+import { contextBridge, ipcRenderer, webUtils } from "electron";
 import type { DesktopBridge } from "./interfaces";
 
 const bridge: DesktopBridge = {
@@ -6,6 +6,11 @@ const bridge: DesktopBridge = {
   openExternal: (url) => ipcRenderer.invoke("desktop:open-external", url),
   getUpdateStatus: () => ipcRenderer.invoke("desktop:get-update-status"),
   checkForUpdates: () => ipcRenderer.invoke("desktop:check-for-updates"),
+  openDirectory: () => ipcRenderer.invoke("desktop:open-directory"),
+  getPathForFile: (file) => webUtils.getPathForFile(file),
+  listProjects: () => ipcRenderer.invoke("desktop:list-projects"),
+  addProject: (directoryPath) => ipcRenderer.invoke("desktop:add-project", directoryPath),
+  removeProject: (id) => ipcRenderer.invoke("desktop:remove-project", id),
 };
 
 contextBridge.exposeInMainWorld("vllmStudioDesktop", bridge);

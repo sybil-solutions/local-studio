@@ -66,3 +66,40 @@ export const resolveProviderConfig = (
 ): ProviderRouteConfig | null => {
   return resolveConfiguredProviderConfig(provider, config.providers);
 };
+
+export interface ProviderCompatMetadata {
+  supportsDeveloperRole: boolean;
+  supportsImageUrl: boolean;
+  supportsMessageName: boolean;
+  supportsUsageInStreaming: boolean;
+  maxTokensField: string;
+}
+
+export const getProviderCompatMetadata = (provider: string): ProviderCompatMetadata => {
+  switch (provider.toLowerCase()) {
+    case "anthropic":
+      return {
+        supportsDeveloperRole: false,
+        supportsImageUrl: false,
+        supportsMessageName: false,
+        supportsUsageInStreaming: false,
+        maxTokensField: "max_tokens",
+      };
+    case "sglang":
+      return {
+        supportsDeveloperRole: false,
+        supportsImageUrl: true,
+        supportsMessageName: true,
+        supportsUsageInStreaming: true,
+        maxTokensField: "max_tokens",
+      };
+    default:
+      return {
+        supportsDeveloperRole: true,
+        supportsImageUrl: true,
+        supportsMessageName: true,
+        supportsUsageInStreaming: true,
+        maxTokensField: "max_tokens",
+      };
+  }
+};

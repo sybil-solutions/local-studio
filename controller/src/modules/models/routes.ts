@@ -4,7 +4,7 @@ import { basename, dirname, resolve } from "node:path";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import type { AppContext } from "../../types/context";
-import type { Recipe } from "../lifecycle/types";
+import type { Recipe } from "../models/types";
 
 /**
  * OpenAI-compatible model info.

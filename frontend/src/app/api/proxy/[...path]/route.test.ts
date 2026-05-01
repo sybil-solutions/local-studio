@@ -110,6 +110,8 @@ describe("GET /api/proxy/[...path]", () => {
     const response = await GET(request, { params: Promise.resolve({ path: ["status"] }) });
 
     expect(response.status).toBe(403);
+    expect(response.headers.get("x-backend-override-invalid")).toBe("1");
+    expect(response.headers.get("set-cookie")).toContain("vllmstudio_backend_url=");
     expect(upstreamFetch).not.toHaveBeenCalled();
   });
 

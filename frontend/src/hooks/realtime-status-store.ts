@@ -157,8 +157,8 @@ async function fetchStatusNow() {
 
 function start() {
   if (started) return;
-  started = true;
   if (typeof window === "undefined") return;
+  started = true;
 
   const onControllerEvent = (event: Event) => {
     const custom = event as CustomEvent<{ type?: string; data?: Record<string, unknown> }>;

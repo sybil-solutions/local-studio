@@ -37,7 +37,10 @@ copyDirectory(resolve(projectRoot, ".next", "static"), resolve(serverRoot, ".nex
 const server = spawn("node", ["server.js"], {
   cwd: serverRoot,
   stdio: "inherit",
-  env: process.env,
+  env: {
+    ...process.env,
+    VLLM_STUDIO_AGENT_CWD: process.env.VLLM_STUDIO_AGENT_CWD || resolve(projectRoot, ".."),
+  },
 });
 
 server.on("exit", (code) => process.exit(code ?? 0));

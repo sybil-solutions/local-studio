@@ -1,3 +1,4 @@
+import { app } from "electron";
 import { cpSync, existsSync, mkdirSync } from "node:fs";
 import path from "node:path";
 import { fork, type ChildProcess } from "node:child_process";
@@ -63,8 +64,20 @@ export async function startFrontendServer(): Promise<ServerHandle> {
   }
 
   const { staticDir, publicDir } = resolveStaticAssetsSource();
-  copyDirectory(staticDir, path.join(serverRoot, ".next", "static"));
-  copyDirectory(publicDir, path.join(serverRoot, "public"));
+  const targetStaticDir = path.join(serverRoot, ".next", "static");
+  const targetPublicDir = path.join(serverRoot, "public");
+
+  if (app.isPackaged) {
+    if (!existsSync(targetStaticDir)) {
+      throw new Error(`Missing packaged static assets: ${targetStaticDir}`);
+    }
+    if (!existsSync(targetPublicDir)) {
+      throw new Error(`Missing packaged public assets: ${targetPublicDir}`);
+    }
+  } else {
+    copyDirectory(staticDir, targetStaticDir);
+    copyDirectory(publicDir, targetPublicDir);
+  }
 
   const port = await allocatePort();
   const url = `http://127.0.0.1:${port}`;
@@ -81,6 +94,14 @@ export async function startFrontendServer(): Promise<ServerHandle> {
       HOSTNAME: "127.0.0.1",
       NEXT_TELEMETRY_DISABLED: "1",
       VLLM_STUDIO_DATA_DIR: DESKTOP_CONFIG.userDataDir,
+      // In packaged Electron, process.cwd() is "/" — pi-runtime.resolveDefaultAgentCwd
+      // does the right thing (prefers the most-recently-added project, falls back
+      // to $HOME) when this env is empty, so leave it unset unless the operator
+      // explicitly supplied one.
+      VLLM_STUDIO_AGENT_CWD: process.env.VLLM_STUDIO_AGENT_CWD || app.getPath("home"),
+      // Expose the embedded server's own URL so the pi browser extension can
+      // call back into /api/agent/browser/*.
+      VLLM_STUDIO_FRONTEND_BASE: url,
     },
   });
 

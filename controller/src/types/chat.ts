@@ -42,6 +42,11 @@ export type ChatMessage = Record<string, unknown> & {
   request_tools_tokens: number | null;
   request_total_input_tokens: number | null;
   request_completion_tokens: number | null;
+  cache_read_tokens: number | null;
+  cache_write_tokens: number | null;
+  thinking_tokens: number | null;
+  provider_model_id: string | null;
+  cost_json: Record<string, number> | null;
   created_at: string;
 };
 
@@ -53,6 +58,17 @@ export type ChatUsage = {
   prompt_tokens: number;
   completion_tokens: number;
   total_tokens: number;
+  cache_read_tokens: number;
+  cache_write_tokens: number;
+  thinking_tokens: number;
+  estimated_cost: number | undefined;
+  cost_details: Record<string, number> | undefined;
+};
+
+export type ModelPricing = {
+  model_id: string;
+  provider: string | null;
+  pricing_json: Record<string, number>;
 };
 
 export type ChatRun = Record<string, unknown> & {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import type { GpuInfo } from "../lifecycle/types";
+import type { GpuInfo } from "../models/types";
 import { deriveRecommendationVramGb } from "./routes";
 
 const gpu = (overrides: Partial<GpuInfo>): GpuInfo => ({

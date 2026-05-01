@@ -241,23 +241,5 @@ export const createOpenApiSpec = (context: AppContext): Record<string, unknown> 
         },
       },
     },
-    "/chats": {
-      get: {
-        summary: "List chat sessions",
-        responses: {
-          "200": {
-            description: "Chat list",
-          },
-        },
-      },
-      post: {
-        summary: "Create chat session",
-        responses: {
-          "201": {
-            description: "Chat created",
-          },
-        },
-      },
-    },
   },
 });

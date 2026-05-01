@@ -4,6 +4,13 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import api from "@/lib/api";
 import type { PeakMetrics, SortDirection, SortField, UsageStats } from "@/lib/types";
+import { normalizeUsageStats } from "../lib/normalize-usage-stats";
+
+function normalizePeakNumber(value: unknown): number | null {
+  if (value === null || value === undefined || value === "") return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
 
 export function useUsage() {
   const [stats, setStats] = useState<UsageStats | null>(null);
@@ -19,12 +26,21 @@ export function useUsage() {
       setLoading(true);
       setError(null);
       const [usageData, peakData] = await Promise.all([api.getUsageStats(), api.getPeakMetrics()]);
-      setStats(usageData);
+      setStats(normalizeUsageStats(usageData));
 
-      if (peakData.metrics) {
+      if (Array.isArray(peakData.metrics)) {
         const metricsMap = new Map<string, PeakMetrics>();
         for (const metric of peakData.metrics) {
-          metricsMap.set(metric.model_id, metric);
+          const modelId = typeof metric.model_id === "string" ? metric.model_id : "";
+          if (!modelId) continue;
+          metricsMap.set(modelId, {
+            model_id: modelId,
+            prefill_tps: normalizePeakNumber(metric.prefill_tps),
+            generation_tps: normalizePeakNumber(metric.generation_tps),
+            ttft_ms: normalizePeakNumber(metric.ttft_ms),
+            total_tokens: normalizePeakNumber(metric.total_tokens) ?? 0,
+            total_requests: normalizePeakNumber(metric.total_requests) ?? 0,
+          });
         }
         setPeakMetrics(metricsMap);
       }

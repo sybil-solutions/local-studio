@@ -13,13 +13,11 @@ interface StatusSectionProps {
   isConnected: boolean;
   platformKind?: RuntimePlatformKind | null;
   inferencePort?: number;
-  onNavigateChat: () => void;
   onNavigateLogs: () => void;
   onBenchmark: () => void;
   benchmarking: boolean;
-  onStop: () => void;
   recipes?: RecipeWithStatus[];
-  launching?: boolean;
+  lifecycleStatus?: "idle" | "starting" | "ready" | "error";
   onLaunch?: (recipeId: string) => Promise<void>;
   onNewRecipe?: () => void;
   onViewAll?: () => void;
@@ -33,13 +31,11 @@ export function StatusSection({
   isConnected,
   platformKind,
   inferencePort,
-  onNavigateChat,
   onNavigateLogs,
   onBenchmark,
   benchmarking,
-  onStop,
   recipes,
-  launching,
+  lifecycleStatus,
   onLaunch,
   onNewRecipe,
   onViewAll,
@@ -83,89 +79,94 @@ export function StatusSection({
 
   return (
     <div className="border border-(--border) bg-(--surface)">
-      {/* Single-line header bar */}
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-(--border) px-3 py-2">
-        <StatusDot running={isRunning} />
-        <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-(--dim)">
-          {isRunning ? "Active" : "Standby"}
-        </span>
-        <span
-          className="min-w-0 flex-1 truncate font-mono text-xs text-(--fg)"
-          title={modelName || ""}
-        >
-          {modelName || "No model loaded"}
-        </span>
-        {!isConnected && <Tag tone="err">offline</Tag>}
-        {backend && <Tag>{backend}</Tag>}
-        {platformKind && <Tag>{platformKind}</Tag>}
-        {inferencePort && (
-          <span className="font-mono text-[10px] text-(--dim)">:{inferencePort}</span>
-        )}
+      {/* Stable command header. Text uses sans; figures stay mono. */}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-(--border) px-3 py-2.5">
+        <div className="flex min-w-[16rem] flex-1 items-center gap-2.5">
+          <StatusDot running={isRunning} />
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] font-medium uppercase tracking-[0.11em] text-(--dim)">
+                {isRunning ? "Active" : "Standby"}
+              </span>
+              {!isConnected && <Tag tone="err">offline</Tag>}
+              {backend && <Tag>{backend}</Tag>}
+              {platformKind && <Tag>{platformKind}</Tag>}
+              {inferencePort && (
+                <span className="font-mono text-[10px] tabular-nums text-(--dim)">
+                  :{inferencePort}
+                </span>
+              )}
+            </div>
+            <div
+              className="mt-0.5 truncate text-sm font-semibold leading-5 text-(--fg)"
+              title={modelName || ""}
+            >
+              {modelName || "No model loaded"}
+            </div>
+          </div>
+        </div>
 
-        {recipes && onLaunch && (
-          <ModelsDropdown
-            recipes={recipes}
-            currentRecipeId={currentRecipe?.id}
-            launching={!!launching}
-            onLaunch={onLaunch}
-            onNewRecipe={onNewRecipe}
-            onViewAll={onViewAll}
-          />
-        )}
-
-        {isRunning && (
-          <div className="flex items-center gap-1">
-            <ActionBtn label="Chat" onClick={onNavigateChat} />
-            <ActionBtn label="Logs" onClick={onNavigateLogs} />
+        <div className="flex items-center gap-1.5">
+          {recipes && onLaunch && (
+            <ModelsDropdown
+              recipes={recipes}
+              currentRecipeId={currentRecipe?.id}
+              lifecycleStatus={lifecycleStatus ?? "idle"}
+              onLaunch={onLaunch}
+              onNewRecipe={onNewRecipe}
+              onViewAll={onViewAll}
+            />
+          )}
+          <ActionBtn label="Logs" onClick={onNavigateLogs} disabled={!isRunning} />
+          {isRunning ? (
             <ActionBtn
               label={benchmarking ? "Run" : "Bench"}
               onClick={onBenchmark}
               disabled={benchmarking}
             />
-            <ActionBtn label="Stop" onClick={onStop} danger />
-          </div>
-        )}
+          ) : (
+            <ActionBtn label="Bench" onClick={onBenchmark} disabled />
+          )}
+        </div>
       </div>
 
-      {/* Flat stat strip — one row, no nested cards */}
-      {isRunning && (
-        <div className="grid grid-cols-3 divide-x divide-(--border) xl:grid-cols-6">
-          <Stat
-            label="Decode"
-            value={genTps.toFixed(1)}
-            unit="t/s"
-            detail={peakGenTps > 0 ? `max ${peakGenTps.toFixed(1)}` : undefined}
-          />
-          <Stat
-            label="Prefill"
-            value={prefillTps.toFixed(1)}
-            unit="t/s"
-            detail={peakPrefillTps > 0 ? `max ${peakPrefillTps.toFixed(1)}` : undefined}
-          />
-          <Stat
-            label="TTFT"
-            value={ttftMs > 0 ? ttftMs.toFixed(0) : "—"}
-            unit="ms"
-            detail={peakTtftMs > 0 ? `max ${peakTtftMs.toFixed(0)}ms` : undefined}
-          />
-          <Stat
-            label="Req"
-            value={String(sessions)}
-            unit=""
-            detail={peakReq > 0 ? `max ${peakReq}` : undefined}
-          />
-          <Stat
-            label="VRAM"
-            value={totalMemUsed.toFixed(1)}
-            unit={vramCapacity > 0 ? `/${vramCapacity.toFixed(0)}G` : "G"}
-          />
-          <Stat
-            label="Power"
-            value={String(Math.round(totalPower))}
-            unit={powerLimit > 0 ? `/${Math.round(powerLimit)}W` : "W"}
-          />
-        </div>
-      )}
+      {/* Flat stat strip — always rendered so standby/loading has the same footprint as active. */}
+      <div className="grid grid-cols-3 divide-x divide-(--border) xl:grid-cols-6">
+        <Stat
+          label="Decode"
+          value={isRunning ? genTps.toFixed(1) : "—"}
+          unit={isRunning ? "t/s" : ""}
+          detail={peakGenTps > 0 ? `max ${peakGenTps.toFixed(1)}` : "max —"}
+        />
+        <Stat
+          label="Prefill"
+          value={isRunning ? prefillTps.toFixed(1) : "—"}
+          unit={isRunning ? "t/s" : ""}
+          detail={peakPrefillTps > 0 ? `max ${peakPrefillTps.toFixed(1)}` : "max —"}
+        />
+        <Stat
+          label="TTFT"
+          value={isRunning && ttftMs > 0 ? ttftMs.toFixed(0) : "—"}
+          unit={isRunning && ttftMs > 0 ? "ms" : ""}
+          detail={peakTtftMs > 0 ? `max ${peakTtftMs.toFixed(0)}ms` : "max —"}
+        />
+        <Stat
+          label="Req"
+          value={isRunning ? String(sessions) : "—"}
+          unit=""
+          detail={peakReq > 0 ? `max ${peakReq}` : "max —"}
+        />
+        <Stat
+          label="VRAM"
+          value={totalMemUsed > 0 ? totalMemUsed.toFixed(1) : "—"}
+          unit={vramCapacity > 0 ? `/${vramCapacity.toFixed(0)}G` : ""}
+        />
+        <Stat
+          label="Power"
+          value={totalPower > 0 ? String(Math.round(totalPower)) : "—"}
+          unit={powerLimit > 0 ? `/${Math.round(powerLimit)}W` : ""}
+        />
+      </div>
     </div>
   );
 }
@@ -185,14 +186,14 @@ export function SectionCard({ label, children }: { label: string; children: Reac
 }
 
 function StatusDot({ running }: { running: boolean }) {
-  return <span className={`h-1.5 w-1.5 ${running ? "bg-(--fg)" : "bg-(--dim)/55"}`} />;
+  return <span className={`h-2 w-2 shrink-0 ${running ? "bg-(--fg)" : "bg-(--dim)/55"}`} />;
 }
 
 function Tag({ tone, children }: { tone?: "err"; children: React.ReactNode }) {
   const cls = tone === "err" ? "border-(--err) text-(--err)" : "border-(--border) text-(--dim)";
   return (
     <span
-      className={`border px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-[0.14em] ${cls}`}
+      className={`border px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-[0.12em] ${cls}`}
     >
       {children}
     </span>
@@ -212,9 +213,9 @@ function ActionBtn({
 }) {
   return (
     <button
-      onClick={onClick}
+      onClick={disabled ? undefined : onClick}
       disabled={disabled}
-      className={`border px-2 py-1 font-mono text-[10px] uppercase tracking-[0.12em] transition-colors disabled:cursor-not-allowed disabled:opacity-30 ${
+      className={`h-7 border px-2.5 font-mono text-[10px] uppercase tracking-[0.1em] transition-colors disabled:cursor-not-allowed disabled:opacity-30 ${
         danger
           ? "border-(--err)/40 text-(--err) hover:bg-(--err)/10"
           : "border-(--border) text-(--dim) hover:bg-(--fg)/5 hover:text-(--fg)"
@@ -237,14 +238,16 @@ function Stat({
   detail?: string;
 }) {
   return (
-    <div className="px-3 py-2">
-      <div className="font-mono text-[9px] uppercase tracking-[0.16em] text-(--dim)">{label}</div>
-      <div className="mt-0.5 font-mono text-sm tabular-nums text-(--fg)">
+    <div className="px-3 py-3">
+      <div className="text-[10px] font-medium uppercase tracking-[0.11em] text-(--dim)">
+        {label}
+      </div>
+      <div className="mt-1 font-mono text-lg font-semibold tabular-nums leading-none text-(--fg)">
         {value}
-        {unit && <span className="ml-1 text-[9px] text-(--dim)">{unit}</span>}
+        {unit && <span className="ml-1 text-[10px] font-normal text-(--dim)">{unit}</span>}
       </div>
       {detail && (
-        <div className="mt-0.5 font-mono text-[9px] tabular-nums text-(--dim)">{detail}</div>
+        <div className="mt-1 font-mono text-[10px] tabular-nums text-(--dim)">{detail}</div>
       )}
     </div>
   );
@@ -261,14 +264,14 @@ function firstPositive(...values: Array<number | null | undefined>): number {
 function ModelsDropdown({
   recipes,
   currentRecipeId,
-  launching,
+  lifecycleStatus,
   onLaunch,
   onNewRecipe,
   onViewAll,
 }: {
   recipes: RecipeWithStatus[];
   currentRecipeId?: string;
-  launching: boolean;
+  lifecycleStatus: "idle" | "starting" | "ready" | "error";
   onLaunch: (id: string) => Promise<void>;
   onNewRecipe?: () => void;
   onViewAll?: () => void;
@@ -296,7 +299,7 @@ function ModelsDropdown({
     <div className="relative" ref={ref}>
       <button
         onClick={() => setOpen((v) => !v)}
-        className="border border-(--border) px-2 py-1 font-mono text-[10px] uppercase tracking-[0.12em] text-(--dim) hover:bg-(--fg)/5 hover:text-(--fg)"
+        className="h-7 border border-(--border) px-2.5 font-mono text-[10px] uppercase tracking-[0.1em] text-(--fg) hover:bg-(--fg)/5"
       >
         Models ▾
       </button>
@@ -328,9 +331,9 @@ function ModelsDropdown({
               <div className="px-3 py-4 font-mono text-xs text-(--dim)">No models</div>
             )}
             {visible.map((r) => {
-              const isCur = r.id === currentRecipeId;
+              const row = { isCurrent: r.id === currentRecipeId };
               const running = r.status === "running";
-              const disabled = launching || running;
+              const disabled = lifecycleStatus === "starting" || row.isCurrent;
               return (
                 <button
                   key={r.id}
@@ -340,12 +343,12 @@ function ModelsDropdown({
                     await onLaunch(r.id);
                   }}
                   className={`flex w-full items-center gap-2 border-b border-(--border)/60 px-2.5 py-1.5 text-left last:border-b-0 ${
-                    isCur ? "bg-(--fg)/8" : "hover:bg-(--fg)/5"
-                  } ${disabled && !running ? "cursor-not-allowed opacity-30" : ""}`}
+                    row.isCurrent ? "bg-(--fg)/8" : "hover:bg-(--fg)/5"
+                  } ${disabled && !row.isCurrent ? "cursor-not-allowed opacity-30" : ""}`}
                 >
                   <span
                     className={`h-3 w-0.5 shrink-0 ${
-                      isCur ? "bg-(--fg)" : running ? "bg-(--fg)/60" : "bg-(--dim)/40"
+                      row.isCurrent ? "bg-(--fg)" : running ? "bg-(--fg)/60" : "bg-(--dim)/40"
                     }`}
                   />
                   <span className="flex-1 truncate font-mono text-xs text-(--fg)" title={r.name}>

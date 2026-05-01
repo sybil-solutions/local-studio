@@ -3,7 +3,7 @@ import { execSync } from "node:child_process";
 import { createAppContext } from "./app-context";
 import type { Logger } from "./core/logger";
 import { createApp } from "./http/app";
-import { startMetricsCollector } from "./modules/lifecycle/metrics/metrics-collector";
+import { startMetricsCollector } from "./modules/system/metrics-collector/metrics-collector";
 
 /**
  * Check if nvidia-smi is accessible (important for GPU monitoring).

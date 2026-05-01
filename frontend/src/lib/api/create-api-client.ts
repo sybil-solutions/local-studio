@@ -1,4 +1,3 @@
-import { createChatsApi } from "./chats";
 import { createApiCore } from "./core";
 import { createJobsApi } from "./jobs";
 import { createLogsApi } from "./logs";
@@ -11,9 +10,9 @@ export function createApiClient(params: { baseUrl: string; useProxy: boolean }) 
   return {
     ...createSystemApi(core),
     ...createRecipesApi(core),
-    ...createChatsApi(core),
     ...createLogsApi(core),
     ...createStudioApi(core),
     ...createJobsApi(core),
+    healthPoll: (timeoutMs?: number) => core.healthPoll(timeoutMs),
   };
 }

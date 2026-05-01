@@ -14,8 +14,8 @@ import {
 import { basename, resolve, sep } from "node:path";
 import { badRequest, notFound } from "../../core/errors";
 import type { AppContext } from "../../types/context";
-import { getGpuInfo } from "../lifecycle/platform/gpu";
-import type { GpuInfo } from "../lifecycle/types";
+import { getGpuInfo } from "../system/platform/gpu";
+import type { GpuInfo } from "../models/types";
 import { discoverModelDirectories, estimateWeightsSizeBytes } from "../models/model-browser";
 import { STUDIO_MODEL_RECOMMENDATIONS } from "./configs";
 import {
@@ -24,7 +24,7 @@ import {
   savePersistedConfig,
   type ProviderConfig,
 } from "../../config/persisted-config";
-import { getVllmRuntimeInfo } from "../lifecycle/runtime/vllm-runtime";
+import { getVllmRuntimeInfo } from "../engines/layers/vllm-runtime";
 
 const getDiskInfo = (
   path: string

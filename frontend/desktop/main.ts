@@ -1,5 +1,4 @@
-import { app, ipcMain, shell, type BrowserWindow } from "electron";
-import { DESKTOP_CONFIG } from "./configs";
+import { app, dialog, ipcMain, shell, type BrowserWindow } from "electron";
 import type { DesktopAppState } from "./types";
 import { log } from "./helpers/logger";
 import { isHttpUrl } from "./helpers/url";
@@ -7,6 +6,7 @@ import { createMainWindow } from "./logic/window-manager";
 import { registerNavigationPolicy } from "./logic/security";
 import { startFrontendServer, stopFrontendServer, type ServerHandle } from "./logic/app-server";
 import { checkForUpdates, getUpdateState, initializeAutoUpdates } from "./logic/update-manager";
+import { addProject, listProjectsWithMeta, removeProject } from "./logic/projects-store";
 
 let appState: DesktopAppState = "starting";
 let mainWindow: BrowserWindow | null = null;
@@ -42,6 +42,39 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle("desktop:get-update-status", async () => getUpdateState());
   ipcMain.handle("desktop:check-for-updates", async () => checkForUpdates(true));
+
+  ipcMain.handle("desktop:open-directory", async () => {
+    const owner = mainWindow ?? undefined;
+    const result = owner
+      ? await dialog.showOpenDialog(owner, { properties: ["openDirectory", "createDirectory"] })
+      : await dialog.showOpenDialog({ properties: ["openDirectory", "createDirectory"] });
+    if (result.canceled) return null;
+    const selected = result.filePaths[0];
+    if (!selected) return null;
+    try {
+      return addProject(selected);
+    } catch (error) {
+      log.error(`Failed to add project from dialog: ${String(error)}`);
+      throw error;
+    }
+  });
+
+  ipcMain.handle("desktop:list-projects", async () => listProjectsWithMeta());
+
+  ipcMain.handle("desktop:add-project", async (_, directoryPath: string) => {
+    if (typeof directoryPath !== "string") {
+      throw new Error("directoryPath must be a string");
+    }
+    return addProject(directoryPath);
+  });
+
+  ipcMain.handle("desktop:remove-project", async (_, id: string) => {
+    if (typeof id !== "string") {
+      throw new Error("id must be a string");
+    }
+    removeProject(id);
+    return { ok: true } as const;
+  });
 }
 
 async function shutdown(): Promise<void> {

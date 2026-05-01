@@ -39,7 +39,7 @@ export class AsyncLock {
   }
 }
 
-/** Bounded async queue with backpressure u2014 drops oldest items when full. */
+/** Bounded async queue with backpressure — drops oldest items when full. */
 export class AsyncQueue<TValue> {
   private readonly capacity: number;
   private readonly items: TValue[] = [];
@@ -48,6 +48,7 @@ export class AsyncQueue<TValue> {
     reject: (error: Error) => void;
   }> = [];
   private closed = false;
+  private evictedCount = 0;
 
   public constructor(capacity: number) {
     this.capacity = capacity;
@@ -67,9 +68,32 @@ export class AsyncQueue<TValue> {
     }
     if (this.items.length >= this.capacity) {
       this.items.shift();
+      this.evictedCount += 1;
     }
     this.items.push(item);
     return true;
+  }
+
+  /** Evict the oldest item from the queue. Returns the evicted item or null. */
+  public evictOldest(): TValue | null {
+    if (this.items.length === 0) return null;
+    this.evictedCount += 1;
+    return this.items.shift() ?? null;
+  }
+
+  /** Number of items evicted due to backpressure since construction. */
+  public get evictions(): number {
+    return this.evictedCount;
+  }
+
+  /** Current number of items waiting in the queue. */
+  public get size(): number {
+    return this.items.length;
+  }
+
+  /** True when the queue is at capacity. */
+  public get isFull(): boolean {
+    return this.items.length >= this.capacity;
   }
 
   public close(): void {

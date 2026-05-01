@@ -19,9 +19,6 @@ describe("controller event routing", () => {
     expect(resolveControllerEventChannel(CONTROLLER_EVENTS.RECIPE_CREATED)).toBe(
       CONTROLLER_BROWSER_EVENT_CHANNEL.recipe,
     );
-    expect(resolveControllerEventChannel(CONTROLLER_EVENTS.CHAT_SESSION_UPDATED)).toBe(
-      CONTROLLER_BROWSER_EVENT_CHANNEL.chat,
-    );
   });
 
   it("dispatches known events and returns true", () => {

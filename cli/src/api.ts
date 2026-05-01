@@ -22,6 +22,10 @@ function resolveBaseUrl(): string {
   return configured.endsWith("/") ? configured.slice(0, -1) : configured;
 }
 
+function resolveApiKey(): string | undefined {
+  return process.env.VLLM_STUDIO_API_KEY?.trim() || undefined;
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
@@ -77,7 +81,10 @@ async function requestJson<T>(
   try {
     response = await fetch(url, {
       method,
-      headers: options.body ? { "Content-Type": "application/json" } : {},
+      headers: {
+        ...(options.body ? { "Content-Type": "application/json" } : {}),
+        ...(resolveApiKey() ? { "X-API-Key": resolveApiKey() } : {}),
+      },
       body: options.body ? JSON.stringify(options.body) : undefined,
     });
   } catch (error) {

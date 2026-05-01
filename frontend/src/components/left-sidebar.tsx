@@ -6,7 +6,6 @@ import {
   BarChart3,
   Database,
   HardDrive,
-  MessageCircle,
   Server,
   Settings,
   Sun,
@@ -18,13 +17,14 @@ import {
 import { useShallow } from "zustand/react/shallow";
 import { useAppStore } from "@/store";
 import { useSidebarStatus } from "@/hooks/use-sidebar-status";
-import { useStopModel } from "@/hooks/use-stop-model";
+import { useModelLifecycle } from "@/hooks/use-model-lifecycle";
+import { ProjectsNavSection } from "@/components/projects-nav-section";
+import { ModelStopConfirm } from "@/components/model-stop-confirm";
 
 const tabs = [
   { href: "/", label: "Status", icon: BarChart3 },
   { href: "/usage", label: "Usage", icon: Database },
   { href: "/recipes", label: "Models", icon: HardDrive },
-  { href: "/chat", label: "Chat", icon: MessageCircle },
   { href: "/logs", label: "Server", icon: Server },
   { href: "/configs", label: "Settings", icon: Settings },
 ];
@@ -59,9 +59,6 @@ function LogoMark() {
 function isRouteActive(pathname: string, href: string): boolean {
   if (href === "/") {
     return pathname === "/" || pathname === "/discover";
-  }
-  if (href === "/chat") {
-    return pathname === "/chat" || pathname.startsWith("/chat/");
   }
   return pathname.startsWith(href);
 }
@@ -120,31 +117,28 @@ export function LeftSidebar({ children }: { children: React.ReactNode }) {
               expanded={isExpanded}
             />
           ))}
+          <ProjectsNavSection expanded={isExpanded} />
         </nav>
 
-        {/* Footer: stop, theme, status */}
-        <div className="flex flex-col border-t border-(--border) py-2 shrink-0">
-          <button
-            onClick={() => setDesktopSidebarPinnedOpen(!desktopSidebarPinnedOpen)}
-            className="h-9 flex items-center gap-3 px-3 text-(--dim) hover:text-(--fg) hover:bg-(--surface) transition-colors"
-            title={isExpanded ? "Collapse sidebar" : "Expand sidebar"}
-          >
-            {isExpanded ? (
-              <PanelLeftClose className="w-4 h-4 shrink-0" />
-            ) : (
-              <PanelLeftOpen className="w-4 h-4 shrink-0" />
-            )}
-            <span
-              className={`text-sm font-medium whitespace-nowrap transition-opacity duration-100 ${
-                isExpanded ? "opacity-100" : "opacity-0"
-              }`}
+        {/* Footer controls */}
+        <div className="border-t border-(--border) p-2 shrink-0">
+          <div className="flex items-center justify-between gap-1">
+            <button
+              onClick={() => setDesktopSidebarPinnedOpen(!desktopSidebarPinnedOpen)}
+              className="flex h-9 w-9 items-center justify-center text-(--dim) transition-colors hover:bg-(--surface) hover:text-(--fg)"
+              title={isExpanded ? "Collapse sidebar" : "Expand sidebar"}
+              aria-label={isExpanded ? "Collapse sidebar" : "Expand sidebar"}
             >
-              {isExpanded ? "Collapse" : "Expand"}
-            </span>
-          </button>
-          <StopButtonDesktop expanded={isExpanded} />
-          <ThemeToggleDesktop expanded={isExpanded} />
-          <StatusRowDesktop expanded={isExpanded} />
+              {isExpanded ? (
+                <PanelLeftClose className="h-4 w-4" />
+              ) : (
+                <PanelLeftOpen className="h-4 w-4" />
+              )}
+            </button>
+            <StopButtonDesktop />
+            <ThemeToggleDesktop />
+            <StatusRowDesktop />
+          </div>
         </div>
       </aside>
 
@@ -211,7 +205,7 @@ function NavItemDesktop({
         active
           ? "bg-(--surface) text-(--fg)"
           : "text-(--dim) hover:text-(--fg) hover:bg-(--surface)"
-      }`}
+      } shrink-0`}
     >
       <Icon className="w-4 h-4 shrink-0" />
       <span
@@ -225,7 +219,7 @@ function NavItemDesktop({
   );
 }
 
-function ThemeToggleDesktop({ expanded }: { expanded: boolean }) {
+function ThemeToggleDesktop() {
   const { themeId, setThemeId } = useAppStore(
     useShallow((s) => ({ themeId: s.themeId, setThemeId: s.setThemeId })),
   );
@@ -235,60 +229,47 @@ function ThemeToggleDesktop({ expanded }: { expanded: boolean }) {
   return (
     <button
       onClick={() => setThemeId(isDark ? "omlx-light" : "omlx-dark")}
-      className="h-9 flex items-center gap-3 px-3 text-(--dim) hover:text-(--fg) hover:bg-(--surface) transition-colors"
+      className="flex h-9 w-9 items-center justify-center text-(--dim) transition-colors hover:bg-(--surface) hover:text-(--fg)"
       title={label}
+      aria-label={label}
     >
-      <Icon className="w-4 h-4 shrink-0" />
-      <span
-        className={`text-sm font-medium whitespace-nowrap transition-opacity duration-100 ${
-          expanded ? "opacity-100" : "opacity-0"
-        }`}
-      >
-        {label}
-      </span>
+      <Icon className="h-4 w-4" />
     </button>
   );
 }
 
-function StopButtonDesktop({ expanded }: { expanded: boolean }) {
+function StopButtonDesktop() {
   const status = useSidebarStatus();
-  const stop = useStopModel();
-  if (!status.inferenceOnline) return null;
+  const { stop } = useModelLifecycle();
+  if (!status.inferenceOnline) {
+    return <div className="h-9 w-9" />;
+  }
   return (
-    <button
-      onClick={stop}
-      className="h-9 flex items-center gap-3 px-3 text-(--err) hover:bg-(--err)/10 transition-colors"
-      title="Stop model"
-    >
-      <Square className="w-4 h-4 shrink-0" fill="currentColor" />
-      <span
-        className={`text-sm font-medium whitespace-nowrap transition-opacity duration-100 ${
-          expanded ? "opacity-100" : "opacity-0"
-        }`}
-      >
-        Stop model
-      </span>
-    </button>
+    <ModelStopConfirm
+      onStop={stop}
+      trigger={({ open, stopping }) => (
+        <button
+          onClick={open}
+          disabled={stopping}
+          className="flex h-9 w-9 items-center justify-center text-(--err) transition-colors hover:bg-(--err)/10 disabled:opacity-40"
+          title="Stop model"
+          aria-label="Stop model"
+        >
+          <Square className="h-4 w-4" fill="currentColor" />
+        </button>
+      )}
+    />
   );
 }
 
-function StatusRowDesktop({ expanded }: { expanded: boolean }) {
+function StatusRowDesktop() {
   const status = useSidebarStatus();
   const color = status.inferenceOnline ? "bg-(--fg)" : status.online ? "bg-(--dim)" : "bg-(--err)";
   const label = status.inferenceOnline ? "inference" : status.online ? "controller" : "offline";
 
   return (
-    <div className="h-9 flex items-center gap-3 px-3" title={label}>
-      <div className="w-4 h-4 flex items-center justify-center shrink-0">
-        <div className={`h-1.5 w-1.5 ${color}`} />
-      </div>
-      <span
-        className={`text-xs font-medium text-(--dim) truncate transition-opacity duration-100 ${
-          expanded ? "opacity-100" : "opacity-0"
-        }`}
-      >
-        {label}
-      </span>
+    <div className="flex h-9 w-9 items-center justify-center" title={label} aria-label={label}>
+      <div className={`h-1.5 w-1.5 ${color}`} />
     </div>
   );
 }

@@ -56,7 +56,12 @@ export function createStudioApi(core: ApiCore) {
       ignore_patterns?: string[];
       hf_token?: string;
     }): Promise<{ download: ModelDownload }> =>
-      core.request("/studio/downloads", { method: "POST", body: JSON.stringify(params) }),
+      core.request("/studio/downloads", {
+        method: "POST",
+        body: JSON.stringify(params),
+        timeout: 120_000,
+        retries: 0,
+      }),
 
     pauseDownload: (id: string): Promise<{ download: ModelDownload }> =>
       core.request(`/studio/downloads/${encodePathSegments(id)}/pause`, { method: "POST" }),
@@ -100,7 +105,13 @@ export function createStudioApi(core: ApiCore) {
       enabled?: boolean;
     }): Promise<{
       success: boolean;
-      provider: { id: string; name: string; base_url: string; enabled: boolean; has_api_key: boolean };
+      provider: {
+        id: string;
+        name: string;
+        base_url: string;
+        enabled: boolean;
+        has_api_key: boolean;
+      };
     }> =>
       core.request("/studio/providers", {
         method: "POST",
@@ -117,7 +128,13 @@ export function createStudioApi(core: ApiCore) {
       },
     ): Promise<{
       success: boolean;
-      provider: { id: string; name: string; base_url: string; enabled: boolean; has_api_key: boolean };
+      provider: {
+        id: string;
+        name: string;
+        base_url: string;
+        enabled: boolean;
+        has_api_key: boolean;
+      };
     }> =>
       core.request(`/studio/providers/${encodePathSegments(id)}`, {
         method: "PUT",

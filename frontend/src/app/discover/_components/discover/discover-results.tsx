@@ -17,6 +17,7 @@ export function DiscoverResults({
   hasMore,
   isModelLocal,
   getDownloadForModel,
+  startingModelIds,
   onCopyModelId,
   onRefresh,
   onLoadMore,
@@ -33,6 +34,7 @@ export function DiscoverResults({
   hasMore: boolean;
   isModelLocal: (modelId: string) => boolean;
   getDownloadForModel: (modelId: string) => ModelDownload | null;
+  startingModelIds: Set<string>;
   onCopyModelId: (modelId: string) => void;
   onRefresh: () => void;
   onLoadMore: () => void;
@@ -148,6 +150,7 @@ export function DiscoverResults({
                     copied={copiedId === group.lead.modelId}
                     isLocal={isModelLocal(group.lead.modelId)}
                     activeDownload={getDownloadForModel(group.lead.modelId)}
+                    isStarting={startingModelIds.has(group.lead.modelId)}
                     onCopyModelId={onCopyModelId}
                     onStartDownload={onStartDownload}
                     onPauseDownload={onPauseDownload}
@@ -159,20 +162,23 @@ export function DiscoverResults({
                     }
                   />
                   {expanded &&
-                    group.variants.slice(1).map((model) => (
-                      <ModelRow
-                        key={model._id}
-                        model={model}
-                        copied={copiedId === model.modelId}
-                        isLocal={isModelLocal(model.modelId)}
-                        activeDownload={getDownloadForModel(model.modelId)}
-                        onCopyModelId={onCopyModelId}
-                        onStartDownload={onStartDownload}
-                        onPauseDownload={onPauseDownload}
-                        onResumeDownload={onResumeDownload}
-                        child
-                      />
-                    ))}
+                    group.variants
+                      .slice(1)
+                      .map((model) => (
+                        <ModelRow
+                          key={model._id}
+                          model={model}
+                          copied={copiedId === model.modelId}
+                          isLocal={isModelLocal(model.modelId)}
+                          activeDownload={getDownloadForModel(model.modelId)}
+                          isStarting={startingModelIds.has(model.modelId)}
+                          onCopyModelId={onCopyModelId}
+                          onStartDownload={onStartDownload}
+                          onPauseDownload={onPauseDownload}
+                          onResumeDownload={onResumeDownload}
+                          child
+                        />
+                      ))}
                 </Fragment>
               );
             })}

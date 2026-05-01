@@ -21,17 +21,13 @@ Access these in scripts via environment variables or load them from `.env.local`
 ### Production — Remote GPU Server
 
 - **Deploy**: `./scripts/deploy-remote.sh` (or `controller` / `frontend` / `status`)
-- Controller (bun :8080) and frontend (next :3000) run natively; postgres + litellm in Docker
+- Controller (bun :8080) and frontend (next :3000) run natively.
 
-### Staging — Local Docker (macOS)
+### Local Mac Dev / Verification
 
-- **Image**: `vllm-studio-frontend`
-- **Container**: `vllm-studio-staging`
-- **URL**: `http://localhost:3000`
-- **Build**: `docker build -f frontend/Dockerfile -t vllm-studio-frontend .` (from repo root)
-- **Run**: `docker run -d --name vllm-studio-staging -p 3000:3000 -e BACKEND_URL=http://host.docker.internal:8080 vllm-studio-frontend`
-- **Rebuild+restart**: `docker rm -f vllm-studio-staging && docker build -f frontend/Dockerfile -t vllm-studio-frontend . && docker run -d --name vllm-studio-staging -p 3000:3000 -e BACKEND_URL=http://host.docker.internal:8080 vllm-studio-frontend`
-- The frontend runs as a **prebuilt standalone Next.js app** inside Docker (not dev mode). The Dockerfile does `npm run build` then runs `node frontend/server.js`.
+- **Agent surface**: `http://localhost:3001/agent`
+- **Run**: `cd frontend && PORT=3001 npm run dev`
+- Use this local server for fast browser verification unless the user explicitly asks for a different port or deployment target.
 
 ## Deployment Workflow
 
@@ -40,12 +36,11 @@ After finishing a feature, you **MUST** complete ALL deployment steps. This is n
 After finishing a feature, follow this checklist:
 
 1. **Build check**: `cd frontend && npx next build`
-2. **Docker staging**: `docker rm -f vllm-studio-staging && docker build --no-cache -f frontend/Dockerfile -t vllm-studio-frontend . && docker run -d --name vllm-studio-staging -p 3000:3000 -e BACKEND_URL=http://host.docker.internal:8080 vllm-studio-frontend`
-3. **Verify locally**: `curl -s -o /dev/null -w "%{http_code}" http://localhost:3000` (should be 200)
-4. **Remote deploy** (if needed): `./scripts/deploy-remote.sh` (syncs, builds, restarts)
-5. **Verify remote**: check production URLs (see `.env.local` for REMOTE_HOST)
-6. **Desktop Electron update (REQUIRED - ALWAYS DO THIS)**: `cd frontend && npm run desktop:dist`
-7. **Update installed Desktop app** (REQUIRED - ALWAYS DO THIS): See [Installed Desktop App Update](#installed-desktop-app-update-required) section below
+2. **Verify local app**: `curl -s -o /dev/null -w "%{http_code}" http://localhost:3001/agent` (should be 200 when the local dev server is running)
+3. **Remote deploy** (if needed): `./scripts/deploy-remote.sh` (syncs, builds, restarts)
+4. **Verify remote**: check production URLs (see `.env.local` for REMOTE_HOST)
+5. **Desktop Electron update (REQUIRED - ALWAYS DO THIS)**: `cd frontend && npm run desktop:dist`
+6. **Update installed Desktop app** (REQUIRED - ALWAYS DO THIS): See [Installed Desktop App Update](#installed-desktop-app-update-required) section below
 
 ### Installed Desktop App Update (Required)
 

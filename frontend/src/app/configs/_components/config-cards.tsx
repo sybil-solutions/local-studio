@@ -1,7 +1,7 @@
 // CRITICAL
 import { Cpu, Database, FolderOpen, Globe, Key, Server, Settings } from "lucide-react";
 import type { ConfigData } from "@/lib/types";
-import { ConfigRow } from "@/components/shared";
+import { ConfigRow } from "@/ui";
 
 export function ConfigCards({ data }: { data: ConfigData }) {
   const formatRuntime = (

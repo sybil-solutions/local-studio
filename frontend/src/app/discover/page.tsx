@@ -43,6 +43,8 @@ export default function DiscoverPage() {
   const {
     downloads,
     downloadsByModel,
+    startingModelIds,
+    error: downloadError,
     startDownload,
     pauseDownload,
     resumeDownload,
@@ -100,11 +102,21 @@ export default function DiscoverPage() {
       onRefresh={refreshModels}
       isModelLocal={isModelLocal}
       downloads={downloads}
+      downloadError={downloadError}
+      startingModelIds={startingModelIds}
       getDownloadForModel={getDownloadForModel}
-      onStartDownload={async (params) => { await startDownload(params); }}
-      onPauseDownload={async (id) => { await pauseDownload(id); }}
-      onResumeDownload={async (id) => { await resumeDownload(id); }}
-      onCancelDownload={async (id) => { await cancelDownload(id); }}
+      onStartDownload={async (params) => {
+        await startDownload(params);
+      }}
+      onPauseDownload={async (id) => {
+        await pauseDownload(id);
+      }}
+      onResumeDownload={async (id) => {
+        await resumeDownload(id);
+      }}
+      onCancelDownload={async (id) => {
+        await cancelDownload(id);
+      }}
     />
   );
 }

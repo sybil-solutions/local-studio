@@ -6,3 +6,4 @@ export {
   UiModal,
   UiModalHeader,
 } from "./primitives";
+export { IconButton, Button } from "./buttons";

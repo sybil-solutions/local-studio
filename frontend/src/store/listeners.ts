@@ -4,16 +4,17 @@
  */
 import { useAppStore } from "./app-store";
 
+let lastWasMobile = false;
+
 if (typeof window !== "undefined") {
-  // --- Resize → isMobile + sidebar.collapsed ---
+  // --- Resize → sidebar.collapsed ---
   const onResize = () => {
     const mobile = window.innerWidth < 768;
-    const state = useAppStore.getState();
-    if (state.isMobile !== mobile) {
-      useAppStore.setState({ isMobile: mobile });
+    if (mobile !== lastWasMobile) {
+      lastWasMobile = mobile;
     }
-    if (mobile && !state.sidebar.collapsed) {
-      state.setSidebarCollapsed(true);
+    if (mobile && !useAppStore.getState().sidebar.collapsed) {
+      useAppStore.getState().setSidebarCollapsed(true);
     }
   };
   window.addEventListener("resize", onResize);

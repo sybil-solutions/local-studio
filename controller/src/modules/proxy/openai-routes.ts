@@ -1,10 +1,10 @@
 // CRITICAL
 import type { Hono } from "hono";
 import { HttpStatus, notFound, serviceUnavailable } from "../../core/errors";
-import { isRecipeRunning } from "../lifecycle/recipes/recipe-matching";
+import { isRecipeRunning } from "../models/recipes/recipe-matching";
 import { buildSseHeaders } from "../../http/sse";
 import type { AppContext } from "../../types/context";
-import type { ProcessInfo, Recipe } from "../lifecycle/types";
+import type { ProcessInfo, Recipe } from "../models/types";
 import { buildInferenceUrl } from "../../services/inference/inference-client";
 import {
   DEFAULT_CHAT_PROVIDER,
@@ -12,13 +12,80 @@ import {
   resolveProviderConfig,
 } from "../../services/provider-routing";
 import {
-  createToolCallStream,
+  normalizeChatMessageContentParts,
+  normalizeToolRequest,
+} from "./content-normalizer";
+import {
   normalizeReasoningAndContentInMessage,
   normalizeToolCallsInMessage,
-  normalizeToolRequest,
-} from "./tool-call-core";
+} from "./reasoning-extractor";
+import { createToolCallStream } from "./tool-call-stream";
+
+type OpenAIUsage = Record<string, number>;
+
+export const ensureStreamingUsageIncluded = (payload: Record<string, unknown>): boolean => {
+  if (!Boolean(payload["stream"])) return false;
+  const existingStreamOptions =
+    payload["stream_options"] &&
+    typeof payload["stream_options"] === "object" &&
+    !Array.isArray(payload["stream_options"])
+      ? (payload["stream_options"] as Record<string, unknown>)
+      : {};
+  if (existingStreamOptions["include_usage"] === true) return false;
+  payload["stream_options"] = {
+    ...existingStreamOptions,
+    include_usage: true,
+  };
+  return true;
+};
 
 export const registerOpenAIRoutes = (app: Hono, context: AppContext): void => {
+  const extractSessionId = (
+    parsedBody: Record<string, unknown>,
+    header: (name: string) => string | undefined
+  ): string | null => {
+    const fromHeader =
+      header("x-vllm-session-id") ??
+      header("x-session-id") ??
+      header("x-chat-session-id") ??
+      header("openai-conversation-id");
+    if (fromHeader?.trim()) return fromHeader.trim();
+
+    const direct = parsedBody["session_id"] ?? parsedBody["sessionId"] ?? parsedBody["chat_id"];
+    if (typeof direct === "string" && direct.trim()) return direct.trim();
+
+    const metadata = parsedBody["metadata"];
+    if (metadata && typeof metadata === "object" && !Array.isArray(metadata)) {
+      const record = metadata as Record<string, unknown>;
+      const fromMetadata = record["session_id"] ?? record["sessionId"] ?? record["chat_id"];
+      if (typeof fromMetadata === "string" && fromMetadata.trim()) return fromMetadata.trim();
+    }
+
+    return null;
+  };
+
+  const attachSessionUsage = (
+    result: Record<string, unknown>,
+    sessionId: string | null,
+    usage: OpenAIUsage | undefined
+  ): void => {
+    if (!sessionId) return;
+
+    const promptTokens = usage?.["prompt_tokens"] ?? 0;
+    const completionTokens = usage?.["completion_tokens"] ?? 0;
+    const reasoningTokens = usage?.["reasoning_tokens"] ?? 0;
+
+    result["session_id"] = sessionId;
+    result["session_usage"] = {
+      prompt_tokens: promptTokens,
+      completion_tokens: completionTokens,
+      total_tokens: promptTokens + completionTokens,
+      current_prompt_tokens: promptTokens,
+      current_completion_tokens: completionTokens,
+      current_reasoning_tokens: typeof reasoningTokens === "number" ? reasoningTokens : 0,
+    };
+  };
+
   const findRecipeByModel = (modelName: string): Recipe | null => {
     const lower = modelName.toLowerCase();
     for (const recipe of context.stores.recipeStore.list()) {
@@ -50,7 +117,7 @@ export const registerOpenAIRoutes = (app: Hono, context: AppContext): void => {
   ): Promise<void> => {
     if (current && !isRecipeRunning(recipe, current, { allowEitherPathContains: true })) {
       if (policy === "switch_on_request") {
-        const switchResult = await context.lifecycleCoordinator.ensureActive(recipe, {
+        const switchResult = await context.engineService.ensureActive(recipe, {
           force_evict: false,
         });
         if (switchResult.error) {
@@ -60,7 +127,7 @@ export const registerOpenAIRoutes = (app: Hono, context: AppContext): void => {
       return;
     }
 
-    const switchResult = await context.lifecycleCoordinator.ensureActive(recipe, {
+    const switchResult = await context.engineService.ensureActive(recipe, {
       force_evict: false,
     });
     if (switchResult.error) {
@@ -110,11 +177,16 @@ export const registerOpenAIRoutes = (app: Hono, context: AppContext): void => {
     let matchedRecipe: Recipe | null = null;
     let isStreaming = false;
     let bodyChanged = false;
+    let sessionId: string | null = null;
 
     try {
       const bodyText = new TextDecoder().decode(bodyBuffer);
       parsed = JSON.parse(bodyText) as Record<string, unknown>;
+      sessionId = extractSessionId(parsed, (name) => ctx.req.header(name));
       normalizeToolRequest(parsed);
+      if (normalizeChatMessageContentParts(parsed)) {
+        bodyChanged = true;
+      }
       if (typeof parsed["model"] === "string") {
         requestedModel = parsed["model"];
         matchedRecipe = findRecipeByModel(requestedModel);
@@ -131,6 +203,9 @@ export const registerOpenAIRoutes = (app: Hono, context: AppContext): void => {
         bodyChanged = true;
       }
       isStreaming = Boolean(parsed["stream"]);
+      if (ensureStreamingUsageIncluded(parsed)) {
+        bodyChanged = true;
+      }
     } catch {
       throw new HttpStatus(400, "Invalid JSON body");
     }
@@ -161,7 +236,9 @@ export const registerOpenAIRoutes = (app: Hono, context: AppContext): void => {
     }
 
     if (matchedRecipe) {
-      const current = await context.processManager.findInferenceProcess(context.config.inference_port);
+      const current = await context.processManager.findInferenceProcess(
+        context.config.inference_port
+      );
       const policy = context.config.openai_model_activation_policy ?? "load_if_idle";
       const isMismatchedActive = Boolean(
         current && !isRecipeRunning(matchedRecipe, current, { allowEitherPathContains: true })
@@ -205,11 +282,11 @@ export const registerOpenAIRoutes = (app: Hono, context: AppContext): void => {
           body: finalBody,
           signal: clientSignal,
         });
-      } catch (err) {
+      } catch (error) {
         if (clientSignal.aborted) {
           return ctx.body(null, { status: 499 });
         }
-        throw err;
+        throw error;
       }
       let result: Record<string, unknown>;
       try {
@@ -223,7 +300,7 @@ export const registerOpenAIRoutes = (app: Hono, context: AppContext): void => {
         return ctx.body(null, { status: response.status });
       }
 
-      const usage = result["usage"] as Record<string, number> | undefined;
+      const usage = result["usage"] as OpenAIUsage | undefined;
       if (usage) {
         const promptTokens = usage["prompt_tokens"] ?? 0;
         const completionTokens = usage["completion_tokens"] ?? 0;
@@ -239,6 +316,8 @@ export const registerOpenAIRoutes = (app: Hono, context: AppContext): void => {
           context.stores.lifetimeMetricsStore.addRequests(1);
         }
       }
+
+      attachSessionUsage(result, sessionId, usage);
 
       const choices = result["choices"];
       if (Array.isArray(choices)) {
@@ -264,11 +343,11 @@ export const registerOpenAIRoutes = (app: Hono, context: AppContext): void => {
         body: finalBody,
         signal: clientSignal,
       });
-    } catch (err) {
+    } catch (error) {
       if (clientSignal.aborted) {
         return ctx.body(null, { status: 499 });
       }
-      throw err;
+      throw error;
     }
     if (!upstreamResponse.ok) {
       const errorText = await upstreamResponse.text();
@@ -283,9 +362,7 @@ export const registerOpenAIRoutes = (app: Hono, context: AppContext): void => {
     const reader = upstreamResponse.body?.getReader();
     if (!reader) {
       throw serviceUnavailable(
-        providerRouting
-          ? `${requestProvider} backend unavailable`
-          : "Inference backend unavailable"
+        providerRouting ? `${requestProvider} backend unavailable` : "Inference backend unavailable"
       );
     }
 

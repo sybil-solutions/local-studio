@@ -14,10 +14,11 @@ export function createMainWindow(appUrl: string): BrowserWindow {
     title: DESKTOP_CONFIG.appName,
     autoHideMenuBar: true,
     webPreferences: {
-      preload: path.join(__dirname, "preload.js"),
+      preload: path.join(__dirname, "../preload.js"),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
+      webviewTag: true,
       webSecurity: true,
       devTools: !process.env.VLLM_STUDIO_DESKTOP_DISABLE_DEVTOOLS,
       allowRunningInsecureContent: false,

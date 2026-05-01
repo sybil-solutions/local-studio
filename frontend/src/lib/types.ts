@@ -4,10 +4,6 @@
  * This file is intentionally kept small; types live in `src/lib/types/*`.
  */
 
-export type * from "./types/chat/agent";
-export type * from "./types/chat/artifacts";
-export type * from "./types/chat/chat";
-
 export type * from "./types/recipes/downloads";
 export type * from "./types/recipes/launch";
 export type * from "./types/recipes/models";

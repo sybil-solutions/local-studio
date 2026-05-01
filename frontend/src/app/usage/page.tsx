@@ -1,7 +1,7 @@
 // CRITICAL
 "use client";
 
-import { RefreshButton, PageState } from "@/components/shared";
+import { RefreshButton, PageState } from "@/ui";
 import { DailyUsageChart } from "./_components/daily-usage-chart";
 import { ModelPerformanceTable } from "./_components/model-performance-table";
 import { PerformanceDetails } from "./_components/performance-details";
@@ -9,63 +9,7 @@ import { SecondaryMetrics } from "./_components/secondary-metrics";
 import { OverviewMetrics } from "./_components/overview-metrics";
 import { useUsage } from "./hooks/use-usage";
 import { formatNumber } from "@/lib/formatters";
-import type { UsageStats } from "@/lib/types";
-
-function normalizeStats(s: UsageStats): UsageStats {
-  const empty = <T extends object>(defaults: T, value: Partial<T> | undefined): T => ({
-    ...defaults,
-    ...(value ?? {}),
-  });
-  return {
-    ...s,
-    totals: empty(
-      {
-        total_tokens: 0,
-        prompt_tokens: 0,
-        completion_tokens: 0,
-        total_requests: 0,
-        successful_requests: 0,
-        failed_requests: 0,
-        success_rate: 0,
-        unique_sessions: 0,
-        unique_users: 0,
-      },
-      s.totals,
-    ),
-    latency: empty({ avg_ms: 0, p50_ms: 0, p95_ms: 0, p99_ms: 0, min_ms: 0, max_ms: 0 }, s.latency),
-    ttft: empty({ avg_ms: 0, p50_ms: 0, p95_ms: 0, p99_ms: 0 }, s.ttft),
-    tokens_per_request: empty(
-      { avg: 0, avg_prompt: 0, avg_completion: 0, max: 0, p50: 0, p95: 0 },
-      s.tokens_per_request,
-    ),
-    cache: empty({ hits: 0, misses: 0, hit_tokens: 0, miss_tokens: 0, hit_rate: 0 }, s.cache),
-    week_over_week: empty(
-      {
-        this_week: { requests: 0, tokens: 0, successful: 0 },
-        last_week: { requests: 0, tokens: 0, successful: 0 },
-        change_pct: { requests: null as number | null, tokens: null as number | null },
-      },
-      s.week_over_week,
-    ),
-    recent_activity: empty(
-      {
-        last_hour_requests: 0,
-        last_24h_requests: 0,
-        prev_24h_requests: 0,
-        last_24h_tokens: 0,
-        change_24h_pct: null as number | null,
-      },
-      s.recent_activity,
-    ),
-    peak_days: s.peak_days ?? [],
-    peak_hours: s.peak_hours ?? [],
-    by_model: s.by_model ?? [],
-    daily: s.daily ?? [],
-    daily_by_model: s.daily_by_model ?? [],
-    hourly_pattern: s.hourly_pattern ?? [],
-  };
-}
-
+import { normalizeUsageStats } from "./lib/normalize-usage-stats";
 export default function UsagePage() {
   const {
     stats,
@@ -96,7 +40,7 @@ export default function UsagePage() {
 
   // Defensive: ensure every nested field used by child components exists,
   // so a partial backend response doesn't crash the page.
-  const safeStats = normalizeStats(stats);
+  const safeStats = normalizeUsageStats(stats);
 
   return (
     <div className="min-h-full overflow-y-auto bg-(--bg) text-(--fg)">

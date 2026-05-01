@@ -17,9 +17,24 @@ export function proxy(request: NextRequest) {
 
   const method = request.method;
   const path = request.nextUrl.pathname;
-  const query = request.nextUrl.search || "";
+  const sanitizedUrl = request.nextUrl.clone();
+  for (const sensitiveKey of ["api_key", "key", "token", "access_token"]) {
+    if (sanitizedUrl.searchParams.has(sensitiveKey)) {
+      sanitizedUrl.searchParams.set(sensitiveKey, "[redacted]");
+    }
+  }
+  const query = sanitizedUrl.search || "";
   const userAgent = request.headers.get("User-Agent")?.slice(0, 100) || "unknown";
-  const referer = request.headers.get("Referer")?.slice(0, 200) || "-";
+  const rawReferer = request.headers.get("Referer") || "-";
+  const referer = (() => {
+    if (rawReferer === "-") return "-";
+    try {
+      const parsed = new URL(rawReferer);
+      return `${parsed.origin}${parsed.pathname}`.slice(0, 200);
+    } catch {
+      return "[invalid]";
+    }
+  })();
 
   const authHeader = request.headers.get("Authorization") || "";
   const hasAuth = Boolean(authHeader);
@@ -47,7 +62,9 @@ export function proxy(request: NextRequest) {
 
   const logMsg = `${timestamp} ACCESS ${logParts.join(" | ")}`;
 
-  console.log(logMsg);
+  if (process.env.VLLM_STUDIO_ACCESS_LOGS === "true") {
+    console.log(logMsg);
+  }
 
   response.headers.set("X-Content-Type-Options", "nosniff");
   response.headers.set("X-Frame-Options", "DENY");

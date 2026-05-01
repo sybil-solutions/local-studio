@@ -1,28 +1,16 @@
 import type { Config } from "../config/env";
 import type { Logger } from "../core/logger";
-import type { EventManager } from "../modules/monitoring/event-manager";
-import type { LaunchState } from "../modules/lifecycle/state/launch-state";
-import type { ControllerMetrics, MetricsRegistry } from "../modules/monitoring/metrics";
-import type { ProcessManager } from "../modules/lifecycle/process/process-manager";
-import type { LifecycleCoordinator } from "../modules/lifecycle/state/lifecycle-coordinator";
-import type { DownloadManager } from "../modules/downloads/manager";
-import type { ChatRunOptions, ChatRunStream } from "../modules/chat/agent/run-manager-types";
-import type { ChatStore } from "../modules/chat/store";
-import type { DownloadStore } from "../modules/downloads/store";
-import type { LifetimeMetricsStore, PeakMetricsStore } from "../modules/monitoring/metrics-store";
-import type { RecipeStore } from "../modules/lifecycle/recipes/recipe-store";
+import type { EventManager } from "../modules/system/event-manager";
+import type { LaunchState } from "../modules/engines/layers/launch-state";
+import type { ControllerMetrics, MetricsRegistry } from "../modules/system/metrics";
+import type { ProcessManager } from "../modules/engines/layers/process-manager";
+import type { EngineCoordinator } from "../modules/engines/layers/engine-coordinator";
+import type { DownloadManager } from "../modules/engines/layers/download-manager";
+import type { DownloadStore } from "../modules/engines/layers/download-store";
+import type { LifetimeMetricsStore, PeakMetricsStore } from "../modules/system/metrics-store";
+import type { RecipeStore } from "../modules/models/recipes/recipe-store";
 import type { JobStore } from "../stores/job-store";
 import type { JobType } from "../modules/jobs/types";
-
-/**
- * Minimal interface for the chat run manager as seen through the app context.
- * The concrete ChatRunManager class satisfies this interface structurally.
- */
-export interface IChatRunManager {
-  startRun(options: ChatRunOptions): Promise<ChatRunStream>;
-  abortRun(runId: string): boolean;
-  abortRunsForModel(modelName: string): number;
-}
 
 /**
  * Minimal interface for the job manager as seen through the app context.
@@ -45,13 +33,11 @@ export interface AppContext {
   metrics: ControllerMetrics;
   metricsRegistry: MetricsRegistry;
   processManager: ProcessManager;
-  lifecycleCoordinator: LifecycleCoordinator;
   downloadManager: DownloadManager;
-  runManager: IChatRunManager;
+  engineService: EngineCoordinator;
   jobManager: IJobManager;
   stores: {
     recipeStore: RecipeStore;
-    chatStore: ChatStore;
     downloadStore: DownloadStore;
     peakMetricsStore: PeakMetricsStore;
     lifetimeMetricsStore: LifetimeMetricsStore;

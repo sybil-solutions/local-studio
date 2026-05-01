@@ -18,6 +18,7 @@ export function useDownloads(pollIntervalMs = 2500) {
   const [downloads, setDownloads] = useState<ModelDownload[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [startingModelIds, setStartingModelIds] = useState<Set<string>>(new Set());
 
   const refresh = useCallback(async () => {
     try {
@@ -40,9 +41,23 @@ export function useDownloads(pollIntervalMs = 2500) {
 
   const startDownload = useCallback(
     async (params: StartDownloadParams) => {
-      const result = await api.startDownload(params);
-      await refresh();
-      return result.download;
+      const modelId = params.model_id;
+      setStartingModelIds((previous) => new Set(previous).add(modelId));
+      setError(null);
+      try {
+        const result = await api.startDownload(params);
+        await refresh();
+        return result.download;
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to start download");
+        throw err;
+      } finally {
+        setStartingModelIds((previous) => {
+          const next = new Set(previous);
+          next.delete(modelId);
+          return next;
+        });
+      }
     },
     [refresh],
   );
@@ -87,6 +102,7 @@ export function useDownloads(pollIntervalMs = 2500) {
   return {
     downloads,
     downloadsByModel,
+    startingModelIds,
     loading,
     error,
     refresh,

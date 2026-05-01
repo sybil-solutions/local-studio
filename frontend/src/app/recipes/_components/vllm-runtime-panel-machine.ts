@@ -2,7 +2,7 @@ import {
   createStateMachine,
   type StateMachineContainer,
   type StateMachineTransition,
-} from "../../../../../shared/src/state-machine";
+} from "@/lib/state-machine";
 import type {
   RuntimeBackendInfo,
   RuntimeCudaInfo,

@@ -59,6 +59,41 @@ describe("createApiCore", () => {
     expect(clearStoredBackendUrlMock).toHaveBeenCalledTimes(1);
   });
 
+  it("retries once without a stale backend override when the proxy rejects it", async () => {
+    getStoredBackendUrlMock.mockReturnValue("http://localhost:8080");
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ error: "blocked" }), {
+          status: 403,
+          headers: {
+            "Content-Type": "application/json",
+            "X-Backend-Override-Invalid": "1",
+          },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ ok: true }), {
+          status: 200,
+          headers: {
+            "Content-Type": "application/json",
+          },
+        }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const core = createApiCore({ baseUrl: "/api/proxy", useProxy: true });
+    const result = await core.request<{ ok: boolean }>("/recipes", { retries: 0 });
+
+    expect(result.ok).toBe(true);
+    expect(clearStoredBackendUrlMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls[0]?.[1]?.headers).toMatchObject({
+      "X-Backend-Url": "http://localhost:8080",
+    });
+    expect(fetchMock.mock.calls[1]?.[1]?.headers).not.toHaveProperty("X-Backend-Url");
+  });
+
   it("does not clear backend override when no invalid marker is present", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({ ok: true }), {
@@ -77,17 +112,19 @@ describe("createApiCore", () => {
   });
 
   it("parses canonical SSE events from event lines", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(
-      sseResponse(
-        [
-          "event: run_start\n",
-          'data: {"run_id":"r1","session_id":"s1"}\n\n',
-          "event: run_end\n",
-          'data: {"run_id":"r1","session_id":"s1","status":"completed","error":null}\n\n',
-        ],
-        { "X-Run-Id": "r1" },
-      ),
-    );
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        sseResponse(
+          [
+            "event: run_start\n",
+            'data: {"run_id":"r1","session_id":"s1"}\n\n',
+            "event: run_end\n",
+            'data: {"run_id":"r1","session_id":"s1","status":"completed","error":null}\n\n',
+          ],
+          { "X-Run-Id": "r1" },
+        ),
+      );
     vi.stubGlobal("fetch", fetchMock);
 
     const core = createApiCore({ baseUrl: "/api/proxy", useProxy: true });
@@ -104,12 +141,14 @@ describe("createApiCore", () => {
   });
 
   it("unwraps legacy SSE payloads wrapped as data.event/data", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(
-      sseResponse([
-        'data: {"event":"run_start","data":{"run_id":"legacy-1","session_id":"s1"}}\n\n',
-        'data: {"event":"run_end","data":{"run_id":"legacy-1","session_id":"s1","status":"completed","error":null}}\n\n',
-      ]),
-    );
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        sseResponse([
+          'data: {"event":"run_start","data":{"run_id":"legacy-1","session_id":"s1"}}\n\n',
+          'data: {"event":"run_end","data":{"run_id":"legacy-1","session_id":"s1","status":"completed","error":null}}\n\n',
+        ]),
+      );
     vi.stubGlobal("fetch", fetchMock);
 
     const core = createApiCore({ baseUrl: "/api/proxy", useProxy: true });
@@ -126,12 +165,14 @@ describe("createApiCore", () => {
   });
 
   it("unwraps legacy SSE payloads wrapped as data.type/payload", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(
-      sseResponse([
-        'data: {"type":"run_start","payload":{"run_id":"legacy-2","session_id":"s2"}}\n\n',
-        'data: {"type":"run_end","payload":{"run_id":"legacy-2","session_id":"s2","status":"completed","error":null}}\n\n',
-      ]),
-    );
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        sseResponse([
+          'data: {"type":"run_start","payload":{"run_id":"legacy-2","session_id":"s2"}}\n\n',
+          'data: {"type":"run_end","payload":{"run_id":"legacy-2","session_id":"s2","status":"completed","error":null}}\n\n',
+        ]),
+      );
     vi.stubGlobal("fetch", fetchMock);
 
     const core = createApiCore({ baseUrl: "/api/proxy", useProxy: true });

@@ -45,10 +45,21 @@ export const metadata: Metadata = {
 };
 
 const bootScript = `${getThemeBootstrapScript()}
-  const isProd = ${process.env.NODE_ENV === "production" ? "true" : "false"};
-  if (isProd && 'serviceWorker' in navigator) {
+  const enableServiceWorker = ${process.env.VLLM_STUDIO_ENABLE_SERVICE_WORKER === "true" ? "true" : "false"};
+  if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('/sw.js').catch(() => {});
+      if (enableServiceWorker) {
+        navigator.serviceWorker.register('/sw.js').catch(() => {});
+        return;
+      }
+      navigator.serviceWorker.getRegistrations()
+        .then((registrations) => Promise.all(registrations.map((registration) => registration.unregister())))
+        .catch(() => {});
+      if ('caches' in window) {
+        caches.keys()
+          .then((keys) => Promise.all(keys.filter((key) => key.startsWith('vllm-studio-')).map((key) => caches.delete(key))))
+          .catch(() => {});
+      }
     });
   }
   const setAppHeight = () => {

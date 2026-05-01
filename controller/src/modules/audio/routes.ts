@@ -146,7 +146,15 @@ const ensureServiceLease = async (
   }
 
   if (replace) {
-    await context.lifecycleCoordinator.evict(true);
+    const result = await context.engineService.setActiveRecipe(null);
+    if (!result.ok) {
+      return {
+        code: "gpu_lease_evict_failed",
+        requested_service: { id: serviceId },
+        holder_service: { id: "llm" },
+        error: result.error,
+      };
+    }
     return null;
   }
 

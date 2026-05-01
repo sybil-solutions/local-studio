@@ -9,8 +9,8 @@ import { getStoredBackendUrl, setStoredBackendUrl, clearStoredBackendUrl } from 
 import type { CompatibilityReport, ConfigData } from "@/lib/types";
 
 const FAST_STATUS_REQUEST = { timeout: 5_000, retries: 0 } as const;
-const FAST_COMPAT_REQUEST = { timeout: 5_000, retries: 0 } as const;
-const FAST_CONFIG_REQUEST = { timeout: 8_000, retries: 0 } as const;
+const FAST_COMPAT_REQUEST = { timeout: 20_000, retries: 0 } as const;
+const FAST_CONFIG_REQUEST = { timeout: 20_000, retries: 0 } as const;
 
 export interface ApiConnectionSettings {
   backendUrl: string;

@@ -4,7 +4,7 @@ import { useCallback, useState } from "react";
 import type {
   StateMachineContainer,
   StateMachineTransitionResult,
-} from "../../../shared/src/state-machine";
+} from "@/lib/state-machine";
 
 export interface UseMachineResult<State, Event, Effect> {
   state: State;

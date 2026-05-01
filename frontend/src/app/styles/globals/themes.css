@@ -1,9 +1,0 @@
-/* CRITICAL */
-/*
-  Theme tokens are now single-sourced in `src/lib/themes.ts`.
-  They are applied at runtime via:
-  - bootstrap script: `src/lib/theme/runtime.ts#getThemeBootstrapScript`
-  - store updates: `src/store/theme-slice.ts`
-
-  Keep this file imported to preserve global style ordering.
-*/

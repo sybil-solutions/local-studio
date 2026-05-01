@@ -3,7 +3,6 @@
 *::before,
 *::after {
   border-color: var(--border);
-  border-radius: 0 !important;
   scrollbar-width: thin;
   scrollbar-color: color-mix(in srgb, var(--hl1) 18%, transparent) transparent;
 }
@@ -45,11 +44,6 @@ body {
     24px 24px;
   color: var(--fg);
   font-family: var(--font-sans), system-ui, sans-serif;
-}
-
-:where([class*="shadow"], [class*="backdrop-blur"]) {
-  box-shadow: none !important;
-  backdrop-filter: none !important;
 }
 
 /* Links */

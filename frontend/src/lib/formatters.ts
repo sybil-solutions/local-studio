@@ -39,16 +39,16 @@ function toGBFromMB(value: number | null | undefined): number {
   return Math.round((safe / 1024) * 100) / 100;
 }
 
-function formatNumber(n: number): string {
-  if (n == null) return ""; // Handle null/undefined gracefully
-
+function formatNumber(value: number | null | undefined): string {
+  const n = safeNumber(value, 0);
   if (n >= 1_000_000_000) return (n / 1_000_000_000).toFixed(2) + "B";
   if (n >= 1_000_000) return (n / 1_000_000).toFixed(2) + "M";
   if (n >= 1_000) return (n / 1_000).toFixed(1) + "K";
   return n.toLocaleString();
 }
 
-function formatDuration(ms: number): string {
+function formatDuration(value: number | null | undefined): string {
+  const ms = safeNumber(value, 0);
   if (ms >= 1000) return (ms / 1000).toFixed(1) + "s";
   return Math.round(ms) + "ms";
 }
@@ -82,4 +82,12 @@ function formatDurationMmSs(seconds: number): string {
   return `${mins}:${secs.toString().padStart(2, "0")}`;
 }
 
-export { toGB, toGBFromMB, formatNumber, formatDuration, formatDate, formatBytes, formatDurationMmSs };
+export {
+  toGB,
+  toGBFromMB,
+  formatNumber,
+  formatDuration,
+  formatDate,
+  formatBytes,
+  formatDurationMmSs,
+};

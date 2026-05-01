@@ -20,22 +20,18 @@ export function ControlPanel(props: DashboardLayoutProps) {
         isConnected={props.isConnected}
         platformKind={props.platformKind}
         inferencePort={props.inferencePort}
-        onNavigateChat={props.onNavigateChat}
         onNavigateLogs={props.onNavigateLogs}
         onBenchmark={props.onBenchmark}
         benchmarking={props.benchmarking}
-        onStop={props.onStop}
         recipes={recipes}
-        launching={props.launching}
+        lifecycleStatus={props.lifecycleStatus}
         onLaunch={props.onLaunch}
         onNewRecipe={props.onNewRecipe}
         onViewAll={props.onViewAll}
       />
 
-      {/* GPU — when GPUs exist */}
-      {gpus.length > 0 && (
-        <GpuSection metrics={metrics} gpus={gpus} currentProcess={currentProcess} logs={logs} />
-      )}
+      {/* GPU — always rendered so loading/offline/standby states do not shift the page. */}
+      <GpuSection metrics={metrics} gpus={gpus} currentProcess={currentProcess} logs={logs} />
 
       {/* Logs */}
       <LogSection logs={logs} />

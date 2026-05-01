@@ -51,6 +51,7 @@ const ModelRow = memo(function ModelRow({
   model,
   isLocal,
   activeDownload,
+  isStarting,
   onStartDownload,
   onPauseDownload,
   onResumeDownload,
@@ -66,6 +67,7 @@ const ModelRow = memo(function ModelRow({
   model: HuggingFaceModel;
   isLocal: boolean;
   activeDownload: ModelDownload | null;
+  isStarting: boolean;
   onStartDownload: (id: string) => void;
   onPauseDownload: (id: string) => void;
   onResumeDownload: (id: string) => void;
@@ -95,14 +97,22 @@ const ModelRow = memo(function ModelRow({
         <div className={`flex items-center gap-2 ${child ? "pl-5" : ""}`}>
           {variantCount > 1 && !child && onToggleExpand && (
             <button onClick={onToggleExpand} className="p-1 hover:bg-(--surface) rounded shrink-0">
-              {expanded ? <ChevronDown className="h-3.5 w-3.5 text-(--dim)" /> : <ChevronRight className="h-3.5 w-3.5 text-(--dim)" />}
+              {expanded ? (
+                <ChevronDown className="h-3.5 w-3.5 text-(--dim)" />
+              ) : (
+                <ChevronRight className="h-3.5 w-3.5 text-(--dim)" />
+              )}
             </button>
           )}
           <span className="text-sm text-(--fg) truncate max-w-[280px]" title={model.modelId}>
             {model.modelId}
           </span>
           <button onClick={copyId} className="p-0.5 hover:bg-(--surface) rounded shrink-0">
-            {copied ? <Check className="h-3 w-3 text-(--hl2)" /> : <Copy className="h-3 w-3 text-(--dim)" />}
+            {copied ? (
+              <Check className="h-3 w-3 text-(--hl2)" />
+            ) : (
+              <Copy className="h-3 w-3 text-(--dim)" />
+            )}
           </button>
         </div>
         {!child && variantCount > 1 && (
@@ -114,9 +124,18 @@ const ModelRow = memo(function ModelRow({
       </td>
       <td className="px-4 py-3">
         <div className="flex flex-wrap gap-1">
-          {quants.length > 0 ? quants.map((q) => (
-            <span key={q} className="px-1.5 py-0.5 bg-(--surface) border border-(--border) rounded text-[11px] text-(--dim)">{q}</span>
-          )) : <span className="text-xs text-(--dim)">—</span>}
+          {quants.length > 0 ? (
+            quants.map((q) => (
+              <span
+                key={q}
+                className="px-1.5 py-0.5 bg-(--surface) border border-(--border) rounded text-[11px] text-(--dim)"
+              >
+                {q}
+              </span>
+            ))
+          ) : (
+            <span className="text-xs text-(--dim)">—</span>
+          )}
         </div>
       </td>
       <td className="px-4 py-3">
@@ -136,25 +155,43 @@ const ModelRow = memo(function ModelRow({
       </td>
       <td className="px-4 py-3 text-right">
         {isLocal ? (
-          <span className="inline-flex items-center gap-1 text-xs text-(--hl2)"><CheckCircle2 className="h-3.5 w-3.5" />Local</span>
+          <span className="inline-flex items-center gap-1 text-xs text-(--hl2)">
+            <CheckCircle2 className="h-3.5 w-3.5" />
+            Local
+          </span>
+        ) : isStarting ? (
+          <span className="text-xs text-(--dim)">Starting…</span>
         ) : activeDownload ? (
           <div className="flex items-center justify-end gap-1">
             {activeDownload.status === "downloading" && (
-              <button onClick={() => onPauseDownload(activeDownload.id)} className="p-1 rounded border border-(--border) hover:bg-(--surface)" title="Pause">
+              <button
+                onClick={() => onPauseDownload(activeDownload.id)}
+                className="p-1 rounded border border-(--border) hover:bg-(--surface)"
+                title="Pause"
+              >
                 <Pause className="h-3.5 w-3.5" />
               </button>
             )}
             {(activeDownload.status === "paused" || activeDownload.status === "failed") && (
-              <button onClick={() => onResumeDownload(activeDownload.id)} className="p-1 rounded border border-(--border) hover:bg-(--surface)" title="Resume">
+              <button
+                onClick={() => onResumeDownload(activeDownload.id)}
+                className="p-1 rounded border border-(--border) hover:bg-(--surface)"
+                title="Resume"
+              >
                 <Play className="h-3.5 w-3.5" />
               </button>
             )}
-            {activeDownload.status === "completed" && <span className="text-xs text-(--hl2)">Done</span>}
-            {(activeDownload.status === "downloading" || activeDownload.status === "queued") && <span className="text-xs text-(--dim)">…</span>}
+            {activeDownload.status === "completed" && (
+              <span className="text-xs text-(--hl2)">Done</span>
+            )}
+            {(activeDownload.status === "downloading" || activeDownload.status === "queued") && (
+              <span className="text-xs text-(--dim)">…</span>
+            )}
           </div>
         ) : (
           <button
             onClick={() => onStartDownload(model.modelId)}
+            disabled={isStarting}
             className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-(--hl1) text-white text-xs font-medium hover:opacity-90"
           >
             <DownloadCloud className="h-3.5 w-3.5" />
@@ -192,7 +229,15 @@ export function ExploreTab() {
     loadMore,
     refresh,
   } = useExplore();
-  const { downloads, downloadsByModel, startDownload, pauseDownload, resumeDownload } = useDownloads();
+  const {
+    downloads,
+    downloadsByModel,
+    startingModelIds,
+    error: downloadError,
+    startDownload,
+    pauseDownload,
+    resumeDownload,
+  } = useDownloads();
   const [expandedKeys, setExpandedKeys] = useState<Set<string>>(new Set());
   const [localModelIds, setLocalModelIds] = useState<Set<string>>(new Set());
   const completedSet = useRef<Set<string>>(new Set());
@@ -241,30 +286,42 @@ export function ExploreTab() {
   }, [downloads]);
 
   const isLocal = useCallback(
-    (modelId: string) => localModelIds.has(modelId.toLowerCase()) || modelId.toLowerCase().split("/").some((p) => localModelIds.has(p)),
+    (modelId: string) =>
+      localModelIds.has(modelId.toLowerCase()) ||
+      modelId
+        .toLowerCase()
+        .split("/")
+        .some((p) => localModelIds.has(p)),
     [localModelIds],
   );
 
   const toggleExpand = useCallback((key: string) => {
     setExpandedKeys((prev) => {
       const next = new Set(prev);
-      if (next.has(key)) next.delete(key); else next.add(key);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
       return next;
     });
   }, []);
 
   const handleStartDownload = useCallback(
-    async (modelId: string) => { await startDownload({ model_id: modelId }); },
+    async (modelId: string) => {
+      await startDownload({ model_id: modelId });
+    },
     [startDownload],
   );
 
   const handlePause = useCallback(
-    async (id: string) => { await pauseDownload(id); },
+    async (id: string) => {
+      await pauseDownload(id);
+    },
     [pauseDownload],
   );
 
   const handleResume = useCallback(
-    async (id: string) => { await resumeDownload(id); },
+    async (id: string) => {
+      await resumeDownload(id);
+    },
     [resumeDownload],
   );
 
@@ -323,18 +380,29 @@ export function ExploreTab() {
         {maxVramGb > 0 && (
           <span className="text-xs px-2.5 py-1.5 rounded-md bg-(--surface) border border-(--border) text-(--dim)">
             Using {Math.round(maxVramGb)} GB
-            {poolOverrideGb != null ? " (manual)" : detectedPoolGb > 0 && gpuCount > 0 ? ` · ${gpuCount} GPU${gpuCount === 1 ? "" : "s"}` : ""}
+            {poolOverrideGb != null
+              ? " (manual)"
+              : detectedPoolGb > 0 && gpuCount > 0
+                ? ` · ${gpuCount} GPU${gpuCount === 1 ? "" : "s"}`
+                : ""}
           </span>
         )}
-        <button onClick={refresh} className="p-2 hover:bg-(--surface) rounded-lg text-(--dim) hover:text-(--fg)" title="Refresh">
+        <button
+          onClick={refresh}
+          className="p-2 hover:bg-(--surface) rounded-lg text-(--dim) hover:text-(--fg)"
+          title="Refresh"
+        >
           <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
         </button>
       </div>
 
       {/* Results */}
       <div className="flex-1 overflow-auto">
-        {error && (
-          <div className="p-4 text-center text-(--err) text-sm">{error}</div>
+        {error && <div className="p-4 text-center text-(--err) text-sm">{error}</div>}
+        {downloadError && (
+          <div className="mx-4 mt-4 rounded-lg border border-(--err)/30 bg-(--err)/10 px-3 py-2 text-sm text-(--err)">
+            {downloadError}
+          </div>
         )}
 
         {loading && groups.length === 0 && (
@@ -347,8 +415,8 @@ export function ExploreTab() {
           <div className="py-16 text-center text-(--dim) max-w-md mx-auto px-4">
             <p>No models match Explore filters</p>
             <p className="text-sm mt-2">
-              Rows need Hugging Face engagement (downloads or likes) and a recent <span className="font-mono">createdAt</span>.
-              Try another search or adjust Pool (GB).
+              Rows need Hugging Face engagement (downloads or likes) and a recent{" "}
+              <span className="font-mono">createdAt</span>. Try another search or adjust Pool (GB).
             </p>
           </div>
         )}
@@ -356,18 +424,31 @@ export function ExploreTab() {
         {groups.length > 0 && (
           <>
             <div className="px-4 pt-3 pb-1 text-xs text-(--dim)">
-              {groups.length} models — recently created on Hugging Face (~4 months), with download or like counts;
-              sizes are mixed (large / mid / small vs your pool). Set Pool (GB) to override detected VRAM.
+              {groups.length} models — recently created on Hugging Face (~4 months), with download
+              or like counts; sizes are mixed (large / mid / small vs your pool). Set Pool (GB) to
+              override detected VRAM.
             </div>
             <table className="w-full">
               <thead className="bg-(--surface) border-b border-(--border)">
                 <tr>
-                  <th className="px-4 py-2 text-left text-[11px] font-medium text-(--dim) uppercase tracking-wider">Model</th>
-                  <th className="px-4 py-2 text-left text-[11px] font-medium text-(--dim) uppercase tracking-wider">Provider</th>
-                  <th className="px-4 py-2 text-left text-[11px] font-medium text-(--dim) uppercase tracking-wider">Format</th>
-                  <th className="px-4 py-2 text-left text-[11px] font-medium text-(--dim) uppercase tracking-wider">VRAM</th>
-                  <th className="px-4 py-2 text-right text-[11px] font-medium text-(--dim) uppercase tracking-wider">Stats</th>
-                  <th className="px-4 py-2 text-right text-[11px] font-medium text-(--dim) uppercase tracking-wider">Action</th>
+                  <th className="px-4 py-2 text-left text-[11px] font-medium text-(--dim) uppercase tracking-wider">
+                    Model
+                  </th>
+                  <th className="px-4 py-2 text-left text-[11px] font-medium text-(--dim) uppercase tracking-wider">
+                    Provider
+                  </th>
+                  <th className="px-4 py-2 text-left text-[11px] font-medium text-(--dim) uppercase tracking-wider">
+                    Format
+                  </th>
+                  <th className="px-4 py-2 text-left text-[11px] font-medium text-(--dim) uppercase tracking-wider">
+                    VRAM
+                  </th>
+                  <th className="px-4 py-2 text-right text-[11px] font-medium text-(--dim) uppercase tracking-wider">
+                    Stats
+                  </th>
+                  <th className="px-4 py-2 text-right text-[11px] font-medium text-(--dim) uppercase tracking-wider">
+                    Action
+                  </th>
                   <th className="px-4 py-2 text-right text-[11px] font-medium text-(--dim) uppercase tracking-wider w-8"></th>
                 </tr>
               </thead>
@@ -380,34 +461,40 @@ export function ExploreTab() {
                       model={group.lead}
                       isLocal={isLocal(group.lead.modelId)}
                       activeDownload={downloadsByModel.get(group.lead.modelId) ?? null}
+                      isStarting={startingModelIds.has(group.lead.modelId)}
                       onStartDownload={handleStartDownload}
                       onPauseDownload={handlePause}
                       onResumeDownload={handleResume}
                       variantCount={group.variants.length}
                       expanded={expanded}
-                      onToggleExpand={group.variants.length > 1 ? () => toggleExpand(group.key) : undefined}
+                      onToggleExpand={
+                        group.variants.length > 1 ? () => toggleExpand(group.key) : undefined
+                      }
                       displayDownloads={group.maxDownloads}
                       displayLikes={group.maxLikes}
                       weightEstimateGb={group.needGb}
                       pooledVramGb={maxVramGb}
                     />,
                     ...(expanded
-                      ? group.variants.slice(1).map((variant) => (
-                          <ModelRow
-                            key={variant._id}
-                            model={variant}
-                            isLocal={isLocal(variant.modelId)}
-                            activeDownload={downloadsByModel.get(variant.modelId) ?? null}
-                            onStartDownload={handleStartDownload}
-                            onPauseDownload={handlePause}
-                            onResumeDownload={handleResume}
-                            variantCount={1}
-                            expanded={false}
-                            child
-                            weightEstimateGb={estimateRoughWeightsGb(variant)}
-                            pooledVramGb={maxVramGb}
-                          />
-                        ))
+                      ? group.variants
+                          .slice(1)
+                          .map((variant) => (
+                            <ModelRow
+                              key={variant._id}
+                              model={variant}
+                              isLocal={isLocal(variant.modelId)}
+                              activeDownload={downloadsByModel.get(variant.modelId) ?? null}
+                              isStarting={startingModelIds.has(variant.modelId)}
+                              onStartDownload={handleStartDownload}
+                              onPauseDownload={handlePause}
+                              onResumeDownload={handleResume}
+                              variantCount={1}
+                              expanded={false}
+                              child
+                              weightEstimateGb={estimateRoughWeightsGb(variant)}
+                              pooledVramGb={maxVramGb}
+                            />
+                          ))
                       : []),
                   ];
                 })}

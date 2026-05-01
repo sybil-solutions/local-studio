@@ -6,11 +6,11 @@ export {
   getBrowserEventChannelForControllerEvent,
   getControllerEventDomain,
   isControllerStreamEventType,
-} from "../../../shared/src/controller-events";
+} from "../modules/shared/controller-events";
 
 export type {
   ControllerBrowserEventChannel,
   ControllerEventDomain,
   ControllerEventType,
   ControllerStreamEventType,
-} from "../../../shared/src/controller-events";
+} from "../modules/shared/controller-events";

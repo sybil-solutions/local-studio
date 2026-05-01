@@ -24,6 +24,7 @@ export const ModelRow = memo(function ModelRow({
   copied,
   isLocal,
   activeDownload,
+  isStarting,
   onCopyModelId,
   onStartDownload,
   onPauseDownload,
@@ -37,6 +38,7 @@ export const ModelRow = memo(function ModelRow({
   copied: boolean;
   isLocal: boolean;
   activeDownload: ModelDownload | null;
+  isStarting: boolean;
   onCopyModelId: (modelId: string) => void;
   onStartDownload: (params: { model_id: string }) => Promise<void>;
   onPauseDownload: (downloadId: string) => Promise<void>;
@@ -79,7 +81,11 @@ export const ModelRow = memo(function ModelRow({
             className="p-1 hover:bg-(--surface) rounded transition-colors shrink-0"
             title="Copy model ID"
           >
-            {copied ? <Check className="h-3 w-3 text-(--hl2)" /> : <Copy className="h-3 w-3 text-(--dim)" />}
+            {copied ? (
+              <Check className="h-3 w-3 text-(--hl2)" />
+            ) : (
+              <Copy className="h-3 w-3 text-(--dim)" />
+            )}
           </button>
         </div>
         {!child && hasVariants && (
@@ -89,7 +95,9 @@ export const ModelRow = memo(function ModelRow({
         )}
       </td>
       <td className="px-4 py-3">
-        <span className="px-2 py-1 bg-(--surface) border border-(--border) rounded text-xs text-(--fg)">{provider}</span>
+        <span className="px-2 py-1 bg-(--surface) border border-(--border) rounded text-xs text-(--fg)">
+          {provider}
+        </span>
       </td>
       <td className="px-4 py-3">
         {model.pipeline_tag ? (
@@ -155,6 +163,8 @@ export const ModelRow = memo(function ModelRow({
             <CheckCircle2 className="h-3.5 w-3.5" />
             Ready
           </span>
+        ) : isStarting ? (
+          <span className="text-xs text-(--dim)">Starting…</span>
         ) : activeDownload ? (
           <div className="flex items-center justify-end gap-2">
             {activeDownload.status === "downloading" && (
@@ -175,7 +185,9 @@ export const ModelRow = memo(function ModelRow({
                 <Play className="h-4 w-4" />
               </button>
             )}
-            {activeDownload.status === "completed" && <span className="text-xs text-(--hl2)">Downloaded</span>}
+            {activeDownload.status === "completed" && (
+              <span className="text-xs text-(--hl2)">Downloaded</span>
+            )}
             {(activeDownload.status === "downloading" || activeDownload.status === "queued") && (
               <span className="text-xs text-(--dim)">Downloading…</span>
             )}
@@ -183,6 +195,7 @@ export const ModelRow = memo(function ModelRow({
         ) : (
           <button
             onClick={() => onStartDownload({ model_id: model.modelId })}
+            disabled={isStarting}
             className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-(--hl1) text-white text-xs font-medium hover:opacity-90"
           >
             <DownloadCloud className="h-3.5 w-3.5" />

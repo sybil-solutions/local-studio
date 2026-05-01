@@ -1,4 +1,4 @@
-import type { Backend as SharedBackend, RecipePayload } from "../../shared/src";
+import type { Backend as SharedBackend, RecipePayload } from "../../controller/src/modules/shared/recipe-types";
 
 export type View = 'dashboard' | 'recipes' | 'status' | 'config';
 

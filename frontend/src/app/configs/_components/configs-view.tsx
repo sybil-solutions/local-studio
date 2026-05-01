@@ -104,7 +104,7 @@ export function ConfigsView({
 
           {activeTab === "engines" && (
             <section>
-              <EnginesSection />
+              <EnginesSection runtime={data?.runtime ?? null} />
             </section>
           )}
 

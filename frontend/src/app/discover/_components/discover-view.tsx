@@ -27,6 +27,8 @@ interface DiscoverViewProps {
   selectedVramGb: number;
   excludedQuantizations: string[];
   downloads: ModelDownload[];
+  downloadError: string | null;
+  startingModelIds: Set<string>;
   getDownloadForModel: (modelId: string) => ModelDownload | null;
   onSearchChange: (value: string) => void;
   onTaskChange: (value: string) => void;
@@ -65,6 +67,8 @@ export function DiscoverView({
   selectedVramGb,
   excludedQuantizations,
   downloads,
+  downloadError,
+  startingModelIds,
   getDownloadForModel,
   onSearchChange,
   onTaskChange,
@@ -94,7 +98,12 @@ export function DiscoverView({
 
   return (
     <div className="flex flex-col h-full bg-(--bg) text-(--fg)">
-      <DiscoverHeader showFilters={showFilters} onToggleFilters={onToggleFilters} onRefresh={onRefresh} loading={loading} />
+      <DiscoverHeader
+        showFilters={showFilters}
+        onToggleFilters={onToggleFilters}
+        onRefresh={onRefresh}
+        loading={loading}
+      />
 
       {/* Content */}
       <div className="flex-1 overflow-auto">
@@ -105,6 +114,11 @@ export function DiscoverView({
             onResumeDownload={onResumeDownload}
             onCancelDownload={onCancelDownload}
           />
+          {downloadError && (
+            <div className="mb-4 rounded-lg border border-(--err)/30 bg-(--err)/10 px-3 py-2 text-sm text-(--err)">
+              {downloadError}
+            </div>
+          )}
 
           {/* Toolbar */}
           <DiscoverSearchToolbar search={search} onSearchChange={onSearchChange} />
@@ -166,7 +180,7 @@ export function DiscoverView({
                       <div
                         className={
                           "shrink-0 text-xs px-2 py-1 rounded-md border " +
-                          ((effectiveVramGb === 0 || rec.min_vram_gb <= effectiveVramGb)
+                          (effectiveVramGb === 0 || rec.min_vram_gb <= effectiveVramGb
                             ? "text-(--hl2) border-(--hl2)/30 bg-(--hl2)/10"
                             : "text-(--err) border-(--err)/30 bg-(--err)/10")
                         }
@@ -196,6 +210,7 @@ export function DiscoverView({
             hasMore={hasMore}
             isModelLocal={isModelLocal}
             getDownloadForModel={getDownloadForModel}
+            startingModelIds={startingModelIds}
             onCopyModelId={onCopyModelId}
             onRefresh={onRefresh}
             onLoadMore={onLoadMore}

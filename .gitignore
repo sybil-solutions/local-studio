@@ -7,6 +7,10 @@
 
 .factory
 
+# Per-project agent comments (created when the user adds comments via the
+# vLLM Studio agent surface). Project-local, not shared.
+.vllm-studio/
+
 website-dist
 
 # Python

@@ -5,7 +5,7 @@ import { useCallback, useState } from "react";
 import { ArrowUpCircle, Check, Loader2, XCircle } from "lucide-react";
 import { useRealtimeStatus } from "@/hooks/use-realtime-status";
 import api from "@/lib/api";
-import type { RuntimeBackendInfo } from "@/lib/types";
+import type { RuntimeBackendInfo, SystemRuntimeInfo } from "@/lib/types";
 
 const ENGINE_META: Record<string, { label: string; description: string }> = {
   vllm: { label: "vLLM", description: "High-throughput LLM serving (CUDA)" },
@@ -19,10 +19,12 @@ type UpgradeState = { status: "idle" | "upgrading" | "success" | "error"; messag
 function EngineCard({
   id,
   info,
+  active,
   onUpgrade,
 }: {
   id: string;
   info: RuntimeBackendInfo;
+  active?: boolean;
   onUpgrade?: () => Promise<void>;
 }) {
   const meta = ENGINE_META[id] ?? { label: id, description: "" };
@@ -52,7 +54,13 @@ function EngineCard({
           />
           <span className="text-sm font-semibold text-(--fg)">{meta.label}</span>
         </div>
-        {onUpgrade && info.upgrade_command_available && (
+        <div className="flex items-center gap-2">
+          {active && (
+            <span className="rounded border border-(--hl2)/30 px-1.5 py-0.5 text-[10px] font-mono uppercase tracking-wide text-(--hl2)">
+              active
+            </span>
+          )}
+          {onUpgrade && info.upgrade_command_available && (
           <button
             onClick={handleUpgrade}
             disabled={state.status === "upgrading"}
@@ -80,7 +88,8 @@ function EngineCard({
               </>
             )}
           </button>
-        )}
+          )}
+        </div>
       </div>
 
       <div className="text-[11px] text-(--dim)/60 mb-2">{meta.description}</div>
@@ -121,11 +130,12 @@ function EngineCard({
   );
 }
 
-export function EnginesSection() {
-  const { runtimeSummary, services = [], lease } = useRealtimeStatus();
+export function EnginesSection({ runtime }: { runtime?: SystemRuntimeInfo | null }) {
+  const { runtimeSummary, status, lease } = useRealtimeStatus();
 
-  const backends = runtimeSummary?.backends;
-  const gpuMon = runtimeSummary?.gpu_monitoring;
+  const backends = runtime?.backends ?? runtimeSummary?.backends;
+  const gpuMon = runtime?.gpu_monitoring ?? runtimeSummary?.gpu_monitoring;
+  const activeBackend = status?.process?.backend;
 
   const upgradeHandlers: Record<string, (() => Promise<void>) | undefined> = {
     vllm: async () => {
@@ -151,7 +161,15 @@ export function EnginesSection() {
             {(["vllm", "sglang", "llamacpp", "exllamav3"] as const).map((key) => {
               const b = backends[key];
               if (!b) return null;
-              return <EngineCard key={key} id={key} info={b} onUpgrade={upgradeHandlers[key]} />;
+              return (
+                <EngineCard
+                  key={key}
+                  id={key}
+                  info={b}
+                  active={activeBackend === key}
+                  onUpgrade={upgradeHandlers[key]}
+                />
+              );
             })}
           </div>
         ) : (

@@ -5,8 +5,3 @@ export interface ProxyModuleConfig {
 export interface ProxyRouteContext {
   apiKey?: string;
 }
-
-export type Utf8State = {
-  pendingContent: string;
-  pendingReasoning: string;
-};

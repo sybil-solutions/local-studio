@@ -3,6 +3,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { getApiSettings } from "@/lib/api-settings";
 
 const OVERRIDE_ALLOWLIST_ENV_KEY = "VLLM_STUDIO_PROXY_OVERRIDE_ALLOWLIST";
+const DEFAULT_UPSTREAM_TIMEOUT_MS = 5_000;
+const DOWNLOAD_UPSTREAM_TIMEOUT_MS = 120_000;
+const SYSTEM_UPSTREAM_TIMEOUT_MS = 20_000;
+const CHAT_COMPLETION_UPSTREAM_TIMEOUT_MS = 600_000;
+const PROXY_ACCESS_LOGS_ENABLED = process.env.VLLM_STUDIO_PROXY_ACCESS_LOGS === "true";
 
 export async function GET(
   request: NextRequest,
@@ -130,6 +135,27 @@ function buildTargetUrl(backendUrl: string, path: string[], searchParams: string
   return `${backendUrl}/${path.join("/")}${searchParams ? `?${searchParams}` : ""}`;
 }
 
+function getUpstreamTimeoutMs(path: string[]): number {
+  const route = path.join("/");
+  if (route === "studio/downloads" || route.startsWith("studio/downloads/")) {
+    return DOWNLOAD_UPSTREAM_TIMEOUT_MS;
+  }
+  if (route === "v1/chat/completions" || route === "v1/responses") {
+    return CHAT_COMPLETION_UPSTREAM_TIMEOUT_MS;
+  }
+  if (route === "config" || route === "compat" || route === "evict") {
+    return SYSTEM_UPSTREAM_TIMEOUT_MS;
+  }
+  return DEFAULT_UPSTREAM_TIMEOUT_MS;
+}
+
+function isAbortError(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    (error.name === "AbortError" || error.message.toLowerCase().includes("aborted"))
+  );
+}
+
 function shouldFallbackFromResponse(response: Response): boolean {
   if (response.ok) return false;
   if (response.status !== 404) return false;
@@ -150,13 +176,24 @@ async function fetchWithOptionalFallback(
 ): Promise<{ response: Response; usedFallback: boolean }> {
   const canFallback = Boolean(context.overrideUsed && fallbackUrl && fallbackUrl !== primaryUrl);
 
+  const fetchWithTimeout = async (url: string): Promise<Response> => {
+    const controller = new AbortController();
+    const timeoutMs = getUpstreamTimeoutMs(context.path);
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      return await fetch(url, { ...init, signal: controller.signal });
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  };
+
   try {
-    const primaryResponse = await fetch(primaryUrl, init);
+    const primaryResponse = await fetchWithTimeout(primaryUrl);
     if (canFallback && shouldFallbackFromResponse(primaryResponse)) {
       console.warn(
         `[PROXY FALLBACK] ip=${context.client.ip} | country=${context.client.country} | method=${context.method} | path=/${context.path.join("/")} | reason=override-404-text`,
       );
-      return { response: await fetch(fallbackUrl as string, init), usedFallback: true };
+      return { response: await fetchWithTimeout(fallbackUrl as string), usedFallback: true };
     }
     return { response: primaryResponse, usedFallback: false };
   } catch (error) {
@@ -164,7 +201,7 @@ async function fetchWithOptionalFallback(
     console.warn(
       `[PROXY FALLBACK] ip=${context.client.ip} | country=${context.client.country} | method=${context.method} | path=/${context.path.join("/")} | reason=override-network-error | error=${String(error)}`,
     );
-    return { response: await fetch(fallbackUrl as string, init), usedFallback: true };
+    return { response: await fetchWithTimeout(fallbackUrl as string), usedFallback: true };
   }
 }
 
@@ -190,19 +227,25 @@ async function handleRequest(request: NextRequest, method: string, path: string[
       if (!trusted) {
         if (overrideSource === "header") {
           console.warn(
-            `[PROXY BLOCKED] ip=${client.ip} | override=${overrideUrl} | reason=private-address-not-allowlisted`,
+            `[PROXY BLOCKED] ip=${client.ip} | override=redacted | reason=private-address-not-allowlisted`,
           );
           return NextResponse.json(
             {
               error:
                 "Backend override blocked: private/local addresses must be allowlisted via VLLM_STUDIO_PROXY_OVERRIDE_ALLOWLIST",
             },
-            { status: 403 },
+            {
+              status: 403,
+              headers: {
+                "X-Backend-Override-Invalid": "1",
+                "Set-Cookie": "vllmstudio_backend_url=; Path=/; Max-Age=0; SameSite=Lax",
+              },
+            },
           );
         }
 
         console.warn(
-          `[PROXY OVERRIDE IGNORED] ip=${client.ip} | override=${overrideUrl} | reason=private-cookie-not-allowlisted`,
+          `[PROXY OVERRIDE IGNORED] ip=${client.ip} | override=redacted | reason=private-cookie-not-allowlisted`,
         );
         overrideUrl = null;
         blockedOverrideCleared = true;
@@ -225,9 +268,11 @@ async function handleRequest(request: NextRequest, method: string, path: string[
         : null;
     const hasAuth = Boolean(request.headers.get("authorization"));
 
-    console.log(
-      `[PROXY] ip=${client.ip} | country=${client.country} | method=${method} | path=/${path.join("/")} | backend=${backendUrl} | override=${overrideUrl ? "yes" : "no"} | auth=${hasAuth ? "present" : "none"}`,
-    );
+    if (PROXY_ACCESS_LOGS_ENABLED) {
+      console.log(
+        `[PROXY] ip=${client.ip} | country=${client.country} | method=${method} | path=/${path.join("/")} | backend=configured | override=${overrideUrl ? "yes" : "no"} | auth=${hasAuth ? "present" : "none"}`,
+      );
+    }
 
     const headers: HeadersInit = {
       ...(request.headers.get("accept") ? { Accept: request.headers.get("accept") as string } : {}),
@@ -295,6 +340,9 @@ async function handleRequest(request: NextRequest, method: string, path: string[
     console.error(
       `[PROXY ERROR] ip=${client.ip} | country=${client.country} | method=${method} | path=/${path.join("/")} | duration=${duration}ms | error=${String(error)}`,
     );
+    if (isAbortError(error)) {
+      return NextResponse.json({ error: "Backend request timed out" }, { status: 504 });
+    }
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }

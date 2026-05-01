@@ -1,8 +1,8 @@
 // CRITICAL
 import { describe, expect, it } from "bun:test";
 import { CONTROLLER_EVENTS } from "../contracts/controller-events";
-import type { Event } from "../modules/monitoring/event-manager";
-import { createEventManager } from "../modules/monitoring/event-manager";
+import type { Event } from "../modules/system/event-manager";
+import { createEventManager } from "../modules/system/event-manager";
 
 describe("runtime_summary event contract", () => {
   it("publishRuntimeSummary emits event with required keys", async () => {
