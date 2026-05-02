@@ -1,6 +1,6 @@
 // CRITICAL
 import { Filter } from "lucide-react";
-import { RefreshButton } from "@/ui";
+import { RefreshButton } from "@/ui/refresh-button";
 
 export function DiscoverHeader({
   showFilters,

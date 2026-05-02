@@ -11,8 +11,6 @@
     "format": "prettier --write \"src/**/*.ts\"",
     "typecheck": "tsc --noEmit",
     "standards": "bun scripts/controller-standards-audit.ts",
-    "script:util:compare": "bun scripts/utilities/compare-controllers.ts",
-    "script:chats:purge-test-sessions": "bun scripts/delete-test-chat-sessions.ts",
     "prepare": "cd ../.. && husky controller/.husky",
     "test": "bun test",
     "check": "knip && jscpd src && depcheck --ignores=\"swagger-ui-dist,lint-staged,bun:test\" --skip-missing",
@@ -20,8 +18,6 @@
   },
   "dependencies": {
     "@hono/swagger-ui": "^0.5.3",
-    "@mariozechner/pi-agent-core": "^0.50.9",
-    "@sinclair/typebox": "^0.34.41",
     "dotenv": "16.6.1",
     "hono": "4.6.12",
     "prom-client": "15.1.3",
