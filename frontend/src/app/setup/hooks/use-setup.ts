@@ -98,8 +98,24 @@ export function useSetup() {
     setUpgrading(true);
     setUpgradeResult(null);
     try {
-      const result = await api.upgradeVllmRuntime({ preferBundled: true });
-      setUpgradeResult(result);
+      const { job_id: jobId } = await api.upgradeVllmRuntime({ preferBundled: true });
+      let finalJob = (await api.getRuntimeJob(jobId)).job;
+      for (
+        let attempt = 0;
+        attempt < 120 && (finalJob.status === "queued" || finalJob.status === "running");
+        attempt += 1
+      ) {
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+        finalJob = (await api.getRuntimeJob(jobId)).job;
+      }
+      setUpgradeResult({
+        success: finalJob.status === "success",
+        version: null,
+        output: finalJob.outputTail ?? null,
+        error: finalJob.status === "error" ? (finalJob.error ?? finalJob.message) : null,
+        used_wheel: null,
+        used_command: finalJob.command ?? null,
+      });
       const refreshed = await api.getStudioDiagnostics();
       setDiagnostics(refreshed);
     } catch (err) {

@@ -1,11 +1,11 @@
 // CRITICAL
 "use client";
 
-import { useCallback, useState } from "react";
-import { ArrowUpCircle, Check, Loader2, XCircle } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { ArrowUpCircle, Check, Loader2, Settings, XCircle } from "lucide-react";
 import { useRealtimeStatus } from "@/hooks/use-realtime-status";
 import api from "@/lib/api";
-import type { RuntimeBackendInfo, SystemRuntimeInfo } from "@/lib/types";
+import type { EngineJob, RuntimeBackendInfo, RuntimeTarget, SystemRuntimeInfo } from "@/lib/types";
 
 const ENGINE_META: Record<string, { label: string; description: string }> = {
   vllm: { label: "vLLM", description: "High-throughput LLM serving (CUDA)" },
@@ -15,6 +15,121 @@ const ENGINE_META: Record<string, { label: string; description: string }> = {
 };
 
 type UpgradeState = { status: "idle" | "upgrading" | "success" | "error"; message?: string };
+
+const isRunningJob = (job: EngineJob | undefined): boolean =>
+  job?.status === "queued" || job?.status === "running";
+
+const jobForTarget = (jobs: EngineJob[], target: RuntimeTarget): EngineJob | undefined =>
+  jobs.find((job) => job.targetId === target.id && isRunningJob(job)) ??
+  jobs.find((job) => job.targetId === target.id);
+
+function RuntimeTargetCard({
+  target,
+  job,
+  onJobCreated,
+}: {
+  target: RuntimeTarget;
+  job?: EngineJob;
+  onJobCreated: () => Promise<void>;
+}) {
+  const meta = ENGINE_META[target.backend] ?? { label: target.backend, description: "" };
+  const running = isRunningJob(job);
+  const action = target.capabilities.canUpdate
+    ? target.installed
+      ? "Update"
+      : "Install"
+    : "Configure";
+  const actionDisabled = running || !target.capabilities.canUpdate;
+  const disabledReason = !target.capabilities.canUpdate
+    ? (target.health.message ?? "Updates are unsupported for this target.")
+    : null;
+
+  const handleAction = useCallback(async () => {
+    if (actionDisabled) return;
+    await api.createRuntimeJob({
+      backend: target.backend,
+      targetId: target.id,
+      type: target.installed ? "update" : "install",
+    });
+    await onJobCreated();
+  }, [actionDisabled, onJobCreated, target.backend, target.id, target.installed]);
+
+  return (
+    <div className="px-4 py-3.5 rounded-xl bg-(--surface) border border-(--border)/30">
+      <div className="flex items-start justify-between gap-3 mb-1.5">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <div
+              className={`w-2 h-2 rounded-full shrink-0 ${target.installed ? "bg-(--hl2)" : "bg-(--dim)/30"}`}
+            />
+            <span className="text-sm font-semibold text-(--fg) truncate">
+              {target.label || meta.label}
+            </span>
+          </div>
+          <div className="text-[11px] text-(--dim)/60 mt-1">
+            {meta.description} · {target.kind} · {target.source}
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          {target.active && (
+            <span className="rounded border border-(--hl2)/30 px-1.5 py-0.5 text-[10px] font-mono uppercase tracking-wide text-(--hl2)">
+              active
+            </span>
+          )}
+          <button
+            onClick={() => void handleAction()}
+            disabled={actionDisabled}
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-medium transition-colors bg-(--fg)/[0.05] hover:bg-(--fg)/[0.1] text-(--fg)/70 disabled:opacity-50"
+            title={disabledReason ?? undefined}
+          >
+            {running ? (
+              <Loader2 className="w-3 h-3 animate-spin" />
+            ) : target.capabilities.canUpdate ? (
+              <ArrowUpCircle className="w-3 h-3" />
+            ) : (
+              <Settings className="w-3 h-3" />
+            )}
+            <span>{running ? job?.status : action}</span>
+          </button>
+        </div>
+      </div>
+
+      <div className="space-y-1 mt-2">
+        <div className="flex items-center justify-between">
+          <span className="text-[11px] text-(--dim)">Version</span>
+          <span
+            className={`text-[12px] font-mono ${target.installed ? "text-(--fg)" : "text-(--dim)/40"}`}
+          >
+            {target.installed ? (target.version ?? "installed") : "not installed"}
+          </span>
+        </div>
+        {(target.pythonPath || target.binaryPath || target.dockerImage) && (
+          <div className="flex items-center justify-between gap-4">
+            <span className="text-[11px] text-(--dim) shrink-0">
+              {target.pythonPath ? "Python" : target.binaryPath ? "Binary" : "Image"}
+            </span>
+            <span className="text-[11px] font-mono text-(--dim)/60 truncate">
+              {target.pythonPath ?? target.binaryPath ?? target.dockerImage}
+            </span>
+          </div>
+        )}
+      </div>
+
+      {disabledReason && <div className="mt-2 text-[10px] text-(--dim)/80">{disabledReason}</div>}
+      {job && (
+        <div
+          className={`mt-2 text-[10px] font-mono ${job.status === "error" ? "text-(--err)" : "text-(--dim)/80"}`}
+        >
+          <div>{job.message}</div>
+          {job.command && <div className="truncate">Command: {job.command}</div>}
+          {(job.error || job.outputTail) && (
+            <div className="whitespace-pre-wrap line-clamp-3">{job.error ?? job.outputTail}</div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function EngineCard({
   id,
@@ -61,33 +176,33 @@ function EngineCard({
             </span>
           )}
           {onUpgrade && info.upgrade_command_available && (
-          <button
-            onClick={handleUpgrade}
-            disabled={state.status === "upgrading"}
-            className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-medium transition-colors bg-(--fg)/[0.05] hover:bg-(--fg)/[0.1] text-(--fg)/70 disabled:opacity-50"
-          >
-            {state.status === "upgrading" ? (
-              <>
-                <Loader2 className="w-3 h-3 animate-spin" />
-                <span>Upgrading...</span>
-              </>
-            ) : state.status === "success" ? (
-              <>
-                <Check className="w-3 h-3 text-(--hl2)" />
-                <span>Done</span>
-              </>
-            ) : state.status === "error" ? (
-              <>
-                <XCircle className="w-3 h-3 text-(--err)" />
-                <span>Failed</span>
-              </>
-            ) : (
-              <>
-                <ArrowUpCircle className="w-3 h-3" />
-                <span>{info.installed ? "Update" : "Install"}</span>
-              </>
-            )}
-          </button>
+            <button
+              onClick={handleUpgrade}
+              disabled={state.status === "upgrading"}
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-medium transition-colors bg-(--fg)/[0.05] hover:bg-(--fg)/[0.1] text-(--fg)/70 disabled:opacity-50"
+            >
+              {state.status === "upgrading" ? (
+                <>
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                  <span>Upgrading...</span>
+                </>
+              ) : state.status === "success" ? (
+                <>
+                  <Check className="w-3 h-3 text-(--hl2)" />
+                  <span>Done</span>
+                </>
+              ) : state.status === "error" ? (
+                <>
+                  <XCircle className="w-3 h-3 text-(--err)" />
+                  <span>Failed</span>
+                </>
+              ) : (
+                <>
+                  <ArrowUpCircle className="w-3 h-3" />
+                  <span>{info.installed ? "Update" : "Install"}</span>
+                </>
+              )}
+            </button>
           )}
         </div>
       </div>
@@ -132,10 +247,38 @@ function EngineCard({
 
 export function EnginesSection({ runtime }: { runtime?: SystemRuntimeInfo | null }) {
   const { runtimeSummary, status, lease } = useRealtimeStatus();
+  const [targets, setTargets] = useState<RuntimeTarget[]>([]);
+  const [jobs, setJobs] = useState<EngineJob[]>([]);
 
   const backends = runtime?.backends ?? runtimeSummary?.backends;
   const gpuMon = runtime?.gpu_monitoring ?? runtimeSummary?.gpu_monitoring;
   const activeBackend = status?.process?.backend;
+
+  const refreshRuntimeJobs = useCallback(async () => {
+    const [targetPayload, jobPayload] = await Promise.all([
+      api.getRuntimeTargets().catch(() => ({ targets: [] })),
+      api.getRuntimeJobs().catch(() => ({ jobs: [] })),
+    ]);
+    setTargets(targetPayload.targets);
+    setJobs(jobPayload.jobs);
+  }, []);
+
+  useEffect(() => {
+    void Promise.resolve().then(refreshRuntimeJobs);
+    const timer = setInterval(() => {
+      void refreshRuntimeJobs();
+    }, 2000);
+    return () => clearInterval(timer);
+  }, [refreshRuntimeJobs]);
+
+  const inferenceTargets = useMemo(
+    () =>
+      targets.filter(
+        (target) =>
+          target.backend === "vllm" || target.backend === "sglang" || target.backend === "llamacpp",
+      ),
+    [targets],
+  );
 
   const upgradeHandlers: Record<string, (() => Promise<void>) | undefined> = {
     vllm: async () => {
@@ -156,7 +299,18 @@ export function EnginesSection({ runtime }: { runtime?: SystemRuntimeInfo | null
         <h3 className="text-[11px] uppercase tracking-[0.12em] font-medium text-(--dim) mb-3">
           Inference Engines
         </h3>
-        {backends ? (
+        {inferenceTargets.length > 0 ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {inferenceTargets.map((target) => (
+              <RuntimeTargetCard
+                key={target.id}
+                target={target}
+                job={jobForTarget(jobs, target)}
+                onJobCreated={refreshRuntimeJobs}
+              />
+            ))}
+          </div>
+        ) : backends ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {(["vllm", "sglang", "llamacpp", "exllamav3"] as const).map((key) => {
               const b = backends[key];

@@ -40,6 +40,49 @@ export interface RuntimeBackendInfo {
   upgrade_command_available?: boolean;
 }
 
+export type EngineBackend = "vllm" | "sglang" | "llamacpp";
+
+export type RuntimeKind = "venv" | "docker" | "binary" | "system";
+
+export interface RuntimeTarget {
+  id: string;
+  backend: EngineBackend;
+  kind: RuntimeKind;
+  label: string;
+  installed: boolean;
+  active: boolean;
+  version: string | null;
+  pythonPath?: string | null;
+  binaryPath?: string | null;
+  dockerImage?: string | null;
+  source: "configured" | "discovered" | "running" | "bundled";
+  capabilities: {
+    canLaunch: boolean;
+    canUpdate: boolean;
+    canInspectOptions: boolean;
+    supportsDocker: boolean;
+  };
+  health: {
+    status: "ok" | "warning" | "error" | "unknown";
+    message?: string;
+  };
+}
+
+export interface EngineJob {
+  id: string;
+  backend: EngineBackend;
+  targetId?: string;
+  type: "install" | "update" | "download" | "inspect";
+  status: "queued" | "running" | "success" | "error" | "cancelled";
+  progress?: number;
+  message: string;
+  command?: string;
+  startedAt: string;
+  finishedAt?: string;
+  outputTail?: string;
+  error?: string;
+}
+
 export type RuntimePlatformKind = "cuda" | "rocm" | "unknown";
 
 export type RuntimeRocmSmiTool = "amd-smi" | "rocm-smi";

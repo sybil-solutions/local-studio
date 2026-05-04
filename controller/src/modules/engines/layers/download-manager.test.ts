@@ -19,10 +19,10 @@ afterEach(() => {
   }
 });
 
-const createManager = (modelsDir: string): DownloadManager => {
+const createManager = (modelsDirectory: string): DownloadManager => {
   return new DownloadManager(
     {
-      models_dir: modelsDir,
+      models_dir: modelsDirectory,
     } as Config,
     {
       list: () => [],

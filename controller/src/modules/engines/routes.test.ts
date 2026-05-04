@@ -10,12 +10,14 @@ import type { Logger } from "../../core/logger";
 import type { AppContext } from "../../types/context";
 import type { ProcessInfo, Recipe, LaunchResult } from "../models/types";
 import { EngineCoordinator } from "./layers/engine-coordinator";
+import { clearEngineJobsForTests } from "./layers/engine-jobs";
 import type { ProcessManager } from "./layers/process-manager";
 import { registerEngineRoutes } from "./routes";
 
 const servers: Array<ReturnType<typeof Bun.serve>> = [];
 
 afterEach(() => {
+  clearEngineJobsForTests();
   for (const server of servers.splice(0)) {
     server.stop(true);
   }
@@ -161,5 +163,26 @@ describe("engine routes", () => {
     expect(await launchResponse.json()).toEqual({ success: true, message: "Launch started" });
     expect(killed).toEqual([process.pid]);
     expect(launched).toEqual([recipes[1]]);
+  });
+
+  it("creates and exposes runtime jobs from upgrade wrappers", async () => {
+    const { app } = createEngineRoutesHarness();
+
+    const createResponse = await app.request("/runtime/llamacpp/upgrade", {
+      method: "POST",
+      body: JSON.stringify({}),
+    });
+    expect(createResponse.status).toBe(200);
+    const createPayload = (await createResponse.json()) as { job_id: string };
+    expect(createPayload.job_id).toBeTruthy();
+
+    const jobResponse = await app.request(`/runtime/jobs/${createPayload.job_id}`);
+    expect(jobResponse.status).toBe(200);
+    const jobPayload = (await jobResponse.json()) as {
+      job: { id: string; type: string; message: string };
+    };
+    expect(jobPayload.job.id).toBe(createPayload.job_id);
+    expect(jobPayload.job.type).toBe("update");
+    expect(jobPayload.job.message.length).toBeGreaterThan(0);
   });
 });

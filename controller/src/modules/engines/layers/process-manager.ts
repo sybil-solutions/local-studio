@@ -206,7 +206,9 @@ export const createProcessManager = (
       const port = Number(extractFlag(proc.args, "--port"));
       if (Number.isFinite(port) && port > 0) inferencePorts.add(port);
 
-      const dockerIndex = proc.args.findIndex((arg) => arg === "docker" || arg.endsWith("/docker"));
+      const dockerIndex = proc.args.findIndex(
+        (argument) => argument === "docker" || argument.endsWith("/docker")
+      );
       if (dockerIndex < 0 || proc.args[dockerIndex + 1] !== "run") continue;
       const name = extractFlag(proc.args.slice(dockerIndex + 2), "--name");
       if (name) names.add(name);
@@ -219,7 +221,7 @@ export const createProcessManager = (
     if (inferencePorts.size > 0) {
       for (const proc of processes) {
         const dockerIndex = proc.args.findIndex(
-          (arg) => arg === "docker" || arg.endsWith("/docker")
+          (argument) => argument === "docker" || argument.endsWith("/docker")
         );
         if (dockerIndex < 0 || proc.args[dockerIndex + 1] !== "run") continue;
         const dockerPort = Number(extractFlag(proc.args, "--port"));

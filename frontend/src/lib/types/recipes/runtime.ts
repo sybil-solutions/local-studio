@@ -23,6 +23,11 @@ export interface RuntimeUpgradeResult {
   used_command: string | null;
 }
 
+export interface RuntimeJobResponse {
+  job_id: string;
+  job: import("../system/config").EngineJob;
+}
+
 export interface VllmUpgradeResult extends RuntimeUpgradeResult {
   used_wheel: string | null;
 }

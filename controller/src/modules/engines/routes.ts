@@ -8,24 +8,23 @@ import { Event } from "../system/event-manager";
 import { CONTROLLER_EVENTS } from "../../contracts/controller-events";
 import { fetchInference } from "../../services/inference/inference-client";
 import { isRecipeRunning } from "../models/recipes/recipe-matching";
-import {
-  getVllmRuntimeInfo,
-  upgradeVllmRuntime,
-  getVllmConfigHelp,
-} from "./layers/vllm-runtime";
+import { getVllmConfigHelp } from "./layers/vllm-runtime";
 import { getLlamacppConfigHelp } from "./layers/llamacpp-runtime";
-import {
-  getLlamacppRuntimeInfo,
-  getSglangRuntimeInfo,
-  getExllamav3RuntimeInfo,
-  getCudaInfo,
-} from "./layers/runtime-info";
+import { getExllamav3RuntimeInfo, getCudaInfo } from "./layers/runtime-info";
 import { getRocmInfo, resolveRocmSmiTool } from "../system/platform/rocm-info";
 import {
-  upgradeSglangRuntime,
-  upgradeLlamacppRuntime,
-  runPlatformUpgrade,
-} from "./layers/runtime-upgrade";
+  getDefaultRuntimeTarget,
+  getRuntimeTarget,
+  getRuntimeTargets,
+  runtimeTargetToBackendInfo,
+  selectRuntimeTarget,
+} from "./layers/runtime-targets";
+import {
+  cancelEngineJob,
+  createEngineJob,
+  getEngineJob,
+  listEngineJobs,
+} from "./layers/engine-jobs";
 
 const resolveHfToken = (
   ctx: { req: { header: (name: string) => string | undefined } },
@@ -39,6 +38,42 @@ const resolveHfToken = (
     process.env["HUGGINGFACE_TOKEN"] ??
     null;
   return bodyToken || headerToken || envToken;
+};
+
+const parseRuntimeJobBody = async (ctx: {
+  req: { json: () => Promise<unknown> };
+}): Promise<{
+  backend?: "vllm" | "sglang" | "llamacpp" | "cuda" | "rocm";
+  targetId?: string;
+  type?: "install" | "update" | "download" | "inspect";
+  command?: string;
+  args?: string[];
+  version?: string;
+  preferBundled?: boolean;
+}> => {
+  const body = await ctx.req.json().catch(() => ({}));
+  if (!body || typeof body !== "object" || Array.isArray(body)) throw badRequest("Invalid payload");
+  const record = body as Record<string, unknown>;
+  const backend = typeof record["backend"] === "string" ? record["backend"] : undefined;
+  if (backend && !["vllm", "sglang", "llamacpp", "cuda", "rocm"].includes(backend))
+    throw badRequest("Invalid backend");
+  const type = typeof record["type"] === "string" ? record["type"] : undefined;
+  if (type && !["install", "update", "download", "inspect"].includes(type))
+    throw badRequest("Invalid job type");
+  const args = Array.isArray(record["args"]) ? record["args"] : undefined;
+  if (args?.some((value) => typeof value !== "string"))
+    throw badRequest("args must be an array of strings");
+  return {
+    ...(backend ? { backend: backend as "vllm" | "sglang" | "llamacpp" | "cuda" | "rocm" } : {}),
+    ...(typeof record["targetId"] === "string" ? { targetId: record["targetId"] } : {}),
+    ...(type ? { type: type as "install" | "update" | "download" | "inspect" } : {}),
+    ...(typeof record["command"] === "string" ? { command: record["command"] } : {}),
+    ...(args ? { args: args as string[] } : {}),
+    ...(typeof record["version"] === "string" ? { version: record["version"] } : {}),
+    ...(typeof record["prefer_bundled"] === "boolean"
+      ? { preferBundled: record["prefer_bundled"] }
+      : {}),
+  };
 };
 
 /**
@@ -116,7 +151,9 @@ export const registerEngineRoutes = (app: Hono, context: AppContext): void => {
     const controller = new AbortController();
     launchAbortControllers.set(recipeId, controller);
     try {
-      const result = await context.engineService.setActiveRecipe(recipe, { signal: controller.signal });
+      const result = await context.engineService.setActiveRecipe(recipe, {
+        signal: controller.signal,
+      });
       if (!result.ok) {
         if (result.error.toLowerCase().includes("cancelled")) throw badRequest(result.error);
         throw serviceUnavailable(result.error);
@@ -186,7 +223,9 @@ export const registerEngineRoutes = (app: Hono, context: AppContext): void => {
       revision: typeof body?.revision === "string" ? body.revision : null,
       destination_dir: typeof body?.destination_dir === "string" ? body.destination_dir : null,
       allow_patterns: Array.isArray(body?.allow_patterns) ? body.allow_patterns.map(String) : null,
-      ignore_patterns: Array.isArray(body?.ignore_patterns) ? body.ignore_patterns.map(String) : null,
+      ignore_patterns: Array.isArray(body?.ignore_patterns)
+        ? body.ignore_patterns.map(String)
+        : null,
       hf_token: resolveHfToken(ctx, body),
     });
     return ctx.json({ download });
@@ -214,9 +253,70 @@ export const registerEngineRoutes = (app: Hono, context: AppContext): void => {
 
   // ── Runtime info (from runtime-routes) ──
 
+  app.get("/runtime/targets", async (ctx) => {
+    const current = await context.engineService.getCurrentProcess();
+    const targets = await getRuntimeTargets(context.config, current);
+    return ctx.json({ targets });
+  });
+
+  app.get("/runtime/targets/:targetId", async (ctx) => {
+    const current = await context.engineService.getCurrentProcess();
+    const target = await getRuntimeTarget(context.config, ctx.req.param("targetId"), current);
+    if (!target) throw notFound("Runtime target not found");
+    return ctx.json({ target });
+  });
+
+  app.post("/runtime/targets/:targetId/select", async (ctx) => {
+    const current = await context.engineService.getCurrentProcess();
+    const target = await selectRuntimeTarget(context.config, ctx.req.param("targetId"), current);
+    if (!target) throw notFound("Runtime target not found");
+    return ctx.json({ target });
+  });
+
+  app.get("/runtime/targets/:targetId/health", async (ctx) => {
+    const current = await context.engineService.getCurrentProcess();
+    const target = await getRuntimeTarget(context.config, ctx.req.param("targetId"), current);
+    if (!target) throw notFound("Runtime target not found");
+    return ctx.json({ health: target.health });
+  });
+
+  app.post("/runtime/jobs", async (ctx) => {
+    const body = await parseRuntimeJobBody(ctx);
+    if (!body.backend) throw badRequest("backend is required");
+    const current = await context.engineService.getCurrentProcess();
+    const job = createEngineJob(context.config, {
+      backend: body.backend,
+      type: body.type ?? "update",
+      ...(body.targetId ? { targetId: body.targetId } : {}),
+      ...(body.command ? { command: body.command } : {}),
+      ...(body.args ? { args: body.args } : {}),
+      ...(body.version ? { version: body.version } : {}),
+      ...(body.preferBundled !== undefined ? { preferBundled: body.preferBundled } : {}),
+      runningProcess: current,
+    });
+    return ctx.json({ job });
+  });
+
+  app.get("/runtime/jobs", async (ctx) => {
+    return ctx.json({ jobs: listEngineJobs() });
+  });
+
+  app.get("/runtime/jobs/:jobId", async (ctx) => {
+    const job = getEngineJob(ctx.req.param("jobId"));
+    if (!job) throw notFound("Runtime job not found");
+    return ctx.json({ job });
+  });
+
+  app.post("/runtime/jobs/:jobId/cancel", async (ctx) => {
+    const job = cancelEngineJob(ctx.req.param("jobId"));
+    if (!job) throw notFound("Runtime job not found");
+    return ctx.json({ job });
+  });
+
   app.get("/runtime/vllm", async (ctx) => {
-    const info = await getVllmRuntimeInfo();
-    return ctx.json(info);
+    const current = await context.engineService.getCurrentProcess();
+    const target = await getDefaultRuntimeTarget(context.config, "vllm", current);
+    return ctx.json(runtimeTargetToBackendInfo(target));
   });
 
   app.get("/runtime/vllm/config", async (ctx) => {
@@ -231,13 +331,14 @@ export const registerEngineRoutes = (app: Hono, context: AppContext): void => {
 
   app.get("/runtime/sglang", async (ctx) => {
     const current = await context.engineService.getCurrentProcess();
-    const info = await getSglangRuntimeInfo(context.config, current);
-    return ctx.json(info);
+    const target = await getDefaultRuntimeTarget(context.config, "sglang", current);
+    return ctx.json(runtimeTargetToBackendInfo(target));
   });
 
   app.get("/runtime/llamacpp", async (ctx) => {
-    const info = getLlamacppRuntimeInfo(context.config);
-    return ctx.json(info);
+    const current = await context.engineService.getCurrentProcess();
+    const target = await getDefaultRuntimeTarget(context.config, "llamacpp", current);
+    return ctx.json(runtimeTargetToBackendInfo(target));
   });
 
   app.get("/runtime/exllamav3", async (ctx) => {
@@ -257,72 +358,54 @@ export const registerEngineRoutes = (app: Hono, context: AppContext): void => {
   // ── Runtime upgrade ──
 
   app.post("/runtime/vllm/upgrade", async (ctx) => {
-    const body = await ctx.req.json().catch(() => ({}));
-    if (body && typeof body !== "object") throw badRequest("Invalid payload");
-    const preferBundled = body?.prefer_bundled !== false;
-    const parsedArguments = Array.isArray(body?.args) ? body.args : [];
-    const requestedVersion = typeof body?.version === "string" ? body.version.trim() : undefined;
-    if (parsedArguments.some((value: unknown) => typeof value !== "string")) throw badRequest("args must be an array of strings");
-    const result = await upgradeVllmRuntime({
-      preferBundled,
-      ...(parsedArguments.length > 0 ? { args: parsedArguments as string[] } : {}),
-      ...(requestedVersion ? { version: requestedVersion } : {}),
+    const body = await parseRuntimeJobBody(ctx);
+    const job = createEngineJob(context.config, {
+      backend: "vllm",
+      type: "update",
+      ...(body.args ? { args: body.args } : {}),
+      ...(body.version ? { version: body.version.trim() } : {}),
+      preferBundled: body.preferBundled ?? true,
     });
-    await context.eventManager.publish(
-      new Event(CONTROLLER_EVENTS.RUNTIME_VLLM_UPGRADED, { success: result.success, version: result.version, used_wheel: result.used_wheel })
-    );
-    return ctx.json(result);
+    return ctx.json({ job_id: job.id, job });
   });
 
   app.post("/runtime/sglang/upgrade", async (ctx) => {
-    const body = await ctx.req.json().catch(() => ({}));
-    const parsedArguments = Array.isArray(body?.args) ? body.args : [];
-    if (parsedArguments.some((value: unknown) => typeof value !== "string")) throw badRequest("args must be an array of strings");
-    const finalResult = await upgradeSglangRuntime(context.config, {
-      ...(parsedArguments.length > 0 ? { args: parsedArguments as string[] } : {}),
+    const body = await parseRuntimeJobBody(ctx);
+    const job = createEngineJob(context.config, {
+      backend: "sglang",
+      type: "update",
+      ...(body.args ? { args: body.args } : {}),
     });
-    await context.eventManager.publish(
-      new Event(CONTROLLER_EVENTS.RUNTIME_SGLANG_UPGRADED, { success: finalResult.success, version: finalResult.version, used_command: finalResult.used_command })
-    );
-    return ctx.json(finalResult);
+    return ctx.json({ job_id: job.id, job });
   });
 
   app.post("/runtime/llamacpp/upgrade", async (ctx) => {
-    const body = await ctx.req.json().catch(() => ({}));
-    const parsedArguments = Array.isArray(body?.args) ? body.args : [];
-    if (parsedArguments.some((value: unknown) => typeof value !== "string")) throw badRequest("args must be an array of strings");
-    const result = await upgradeLlamacppRuntime(context.config, {
-      ...(parsedArguments.length > 0 ? { args: parsedArguments as string[] } : {}),
+    const body = await parseRuntimeJobBody(ctx);
+    const job = createEngineJob(context.config, {
+      backend: "llamacpp",
+      type: "update",
+      ...(body.args ? { args: body.args } : {}),
     });
-    await context.eventManager.publish(
-      new Event(CONTROLLER_EVENTS.RUNTIME_LLAMACPP_UPGRADED, { success: result.success, version: result.version, used_command: result.used_command })
-    );
-    return ctx.json(result);
+    return ctx.json({ job_id: job.id, job });
   });
 
   app.post("/runtime/cuda/upgrade", async (ctx) => {
-    const body = await ctx.req.json().catch(() => ({}));
-    const parsedArguments = Array.isArray(body?.args) ? body.args : [];
-    if (parsedArguments.some((value: unknown) => typeof value !== "string")) throw badRequest("args must be an array of strings");
-    const result = runPlatformUpgrade("cuda", {
-      ...(parsedArguments.length > 0 ? { args: parsedArguments as string[] } : {}),
+    const body = await parseRuntimeJobBody(ctx);
+    const job = createEngineJob(context.config, {
+      backend: "cuda",
+      type: "update",
+      ...(body.args ? { args: body.args } : {}),
     });
-    await context.eventManager.publish(
-      new Event(CONTROLLER_EVENTS.RUNTIME_CUDA_UPGRADED, { success: result.success, version: result.version, used_command: result.used_command })
-    );
-    return ctx.json(result);
+    return ctx.json({ job_id: job.id, job });
   });
 
   app.post("/runtime/rocm/upgrade", async (ctx) => {
-    const body = await ctx.req.json().catch(() => ({}));
-    const parsedArguments = Array.isArray(body?.args) ? body.args : [];
-    if (parsedArguments.some((value: unknown) => typeof value !== "string")) throw badRequest("args must be an array of strings");
-    const result = runPlatformUpgrade("rocm", {
-      ...(parsedArguments.length > 0 ? { args: parsedArguments as string[] } : {}),
+    const body = await parseRuntimeJobBody(ctx);
+    const job = createEngineJob(context.config, {
+      backend: "rocm",
+      type: "update",
+      ...(body.args ? { args: body.args } : {}),
     });
-    await context.eventManager.publish(
-      new Event(CONTROLLER_EVENTS.RUNTIME_ROCM_UPGRADED, { success: result.success, version: result.version, used_command: result.used_command })
-    );
-    return ctx.json(result);
+    return ctx.json({ job_id: job.id, job });
   });
 };

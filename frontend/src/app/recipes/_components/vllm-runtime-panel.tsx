@@ -4,7 +4,7 @@
 import { ArrowUpCircle, RefreshCw } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import api from "@/lib/api";
-import type { RuntimeCommandPayload, RuntimeUpgradeResult, VllmUpgradeResult } from "@/lib/types";
+import type { EngineJob, RuntimeCommandPayload, RuntimeUpgradeResult } from "@/lib/types";
 import { useMachine } from "@/hooks/use-machine";
 import {
   createRuntimePanelMachine,
@@ -20,13 +20,14 @@ export function VllmRuntimePanel() {
     dispatch({ type: "runtime/load/request" });
 
     try {
-      const [vllmRuntime, sglangRuntime, llamacppRuntime, cudaRuntime, rocmRuntime] = await Promise.all([
-        api.getVllmRuntime(),
-        api.getSglangRuntime(),
-        api.getLlamacppRuntime(),
-        api.getCudaRuntime(),
-        api.getRocmRuntime(),
-      ]);
+      const [vllmRuntime, sglangRuntime, llamacppRuntime, cudaRuntime, rocmRuntime] =
+        await Promise.all([
+          api.getVllmRuntime(),
+          api.getSglangRuntime(),
+          api.getLlamacppRuntime(),
+          api.getCudaRuntime(),
+          api.getRocmRuntime(),
+        ]);
       dispatch({
         type: "runtime/load/success",
         payload: {
@@ -64,32 +65,54 @@ export function VllmRuntimePanel() {
     void loadRuntimeConfig();
   }, [loadRuntime, loadRuntimeConfig]);
 
+  const waitForRuntimeJob = useCallback(async (jobId: string): Promise<EngineJob> => {
+    for (let attempt = 0; attempt < 120; attempt += 1) {
+      const { job } = await api.getRuntimeJob(jobId);
+      if (job.status !== "queued" && job.status !== "running") return job;
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+    }
+    throw new Error("Runtime job did not finish before timeout");
+  }, []);
+
+  const upgradeResultFromJob = useCallback(
+    (job: EngineJob): RuntimeUpgradeResult => ({
+      success: job.status === "success",
+      version: null,
+      output: job.outputTail ?? null,
+      error: job.status === "error" ? (job.error ?? job.message) : null,
+      used_command: job.command ?? null,
+    }),
+    [],
+  );
+
   const triggerUpgrade = useCallback(
     async (backend: RuntimeBackendKind, payload: RuntimeCommandPayload = {}) => {
       dispatch({ type: "upgrade/request", backend });
 
       try {
-        let result: VllmUpgradeResult | RuntimeUpgradeResult;
+        let jobId: string;
         switch (backend) {
           case "vllm":
-            result = await api.upgradeVllmRuntime({ preferBundled: true });
+            jobId = (await api.upgradeVllmRuntime({ preferBundled: true })).job_id;
             break;
           case "sglang":
-            result = await api.upgradeSglangRuntime();
+            jobId = (await api.upgradeSglangRuntime()).job_id;
             break;
           case "llamacpp":
-            result = await api.upgradeLlamacppRuntime(payload);
+            jobId = (await api.upgradeLlamacppRuntime(payload)).job_id;
             break;
           case "cuda":
-            result = await api.upgradeCudaRuntime(payload);
+            jobId = (await api.upgradeCudaRuntime(payload)).job_id;
             break;
           case "rocm":
-            result = await api.upgradeRocmRuntime(payload);
+            jobId = (await api.upgradeRocmRuntime(payload)).job_id;
             break;
           default:
             throw new Error(`Unsupported backend: ${backend}`);
         }
 
+        const job = await waitForRuntimeJob(jobId);
+        const result = upgradeResultFromJob(job);
         dispatch({ type: "upgrade/success", backend, result });
         await loadRuntime();
         if (backend === "vllm") {
@@ -103,14 +126,17 @@ export function VllmRuntimePanel() {
         });
       }
     },
-    [dispatch, loadRuntime, loadRuntimeConfig],
+    [dispatch, loadRuntime, loadRuntimeConfig, upgradeResultFromJob, waitForRuntimeJob],
   );
 
   useEffect(() => {
     handleRefresh();
   }, [handleRefresh]);
 
-  const { vllmCards, backendCards } = useMemo(() => getRuntimePanelCards(runtimeState), [runtimeState]);
+  const { vllmCards, backendCards } = useMemo(
+    () => getRuntimePanelCards(runtimeState),
+    [runtimeState],
+  );
 
   return (
     <div style={{ padding: "1.5rem" }} className="space-y-6 max-w-3xl">
@@ -126,7 +152,9 @@ export function VllmRuntimePanel() {
           disabled={runtimeState.runtimeLoading || runtimeState.runtimeConfigLoading}
           className="flex items-center gap-2 px-3 py-2 bg-(--surface) hover:bg-(--surface) border border-(--border) rounded-lg text-sm transition-colors disabled:opacity-50"
         >
-          <RefreshCw className={`w-4 h-4 ${runtimeState.runtimeLoading || runtimeState.runtimeConfigLoading ? "animate-spin" : ""}`} />
+          <RefreshCw
+            className={`w-4 h-4 ${runtimeState.runtimeLoading || runtimeState.runtimeConfigLoading ? "animate-spin" : ""}`}
+          />
           Refresh
         </button>
       </div>
@@ -142,12 +170,17 @@ export function VllmRuntimePanel() {
         <div className="grid grid-cols-1 gap-4">
           {vllmCards.map((card) => {
             return (
-              <div key={card.title} className="bg-(--surface) border border-(--border) rounded-lg p-4">
+              <div
+                key={card.title}
+                className="bg-(--surface) border border-(--border) rounded-lg p-4"
+              >
                 <div className="flex items-start justify-between gap-4">
                   <div>
-                    <div className="text-xs uppercase tracking-wider text-(--dim) font-medium">{card.title}</div>
+                    <div className="text-xs uppercase tracking-wider text-(--dim) font-medium">
+                      {card.title}
+                    </div>
                     <div className="mt-2 text-lg font-semibold">
-                      {card.installed ? card.version ?? "Version unknown" : "Not installed"}
+                      {card.installed ? (card.version ?? "Version unknown") : "Not installed"}
                     </div>
                     <div className="text-xs text-(--dim) mt-2">
                       {card.pathLabel}: {card.pathValue}
@@ -163,7 +196,9 @@ export function VllmRuntimePanel() {
                       {card.upgrading ? "Upgrading..." : "Upgrade"}
                     </button>
                     {card.disabledReason && (
-                      <span className="text-xs text-(--dim) text-right max-w-[12rem]">{card.disabledReason}</span>
+                      <span className="text-xs text-(--dim) text-right max-w-[12rem]">
+                        {card.disabledReason}
+                      </span>
                     )}
                   </div>
                 </div>
@@ -178,10 +213,15 @@ export function VllmRuntimePanel() {
         <div className="grid grid-cols-1 gap-4">
           {backendCards.map((card) => {
             return (
-              <div key={card.title} className="bg-(--surface) border border-(--border) rounded-lg p-4">
+              <div
+                key={card.title}
+                className="bg-(--surface) border border-(--border) rounded-lg p-4"
+              >
                 <div className="flex items-start justify-between gap-4">
                   <div>
-                    <div className="text-xs uppercase tracking-wider text-(--dim) font-medium">{card.title}</div>
+                    <div className="text-xs uppercase tracking-wider text-(--dim) font-medium">
+                      {card.title}
+                    </div>
                     <div className="mt-2 text-lg font-semibold">
                       {card.version ?? "Not detected"}
                     </div>
@@ -199,7 +239,9 @@ export function VllmRuntimePanel() {
                       {card.upgrading ? "Upgrading..." : "Upgrade"}
                     </button>
                     {card.disabledReason && (
-                      <span className="text-xs text-(--dim) text-right max-w-[12rem]">{card.disabledReason}</span>
+                      <span className="text-xs text-(--dim) text-right max-w-[12rem]">
+                        {card.disabledReason}
+                      </span>
                     )}
                   </div>
                 </div>
@@ -222,7 +264,9 @@ export function VllmRuntimePanel() {
             {runtimeState.runtimeConfigLoading ? "Loading..." : "Refresh"}
           </button>
         </div>
-        {runtimeState.runtimeConfig?.error && <div className="text-xs text-(--err)">{runtimeState.runtimeConfig.error}</div>}
+        {runtimeState.runtimeConfig?.error && (
+          <div className="text-xs text-(--err)">{runtimeState.runtimeConfig.error}</div>
+        )}
         <pre className="max-h-72 overflow-auto text-xs text-(--fg) whitespace-pre-wrap">
           {runtimeState.runtimeConfig?.config || "No config available."}
         </pre>
@@ -239,19 +283,31 @@ export function VllmRuntimePanel() {
           <div className="font-medium">
             {runtimeState.upgradeResult.result.success ? "Upgrade complete" : "Upgrade failed"} (
             {runtimeState.upgradeResult.backend})
-            {runtimeState.upgradeResult.result.version ? ` (v ${runtimeState.upgradeResult.result.version})` : ""}
+            {runtimeState.upgradeResult.result.version
+              ? ` (v ${runtimeState.upgradeResult.result.version})`
+              : ""}
           </div>
-          {"used_command" in runtimeState.upgradeResult.result && runtimeState.upgradeResult.result.used_command && (
-            <div className="text-xs mt-1 break-all">Command: {runtimeState.upgradeResult.result.used_command}</div>
-          )}
-          {"used_wheel" in runtimeState.upgradeResult.result && runtimeState.upgradeResult.result.used_wheel && (
-            <div className="text-xs mt-1">Wheel: {runtimeState.upgradeResult.result.used_wheel}</div>
-          )}
+          {"used_command" in runtimeState.upgradeResult.result &&
+            runtimeState.upgradeResult.result.used_command && (
+              <div className="text-xs mt-1 break-all">
+                Command: {runtimeState.upgradeResult.result.used_command}
+              </div>
+            )}
+          {"used_wheel" in runtimeState.upgradeResult.result &&
+            runtimeState.upgradeResult.result.used_wheel && (
+              <div className="text-xs mt-1">
+                Wheel: {runtimeState.upgradeResult.result.used_wheel}
+              </div>
+            )}
           {runtimeState.upgradeResult.result.error && (
-            <div className="text-xs mt-2 whitespace-pre-wrap text-(--err)">{runtimeState.upgradeResult.result.error}</div>
+            <div className="text-xs mt-2 whitespace-pre-wrap text-(--err)">
+              {runtimeState.upgradeResult.result.error}
+            </div>
           )}
           {runtimeState.upgradeResult.result.output && (
-            <pre className="text-xs mt-2 whitespace-pre-wrap text-(--fg)">{runtimeState.upgradeResult.result.output}</pre>
+            <pre className="text-xs mt-2 whitespace-pre-wrap text-(--fg)">
+              {runtimeState.upgradeResult.result.output}
+            </pre>
           )}
         </div>
       )}

@@ -11,6 +11,10 @@ export type {
   SystemConfig,
   EnvironmentInfo,
   RuntimeBackendInfo,
+  EngineBackend,
+  EngineJob,
+  RuntimeKind,
+  RuntimeTarget,
   RuntimePlatformKind,
   RuntimeRocmSmiTool,
   RuntimeGpuMonitoringTool,
@@ -26,9 +30,4 @@ export type {
   CompatibilityReport,
 } from "../shared/system-types";
 
-export type {
-  LaunchResult,
-  ProcessInfo,
-  Recipe,
-  GpuInfo,
-} from "../models/types";
+export type { LaunchResult, ProcessInfo, Recipe, GpuInfo } from "../models/types";

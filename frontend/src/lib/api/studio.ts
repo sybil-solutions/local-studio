@@ -1,6 +1,7 @@
 // CRITICAL
 import type {
   ModelDownload,
+  EngineJob,
   ModelInfo,
   ModelRecommendation,
   StorageInfo,
@@ -10,11 +11,11 @@ import type {
   RuntimeBackendInfo,
   RuntimeCommandPayload,
   RuntimeCudaInfo,
+  RuntimeJobResponse,
   RuntimeRocmInfo,
-  RuntimeUpgradeResult,
+  RuntimeTarget,
   VllmRuntimeConfig,
   VllmRuntimeInfo,
-  VllmUpgradeResult,
 } from "../types";
 import type { ApiCore } from "./core";
 import { encodePathSegments } from "./core";
@@ -155,6 +156,39 @@ export function createStudioApi(core: ApiCore) {
 
     getVllmRuntime: (): Promise<VllmRuntimeInfo> => core.request("/runtime/vllm"),
 
+    getRuntimeTargets: (): Promise<{ targets: RuntimeTarget[] }> =>
+      core.request("/runtime/targets"),
+
+    createRuntimeJob: (payload: {
+      backend: "vllm" | "sglang" | "llamacpp";
+      targetId?: string;
+      type?: "install" | "update" | "download" | "inspect";
+      command?: string;
+      args?: string[];
+      version?: string;
+      preferBundled?: boolean;
+    }): Promise<{ job: EngineJob }> =>
+      core.request("/runtime/jobs", {
+        method: "POST",
+        body: JSON.stringify({
+          backend: payload.backend,
+          targetId: payload.targetId,
+          type: payload.type,
+          command: payload.command,
+          args: payload.args,
+          version: payload.version,
+          prefer_bundled: payload.preferBundled,
+        }),
+      }),
+
+    getRuntimeJobs: (): Promise<{ jobs: EngineJob[] }> => core.request("/runtime/jobs"),
+
+    getRuntimeJob: (id: string): Promise<{ job: EngineJob }> =>
+      core.request(`/runtime/jobs/${encodePathSegments(id)}`),
+
+    cancelRuntimeJob: (id: string): Promise<{ job: EngineJob }> =>
+      core.request(`/runtime/jobs/${encodePathSegments(id)}/cancel`, { method: "POST" }),
+
     getVllmRuntimeConfig: (): Promise<VllmRuntimeConfig> => core.request("/runtime/vllm/config"),
 
     getSglangRuntime: (): Promise<RuntimeBackendInfo> => core.request("/runtime/sglang"),
@@ -175,7 +209,7 @@ export function createStudioApi(core: ApiCore) {
         args?: string[];
         version?: string;
       } = {},
-    ): Promise<VllmUpgradeResult> =>
+    ): Promise<RuntimeJobResponse> =>
       core.request("/runtime/vllm/upgrade", {
         method: "POST",
         body: JSON.stringify({
@@ -186,25 +220,25 @@ export function createStudioApi(core: ApiCore) {
         }),
       }),
 
-    upgradeSglangRuntime: (payload: RuntimeCommandPayload = {}): Promise<RuntimeUpgradeResult> =>
+    upgradeSglangRuntime: (payload: RuntimeCommandPayload = {}): Promise<RuntimeJobResponse> =>
       core.request("/runtime/sglang/upgrade", {
         method: "POST",
         body: JSON.stringify(payload),
       }),
 
-    upgradeLlamacppRuntime: (payload: RuntimeCommandPayload = {}): Promise<RuntimeUpgradeResult> =>
+    upgradeLlamacppRuntime: (payload: RuntimeCommandPayload = {}): Promise<RuntimeJobResponse> =>
       core.request("/runtime/llamacpp/upgrade", {
         method: "POST",
         body: JSON.stringify(payload),
       }),
 
-    upgradeCudaRuntime: (payload: RuntimeCommandPayload = {}): Promise<RuntimeUpgradeResult> =>
+    upgradeCudaRuntime: (payload: RuntimeCommandPayload = {}): Promise<RuntimeJobResponse> =>
       core.request("/runtime/cuda/upgrade", {
         method: "POST",
         body: JSON.stringify(payload),
       }),
 
-    upgradeRocmRuntime: (payload: RuntimeCommandPayload = {}): Promise<RuntimeUpgradeResult> =>
+    upgradeRocmRuntime: (payload: RuntimeCommandPayload = {}): Promise<RuntimeJobResponse> =>
       core.request("/runtime/rocm/upgrade", {
         method: "POST",
         body: JSON.stringify(payload),
