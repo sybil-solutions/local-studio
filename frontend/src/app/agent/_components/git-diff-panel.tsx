@@ -81,7 +81,6 @@ function parseUnifiedDiff(diff: string): DiffFile[] {
 export function GitDiffPanel({ cwd }: { cwd: string | null }) {
   const [payload, setPayload] = useState<GitDiffPayload | null>(null);
   const [loading, setLoading] = useState(false);
-  const [selectedPath, setSelectedPath] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!cwd) {
@@ -107,13 +106,6 @@ export function GitDiffPanel({ cwd }: { cwd: string | null }) {
   }, [load]);
 
   const files = useMemo(() => parseUnifiedDiff(payload?.diff ?? ""), [payload?.diff]);
-  const selected = files.find((file) => file.path === selectedPath) ?? files[0] ?? null;
-
-  useEffect(() => {
-    if (files.length > 0 && !files.some((file) => file.path === selectedPath)) {
-      setSelectedPath(files[0].path);
-    }
-  }, [files, selectedPath]);
 
   return (
     <section className="flex min-h-0 flex-1 flex-col">
@@ -153,55 +145,58 @@ export function GitDiffPanel({ cwd }: { cwd: string | null }) {
           ) : null}
         </div>
       ) : (
-        <div className="flex min-h-0 flex-1">
-          <div className="w-44 shrink-0 overflow-auto border-r border-(--border) bg-(--surface)/40">
-            {files.map((file) => (
-              <button
+        <div className="min-h-0 flex-1 overflow-auto p-2 font-mono text-[11px] leading-5">
+          <div className="flex flex-col gap-2">
+            {files.map((file, fileIndex) => (
+              <details
                 key={file.path}
-                type="button"
-                onClick={() => setSelectedPath(file.path)}
-                className={`flex w-full flex-col gap-1 border-b border-(--border)/60 px-2 py-2 text-left text-xs ${
-                  selected?.path === file.path
-                    ? "bg-(--bg) text-(--fg)"
-                    : "text-(--dim) hover:bg-(--surface) hover:text-(--fg)"
-                }`}
-                title={file.path}
+                className="overflow-hidden rounded-md border border-(--border) bg-(--bg)"
+                open={fileIndex === 0}
               >
-                <span className="truncate font-mono">{file.path}</span>
-                <span className="font-mono text-[10px]">
-                  <span className="text-emerald-400">+{file.additions}</span>{" "}
-                  <span className="text-red-400">-{file.deletions}</span>
-                </span>
-              </button>
-            ))}
-          </div>
-          <div className="min-w-0 flex-1 overflow-auto font-mono text-[11px] leading-5">
-            {selected?.lines.map((line, index) => (
-              <div
-                key={`${selected.path}-${index}`}
-                className={`grid grid-cols-[3rem_3rem_1fr] gap-2 border-b border-(--border)/20 px-2 ${
-                  line.kind === "add"
-                    ? "bg-emerald-500/10 text-emerald-100"
-                    : line.kind === "del"
-                      ? "bg-red-500/10 text-red-100"
-                      : line.kind === "meta"
-                        ? "bg-(--surface) text-(--accent)"
-                        : "text-(--fg)"
-                }`}
-              >
-                <span className="select-none text-right text-(--dim)">{line.oldLine ?? ""}</span>
-                <span className="select-none text-right text-(--dim)">{line.newLine ?? ""}</span>
-                <span className="whitespace-pre">
-                  {line.kind === "add"
-                    ? "+"
-                    : line.kind === "del"
-                      ? "-"
-                      : line.kind === "context"
-                        ? " "
-                        : ""}
-                  {line.text}
-                </span>
-              </div>
+                <summary
+                  className="flex cursor-pointer list-none items-center gap-2 border-b border-(--border) bg-(--surface)/70 px-2 py-1.5 text-xs text-(--fg) hover:bg-(--surface)"
+                  title={file.path}
+                >
+                  <span className="min-w-0 flex-1 truncate">{file.path}</span>
+                  <span className="shrink-0 font-mono text-[10px]">
+                    <span className="text-emerald-400">+{file.additions}</span>{" "}
+                    <span className="text-red-400">-{file.deletions}</span>
+                  </span>
+                </summary>
+                <div className="min-w-max">
+                  {file.lines.map((line, index) => (
+                    <div
+                      key={`${file.path}-${index}`}
+                      className={`grid grid-cols-[3rem_3rem_1fr] gap-2 border-b border-(--border)/20 px-2 ${
+                        line.kind === "add"
+                          ? "bg-emerald-500/10 text-emerald-100"
+                          : line.kind === "del"
+                            ? "bg-red-500/10 text-red-100"
+                            : line.kind === "meta"
+                              ? "bg-(--surface) text-(--accent)"
+                              : "text-(--fg)"
+                      }`}
+                    >
+                      <span className="select-none text-right text-(--dim)">
+                        {line.oldLine ?? ""}
+                      </span>
+                      <span className="select-none text-right text-(--dim)">
+                        {line.newLine ?? ""}
+                      </span>
+                      <span className="whitespace-pre">
+                        {line.kind === "add"
+                          ? "+"
+                          : line.kind === "del"
+                            ? "-"
+                            : line.kind === "context"
+                              ? " "
+                              : ""}
+                        {line.text}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </details>
             ))}
           </div>
         </div>

@@ -549,9 +549,15 @@ export function ProjectsNavSection({ expanded }: { expanded: boolean }) {
         }),
       );
       if (!cancelled) {
+        const activePiSessionIds = new Set(
+          activeSessions
+            .map((session) => session.piSessionId)
+            .filter((id): id is string => Boolean(id)),
+        );
         setPinnedSessions(
           rows
             .flat()
+            .filter((session) => !activePiSessionIds.has(session.id))
             .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()),
         );
       }
@@ -559,7 +565,7 @@ export function ProjectsNavSection({ expanded }: { expanded: boolean }) {
     return () => {
       cancelled = true;
     };
-  }, [expanded, projects, prefs]);
+  }, [activeSessions, expanded, projects, prefs]);
 
   if (!expanded) {
     return null;

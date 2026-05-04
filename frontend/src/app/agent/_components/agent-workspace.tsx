@@ -14,16 +14,10 @@ import {
   triggerAddProjectFlow,
 } from "@/components/projects-nav-section";
 import { sanitizeEmbeddedBrowserUrl } from "@/lib/sanitize-embedded-browser-url";
-import { ChevronDownIcon, CloseIcon, GitBranchIcon, PlusIcon } from "@/components/icons";
+import { ChevronDownIcon, CloseIcon, ComputerIcon, PlusIcon } from "@/components/icons";
 import { safeJson } from "@/lib/agent/safe-json";
 import { AgentBrowser, type AgentBrowserHandle, type WebviewElement } from "./agent-browser";
-import {
-  ChatPane,
-  makeFreshTab,
-  SessionTabsBar,
-  type ChatPaneHandle,
-  type SessionTab,
-} from "./chat-pane";
+import { ChatPane, makeFreshTab, type ChatPaneHandle, type SessionTab } from "./chat-pane";
 import { FilesystemPanel } from "./filesystem-panel";
 import { GitDiffPanel } from "./git-diff-panel";
 import { PaneGrid, type SessionDropPayload } from "./pane-grid";
@@ -137,7 +131,9 @@ function randomIdSegment(length: number): string {
   if (cryptoApi?.getRandomValues) {
     cryptoApi.getRandomValues(bytes);
   }
-  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("").slice(0, length);
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0"))
+    .join("")
+    .slice(0, length);
 }
 
 function isSafeBrowserSelector(selector: string): boolean {
@@ -968,121 +964,6 @@ export function AgentWorkspace() {
 
   return (
     <div className="agent-workspace flex h-full min-h-0 w-full flex-col bg-(--bg) text-(--fg) md:h-[100dvh]">
-      <header className="agent-workspace-header flex h-11 shrink-0 items-center gap-3 border-b border-(--border) px-3">
-        <div className="flex shrink-0 items-center gap-1.5 text-sm">
-          <span className="font-semibold tracking-tight text-[13px]">Agent</span>
-          {activeProject ? (
-            <span className="hidden items-center gap-1 truncate text-xs text-(--dim) sm:inline-flex">
-              <span className="opacity-60">/</span>
-              {projects.length > 0 ? (
-                <select
-                  value={selectedProjectId ?? ""}
-                  onChange={(event) => {
-                    const project = projects.find((entry) => entry.id === event.target.value);
-                    if (project) selectProject(project);
-                  }}
-                  disabled={!focusedTabIsNew}
-                  className="max-w-[260px] truncate rounded border border-transparent bg-transparent px-1 py-0.5 font-mono text-[11px] text-(--dim) outline-none hover:border-(--border) hover:bg-(--surface) hover:text-(--fg) disabled:opacity-100"
-                  title={
-                    focusedTabIsNew ? "Change directory for this new session" : activeProject.path
-                  }
-                  aria-label="Session directory"
-                >
-                  {projects.map((project) => (
-                    <option key={project.id} value={project.id}>
-                      {project.path}
-                    </option>
-                  ))}
-                </select>
-              ) : (
-                <span className="truncate font-mono text-[11px]">{activeProject.path}</span>
-              )}
-              {activeProject.hasGit && activeProject.branch ? (
-                <span className="ml-1 inline-flex items-center gap-1 rounded border border-(--border) px-1 py-0.5 font-mono text-[10px]">
-                  <GitBranchIcon className="h-3 w-3" />
-                  {activeProject.branch}
-                </span>
-              ) : null}
-            </span>
-          ) : null}
-        </div>
-
-        {focusedPane ? (
-          <SessionTabsBar
-            paneId={focusedPaneId}
-            tabs={focusedPane.tabs}
-            activeTabId={focusedPane.activeTabId}
-            onTabsChange={(nextTabsOrUpdater) => {
-              setPanesById((current) => {
-                const cur = current.get(focusedPaneId);
-                if (!cur) return current;
-                const nextTabs =
-                  typeof nextTabsOrUpdater === "function"
-                    ? nextTabsOrUpdater(cur.tabs)
-                    : nextTabsOrUpdater;
-                const next = new Map(current);
-                next.set(focusedPaneId, { ...cur, tabs: nextTabs });
-                return next;
-              });
-            }}
-            onActiveTabChange={(tabId) => {
-              setPanesById((current) => {
-                const cur = current.get(focusedPaneId);
-                if (!cur) return current;
-                const next = new Map(current);
-                next.set(focusedPaneId, { ...cur, activeTabId: tabId });
-                return next;
-              });
-            }}
-            onRenameTab={(tabId, title) => {
-              setPanesById((current) => {
-                const cur = current.get(focusedPaneId);
-                if (!cur) return current;
-                const next = new Map(current);
-                next.set(focusedPaneId, {
-                  ...cur,
-                  tabs: cur.tabs.map((tab) => (tab.id === tabId ? { ...tab, title } : tab)),
-                });
-                return next;
-              });
-            }}
-          />
-        ) : (
-          <div className="flex-1" />
-        )}
-
-        <ModelPicker
-          models={models}
-          selectedModel={selectedModel}
-          onSelect={setSelectedModel}
-          loading={loadingModels}
-        />
-
-        <button
-          type="button"
-          onClick={() =>
-            setRightPanelOpen((value) => {
-              const next = !value;
-              window.localStorage.setItem(COMPUTER_BROWSER_OPEN_KEY, next ? "1" : "0");
-              return next;
-            })
-          }
-          aria-pressed={rightPanelOpen}
-          className={`inline-flex h-7 shrink-0 items-center gap-1.5 rounded border px-2 text-xs ${
-            rightPanelOpen
-              ? "border-(--border) bg-(--surface) text-(--fg)"
-              : "border-transparent text-(--dim) hover:text-(--fg) hover:bg-(--surface)"
-          }`}
-          title={
-            rightPanelOpen
-              ? "Hide browser/files computer panel"
-              : "Show browser/files computer panel for the focused agent"
-          }
-        >
-          {rightPanelOpen ? "Hide computer" : "Show computer"}
-        </button>
-      </header>
-
       {error ? (
         <div className="border-b border-(--border) bg-(--err)/10 px-4 py-2 text-xs text-(--err)">
           {error}
@@ -1090,7 +971,27 @@ export function AgentWorkspace() {
       ) : null}
 
       <div className="flex min-h-0 flex-1">
-        <section className="flex min-w-0 flex-1 flex-col">
+        <section className="relative flex min-w-0 flex-1 flex-col">
+          <button
+            type="button"
+            onClick={() =>
+              setRightPanelOpen((value) => {
+                const next = !value;
+                window.localStorage.setItem(COMPUTER_BROWSER_OPEN_KEY, next ? "1" : "0");
+                return next;
+              })
+            }
+            aria-pressed={rightPanelOpen}
+            className={`absolute right-3 top-3 z-20 inline-flex h-8 w-8 items-center justify-center rounded-md border backdrop-blur ${
+              rightPanelOpen
+                ? "border-(--accent)/50 bg-(--accent)/10 text-(--accent)"
+                : "border-(--border) bg-(--surface)/90 text-(--dim) hover:text-(--fg)"
+            }`}
+            title={rightPanelOpen ? "Hide computer" : "Show computer"}
+            aria-label={rightPanelOpen ? "Hide computer" : "Show computer"}
+          >
+            <ComputerIcon className="h-4 w-4" />
+          </button>
           {shouldShowProjectEmptyState ? (
             <div className="flex min-h-0 flex-1 items-center justify-center px-6">
               <div className="max-w-sm text-center">
@@ -1129,6 +1030,42 @@ export function AgentWorkspace() {
                       contextWindow={activeModel?.contextWindow ?? 0}
                       cwd={agentCwd}
                       projectName={activeProject?.name ?? null}
+                      projectSelector={
+                        activeProject && projects.length > 0 ? (
+                          <select
+                            value={selectedProjectId ?? ""}
+                            onChange={(event) => {
+                              const project = projects.find(
+                                (entry) => entry.id === event.target.value,
+                              );
+                              if (project) selectProject(project);
+                            }}
+                            disabled={!focusedTabIsNew}
+                            className="min-w-0 max-w-[280px] truncate rounded border border-(--border) bg-(--bg) px-2 py-1 font-mono text-[11px] text-(--dim) outline-none hover:text-(--fg) disabled:opacity-100"
+                            title={
+                              focusedTabIsNew
+                                ? "Change directory for this new session"
+                                : activeProject.path
+                            }
+                            aria-label="Session directory"
+                          >
+                            {projects.map((project) => (
+                              <option key={project.id} value={project.id}>
+                                {project.path}
+                              </option>
+                            ))}
+                          </select>
+                        ) : null
+                      }
+                      gitBranch={activeProject?.hasGit ? activeProject.branch : null}
+                      modelSelector={
+                        <ModelPicker
+                          models={models}
+                          selectedModel={selectedModel}
+                          onSelect={setSelectedModel}
+                          loading={loadingModels}
+                        />
+                      }
                       browserToolEnabled={focusedPaneId === paneId && browserToolEnabled}
                       onToggleBrowserTool={toggleBrowserTool}
                       onPiSessionIdChange={notifySessionsChanged}

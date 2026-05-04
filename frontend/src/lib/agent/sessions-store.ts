@@ -3,7 +3,7 @@ import { unlink } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
 import readline from "node:readline";
-import { SessionManager as PiSessionManagerImpl } from "@mariozechner/pi-coding-agent";
+import { resolveDataDir } from "@/lib/data-dir";
 
 export type SessionSummary = {
   id: string;
@@ -19,15 +19,6 @@ export type SessionSummary = {
 
 export type SessionEvent = Record<string, unknown> & { type?: string };
 
-type PiSessionInfo = { id: string; path: string };
-type PiSessionManager = {
-  list: (cwd: string) => Promise<PiSessionInfo[]>;
-  open: (sessionPath: string) => {
-    getHeader: () => (Record<string, unknown> & { type?: string }) | null;
-    getBranch: () => Array<Record<string, unknown> & { type?: string }>;
-  };
-};
-
 type ListSessionsOptions = {
   since?: Date;
 };
@@ -41,18 +32,22 @@ function encodeCwdForPi(cwd: string): string {
   return `--${collapsed}--`;
 }
 
-function piSessionsRoot(): string {
-  return process.env.PI_CODING_AGENT_DIR
-    ? path.join(process.env.PI_CODING_AGENT_DIR, "sessions")
-    : path.join(homedir(), ".pi", "agent", "sessions");
+function piSessionRoots(): string[] {
+  const roots = [
+    process.env.PI_CODING_AGENT_DIR ? path.join(process.env.PI_CODING_AGENT_DIR, "sessions") : null,
+    path.join(resolveDataDir(), "pi-agent", "sessions"),
+    path.join(homedir(), ".pi", "agent", "sessions"),
+  ].filter((value): value is string => Boolean(value));
+  return [...new Set(roots.map((root) => path.resolve(root)))];
 }
 
-async function loadPiSessionManager(): Promise<PiSessionManager> {
-  return PiSessionManagerImpl as unknown as PiSessionManager;
+function sessionsDirsForCwd(cwd: string): string[] {
+  const encoded = encodeCwdForPi(cwd);
+  return piSessionRoots().map((root) => path.join(root, encoded));
 }
 
 export function sessionsDirForCwd(cwd: string): string {
-  return path.join(piSessionsRoot(), encodeCwdForPi(cwd));
+  return sessionsDirsForCwd(cwd)[0];
 }
 
 async function readSessionSummary(
@@ -140,52 +135,64 @@ export async function listSessions(
   cwd: string,
   options: ListSessionsOptions = {},
 ): Promise<SessionSummary[]> {
-  const dir = sessionsDirForCwd(cwd);
-  if (!existsSync(dir)) return [];
-  const entries = readdirSync(dir).filter((name) => name.endsWith(".jsonl"));
-  const summaries: SessionSummary[] = [];
-  for (const filename of entries) {
-    try {
-      const filepath = path.join(dir, filename);
-      if (options.since && statSync(filepath).mtime < options.since) continue;
-      const summary = await readSessionSummary(filepath, filename);
-      if (summary && summary.id) summaries.push(summary);
-    } catch {
-      // skip corrupted files
+  const summariesById = new Map<string, SessionSummary>();
+  for (const dir of sessionsDirsForCwd(cwd)) {
+    if (!existsSync(dir)) continue;
+    const entries = readdirSync(dir).filter((name) => name.endsWith(".jsonl"));
+    for (const filename of entries) {
+      try {
+        const filepath = path.join(dir, filename);
+        if (options.since && statSync(filepath).mtime < options.since) continue;
+        const summary = await readSessionSummary(filepath, filename);
+        if (!summary?.id) continue;
+        const existing = summariesById.get(summary.id);
+        if (!existing || summary.updatedAt > existing.updatedAt) {
+          summariesById.set(summary.id, summary);
+        }
+      } catch {
+        // skip corrupted files
+      }
     }
   }
+  const summaries = [...summariesById.values()];
   summaries.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   return summaries;
+}
+
+function findSessionFile(cwd: string, sessionId: string): string | null {
+  for (const dir of sessionsDirsForCwd(cwd)) {
+    if (!existsSync(dir)) continue;
+    const match = readdirSync(dir).find(
+      (name) => name.endsWith(".jsonl") && (name.includes(sessionId) || name.startsWith(sessionId)),
+    );
+    if (match) return path.join(dir, match);
+  }
+  return null;
 }
 
 // Stream-load every event from a session JSONL. Used to replay a past
 // conversation back into the renderer's `applyPiEvent` pipeline.
 export async function loadSession(cwd: string, sessionId: string): Promise<SessionEvent[]> {
-  const SessionManager = await loadPiSessionManager();
-  const sessions = await SessionManager.list(cwd);
-  const match = sessions.find(
-    (session) =>
-      session.id === sessionId ||
-      session.id.startsWith(sessionId) ||
-      path.basename(session.path).includes(sessionId),
-  );
-  if (!match) return [];
-
-  const manager = SessionManager.open(match.path);
-  const header = manager.getHeader();
-  const entries = manager.getBranch();
-  return [header, ...entries]
-    .filter((entry): entry is Record<string, unknown> & { type?: string } => Boolean(entry))
-    .map((entry) => ({ ...entry }) as SessionEvent);
+  const filepath = findSessionFile(cwd, sessionId);
+  if (!filepath) return [];
+  const events: SessionEvent[] = [];
+  const stream = createReadStream(filepath, { encoding: "utf-8" });
+  const rl = readline.createInterface({ input: stream, crlfDelay: Infinity });
+  for await (const line of rl) {
+    if (!line.trim()) continue;
+    try {
+      const event = JSON.parse(line) as SessionEvent;
+      events.push({ ...event });
+    } catch {
+      // skip corrupted lines
+    }
+  }
+  return events;
 }
 
 export async function deleteSession(cwd: string, sessionId: string): Promise<boolean> {
-  const dir = sessionsDirForCwd(cwd);
-  if (!existsSync(dir)) return false;
-  const match = readdirSync(dir).find(
-    (name) => name.includes(sessionId) && name.endsWith(".jsonl"),
-  );
-  if (!match) return false;
-  await unlink(path.join(dir, match));
+  const filepath = findSessionFile(cwd, sessionId);
+  if (!filepath) return false;
+  await unlink(filepath);
   return true;
 }

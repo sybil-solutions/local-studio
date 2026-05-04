@@ -1,12 +1,13 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { ReactNode } from "react";
 import {
   AttachIcon,
   CloseIcon,
   FileIcon,
+  GitBranchIcon,
   GlobeIcon,
-  PlusIcon,
   SendIcon,
   StopIcon,
 } from "@/components/icons";
@@ -104,6 +105,9 @@ type Props = {
   contextWindow: number;
   cwd: string;
   projectName: string | null;
+  projectSelector?: ReactNode;
+  modelSelector?: ReactNode;
+  gitBranch?: string | null;
   browserToolEnabled: boolean;
   onToggleBrowserTool: () => void;
   isFocused: boolean;
@@ -688,6 +692,9 @@ export function ChatPane({
   contextWindow,
   cwd,
   projectName,
+  projectSelector,
+  modelSelector,
+  gitBranch,
   browserToolEnabled,
   onToggleBrowserTool,
   isFocused,
@@ -1031,12 +1038,17 @@ export function ChatPane({
             const line = chunk.split("\n").find((entry) => entry.startsWith("data: "));
             if (!line) continue;
             const payload = JSON.parse(line.slice(6)) as
-              | { type: "status"; phase: string }
+              | { type: "status"; phase: string; piSessionId?: string | null }
               | { type: "error"; error: string }
               | { type: "pi"; event: Record<string, unknown> };
             if (payload.type === "status") {
               const phase = payload.phase;
-              updateTab(tabId, (tab) => ({ ...tab, status: phase === "done" ? "idle" : phase }));
+              updateTab(tabId, (tab) => ({
+                ...tab,
+                piSessionId: payload.piSessionId || tab.piSessionId,
+                status: phase === "done" ? "idle" : phase,
+              }));
+              if (payload.piSessionId) onPiSessionIdChange?.(payload.piSessionId);
             } else if (payload.type === "error") {
               updateTab(tabId, (tab) => ({ ...tab, error: payload.error, status: "idle" }));
             } else if (payload.type === "pi") {
@@ -1313,6 +1325,30 @@ export function ChatPane({
 
       <form onSubmit={sendMessage} className="shrink-0 bg-(--bg) px-6 pb-3 pt-1.5">
         <div className="mx-auto max-w-3xl rounded-lg border border-(--border)/50 bg-(--surface)">
+          <div className="flex min-h-8 items-center gap-2 border-b border-(--border)/50 px-2 py-1.5 text-xs">
+            <span className="shrink-0 font-semibold text-(--fg)">Agent</span>
+            {projectSelector ? (
+              <>
+                <span className="text-(--dim)">/</span>
+                {projectSelector}
+              </>
+            ) : cwd ? (
+              <>
+                <span className="text-(--dim)">/</span>
+                <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-(--dim)">
+                  {cwd}
+                </span>
+              </>
+            ) : null}
+            {gitBranch ? (
+              <span className="inline-flex min-w-0 shrink items-center gap-1 rounded border border-(--border) bg-(--bg) px-1.5 py-0.5 font-mono text-[10px] text-(--dim)">
+                <GitBranchIcon className="h-3 w-3 shrink-0" />
+                <span className="truncate">{gitBranch}</span>
+              </span>
+            ) : null}
+            <div className="min-w-0 flex-1" />
+            {modelSelector}
+          </div>
           {(activeTab?.queue ?? []).length > 0 ? (
             <div className="flex flex-wrap gap-1.5 border-b border-(--border)/50 px-2 py-1.5">
               {(activeTab?.queue ?? []).map((item) => (
@@ -1529,12 +1565,6 @@ export function SessionTabsBar({
   onTabsChange: (tabs: SessionTab[] | ((tabs: SessionTab[]) => SessionTab[])) => void;
   onRenameTab: (tabId: string, title: string) => void;
 }) {
-  const newTab = useCallback(() => {
-    const tab = makeFreshTab();
-    onTabsChange((current) => [...current, tab]);
-    onActiveTabChange(tab.id);
-  }, [onTabsChange, onActiveTabChange]);
-
   const closeTab = useCallback(
     (tabId: string) => {
       const remaining = tabs.filter((tab) => tab.id !== tabId);
@@ -1563,15 +1593,6 @@ export function SessionTabsBar({
           onRename={(title) => onRenameTab(tab.id, title)}
         />
       ))}
-      <button
-        type="button"
-        onClick={newTab}
-        className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-(--dim) hover:bg-(--surface) hover:text-(--fg)"
-        title="New tab in this pane"
-        aria-label="New tab in this pane"
-      >
-        <PlusIcon className="h-3.5 w-3.5" />
-      </button>
     </div>
   );
 }

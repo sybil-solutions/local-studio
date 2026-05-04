@@ -337,6 +337,16 @@ class PiRpcSession extends EventEmitter {
       }
     }
 
+    if (parsed.type === "session") {
+      for (const key of ["id", "sessionId", "session_id"]) {
+        const value = parsed[key];
+        if (typeof value === "string" && value.trim()) {
+          this.currentPiSessionId = value.trim();
+          break;
+        }
+      }
+    }
+
     this.emit("event", parsed);
   }
 
