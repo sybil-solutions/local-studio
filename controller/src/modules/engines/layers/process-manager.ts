@@ -71,8 +71,7 @@ export const createProcessManager = (
       } else if (!flagPort || Number(flagPort) !== port) {
         continue;
       }
-      let modelPath =
-        extractFlag(proc.args, "--model") || extractFlag(proc.args, "--model-path");
+      let modelPath = extractFlag(proc.args, "--model") || extractFlag(proc.args, "--model-path");
       if (!modelPath && (backend === "llamacpp" || backend === "exllamav3")) {
         modelPath = extractFlag(proc.args, "-m");
       }
@@ -160,28 +159,87 @@ export const createProcessManager = (
     collectChildren(tree, pid, children);
     const allPids = [...children, pid];
 
+    // Docker-backed recipes often leave the actual server inside a container whose
+    // host process tree does not reliably die when the docker CLI process is
+    // signalled. Stop/kill the named container first, then signal the process tree.
+    stopDockerContainersForProcesses(allPids, force);
+
     const signal = force ? "SIGKILL" : "SIGTERM";
     for (const childPid of allPids) {
       sendSignal(childPid, signal);
     }
 
-    if (!force) {
-      const deadline = Date.now() + 10_000;
-      while (Date.now() < deadline) {
+    const deadline = Date.now() + (force ? 15_000 : 10_000);
+    while (Date.now() < deadline) {
+      if (!pidExists(pid)) {
+        break;
+      }
+      await delayTimeout(250);
+    }
+
+    if (pidExists(pid)) {
+      stopDockerContainersForProcesses(allPids, true);
+      if (!sendSignal(pid, "SIGKILL")) {
+        return false;
+      }
+      const finalDeadline = Date.now() + 5_000;
+      while (Date.now() < finalDeadline) {
         if (!pidExists(pid)) {
           break;
         }
         await delayTimeout(250);
       }
-      if (pidExists(pid)) {
-        if (!sendSignal(pid, "SIGKILL")) {
-          return false;
-        }
-      }
     }
 
     await delay(force ? 500 : 1000);
     return !pidExists(pid);
+  };
+
+  const stopDockerContainersForProcesses = (pids: number[], force: boolean): void => {
+    const pidSet = new Set(pids);
+    const names = new Set<string>();
+    const inferencePorts = new Set<number>();
+    const processes = listProcesses();
+
+    for (const proc of processes) {
+      if (!pidSet.has(proc.pid)) continue;
+      const port = Number(extractFlag(proc.args, "--port"));
+      if (Number.isFinite(port) && port > 0) inferencePorts.add(port);
+
+      const dockerIndex = proc.args.findIndex((arg) => arg === "docker" || arg.endsWith("/docker"));
+      if (dockerIndex < 0 || proc.args[dockerIndex + 1] !== "run") continue;
+      const name = extractFlag(proc.args.slice(dockerIndex + 2), "--name");
+      if (name) names.add(name);
+    }
+
+    // With Docker + host process visibility, the Python server process is often
+    // parented under containerd-shim rather than the `docker run` CLI process. If
+    // `findInferenceProcess()` found the in-container Python PID, match the
+    // sibling docker-run command by inference port so the container is stopped too.
+    if (inferencePorts.size > 0) {
+      for (const proc of processes) {
+        const dockerIndex = proc.args.findIndex(
+          (arg) => arg === "docker" || arg.endsWith("/docker")
+        );
+        if (dockerIndex < 0 || proc.args[dockerIndex + 1] !== "run") continue;
+        const dockerPort = Number(extractFlag(proc.args, "--port"));
+        if (!inferencePorts.has(dockerPort)) continue;
+        const name = extractFlag(proc.args.slice(dockerIndex + 2), "--name");
+        if (name) names.add(name);
+      }
+    }
+
+    for (const name of names) {
+      const action = force ? "kill" : "stop";
+      const args = force ? [action, name] : [action, "--time", "2", name];
+      let result = spawnSync("docker", args, { stdio: "ignore" });
+      if (result.status !== 0) {
+        result = spawnSync("sudo", ["-n", "docker", ...args], { stdio: "ignore" });
+      }
+      if (result.status !== 0) {
+        logger.warn("Failed to stop docker inference container", { name, action });
+      }
+    }
   };
 
   const sendSignal = (pid: number, signal: NodeJS.Signals): boolean => {

@@ -1,5 +1,13 @@
 // CRITICAL
-import { createWriteStream, existsSync, mkdirSync, renameSync, statSync } from "node:fs";
+import {
+  accessSync,
+  constants,
+  createWriteStream,
+  existsSync,
+  mkdirSync,
+  renameSync,
+  statSync,
+} from "node:fs";
 import { dirname, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 import type { Config } from "../../../config/env";
@@ -94,6 +102,7 @@ export class DownloadManager {
       ...(request.ignore_patterns ?? []).filter(Boolean),
     ];
     const targetDirectory = resolveDownloadRoot(this.config, modelId, request.destination_dir);
+    this.ensureModelsDirectoryWritable();
     const hfToken = request.hf_token ?? null;
 
     const info = await fetchHuggingFaceModelInfo(modelId, request.revision, hfToken);
@@ -120,6 +129,22 @@ export class DownloadManager {
     this.store.save(download);
     void this.runDownload(download.id, hfToken);
     return download;
+  }
+
+  /**
+   * Ensure downloads fail synchronously with a useful setup error instead of
+   * queueing a job that immediately dies with EACCES in the background.
+   */
+  private ensureModelsDirectoryWritable(): void {
+    try {
+      mkdirSync(this.config.models_dir, { recursive: true });
+      accessSync(this.config.models_dir, constants.W_OK);
+    } catch (error) {
+      throw new Error(
+        `Models directory is not writable by the controller: ${this.config.models_dir}. ` +
+          `Update Settings → Models directory to a writable server path. ${String(error)}`
+      );
+    }
   }
 
   /**

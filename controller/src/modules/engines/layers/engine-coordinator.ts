@@ -53,6 +53,10 @@ interface CoordinatorDeps {
 export class EngineCoordinator implements EngineService {
   private readonly switchLock = new AsyncLock();
   private currentRecipe: Recipe | null = null;
+  private activeLifecycleAbort: AbortController | null = null;
+  private activeLaunchPid: number | null = null;
+  private lifecycleIntentSerial = 0;
+  private autoActivationBlocked = false;
 
   /**
    *
@@ -72,9 +76,30 @@ export class EngineCoordinator implements EngineService {
     recipe: Recipe | null,
     options: SetActiveRecipeOptions = {}
   ): Promise<SetActiveRecipeResult> {
+    const intentSerial = ++this.lifecycleIntentSerial;
+
+    if (!recipe) {
+      this.autoActivationBlocked = true;
+      this.activeLifecycleAbort?.abort();
+      if (this.activeLaunchPid) {
+        await this.deps.processManager.killProcess(this.activeLaunchPid, true);
+      }
+    } else {
+      this.autoActivationBlocked = false;
+    }
+
     const release = await this.switchLock.acquire();
     let spawnedPid: number | null = null;
     let cancelled = false;
+    const lifecycleAbort = recipe ? new AbortController() : null;
+    const abortLifecycle = (): void => lifecycleAbort?.abort();
+    if (lifecycleAbort) {
+      if (options.signal?.aborted) lifecycleAbort.abort();
+      options.signal?.addEventListener("abort", abortLifecycle, { once: true });
+      this.activeLifecycleAbort = lifecycleAbort;
+    }
+    const isAborted = (): boolean =>
+      Boolean(lifecycleAbort?.signal.aborted || intentSerial !== this.lifecycleIntentSerial);
     const publishCancelled = async (targetRecipe: Recipe): Promise<SetActiveRecipeResult> => {
       if (cancelled) return { ok: false, error: "Launch cancelled" };
       cancelled = true;
@@ -92,12 +117,16 @@ export class EngineCoordinator implements EngineService {
     const abortIfNeeded = async (
       targetRecipe: Recipe | null
     ): Promise<SetActiveRecipeResult | null> => {
-      if (!options.signal?.aborted) return null;
+      if (!isAborted()) return null;
       if (!targetRecipe) return null;
       return publishCancelled(targetRecipe);
     };
 
     try {
+      if (recipe && intentSerial !== this.lifecycleIntentSerial) {
+        return { ok: false, error: "Launch cancelled" };
+      }
+
       const current = await this.deps.processManager.findInferenceProcess(
         this.deps.config.inference_port
       );
@@ -114,16 +143,34 @@ export class EngineCoordinator implements EngineService {
         return { ok: true };
       }
 
-      const killCurrent = async (process: ProcessInfo): Promise<void> => {
+      const killCurrent = async (process: ProcessInfo): Promise<boolean> => {
         const evictedRecipe = this.findRecipeForProcess(process);
-        await this.deps.processManager.killProcess(process.pid, true);
+        if (evictedRecipe) {
+          await this.deps.eventManager.publishLaunchProgress(
+            evictedRecipe.id,
+            "stopping",
+            `Stopping ${evictedRecipe.name}...`,
+            0.1
+          );
+        }
+        const stopped = await this.deps.processManager.killProcess(process.pid, true);
         if (evictedRecipe) {
           this.abortRunsForRecipe(evictedRecipe);
+          await this.deps.eventManager.publishLaunchProgress(
+            evictedRecipe.id,
+            stopped ? "stopped" : "error",
+            stopped ? "Model stopped" : "Model did not stop cleanly",
+            stopped ? 1 : 0
+          );
         }
+        return stopped;
       };
 
       if (current && (!recipe || !isRecipeRunning(recipe, current))) {
-        await killCurrent(current);
+        const stopped = await killCurrent(current);
+        if (!stopped) {
+          return { ok: false, error: `Failed to stop process ${current.pid}` };
+        }
         await delay(500);
       }
 
@@ -143,6 +190,7 @@ export class EngineCoordinator implements EngineService {
       );
       const launch = await this.deps.processManager.launchModel(recipe);
       spawnedPid = launch.pid;
+      this.activeLaunchPid = launch.pid;
       if (!launch.success) {
         await this.deps.eventManager.publishLaunchProgress(recipe.id, "error", launch.message, 0);
         return { ok: false, error: launch.message };
@@ -163,12 +211,12 @@ export class EngineCoordinator implements EngineService {
         logFilePath: launch.log_file ?? primaryLogPathFor(this.deps.config.data_dir, recipe.id),
         timeoutMs: LIFECYCLE_READY_TIMEOUT_MS,
       };
-      if (options.signal) {
-        waitOptions.cancel = options.signal;
+      if (lifecycleAbort) {
+        waitOptions.cancel = lifecycleAbort.signal;
       }
       const ready = await this.waitForReady(waitOptions);
 
-      if (options.signal?.aborted) {
+      if (isAborted()) {
         return publishCancelled(recipe);
       }
 
@@ -189,6 +237,13 @@ export class EngineCoordinator implements EngineService {
       await this.deps.eventManager.publishLaunchProgress(recipe.id, "error", ready.message, 0);
       return { ok: false, error: ready.message };
     } finally {
+      if (this.activeLifecycleAbort === lifecycleAbort) {
+        this.activeLifecycleAbort = null;
+      }
+      if (this.activeLaunchPid === spawnedPid) {
+        this.activeLaunchPid = null;
+      }
+      options.signal?.removeEventListener("abort", abortLifecycle);
       release();
     }
   }
@@ -324,14 +379,36 @@ export class EngineCoordinator implements EngineService {
     if (existing && isRecipeRunning(recipe, existing)) {
       return { switched: false, error: null };
     }
+    if (this.autoActivationBlocked) {
+      return {
+        switched: false,
+        error:
+          "Model auto-loading is disabled because the model was manually stopped. Start a model from vLLM Studio before sending local inference requests.",
+      };
+    }
+
+    const intentSerial = ++this.lifecycleIntentSerial;
+    const lifecycleAbort = new AbortController();
+    this.activeLifecycleAbort = lifecycleAbort;
+    let launchPid: number | null = null;
 
     const release = await this.switchLock.acquire();
     try {
+      if (lifecycleAbort.signal.aborted || intentSerial !== this.lifecycleIntentSerial) {
+        return { switched: false, error: "Model switch cancelled" };
+      }
       const latest = await this.deps.processManager.findInferenceProcess(
         this.deps.config.inference_port
       );
       if (latest && isRecipeRunning(recipe, latest)) {
         return { switched: false, error: null };
+      }
+      if (this.autoActivationBlocked) {
+        return {
+          switched: false,
+          error:
+            "Model auto-loading is disabled because the model was manually stopped. Start a model from vLLM Studio before sending local inference requests.",
+        };
       }
 
       const publishEvents = options.publish_events !== false;
@@ -363,7 +440,12 @@ export class EngineCoordinator implements EngineService {
         this.abortRunsForRecipe(evictedRecipe);
       }
       await delay(2000);
+      if (lifecycleAbort.signal.aborted || intentSerial !== this.lifecycleIntentSerial) {
+        return { switched: true, error: "Model switch cancelled" };
+      }
       const launch = await this.deps.processManager.launchModel(recipe);
+      launchPid = launch.pid;
+      this.activeLaunchPid = launch.pid;
       if (!launch.success) {
         const message = `Failed to launch model ${recipe.id}: ${launch.message}`;
         if (publishEvents) {
@@ -386,7 +468,14 @@ export class EngineCoordinator implements EngineService {
         pid: launch.pid,
         logFilePath,
         timeoutMs: LIFECYCLE_READY_TIMEOUT_MS,
+        cancel: lifecycleAbort.signal,
       });
+      if (lifecycleAbort.signal.aborted || intentSerial !== this.lifecycleIntentSerial) {
+        if (launch.pid) {
+          await this.deps.processManager.killProcess(launch.pid, true);
+        }
+        return { switched: true, error: "Model switch cancelled" };
+      }
       if (ready.ready) {
         if (publishEvents) {
           await this.deps.eventManager.publish(
@@ -420,6 +509,12 @@ export class EngineCoordinator implements EngineService {
       }
       return { switched: true, error: ready.message };
     } finally {
+      if (this.activeLifecycleAbort === lifecycleAbort) {
+        this.activeLifecycleAbort = null;
+      }
+      if (this.activeLaunchPid === launchPid) {
+        this.activeLaunchPid = null;
+      }
       release();
     }
   }

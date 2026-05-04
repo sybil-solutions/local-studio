@@ -33,7 +33,10 @@ const processFor = (activeRecipe: Recipe, port: number): ProcessInfo => ({
   served_model_name: activeRecipe.served_model_name ?? null,
 });
 
-const createCoordinator = (initialRecipe: Recipe | null = null, healthStatus: number = 200): {
+const createCoordinator = (
+  initialRecipe: Recipe | null = null,
+  healthStatus: number = 200
+): {
   coordinator: EngineCoordinator;
   recipes: [Recipe, Recipe];
   launched: Recipe[];
@@ -51,7 +54,10 @@ const createCoordinator = (initialRecipe: Recipe | null = null, healthStatus: nu
   if (port === undefined) {
     throw new Error("Test server did not bind a port");
   }
-  const recipes: [Recipe, Recipe] = [recipe("alpha", "/models/alpha"), recipe("beta", "/models/beta")];
+  const recipes: [Recipe, Recipe] = [
+    recipe("alpha", "/models/alpha"),
+    recipe("beta", "/models/beta"),
+  ];
   let current = initialRecipe ? processFor(initialRecipe, port) : null;
   const launched: Recipe[] = [];
   const killed: number[] = [];
@@ -94,7 +100,12 @@ const createCoordinator = (initialRecipe: Recipe | null = null, healthStatus: nu
       debug: () => {},
     } as Logger,
     eventManager: {
-      publishLaunchProgress: async (recipeId: string, stage: string, message: string, progress?: number) => {
+      publishLaunchProgress: async (
+        recipeId: string,
+        stage: string,
+        message: string,
+        progress?: number
+      ) => {
         events.push({
           recipeId,
           stage,
@@ -163,8 +174,23 @@ describe("EngineCoordinator.setActiveRecipe", () => {
     expect(abortedModels).toEqual(["alpha"]);
     expect(launched).toEqual([target]);
     expect(coordinator.getCurrentRecipe()).toBe(target);
-    expect(events.map((event) => event.stage)).toEqual(["launching", "waiting", "ready"]);
+    expect(events.map((event) => event.stage)).toEqual([
+      "stopping",
+      "stopped",
+      "launching",
+      "waiting",
+      "ready",
+    ]);
   });
 
+  it("blocks OpenAI auto-load after the user manually stops a model", async () => {
+    const active = recipe("alpha", "/models/alpha");
+    const { coordinator, recipes, launched } = createCoordinator(active);
 
+    await expect(coordinator.setActiveRecipe(null)).resolves.toEqual({ ok: true });
+    const result = await coordinator.ensureActive(recipes[1]);
+
+    expect(result.error).toContain("manually stopped");
+    expect(launched).toHaveLength(0);
+  });
 });

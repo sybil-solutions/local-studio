@@ -73,4 +73,68 @@ describe("replaySessionEvents", () => {
       text: "Done. I found the Next dev script.",
     });
   });
+
+  it("replays streamed tool-call argument deltas from Pi", () => {
+    const result = replaySessionEvents([
+      {
+        type: "message_update",
+        assistantMessageEvent: {
+          type: "toolcall_start",
+          contentIndex: 0,
+          partial: {
+            content: [{ type: "toolCall", id: "call-write", name: "write", arguments: {} }],
+          },
+        },
+      },
+      {
+        type: "message_update",
+        assistantMessageEvent: {
+          type: "toolcall_delta",
+          contentIndex: 0,
+          delta: '{"path":"demo.txt","content":"hel',
+          partial: {
+            content: [
+              {
+                type: "toolCall",
+                id: "call-write",
+                name: "write",
+                arguments: { path: "demo.txt", content: "hel" },
+              },
+            ],
+          },
+        },
+      },
+      {
+        type: "message_update",
+        assistantMessageEvent: {
+          type: "toolcall_delta",
+          contentIndex: 0,
+          delta: 'lo"}',
+          partial: {
+            content: [
+              {
+                type: "toolCall",
+                id: "call-write",
+                name: "write",
+                arguments: { path: "demo.txt", content: "hello" },
+              },
+            ],
+          },
+        },
+      },
+    ]);
+
+    expect(result.messages).toHaveLength(1);
+    expect(result.messages[0].blocks).toEqual([
+      {
+        kind: "tool",
+        id: "call-write",
+        name: "write",
+        status: "running",
+        args: { path: "demo.txt", content: "hello" },
+        argsText: '{"path":"demo.txt","content":"hello"}',
+        text: "",
+      },
+    ]);
+  });
 });

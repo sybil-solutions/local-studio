@@ -29,8 +29,12 @@ export interface ModelGroup {
   needGb: number | null;
 }
 
-function groupPassesExploreFilters(group: ModelGroup): boolean {
-  return hasHfEngagementStats(group.lead) && isRecentlyCreatedOnHf(group.lead);
+function groupPassesExploreFilters(group: ModelGroup, search: string): boolean {
+  if (!hasHfEngagementStats(group.lead)) return false;
+  // When the user searches, relevance matters more than the Explore recency gate;
+  // otherwise well-known models disappear and the page looks broken.
+  if (search.trim().length > 0) return true;
+  return isRecentlyCreatedOnHf(group.lead);
 }
 
 export function useExplore() {
@@ -62,7 +66,11 @@ export function useExplore() {
 
   /** User override wins when set; otherwise detected pool. */
   const poolGb =
-    poolOverrideGb != null && poolOverrideGb > 0 ? poolOverrideGb : detectedPoolGb > 0 ? detectedPoolGb : 0;
+    poolOverrideGb != null && poolOverrideGb > 0
+      ? poolOverrideGb
+      : detectedPoolGb > 0
+        ? detectedPoolGb
+        : 0;
 
   const spotlightRecommendations = useMemo(() => {
     return filterRecommendationsWithinPool(recommendations, poolGb);
@@ -93,7 +101,7 @@ export function useExplore() {
         const params = new URLSearchParams();
         if (search) params.set("search", search);
         params.set("filter", "text-generation");
-        params.set("sort", search.trim().length > 0 ? "modified" : "trending");
+        params.set("sort", search.trim().length > 0 ? "downloads" : "trending");
         params.set("limit", String(PAGE_SIZE));
         params.set("full", "false");
         params.set("offset", String(pageIndex * PAGE_SIZE));
@@ -150,7 +158,9 @@ export function useExplore() {
   }, [recommendations]);
 
   const spotlightRecKeys = useMemo(() => {
-    return new Set(spotlightRecommendations.map((r) => normalizeModelId(r.id) || r.id.toLowerCase()));
+    return new Set(
+      spotlightRecommendations.map((r) => normalizeModelId(r.id) || r.id.toLowerCase()),
+    );
   }, [spotlightRecommendations]);
 
   const groupedModels = useMemo((): ModelGroup[] => {
@@ -222,8 +232,8 @@ export function useExplore() {
   );
 
   const visibleGroups = useMemo(() => {
-    return mixedGroups.filter((g) => groupPassesExploreFilters(g));
-  }, [mixedGroups]);
+    return mixedGroups.filter((g) => groupPassesExploreFilters(g, search));
+  }, [mixedGroups, search]);
 
   const refresh = useCallback(() => {
     void (async () => {

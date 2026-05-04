@@ -2,10 +2,10 @@
 
 | Domain       | Phase | Status       |
 |-------------|-------|-------------|
-| engines     | 1     | 🟢 done     |
+| engines     | 1.1   | 🟢 done — lifecycle/download hardening |
 | system      | 2     | 🟢 done     |
-| models      | 3     | 🟢 done     |
-| chat        | 4     | 🟢 done     |
+| models      | 3.1   | 🟢 done — HF explore/search hardening |
+| chat        | 4.1   | 🟢 done — Agent tab tool-call streaming |
 | pass-through| 5     | 🟢 done     |
 
 ## Phase 1: Engines Module — Completed
@@ -83,6 +83,22 @@ The `engines/` module is fully wired and replaces the old `lifecycle/engines/`, 
 - `bun test` passes (113/114, 1 pre-existing failure) ✓
 - `npx next build` passes (frontend) ✓
 
+### Phase 1.1 maintenance note — lifecycle/download hardening
+
+Post-migration lifecycle fixes were made in the migrated `engines/` target files:
+
+- `engine-coordinator.ts` now treats manual stop as an authoritative user intent, aborts in-flight launch/switch work, and blocks OpenAI proxy auto-load until the user explicitly starts a model again.
+- `process-manager.ts` now stops Docker-backed inference containers more reliably, including the case where the detected backend process is the in-container Python server rather than the `docker run` parent.
+- `download-manager.ts` now validates that the configured server-side models directory is writable before queueing a download, so setup errors fail synchronously with an actionable message.
+- Added controller tests for manual-stop auto-load blocking and non-writable download directories.
+
+Verification for this maintenance pass:
+
+- `cd controller && bun run typecheck` ✓
+- `cd controller && bun test` passes (101/101) ✓
+- Remote stop + follow-up OpenAI request verified: stopped model did not relaunch ✓
+- Remote server-side download verified under writable models directory and test artifact cleaned up ✓
+
 ## Phase 2: System Module — Completed
 
 The `system/` module consolidates monitoring infrastructure and platform detection from three old directories into one.
@@ -106,6 +122,21 @@ The `system/` module consolidates monitoring infrastructure and platform detecti
 
 **Verification:** `bun test` passes (175/179, 4 pre-existing sandbox failures)
 
+### Phase 3.1 maintenance note — Hugging Face Explore/search hardening
+
+Post-migration model-discovery fixes were made in the migrated `models/` target route and the frontend Explore surface:
+
+- `models/routes.ts` now honors `offset`, normalizes Hugging Face model records, and promotes exact repo-id matches for searches like `Qwen/Qwen3-0.6B`.
+- `use-explore.ts` no longer applies the default recency gate to explicit searches, and ranks search results by downloads instead of modified date.
+- `explore-tab.tsx` clarifies that downloads are executed by the backend on the server and shows server-side download status/progress/path context.
+
+Verification for this maintenance pass:
+
+- `cd frontend && npm run lint` ✓
+- `cd frontend && npm test` passes (55/55) ✓
+- `cd frontend && npx next build` ✓
+- Remote HF search endpoint verified with exact repo promotion ✓
+
 ## Phase 4: Chat Module — Completed
 
 ### Summary
@@ -121,6 +152,23 @@ The chat module was already in its final location at `controller/src/modules/cha
 ### Verification
 
 - `bun test` passes (107/108, 1 pre-existing DNS sandbox failure) ✓
+
+### Phase 4.1 maintenance note — Agent tab tool-call streaming
+
+Post-migration Agent tab fixes were made in the migrated chat/agent frontend surface:
+
+- `frontend/src/app/agent/_components/chat-pane.tsx` now consumes Pi `toolcall_start` / `toolcall_delta` message updates from `assistantMessageEvent.partial.content[contentIndex]` and `delta`, matching pi-mono's streamed tool-call argument protocol.
+- File-writing tool blocks (`write`, `edit`, and related names) now receive partial parsed arguments while the model is still generating the tool call, so large file content appears incrementally instead of only after `toolcall_end`.
+- Session replay now hydrates streamed tool-call deltas as well as finalized tool-call events.
+- Added a regression test for streamed `write` tool-call argument deltas in `chat-pane.test.ts`.
+
+Verification for this maintenance pass:
+
+- `cd frontend && npm test -- --run src/app/agent/_components/chat-pane.test.ts` ✓
+- `cd frontend && npx eslint src/app/agent/_components/chat-pane.tsx src/app/agent/_components/chat-pane.test.ts` ✓
+- `cd frontend && npx next build` ✓
+- `cd frontend && npm run desktop:dist` ✓
+- Installed `/Applications/vLLM Studio.app` replaced and bundle id verified (`org.vllm.studio.desktop`) ✓
 
 ## Phase 5: Pass-through/OpenAI Proxy — Completed
 

@@ -273,10 +273,11 @@ export const registerModelsRoutes = (app: Hono, context: AppContext): void => {
   });
 
   app.get("/v1/huggingface/models", async (ctx) => {
-    const search = ctx.req.query("search") || undefined;
+    const search = ctx.req.query("search")?.trim() || undefined;
     const filter = ctx.req.query("filter") || undefined;
     const sort = ctx.req.query("sort") || "trending";
-    const limit = Number(ctx.req.query("limit") ?? 50);
+    const limit = Math.min(Math.max(Number(ctx.req.query("limit") ?? 50), 1), 100);
+    const offset = Math.max(Number(ctx.req.query("offset") ?? 0), 0);
 
     const sortMapping: Record<string, string> = {
       trending: "trendingScore",
@@ -285,7 +286,12 @@ export const registerModelsRoutes = (app: Hono, context: AppContext): void => {
       modified: "lastModified",
     };
     const hfSort = sortMapping[sort] ?? "trendingScore";
-    const params = new URLSearchParams({ limit: String(limit), full: "false", sort: hfSort });
+    const requestLimit = Math.min(limit + offset, 500);
+    const params = new URLSearchParams({
+      limit: String(requestLimit),
+      full: "false",
+      sort: hfSort,
+    });
     if (search) {
       params.set("search", search);
     }
@@ -293,17 +299,50 @@ export const registerModelsRoutes = (app: Hono, context: AppContext): void => {
       params.set("filter", filter);
     }
 
+    const normalize = (model: Record<string, unknown>): Record<string, unknown> => {
+      const modelId = String(model["modelId"] ?? model["id"] ?? "");
+      return {
+        ...model,
+        _id: String(model["_id"] ?? modelId),
+        modelId,
+        downloads: Number(model["downloads"] ?? 0),
+        likes: Number(model["likes"] ?? 0),
+        tags: Array.isArray(model["tags"]) ? model["tags"] : [],
+        private: Boolean(model["private"]),
+      };
+    };
+
     const url = `https://huggingface.co/api/models?${params.toString()}`;
     try {
-      const response = await fetch(url);
-      if (!response.ok) {
+      const [listResponse, exactResponse] = await Promise.all([
+        fetch(url),
+        search && search.includes("/")
+          ? fetch(
+              `https://huggingface.co/api/models/${search.split("/").map(encodeURIComponent).join("/")}`
+            )
+          : Promise.resolve(null),
+      ]);
+      if (!listResponse.ok) {
         return ctx.json(
-          { detail: `HuggingFace API error: ${response.status}` },
-          { status: response.status }
+          { detail: `HuggingFace API error: ${listResponse.status}` },
+          { status: listResponse.status }
         );
       }
-      const data = await response.json();
-      return ctx.json(data);
+      const data = ((await listResponse.json()) as Record<string, unknown>[]).map(normalize);
+      let results = data.slice(offset, offset + limit);
+
+      if (exactResponse?.ok) {
+        const exact = normalize((await exactResponse.json()) as Record<string, unknown>);
+        const exactId = String(exact["modelId"] ?? "").toLowerCase();
+        if (exactId) {
+          results = [
+            exact,
+            ...results.filter((entry) => String(entry["modelId"] ?? "").toLowerCase() !== exactId),
+          ];
+        }
+      }
+
+      return ctx.json(results);
     } catch (error) {
       return ctx.json(
         { detail: `Failed to reach HuggingFace API: ${String(error)}` },

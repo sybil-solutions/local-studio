@@ -17,7 +17,7 @@ import {
   Search,
 } from "lucide-react";
 import type { HuggingFaceModel, ModelDownload } from "@/lib/types";
-import { formatNumber } from "@/lib/formatters";
+import { formatBytes, formatNumber } from "@/lib/formatters";
 import { extractProvider, extractQuantizations } from "@/app/discover/_components/utils";
 import { useExplore } from "./use-explore";
 import { useDownloads } from "@/hooks/use-downloads";
@@ -162,12 +162,19 @@ const ModelRow = memo(function ModelRow({
         ) : isStarting ? (
           <span className="text-xs text-(--dim)">Starting…</span>
         ) : activeDownload ? (
-          <div className="flex items-center justify-end gap-1">
+          <div className="flex items-center justify-end gap-2">
+            <div className="text-right" title={`Server path: ${activeDownload.target_dir}`}>
+              <div className="text-xs text-(--fg)">{activeDownload.status}</div>
+              <div className="text-[11px] text-(--dim)">
+                {formatBytes(activeDownload.downloaded_bytes)} /{" "}
+                {formatBytes(activeDownload.total_bytes)}
+              </div>
+            </div>
             {activeDownload.status === "downloading" && (
               <button
                 onClick={() => onPauseDownload(activeDownload.id)}
                 className="p-1 rounded border border-(--border) hover:bg-(--surface)"
-                title="Pause"
+                title="Pause server download"
               >
                 <Pause className="h-3.5 w-3.5" />
               </button>
@@ -176,16 +183,10 @@ const ModelRow = memo(function ModelRow({
               <button
                 onClick={() => onResumeDownload(activeDownload.id)}
                 className="p-1 rounded border border-(--border) hover:bg-(--surface)"
-                title="Resume"
+                title="Resume server download"
               >
                 <Play className="h-3.5 w-3.5" />
               </button>
-            )}
-            {activeDownload.status === "completed" && (
-              <span className="text-xs text-(--hl2)">Done</span>
-            )}
-            {(activeDownload.status === "downloading" || activeDownload.status === "queued") && (
-              <span className="text-xs text-(--dim)">…</span>
             )}
           </div>
         ) : (
@@ -415,8 +416,8 @@ export function ExploreTab() {
           <div className="py-16 text-center text-(--dim) max-w-md mx-auto px-4">
             <p>No models match Explore filters</p>
             <p className="text-sm mt-2">
-              Rows need Hugging Face engagement (downloads or likes) and a recent{" "}
-              <span className="font-mono">createdAt</span>. Try another search or adjust Pool (GB).
+              Try a repo id like <span className="font-mono">Qwen/Qwen3-32B</span>, a family name,
+              or adjust Pool (GB). Search results are no longer hidden by the recency filter.
             </p>
           </div>
         )}
@@ -424,9 +425,9 @@ export function ExploreTab() {
         {groups.length > 0 && (
           <>
             <div className="px-4 pt-3 pb-1 text-xs text-(--dim)">
-              {groups.length} models — recently created on Hugging Face (~4 months), with download
-              or like counts; sizes are mixed (large / mid / small vs your pool). Set Pool (GB) to
-              override detected VRAM.
+              {groups.length} models — downloads happen on the server under the configured models
+              directory. Search is ranked by downloads; default Explore keeps recent HF repos with
+              engagement. Set Pool (GB) to override detected VRAM.
             </div>
             <table className="w-full">
               <thead className="bg-(--surface) border-b border-(--border)">
