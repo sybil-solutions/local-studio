@@ -12,8 +12,7 @@
 # ─── What runs where ─────────────────────────────────────────────────────
 #
 #   Docker (infra only, stays up across deploys):
-#     postgres:16       :5432   LiteLLM database
-#     litellm           :4100   API gateway
+#     postgres:16       :5432   optional database service
 #
 #   Native on host (needs nvidia-smi + host process visibility):
 #     controller (bun)  :8080   Model lifecycle, GPU stats, chat, recipes
@@ -24,7 +23,7 @@
 #
 # ─── How it works ─────────────────────────────────────────────────────────
 #
-#   1. rsync  — push controller/src, frontend/src, shared/, config/ to remote
+#   1. rsync  — push controller/src, frontend/src, shared/ to remote
 #   2. install — bun install (controller), npm install (frontend)
 #   3. restart — kill old process, start new one via nohup, wait for port
 #   4. verify  — hit health endpoints, print GPU and model status
@@ -144,12 +143,12 @@ sync_shared() {
 }
 
 sync_config() {
-  step "Syncing config"
-  sync_dir config/ "$REMOTE_DIR/config/"
+  step "Syncing infra config"
+  remote "rm -rf $REMOTE_DIR_SHELL/config"
   rsync -az -e "ssh $SSH_OPTS" \
     docker-compose.yml .env.example \
     "$REMOTE:$REMOTE_DIR/"
-  ok "config/, docker-compose.yml → remote"
+  ok "docker-compose.yml → remote, removed legacy config/"
 }
 
 sync_all() {
@@ -216,8 +215,6 @@ pkill -f "next dev" 2>/dev/null || true
 fuser -k 3000/tcp >/dev/null 2>&1 || true
 sleep 1
 export BACKEND_URL=http://localhost:8080
-export LITELLM_URL=http://localhost:4100
-export LITELLM_MASTER_KEY=\${LITELLM_MASTER_KEY:-}
 nohup npx next start > /tmp/frontend-stdout.log 2>&1 &
 REMOTE
   wait_port 3000 frontend 15 || return 1
@@ -227,9 +224,10 @@ REMOTE
 # ─── Infra ────────────────────────────────────────────────────────────────
 
 start_infra() {
-  step "Starting Docker infra (postgres + litellm)"
-  remote "cd $REMOTE_DIR_SHELL && docker compose up -d postgres litellm 2>&1 | tail -5"
-  ok "postgres :5432, litellm :4100"
+  step "Starting Docker infra"
+  remote "cd $REMOTE_DIR_SHELL && docker compose stop litellm 2>/dev/null || true"
+  remote "cd $REMOTE_DIR_SHELL && docker compose up -d postgres 2>&1 | tail -5"
+  ok "postgres :5432"
 }
 
 # ─── Status / diagnostics ────────────────────────────────────────────────
@@ -257,7 +255,7 @@ probe "frontend→proxy"  http://localhost:3000/api/proxy/health 3000
 probe "vllm"            http://localhost:8000/v1/models  8000
 
 # Services that need port checks instead of HTTP probes
-for pair in "litellm:4100" "postgres:5432"; do
+for pair in "postgres:5432"; do
   label="${pair%%:*}" port="${pair##*:}"
   if ss -tlnp 2>/dev/null | grep -q ":${port}\b"; then
     printf "  ${_g}%-22s${_n} %s\n" "$label" ":$port OK"

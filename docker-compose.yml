@@ -12,7 +12,7 @@ services:
     environment:
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=postgres
-      - POSTGRES_DB=litellm
+      - POSTGRES_DB=vllm_studio
     volumes:
       - ./data/postgres:/var/lib/postgresql/data
     restart: unless-stopped
@@ -21,36 +21,3 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-
-  litellm:
-    image: ghcr.io/berriai/litellm:main-latest
-    container_name: vllm-studio-litellm
-    ports:
-      - "4100:4000"
-    volumes:
-      - ./config/litellm.yaml:/app/config.yaml
-      - ./config/think_parser.py:/app/think_parser.py
-      - ./data:/app/data
-    environment:
-      - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY:-dev-master-key}
-      - DATABASE_URL=postgresql://postgres:postgres@vllm-studio-postgres:5432/litellm?connect_timeout=10&pool_pre_ping=true&pool_size=5&max_overflow=10
-      - INFERENCE_API_BASE=${INFERENCE_API_BASE:-http://host.docker.internal:8000/v1}
-      - INFERENCE_API_KEY=${INFERENCE_API_KEY:-dev-placeholder-key}
-      - PYTHONPATH=/app
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    command: ["--config", "/app/config.yaml", "--port", "4000"]
-    restart: unless-stopped
-    depends_on:
-      postgres:
-        condition: service_started
-    healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          "python -c \"import urllib.request, urllib.error, sys; req = urllib.request.Request('http://localhost:4000/health');\ntry:\n  urllib.request.urlopen(req, timeout=5)\n  sys.exit(0)\nexcept urllib.error.HTTPError as e:\n  sys.exit(0 if e.code == 401 else 1)\nexcept Exception:\n  sys.exit(1)\n\"",
-        ]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
