@@ -101,6 +101,28 @@ export function GitDiffPanel({ cwd }: { cwd: string | null }) {
     }
   }, [cwd]);
 
+  const initGit = useCallback(async () => {
+    if (!cwd) return;
+    setLoading(true);
+    try {
+      const response = await fetch(`/api/agent/git-diff?cwd=${encodeURIComponent(cwd)}`, {
+        method: "POST",
+      });
+      if (!response.ok) {
+        const next = (await response.json()) as GitDiffPayload;
+        setPayload({ error: next.error || "Failed to initialize git repository" });
+        return;
+      }
+      await load();
+    } catch (error) {
+      setPayload({
+        error: error instanceof Error ? error.message : "Failed to initialize git repository",
+      });
+    } finally {
+      setLoading(false);
+    }
+  }, [cwd, load]);
+
   useEffect(() => {
     void load();
   }, [load]);
@@ -134,7 +156,17 @@ export function GitDiffPanel({ cwd }: { cwd: string | null }) {
           {payload.error}
         </div>
       ) : payload?.isRepo === false ? (
-        <div className="p-4 text-xs text-(--dim)">This directory is not a git repository.</div>
+        <div className="flex flex-col gap-3 p-4 text-xs text-(--dim)">
+          <span>This directory is not a git repository.</span>
+          <button
+            type="button"
+            onClick={() => void initGit()}
+            disabled={loading}
+            className="w-fit rounded border border-(--border) bg-(--surface) px-2 py-1 text-(--fg) hover:bg-(--bg) disabled:opacity-50"
+          >
+            Initialize git repository
+          </button>
+        </div>
       ) : files.length === 0 ? (
         <div className="p-4 text-xs text-(--dim)">
           {loading ? "Loading diff…" : "No unstaged tracked-file changes."}

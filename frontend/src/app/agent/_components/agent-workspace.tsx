@@ -50,6 +50,14 @@ type ProjectEntry = {
   branch: string | null;
 };
 
+type GitSummary = {
+  isRepo: boolean;
+  branch: string | null;
+  additions: number;
+  deletions: number;
+  statusCount: number;
+};
+
 const DEFAULT_AGENT_CWD = "";
 const SELECTED_PROJECT_KEY = "vllm-studio.agent.selectedProjectId";
 const BROWSER_TOOL_KEY = "vllm-studio.agent.browserToolEnabled";
@@ -169,6 +177,7 @@ export function AgentWorkspace() {
   const [browserToolEnabled, setBrowserToolEnabled] = useState(false);
   const [activeComputerTab, setActiveComputerTab] = useState<ComputerTab>("browser");
   const [computerWidth, setComputerWidth] = useState(DEFAULT_COMPUTER_WIDTH);
+  const [gitSummary, setGitSummary] = useState<GitSummary | null>(null);
 
   // Pane state: a tree-shaped Layout where each leaf is identified by a
   // PaneId and points into panesById, which holds tabs + the per-pane
@@ -221,11 +230,6 @@ export function AgentWorkspace() {
       if (handle && pendingSessionId) queueSessionReplay(paneId, pendingSessionId);
     },
     [queueSessionReplay],
-  );
-
-  const activeModel = useMemo(
-    () => models.find((model) => model.id === selectedModel),
-    [models, selectedModel],
   );
 
   useEffect(() => {
@@ -771,6 +775,65 @@ export function AgentWorkspace() {
   );
   const focusedPane = panesById.get(focusedPaneId) ?? panesById.values().next().value ?? null;
   const focusedTab = focusedPane?.tabs.find((tab) => tab.id === focusedPane.activeTabId) ?? null;
+  const focusedProject =
+    projects.find((entry) => entry.id === focusedTab?.projectId) ??
+    projects.find((entry) => entry.path === focusedTab?.cwd) ??
+    activeProject;
+
+  const refreshGitSummary = useCallback(async () => {
+    if (!focusedProject?.path) {
+      setGitSummary(null);
+      return;
+    }
+    try {
+      const response = await fetch(
+        `/api/agent/git-diff?cwd=${encodeURIComponent(focusedProject.path)}`,
+        { cache: "no-store" },
+      );
+      const payload = (await safeJson<{
+        isRepo?: boolean;
+        branch?: string | null;
+        additions?: number;
+        deletions?: number;
+        status?: string[];
+      }>(response)) as {
+        isRepo?: boolean;
+        branch?: string | null;
+        additions?: number;
+        deletions?: number;
+        status?: string[];
+      };
+      setGitSummary({
+        isRepo: payload.isRepo === true,
+        branch: payload.branch ?? null,
+        additions: payload.additions ?? 0,
+        deletions: payload.deletions ?? 0,
+        statusCount: payload.status?.length ?? 0,
+      });
+    } catch {
+      setGitSummary(null);
+    }
+  }, [focusedProject?.path]);
+
+  useEffect(() => {
+    void refreshGitSummary();
+  }, [refreshGitSummary]);
+
+  const initGitForActiveProject = useCallback(async () => {
+    if (!focusedProject?.path) return;
+    const response = await fetch(
+      `/api/agent/git-diff?cwd=${encodeURIComponent(focusedProject.path)}`,
+      { method: "POST" },
+    );
+    if (!response.ok) {
+      const payload = await safeJson<{ error?: string }>(response);
+      setError(payload.error || "Failed to initialize git repository");
+      return;
+    }
+    await refreshGitSummary();
+    window.dispatchEvent(new Event(PROJECTS_CHANGED_EVENT));
+  }, [focusedProject?.path, refreshGitSummary]);
+
   const focusedTabIsNew =
     Boolean(focusedTab) && !focusedTab?.piSessionId && (focusedTab?.messages.length ?? 0) === 0;
   const shouldShowProjectEmptyState =
@@ -785,19 +848,25 @@ export function AgentWorkspace() {
     const sessions = [...panesById.entries()].flatMap(([paneId, pane]) =>
       pane.tabs
         .filter((tab) => Boolean(tab.piSessionId) || tab.messages.length > 0)
-        .map((tab) => ({
-          projectId: activeProject.id,
-          cwd: activeProject.path,
-          paneId,
-          tabId: tab.id,
-          piSessionId: tab.piSessionId,
-          title: tab.title,
-          status: tab.status,
-          updatedAt: new Date().toISOString(),
-        })),
+        .map((tab) => {
+          const project =
+            projects.find((entry) => entry.id === tab.projectId) ??
+            projects.find((entry) => entry.path === tab.cwd) ??
+            activeProject;
+          return {
+            projectId: project.id,
+            cwd: tab.cwd ?? project.path,
+            paneId,
+            tabId: tab.id,
+            piSessionId: tab.piSessionId,
+            title: tab.title,
+            status: tab.status,
+            updatedAt: new Date().toISOString(),
+          };
+        }),
     );
     window.dispatchEvent(new CustomEvent(ACTIVE_AGENT_SESSIONS_EVENT, { detail: { sessions } }));
-  }, [activeProject, panesById]);
+  }, [activeProject, panesById, projects]);
 
   const openSessionPayloadInPane = useCallback(
     (paneId: PaneId, payload: SessionDropPayload) => {
@@ -807,7 +876,12 @@ export function AgentWorkspace() {
         if (!target) return current;
         const next = new Map(current);
         if (payload.piSessionId) {
-          const tab = makeFreshTab();
+          const tab = {
+            ...makeFreshTab(),
+            projectId: payload.projectId,
+            cwd: payload.cwd,
+            title: payload.title ?? "Loading session",
+          };
           next.set(paneId, {
             ...target,
             tabs: [...target.tabs, tab],
@@ -1019,33 +1093,60 @@ export function AgentWorkspace() {
                   const pane = panesById.get(paneId);
                   if (!pane) return null;
                   const onlyOne = collectLeaves(layout).length === 1;
+                  const paneActiveTab =
+                    pane.tabs.find((tab) => tab.id === pane.activeTabId) ?? pane.tabs[0] ?? null;
+                  const paneProject =
+                    projects.find((project) => project.id === paneActiveTab?.projectId) ??
+                    projects.find((project) => project.path === paneActiveTab?.cwd) ??
+                    activeProject;
+                  const paneCwd = paneActiveTab?.cwd ?? paneProject?.path ?? agentCwd;
+                  const paneModelId = paneActiveTab?.modelId ?? selectedModel;
+                  const paneModel = models.find((model) => model.id === paneModelId) ?? null;
+                  const paneTabIsNew =
+                    Boolean(paneActiveTab) &&
+                    !paneActiveTab?.piSessionId &&
+                    (paneActiveTab?.messages.length ?? 0) === 0;
                   return (
                     <ChatPane
                       key={paneId}
                       paneId={paneId}
                       runtimeSessionId={pane.runtimeSessionId}
-                      modelId={selectedModel}
-                      modelName={activeModel?.name ?? null}
+                      modelId={paneModelId}
+                      modelName={paneModel?.name ?? null}
                       modelsLoading={loadingModels}
-                      contextWindow={activeModel?.contextWindow ?? 0}
-                      cwd={agentCwd}
-                      projectName={activeProject?.name ?? null}
+                      contextWindow={paneModel?.contextWindow ?? 0}
+                      cwd={paneCwd}
+                      projectName={paneProject?.name ?? null}
                       projectSelector={
-                        activeProject && projects.length > 0 ? (
+                        paneProject && projects.length > 0 ? (
                           <select
-                            value={selectedProjectId ?? ""}
+                            value={paneProject.id}
                             onChange={(event) => {
                               const project = projects.find(
                                 (entry) => entry.id === event.target.value,
                               );
-                              if (project) selectProject(project);
+                              if (!project) return;
+                              setPanesById((current) => {
+                                const cur = current.get(paneId);
+                                if (!cur) return current;
+                                const next = new Map(current);
+                                next.set(paneId, {
+                                  ...cur,
+                                  tabs: cur.tabs.map((tab) =>
+                                    tab.id === cur.activeTabId
+                                      ? { ...tab, projectId: project.id, cwd: project.path }
+                                      : tab,
+                                  ),
+                                });
+                                return next;
+                              });
                             }}
-                            disabled={!focusedTabIsNew}
+                            disabled={!paneTabIsNew}
                             className="min-w-0 max-w-[280px] truncate rounded border border-(--border) bg-(--bg) px-2 py-1 font-mono text-[11px] text-(--dim) outline-none hover:text-(--fg) disabled:opacity-100"
                             title={
-                              focusedTabIsNew
+                              paneTabIsNew
                                 ? "Change directory for this new session"
-                                : activeProject.path
+                                : paneProject.path
                             }
                             aria-label="Session directory"
                           >
@@ -1057,12 +1158,27 @@ export function AgentWorkspace() {
                           </select>
                         ) : null
                       }
-                      gitBranch={activeProject?.hasGit ? activeProject.branch : null}
+                      gitBranch={gitSummary?.branch ?? paneProject?.branch ?? null}
+                      gitSummary={gitSummary}
+                      onInitGit={initGitForActiveProject}
                       modelSelector={
                         <ModelPicker
                           models={models}
-                          selectedModel={selectedModel}
-                          onSelect={setSelectedModel}
+                          selectedModel={paneModelId}
+                          onSelect={(modelId) => {
+                            setPanesById((current) => {
+                              const cur = current.get(paneId);
+                              if (!cur) return current;
+                              const next = new Map(current);
+                              next.set(paneId, {
+                                ...cur,
+                                tabs: cur.tabs.map((tab) =>
+                                  tab.id === cur.activeTabId ? { ...tab, modelId } : tab,
+                                ),
+                              });
+                              return next;
+                            });
+                          }}
                           loading={loadingModels}
                         />
                       }
@@ -1113,7 +1229,12 @@ export function AgentWorkspace() {
                   const id = newPaneId();
                   if (collectLeaves(layout).length >= 2) return;
                   const runtime = newRuntimeId();
-                  const baseTab = makeFreshTab();
+                  const baseTab = {
+                    ...makeFreshTab(),
+                    projectId: payload.projectId,
+                    cwd: payload.cwd,
+                    title: payload.title ?? "Loading session",
+                  };
                   setPanesById((current) => {
                     const next = new Map(current);
                     next.set(id, {

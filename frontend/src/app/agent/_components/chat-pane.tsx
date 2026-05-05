@@ -73,6 +73,9 @@ export type SessionTab = {
   // Pi session UUID (null = unstarted, will be assigned by pi when the first
   // turn runs).
   piSessionId: string | null;
+  projectId?: string;
+  cwd?: string;
+  modelId?: string;
   // Display title — derived from the first user message of the session, or a
   // placeholder while empty.
   title: string;
@@ -108,6 +111,13 @@ type Props = {
   projectSelector?: ReactNode;
   modelSelector?: ReactNode;
   gitBranch?: string | null;
+  gitSummary?: {
+    isRepo: boolean;
+    additions: number;
+    deletions: number;
+    statusCount: number;
+  } | null;
+  onInitGit?: () => void;
   browserToolEnabled: boolean;
   onToggleBrowserTool: () => void;
   isFocused: boolean;
@@ -695,6 +705,8 @@ export function ChatPane({
   projectSelector,
   modelSelector,
   gitBranch,
+  gitSummary,
+  onInitGit,
   browserToolEnabled,
   onToggleBrowserTool,
   isFocused,
@@ -981,6 +993,7 @@ export function ChatPane({
       // Optimistic update: show the user's turn + a blank assistant message.
       updateTab(tabId, (tab) => ({
         ...tab,
+        modelId: tab.modelId || modelId,
         input: "",
         error: "",
         status: "starting",
@@ -1324,31 +1337,7 @@ export function ChatPane({
       </div>
 
       <form onSubmit={sendMessage} className="shrink-0 bg-(--bg) px-6 pb-3 pt-1.5">
-        <div className="mx-auto max-w-3xl rounded-lg border border-(--border)/50 bg-(--surface)">
-          <div className="flex min-h-8 items-center gap-2 border-b border-(--border)/50 px-2 py-1.5 text-xs">
-            <span className="shrink-0 font-semibold text-(--fg)">Agent</span>
-            {projectSelector ? (
-              <>
-                <span className="text-(--dim)">/</span>
-                {projectSelector}
-              </>
-            ) : cwd ? (
-              <>
-                <span className="text-(--dim)">/</span>
-                <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-(--dim)">
-                  {cwd}
-                </span>
-              </>
-            ) : null}
-            {gitBranch ? (
-              <span className="inline-flex min-w-0 shrink items-center gap-1 rounded border border-(--border) bg-(--bg) px-1.5 py-0.5 font-mono text-[10px] text-(--dim)">
-                <GitBranchIcon className="h-3 w-3 shrink-0" />
-                <span className="truncate">{gitBranch}</span>
-              </span>
-            ) : null}
-            <div className="min-w-0 flex-1" />
-            {modelSelector}
-          </div>
+        <div className="mx-auto max-w-3xl overflow-hidden rounded-xl border border-(--border)/50 bg-(--surface)">
           {(activeTab?.queue ?? []).length > 0 ? (
             <div className="flex flex-wrap gap-1.5 border-b border-(--border)/50 px-2 py-1.5">
               {(activeTab?.queue ?? []).map((item) => (
@@ -1454,7 +1443,7 @@ export function ChatPane({
             }
             className="min-h-[34px] max-h-[160px] w-full resize-none overflow-y-auto bg-transparent px-2.5 py-1.5 text-sm leading-5 text-(--fg) outline-none placeholder:text-(--dim)"
           />
-          <div className="flex items-center gap-1.5 px-2 pb-1.5">
+          <div className="flex items-center gap-1.5 px-2 pb-2">
             <input
               ref={fileInputRef}
               type="file"
@@ -1535,6 +1524,40 @@ export function ChatPane({
                 <SendIcon className="h-3.5 w-3.5" />
               </button>
             )}
+          </div>
+          <div className="flex min-h-9 items-center gap-2 border-t border-(--border)/50 bg-(--bg)/45 px-2 py-1.5 text-xs">
+            {projectSelector ? (
+              projectSelector
+            ) : cwd ? (
+              <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-(--dim)">
+                {cwd}
+              </span>
+            ) : null}
+            {gitBranch ? (
+              <span className="inline-flex min-w-0 shrink items-center gap-1 rounded border border-(--border) bg-(--surface) px-1.5 py-0.5 font-mono text-[10px] text-(--dim)">
+                <GitBranchIcon className="h-3 w-3 shrink-0" />
+                <span className="truncate">{gitBranch}</span>
+              </span>
+            ) : gitSummary && !gitSummary.isRepo ? (
+              <button
+                type="button"
+                onClick={onInitGit}
+                className="inline-flex shrink-0 items-center rounded border border-(--border) bg-(--surface) px-1.5 py-0.5 text-[10px] text-(--dim) hover:text-(--fg)"
+              >
+                Init git
+              </button>
+            ) : null}
+            {gitSummary?.isRepo ? (
+              <span className="inline-flex shrink-0 items-center gap-1 font-mono text-[10px]">
+                <span className="text-emerald-400">+{gitSummary.additions}</span>
+                <span className="text-red-400">-{gitSummary.deletions}</span>
+                {gitSummary.statusCount > 0 ? (
+                  <span className="text-(--dim)">· {gitSummary.statusCount} files</span>
+                ) : null}
+              </span>
+            ) : null}
+            <div className="min-w-0 flex-1" />
+            {modelSelector}
           </div>
         </div>
         <div className="mx-auto mt-1 flex max-w-3xl items-center justify-end gap-2 font-mono text-[10px] text-(--dim)">
@@ -1632,7 +1655,14 @@ function TabPill({
         }
         event.dataTransfer.setData(
           "application/x-vllm-agent-session",
-          JSON.stringify({ piSessionId: tab.piSessionId, paneId, tabId: tab.id, title: tab.title }),
+          JSON.stringify({
+            piSessionId: tab.piSessionId,
+            projectId: tab.projectId,
+            cwd: tab.cwd,
+            paneId,
+            tabId: tab.id,
+            title: tab.title,
+          }),
         );
         event.dataTransfer.effectAllowed = "copy";
       }}

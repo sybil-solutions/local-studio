@@ -20,6 +20,8 @@ type Props = {
 
 export type SessionDropPayload = {
   piSessionId?: string | null;
+  projectId?: string;
+  cwd?: string;
   paneId?: string;
   tabId?: string;
   title?: string;

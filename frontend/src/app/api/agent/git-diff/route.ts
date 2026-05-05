@@ -41,12 +41,22 @@ async function git(cwd: string, args: string[]) {
   return stdout;
 }
 
+function diffStats(diff: string): { additions: number; deletions: number } {
+  let additions = 0;
+  let deletions = 0;
+  for (const line of diff.split("\n")) {
+    if (line.startsWith("+++") || line.startsWith("---")) continue;
+    if (line.startsWith("+")) additions += 1;
+    if (line.startsWith("-")) deletions += 1;
+  }
+  return { additions, deletions };
+}
+
 export async function GET(request: NextRequest) {
   const requestedCwd = request.nextUrl.searchParams.get("cwd")?.trim();
   if (!requestedCwd) return Response.json({ error: "cwd is required" }, { status: 400 });
   const cwd = resolveAllowedWorkingDirectory(requestedCwd, configuredRoots());
-  if (!cwd)
-    return Response.json({ error: "cwd must be absolute" }, { status: 400 });
+  if (!cwd) return Response.json({ error: "cwd must be absolute" }, { status: 400 });
   if (!existsSync(cwd)) return Response.json({ error: "cwd not found" }, { status: 404 });
 
   try {
@@ -67,10 +77,30 @@ export async function GET(request: NextRequest) {
         .map((line) => line.trimEnd())
         .filter(Boolean),
       diff,
+      ...diffStats(diff),
     });
   } catch (error) {
     return Response.json(
       { error: error instanceof Error ? error.message : "Failed to load git diff" },
+      { status: 400 },
+    );
+  }
+}
+
+export async function POST(request: NextRequest) {
+  const requestedCwd = request.nextUrl.searchParams.get("cwd")?.trim();
+  if (!requestedCwd) return Response.json({ error: "cwd is required" }, { status: 400 });
+  const cwd = resolveAllowedWorkingDirectory(requestedCwd, configuredRoots());
+  if (!cwd) return Response.json({ error: "cwd must be absolute" }, { status: 400 });
+  if (!existsSync(cwd)) return Response.json({ error: "cwd not found" }, { status: 404 });
+
+  try {
+    await git(cwd, ["init"]);
+    const branch = await git(cwd, ["branch", "--show-current"]).catch(() => "");
+    return Response.json({ ok: true, isRepo: true, branch: branch.trim() || null });
+  } catch (error) {
+    return Response.json(
+      { error: error instanceof Error ? error.message : "Failed to initialize git repository" },
       { status: 400 },
     );
   }

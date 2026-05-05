@@ -111,6 +111,8 @@ function setAgentSessionDragData(
   event: DragEvent,
   session: {
     piSessionId?: string | null;
+    projectId?: string;
+    cwd?: string;
     paneId?: string;
     tabId?: string;
     title?: string;
@@ -1181,8 +1183,12 @@ function SessionRow({
         title={label}
         draggable
         onDragStart={(event) => {
-          event.dataTransfer.setData("application/x-vllm-session", session.id);
-          event.dataTransfer.effectAllowed = "copy";
+          setAgentSessionDragData(event, {
+            piSessionId: session.id,
+            projectId: project.id,
+            cwd: project.path,
+            title: label,
+          });
         }}
         className="flex min-w-0 flex-1 items-center gap-2"
       >
