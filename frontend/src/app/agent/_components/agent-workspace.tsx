@@ -177,7 +177,8 @@ export function AgentWorkspace() {
   const [browserToolEnabled, setBrowserToolEnabled] = useState(false);
   const [activeComputerTab, setActiveComputerTab] = useState<ComputerTab>("browser");
   const [computerWidth, setComputerWidth] = useState(DEFAULT_COMPUTER_WIDTH);
-  const [gitSummary, setGitSummary] = useState<GitSummary | null>(null);
+  const [gitSummaries, setGitSummaries] = useState<Map<string, GitSummary>>(new Map());
+  const realtime = useRealtimeStatus();
 
   // Pane state: a tree-shaped Layout where each leaf is identified by a
   // PaneId and points into panesById, which holds tabs + the per-pane
@@ -781,10 +782,7 @@ export function AgentWorkspace() {
     activeProject;
 
   const refreshGitSummary = useCallback(async () => {
-    if (!focusedProject?.path) {
-      setGitSummary(null);
-      return;
-    }
+    if (!focusedProject?.path) return;
     try {
       const response = await fetch(
         `/api/agent/git-diff?cwd=${encodeURIComponent(focusedProject.path)}`,
@@ -803,15 +801,23 @@ export function AgentWorkspace() {
         deletions?: number;
         status?: string[];
       };
-      setGitSummary({
-        isRepo: payload.isRepo === true,
-        branch: payload.branch ?? null,
-        additions: payload.additions ?? 0,
-        deletions: payload.deletions ?? 0,
-        statusCount: payload.status?.length ?? 0,
+      setGitSummaries((prev) => {
+        const next = new Map(prev);
+        next.set(focusedProject.path, {
+          isRepo: payload.isRepo === true,
+          branch: payload.branch ?? null,
+          additions: payload.additions ?? 0,
+          deletions: payload.deletions ?? 0,
+          statusCount: payload.status?.length ?? 0,
+        });
+        return next;
       });
     } catch {
-      setGitSummary(null);
+      setGitSummaries((prev) => {
+        const next = new Map(prev);
+        next.delete(focusedProject.path);
+        return next;
+      });
     }
   }, [focusedProject?.path]);
 
@@ -1158,8 +1164,8 @@ export function AgentWorkspace() {
                           </select>
                         ) : null
                       }
-                      gitBranch={gitSummary?.branch ?? paneProject?.branch ?? null}
-                      gitSummary={gitSummary}
+                      gitBranch={(paneProject?.path ? gitSummaries.get(paneProject.path)?.branch : null) ?? paneProject?.branch ?? null}
+                      gitSummary={paneProject?.path ? gitSummaries.get(paneProject.path) ?? null : null}
                       onInitGit={initGitForActiveProject}
                       modelSelector={
                         <ModelPicker

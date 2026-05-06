@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { ReactNode } from "react";
+import type { ClipboardEvent, DragEvent, ReactNode } from "react";
 import {
   AttachIcon,
   CloseIcon,
@@ -94,6 +94,7 @@ type ChatAttachment = {
   name: string;
   type: string;
   size: number;
+  path?: string;
   mode: "text" | "data-url" | "metadata";
   content: string;
 };
@@ -168,11 +169,75 @@ function formatFileSize(bytes: number) {
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
-function isTextLike(file: File) {
+function extensionFromMimeType(type: string): string {
+  if (!type) return "bin";
+  const normalized = type.toLowerCase().split(";")[0]?.trim() ?? "";
+  const known: Record<string, string> = {
+    "application/json": "json",
+    "application/pdf": "pdf",
+    "application/zip": "zip",
+    "image/jpeg": "jpg",
+    "image/svg+xml": "svg",
+    "text/csv": "csv",
+    "text/html": "html",
+    "text/markdown": "md",
+    "text/plain": "txt",
+    "video/quicktime": "mov",
+  };
+  if (known[normalized]) return known[normalized];
+  const [, subtype] = normalized.split("/");
+  const sanitized = subtype?.replace(/[^a-z0-9]+/g, "").replace(/^x/, "");
+  return sanitized || "bin";
+}
+
+function fileDisplayName(file: File): string {
+  const name = file.name.trim();
+  if (name) return name;
+  return `pasted-${Date.now().toString(36)}-${randomIdSegment(4)}.${extensionFromMimeType(file.type)}`;
+}
+
+function isTextLike(file: File, name = file.name) {
   if (file.type.startsWith("text/")) return true;
   return /\.(md|markdown|txt|json|csv|tsv|log|yaml|yml|xml|html|css|js|jsx|ts|tsx|py|sh|sql)$/i.test(
-    file.name,
+    name,
   );
+}
+
+function getDesktopFilePath(file: File): string | null {
+  if (typeof window === "undefined") return null;
+  const bridge = (window as unknown as { vllmStudioDesktop?: { getPathForFile?: unknown } })
+    .vllmStudioDesktop;
+  const getPathForFile = bridge?.getPathForFile;
+  if (typeof getPathForFile !== "function") return null;
+  try {
+    const path = getPathForFile(file);
+    return typeof path === "string" && path.trim() ? path : null;
+  } catch {
+    return null;
+  }
+}
+
+function dataTransferHasFiles(dataTransfer: DataTransfer | null): boolean {
+  if (!dataTransfer) return false;
+  return Array.from(dataTransfer.types ?? []).includes("Files");
+}
+
+function filesFromDataTransfer(dataTransfer: DataTransfer | null): File[] {
+  if (!dataTransfer) return [];
+  const files: File[] = [];
+  const seen = new Set<string>();
+  const push = (file: File | null) => {
+    if (!file) return;
+    const key = `${file.name}:${file.type}:${file.size}:${file.lastModified}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    files.push(file);
+  };
+  Array.from(dataTransfer.files ?? []).forEach(push);
+  Array.from(dataTransfer.items ?? []).forEach((item) => {
+    if (item.kind === "file") push(item.getAsFile());
+  });
+  return files;
 }
 
 function readFileAsText(file: File) {
@@ -195,12 +260,16 @@ function readFileAsDataUrl(file: File) {
 
 async function createAttachment(file: File): Promise<ChatAttachment> {
   const id = newId("file");
-  if (isTextLike(file) && file.size <= 350_000) {
+  const name = fileDisplayName(file);
+  const type = file.type || "application/octet-stream";
+  const path = getDesktopFilePath(file) ?? undefined;
+  if (isTextLike(file, name) && file.size <= 350_000) {
     return {
       id,
-      name: file.name,
+      name,
       type: file.type || "text/plain",
       size: file.size,
+      path,
       mode: "text",
       content: await readFileAsText(file),
     };
@@ -208,20 +277,24 @@ async function createAttachment(file: File): Promise<ChatAttachment> {
   if (file.size <= 1_500_000) {
     return {
       id,
-      name: file.name,
-      type: file.type || "application/octet-stream",
+      name,
+      type,
       size: file.size,
+      path,
       mode: "data-url",
       content: await readFileAsDataUrl(file),
     };
   }
   return {
     id,
-    name: file.name,
-    type: file.type || "application/octet-stream",
+    name,
+    type,
     size: file.size,
+    path,
     mode: "metadata",
-    content: "File is too large to inline; only metadata is attached.",
+    content: path
+      ? `File is too large to inline; it is available on disk at ${path}.`
+      : "File is too large to inline; only metadata is attached.",
   };
 }
 
@@ -229,7 +302,8 @@ function attachmentPrompt(attachments: ChatAttachment[]) {
   if (attachments.length === 0) return "";
   return attachments
     .map((file, index) => {
-      const header = `Attachment ${index + 1}: ${file.name} (${file.type}, ${formatFileSize(file.size)})`;
+      const pathInfo = file.path ? `\nLocal path: ${file.path}` : "";
+      const header = `Attachment ${index + 1}: ${file.name} (${file.type}, ${formatFileSize(file.size)})${pathInfo}`;
       if (file.mode === "text") return `${header}\n\`\`\`\n${file.content}\n\`\`\``;
       if (file.mode === "data-url") return `${header}\nData URL:\n${file.content}`;
       return `${header}\n${file.content}`;
@@ -724,6 +798,7 @@ export function ChatPane({
   const [isMultiline, setIsMultiline] = useState(false);
   const [attachments, setAttachments] = useState<ChatAttachment[]>([]);
   const [readingAttachments, setReadingAttachments] = useState(false);
+  const [composerDragActive, setComposerDragActive] = useState(false);
 
   const activeTab = useMemo(
     () => tabs.find((tab) => tab.id === activeTabId) ?? tabs[0] ?? null,
@@ -938,7 +1013,7 @@ export function ChatPane({
   // stream — pi delivers the queued message and continues emitting events on
   // the original prompt's stream. Returns true on success.
   const sendControlMessage = useCallback(
-    async (mode: "steer" | "follow_up", text: string, runtime: string): Promise<boolean> => {
+    async (mode: "steer" | "follow_up", text: string, runtime: string, piSessionId?: string | null): Promise<boolean> => {
       if (!text.trim() || !modelId) return false;
       try {
         const response = await fetch("/api/agent/turn", {
@@ -949,6 +1024,7 @@ export function ChatPane({
             modelId,
             message: text,
             cwd: cwd.trim() || undefined,
+            piSessionId,
             mode,
             browserToolEnabled,
           }),
@@ -1139,6 +1215,7 @@ export function ChatPane({
           "steer",
           text,
           activeTab.runtimeSessionId || runtimeSessionId,
+          activeTab.piSessionId,
         );
         if (ok) {
           updateTab(activeTab.id, (tab) => ({ ...tab, input: "" }));
@@ -1179,7 +1256,7 @@ export function ChatPane({
     }));
     if (running) {
       // Hand it to pi as a follow_up so the agent sees it after it finishes.
-      void sendControlMessage(mode, text, runtime);
+      void sendControlMessage(mode, text, runtime, activeTab.piSessionId);
     }
   }, [activeTab, modelId, running, runtimeSessionId, sendControlMessage, updateTab]);
 
@@ -1195,11 +1272,19 @@ export function ChatPane({
   );
 
   const attachFiles = useCallback(
-    async (files: FileList | null) => {
-      if (!files || files.length === 0 || !activeTab) return;
+    async (files: FileList | File[] | null) => {
+      const fileArray = files ? Array.from(files) : [];
+      if (fileArray.length === 0 || !activeTab) return;
+      if (running) {
+        updateTab(activeTab.id, (tab) => ({
+          ...tab,
+          error: "Pause or wait for the current turn before attaching files.",
+        }));
+        return;
+      }
       setReadingAttachments(true);
       try {
-        const next = await Promise.all(Array.from(files).map((file) => createAttachment(file)));
+        const next = await Promise.all(fileArray.map((file) => createAttachment(file)));
         setAttachments((current) => [...current, ...next]);
         updateTab(activeTab.id, (tab) => ({ ...tab, error: "" }));
       } catch (err) {
@@ -1212,7 +1297,43 @@ export function ChatPane({
         if (fileInputRef.current) fileInputRef.current.value = "";
       }
     },
-    [activeTab, updateTab],
+    [activeTab, running, updateTab],
+  );
+
+  const handleComposerPaste = useCallback(
+    (event: ClipboardEvent<HTMLTextAreaElement>) => {
+      const files = filesFromDataTransfer(event.clipboardData);
+      if (files.length === 0) return;
+      event.preventDefault();
+      void attachFiles(files);
+    },
+    [attachFiles],
+  );
+
+  const handleComposerDragOver = useCallback(
+    (event: DragEvent<HTMLDivElement>) => {
+      if (!dataTransferHasFiles(event.dataTransfer)) return;
+      event.preventDefault();
+      event.dataTransfer.dropEffect = running ? "none" : "copy";
+      setComposerDragActive(true);
+    },
+    [running],
+  );
+
+  const handleComposerDragLeave = useCallback((event: DragEvent<HTMLDivElement>) => {
+    const nextTarget = event.relatedTarget;
+    if (nextTarget instanceof Node && event.currentTarget.contains(nextTarget)) return;
+    setComposerDragActive(false);
+  }, []);
+
+  const handleComposerDrop = useCallback(
+    (event: DragEvent<HTMLDivElement>) => {
+      if (!dataTransferHasFiles(event.dataTransfer)) return;
+      event.preventDefault();
+      setComposerDragActive(false);
+      void attachFiles(filesFromDataTransfer(event.dataTransfer));
+    },
+    [attachFiles],
   );
 
   const abortTurn = useCallback(async () => {
@@ -1337,7 +1458,19 @@ export function ChatPane({
       </div>
 
       <form onSubmit={sendMessage} className="shrink-0 bg-(--bg) px-6 pb-3 pt-1.5">
-        <div className="mx-auto max-w-3xl overflow-hidden rounded-xl border border-(--border)/50 bg-(--surface)">
+        <div
+          onDragOver={handleComposerDragOver}
+          onDragLeave={handleComposerDragLeave}
+          onDrop={handleComposerDrop}
+          className={`mx-auto max-w-3xl overflow-hidden rounded-xl border bg-(--surface) ${
+            composerDragActive ? "border-(--accent)" : "border-(--border)/50"
+          }`}
+        >
+          {composerDragActive ? (
+            <div className="border-b border-(--accent)/50 bg-(--accent)/10 px-2 py-1.5 text-[11px] text-(--accent)">
+              Drop files to attach to the next message.
+            </div>
+          ) : null}
           {(activeTab?.queue ?? []).length > 0 ? (
             <div className="flex flex-wrap gap-1.5 border-b border-(--border)/50 px-2 py-1.5">
               {(activeTab?.queue ?? []).map((item) => (
@@ -1369,7 +1502,7 @@ export function ChatPane({
                 <span
                   key={file.id}
                   className="inline-flex max-w-[220px] items-center gap-1 rounded border border-(--border)/70 bg-(--bg) px-1.5 py-0.5 text-[11px] text-(--dim)"
-                  title={`${file.name} · ${file.type} · ${formatFileSize(file.size)}`}
+                  title={`${file.name} · ${file.type} · ${formatFileSize(file.size)}${file.path ? ` · ${file.path}` : ""}`}
                 >
                   <FileIcon className="h-3 w-3 shrink-0" />
                   <span className="truncate">{file.name}</span>
@@ -1392,6 +1525,7 @@ export function ChatPane({
           <textarea
             ref={textareaRef}
             value={activeTab?.input ?? ""}
+            onPaste={handleComposerPaste}
             onChange={(event) => {
               const value = event.target.value;
               if (!activeTab) return;
@@ -1439,7 +1573,7 @@ export function ChatPane({
                   ? "No models available — check /v1/models"
                   : running
                     ? `Steer ${modelName} (Enter) · queue with Tab · Esc to pause`
-                    : `Ask ${modelName} (Enter) · queue with Tab`
+                    : `Ask ${modelName} (Enter) · queue with Tab · paste/drop files`
             }
             className="min-h-[34px] max-h-[160px] w-full resize-none overflow-y-auto bg-transparent px-2.5 py-1.5 text-sm leading-5 text-(--fg) outline-none placeholder:text-(--dim)"
           />
@@ -1457,7 +1591,7 @@ export function ChatPane({
               disabled={readingAttachments || running}
               className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded text-(--dim) hover:bg-(--bg) hover:text-(--fg) disabled:opacity-30"
               aria-label="Attach files"
-              title="Attach files"
+              title="Attach files (or paste/drop into composer)"
             >
               <AttachIcon className="h-3.5 w-3.5" />
             </button>

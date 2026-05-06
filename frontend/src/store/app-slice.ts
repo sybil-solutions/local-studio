@@ -14,6 +14,10 @@ export interface AppSlice {
   toggleSidebarMobileOpen: () => void;
   sidebarWidth: number;
   setSidebarWidth: (width: number) => void;
+  fileViewerFontSize: number;
+  setFileViewerFontSize: (size: number) => void;
+  lastOpenFileByProject: Record<string, string>;
+  setLastOpenFileByProject: (cwd: string, rel: string) => void;
 }
 
 export const createAppSlice: StateCreator<AppSlice, [], [], AppSlice> = (set) => ({
@@ -34,4 +38,11 @@ export const createAppSlice: StateCreator<AppSlice, [], [], AppSlice> = (set) =>
     set((state) => ({ sidebar: { ...state.sidebar, mobileOpen: !state.sidebar.mobileOpen } })),
   sidebarWidth: 240,
   setSidebarWidth: (sidebarWidth) => set({ sidebarWidth }),
+  fileViewerFontSize: 12,
+  setFileViewerFontSize: (fileViewerFontSize) => set({ fileViewerFontSize }),
+  lastOpenFileByProject: {},
+  setLastOpenFileByProject: (cwd, rel) =>
+    set((state) => ({
+      lastOpenFileByProject: { ...state.lastOpenFileByProject, [cwd]: rel },
+    })),
 });

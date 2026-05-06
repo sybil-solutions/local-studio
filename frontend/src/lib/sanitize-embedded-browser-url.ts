@@ -2,6 +2,10 @@
 /**
  * Normalize and allow-list URLs for the Computer embedded browser (iframe).
  * Aligns loosely with controller browser_open_url rules (no loopback / private nets).
+ *
+ * `file://` URLs are allowed for local file viewing (the webview/iframe handles them
+ * directly). The caller must decide whether to pass them to a server-side fetch;
+ * this function only validates the URL structure.
  */
 export function sanitizeEmbeddedBrowserUrl(raw: string): string | null {
   const trimmed = raw.trim();
@@ -14,7 +18,10 @@ export function sanitizeEmbeddedBrowserUrl(raw: string): string | null {
     return null;
   }
 
-  if (url.protocol !== "http:" && url.protocol !== "https:") return null;
+  if (url.protocol !== "http:" && url.protocol !== "https:" && url.protocol !== "file:") return null;
+
+  // file:// URLs are allowed directly — no hostname checks needed.
+  if (url.protocol === "file:") return url.toString();
 
   const host = url.hostname.toLowerCase();
   if (host === "localhost" || host.endsWith(".localhost") || host.endsWith(".local")) {

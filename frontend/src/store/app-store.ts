@@ -33,6 +33,8 @@ export const useAppStore = create<AppStore>()(
         desktopSidebarPinnedOpen: state.desktopSidebarPinnedOpen,
         sidebarCollapsed: state.sidebar.collapsed,
         sidebarWidth: state.sidebarWidth,
+        fileViewerFontSize: state.fileViewerFontSize,
+        lastOpenFileByProject: state.lastOpenFileByProject,
       }),
       merge: (persisted, current) => ({
         ...current,

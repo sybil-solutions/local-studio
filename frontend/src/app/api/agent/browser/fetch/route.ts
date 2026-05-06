@@ -105,6 +105,12 @@ export async function GET(request: NextRequest) {
       { status: 400 },
     );
   }
+  if (safe.startsWith("file:")) {
+    return NextResponse.json(
+      { error: "file:// URLs are not supported in reading mode" },
+      { status: 400 },
+    );
+  }
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
   try {

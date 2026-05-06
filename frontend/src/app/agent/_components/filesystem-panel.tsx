@@ -1,20 +1,21 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Virtuoso } from "react-virtuoso";
 import {
-  ChevronLeft,
   ChevronRight,
+  ChevronDown,
   Code,
   File,
   Folder,
   Monitor,
   MessageSquare,
-  PanelLeftOpen,
+  Minus,
+  Plus,
   Trash2,
 } from "lucide-react";
 import hljs from "highlight.js";
-import { AssistantMarkdown } from "./assistant-markdown";
+import { useAppStore } from "@/store";
 
 type FsEntry = {
   name: string;
@@ -36,7 +37,7 @@ type Props = {
   cwd: string | null;
 };
 
-const LAST_FILE_KEY_PREFIX = "vllm-studio.agent.lastOpenFile.";
+
 
 const EXT_TO_LANG: Record<string, string> = {
   js: "javascript", jsx: "javascript", ts: "typescript", tsx: "typescript",
@@ -95,6 +96,107 @@ function previewDocument(content: string, kind: "html" | "jsx"): string {
   return `<!doctype html><html><head><meta charset="utf-8"><base target="_blank"><style>body{margin:16px;font:14px system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#111;background:#fff}*{box-sizing:border-box}img,video,iframe{max-width:100%}pre,code{white-space:pre-wrap}</style></head><body>${body}</body></html>`;
 }
 
+// ─── Tree file list ─────────────────────────────────────────────────────────
+
+function TreeFileList({
+  entries,
+  searchQuery,
+  openFile,
+  onOpen,
+  cwd,
+  depth,
+  expandedDirs,
+  onToggleDir,
+  dirChildren,
+  dirLoading,
+}: {
+  entries: FsEntry[];
+  searchQuery: string;
+  openFile: string | null;
+  onOpen: (entry: FsEntry) => void;
+  cwd: string;
+  depth: number;
+  expandedDirs: Set<string>;
+  onToggleDir: (rel: string) => void;
+  dirChildren: Map<string, FsEntry[]>;
+  dirLoading: Set<string>;
+}) {
+  const filtered = useMemo(() => {
+    if (!searchQuery) return entries;
+    const q = searchQuery.toLowerCase();
+    return entries.filter((e) => e.name.toLowerCase().includes(q));
+  }, [entries, searchQuery]);
+
+  const items: FsEntry[] = [];
+  for (const entry of filtered) {
+    items.push(entry);
+    if (entry.kind === "directory" && expandedDirs.has(entry.rel)) {
+      const children = dirChildren.get(entry.rel);
+      if (children) {
+        for (const child of children) {
+          items.push(child);
+        }
+      }
+    }
+  }
+
+  return (
+    <>
+      {items.map((entry) => {
+        const isDir = entry.kind === "directory";
+        const isExpanded = expandedDirs.has(entry.rel);
+        const isLoading = dirLoading.has(entry.rel);
+        const indent = depth * 12;
+        const isActive = openFile === entry.rel;
+
+        return (
+          <button
+            key={entry.path}
+            type="button"
+            onClick={() => onOpen(entry)}
+            title={entry.rel}
+            className={`flex w-full items-center gap-1 py-0.5 text-left text-[11px] hover:bg-(--surface) ${
+              isActive ? "bg-(--surface) text-(--fg)" : "text-(--dim)"
+            }`}
+            style={{ paddingLeft: `${8 + indent}px`, paddingRight: "8px" }}
+          >
+            {isDir ? (
+              <span className="shrink-0 w-3 h-3 flex items-center justify-center">
+                {isLoading ? (
+                  <span className="text-[8px] text-(--dim)">…</span>
+                ) : isExpanded ? (
+                  <ChevronDown className="h-3 w-3" />
+                ) : (
+                  <ChevronRight className="h-3 w-3" />
+                )}
+              </span>
+            ) : (
+              <span className="shrink-0 w-3" />
+            )}
+            {isDir ? (
+              <Folder className={`h-3 w-3 shrink-0 ${isActive ? "text-(--accent)" : "text-(--accent)"}`} />
+            ) : (
+              <File className="h-3 w-3 shrink-0" />
+            )}
+            <span className="flex-1 truncate">{entry.name}</span>
+            {!isDir && entry.size != null && entry.size > 0 && (
+              <span className="shrink-0 text-[9px] text-(--dim)">
+                {entry.size < 1024
+                  ? `${entry.size}B`
+                  : entry.size < 1024 * 1024
+                    ? `${(entry.size / 1024).toFixed(0)}K`
+                    : `${(entry.size / (1024 * 1024)).toFixed(1)}M`}
+              </span>
+            )}
+          </button>
+        );
+      })}
+    </>
+  );
+}
+
+// ─── Main panel ─────────────────────────────────────────────────────────────
+
 export function FilesystemPanel({ cwd }: Props) {
   const [relPath, setRelPath] = useState("");
   const [entries, setEntries] = useState<FsEntry[]>([]);
@@ -104,8 +206,18 @@ export function FilesystemPanel({ cwd }: Props) {
   const [fileSize, setFileSize] = useState(0);
   const [loadingFile, setLoadingFile] = useState(false);
   const [comments, setComments] = useState<Comment[]>([]);
+  const [viewMode, setViewMode] = useState<"preview" | "code">("code");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [expandedDirs, setExpandedDirs] = useState<Set<string>>(new Set());
+  const [dirChildren, setDirChildren] = useState<Map<string, FsEntry[]>>(new Map());
+  const [dirLoading, setDirLoading] = useState<Set<string>>(new Set());
   const [fileListOpen, setFileListOpen] = useState(true);
-  const [viewMode, setViewMode] = useState<"preview" | "code">("preview");
+  const searchRef = useRef<HTMLInputElement>(null);
+
+  const fontSize = useAppStore((s) => s.fileViewerFontSize);
+  const setFontSize = useAppStore((s) => s.setFileViewerFontSize);
+  const lastOpenFileByProject = useAppStore((s) => s.lastOpenFileByProject);
+  const setLastOpenFileByProject = useAppStore((s) => s.setLastOpenFileByProject);
 
   // Load directory whenever the cwd or relPath changes.
   useEffect(() => {
@@ -126,17 +238,15 @@ export function FilesystemPanel({ cwd }: Props) {
         if (!cancelled) setEntries([]);
       }
     })();
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [cwd, relPath]);
 
   // Restore the last-opened file for this project.
   useEffect(() => {
     if (!cwd) return;
-    const remembered = window.localStorage.getItem(LAST_FILE_KEY_PREFIX + cwd);
+    const remembered = lastOpenFileByProject[cwd];
     if (remembered) setOpenFile(remembered);
-  }, [cwd]);
+  }, [cwd, lastOpenFileByProject]);
 
   // Load file contents + comments whenever an open file is selected.
   useEffect(() => {
@@ -182,21 +292,57 @@ export function FilesystemPanel({ cwd }: Props) {
         if (!cancelled) setLoadingFile(false);
       }
     })();
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [cwd, openFile]);
+
+  // Fetch children of a directory on demand.
+  const fetchDirChildren = useCallback(
+    async (dirRel: string) => {
+      if (!cwd) return;
+      setDirLoading((prev) => new Set(prev).add(dirRel));
+      try {
+        const response = await fetch(
+          `/api/agent/fs?cwd=${encodeURIComponent(cwd)}&path=${encodeURIComponent(dirRel)}`,
+          { cache: "no-store" },
+        );
+        const payload = (await response.json()) as { entries?: FsEntry[]; error?: string };
+        setDirChildren((prev) => new Map(prev).set(dirRel, payload.entries ?? []));
+      } catch {
+        setDirChildren((prev) => new Map(prev).set(dirRel, []));
+      } finally {
+        setDirLoading((prev) => {
+          const next = new Set(prev);
+          next.delete(dirRel);
+          return next;
+        });
+      }
+    },
+    [cwd],
+  );
 
   const openEntry = useCallback(
     (entry: FsEntry) => {
       if (entry.kind === "directory") {
+        setExpandedDirs((prev) => {
+          const next = new Set(prev);
+          if (next.has(entry.rel)) {
+            next.delete(entry.rel);
+          } else {
+            next.add(entry.rel);
+            if (!dirChildren.has(entry.rel)) {
+              fetchDirChildren(entry.rel);
+            }
+          }
+          return next;
+        });
+        // Also navigate into the directory (keep current behavior)
         setRelPath(entry.rel);
       } else {
         setOpenFile(entry.rel);
-        if (cwd) window.localStorage.setItem(LAST_FILE_KEY_PREFIX + cwd, entry.rel);
+        if (cwd) setLastOpenFileByProject(cwd, entry.rel);
       }
     },
-    [cwd],
+    [cwd, dirChildren, fetchDirChildren],
   );
 
   const goUp = useCallback(() => {
@@ -257,7 +403,7 @@ export function FilesystemPanel({ cwd }: Props) {
   return (
     <div className="flex h-full min-h-0">
       {fileListOpen ? (
-        <div className="flex w-[180px] shrink-0 flex-col border-r border-(--border)">
+        <div className="flex w-[200px] shrink-0 flex-col border-r border-(--border)">
           <div className="flex h-7 shrink-0 items-center border-b border-(--border)">
             <div className="min-w-0 flex-1">
               <Breadcrumb relPath={relPath} onUp={goUp} onRoot={() => setRelPath("")} />
@@ -269,31 +415,56 @@ export function FilesystemPanel({ cwd }: Props) {
               title="Collapse file list"
               aria-label="Collapse file list"
             >
-              <ChevronLeft className="h-3.5 w-3.5" />
+              <Minus className="h-3.5 w-3.5" />
             </button>
           </div>
-          <div className="min-h-0 flex-1 overflow-y-auto py-1">
-            {entries.map((entry) => (
+          <div className="flex shrink-0 border-b border-(--border) px-1.5 py-1">
+            <input
+              ref={searchRef}
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search files…"
+              className="w-full rounded border border-(--border) bg-(--surface) px-2 py-0.5 text-[10px] text-(--fg) outline-none placeholder:text-(--dim)"
+              spellCheck={false}
+            />
+            {searchQuery && (
               <button
-                key={entry.path}
                 type="button"
-                onClick={() => openEntry(entry)}
-                title={entry.rel}
-                className={`flex w-full items-center gap-1.5 px-2 py-1 text-left text-[11px] hover:bg-(--surface) ${
-                  openFile === entry.rel ? "bg-(--surface) text-(--fg)" : "text-(--dim)"
-                }`}
+                onClick={() => setSearchQuery("")}
+                className="ml-1 shrink-0 rounded p-0.5 text-[10px] text-(--dim) hover:text-(--fg)"
+                title="Clear search"
               >
-                {entry.kind === "directory" ? (
-                  <Folder className="h-3 w-3 shrink-0" />
-                ) : (
-                  <File className="h-3 w-3 shrink-0" />
-                )}
-                <span className="truncate">{entry.name}</span>
+                ✕
               </button>
-            ))}
-            {entries.length === 0 ? (
+            )}
+          </div>
+          <div className="min-h-0 flex-1 overflow-y-auto py-1">
+            <TreeFileList
+              entries={entries}
+              searchQuery={searchQuery}
+              openFile={openFile}
+              onOpen={openEntry}
+              cwd={cwd}
+              depth={0}
+              expandedDirs={expandedDirs}
+              onToggleDir={(rel) => {
+                setExpandedDirs((prev) => {
+                  const next = new Set(prev);
+                  if (next.has(rel)) next.delete(rel);
+                  else {
+                    next.add(rel);
+                    if (!dirChildren.has(rel)) fetchDirChildren(rel);
+                  }
+                  return next;
+                });
+              }}
+              dirChildren={dirChildren}
+              dirLoading={dirLoading}
+            />
+            {entries.length === 0 && !searchQuery && (
               <div className="px-2 py-2 text-[11px] text-(--dim)">Empty.</div>
-            ) : null}
+            )}
           </div>
         </div>
       ) : (
@@ -305,7 +476,7 @@ export function FilesystemPanel({ cwd }: Props) {
             title="Show file list"
             aria-label="Show file list"
           >
-            <PanelLeftOpen className="h-3.5 w-3.5" />
+            <Plus className="h-3.5 w-3.5" />
           </button>
         </div>
       )}
@@ -326,39 +497,59 @@ export function FilesystemPanel({ cwd }: Props) {
           </div>
         ) : (
           <>
-            {previewKind ? (
-              <div className="flex h-8 shrink-0 items-center justify-between border-b border-(--border) px-2">
-                <div className="min-w-0 truncate font-mono text-[10px] text-(--dim)">
-                  {openFile}
-                </div>
-                <div className="flex items-center gap-1 rounded border border-(--border) bg-(--surface) p-0.5">
+            {/* Toolbar: file name + view toggle + font size */}
+            <div className="flex h-8 shrink-0 items-center justify-between border-b border-(--border) px-2 gap-1">
+              <div className="min-w-0 truncate font-mono text-[10px] text-(--dim) flex-1">
+                {openFile}
+              </div>
+              <div className="flex shrink-0 items-center gap-0.5">
+                {previewKind && (
+                  <div className="flex items-center gap-0.5 rounded border border-(--border) bg-(--surface) p-0.5 mr-1">
+                    <button
+                      type="button"
+                      onClick={() => setViewMode("preview")}
+                      className={`inline-flex h-5 items-center gap-1 rounded px-1.5 text-[10px] ${
+                        viewMode === "preview"
+                          ? "bg-(--bg) text-(--fg)"
+                          : "text-(--dim) hover:text-(--fg)"
+                      }`}
+                    >
+                      <Monitor className="h-3 w-3" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setViewMode("code")}
+                      className={`inline-flex h-5 items-center gap-1 rounded px-1.5 text-[10px] ${
+                        viewMode === "code"
+                          ? "bg-(--bg) text-(--fg)"
+                          : "text-(--dim) hover:text-(--fg)"
+                      }`}
+                    >
+                      <Code className="h-3 w-3" />
+                    </button>
+                  </div>
+                )}
+                <div className="flex items-center gap-0.5 rounded border border-(--border) bg-(--surface) p-0.5">
                   <button
                     type="button"
-                    onClick={() => setViewMode("preview")}
-                    className={`inline-flex h-5 items-center gap-1 rounded px-1.5 text-[10px] ${
-                      viewMode === "preview"
-                        ? "bg-(--bg) text-(--fg)"
-                        : "text-(--dim) hover:text-(--fg)"
-                    }`}
+                    onClick={() => setFontSize(Math.max(8, fontSize - 1))}
+                    className="inline-flex h-5 w-5 items-center justify-center rounded text-(--dim) hover:text-(--fg)"
+                    title="Decrease font size"
                   >
-                    <Monitor className="h-3 w-3" />
-                    Preview
+                    <Minus className="h-3 w-3" />
                   </button>
+                  <span className="w-5 text-center text-[9px] text-(--dim)">{fontSize}</span>
                   <button
                     type="button"
-                    onClick={() => setViewMode("code")}
-                    className={`inline-flex h-5 items-center gap-1 rounded px-1.5 text-[10px] ${
-                      viewMode === "code"
-                        ? "bg-(--bg) text-(--fg)"
-                        : "text-(--dim) hover:text-(--fg)"
-                    }`}
+                    onClick={() => setFontSize(Math.min(20, fontSize + 1))}
+                    className="inline-flex h-5 w-5 items-center justify-center rounded text-(--dim) hover:text-(--fg)"
+                    title="Increase font size"
                   >
-                    <Code className="h-3 w-3" />
-                    Code
+                    <Plus className="h-3 w-3" />
                   </button>
                 </div>
               </div>
-            ) : null}
+            </div>
             {previewKind && viewMode === "preview" ? (
               <RenderedPreview content={fileContent} kind={previewKind} />
             ) : (
@@ -369,6 +560,7 @@ export function FilesystemPanel({ cwd }: Props) {
                 commentsByLine={commentsByLine}
                 onAddComment={addComment}
                 onRemoveComment={removeComment}
+                fontSize={fontSize}
               />
             )}
           </>
@@ -377,6 +569,8 @@ export function FilesystemPanel({ cwd }: Props) {
     </div>
   );
 }
+
+// ─── Breadcrumb ─────────────────────────────────────────────────────────────
 
 function Breadcrumb({
   relPath,
@@ -387,40 +581,46 @@ function Breadcrumb({
   onUp: () => void;
   onRoot: () => void;
 }) {
+  const parts = relPath ? relPath.split("/").filter(Boolean) : [];
   return (
-    <div className="flex h-7 shrink-0 items-center gap-1 px-2 text-[11px] text-(--dim)">
+    <div className="flex h-7 shrink-0 items-center gap-0.5 overflow-x-auto px-2 text-[11px] text-(--dim)">
       <button
         type="button"
         onClick={onRoot}
-        className="rounded px-1 text-(--dim) hover:bg-(--surface) hover:text-(--fg)"
+        className="shrink-0 rounded px-1 text-(--dim) hover:bg-(--surface) hover:text-(--fg)"
         title="Project root"
       >
         /
       </button>
-      {relPath ? (
-        <>
-          <button
-            type="button"
-            onClick={onUp}
-            className="rounded px-1 text-(--dim) hover:bg-(--surface) hover:text-(--fg)"
-            title="Up one"
-            aria-label="Up one"
-          >
-            ..
-          </button>
-          <ChevronRight className="h-3 w-3 shrink-0 text-(--dim)" />
-          <span className="truncate font-mono text-[10px]">{relPath}</span>
-        </>
-      ) : null}
+      {parts.length > 0 && (
+        <ChevronRight className="h-3 w-3 shrink-0 text-(--dim)" />
+      )}
+      {parts.map((part, i) => (
+        <span key={i} className="flex shrink-0 items-center gap-0.5">
+          <span className="truncate font-mono text-[10px] text-(--fg)">{part}</span>
+          {i < parts.length - 1 && <ChevronRight className="h-3 w-3 shrink-0 text-(--dim)" />}
+        </span>
+      ))}
+      <button
+        type="button"
+        onClick={onUp}
+        className="ml-auto shrink-0 rounded px-1 text-[10px] text-(--dim) hover:bg-(--surface) hover:text-(--fg)"
+        title="Go up"
+        aria-label="Go up"
+      >
+        ⬆
+      </button>
     </div>
   );
 }
 
+// ─── Preview (HTML/JSX/MD) ──────────────────────────────────────────────────
+
 function RenderedPreview({ content, kind }: { content: string; kind: "html" | "jsx" | "md" }) {
   if (kind === "md") {
     return (
-      <div className="min-h-0 flex-1 overflow-y-auto bg-(--bg) p-4 text-(--fg)">
-        <AssistantMarkdown text={content} />
+      <div className="min-h-0 flex-1 overflow-y-auto bg-(--bg) p-4 text-(--fg) text-sm leading-6">
+        <article className="whitespace-pre-wrap break-words">{content}</article>
       </div>
     );
   }
@@ -435,18 +635,22 @@ function RenderedPreview({ content, kind }: { content: string; kind: "html" | "j
   );
 }
 
+// ─── Code viewer ────────────────────────────────────────────────────────────
+
 function FileViewer({
   filePath,
   lines,
   commentsByLine,
   onAddComment,
   onRemoveComment,
+  fontSize,
 }: {
   filePath: string;
   lines: string[];
   commentsByLine: Map<number, Comment[]>;
   onAddComment: (line: number, body: string) => Promise<void>;
   onRemoveComment: (id: string) => Promise<void>;
+  fontSize: number;
 }) {
   const [composerLine, setComposerLine] = useState<number | null>(null);
   const [composerValue, setComposerValue] = useState("");
@@ -475,6 +679,8 @@ function FileViewer({
     [composerLine, composerValue, onAddComment],
   );
 
+  const lineHeight = Math.round(fontSize * 1.5);
+
   const renderLine = useCallback(
     (index: number) => {
       const lineNumber = index + 1;
@@ -489,27 +695,33 @@ function FileViewer({
               setComposerLine(lineNumber);
               setComposerValue("");
             }}
-            className="flex cursor-text gap-2 px-2 hover:bg-(--surface)"
+            className="flex cursor-text gap-1 px-1 hover:bg-(--surface)"
           >
-            <span className="w-10 shrink-0 select-none text-right font-mono text-[10px] leading-5 text-(--dim)">
+            <span
+              className="w-8 shrink-0 select-none text-right font-mono text-(--dim)"
+              style={{ fontSize: fontSize - 2, lineHeight: `${lineHeight}px` }}
+            >
               {lineNumber}
             </span>
             <pre
-              className="min-w-0 flex-1 overflow-x-auto whitespace-pre font-mono text-[12px] leading-5 text-(--fg)"
-              {...(html ? { dangerouslySetInnerHTML: { __html: html || "&nbsp;" } } : undefined)}
+              className="min-w-0 flex-1 whitespace-pre font-mono text-(--fg)"
+              style={{ fontSize, lineHeight: `${lineHeight}px` }}
+              {...(html
+                ? { dangerouslySetInnerHTML: { __html: html || " " } }
+                : undefined)}
             >
               {!html ? (text || "\u00a0") : undefined}
             </pre>
             {lineComments.length > 0 ? (
-              <span className="ml-1 inline-flex shrink-0 items-center gap-0.5 rounded border border-(--border) px-1 font-mono text-[10px] text-(--dim)">
-                <MessageSquare className="h-2.5 w-2.5" />
+              <span className="ml-1 inline-flex shrink-0 items-center gap-0.5 rounded border border-(--border) px-1 font-mono text-[9px] text-(--dim)">
+                <MessageSquare className="h-2 w-2" />
                 {lineComments.length}
               </span>
             ) : null}
           </div>
 
           {lineComments.length > 0 ? (
-            <div className="ml-12 mr-2 mb-1 flex flex-col gap-1 border-l-2 border-(--border) pl-2">
+            <div className="ml-10 mr-2 mb-0.5 flex flex-col gap-1 border-l-2 border-(--border) pl-2">
               {lineComments.map((c) => (
                 <div key={c.id} className="flex items-start gap-1 text-[11px] text-(--fg)">
                   <span className="flex-1 whitespace-pre-wrap">{c.body}</span>
@@ -534,7 +746,7 @@ function FileViewer({
             <form
               onSubmit={submit}
               onClick={(event) => event.stopPropagation()}
-              className="ml-12 mr-2 mb-1 rounded border border-(--border) bg-(--surface) p-1.5"
+              className="ml-10 mr-2 mb-0.5 rounded border border-(--border) bg-(--surface) p-1.5"
             >
               <textarea
                 value={composerValue}
@@ -568,13 +780,13 @@ function FileViewer({
         </div>
       );
     },
-    [lines, highlightedLines, commentsByLine, composerLine, composerValue, onRemoveComment, submit],
+    [lines, highlightedLines, commentsByLine, composerLine, composerValue, onRemoveComment, submit, fontSize, lineHeight],
   );
 
   // Plain map for short files; virtualized for long ones.
   if (lines.length < 2000) {
     return (
-      <div className="min-h-0 flex-1 overflow-y-auto py-1">
+      <div className="min-h-0 flex-1 overflow-y-auto overflow-x-auto py-0.5">
         {lines.map((_, index) => (
           <div key={index}>{renderLine(index)}</div>
         ))}
