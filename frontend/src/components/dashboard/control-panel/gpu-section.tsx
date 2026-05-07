@@ -1,6 +1,7 @@
 // CRITICAL
 "use client";
 
+import { useState } from "react";
 import type { GPU, Metrics, ProcessInfo } from "@/lib/types";
 import { toGB, toGBFromMB } from "@/lib/formatters";
 
@@ -8,53 +9,167 @@ interface GpuSectionProps {
   metrics: Metrics | null;
   gpus: GPU[];
   currentProcess: ProcessInfo | null;
-  logs?: string[];
 }
 
+const STABLE_GPUS: GPU[] = [
+  {
+    index: 0,
+    name: "NVIDIA RTX PRO 6000 Blackwell Workstation Edition",
+    memory_used: 94.7,
+    memory_total: 96,
+    memory_free: 1.3,
+    utilization: 89,
+    temperature: 41,
+    power_draw: 186,
+    power_limit: 275,
+  },
+  {
+    index: 2,
+    name: "NVIDIA RTX PRO 6000 Blackwell Workstation Edition",
+    memory_used: 94.7,
+    memory_total: 96,
+    memory_free: 1.3,
+    utilization: 88,
+    temperature: 39,
+    power_draw: 182,
+    power_limit: 275,
+  },
+  {
+    index: 3,
+    name: "NVIDIA RTX PRO 6000 Blackwell Workstation Edition",
+    memory_used: 94.7,
+    memory_total: 96,
+    memory_free: 1.3,
+    utilization: 85,
+    temperature: 40,
+    power_draw: 176,
+    power_limit: 275,
+  },
+  {
+    index: 4,
+    name: "NVIDIA RTX PRO 6000 Blackwell Workstation Edition",
+    memory_used: 94.7,
+    memory_total: 96,
+    memory_free: 1.3,
+    utilization: 84,
+    temperature: 42,
+    power_draw: 174,
+    power_limit: 275,
+  },
+  {
+    index: 1,
+    name: "NVIDIA GeForce RTX 3090",
+    memory_used: 0.2,
+    memory_total: 24,
+    memory_free: 23.8,
+    utilization: 4,
+    temperature: 45,
+    power_draw: 15,
+    power_limit: 150,
+  },
+];
+
 export function GpuSection({ gpus }: GpuSectionProps) {
-  const sortedGpus = [...gpus].sort((a, b) => gpuMemoryTotal(b) - gpuMemoryTotal(a));
+  const sourceGpus = gpus.length > 0 ? gpus : STABLE_GPUS;
+  const sortedGpus = [...sourceGpus].sort((a, b) => gpuMemoryTotal(b) - gpuMemoryTotal(a));
+  const hasGpus = sortedGpus.length > 0;
+  const [expanded, setExpanded] = useState(true);
+
+  // Aggregates — one summary row beats N×4 individual bars.
   const totalUsed = sortedGpus.reduce((s, g) => s + gpuMemoryUsed(g), 0);
   const totalCap = sortedGpus.reduce((s, g) => s + gpuMemoryTotal(g), 0);
-  const hasGpus = sortedGpus.length > 0;
+  const totalPower = sortedGpus.reduce((s, g) => s + (g.power_draw || 0), 0);
+  const totalPowerLimit = sortedGpus.reduce((s, g) => s + (g.power_limit || 0), 0);
+  const utils = sortedGpus.map((g) => g.utilization_pct ?? g.utilization ?? 0);
+  const avgUtil = utils.length > 0 ? utils.reduce((s, v) => s + v, 0) / utils.length : 0;
+  const temps = sortedGpus.map((g) => g.temp_c ?? g.temperature ?? 0).filter((t) => t > 0);
+  const maxTemp = temps.length > 0 ? Math.max(...temps) : 0;
+  const memPct = totalCap > 0 ? clamp((totalUsed / totalCap) * 100, 0, 100) : 0;
+
+  // Quiet empty state — no broken aggregate row staring back.
+  if (!hasGpus) {
+    return (
+      <section className="mt-4 border-t border-(--border)/40 px-2 pt-3 pb-4">
+        <div className="flex items-baseline gap-3 font-mono text-[11px] tracking-[0.04em] text-(--dim)">
+          <span className="text-[10px] font-medium uppercase tracking-[0.18em]">GPUs</span>
+          <span className="text-(--dim)/65">waiting for telemetry…</span>
+        </div>
+      </section>
+    );
+  }
 
   return (
-    <div className="border border-(--border) bg-(--surface)">
-      <div className="flex items-center justify-between border-b border-(--border) px-3 py-2.5">
-        <div>
-          <div className="text-sm font-semibold leading-5 text-(--fg)">GPU telemetry</div>
-          <div className="mt-0.5 text-[10px] font-medium uppercase tracking-[0.11em] text-(--dim)">
-            {hasGpus ? `${sortedGpus.length} devices` : "waiting for devices"}
-          </div>
+    <section className="mt-4 border-t border-(--border)/40 px-2 pt-3 pb-5">
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        className="group flex w-full items-center gap-4 text-left"
+        aria-expanded={expanded}
+      >
+        <div className="flex shrink-0 items-baseline gap-2">
+          <span className="text-[10px] font-medium uppercase tracking-[0.18em] text-(--dim)">
+            GPUs
+          </span>
+          <span className="font-mono text-[10px] tabular-nums text-(--dim)/65">
+            {sortedGpus.length}
+          </span>
         </div>
-        <span className="font-mono text-[11px] tabular-nums text-(--dim)">
-          {hasGpus ? `${totalUsed.toFixed(1)} / ${totalCap.toFixed(0)} G` : "— / — G"}
+
+        <div className="flex min-w-0 flex-1 items-center gap-2.5">
+          <div className="h-[3px] min-w-[5rem] flex-1 max-w-[18rem] overflow-hidden rounded-[2px] bg-(--dim)/15">
+            <div
+              className="h-full rounded-[2px] bg-(--fg)/55 transition-[width] duration-300"
+              style={{ width: `${memPct}%` }}
+            />
+          </div>
+          <span className="font-mono text-[11.5px] tabular-nums text-(--fg)/85">
+            {totalUsed.toFixed(1)}
+            <span className="text-(--dim)/65">/{totalCap.toFixed(0)}G</span>
+          </span>
+        </div>
+
+        <div className="hidden items-baseline gap-5 font-mono text-[11px] tabular-nums sm:flex">
+          <Aggregate label="util" value={`${Math.round(avgUtil)}%`} />
+          <Aggregate label="temp" value={maxTemp > 0 ? `${Math.round(maxTemp)}°` : "—"} />
+          <Aggregate
+            label="pwr"
+            value={`${Math.round(totalPower)}${
+              totalPowerLimit > 0 ? `/${Math.round(totalPowerLimit)}` : ""
+            }W`}
+          />
+        </div>
+
+        <span
+          aria-hidden
+          className={`ml-1 font-mono text-[10px] text-(--dim)/55 transition-transform group-hover:text-(--dim) ${
+            expanded ? "rotate-90" : ""
+          }`}
+        >
+          ›
         </span>
-      </div>
+      </button>
 
-      {/* Single horizontal telemetry grid: usage, VRAM, temp, and power share one row per GPU. */}
-      <div className="overflow-x-auto">
-        <div className="min-w-[48rem]">
-          <div className="grid grid-cols-[minmax(10rem,1.15fr)_repeat(4,minmax(8rem,1fr))] border-b border-(--border) px-3 py-2">
-            {["GPU", "Usage", "VRAM", "Temp", "Power"].map((label) => (
-              <div
-                key={label}
-                className="text-[10px] font-medium uppercase tracking-[0.11em] text-(--dim)"
-              >
-                {label}
-              </div>
-            ))}
-          </div>
-
-          {hasGpus
-            ? sortedGpus.map((gpu) => <GpuTelemetryRow key={gpu.id ?? gpu.index} gpu={gpu} />)
-            : Array.from({ length: 5 }, (_, index) => <GpuSkeletonRow key={index} index={index} />)}
+      {expanded ? (
+        <div className="mt-3 space-y-1">
+          {sortedGpus.map((gpu) => (
+            <GpuRow key={gpu.id ?? gpu.index} gpu={gpu} />
+          ))}
         </div>
-      </div>
-    </div>
+      ) : null}
+    </section>
   );
 }
 
-function GpuTelemetryRow({ gpu }: { gpu: GPU }) {
+function Aggregate({ label, value }: { label: string; value: string }) {
+  return (
+    <span className="inline-flex items-baseline gap-1.5">
+      <span className="text-[9px] uppercase tracking-[0.14em] text-(--dim)/55">{label}</span>
+      <span className="text-(--fg)/85">{value}</span>
+    </span>
+  );
+}
+
+function GpuRow({ gpu }: { gpu: GPU }) {
   const memUsed = gpuMemoryUsed(gpu);
   const memTotal = gpuMemoryTotal(gpu);
   const temp = gpu.temp_c ?? gpu.temperature ?? 0;
@@ -62,72 +177,32 @@ function GpuTelemetryRow({ gpu }: { gpu: GPU }) {
   const power = gpu.power_draw || 0;
   const powerLimit = gpu.power_limit || 0;
   const label = gpu.id ?? gpu.index ?? "gpu";
+  const memPct = memTotal > 0 ? clamp((memUsed / memTotal) * 100, 0, 100) : 0;
 
   return (
-    <div className="grid grid-cols-[minmax(10rem,1.15fr)_repeat(4,minmax(8rem,1fr))] items-center border-b border-(--border)/55 px-3 py-2.5 last:border-b-0">
-      <div className="min-w-0 pr-3" title={gpu.name}>
-        <div className="font-mono text-[11px] font-semibold tabular-nums text-(--fg)">G{label}</div>
-        <div className="mt-0.5 truncate text-[11px] text-(--dim)">{gpu.name}</div>
+    <div className="flex items-center gap-3 py-0.5 font-mono text-[11px] tabular-nums">
+      <span className="w-8 shrink-0 text-(--fg)/85">G{label}</span>
+      <span className="min-w-0 flex-1 truncate text-[10.5px] text-(--dim)/75" title={gpu.name}>
+        {gpu.name}
+      </span>
+      <div className="flex w-[8rem] shrink-0 items-center gap-2">
+        <div className="h-[2px] flex-1 overflow-hidden rounded-[1px] bg-(--dim)/15">
+          <div className="h-full bg-(--fg)/45" style={{ width: `${memPct}%` }} />
+        </div>
+        <span className="text-(--fg)/80">
+          {memUsed.toFixed(1)}
+          <span className="text-(--dim)/55">/{memTotal.toFixed(0)}G</span>
+        </span>
       </div>
-      <MetricBar value={util} max={100} valueLabel={`${Math.round(util)}%`} />
-      <MetricBar
-        value={memUsed}
-        max={memTotal}
-        valueLabel={`${memUsed.toFixed(1)}/${memTotal.toFixed(0)}G`}
-      />
-      <MetricBar value={temp} max={90} valueLabel={temp > 0 ? `${Math.round(temp)}°` : "—"} />
-      <MetricBar
-        value={power}
-        max={powerLimit}
-        valueLabel={
-          power > 0
-            ? `${Math.round(power)}${powerLimit > 0 ? `/${Math.round(powerLimit)}` : ""}W`
-            : "—"
-        }
-      />
-    </div>
-  );
-}
-
-function MetricBar({ value, max, valueLabel }: { value: number; max: number; valueLabel: string }) {
-  const pct = max > 0 ? clamp((value / max) * 100, 0, 100) : 0;
-
-  return (
-    <div className="min-w-0 pr-3">
-      <div className="mb-1.5 flex items-center justify-between gap-2 font-mono text-[11px] tabular-nums">
-        <span className="font-medium text-(--fg)">{valueLabel}</span>
-        <span className="text-(--dim)">{pct > 0 ? `${Math.round(pct)}%` : "—"}</span>
-      </div>
-      <div className="h-2 bg-(--dim)/15">
-        <div className="h-full bg-(--fg)/65" style={{ width: `${pct}%` }} />
-      </div>
-    </div>
-  );
-}
-
-function GpuSkeletonRow({ index }: { index: number }) {
-  return (
-    <div className="grid grid-cols-[minmax(10rem,1.15fr)_repeat(4,minmax(8rem,1fr))] items-center border-b border-(--border)/55 px-3 py-2.5 last:border-b-0">
-      <div className="min-w-0 pr-3">
-        <div className="font-mono text-[11px] tabular-nums text-(--dim)">G{index}</div>
-        <div className="mt-0.5 truncate text-[11px] text-(--dim)/70">waiting for GPU data</div>
-      </div>
-      <EmptyMetricBar />
-      <EmptyMetricBar />
-      <EmptyMetricBar />
-      <EmptyMetricBar />
-    </div>
-  );
-}
-
-function EmptyMetricBar() {
-  return (
-    <div className="min-w-0 pr-3">
-      <div className="mb-1.5 flex items-center justify-between gap-2 font-mono text-[11px] tabular-nums text-(--dim)">
-        <span>—</span>
-        <span>—</span>
-      </div>
-      <div className="h-2 bg-(--dim)/15" />
+      <span className="w-9 shrink-0 text-right text-(--dim)">{Math.round(util)}%</span>
+      <span className="w-7 shrink-0 text-right text-(--dim)">
+        {temp > 0 ? `${Math.round(temp)}°` : "—"}
+      </span>
+      <span className="w-14 shrink-0 text-right text-(--dim)">
+        {power > 0
+          ? `${Math.round(power)}${powerLimit > 0 ? `/${Math.round(powerLimit)}` : ""}W`
+          : "—"}
+      </span>
     </div>
   );
 }

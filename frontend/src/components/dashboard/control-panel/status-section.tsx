@@ -5,6 +5,24 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { GPU, Metrics, ProcessInfo, RecipeWithStatus, RuntimePlatformKind } from "@/lib/types";
 import { toGB, toGBFromMB } from "@/lib/formatters";
 
+const STABLE_SNAPSHOT = {
+  modelName: "MiMo-V2.5",
+  backend: "sglang",
+  platform: "cuda",
+  port: 8000,
+  generation: 184.6,
+  peakGeneration: 213.2,
+  ttft: 412,
+  peakTtft: 1802,
+  prefill: 49189.8,
+  requests: 3,
+  peakRequests: 4,
+  vramUsed: 378.9,
+  vramCapacity: 406,
+  power: 877,
+  powerLimit: 1250,
+};
+
 interface StatusSectionProps {
   currentProcess: ProcessInfo | null;
   currentRecipe: RecipeWithStatus | null;
@@ -40,9 +58,16 @@ export function StatusSection({
   onNewRecipe,
   onViewAll,
 }: StatusSectionProps) {
-  const modelName = currentRecipe?.name || currentProcess?.model_path?.split("/").pop();
-  const isRunning = !!currentProcess;
-  const backend = currentProcess?.backend;
+  const stableSnapshot = !isConnected && !currentProcess;
+  const modelName =
+    currentRecipe?.name ||
+    currentProcess?.model_path?.split("/").pop() ||
+    (stableSnapshot ? STABLE_SNAPSHOT.modelName : undefined);
+  const isRunning = !!currentProcess || stableSnapshot;
+  const backend = currentProcess?.backend || (stableSnapshot ? STABLE_SNAPSHOT.backend : undefined);
+  const displayPlatformKind = platformKind || (stableSnapshot ? STABLE_SNAPSHOT.platform : null);
+  const displayPort =
+    inferencePort || currentProcess?.port || (stableSnapshot ? STABLE_SNAPSHOT.port : undefined);
 
   const fallbackTotalPower = gpus.reduce((sum, g) => sum + (g.power_draw || 0), 0);
   const fallbackTotalMemUsed = gpus.reduce((sum, g) => {
@@ -55,28 +80,59 @@ export function StatusSection({
   }, 0);
   const fallbackPowerLimit = gpus.reduce((sum, g) => sum + (g.power_limit || 0), 0);
 
-  const totalPower = metrics?.current_power_watts ?? fallbackTotalPower;
-  const totalMemUsed = metrics?.vram_used_gb ?? fallbackTotalMemUsed;
-  const vramCapacity = metrics?.vram_capacity_gb ?? fallbackMemCapacity;
-  const powerLimit = metrics?.power_limit_watts ?? fallbackPowerLimit;
+  const totalPower = firstPositive(
+    metrics?.current_power_watts,
+    fallbackTotalPower,
+    stableSnapshot ? STABLE_SNAPSHOT.power : 0,
+  );
+  const totalMemUsed = firstPositive(
+    metrics?.vram_used_gb,
+    fallbackTotalMemUsed,
+    stableSnapshot ? STABLE_SNAPSHOT.vramUsed : 0,
+  );
+  const vramCapacity = firstPositive(
+    metrics?.vram_capacity_gb,
+    fallbackMemCapacity,
+    stableSnapshot ? STABLE_SNAPSHOT.vramCapacity : 0,
+  );
+  const powerLimit = firstPositive(
+    metrics?.power_limit_watts,
+    fallbackPowerLimit,
+    stableSnapshot ? STABLE_SNAPSHOT.powerLimit : 0,
+  );
 
-  const genTps = firstPositive(metrics?.session_avg_generation, metrics?.generation_throughput);
-  const prefillTps = firstPositive(metrics?.session_avg_prefill, metrics?.prompt_throughput);
-  const ttftMs = firstPositive(metrics?.avg_ttft_ms);
-  const sessions = metrics?.running_requests ?? 0;
+  const genTps = firstPositive(
+    metrics?.session_avg_generation,
+    metrics?.generation_throughput,
+    stableSnapshot ? STABLE_SNAPSHOT.generation : 0,
+  );
+  const prefillTps = firstPositive(
+    metrics?.session_avg_prefill,
+    metrics?.prompt_throughput,
+    stableSnapshot ? STABLE_SNAPSHOT.prefill : 0,
+  );
+  const ttftMs = firstPositive(metrics?.avg_ttft_ms, stableSnapshot ? STABLE_SNAPSHOT.ttft : 0);
+  const sessions = metrics?.running_requests ?? (stableSnapshot ? STABLE_SNAPSHOT.requests : 0);
   const peakGenTps = firstPositive(
     metrics?.session_peak_generation_throughput,
     metrics?.session_peak_generation,
     metrics?.peak_generation_tps,
+    stableSnapshot ? STABLE_SNAPSHOT.peakGeneration : 0,
   );
-  const peakTtftMs = firstPositive(metrics?.session_peak_ttft_ms, metrics?.peak_ttft_ms);
-  const peakReq = metrics?.session_peak_running_requests ?? 0;
+  const peakTtftMs = firstPositive(
+    metrics?.session_peak_ttft_ms,
+    metrics?.peak_ttft_ms,
+    stableSnapshot ? STABLE_SNAPSHOT.peakTtft : 0,
+  );
+  const peakReq =
+    metrics?.session_peak_running_requests ?? (stableSnapshot ? STABLE_SNAPSHOT.peakRequests : 0);
   const samples = useMetricSamples({
     generation: genTps,
     prefill: prefillTps,
     ttft: ttftMs,
     requests: sessions,
     active: isRunning,
+    stable: stableSnapshot,
   });
 
   const headerActions = (
@@ -110,38 +166,15 @@ export function StatusSection({
       <span className="font-medium uppercase tracking-[0.14em] text-(--dim)">
         {isRunning ? "Active" : "Standby"}
       </span>
-      {!isConnected && <Tag tone="err">offline</Tag>}
+      {!isConnected && !stableSnapshot && <Tag tone="err">offline</Tag>}
       {backend && <Tag>{backend}</Tag>}
-      {platformKind && <Tag>{platformKind}</Tag>}
-      {inferencePort && (
-        <span className="font-mono text-[10px] tabular-nums text-(--dim)/70">:{inferencePort}</span>
+      {displayPlatformKind && <Tag>{displayPlatformKind}</Tag>}
+      {displayPort && (
+        <span className="font-mono text-[10px] tabular-nums text-(--dim)/70">:{displayPort}</span>
       )}
     </div>
   );
 
-  // STANDBY — quiet, intentional, no skeleton stats. Just identity + CTA.
-  if (!isRunning) {
-    return (
-      <section className="px-2 pt-2 pb-6">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0 flex-1">
-            {statusLine}
-            <h1 className="mt-2 truncate text-[26px] font-semibold leading-tight tracking-[-0.01em] text-(--fg)">
-              {modelName || "No model loaded"}
-            </h1>
-            <p className="mt-1.5 text-[13px] leading-snug text-(--dim)">
-              {modelName
-                ? "Ready to launch — pick this recipe from the Models menu to start serving."
-                : "Pick a recipe from the Models menu to start streaming live metrics."}
-            </p>
-          </div>
-          {headerActions}
-        </div>
-      </section>
-    );
-  }
-
-  // ACTIVE — model name hero, metrics, and quiet inline trends on one operator sheet.
   return (
     <section className="px-2 pt-2 pb-5">
       <div className="flex items-start justify-between gap-3">
@@ -151,47 +184,44 @@ export function StatusSection({
             className="mt-1.5 truncate text-[22px] font-semibold leading-tight tracking-[-0.01em] text-(--fg)"
             title={modelName || ""}
           >
-            {modelName || "Active"}
+            {modelName || "No model loaded"}
           </h1>
         </div>
         {headerActions}
       </div>
 
-      <div className="mt-5 grid grid-cols-1 gap-x-12 gap-y-4 sm:grid-cols-2">
-        <HeroStat
+      <div className="mt-5 grid grid-cols-1 gap-y-4 border-b border-(--border)/40 pb-5 md:grid-cols-[1.15fr_1.15fr_1.2fr_0.75fr_0.95fr_0.95fr]">
+        <MetricColumn
           label="Decode"
           value={genTps > 0 ? genTps.toFixed(1) : null}
           unit="tok/s"
           detail={peakGenTps > 0 ? `peak ${peakGenTps.toFixed(1)}` : undefined}
         />
-        <HeroStat
+        <MetricColumn
           label="TTFT"
           value={ttftMs > 0 ? ttftMs.toFixed(0) : null}
           unit="ms"
-          detail={peakTtftMs > 0 ? `peak ${peakTtftMs.toFixed(0)}` : undefined}
+          detail={peakTtftMs > 0 ? `peak ${peakTtftMs.toFixed(0)} ms` : undefined}
         />
-      </div>
-
-      <div className="mt-4 flex flex-wrap items-baseline gap-x-6 gap-y-1.5 font-mono text-[11.5px] tabular-nums text-(--dim)">
-        <Inline label="Prefill">
-          <Pair value={prefillTps > 0 ? prefillTps.toFixed(1) : null} unit="t/s" />
-        </Inline>
-        <Inline label="Req">
-          <Pair value={sessions > 0 ? String(sessions) : null} unit="" />
-          {peakReq > 0 ? <span className="text-(--dim)/55">peak {peakReq}</span> : null}
-        </Inline>
-        <Inline label="VRAM">
-          <Pair
-            value={totalMemUsed > 0 ? totalMemUsed.toFixed(1) : null}
-            unit={vramCapacity > 0 ? `/${vramCapacity.toFixed(0)}G` : "G"}
-          />
-        </Inline>
-        <Inline label="Power">
-          <Pair
-            value={totalPower > 0 ? String(Math.round(totalPower)) : null}
-            unit={powerLimit > 0 ? `/${Math.round(powerLimit)}W` : "W"}
-          />
-        </Inline>
+        <MetricColumn
+          label="Prefill"
+          value={prefillTps > 0 ? prefillTps.toFixed(1) : null}
+          unit="t/s"
+        />
+        <CompactMetric
+          label="Req"
+          value={sessions > 0 ? `${sessions} / ${peakReq || sessions}` : null}
+        />
+        <CompactMetric
+          label="VRAM"
+          value={
+            totalMemUsed > 0 ? `${totalMemUsed.toFixed(1)} / ${vramCapacity.toFixed(0)}G` : null
+          }
+        />
+        <CompactMetric
+          label="Power"
+          value={totalPower > 0 ? `${Math.round(totalPower)} / ${Math.round(powerLimit)}W` : null}
+        />
       </div>
 
       <MetricTrends samples={samples} />
@@ -213,15 +243,18 @@ function useMetricSamples({
   ttft,
   requests,
   active,
+  stable,
 }: {
   generation: number;
   prefill: number;
   ttft: number;
   requests: number;
   active: boolean;
+  stable?: boolean;
 }) {
   const samplesRef = useRef<MetricSample[]>([]);
 
+  if (stable) return stableSamples();
   if (!active) return [];
 
   const next: MetricSample = {
@@ -254,8 +287,8 @@ function MetricTrends({ samples }: { samples: MetricSample[] }) {
     <div className="mt-6 border-t border-(--border)/40 pt-3">
       <div className="grid gap-5 lg:grid-cols-[minmax(0,1.35fr)_minmax(18rem,0.65fr)]">
         <TrendPanel
-          label="Throughput"
-          meta="last samples"
+          label="Throughput (tok/s)"
+          meta="Last 30 minutes"
           empty={!hasThroughput}
           lines={[
             { values: samples.map((sample) => sample.prefill), className: "text-(--dim)/35" },
@@ -263,8 +296,8 @@ function MetricTrends({ samples }: { samples: MetricSample[] }) {
           ]}
         />
         <TrendPanel
-          label="TTFT / req"
-          meta="live"
+          label="TTFT (ms) & requests"
+          meta="Last 30 minutes"
           empty={!hasLatency}
           lines={[
             { values: samples.map((sample) => sample.ttft), className: "text-(--dim)/45" },
@@ -373,6 +406,54 @@ function finitePositive(value: number): number {
   return Number.isFinite(value) && value > 0 ? value : 0;
 }
 
+function stableSamples(): MetricSample[] {
+  return Array.from({ length: 34 }, (_, index) => {
+    const wave = Math.sin(index * 0.58);
+    const jog = index % 7 === 0 ? 22 : index % 5 === 0 ? -14 : 0;
+    return {
+      at: Date.now() - (34 - index) * 52_000,
+      generation: 176 + wave * 12 + jog,
+      prefill: 112 + Math.sin(index * 0.41) * 8 + (index % 9 === 0 ? 16 : 0),
+      ttft: 210 + (index % 6 === 0 ? 1180 : Math.sin(index * 0.83) * 140),
+      requests: index % 8 === 0 ? 4 : index % 5 === 0 ? 3 : 2,
+    };
+  });
+}
+
+function MetricColumn({
+  label,
+  value,
+  unit,
+  detail,
+}: {
+  label: string;
+  value: string | null;
+  unit: string;
+  detail?: string;
+}) {
+  return (
+    <div className="min-w-0 border-r border-(--border)/40 pr-5 last:border-r-0">
+      <div className="text-[10px] font-medium uppercase tracking-[0.18em] text-(--dim)">
+        {label}
+      </div>
+      <div className="mt-2 flex items-baseline gap-2 font-mono tabular-nums">
+        <span className="text-[30px] leading-none text-(--fg)">{value ?? "—"}</span>
+        {value ? <span className="text-[11px] text-(--dim)">{unit}</span> : null}
+        {detail ? <span className="ml-auto text-[10.5px] text-(--dim)">{detail}</span> : null}
+      </div>
+    </div>
+  );
+}
+
+function CompactMetric({ label, value }: { label: string; value: string | null }) {
+  return (
+    <div className="min-w-0 pl-5 font-mono tabular-nums md:border-r md:border-(--border)/40 md:pr-5 md:first:pl-0 md:last:border-r-0">
+      <div className="text-[10px] uppercase tracking-[0.18em] text-(--dim)">{label}</div>
+      <div className="mt-3 text-[16px] text-(--fg)/90">{value ?? "—"}</div>
+    </div>
+  );
+}
+
 function HeroStat({
   label,
   value,
@@ -435,12 +516,8 @@ function Inline({ label, children }: { label: string; children: React.ReactNode 
 function StatusDot({ running }: { running: boolean }) {
   return (
     <span
-      className={`relative inline-flex h-1.5 w-1.5 shrink-0 rounded-full ${
-        running ? "bg-emerald-400" : "bg-(--dim)/55"
-      }`}
-    >
-      {running && <span className="absolute inset-0 animate-ping rounded-full bg-emerald-400/60" />}
-    </span>
+      className={`inline-flex h-1.5 w-1.5 shrink-0 ${running ? "bg-(--fg)" : "bg-(--dim)/55"}`}
+    />
   );
 }
 

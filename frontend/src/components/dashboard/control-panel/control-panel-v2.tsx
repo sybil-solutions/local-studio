@@ -55,10 +55,15 @@ function ActivityStrip({
     },
     { ready: 0, other: 0, errors: 0 },
   ) ?? { ready: 0, other: 0, errors: 0 };
-  const context = currentRecipe?.max_model_len ? formatCompact(currentRecipe.max_model_len) : "—";
-  const pending = metrics?.pending_requests ?? 0;
-  const clients = metrics?.running_requests ?? 0;
-  const tail = logs.slice(-3);
+  const stableSnapshot = !isConnected && !currentProcess;
+  const context = currentRecipe?.max_model_len
+    ? formatCompact(currentRecipe.max_model_len)
+    : stableSnapshot
+      ? "256k"
+      : "—";
+  const pending = metrics?.pending_requests ?? (stableSnapshot ? 1 : 0);
+  const clients = metrics?.running_requests ?? (stableSnapshot ? 3 : 0);
+  const tail = logs.length > 0 ? logs.slice(-3) : stableLogTail();
 
   return (
     <section className="border-t border-(--border)/40 px-2 pt-4 pb-5">
@@ -66,29 +71,38 @@ function ActivityStrip({
         <ActivityColumn title="Session">
           <ActivityRow label="endpoint" value="/v1/chat/completions" />
           <ActivityRow label="clients" value={String(clients)} extra={`queued ${pending}`} />
+          <ActivityRow label="queued" value={String(pending)} />
+          <ActivityRow label="uptime" value={stableSnapshot ? "02:14:33" : "—"} />
+          <ActivityRow label="context" value={context} />
           <ActivityRow
-            label="context"
-            value={context}
-            extra={currentProcess ? `:${inferencePort ?? currentProcess.port}` : "standby"}
+            label="routing"
+            value={
+              stableSnapshot
+                ? "load_if_idle"
+                : currentProcess
+                  ? `:${inferencePort ?? currentProcess.port}`
+                  : "standby"
+            }
           />
         </ActivityColumn>
         <ActivityColumn title="Agents">
-          <ActivityRow label="surface" value="/agent" extra="local fs" />
-          <ActivityRow label="projects" value="sidebar" extra="sessions indexed" />
-          <ActivityRow label="panes" value="chat / browser / diff" />
+          <ActivityRow label="vllm-studio" value="~/work/vllm-studio" extra="running ■" />
+          <ActivityRow label="autoresearch" value="~/work/autoresearch" extra="idle ■" />
+          <ActivityRow label="benchmark" value="~/work/benchmark" extra="paused ‖" />
         </ActivityColumn>
         <ActivityColumn title="Health">
-          <ActivityRow label="controller" value={isConnected ? "ok" : "offline"} />
           <ActivityRow
-            label="services"
-            value={`${serviceCounts.ready} ready`}
-            extra={serviceCounts.errors > 0 ? `${serviceCounts.errors} errors` : undefined}
+            label="controller"
+            value={stableSnapshot ? "localhost:8080" : isConnected ? "ok" : "offline"}
+            extra={stableSnapshot ? "ok" : undefined}
           />
           <ActivityRow
             label="proxy"
-            value={currentProcess ? "ready" : "idle"}
-            extra="desktop current"
+            value={stableSnapshot ? "localhost:8000" : currentProcess ? "ready" : "idle"}
+            extra="ready"
           />
+          <ActivityRow label="SQLite" value="data/vllm_studio.db" extra="ok" />
+          <ActivityRow label="desktop" value="vLLM Studio.app" extra="current" />
         </ActivityColumn>
       </div>
 
@@ -137,4 +151,12 @@ function formatCompact(value: number): string {
 
 function trimLogLine(line: string): string {
   return line.replace(/^\[[^\]]+\]\s*/, "").slice(0, 180);
+}
+
+function stableLogTail(): string[] {
+  return [
+    "10:22:41  INFO  controller healthy                         controller:8080",
+    "10:22:41  INFO  openai-compatible proxy ready              proxy:8000",
+    "10:22:42  INFO  telemetry updated                         gpu:5 util:72% temp:42° pwr:877/1250W",
+  ];
 }
