@@ -227,24 +227,26 @@ export function LeftSidebar({ children }: { children: React.ReactNode }) {
       </aside>
 
       {/* Mobile/PWA: top app bar + hamburger drawer (no footer nav). */}
-      <div className="mobile-pwa-topbar md:hidden fixed left-0 right-0 top-0 z-40 border-b border-(--border) bg-(--rail) px-3">
-        <Link href="/" className="flex min-w-0 items-center gap-2">
+      <div className="mobile-pwa-topbar md:hidden fixed left-0 right-0 top-0 z-40 border-b border-(--border)/70 bg-(--bg) px-4">
+        <Link href="/" className="flex min-w-0 items-center gap-2.5">
           <LogoMark />
-          <span className="truncate text-sm font-bold tracking-tight text-(--fg)">vLLM Studio</span>
+          <span className="truncate text-[13px] font-semibold tracking-tight text-(--fg)">
+            vLLM Studio
+          </span>
         </Link>
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-2">
           <StopButtonMobile />
           <ThemeToggleMobile />
           <StatusRowMobile />
           <button
             type="button"
             onClick={() => setMobileMenuOpen(true)}
-            className="flex h-10 w-10 items-center justify-center rounded border border-(--border) bg-(--surface) text-(--fg)"
+            className="flex !h-8 !min-h-8 !w-8 !min-w-8 items-center justify-center rounded-md border-0 bg-transparent text-(--dim) transition-colors hover:bg-(--surface) hover:text-(--fg)"
             aria-label="Open navigation menu"
             aria-expanded={mobileMenuOpen}
             aria-controls="mobile-navigation-drawer"
           >
-            <Menu className="h-5 w-5" />
+            <Menu className="h-[18px] w-[18px]" />
           </button>
         </div>
       </div>
@@ -452,7 +454,7 @@ function StopButtonMobile() {
         <button
           onClick={open}
           disabled={stopping}
-          className="flex h-10 w-10 items-center justify-center rounded text-(--err) hover:bg-(--err)/10 disabled:opacity-40"
+          className="flex !h-8 !min-h-8 !w-8 !min-w-8 items-center justify-center rounded-md text-(--err) hover:bg-(--err)/10 disabled:opacity-40"
           title="Stop model"
           aria-label="Stop model"
         >
@@ -472,7 +474,7 @@ function ThemeToggleMobile() {
   return (
     <button
       onClick={() => setThemeId(isDark ? "omlx-light" : "omlx-dark")}
-      className="flex h-10 w-10 items-center justify-center rounded text-(--dim) transition-colors hover:bg-(--surface) hover:text-(--fg)"
+      className="flex !h-8 !min-h-8 !w-8 !min-w-8 items-center justify-center rounded-md text-(--dim) transition-colors hover:bg-(--surface) hover:text-(--fg)"
       title={isDark ? "Light mode" : "Dark mode"}
     >
       <Icon className="h-4 w-4" />

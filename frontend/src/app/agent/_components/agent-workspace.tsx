@@ -460,7 +460,10 @@ export function AgentWorkspace() {
     }
     const filesOpenStored = window.localStorage.getItem(COMPUTER_FILES_OPEN_KEY);
     setActiveComputerTab(filesOpenStored === "1" ? "files" : "browser");
-    setRightPanelOpen(window.localStorage.getItem(COMPUTER_BROWSER_OPEN_KEY) === "1");
+    // Always start collapsed on load. Opening the computer is intentionally
+    // session-local so stale localStorage can never resurrect it by default.
+    window.localStorage.setItem(COMPUTER_BROWSER_OPEN_KEY, "0");
+    setRightPanelOpen(false);
     const storedComputerWidth = Number(window.localStorage.getItem(COMPUTER_WIDTH_KEY));
     if (Number.isFinite(storedComputerWidth)) {
       setComputerWidth(clampComputerWidth(storedComputerWidth));
@@ -506,7 +509,6 @@ export function AgentWorkspace() {
   const selectComputerTab = useCallback((tab: ComputerTab) => {
     setActiveComputerTab(tab);
     if (typeof window !== "undefined") {
-      window.localStorage.setItem(COMPUTER_BROWSER_OPEN_KEY, "1");
       window.localStorage.setItem(COMPUTER_FILES_OPEN_KEY, tab === "files" ? "1" : "0");
     }
   }, []);
@@ -1056,15 +1058,15 @@ export function AgentWorkspace() {
             onClick={() =>
               setRightPanelOpen((value) => {
                 const next = !value;
-                window.localStorage.setItem(COMPUTER_BROWSER_OPEN_KEY, next ? "1" : "0");
+                window.localStorage.setItem(COMPUTER_BROWSER_OPEN_KEY, "0");
                 return next;
               })
             }
             aria-pressed={rightPanelOpen}
-            className={`absolute right-3 top-3 z-20 inline-flex h-8 w-8 items-center justify-center rounded-md border backdrop-blur ${
+            className={`absolute right-3 top-3 z-20 inline-flex !h-8 !min-h-8 !w-8 !min-w-8 items-center justify-center rounded-md border-0 backdrop-blur ${
               rightPanelOpen
-                ? "border-(--accent)/50 bg-(--accent)/10 text-(--accent)"
-                : "border-(--border) bg-(--surface)/90 text-(--dim) hover:text-(--fg)"
+                ? "bg-(--accent)/10 text-(--accent)"
+                : "bg-transparent text-(--dim) hover:bg-(--surface) hover:text-(--fg)"
             }`}
             title={rightPanelOpen ? "Hide computer" : "Show computer"}
             aria-label={rightPanelOpen ? "Hide computer" : "Show computer"}
@@ -1147,7 +1149,7 @@ export function AgentWorkspace() {
                               });
                             }}
                             disabled={!paneTabIsNew}
-                            className="min-w-0 max-w-[280px] truncate rounded border border-(--border) bg-(--bg) px-2 py-1 font-mono text-[11px] text-(--dim) outline-none hover:text-(--fg) disabled:opacity-100"
+                            className="!h-7 !min-h-7 w-full min-w-0 truncate rounded-md border border-(--border) bg-(--bg) px-2 py-0 font-mono !text-[11px] text-(--dim) outline-none hover:text-(--fg) disabled:opacity-100"
                             title={
                               paneTabIsNew
                                 ? "Change directory for this new session"
@@ -1359,7 +1361,10 @@ export function AgentWorkspace() {
                 inputValue={browserInput}
                 onInputChange={setBrowserInput}
                 onSubmit={submitBrowserUrl}
-                onClose={() => setRightPanelOpen(false)}
+                onClose={() => {
+                  setRightPanelOpen(false);
+                  window.localStorage.setItem(COMPUTER_BROWSER_OPEN_KEY, "0");
+                }}
                 isElectron={isElectron}
               />
             ) : activeComputerTab === "files" ? (
@@ -1411,7 +1416,7 @@ function ModelPicker({
   const disabled = loading || models.length === 0;
 
   return (
-    <div ref={containerRef} className="relative">
+    <div ref={containerRef} className="relative shrink-0">
       <button
         type="button"
         onClick={() => {
@@ -1419,14 +1424,14 @@ function ModelPicker({
           setOpen((value) => !value);
         }}
         disabled={disabled}
-        className="inline-flex h-7 items-center gap-1.5 rounded border border-(--border) bg-(--surface) px-2 text-xs text-(--fg) hover:bg-(--bg) disabled:opacity-60"
+        className="inline-flex !h-7 !min-h-7 !min-w-0 max-w-[150px] items-center gap-1.5 rounded-md border border-(--border) bg-(--surface) px-2 !text-xs text-(--fg) hover:bg-(--bg) disabled:opacity-60"
         title={active?.name || triggerLabel}
       >
-        <span className="max-w-[160px] truncate">{triggerLabel}</span>
+        <span className="min-w-0 max-w-[118px] truncate">{triggerLabel}</span>
         <ChevronDownIcon className="h-3 w-3 shrink-0 text-(--dim)" />
       </button>
       {open ? (
-        <div className="absolute right-0 top-9 z-50 w-72 rounded-md border border-(--border) bg-(--surface) shadow-lg">
+        <div className="absolute right-0 top-10 z-50 w-72 rounded-md border border-(--border) bg-(--surface) shadow-lg">
           <div className="max-h-72 overflow-y-auto p-1">
             {models.map((model) => {
               const isActive = model.id === selectedModel;
