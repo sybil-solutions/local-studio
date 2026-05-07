@@ -26,6 +26,7 @@ export interface AgentModel {
   contextWindow: number;
   maxTokens: number;
   reasoning: boolean;
+  vision: boolean;
   active: boolean;
 }
 
@@ -42,6 +43,11 @@ export function inferReasoningSupport(modelId: string): boolean {
   );
 }
 
+export function inferVisionSupport(modelId: string): boolean {
+  const normalized = modelId.toLowerCase();
+  return normalized.includes("mimo-v2.5") || normalized.includes("mimo-v2-5");
+}
+
 function numberFromUnknown(value: unknown): number | undefined {
   if (typeof value === "number" && Number.isFinite(value) && value > 0) return value;
   if (typeof value === "string") {
@@ -51,8 +57,35 @@ function numberFromUnknown(value: unknown): number | undefined {
   return undefined;
 }
 
+function booleanFromUnknown(value: unknown): boolean | undefined {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (["1", "true", "yes", "on"].includes(normalized)) return true;
+    if (["0", "false", "no", "off"].includes(normalized)) return false;
+  }
+  return undefined;
+}
+
+function hasImageInput(value: unknown): boolean | undefined {
+  const values = Array.isArray(value) ? value : typeof value === "string" ? value.split(",") : [];
+  const normalized = values
+    .filter((entry): entry is string => typeof entry === "string")
+    .map((entry) => entry.trim().toLowerCase())
+    .filter(Boolean);
+  if (normalized.length === 0) return undefined;
+  return normalized.some((entry) => entry === "image" || entry === "vision");
+}
+
+function recordFromUnknown(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
 export function normalizeOpenAIModel(model: OpenAIModelListItem): AgentModel {
-  const metadata = model.metadata && typeof model.metadata === "object" ? model.metadata : {};
+  const metadata = recordFromUnknown(model.metadata);
+  const capabilities = recordFromUnknown(metadata.capabilities);
   const id = String(model.id || "").trim();
   const name = String(model.name || metadata.name || id).trim() || id;
   const contextWindow =
@@ -73,6 +106,21 @@ export function normalizeOpenAIModel(model: OpenAIModelListItem): AgentModel {
   const explicitReasoning = metadata.reasoning ?? model.reasoning;
   const reasoning =
     typeof explicitReasoning === "boolean" ? explicitReasoning : inferReasoningSupport(id);
+  const explicitVision =
+    booleanFromUnknown(metadata.vision) ??
+    booleanFromUnknown(metadata.supportsVision) ??
+    booleanFromUnknown(metadata.supports_vision) ??
+    booleanFromUnknown(metadata.multimodal) ??
+    booleanFromUnknown(capabilities.vision) ??
+    booleanFromUnknown(capabilities.image) ??
+    hasImageInput(metadata.input) ??
+    hasImageInput(metadata.inputs) ??
+    hasImageInput(metadata.modalities) ??
+    hasImageInput(metadata.input_modalities) ??
+    hasImageInput(model.input) ??
+    hasImageInput(model.inputs) ??
+    hasImageInput(model.modalities);
+  const vision = explicitVision ?? inferVisionSupport(id);
   const explicitActive = metadata.active ?? model.active;
 
   return {
@@ -82,6 +130,7 @@ export function normalizeOpenAIModel(model: OpenAIModelListItem): AgentModel {
     contextWindow,
     maxTokens,
     reasoning,
+    vision,
     active: explicitActive === true,
   };
 }
@@ -105,7 +154,7 @@ export function modelsToPiModels(models: AgentModel[]) {
     id: model.id,
     name: model.name,
     reasoning: model.reasoning,
-    input: ["text"],
+    input: model.vision ? ["text", "image"] : ["text"],
     contextWindow: model.contextWindow,
     maxTokens: model.maxTokens,
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
