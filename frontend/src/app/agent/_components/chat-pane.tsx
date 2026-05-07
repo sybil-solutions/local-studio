@@ -3,7 +3,17 @@
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ClipboardEvent, DragEvent, ReactNode } from "react";
 import {
+  AlertTriangle,
+  FileText,
+  Loader2,
+  PencilLine,
+  Search,
+  TerminalSquare,
+  Wrench,
+} from "lucide-react";
+import {
   AttachIcon,
+  ChevronDownIcon,
   CloseIcon,
   FileIcon,
   GitBranchIcon,
@@ -1284,7 +1294,9 @@ export function ChatPane({
         }}
         className={`min-h-0 flex-1 overflow-y-auto px-6 py-10 ${showEmptyPrompt ? "flex" : ""}`}
       >
-        <div className={`mx-auto w-full max-w-[720px] ${showEmptyPrompt ? "flex flex-1" : ""}`}>
+        <div
+          className={`mx-auto w-full max-w-[var(--thread-w)] ${showEmptyPrompt ? "flex flex-1" : ""}`}
+        >
           {showEmptyPrompt ? (
             <div className="flex flex-1 flex-col items-center justify-center gap-3 -translate-y-12 text-center">
               <h1 className="text-[26px] font-semibold tracking-[-0.04em] text-(--fg)">
@@ -1710,10 +1722,7 @@ function TimelineMessage({ message }: { message: ChatMessage }) {
   if (isUser) {
     return (
       <article className="flex justify-end">
-        <div className="max-w-[78%] rounded-2xl bg-(--surface) px-3.5 py-2 text-sm leading-6 text-(--fg)">
-          <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-(--dim)">
-            You
-          </div>
+        <div className="max-w-[72%] rounded-xl bg-(--surface) px-3.5 py-2 text-sm leading-6 text-(--fg)">
           <div className="whitespace-pre-wrap break-words">{message.text}</div>
         </div>
       </article>
@@ -1721,12 +1730,11 @@ function TimelineMessage({ message }: { message: ChatMessage }) {
   }
   const blocks = message.blocks ?? [];
   return (
-    <article className="flex flex-col gap-1">
-      <div className="text-[10px] font-semibold uppercase tracking-[0.08em] text-(--dim)">Pi</div>
+    <article className="min-w-0">
       {blocks.length === 0 ? (
         <div className="text-sm leading-6 text-(--dim)">…</div>
       ) : (
-        <div className="flex flex-col gap-2">
+        <div className="flex flex-col gap-3">
           {blocks.map((block) => {
             if (block.kind === "thinking") {
               return (
@@ -1850,6 +1858,167 @@ function extractFromArgs(
   return null;
 }
 
+function compactToolText(value: string | null | undefined, limit = 88): string | null {
+  if (!value) return null;
+  const oneLine = value.replace(/\s+/g, " ").trim();
+  if (!oneLine) return null;
+  if (oneLine.length <= limit) return oneLine;
+  return `${oneLine.slice(0, Math.max(0, limit - 1)).trimEnd()}…`;
+}
+
+function fileBasename(path: string | null | undefined): string | null {
+  if (!path) return null;
+  const clean = path.replace(/\\/g, "/").replace(/\/+$/, "");
+  const slash = clean.lastIndexOf("/");
+  return clean.slice(slash + 1) || clean;
+}
+
+function humanizeToolName(name: string): string {
+  return name
+    .replace(/^functions[._-]/, "")
+    .replace(/^mcp__[a-z0-9_-]+__/i, "")
+    .replace(/[_-]+/g, " ")
+    .replace(/\b\w/g, (match) => match.toUpperCase());
+}
+
+function hasAnyNeedle(value: string, needles: string[]): boolean {
+  return needles.some((needle) => value.includes(needle));
+}
+
+function toolArg(
+  block: ToolBlock,
+  keys: string[],
+  fallback?: string | null | undefined,
+): string | null {
+  return extractFromArgs(block.args, block.argsText, keys) ?? fallback ?? null;
+}
+
+function toolMeta(block: ToolBlock, filePath?: string | null) {
+  const name = block.name.toLowerCase();
+  const path = toolArg(block, [
+    "path",
+    "file_path",
+    "filePath",
+    "file",
+    "filename",
+    "target_file",
+    "uri",
+    "ref_id",
+  ]);
+  const query = toolArg(block, ["query", "q", "pattern", "search", "search_query", "needle"]);
+  const command = toolArg(block, ["cmd", "command", "script", "shell", "input"]);
+  const url = toolArg(block, ["url", "href"]);
+  const resolvedPath = filePath ?? path;
+  const basename = fileBasename(resolvedPath);
+
+  if (FILE_WRITE_TOOL_NAMES.has(name) || hasAnyNeedle(name, ["edit", "write", "patch"])) {
+    return {
+      icon: <PencilLine className="h-4 w-4" />,
+      label: basename ? `Edited ${basename}` : humanizeToolName(block.name),
+      detail: resolvedPath && basename !== resolvedPath ? resolvedPath : null,
+    };
+  }
+  if (hasAnyNeedle(name, ["search", "grep", "find", "ripgrep", "rg"])) {
+    return {
+      icon: <Search className="h-4 w-4" />,
+      label: compactToolText(query, 80)
+        ? `Searched for ${compactToolText(query, 80)}`
+        : "Searched files",
+      detail: path && !query ? path : null,
+    };
+  }
+  if (hasAnyNeedle(name, ["read", "open", "cat", "view", "list"])) {
+    return {
+      icon: <FileText className="h-4 w-4" />,
+      label: basename ? `Read ${basename}` : humanizeToolName(block.name),
+      detail: resolvedPath && basename !== resolvedPath ? resolvedPath : null,
+    };
+  }
+  if (hasAnyNeedle(name, ["exec", "command", "shell", "bash", "run", "terminal"])) {
+    return {
+      icon: <TerminalSquare className="h-4 w-4" />,
+      label: "Ran command",
+      detail: compactToolText(command, 110),
+    };
+  }
+  if (hasAnyNeedle(name, ["browser", "web", "open_url", "navigate"])) {
+    return {
+      icon: <GlobeIcon className="h-4 w-4" />,
+      label: "Used browser",
+      detail: compactToolText(url, 110),
+    };
+  }
+  return {
+    icon: <Wrench className="h-4 w-4" />,
+    label: humanizeToolName(block.name),
+    detail: compactToolText(command ?? query ?? path ?? url, 110),
+  };
+}
+
+function ToolStatus({ status }: { status: ToolBlock["status"] }) {
+  if (status === "running") {
+    return (
+      <span className="inline-flex items-center gap-1 text-[11px] text-(--dim)">
+        <Loader2 className="h-3 w-3 animate-spin" />
+        running
+      </span>
+    );
+  }
+  if (status === "error") {
+    return (
+      <span className="inline-flex items-center gap-1 text-[11px] text-(--err)">
+        <AlertTriangle className="h-3 w-3" />
+        error
+      </span>
+    );
+  }
+  return null;
+}
+
+function ToolSummary({
+  block,
+  filePath,
+  children,
+  open = false,
+}: {
+  block: ToolBlock;
+  filePath?: string | null;
+  children?: ReactNode;
+  open?: boolean;
+}) {
+  const meta = toolMeta(block, filePath);
+  return (
+    <details className="group py-0.5" open={open}>
+      <summary className="flex cursor-pointer list-none items-start gap-2 rounded-md py-1 text-(--dim) hover:text-(--fg) [&::-webkit-details-marker]:hidden">
+        <span className="mt-1 flex h-4 w-4 shrink-0 items-center justify-center opacity-80">
+          {meta.icon}
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-[13px] leading-6">{meta.label}</span>
+          {meta.detail ? (
+            <span className="block truncate font-mono text-[11px] leading-4 opacity-70">
+              {meta.detail}
+            </span>
+          ) : null}
+        </span>
+        <ToolStatus status={block.status} />
+        {children ? (
+          <ChevronDownIcon className="mt-1 h-3.5 w-3.5 shrink-0 transition-transform group-open:rotate-180" />
+        ) : null}
+      </summary>
+      {children ? <div className="ml-6 mt-1">{children}</div> : null}
+    </details>
+  );
+}
+
+function ToolOutput({ children }: { children: ReactNode }) {
+  return (
+    <pre className="max-h-[320px] overflow-auto whitespace-pre-wrap font-mono text-[11px] leading-5 text-(--dim) [overflow-wrap:anywhere]">
+      {children}
+    </pre>
+  );
+}
+
 function ToolBlockView({ block }: { block: ToolBlock }) {
   const isFileWrite = FILE_WRITE_TOOL_NAMES.has(block.name.toLowerCase());
   const filePath = isFileWrite
@@ -1868,66 +2037,49 @@ function ToolBlockView({ block }: { block: ToolBlock }) {
   if (isFileWrite && (fileContent !== null || patchContent !== null)) {
     const body = fileContent ?? patchContent ?? "";
     return (
-      <details className="rounded border border-(--border)" open>
-        <summary className="flex cursor-pointer list-none items-center gap-2 px-2 py-1 text-[11px] text-(--dim) hover:text-(--fg)">
-          <span className="font-mono font-medium text-(--fg)">{block.name}</span>
-          {filePath ? (
-            <span className="truncate font-mono text-[11px] text-(--accent)">{filePath}</span>
-          ) : null}
-          {lang ? (
-            <span className="rounded border border-(--border) px-1 py-0.5 text-[9px] uppercase text-(--dim)">
-              {lang}
-            </span>
-          ) : null}
-          <span className="ml-auto opacity-70">{block.status}</span>
+      <ToolSummary block={block} filePath={filePath} open>
+        <div className="mb-1 flex items-center justify-between gap-2 text-[10px] uppercase tracking-[0.08em] text-(--dim)">
+          <span>{lang || "source"}</span>
           {isHtml ? (
             <button
               type="button"
-              onClick={(event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                setShowPreview((value) => !value);
-              }}
-              className="rounded border border-(--border) px-1.5 py-0.5 text-[10px] text-(--fg) hover:bg-(--surface)"
+              onClick={() => setShowPreview((value) => !value)}
+              className="rounded-md px-1.5 py-0.5 text-[10px] normal-case tracking-normal text-(--dim) hover:bg-(--hover) hover:text-(--fg)"
             >
               {showPreview ? "Source" : "Preview"}
             </button>
           ) : null}
-        </summary>
+        </div>
         {isHtml && showPreview ? (
           <iframe
             sandbox=""
             srcDoc={body}
-            className="h-72 w-full border-t border-(--border) bg-white"
+            className="h-72 w-full rounded-md border border-(--border) bg-white"
             title={filePath ?? "preview"}
           />
         ) : (
-          <pre className="max-h-[420px] overflow-auto whitespace-pre-wrap border-t border-(--border) p-2 font-mono text-[11px] leading-5 text-(--fg)">
+          <pre className="max-h-[420px] overflow-auto whitespace-pre-wrap rounded-md border border-(--border)/70 bg-(--surface)/35 p-2 font-mono text-[11px] leading-5 text-(--fg)">
             {body}
           </pre>
         )}
         {block.resultText ? (
-          <div className="border-t border-(--border) bg-(--bg)/40 px-2 py-1 font-mono text-[10px] text-(--dim)">
-            {block.resultText}
+          <div className="mt-1 font-mono text-[10px] text-(--dim)">
+            <ToolOutput>{block.resultText}</ToolOutput>
           </div>
         ) : null}
-      </details>
+      </ToolSummary>
     );
   }
 
   // Generic fallback (shells, reads, searches, browser tools, etc.).
-  const display = block.resultText || block.argsText || block.text;
+  const display =
+    block.resultText || (block.text && block.text !== block.argsText ? block.text : "");
   return (
-    <details className="rounded border border-(--border)" open={block.status === "running"}>
-      <summary className="flex cursor-pointer list-none items-center gap-2 px-2 py-1 text-[11px] text-(--dim) hover:text-(--fg)">
-        <span className="font-mono font-medium">{block.name}</span>
-        <span className="opacity-70">· {block.status}</span>
-      </summary>
-      {display ? (
-        <pre className="max-h-[320px] overflow-auto whitespace-pre-wrap border-t border-(--border) p-2 font-mono text-[11px] leading-5 text-(--fg)">
-          {display}
-        </pre>
-      ) : null}
-    </details>
+    <ToolSummary
+      block={block}
+      open={block.status === "running" || (Boolean(display) && display.length < 2400)}
+    >
+      {display ? <ToolOutput>{display}</ToolOutput> : null}
+    </ToolSummary>
   );
 }
