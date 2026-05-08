@@ -185,4 +185,43 @@ describe("engine routes", () => {
     expect(jobPayload.job.type).toBe("update");
     expect(jobPayload.job.message.length).toBeGreaterThan(0);
   });
+
+  it("rejects request-controlled runtime job commands", async () => {
+    const { app } = createEngineRoutesHarness();
+
+    const createResponse = await app.request("/runtime/jobs", {
+      method: "POST",
+      body: JSON.stringify({
+        backend: "sglang",
+        type: "update",
+        command: "/bin/sh",
+        args: ["-c", "id"],
+      }),
+    });
+
+    expect(createResponse.status).toBe(400);
+    const payload = (await createResponse.json()) as { error: string };
+    expect(payload.error).toContain(
+      "Runtime job commands and arguments must be configured server-side"
+    );
+
+    const jobsResponse = await app.request("/runtime/jobs");
+    const jobsPayload = (await jobsResponse.json()) as { jobs: unknown[] };
+    expect(jobsPayload.jobs).toEqual([]);
+  });
+
+  it("rejects command overrides on upgrade wrapper routes", async () => {
+    const { app } = createEngineRoutesHarness();
+
+    const createResponse = await app.request("/runtime/sglang/upgrade", {
+      method: "POST",
+      body: JSON.stringify({ command: "/bin/sh" }),
+    });
+
+    expect(createResponse.status).toBe(400);
+    const payload = (await createResponse.json()) as { error: string };
+    expect(payload.error).toContain(
+      "Runtime job commands and arguments must be configured server-side"
+    );
+  });
 });
