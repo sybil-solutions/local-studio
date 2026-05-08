@@ -1,17 +1,31 @@
 import { NextRequest } from "next/server";
-import path from "node:path";
 import { existsSync } from "node:fs";
-import { listDirectory } from "@/lib/agent/fs-store";
+import {
+  configuredAgentFsRoots,
+  isAgentFsRequestAllowed,
+  listDirectory,
+  resolveAllowedWorkingDirectory,
+} from "@/lib/agent/fs-store";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
-  const cwd = request.nextUrl.searchParams.get("cwd")?.trim() ?? "";
+  const requestedCwd = request.nextUrl.searchParams.get("cwd")?.trim() ?? "";
   const relPath = request.nextUrl.searchParams.get("path")?.trim() ?? "";
-  if (!cwd) return Response.json({ error: "cwd is required" }, { status: 400 });
-  if (!path.isAbsolute(cwd)) {
-    return Response.json({ error: "cwd must be absolute" }, { status: 400 });
+  if (!requestedCwd) return Response.json({ error: "cwd is required" }, { status: 400 });
+
+  const roots = configuredAgentFsRoots();
+  if (!isAgentFsRequestAllowed(request.headers.get("host"), roots)) {
+    return Response.json(
+      { error: "Agent filesystem browsing is only available locally" },
+      { status: 403 },
+    );
+  }
+
+  const cwd = resolveAllowedWorkingDirectory(requestedCwd, roots);
+  if (!cwd) {
+    return Response.json({ error: "cwd is outside the allowed directories" }, { status: 403 });
   }
   if (!existsSync(cwd)) return Response.json({ error: "cwd not found" }, { status: 404 });
   try {

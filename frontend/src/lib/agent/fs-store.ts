@@ -1,5 +1,6 @@
 import { promises as fs } from "node:fs";
-import { existsSync, readdirSync, statSync } from "node:fs";
+import { existsSync, readdirSync, realpathSync, statSync } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 
 export type FsEntry = {
@@ -25,17 +26,72 @@ const IGNORE_DIRS = new Set([
   ".vllm-studio",
 ]);
 
-// Reject any path that escapes the project root, including via symlinks.
+function splitConfiguredRoots(raw: string | undefined): string[] {
+  if (!raw) return [path.resolve(os.homedir())];
+  return raw
+    .split(path.delimiter)
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+    .map((entry) => path.resolve(entry));
+}
+
+function realpathIfExists(candidate: string): string | null {
+  try {
+    return realpathSync(candidate);
+  } catch {
+    return null;
+  }
+}
+
+function isWithinRoot(candidate: string, root: string): boolean {
+  const relative = path.relative(root, candidate);
+  return (
+    relative === "" || (!!relative && !relative.startsWith("..") && !path.isAbsolute(relative))
+  );
+}
+
+export function configuredAgentFsRoots(): string[] {
+  return splitConfiguredRoots(process.env.VLLM_STUDIO_AGENT_FS_ROOTS);
+}
+
+export function isLoopbackHost(host: string | null): boolean {
+  const value = host ?? "";
+  const hostname = value.startsWith("[")
+    ? value.slice(1, value.indexOf("]"))
+    : value.split(":")[0]?.toLowerCase();
+  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
+}
+
+export function isAgentFsRequestAllowed(host: string | null, roots: string[]): boolean {
+  const remoteBrowserEnabled = process.env.VLLM_STUDIO_ENABLE_REMOTE_AGENT_FS === "1";
+  return isLoopbackHost(host) || (remoteBrowserEnabled && roots.length > 0);
+}
+
+export function resolveAllowedWorkingDirectory(input: string, roots: string[]): string | null {
+  if (!path.isAbsolute(input)) return null;
+
+  const candidate = realpathIfExists(path.resolve(input));
+  if (!candidate) return null;
+
+  const allowedRoots = roots
+    .map((root) => realpathIfExists(path.resolve(root)))
+    .filter(Boolean) as string[];
+  return allowedRoots.some((root) => isWithinRoot(candidate, root)) ? candidate : null;
+}
+
+// Reject any path that escapes the allowed project root, including via symlinks.
 function ensureInside(rootCwd: string, target: string): string {
-  const rel = path.relative(rootCwd, target);
-  if (rel.startsWith("..") || path.isAbsolute(rel)) {
+  const root = realpathIfExists(rootCwd);
+  const resolvedTarget = realpathIfExists(target);
+  if (!root || !resolvedTarget || !isWithinRoot(resolvedTarget, root)) {
     throw new Error("Path escapes project root");
   }
-  return target;
+  return resolvedTarget;
 }
 
 export function listDirectory(rootCwd: string, relPath: string): FsEntry[] {
-  const target = ensureInside(rootCwd, path.resolve(rootCwd, relPath || "."));
+  const root = ensureInside(rootCwd, rootCwd);
+  const target = ensureInside(root, path.resolve(root, relPath || "."));
   if (!existsSync(target)) throw new Error("Not found");
   const stats = statSync(target);
   if (!stats.isDirectory()) throw new Error("Not a directory");
@@ -46,16 +102,18 @@ export function listDirectory(rootCwd: string, relPath: string): FsEntry[] {
     if (IGNORE_DIRS.has(name)) continue;
     if (name.startsWith(".") && name !== ".env.example") continue;
     const abs = path.join(target, name);
+    let resolvedAbs: string;
     let s: ReturnType<typeof statSync>;
     try {
-      s = statSync(abs);
+      resolvedAbs = ensureInside(root, abs);
+      s = statSync(resolvedAbs);
     } catch {
       continue;
     }
     entries.push({
       name,
-      path: abs,
-      rel: path.relative(rootCwd, abs),
+      path: resolvedAbs,
+      rel: path.relative(root, resolvedAbs),
       kind: s.isDirectory() ? "directory" : "file",
       size: s.isFile() ? s.size : undefined,
       modifiedAt: s.mtime.toISOString(),
@@ -73,7 +131,8 @@ export async function readFileSnippet(
   relPath: string,
   maxBytes = 5 * 1024 * 1024,
 ): Promise<{ content: string; truncated: boolean; size: number }> {
-  const target = ensureInside(rootCwd, path.resolve(rootCwd, relPath));
+  const root = ensureInside(rootCwd, rootCwd);
+  const target = ensureInside(root, path.resolve(root, relPath));
   const stats = await fs.stat(target);
   if (!stats.isFile()) throw new Error("Not a file");
   if (stats.size > maxBytes) {
