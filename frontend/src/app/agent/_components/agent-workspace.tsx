@@ -185,7 +185,7 @@ type PersistedPaneState = {
   >;
 };
 
-function normalizePersistedTab(value: unknown): SessionTab | null {
+export function normalizePersistedTab(value: unknown): SessionTab | null {
   if (!value || typeof value !== "object") return null;
   const tab = value as Partial<SessionTab>;
   if (typeof tab.id !== "string" || typeof tab.runtimeSessionId !== "string") return null;
@@ -206,6 +206,8 @@ function normalizePersistedTab(value: unknown): SessionTab | null {
     activeAssistantId:
       typeof tab.activeAssistantId === "string" ? tab.activeAssistantId : undefined,
     lastEventSeq: typeof tab.lastEventSeq === "number" ? tab.lastEventSeq : undefined,
+    plugins: Array.isArray(tab.plugins) ? tab.plugins : undefined,
+    skills: Array.isArray(tab.skills) ? tab.skills : undefined,
   };
 }
 
