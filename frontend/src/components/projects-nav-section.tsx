@@ -966,30 +966,6 @@ function ActiveSessionRow({
           if (session.piSessionId) patchSessionPref(session.piSessionId, { pinned: !pref.pinned });
         }}
       />
-      {session.piSessionId ? (
-        <Link
-          href={`/agent?project=${encodeURIComponent(project.id)}&session=${encodeURIComponent(session.piSessionId)}&split=1`}
-          className="px-0.5 text-[10px] text-(--dim) opacity-0 hover:text-(--fg) group-hover:opacity-100"
-          title="Open beside focused session"
-        >
-          Split
-        </Link>
-      ) : (
-        <button
-          type="button"
-          onClick={() => {
-            window.dispatchEvent(
-              new CustomEvent(ACTIVE_AGENT_SESSION_OPEN_EVENT, {
-                detail: { paneId: session.paneId, tabId: session.tabId, mode: "split" },
-              }),
-            );
-          }}
-          className="px-0.5 text-[10px] text-(--dim) opacity-0 hover:text-(--fg) group-hover:opacity-100"
-          title="Open beside focused session"
-        >
-          Split
-        </button>
-      )}
       <div ref={menuRef} className="relative shrink-0">
         <button
           type="button"
@@ -1123,13 +1099,6 @@ function SessionRow({
         onToggle={() => patchSessionPref(session.id, { pinned: !pref.pinned })}
       />
       <div ref={menuRef} className="relative shrink-0">
-        <Link
-          href={`/agent?project=${encodeURIComponent(project.id)}&session=${encodeURIComponent(session.id)}&split=1`}
-          className="px-0.5 text-[10px] text-(--dim) opacity-0 hover:text-(--fg) group-hover:opacity-100"
-          title="Open beside focused session"
-        >
-          Split
-        </Link>
         <button
           type="button"
           onClick={(event) => {

@@ -833,6 +833,7 @@ export function ChatPane({
   const [compacting, setCompacting] = useState(false);
   const tabsRef = useRef(tabs);
   const localStreamTabsRef = useRef<Set<string>>(new Set());
+  const liveAssistantIdsRef = useRef<Map<string, string>>(new Map());
 
   useEffect(() => {
     tabsRef.current = tabs;
@@ -964,12 +965,55 @@ export function ChatPane({
   const applyPiEvent = useCallback(
     (tabId: string, assistantId: string, event: Record<string, unknown>) => {
       const eventType = event.type;
+      const currentAssistantId = () => liveAssistantIdsRef.current.get(tabId) ?? assistantId;
+      const ensureNextAssistant = () => {
+        const id = newId("assistant");
+        liveAssistantIdsRef.current.set(tabId, id);
+        updateTab(tabId, (tab) => ({
+          ...tab,
+          activeAssistantId: id,
+          messages: [
+            ...tab.messages,
+            { id, role: "assistant", text: "", blocks: [], timestamp: nowLabel() },
+          ],
+        }));
+        return id;
+      };
+      const patchCurrentAssistant = (patch: (msg: ChatMessage) => ChatMessage) => {
+        patchAssistant(tabId, currentAssistantId(), patch);
+      };
+
       if (eventType === "queue_update") {
         updateTab(tabId, (tab) => ({
           ...tab,
           queue: reconcileQueueWithPiEvent(tab.queue ?? [], event),
         }));
         return;
+      }
+      if (eventType === "message_start" || eventType === "message_end") {
+        const msg = event.message as
+          | { role?: string; content?: string | Record<string, unknown>[] }
+          | undefined;
+        if (msg?.role === "user") {
+          const text = messageText(msg.content);
+          if (!text) return;
+          const current = tabsRef.current.find((tab) => tab.id === tabId);
+          const lastUser = [...(current?.messages ?? [])]
+            .reverse()
+            .find((entry) => entry.role === "user");
+          if (lastUser && (lastUser.text === text || text.includes(lastUser.text))) return;
+          updateTab(tabId, (tab) => {
+            return {
+              ...tab,
+              messages: [
+                ...tab.messages,
+                { id: newId("user"), role: "user", text, timestamp: nowLabel() },
+              ],
+            };
+          });
+          ensureNextAssistant();
+          return;
+        }
       }
       const usage = usageFromEvent(event);
       if (usage) {
@@ -978,7 +1022,7 @@ export function ChatPane({
 
       const compactionText = compactionTextFromEvent(event);
       if (compactionText) {
-        patchAssistant(tabId, assistantId, (msg) => ({
+        patchCurrentAssistant((msg) => ({
           ...msg,
           blocks: appendEventBlock(msg.blocks ?? [], compactionText),
         }));
@@ -990,7 +1034,7 @@ export function ChatPane({
         const updateType = ame?.type;
         if (updateType === "text_delta" && typeof ame?.delta === "string") {
           const delta = ame.delta;
-          patchAssistant(tabId, assistantId, (msg) => ({
+          patchCurrentAssistant((msg) => ({
             ...msg,
             blocks: appendDelta(msg.blocks ?? [], "text", delta),
           }));
@@ -998,7 +1042,7 @@ export function ChatPane({
         }
         if (updateType === "thinking_delta" && typeof ame?.delta === "string") {
           const delta = ame.delta;
-          patchAssistant(tabId, assistantId, (msg) => ({
+          patchCurrentAssistant((msg) => ({
             ...msg,
             blocks: appendDelta(msg.blocks ?? [], "thinking", delta),
           }));
@@ -1007,7 +1051,7 @@ export function ChatPane({
         if (updateType === "toolcall_start") {
           const snapshot = toolCallSnapshotFromUpdate(ame, event.message);
           if (!snapshot) return;
-          patchAssistant(tabId, assistantId, (msg) => ({
+          patchCurrentAssistant((msg) => ({
             ...msg,
             blocks: upsertTool(
               msg.blocks ?? [],
@@ -1034,7 +1078,7 @@ export function ChatPane({
           const snapshot = toolCallSnapshotFromUpdate(ame, event.message);
           const delta = toolCallDeltaFromUpdate(ame);
           if (!snapshot || (!delta && !snapshot.args)) return;
-          patchAssistant(tabId, assistantId, (msg) => ({
+          patchCurrentAssistant((msg) => ({
             ...msg,
             blocks: upsertTool(
               msg.blocks ?? [],
@@ -1072,7 +1116,7 @@ export function ChatPane({
             toolCall.arguments && typeof toolCall.arguments === "object"
               ? (toolCall.arguments as Record<string, unknown>)
               : undefined;
-          patchAssistant(tabId, assistantId, (msg) => ({
+          patchCurrentAssistant((msg) => ({
             ...msg,
             blocks: upsertTool(
               msg.blocks ?? [],
@@ -1102,7 +1146,7 @@ export function ChatPane({
       if (eventType === "tool_execution_start") {
         const id = String(event.toolCallId || newId("tool"));
         const name = String(event.toolName || "tool");
-        patchAssistant(tabId, assistantId, (msg) => ({
+        patchCurrentAssistant((msg) => ({
           ...msg,
           blocks: upsertTool(
             msg.blocks ?? [],
@@ -1118,7 +1162,7 @@ export function ChatPane({
         const id = String(event.toolCallId || "");
         if (!id) return;
         const resultText = extractToolText(event.partialResult || event.result);
-        patchAssistant(tabId, assistantId, (msg) => ({
+        patchCurrentAssistant((msg) => ({
           ...msg,
           blocks: upsertTool(
             msg.blocks ?? [],
@@ -1301,6 +1345,7 @@ export function ChatPane({
 
       let agentEnded = false;
       let streamError = "";
+      liveAssistantIdsRef.current.set(tabId, assistantId);
       localStreamTabsRef.current.add(tabId);
       try {
         const response = await fetch("/api/agent/turn", {
@@ -1377,6 +1422,7 @@ export function ChatPane({
         streamError = err instanceof Error ? err.message : "Agent request failed";
       } finally {
         localStreamTabsRef.current.delete(tabId);
+        liveAssistantIdsRef.current.delete(tabId);
         const runtimeStatus = agentEnded ? null : await loadRuntimeStatus(runtime);
         const currentPiSessionId =
           tabsRef.current.find((tab) => tab.id === tabId)?.piSessionId ??
@@ -1935,7 +1981,7 @@ export function ChatPane({
 
       <form onSubmit={sendMessage} className="shrink-0 bg-(--bg) px-6 pb-2 pt-1">
         {visibleQueueItems.length > 0 ? (
-          <div className="mx-auto mb-1 w-[85%] max-w-[var(--composer-w)] overflow-hidden rounded-2xl bg-(--composer) px-4 py-2 text-[11px] text-(--fg)">
+          <div className="mx-auto mb-1 w-[85%] max-w-[var(--composer-w)] overflow-hidden rounded-lg bg-(--composer) px-4 py-2 text-[11px] text-(--fg)">
             <button
               type="button"
               onClick={() => setQueueExpanded((value) => !value)}
@@ -1990,7 +2036,7 @@ export function ChatPane({
           onDragOver={handleComposerDragOver}
           onDragLeave={handleComposerDragLeave}
           onDrop={handleComposerDrop}
-          className={`mx-auto max-w-[var(--composer-w)] overflow-visible rounded-2xl bg-(--composer) shadow-none transition-colors ${
+          className={`mx-auto max-w-[var(--composer-w)] overflow-visible rounded-lg bg-(--composer) shadow-none transition-colors ${
             composerDragActive ? "outline outline-1 outline-(--accent)/50" : ""
           }`}
         >

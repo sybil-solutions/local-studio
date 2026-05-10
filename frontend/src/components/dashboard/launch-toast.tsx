@@ -7,6 +7,15 @@ interface LaunchToastProps {
 
 export function LaunchToast({ launching, launchProgress }: LaunchToastProps) {
   if (!launching && !launchProgress) return null;
+  if (
+    !launching &&
+    (launchProgress?.stage === "preempting" ||
+      launchProgress?.stage === "evicting" ||
+      launchProgress?.stage === "launching" ||
+      launchProgress?.stage === "waiting")
+  ) {
+    return null;
+  }
 
   return (
     <div
