@@ -94,20 +94,21 @@ function selectedContextLines(
   const lines: string[] = [];
   const enabledPlugins = activeComposerPlugins(plugins);
   if (enabledPlugins.length) {
-    lines.push(`Enabled plugins: ${enabledPlugins.map((plugin) => `@${plugin.name}`).join(", ")}.`);
+    lines.push(`Enabled plugins: ${enabledPlugins.map(pluginRefLabel).join(", ")}.`);
     for (const plugin of enabledPlugins) {
+      const label = pluginRefLabel(plugin);
       const summary = plugin.shortDescription ?? plugin.description;
-      if (summary) lines.push(`Plugin @${plugin.name}: ${summary}`);
+      if (summary) lines.push(`Plugin ${label}: ${summary}`);
       if (plugin.capabilities?.length) {
-        lines.push(`Plugin @${plugin.name} capabilities: ${plugin.capabilities.join(", ")}`);
+        lines.push(`Plugin ${label} capabilities: ${plugin.capabilities.join(", ")}`);
       }
       if (plugin.defaultPrompts?.length) {
         lines.push(
-          `Plugin @${plugin.name} default prompts: ${plugin.defaultPrompts.slice(0, 2).join(" | ")}`,
+          `Plugin ${label} default prompts: ${plugin.defaultPrompts.slice(0, 2).join(" | ")}`,
         );
       }
       if (plugin.appIds?.length) {
-        lines.push(`Plugin @${plugin.name} declares app connectors: ${plugin.appIds.join(", ")}`);
+        lines.push(`Plugin ${label} declares app connectors: ${plugin.appIds.join(", ")}`);
       }
     }
     if (enabledPlugins.some((plugin) => plugin.name.includes("browser-use"))) {
@@ -127,6 +128,10 @@ function selectedContextLines(
     }
   }
   return lines;
+}
+
+function pluginRefLabel(plugin: ComposerPluginRef): string {
+  return plugin.source ? `@${plugin.name} (${plugin.source})` : `@${plugin.name}`;
 }
 
 function searchableText(row: {

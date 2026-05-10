@@ -104,6 +104,16 @@ describe("composer context helpers", () => {
     expect(prompt).not.toContain("@computer-use");
   });
 
+  it("preserves plugin source identity in composer context", () => {
+    const prompt = selectedContextPrompt("inspect", [
+      { id: "one", name: "browser-use", source: "openai-bundled" },
+      { id: "two", name: "browser-use", source: "local-market" },
+    ]);
+
+    expect(prompt).toContain("@browser-use (openai-bundled)");
+    expect(prompt).toContain("@browser-use (local-market)");
+  });
+
   it("tells computer-use sessions to inspect MCP status before desktop control", () => {
     expect(
       selectedContextPrompt("control the desktop", [
