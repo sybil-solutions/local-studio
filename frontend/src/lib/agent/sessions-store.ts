@@ -175,14 +175,18 @@ export async function listSessions(
 }
 
 function findSessionFile(cwd: string, sessionId: string): string | null {
+  const matches: Array<{ filepath: string; mtime: number }> = [];
   for (const dir of sessionsDirsForCwd(cwd)) {
     if (!existsSync(dir)) continue;
-    const match = readdirSync(dir).find(
-      (name) => name.endsWith(".jsonl") && (name.includes(sessionId) || name.startsWith(sessionId)),
-    );
-    if (match) return path.join(dir, match);
+    for (const name of readdirSync(dir)) {
+      if (!name.endsWith(".jsonl") || (!name.includes(sessionId) && !name.startsWith(sessionId))) {
+        continue;
+      }
+      const filepath = path.join(dir, name);
+      matches.push({ filepath, mtime: statSync(filepath).mtimeMs });
+    }
   }
-  return null;
+  return matches.sort((a, b) => b.mtime - a.mtime)[0]?.filepath ?? null;
 }
 
 // Stream-load every event from a session JSONL. Used to replay a past

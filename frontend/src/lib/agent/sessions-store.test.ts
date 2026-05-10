@@ -82,4 +82,36 @@ describe("session store", () => {
 
     await expect(listSessions(cwd)).resolves.toMatchObject([{ id: "newer" }, { id: "older" }]);
   });
+
+  it("loads the newest matching session file when duplicate roots exist", async () => {
+    const root = mkdtempSync(path.join(tmpdir(), "vllm-studio-sessions-"));
+    roots.push(root);
+    process.env.PI_CODING_AGENT_DIR = path.join(root, "pi-agent");
+
+    const cwd = path.join(root, "project");
+    const sessionDir = path.join(process.env.PI_CODING_AGENT_DIR, "sessions", encodeCwdForPi(cwd));
+    mkdirSync(sessionDir, { recursive: true });
+    const oldFile = path.join(sessionDir, "old_session-dupe.jsonl");
+    const newFile = path.join(sessionDir, "new_session-dupe.jsonl");
+    writeFileSync(
+      oldFile,
+      [
+        JSON.stringify({ type: "session", id: "session-dupe", cwd }),
+        JSON.stringify({ type: "message", message: { role: "user", content: "old" } }),
+      ].join("\n"),
+    );
+    writeFileSync(
+      newFile,
+      [
+        JSON.stringify({ type: "session", id: "session-dupe", cwd }),
+        JSON.stringify({ type: "message", message: { role: "user", content: "new" } }),
+      ].join("\n"),
+    );
+    utimesSync(oldFile, new Date("2026-05-10T00:00:00.000Z"), new Date("2026-05-10T00:00:00.000Z"));
+    utimesSync(newFile, new Date("2026-05-10T00:10:00.000Z"), new Date("2026-05-10T00:10:00.000Z"));
+
+    const events = await loadSession(cwd, "session-dupe");
+
+    expect(events[1]).toMatchObject({ message: { role: "user", content: "new" } });
+  });
 });
