@@ -577,7 +577,7 @@ function PluginsSettings() {
           }
           status={
             <StatusPill tone={validation?.browserUseAvailable ? "good" : "warning"}>
-              {validation?.browserUseAvailable ? "loaded" : "missing"}
+              {validation?.browserUseAvailable ? "selectable" : "missing"}
             </StatusPill>
           }
         />
@@ -593,7 +593,7 @@ function PluginsSettings() {
           }
           status={
             <StatusPill tone={validation?.computerUseAvailable ? "good" : "warning"}>
-              {validation?.computerUseAvailable ? "loaded" : "missing"}
+              {validation?.computerUseAvailable ? "selectable" : "missing"}
             </StatusPill>
           }
         />
@@ -601,9 +601,7 @@ function PluginsSettings() {
           <SettingsRow
             key={plugin.path}
             label={plugin.name}
-            description={
-              plugin.description ? `${plugin.description} · ${plugin.path}` : plugin.path
-            }
+            description={pluginDescription(plugin)}
             value={<SettingsValue>{plugin.enabled ? "Enabled" : "Disabled"}</SettingsValue>}
             status={
               <StatusPill tone={plugin.enabled ? "good" : "default"}>
@@ -615,6 +613,12 @@ function PluginsSettings() {
       </SettingsGroup>
     </div>
   );
+}
+
+function pluginDescription(plugin: { description?: string; path: string }) {
+  const summary = plugin.description?.replace(/\s+/g, " ").trim();
+  const short = summary && summary.length > 150 ? `${summary.slice(0, 147)}…` : summary;
+  return short ? `${short} · ${plugin.path}` : plugin.path;
 }
 
 function SkillsSettings() {
