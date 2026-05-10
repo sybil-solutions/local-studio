@@ -100,6 +100,11 @@ function selectedContextLines(
       if (plugin.capabilities?.length) {
         lines.push(`Plugin @${plugin.name} capabilities: ${plugin.capabilities.join(", ")}`);
       }
+      if (plugin.defaultPrompts?.length) {
+        lines.push(
+          `Plugin @${plugin.name} default prompts: ${plugin.defaultPrompts.slice(0, 2).join(" | ")}`,
+        );
+      }
     }
     if (enabledPlugins.some((plugin) => plugin.name.includes("browser-use"))) {
       lines.push("Browser-use is enabled; use browser tools when the task requires page control.");

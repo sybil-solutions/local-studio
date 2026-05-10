@@ -46,7 +46,14 @@ describe("composer context helpers", () => {
     expect(
       selectedContextPrompt(
         "inspect localhost",
-        [{ id: "browser", name: "browser-use", description: "Control the in-app browser." }],
+        [
+          {
+            id: "browser",
+            name: "browser-use",
+            description: "Control the in-app browser.",
+            defaultPrompts: ["Inspect the current page"],
+          },
+        ],
         [
           {
             id: "agent",
@@ -57,6 +64,15 @@ describe("composer context helpers", () => {
         ],
       ),
     ).toContain("Enabled plugins: @browser-use.");
+    expect(
+      selectedContextPrompt("inspect localhost", [
+        {
+          id: "browser",
+          name: "browser-use",
+          defaultPrompts: ["Inspect the current page"],
+        },
+      ]),
+    ).toContain("Plugin @browser-use default prompts: Inspect the current page");
     expect(
       selectedContextPrompt(
         "inspect localhost",
