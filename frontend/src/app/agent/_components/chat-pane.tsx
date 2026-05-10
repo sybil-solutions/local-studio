@@ -698,6 +698,7 @@ export function ChatPane({
   const [attachments, setAttachments] = useState<ChatAttachment[]>([]);
   const [readingAttachments, setReadingAttachments] = useState(false);
   const [composerDragActive, setComposerDragActive] = useState(false);
+  const [queueExpanded, setQueueExpanded] = useState(false);
   const [pluginRows, setPluginRows] = useState<ComposerPluginRef[]>([]);
   const [skillRows, setSkillRows] = useState<ComposerSkillRef[]>([]);
   const [mention, setMention] = useState<ComposerMention | null>(null);
@@ -1758,28 +1759,61 @@ export function ChatPane({
             </div>
           ) : null}
           {(activeTab?.queue ?? []).length > 0 ? (
-            <div className="flex flex-wrap gap-1.5 border-b border-(--border)/50 px-2 py-1.5">
-              {(activeTab?.queue ?? []).map((item) => (
-                <span
-                  key={item.id}
-                  className="inline-flex max-w-[260px] items-center gap-1 rounded border border-(--accent)/60 bg-(--accent)/10 px-1.5 py-0.5 text-[11px] text-(--fg)"
-                  title={`Queued (${item.mode}): ${item.text}`}
-                >
-                  <span className="rounded border border-(--accent)/40 px-1 text-[9px] uppercase text-(--accent)">
-                    {item.mode === "steer" ? "steer" : "queue"}
-                  </span>
-                  <span className="truncate">{item.text}</span>
-                  <button
-                    type="button"
-                    onClick={() => removeQueued(item.id)}
-                    className="rounded p-0.5 text-(--dim) hover:bg-(--bg) hover:text-(--fg)"
-                    aria-label="Remove queued message"
-                    title="Remove queued message"
-                  >
-                    <CloseIcon className="h-3 w-3" />
-                  </button>
-                </span>
-              ))}
+            <div className="border-b border-(--border)/50 px-2 py-1.5">
+              <div className="mx-auto w-[85%] max-w-full rounded-md border border-(--border)/70 bg-(--bg)/60 text-[11px]">
+                {(() => {
+                  const queue = activeTab?.queue ?? [];
+                  const visibleQueue = queueExpanded ? queue : queue.slice(-1);
+                  return (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => setQueueExpanded((value) => !value)}
+                        className="flex w-full min-w-0 items-center gap-2 px-2 py-1.5 text-left text-(--fg) hover:bg-(--hover)"
+                        aria-expanded={queueExpanded}
+                        title="Queued follow-ups and steers"
+                      >
+                        <ChevronDownIcon
+                          className={`h-3 w-3 shrink-0 text-(--dim) transition-transform ${
+                            queueExpanded ? "rotate-180" : "-rotate-90"
+                          }`}
+                        />
+                        <span className="shrink-0 rounded border border-(--border)/70 px-1 text-[9px] uppercase text-(--dim)">
+                          queue {queue.length}
+                        </span>
+                        <span className="min-w-0 truncate text-(--fg)">
+                          {queue[queue.length - 1]?.text}
+                        </span>
+                      </button>
+                      {queueExpanded ? (
+                        <div className="border-t border-(--border)/60">
+                          {visibleQueue.map((item) => (
+                            <div
+                              key={item.id}
+                              className="flex min-w-0 items-center gap-2 px-2 py-1.5 text-(--fg)"
+                              title={`${item.mode === "steer" ? "Steer" : "Queued follow-up"}: ${item.text}`}
+                            >
+                              <span className="shrink-0 rounded border border-(--accent)/40 px-1 text-[9px] uppercase text-(--accent)">
+                                {item.mode === "steer" ? "steer" : "queue"}
+                              </span>
+                              <span className="min-w-0 flex-1 truncate">{item.text}</span>
+                              <button
+                                type="button"
+                                onClick={() => removeQueued(item.id)}
+                                className="shrink-0 rounded p-0.5 text-(--dim) hover:bg-(--surface) hover:text-(--fg)"
+                                aria-label="Remove queued message"
+                                title="Remove queued message"
+                              >
+                                <CloseIcon className="h-3 w-3" />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      ) : null}
+                    </>
+                  );
+                })()}
+              </div>
             </div>
           ) : null}
           {mention ? (
@@ -1990,13 +2024,7 @@ export function ChatPane({
               </span>
             ) : null}
             {modelSelector}
-            {running ? (
-              <span className="inline-flex shrink-0 items-center gap-1 rounded-md border border-(--accent)/30 px-1.5 py-0.5 text-[10px] text-(--accent)">
-                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-(--accent)" />
-                session running
-              </span>
-            ) : null}
-            <div className="flex shrink-0 items-center gap-1">
+            <div className="ml-auto flex shrink-0 items-center gap-1">
               {running ? (
                 <>
                   {activeTab?.input.trim() ? (

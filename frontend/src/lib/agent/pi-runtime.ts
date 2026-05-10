@@ -83,17 +83,17 @@ async function resolveAgentCwd(input?: string): Promise<string> {
   return resolved;
 }
 
-// Locate the bundled browser extension. In dev it sits next to the source
-// files; in a packaged Electron app it ships under
+// Locate bundled Pi extensions. In dev they sit next to the source files;
+// in a packaged Electron app they ship under
 // process.resourcesPath/desktop/resources/pi-extensions/. We accept either.
-function resolveBrowserExtensionPath(): string | null {
+function resolveBundledPiExtensionPath(fileName: string, envOverride?: string): string | null {
   const candidates = [
-    process.env.VLLM_STUDIO_BROWSER_EXTENSION_PATH,
+    envOverride,
     process.resourcesPath
-      ? path.join(process.resourcesPath, "desktop", "resources", "pi-extensions", "browser.ts")
+      ? path.join(process.resourcesPath, "desktop", "resources", "pi-extensions", fileName)
       : null,
-    path.resolve(process.cwd(), "frontend", "desktop", "resources", "pi-extensions", "browser.ts"),
-    path.resolve(process.cwd(), "desktop", "resources", "pi-extensions", "browser.ts"),
+    path.resolve(process.cwd(), "frontend", "desktop", "resources", "pi-extensions", fileName),
+    path.resolve(process.cwd(), "desktop", "resources", "pi-extensions", fileName),
     path.resolve(
       process.cwd(),
       "..",
@@ -101,13 +101,27 @@ function resolveBrowserExtensionPath(): string | null {
       "desktop",
       "resources",
       "pi-extensions",
-      "browser.ts",
+      fileName,
     ),
   ].filter((value): value is string => Boolean(value));
   for (const candidate of candidates) {
     if (existsSync(candidate)) return candidate;
   }
   return null;
+}
+
+function resolveBrowserExtensionPath(): string | null {
+  return resolveBundledPiExtensionPath(
+    "browser.ts",
+    process.env.VLLM_STUDIO_BROWSER_EXTENSION_PATH,
+  );
+}
+
+function resolveTimeoutExtensionPath(): string | null {
+  return resolveBundledPiExtensionPath(
+    "vllm-studio-timeouts.ts",
+    process.env.VLLM_STUDIO_TIMEOUT_EXTENSION_PATH,
+  );
 }
 
 function deriveFrontendBase(): string {
@@ -253,6 +267,8 @@ class PiRpcSession extends EventEmitter {
       // resolves it within the current cwd's session directory.
       args.push("--session", piSessionId);
     }
+    const timeoutExtensionPath = resolveTimeoutExtensionPath();
+    if (timeoutExtensionPath) args.push("--extension", timeoutExtensionPath);
     if (browserToolEnabled) {
       const extensionPath = resolveBrowserExtensionPath();
       if (extensionPath) args.push("--extension", extensionPath);
