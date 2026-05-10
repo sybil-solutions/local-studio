@@ -654,6 +654,7 @@ function appendDelta(
 ): AssistantBlock[] {
   const last = blocks[blocks.length - 1];
   if (last && last.kind === kind) {
+    if (last.text.startsWith(delta)) return blocks;
     const append = delta.startsWith(last.text) ? delta.slice(last.text.length) : delta;
     if (!append) return blocks;
     return [...blocks.slice(0, -1), { ...last, text: last.text + append }];

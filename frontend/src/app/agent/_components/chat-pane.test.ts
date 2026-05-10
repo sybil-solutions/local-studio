@@ -201,6 +201,23 @@ describe("replaySessionEvents", () => {
     ]);
   });
 
+  it("does not duplicate replayed prefix deltas over a hydrated assistant message", () => {
+    const result = replaySessionEvents([
+      {
+        type: "message_update",
+        assistantMessageEvent: { type: "text_delta", delta: "Hello world" },
+      },
+      { type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "H" } },
+      { type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "Hello" } },
+      {
+        type: "message_update",
+        assistantMessageEvent: { type: "text_delta", delta: "Hello world!" },
+      },
+    ]);
+
+    expect(result.messages[0].blocks).toMatchObject([{ kind: "text", text: "Hello world!" }]);
+  });
+
   it("merges final assistant message_end into the streamed assistant during replay", () => {
     const result = replaySessionEvents([
       {
