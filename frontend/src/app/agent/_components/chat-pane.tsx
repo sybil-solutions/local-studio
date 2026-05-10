@@ -122,6 +122,7 @@ export type SessionTab = {
   messages: ChatMessage[];
   status: string;
   error: string;
+  startedAt?: string;
   input: string;
   tokenStats?: TokenStats;
   activeAssistantId?: string;
@@ -1109,6 +1110,7 @@ export function ChatPane({
         ...tab,
         cwd: tab.cwd || cwd,
         modelId: tab.modelId || modelId,
+        startedAt: tab.startedAt ?? new Date().toISOString(),
         input: "",
         error: "",
         status: "starting",

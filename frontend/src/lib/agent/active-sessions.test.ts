@@ -37,6 +37,24 @@ describe("mergeActiveAgentSessions", () => {
     expect(merged.map((entry) => entry.piSessionId)).toEqual(["pi-b"]);
   });
 
+  it("orders by first sent time, not later update time", () => {
+    const olderStarted = session({
+      piSessionId: "pi-old",
+      startedAt: "2026-05-10T00:00:00.000Z",
+      updatedAt: "2026-05-10T00:10:00.000Z",
+    });
+    const newerStarted = session({
+      piSessionId: "pi-new",
+      tabId: "tab-2",
+      startedAt: "2026-05-10T00:05:00.000Z",
+      updatedAt: "2026-05-10T00:05:00.000Z",
+    });
+
+    const merged = mergeActiveAgentSessions([olderStarted, newerStarted], [olderStarted]);
+
+    expect(merged.map((entry) => entry.piSessionId)).toEqual(["pi-new", "pi-old"]);
+  });
+
   it("deduplicates duplicate incoming rows for the same Pi session", () => {
     const merged = mergeActiveAgentSessions(
       [],

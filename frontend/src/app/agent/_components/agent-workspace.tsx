@@ -200,6 +200,7 @@ function normalizePersistedTab(value: unknown): SessionTab | null {
     messages: Array.isArray(tab.messages) ? tab.messages.slice(-80) : [],
     status: typeof tab.status === "string" ? tab.status : "idle",
     error: "",
+    startedAt: typeof tab.startedAt === "string" ? tab.startedAt : undefined,
     input: typeof tab.input === "string" ? tab.input : "",
     queue: Array.isArray(tab.queue) ? tab.queue : undefined,
     activeAssistantId:
@@ -281,6 +282,7 @@ function loadPersistedActiveAgentSessions(): ActiveAgentSessionSnapshot[] {
           title: typeof entry.title === "string" ? entry.title : "Loading session",
           status: typeof entry.status === "string" ? entry.status : "idle",
           active: entry.active === true,
+          startedAt: typeof entry.startedAt === "string" ? entry.startedAt : undefined,
           updatedAt: typeof entry.updatedAt === "string" ? entry.updatedAt : "",
         };
       })
@@ -306,7 +308,7 @@ function persistActiveAgentSessions(sessions: ActiveAgentSessionSnapshot[]) {
   } catch {
     prefs = {};
   }
-  const merged = mergeActiveAgentSessions([], sessions, prefs);
+  const merged = mergeActiveAgentSessions(loadPersistedActiveAgentSessions(), sessions, prefs);
   if (merged.length > 0) {
     window.localStorage.setItem(ACTIVE_AGENT_SESSIONS_SNAPSHOT_KEY, JSON.stringify(merged));
   } else {
@@ -340,6 +342,7 @@ function tabFromSnapshot(session: ActiveAgentSessionSnapshot): SessionTab {
     // JSONL and let the user continue from the recovered tab instead of
     // resurrecting a permanently "running" UI state.
     status: "loading",
+    startedAt: session.startedAt ?? session.updatedAt,
   };
 }
 
@@ -1254,6 +1257,7 @@ export function AgentWorkspace() {
             title: tab.title,
             status: tab.status,
             active: paneId === focusedPaneId && tab.id === pane.activeTabId,
+            startedAt: tab.startedAt,
             updatedAt: new Date().toISOString(),
           };
         }),

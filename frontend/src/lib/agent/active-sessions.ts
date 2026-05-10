@@ -8,6 +8,7 @@ export type ActiveAgentSessionSnapshot = {
   title: string;
   status: string;
   active?: boolean;
+  startedAt?: string;
   updatedAt: string;
 };
 
@@ -21,6 +22,11 @@ function sessionStorageKey(session: ActiveAgentSessionSnapshot): string {
 
 function isHidden(session: ActiveAgentSessionSnapshot, prefs: ActiveSessionPrefs): boolean {
   return Boolean(session.piSessionId && prefs[session.piSessionId]?.hidden);
+}
+
+function startTime(session: ActiveAgentSessionSnapshot): number {
+  const value = Date.parse(session.startedAt ?? session.updatedAt);
+  return Number.isFinite(value) ? value : 0;
 }
 
 export function mergeActiveAgentSessions(
@@ -47,9 +53,8 @@ export function mergeActiveAgentSessions(
       ...existing,
       ...session,
       piSessionId: session.piSessionId ?? existing?.piSessionId ?? null,
+      startedAt: existing?.startedAt ?? session.startedAt ?? session.updatedAt,
     });
   }
-  return [...byKey.values()].sort(
-    (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
-  );
+  return [...byKey.values()].sort((a, b) => startTime(b) - startTime(a));
 }

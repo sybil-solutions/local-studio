@@ -95,7 +95,7 @@ function loadActiveAgentSessions(): ActiveAgentSession[] {
 function saveActiveAgentSessions(sessions: ActiveAgentSession[]) {
   if (typeof window === "undefined") return;
   const prefs = loadSessionPrefs();
-  const merged = mergeActiveAgentSessions([], sessions, prefs);
+  const merged = mergeActiveAgentSessions(loadActiveAgentSessions(), sessions, prefs);
   if (merged.length > 0) {
     window.localStorage.setItem(ACTIVE_AGENT_SESSIONS_KEY, JSON.stringify(merged));
   } else {
@@ -516,7 +516,9 @@ export function ProjectsNavSection({ expanded }: { expanded: boolean }) {
     const onActiveSessions = (event: Event) => {
       const detail = (event as CustomEvent<{ sessions?: ActiveAgentSession[] }>).detail;
       const sessions = Array.isArray(detail?.sessions) ? detail.sessions : [];
-      setActiveSessions(mergeActiveAgentSessions([], sessions, loadSessionPrefs()));
+      setActiveSessions((current) =>
+        mergeActiveAgentSessions(current, sessions, loadSessionPrefs()),
+      );
       saveActiveAgentSessions(sessions);
     };
     window.addEventListener(ACTIVE_AGENT_SESSIONS_EVENT, onActiveSessions);
