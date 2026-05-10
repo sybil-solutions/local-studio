@@ -3,6 +3,7 @@ import { isAgentEndEvent } from "@/lib/agent/pi-events";
 import {
   drainQueueAfterAgentEnd,
   mergeCanonicalAndRuntimeEvents,
+  parseAgentTurnSsePayload,
   reconcileQueueWithPiEvent,
   replaySessionEvents,
 } from "./chat-pane";
@@ -11,6 +12,27 @@ describe("isAgentEndEvent", () => {
   it("does not treat per-tool turn_end as full agent completion", () => {
     expect(isAgentEndEvent({ type: "turn_end" })).toBe(false);
     expect(isAgentEndEvent({ type: "agent_end" })).toBe(true);
+  });
+});
+
+describe("parseAgentTurnSsePayload", () => {
+  it("ignores malformed SSE data instead of throwing", () => {
+    expect(parseAgentTurnSsePayload("data: {not json")).toBeNull();
+    expect(parseAgentTurnSsePayload(": keep-alive")).toBeNull();
+  });
+
+  it("accepts status, error, and Pi event payloads", () => {
+    expect(parseAgentTurnSsePayload('data: {"type":"status","phase":"running"}')).toEqual({
+      type: "status",
+      phase: "running",
+    });
+    expect(parseAgentTurnSsePayload('data: {"type":"error","error":"boom"}')).toEqual({
+      type: "error",
+      error: "boom",
+    });
+    expect(
+      parseAgentTurnSsePayload('data: {"type":"pi","seq":2,"event":{"type":"agent_end"}}'),
+    ).toEqual({ type: "pi", seq: 2, event: { type: "agent_end" } });
   });
 });
 

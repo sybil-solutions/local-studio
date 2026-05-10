@@ -98,6 +98,30 @@ export type QueuedMessage = {
   sent?: boolean;
 };
 
+export type AgentTurnSsePayload =
+  | { type: "status"; phase: string; piSessionId?: string | null }
+  | { type: "error"; error: string }
+  | { type: "pi"; seq?: number; event: Record<string, unknown> };
+
+export function parseAgentTurnSsePayload(line: string): AgentTurnSsePayload | null {
+  if (!line.startsWith("data: ")) return null;
+  try {
+    const payload = JSON.parse(line.slice(6)) as Partial<AgentTurnSsePayload>;
+    if (payload.type === "status" && typeof payload.phase === "string") {
+      return payload as AgentTurnSsePayload;
+    }
+    if (payload.type === "error" && typeof payload.error === "string") {
+      return payload as AgentTurnSsePayload;
+    }
+    if (payload.type === "pi" && payload.event && typeof payload.event === "object") {
+      return payload as AgentTurnSsePayload;
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
 export function drainQueueAfterAgentEnd(queue: QueuedMessage[]): {
   next: QueuedMessage | null;
   remaining: QueuedMessage[];
@@ -1198,10 +1222,8 @@ export function ChatPane({
           for (const chunk of chunks) {
             const line = chunk.split("\n").find((entry) => entry.startsWith("data: "));
             if (!line) continue;
-            const payload = JSON.parse(line.slice(6)) as
-              | { type: "status"; phase: string }
-              | { type: "error"; error: string };
-            if (payload.type === "error") controlError = payload.error;
+            const payload = parseAgentTurnSsePayload(line);
+            if (payload?.type === "error") controlError = payload.error;
           }
         }
         if (controlError) throw new Error(controlError);
@@ -1308,10 +1330,8 @@ export function ChatPane({
           for (const chunk of chunks) {
             const line = chunk.split("\n").find((entry) => entry.startsWith("data: "));
             if (!line) continue;
-            const payload = JSON.parse(line.slice(6)) as
-              | { type: "status"; phase: string; piSessionId?: string | null }
-              | { type: "error"; error: string }
-              | { type: "pi"; seq?: number; event: Record<string, unknown> };
+            const payload = parseAgentTurnSsePayload(line);
+            if (!payload) continue;
             if (payload.type === "status") {
               const phase = payload.phase;
               updateTab(tabId, (tab) => ({
