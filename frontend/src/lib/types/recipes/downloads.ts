@@ -25,11 +25,14 @@ export interface ModelDownload {
   model_id: string;
   revision: string | null;
   status: DownloadStatus;
+  source?: string | null;
   created_at: string;
   updated_at: string;
+  completed_at?: string | null;
   target_dir: string;
   total_bytes: number | null;
   downloaded_bytes: number;
+  speed_bytes_per_second?: number | null;
   files: DownloadFileInfo[];
   error: string | null;
 }
