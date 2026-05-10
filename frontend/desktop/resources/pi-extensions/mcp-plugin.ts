@@ -29,6 +29,15 @@ type McpTool = {
   inputSchema?: Record<string, unknown>;
 };
 
+type McpToolDetails = {
+  plugin: string;
+  server: string;
+  tool: string;
+  result?: unknown;
+  error?: string;
+  failed?: boolean;
+};
+
 type McpBridgeStatus = {
   pluginName: string;
   serverName: string;
@@ -291,7 +300,7 @@ async function registerOneServer(
   }
   for (const tool of tools) {
     const piToolName = safeToolName(serverName, tool.name);
-    pi.registerTool({
+    pi.registerTool<TSchema, McpToolDetails>({
       name: piToolName,
       label: `${plugin.pluginName}: ${tool.name}`,
       description:
@@ -319,6 +328,7 @@ async function registerOneServer(
               plugin: plugin.pluginName,
               server: serverName,
               tool: tool.name,
+              result: null,
               error: message,
               failed: true,
             },
