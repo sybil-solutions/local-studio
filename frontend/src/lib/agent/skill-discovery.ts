@@ -29,7 +29,29 @@ export function defaultSkillSources(): SkillSource[] {
     { source: "~/.factory", dir: path.join(home, ".factory", "plugins", "cache") },
     { source: "~/.factory", dir: path.join(home, ".factory", "plugins") },
     { source: "~/.opencode", dir: path.join(home, ".opencode", "skills") },
+    ...codexAppSkillSources(),
   ];
+}
+
+export function codexAppSkillSources(): SkillSource[] {
+  return ["openai-bundled", "openai-curated", "openai-primary-runtime"].flatMap((source) => [
+    {
+      source,
+      dir: path.join("/Applications", "Codex.app", "Contents", "Resources", "plugins", source),
+    },
+    {
+      source,
+      dir: path.join(
+        "/Applications",
+        "Codex.app",
+        "Contents",
+        "Resources",
+        "plugins",
+        source,
+        "plugins",
+      ),
+    },
+  ]);
 }
 
 function skillNameFromDir(dir: string): string {

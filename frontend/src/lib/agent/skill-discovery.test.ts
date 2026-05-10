@@ -3,7 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { discoverSkills, loadSkillInstructions } from "./skill-discovery";
+import { codexAppSkillSources, discoverSkills, loadSkillInstructions } from "./skill-discovery";
 
 describe("discoverSkills", () => {
   it("discovers and normalizes skills from every configured source", async () => {
@@ -89,6 +89,15 @@ describe("discoverSkills", () => {
     } finally {
       await rm(root, { recursive: true, force: true });
     }
+  });
+
+  it("includes bundled Codex app plugin skills as skill sources", () => {
+    expect(codexAppSkillSources()).toContainEqual(
+      expect.objectContaining({
+        source: "openai-bundled",
+        dir: expect.stringContaining("Codex.app/Contents/Resources/plugins/openai-bundled/plugins"),
+      }),
+    );
   });
 
   it("loads selected skill instructions only from configured roots", async () => {
