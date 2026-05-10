@@ -1496,7 +1496,13 @@ export function AgentWorkspace() {
             <span className="relative inline-flex">
               <ComputerIcon className="h-4 w-4" />
               {focusedComputerUseLoaded ? (
-                <span className="absolute -right-1 -top-1 h-1.5 w-1.5 animate-pulse rounded-full bg-(--accent)" />
+                <span
+                  className="absolute -right-1.5 -top-1 inline-flex h-2.5 w-2.5 items-center justify-center"
+                  aria-hidden="true"
+                >
+                  <span className="absolute h-2.5 w-2.5 animate-ping rounded-full bg-(--accent)/35" />
+                  <span className="relative h-1.5 w-1.5 rounded-full bg-(--accent)" />
+                </span>
               ) : null}
             </span>
           </button>
@@ -1854,9 +1860,16 @@ function ModelPicker({
   const disabled = loading || models.length === 0;
 
   return (
-    <div ref={containerRef} className="relative shrink-0">
+    <div
+      ref={containerRef}
+      className="relative shrink-0"
+      onPointerDown={(event) => event.stopPropagation()}
+      onMouseDown={(event) => event.stopPropagation()}
+    >
       <button
         type="button"
+        onPointerDown={(event) => event.stopPropagation()}
+        onMouseDown={(event) => event.stopPropagation()}
         onClick={() => {
           if (disabled) return;
           setOpen((value) => !value);
@@ -1869,7 +1882,11 @@ function ModelPicker({
         <ChevronDownIcon className="h-3 w-3 shrink-0 text-(--dim)" />
       </button>
       {open ? (
-        <div className="absolute bottom-9 right-0 z-50 w-72 rounded-md border border-(--border) bg-(--surface) shadow-lg">
+        <div
+          className="absolute bottom-9 right-0 z-[80] w-72 border border-(--border) bg-(--surface) shadow-lg"
+          onPointerDown={(event) => event.stopPropagation()}
+          onMouseDown={(event) => event.stopPropagation()}
+        >
           <div className="max-h-72 overflow-y-auto p-1">
             {models.map((model) => {
               const isActive = model.id === selectedModel;

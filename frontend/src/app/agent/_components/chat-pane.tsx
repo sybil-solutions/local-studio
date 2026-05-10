@@ -2161,9 +2161,7 @@ export function ChatPane({
             >
               <span className="relative inline-flex">
                 <GlobeIcon className="h-3.5 w-3.5" />
-                {computerUseLoaded ? (
-                  <span className="absolute -right-1 -top-1 h-1.5 w-1.5 animate-pulse rounded-full bg-(--accent)" />
-                ) : null}
+                {computerUseLoaded ? <ComputerUseActivityDot /> : null}
               </span>
             </button>
             <div className="min-w-[7rem] max-w-[12rem] flex-[0_1_12rem]">
@@ -2292,12 +2290,7 @@ function LoadedContextTab({
       title={title ?? label}
     >
       <span className="font-mono text-(--accent)">{prefix}</span>
-      {active ? (
-        <span
-          className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-(--accent)"
-          aria-hidden="true"
-        />
-      ) : null}
+      {active ? <ComputerUseActivityDot inline /> : null}
       <span className="truncate">{label}</span>
       <button
         type="button"
@@ -2308,6 +2301,22 @@ function LoadedContextTab({
       >
         <CloseIcon className="h-3 w-3" />
       </button>
+    </span>
+  );
+}
+
+function ComputerUseActivityDot({ inline = false }: { inline?: boolean }) {
+  return (
+    <span
+      className={
+        inline
+          ? "relative inline-flex h-2.5 w-2.5 shrink-0 items-center justify-center"
+          : "absolute -right-1.5 -top-1 inline-flex h-2.5 w-2.5 items-center justify-center"
+      }
+      aria-hidden="true"
+    >
+      <span className="absolute h-2.5 w-2.5 animate-ping rounded-full bg-(--accent)/35" />
+      <span className="relative h-1.5 w-1.5 rounded-full bg-(--accent)" />
     </span>
   );
 }
