@@ -17,29 +17,61 @@ type ToolResult = {
 };
 
 const FRONTEND_BASE = process.env.VLLM_STUDIO_FRONTEND_BASE ?? "http://127.0.0.1:3000";
+const BROWSER_TOOL_TIMEOUT_MS = Number(process.env.VLLM_STUDIO_BROWSER_TOOL_TIMEOUT_MS || 60_000);
+
+function failedToolResult(
+  verb: string,
+  payload: Record<string, unknown>,
+  error: unknown,
+): ToolResult {
+  const message = error instanceof Error ? error.message : String(error);
+  return {
+    content: [{ type: "text", text: `browser_${verb} failed: ${message}` }],
+    details: { verb, payload, error: message, failed: true },
+  };
+}
 
 async function callBrowserAction(
   verb: string,
   payload: Record<string, unknown>,
   signal: AbortSignal,
 ): Promise<ToolResult> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), BROWSER_TOOL_TIMEOUT_MS);
+  const abort = () => controller.abort();
+  signal.addEventListener("abort", abort, { once: true });
   const response = await fetch(`${FRONTEND_BASE}/api/agent/browser/${verb}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
-    signal,
+    signal: controller.signal,
+  }).finally(() => {
+    clearTimeout(timeout);
+    signal.removeEventListener("abort", abort);
   });
   if (!response.ok) {
     const errBody = await response.text().catch(() => "");
-    throw new Error(`browser_${verb} failed: HTTP ${response.status} ${errBody}`);
+    throw new Error(`HTTP ${response.status} ${errBody}`);
   }
   const result = (await response.json()) as { ok: boolean; data?: unknown; error?: string };
-  if (!result.ok) throw new Error(result.error || `browser_${verb} failed`);
+  if (!result.ok) throw new Error(result.error || "browser bridge returned ok=false");
   const text = typeof result.data === "string" ? result.data : JSON.stringify(result.data, null, 2);
   return {
     content: [{ type: "text", text }],
     details: { verb, payload, data: result.data },
   };
+}
+
+async function safeBrowserAction(
+  verb: string,
+  payload: Record<string, unknown>,
+  signal: AbortSignal,
+): Promise<ToolResult> {
+  try {
+    return await callBrowserAction(verb, payload, signal);
+  } catch (error) {
+    return failedToolResult(verb, payload, error);
+  }
 }
 
 export default function registerBrowserExtension(pi: ExtensionAPI) {
@@ -52,7 +84,7 @@ export default function registerBrowserExtension(pi: ExtensionAPI) {
       url: Type.String({ description: "Absolute http(s) URL to load" }),
     }),
     async execute(_id, params, signal) {
-      return callBrowserAction("navigate", { url: params.url }, signal);
+      return safeBrowserAction("navigate", { url: params.url }, signal);
     },
   });
 
@@ -62,7 +94,7 @@ export default function registerBrowserExtension(pi: ExtensionAPI) {
     description: "Return the current URL of the embedded browser.",
     parameters: Type.Object({}),
     async execute(_id, _params, signal) {
-      return callBrowserAction("get-url", {}, signal);
+      return safeBrowserAction("get-url", {}, signal);
     },
   });
 
@@ -73,7 +105,7 @@ export default function registerBrowserExtension(pi: ExtensionAPI) {
       "Return the visible text of the current page (innerText of <body>). Use after navigating to read page contents.",
     parameters: Type.Object({}),
     async execute(_id, _params, signal) {
-      return callBrowserAction("get-text", {}, signal);
+      return safeBrowserAction("get-text", {}, signal);
     },
   });
 
@@ -84,7 +116,7 @@ export default function registerBrowserExtension(pi: ExtensionAPI) {
       "Return the rendered HTML of the current page. Useful when text alone isn't enough.",
     parameters: Type.Object({}),
     async execute(_id, _params, signal) {
-      return callBrowserAction("get-html", {}, signal);
+      return safeBrowserAction("get-html", {}, signal);
     },
   });
 
@@ -94,7 +126,7 @@ export default function registerBrowserExtension(pi: ExtensionAPI) {
     description: "Capture a PNG screenshot of the current page; returns a base64 data URI.",
     parameters: Type.Object({}),
     async execute(_id, _params, signal) {
-      return callBrowserAction("screenshot", {}, signal);
+      return safeBrowserAction("screenshot", {}, signal);
     },
   });
 
@@ -106,7 +138,7 @@ export default function registerBrowserExtension(pi: ExtensionAPI) {
       selector: Type.String({ description: "CSS selector for the element to click" }),
     }),
     async execute(_id, params, signal) {
-      return callBrowserAction("click", { selector: params.selector }, signal);
+      return safeBrowserAction("click", { selector: params.selector }, signal);
     },
   });
 
@@ -118,7 +150,7 @@ export default function registerBrowserExtension(pi: ExtensionAPI) {
       deltaY: Type.Number({ description: "Pixels to scroll vertically" }),
     }),
     async execute(_id, params, signal) {
-      return callBrowserAction("scroll", { deltaY: params.deltaY }, signal);
+      return safeBrowserAction("scroll", { deltaY: params.deltaY }, signal);
     },
   });
 
@@ -132,7 +164,7 @@ export default function registerBrowserExtension(pi: ExtensionAPI) {
       value: Type.String({ description: "Value to set" }),
     }),
     async execute(_id, params, signal) {
-      return callBrowserAction("fill", { selector: params.selector, value: params.value }, signal);
+      return safeBrowserAction("fill", { selector: params.selector, value: params.value }, signal);
     },
   });
 }

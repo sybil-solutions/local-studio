@@ -286,11 +286,31 @@ async function registerOneServer(
       promptSnippet: tool.description || `Call ${tool.name} from ${plugin.pluginName}`,
       parameters: schemaForTool(tool.inputSchema),
       async execute(_toolCallId, params, signal) {
-        const result = await client.callTool(tool.name, params as Record<string, unknown>, signal);
-        return {
-          content: [{ type: "text", text: contentToText(result) }],
-          details: { plugin: plugin.pluginName, server: serverName, tool: tool.name, result },
-        };
+        try {
+          const result = await client.callTool(
+            tool.name,
+            params as Record<string, unknown>,
+            signal,
+          );
+          return {
+            content: [{ type: "text", text: contentToText(result) }],
+            details: { plugin: plugin.pluginName, server: serverName, tool: tool.name, result },
+          };
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          return {
+            content: [
+              { type: "text", text: `${plugin.pluginName}:${tool.name} failed: ${message}` },
+            ],
+            details: {
+              plugin: plugin.pluginName,
+              server: serverName,
+              tool: tool.name,
+              error: message,
+              failed: true,
+            },
+          };
+        }
       },
     });
   }
