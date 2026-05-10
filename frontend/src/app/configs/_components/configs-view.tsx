@@ -766,27 +766,33 @@ function PluginsSettings() {
             />
           }
         />
-        {plugins.slice(0, 40).map((plugin) => (
-          <SettingsRow
-            key={plugin.path}
-            label={plugin.name}
-            description={pluginDescription(plugin)}
-            value={<SettingsValue>{plugin.enabled ? "Enabled" : "Disabled"}</SettingsValue>}
-            status={
-              <StatusPill tone={plugin.enabled ? "good" : "default"}>
-                {plugin.installed ? "installed" : "available"}
-              </StatusPill>
-            }
-            actions={
-              <SettingsButton
-                onClick={() => setPluginEnabled(plugin, !plugin.enabled)}
-                disabled={savingPlugin === plugin.id}
-              >
-                {plugin.enabled ? "Disable" : "Enable"}
-              </SettingsButton>
-            }
-          />
-        ))}
+        {plugins
+          .filter(
+            (plugin) =>
+              !plugin.name.includes("browser-use") && !plugin.name.includes("computer-use"),
+          )
+          .slice(0, 40)
+          .map((plugin) => (
+            <SettingsRow
+              key={plugin.path}
+              label={plugin.name}
+              description={pluginDescription(plugin)}
+              value={<SettingsValue>{plugin.enabled ? "Enabled" : "Disabled"}</SettingsValue>}
+              status={
+                <StatusPill tone={plugin.enabled ? "good" : "default"}>
+                  {plugin.installed ? "installed" : "available"}
+                </StatusPill>
+              }
+              actions={
+                <SettingsButton
+                  onClick={() => setPluginEnabled(plugin, !plugin.enabled)}
+                  disabled={savingPlugin === plugin.id}
+                >
+                  {plugin.enabled ? "Disable" : "Enable"}
+                </SettingsButton>
+              }
+            />
+          ))}
       </SettingsGroup>
     </div>
   );

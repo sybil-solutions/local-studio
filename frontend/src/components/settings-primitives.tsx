@@ -59,7 +59,7 @@ export function SettingsLayout<Id extends SettingsSectionId = SettingsSectionId>
   return (
     <main className="min-h-full overflow-y-auto overflow-x-hidden bg-(--bg) text-(--fg)">
       <div className="mx-auto w-full max-w-[880px] px-3 py-4 sm:px-5 lg:py-6">
-        <header className="mb-4 border-b border-(--border)/70 pb-3">
+        <header className="mb-4 pb-2">
           <div className="flex min-h-8 items-start justify-between gap-3">
             <div className="min-w-0">
               <div className="text-[10px] uppercase tracking-[0.16em] text-(--dim)">{eyebrow}</div>
@@ -127,7 +127,7 @@ export function SettingsGroup({
   children: ReactNode;
 }) {
   return (
-    <section className="border-t border-(--border)/80">
+    <section className="pt-1">
       <div className="flex min-h-10 items-start justify-between gap-4 py-2.5">
         <div className="min-w-0">
           <h3 className="text-[13px] font-medium text-(--fg)">{title}</h3>
@@ -137,7 +137,7 @@ export function SettingsGroup({
         </div>
         {actions ? <div className="shrink-0">{actions}</div> : null}
       </div>
-      <div className="divide-y divide-(--border)/45">{children}</div>
+      <div className="space-y-1">{children}</div>
     </section>
   );
 }
@@ -152,7 +152,7 @@ export function SettingsRow({
   children,
 }: RowProps) {
   return (
-    <div className="py-2.5">
+    <div className="py-2">
       <div className="flex min-h-8 flex-col gap-1.5">
         <div className="flex min-w-0 items-start justify-between gap-3">
           <div className="min-w-0 text-[12px] font-medium text-(--fg)">{label}</div>
@@ -270,7 +270,7 @@ export function SettingsInput({
 
 export function EmptySafeNotice({ children }: { children: ReactNode }) {
   return (
-    <div className="border-l border-(--border) py-1 pl-2 text-[11px] leading-4 text-(--dim)">
+    <div className="py-1 text-[11px] leading-4 text-(--dim)">
       {children}
     </div>
   );
