@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { normalizePersistedTab, setupWarningFromPiCheck } from "./agent-workspace";
+import { normalizePersistedTab, setupWarningFromPiCheck } from "@/lib/agent/workspace/store";
 
 describe("normalizePersistedTab", () => {
   it("preserves selected plugin and skill tabs across pane-state restore", () => {
@@ -35,8 +35,8 @@ describe("setupWarningFromPiCheck", () => {
   });
 
   it("shows guidance when Pi is missing and no models are usable", () => {
-    expect(
-      setupWarningFromPiCheck({ ok: false, guidance: "Install Pi" }, false),
-    ).toBe("Install Pi");
+    expect(setupWarningFromPiCheck({ ok: false, guidance: "Install Pi" }, false)).toBe(
+      "Install Pi",
+    );
   });
 });

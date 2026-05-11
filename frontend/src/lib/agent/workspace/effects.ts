@@ -26,33 +26,141 @@ import {
 const SESSIONS_CHANGED_EVENT = "vllm-studio.agent.sessionsChanged";
 const PROJECTS_CHANGED_EVENT = "vllm-studio.agent.projectsChanged";
 const ACTIVE_AGENT_SESSIONS_EVENT = "vllm-studio.agent.activeSessions";
+const NEW_AGENT_SESSION_EVENT = "vllm-studio.agent.newSession";
+const ACTIVE_AGENT_SESSION_RENAME_EVENT = "vllm-studio.agent.activeSessionRename";
+const ACTIVE_AGENT_SESSION_OPEN_EVENT = "vllm-studio.agent.activeSessionOpen";
+const OPEN_SESSION_SPLIT_EVENT = "vllm-studio.agent.openSessionSplit";
 
 type SetupCheck = { id: string; ok: boolean; guidance?: string };
 
-type WorkspaceApi = {
+export type WorkspaceApi = {
   loadSetupChecks?: () => Promise<{ checks?: SetupCheck[] }>;
   loadModels?: () => Promise<{ models?: AgentModel[]; error?: string } | AgentModel[]>;
   loadProjects?: () => Promise<ProjectEntry[]>;
   loadGitSummary?: (cwd: string) => Promise<GitSummary | null>;
 };
 
-type WorkspaceWindow = {
+export type WorkspaceWindow = {
   Event: typeof Event;
   CustomEvent: typeof CustomEvent;
   dispatchEvent: (event: Event) => boolean;
-  setTimeout?: typeof setTimeout;
+  addEventListener: Window["addEventListener"];
+  removeEventListener: Window["removeEventListener"];
+  setTimeout?: (handler: () => void, timeout: number) => unknown;
 };
 
-type WorkspaceEffectDeps = {
+export type BrowserEventsSubscription = {
+  setEnabled: (enabled: boolean) => void;
+  close: () => void;
+};
+
+export type WorkspaceDispatch = (action: WorkspaceAction) => void;
+
+export type WorkspaceEffectDeps = {
   storage: WorkspaceStorage;
   window: WorkspaceWindow;
   api: WorkspaceApi;
-  dispatch?: (action: WorkspaceAction) => void;
+  dispatch?: WorkspaceDispatch;
   hasExplicitSessionNav?: () => boolean;
   queueReplay: (paneId: PaneId, piSessionId: string) => void;
+  browserEvents?: BrowserEventsSubscription;
 };
 
-const PANE_STATE_ACTIONS = new Set<WorkspaceAction["type"]>([
+type WorkspaceActionKind =
+  | "hydrate"
+  | "workspaceUnmounted"
+  | "projectsChanged"
+  | "setProjects"
+  | "selectProject"
+  | "setSplitRatio"
+  | "restorePaneState"
+  | "openNewSession"
+  | "replaySession"
+  | "replaySessionInSplit"
+  | "openSessionPayloadInPane"
+  | "splitPaneWithPayload"
+  | "focusPane"
+  | "focusTab"
+  | "renameTab"
+  | "splitTab"
+  | "closePane"
+  | "setPaneTabs"
+  | "patchActiveTab"
+  | "setComputerOpen"
+  | "toggleComputerOpen"
+  | "setComputerTab"
+  | "setComputerWidth"
+  | "setBrowserToolEnabled"
+  | "toggleBrowserTool"
+  | "setBrowserUrl"
+  | "setBrowserInput"
+  | "setGitSummary"
+  | "notifySessionsChanged"
+  | "urlNavRequested"
+  | WorkspaceAction["type"];
+
+function workspaceActionKind(action: WorkspaceAction): WorkspaceActionKind {
+  switch (action.type) {
+    case "HYDRATE":
+      return "hydrate";
+    case "WORKSPACE_UNMOUNTED":
+      return "workspaceUnmounted";
+    case "PROJECTS_CHANGED":
+      return "projectsChanged";
+    case "SELECT_PROJECT":
+      return "selectProject";
+    case "SET_SPLIT_RATIO":
+      return "setSplitRatio";
+    case "OPEN_NEW_SESSION":
+      return "openNewSession";
+    case "REPLAY_SESSION":
+      return "replaySession";
+    case "REPLAY_SESSION_IN_SPLIT":
+      return "replaySessionInSplit";
+    case "OPEN_SESSION_PAYLOAD_IN_PANE":
+      return "openSessionPayloadInPane";
+    case "SPLIT_PANE_WITH_PAYLOAD":
+      return "splitPaneWithPayload";
+    case "FOCUS_PANE":
+      return "focusPane";
+    case "FOCUS_TAB":
+      return "focusTab";
+    case "RENAME_TAB":
+      return "renameTab";
+    case "SPLIT_TAB":
+      return "splitTab";
+    case "CLOSE_PANE":
+      return "closePane";
+    case "SET_PANE_TABS":
+      return "setPaneTabs";
+    case "PATCH_ACTIVE_TAB":
+      return "patchActiveTab";
+    case "SET_COMPUTER_OPEN":
+      return "setComputerOpen";
+    case "TOGGLE_COMPUTER_OPEN":
+      return "toggleComputerOpen";
+    case "SET_COMPUTER_TAB":
+      return "setComputerTab";
+    case "SET_COMPUTER_WIDTH":
+      return "setComputerWidth";
+    case "SET_BROWSER_TOOL_ENABLED":
+      return "setBrowserToolEnabled";
+    case "TOGGLE_BROWSER_TOOL":
+      return "toggleBrowserTool";
+    case "SET_BROWSER_URL":
+      return "setBrowserUrl";
+    case "SET_BROWSER_INPUT":
+      return "setBrowserInput";
+    case "NOTIFY_SESSIONS_CHANGED":
+      return "notifySessionsChanged";
+    case "URL_NAV_REQUESTED":
+      return "urlNavRequested";
+    default:
+      return action.type;
+  }
+}
+
+const PANE_STATE_ACTIONS = new Set<WorkspaceActionKind>([
   "setLayout",
   "setSplitRatio",
   "restorePaneState",
@@ -69,9 +177,10 @@ const PANE_STATE_ACTIONS = new Set<WorkspaceAction["type"]>([
   "setPaneTabs",
   "patchActiveTab",
   "hydrateActiveSessions",
+  "urlNavRequested",
 ]);
 
-const SESSIONS_CHANGED_ACTIONS = new Set<WorkspaceAction["type"]>([
+const SESSIONS_CHANGED_ACTIONS = new Set<WorkspaceActionKind>([
   "openNewSession",
   "replaySession",
   "replaySessionInSplit",
@@ -83,6 +192,8 @@ const SESSIONS_CHANGED_ACTIONS = new Set<WorkspaceAction["type"]>([
   "setPaneTabs",
   "patchActiveTab",
   "hydrateActiveSessions",
+  "notifySessionsChanged",
+  "urlNavRequested",
 ]);
 
 function dispatchEvent(deps: WorkspaceEffectDeps, type: string): void {
@@ -91,6 +202,75 @@ function dispatchEvent(deps: WorkspaceEffectDeps, type: string): void {
 
 function dispatchCustomEvent<T>(deps: WorkspaceEffectDeps, type: string, detail: T): void {
   deps.window.dispatchEvent(new deps.window.CustomEvent<T>(type, { detail }));
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
+function eventDetail(event: Event): unknown {
+  return "detail" in event ? event.detail : undefined;
+}
+
+function stringField(value: Record<string, unknown>, key: string): string | undefined {
+  const field = value[key];
+  return typeof field === "string" && field.trim() ? field : undefined;
+}
+
+export function subscribeWorkspaceWindowEvents(
+  workspaceWindow: WorkspaceWindow,
+  dispatch: WorkspaceDispatch,
+): () => void {
+  const onNewSession = (event: Event) => {
+    const detail = eventDetail(event);
+    const projectId = isRecord(detail) ? stringField(detail, "projectId") : undefined;
+    dispatch({ type: "OPEN_NEW_SESSION", projectId });
+  };
+  const onRename = (event: Event) => {
+    const detail = eventDetail(event);
+    if (!isRecord(detail)) return;
+    const paneId = stringField(detail, "paneId");
+    const tabId = stringField(detail, "tabId");
+    const title = stringField(detail, "title");
+    if (!paneId || !tabId || !title) return;
+    dispatch({ type: "RENAME_TAB", paneId, tabId, title });
+  };
+  const onOpen = (event: Event) => {
+    const detail = eventDetail(event);
+    if (!isRecord(detail)) return;
+    const paneId = stringField(detail, "paneId");
+    const tabId = stringField(detail, "tabId");
+    const mode = stringField(detail, "mode");
+    if (!paneId || !tabId) return;
+    if (mode === "split") {
+      dispatch({ type: "SPLIT_TAB", sourcePaneId: paneId, sourceTabId: tabId });
+      return;
+    }
+    dispatch({ type: "FOCUS_TAB", paneId, tabId });
+  };
+  const onSplitSession = (event: Event) => {
+    const detail = eventDetail(event);
+    const piSessionId = isRecord(detail) ? stringField(detail, "piSessionId") : undefined;
+    if (piSessionId) dispatch({ type: "REPLAY_SESSION_IN_SPLIT", piSessionId });
+  };
+  const onProjectsChanged = () => {
+    dispatch({ type: "PROJECTS_CHANGED" });
+  };
+
+  workspaceWindow.addEventListener(NEW_AGENT_SESSION_EVENT, onNewSession);
+  workspaceWindow.addEventListener(ACTIVE_AGENT_SESSION_RENAME_EVENT, onRename);
+  workspaceWindow.addEventListener(ACTIVE_AGENT_SESSION_OPEN_EVENT, onOpen);
+  workspaceWindow.addEventListener(OPEN_SESSION_SPLIT_EVENT, onSplitSession);
+  workspaceWindow.addEventListener(PROJECTS_CHANGED_EVENT, onProjectsChanged);
+
+  return () => {
+    workspaceWindow.removeEventListener(NEW_AGENT_SESSION_EVENT, onNewSession);
+    workspaceWindow.removeEventListener(ACTIVE_AGENT_SESSION_RENAME_EVENT, onRename);
+    workspaceWindow.removeEventListener(ACTIVE_AGENT_SESSION_OPEN_EVENT, onOpen);
+    workspaceWindow.removeEventListener(OPEN_SESSION_SPLIT_EVENT, onSplitSession);
+    workspaceWindow.removeEventListener(PROJECTS_CHANGED_EVENT, onProjectsChanged);
+    dispatch({ type: "WORKSPACE_UNMOUNTED" });
+  };
 }
 
 function scheduleSessionsRefresh(deps: WorkspaceEffectDeps): void {
@@ -227,7 +407,7 @@ function computeActiveSessionBroadcast(state: WorkspaceState): ActiveAgentSessio
           status: tab.status,
           active: paneId === state.focusedPaneId && tab.id === pane.activeTabId,
           startedAt: tab.startedAt,
-          updatedAt: tab.startedAt || "",
+          updatedAt: tab.startedAt || new Date().toISOString(),
           plugins: tab.plugins,
           skills: tab.skills,
         };
@@ -287,15 +467,19 @@ function queueReplayEffects(
 ): void {
   switch (action.type) {
     case "replaySession":
+    case "REPLAY_SESSION":
       queueLocatedReplay(action.piSessionId, nextState, deps);
       return;
     case "replaySessionInSplit":
+    case "REPLAY_SESSION_IN_SPLIT":
       if (!findPaneTabByPiSessionId(prevState.panesById, action.piSessionId)) {
         queueLocatedReplay(action.piSessionId, nextState, deps);
       }
       return;
     case "openSessionPayloadInPane":
+    case "OPEN_SESSION_PAYLOAD_IN_PANE":
     case "splitPaneWithPayload":
+    case "SPLIT_PANE_WITH_PAYLOAD":
       if (
         action.payload.piSessionId &&
         !findPaneTabByPiSessionId(prevState.panesById, action.payload.piSessionId)
@@ -303,10 +487,21 @@ function queueReplayEffects(
         queueLocatedReplay(action.payload.piSessionId, nextState, deps);
       }
       return;
+    case "URL_NAV_REQUESTED":
+      if (action.sessionId) queueLocatedReplay(action.sessionId, nextState, deps);
+      return;
     case "restorePaneState":
-    case "hydrateActiveSessions":
       queueRecoverableActiveTabReplays(nextState, deps);
       return;
+    case "hydrateActiveSessions": {
+      const queued = new Set<string>();
+      for (const snapshot of action.snapshots) {
+        if (!snapshot.piSessionId || queued.has(snapshot.piSessionId)) continue;
+        queued.add(snapshot.piSessionId);
+        queueLocatedReplay(snapshot.piSessionId, nextState, deps);
+      }
+      return;
+    }
     default:
       return;
   }
@@ -318,14 +513,17 @@ function persistActionEffects(
   nextState: WorkspaceState,
   deps: WorkspaceEffectDeps,
 ): void {
-  if (PANE_STATE_ACTIONS.has(action.type)) {
+  const actionKind = workspaceActionKind(action);
+
+  if (PANE_STATE_ACTIONS.has(actionKind)) {
     writePaneState(deps.storage, nextState);
   }
 
   if (
-    (action.type === "selectProject" ||
-      action.type === "openNewSession" ||
-      action.type === "hydrateActiveSessions") &&
+    (actionKind === "selectProject" ||
+      actionKind === "openNewSession" ||
+      actionKind === "hydrateActiveSessions" ||
+      actionKind === "urlNavRequested") &&
     prevState.selectedProjectId !== nextState.selectedProjectId
   ) {
     writeSelectedProject(deps.storage, nextState.selectedProjectId);
@@ -350,18 +548,40 @@ export function runWorkspaceEffect(
   nextState: WorkspaceState,
   deps: WorkspaceEffectDeps,
 ): void {
+  const actionKind = workspaceActionKind(action);
+
+  if (actionKind === "workspaceUnmounted") {
+    deps.browserEvents?.close();
+    return;
+  }
+
   persistActionEffects(action, prevState, nextState, deps);
   queueReplayEffects(action, prevState, nextState, deps);
 
-  if (SESSIONS_CHANGED_ACTIONS.has(action.type)) {
+  if (SESSIONS_CHANGED_ACTIONS.has(actionKind)) {
     scheduleSessionsRefresh(deps);
   }
 
-  if (action.type === "hydrate") {
+  if (actionKind === "hydrate") {
     runInitialApiEffects(nextState, deps);
   }
 
-  if (action.type === "setProjects" && !nextState.hydrated) {
+  if (actionKind === "projectsChanged" && deps.api.loadProjects) {
+    void deps.api
+      .loadProjects()
+      .then((projects) => {
+        deps.dispatch?.({
+          type: "setProjects",
+          projects,
+          storedProjectId: readSelectedProjectId(deps.storage),
+        });
+      })
+      .catch(() => {
+        deps.dispatch?.({ type: "setProjectsLoaded", loaded: true });
+      });
+  }
+
+  if (actionKind === "setProjects" && !nextState.hydrated) {
     deps.dispatch?.({
       type: "hydrateActiveSessions",
       snapshots: loadPersistedActiveAgentSessions(deps.storage),
@@ -371,8 +591,5 @@ export function runWorkspaceEffect(
 
   runGitSummaryEffect(prevState, nextState, deps);
   broadcastActiveSessions(prevState, nextState, deps);
-
-  if (action.type === "setGitSummary") {
-    dispatchEvent(deps, PROJECTS_CHANGED_EVENT);
-  }
+  deps.browserEvents?.setEnabled(nextState.browserToolEnabled);
 }

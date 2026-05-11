@@ -68,6 +68,8 @@ function makeDeps(storage = memoryStorage()) {
         events.push(event);
         return true;
       }),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
     },
     api: {},
     queueReplay,

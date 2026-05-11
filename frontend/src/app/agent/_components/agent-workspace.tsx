@@ -1,1183 +1,71 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { FormEvent, MouseEvent as ReactMouseEvent } from "react";
+import { useMemo, useState } from "react";
+import type { ReactNode } from "react";
 import { useSearchParams } from "next/navigation";
-import {
-  loadAgentProjects,
-  ACTIVE_AGENT_SESSIONS_EVENT,
-  ACTIVE_AGENT_SESSION_OPEN_EVENT,
-  ACTIVE_AGENT_SESSION_RENAME_EVENT,
-  NEW_AGENT_SESSION_EVENT,
-  PROJECTS_CHANGED_EVENT,
-  SESSIONS_CHANGED_EVENT,
-  triggerAddProjectFlow,
-} from "@/components/projects-nav-section";
-import {
-  sanitizeLocalFileUrl,
-  sanitizePublicBrowserUrl,
-} from "@/lib/sanitize-embedded-browser-url";
+import { triggerAddProjectFlow } from "@/components/projects-nav-section";
 import { ChevronDownIcon, CloseIcon, ComputerIcon, PlusIcon } from "@/components/icons";
-import { safeJson } from "@/lib/agent/safe-json";
-import {
-  mergeActiveAgentSessions,
-  type ActiveAgentSessionSnapshot,
-} from "@/lib/agent/active-sessions";
-import { AgentBrowser, type AgentBrowserHandle, type WebviewElement } from "./agent-browser";
-import { ChatPane, makeFreshTab, type ChatPaneHandle, type SessionTab } from "./chat-pane";
+import type { AgentModel, PaneId, ProjectEntry } from "@/lib/agent/workspace/types";
+import { AgentBrowser } from "./agent-browser";
+import { ChatPane } from "./chat-pane";
 import { FilesystemPanel } from "./filesystem-panel";
 import { GitDiffPanel } from "./git-diff-panel";
-import { PaneGrid, type SessionDropPayload } from "./pane-grid";
-import {
-  collectLeaves,
-  removeLeaf,
-  setSplitRatio,
-  splitLeaf,
-  type Layout,
-  type PaneId,
-} from "./pane-layout";
-
-type AgentModel = {
-  id: string;
-  name: string;
-  provider: "vllm-studio";
-  contextWindow: number;
-  maxTokens: number;
-  reasoning: boolean;
-  active: boolean;
-};
-
-type ProjectEntry = {
-  id: string;
-  name: string;
-  path: string;
-  addedAt: string;
-  exists: boolean;
-  hasGit: boolean;
-  branch: string | null;
-};
-
-type GitSummary = {
-  isRepo: boolean;
-  branch: string | null;
-  additions: number;
-  deletions: number;
-  statusCount: number;
-};
-
-const DEFAULT_AGENT_CWD = "";
-const SELECTED_PROJECT_KEY = "vllm-studio.agent.selectedProjectId";
-const BROWSER_TOOL_KEY = "vllm-studio.agent.browserToolEnabled";
-const BROWSER_TOOL_DEFAULT_OFF_MIGRATION_KEY =
-  "***************************************************";
-const COMPUTER_BROWSER_OPEN_KEY = "vllm-studio.agent.computer.browserOpen";
-const BROWSER_COMMAND_TIMEOUT_MS = 12_000;
-const COMPUTER_WIDTH_KEY = "vllm-studio.agent.computer.width";
-const DEFAULT_COMPUTER_WIDTH = 440;
-const MIN_COMPUTER_WIDTH = 320;
-const MAX_COMPUTER_WIDTH = 960;
-
-function withBrowserTimeout<T>(operation: Promise<T>, label: string): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | null = null;
-  const timeout = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => {
-      reject(new Error(`${label} timed out after ${BROWSER_COMMAND_TIMEOUT_MS / 1000}s`));
-    }, BROWSER_COMMAND_TIMEOUT_MS);
-  });
-  return Promise.race([operation, timeout]).finally(() => {
-    if (timer) clearTimeout(timer);
-  });
-}
-
-function detectBotProtection(text: string): string | null {
-  const normalized = text.toLowerCase();
-  if (
-    normalized.includes("our systems have detected unusual traffic") ||
-    normalized.includes("/sorry/") ||
-    normalized.includes("captcha") ||
-    normalized.includes("not a robot")
-  ) {
-    return "Bot-protection page detected. Stop automated browser use for this page and ask the user to intervene or use a non-browser search source.";
-  }
-  return null;
-}
-
-function clampComputerWidth(width: number): number {
-  return Math.min(MAX_COMPUTER_WIDTH, Math.max(MIN_COMPUTER_WIDTH, Math.round(width)));
-}
-
-function encodeFilePath(pathValue: string): string {
-  const normalized = pathValue.replace(/\\/g, "/");
-  const withLeadingSlash = normalized.startsWith("/") ? normalized : `/${normalized}`;
-  return `file://${withLeadingSlash.split("/").map(encodeURIComponent).join("/")}`;
-}
-
-function resolveRelativeFilePath(cwd: string, value: string): string {
-  const segments = `${cwd.replace(/\/+$/, "")}/${value}`.split("/");
-  const resolved: string[] = [];
-  for (const segment of segments) {
-    if (!segment || segment === ".") continue;
-    if (segment === "..") {
-      resolved.pop();
-      continue;
-    }
-    resolved.push(segment);
-  }
-  return `/${resolved.join("/")}`;
-}
-
-function expandHomeFilePath(cwd: string, value: string): string | null {
-  const homeMatch = cwd.match(/^(\/Users\/[^/]+|\/home\/[^/]+)(?:\/|$)/);
-  if (!homeMatch) return null;
-  return `${homeMatch[1]}${value.slice(1)}`;
-}
-const COMPUTER_FILES_OPEN_KEY = "vllm-studio.agent.computer.filesOpen";
-const COMPUTER_DEFAULT_CLOSED_STORAGE_ID = "vllm-studio.agent.computer.defaultCollapsedV2";
-const PANE_LAYOUT_KEY = "vllm-studio.agent.paneLayout";
-const PANE_STATE_KEY = "vllm-studio.agent.paneState";
-const ACTIVE_AGENT_SESSIONS_SNAPSHOT_KEY = "vllm-studio.agent.activeSessions.snapshot";
-
-type ComputerTab = "browser" | "files" | "diff";
-
-function randomIdSegment(length: number): string {
-  const cryptoApi = globalThis.crypto;
-  if (cryptoApi?.randomUUID) {
-    return cryptoApi.randomUUID().replace(/-/g, "").slice(0, length);
-  }
-  const bytes = new Uint8Array(Math.ceil(length / 2));
-  if (cryptoApi?.getRandomValues) {
-    cryptoApi.getRandomValues(bytes);
-  }
-  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0"))
-    .join("")
-    .slice(0, length);
-}
-
-function isSafeBrowserSelector(selector: string): boolean {
-  return selector.length > 0 && selector.length <= 240 && !/[`;{}]/.test(selector);
-}
-
-function newPaneId(): PaneId {
-  return `p-${Date.now().toString(36)}-${randomIdSegment(6)}`;
-}
-
-function newRuntimeId(): string {
-  return `rt-${Date.now().toString(36)}-${randomIdSegment(6)}`;
-}
-
-type PaneState = {
-  tabs: SessionTab[];
-  activeTabId: string;
-  runtimeSessionId: string;
-};
-
-type PersistedPaneState = {
-  version: 1;
-  layout: Layout;
-  focusedPaneId: PaneId;
-  panes: Record<
-    string,
-    {
-      tabs?: unknown[];
-      activeTabId?: unknown;
-      runtimeSessionId?: unknown;
-    }
-  >;
-};
-
-export function normalizePersistedTab(value: unknown): SessionTab | null {
-  if (!value || typeof value !== "object") return null;
-  const tab = value as Partial<SessionTab>;
-  if (typeof tab.id !== "string" || typeof tab.runtimeSessionId !== "string") return null;
-  const fallback = makeFreshTab();
-  return {
-    ...fallback,
-    ...tab,
-    id: tab.id,
-    runtimeSessionId: tab.runtimeSessionId,
-    piSessionId: typeof tab.piSessionId === "string" ? tab.piSessionId : null,
-    title: typeof tab.title === "string" && tab.title.trim() ? tab.title : fallback.title,
-    messages: Array.isArray(tab.messages) ? tab.messages.slice(-80) : [],
-    status: typeof tab.status === "string" ? tab.status : "idle",
-    error: "",
-    startedAt: typeof tab.startedAt === "string" ? tab.startedAt : undefined,
-    input: typeof tab.input === "string" ? tab.input : "",
-    queue: Array.isArray(tab.queue) ? tab.queue : undefined,
-    activeAssistantId:
-      typeof tab.activeAssistantId === "string" ? tab.activeAssistantId : undefined,
-    lastEventSeq: typeof tab.lastEventSeq === "number" ? tab.lastEventSeq : undefined,
-    plugins: Array.isArray(tab.plugins) ? tab.plugins : undefined,
-    skills: Array.isArray(tab.skills) ? tab.skills : undefined,
-  };
-}
-
-export function setupWarningFromPiCheck(
-  piCheck: { ok: boolean; guidance?: string } | undefined,
-  hasUsableModels: boolean,
-): string {
-  if (hasUsableModels || !piCheck || piCheck.ok) return "";
-  return piCheck.guidance ?? "Pi is not installed.";
-}
-
-function restorePersistedPaneState(raw: string): {
-  layout: Layout;
-  panesById: Map<PaneId, PaneState>;
-  focusedPaneId: PaneId;
-} | null {
-  const parsed = JSON.parse(raw) as Partial<PersistedPaneState>;
-  if (!parsed.layout || typeof parsed.layout !== "object") return null;
-  const leaves = collectLeaves(parsed.layout as Layout);
-  if (leaves.length === 0) return null;
-  const panes = parsed.panes && typeof parsed.panes === "object" ? parsed.panes : {};
-  const panesById = new Map<PaneId, PaneState>();
-  for (const paneId of leaves) {
-    const pane = panes[paneId] ?? {};
-    const restoredTabs = Array.isArray(pane.tabs)
-      ? pane.tabs.map(normalizePersistedTab).filter((tab): tab is SessionTab => Boolean(tab))
-      : [];
-    const tabs = restoredTabs.length > 0 ? restoredTabs : [makeFreshTab()];
-    const activeTabId =
-      typeof pane.activeTabId === "string" && tabs.some((tab) => tab.id === pane.activeTabId)
-        ? pane.activeTabId
-        : tabs[0].id;
-    panesById.set(paneId, {
-      tabs,
-      activeTabId,
-      runtimeSessionId:
-        typeof pane.runtimeSessionId === "string" && pane.runtimeSessionId.trim()
-          ? pane.runtimeSessionId
-          : newRuntimeId(),
-    });
-  }
-  const focusedPaneId =
-    typeof parsed.focusedPaneId === "string" && leaves.includes(parsed.focusedPaneId)
-      ? parsed.focusedPaneId
-      : leaves[0];
-  return { layout: parsed.layout as Layout, panesById, focusedPaneId };
-}
-
-function tabForPersistence(tab: SessionTab): SessionTab {
-  return {
-    ...tab,
-    messages: tab.messages.slice(-80),
-    status: tab.status,
-    error: "",
-  };
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value && typeof value === "object" && !Array.isArray(value));
-}
-
-function loadPersistedActiveAgentSessions(): ActiveAgentSessionSnapshot[] {
-  if (typeof window === "undefined") return [];
-  try {
-    const raw = window.localStorage.getItem(ACTIVE_AGENT_SESSIONS_SNAPSHOT_KEY);
-    if (!raw) return [];
-    const prefsRaw = window.localStorage.getItem("vllm-studio.agent.sessionPrefs");
-    const prefs = prefsRaw ? (JSON.parse(prefsRaw) as Record<string, { hidden?: boolean }>) : {};
-    const parsed = JSON.parse(raw) as unknown;
-    if (!Array.isArray(parsed)) return [];
-    return parsed
-      .filter(isRecord)
-      .map((entry) => {
-        const piSessionId = typeof entry.piSessionId === "string" ? entry.piSessionId.trim() : null;
-        return {
-          projectId: typeof entry.projectId === "string" ? entry.projectId : "",
-          cwd: typeof entry.cwd === "string" ? entry.cwd : "",
-          paneId: typeof entry.paneId === "string" ? entry.paneId : "",
-          tabId: typeof entry.tabId === "string" ? entry.tabId : "",
-          piSessionId: piSessionId || null,
-          modelId: typeof entry.modelId === "string" ? entry.modelId : undefined,
-          title: typeof entry.title === "string" ? entry.title : "Loading session",
-          status: typeof entry.status === "string" ? entry.status : "idle",
-          active: entry.active === true,
-          startedAt: typeof entry.startedAt === "string" ? entry.startedAt : undefined,
-          updatedAt: typeof entry.updatedAt === "string" ? entry.updatedAt : "",
-          plugins: Array.isArray(entry.plugins)
-            ? (entry.plugins as SessionTab["plugins"])
-            : undefined,
-          skills: Array.isArray(entry.skills) ? (entry.skills as SessionTab["skills"]) : undefined,
-        };
-      })
-      .filter(
-        (entry) =>
-          !prefs[entry.piSessionId ?? ""]?.hidden &&
-          Boolean(entry.projectId) &&
-          Boolean(entry.cwd) &&
-          Boolean(entry.paneId) &&
-          Boolean(entry.tabId),
-      );
-  } catch {
-    return [];
-  }
-}
-
-function persistActiveAgentSessions(sessions: ActiveAgentSessionSnapshot[]) {
-  if (typeof window === "undefined") return;
-  let prefs: Record<string, { hidden?: boolean }> = {};
-  try {
-    const raw = window.localStorage.getItem("vllm-studio.agent.sessionPrefs");
-    prefs = raw ? (JSON.parse(raw) as Record<string, { hidden?: boolean }>) : {};
-  } catch {
-    prefs = {};
-  }
-  const merged = mergeActiveAgentSessions(loadPersistedActiveAgentSessions(), sessions, prefs);
-  if (merged.length > 0) {
-    window.localStorage.setItem(ACTIVE_AGENT_SESSIONS_SNAPSHOT_KEY, JSON.stringify(merged));
-  } else {
-    window.localStorage.removeItem(ACTIVE_AGENT_SESSIONS_SNAPSHOT_KEY);
-  }
-}
-
-function layoutFromPaneIds(paneIds: PaneId[]): Layout {
-  if (paneIds.length <= 1) return { kind: "leaf", paneId: paneIds[0] ?? "p-init" };
-  const [first, ...rest] = paneIds;
-  return {
-    kind: "split",
-    direction: "vertical",
-    ratio: 0.5,
-    a: { kind: "leaf", paneId: first },
-    b: layoutFromPaneIds(rest),
-  };
-}
-
-function tabFromSnapshot(session: ActiveAgentSessionSnapshot): SessionTab {
-  const fresh = makeFreshTab();
-  return {
-    ...fresh,
-    id: session.tabId || fresh.id,
-    piSessionId: session.piSessionId,
-    projectId: session.projectId,
-    cwd: session.cwd,
-    modelId: session.modelId,
-    title: session.title || "Loading session",
-    // The previous SSE stream is gone after navigation. Replay the persisted
-    // JSONL and let the user continue from the recovered tab instead of
-    // resurrecting a permanently "running" UI state.
-    status: "loading",
-    startedAt: session.startedAt ?? session.updatedAt,
-    plugins: session.plugins,
-    skills: session.skills,
-  };
-}
-
-function isEmptyStarterTab(tab: SessionTab): boolean {
-  return !tab.piSessionId && tab.messages.length === 0 && !tab.input.trim();
-}
-
-function findPaneTabByPiSessionId(
-  panes: Map<PaneId, PaneState>,
-  piSessionId: string,
-): { paneId: PaneId; tab: SessionTab } | null {
-  for (const [paneId, pane] of panes.entries()) {
-    const tab = pane.tabs.find((entry) => entry.piSessionId === piSessionId);
-    if (tab) return { paneId, tab };
-  }
-  return null;
-}
+import { PaneGrid } from "./pane-grid";
+import { collectLeaves } from "./pane-layout";
+import { useWorkspace } from "./use-workspace";
 
 export function AgentWorkspace() {
-  const [models, setModels] = useState<AgentModel[]>([]);
-  const [selectedModel, setSelectedModel] = useState("");
-  const [agentCwd, setAgentCwd] = useState(DEFAULT_AGENT_CWD);
-  const [error, setError] = useState("");
-  const [loadingModels, setLoadingModels] = useState(true);
-  const [rightPanelOpen, setRightPanelOpen] = useState(false);
-  const [browserUrl, setBrowserUrl] = useState("https://www.google.com");
-  const [browserInput, setBrowserInput] = useState("https://www.google.com");
-  const [projects, setProjects] = useState<ProjectEntry[]>([]);
-  const [projectsLoaded, setProjectsLoaded] = useState(false);
-  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
-  const [browserToolEnabled, setBrowserToolEnabled] = useState(false);
-  const [activeComputerTab, setActiveComputerTab] = useState<ComputerTab>("browser");
-  const [computerWidth, setComputerWidth] = useState(DEFAULT_COMPUTER_WIDTH);
-  const [gitSummaries, setGitSummaries] = useState<Map<string, GitSummary>>(new Map());
-  const [panePersistenceReady, setPanePersistenceReady] = useState(false);
-  const [setupWarning, setSetupWarning] = useState<string>("");
-
-  // Pane state: a tree-shaped Layout where each leaf is identified by a
-  // PaneId and points into panesById, which holds tabs + the per-pane
-  // runtime session id used to scope the pi child process and the
-  // /api/agent/turn calls. Each tab inside a pane has its own piSessionId
-  // (loaded from URL session params or assigned by pi after the first turn).
-  const [layout, setLayout] = useState<Layout>(() => ({ kind: "leaf", paneId: "p-init" }));
-  const [panesById, setPanesById] = useState<Map<PaneId, PaneState>>(() => {
-    const tab = makeFreshTab();
-    return new Map([
-      [
-        "p-init",
-        {
-          tabs: [tab],
-          activeTabId: tab.id,
-          runtimeSessionId: `rt-${randomIdSegment(9)}`,
-        },
-      ],
-    ]);
-  });
-  const [focusedPaneId, setFocusedPaneId] = useState<PaneId>("p-init");
-  const [sessionSnapshotRestored, setSessionSnapshotRestored] = useState(false);
-
-  const browserRef = useRef<AgentBrowserHandle | null>(null);
-  const computerAsideRef = useRef<HTMLElement | null>(null);
-  const isElectron = typeof window !== "undefined" && /electron/i.test(navigator.userAgent);
-  const getWebview = (): WebviewElement | null => browserRef.current?.webview ?? null;
-  const getIframe = (): HTMLIFrameElement | null => browserRef.current?.iframe ?? null;
+  const { state, dispatch, handles } = useWorkspace();
   const searchParams = useSearchParams();
-
-  // Imperative handles registered by each ChatPane. The workspace calls
-  // handle.loadAndReplay(piSessionId) directly when the user opens a past
-  // session — no useEffect-driven prop chain, no replay races.
-  const paneHandlesRef = useRef<Map<PaneId, ChatPaneHandle>>(new Map());
-  const pendingSessionReplaysRef = useRef<Map<PaneId, string>>(new Map());
-  const usableModelsRef = useRef(false);
-  const queueSessionReplay = useCallback((paneId: PaneId, sessionId: string) => {
-    pendingSessionReplaysRef.current.set(paneId, sessionId);
-    window.setTimeout(() => {
-      const pendingSessionId = pendingSessionReplaysRef.current.get(paneId);
-      const handle = paneHandlesRef.current.get(paneId);
-      if (!pendingSessionId || !handle) return;
-      pendingSessionReplaysRef.current.delete(paneId);
-      void handle.loadAndReplay(pendingSessionId);
-    }, 0);
-  }, []);
-  const registerPaneHandle = useCallback(
-    (paneId: PaneId, handle: ChatPaneHandle | null) => {
-      if (handle) paneHandlesRef.current.set(paneId, handle);
-      else paneHandlesRef.current.delete(paneId);
-      const pendingSessionId = pendingSessionReplaysRef.current.get(paneId);
-      if (handle && pendingSessionId) queueSessionReplay(paneId, pendingSessionId);
-    },
-    [queueSessionReplay],
-  );
-
-  useEffect(() => {
-    let cancelled = false;
-    void fetch("/api/agent/setup-checks", { cache: "no-store" })
-      .then((res) =>
-        safeJson<{ checks?: Array<{ id: string; ok: boolean; guidance?: string }> }>(res),
-      )
-      .then((payload) => {
-        if (cancelled) return;
-        const pi = payload.checks?.find((check) => check.id === "pi");
-        setSetupWarning(setupWarningFromPiCheck(pi, usableModelsRef.current));
-      })
-      .catch(() => undefined);
-    async function loadModels() {
-      setLoadingModels(true);
-      setError("");
-      try {
-        const response = await fetch("/api/agent/models", { cache: "no-store" });
-        const payload = await safeJson<{ models?: AgentModel[]; error?: string }>(response);
-        if (!response.ok) throw new Error(payload.error || "Failed to load models");
-        if (cancelled) return;
-        const nextModels = payload.models ?? [];
-        usableModelsRef.current = nextModels.length > 0;
-        if (usableModelsRef.current) setSetupWarning("");
-        setModels(nextModels);
-        setSelectedModel(
-          (current) =>
-            (current && nextModels.some((model) => model.id === current) ? current : "") ||
-            nextModels.find((model) => model.active)?.id ||
-            nextModels[0]?.id ||
-            "",
-        );
-      } catch (err) {
-        if (!cancelled) setError(err instanceof Error ? err.message : "Failed to load models");
-      } finally {
-        if (!cancelled) setLoadingModels(false);
-      }
-    }
-    void loadModels();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  // Run a browser command issued by the agent against the embedded webview.
-  // In dev (iframe) we can only do limited operations because of cross-origin
-  // restrictions; we surface a helpful error so the model can adapt.
-  const runBrowserCommand = useCallback(
-    async (
-      verb: string,
-      payload: Record<string, unknown>,
-    ): Promise<{ ok: boolean; data?: unknown; error?: string }> => {
-      const webview = getWebview();
-      if (isElectron && webview && typeof webview.executeJavaScript === "function") {
-        try {
-          switch (verb) {
-            case "navigate": {
-              const url = sanitizePublicBrowserUrl(String(payload.url || ""));
-              if (!url) return { ok: false, error: "valid public http(s) url required" };
-              await withBrowserTimeout(webview.loadURL(url), "Browser navigation");
-              setBrowserUrl(url);
-              setBrowserInput(url);
-              return { ok: true, data: { url } };
-            }
-            case "get-url": {
-              return { ok: true, data: { url: webview.getURL(), title: webview.getTitle() } };
-            }
-            case "get-text": {
-              const text = (await withBrowserTimeout(
-                webview.executeJavaScript("document.body && document.body.innerText"),
-                "Browser text read",
-              )) as string | null;
-              const protectionError = detectBotProtection(text ?? "");
-              if (protectionError) return { ok: false, error: protectionError };
-              return { ok: true, data: { text: text ?? "" } };
-            }
-            case "get-html": {
-              const html = (await withBrowserTimeout(
-                webview.executeJavaScript(
-                  "document.documentElement && document.documentElement.outerHTML",
-                ),
-                "Browser HTML read",
-              )) as string | null;
-              const protectionError = detectBotProtection(html ?? "");
-              if (protectionError) return { ok: false, error: protectionError };
-              return { ok: true, data: { html: html ?? "" } };
-            }
-            case "screenshot": {
-              const image = await withBrowserTimeout(webview.capturePage(), "Browser screenshot");
-              return { ok: true, data: { dataUri: image.toDataURL() } };
-            }
-            case "click": {
-              const selector = String(payload.selector || "");
-              if (!selector) return { ok: false, error: "selector required" };
-              if (!isSafeBrowserSelector(selector)) {
-                return { ok: false, error: "unsupported selector" };
-              }
-              const script = `(() => { const el = document.querySelector(${JSON.stringify(selector)}); if (!el) return { found: false }; (el).click(); return { found: true }; })()`;
-              const result = (await withBrowserTimeout(
-                webview.executeJavaScript(script, true),
-                "Browser click",
-              )) as { found: boolean };
-              return {
-                ok: result.found,
-                data: result,
-                error: result.found ? undefined : "selector not found",
-              };
-            }
-            case "scroll": {
-              const rawDeltaY = Number(payload.deltaY ?? 0);
-              const deltaY = Number.isFinite(rawDeltaY)
-                ? Math.max(-10_000, Math.min(10_000, Math.trunc(rawDeltaY)))
-                : 0;
-              await withBrowserTimeout(
-                webview.executeJavaScript(`window.scrollBy(0, ${deltaY})`),
-                "Browser scroll",
-              );
-              return {
-                ok: true,
-                data: {
-                  deltaY,
-                  scrollY: await withBrowserTimeout(
-                    webview.executeJavaScript("window.scrollY"),
-                    "Browser scroll position read",
-                  ),
-                },
-              };
-            }
-            case "fill": {
-              const selector = String(payload.selector || "");
-              const value = String(payload.value ?? "");
-              if (!selector) return { ok: false, error: "selector required" };
-              if (!isSafeBrowserSelector(selector)) {
-                return { ok: false, error: "unsupported selector" };
-              }
-              const script = `(() => { const el = document.querySelector(${JSON.stringify(selector)}); if (!el) return { found: false }; el.focus(); el.value = ${JSON.stringify(value)}; el.dispatchEvent(new Event('input', { bubbles: true })); el.dispatchEvent(new Event('change', { bubbles: true })); return { found: true }; })()`;
-              const result = (await withBrowserTimeout(
-                webview.executeJavaScript(script, true),
-                "Browser fill",
-              )) as { found: boolean };
-              return {
-                ok: result.found,
-                data: result,
-                error: result.found ? undefined : "selector not found",
-              };
-            }
-            default:
-              return { ok: false, error: `Unsupported browser verb: ${verb}` };
-          }
-        } catch (error) {
-          return { ok: false, error: error instanceof Error ? error.message : String(error) };
-        }
-      }
-
-      // Iframe fallback (dev or non-electron). Cross-origin restrictions make
-      // most operations impossible — handle the few that are still useful.
-      const iframe = getIframe();
-      if (!iframe && verb === "get-url") {
-        return { ok: true, data: { url: browserUrl, title: "" } };
-      }
-      if (!iframe) return { ok: false, error: "Browser panel not mounted" };
-      switch (verb) {
-        case "navigate": {
-          const url = sanitizePublicBrowserUrl(String(payload.url || ""));
-          if (!url) return { ok: false, error: "valid public http(s) url required" };
-          iframe.src = url;
-          setBrowserUrl(url);
-          setBrowserInput(url);
-          return { ok: true, data: { url } };
-        }
-        case "get-url":
-          return { ok: true, data: { url: iframe.src, title: "" } };
-        default:
-          return {
-            ok: false,
-            error: `Browser tool '${verb}' is only available in the desktop app (cross-origin iframe restriction in dev).`,
-          };
-      }
-    },
-    [browserUrl, isElectron],
-  );
-
-  // Open an SSE subscription to /api/agent/browser/events whenever the
-  // browser tool is enabled. Each command we receive is dispatched to
-  // runBrowserCommand and the result is POSTed back to /result. The renderer
-  // is the only authoritative source for the embedded webview state.
-  useEffect(() => {
-    if (!browserToolEnabled) return;
-    if (typeof window === "undefined") return;
-    const source = new EventSource("/api/agent/browser/events");
-    source.onmessage = async (event) => {
-      try {
-        const command = JSON.parse(event.data) as {
-          id: string;
-          verb: string;
-          payload: Record<string, unknown>;
-        };
-        const result = await runBrowserCommand(command.verb, command.payload);
-        await fetch("/api/agent/browser/result", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ id: command.id, ...result }),
-        });
-      } catch (err) {
-        // Swallow — pi will time out and surface the error to the model.
-        console.warn("[agent] browser bridge dispatch failed", err);
-      }
-    };
-    return () => {
-      source.close();
-    };
-  }, [browserToolEnabled, runBrowserCommand]);
-
-  // Restore preferences across reloads (browser-tool toggle, right-pane split ratio,
-  // multiplex layout shape).
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const sessionsCollapsedCleaned = window.localStorage.getItem(
-      "vllm-studio.agent.sessionsCollapsedCleaned",
-    );
-    if (!sessionsCollapsedCleaned) {
-      window.localStorage.removeItem("vllm-studio.agent.sessionsCollapsed");
-      window.localStorage.setItem("vllm-studio.agent.sessionsCollapsedCleaned", "1");
-    }
-    // One-time migration: reset stale ON state so the browser tool defaults
-    // to OFF for existing users. New users naturally default to OFF.
-    const migrated = window.localStorage.getItem(BROWSER_TOOL_DEFAULT_OFF_MIGRATION_KEY);
-    if (!migrated) {
-      window.localStorage.setItem(BROWSER_TOOL_KEY, "0");
-      window.localStorage.setItem(BROWSER_TOOL_DEFAULT_OFF_MIGRATION_KEY, "1");
-    }
-    const browserOn = window.localStorage.getItem(BROWSER_TOOL_KEY);
-    if (browserOn === "1") setBrowserToolEnabled(true);
-    const computerMigrated = window.localStorage.getItem(COMPUTER_DEFAULT_CLOSED_STORAGE_ID);
-    if (!computerMigrated) {
-      window.localStorage.setItem(COMPUTER_BROWSER_OPEN_KEY, "0");
-      window.localStorage.setItem(COMPUTER_FILES_OPEN_KEY, "0");
-      window.localStorage.setItem(COMPUTER_DEFAULT_CLOSED_STORAGE_ID, "1");
-    }
-    const filesOpenStored = window.localStorage.getItem(COMPUTER_FILES_OPEN_KEY);
-    setActiveComputerTab(filesOpenStored === "1" ? "files" : "browser");
-    // Always start collapsed on load. Opening the computer is intentionally
-    // session-local so stale localStorage can never resurrect it by default.
-    window.localStorage.setItem(COMPUTER_BROWSER_OPEN_KEY, "0");
-    setRightPanelOpen(false);
-    const storedComputerWidth = Number(window.localStorage.getItem(COMPUTER_WIDTH_KEY));
-    if (Number.isFinite(storedComputerWidth)) {
-      setComputerWidth(clampComputerWidth(storedComputerWidth));
-    }
-    // Restore full pane/tab metadata first so leaving /agent and coming back
-    // does not erase active sessions before the sidebar can point back to them.
-    // The legacy layout-only value remains as a fallback for older installs.
-    try {
-      const rawState = window.localStorage.getItem(PANE_STATE_KEY);
-      if (rawState) {
-        const restored = restorePersistedPaneState(rawState);
-        if (restored) {
-          setPanesById(restored.panesById);
-          setLayout(restored.layout);
-          setFocusedPaneId(restored.focusedPaneId);
-          setPanePersistenceReady(true);
-          return;
-        }
-      }
-    } catch {
-      // ignore — fall through to legacy/fresh state
-    }
-    try {
-      const rawLayout = window.localStorage.getItem(PANE_LAYOUT_KEY);
-      if (rawLayout) {
-        const restored = JSON.parse(rawLayout) as Layout;
-        if (!restored || typeof restored !== "object") return;
-        const leaves = collectLeaves(restored);
-        if (leaves.length === 0) return;
-        const next = new Map<PaneId, PaneState>();
-        for (const id of leaves) {
-          const tab = makeFreshTab();
-          next.set(id, {
-            tabs: [tab],
-            activeTabId: tab.id,
-            runtimeSessionId: newRuntimeId(),
-          });
-        }
-        setPanesById(next);
-        setLayout(restored);
-        setFocusedPaneId(leaves[0]);
-      }
-    } catch {
-      // ignore — fresh state
-    } finally {
-      setPanePersistenceReady(true);
-    }
-  }, []);
-
-  // Persist pane/session metadata whenever it changes. This is deliberately
-  // small (last 80 messages per tab, no transient running status) but enough to
-  // re-open active/past sessions after navigation or reload.
-  useEffect(() => {
-    if (typeof window === "undefined" || !panePersistenceReady) return;
-    try {
-      const panes: PersistedPaneState["panes"] = {};
-      for (const [paneId, pane] of panesById.entries()) {
-        panes[paneId] = {
-          activeTabId: pane.activeTabId,
-          runtimeSessionId: pane.runtimeSessionId,
-          tabs: pane.tabs.map(tabForPersistence),
-        };
-      }
-      window.localStorage.setItem(
-        PANE_STATE_KEY,
-        JSON.stringify({ version: 1, layout, focusedPaneId, panes }),
-      );
-      window.localStorage.setItem(PANE_LAYOUT_KEY, JSON.stringify(layout));
-    } catch {
-      // ignore quota errors
-    }
-  }, [focusedPaneId, layout, panesById, panePersistenceReady]);
-
-  const selectComputerTab = useCallback((tab: ComputerTab) => {
-    setActiveComputerTab(tab);
-    if (typeof window !== "undefined") {
-      window.localStorage.setItem(COMPUTER_FILES_OPEN_KEY, tab === "files" ? "1" : "0");
-    }
-  }, []);
-
-  const toggleBrowserTool = useCallback(() => {
-    setBrowserToolEnabled((current) => {
-      const next = !current;
-      if (typeof window !== "undefined") {
-        window.localStorage.setItem(BROWSER_TOOL_KEY, next ? "1" : "0");
-      }
-      return next;
-    });
-  }, []);
-
-  const notifySessionsChanged = useCallback(() => {
-    if (typeof window === "undefined") return;
-    window.dispatchEvent(new Event(SESSIONS_CHANGED_EVENT));
-    window.setTimeout(() => window.dispatchEvent(new Event(SESSIONS_CHANGED_EVENT)), 1_500);
-  }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-    const refreshProjects = async () => {
-      try {
-        const list = await loadAgentProjects();
-        if (cancelled) return;
-        setProjects(list);
-        setProjectsLoaded(true);
-        const stored =
-          typeof window !== "undefined" ? window.localStorage.getItem(SELECTED_PROJECT_KEY) : null;
-        const initial = (stored && list.find((entry) => entry.id === stored)) || list[0];
-        if (initial) {
-          setSelectedProjectId(initial.id);
-          setAgentCwd(initial.path);
-        } else {
-          setSelectedProjectId(null);
-          setAgentCwd(DEFAULT_AGENT_CWD);
-        }
-      } catch (err) {
-        if (!cancelled) {
-          setProjectsLoaded(true);
-          console.warn("[agent] failed to load projects", err);
-        }
-      }
-    };
-    void refreshProjects();
-    if (typeof window !== "undefined") {
-      window.addEventListener(PROJECTS_CHANGED_EVENT, refreshProjects);
-    }
-    return () => {
-      cancelled = true;
-      if (typeof window !== "undefined") {
-        window.removeEventListener(PROJECTS_CHANGED_EVENT, refreshProjects);
-      }
-    };
-  }, []);
-
-  const persistSelectedProjectId = useCallback((id: string | null) => {
-    if (typeof window === "undefined") return;
-    if (id) {
-      window.localStorage.setItem(SELECTED_PROJECT_KEY, id);
-    } else {
-      window.localStorage.removeItem(SELECTED_PROJECT_KEY);
-    }
-  }, []);
-
-  const selectProject = useCallback(
-    (project: ProjectEntry) => {
-      setSelectedProjectId(project.id);
-      setAgentCwd(project.path);
-      persistSelectedProjectId(project.id);
-    },
-    [persistSelectedProjectId],
-  );
-
-  // Rehydrate recoverable pi sessions after leaving `/agent` and coming back.
-  // We persist only session metadata here; message bodies stay in Pi's JSONL
-  // files and are loaded through `loadAndReplay` once the panes mount.
-  useEffect(() => {
-    if (sessionSnapshotRestored || !projectsLoaded) return;
-    const hasExplicitSessionNav = Boolean(searchParams.get("session") || searchParams.get("new"));
-    if (hasExplicitSessionNav) {
-      setSessionSnapshotRestored(true);
-      return;
-    }
-    const paneStateAlreadyRestored = [...panesById.values()].some((pane) =>
-      pane.tabs.some((tab) => Boolean(tab.piSessionId) || tab.messages.length > 0),
-    );
-    if (paneStateAlreadyRestored) {
-      for (const [paneId, pane] of panesById.entries()) {
-        const activeTab = pane.tabs.find((tab) => tab.id === pane.activeTabId) ?? pane.tabs[0];
-        if (
-          activeTab?.piSessionId &&
-          (activeTab.messages.length === 0 ||
-            activeTab.status === "running" ||
-            activeTab.status === "starting")
-        ) {
-          queueSessionReplay(paneId, activeTab.piSessionId);
-        }
-      }
-      setSessionSnapshotRestored(true);
-      return;
-    }
-
-    const snapshots = loadPersistedActiveAgentSessions();
-    const restorable = snapshots.filter((session) =>
-      projects.some((project) => project.id === session.projectId || project.path === session.cwd),
-    );
-    if (restorable.length === 0) {
-      setSessionSnapshotRestored(true);
-      return;
-    }
-
-    const panes = new Map<PaneId, ActiveAgentSessionSnapshot[]>();
-    for (const session of restorable) {
-      const current = panes.get(session.paneId) ?? [];
-      current.push(session);
-      panes.set(session.paneId, current);
-    }
-
-    const paneIds = [...panes.keys()];
-    const nextPanes = new Map<PaneId, PaneState>();
-    for (const paneId of paneIds) {
-      const group = panes.get(paneId) ?? [];
-      const tabs = group.map(tabFromSnapshot);
-      const activeTab =
-        group.find((session) => session.active)?.tabId || tabs[0]?.id || makeFreshTab().id;
-      nextPanes.set(paneId, {
-        tabs: tabs.length > 0 ? tabs : [makeFreshTab()],
-        activeTabId: activeTab,
-        runtimeSessionId: newRuntimeId(),
-      });
-    }
-
-    const activeSnapshot = restorable.find((session) => session.active) ?? restorable[0];
-    const activeProjectForSnapshot =
-      projects.find((project) => project.id === activeSnapshot.projectId) ??
-      projects.find((project) => project.path === activeSnapshot.cwd) ??
-      null;
-
-    setPanesById(nextPanes);
-    setLayout(layoutFromPaneIds(paneIds));
-    setFocusedPaneId(activeSnapshot.paneId);
-    if (activeProjectForSnapshot) {
-      setSelectedProjectId(activeProjectForSnapshot.id);
-      setAgentCwd(activeProjectForSnapshot.path);
-      persistSelectedProjectId(activeProjectForSnapshot.id);
-    }
-    setSessionSnapshotRestored(true);
-
-    for (const session of restorable) {
-      if (session.piSessionId) queueSessionReplay(session.paneId, session.piSessionId);
-    }
-  }, [
+  const {
+    models,
+    selectedModel,
+    agentCwd,
+    modelsLoading,
     projects,
     projectsLoaded,
-    queueSessionReplay,
-    panesById,
-    searchParams,
-    sessionSnapshotRestored,
-    persistSelectedProjectId,
-  ]);
-
-  // Imperative session-management primitives. Every code path that opens a
-  // new tab or replays a past session goes through these — no useEffect
-  // chain, no `initialSessionId` field on PaneState. Read top-down to audit.
-
-  // Idempotent "open a fresh chat tab in the focused pane". If the pane
-  // already has an empty starter (no piSessionId, no messages, no input)
-  // we focus that tab instead of stacking yet another empty one.
-  const openNewSessionInFocusedPane = useCallback(
-    (projectOverride?: ProjectEntry) => {
-      if (projectOverride) {
-        setSelectedProjectId(projectOverride.id);
-        setAgentCwd(projectOverride.path);
-        persistSelectedProjectId(projectOverride.id);
-      }
-      setPanesById((current) => {
-        const cur = current.get(focusedPaneId);
-        if (!cur) return current;
-        const targetProjectId = projectOverride?.id;
-        const targetCwd = projectOverride?.path;
-        const existing = cur.tabs.find((tab) => {
-          if (!isEmptyStarterTab(tab)) return false;
-          if (targetProjectId && tab.projectId && tab.projectId !== targetProjectId) return false;
-          if (targetCwd && tab.cwd && tab.cwd !== targetCwd) return false;
-          return true;
-        });
-        const next = new Map(current);
-        if (existing) {
-          next.set(focusedPaneId, {
-            ...cur,
-            tabs: cur.tabs.map((tab) =>
-              tab.id === existing.id && projectOverride
-                ? { ...tab, projectId: projectOverride.id, cwd: projectOverride.path }
-                : tab,
-            ),
-            activeTabId: existing.id,
-          });
-          return next;
-        }
-        const tab = {
-          ...makeFreshTab(),
-          projectId: projectOverride?.id,
-          cwd: projectOverride?.path,
-        };
-        next.set(focusedPaneId, { ...cur, tabs: [...cur.tabs, tab], activeTabId: tab.id });
-        return next;
-      });
-    },
-    [focusedPaneId, persistSelectedProjectId],
-  );
-
-  // Replay a past pi session into the focused pane via the pane's
-  // imperative handle. No race: the handle was registered when the pane
-  // mounted; if it isn't ready yet the call is a no-op and the next click
-  // will retry.
-  const replaySessionInFocusedPane = useCallback(
-    (piSessionId: string) => {
-      const existingPaneTab = findPaneTabByPiSessionId(panesById, piSessionId);
-      const replayPaneId = existingPaneTab?.paneId ?? focusedPaneId;
-      setPanesById((current) => {
-        const existing = findPaneTabByPiSessionId(current, piSessionId);
-        if (existing) {
-          const pane = current.get(existing.paneId);
-          if (!pane || pane.activeTabId === existing.tab.id) return current;
-          const next = new Map(current);
-          next.set(existing.paneId, { ...pane, activeTabId: existing.tab.id });
-          return next;
-        }
-        const pane = current.get(focusedPaneId);
-        if (!pane) return current;
-        const active = pane.tabs.find((tab) => tab.id === pane.activeTabId);
-        const targetTab = active && isEmptyStarterTab(active) ? active : null;
-        const replayTab = targetTab
-          ? { ...targetTab, piSessionId, title: targetTab.title || "Loading session" }
-          : { ...makeFreshTab(), piSessionId, title: "Loading session" };
-        const nextTabs = targetTab
-          ? pane.tabs.map((tab) => (tab.id === targetTab.id ? replayTab : tab))
-          : [...pane.tabs, replayTab];
-        const next = new Map(current);
-        next.set(focusedPaneId, { ...pane, tabs: nextTabs, activeTabId: replayTab.id });
-        return next;
-      });
-      setFocusedPaneId(replayPaneId);
-      queueSessionReplay(replayPaneId, piSessionId);
-    },
-    [focusedPaneId, panesById, queueSessionReplay],
-  );
-
-  // Open a past session in a side-by-side pane. Splits the layout if there
-  // isn't already a second pane, then queues the replay against that pane —
-  // the queue drains as soon as the new ChatPane registers its handle.
-  const replaySessionInSplitPane = useCallback(
-    (piSessionId: string) => {
-      const existing = findPaneTabByPiSessionId(panesById, piSessionId);
-      if (existing) {
-        setFocusedPaneId(existing.paneId);
-        setPanesById((current) => {
-          const pane = current.get(existing.paneId);
-          if (!pane || pane.activeTabId === existing.tab.id) return current;
-          const next = new Map(current);
-          next.set(existing.paneId, { ...pane, activeTabId: existing.tab.id });
-          return next;
-        });
-        return;
-      }
-      const leaves = collectLeaves(layout);
-      if (leaves.length >= 2) {
-        const targetPaneId = leaves.find((id) => id !== focusedPaneId) ?? focusedPaneId;
-        setPanesById((current) => {
-          const pane = current.get(targetPaneId);
-          if (!pane) return current;
-          const tab = { ...makeFreshTab(), piSessionId, title: "Loading session" };
-          const next = new Map(current);
-          next.set(targetPaneId, { ...pane, tabs: [...pane.tabs, tab], activeTabId: tab.id });
-          return next;
-        });
-        setFocusedPaneId(targetPaneId);
-        queueSessionReplay(targetPaneId, piSessionId);
-        return;
-      }
-      const id = newPaneId();
-      const baseTab = { ...makeFreshTab(), piSessionId, title: "Loading session" };
-      setPanesById((current) => {
-        const next = new Map(current);
-        next.set(id, {
-          tabs: [baseTab],
-          activeTabId: baseTab.id,
-          runtimeSessionId: newRuntimeId(),
-        });
-        return next;
-      });
-      setLayout((prev) => splitLeaf(prev, focusedPaneId, id, "vertical", "b"));
-      setFocusedPaneId(id);
-      queueSessionReplay(id, piSessionId);
-    },
-    [focusedPaneId, layout, panesById, queueSessionReplay],
-  );
-
-  // Single source of truth for URL nav. Re-run only when the URL string
-  // changes; the ref guard makes it idempotent.
-  const handledNavRef = useRef<string>("");
-  useEffect(() => {
-    if (!searchParams) return;
-    const projectParam = searchParams.get("project");
-    const sessionParam = searchParams.get("session");
-    const newParam = searchParams.get("new");
-    const splitParam = searchParams.get("split");
-    if (!projectParam && !sessionParam && !newParam) return;
-    const key = `${projectParam ?? ""}|${sessionParam ?? ""}|${newParam ?? ""}|${splitParam ?? ""}`;
-    if (handledNavRef.current === key) return;
-
-    if (projectParam) {
-      const target = projects.find((entry) => entry.id === projectParam);
-      if (!target) return; // wait for projects to load
-      if (selectedProjectId !== target.id || agentCwd !== target.path) {
-        selectProject(target);
-        return; // rerun with the correct cwd before replaying a session id
-      }
-    }
-    handledNavRef.current = key;
-
-    if (newParam === "1" && !sessionParam) {
-      openNewSessionInFocusedPane();
-      return;
-    }
-    if (sessionParam && splitParam === "1") {
-      replaySessionInSplitPane(sessionParam);
-      return;
-    }
-    if (sessionParam) {
-      replaySessionInFocusedPane(sessionParam);
-    }
-  }, [
-    searchParams,
-    projects,
     selectedProjectId,
-    agentCwd,
-    selectProject,
-    openNewSessionInFocusedPane,
-    replaySessionInFocusedPane,
-    replaySessionInSplitPane,
-  ]);
+    browserToolEnabled,
+    browserUrl,
+    browserInput,
+    gitSummaries,
+    layout,
+    panesById,
+    focusedPaneId,
+    computer,
+  } = state;
+  const {
+    registerComputerAside,
+    startComputerResize,
+    registerBrowserHandle,
+    setBrowserInput,
+    submitBrowserUrl,
+  } = handles;
 
-  function normalizeBrowserInput(raw: string): string {
-    const value = raw.trim();
-    if (!value) return "https://www.google.com";
-    if (/^file:\/\//i.test(value)) {
-      return sanitizeLocalFileUrl(value) ?? "";
-    }
-    if (value.startsWith("~/") && agentCwd) {
-      const expanded = expandHomeFilePath(agentCwd, value);
-      if (expanded) return encodeFilePath(expanded);
-    }
-    if (value.startsWith("/")) return encodeFilePath(value);
-    if ((value.startsWith("./") || value.startsWith("../")) && agentCwd) {
-      return encodeFilePath(resolveRelativeFilePath(agentCwd, value));
-    }
-    if (/^https?:\/\//i.test(value)) return value;
-    if (/^(localhost|127\.0\.0\.1|\[::1\])(:\d+)?([/?#].*)?$/i.test(value)) {
-      return `http://${value}`;
-    }
-    if (/^[\w.-]+:\d+([/?#].*)?$/.test(value)) {
-      return `http://${value}`;
-    }
-    if (/^[\w-]+(\.[\w-]+)+([/:?#].*)?$/.test(value)) {
-      return `https://${value}`;
-    }
-    if (value.includes("/") && agentCwd) {
-      return encodeFilePath(resolveRelativeFilePath(agentCwd, value));
-    }
-    return `https://www.google.com/search?q=${encodeURIComponent(value)}`;
+  const projectParam = searchParams.get("project");
+  const sessionParam = searchParams.get("session");
+  const newParam = searchParams.get("new");
+  const splitParam = searchParams.get("split");
+  const navKey =
+    projectParam || sessionParam || newParam
+      ? `${projectParam ?? ""}|${sessionParam ?? ""}|${newParam ?? ""}|${splitParam ?? ""}`
+      : "";
+  const urlProjectReady = !projectParam || projects.some((project) => project.id === projectParam);
+  if (navKey && state.lastHandledNavKey !== navKey && urlProjectReady) {
+    dispatch({
+      type: "URL_NAV_REQUESTED",
+      key: navKey,
+      projectId: projectParam,
+      sessionId: sessionParam,
+      newSession: newParam === "1",
+      split: splitParam === "1",
+    });
   }
 
-  function submitBrowserUrl(event: FormEvent) {
-    event.preventDefault();
-    const next = normalizeBrowserInput(browserInput);
-    if (!next) return;
-    setBrowserInput(next);
-    setBrowserUrl(next);
-  }
-
-  function startComputerResize(event: ReactMouseEvent<HTMLDivElement>) {
-    event.preventDefault();
-    const startX = event.clientX;
-    const startWidth = computerWidth;
-    let frame = 0;
-    const onMove = (moveEvent: MouseEvent) => {
-      const next = clampComputerWidth(startWidth + startX - moveEvent.clientX);
-      if (frame) cancelAnimationFrame(frame);
-      frame = requestAnimationFrame(() => {
-        if (computerAsideRef.current) computerAsideRef.current.style.width = `${next}px`;
-      });
-    };
-    const onUp = (upEvent: MouseEvent) => {
-      if (frame) cancelAnimationFrame(frame);
-      const next = clampComputerWidth(startWidth + startX - upEvent.clientX);
-      if (computerAsideRef.current) computerAsideRef.current.style.width = `${next}px`;
-      setComputerWidth(next);
-      window.localStorage.setItem(COMPUTER_WIDTH_KEY, String(next));
-      window.removeEventListener("mousemove", onMove);
-      window.removeEventListener("mouseup", onUp);
-    };
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", onUp);
-  }
+  const isElectron = typeof window !== "undefined" && /electron/i.test(navigator.userAgent);
+  const rightPanelOpen = computer.open;
+  const activeComputerTab = computer.tab;
+  const computerWidth = computer.width;
 
   const activeProject = useMemo(
     () => projects.find((entry) => entry.id === selectedProjectId) || null,
@@ -1194,311 +82,16 @@ export function AgentWorkspace() {
     projects.find((entry) => entry.id === focusedTab?.projectId) ??
     projects.find((entry) => entry.path === focusedTab?.cwd) ??
     activeProject;
-
-  const refreshGitSummary = useCallback(async () => {
-    if (!focusedProject?.path) return;
-    try {
-      const response = await fetch(
-        `/api/agent/git-diff?cwd=${encodeURIComponent(focusedProject.path)}`,
-        { cache: "no-store" },
-      );
-      const payload = (await safeJson<{
-        isRepo?: boolean;
-        branch?: string | null;
-        additions?: number;
-        deletions?: number;
-        status?: string[];
-      }>(response)) as {
-        isRepo?: boolean;
-        branch?: string | null;
-        additions?: number;
-        deletions?: number;
-        status?: string[];
-      };
-      setGitSummaries((prev) => {
-        const next = new Map(prev);
-        next.set(focusedProject.path, {
-          isRepo: payload.isRepo === true,
-          branch: payload.branch ?? null,
-          additions: payload.additions ?? 0,
-          deletions: payload.deletions ?? 0,
-          statusCount: payload.status?.length ?? 0,
-        });
-        return next;
-      });
-    } catch {
-      setGitSummaries((prev) => {
-        const next = new Map(prev);
-        next.delete(focusedProject.path);
-        return next;
-      });
-    }
-  }, [focusedProject?.path]);
-
-  useEffect(() => {
-    void refreshGitSummary();
-  }, [refreshGitSummary]);
-
-  const initGitForActiveProject = useCallback(async () => {
-    if (!focusedProject?.path) return;
-    const response = await fetch(
-      `/api/agent/git-diff?cwd=${encodeURIComponent(focusedProject.path)}`,
-      { method: "POST" },
-    );
-    if (!response.ok) {
-      const payload = await safeJson<{ error?: string }>(response);
-      setError(payload.error || "Failed to initialize git repository");
-      return;
-    }
-    await refreshGitSummary();
-    window.dispatchEvent(new Event(PROJECTS_CHANGED_EVENT));
-  }, [focusedProject?.path, refreshGitSummary]);
-
-  const focusedTabIsNew =
-    Boolean(focusedTab) && !focusedTab?.piSessionId && (focusedTab?.messages.length ?? 0) === 0;
   const shouldShowProjectEmptyState =
-    projectsLoaded && !searchParams.get("project") && !selectedProjectId && projects.length === 0;
-
-  // Broadcast the set of *real* in-flight sessions (i.e. tabs that have
-  // either been assigned a pi UUID or already contain user messages) to the
-  // navbar. Empty starter tabs are intentionally excluded so the navbar
-  // doesn't list them as "sessions".
-  useEffect(() => {
-    if (typeof window === "undefined" || !activeProject || !sessionSnapshotRestored) return;
-    const sessions = [...panesById.entries()].flatMap(([paneId, pane]) =>
-      pane.tabs
-        .filter((tab) => Boolean(tab.piSessionId) || tab.messages.length > 0)
-        .map((tab) => {
-          const project =
-            projects.find((entry) => entry.id === tab.projectId) ??
-            projects.find((entry) => entry.path === tab.cwd) ??
-            activeProject;
-          return {
-            projectId: project.id,
-            cwd: tab.cwd ?? project.path,
-            paneId,
-            tabId: tab.id,
-            piSessionId: tab.piSessionId,
-            modelId: tab.modelId ?? selectedModel,
-            title: tab.title,
-            status: tab.status,
-            active: paneId === focusedPaneId && tab.id === pane.activeTabId,
-            startedAt: tab.startedAt,
-            updatedAt: new Date().toISOString(),
-            plugins: tab.plugins,
-            skills: tab.skills,
-          };
-        }),
-    );
-    persistActiveAgentSessions(sessions);
-    window.dispatchEvent(new CustomEvent(ACTIVE_AGENT_SESSIONS_EVENT, { detail: { sessions } }));
-  }, [activeProject, focusedPaneId, panesById, projects, selectedModel, sessionSnapshotRestored]);
-
-  const openSessionPayloadInPane = useCallback(
-    (paneId: PaneId, payload: SessionDropPayload) => {
-      let needsReplay = false;
-      const existingPaneTab = payload.piSessionId
-        ? findPaneTabByPiSessionId(panesById, payload.piSessionId)
-        : null;
-      const replayPaneId = existingPaneTab?.paneId ?? paneId;
-      setPanesById((current) => {
-        const target = current.get(paneId);
-        if (!target) return current;
-        const next = new Map(current);
-        if (payload.piSessionId) {
-          const existing = findPaneTabByPiSessionId(current, payload.piSessionId);
-          if (existing) {
-            const existingPane = current.get(existing.paneId);
-            if (!existingPane) return current;
-            next.set(existing.paneId, { ...existingPane, activeTabId: existing.tab.id });
-            return next;
-          }
-          const tab = {
-            ...makeFreshTab(),
-            projectId: payload.projectId,
-            cwd: payload.cwd,
-            piSessionId: payload.piSessionId,
-            title: payload.title ?? "Loading session",
-          };
-          next.set(paneId, {
-            ...target,
-            tabs: [...target.tabs, tab],
-            activeTabId: tab.id,
-          });
-          needsReplay = true;
-          return next;
-        }
-        if (payload.paneId && payload.tabId) {
-          const source = current.get(payload.paneId);
-          const sourceTab = source?.tabs.find((tab) => tab.id === payload.tabId);
-          if (!sourceTab) return current;
-          const fresh = makeFreshTab();
-          const tab = {
-            ...sourceTab,
-            id: fresh.id,
-            runtimeSessionId: fresh.runtimeSessionId,
-          };
-          next.set(paneId, { ...target, tabs: [...target.tabs, tab], activeTabId: tab.id });
-        }
-        return next;
-      });
-      setFocusedPaneId(replayPaneId);
-      if (needsReplay && payload.piSessionId) {
-        queueSessionReplay(replayPaneId, payload.piSessionId);
-      }
-    },
-    [panesById, queueSessionReplay],
-  );
-
-  // Imperative tab actions used by both URL nav and DOM-event listeners.
-  const renameTab = useCallback((paneId: PaneId, tabId: string, title: string) => {
-    setPanesById((current) => {
-      const pane = current.get(paneId);
-      if (!pane) return current;
-      const next = new Map(current);
-      next.set(paneId, {
-        ...pane,
-        tabs: pane.tabs.map((tab) => (tab.id === tabId ? { ...tab, title } : tab)),
-      });
-      return next;
-    });
-  }, []);
-
-  const focusTab = useCallback((paneId: PaneId, tabId: string) => {
-    setFocusedPaneId(paneId);
-    setPanesById((current) => {
-      const pane = current.get(paneId);
-      if (!pane) return current;
-      const next = new Map(current);
-      next.set(paneId, { ...pane, activeTabId: tabId });
-      return next;
-    });
-  }, []);
-
-  const splitTabIntoNewPane = useCallback(
-    (sourcePaneId: PaneId, sourceTabId: string) => {
-      const leaves = collectLeaves(layout);
-      const source = panesById.get(sourcePaneId);
-      const sourceTab = source?.tabs.find((tab) => tab.id === sourceTabId);
-      const fresh = makeFreshTab();
-      const tab = sourceTab
-        ? { ...sourceTab, id: fresh.id, runtimeSessionId: fresh.runtimeSessionId }
-        : fresh;
-      if (leaves.length >= 2) {
-        const targetPaneId = leaves.find((leafId) => leafId !== focusedPaneId) ?? focusedPaneId;
-        setPanesById((current) => {
-          const target = current.get(targetPaneId);
-          if (!target) return current;
-          const next = new Map(current);
-          next.set(targetPaneId, {
-            ...target,
-            tabs: [...target.tabs, tab],
-            activeTabId: tab.id,
-          });
-          return next;
-        });
-        setFocusedPaneId(targetPaneId);
-        return;
-      }
-      const id = newPaneId();
-      setPanesById((current) => {
-        const next = new Map(current);
-        next.set(id, { tabs: [tab], activeTabId: tab.id, runtimeSessionId: newRuntimeId() });
-        return next;
-      });
-      setLayout((prev) => splitLeaf(prev, focusedPaneId, id, "vertical", "b"));
-      setFocusedPaneId(id);
-    },
-    [focusedPaneId, layout, panesById],
-  );
-
-  // Bridge from window events (dispatched by the navbar) to the imperative
-  // helpers above. We use a ref so listeners stay mount-only — this is the
-  // only effect for the navbar event API and its handler is trivially
-  // auditable in one spot.
-  const navHandlersRef = useRef({
-    openNewSessionInFocusedPane,
-    renameTab,
-    focusTab,
-    splitTabIntoNewPane,
-    selectProject,
-    selectedProjectId,
-    projects,
-  });
-  navHandlersRef.current = {
-    openNewSessionInFocusedPane,
-    renameTab,
-    focusTab,
-    splitTabIntoNewPane,
-    selectProject,
-    selectedProjectId,
-    projects,
-  };
-  useEffect(() => {
-    const onNewSession = (event: Event) => {
-      const detail = (event as CustomEvent<{ projectId?: string }>).detail;
-      const h = navHandlersRef.current;
-      if (detail?.projectId) {
-        const target = h.projects.find((entry) => entry.id === detail.projectId);
-        if (target) {
-          if (h.selectedProjectId !== target.id) h.selectProject(target);
-          h.openNewSessionInFocusedPane(target);
-          return;
-        }
-      }
-      h.openNewSessionInFocusedPane();
-    };
-    const onRename = (event: Event) => {
-      const detail = (event as CustomEvent<{ paneId?: PaneId; tabId?: string; title?: string }>)
-        .detail;
-      if (!detail?.paneId || !detail.tabId || !detail.title) return;
-      navHandlersRef.current.renameTab(detail.paneId, detail.tabId, detail.title);
-    };
-    const onOpen = (event: Event) => {
-      const detail = (
-        event as CustomEvent<{ paneId?: PaneId; tabId?: string; mode?: "focus" | "split" }>
-      ).detail;
-      if (!detail?.paneId || !detail.tabId) return;
-      if (detail.mode === "split") {
-        navHandlersRef.current.splitTabIntoNewPane(detail.paneId, detail.tabId);
-        return;
-      }
-      navHandlersRef.current.focusTab(detail.paneId, detail.tabId);
-    };
-    window.addEventListener(NEW_AGENT_SESSION_EVENT, onNewSession);
-    window.addEventListener(ACTIVE_AGENT_SESSION_RENAME_EVENT, onRename);
-    window.addEventListener(ACTIVE_AGENT_SESSION_OPEN_EVENT, onOpen);
-    return () => {
-      window.removeEventListener(NEW_AGENT_SESSION_EVENT, onNewSession);
-      window.removeEventListener(ACTIVE_AGENT_SESSION_RENAME_EVENT, onRename);
-      window.removeEventListener(ACTIVE_AGENT_SESSION_OPEN_EVENT, onOpen);
-    };
-  }, []);
+    projectsLoaded && !projectParam && !selectedProjectId && projects.length === 0;
 
   return (
     <div className="agent-workspace flex h-full min-h-0 w-full flex-col bg-(--bg) text-(--fg) md:h-[100dvh]">
-      {error ? (
-        <div className="border-b border-(--border) bg-(--err)/10 px-4 py-2 text-xs text-(--err)">
-          {error}
-        </div>
-      ) : null}
-      {setupWarning ? (
-        <div className="border-b border-(--border) bg-(--hl3)/10 px-4 py-2 text-xs text-(--hl3)">
-          Agent setup: {setupWarning} Open Settings → Setup for details.
-        </div>
-      ) : null}
-
       <div className="flex min-h-0 flex-1">
         <section className="relative flex min-w-0 flex-1 flex-col">
           <button
             type="button"
-            onClick={() =>
-              setRightPanelOpen((value) => {
-                const next = !value;
-                window.localStorage.setItem(COMPUTER_BROWSER_OPEN_KEY, "0");
-                return next;
-              })
-            }
+            onClick={handles.toggleComputerOpen}
             aria-pressed={rightPanelOpen}
             className={`absolute right-3 top-3 z-20 inline-flex !h-8 !min-h-8 !w-8 !min-w-8 items-center justify-center rounded-md border-0 backdrop-blur ${
               rightPanelOpen
@@ -1575,7 +168,7 @@ export function AgentWorkspace() {
                       runtimeSessionId={pane.runtimeSessionId}
                       modelId={paneModelId}
                       modelName={paneModel?.name ?? null}
-                      modelsLoading={loadingModels}
+                      modelsLoading={modelsLoading}
                       contextWindow={paneModel?.contextWindow ?? 0}
                       cwd={paneCwd}
                       projectName={paneProject?.name ?? null}
@@ -1587,21 +180,7 @@ export function AgentWorkspace() {
                               const project = projects.find(
                                 (entry) => entry.id === event.target.value,
                               );
-                              if (!project) return;
-                              setPanesById((current) => {
-                                const cur = current.get(paneId);
-                                if (!cur) return current;
-                                const next = new Map(current);
-                                next.set(paneId, {
-                                  ...cur,
-                                  tabs: cur.tabs.map((tab) =>
-                                    tab.id === cur.activeTabId
-                                      ? { ...tab, projectId: project.id, cwd: project.path }
-                                      : tab,
-                                  ),
-                                });
-                                return next;
-                              });
+                              if (project) handles.selectPaneProject(paneId, project);
                             }}
                             disabled={!paneTabIsNew}
                             className="!h-7 !min-h-7 max-w-full min-w-0 truncate rounded-md border-0 bg-transparent px-2 py-0 font-mono !text-[11px] text-(--dim) outline-none hover:bg-(--surface) hover:text-(--fg) disabled:opacity-100"
@@ -1625,130 +204,33 @@ export function AgentWorkspace() {
                       }
                       gitBranch={paneGitBranch}
                       gitSummary={paneGitSummary}
-                      onInitGit={initGitForActiveProject}
+                      onInitGit={handles.initGitForActiveProject}
                       modelSelector={
                         <ModelPicker
                           models={models}
                           selectedModel={paneModelId}
-                          onSelect={(modelId) => {
-                            setPanesById((current) => {
-                              const cur = current.get(paneId);
-                              if (!cur) return current;
-                              const next = new Map(current);
-                              next.set(paneId, {
-                                ...cur,
-                                tabs: cur.tabs.map((tab) =>
-                                  tab.id === cur.activeTabId ? { ...tab, modelId } : tab,
-                                ),
-                              });
-                              return next;
-                            });
-                          }}
-                          loading={loadingModels}
+                          onSelect={(modelId) => handles.selectPaneModel(paneId, modelId)}
+                          loading={modelsLoading}
                         />
                       }
                       browserToolEnabled={focusedPaneId === paneId && browserToolEnabled}
-                      onToggleBrowserTool={toggleBrowserTool}
-                      onPiSessionIdChange={notifySessionsChanged}
+                      onToggleBrowserTool={handles.toggleBrowserTool}
+                      onPiSessionIdChange={handles.notifySessionsChanged}
                       isFocused={focusedPaneId === paneId}
-                      onFocus={() => setFocusedPaneId(paneId)}
+                      onFocus={() => dispatch({ type: "FOCUS_PANE", paneId })}
                       tabs={pane.tabs}
                       activeTabId={pane.activeTabId}
-                      onTabsChange={(nextTabsOrUpdater) => {
-                        setPanesById((current) => {
-                          const cur = current.get(paneId);
-                          if (!cur) return current;
-                          const nextTabs =
-                            typeof nextTabsOrUpdater === "function"
-                              ? nextTabsOrUpdater(cur.tabs)
-                              : nextTabsOrUpdater;
-                          const next = new Map(current);
-                          next.set(paneId, { ...cur, tabs: nextTabs });
-                          return next;
-                        });
-                      }}
-                      onClose={
-                        onlyOne
-                          ? undefined
-                          : () => {
-                              setLayout((prev) => removeLeaf(prev, paneId) ?? prev);
-                              setPanesById((current) => {
-                                const next = new Map(current);
-                                next.delete(paneId);
-                                return next;
-                              });
-                              if (focusedPaneId === paneId) {
-                                const remaining = collectLeaves(layout).filter(
-                                  (id) => id !== paneId,
-                                );
-                                if (remaining[0]) setFocusedPaneId(remaining[0]);
-                              }
-                            }
+                      onTabsChange={(nextTabsOrUpdater) =>
+                        handles.setPaneTabs(paneId, nextTabsOrUpdater)
                       }
-                      onRegisterHandle={(handle) => registerPaneHandle(paneId, handle)}
+                      onClose={onlyOne ? undefined : () => handles.closePane(paneId)}
+                      onRegisterHandle={(handle) => handles.registerPaneHandle(paneId, handle)}
                     />
                   );
                 }}
-                onSplit={(paneId, direction, side, payload) => {
-                  // Create a new pane next to the drop target.
-                  if (payload.piSessionId) {
-                    const existing = findPaneTabByPiSessionId(panesById, payload.piSessionId);
-                    if (existing) {
-                      setFocusedPaneId(existing.paneId);
-                      setPanesById((current) => {
-                        const pane = current.get(existing.paneId);
-                        if (!pane) return current;
-                        const next = new Map(current);
-                        next.set(existing.paneId, { ...pane, activeTabId: existing.tab.id });
-                        return next;
-                      });
-                      return;
-                    }
-                  }
-                  const id = newPaneId();
-                  if (collectLeaves(layout).length >= 2) return;
-                  const runtime = newRuntimeId();
-                  const baseTab = {
-                    ...makeFreshTab(),
-                    projectId: payload.projectId,
-                    cwd: payload.cwd,
-                    piSessionId: payload.piSessionId ?? null,
-                    title: payload.title ?? "Loading session",
-                  };
-                  setPanesById((current) => {
-                    const next = new Map(current);
-                    next.set(id, {
-                      tabs: [baseTab],
-                      activeTabId: baseTab.id,
-                      runtimeSessionId: runtime,
-                    });
-                    if (!payload.piSessionId && payload.paneId && payload.tabId) {
-                      const source = current.get(payload.paneId);
-                      const sourceTab = source?.tabs.find((tab) => tab.id === payload.tabId);
-                      if (sourceTab) {
-                        next.set(id, {
-                          tabs: [
-                            {
-                              ...sourceTab,
-                              id: baseTab.id,
-                              runtimeSessionId: baseTab.runtimeSessionId,
-                            },
-                          ],
-                          activeTabId: baseTab.id,
-                          runtimeSessionId: runtime,
-                        });
-                      }
-                    }
-                    return next;
-                  });
-                  setLayout((prev) => splitLeaf(prev, paneId, id, direction, side));
-                  setFocusedPaneId(id);
-                  if (payload.piSessionId) queueSessionReplay(id, payload.piSessionId);
-                }}
-                onOpenTab={openSessionPayloadInPane}
-                onResize={(path, ratio) => {
-                  setLayout((prev) => setSplitRatio(prev, path, ratio));
-                }}
+                onSplit={handles.splitPaneWithPayload}
+                onOpenTab={handles.openSessionPayloadInPane}
+                onResize={handles.setSplitRatio}
               />
             </div>
           )}
@@ -1757,7 +239,7 @@ export function AgentWorkspace() {
         {rightPanelOpen ? (
           <aside
             className="relative flex shrink-0 flex-col border-l border-(--border) bg-(--bg)"
-            ref={computerAsideRef}
+            ref={registerComputerAside}
             style={{ width: `min(${computerWidth}px, 48vw)` }}
           >
             <div
@@ -1774,41 +256,29 @@ export function AgentWorkspace() {
               >
                 {focusedTab?.title ?? "Focused session"}
               </span>
-              <button
-                type="button"
-                onClick={() => selectComputerTab("browser")}
-                className={`h-6 shrink-0 font-medium uppercase tracking-wide ${
-                  activeComputerTab === "browser" ? "text-(--fg)" : "hover:text-(--fg)"
-                }`}
+              <ComputerTabButton
+                active={activeComputerTab === "browser"}
+                onClick={() => handles.setComputerTab("browser")}
               >
                 Browser
-              </button>
-              <button
-                type="button"
-                onClick={() => selectComputerTab("files")}
-                className={`h-6 shrink-0 font-medium uppercase tracking-wide ${
-                  activeComputerTab === "files" ? "text-(--fg)" : "hover:text-(--fg)"
-                }`}
+              </ComputerTabButton>
+              <ComputerTabButton
+                active={activeComputerTab === "files"}
+                onClick={() => handles.setComputerTab("files")}
               >
                 Files
-              </button>
-              <button
-                type="button"
-                onClick={() => selectComputerTab("diff")}
-                className={`h-6 shrink-0 font-medium uppercase tracking-wide ${
-                  activeComputerTab === "diff" ? "text-(--fg)" : "hover:text-(--fg)"
-                }`}
+              </ComputerTabButton>
+              <ComputerTabButton
+                active={activeComputerTab === "diff"}
+                onClick={() => handles.setComputerTab("diff")}
               >
                 Diff
-              </button>
+              </ComputerTabButton>
               <button
                 type="button"
                 onPointerDown={(event) => event.stopPropagation()}
                 onMouseDown={(event) => event.stopPropagation()}
-                onClick={() => {
-                  setRightPanelOpen(false);
-                  window.localStorage.setItem(COMPUTER_BROWSER_OPEN_KEY, "0");
-                }}
+                onClick={() => handles.setComputerOpen(false)}
                 className="ml-1 inline-flex h-7 w-7 items-center justify-center hover:text-(--fg)"
                 title="Close"
                 aria-label="Close computer"
@@ -1819,15 +289,12 @@ export function AgentWorkspace() {
 
             {activeComputerTab === "browser" ? (
               <AgentBrowser
-                ref={browserRef}
+                ref={registerBrowserHandle}
                 url={browserUrl}
                 inputValue={browserInput}
                 onInputChange={setBrowserInput}
                 onSubmit={submitBrowserUrl}
-                onClose={() => {
-                  setRightPanelOpen(false);
-                  window.localStorage.setItem(COMPUTER_BROWSER_OPEN_KEY, "0");
-                }}
+                onClose={() => handles.setComputerOpen(false)}
                 isElectron={isElectron}
               />
             ) : activeComputerTab === "files" ? (
@@ -1846,6 +313,28 @@ export function AgentWorkspace() {
   );
 }
 
+function ComputerTabButton({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`h-6 shrink-0 font-medium uppercase tracking-wide ${
+        active ? "text-(--fg)" : "hover:text-(--fg)"
+      }`}
+    >
+      {children}
+    </button>
+  );
+}
+
 function ModelPicker({
   models,
   selectedModel,
@@ -1858,21 +347,7 @@ function ModelPicker({
   loading: boolean;
 }) {
   const [open, setOpen] = useState(false);
-  const containerRef = useRef<HTMLDivElement>(null);
   const active = models.find((model) => model.id === selectedModel) || null;
-
-  useEffect(() => {
-    if (!open) return;
-    function onDocClick(event: MouseEvent) {
-      if (!containerRef.current) return;
-      if (!containerRef.current.contains(event.target as Node)) {
-        setOpen(false);
-      }
-    }
-    document.addEventListener("mousedown", onDocClick);
-    return () => document.removeEventListener("mousedown", onDocClick);
-  }, [open]);
-
   const triggerLabel = loading
     ? "Loading…"
     : active?.name || (models.length === 0 ? "No models" : "Select model");
@@ -1880,8 +355,12 @@ function ModelPicker({
 
   return (
     <div
-      ref={containerRef}
       className="relative shrink-0"
+      onBlur={(event) => {
+        const nextTarget = event.relatedTarget;
+        if (nextTarget instanceof Node && event.currentTarget.contains(nextTarget)) return;
+        setOpen(false);
+      }}
       onPointerDown={(event) => event.stopPropagation()}
       onMouseDown={(event) => event.stopPropagation()}
     >

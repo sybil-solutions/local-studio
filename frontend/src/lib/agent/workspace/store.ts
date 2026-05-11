@@ -127,6 +127,7 @@ export function createInitialState(): WorkspaceState {
     browserUrl: DEFAULT_BROWSER_URL,
     browserInput: DEFAULT_BROWSER_URL,
     hydrated: false,
+    lastHandledNavKey: "",
   };
 }
 
@@ -440,10 +441,16 @@ function hydrateSessionSnapshots(
 
 export function reducer(state: WorkspaceState, action: WorkspaceAction): WorkspaceState {
   switch (action.type) {
-    case "hydrate": {
-      const next = { ...state, ...action.state };
+    case "hydrate":
+    case "HYDRATE": {
+      const hydration = action.type === "HYDRATE" ? action.payload : action.state;
+      const next = { ...state, ...hydration };
       return { ...next, hydrated: action.hydrated ?? next.hydrated };
     }
+    case "WORKSPACE_UNMOUNTED":
+    case "PROJECTS_CHANGED":
+    case "NOTIFY_SESSIONS_CHANGED":
+      return state;
     case "setProjects": {
       const initial =
         (action.storedProjectId &&
@@ -461,6 +468,7 @@ export function reducer(state: WorkspaceState, action: WorkspaceAction): Workspa
     case "setProjectsLoaded":
       return { ...state, projectsLoaded: action.loaded };
     case "selectProject":
+    case "SELECT_PROJECT":
       return {
         ...state,
         selectedProjectId: action.project?.id ?? null,
@@ -486,6 +494,7 @@ export function reducer(state: WorkspaceState, action: WorkspaceAction): Workspa
     case "setLayout":
       return { ...state, layout: action.layout };
     case "setSplitRatio":
+    case "SET_SPLIT_RATIO":
       return { ...state, layout: setLayoutSplitRatio(state.layout, action.path, action.ratio) };
     case "restorePaneState":
       return {
@@ -495,22 +504,28 @@ export function reducer(state: WorkspaceState, action: WorkspaceAction): Workspa
         focusedPaneId: action.focusedPaneId,
         hydrated: true,
       };
-    case "openNewSession": {
-      const selectedProjectState = action.project
+    case "openNewSession":
+    case "OPEN_NEW_SESSION": {
+      const project =
+        action.project ??
+        (action.type === "OPEN_NEW_SESSION" && action.projectId
+          ? state.projects.find((entry) => entry.id === action.projectId)
+          : undefined);
+      const selectedProjectState = project
         ? {
             ...state,
-            selectedProjectId: action.project.id,
-            agentCwd: action.project.path,
+            selectedProjectId: project.id,
+            agentCwd: project.path,
           }
         : state;
       const pane = selectedProjectState.panesById.get(selectedProjectState.focusedPaneId);
       if (!pane) return selectedProjectState;
       const existing = pane.tabs.find((tab) => {
         if (!isEmptyStarterTab(tab)) return false;
-        if (action.project?.id && tab.projectId && tab.projectId !== action.project.id) {
+        if (project?.id && tab.projectId && tab.projectId !== project.id) {
           return false;
         }
-        if (action.project?.path && tab.cwd && tab.cwd !== action.project.path) return false;
+        if (project?.path && tab.cwd && tab.cwd !== project.path) return false;
         return true;
       });
       const nextPanes = new Map(selectedProjectState.panesById);
@@ -518,8 +533,8 @@ export function reducer(state: WorkspaceState, action: WorkspaceAction): Workspa
         nextPanes.set(selectedProjectState.focusedPaneId, {
           ...pane,
           tabs: pane.tabs.map((tab) =>
-            tab.id === existing.id && action.project
-              ? { ...tab, projectId: action.project.id, cwd: action.project.path }
+            tab.id === existing.id && project
+              ? { ...tab, projectId: project.id, cwd: project.path }
               : tab,
           ),
           activeTabId: existing.id,
@@ -528,8 +543,8 @@ export function reducer(state: WorkspaceState, action: WorkspaceAction): Workspa
       }
       const tab = {
         ...freshTab(action.tab),
-        projectId: action.project?.id,
-        cwd: action.project?.path,
+        projectId: project?.id,
+        cwd: project?.path,
       };
       nextPanes.set(selectedProjectState.focusedPaneId, {
         ...pane,
@@ -538,7 +553,8 @@ export function reducer(state: WorkspaceState, action: WorkspaceAction): Workspa
       });
       return { ...selectedProjectState, panesById: nextPanes };
     }
-    case "replaySession": {
+    case "replaySession":
+    case "REPLAY_SESSION": {
       const existing = findPaneTabByPiSessionId(state.panesById, action.piSessionId);
       if (existing) return focusExistingSession(state, existing.paneId, existing.tab.id);
       const pane = state.panesById.get(state.focusedPaneId);
@@ -563,7 +579,8 @@ export function reducer(state: WorkspaceState, action: WorkspaceAction): Workspa
       });
       return { ...state, panesById: nextPanes };
     }
-    case "replaySessionInSplit": {
+    case "replaySessionInSplit":
+    case "REPLAY_SESSION_IN_SPLIT": {
       const existing = findPaneTabByPiSessionId(state.panesById, action.piSessionId);
       if (existing) return focusExistingSession(state, existing.paneId, existing.tab.id);
       const leaves = collectLeaves(state.layout);
@@ -595,7 +612,8 @@ export function reducer(state: WorkspaceState, action: WorkspaceAction): Workspa
         focusedPaneId: paneId,
       };
     }
-    case "openSessionPayloadInPane": {
+    case "openSessionPayloadInPane":
+    case "OPEN_SESSION_PAYLOAD_IN_PANE": {
       if (action.payload.piSessionId) {
         const existing = findPaneTabByPiSessionId(state.panesById, action.payload.piSessionId);
         if (existing) return focusExistingSession(state, existing.paneId, existing.tab.id);
@@ -616,7 +634,8 @@ export function reducer(state: WorkspaceState, action: WorkspaceAction): Workspa
       }
       return { ...state, focusedPaneId: action.paneId };
     }
-    case "splitPaneWithPayload": {
+    case "splitPaneWithPayload":
+    case "SPLIT_PANE_WITH_PAYLOAD": {
       if (action.payload.piSessionId) {
         const existing = findPaneTabByPiSessionId(state.panesById, action.payload.piSessionId);
         if (existing) return focusExistingSession(state, existing.paneId, existing.tab.id);
@@ -647,12 +666,15 @@ export function reducer(state: WorkspaceState, action: WorkspaceAction): Workspa
       };
     }
     case "focusPane":
+    case "FOCUS_PANE":
       return state.panesById.has(action.paneId)
         ? { ...state, focusedPaneId: action.paneId }
         : state;
     case "focusTab":
+    case "FOCUS_TAB":
       return focusExistingSession(state, action.paneId, action.tabId);
-    case "renameTab": {
+    case "renameTab":
+    case "RENAME_TAB": {
       const pane = state.panesById.get(action.paneId);
       if (!pane) return state;
       const nextPanes = new Map(state.panesById);
@@ -664,7 +686,8 @@ export function reducer(state: WorkspaceState, action: WorkspaceAction): Workspa
       });
       return { ...state, panesById: nextPanes };
     }
-    case "splitTab": {
+    case "splitTab":
+    case "SPLIT_TAB": {
       const leaves = collectLeaves(state.layout);
       const source = state.panesById.get(action.sourcePaneId);
       const sourceTab = source?.tabs.find((tab) => tab.id === action.sourceTabId);
@@ -688,7 +711,8 @@ export function reducer(state: WorkspaceState, action: WorkspaceAction): Workspa
         focusedPaneId: paneId,
       };
     }
-    case "closePane": {
+    case "closePane":
+    case "CLOSE_PANE": {
       const leaves = collectLeaves(state.layout);
       if (leaves.length <= 1 || !leaves.includes(action.paneId)) return state;
       const nextLayout = removeLeaf(state.layout, action.paneId) ?? state.layout;
@@ -705,14 +729,16 @@ export function reducer(state: WorkspaceState, action: WorkspaceAction): Workspa
             : state.focusedPaneId,
       };
     }
-    case "setPaneTabs": {
+    case "setPaneTabs":
+    case "SET_PANE_TABS": {
       const pane = state.panesById.get(action.paneId);
       if (!pane) return state;
       const nextPanes = new Map(state.panesById);
       nextPanes.set(action.paneId, { ...pane, tabs: action.tabs });
       return { ...state, panesById: nextPanes };
     }
-    case "patchActiveTab": {
+    case "patchActiveTab":
+    case "PATCH_ACTIVE_TAB": {
       const pane = state.panesById.get(action.paneId);
       if (!pane) return state;
       const nextPanes = new Map(state.panesById);
@@ -725,24 +751,32 @@ export function reducer(state: WorkspaceState, action: WorkspaceAction): Workspa
       return { ...state, panesById: nextPanes };
     }
     case "setComputerOpen":
+    case "SET_COMPUTER_OPEN":
       return { ...state, computer: { ...state.computer, open: action.open } };
     case "toggleComputerOpen":
+    case "TOGGLE_COMPUTER_OPEN":
       return { ...state, computer: { ...state.computer, open: !state.computer.open } };
     case "setComputerTab":
+    case "SET_COMPUTER_TAB":
       return { ...state, computer: { ...state.computer, tab: action.tab } };
     case "setComputerWidth":
+    case "SET_COMPUTER_WIDTH":
       return { ...state, computer: { ...state.computer, width: clampComputerWidth(action.width) } };
     case "setBrowserToolEnabled":
+    case "SET_BROWSER_TOOL_ENABLED":
       return { ...state, browserToolEnabled: action.enabled };
     case "toggleBrowserTool":
+    case "TOGGLE_BROWSER_TOOL":
       return { ...state, browserToolEnabled: !state.browserToolEnabled };
     case "setBrowserUrl":
+    case "SET_BROWSER_URL":
       return {
         ...state,
         browserUrl: action.url,
         browserInput: action.input ?? state.browserInput,
       };
     case "setBrowserInput":
+    case "SET_BROWSER_INPUT":
       return { ...state, browserInput: action.input };
     case "setGitSummary": {
       const next = new Map(state.gitSummaries);
@@ -754,6 +788,34 @@ export function reducer(state: WorkspaceState, action: WorkspaceAction): Workspa
       const next = new Map(state.gitSummaries);
       next.delete(action.cwd);
       return { ...state, gitSummaries: next };
+    }
+    case "URL_NAV_REQUESTED": {
+      if (state.lastHandledNavKey === action.key) return state;
+      if (!action.projectId && !action.sessionId && !action.newSession) return state;
+
+      if (action.projectId) {
+        const target = state.projects.find((entry) => entry.id === action.projectId);
+        if (!target) return state;
+        if (state.selectedProjectId !== target.id || state.agentCwd !== target.path) {
+          return {
+            ...state,
+            selectedProjectId: target.id,
+            agentCwd: target.path,
+          };
+        }
+      }
+
+      const marked = { ...state, lastHandledNavKey: action.key };
+      if (action.newSession && !action.sessionId) {
+        return reducer(marked, { type: "OPEN_NEW_SESSION" });
+      }
+      if (action.sessionId && action.split) {
+        return reducer(marked, { type: "REPLAY_SESSION_IN_SPLIT", piSessionId: action.sessionId });
+      }
+      if (action.sessionId) {
+        return reducer(marked, { type: "REPLAY_SESSION", piSessionId: action.sessionId });
+      }
+      return marked;
     }
     case "hydrateActiveSessions":
       return action.hasExplicitSessionNav
