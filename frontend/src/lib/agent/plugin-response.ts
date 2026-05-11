@@ -1,5 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
+import { homedir } from "node:os";
 import path from "node:path";
+import { resolveDataDir } from "@/lib/data-dir";
 import type { PluginRow } from "./plugin-discovery";
 
 export type PluginRuntimeCheck = {
@@ -51,7 +53,8 @@ function pluginRuntimeCheck(plugin: PluginRow): PluginRuntimeCheck {
     ? allMcpExecutablesExist(plugin.mcpConfigPath)
     : undefined;
   const launchConstrained = plugin.mcpConfigPath
-    ? mcpConfigUsesSkyComputerUseClient(plugin.mcpConfigPath)
+    ? mcpConfigUsesSkyComputerUseClient(plugin.mcpConfigPath) &&
+      !isLocalComputerUseHelper(plugin, plugin.mcpConfigPath)
     : false;
   return {
     skillConfigured: Boolean(plugin.skillPath && existsSync(plugin.skillPath)),
@@ -70,10 +73,29 @@ function pluginRuntimeCheck(plugin: PluginRow): PluginRuntimeCheck {
   };
 }
 
+function isLocalComputerUseHelper(plugin: PluginRow, configPath: string): boolean {
+  return (
+    pluginMatches(plugin, "computer-use") &&
+    localComputerUseRoots().some((root) => isPathInside(configPath, root))
+  );
+}
+
+function localComputerUseRoots(): string[] {
+  return [
+    path.join(resolveDataDir(), "computer-use"),
+    path.join(homedir(), ".codex", "computer-use"),
+  ];
+}
+
 function pluginMatches(plugin: PluginRow, needle: string): boolean {
   return [plugin.id, plugin.name, plugin.displayName, plugin.path]
     .filter((value): value is string => Boolean(value))
     .some((value) => value.toLowerCase().includes(needle));
+}
+
+function isPathInside(candidate: string, root: string): boolean {
+  const relative = path.relative(path.resolve(root), path.resolve(candidate));
+  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
 }
 
 function allMcpExecutablesExist(configPath: string): boolean | undefined {

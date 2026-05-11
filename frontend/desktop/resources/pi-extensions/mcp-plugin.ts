@@ -105,6 +105,7 @@ class McpClient {
   private nextId = 1;
   private buffer = Buffer.alloc(0);
   private stderr = "";
+  private transport: "headers" | "jsonl";
   private pending = new Map<
     number,
     { resolve: (value: unknown) => void; reject: (error: Error) => void }
@@ -120,6 +121,7 @@ class McpClient {
     const command = config.command?.startsWith(".")
       ? path.resolve(cwd, config.command)
       : (config.command ?? "");
+    this.transport = usesJsonLineMcp(name, command, config.args) ? "jsonl" : "headers";
     this.child = spawn(command, config.args ?? [], {
       cwd,
       env: { ...process.env, ...(config.env ?? {}) },
@@ -220,6 +222,10 @@ class McpClient {
   }
 
   private write(payload: unknown) {
+    if (this.transport === "jsonl") {
+      this.child.stdin.write(`${JSON.stringify(payload)}\n`);
+      return;
+    }
     const body = Buffer.from(JSON.stringify(payload), "utf8");
     this.child.stdin.write(`Content-Length: ${body.length}\r\n\r\n`);
     this.child.stdin.write(body);
@@ -227,6 +233,10 @@ class McpClient {
 
   private onData(chunk: Buffer) {
     this.buffer = Buffer.concat([this.buffer, chunk]);
+    if (this.transport === "jsonl") {
+      this.onJsonLineData();
+      return;
+    }
     while (true) {
       const headerEnd = this.buffer.indexOf("\r\n\r\n");
       if (headerEnd === -1) return;
@@ -245,6 +255,16 @@ class McpClient {
     }
   }
 
+  private onJsonLineData() {
+    while (true) {
+      const lineEnd = this.buffer.indexOf("\n");
+      if (lineEnd === -1) return;
+      const line = this.buffer.slice(0, lineEnd).toString("utf8").trim();
+      this.buffer = this.buffer.slice(lineEnd + 1);
+      if (line) this.handleMessage(line);
+    }
+  }
+
   private handleMessage(body: string) {
     let message: JsonRpc;
     try {
@@ -259,6 +279,11 @@ class McpClient {
     if (message.error) pending.reject(new Error(message.error.message || `${this.name} MCP error`));
     else pending.resolve(message.result);
   }
+}
+
+function usesJsonLineMcp(serverName: string, command: string, args: string[] | undefined): boolean {
+  const marker = `${serverName} ${command} ${(args ?? []).join(" ")}`.toLowerCase();
+  return marker.includes("computer-use") || marker.includes("skycomputeruseclient");
 }
 
 function computerUseLaunchHint(serverName: string, command: string): string | null {

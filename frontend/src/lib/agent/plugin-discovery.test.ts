@@ -1,8 +1,9 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { __resetDataDirCacheForTests } from "@/lib/data-dir";
 import {
   codexAppPluginRoots,
   codexPluginCacheRoots,
@@ -220,6 +221,42 @@ describe("discoverPlugins", () => {
       });
       expect(loadPluginInstructions(path.join(root, "outside"), [plugin])).toBeNull();
     } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("prefers a local re-signed Computer Use helper over the bundled launch-constrained app", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "vllm-plugin-discovery-"));
+    const previousDataDir = process.env.VLLM_STUDIO_DATA_DIR;
+    try {
+      const dataDir = path.join(root, "data");
+      process.env.VLLM_STUDIO_DATA_DIR = dataDir;
+      __resetDataDirCacheForTests();
+
+      const localHelper = path.join(dataDir, "computer-use");
+      mkdirSync(path.join(localHelper, "Codex Computer Use.app"), { recursive: true });
+      writeFileSync(path.join(localHelper, ".mcp.json"), '{"mcpServers":{}}');
+
+      const bundled = path.join(root, "openai-bundled", "plugins", "computer-use");
+      mkdirSync(path.join(bundled, ".codex-plugin"), { recursive: true });
+      writeFileSync(
+        path.join(bundled, ".codex-plugin", "plugin.json"),
+        '{"name":"computer-use","version":"9.9.9"}',
+      );
+
+      const rows = discoverPlugins([bundled, path.join(homedir(), ".codex", "plugins")], {
+        maxDepth: 0,
+      });
+
+      expect(rows.find((row) => row.name === "computer-use")).toMatchObject({
+        path: localHelper,
+        appPath: path.join(localHelper, "Codex Computer Use.app"),
+        mcpConfigPath: path.join(localHelper, ".mcp.json"),
+      });
+    } finally {
+      if (previousDataDir === undefined) delete process.env.VLLM_STUDIO_DATA_DIR;
+      else process.env.VLLM_STUDIO_DATA_DIR = previousDataDir;
+      __resetDataDirCacheForTests();
       await rm(root, { recursive: true, force: true });
     }
   });

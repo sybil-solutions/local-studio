@@ -192,6 +192,7 @@ function resolveComputerUseApp(plugins: RuntimePluginRef[]): string | null {
       : null,
     selected?.path,
     "/Applications/Codex.app/Contents/Resources/plugins/openai-bundled/plugins/computer-use/Codex Computer Use.app",
+    path.join(resolveDataDir(), "computer-use", "Codex Computer Use.app"),
     path.join(homedir(), ".codex", "computer-use", "Codex Computer Use.app"),
   ].filter((value): value is string => Boolean(value));
   return (
@@ -251,9 +252,29 @@ function isLaunchConstrainedComputerUseMcp(configPath: string): boolean {
 
 function shouldLoadMcpConfig(plugin: RuntimePluginRef, configPath: string): boolean {
   if (process.env.VLLM_STUDIO_ENABLE_CODEX_COMPUTER_USE_MCP === "1") return true;
+  if (isLocalComputerUseHelper(plugin, configPath)) return true;
   return !(
     pluginNameMatches(plugin, "computer-use") && isLaunchConstrainedComputerUseMcp(configPath)
   );
+}
+
+function isLocalComputerUseHelper(plugin: RuntimePluginRef, configPath: string): boolean {
+  return (
+    pluginNameMatches(plugin, "computer-use") &&
+    localComputerUseRoots().some((root) => isPathInside(configPath, root))
+  );
+}
+
+function localComputerUseRoots(): string[] {
+  return [
+    path.join(resolveDataDir(), "computer-use"),
+    path.join(homedir(), ".codex", "computer-use"),
+  ];
+}
+
+function isPathInside(candidate: string, root: string): boolean {
+  const relative = path.relative(path.resolve(root), path.resolve(candidate));
+  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
 }
 
 function pluginMcpConfigs(

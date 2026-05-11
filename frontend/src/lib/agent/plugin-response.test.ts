@@ -2,6 +2,7 @@ import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { __resetDataDirCacheForTests } from "@/lib/data-dir";
 import type { PluginRow } from "./plugin-discovery";
 import { buildPluginsResponse } from "./plugin-response";
 
@@ -102,6 +103,73 @@ describe("buildPluginsResponse", () => {
       runtimeCheckRequired: true,
     });
     expect(response.validation.computerUseRuntime?.note).toContain("launch-constrained");
+  });
+
+  it("does not mark the local Computer Use helper as blocked outside Codex", () => {
+    const root = mkdtempSync(path.join(tmpdir(), "plugin-response-"));
+    const previousDataDir = process.env.VLLM_STUDIO_DATA_DIR;
+    try {
+      process.env.VLLM_STUDIO_DATA_DIR = root;
+      __resetDataDirCacheForTests();
+      const helper = path.join(root, "computer-use");
+      mkdirSync(
+        path.join(
+          helper,
+          "Codex Computer Use.app",
+          "Contents",
+          "SharedSupport",
+          "SkyComputerUseClient.app",
+          "Contents",
+          "MacOS",
+        ),
+        { recursive: true },
+      );
+      const executable = path.join(
+        helper,
+        "Codex Computer Use.app",
+        "Contents",
+        "SharedSupport",
+        "SkyComputerUseClient.app",
+        "Contents",
+        "MacOS",
+        "SkyComputerUseClient",
+      );
+      writeFileSync(executable, "#!/bin/sh\n");
+      writeFileSync(
+        path.join(helper, ".mcp.json"),
+        JSON.stringify({
+          mcpServers: {
+            "computer-use": {
+              command:
+                "./Codex Computer Use.app/Contents/SharedSupport/SkyComputerUseClient.app/Contents/MacOS/SkyComputerUseClient",
+              args: ["mcp"],
+              cwd: ".",
+            },
+          },
+        }),
+      );
+
+      const response = buildPluginsResponse([
+        plugin({
+          name: "computer-use",
+          path: helper,
+          appPath: path.join(helper, "Codex Computer Use.app"),
+          mcpConfigPath: path.join(helper, ".mcp.json"),
+        }),
+      ]);
+
+      expect(response.validation.computerUseRuntime).toMatchObject({
+        mcpConfigured: true,
+        appConfigured: true,
+        mcpExecutableExists: true,
+        runtimeCheckRequired: true,
+      });
+      expect(response.validation.computerUseRuntime?.runtimeBlockedOutsideCodex).toBeUndefined();
+    } finally {
+      if (previousDataDir === undefined) delete process.env.VLLM_STUDIO_DATA_DIR;
+      else process.env.VLLM_STUDIO_DATA_DIR = previousDataDir;
+      __resetDataDirCacheForTests();
+    }
   });
 
   it("marks MCP runtime incomplete when any configured server executable is missing", () => {

@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
+import { resolveDataDir } from "@/lib/data-dir";
 import { defaultCodexConfigPath, pluginConfigKey } from "./plugin-config";
 
 export type PluginRow = {
@@ -241,25 +242,36 @@ function readAppIds(appConfigPath: string): string[] {
 }
 
 function knownLocalPluginRows(): PluginRow[] {
-  const home = homedir();
   const rows: PluginRow[] = [];
-  const computerUseApp = path.join(home, ".codex", "computer-use", "Codex Computer Use.app");
-  if (existsSync(computerUseApp)) {
+  for (const computerUseRoot of localComputerUseRoots()) {
+    const computerUseApp = path.join(computerUseRoot, "Codex Computer Use.app");
+    const computerUseMcp = path.join(computerUseRoot, ".mcp.json");
+    const computerUseSkills = path.join(computerUseRoot, "skills");
+    if (!existsSync(computerUseApp)) continue;
     rows.push({
-      id: "builtin:computer-use",
+      id: `builtin:computer-use:${computerUseRoot}`,
       name: "computer-use",
       displayName: "Computer Use",
-      path: computerUseApp,
+      path: computerUseRoot,
       installed: true,
       enabled: true,
       source: "openai-bundled",
       category: "Productivity",
       capabilities: ["Interactive", "Read", "Write"],
       appPath: computerUseApp,
+      ...(existsSync(computerUseMcp) ? { mcpConfigPath: computerUseMcp } : {}),
+      ...(existsSync(computerUseSkills) ? { skillPath: computerUseSkills } : {}),
       description: "Local Codex Computer Use helper app.",
     });
   }
   return rows;
+}
+
+function localComputerUseRoots(): string[] {
+  return [
+    path.join(resolveDataDir(), "computer-use"),
+    path.join(homedir(), ".codex", "computer-use"),
+  ];
 }
 
 export function discoverPlugins(
@@ -267,9 +279,7 @@ export function discoverPlugins(
   options: { configPath?: string; maxDepth?: number } = {},
 ): PluginRow[] {
   const maxDepth = options.maxDepth ?? 8;
-  const codexConfig = readCodexConfig(
-    options.configPath ?? defaultCodexConfigPath(),
-  );
+  const codexConfig = readCodexConfig(options.configPath ?? defaultCodexConfigPath());
   const rows: PluginRow[] = [];
   const seen = new Set<string>();
 
@@ -289,8 +299,7 @@ export function discoverPlugins(
       const name = manifest.name ?? pluginNameFromPath(dir);
       const source = marketplaceFromPath(dir);
       const enabled =
-        (source ? codexConfig.pluginEnabled.get(pluginConfigKey(name, source)) : undefined) ??
-        true;
+        (source ? codexConfig.pluginEnabled.get(pluginConfigKey(name, source)) : undefined) ?? true;
       rows.push({
         id: dir,
         name,
@@ -332,7 +341,7 @@ export function discoverPlugins(
   );
   if (includesDefaultRoot) {
     for (const row of knownLocalPluginRows()) {
-      if (!rows.some((candidate) => candidate.name === row.name)) rows.push(row);
+      rows.push(row);
     }
   }
   const deduped = new Map<string, PluginRow>();
@@ -348,12 +357,34 @@ export function discoverPlugins(
 
 function preferredPluginRow(current: PluginRow, candidate: PluginRow): PluginRow {
   if (current.enabled !== candidate.enabled) return candidate.enabled ? candidate : current;
+  const candidateLocalComputerUse = isLocalComputerUseHelper(candidate);
+  const currentLocalComputerUse = isLocalComputerUseHelper(current);
+  if (candidateLocalComputerUse !== currentLocalComputerUse) {
+    return candidateLocalComputerUse ? candidate : current;
+  }
+  if (candidateLocalComputerUse && currentLocalComputerUse) {
+    if (Boolean(candidate.mcpConfigPath) !== Boolean(current.mcpConfigPath)) {
+      return candidate.mcpConfigPath ? candidate : current;
+    }
+  }
   const versionDelta = comparePluginVersions(candidate.version, current.version);
   if (versionDelta !== 0) return versionDelta > 0 ? candidate : current;
   const candidateBundled = candidate.path.includes("/Applications/Codex.app/");
   const currentBundled = current.path.includes("/Applications/Codex.app/");
   if (candidateBundled !== currentBundled) return candidateBundled ? candidate : current;
   return candidate;
+}
+
+function isLocalComputerUseHelper(row: PluginRow): boolean {
+  return (
+    row.name.toLowerCase().includes("computer-use") &&
+    localComputerUseRoots().some((root) => isPathInside(row.path, root))
+  );
+}
+
+function isPathInside(candidate: string, root: string): boolean {
+  const relative = path.relative(path.resolve(root), path.resolve(candidate));
+  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
 }
 
 function comparePluginVersions(left?: string, right?: string): number {

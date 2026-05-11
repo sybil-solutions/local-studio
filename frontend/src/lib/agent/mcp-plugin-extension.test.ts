@@ -45,6 +45,41 @@ describe("mcp plugin extension", () => {
       else process.env.VLLM_STUDIO_MCP_PLUGIN_CONFIGS = previous;
     }
   });
+
+  it("registers Computer Use JSON-lines MCP tools", async () => {
+    const dir = mkdtempSync(path.join(tmpdir(), "vllm-studio-mcp-jsonl-"));
+    const serverPath = path.join(dir, "computer-use-jsonl.cjs");
+    const configPath = path.join(dir, ".mcp.json");
+    writeFileSync(serverPath, fakeJsonLineMcpServerSource());
+    writeFileSync(
+      configPath,
+      JSON.stringify({
+        mcpServers: {
+          "computer-use": { command: process.execPath, args: [serverPath], cwd: "." },
+        },
+      }),
+    );
+
+    const previous = process.env.VLLM_STUDIO_MCP_PLUGIN_CONFIGS;
+    process.env.VLLM_STUDIO_MCP_PLUGIN_CONFIGS = JSON.stringify([
+      { pluginName: "computer-use", configPath },
+    ]);
+    try {
+      const tools: ToolRecord[] = [];
+      await registerMcpPlugins({
+        registerTool(tool: ToolRecord) {
+          tools.push(tool);
+        },
+      } as Parameters<typeof registerMcpPlugins>[0]);
+
+      expect(tools.map((tool) => tool.name)).toEqual(
+        expect.arrayContaining(["mcp_plugin_status", "computer-use_list_apps"]),
+      );
+    } finally {
+      if (previous === undefined) delete process.env.VLLM_STUDIO_MCP_PLUGIN_CONFIGS;
+      else process.env.VLLM_STUDIO_MCP_PLUGIN_CONFIGS = previous;
+    }
+  });
 });
 
 function fakeMcpServerSource() {
@@ -74,6 +109,33 @@ process.stdin.on("data", (chunk) => {
     if (message.method === "tools/list") {
       send(message.id, { tools: [{ name: "noop", inputSchema: { type: "object" } }] });
       setTimeout(() => process.exit(42), 20);
+    }
+  }
+});
+`;
+}
+
+function fakeJsonLineMcpServerSource() {
+  return `
+process.stdin.setEncoding("utf8");
+let buffer = "";
+function send(id, result) {
+  process.stdout.write(JSON.stringify({ jsonrpc: "2.0", id, result }) + "\\n");
+}
+process.stdin.on("data", (chunk) => {
+  buffer += chunk;
+  let newline = buffer.indexOf("\\n");
+  while (newline !== -1) {
+    const line = buffer.slice(0, newline).trim();
+    buffer = buffer.slice(newline + 1);
+    newline = buffer.indexOf("\\n");
+    if (!line) continue;
+    const message = JSON.parse(line);
+    if (message.method === "initialize") {
+      send(message.id, { protocolVersion: "2024-11-05", capabilities: {} });
+    }
+    if (message.method === "tools/list") {
+      send(message.id, { tools: [{ name: "list_apps", inputSchema: { type: "object" } }] });
     }
   }
 });
