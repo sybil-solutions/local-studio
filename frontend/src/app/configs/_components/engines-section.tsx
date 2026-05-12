@@ -14,21 +14,12 @@ import {
   StatusPill,
   type StatusTone,
 } from "@/components/settings-primitives";
-
-const ENGINE_META: Record<string, { label: string; description: string }> = {
-  vllm: {
-    label: "vLLM",
-    description: "High-throughput LLM serving with CUDA-oriented scheduling.",
-  },
-  sglang: { label: "SGLang", description: "Fast structured generation and multi-turn serving." },
-  llamacpp: {
-    label: "llama.cpp",
-    description: "GGUF inference through CPU, Metal, or CUDA builds.",
-  },
-  exllamav3: { label: "ExLlama v3", description: "EXL3 quantized inference target." },
-};
-
-const FALLBACK_ENGINES = ["vllm", "sglang", "llamacpp", "exllamav3"] as const;
+import {
+  ENGINE_META,
+  hasHydratedEngineRows,
+  resolveEngineRowsView,
+  type EngineRowsView,
+} from "./engines-section-model";
 
 type UpgradeState = { status: "idle" | "upgrading" | "success" | "error"; message?: string };
 
@@ -63,82 +54,109 @@ export function EnginesSection({ runtime }: { runtime?: SystemRuntimeInfo | null
     return () => clearInterval(timer);
   }, [refreshRuntimeJobs]);
 
-  const inferenceTargets = useMemo(
-    () =>
-      targets.filter(
-        (target) =>
-          target.backend === "vllm" || target.backend === "sglang" || target.backend === "llamacpp",
-      ),
-    [targets],
-  );
-
-  const hasRows = inferenceTargets.length > 0 || Boolean(backends);
+  const engineRows = useMemo(() => resolveEngineRowsView(targets, backends), [backends, targets]);
+  const hasRows = hasHydratedEngineRows(engineRows);
 
   return (
     <div className="space-y-5">
       <SettingsGroup
         title="Inference engines"
         description="Codex-style status rows instead of install cards; each row keeps an action or a fallback."
-        actions={
-          <StatusPill tone={hasRows ? "good" : "info"}>
-            {hasRows ? "hydrated" : "waiting"}
-          </StatusPill>
-        }
+        actions={<HydrationStatus hasRows={hasRows} />}
       >
-        {inferenceTargets.length > 0
-          ? inferenceTargets.map((target) => (
-              <RuntimeTargetRow
-                key={target.id}
-                target={target}
-                job={jobForTarget(jobs, target)}
-                onJobCreated={refreshRuntimeJobs}
-              />
-            ))
-          : backends
-            ? FALLBACK_ENGINES.map((key) => {
-                const info = backends[key];
-                return info ? (
-                  <BackendRow key={key} id={key} info={info} active={activeBackend === key} />
-                ) : null;
-              })
-            : FALLBACK_ENGINES.map((key) => (
-                <SettingsRow
-                  key={key}
-                  label={ENGINE_META[key].label}
-                  description={ENGINE_META[key].description}
-                  value={<SettingsValue dim>Runtime data has not hydrated yet.</SettingsValue>}
-                  status={<StatusPill tone="info">pending</StatusPill>}
-                />
-              ))}
+        <EngineRows
+          activeBackend={activeBackend}
+          jobs={jobs}
+          onJobCreated={refreshRuntimeJobs}
+          view={engineRows}
+        />
       </SettingsGroup>
 
       <SettingsGroup
         title="Hardware monitor"
         description="GPU telemetry rows stay visible even before live samples arrive."
       >
-        <SettingsRow
-          label="GPU monitoring"
-          description="nvidia-smi, amd-smi, or rocm-smi discovery from the controller."
-          value={
-            <SettingsValue mono>
-              {gpuMon?.available ? (gpuMon.tool ?? "available") : "not available yet"}
-            </SettingsValue>
-          }
-          status={
-            <StatusPill tone={gpuMon?.available ? "good" : "warning"}>
-              {gpuMon?.available ? "online" : "fallback"}
-            </StatusPill>
-          }
-        />
-        <SettingsRow
-          label="GPU lease"
-          description="Current runtime lock holder when a launch or engine job owns the GPU lane."
-          value={<SettingsValue mono>{lease?.holder ?? "No active lease"}</SettingsValue>}
-          status={<StatusPill>{lease?.holder ? "held" : "free"}</StatusPill>}
-        />
+        <GpuMonitoringRow gpuMon={gpuMon} />
+        <GpuLeaseRow holder={lease?.holder} />
       </SettingsGroup>
     </div>
   );
+}
+
+function HydrationStatus({ hasRows }: { hasRows: boolean }) {
+  return (
+    <StatusPill tone={hasRows ? "good" : "info"}>{hasRows ? "hydrated" : "waiting"}</StatusPill>
+  );
+}
+
+function GpuMonitoringRow({ gpuMon }: { gpuMon?: SystemRuntimeInfo["gpu_monitoring"] }) {
+  return (
+    <SettingsRow
+      label="GPU monitoring"
+      description="nvidia-smi, amd-smi, or rocm-smi discovery from the controller."
+      value={<SettingsValue mono>{gpuMonitorValue(gpuMon)}</SettingsValue>}
+      status={
+        <StatusPill tone={gpuMon?.available ? "good" : "warning"}>
+          {gpuMon?.available ? "online" : "fallback"}
+        </StatusPill>
+      }
+    />
+  );
+}
+
+function GpuLeaseRow({ holder }: { holder?: string | null }) {
+  return (
+    <SettingsRow
+      label="GPU lease"
+      description="Current runtime lock holder when a launch or engine job owns the GPU lane."
+      value={<SettingsValue mono>{holder ?? "No active lease"}</SettingsValue>}
+      status={<StatusPill>{holder ? "held" : "free"}</StatusPill>}
+    />
+  );
+}
+
+function gpuMonitorValue(gpuMon: SystemRuntimeInfo["gpu_monitoring"] | undefined): string {
+  if (!gpuMon?.available) {
+    return "not available yet";
+  }
+  return gpuMon.tool ?? "available";
+}
+
+function EngineRows({
+  activeBackend,
+  jobs,
+  onJobCreated,
+  view,
+}: {
+  activeBackend?: string;
+  jobs: EngineJob[];
+  onJobCreated: () => Promise<void>;
+  view: EngineRowsView;
+}) {
+  if (view.kind === "targets") {
+    return view.targets.map((target) => (
+      <RuntimeTargetRow
+        key={target.id}
+        target={target}
+        job={jobForTarget(jobs, target)}
+        onJobCreated={onJobCreated}
+      />
+    ));
+  }
+  if (view.kind === "backends") {
+    return view.rows.map(({ id, info }) => (
+      <BackendRow key={id} id={id} info={info} active={activeBackend === id} />
+    ));
+  }
+  return view.engineIds.map((key) => (
+    <SettingsRow
+      key={key}
+      label={ENGINE_META[key].label}
+      description={ENGINE_META[key].description}
+      value={<SettingsValue dim>Runtime data has not hydrated yet.</SettingsValue>}
+      status={<StatusPill tone="info">pending</StatusPill>}
+    />
+  ));
 }
 
 function RuntimeTargetRow({
