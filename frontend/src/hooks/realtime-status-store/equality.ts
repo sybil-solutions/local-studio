@@ -1,5 +1,11 @@
 // CRITICAL
-import type { GPU, LaunchProgressData, Metrics, ProcessInfo, RuntimePlatformKind } from "@/lib/types";
+import type {
+  GPU,
+  LaunchProgressData,
+  Metrics,
+  ProcessInfo,
+  RuntimePlatformKind,
+} from "@/lib/types";
 import type { LeaseInfo, RuntimeSummaryData, ServiceEntry, StatusData } from "./types";
 
 function areProcessInfosEqual(a: ProcessInfo | null, b: ProcessInfo | null) {
@@ -24,31 +30,37 @@ export function areStatusEqual(a: StatusData | null, b: StatusData | null) {
   );
 }
 
-export function areGpusEqual(a: GPU[], b: GPU[]) {
-  if (a === b) return true;
-  if (a.length !== b.length) return false;
-  for (let i = 0; i < a.length; i += 1) {
-    const left = a[i];
-    const right = b[i];
-    if (!left || !right) return false;
-    if (
-      left.index !== right.index ||
-      left.name !== right.name ||
-      left.memory_total !== right.memory_total ||
-      left.memory_used !== right.memory_used ||
-      left.memory_free !== right.memory_free ||
-      left.utilization !== right.utilization ||
-      (left.temperature ?? null) !== (right.temperature ?? null) ||
-      (left.power_draw ?? null) !== (right.power_draw ?? null) ||
-      (left.power_limit ?? null) !== (right.power_limit ?? null)
-    ) {
-      return false;
-    }
-  }
-  return true;
+const GPU_STABLE_KEYS = [
+  "index",
+  "name",
+  "memory_total",
+  "memory_used",
+  "memory_free",
+  "utilization",
+] as const satisfies ReadonlyArray<keyof GPU>;
+
+const GPU_NULLABLE_KEYS = [
+  "temperature",
+  "power_draw",
+  "power_limit",
+] as const satisfies ReadonlyArray<keyof GPU>;
+
+function areGpuEntriesEqual(left: GPU, right: GPU): boolean {
+  return (
+    GPU_STABLE_KEYS.every((key) => left[key] === right[key]) &&
+    GPU_NULLABLE_KEYS.every((key) => (left[key] ?? null) === (right[key] ?? null))
+  );
 }
 
-export function arePlatformKindsEqual(a: RuntimePlatformKind | null, b: RuntimePlatformKind | null) {
+export function areGpusEqual(a: GPU[], b: GPU[]) {
+  if (a === b) return true;
+  return a.length === b.length && a.every((left, index) => areGpuEntriesEqual(left, b[index]!));
+}
+
+export function arePlatformKindsEqual(
+  a: RuntimePlatformKind | null,
+  b: RuntimePlatformKind | null,
+) {
   return a === b;
 }
 
@@ -79,7 +91,10 @@ export function areLaunchProgressEqual(a: LaunchProgressData | null, b: LaunchPr
   );
 }
 
-export function areRuntimeSummariesEqual(a: RuntimeSummaryData | null, b: RuntimeSummaryData | null) {
+export function areRuntimeSummariesEqual(
+  a: RuntimeSummaryData | null,
+  b: RuntimeSummaryData | null,
+) {
   if (a === b) return true;
   if (!a || !b) return false;
   if (a.platform.kind !== b.platform.kind) return false;
@@ -108,4 +123,3 @@ export function areLeasesEqual(a: LeaseInfo | null, b: LeaseInfo | null) {
   if (!a || !b) return false;
   return a.holder === b.holder;
 }
-
