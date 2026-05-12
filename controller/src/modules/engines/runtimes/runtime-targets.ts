@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { existsSync, readdirSync, statSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import type { Config } from "../../../config/env";
 import { loadPersistedConfig, savePersistedConfig } from "../../../config/persisted-config";
@@ -6,17 +6,17 @@ import { resolveBinary, runCommand } from "../../../core/command";
 import type { ProcessInfo } from "../../models/types";
 import type { EngineBackend, RuntimeBackendInfo, RuntimeTarget } from "../../shared/system-types";
 import { detectBackend, listProcesses } from "../process/process-utilities";
+import { makeRuntimeTarget } from "./runtime-target-factory";
 import {
-  getVllmUpgradeVersion,
-  isUpgradeCommandConfigured,
-  LLAMACPP_UPGRADE_ENV,
-  VLLM_UPGRADE_VERSION_ENV,
-} from "./upgrade-config";
+  compareVersions,
+  parseCommandBinary,
+  parseCommandPython,
+  probeBinaryRuntime,
+  probePythonRuntime,
+  probeVllmBinaryRuntime,
+  splitEnvironmentList,
+} from "./runtime-target-probes";
 import { resolveVllmPythonPath } from "./vllm-python-path";
-
-type RuntimeTargetSource = RuntimeTarget["source"];
-type RuntimeTargetKind = RuntimeTarget["kind"];
-type RuntimeHealthStatus = RuntimeTarget["health"]["status"];
 
 const TARGET_CACHE_TTL_MS = 300_000;
 let targetsCache: {
@@ -33,18 +33,6 @@ export const clearRuntimeTargetsCache = (): void => resetRuntimeTargetsCache();
 
 export const clearRuntimeTargetsForTests = (): void => resetRuntimeTargetsCache();
 
-const PYTHON_VERSION_PROBES: Record<"vllm" | "sglang", string> = {
-  vllm: "import json, sys\ntry:\n import vllm\n print(json.dumps({'version': vllm.__version__, 'python': sys.executable}))\nexcept Exception as e:\n print(json.dumps({'version': None, 'python': sys.executable, 'error': str(e)}))",
-  sglang:
-    "import json, sys\ntry:\n import sglang\n print(json.dumps({'version': getattr(sglang, '__version__', None), 'python': sys.executable}))\nexcept Exception as e:\n print(json.dumps({'version': None, 'python': sys.executable, 'error': str(e)}))",
-};
-
-const normalizeIdPart = (value: string): string =>
-  Buffer.from(value).toString("base64url").replace(/=+$/g, "");
-
-const targetId = (backend: EngineBackend, kind: RuntimeTargetKind, key: string): string =>
-  `${backend}:${kind}:${normalizeIdPart(key)}`;
-
 const unique = (values: Array<string | null | undefined>): string[] => {
   const seen = new Set<string>();
   const result: string[] = [];
@@ -55,326 +43,6 @@ const unique = (values: Array<string | null | undefined>): string[] => {
     result.push(normalized);
   }
   return result;
-};
-
-const pathExists = (path: string | null | undefined): boolean => Boolean(path && existsSync(path));
-
-const resolvePathOrBinary = (value: string): string | null => {
-  if (value.includes("/")) return existsSync(value) ? resolve(value) : null;
-  return resolveBinary(value);
-};
-
-const looksLikePython = (value: string): boolean => {
-  const name = basename(value);
-  return /^python(?:\d+(?:\.\d+)?)?$/.test(name) || name.includes("python");
-};
-
-const splitEnvironmentList = (value: string | undefined): string[] =>
-  value
-    ? value
-        .split(",")
-        .map((entry) => entry.trim())
-        .filter((entry) => entry.length > 0)
-    : [];
-
-const parseCommandPython = (args: string[]): string | null => {
-  const first = args[0];
-  if (first && looksLikePython(first)) return resolvePathOrBinary(first) ?? first;
-  const moduleIndex = args.findIndex(
-    (argument) =>
-      argument === "vllm.entrypoints.openai.api_server" || argument === "sglang.launch_server"
-  );
-  if (moduleIndex >= 2 && args[moduleIndex - 1] === "-m") {
-    const candidate = args[moduleIndex - 2];
-    if (candidate && looksLikePython(candidate)) return resolvePathOrBinary(candidate) ?? candidate;
-  }
-  return null;
-};
-
-const parseCommandBinary = (args: string[]): string | null => {
-  const first = args[0];
-  if (!first) return null;
-  return resolvePathOrBinary(first) ?? first;
-};
-
-const createCapabilities = (target: {
-  kind: RuntimeTargetKind;
-  backend: EngineBackend;
-  installed: boolean;
-  source: RuntimeTargetSource;
-  pythonPath?: string | null;
-}): RuntimeTarget["capabilities"] => ({
-  canLaunch: target.installed || target.source === "running",
-  canUpdate:
-    (target.backend === "vllm" &&
-      target.installed &&
-      (target.kind === "venv" || (target.kind === "system" && Boolean(target.pythonPath)))) ||
-    (target.backend === "llamacpp" && isUpgradeCommandConfigured(LLAMACPP_UPGRADE_ENV)),
-  canInspectOptions:
-    target.backend !== "sglang" && (target.installed || target.source === "running"),
-  supportsDocker: target.kind === "docker",
-});
-
-const createHealth = (
-  installed: boolean,
-  source: RuntimeTargetSource,
-  message?: string
-): RuntimeTarget["health"] => {
-  let status: RuntimeHealthStatus = installed ? "ok" : "warning";
-  if (source === "running") status = "ok";
-  if (message && !installed && source !== "running") status = "warning";
-  return message ? { status, message } : { status };
-};
-
-const RELEASE_NOTES: Record<EngineBackend, string> = {
-  vllm: "https://github.com/vllm-project/vllm/releases",
-  sglang: "https://github.com/sgl-project/sglang/releases",
-  llamacpp: "https://github.com/ggml-org/llama.cpp/releases",
-};
-
-const packageSpecForTarget = (backend: EngineBackend): string => {
-  if (backend === "vllm") {
-    const target = getVllmUpgradeVersion().trim();
-    return target ? `vllm==${target}` : "vllm";
-  }
-  if (backend === "sglang") return "sglang";
-  return "configured llama.cpp upgrade command";
-};
-
-const updateMetadata = (args: {
-  backend: EngineBackend;
-  version?: string | null | undefined;
-  capabilities: RuntimeTarget["capabilities"];
-}): RuntimeTarget["update"] | undefined => {
-  if (!args.capabilities.canUpdate) return undefined;
-  const configuredVllmTarget = args.backend === "vllm" ? getVllmUpgradeVersion().trim() : "";
-  const targetVersion =
-    args.backend === "vllm" && configuredVllmTarget
-      ? configuredVllmTarget
-      : args.backend === "llamacpp"
-        ? "configured"
-        : "latest";
-  return {
-    currentVersion: args.version ?? null,
-    targetVersion,
-    packageSpec: packageSpecForTarget(args.backend),
-    releaseNotesUrl: RELEASE_NOTES[args.backend],
-    restartRequired: true,
-    changes: [
-      `${args.backend} runtime package/binary`,
-      "Controller runtime target metadata after completion",
-      "Running model process after restart/reload",
-      ...(args.backend === "vllm" && !configuredVllmTarget
-        ? [`Set ${VLLM_UPGRADE_VERSION_ENV} to pin a specific target version.`]
-        : []),
-    ],
-  };
-};
-
-const makeTarget = (args: {
-  backend: EngineBackend;
-  kind: RuntimeTargetKind;
-  source: RuntimeTargetSource;
-  key: string;
-  label: string;
-  installed: boolean;
-  active?: boolean;
-  version?: string | null;
-  pythonPath?: string | null;
-  binaryPath?: string | null;
-  dockerImage?: string | null;
-  healthMessage?: string | undefined;
-}): RuntimeTarget => {
-  const base = {
-    backend: args.backend,
-    kind: args.kind,
-    installed: args.installed,
-    source: args.source,
-    ...(args.pythonPath !== undefined ? { pythonPath: args.pythonPath } : {}),
-  };
-  const capabilities = createCapabilities(base);
-  const update = updateMetadata({
-    backend: args.backend,
-    version: args.version,
-    capabilities,
-  });
-  return {
-    id: targetId(args.backend, args.kind, args.key),
-    backend: args.backend,
-    kind: args.kind,
-    label: args.label,
-    installed: args.installed,
-    active: args.active ?? false,
-    version: args.version ?? null,
-    pythonPath: args.pythonPath ?? null,
-    binaryPath: args.binaryPath ?? null,
-    dockerImage: args.dockerImage ?? null,
-    source: args.source,
-    capabilities,
-    health: createHealth(args.installed, args.source, args.healthMessage),
-    ...(update ? { update } : {}),
-  };
-};
-
-const probePythonRuntime = (
-  backend: "vllm" | "sglang",
-  python: string
-): {
-  installed: boolean;
-  version: string | null;
-  pythonPath: string | null;
-  message?: string | undefined;
-} => {
-  const check = runCommand(python, ["--version"], 2_000);
-  if (check.status !== 0) {
-    return {
-      installed: false,
-      version: null,
-      pythonPath: pathExists(python) ? resolve(python) : python,
-      message: "Python executable is not runnable",
-    };
-  }
-  const result = runCommand(python, ["-c", PYTHON_VERSION_PROBES[backend]], 5_000);
-  if (result.status !== 0) {
-    return {
-      installed: false,
-      version: null,
-      pythonPath: python,
-      message: result.stderr || `${backend} import probe failed`,
-    };
-  }
-  try {
-    const parsed = JSON.parse(result.stdout) as {
-      version?: string | null;
-      python?: string | null;
-      error?: string;
-    };
-    return {
-      installed: Boolean(parsed.version),
-      version: parsed.version ?? null,
-      pythonPath: parsed.python ?? python,
-      message: parsed.version
-        ? undefined
-        : (parsed.error ?? `${backend} is not installed in this Python`),
-    };
-  } catch {
-    return {
-      installed: false,
-      version: null,
-      pythonPath: python,
-      message: "Unable to parse runtime probe output",
-    };
-  }
-};
-
-const parseLlamaVersion = (output: string): string | null => {
-  const match = output.match(/version\s*[:=]\s*(\d+\s*\([^)]+\)|\S+)/i);
-  return match?.[1]?.trim() ?? output.split("\n")[0]?.trim() ?? null;
-};
-
-const parsePackageVersion = (output: string): string | null => {
-  const match = output.match(/\b\d+(?:\.\d+){1,3}(?:[A-Za-z0-9.+-]*)?\b/);
-  return match?.[0] ?? null;
-};
-
-const compareVersions = (left: string | null, right: string | null): number => {
-  if (!left && !right) return 0;
-  if (!left) return -1;
-  if (!right) return 1;
-  const leftParts = left.split(/[.+-]/).map((part) => Number.parseInt(part, 10) || 0);
-  const rightParts = right.split(/[.+-]/).map((part) => Number.parseInt(part, 10) || 0);
-  const length = Math.max(leftParts.length, rightParts.length);
-  for (let index = 0; index < length; index += 1) {
-    const diff = (leftParts[index] ?? 0) - (rightParts[index] ?? 0);
-    if (diff !== 0) return diff;
-  }
-  return 0;
-};
-
-const resolvePythonFromScript = (scriptPath: string | null | undefined): string | null => {
-  if (!scriptPath || !existsSync(scriptPath)) return null;
-  try {
-    const firstLine = readFileSync(scriptPath, "utf8").split("\n")[0]?.trim() ?? "";
-    if (!firstLine.startsWith("#!")) return null;
-    const parts = firstLine.slice(2).trim().split(/\s+/);
-    const executable = parts[0];
-    const envPython = executable?.endsWith("/env")
-      ? parts.find((part) => part.startsWith("python"))
-      : null;
-    const python = envPython ?? executable;
-    if (!python || !python.includes("python")) return null;
-    return resolvePathOrBinary(python) ?? python;
-  } catch {
-    return null;
-  }
-};
-
-const probeBinaryRuntime = (
-  binary: string
-): {
-  installed: boolean;
-  version: string | null;
-  binaryPath: string | null;
-  message?: string;
-} => {
-  const resolved = resolvePathOrBinary(binary);
-  const command = resolved ?? binary;
-  const version = runCommand(command, ["--version"], 3_000);
-  if (version.status === 0) {
-    return {
-      installed: true,
-      version: parseLlamaVersion(version.stdout) ?? parseLlamaVersion(version.stderr),
-      binaryPath: resolved ?? command,
-    };
-  }
-  const help = runCommand(command, ["--help"], 3_000);
-  if (help.status === 0) {
-    return {
-      installed: true,
-      version: parseLlamaVersion(help.stdout) ?? parseLlamaVersion(help.stderr),
-      binaryPath: resolved ?? command,
-    };
-  }
-  return {
-    installed: false,
-    version: null,
-    binaryPath: resolved,
-    message: version.stderr || "Binary is not runnable",
-  };
-};
-
-const probeVllmBinaryRuntime = (
-  binary: string
-): {
-  installed: boolean;
-  version: string | null;
-  binaryPath: string | null;
-  pythonPath: string | null;
-  message?: string;
-} => {
-  const resolved = resolvePathOrBinary(binary);
-  const command = resolved ?? binary;
-  const version = runCommand(command, ["--version"], 3_000);
-  const pythonPath = resolvePythonFromScript(resolved ?? command);
-  if (version.status === 0) {
-    return {
-      installed: true,
-      version:
-        parsePackageVersion(version.stdout) ??
-        parsePackageVersion(version.stderr) ??
-        parseLlamaVersion(version.stdout) ??
-        parseLlamaVersion(version.stderr),
-      binaryPath: resolved ?? command,
-      pythonPath,
-    };
-  }
-  return {
-    installed: false,
-    version: null,
-    binaryPath: resolved,
-    pythonPath,
-    message: version.stderr || "vLLM binary is not runnable",
-  };
 };
 
 const addTarget = (targets: RuntimeTarget[], target: RuntimeTarget): void => {
@@ -408,7 +76,7 @@ const collectRunningTargets = (runningProcess?: ProcessInfo | null): RuntimeTarg
     const key = pythonPath ?? binaryPath ?? `${entry.pid}:${entry.args.join(" ")}`;
     addTarget(
       targets,
-      makeTarget({
+      makeRuntimeTarget({
         backend,
         kind: pythonPath ? "venv" : "binary",
         source: "running",
@@ -478,7 +146,7 @@ const collectPythonTargets = (
     const probe = probePythonRuntime(backend, candidate);
     addTarget(
       targets,
-      makeTarget({
+      makeRuntimeTarget({
         backend,
         kind: "venv",
         source: "configured",
@@ -500,7 +168,7 @@ const collectPythonTargets = (
     const probe = probePythonRuntime(backend, candidate);
     addTarget(
       targets,
-      makeTarget({
+      makeRuntimeTarget({
         backend,
         kind: "venv",
         source: "discovered",
@@ -522,7 +190,7 @@ const collectPythonTargets = (
     const probe = probePythonRuntime(backend, systemPython);
     addTarget(
       targets,
-      makeTarget({
+      makeRuntimeTarget({
         backend,
         kind: "system",
         source: "discovered",
@@ -543,7 +211,7 @@ const collectPythonTargets = (
       const probe = probeVllmBinaryRuntime(binary);
       addTarget(
         targets,
-        makeTarget({
+        makeRuntimeTarget({
           backend,
           kind: "system",
           source: "discovered",
@@ -576,7 +244,7 @@ const collectLlamacppTargets = (
     const probe = probeBinaryRuntime(candidate);
     addTarget(
       targets,
-      makeTarget({
+      makeRuntimeTarget({
         backend: "llamacpp",
         kind: candidate.includes("/") ? "binary" : "system",
         source: "configured",
@@ -596,7 +264,7 @@ const collectLlamacppTargets = (
     const probe = probeBinaryRuntime(systemBinary);
     addTarget(
       targets,
-      makeTarget({
+      makeRuntimeTarget({
         backend: "llamacpp",
         kind: "system",
         source: "discovered",
@@ -631,7 +299,7 @@ const collectDockerTargets = (backend: EngineBackend): RuntimeTarget[] => {
       if (!patterns[backend].test(image)) continue;
       addTarget(
         targets,
-        makeTarget({
+        makeRuntimeTarget({
           backend,
           kind: "docker",
           source: "discovered",
@@ -652,7 +320,7 @@ const collectDockerTargets = (backend: EngineBackend): RuntimeTarget[] => {
       if (!patterns[backend].test(image)) continue;
       addTarget(
         targets,
-        makeTarget({
+        makeRuntimeTarget({
           backend,
           kind: "docker",
           source: "running",
@@ -680,7 +348,7 @@ const collectBundledTargets = (backend: EngineBackend): RuntimeTarget[] => {
       const version = file.match(/^vllm-([0-9A-Za-z.+-]+)-/)?.[1] ?? null;
       addTarget(
         targets,
-        makeTarget({
+        makeRuntimeTarget({
           backend,
           kind: "binary",
           source: "bundled",
