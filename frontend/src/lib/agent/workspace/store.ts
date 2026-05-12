@@ -5,38 +5,12 @@ import {
   type ActiveSessionPrefs,
 } from "@/lib/agent/active-sessions";
 import { makeFreshTab, newRuntimeId } from "@/lib/agent/session/helpers";
-import type { Project } from "@/lib/agent/projects/types";
 import type { Session, SessionId } from "@/lib/agent/sessions/types";
 import type { ToolSelection } from "@/lib/agent/tools/types";
 import type { ComposerPluginRef, ComposerSkillRef } from "@/lib/agent/composer-context";
-import type {
-  AgentModel,
-  PaneId,
-  PaneState,
-  WorkspaceAction,
-  WorkspaceLayout,
-  WorkspaceState,
-} from "./types";
+import type { PaneId, PaneState, WorkspaceLayout, WorkspaceState } from "./types";
 // Computer/browser tool state moved to lib/agent/tools/ — workspace no longer
 // owns or mutates it.
-import {
-  applyUrlNavigation,
-  closePane,
-  focusPane,
-  focusTab,
-  openNewSessionInFocusedPane,
-  openSessionPayloadInPane,
-  patchActiveTab,
-  replaySessionInFocusedPane,
-  replaySessionInSplitPane,
-  restorePaneState as restorePaneWorkspaceState,
-  setPaneTabs,
-  setWorkspaceLayout,
-  setWorkspaceSplitRatio,
-  splitPaneWithPayload,
-  splitTabIntoNewPane,
-  renameTab,
-} from "./pane-controller";
 
 export { isEmptyStarterTab } from "./pane-controller";
 
@@ -148,56 +122,88 @@ export type RestoredPaneState = {
   focusedPaneId: PaneId;
 };
 
-export function restorePersistedPaneState(raw: string): RestoredPaneState | null {
+function parsePersistedPaneState(raw: string): Partial<PersistedPaneState> | null {
   try {
     const parsed = JSON.parse(raw) as Partial<PersistedPaneState>;
-    if (!parsed.layout || typeof parsed.layout !== "object") return null;
-    const leaves = collectLeaves(parsed.layout as WorkspaceLayout);
-    if (leaves.length === 0) return null;
-    const panes = parsed.panes && typeof parsed.panes === "object" ? parsed.panes : {};
-    const panesById = new Map<PaneId, PaneState>();
-    const sessions = new Map<SessionId, Session>();
-    const selections = new Map<SessionId, ToolSelection>();
-    for (const paneId of leaves) {
-      const pane = panes[paneId] ?? {};
-      const rawTabs = Array.isArray(pane.tabs) ? pane.tabs : [];
-      const restoredTabs: Session[] = [];
-      for (const raw of rawTabs) {
-        const session = normalizePersistedTab(raw);
-        if (!session) continue;
-        restoredTabs.push(session);
-        const selection = selectionFromPersistedTab(raw);
-        if (selection) selections.set(session.id, selection);
-      }
-      const tabs = restoredTabs.length > 0 ? restoredTabs : [makeFreshTab()];
-      for (const session of tabs) sessions.set(session.id, session);
-      const activeSessionId =
-        typeof pane.activeTabId === "string" && tabs.some((tab) => tab.id === pane.activeTabId)
-          ? pane.activeTabId
-          : tabs[0].id;
-      panesById.set(paneId, {
-        sessionIds: tabs.map((tab) => tab.id),
-        activeSessionId,
-        runtimeSessionId:
-          typeof pane.runtimeSessionId === "string" && pane.runtimeSessionId.trim()
-            ? pane.runtimeSessionId
-            : newRuntimeId(),
-      });
-    }
-    const focusedPaneId =
-      typeof parsed.focusedPaneId === "string" && leaves.includes(parsed.focusedPaneId)
-        ? parsed.focusedPaneId
-        : leaves[0];
-    return {
-      layout: parsed.layout as WorkspaceLayout,
-      panesById,
-      sessions,
-      selections,
-      focusedPaneId,
-    };
+    return parsed.layout && typeof parsed.layout === "object" ? parsed : null;
   } catch {
     return null;
   }
+}
+
+function restoreTabsWithSelections(rawTabs: unknown[]): {
+  tabs: Session[];
+  selections: Map<SessionId, ToolSelection>;
+} {
+  const tabs: Session[] = [];
+  const selections = new Map<SessionId, ToolSelection>();
+  for (const raw of rawTabs) {
+    const session = normalizePersistedTab(raw);
+    if (!session) continue;
+    tabs.push(session);
+    const selection = selectionFromPersistedTab(raw);
+    if (selection) selections.set(session.id, selection);
+  }
+  return { tabs: tabs.length > 0 ? tabs : [makeFreshTab()], selections };
+}
+
+function activePersistedTabId(
+  pane: PersistedPaneState["panes"][string],
+  tabs: Session[],
+): SessionId {
+  const activeTabId = pane.activeTabId;
+  if (typeof activeTabId === "string" && tabs.some((tab) => tab.id === activeTabId)) {
+    return activeTabId;
+  }
+  return tabs[0].id;
+}
+
+function persistedRuntimeSessionId(pane: PersistedPaneState["panes"][string]): string {
+  const runtimeSessionId = pane.runtimeSessionId;
+  return typeof runtimeSessionId === "string" && runtimeSessionId.trim()
+    ? runtimeSessionId
+    : newRuntimeId();
+}
+
+function focusedPersistedPaneId(focusedPaneId: unknown, leaves: PaneId[]): PaneId {
+  return typeof focusedPaneId === "string" && leaves.includes(focusedPaneId)
+    ? focusedPaneId
+    : leaves[0];
+}
+
+export function restorePersistedPaneState(raw: string): RestoredPaneState | null {
+  const parsed = parsePersistedPaneState(raw);
+  if (!parsed) return null;
+
+  const layout = parsed.layout as WorkspaceLayout;
+  const leaves = collectLeaves(layout);
+  if (leaves.length === 0) return null;
+
+  const persistedPanes = parsed.panes && typeof parsed.panes === "object" ? parsed.panes : {};
+  const panesById = new Map<PaneId, PaneState>();
+  const sessions = new Map<SessionId, Session>();
+  const selections = new Map<SessionId, ToolSelection>();
+
+  for (const paneId of leaves) {
+    const pane = persistedPanes[paneId] ?? {};
+    const rawTabs = Array.isArray(pane.tabs) ? pane.tabs : [];
+    const restored = restoreTabsWithSelections(rawTabs);
+    for (const session of restored.tabs) sessions.set(session.id, session);
+    for (const [sessionId, selection] of restored.selections) selections.set(sessionId, selection);
+    panesById.set(paneId, {
+      sessionIds: restored.tabs.map((tab) => tab.id),
+      activeSessionId: activePersistedTabId(pane, restored.tabs),
+      runtimeSessionId: persistedRuntimeSessionId(pane),
+    });
+  }
+
+  return {
+    layout,
+    panesById,
+    sessions,
+    selections,
+    focusedPaneId: focusedPersistedPaneId(parsed.focusedPaneId, leaves),
+  };
 }
 
 /**
@@ -309,205 +315,4 @@ export function persistActiveAgentSessions(
   }
 }
 
-export function layoutFromPaneIds(paneIds: PaneId[]): WorkspaceLayout {
-  if (paneIds.length <= 1) return { kind: "leaf", paneId: paneIds[0] ?? "p-init" };
-  const [first, ...rest] = paneIds;
-  return {
-    kind: "split",
-    direction: "vertical",
-    ratio: 0.5,
-    a: { kind: "leaf", paneId: first },
-    b: layoutFromPaneIds(rest),
-  };
-}
-
-export function tabFromSnapshot(session: ActiveAgentSessionSnapshot): Session {
-  const fresh = makeFreshTab();
-  return {
-    ...fresh,
-    id: session.tabId || fresh.id,
-    piSessionId: session.piSessionId,
-    projectId: session.projectId,
-    cwd: session.cwd,
-    modelId: session.modelId,
-    title: session.title || "Loading session",
-    status: "loading",
-    startedAt: session.startedAt ?? session.updatedAt,
-  };
-}
-
-function chooseModelId(
-  models: AgentModel[],
-  currentModelId: string,
-  preferredModelId?: string,
-): string {
-  if (preferredModelId && models.some((model) => model.id === preferredModelId)) {
-    return preferredModelId;
-  }
-  if (currentModelId && models.some((model) => model.id === currentModelId)) {
-    return currentModelId;
-  }
-  return models.find((model) => model.active)?.id || models[0]?.id || "";
-}
-
-function hydrateSessionSnapshots(
-  state: WorkspaceState,
-  snapshots: ActiveAgentSessionSnapshot[],
-  projects: Project[],
-): WorkspaceState {
-  const paneStateAlreadyRestored = [...state.sessions.values()].some(
-    (session) => Boolean(session.piSessionId) || session.messages.length > 0,
-  );
-  if (paneStateAlreadyRestored) return { ...state, hydrated: true };
-
-  const restorable = snapshots.filter((session) =>
-    projects.some((project) => project.id === session.projectId || project.path === session.cwd),
-  );
-  if (restorable.length === 0) return { ...state, hydrated: true };
-
-  const grouped = new Map<PaneId, ActiveAgentSessionSnapshot[]>();
-  for (const session of restorable) {
-    const current = grouped.get(session.paneId) ?? [];
-    current.push(session);
-    grouped.set(session.paneId, current);
-  }
-
-  const paneIds = [...grouped.keys()];
-  const panesById = new Map<PaneId, PaneState>();
-  const sessions = new Map<SessionId, Session>();
-  for (const paneId of paneIds) {
-    const group = grouped.get(paneId) ?? [];
-    const restored = group.map(tabFromSnapshot);
-    const tabs = restored.length > 0 ? restored : [makeFreshTab()];
-    for (const session of tabs) sessions.set(session.id, session);
-    const activeSessionId = group.find((session) => session.active)?.tabId || tabs[0]?.id;
-    panesById.set(paneId, {
-      sessionIds: tabs.map((tab) => tab.id),
-      activeSessionId,
-      runtimeSessionId: newRuntimeId(),
-    });
-  }
-
-  const activeSnapshot = restorable.find((session) => session.active) ?? restorable[0];
-
-  return {
-    ...state,
-    sessions,
-    panesById,
-    layout: layoutFromPaneIds(paneIds),
-    focusedPaneId: activeSnapshot.paneId,
-    hydrated: true,
-  };
-}
-
-export function reducer(state: WorkspaceState, action: WorkspaceAction): WorkspaceState {
-  switch (action.type) {
-    case "hydrate": {
-      const next = { ...state, ...action.state };
-      return { ...next, hydrated: action.hydrated ?? next.hydrated };
-    }
-    case "workspaceUnmounted":
-    case "notifySessionsChanged":
-      return state;
-    case "setModelsLoading":
-      return { ...state, modelsLoading: action.loading };
-    case "setModels":
-      return {
-        ...state,
-        models: action.models,
-        selectedModel: chooseModelId(action.models, state.selectedModel, action.preferredModelId),
-        modelsLoading: false,
-      };
-    case "setSelectedModel":
-      return { ...state, selectedModel: action.modelId };
-    case "setSetupWarning":
-      return { ...state, setupWarning: action.warning };
-    case "setError":
-      return { ...state, error: action.error };
-    case "setLayout":
-      return setWorkspaceLayout(state, { layout: action.layout });
-    case "setSplitRatio":
-      return setWorkspaceSplitRatio(state, { path: action.path, ratio: action.ratio });
-    case "restorePaneState":
-      return restorePaneWorkspaceState(state, action);
-    case "openNewSession":
-      return openNewSessionInFocusedPane(state, {
-        project: action.project,
-        tab: action.tab,
-        paneId: action.paneId,
-        runtimeSessionId: action.runtimeSessionId,
-      });
-    case "replaySession":
-      return replaySessionInFocusedPane(state, {
-        piSessionId: action.piSessionId,
-        sessionTitle: action.sessionTitle,
-        tab: action.tab,
-      });
-    case "replaySessionInSplit":
-      return replaySessionInSplitPane(state, {
-        piSessionId: action.piSessionId,
-        paneId: action.paneId,
-        runtimeSessionId: action.runtimeSessionId,
-        sessionTitle: action.sessionTitle,
-        tab: action.tab,
-      });
-    case "openSessionPayloadInPane":
-      return openSessionPayloadInPane(state, {
-        paneId: action.paneId,
-        payload: action.payload,
-        tab: action.tab,
-      });
-    case "splitPaneWithPayload":
-      return splitPaneWithPayload(state, {
-        paneId: action.paneId,
-        direction: action.direction,
-        side: action.side,
-        payload: action.payload,
-        newPaneId: action.newPaneId,
-        runtimeSessionId: action.runtimeSessionId,
-        tab: action.tab,
-      });
-    case "focusPane":
-      return focusPane(state, { paneId: action.paneId });
-    case "focusTab":
-      return focusTab(state, { paneId: action.paneId, tabId: action.tabId });
-    case "renameTab":
-      return renameTab(state, {
-        paneId: action.paneId,
-        tabId: action.tabId,
-        title: action.title,
-      });
-    case "splitTab":
-      return splitTabIntoNewPane(state, {
-        sourcePaneId: action.sourcePaneId,
-        sourceTabId: action.sourceTabId,
-        newPaneId: action.newPaneId,
-        runtimeSessionId: action.runtimeSessionId,
-        tab: action.tab,
-      });
-    case "closePane":
-      return closePane(state, { paneId: action.paneId });
-    case "setPaneTabs":
-      return setPaneTabs(state, { paneId: action.paneId, tabs: action.tabs });
-    case "patchActiveTab":
-      return patchActiveTab(state, { paneId: action.paneId, patch: action.patch });
-    case "urlNavRequested":
-      return applyUrlNavigation(state, {
-        key: action.key,
-        project: action.project,
-        sessionId: action.sessionId,
-        sessionTitle: action.sessionTitle,
-        newSession: action.newSession,
-        split: action.split,
-        paneId: action.paneId,
-        runtimeSessionId: action.runtimeSessionId,
-        tab: action.tab,
-      });
-    case "hydrateActiveSessions":
-      return action.hasExplicitSessionNav
-        ? { ...state, hydrated: true }
-        : hydrateSessionSnapshots(state, action.snapshots, action.projects);
-    default:
-      return state;
-  }
-}
+export { reducer } from "./reducer";
