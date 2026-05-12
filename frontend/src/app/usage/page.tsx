@@ -125,15 +125,15 @@ export default function UsagePage() {
         {DailyUsageChart(safeStats, dailyByModel, modelsForChart)}
 
         {/* Model Performance Table */}
-        {ModelPerformanceTable(
-          sortedModels,
-          peakMetrics,
-          expandedRows,
-          sortField,
-          sortDirection,
-          handleSort,
-          toggleRow,
-        )}
+        <ModelPerformanceTable
+          expandedRows={expandedRows}
+          handleSort={handleSort}
+          peakMetrics={peakMetrics}
+          sortDirection={sortDirection}
+          sortField={sortField}
+          sortedModels={sortedModels}
+          toggleRow={toggleRow}
+        />
 
         {/* Performance Details & Secondary Metrics */}
         <div className="grid lg:grid-cols-2 gap-6">

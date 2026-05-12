@@ -6,33 +6,33 @@ import { Fragment } from "react";
 import { ChevronDown, ChevronUp } from "lucide-react";
 import { formatNumber, formatDurationOrUnavailable } from "@/lib/formatters";
 import { getModelColor } from "@/lib/colors";
+import {
+  modelDisplayName,
+  resolveSpeedDisplay,
+  type ModelData,
+  type SpeedDisplay,
+} from "./model-performance-table-model";
 import { SortHeader, StatusPill } from "./model-performance-table/components";
 
-interface ModelData {
-  model: string;
-  requests: number;
-  total_tokens: number;
-  success_rate: number;
-  avg_latency_ms: number | null;
-  avg_ttft_ms: number | null;
-  tokens_per_sec: number | null;
-  prefill_tps: number | null;
-  generation_tps: number | null;
-  prompt_tokens: number;
-  completion_tokens: number;
-  avg_tokens: number;
-  p50_latency_ms: number | null;
+interface ModelPerformanceTableProps {
+  sortedModels: ModelData[];
+  peakMetrics: Map<string, PeakMetrics>;
+  expandedRows: Set<string>;
+  sortField: SortField;
+  sortDirection: SortDirection;
+  handleSort: (field: SortField) => void;
+  toggleRow: (model: string) => void;
 }
 
-export function ModelPerformanceTable(
-  sortedModels: ModelData[],
-  peakMetrics: Map<string, PeakMetrics>,
-  expandedRows: Set<string>,
-  sortField: SortField,
-  sortDirection: SortDirection,
-  handleSort: (field: SortField) => void,
-  toggleRow: (model: string) => void,
-) {
+export function ModelPerformanceTable({
+  expandedRows,
+  handleSort,
+  peakMetrics,
+  sortDirection,
+  sortField,
+  sortedModels,
+  toggleRow,
+}: ModelPerformanceTableProps) {
   return (
     <section className="mb-6 sm:mb-8">
       <div className="border border-(--border) bg-(--surface) overflow-hidden">
@@ -147,7 +147,7 @@ export function ModelPerformanceTable(
                             className="max-w-[150px] truncate font-mono text-(--fg) sm:max-w-[240px]"
                             title={model.model}
                           >
-                            {model.model.split("/").pop()}
+                            {modelDisplayName(model.model)}
                           </div>
                         </div>
                       </td>
@@ -167,39 +167,7 @@ export function ModelPerformanceTable(
                         {formatDurationOrUnavailable(model.avg_ttft_ms)}
                       </td>
                       <td className="py-3 px-3 sm:px-4 text-right">
-                        {model.prefill_tps || model.generation_tps ? (
-                          <div className="flex flex-col items-end gap-0.5">
-                            {model.prefill_tps && (
-                              <span className="tabular-nums text-xs">
-                                {model.prefill_tps.toFixed(0)} prefill
-                              </span>
-                            )}
-                            {model.generation_tps && (
-                              <span className="tabular-nums text-xs">
-                                {model.generation_tps.toFixed(0)} gen
-                              </span>
-                            )}
-                          </div>
-                        ) : model.tokens_per_sec ? (
-                          <span className="tabular-nums">
-                            {model.tokens_per_sec.toFixed(0)} tok/s
-                          </span>
-                        ) : peak?.generation_tps || peak?.prefill_tps ? (
-                          <div className="flex flex-col items-end gap-0.5 text-(--dim)">
-                            {peak.prefill_tps && (
-                              <span className="tabular-nums text-xs">
-                                peak {peak.prefill_tps.toFixed(0)} prefill
-                              </span>
-                            )}
-                            {peak.generation_tps && (
-                              <span className="tabular-nums text-xs">
-                                peak {peak.generation_tps.toFixed(0)} gen
-                              </span>
-                            )}
-                          </div>
-                        ) : (
-                          <span className="text-(--dim)">—</span>
-                        )}
+                        {renderSpeedDisplay(resolveSpeedDisplay(model, peak))}
                       </td>
                     </tr>
                     {isExpanded && (
@@ -276,5 +244,23 @@ export function ModelPerformanceTable(
         </div>
       </div>
     </section>
+  );
+}
+
+function renderSpeedDisplay(speed: SpeedDisplay) {
+  if (speed.kind === "empty") {
+    return <span className="text-(--dim)">—</span>;
+  }
+  if (speed.kind === "single") {
+    return <span className="tabular-nums">{speed.text}</span>;
+  }
+  return (
+    <div className={`flex flex-col items-end gap-0.5 ${speed.muted ? "text-(--dim)" : ""}`}>
+      {speed.rows.map((row) => (
+        <span key={row} className="tabular-nums text-xs">
+          {row}
+        </span>
+      ))}
+    </div>
   );
 }
