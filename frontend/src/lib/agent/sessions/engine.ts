@@ -10,31 +10,19 @@
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import { isAgentEndEvent } from "@/lib/agent/pi-events";
 import {
-  appendDelta,
-  appendEventBlock,
   type ChatMessage,
-  compactionTextFromEvent,
   drainQueueAfterAgentEnd,
-  extractToolText,
   mergeCanonicalAndRuntimeEvents,
-  messageText,
   newId,
   nowLabel,
   piSessionIdFromEvent,
-  reconcileQueueWithPiEvent,
   replayCursorAfterRuntimeHydration,
   replaySessionEvents,
   runtimeStatusAcceptsControl,
   sessionTitleFromPrompt,
   statusAfterControlPhase,
-  stringifyToolArgs,
-  toolCallDeltaFromUpdate,
-  toolCallSnapshotFromUpdate,
   type TokenStats,
-  type ToolBlock,
-  upsertTool,
   usageFromEvent,
-  visibleUserTextFromPi,
 } from "@/lib/agent/session";
 import {
   activeComposerPlugins,
@@ -51,6 +39,7 @@ import {
   runtimeCanHydrateCanonicalSession,
   runtimeIsActiveForPiSession,
 } from "./engine-helpers";
+import { applyPiEventToSession } from "./pi-event-applier";
 
 const EMPTY_PLUGINS: ComposerPluginRef[] = [];
 const EMPTY_SKILLS: ComposerSkillRef[] = [];
@@ -139,234 +128,16 @@ export function useSessionEngine(deps: UseSessionEngineDeps): SessionEngine {
     [updateSession],
   );
 
-  // Apply a single pi event to a session — the meaty accumulator: routes the
-  // event by type into delta-merge / tool-block / queue updates.
+  // Apply a single pi event to a session through a deep Module that owns Pi
+  // event routing while the hook owns React lifecycle and runtime streams.
   const applyPiEvent = useCallback(
     (sessionId: SessionId, assistantId: string, event: Record<string, unknown>) => {
-      const eventType = event.type;
-      const currentAssistantId = () => liveAssistantIdsRef.current.get(sessionId) ?? assistantId;
-      const ensureNextAssistant = () => {
-        const id = newId("assistant");
-        liveAssistantIdsRef.current.set(sessionId, id);
-        updateSession(sessionId, (session) => ({
-          ...session,
-          activeAssistantId: id,
-          messages: [
-            ...session.messages,
-            { id, role: "assistant", text: "", blocks: [], timestamp: nowLabel() },
-          ],
-        }));
-        return id;
-      };
-      const patchCurrentAssistant = (patch: (msg: ChatMessage) => ChatMessage) => {
-        patchAssistant(sessionId, currentAssistantId(), patch);
-      };
-
-      if (eventType === "queue_update") {
-        updateSession(sessionId, (session) => ({
-          ...session,
-          queue: reconcileQueueWithPiEvent(session.queue ?? [], event),
-        }));
-        return;
-      }
-      if (eventType === "message_start" || eventType === "message_end") {
-        const msg = event.message as
-          | { role?: string; content?: string | Record<string, unknown>[] }
-          | undefined;
-        if (msg?.role === "user") {
-          const text = visibleUserTextFromPi(messageText(msg.content));
-          if (!text) return;
-          const current = tabsRef.current.find((tab) => tab.id === sessionId);
-          const lastUser = [...(current?.messages ?? [])]
-            .reverse()
-            .find((entry) => entry.role === "user");
-          if (lastUser && (lastUser.text === text || text.includes(lastUser.text))) return;
-          updateSession(sessionId, (session) => ({
-            ...session,
-            messages: [
-              ...session.messages,
-              { id: newId("user"), role: "user", text, timestamp: nowLabel() },
-            ],
-          }));
-          ensureNextAssistant();
-          return;
-        }
-      }
-      const usage = usageFromEvent(event);
-      if (usage) {
-        updateSession(sessionId, (session) => ({ ...session, tokenStats: usage }));
-      }
-
-      const compactionText = compactionTextFromEvent(event);
-      if (compactionText) {
-        patchCurrentAssistant((msg) => ({
-          ...msg,
-          blocks: appendEventBlock(msg.blocks ?? [], compactionText),
-        }));
-        return;
-      }
-
-      if (eventType === "message_update") {
-        const ame = event.assistantMessageEvent as Record<string, unknown> | undefined;
-        const updateType = ame?.type;
-        if (updateType === "text_delta" && typeof ame?.delta === "string") {
-          const delta = ame.delta;
-          patchCurrentAssistant((msg) => ({
-            ...msg,
-            blocks: appendDelta(msg.blocks ?? [], "text", delta),
-          }));
-          return;
-        }
-        if (updateType === "thinking_delta" && typeof ame?.delta === "string") {
-          const delta = ame.delta;
-          patchCurrentAssistant((msg) => ({
-            ...msg,
-            blocks: appendDelta(msg.blocks ?? [], "thinking", delta),
-          }));
-          return;
-        }
-        if (updateType === "toolcall_start") {
-          const snapshot = toolCallSnapshotFromUpdate(ame, event.message);
-          if (!snapshot) return;
-          patchCurrentAssistant((msg) => ({
-            ...msg,
-            blocks: upsertTool(
-              msg.blocks ?? [],
-              snapshot.id,
-              (existing) => ({
-                ...existing,
-                name: snapshot.name,
-                args: snapshot.args ?? existing.args,
-              }),
-              () => ({
-                kind: "tool",
-                id: snapshot.id,
-                name: snapshot.name,
-                status: "running",
-                text: "",
-                argsText: stringifyToolArgs(snapshot.args) ?? "",
-                args: snapshot.args,
-              }),
-            ),
-          }));
-          return;
-        }
-        if (updateType === "toolcall_delta") {
-          const snapshot = toolCallSnapshotFromUpdate(ame, event.message);
-          const delta = toolCallDeltaFromUpdate(ame);
-          if (!snapshot || (!delta && !snapshot.args)) return;
-          patchCurrentAssistant((msg) => ({
-            ...msg,
-            blocks: upsertTool(
-              msg.blocks ?? [],
-              snapshot.id,
-              (existing) => ({
-                ...existing,
-                name: snapshot.name || existing.name,
-                args: snapshot.args ?? existing.args,
-                argsText: delta
-                  ? (existing.argsText ?? "") + delta
-                  : existing.argsText || stringifyToolArgs(snapshot.args),
-              }),
-              () => ({
-                kind: "tool",
-                id: snapshot.id,
-                name: snapshot.name,
-                status: "running",
-                text: "",
-                argsText: delta || stringifyToolArgs(snapshot.args) || "",
-                args: snapshot.args,
-              }),
-            ),
-          }));
-          return;
-        }
-        if (updateType === "toolcall_end") {
-          const toolCall = ame?.toolCall as
-            | { id?: string; name?: string; arguments?: unknown }
-            | undefined;
-          if (!toolCall) return;
-          const id = toolCall.id || newId("tool");
-          const name = toolCall.name || "tool";
-          const argsText = JSON.stringify(toolCall.arguments ?? {}, null, 2);
-          const argsObj =
-            toolCall.arguments && typeof toolCall.arguments === "object"
-              ? (toolCall.arguments as Record<string, unknown>)
-              : undefined;
-          patchCurrentAssistant((msg) => ({
-            ...msg,
-            blocks: upsertTool(
-              msg.blocks ?? [],
-              id,
-              (existing) => ({
-                ...existing,
-                name,
-                argsText,
-                args: argsObj ?? existing.args,
-                text: existing.text || argsText,
-              }),
-              () => ({
-                kind: "tool",
-                id,
-                name,
-                status: "running",
-                argsText,
-                args: argsObj,
-                text: argsText,
-              }),
-            ),
-          }));
-          return;
-        }
-      }
-
-      if (eventType === "tool_execution_start") {
-        const id = String(event.toolCallId || newId("tool"));
-        const name = String(event.toolName || "tool");
-        patchCurrentAssistant((msg) => ({
-          ...msg,
-          blocks: upsertTool(
-            msg.blocks ?? [],
-            id,
-            (existing) => existing,
-            () => ({ kind: "tool", id, name, status: "running", text: "" }),
-          ),
-        }));
-        return;
-      }
-
-      if (eventType === "tool_execution_update" || eventType === "tool_execution_end") {
-        const id = String(event.toolCallId || "");
-        if (!id) return;
-        const resultText = extractToolText(event.partialResult || event.result);
-        patchCurrentAssistant((msg) => ({
-          ...msg,
-          blocks: upsertTool(
-            msg.blocks ?? [],
-            id,
-            (existing) => ({
-              ...existing,
-              status:
-                eventType === "tool_execution_end"
-                  ? ((event.isError ? "error" : "done") as ToolBlock["status"])
-                  : existing.status,
-              resultText: resultText || existing.resultText,
-              text: existing.argsText || existing.text || resultText,
-            }),
-            () => ({
-              kind: "tool",
-              id,
-              name: "tool",
-              status:
-                eventType === "tool_execution_end"
-                  ? ((event.isError ? "error" : "done") as ToolBlock["status"])
-                  : "running",
-              resultText,
-              text: resultText,
-            }),
-          ),
-        }));
-      }
+      applyPiEventToSession(
+        { liveAssistantIdsRef, patchAssistant, tabsRef, updateSession },
+        sessionId,
+        assistantId,
+        event,
+      );
     },
     [patchAssistant, updateSession],
   );

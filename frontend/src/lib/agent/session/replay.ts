@@ -1,103 +1,16 @@
 import {
-  asRecord,
-  compactionTextFromEvent,
-  extractToolText,
+  applyAssistantPiEventToBlocks,
+  assistantPiEventAffectsBlocks,
+  upsertTool,
+} from "./block-event";
+import {
   messageText,
   newId,
   nowLabel,
   sessionTitleFromPrompt,
   visibleUserTextFromPi,
 } from "./helpers";
-import type { AssistantBlock, ChatMessage, TextBlock, ToolBlock } from "./types";
-
-// ----- block mutation primitives -----
-
-export function appendDelta(
-  blocks: AssistantBlock[],
-  kind: "text" | "thinking",
-  delta: string,
-): AssistantBlock[] {
-  const last = blocks[blocks.length - 1];
-  if (last && last.kind === kind) {
-    if (last.text.startsWith(delta)) return blocks;
-    const append = delta.startsWith(last.text) ? delta.slice(last.text.length) : delta;
-    if (!append) return blocks;
-    return [...blocks.slice(0, -1), { ...last, text: last.text + append }];
-  }
-  return [...blocks, { kind, id: newId(kind), text: delta }];
-}
-
-export function upsertTool(
-  blocks: AssistantBlock[],
-  toolCallId: string,
-  patch: (tool: ToolBlock) => ToolBlock,
-  fallback: () => ToolBlock,
-): AssistantBlock[] {
-  const idx = blocks.findIndex((b) => b.kind === "tool" && b.id === toolCallId);
-  if (idx === -1) return [...blocks, fallback()];
-  const next = blocks.slice();
-  next[idx] = patch(next[idx] as ToolBlock);
-  return next;
-}
-
-export function appendEventBlock(blocks: AssistantBlock[], text: string): AssistantBlock[] {
-  const last = blocks[blocks.length - 1];
-  if (last?.kind === "event" && last.text === text) return blocks;
-  return [...blocks, { kind: "event", id: newId("event"), text }];
-}
-
-// ----- streaming tool-call extraction helpers -----
-
-export type StreamingToolCallSnapshot = {
-  id: string;
-  name: string;
-  args?: Record<string, unknown>;
-};
-
-function contentPartAt(
-  messageLike: unknown,
-  contentIndex: unknown,
-): Record<string, unknown> | null {
-  const message = asRecord(messageLike);
-  const content = Array.isArray(message?.content) ? message.content : null;
-  if (!content) return null;
-  if (typeof contentIndex === "number") return asRecord(content[contentIndex]);
-  for (let idx = content.length - 1; idx >= 0; idx -= 1) {
-    const part = asRecord(content[idx]);
-    if (part?.type === "toolCall") return part;
-  }
-  return null;
-}
-
-export function toolCallSnapshotFromUpdate(
-  assistantMessageEvent: Record<string, unknown> | undefined,
-  message?: unknown,
-): StreamingToolCallSnapshot | null {
-  if (!assistantMessageEvent) return null;
-  const explicit = asRecord(assistantMessageEvent.toolCall);
-  const part =
-    explicit ??
-    contentPartAt(assistantMessageEvent.partial, assistantMessageEvent.contentIndex) ??
-    contentPartAt(message, assistantMessageEvent.contentIndex);
-  const idValue = part?.id ?? assistantMessageEvent.toolCallId;
-  const id = typeof idValue === "string" && idValue.trim() ? idValue.trim() : "";
-  if (!id) return null;
-  const nameValue = part?.name ?? assistantMessageEvent.toolName;
-  const name = typeof nameValue === "string" && nameValue.trim() ? nameValue.trim() : "tool";
-  const args = asRecord(part?.arguments) ?? undefined;
-  return { id, name, args };
-}
-
-export function toolCallDeltaFromUpdate(
-  assistantMessageEvent: Record<string, unknown> | undefined,
-): string {
-  const value = assistantMessageEvent?.delta ?? assistantMessageEvent?.argumentsDelta;
-  return typeof value === "string" ? value : "";
-}
-
-export function stringifyToolArgs(args: Record<string, unknown> | undefined): string | undefined {
-  return args && Object.keys(args).length > 0 ? JSON.stringify(args, null, 2) : undefined;
-}
+import type { AssistantBlock, ChatMessage, TextBlock } from "./types";
 
 function blocksFromMessageContent(content: string | Array<Record<string, unknown>> | undefined) {
   if (typeof content === "string") {
@@ -167,16 +80,6 @@ export function replaySessionEvents(events: Record<string, unknown>[]): {
   };
 
   for (const event of events) {
-    const compactionText = compactionTextFromEvent(event);
-    if (compactionText) {
-      const assistantId = ensureAssistant();
-      localPatch(assistantId, (message) => ({
-        ...message,
-        blocks: appendEventBlock(message.blocks ?? [], compactionText),
-      }));
-      continue;
-    }
-
     const type = event.type;
     if (type === "session" && !startedAt && typeof event.timestamp === "string") {
       startedAt = event.timestamp;
@@ -259,166 +162,13 @@ export function replaySessionEvents(events: Record<string, unknown>[]): {
       }
     }
 
-    const eventType = event.type;
-    if (
-      eventType !== "message_update" &&
-      eventType !== "tool_execution_start" &&
-      eventType !== "tool_execution_update" &&
-      eventType !== "tool_execution_end"
-    ) {
-      continue;
-    }
+    if (!assistantPiEventAffectsBlocks(event)) continue;
 
     const assistantId = ensureAssistant();
-    if (eventType === "message_update") {
-      const ame = event.assistantMessageEvent as Record<string, unknown> | undefined;
-      const updateType = ame?.type;
-      if (updateType === "text_delta" && typeof ame?.delta === "string") {
-        const delta = ame.delta;
-        localPatch(assistantId, (msg) => ({
-          ...msg,
-          blocks: appendDelta(msg.blocks ?? [], "text", delta),
-        }));
-      } else if (updateType === "thinking_delta" && typeof ame?.delta === "string") {
-        const delta = ame.delta;
-        localPatch(assistantId, (msg) => ({
-          ...msg,
-          blocks: appendDelta(msg.blocks ?? [], "thinking", delta),
-        }));
-      } else if (updateType === "toolcall_start") {
-        const snapshot = toolCallSnapshotFromUpdate(ame, event.message);
-        if (!snapshot) continue;
-        localPatch(assistantId, (msg) => ({
-          ...msg,
-          blocks: upsertTool(
-            msg.blocks ?? [],
-            snapshot.id,
-            (existing) => ({
-              ...existing,
-              name: snapshot.name,
-              args: snapshot.args ?? existing.args,
-            }),
-            () => ({
-              kind: "tool",
-              id: snapshot.id,
-              name: snapshot.name,
-              status: "running",
-              text: "",
-              argsText: stringifyToolArgs(snapshot.args) ?? "",
-              args: snapshot.args,
-            }),
-          ),
-        }));
-      } else if (updateType === "toolcall_delta") {
-        const snapshot = toolCallSnapshotFromUpdate(ame, event.message);
-        const delta = toolCallDeltaFromUpdate(ame);
-        if (!snapshot || (!delta && !snapshot.args)) continue;
-        localPatch(assistantId, (msg) => ({
-          ...msg,
-          blocks: upsertTool(
-            msg.blocks ?? [],
-            snapshot.id,
-            (existing) => ({
-              ...existing,
-              name: snapshot.name || existing.name,
-              args: snapshot.args ?? existing.args,
-              argsText: delta
-                ? (existing.argsText ?? "") + delta
-                : existing.argsText || stringifyToolArgs(snapshot.args),
-            }),
-            () => ({
-              kind: "tool",
-              id: snapshot.id,
-              name: snapshot.name,
-              status: "running",
-              text: "",
-              argsText: delta || stringifyToolArgs(snapshot.args) || "",
-              args: snapshot.args,
-            }),
-          ),
-        }));
-      } else if (updateType === "toolcall_end") {
-        const toolCall = ame?.toolCall as
-          | { id?: string; name?: string; arguments?: unknown }
-          | undefined;
-        if (toolCall) {
-          const id = toolCall.id || newId("tool");
-          const name = toolCall.name || "tool";
-          const argsText = JSON.stringify(toolCall.arguments ?? {}, null, 2);
-          const argsObj =
-            toolCall.arguments && typeof toolCall.arguments === "object"
-              ? (toolCall.arguments as Record<string, unknown>)
-              : undefined;
-          localPatch(assistantId, (msg) => ({
-            ...msg,
-            blocks: upsertTool(
-              msg.blocks ?? [],
-              id,
-              (existing) => ({
-                ...existing,
-                name,
-                argsText,
-                args: argsObj ?? existing.args,
-                text: existing.text || argsText,
-              }),
-              () => ({
-                kind: "tool",
-                id,
-                name,
-                status: "running",
-                argsText,
-                args: argsObj,
-                text: argsText,
-              }),
-            ),
-          }));
-        }
-      }
-    } else if (eventType === "tool_execution_start") {
-      const id = String(event.toolCallId || newId("tool"));
-      const name = String(event.toolName || "tool");
-      localPatch(assistantId, (msg) => ({
-        ...msg,
-        blocks: upsertTool(
-          msg.blocks ?? [],
-          id,
-          (existing) => existing,
-          () => ({ kind: "tool", id, name, status: "running", text: "" }),
-        ),
-      }));
-    } else if (eventType === "tool_execution_update" || eventType === "tool_execution_end") {
-      const id = String(event.toolCallId || "");
-      if (id) {
-        const resultText = extractToolText(event.partialResult || event.result);
-        localPatch(assistantId, (msg) => ({
-          ...msg,
-          blocks: upsertTool(
-            msg.blocks ?? [],
-            id,
-            (existing) => ({
-              ...existing,
-              status:
-                eventType === "tool_execution_end"
-                  ? ((event.isError ? "error" : "done") as ToolBlock["status"])
-                  : existing.status,
-              resultText: resultText || existing.resultText,
-              text: existing.argsText || existing.text || resultText,
-            }),
-            () => ({
-              kind: "tool",
-              id,
-              name: "tool",
-              status:
-                eventType === "tool_execution_end"
-                  ? ((event.isError ? "error" : "done") as ToolBlock["status"])
-                  : "running",
-              resultText,
-              text: resultText,
-            }),
-          ),
-        }));
-      }
-    }
+    localPatch(assistantId, (msg) => {
+      const blocks = applyAssistantPiEventToBlocks(msg.blocks ?? [], event);
+      return blocks ? { ...msg, blocks } : msg;
+    });
   }
 
   return { messages: replayed, title, startedAt };
