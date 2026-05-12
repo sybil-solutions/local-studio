@@ -105,6 +105,39 @@ describe("session store", () => {
     ]);
   });
 
+  it("summarizes user turns from current and legacy Pi event shapes", async () => {
+    const root = mkdtempSync(path.join(tmpdir(), "vllm-studio-sessions-"));
+    roots.push(root);
+    process.env.PI_CODING_AGENT_DIR = path.join(root, "pi-agent");
+
+    const cwd = path.join(root, "project");
+    const sessionDir = path.join(process.env.PI_CODING_AGENT_DIR, "sessions", encodeCwdForPi(cwd));
+    mkdirSync(sessionDir, { recursive: true });
+    writeFileSync(
+      path.join(sessionDir, "2026-05-10T00-00-00-000Z_session-summary.jsonl"),
+      [
+        JSON.stringify({ type: "session", id: "session-summary", cwd }),
+        JSON.stringify({
+          type: "message",
+          message: {
+            role: "user",
+            content: [
+              { type: "text", text: "first" },
+              { type: "image", text: "ignored" },
+              { type: "text", text: "turn" },
+            ],
+          },
+        }),
+        JSON.stringify({ type: "message_end", message: { role: "assistant", content: "ok" } }),
+        JSON.stringify({ type: "user_message", content: "second turn" }),
+      ].join("\n"),
+    );
+
+    await expect(listSessions(cwd)).resolves.toMatchObject([
+      { id: "session-summary", firstUserMessage: "first turn", turnCount: 2 },
+    ]);
+  });
+
   it("loads the newest matching session file when duplicate roots exist", async () => {
     const root = mkdtempSync(path.join(tmpdir(), "vllm-studio-sessions-"));
     roots.push(root);

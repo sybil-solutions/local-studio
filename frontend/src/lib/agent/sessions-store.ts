@@ -23,6 +23,13 @@ type ListSessionsOptions = {
   ids?: string[];
 };
 
+type PiMessageContent = string | Array<{ type?: string; text?: string }>;
+
+type UserTurn = {
+  isUser: boolean;
+  text: string | null;
+};
+
 function summaryStartTime(session: Pick<SessionSummary, "startedAt" | "updatedAt">): number {
   const value = Date.parse(session.startedAt || session.updatedAt);
   return Number.isFinite(value) ? value : 0;
@@ -66,6 +73,32 @@ function sessionsDirsForCwd(cwd: string): string[] {
   return piSessionRoots().flatMap((root) => encodedCwds.map((encoded) => path.join(root, encoded)));
 }
 
+function piTextContent(content: PiMessageContent | undefined): string | null {
+  if (Array.isArray(content)) {
+    const text = content
+      .filter((part) => part?.type === "text" && typeof part.text === "string")
+      .map((part) => part.text as string)
+      .join(" ")
+      .trim();
+    return text || null;
+  }
+  if (typeof content !== "string") return null;
+  const text = content.trim();
+  return text || null;
+}
+
+function userTurnFromEvent(event: Record<string, unknown>): UserTurn {
+  if (event.type === "user_message") {
+    return { isUser: true, text: piTextContent(event.content as PiMessageContent | undefined) };
+  }
+  if (event.type !== "message" && event.type !== "message_end") {
+    return { isUser: false, text: null };
+  }
+  const message = event.message as { role?: string; content?: PiMessageContent } | undefined;
+  if (message?.role !== "user") return { isUser: false, text: null };
+  return { isUser: true, text: piTextContent(message.content) };
+}
+
 async function readSessionSummary(
   filepath: string,
   filename: string,
@@ -86,49 +119,12 @@ async function readSessionSummary(
       continue;
     }
     if (!header && event.type === "session") header = event;
-    // Pi writes per-message events. Older versions used `message_end`;
-    // current versions use `message` with the message object nested under
-    // `event.message`. Accept both shapes, and also tolerate a flat
-    // `user_message` event with `content` directly on the event.
-    if (event.type === "message" || event.type === "message_end") {
-      const message = event.message as
-        | { role?: string; content?: Array<{ type?: string; text?: string }> | string }
-        | undefined;
-      if (message?.role === "user") {
-        turnCount += 1;
-        if (!firstUserMessage) {
-          let text: string | null = null;
-          if (Array.isArray(message.content)) {
-            text = message.content
-              .filter((part) => part?.type === "text" && typeof part.text === "string")
-              .map((part) => part.text as string)
-              .join(" ")
-              .trim();
-          } else if (typeof message.content === "string") {
-            text = message.content.trim();
-          }
-          if (text) firstUserMessage = text.slice(0, 120);
-        }
-      }
-    } else if (event.type === "user_message") {
+    // Pi writes per-message events. Older versions used `message_end`; current
+    // versions use `message`, and some callers still emit flat `user_message`.
+    const userTurn = userTurnFromEvent(event);
+    if (userTurn.isUser) {
       turnCount += 1;
-      if (!firstUserMessage) {
-        const content = event.content as
-          | string
-          | Array<{ type?: string; text?: string }>
-          | undefined;
-        let text: string | null = null;
-        if (Array.isArray(content)) {
-          text = content
-            .filter((part) => part?.type === "text" && typeof part.text === "string")
-            .map((part) => part.text as string)
-            .join(" ")
-            .trim();
-        } else if (typeof content === "string") {
-          text = content.trim();
-        }
-        if (text) firstUserMessage = text.slice(0, 120);
-      }
+      if (!firstUserMessage && userTurn.text) firstUserMessage = userTurn.text.slice(0, 120);
     }
   }
 
