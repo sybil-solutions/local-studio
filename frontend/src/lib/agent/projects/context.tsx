@@ -17,6 +17,7 @@ import {
 } from "@/lib/agent/workspace/events";
 import * as api from "./api";
 import { readSelectedProjectId, writeSelectedProjectId } from "./persistence";
+import { projectPathById, resolveSelectedProjectId } from "./selection";
 import type { GitSummary, Project, ProjectId } from "./types";
 
 export type ProjectsContextValue = {
@@ -56,7 +57,10 @@ function notifySessionsChanged() {
 export function ProjectsProvider({ children }: { children: ReactNode }) {
   const [projects, setProjects] = useState<Project[]>([]);
   const [loaded, setLoaded] = useState(false);
-  const [selectedId, setSelectedIdState] = useState<ProjectId | null>(() => readSelectedProjectId());
+  const [selectedId, setSelectedIdState] = useState<ProjectId | null>(() =>
+    readSelectedProjectId(),
+  );
+  const selectedIdRef = useRef<ProjectId | null>(selectedId);
   const [gitSummaries, setGitSummaries] = useState<ReadonlyMap<string, GitSummary>>(new Map());
   const lastGitFetchRef = useRef<string | null>(null);
 
@@ -68,11 +72,42 @@ export function ProjectsProvider({ children }: { children: ReactNode }) {
     (next: ProjectId | null | ((current: ProjectId | null) => ProjectId | null)) => {
       setSelectedIdState((current) => {
         const resolved = typeof next === "function" ? next(current) : next;
+        selectedIdRef.current = resolved;
         if (resolved !== current) writeSelectedProjectId(resolved);
         return resolved;
       });
     },
     [],
+  );
+
+  const loadGitSummary = useCallback(async (cwd: string) => {
+    try {
+      const summary = await api.loadGitSummary(cwd);
+      setGitSummaries((current) => {
+        const next = new Map(current);
+        if (summary) next.set(cwd, summary);
+        else next.delete(cwd);
+        return next;
+      });
+      return summary;
+    } catch {
+      setGitSummaries((current) => {
+        if (!current.has(cwd)) return current;
+        const next = new Map(current);
+        next.delete(cwd);
+        return next;
+      });
+      return null;
+    }
+  }, []);
+
+  const loadGitSummaryOnce = useCallback(
+    (cwd: string) => {
+      if (!cwd || lastGitFetchRef.current === cwd) return;
+      lastGitFetchRef.current = cwd;
+      void loadGitSummary(cwd);
+    },
+    [loadGitSummary],
   );
 
   const refresh = useCallback(async () => {
@@ -84,16 +119,20 @@ export function ProjectsProvider({ children }: { children: ReactNode }) {
       // Swallow — we still mark loaded so consumers don't wait forever.
     }
     setLoaded(true);
-    setSelectedId((current) => (current && next.some((p) => p.id === current) ? current : (next[0]?.id ?? null)));
+    const nextSelectedId = resolveSelectedProjectId(selectedIdRef.current, next);
+    setSelectedId(nextSelectedId);
+    loadGitSummaryOnce(projectPathById(next, nextSelectedId));
     if (!firstLoadRef.current) {
       firstLoadRef.current = true;
       // Notify the workspace (and any other subscribers) that the project
       // list is now authoritative — they can hydrate session snapshots etc.
       window.dispatchEvent(
-        new CustomEvent<{ projects: Project[] }>(PROJECTS_LOADED_EVENT, { detail: { projects: next } }),
+        new CustomEvent<{ projects: Project[] }>(PROJECTS_LOADED_EVENT, {
+          detail: { projects: next },
+        }),
       );
     }
-  }, [setSelectedId]);
+  }, [loadGitSummaryOnce, setSelectedId]);
 
   useEffect(() => {
     void refresh();
@@ -103,8 +142,11 @@ export function ProjectsProvider({ children }: { children: ReactNode }) {
   }, [refresh]);
 
   const selectProject = useCallback(
-    (project: Project | null) => setSelectedId(project?.id ?? null),
-    [setSelectedId],
+    (project: Project | null) => {
+      setSelectedId(project?.id ?? null);
+      loadGitSummaryOnce(project?.path ?? "");
+    },
+    [loadGitSummaryOnce, setSelectedId],
   );
 
   const upsertProject = useCallback((project: Project) => {
@@ -140,40 +182,13 @@ export function ProjectsProvider({ children }: { children: ReactNode }) {
   );
 
   const gitSummary = useCallback(
-    (cwd: string | null | undefined): GitSummary | null => (cwd ? gitSummaries.get(cwd) ?? null : null),
+    (cwd: string | null | undefined): GitSummary | null =>
+      cwd ? (gitSummaries.get(cwd) ?? null) : null,
     [gitSummaries],
   );
 
-  const loadGitSummary = useCallback(async (cwd: string) => {
-    try {
-      const summary = await api.loadGitSummary(cwd);
-      setGitSummaries((current) => {
-        const next = new Map(current);
-        if (summary) next.set(cwd, summary);
-        else next.delete(cwd);
-        return next;
-      });
-      return summary;
-    } catch {
-      setGitSummaries((current) => {
-        if (!current.has(cwd)) return current;
-        const next = new Map(current);
-        next.delete(cwd);
-        return next;
-      });
-      return null;
-    }
-  }, []);
-
   const selectedProject = useMemo(() => findById(selectedId), [findById, selectedId]);
   const agentCwd = selectedProject?.path ?? "";
-
-  // Auto-fetch git summary for the selected project's path (once per path).
-  useEffect(() => {
-    if (!agentCwd || lastGitFetchRef.current === agentCwd) return;
-    lastGitFetchRef.current = agentCwd;
-    void loadGitSummary(agentCwd);
-  }, [agentCwd, loadGitSummary]);
 
   const initGitForActiveProject = useCallback(async () => {
     if (!agentCwd) return;
