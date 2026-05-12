@@ -83,44 +83,101 @@ function recordFromUnknown(value: unknown): Record<string, unknown> {
     : {};
 }
 
+function firstNumber(values: unknown[], fallback: number): number {
+  for (const value of values) {
+    const parsed = numberFromUnknown(value);
+    if (parsed) return parsed;
+  }
+  return fallback;
+}
+
+function firstBoolean(values: unknown[]): boolean | undefined {
+  for (const value of values) {
+    const parsed = booleanFromUnknown(value);
+    if (typeof parsed === "boolean") return parsed;
+  }
+  return undefined;
+}
+
+function firstImageInput(values: unknown[]): boolean | undefined {
+  for (const value of values) {
+    const parsed = hasImageInput(value);
+    if (typeof parsed === "boolean") return parsed;
+  }
+  return undefined;
+}
+
+function resolveContextWindow(
+  model: OpenAIModelListItem,
+  metadata: Record<string, unknown>,
+): number {
+  return firstNumber(
+    [
+      model.contextWindow,
+      model.context_window,
+      model.max_model_len,
+      metadata.contextWindow,
+      metadata.context_window,
+      metadata.max_model_len,
+    ],
+    128_000,
+  );
+}
+
+function resolveMaxTokens(
+  model: OpenAIModelListItem,
+  metadata: Record<string, unknown>,
+  contextWindow: number,
+): number {
+  return firstNumber(
+    [model.maxTokens, model.max_tokens, metadata.maxTokens, metadata.max_tokens],
+    Math.min(contextWindow, 65_536),
+  );
+}
+
+function resolveReasoning(
+  model: OpenAIModelListItem,
+  metadata: Record<string, unknown>,
+  id: string,
+): boolean {
+  const explicitReasoning = metadata.reasoning ?? model.reasoning;
+  return typeof explicitReasoning === "boolean" ? explicitReasoning : inferReasoningSupport(id);
+}
+
+function resolveVision(
+  model: OpenAIModelListItem,
+  metadata: Record<string, unknown>,
+  capabilities: Record<string, unknown>,
+  id: string,
+): boolean {
+  const explicitVision =
+    firstBoolean([
+      metadata.vision,
+      metadata.supportsVision,
+      metadata.supports_vision,
+      metadata.multimodal,
+      capabilities.vision,
+      capabilities.image,
+    ]) ??
+    firstImageInput([
+      metadata.input,
+      metadata.inputs,
+      metadata.modalities,
+      metadata.input_modalities,
+      model.input,
+      model.inputs,
+      model.modalities,
+    ]);
+  return explicitVision ?? inferVisionSupport(id);
+}
+
 export function normalizeOpenAIModel(model: OpenAIModelListItem): AgentModel {
   const metadata = recordFromUnknown(model.metadata);
   const capabilities = recordFromUnknown(metadata.capabilities);
   const id = String(model.id || "").trim();
   const name = String(model.name || metadata.name || id).trim() || id;
-  const contextWindow =
-    numberFromUnknown(model.contextWindow) ??
-    numberFromUnknown(model.context_window) ??
-    numberFromUnknown(model.max_model_len) ??
-    numberFromUnknown(metadata.contextWindow) ??
-    numberFromUnknown(metadata.context_window) ??
-    numberFromUnknown(metadata.max_model_len) ??
-    128_000;
-  const fallbackMaxTokens = Math.min(contextWindow, 65_536);
-  const maxTokens =
-    numberFromUnknown(model.maxTokens) ??
-    numberFromUnknown(model.max_tokens) ??
-    numberFromUnknown(metadata.maxTokens) ??
-    numberFromUnknown(metadata.max_tokens) ??
-    fallbackMaxTokens;
-  const explicitReasoning = metadata.reasoning ?? model.reasoning;
-  const reasoning =
-    typeof explicitReasoning === "boolean" ? explicitReasoning : inferReasoningSupport(id);
-  const explicitVision =
-    booleanFromUnknown(metadata.vision) ??
-    booleanFromUnknown(metadata.supportsVision) ??
-    booleanFromUnknown(metadata.supports_vision) ??
-    booleanFromUnknown(metadata.multimodal) ??
-    booleanFromUnknown(capabilities.vision) ??
-    booleanFromUnknown(capabilities.image) ??
-    hasImageInput(metadata.input) ??
-    hasImageInput(metadata.inputs) ??
-    hasImageInput(metadata.modalities) ??
-    hasImageInput(metadata.input_modalities) ??
-    hasImageInput(model.input) ??
-    hasImageInput(model.inputs) ??
-    hasImageInput(model.modalities);
-  const vision = explicitVision ?? inferVisionSupport(id);
+  const contextWindow = resolveContextWindow(model, metadata);
+  const maxTokens = resolveMaxTokens(model, metadata, contextWindow);
   const explicitActive = metadata.active ?? model.active;
 
   return {
@@ -129,8 +186,8 @@ export function normalizeOpenAIModel(model: OpenAIModelListItem): AgentModel {
     provider: "vllm-studio",
     contextWindow,
     maxTokens,
-    reasoning,
-    vision,
+    reasoning: resolveReasoning(model, metadata, id),
+    vision: resolveVision(model, metadata, capabilities, id),
     active: explicitActive === true,
   };
 }
