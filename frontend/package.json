@@ -11,11 +11,11 @@
     "lint:fix": "eslint --fix",
     "format": "prettier --write \"src/**/*.{ts,tsx,js,jsx,css,md,json}\"",
     "format:check": "prettier --check \"src/**/*.{ts,tsx,js,jsx,css,md,json}\"",
-    "depcheck": "depcheck --ignores=\"@types/react,@types/react-dom,@types/node,eslint-config-next,tailwindcss,@tailwindcss/postcss,depcheck,prettier,husky,jscpd,knip,lint-staged,rehype-highlight,concurrently,cross-env,electron-builder,wait-on\" --ignore-patterns=\"*.d.ts,.next/**,playwright-report/**\" --specials=next,webpack,babel --skip-missing",
+    "depcheck": "depcheck --ignores=\"@types/react,@types/react-dom,@types/node,eslint-config-next,tailwindcss,@tailwindcss/postcss,depcheck,prettier,husky,jscpd,knip,lint-staged,rehype-highlight,concurrently,cross-env,electron-builder,wait-on,@vitest/coverage-v8,madge,enhanced-resolve\" --ignore-patterns=\"*.d.ts,.next/**,playwright-report/**,coverage/**,dist-desktop/**,desktop/dist/**\" --specials=next,webpack,babel --skip-missing",
     "analyze": "ANALYZE=true next build",
     "test": "vitest run --passWithNoTests",
     "test:integration": "playwright test",
-    "prepare": "cd ../.. && husky frontend/.husky",
+    "prepare": "cd .. && git rev-parse --git-dir >/dev/null 2>&1 && npm run setup:git-hooks || true",
     "check": "knip && jscpd src && npm run depcheck",
     "check:deadcode": "knip",
     "check:dupes": "jscpd src",
@@ -28,7 +28,15 @@
     "desktop:dev": "npm run desktop:build:main && concurrently -k -n NEXT,ELECTRON -c cyan,magenta \"npm run dev\" \"node -e \\\"setTimeout(() => process.exit(0), 3000)\\\" && npm run desktop:start:dev\"",
     "desktop:dist": "npm run desktop:build && npm run desktop:prepare-pi && electron-builder --config desktop/electron-builder.yml",
     "desktop:pack": "npm run desktop:build && npm run desktop:prepare-pi && electron-builder --dir --config desktop/electron-builder.yml",
-    "desktop:prepare-pi": "node scripts/prepare-pi-runtime.mjs"
+    "desktop:prepare-pi": "node scripts/prepare-pi-runtime.mjs",
+    "test:coverage": "vitest run --coverage",
+    "typecheck": "tsc --noEmit",
+    "typecheck:desktop": "tsc -p desktop/tsconfig.json",
+    "check:cycles": "madge --extensions ts,tsx --circular src",
+    "check:static": "npm run lint && npm run typecheck && npm run typecheck:desktop && npm run check:cycles",
+    "check:quality": "npm run check:static && npm test && npm run check:cleanup && npm run build",
+    "check:quality:full": "npm run check:quality && npm run test:coverage && npm run test:integration",
+    "precommit": "lint-staged --config .lintstagedrc.json && npm run typecheck"
   },
   "dependencies": {
     "@mariozechner/pi-coding-agent": "^0.70.6",
@@ -67,7 +75,10 @@
     "prettier": "^3.8.0",
     "tailwindcss": "^4",
     "typescript": "^5",
-    "vitest": "^3.2.4"
+    "vitest": "^3.2.4",
+    "@vitest/coverage-v8": "^3.2.4",
+    "madge": "^8.0.0",
+    "enhanced-resolve": "^5.21.3"
   },
   "main": "desktop/dist/main.js"
 }

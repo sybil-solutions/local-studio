@@ -21,7 +21,11 @@ const eslintConfig = defineConfig([
       ],
     },
     rules: {
-      complexity: "off",
+      complexity: ["warn", { max: 20 }],
+      "max-depth": ["warn", 4],
+      "max-params": ["warn", 5],
+      "max-lines-per-function": ["error", { max: 500, skipBlankLines: true, skipComments: true }],
+      "no-duplicate-imports": "warn",
       "max-lines": ["error", { max: 500, skipBlankLines: true, skipComments: true }],
       "no-restricted-syntax": [
         "error",
@@ -57,6 +61,18 @@ const eslintConfig = defineConfig([
     files: ["src/lib/**/*.ts", "src/lib/**/*.tsx"],
     rules: {
       "@typescript-eslint/no-unused-vars": "warn",
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: ["@/app/*"],
+              message:
+                "src/lib is a lower-level seam and must not import app/UI modules. Move shared types or helpers into src/lib first.",
+            },
+          ],
+        },
+      ],
     },
   },
   // Tests, configs and types files are exempt from the file-length cap.
@@ -83,6 +99,7 @@ const eslintConfig = defineConfig([
       "src/app/agent/_components/git-diff-panel.tsx",
       "src/app/agent/_components/agent-browser.tsx",
       "src/app/agent/_components/use-workspace.ts",
+      "src/app/agent/_components/agent-workspace-shell.tsx",
       "src/app/agent/sessions/page.tsx",
       "src/components/projects-nav-section.tsx",
       "src/components/left-sidebar.tsx",
@@ -110,11 +127,17 @@ const eslintConfig = defineConfig([
       "src/lib/agent/workspace/store.ts",
       "src/lib/agent/workspace/effects.ts",
       "src/lib/agent/pi-runtime.ts",
+      "src/lib/agent/sessions/engine.ts",
+      "src/lib/agent/projects/context.tsx",
+      "src/lib/agent/tools/context.tsx",
+      "src/hooks/use-click-outside.ts",
       "src/lib/api/core.ts",
     ],
     rules: {
       "max-lines": "warn",
+      "max-lines-per-function": "warn",
       "no-restricted-syntax": "warn",
+      "react-hooks/set-state-in-effect": "warn",
     },
   },
   {
@@ -128,6 +151,7 @@ const eslintConfig = defineConfig([
     ignores: [
       "src/app/agent/_components/chat-pane.tsx",
       "src/app/agent/_components/use-workspace.ts",
+      "src/app/agent/_components/agent-workspace-shell.tsx",
       "src/app/agent/_components/**/*.test.ts",
       "src/app/agent/_components/__lint__/**",
     ],
@@ -153,6 +177,7 @@ const eslintConfig = defineConfig([
     // Test artifacts:
     "playwright-report/**",
     "test-results/**",
+    "coverage/**",
     "desktop/dist/**",
     "dist-desktop/**",
   ]),

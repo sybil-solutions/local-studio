@@ -1,7 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
-import type { MouseEvent as ReactMouseEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { safeJson } from "@/lib/agent/safe-json";
 import { clampComputerWidth } from "@/lib/agent/tools/persistence";
 import { loadInitialFromStorage } from "@/lib/agent/workspace/persistence";
@@ -25,9 +24,9 @@ import { useProjects } from "@/lib/agent/projects/context";
 import { useTools } from "@/lib/agent/tools/context";
 import type { Project } from "@/lib/agent/projects/types";
 import { paneSessions } from "@/lib/agent/sessions/selectors";
+import { runBrowserPanelCommand, type BrowserCommandResult } from "@/lib/agent/browser/command";
 import type { ChatPaneHandle, SessionTab } from "./chat-pane";
 import type { AgentBrowserHandle } from "./agent-browser";
-import { runBrowserPanelCommand, type BrowserCommandResult } from "./agent-browser-panel";
 import type { SessionDropPayload } from "./pane-grid";
 
 type BrowserCommand = { id: string; verb: string; payload: Record<string, unknown> };

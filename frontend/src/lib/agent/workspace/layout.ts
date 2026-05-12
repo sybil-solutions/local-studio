@@ -30,11 +30,7 @@ export function collectLeaves(layout: Layout): PaneId[] {
 }
 
 // Replace one leaf with a new layout subtree. Used when splitting.
-export function replaceLeaf(
-  layout: Layout,
-  paneId: PaneId,
-  replacement: Layout,
-): Layout {
+export function replaceLeaf(layout: Layout, paneId: PaneId, replacement: Layout): Layout {
   if (layout.kind === "leaf") {
     return layout.paneId === paneId ? replacement : layout;
   }
@@ -78,11 +74,7 @@ export function splitLeaf(
 }
 
 // Update the ratio of a split given a delta in pixels along its drag axis.
-export function setSplitRatio(
-  layout: Layout,
-  splitPath: number[],
-  ratio: number,
-): Layout {
+export function setSplitRatio(layout: Layout, splitPath: number[], ratio: number): Layout {
   if (splitPath.length === 0 || layout.kind !== "split") return layout;
   const [head, ...rest] = splitPath;
   const clamped = Math.min(0.85, Math.max(0.15, ratio));

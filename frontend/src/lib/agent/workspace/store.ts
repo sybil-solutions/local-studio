@@ -1,4 +1,4 @@
-import { collectLeaves } from "@/app/agent/_components/pane-layout";
+import { collectLeaves } from "@/lib/agent/workspace/layout";
 import {
   mergeActiveAgentSessions,
   type ActiveAgentSessionSnapshot,
@@ -6,7 +6,7 @@ import {
 } from "@/lib/agent/active-sessions";
 import { makeFreshTab, newRuntimeId } from "@/lib/agent/session/helpers";
 import type { Project } from "@/lib/agent/projects/types";
-import type { Session, SessionId, SessionsMap } from "@/lib/agent/sessions/types";
+import type { Session, SessionId } from "@/lib/agent/sessions/types";
 import type { ToolSelection } from "@/lib/agent/tools/types";
 import type { ComposerPluginRef, ComposerSkillRef } from "@/lib/agent/composer-context";
 import type {

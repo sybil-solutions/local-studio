@@ -47,14 +47,6 @@ export function PinIcon(props: IconProps) {
   );
 }
 
-export function PinSlashIcon(props: IconProps) {
-  return (
-    <Svg {...props}>
-      <path d="M2 1.4 14.6 14 13.4 15.2.8 2.6 2 1.4zm7.5-.2 5.3 5.3-2.4.6-2.5 2.5.4 2.5-1 1-3-3L2.5 14l-.4-.4 4.8-4.8-.7-.7 4.3-4.4z" />
-    </Svg>
-  );
-}
-
 export function PlusIcon(props: IconProps) {
   return (
     <Svg {...props}>
@@ -83,14 +75,6 @@ export function ChevronDownIcon(props: IconProps) {
   return (
     <Svg {...props}>
       <path d="M3.2 5.5h9.6L8 11.2 3.2 5.5z" />
-    </Svg>
-  );
-}
-
-export function ChevronRightIcon(props: IconProps) {
-  return (
-    <Svg {...props}>
-      <path d="M5.5 3.2v9.6L11.2 8 5.5 3.2z" />
     </Svg>
   );
 }

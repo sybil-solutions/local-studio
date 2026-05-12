@@ -1,4 +1,6 @@
+export * from "./configs";
 export * from "./event-manager";
+export * from "./interfaces";
 export * from "./logs-routes";
 export * from "./metrics";
 export * from "./metrics-collector";
@@ -6,5 +8,6 @@ export * from "./metrics-routes";
 export * from "./metrics-store";
 export * from "./platform";
 export * from "./routes";
+export * from "./types";
 export * from "./usage";
 export * from "./usage-routes";

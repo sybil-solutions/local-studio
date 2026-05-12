@@ -6,7 +6,12 @@
     "release:notes": "node scripts/release-statement.mjs",
     "release:notes:week": "node scripts/release-statement.mjs --since '1 week ago'",
     "release:check-commits": "node scripts/check-conventional-commits.mjs --range origin/main..HEAD",
-    "setup:git-hooks": "git config core.hooksPath .githooks"
+    "setup:git-hooks": "git config core.hooksPath .githooks && chmod +x .githooks/*",
+    "frontend:lint": "npm --prefix frontend run lint",
+    "frontend:typecheck": "npm --prefix frontend run typecheck",
+    "frontend:test": "npm --prefix frontend test",
+    "frontend:check": "npm --prefix frontend run check:quality",
+    "check": "npm run frontend:check"
   },
   "dependencies": {
     "electron-updater": "^6.6.2",

@@ -10,10 +10,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import type {
-  ComposerPluginRef,
-  ComposerSkillRef,
-} from "@/lib/agent/composer-context";
+import type { ComposerPluginRef, ComposerSkillRef } from "@/lib/agent/composer-context";
 import type { SessionId } from "@/lib/agent/sessions/types";
 import {
   EMPTY_SELECTION,
@@ -152,7 +149,9 @@ export function ToolsProvider({ children }: { children: ReactNode }) {
   const setComputerWidth = useCallback((width: number) => {
     if (!Number.isFinite(width)) return;
     const clamped = clampComputerWidth(width);
-    setComputer((current) => (current.width === clamped ? current : { ...current, width: clamped }));
+    setComputer((current) =>
+      current.width === clamped ? current : { ...current, width: clamped },
+    );
     writeComputerWidth(clamped);
   }, []);
 
@@ -163,52 +162,41 @@ export function ToolsProvider({ children }: { children: ReactNode }) {
     },
     // selectionVersion is read implicitly via the Ref; we depend on it so the
     // returned function identity changes when selections mutate.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     [selectionVersion],
   );
 
-  const setSelection = useCallback(
-    (sessionId: SessionId, selection: ToolSelection | null) => {
-      const map = selectionsRef.current;
-      if (!selection) {
-        if (!map.delete(sessionId)) return;
-      } else {
-        const current = map.get(sessionId);
-        if (
-          current &&
-          current.plugins === selection.plugins &&
-          current.skills === selection.skills
-        ) {
-          return;
-        }
-        map.set(sessionId, selection);
+  const setSelection = useCallback((sessionId: SessionId, selection: ToolSelection | null) => {
+    const map = selectionsRef.current;
+    if (!selection) {
+      if (!map.delete(sessionId)) return;
+    } else {
+      const current = map.get(sessionId);
+      if (current && current.plugins === selection.plugins && current.skills === selection.skills) {
+        return;
       }
-      setSelectionVersion((v) => v + 1);
-    },
-    [],
-  );
+      map.set(sessionId, selection);
+    }
+    setSelectionVersion((v) => v + 1);
+  }, []);
 
-  const hydrateSelections = useCallback(
-    (entries: Iterable<[SessionId, ToolSelection]>) => {
-      const map = selectionsRef.current;
-      let changed = false;
-      for (const [id, selection] of entries) {
-        if (!selection) continue;
-        const existing = map.get(id);
-        if (
-          existing &&
-          existing.plugins === selection.plugins &&
-          existing.skills === selection.skills
-        ) {
-          continue;
-        }
-        map.set(id, selection);
-        changed = true;
+  const hydrateSelections = useCallback((entries: Iterable<[SessionId, ToolSelection]>) => {
+    const map = selectionsRef.current;
+    let changed = false;
+    for (const [id, selection] of entries) {
+      if (!selection) continue;
+      const existing = map.get(id);
+      if (
+        existing &&
+        existing.plugins === selection.plugins &&
+        existing.skills === selection.skills
+      ) {
+        continue;
       }
-      if (changed) setSelectionVersion((v) => v + 1);
-    },
-    [],
-  );
+      map.set(id, selection);
+      changed = true;
+    }
+    if (changed) setSelectionVersion((v) => v + 1);
+  }, []);
 
   const value = useMemo<ToolsContextValue>(
     () => ({

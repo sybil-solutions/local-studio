@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { collectLeaves } from "@/app/agent/_components/pane-layout";
-import type { SessionTab } from "@/app/agent/_components/chat-pane";
+import { collectLeaves } from "@/lib/agent/workspace/layout";
+import type { SessionTab } from "@/lib/agent/session/types";
 import { makeFreshTab } from "@/lib/agent/session/helpers";
 import type { ProjectEntry, WorkspaceState } from "./types";
 import {

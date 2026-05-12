@@ -1,9 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useSearchParams } from "next/navigation";
-import { consumeAgentSessionNavTitle, triggerAddProjectFlow } from "@/components/projects-nav-section";
+import {
+  consumeAgentSessionNavTitle,
+  triggerAddProjectFlow,
+} from "@/components/projects-nav-section";
 import { makeFreshTab, newPaneId, newRuntimeId } from "@/lib/agent/session/helpers";
 import { ChevronDownIcon, CloseIcon, ComputerIcon, PlusIcon } from "@/components/icons";
 import type { WorkspaceDispatch } from "@/lib/agent/workspace/effects";
@@ -15,7 +17,7 @@ import { focusedSession, materializePaneSessions } from "@/lib/agent/sessions/se
 import { AgentBrowserPanel } from "./agent-browser-panel";
 import { ChatPane } from "./chat-pane";
 import { PaneGrid } from "./pane-grid";
-import { collectLeaves } from "./pane-layout";
+import { collectLeaves } from "@/lib/agent/workspace/layout";
 import type { WorkspaceHandles } from "./use-workspace";
 
 type SearchParamsReader = {
@@ -33,7 +35,10 @@ export function shouldShowProjectEmptyState(
   projectParam: string | null,
 ): boolean {
   return (
-    projects.loaded && !projectParam && !projects.selectedProjectId && projects.projects.length === 0
+    projects.loaded &&
+    !projectParam &&
+    !projects.selectedProjectId &&
+    projects.projects.length === 0
   );
 }
 
@@ -83,11 +88,13 @@ export function AgentWorkspaceShell({ state, dispatch, handles }: AgentWorkspace
 
   const activeProject = projects.selectedProject;
   const focusedTab = focusedSession(state);
-  const focusedComputerUseLoaded = tools.selectionFor(focusedTab?.id).plugins.some((plugin) =>
-    [plugin.id, plugin.name, plugin.path].some((value) =>
-      value?.toLowerCase().includes("computer-use"),
-    ),
-  );
+  const focusedComputerUseLoaded = tools
+    .selectionFor(focusedTab?.id)
+    .plugins.some((plugin) =>
+      [plugin.id, plugin.name, plugin.path].some((value) =>
+        value?.toLowerCase().includes("computer-use"),
+      ),
+    );
 
   return (
     <div className="agent-workspace flex h-full min-h-0 w-full flex-col bg-(--bg) text-(--fg) md:h-[100dvh]">

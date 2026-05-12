@@ -23,3 +23,6 @@ do
   echo "Checking conventional commits for $local_ref -> $remote/$remote_ref ($url)"
   node scripts/check-conventional-commits.mjs --range "$range" || exit 1
 done
+
+echo "pre-push: frontend quality gate"
+npm --prefix frontend run check:quality

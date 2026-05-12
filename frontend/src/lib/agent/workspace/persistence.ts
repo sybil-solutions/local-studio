@@ -1,13 +1,9 @@
-import { collectLeaves } from "@/app/agent/_components/pane-layout";
+import { collectLeaves } from "@/lib/agent/workspace/layout";
 import type { ActiveAgentSessionSnapshot } from "@/lib/agent/active-sessions";
 import type { Session, SessionId, SessionsMap } from "@/lib/agent/sessions/types";
 import type { ToolSelection } from "@/lib/agent/tools/types";
 import type { PaneId, PaneState, WorkspaceLayout, WorkspaceState } from "./types";
 
-// `SessionTab` was the old name for the per-pane session record. Now sessions
-// live in a flat map and panes hold ids; this alias keeps the persisted shape
-// declaration readable for future-archaeologists.
-type SessionTab = Session;
 import {
   PANE_LAYOUT_KEY,
   PANE_STATE_KEY,

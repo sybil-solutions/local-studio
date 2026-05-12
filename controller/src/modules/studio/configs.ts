@@ -1,8 +1,10 @@
-export const STUDIO_MODULE_DEFAULTS = {
+import type { StudioModelRecommendation, StudioModuleDefaults } from "./types";
+
+export const STUDIO_MODULE_DEFAULTS: StudioModuleDefaults = {
   uiRefreshMs: 5_000,
 };
 
-export const STUDIO_MODEL_RECOMMENDATIONS = [
+export const STUDIO_MODEL_RECOMMENDATIONS: StudioModelRecommendation[] = [
   // --- Flagship / large ---
   {
     id: "meta-llama/Llama-4-Maverick-17B-128E-Instruct",

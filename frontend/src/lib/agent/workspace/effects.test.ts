@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type { SessionTab } from "@/app/agent/_components/chat-pane";
+import type { SessionTab } from "@/lib/agent/session/types";
 import type { ProjectEntry, WorkspaceAction, WorkspaceState } from "./types";
 import {
   PANE_LAYOUT_KEY,
@@ -9,10 +9,7 @@ import {
   type WorkspaceStorage,
 } from "./store";
 import { runWorkspaceEffect } from "./effects";
-import {
-  ACTIVE_AGENT_SESSIONS_EVENT,
-  SESSIONS_CHANGED_EVENT,
-} from "./events";
+import { ACTIVE_AGENT_SESSIONS_EVENT, SESSIONS_CHANGED_EVENT } from "./events";
 
 function project(overrides: Partial<ProjectEntry> = {}): ProjectEntry {
   return {

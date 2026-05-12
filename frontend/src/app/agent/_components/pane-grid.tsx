@@ -1,7 +1,7 @@
 "use client";
 
 import { ReactNode, useState } from "react";
-import type { Layout, PaneId } from "./pane-layout";
+import type { Layout, PaneId } from "@/lib/agent/workspace/layout";
 
 type RenderPane = (paneId: PaneId) => ReactNode;
 

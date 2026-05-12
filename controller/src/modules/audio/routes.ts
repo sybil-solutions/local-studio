@@ -8,22 +8,16 @@ import type { AppContext } from "../../types/context";
 import { resolveBinary } from "../../core/command";
 import { runCliCommand } from "../../services/integrations/cli/cli-runner";
 import { SttIntegrationError, transcribeAudio } from "../../services/integrations/stt";
-import type { SttMode, SttTranscriptionResult } from "../../services/integrations/stt";
+import type { SttMode } from "../../services/integrations/stt";
 import { synthesizeSpeech, TtsIntegrationError } from "../../services/integrations/tts";
-import type { TtsMode, TtsSynthesisRequest } from "../../services/integrations/tts";
-
-interface AudioRouteDependencies {
-  transcribe?: (request: {
-    audioPath: string;
-    modelPath: string;
-    language?: string;
-  }) => Promise<SttTranscriptionResult>;
-  transcodeToWav?: (options: {
-    sourcePath: string;
-    outputPath: string;
-  }) => Promise<string>;
-  synthesize?: (request: TtsSynthesisRequest) => Promise<void>;
-}
+import type { TtsMode } from "../../services/integrations/tts";
+import type { AudioRouteDependencies } from "./interfaces";
+import {
+  AUDIO_DEFAULT_MODE,
+  AUDIO_REPLACE_TRUE_VALUES,
+  AUDIO_TEMP_PATH_SEGMENTS,
+  AUDIO_TRANSCODE_TIMEOUT_MS,
+} from "./configs";
 
 const parseField = (value: FormDataEntryValue | null): string | undefined => {
   if (typeof value !== "string") return undefined;
@@ -32,7 +26,7 @@ const parseField = (value: FormDataEntryValue | null): string | undefined => {
 };
 
 const parseMode = (value: FormDataEntryValue | null): SttMode => {
-  const modeValue = (parseField(value) ?? "strict").toLowerCase();
+  const modeValue = (parseField(value) ?? AUDIO_DEFAULT_MODE).toLowerCase();
   if (modeValue === "strict" || modeValue === "best_effort") {
     return modeValue;
   }
@@ -42,12 +36,12 @@ const parseMode = (value: FormDataEntryValue | null): SttMode => {
 const parseReplace = (value: FormDataEntryValue | null): boolean => {
   const replaceValue = parseField(value);
   if (!replaceValue) return false;
-  return ["1", "true", "yes", "on"].includes(replaceValue.toLowerCase());
+  return AUDIO_REPLACE_TRUE_VALUES.includes(replaceValue.toLowerCase());
 };
 
 const parseJsonMode = (value: unknown): TtsMode => {
   if (typeof value !== "string" || value.trim().length === 0) {
-    return "strict";
+    return AUDIO_DEFAULT_MODE;
   }
   const normalized = value.trim().toLowerCase();
   if (normalized === "strict" || normalized === "best_effort") {
@@ -64,7 +58,7 @@ const parseJsonReplace = (value: unknown): boolean => {
     return value === 1;
   }
   if (typeof value === "string") {
-    return ["1", "true", "yes", "on"].includes(value.trim().toLowerCase());
+    return AUDIO_REPLACE_TRUE_VALUES.includes(value.trim().toLowerCase());
   }
   return false;
 };
@@ -186,7 +180,7 @@ const defaultTranscodeToWav = async (options: {
   const result = await runCliCommand({
     command: ffmpegPath,
     args: ["-y", "-i", options.sourcePath, "-ac", "1", "-ar", "16000", "-f", "wav", options.outputPath],
-    timeoutMs: 60_000,
+    timeoutMs: AUDIO_TRANSCODE_TIMEOUT_MS,
   });
 
   if (result.timedOut) {
@@ -244,7 +238,7 @@ export const registerAudioRoutes = (
         return ctx.json(conflict, { status: 409 });
       }
 
-      const temporaryDirectory = join(context.config.data_dir, "tmp", "audio");
+      const temporaryDirectory = join(context.config.data_dir, ...AUDIO_TEMP_PATH_SEGMENTS);
       await mkdir(temporaryDirectory, { recursive: true });
 
       const uploadBuffer = new Uint8Array(await file.arrayBuffer());

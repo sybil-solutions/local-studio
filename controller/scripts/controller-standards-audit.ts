@@ -22,6 +22,7 @@ const MAX_FILES_PER_DIR = Number.parseInt(process.env["MAX_FILES_PER_DIR"] ?? "2
 const MAX_SUBDIRS_PER_DIR = Number.parseInt(process.env["MAX_SUBDIRS_PER_DIR"] ?? "8", 10);
 const MAX_DOC_LOOKBACK = 20;
 const REQUIRED_MODULE_CONTRACT_FILES = ["types.ts", "interfaces.ts", "configs.ts", "index.ts"];
+const STRUCTURE_COUNT_EXCLUDED_DIRS = new Set(["tests"]);
 
 const findings: Finding[] = [];
 const stats: AuditStats = {
@@ -50,7 +51,10 @@ function scanDirectory(dir: string): void {
   const entries = fs.readdirSync(dir, { withFileTypes: true });
   const directFiles = entries.filter((entry) => entry.isFile());
   const directDirectories = entries.filter(
-    (entry) => entry.isDirectory() && !entry.name.startsWith(".")
+    (entry) =>
+      entry.isDirectory() &&
+      !entry.name.startsWith(".") &&
+      !STRUCTURE_COUNT_EXCLUDED_DIRS.has(entry.name)
   );
 
   stats.directories += 1;

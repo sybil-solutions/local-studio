@@ -1,9 +1,9 @@
 import type { ActiveAgentSessionSnapshot } from "@/lib/agent/active-sessions";
 import type { Project } from "@/lib/agent/projects/types";
 import type { Session, SessionId, SessionsMap } from "@/lib/agent/sessions/types";
-import type { Layout, PaneId } from "@/app/agent/_components/pane-layout";
+import type { Layout, PaneId } from "@/lib/agent/workspace/layout";
 
-export type { PaneId } from "@/app/agent/_components/pane-layout";
+export type { PaneId } from "@/lib/agent/workspace/layout";
 export type { SessionId } from "@/lib/agent/sessions/types";
 
 export type WorkspaceLayout = Layout;

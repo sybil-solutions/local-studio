@@ -14,9 +14,18 @@ import { fetchLocal } from "../../http/local-fetch";
 import { registerMonitoringRoutes } from "./metrics-routes";
 import { registerLogsRoutes } from "./logs-routes";
 import { registerUsageRoutes } from "./usage-routes";
+import {
+  SYSTEM_COMPAT_SERVICE_CHECK_TIMEOUT_MS,
+  SYSTEM_DEFAULT_SERVICE_CHECK_TIMEOUT_MS,
+  SYSTEM_SERVICE_CHECK_HOST,
+} from "./configs";
 
 export const registerSystemRoutes = (app: Hono, context: AppContext): void => {
-  const checkService = (host: string, port: number, timeoutMs = 1000): Promise<boolean> => {
+  const checkService = (
+    host: string,
+    port: number,
+    timeoutMs = SYSTEM_DEFAULT_SERVICE_CHECK_TIMEOUT_MS
+  ): Promise<boolean> => {
     return new Promise((resolve) => {
       const socket = connect({ port, host });
       let settled = false;
@@ -57,7 +66,11 @@ export const registerSystemRoutes = (app: Hono, context: AppContext): void => {
   app.get("/compat", async (ctx) => {
     const known = await context.processManager.findInferenceProcess(context.config.inference_port);
     const runtime = await getSystemRuntimeInfo(context.config, known);
-    const portOpen = await checkService("127.0.0.1", context.config.inference_port, 500);
+    const portOpen = await checkService(
+      SYSTEM_SERVICE_CHECK_HOST,
+      context.config.inference_port,
+      SYSTEM_COMPAT_SERVICE_CHECK_TIMEOUT_MS
+    );
 
     const report = buildCompatibilityReport({
       runtime,

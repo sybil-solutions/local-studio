@@ -25,11 +25,13 @@ let targetsCache: {
   value: RuntimeTarget[];
 } | null = null;
 
-export const clearRuntimeTargetsForTests = (): void => {
+const resetRuntimeTargetsCache = (): void => {
   targetsCache = null;
 };
 
-export const clearRuntimeTargetsCache = clearRuntimeTargetsForTests;
+export const clearRuntimeTargetsCache = (): void => resetRuntimeTargetsCache();
+
+export const clearRuntimeTargetsForTests = (): void => resetRuntimeTargetsCache();
 
 const PYTHON_VERSION_PROBES: Record<"vllm" | "sglang", string> = {
   vllm: "import json, sys\ntry:\n import vllm\n print(json.dumps({'version': vllm.__version__, 'python': sys.executable}))\nexcept Exception as e:\n print(json.dumps({'version': None, 'python': sys.executable, 'error': str(e)}))",

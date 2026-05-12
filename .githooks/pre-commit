@@ -1,0 +1,5 @@
+#!/bin/sh
+set -eu
+
+echo "pre-commit: frontend staged lint/format + typecheck"
+npm --prefix frontend run precommit

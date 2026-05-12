@@ -3,7 +3,7 @@ import {
   removeLeaf,
   setSplitRatio as setLayoutSplitRatio,
   splitLeaf,
-} from "@/app/agent/_components/pane-layout";
+} from "@/lib/agent/workspace/layout";
 import type { Project } from "@/lib/agent/projects/types";
 import type { Session, SessionId, SessionsMap } from "@/lib/agent/sessions/types";
 import {

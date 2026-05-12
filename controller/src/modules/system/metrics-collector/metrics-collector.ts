@@ -158,6 +158,11 @@ const firstMetric = (metrics: Record<string, number>, names: string[]): number =
   return 0;
 };
 
+/**
+ * Start the background runtime metrics poller and return its shutdown callback.
+ * @param context - Controller application context used to read runtime state and publish events.
+ * @returns Function that stops future polling ticks.
+ */
 export const startMetricsCollector = (context: AppContext): (() => void) => {
   let running = true;
   let lastVllmMetrics: Record<string, number> = {};
