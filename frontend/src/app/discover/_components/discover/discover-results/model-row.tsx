@@ -17,7 +17,23 @@ import {
 } from "lucide-react";
 import type { HuggingFaceModel, ModelDownload } from "@/lib/types";
 import { formatNumber } from "@/lib/formatters";
-import { extractProvider, extractQuantizations } from "../../utils";
+import { resolveModelRowView, type ModelRowDownloadAction } from "./model-row-model";
+
+interface ModelRowProps {
+  model: HuggingFaceModel;
+  copied: boolean;
+  isLocal: boolean;
+  activeDownload: ModelDownload | null;
+  isStarting: boolean;
+  onCopyModelId: (modelId: string) => void;
+  onStartDownload: (params: { model_id: string }) => Promise<void>;
+  onPauseDownload: (downloadId: string) => Promise<void>;
+  onResumeDownload: (downloadId: string) => Promise<void>;
+  variantCount?: number;
+  expanded?: boolean;
+  onToggleExpand?: () => void;
+  child?: boolean;
+}
 
 export const ModelRow = memo(function ModelRow({
   model,
@@ -33,33 +49,25 @@ export const ModelRow = memo(function ModelRow({
   expanded = false,
   onToggleExpand,
   child = false,
-}: {
-  model: HuggingFaceModel;
-  copied: boolean;
-  isLocal: boolean;
-  activeDownload: ModelDownload | null;
-  isStarting: boolean;
-  onCopyModelId: (modelId: string) => void;
-  onStartDownload: (params: { model_id: string }) => Promise<void>;
-  onPauseDownload: (downloadId: string) => Promise<void>;
-  onResumeDownload: (downloadId: string) => Promise<void>;
-  variantCount?: number;
-  expanded?: boolean;
-  onToggleExpand?: () => void;
-  child?: boolean;
-}) {
-  const provider = useMemo(() => extractProvider(model.modelId), [model.modelId]);
-  const quantizations = useMemo(() => extractQuantizations(model.tags), [model.tags]);
-  const hasVariants = variantCount > 1;
-  const rowClasses = child
-    ? "bg-(--surface)/15 hover:bg-(--surface)/25 transition-colors"
-    : "hover:bg-(--surface)/30 transition-colors";
+}: ModelRowProps) {
+  const view = useMemo(
+    () =>
+      resolveModelRowView({
+        activeDownload,
+        child,
+        isLocal,
+        isStarting,
+        model,
+        variantCount,
+      }),
+    [activeDownload, child, isLocal, isStarting, model, variantCount],
+  );
 
   return (
-    <tr className={rowClasses}>
+    <tr className={view.rowClasses}>
       <td className="px-4 py-3">
         <div className={`flex items-center gap-2 ${child ? "pl-5" : ""}`}>
-          {hasVariants && !child && (
+          {view.hasVariants && !child && (
             <button
               type="button"
               onClick={onToggleExpand}
@@ -88,15 +96,13 @@ export const ModelRow = memo(function ModelRow({
             )}
           </button>
         </div>
-        {!child && hasVariants && (
-          <div className="text-[11px] text-(--dim) mt-1 pl-7">
-            {variantCount} quantization variants
-          </div>
+        {view.variantLabel && (
+          <div className="text-[11px] text-(--dim) mt-1 pl-7">{view.variantLabel}</div>
         )}
       </td>
       <td className="px-4 py-3">
         <span className="px-2 py-1 bg-(--surface) border border-(--border) rounded text-xs text-(--fg)">
-          {provider}
+          {view.provider}
         </span>
       </td>
       <td className="px-4 py-3">
@@ -109,20 +115,7 @@ export const ModelRow = memo(function ModelRow({
         )}
       </td>
       <td className="px-4 py-3">
-        <div className="flex flex-wrap gap-1">
-          {quantizations.length > 0 ? (
-            quantizations.map((quantization) => (
-              <span
-                key={quantization}
-                className="px-2 py-1 bg-(--hl3)/20 text-(--hl3) border border-(--hl3)/30 rounded text-xs font-medium"
-              >
-                {quantization}
-              </span>
-            ))
-          ) : (
-            <span className="text-xs text-(--dim)">—</span>
-          )}
-        </div>
+        <div className="flex flex-wrap gap-1">{renderQuantizations(view.quantizations)}</div>
       </td>
       <td className="px-4 py-3">
         {isLocal ? (
@@ -148,7 +141,7 @@ export const ModelRow = memo(function ModelRow({
       </td>
       <td className="px-4 py-3 text-right">
         <a
-          href={`https://huggingface.co/${model.modelId}`}
+          href={view.modelUrl}
           target="_blank"
           rel="noopener noreferrer"
           className="p-1.5 hover:bg-(--surface) rounded transition-colors inline-block text-(--hl1) hover:text-(--hl1)"
@@ -158,51 +151,91 @@ export const ModelRow = memo(function ModelRow({
         </a>
       </td>
       <td className="px-4 py-3 text-right">
-        {isLocal ? (
-          <span className="inline-flex items-center gap-1 text-xs text-(--hl2)">
-            <CheckCircle2 className="h-3.5 w-3.5" />
-            Ready
-          </span>
-        ) : isStarting ? (
-          <span className="text-xs text-(--dim)">Starting…</span>
-        ) : activeDownload ? (
-          <div className="flex items-center justify-end gap-2">
-            {activeDownload.status === "downloading" && (
-              <button
-                onClick={() => onPauseDownload(activeDownload.id)}
-                className="p-1.5 rounded-lg border border-(--border) hover:bg-(--surface)"
-                title="Pause download"
-              >
-                <Pause className="h-4 w-4" />
-              </button>
-            )}
-            {(activeDownload.status === "paused" || activeDownload.status === "failed") && (
-              <button
-                onClick={() => onResumeDownload(activeDownload.id)}
-                className="p-1.5 rounded-lg border border-(--border) hover:bg-(--surface)"
-                title="Resume download"
-              >
-                <Play className="h-4 w-4" />
-              </button>
-            )}
-            {activeDownload.status === "completed" && (
-              <span className="text-xs text-(--hl2)">Downloaded</span>
-            )}
-            {(activeDownload.status === "downloading" || activeDownload.status === "queued") && (
-              <span className="text-xs text-(--dim)">Downloading…</span>
-            )}
-          </div>
-        ) : (
-          <button
-            onClick={() => onStartDownload({ model_id: model.modelId })}
-            disabled={isStarting}
-            className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-(--hl1) text-white text-xs font-medium hover:opacity-90"
-          >
-            <DownloadCloud className="h-3.5 w-3.5" />
-            Download
-          </button>
-        )}
+        <DownloadAction
+          action={view.downloadAction}
+          onPauseDownload={onPauseDownload}
+          onResumeDownload={onResumeDownload}
+          onStartDownload={onStartDownload}
+        />
       </td>
     </tr>
   );
 });
+
+function renderQuantizations(quantizations: string[]) {
+  if (quantizations.length === 0) {
+    return <span className="text-xs text-(--dim)">—</span>;
+  }
+  return quantizations.map((quantization) => (
+    <span
+      key={quantization}
+      className="px-2 py-1 bg-(--hl3)/20 text-(--hl3) border border-(--hl3)/30 rounded text-xs font-medium"
+    >
+      {quantization}
+    </span>
+  ));
+}
+
+function DownloadAction({
+  action,
+  onPauseDownload,
+  onResumeDownload,
+  onStartDownload,
+}: {
+  action: ModelRowDownloadAction;
+  onPauseDownload: (downloadId: string) => Promise<void>;
+  onResumeDownload: (downloadId: string) => Promise<void>;
+  onStartDownload: (params: { model_id: string }) => Promise<void>;
+}) {
+  if (action.kind === "ready") {
+    return (
+      <span className="inline-flex items-center gap-1 text-xs text-(--hl2)">
+        <CheckCircle2 className="h-3.5 w-3.5" />
+        Ready
+      </span>
+    );
+  }
+  if (action.kind === "starting") {
+    return <span className="text-xs text-(--dim)">Starting…</span>;
+  }
+  if (action.kind === "download") {
+    return (
+      <button
+        onClick={() => onStartDownload({ model_id: action.modelId })}
+        className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-(--hl1) text-white text-xs font-medium hover:opacity-90"
+      >
+        <DownloadCloud className="h-3.5 w-3.5" />
+        Download
+      </button>
+    );
+  }
+  return (
+    <div className="flex items-center justify-end gap-2">
+      {action.canPause && (
+        <button
+          onClick={() => onPauseDownload(action.downloadId)}
+          className="p-1.5 rounded-lg border border-(--border) hover:bg-(--surface)"
+          title="Pause download"
+        >
+          <Pause className="h-4 w-4" />
+        </button>
+      )}
+      {action.canResume && (
+        <button
+          onClick={() => onResumeDownload(action.downloadId)}
+          className="p-1.5 rounded-lg border border-(--border) hover:bg-(--surface)"
+          title="Resume download"
+        >
+          <Play className="h-4 w-4" />
+        </button>
+      )}
+      {action.label && (
+        <span
+          className={`text-xs ${action.label === "Downloaded" ? "text-(--hl2)" : "text-(--dim)"}`}
+        >
+          {action.label}
+        </span>
+      )}
+    </div>
+  );
+}
