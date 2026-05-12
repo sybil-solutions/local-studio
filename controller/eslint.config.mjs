@@ -28,25 +28,26 @@ const config = [
       "no-throw-literal": "error",
       "no-console": "off",
       "prefer-const": "error",
-      "eqeqeq": ["error", "always"],
+      eqeqeq: ["error", "always"],
+      "max-lines-per-function": ["error", { max: 500, skipBlankLines: true, skipComments: true }],
       "@typescript-eslint/no-explicit-any": "error",
-      "@typescript-eslint/consistent-type-imports": ["error", { "prefer": "type-imports" }],
-      "@typescript-eslint/no-unused-vars": ["error", { "argsIgnorePattern": "^_" }],
+      "@typescript-eslint/consistent-type-imports": ["error", { prefer: "type-imports" }],
+      "@typescript-eslint/no-unused-vars": ["error", { argsIgnorePattern: "^_" }],
       "@typescript-eslint/explicit-function-return-type": "error",
       "@typescript-eslint/no-inferrable-types": "off",
-      "@typescript-eslint/no-misused-promises": ["error", { "checksVoidReturn": false }],
+      "@typescript-eslint/no-misused-promises": ["error", { checksVoidReturn: false }],
       "@typescript-eslint/switch-exhaustiveness-check": "error",
       "jsdoc/require-jsdoc": [
         "error",
         {
-          "require": {
-            "FunctionDeclaration": true,
-            "MethodDefinition": true,
-            "ClassDeclaration": true,
-            "ArrowFunctionExpression": false,
-            "FunctionExpression": false
-          }
-        }
+          require: {
+            FunctionDeclaration: true,
+            MethodDefinition: true,
+            ClassDeclaration: true,
+            ArrowFunctionExpression: false,
+            FunctionExpression: false,
+          },
+        },
       ],
       "jsdoc/require-returns": "off",
       "jsdoc/require-param": "error",
@@ -58,24 +59,24 @@ const config = [
       "unicorn/prevent-abbreviations": [
         "error",
         {
-          "allowList": {
-            "env": true,
-            "db": true,
-            "ctx": true,
-            "req": true,
-            "res": true,
-            "id": true,
-            "ids": true,
-            "args": true,
-            "params": true,
-            "dir": true,
-            "dirs": true,
-            "docs": true,
-            "Docs": true,
-            "moduleDir": true
-          }
-        }
-      ]
+          allowList: {
+            env: true,
+            db: true,
+            ctx: true,
+            req: true,
+            res: true,
+            id: true,
+            ids: true,
+            args: true,
+            params: true,
+            dir: true,
+            dirs: true,
+            docs: true,
+            Docs: true,
+            moduleDir: true,
+          },
+        },
+      ],
     },
   },
 ];

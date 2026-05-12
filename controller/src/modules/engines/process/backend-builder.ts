@@ -5,6 +5,11 @@ import type { Recipe } from "../../models/types";
 import type { Config } from "../../../config/env";
 import { resolveBinary } from "../../../core/command";
 import { resolveVllmRecipePythonPath } from "../runtimes/vllm-python-path";
+import {
+  getDefaultReasoningParser,
+  getDefaultToolCallParser,
+  shouldEnableExpertParallel,
+} from "./model-runtime-defaults";
 
 /**
  * Normalize JSON-like arguments for CLI flags.
@@ -69,76 +74,6 @@ export const getPythonPath = (recipe: Recipe): string | undefined => {
 
 const getVllmPythonPath = (recipe: Recipe): string | undefined => {
   return resolveVllmRecipePythonPath(recipe.python_path) ?? undefined;
-};
-
-/**
- * Auto-detect reasoning parser based on model name.
- * @param recipe - Recipe data.
- * @returns Parser name or undefined.
- */
-export const getDefaultReasoningParser = (recipe: Recipe): string | undefined => {
-  const modelId = (recipe.served_model_name || recipe.model_path || "").toLowerCase();
-
-  if (modelId.includes("minimax") && (modelId.includes("m2") || modelId.includes("m-2"))) {
-    return "minimax_m2_append_think";
-  }
-  if (modelId.includes("intellect") && modelId.includes("3")) {
-    return "deepseek_r1";
-  }
-  if (
-    modelId.includes("glm") &&
-    ["4.5", "4.6", "4.7", "4-5", "4-6", "4-7"].some((tag) => modelId.includes(tag))
-  ) {
-    return "glm45";
-  }
-  if (
-    modelId.includes("glm") &&
-    ["5.0", "5.1", "5-0", "5-1"].some((tag) => modelId.includes(tag))
-  ) {
-    return "glm45";
-  }
-  if (modelId.includes("mirothinker")) {
-    return "deepseek_r1";
-  }
-  if (modelId.includes("qwen3") && modelId.includes("thinking")) {
-    return "deepseek_r1";
-  }
-  if (modelId.includes("qwen3")) {
-    return "qwen3";
-  }
-  return undefined;
-};
-
-/**
- * Auto-detect tool call parser based on model name.
- * @param recipe - Recipe data.
- * @returns Parser name or undefined.
- */
-export const getDefaultToolCallParser = (recipe: Recipe): string | undefined => {
-  const modelId = (recipe.served_model_name || recipe.model_path || "").toLowerCase();
-
-  if (modelId.includes("mirothinker")) {
-    return undefined;
-  }
-  if (modelId.includes("minimax") && (modelId.includes("m2") || modelId.includes("m-2"))) {
-    return "minimax-m2";
-  }
-  if (
-    modelId.includes("glm") &&
-    ["4.5", "4.6", "4.7", "4-5", "4-6", "4-7"].some((tag) => modelId.includes(tag))
-  ) {
-    return "glm45";
-  }
-  if (
-    modelId.includes("glm") &&
-    ["5.0", "5.1", "5-0", "5-1"].some((tag) => modelId.includes(tag))
-  ) {
-    return "glm47";
-  }
-  if (modelId.includes("intellect") && modelId.includes("3")) {
-    return "qwen3_xml";
-  }
-  return undefined;
 };
 
 /**
@@ -334,24 +269,8 @@ export const buildVllmCommand = (recipe: Recipe): string[] => {
     command.push("--pipeline-parallel-size", String(recipe.pipeline_parallel_size));
   }
 
-  const modelId = (recipe.served_model_name || recipe.model_path || "").toLowerCase();
-
-  // Auto-enable expert parallelism for known MoE models with TP > 4
-  // Also respect explicit enable_expert_parallel in extra_args
-  const isMoEModel =
-    (modelId.includes("minimax") && (modelId.includes("m2") || modelId.includes("m-2"))) ||
-    modelId.includes("qwen3.5") ||
-    modelId.includes("qwen3-3.5") ||
-    (modelId.includes("qwen") && modelId.includes("262")) ||
-    modelId.includes("qwen3-235b") ||
-    modelId.includes("qwen3_235b");
-
   const expertParallelExplicit = getExtraArgument(recipe.extra_args, "enable-expert-parallel");
-  const expertParallelEnabled =
-    expertParallelExplicit === true ||
-    (expertParallelExplicit !== false && isMoEModel && recipe.tensor_parallel_size > 1);
-
-  if (expertParallelEnabled) {
+  if (shouldEnableExpertParallel(recipe, expertParallelExplicit)) {
     command.push("--enable-expert-parallel");
   }
 
