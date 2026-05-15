@@ -219,4 +219,35 @@ describe("engine routes", () => {
     expect(jobPayload.job.type).toBe("update");
     expect(jobPayload.job.message.length).toBeGreaterThan(0);
   });
+
+  it("rejects request-controlled commands for runtime jobs", async () => {
+    const { app } = createEngineRoutesHarness();
+
+    const response = await app.request("/runtime/jobs", {
+      method: "POST",
+      body: JSON.stringify({
+        backend: "sglang",
+        type: "update",
+        command: "/bin/sh",
+        args: ["-c", "id"],
+      }),
+    });
+
+    expect(response.status).toBe(400);
+    const payload = (await response.json()) as { error: string };
+    expect(payload.error).toContain("Runtime job command and args are server-controlled");
+  });
+
+  it("rejects request-controlled args for runtime upgrade wrappers", async () => {
+    const { app } = createEngineRoutesHarness();
+
+    const response = await app.request("/runtime/llamacpp/upgrade", {
+      method: "POST",
+      body: JSON.stringify({ args: ["--post-install-hook=/bin/sh"] }),
+    });
+
+    expect(response.status).toBe(400);
+    const payload = (await response.json()) as { error: string };
+    expect(payload.error).toContain("Runtime job command and args are server-controlled");
+  });
 });

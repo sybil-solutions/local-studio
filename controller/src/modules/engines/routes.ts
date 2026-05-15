@@ -46,8 +46,6 @@ const parseRuntimeJobBody = async (ctx: {
   backend?: "vllm" | "sglang" | "llamacpp" | "cuda" | "rocm";
   targetId?: string;
   type?: "install" | "update" | "download" | "inspect";
-  command?: string;
-  args?: string[];
   version?: string;
   preferBundled?: boolean;
 }> => {
@@ -60,15 +58,13 @@ const parseRuntimeJobBody = async (ctx: {
   const type = typeof record["type"] === "string" ? record["type"] : undefined;
   if (type && !["install", "update", "download", "inspect"].includes(type))
     throw badRequest("Invalid job type");
-  const args = Array.isArray(record["args"]) ? record["args"] : undefined;
-  if (args?.some((value) => typeof value !== "string"))
-    throw badRequest("args must be an array of strings");
+  if ("command" in record || "args" in record) {
+    throw badRequest("Runtime job command and args are server-controlled");
+  }
   return {
     ...(backend ? { backend: backend as "vllm" | "sglang" | "llamacpp" | "cuda" | "rocm" } : {}),
     ...(typeof record["targetId"] === "string" ? { targetId: record["targetId"] } : {}),
     ...(type ? { type: type as "install" | "update" | "download" | "inspect" } : {}),
-    ...(typeof record["command"] === "string" ? { command: record["command"] } : {}),
-    ...(args ? { args: args as string[] } : {}),
     ...(typeof record["version"] === "string" ? { version: record["version"] } : {}),
     ...(typeof record["prefer_bundled"] === "boolean"
       ? { preferBundled: record["prefer_bundled"] }
@@ -328,8 +324,6 @@ export const registerEngineRoutes = (app: Hono, context: AppContext): void => {
       backend: body.backend,
       type: body.type ?? "update",
       ...(body.targetId ? { targetId: body.targetId } : {}),
-      ...(body.command ? { command: body.command } : {}),
-      ...(body.args ? { args: body.args } : {}),
       ...(body.version ? { version: body.version } : {}),
       ...(body.preferBundled !== undefined ? { preferBundled: body.preferBundled } : {}),
       runningProcess: current,
@@ -402,8 +396,6 @@ export const registerEngineRoutes = (app: Hono, context: AppContext): void => {
       backend: "vllm",
       type: "update",
       ...(body.targetId ? { targetId: body.targetId } : {}),
-      ...(body.command ? { command: body.command } : {}),
-      ...(body.args ? { args: body.args } : {}),
       ...(body.version ? { version: body.version.trim() } : {}),
       ...(body.preferBundled !== undefined ? { preferBundled: body.preferBundled } : {}),
       runningProcess: current,
@@ -412,41 +404,37 @@ export const registerEngineRoutes = (app: Hono, context: AppContext): void => {
   });
 
   app.post("/runtime/sglang/upgrade", async (ctx) => {
-    const body = await parseRuntimeJobBody(ctx);
+    await parseRuntimeJobBody(ctx);
     const job = createEngineJob(context.config, {
       backend: "sglang",
       type: "update",
-      ...(body.args ? { args: body.args } : {}),
     });
     return ctx.json({ job_id: job.id, job });
   });
 
   app.post("/runtime/llamacpp/upgrade", async (ctx) => {
-    const body = await parseRuntimeJobBody(ctx);
+    await parseRuntimeJobBody(ctx);
     const job = createEngineJob(context.config, {
       backend: "llamacpp",
       type: "update",
-      ...(body.args ? { args: body.args } : {}),
     });
     return ctx.json({ job_id: job.id, job });
   });
 
   app.post("/runtime/cuda/upgrade", async (ctx) => {
-    const body = await parseRuntimeJobBody(ctx);
+    await parseRuntimeJobBody(ctx);
     const job = createEngineJob(context.config, {
       backend: "cuda",
       type: "update",
-      ...(body.args ? { args: body.args } : {}),
     });
     return ctx.json({ job_id: job.id, job });
   });
 
   app.post("/runtime/rocm/upgrade", async (ctx) => {
-    const body = await parseRuntimeJobBody(ctx);
+    await parseRuntimeJobBody(ctx);
     const job = createEngineJob(context.config, {
       backend: "rocm",
       type: "update",
-      ...(body.args ? { args: body.args } : {}),
     });
     return ctx.json({ job_id: job.id, job });
   });
