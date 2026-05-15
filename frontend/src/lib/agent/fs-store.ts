@@ -1,4 +1,4 @@
-import { existsSync, promises as fs, readdirSync, statSync } from "node:fs";
+import { existsSync, promises as fs, readdirSync, realpathSync, statSync } from "node:fs";
 import path from "node:path";
 
 export type FsEntry = {
@@ -26,11 +26,13 @@ const IGNORE_DIRS = new Set([
 
 // Reject any path that escapes the project root, including via symlinks.
 function ensureInside(rootCwd: string, target: string): string {
-  const rel = path.relative(rootCwd, target);
+  const root = realpathSync(rootCwd);
+  const resolvedTarget = realpathSync(target);
+  const rel = path.relative(root, resolvedTarget);
   if (rel.startsWith("..") || path.isAbsolute(rel)) {
     throw new Error("Path escapes project root");
   }
-  return target;
+  return resolvedTarget;
 }
 
 export function listDirectory(rootCwd: string, relPath: string): FsEntry[] {

@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import path from "node:path";
+import { resolveRegisteredProjectRoot } from "@/lib/agent/fs-access";
 import { readFileSnippet } from "@/lib/agent/fs-store";
 
 export const runtime = "nodejs";
@@ -11,11 +11,9 @@ export async function GET(request: NextRequest) {
   if (!cwd || !relPath) {
     return Response.json({ error: "cwd and path are required" }, { status: 400 });
   }
-  if (!path.isAbsolute(cwd)) {
-    return Response.json({ error: "cwd must be absolute" }, { status: 400 });
-  }
   try {
-    const data = await readFileSnippet(cwd, relPath);
+    const root = resolveRegisteredProjectRoot(cwd);
+    const data = await readFileSnippet(root, relPath);
     return Response.json(data);
   } catch (error) {
     return Response.json(
