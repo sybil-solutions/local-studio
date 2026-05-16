@@ -40,6 +40,7 @@ const resolveHfToken = (
   return bodyToken || headerToken || envToken;
 };
 
+const SHELL_METACHAR_REGEX = /[;&|`$()\\]/;
 const parseRuntimeJobBody = async (ctx: {
   req: { json: () => Promise<unknown> };
 }): Promise<{
@@ -63,11 +64,17 @@ const parseRuntimeJobBody = async (ctx: {
   const args = Array.isArray(record["args"]) ? record["args"] : undefined;
   if (args?.some((value) => typeof value !== "string"))
     throw badRequest("args must be an array of strings");
+  if (args?.some((value) => SHELL_METACHAR_REGEX.test(value)))
+    throw badRequest("args must not contain shell metacharacters (;&|`$()\\)");
   return {
     ...(backend ? { backend: backend as "vllm" | "sglang" | "llamacpp" | "cuda" | "rocm" } : {}),
     ...(typeof record["targetId"] === "string" ? { targetId: record["targetId"] } : {}),
     ...(type ? { type: type as "install" | "update" | "download" | "inspect" } : {}),
-    ...(typeof record["command"] === "string" ? { command: record["command"] } : {}),
+    ...((typeof record["command"] === "string" 
+    ? (SHELL_METACHAR_REGEX.test(record["command"]) 
+      ? (() => { throw badRequest("command must not contain shell metacharacters (;&|`$()\\)"); })()
+      : { command: record["command"] })
+    : {})),
     ...(args ? { args: args as string[] } : {}),
     ...(typeof record["version"] === "string" ? { version: record["version"] } : {}),
     ...(typeof record["prefer_bundled"] === "boolean"
