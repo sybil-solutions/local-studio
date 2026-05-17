@@ -95,6 +95,7 @@ const computeSystemRuntimeInfo = async (
       },
       sglang: sglangInfo,
       llamacpp: llamaInfo,
+      ds4: getDs4RuntimeInfo(config),
       exllamav3: getExllamav3RuntimeInfo(config),
     },
   };
@@ -259,6 +260,39 @@ export const getLlamacppRuntimeInfo = (config: Config): RuntimeBackendInfo => {
     version,
     binary_path: resolved,
     upgrade_command_available: isUpgradeCommandConfigured(LLAMACPP_UPGRADE_ENV),
+  };
+};
+
+export const getDs4RuntimeInfo = (config: Config): RuntimeBackendInfo => {
+  const configured = config.ds4_bin || "ds4-server";
+  const resolved =
+    resolveBinary(configured) ?? (existsSync(configured) ? resolve(configured) : null);
+  const binary = resolved ?? configured;
+  const versionResult = runCommand(binary, ["--version"]);
+  if (versionResult.status !== 0) {
+    const helpResult = runCommand(binary, ["--help"]);
+    if (helpResult.status !== 0)
+      return {
+        installed: false,
+        version: null,
+        binary_path: resolved,
+        upgrade_command_available: false,
+      };
+    const version = parseLlamaVersion(helpResult.stdout) ?? parseLlamaVersion(helpResult.stderr);
+    return {
+      installed: true,
+      version,
+      binary_path: resolved,
+      upgrade_command_available: false,
+    };
+  }
+  const version =
+    parseLlamaVersion(versionResult.stdout) ?? parseLlamaVersion(versionResult.stderr);
+  return {
+    installed: true,
+    version,
+    binary_path: resolved,
+    upgrade_command_available: false,
   };
 };
 

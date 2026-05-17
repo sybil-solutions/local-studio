@@ -170,6 +170,27 @@ exit 1
     ).toBe(true);
   });
 
+  it("discovers configured DS4 server binaries", async () => {
+    const root = temporaryRoot();
+    const executable = join(root, "ds4-server");
+    writeExecutable(
+      executable,
+      `#!/bin/sh
+if [ "$1" = "--version" ]; then echo "ds4-server version test"; exit 0; fi
+if [ "$1" = "--help" ]; then echo "Usage: ds4-server"; exit 0; fi
+exit 1
+`
+    );
+
+    const targets = (await getRuntimeTargets({ ...configFor(root), ds4_bin: executable })).filter(
+      (target) => target.backend === "ds4"
+    );
+
+    expect(targets.some((target) => target.binaryPath === executable && target.installed)).toBe(
+      true
+    );
+  });
+
   it("marks the running target active even when another target is selected", async () => {
     const root = temporaryRoot();
     const configured = createFakePython(join(root, "configured"), "0.9.0");

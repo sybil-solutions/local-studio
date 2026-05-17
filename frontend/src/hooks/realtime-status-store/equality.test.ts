@@ -43,7 +43,7 @@ const backend = { installed: true, version: "1.0" };
 const runtimeSummary: RuntimeSummaryData = {
   platform: { kind: "cuda", vendor: "nvidia" },
   gpu_monitoring: { available: true, tool: "nvidia-smi" },
-  backends: { vllm: backend, mlx: backend, sglang: backend, llamacpp: backend },
+  backends: { vllm: backend, mlx: backend, sglang: backend, llamacpp: backend, ds4: backend },
 };
 
 describe("realtime status equality", () => {

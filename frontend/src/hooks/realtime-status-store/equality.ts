@@ -100,7 +100,7 @@ export function areRuntimeSummariesEqual(
   if (a.platform.kind !== b.platform.kind) return false;
   if (a.gpu_monitoring.available !== b.gpu_monitoring.available) return false;
   if (a.gpu_monitoring.tool !== b.gpu_monitoring.tool) return false;
-  for (const key of ["vllm", "sglang", "llamacpp"] as const) {
+  for (const key of ["vllm", "sglang", "llamacpp", "ds4"] as const) {
     if (a.backends[key].installed !== b.backends[key].installed) return false;
     if (a.backends[key].version !== b.backends[key].version) return false;
   }

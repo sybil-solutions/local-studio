@@ -70,9 +70,10 @@ const collectRunningTargets = (runningProcess?: ProcessInfo | null): RuntimeTarg
   const activePid = runningProcess?.pid ?? null;
   for (const entry of processEntries) {
     const backend = detectBackend(entry.args);
-    if (backend !== "vllm" && backend !== "sglang" && backend !== "llamacpp") continue;
-    const pythonPath = backend === "llamacpp" ? null : parseCommandPython(entry.args);
-    const binaryPath = backend === "llamacpp" ? parseCommandBinary(entry.args) : null;
+    if (backend !== "vllm" && backend !== "sglang" && backend !== "llamacpp" && backend !== "ds4") continue;
+    const isBinaryRuntime = backend === "llamacpp" || backend === "ds4";
+    const pythonPath = isBinaryRuntime ? null : parseCommandPython(entry.args);
+    const binaryPath = isBinaryRuntime ? parseCommandBinary(entry.args) : null;
     const key = pythonPath ?? binaryPath ?? `${entry.pid}:${entry.args.join(" ")}`;
     addTarget(
       targets,
@@ -280,6 +281,56 @@ const collectLlamacppTargets = (
   return targets;
 };
 
+const collectDs4Targets = (
+  config: Config,
+  runningProcess?: ProcessInfo | null
+): RuntimeTarget[] => {
+  const targets: RuntimeTarget[] = [];
+  const running = collectRunningTargets(runningProcess).filter(
+    (target) => target.backend === "ds4"
+  );
+  for (const target of running) addTarget(targets, target);
+
+  for (const candidate of unique([config.ds4_bin])) {
+    const probe = probeBinaryRuntime(candidate);
+    addTarget(
+      targets,
+      makeRuntimeTarget({
+        backend: "ds4",
+        kind: candidate.includes("/") ? "binary" : "system",
+        source: "configured",
+        key: probe.binaryPath ?? candidate,
+        label: `DS4 configured (${basename(probe.binaryPath ?? candidate)})`,
+        installed: probe.installed,
+        version: probe.version,
+        binaryPath: probe.binaryPath,
+        healthMessage: probe.message,
+      })
+    );
+  }
+
+  const systemBinary =
+    process.env["VLLM_STUDIO_RUNTIME_SKIP_SYSTEM"] === "1" ? null : resolveBinary("ds4-server");
+  if (systemBinary) {
+    const probe = probeBinaryRuntime(systemBinary);
+    addTarget(
+      targets,
+      makeRuntimeTarget({
+        backend: "ds4",
+        kind: "system",
+        source: "discovered",
+        key: probe.binaryPath ?? systemBinary,
+        label: "DS4 system binary",
+        installed: probe.installed,
+        version: probe.version,
+        binaryPath: probe.binaryPath,
+        healthMessage: probe.message,
+      })
+    );
+  }
+  return targets;
+};
+
 const collectDockerTargets = (backend: EngineBackend): RuntimeTarget[] => {
   if (process.env["VLLM_STUDIO_RUNTIME_SKIP_DOCKER"] === "1") return [];
   const docker = resolveBinary("docker");
@@ -289,6 +340,7 @@ const collectDockerTargets = (backend: EngineBackend): RuntimeTarget[] => {
     vllm: /(^|[/:_-])vllm($|[/:_-])/i,
     sglang: /(^|[/:_-])sglang($|[/:_-])/i,
     llamacpp: /(llama\.cpp|llamacpp|llama-server)/i,
+    ds4: /(ds4|deepseek-?4|deepseek-v4)/i,
   };
   const imageResult = runCommand(docker, ["images", "--format", "{{.Repository}}:{{.Tag}}"], 3_000);
   if (imageResult.status === 0) {
@@ -376,7 +428,7 @@ const withSelection = (targets: RuntimeTarget[], config: Config): RuntimeTarget[
 };
 
 const sortTargets = (targets: RuntimeTarget[]): RuntimeTarget[] => {
-  const backendOrder: Record<EngineBackend, number> = { vllm: 0, sglang: 1, llamacpp: 2 };
+  const backendOrder: Record<EngineBackend, number> = { vllm: 0, sglang: 1, llamacpp: 2, ds4: 3 };
   return [...targets].sort(
     (first, second) =>
       backendOrder[first.backend] - backendOrder[second.backend] ||
@@ -399,12 +451,14 @@ export const getRuntimeTargets = async (
   ) {
     return targetsCache.value;
   }
-  const backends: EngineBackend[] = ["vllm", "sglang", "llamacpp"];
+  const backends: EngineBackend[] = ["vllm", "sglang", "llamacpp", "ds4"];
   const targets: RuntimeTarget[] = [];
   for (const backend of backends) {
     const backendTargets =
       backend === "llamacpp"
         ? collectLlamacppTargets(config, runningProcess)
+        : backend === "ds4"
+          ? collectDs4Targets(config, runningProcess)
         : collectPythonTargets(backend, config, runningProcess);
     for (const target of backendTargets) addTarget(targets, target);
     for (const target of collectDockerTargets(backend)) addTarget(targets, target);

@@ -49,6 +49,7 @@ function diagnostics(overrides: Partial<StudioDiagnostics> = {}): StudioDiagnost
       sglang_python: null,
       tabby_api_dir: null,
       llama_bin: null,
+      ds4_bin: null,
     },
     ...overrides,
   };

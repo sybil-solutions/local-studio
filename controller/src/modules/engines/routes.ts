@@ -10,7 +10,7 @@ import { fetchInference } from "../../services/inference/inference-client";
 import { isRecipeRunning } from "../models/recipes/recipe-matching";
 import { getVllmConfigHelp, getVllmRuntimeInfo } from "./runtimes/vllm-runtime";
 import { getLlamacppConfigHelp } from "./runtimes/llamacpp-runtime";
-import { getExllamav3RuntimeInfo, getCudaInfo } from "./runtimes/runtime-info";
+import { getExllamav3RuntimeInfo, getCudaInfo, getDs4RuntimeInfo } from "./runtimes/runtime-info";
 import { getRocmInfo, resolveRocmSmiTool } from "../system/platform/rocm-info";
 import {
   getDefaultRuntimeTarget,
@@ -43,7 +43,7 @@ const resolveHfToken = (
 const parseRuntimeJobBody = async (ctx: {
   req: { json: () => Promise<unknown> };
 }): Promise<{
-  backend?: "vllm" | "sglang" | "llamacpp" | "cuda" | "rocm";
+  backend?: "vllm" | "sglang" | "llamacpp" | "ds4" | "cuda" | "rocm";
   targetId?: string;
   type?: "install" | "update" | "download" | "inspect";
   command?: string;
@@ -55,7 +55,7 @@ const parseRuntimeJobBody = async (ctx: {
   if (!body || typeof body !== "object" || Array.isArray(body)) throw badRequest("Invalid payload");
   const record = body as Record<string, unknown>;
   const backend = typeof record["backend"] === "string" ? record["backend"] : undefined;
-  if (backend && !["vllm", "sglang", "llamacpp", "cuda", "rocm"].includes(backend))
+  if (backend && !["vllm", "sglang", "llamacpp", "ds4", "cuda", "rocm"].includes(backend))
     throw badRequest("Invalid backend");
   const type = typeof record["type"] === "string" ? record["type"] : undefined;
   if (type && !["install", "update", "download", "inspect"].includes(type))
@@ -64,7 +64,7 @@ const parseRuntimeJobBody = async (ctx: {
   if (args?.some((value) => typeof value !== "string"))
     throw badRequest("args must be an array of strings");
   return {
-    ...(backend ? { backend: backend as "vllm" | "sglang" | "llamacpp" | "cuda" | "rocm" } : {}),
+    ...(backend ? { backend: backend as "vllm" | "sglang" | "llamacpp" | "ds4" | "cuda" | "rocm" } : {}),
     ...(typeof record["targetId"] === "string" ? { targetId: record["targetId"] } : {}),
     ...(type ? { type: type as "install" | "update" | "download" | "inspect" } : {}),
     ...(typeof record["command"] === "string" ? { command: record["command"] } : {}),
@@ -231,6 +231,10 @@ export const registerEngineRoutes = (app: Hono, context: AppContext): void => {
         if (response.status === 200) {
           return ctx.json({ ready: true, elapsed: Math.floor((Date.now() - start) / 1000) });
         }
+        const modelsResponse = await fetchInference(context, "/v1/models", { timeoutMs: 5000 });
+        if (modelsResponse.status === 200) {
+          return ctx.json({ ready: true, elapsed: Math.floor((Date.now() - start) / 1000) });
+        }
       } catch {
         // Ignore
       }
@@ -377,6 +381,12 @@ export const registerEngineRoutes = (app: Hono, context: AppContext): void => {
     const current = await context.engineService.getCurrentProcess();
     const target = await getDefaultRuntimeTarget(context.config, "llamacpp", current);
     return ctx.json(runtimeTargetToBackendInfo(target));
+  });
+
+  app.get("/runtime/ds4", async (ctx) => {
+    const current = await context.engineService.getCurrentProcess();
+    const target = await getDefaultRuntimeTarget(context.config, "ds4", current);
+    return ctx.json(target ? runtimeTargetToBackendInfo(target) : getDs4RuntimeInfo(context.config));
   });
 
   app.get("/runtime/exllamav3", async (ctx) => {

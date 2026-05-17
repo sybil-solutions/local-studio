@@ -13,6 +13,8 @@ const appendExtraArgsToCommand = (args: string[], extraArgs: Record<string, unkn
     "description",
     "tags",
     "status",
+    "llama_bin",
+    "ds4_bin",
     "launch_command",
     "custom_command",
   ]);
@@ -118,9 +120,58 @@ const appendLlamacppArgsToCommand = (
   return args;
 };
 
+const appendDs4ArgsToCommand = (args: string[], extraArgs: Record<string, unknown>): string[] => {
+  const internalKeys = new Set([
+    "venv_path",
+    "env_vars",
+    "visible_devices",
+    "cuda_visible_devices",
+    "hip_visible_devices",
+    "rocr_visible_devices",
+    "description",
+    "tags",
+    "status",
+    "llama_bin",
+    "ds4_bin",
+  ]);
+
+  for (const [key, value] of Object.entries(extraArgs)) {
+    const normalizedKey = normalizeExtraArgKey(key);
+    if (internalKeys.has(normalizedKey)) continue;
+
+    const flag = normalizedKey === "c" ? "-c" : `--${key.replace(/_/g, "-")}`;
+    if (args.some((entry) => entry.startsWith(flag))) continue;
+
+    if (value === true) {
+      args.push(flag);
+      continue;
+    }
+    if (value === false) continue;
+    if (value === undefined || value === null || value === "") continue;
+
+    if (Array.isArray(value)) {
+      for (const entry of value) {
+        if (entry === undefined || entry === null || entry === "") continue;
+        args.push(`${flag} ${entry}`);
+      }
+      continue;
+    }
+
+    if (typeof value === "object") {
+      args.push(`${flag} '${JSON.stringify(value)}'`);
+      continue;
+    }
+
+    args.push(`${flag} ${value}`);
+  }
+
+  return args;
+};
+
 export const generateCommand = (recipe: RecipeEditor): string => {
   const payload = prepareRecipeForSave(recipe);
-  const commandOverride = payload.extra_args?.["launch_command"] ?? payload.extra_args?.["custom_command"];
+  const commandOverride =
+    payload.extra_args?.["launch_command"] ?? payload.extra_args?.["custom_command"];
   if (typeof commandOverride === "string" && commandOverride.trim()) {
     return commandOverride;
   }
@@ -132,12 +183,16 @@ export const generateCommand = (recipe: RecipeEditor): string => {
     args.push("vllm serve");
   } else if (backend === "llamacpp") {
     args.push("llama-server");
+  } else if (backend === "ds4") {
+    args.push(
+      String(payload.extra_args?.["ds4_bin"] ?? payload.extra_args?.["ds4-bin"] ?? "ds4-server"),
+    );
   } else {
     args.push("python -m sglang.launch_server");
   }
 
   if (payload.model_path) {
-    if (backend === "llamacpp") {
+    if (backend === "llamacpp" || backend === "ds4") {
       args.push(`--model ${payload.model_path}`);
     } else {
       args.push(payload.model_path);
@@ -147,14 +202,14 @@ export const generateCommand = (recipe: RecipeEditor): string => {
   if (payload.host && payload.host !== "0.0.0.0") args.push(`--host ${payload.host}`);
   if (payload.port && payload.port !== 8000) args.push(`--port ${payload.port}`);
   if (payload.served_model_name) {
-    args.push(
-      backend === "llamacpp"
-        ? `--alias ${payload.served_model_name}`
-        : `--served-model-name ${payload.served_model_name}`,
-    );
+    if (backend === "llamacpp") {
+      args.push(`--alias ${payload.served_model_name}`);
+    } else if (backend !== "ds4") {
+      args.push(`--served-model-name ${payload.served_model_name}`);
+    }
   }
 
-  if (backend !== "llamacpp") {
+  if (backend !== "llamacpp" && backend !== "ds4") {
     if (payload.tensor_parallel_size && payload.tensor_parallel_size > 1) {
       args.push(`--tensor-parallel-size ${payload.tensor_parallel_size}`);
     }
@@ -164,8 +219,13 @@ export const generateCommand = (recipe: RecipeEditor): string => {
   }
 
   const ctxOverride = payload.extra_args?.["ctx-size"] ?? payload.extra_args?.["ctx_size"];
+  const ds4CtxOverride =
+    hasExtraArgument(payload.extra_args ?? {}, "ctx") ||
+    hasExtraArgument(payload.extra_args ?? {}, "c");
   if (backend === "llamacpp") {
     if (!ctxOverride && payload.max_model_len) args.push(`--ctx-size ${payload.max_model_len}`);
+  } else if (backend === "ds4") {
+    if (!ds4CtxOverride && payload.max_model_len) args.push(`--ctx ${payload.max_model_len}`);
   } else {
     if (payload.max_model_len) args.push(`--max-model-len ${payload.max_model_len}`);
     if (payload.max_num_seqs) args.push(`--max-num-seqs ${payload.max_num_seqs}`);
@@ -177,7 +237,7 @@ export const generateCommand = (recipe: RecipeEditor): string => {
     }
   }
 
-  if (backend !== "llamacpp") {
+  if (backend !== "llamacpp" && backend !== "ds4") {
     if (payload.quantization) args.push(`--quantization ${payload.quantization}`);
     if (payload.dtype && payload.dtype !== "auto") args.push(`--dtype ${payload.dtype}`);
 
@@ -198,7 +258,11 @@ export const generateCommand = (recipe: RecipeEditor): string => {
 
     appendExtraArgsToCommand(args, payload.extra_args ?? {});
   } else {
-    appendLlamacppArgsToCommand(args, payload.extra_args ?? {});
+    if (backend === "ds4") {
+      appendDs4ArgsToCommand(args, payload.extra_args ?? {});
+    } else {
+      appendLlamacppArgsToCommand(args, payload.extra_args ?? {});
+    }
   }
 
   return args.join(" \\\n  ");

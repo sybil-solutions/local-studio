@@ -27,6 +27,7 @@ const baseRuntime = (overrides: Partial<SystemRuntimeInfo>): SystemRuntimeInfo =
     vllm: { installed: false, version: null, python_path: null, binary_path: null },
     sglang: { installed: false, version: null, python_path: null, binary_path: null },
     llamacpp: { installed: false, version: null, python_path: null, binary_path: null },
+    ds4: { installed: false, version: null, binary_path: null },
   },
   ...overrides,
 });

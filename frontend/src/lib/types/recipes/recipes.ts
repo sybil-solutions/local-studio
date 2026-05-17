@@ -8,6 +8,7 @@ export type Backend =
   | "mlx"
   | "sglang"
   | "llamacpp"
+  | "ds4"
   | "transformers"
   | "tabbyapi"
   | "exllamav3";

@@ -144,4 +144,58 @@ describe("backend builder command overrides", () => {
     expect(command).toContain("--model");
     expect(command).toContain("/models/test");
   });
+
+  it("builds DS4 server commands with context and native extra args", () => {
+    const executable = fakeExecutable("ds4-server");
+    const command = buildBackendCommand(
+      {
+        ...baseRecipe,
+        backend: "ds4",
+        max_model_len: 100000,
+        extra_args: {
+          ds4_bin: executable,
+          mtp: "/models/mtp.gguf",
+          mtp_draft: 4,
+          cuda: true,
+          kv_disk_dir: "/tmp/ds4-kv",
+          kv_disk_space_mb: 8192,
+        },
+      },
+      {} as Config
+    );
+
+    expect(command).toEqual([
+      executable,
+      "--model",
+      "/models/test",
+      "--host",
+      "0.0.0.0",
+      "--port",
+      "8000",
+      "--ctx",
+      "100000",
+      "--mtp",
+      "/models/mtp.gguf",
+      "--mtp-draft",
+      "4",
+      "--cuda",
+      "--kv-disk-dir",
+      "/tmp/ds4-kv",
+      "--kv-disk-space-mb",
+      "8192",
+    ]);
+  });
+
+  it("rejects non ds4-server DS4 overrides", () => {
+    expect(() =>
+      buildBackendCommand(
+        {
+          ...baseRecipe,
+          backend: "ds4",
+          extra_args: { ds4_bin: "/bin/sh" },
+        },
+        {} as Config
+      )
+    ).toThrow("Invalid ds4_bin");
+  });
 });

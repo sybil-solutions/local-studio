@@ -8,6 +8,7 @@ export function RecipeModalTabEnvironment({
   recipe,
   onChange,
   isLlamacpp,
+  isDs4,
   envVarEntries,
   onAddEnvVar,
   onChangeEnvVar,
@@ -21,6 +22,7 @@ export function RecipeModalTabEnvironment({
   recipe: RecipeEditor;
   onChange: (next: RecipeEditor) => void;
   isLlamacpp: boolean;
+  isDs4: boolean;
   envVarEntries: Array<{ key: string; value: string }>;
   onAddEnvVar: () => void;
   onChangeEnvVar: (index: number, field: "key" | "value", value: string) => void;
@@ -33,7 +35,7 @@ export function RecipeModalTabEnvironment({
 }) {
   return (
     <div className="space-y-5">
-      {!isLlamacpp && (
+      {!isLlamacpp && !isDs4 && (
         <div className="space-y-4">
           <div className="flex items-center gap-2 text-(--fg) pb-2 border-b border-(--border)/50">
             <Terminal className="w-4 h-4 text-(--accent)" />
@@ -56,6 +58,13 @@ export function RecipeModalTabEnvironment({
         <p className="text-xs text-(--dim)">
           llama.cpp uses the configured server binary. Set{" "}
           <span className="font-mono">VLLM_STUDIO_LLAMA_BIN</span> if you need a custom path.
+        </p>
+      )}
+      {isDs4 && (
+        <p className="text-xs text-(--dim)">
+          DS4 uses the configured ds4-server binary. Set{" "}
+          <span className="font-mono">VLLM_STUDIO_DS4_BIN</span> or{" "}
+          <span className="font-mono">extra_args.ds4_bin</span> for a custom path.
         </p>
       )}
 

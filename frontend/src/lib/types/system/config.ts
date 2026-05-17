@@ -23,6 +23,7 @@ export interface SystemConfig {
   sglang_python: string | null;
   tabby_api_dir: string | null;
   llama_bin: string | null;
+  ds4_bin: string | null;
 }
 
 export interface EnvironmentInfo {
@@ -41,7 +42,7 @@ export interface RuntimeBackendInfo {
   upgrade_command_available?: boolean;
 }
 
-export type EngineBackend = "vllm" | "sglang" | "llamacpp";
+export type EngineBackend = "vllm" | "sglang" | "llamacpp" | "ds4";
 
 export type RuntimeKind = "venv" | "docker" | "binary" | "system";
 
@@ -158,6 +159,7 @@ export interface SystemRuntimeInfo {
     mlx?: RuntimeBackendInfo;
     sglang: RuntimeBackendInfo;
     llamacpp: RuntimeBackendInfo;
+    ds4: RuntimeBackendInfo;
     exllamav3?: RuntimeBackendInfo;
   };
 }

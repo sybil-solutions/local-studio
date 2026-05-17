@@ -10,10 +10,14 @@ export const ENGINE_META: Record<string, { label: string; description: string }>
     label: "llama.cpp",
     description: "GGUF inference through CPU, Metal, or CUDA builds.",
   },
+  ds4: {
+    label: "DS4",
+    description: "DeepSeek 4 Flash serving through a ds4-server binary.",
+  },
   exllamav3: { label: "ExLlama v3", description: "EXL3 quantized inference target." },
 };
 
-export const FALLBACK_ENGINES = ["vllm", "sglang", "llamacpp", "exllamav3"] as const;
+export const FALLBACK_ENGINES = ["vllm", "sglang", "llamacpp", "ds4", "exllamav3"] as const;
 
 export type EngineRowsView =
   | { kind: "backends"; rows: Array<{ id: string; info: RuntimeBackendInfo }> }
@@ -51,5 +55,10 @@ export function hasHydratedEngineRows(view: EngineRowsView): boolean {
 }
 
 function isInferenceTarget(target: RuntimeTarget): boolean {
-  return target.backend === "vllm" || target.backend === "sglang" || target.backend === "llamacpp";
+  return (
+    target.backend === "vllm" ||
+    target.backend === "sglang" ||
+    target.backend === "llamacpp" ||
+    target.backend === "ds4"
+  );
 }

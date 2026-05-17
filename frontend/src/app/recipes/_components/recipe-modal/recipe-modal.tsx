@@ -54,6 +54,7 @@ export function RecipeModal({
 
   const backend = recipe.backend ?? "vllm";
   const isLlamacpp = backend === "llamacpp";
+  const isDs4 = backend === "ds4";
   const llamaConfigLoading = isLlamacpp && !llamaConfigHelp;
 
   useEffect(() => {
@@ -206,6 +207,7 @@ export function RecipeModal({
             availableModels={availableModels}
             modelServedNames={modelServedNames}
             isLlamacpp={isLlamacpp}
+            isDs4={isDs4}
             getExtraArgValueForKey={getExtraArgValueForKeyLocal}
             setExtraArgValueForKey={setExtraArgValueForKeyLocal}
             envVarEntries={envVarEntries}

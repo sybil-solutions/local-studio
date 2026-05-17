@@ -188,6 +188,8 @@ export const registerStudioRoutes = (app: Hono, context: AppContext): void => {
         db_path: context.config.db_path,
         sglang_python: context.config.sglang_python ?? null,
         tabby_api_dir: context.config.tabby_api_dir ?? null,
+        llama_bin: context.config.llama_bin ?? null,
+        ds4_bin: context.config.ds4_bin ?? null,
       },
     });
   });

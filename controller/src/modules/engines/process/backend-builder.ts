@@ -38,7 +38,7 @@ const getVllmPythonPath = (recipe: Recipe): string | undefined => { return resol
  * @param command - Command array. * @param extraArguments - Extra args object.
  * @param extraArguments
  * @returns Updated command array. */
-export const appendExtraArguments = (command: string[], extraArguments: Record<string, unknown>): string[] => { const internalKeys = new Set(["venv_path", "env_vars", "visible_devices", "cuda_visible_devices", "hip_visible_devices", "rocr_visible_devices", "description", "tags", "status", "llama_bin", "launch_command", "custom_command", "docker_container", "docker_image", "docker-container", "exllama_command", "exllamav3_command", "exllama-cmd"]);
+export const appendExtraArguments = (command: string[], extraArguments: Record<string, unknown>): string[] => { const internalKeys = new Set(["venv_path", "env_vars", "visible_devices", "cuda_visible_devices", "hip_visible_devices", "rocr_visible_devices", "description", "tags", "status", "llama_bin", "ds4_bin", "launch_command", "custom_command", "docker_container", "docker_image", "docker-container", "exllama_command", "exllamav3_command", "exllama-cmd"]);
   const jsonStringKeys = new Set(["speculative_config", "default_chat_template_kwargs"]);
   for (const [key, value] of Object.entries(extraArguments)) { const normalizedKey = key.replace(/-/g, "_").toLowerCase();
     if (internalKeys.has(normalizedKey)) { continue;
@@ -145,8 +145,11 @@ const splitCommand = (command: string): string[] => { const matches = command.ma
   return value.split(/[\\/]/).filter(Boolean).at(-1)?.toLowerCase() ?? value.toLowerCase(); };
  const isAllowedExllamaBinary = (value: string): boolean => {
   return executableBaseName(value).includes("exllama"); };
- const isAllowedLlamaServerBinary = (value: string): boolean => {
+const isAllowedLlamaServerBinary = (value: string): boolean => {
   const name = executableBaseName(value); return name === "llama-server" || name === "llama-server.exe";
+};
+const isAllowedDs4ServerBinary = (value: string): boolean => {
+  const name = executableBaseName(value); return name === "ds4-server" || name === "ds4-server.exe";
 };
 const rejectPathTraversal = (value: string, label: string): void => { if (value.split(/[\\/]+/).includes("..")) {
     throw new Error(`Invalid ${label}: path traversal is not allowed`); }
@@ -196,6 +199,8 @@ export const buildBackendCommand = (recipe: Recipe, config: Config): string[] =>
   if (recipe.backend === "sglang") { return buildSglangCommand(recipe, config);
   } if (recipe.backend === "llamacpp") {
     return buildLlamacppCommand(recipe, config); }
+  if (recipe.backend === "ds4") { return buildDs4Command(recipe, config);
+  }
   if (recipe.backend === "exllamav3") { const command = buildExllamav3Command(recipe, config);
     if (!command) { throw new Error("Missing ExLLaMA v3 command. Set extra_args.exllama_command or VLLM_STUDIO_EXLLAMAV3_COMMAND.");
     } return command;
@@ -243,6 +248,42 @@ export const buildLlamacppCommand = (recipe: Recipe, config: Config): string[] =
   if (!ctxOverride && recipe.max_model_len > 0) { command.push("--ctx-size", String(recipe.max_model_len));
   }
   return appendLlamacppArguments(command, recipe.extra_args); };
+const resolveDs4Binary = (recipe: Recipe, config: Config): string => { const override = getExtraArgument(recipe.extra_args, "ds4_bin") ?? config.ds4_bin;
+  if (typeof override === "string" && override.trim()) { rejectPathTraversal(override, "ds4_bin");
+    if (!isAllowedDs4ServerBinary(override)) { throw new Error("Invalid ds4_bin: only ds4-server executables are allowed");
+    } const resolved = resolveBinary(override);
+    if (resolved) { return resolved;
+    } throw new Error(`Invalid ds4_bin: executable "${override}" was not found`);
+  } return resolveBinary("ds4-server") ?? "ds4-server";
+};
+const appendDs4Arguments = (command: string[], extraArguments: Record<string, unknown>): string[] => { const internalKeys = new Set(["venv_path", "env_vars", "visible_devices", "cuda_visible_devices", "hip_visible_devices", "rocr_visible_devices", "description", "tags", "status", "llama_bin", "ds4_bin", "docker_container", "docker_image", "docker-container"]);
+  for (const [key, value] of Object.entries(extraArguments)) {
+    const normalizedKey = key.replace(/-/g, "_").toLowerCase(); if (internalKeys.has(normalizedKey)) {
+      continue; }
+    const flag = normalizedKey === "c" ? "-c" : `--${key.replace(/_/g, "-")}`; if (command.includes(flag)) {
+      continue; }
+    if (value === true) { command.push(flag);
+      continue; }
+    if (value === false || value === undefined || value === null || value === "") { continue;
+    } if (Array.isArray(value)) { for (const entry of value) {
+        if (entry === undefined || entry === null || entry === "") { continue;
+        } command.push(flag, String(entry));
+      } continue;
+    } if (typeof value === "object") {
+      command.push(flag, JSON.stringify(value)); continue;
+    } command.push(flag, String(value));
+  } return command;
+};
+/** * Build a DS4 launch command.
+ * @param recipe - Recipe data. * @param config - Runtime config.
+ * @param config
+ * @returns CLI command array. */
+export const buildDs4Command = (recipe: Recipe, config: Config): string[] => { const command: string[] = [resolveDs4Binary(recipe, config)];
+  command.push("--model", recipe.model_path, "--host", recipe.host, "--port", String(recipe.port));
+  const ctxOverride = getExtraArgument(recipe.extra_args, "ctx") ?? getExtraArgument(recipe.extra_args, "c");
+  if (ctxOverride === undefined && recipe.max_model_len > 0) { command.push("--ctx", String(recipe.max_model_len));
+  }
+  return appendDs4Arguments(command, recipe.extra_args); };
  /**
  * Build an SGLang launch command. * @param recipe - Recipe data.
  * @param recipe

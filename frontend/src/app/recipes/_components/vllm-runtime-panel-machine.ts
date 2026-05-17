@@ -13,7 +13,7 @@ import type {
   VllmUpgradeResult,
 } from "@/lib/types";
 
-export type RuntimeBackendKind = "vllm" | "sglang" | "llamacpp" | "cuda" | "rocm";
+export type RuntimeBackendKind = "vllm" | "sglang" | "llamacpp" | "ds4" | "cuda" | "rocm";
 
 export interface RuntimeCard {
   backend: RuntimeBackendKind;
@@ -31,6 +31,7 @@ export interface RuntimePanelState {
   vllmRuntime: VllmRuntimeInfo | null;
   sglangRuntime: RuntimeBackendInfo | null;
   llamacppRuntime: RuntimeBackendInfo | null;
+  ds4Runtime: RuntimeBackendInfo | null;
   cudaRuntime: RuntimeCudaInfo | null;
   rocmRuntime: RuntimeRocmInfo | null;
   runtimeConfig: VllmRuntimeConfig | null;
@@ -50,6 +51,7 @@ interface RuntimePanelRuntimePayload {
   vllmRuntime: VllmRuntimeInfo;
   sglangRuntime: RuntimeBackendInfo;
   llamacppRuntime: RuntimeBackendInfo;
+  ds4Runtime: RuntimeBackendInfo;
   cudaRuntime: RuntimeCudaInfo;
   rocmRuntime: RuntimeRocmInfo;
 }
@@ -89,6 +91,7 @@ export function createInitialRuntimePanelState(): RuntimePanelState {
     vllmRuntime: null,
     sglangRuntime: null,
     llamacppRuntime: null,
+    ds4Runtime: null,
     cudaRuntime: null,
     rocmRuntime: null,
     runtimeConfig: null,
@@ -125,6 +128,7 @@ export const transitionRuntimePanel: StateMachineTransition<
           vllmRuntime: event.payload.vllmRuntime,
           sglangRuntime: event.payload.sglangRuntime,
           llamacppRuntime: event.payload.llamacppRuntime,
+          ds4Runtime: event.payload.ds4Runtime,
           cudaRuntime: event.payload.cudaRuntime,
           rocmRuntime: event.payload.rocmRuntime,
         },
@@ -236,16 +240,18 @@ export const transitionRuntimePanel: StateMachineTransition<
 
 export const createRuntimePanelMachine = (
   initialState: RuntimePanelState = createInitialRuntimePanelState(),
-): StateMachineContainer<RuntimePanelState, RuntimePanelEvent, RuntimePanelContext, RuntimePanelEffect> =>
-  createStateMachine<
-    RuntimePanelState,
-    RuntimePanelEvent,
-    RuntimePanelContext,
-    RuntimePanelEffect
-  >({
-    initialState,
-    transition: transitionRuntimePanel,
-  });
+): StateMachineContainer<
+  RuntimePanelState,
+  RuntimePanelEvent,
+  RuntimePanelContext,
+  RuntimePanelEffect
+> =>
+  createStateMachine<RuntimePanelState, RuntimePanelEvent, RuntimePanelContext, RuntimePanelEffect>(
+    {
+      initialState,
+      transition: transitionRuntimePanel,
+    },
+  );
 
 export function getRuntimePanelCards(state: RuntimePanelState): {
   vllmCards: RuntimeCard[];
@@ -254,6 +260,7 @@ export function getRuntimePanelCards(state: RuntimePanelState): {
   const vllmUpgradeConfigured = state.vllmRuntime?.upgrade_command_available;
   const sglangUpgradeConfigured = state.sglangRuntime?.upgrade_command_available;
   const llamaUpgradeConfigured = state.llamacppRuntime?.upgrade_command_available;
+  const ds4UpgradeConfigured = state.ds4Runtime?.upgrade_command_available;
   const cudaUpgradeConfigured = state.cudaRuntime?.upgrade_command_available;
   const rocmUpgradeConfigured = state.rocmRuntime?.upgrade_command_available;
 
@@ -300,6 +307,20 @@ export function getRuntimePanelCards(state: RuntimePanelState): {
       ),
       upgrading: state.upgrading === "llamacpp",
     },
+    {
+      backend: "ds4",
+      title: "DS4 Runtime",
+      installed: state.ds4Runtime?.installed ?? false,
+      version: state.ds4Runtime?.version ?? null,
+      pathLabel: "Binary",
+      pathValue: state.ds4Runtime?.binary_path ?? "Not detected",
+      canUpgrade: ds4UpgradeConfigured === true,
+      disabledReason: getDisabledReason(
+        ds4UpgradeConfigured,
+        "Set VLLM_STUDIO_DS4_BIN on the controller or place ds4-server on PATH.",
+      ),
+      upgrading: state.upgrading === "ds4",
+    },
   ];
 
   const backendCards: Array<RuntimeCard & { backend: "cuda" | "rocm" }> = [
@@ -335,4 +356,3 @@ export function getRuntimePanelCards(state: RuntimePanelState): {
 
   return { vllmCards, backendCards };
 }
-

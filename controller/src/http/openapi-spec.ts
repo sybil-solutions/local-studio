@@ -103,6 +103,17 @@ export const createOpenApiSpec = (context: AppContext): Record<string, unknown> 
         },
       },
     },
+    "/runtime/ds4": {
+      get: {
+        summary: "DS4 runtime info",
+        description: "Get DeepSeek 4 Flash/DS4 install status and binary/version",
+        responses: {
+          "200": {
+            description: "Runtime info",
+          },
+        },
+      },
+    },
     "/runtime/cuda": {
       get: {
         summary: "CUDA info",

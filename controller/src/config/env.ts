@@ -21,6 +21,7 @@ export interface Config {
   sglang_python?: string;
   tabby_api_dir?: string;
   llama_bin?: string;
+  ds4_bin?: string;
   exllamav3_command?: string;
   strict_openai_models: boolean;
   providers: ProviderConfig[];
@@ -113,6 +114,7 @@ export const createConfig = (): Config => {
     VLLM_STUDIO_SGLANG_PYTHON: z.string().optional(),
     VLLM_STUDIO_TABBY_API_DIR: z.string().optional(),
     VLLM_STUDIO_LLAMA_BIN: z.string().optional(),
+    VLLM_STUDIO_DS4_BIN: z.string().optional(),
     VLLM_STUDIO_EXLLAMAV3_COMMAND: z.string().optional(),
     VLLM_STUDIO_STRICT_OPENAI_MODELS: z.string().optional(),
   });
@@ -157,6 +159,9 @@ export const createConfig = (): Config => {
   }
   if (parsed.VLLM_STUDIO_LLAMA_BIN) {
     config.llama_bin = parsed.VLLM_STUDIO_LLAMA_BIN;
+  }
+  if (parsed.VLLM_STUDIO_DS4_BIN) {
+    config.ds4_bin = parsed.VLLM_STUDIO_DS4_BIN;
   }
   if (parsed.VLLM_STUDIO_EXLLAMAV3_COMMAND) {
     const command = parsed.VLLM_STUDIO_EXLLAMAV3_COMMAND.trim();

@@ -7,7 +7,7 @@ import type { RecipeStore } from "../models/recipes/recipe-store"; import { LIFE
 import type { EngineService, RuntimeType, UpgradeResult, RuntimeInfo, DownloadRequest, HfModel, SetActiveRecipeResult, SetActiveRecipeOptions } from "./engine-service"; import type { ModelDownload } from "../shared/recipe-types";
  import type { DownloadManager } from "./downloads/download-manager";
 import { getVllmRuntimeInfo, upgradeVllmRuntime, getVllmConfigHelp } from "./runtimes/vllm-runtime"; import { getLlamacppConfigHelp } from "./runtimes/llamacpp-runtime";
-import { getLlamacppRuntimeInfo, getSglangRuntimeInfo, getExllamav3RuntimeInfo } from "./runtimes/runtime-info"; import { upgradeSglangRuntime, upgradeLlamacppRuntime, runPlatformUpgrade } from "./runtimes/runtime-upgrade";
+import { getLlamacppRuntimeInfo, getSglangRuntimeInfo, getExllamav3RuntimeInfo, getDs4RuntimeInfo } from "./runtimes/runtime-info"; import { upgradeSglangRuntime, upgradeLlamacppRuntime, runPlatformUpgrade } from "./runtimes/runtime-upgrade";
 import { fetchHuggingFaceModelInfo } from "./downloads/huggingface-api";
 interface CoordinatorDeps { config: Config;
   logger: Logger; eventManager: EventManager;
@@ -124,7 +124,12 @@ interface CoordinatorDeps { config: Config;
         const { fetchLocal } = await import("../../http/local-fetch"); const response = await fetchLocal(this.deps.config.inference_port, "/health", {
           timeoutMs: 5000, });
         if (response.status === 200) { return { ready: true };
-        } } catch {
+        }
+        if (options.recipe.backend === "ds4") { const modelsResponse = await fetchLocal(this.deps.config.inference_port, "/v1/models", {
+            timeoutMs: 5000, });
+          if (modelsResponse.status === 200) { return { ready: true };
+          } }
+      } catch {
       }
       const elapsedSeconds = Math.floor((Date.now() - start) / 1000); if (options.onProgress) {
         await options.onProgress(elapsedSeconds); }
@@ -274,7 +279,7 @@ interface CoordinatorDeps { config: Config;
 
   /** *
    */ listRuntimes(): Record<string, RuntimeInfo> {
-    const llamacppInfo = getLlamacppRuntimeInfo(this.deps.config); const exllamav3Info = getExllamav3RuntimeInfo(this.deps.config);
+    const llamacppInfo = getLlamacppRuntimeInfo(this.deps.config); const ds4Info = getDs4RuntimeInfo(this.deps.config); const exllamav3Info = getExllamav3RuntimeInfo(this.deps.config);
     return { vllm: {
         installed: false, version: null,
         python_path: null, upgrade_command_available: true,
@@ -284,6 +289,9 @@ interface CoordinatorDeps { config: Config;
       }, llamacpp: {
         installed: llamacppInfo.installed, version: llamacppInfo.version,
         binary_path: llamacppInfo.binary_path ?? null, upgrade_command_available: llamacppInfo.upgrade_command_available ?? false,
+      }, ds4: {
+        installed: ds4Info.installed, version: ds4Info.version,
+        binary_path: ds4Info.binary_path ?? null, upgrade_command_available: false,
       }, exllamav3: {
         installed: exllamav3Info.installed, version: exllamav3Info.version,
         binary_path: exllamav3Info.binary_path ?? null, upgrade_command_available: exllamav3Info.upgrade_command_available ?? false,

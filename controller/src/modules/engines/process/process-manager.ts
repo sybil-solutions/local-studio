@@ -70,11 +70,11 @@ export const createProcessManager = (
         }
       } else if (flagPort && Number(flagPort) !== port) {
         continue;
-      } else if (!flagPort && !(backend === "vllm" && port === 8000)) {
+      } else if (!flagPort && !((backend === "vllm" || backend === "ds4") && port === 8000)) {
         continue;
       }
       let modelPath = extractFlag(proc.args, "--model") || extractFlag(proc.args, "--model-path");
-      if (!modelPath && (backend === "llamacpp" || backend === "exllamav3")) {
+      if (!modelPath && (backend === "llamacpp" || backend === "exllamav3" || backend === "ds4")) {
         modelPath = extractFlag(proc.args, "-m");
       }
       let servedModelName =

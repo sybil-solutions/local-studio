@@ -20,11 +20,12 @@ export function VllmRuntimePanel() {
     dispatch({ type: "runtime/load/request" });
 
     try {
-      const [vllmRuntime, sglangRuntime, llamacppRuntime, cudaRuntime, rocmRuntime] =
+      const [vllmRuntime, sglangRuntime, llamacppRuntime, ds4Runtime, cudaRuntime, rocmRuntime] =
         await Promise.all([
           api.getVllmRuntime(),
           api.getSglangRuntime(),
           api.getLlamacppRuntime(),
+          api.getDs4Runtime(),
           api.getCudaRuntime(),
           api.getRocmRuntime(),
         ]);
@@ -34,6 +35,7 @@ export function VllmRuntimePanel() {
           vllmRuntime,
           sglangRuntime,
           llamacppRuntime,
+          ds4Runtime,
           cudaRuntime,
           rocmRuntime,
         },
@@ -101,6 +103,8 @@ export function VllmRuntimePanel() {
           case "llamacpp":
             jobId = (await api.upgradeLlamacppRuntime(payload)).job_id;
             break;
+          case "ds4":
+            throw new Error("DS4 runtime upgrades are not managed by vLLM Studio.");
           case "cuda":
             jobId = (await api.upgradeCudaRuntime(payload)).job_id;
             break;
@@ -144,7 +148,7 @@ export function VllmRuntimePanel() {
         <div>
           <h2 className="text-lg font-semibold">Runtime Management</h2>
           <p className="text-sm text-(--dim)">
-            Manage vLLM, SGLang, llama.cpp, and platform runtimes from one screen.
+            Manage vLLM, SGLang, llama.cpp, DS4, and platform runtimes from one screen.
           </p>
         </div>
         <button

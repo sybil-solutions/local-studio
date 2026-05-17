@@ -13,7 +13,7 @@ export interface ProviderConfig {
 export interface PersistedConfig {
   models_dir?: string;
   providers?: ProviderConfig[];
-  selected_runtime_target_ids?: Partial<Record<"vllm" | "sglang" | "llamacpp", string>>;
+  selected_runtime_target_ids?: Partial<Record<"vllm" | "sglang" | "llamacpp" | "ds4", string>>;
 }
 
 export const getPersistedConfigPath = (dataDirectory: string): string => {

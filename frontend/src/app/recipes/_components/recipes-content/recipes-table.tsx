@@ -48,6 +48,12 @@ const TEMPLATE_ROWS = [
     value: "backend llama.cpp · local path",
     status: "template",
   },
+  {
+    label: "DS4 server",
+    description: "DeepSeek 4 Flash through ds4-server.",
+    value: "backend DS4 · native local path",
+    status: "template",
+  },
 ];
 
 export function RecipesTable({

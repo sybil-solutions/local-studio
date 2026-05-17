@@ -24,6 +24,7 @@ describe("runtime_summary event contract", () => {
         vllm: { installed: true, version: "0.6.0" },
         sglang: { installed: false, version: null },
         llamacpp: { installed: true, version: "b1234" },
+        ds4: { installed: false, version: null },
       },
       lease: { holder: "test-model", since: "2026-01-01T00:00:00Z" },
     });

@@ -63,6 +63,7 @@ const describeDefaultCommand = (options: CreateEngineJobOptions): string => {
   if (options.backend === "vllm") return "python -m pip install --upgrade vllm";
   if (options.backend === "sglang") return "python -m pip install --upgrade sglang";
   if (options.backend === "llamacpp") return "configured llama.cpp upgrade command";
+  if (options.backend === "ds4") return "configured DS4 runtime";
   if (options.backend === "cuda") return "configured CUDA upgrade command";
   return "configured ROCm upgrade command";
 };
@@ -109,7 +110,15 @@ const runJob = async (
             ? await upgradeLlamacppRuntime(config, upgradeOptions)
             : options.backend === "cuda"
               ? runPlatformUpgrade("cuda", upgradeOptions)
-              : runPlatformUpgrade("rocm", upgradeOptions);
+              : options.backend === "rocm"
+                ? runPlatformUpgrade("rocm", upgradeOptions)
+                : {
+                    success: false,
+                    version: null,
+                    output: null,
+                    error: "Runtime jobs are not supported for DS4",
+                    used_command: null,
+                  };
 
     const outputTail = tailOutput(result.output ?? result.error);
     const command = result.used_command ?? job.command;

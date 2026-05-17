@@ -159,7 +159,7 @@ export function createStudioApi(core: ApiCore) {
       core.request("/runtime/targets"),
 
     createRuntimeJob: (payload: {
-      backend: "vllm" | "sglang" | "llamacpp";
+      backend: "vllm" | "sglang" | "llamacpp" | "ds4";
       targetId?: string;
       type?: "install" | "update" | "download" | "inspect";
       command?: string;
@@ -193,6 +193,8 @@ export function createStudioApi(core: ApiCore) {
     getSglangRuntime: (): Promise<RuntimeBackendInfo> => core.request("/runtime/sglang"),
 
     getLlamacppRuntime: (): Promise<RuntimeBackendInfo> => core.request("/runtime/llamacpp"),
+
+    getDs4Runtime: (): Promise<RuntimeBackendInfo> => core.request("/runtime/ds4"),
 
     getLlamacppRuntimeConfig: (): Promise<{ config: string | null; error?: string | null }> =>
       core.request("/runtime/llamacpp/config"),
