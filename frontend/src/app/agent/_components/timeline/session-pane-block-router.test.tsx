@@ -56,6 +56,31 @@ describe("groupAssistantBlocks", () => {
 });
 
 describe("SessionPaneBlockRouter", () => {
+  it("keeps mixed reasoning and finished tools collapsed as a preview", () => {
+    const message: ChatMessage = {
+      id: "assistant",
+      role: "assistant",
+      text: "",
+      blocks: [
+        { kind: "thinking", id: "think-1", text: "private plan text" },
+        {
+          kind: "tool",
+          id: "tool-1",
+          name: "read_file",
+          status: "done",
+          text: "",
+          args: { path: "src/app.ts" },
+        },
+      ],
+    };
+
+    const html = renderToStaticMarkup(<SessionPaneBlockRouter message={message} />);
+
+    expect(html).toContain("Reasoning + 1 tool");
+    expect(html).toContain("read app.ts");
+    expect(html).not.toContain("private plan text");
+  });
+
   it("renders collapsed tool group previews without mounting completed tool details", () => {
     const message: ChatMessage = {
       id: "assistant",

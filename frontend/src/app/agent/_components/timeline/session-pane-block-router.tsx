@@ -126,10 +126,7 @@ function AssistantActivityGroup({ segments }: { segments: ActivitySegment[] }) {
     (segment) =>
       segment.kind === "tools" && segment.blocks.some((block) => block.status === "running"),
   );
-  const isMixed =
-    segments.some((segment) => segment.kind === "reasoning") &&
-    segments.some((segment) => segment.kind === "tools");
-  const [expanded, setExpanded] = useState(isMixed || hasActiveTool);
+  const [expanded, setExpanded] = useState(hasActiveTool);
   const open = hasActiveTool || expanded;
 
   if (segments.length === 1) {
@@ -173,10 +170,16 @@ function AssistantActivityGroup({ segments }: { segments: ActivitySegment[] }) {
   );
 }
 
-function ReasoningGroup({ blocks }: { blocks: ThinkingBlock[] }) {
+function ReasoningGroup({
+  blocks,
+  defaultOpen = false,
+}: {
+  blocks: ThinkingBlock[];
+  defaultOpen?: boolean;
+}) {
   const text = blocks.map((block) => block.text).join("\n\n");
   return (
-    <details className="text-xs" open>
+    <details className="text-xs" open={defaultOpen}>
       <summary className="cursor-pointer list-none text-[11px] italic text-(--dim) hover:text-(--fg) [&::-webkit-details-marker]:hidden">
         Reasoning{blocks.length > 1 ? ` · ${blocks.length}` : ""}
       </summary>
@@ -229,10 +232,9 @@ function ToolCallGroup({ blocks }: { blocks: ToolBlock[] }) {
         ) : null}
       </summary>
       {open ? (
-        <div className="ml-3 mt-1.5 border-l border-(--border)/70 pl-2">
+        <div className="mt-2 border-l-2 border-(--border) pl-3">
           {blocks.map((block, index) => (
-            <div key={block.id} className="relative pb-1.5 last:pb-0">
-              <span className="absolute -left-2 top-4 h-px w-2 bg-(--border)/80" />
+            <div key={block.id} className="pb-1.5 last:pb-0">
               <div className={index === 0 ? "" : "pt-0.5"}>
                 <ToolBlockView block={block} />
               </div>
