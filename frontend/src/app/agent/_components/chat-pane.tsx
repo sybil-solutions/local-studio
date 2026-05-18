@@ -319,12 +319,7 @@ export function ChatPane({
       const result = await engine.sendControl(mode, text, runtime, tab.id, tab.piSessionId);
       updateTab(tab.id, (t) => ({
         ...t,
-        queue:
-          mode === "steer"
-            ? (t.queue ?? []).filter((item) => item.id !== queuedId)
-            : (t.queue ?? []).map((item) =>
-                item.id === queuedId ? { ...item, sent: result.ok } : item,
-              ),
+        queue: result.ok ? t.queue : (t.queue ?? []).filter((item) => item.id !== queuedId),
         ...(result.ok ? {} : { input: text, error: result.error || "Message failed" }),
       }));
     },

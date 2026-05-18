@@ -6,6 +6,7 @@ import {
   newId,
   nowLabel,
   reconcileQueueWithPiEvent,
+  removeDeliveredQueuedMessage,
   usageFromEvent,
   visibleUserTextFromPi,
 } from "@/lib/agent/session";
@@ -71,9 +72,17 @@ function appendUserMessageFromPiEvent(
   const msg = event.message as { role?: string; content?: string | Record<string, unknown>[] };
   if (msg?.role !== "user") return false;
   const text = visibleUserTextFromPi(messageText(msg.content));
-  if (!text || hasMatchingLastUserMessage(deps.tabsRef.current, sessionId, text)) return true;
+  if (!text) return true;
+  if (hasMatchingLastUserMessage(deps.tabsRef.current, sessionId, text)) {
+    deps.updateSession(sessionId, (session) => ({
+      ...session,
+      queue: removeDeliveredQueuedMessage(session.queue ?? [], text),
+    }));
+    return true;
+  }
   deps.updateSession(sessionId, (session) => ({
     ...session,
+    queue: removeDeliveredQueuedMessage(session.queue ?? [], text),
     messages: [
       ...session.messages,
       { id: newId("user"), role: "user", text, timestamp: nowLabel() },

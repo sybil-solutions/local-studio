@@ -28,6 +28,17 @@ Access these in scripts via environment variables or load them from `.env.local`
 - **Agent surface**: `http://localhost:3001/agent`
 - **Run**: `cd frontend && PORT=3001 npm run dev`
 - Use this local server for fast browser verification unless the user explicitly asks for a different port or deployment target.
+- **Desktop dev mode for iterative UI work**: launch Electron against the local dev server so frontend changes show up without rebuilding the installed app:
+
+```bash
+# Terminal 1
+cd frontend && PORT=3001 npm run dev
+
+# Terminal 2
+cd frontend && npm run desktop:build:main && VLLM_STUDIO_DESKTOP_DEV_SERVER_URL=http://127.0.0.1:3001 npm run desktop:start
+```
+
+- Prefer this desktop dev mode while debugging/iterating on the Mac app. Still run `desktop:dist` and replace `/Applications/vLLM Studio.app` before calling the feature finished.
 
 ## Deployment Workflow
 

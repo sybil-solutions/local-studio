@@ -182,7 +182,7 @@ export function replayCursorAfterRuntimeHydration(
 // ----- queue helpers -----
 
 export function visibleQueuedMessages(queue: QueuedMessage[]): QueuedMessage[] {
-  return queue.filter((item) => item.mode === "follow_up");
+  return queue;
 }
 
 export function drainQueueAfterAgentEnd(queue: QueuedMessage[]): {
@@ -200,32 +200,67 @@ function stringArray(value: unknown): string[] {
     : [];
 }
 
+function queueDisplayText(text: string): string {
+  return visibleUserTextFromPi(text) || text.trim();
+}
+
+function queueKey(mode: QueuedMessage["mode"], text: string): string {
+  return `${mode}:${queueDisplayText(text)}`;
+}
+
+function consumePending(
+  pending: Map<string, string[]>,
+  mode: QueuedMessage["mode"],
+  text: string,
+): string | null {
+  const key = queueKey(mode, text);
+  const values = pending.get(key);
+  if (!values || values.length === 0) return null;
+  const [value, ...remaining] = values;
+  if (remaining.length > 0) pending.set(key, remaining);
+  else pending.delete(key);
+  return value ?? null;
+}
+
 export function reconcileQueueWithPiEvent(
   queue: QueuedMessage[],
   event: Record<string, unknown>,
 ): QueuedMessage[] {
   if (event.type !== "queue_update") return queue;
-  const pending = {
-    steer: stringArray(event.steering),
-    follow_up: stringArray(event.followUp),
+  const pending = new Map<string, string[]>();
+  const addPending = (mode: QueuedMessage["mode"], messages: string[]) => {
+    for (const text of messages) {
+      const key = queueKey(mode, text);
+      pending.set(key, [...(pending.get(key) ?? []), text]);
+    }
   };
+  addPending("steer", stringArray(event.steering));
+  addPending("follow_up", stringArray(event.followUp));
+
   const next = queue.flatMap((item) => {
-    const acceptedByPi = pending[item.mode].includes(item.text);
-    if (acceptedByPi) return [{ ...item, sent: true }];
+    const acceptedByPi = consumePending(pending, item.mode, item.text);
+    if (acceptedByPi) return [{ ...item, text: queueDisplayText(acceptedByPi), sent: true }];
     return item.sent ? [] : [item];
   });
-  const seen = new Set(next.map((item) => `${item.mode}:${item.text}`));
-  for (const [mode, messages] of Object.entries(pending) as Array<
-    [QueuedMessage["mode"], string[]]
-  >) {
+
+  for (const [key, messages] of pending) {
+    const separator = key.indexOf(":");
+    const mode = key.slice(0, separator) as QueuedMessage["mode"];
     for (const text of messages) {
-      const key = `${mode}:${text}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      next.push({ id: newId("queue"), mode, text, sent: true });
+      next.push({ id: newId("queue"), mode, text: queueDisplayText(text), sent: true });
     }
   }
   return next;
+}
+
+export function removeDeliveredQueuedMessage(
+  queue: QueuedMessage[],
+  deliveredText: string,
+): QueuedMessage[] {
+  const delivered = queueDisplayText(deliveredText);
+  const index = queue.findIndex((item) => queueDisplayText(item.text) === delivered);
+  if (index === -1) return queue;
+  return [...queue.slice(0, index), ...queue.slice(index + 1)];
 }
 
 // ----- canonical + runtime event merge -----

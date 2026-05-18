@@ -5,6 +5,7 @@ import {
   mergeCanonicalAndRuntimeEvents,
   parseAgentTurnSsePayload,
   reconcileQueueWithPiEvent,
+  removeDeliveredQueuedMessage,
   replayCursorAfterRuntimeHydration,
   replaySessionEvents,
   runtimeStatusLooksActive,
@@ -39,13 +40,16 @@ describe("parseAgentTurnSsePayload", () => {
   });
 });
 describe("visibleQueuedMessages", () => {
-  it("shows only follow-up queue items, not transient steers", () => {
+  it("shows follow-up and steer queue items", () => {
     expect(
       visibleQueuedMessages([
         { id: "steer", mode: "steer", text: "interrupt", sent: true },
         { id: "follow", mode: "follow_up", text: "next" },
       ]),
-    ).toEqual([{ id: "follow", mode: "follow_up", text: "next" }]);
+    ).toEqual([
+      { id: "steer", mode: "steer", text: "interrupt", sent: true },
+      { id: "follow", mode: "follow_up", text: "next" },
+    ]);
   });
 });
 describe("statusAfterControlPhase", () => {
@@ -154,6 +158,44 @@ describe("reconcileQueueWithPiEvent", () => {
         { type: "queue_update", steering: [], followUp: [] },
       ),
     ).toEqual([{ id: "local", mode: "follow_up", text: "retry locally", sent: false }]);
+  });
+  it("matches Pi context-wrapped queue text to the local composer text", () => {
+    const result = reconcileQueueWithPiEvent(
+      [{ id: "optimistic", mode: "steer", text: "focus on the queue bug", sent: true }],
+      {
+        type: "queue_update",
+        steering: [
+          "Composer context:\nEnabled plugins: @browser.\n\nUser prompt:\nfocus on the queue bug",
+        ],
+        followUp: [],
+      },
+    );
+    expect(result).toEqual([
+      { id: "optimistic", mode: "steer", text: "focus on the queue bug", sent: true },
+    ]);
+  });
+  it("displays context-wrapped canonical Pi queue items as user text", () => {
+    const result = reconcileQueueWithPiEvent([], {
+      type: "queue_update",
+      steering: [],
+      followUp: ["Composer context:\nEnabled skills: docs.\n\nUser prompt:\nthen summarize"],
+    });
+    expect(result).toEqual([
+      { id: expect.any(String), mode: "follow_up", text: "then summarize", sent: true },
+    ]);
+  });
+});
+describe("removeDeliveredQueuedMessage", () => {
+  it("removes the queued chip once Pi starts the delivered user message", () => {
+    expect(
+      removeDeliveredQueuedMessage(
+        [
+          { id: "steer", mode: "steer", text: "focus on tests", sent: true },
+          { id: "follow", mode: "follow_up", text: "then summarize", sent: true },
+        ],
+        "Composer context:\nEnabled plugins: @browser.\n\nUser prompt:\nfocus on tests",
+      ),
+    ).toEqual([{ id: "follow", mode: "follow_up", text: "then summarize", sent: true }]);
   });
 });
 describe("mergeCanonicalAndRuntimeEvents", () => {
