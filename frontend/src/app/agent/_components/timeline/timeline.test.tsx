@@ -94,7 +94,7 @@ describe("Timeline", () => {
     expect(call.atBottomThreshold).toBe(80);
   });
 
-  it("wires follow-bottom state through Virtuoso instead of a raw scroll div", () => {
+  it("keeps following output while running even if bottom state briefly drifts", () => {
     const onStickToBottomChange = vi.fn();
 
     renderToStaticMarkup(
@@ -111,10 +111,16 @@ describe("Timeline", () => {
       followOutput: () => "auto" | false;
     };
 
-    expect(call.atBottomStateChange).toBe(onStickToBottomChange);
-    expect(call.followOutput()).toBe(false);
+    expect(call.followOutput()).toBe("auto");
 
     call.atBottomStateChange(true);
     expect(onStickToBottomChange).toHaveBeenCalledWith(true);
+  });
+
+  it("does not follow output after the user scrolls away from an idle session", () => {
+    renderToStaticMarkup(<Timeline messages={messages} running={false} stickToBottom={false} />);
+    const call = virtuosoMock.calls[0] as { followOutput: () => "auto" | false };
+
+    expect(call.followOutput()).toBe(false);
   });
 });

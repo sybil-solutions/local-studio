@@ -1,5 +1,6 @@
-import { forwardRef, useMemo, type ComponentPropsWithoutRef } from "react";
-import { Virtuoso } from "react-virtuoso";
+import { forwardRef, useCallback, useMemo, useRef, type ComponentPropsWithoutRef } from "react";
+import { Virtuoso, type VirtuosoHandle } from "react-virtuoso";
+import { useTimelineFollowEffects } from "@/hooks/agent/use-timeline-follow-effects";
 import type { ChatMessage } from "@/lib/agent/session";
 import { MessageView } from "./message-view";
 
@@ -35,10 +36,12 @@ export function Timeline({
   stickToBottom = true,
   onStickToBottomChange,
 }: TimelineProps) {
+  const virtuosoRef = useRef<VirtuosoHandle>(null);
   const visibleMessages = useMemo(
     () => messages.filter((message) => message.role !== "system"),
     [messages],
   );
+  const shouldFollowOutput = stickToBottom || running;
   const footer = useMemo(
     () =>
       running
@@ -51,6 +54,25 @@ export function Timeline({
         : undefined,
     [running, statusLabel],
   );
+  const handleAtBottomStateChange = useCallback(
+    (atBottom: boolean) => {
+      if (atBottom || !running) {
+        onStickToBottomChange?.(atBottom);
+        return;
+      }
+      if (stickToBottom) {
+        requestAnimationFrame(() => virtuosoRef.current?.autoscrollToBottom());
+      }
+    },
+    [onStickToBottomChange, running, stickToBottom],
+  );
+
+  useTimelineFollowEffects({
+    enabled: shouldFollowOutput,
+    itemCount: visibleMessages.length,
+    statusLabel,
+    virtuosoRef,
+  });
 
   if (emptyPrompt) {
     return (
@@ -69,8 +91,9 @@ export function Timeline({
   }
 
   return (
-    <div className="min-h-0 flex-1 px-6 pb-10 pt-2">
+    <div className="min-h-0 flex-1 px-6 pb-1 pt-2">
       <Virtuoso
+        ref={virtuosoRef}
         className="h-full"
         data={visibleMessages}
         computeItemKey={(_, message) => message.id}
@@ -78,8 +101,8 @@ export function Timeline({
         increaseViewportBy={{ top: 700, bottom: 1000 }}
         alignToBottom
         atBottomThreshold={80}
-        atBottomStateChange={onStickToBottomChange}
-        followOutput={() => (stickToBottom ? "auto" : false)}
+        atBottomStateChange={handleAtBottomStateChange}
+        followOutput={() => (shouldFollowOutput ? "auto" : false)}
         initialTopMostItemIndex={Math.max(0, visibleMessages.length - 1)}
         components={{
           Footer: footer,
