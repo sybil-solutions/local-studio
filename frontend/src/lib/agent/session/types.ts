@@ -34,8 +34,19 @@ export type ChatMessage = {
   id: string;
   role: "user" | "assistant" | "system";
   text: string;
+  attachments?: ChatMessageAttachment[];
   blocks?: AssistantBlock[];
   timestamp?: string;
+};
+
+export type ChatMessageAttachment = {
+  id: string;
+  name: string;
+  type: string;
+  size: number;
+  path?: string;
+  previewKind?: "image" | "video" | "pdf" | "file";
+  previewUrl?: string;
 };
 
 export type TokenStats = {

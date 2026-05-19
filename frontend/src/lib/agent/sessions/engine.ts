@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import { isAgentEndEvent } from "@/lib/agent/pi-events";
 import {
+  type ChatMessageAttachment,
   type ChatMessage,
   mergeCanonicalAndRuntimeEvents,
   newId,
@@ -44,6 +45,7 @@ type SubmitArgs = {
   prompt: string;
   displayText: string;
   userText: string;
+  attachments?: ChatMessageAttachment[];
   targetSessionId?: SessionId;
 };
 
@@ -245,7 +247,13 @@ export function useSessionEngine(deps: UseSessionEngineDeps): SessionEngine {
             : session.title,
         messages: [
           ...session.messages,
-          { id: userId, role: "user", text: args.displayText, timestamp: nowLabel() },
+          {
+            id: userId,
+            role: "user",
+            text: args.displayText,
+            attachments: args.attachments,
+            timestamp: nowLabel(),
+          },
           { id: assistantId, role: "assistant", text: "", blocks: [], timestamp: nowLabel() },
         ],
       }));

@@ -444,7 +444,7 @@ function ProjectDirectoryPickerModal({
       const detail = (event as CustomEvent<{ sessions?: ActiveAgentSession[] }>).detail;
       const sessions = Array.isArray(detail?.sessions) ? detail.sessions : [];
       setActiveSessions((current) =>
-        mergeActiveAgentSessions(current, sessions, loadSessionPrefs()),
+        sessions.length > 0 ? mergeActiveAgentSessions([], sessions, loadSessionPrefs()) : [],
       );
       persistActiveAgentSessions(sessions);
     };

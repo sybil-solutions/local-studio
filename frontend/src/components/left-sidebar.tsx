@@ -267,13 +267,18 @@ export function LeftSidebar({ children }: { children: ReactNode }) {
               </nav>
 
               <div className="shrink-0 px-2 py-3">
-                <NavItemDesktop
+                <Link
                   href="/settings"
-                  label="Settings"
-                  Icon={Settings}
-                  active={isRouteActive(pathname, "/settings")}
-                  expanded={isExpanded}
-                />
+                  title="Settings"
+                  className={`flex h-7 shrink-0 items-center gap-2 rounded-md px-2.5 transition-colors ${
+                    isRouteActive(pathname, "/settings")
+                      ? "bg-(--hover) text-white"
+                      : "text-(--fg)/85 hover:bg-(--hover) hover:text-white"
+                  }`}
+                >
+                  <Settings className="h-4 w-4 shrink-0" />
+                  <span className="whitespace-nowrap text-[12px] font-medium">Settings</span>
+                </Link>
               </div>
             </>
           ) : null}

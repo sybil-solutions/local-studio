@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { attachmentDedupKey, filesFromDataTransfer, isImageAttachment } from "./chat-attachments";
+import {
+  attachmentDedupKey,
+  attachmentPrompt,
+  createAttachment,
+  filesFromDataTransfer,
+  isImageAttachment,
+} from "./chat-attachments";
 
 describe("chat attachments", () => {
   it("dedupes one pasted file exposed through files and items", () => {
@@ -35,5 +41,15 @@ describe("chat attachments", () => {
         content: "data:image/png;base64,abc",
       }),
     ).toBe(true);
+  });
+
+  it("keeps PDFs out of data-url prompt payloads", async () => {
+    const attachment = await createAttachment(
+      new File(["%PDF-1.7"], "paper.pdf", { type: "application/pdf" }),
+    );
+
+    expect(attachment.mode).toBe("metadata");
+    expect(attachment.previewKind).toBe("pdf");
+    expect(attachmentPrompt([attachment])).not.toContain("data:");
   });
 });

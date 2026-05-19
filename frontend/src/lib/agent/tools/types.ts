@@ -23,6 +23,11 @@ export type ComputerState = {
   width: number;
 };
 
+export type FileOpenRequest = {
+  id: number;
+  path: string;
+};
+
 export type ToolSelection = {
   plugins: ComposerPluginRef[];
   skills: ComposerSkillRef[];

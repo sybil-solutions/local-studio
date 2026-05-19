@@ -1,4 +1,11 @@
-import { useEffect, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
+import {
+  useEffect,
+  useRef,
+  type Dispatch,
+  type MutableRefObject,
+  type SetStateAction,
+} from "react";
+import type { FileOpenRequest } from "@/lib/agent/tools/types";
 
 type FsEntry = {
   name: string;
@@ -20,6 +27,7 @@ type UseFilesystemPanelEffectsParams = {
   cwd: string | null;
   relPath: string;
   openFile: string | null;
+  fileOpenRequest: FileOpenRequest | null;
   lastOpenFileByProject: Record<string, string>;
   cwdRef: MutableRefObject<string | null>;
   setRelPath: Dispatch<SetStateAction<string>>;
@@ -34,12 +42,14 @@ type UseFilesystemPanelEffectsParams = {
   setExpandedDirs: Dispatch<SetStateAction<Set<string>>>;
   setDirChildren: Dispatch<SetStateAction<Map<string, FsEntry[]>>>;
   setDirLoading: Dispatch<SetStateAction<Set<string>>>;
+  setLastOpenFileByProject: (projectPath: string, relPath: string) => void;
 };
 
 export function useFilesystemPanelEffects({
   cwd,
   relPath,
   openFile,
+  fileOpenRequest,
   lastOpenFileByProject,
   cwdRef,
   setRelPath,
@@ -54,7 +64,10 @@ export function useFilesystemPanelEffects({
   setExpandedDirs,
   setDirChildren,
   setDirLoading,
+  setLastOpenFileByProject,
 }: UseFilesystemPanelEffectsParams): void {
+  const handledFileOpenRequest = useRef(0);
+
   useEffect(() => {
     cwdRef.current = cwd;
   }, [cwd, cwdRef]);
@@ -106,6 +119,15 @@ export function useFilesystemPanelEffects({
   }, [cwd, lastOpenFileByProject, setOpenFile]);
 
   useEffect(() => {
+    if (!fileOpenRequest || handledFileOpenRequest.current === fileOpenRequest.id) return;
+    handledFileOpenRequest.current = fileOpenRequest.id;
+    const rel = relativePathForRequest(fileOpenRequest.path, cwd);
+    if (!rel) return;
+    setOpenFile(rel);
+    if (cwd) setLastOpenFileByProject(cwd, rel);
+  }, [cwd, fileOpenRequest, setLastOpenFileByProject, setOpenFile]);
+
+  useEffect(() => {
     if (!cwd || !openFile) {
       setFileContent("");
       setFileTruncated(false);
@@ -152,4 +174,24 @@ export function useFilesystemPanelEffects({
       cancelled = true;
     };
   }, [cwd, openFile, setComments, setFileContent, setFileSize, setFileTruncated, setLoadingFile]);
+}
+
+function relativePathForRequest(path: string, cwd: string | null): string | null {
+  let raw = path.trim();
+  if (!raw) return null;
+  if (/^file:\/\//i.test(raw)) {
+    try {
+      raw = decodeURIComponent(new URL(raw).pathname);
+    } catch {
+      return null;
+    }
+  }
+  raw = raw.replace(/^`|`$/g, "").replace(/:\d+(?::\d+)?$/, "");
+  if (!raw || raw.includes("\0")) return null;
+  if (cwd && raw.startsWith(`${cwd.replace(/\/+$/, "")}/`)) {
+    return raw.slice(cwd.replace(/\/+$/, "").length + 1);
+  }
+  if (raw.startsWith("./")) return raw.slice(2);
+  if (!raw.startsWith("/") && !raw.startsWith("../")) return raw;
+  return null;
 }

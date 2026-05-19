@@ -221,9 +221,17 @@ export function tabForPersistence(
   plugins?: ComposerPluginRef[];
   skills?: ComposerSkillRef[];
 } {
+  const messages = tab.messages.slice(-80).map((message) => ({
+    ...message,
+    attachments: message.attachments?.map((attachment) => {
+      const { previewUrl, ...persisted } = attachment;
+      void previewUrl;
+      return persisted;
+    }),
+  }));
   const base: Session = {
     ...tab,
-    messages: tab.messages.slice(-80),
+    messages,
     status: tab.status,
     error: "",
   };
@@ -306,11 +314,7 @@ export function persistActiveAgentSessions(
 ): void {
   if (!storage) return;
   const prefs = loadSessionPrefs(storage);
-  const merged = mergeActiveAgentSessions(
-    loadPersistedActiveAgentSessions(storage),
-    sessions,
-    prefs,
-  );
+  const merged = sessions.length > 0 ? mergeActiveAgentSessions([], sessions, prefs) : [];
   if (merged.length > 0) {
     storage.setItem(ACTIVE_AGENT_SESSIONS_SNAPSHOT_KEY, JSON.stringify(merged));
   } else {

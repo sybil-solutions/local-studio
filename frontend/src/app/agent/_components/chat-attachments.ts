@@ -10,6 +10,8 @@ export type ChatAttachment = {
   path?: string;
   mode: "text" | "data-url" | "metadata";
   content: string;
+  previewUrl?: string;
+  previewKind?: "image" | "video" | "pdf" | "file";
 };
 
 export function attachmentDedupKey(file: Pick<ChatAttachment, "name" | "type" | "size" | "path">) {
@@ -22,6 +24,31 @@ export function isImageAttachment(file: Pick<ChatAttachment, "type" | "mode" | "
   return (
     file.type.startsWith("image/") && file.mode === "data-url" && file.content.startsWith("data:")
   );
+}
+
+export function isRenderableAttachment(
+  file: Pick<ChatAttachment, "previewKind" | "previewUrl" | "type">,
+) {
+  return Boolean(
+    file.previewUrl &&
+    (file.previewKind === "image" || file.previewKind === "video" || file.previewKind === "pdf"),
+  );
+}
+
+function previewKindFor(type: string): ChatAttachment["previewKind"] {
+  if (type.startsWith("image/")) return "image";
+  if (type.startsWith("video/")) return "video";
+  if (type === "application/pdf") return "pdf";
+  return "file";
+}
+
+function objectUrlFor(file: File): string | undefined {
+  if (typeof URL === "undefined" || typeof URL.createObjectURL !== "function") return undefined;
+  try {
+    return URL.createObjectURL(file);
+  } catch {
+    return undefined;
+  }
 }
 
 function newAttachmentId() {
@@ -132,6 +159,11 @@ export async function createAttachment(file: File): Promise<ChatAttachment> {
   const name = fileDisplayName(file);
   const type = file.type || "application/octet-stream";
   const path = getDesktopFilePath(file) ?? undefined;
+  const previewKind = previewKindFor(type);
+  const previewUrl =
+    previewKind === "image" || previewKind === "video" || previewKind === "pdf"
+      ? objectUrlFor(file)
+      : undefined;
   if (isTextLike(file, name) && file.size <= 350_000) {
     return {
       id,
@@ -141,9 +173,11 @@ export async function createAttachment(file: File): Promise<ChatAttachment> {
       path,
       mode: "text",
       content: await readFileAsText(file),
+      previewKind,
+      previewUrl,
     };
   }
-  if (file.size <= 1_500_000) {
+  if (previewKind === "image" && file.size <= 1_500_000) {
     return {
       id,
       name,
@@ -152,6 +186,8 @@ export async function createAttachment(file: File): Promise<ChatAttachment> {
       path,
       mode: "data-url",
       content: await readFileAsDataUrl(file),
+      previewKind,
+      previewUrl,
     };
   }
   return {
@@ -163,7 +199,11 @@ export async function createAttachment(file: File): Promise<ChatAttachment> {
     mode: "metadata",
     content: path
       ? `File is too large to inline; it is available on disk at ${path}.`
-      : "File is too large to inline; only metadata is attached.",
+      : previewKind === "pdf"
+        ? "PDF preview is visible in the chat UI, but only metadata is attached to the model."
+        : "File is too large to inline; only metadata is attached.",
+    previewKind,
+    previewUrl,
   };
 }
 
@@ -174,7 +214,9 @@ export function attachmentPrompt(attachments: ChatAttachment[]) {
       const pathInfo = file.path ? `\nLocal path: ${file.path}` : "";
       const header = `Attachment ${index + 1}: ${file.name} (${file.type}, ${formatFileSize(file.size)})${pathInfo}`;
       if (file.mode === "text") return `${header}\n\`\`\`\n${file.content}\n\`\`\``;
-      if (file.mode === "data-url") return `${header}\nData URL:\n${file.content}`;
+      if (file.mode === "data-url" && file.type.startsWith("image/")) {
+        return `${header}\nImage data URL:\n${file.content}`;
+      }
       return `${header}\n${file.content}`;
     })
     .join("\n\n");

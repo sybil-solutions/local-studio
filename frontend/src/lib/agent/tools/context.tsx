@@ -17,6 +17,7 @@ import {
   type BrowserState,
   type ComputerState,
   type ComputerTab,
+  type FileOpenRequest,
   type ToolSelection,
   type ToolSelectionMap,
 } from "./types";
@@ -33,6 +34,7 @@ import {
 export type ToolsContextValue = {
   browser: BrowserState;
   computer: ComputerState;
+  fileOpenRequest: FileOpenRequest | null;
   /** Workspace-global plugin catalogue (loaded once on mount). */
   pluginCatalogue: ComposerPluginRef[];
   /** Workspace-global skill catalogue (loaded once on mount). */
@@ -47,6 +49,7 @@ export type ToolsContextValue = {
   toggleComputerOpen: () => void;
   setComputerTab: (tab: ComputerTab) => void;
   setComputerWidth: (width: number) => void;
+  requestFileOpen: (path: string) => void;
   /**
    * Replace the entire selection for a session. Pass `null` to clear it (used
    * when a session is closed / pruned).
@@ -76,6 +79,7 @@ function buildInitialComputer(): ComputerState {
 export function ToolsProvider({ children }: { children: ReactNode }) {
   const [browser, setBrowser] = useState<BrowserState>(() => buildInitialBrowser());
   const [computer, setComputer] = useState<ComputerState>(() => buildInitialComputer());
+  const [fileOpenRequest, setFileOpenRequest] = useState<FileOpenRequest | null>(null);
   const [pluginCatalogue, setPluginCatalogue] = useState<ComposerPluginRef[]>([]);
   const [skillCatalogue, setSkillCatalogue] = useState<ComposerSkillRef[]>([]);
   const selectionsRef = useRef<Map<SessionId, ToolSelection>>(new Map());
@@ -135,6 +139,13 @@ export function ToolsProvider({ children }: { children: ReactNode }) {
 
   const setComputerOpen = useCallback((open: boolean) => {
     setComputer((current) => (current.open === open ? current : { ...current, open }));
+    if (open) {
+      setBrowser((current) => {
+        if (current.enabled) return current;
+        writeBrowserEnabled(true);
+        return { ...current, enabled: true };
+      });
+    }
   }, []);
 
   const toggleComputerOpen = useCallback(() => {
@@ -144,6 +155,13 @@ export function ToolsProvider({ children }: { children: ReactNode }) {
   const setComputerTab = useCallback((tab: ComputerTab) => {
     setComputer((current) => (current.tab === tab ? current : { ...current, tab }));
     writeComputerTab(tab);
+    if (tab === "browser") {
+      setBrowser((current) => {
+        if (current.enabled) return current;
+        writeBrowserEnabled(true);
+        return { ...current, enabled: true };
+      });
+    }
   }, []);
 
   const setComputerWidth = useCallback((width: number) => {
@@ -153,6 +171,17 @@ export function ToolsProvider({ children }: { children: ReactNode }) {
       current.width === clamped ? current : { ...current, width: clamped },
     );
     writeComputerWidth(clamped);
+  }, []);
+
+  const requestFileOpen = useCallback((path: string) => {
+    const clean = path.trim();
+    if (!clean) return;
+    setComputer((current) => ({ ...current, open: true, tab: "files" }));
+    writeComputerTab("files");
+    setFileOpenRequest((current) => ({
+      id: (current?.id ?? 0) + 1,
+      path: clean,
+    }));
   }, []);
 
   const selectionFor = useCallback(
@@ -202,6 +231,7 @@ export function ToolsProvider({ children }: { children: ReactNode }) {
     () => ({
       browser,
       computer,
+      fileOpenRequest,
       pluginCatalogue,
       skillCatalogue,
       selectionFor,
@@ -213,12 +243,14 @@ export function ToolsProvider({ children }: { children: ReactNode }) {
       toggleComputerOpen,
       setComputerTab,
       setComputerWidth,
+      requestFileOpen,
       setSelection,
       hydrateSelections,
     }),
     [
       browser,
       computer,
+      fileOpenRequest,
       pluginCatalogue,
       skillCatalogue,
       selectionFor,
@@ -230,6 +262,7 @@ export function ToolsProvider({ children }: { children: ReactNode }) {
       toggleComputerOpen,
       setComputerTab,
       setComputerWidth,
+      requestFileOpen,
       setSelection,
       hydrateSelections,
     ],

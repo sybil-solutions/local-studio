@@ -3,6 +3,7 @@ import { ChevronDown } from "lucide-react";
 import type {
   AssistantBlock,
   ChatMessage,
+  ChatMessageAttachment,
   EventBlock,
   TextBlock,
   ThinkingBlock,
@@ -28,8 +29,8 @@ type RoutedBlock =
   | { kind: "event"; block: EventBlock };
 
 export function groupAssistantBlocks(blocks: AssistantBlock[]): RoutedBlock[] {
-  const routed: RoutedBlock[] = [];
-  let activitySegments: ActivitySegment[] = [];
+  const content: RoutedBlock[] = [];
+  const activitySegments: ActivitySegment[] = [];
   let reasoningGroup: ThinkingBlock[] = [];
   let toolGroup: ToolBlock[] = [];
 
@@ -37,7 +38,7 @@ export function groupAssistantBlocks(blocks: AssistantBlock[]): RoutedBlock[] {
     if (reasoningGroup.length === 0) return;
     activitySegments.push({
       kind: "reasoning",
-      id: `reasoning-${reasoningGroup[0]?.id ?? routed.length}`,
+      id: `reasoning-${reasoningGroup[0]?.id ?? content.length}`,
       blocks: reasoningGroup,
     });
     reasoningGroup = [];
@@ -47,7 +48,7 @@ export function groupAssistantBlocks(blocks: AssistantBlock[]): RoutedBlock[] {
     if (toolGroup.length === 0) return;
     activitySegments.push({
       kind: "tools",
-      id: `tools-${toolGroup[0]?.id ?? routed.length}`,
+      id: `tools-${toolGroup[0]?.id ?? content.length}`,
       blocks: toolGroup,
     });
     toolGroup = [];
@@ -56,13 +57,6 @@ export function groupAssistantBlocks(blocks: AssistantBlock[]): RoutedBlock[] {
   const flushActivityGroup = () => {
     flushReasoningSegment();
     flushToolSegment();
-    if (activitySegments.length === 0) return;
-    routed.push({
-      kind: "activity-group",
-      id: `activity-${activitySegments[0]?.id ?? routed.length}`,
-      segments: activitySegments,
-    });
-    activitySegments = [];
   };
 
   for (const block of blocks) {
@@ -78,14 +72,23 @@ export function groupAssistantBlocks(blocks: AssistantBlock[]): RoutedBlock[] {
     }
     flushActivityGroup();
     if (block.kind === "text") {
-      routed.push({ kind: "content", block });
+      content.push({ kind: "content", block });
     } else {
-      routed.push({ kind: "event", block });
+      content.push({ kind: "event", block });
     }
   }
   flushActivityGroup();
 
-  return routed;
+  return activitySegments.length > 0
+    ? [
+        {
+          kind: "activity-group",
+          id: `activity-${activitySegments[0]?.id ?? 0}`,
+          segments: activitySegments,
+        },
+        ...content,
+      ]
+    : content;
 }
 
 export function SessionPaneBlockRouter({ message }: { message: ChatMessage }) {
@@ -94,6 +97,13 @@ export function SessionPaneBlockRouter({ message }: { message: ChatMessage }) {
       <article className="flex justify-end">
         <div className="max-w-[72%] rounded-xl bg-(--surface) px-3.5 py-2 text-sm leading-6 text-(--fg)">
           <div className="whitespace-pre-wrap break-words">{message.text}</div>
+          {message.attachments?.length ? (
+            <div className="mt-2 grid gap-2">
+              {message.attachments.map((attachment) => (
+                <UserAttachmentPreview key={attachment.id} attachment={attachment} />
+              ))}
+            </div>
+          ) : null}
         </div>
       </article>
     );
@@ -121,6 +131,71 @@ export function SessionPaneBlockRouter({ message }: { message: ChatMessage }) {
   );
 }
 
+function UserAttachmentPreview({ attachment }: { attachment: ChatMessageAttachment }) {
+  const size = formatAttachmentSize(attachment.size);
+  const title = `${attachment.name} · ${attachment.type} · ${size}${attachment.path ? ` · ${attachment.path}` : ""}`;
+  if (attachment.previewKind === "image" && attachment.previewUrl) {
+    return (
+      <figure
+        className="overflow-hidden rounded-md border border-(--border) bg-black/40"
+        title={title}
+      >
+        <img
+          src={attachment.previewUrl}
+          alt={attachment.name}
+          className="max-h-72 w-full object-contain"
+        />
+        <figcaption className="truncate px-2 py-1 font-mono text-[10px] text-(--dim)">
+          {attachment.name} · {size}
+        </figcaption>
+      </figure>
+    );
+  }
+  if (attachment.previewKind === "video" && attachment.previewUrl) {
+    return (
+      <figure
+        className="overflow-hidden rounded-md border border-(--border) bg-black/40"
+        title={title}
+      >
+        <video src={attachment.previewUrl} className="max-h-72 w-full" controls />
+        <figcaption className="truncate px-2 py-1 font-mono text-[10px] text-(--dim)">
+          {attachment.name} · {size}
+        </figcaption>
+      </figure>
+    );
+  }
+  if (attachment.previewKind === "pdf" && attachment.previewUrl) {
+    return (
+      <div
+        className="overflow-hidden rounded-md border border-(--border) bg-black/40"
+        title={title}
+      >
+        <object data={attachment.previewUrl} type="application/pdf" className="h-72 w-full">
+          <span className="block p-3 text-xs text-(--dim)">PDF preview unavailable.</span>
+        </object>
+        <div className="truncate px-2 py-1 font-mono text-[10px] text-(--dim)">
+          {attachment.name} · {size}
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div
+      className="flex min-w-0 items-center gap-2 rounded-md border border-(--border) bg-black/30 px-2 py-1 font-mono text-[10px] text-(--dim)"
+      title={title}
+    >
+      <span className="truncate">{attachment.name}</span>
+      <span className="shrink-0">{size}</span>
+    </div>
+  );
+}
+
+function formatAttachmentSize(bytes: number) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
 function AssistantActivityGroup({ segments }: { segments: ActivitySegment[] }) {
   const hasActiveTool = segments.some(
     (segment) =>
@@ -131,12 +206,6 @@ function AssistantActivityGroup({ segments }: { segments: ActivitySegment[] }) {
     segments.some((segment) => segment.kind === "tools");
   const [expanded, setExpanded] = useState(isMixed || hasActiveTool);
   const open = hasActiveTool || expanded;
-
-  if (segments.length === 1) {
-    const [segment] = segments;
-    if (segment.kind === "reasoning") return <ReasoningGroup blocks={segment.blocks} />;
-    return <ToolCallGroup blocks={segment.blocks} />;
-  }
 
   return (
     <details className="group min-w-0" open={open}>
@@ -159,31 +228,38 @@ function AssistantActivityGroup({ segments }: { segments: ActivitySegment[] }) {
         ) : null}
       </summary>
       {open ? (
-        <div className="mt-1.5 flex min-w-0 flex-col gap-2">
-          {segments.map((segment) =>
-            segment.kind === "reasoning" ? (
-              <ReasoningGroup key={segment.id} blocks={segment.blocks} />
-            ) : (
-              <ToolCallGroup key={segment.id} blocks={segment.blocks} />
-            ),
-          )}
+        <div className="ml-[0.8rem] mt-1.5 flex min-w-0 flex-col gap-2 border-l border-(--border)/70 pl-3">
+          {segments.map((segment) => (
+            <ActivitySegmentView key={segment.id} segment={segment} />
+          ))}
         </div>
       ) : null}
     </details>
   );
 }
 
-function ReasoningGroup({ blocks }: { blocks: ThinkingBlock[] }) {
+function ActivitySegmentView({ segment }: { segment: ActivitySegment }) {
+  if (segment.kind === "reasoning") return <ReasoningLeaf blocks={segment.blocks} />;
+  return (
+    <div className="grid gap-1.5">
+      {segment.blocks.map((block) => (
+        <ToolBlockView key={block.id} block={block} />
+      ))}
+    </div>
+  );
+}
+
+function ReasoningLeaf({ blocks }: { blocks: ThinkingBlock[] }) {
   const text = blocks.map((block) => block.text).join("\n\n");
   return (
-    <details className="text-xs" open>
-      <summary className="cursor-pointer list-none text-[11px] italic text-(--dim) hover:text-(--fg) [&::-webkit-details-marker]:hidden">
+    <div className="text-xs">
+      <div className="text-[11px] italic text-(--dim)">
         Reasoning{blocks.length > 1 ? ` · ${blocks.length}` : ""}
-      </summary>
-      <pre className="mt-2 max-w-full whitespace-pre-wrap break-words border-l-2 border-(--border) pl-3 font-mono text-[11px] leading-5 text-(--dim) [overflow-wrap:anywhere]">
+      </div>
+      <pre className="mt-1 max-w-full whitespace-pre-wrap break-words font-mono text-[11px] leading-5 text-(--dim) [overflow-wrap:anywhere]">
         {text}
       </pre>
-    </details>
+    </div>
   );
 }
 
@@ -194,53 +270,6 @@ function EventBlockView({ block }: { block: EventBlock }) {
       <span>{block.text}</span>
       <span className="h-px flex-1 bg-(--border)" />
     </div>
-  );
-}
-
-function ToolCallGroup({ blocks }: { blocks: ToolBlock[] }) {
-  const hasActiveTool = blocks.some((block) => block.status === "running");
-  const hasError = blocks.some((block) => block.status === "error");
-  const [expanded, setExpanded] = useState(hasActiveTool);
-  const open = hasActiveTool || expanded;
-  const preview = toolGroupPreview(blocks);
-
-  return (
-    <details className="group min-w-0" open={open}>
-      <summary
-        className="flex cursor-pointer list-none items-center gap-1.5 rounded-md px-1.5 py-1 text-[11px] text-(--fg) hover:bg-(--hover) [&::-webkit-details-marker]:hidden"
-        onClick={(event) => {
-          event.preventDefault();
-          setExpanded((value) => !value);
-        }}
-      >
-        <ChevronDown
-          className={`h-3 w-3 shrink-0 text-(--fg)/70 transition-transform ${open ? "rotate-180" : ""}`}
-        />
-        <span className="shrink-0 font-medium text-(--fg)/90">
-          {blocks.length === 1 ? "1 tool" : `${blocks.length} tools`}
-        </span>
-        <span className="min-w-0 flex-1 truncate font-mono text-[10.5px] text-(--fg)/75">
-          {preview}
-        </span>
-        {hasActiveTool ? (
-          <span className="shrink-0 text-[10px] text-(--accent)">running</span>
-        ) : hasError ? (
-          <span className="shrink-0 text-[10px] text-(--err)">error</span>
-        ) : null}
-      </summary>
-      {open ? (
-        <div className="ml-3 mt-1.5 border-l border-(--border)/70 pl-2">
-          {blocks.map((block, index) => (
-            <div key={block.id} className="relative pb-1.5 last:pb-0">
-              <span className="absolute -left-2 top-4 h-px w-2 bg-(--border)/80" />
-              <div className={index === 0 ? "" : "pt-0.5"}>
-                <ToolBlockView block={block} />
-              </div>
-            </div>
-          ))}
-        </div>
-      ) : null}
-    </details>
   );
 }
 

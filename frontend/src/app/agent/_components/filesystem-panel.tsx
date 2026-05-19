@@ -16,6 +16,7 @@ import {
 import hljs from "highlight.js";
 import { useAppStore } from "@/store";
 import { useFilesystemPanelEffects } from "@/hooks/agent/use-filesystem-panel-effects";
+import { useTools } from "@/lib/agent/tools/context";
 import { AssistantMarkdown } from "./assistant-markdown";
 type FsEntry = {
   name: string;
@@ -244,6 +245,7 @@ export function FilesystemPanel({ cwd }: Props) {
   const [dirLoading, setDirLoading] = useState<Set<string>>(new Set());
   const [fileListOpen, setFileListOpen] = useState(true);
   const searchRef = useRef<HTMLInputElement>(null);
+  const tools = useTools();
   const fontSize = useAppStore((s) => s.fileViewerFontSize);
   const setFontSize = useAppStore((s) => s.setFileViewerFontSize);
   const lastOpenFileByProject = useAppStore((s) => s.lastOpenFileByProject);
@@ -253,6 +255,7 @@ export function FilesystemPanel({ cwd }: Props) {
     cwd,
     relPath,
     openFile,
+    fileOpenRequest: tools.fileOpenRequest,
     lastOpenFileByProject,
     cwdRef,
     setRelPath,
@@ -267,6 +270,7 @@ export function FilesystemPanel({ cwd }: Props) {
     setExpandedDirs,
     setDirChildren,
     setDirLoading,
+    setLastOpenFileByProject,
   });
   const fetchDirChildren = useCallback(
     async (dirRel: string) => {

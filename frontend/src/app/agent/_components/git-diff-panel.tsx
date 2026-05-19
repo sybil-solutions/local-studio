@@ -281,16 +281,54 @@ function InitializeGitPanel({
 }
 
 function EmptyDiffPanel({ loading, status }: { loading: boolean; status: string[] }) {
+  const rows = status.map(parseStatusLine).filter((row): row is GitStatusRow => Boolean(row));
   return (
     <div className="p-4 text-xs text-(--dim)">
       {loading ? "Loading diff…" : "No unstaged tracked-file changes."}
-      {status.length > 0 ? (
-        <pre className="mt-3 overflow-auto rounded border border-(--border) bg-(--surface) p-2 font-mono text-[11px] text-(--fg)">
-          {status.join("\n")}
-        </pre>
+      {rows.length > 0 ? (
+        <div className="mt-3 grid gap-1">
+          {rows.map((row) => (
+            <details
+              key={`${row.status}:${row.path}`}
+              className="rounded-md border border-(--border) bg-(--surface)/45"
+            >
+              <summary className="flex cursor-pointer list-none items-center gap-2 px-2 py-1.5 text-(--fg) hover:bg-(--hover) [&::-webkit-details-marker]:hidden">
+                <span className="rounded border border-(--border) px-1 font-mono text-[10px] text-(--dim)">
+                  {row.label}
+                </span>
+                <span className="min-w-0 flex-1 truncate font-mono text-[11px]">{row.path}</span>
+              </summary>
+              <div className="border-t border-(--border) px-2 py-2 text-[11px] leading-5">
+                <div className="text-(--dim)">No textual diff is available for this file yet.</div>
+                <div className="mt-1 font-mono text-(--fg)">{row.path}</div>
+              </div>
+            </details>
+          ))}
+        </div>
       ) : null}
     </div>
   );
+}
+
+type GitStatusRow = { status: string; label: string; path: string };
+
+function parseStatusLine(line: string): GitStatusRow | null {
+  const trimmed = line.trim();
+  if (!trimmed) return null;
+  const status = trimmed.slice(0, 2).trim() || trimmed.slice(0, 1);
+  const path = trimmed.slice(2).trim();
+  if (!path) return null;
+  const label =
+    status === "??"
+      ? "Untracked"
+      : status === "M"
+        ? "Modified"
+        : status === "A"
+          ? "Added"
+          : status === "D"
+            ? "Deleted"
+            : status;
+  return { status, label, path };
 }
 
 function DiffFileList({ files }: { files: DiffFile[] }) {

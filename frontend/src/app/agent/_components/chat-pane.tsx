@@ -59,6 +59,7 @@ import {
   filesFromDataTransfer,
   formatFileSize,
   isImageAttachment,
+  isRenderableAttachment,
   type ChatAttachment,
 } from "./chat-attachments";
 import { Timeline } from "./timeline/timeline";
@@ -106,6 +107,18 @@ type Props = {
   onClose?: () => void;
   onRegisterHandle?: (handle: ChatPaneHandle | null) => void;
 };
+type FileMentionRow = {
+  id: string;
+  name: string;
+  rel: string;
+  path: string;
+  source: string;
+};
+type MentionRow =
+  | { kind: "plugin"; row: ComposerPluginRef }
+  | { kind: "skill"; row: ComposerSkillRef }
+  | { kind: "file"; row: FileMentionRow };
+
 export function ChatPane({
   paneId,
   runtimeSessionId,
@@ -140,6 +153,8 @@ export function ChatPane({
   const [composerDragActive, setComposerDragActive] = useState(false);
   const [queueExpanded, setQueueExpanded] = useState(false);
   const [mention, setMention] = useState<ComposerMention | null>(null);
+  const [mentionIndex, setMentionIndex] = useState(0);
+  const [fileMentionRows, setFileMentionRows] = useState<FileMentionRow[]>([]);
   const [compacting, setCompacting] = useState(false);
   const tools = useTools();
   const pluginRows = tools.pluginCatalogue;
@@ -161,12 +176,61 @@ export function ChatPane({
   useEffect(() => {
     setStickToBottom(true);
   }, [activeTab?.id]);
-  const mentionRows = useMemo(() => {
+  const mentionRows = useMemo<MentionRow[]>(() => {
     if (!mention) return [];
-    return mention.kind === "plugin"
-      ? byQuery(pluginRows, mention.query, 8)
-      : byQuery(skillRows, mention.query, 8);
-  }, [mention, pluginRows, skillRows]);
+    if (mention.kind === "skill") {
+      return byQuery(skillRows, mention.query, 8).map((row) => ({ kind: "skill", row }));
+    }
+    const plugins = byQuery(pluginRows, mention.query, 5).map((row) => ({
+      kind: "plugin" as const,
+      row,
+    }));
+    const q = mention.query.trim().toLowerCase();
+    const files = fileMentionRows
+      .filter(
+        (row) => !q || row.rel.toLowerCase().includes(q) || row.name.toLowerCase().includes(q),
+      )
+      .slice(0, 5)
+      .map((row) => ({ kind: "file" as const, row }));
+    return [...plugins, ...files].slice(0, 8);
+  }, [fileMentionRows, mention, pluginRows, skillRows]);
+  useEffect(() => {
+    setMentionIndex(0);
+  }, [mention?.kind, mention?.query]);
+  useEffect(() => {
+    if (!mention || mention.kind !== "plugin" || !cwd) {
+      setFileMentionRows([]);
+      return;
+    }
+    let cancelled = false;
+    void fetch(`/api/agent/fs?cwd=${encodeURIComponent(cwd)}`, { cache: "no-store" })
+      .then((response) => (response.ok ? response.json() : null))
+      .then(
+        (
+          payload: {
+            entries?: Array<{ name: string; rel: string; path: string; kind: string }>;
+          } | null,
+        ) => {
+          if (cancelled) return;
+          const rows = (payload?.entries ?? [])
+            .filter((entry) => entry.kind === "file")
+            .map((entry) => ({
+              id: `file:${entry.rel}`,
+              name: entry.name,
+              rel: entry.rel,
+              path: entry.path,
+              source: "project",
+            }));
+          setFileMentionRows(rows);
+        },
+      )
+      .catch(() => {
+        if (!cancelled) setFileMentionRows([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [cwd, mention]);
   const updateTab = useCallback(
     (tabId: string, patch: (tab: SessionTab) => SessionTab) => {
       onTabsChange((currentTabs) =>
@@ -176,9 +240,21 @@ export function ChatPane({
     [onTabsChange],
   );
   const selectMentionRow = useCallback(
-    async (row: ComposerPluginRef | ComposerSkillRef) => {
+    async (entry: MentionRow) => {
       if (!activeTab || !mention) return;
       const selectedMention = mention;
+      if (entry.kind === "file") {
+        const before = activeTab.input.slice(0, selectedMention.start);
+        const after = activeTab.input.slice(selectedMention.end);
+        const token = `@${entry.row.rel}`;
+        const prefix = before && !/\s$/.test(before) ? `${before} ` : before;
+        const suffix = after && !/^\s/.test(after) ? ` ${after}` : after;
+        updateTab(activeTab.id, (tab) => ({ ...tab, input: `${prefix}${token}${suffix}` }));
+        setMention(null);
+        requestAnimationFrame(() => textareaRef.current?.focus());
+        return;
+      }
+      const row = entry.row;
       const input = consumeComposerMention(activeTab.input, selectedMention);
       let selectedRow = row;
       if ("path" in row && row.path) {
@@ -219,6 +295,7 @@ export function ChatPane({
       }
       if (
         selectedMention.kind === "plugin" &&
+        entry.kind === "plugin" &&
         row.name.toLowerCase().includes("browser-use") &&
         !browserToolEnabled
       ) {
@@ -276,7 +353,16 @@ export function ChatPane({
         selection.skills,
       );
       const prompt = [contextText, attachedText].filter(Boolean).join("\n\n");
-      return { text, prompt, displayText, userText };
+      const messageAttachments = attachments.map((file) => ({
+        id: file.id,
+        name: file.name,
+        type: file.type,
+        size: file.size,
+        path: file.path,
+        previewKind: file.previewKind,
+        previewUrl: file.previewUrl,
+      }));
+      return { text, prompt, displayText, userText, attachments: messageAttachments };
     },
     [attachments, tools],
   );
@@ -633,39 +719,43 @@ export function ChatPane({
           {mention ? (
             <div className="px-4 pt-2">
               <div className="mb-1 text-[10px] uppercase tracking-[0.12em] text-(--dim)">
-                {mention.kind === "plugin" ? "Plugins" : "Skills"}
+                {mention.kind === "plugin" ? "Plugins & files" : "Skills"}
               </div>{" "}
               {mentionRows.length ? (
                 <div className="grid gap-1">
                   {" "}
-                  {mentionRows.map((row) => (
+                  {mentionRows.map((entry, index) => (
                     <button
-                      key={row.id}
+                      key={entry.row.id}
                       type="button"
                       onMouseDown={(event) => event.preventDefault()}
-                      onClick={() => void selectMentionRow(row)}
-                      className="flex min-w-0 items-start justify-between gap-3 py-1 text-left text-(--dim) hover:text-(--fg)"
+                      onClick={() => void selectMentionRow(entry)}
+                      className={`flex min-w-0 items-start justify-between gap-3 rounded-md px-2 py-1 text-left ${
+                        index === mentionIndex
+                          ? "bg-(--hover) text-(--fg)"
+                          : "text-(--dim) hover:text-(--fg)"
+                      }`}
                     >
                       {" "}
                       <span className="min-w-0">
                         <span className="block truncate text-[12px] text-(--fg)">
                           {" "}
-                          {mention.kind === "plugin" ? "@" : "$"}
-                          {mentionRowTitle(row)}{" "}
-                          {mentionRowVersion(row) ? (
+                          {entry.kind === "skill" ? "$" : "@"}
+                          {mentionRowTitle(entry)}{" "}
+                          {mentionRowVersion(entry) ? (
                             <span className="ml-1 font-mono text-[10px] text-(--dim)">
-                              {mentionRowVersion(row)}
+                              {mentionRowVersion(entry)}
                             </span>
                           ) : null}
                         </span>{" "}
-                        {mentionRowDescription(row) ? (
+                        {mentionRowDescription(entry) ? (
                           <span className="block truncate text-[10.5px] text-(--dim)">
-                            {mentionRowDescription(row)}
+                            {mentionRowDescription(entry)}
                           </span>
                         ) : null}
                       </span>{" "}
                       <span className="truncate font-mono text-[10px] text-(--dim)">
-                        {row.source ?? ""}
+                        {entry.row.source ?? ""}
                       </span>
                     </button>
                   ))}
@@ -673,7 +763,7 @@ export function ChatPane({
               ) : (
                 <div className="px-2 py-1 text-[11px] text-(--dim)">
                   {" "}
-                  No {mention.kind === "plugin" ? "plugins" : "skills"} match{" "}
+                  No {mention.kind === "plugin" ? "plugins or files" : "skills"} match{" "}
                   <span className="font-mono">{mention.query || "…"}</span>.
                 </div>
               )}
@@ -692,6 +782,16 @@ export function ChatPane({
                       src={file.content}
                       alt=""
                       className="h-7 w-7 shrink-0 rounded object-cover"
+                    />
+                  ) : isRenderableAttachment(file) && file.previewKind === "pdf" ? (
+                    <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded border border-(--border) bg-(--bg) font-mono text-[9px] text-(--fg)">
+                      PDF
+                    </span>
+                  ) : isRenderableAttachment(file) && file.previewKind === "video" ? (
+                    <video
+                      src={file.previewUrl}
+                      className="h-7 w-7 shrink-0 rounded object-cover"
+                      muted
                     />
                   ) : (
                     <FileIcon className="h-3 w-3 shrink-0" />
@@ -735,14 +835,23 @@ export function ChatPane({
             }}
             onKeyDown={(event) => {
               if (mention) {
+                if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+                  event.preventDefault();
+                  setMentionIndex((index) => {
+                    if (mentionRows.length === 0) return 0;
+                    const delta = event.key === "ArrowDown" ? 1 : -1;
+                    return (index + delta + mentionRows.length) % mentionRows.length;
+                  });
+                  return;
+                }
                 if (event.key === "Escape") {
                   event.preventDefault();
                   setMention(null);
                   return;
                 }
-                if ((event.key === "Enter" || event.key === "Tab") && mentionRows[0]) {
+                if ((event.key === "Enter" || event.key === "Tab") && mentionRows[mentionIndex]) {
                   event.preventDefault();
-                  selectMentionRow(mentionRows[0]);
+                  selectMentionRow(mentionRows[mentionIndex]);
                   return;
                 }
               }
@@ -950,14 +1059,16 @@ export function ChatPane({
     </section>
   );
 }
-function mentionRowTitle(row: ComposerPluginRef | ComposerSkillRef): string {
-  return ("displayName" in row && row.displayName) || row.name;
+function mentionRowTitle(entry: MentionRow): string {
+  if (entry.kind === "file") return entry.row.rel;
+  return ("displayName" in entry.row && entry.row.displayName) || entry.row.name;
 }
-function mentionRowVersion(row: ComposerPluginRef | ComposerSkillRef): string | undefined {
-  return "version" in row ? row.version : undefined;
+function mentionRowVersion(entry: MentionRow): string | undefined {
+  return entry.kind === "plugin" ? entry.row.version : undefined;
 }
-function mentionRowDescription(row: ComposerPluginRef | ComposerSkillRef): string | undefined {
-  return "shortDescription" in row ? row.shortDescription : undefined;
+function mentionRowDescription(entry: MentionRow): string | undefined {
+  if (entry.kind === "file") return entry.row.path;
+  return entry.kind === "plugin" ? entry.row.shortDescription : undefined;
 }
 function LoadedContextTab({
   prefix,

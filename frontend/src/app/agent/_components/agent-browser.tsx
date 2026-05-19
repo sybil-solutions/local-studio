@@ -53,6 +53,8 @@ type Props = {
   url: string;
   inputValue: string;
   onInputChange: (value: string) => void;
+  onNavigate: (value: string) => void;
+  onLocationChange: (value: string) => void;
   onSubmit: (event: FormEvent) => void;
   onClose: () => void;
   isElectron: boolean;
@@ -64,7 +66,7 @@ export type AgentBrowserHandle = {
 };
 
 export const AgentBrowser = forwardRef<AgentBrowserHandle, Props>(function AgentBrowser(
-  { url, inputValue, onInputChange, onSubmit, onClose, isElectron },
+  { url, inputValue, onInputChange, onNavigate, onLocationChange, onSubmit, onClose, isElectron },
   ref,
 ) {
   const webviewRef = useRef<WebviewElement | null>(null);
@@ -114,6 +116,7 @@ export const AgentBrowser = forwardRef<AgentBrowserHandle, Props>(function Agent
     isElectron,
     webviewRef,
     fetchReadable,
+    onLocationChange,
     setLiveBlank,
   });
 
@@ -212,7 +215,7 @@ export const AgentBrowser = forwardRef<AgentBrowserHandle, Props>(function Agent
             page={readable}
             error={readingError}
             loading={readingLoading}
-            onLinkClick={(target) => onInputChange(target)}
+            onLinkClick={onNavigate}
           />
         ) : isElectron ? (
           <>
@@ -295,7 +298,7 @@ function ReadingView({
     );
   }
   // Render the markdown-ish text with simple link parsing.
-  const segments = renderSegments(page.text, onLinkClick);
+  const segments = renderSegments(page.text, page.url, onLinkClick);
   return (
     <div className="size-full overflow-y-auto bg-(--bg) px-4 py-3 text-sm leading-6 text-(--fg)">
       <div className="mx-auto max-w-3xl">
@@ -309,7 +312,15 @@ function ReadingView({
   );
 }
 
-function renderSegments(text: string, onLinkClick: (url: string) => void) {
+function resolveBrowserHref(href: string, baseUrl: string): string {
+  try {
+    return new URL(href, baseUrl).toString();
+  } catch {
+    return href;
+  }
+}
+
+function renderSegments(text: string, baseUrl: string, onLinkClick: (url: string) => void) {
   const out: React.ReactNode[] = [];
   const linkRe = /\[([^\]]+)\]\(([^)]+)\)/g;
   let lastIndex = 0;
@@ -325,7 +336,7 @@ function renderSegments(text: string, onLinkClick: (url: string) => void) {
       <button
         key={key++}
         type="button"
-        onClick={() => onLinkClick(href)}
+        onClick={() => onLinkClick(resolveBrowserHref(href, baseUrl))}
         className="text-(--accent) underline-offset-2 hover:underline"
         title={href}
       >

@@ -4,12 +4,24 @@ import React, { Children, isValidElement, useCallback, useState, type ReactNode 
 import ReactMarkdown, { type Components } from "react-markdown";
 import rehypeHighlight from "rehype-highlight";
 import remarkGfm from "remark-gfm";
+import { normalizeBrowserInput } from "@/lib/agent/tools/browser-url";
+import { useTools } from "@/lib/agent/tools/context";
+
+const FILE_REF_PATTERN =
+  /^(?:file:\/\/|~\/|\.{1,2}\/|\/|[\w.-]+\/)[^\s`'")]+(?:\.[A-Za-z0-9][A-Za-z0-9_-]*)(?::\d+(?::\d+)?)?$/;
 
 function nodeToPlainText(node: ReactNode): string {
   if (typeof node === "string" || typeof node === "number") return String(node);
   if (Array.isArray(node)) return node.map(nodeToPlainText).join("");
   if (isValidElement<{ children?: ReactNode }>(node)) return nodeToPlainText(node.props.children);
   return "";
+}
+
+function isFileReference(value: string | undefined): value is string {
+  if (!value) return false;
+  const clean = value.trim();
+  if (/^https?:\/\//i.test(clean)) return false;
+  return FILE_REF_PATTERN.test(clean);
 }
 
 class MarkdownErrorBoundary extends React.Component<
@@ -139,13 +151,69 @@ const components: Components = {
 };
 
 export function AssistantMarkdown({ text }: { text: string }) {
+  const tools = useTools();
+  const componentsWithAppLinks: Components = {
+    ...components,
+    code: ({ node: _n, className, children, ...props }) => {
+      const isBlock = typeof className === "string" && /\blanguage-/.test(className);
+      if (isBlock) {
+        return (
+          <code className={`${className ?? ""} font-mono`} {...props}>
+            {children}
+          </code>
+        );
+      }
+      const value = nodeToPlainText(children).trim();
+      if (isFileReference(value)) {
+        return (
+          <button
+            type="button"
+            onClick={() => tools.requestFileOpen(value)}
+            className="rounded bg-(--surface) px-1 py-0.5 font-mono text-[12px] text-(--fg) hover:bg-(--hover)"
+            title="Open file"
+          >
+            {children}
+          </button>
+        );
+      }
+      return (
+        <code
+          className="rounded bg-(--surface) px-1 py-0.5 font-mono text-[12px] text-(--fg)"
+          {...props}
+        >
+          {children}
+        </code>
+      );
+    },
+    a: ({ node: _n, href, ...props }) => (
+      <a
+        {...props}
+        href={href}
+        onClick={(event) => {
+          if (!href) return;
+          if (isFileReference(href)) {
+            event.preventDefault();
+            tools.requestFileOpen(href);
+            return;
+          }
+          const next = normalizeBrowserInput(href, "");
+          if (!next) return;
+          event.preventDefault();
+          tools.setComputerOpen(true);
+          tools.setComputerTab("browser");
+          tools.setBrowserUrl(next, next);
+        }}
+        className="text-(--accent) underline underline-offset-2 hover:opacity-80"
+      />
+    ),
+  };
   return (
     <div className="min-w-0 text-sm leading-6 text-(--fg)">
       <MarkdownErrorBoundary fallback={<pre className="whitespace-pre-wrap text-sm">{text}</pre>}>
         <ReactMarkdown
           remarkPlugins={[remarkGfm]}
           rehypePlugins={[[rehypeHighlight, { detect: true, ignoreMissing: true }]]}
-          components={components}
+          components={componentsWithAppLinks}
         >
           {text}
         </ReactMarkdown>

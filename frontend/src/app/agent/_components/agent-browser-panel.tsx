@@ -25,7 +25,7 @@ type AgentBrowserPanelProps = {
 export function AgentBrowserPanel({
   handles,
   activeProject,
-  focusedTitle,
+  focusedTitle: _focusedTitle,
 }: AgentBrowserPanelProps) {
   const tools = useTools();
   if (!tools.computer.open) return null;
@@ -35,7 +35,10 @@ export function AgentBrowserPanel({
   const isElectron = typeof navigator !== "undefined" && /electron/i.test(navigator.userAgent);
   const submitBrowserUrl = (event: FormEvent) => {
     event.preventDefault();
-    const next = normalizeBrowserInput(tools.browser.input, activeProject?.path ?? "");
+    navigateBrowser(tools.browser.input);
+  };
+  const navigateBrowser = (value: string) => {
+    const next = normalizeBrowserInput(value, activeProject?.path ?? "");
     if (!next) return;
     tools.setBrowserUrl(next, next);
     void runBrowserCommand("navigate", { url: next });
@@ -45,7 +48,7 @@ export function AgentBrowserPanel({
     <aside
       className="relative flex shrink-0 flex-col border-l border-(--border) bg-(--bg)"
       ref={registerComputerAside}
-      style={{ width: `min(${tools.computer.width}px, 48vw)` }}
+      style={{ width: `min(${tools.computer.width}px, 65vw)` }}
     >
       <div
         role="separator"
@@ -54,13 +57,7 @@ export function AgentBrowserPanel({
         onMouseDown={startComputerResize}
         className="absolute -left-1 top-0 z-10 h-full w-2 cursor-col-resize hover:bg-(--accent)/20"
       />
-      <div className="flex h-9 shrink-0 items-center gap-3 px-3 text-xs text-(--dim)">
-        <span
-          className="min-w-0 flex-1 truncate px-1 text-[10px] uppercase tracking-wide"
-          title={`Computer follows focused session: ${focusedTitle}`}
-        >
-          {focusedTitle}
-        </span>
+      <div className="flex h-9 shrink-0 items-center gap-1 overflow-x-auto border-b border-(--border) px-2 text-xs text-(--dim) [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         <ComputerTabButton
           active={tools.computer.tab === "browser"}
           onClick={() => tools.setComputerTab("browser")}
@@ -77,7 +74,7 @@ export function AgentBrowserPanel({
           active={tools.computer.tab === "diff"}
           onClick={() => tools.setComputerTab("diff")}
         >
-          Diff
+          Git
         </ComputerTabButton>
         <ComputerTabButton
           active={tools.computer.tab === "terminal"}
@@ -90,7 +87,7 @@ export function AgentBrowserPanel({
           onPointerDown={(event) => event.stopPropagation()}
           onMouseDown={(event) => event.stopPropagation()}
           onClick={() => tools.setComputerOpen(false)}
-          className="ml-1 inline-flex h-7 w-7 items-center justify-center hover:text-(--fg)"
+          className="ml-auto inline-flex h-7 w-7 shrink-0 items-center justify-center hover:text-(--fg)"
           title="Close"
           aria-label="Close computer"
         >
@@ -104,6 +101,8 @@ export function AgentBrowserPanel({
           url={tools.browser.url}
           inputValue={tools.browser.input}
           onInputChange={tools.setBrowserInput}
+          onNavigate={navigateBrowser}
+          onLocationChange={(next) => tools.setBrowserUrl(next, next)}
           onSubmit={submitBrowserUrl}
           onClose={() => tools.setComputerOpen(false)}
           isElectron={isElectron}
@@ -136,8 +135,8 @@ function ComputerTabButton({
     <button
       type="button"
       onClick={onClick}
-      className={`h-6 shrink-0 font-medium uppercase tracking-wide ${
-        active ? "text-(--fg)" : "hover:text-(--fg)"
+      className={`h-7 shrink-0 rounded-md px-2 font-medium ${
+        active ? "bg-(--hover) text-(--fg)" : "hover:bg-(--hover) hover:text-(--fg)"
       }`}
     >
       {children}
