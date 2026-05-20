@@ -8,6 +8,7 @@ import { EventEmitter } from "node:events";
 export type BrowserCommand = {
   id: string;
   verb: string;
+  sessionId?: string;
   payload: Record<string, unknown>;
 };
 
@@ -27,7 +28,11 @@ class BrowserBridge extends EventEmitter {
   private pending = new Map<string, PendingCommand>();
   private seq = 0;
 
-  enqueue(verb: string, payload: Record<string, unknown>): Promise<BrowserResult> {
+  enqueue(
+    verb: string,
+    payload: Record<string, unknown>,
+    sessionId?: string,
+  ): Promise<BrowserResult> {
     if (this.listenerCount("command") === 0) {
       return Promise.reject(
         new Error(`Browser command '${verb}' could not run because no browser panel is connected.`),
@@ -35,7 +40,7 @@ class BrowserBridge extends EventEmitter {
     }
 
     const id = `browser-${Date.now().toString(36)}-${(++this.seq).toString(36)}`;
-    const command: BrowserCommand = { id, verb, payload };
+    const command: BrowserCommand = { id, verb, ...(sessionId ? { sessionId } : {}), payload };
     return new Promise<BrowserResult>((resolve, reject) => {
       this.pending.set(id, { resolve, reject });
       this.emit("command", command);

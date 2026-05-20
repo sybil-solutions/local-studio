@@ -4,13 +4,13 @@ import {
   createContext,
   useCallback,
   useContext,
-  useEffect,
   useMemo,
   useRef,
   useState,
   type ReactNode,
 } from "react";
 import type { ComposerPluginRef, ComposerSkillRef } from "@/lib/agent/composer-context";
+import { useToolsCatalogueEffects } from "@/hooks/agent/use-tools-catalogue-effects";
 import type { SessionId } from "@/lib/agent/sessions/types";
 import {
   EMPTY_SELECTION,
@@ -26,8 +26,12 @@ import {
   loadBrowserState,
   loadComputerState,
   migrateToolStorage,
+  uniqueComputerTabs,
   writeBrowserEnabled,
+  writeComputerCanvasEnabled,
+  writeComputerCanvasText,
   writeComputerTab,
+  writeComputerTabs,
   writeComputerWidth,
 } from "./persistence";
 
@@ -48,7 +52,11 @@ export type ToolsContextValue = {
   setComputerOpen: (open: boolean) => void;
   toggleComputerOpen: () => void;
   setComputerTab: (tab: ComputerTab) => void;
+  closeComputerTab: (tab: ComputerTab) => void;
   setComputerWidth: (width: number) => void;
+  setCanvasEnabled: (enabled: boolean) => void;
+  toggleCanvas: () => void;
+  setCanvasText: (text: string) => void;
   requestFileOpen: (path: string) => void;
   /**
    * Replace the entire selection for a session. Pass `null` to clear it (used
@@ -71,7 +79,14 @@ function buildInitialBrowser(): BrowserState {
 
 function buildInitialComputer(): ComputerState {
   if (typeof window === "undefined") {
-    return { open: false, tab: "browser", width: 0 };
+    return {
+      open: false,
+      tab: "status",
+      tabs: ["status"],
+      width: 0,
+      canvasEnabled: false,
+      canvasText: "",
+    };
   }
   return loadComputerState();
 }
@@ -87,28 +102,14 @@ export function ToolsProvider({ children }: { children: ReactNode }) {
   const [selectionVersion, setSelectionVersion] = useState(0);
 
   // Discover the workspace-global plugin / skill catalogue once on mount.
-  // Previously each ChatPane fetched these independently; now multiple panes
-  // share a single fetch.
-  useEffect(() => {
-    let cancelled = false;
-    void Promise.all([
-      fetch("/api/agent/plugins?includeDisabled=1", { cache: "no-store" })
-        .then((res) => res.json() as Promise<{ plugins?: ComposerPluginRef[] }>)
-        .then((payload) => payload.plugins ?? [])
-        .catch(() => [] as ComposerPluginRef[]),
-      fetch("/api/agent/skills", { cache: "no-store" })
-        .then((res) => res.json() as Promise<{ skills?: ComposerSkillRef[] }>)
-        .then((payload) => payload.skills ?? [])
-        .catch(() => [] as ComposerSkillRef[]),
-    ]).then(([plugins, skills]) => {
-      if (cancelled) return;
+  // The actual side effect lives in `use-tools-catalogue-effects.ts` — the
+  // only sanctioned home for `useEffect` in this codebase.
+  useToolsCatalogueEffects({
+    onLoaded: ({ plugins, skills }) => {
       setPluginCatalogue(plugins);
       setSkillCatalogue(skills);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+    },
+  });
 
   const setBrowserEnabled = useCallback((enabled: boolean) => {
     setBrowser((current) => (current.enabled === enabled ? current : { ...current, enabled }));
@@ -138,22 +139,35 @@ export function ToolsProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const setComputerOpen = useCallback((open: boolean) => {
-    setComputer((current) => (current.open === open ? current : { ...current, open }));
-    if (open) {
-      setBrowser((current) => {
-        if (current.enabled) return current;
-        writeBrowserEnabled(true);
-        return { ...current, enabled: true };
-      });
-    }
+    setComputer((current) =>
+      current.open === open
+        ? current
+        : {
+            ...current,
+            open,
+            tab: open ? current.tab || "status" : current.tab,
+            tabs: uniqueComputerTabs(current.tabs.length ? current.tabs : ["status"]),
+          },
+    );
   }, []);
 
   const toggleComputerOpen = useCallback(() => {
-    setComputer((current) => ({ ...current, open: !current.open }));
+    setComputer((current) => ({
+      ...current,
+      open: !current.open,
+      tab: !current.open ? current.tab || "status" : current.tab,
+      tabs: uniqueComputerTabs(current.tabs.length ? current.tabs : ["status"]),
+    }));
   }, []);
 
   const setComputerTab = useCallback((tab: ComputerTab) => {
-    setComputer((current) => (current.tab === tab ? current : { ...current, tab }));
+    setComputer((current) => {
+      const tabs = uniqueComputerTabs([...current.tabs, tab]);
+      writeComputerTabs(tabs);
+      return current.tab === tab && current.tabs === tabs
+        ? current
+        : { ...current, open: true, tab, tabs };
+    });
     writeComputerTab(tab);
     if (tab === "browser") {
       setBrowser((current) => {
@@ -164,6 +178,17 @@ export function ToolsProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const closeComputerTab = useCallback((tab: ComputerTab) => {
+    if (tab === "status") return;
+    setComputer((current) => {
+      const tabs = uniqueComputerTabs(current.tabs.filter((item) => item !== tab));
+      const activeTab = current.tab === tab ? (tabs[tabs.length - 1] ?? "status") : current.tab;
+      writeComputerTabs(tabs);
+      writeComputerTab(activeTab);
+      return { ...current, tab: activeTab, tabs };
+    });
+  }, []);
+
   const setComputerWidth = useCallback((width: number) => {
     if (!Number.isFinite(width)) return;
     const clamped = clampComputerWidth(width);
@@ -171,6 +196,55 @@ export function ToolsProvider({ children }: { children: ReactNode }) {
       current.width === clamped ? current : { ...current, width: clamped },
     );
     writeComputerWidth(clamped);
+  }, []);
+
+  const setCanvasEnabled = useCallback((enabled: boolean) => {
+    setComputer((current) =>
+      current.canvasEnabled === enabled ? current : { ...current, canvasEnabled: enabled },
+    );
+    writeComputerCanvasEnabled(enabled);
+    // Best-effort server sync; the use-canvas-effects hook owns full hydration
+    // and reconciliation. Failures here are harmless because the next mount
+    // will re-read the server-side document.
+    void fetch("/api/agent/canvas", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled }),
+    }).catch(() => undefined);
+  }, []);
+
+  const toggleCanvas = useCallback(() => {
+    setComputer((current) => {
+      const next = !current.canvasEnabled;
+      const tabs = next ? uniqueComputerTabs([...current.tabs, "canvas"]) : current.tabs;
+      writeComputerCanvasEnabled(next);
+      if (next) writeComputerTabs(tabs);
+      void fetch("/api/agent/canvas", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled: next }),
+      }).catch(() => undefined);
+      return {
+        ...current,
+        canvasEnabled: next,
+        tabs,
+        // When enabling the canvas, focus it; when disabling, fall back to status.
+        tab: next ? "canvas" : current.tab === "canvas" ? "status" : current.tab,
+        open: next ? true : current.open,
+      };
+    });
+  }, []);
+
+  const setCanvasText = useCallback((text: string) => {
+    setComputer((current) =>
+      current.canvasText === text ? current : { ...current, canvasText: text },
+    );
+    writeComputerCanvasText(text);
+    void fetch("/api/agent/canvas", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled: true, text }),
+    }).catch(() => undefined);
   }, []);
 
   const requestFileOpen = useCallback((path: string) => {
@@ -242,7 +316,11 @@ export function ToolsProvider({ children }: { children: ReactNode }) {
       setComputerOpen,
       toggleComputerOpen,
       setComputerTab,
+      closeComputerTab,
       setComputerWidth,
+      setCanvasEnabled,
+      toggleCanvas,
+      setCanvasText,
       requestFileOpen,
       setSelection,
       hydrateSelections,
@@ -261,7 +339,11 @@ export function ToolsProvider({ children }: { children: ReactNode }) {
       setComputerOpen,
       toggleComputerOpen,
       setComputerTab,
+      closeComputerTab,
       setComputerWidth,
+      setCanvasEnabled,
+      toggleCanvas,
+      setCanvasText,
       requestFileOpen,
       setSelection,
       hydrateSelections,

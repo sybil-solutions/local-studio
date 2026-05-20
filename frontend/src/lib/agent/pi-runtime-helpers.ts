@@ -24,6 +24,8 @@ export type RuntimeSkillRef = {
 
 export type RuntimeStartOptions = {
   browserToolEnabled?: boolean;
+  browserSessionId?: string;
+  canvasEnabled?: boolean;
   plugins?: RuntimePluginRef[];
   skills?: RuntimeSkillRef[];
 };
@@ -134,6 +136,10 @@ export function resolveBrowserExtensionPath(): string | null {
   );
 }
 
+export function resolveCanvasExtensionPath(): string | null {
+  return resolveBundledPiExtensionPath("canvas.ts", process.env.VLLM_STUDIO_CANVAS_EXTENSION_PATH);
+}
+
 export function resolveTimeoutExtensionPath(): string | null {
   return resolveBundledPiExtensionPath(
     "vllm-studio-timeouts.ts",
@@ -171,6 +177,8 @@ export function pluginFingerprint(options: RuntimeStartOptions): string {
     .sort();
   return JSON.stringify({
     browser: options.browserToolEnabled === true,
+    browserSessionId: options.browserSessionId ?? "",
+    canvas: options.canvasEnabled === true,
     plugins: names,
     skills,
   });
@@ -313,6 +321,10 @@ function extensionArgs(
     const browserExtensionPath = resolveBrowserExtensionPath();
     if (browserExtensionPath) args.push("--extension", browserExtensionPath);
   }
+  if (options.canvasEnabled === true) {
+    const canvasExtensionPath = resolveCanvasExtensionPath();
+    if (canvasExtensionPath) args.push("--extension", canvasExtensionPath);
+  }
   return args;
 }
 
@@ -342,6 +354,7 @@ export function buildPiLaunchPlan(input: RuntimeLaunchPlanInput): RuntimeLaunchP
       PATH: input.pathEnv,
       PI_CODING_AGENT_DIR: input.agentDir,
       PI_SKIP_VERSION_CHECK: "1",
+      VLLM_STUDIO_BROWSER_SESSION_ID: input.options.browserSessionId ?? "",
       VLLM_STUDIO_FRONTEND_BASE: input.processEnv.VLLM_STUDIO_FRONTEND_BASE ?? deriveFrontendBase(),
       VLLM_STUDIO_MCP_PLUGIN_CONFIGS: JSON.stringify(mcpConfigs),
     },

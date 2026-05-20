@@ -40,6 +40,8 @@
   },
   "dependencies": {
     "@mariozechner/pi-coding-agent": "^0.70.6",
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/xterm": "^6.0.0",
     "electron-updater": "^6.6.2",
     "highlight.js": "11.11.1",
     "lucide-react": "^0.561.0",
