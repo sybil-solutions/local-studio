@@ -50,11 +50,11 @@ const tabs = [
   { href: "/server", label: "Server", icon: Server },
 ];
 
-const SIDEBAR_MIN_WIDTH = 210;
-const SIDEBAR_MAX_WIDTH = 420;
+const SIDEBAR_MIN_WIDTH = 184;
+const SIDEBAR_MAX_WIDTH = 380;
 
 function clampSidebarWidth(width: number): number {
-  if (!Number.isFinite(width)) return 250;
+  if (!Number.isFinite(width)) return 216;
   return Math.min(SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, Math.round(width)));
 }
 
@@ -208,7 +208,7 @@ export function LeftSidebar({ children }: { children: ReactNode }) {
           {isExpanded ? (
             <>
               {/* Header with window controls + nav arrows */}
-              <div className="sticky top-0 z-50 flex h-12 shrink-0 items-center justify-between px-4 bg-(--rail)">
+              <div className="sticky top-0 z-50 flex h-12 shrink-0 items-center justify-between px-2 bg-(--rail)">
                 <button
                   onClick={() => setDesktopSidebarPinnedOpen(false)}
                   className="flex h-7 w-7 items-center justify-center rounded-md text-(--dim) transition-colors hover:bg-(--hover) hover:text-(--fg)"
@@ -238,11 +238,11 @@ export function LeftSidebar({ children }: { children: ReactNode }) {
               </div>
 
               {/* Primary nav */}
-              <nav className="flex-1 min-h-0 flex flex-col px-2 py-1 overflow-y-auto overflow-x-hidden">
+              <nav className="flex-1 min-h-0 flex flex-col px-1.5 py-1 overflow-y-auto overflow-x-hidden">
                 <button
                   type="button"
                   onClick={() => setSearchOpen(true)}
-                  className="mb-1 flex h-7 items-center gap-2 rounded-md px-2.5 text-(--dim) transition-colors hover:bg-(--hover) hover:text-(--fg)"
+                  className="mb-1 flex h-7 items-center gap-2 rounded-md px-2 text-(--dim) transition-colors hover:bg-(--hover) hover:text-(--fg)"
                   title="Search sessions (⌘K)"
                 >
                   <SearchIcon className="h-3.5 w-3.5 shrink-0" />
@@ -250,9 +250,7 @@ export function LeftSidebar({ children }: { children: ReactNode }) {
                   <kbd className="px-1 py-0.5 text-[10px] font-mono text-(--dim)">⌘K</kbd>
                 </button>
 
-                <div className="mb-1 mt-3 px-2.5 text-[11px] font-medium text-(--dim)">
-                  Workspace
-                </div>
+                <div className="mb-1 mt-3 px-2 text-[11px] font-medium text-(--dim)">Workspace</div>
                 {tabs.map((tab) => (
                   <NavItemDesktop
                     key={tab.href}
@@ -266,11 +264,11 @@ export function LeftSidebar({ children }: { children: ReactNode }) {
                 <ProjectsNavSection expanded={isExpanded} />
               </nav>
 
-              <div className="shrink-0 px-2 py-3">
+              <div className="shrink-0 px-1.5 py-3">
                 <Link
                   href="/settings"
                   title="Settings"
-                  className={`flex h-7 shrink-0 items-center gap-2 rounded-md px-2.5 text-(--fg) transition-colors ${
+                  className={`flex h-7 shrink-0 items-center gap-2 rounded-md px-2 text-(--fg) transition-colors ${
                     isRouteActive(pathname, "/settings") ? "bg-(--hover)" : "hover:bg-(--hover)"
                   }`}
                 >
@@ -428,7 +426,7 @@ function NavItemDesktop({
     <Link
       href={href}
       title={label}
-      className={`h-7 flex items-center gap-2 rounded-md px-2.5 transition-colors shrink-0 ${
+      className={`h-7 flex items-center gap-2 rounded-md px-2 transition-colors shrink-0 ${
         active ? "bg-(--hover) text-(--fg)" : "text-(--dim) hover:bg-(--hover) hover:text-(--fg)"
       }`}
     >

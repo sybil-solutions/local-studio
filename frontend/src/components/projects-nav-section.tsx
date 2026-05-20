@@ -48,6 +48,7 @@ import { useClickOutside } from "@/hooks/use-click-outside";
 import {
   loadSessionPrefs,
   patchSessionPref,
+  hydrateSessionPrefsFromDesktop,
   type SessionPref,
   type SessionPrefs,
 } from "@/lib/agent/session/prefs";
@@ -130,6 +131,7 @@ function sessionDedupeKey(session: SessionSummary): string {
 function useSessionPrefs() {
   const [prefs, setPrefs] = useState<SessionPrefs>(() => loadSessionPrefs());
   useEffect(() => {
+    void hydrateSessionPrefsFromDesktop();
     const refresh = () =>
       setPrefs((current) => {
         const next = loadSessionPrefs();
@@ -381,14 +383,20 @@ function ProjectDirectoryPickerModal({
         ),
     [activeSessions, prefs, projectsById],
   );
+  const pinnedActiveSessionIds = useMemo(
+    () =>
+      new Set(
+        pinnedActiveSessions
+          .map(({ session }) => session.piSessionId)
+          .filter((id): id is string => Boolean(id)),
+      ),
+    [pinnedActiveSessions],
+  );
   const pinnedRenderedIds = useMemo(() => {
-    const ids = new Set<string>();
-    for (const { session } of pinnedActiveSessions) {
-      if (session.piSessionId) ids.add(session.piSessionId);
-    }
+    const ids = new Set(pinnedActiveSessionIds);
     for (const session of pinnedSessions) ids.add(session.id);
     return ids;
-  }, [pinnedActiveSessions, pinnedSessions]);
+  }, [pinnedActiveSessionIds, pinnedSessions]);
   const removeProjectAndCloseRow = useCallback(
     async (id: string) => {
       await removeProject(id);
@@ -464,7 +472,6 @@ function ProjectDirectoryPickerModal({
     const pinnedIdsList = pinnedPrefIdsKey.split("\u0000").filter(Boolean);
     const pinnedIds = new Set(pinnedIdsList);
     const hiddenIds = new Set(hiddenPrefIdsKey.split("\u0000").filter(Boolean));
-    const activeIds = new Set(activePiSessionIdsKey.split("\u0000").filter(Boolean));
     const idsParam = encodeURIComponent(pinnedIdsList.join(","));
     (async () => {
       const rows = await Promise.all(
@@ -487,7 +494,6 @@ function ProjectDirectoryPickerModal({
         setPinnedSessions(
           rows
             .flat()
-            .filter((session) => !activeIds.has(session.id))
             .sort(
               (a, b) =>
                 new Date(b.startedAt || b.updatedAt).getTime() -
@@ -514,7 +520,7 @@ function ProjectDirectoryPickerModal({
       />
       {pinnedSessions.length > 0 || pinnedActiveSessions.length > 0 ? (
         <div className="flex flex-col pb-1">
-          <div className="mt-4 flex h-6 items-center px-3 text-[11px] font-medium text-(--dim)">
+          <div className="mt-4 flex h-6 items-center px-2 text-[11px] font-medium text-(--dim)">
             Pinned
           </div>{" "}
           {pinnedActiveSessions.map(({ session, project }) => (
@@ -525,14 +531,16 @@ function ProjectDirectoryPickerModal({
               pref={activeSessionPref(session, prefs)}
             />
           ))}
-          {pinnedSessions.map((session) => (
-            <SessionRow
-              key={`${session.project.id}:${session.id}`}
-              project={session.project}
-              session={session}
-              pref={prefs[session.id] ?? {}}
-            />
-          ))}{" "}
+          {pinnedSessions
+            .filter((session) => !pinnedActiveSessionIds.has(session.id))
+            .map((session) => (
+              <SessionRow
+                key={`${session.project.id}:${session.id}`}
+                project={session.project}
+                session={session}
+                pref={prefs[session.id] ?? {}}
+              />
+            ))}{" "}
         </div>
       ) : null}{" "}
       {chatProject ? (
@@ -592,7 +600,7 @@ function ProjectDirectoryPickerModal({
           <button
             type="button"
             onClick={handleAddProject}
-            className="px-3 py-1 text-left text-[12px] text-(--dim) hover:text-(--fg)"
+            className="px-2 py-1 text-left text-[12px] text-(--dim) hover:text-(--fg)"
           >
             {" "}
             No projects yet — pick a folder to get started.
@@ -617,7 +625,7 @@ function ProjectDirectoryPickerModal({
           ))
         )
       ) : null}
-      {addError ? <div className="px-3 py-1 text-[11px] text-red-400">{addError}</div> : null}{" "}
+      {addError ? <div className="px-2 py-1 text-[11px] text-red-400">{addError}</div> : null}{" "}
     </div>
   );
 }
@@ -633,7 +641,7 @@ function SidebarSectionHeader({
   action?: ReactNode;
 }) {
   return (
-    <div className="mt-4 flex h-6 items-center justify-between px-3 text-[11px] font-medium text-(--dim)">
+    <div className="mt-4 flex h-6 items-center justify-between px-2 text-[11px] font-medium text-(--dim)">
       <button
         type="button"
         onClick={onToggle}
@@ -679,7 +687,7 @@ function ProjectRow({
   };
   return (
     <div className="flex flex-col">
-      <div className="group relative flex h-7 items-center rounded-md pl-3 pr-2 text-(--dim) transition-colors hover:bg-(--hover) hover:text-(--fg)">
+      <div className="group relative flex h-7 items-center rounded-md pl-2 pr-1.5 text-(--dim) transition-colors hover:bg-(--hover) hover:text-(--fg)">
         {" "}
         <button
           type="button"
