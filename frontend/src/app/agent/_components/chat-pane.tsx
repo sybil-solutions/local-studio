@@ -353,15 +353,25 @@ export function ChatPane({
         selection.skills,
       );
       const prompt = [contextText, attachedText].filter(Boolean).join("\n\n");
-      const messageAttachments = attachments.map((file) => ({
-        id: file.id,
-        name: file.name,
-        type: file.type,
-        size: file.size,
-        path: file.path,
-        previewKind: file.previewKind,
-        previewUrl: file.previewUrl,
-      }));
+      const messageAttachments = attachments.map((file) => {
+        // Prefer the durable inline data URL over the ephemeral blob: URL when
+        // available — blob URLs are tied to the composer document and become
+        // stale once a session is persisted and replayed, which is why image
+        // attachments rendered fine in the composer but not in chat history.
+        const durablePreviewUrl =
+          file.mode === "data-url" && file.content.startsWith("data:")
+            ? file.content
+            : file.previewUrl;
+        return {
+          id: file.id,
+          name: file.name,
+          type: file.type,
+          size: file.size,
+          path: file.path,
+          previewKind: file.previewKind,
+          previewUrl: durablePreviewUrl,
+        };
+      });
       return { text, prompt, displayText, userText, attachments: messageAttachments };
     },
     [attachments, tools],
