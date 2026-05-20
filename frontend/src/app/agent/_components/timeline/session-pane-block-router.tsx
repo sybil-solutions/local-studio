@@ -76,6 +76,10 @@ export function groupAssistantBlocks(blocks: AssistantBlock[]): RoutedBlock[] {
       reasoningGroup.push(block);
       continue;
     }
+    if (block.kind === "text" && block.text.trim() === "") {
+      // Empty text blocks shouldn't split an activity group — keep reasoning+tools together.
+      continue;
+    }
     flushActivityGroup();
     if (block.kind === "text") {
       routed.push({ kind: "content", block });

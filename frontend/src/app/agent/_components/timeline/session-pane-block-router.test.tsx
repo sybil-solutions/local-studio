@@ -32,6 +32,29 @@ describe("groupAssistantBlocks", () => {
     ]);
   });
 
+  it("ignores empty text blocks so they don't split a single activity group", () => {
+    const blocks: AssistantBlock[] = [
+      { kind: "thinking", id: "think-1", text: "plan" },
+      { kind: "tool", id: "tool-1", name: "ls", status: "done", text: "" },
+      { kind: "text", id: "empty", text: "" },
+      { kind: "thinking", id: "think-2", text: "more" },
+      { kind: "tool", id: "tool-2", name: "bash", status: "done", text: "" },
+    ];
+
+    expect(groupAssistantBlocks(blocks)).toEqual([
+      {
+        kind: "activity-group",
+        id: "activity-reasoning-think-1",
+        segments: [
+          { kind: "reasoning", id: "reasoning-think-1", blocks: [blocks[0]] },
+          { kind: "tools", id: "tools-tool-1", blocks: [blocks[1]] },
+          { kind: "reasoning", id: "reasoning-think-2", blocks: [blocks[3]] },
+          { kind: "tools", id: "tools-tool-2", blocks: [blocks[4]] },
+        ],
+      },
+    ]);
+  });
+
   it("keeps interleaved reasoning and tools in one ordered activity group", () => {
     const blocks: AssistantBlock[] = [
       { kind: "thinking", id: "think-1", text: "inspect" },
