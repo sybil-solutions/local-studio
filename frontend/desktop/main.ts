@@ -1,4 +1,6 @@
 import { app, dialog, ipcMain, shell, type BrowserWindow } from "electron";
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import path from "node:path";
 import type { DesktopAppState } from "./types";
 import { log } from "./helpers/logger";
 import { isHttpUrl } from "./helpers/url";
@@ -79,6 +81,17 @@ function registerIpcHandlers(): void {
     removeProject(id);
     return { ok: true } as const;
   });
+
+  ipcMain.handle("desktop:load-session-prefs", async () => {
+    return readSessionPrefsFile();
+  });
+
+  ipcMain.handle("desktop:save-session-prefs", async (_, prefs: unknown) => {
+    if (!prefs || typeof prefs !== "object" || Array.isArray(prefs)) {
+      throw new Error("prefs must be a plain object");
+    }
+    writeSessionPrefsFile(prefs as Record<string, unknown>);
+  });
 }
 
 async function shutdown(): Promise<void> {
@@ -140,3 +153,30 @@ async function run(): Promise<void> {
 }
 
 void run();
+
+function sessionPrefsFilePath(): string {
+  return path.join(app.getPath("userData"), "session-prefs.json");
+}
+
+function readSessionPrefsFile(): Record<string, unknown> {
+  const filePath = sessionPrefsFilePath();
+  try {
+    if (!existsSync(filePath)) return {};
+    const raw = readFileSync(filePath, "utf8");
+    const parsed = JSON.parse(raw) as unknown;
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeSessionPrefsFile(prefs: Record<string, unknown>): void {
+  const filePath = sessionPrefsFilePath();
+  const directory = path.dirname(filePath);
+  mkdirSync(directory, { recursive: true });
+  const tempPath = `${filePath}.${process.pid}.${Date.now()}.tmp`;
+  writeFileSync(tempPath, `${JSON.stringify(prefs)}\n`, "utf8");
+  renameSync(tempPath, filePath);
+}

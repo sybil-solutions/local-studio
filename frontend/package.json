@@ -34,7 +34,7 @@
     "typecheck:desktop": "tsc -p desktop/tsconfig.json",
     "check:cycles": "madge --extensions ts,tsx --circular src",
     "check:static": "npm run lint && npm run typecheck && npm run typecheck:desktop && npm run check:cycles",
-    "check:quality": "npm run check:static && npm test && npm run check:cleanup && npm run build",
+    "check:quality": "node scripts/validate-package-json.mjs && npm run check:static && npm test && npm run check:cleanup && npm run build",
     "check:quality:full": "npm run check:quality && npm run test:coverage && npm run test:integration",
     "precommit": "lint-staged --config .lintstagedrc.json && npm run typecheck"
   },

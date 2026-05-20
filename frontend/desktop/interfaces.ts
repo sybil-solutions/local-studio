@@ -10,6 +10,11 @@ export interface ProjectEntry {
   branch: string | null;
 }
 
+export type SessionPrefsPayload = Record<
+  string,
+  { title?: string; pinned?: boolean; hidden?: boolean }
+>;
+
 export interface DesktopBridge {
   getRuntime(): Promise<{
     platform: NodeJS.Platform;
@@ -25,6 +30,9 @@ export interface DesktopBridge {
   listProjects(): Promise<ProjectEntry[]>;
   addProject(directoryPath: string): Promise<ProjectEntry>;
   removeProject(id: string): Promise<{ ok: true }>;
+  /** Durable file-backed session prefs that survive process kill. */
+  loadSessionPrefs(): Promise<SessionPrefsPayload>;
+  saveSessionPrefs(prefs: SessionPrefsPayload): Promise<void>;
 }
 
 export interface IpcRequestMap {

@@ -43,11 +43,10 @@ directories:
 mac:
   icon: desktop/resources/icon.icns
   category: public.app-category.developer-tools
-  # Keep macOS TCC permissions (Accessibility / Screen Recording) stable
-  # across local rebuilds. This identity is a self-signed Code Signing cert in
-  # the login keychain when no Apple Developer ID identity is available.
-  identity: vLLM Studio Local Dev
-  timestamp: none
+  # Sign with the real Apple Developer ID Application certificate so Gatekeeper
+  # accepts the bundle without `-609` errors and the app can be distributed.
+  # The matching private key must be present in the login keychain.
+  identity: "sherif cherfa (TZ447KHNZL)"
   target:
     - target: dmg
       arch:

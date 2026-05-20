@@ -24,7 +24,7 @@ export function SortHeader({
 
   return (
     <th
-      className={`cursor-pointer select-none px-3 py-3 font-mono text-[11px] font-normal uppercase tracking-[0.2em] text-(--dim) transition-colors hover:text-(--fg) sm:px-4 ${
+      className={`cursor-pointer select-none px-3 py-2 font-mono text-[10px] font-normal uppercase tracking-[0.14em] text-(--dim) transition-colors hover:text-(--fg) ${
         align === "right" ? "text-right" : "text-left"
       }`}
       onClick={onClick}
@@ -37,13 +37,7 @@ export function SortHeader({
   );
 }
 
-export function StatusPill({
-  value,
-  type,
-}: {
-  value: number | null;
-  type: "success" | "latency";
-}) {
+export function StatusPill({ value, type }: { value: number | null; type: "success" | "latency" }) {
   if (value === null) {
     return <span className="font-mono text-sm tabular-nums text-(--dim)">unavailable</span>;
   }
@@ -60,7 +54,7 @@ export function StatusPill({
   };
 
   return (
-    <span className={`font-mono text-sm tabular-nums ${getColor()}`}>
+    <span className={`font-mono text-[12px] tabular-nums ${getColor()}`}>
       {type === "success" ? `${value.toFixed(1)}%` : formatDurationOrUnavailable(value)}
     </span>
   );

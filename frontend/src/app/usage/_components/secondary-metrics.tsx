@@ -2,7 +2,6 @@
 "use client";
 
 import { formatNumber } from "@/lib/formatters";
-import { Hash, Database, Clock } from "lucide-react";
 
 interface TokensPerRequestStats {
   avg: number;
@@ -31,22 +30,21 @@ interface SecondaryMetricsStats {
   hourly_pattern: HourlyPatternData[];
 }
 
-function SectionCard({
-  title,
-  icon: Icon,
-  children,
-}: {
-  title: string;
-  icon: React.ElementType;
-  children: React.ReactNode;
-}) {
+function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
-    <div className="border border-(--border) bg-(--surface) overflow-hidden">
-      <div className="flex items-center gap-2 border-b border-(--border) bg-(--bg)/55 px-4 py-4 text-(--dim)">
-        <Icon className="h-4 w-4" />
-        <span className="font-mono text-sm uppercase tracking-[0.3em]">{title}</span>
-      </div>
-      <div className="p-4">{children}</div>
+    <div className="mb-3 font-mono text-[9.5px] font-medium uppercase tracking-[0.18em] text-(--dim)/75">
+      {children}
+    </div>
+  );
+}
+
+function Cell({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="min-w-0 border-r border-(--border)/40 pr-2 pl-3 first:pl-0 last:border-r-0 sm:pr-4 sm:pl-5">
+      <dt className="truncate font-mono text-[9.5px] font-medium uppercase tracking-[0.18em] text-(--dim)/75">
+        {label}
+      </dt>
+      <dd className="mt-1 font-mono text-[16px] leading-none tabular-nums text-(--fg)">{value}</dd>
     </div>
   );
 }
@@ -60,158 +58,101 @@ export function SecondaryMetrics(stats: SecondaryMetricsStats) {
     (max, h) => (h.requests > max.requests ? h : max),
     stats.hourly_pattern[0],
   );
+  const totalRequests = stats.hourly_pattern.reduce((sum, h) => sum + h.requests, 0);
 
   return (
-    <div className="space-y-4">
-      {/* Tokens per Request */}
-      <SectionCard title="Tokens per Request" icon={Hash}>
-        <div className="space-y-3">
+    <section className="px-2 pt-2 pb-5">
+      <SectionLabel>Tokens per request</SectionLabel>
+      <dl className="grid grid-cols-3 border-b border-(--border)/40 pb-4">
+        <Cell label="average" value={formatNumber(stats.tokens_per_request.avg)} />
+        <Cell label="prompt" value={formatNumber(stats.tokens_per_request.avg_prompt)} />
+        <Cell label="completion" value={formatNumber(stats.tokens_per_request.avg_completion)} />
+      </dl>
+      <dl className="mt-3 grid grid-cols-2 gap-2 font-mono text-[11px] text-(--dim)">
+        <div>
+          p50{" "}
+          <span className="tabular-nums text-(--fg)">
+            {formatNumber(stats.tokens_per_request.p50)}
+          </span>
+        </div>
+        <div>
+          p95{" "}
+          <span className="tabular-nums text-(--fg)">
+            {formatNumber(stats.tokens_per_request.p95)}
+          </span>
+        </div>
+      </dl>
+
+      <div className="mt-6">
+        <SectionLabel>Cache</SectionLabel>
+        <dl className="grid grid-cols-3 border-b border-(--border)/40 pb-4">
+          <Cell label="hit rate" value={`${stats.cache.hit_rate.toFixed(1)}%`} />
+          <Cell label="hits" value={formatNumber(stats.cache.hits)} />
+          <Cell label="misses" value={formatNumber(stats.cache.misses)} />
+        </dl>
+        <dl className="mt-3 grid grid-cols-2 gap-2 font-mono text-[11px] text-(--dim)">
           <div>
-            <div className="mb-1 font-mono text-xs uppercase tracking-[0.18em] text-(--dim)">
-              Average
-            </div>
-            <div className="font-mono text-2xl tabular-nums">
-              {formatNumber(stats.tokens_per_request.avg)}
-            </div>
+            cached{" "}
+            <span className="tabular-nums text-(--fg)">{formatNumber(stats.cache.hit_tokens)}</span>
           </div>
+          <div>
+            uncached{" "}
+            <span className="tabular-nums text-(--fg)">
+              {formatNumber(stats.cache.miss_tokens)}
+            </span>
+          </div>
+        </dl>
+      </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <div className="mb-1 font-mono text-xs uppercase tracking-[0.18em] text-(--dim)">
-                Prompt
-              </div>
-              <div className="font-mono text-base tabular-nums">
-                {formatNumber(stats.tokens_per_request.avg_prompt)}
-              </div>
-            </div>
-            <div>
-              <div className="mb-1 font-mono text-xs uppercase tracking-[0.18em] text-(--dim)">
-                Completion
-              </div>
-              <div className="font-mono text-base tabular-nums">
-                {formatNumber(stats.tokens_per_request.avg_completion)}
-              </div>
-            </div>
+      <div className="mt-6">
+        <div className="mb-3 flex items-center justify-between">
+          <div className="font-mono text-[9.5px] font-medium uppercase tracking-[0.18em] text-(--dim)/75">
+            Hourly activity
           </div>
-
-          <div className="grid grid-cols-2 gap-3 border-t border-(--border) pt-3 font-mono text-xs">
-            <div>
-              <span className="text-(--dim)">P50: </span>
-              <span className="tabular-nums">{formatNumber(stats.tokens_per_request.p50)}</span>
-            </div>
-            <div>
-              <span className="text-(--dim)">P95: </span>
-              <span className="tabular-nums">{formatNumber(stats.tokens_per_request.p95)}</span>
-            </div>
-          </div>
+          <span className="font-mono text-[10.5px] text-(--dim)">
+            peak {peakHour?.hour ?? 0}:00 ·{" "}
+            <span className="tabular-nums text-(--fg)">
+              {formatNumber(peakHour?.requests || 0)}
+            </span>{" "}
+            req
+          </span>
         </div>
-      </SectionCard>
 
-      {/* Cache Stats */}
-      <SectionCard title="Cache Performance" icon={Database}>
-        <div className="space-y-3">
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="mb-1 font-mono text-xs uppercase tracking-[0.18em] text-(--dim)">
-                Hit Rate
-              </div>
-              <div className="font-mono text-2xl tabular-nums">
-                {stats.cache.hit_rate.toFixed(1)}%
-              </div>
-            </div>
-            <div className="grid h-12 w-12 grid-cols-4 gap-0.5">
-              {Array.from({ length: 16 }, (_, index) => (
+        <div className="flex h-20 items-end gap-0.5 border-b border-(--border)/40 pb-2">
+          {Array.from({ length: 24 }, (_: undefined, i: number) => {
+            const hourData = stats.hourly_pattern.find((h: HourlyPatternData) => h.hour === i);
+            const requests = hourData?.requests || 0;
+            const height = (requests / maxHourlyRequests) * 100;
+            const isPeak = requests === maxHourlyRequests && requests > 0;
+            return (
+              <div key={i} className="group flex min-w-0 flex-1 flex-col items-center gap-1">
                 <div
-                  key={index}
-                  className={
-                    index < Math.round((stats.cache.hit_rate / 100) * 16)
-                      ? "bg-(--hl2)"
-                      : "bg-(--border)"
-                  }
+                  className={`w-full ${isPeak ? "bg-(--hl3)" : "bg-(--fg)/20"}`}
+                  style={{
+                    height: `${Math.max(height, 3)}%`,
+                    minHeight: height > 0 ? "2px" : "0",
+                  }}
+                  title={`${i}:00 — ${formatNumber(requests)} requests`}
                 />
-              ))}
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <div className="mb-1 font-mono text-xs uppercase tracking-[0.18em] text-(--hl2)">
-                Hits
+                {i % 6 === 0 ? (
+                  <div className="font-mono text-[8.5px] text-(--dim)/60">{i}:00</div>
+                ) : null}
               </div>
-              <div className="font-mono text-base tabular-nums">
-                {formatNumber(stats.cache.hits)}
-              </div>
-            </div>
-            <div>
-              <div className="mb-1 font-mono text-xs uppercase tracking-[0.18em] text-(--dim)">
-                Misses
-              </div>
-              <div className="font-mono text-base tabular-nums">
-                {formatNumber(stats.cache.misses)}
-              </div>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3 border-t border-(--border) pt-3 font-mono text-xs">
-            <div>
-              <span className="text-(--dim)">Cached: </span>
-              <span className="tabular-nums">{formatNumber(stats.cache.hit_tokens)}</span>
-            </div>
-            <div>
-              <span className="text-(--dim)">Uncached: </span>
-              <span className="tabular-nums">{formatNumber(stats.cache.miss_tokens)}</span>
-            </div>
-          </div>
+            );
+          })}
         </div>
-      </SectionCard>
 
-      {/* Hourly Pattern */}
-      <SectionCard title="Hourly Activity" icon={Clock}>
-        <div className="space-y-2">
-          <div className="flex items-center justify-between font-mono text-xs text-(--dim)">
-            <span>
-              Peak: {peakHour?.hour}:00 ({formatNumber(peakHour?.requests || 0)} req)
-            </span>
-            <span>24h view</span>
-          </div>
-
-          <div className="flex items-end gap-0.5 h-20">
-            {Array.from({ length: 24 }, (_: undefined, i: number) => {
-              const hourData = stats.hourly_pattern.find((h: HourlyPatternData) => h.hour === i);
-              const requests = hourData?.requests || 0;
-              const height = (requests / maxHourlyRequests) * 100;
-              const isPeak = requests === maxHourlyRequests;
-
-              return (
-                <div key={i} className="flex-1 flex flex-col items-center gap-1 group min-w-0">
-                  <div
-                    className={`w-full ${isPeak ? "bg-(--hl3)" : "bg-(--fg)/20"}`}
-                    style={{
-                      height: `${Math.max(height, 3)}%`,
-                      minHeight: height > 0 ? "2px" : "0",
-                    }}
-                    title={`${i}:00 - ${formatNumber(requests)} requests`}
-                  />
-                  {i % 6 === 0 && (
-                    <div className="font-mono text-[8px] text-(--dim)/60">{i}:00</div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-
-          <div className="flex items-center justify-between border-t border-(--border) pt-2 font-mono text-xs text-(--dim)">
-            <div className="flex items-center gap-1.5">
-              <div className="h-2 w-2 bg-(--hl3)" />
-              <span>Peak hour</span>
-            </div>
-            <span>
-              Total: {formatNumber(stats.hourly_pattern.reduce((sum, h) => sum + h.requests, 0))}{" "}
-              requests
-            </span>
-          </div>
+        <div className="mt-2 flex items-center justify-between font-mono text-[10.5px] text-(--dim)">
+          <span className="flex items-center gap-1.5">
+            <span className="h-2 w-2 bg-(--hl3)" />
+            peak hour
+          </span>
+          <span>
+            total <span className="tabular-nums text-(--fg)">{formatNumber(totalRequests)}</span>{" "}
+            req
+          </span>
         </div>
-      </SectionCard>
-    </div>
+      </div>
+    </section>
   );
 }
