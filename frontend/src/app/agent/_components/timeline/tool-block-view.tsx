@@ -155,7 +155,7 @@ function ToolSummary({
 
 function ToolOutput({ children }: { children: ReactNode }) {
   return (
-    <pre className="max-h-[320px] overflow-auto whitespace-pre-wrap font-mono text-[10.5px] leading-5 text-(--fg)/70 [overflow-wrap:anywhere]">
+    <pre className="max-h-[320px] max-w-full overflow-y-auto overflow-x-hidden whitespace-pre-wrap break-words font-mono text-[10.5px] leading-5 text-(--fg)/70 [overflow-wrap:anywhere]">
       {children}
     </pre>
   );
@@ -174,7 +174,7 @@ function HighlightedToolSource({ body, lang }: { body: string; lang: string }) {
   }, [body, lang]);
 
   const className =
-    "max-h-[420px] overflow-auto whitespace-pre-wrap rounded-md border border-(--border)/60 bg-(--surface)/30 p-2 font-mono text-[10.5px] leading-5 text-(--fg)";
+    "max-h-[420px] max-w-full overflow-y-auto overflow-x-hidden whitespace-pre-wrap break-words rounded-md border border-(--border)/60 bg-(--surface)/30 p-2 font-mono text-[10.5px] leading-5 text-(--fg) [overflow-wrap:anywhere]";
 
   if (highlighted === null) {
     return <pre className={className}>{body}</pre>;

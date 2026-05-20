@@ -29,7 +29,7 @@ type RoutedBlock =
   | { kind: "event"; block: EventBlock };
 
 export function groupAssistantBlocks(blocks: AssistantBlock[]): RoutedBlock[] {
-  const content: RoutedBlock[] = [];
+  const routed: RoutedBlock[] = [];
   const activitySegments: ActivitySegment[] = [];
   let reasoningGroup: ThinkingBlock[] = [];
   let toolGroup: ToolBlock[] = [];
@@ -38,7 +38,7 @@ export function groupAssistantBlocks(blocks: AssistantBlock[]): RoutedBlock[] {
     if (reasoningGroup.length === 0) return;
     activitySegments.push({
       kind: "reasoning",
-      id: `reasoning-${reasoningGroup[0]?.id ?? content.length}`,
+      id: `reasoning-${reasoningGroup[0]?.id ?? routed.length}`,
       blocks: reasoningGroup,
     });
     reasoningGroup = [];
@@ -48,7 +48,7 @@ export function groupAssistantBlocks(blocks: AssistantBlock[]): RoutedBlock[] {
     if (toolGroup.length === 0) return;
     activitySegments.push({
       kind: "tools",
-      id: `tools-${toolGroup[0]?.id ?? content.length}`,
+      id: `tools-${toolGroup[0]?.id ?? routed.length}`,
       blocks: toolGroup,
     });
     toolGroup = [];
@@ -57,6 +57,12 @@ export function groupAssistantBlocks(blocks: AssistantBlock[]): RoutedBlock[] {
   const flushActivityGroup = () => {
     flushReasoningSegment();
     flushToolSegment();
+    if (activitySegments.length === 0) return;
+    routed.push({
+      kind: "activity-group",
+      id: `activity-${activitySegments[0]?.id ?? routed.length}`,
+      segments: activitySegments.splice(0),
+    });
   };
 
   for (const block of blocks) {
@@ -72,30 +78,21 @@ export function groupAssistantBlocks(blocks: AssistantBlock[]): RoutedBlock[] {
     }
     flushActivityGroup();
     if (block.kind === "text") {
-      content.push({ kind: "content", block });
+      routed.push({ kind: "content", block });
     } else {
-      content.push({ kind: "event", block });
+      routed.push({ kind: "event", block });
     }
   }
   flushActivityGroup();
 
-  return activitySegments.length > 0
-    ? [
-        {
-          kind: "activity-group",
-          id: `activity-${activitySegments[0]?.id ?? 0}`,
-          segments: activitySegments,
-        },
-        ...content,
-      ]
-    : content;
+  return routed;
 }
 
 export function SessionPaneBlockRouter({ message }: { message: ChatMessage }) {
   if (message.role === "user") {
     return (
       <article className="flex justify-end">
-        <div className="max-w-[72%] rounded-xl bg-(--surface) px-3.5 py-2 text-sm leading-6 text-(--fg)">
+        <div className="max-w-[72%] rounded-xl bg-(--surface) px-3.5 py-2 font-sans text-[13px] leading-[21px] text-(--fg)">
           <div className="whitespace-pre-wrap break-words">{message.text}</div>
           {message.attachments?.length ? (
             <div className="mt-2 grid gap-2">
@@ -113,7 +110,7 @@ export function SessionPaneBlockRouter({ message }: { message: ChatMessage }) {
   return (
     <article className="min-w-0">
       {routedBlocks.length === 0 ? (
-        <div className="text-sm leading-6 text-(--dim)">…</div>
+        <div className="text-[13px] leading-[21px] text-(--dim)">…</div>
       ) : (
         <div className="flex flex-col gap-3">
           {routedBlocks.map((item) => {
@@ -201,36 +198,32 @@ function AssistantActivityGroup({ segments }: { segments: ActivitySegment[] }) {
     (segment) =>
       segment.kind === "tools" && segment.blocks.some((block) => block.status === "running"),
   );
-  const isMixed =
-    segments.some((segment) => segment.kind === "reasoning") &&
-    segments.some((segment) => segment.kind === "tools");
-  const [expanded, setExpanded] = useState(isMixed || hasActiveTool);
-  const open = hasActiveTool || expanded;
+  const [expanded, setExpanded] = useState(false);
 
   return (
-    <details className="group min-w-0" open={open}>
+    <details className="group min-w-0 overflow-hidden" open={expanded}>
       <summary
-        className="flex cursor-pointer list-none items-center gap-1.5 rounded-md px-1.5 py-1 text-[11px] text-(--fg) hover:bg-(--hover) [&::-webkit-details-marker]:hidden"
+        className="flex min-w-0 cursor-pointer list-none items-center gap-1 rounded-md px-1 py-0.5 text-[11px] text-(--fg) hover:bg-(--hover) [&::-webkit-details-marker]:hidden"
         onClick={(event) => {
           event.preventDefault();
           setExpanded((value) => !value);
         }}
       >
         <ChevronDown
-          className={`h-3 w-3 shrink-0 text-(--fg)/70 transition-transform ${open ? "rotate-180" : ""}`}
+          className={`h-3 w-3 shrink-0 text-(--fg)/70 transition-transform ${expanded ? "rotate-180" : ""}`}
         />
         <span className="shrink-0 font-medium text-(--fg)/90">{activityLabel(segments)}</span>
-        <span className="min-w-0 flex-1 truncate font-mono text-[10.5px] text-(--fg)/75">
+        <span className="min-w-0 flex-1 truncate font-mono text-[10.5px] text-(--fg)/70">
           {activityPreview(segments)}
         </span>
         {hasActiveTool ? (
           <span className="shrink-0 text-[10px] text-(--accent)">running</span>
         ) : null}
       </summary>
-      {open ? (
-        <div className="ml-[0.8rem] mt-1.5 flex min-w-0 flex-col gap-2 border-l border-(--border)/70 pl-3">
-          {segments.map((segment) => (
-            <ActivitySegmentView key={segment.id} segment={segment} />
+      {expanded ? (
+        <div className="ml-1.5 mt-1 flex min-w-0 flex-col gap-1.5 border-l border-(--border)/70 pl-2">
+          {segments.flatMap(activitySegmentItems).map((item) => (
+            <ActivityTreeItem key={item.id} item={item} />
           ))}
         </div>
       ) : null}
@@ -238,28 +231,27 @@ function AssistantActivityGroup({ segments }: { segments: ActivitySegment[] }) {
   );
 }
 
-function ActivitySegmentView({ segment }: { segment: ActivitySegment }) {
-  if (segment.kind === "reasoning") return <ReasoningLeaf blocks={segment.blocks} />;
-  return (
-    <div className="grid gap-1.5">
-      {segment.blocks.map((block) => (
-        <ToolBlockView key={block.id} block={block} />
-      ))}
-    </div>
-  );
+type ActivityTreeItem =
+  | { kind: "reasoning"; id: string; block: ThinkingBlock }
+  | { kind: "tool"; id: string; block: ToolBlock };
+
+function activitySegmentItems(segment: ActivitySegment): ActivityTreeItem[] {
+  if (segment.kind === "reasoning") {
+    return segment.blocks.map((block) => ({ kind: "reasoning", id: block.id, block }));
+  }
+  return segment.blocks.map((block) => ({ kind: "tool", id: block.id, block }));
 }
 
-function ReasoningLeaf({ blocks }: { blocks: ThinkingBlock[] }) {
-  const text = blocks.map((block) => block.text).join("\n\n");
+function ActivityTreeItem({ item }: { item: ActivityTreeItem }) {
+  if (item.kind === "reasoning") return <ReasoningLeaf block={item.block} />;
+  return <ToolBlockView block={item.block} />;
+}
+
+function ReasoningLeaf({ block }: { block: ThinkingBlock }) {
   return (
-    <div className="text-xs">
-      <div className="text-[11px] italic text-(--dim)">
-        Reasoning{blocks.length > 1 ? ` · ${blocks.length}` : ""}
-      </div>
-      <pre className="mt-1 max-w-full whitespace-pre-wrap break-words font-mono text-[11px] leading-5 text-(--dim) [overflow-wrap:anywhere]">
-        {text}
-      </pre>
-    </div>
+    <pre className="max-w-full whitespace-pre-wrap break-words py-0.5 font-mono text-[11px] leading-5 text-(--dim) [overflow-wrap:anywhere]">
+      {block.text}
+    </pre>
   );
 }
 
@@ -288,19 +280,20 @@ function activityLabel(segments: ActivitySegment[]): string {
 }
 
 function activityPreview(segments: ActivitySegment[]): string {
-  const tools = segments.flatMap((segment) => (segment.kind === "tools" ? segment.blocks : []));
-  if (tools.length > 0) return toolGroupPreview(tools);
-  const reasoning = segments
-    .flatMap((segment) => (segment.kind === "reasoning" ? segment.blocks : []))
-    .map((block) => compactToolText(block.text, 72))
-    .filter(Boolean);
-  return reasoning.join(" · ");
-}
-
-function toolGroupPreview(blocks: ToolBlock[]): string {
-  const previewItems = blocks.slice(0, 4).map(toolPreview);
-  const remaining = blocks.length - previewItems.length;
-  return `${previewItems.join(" · ")}${remaining > 0 ? ` · +${remaining} more` : ""}`;
+  for (let index = segments.length - 1; index >= 0; index -= 1) {
+    const segment = segments[index];
+    if (!segment) continue;
+    if (segment.kind === "tools") {
+      const runningTool = [...segment.blocks].reverse().find((block) => block.status === "running");
+      const latestTool = runningTool ?? segment.blocks[segment.blocks.length - 1];
+      if (latestTool) return toolPreview(latestTool);
+      continue;
+    }
+    const latestReasoning = segment.blocks[segment.blocks.length - 1];
+    const preview = latestReasoning ? compactToolText(latestReasoning.text, 96) : null;
+    if (preview) return preview;
+  }
+  return "";
 }
 
 function toolPreview(block: ToolBlock): string {

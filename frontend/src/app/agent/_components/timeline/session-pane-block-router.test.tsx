@@ -4,7 +4,7 @@ import type { AssistantBlock, ChatMessage } from "@/lib/agent/session";
 import { groupAssistantBlocks, SessionPaneBlockRouter } from "./session-pane-block-router";
 
 describe("groupAssistantBlocks", () => {
-  it("keeps all reasoning and tool activity in one tree without swallowing content", () => {
+  it("starts a new activity group after assistant content", () => {
     const blocks: AssistantBlock[] = [
       { kind: "thinking", id: "think", text: "plan" },
       { kind: "thinking", id: "think-2", text: "more plan" },
@@ -21,10 +21,14 @@ describe("groupAssistantBlocks", () => {
         segments: [
           { kind: "reasoning", id: "reasoning-think", blocks: [blocks[0], blocks[1]] },
           { kind: "tools", id: "tools-tool-1", blocks: [blocks[2], blocks[3]] },
-          { kind: "tools", id: "tools-tool-3", blocks: [blocks[5]] },
         ],
       },
       { kind: "content", block: blocks[4] },
+      {
+        kind: "activity-group",
+        id: "activity-tools-tool-3",
+        segments: [{ kind: "tools", id: "tools-tool-3", blocks: [blocks[5]] }],
+      },
     ]);
   });
 
@@ -80,8 +84,8 @@ describe("SessionPaneBlockRouter", () => {
     const html = renderToStaticMarkup(<SessionPaneBlockRouter message={message} />);
 
     expect(html).toContain("2 tools");
-    expect(html).toContain("edit example.ts");
     expect(html).toContain("npm test");
+    expect(html).not.toContain("edit example.ts");
     expect(html).not.toContain("border border-(--border)/70");
     expect(html).not.toContain("language-ts");
   });
