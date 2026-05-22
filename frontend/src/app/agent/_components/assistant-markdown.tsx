@@ -1,6 +1,14 @@
 "use client";
 
-import React, { Children, isValidElement, useCallback, useState, type ReactNode } from "react";
+import React, {
+  Children,
+  isValidElement,
+  memo,
+  useCallback,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import rehypeHighlight from "rehype-highlight";
 import remarkGfm from "remark-gfm";
@@ -181,9 +189,20 @@ const components: Components = {
   ),
 };
 
-export function AssistantMarkdown({ text }: { text: string }) {
-  const tools = useTools();
-  const componentsWithAppLinks: Components = {
+// The remark/rehype plugin lists are constant. Hoisted out of render so the
+// `ReactMarkdown` reconciler sees the same array identity each commit.
+const REMARK_PLUGINS = [remarkGfm];
+const REHYPE_PLUGINS = [[rehypeHighlight, { detect: true, ignoreMissing: true }]] as never;
+
+type ToolHandlers = {
+  requestFileOpen: (path: string) => void;
+  setComputerOpen: (open: boolean) => void;
+  setComputerTab: (tab: "browser" | "files" | "status" | "canvas") => void;
+  setBrowserUrl: (url: string, input?: string) => void;
+};
+
+function buildComponentsWithAppLinks(tools: ToolHandlers): Components {
+  return {
     ...components,
     code: ({ node: _n, className, children, ...props }) => {
       const isBlock = typeof className === "string" && /\blanguage-/.test(className);
@@ -238,6 +257,22 @@ export function AssistantMarkdown({ text }: { text: string }) {
       />
     ),
   };
+}
+
+function AssistantMarkdownInner({ text }: { text: string }) {
+  const tools = useTools();
+  // Stable `components` map: only changes when any of the four tool callbacks
+  // it captures changes identity (they're useCallback-stable in ToolsProvider).
+  const componentsWithAppLinks = useMemo<Components>(
+    () =>
+      buildComponentsWithAppLinks({
+        requestFileOpen: tools.requestFileOpen,
+        setComputerOpen: tools.setComputerOpen,
+        setComputerTab: tools.setComputerTab,
+        setBrowserUrl: tools.setBrowserUrl,
+      }),
+    [tools.requestFileOpen, tools.setComputerOpen, tools.setComputerTab, tools.setBrowserUrl],
+  );
   return (
     <div className="chat-markdown min-w-0 max-w-full overflow-x-hidden font-sans text-[14px] leading-[22px] tracking-[-0.003em] text-(--fg) [overflow-wrap:anywhere]">
       <MarkdownErrorBoundary
@@ -248,8 +283,8 @@ export function AssistantMarkdown({ text }: { text: string }) {
         }
       >
         <ReactMarkdown
-          remarkPlugins={[remarkGfm]}
-          rehypePlugins={[[rehypeHighlight, { detect: true, ignoreMissing: true }]]}
+          remarkPlugins={REMARK_PLUGINS}
+          rehypePlugins={REHYPE_PLUGINS}
           components={componentsWithAppLinks}
         >
           {text}
@@ -258,3 +293,9 @@ export function AssistantMarkdown({ text }: { text: string }) {
     </div>
   );
 }
+
+// React.memo on `text` lets prior text blocks skip re-rendering entirely once
+// they're frozen. The streaming text block keeps changing identity per delta
+// (via appendDelta), which still re-renders correctly through this memo.
+export const AssistantMarkdown = memo(AssistantMarkdownInner);
+AssistantMarkdown.displayName = "AssistantMarkdown";

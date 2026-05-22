@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { memo, useMemo, useState } from "react";
 import { ChevronDown } from "lucide-react";
 import type {
   AssistantBlock,
@@ -92,7 +92,18 @@ export function groupAssistantBlocks(blocks: AssistantBlock[]): RoutedBlock[] {
   return routed;
 }
 
-export function SessionPaneBlockRouter({ message }: { message: ChatMessage }) {
+// Per-content-block memo. `appendDelta` preserves the reference of every
+// non-trailing text block during streaming, so prior content blocks skip
+// re-rendering entirely once the assistant moves on past them.
+const MemoContentBlock = memo(function MemoContentBlock({ block }: { block: TextBlock }) {
+  return <AssistantMarkdown text={block.text} />;
+});
+
+const MemoEventBlock = memo(function MemoEventBlock({ block }: { block: EventBlock }) {
+  return <EventBlockView block={block} />;
+});
+
+function SessionPaneBlockRouterInner({ message }: { message: ChatMessage }) {
   if (message.role === "user") {
     return (
       <article className="flex justify-end">
@@ -110,7 +121,19 @@ export function SessionPaneBlockRouter({ message }: { message: ChatMessage }) {
     );
   }
 
-  const routedBlocks = groupAssistantBlocks(message.blocks ?? []);
+  return <AssistantBlocks blocks={message.blocks ?? EMPTY_BLOCKS} />;
+}
+
+const EMPTY_BLOCKS: AssistantBlock[] = [];
+
+// `AssistantBlocks` isolates the (memoised) routed-block computation so that
+// re-renders triggered by non-block message fields (e.g. `text`, `timestamp`,
+// `attachments`) don't redo `groupAssistantBlocks`. Re-runs only on a new
+// `blocks` array identity — which `appendDelta` only produces when the
+// assistant actually mutates a block.
+const AssistantBlocks = memo(function AssistantBlocks({ blocks }: { blocks: AssistantBlock[] }) {
+  const routedBlocks = useMemo(() => groupAssistantBlocks(blocks), [blocks]);
+
   return (
     <article className="min-w-0">
       {routedBlocks.length === 0 ? (
@@ -122,15 +145,18 @@ export function SessionPaneBlockRouter({ message }: { message: ChatMessage }) {
               return <AssistantActivityGroup key={item.id} segments={item.segments} />;
             }
             if (item.kind === "content") {
-              return <AssistantMarkdown key={item.block.id} text={item.block.text} />;
+              return <MemoContentBlock key={item.block.id} block={item.block} />;
             }
-            return <EventBlockView key={item.block.id} block={item.block} />;
+            return <MemoEventBlock key={item.block.id} block={item.block} />;
           })}
         </div>
       )}
     </article>
   );
-}
+});
+
+export const SessionPaneBlockRouter = memo(SessionPaneBlockRouterInner);
+SessionPaneBlockRouter.displayName = "SessionPaneBlockRouter";
 
 function UserAttachmentPreview({ attachment }: { attachment: ChatMessageAttachment }) {
   const size = formatAttachmentSize(attachment.size);
@@ -199,7 +225,11 @@ function formatAttachmentSize(bytes: number) {
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
-function AssistantActivityGroup({ segments }: { segments: ActivitySegment[] }) {
+const AssistantActivityGroup = memo(function AssistantActivityGroup({
+  segments,
+}: {
+  segments: ActivitySegment[];
+}) {
   const hasActiveTool = segments.some(
     (segment) =>
       segment.kind === "tools" && segment.blocks.some((block) => block.status === "running"),
@@ -235,7 +265,7 @@ function AssistantActivityGroup({ segments }: { segments: ActivitySegment[] }) {
       ) : null}
     </details>
   );
-}
+});
 
 type ActivityTreeItem =
   | { kind: "reasoning"; id: string; block: ThinkingBlock }
