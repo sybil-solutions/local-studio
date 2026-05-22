@@ -10,8 +10,8 @@ import React, {
   type ReactNode,
 } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
-import rehypeHighlight from "rehype-highlight";
 import remarkGfm from "remark-gfm";
+import { highlightFenced } from "@/lib/agent/highlight-cache";
 import { normalizeBrowserInput } from "@/lib/agent/tools/browser-url";
 import { useTools } from "@/lib/agent/tools/context";
 
@@ -86,6 +86,34 @@ function codeLanguage(children: ReactNode): string | null {
   return match ? match[1] : null;
 }
 
+const FencedCodeBlock = memo(function FencedCodeBlock({
+  code,
+  language,
+}: {
+  code: string;
+  language: string | null;
+}) {
+  const highlightedHtml = useMemo(() => highlightFenced(language, code), [code, language]);
+  const codeClassName = ["hljs", language ? `language-${language}` : "", "font-mono"]
+    .filter(Boolean)
+    .join(" ");
+
+  return (
+    <div className="assistant-code-block group my-3 overflow-hidden rounded-md border border-white/10 bg-[#07090d] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+      <div className="flex h-8 items-center justify-between border-b border-white/10 bg-white/[0.025] px-2.5">
+        <span className="font-mono text-[10px] uppercase tracking-[0.08em] text-(--dim)">
+          {language ?? "code"}
+        </span>
+        {code ? <CodeBlockCopyButton code={code} /> : null}
+      </div>
+      <pre className="m-0 max-w-full overflow-x-auto bg-transparent px-3 py-2.5 text-[12px] leading-5">
+        <code className={codeClassName} dangerouslySetInnerHTML={{ __html: highlightedHtml }} />
+      </pre>
+    </div>
+  );
+});
+FencedCodeBlock.displayName = "FencedCodeBlock";
+
 const components: Components = {
   h1: ({ node: _n, ...props }) => (
     <h1 className="mb-1 mt-4 text-[18px] font-medium leading-[1.33] text-(--fg)" {...props} />
@@ -128,29 +156,14 @@ const components: Components = {
       </code>
     );
   },
-  pre: ({ node: _n, children, ...props }) => {
+  pre: ({ node: _n, children }) => {
     const code = nodeToPlainText(
       Children.toArray(children).find(
         (child) => isValidElement(child) && (child as { type?: string }).type === "code",
       ) ?? children,
     );
     const language = codeLanguage(children);
-    return (
-      <div className="assistant-code-block group my-3 overflow-hidden rounded-md border border-white/10 bg-[#07090d] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
-        <div className="flex h-8 items-center justify-between border-b border-white/10 bg-white/[0.025] px-2.5">
-          <span className="font-mono text-[10px] uppercase tracking-[0.08em] text-(--dim)">
-            {language ?? "code"}
-          </span>
-          {code ? <CodeBlockCopyButton code={code} /> : null}
-        </div>
-        <pre
-          className="m-0 max-w-full overflow-x-auto bg-transparent px-3 py-2.5 text-[12px] leading-5"
-          {...props}
-        >
-          {children}
-        </pre>
-      </div>
-    );
+    return <FencedCodeBlock code={code} language={language} />;
   },
   a: ({ node: _n, href, ...props }) => (
     <a
@@ -192,7 +205,6 @@ const components: Components = {
 // The remark/rehype plugin lists are constant. Hoisted out of render so the
 // `ReactMarkdown` reconciler sees the same array identity each commit.
 const REMARK_PLUGINS = [remarkGfm];
-const REHYPE_PLUGINS = [[rehypeHighlight, { detect: true, ignoreMissing: true }]] as never;
 
 type ToolHandlers = {
   requestFileOpen: (path: string) => void;
@@ -282,11 +294,7 @@ function AssistantMarkdownInner({ text }: { text: string }) {
           </pre>
         }
       >
-        <ReactMarkdown
-          remarkPlugins={REMARK_PLUGINS}
-          rehypePlugins={REHYPE_PLUGINS}
-          components={componentsWithAppLinks}
-        >
+        <ReactMarkdown remarkPlugins={REMARK_PLUGINS} components={componentsWithAppLinks}>
           {text}
         </ReactMarkdown>
       </MarkdownErrorBoundary>
