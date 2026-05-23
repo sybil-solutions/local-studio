@@ -42,10 +42,22 @@
 }
 
 /* Chat markdown */
+:root {
+  --codex-chat-font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --codex-chat-mono-font-family:
+    ui-monospace, "SFMono-Regular", "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  --codex-chat-font-size: 14px;
+  --codex-chat-line-height: 24px;
+  --codex-chat-code-font-size: 12px;
+  --codex-chat-font-weight: 430;
+}
+
 .chat-markdown {
-  /* Codex desktop typography values: calm chat text with restrained code chips. */
-  font-size: 15px;
-  line-height: 24px;
+  /* Codex desktop typography values: system UI, 14px chat, 12px code, 430 weight. */
+  font-family: var(--codex-chat-font-family);
+  font-size: var(--codex-chat-font-size);
+  line-height: var(--codex-chat-line-height);
+  font-weight: var(--codex-chat-font-weight);
   color: color-mix(in srgb, var(--fg) 88%, transparent);
   letter-spacing: 0;
 }
@@ -220,9 +232,9 @@
   border: 1px solid color-mix(in srgb, var(--fg) 6%, transparent);
   color: color-mix(in srgb, var(--fg) 82%, transparent);
   font-family:
-    var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+    var(--codex-chat-mono-font-family), ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
     "Liberation Mono", "Courier New", monospace;
-  font-size: 12px;
+  font-size: var(--codex-chat-code-font-size);
   line-height: 18px;
   word-break: break-word;
   box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.02);

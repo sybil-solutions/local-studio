@@ -993,7 +993,7 @@ export function ChatPane({
                     ? `Steer ${modelName}…`
                     : `Message ${modelName}`
             }
-            className="min-h-[34px] max-h-[108px] w-full resize-none overflow-y-auto bg-transparent px-4 py-2 font-sans text-[15px] leading-[22px] tracking-normal text-(--fg) outline-none placeholder:text-(--dim)"
+            className="min-h-[34px] max-h-[108px] w-full resize-none overflow-y-auto bg-transparent px-4 py-2 text-[14px] leading-6 tracking-normal text-(--fg) outline-none [font-family:var(--codex-chat-font-family)] [font-weight:var(--codex-chat-font-weight)] placeholder:text-(--dim)"
           />
           <div className="agent-composer-actions-row flex min-h-8 items-center gap-1.5 bg-transparent px-3 pb-1.5 pt-0.5 text-xs">
             {" "}

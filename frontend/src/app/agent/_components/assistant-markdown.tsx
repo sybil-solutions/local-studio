@@ -138,14 +138,14 @@ const components: Components = {
   ),
   p: ({ node: _n, ...props }) => (
     <p
-      className="my-2.5 max-w-full break-words text-[15px] leading-6 tracking-normal first:mt-0 last:mb-0 [overflow-wrap:anywhere]"
+      className="my-2.5 max-w-full break-words text-[14px] leading-6 tracking-normal first:mt-0 last:mb-0 [overflow-wrap:anywhere]"
       {...props}
     />
   ),
   ul: ({ node: _n, ...props }) => <ul className="my-2 list-disc pl-5" {...props} />,
   ol: ({ node: _n, ...props }) => <ol className="my-2 list-decimal pl-5" {...props} />,
   li: ({ node: _n, ...props }) => (
-    <li className="text-[15px] leading-6 tracking-normal" {...props} />
+    <li className="text-[14px] leading-6 tracking-normal" {...props} />
   ),
   code: ({ node: _n, className, children, ...props }) => {
     const isBlock = typeof className === "string" && /\blanguage-/.test(className);
@@ -295,10 +295,10 @@ function AssistantMarkdownInner({ text }: { text: string }) {
     [tools.requestFileOpen, tools.setComputerOpen, tools.setComputerTab, tools.setBrowserUrl],
   );
   return (
-    <div className="chat-markdown min-w-0 max-w-full overflow-x-hidden font-sans text-[15px] leading-6 tracking-normal text-(--fg) [overflow-wrap:anywhere]">
+    <div className="chat-markdown min-w-0 max-w-full overflow-x-hidden text-[14px] leading-6 tracking-normal text-(--fg) [overflow-wrap:anywhere]">
       <MarkdownErrorBoundary
         fallback={
-          <pre className="max-w-full whitespace-pre-wrap break-words font-sans text-[15px] leading-6 tracking-normal [overflow-wrap:anywhere]">
+          <pre className="max-w-full whitespace-pre-wrap break-words text-[14px] leading-6 tracking-normal [font-family:var(--codex-chat-font-family)] [font-weight:var(--codex-chat-font-weight)] [overflow-wrap:anywhere]">
             {text}
           </pre>
         }

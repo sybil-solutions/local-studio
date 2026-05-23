@@ -107,7 +107,7 @@ function SessionPaneBlockRouterInner({ message }: { message: ChatMessage }) {
   if (message.role === "user") {
     return (
       <article className="flex justify-end">
-        <div className="max-w-[72%] rounded-[14px] bg-(--surface-3)/80 px-4 py-2.5 font-sans text-[14px] leading-[22px] tracking-normal text-(--fg)">
+        <div className="max-w-[72%] rounded-[14px] bg-(--surface-3)/80 px-4 py-2.5 text-[14px] leading-6 tracking-normal text-(--fg) [font-family:var(--codex-chat-font-family)] [font-weight:var(--codex-chat-font-weight)]">
           <div className="whitespace-pre-wrap break-words">{message.text}</div>
           {message.attachments?.length ? (
             <div className="mt-2 grid gap-2">
@@ -239,7 +239,7 @@ const AssistantActivityGroup = memo(function AssistantActivityGroup({
   return (
     <details className="group min-w-0 overflow-hidden" open={expanded}>
       <summary
-        className="flex min-h-8 min-w-0 cursor-pointer list-none items-center gap-2 rounded-md px-0.5 py-1 text-[13px] leading-5 text-(--dim) transition-colors hover:text-(--fg) [&::-webkit-details-marker]:hidden"
+        className="flex min-h-8 min-w-0 cursor-pointer list-none items-center gap-2 rounded-md px-0.5 py-1 text-[13px] leading-5 text-(--dim) transition-colors [font-family:var(--codex-chat-font-family)] [font-weight:var(--codex-chat-font-weight)] hover:text-(--fg) [&::-webkit-details-marker]:hidden"
         onClick={(event) => {
           event.preventDefault();
           setExpanded((value) => !value);
