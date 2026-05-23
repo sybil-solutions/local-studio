@@ -252,7 +252,17 @@ export function ChatPane({
     const nextTitle = sessionPrefs[key]?.title?.trim();
     return nextTitle || title;
   }, "");
-  const displayedSessionTitle = sessionPrefTitle || activeTab?.title?.trim() || "New session";
+  // An empty starter tab has no pi session, no messages, and an empty
+  // composer. Stale pref entries (e.g. a prior chat that used the same
+  // composite `tab:<paneId>:<tabId>` key) or stale `tab.title` left over
+  // from `replacePaneSession`/restore paths must NOT bleed into a fresh
+  // chat's header — always show "New session" until the user actually
+  // types something or pi assigns a session id.
+  const isEmptyStarter =
+    !activeTab?.piSessionId && (activeTab?.messages.length ?? 0) === 0 && !activeTab?.input.trim();
+  const displayedSessionTitle = isEmptyStarter
+    ? "New session"
+    : sessionPrefTitle || activeTab?.title?.trim() || "New session";
   const sessionPinned = sessionPrefKeys.some((key) => Boolean(sessionPrefs[key]?.pinned));
   const patchActiveSessionPrefs = useCallback(
     (patch: { title?: string; pinned?: boolean }) => {
