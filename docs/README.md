@@ -4,6 +4,7 @@
 |---|---|---|
 | [getting-started.md](./getting-started.md) | New users | **Start here** — pick your path and get running in minutes |
 | [operations.md](./operations.md) | Everyone | Setup, deployment, daemon mode, desktop app, troubleshooting |
+| [recipes.md](./recipes.md) | Users | Create recipes, configure backends, launch models, troubleshoot launches |
 | [environment.md](./environment.md) | Developers, operators | Every environment variable with defaults |
 | [desktop-electron.md](./desktop-electron.md) | Desktop users | Electron app build, install, and dev workflow |
 | [CONTRIBUTING.md](../CONTRIBUTING.md) | Contributors | PR policy, local validation, release process |
