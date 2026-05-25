@@ -129,6 +129,12 @@ A shared scratchpad — both you and the agent can read and write it. Toggle it 
 
 ---
 
+## Before you start
+
+You need a running model. If you haven't set one up yet, head to [Recipes & Models](./recipes.md) first.
+
+---
+
 ## Settings
 
 Agent-related settings live in the main **Settings** page (`/settings`):
@@ -151,3 +157,7 @@ Tool selections (which `@plugins` and `$skills` you've picked) are saved per ses
 4. **Send a message** — "Review the README and suggest improvements"
 5. **Watch the right panel** — the agent browses files in the Filesystem tab, shows diffs in the Git tab, and streams its response in the chat pane
 6. **Review and iterate** — open the Terminal to verify changes, check the Git diff, send a follow-up
+
+---
+
+[← Back to docs index](./README.md)
