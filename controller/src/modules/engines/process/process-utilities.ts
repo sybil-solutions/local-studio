@@ -1,10 +1,6 @@
 // CRITICAL
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
-import { resolve } from "node:path";
-import { parse as parseYaml } from "yaml";
 import type { Recipe } from "../../models/types";
-import { fetchLocal } from "../../../http/local-fetch";
 import type { Backend } from "../../shared/recipe-types";
 
 /**
@@ -55,9 +51,6 @@ export const detectBackend = (args: string[]): Backend | null => {
   if (joinedLower.includes("exllama") || joinedLower.includes("exllamav3")) {
     return "exllamav3";
   }
-  if (joined.includes("tabbyAPI") || (joined.includes("main.py") && joined.includes("--config"))) {
-    return "tabbyapi";
-  }
   if (
     joined.includes("llama-server") ||
     joined.includes("llama.cpp") ||
@@ -98,58 +91,6 @@ export const listProcesses = (): Array<{ pid: number; args: string[] }> => {
   } catch {
     return [];
   }
-};
-
-/**
- * Read TabbyAPI api_tokens.yml for API key.
- * @param tabbyDirectory - TabbyAPI directory.
- * @returns API key if found.
- */
-const readTabbyApiKey = (tabbyDirectory: string): string | undefined => {
-  const path = resolve(tabbyDirectory, "api_tokens.yml");
-  if (!existsSync(path)) {
-    return undefined;
-  }
-  try {
-    const content = readFileSync(path, "utf-8");
-    const parsed = parseYaml(content) as Record<string, unknown>;
-    const apiKey = parsed["api_key"];
-    if (typeof apiKey === "string") {
-      return apiKey;
-    }
-    return undefined;
-  } catch {
-    return undefined;
-  }
-};
-
-/**
- * Resolve TabbyAPI model information.
- * @param port - API port.
- * @param tabbyDirectory - TabbyAPI directory.
- * @param modelsDirectory - Models directory.
- * @returns Model info if available.
- */
-export const fetchTabbyModel = async (
-  port: number,
-  tabbyDirectory: string,
-  modelsDirectory: string
-): Promise<{ servedModelName?: string; modelPath?: string }> => {
-  const apiKey = readTabbyApiKey(tabbyDirectory);
-  const headers: Record<string, string> = apiKey ? { Authorization: `Bearer ${apiKey}` } : {};
-  try {
-    const response = await fetchLocal(port, "/v1/models", { headers, timeoutMs: 2000 });
-    if (response.ok) {
-      const data = (await response.json()) as { data?: Array<{ id?: string }> };
-      const modelId = data.data?.[0]?.id;
-      if (modelId) {
-        return { servedModelName: modelId, modelPath: resolve(modelsDirectory, modelId) };
-      }
-    }
-  } catch {
-    return {};
-  }
-  return {};
 };
 
 /**

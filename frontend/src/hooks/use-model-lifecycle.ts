@@ -69,7 +69,7 @@ export function useModelLifecycle(): ModelLifecycle {
   const start = useCallback(async (recipeId: string) => {
     setError(null);
     try {
-      await api.launch(recipeId, true);
+      await api.launch(recipeId);
     } catch (caught) {
       const message = (caught as Error).message;
       setError(message);
@@ -79,7 +79,7 @@ export function useModelLifecycle(): ModelLifecycle {
   const stop = useCallback(async () => {
     setError(null);
     try {
-      await api.evict(true);
+      await api.evict();
     } catch (caught) {
       const message = (caught as Error).message;
       setError(message);

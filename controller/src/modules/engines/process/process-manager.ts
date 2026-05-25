@@ -1,12 +1,10 @@
 // CRITICAL
 import { spawn, spawnSync } from "node:child_process";
 import type { ChildProcess } from "node:child_process";
-import { createWriteStream, existsSync, readFileSync } from "node:fs";
+import { createWriteStream } from "node:fs";
 import type { WriteStream } from "node:fs";
 import { createInterface } from "node:readline";
-import { resolve } from "node:path";
 import { setTimeout as delayTimeout } from "node:timers/promises";
-import { parse as parseYaml } from "yaml";
 import type { Config } from "../../../config/env";
 import { delay } from "../../../core/async";
 import {
@@ -23,7 +21,6 @@ import {
   collectChildren,
   detectBackend,
   extractFlag,
-  fetchTabbyModel,
   listProcesses,
   pidExists,
   buildProcessTree,
@@ -64,11 +61,7 @@ export const createProcessManager = (
         continue;
       }
       const flagPort = extractFlag(proc.args, "--port");
-      if (backend === "tabbyapi") {
-        if (port !== 8000) {
-          continue;
-        }
-      } else if (flagPort && Number(flagPort) !== port) {
+      if (flagPort && Number(flagPort) !== port) {
         continue;
       } else if (!flagPort && !(backend === "vllm" && port === 8000)) {
         continue;
@@ -77,7 +70,7 @@ export const createProcessManager = (
       if (!modelPath && (backend === "llamacpp" || backend === "exllamav3")) {
         modelPath = extractFlag(proc.args, "-m");
       }
-      let servedModelName =
+      const servedModelName =
         extractFlag(proc.args, "--served-model-name") ||
         extractFlag(proc.args, "--alias") ||
         extractFlag(proc.args, "-a");
@@ -90,49 +83,6 @@ export const createProcessManager = (
             modelPath = candidate;
           }
         }
-      }
-
-      if (backend === "tabbyapi" && !modelPath) {
-        const tabbyDirectory = config.tabby_api_dir || "/opt/tabbyAPI";
-        const configFlag = extractFlag(proc.args, "--config");
-        if (configFlag) {
-          const configPath = resolve(tabbyDirectory, configFlag);
-          if (existsSync(configPath)) {
-            try {
-              const content = readFileSync(configPath, "utf-8");
-              const parsed = parseYaml(content) as Record<string, unknown>;
-              const model = parsed["model"] as Record<string, unknown> | undefined;
-              const modelName = model?.["model_name"];
-              if (typeof modelName === "string") {
-                modelPath = resolve(config.models_dir, modelName);
-                servedModelName = modelName;
-              }
-            } catch {
-              return {
-                pid: proc.pid,
-                backend,
-                model_path: "tabbyapi:unknown",
-                port,
-                served_model_name: servedModelName ?? "GLM-4.7",
-              };
-            }
-          }
-        }
-        if (!modelPath) {
-          const tabbyResult = await fetchTabbyModel(port, tabbyDirectory, config.models_dir);
-          modelPath = tabbyResult.modelPath ?? modelPath;
-          servedModelName = tabbyResult.servedModelName ?? servedModelName;
-        }
-      }
-
-      if (!modelPath && backend === "tabbyapi") {
-        return {
-          pid: proc.pid,
-          backend,
-          model_path: "tabbyapi:unknown",
-          port,
-          served_model_name: servedModelName ?? "GLM-4.7",
-        };
       }
 
       return {

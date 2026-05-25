@@ -145,9 +145,6 @@ export interface CompatibilityCheck {
   suggested_fix: string | null;
 }
 
-/**
- * Aggregate runtime info. `mlx` is frontend-only (optional).
- */
 export interface SystemRuntimeInfo {
   platform: RuntimePlatformInfo;
   gpu_monitoring: RuntimeGpuMonitoringInfo;
@@ -155,7 +152,6 @@ export interface SystemRuntimeInfo {
   gpus: RuntimeGpuInfoSummary;
   backends: {
     vllm: RuntimeBackendInfo;
-    mlx?: RuntimeBackendInfo;
     sglang: RuntimeBackendInfo;
     llamacpp: RuntimeBackendInfo;
     exllamav3?: RuntimeBackendInfo;

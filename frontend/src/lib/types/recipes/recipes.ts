@@ -3,14 +3,7 @@
  * Recipe types (model launch configuration).
  */
 
-export type Backend =
-  | "vllm"
-  | "mlx"
-  | "sglang"
-  | "llamacpp"
-  | "transformers"
-  | "tabbyapi"
-  | "exllamav3";
+export type Backend = "vllm" | "sglang" | "llamacpp" | "exllamav3";
 
 /**
  * Canonical recipe shape as returned by the controller API (stored/normalized).

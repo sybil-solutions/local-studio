@@ -199,9 +199,6 @@ export const buildBackendCommand = (recipe: Recipe, config: Config): string[] =>
   if (recipe.backend === "exllamav3") { const command = buildExllamav3Command(recipe, config);
     if (!command) { throw new Error("Missing ExLLaMA v3 command. Set extra_args.exllama_command or VLLM_STUDIO_EXLLAMAV3_COMMAND.");
     } return command;
-  } if (recipe.backend === "tabbyapi") {
-    throw new Error("TabbyAPI backend launching is not supported by this controller lifecycle path."); }
-  if (recipe.backend === "transformers") { return buildVllmCommand(recipe);
   } return buildVllmCommand(recipe);
 };
 const resolveLlamaBinary = (recipe: Recipe, config: Config): string => { const override = getExtraArgument(recipe.extra_args, "llama_bin") ?? config.llama_bin;

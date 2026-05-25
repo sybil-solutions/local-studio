@@ -12,18 +12,15 @@ import type { ApiCore, RequestOptions } from "./core";
 
 export function createSystemApi(core: ApiCore) {
   return {
-    launch: (
-      recipeId: string,
-      force = false,
-    ): Promise<{ success: boolean; pid?: number; message: string }> =>
-      core.request(`/launch/${recipeId}?force=${force}`, {
+    launch: (recipeId: string): Promise<{ success: boolean; pid?: number; message: string }> =>
+      core.request(`/launch/${recipeId}`, {
         method: "POST",
         timeout: 30_000,
         retries: 0,
       }),
 
-    evict: (force = false): Promise<{ success: boolean; evicted_pid?: number }> =>
-      core.request(`/evict?force=${force}`, { method: "POST" }),
+    evict: (): Promise<{ success: boolean; evicted_pid?: number }> =>
+      core.request("/evict", { method: "POST" }),
 
     waitReady: (timeout = 300): Promise<{ ready: boolean; elapsed: number; error?: string }> =>
       core.request(`/wait-ready?timeout=${timeout}`),

@@ -4,10 +4,8 @@ import { pidExists } from "./process/process-utilities"; import { isRecipeRunnin
 import type { ProcessInfo, Recipe } from "../models/types"; import type { Config } from "../../config/env";
 import type { Logger } from "../../core/logger"; import type { ProcessManager } from "./process/process-manager";
 import type { RecipeStore } from "../models/recipes/recipe-store"; import { LIFECYCLE_READY_TIMEOUT_MS } from "./configs";
-import type { EngineService, RuntimeType, UpgradeResult, RuntimeInfo, DownloadRequest, HfModel, SetActiveRecipeResult, SetActiveRecipeOptions } from "./engine-service"; import type { ModelDownload } from "../shared/recipe-types";
+import type { EngineService, DownloadRequest, HfModel, SetActiveRecipeResult, SetActiveRecipeOptions } from "./engine-service"; import type { ModelDownload } from "../shared/recipe-types";
  import type { DownloadManager } from "./downloads/download-manager";
-import { getVllmRuntimeInfo, upgradeVllmRuntime, getVllmConfigHelp } from "./runtimes/vllm-runtime"; import { getLlamacppConfigHelp } from "./runtimes/llamacpp-runtime";
-import { getLlamacppRuntimeInfo, getSglangRuntimeInfo, getExllamav3RuntimeInfo } from "./runtimes/runtime-info"; import { upgradeSglangRuntime, upgradeLlamacppRuntime, runPlatformUpgrade } from "./runtimes/runtime-upgrade";
 import { fetchHuggingFaceModelInfo } from "./downloads/huggingface-api";
 interface CoordinatorDeps { config: Config;
   logger: Logger; eventManager: EventManager;
@@ -272,95 +270,6 @@ interface CoordinatorDeps { config: Config;
         name: info.modelId ?? query, },
     ]; }
 
-  /** *
-   */ listRuntimes(): Record<string, RuntimeInfo> {
-    const llamacppInfo = getLlamacppRuntimeInfo(this.deps.config); const exllamav3Info = getExllamav3RuntimeInfo(this.deps.config);
-    return { vllm: {
-        installed: false, version: null,
-        python_path: null, upgrade_command_available: true,
-      }, sglang: {
-        installed: false, version: null,
-        python_path: this.deps.config.sglang_python ?? null, upgrade_command_available: true,
-      }, llamacpp: {
-        installed: llamacppInfo.installed, version: llamacppInfo.version,
-        binary_path: llamacppInfo.binary_path ?? null, upgrade_command_available: llamacppInfo.upgrade_command_available ?? false,
-      }, exllamav3: {
-        installed: exllamav3Info.installed, version: exllamav3Info.version,
-        binary_path: exllamav3Info.binary_path ?? null, upgrade_command_available: exllamav3Info.upgrade_command_available ?? false,
-      }, };
-  }
-  /** *
-   */ async getVllmRuntimeInfoAsync(): Promise<RuntimeInfo> {
-    const info = await getVllmRuntimeInfo(); return {
-      installed: info.installed, version: info.version,
-      python_path: info.python_path, binary_path: info.vllm_bin,
-      upgrade_command_available: info.upgrade_command_available ?? false, };
-  }
-  /** *
-   */ async getSglangRuntimeInfoAsync(): Promise<RuntimeInfo> {
-    const current = await this.deps.processManager.findInferenceProcess(this.deps.config.inference_port); const info = await getSglangRuntimeInfo(this.deps.config, current);
-    return { installed: info.installed,
-      version: info.version, python_path: info.python_path,
-      upgrade_command_available: info.upgrade_command_available ?? false, };
-  }
-  /** *
-   * @param runtime
-   * @param options
-   * @param options.version
-   * @param options.args
-   */ async upgradeRuntime(runtime: RuntimeType, options?: { version?: string; args?: string[] }): Promise<UpgradeResult> {
-    switch (runtime) { case "vllm": {
-        const result = await upgradeVllmRuntime({ preferBundled: true,
-          ...(options?.version ? { version: options.version } : {}), ...(options?.args ? { args: options.args as string[] } : {}),
-        }); await this.deps.eventManager.publish(
-          new Event(CONTROLLER_EVENTS.RUNTIME_VLLM_UPGRADED, { success: result.success,
-            version: result.version, used_wheel: result.used_wheel,
-          }) );
-        return { success: result.success,
-          version: result.version, output: result.output,
-          error: result.error, used_command: null,
-        }; }
-      case "sglang": { const result = await upgradeSglangRuntime(this.deps.config, {
-          ...(options?.args ? { args: options.args as string[] } : {}), });
-        await this.deps.eventManager.publish( new Event(CONTROLLER_EVENTS.RUNTIME_SGLANG_UPGRADED, {
-            success: result.success, version: result.version,
-            used_command: result.used_command, })
-        ); return result;
-      } case "llamacpp": {
-        const result = await upgradeLlamacppRuntime(this.deps.config, { ...(options?.args ? { args: options.args as string[] } : {}),
-        }); await this.deps.eventManager.publish(
-          new Event(CONTROLLER_EVENTS.RUNTIME_LLAMACPP_UPGRADED, { success: result.success,
-            version: result.version, used_command: result.used_command,
-          }) );
-        return result; }
-      case "cuda": { const result = runPlatformUpgrade("cuda", {
-          ...(options?.args ? { args: options.args as string[] } : {}), });
-        await this.deps.eventManager.publish( new Event(CONTROLLER_EVENTS.RUNTIME_CUDA_UPGRADED, {
-            success: result.success, version: result.version,
-            used_command: result.used_command, })
-        ); return result;
-      } case "rocm": {
-        const result = runPlatformUpgrade("rocm", { ...(options?.args ? { args: options.args as string[] } : {}),
-        }); await this.deps.eventManager.publish(
-          new Event(CONTROLLER_EVENTS.RUNTIME_ROCM_UPGRADED, { success: result.success,
-            version: result.version, used_command: result.used_command,
-          }) );
-        return result; }
-      case "exllamav3": return {
-          success: false, version: null,
-          output: null, error: "Runtime upgrades are not supported for exllamav3",
-          used_command: null, };
-      default: return {
-          success: false, version: null,
-          output: null, error: `Unknown runtime: ${runtime}`,
-          used_command: null, };
-    } }
- /**
-   * * @param runtime
-   * @param runtime
-   */ async getRuntimeHelp(runtime: "vllm" | "llamacpp"): Promise<{ config: string | null; error: string | null }> {
-    if (runtime === "vllm") { return getVllmConfigHelp();
-    } return getLlamacppConfigHelp(this.deps.config);
-  } }
+}
  export const createEngineCoordinator = (deps: CoordinatorDeps): EngineCoordinator => {
   return new EngineCoordinator(deps); };

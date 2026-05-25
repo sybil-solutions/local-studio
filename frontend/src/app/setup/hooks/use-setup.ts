@@ -182,7 +182,7 @@ export function useSetup() {
         setCreatedRecipeId(recipe.id);
       }
 
-      await api.launch(recipeId, true);
+      await api.launch(recipeId);
       const ready = await api.waitReady(300);
       if (!ready.ready) {
         throw new Error(ready.error || "The model did not become ready in time.");

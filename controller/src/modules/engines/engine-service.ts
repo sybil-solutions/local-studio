@@ -5,22 +5,6 @@ import type { ModelDownload } from "../shared/recipe-types";
 export type { Recipe, ProcessInfo };
 export type { ModelDownload };
 
-export type RuntimeType = "vllm" | "sglang" | "llamacpp" | "exllamav3" | "cuda" | "rocm";
-export type RuntimeInfo = {
-  installed: boolean;
-  version: string | null;
-  python_path?: string | null | undefined;
-  binary_path?: string | null | undefined;
-  upgrade_command_available: boolean;
-};
-export type UpgradeResult = {
-  success: boolean;
-  version: string | null;
-  output: string | null;
-  error: string | null;
-  used_command: string | null;
-};
-
 export interface DownloadRequest {
   model_id: string;
   revision?: string | null;
@@ -94,14 +78,4 @@ export interface EngineService {
 
   // HuggingFace
   searchHuggingFace(query: string, hfToken?: string | null): Promise<HfModel[]>;
-
-  // Runtimes
-  listRuntimes(): Record<string, RuntimeInfo>;
-  upgradeRuntime(
-    runtime: RuntimeType,
-    options?: { version?: string; args?: string[] }
-  ): Promise<UpgradeResult>;
-  getRuntimeHelp(
-    runtime: "vllm" | "llamacpp"
-  ): Promise<{ config: string | null; error: string | null }>;
 }

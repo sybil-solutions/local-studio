@@ -21,7 +21,6 @@ export interface RuntimeSummaryData {
   gpu_monitoring: RuntimeGpuMonitoringInfo;
   backends: {
     vllm: RuntimeBackendInfo;
-    mlx: RuntimeBackendInfo;
     sglang: RuntimeBackendInfo;
     llamacpp: RuntimeBackendInfo;
     exllamav3?: RuntimeBackendInfo;

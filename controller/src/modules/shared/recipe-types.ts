@@ -1,10 +1,7 @@
 export type Backend =
   | "vllm"
-  | "mlx"
   | "sglang"
   | "llamacpp"
-  | "transformers"
-  | "tabbyapi"
   | "exllamav3";
 
 /**
