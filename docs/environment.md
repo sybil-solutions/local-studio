@@ -146,3 +146,7 @@ These are read at runtime for binary resolution and are not vLLM Studio-specific
 - `PATH` — used to locate `python`, `vllm`, `llama-server`, and other binaries
 - `HOME` / `USER` / `LOGNAME` — used for runtime environment construction
 - `SNAP` — checked for Snap-packaged runtime detection
+
+---
+
+[← Back to docs index](./README.md)

@@ -6,12 +6,23 @@ The vLLM Studio desktop app wraps the Next.js frontend in Electron for a native 
 
 ## Quick Start
 
+For a first-time build that gives you an installable app:
+
 ```bash
 cd frontend
-npm run desktop:dev       # next dev + electron shell
-npm run desktop:build     # next standalone + desktop main build
-npm run desktop:dist      # production installers in dist-desktop/
+npm ci
+npm run desktop:pack      # builds the app (skip DMG/ZIP creation)
 ```
+
+Then install it — see [Install the Built App](#install-the-built-app) below.
+
+For other scenarios:
+
+| Command | When to use |
+|---|---|
+| `npm run desktop:dev` | Iterating on UI — runs Next.js dev server + Electron shell |
+| `npm run desktop:build` | Full standalone build + desktop main |
+| `npm run desktop:dist` | Production release — signed app + DMG/ZIP |
 
 ---
 
@@ -104,3 +115,7 @@ cd frontend && npm run desktop:dist
 | Bundle ID | `org.vllm.studio.desktop` |
 | Legacy install (remove) | `~/Applications/vllm-studio-mac.app` |
 | Build output (arm64) | `frontend/dist-desktop/mac-arm64/` |
+
+---
+
+[← Back to docs index](./README.md)

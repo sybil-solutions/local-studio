@@ -12,7 +12,7 @@ You need:
 
 ```bash
 # 1. Clone
-git clone <repo-url> && cd vllm-studio
+git clone https://github.com/sybil-solutions/vllm-studio.git && cd vllm-studio
 
 # 2. Install & build
 cd frontend && npm ci && npm run desktop:pack
@@ -44,12 +44,12 @@ You need on the server:
 
 ```bash
 # 1. Clone
-git clone <repo-url> && cd vllm-studio
+git clone https://github.com/sybil-solutions/vllm-studio.git && cd vllm-studio
 
-# 2. Start the controller
+# 2. Start the controller (bind to 0.0.0.0 so other machines can reach it)
 cd controller
 bun install
-bun src/main.ts   # runs on http://0.0.0.0:8080
+VLLM_STUDIO_HOST=0.0.0.0 bun src/main.ts   # runs on http://0.0.0.0:8080
 ```
 
 To keep it running after you log out:
@@ -64,7 +64,7 @@ To keep it running after you log out:
 
 ```bash
 # 1. Clone (same repo)
-git clone <repo-url> && cd vllm-studio
+git clone https://github.com/sybil-solutions/vllm-studio.git && cd vllm-studio
 
 # 2. Start the frontend, pointing at your server
 cd frontend
@@ -93,7 +93,7 @@ You need:
 
 ```bash
 # 1. Clone
-git clone <repo-url> && cd vllm-studio
+git clone https://github.com/sybil-solutions/vllm-studio.git && cd vllm-studio
 
 # 2. Start the controller in mock mode
 cd controller
@@ -121,7 +121,7 @@ You need:
 
 ```bash
 # 1. Clone
-git clone <repo-url> && cd vllm-studio
+git clone https://github.com/sybil-solutions/vllm-studio.git && cd vllm-studio
 
 # 2. Controller — install, typecheck, test
 cd controller
@@ -142,3 +142,13 @@ All green? You're ready. Pick an issue and open a PR.
 - [Contributing guide](../CONTRIBUTING.md)
 - [Codebase context](../CONTEXT.md)
 - [Architecture docs](./architecture/README.md)
+
+---
+
+## Next: set up a model
+
+Once you're running, head to [Recipes & Models](./recipes.md) to create a recipe, configure a backend, and launch your first model.
+
+---
+
+[← Back to docs index](./README.md)

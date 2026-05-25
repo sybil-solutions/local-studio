@@ -206,3 +206,7 @@ Mock mode returns synthetic inference responses — no real model is loaded.
 
 **Build failures on remote:**
 - The deploy script builds locally and ships `.next/` — Turbopack + Redis permissions on the remote can cause failures if you try `next build` there directly
+
+---
+
+[← Back to docs index](./README.md)
