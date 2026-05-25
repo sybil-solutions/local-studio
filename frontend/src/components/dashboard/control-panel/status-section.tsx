@@ -284,7 +284,7 @@ function HeaderStopButton({ running }: { running: boolean }) {
 export function metricValue(value: number | null, digits: number): string | null {
   return typeof value === "number" && Number.isFinite(value) && value > 0
     ? value.toFixed(digits)
-    : null;
+    : (0).toFixed(digits);
 }
 
 export function ratioMetric(
@@ -329,23 +329,23 @@ function tokenMetric(...values: Array<number | undefined>): string {
   const value = values.find(
     (item) => typeof item === "number" && Number.isFinite(item) && item >= 0,
   );
-  return typeof value === "number" ? Math.round(value).toLocaleString() : "unavailable";
+  return typeof value === "number" ? Math.round(value).toLocaleString() : "0";
 }
 
 function tokenTotalMetric(metrics: Metrics | null): string {
   const explicit = tokenMetric(metrics?.total_tokens, metrics?.tokens_total);
-  if (explicit !== "unavailable") return explicit;
+  if (explicit !== "0") return explicit;
   if (
     typeof metrics?.prompt_tokens_total === "number" &&
     typeof metrics.generation_tokens_total === "number"
   ) {
     return tokenMetric(metrics.prompt_tokens_total + metrics.generation_tokens_total);
   }
-  return "unavailable";
+  return explicit;
 }
 
 function durationMetric(value: number | undefined): string {
-  if (!value || value <= 0) return "unavailable";
+  if (!value || value <= 0) return "0ms";
   return value > 1000 ? `${(value / 1000).toFixed(2)}s` : `${value.toFixed(0)}ms`;
 }
 
@@ -549,7 +549,7 @@ function MetricColumn({
   detail?: string;
   detailTitle?: string;
 }) {
-  const displayValue = value ?? "unavailable";
+  const displayValue = value ?? "0";
 
   return (
     <div className="min-w-0 overflow-hidden border-r border-(--border)/40 pr-2 pl-3 first:pl-0 sm:pr-4 sm:pl-5 last:border-r-0 [container-type:inline-size]">

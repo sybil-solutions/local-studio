@@ -1,4 +1,5 @@
 const CONTROLLERS_STORAGE_KEY = "vllm-studio.controllers";
+export const CONTROLLERS_CHANGED_EVENT = "vllm:controllers-changed";
 
 export type SavedController = {
   url: string;
@@ -75,6 +76,9 @@ export function saveSavedControllers(controllers: SavedController[]): SavedContr
   }
   const next = [...byUrl.values()];
   window.localStorage.setItem(CONTROLLERS_STORAGE_KEY, JSON.stringify(next));
+  window.dispatchEvent(
+    new CustomEvent(CONTROLLERS_CHANGED_EVENT, { detail: { controllers: next } }),
+  );
   window.dispatchEvent(new Event("storage"));
   return next;
 }

@@ -7,8 +7,13 @@ import { StatusSection } from "./status-section";
 import { GpuSection } from "./gpu-section";
 import { createApiClient } from "@/lib/api/create-api-client";
 import { setApiKey } from "@/lib/api-key";
-import { getStoredBackendUrl, setStoredBackendUrl } from "@/lib/backend-url";
 import {
+  BACKEND_URL_CHANGED_EVENT,
+  getStoredBackendUrl,
+  setStoredBackendUrl,
+} from "@/lib/backend-url";
+import {
+  CONTROLLERS_CHANGED_EVENT,
   loadSavedControllers,
   normalizeControllerUrl,
   type SavedController,
@@ -94,7 +99,13 @@ function ControllerMatrix() {
     };
     load();
     window.addEventListener("storage", load);
-    return () => window.removeEventListener("storage", load);
+    window.addEventListener(BACKEND_URL_CHANGED_EVENT, load);
+    window.addEventListener(CONTROLLERS_CHANGED_EVENT, load);
+    return () => {
+      window.removeEventListener("storage", load);
+      window.removeEventListener(BACKEND_URL_CHANGED_EVENT, load);
+      window.removeEventListener(CONTROLLERS_CHANGED_EVENT, load);
+    };
   }, []);
 
   useLegacyEffect(() => {
