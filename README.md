@@ -2,19 +2,11 @@
 
 Unified local AI workstation for model lifecycle, chat/agent workflows, orchestration, observability, and remote deployment.
 
-## Release: v1.13.0
-
-This release consolidates major repo changes currently in the tree, including:
-
-- OpenAI chat proxy is fully passive — frontend-only model launches; chat requests for a non-running model now return 503 instead of triggering an auto-launch
-- lifecycle-aware run aborts when model eviction happens
-- SSE run stream termination fixes across backend and frontend
-- local-only chat/runtime cleanup and controller simplification
-- dashboard launch-state cleanup improvements
-- reduced chat/controller indirection and removed dead remote-runtime branches
+See [CHANGELOG.md](./CHANGELOG.md) for release notes.
 
 ## Docs
 
+- **Getting started: docs/getting-started.md** — pick your path and get running
 - Overview: docs/README.md
 - Setup and deployment: docs/operations.md
 - Environment variables: docs/environment.md
@@ -53,11 +45,13 @@ npm run build
 npm run dev
 ```
 
-3. Full stack with Docker (controller + frontend + infra):
+3. PostgreSQL (optional — for production persistence):
 
 ```bash
-docker compose up -d --build controller frontend
+docker compose up -d postgres
 ```
+
+The controller and frontend run natively for GPU tool access. Docker is only used for the database.
 
 4. Run controller as a background daemon:
 
@@ -81,7 +75,7 @@ curl -I http://localhost:3000
 
 ## Setup guide
 
-See `docs/operations.md` for setup, deployment, and verification instructions.
+See [docs/getting-started.md](./docs/getting-started.md) to get running in minutes, or [docs/operations.md](./docs/operations.md) for the full setup and deployment reference.
 
 ## Branching and release workflow
 
