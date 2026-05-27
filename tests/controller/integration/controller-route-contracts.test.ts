@@ -122,6 +122,133 @@ describe("controller route contracts", () => {
     ]);
   });
 
+  test("model catalog routes expose recipe-backed model details and discovery metadata", async () => {
+    const modelsDir = process.env.VLLM_STUDIO_MODELS_DIR;
+    if (!modelsDir) throw new Error("VLLM_STUDIO_MODELS_DIR is required for tests");
+    const modelPath = join(modelsDir, "catalog-route-model");
+    mkdirSync(modelPath, { recursive: true });
+    writeFileSync(
+      join(modelPath, "config.json"),
+      JSON.stringify({
+        architectures: ["CatalogRouteForCausalLM"],
+        max_position_embeddings: 8192,
+      }),
+      "utf8",
+    );
+    writeFileSync(join(modelPath, "model.safetensors"), "weights", "utf8");
+    const app = await createTestApp();
+
+    const createRecipeResponse = await app.request("/recipes", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        id: "catalog-route-recipe",
+        name: "Catalog Route Recipe",
+        model_path: modelPath,
+        backend: "vllm",
+        served_model_name: "catalog-route-served",
+        max_model_len: 8192,
+      }),
+    });
+    const createRecipeBody = await createRecipeResponse.json();
+    expect(createRecipeResponse.status).toBe(200);
+    expect(createRecipeBody).toEqual({ success: true, id: "catalog-route-recipe" });
+
+    const modelsResponse = await app.request("/v1/models");
+    const modelsBody = await modelsResponse.json();
+    expect(modelsResponse.status).toBe(200);
+    expect(modelsBody).toMatchObject({ object: "list" });
+    expect(modelsBody.data).toEqual([
+      expect.objectContaining({
+        id: "catalog-route-served",
+        object: "model",
+        owned_by: "vllm-studio",
+        active: false,
+        max_model_len: 8192,
+      }),
+    ]);
+
+    const modelResponse = await app.request("/v1/models/catalog-route-served");
+    const modelBody = await modelResponse.json();
+    expect(modelResponse.status).toBe(200);
+    expect(modelBody).toMatchObject({
+      id: "catalog-route-served",
+      object: "model",
+      owned_by: "vllm-studio",
+      active: false,
+      max_model_len: 8192,
+    });
+
+    const missingModelResponse = await app.request("/v1/models/missing-model");
+    const missingModelBody = await missingModelResponse.json();
+    expect(missingModelResponse.status).toBe(404);
+    expect(missingModelBody).toEqual({ detail: "Model not found" });
+
+    const studioModelsResponse = await app.request("/v1/studio/models");
+    const studioModelsBody = await studioModelsResponse.json();
+    expect(studioModelsResponse.status).toBe(200);
+    expect(studioModelsBody).toMatchObject({
+      configured_models_dir: modelsDir,
+    });
+    expect(studioModelsBody.roots).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          path: modelsDir,
+          exists: true,
+          sources: ["config", "recipe_parent"],
+          recipe_ids: ["catalog-route-recipe"],
+        }),
+      ]),
+    );
+    expect(studioModelsBody.models).toEqual([
+      expect.objectContaining({
+        name: "catalog-route-model",
+        path: modelPath,
+        size_bytes: 7,
+        architecture: "CatalogRouteForCausalLM",
+        context_length: 8192,
+        recipe_ids: ["catalog-route-recipe"],
+        has_recipe: true,
+      }),
+    ]);
+
+    const rows = readControllerRequestRows();
+    expect(rows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          method: "POST",
+          path: "/recipes",
+          status: 200,
+          success: 1,
+        }),
+        expect.objectContaining({
+          method: "GET",
+          path: "/v1/models",
+          status: 200,
+          success: 1,
+        }),
+        expect.objectContaining({
+          method: "GET",
+          path: "/v1/models/catalog-route-served",
+          status: 200,
+          success: 1,
+        }),
+        expect.objectContaining({
+          method: "GET",
+          path: "/v1/models/missing-model",
+          status: 404,
+          success: 0,
+        }),
+        expect.objectContaining({
+          method: "GET",
+          path: "/v1/studio/models",
+          status: 200,
+          success: 1,
+        }),
+      ]),
+    );
+  });
+
   test("invalid controller proxy targets fail before any upstream request is made", async () => {
     const app = await createTestApp();
     const response = await app.request(
