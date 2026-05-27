@@ -3,6 +3,7 @@ export const BACKEND_LABELS: Record<string, string> = {
   sglang: "SGLang",
   llamacpp: "llama.cpp",
   exllamav3: "ExLlama v3",
+  mlx: "MLX",
 };
 
 export const formatBackendLabel = (backend?: string | null): string => {

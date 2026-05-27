@@ -74,13 +74,14 @@ export function RecipeModalTabGeneral({
             <select
               value={recipe.backend ?? "vllm"}
               onChange={(e) =>
-                onChange({ ...recipe, backend: e.target.value as "vllm" | "sglang" | "llamacpp" })
+                onChange({ ...recipe, backend: e.target.value as RecipeEditor["backend"] })
               }
               className="w-full px-3 py-2 bg-(--bg) border border-(--border) rounded-md text-sm focus:outline-none focus:border-(--accent)"
             >
               <option value="vllm">vLLM</option>
               <option value="sglang">SGLang</option>
               <option value="llamacpp">llama.cpp</option>
+              <option value="mlx">MLX</option>
             </select>
           </div>
           <div>

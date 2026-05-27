@@ -19,6 +19,7 @@ const ENV_KEYS = [
   "VLLM_STUDIO_RUNTIME_SKIP_DOCKER",
   "VLLM_STUDIO_RUNTIME_SKIP_SYSTEM",
   "VLLM_STUDIO_LLAMA_BIN",
+  "VLLM_STUDIO_MLX_PYTHON",
   "PI_CODING_AGENT_DIR",
 ] as const;
 
@@ -1163,6 +1164,20 @@ describe("controller route contracts", () => {
     );
     chmodSync(llamaBin, 0o755);
     process.env.VLLM_STUDIO_LLAMA_BIN = llamaBin;
+    const mlxPython = join(tempDir, "python-mlx-test");
+    writeFileSync(
+      mlxPython,
+      [
+        "#!/usr/bin/env sh",
+        "if [ \"$1\" = \"--version\" ]; then echo 'Python 3.12.0'; exit 0; fi",
+        "if [ \"$1\" = \"-c\" ]; then echo '{\"version\":\"0.24.0\",\"python\":\"'\"$0\"'\"}'; exit 0; fi",
+        "exit 0",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+    chmodSync(mlxPython, 0o755);
+    process.env.VLLM_STUDIO_MLX_PYTHON = mlxPython;
     const app = await createTestApp();
 
     const targetsResponse = await app.request("/runtime/targets");
@@ -1188,6 +1203,29 @@ describe("controller route contracts", () => {
       health: { status: "ok" },
     });
     if (!target) throw new Error("Expected configured llama.cpp runtime target");
+
+    const mlxTarget = targetsBody.targets.find(
+      (candidate: Record<string, unknown>) =>
+        candidate["backend"] === "mlx" &&
+        candidate["source"] === "configured" &&
+        candidate["pythonPath"] === mlxPython,
+    );
+    expect(mlxTarget).toMatchObject({
+      backend: "mlx",
+      kind: "venv",
+      source: "configured",
+      installed: true,
+      active: false,
+      version: "0.24.0",
+      pythonPath: mlxPython,
+      capabilities: expect.objectContaining({
+        canLaunch: true,
+        canUpdate: false,
+        canInspectOptions: false,
+      }),
+      health: { status: "ok" },
+    });
+    if (!mlxTarget) throw new Error("Expected configured MLX runtime target");
 
     const targetId = String(target.id);
     const targetResponse = await app.request(`/runtime/targets/${targetId}`);
@@ -1223,6 +1261,16 @@ describe("controller route contracts", () => {
       refreshedBody.targets.find((candidate: Record<string, unknown>) => candidate["id"] === targetId),
     ).toMatchObject({ active: true });
 
+    const mlxResponse = await app.request("/runtime/mlx");
+    const mlxBody = await mlxResponse.json();
+    expect(mlxResponse.status).toBe(200);
+    expect(mlxBody).toMatchObject({
+      installed: true,
+      version: "0.24.0",
+      python_path: mlxPython,
+      upgrade_command_available: false,
+    });
+
     const rows = readControllerRequestRows();
     expect(rows).toEqual(
       expect.arrayContaining([
@@ -1247,6 +1295,12 @@ describe("controller route contracts", () => {
         expect.objectContaining({
           method: "POST",
           path: `/runtime/targets/${targetId}/select`,
+          status: 200,
+          success: 1,
+        }),
+        expect.objectContaining({
+          method: "GET",
+          path: "/runtime/mlx",
           status: 200,
           success: 1,
         }),
@@ -1407,6 +1461,16 @@ describe("controller route contracts", () => {
     expect(llamaBody.version === null || typeof llamaBody.version === "string").toBe(true);
     expect(llamaBody.binary_path === null || typeof llamaBody.binary_path === "string").toBe(true);
 
+    const mlxResponse = await app.request("/runtime/mlx");
+    const mlxBody = await mlxResponse.json();
+    expect(mlxResponse.status).toBe(200);
+    expect(mlxBody).toMatchObject({
+      installed: expect.any(Boolean),
+      upgrade_command_available: expect.any(Boolean),
+    });
+    expect(mlxBody.version === null || typeof mlxBody.version === "string").toBe(true);
+    expect(mlxBody.python_path === null || typeof mlxBody.python_path === "string").toBe(true);
+
     const exllamav3Response = await app.request("/runtime/exllamav3");
     const exllamav3Body = await exllamav3Response.json();
     expect(exllamav3Response.status).toBe(200);
@@ -1456,6 +1520,12 @@ describe("controller route contracts", () => {
         expect.objectContaining({
           method: "GET",
           path: "/runtime/llamacpp",
+          status: 200,
+          success: 1,
+        }),
+        expect.objectContaining({
+          method: "GET",
+          path: "/runtime/mlx",
           status: 200,
           success: 1,
         }),

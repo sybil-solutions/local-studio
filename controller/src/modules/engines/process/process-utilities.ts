@@ -30,6 +30,9 @@ export const detectBackend = (args: string[]): Backend | null => {
   if (joined.includes("sglang.launch_server")) {
     return "sglang";
   }
+  if (joined.includes("mlx_lm.server") || joined.includes("mlx-lm")) {
+    return "mlx";
+  }
   const joinedLower = joined.toLowerCase();
   if (joinedLower.includes("exllama") || joinedLower.includes("exllamav3")) {
     return "exllamav3";

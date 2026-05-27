@@ -30,7 +30,9 @@ const createCapabilities = (target: {
       (target.kind === "venv" || (target.kind === "system" && Boolean(target.pythonPath)))) ||
     (target.backend === "llamacpp" && isUpgradeCommandConfigured(LLAMACPP_UPGRADE_ENV)),
   canInspectOptions:
-    target.backend !== "sglang" && (target.installed || target.source === "running"),
+    target.backend !== "sglang" &&
+    target.backend !== "mlx" &&
+    (target.installed || target.source === "running"),
   supportsDocker: target.kind === "docker",
 });
 
@@ -49,6 +51,7 @@ const RELEASE_NOTES: Record<EngineBackend, string> = {
   vllm: "https://github.com/vllm-project/vllm/releases",
   sglang: "https://github.com/sgl-project/sglang/releases",
   llamacpp: "https://github.com/ggml-org/llama.cpp/releases",
+  mlx: "https://github.com/ml-explore/mlx-lm/releases",
 };
 
 const packageSpecForTarget = (backend: EngineBackend): string => {
@@ -57,6 +60,7 @@ const packageSpecForTarget = (backend: EngineBackend): string => {
     return target ? `vllm==${target}` : "vllm";
   }
   if (backend === "sglang") return "sglang";
+  if (backend === "mlx") return "mlx-lm";
   return "configured llama.cpp upgrade command";
 };
 

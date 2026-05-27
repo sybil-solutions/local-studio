@@ -286,6 +286,7 @@ export const registerSystemRoutes = (app: Hono, context: AppContext): void => {
         sglang_python: context.config.sglang_python ?? null,
         tabby_api_dir: context.config.tabby_api_dir ?? null,
         llama_bin: context.config.llama_bin ?? null,
+        mlx_python: context.config.mlx_python ?? null,
       },
       services,
       environment: {

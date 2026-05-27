@@ -2,10 +2,11 @@ import { existsSync, readFileSync } from "node:fs";
 import { basename, resolve } from "node:path";
 import { resolveBinary, runCommand } from "../../../core/command";
 
-const PYTHON_VERSION_PROBES: Record<"vllm" | "sglang", string> = {
+const PYTHON_VERSION_PROBES: Record<"vllm" | "sglang" | "mlx", string> = {
   vllm: "import json, sys\ntry:\n import vllm\n print(json.dumps({'version': vllm.__version__, 'python': sys.executable}))\nexcept Exception as e:\n print(json.dumps({'version': None, 'python': sys.executable, 'error': str(e)}))",
   sglang:
     "import json, sys\ntry:\n import sglang\n print(json.dumps({'version': getattr(sglang, '__version__', None), 'python': sys.executable}))\nexcept Exception as e:\n print(json.dumps({'version': None, 'python': sys.executable, 'error': str(e)}))",
+  mlx: "import json, sys\ntry:\n import mlx_lm\n print(json.dumps({'version': getattr(mlx_lm, '__version__', None) or 'installed', 'python': sys.executable}))\nexcept Exception as e:\n print(json.dumps({'version': None, 'python': sys.executable, 'error': str(e)}))",
 };
 
 const pathExists = (path: string | null | undefined): boolean => Boolean(path && existsSync(path));
@@ -33,7 +34,9 @@ export const parseCommandPython = (args: string[]): string | null => {
   if (first && looksLikePython(first)) return resolvePathOrBinary(first) ?? first;
   const moduleIndex = args.findIndex(
     (argument) =>
-      argument === "vllm.entrypoints.openai.api_server" || argument === "sglang.launch_server"
+      argument === "vllm.entrypoints.openai.api_server" ||
+      argument === "sglang.launch_server" ||
+      argument === "mlx_lm.server"
   );
   if (moduleIndex >= 2 && args[moduleIndex - 1] === "-m") {
     const candidate = args[moduleIndex - 2];
@@ -49,7 +52,7 @@ export const parseCommandBinary = (args: string[]): string | null => {
 };
 
 export const probePythonRuntime = (
-  backend: "vllm" | "sglang",
+  backend: "vllm" | "sglang" | "mlx",
   python: string
 ): {
   installed: boolean;

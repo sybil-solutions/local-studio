@@ -102,6 +102,17 @@ export const createOpenApiSpec = (context: AppContext): Record<string, unknown> 
         },
       },
     },
+    "/runtime/mlx": {
+      get: {
+        summary: "MLX runtime info",
+        description: "Get MLX install status and Python runtime path",
+        responses: {
+          "200": {
+            description: "Runtime info",
+          },
+        },
+      },
+    },
     "/runtime/cuda": {
       get: {
         summary: "CUDA info",

@@ -45,6 +45,13 @@ const unique = (values: Array<string | null | undefined>): string[] => {
   return result;
 };
 
+const sourcePriority = (source: RuntimeTarget["source"]): number => {
+  if (source === "running") return 4;
+  if (source === "configured") return 3;
+  if (source === "bundled") return 2;
+  return 1;
+};
+
 const addTarget = (targets: RuntimeTarget[], target: RuntimeTarget): void => {
   const existingIndex = targets.findIndex((candidate) => candidate.id === target.id);
   if (existingIndex === -1) {
@@ -53,14 +60,16 @@ const addTarget = (targets: RuntimeTarget[], target: RuntimeTarget): void => {
   }
   const existing = targets[existingIndex];
   if (!existing) return;
+  const keepExistingSource = sourcePriority(existing.source) >= sourcePriority(target.source);
   targets[existingIndex] = {
     ...existing,
     ...target,
+    label: keepExistingSource ? existing.label : target.label,
     active: existing.active || target.active,
     installed: existing.installed || target.installed,
     version: existing.version ?? target.version,
     health: existing.health.status === "ok" ? existing.health : target.health,
-    source: existing.source === "running" ? existing.source : target.source,
+    source: keepExistingSource ? existing.source : target.source,
   };
 };
 
@@ -70,7 +79,8 @@ const collectRunningTargets = (runningProcess?: ProcessInfo | null): RuntimeTarg
   const activePid = runningProcess?.pid ?? null;
   for (const entry of processEntries) {
     const backend = detectBackend(entry.args);
-    if (backend !== "vllm" && backend !== "sglang" && backend !== "llamacpp") continue;
+    if (backend !== "vllm" && backend !== "sglang" && backend !== "llamacpp" && backend !== "mlx")
+      continue;
     const pythonPath = backend === "llamacpp" ? null : parseCommandPython(entry.args);
     const binaryPath = backend === "llamacpp" ? parseCommandBinary(entry.args) : null;
     const key = pythonPath ?? binaryPath ?? `${entry.pid}:${entry.args.join(" ")}`;
@@ -124,7 +134,7 @@ const collectVenvPythonFiles = (config: Config): string[] => {
 };
 
 const collectPythonTargets = (
-  backend: "vllm" | "sglang",
+  backend: "vllm" | "sglang" | "mlx",
   config: Config,
   runningProcess?: ProcessInfo | null
 ): RuntimeTarget[] => {
@@ -141,7 +151,9 @@ const collectPythonTargets = (
           ...splitEnvironmentList(process.env["VLLM_STUDIO_VLLM_PYTHONS"]),
           ...splitEnvironmentList(process.env["VLLM_STUDIO_RUNTIME_PYTHONS"]),
         ]
-      : [config.sglang_python, ...splitEnvironmentList(process.env["VLLM_STUDIO_SGLANG_PYTHONS"])];
+      : backend === "sglang"
+        ? [config.sglang_python, ...splitEnvironmentList(process.env["VLLM_STUDIO_SGLANG_PYTHONS"])]
+        : [config.mlx_python, ...splitEnvironmentList(process.env["VLLM_STUDIO_MLX_PYTHONS"])];
   for (const candidate of unique(configured)) {
     const probe = probePythonRuntime(backend, candidate);
     addTarget(
@@ -163,7 +175,11 @@ const collectPythonTargets = (
   const projectManaged =
     backend === "vllm"
       ? unique([resolveVllmPythonPath(), ...collectVenvPythonFiles(config)])
-      : unique([config.sglang_python, resolveVllmPythonPath(), ...collectVenvPythonFiles(config)]);
+      : unique([
+          backend === "sglang" ? config.sglang_python : config.mlx_python,
+          resolveVllmPythonPath(),
+          ...collectVenvPythonFiles(config),
+        ]);
   for (const candidate of projectManaged) {
     const probe = probePythonRuntime(backend, candidate);
     addTarget(
@@ -289,6 +305,7 @@ const collectDockerTargets = (backend: EngineBackend): RuntimeTarget[] => {
     vllm: /(^|[/:_-])vllm($|[/:_-])/i,
     sglang: /(^|[/:_-])sglang($|[/:_-])/i,
     llamacpp: /(llama\.cpp|llamacpp|llama-server)/i,
+    mlx: /(mlx-lm|mlx_lm|mlx)/i,
   };
   const imageResult = runCommand(docker, ["images", "--format", "{{.Repository}}:{{.Tag}}"], 3_000);
   if (imageResult.status === 0) {
@@ -376,7 +393,7 @@ const withSelection = (targets: RuntimeTarget[], config: Config): RuntimeTarget[
 };
 
 const sortTargets = (targets: RuntimeTarget[]): RuntimeTarget[] => {
-  const backendOrder: Record<EngineBackend, number> = { vllm: 0, sglang: 1, llamacpp: 2 };
+  const backendOrder: Record<EngineBackend, number> = { vllm: 0, sglang: 1, llamacpp: 2, mlx: 3 };
   return [...targets].sort(
     (first, second) =>
       backendOrder[first.backend] - backendOrder[second.backend] ||
@@ -399,7 +416,7 @@ export const getRuntimeTargets = async (
   ) {
     return targetsCache.value;
   }
-  const backends: EngineBackend[] = ["vllm", "sglang", "llamacpp"];
+  const backends: EngineBackend[] = ["vllm", "sglang", "llamacpp", "mlx"];
   const targets: RuntimeTarget[] = [];
   for (const backend of backends) {
     const backendTargets =

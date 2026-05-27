@@ -34,7 +34,7 @@ function target(id: string, backendId: RuntimeTarget["backend"]): RuntimeTarget 
 
 test("settings engine rows prefer direct inference targets including llama.cpp", () => {
   const view = resolveEngineRowsView(
-    [target("vllm-venv", "vllm"), target("llama-cpp-binary", "llamacpp")],
+    [target("vllm-venv", "vllm"), target("llama-cpp-binary", "llamacpp"), target("mlx-venv", "mlx")],
     {
       vllm: backend(false),
       sglang: backend(false),
@@ -49,6 +49,7 @@ test("settings engine rows prefer direct inference targets including llama.cpp",
     [
       ["vllm-venv", "vllm", "venv"],
       ["llama-cpp-binary", "llamacpp", "binary"],
+      ["mlx-venv", "mlx", "venv"],
     ],
   );
 });
@@ -58,6 +59,7 @@ test("settings engine rows fall back to backend summaries before runtime targets
     vllm: backend(true),
     sglang: backend(false),
     llamacpp: backend(true),
+    mlx: backend(true),
     exllamav3: backend(false),
   };
   const view = resolveEngineRowsView([], backends);
@@ -70,6 +72,7 @@ test("settings engine rows fall back to backend summaries before runtime targets
       ["vllm", true],
       ["sglang", false],
       ["llamacpp", true],
+      ["mlx", true],
       ["exllamav3", false],
     ],
   );

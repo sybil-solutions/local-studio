@@ -96,7 +96,7 @@ export const recipeSchema = z.object({
   id: z.string(),
   name: z.string(),
   model_path: z.string(),
-  backend: z.enum(["vllm", "sglang", "llamacpp", "exllamav3"]).default("vllm"),
+  backend: z.enum(["vllm", "sglang", "llamacpp", "exllamav3", "mlx"]).default("vllm"),
   env_vars: z.record(z.string()).nullable().optional(),
   tensor_parallel_size: z.coerce.number().int().default(1),
   pipeline_parallel_size: z.coerce.number().int().default(1),

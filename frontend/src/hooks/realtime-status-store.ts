@@ -43,6 +43,7 @@ function normalizeRuntimeBackends(
     vllm: backends?.vllm ?? unavailableBackend(),
     sglang: backends?.sglang ?? unavailableBackend(),
     llamacpp: backends?.llamacpp ?? unavailableBackend(),
+    ...(backends?.mlx ? { mlx: backends.mlx } : {}),
     ...(backends?.exllamav3 ? { exllamav3: backends.exllamav3 } : {}),
   };
 }

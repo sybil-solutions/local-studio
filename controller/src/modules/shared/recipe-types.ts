@@ -2,7 +2,8 @@ export type Backend =
   | "vllm"
   | "sglang"
   | "llamacpp"
-  | "exllamav3";
+  | "exllamav3"
+  | "mlx";
 
 /**
  * Canonical recipe shape as sent over the wire (JSON).

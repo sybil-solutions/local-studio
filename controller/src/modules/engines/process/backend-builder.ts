@@ -24,7 +24,7 @@ export const getPythonPath = (recipe: Recipe): string | undefined => { if (recip
 };
 const getVllmPythonPath = (recipe: Recipe): string | undefined => { return resolveVllmRecipePythonPath(recipe.python_path) ?? undefined;
 };
-export const appendExtraArguments = (command: string[], extraArguments: Record<string, unknown>): string[] => { const internalKeys = new Set(["venv_path", "env_vars", "visible_devices", "cuda_visible_devices", "hip_visible_devices", "rocr_visible_devices", "description", "tags", "status", "llama_bin", "launch_command", "custom_command", "docker_container", "docker_image", "docker-container", "exllama_command", "exllamav3_command", "exllama-cmd"]);
+export const appendExtraArguments = (command: string[], extraArguments: Record<string, unknown>): string[] => { const internalKeys = new Set(["venv_path", "env_vars", "visible_devices", "cuda_visible_devices", "hip_visible_devices", "rocr_visible_devices", "description", "tags", "status", "llama_bin", "mlx_python", "launch_command", "custom_command", "docker_container", "docker_image", "docker-container", "exllama_command", "exllamav3_command", "exllama-cmd"]);
   const jsonStringKeys = new Set(["speculative_config", "default_chat_template_kwargs"]);
   for (const [key, value] of Object.entries(extraArguments)) { const normalizedKey = key.replace(/-/g, "_").toLowerCase();
     if (internalKeys.has(normalizedKey)) { continue;
@@ -150,12 +150,18 @@ export const buildExllamav3Command = (recipe: Recipe, config: Config): string[] 
     commandWithDefaults.push("--model", recipe.model_path); }
  return appendExtraArguments(commandWithDefaults, recipe.extra_args);
 };
+export const buildMlxCommand = (recipe: Recipe, config: Config): string[] => { const python = getPythonPath(recipe) || config.mlx_python || "python3";
+  const command = [python, "-m", "mlx_lm.server"];
+  command.push("--model", recipe.model_path, "--host", recipe.host, "--port", String(recipe.port));
+  return appendExtraArguments(command, recipe.extra_args);
+};
 export const buildBackendCommand = (recipe: Recipe, config: Config): string[] => { const launchCommand = getLaunchCommandOverride(recipe);
   if (launchCommand) { return launchCommand;
   }
   if (recipe.backend === "sglang") { return buildSglangCommand(recipe, config);
   } if (recipe.backend === "llamacpp") {
     return buildLlamacppCommand(recipe, config); }
+  if (recipe.backend === "mlx") { return buildMlxCommand(recipe, config); }
   if (recipe.backend === "exllamav3") { const command = buildExllamav3Command(recipe, config);
     if (!command) { throw new Error("Missing ExLLaMA v3 command. Set extra_args.exllama_command or VLLM_STUDIO_EXLLAMAV3_COMMAND.");
     } return command;

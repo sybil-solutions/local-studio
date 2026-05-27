@@ -158,10 +158,12 @@ export const buildCompatibilityReport = (args: {
   }
 
   const exllamav3Installed = runtime.backends.exllamav3?.installed ?? false;
+  const mlxInstalled = runtime.backends.mlx?.installed ?? false;
   if (
     !runtime.backends.vllm.installed &&
     !runtime.backends.sglang.installed &&
     !runtime.backends.llamacpp.installed &&
+    !mlxInstalled &&
     !exllamav3Installed
   ) {
     addCheck(checks, {
