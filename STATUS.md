@@ -6,9 +6,9 @@ Clean up vLLM Studio without changing runtime functionality or UI unless a later
 
 ## Current Turn
 
-- [x] Inspect comments in `frontend/src/lib/agent/session/helpers.ts`.
-- [x] Remove decorative session helper section headers.
-- [x] Validate frontend session helper comment cleanup slice.
+- [x] Inspect comments in `frontend/src/components/dashboard/launch-toast-model.ts`.
+- [x] Remove redundant launch-toast JSDoc.
+- [x] Validate frontend launch-toast comment cleanup slice.
 - [x] Commit this slice.
 
 ## Backlog
@@ -22,7 +22,7 @@ Clean up vLLM Studio without changing runtime functionality or UI unless a later
 - [ ] Surface observability data in `/usage` and validate it end to end. Initial route observability is surfaced, raw persistence is integration-tested, `/usage` status, latency, recent-activity, and error aggregation is integration-tested, and the frontend normalization boundary preserves controller observability; frontend visual rendering and full API-route coverage remain.
 - [ ] Deploy controller to Pop!\_OS after killing the old controller from this device.
 - [ ] Test every API route against controller observability rows and `/usage`.
-- [ ] Audit comments across the repo and delete stale or irrelevant comments. Current slices remove empty/generated JSDoc blocks from controller source/tooling, exact non-informative `// CRITICAL` headers, stale annotated `CRITICAL` migration labels, generated lifecycle JSDoc noise from the engine coordinator, non-informative `CRITICAL` banners from deploy/global-style files, generated download-manager JSDoc noise, parameter-only download helper JSDoc, boilerplate process utility JSDoc, backend-builder command JSDoc noise, runtime parser default JSDoc noise, process-manager wrapper JSDoc noise, parameter-only metrics-store JSDoc, proxy route registration JSDoc noise, stale log-route wrapper JSDoc, event-manager method JSDoc noise, stale metrics-collector helper JSDoc, self-evident launch-state JSDoc, vLLM runtime path resolver JSDoc, model-browser JSDoc noise, redundant Projects navigation comments, redundant pane-grid comments, redundant tools persistence comments, self-evident pane-controller helper JSDoc, self-evident API core comments, redundant chat-pane comments, self-evident agent-browser render comments, decorative session block-event section headers, and decorative session helper section headers; broader file-by-file audit remains open.
+- [ ] Audit comments across the repo and delete stale or irrelevant comments. Current slices remove empty/generated JSDoc blocks from controller source/tooling, exact non-informative `// CRITICAL` headers, stale annotated `CRITICAL` migration labels, generated lifecycle JSDoc noise from the engine coordinator, non-informative `CRITICAL` banners from deploy/global-style files, generated download-manager JSDoc noise, parameter-only download helper JSDoc, boilerplate process utility JSDoc, backend-builder command JSDoc noise, runtime parser default JSDoc noise, process-manager wrapper JSDoc noise, parameter-only metrics-store JSDoc, proxy route registration JSDoc noise, stale log-route wrapper JSDoc, event-manager method JSDoc noise, stale metrics-collector helper JSDoc, self-evident launch-state JSDoc, vLLM runtime path resolver JSDoc, model-browser JSDoc noise, redundant Projects navigation comments, redundant pane-grid comments, redundant tools persistence comments, self-evident pane-controller helper JSDoc, self-evident API core comments, redundant chat-pane comments, self-evident agent-browser render comments, decorative session block-event section headers, decorative session helper section headers, and redundant launch-toast JSDoc; broader file-by-file audit remains open.
 - [ ] Audit package scripts and remove irrelevant commands. Current slices remove stale root frontend metadata/dependencies, duplicate frontend quality/cleanup aliases, and broken nested Husky prepare scripts; deeper command pruning remains open as features are removed.
 - [x] Replace every React effect hook with appropriate alternatives and validate there are zero remaining frontend source usages.
 

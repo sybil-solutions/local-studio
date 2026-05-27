@@ -17,12 +17,6 @@ export interface LaunchToastView {
   visible: boolean;
 }
 
-/**
- * Resolve launch toast visibility and display state from launch progress.
- * @param launching - Whether a launch request is still active.
- * @param launchProgress - Latest launch progress event.
- * @returns The view model consumed by the toast UI.
- */
 export function resolveLaunchToastView(
   launching: boolean,
   launchProgress: LaunchProgress | null,
