@@ -6,15 +6,15 @@ Clean up vLLM Studio without changing runtime functionality or UI unless a later
 
 ## Current Turn
 
-- [x] Inspect saved controller settings storage.
-- [x] Add frontend e2e coverage for saved controller settings.
-- [x] Validate saved controller settings slice.
+- [x] Inspect settings persistence and voice target code paths.
+- [x] Add frontend e2e coverage for API settings persistence and voice routing.
+- [x] Validate settings persistence slice.
 - [x] Commit this slice.
 
 ## Backlog
 
 - [ ] Add frontend e2e coverage for agent flows: splitting, leaving and reconnecting sessions, forking, compacting, pi-extensions, tagging files, and skills. Initial regression coverage exists for reconnect, active-session model metadata merge, Pi multi-controller model refresh, splitting, queue/follow-up, compacting, skills, file tagging, Pi extension override persistence, and tab forking; browser screenshot coverage and extension UI remain.
-- [ ] Add settings e2e coverage and implement direct MLX and llama.cpp support. Initial controller-level settings/provider route coverage, frontend engine-row e2e coverage, and saved-controller settings coverage exist; broader frontend settings e2e and MLX support remain.
+- [ ] Add settings e2e coverage and implement direct MLX and llama.cpp support. Initial controller-level settings/provider route coverage, frontend engine-row e2e coverage, saved-controller settings coverage, and API settings persistence/voice routing coverage exist; broader frontend settings e2e and MLX support remain.
 - [ ] Improve venv management experience.
 - [ ] Clean controller dead paths and unused complexity based on code and logs.
 - [ ] Add controller integration and e2e tests for all active controller flows. Initial integration smoke coverage exists for core route contracts, raw observability persistence, controller proxy success/failure paths, model catalog/discovery routes, HuggingFace discovery normalization, system introspection routes, studio settings/provider CRUD, Studio operational routes, recipe CRUD, lifecycle control routes, runtime/download validation routes, download control error routes, runtime target selection/health routes, runtime backend metadata routes, runtime job validation/config routes, monitoring/log/benchmark route contracts, proxy/tokenization fallback contracts, and audio validation contracts; full active-flow coverage remains.
