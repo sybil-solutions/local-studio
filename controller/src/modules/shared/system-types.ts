@@ -1,7 +1,3 @@
-/**
- * System configuration and runtime types.
- */
-
 export interface ServiceInfo {
   name: string;
   port: number;
