@@ -29,13 +29,6 @@ export const fetchHuggingFaceModelInfo = async (
   return (await response.json()) as HuggingFaceModelInfo;
 };
 
-/**
- * Builds a file download list from model metadata, filtering by allow/ignore glob patterns.
- * @param modelInfo
- * @param allowPatterns
- * @param ignorePatterns
- * @returns Downloadable file metadata after applying filters.
- */
 export const buildHuggingFaceFileList = (
   modelInfo: HuggingFaceModelInfo,
   allowPatterns: string[],
