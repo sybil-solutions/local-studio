@@ -94,7 +94,6 @@ export function useDashboardRecipes(currentProcess: ProcessInfo | null) {
       const list = data.recipes || [];
       setRecipes(list);
 
-      // Find running recipe if any
       const running = currentProcess
         ? list.find((r: RecipeWithStatus) => r.status === "running") || null
         : null;
