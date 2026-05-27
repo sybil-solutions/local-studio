@@ -125,6 +125,41 @@ test("agent session merge upgrades tab identity to pi identity without dropping 
   assert.deepEqual(merged[0]?.usedSkills, [{ id: "skill-code", name: "code" }]);
 });
 
+test("agent session merge preserves model metadata when active snapshots absorb inactive updates", () => {
+  const incoming: ActiveAgentSessionSnapshot[] = [
+    {
+      projectId: "personal",
+      cwd: "/workspace/personal",
+      paneId: "p-main",
+      tabId: "tab-live",
+      piSessionId: "pi-live",
+      title: "Live",
+      status: "running",
+      active: true,
+      updatedAt: "2026-05-26T12:00:02.000Z",
+    },
+    {
+      projectId: "personal",
+      cwd: "/workspace/personal",
+      paneId: "p-main",
+      tabId: "tab-live",
+      piSessionId: "pi-live",
+      modelId: "deepseek-v4-flash",
+      title: "Live with model",
+      status: "running",
+      active: false,
+      updatedAt: "2026-05-26T12:00:03.000Z",
+    },
+  ];
+
+  const merged = mergeActiveAgentSessions([], incoming);
+
+  assert.equal(merged.length, 1);
+  assert.equal(merged[0]?.active, true);
+  assert.equal(merged[0]?.modelId, "deepseek-v4-flash");
+  assert.equal(merged[0]?.title, "Live with model");
+});
+
 test("splitting a session is idempotent when navigating to an already open pi session", () => {
   const state = makeState(
     makeSession("s-main", {

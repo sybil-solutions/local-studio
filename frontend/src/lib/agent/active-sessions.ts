@@ -111,6 +111,7 @@ function preserveActiveSnapshot(
     status: preferText(session.status, existing.status),
     updatedAt: preferText(session.updatedAt, existing.updatedAt),
     piSessionId: preferNullable(session.piSessionId, existing.piSessionId),
+    modelId: preferDefined(session.modelId, existing.modelId),
     startedAt: preferDefined(
       existing.startedAt,
       preferDefined(session.startedAt, session.updatedAt),

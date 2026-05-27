@@ -6,14 +6,15 @@ Clean up vLLM Studio without changing runtime functionality or UI unless a later
 
 ## Current Turn
 
-- [x] Inspect studio route divider comments.
-- [x] Remove redundant studio route provider divider.
-- [x] Validate studio route divider cleanup slice.
+- [x] Inspect active-session model merge behavior.
+- [x] Add frontend e2e coverage for active-session model metadata merge.
+- [x] Preserve model metadata when active snapshots absorb inactive updates.
+- [x] Validate active-session model merge slice.
 - [x] Commit this slice.
 
 ## Backlog
 
-- [ ] Add frontend e2e coverage for agent flows: splitting, leaving and reconnecting sessions, forking, compacting, pi-extensions, tagging files, and skills. Initial regression coverage exists for reconnect, splitting, queue/follow-up, compacting, skills, file tagging, Pi extension override persistence, and tab forking; browser screenshot coverage and extension UI remain.
+- [ ] Add frontend e2e coverage for agent flows: splitting, leaving and reconnecting sessions, forking, compacting, pi-extensions, tagging files, and skills. Initial regression coverage exists for reconnect, active-session model metadata merge, splitting, queue/follow-up, compacting, skills, file tagging, Pi extension override persistence, and tab forking; browser screenshot coverage and extension UI remain.
 - [ ] Add settings e2e coverage and implement direct MLX and llama.cpp support. Initial controller-level settings/provider route coverage exists; frontend settings e2e and MLX support remain.
 - [ ] Improve venv management experience.
 - [ ] Clean controller dead paths and unused complexity based on code and logs.
