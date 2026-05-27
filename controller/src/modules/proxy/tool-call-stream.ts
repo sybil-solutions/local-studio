@@ -404,9 +404,7 @@ export const createToolCallStream = (
       if (downstreamClosed) {
         try {
           controller.close();
-        } catch {
-          // already closed
-        }
+        } catch {}
         await tearDownUpstream();
         return;
       }
@@ -422,9 +420,7 @@ export const createToolCallStream = (
             downstreamClosed = true;
             try {
               controller.close();
-            } catch {
-              // already closed
-            }
+            } catch {}
             return;
           }
           if (result.done) {
@@ -443,9 +439,7 @@ export const createToolCallStream = (
             flushThinkCarry(controller);
             try {
               controller.close();
-            } catch {
-              // already closed
-            }
+            } catch {}
             return;
           }
 
@@ -470,9 +464,7 @@ export const createToolCallStream = (
         await tearDownUpstream();
         try {
           controller.close();
-        } catch {
-          // already closed
-        }
+        } catch {}
       }
     },
     async cancel(): Promise<void> {
