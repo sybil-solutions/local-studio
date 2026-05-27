@@ -1,19 +1,11 @@
 export default {
-  entry: ['src/main.ts'],
-  project: ['src/**/*.ts'],
-  ignore: [
-    'vllm-studio',
-    'node_modules/**',
-    '.husky/**',
-  ],
-  ignoreDependencies: [
-    // Bun types used in tsconfig
-    'bun-types',
-  ],
+  entry: ["src/main.ts"],
+  project: ["src/**/*.ts"],
+  ignore: ["vllm-studio", "node_modules/**"],
+  ignoreDependencies: ["bun-types"],
   ignoreExportsUsedInFile: true,
-  // Exports are part of public API
   rules: {
-    exports: 'off',
-    types: 'off',
+    exports: "off",
+    types: "off",
   },
 };
