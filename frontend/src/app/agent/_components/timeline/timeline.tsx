@@ -85,7 +85,7 @@ export function Timeline({
         })}
         {running ? (
           <div className="pt-6 pb-4 [overflow-anchor:none]">
-            <div className="flex items-center gap-2.5 text-[13px] leading-5 text-(--dim)">
+            <div className="flex items-center gap-2.5 text-[10.4px] leading-4 text-(--dim)">
               <span className="relative inline-flex h-2 w-2">
                 <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-(--accent)/40 opacity-75" />
                 <span className="relative inline-flex h-2 w-2 rounded-full bg-(--accent)/60" />

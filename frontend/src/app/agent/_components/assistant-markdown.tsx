@@ -107,7 +107,7 @@ const FencedCodeBlock = memo(function FencedCodeBlock({
         </span>
         {code ? <CodeBlockCopyButton code={code} /> : null}
       </div>
-      <pre className="m-0 max-w-full overflow-x-auto bg-transparent px-3.5 py-2.5 text-[12px] leading-[1.6]">
+      <pre className="m-0 max-w-full overflow-x-auto bg-transparent px-3.5 py-2.5 text-[9.6px] leading-[1.6]">
         <code className={codeClassName} dangerouslySetInnerHTML={{ __html: highlightedHtml }} />
       </pre>
     </div>
@@ -118,35 +118,35 @@ FencedCodeBlock.displayName = "FencedCodeBlock";
 const components: Components = {
   h1: ({ node: _n, ...props }) => (
     <h1
-      className="mb-2 mt-5 text-[18px] font-semibold leading-tight tracking-[-0.01em] text-(--fg) first:mt-0"
+      className="mb-2 mt-5 text-[14.4px] font-semibold leading-tight tracking-[-0.01em] text-(--fg) first:mt-0"
       {...props}
     />
   ),
   h2: ({ node: _n, ...props }) => (
     <h2
-      className="mb-1.5 mt-4 text-[15px] font-semibold leading-snug tracking-[-0.01em] text-(--fg) first:mt-0"
+      className="mb-1.5 mt-4 text-[12px] font-semibold leading-snug tracking-[-0.01em] text-(--fg) first:mt-0"
       {...props}
     />
   ),
   h3: ({ node: _n, ...props }) => (
     <h3
-      className="mb-1.5 mt-3.5 text-[14px] font-semibold leading-snug tracking-[-0.01em] text-(--fg) first:mt-0"
+      className="mb-1.5 mt-3.5 text-[11.2px] font-semibold leading-snug tracking-[-0.01em] text-(--fg) first:mt-0"
       {...props}
     />
   ),
   h4: ({ node: _n, ...props }) => (
-    <h4 className="mb-1 mt-3 text-[13px] font-semibold leading-snug text-(--fg)" {...props} />
+    <h4 className="mb-1 mt-3 text-[10.4px] font-semibold leading-snug text-(--fg)" {...props} />
   ),
   p: ({ node: _n, ...props }) => (
     <p
-      className="my-2.5 max-w-full break-words text-[13px] leading-[1.6] tracking-normal first:mt-0 last:mb-0 [overflow-wrap:anywhere]"
+      className="my-2.5 max-w-full break-words text-[10.4px] leading-[1.6] tracking-normal first:mt-0 last:mb-0 [overflow-wrap:anywhere]"
       {...props}
     />
   ),
   ul: ({ node: _n, ...props }) => <ul className="my-2 list-disc pl-5" {...props} />,
   ol: ({ node: _n, ...props }) => <ol className="my-2 list-decimal pl-5" {...props} />,
   li: ({ node: _n, ...props }) => (
-    <li className="text-[13px] leading-[1.6] tracking-normal" {...props} />
+    <li className="text-[10.4px] leading-[1.6] tracking-normal" {...props} />
   ),
   code: ({ node: _n, className, children, ...props }) => {
     const isBlock = typeof className === "string" && /\blanguage-/.test(className);
@@ -159,7 +159,7 @@ const components: Components = {
     }
     return (
       <code
-        className="rounded-md bg-(--surface-2)/60 px-[5px] py-[1px] font-mono text-[12.5px] leading-[18px] text-(--fg)/85 [overflow-wrap:anywhere]"
+        className="rounded-md bg-(--surface-2)/60 px-[5px] py-[1px] font-mono text-[10px] leading-[14.4px] text-(--fg)/85 [overflow-wrap:anywhere]"
         {...props}
       >
         {children}
@@ -288,10 +288,10 @@ function AssistantMarkdownInner({ text }: { text: string }) {
     [tools.requestFileOpen, tools.setComputerOpen, tools.setComputerTab, tools.setBrowserUrl],
   );
   return (
-    <div className="chat-markdown min-w-0 max-w-full overflow-x-hidden text-[13px] leading-[20px] tracking-normal [overflow-wrap:anywhere]">
+    <div className="chat-markdown min-w-0 max-w-full overflow-x-hidden text-[10.4px] leading-[16px] tracking-normal [overflow-wrap:anywhere]">
       <MarkdownErrorBoundary
         fallback={
-          <pre className="max-w-full whitespace-pre-wrap break-words text-[13px] leading-[22px] tracking-normal [font-family:var(--codex-chat-font-family)] [font-weight:var(--codex-chat-font-weight)] [overflow-wrap:anywhere]">
+          <pre className="max-w-full whitespace-pre-wrap break-words text-[10.4px] leading-[17.6px] tracking-normal [font-family:var(--codex-chat-font-family)] [font-weight:var(--codex-chat-font-weight)] [overflow-wrap:anywhere]">
             {text}
           </pre>
         }

@@ -107,7 +107,7 @@ function SessionPaneBlockRouterInner({ message }: { message: ChatMessage }) {
   if (message.role === "user") {
     return (
       <article className="flex justify-end">
-        <div className="max-w-[80%] rounded-2xl bg-(--surface-2)/70 px-3.5 py-2 text-[13px] leading-[1.55] tracking-normal text-(--fg)/95">
+        <div className="max-w-[80%] rounded-2xl bg-(--surface-2)/70 px-3.5 py-2 text-[10.4px] leading-[1.55] tracking-normal text-(--fg)/95">
           <div className="whitespace-pre-wrap break-words">{message.text}</div>
           {message.attachments?.length ? (
             <div className="mt-2 grid gap-2">
@@ -137,7 +137,7 @@ const AssistantBlocks = memo(function AssistantBlocks({ blocks }: { blocks: Assi
   return (
     <article className="min-w-0">
       {routedBlocks.length === 0 ? (
-        <div className="text-[13px] leading-[21px] text-(--dim)">…</div>
+        <div className="text-[10.4px] leading-[16.8px] text-(--dim)">…</div>
       ) : (
         <div className="flex flex-col gap-3.5">
           {routedBlocks.map((item) => {
@@ -244,7 +244,7 @@ const AssistantActivityGroup = memo(function AssistantActivityGroup({
   return (
     <details className="group min-w-0 overflow-hidden" open={expanded}>
       <summary
-        className="flex min-h-7 min-w-0 cursor-pointer list-none items-center gap-2 rounded-lg px-2 py-1 text-[12px] leading-5 text-(--dim)/75 transition-colors hover:bg-(--hover) hover:text-(--fg)/80 [&::-webkit-details-marker]:hidden"
+        className="flex min-h-7 min-w-0 cursor-pointer list-none items-center gap-2 rounded-lg px-2 py-1 text-[9.6px] leading-4 text-(--dim)/75 transition-colors hover:bg-(--hover) hover:text-(--fg)/80 [&::-webkit-details-marker]:hidden"
         onClick={(event) => {
           event.preventDefault();
           setExpanded((value) => !value);
@@ -263,7 +263,7 @@ const AssistantActivityGroup = memo(function AssistantActivityGroup({
           <span className="min-w-0 flex-1" />
         )}
         {hasActiveTool ? (
-          <span className="shrink-0 text-[11px] font-medium text-(--accent)/60">running</span>
+          <span className="shrink-0 text-[8.8px] font-medium text-(--accent)/60">running</span>
         ) : null}
       </summary>
       {expanded ? (
@@ -295,7 +295,7 @@ function ActivityTreeItem({ item }: { item: ActivityTreeItem }) {
 
 function ReasoningLeaf({ block }: { block: ThinkingBlock }) {
   return (
-    <pre className="max-w-full overflow-x-auto whitespace-pre-wrap rounded-lg bg-(--surface)/40 px-3 py-2 font-mono text-[12px] leading-[1.6] text-(--dim)/80">
+    <pre className="max-w-full overflow-x-auto whitespace-pre-wrap rounded-lg bg-(--surface)/40 px-3 py-2 font-mono text-[9.6px] leading-[1.6] text-(--dim)/80">
       {block.text}
     </pre>
   );
@@ -303,7 +303,7 @@ function ReasoningLeaf({ block }: { block: ThinkingBlock }) {
 
 function EventBlockView({ block }: { block: EventBlock }) {
   return (
-    <div className="flex items-center gap-3 py-2 text-[11px] text-(--dim)/70">
+    <div className="flex items-center gap-3 py-2 text-[8.8px] text-(--dim)/70">
       <span className="h-px flex-1 bg-(--border)/50" />
       <span className="font-medium">{block.text}</span>
       <span className="h-px flex-1 bg-(--border)/50" />

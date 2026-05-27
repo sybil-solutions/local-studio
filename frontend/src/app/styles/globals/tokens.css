@@ -56,6 +56,13 @@
   --app-font-size: 16px;
 }
 
+@media (min-width: 1024px) {
+  :root {
+    --thread-w: 40vw;
+    --composer-w: 40vw;
+  }
+}
+
 :root[data-theme="omlx-dark"],
 .dark {
   /* Codex-inspired gray ladder, quieter than the original app.

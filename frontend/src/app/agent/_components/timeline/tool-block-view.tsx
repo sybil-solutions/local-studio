@@ -98,7 +98,7 @@ function toolMeta(block: ToolBlock, filePath?: string | null): ToolMeta {
 function ToolStatus({ status }: { status: ToolBlock["status"] }) {
   if (status === "running") {
     return (
-      <span className="inline-flex items-center gap-1 text-[12px] text-(--accent)">
+      <span className="inline-flex items-center gap-1 text-[9.6px] text-(--accent)">
         <Loader2 className="h-3 w-3 animate-spin" />
         running
       </span>
@@ -106,7 +106,7 @@ function ToolStatus({ status }: { status: ToolBlock["status"] }) {
   }
   if (status === "error") {
     return (
-      <span className="inline-flex items-center gap-1 text-[12px] text-(--err)">
+      <span className="inline-flex items-center gap-1 text-[9.6px] text-(--err)">
         <AlertTriangle className="h-3 w-3" />
         error
       </span>
@@ -134,11 +134,11 @@ function ToolSummary({
           {meta.icon}
         </span>
         <span className="flex min-w-0 flex-1 items-baseline gap-2">
-          <span className="shrink-0 truncate text-[13px] font-medium leading-5 text-(--fg)/90">
+          <span className="shrink-0 truncate text-[10.4px] font-medium leading-4 text-(--fg)/90">
             {meta.label}
           </span>
           {meta.detail ? (
-            <span className="min-w-0 flex-1 truncate text-[13px] leading-5 text-(--dim)">
+            <span className="min-w-0 flex-1 truncate text-[10.4px] leading-4 text-(--dim)">
               {meta.detail}
             </span>
           ) : null}
@@ -152,7 +152,7 @@ function ToolSummary({
 
 function ToolOutput({ children }: { children: ReactNode }) {
   return (
-    <pre className="max-h-[320px] max-w-full overflow-auto whitespace-pre font-mono text-[12px] leading-5 text-(--fg)/70">
+    <pre className="max-h-[320px] max-w-full overflow-auto whitespace-pre font-mono text-[9.6px] leading-4 text-(--fg)/70">
       {children}
     </pre>
   );
@@ -171,7 +171,7 @@ function HighlightedToolSource({ body, lang }: { body: string; lang: string }) {
   }, [body, lang]);
 
   const className =
-    "max-h-[420px] max-w-full overflow-auto rounded-lg border border-(--border)/50 bg-(--surface)/35 p-3 font-mono text-[12px] leading-5 text-(--fg)";
+    "max-h-[420px] max-w-full overflow-auto rounded-lg border border-(--border)/50 bg-(--surface)/35 p-3 font-mono text-[9.6px] leading-4 text-(--fg)";
 
   if (highlighted === null) {
     return <pre className={className}>{body}</pre>;
