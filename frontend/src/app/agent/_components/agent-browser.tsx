@@ -483,7 +483,6 @@ function ReadingView({
       </div>
     );
   }
-  // Render the markdown-ish text with simple link parsing.
   const segments = renderSegments(page.text, page.url, onLinkClick);
   return (
     <div className="size-full overflow-y-auto bg-(--bg) px-4 py-3 text-sm leading-6 text-(--fg)">
