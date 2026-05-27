@@ -142,6 +142,97 @@ describe("controller route contracts", () => {
     expect(body.detail).toBe("model is required");
   });
 
+  test("studio settings and provider CRUD routes persist observable contracts", async () => {
+    const app = await createTestApp();
+
+    const settingsResponse = await app.request("/studio/settings");
+    const settingsBody = await settingsResponse.json();
+    expect(settingsResponse.status).toBe(200);
+    expect(settingsBody.effective.models_dir).toBe(process.env.VLLM_STUDIO_MODELS_DIR);
+
+    const settingsUpdateResponse = await app.request("/studio/settings", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ ui_preferences: { theme: "midnight" } }),
+    });
+    const settingsUpdateBody = await settingsUpdateResponse.json();
+    expect(settingsUpdateResponse.status).toBe(200);
+    expect(settingsUpdateBody).toMatchObject({
+      success: true,
+      persisted: { ui_preferences: { theme: "midnight" } },
+    });
+
+    const providersResponse = await app.request("/studio/providers");
+    const providersBody = await providersResponse.json();
+    expect(providersResponse.status).toBe(200);
+    expect(providersBody.providers).toEqual([]);
+
+    const createProviderResponse = await app.request("/studio/providers", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        id: "local",
+        name: "Local Provider",
+        base_url: "http://127.0.0.1:8000",
+        api_key: "secret-token",
+        enabled: true,
+      }),
+    });
+    const createProviderBody = await createProviderResponse.json();
+    expect(createProviderResponse.status).toBe(200);
+    expect(createProviderBody.provider).toEqual({
+      id: "local",
+      name: "Local Provider",
+      base_url: "http://127.0.0.1:8000",
+      enabled: true,
+      has_api_key: true,
+    });
+    expect(createProviderBody.provider.api_key).toBeUndefined();
+
+    const updateProviderResponse = await app.request("/studio/providers/local", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        name: "Local Provider Updated",
+        base_url: "http://127.0.0.1:9000",
+        enabled: false,
+      }),
+    });
+    const updateProviderBody = await updateProviderResponse.json();
+    expect(updateProviderResponse.status).toBe(200);
+    expect(updateProviderBody.provider).toMatchObject({
+      id: "local",
+      name: "Local Provider Updated",
+      base_url: "http://127.0.0.1:9000",
+      enabled: false,
+      has_api_key: true,
+    });
+
+    const deleteProviderResponse = await app.request("/studio/providers/local", {
+      method: "DELETE",
+    });
+    const deleteProviderBody = await deleteProviderResponse.json();
+    expect(deleteProviderResponse.status).toBe(200);
+    expect(deleteProviderBody).toEqual({ success: true });
+
+    const rows = readControllerRequestRows();
+    expect(rows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ method: "GET", path: "/studio/settings", status: 200 }),
+        expect.objectContaining({ method: "POST", path: "/studio/settings", status: 200 }),
+        expect.objectContaining({ method: "GET", path: "/studio/providers", status: 200 }),
+        expect.objectContaining({ method: "POST", path: "/studio/providers", status: 200 }),
+        expect.objectContaining({ method: "PUT", path: "/studio/providers/local", status: 200 }),
+        expect.objectContaining({
+          method: "DELETE",
+          path: "/studio/providers/local",
+          status: 200,
+        }),
+      ]),
+    );
+    expect(rows.every((row) => row.success === 1)).toBe(true);
+  });
+
   test("usage includes persisted controller route observability", async () => {
     const app = await createTestApp();
 
