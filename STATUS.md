@@ -6,9 +6,10 @@ Clean up vLLM Studio without changing runtime functionality or UI unless a later
 
 ## Current Turn
 
-- [x] Inspect the Pi session usage aggregation path.
-- [x] Instrument `/usage/pi-sessions` aggregation with persistent function-call tracking.
-- [x] Add integration coverage proving Pi session usage aggregation records a successful function call row.
+- [x] Inspect active controller routes for another high-traffic function-observability boundary.
+- [x] Instrument `/status` process lookup with persistent function-call tracking.
+- [x] Add integration coverage proving `/status` records a successful function call row and appears in `/usage`.
+- [x] Validate controller checks.
 - [x] Commit this slice.
 
 ## Backlog
@@ -18,7 +19,7 @@ Clean up vLLM Studio without changing runtime functionality or UI unless a later
 - [ ] Improve venv management experience.
 - [ ] Clean controller dead paths and unused complexity based on code and logs.
 - [ ] Add controller integration and e2e tests for all active controller flows. Initial integration smoke coverage exists for core route contracts, raw observability persistence, controller proxy success/failure paths, model catalog/discovery routes, HuggingFace discovery normalization, system introspection routes, studio settings/provider CRUD, Studio operational routes, recipe CRUD, lifecycle control routes, runtime/download validation routes, download control error routes, runtime target selection/health routes, runtime backend metadata routes, runtime job validation/config routes, monitoring/log/benchmark route contracts, proxy/tokenization fallback contracts, and audio validation contracts; full active-flow coverage remains.
-- [ ] Add controller observability for success, failure, error, path, and function-call tracking. Initial persistent HTTP route observability exists and raw rows are integration-tested; `/usage` records collect-known-models and inference-aggregate function calls; `/usage/pi-sessions` records Pi session aggregation function calls; broader per-function instrumentation remains.
+- [ ] Add controller observability for success, failure, error, path, and function-call tracking. Initial persistent HTTP route observability exists and raw rows are integration-tested; `/status` records process lookup function calls; `/usage` records collect-known-models and inference-aggregate function calls; `/usage/pi-sessions` records Pi session aggregation function calls; broader per-function instrumentation remains.
 - [ ] Surface observability data in `/usage` and validate it end to end. Initial route observability is surfaced, raw persistence is integration-tested, `/usage` status, latency, recent-activity, error aggregation, function-call aggregation, inference-aggregate fallback behavior, and `/usage/pi-sessions` JSONL/function-call aggregation are integration-tested, and the frontend normalization boundary preserves controller observability; frontend visual rendering and full API-route coverage remain.
 - [ ] Deploy controller to Pop!\_OS after killing the old controller from this device.
 - [ ] Test every API route against controller observability rows and `/usage`.

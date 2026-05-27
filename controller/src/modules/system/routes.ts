@@ -6,6 +6,7 @@ import { join, resolve, sep } from "node:path";
 import type { AppContext } from "../../types/context";
 import type { SystemConfigResponse } from "../models/types";
 import { badRequest, notFound } from "../../core/errors";
+import { observeControllerFunction } from "../../core/function-observability";
 import { estimateWeightsSizeBytes } from "../models/model-browser";
 import { getGpuInfo } from "./platform/gpu";
 import { getSystemRuntimeInfo } from "../engines/runtimes/runtime-info";
@@ -44,8 +45,8 @@ export const registerSystemRoutes = (app: Hono, context: AppContext): void => {
   };
 
   app.get("/status", async (ctx) => {
-    const current = await context.processManager.findInferenceProcess(
-      context.config.inference_port
+    const current = await observeControllerFunction(context, "status.findInferenceProcess", () =>
+      context.processManager.findInferenceProcess(context.config.inference_port)
     );
     return ctx.json({
       running: Boolean(current),

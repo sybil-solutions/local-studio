@@ -138,6 +138,15 @@ describe("controller route contracts", () => {
       inference_port: 65534,
       launching: null,
     });
+
+    expect(readControllerFunctionCallRows()).toEqual([
+      expect.objectContaining({
+        function_name: "status.findInferenceProcess",
+        success: 1,
+        error_class: null,
+        error_message: null,
+      }),
+    ]);
   });
 
   test("mock inference exposes an OpenAI-compatible model list without a live backend", async () => {
@@ -2172,8 +2181,8 @@ describe("controller route contracts", () => {
       ]),
     );
     expect(body.controller.function_calls.totals).toMatchObject({
-      total_calls: 2,
-      successful_calls: 2,
+      total_calls: 3,
+      successful_calls: 3,
       failed_calls: 0,
       success_rate: 100,
     });
@@ -2185,6 +2194,12 @@ describe("controller route contracts", () => {
     ).toBeGreaterThanOrEqual(0);
     expect(body.controller.function_calls.by_function).toEqual(
       expect.arrayContaining([
+        expect.objectContaining({
+          function_name: "status.findInferenceProcess",
+          calls: 1,
+          successful: 1,
+          failed: 0,
+        }),
         expect.objectContaining({
           function_name: "usage.collectKnownModels",
           calls: 1,
@@ -2203,6 +2218,12 @@ describe("controller route contracts", () => {
     const functionRows = readControllerFunctionCallRows();
     expect(functionRows).toEqual(
       expect.arrayContaining([
+        expect.objectContaining({
+          function_name: "status.findInferenceProcess",
+          success: 1,
+          error_class: null,
+          error_message: null,
+        }),
         expect.objectContaining({
           function_name: "usage.collectKnownModels",
           success: 1,
@@ -2264,11 +2285,14 @@ describe("controller route contracts", () => {
       ]),
     );
     expect(body.controller.function_calls.totals).toMatchObject({
-      total_calls: 2,
-      successful_calls: 1,
+      total_calls: 3,
+      successful_calls: 2,
       failed_calls: 1,
-      success_rate: 50,
     });
+    expect(body.controller.function_calls.totals.success_rate).toBeCloseTo(
+      66.666,
+      2,
+    );
     expect(body.controller.function_calls.recent_errors).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -2282,6 +2306,12 @@ describe("controller route contracts", () => {
     const functionRows = readControllerFunctionCallRows();
     expect(functionRows).toEqual(
       expect.arrayContaining([
+        expect.objectContaining({
+          function_name: "status.findInferenceProcess",
+          success: 1,
+          error_class: null,
+          error_message: null,
+        }),
         expect.objectContaining({
           function_name: "usage.collectKnownModels",
           success: 1,
