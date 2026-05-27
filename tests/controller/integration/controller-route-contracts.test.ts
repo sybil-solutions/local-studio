@@ -162,6 +162,14 @@ describe("controller route contracts", () => {
       total_requests: 4,
       successful_requests: 2,
       failed_requests: 2,
+      success_rate: 50,
+    });
+    expect(body.controller.latency.avg_ms).toBeGreaterThanOrEqual(0);
+    expect(body.controller.latency.max_ms).toBeGreaterThanOrEqual(0);
+    expect(body.controller.recent_activity).toMatchObject({
+      last_hour_requests: 4,
+      last_24h_requests: 4,
+      last_24h_failed_requests: 2,
     });
     expect(body.controller.by_path).toEqual(
       expect.arrayContaining([
@@ -187,6 +195,12 @@ describe("controller route contracts", () => {
           requests: 1,
           failed: 1,
         }),
+      ]),
+    );
+    expect(body.controller.by_status).toEqual(
+      expect.arrayContaining([
+        { status: 200, requests: 2 },
+        { status: 400, requests: 2 },
       ]),
     );
     expect(body.controller.recent_errors).toEqual(
