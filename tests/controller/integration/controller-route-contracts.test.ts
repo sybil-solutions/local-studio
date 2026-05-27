@@ -723,6 +723,68 @@ describe("controller route contracts", () => {
     );
   });
 
+  test("engine lifecycle control routes expose no-op and missing-resource contracts", async () => {
+    const app = await createTestApp();
+
+    const missingLaunchResponse = await app.request("/launch/missing-recipe", {
+      method: "POST",
+    });
+    const missingLaunchBody = await missingLaunchResponse.json();
+    expect(missingLaunchResponse.status).toBe(404);
+    expect(missingLaunchBody).toEqual({ detail: "Recipe not found" });
+
+    const missingCancelResponse = await app.request("/launch/missing-recipe/cancel", {
+      method: "POST",
+    });
+    const missingCancelBody = await missingCancelResponse.json();
+    expect(missingCancelResponse.status).toBe(404);
+    expect(missingCancelBody).toEqual({ detail: "No launch in progress for missing-recipe" });
+
+    const evictResponse = await app.request("/evict", { method: "POST" });
+    const evictBody = await evictResponse.json();
+    expect(evictResponse.status).toBe(200);
+    expect(evictBody).toEqual({ success: true, evicted_pid: null });
+
+    const waitReadyResponse = await app.request("/wait-ready?timeout=0");
+    const waitReadyBody = await waitReadyResponse.json();
+    expect(waitReadyResponse.status).toBe(200);
+    expect(waitReadyBody).toEqual({
+      ready: false,
+      elapsed: 0,
+      error: "Timeout waiting for backend",
+    });
+
+    const rows = readControllerRequestRows();
+    expect(rows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          method: "POST",
+          path: "/launch/missing-recipe",
+          status: 404,
+          success: 0,
+        }),
+        expect.objectContaining({
+          method: "POST",
+          path: "/launch/missing-recipe/cancel",
+          status: 404,
+          success: 0,
+        }),
+        expect.objectContaining({
+          method: "POST",
+          path: "/evict",
+          status: 200,
+          success: 1,
+        }),
+        expect.objectContaining({
+          method: "GET",
+          path: "/wait-ready",
+          status: 200,
+          success: 1,
+        }),
+      ]),
+    );
+  });
+
   test("runtime and download validation routes persist observable outcomes", async () => {
     const app = await createTestApp();
 

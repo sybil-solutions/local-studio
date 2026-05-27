@@ -6,10 +6,10 @@ Clean up vLLM Studio without changing runtime functionality or UI unless a later
 
 ## Current Turn
 
-- [x] Inspect runtime route contracts and gaps.
-- [x] Add runtime job lookup, missing-job, invalid upgrade body, and runtime config coverage without starting jobs.
+- [x] Inspect engine lifecycle route contracts.
+- [x] Add missing launch/cancel, no-op evict, and zero-timeout wait-ready coverage without starting a model.
 - [x] Validate those success and failure paths are persisted in controller observability rows.
-- [x] Validate controller runtime job/config coverage slice.
+- [x] Validate controller lifecycle control coverage slice.
 - [x] Commit this slice.
 
 ## Backlog
@@ -18,7 +18,7 @@ Clean up vLLM Studio without changing runtime functionality or UI unless a later
 - [ ] Add settings e2e coverage and implement direct MLX and llama.cpp support. Initial controller-level settings/provider route coverage exists; frontend settings e2e and MLX support remain.
 - [ ] Improve venv management experience.
 - [ ] Clean controller dead paths and unused complexity based on code and logs.
-- [ ] Add controller integration and e2e tests for all active controller flows. Initial integration smoke coverage exists for core route contracts, raw observability persistence, model catalog/discovery routes, system introspection routes, studio settings/provider CRUD, Studio operational routes, recipe CRUD, runtime/download validation routes, runtime job/config routes, monitoring/log route contracts, proxy/tokenization fallback contracts, and audio validation contracts; full active-flow coverage remains.
+- [ ] Add controller integration and e2e tests for all active controller flows. Initial integration smoke coverage exists for core route contracts, raw observability persistence, model catalog/discovery routes, system introspection routes, studio settings/provider CRUD, Studio operational routes, recipe CRUD, lifecycle control routes, runtime/download validation routes, runtime job/config routes, monitoring/log route contracts, proxy/tokenization fallback contracts, and audio validation contracts; full active-flow coverage remains.
 - [ ] Add controller observability for success, failure, error, path, and function-call tracking. Initial persistent HTTP route observability exists and raw rows are integration-tested; per-function call tracking remains.
 - [ ] Surface observability data in `/usage` and validate it end to end. Initial route observability is surfaced, raw persistence is integration-tested, `/usage` status, latency, recent-activity, and error aggregation is integration-tested, and the frontend normalization boundary preserves controller observability; frontend visual rendering and full API-route coverage remain.
 - [ ] Deploy controller to Pop!\_OS after killing the old controller from this device.
