@@ -45,13 +45,6 @@ export class PeakMetricsStore {
     return row ? { ...row } : null;
   }
 
-  /**
-   * Upserts peak values — only overwrites if the new value is better.
-   * @param modelId
-   * @param prefillTps
-   * @param generationTps
-   * @param ttftMs
-   */
   public updateIfBetter(
     modelId: string,
     prefillTps?: number,
@@ -192,9 +185,6 @@ export class PeakMetricsStore {
     return this.getSession(sessionId) ?? {};
   }
 
-  /**
-   * @param sessionId Runtime session identifier.
-   */
   public getSession(sessionId: string): Record<string, unknown> | null {
     const row = this.db
       .query("SELECT * FROM peak_metric_sessions WHERE session_id = ?")

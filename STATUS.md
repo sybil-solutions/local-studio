@@ -6,9 +6,9 @@ Clean up vLLM Studio without changing runtime functionality or UI unless a later
 
 ## Current Turn
 
-- [x] Inspect stale generated comments in controller process manager.
-- [x] Remove boilerplate JSDoc from `controller/src/modules/engines/process/process-manager.ts` without behavior changes.
-- [x] Validate no stale generated JSDoc remnants remain in that file.
+- [x] Inspect stale generated comments in controller metrics store.
+- [x] Remove parameter-only JSDoc from `controller/src/modules/system/metrics-store.ts` without behavior changes.
+- [x] Validate no parameter-only JSDoc remnants remain in that file.
 - [x] Validate controller comment cleanup slice.
 - [x] Commit this slice.
 
@@ -23,7 +23,7 @@ Clean up vLLM Studio without changing runtime functionality or UI unless a later
 - [ ] Surface observability data in `/usage` and validate it end to end. Initial route observability is surfaced, raw persistence is integration-tested, `/usage` status, latency, recent-activity, and error aggregation is integration-tested, and the frontend normalization boundary preserves controller observability; frontend visual rendering and full API-route coverage remain.
 - [ ] Deploy controller to Pop!\_OS after killing the old controller from this device.
 - [ ] Test every API route against controller observability rows and `/usage`.
-- [ ] Audit comments across the repo and delete stale or irrelevant comments. Current slices remove empty/generated JSDoc blocks from controller source/tooling, exact non-informative `// CRITICAL` headers, stale annotated `CRITICAL` migration labels, generated lifecycle JSDoc noise from the engine coordinator, non-informative `CRITICAL` banners from deploy/global-style files, generated download-manager JSDoc noise, parameter-only download helper JSDoc, boilerplate process utility JSDoc, backend-builder command JSDoc noise, runtime parser default JSDoc noise, and process-manager wrapper JSDoc noise; broader file-by-file audit remains open.
+- [ ] Audit comments across the repo and delete stale or irrelevant comments. Current slices remove empty/generated JSDoc blocks from controller source/tooling, exact non-informative `// CRITICAL` headers, stale annotated `CRITICAL` migration labels, generated lifecycle JSDoc noise from the engine coordinator, non-informative `CRITICAL` banners from deploy/global-style files, generated download-manager JSDoc noise, parameter-only download helper JSDoc, boilerplate process utility JSDoc, backend-builder command JSDoc noise, runtime parser default JSDoc noise, process-manager wrapper JSDoc noise, and parameter-only metrics-store JSDoc; broader file-by-file audit remains open.
 - [ ] Audit package scripts and remove irrelevant commands. Current slices remove stale root frontend metadata/dependencies, duplicate frontend quality/cleanup aliases, and broken nested Husky prepare scripts; deeper command pruning remains open as features are removed.
 - [x] Replace every React effect hook with appropriate alternatives and validate there are zero remaining frontend source usages.
 
