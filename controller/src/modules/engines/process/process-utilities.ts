@@ -2,22 +2,11 @@ import { spawnSync } from "node:child_process";
 import type { Recipe } from "../../models/types";
 import type { Backend } from "../../shared/recipe-types";
 
-/**
- * Split a command line string into arguments.
- * @param command - Raw command line.
- * @returns Parsed arguments.
- */
 const splitCommand = (command: string): string[] => {
   const matches = command.match(/(?:[^\s"]+|"[^"]*")+/g) ?? [];
   return matches.map((token) => token.replace(/^"|"$/g, ""));
 };
 
-/**
- * Extract a flag value from arguments.
- * @param args - CLI args.
- * @param flag - Flag to lookup.
- * @returns Flag value if present.
- */
 export const extractFlag = (args: string[], flag: string): string | undefined => {
   for (let index = 0; index < args.length; index += 1) {
     if (args[index] === flag && index + 1 < args.length) {
@@ -27,11 +16,6 @@ export const extractFlag = (args: string[], flag: string): string | undefined =>
   return undefined;
 };
 
-/**
- * Detect inference backend from command line.
- * @param args - Process args.
- * @returns Backend string or null.
- */
 export const detectBackend = (args: string[]): Backend | null => {
   if (args.length === 0) {
     return null;
@@ -60,10 +44,6 @@ export const detectBackend = (args: string[]): Backend | null => {
   return null;
 };
 
-/**
- * List running processes via ps.
- * @returns Array of pid and args.
- */
 export const listProcesses = (): Array<{ pid: number; args: string[] }> => {
   try {
     const result = spawnSync("ps", ["-eo", "pid=,args="]);
@@ -92,11 +72,6 @@ export const listProcesses = (): Array<{ pid: number; args: string[] }> => {
   }
 };
 
-/**
- * Build environment variables for a recipe.
- * @param recipe - Recipe data.
- * @returns Environment map.
- */
 export const buildEnvironment = (recipe: Recipe): Record<string, string> => {
   const env: Record<string, string> = { ...process.env } as Record<string, string>;
   env["FLASHINFER_DISABLE_VERSION_CHECK"] = "1";
@@ -186,11 +161,6 @@ export const buildEnvironment = (recipe: Recipe): Record<string, string> => {
   return env;
 };
 
-/**
- * Determine if a process is still alive.
- * @param pid - Process id.
- * @returns True if process exists.
- */
 export const pidExists = (pid: number): boolean => {
   try {
     process.kill(pid, 0);
@@ -200,10 +170,6 @@ export const pidExists = (pid: number): boolean => {
   }
 };
 
-/**
- * Build a process tree map.
- * @returns Map of parent pid to children.
- */
 export const buildProcessTree = (): Map<number, number[]> => {
   const result = spawnSync("ps", ["-eo", "pid=,ppid="]);
   if (result.status !== 0) {
@@ -229,12 +195,6 @@ export const buildProcessTree = (): Map<number, number[]> => {
   return tree;
 };
 
-/**
- * Collect child processes recursively.
- * @param tree - Process tree map.
- * @param pid - Parent pid.
- * @param accumulator - Accumulator set.
- */
 export const collectChildren = (
   tree: Map<number, number[]>,
   pid: number,
