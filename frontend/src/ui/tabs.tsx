@@ -53,9 +53,9 @@ function Tabs<T extends string = string>({
           <button
             key={tab.id}
             onClick={() => onSelectTab(tab.id)}
-            className={`flex items-center gap-2 px-4 py-2 text-sm rounded-lg transition-all whitespace-nowrap ${
+            className={`flex items-center gap-2 rounded-lg px-4 py-2 text-sm whitespace-nowrap transition-colors ${
               activeTab === tab.id
-                ? "bg-(--ui-active) text-(--ui-fg)"
+                ? "bg-(--ui-surface) text-(--ui-fg)"
                 : "text-(--ui-muted) hover:bg-(--ui-hover) hover:text-(--ui-fg)"
             }`}
           >

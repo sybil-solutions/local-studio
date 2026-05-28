@@ -3,3 +3,4 @@ export * from "./helpers";
 export * from "./message-content";
 export * from "./block-event";
 export * from "./replay";
+export type { AgentTurnSsePayload } from "../contracts/turn";

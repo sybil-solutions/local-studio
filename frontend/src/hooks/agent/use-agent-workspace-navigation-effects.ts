@@ -1,5 +1,5 @@
 import { useCallback, useSyncExternalStore } from "react";
-import { consumeAgentSessionNavTitle } from "@/components/projects-nav-section";
+import { consumeAgentSessionNavTitle } from "@/ui/projects-nav-section";
 import { makeFreshTab, newPaneId, newRuntimeId } from "@/lib/agent/session/helpers";
 import type { ProjectsContextValue } from "@/lib/agent/projects/context";
 import type { WorkspaceDispatch } from "@/lib/agent/workspace/effects";

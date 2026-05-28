@@ -114,11 +114,12 @@ const resolvePythonBinary = (preferredPython?: string | null): string | null => 
   if (preferredPython) candidates.push(preferredPython);
   const override = process.env["VLLM_STUDIO_RUNTIME_PYTHON"];
   if (override) candidates.push(override);
-  const systemVllmPython = resolvePythonFromScript(resolveBinary("vllm"));
-  if (systemVllmPython) candidates.push(systemVllmPython);
+  const skipSystem = process.env["VLLM_STUDIO_RUNTIME_SKIP_SYSTEM"] === "1";
+  const systemVllmPython = skipSystem ? null : resolvePythonFromScript(resolveBinary("vllm"));
+  if (!skipSystem && systemVllmPython) candidates.push(systemVllmPython);
   const runtimePython = resolveVllmPythonPath();
   if (runtimePython) candidates.push(runtimePython);
-  candidates.push("python3", "python");
+  if (!skipSystem) candidates.push("python3", "python");
   for (const candidate of candidates) {
     try {
       const result = spawnSync(candidate, ["--version"], { timeout: 2000 });
@@ -135,11 +136,12 @@ const collectPythonCandidates = (preferredPython?: string | null): string[] => {
   if (preferredPython) candidates.push(preferredPython);
   const override = process.env["VLLM_STUDIO_RUNTIME_PYTHON"];
   if (override) candidates.push(override);
-  const systemVllmPython = resolvePythonFromScript(resolveBinary("vllm"));
-  if (systemVllmPython) candidates.push(systemVllmPython);
+  const skipSystem = process.env["VLLM_STUDIO_RUNTIME_SKIP_SYSTEM"] === "1";
+  const systemVllmPython = skipSystem ? null : resolvePythonFromScript(resolveBinary("vllm"));
+  if (!skipSystem && systemVllmPython) candidates.push(systemVllmPython);
   const runtimePython = resolveVllmPythonPath();
   if (runtimePython) candidates.push(runtimePython);
-  candidates.push("python3", "python");
+  if (!skipSystem) candidates.push("python3", "python");
   return candidates.filter((c, index, array) => array.indexOf(c) === index);
 };
 

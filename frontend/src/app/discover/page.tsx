@@ -1,6 +1,6 @@
 "use client";
 
-import { DiscoverView } from "./_components/discover-view";
+import { DiscoverView } from "@/ui/discover/discover-view";
 import { useDiscover } from "./hooks/use-discover";
 import { useDownloads } from "@/hooks/use-downloads";
 import { useCallback, useMemo, useRef, useSyncExternalStore } from "react";

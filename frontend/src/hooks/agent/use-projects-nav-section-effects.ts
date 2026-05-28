@@ -6,6 +6,7 @@ import {
   type ActiveAgentSessionSnapshot,
 } from "@/lib/agent/active-sessions";
 import type { Project as ProjectEntry } from "@/lib/agent/projects/types";
+import type { SessionSummary } from "@/lib/agent/session-summary";
 import {
   ACTIVE_AGENT_SESSIONS_EVENT,
   ADD_PROJECT_EVENT,
@@ -18,20 +19,6 @@ import {
   loadSessionPrefs,
   type SessionPrefs,
 } from "@/lib/agent/session/prefs";
-
-type SessionSummary = {
-  id: string;
-  filename: string;
-  cwd: string;
-  startedAt: string;
-  updatedAt: string;
-  modelId: string | null;
-  provider: string | null;
-  firstUserMessage: string | null;
-  turnCount: number;
-  archived: boolean;
-  archivedAt: string | null;
-};
 
 type PinnedSession = SessionSummary & { project: ProjectEntry };
 type ActiveAgentSession = ActiveAgentSessionSnapshot;

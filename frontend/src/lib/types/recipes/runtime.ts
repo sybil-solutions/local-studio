@@ -1,3 +1,5 @@
+import type { RuntimeUpgradeResult } from "../../../../../shared/contracts/system";
+
 export interface VllmRuntimeInfo {
   installed: boolean;
   version: string | null;
@@ -15,13 +17,7 @@ export interface VllmRuntimeConfig {
   error?: string | null;
 }
 
-export interface RuntimeUpgradeResult {
-  success: boolean;
-  version: string | null;
-  output: string | null;
-  error: string | null;
-  used_command: string | null;
-}
+export type { RuntimeUpgradeResult } from "../../../../../shared/contracts/system";
 
 export interface RuntimeJobResponse {
   job_id: string;

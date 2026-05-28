@@ -2,10 +2,10 @@
 
 import { useState } from "react";
 import { AppPage, PageState, RefreshButton, Tabs } from "@/ui";
-import { DailyUsageChart } from "./_components/daily-usage-chart";
-import { ModelPerformanceTable } from "./_components/model-performance-table";
-import { PerformanceDetails } from "./_components/performance-details";
-import { SecondaryMetrics } from "./_components/secondary-metrics";
+import { DailyUsageChart } from "@/ui/usage/daily-usage-chart";
+import { ModelPerformanceTable } from "@/ui/usage/model-performance-table";
+import { PerformanceDetails } from "@/ui/usage/performance-details";
+import { SecondaryMetrics } from "@/ui/usage/secondary-metrics";
 import { useUsage, type UsageSource } from "./hooks/use-usage";
 import { formatNumber } from "@/lib/formatters";
 import { normalizeUsageStats } from "./lib/normalize-usage-stats";

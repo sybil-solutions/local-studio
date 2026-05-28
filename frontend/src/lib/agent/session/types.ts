@@ -69,11 +69,6 @@ export type QueuedMessage = {
   sent?: boolean;
 };
 
-export type AgentTurnSsePayload =
-  | { type: "status"; phase: string; piSessionId?: string | null }
-  | { type: "error"; error: string }
-  | { type: "pi"; seq?: number; event: Record<string, unknown> };
-
 export type SessionTab = {
   id: string;
   // In-memory Pi runtime key. One per tab so tabs can run independent agent

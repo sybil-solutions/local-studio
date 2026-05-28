@@ -9,7 +9,7 @@ import {
   TerminalSquare,
   Wrench,
 } from "lucide-react";
-import { GlobeIcon } from "@/components/icons";
+import { GlobeIcon } from "@/ui/icons";
 import type { ToolBlock } from "@/lib/agent/session";
 import {
   FILE_WRITE_TOOL_NAMES,

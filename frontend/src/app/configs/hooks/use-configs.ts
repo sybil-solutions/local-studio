@@ -8,20 +8,11 @@ import { getStoredBackendUrl, setStoredBackendUrl, clearStoredBackendUrl } from 
 import { normalizeControllerUrl } from "@/lib/controllers";
 import { scheduleDurableUiPreferencesSave } from "@/lib/desktop-ui-preferences";
 import type { CompatibilityReport, ConfigData } from "@/lib/types";
+import type { ApiConnectionSettings, ConnectionStatus } from "@/lib/configs/types";
 
 const FAST_STATUS_REQUEST = { timeout: 5_000, retries: 0 } as const;
 const FAST_COMPAT_REQUEST = { timeout: 20_000, retries: 0 } as const;
 const FAST_CONFIG_REQUEST = { timeout: 20_000, retries: 0 } as const;
-
-export interface ApiConnectionSettings {
-  backendUrl: string;
-  apiKey: string;
-  hasApiKey: boolean;
-  voiceUrl: string;
-  voiceModel: string;
-}
-
-export type ConnectionStatus = "unknown" | "connected" | "error";
 
 const DEFAULT_BACKEND_URL = resolveSettingsDefaultBackendUrl();
 

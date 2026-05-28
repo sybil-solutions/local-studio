@@ -25,7 +25,7 @@ import {
   useState,
   type FormEvent,
 } from "react";
-import { ArrowLeftIcon, ArrowRightIcon, CloseIcon, ReloadIcon } from "@/components/icons";
+import { ArrowLeftIcon, ArrowRightIcon, CloseIcon, ReloadIcon } from "@/ui/icons";
 import { useAgentBrowserEffects } from "@/hooks/agent/use-agent-browser-effects";
 import { useLocalhostSitesEffects } from "@/hooks/agent/use-localhost-sites-effects";
 import { DEFAULT_BROWSER_URL } from "@/lib/agent/tools/persistence";

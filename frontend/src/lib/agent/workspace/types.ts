@@ -1,26 +1,14 @@
 import type { ActiveAgentSessionSnapshot } from "@/lib/agent/active-sessions";
+import type { AgentModel } from "@/lib/agent/models";
 import type { Project } from "@/lib/agent/projects/types";
 import type { Session, SessionId, SessionsMap } from "@/lib/agent/sessions/types";
 import type { Layout, PaneId } from "@/lib/agent/workspace/layout";
 
 export type { PaneId } from "@/lib/agent/workspace/layout";
 export type { SessionId } from "@/lib/agent/sessions/types";
+export type { AgentModel } from "@/lib/agent/models";
 
 export type WorkspaceLayout = Layout;
-
-export type AgentModel = {
-  id: string;
-  name: string;
-  provider: "vllm-studio";
-  providerId?: string;
-  rawId?: string;
-  controllerUrl?: string;
-  controllerName?: string;
-  contextWindow: number;
-  maxTokens: number;
-  reasoning: boolean;
-  active: boolean;
-};
 
 export type { GitSummary } from "@/lib/agent/projects/types";
 

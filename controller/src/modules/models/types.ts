@@ -1,12 +1,15 @@
 import type { RecipeId } from "../../types/brand";
-import type { Backend as SharedBackend, RecipeBase } from "../shared/recipe-types";
+import type { Backend as SharedBackend, ModelInfo, RecipeBase } from "../shared/recipe-types";
+import type { ProcessInfo as PublicProcessInfo } from "../../../../shared/contracts/observability";
 import type {
   ServiceInfo,
   SystemConfig,
   EnvironmentInfo,
   SystemRuntimeInfo,
+  ConfigData,
 } from "../shared/system-types";
 
+export type { ModelInfo } from "../shared/recipe-types";
 export type {
   ServiceInfo,
   SystemConfig,
@@ -28,21 +31,21 @@ export type {
   CompatibilityCheck,
   SystemRuntimeInfo,
   CompatibilityReport,
+  ConfigData,
 } from "../shared/system-types";
 
-export type Backend = SharedBackend;
-
-export interface Recipe extends Omit<RecipeBase, "id"> {
+export interface ControllerRecipe extends Omit<RecipeBase, "id"> {
   id: RecipeId;
 }
 
-export interface ProcessInfo {
-  pid: number;
-  backend: Backend | "unknown";
-  model_path: string | null;
-  port: number;
+export type { ControllerRecipe as Recipe };
+
+interface EngineProcessInfo extends PublicProcessInfo {
+  backend: SharedBackend | "unknown";
   served_model_name: string | null;
 }
+
+export type { EngineProcessInfo as ProcessInfo };
 
 export interface LaunchResult {
   success: boolean;
@@ -68,12 +71,7 @@ export interface GpuInfo {
   power_limit: number;
 }
 
-export interface SystemConfigResponse {
-  config: SystemConfig;
-  services: ServiceInfo[];
-  environment: EnvironmentInfo;
-  runtime: SystemRuntimeInfo;
-}
+export type SystemConfigResponse = ConfigData;
 
 export interface ModelsModuleConfig {
   feature: "models";
@@ -81,16 +79,4 @@ export interface ModelsModuleConfig {
 
 export interface ModelBrowserRecord {
   id: string;
-}
-
-export interface ModelInfo {
-  name: string;
-  path: string;
-  size_bytes: number | null;
-  modified_at: number | null;
-  architecture: string | null;
-  quantization: string | null;
-  context_length: number | null;
-  recipe_ids: string[];
-  has_recipe: boolean;
 }

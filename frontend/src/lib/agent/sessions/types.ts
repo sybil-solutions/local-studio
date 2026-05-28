@@ -7,7 +7,8 @@ import type { ChatMessage, QueuedMessage, TokenStats } from "@/lib/agent/session
 import type { ComposerSkillRef } from "@/lib/agent/composer-context";
 import type { RuntimeContextUsage } from "./api";
 
-export type SessionId = string;
+export type AgentSessionId = string;
+export type { AgentSessionId as SessionId };
 
 export type SessionStatus = "idle" | "starting" | "running" | "loading" | "done" | string;
 
@@ -17,7 +18,7 @@ export type SessionStatus = "idle" | "starting" | "running" | "loading" | "done"
  * subsystem (`useTools().selectionFor(id)`) keyed by the session id below.
  */
 export type Session = {
-  id: SessionId;
+  id: AgentSessionId;
   runtimeSessionId: string;
   piSessionId: string | null;
   projectId?: string;
@@ -37,4 +38,4 @@ export type Session = {
   queue?: QueuedMessage[];
 };
 
-export type SessionsMap = ReadonlyMap<SessionId, Session>;
+export type SessionsMap = ReadonlyMap<AgentSessionId, Session>;

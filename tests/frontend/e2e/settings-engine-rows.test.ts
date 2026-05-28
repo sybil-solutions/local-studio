@@ -5,7 +5,7 @@ import {
   FALLBACK_ENGINES,
   hasHydratedEngineRows,
   resolveEngineRowsView,
-} from "@/app/configs/_components/engines-section-model";
+} from "@/ui/configs/engines-section-model";
 import type { RuntimeBackendInfo, RuntimeTarget, SystemRuntimeInfo } from "@/lib/types";
 
 function backend(installed: boolean): RuntimeBackendInfo {

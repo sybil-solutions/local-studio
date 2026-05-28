@@ -43,7 +43,7 @@
   --row-h-sm: 24px;
   --row-radius: 8px;
   --thread-w: 720px;
-  --composer-w: 680px;
+  --composer-w: 560px;
   --composer-radius: 14px;
   --composer-shadow: 0 12px 36px rgba(0, 0, 0, 0.06);
 
@@ -103,7 +103,7 @@
 @media (min-width: 1024px) {
   :root {
     --thread-w: 40vw;
-    --composer-w: 680px;
+    --composer-w: 560px;
   }
 }
 

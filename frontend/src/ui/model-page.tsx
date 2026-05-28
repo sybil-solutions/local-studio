@@ -53,7 +53,7 @@ export function ModelRow({
   children,
 }: ModelRowProps) {
   return (
-    <div className="my-1 rounded-md bg-(--ui-surface)/70 px-2 py-3">
+    <div className="group px-1 py-2.5 transition-colors hover:bg-(--ui-hover)/35">
       <div className="grid min-h-7 grid-cols-1 gap-2 md:grid-cols-[minmax(150px,0.44fr)_minmax(0,1fr)] md:items-center md:gap-5">
         <div className="min-w-0">
           <div className="truncate text-[12px] font-medium text-(--ui-fg)" title={label}>
@@ -109,7 +109,7 @@ export function ModelStatus({
   children: ReactNode;
 }) {
   return (
-    <StatusPill tone={tone} variant="badge">
+    <StatusPill tone={tone} variant="dot" className="text-[10px]">
       {children}
     </StatusPill>
   );
@@ -132,7 +132,7 @@ export function ModelButton({
 }) {
   const classes =
     tone === "primary"
-      ? "bg-(--ui-surface) text-(--ui-fg) hover:bg-(--ui-surface-2)"
+      ? "text-(--ui-fg) hover:bg-(--ui-hover)"
       : tone === "danger"
         ? "text-(--ui-danger) hover:bg-(--ui-danger)/10"
         : "text-(--ui-muted) hover:bg-(--ui-hover) hover:text-(--ui-fg)";
@@ -143,7 +143,7 @@ export function ModelButton({
       disabled={disabled}
       title={title}
       className={cx(
-        "inline-flex h-7 items-center justify-center gap-1.5 rounded-md px-2 text-[11px] font-medium transition-colors disabled:pointer-events-none disabled:opacity-45",
+        "inline-flex h-6 items-center justify-center gap-1.5 rounded-md px-1.5 text-[11px] font-medium transition-colors disabled:pointer-events-none disabled:opacity-45",
         classes,
       )}
     >

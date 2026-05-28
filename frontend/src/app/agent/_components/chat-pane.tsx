@@ -30,7 +30,7 @@ import {
   MoreIcon,
   SendIcon,
   StopIcon,
-} from "@/components/icons";
+} from "@/ui/icons";
 import { useClickOutside } from "@/hooks/use-click-outside";
 import {
   useChatPaneMentionEffects,

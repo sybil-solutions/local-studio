@@ -9,6 +9,7 @@
     "start:next": "next start",
     "test": "tsx --test scripts/test-build-agent-session-options.ts",
     "test:e2e": "tsx --test ../tests/frontend/e2e/*.test.ts",
+    "test:e2e:ui": "playwright test",
     "lint": "eslint",
     "lint:fix": "eslint --fix",
     "format": "prettier --write \"src/**/*.{ts,tsx,js,jsx,css,md,json}\"",
@@ -19,6 +20,7 @@
     "check:deadcode": "knip",
     "check:dupes": "jscpd src",
     "check:cleanup": "npm run check:deadcode && npm run check:dupes && npm run depcheck",
+    "check:ui-structure": "node scripts/validate-ui-structure.mjs",
     "check:fix": "knip --fix",
     "desktop:build:main": "tsc -p desktop/tsconfig.json",
     "desktop:start": "electron desktop/dist/main.js",
@@ -32,7 +34,7 @@
     "typecheck": "tsc --noEmit",
     "typecheck:desktop": "tsc -p desktop/tsconfig.json",
     "check:cycles": "madge --extensions ts,tsx --circular src",
-    "check:static": "npm run lint && npm run typecheck && npm run typecheck:desktop && npm run check:cycles",
+    "check:static": "npm run lint && npm run typecheck && npm run typecheck:desktop && npm run check:cycles && npm run check:ui-structure",
     "check:quality": "node scripts/validate-package-json.mjs && npm run check:static && npm run check:cleanup && npm run build",
     "precommit": "lint-staged --config .lintstagedrc.json && npm run typecheck"
   },
@@ -56,6 +58,7 @@
   },
   "devDependencies": {
     "@next/bundle-analyzer": "^16.1.3",
+    "@playwright/test": "^1.60.0",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",

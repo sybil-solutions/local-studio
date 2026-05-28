@@ -1,7 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
-import { LeftSidebar } from "@/components/left-sidebar";
+import { LeftSidebar } from "@/ui/left-sidebar";
 import { getThemeBootstrapScript } from "@/lib/theme/runtime";
 import { Providers } from "./providers";
 

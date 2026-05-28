@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useMemo, useState } from "react";
-import { GitBranchIcon, ReloadIcon } from "@/components/icons";
+import { GitBranchIcon, ReloadIcon } from "@/ui/icons";
 import type { GitAction, GitRef, GitState } from "@/lib/agent/contracts/git";
 import { loadGitState, runGitAction } from "@/lib/agent/git/client";
 import { useGitDiffPanelEffects } from "@/hooks/agent/use-git-diff-panel-effects";

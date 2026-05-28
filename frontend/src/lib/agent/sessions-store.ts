@@ -5,20 +5,8 @@ import readline from "node:readline";
 import { resolveDataDir } from "@/lib/data-dir";
 import { cleanSessionTitle } from "@/lib/agent/session/helpers";
 import { sessionArchiveState } from "@/lib/agent/session-metadata-store";
-
-export type SessionSummary = {
-  id: string;
-  filename: string;
-  cwd: string;
-  startedAt: string;
-  updatedAt: string;
-  modelId: string | null;
-  provider: string | null;
-  firstUserMessage: string | null;
-  turnCount: number;
-  archived: boolean;
-  archivedAt: string | null;
-};
+import type { SessionSummary } from "@/lib/agent/session-summary";
+export type { SessionSummary } from "@/lib/agent/session-summary";
 
 export type SessionEvent = Record<string, unknown> & { type?: string };
 

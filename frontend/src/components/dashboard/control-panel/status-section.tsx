@@ -3,7 +3,7 @@
 import { useCallback, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { Info, Moon, Square, Sun } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
-import { ModelStopConfirm } from "@/components/model-stop-confirm";
+import { ModelStopConfirm } from "@/ui/model-stop-confirm";
 import { useModelLifecycle } from "@/hooks/use-model-lifecycle";
 import type { GPU, Metrics, ProcessInfo, RecipeWithStatus, RuntimePlatformKind } from "@/lib/types";
 import { toGB, toGBFromMB } from "@/lib/formatters";

@@ -14,7 +14,7 @@ import {
   TerminalSquare,
   type LucideIcon,
 } from "lucide-react";
-import { CloseIcon } from "@/components/icons";
+import { CloseIcon } from "@/ui/icons";
 import { normalizeBrowserInput } from "@/lib/agent/tools/browser-url";
 import { useTools } from "@/lib/agent/tools/context";
 import type { ComputerTab } from "@/lib/agent/tools/types";

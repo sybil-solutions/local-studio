@@ -71,6 +71,17 @@ export { ListGroup, ListRow, RowValue, EmptySafeNotice, KeyValueRow } from "./li
 export { StatusDot, StatusPill } from "./status";
 export type { UiTone, StatusPillVariant } from "./status";
 
+export { LeftSidebar } from "./left-sidebar";
+export { ModelStopConfirm } from "./model-stop-confirm";
+export {
+  ProjectsNavSection,
+  consumeAgentSessionNavTitle,
+  mergeActiveSessionPref,
+  rememberAgentSessionNavTitle,
+  triggerAddProjectFlow,
+} from "./projects-nav-section";
+export { SessionsCommand } from "./sessions-command";
+
 // Page-specialized adapters kept in /ui so library swaps happen in one place.
 export {
   SettingsLayout,

@@ -3,7 +3,7 @@
 import { useCallback, useMemo, useState, useSyncExternalStore } from "react";
 import api from "@/lib/api";
 import type { HuggingFaceModel, ModelInfo, ModelRecommendation } from "@/lib/types";
-import { extractProvider, extractQuantizations, normalizeModelId } from "../_components/utils";
+import { extractProvider, extractQuantizations, normalizeModelId } from "@/ui/discover/utils";
 
 export function useDiscover() {
   const [models, setModels] = useState<HuggingFaceModel[]>([]);

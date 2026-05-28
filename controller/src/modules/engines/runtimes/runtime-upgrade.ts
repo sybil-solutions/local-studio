@@ -3,6 +3,7 @@ import { resolveBinary, runCommand } from "../../../core/command";
 import { getLlamacppRuntimeInfo, getSglangRuntimeInfo, getCudaInfo } from "./runtime-info";
 import { getRocmInfo, resolveRocmSmiTool } from "../../system/platform/rocm-info";
 import { resolveVllmPythonPath } from "./vllm-python-path";
+import type { RuntimeUpgradeResult } from "../../../../../shared/contracts/system";
 import {
   CUDA_UPGRADE_ENV,
   LLAMACPP_UPGRADE_ENV,
@@ -12,13 +13,7 @@ import {
 } from "./upgrade-config";
 import { RUNTIME_UPGRADE_TIMEOUT_MS } from "../configs";
 
-export interface RuntimeUpgradeResult {
-  success: boolean;
-  version: string | null;
-  output: string | null;
-  error: string | null;
-  used_command: string | null;
-}
+export type { RuntimeUpgradeResult } from "../../../../../shared/contracts/system";
 
 export interface RuntimeUpgradeOptions {
   command?: string;
