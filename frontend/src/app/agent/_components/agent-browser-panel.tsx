@@ -1,12 +1,15 @@
 "use client";
 
+import { useCallback, useState } from "react";
 import {
+  Activity,
   Code2,
   FolderTree,
   GitBranch,
   Globe2,
   MessageSquarePlus,
   PanelRight,
+  Plug,
   Plus,
   TerminalSquare,
   type LucideIcon,
@@ -17,17 +20,24 @@ import { useTools } from "@/lib/agent/tools/context";
 import type { ComputerTab } from "@/lib/agent/tools/types";
 import type { Project } from "@/lib/agent/projects/types";
 import type { Session } from "@/lib/agent/sessions/types";
+import { makeFreshTab, newRuntimeId } from "@/lib/agent/session/helpers";
 import type { AgentModel } from "@/lib/agent/workspace/types";
-import { NEW_AGENT_SESSION_EVENT } from "@/lib/agent/workspace/events";
 import { AgentBrowser, type AgentBrowserHandle } from "./agent-browser";
+import { ChatPane } from "./chat-pane";
+import { ComputerStatusPanel } from "./computer-status-panel";
 import { FilesystemPanel } from "./filesystem-panel";
 import { GitDiffPanel } from "./git-diff-panel";
+import { PluginsPanel } from "./plugins-panel";
 import { TerminalPanel } from "./terminal-panel";
 import type { WorkspaceHandles } from "./use-workspace";
 
 type AgentBrowserPanelHandles = Pick<
   WorkspaceHandles,
-  "registerComputerAside" | "startComputerResize" | "registerBrowserHandle" | "runBrowserCommand"
+  | "registerComputerAside"
+  | "startComputerResize"
+  | "registerBrowserHandle"
+  | "runBrowserCommand"
+  | "compactFocusedSession"
 >;
 
 type AgentBrowserPanelProps = {
@@ -35,6 +45,7 @@ type AgentBrowserPanelProps = {
   activeProject: Project | null;
   focusedSession: Session | null;
   sessions: Session[];
+  activeModelId: string;
   activeModel: AgentModel | null;
   gitSummary?: {
     isRepo: boolean;
@@ -45,10 +56,35 @@ type AgentBrowserPanelProps = {
   } | null;
 };
 
-export function AgentBrowserPanel({ handles, activeProject }: AgentBrowserPanelProps) {
-  const tools = useTools();
-  if (!tools.computer.open) return null;
+function createSideChatSession(
+  activeProject: Project | null,
+  focusedSession: Session | null,
+  activeModelId: string,
+): Session {
+  const tab = makeFreshTab();
+  return {
+    ...tab,
+    runtimeSessionId: newRuntimeId(),
+    title: "Side chat",
+    cwd: activeProject?.path ?? focusedSession?.cwd,
+    projectId: activeProject?.id ?? focusedSession?.projectId,
+    modelId: focusedSession?.modelId ?? activeModelId,
+  };
+}
 
+export function AgentBrowserPanel({
+  handles,
+  activeProject,
+  focusedSession,
+  sessions,
+  activeModelId,
+  activeModel,
+  gitSummary,
+}: AgentBrowserPanelProps) {
+  const tools = useTools();
+  const [sideChatSession, setSideChatSession] = useState<Session>(() =>
+    createSideChatSession(null, null, ""),
+  );
   const { registerComputerAside, startComputerResize, registerBrowserHandle, runBrowserCommand } =
     handles;
   const isElectron = typeof navigator !== "undefined" && /electron/i.test(navigator.userAgent);
@@ -58,13 +94,39 @@ export function AgentBrowserPanel({ handles, activeProject }: AgentBrowserPanelP
     tools.setBrowserUrl(next, next);
     void runBrowserCommand("navigate", { url: next });
   };
-  const startSideChat = () => {
-    window.dispatchEvent(
-      new CustomEvent(NEW_AGENT_SESSION_EVENT, {
-        detail: { projectId: activeProject?.id, mode: "split" },
-      }),
+  const openSideChat = useCallback(() => {
+    setSideChatSession((current) =>
+      current.messages.length
+        ? current
+        : {
+            ...current,
+            cwd: activeProject?.path ?? focusedSession?.cwd,
+            projectId: activeProject?.id ?? focusedSession?.projectId,
+            modelId: current.modelId || focusedSession?.modelId || activeModelId,
+          },
     );
-  };
+    tools.setComputerTab("side-chat");
+  }, [activeModelId, activeProject, focusedSession, tools]);
+  const updateSideChatTabs = useCallback(
+    (nextTabsOrUpdater: Session[] | ((tabs: Session[]) => Session[])) => {
+      setSideChatSession((current) => {
+        const nextTabs =
+          typeof nextTabsOrUpdater === "function"
+            ? nextTabsOrUpdater([current])
+            : nextTabsOrUpdater;
+        return nextTabs.at(-1) ?? current;
+      });
+    },
+    [],
+  );
+  const renameSideChat = useCallback((tabId: string, title: string) => {
+    setSideChatSession((current) => (current?.id === tabId ? { ...current, title } : current));
+  }, []);
+  const closeSideChat = useCallback(() => {
+    setSideChatSession(createSideChatSession(activeProject ?? null, focusedSession, activeModelId));
+    tools.closeComputerTab("side-chat");
+  }, [activeModelId, activeProject, focusedSession, tools]);
+  if (!tools.computer.open) return null;
 
   return (
     <aside
@@ -83,19 +145,54 @@ export function AgentBrowserPanel({ handles, activeProject }: AgentBrowserPanelP
         tab={tools.computer.tab}
         openTabs={tools.computer.tabs}
         onSelectTab={tools.setComputerTab}
-        onCloseTab={tools.closeComputerTab}
-        onShowLauncher={() => tools.setComputerTab("status")}
-        onCloseComputer={() => tools.setComputerOpen(false)}
+        onCloseTab={(closing) =>
+          closing === "side-chat" ? closeSideChat() : tools.closeComputerTab(closing)
+        }
+        onShowLauncher={() => tools.setComputerTab("tools")}
       />
 
       {tools.computer.tab === "status" ? (
+        <ComputerStatusPanel
+          activeProject={activeProject}
+          activeModel={activeModel}
+          focusedSession={focusedSession}
+          sessions={sessions}
+          gitSummary={gitSummary}
+          onCompactSession={handles.compactFocusedSession}
+        />
+      ) : tools.computer.tab === "tools" ? (
         <ComputerLauncherPanel
           activeTab={tools.computer.tab}
           onSelectTab={tools.setComputerTab}
-          onStartSideChat={startSideChat}
+          onStartSideChat={openSideChat}
         />
       ) : tools.computer.tab === "canvas" ? (
         <CanvasPanel />
+      ) : tools.computer.tab === "side-chat" ? (
+        <ChatPane
+          paneId="computer-side-chat"
+          runtimeSessionId={sideChatSession.runtimeSessionId}
+          modelId={sideChatSession.modelId ?? focusedSession?.modelId ?? activeModelId}
+          modelName={activeModel?.name ?? null}
+          modelsLoading={false}
+          contextWindow={activeModel?.contextWindow ?? 0}
+          cwd={sideChatSession.cwd ?? activeProject?.path ?? focusedSession?.cwd ?? ""}
+          projectName={activeProject?.name ?? null}
+          browserToolEnabled={false}
+          onToggleBrowserTool={() => tools.setComputerTab("browser")}
+          canvasEnabled={false}
+          onToggleCanvas={tools.toggleCanvas}
+          isFocused
+          onFocus={() => undefined}
+          tabs={[sideChatSession]}
+          activeTabId={sideChatSession.id}
+          onTabsChange={updateSideChatTabs}
+          onRenameSession={renameSideChat}
+          onClose={closeSideChat}
+          rightPanelOpen
+          onToggleRightPanel={() => tools.setComputerOpen(false)}
+          showHeader={false}
+        />
       ) : tools.computer.tab === "browser" ? (
         <AgentBrowser
           ref={registerBrowserHandle}
@@ -115,6 +212,8 @@ export function AgentBrowserPanel({ handles, activeProject }: AgentBrowserPanelP
         </section>
       ) : tools.computer.tab === "diff" ? (
         <GitDiffPanel cwd={activeProject?.path ?? null} />
+      ) : tools.computer.tab === "plugins" ? (
+        <PluginsPanel />
       ) : (
         <TerminalPanel cwd={activeProject?.path ?? null} />
       )}
@@ -123,12 +222,15 @@ export function AgentBrowserPanel({ handles, activeProject }: AgentBrowserPanelP
 }
 
 const TAB_LABELS: Record<ComputerTab, string> = {
-  status: "Tools",
+  status: "Status",
+  tools: "Tools",
   canvas: "Canvas",
+  "side-chat": "Side chat",
   browser: "Browser",
   files: "Filesystem",
   diff: "Git",
   terminal: "Terminal",
+  plugins: "Plugins",
 };
 
 const TAB_OPTIONS: Array<{
@@ -144,6 +246,12 @@ const TAB_OPTIONS: Array<{
     icon: Code2,
   },
   {
+    tab: "side-chat",
+    label: "Side chat",
+    description: "Focused side conversation",
+    icon: MessageSquarePlus,
+  },
+  {
     tab: "browser",
     label: "Browser",
     description: "Web, localhost, and file previews",
@@ -157,6 +265,12 @@ const TAB_OPTIONS: Array<{
     icon: FolderTree,
   },
   { tab: "terminal", label: "Terminal", description: "Project shell", icon: TerminalSquare },
+  {
+    tab: "plugins",
+    label: "Plugins",
+    description: "Install and manage Pi extensions, skills, prompts, themes",
+    icon: Plug,
+  },
 ];
 
 function ComputerHeader({
@@ -165,50 +279,37 @@ function ComputerHeader({
   onSelectTab,
   onCloseTab,
   onShowLauncher,
-  onCloseComputer,
 }: {
   tab: ComputerTab;
   openTabs: ComputerTab[];
   onSelectTab: (tab: ComputerTab) => void;
   onCloseTab: (tab: ComputerTab) => void;
   onShowLauncher: () => void;
-  onCloseComputer: () => void;
 }) {
-  const visibleTabs = openTabs.filter((openTab) => openTab !== "status");
+  // The launcher ("tools") is reached via the Plus button, so it never
+  // appears as a row entry. Status IS a real row tab again.
+  const visibleTabs = openTabs.filter((openTab) => openTab !== "tools");
   const tabMeta = (candidate: ComputerTab) =>
     candidate === "status"
-      ? { label: "Status", icon: PanelRight }
+      ? { label: "Status", icon: Activity }
       : {
           label: TAB_LABELS[candidate],
           icon: TAB_OPTIONS.find((item) => item.tab === candidate)?.icon ?? PanelRight,
         };
   return (
     <div className="relative flex h-9 shrink-0 items-center gap-1 border-b border-(--border) px-1.5 text-[11px]">
-      <button
-        type="button"
-        onClick={onShowLauncher}
-        className={`relative z-10 -my-1 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md transition-colors ${
-          tab === "status"
-            ? "text-(--fg) hover:bg-(--surface)"
-            : "text-(--dim) hover:bg-(--surface) hover:text-(--fg)"
-        }`}
-        title="Show tools"
-        aria-label="Show tools"
-        aria-pressed={tab === "status"}
-      >
-        <Plus className="pointer-events-none h-3.5 w-3.5" />
-      </button>
       <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto overflow-y-hidden [scrollbar-width:thin]">
         {visibleTabs.map((openTab) => {
           const meta = tabMeta(openTab);
           const Icon = meta.icon;
+          const canClose = openTab !== "status";
           return (
             <div
               key={openTab}
               className={`group inline-flex h-8 min-w-0 shrink-0 items-center gap-0.5 rounded-md ${
                 tab === openTab
-                  ? "text-(--fg) hover:bg-(--surface)"
-                  : "text-(--dim) hover:bg-(--surface) hover:text-(--fg)"
+                  ? "text-(--fg)/70 hover:bg-(--surface) hover:text-(--fg)/85"
+                  : "text-(--dim)/75 hover:bg-(--surface) hover:text-(--fg)/75"
               }`}
               title={meta.label}
             >
@@ -220,18 +321,20 @@ function ComputerHeader({
                 <Icon className="pointer-events-none h-3 w-3 shrink-0" />
                 <span className="max-w-[7rem] truncate">{meta.label}</span>
               </button>
-              <button
-                type="button"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  onCloseTab(openTab);
-                }}
-                className="hidden h-8 w-7 items-center justify-center rounded text-(--dim) hover:bg-(--hover) hover:text-(--fg) group-hover:inline-flex"
-                aria-label={`Close ${meta.label}`}
-                title={`Close ${meta.label}`}
-              >
-                <CloseIcon className="pointer-events-none h-2 w-2" />
-              </button>
+              {canClose ? (
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onCloseTab(openTab);
+                  }}
+                  className="inline-flex h-8 w-7 items-center justify-center rounded text-(--dim)/65 hover:bg-(--hover) hover:text-(--fg)/75"
+                  aria-label={`Close ${meta.label}`}
+                  title={`Close ${meta.label}`}
+                >
+                  <CloseIcon className="pointer-events-none h-2 w-2" />
+                </button>
+              ) : null}
             </div>
           );
         })}
@@ -239,14 +342,17 @@ function ComputerHeader({
       <div className="ml-auto flex shrink-0 items-center gap-1">
         <button
           type="button"
-          onPointerDown={(event) => event.stopPropagation()}
-          onMouseDown={(event) => event.stopPropagation()}
-          onClick={onCloseComputer}
-          className="relative z-10 -my-1 inline-flex h-8 w-8 items-center justify-center rounded-md text-(--dim) hover:bg-(--surface) hover:text-(--fg)"
-          title="Close"
-          aria-label="Close computer"
+          onClick={onShowLauncher}
+          className={`relative z-10 -my-1 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md transition-colors ${
+            tab === "tools"
+              ? "text-(--fg)/70 hover:bg-(--surface) hover:text-(--fg)/85"
+              : "text-(--dim)/75 hover:bg-(--surface) hover:text-(--fg)/75"
+          }`}
+          title="Show tools"
+          aria-label="Show tools"
+          aria-pressed={tab === "tools"}
         >
-          <CloseIcon className="h-3 w-3 pointer-events-none" />
+          <Plus className="pointer-events-none h-3.5 w-3.5" />
         </button>
       </div>
     </div>
@@ -298,6 +404,13 @@ function ComputerLauncherPanel({
       icon: TerminalSquare,
       onClick: () => onSelectTab("terminal"),
     },
+    {
+      key: "plugins",
+      title: "Plugins",
+      description: "Install Pi extensions, skills, prompts, themes",
+      icon: Plug,
+      onClick: () => onSelectTab("plugins"),
+    },
   ] as const;
   return (
     <section className="min-h-0 flex-1 overflow-y-auto bg-(--bg) px-5 py-7">
@@ -312,11 +425,11 @@ function ComputerLauncherPanel({
               onClick={card.onClick}
               className={`group flex min-h-24 flex-col items-center justify-center rounded-xl border px-5 py-5 text-center transition-colors ${
                 selected
-                  ? "border-(--border) bg-(--surface) text-(--fg)"
-                  : "border-transparent bg-black/20 text-(--fg) hover:border-(--border) hover:bg-(--surface)/70"
+                  ? "border-(--border) bg-(--surface) text-(--fg)/80"
+                  : "border-transparent bg-black/20 text-(--fg)/75 hover:border-(--border) hover:bg-(--surface)/70"
               }`}
             >
-              <Icon className="mb-3 h-5 w-5 text-(--dim) transition-colors group-hover:text-(--fg)" />
+              <Icon className="mb-3 h-5 w-5 text-(--dim)/70 transition-colors group-hover:text-(--fg)/75" />
               <span className="text-[15px] font-semibold tracking-tight">{card.title}</span>
               <span className="mt-1.5 text-[13px] text-(--dim)">{card.description}</span>
             </button>
@@ -332,7 +445,7 @@ function CanvasPanel() {
   return (
     <section className="flex min-h-0 flex-1 flex-col">
       <div className="flex h-10 shrink-0 items-center gap-2 border-b border-(--border) px-3 text-xs">
-        <Code2 className="h-3.5 w-3.5 text-(--accent)" />
+        <Code2 className="h-3.5 w-3.5 text-(--accent)/70" />
         <span className="font-medium text-(--fg)">Canvas</span>
         <span className="min-w-0 flex-1 truncate text-[11px] text-(--dim)">
           Shared scratchboard for the human and model
@@ -342,8 +455,8 @@ function CanvasPanel() {
           onClick={tools.toggleCanvas}
           className={`h-6 rounded px-2 text-[11px] ${
             tools.computer.canvasEnabled
-              ? "bg-(--accent)/15 text-(--accent)"
-              : "bg-(--surface) text-(--dim) hover:text-(--fg)"
+              ? "bg-(--accent)/15 text-(--accent)/75"
+              : "bg-(--surface) text-(--dim)/75 hover:text-(--fg)/75"
           }`}
         >
           {tools.computer.canvasEnabled ? "On" : "Off"}

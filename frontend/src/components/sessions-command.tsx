@@ -1,11 +1,11 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
 import { Search } from "lucide-react";
 import { ChatIcon, Folder } from "@/components/icons";
+import { cleanSessionTitle } from "@/lib/agent/session/helpers";
 import { safeJson } from "@/lib/agent/safe-json";
-import { useLegacyEffect } from "@/hooks/agent/use-legacy-effects";
 
 // Aggregated session row returned by /api/agent/sessions/all. Mirrored here
 // so the component is decoupled from the API module.
@@ -64,34 +64,45 @@ export function SessionsCommand({ open, onClose, activeSessions }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
-  // Load on open. Sessions index is small and changes infrequently; we just
-  // refetch each time the palette opens so the user always sees the latest.
-  useLegacyEffect(() => {
-    if (!open) return;
-    let cancelled = false;
-    (async () => {
-      try {
-        const response = await fetch("/api/agent/sessions/all?since=30d", { cache: "no-store" });
-        const payload = await safeJson<{ sessions?: AggregatedSession[] }>(response);
-        if (!cancelled) setSessions(payload.sessions ?? []);
-      } catch {
-        if (!cancelled) setSessions([]);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [open]);
+  const subscribeSessionIndex = useCallback(
+    (_notify: () => void) => {
+      if (!open) return () => {};
+      let cancelled = false;
+      void (async () => {
+        try {
+          const response = await fetch("/api/agent/sessions/all?since=30d", { cache: "no-store" });
+          const payload = await safeJson<{ sessions?: AggregatedSession[] }>(response);
+          if (!cancelled) setSessions(payload.sessions ?? []);
+        } catch {
+          if (!cancelled) setSessions([]);
+        }
+      })();
+      return () => {
+        cancelled = true;
+      };
+    },
+    [open],
+  );
 
-  useLegacyEffect(() => {
-    if (!open) return;
-    const frame = requestAnimationFrame(() => {
-      setQuery("");
-      setHighlight(0);
-      inputRef.current?.focus();
-    });
-    return () => cancelAnimationFrame(frame);
-  }, [open]);
+  const subscribeOpenFocus = useCallback(
+    (_notify: () => void) => {
+      if (!open) return () => {};
+      const frame = requestAnimationFrame(() => {
+        setQuery("");
+        setHighlight(0);
+        inputRef.current?.focus();
+      });
+      return () => cancelAnimationFrame(frame);
+    },
+    [open],
+  );
+
+  useSyncExternalStore(
+    subscribeSessionIndex,
+    getSessionsCommandSnapshot,
+    getSessionsCommandSnapshot,
+  );
+  useSyncExternalStore(subscribeOpenFocus, getSessionsCommandSnapshot, getSessionsCommandSnapshot);
 
   // Index active sessions by piSessionId so we can mark stored sessions that
   // are currently running in a pane.
@@ -224,7 +235,9 @@ export function SessionsCommand({ open, onClose, activeSessions }: Props) {
                       className="inline-block h-2 w-2 shrink-0 rounded-full bg-(--hl2) animate-pulse"
                       aria-hidden
                     />
-                    <span className="min-w-0 flex-1 truncate text-(--fg)">{session.title}</span>
+                    <span className="min-w-0 flex-1 truncate text-(--fg)">
+                      {cleanSessionTitle(session.title) || "Current session"}
+                    </span>
                     <span className="shrink-0 truncate text-[11px] text-(--dim)">
                       {session.status}
                     </span>
@@ -237,7 +250,8 @@ export function SessionsCommand({ open, onClose, activeSessions }: Props) {
                 const active = selectedIndex === i;
                 const running = activeByPiId.has(session.id);
                 const label =
-                  session.firstUserMessage?.trim() || `Session ${session.id.slice(0, 8)}`;
+                  cleanSessionTitle(session.firstUserMessage) ||
+                  `Session ${session.id.slice(0, 8)}`;
                 return (
                   <button
                     key={session.id}
@@ -286,6 +300,8 @@ export function SessionsCommand({ open, onClose, activeSessions }: Props) {
     </div>
   );
 }
+
+const getSessionsCommandSnapshot = (): number => 0;
 
 function SectionLabel({ children }: { children: string }) {
   return (

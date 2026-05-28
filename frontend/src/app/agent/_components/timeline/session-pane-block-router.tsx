@@ -1,5 +1,5 @@
 import { memo, useMemo, useState } from "react";
-import { ChevronDown } from "lucide-react";
+import { Search } from "lucide-react";
 import type {
   AssistantBlock,
   ChatMessage,
@@ -9,6 +9,7 @@ import type {
   ThinkingBlock,
   ToolBlock,
 } from "@/lib/agent/session";
+import { traceAgentReasoning } from "@/lib/agent/trace-reasoning";
 import { AssistantMarkdown } from "../assistant-markdown";
 import { ToolBlockView } from "./tool-block-view";
 import {
@@ -107,7 +108,7 @@ function SessionPaneBlockRouterInner({ message }: { message: ChatMessage }) {
   if (message.role === "user") {
     return (
       <article className="flex justify-end">
-        <div className="max-w-[72%] rounded-xl bg-(--surface) px-3.5 py-2 font-sans text-[14px] leading-[22px] tracking-[-0.003em] text-(--fg)">
+        <div className="max-w-[80%] rounded-2xl bg-(--surface-2)/70 px-3.5 py-2 text-[10.4px] leading-[1.55] tracking-normal text-(--fg)/95">
           <div className="whitespace-pre-wrap break-words">{message.text}</div>
           {message.attachments?.length ? (
             <div className="mt-2 grid gap-2">
@@ -133,13 +134,14 @@ const EMPTY_BLOCKS: AssistantBlock[] = [];
 // assistant actually mutates a block.
 const AssistantBlocks = memo(function AssistantBlocks({ blocks }: { blocks: AssistantBlock[] }) {
   const routedBlocks = useMemo(() => groupAssistantBlocks(blocks), [blocks]);
+  traceAgentReasoning("render.blocks", { blocks, routedBlocks });
 
   return (
     <article className="min-w-0">
       {routedBlocks.length === 0 ? (
-        <div className="text-[13px] leading-[21px] text-(--dim)">…</div>
+        <div className="text-[10.4px] leading-[16.8px] text-(--dim)">…</div>
       ) : (
-        <div className="flex flex-col gap-3">
+        <div className="flex flex-col gap-3.5">
           {routedBlocks.map((item) => {
             if (item.kind === "activity-group") {
               return <AssistantActivityGroup key={item.id} segments={item.segments} />;
@@ -234,30 +236,40 @@ const AssistantActivityGroup = memo(function AssistantActivityGroup({
     (segment) =>
       segment.kind === "tools" && segment.blocks.some((block) => block.status === "running"),
   );
+  // Default collapsed: tool calls + reasoning are progress detail, not the
+  // primary signal. The summary row already shows what happened ("Explored 1
+  // search, read 2 files") plus a live "running" badge while a tool is in
+  // flight, so the timeline stays scannable. Users can click to expand.
   const [expanded, setExpanded] = useState(false);
+  const preview = activityPreview(segments);
 
   return (
     <details className="group min-w-0 overflow-hidden" open={expanded}>
       <summary
-        className="flex min-w-0 cursor-pointer list-none items-center gap-1 rounded-md px-1 py-0.5 text-[11px] text-(--fg) hover:bg-(--hover) [&::-webkit-details-marker]:hidden"
+        className="flex min-h-7 min-w-0 cursor-pointer list-none items-center gap-2 rounded-lg px-2 py-1 text-[9.6px] leading-4 text-(--dim)/75 transition-colors hover:bg-(--hover) hover:text-(--fg)/80 [&::-webkit-details-marker]:hidden"
         onClick={(event) => {
           event.preventDefault();
           setExpanded((value) => !value);
         }}
       >
-        <ChevronDown
-          className={`h-3 w-3 shrink-0 text-(--fg)/70 transition-transform ${expanded ? "rotate-180" : ""}`}
-        />
-        <span className="shrink-0 font-medium text-(--fg)/90">{activityLabel(segments)}</span>
-        <span className="min-w-0 flex-1 truncate font-mono text-[10.5px] text-(--fg)/70">
-          {activityPreview(segments)}
-        </span>
+        <Search className="h-3.5 w-3.5 shrink-0 text-(--dim)/50" />
+        <span className="shrink-0 font-medium text-(--fg)/50">{activityLabel(segments)}</span>
+        {!expanded ? (
+          <span
+            className={`agent-activity-preview min-w-0 flex-1 truncate text-(--dim)/50 ${hasActiveTool ? "agent-activity-preview-running" : ""}`}
+            data-preview={preview}
+          >
+            {preview}
+          </span>
+        ) : (
+          <span className="min-w-0 flex-1" />
+        )}
         {hasActiveTool ? (
-          <span className="shrink-0 text-[10px] text-(--accent)">running</span>
+          <span className="shrink-0 text-[8.8px] font-medium text-(--accent)/60">running</span>
         ) : null}
       </summary>
       {expanded ? (
-        <div className="ml-1.5 mt-1 flex min-w-0 flex-col gap-1.5 border-l border-(--border)/70 pl-2">
+        <div className="ml-3 mt-2 flex min-w-0 flex-col gap-1.5 border-l border-(--border)/50 pl-3">
           {segments.flatMap(activitySegmentItems).map((item) => (
             <ActivityTreeItem key={item.id} item={item} />
           ))}
@@ -285,7 +297,7 @@ function ActivityTreeItem({ item }: { item: ActivityTreeItem }) {
 
 function ReasoningLeaf({ block }: { block: ThinkingBlock }) {
   return (
-    <pre className="max-w-full whitespace-pre-wrap break-words py-0.5 font-mono text-[11px] leading-5 text-(--dim) [overflow-wrap:anywhere]">
+    <pre className="max-w-full overflow-x-auto whitespace-pre-wrap rounded-lg bg-(--surface)/40 px-3 py-2 font-mono text-[9.6px] leading-[1.6] text-(--dim)/80">
       {block.text}
     </pre>
   );
@@ -293,10 +305,10 @@ function ReasoningLeaf({ block }: { block: ThinkingBlock }) {
 
 function EventBlockView({ block }: { block: EventBlock }) {
   return (
-    <div className="flex items-center gap-3 py-1 text-[11px] text-(--dim)">
-      <span className="h-px flex-1 bg-(--border)" />
-      <span>{block.text}</span>
-      <span className="h-px flex-1 bg-(--border)" />
+    <div className="flex items-center gap-3 py-2 text-[8.8px] text-(--dim)/70">
+      <span className="h-px flex-1 bg-(--border)/50" />
+      <span className="font-medium">{block.text}</span>
+      <span className="h-px flex-1 bg-(--border)/50" />
     </div>
   );
 }
@@ -305,14 +317,44 @@ function activityLabel(segments: ActivitySegment[]): string {
   const reasoningCount = segments
     .filter((segment) => segment.kind === "reasoning")
     .reduce((count, segment) => count + segment.blocks.length, 0);
-  const toolCount = segments
+  const tools = segments
     .filter((segment) => segment.kind === "tools")
-    .reduce((count, segment) => count + segment.blocks.length, 0);
+    .flatMap((segment) => segment.blocks);
+  const toolCount = tools.length;
+  const toolSummary = summarizeTools(tools);
   const pieces = [];
   if (reasoningCount > 0)
-    pieces.push(reasoningCount === 1 ? "Reasoning" : `${reasoningCount} reasoning`);
-  if (toolCount > 0) pieces.push(toolCount === 1 ? "1 tool" : `${toolCount} tools`);
-  return pieces.join(" + ");
+    pieces.push(reasoningCount === 1 ? "Reasoned" : `${reasoningCount} reasoning`);
+  if (toolSummary) pieces.push(toolSummary);
+  if (!toolSummary && toolCount > 0) pieces.push(toolCount === 1 ? "1 tool" : `${toolCount} tools`);
+  return pieces.join(", ");
+}
+
+function summarizeTools(blocks: ToolBlock[]): string {
+  const counts = blocks.reduce<Record<string, number>>((acc, block) => {
+    const kind = classifyTool(block);
+    acc[kind] = (acc[kind] ?? 0) + 1;
+    return acc;
+  }, {});
+  return [
+    pluralAction(counts.search, "Explored", "search", "searches"),
+    pluralAction(counts.read, "read", "file", "files"),
+    pluralAction(counts.exec, "ran", "command", "commands"),
+    pluralAction(counts.edit, "edited", "file", "files"),
+    pluralAction(counts.browser, "used", "browser", "browser"),
+  ]
+    .filter(Boolean)
+    .join(", ");
+}
+
+function pluralAction(
+  count: number | undefined,
+  verb: string,
+  singular: string,
+  plural: string,
+): string | null {
+  if (!count) return null;
+  return `${verb} ${count} ${count === 1 ? singular : plural}`;
 }
 
 function activityPreview(segments: ActivitySegment[]): string {

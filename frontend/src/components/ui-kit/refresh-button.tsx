@@ -1,4 +1,3 @@
-// CRITICAL
 import { RefreshCw } from "lucide-react";
 import type { ButtonHTMLAttributes } from "react";
 
@@ -8,7 +7,6 @@ type RefreshButtonProps = Omit<ButtonHTMLAttributes<HTMLButtonElement>, "childre
   label?: string;
 };
 
-/** Shared reload action for data-heavy pages. */
 export function RefreshButton({
   loading = false,
   onRefresh,

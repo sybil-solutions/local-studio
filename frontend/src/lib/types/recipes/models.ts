@@ -1,4 +1,3 @@
-// CRITICAL
 /**
  * Model discovery + recommendation types.
  */
@@ -50,4 +49,3 @@ export interface HuggingFaceModel {
   author?: string;
   private: boolean;
 }
-

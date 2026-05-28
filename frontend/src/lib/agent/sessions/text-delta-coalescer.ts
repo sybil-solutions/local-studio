@@ -1,3 +1,4 @@
+import { traceAgentReasoning } from "@/lib/agent/trace-reasoning";
 import type { SessionId } from "./types";
 
 type TextDeltaKind = "text" | "thinking";
@@ -31,12 +32,12 @@ type KindBuffer = {
   delta: string;
   event: Record<string, unknown>;
   firstSeq: number;
+  kind: TextDeltaKind;
 };
 
 type SessionBuffer = {
+  entries: KindBuffer[];
   frame: FrameToken | null;
-  thinking?: KindBuffer;
-  text?: KindBuffer;
 };
 
 type DeltaEvent = {
@@ -82,24 +83,43 @@ export function createTextDeltaCoalescer({
   ) => {
     const deltaEvent = textDeltaFromPiEvent(event);
     if (!deltaEvent) return false;
+    traceAgentReasoning("coalescer.enqueue", {
+      sessionId,
+      assistantId,
+      kind: deltaEvent.kind,
+      delta: deltaEvent.delta,
+      event,
+    });
 
     const existing = pending.get(sessionId);
     if (existing && bufferAssistantId(existing) !== assistantId) {
       flushNow(sessionId);
     }
 
-    const buffer = pending.get(sessionId) ?? { frame: null };
-    const current = buffer[deltaEvent.kind];
+    const buffer = pending.get(sessionId) ?? { entries: [], frame: null };
+    const current = buffer.entries.at(-1);
     if (current) {
-      current.delta += deltaEvent.delta;
-      current.event = event;
+      if (current.kind === deltaEvent.kind) {
+        current.delta += deltaEvent.delta;
+        current.event = event;
+      } else {
+        buffer.entries.push({
+          assistantId,
+          delta: deltaEvent.delta,
+          event,
+          firstSeq: sequence,
+          kind: deltaEvent.kind,
+        });
+        sequence += 1;
+      }
     } else {
-      buffer[deltaEvent.kind] = {
+      buffer.entries.push({
         assistantId,
         delta: deltaEvent.delta,
         event,
         firstSeq: sequence,
-      };
+        kind: deltaEvent.kind,
+      });
       sequence += 1;
     }
     pending.set(sessionId, buffer);
@@ -132,23 +152,35 @@ export function textDeltaFromPiEvent(event: Record<string, unknown>): DeltaEvent
   const assistantMessageEvent = asRecord(event.assistantMessageEvent);
   const delta = assistantMessageEvent?.delta;
   if (typeof delta !== "string" || !delta) return null;
-  if (assistantMessageEvent.type === "text_delta") return { kind: "text", delta };
-  if (assistantMessageEvent.type === "thinking_delta") return { kind: "thinking", delta };
+  if (
+    assistantMessageEvent.type === "thinking_delta" ||
+    assistantMessageEvent.type === "reasoning_delta" ||
+    assistantMessageEvent.type === "reasoning_text_delta"
+  ) {
+    return { kind: "thinking", delta };
+  }
+  if (assistantMessageEvent.type === "text_delta") {
+    traceAgentReasoning("coalescer.classify", {
+      kind: "text",
+      assistantMessageEventType: assistantMessageEvent.type,
+      contentIndex: assistantMessageEvent.contentIndex,
+      delta,
+    });
+    return { kind: "text", delta };
+  }
   return null;
 }
 
 function orderedEntries(buffer: SessionBuffer): KindBuffer[] {
-  return [buffer.text, buffer.thinking]
-    .filter((entry): entry is KindBuffer => Boolean(entry))
-    .sort((a, b) => a.firstSeq - b.firstSeq);
+  return buffer.entries.slice().sort((a, b) => a.firstSeq - b.firstSeq);
 }
 
 function bufferAssistantId(buffer: SessionBuffer): string | undefined {
-  return buffer.text?.assistantId ?? buffer.thinking?.assistantId;
+  return buffer.entries[0]?.assistantId;
 }
 
 function eventTypeForKind(entry: KindBuffer): "text_delta" | "thinking_delta" {
-  return textDeltaFromPiEvent(entry.event)?.kind === "thinking" ? "thinking_delta" : "text_delta";
+  return entry.kind === "thinking" ? "thinking_delta" : "text_delta";
 }
 
 function syntheticDeltaEvent(

@@ -1,10 +1,10 @@
-// CRITICAL
 import { Pause, Play, XCircle } from "lucide-react";
 import type { ModelDownload } from "@/lib/types";
 
 const renderDownloadStatus = (download: ModelDownload) => {
   const total = download.total_bytes ?? 0;
-  const progress = total > 0 ? Math.min(100, Math.round((download.downloaded_bytes / total) * 100)) : 0;
+  const progress =
+    total > 0 ? Math.min(100, Math.round((download.downloaded_bytes / total) * 100)) : 0;
   const statusLabel = download.status.replace("_", " ");
 
   return (
@@ -14,9 +14,14 @@ const renderDownloadStatus = (download: ModelDownload) => {
         {total > 0 && <span>{progress}%</span>}
       </div>
       <div className="h-1.5 w-full rounded-full bg-(--surface)">
-        <div className="h-1.5 rounded-full bg-(--hl1) transition-all" style={{ width: `${progress}%` }} />
+        <div
+          className="h-1.5 rounded-full bg-(--hl1) transition-all"
+          style={{ width: `${progress}%` }}
+        />
       </div>
-      {download.error && download.status === "failed" && <div className="text-xs text-(--err)">{download.error}</div>}
+      {download.error && download.status === "failed" && (
+        <div className="text-xs text-(--err)">{download.error}</div>
+      )}
     </div>
   );
 };
@@ -82,4 +87,3 @@ export function DiscoverDownloadQueue({
     </div>
   );
 }
-

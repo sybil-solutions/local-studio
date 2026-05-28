@@ -1,4 +1,3 @@
-// CRITICAL
 import type { GPU, Recipe, Status, Config, LifetimeMetrics } from "./types";
 
 const DEFAULT_BASE_URL = "http://localhost:8080";

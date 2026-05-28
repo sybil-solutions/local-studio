@@ -41,21 +41,6 @@ export function escapeHighlightHtml(code: string): string {
     .replaceAll("'", "&#39;");
 }
 
-export function clearHighlightCacheForTests(): void {
-  cache.clear();
-}
-
-export function highlightCacheSizeForTests(): number {
-  return cache.size;
-}
-
-export function isHighlightCacheEntryCachedForTests(
-  language: string | null,
-  code: string,
-): boolean {
-  return cache.has(cacheKey(normalizeLanguage(language), code));
-}
-
 function highlightUncached(language: string | null, code: string): string {
   try {
     ensureLanguagesRegistered();

@@ -1,4 +1,3 @@
-// CRITICAL
 "use client";
 
 import { useMemo } from "react";
@@ -12,7 +11,13 @@ type Args = {
   deleteConfirm: string | null;
 };
 
-export function useRecipesDerived({ recipes, filter, pinnedRecipes, runningRecipeId, deleteConfirm }: Args) {
+export function useRecipesDerived({
+  recipes,
+  filter,
+  pinnedRecipes,
+  runningRecipeId,
+  deleteConfirm,
+}: Args) {
   const modelServedNames = useMemo(() => {
     const lookup: Record<string, string> = {};
     for (const r of recipes) {
@@ -56,4 +61,3 @@ export function useRecipesDerived({ recipes, filter, pinnedRecipes, runningRecip
 
   return { modelServedNames, runningRecipe, deleteRecipe, sortedRecipes };
 }
-

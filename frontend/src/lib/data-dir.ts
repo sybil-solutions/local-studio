@@ -1,4 +1,3 @@
-// CRITICAL
 //
 // Single source of truth for the user-data directory.
 //
@@ -80,10 +79,4 @@ function migrateLegacySettings(targetDir: string): void {
       console.warn(`[data-dir] Failed to migrate from ${legacyFile}:`, error);
     }
   }
-}
-
-// Test helper. Not exported from index; only consumed by vitest setups.
-export function __resetDataDirCacheForTests(): void {
-  cachedDataDir = null;
-  migrated = false;
 }

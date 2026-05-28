@@ -1,4 +1,3 @@
-// CRITICAL
 /**
  * App-level settings + diagnostics.
  */

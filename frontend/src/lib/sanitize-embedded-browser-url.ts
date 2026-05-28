@@ -1,4 +1,3 @@
-// CRITICAL
 /**
  * Normalize and allow-list URLs for the Computer embedded browser.
  * Public URLs align loosely with controller browser_open_url rules

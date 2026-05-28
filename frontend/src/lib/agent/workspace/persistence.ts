@@ -58,8 +58,7 @@ function restoreLegacyLayout(rawLayout: string): {
       const session = makeFreshTab();
       sessions.set(session.id, session);
       panesById.set(paneId, {
-        sessionIds: [session.id],
-        activeSessionId: session.id,
+        sessionId: session.id,
         runtimeSessionId: newRuntimeId(),
       });
     }
@@ -104,10 +103,8 @@ export function writePaneState(
   state: WorkspaceState,
   selectionFor: (sessionId: SessionId) => ToolSelection | null = () => null,
 ): void {
-  // Denormalize on write — the persisted shape embeds session content (and
-  // tool selection) inside each pane (back-compat with the old PaneState.tabs
-  // format). The runtime model keeps sessions in a flat map and selections in
-  // the tools subsystem.
+  // Denormalize on write for back-compat with the old persisted pane tabs
+  // format. The runtime model keeps one visible session per pane.
   const panes: Record<
     string,
     {
@@ -117,13 +114,12 @@ export function writePaneState(
     }
   > = {};
   for (const [paneId, pane] of state.panesById.entries()) {
-    const tabs: ReturnType<typeof sessionMetaForPersistence>[] = [];
-    for (const id of pane.sessionIds) {
-      const session = state.sessions.get(id);
-      if (session) tabs.push(sessionMetaForPersistence(session, selectionFor(id) ?? undefined));
-    }
+    const session = state.sessions.get(pane.sessionId);
+    const tabs = session
+      ? [sessionMetaForPersistence(session, selectionFor(session.id) ?? undefined)]
+      : [];
     panes[paneId] = {
-      activeTabId: pane.activeSessionId,
+      activeTabId: pane.sessionId,
       runtimeSessionId: pane.runtimeSessionId,
       tabs,
     };

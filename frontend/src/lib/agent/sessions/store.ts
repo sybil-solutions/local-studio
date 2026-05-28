@@ -1,7 +1,3 @@
-// Pure helpers for the flat sessions map. The map itself currently lives in
-// WorkspaceState (`state.sessions`). A future refactor can lift it into a
-// SessionsProvider context — these helpers stay shape-stable across that move.
-
 import type { Session, SessionId, SessionsMap } from "./types";
 
 export function setSession(sessions: SessionsMap, session: Session): SessionsMap {
@@ -24,7 +20,6 @@ export function patchSession(
   return next;
 }
 
-/** Drop sessions that no pane in `referencedIds` is using. */
 export function pruneSessions(
   sessions: SessionsMap,
   referencedIds: ReadonlySet<SessionId>,
@@ -41,5 +36,17 @@ export function pruneSessions(
 }
 
 export function isEmptyStarterSession(session: Session): boolean {
-  return !session.piSessionId && session.messages.length === 0 && !session.input.trim();
+  const hasQueuedWork = (session.queue?.length ?? 0) > 0;
+  const isLiveStatus =
+    session.status === "starting" || session.status === "running" || session.status === "loading";
+  return (
+    !session.piSessionId &&
+    session.messages.length === 0 &&
+    !session.input.trim() &&
+    !session.startedAt &&
+    !session.activeAssistantId &&
+    session.lastEventSeq === undefined &&
+    !hasQueuedWork &&
+    !isLiveStatus
+  );
 }

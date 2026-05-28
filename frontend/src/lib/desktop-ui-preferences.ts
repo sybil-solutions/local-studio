@@ -3,12 +3,17 @@ type DesktopUiPreferencesBridge = {
   saveUiPreferences?: (prefs: Record<string, string>) => Promise<void>;
 };
 
+const CONTROLLERS_STORAGE_KEY = "vllm-studio.controllers";
+const BACKEND_URL_STORAGE_KEY = "vllmstudio_backend_url";
+const CONTROLLERS_CHANGED_EVENT = "vllm:controllers-changed";
+const BACKEND_URL_CHANGED_EVENT = "vllm:backend-url-changed";
+
 const DURABLE_EXACT_KEYS = new Set([
   "vllm-studio-state",
   "vllm-studio.customThemeTokens",
-  "vllm-studio.controllers",
+  CONTROLLERS_STORAGE_KEY,
   "vllm-studio-setup-complete",
-  "vllmstudio_backend_url",
+  BACKEND_URL_STORAGE_KEY,
 ]);
 
 const DURABLE_KEY_PREFIXES = ["vllm-studio.", "vllm-studio-", "vllmstudio_", "vllm_studio_"];
@@ -64,15 +69,31 @@ async function saveControllerUiPreferences(prefs: Record<string, string>): Promi
   }
 }
 
-function applyMissingPreferences(prefs: Record<string, string>): void {
-  if (typeof window === "undefined") return;
+function applyMissingPreferences(prefs: Record<string, string>): Set<string> {
+  const applied = new Set<string>();
+  if (typeof window === "undefined") return applied;
   for (const [key, value] of Object.entries(prefs ?? {})) {
     if (!isDurableUiPreferenceKey(key) || typeof value !== "string") continue;
     // Renderer storage wins when present; controller/database is the durable
     // rebuild/reinstall fallback, not a stale override while the user is active.
     if (window.localStorage.getItem(key) === null) {
       window.localStorage.setItem(key, value);
+      applied.add(key);
     }
+  }
+  return applied;
+}
+
+function dispatchHydratedPreferenceEvents(keys: ReadonlySet<string>): void {
+  if (typeof window === "undefined" || keys.size === 0) return;
+  if (keys.has(CONTROLLERS_STORAGE_KEY)) {
+    window.dispatchEvent(new Event(CONTROLLERS_CHANGED_EVENT));
+  }
+  if (keys.has(BACKEND_URL_STORAGE_KEY)) {
+    window.dispatchEvent(new Event(BACKEND_URL_CHANGED_EVENT));
+  }
+  if (keys.has(CONTROLLERS_STORAGE_KEY) || keys.has(BACKEND_URL_STORAGE_KEY)) {
+    window.dispatchEvent(new Event("storage"));
   }
 }
 
@@ -80,13 +101,18 @@ export async function hydrateDurableUiPreferences(): Promise<void> {
   if (typeof window === "undefined") return;
   const desktop = bridge();
   const controllerPrefs = await loadControllerUiPreferences();
-  applyMissingPreferences(controllerPrefs);
-  if (!desktop?.loadUiPreferences) return;
+  const applied = applyMissingPreferences(controllerPrefs);
+  if (!desktop?.loadUiPreferences) {
+    dispatchHydratedPreferenceEvents(applied);
+    return;
+  }
   try {
     const prefs = await desktop.loadUiPreferences();
-    applyMissingPreferences(prefs);
+    for (const key of applyMissingPreferences(prefs)) applied.add(key);
   } catch {
     // Keep localStorage-only behavior if the desktop bridge is unavailable.
+  } finally {
+    dispatchHydratedPreferenceEvents(applied);
   }
 }
 

@@ -1,4 +1,3 @@
-// CRITICAL
 import { existsSync } from "node:fs";
 import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
 import { extname, join, resolve } from "node:path";
@@ -179,7 +178,18 @@ const defaultTranscodeToWav = async (options: {
 
   const result = await runCliCommand({
     command: ffmpegPath,
-    args: ["-y", "-i", options.sourcePath, "-ac", "1", "-ar", "16000", "-f", "wav", options.outputPath],
+    args: [
+      "-y",
+      "-i",
+      options.sourcePath,
+      "-ac",
+      "1",
+      "-ar",
+      "16000",
+      "-f",
+      "wav",
+      options.outputPath,
+    ],
     timeoutMs: AUDIO_TRANSCODE_TIMEOUT_MS,
   });
 
@@ -191,24 +201,22 @@ const defaultTranscodeToWav = async (options: {
   }
 
   if (result.exitCode !== 0) {
-    throw new SttIntegrationError(400, "audio_transcode_failed", "Failed to transcode audio to WAV", {
-      exit_code: result.exitCode,
-      signal: result.signal,
-      stderr: result.stderr,
-      stdout: result.stdout,
-    });
+    throw new SttIntegrationError(
+      400,
+      "audio_transcode_failed",
+      "Failed to transcode audio to WAV",
+      {
+        exit_code: result.exitCode,
+        signal: result.signal,
+        stderr: result.stderr,
+        stdout: result.stdout,
+      }
+    );
   }
 
   return options.outputPath;
 };
 
-/**
- * Register speech routes.
- * @param app - Hono app.
- * @param context - Application context.
- * @param dependencies - Optional route dependency overrides for testing.
- * @returns Nothing.
- */
 export const registerAudioRoutes = (
   app: Hono,
   context: AppContext,
@@ -322,7 +330,11 @@ export const registerAudioRoutes = (
 
       const input = typeof body["input"] === "string" ? body["input"].trim() : "";
       if (!input) {
-        throw new TtsIntegrationError(400, "input_missing", "input is required and cannot be empty");
+        throw new TtsIntegrationError(
+          400,
+          "input_missing",
+          "input is required and cannot be empty"
+        );
       }
 
       const requestedFormat =

@@ -1,4 +1,3 @@
-// CRITICAL
 import { chmod, readFile, writeFile } from "fs/promises";
 import { existsSync } from "fs";
 import { resolveSettingsDefaultBackendUrl } from "./backend-config";

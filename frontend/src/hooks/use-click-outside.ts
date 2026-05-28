@@ -1,5 +1,4 @@
-import { type RefObject } from "react";
-import { useLegacyEffect } from "@/hooks/agent/use-legacy-effects";
+import { useCallback, useSyncExternalStore, type RefObject } from "react";
 
 /**
  * Closes a popover / dropdown when the user clicks anywhere outside the
@@ -12,13 +11,23 @@ export function useClickOutside(
   open: boolean,
   onOutside: () => void,
 ): void {
-  useLegacyEffect(() => {
-    if (!open) return;
-    const onDocClick = (event: MouseEvent) => {
-      if (!ref.current) return;
-      if (!ref.current.contains(event.target as Node)) onOutside();
-    };
-    document.addEventListener("mousedown", onDocClick);
-    return () => document.removeEventListener("mousedown", onDocClick);
-  }, [ref, open, onOutside]);
+  const subscribe = useCallback(
+    (notify: () => void) => {
+      if (!open || typeof document === "undefined") return () => {};
+      const onDocClick = (event: MouseEvent) => {
+        if (!ref.current) return;
+        if (!ref.current.contains(event.target as Node)) {
+          onOutside();
+          notify();
+        }
+      };
+      document.addEventListener("mousedown", onDocClick);
+      return () => document.removeEventListener("mousedown", onDocClick);
+    },
+    [ref, open, onOutside],
+  );
+
+  useSyncExternalStore(subscribe, getClickOutsideSnapshot, getClickOutsideSnapshot);
 }
+
+const getClickOutsideSnapshot = (): number => 0;

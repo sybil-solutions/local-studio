@@ -1,4 +1,3 @@
-// CRITICAL
 "use client";
 
 import type { ModelInfo, RecipeEditor } from "@/lib/types";

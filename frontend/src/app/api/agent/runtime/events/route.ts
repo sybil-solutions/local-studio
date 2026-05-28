@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
-import { piRuntimeManager, type LoggedPiEvent } from "@/lib/agent/pi-runtime";
+import { piRuntimeManager } from "@/lib/agent/pi-runtime";
+import type { LoggedPiEvent } from "@/lib/agent/pi-runtime-types";
 import { isAgentEndEvent } from "@/lib/agent/pi-events";
 
 export const runtime = "nodejs";
@@ -16,8 +17,10 @@ function encode(payload: unknown): Uint8Array {
 
 export async function GET(request: NextRequest) {
   const sessionId = request.nextUrl.searchParams.get("sessionId")?.trim() || "default";
+  const piSessionId = request.nextUrl.searchParams.get("piSessionId")?.trim() || null;
   const after = parseSeq(request.nextUrl.searchParams.get("after"));
-  const session = piRuntimeManager.getSession(sessionId);
+  const resolved = piRuntimeManager.getSessionForLookup(sessionId, piSessionId);
+  const session = resolved.session;
 
   const stream = new ReadableStream<Uint8Array>({
     start(controller) {
@@ -53,10 +56,6 @@ export async function GET(request: NextRequest) {
         safeSend({ type: "pi", seq: logged.seq, event: logged.event });
         if (isAgentEndEvent(logged.event)) {
           safeSend({ type: "status", phase: "done", session: session.status });
-          setTimeout(close, 25);
-        }
-        if (logged.event.type === "process_exit") {
-          safeSend({ type: "status", phase: "idle", session: session.status });
           setTimeout(close, 25);
         }
       };

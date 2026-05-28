@@ -1,4 +1,3 @@
-// CRITICAL
 /**
  * Formatting utilities for display purposes
  */
@@ -56,7 +55,7 @@ function formatDuration(value: number | null | undefined): string {
 function formatDurationOrUnavailable(value: number | null | undefined): string {
   const parsed = Number(value);
   if (value === null || value === undefined || !Number.isFinite(parsed) || parsed <= 0) {
-    return "unavailable";
+    return "0ms";
   }
   return formatDuration(value);
 }

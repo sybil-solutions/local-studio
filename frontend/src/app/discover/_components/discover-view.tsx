@@ -1,4 +1,3 @@
-// CRITICAL
 import type { HuggingFaceModel, ModelDownload, ModelRecommendation } from "@/lib/types";
 import { SORT_OPTIONS, TASKS } from "./config";
 import { DiscoverHeader } from "./discover/discover-header";

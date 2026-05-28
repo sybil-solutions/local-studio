@@ -1,4 +1,3 @@
-// CRITICAL
 import type { ComponentType } from "react";
 
 export function DiscoverSortChips({

@@ -119,14 +119,6 @@ export function StopIcon(props: IconProps) {
   );
 }
 
-export function AttachIcon(props: IconProps) {
-  return (
-    <Svg {...props}>
-      <path d="M11 2.5a3.5 3.5 0 0 1 3.5 3.5v6a3 3 0 0 1-6 0V5.5h1.5V12a1.5 1.5 0 0 0 3 0V6a2 2 0 1 0-4 0v6.5a.5.5 0 0 1-1 0V6a3 3 0 0 1 3-3z" />
-    </Svg>
-  );
-}
-
 export function FileIcon(props: IconProps) {
   return (
     <Svg {...props}>

@@ -4,7 +4,7 @@
 // embedded Electron webview bridge. Enable through VLLM_STUDIO_BROWSER_BACKEND=parchi
 // while the normal browser tool toggle is on.
 
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 
 type ToolResult = {

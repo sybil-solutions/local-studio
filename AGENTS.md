@@ -29,6 +29,8 @@ Access these in scripts via environment variables or load them from `.env.local`
 - **Run**: `cd frontend && PORT=3001 npm run dev`
 - **Do not run dev unless explicitly asked.** If a dev server is already running, you may use it for verification.
 - Use this local server for fast browser verification unless the user explicitly asks for a different port or deployment target.
+- **Do not build or replace the desktop app unless explicitly asked.** Default to web/dev-server verification or an isolated beta app so the user's real vLLM Studio desktop app is not disturbed.
+- **Beta desktop app for testing**: when desktop verification is explicitly requested, build/install a separate beta app with its own app name, bundle id, and user data path. Do not overwrite `/Applications/vLLM Studio.app` or relaunch the user's production work app while testing feature branches.
 - **Desktop dev mode for iterative UI work**: launch Electron against the local dev server so frontend changes show up without rebuilding the installed app:
 
 ```bash

@@ -1,4 +1,3 @@
-// CRITICAL
 "use client";
 
 import type { ReactNode } from "react";
@@ -39,7 +38,11 @@ export function SortHeader({
 
 export function StatusPill({ value, type }: { value: number | null; type: "success" | "latency" }) {
   if (value === null) {
-    return <span className="font-mono text-sm tabular-nums text-(--dim)">unavailable</span>;
+    return (
+      <span className="font-mono text-[12px] tabular-nums text-(--dim)">
+        {type === "success" ? "0.0%" : "0ms"}
+      </span>
+    );
   }
 
   const getColor = () => {

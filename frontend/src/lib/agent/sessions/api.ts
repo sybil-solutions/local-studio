@@ -8,28 +8,49 @@ import {
   type RuntimeLoggedEvent,
 } from "@/lib/agent/session";
 import type { AgentImageInput } from "@/lib/agent/contracts/turn";
-import type { ComposerPluginRef, ComposerSkillRef } from "@/lib/agent/composer-context";
+import type {
+  ComposerExtensionOverride,
+  ComposerPluginRef,
+  ComposerPromptTemplateRef,
+  ComposerSkillRef,
+} from "@/lib/agent/composer-context";
+import { traceAgentReasoning } from "@/lib/agent/trace-reasoning";
+
+export type RuntimeContextUsage = {
+  tokens: number | null;
+  contextWindow: number;
+  percent: number | null;
+  shouldCompact: boolean;
+};
 
 export type RuntimeStatus = {
   active?: boolean;
   running?: boolean;
   piSessionId?: string | null;
+  modelId?: string | null;
   eventSeq?: number;
   events?: RuntimeLoggedEvent[];
+  contextUsage?: RuntimeContextUsage | null;
 };
 
-export async function loadRuntimeStatus(sessionId: string): Promise<RuntimeStatus | null> {
+export async function loadRuntimeStatus(
+  sessionId: string,
+  piSessionId?: string | null,
+): Promise<RuntimeStatus | null> {
   try {
-    const response = await fetch(
-      `/api/agent/runtime/status?sessionId=${encodeURIComponent(sessionId)}`,
-      { cache: "no-store" },
-    );
+    const params = new URLSearchParams({ sessionId });
+    if (piSessionId) params.set("piSessionId", piSessionId);
+    const response = await fetch(`/api/agent/runtime/status?${params.toString()}`, {
+      cache: "no-store",
+    });
     const payload = await safeJson<{
       status?: {
         active?: boolean;
         running?: boolean;
         piSessionId?: string | null;
+        modelId?: string | null;
         eventSeq?: number;
+        contextUsage?: RuntimeContextUsage | null;
       };
       events?: RuntimeLoggedEvent[];
     }>(response);
@@ -74,6 +95,8 @@ export type CompactSessionArgs = {
   canvasEnabled?: boolean;
   plugins: ComposerPluginRef[];
   skills: ComposerSkillRef[];
+  promptTemplates?: ComposerPromptTemplateRef[];
+  extensionOverrides?: ComposerExtensionOverride[];
 };
 
 export type CompactSessionResult = {
@@ -108,6 +131,8 @@ export type SubmitTurnArgs = {
   canvasEnabled?: boolean;
   plugins: ComposerPluginRef[];
   skills: ComposerSkillRef[];
+  promptTemplates?: ComposerPromptTemplateRef[];
+  extensionOverrides?: ComposerExtensionOverride[];
 };
 
 /**
@@ -118,11 +143,13 @@ export type SubmitTurnArgs = {
 export async function submitTurnStream(
   args: SubmitTurnArgs,
   onPayload: (payload: AgentTurnSsePayload) => void,
+  options: { signal?: AbortSignal } = {},
 ): Promise<void> {
   const response = await fetch("/api/agent/turn", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(args),
+    signal: options.signal,
   });
   if (!response.ok || !response.body) {
     const payload = (await response.json().catch(() => ({}))) as { error?: string };
@@ -132,6 +159,7 @@ export async function submitTurnStream(
   const decoder = new TextDecoder();
   let buffer = "";
   while (true) {
+    if (options.signal?.aborted) break;
     const { done, value } = await reader.read();
     if (done) break;
     buffer += decoder.decode(value, { stream: true });
@@ -141,7 +169,11 @@ export async function submitTurnStream(
       const line = chunk.split("\n").find((entry) => entry.startsWith("data: "));
       if (!line) continue;
       const payload = parseAgentTurnSsePayload(line);
-      if (payload) onPayload(payload);
+      if (options.signal?.aborted) break;
+      if (payload) {
+        traceAgentReasoning("client.sse.payload", payload);
+        onPayload(payload);
+      }
     }
   }
 }
@@ -160,12 +192,14 @@ export type RuntimeEventSubscription = { close: () => void };
 export function subscribeRuntimeEvents(
   sessionId: string,
   after: number,
+  piSessionId: string | null | undefined,
   handlers: {
     onPayload: (payload: RuntimeEventPayload) => void;
     onError: () => void;
   },
 ): RuntimeEventSubscription {
   const params = new URLSearchParams({ sessionId, after: String(after) });
+  if (piSessionId) params.set("piSessionId", piSessionId);
   const source = new EventSource(`/api/agent/runtime/events?${params.toString()}`);
   source.onmessage = (event) => {
     let payload: RuntimeEventPayload;

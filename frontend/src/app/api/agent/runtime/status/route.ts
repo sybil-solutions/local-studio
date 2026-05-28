@@ -6,11 +6,12 @@ export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
   const sessionId = request.nextUrl.searchParams.get("sessionId")?.trim() || "default";
+  const piSessionId = request.nextUrl.searchParams.get("piSessionId")?.trim() || null;
   const after = Number(request.nextUrl.searchParams.get("after") ?? 0);
-  const session = piRuntimeManager.getSession(sessionId);
+  const resolved = piRuntimeManager.getSessionForLookup(sessionId, piSessionId);
   return Response.json({
-    sessionId,
-    status: session.status,
-    events: session.getEventsAfter(Number.isFinite(after) ? after : 0),
+    sessionId: resolved.sessionId,
+    status: resolved.session.status,
+    events: resolved.session.getEventsAfter(Number.isFinite(after) ? after : 0),
   });
 }

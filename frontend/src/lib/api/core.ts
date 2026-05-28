@@ -1,4 +1,3 @@
-// CRITICAL
 import { getApiKey } from "../api-key";
 import { clearStoredBackendUrl, getStoredBackendUrl } from "../backend-url";
 import { delay } from "../async";
@@ -223,7 +222,9 @@ export function createApiCore(params: {
 
   const responseError = async (response: Response): Promise<Error> => {
     const errorBody: unknown = await response.json().catch(() => ({ detail: "Request failed" }));
-    return new Error(formatHttpErrorMessage(response.status, errorBody));
+    const error = new Error(formatHttpErrorMessage(response.status, errorBody));
+    (error as Error & { status: number }).status = response.status;
+    return error;
   };
 
   const normalizeRequestError = (error: unknown, timeout: number): Error => {
@@ -455,9 +456,7 @@ export function createApiCore(params: {
       const onAbort = () => {
         try {
           void reader.cancel();
-        } catch {
-          /* ignore */
-        }
+        } catch {}
       };
       if (signal.aborted) {
         onAbort();
@@ -512,9 +511,7 @@ export function createApiCore(params: {
       const onAbort = () => {
         try {
           void reader.cancel();
-        } catch {
-          /* ignore */
-        }
+        } catch {}
       };
       if (signal.aborted) {
         onAbort();
@@ -526,7 +523,6 @@ export function createApiCore(params: {
     return { runId, stream: parseSseStream(reader, signal) };
   };
 
-  /** Poll the controller health endpoint. Returns true if reachable. */
   const healthPoll = async (timeoutMs = 5_000): Promise<boolean> => {
     try {
       const url = buildUrl("/health");

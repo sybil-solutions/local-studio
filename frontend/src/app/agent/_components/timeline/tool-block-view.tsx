@@ -9,7 +9,7 @@ import {
   TerminalSquare,
   Wrench,
 } from "lucide-react";
-import { ChevronDownIcon, GlobeIcon } from "@/components/icons";
+import { GlobeIcon } from "@/components/icons";
 import type { ToolBlock } from "@/lib/agent/session";
 import {
   FILE_WRITE_TOOL_NAMES,
@@ -28,17 +28,17 @@ type ToolMeta = { icon: ReactNode; label: string; detail: string | null };
 function iconForKind(kind: ToolKind): ReactNode {
   switch (kind) {
     case "edit":
-      return <PencilLine className="h-3 w-3" />;
+      return <PencilLine className="h-3.5 w-3.5" />;
     case "search":
-      return <Search className="h-3 w-3" />;
+      return <Search className="h-3.5 w-3.5" />;
     case "read":
-      return <FileText className="h-3 w-3" />;
+      return <FileText className="h-3.5 w-3.5" />;
     case "exec":
-      return <TerminalSquare className="h-3 w-3" />;
+      return <TerminalSquare className="h-3.5 w-3.5" />;
     case "browser":
-      return <GlobeIcon className="h-3 w-3" />;
+      return <GlobeIcon className="h-3.5 w-3.5" />;
     default:
-      return <Wrench className="h-3 w-3" />;
+      return <Wrench className="h-3.5 w-3.5" />;
   }
 }
 
@@ -98,7 +98,7 @@ function toolMeta(block: ToolBlock, filePath?: string | null): ToolMeta {
 function ToolStatus({ status }: { status: ToolBlock["status"] }) {
   if (status === "running") {
     return (
-      <span className="inline-flex items-center gap-1 text-[10px] text-(--accent)">
+      <span className="inline-flex items-center gap-1 text-[9.6px] text-(--accent)">
         <Loader2 className="h-3 w-3 animate-spin" />
         running
       </span>
@@ -106,7 +106,7 @@ function ToolStatus({ status }: { status: ToolBlock["status"] }) {
   }
   if (status === "error") {
     return (
-      <span className="inline-flex items-center gap-1 text-[10px] text-(--err)">
+      <span className="inline-flex items-center gap-1 text-[9.6px] text-(--err)">
         <AlertTriangle className="h-3 w-3" />
         error
       </span>
@@ -129,33 +129,30 @@ function ToolSummary({
   const meta = toolMeta(block, filePath);
   return (
     <details className="group py-0.5" open={open}>
-      <summary className="flex cursor-pointer list-none items-start gap-1.5 rounded-md px-1.5 py-1 text-(--fg) hover:bg-(--hover) [&::-webkit-details-marker]:hidden">
-        <span className="mt-0.5 flex h-3.5 w-3.5 shrink-0 items-center justify-center text-(--fg)/75">
+      <summary className="flex min-h-8 cursor-pointer list-none items-center gap-2 rounded-md px-1 py-1 text-(--dim) transition-colors hover:text-(--fg) [&::-webkit-details-marker]:hidden">
+        <span className="flex h-4 w-4 shrink-0 items-center justify-center text-(--dim)">
           {meta.icon}
         </span>
-        <span className="min-w-0 flex-1">
-          <span className="block truncate text-[11.5px] leading-5 text-(--fg)/90">
+        <span className="flex min-w-0 flex-1 items-baseline gap-2">
+          <span className="shrink-0 truncate text-[10.4px] font-medium leading-4 text-(--fg)/90">
             {meta.label}
           </span>
           {meta.detail ? (
-            <span className="block truncate font-mono text-[10px] leading-4 text-(--fg)/60">
+            <span className="min-w-0 flex-1 truncate text-[10.4px] leading-4 text-(--dim)">
               {meta.detail}
             </span>
           ) : null}
         </span>
         <ToolStatus status={block.status} />
-        {children ? (
-          <ChevronDownIcon className="mt-0.5 h-3 w-3 shrink-0 text-(--fg)/60 transition-transform group-open:rotate-180" />
-        ) : null}
       </summary>
-      {children ? <div className="ml-5 mt-1 min-w-0">{children}</div> : null}
+      {children ? <div className="ml-6 mt-1 min-w-0">{children}</div> : null}
     </details>
   );
 }
 
 function ToolOutput({ children }: { children: ReactNode }) {
   return (
-    <pre className="max-h-[320px] max-w-full overflow-y-auto overflow-x-hidden whitespace-pre-wrap break-words font-mono text-[10.5px] leading-5 text-(--fg)/70 [overflow-wrap:anywhere]">
+    <pre className="max-h-[320px] max-w-full overflow-auto whitespace-pre font-mono text-[9.6px] leading-4 text-(--fg)/70">
       {children}
     </pre>
   );
@@ -174,7 +171,7 @@ function HighlightedToolSource({ body, lang }: { body: string; lang: string }) {
   }, [body, lang]);
 
   const className =
-    "max-h-[420px] max-w-full overflow-y-auto overflow-x-hidden whitespace-pre-wrap break-words rounded-md border border-(--border)/60 bg-(--surface)/30 p-2 font-mono text-[10.5px] leading-5 text-(--fg) [overflow-wrap:anywhere]";
+    "max-h-[420px] max-w-full overflow-auto rounded-lg border border-(--border)/50 bg-(--surface)/35 p-3 font-mono text-[9.6px] leading-4 text-(--fg)";
 
   if (highlighted === null) {
     return <pre className={className}>{body}</pre>;

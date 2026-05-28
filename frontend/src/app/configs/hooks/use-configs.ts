@@ -1,14 +1,13 @@
-// CRITICAL
 "use client";
 
-import { useState } from "react";
+import { useCallback, useState, useSyncExternalStore } from "react";
 import api from "@/lib/api";
 import { getApiKey, setApiKey, clearApiKey } from "@/lib/api-key";
 import { resolveSettingsDefaultBackendUrl } from "@/lib/backend-config";
 import { getStoredBackendUrl, setStoredBackendUrl, clearStoredBackendUrl } from "@/lib/backend-url";
+import { normalizeControllerUrl } from "@/lib/controllers";
 import { scheduleDurableUiPreferencesSave } from "@/lib/desktop-ui-preferences";
 import type { CompatibilityReport, ConfigData } from "@/lib/types";
-import { useLegacyEffect } from "@/hooks/agent/use-legacy-effects";
 
 const FAST_STATUS_REQUEST = { timeout: 5_000, retries: 0 } as const;
 const FAST_COMPAT_REQUEST = { timeout: 20_000, retries: 0 } as const;
@@ -65,7 +64,7 @@ export function useConfigs() {
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>("unknown");
   const [statusMessage, setStatusMessage] = useState<string>("");
 
-  const loadApiSettings = async () => {
+  const loadApiSettings = useCallback(async () => {
     try {
       setApiSettingsLoading(true);
       const res = await fetch("/api/settings");
@@ -80,10 +79,10 @@ export function useConfigs() {
       setApiSettingsLoading(false);
     }
     setApiSettings((previous) => mergeApiSettings(undefined, previous));
-  };
+  }, []);
 
-  const persistLocalApiSettings = () => {
-    const backendUrl = apiSettings.backendUrl?.trim() || "";
+  const persistLocalApiSettings = useCallback(() => {
+    const backendUrl = normalizeControllerUrl(apiSettings.backendUrl ?? "");
     if (backendUrl) {
       setStoredBackendUrl(backendUrl);
     } else {
@@ -96,21 +95,21 @@ export function useConfigs() {
       clearApiKey();
     }
     scheduleDurableUiPreferencesSave();
-  };
+  }, [apiSettings]);
 
-  const testConnection = async () => {
+  const testConnection = useCallback(async () => {
     try {
       setTesting(true);
       setConnectionStatus("unknown");
       setStatusMessage("Testing...");
 
-      const baseUrl = apiSettings.backendUrl?.trim() || "";
+      const baseUrl = normalizeControllerUrl(apiSettings.backendUrl ?? "");
       if (!baseUrl) {
         setConnectionStatus("error");
         setStatusMessage("Missing API URL");
         return;
       }
-      const res = await fetch(`${baseUrl.replace(/\/+$/, "")}/status`);
+      const res = await fetch(`${baseUrl}/status`);
       if (res.ok) {
         setConnectionStatus("connected");
         setStatusMessage("Connected");
@@ -124,9 +123,9 @@ export function useConfigs() {
     } finally {
       setTesting(false);
     }
-  };
+  }, [apiSettings.backendUrl]);
 
-  const checkBackendHealth = async () => {
+  const checkBackendHealth = useCallback(async () => {
     try {
       await api.getStatus(FAST_STATUS_REQUEST);
       setBackendOnline(true);
@@ -135,9 +134,9 @@ export function useConfigs() {
       setBackendOnline(false);
       return false;
     }
-  };
+  }, []);
 
-  const loadConfig = async () => {
+  const loadConfig = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
@@ -165,10 +164,10 @@ export function useConfigs() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [checkBackendHealth]);
 
-  const saveApiSettings = async () => {
-    const backendUrl = apiSettings.backendUrl?.trim() || "";
+  const saveApiSettings = useCallback(async () => {
+    const backendUrl = normalizeControllerUrl(apiSettings.backendUrl ?? "");
     persistLocalApiSettings();
 
     let savedRemotely = false;
@@ -179,7 +178,7 @@ export function useConfigs() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          backendUrl: apiSettings.backendUrl,
+          backendUrl,
           apiKey: apiSettings.apiKey,
           voiceUrl: apiSettings.voiceUrl,
           voiceModel: apiSettings.voiceModel,
@@ -212,12 +211,18 @@ export function useConfigs() {
     if (!savedRemotely) {
       setConnectionStatus("unknown");
     }
-  };
+  }, [apiSettings, loadConfig, persistLocalApiSettings]);
 
-  useLegacyEffect(() => {
-    loadConfig();
-    loadApiSettings();
-  }, []);
+  const subscribeConfigLoad = useCallback(
+    (_notify: () => void) => {
+      void loadConfig();
+      void loadApiSettings();
+      return () => {};
+    },
+    [loadApiSettings, loadConfig],
+  );
+
+  useSyncExternalStore(subscribeConfigLoad, getConfigsSnapshot, getConfigsSnapshot);
 
   return {
     data,
@@ -241,3 +246,5 @@ export function useConfigs() {
     backendOnline,
   };
 }
+
+const getConfigsSnapshot = (): number => 0;

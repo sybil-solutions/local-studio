@@ -1,4 +1,3 @@
-// CRITICAL — copied from lifecycle/runtime/vllm-runtime.ts
 import { spawn, spawnSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";

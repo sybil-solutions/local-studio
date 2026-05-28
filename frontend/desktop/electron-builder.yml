@@ -17,10 +17,6 @@ extraResources:
     to: app/frontend/.next/standalone
     filter:
       - "**/*"
-  - from: .desktop-pi-runtime/node_modules
-    to: app/node_modules
-    filter:
-      - "**/*"
   - from: .next/static
     to: app/frontend/.next/standalone/.next/static
     filter:
@@ -39,6 +35,10 @@ extraResources:
       - "**/*"
   - from: desktop/resources/pi-extensions
     to: desktop/resources/pi-extensions
+    filter:
+      - "**/*"
+  - from: desktop/resources/skills
+    to: desktop/resources/skills
     filter:
       - "**/*"
 

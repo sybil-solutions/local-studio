@@ -1,12 +1,25 @@
-// CRITICAL
-import { useState } from "react";
-import { Check, Eye, EyeOff, Link, Loader2, Plus, Save, Trash2, X } from "lucide-react";
+import { useMemo, useState, useSyncExternalStore } from "react";
+import {
+  Check,
+  CircleDot,
+  Eye,
+  EyeOff,
+  Link as LinkIcon,
+  Loader2,
+  Plus,
+  Save,
+  Trash2,
+  X,
+} from "lucide-react";
 import type { ApiConnectionSettings, ConnectionStatus } from "../hooks/use-configs";
 import {
   loadSavedControllers,
+  normalizeControllerUrl,
   saveSavedControllers,
   type SavedController,
 } from "@/lib/controllers";
+import { getStoredBackendUrl, setStoredBackendUrl } from "@/lib/backend-url";
+import { setApiKey } from "@/lib/api-key";
 import { scheduleDurableUiPreferencesSave } from "@/lib/desktop-ui-preferences";
 import {
   SettingsButton,
@@ -17,6 +30,51 @@ import {
   StatusPill,
   type StatusTone,
 } from "@/components/settings-primitives";
+
+type ControllerEntry = SavedController & { id: string };
+
+/**
+ * Rebuild the unified list: every controller stored in `vllm-studio.controllers`
+ * is a first-class entry, the currently active controller (from
+ * `vllmstudio_backend_url`) is just whichever row matches. If the active URL
+ * isn't yet saved, we synthesize an entry for it so toggling away doesn't
+ * lose it.
+ */
+function subscribeToStorage(callback: () => void): () => void {
+  if (typeof window === "undefined") return () => undefined;
+  window.addEventListener("storage", callback);
+  return () => window.removeEventListener("storage", callback);
+}
+
+let cachedEntriesKey = "";
+let cachedEntries: ControllerEntry[] = [];
+
+function controllerEntriesKey(entries: ControllerEntry[]): string {
+  return JSON.stringify(
+    entries.map((entry) => [entry.id, entry.url, entry.name ?? "", entry.apiKey ?? ""]),
+  );
+}
+
+function readEntries(): ControllerEntry[] {
+  const saved = loadSavedControllers();
+  const byUrl = new Map<string, SavedController>();
+  for (const entry of saved) {
+    const url = normalizeControllerUrl(entry.url);
+    if (!url) continue;
+    byUrl.set(url, { ...entry, url });
+  }
+  const next = [...byUrl.entries()].map(([url, value]) => ({
+    id: url,
+    url,
+    apiKey: value.apiKey,
+    name: value.name,
+  }));
+  const key = controllerEntriesKey(next);
+  if (key === cachedEntriesKey) return cachedEntries;
+  cachedEntriesKey = key;
+  cachedEntries = next;
+  return cachedEntries;
+}
 
 export function ApiConnectionSection({
   apiSettingsLoading,
@@ -43,24 +101,50 @@ export function ApiConnectionSection({
   onTestConnection: () => void;
   onSave: () => void;
 }) {
-  const [controllers, setControllers] = useState<SavedController[]>(() => loadSavedControllers());
-  const [draftController, setDraftController] = useState<SavedController>({ url: "" });
-  const [revealedControllerKeys, setRevealedControllerKeys] = useState<Record<string, boolean>>({});
-
-  const persistControllers = (next: SavedController[]) => {
-    const saved = saveSavedControllers(next);
-    setControllers(saved);
+  const activeUrl = apiSettings.backendUrl;
+  const entries = useSyncExternalStore(subscribeToStorage, readEntries, readEntries);
+  const setEntries = (next: ControllerEntry[]) => {
+    saveSavedControllers(next);
     scheduleDurableUiPreferencesSave();
+    if (typeof window !== "undefined") window.dispatchEvent(new Event("storage"));
   };
-  const toggleControllerKey = (key: string) => {
-    setRevealedControllerKeys((current) => ({ ...current, [key]: !current[key] }));
+  const [draft, setDraft] = useState<SavedController>({ url: "" });
+  const [revealed, setRevealed] = useState<Record<string, boolean>>({});
+
+  const activeId = useMemo(() => normalizeControllerUrl(activeUrl), [activeUrl]);
+  const persist = setEntries;
+  const toggleReveal = (id: string) =>
+    setRevealed((current) => ({ ...current, [id]: !current[id] }));
+
+  const activate = (entry: ControllerEntry) => {
+    // Switching never deletes anything — every row stays in the list.
+    if (entry.apiKey) setApiKey(entry.apiKey);
+    setStoredBackendUrl(entry.url);
+    onApiSettingsChange({
+      ...apiSettings,
+      backendUrl: entry.url,
+      apiKey: entry.apiKey ?? "",
+      hasApiKey: Boolean(entry.apiKey),
+    });
+    void fetch("/api/settings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        backendUrl: entry.url,
+        apiKey: entry.apiKey ?? "",
+      }),
+    }).finally(() => {
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new Event("storage"));
+      }
+    });
   };
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-8">
       <SettingsGroup
-        title="Controller"
-        description="Where the desktop app reads runtime state, launches engines, and proxies model APIs."
+        title="Controllers"
+        description="Every controller is saved in one list. Switch active with the radio button."
         actions={
           <ApiStatus
             status={connectionStatus}
@@ -69,58 +153,113 @@ export function ApiConnectionSection({
           />
         }
       >
-        <SettingsRow
-          label="Controller URL"
-          description="Saved locally first so the app can recover without the backend."
-          control={
-            <SettingsInput
-              value={apiSettings.backendUrl}
-              placeholder="http://127.0.0.1:8080"
-              onChange={(backendUrl) => onApiSettingsChange({ ...apiSettings, backendUrl })}
+        {entries.length === 0 ? (
+          <div className="px-4 py-3.5 text-[12px] text-(--dim)">
+            No controllers yet. Add one below.
+          </div>
+        ) : (
+          entries.map((entry, index) => (
+            <ControllerListRow
+              key={entry.id}
+              entry={entry}
+              index={index}
+              active={entry.id === activeId}
+              revealed={Boolean(revealed[entry.id])}
+              onToggleReveal={() => toggleReveal(entry.id)}
+              onActivate={() => activate(entry)}
+              onCommit={(next) => {
+                const updated = entries.slice();
+                updated[index] = { ...next, id: entry.id };
+                persist(updated);
+                const urlChanged = normalizeControllerUrl(next.url) !== entry.id;
+                if (entry.id === activeId && urlChanged) {
+                  const url = normalizeControllerUrl(next.url);
+                  activate({ ...next, url, id: url });
+                } else if (entry.id === activeId && next.apiKey !== entry.apiKey) {
+                  activate({ ...next, id: entry.id });
+                }
+              }}
+              onRemove={() => {
+                const remaining = entries.filter((row) => row.id !== entry.id);
+                persist(remaining);
+                if (entry.id === activeId && remaining[0]) activate(remaining[0]);
+              }}
             />
-          }
-          status={
-            <StatusPill tone={apiSettings.backendUrl ? "info" : "warning"}>required</StatusPill>
-          }
-        />
+          ))
+        )}
+        <div className="flex items-center gap-2 px-4 py-3.5">
+          <SettingsInput
+            value={draft.name ?? ""}
+            placeholder="Name (e.g. homelab)"
+            onChange={(name) => setDraft((current) => ({ ...current, name }))}
+            className="w-32"
+          />
+          <SettingsInput
+            value={draft.url}
+            placeholder="http://192.168.1.70:8080"
+            onChange={(url) => setDraft((current) => ({ ...current, url }))}
+            className="flex-1"
+          />
+          <div className="relative w-40">
+            <SettingsInput
+              type={revealed.__draft ? "text" : "password"}
+              value={draft.apiKey ?? ""}
+              placeholder="API key optional"
+              onChange={(apiKey) => setDraft((current) => ({ ...current, apiKey }))}
+              className="pr-7"
+            />
+            <button
+              type="button"
+              onClick={() => toggleReveal("__draft")}
+              className="absolute right-1.5 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded text-(--dim) hover:bg-(--hover) hover:text-(--fg)"
+              aria-label={revealed.__draft ? "Hide API key" : "Reveal API key"}
+            >
+              {revealed.__draft ? (
+                <EyeOff className="pointer-events-none h-3.5 w-3.5" />
+              ) : (
+                <Eye className="pointer-events-none h-3.5 w-3.5" />
+              )}
+            </button>
+          </div>
+          <SettingsButton
+            onClick={() => {
+              const url = normalizeControllerUrl(draft.url);
+              if (!url) return;
+              const exists = entries.find((entry) => entry.id === url);
+              if (exists) return;
+              persist([
+                ...entries,
+                {
+                  id: url,
+                  url,
+                  apiKey: draft.apiKey?.trim() || undefined,
+                  name: draft.name?.trim() || undefined,
+                },
+              ]);
+              setDraft({ url: "" });
+            }}
+            title="Add controller"
+          >
+            <Plus className="h-3 w-3" />
+            Add
+          </SettingsButton>
+        </div>
+      </SettingsGroup>
+
+      <SettingsGroup
+        title="Connection"
+        description="Fast status probe against the active controller."
+      >
         <SettingsRow
-          label="API key"
-          description="Stored masked; never displayed unless you choose reveal."
-          control={
-            <div className="relative">
-              <SettingsInput
-                type={showApiKey ? "text" : "password"}
-                value={apiSettings.apiKey}
-                placeholder={apiSettings.hasApiKey ? "••••••••" : "Optional"}
-                onChange={(apiKey) => onApiSettingsChange({ ...apiSettings, apiKey })}
-              />
-              <button
-                type="button"
-                onClick={onToggleApiKey}
-                className="absolute right-1.5 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded text-(--dim) hover:bg-(--hover) hover:text-(--fg)"
-                aria-label={showApiKey ? "Hide API key" : "Reveal API key"}
-              >
-                {showApiKey ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-              </button>
-            </div>
-          }
-          status={
-            <StatusPill tone={apiSettings.hasApiKey || apiSettings.apiKey ? "good" : "default"}>
-              {apiSettings.hasApiKey || apiSettings.apiKey ? "stored" : "unset"}
-            </StatusPill>
-          }
-        />
-        <SettingsRow
-          label="Connection check"
-          description="Fast status probe; config and compatibility hydrate separately."
-          value={<SettingsValue dim>{statusMessage || "Ready to test"}</SettingsValue>}
+          label="Active connection check"
+          description={statusMessage || "Ready to test"}
           actions={
             <>
               <SettingsButton onClick={onTestConnection} disabled={testing || apiSettingsLoading}>
                 {testing ? (
                   <Loader2 className="h-3 w-3 animate-spin" />
                 ) : (
-                  <Link className="h-3 w-3" />
+                  <LinkIcon className="h-3 w-3" />
                 )}
                 Test
               </SettingsButton>
@@ -134,85 +273,9 @@ export function ApiConnectionSection({
                 ) : (
                   <Save className="h-3 w-3" />
                 )}
-                Save
+                Save active
               </SettingsButton>
             </>
-          }
-        />
-        <SettingsRow
-          label="Additional controllers"
-          description="Optional controller targets. Each can carry its own API key for status tabs and proxy routing."
-          control={
-            <div className="space-y-2">
-              {controllers.map((controller, index) => (
-                <ControllerCredentialRow
-                  key={`${controller.url}-${index}`}
-                  controller={controller}
-                  index={index}
-                  revealed={Boolean(revealedControllerKeys[`controller-${index}`])}
-                  onToggleReveal={() => toggleControllerKey(`controller-${index}`)}
-                  onChange={(nextController) => {
-                    const next = controllers.slice();
-                    next[index] = nextController;
-                    persistControllers(next);
-                  }}
-                  onRemove={() => persistControllers(controllers.filter((_, i) => i !== index))}
-                />
-              ))}
-              <div className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1.25fr)_minmax(0,0.9fr)_auto]">
-                <SettingsInput
-                  value={draftController.url}
-                  placeholder="http://192.168.1.70:8080"
-                  onChange={(url) => setDraftController((current) => ({ ...current, url }))}
-                />
-                <div className="relative">
-                  <SettingsInput
-                    type={revealedControllerKeys.draft ? "text" : "password"}
-                    value={draftController.apiKey ?? ""}
-                    placeholder="API key optional"
-                    onChange={(apiKey) => setDraftController((current) => ({ ...current, apiKey }))}
-                    className="pr-7"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => toggleControllerKey("draft")}
-                    className="absolute right-1.5 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded text-(--dim) hover:bg-(--hover) hover:text-(--fg)"
-                    aria-label={revealedControllerKeys.draft ? "Hide API key" : "Reveal API key"}
-                  >
-                    {revealedControllerKeys.draft ? (
-                      <EyeOff className="pointer-events-none h-3.5 w-3.5" />
-                    ) : (
-                      <Eye className="pointer-events-none h-3.5 w-3.5" />
-                    )}
-                  </button>
-                </div>
-                <SettingsButton
-                  onClick={() => {
-                    if (!draftController.url.trim()) return;
-                    persistControllers([...controllers, draftController]);
-                    setDraftController({ url: "" });
-                  }}
-                  title="Add controller"
-                >
-                  <Plus className="h-3 w-3" />
-                  Add
-                </SettingsButton>
-              </div>
-              {controllers.length ? (
-                <div className="flex flex-wrap gap-1.5 pt-1">
-                  {controllers.map((controller, index) => (
-                    <StatusPill key={`${controller.url}-status`} tone="default">
-                      controller {index + 2} · {controller.apiKey ? "key set" : "no key"}
-                    </StatusPill>
-                  ))}
-                </div>
-              ) : null}
-            </div>
-          }
-          status={
-            <StatusPill tone={controllers.length ? "info" : "default"}>
-              {controllers.length}
-            </StatusPill>
           }
         />
       </SettingsGroup>
@@ -229,6 +292,7 @@ export function ApiConnectionSection({
               value={apiSettings.voiceUrl}
               placeholder="https://voice.example.com"
               onChange={(voiceUrl) => onApiSettingsChange({ ...apiSettings, voiceUrl })}
+              className="w-64"
             />
           }
           status={
@@ -245,6 +309,7 @@ export function ApiConnectionSection({
               value={apiSettings.voiceModel}
               placeholder="whisper-large-v3-turbo"
               onChange={(voiceModel) => onApiSettingsChange({ ...apiSettings, voiceModel })}
+              className="w-64"
             />
           }
           status={<StatusPill>{apiSettings.voiceModel ? "ready" : "default"}</StatusPill>}
@@ -254,34 +319,72 @@ export function ApiConnectionSection({
   );
 }
 
-function ControllerCredentialRow({
-  controller,
+function ControllerListRow({
+  entry,
   index,
+  active,
   revealed,
   onToggleReveal,
-  onChange,
+  onActivate,
+  onCommit,
   onRemove,
 }: {
-  controller: SavedController;
+  entry: ControllerEntry;
   index: number;
+  active: boolean;
   revealed: boolean;
   onToggleReveal: () => void;
-  onChange: (controller: SavedController) => void;
+  onActivate: () => void;
+  onCommit: (entry: ControllerEntry) => void;
   onRemove: () => void;
 }) {
+  const [draft, setDraft] = useState<ControllerEntry>(entry);
+  const commit = (next: ControllerEntry) => {
+    if (next.name === entry.name && next.url === entry.url && next.apiKey === entry.apiKey) {
+      return;
+    }
+    onCommit(next);
+  };
   return (
-    <div className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1.25fr)_minmax(0,0.9fr)_auto]">
+    <div className={`flex items-center gap-2 px-4 py-3 ${active ? "bg-(--accent)/[0.03]" : ""}`}>
+      <button
+        type="button"
+        onClick={onActivate}
+        className={`inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full border ${
+          active
+            ? "border-(--accent) text-(--accent)"
+            : "border-(--border) text-(--dim) hover:text-(--fg)"
+        }`}
+        title={active ? "Active controller" : "Activate this controller"}
+        aria-pressed={active}
+      >
+        {active ? (
+          <CircleDot className="h-3 w-3" />
+        ) : (
+          <span className="h-1.5 w-1.5 rounded-full bg-current" />
+        )}
+      </button>
       <SettingsInput
-        value={controller.url}
-        placeholder={`Controller ${index + 2} URL`}
-        onChange={(url) => onChange({ ...controller, url })}
+        value={draft.name ?? ""}
+        placeholder={`Controller ${index + 1}`}
+        onChange={(name) => setDraft((current) => ({ ...current, name }))}
+        onBlur={() => commit(draft)}
+        className="w-28"
       />
-      <div className="relative">
+      <SettingsInput
+        value={draft.url}
+        placeholder="http://host:port"
+        onChange={(url) => setDraft((current) => ({ ...current, url }))}
+        onBlur={() => commit(draft)}
+        className="flex-1"
+      />
+      <div className="relative w-36">
         <SettingsInput
           type={revealed ? "text" : "password"}
-          value={controller.apiKey ?? ""}
+          value={draft.apiKey ?? ""}
           placeholder="API key optional"
-          onChange={(apiKey) => onChange({ ...controller, apiKey })}
+          onChange={(apiKey) => setDraft((current) => ({ ...current, apiKey }))}
+          onBlur={() => commit(draft)}
           className="pr-7"
         />
         <button
@@ -303,6 +406,7 @@ function ControllerCredentialRow({
     </div>
   );
 }
+
 function ApiStatus({
   status,
   message,
@@ -315,11 +419,9 @@ function ApiStatus({
   if (loading) {
     return <StatusPill tone="info">loading</StatusPill>;
   }
-
   const tone: StatusTone =
     status === "connected" ? "good" : status === "error" ? "danger" : "default";
   const label = message || (status === "unknown" ? "not tested" : status);
-
   return (
     <span className="inline-flex items-center gap-1.5">
       {status === "connected" ? <Check className="h-3 w-3 text-(--hl2)" /> : null}

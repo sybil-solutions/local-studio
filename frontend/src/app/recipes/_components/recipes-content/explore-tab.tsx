@@ -1,6 +1,6 @@
 "use client";
 
-import { memo, useCallback, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import {
   Check,
   ChevronDown,
@@ -29,7 +29,6 @@ import { useExplore } from "./use-explore";
 import { useDownloads } from "@/hooks/use-downloads";
 import api from "@/lib/api";
 import { estimateRoughWeightsGb } from "./explore-model-stats";
-import { useLegacyEffect } from "@/hooks/agent/use-legacy-effects";
 
 function ExploreVramCell({ needGb, poolGb }: { needGb: number | null; poolGb: number }) {
   if (needGb == null || !Number.isFinite(needGb)) {
@@ -223,48 +222,47 @@ export function ExploreTab() {
   const [localModelIds, setLocalModelIds] = useState<Set<string>>(new Set());
   const completedSet = useRef<Set<string>>(new Set());
 
-  // Load local models
-  useLegacyEffect(() => {
-    (async () => {
-      try {
-        const data = await api.getModels();
-        const ids = new Set<string>();
-        for (const m of data.models || []) {
-          ids.add(m.name.toLowerCase());
-          for (const part of m.path.split("/")) {
-            if (part) ids.add(part.toLowerCase());
-          }
+  const loadLocalModels = useCallback(async () => {
+    try {
+      const data = await api.getModels();
+      const ids = new Set<string>();
+      for (const m of data.models || []) {
+        ids.add(m.name.toLowerCase());
+        for (const part of m.path.split("/")) {
+          if (part) ids.add(part.toLowerCase());
         }
-        setLocalModelIds(ids);
-      } catch {}
-    })();
+      }
+      setLocalModelIds(ids);
+    } catch {}
   }, []);
 
-  // Refresh local models on download completion
-  useLegacyEffect(() => {
-    let shouldRefresh = false;
-    for (const d of downloads) {
-      if (d.status === "completed" && !completedSet.current.has(d.id)) {
-        completedSet.current.add(d.id);
-        shouldRefresh = true;
+  const subscribeLocalModels = useCallback(
+    (_notify: () => void) => {
+      void loadLocalModels();
+      return () => {};
+    },
+    [loadLocalModels],
+  );
+
+  const subscribeCompletedDownloads = useCallback(
+    (_notify: () => void) => {
+      let shouldRefresh = false;
+      for (const d of downloads) {
+        if (d.status === "completed" && !completedSet.current.has(d.id)) {
+          completedSet.current.add(d.id);
+          shouldRefresh = true;
+        }
       }
-    }
-    if (shouldRefresh) {
-      (async () => {
-        try {
-          const data = await api.getModels();
-          const ids = new Set<string>();
-          for (const m of data.models || []) {
-            ids.add(m.name.toLowerCase());
-            for (const part of m.path.split("/")) {
-              if (part) ids.add(part.toLowerCase());
-            }
-          }
-          setLocalModelIds(ids);
-        } catch {}
-      })();
-    }
-  }, [downloads]);
+      if (shouldRefresh) {
+        void loadLocalModels();
+      }
+      return () => {};
+    },
+    [downloads, loadLocalModels],
+  );
+
+  useSyncExternalStore(subscribeLocalModels, getExploreTabSnapshot, getExploreTabSnapshot);
+  useSyncExternalStore(subscribeCompletedDownloads, getExploreTabSnapshot, getExploreTabSnapshot);
 
   const isLocal = useCallback(
     (modelId: string) => {
@@ -536,3 +534,5 @@ export function ExploreTab() {
     </div>
   );
 }
+
+const getExploreTabSnapshot = (): number => 0;

@@ -1,4 +1,3 @@
-// CRITICAL
 import { Hono } from "hono";
 import { swaggerUI } from "@hono/swagger-ui";
 import { cors } from "hono/cors";
@@ -16,12 +15,8 @@ import {
   createMutatingAuthMiddleware,
   createMutatingRateLimitMiddleware,
 } from "./security-middleware";
+import { createControllerRequestObservabilityMiddleware } from "./observability-middleware";
 
-/**
- * Create the Hono application.
- * @param context - App context.
- * @returns Hono app instance.
- */
 export const createApp = (context: AppContext): Hono => {
   const app = new Hono();
   const allowedCorsOrigins = context.config.cors_origins ?? [];
@@ -50,10 +45,10 @@ export const createApp = (context: AppContext): Hono => {
     await next();
   });
 
+  app.use("*", createControllerRequestObservabilityMiddleware(context));
   app.use("*", createMutatingRateLimitMiddleware(context));
   app.use("*", createMutatingAuthMiddleware(context));
 
-  // Register all routes
   registerSystemRoutes(app, context);
   registerEngineRoutes(app, context);
   registerModelsRoutes(app, context);

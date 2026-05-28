@@ -1,4 +1,3 @@
-// CRITICAL
 import { performance } from "node:perf_hooks";
 import type { Hono } from "hono";
 import { HttpStatus, notFound, serviceUnavailable } from "../../core/errors";
@@ -6,6 +5,7 @@ import { isRecipeRunning } from "../models/recipes/recipe-matching";
 import { buildSseHeaders } from "../../http/sse";
 import type { AppContext } from "../../types/context";
 import type { Recipe } from "../models/types";
+import { getDefaultReasoningParser } from "../engines/process/model-runtime-defaults";
 import { buildInferenceUrl } from "../../services/inference/inference-client";
 import {
   DEFAULT_CHAT_PROVIDER,
@@ -71,6 +71,22 @@ const exposeReasoningAsContentWhenEmpty = (
     message["reasoning_content"] = reasoning;
   }
   return true;
+};
+
+const shouldBufferImplicitReasoningContent = (
+  model: string,
+  reasoningParser: string | null | undefined
+): boolean => {
+  const parser = (reasoningParser ?? "").toLowerCase();
+  const modelLower = model.toLowerCase();
+  return (
+    parser === "deepseek_r1" ||
+    parser === "minimax_m2_append_think" ||
+    modelLower.includes("deepseek") ||
+    modelLower.includes("r1") ||
+    modelLower.includes("reasoning") ||
+    modelLower.includes("thinking")
+  );
 };
 
 export const registerOpenAIRoutes = (app: Hono, context: AppContext): void => {
@@ -257,8 +273,7 @@ export const registerOpenAIRoutes = (app: Hono, context: AppContext): void => {
         context.config.inference_port
       );
       const matches =
-        current &&
-        isRecipeRunning(matchedRecipe, current, { allowEitherPathContains: true });
+        current && isRecipeRunning(matchedRecipe, current, { allowEitherPathContains: true });
       if (!matches) {
         const activeModel = current?.served_model_name ?? current?.model_path ?? null;
         warnNonRunningModel({
@@ -400,6 +415,12 @@ export const registerOpenAIRoutes = (app: Hono, context: AppContext): void => {
     }
 
     let ttftMs: number | null = null;
+    const reasoningParser =
+      matchedRecipe && matchedRecipe.reasoning_parser !== null
+        ? matchedRecipe.reasoning_parser
+        : matchedRecipe
+          ? getDefaultReasoningParser(matchedRecipe)
+          : null;
     const stream = createToolCallStream(
       reader,
       (usage) => {
@@ -421,6 +442,12 @@ export const registerOpenAIRoutes = (app: Hono, context: AppContext): void => {
       },
       () => {
         ttftMs ??= Math.max(0, Math.round(performance.now() - requestStart));
+      },
+      {
+        bufferImplicitReasoningContent: shouldBufferImplicitReasoningContent(
+          recordedModel,
+          reasoningParser
+        ),
       }
     );
 

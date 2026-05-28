@@ -1,4 +1,3 @@
-// CRITICAL — copied from lifecycle/runtime/runtime-upgrade.ts
 import type { Config } from "../../../config/env";
 import { resolveBinary, runCommand } from "../../../core/command";
 import { getLlamacppRuntimeInfo, getSglangRuntimeInfo, getCudaInfo } from "./runtime-info";

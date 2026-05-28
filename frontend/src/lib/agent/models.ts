@@ -23,6 +23,10 @@ export interface AgentModel {
   id: string;
   name: string;
   provider: "vllm-studio";
+  providerId?: string;
+  rawId?: string;
+  controllerUrl?: string;
+  controllerName?: string;
   contextWindow: number;
   maxTokens: number;
   reasoning: boolean;
@@ -239,19 +243,45 @@ export function normalizeOpenAIModels(payload: OpenAIModelsResponse): AgentModel
   return models.sort((a, b) => a.name.localeCompare(b.name));
 }
 
+function isDeepSeekReasoningModel(model: AgentModel): boolean {
+  const id = `${model.id} ${model.rawId ?? ""} ${model.name}`.toLowerCase();
+  return model.reasoning && id.includes("deepseek");
+}
+
 export function modelsToPiModels(models: AgentModel[]) {
-  return models.map((model) => ({
-    id: model.id,
-    name: model.name,
-    reasoning: model.reasoning,
-    input: model.vision ? ["text", "image"] : ["text"],
-    contextWindow: model.contextWindow,
-    maxTokens: model.maxTokens,
-    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-    compat: {
-      supportsDeveloperRole: false,
-      supportsReasoningEffort: model.reasoning,
-      maxTokensField: "max_tokens",
-    },
-  }));
+  return models.map((model) => {
+    const deepSeekReasoning = isDeepSeekReasoningModel(model);
+    return {
+      id: model.rawId ?? model.id,
+      name: model.name,
+      reasoning: model.reasoning,
+      input: model.vision ? ["text", "image"] : ["text"],
+      contextWindow: model.contextWindow,
+      maxTokens: model.maxTokens,
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      ...(deepSeekReasoning
+        ? {
+            thinkingLevelMap: {
+              off: null,
+              minimal: null,
+              low: "low",
+              medium: "medium",
+              high: "high",
+              xhigh: "max",
+            },
+          }
+        : {}),
+      compat: {
+        supportsDeveloperRole: false,
+        supportsReasoningEffort: model.reasoning,
+        maxTokensField: "max_tokens",
+        ...(deepSeekReasoning
+          ? {
+              thinkingFormat: "deepseek",
+              requiresReasoningContentOnAssistantMessages: true,
+            }
+          : {}),
+      },
+    };
+  });
 }

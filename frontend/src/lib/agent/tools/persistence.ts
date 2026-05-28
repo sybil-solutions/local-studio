@@ -1,6 +1,3 @@
-// Storage keys and read/write helpers for tool UI state. The shape of the
-// keys matches the historical ones so existing localStorage data still loads.
-
 import type { BrowserState, ComputerState, ComputerTab } from "./types";
 
 export const BROWSER_TOOL_KEY = "vllm-studio.agent.browserToolEnabled";
@@ -22,7 +19,17 @@ export const MAX_COMPUTER_WIDTH = 1800;
 export const MIN_CHAT_WIDTH_WHEN_COMPUTER_OPEN = 340;
 export const COMPUTER_SNAP_RATIOS = [0.25, 0.35, 0.5, 0.65] as const;
 
-const COMPUTER_TABS: ComputerTab[] = ["status", "canvas", "browser", "files", "diff", "terminal"];
+const COMPUTER_TABS: ComputerTab[] = [
+  "status",
+  "tools",
+  "canvas",
+  "side-chat",
+  "browser",
+  "files",
+  "diff",
+  "terminal",
+  "plugins",
+];
 
 function viewportWidth(): number | undefined {
   return typeof window === "undefined" ? undefined : window.innerWidth;
@@ -95,12 +102,9 @@ function remove(key: string): void {
   if (typeof window === "undefined") return;
   try {
     window.localStorage.removeItem(key);
-  } catch {
-    // Ignore.
-  }
+  } catch {}
 }
 
-/** One-shot migrations that clean up older formats. Safe to call repeatedly. */
 export function migrateToolStorage(): void {
   if (!read(BROWSER_TOOL_DEFAULT_OFF_MIGRATION_KEY)) {
     write(BROWSER_TOOL_KEY, "0");

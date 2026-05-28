@@ -1,5 +1,3 @@
-// CRITICAL — server-side URL reader for the agent browser.
-//
 // The renderer-embedded webview goes blank in many real-world scenarios
 // (CSP, X-Frame-Options, oversized SPAs, captive portals, model-spawned
 // errors). Rather than asking the user to debug, we always have a working

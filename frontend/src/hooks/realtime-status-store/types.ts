@@ -1,4 +1,3 @@
-// CRITICAL
 import type {
   GPU,
   LaunchProgressData,
@@ -21,9 +20,9 @@ export interface RuntimeSummaryData {
   gpu_monitoring: RuntimeGpuMonitoringInfo;
   backends: {
     vllm: RuntimeBackendInfo;
-    mlx: RuntimeBackendInfo;
     sglang: RuntimeBackendInfo;
     llamacpp: RuntimeBackendInfo;
+    mlx?: RuntimeBackendInfo;
     exllamav3?: RuntimeBackendInfo;
   };
 }
@@ -42,6 +41,7 @@ export interface LeaseInfo {
 
 export interface RealtimeStatusSnapshot {
   status: StatusData | null;
+  statusLoading: boolean;
   gpus: GPU[];
   metrics: Metrics | null;
   launchProgress: LaunchProgressData | null;

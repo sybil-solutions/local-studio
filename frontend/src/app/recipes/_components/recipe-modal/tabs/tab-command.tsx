@@ -1,4 +1,3 @@
-// CRITICAL
 "use client";
 
 import { Eye, Info, Terminal } from "lucide-react";

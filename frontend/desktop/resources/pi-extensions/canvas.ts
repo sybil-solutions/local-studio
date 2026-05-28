@@ -4,7 +4,7 @@
 // edits this same document through /api/agent/canvas, so the human and model
 // see one source of truth.
 
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 
 type ToolResult = {

@@ -1,4 +1,3 @@
-// CRITICAL
 import type { RecipeEditor } from "@/lib/types";
 import { normalizeExtraArgKey, prepareRecipeForSave } from "./recipe-utils";
 
@@ -120,7 +119,8 @@ const appendLlamacppArgsToCommand = (
 
 export const generateCommand = (recipe: RecipeEditor): string => {
   const payload = prepareRecipeForSave(recipe);
-  const commandOverride = payload.extra_args?.["launch_command"] ?? payload.extra_args?.["custom_command"];
+  const commandOverride =
+    payload.extra_args?.["launch_command"] ?? payload.extra_args?.["custom_command"];
   if (typeof commandOverride === "string" && commandOverride.trim()) {
     return commandOverride;
   }
@@ -132,12 +132,14 @@ export const generateCommand = (recipe: RecipeEditor): string => {
     args.push("vllm serve");
   } else if (backend === "llamacpp") {
     args.push("llama-server");
+  } else if (backend === "mlx") {
+    args.push("python -m mlx_lm.server");
   } else {
     args.push("python -m sglang.launch_server");
   }
 
   if (payload.model_path) {
-    if (backend === "llamacpp") {
+    if (backend === "llamacpp" || backend === "mlx") {
       args.push(`--model ${payload.model_path}`);
     } else {
       args.push(payload.model_path);
@@ -146,7 +148,7 @@ export const generateCommand = (recipe: RecipeEditor): string => {
 
   if (payload.host && payload.host !== "0.0.0.0") args.push(`--host ${payload.host}`);
   if (payload.port && payload.port !== 8000) args.push(`--port ${payload.port}`);
-  if (payload.served_model_name) {
+  if (payload.served_model_name && backend !== "mlx") {
     args.push(
       backend === "llamacpp"
         ? `--alias ${payload.served_model_name}`
@@ -154,7 +156,7 @@ export const generateCommand = (recipe: RecipeEditor): string => {
     );
   }
 
-  if (backend !== "llamacpp") {
+  if (backend !== "llamacpp" && backend !== "mlx") {
     if (payload.tensor_parallel_size && payload.tensor_parallel_size > 1) {
       args.push(`--tensor-parallel-size ${payload.tensor_parallel_size}`);
     }
@@ -166,7 +168,7 @@ export const generateCommand = (recipe: RecipeEditor): string => {
   const ctxOverride = payload.extra_args?.["ctx-size"] ?? payload.extra_args?.["ctx_size"];
   if (backend === "llamacpp") {
     if (!ctxOverride && payload.max_model_len) args.push(`--ctx-size ${payload.max_model_len}`);
-  } else {
+  } else if (backend !== "mlx") {
     if (payload.max_model_len) args.push(`--max-model-len ${payload.max_model_len}`);
     if (payload.max_num_seqs) args.push(`--max-num-seqs ${payload.max_num_seqs}`);
     if (payload.gpu_memory_utilization !== undefined && payload.gpu_memory_utilization !== null) {
@@ -177,7 +179,7 @@ export const generateCommand = (recipe: RecipeEditor): string => {
     }
   }
 
-  if (backend !== "llamacpp") {
+  if (backend !== "llamacpp" && backend !== "mlx") {
     if (payload.quantization) args.push(`--quantization ${payload.quantization}`);
     if (payload.dtype && payload.dtype !== "auto") args.push(`--dtype ${payload.dtype}`);
 

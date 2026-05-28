@@ -1,4 +1,3 @@
-// CRITICAL
 export type ThemeId =
   | "omlx-light"
   | "omlx-dark"

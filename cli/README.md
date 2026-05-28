@@ -1,51 +1,78 @@
 # CLI
 
-Bun-based CLI for operating the vLLM Studio controller.
+`cli/` is the Bun command-line client for a vLLM Studio controller. It is useful for quick status checks, model lifecycle commands, and terminal dashboards without opening the frontend.
 
-## Modes
+## What It Does
 
-- Interactive TUI mode: `bun src/main.ts`
-- Headless command mode: `bun src/main.ts <command>`
+- Reads status and GPU information from a controller.
+- Lists recipes and configuration.
+- Launches and evicts models.
+- Uses controller APIs, so runtime support follows the connected controller: vLLM, SGLang, llama.cpp, MLX, and configured recipe command overrides.
+- Provides an interactive terminal UI and headless commands.
 
-## Headless Commands
+## What Is In Use
 
-```bash
-vllm-studio status
-vllm-studio gpus
-vllm-studio recipes
-vllm-studio config
-vllm-studio metrics
-vllm-studio launch <recipe-id>
-vllm-studio evict
-vllm-studio help
+- Bun runtime.
+- TypeScript source compiled with `bun build`.
+- Direct HTTP calls to the controller API.
+
+## Architecture
+
+```mermaid
+flowchart LR
+    User["Terminal user"] --> CLI["cli/src/main.ts"]
+    CLI --> Headless["headless command mode"]
+    CLI --> TUI["interactive TUI mode"]
+    Headless --> API["controller HTTP API"]
+    TUI --> API
+    API --> Runtime["controller-managed runtimes"]
 ```
 
-## Exit Behavior
+## Prerequisites
 
-- `0` for successful commands.
-- `1` for command errors (unknown command, HTTP/network error, or failed mutation such as `launch`/`evict`).
+- Bun 1.x.
+- A reachable controller. The default URL is `http://localhost:8080`.
 
-## Interactive Key Bindings
+## Commands
 
-- `1..4` switch tabs (Dashboard, Recipes, Status, Config)
-- `↑/↓` move recipe selection
-- `Enter` launch selected recipe
-- `e` evict running model
-- `r` refresh now
-- `q` or `Ctrl-C` quit
+```bash
+bun install
+bun src/main.ts status
+bun src/main.ts gpus
+bun src/main.ts recipes
+bun src/main.ts config
+bun src/main.ts metrics
+bun src/main.ts launch <recipe-id>
+bun src/main.ts evict
+bun src/main.ts help
+```
+
+Interactive mode:
+
+```bash
+bun src/main.ts
+```
 
 ## Configuration
 
-- `VLLM_STUDIO_URL`: controller base URL (default `http://localhost:8080`)
+- `VLLM_STUDIO_URL`: controller base URL. Defaults to `http://localhost:8080`.
+
+The CLI does not discover local runtimes itself. It asks the connected controller for status, recipes, model lifecycle actions, and metrics.
 
 ## Development
 
 ```bash
-bun install
-bun test
 bun run typecheck
 bun run lint
 bun run build
+bun run check
 ```
 
-This produces a compiled `vllm-studio` binary.
+The build command emits the compiled `vllm-studio` CLI binary.
+
+## Where To Look
+
+- `src/main.ts`: entrypoint.
+- `src/headless.ts`: headless commands.
+- `src/api.ts`: controller HTTP client.
+- `src/views/`: interactive TUI views.

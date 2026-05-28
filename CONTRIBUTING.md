@@ -15,17 +15,11 @@ Thanks for wanting to improve vLLM Studio. This project moves quickly, so contri
 Run the relevant checks before opening a PR:
 
 ```bash
-# Frontend
-cd frontend
-npm run lint
-npm run typecheck
-npm test
+# Full repo gate
+npm run check
 
-# Controller
-cd ../controller
-bun run typecheck
-bun run lint
-bun test
+# Integration and e2e tests
+npm run test:e2e
 ```
 
 For desktop changes, also run:

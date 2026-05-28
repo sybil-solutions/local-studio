@@ -1,30 +1,20 @@
-// CRITICAL
 import { existsSync, readFileSync } from "node:fs";
 import { parseRecipe } from "./recipe-serializer";
 import type { Recipe } from "../types";
 import { openSqliteDatabase } from "../../../stores/sqlite";
 import { resolveVllmRecipePythonPath } from "../../engines/runtimes/vllm-python-path";
 
-/**
- *
- */
+/** Persists launch recipes and normalizes runtime-specific defaults. */
 export class RecipeStore {
   private readonly db: ReturnType<typeof openSqliteDatabase>;
   private useJsonColumn = false;
 
-  /**
-   *
-   * @param dbPath
-   */
   public constructor(dbPath: string) {
     this.db = openSqliteDatabase(dbPath);
     this.migrate();
     this.normalizeVllmRecipes();
   }
 
-  /**
-   *
-   */
   private migrate(): void {
     const table = this.db
       .query("SELECT name FROM sqlite_master WHERE type='table' AND name='recipes'")
@@ -94,9 +84,6 @@ export class RecipeStore {
     }
   }
 
-  /**
-   *
-   */
   public list(): Recipe[] {
     const column = this.useJsonColumn ? "json" : "data";
     const rows = this.db.query(`SELECT ${column} FROM recipes ORDER BY id`).all() as Array<
@@ -118,10 +105,6 @@ export class RecipeStore {
     return recipes;
   }
 
-  /**
-   *
-   * @param recipeId
-   */
   public get(recipeId: string): Recipe | null {
     const column = this.useJsonColumn ? "json" : "data";
     const row = this.db.query(`SELECT ${column} FROM recipes WHERE id = ?`).get(recipeId) as Record<
@@ -142,10 +125,6 @@ export class RecipeStore {
     }
   }
 
-  /**
-   *
-   * @param recipe
-   */
   public save(recipe: Recipe): void {
     const normalizedRecipe = {
       ...recipe,
@@ -178,19 +157,11 @@ export class RecipeStore {
       .run(recipe.id, data);
   }
 
-  /**
-   *
-   * @param recipeId
-   */
   public delete(recipeId: string): boolean {
     const result = this.db.query("DELETE FROM recipes WHERE id = ?").run(recipeId);
     return result.changes > 0;
   }
 
-  /**
-   *
-   * @param jsonPath
-   */
   public importFromJson(jsonPath: string): number {
     const content = readFileSync(jsonPath, "utf-8");
     const parsed = JSON.parse(content) as unknown;

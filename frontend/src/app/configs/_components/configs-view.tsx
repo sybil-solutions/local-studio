@@ -1,5 +1,5 @@
 "use client";
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState, useSyncExternalStore } from "react";
 import {
   Archive,
   Cable,
@@ -11,6 +11,7 @@ import {
   ServerCog,
 } from "lucide-react";
 import type { CompatibilityCheck, CompatibilityReport, ConfigData, ServiceInfo } from "@/lib/types";
+import { cleanSessionTitle } from "@/lib/agent/session/helpers";
 import type { ApiConnectionSettings, ConnectionStatus } from "../hooks/use-configs";
 import { ApiConnectionSection } from "./api-connection-section";
 import { AppearanceSettings } from "./appearance-settings";
@@ -29,9 +30,7 @@ import {
   type SettingsSectionId,
   type StatusTone,
 } from "@/components/settings-primitives";
-import { SESSION_PREFS_CHANGED_EVENT } from "@/lib/agent/workspace/events";
-import { SESSION_PREFS_KEY } from "@/lib/agent/workspace/store";
-import { useLegacyEffect } from "@/hooks/agent/use-legacy-effects";
+import { SESSIONS_CHANGED_EVENT } from "@/lib/agent/workspace/events";
 interface ConfigsViewProps {
   data: ConfigData | null;
   compatibilityReport: CompatibilityReport | null;
@@ -57,7 +56,7 @@ const SECTIONS: SettingsSectionDef[] = [
   ["connection", "Connection", "Controller URL, API key, voice defaults.", Cable],
   ["system", "System", "Runtime targets, services, storage, hardware.", Cpu],
   ["appearance", "Appearance", "Theme variables, typography, density.", Paintbrush],
-  ["archive", "Archived chats", "Hidden Pi sessions tracked by stable ID.", Archive],
+  ["archive", "Archived chats", "Pi sessions kept out of normal chat lists.", Archive],
   ["plugins", "Plugins", "Codex plugin discovery and composer availability.", Plug],
   [
     "skills",
@@ -104,8 +103,8 @@ export function ConfigsView({
     const hash = window.location.hash.replace("#", "");
     return normalizeSectionId(hash) ?? "connection";
   });
-  useLegacyEffect(() => {
-    if (typeof window === "undefined") return;
+  const subscribeHashSection = useCallback((_notify: () => void) => {
+    if (typeof window === "undefined") return () => {};
     const onHashChange = () => {
       const hash = window.location.hash.replace("#", "");
       const normalized = normalizeSectionId(hash);
@@ -114,6 +113,8 @@ export function ConfigsView({
     window.addEventListener("hashchange", onHashChange);
     return () => window.removeEventListener("hashchange", onHashChange);
   }, []);
+
+  useSyncExternalStore(subscribeHashSection, getConfigsViewSnapshot, getConfigsViewSnapshot);
   const selectSection = (section: SettingsSectionId) => {
     setActiveSection(section);
     if (typeof window !== "undefined") {
@@ -154,15 +155,9 @@ export function ConfigsView({
         />
       ) : null}
       {activeSection === "system" ? (
-        <div className="space-y-5">
-          {" "}
+        <div className="space-y-8">
           <EnginesSection runtime={data?.runtime ?? null} />
-          <ServicesSettings
-            data={data}
-            apiSettings={apiSettings}
-            loading={loading}
-            error={error}
-          />{" "}
+          <ServicesSettings data={data} apiSettings={apiSettings} loading={loading} error={error} />
           <SystemSettings
             data={data}
             compatibilityReport={compatibilityReport}
@@ -448,74 +443,115 @@ function CompatibilitySettings({
   );
 }
 function ArchivedChatsSettings() {
-  type Pref = { title?: string; pinned?: boolean; hidden?: boolean };
   type Session = {
     id: string;
     projectName?: string;
     projectPath?: string;
     firstUserMessage?: string | null;
     updatedAt?: string;
+    archived?: boolean;
+    archivedAt?: string | null;
   };
-  const [prefs, setPrefs] = useState<Record<string, Pref>>(() => {
-    if (typeof window === "undefined") return {};
-    try {
-      const raw = localStorage.getItem(SESSION_PREFS_KEY);
-      return raw ? (JSON.parse(raw) as Record<string, Pref>) : {};
-    } catch {
-      return {};
-    }
-  });
   const [sessions, setSessions] = useState<Session[]>([]);
-  useLegacyEffect(() => {
-    void fetch("/api/agent/sessions/all?since=365d", { cache: "no-store" })
-      .then((res) => res.json() as Promise<{ sessions?: Session[] }>)
-      .then((payload) => setSessions(payload.sessions ?? []))
-      .catch(() => setSessions([]));
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [restoringId, setRestoringId] = useState<string | null>(null);
+  const loadArchivedSessions = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const response = await fetch("/api/agent/sessions/all?archived=1", {
+        cache: "no-store",
+      });
+      const payload = (await response.json()) as { sessions?: Session[]; error?: string };
+      if (!response.ok) throw new Error(payload.error || "Failed to load archived chats");
+      setSessions(payload.sessions ?? []);
+    } catch (loadError) {
+      setSessions([]);
+      setError(loadError instanceof Error ? loadError.message : "Failed to load archived chats");
+    } finally {
+      setLoading(false);
+    }
   }, []);
-  const archivedIds = Object.entries(prefs)
-    .filter(([, pref]) => pref.hidden)
-    .map(([id]) => id);
-  const byId = new Map(sessions.map((session) => [session.id, session]));
-  const unarchive = (id: string) => {
-    const next = { ...prefs, [id]: { ...prefs[id], hidden: undefined } };
-    if (!next[id].title && !next[id].pinned && !next[id].hidden) delete next[id];
-    localStorage.setItem(SESSION_PREFS_KEY, JSON.stringify(next));
-    window.dispatchEvent(new Event(SESSION_PREFS_CHANGED_EVENT));
-    setPrefs(next);
+  const subscribeArchivedSessions = useCallback(
+    (_notify: () => void) => {
+      void loadArchivedSessions();
+      window.addEventListener(SESSIONS_CHANGED_EVENT, loadArchivedSessions);
+      return () => window.removeEventListener(SESSIONS_CHANGED_EVENT, loadArchivedSessions);
+    },
+    [loadArchivedSessions],
+  );
+
+  useSyncExternalStore(subscribeArchivedSessions, getConfigsViewSnapshot, getConfigsViewSnapshot);
+  const unarchive = async (session: Session) => {
+    setRestoringId(session.id);
+    setError("");
+    try {
+      const response = await fetch(`/api/agent/sessions/${encodeURIComponent(session.id)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          archived: false,
+          ...(session.projectPath ? { cwd: session.projectPath } : {}),
+        }),
+      });
+      const payload = (await response.json()) as { error?: string };
+      if (!response.ok) throw new Error(payload.error || "Failed to restore chat");
+      setSessions((current) => current.filter((row) => row.id !== session.id));
+      window.dispatchEvent(new Event(SESSIONS_CHANGED_EVENT));
+    } catch (restoreError) {
+      setError(restoreError instanceof Error ? restoreError.message : "Failed to restore chat");
+    } finally {
+      setRestoringId(null);
+    }
   };
   return (
     <SettingsGroup
       title="Archived chats"
-      description="Archived sessions are hidden from normal session lists and restart hydration by stable Pi session ID."
-      actions={<StatusPill>{archivedIds.length} archived</StatusPill>}
+      description="Archived sessions are excluded from normal chat fetches. Restore one here to return it to the sidebar."
+      actions={<StatusPill>{loading ? "loading" : `${sessions.length} archived`}</StatusPill>}
     >
-      {archivedIds.length === 0 ? (
+      {error ? (
+        <SettingsRow
+          label="Archive"
+          description={error}
+          value={<SettingsValue dim>Try refreshing this settings section.</SettingsValue>}
+          status={<StatusPill tone="warning">error</StatusPill>}
+        />
+      ) : null}
+      {!error && sessions.length === 0 ? (
         <SettingsRow
           label="Archive"
           description="Use a session row menu to archive instead of deleting from disk."
-          value={<SettingsValue dim>No archived chats.</SettingsValue>}
-          status={<StatusPill>empty</StatusPill>}
+          value={
+            <SettingsValue dim>
+              {loading ? "Loading archived chats…" : "No archived chats."}
+            </SettingsValue>
+          }
+          status={<StatusPill>{loading ? "loading" : "empty"}</StatusPill>}
         />
       ) : (
-        archivedIds.map((id) => {
-          const session = byId.get(id);
-          const pref = prefs[id] ?? {};
+        sessions.map((session) => {
           return (
             <SettingsRow
-              key={id}
-              label={pref.title || session?.firstUserMessage || id}
-              description={
-                session?.projectPath ||
-                "Session metadata will hydrate when its project is available."
-              }
-              value={<SettingsValue mono>{id}</SettingsValue>}
+              key={session.id}
+              label={cleanSessionTitle(session.firstUserMessage) || session.id}
+              description={session.projectPath || "Session project metadata is not available."}
+              value={<SettingsValue mono>{session.id}</SettingsValue>}
               status={<StatusPill tone="info">archived</StatusPill>}
-              actions={<SettingsButton onClick={() => unarchive(id)}>Restore</SettingsButton>}
+              actions={
+                <SettingsButton
+                  onClick={() => void unarchive(session)}
+                  disabled={restoringId === session.id}
+                >
+                  {restoringId === session.id ? "Restoring" : "Restore"}
+                </SettingsButton>
+              }
             >
-              <div className="text-[11px] text-(--dim)">
+              <div className="text-[12px] text-(--dim)/55">
                 {" "}
-                {session?.projectName ? `${session.projectName} · ` : ""}
-                {session?.updatedAt ?? "no timestamp"}{" "}
+                {session.projectName ? `${session.projectName} · ` : ""}
+                {session.archivedAt ? `archived ${session.archivedAt}` : session.updatedAt}{" "}
               </div>
             </SettingsRow>
           );
@@ -581,9 +617,12 @@ function PluginsSettings() {
         setMarketplaces([]);
         setValidation({ browserUseAvailable: false, computerUseAvailable: false });
       });
-  useLegacyEffect(() => {
+  const subscribePlugins = useCallback((_notify: () => void) => {
     void loadPlugins();
+    return () => {};
   }, []);
+
+  useSyncExternalStore(subscribePlugins, getConfigsViewSnapshot, getConfigsViewSnapshot);
   const setPluginEnabled = (plugin: Plugin, enabled: boolean) => {
     setSavingPlugin(plugin.id);
     void fetch("/api/agent/plugins", {
@@ -843,12 +882,15 @@ function pluginLocation(plugin: { enabled: boolean; source?: string; path: strin
 function SkillsSettings() {
   type Skill = { id: string; name: string; source: string; path: string };
   const [skills, setSkills] = useState<Skill[]>([]);
-  useLegacyEffect(() => {
+  const subscribeSkills = useCallback((_notify: () => void) => {
     void fetch("/api/agent/skills", { cache: "no-store" })
       .then((res) => res.json() as Promise<{ skills?: Skill[] }>)
       .then((payload) => setSkills(payload.skills ?? []))
       .catch(() => setSkills([]));
+    return () => {};
   }, []);
+
+  useSyncExternalStore(subscribeSkills, getConfigsViewSnapshot, getConfigsViewSnapshot);
   return (
     <SettingsGroup
       title="Skills"
@@ -884,12 +926,15 @@ function SetupChecksSettings() {
   type Check = { id: string; label: string; ok: boolean; value: string; guidance: string };
   const [checks, setChecks] = useState<Check[]>([]);
   const controllerStatus = useSidebarStatus();
-  useLegacyEffect(() => {
+  const subscribeSetupChecks = useCallback((_notify: () => void) => {
     void fetch("/api/agent/setup-checks", { cache: "no-store" })
       .then((res) => res.json() as Promise<{ checks?: Check[] }>)
       .then((payload) => setChecks(payload.checks ?? []))
       .catch(() => setChecks([]));
+    return () => {};
   }, []);
+
+  useSyncExternalStore(subscribeSetupChecks, getConfigsViewSnapshot, getConfigsViewSnapshot);
   const controllerCheck: Check = {
     id: "controller",
     label: "Controller connection",
@@ -978,3 +1023,5 @@ function severityTone(severity: CompatibilityCheck["severity"]): StatusTone {
   if (severity === "warn") return "warning";
   return "info";
 }
+
+const getConfigsViewSnapshot = (): number => 0;

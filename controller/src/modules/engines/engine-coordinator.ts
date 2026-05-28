@@ -4,30 +4,20 @@ import { pidExists } from "./process/process-utilities"; import { isRecipeRunnin
 import type { ProcessInfo, Recipe } from "../models/types"; import type { Config } from "../../config/env";
 import type { Logger } from "../../core/logger"; import type { ProcessManager } from "./process/process-manager";
 import type { RecipeStore } from "../models/recipes/recipe-store"; import { LIFECYCLE_READY_TIMEOUT_MS } from "./configs";
-import type { EngineService, RuntimeType, UpgradeResult, RuntimeInfo, DownloadRequest, HfModel, SetActiveRecipeResult, SetActiveRecipeOptions } from "./engine-service"; import type { ModelDownload } from "../shared/recipe-types";
+import type { EngineService, DownloadRequest, HfModel, SetActiveRecipeResult, SetActiveRecipeOptions } from "./engine-service"; import type { ModelDownload } from "../shared/recipe-types";
  import type { DownloadManager } from "./downloads/download-manager";
-import { getVllmRuntimeInfo, upgradeVllmRuntime, getVllmConfigHelp } from "./runtimes/vllm-runtime"; import { getLlamacppConfigHelp } from "./runtimes/llamacpp-runtime";
-import { getLlamacppRuntimeInfo, getSglangRuntimeInfo, getExllamav3RuntimeInfo } from "./runtimes/runtime-info"; import { upgradeSglangRuntime, upgradeLlamacppRuntime, runPlatformUpgrade } from "./runtimes/runtime-upgrade";
 import { fetchHuggingFaceModelInfo } from "./downloads/huggingface-api";
 interface CoordinatorDeps { config: Config;
   logger: Logger; eventManager: EventManager;
   processManager: ProcessManager; recipeStore: RecipeStore;
   downloadManager: DownloadManager; abortRunsForModel?: (modelName: string) => number;
 }
-/** *
- */ export class EngineCoordinator implements EngineService {
+export class EngineCoordinator implements EngineService {
   private readonly switchLock = new AsyncLock(); private currentRecipe: Recipe | null = null;
   private activeLifecycleAbort: AbortController | null = null; private activeLaunchPid: number | null = null;
   private lifecycleIntentSerial = 0; private autoActivationBlocked = false;
- /**
-   * * @param deps
-   * @param deps
-   */ constructor(private readonly deps: CoordinatorDeps) {}
+ constructor(private readonly deps: CoordinatorDeps) {}
 
-  /** * Set the authoritative active recipe.
-   * @param recipe - Recipe to activate, or null to evict the active process. * @param options - Optional cancellation controls.
-   * @param options
-   * @returns Operation result. */
   async setActiveRecipe(recipe: Recipe | null, options: SetActiveRecipeOptions = {}): Promise<SetActiveRecipeResult> { const intentSerial = ++this.lifecycleIntentSerial;
  if (!recipe) {
       this.autoActivationBlocked = true; this.activeLifecycleAbort?.abort();
@@ -97,16 +87,7 @@ interface CoordinatorDeps { config: Config;
       } options.signal?.removeEventListener("abort", abortLifecycle);
       release(); }
   }
-  /** *
-   * @param options * @param options.recipe
-   * @param options.pid * @param options.logFilePath
-   * @param options.cancel * @param options.timeoutMs
-   * @param options.fatalPatterns * @param options.onProgress
-   * @param options.recipe
-   * @param options.logFilePath
-   * @param options.timeoutMs
-   * @param options.onProgress
-   */ private async waitForReady(options: { recipe: Recipe; pid: number | null; logFilePath: string | null; cancel?: AbortSignal; timeoutMs?: number; fatalPatterns?: string[]; onProgress?: (elapsedSeconds: number) => Promise<void> }): Promise<{ ready: true } | { ready: false; message: string }> {
+  private async waitForReady(options: { recipe: Recipe; pid: number | null; logFilePath: string | null; cancel?: AbortSignal; timeoutMs?: number; fatalPatterns?: string[]; onProgress?: (elapsedSeconds: number) => Promise<void> }): Promise<{ ready: true } | { ready: false; message: string }> {
     const timeout = options.timeoutMs ?? LIFECYCLE_READY_TIMEOUT_MS; const start = Date.now();
  while (Date.now() - start < timeout) {
       if (options.cancel?.aborted) { return { ready: false, message: "Launch cancelled" };
@@ -122,6 +103,7 @@ interface CoordinatorDeps { config: Config;
         } }
  try {
         const { fetchLocal } = await import("../../http/local-fetch"); const response = await fetchLocal(this.deps.config.inference_port, "/health", {
+          host: this.deps.config.inference_host,
           timeoutMs: 5000, });
         if (response.status === 200) { return { ready: true };
         } } catch {
@@ -132,16 +114,11 @@ interface CoordinatorDeps { config: Config;
  return {
       ready: false, message: `Model ${options.recipe.id} failed to become ready (timeout)`,
     }; }
- /**
-   * * @param current
-   * @param current
-   */ private findRecipeForProcess(current: ProcessInfo): Recipe | null {
+ private findRecipeForProcess(current: ProcessInfo): Recipe | null {
     for (const candidate of this.deps.recipeStore.list()) { if (isRecipeRunning(candidate, current, { allowEitherPathContains: true })) {
         return candidate; }
     } return null;
   }
-  /** *
-   * @param recipe */
   private abortRunsForRecipe(recipe: Recipe): void { if (!this.deps.abortRunsForModel) return;
     const modelCandidates = [recipe.served_model_name, recipe.id].filter((value): value is string => Boolean(value && value.trim()));
     let totalAborted = 0; const abortedCandidates = new Set<string>();
@@ -153,12 +130,7 @@ interface CoordinatorDeps { config: Config;
         recipe_id: recipe.id, aborted_runs: totalAborted,
       }); }
   }
-  /** *
-   * @param recipe
-   * @param options
-   * @param options.force_evict
-   * @param options.publish_events
-   */ async ensureActive(recipe: Recipe, options: { force_evict?: boolean; publish_events?: boolean } = {}): Promise<{ switched: boolean; error: string | null }> {
+  async ensureActive(recipe: Recipe, options: { force_evict?: boolean; publish_events?: boolean } = {}): Promise<{ switched: boolean; error: string | null }> {
     const existing = await this.deps.processManager.findInferenceProcess(this.deps.config.inference_port); if (existing && isRecipeRunning(recipe, existing)) {
       return { switched: false, error: null }; }
     if (this.autoActivationBlocked) { return {
@@ -227,140 +199,35 @@ interface CoordinatorDeps { config: Config;
         this.activeLaunchPid = null; }
       release(); }
   }
-  /** *
-   */ getCurrentRecipe(): Recipe | null {
+  getCurrentRecipe(): Recipe | null {
     return this.currentRecipe; }
- /**
-   * */
+
   async getCurrentProcess(): Promise<ProcessInfo | null> { return this.deps.processManager.findInferenceProcess(this.deps.config.inference_port);
   }
- /**
-   * * @param request
-   * @param request
-   */ async startDownload(request: DownloadRequest): Promise<ModelDownload> {
+
+  async startDownload(request: DownloadRequest): Promise<ModelDownload> {
     return await this.deps.downloadManager.start(request); }
- /**
-   * * @param downloadId
-   * @param downloadId
-   */ pauseDownload(downloadId: string): ModelDownload {
+
+  pauseDownload(downloadId: string): ModelDownload {
     return this.deps.downloadManager.pause(downloadId); }
- /**
-   * * @param downloadId
-   * @param downloadId
-   * @param hfToken */
+
   resumeDownload(downloadId: string, hfToken?: string | null): ModelDownload { return this.deps.downloadManager.resume(downloadId, hfToken ?? null);
   }
-  /** *
-   * @param downloadId */
+
   cancelDownload(downloadId: string): ModelDownload { return this.deps.downloadManager.cancel(downloadId);
   }
-  /** *
-   */ listDownloads(): ModelDownload[] {
+  listDownloads(): ModelDownload[] {
     return this.deps.downloadManager.list(); }
- /**
-   * * @param downloadId
-   * @param downloadId
-   */ getDownload(downloadId: string): ModelDownload | null {
+
+  getDownload(downloadId: string): ModelDownload | null {
     return this.deps.downloadManager.get(downloadId); }
 
-  /** *
-   * @param query * @param hfToken
-   * @param hfToken
-   */ async searchHuggingFace(query: string, hfToken?: string | null): Promise<HfModel[]> {
+  async searchHuggingFace(query: string, hfToken?: string | null): Promise<HfModel[]> {
     const info = await fetchHuggingFaceModelInfo(query, undefined, hfToken ?? undefined); return [
       { id: info.modelId ?? query,
         name: info.modelId ?? query, },
     ]; }
 
-  /** *
-   */ listRuntimes(): Record<string, RuntimeInfo> {
-    const llamacppInfo = getLlamacppRuntimeInfo(this.deps.config); const exllamav3Info = getExllamav3RuntimeInfo(this.deps.config);
-    return { vllm: {
-        installed: false, version: null,
-        python_path: null, upgrade_command_available: true,
-      }, sglang: {
-        installed: false, version: null,
-        python_path: this.deps.config.sglang_python ?? null, upgrade_command_available: true,
-      }, llamacpp: {
-        installed: llamacppInfo.installed, version: llamacppInfo.version,
-        binary_path: llamacppInfo.binary_path ?? null, upgrade_command_available: llamacppInfo.upgrade_command_available ?? false,
-      }, exllamav3: {
-        installed: exllamav3Info.installed, version: exllamav3Info.version,
-        binary_path: exllamav3Info.binary_path ?? null, upgrade_command_available: exllamav3Info.upgrade_command_available ?? false,
-      }, };
-  }
-  /** *
-   */ async getVllmRuntimeInfoAsync(): Promise<RuntimeInfo> {
-    const info = await getVllmRuntimeInfo(); return {
-      installed: info.installed, version: info.version,
-      python_path: info.python_path, binary_path: info.vllm_bin,
-      upgrade_command_available: info.upgrade_command_available ?? false, };
-  }
-  /** *
-   */ async getSglangRuntimeInfoAsync(): Promise<RuntimeInfo> {
-    const current = await this.deps.processManager.findInferenceProcess(this.deps.config.inference_port); const info = await getSglangRuntimeInfo(this.deps.config, current);
-    return { installed: info.installed,
-      version: info.version, python_path: info.python_path,
-      upgrade_command_available: info.upgrade_command_available ?? false, };
-  }
-  /** *
-   * @param runtime
-   * @param options
-   * @param options.version
-   * @param options.args
-   */ async upgradeRuntime(runtime: RuntimeType, options?: { version?: string; args?: string[] }): Promise<UpgradeResult> {
-    switch (runtime) { case "vllm": {
-        const result = await upgradeVllmRuntime({ preferBundled: true,
-          ...(options?.version ? { version: options.version } : {}), ...(options?.args ? { args: options.args as string[] } : {}),
-        }); await this.deps.eventManager.publish(
-          new Event(CONTROLLER_EVENTS.RUNTIME_VLLM_UPGRADED, { success: result.success,
-            version: result.version, used_wheel: result.used_wheel,
-          }) );
-        return { success: result.success,
-          version: result.version, output: result.output,
-          error: result.error, used_command: null,
-        }; }
-      case "sglang": { const result = await upgradeSglangRuntime(this.deps.config, {
-          ...(options?.args ? { args: options.args as string[] } : {}), });
-        await this.deps.eventManager.publish( new Event(CONTROLLER_EVENTS.RUNTIME_SGLANG_UPGRADED, {
-            success: result.success, version: result.version,
-            used_command: result.used_command, })
-        ); return result;
-      } case "llamacpp": {
-        const result = await upgradeLlamacppRuntime(this.deps.config, { ...(options?.args ? { args: options.args as string[] } : {}),
-        }); await this.deps.eventManager.publish(
-          new Event(CONTROLLER_EVENTS.RUNTIME_LLAMACPP_UPGRADED, { success: result.success,
-            version: result.version, used_command: result.used_command,
-          }) );
-        return result; }
-      case "cuda": { const result = runPlatformUpgrade("cuda", {
-          ...(options?.args ? { args: options.args as string[] } : {}), });
-        await this.deps.eventManager.publish( new Event(CONTROLLER_EVENTS.RUNTIME_CUDA_UPGRADED, {
-            success: result.success, version: result.version,
-            used_command: result.used_command, })
-        ); return result;
-      } case "rocm": {
-        const result = runPlatformUpgrade("rocm", { ...(options?.args ? { args: options.args as string[] } : {}),
-        }); await this.deps.eventManager.publish(
-          new Event(CONTROLLER_EVENTS.RUNTIME_ROCM_UPGRADED, { success: result.success,
-            version: result.version, used_command: result.used_command,
-          }) );
-        return result; }
-      case "exllamav3": return {
-          success: false, version: null,
-          output: null, error: "Runtime upgrades are not supported for exllamav3",
-          used_command: null, };
-      default: return {
-          success: false, version: null,
-          output: null, error: `Unknown runtime: ${runtime}`,
-          used_command: null, };
-    } }
- /**
-   * * @param runtime
-   * @param runtime
-   */ async getRuntimeHelp(runtime: "vllm" | "llamacpp"): Promise<{ config: string | null; error: string | null }> {
-    if (runtime === "vllm") { return getVllmConfigHelp();
-    } return getLlamacppConfigHelp(this.deps.config);
-  } }
+}
  export const createEngineCoordinator = (deps: CoordinatorDeps): EngineCoordinator => {
   return new EngineCoordinator(deps); };

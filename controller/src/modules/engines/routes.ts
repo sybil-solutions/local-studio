@@ -1,8 +1,8 @@
-// CRITICAL — Engines module routes
 import type { Hono } from "hono";
 import type { AppContext } from "../../types/context";
 import { delay } from "../../core/async";
 import { HttpStatus, badRequest, notFound, serviceUnavailable } from "../../core/errors";
+import { observeControllerFunction } from "../../core/function-observability";
 import { parseRecipe } from "../models/recipes/recipe-serializer";
 import { Event } from "../system/event-manager";
 import { CONTROLLER_EVENTS } from "../../contracts/controller-events";
@@ -10,7 +10,7 @@ import { fetchInference } from "../../services/inference/inference-client";
 import { isRecipeRunning } from "../models/recipes/recipe-matching";
 import { getVllmConfigHelp, getVllmRuntimeInfo } from "./runtimes/vllm-runtime";
 import { getLlamacppConfigHelp } from "./runtimes/llamacpp-runtime";
-import { getExllamav3RuntimeInfo, getCudaInfo } from "./runtimes/runtime-info";
+import { getExllamav3RuntimeInfo, getCudaInfo, getMlxRuntimeInfo } from "./runtimes/runtime-info";
 import { getRocmInfo, resolveRocmSmiTool } from "../system/platform/rocm-info";
 import {
   getDefaultRuntimeTarget,
@@ -43,7 +43,7 @@ const resolveHfToken = (
 const parseRuntimeJobBody = async (ctx: {
   req: { json: () => Promise<unknown> };
 }): Promise<{
-  backend?: "vllm" | "sglang" | "llamacpp" | "cuda" | "rocm";
+  backend?: "vllm" | "sglang" | "llamacpp" | "mlx" | "cuda" | "rocm";
   targetId?: string;
   type?: "install" | "update" | "download" | "inspect";
   command?: string;
@@ -55,7 +55,7 @@ const parseRuntimeJobBody = async (ctx: {
   if (!body || typeof body !== "object" || Array.isArray(body)) throw badRequest("Invalid payload");
   const record = body as Record<string, unknown>;
   const backend = typeof record["backend"] === "string" ? record["backend"] : undefined;
-  if (backend && !["vllm", "sglang", "llamacpp", "cuda", "rocm"].includes(backend))
+  if (backend && !["vllm", "sglang", "llamacpp", "mlx", "cuda", "rocm"].includes(backend))
     throw badRequest("Invalid backend");
   const type = typeof record["type"] === "string" ? record["type"] : undefined;
   if (type && !["install", "update", "download", "inspect"].includes(type))
@@ -64,7 +64,9 @@ const parseRuntimeJobBody = async (ctx: {
   if (args?.some((value) => typeof value !== "string"))
     throw badRequest("args must be an array of strings");
   return {
-    ...(backend ? { backend: backend as "vllm" | "sglang" | "llamacpp" | "cuda" | "rocm" } : {}),
+    ...(backend
+      ? { backend: backend as "vllm" | "sglang" | "llamacpp" | "mlx" | "cuda" | "rocm" }
+      : {}),
     ...(typeof record["targetId"] === "string" ? { targetId: record["targetId"] } : {}),
     ...(type ? { type: type as "install" | "update" | "download" | "inspect" } : {}),
     ...(typeof record["command"] === "string" ? { command: record["command"] } : {}),
@@ -76,19 +78,14 @@ const parseRuntimeJobBody = async (ctx: {
   };
 };
 
-/**
- * Register engines module routes.
- * @param app - Hono application to register routes on.
- * @param context - Application dependency container.
- */
 export const registerEngineRoutes = (app: Hono, context: AppContext): void => {
   const launchAbortControllers = new Map<string, AbortController>();
 
-  // ── Recipe CRUD (from lifecycle-routes) ──
-
   app.get("/recipes", async (ctx) => {
     const recipes = context.stores.recipeStore.list();
-    const current = await context.engineService.getCurrentProcess();
+    const current = await observeControllerFunction(context, "recipes.list.getCurrentProcess", () =>
+      context.engineService.getCurrentProcess()
+    );
     const launchingRecipe = context.engineService.getCurrentRecipe();
     const launchingId = launchingRecipe?.id ?? null;
     const result = recipes.map((recipe) => {
@@ -141,8 +138,6 @@ export const registerEngineRoutes = (app: Hono, context: AppContext): void => {
     );
     return ctx.json({ success: true });
   });
-
-  // ── Launch / Evict / Cancel (from lifecycle-routes) ──
 
   app.post("/launch/:recipeId", async (ctx) => {
     const recipeId = ctx.req.param("recipeId");
@@ -239,8 +234,6 @@ export const registerEngineRoutes = (app: Hono, context: AppContext): void => {
     return ctx.json({ ready: false, elapsed: timeout, error: "Timeout waiting for backend" });
   });
 
-  // ── Downloads (from downloads/routes) ──
-
   app.get("/studio/downloads", async (ctx) => {
     const downloads = context.engineService.listDownloads();
     return ctx.json({ downloads });
@@ -273,6 +266,7 @@ export const registerEngineRoutes = (app: Hono, context: AppContext): void => {
 
   app.post("/studio/downloads/:downloadId/pause", async (ctx) => {
     const id = ctx.req.param("downloadId");
+    if (!context.engineService.getDownload(id)) throw notFound("Download not found");
     const download = context.engineService.pauseDownload(id);
     return ctx.json({ download });
   });
@@ -281,40 +275,56 @@ export const registerEngineRoutes = (app: Hono, context: AppContext): void => {
     const body = await ctx.req.json().catch(() => ({}));
     const token = resolveHfToken(ctx, body);
     const id = ctx.req.param("downloadId");
+    if (!context.engineService.getDownload(id)) throw notFound("Download not found");
     const download = context.engineService.resumeDownload(id, token);
     return ctx.json({ download });
   });
 
   app.post("/studio/downloads/:downloadId/cancel", async (ctx) => {
     const id = ctx.req.param("downloadId");
+    if (!context.engineService.getDownload(id)) throw notFound("Download not found");
     const download = context.engineService.cancelDownload(id);
     return ctx.json({ download });
   });
 
-  // ── Runtime info (from runtime-routes) ──
-
   app.get("/runtime/targets", async (ctx) => {
-    const current = await context.engineService.getCurrentProcess();
+    const current = await observeControllerFunction(
+      context,
+      "runtime.targets.getCurrentProcess",
+      () => context.engineService.getCurrentProcess()
+    );
     const targets = await getRuntimeTargets(context.config, current);
     return ctx.json({ targets });
   });
 
   app.get("/runtime/targets/:targetId", async (ctx) => {
-    const current = await context.engineService.getCurrentProcess();
+    const current = await observeControllerFunction(
+      context,
+      "runtime.target.getCurrentProcess",
+      () => context.engineService.getCurrentProcess()
+    );
     const target = await getRuntimeTarget(context.config, ctx.req.param("targetId"), current);
     if (!target) throw notFound("Runtime target not found");
     return ctx.json({ target });
   });
 
   app.post("/runtime/targets/:targetId/select", async (ctx) => {
-    const current = await context.engineService.getCurrentProcess();
+    const current = await observeControllerFunction(
+      context,
+      "runtime.target.select.getCurrentProcess",
+      () => context.engineService.getCurrentProcess()
+    );
     const target = await selectRuntimeTarget(context.config, ctx.req.param("targetId"), current);
     if (!target) throw notFound("Runtime target not found");
     return ctx.json({ target });
   });
 
   app.get("/runtime/targets/:targetId/health", async (ctx) => {
-    const current = await context.engineService.getCurrentProcess();
+    const current = await observeControllerFunction(
+      context,
+      "runtime.target.health.getCurrentProcess",
+      () => context.engineService.getCurrentProcess()
+    );
     const target = await getRuntimeTarget(context.config, ctx.req.param("targetId"), current);
     if (!target) throw notFound("Runtime target not found");
     return ctx.json({ health: target.health });
@@ -323,7 +333,9 @@ export const registerEngineRoutes = (app: Hono, context: AppContext): void => {
   app.post("/runtime/jobs", async (ctx) => {
     const body = await parseRuntimeJobBody(ctx);
     if (!body.backend) throw badRequest("backend is required");
-    const current = await context.engineService.getCurrentProcess();
+    const current = await observeControllerFunction(context, "runtime.jobs.getCurrentProcess", () =>
+      context.engineService.getCurrentProcess()
+    );
     const job = createEngineJob(context.config, {
       backend: body.backend,
       type: body.type ?? "update",
@@ -368,15 +380,32 @@ export const registerEngineRoutes = (app: Hono, context: AppContext): void => {
   });
 
   app.get("/runtime/sglang", async (ctx) => {
-    const current = await context.engineService.getCurrentProcess();
+    const current = await observeControllerFunction(
+      context,
+      "runtime.backend.sglang.getCurrentProcess",
+      () => context.engineService.getCurrentProcess()
+    );
     const target = await getDefaultRuntimeTarget(context.config, "sglang", current);
     return ctx.json(runtimeTargetToBackendInfo(target));
   });
 
   app.get("/runtime/llamacpp", async (ctx) => {
-    const current = await context.engineService.getCurrentProcess();
+    const current = await observeControllerFunction(
+      context,
+      "runtime.backend.llamacpp.getCurrentProcess",
+      () => context.engineService.getCurrentProcess()
+    );
     const target = await getDefaultRuntimeTarget(context.config, "llamacpp", current);
     return ctx.json(runtimeTargetToBackendInfo(target));
+  });
+
+  app.get("/runtime/mlx", async (ctx) => {
+    const current = await observeControllerFunction(
+      context,
+      "runtime.backend.mlx.getCurrentProcess",
+      () => context.engineService.getCurrentProcess()
+    );
+    return ctx.json(getMlxRuntimeInfo(context.config, current));
   });
 
   app.get("/runtime/exllamav3", async (ctx) => {
@@ -392,8 +421,6 @@ export const registerEngineRoutes = (app: Hono, context: AppContext): void => {
     const smiTool = resolveRocmSmiTool();
     return ctx.json(getRocmInfo(smiTool));
   });
-
-  // ── Runtime upgrade ──
 
   app.post("/runtime/vllm/upgrade", async (ctx) => {
     const body = await parseRuntimeJobBody(ctx);

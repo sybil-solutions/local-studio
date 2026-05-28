@@ -1,4 +1,3 @@
-// CRITICAL
 import { LLAMACPP_OPTION_KEYS } from "../llamacpp-options";
 import { EXTRA_ARG_FIELDS } from "./extra-arg-fields";
 
@@ -19,10 +18,11 @@ for (const field of EXTRA_ARG_FIELDS) {
   }
 }
 
-["env_vars", "env-vars", "envVars", "status", "launch_command", "custom_command"].forEach(addReservedKeys);
+["env_vars", "env-vars", "envVars", "status", "launch_command", "custom_command"].forEach(
+  addReservedKeys,
+);
 ["default-chat-template-kwargs", "default_chat_template_kwargs"].forEach(addReservedKeys);
 
 for (const key of LLAMACPP_OPTION_KEYS) {
   addReservedKeys(key);
 }
-

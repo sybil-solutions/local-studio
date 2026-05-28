@@ -1,17 +1,11 @@
-// CRITICAL
 export const delay = (milliseconds: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, milliseconds));
 
-/**
- *
- */
+/** FIFO async mutex for controller operations that must not overlap. */
 export class AsyncLock {
   private queue: Array<() => void> = [];
   private locked = false;
 
-  /**
-   *
-   */
   public async acquire(): Promise<() => void> {
     if (!this.locked) {
       this.locked = true;
@@ -26,10 +20,6 @@ export class AsyncLock {
     });
   }
 
-  /**
-   *
-   * @param timeoutMs
-   */
   public async acquireWithTimeout(timeoutMs: number): Promise<(() => void) | null> {
     const timeoutPromise = new Promise<null>((resolve) => {
       setTimeout(() => resolve(null), timeoutMs);
@@ -39,9 +29,6 @@ export class AsyncLock {
     return result;
   }
 
-  /**
-   *
-   */
   public release(): void {
     const next = this.queue.shift();
     if (next) {
@@ -63,18 +50,10 @@ export class AsyncQueue<TValue> {
   private closed = false;
   private evictedCount = 0;
 
-  /**
-   *
-   * @param capacity
-   */
   public constructor(capacity: number) {
     this.capacity = capacity;
   }
 
-  /**
-   *
-   * @param item
-   */
   public push(item: TValue): boolean {
     if (this.closed) {
       return false;
@@ -117,9 +96,6 @@ export class AsyncQueue<TValue> {
     return this.items.length >= this.capacity;
   }
 
-  /**
-   *
-   */
   public close(): void {
     this.closed = true;
     while (this.resolvers.length > 0) {
@@ -130,10 +106,6 @@ export class AsyncQueue<TValue> {
     }
   }
 
-  /**
-   *
-   * @param signal
-   */
   public async shift(signal?: AbortSignal): Promise<TValue> {
     if (this.items.length > 0) {
       return this.items.shift() as TValue;

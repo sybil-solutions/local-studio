@@ -1,4 +1,3 @@
-// CRITICAL
 import { createWriteStream, mkdirSync } from "node:fs";
 import type { WriteStream } from "node:fs";
 import { dirname } from "node:path";

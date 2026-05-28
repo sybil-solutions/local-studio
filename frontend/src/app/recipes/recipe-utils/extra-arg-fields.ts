@@ -1,4 +1,3 @@
-// CRITICAL
 import type { RecipeEditor } from "@/lib/types";
 
 export type ExtraArgType = "string" | "number" | "boolean";

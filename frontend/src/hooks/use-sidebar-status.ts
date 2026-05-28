@@ -1,10 +1,9 @@
-// CRITICAL
 "use client";
 
 import { useSyncExternalStore } from "react";
 import api from "@/lib/api";
+import { BACKEND_URL_CHANGED_EVENT } from "@/lib/backend-url";
 import type { LaunchStage } from "@/lib/types";
-import { useLegacyEffect } from "@/hooks/agent/use-legacy-effects";
 
 const FAST_STATUS_REQUEST = { timeout: 5_000, retries: 0 } as const;
 
@@ -143,6 +142,11 @@ async function fetchNow() {
   emitIfChanged(next);
 }
 
+function resetForControllerSwitch() {
+  emitIfChanged({ ...initialState, lastUpdateAt: Date.now() });
+  void fetchNow();
+}
+
 function start() {
   if (started) return;
   started = true;
@@ -157,6 +161,7 @@ function start() {
   };
 
   window.addEventListener("vllm:controller-event", onControllerEvent as EventListener);
+  window.addEventListener(BACKEND_URL_CHANGED_EVENT, resetForControllerSwitch);
 
   // Polling fallback for initial state and missed events (low frequency).
   void fetchNow();
@@ -178,12 +183,9 @@ function start() {
 }
 
 export function useSidebarStatus(): SidebarStatusSnapshot {
-  useLegacyEffect(() => {
-    start();
-  }, []);
-
   const snap = useSyncExternalStore(
     (onStoreChange) => {
+      start();
       listeners.add(onStoreChange);
       return () => listeners.delete(onStoreChange);
     },

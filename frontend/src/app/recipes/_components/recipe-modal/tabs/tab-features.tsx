@@ -1,4 +1,3 @@
-// CRITICAL
 "use client";
 
 import { Brain, MessageSquare, Wrench } from "lucide-react";

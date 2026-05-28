@@ -1,4 +1,3 @@
-// CRITICAL
 import { useMemo } from "react";
 import { useRealtimeStatusStore } from "./realtime-status-store";
 
@@ -23,7 +22,19 @@ export function useRealtimeStatus() {
       services: snap.services,
       lease: snap.lease,
       isConnected: connected,
+      isStatusLoading: snap.statusLoading,
     }),
-    [connected, snap.gpus, snap.launchProgress, snap.lease, snap.metrics, snap.platformKind, snap.runtimeSummary, snap.services, snap.status],
+    [
+      connected,
+      snap.gpus,
+      snap.launchProgress,
+      snap.lease,
+      snap.metrics,
+      snap.platformKind,
+      snap.runtimeSummary,
+      snap.services,
+      snap.status,
+      snap.statusLoading,
+    ],
   );
 }

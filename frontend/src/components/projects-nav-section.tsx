@@ -37,18 +37,14 @@ import {
   ACTIVE_AGENT_SESSION_RENAME_EVENT,
   ADD_PROJECT_EVENT,
   NEW_AGENT_SESSION_EVENT,
-  PROJECTS_CHANGED_EVENT,
+  SESSIONS_CHANGED_EVENT,
 } from "@/lib/agent/workspace/events";
 import { loadPersistedActiveAgentSessions } from "@/lib/agent/workspace/store";
 import { useProjects } from "@/lib/agent/projects/context";
 import { addProjectFromPath, openProjectDirectory } from "@/lib/agent/projects/api";
 import { useClickOutside } from "@/hooks/use-click-outside";
-import {
-  loadSessionPrefs,
-  patchSessionPref,
-  type SessionPref,
-  type SessionPrefs,
-} from "@/lib/agent/session/prefs";
+import { patchSessionPref, type SessionPref, type SessionPrefs } from "@/lib/agent/session/prefs";
+import { cleanSessionTitle } from "@/lib/agent/session/helpers";
 import { isChatsProject, type Project as ProjectEntry } from "@/lib/agent/projects/types";
 type SessionSummary = {
   id: string;
@@ -60,6 +56,8 @@ type SessionSummary = {
   provider: string | null;
   firstUserMessage: string | null;
   turnCount: number;
+  archived: boolean;
+  archivedAt: string | null;
 };
 type PinnedSession = SessionSummary & { project: ProjectEntry };
 type DirectoryBrowserEntry = { name: string; path: string };
@@ -71,7 +69,6 @@ type DirectoryBrowserPayload = {
   error?: string;
 };
 type ActiveAgentSession = ActiveAgentSessionSnapshot;
-const SHOW_HIDDEN_KEY = "vllm-studio.agent.sessionPrefs.showHidden";
 const SESSION_NAV_TITLE_PREFIX = "vllm-studio.agent.sessionNavTitle:";
 const SESSION_MENU_CLASS =
   "absolute right-0 top-5 isolate z-[999] min-w-[150px] rounded-md border border-[#3a3a3a] bg-[#202020] p-1 text-xs text-(--fg) opacity-100 shadow-[0_12px_32px_rgba(0,0,0,0.85)]";
@@ -146,7 +143,7 @@ export function triggerAddProjectFlow() {
 }
 export function rememberAgentSessionNavTitle(sessionId: string | null | undefined, title: string) {
   if (typeof window === "undefined" || !sessionId) return;
-  const trimmed = title.trim();
+  const trimmed = cleanSessionTitle(title);
   if (!trimmed || trimmed === "Loading session") return;
   try {
     window.sessionStorage.setItem(`${SESSION_NAV_TITLE_PREFIX}${sessionId}`, trimmed);
@@ -158,12 +155,35 @@ export function consumeAgentSessionNavTitle(sessionId: string | null | undefined
   if (typeof window === "undefined" || !sessionId) return undefined;
   const key = `${SESSION_NAV_TITLE_PREFIX}${sessionId}`;
   try {
-    const title = window.sessionStorage.getItem(key)?.trim() || undefined;
+    const title = cleanSessionTitle(window.sessionStorage.getItem(key)) || undefined;
     window.sessionStorage.removeItem(key);
     return title;
   } catch {
     return undefined;
   }
+}
+async function setSessionArchive(
+  sessionId: string,
+  project: ProjectEntry,
+  title: string,
+  archived: boolean,
+): Promise<void> {
+  const response = await fetch(`/api/agent/sessions/${encodeURIComponent(sessionId)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      cwd: project.path,
+      archived,
+      projectId: project.id,
+      projectName: project.name,
+      title,
+    }),
+  });
+  const payload = await safeJson<{ error?: string }>(response);
+  if (!response.ok) {
+    throw new Error(payload.error || "Failed to update session archive");
+  }
+  window.dispatchEvent(new Event(SESSIONS_CHANGED_EVENT));
 }
 function ProjectDirectoryPickerModal({
   open,
@@ -308,10 +328,7 @@ function ProjectDirectoryPickerModal({
     </UiModal>
   );
 }
-/** * Collapsible PROJECTS section in the top-level left sidebar. Each project is
- * a folder; expanding it fetches and lists the recent sessions inside. *
- * Hidden when the sidebar is collapsed to its icon rail (caller decides via * `expanded`).
- */ export function ProjectsNavSection({ expanded }: { expanded: boolean }) {
+export function ProjectsNavSection({ expanded }: { expanded: boolean }) {
   const projectsContext = useProjects();
   const projects = projectsContext.projects;
   const chatProject = projects.find(isChatsProject) ?? null;
@@ -456,8 +473,8 @@ function ProjectDirectoryPickerModal({
         onSelect={(directoryPath) => void handleDirectoryPicked(directoryPath)}
       />
       {pinnedSessions.length > 0 || pinnedActiveSessions.length > 0 ? (
-        <div className="flex flex-col pb-1">
-          <div className="mt-4 flex h-6 items-center px-1.5 text-[10.5px] font-medium text-(--dim)">
+        <div className="flex flex-col">
+          <div className="mt-3 flex h-5 items-center px-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-(--dim)">
             Pinned
           </div>{" "}
           {pinnedActiveSessions.map(({ session, project }) => (
@@ -566,7 +583,7 @@ function SidebarSectionHeader({
   action?: ReactNode;
 }) {
   return (
-    <div className="group mt-4 flex h-6 items-center justify-between px-1.5 text-[10.5px] font-medium text-(--dim)">
+    <div className="group mt-3 flex h-5 items-center justify-between px-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-(--dim)">
       <button
         type="button"
         onClick={onToggle}
@@ -606,7 +623,6 @@ function ProjectRow({
   icon?: "folder" | "chat";
 }) {
   const [missingErrorVisible, setMissingErrorVisible] = useState(false);
-  const [newChatMenuOpen, setNewChatMenuOpen] = useState(false);
   const handleToggle = () => {
     if (!project.exists) {
       setMissingErrorVisible(true);
@@ -617,28 +633,30 @@ function ProjectRow({
   };
   return (
     <div className="flex flex-col">
-      <div className="group relative flex h-6 items-center rounded-md pl-1.5 pr-1 text-(--dim) transition-colors hover:bg-(--hover) hover:text-(--fg)">
+      <div className="group relative flex h-7 items-center rounded-md pl-2 pr-1.5 text-(--dim)/70 transition-colors hover:bg-(--hover) hover:text-(--fg)/80">
         {" "}
         <button
           type="button"
           onClick={handleToggle}
           title={project.path}
-          className="flex min-w-0 flex-1 items-center gap-1.5 px-0 pr-8 text-left"
+          className="flex min-w-0 flex-1 items-center gap-2 px-0 pr-8 text-left"
         >
           {icon === "chat" ? (
-            <ChatIcon className="h-3.5 w-3.5 shrink-0 text-(--dim)" />
+            <ChatIcon className="h-3.5 w-3.5 shrink-0 opacity-55 transition-opacity group-hover:opacity-75" />
           ) : (
-            <span className="relative h-3.5 w-3.5 shrink-0 text-(--dim)">
+            <span className="relative h-3.5 w-3.5 shrink-0 opacity-55 transition-opacity group-hover:opacity-75">
               {" "}
               <Folder
-                className={`absolute inset-0 h-3.5 w-3.5 transition-all duration-150 ${open ? "scale-90 opacity-0" : "scale-100 opacity-80"}`}
+                className={`absolute inset-0 h-3.5 w-3.5 transition-all duration-150 ${open ? "scale-90 opacity-0" : "scale-100 opacity-100"}`}
               />
               <FolderOpen
-                className={`absolute inset-0 h-3.5 w-3.5 transition-all duration-150 ${open ? "scale-100 opacity-80" : "scale-90 opacity-0"}`}
+                className={`absolute inset-0 h-3.5 w-3.5 transition-all duration-150 ${open ? "scale-100 opacity-100" : "scale-90 opacity-0"}`}
               />{" "}
             </span>
           )}
-          <span className="truncate text-[12px] font-medium text-(--fg)">{project.name}</span>{" "}
+          <span className="truncate text-[13px] font-normal text-(--dim) transition-colors group-hover:text-(--fg)/85">
+            {project.name}
+          </span>{" "}
           {!project.exists ? (
             <span
               className="h-1.5 w-1.5 shrink-0 rounded-full bg-amber-400"
@@ -647,16 +665,11 @@ function ProjectRow({
             />
           ) : null}
         </button>{" "}
-        <div
-          className={`absolute right-1.5 top-1/2 -translate-y-1/2 transition-opacity ${
-            newChatMenuOpen ? "opacity-100" : "opacity-0 group-hover:opacity-100"
-          }`}
-        >
+        <div className="absolute right-1.5 top-1/2 -translate-y-1/2 opacity-0 transition-opacity group-hover:opacity-100">
           <NewChatPlusButton
             projectId={project.id}
             label={`New chat in ${project.name}`}
-            className="flex h-5 w-5 items-center justify-center text-(--dim) hover:text-(--fg)"
-            onMenuOpenChange={setNewChatMenuOpen}
+            className="flex h-5 w-5 items-center justify-center text-(--dim)/55 hover:text-(--fg)/80"
           />
         </div>
         {onRemove ? (
@@ -667,7 +680,7 @@ function ProjectRow({
               event.stopPropagation();
               onRemove();
             }}
-            className="absolute right-6 top-1/2 -translate-y-1/2 p-0.5 text-(--dim) opacity-0 hover:text-(--err) group-hover:opacity-100"
+            className="absolute right-6 top-1/2 -translate-y-1/2 p-0.5 text-(--dim)/55 opacity-0 hover:text-(--err) group-hover:opacity-100"
             title="Remove from list"
             aria-label="Remove project"
           >
@@ -709,7 +722,7 @@ function ProjectSessions({
   project: ProjectEntry;
   activeSessions: ActiveAgentSession[];
   prefs: SessionPrefs;
-  /** Session ids already rendered elsewhere in the sidebar (e.g. Pinned). */ excludedIds: ReadonlySet<string>;
+  excludedIds: ReadonlySet<string>;
 }) {
   const [sessions, setSessions] = useState<SessionSummary[] | null>(null);
   const [loading, setLoading] = useState(false);
@@ -744,46 +757,31 @@ function ProjectSessions({
     }
   }, [project.path]);
   useProjectSessionsReloadEffect(reload);
-  const [showHidden, setShowHidden] = useState<boolean>(() => {
-    if (typeof window === "undefined") return false;
-    return window.localStorage.getItem(SHOW_HIDDEN_KEY) === "1";
-  });
-  const toggleShowHidden = () =>
-    setShowHidden((value) => {
-      const next = !value;
-      if (typeof window !== "undefined") {
-        window.localStorage.setItem(SHOW_HIDDEN_KEY, next ? "1" : "0");
-      }
-      return next;
-    });
   const visibleActiveSessions = useMemo(
     () =>
       projectActiveSessions.filter((session) => {
         const pref = activeSessionPref(session, prefs);
         if (pref?.pinned) return false;
         if (session.piSessionId && excludedIds.has(session.piSessionId)) return false;
-        return showHidden || !pref?.hidden;
+        return !pref?.hidden;
       }),
-    [projectActiveSessions, prefs, excludedIds, showHidden],
+    [projectActiveSessions, prefs, excludedIds],
   );
-  const { recent, hidden, allRecent } = useMemo(() => {
+  const recent = useMemo(() => {
     const seen = new Set<string>();
     const recent: SessionSummary[] = [];
-    const hidden: SessionSummary[] = [];
-    const allRecent: SessionSummary[] = [];
     for (const session of sessions ?? []) {
       if (activePiSessionIds.has(session.id)) continue;
       if (excludedIds.has(session.id)) continue;
       if (prefs[session.id]?.pinned) continue;
+      if (prefs[session.id]?.hidden) continue;
       const key = sessionDedupeKey(session);
       if (seen.has(session.id) || seen.has(key)) continue;
       seen.add(session.id);
       seen.add(key);
-      allRecent.push(session);
-      if (prefs[session.id]?.hidden) hidden.push(session);
-      else recent.push(session);
+      recent.push(session);
     }
-    return { recent, hidden, allRecent };
+    return recent;
   }, [sessions, activePiSessionIds, excludedIds, prefs]);
   return (
     <div className="flex flex-col">
@@ -797,9 +795,9 @@ function ProjectSessions({
         />
       ))}
       {loading && !sessions ? (
-        <div className="pl-7 pr-2 py-1 text-[11px] text-(--dim)">Loading…</div>
-      ) : allRecent.length === 0 && visibleActiveSessions.length === 0 ? (
-        <div className="pl-7 pr-2 py-1 text-[11px] text-(--dim)">No chats</div>
+        <div className="pl-2 pr-2 py-0.5 text-[11px] text-(--dim)">Loading…</div>
+      ) : recent.length === 0 && visibleActiveSessions.length === 0 ? (
+        <div className="pl-2 pr-2 py-0.5 text-[11px] text-(--dim)">No chats</div>
       ) : (
         <>
           {" "}
@@ -811,27 +809,6 @@ function ProjectSessions({
               pref={prefs[session.id] ?? {}}
             />
           ))}
-          {hidden.length > 0 ? (
-            <button
-              type="button"
-              onClick={toggleShowHidden}
-              className="flex h-6 items-center gap-1 rounded-md pl-7 pr-2 text-[11px] text-(--dim) hover:bg-(--hover) hover:text-(--fg)"
-              title={showHidden ? "Hide hidden sessions" : "Show hidden sessions"}
-            >
-              <EyeOffIcon className="w-3 h-3 shrink-0" />{" "}
-              {showHidden ? `Hide ${hidden.length} hidden` : `Show ${hidden.length} hidden`}
-            </button>
-          ) : null}
-          {showHidden
-            ? hidden.map((session) => (
-                <SessionRow
-                  key={session.id}
-                  project={project}
-                  session={session}
-                  pref={prefs[session.id] ?? {}}
-                />
-              ))
-            : null}{" "}
         </>
       )}{" "}
     </div>
@@ -847,6 +824,7 @@ type SessionNavRowProps = {
   href?: string;
   onOpen?: () => void;
   onPatchPref: (patch: SessionPref) => void;
+  onArchive?: () => void;
   onRenameCommit?: (title: string) => void;
   onRememberTitle?: () => void;
   onDragStart: (event: DragEvent) => void;
@@ -868,6 +846,7 @@ function SessionNavRow({
   href,
   onOpen,
   onPatchPref,
+  onArchive,
   onRenameCommit,
   onRememberTitle,
   onDragStart,
@@ -918,7 +897,9 @@ function SessionNavRow({
   const content = (
     <>
       {" "}
-      <span className="min-w-0 flex-1 truncate text-[10.5px] font-normal leading-5">{label}</span>
+      <span className="min-w-0 flex-1 truncate text-[10.5px] font-normal leading-4 text-(--fg)/78 transition-colors group-hover:text-(--fg)/95">
+        {label}
+      </span>
       {age ? (
         <span className="shrink-0 pl-1.5 pr-1 font-mono text-[8.5px] text-(--dim)">{age}</span>
       ) : null}{" "}
@@ -956,7 +937,7 @@ function SessionNavRow({
           draggable
           onClick={onRememberTitle}
           onDragStart={onDragStart}
-          className="flex min-w-0 flex-1 items-center gap-1 pr-5"
+          className="flex min-w-0 flex-1 items-center gap-1"
           {...openProps}
         >
           {" "}
@@ -969,14 +950,14 @@ function SessionNavRow({
           onDragStart={onDragStart}
           onClick={onOpen}
           aria-label={label}
-          className="flex min-w-0 flex-1 items-center gap-1 pr-5 text-left"
+          className="flex min-w-0 flex-1 items-center gap-1 text-left"
           {...openProps}
         >
           {" "}
           {content}
         </button>
       )}
-      <div ref={menuRef} className="absolute right-2 top-1/2 -translate-y-1/2 shrink-0">
+      <div ref={menuRef} className="absolute right-1 top-1/2 z-20 -translate-y-1/2 shrink-0">
         {" "}
         <button
           type="button"
@@ -985,8 +966,10 @@ function SessionNavRow({
             event.stopPropagation();
             setMenuOpen((value) => !value);
           }}
-          className={`inline-flex h-6 w-6 items-center justify-center rounded-md text-(--dim) hover:bg-(--hover) hover:text-(--fg) ${
-            menuOpen ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+          className={`inline-flex h-6 w-6 items-center justify-center rounded-md bg-(--hover)/95 text-(--dim) shadow-[0_0_14px_rgba(0,0,0,0.18)] backdrop-blur-sm transition-[opacity,color] hover:text-(--fg) ${
+            menuOpen
+              ? "pointer-events-auto opacity-100"
+              : "pointer-events-none opacity-0 group-hover:pointer-events-auto group-hover:opacity-100 focus-visible:pointer-events-auto focus-visible:opacity-100"
           }`}
           aria-label="Session options"
           title="Session options"
@@ -1019,27 +1002,27 @@ function SessionNavRow({
                 "Pin"
               )}{" "}
             </SessionMenuItem>
-            <SessionMenuItem
-              onClick={() => {
-                setMenuOpen(false);
-                onPatchPref({ hidden: !pref.hidden });
-              }}
-            >
-              {menuItemsWithIcons ? (
-                <span className="inline-flex items-center gap-2">
-                  <EyeOffIcon className="h-4 w-4" /> {pref.hidden ? "Unarchive" : "Archive"}{" "}
-                </span>
-              ) : pref.hidden ? (
-                "Unarchive"
-              ) : (
-                "Archive"
-              )}{" "}
-            </SessionMenuItem>
-            {showClearAction && (pref.title || pref.pinned || pref.hidden) ? (
+            {onArchive ? (
               <SessionMenuItem
                 onClick={() => {
                   setMenuOpen(false);
-                  onPatchPref({ title: undefined, pinned: undefined, hidden: undefined });
+                  onArchive();
+                }}
+              >
+                {menuItemsWithIcons ? (
+                  <span className="inline-flex items-center gap-2">
+                    <EyeOffIcon className="h-4 w-4" /> Archive{" "}
+                  </span>
+                ) : (
+                  "Archive"
+                )}{" "}
+              </SessionMenuItem>
+            ) : null}
+            {showClearAction && (pref.title || pref.pinned) ? (
+              <SessionMenuItem
+                onClick={() => {
+                  setMenuOpen(false);
+                  onPatchPref({ title: undefined, pinned: undefined });
                 }}
               >
                 {" "}
@@ -1063,14 +1046,15 @@ function ActiveSessionRow({
   session: ActiveAgentSession;
   pref: SessionPref;
 }) {
-  const label = pref.title || session.title || "Current session";
+  const label =
+    cleanSessionTitle(pref.title) || cleanSessionTitle(session.title) || "Current session";
   const isActive = session.active === true;
-  const rowClass = `group relative flex h-6 items-center gap-1 rounded-md pl-1.5 pr-1 transition-colors ${isActive ? "bg-(--hover) text-(--fg)" : "text-(--dim) hover:bg-(--hover) hover:text-(--fg)"}`;
+  const rowClass = `group relative flex h-6 items-center rounded-md pl-3 pr-0 transition-colors ${isActive ? "bg-(--hover) text-(--fg)" : "text-(--fg)/72 hover:bg-(--hover) hover:text-(--fg)/95"}`;
   return (
     <SessionNavRow
       pref={pref}
       label={label}
-      initialDraft={pref.title ?? session.title ?? ""}
+      initialDraft={cleanSessionTitle(pref.title) || cleanSessionTitle(session.title)}
       age={relativeAge(session.startedAt ?? session.updatedAt)}
       rowClass={rowClass}
       href={
@@ -1092,7 +1076,7 @@ function ActiveSessionRow({
             detail: {
               paneId: session.paneId,
               tabId: session.tabId,
-              title: trimmed || session.title,
+              title: cleanSessionTitle(trimmed) || cleanSessionTitle(session.title) || label,
             },
           }),
         );
@@ -1115,17 +1099,27 @@ function SessionRow({
   session: SessionSummary;
   pref: SessionPref;
 }) {
-  const label = pref.title || session.firstUserMessage || "Untitled session";
+  const label =
+    cleanSessionTitle(pref.title) ||
+    cleanSessionTitle(session.firstUserMessage) ||
+    "Untitled session";
   return (
     <SessionNavRow
       pref={pref}
       label={label}
-      initialDraft={pref.title ?? session.firstUserMessage ?? ""}
+      initialDraft={cleanSessionTitle(pref.title) || cleanSessionTitle(session.firstUserMessage)}
       age={relativeAge(session.startedAt)}
-      rowClass="group relative flex h-6 items-center gap-1 rounded-md pl-1.5 pr-1 text-(--dim) transition-colors hover:bg-(--hover) hover:text-(--fg)"
-      renameRowClass="flex h-6 items-center gap-1 rounded-md bg-(--surface)/60 pl-1.5 pr-1"
+      rowClass="group relative flex h-6 items-center rounded-md pl-3 pr-0 text-(--fg)/72 transition-colors hover:bg-(--hover) hover:text-(--fg)/95"
+      renameRowClass="flex h-6 items-center rounded-md bg-(--surface)/40 pl-3 pr-1"
       href={`/agent?project=${encodeURIComponent(project.id)}&session=${encodeURIComponent(session.id)}`}
       onPatchPref={(patch) => patchSessionPref(session.id, patch)}
+      onArchive={() => {
+        void setSessionArchive(session.id, project, label, true)
+          .then(() => patchSessionPref(session.id, { hidden: undefined }))
+          .catch((error) => {
+            console.warn("[agent] failed to archive session", error);
+          });
+      }}
       onRememberTitle={() => rememberAgentSessionNavTitle(session.id, label)}
       onDragStart={(event) => {
         setAgentSessionDragData(event, {
@@ -1161,7 +1155,7 @@ function SessionPinButton({
         if (!disabled) onToggle();
       }}
       disabled={disabled}
-      className={`inline-flex h-6 w-4 shrink-0 items-center justify-center transition-opacity hover:text-(--fg) disabled:opacity-20 ${pinned ? "text-(--accent) opacity-100" : "text-(--dim) opacity-60 group-hover:opacity-100"}`}
+      className={`pointer-events-none absolute left-1.5 top-1/2 z-20 inline-flex h-5 w-5 shrink-0 -translate-y-1/2 scale-90 items-center justify-center rounded-md bg-(--hover)/95 opacity-0 shadow-[0_0_14px_rgba(0,0,0,0.18)] backdrop-blur-sm transition-[opacity,transform,color] duration-300 ease-out hover:text-(--fg) group-hover:pointer-events-auto group-hover:scale-100 group-hover:opacity-100 focus-visible:pointer-events-auto focus-visible:scale-100 focus-visible:opacity-100 disabled:opacity-20 ${pinned ? "text-(--accent)" : "text-(--fg)/78"}`}
       aria-pressed={pinned}
       aria-label={pinned ? "Unpin session" : "Pin session"}
       title={pinned ? "Unpin session" : "Pin session"}
@@ -1182,63 +1176,31 @@ function SessionMenuItem({ onClick, children }: { onClick: () => void; children:
   );
 }
 
-/**
- * The "+" affordance in the sidebar (Chats header + each project row). When
- * already on the workspace page it pops a dropdown so the user explicitly
- * picks Split (sibling pane) or New (replace focused pane). When elsewhere it
- * acts as a regular `<Link>` into `/agent` — no UI choice to make until we
- * land on the workspace.
- */
 function NewChatPlusButton({
   projectId,
   label,
   className,
-  onMenuOpenChange,
 }: {
   projectId: string;
   label: string;
   className: string;
-  onMenuOpenChange?: (open: boolean) => void;
 }) {
-  const [menuOpen, setMenuOpen] = useState(false);
-  const containerRef = useRef<HTMLDivElement>(null);
-  const setMenuOpenAndNotify = (open: boolean) => {
-    setMenuOpen(open);
-    onMenuOpenChange?.(open);
-  };
-  useClickOutside(containerRef, menuOpen, () => setMenuOpenAndNotify(false));
-
-  const dispatchNew = (mode: "split" | "replace") => {
-    setMenuOpenAndNotify(false);
-    window.dispatchEvent(new CustomEvent(NEW_AGENT_SESSION_EVENT, { detail: { projectId, mode } }));
-  };
-
   return (
-    <div ref={containerRef} className="relative flex items-center justify-center leading-none">
+    <div className="relative flex items-center justify-center leading-none">
       <Link
         href={`/agent?project=${encodeURIComponent(projectId)}&new=1`}
         onClick={(event) => {
           if (window.location.pathname !== "/agent") return;
-          // On the workspace we never navigate — open the dropdown instead so
-          // the user can choose how to slot the new session.
           event.preventDefault();
           event.stopPropagation();
-          setMenuOpenAndNotify(!menuOpen);
+          window.dispatchEvent(new CustomEvent(NEW_AGENT_SESSION_EVENT, { detail: { projectId } }));
         }}
         className={className}
         aria-label={label}
-        aria-haspopup="menu"
-        aria-expanded={menuOpen}
         title={label}
       >
         <PlusIcon className="block h-3.5 w-3.5" />
       </Link>
-      {menuOpen ? (
-        <div className={`${SESSION_MENU_CLASS} min-w-[140px]`} role="menu">
-          <SessionMenuItem onClick={() => dispatchNew("replace")}>New session </SessionMenuItem>
-          <SessionMenuItem onClick={() => dispatchNew("split")}>Split right </SessionMenuItem>
-        </div>
-      ) : null}
     </div>
   );
 }

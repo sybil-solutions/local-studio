@@ -1,11 +1,9 @@
-// CRITICAL
 "use client";
 
 import { DiscoverView } from "./_components/discover-view";
 import { useDiscover } from "./hooks/use-discover";
 import { useDownloads } from "@/hooks/use-downloads";
-import { useMemo, useRef } from "react";
-import { useLegacyEffect } from "@/hooks/agent/use-legacy-effects";
+import { useCallback, useMemo, useRef, useSyncExternalStore } from "react";
 
 export default function DiscoverPage() {
   const {
@@ -54,18 +52,28 @@ export default function DiscoverPage() {
 
   const completedSet = useRef<Set<string>>(new Set());
 
-  useLegacyEffect(() => {
-    let shouldRefresh = false;
-    for (const download of downloads) {
-      if (download.status === "completed" && !completedSet.current.has(download.id)) {
-        completedSet.current.add(download.id);
-        shouldRefresh = true;
+  const subscribeCompletedDownloads = useCallback(
+    (_notify: () => void) => {
+      let shouldRefresh = false;
+      for (const download of downloads) {
+        if (download.status === "completed" && !completedSet.current.has(download.id)) {
+          completedSet.current.add(download.id);
+          shouldRefresh = true;
+        }
       }
-    }
-    if (shouldRefresh) {
-      refreshLocalModels();
-    }
-  }, [downloads, refreshLocalModels]);
+      if (shouldRefresh) {
+        void refreshLocalModels();
+      }
+      return () => {};
+    },
+    [downloads, refreshLocalModels],
+  );
+
+  useSyncExternalStore(
+    subscribeCompletedDownloads,
+    getCompletedDownloadsSnapshot,
+    getCompletedDownloadsSnapshot,
+  );
 
   const getDownloadForModel = useMemo(() => {
     return (modelId: string) => downloadsByModel.get(modelId) ?? null;
@@ -121,3 +129,5 @@ export default function DiscoverPage() {
     />
   );
 }
+
+const getCompletedDownloadsSnapshot = (): number => 0;

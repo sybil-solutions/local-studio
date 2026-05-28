@@ -24,16 +24,34 @@ type PendingCommand = {
   reject: (error: Error) => void;
 };
 
+function waitForCommandListener(emitter: EventEmitter, timeoutMs: number): Promise<boolean> {
+  if (emitter.listenerCount("command") > 0) return Promise.resolve(true);
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      emitter.off("newListener", onNewListener);
+      resolve(false);
+    }, timeoutMs);
+    const onNewListener = (eventName: string | symbol) => {
+      if (eventName !== "command") return;
+      clearTimeout(timer);
+      emitter.off("newListener", onNewListener);
+      queueMicrotask(() => resolve(emitter.listenerCount("command") > 0));
+    };
+    emitter.on("newListener", onNewListener);
+  });
+}
+
 class BrowserBridge extends EventEmitter {
   private pending = new Map<string, PendingCommand>();
   private seq = 0;
 
-  enqueue(
+  async enqueue(
     verb: string,
     payload: Record<string, unknown>,
     sessionId?: string,
   ): Promise<BrowserResult> {
-    if (this.listenerCount("command") === 0) {
+    const connected = await waitForCommandListener(this, 5_000);
+    if (!connected) {
       return Promise.reject(
         new Error(`Browser command '${verb}' could not run because no browser panel is connected.`),
       );

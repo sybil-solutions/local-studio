@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { existsSync, statSync } from "node:fs";
 import { listProjectsFromStore } from "@/lib/agent/projects-store";
 import { listSessions, type SessionSummary } from "@/lib/agent/sessions-store";
+import { listArchivedSessionMetadata } from "@/lib/agent/session-metadata-store";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -26,17 +27,37 @@ function parseSince(value: string | null): Date | null {
   return new Date(Date.now() - amount * multiplier);
 }
 
+function archiveOptions(searchParams: URLSearchParams): {
+  includeArchived?: boolean;
+  archivedOnly?: boolean;
+} {
+  const archived = searchParams.get("archived")?.toLowerCase();
+  const includeArchived = searchParams.get("includeArchived")?.toLowerCase();
+  return {
+    ...(includeArchived === "1" || includeArchived === "true" ? { includeArchived: true } : {}),
+    ...(archived === "1" || archived === "true" || archived === "only"
+      ? { archivedOnly: true, includeArchived: true }
+      : {}),
+  };
+}
+
 export async function GET(request: NextRequest) {
   const sinceParam = request.nextUrl.searchParams.get("since");
   const since = parseSince(sinceParam) ?? undefined;
+  const archive = archiveOptions(request.nextUrl.searchParams);
   const projects = listProjectsFromStore();
   const aggregated: AggregatedSession[] = [];
+  const seenIds = new Set<string>();
   await Promise.all(
     projects.map(async (project) => {
       try {
         if (!existsSync(project.path) || !statSync(project.path).isDirectory()) return;
-        const sessions = await listSessions(project.path, since ? { since } : undefined);
+        const sessions = await listSessions(project.path, {
+          ...(since && !archive.archivedOnly ? { since } : {}),
+          ...archive,
+        });
         for (const summary of sessions) {
+          seenIds.add(summary.id);
           aggregated.push({
             ...summary,
             projectId: project.id,
@@ -49,6 +70,27 @@ export async function GET(request: NextRequest) {
       }
     }),
   );
+  if (archive.archivedOnly) {
+    for (const metadata of listArchivedSessionMetadata()) {
+      if (seenIds.has(metadata.id)) continue;
+      aggregated.push({
+        id: metadata.id,
+        filename: "",
+        cwd: metadata.cwd ?? "",
+        startedAt: metadata.sessionUpdatedAt ?? metadata.archivedAt ?? metadata.updatedAt ?? "",
+        updatedAt: metadata.sessionUpdatedAt ?? metadata.updatedAt ?? metadata.archivedAt ?? "",
+        modelId: null,
+        provider: null,
+        firstUserMessage: metadata.title,
+        turnCount: 0,
+        archived: true,
+        archivedAt: metadata.archivedAt,
+        projectId: metadata.projectId ?? "",
+        projectName: metadata.projectName ?? "Unknown project",
+        projectPath: metadata.cwd ?? "",
+      });
+    }
+  }
   aggregated.sort(
     (a, b) =>
       new Date(b.startedAt || b.updatedAt).getTime() -

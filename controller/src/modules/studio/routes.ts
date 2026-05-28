@@ -1,4 +1,3 @@
-// CRITICAL
 import type { Hono } from "hono";
 import { cpus, freemem, totalmem, platform, arch, release } from "node:os";
 import {
@@ -112,11 +111,6 @@ const parseUiPreferencesUpdate = (value: unknown): Record<string, string> | null
   return clean;
 };
 
-/**
- * Register studio routes.
- * @param app - Hono app.
- * @param context - App context.
- */
 export const registerStudioRoutes = (app: Hono, context: AppContext): void => {
   const buildSettingsPayload = (): {
     config_path: string;
@@ -223,6 +217,8 @@ export const registerStudioRoutes = (app: Hono, context: AppContext): void => {
         db_path: context.config.db_path,
         sglang_python: context.config.sglang_python ?? null,
         tabby_api_dir: context.config.tabby_api_dir ?? null,
+        llama_bin: context.config.llama_bin ?? null,
+        mlx_python: context.config.mlx_python ?? null,
       },
     });
   });
@@ -321,8 +317,6 @@ export const registerStudioRoutes = (app: Hono, context: AppContext): void => {
     }
     return ctx.json({ success: true, target });
   });
-
-  // --- Provider CRUD ---
 
   app.get("/studio/providers", async (ctx) => {
     const providers = context.config.providers.map((p) => ({

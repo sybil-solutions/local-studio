@@ -1,15 +1,7 @@
-/**
- *
- */
 export class HttpStatus extends Error {
   public readonly status: number;
   public readonly detail: string;
 
-  /**
-   *
-   * @param status
-   * @param detail
-   */
   public constructor(status: number, detail: string) {
     super(detail);
     this.status = status;

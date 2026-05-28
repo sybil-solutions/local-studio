@@ -2,11 +2,6 @@ import { synthesizeWithPiper } from "./piper-adapter";
 import type { TtsSynthesisRequest } from "./types";
 import { TtsIntegrationError } from "./types";
 
-/**
- * Run TTS synthesis using the configured backend.
- * @param request - TTS synthesis request.
- * @returns Nothing.
- */
 export const synthesizeSpeech = async (request: TtsSynthesisRequest): Promise<void> => {
   const backend = (process.env["VLLM_STUDIO_TTS_BACKEND"] ?? "piper").toLowerCase();
 

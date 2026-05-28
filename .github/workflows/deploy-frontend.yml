@@ -1,14 +1,11 @@
-# CRITICAL
-# Builds the frontend Docker image and pushes to GHCR.
-# Deployment to the remote GPU host is done manually via ./scripts/deploy-remote.sh.
 name: Build Frontend Image
 
 on:
   push:
     branches: [main]
     paths:
-      - 'frontend/**'
-      - '.github/workflows/deploy-frontend.yml'
+      - "frontend/**"
+      - ".github/workflows/deploy-frontend.yml"
   workflow_dispatch:
 
 env:

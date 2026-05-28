@@ -1,4 +1,3 @@
-// CRITICAL
 import type { StateCreator } from "zustand";
 
 export interface SidebarState {

@@ -1,4 +1,3 @@
-// CRITICAL
 import type { IService } from "../types";
 
 export interface ContextConfig {
@@ -71,26 +70,20 @@ export interface IContextManagementService extends IService {
   readonly name: "context-management";
   readonly config: ContextConfig;
 
-  /** Estimate tokens for text */
   estimateTokens(text: string): number;
 
-  /** Calculate total tokens for messages */
   calculateMessageTokens(messages: ContextMessage[]): number;
 
-  /** Compact messages using specified strategy */
   compactMessages(
     messages: ContextMessage[],
     maxContext: number,
     strategy?: CompactionStrategy,
   ): { messages: ContextMessage[]; event: CompactionEvent };
 
-  /** Get utilization level for color coding */
   getUtilizationLevel(utilization: number): UtilizationLevel;
 
-  /** Format token count for display */
   formatTokenCount(tokens: number): string;
 
-  /** Calculate context stats */
   calculateStats(
     messages: ContextMessage[],
     maxContext: number,

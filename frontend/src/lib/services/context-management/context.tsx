@@ -1,10 +1,4 @@
-// CRITICAL
 "use client";
-
-/**
- * Context Management Context
- * Provides dependency injection for ContextManagementService
- */
 
 import { createContext, useMemo, type ReactNode } from "react";
 import { contextManagementServiceFactory } from "./factory";

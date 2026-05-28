@@ -1,7 +1,8 @@
-// CRITICAL
 import { RESERVED_EXTRA_ARGS } from "./reserved-extra-args";
 
-export const filterExtraArgsForEditor = (extraArgs: Record<string, unknown>): Record<string, unknown> => {
+export const filterExtraArgsForEditor = (
+  extraArgs: Record<string, unknown>,
+): Record<string, unknown> => {
   const filtered: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(extraArgs ?? {})) {
     if (!RESERVED_EXTRA_ARGS.has(key)) {
@@ -26,4 +27,3 @@ export const mergeExtraArgsFromEditor = (
   }
   return merged;
 };
-

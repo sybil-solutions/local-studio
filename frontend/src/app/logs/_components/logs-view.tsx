@@ -1,12 +1,6 @@
-// CRITICAL
 "use client";
 
-import {
-  ChevronRight,
-  Download,
-  Menu,
-  RefreshCw,
-} from "lucide-react";
+import { ChevronRight, Download, Menu, RefreshCw } from "lucide-react";
 import type { LogSession } from "@/lib/types";
 import { LogsSessionsSidebar } from "./logs-view/logs-sessions-sidebar";
 

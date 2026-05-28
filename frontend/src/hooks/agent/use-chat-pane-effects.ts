@@ -1,7 +1,15 @@
-import { useEffect, type Dispatch, type RefObject, type SetStateAction } from "react";
+import {
+  useCallback,
+  useSyncExternalStore,
+  type Dispatch,
+  type RefObject,
+  type SetStateAction,
+} from "react";
 
 import type { ComposerMention } from "@/lib/agent/composer-context";
 import type { ChatPaneHandle } from "@/lib/agent/session";
+
+const getChatPaneSnapshot = (): number => 0;
 
 export type ChatPaneFileMentionRow = {
   id: string;
@@ -18,9 +26,12 @@ export function useChatPaneStickToBottomEffect({
   activeTabId: string | null | undefined;
   setStickToBottom: Dispatch<SetStateAction<boolean>>;
 }): void {
-  useEffect(() => {
+  const subscribeStickToBottom = useCallback(() => {
     setStickToBottom(true);
+    return () => undefined;
   }, [activeTabId, setStickToBottom]);
+
+  useSyncExternalStore(subscribeStickToBottom, getChatPaneSnapshot, getChatPaneSnapshot);
 }
 
 export function useChatPaneMentionEffects({
@@ -34,14 +45,15 @@ export function useChatPaneMentionEffects({
   setFileMentionRows: Dispatch<SetStateAction<ChatPaneFileMentionRow[]>>;
   setMentionIndex: Dispatch<SetStateAction<number>>;
 }): void {
-  useEffect(() => {
+  const subscribeMentionIndex = useCallback(() => {
     setMentionIndex(0);
+    return () => undefined;
   }, [mention?.kind, mention?.query, setMentionIndex]);
 
-  useEffect(() => {
+  const subscribeMentionRows = useCallback(() => {
     if (!mention || mention.kind !== "plugin" || !cwd) {
       setFileMentionRows([]);
-      return;
+      return () => undefined;
     }
     let cancelled = false;
     void fetch(`/api/agent/fs?cwd=${encodeURIComponent(cwd)}`, { cache: "no-store" })
@@ -72,6 +84,9 @@ export function useChatPaneMentionEffects({
       cancelled = true;
     };
   }, [cwd, mention, setFileMentionRows]);
+
+  useSyncExternalStore(subscribeMentionIndex, getChatPaneSnapshot, getChatPaneSnapshot);
+  useSyncExternalStore(subscribeMentionRows, getChatPaneSnapshot, getChatPaneSnapshot);
 }
 
 export function useChatPaneRegisterHandleEffect({
@@ -81,12 +96,15 @@ export function useChatPaneRegisterHandleEffect({
   handleRef: RefObject<ChatPaneHandle>;
   onRegisterHandle?: (handle: ChatPaneHandle | null) => void;
 }): void {
-  useEffect(() => {
-    if (!onRegisterHandle) return;
+  const subscribeHandle = useCallback(() => {
+    if (!onRegisterHandle) return () => undefined;
     const handle: ChatPaneHandle = {
       loadAndReplay: (id) => handleRef.current.loadAndReplay(id),
+      compact: () => handleRef.current.compact(),
     };
     onRegisterHandle(handle);
     return () => onRegisterHandle(null);
   }, [handleRef, onRegisterHandle]);
+
+  useSyncExternalStore(subscribeHandle, getChatPaneSnapshot, getChatPaneSnapshot);
 }

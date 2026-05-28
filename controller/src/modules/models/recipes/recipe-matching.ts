@@ -1,4 +1,3 @@
-// CRITICAL
 import { basename } from "node:path";
 import type { ProcessInfo, Recipe } from "../types";
 

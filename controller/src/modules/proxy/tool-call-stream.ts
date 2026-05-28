@@ -9,10 +9,15 @@ export interface StreamUsage {
   cache_write_tokens?: number;
 }
 
+export interface ToolCallStreamOptions {
+  bufferImplicitReasoningContent?: boolean;
+}
+
 export const createToolCallStream = (
   reader: ReadableStreamDefaultReader<Uint8Array>,
   onUsage?: (usage: StreamUsage) => void,
-  onFirstToken?: () => void
+  onFirstToken?: () => void,
+  options: ToolCallStreamOptions = {}
 ): ReadableStream<Uint8Array> => {
   const decoder = new TextDecoder();
   const encoder = new TextEncoder();
@@ -21,8 +26,6 @@ export const createToolCallStream = (
   let visibleContentBuffer = "";
   let toolCallsFound = false;
   let usageTracked = false;
-  let thinkCarry = "";
-  let inThink = false;
   let emittedLines = 0;
   let downstreamClosed = false;
   let firstTokenTracked = false;
@@ -131,61 +134,125 @@ export const createToolCallStream = (
     return text;
   };
 
-  const rewriteThinkDelta = (
-    deltaText: string,
-    defaultToReasoning = false
-  ): { content: string; reasoningAppend: string } => {
-    const combined = thinkCarry + (deltaText ?? "");
-    const combinedLower = combined.toLowerCase();
-    let carryIndex = combined.length;
-    let index = 0;
-    let contentOut = "";
-    let reasoningOut = "";
+  type ThinkRewriter = {
+    inThink: () => boolean;
+    drainCarry: () => string;
+    drainPendingContent: () => string;
+    rewrite: (
+      deltaText: string,
+      defaultToReasoning?: boolean
+    ) => { content: string; reasoningAppend: string };
+  };
 
-    while (index < carryIndex) {
-      const remainingLower = combinedLower.slice(index);
-
-      if (combined[index] === "<") {
-        const thinkTag = isThinkingTag(remainingLower);
-        if (thinkTag?.kind === "open") {
-          inThink = true;
-          index += thinkTag.length;
-          continue;
-        }
-        if (thinkTag?.kind === "close") {
-          if (!inThink) {
-            const before = contentOut.trim();
-            if (before) {
-              reasoningOut += contentOut;
-              contentOut = "";
-            }
-          }
-          inThink = false;
-          index += thinkTag.length;
-          continue;
-        }
-        if (thinkingTagPrefixIsPartial(remainingLower)) {
-          carryIndex = index;
-          break;
-        }
-      }
-
-      const ch = combined[index] ?? "";
-      if (inThink || defaultToReasoning) {
-        reasoningOut += ch;
-      } else {
-        contentOut += ch;
-      }
-      index += 1;
-    }
-
-    thinkCarry = carryIndex < combined.length ? combined.slice(carryIndex) : "";
+  const createThinkRewriter = (
+    settings: {
+      bufferImplicitReasoningContent?: boolean;
+    } = {}
+  ): ThinkRewriter => {
+    let inThink = false;
+    let thinkCarry = "";
+    let pendingImplicitContent = "";
+    let seenOpen = false;
+    let resolvedImplicitPrefix = false;
 
     return {
-      content: contentOut,
-      reasoningAppend: reasoningOut,
+      inThink(): boolean {
+        return inThink;
+      },
+      drainCarry(): string {
+        const tail = thinkCarry;
+        thinkCarry = "";
+        return tail;
+      },
+      drainPendingContent(): string {
+        const pending = pendingImplicitContent;
+        pendingImplicitContent = "";
+        return pending;
+      },
+      rewrite(
+        deltaText: string,
+        defaultToReasoning = false
+      ): { content: string; reasoningAppend: string } {
+        const combined = thinkCarry + (deltaText ?? "");
+        const combinedLower = combined.toLowerCase();
+        let carryIndex = combined.length;
+        let index = 0;
+        let contentOut = "";
+        let reasoningOut = "";
+
+        while (index < carryIndex) {
+          const remainingLower = combinedLower.slice(index);
+
+          if (combined[index] === "<") {
+            const thinkTag = isThinkingTag(remainingLower);
+            if (thinkTag?.kind === "open") {
+              if (pendingImplicitContent) {
+                contentOut += pendingImplicitContent;
+                pendingImplicitContent = "";
+              }
+              inThink = true;
+              seenOpen = true;
+              index += thinkTag.length;
+              continue;
+            }
+            if (thinkTag?.kind === "close") {
+              if (!inThink) {
+                // Close tag without an opening tag: model uses implicit
+                // thinking (e.g. DeepSeek sends `...` with no `...`).
+                if (
+                  settings.bufferImplicitReasoningContent &&
+                  !seenOpen &&
+                  !resolvedImplicitPrefix
+                ) {
+                  reasoningOut += pendingImplicitContent;
+                  pendingImplicitContent = "";
+                  resolvedImplicitPrefix = true;
+                }
+                const before = contentOut.trim();
+                if (before) {
+                  reasoningOut += contentOut;
+                  contentOut = "";
+                }
+              }
+              inThink = false;
+              index += thinkTag.length;
+              continue;
+            }
+            if (thinkingTagPrefixIsPartial(remainingLower)) {
+              carryIndex = index;
+              break;
+            }
+          }
+
+          const ch = combined[index] ?? "";
+          if (inThink || defaultToReasoning) {
+            reasoningOut += ch;
+          } else if (
+            settings.bufferImplicitReasoningContent &&
+            !seenOpen &&
+            !resolvedImplicitPrefix
+          ) {
+            pendingImplicitContent += ch;
+          } else {
+            contentOut += ch;
+          }
+          index += 1;
+        }
+
+        thinkCarry = carryIndex < combined.length ? combined.slice(carryIndex) : "";
+
+        return {
+          content: contentOut,
+          reasoningAppend: reasoningOut,
+        };
+      },
     };
   };
+
+  const contentThink = createThinkRewriter({
+    bufferImplicitReasoningContent: Boolean(options.bufferImplicitReasoningContent),
+  });
+  const reasoningThink = createThinkRewriter();
 
   const enqueueLine = (
     controller: ReadableStreamDefaultController<Uint8Array>,
@@ -228,13 +295,24 @@ export const createToolCallStream = (
     return `data: ${JSON.stringify({ id: `chatcmpl-${randomUUID().slice(0, 8)}`, choices: [{ index: 0, delta }] })}`;
   };
 
+  const emitVisibleContent = (
+    controller: ReadableStreamDefaultController<Uint8Array>,
+    content: string
+  ): void => {
+    if (!content) return;
+    visibleContentBuffer += content;
+    const cleaned = stripToolXmlDelta(content);
+    const chunk = buildFlushChunk({ content: cleaned });
+    if (chunk) enqueueLine(controller, chunk);
+  };
+
   const flushThinkCarry = (controller: ReadableStreamDefaultController<Uint8Array>): void => {
-    if (!thinkCarry) return;
-    const tail = thinkCarry;
-    thinkCarry = "";
+    emitVisibleContent(controller, contentThink.drainPendingContent());
+    const tail = contentThink.drainCarry();
+    if (!tail) return;
     const carryLooksLikeThink = thinkingTagPrefixIsPartial(tail.trim());
     const chunk =
-      inThink || carryLooksLikeThink
+      contentThink.inThink() || carryLooksLikeThink
         ? buildFlushChunk({ reasoning_content: stripToolXmlDelta(tail) })
         : buildFlushChunk({ content: stripToolXmlDelta(tail) });
     if (chunk) enqueueLine(controller, chunk);
@@ -308,8 +386,8 @@ export const createToolCallStream = (
 
         const data = dataLines.join("\n").trim();
         if (data === "[DONE]") {
-          maybeInjectToolCalls(controller);
           flushThinkCarry(controller);
+          maybeInjectToolCalls(controller);
           for (const outLine of otherLines) {
             enqueueLine(controller, outLine);
           }
@@ -341,7 +419,8 @@ export const createToolCallStream = (
               | undefined;
             if (!delta) continue;
             const toolCalls = delta["tool_calls"];
-            if (Array.isArray(toolCalls) && toolCalls.length > 0) {
+            const hasActiveToolCalls = Array.isArray(toolCalls) && toolCalls.length > 0;
+            if (hasActiveToolCalls) {
               toolCallsFound = true;
               trackFirstToken();
             }
@@ -365,8 +444,10 @@ export const createToolCallStream = (
             let reasoning = "";
             let reasoningFromContent = "";
             if (content) {
-              visibleContentBuffer += content;
-              const rewritten = rewriteThinkDelta(content, false);
+              const rewritten = contentThink.rewrite(content, false);
+              if (rewritten.content) {
+                visibleContentBuffer += rewritten.content;
+              }
               const cleanedContent = stripToolXmlDelta(rewritten.content);
               if (cleanedContent) {
                 delta["content"] = cleanedContent;
@@ -379,8 +460,8 @@ export const createToolCallStream = (
             }
 
             if (reasoningRaw) {
-              const rewrittenReasoning = rewriteThinkDelta(reasoningRaw, true);
-              reasoning = rewrittenReasoning.reasoningAppend;
+              const rewrittenReasoning = reasoningThink.rewrite(reasoningRaw, true);
+              reasoning = `${reasoning}${rewrittenReasoning.reasoningAppend}`;
             }
 
             if (reasoningFromContent) {
@@ -404,9 +485,7 @@ export const createToolCallStream = (
       if (downstreamClosed) {
         try {
           controller.close();
-        } catch {
-          // already closed
-        }
+        } catch {}
         await tearDownUpstream();
         return;
       }
@@ -422,9 +501,7 @@ export const createToolCallStream = (
             downstreamClosed = true;
             try {
               controller.close();
-            } catch {
-              // already closed
-            }
+            } catch {}
             return;
           }
           if (result.done) {
@@ -439,13 +516,11 @@ export const createToolCallStream = (
               flushEvent(pendingEventLines);
               pendingEventLines = [];
             }
-            maybeInjectToolCalls(controller);
             flushThinkCarry(controller);
+            maybeInjectToolCalls(controller);
             try {
               controller.close();
-            } catch {
-              // already closed
-            }
+            } catch {}
             return;
           }
 
@@ -470,9 +545,7 @@ export const createToolCallStream = (
         await tearDownUpstream();
         try {
           controller.close();
-        } catch {
-          // already closed
-        }
+        } catch {}
       }
     },
     async cancel(): Promise<void> {

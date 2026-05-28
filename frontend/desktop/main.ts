@@ -1,3 +1,4 @@
+import "./app-identity";
 import { app, dialog, ipcMain, shell, type BrowserWindow } from "electron";
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import path from "node:path";

@@ -1,4 +1,3 @@
-// CRITICAL
 "use client";
 
 import { Settings } from "lucide-react";

@@ -1,9 +1,11 @@
-import { useEffect, useLayoutEffect, useRef, type RefObject } from "react";
+import { useCallback, useRef, useSyncExternalStore, type RefObject } from "react";
 
 const AT_BOTTOM_THRESHOLD_PX = 64;
 const RETURN_TO_BOTTOM_IDLE_MS = 250;
 const PROGRAMMATIC_SCROLL_IGNORE_MS = 120;
 const USER_SCROLL_INTENT_MS = 700;
+
+const getTimelineScrollSnapshot = (): number => 0;
 
 export function useTimelineScrollEffects({
   scrollerRef,
@@ -28,20 +30,24 @@ export function useTimelineScrollEffects({
   // immediately on user input so streaming `scrollIntoView` writes never
   // fight a user scroll-up gesture mid-frame (which is the visible "shake").
   const stickRef = useRef(stickToBottom);
-  useEffect(() => {
-    stickRef.current = stickToBottom;
-  }, [stickToBottom]);
 
   // Cache the callback in a ref so listener registration never re-binds
   // when the parent hands us a new function identity per render.
   const onChangeRef = useRef(onStickToBottomChange);
-  useEffect(() => {
+
+  const subscribeStickRef = useCallback(() => {
+    stickRef.current = stickToBottom;
+    return () => undefined;
+  }, [stickToBottom]);
+
+  const subscribeOnChangeRef = useCallback(() => {
     onChangeRef.current = onStickToBottomChange;
+    return () => undefined;
   }, [onStickToBottomChange]);
 
-  useEffect(() => {
+  const subscribeScrollListeners = useCallback(() => {
     const el = scrollerRef.current;
-    if (!el) return;
+    if (!el) return () => undefined;
     let rafId: number | null = null;
     let scrollRafId: number | null = null;
     let followupScrollRafId: number | null = null;
@@ -121,11 +127,25 @@ export function useTimelineScrollEffects({
       if (rafId != null) return;
       rafId = window.requestAnimationFrame(evaluate);
     };
+    const restickIfAtBottom = () => {
+      if (stickRef.current) return;
+      window.requestAnimationFrame(() => {
+        const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight <= AT_BOTTOM_THRESHOLD_PX;
+        if (!atBottom) return;
+        stickRef.current = true;
+        onChangeRef.current?.(true);
+        scrollToBottom();
+      });
+    };
     const markUserScrollIntent = () => {
       userScrollIntentUntil = performance.now() + USER_SCROLL_INTENT_MS;
     };
     const onWheel = (event: WheelEvent) => {
-      if (event.deltaY < 0) markUserScrollIntent();
+      if (event.deltaY < 0) {
+        markUserScrollIntent();
+        return;
+      }
+      if (event.deltaY > 0) restickIfAtBottom();
     };
     const onPointerDown = (event: PointerEvent) => {
       if (event.target !== el) return;
@@ -140,6 +160,10 @@ export function useTimelineScrollEffects({
     const onKeyDown = (event: KeyboardEvent) => {
       if (["ArrowUp", "PageUp", "Home"].includes(event.key)) {
         markUserScrollIntent();
+        return;
+      }
+      if (["ArrowDown", "PageDown", "End"].includes(event.key)) {
+        restickIfAtBottom();
       }
     };
 
@@ -161,7 +185,7 @@ export function useTimelineScrollEffects({
     if (listEl) resizeObserver?.observe(listEl);
     resizeObserver?.observe(el);
 
-    // Expose a marker the layout effect can set when it programmatically
+    // Expose a marker the scroll sync can set when it programmatically
     // scrolls, so we don't misread our own writes as user input.
     (el as HTMLElement & { __markProgrammaticScroll?: () => void }).__markProgrammaticScroll =
       markProgrammaticScroll;
@@ -184,12 +208,12 @@ export function useTimelineScrollEffects({
     };
   }, [bottomRef, scrollerRef]);
 
-  useLayoutEffect(() => {
-    if (!stickRef.current) return;
+  const subscribeStickyScroll = useCallback(() => {
+    if (!stickRef.current) return () => undefined;
     const scroller = scrollerRef.current as
       | (HTMLElement & { __markProgrammaticScroll?: () => void })
       | null;
-    if (!scroller || !bottomRef.current) return;
+    if (!scroller || !bottomRef.current) return () => undefined;
     scroller?.__markProgrammaticScroll?.();
     // Keep the write scoped to the timeline scroller. `scrollIntoView` walks
     // ancestor scrollers too; when a submit swaps the empty-state view for the
@@ -212,4 +236,13 @@ export function useTimelineScrollEffects({
       if (followupRafId != null) window.cancelAnimationFrame(followupRafId);
     };
   }, [bottomRef, scrollerRef, itemCount, running, statusLabel]);
+
+  useSyncExternalStore(subscribeStickRef, getTimelineScrollSnapshot, getTimelineScrollSnapshot);
+  useSyncExternalStore(subscribeOnChangeRef, getTimelineScrollSnapshot, getTimelineScrollSnapshot);
+  useSyncExternalStore(
+    subscribeScrollListeners,
+    getTimelineScrollSnapshot,
+    getTimelineScrollSnapshot,
+  );
+  useSyncExternalStore(subscribeStickyScroll, getTimelineScrollSnapshot, getTimelineScrollSnapshot);
 }

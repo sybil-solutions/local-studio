@@ -1,4 +1,3 @@
-// CRITICAL
 import type { LlamacppOption } from "./types";
 
 export const LLAMACPP_OPTIONS_PART_1B: LlamacppOption[] = [
@@ -88,4 +87,3 @@ export const LLAMACPP_OPTIONS_PART_1B: LlamacppOption[] = [
     tab: "resources",
   },
 ];
-

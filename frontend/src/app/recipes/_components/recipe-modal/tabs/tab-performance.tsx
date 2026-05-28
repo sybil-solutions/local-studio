@@ -1,4 +1,3 @@
-// CRITICAL
 "use client";
 
 import { Clock, Database } from "lucide-react";

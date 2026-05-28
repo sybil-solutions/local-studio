@@ -1,11 +1,9 @@
 export type Backend =
   | "vllm"
-  | "mlx"
   | "sglang"
   | "llamacpp"
-  | "transformers"
-  | "tabbyapi"
-  | "exllamav3";
+  | "exllamav3"
+  | "mlx";
 
 /**
  * Canonical recipe shape as sent over the wire (JSON).
@@ -47,8 +45,6 @@ export interface RecipeBase {
 export type RecipePayload =
   & Pick<RecipeBase, "id" | "name" | "model_path">
   & Partial<Omit<RecipeBase, "id" | "name" | "model_path">>;
-
-// ── Downloads ────────────────────────────────────────────────────────────────
 
 export type DownloadStatus =
   | "queued"

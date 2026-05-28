@@ -1,7 +1,6 @@
-// CRITICAL
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState, useSyncExternalStore } from "react";
 import { Layers, RefreshCw, Save, X } from "lucide-react";
 import api from "@/lib/api";
 import type { ModelInfo, RecipeEditor, RecipeWithStatus } from "@/lib/types";
@@ -16,7 +15,6 @@ import {
 import { RecipeModalTabBar } from "./recipe-modal-tab-bar";
 import type { RecipeModalTabId } from "./tabs/tab-id";
 import { RecipeModalTabContent } from "./tabs/tab-content";
-import { useLegacyEffect } from "@/hooks/agent/use-legacy-effects";
 
 export function RecipeModal({
   recipe,
@@ -57,24 +55,29 @@ export function RecipeModal({
   const isLlamacpp = backend === "llamacpp";
   const llamaConfigLoading = isLlamacpp && !llamaConfigHelp;
 
-  useLegacyEffect(() => {
-    if (!isLlamacpp) return;
-    if (llamaConfigHelp) return;
+  const subscribeLlamaConfigHelp = useCallback(
+    (_notify: () => void) => {
+      if (!isLlamacpp) return () => {};
+      if (llamaConfigHelp) return () => {};
 
-    let cancelled = false;
-    api
-      .getLlamacppRuntimeConfig()
-      .then((result) => {
-        if (!cancelled) setLlamaConfigHelp(result);
-      })
-      .catch((error) => {
-        if (!cancelled) setLlamaConfigHelp({ config: null, error: (error as Error).message });
-      });
+      let cancelled = false;
+      api
+        .getLlamacppRuntimeConfig()
+        .then((result) => {
+          if (!cancelled) setLlamaConfigHelp(result);
+        })
+        .catch((error) => {
+          if (!cancelled) setLlamaConfigHelp({ config: null, error: (error as Error).message });
+        });
 
-    return () => {
-      cancelled = true;
-    };
-  }, [isLlamacpp, llamaConfigHelp]);
+      return () => {
+        cancelled = true;
+      };
+    },
+    [isLlamacpp, llamaConfigHelp],
+  );
+
+  useSyncExternalStore(subscribeLlamaConfigHelp, getRecipeModalSnapshot, getRecipeModalSnapshot);
 
   const getExtraArgValueForKeyLocal = (key: string): unknown => {
     return getExtraArgValueForKey(recipe.extra_args ?? {}, key);
@@ -163,105 +166,100 @@ export function RecipeModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex">
-      {/* Backdrop */}
-      <button className="flex-1 bg-black/50" onClick={onClose} aria-label="Close" />
+    <aside
+      className="relative flex shrink-0 flex-col border-l border-(--border) bg-(--bg)"
+      style={{ width: "720px", minWidth: "min(420px, 40%)", maxWidth: "min(820px, 65%)" }}
+    >
+      {/* Header — matches chat sidepanel ComputerHeader (h-9, text-[11px]) */}
+      <div className="relative flex h-9 shrink-0 items-center gap-2 border-b border-(--border) px-2 text-[11px]">
+        <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-(--surface)">
+          <Layers className="h-3 w-3 text-(--accent)/70" />
+        </div>
+        <div className="flex min-w-0 flex-1 items-center gap-2">
+          <span className="truncate font-medium text-(--fg)/85">
+            {recipe.id ? "Edit recipe" : "New recipe"}
+          </span>
+          <span className="shrink-0 rounded-[5px] bg-(--surface) px-1.5 py-0.5 text-[10px] font-medium text-(--accent)/80">
+            {formatBackendLabel(recipe.backend)}
+          </span>
+        </div>
+        <button
+          onClick={onClose}
+          className="inline-flex h-7 w-7 items-center justify-center rounded-md text-(--dim)/65 transition-colors hover:bg-(--hover) hover:text-(--fg)/75"
+          aria-label="Close recipe drawer"
+          title="Close"
+        >
+          <X className="h-3 w-3" />
+        </button>
+      </div>
 
-      {/* Drawer */}
-      <div className="flex h-full w-full max-w-[720px] animate-in flex-col border-l border-(--border) bg-(--bg) slide-in-from-right duration-200">
-        {/* Header */}
-        <div className="flex min-h-14 shrink-0 items-center justify-between border-b border-(--border) bg-(--bg) px-4 py-3">
-          <div className="flex min-w-0 items-center gap-3">
-            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-(--surface)">
-              <Layers className="h-4 w-4 text-(--accent)" />
-            </div>
-            <div className="min-w-0">
-              <h3 className="truncate text-[15px] font-semibold tracking-[-0.01em] text-(--fg)">
-                {recipe.id ? "Edit Recipe" : "New Recipe"}
-              </h3>
-              <div className="flex items-center gap-2 text-xs text-(--dim)">
-                <span>Engine</span>
-                <span className="rounded-[5px] bg-(--surface) px-1.5 py-0.5 text-[10px] font-medium text-(--accent)">
-                  {formatBackendLabel(recipe.backend)}
-                </span>
-              </div>
-            </div>
-          </div>
+      <RecipeModalTabBar activeTab={activeTab} onSelectTab={setActiveTab} />
+
+      {/* Content */}
+      <div className="min-h-0 flex-1 overflow-y-auto p-4">
+        <RecipeModalTabContent
+          activeTab={activeTab}
+          recipe={recipe}
+          onChange={onChange}
+          availableModels={availableModels}
+          modelServedNames={modelServedNames}
+          isLlamacpp={isLlamacpp}
+          getExtraArgValueForKey={getExtraArgValueForKeyLocal}
+          setExtraArgValueForKey={setExtraArgValueForKeyLocal}
+          envVarEntries={envVarEntries}
+          onAddEnvVar={handleAddEnvVar}
+          onChangeEnvVar={handleEnvVarChange}
+          onRemoveEnvVar={handleRemoveEnvVar}
+          extraArgsText={extraArgsText}
+          extraArgsError={extraArgsError}
+          onExtraArgsChange={handleExtraArgsChange}
+          llamaConfigLoading={llamaConfigLoading}
+          llamaConfigHelp={llamaConfigHelp}
+          commandText={commandText}
+          onCommandChange={handleCommandChange}
+        />
+      </div>
+
+      {/* Footer */}
+      <div className="flex h-10 shrink-0 items-center justify-between gap-3 border-t border-(--border) bg-(--bg) px-2 text-[11px]">
+        <div className="min-w-0 truncate text-(--dim)/75">
+          {recipe.id ? `Editing ${recipe.name}` : "Creating new recipe"}
+          {extraArgsError && <span className="ml-3 text-(--err)">Extra args has errors</span>}
+        </div>
+        <div className="flex shrink-0 items-center gap-1">
           <button
             onClick={onClose}
-            className="inline-flex h-7 w-7 items-center justify-center rounded-md text-(--dim) transition-colors hover:bg-(--hover) hover:text-(--fg)"
-            aria-label="Close recipe drawer"
+            disabled={saving}
+            className="inline-flex h-7 items-center rounded-md px-2 text-[11px] text-(--dim)/75 transition-colors hover:bg-(--hover) hover:text-(--fg)/85 disabled:opacity-50"
           >
-            <X className="h-3.5 w-3.5" />
+            Cancel
+          </button>
+          <button
+            onClick={onSave}
+            disabled={
+              saving ||
+              !!extraArgsError ||
+              !(recipe.name ?? "").trim() ||
+              !(recipe.model_path ?? "").trim()
+            }
+            className="inline-flex h-7 items-center gap-1.5 rounded-md bg-(--surface) px-2.5 text-[11px] font-medium text-(--fg)/85 transition-colors hover:bg-(--surface-2) disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {saving ? (
+              <>
+                <RefreshCw className="h-3 w-3 animate-spin" />
+                Saving…
+              </>
+            ) : (
+              <>
+                <Save className="h-3 w-3" />
+                Save recipe
+              </>
+            )}
           </button>
         </div>
-
-        <RecipeModalTabBar activeTab={activeTab} onSelectTab={setActiveTab} />
-
-        {/* Content */}
-        <div className="flex-1 overflow-y-auto p-5">
-          <RecipeModalTabContent
-            activeTab={activeTab}
-            recipe={recipe}
-            onChange={onChange}
-            availableModels={availableModels}
-            modelServedNames={modelServedNames}
-            isLlamacpp={isLlamacpp}
-            getExtraArgValueForKey={getExtraArgValueForKeyLocal}
-            setExtraArgValueForKey={setExtraArgValueForKeyLocal}
-            envVarEntries={envVarEntries}
-            onAddEnvVar={handleAddEnvVar}
-            onChangeEnvVar={handleEnvVarChange}
-            onRemoveEnvVar={handleRemoveEnvVar}
-            extraArgsText={extraArgsText}
-            extraArgsError={extraArgsError}
-            onExtraArgsChange={handleExtraArgsChange}
-            llamaConfigLoading={llamaConfigLoading}
-            llamaConfigHelp={llamaConfigHelp}
-            commandText={commandText}
-            onCommandChange={handleCommandChange}
-          />
-        </div>
-
-        {/* Footer */}
-        <div className="flex shrink-0 items-center justify-between border-t border-(--border) bg-(--bg) px-4 py-3">
-          <div className="text-xs text-(--dim)">
-            {recipe.id ? `Editing ${recipe.name}` : "Creating new recipe"}
-            {extraArgsError && <span className="ml-3 text-(--err)">Extra args has errors</span>}
-          </div>
-          <div className="flex gap-2">
-            <button
-              onClick={onClose}
-              disabled={saving}
-              className="inline-flex h-8 items-center rounded-md px-3 text-[12px] text-(--dim) transition-colors hover:bg-(--hover) hover:text-(--fg) disabled:opacity-50"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={onSave}
-              disabled={
-                saving ||
-                !!extraArgsError ||
-                !(recipe.name ?? "").trim() ||
-                !(recipe.model_path ?? "").trim()
-              }
-              className="inline-flex h-8 items-center gap-2 rounded-md bg-(--surface) px-3 text-[12px] font-medium text-(--fg) transition-colors hover:bg-(--surface-2) disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {saving ? (
-                <>
-                  <RefreshCw className="h-3.5 w-3.5 animate-spin" />
-                  Saving...
-                </>
-              ) : (
-                <>
-                  <Save className="h-3.5 w-3.5" />
-                  Save Recipe
-                </>
-              )}
-            </button>
-          </div>
-        </div>
       </div>
-    </div>
+    </aside>
   );
 }
+
+const getRecipeModalSnapshot = (): number => 0;

@@ -1,9 +1,7 @@
-// CRITICAL
 "use client";
 
 import { ArrowUpCircle, RefreshCw } from "lucide-react";
-import { useCallback, useMemo, useRef } from "react";
-import { useLegacyEffect } from "@/hooks/agent/use-legacy-effects";
+import { useCallback, useMemo, useRef, useSyncExternalStore } from "react";
 import api from "@/lib/api";
 import type { EngineJob, RuntimeCommandPayload, RuntimeUpgradeResult } from "@/lib/types";
 import { useMachine } from "@/hooks/use-machine";
@@ -130,9 +128,19 @@ export function VllmRuntimePanel() {
     [dispatch, loadRuntime, loadRuntimeConfig, upgradeResultFromJob, waitForRuntimeJob],
   );
 
-  useLegacyEffect(() => {
-    handleRefresh();
-  }, [handleRefresh]);
+  const subscribeRuntimeRefresh = useCallback(
+    (_notify: () => void) => {
+      handleRefresh();
+      return () => {};
+    },
+    [handleRefresh],
+  );
+
+  useSyncExternalStore(
+    subscribeRuntimeRefresh,
+    getVllmRuntimePanelSnapshot,
+    getVllmRuntimePanelSnapshot,
+  );
 
   const { vllmCards, backendCards } = useMemo(
     () => getRuntimePanelCards(runtimeState),
@@ -315,3 +323,5 @@ export function VllmRuntimePanel() {
     </div>
   );
 }
+
+const getVllmRuntimePanelSnapshot = (): number => 0;

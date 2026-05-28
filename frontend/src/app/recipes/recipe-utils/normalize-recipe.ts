@@ -1,4 +1,3 @@
-// CRITICAL
 import type { Recipe, RecipeEditor } from "@/lib/types";
 import { coerceValue } from "./coercion";
 import { EXTRA_ARG_FIELDS } from "./extra-arg-fields";
@@ -19,10 +18,16 @@ export const normalizeRecipeForEditor = (recipe: Recipe): RecipeEditor => {
   }
 
   if (!normalized.env_vars) {
-    const envVars = getExtraArgValue(extraArgs, { key: "env_vars", aliases: ["env-vars", "envVars"] });
+    const envVars = getExtraArgValue(extraArgs, {
+      key: "env_vars",
+      aliases: ["env-vars", "envVars"],
+    });
     if (envVars && typeof envVars === "object" && !Array.isArray(envVars)) {
       normalized.env_vars = Object.fromEntries(
-        Object.entries(envVars as Record<string, unknown>).map(([key, value]) => [key, String(value)]),
+        Object.entries(envVars as Record<string, unknown>).map(([key, value]) => [
+          key,
+          String(value),
+        ]),
       );
     }
   }

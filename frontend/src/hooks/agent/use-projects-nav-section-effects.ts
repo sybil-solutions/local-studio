@@ -1,4 +1,4 @@
-import { useEffect, useState, type Dispatch, type SetStateAction } from "react";
+import { useCallback, useSyncExternalStore, type Dispatch, type SetStateAction } from "react";
 
 import { safeJson } from "@/lib/agent/safe-json";
 import {
@@ -29,23 +29,43 @@ type SessionSummary = {
   provider: string | null;
   firstUserMessage: string | null;
   turnCount: number;
+  archived: boolean;
+  archivedAt: string | null;
 };
 
 type PinnedSession = SessionSummary & { project: ProjectEntry };
 type ActiveAgentSession = ActiveAgentSessionSnapshot;
 
+const getProjectsNavSnapshot = (): number => 0;
+
+let cachedSessionPrefs: SessionPrefs = {};
+let cachedSessionPrefsKey = "";
+
+function syncSessionPrefsSnapshot(): boolean {
+  const next = loadSessionPrefs();
+  let nextKey = "";
+  try {
+    nextKey = JSON.stringify(next);
+  } catch {
+    nextKey = "";
+  }
+  if (nextKey === cachedSessionPrefsKey) return false;
+  cachedSessionPrefs = next;
+  cachedSessionPrefsKey = nextKey;
+  return true;
+}
+
+function getSessionPrefsSnapshot(): SessionPrefs {
+  syncSessionPrefsSnapshot();
+  return cachedSessionPrefs;
+}
+
 export function useProjectsNavSessionPrefs(): SessionPrefs {
-  const [prefs, setPrefs] = useState<SessionPrefs>(() => loadSessionPrefs());
-  useEffect(() => {
+  const subscribeSessionPrefs = useCallback((notify: () => void) => {
     void hydrateSessionPrefsFromDesktop();
-    const refresh = () =>
-      setPrefs((current) => {
-        const next = loadSessionPrefs();
-        try {
-          if (JSON.stringify(current) === JSON.stringify(next)) return current;
-        } catch {}
-        return next;
-      });
+    const refresh = () => {
+      if (syncSessionPrefsSnapshot()) notify();
+    };
     window.addEventListener(SESSION_PREFS_CHANGED_EVENT, refresh);
     window.addEventListener("storage", refresh);
     return () => {
@@ -53,7 +73,8 @@ export function useProjectsNavSessionPrefs(): SessionPrefs {
       window.removeEventListener("storage", refresh);
     };
   }, []);
-  return prefs;
+
+  return useSyncExternalStore(subscribeSessionPrefs, getSessionPrefsSnapshot, () => ({}));
 }
 
 export function useProjectDirectoryPickerModalEffects({
@@ -63,17 +84,22 @@ export function useProjectDirectoryPickerModalEffects({
   loadDirectory: (directoryPath?: string) => Promise<void>;
   open: boolean;
 }): void {
-  useEffect(() => {
-    if (!open) return;
+  const subscribeDirectoryLoad = useCallback(() => {
+    if (!open) return () => undefined;
     void loadDirectory();
+    return () => undefined;
   }, [open, loadDirectory]);
+
+  useSyncExternalStore(subscribeDirectoryLoad, getProjectsNavSnapshot, getProjectsNavSnapshot);
 }
 
 export function useProjectsNavAddProjectEffect(handleAddProject: () => void): void {
-  useEffect(() => {
+  const subscribeAddProject = useCallback(() => {
     window.addEventListener(ADD_PROJECT_EVENT, handleAddProject);
     return () => window.removeEventListener(ADD_PROJECT_EVENT, handleAddProject);
   }, [handleAddProject]);
+
+  useSyncExternalStore(subscribeAddProject, getProjectsNavSnapshot, getProjectsNavSnapshot);
 }
 
 export function useActiveAgentSessionsEffect({
@@ -81,7 +107,7 @@ export function useActiveAgentSessionsEffect({
 }: {
   setActiveSessions: Dispatch<SetStateAction<ActiveAgentSession[]>>;
 }): void {
-  useEffect(() => {
+  const subscribeActiveSessions = useCallback(() => {
     const onActiveSessions = (event: Event) => {
       const detail = (event as CustomEvent<{ sessions?: ActiveAgentSession[] }>).detail;
       const sessions = Array.isArray(detail?.sessions) ? detail.sessions : [];
@@ -93,6 +119,8 @@ export function useActiveAgentSessionsEffect({
     window.addEventListener(ACTIVE_AGENT_SESSIONS_EVENT, onActiveSessions);
     return () => window.removeEventListener(ACTIVE_AGENT_SESSIONS_EVENT, onActiveSessions);
   }, [setActiveSessions]);
+
+  useSyncExternalStore(subscribeActiveSessions, getProjectsNavSnapshot, getProjectsNavSnapshot);
 }
 
 export function usePinnedSessionsEffect({
@@ -110,14 +138,14 @@ export function usePinnedSessionsEffect({
   projects: ProjectEntry[];
   setPinnedSessions: Dispatch<SetStateAction<PinnedSession[]>>;
 }): void {
-  useEffect(() => {
+  const subscribePinnedSessions = useCallback(() => {
     if (!expanded || projects.length === 0) {
       queueMicrotask(() => setPinnedSessions([]));
-      return;
+      return () => undefined;
     }
     if (!pinnedPrefIdsKey) {
       queueMicrotask(() => setPinnedSessions([]));
-      return;
+      return () => undefined;
     }
     let cancelled = false;
     const pinnedIdsList = pinnedPrefIdsKey.split("\u0000").filter(Boolean);
@@ -164,12 +192,20 @@ export function usePinnedSessionsEffect({
     projects,
     setPinnedSessions,
   ]);
+
+  useSyncExternalStore(subscribePinnedSessions, getProjectsNavSnapshot, getProjectsNavSnapshot);
 }
 
 export function useProjectSessionsReloadEffect(reload: () => Promise<void>): void {
-  useEffect(() => {
+  const subscribeProjectSessionsReload = useCallback(() => {
     void reload();
     window.addEventListener(SESSIONS_CHANGED_EVENT, reload);
     return () => window.removeEventListener(SESSIONS_CHANGED_EVENT, reload);
   }, [reload]);
+
+  useSyncExternalStore(
+    subscribeProjectSessionsReload,
+    getProjectsNavSnapshot,
+    getProjectsNavSnapshot,
+  );
 }

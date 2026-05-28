@@ -1,4 +1,5 @@
 import type { ComposerPluginRef, ComposerSkillRef } from "./composer-context";
+import { cleanSessionTitle } from "./session/helpers";
 
 export type ActiveAgentSessionSnapshot = {
   projectId: string;
@@ -14,6 +15,7 @@ export type ActiveAgentSessionSnapshot = {
   updatedAt: string;
   plugins?: ComposerPluginRef[];
   skills?: ComposerSkillRef[];
+  usedSkills?: ComposerSkillRef[];
 };
 
 export type ActiveSessionPrefs = Record<string, { hidden?: boolean }>;
@@ -88,7 +90,7 @@ function resolveMergeTarget(
 }
 
 function preferText(value: string, fallback: string): string {
-  return value || fallback;
+  return cleanSessionTitle(value) || cleanSessionTitle(fallback) || fallback;
 }
 
 function preferDefined<T>(value: T | undefined, fallback: T): T {
@@ -109,12 +111,14 @@ function preserveActiveSnapshot(
     status: preferText(session.status, existing.status),
     updatedAt: preferText(session.updatedAt, existing.updatedAt),
     piSessionId: preferNullable(session.piSessionId, existing.piSessionId),
+    modelId: preferDefined(session.modelId, existing.modelId),
     startedAt: preferDefined(
       existing.startedAt,
       preferDefined(session.startedAt, session.updatedAt),
     ),
     plugins: preferDefined(session.plugins, existing.plugins),
     skills: preferDefined(session.skills, existing.skills),
+    usedSkills: preferDefined(session.usedSkills, existing.usedSkills),
   };
 }
 
@@ -132,6 +136,7 @@ function applyIncomingSnapshot(
     ),
     plugins: preferDefined(session.plugins, target.existing?.plugins),
     skills: preferDefined(session.skills, target.existing?.skills),
+    usedSkills: preferDefined(session.usedSkills, target.existing?.usedSkills),
   };
 }
 

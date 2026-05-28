@@ -6,17 +6,18 @@ import {
   useCallback,
   useRef,
   useState,
+  useSyncExternalStore,
   type MouseEvent as ReactMouseEvent,
   type ReactNode,
 } from "react";
 import {
-  BarChart3,
+  Gauge,
   ChevronLeft,
   ChevronRight,
-  Database,
+  Microchip,
   HardDrive,
   Search as SearchIcon,
-  Server,
+  Globe,
   Settings,
   PanelLeftClose,
   Menu,
@@ -29,7 +30,6 @@ import { useAppStore } from "@/store";
 import { ProjectsNavSection } from "@/components/projects-nav-section";
 import { SessionsCommand } from "@/components/sessions-command";
 import { ACTIVE_AGENT_SESSIONS_EVENT } from "@/lib/agent/workspace/events";
-import { useLegacyEffect } from "@/hooks/agent/use-legacy-effects";
 
 type ActiveSessionDetail = {
   projectId: string;
@@ -44,15 +44,15 @@ type ActiveSessionDetail = {
 };
 
 const tabs = [
-  { href: "/", label: "Status", icon: BarChart3 },
-  { href: "/usage", label: "Usage", icon: Database },
+  { href: "/", label: "Status", icon: Gauge },
+  { href: "/usage", label: "Usage", icon: Microchip },
   { href: "/recipes", label: "Models", icon: HardDrive },
-  { href: "/server", label: "Server", icon: Server },
+  { href: "/server", label: "Server", icon: Globe },
 ];
 
-const SIDEBAR_MIN_WIDTH = 160;
-const SIDEBAR_MAX_WIDTH = 320;
-const SIDEBAR_DEFAULT_WIDTH = 204;
+const SIDEBAR_MIN_WIDTH = 180;
+const SIDEBAR_MAX_WIDTH = 340;
+const SIDEBAR_DEFAULT_WIDTH = 248;
 
 function clampSidebarWidth(width: number): number {
   if (!Number.isFinite(width)) return SIDEBAR_DEFAULT_WIDTH;
@@ -93,17 +93,19 @@ export function LeftSidebar({ children }: { children: ReactNode }) {
   const [sidebarResizing, setSidebarResizing] = useState(false);
   const resizeCleanupRef = useRef<(() => void) | null>(null);
 
-  useLegacyEffect(() => {
-    if (!mobileMenuOpen) return;
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setMobileMenuOpen(false);
-    };
-    document.addEventListener("keydown", onKeyDown);
-    return () => document.removeEventListener("keydown", onKeyDown);
-  }, [mobileMenuOpen]);
+  const subscribeMobileMenuEscape = useCallback(
+    (_notify: () => void) => {
+      if (!mobileMenuOpen) return () => {};
+      const onKeyDown = (event: KeyboardEvent) => {
+        if (event.key === "Escape") setMobileMenuOpen(false);
+      };
+      document.addEventListener("keydown", onKeyDown);
+      return () => document.removeEventListener("keydown", onKeyDown);
+    },
+    [mobileMenuOpen],
+  );
 
-  // Global Cmd/Ctrl+K opens the session search palette.
-  useLegacyEffect(() => {
+  const subscribeSearchHotkey = useCallback((_notify: () => void) => {
     const onKeyDown = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
         event.preventDefault();
@@ -114,9 +116,7 @@ export function LeftSidebar({ children }: { children: ReactNode }) {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
 
-  // Mirror active sessions broadcast by the agent workspace so the palette
-  // can show what's running even when the user is on a non-agent route.
-  useLegacyEffect(() => {
+  const subscribeActiveSessions = useCallback((_notify: () => void) => {
     const onActive = (event: Event) => {
       const detail = (event as CustomEvent<{ sessions?: ActiveSessionDetail[] }>).detail;
       setActiveSessions(Array.isArray(detail?.sessions) ? detail.sessions : []);
@@ -125,12 +125,16 @@ export function LeftSidebar({ children }: { children: ReactNode }) {
     return () => window.removeEventListener(ACTIVE_AGENT_SESSIONS_EVENT, onActive);
   }, []);
 
-  useLegacyEffect(
-    () => () => {
+  const subscribeResizeCleanup = useCallback((_notify: () => void) => {
+    return () => {
       resizeCleanupRef.current?.();
-    },
-    [],
-  );
+    };
+  }, []);
+
+  useSyncExternalStore(subscribeMobileMenuEscape, getLeftSidebarSnapshot, getLeftSidebarSnapshot);
+  useSyncExternalStore(subscribeSearchHotkey, getLeftSidebarSnapshot, getLeftSidebarSnapshot);
+  useSyncExternalStore(subscribeActiveSessions, getLeftSidebarSnapshot, getLeftSidebarSnapshot);
+  useSyncExternalStore(subscribeResizeCleanup, getLeftSidebarSnapshot, getLeftSidebarSnapshot);
 
   const startSidebarResize = useCallback(
     (event: ReactMouseEvent<HTMLDivElement>) => {
@@ -173,7 +177,7 @@ export function LeftSidebar({ children }: { children: ReactNode }) {
       {!isExpanded ? (
         <button
           onClick={() => setDesktopSidebarPinnedOpen(true)}
-          className="fixed left-3 top-3 z-50 hidden h-8 w-8 items-center justify-center rounded-md bg-(--bg)/70 text-(--dim) transition-colors hover:bg-(--surface) hover:text-(--fg) md:flex"
+          className="fixed left-3 top-3 z-50 hidden h-8 w-8 items-center justify-center rounded-md bg-(--sidebar-bg)/70 text-(--dim) transition-colors hover:bg-(--surface) hover:text-(--fg) md:flex"
           title="Expand sidebar"
           aria-label="Expand sidebar"
         >
@@ -181,7 +185,7 @@ export function LeftSidebar({ children }: { children: ReactNode }) {
         </button>
       ) : null}
       <aside
-        className={`relative hidden md:flex sticky top-0 h-[100dvh] border-r border-(--border) bg-(--rail) flex-col shrink-0 z-40 overflow-hidden ${
+        className={`relative hidden md:flex sticky top-0 h-[100dvh] border-r border-(--border) bg-(--sidebar-bg) flex-col shrink-0 z-40 overflow-hidden ${
           sidebarResizing ? "" : "transition-[width] duration-150 ease-out"
         } ${isExpanded ? "" : "w-0 border-r-0"}`}
         style={{
@@ -209,7 +213,7 @@ export function LeftSidebar({ children }: { children: ReactNode }) {
           {isExpanded ? (
             <>
               {/* Header with window controls + nav arrows */}
-              <div className="sticky top-0 z-50 flex h-12 shrink-0 items-center justify-between px-1.5 bg-(--rail)">
+              <div className="sticky top-0 z-50 flex h-12 shrink-0 items-center justify-between px-1.5 bg-(--sidebar-bg)">
                 <button
                   onClick={() => setDesktopSidebarPinnedOpen(false)}
                   className="flex h-7 w-7 items-center justify-center rounded-md text-(--dim) transition-colors hover:bg-(--hover) hover:text-(--fg)"
@@ -239,19 +243,21 @@ export function LeftSidebar({ children }: { children: ReactNode }) {
               </div>
 
               {/* Primary nav */}
-              <nav className="flex-1 min-h-0 flex flex-col px-1 py-1 overflow-y-auto overflow-x-hidden">
+              <nav className="flex-1 min-h-0 flex flex-col px-1 py-0.5 overflow-y-auto overflow-x-hidden">
                 <button
                   type="button"
                   onClick={() => setSearchOpen(true)}
-                  className="mb-1 flex h-7 items-center gap-2 rounded-md px-1.5 text-(--dim) transition-colors hover:bg-(--hover) hover:text-(--fg)"
+                  className="mb-1.5 flex h-7 items-center gap-2.5 rounded-md px-2 text-(--dim)/70 transition-colors hover:bg-(--hover) hover:text-(--fg)/90"
                   title="Search sessions (⌘K)"
                 >
-                  <SearchIcon className="h-3.5 w-3.5 shrink-0" />
-                  <span className="flex-1 truncate text-left text-[12px]">Search</span>
-                  <kbd className="px-1 py-0.5 text-[10px] font-mono text-(--dim)">⌘K</kbd>
+                  <SearchIcon className="h-[15px] w-[15px] shrink-0 opacity-50" strokeWidth={1.5} />
+                  <span className="flex-1 truncate text-left text-[13px] font-normal">Search</span>
+                  <kbd className="px-1.5 py-0.5 text-[10px] font-mono text-(--dim)/50 bg-transparent rounded border border-(--border)/30">
+                    ⌘K
+                  </kbd>
                 </button>
 
-                <div className="mb-1 mt-3 px-1.5 text-[11px] font-medium text-(--dim)">
+                <div className="mb-0.5 mt-3 px-2 text-[10px] font-medium uppercase tracking-[0.12em] text-(--dim)/60">
                   Workspace
                 </div>
                 {tabs.map((tab) => (
@@ -267,16 +273,16 @@ export function LeftSidebar({ children }: { children: ReactNode }) {
                 <ProjectsNavSection expanded={isExpanded} />
               </nav>
 
-              <div className="shrink-0 px-1 py-3">
+              <div className="shrink-0 px-1 py-2">
                 <Link
                   href="/settings"
                   title="Settings"
-                  className={`flex h-7 shrink-0 items-center gap-2 rounded-md px-1.5 text-(--fg) transition-colors ${
-                    isRouteActive(pathname, "/settings") ? "bg-(--hover)" : "hover:bg-(--hover)"
+                  className={`group relative flex h-7 shrink-0 items-center gap-2.5 rounded-md px-2 text-(--dim)/80 transition-colors hover:bg-(--hover) hover:text-(--fg)/90 ${
+                    isRouteActive(pathname, "/settings") ? "bg-(--hover) text-(--fg)" : ""
                   }`}
                 >
-                  <Settings className="h-4 w-4 shrink-0" />
-                  <span className="whitespace-nowrap text-[12px] font-medium">Settings</span>
+                  <Settings className="h-[15px] w-[15px] shrink-0 opacity-50" strokeWidth={1.5} />
+                  <span className="whitespace-nowrap text-[13px] font-normal">Settings</span>
                 </Link>
               </div>
             </>
@@ -316,7 +322,7 @@ export function LeftSidebar({ children }: { children: ReactNode }) {
       />
 
       {/* Main content */}
-      <main className="mobile-pwa-main flex-1 min-w-0 min-h-0 overflow-y-auto overflow-x-hidden bg-(--bg) md:pt-0">
+      <main className="mobile-pwa-main flex-1 min-w-0 min-h-0 overflow-y-auto overflow-x-hidden bg-(--agent-bg) md:pt-0">
         {children}
       </main>
     </div>
@@ -390,7 +396,7 @@ function NavItemMobile({
 }: {
   href: string;
   label: string;
-  Icon: React.ComponentType<{ className?: string }>;
+  Icon: React.ComponentType<{ className?: string; strokeWidth?: number }>;
   active: boolean;
   onClick: () => void;
 }) {
@@ -421,7 +427,7 @@ function NavItemDesktop({
 }: {
   href: string;
   label: string;
-  Icon: React.ComponentType<{ className?: string }>;
+  Icon: React.ComponentType<{ className?: string; strokeWidth?: number }>;
   active: boolean;
   expanded: boolean;
 }) {
@@ -429,13 +435,15 @@ function NavItemDesktop({
     <Link
       href={href}
       title={label}
-      className={`h-7 flex items-center gap-2 rounded-md px-1.5 transition-colors shrink-0 ${
-        active ? "bg-(--hover) text-(--fg)" : "text-(--dim) hover:bg-(--hover) hover:text-(--fg)"
+      className={`group relative flex h-7 items-center gap-2.5 rounded-md px-2 transition-colors shrink-0 ${
+        active
+          ? "bg-(--hover) text-(--fg)"
+          : "text-(--dim)/80 hover:bg-(--hover) hover:text-(--fg)/90"
       }`}
     >
-      <Icon className="w-4 h-4 shrink-0" />
+      <Icon className="w-[15px] h-[15px] shrink-0 opacity-50" strokeWidth={1.5} />
       <span
-        className={`text-[12px] font-medium whitespace-nowrap transition-opacity duration-100 ${
+        className={`text-[13px] font-normal whitespace-nowrap transition-opacity duration-100 ${
           expanded ? "opacity-100" : "opacity-0"
         }`}
       >
@@ -444,3 +452,5 @@ function NavItemDesktop({
     </Link>
   );
 }
+
+const getLeftSidebarSnapshot = (): number => 0;

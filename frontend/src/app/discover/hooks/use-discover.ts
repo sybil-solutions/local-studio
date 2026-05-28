@@ -1,11 +1,9 @@
-// CRITICAL
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useState, useSyncExternalStore } from "react";
 import api from "@/lib/api";
 import type { HuggingFaceModel, ModelInfo, ModelRecommendation } from "@/lib/types";
 import { extractProvider, extractQuantizations, normalizeModelId } from "../_components/utils";
-import { useLegacyEffect } from "@/hooks/agent/use-legacy-effects";
 
 export function useDiscover() {
   const [models, setModels] = useState<HuggingFaceModel[]>([]);
@@ -55,16 +53,16 @@ export function useDiscover() {
     }
   }, []);
 
-  useLegacyEffect(() => {
-    let mounted = true;
-    if (mounted) {
-      loadLocalModels();
-      loadRecommendations();
-    }
-    return () => {
-      mounted = false;
-    };
-  }, [loadLocalModels, loadRecommendations]);
+  const subscribeDiscoverMetadata = useCallback(
+    (_notify: () => void) => {
+      void loadLocalModels();
+      void loadRecommendations();
+      return () => {};
+    },
+    [loadLocalModels, loadRecommendations],
+  );
+
+  useSyncExternalStore(subscribeDiscoverMetadata, getDiscoverSnapshot, getDiscoverSnapshot);
 
   const localModelMap = useMemo(() => {
     const map = new Map<string, boolean>();
@@ -132,13 +130,18 @@ export function useDiscover() {
     [library, page, search, sort, task],
   );
 
-  useLegacyEffect(() => {
-    setPage(0);
-    const debounce = setTimeout(() => {
-      fetchModels(false);
-    }, 300);
-    return () => clearTimeout(debounce);
-  }, [fetchModels, library, search, sort, task]);
+  const subscribeModelSearch = useCallback(
+    (_notify: () => void) => {
+      setPage(0);
+      const debounce = setTimeout(() => {
+        void fetchModels(false);
+      }, 300);
+      return () => clearTimeout(debounce);
+    },
+    [fetchModels, library, search, sort, task],
+  );
+
+  useSyncExternalStore(subscribeModelSearch, getDiscoverSnapshot, getDiscoverSnapshot);
 
   const loadMore = useCallback(() => {
     if (!loading && hasMore) {
@@ -211,3 +214,5 @@ export function useDiscover() {
     isModelLocal,
   };
 }
+
+const getDiscoverSnapshot = (): number => 0;

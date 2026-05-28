@@ -1,4 +1,3 @@
-// CRITICAL
 "use client";
 
 import { Plus, Search, Square } from "lucide-react";

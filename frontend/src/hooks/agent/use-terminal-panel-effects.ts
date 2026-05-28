@@ -1,4 +1,4 @@
-import { useEffect, type RefObject } from "react";
+import { useCallback, useSyncExternalStore, type RefObject } from "react";
 import type { Terminal as XTerm } from "@xterm/xterm";
 import type { FitAddon } from "@xterm/addon-fit";
 import type { TerminalRunResult } from "@/lib/agent/contracts/terminal";
@@ -37,6 +37,8 @@ type FallbackSession = {
   previousCwd: string | null;
 };
 
+const getTerminalPanelSnapshot = (): number => 0;
+
 export function useTerminalPanelEffects({
   containerRef,
   cwd,
@@ -46,7 +48,7 @@ export function useTerminalPanelEffects({
   cwd: string | null;
   stateRef: RefObject<TerminalRefs>;
 }): void {
-  useEffect(() => {
+  const subscribeTerminal = useCallback(() => {
     const refs = stateRef.current;
     refs.disposed = false;
     refs.input = "";
@@ -63,6 +65,13 @@ export function useTerminalPanelEffects({
         import("@xterm/addon-web-links").catch(() => null),
       ]);
       if (refs.disposed) return;
+      // xterm renders to canvas and cannot resolve `var(--font-geist-mono)` itself,
+      // so read the resolved value off the container first and fall back gracefully.
+      const resolvedGeistMono =
+        getComputedStyle(element).getPropertyValue("--font-geist-mono").trim() || "";
+      const fontFamily =
+        (resolvedGeistMono ? `${resolvedGeistMono}, ` : "") +
+        '"Geist Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace';
       const term = new Terminal({
         cursorBlink: true,
         convertEol: false,
@@ -70,8 +79,7 @@ export function useTerminalPanelEffects({
         allowProposedApi: true,
         macOptionIsMeta: true,
         rightClickSelectsWord: true,
-        fontFamily:
-          'var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace',
+        fontFamily,
         fontSize: 12,
         lineHeight: 1.35,
         theme: {
@@ -149,6 +157,8 @@ export function useTerminalPanelEffects({
       refs.fit = null;
     };
   }, [containerRef, cwd, stateRef]);
+
+  useSyncExternalStore(subscribeTerminal, getTerminalPanelSnapshot, getTerminalPanelSnapshot);
 }
 
 async function bootPty(

@@ -1,7 +1,6 @@
-// CRITICAL
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useState, useSyncExternalStore } from "react";
 import api from "@/lib/api";
 import type { ModelInfo, RecipeEditor, RecipeWithStatus } from "@/lib/types";
 import { useRealtimeStatus } from "@/hooks/use-realtime-status";
@@ -9,7 +8,6 @@ import { delay } from "@/lib/async";
 import { normalizeRecipeForEditor, prepareRecipeForSave } from "../../recipe-utils";
 import { DEFAULT_RECIPE } from "./default-recipe";
 import { useRecipesDerived } from "./use-recipes-derived";
-import { useLegacyEffect } from "@/hooks/agent/use-legacy-effects";
 
 export type RecipesContentTab = "recipes" | "explore" | "downloads";
 
@@ -33,12 +31,19 @@ export function useRecipesContentModel() {
 
   const { launchProgress } = useRealtimeStatus();
 
-  useLegacyEffect(() => {
+  const subscribePinnedRecipes = useCallback((_notify: () => void) => {
     try {
       const saved = localStorage.getItem("vllm-studio-pinned-recipes");
       if (saved) setPinnedRecipes(new Set(JSON.parse(saved)));
     } catch {}
+    return () => {};
   }, []);
+
+  useSyncExternalStore(
+    subscribePinnedRecipes,
+    getRecipesContentModelSnapshot,
+    getRecipesContentModelSnapshot,
+  );
 
   const togglePin = useCallback((recipeId: string) => {
     setPinnedRecipes((prev) => {
@@ -69,15 +74,25 @@ export function useRecipesContentModel() {
     }
   }, []);
 
-  useLegacyEffect(() => {
-    (async () => {
-      try {
-        await loadRecipes();
-      } finally {
-        setLoading(false);
-      }
-    })();
-  }, [loadRecipes]);
+  const subscribeRecipes = useCallback(
+    (_notify: () => void) => {
+      void (async () => {
+        try {
+          await loadRecipes();
+        } finally {
+          setLoading(false);
+        }
+      })();
+      return () => {};
+    },
+    [loadRecipes],
+  );
+
+  useSyncExternalStore(
+    subscribeRecipes,
+    getRecipesContentModelSnapshot,
+    getRecipesContentModelSnapshot,
+  );
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -237,3 +252,5 @@ export function useRecipesContentModel() {
     },
   };
 }
+
+const getRecipesContentModelSnapshot = (): number => 0;

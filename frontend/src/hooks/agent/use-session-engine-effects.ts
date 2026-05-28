@@ -1,11 +1,12 @@
-import { useEffect, type RefObject } from "react";
+import { useCallback, useSyncExternalStore, type RefObject } from "react";
 
 import type { Session, SessionId } from "@/lib/agent/sessions/types";
-import * as sessionsApi from "@/lib/agent/sessions/api";
+import { loadRuntimeStatus, subscribeRuntimeEvents } from "@/lib/agent/sessions/api";
 import {
   subscribeResumeRuntimeSession,
   type RuntimeResumeDeps,
 } from "@/lib/agent/sessions/runtime-resume";
+import { hasRuntimePromptStream } from "@/lib/agent/sessions/stream-ownership";
 import type { TextDeltaCoalescer } from "@/lib/agent/sessions/text-delta-coalescer";
 
 type PiEventBatch = {
@@ -14,12 +15,14 @@ type PiEventBatch = {
 
 type UpdateSession = (sessionId: SessionId, patch: (session: Session) => Session) => void;
 
+const getSessionEngineSnapshot = (): number => 0;
+
 export function useSessionEngineBatchCleanupEffect({
   piEventBatchesRef,
 }: {
   piEventBatchesRef: RefObject<Map<SessionId, PiEventBatch>>;
 }): void {
-  useEffect(
+  const subscribeBatchCleanup = useCallback(
     () => () => {
       for (const batch of piEventBatchesRef.current.values()) {
         if (batch.timer) clearTimeout(batch.timer);
@@ -28,6 +31,8 @@ export function useSessionEngineBatchCleanupEffect({
     },
     [piEventBatchesRef],
   );
+
+  useSyncExternalStore(subscribeBatchCleanup, getSessionEngineSnapshot, getSessionEngineSnapshot);
 }
 
 export function useSessionEngineTextDeltaCleanupEffect({
@@ -35,12 +40,40 @@ export function useSessionEngineTextDeltaCleanupEffect({
 }: {
   textDeltaCoalescerRef: RefObject<TextDeltaCoalescer | null>;
 }): void {
-  useEffect(
+  const subscribeTextDeltaCleanup = useCallback(
     () => () => {
       textDeltaCoalescerRef.current?.flushAll();
       textDeltaCoalescerRef.current?.dispose();
     },
     [textDeltaCoalescerRef],
+  );
+
+  useSyncExternalStore(
+    subscribeTextDeltaCleanup,
+    getSessionEngineSnapshot,
+    getSessionEngineSnapshot,
+  );
+}
+
+export function useSessionEnginePromptStreamCleanupEffect({
+  promptStreamControllersRef,
+}: {
+  promptStreamControllersRef: RefObject<Map<string, AbortController>>;
+}): void {
+  const subscribePromptStreamCleanup = useCallback(
+    () => () => {
+      for (const controller of promptStreamControllersRef.current.values()) {
+        controller.abort();
+      }
+      promptStreamControllersRef.current.clear();
+    },
+    [promptStreamControllersRef],
+  );
+
+  useSyncExternalStore(
+    subscribePromptStreamCleanup,
+    getSessionEngineSnapshot,
+    getSessionEngineSnapshot,
   );
 }
 
@@ -51,7 +84,9 @@ export function useSessionEngineRuntimeResumeEffect({
   localStreamRef,
   onPiSessionIdChange,
   runtime,
+  piSessionId,
   sessionId,
+  shouldApplySeq,
   submitPromptRef,
   tabsRef,
   updateSession,
@@ -62,23 +97,28 @@ export function useSessionEngineRuntimeResumeEffect({
   localStreamRef: RefObject<Set<SessionId>>;
   onPiSessionIdChange?: (piSessionId: string) => void;
   runtime: string | null;
+  piSessionId?: string | null;
   sessionId: SessionId | null;
+  shouldApplySeq?: RuntimeResumeDeps["shouldApplySeq"];
   submitPromptRef: RuntimeResumeDeps["submitPromptRef"];
   tabsRef: RefObject<Session[]>;
   updateSession: UpdateSession;
 }): void {
-  useEffect(() => {
-    if (!sessionId || !runtime) return;
-    if (localStreamRef.current.has(sessionId)) return;
+  const subscribeRuntimeResume = useCallback(() => {
+    if (!sessionId || !runtime) return () => undefined;
+    if (localStreamRef.current.has(sessionId)) return () => undefined;
+    if (hasRuntimePromptStream(runtime)) return () => undefined;
 
     const sub = subscribeResumeRuntimeSession({
       after,
-      api: sessionsApi,
+      api: { loadRuntimeStatus, subscribeRuntimeEvents },
       applyPiEvent,
       flushPiEvents,
       onPiSessionIdChange,
+      piSessionId,
       runtime,
       sessionId,
+      shouldApplySeq,
       submitPromptRef,
       tabsRef,
       updateSession,
@@ -90,10 +130,14 @@ export function useSessionEngineRuntimeResumeEffect({
     flushPiEvents,
     localStreamRef,
     onPiSessionIdChange,
+    piSessionId,
     runtime,
     sessionId,
+    shouldApplySeq,
     submitPromptRef,
     tabsRef,
     updateSession,
   ]);
+
+  useSyncExternalStore(subscribeRuntimeResume, getSessionEngineSnapshot, getSessionEngineSnapshot);
 }

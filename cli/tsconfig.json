@@ -9,5 +9,5 @@
     "types": ["bun-types"]
   },
   "include": ["src/**/*.ts"],
-  "exclude": ["src/**/*.test.ts"]
+  "exclude": []
 }

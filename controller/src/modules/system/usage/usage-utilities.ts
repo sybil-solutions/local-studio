@@ -1,4 +1,3 @@
-// CRITICAL
 
 export const calcChange = (current: number, previous: number): number | null => {
   if (!previous || previous === 0) return null;

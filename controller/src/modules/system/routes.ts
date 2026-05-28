@@ -6,6 +6,7 @@ import { join, resolve, sep } from "node:path";
 import type { AppContext } from "../../types/context";
 import type { SystemConfigResponse } from "../models/types";
 import { badRequest, notFound } from "../../core/errors";
+import { observeControllerFunction } from "../../core/function-observability";
 import { estimateWeightsSizeBytes } from "../models/model-browser";
 import { getGpuInfo } from "./platform/gpu";
 import { getSystemRuntimeInfo } from "../engines/runtimes/runtime-info";
@@ -44,8 +45,8 @@ export const registerSystemRoutes = (app: Hono, context: AppContext): void => {
   };
 
   app.get("/status", async (ctx) => {
-    const current = await context.processManager.findInferenceProcess(
-      context.config.inference_port
+    const current = await observeControllerFunction(context, "status.findInferenceProcess", () =>
+      context.processManager.findInferenceProcess(context.config.inference_port)
     );
     return ctx.json({
       running: Boolean(current),
@@ -64,7 +65,9 @@ export const registerSystemRoutes = (app: Hono, context: AppContext): void => {
   });
 
   app.get("/compat", async (ctx) => {
-    const known = await context.processManager.findInferenceProcess(context.config.inference_port);
+    const known = await observeControllerFunction(context, "compat.findInferenceProcess", () =>
+      context.processManager.findInferenceProcess(context.config.inference_port)
+    );
     const runtime = await getSystemRuntimeInfo(context.config, known);
     const portOpen = await checkService(
       SYSTEM_SERVICE_CHECK_HOST,
@@ -220,18 +223,18 @@ export const registerSystemRoutes = (app: Hono, context: AppContext): void => {
       description: "Controller service (Bun/Hono)",
     });
 
-    const current = await context.processManager.findInferenceProcess(
-      context.config.inference_port
+    const current = await observeControllerFunction(context, "config.findInferenceProcess", () =>
+      context.processManager.findInferenceProcess(context.config.inference_port)
     );
     const inferenceStatus = current ? "running" : "stopped";
 
     services.push({
-      name: "vLLM/SGLang",
+      name: "Inference runtime",
       port: context.config.inference_port,
       internal_port: context.config.inference_port,
       protocol: "http",
       status: inferenceStatus,
-      description: "Inference backend (vLLM, SGLang, or llama.cpp)",
+      description: "Inference backend (vLLM, SGLang, llama.cpp, or MLX)",
     });
 
     const redisReachable = await checkService("localhost", 6379);
@@ -286,6 +289,7 @@ export const registerSystemRoutes = (app: Hono, context: AppContext): void => {
         sglang_python: context.config.sglang_python ?? null,
         tabby_api_dir: context.config.tabby_api_dir ?? null,
         llama_bin: context.config.llama_bin ?? null,
+        mlx_python: context.config.mlx_python ?? null,
       },
       services,
       environment: {

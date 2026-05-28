@@ -1,4 +1,3 @@
-// CRITICAL
 "use client";
 
 import { Fragment, useMemo, useState } from "react";

@@ -88,3 +88,12 @@ export function patchSessionPref(piSessionId: string, patch: SessionPref): void 
   }
   saveSessionPrefs(all);
 }
+
+export function copySessionPref(fromKey: string, toKey: string): void {
+  if (!fromKey || !toKey || fromKey === toKey) return;
+  const all = loadSessionPrefs();
+  const source = all[fromKey];
+  if (!source?.title && !source?.pinned && !source?.hidden) return;
+  all[toKey] = { ...(all[toKey] ?? {}), ...source };
+  saveSessionPrefs(all);
+}

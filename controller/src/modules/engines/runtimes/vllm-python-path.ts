@@ -1,4 +1,3 @@
-// CRITICAL — copied from lifecycle/runtime/vllm-python-path.ts
 import { existsSync } from "node:fs";
 import { DEFAULT_CANONICAL_PYTHON_PATH } from "../configs";
 
@@ -10,10 +9,6 @@ const getExplicitPythonOverride = (): string | null => {
   return explicit;
 };
 
-/**
- * Resolve the first valid vLLM python path in precedence order.
- * @returns Resolved Python executable path or null.
- */
 export const resolveVllmPythonPath = (): string | null => {
   const candidates = [getExplicitPythonOverride(), DEFAULT_CANONICAL_PYTHON_PATH];
   for (const candidate of candidates) {
@@ -24,12 +19,6 @@ export const resolveVllmPythonPath = (): string | null => {
   return null;
 };
 
-/**
- * Resolve a recipe python path to a usable vLLM python path.
- * If the recipe path is missing/invalid, falls back to the canonical runtime path.
- * @param recipePythonPath - Recipe configured python path.
- * @returns Normalized python path to use.
- */
 export const resolveVllmRecipePythonPath = (
   recipePythonPath: string | null | undefined
 ): string | null => {

@@ -1,4 +1,3 @@
-// CRITICAL
 "use client";
 
 import { Layers } from "lucide-react";

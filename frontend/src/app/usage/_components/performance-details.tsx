@@ -1,4 +1,3 @@
-// CRITICAL
 "use client";
 
 import { formatDurationOrUnavailable } from "@/lib/formatters";

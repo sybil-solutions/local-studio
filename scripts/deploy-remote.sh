@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# CRITICAL
-#
 # Deploy vLLM Studio from this machine to the remote GPU server.
 #
 # ─── Connection ───────────────────────────────────────────────────────────

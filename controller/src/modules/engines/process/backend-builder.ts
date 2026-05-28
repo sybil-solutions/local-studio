@@ -2,18 +2,12 @@ import { existsSync } from "node:fs"; import { dirname, join } from "node:path";
 import type { Recipe } from "../../models/types"; import type { Config } from "../../../config/env";
 import { resolveBinary } from "../../../core/command"; import { resolveVllmRecipePythonPath } from "../runtimes/vllm-python-path";
 import { getDefaultReasoningParser, getDefaultToolCallParser, shouldEnableExpertParallel } from "./model-runtime-defaults";
-/** * Normalize JSON-like arguments for CLI flags.
- * @param value - Payload value. * @returns Normalized payload.
- */ export const normalizeJsonArgument = (value: unknown): unknown => {
+export const normalizeJsonArgument = (value: unknown): unknown => {
   if (Array.isArray(value)) { return value.map((item) => normalizeJsonArgument(item));
   } if (value && typeof value === "object") {
     const record = value as Record<string, unknown>; return Object.fromEntries(Object.entries(record).map(([key, entry]) => [key.replace(/-/g, "_"), normalizeJsonArgument(entry)]));
   } return value;
 };
-/** * Get extra arg supporting snake or kebab case.
- * @param extraArguments - Extra args object. * @param key - Key to lookup.
- * @param key
- * @returns Matching value or undefined. */
 export const getExtraArgument = (extraArguments: Record<string, unknown>, key: string): unknown => { if (Object.prototype.hasOwnProperty.call(extraArguments, key)) {
     return extraArguments[key]; }
   const kebab = key.replace(/_/g, "-"); if (Object.prototype.hasOwnProperty.call(extraArguments, kebab)) {
@@ -21,10 +15,6 @@ export const getExtraArgument = (extraArguments: Record<string, unknown>, key: s
   const snake = key.replace(/-/g, "_"); if (Object.prototype.hasOwnProperty.call(extraArguments, snake)) {
     return extraArguments[snake]; }
   return undefined; };
- /**
- * Resolve Python path for vLLM or SGLang. * @param recipe - Recipe data.
- * @param recipe
- * @returns Python executable path if resolved. */
 export const getPythonPath = (recipe: Recipe): string | undefined => { if (recipe.python_path && existsSync(recipe.python_path)) {
     return recipe.python_path; }
   const venvPath = getExtraArgument(recipe.extra_args, "venv_path"); if (typeof venvPath === "string") {
@@ -34,11 +24,7 @@ export const getPythonPath = (recipe: Recipe): string | undefined => { if (recip
 };
 const getVllmPythonPath = (recipe: Recipe): string | undefined => { return resolveVllmRecipePythonPath(recipe.python_path) ?? undefined;
 };
-/** * Append extra CLI arguments to a command.
- * @param command - Command array. * @param extraArguments - Extra args object.
- * @param extraArguments
- * @returns Updated command array. */
-export const appendExtraArguments = (command: string[], extraArguments: Record<string, unknown>): string[] => { const internalKeys = new Set(["venv_path", "env_vars", "visible_devices", "cuda_visible_devices", "hip_visible_devices", "rocr_visible_devices", "description", "tags", "status", "llama_bin", "launch_command", "custom_command", "docker_container", "docker_image", "docker-container", "exllama_command", "exllamav3_command", "exllama-cmd"]);
+export const appendExtraArguments = (command: string[], extraArguments: Record<string, unknown>): string[] => { const internalKeys = new Set(["venv_path", "env_vars", "visible_devices", "cuda_visible_devices", "hip_visible_devices", "rocr_visible_devices", "description", "tags", "status", "llama_bin", "mlx_python", "launch_command", "custom_command", "docker_container", "docker_image", "docker-container", "exllama_command", "exllamav3_command", "exllama-cmd"]);
   const jsonStringKeys = new Set(["speculative_config", "default_chat_template_kwargs"]);
   for (const [key, value] of Object.entries(extraArguments)) { const normalizedKey = key.replace(/-/g, "_").toLowerCase();
     if (internalKeys.has(normalizedKey)) { continue;
@@ -94,10 +80,6 @@ const getLaunchCommandOverride = (recipe: Recipe): string[] | null => { const ov
   if (typeof override !== "string" || !override.trim()) { return null;
   } const command = splitLaunchCommand(override);
   return command.length > 0 ? command : null; };
- /**
- * Build a vLLM launch command. * @param recipe - Recipe data.
- * @param recipe
- * @returns CLI command array. */
 export const buildVllmCommand = (recipe: Recipe): string[] => { const pythonPath = getVllmPythonPath(recipe);
   let command: string[]; let usesServe = false;
   if (pythonPath) { const vllmBin = join(dirname(pythonPath), "vllm");
@@ -135,10 +117,6 @@ export const buildVllmCommand = (recipe: Recipe): string[] => { const pythonPath
     command.push("--dtype", recipe.dtype); }
  return appendExtraArguments(command, recipe.extra_args);
 };
-/** * Split a shell command string into argv-style tokens.
- * Supports quoted tokens to preserve spaces. * @param command - Raw command.
- * @param command
- * @returns Tokenized command. */
 const splitCommand = (command: string): string[] => { const matches = command.match(/(?:[^\s"]+|"[^"]*")+/g) ?? [];
   return matches.map((token) => token.replace(/^"|"$/g, "")); };
  const executableBaseName = (value: string): string => {
@@ -151,28 +129,14 @@ const splitCommand = (command: string): string[] => { const matches = command.ma
 const rejectPathTraversal = (value: string, label: string): void => { if (value.split(/[\\/]+/).includes("..")) {
     throw new Error(`Invalid ${label}: path traversal is not allowed`); }
 };
-/** * Detect if a command already includes a flag.
- * @param command - Command tokens. * @param flag - Flag to check.
- * @param flag
- * @returns True if flag exists. */
 const hasCommandFlag = (command: string[], flag: string): boolean => command.includes(flag);
-/** * Append model host/port/model arguments if not already present.
- * @param command - Base command. * @param recipe - Recipe data.
- * @param recipe
- * @returns Updated command tokens. */
 const appendRuntimeCoreArguments = (command: string[], recipe: Recipe): string[] => { if (!hasCommandFlag(command, "--host")) {
     command.push("--host", recipe.host); }
   if (!hasCommandFlag(command, "--port")) { command.push("--port", String(recipe.port));
   } if (recipe.served_model_name && !hasCommandFlag(command, "--served-model-name")) {
     command.push("--served-model-name", recipe.served_model_name); }
   return command; };
- /**
- * Build an ExLLaMA v3 launch command. *
- * Requires an explicit command template either in recipe.extra_args.exllama_command or * VLLM_STUDIO_EXLLAMAV3_COMMAND.
- * Extra args are appended for backend-specific tuning. * @param recipe - Recipe data.
- * @param recipe
- * @param config - Runtime config. * @returns CLI command array.
- */ export const buildExllamav3Command = (recipe: Recipe, config: Config): string[] | null => {
+export const buildExllamav3Command = (recipe: Recipe, config: Config): string[] | null => {
   const commandTemplate = String(getExtraArgument(recipe.extra_args, "exllama_command") ?? getExtraArgument(recipe.extra_args, "exllamav3_command") ?? getExtraArgument(recipe.extra_args, "exllama-cmd") ?? config.exllamav3_command ?? "").trim(); if (!commandTemplate) {
     return null; }
   const command = splitCommand(commandTemplate); if (command.length === 0) {
@@ -186,22 +150,21 @@ const appendRuntimeCoreArguments = (command: string[], recipe: Recipe): string[]
     commandWithDefaults.push("--model", recipe.model_path); }
  return appendExtraArguments(commandWithDefaults, recipe.extra_args);
 };
-/** * Build launch command by backend.
- * @param recipe - Recipe data. * @param config - Runtime config.
- * @param config
- * @returns Backend-specific command. */
+export const buildMlxCommand = (recipe: Recipe, config: Config): string[] => { const python = getPythonPath(recipe) || config.mlx_python || "python3";
+  const command = [python, "-m", "mlx_lm.server"];
+  command.push("--model", recipe.model_path, "--host", recipe.host, "--port", String(recipe.port));
+  return appendExtraArguments(command, recipe.extra_args);
+};
 export const buildBackendCommand = (recipe: Recipe, config: Config): string[] => { const launchCommand = getLaunchCommandOverride(recipe);
   if (launchCommand) { return launchCommand;
   }
   if (recipe.backend === "sglang") { return buildSglangCommand(recipe, config);
   } if (recipe.backend === "llamacpp") {
     return buildLlamacppCommand(recipe, config); }
+  if (recipe.backend === "mlx") { return buildMlxCommand(recipe, config); }
   if (recipe.backend === "exllamav3") { const command = buildExllamav3Command(recipe, config);
     if (!command) { throw new Error("Missing ExLLaMA v3 command. Set extra_args.exllama_command or VLLM_STUDIO_EXLLAMAV3_COMMAND.");
     } return command;
-  } if (recipe.backend === "tabbyapi") {
-    throw new Error("TabbyAPI backend launching is not supported by this controller lifecycle path."); }
-  if (recipe.backend === "transformers") { return buildVllmCommand(recipe);
   } return buildVllmCommand(recipe);
 };
 const resolveLlamaBinary = (recipe: Recipe, config: Config): string => { const override = getExtraArgument(recipe.extra_args, "llama_bin") ?? config.llama_bin;
@@ -232,10 +195,6 @@ const appendLlamacppArguments = (command: string[], extraArguments: Record<strin
     } command.push(flag, String(value));
   } return command;
 };
-/** * Build a llama.cpp launch command.
- * @param recipe - Recipe data. * @param config - Runtime config.
- * @param config
- * @returns CLI command array. */
 export const buildLlamacppCommand = (recipe: Recipe, config: Config): string[] => { const command: string[] = [resolveLlamaBinary(recipe, config)];
   command.push("--model", recipe.model_path, "--host", recipe.host, "--port", String(recipe.port));
   if (recipe.served_model_name) { command.push("--alias", recipe.served_model_name);
@@ -243,11 +202,7 @@ export const buildLlamacppCommand = (recipe: Recipe, config: Config): string[] =
   if (!ctxOverride && recipe.max_model_len > 0) { command.push("--ctx-size", String(recipe.max_model_len));
   }
   return appendLlamacppArguments(command, recipe.extra_args); };
- /**
- * Build an SGLang launch command. * @param recipe - Recipe data.
- * @param recipe
- * @param config - Runtime config. * @returns CLI command array.
- */ export const buildSglangCommand = (recipe: Recipe, config: Config): string[] => {
+export const buildSglangCommand = (recipe: Recipe, config: Config): string[] => {
   const python = getPythonPath(recipe) || config.sglang_python || "python"; const command = [python, "-m", "sglang.launch_server"];
   command.push("--model-path", recipe.model_path); command.push("--host", recipe.host, "--port", String(recipe.port));
  if (recipe.served_model_name) {

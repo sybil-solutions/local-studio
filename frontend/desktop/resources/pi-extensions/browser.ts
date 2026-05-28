@@ -8,7 +8,7 @@
 // Loaded by pi-runtime via `--extension` only when the user has toggled
 // "Browser tool" on in the agent header.
 
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 
 type ToolResult = {

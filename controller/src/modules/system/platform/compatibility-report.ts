@@ -1,4 +1,3 @@
-// CRITICAL
 import type {
   CompatibilityCheck,
   CompatibilityReport,
@@ -159,10 +158,12 @@ export const buildCompatibilityReport = (args: {
   }
 
   const exllamav3Installed = runtime.backends.exllamav3?.installed ?? false;
+  const mlxInstalled = runtime.backends.mlx?.installed ?? false;
   if (
     !runtime.backends.vllm.installed &&
     !runtime.backends.sglang.installed &&
     !runtime.backends.llamacpp.installed &&
+    !mlxInstalled &&
     !exllamav3Installed
   ) {
     addCheck(checks, {
@@ -171,7 +172,7 @@ export const buildCompatibilityReport = (args: {
       message: "No inference runtime backends appear to be installed.",
       evidence: null,
       suggested_fix:
-        "Install at least one backend runtime (vLLM, SGLang, llama.cpp, or ExLLaMA v3), then restart the controller.",
+        "Install at least one backend runtime (vLLM, SGLang, llama.cpp, MLX, or ExLLaMA v3), then restart the controller.",
     });
   }
 

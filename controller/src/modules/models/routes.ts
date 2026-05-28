@@ -1,4 +1,3 @@
-// CRITICAL
 import type { Hono } from "hono";
 import { basename, dirname, resolve } from "node:path";
 import { existsSync } from "node:fs";
@@ -27,12 +26,9 @@ interface OpenAIModelList {
 }
 import { buildModelInfo, discoverModelDirectories } from "./model-browser";
 import { notFound } from "../../core/errors";
+import { observeControllerFunction } from "../../core/function-observability";
 import { fetchInference } from "../../services/inference/inference-client";
 
-/**
- * Check if mock inference mode is enabled via environment variable.
- * @returns True if mock inference is enabled.
- */
 function isMockInferenceEnabled(): boolean {
   const raw = process.env["VLLM_STUDIO_MOCK_INFERENCE"];
   if (!raw) return false;
@@ -40,16 +36,13 @@ function isMockInferenceEnabled(): boolean {
   return normalized === "1" || normalized === "true" || normalized === "yes" || normalized === "on";
 }
 
-/**
- * Register model-related routes.
- * @param app - Hono app.
- * @param context - App context.
- */
 export const registerModelsRoutes = (app: Hono, context: AppContext): void => {
   app.get("/v1/models", async (ctx) => {
     const recipes = context.stores.recipeStore.list();
-    const current = await context.processManager.findInferenceProcess(
-      context.config.inference_port
+    const current = await observeControllerFunction(
+      context,
+      "models.list.findInferenceProcess",
+      () => context.processManager.findInferenceProcess(context.config.inference_port)
     );
     let activeModelData: { data?: Array<{ max_model_len?: number }> } | null = null;
     if (current) {
@@ -81,7 +74,7 @@ export const registerModelsRoutes = (app: Hono, context: AppContext): void => {
             isActive = true;
           }
         }
-        if (activeModelData?.data?.[0]?.max_model_len) {
+        if (isActive && activeModelData?.data?.[0]?.max_model_len) {
           maxModelLength = activeModelData.data[0].max_model_len;
         }
       }
@@ -135,8 +128,10 @@ export const registerModelsRoutes = (app: Hono, context: AppContext): void => {
       throw notFound("Model not found");
     }
 
-    const current = await context.processManager.findInferenceProcess(
-      context.config.inference_port
+    const current = await observeControllerFunction(
+      context,
+      "models.detail.findInferenceProcess",
+      () => context.processManager.findInferenceProcess(context.config.inference_port)
     );
     let isActive = false;
     let maxModelLength = recipe.max_model_len;

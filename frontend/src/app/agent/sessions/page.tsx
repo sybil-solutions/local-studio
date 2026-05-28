@@ -1,11 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState, useSyncExternalStore } from "react";
 import { ChevronDown, Folder, RefreshCw, Search as SearchIcon } from "lucide-react";
+import { cleanSessionTitle } from "@/lib/agent/session/helpers";
 import { safeJson } from "@/lib/agent/safe-json";
 import { ACTIVE_AGENT_SESSIONS_EVENT } from "@/lib/agent/workspace/events";
-import { useLegacyEffect } from "@/hooks/agent/use-legacy-effects";
 
 // Mirrors the API payload from /api/agent/sessions/all. Kept inline so this
 // page doesn't import server-only modules into the client bundle.
@@ -61,7 +61,7 @@ export default function AgentSessionsPage() {
   const [sortField, setSortField] = useState<SortField>("updatedAt");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
 
-  const reload = async () => {
+  const reload = useCallback(async () => {
     setLoading(true);
     try {
       const response = await fetch("/api/agent/sessions/all?since=90d", { cache: "no-store" });
@@ -72,15 +72,17 @@ export default function AgentSessionsPage() {
     } finally {
       setLoading(false);
     }
-  };
-
-  useLegacyEffect(() => {
-    void reload();
   }, []);
 
-  // Listen for active-session broadcasts so the table stays in sync with the
-  // agent workspace if the user has it open in another tab/pane.
-  useLegacyEffect(() => {
+  const subscribeSessionRows = useCallback(
+    (_notify: () => void) => {
+      void reload();
+      return () => {};
+    },
+    [reload],
+  );
+
+  const subscribeActiveSessions = useCallback((_notify: () => void) => {
     const onActive = (event: Event) => {
       const detail = (event as CustomEvent<{ sessions?: ActiveSession[] }>).detail;
       setActiveSessions(Array.isArray(detail?.sessions) ? detail.sessions : []);
@@ -88,6 +90,9 @@ export default function AgentSessionsPage() {
     window.addEventListener(ACTIVE_AGENT_SESSIONS_EVENT, onActive);
     return () => window.removeEventListener(ACTIVE_AGENT_SESSIONS_EVENT, onActive);
   }, []);
+
+  useSyncExternalStore(subscribeSessionRows, getAgentSessionsSnapshot, getAgentSessionsSnapshot);
+  useSyncExternalStore(subscribeActiveSessions, getAgentSessionsSnapshot, getAgentSessionsSnapshot);
 
   const activeByPiId = useMemo(() => {
     const map = new Map<string, ActiveSession>();
@@ -261,7 +266,8 @@ export default function AgentSessionsPage() {
                   const running = activeByPiId.has(session.id);
                   const status = activeByPiId.get(session.id)?.status ?? "idle";
                   const label =
-                    session.firstUserMessage?.trim() || `Session ${session.id.slice(0, 8)}`;
+                    cleanSessionTitle(session.firstUserMessage) ||
+                    `Session ${session.id.slice(0, 8)}`;
                   return (
                     <tr
                       key={session.id}
@@ -314,6 +320,8 @@ export default function AgentSessionsPage() {
     </div>
   );
 }
+
+const getAgentSessionsSnapshot = (): number => 0;
 
 function SummaryChip({
   label,

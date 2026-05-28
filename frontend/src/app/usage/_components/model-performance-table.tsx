@@ -1,4 +1,3 @@
-// CRITICAL
 "use client";
 
 import type { PeakMetrics, SortDirection, SortField } from "@/lib/types";
@@ -200,6 +199,18 @@ export function ModelPerformanceTable({
                             <ExpandedCell
                               label="best ttft"
                               value={`${Math.round(peak.ttft_ms)} ms`}
+                            />
+                          ) : null}
+                          {peak?.best_session_prefill_tps ? (
+                            <ExpandedCell
+                              label="session max prefill"
+                              value={`${peak.best_session_prefill_tps.toFixed(1)} t/s`}
+                            />
+                          ) : null}
+                          {peak?.best_session_generation_tps ? (
+                            <ExpandedCell
+                              label="session max generation"
+                              value={`${peak.best_session_generation_tps.toFixed(1)} t/s`}
                             />
                           ) : null}
                         </dl>

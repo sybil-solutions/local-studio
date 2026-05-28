@@ -1,7 +1,3 @@
-/**
- * Context Management Service Factory
- */
-
 import { ContextManagementService } from "./service";
 import {
   DEFAULT_CONTEXT_CONFIG,

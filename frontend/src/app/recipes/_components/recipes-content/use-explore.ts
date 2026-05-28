@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useState, useSyncExternalStore } from "react";
 import api from "@/lib/api";
 import type { GPU, HuggingFaceModel, ModelRecommendation } from "@/lib/types";
 import {
@@ -17,7 +17,6 @@ import {
 } from "@/app/recipes/_components/recipes-content/explore-model-stats";
 
 import { normalizeModelId } from "@/app/discover/_components/utils";
-import { useLegacyEffect } from "@/hooks/agent/use-legacy-effects";
 
 export interface ModelGroup {
   key: string;
@@ -69,9 +68,12 @@ export function useExplore() {
   const [recommendations, setRecommendations] = useState<ModelRecommendation[]>([]);
   const PAGE_SIZE = 50;
 
-  useLegacyEffect(() => {
+  const subscribePoolOverride = useCallback((_notify: () => void) => {
     setPoolOverrideGbState(readExplorePoolOverrideGb());
+    return () => {};
   }, []);
+
+  useSyncExternalStore(subscribePoolOverride, getExploreSnapshot, getExploreSnapshot);
 
   const setPoolOverrideGb = useCallback((value: number | null) => {
     writeExplorePoolOverrideGb(value);
@@ -149,17 +151,27 @@ export function useExplore() {
     [search],
   );
 
-  useLegacyEffect(() => {
-    void loadRecommendationsAndGpus();
-  }, [loadRecommendationsAndGpus]);
+  const subscribeRecommendations = useCallback(
+    (_notify: () => void) => {
+      void loadRecommendationsAndGpus();
+      return () => {};
+    },
+    [loadRecommendationsAndGpus],
+  );
 
-  useLegacyEffect(() => {
-    setPage(0);
-    const debounce = setTimeout(() => {
-      void fetchModels(false, 0);
-    }, 300);
-    return () => clearTimeout(debounce);
-  }, [search, fetchModels]);
+  const subscribeModelSearch = useCallback(
+    (_notify: () => void) => {
+      setPage(0);
+      const debounce = setTimeout(() => {
+        void fetchModels(false, 0);
+      }, 300);
+      return () => clearTimeout(debounce);
+    },
+    [search, fetchModels],
+  );
+
+  useSyncExternalStore(subscribeRecommendations, getExploreSnapshot, getExploreSnapshot);
+  useSyncExternalStore(subscribeModelSearch, getExploreSnapshot, getExploreSnapshot);
 
   const loadMore = useCallback(() => {
     if (!loading && hasMore) {
@@ -278,3 +290,5 @@ export function useExplore() {
     refresh,
   };
 }
+
+const getExploreSnapshot = (): number => 0;

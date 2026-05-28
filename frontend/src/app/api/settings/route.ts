@@ -1,4 +1,3 @@
-// CRITICAL
 import { NextRequest, NextResponse } from "next/server";
 import { getApiSettings, saveApiSettings, maskApiKey, ApiSettings } from "@/lib/api-settings";
 

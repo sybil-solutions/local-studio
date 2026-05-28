@@ -1,4 +1,3 @@
-// CRITICAL
 import type { Hono } from "hono";
 import { spawn, spawnSync } from "node:child_process";
 import { unlinkSync } from "node:fs";
@@ -6,6 +5,7 @@ import { createInterface } from "node:readline";
 import { PassThrough } from "node:stream";
 import type { AppContext } from "../../types/context";
 import { badRequest, notFound } from "../../core/errors";
+import { observeControllerFunction } from "../../core/function-observability";
 import { streamAsyncStrings, buildSseHeaders } from "../../http/sse";
 import { CONTROLLER_EVENTS } from "../../contracts/controller-events";
 import { Event } from "./event-manager";
@@ -21,11 +21,6 @@ import {
   tailFileLines,
 } from "../../core/log-files";
 
-/**
- * Register log and SSE routes.
- * @param app - Hono app.
- * @param context - App context.
- */
 export const registerLogsRoutes = (app: Hono, context: AppContext): void => {
   let lastCleanupAt = 0;
 
@@ -36,11 +31,6 @@ export const registerLogsRoutes = (app: Hono, context: AppContext): void => {
     cleanupLogFiles(context.config.data_dir, getLogCleanupDefaultsFromEnvironment());
   };
 
-  /**
-   * Resolve log file path for a session id.
-   * @param sessionId - Session identifier.
-   * @returns Path to log file.
-   */
   const assertSafeSessionId = (sessionId: string): string => {
     const safe = sanitizeLogSessionId(sessionId);
     if (!safe) throw badRequest("Invalid log session id");
@@ -101,9 +91,7 @@ export const registerLogsRoutes = (app: Hono, context: AppContext): void => {
     const close = (): void => {
       try {
         child.kill("SIGTERM");
-      } catch {
-        // ignore
-      }
+      } catch {}
     };
     signal.addEventListener("abort", close, { once: true });
     try {
@@ -120,8 +108,8 @@ export const registerLogsRoutes = (app: Hono, context: AppContext): void => {
 
   app.get("/logs", async (ctx) => {
     maybeCleanup();
-    const current = await context.processManager.findInferenceProcess(
-      context.config.inference_port
+    const current = await observeControllerFunction(context, "logs.findInferenceProcess", () =>
+      context.processManager.findInferenceProcess(context.config.inference_port)
     );
     const entries = listLogFiles(context.config.data_dir);
     type LogSessionRow = {
@@ -197,9 +185,7 @@ export const registerLogsRoutes = (app: Hono, context: AppContext): void => {
       try {
         unlinkSync(path);
         deleted = true;
-      } catch {
-        // ignore
-      }
+      } catch {}
     }
     if (!deleted) {
       throw notFound("Log not found");

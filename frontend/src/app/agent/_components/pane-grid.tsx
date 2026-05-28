@@ -34,9 +34,7 @@ function readSessionDrop(event: React.DragEvent): SessionDropPayload | null {
     try {
       const parsed = JSON.parse(raw) as SessionDropPayload;
       if (parsed.piSessionId || parsed.tabId) return parsed;
-    } catch {
-      // Fall through to the legacy persisted-session payload.
-    }
+    } catch {}
   }
   const piSessionId = event.dataTransfer.getData("application/x-vllm-session");
   return piSessionId ? { piSessionId } : null;
@@ -109,7 +107,7 @@ function SplitNode({
   onOpenTab: Props["onOpenTab"];
   onResize: Props["onResize"];
 }) {
-  const isRow = layout.direction === "vertical"; // side-by-side = horizontal flex
+  const isRow = layout.direction === "vertical";
   const aPct = `${Math.round(layout.ratio * 100)}%`;
   const bPct = `${Math.round((1 - layout.ratio) * 100)}%`;
 
@@ -167,8 +165,6 @@ function SplitNode({
   );
 }
 
-// A leaf renders a chat pane plus four invisible edge drop targets that turn
-// into a visible drop zone overlay while a session row is being dragged.
 function PaneLeaf({
   paneId,
   renderPane,
