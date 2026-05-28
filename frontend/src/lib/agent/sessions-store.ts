@@ -4,6 +4,7 @@ import path from "node:path";
 import readline from "node:readline";
 import { resolveDataDir } from "@/lib/data-dir";
 import { cleanSessionTitle } from "@/lib/agent/session/helpers";
+import { sessionArchiveState } from "@/lib/agent/session-metadata-store";
 
 export type SessionSummary = {
   id: string;
@@ -15,6 +16,8 @@ export type SessionSummary = {
   provider: string | null;
   firstUserMessage: string | null;
   turnCount: number;
+  archived: boolean;
+  archivedAt: string | null;
 };
 
 export type SessionEvent = Record<string, unknown> & { type?: string };
@@ -22,6 +25,8 @@ export type SessionEvent = Record<string, unknown> & { type?: string };
 type ListSessionsOptions = {
   since?: Date;
   ids?: string[];
+  includeArchived?: boolean;
+  archivedOnly?: boolean;
 };
 
 type PiMessageContent = string | Array<{ type?: string; text?: string }>;
@@ -143,7 +148,14 @@ async function readSessionSummary(
     provider: typeof header.provider === "string" ? header.provider : null,
     firstUserMessage,
     turnCount,
+    archived: false,
+    archivedAt: null,
   };
+}
+
+function applySessionMetadata(summary: SessionSummary): SessionSummary {
+  const archiveState = sessionArchiveState(summary.id);
+  return { ...summary, ...archiveState };
 }
 
 export async function listSessions(
@@ -169,9 +181,12 @@ export async function listSessions(
         const summary = await readSessionSummary(filepath, filename);
         if (!summary?.id) continue;
         if (wantedIds.size > 0 && !wantedIds.has(summary.id)) continue;
+        const decorated = applySessionMetadata(summary);
+        if (options.archivedOnly && !decorated.archived) continue;
+        if (!options.archivedOnly && !options.includeArchived && decorated.archived) continue;
         const existing = summariesById.get(summary.id);
-        if (!existing || summary.updatedAt > existing.updatedAt) {
-          summariesById.set(summary.id, summary);
+        if (!existing || decorated.updatedAt > existing.updatedAt) {
+          summariesById.set(summary.id, decorated);
         }
       } catch {
         // skip corrupted files
