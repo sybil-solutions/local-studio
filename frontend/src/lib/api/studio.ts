@@ -1,4 +1,3 @@
-// CRITICAL
 import type {
   ModelDownload,
   EngineJob,
@@ -31,6 +30,7 @@ export function createStudioApi(core: ApiCore) {
 
     updateStudioSettings: (payload: {
       models_dir?: string | null;
+      ui_preferences?: Record<string, string> | null;
     }): Promise<StudioSettings & { success: boolean }> =>
       core.request("/studio/settings", {
         method: "POST",
@@ -159,7 +159,7 @@ export function createStudioApi(core: ApiCore) {
       core.request("/runtime/targets"),
 
     createRuntimeJob: (payload: {
-      backend: "vllm" | "sglang" | "llamacpp";
+      backend: "vllm" | "sglang" | "llamacpp" | "mlx";
       targetId?: string;
       type?: "install" | "update" | "download" | "inspect";
       command?: string;
@@ -193,6 +193,8 @@ export function createStudioApi(core: ApiCore) {
     getSglangRuntime: (): Promise<RuntimeBackendInfo> => core.request("/runtime/sglang"),
 
     getLlamacppRuntime: (): Promise<RuntimeBackendInfo> => core.request("/runtime/llamacpp"),
+
+    getMlxRuntime: (): Promise<RuntimeBackendInfo> => core.request("/runtime/mlx"),
 
     getLlamacppRuntimeConfig: (): Promise<{ config: string | null; error?: string | null }> =>
       core.request("/runtime/llamacpp/config"),

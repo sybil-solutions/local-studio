@@ -1,5 +1,3 @@
-// CRITICAL
-
 import { useState } from "react";
 import api from "@/lib/api";
 import type { ModelInfo, VRAMCalculation } from "@/lib/types";
@@ -138,4 +136,3 @@ export function VramCalculatorPanel({
     </div>
   );
 }
-

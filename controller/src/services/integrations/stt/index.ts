@@ -2,11 +2,6 @@ import { transcribeWithWhisperCpp } from "./whispercpp-adapter";
 import type { SttTranscriptionRequest, SttTranscriptionResult } from "./types";
 import { SttIntegrationError } from "./types";
 
-/**
- * Run STT transcription using the configured backend.
- * @param request - STT transcription request.
- * @returns STT transcription output.
- */
 export const transcribeAudio = async (
   request: SttTranscriptionRequest
 ): Promise<SttTranscriptionResult> => {

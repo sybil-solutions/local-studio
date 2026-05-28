@@ -1,6 +1,9 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
 import path from "node:path";
 import { app } from "electron";
+
+const CHATS_PROJECT_ID = "chats";
 
 export interface ProjectRecord {
   id: string;
@@ -92,12 +95,27 @@ export interface ProjectListEntry extends ProjectRecord {
 
 export function listProjectsWithMeta(): ProjectListEntry[] {
   const document = readDocument(projectsFilePath());
-  return document.projects.map((project) => ({
-    ...project,
-    exists: isExistingDirectory(project.path),
-    hasGit: existsSync(path.join(project.path, ".git")),
-    branch: gitBranchFor(project.path),
-  }));
+  const chatsPath = path.join(homedir(), ".vllm-studio");
+  mkdirSync(chatsPath, { recursive: true });
+  return [
+    {
+      id: CHATS_PROJECT_ID,
+      name: "Chats",
+      path: chatsPath,
+      addedAt: "1970-01-01T00:00:00.000Z",
+      exists: isExistingDirectory(chatsPath),
+      hasGit: existsSync(path.join(chatsPath, ".git")),
+      branch: gitBranchFor(chatsPath),
+    },
+    ...document.projects
+      .filter((project) => project.id !== CHATS_PROJECT_ID)
+      .map((project) => ({
+        ...project,
+        exists: isExistingDirectory(project.path),
+        hasGit: existsSync(path.join(project.path, ".git")),
+        branch: gitBranchFor(project.path),
+      })),
+  ];
 }
 
 export function addProject(rawPath: string): ProjectListEntry {
@@ -135,6 +153,7 @@ export function addProject(rawPath: string): ProjectListEntry {
 }
 
 export function removeProject(id: string): void {
+  if (id === CHATS_PROJECT_ID) return;
   const filePath = projectsFilePath();
   const document = readDocument(filePath);
   if (!document.projects.some((entry) => entry.id === id)) return;

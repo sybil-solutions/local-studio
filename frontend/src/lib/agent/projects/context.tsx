@@ -16,14 +16,10 @@ export type ProjectsContextValue = {
   loaded: boolean;
   selectedProject: Project | null;
   selectedProjectId: ProjectId | null;
-  /** Path of the selected project (or "" if none). Equivalent to old workspace `agentCwd`. */
   agentCwd: string;
   gitSummary: (cwd: string | null | undefined) => GitSummary | null;
-  /** Find a project by id. */
   findById: (id: string | null | undefined) => Project | null;
-  /** Find a project by absolute path. */
   findByPath: (path: string | null | undefined) => Project | null;
-  /** Resolve a tab's project from its projectId, then cwd, then fall back to the selected one. */
   resolveProject: (tab: { projectId?: string; cwd?: string } | null | undefined) => Project | null;
   selectProject: (project: Project | null) => void;
   upsertProject: (project: Project) => void;

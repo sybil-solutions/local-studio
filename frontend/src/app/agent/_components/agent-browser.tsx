@@ -27,6 +27,8 @@ import {
 } from "react";
 import { ArrowLeftIcon, ArrowRightIcon, CloseIcon, ReloadIcon } from "@/components/icons";
 import { useAgentBrowserEffects } from "@/hooks/agent/use-agent-browser-effects";
+import { useLocalhostSitesEffects } from "@/hooks/agent/use-localhost-sites-effects";
+import { DEFAULT_BROWSER_URL } from "@/lib/agent/tools/persistence";
 
 export type WebviewElement = HTMLElement & {
   goBack: () => void;
@@ -49,11 +51,21 @@ type ReadablePage = {
   contentType?: string;
 };
 
+export type LocalhostSite = {
+  port: number;
+  url: string;
+  displayUrl: string;
+  title: string;
+  process?: string;
+  current?: boolean;
+};
+
 type Props = {
   url: string;
   inputValue: string;
   onInputChange: (value: string) => void;
-  onSubmit: (event: FormEvent) => void;
+  onNavigate: (value: string) => void;
+  onLocationChange: (value: string) => void;
   onClose: () => void;
   isElectron: boolean;
 };
@@ -64,7 +76,7 @@ export type AgentBrowserHandle = {
 };
 
 export const AgentBrowser = forwardRef<AgentBrowserHandle, Props>(function AgentBrowser(
-  { url, inputValue, onInputChange, onSubmit, onClose, isElectron },
+  { url, inputValue, onInputChange, onNavigate, onLocationChange, onClose, isElectron },
   ref,
 ) {
   const webviewRef = useRef<WebviewElement | null>(null);
@@ -74,6 +86,14 @@ export const AgentBrowser = forwardRef<AgentBrowserHandle, Props>(function Agent
   const [readingError, setReadingError] = useState<string | null>(null);
   const [readingLoading, setReadingLoading] = useState(false);
   const [liveBlank, setLiveBlank] = useState(false);
+  const [hasOpenedUrl, setHasOpenedUrl] = useState(() =>
+    Boolean(url && url !== DEFAULT_BROWSER_URL),
+  );
+  const [localSites, setLocalSites] = useState<LocalhostSite[]>([]);
+  const [localSitesLoading, setLocalSitesLoading] = useState(false);
+  const [localSitesError, setLocalSitesError] = useState<string | null>(null);
+  const showStartPage = !hasOpenedUrl && url === DEFAULT_BROWSER_URL;
+  const addressValue = showStartPage && inputValue === DEFAULT_BROWSER_URL ? "" : inputValue;
 
   useImperativeHandle(
     ref,
@@ -114,7 +134,15 @@ export const AgentBrowser = forwardRef<AgentBrowserHandle, Props>(function Agent
     isElectron,
     webviewRef,
     fetchReadable,
+    onLocationChange,
     setLiveBlank,
+    enabled: !showStartPage,
+  });
+  useLocalhostSitesEffects({
+    enabled: showStartPage,
+    onLoadingChange: setLocalSitesLoading,
+    onSitesChange: setLocalSites,
+    onErrorChange: setLocalSitesError,
   });
 
   const handleBack = () => {
@@ -126,6 +154,22 @@ export const AgentBrowser = forwardRef<AgentBrowserHandle, Props>(function Agent
     if (isElectron) webviewRef.current?.goForward();
   };
   const handleReload = () => {
+    if (showStartPage) {
+      setLocalSites([]);
+      setLocalSitesError(null);
+      setLocalSitesLoading(true);
+      void fetch("/api/agent/browser/localhosts", { cache: "no-store" })
+        .then(async (response) => {
+          const payload = (await response.json()) as { sites?: LocalhostSite[]; error?: string };
+          if (!response.ok || payload.error) throw new Error(payload.error || "Failed to scan");
+          setLocalSites(payload.sites ?? []);
+        })
+        .catch((error) =>
+          setLocalSitesError(error instanceof Error ? error.message : "Failed to scan localhost"),
+        )
+        .finally(() => setLocalSitesLoading(false));
+      return;
+    }
     if (readingMode) {
       void fetchReadable(url);
       return;
@@ -136,11 +180,21 @@ export const AgentBrowser = forwardRef<AgentBrowserHandle, Props>(function Agent
       iframeRef.current.src = current;
     }
   };
+  const navigateFromBrowser = (value: string) => {
+    const clean = value.trim();
+    if (!clean) return;
+    setHasOpenedUrl(true);
+    onNavigate(clean);
+  };
+  const handleSubmit = (event: FormEvent) => {
+    event.preventDefault();
+    navigateFromBrowser(addressValue);
+  };
 
   return (
     <section className="flex min-h-0 flex-1 flex-col">
       <form
-        onSubmit={onSubmit}
+        onSubmit={handleSubmit}
         className="flex shrink-0 items-center gap-1 border-b border-(--border) px-2 py-1.5"
       >
         <button
@@ -173,10 +227,10 @@ export const AgentBrowser = forwardRef<AgentBrowserHandle, Props>(function Agent
           <ReloadIcon className="h-3.5 w-3.5" />
         </button>
         <input
-          value={inputValue}
+          value={addressValue}
           onChange={(event) => onInputChange(event.target.value)}
           spellCheck={false}
-          placeholder="Search or enter URL"
+          placeholder="Enter a URL or search local apps"
           className="min-w-0 flex-1 rounded border border-(--border) bg-(--surface) px-2 py-1 font-mono text-[11px] text-(--fg) outline-none placeholder:text-(--dim)"
           aria-label="Browser address"
         />
@@ -206,13 +260,22 @@ export const AgentBrowser = forwardRef<AgentBrowserHandle, Props>(function Agent
       </form>
 
       <div className="min-h-0 flex-1 bg-(--bg)">
-        {readingMode ? (
+        {showStartPage ? (
+          <LocalhostStartPage
+            sites={localSites}
+            loading={localSitesLoading}
+            error={localSitesError}
+            query={addressValue}
+            onQueryChange={onInputChange}
+            onNavigate={navigateFromBrowser}
+          />
+        ) : readingMode ? (
           <ReadingView
             url={url}
             page={readable}
             error={readingError}
             loading={readingLoading}
-            onLinkClick={(target) => onInputChange(target)}
+            onLinkClick={onNavigate}
           />
         ) : isElectron ? (
           <>
@@ -261,6 +324,132 @@ export const AgentBrowser = forwardRef<AgentBrowserHandle, Props>(function Agent
   );
 });
 
+function LocalhostStartPage({
+  sites,
+  loading,
+  error,
+  query,
+  onQueryChange,
+  onNavigate,
+}: {
+  sites: LocalhostSite[];
+  loading: boolean;
+  error: string | null;
+  query: string;
+  onQueryChange: (value: string) => void;
+  onNavigate: (value: string) => void;
+}) {
+  const normalizedQuery = query.trim().toLowerCase();
+  const filteredSites = normalizedQuery
+    ? sites.filter((site) =>
+        `${site.title} ${site.displayUrl} ${site.process ?? ""}`
+          .toLowerCase()
+          .includes(normalizedQuery),
+      )
+    : sites;
+  const canOpenQuery = Boolean(query.trim());
+  return (
+    <div className="size-full overflow-y-auto bg-(--bg) px-5 py-8 text-(--fg)">
+      <div className="mx-auto max-w-3xl">
+        <div className="mb-5 flex items-end justify-between gap-3">
+          <div>
+            <div className="text-[15px] font-medium text-(--dim)">Local</div>
+            <div className="mt-1 text-[11px] text-(--dim)">
+              Pick a running localhost app, or type a URL/search above.
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => onQueryChange("")}
+            className="rounded-md px-2 py-1 text-[11px] text-(--dim) hover:bg-(--surface) hover:text-(--fg)"
+          >
+            Clear
+          </button>
+        </div>
+
+        {canOpenQuery && filteredSites.length === 0 ? (
+          <button
+            type="button"
+            onClick={() => onNavigate(query)}
+            className="mb-3 flex w-full items-center justify-between rounded-xl border border-(--border) bg-(--surface)/70 px-4 py-3 text-left hover:bg-(--surface)"
+          >
+            <span className="min-w-0">
+              <span className="block truncate text-[13px] font-medium">Open “{query.trim()}”</span>
+              <span className="mt-1 block text-[11px] text-(--dim)">Navigate in the browser</span>
+            </span>
+            <span className="text-lg text-(--dim)">↗</span>
+          </button>
+        ) : null}
+
+        {loading ? (
+          <div className="rounded-xl border border-(--border) bg-black/20 px-4 py-8 text-center text-xs text-(--dim)">
+            Scanning localhost…
+          </div>
+        ) : error ? (
+          <div className="rounded-xl border border-(--err)/30 bg-(--err)/10 px-4 py-3 text-xs text-(--err)">
+            {error}
+          </div>
+        ) : filteredSites.length === 0 ? (
+          <div className="rounded-xl border border-(--border) bg-black/20 px-4 py-8 text-center text-xs text-(--dim)">
+            No running localhost web apps found.
+          </div>
+        ) : (
+          <div className="grid gap-3">
+            {filteredSites.map((site) => (
+              <LocalhostSiteRow
+                key={`${site.port}:${site.url}`}
+                site={site}
+                onNavigate={onNavigate}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function LocalhostSiteRow({
+  site,
+  onNavigate,
+}: {
+  site: LocalhostSite;
+  onNavigate: (value: string) => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={() => onNavigate(site.url)}
+      className="group flex w-full items-center gap-4 rounded-xl border border-(--border) bg-black/10 px-3 py-3 text-left transition-colors hover:bg-(--surface)"
+    >
+      <span className="flex h-[58px] w-[92px] shrink-0 flex-col justify-between rounded-lg border border-white/20 bg-[#f4f4f4] p-2 shadow-inner">
+        <span className="flex gap-1">
+          <span className="h-1.5 w-1.5 rounded-full bg-[#ff6b5f]" />
+          <span className="h-1.5 w-1.5 rounded-full bg-[#ffd166]" />
+          <span className="h-1.5 w-1.5 rounded-full bg-[#3ddc84]" />
+        </span>
+        <span className="space-y-1">
+          <span className="block h-1.5 w-16 rounded-full bg-black/15" />
+          <span className="block h-1.5 w-11 rounded-full bg-black/15" />
+        </span>
+        <span className="truncate text-[7px] font-semibold text-black/70">{site.title}</span>
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-[15px] font-semibold tracking-tight text-(--fg)">
+          {site.title}
+        </span>
+        <span className="mt-1 block truncate text-[13px] text-(--dim)">{site.displayUrl}</span>
+      </span>
+      {site.current ? (
+        <span className="rounded-md border border-(--border) px-2 py-1 text-[11px] text-(--dim)">
+          This chat
+        </span>
+      ) : null}
+      <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-emerald-400" />
+    </button>
+  );
+}
+
 function ReadingView({
   url,
   page,
@@ -294,8 +483,7 @@ function ReadingView({
       </div>
     );
   }
-  // Render the markdown-ish text with simple link parsing.
-  const segments = renderSegments(page.text, onLinkClick);
+  const segments = renderSegments(page.text, page.url, onLinkClick);
   return (
     <div className="size-full overflow-y-auto bg-(--bg) px-4 py-3 text-sm leading-6 text-(--fg)">
       <div className="mx-auto max-w-3xl">
@@ -309,7 +497,15 @@ function ReadingView({
   );
 }
 
-function renderSegments(text: string, onLinkClick: (url: string) => void) {
+function resolveBrowserHref(href: string, baseUrl: string): string {
+  try {
+    return new URL(href, baseUrl).toString();
+  } catch {
+    return href;
+  }
+}
+
+function renderSegments(text: string, baseUrl: string, onLinkClick: (url: string) => void) {
   const out: React.ReactNode[] = [];
   const linkRe = /\[([^\]]+)\]\(([^)]+)\)/g;
   let lastIndex = 0;
@@ -325,7 +521,7 @@ function renderSegments(text: string, onLinkClick: (url: string) => void) {
       <button
         key={key++}
         type="button"
-        onClick={() => onLinkClick(href)}
+        onClick={() => onLinkClick(resolveBrowserHref(href, baseUrl))}
         className="text-(--accent) underline-offset-2 hover:underline"
         title={href}
       >

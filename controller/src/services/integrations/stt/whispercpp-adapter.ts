@@ -1,4 +1,3 @@
-// CRITICAL
 import { resolveBinary } from "../../../core/command";
 import { runCliCommand } from "../cli/cli-runner";
 import type { SttTranscriptionRequest, SttTranscriptionResult } from "./types";
@@ -27,11 +26,6 @@ const parseWhisperOutput = (stdout: string, stderr: string): string => {
   return lines.join(" ").replace(/\s+/g, " ").trim();
 };
 
-/**
- * Run whisper.cpp CLI and parse transcript output.
- * @param request - STT transcription request.
- * @returns Transcript text and raw CLI output.
- */
 export const transcribeWithWhisperCpp = async (
   request: SttTranscriptionRequest
 ): Promise<SttTranscriptionResult> => {

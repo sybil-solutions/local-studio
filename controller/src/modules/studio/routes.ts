@@ -1,4 +1,3 @@
-// CRITICAL
 import type { Hono } from "hono";
 import { cpus, freemem, totalmem, platform, arch, release } from "node:os";
 import {
@@ -95,26 +94,50 @@ const parseOptionalStringUpdate = (value: unknown): string | null | undefined =>
   return trimmed.length > 0 ? trimmed : null;
 };
 
-/**
- * Register studio routes.
- * @param app - Hono app.
- * @param context - App context.
- */
+const parseUiPreferencesUpdate = (value: unknown): Record<string, string> | null | undefined => {
+  if (value === undefined) return undefined;
+  if (value === null) return null;
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw badRequest("ui_preferences must be an object or null");
+  }
+  const clean: Record<string, string> = {};
+  for (const [key, entry] of Object.entries(value)) {
+    if (!key) continue;
+    if (typeof entry !== "string") {
+      throw badRequest("ui_preferences values must be strings");
+    }
+    clean[key] = entry;
+  }
+  return clean;
+};
+
 export const registerStudioRoutes = (app: Hono, context: AppContext): void => {
   const buildSettingsPayload = (): {
     config_path: string;
     persisted: {
       models_dir: string | undefined;
+      ui_preferences: Record<string, string>;
     };
     effective: {
       models_dir: string;
     };
   } => {
     const persisted = loadPersistedConfig(context.config.data_dir);
+    const dbUiPreferences = context.stores.controllerSettingsStore.getUiPreferences();
+    const uiPreferences =
+      Object.keys(dbUiPreferences).length > 0
+        ? dbUiPreferences
+        : persisted.ui_preferences && typeof persisted.ui_preferences === "object"
+          ? persisted.ui_preferences
+          : {};
+    if (Object.keys(dbUiPreferences).length === 0 && Object.keys(uiPreferences).length > 0) {
+      context.stores.controllerSettingsStore.saveUiPreferences(uiPreferences);
+    }
     return {
       config_path: getPersistedConfigPath(context.config.data_dir),
       persisted: {
         models_dir: persisted.models_dir,
+        ui_preferences: uiPreferences,
       },
       effective: {
         models_dir: context.config.models_dir,
@@ -133,8 +156,9 @@ export const registerStudioRoutes = (app: Hono, context: AppContext): void => {
     }
 
     const modelsDirectory = parseOptionalStringUpdate(body?.models_dir);
+    const uiPreferences = parseUiPreferencesUpdate(body?.ui_preferences);
 
-    const hasAnyUpdate = modelsDirectory !== undefined;
+    const hasAnyUpdate = modelsDirectory !== undefined || uiPreferences !== undefined;
 
     if (!hasAnyUpdate) {
       throw badRequest("No supported settings provided");
@@ -142,7 +166,12 @@ export const registerStudioRoutes = (app: Hono, context: AppContext): void => {
 
     const saved = savePersistedConfig(context.config.data_dir, {
       ...(modelsDirectory !== undefined ? { models_dir: modelsDirectory } : {}),
+      ...(uiPreferences !== undefined ? { ui_preferences: uiPreferences } : {}),
     });
+
+    if (uiPreferences !== undefined) {
+      context.stores.controllerSettingsStore.saveUiPreferences(uiPreferences ?? {});
+    }
 
     if (saved.models_dir) {
       context.config.models_dir = resolve(saved.models_dir);
@@ -188,6 +217,8 @@ export const registerStudioRoutes = (app: Hono, context: AppContext): void => {
         db_path: context.config.db_path,
         sglang_python: context.config.sglang_python ?? null,
         tabby_api_dir: context.config.tabby_api_dir ?? null,
+        llama_bin: context.config.llama_bin ?? null,
+        mlx_python: context.config.mlx_python ?? null,
       },
     });
   });
@@ -286,8 +317,6 @@ export const registerStudioRoutes = (app: Hono, context: AppContext): void => {
     }
     return ctx.json({ success: true, target });
   });
-
-  // --- Provider CRUD ---
 
   app.get("/studio/providers", async (ctx) => {
     const providers = context.config.providers.map((p) => ({

@@ -1,4 +1,3 @@
-// CRITICAL
 import { QUANTIZATION_TAGS } from "../config";
 
 export function DiscoverFiltersPanel({

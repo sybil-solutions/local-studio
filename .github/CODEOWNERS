@@ -14,4 +14,3 @@ config/ @0xSero
 
 # Documentation
 *.md @0xSero
-docs/ @0xSero

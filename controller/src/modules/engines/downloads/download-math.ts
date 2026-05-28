@@ -1,4 +1,3 @@
-// CRITICAL
 import type { DownloadFileInfo } from "../types";
 
 export const sumDownloadedBytes = (files: DownloadFileInfo[]): number => {

@@ -1,7 +1,11 @@
-// CRITICAL
 import type { Recipe, RecipeEditor } from "@/lib/types";
 import { EXTRA_ARG_FIELDS } from "./extra-arg-fields";
-import { getCandidateKeys, getExtraArgValue, parseJsonObject, setExtraArgValue } from "./extra-args";
+import {
+  getCandidateKeys,
+  getExtraArgValue,
+  parseJsonObject,
+  setExtraArgValue,
+} from "./extra-args";
 
 export const prepareRecipeForSave = (recipe: RecipeEditor): Recipe => {
   const payload: RecipeEditor = {
@@ -37,7 +41,10 @@ export const prepareRecipeForSave = (recipe: RecipeEditor): Recipe => {
   } else {
     delete updatedKwargs["thinking_budget"];
   }
-  for (const key of getCandidateKeys({ key: "default-chat-template-kwargs", aliases: ["default_chat_template_kwargs"] })) {
+  for (const key of getCandidateKeys({
+    key: "default-chat-template-kwargs",
+    aliases: ["default_chat_template_kwargs"],
+  })) {
     delete extraArgs[key];
   }
   if (Object.keys(updatedKwargs).length > 0) {
@@ -58,4 +65,3 @@ export const prepareRecipeForSave = (recipe: RecipeEditor): Recipe => {
   payload.extra_args = extraArgs;
   return payload;
 };
-

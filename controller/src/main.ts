@@ -2,9 +2,6 @@ import { createAppContext } from "./app-context";
 import { createApp } from "./http/app";
 import { startMetricsCollector } from "./modules/system/metrics-collector/metrics-collector";
 
-/**
- * Return true when background telemetry should stay off.
- */
 const metricsDisabled = (): boolean => {
   const raw = process.env["VLLM_STUDIO_DISABLE_METRICS"]?.trim().toLowerCase();
   return raw === "1" || raw === "true" || raw === "yes" || raw === "on";
@@ -15,10 +12,6 @@ const app = createApp(context);
 let server: ReturnType<typeof Bun.serve> | null = null;
 let stopMetrics: (() => void) | null = null;
 
-/**
- * Start optional background telemetry after the HTTP socket is accepting traffic.
- * @returns Metrics shutdown callback.
- */
 const startBackgroundMetrics = (): (() => void) => {
   if (metricsDisabled()) {
     context.logger.warn("Metrics collector disabled by VLLM_STUDIO_DISABLE_METRICS");
@@ -32,9 +25,6 @@ const startBackgroundMetrics = (): (() => void) => {
   }
 };
 
-/**
- * Start the Bun server.
- */
 const start = (): void => {
   server = Bun.serve({
     port: context.config.port,

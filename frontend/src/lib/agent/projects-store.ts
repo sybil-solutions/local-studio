@@ -1,5 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
 import path from "node:path";
+import { CHATS_PROJECT_ID } from "@/lib/agent/projects/types";
 
 export interface ProjectEntry {
   id: string;
@@ -103,8 +105,22 @@ function withMeta(record: ProjectRecord): ProjectEntry {
   };
 }
 
+function chatsProject(): ProjectEntry {
+  const chatsPath = path.join(homedir(), ".vllm-studio");
+  mkdirSync(chatsPath, { recursive: true });
+  return withMeta({
+    id: CHATS_PROJECT_ID,
+    name: "Chats",
+    path: chatsPath,
+    addedAt: "1970-01-01T00:00:00.000Z",
+  });
+}
+
 export function listProjectsFromStore(): ProjectEntry[] {
-  return readDocument(projectsFilePath()).projects.map(withMeta);
+  const projects = readDocument(projectsFilePath())
+    .projects.filter((project) => project.id !== CHATS_PROJECT_ID)
+    .map(withMeta);
+  return [chatsProject(), ...projects];
 }
 
 export function addProjectToStore(rawPath: string): ProjectEntry {
@@ -128,6 +144,7 @@ export function addProjectToStore(rawPath: string): ProjectEntry {
 }
 
 export function removeProjectFromStore(id: string): void {
+  if (id === CHATS_PROJECT_ID) return;
   const filePath = projectsFilePath();
   const document = readDocument(filePath);
   if (!document.projects.some((entry) => entry.id === id)) return;

@@ -23,6 +23,10 @@ export interface AgentModel {
   id: string;
   name: string;
   provider: "vllm-studio";
+  providerId?: string;
+  rawId?: string;
+  controllerUrl?: string;
+  controllerName?: string;
   contextWindow: number;
   maxTokens: number;
   reasoning: boolean;
@@ -45,7 +49,40 @@ export function inferReasoningSupport(modelId: string): boolean {
 
 export function inferVisionSupport(modelId: string): boolean {
   const normalized = modelId.toLowerCase();
-  return normalized.includes("mimo-v2.5") || normalized.includes("mimo-v2-5");
+  const patterns = [
+    "mimo-v2.5",
+    "mimo-v2-5",
+    "gemma-4",
+    "gemma4",
+    "llava",
+    "internvl",
+    "qwen-vl",
+    "qwen2-vl",
+    "qwen2.5-vl",
+    "qwen3-vl",
+    "qwen-omni",
+    "pixtral",
+    "minicpm-v",
+    "molmo",
+    "phi-3.5-v",
+    "phi-3-vision",
+    "phi-4-mm",
+    "phi-4-multimodal",
+    "llama-3.2-vision",
+    "llama-4",
+    "deepseek-vl",
+    "idefics",
+    "ovis",
+    "moondream",
+    "fuyu",
+    "kosmos",
+    "-vl-",
+    "-vlm",
+    "vision",
+    "multimodal",
+    "-mm-",
+  ];
+  return patterns.some((p) => normalized.includes(p));
 }
 
 function numberFromUnknown(value: unknown): number | undefined {
@@ -206,19 +243,45 @@ export function normalizeOpenAIModels(payload: OpenAIModelsResponse): AgentModel
   return models.sort((a, b) => a.name.localeCompare(b.name));
 }
 
+function isDeepSeekReasoningModel(model: AgentModel): boolean {
+  const id = `${model.id} ${model.rawId ?? ""} ${model.name}`.toLowerCase();
+  return model.reasoning && id.includes("deepseek");
+}
+
 export function modelsToPiModels(models: AgentModel[]) {
-  return models.map((model) => ({
-    id: model.id,
-    name: model.name,
-    reasoning: model.reasoning,
-    input: model.vision ? ["text", "image"] : ["text"],
-    contextWindow: model.contextWindow,
-    maxTokens: model.maxTokens,
-    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-    compat: {
-      supportsDeveloperRole: false,
-      supportsReasoningEffort: model.reasoning,
-      maxTokensField: "max_tokens",
-    },
-  }));
+  return models.map((model) => {
+    const deepSeekReasoning = isDeepSeekReasoningModel(model);
+    return {
+      id: model.rawId ?? model.id,
+      name: model.name,
+      reasoning: model.reasoning,
+      input: model.vision ? ["text", "image"] : ["text"],
+      contextWindow: model.contextWindow,
+      maxTokens: model.maxTokens,
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      ...(deepSeekReasoning
+        ? {
+            thinkingLevelMap: {
+              off: null,
+              minimal: null,
+              low: "low",
+              medium: "medium",
+              high: "high",
+              xhigh: "max",
+            },
+          }
+        : {}),
+      compat: {
+        supportsDeveloperRole: false,
+        supportsReasoningEffort: model.reasoning,
+        maxTokensField: "max_tokens",
+        ...(deepSeekReasoning
+          ? {
+              thinkingFormat: "deepseek",
+              requiresReasoningContentOnAssistantMessages: true,
+            }
+          : {}),
+      },
+    };
+  });
 }

@@ -1,4 +1,3 @@
-// CRITICAL
 "use client";
 
 import { Cpu, Database, GitBranch } from "lucide-react";

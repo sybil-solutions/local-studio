@@ -1,4 +1,3 @@
-# CRITICAL
 # Infrastructure services only.
 # Controller and frontend run natively on the host (not in Docker)
 # because they need nvidia-smi access and host process visibility.

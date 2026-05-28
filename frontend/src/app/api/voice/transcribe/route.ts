@@ -1,4 +1,3 @@
-// CRITICAL
 import { NextRequest, NextResponse } from "next/server";
 import { getApiSettings } from "@/lib/api-settings";
 import { resolveVoiceTarget } from "../voice-target";
@@ -19,7 +18,10 @@ export async function POST(request: NextRequest) {
     if (target.kind === "external-voice") {
       const configuredModel = settings.voiceModel?.trim();
       const requestModel = formData.get("model");
-      if (configuredModel && (typeof requestModel !== "string" || requestModel.trim().length === 0)) {
+      if (
+        configuredModel &&
+        (typeof requestModel !== "string" || requestModel.trim().length === 0)
+      ) {
         formData.set("model", configuredModel);
       }
     } else {

@@ -28,6 +28,7 @@ export interface DashboardLayoutProps {
   services?: ServiceEntry[];
   lease?: LeaseInfo | null;
   isConnected: boolean;
+  isStatusLoading: boolean;
   inferencePort?: number;
   onNavigateLogs: () => void;
   onBenchmark: () => void;

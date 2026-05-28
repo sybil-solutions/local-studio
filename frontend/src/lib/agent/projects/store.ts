@@ -86,6 +86,7 @@ export function createProjectsStore(dependencies: ProjectsStoreDependencies = {}
   };
 
   const loadGitSummary = async (cwd: string): Promise<GitSummary | null> => {
+    if (!cwd) return null;
     try {
       const summary = await api.loadGitSummary(cwd);
       const next = new Map(snapshot.gitSummaries);
@@ -119,7 +120,7 @@ export function createProjectsStore(dependencies: ProjectsStoreDependencies = {}
     const selectedId = resolveSelectedProjectId(previousSelectedId, projects);
     update({ ...snapshot, projects, loaded: true, selectedId });
     if (selectedId !== previousSelectedId) writeSelection(selectedId);
-    loadGitSummaryOnce(projectPathById(projects, selectedId));
+    void loadGitSummary(projectPathById(projects, selectedId));
     if (!firstLoad) {
       firstLoad = true;
       getWindow()?.dispatchEvent(loadedEvent(projects));

@@ -1,4 +1,3 @@
-// CRITICAL
 "use client";
 
 import { ChevronLeft, Search, Trash2 } from "lucide-react";
@@ -59,12 +58,16 @@ export function LogsSessionsSidebar({
     >
       <div className="flex items-start justify-between gap-2">
         <div className="flex-1 min-w-0">
-          <div className="text-sm font-medium text-(--fg) truncate">{session.model || session.id}</div>
+          <div className="text-sm font-medium text-(--fg) truncate">
+            {session.model || session.id}
+          </div>
           <div className="text-[11px] text-(--dim) mt-1">{formatDateTime(session.created_at)}</div>
           {session.backend && (
             <span
               className={`inline-block mt-1.5 px-1.5 py-0.5 rounded text-[10px] ${
-                session.backend === "vllm" ? "bg-(--hl1)/10 text-(--hl1)" : "bg-(--hl1)/10 text-(--hl1)"
+                session.backend === "vllm"
+                  ? "bg-(--hl1)/10 text-(--hl1)"
+                  : "bg-(--hl1)/10 text-(--hl1)"
               }`}
             >
               {session.backend}
@@ -96,12 +99,19 @@ export function LogsSessionsSidebar({
 
   return (
     <>
-      {sidebarOpen && <div className="fixed inset-0 bg-black/50 z-20 md:hidden" onClick={() => onSidebarToggle(false)} />}
+      {sidebarOpen && (
+        <div
+          className="fixed inset-0 bg-black/50 z-20 md:hidden"
+          onClick={() => onSidebarToggle(false)}
+        />
+      )}
 
       <div className="w-72 border-r border-(--border) flex-col bg-(--surface) shrink-0 hidden md:flex">
         <div className="p-4 border-b border-(--border)">
           <div className="flex items-center justify-between mb-3">
-            <h1 className="text-sm font-medium text-(--dim) uppercase tracking-wider">Log Sessions</h1>
+            <h1 className="text-sm font-medium text-(--dim) uppercase tracking-wider">
+              Log Sessions
+            </h1>
           </div>
           {renderFilter()}
         </div>
@@ -118,8 +128,13 @@ export function LogsSessionsSidebar({
       >
         <div className="p-4 border-b border-(--border)">
           <div className="flex items-center justify-between mb-3">
-            <h1 className="text-sm font-medium text-(--dim) uppercase tracking-wider">Log Sessions</h1>
-            <button onClick={() => onSidebarToggle(false)} className="p-1 hover:bg-(--surface) rounded">
+            <h1 className="text-sm font-medium text-(--dim) uppercase tracking-wider">
+              Log Sessions
+            </h1>
+            <button
+              onClick={() => onSidebarToggle(false)}
+              className="p-1 hover:bg-(--surface) rounded"
+            >
               <ChevronLeft className="h-4 w-4 text-(--dim)" />
             </button>
           </div>
@@ -133,4 +148,3 @@ export function LogsSessionsSidebar({
     </>
   );
 }
-

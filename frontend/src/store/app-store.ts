@@ -2,6 +2,10 @@ import { create, type StateCreator } from "zustand";
 import { devtools, persist, createJSONStorage } from "zustand/middleware";
 import { createAppSlice, type AppSlice } from "./app-slice";
 import { createThemeSlice, type ThemeSlice } from "./theme-slice";
+import {
+  hydrateDurableUiPreferences,
+  scheduleDurableUiPreferencesSave,
+} from "@/lib/desktop-ui-preferences";
 
 export type AppStore = AppSlice &
   ThemeSlice & {
@@ -36,14 +40,24 @@ export const useAppStore = create<AppStore>()(
         fileViewerFontSize: state.fileViewerFontSize,
         lastOpenFileByProject: state.lastOpenFileByProject,
       }),
-      merge: (persisted, current) => ({
-        ...current,
-        ...(persisted as Partial<AppStore>),
-        sidebar: {
-          ...current.sidebar,
-          collapsed: (persisted as Record<string, unknown>)?.sidebarCollapsed === true,
-        },
-      }),
+      merge: (persisted, current) => {
+        const persistedRecord = (persisted ?? {}) as Record<string, unknown>;
+        const persistedStore = (persisted ?? {}) as Partial<AppStore>;
+        return {
+          ...current,
+          ...persistedStore,
+          // 240px/220px were old defaults. Keep genuinely custom widths, but
+          // migrate default-width sidebars to the tighter desktop rail.
+          sidebarWidth:
+            persistedRecord.sidebarWidth === 240 || persistedRecord.sidebarWidth === 220
+              ? 204
+              : (persistedStore.sidebarWidth ?? current.sidebarWidth),
+          sidebar: {
+            ...current.sidebar,
+            collapsed: persistedRecord.sidebarCollapsed === true,
+          },
+        };
+      },
       onRehydrateStorage: () => (state) => {
         if (state?.themeId) state.setThemeId(state.themeId);
         if (state?.fontFamilyId) state.setFontFamilyId(state.fontFamilyId);
@@ -55,5 +69,10 @@ export const useAppStore = create<AppStore>()(
 );
 
 if (typeof window !== "undefined") {
-  void useAppStore.persist.rehydrate();
+  void (async () => {
+    await hydrateDurableUiPreferences();
+    await useAppStore.persist.rehydrate();
+    scheduleDurableUiPreferencesSave();
+    useAppStore.subscribe(() => scheduleDurableUiPreferencesSave());
+  })();
 }

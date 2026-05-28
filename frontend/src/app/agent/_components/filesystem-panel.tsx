@@ -1,5 +1,5 @@
 "use client";
-import { FormEvent, useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { Virtuoso } from "react-virtuoso";
 import {
   ChevronRight,
@@ -8,14 +8,14 @@ import {
   File,
   Folder,
   Monitor,
-  MessageSquare,
   Minus,
+  PanelLeftOpen,
   Plus,
-  Trash2,
 } from "lucide-react";
 import hljs from "highlight.js";
 import { useAppStore } from "@/store";
 import { useFilesystemPanelEffects } from "@/hooks/agent/use-filesystem-panel-effects";
+import { useTools } from "@/lib/agent/tools/context";
 import { AssistantMarkdown } from "./assistant-markdown";
 type FsEntry = {
   name: string;
@@ -187,7 +187,7 @@ function TreeFileList({
               )}
               <button
                 type="button"
-                onClick={() => onOpen(entry)}
+                onClick={() => (isDir ? onToggleDir(entry.rel) : onOpen(entry))}
                 title={entry.rel}
                 className="flex min-w-0 flex-1 items-center gap-1 text-left"
               >
@@ -244,6 +244,7 @@ export function FilesystemPanel({ cwd }: Props) {
   const [dirLoading, setDirLoading] = useState<Set<string>>(new Set());
   const [fileListOpen, setFileListOpen] = useState(true);
   const searchRef = useRef<HTMLInputElement>(null);
+  const tools = useTools();
   const fontSize = useAppStore((s) => s.fileViewerFontSize);
   const setFontSize = useAppStore((s) => s.setFileViewerFontSize);
   const lastOpenFileByProject = useAppStore((s) => s.lastOpenFileByProject);
@@ -253,6 +254,7 @@ export function FilesystemPanel({ cwd }: Props) {
     cwd,
     relPath,
     openFile,
+    fileOpenRequest: tools.fileOpenRequest,
     lastOpenFileByProject,
     cwdRef,
     setRelPath,
@@ -267,6 +269,7 @@ export function FilesystemPanel({ cwd }: Props) {
     setExpandedDirs,
     setDirChildren,
     setDirLoading,
+    setLastOpenFileByProject,
   });
   const fetchDirChildren = useCallback(
     async (dirRel: string) => {
@@ -297,9 +300,7 @@ export function FilesystemPanel({ cwd }: Props) {
   );
   const openEntry = useCallback(
     (entry: FsEntry) => {
-      if (entry.kind === "directory") {
-        setRelPath(entry.rel);
-      } else {
+      if (entry.kind !== "directory") {
         setOpenFile(entry.rel);
         if (cwd) setLastOpenFileByProject(cwd, entry.rel);
       }
@@ -323,49 +324,8 @@ export function FilesystemPanel({ cwd }: Props) {
     },
     [dirChildren, fetchDirChildren],
   );
-  const goUp = useCallback(() => {
-    if (!relPath) return;
-    const trimmed = relPath.replace(/\/$/, "");
-    const idx = trimmed.lastIndexOf("/");
-    setRelPath(idx === -1 ? "" : trimmed.slice(0, idx));
-  }, [relPath]);
   const lines = useMemo(() => fileContent.split("\n"), [fileContent]);
   const previewKind = useMemo(() => (openFile ? previewKindForPath(openFile) : null), [openFile]);
-  const commentsByLine = useMemo(() => {
-    const map = new Map<number, Comment[]>();
-    for (const c of comments) {
-      const list = map.get(c.line) ?? [];
-      list.push(c);
-      map.set(c.line, list);
-    }
-    return map;
-  }, [comments]);
-  const addComment = useCallback(
-    async (line: number, body: string) => {
-      if (!cwd || !openFile) return;
-      const response = await fetch("/api/agent/comments", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ cwd, path: openFile, line, body }),
-      });
-      const payload = (await response.json()) as { comment?: Comment; error?: string };
-      if (response.ok && payload.comment) {
-        setComments((current) => [...current, payload.comment as Comment]);
-      }
-    },
-    [cwd, openFile],
-  );
-  const removeComment = useCallback(
-    async (id: string) => {
-      if (!cwd || !openFile) return;
-      await fetch(
-        `/api/agent/comments?cwd=${encodeURIComponent(cwd)}&path=${encodeURIComponent(openFile)}&id=${encodeURIComponent(id)}`,
-        { method: "DELETE" },
-      );
-      setComments((current) => current.filter((c) => c.id !== id));
-    },
-    [cwd, openFile],
-  );
   if (!cwd) {
     return (
       <div className="flex h-full items-center justify-center text-center text-[11px] text-(--dim)">
@@ -374,7 +334,7 @@ export function FilesystemPanel({ cwd }: Props) {
     );
   }
   return (
-    <div className="flex h-full min-h-0">
+    <div className="relative flex h-full min-h-0">
       {" "}
       {fileListOpen ? (
         <div className="flex w-[200px] shrink-0 flex-col border-r border-(--border)">
@@ -382,7 +342,7 @@ export function FilesystemPanel({ cwd }: Props) {
           <div className="flex h-7 shrink-0 items-center border-b border-(--border)">
             <div className="min-w-0 flex-1">
               {" "}
-              <Breadcrumb relPath={relPath} onUp={goUp} onRoot={() => setRelPath("")} />
+              <Breadcrumb relPath={relPath} onRoot={() => setRelPath("")} />
             </div>{" "}
             <button
               type="button"
@@ -433,20 +393,18 @@ export function FilesystemPanel({ cwd }: Props) {
             )}
           </div>{" "}
         </div>
-      ) : (
-        <div className="flex w-8 shrink-0 justify-center border-r border-(--border) pt-1">
-          <button
-            type="button"
-            onClick={() => setFileListOpen(true)}
-            className="h-6 rounded p-1 text-(--dim) hover:bg-(--surface) hover:text-(--fg)"
-            title="Show file list"
-            aria-label="Show file list"
-          >
-            {" "}
-            <Plus className="h-3.5 w-3.5" />
-          </button>{" "}
-        </div>
-      )}
+      ) : null}
+      {!fileListOpen ? (
+        <button
+          type="button"
+          onClick={() => setFileListOpen(true)}
+          className="absolute left-2 top-2 z-20 inline-flex h-7 w-7 items-center justify-center rounded-md border border-(--border) bg-(--surface) text-(--fg) shadow-[0_4px_16px_rgba(0,0,0,0.35)] hover:bg-(--hover)"
+          title="Show file list"
+          aria-label="Show file list"
+        >
+          <PanelLeftOpen className="h-3.5 w-3.5" />
+        </button>
+      ) : null}
       <div className="flex min-w-0 flex-1 flex-col">
         {" "}
         {!openFile ? (
@@ -515,15 +473,7 @@ export function FilesystemPanel({ cwd }: Props) {
             {previewKind && viewMode === "preview" ? (
               <RenderedPreview content={fileContent} kind={previewKind} />
             ) : (
-              <FileViewer
-                key={openFile}
-                filePath={openFile}
-                lines={lines}
-                commentsByLine={commentsByLine}
-                onAddComment={addComment}
-                onRemoveComment={removeComment}
-                fontSize={fontSize}
-              />
+              <FileViewer key={openFile} filePath={openFile} lines={lines} fontSize={fontSize} />
             )}
           </>
         )}
@@ -532,15 +482,7 @@ export function FilesystemPanel({ cwd }: Props) {
   );
 }
 
-function Breadcrumb({
-  relPath,
-  onUp,
-  onRoot,
-}: {
-  relPath: string;
-  onUp: () => void;
-  onRoot: () => void;
-}) {
+function Breadcrumb({ relPath, onRoot }: { relPath: string; onRoot: () => void }) {
   const parts = relPath ? relPath.split("/").filter(Boolean) : [];
   return (
     <div className="flex h-7 shrink-0 items-center gap-0.5 overflow-x-auto px-2 text-[11px] text-(--dim)">
@@ -560,16 +502,6 @@ function Breadcrumb({
           {i < parts.length - 1 && <ChevronRight className="h-3 w-3 shrink-0 text-(--dim)" />}
         </span>
       ))}
-      <button
-        type="button"
-        onClick={onUp}
-        className="ml-auto shrink-0 rounded px-1 text-[10px] text-(--dim) hover:bg-(--surface) hover:text-(--fg)"
-        title="Go up"
-        aria-label="Go up"
-      >
-        {" "}
-        ⬆
-      </button>{" "}
     </div>
   );
 }
@@ -594,20 +526,12 @@ function RenderedPreview({ content, kind }: { content: string; kind: "html" | "j
 function FileViewer({
   filePath,
   lines,
-  commentsByLine,
-  onAddComment,
-  onRemoveComment,
   fontSize,
 }: {
   filePath: string;
   lines: string[];
-  commentsByLine: Map<number, Comment[]>;
-  onAddComment: (line: number, body: string) => Promise<void>;
-  onRemoveComment: (id: string) => Promise<void>;
   fontSize: number;
 }) {
-  const [composerLine, setComposerLine] = useState<number | null>(null);
-  const [composerValue, setComposerValue] = useState("");
   const highlightedLines = useMemo(() => {
     const lang = languageForPath(filePath);
     if (!lang) return null;
@@ -618,35 +542,15 @@ function FileViewer({
       return null;
     }
   }, [filePath, lines]);
-  const submit = useCallback(
-    async (event: FormEvent) => {
-      event.preventDefault();
-      if (composerLine === null) return;
-      const value = composerValue.trim();
-      if (!value) return;
-      await onAddComment(composerLine, value);
-      setComposerLine(null);
-      setComposerValue("");
-    },
-    [composerLine, composerValue, onAddComment],
-  );
   const lineHeight = Math.round(fontSize * 1.5);
   const renderLine = useCallback(
     (index: number) => {
       const lineNumber = index + 1;
       const text = lines[index] ?? "";
-      const lineComments = commentsByLine.get(lineNumber) ?? [];
-      const composerOpen = composerLine === lineNumber;
       const html = highlightedLines?.[index];
       return (
         <div className="group flex flex-col">
-          <div
-            onClick={() => {
-              setComposerLine(lineNumber);
-              setComposerValue("");
-            }}
-            className="flex cursor-text gap-1 px-1 hover:bg-(--surface)"
-          >
+          <div className="flex gap-1 px-1 hover:bg-(--surface)">
             {" "}
             <span
               className="w-8 shrink-0 select-none text-right font-mono text-(--dim)"
@@ -654,97 +558,25 @@ function FileViewer({
             >
               {lineNumber}{" "}
             </span>
-            <pre
-              className="min-w-0 flex-1 whitespace-pre font-mono text-(--fg)"
-              style={{ fontSize, lineHeight: `${lineHeight}px` }}
-              {...(html ? { dangerouslySetInnerHTML: { __html: html || " " } } : undefined)}
-            >
-              {" "}
-              {!html ? text || "\u00a0" : undefined}
-            </pre>{" "}
-            {lineComments.length > 0 ? (
-              <span className="ml-1 inline-flex shrink-0 items-center gap-0.5 rounded border border-(--border) px-1 font-mono text-[9px] text-(--dim)">
-                {" "}
-                <MessageSquare className="h-2 w-2" />
-                {lineComments.length}{" "}
-              </span>
-            ) : null}{" "}
-          </div>
-          {lineComments.length > 0 ? (
-            <div className="ml-10 mr-2 mb-0.5 flex flex-col gap-1 border-l-2 border-(--border) pl-2">
-              {" "}
-              {lineComments.map((c) => (
-                <div key={c.id} className="flex items-start gap-1 text-[11px] text-(--fg)">
-                  {" "}
-                  <span className="flex-1 whitespace-pre-wrap">{c.body}</span>
-                  <button
-                    type="button"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      void onRemoveComment(c.id);
-                    }}
-                    className="rounded p-0.5 text-(--dim) opacity-0 hover:bg-(--surface) hover:text-(--err) group-hover:opacity-100"
-                    title="Delete comment"
-                    aria-label="Delete comment"
-                  >
-                    <Trash2 className="h-2.5 w-2.5" />{" "}
-                  </button>
-                </div>
-              ))}
-            </div>
-          ) : null}
-          {composerOpen ? (
-            <form
-              onSubmit={submit}
-              onClick={(event) => event.stopPropagation()}
-              className="ml-10 mr-2 mb-0.5 rounded border border-(--border) bg-(--surface) p-1.5"
-            >
-              {" "}
-              <textarea
-                value={composerValue}
-                onChange={(event) => setComposerValue(event.target.value)}
-                autoFocus
-                rows={2}
-                placeholder={`Comment on line ${lineNumber}…`}
-                className="w-full resize-none bg-transparent text-[11px] leading-5 text-(--fg) outline-none"
+            {html ? (
+              <pre
+                className="min-w-0 flex-1 whitespace-pre font-mono text-(--fg)"
+                style={{ fontSize, lineHeight: `${lineHeight}px` }}
+                dangerouslySetInnerHTML={{ __html: html || "&nbsp;" }}
               />
-              <div className="flex items-center justify-end gap-1">
-                {" "}
-                <button
-                  type="button"
-                  onClick={() => {
-                    setComposerLine(null);
-                    setComposerValue("");
-                  }}
-                  className="h-5 rounded px-1.5 text-[10px] text-(--dim) hover:bg-(--bg) hover:text-(--fg)"
-                >
-                  {" "}
-                  Cancel
-                </button>{" "}
-                <button
-                  type="submit"
-                  className="h-5 rounded bg-(--fg) px-1.5 text-[10px] font-medium text-(--bg) disabled:opacity-30"
-                  disabled={!composerValue.trim()}
-                >
-                  Add{" "}
-                </button>
-              </div>{" "}
-            </form>
-          ) : null}{" "}
+            ) : (
+              <pre
+                className="min-w-0 flex-1 whitespace-pre font-mono text-(--fg)"
+                style={{ fontSize, lineHeight: `${lineHeight}px` }}
+              >
+                {text || "\u00a0"}
+              </pre>
+            )}{" "}
+          </div>
         </div>
       );
     },
-    [
-      lines,
-      highlightedLines,
-      commentsByLine,
-      composerLine,
-      composerValue,
-      onRemoveComment,
-      submit,
-      fontSize,
-      lineHeight,
-    ],
+    [lines, highlightedLines, fontSize, lineHeight],
   );
   if (lines.length < 2000) {
     return (

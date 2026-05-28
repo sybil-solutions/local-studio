@@ -1,23 +1,26 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
-import { safeJson } from "@/lib/agent/safe-json";
-import { clampComputerWidth } from "@/lib/agent/tools/persistence";
-import { loadInitialFromStorage } from "@/lib/agent/workspace/persistence";
 import {
-  createInitialState,
-  loadPersistedActiveAgentSessions,
-  reducer,
-} from "@/lib/agent/workspace/store";
+  useCallback,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type MouseEvent as ReactMouseEvent,
+} from "react";
+import { safeJson } from "@/lib/agent/safe-json";
+import { clampComputerWidth, gentlySnapComputerWidth } from "@/lib/agent/tools/persistence";
+import { createInitialState, reducer } from "@/lib/agent/workspace/store";
 import { makeFreshTab, newPaneId, newRuntimeId } from "@/lib/agent/session/helpers";
 import {
   runWorkspaceEffect,
-  subscribeWorkspaceWindowEvents,
   type BrowserEventsSubscription,
   type WorkspaceDispatch,
   type WorkspaceEffectDeps,
   type WorkspaceWindow,
 } from "@/lib/agent/workspace/effects";
+import { useWorkspaceHydrationEffects } from "@/hooks/agent/use-workspace-hydration-effects";
+import { useBrowserEventsEffects } from "@/hooks/agent/use-browser-events-effects";
 import type {
   AgentModel,
   PaneId,
@@ -26,6 +29,9 @@ import type {
 } from "@/lib/agent/workspace/types";
 import { useProjects } from "@/lib/agent/projects/context";
 import { useTools } from "@/lib/agent/tools/context";
+import { getApiKey } from "@/lib/api-key";
+import { getStoredBackendUrl } from "@/lib/backend-url";
+import { loadSavedControllers, normalizeControllerUrl } from "@/lib/controllers";
 import type { Project } from "@/lib/agent/projects/types";
 import { paneSessions } from "@/lib/agent/sessions/selectors";
 import { runBrowserPanelCommand, type BrowserCommandResult } from "@/lib/agent/browser/command";
@@ -33,7 +39,12 @@ import type { ChatPaneHandle, SessionTab } from "./chat-pane";
 import type { AgentBrowserHandle } from "./agent-browser";
 import type { SessionDropPayload } from "./pane-grid";
 
-type BrowserCommand = { id: string; verb: string; payload: Record<string, unknown> };
+type BrowserCommand = {
+  id: string;
+  verb: string;
+  sessionId?: string;
+  payload: Record<string, unknown>;
+};
 
 export type WorkspaceHandles = {
   registerBrowserHandle: (handle: AgentBrowserHandle | null) => void;
@@ -43,10 +54,10 @@ export type WorkspaceHandles = {
   replaySessionInSplitPane: (piSessionId: string) => void;
   openSessionPayloadInPane: (paneId: PaneId, payload: SessionDropPayload) => void;
   renameTab: (paneId: PaneId, tabId: string, title: string) => void;
-  focusTab: (paneId: PaneId, tabId: string) => void;
   splitTabIntoNewPane: (paneId: PaneId, tabId: string) => void;
   selectProject: (project: Project | null) => void;
   registerPaneHandle: (paneId: PaneId, handle: ChatPaneHandle | null) => void;
+  compactFocusedSession: () => Promise<void>;
   runBrowserCommand: (
     verb: string,
     payload: Record<string, unknown>,
@@ -88,11 +99,32 @@ function parseBrowserCommand(raw: string): BrowserCommand | null {
     const id = parsed.id;
     const verb = parsed.verb;
     const payload = parsed.payload;
+    const sessionId = parsed.sessionId;
     if (typeof id !== "string" || typeof verb !== "string" || !isRecord(payload)) return null;
-    return { id, verb, payload };
+    return {
+      id,
+      verb,
+      payload,
+      ...(typeof sessionId === "string" && sessionId.trim() ? { sessionId: sessionId.trim() } : {}),
+    };
   } catch {
     return null;
   }
+}
+
+function focusedBrowserSessionId(state: WorkspaceState): string | null {
+  const pane = state.panesById.get(state.focusedPaneId);
+  if (!pane) return null;
+  const activeSession = state.sessions.get(pane.sessionId);
+  return activeSession?.runtimeSessionId || pane.runtimeSessionId || null;
+}
+
+function postBrowserResult(id: string, result: BrowserCommandResult) {
+  return fetch("/api/agent/browser/result", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ id, ...result }),
+  });
 }
 
 function createWorkspaceWindow(source: Window): WorkspaceWindow {
@@ -111,6 +143,7 @@ function createBrowserEvents(
     verb: string,
     payload: Record<string, unknown>,
   ) => Promise<BrowserCommandResult>,
+  focusedSessionId: () => string | null,
 ): BrowserEventsSubscription {
   let source: EventSource | null = null;
   let enabled = false;
@@ -131,14 +164,18 @@ function createBrowserEvents(
         if (typeof event.data !== "string") return;
         const command = parseBrowserCommand(event.data);
         if (!command || typeof fetch !== "function") return;
+        const focused = focusedSessionId();
+        if (command.sessionId && command.sessionId !== focused) {
+          void postBrowserResult(command.id, {
+            ok: false,
+            error: focused
+              ? `Browser is connected to the focused session (${focused}); focus the requesting session to run browser_${command.verb}.`
+              : `Browser is not connected to the requesting session (${command.sessionId}).`,
+          });
+          return;
+        }
         void runBrowserCommand(command.verb, command.payload)
-          .then((result) =>
-            fetch("/api/agent/browser/result", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ id: command.id, ...result }),
-            }),
-          )
+          .then((result) => postBrowserResult(command.id, result))
           .catch((error) => {
             console.warn("[agent] browser bridge dispatch failed", error);
           });
@@ -151,6 +188,45 @@ function createBrowserEvents(
   };
 }
 
+function agentModelControllersPayload() {
+  const byUrl = new Map<string, { url: string; apiKey?: string; name?: string }>();
+  const activeUrl = normalizeControllerUrl(getStoredBackendUrl());
+  if (activeUrl) {
+    const activeApiKey = getApiKey();
+    byUrl.set(activeUrl, {
+      url: activeUrl,
+      ...(activeApiKey ? { apiKey: activeApiKey } : {}),
+      name: "primary",
+    });
+  }
+  for (const controller of loadSavedControllers()) {
+    const url = normalizeControllerUrl(controller.url);
+    if (!url) continue;
+    const existing = byUrl.get(url);
+    byUrl.set(url, {
+      ...existing,
+      url,
+      ...(controller.apiKey || existing?.apiKey
+        ? { apiKey: controller.apiKey || existing?.apiKey }
+        : {}),
+      ...(controller.name || existing?.name ? { name: controller.name || existing?.name } : {}),
+    });
+  }
+  return [...byUrl.values()];
+}
+
+async function loadAgentModelsPayload(): Promise<{ models?: AgentModel[]; error?: string }> {
+  const response = await fetch("/api/agent/models", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    cache: "no-store",
+    body: JSON.stringify({ controllers: agentModelControllersPayload() }),
+  });
+  const payload = await safeJson<{ models?: AgentModel[]; error?: string }>(response);
+  if (!response.ok) throw new Error(payload.error || "Failed to load models");
+  return payload;
+}
+
 function api(): WorkspaceEffectDeps["api"] {
   return {
     loadSetupChecks: async () => {
@@ -158,10 +234,7 @@ function api(): WorkspaceEffectDeps["api"] {
       return safeJson<{ checks?: Array<{ id: string; ok: boolean; guidance?: string }> }>(response);
     },
     loadModels: async () => {
-      const response = await fetch("/api/agent/models", { cache: "no-store" });
-      const payload = await safeJson<{ models?: AgentModel[]; error?: string }>(response);
-      if (!response.ok) throw new Error(payload.error || "Failed to load models");
-      return payload;
+      return loadAgentModelsPayload();
     },
   };
 }
@@ -197,7 +270,9 @@ export function useWorkspace(): UseWorkspaceResult {
   const controller = useMemo(() => {
     let browserEvents: BrowserEventsSubscription | null = null;
     const getBrowserEvents = () => {
-      browserEvents ??= createBrowserEvents(runBrowserCommand);
+      browserEvents ??= createBrowserEvents(runBrowserCommand, () =>
+        focusedBrowserSessionId(stateRef.current),
+      );
       return browserEvents;
     };
     const makeDeps = (workspaceDispatch: WorkspaceDispatch): WorkspaceEffectDeps | null => {
@@ -238,10 +313,48 @@ export function useWorkspace(): UseWorkspaceResult {
         setBrowserUrl: toolsRef.current.setBrowserUrl,
         isElectron: typeof navigator !== "undefined" && /electron/i.test(navigator.userAgent),
       });
-    return { dispatch: workspaceDispatch, runBrowserCommand };
+    return { browserEvents: getBrowserEvents(), dispatch: workspaceDispatch, runBrowserCommand };
   }, [queueSessionReplay]);
 
-  const { dispatch, runBrowserCommand } = controller;
+  const { browserEvents, dispatch, runBrowserCommand } = controller;
+
+  useBrowserEventsEffects({ browserEvents, enabled: tools.browser.enabled });
+
+  const subscribeWorkspaceModelStorage = useCallback(
+    (_notify: () => void) => {
+      if (typeof window === "undefined") return () => {};
+      const reload = () => {
+        dispatch({ type: "setModelsLoading", loading: true });
+        dispatch({ type: "setError", error: "" });
+        void loadAgentModelsPayload()
+          .then((models) => {
+            dispatch({ type: "setModels", models: models.models ?? [] });
+          })
+          .catch((error) => {
+            dispatch({
+              type: "setError",
+              error: error instanceof Error ? error.message : String(error),
+            });
+            dispatch({ type: "setModels", models: [] });
+          })
+          .finally(() => dispatch({ type: "setModelsLoading", loading: false }));
+      };
+      const onStorage = (event: StorageEvent | Event) => {
+        const key = (event as StorageEvent).key;
+        if (key && key !== "vllmstudio_backend_url" && key !== "vllm-studio.controllers") return;
+        reload();
+      };
+      window.addEventListener("storage", onStorage);
+      return () => window.removeEventListener("storage", onStorage);
+    },
+    [dispatch],
+  );
+
+  useSyncExternalStore(
+    subscribeWorkspaceModelStorage,
+    getWorkspaceModelStorageSnapshot,
+    getWorkspaceModelStorageSnapshot,
+  );
 
   const handles = useMemo<WorkspaceHandles>(
     () => ({
@@ -275,7 +388,6 @@ export function useWorkspace(): UseWorkspaceResult {
         dispatch({ type: "openSessionPayloadInPane", paneId, payload, tab: makeFreshTab() }),
       renameTab: (paneId: PaneId, tabId: string, title: string) =>
         dispatch({ type: "renameTab", paneId, tabId, title }),
-      focusTab: (paneId: PaneId, tabId: string) => dispatch({ type: "focusTab", paneId, tabId }),
       splitTabIntoNewPane: (paneId: PaneId, tabId: string) =>
         dispatch({
           type: "splitTab",
@@ -292,6 +404,10 @@ export function useWorkspace(): UseWorkspaceResult {
         const pendingSessionId = pendingSessionReplaysRef.current.get(paneId);
         if (handle && pendingSessionId) queueSessionReplay(paneId, pendingSessionId);
       },
+      compactFocusedSession: async () => {
+        const handle = paneHandlesRef.current.get(stateRef.current.focusedPaneId);
+        await handle?.compact();
+      },
       runBrowserCommand,
       setSplitRatio: (path: number[], ratio: number) =>
         dispatch({ type: "setSplitRatio", path, ratio }),
@@ -302,10 +418,13 @@ export function useWorkspace(): UseWorkspaceResult {
         const pane = stateRef.current.panesById.get(paneId);
         if (!pane) return;
         const current = paneSessions(stateRef.current, paneId);
+        const next = typeof tabs === "function" ? tabs(current) : tabs;
+        const session = next.at(-1) ?? current[0];
+        if (!session) return;
         dispatch({
-          type: "setPaneTabs",
+          type: "setPaneSession",
           paneId,
-          tabs: typeof tabs === "function" ? tabs(current) : tabs,
+          session,
         });
       },
       patchActiveTab: (paneId: PaneId, patch: Partial<SessionTab>) =>
@@ -340,10 +459,16 @@ export function useWorkspace(): UseWorkspaceResult {
         if (typeof window === "undefined") return;
         event.preventDefault();
         const startX = event.clientX;
-        const startWidth = toolsRef.current.computer.width;
+        const startWidth =
+          computerAsideRef.current?.getBoundingClientRect().width ??
+          toolsRef.current.computer.width;
+        const containerWidth =
+          computerAsideRef.current?.parentElement?.getBoundingClientRect().width ??
+          window.innerWidth;
         let frame = 0;
+        if (computerAsideRef.current) computerAsideRef.current.style.transition = "none";
         const onMove = (moveEvent: MouseEvent) => {
-          const next = clampComputerWidth(startWidth + startX - moveEvent.clientX);
+          const next = clampComputerWidth(startWidth + startX - moveEvent.clientX, containerWidth);
           if (frame) cancelAnimationFrame(frame);
           frame = requestAnimationFrame(() => {
             if (computerAsideRef.current) computerAsideRef.current.style.width = `${next}px`;
@@ -351,8 +476,16 @@ export function useWorkspace(): UseWorkspaceResult {
         };
         const onUp = (upEvent: MouseEvent) => {
           if (frame) cancelAnimationFrame(frame);
-          const next = clampComputerWidth(startWidth + startX - upEvent.clientX);
-          if (computerAsideRef.current) computerAsideRef.current.style.width = `${next}px`;
+          const raw = startWidth + startX - upEvent.clientX;
+          const next = gentlySnapComputerWidth(raw, containerWidth);
+          if (computerAsideRef.current) {
+            computerAsideRef.current.style.transition =
+              "width 150ms cubic-bezier(0.22, 1, 0.36, 1)";
+            computerAsideRef.current.style.width = `${next}px`;
+            window.setTimeout(() => {
+              if (computerAsideRef.current) computerAsideRef.current.style.transition = "";
+            }, 170);
+          }
           toolsRef.current.setComputerWidth(next);
           window.removeEventListener("mousemove", onMove);
           window.removeEventListener("mouseup", onUp);
@@ -374,32 +507,9 @@ export function useWorkspace(): UseWorkspaceResult {
     [dispatch, queueSessionReplay, runBrowserCommand],
   );
 
-  useEffect(() => {
-    const { workspace, selections } = loadInitialFromStorage(window.localStorage);
-    dispatch({ type: "hydrate", state: workspace });
-    if (selections.size > 0) toolsRef.current.hydrateSelections(selections);
-
-    // The PROJECTS_LOADED_EVENT is a once-per-process-lifetime broadcast
-    // from ProjectsProvider. On re-mount (navigating back to the agent page
-    // after visiting another route) the event won't fire again, so we check
-    // synchronously whether projects are already loaded and hydrate active
-    // session snapshots directly. Without this, `hydrateActiveSessions` is
-    // never dispatched, `hydrated` stays false, replays are never queued, and
-    // the conversation shows stale localStorage data with no resync.
-    if (projectsRef.current.loaded) {
-      const snapshots = loadPersistedActiveAgentSessions();
-      dispatch({
-        type: "hydrateActiveSessions",
-        snapshots,
-        projects: projectsRef.current.projects,
-      });
-    }
-
-    const unsub = subscribeWorkspaceWindowEvents(window, dispatch, (id) =>
-      projectsRef.current.findById(id),
-    );
-    return unsub;
-  }, [dispatch]);
+  useWorkspaceHydrationEffects({ dispatch, projectsRef, toolsRef });
 
   return { state, dispatch, handles };
 }
+
+const getWorkspaceModelStorageSnapshot = (): number => 0;

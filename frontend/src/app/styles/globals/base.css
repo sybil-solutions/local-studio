@@ -1,4 +1,3 @@
-/* CRITICAL */
 *,
 *::before,
 *::after {
@@ -44,18 +43,23 @@ body {
     24px 24px;
   color: var(--fg);
   font-family: var(--font-sans), system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
 }
 
-/* Links */
+.agent-workspace {
+  background-color: var(--agent-bg);
+  background-image: none;
+}
+
+/* Links default to inherited color so UI chrome (sidebar, settings, nav,
+   tabs, etc.) is not painted with --hl1 blue. Markdown/content links opt in
+   via their own Tailwind color classes (e.g. text-(--accent)). */
 a {
-  color: var(--hl1);
+  color: inherit;
   text-decoration: none;
   transition: color 0.15s ease;
-}
-
-a:hover {
-  color: var(--hl1);
-  text-decoration: underline;
 }
 
 nav a,
@@ -146,8 +150,14 @@ a.nav-link:hover,
 
 /* Selection */
 ::selection {
-  background: var(--accent);
+  background: color-mix(in srgb, var(--hl1) 42%, transparent);
   color: var(--fg);
+}
+
+:root[data-theme="omlx-dark"] ::selection,
+.dark ::selection {
+  background: color-mix(in srgb, var(--hl1) 52%, #000 28%);
+  color: #fff;
 }
 
 /* Scroll shadows */

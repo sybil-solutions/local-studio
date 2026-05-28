@@ -1,5 +1,3 @@
-// Merged configs from lifecycle/configs.ts and downloads/configs.ts
-
 export const LIFECYCLE_MODULE_DEFAULTS = {
   modelStartTimeoutMs: 120_000,
 };

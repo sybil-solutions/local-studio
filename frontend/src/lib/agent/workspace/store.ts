@@ -4,7 +4,7 @@ import {
   type ActiveAgentSessionSnapshot,
   type ActiveSessionPrefs,
 } from "@/lib/agent/active-sessions";
-import { makeFreshTab, newRuntimeId } from "@/lib/agent/session/helpers";
+import { cleanSessionTitle, makeFreshTab, newRuntimeId } from "@/lib/agent/session/helpers";
 import type { Session, SessionId } from "@/lib/agent/sessions/types";
 import type { ToolSelection } from "@/lib/agent/tools/types";
 import type { ComposerPluginRef, ComposerSkillRef } from "@/lib/agent/composer-context";
@@ -47,8 +47,7 @@ export function createInitialState(): WorkspaceState {
       [
         "p-init",
         {
-          sessionIds: [session.id],
-          activeSessionId: session.id,
+          sessionId: session.id,
           runtimeSessionId: newRuntimeId(),
         },
       ],
@@ -74,6 +73,11 @@ type PersistedTabShape = Partial<Session> & {
   skills?: ComposerSkillRef[];
 };
 
+export type PersistedSessionMeta = Omit<Session, "messages" | "error"> & {
+  plugins?: ComposerPluginRef[];
+  skills?: ComposerSkillRef[];
+};
+
 export function normalizePersistedTab(value: unknown): Session | null {
   if (!value || typeof value !== "object") return null;
   const tab = value as PersistedTabShape;
@@ -85,8 +89,11 @@ export function normalizePersistedTab(value: unknown): Session | null {
     id: tab.id,
     runtimeSessionId: tab.runtimeSessionId,
     piSessionId: typeof tab.piSessionId === "string" ? tab.piSessionId : null,
-    title: typeof tab.title === "string" && tab.title.trim() ? tab.title : fallback.title,
-    messages: Array.isArray(tab.messages) ? tab.messages.slice(-80) : [],
+    title: cleanSessionTitle(tab.title) || fallback.title,
+    // The canonical session log is the transcript source of truth. Legacy
+    // pane-state entries may still contain messages, but restoring them here
+    // would put large reasoning/tool payloads back onto the renderer hot path.
+    messages: [],
     status: typeof tab.status === "string" ? tab.status : "idle",
     error: "",
     startedAt: typeof tab.startedAt === "string" ? tab.startedAt : undefined,
@@ -95,6 +102,7 @@ export function normalizePersistedTab(value: unknown): Session | null {
     activeAssistantId:
       typeof tab.activeAssistantId === "string" ? tab.activeAssistantId : undefined,
     lastEventSeq: typeof tab.lastEventSeq === "number" ? tab.lastEventSeq : undefined,
+    usedSkills: Array.isArray(tab.usedSkills) ? (tab.usedSkills as ComposerSkillRef[]) : undefined,
   };
 }
 
@@ -106,11 +114,23 @@ export function normalizePersistedTab(value: unknown): Session | null {
  */
 export function selectionFromPersistedTab(value: unknown): ToolSelection | null {
   if (!value || typeof value !== "object") return null;
-  const tab = value as PersistedTabShape;
+  const tab = value as PersistedTabShape & {
+    promptTemplates?: ToolSelection["promptTemplates"];
+    extensionOverrides?: ToolSelection["extensionOverrides"];
+  };
   const plugins = Array.isArray(tab.plugins) ? tab.plugins : [];
   const skills = Array.isArray(tab.skills) ? tab.skills : [];
-  if (plugins.length === 0 && skills.length === 0) return null;
-  return { plugins, skills };
+  const promptTemplates = Array.isArray(tab.promptTemplates) ? tab.promptTemplates : [];
+  const extensionOverrides = Array.isArray(tab.extensionOverrides) ? tab.extensionOverrides : [];
+  if (
+    plugins.length === 0 &&
+    skills.length === 0 &&
+    promptTemplates.length === 0 &&
+    extensionOverrides.length === 0
+  ) {
+    return null;
+  }
+  return { plugins, skills, promptTemplates, extensionOverrides };
 }
 
 export type RestoredPaneState = {
@@ -194,8 +214,7 @@ export function restorePersistedPaneState(raw: string): RestoredPaneState | null
     const selection = restored.selections.get(session.id);
     if (selection) selections.set(session.id, selection);
     panesById.set(paneId, {
-      sessionIds: [session.id],
-      activeSessionId: session.id,
+      sessionId: session.id,
       runtimeSessionId: persistedRuntimeSessionId(pane),
     });
   }
@@ -210,28 +229,42 @@ export function restorePersistedPaneState(raw: string): RestoredPaneState | null
 }
 
 /**
- * Serialize a session for persistence. Tool selection (plugins/skills) is
- * embedded back into the persisted tab so older clients keep loading; the
- * runtime model keeps them in the tools subsystem.
+ * Serialize only durable session metadata. Transcripts, reasoning, tool
+ * payloads, attachment bodies, and preview data belong to canonical session
+ * storage or runtime memory, never pane-state localStorage.
  */
-export function tabForPersistence(
+export function sessionMetaForPersistence(
   tab: Session,
   selection?: ToolSelection,
-): Session & {
-  plugins?: ComposerPluginRef[];
-  skills?: ComposerSkillRef[];
-} {
-  const base: Session = {
-    ...tab,
-    messages: tab.messages.slice(-80),
+): PersistedSessionMeta {
+  const base: PersistedSessionMeta = {
+    id: tab.id,
+    runtimeSessionId: tab.runtimeSessionId,
+    piSessionId: tab.piSessionId,
+    projectId: tab.projectId,
+    cwd: tab.cwd,
+    modelId: tab.modelId,
+    title: cleanSessionTitle(tab.title) || "New session",
     status: tab.status,
-    error: "",
+    startedAt: tab.startedAt,
+    input: tab.input,
+    tokenStats: tab.tokenStats,
+    usedSkills: tab.usedSkills,
+    activeAssistantId: tab.activeAssistantId,
+    lastEventSeq: tab.lastEventSeq,
+    queue: tab.queue,
   };
   if (selection) {
     return {
       ...base,
       ...(selection.plugins.length > 0 ? { plugins: selection.plugins } : {}),
       ...(selection.skills.length > 0 ? { skills: selection.skills } : {}),
+      ...(selection.promptTemplates.length > 0
+        ? { promptTemplates: selection.promptTemplates }
+        : {}),
+      ...(selection.extensionOverrides.length > 0
+        ? { extensionOverrides: selection.extensionOverrides }
+        : {}),
     };
   }
   return base;
@@ -276,7 +309,9 @@ export function loadPersistedActiveAgentSessions(
           tabId: typeof entry.tabId === "string" ? entry.tabId : "",
           piSessionId: piSessionId || null,
           modelId: typeof entry.modelId === "string" ? entry.modelId : undefined,
-          title: typeof entry.title === "string" ? entry.title : "Loading session",
+          title:
+            cleanSessionTitle(typeof entry.title === "string" ? entry.title : null) ||
+            "Loading session",
           status: typeof entry.status === "string" ? entry.status : "idle",
           active: entry.active === true,
           startedAt: typeof entry.startedAt === "string" ? entry.startedAt : undefined,
@@ -285,6 +320,9 @@ export function loadPersistedActiveAgentSessions(
             ? (entry.plugins as ComposerPluginRef[])
             : undefined,
           skills: Array.isArray(entry.skills) ? (entry.skills as ComposerSkillRef[]) : undefined,
+          usedSkills: Array.isArray(entry.usedSkills)
+            ? (entry.usedSkills as ComposerSkillRef[])
+            : undefined,
         };
       })
       .filter(

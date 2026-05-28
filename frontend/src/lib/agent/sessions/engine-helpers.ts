@@ -4,6 +4,7 @@ import type { Session, SessionId } from "./types";
 
 export type ResumeRuntimeTarget = {
   after: number;
+  piSessionId: string | null;
   runtimeSessionId: string;
   sessionId: SessionId;
 };
@@ -45,6 +46,7 @@ export function resolveResumeRuntimeTarget(
   if (active?.status !== "running" && active?.status !== "starting") return null;
   return {
     after: active.lastEventSeq ?? 0,
+    piSessionId: active.piSessionId,
     runtimeSessionId: resolveRuntimeSessionId(active, fallbackRuntimeSessionId),
     sessionId: activeTabId,
   };

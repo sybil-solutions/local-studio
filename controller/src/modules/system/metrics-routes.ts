@@ -1,6 +1,6 @@
-// CRITICAL
 import type { Hono } from "hono";
 import { performance } from "node:perf_hooks";
+import { observeControllerFunction } from "../../core/function-observability";
 import type { AppContext } from "../../types/context";
 import { getGpuInfo } from "./platform/gpu";
 import { fetchInference } from "../../services/inference/inference-client";
@@ -59,12 +59,19 @@ const buildModelKeys = (modelId: string, modelPath: string | null | undefined): 
 };
 
 const buildCurrentMetrics = async (context: AppContext): Promise<Record<string, unknown>> => {
-  const current = await context.processManager.findInferenceProcess(context.config.inference_port);
+  const current = await observeControllerFunction(
+    context,
+    "metrics.current.findInferenceProcess",
+    () => context.processManager.findInferenceProcess(context.config.inference_port)
+  );
   const gpus = getGpuInfo();
   const lifetimeData = context.stores.lifetimeMetricsStore.getAll();
   const currentPowerWatts = gpus.reduce((sum, gpu) => sum + gpu.power_draw, 0);
   const vramUsedGb = gpus.reduce((sum, gpu) => sum + Number(gpu.memory_used_mb ?? 0) / 1024, 0);
-  const vramCapacityGb = gpus.reduce((sum, gpu) => sum + Number(gpu.memory_total_mb ?? 0) / 1024, 0);
+  const vramCapacityGb = gpus.reduce(
+    (sum, gpu) => sum + Number(gpu.memory_total_mb ?? 0) / 1024,
+    0
+  );
   const powerLimitWatts = gpus.reduce((sum, gpu) => sum + Number(gpu.power_limit ?? 0), 0);
   const baseMetrics: Record<string, unknown> = {
     lifetime_prompt_tokens: lifetimeData["prompt_tokens_total"] ?? 0,
@@ -118,6 +125,7 @@ const buildCurrentMetrics = async (context: AppContext): Promise<Record<string, 
   const ttftCount = prometheus[ttftCountName] ?? 0;
   const avgTtftMs = ttftCount > 0 ? ((prometheus[ttftSumName] ?? 0) / ttftCount) * 1000 : 0;
   const peakData = context.stores.peakMetricsStore.get(modelId);
+  const bestSessionPeakData = context.stores.peakMetricsStore.getBestSession(modelId);
 
   return {
     ...baseMetrics,
@@ -161,21 +169,22 @@ const buildCurrentMetrics = async (context: AppContext): Promise<Record<string, 
     ),
     avg_ttft_ms: avgTtftMs > 0 ? Math.round(avgTtftMs * 10) / 10 : usageAggregate?.ttft?.avg_ms,
     latency_avg: positiveOrUndefined(usageAggregate?.latency?.avg_ms),
+    best_session_peak_id: bestSessionPeakData?.["session_id"] ?? null,
+    best_session_prefill_tps: bestSessionPeakData?.["peak_prefill_tps"] ?? null,
+    best_session_generation_tps: bestSessionPeakData?.["peak_generation_tps"] ?? null,
+    best_session_ttft_ms: bestSessionPeakData?.["best_ttft_ms"] ?? null,
     peak_prefill_tps: peakData?.["prefill_tps"] ?? null,
     peak_generation_tps: peakData?.["generation_tps"] ?? null,
     peak_ttft_ms: peakData?.["ttft_ms"] ?? null,
   };
 };
 
-/**
- * Register monitoring routes.
- * @param app - Hono app.
- * @param context - App context.
- */
 export const registerMonitoringRoutes = (app: Hono, context: AppContext): void => {
   app.get("/metrics", async (_ctx) => {
-    const current = await context.processManager.findInferenceProcess(
-      context.config.inference_port
+    const current = await observeControllerFunction(
+      context,
+      "metrics.prometheus.findInferenceProcess",
+      () => context.processManager.findInferenceProcess(context.config.inference_port)
     );
     if (current) {
       context.metrics.updateActiveModel(
@@ -240,8 +249,8 @@ export const registerMonitoringRoutes = (app: Hono, context: AppContext): void =
   app.post("/benchmark", async (ctx) => {
     const promptTokens = Number(ctx.req.query("prompt_tokens") ?? 1000);
     const maxTokens = Number(ctx.req.query("max_tokens") ?? 100);
-    const current = await context.processManager.findInferenceProcess(
-      context.config.inference_port
+    const current = await observeControllerFunction(context, "benchmark.findInferenceProcess", () =>
+      context.processManager.findInferenceProcess(context.config.inference_port)
     );
     if (!current) {
       return ctx.json({ error: "No model running" });
@@ -273,17 +282,13 @@ export const registerMonitoringRoutes = (app: Hono, context: AppContext): void =
       const completionTokens = usage["completion_tokens"] ?? 0;
 
       if (completionTokens > 0 && promptTokensActual > 0) {
-        // Calculate generation throughput from total time
-        // Note: This includes prefill time so it's a conservative estimate
-        // Real-time metrics collector tracks actual generation throughput more accurately
         const generationTps = completionTokens / totalTime;
 
-        // Don't fake prefill - it requires TTFT measurement from streaming
         const result = context.stores.peakMetricsStore.updateIfBetter(
           modelId,
-          undefined, // prefill requires proper TTFT measurement
+          undefined,
           generationTps,
-          undefined // TTFT requires streaming measurement
+          undefined
         );
         context.stores.peakMetricsStore.addTokens(modelId, completionTokens, 1);
 

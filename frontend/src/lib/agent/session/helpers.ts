@@ -1,7 +1,4 @@
-import { isAgentEndEvent } from "@/lib/agent/pi-events";
 import type { QueuedMessage, RuntimeLoggedEvent, SessionTab, TokenStats } from "./types";
-
-// ----- id / time -----
 
 export function randomIdSegment(length: number): string {
   const cryptoApi = globalThis.crypto;
@@ -34,8 +31,6 @@ export function nowLabel(): string {
     new Date(),
   );
 }
-
-// ----- generic event helpers -----
 
 export function asRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" && !Array.isArray(value)
@@ -106,13 +101,29 @@ export function formatTokenCount(tokens: number): string {
 }
 
 export function sessionTitleFromPrompt(text: string): string {
-  return text.replace(/\s+/g, " ").trim().slice(0, 48) || "New session";
+  return cleanSessionTitle(text.replace(/\s+/g, " ").trim().slice(0, 48)) || "New session";
+}
+
+export function isPlaceholderSessionTitle(value: string | null | undefined): boolean {
+  const normalized = value?.replace(/\s+/g, " ").trim();
+  return Boolean(normalized && /^(?:\.{3}|…)+$/.test(normalized));
+}
+
+export function cleanSessionTitle(value: string | null | undefined): string {
+  const normalized = value?.replace(/\s+/g, " ").trim() ?? "";
+  return normalized && !isPlaceholderSessionTitle(normalized) ? normalized : "";
 }
 
 export function visibleUserTextFromPi(text: string): string {
   const marker = "\n\nUser prompt:\n";
   const idx = text.lastIndexOf(marker);
-  return (idx === -1 ? text : text.slice(idx + marker.length)).trim();
+  return stripAttachmentPromptText(idx === -1 ? text : text.slice(idx + marker.length)).trim();
+}
+
+function stripAttachmentPromptText(text: string): string {
+  const attachmentStart = text.search(/(?:^|\n\n)Attachment \d+:/);
+  if (attachmentStart === -1) return text;
+  return text.slice(0, attachmentStart).trim();
 }
 
 export function messageText(
@@ -130,22 +141,10 @@ export function messageText(
     .join(separator);
 }
 
-// ----- SSE parsing -----
-
 export { parseAgentTurnSsePayload } from "@/lib/agent/contracts/turn";
 
-// ----- runtime status / control helpers -----
-
-export function runtimeStatusLooksActive(status: {
-  active?: boolean;
-  running?: boolean;
-  events?: RuntimeLoggedEvent[];
-}): boolean {
-  if (status.active) return true;
-  if (!status.running) return false;
-  const lastEvent = [...(status.events ?? [])].reverse().find((entry) => entry.event);
-  if (!lastEvent) return true;
-  return !isAgentEndEvent(lastEvent.event ?? {}) && lastEvent.event?.type !== "process_exit";
+export function runtimeStatusLooksActive(status: { active?: boolean }): boolean {
+  return status.active === true;
 }
 
 export function runtimeStatusAcceptsControl(
@@ -160,11 +159,16 @@ export function runtimeStatusAcceptsControl(
 export function statusAfterControlPhase(
   current: SessionTab["status"],
   phase?: string,
+  options: { queuedControlAccepted?: boolean } = {},
 ): SessionTab["status"] {
-  // A steer/follow_up request has its own short SSE stream. Its final "done"
-  // only means the control message was accepted; the original Pi turn is still
-  // running on the owning stream. Do not mark the UI idle here.
-  if (phase === "done" || phase === "queued") return "running";
+  if (phase === "starting" || phase === "running") return phase;
+  // A true steer/follow_up request has its own short SSE stream. Its final
+  // "done" only means the control message was accepted; the original Pi turn
+  // is still running on the owning stream. If the server promoted a stale
+  // control request to a normal prompt, there is no "queued" phase and "done"
+  // really means the streamed prompt has completed.
+  if (phase === "queued") return "running";
+  if (phase === "done") return options.queuedControlAccepted ? "running" : "idle";
   return current;
 }
 
@@ -178,8 +182,6 @@ export function replayCursorAfterRuntimeHydration(
   // rendered deltas and duplicate visible assistant content after navigation.
   return runtimeActive ? runtimeEventSeq : undefined;
 }
-
-// ----- queue helpers -----
 
 export function visibleQueuedMessages(queue: QueuedMessage[]): QueuedMessage[] {
   return queue.filter((item) => item.mode === "follow_up");
@@ -200,31 +202,68 @@ function stringArray(value: unknown): string[] {
     : [];
 }
 
+function queueDisplayText(text: string): string {
+  return visibleUserTextFromPi(text) || text.trim();
+}
+
+function queueKey(mode: QueuedMessage["mode"], text: string): string {
+  return `${mode}:${queueDisplayText(text)}`;
+}
+
+function consumePending(
+  pending: Map<string, string[]>,
+  mode: QueuedMessage["mode"],
+  text: string,
+): string | null {
+  const key = queueKey(mode, text);
+  const values = pending.get(key);
+  if (!values || values.length === 0) return null;
+  const [value, ...remaining] = values;
+  if (remaining.length > 0) pending.set(key, remaining);
+  else pending.delete(key);
+  return value ?? null;
+}
+
 export function reconcileQueueWithPiEvent(
   queue: QueuedMessage[],
   event: Record<string, unknown>,
 ): QueuedMessage[] {
   if (event.type !== "queue_update") return queue;
-  const pending = {
-    steer: stringArray(event.steering),
-    follow_up: stringArray(event.followUp),
-  };
-  const next = queue.filter((item) => !item.sent || pending[item.mode].includes(item.text));
-  const seen = new Set(next.map((item) => `${item.mode}:${item.text}`));
-  for (const [mode, messages] of Object.entries(pending) as Array<
-    [QueuedMessage["mode"], string[]]
-  >) {
+  const pending = new Map<string, string[]>();
+  const addPending = (mode: QueuedMessage["mode"], messages: string[]) => {
     for (const text of messages) {
-      const key = `${mode}:${text}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      next.push({ id: newId("queue"), mode, text, sent: true });
+      const key = queueKey(mode, text);
+      pending.set(key, [...(pending.get(key) ?? []), text]);
+    }
+  };
+  addPending("follow_up", stringArray(event.followUp));
+
+  const next = queue.flatMap((item) => {
+    if (item.mode !== "follow_up") return [];
+    const acceptedByPi = consumePending(pending, item.mode, item.text);
+    if (acceptedByPi) return [{ ...item, text: queueDisplayText(acceptedByPi), sent: true }];
+    return item.sent ? [] : [item];
+  });
+
+  for (const [key, messages] of pending) {
+    const separator = key.indexOf(":");
+    const mode = key.slice(0, separator) as QueuedMessage["mode"];
+    for (const text of messages) {
+      next.push({ id: newId("queue"), mode, text: queueDisplayText(text), sent: true });
     }
   }
   return next;
 }
 
-// ----- canonical + runtime event merge -----
+export function removeDeliveredQueuedMessage(
+  queue: QueuedMessage[],
+  deliveredText: string,
+): QueuedMessage[] {
+  const delivered = queueDisplayText(deliveredText);
+  const index = queue.findIndex((item) => queueDisplayText(item.text) === delivered);
+  if (index === -1) return queue;
+  return [...queue.slice(0, index), ...queue.slice(index + 1)];
+}
 
 function eventKey(event: Record<string, unknown>): string {
   try {
@@ -253,8 +292,6 @@ export function mergeCanonicalAndRuntimeEvents(
     .forEach((entry) => push(entry.event as Record<string, unknown>));
   return merged;
 }
-
-// ----- fresh tab factory -----
 
 export function makeFreshTab(): SessionTab {
   return {

@@ -1,4 +1,3 @@
-// CRITICAL
 import {
   getBrowserEventChannelForControllerEvent,
   isControllerStreamEventType,
@@ -7,11 +6,11 @@ import {
 
 export type UnknownControllerEventLogger = (
   message: string,
-  detail: { eventType: string; data: Record<string, unknown> }
+  detail: { eventType: string; data: Record<string, unknown> },
 ) => void;
 
 export const resolveControllerEventChannel = (
-  eventType: string
+  eventType: string,
 ): ControllerBrowserEventChannel | null => {
   return getBrowserEventChannelForControllerEvent(eventType);
 };
@@ -19,7 +18,7 @@ export const resolveControllerEventChannel = (
 export const dispatchControllerDomainEvent = (
   eventType: string,
   data: Record<string, unknown>,
-  dispatch: (name: string, detail: Record<string, unknown>) => void
+  dispatch: (name: string, detail: Record<string, unknown>) => void,
 ): boolean => {
   const channel = resolveControllerEventChannel(eventType);
   if (!channel) {
@@ -34,7 +33,7 @@ export const logUnknownControllerEvent = (
   data: Record<string, unknown>,
   logger: UnknownControllerEventLogger = (message, detail) => {
     console.warn(message, detail);
-  }
+  },
 ): void => {
   logger("[Controller SSE] Unhandled event type", { eventType, data });
 };

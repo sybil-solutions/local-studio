@@ -1,4 +1,3 @@
-// CRITICAL
 import type { AppContext } from "../types/context";
 
 export const createOpenApiSpec = (context: AppContext): Record<string, unknown> => ({
@@ -96,6 +95,17 @@ export const createOpenApiSpec = (context: AppContext): Record<string, unknown> 
       get: {
         summary: "llama.cpp runtime info",
         description: "Get llama.cpp install status and binary/version",
+        responses: {
+          "200": {
+            description: "Runtime info",
+          },
+        },
+      },
+    },
+    "/runtime/mlx": {
+      get: {
+        summary: "MLX runtime info",
+        description: "Get MLX install status and Python runtime path",
         responses: {
           "200": {
             description: "Runtime info",

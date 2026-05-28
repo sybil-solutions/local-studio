@@ -1,4 +1,3 @@
-# CRITICAL
 # Environment files
 .env
 .env.*
@@ -6,14 +5,10 @@
 !.env.example
 
 .factory
-engines-wiki/
-droid-wiki/
 
 # Per-project agent comments (created when the user adds comments via the
 # vLLM Studio agent surface). Project-local, not shared.
 .vllm-studio/
-
-website-dist
 
 # Python
 __pycache__/
@@ -88,9 +83,6 @@ scripts/*.local.sh
 .worktree/
 .pi/
 .ralph/
-
-# Reference-only copy of the previous controller (superseded by controller/)
-controller-legacy/
 
 # Sensitive data - do not commit specific IPs or domains
 # Use environment variables or config files instead

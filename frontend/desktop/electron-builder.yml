@@ -2,21 +2,31 @@ appId: org.vllm.studio.desktop
 productName: vLLM Studio
 asar: true
 
+asarUnpack:
+  - "node_modules/@lydell/**/*.node"
+  - "node_modules/@lydell/**/spawn-helper"
+
 files:
   - desktop/dist/**
   - package.json
+  - node_modules/@lydell/node-pty/**
+  - node_modules/@lydell/node-pty-${platform}-${arch}/**
 
 extraResources:
   - from: .next/standalone
     to: app/frontend/.next/standalone
     filter:
       - "**/*"
-  - from: .desktop-pi-runtime/node_modules
-    to: app/node_modules
+  - from: .next/static
+    to: app/frontend/.next/standalone/.next/static
     filter:
       - "**/*"
   - from: .next/static
     to: app/frontend/.next/standalone/frontend/.next/static
+    filter:
+      - "**/*"
+  - from: public
+    to: app/frontend/.next/standalone/public
     filter:
       - "**/*"
   - from: public
@@ -27,6 +37,10 @@ extraResources:
     to: desktop/resources/pi-extensions
     filter:
       - "**/*"
+  - from: desktop/resources/skills
+    to: desktop/resources/skills
+    filter:
+      - "**/*"
 
 directories:
   output: dist-desktop
@@ -35,11 +49,10 @@ directories:
 mac:
   icon: desktop/resources/icon.icns
   category: public.app-category.developer-tools
-  # Keep macOS TCC permissions (Accessibility / Screen Recording) stable
-  # across local rebuilds. This identity is a self-signed Code Signing cert in
-  # the login keychain when no Apple Developer ID identity is available.
-  identity: vLLM Studio Local Dev
-  timestamp: none
+  # Sign with the real Apple Developer ID Application certificate so Gatekeeper
+  # accepts the bundle without `-609` errors and the app can be distributed.
+  # The matching private key must be present in the login keychain.
+  identity: "sherif cherfa (TZ447KHNZL)"
   target:
     - target: dmg
       arch:

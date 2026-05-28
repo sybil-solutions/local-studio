@@ -1,0 +1,29 @@
+#!/bin/bash
+# Wraps /usr/bin/codesign with retries when Apple's timestamp server transiently
+# returns "A timestamp was expected but was not found." during deep signing of
+# native modules. Without this, electron-builder aborts the whole build.
+
+set -u
+REAL=/usr/bin/codesign
+MAX_ATTEMPTS=8
+DELAY=2
+
+attempt=1
+while :; do
+  TMP_ERR="$(mktemp -t codesign-shim.XXXXXX)"
+  if "$REAL" "$@" 2> >(tee "$TMP_ERR" >&2); then
+    rm -f "$TMP_ERR"
+    exit 0
+  fi
+  status=$?
+  if grep -q "timestamp was expected but was not found" "$TMP_ERR" && [ "$attempt" -lt "$MAX_ATTEMPTS" ]; then
+    echo "[codesign-shim] transient timestamp failure (attempt $attempt), retrying in ${DELAY}s..." >&2
+    rm -f "$TMP_ERR"
+    sleep "$DELAY"
+    attempt=$((attempt + 1))
+    DELAY=$((DELAY * 2))
+    continue
+  fi
+  rm -f "$TMP_ERR"
+  exit "$status"
+done

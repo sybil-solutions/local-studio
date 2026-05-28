@@ -1,4 +1,3 @@
-// CRITICAL
 import { existsSync, mkdirSync, readdirSync, statSync, unlinkSync, openSync, closeSync, readSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 

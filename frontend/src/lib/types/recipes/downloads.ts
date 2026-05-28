@@ -1,4 +1,3 @@
-// CRITICAL
 /**
  * Model download + storage types.
  */

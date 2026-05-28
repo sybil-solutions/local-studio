@@ -1,12 +1,9 @@
-// CRITICAL
 import { spawn, spawnSync } from "node:child_process";
 import type { ChildProcess } from "node:child_process";
-import { createWriteStream, existsSync, readFileSync } from "node:fs";
+import { createWriteStream } from "node:fs";
 import type { WriteStream } from "node:fs";
 import { createInterface } from "node:readline";
-import { resolve } from "node:path";
 import { setTimeout as delayTimeout } from "node:timers/promises";
-import { parse as parseYaml } from "yaml";
 import type { Config } from "../../../config/env";
 import { delay } from "../../../core/async";
 import {
@@ -23,15 +20,11 @@ import {
   collectChildren,
   detectBackend,
   extractFlag,
-  fetchTabbyModel,
   listProcesses,
   pidExists,
   buildProcessTree,
 } from "./process-utilities";
 
-/**
- * Controller process manager.
- */
 export interface ProcessManager {
   findInferenceProcess: (port: number) => Promise<ProcessInfo | null>;
   launchModel: (recipe: Recipe) => Promise<LaunchResult>;
@@ -39,23 +32,18 @@ export interface ProcessManager {
   killProcess: (pid: number, force: boolean) => Promise<boolean>;
 }
 
-/**
- * Create a process manager.
- * @param config - Runtime config.
- * @param logger - Logger instance.
- * @param eventManager - Event manager for log forwarding.
- * @returns Process manager.
- */
 export const createProcessManager = (
   config: Config,
   logger: Logger,
   eventManager?: EventManager
 ): ProcessManager => {
-  /**
-   * Locate the inference process by port.
-   * @param port - Port to match.
-   * @returns Process info or null.
-   */
+  type ProcessTableEntry = {
+    pid: number;
+    ppid: number;
+    stat: string;
+    command: string;
+  };
+
   const findInferenceProcess = async (port: number): Promise<ProcessInfo | null> => {
     const processes = listProcesses();
     for (const proc of processes) {
@@ -64,11 +52,7 @@ export const createProcessManager = (
         continue;
       }
       const flagPort = extractFlag(proc.args, "--port");
-      if (backend === "tabbyapi") {
-        if (port !== 8000) {
-          continue;
-        }
-      } else if (flagPort && Number(flagPort) !== port) {
+      if (flagPort && Number(flagPort) !== port) {
         continue;
       } else if (!flagPort && !(backend === "vllm" && port === 8000)) {
         continue;
@@ -77,7 +61,7 @@ export const createProcessManager = (
       if (!modelPath && (backend === "llamacpp" || backend === "exllamav3")) {
         modelPath = extractFlag(proc.args, "-m");
       }
-      let servedModelName =
+      const servedModelName =
         extractFlag(proc.args, "--served-model-name") ||
         extractFlag(proc.args, "--alias") ||
         extractFlag(proc.args, "-a");
@@ -92,49 +76,6 @@ export const createProcessManager = (
         }
       }
 
-      if (backend === "tabbyapi" && !modelPath) {
-        const tabbyDirectory = config.tabby_api_dir || "/opt/tabbyAPI";
-        const configFlag = extractFlag(proc.args, "--config");
-        if (configFlag) {
-          const configPath = resolve(tabbyDirectory, configFlag);
-          if (existsSync(configPath)) {
-            try {
-              const content = readFileSync(configPath, "utf-8");
-              const parsed = parseYaml(content) as Record<string, unknown>;
-              const model = parsed["model"] as Record<string, unknown> | undefined;
-              const modelName = model?.["model_name"];
-              if (typeof modelName === "string") {
-                modelPath = resolve(config.models_dir, modelName);
-                servedModelName = modelName;
-              }
-            } catch {
-              return {
-                pid: proc.pid,
-                backend,
-                model_path: "tabbyapi:unknown",
-                port,
-                served_model_name: servedModelName ?? "GLM-4.7",
-              };
-            }
-          }
-        }
-        if (!modelPath) {
-          const tabbyResult = await fetchTabbyModel(port, tabbyDirectory, config.models_dir);
-          modelPath = tabbyResult.modelPath ?? modelPath;
-          servedModelName = tabbyResult.servedModelName ?? servedModelName;
-        }
-      }
-
-      if (!modelPath && backend === "tabbyapi") {
-        return {
-          pid: proc.pid,
-          backend,
-          model_path: "tabbyapi:unknown",
-          port,
-          served_model_name: servedModelName ?? "GLM-4.7",
-        };
-      }
-
       return {
         pid: proc.pid,
         backend,
@@ -146,12 +87,6 @@ export const createProcessManager = (
     return null;
   };
 
-  /**
-   * Kill a process and its children.
-   * @param pid - Process id.
-   * @param force - Force kill if true.
-   * @returns True on success.
-   */
   const killProcess = async (pid: number, force: boolean): Promise<boolean> => {
     if (!pidExists(pid)) {
       return true;
@@ -258,11 +193,78 @@ export const createProcessManager = (
     }
   };
 
-  /**
-   * Launch an inference backend for a recipe.
-   * @param recipe - Recipe data.
-   * @returns Launch result.
-   */
+  const listProcessTable = (): ProcessTableEntry[] => {
+    try {
+      const result = spawnSync("ps", ["-eo", "pid=,ppid=,stat=,args="]);
+      if (result.status !== 0) {
+        return [];
+      }
+      const output = result.stdout.toString("utf-8").trim();
+      if (!output) {
+        return [];
+      }
+      return output
+        .split("\n")
+        .map((line): ProcessTableEntry | null => {
+          const match = line.trim().match(/^(\d+)\s+(\d+)\s+(\S+)\s+(.*)$/);
+          if (!match) {
+            return null;
+          }
+          const command = match[4] ?? "";
+          return {
+            pid: Number(match[1]),
+            ppid: Number(match[2]),
+            stat: match[3] ?? "",
+            command,
+          };
+        })
+        .filter((entry): entry is ProcessTableEntry => entry !== null && entry.pid > 0);
+    } catch {
+      return [];
+    }
+  };
+
+  const isOrphanedInferenceWorker = (entry: ProcessTableEntry): boolean => {
+    if (entry.ppid !== 1 || entry.stat.includes("Z")) {
+      return false;
+    }
+    return entry.command.includes("VLLM::Worker");
+  };
+
+  const cleanupOrphanedInferenceWorkers = async (reason: string): Promise<number> => {
+    const workers = listProcessTable().filter(isOrphanedInferenceWorker);
+    if (workers.length === 0) {
+      return 0;
+    }
+
+    for (const worker of workers) {
+      logger.warn("Killing orphaned inference worker", {
+        pid: worker.pid,
+        reason,
+        command: worker.command,
+      });
+      sendSignal(worker.pid, "SIGTERM");
+    }
+
+    const deadline = Date.now() + 2_000;
+    while (Date.now() < deadline && workers.some((worker) => pidExists(worker.pid))) {
+      await delayTimeout(200);
+    }
+
+    for (const worker of workers) {
+      if (pidExists(worker.pid)) {
+        logger.warn("Force killing orphaned inference worker", {
+          pid: worker.pid,
+          reason,
+          command: worker.command,
+        });
+        sendSignal(worker.pid, "SIGKILL");
+      }
+    }
+
+    return workers.length;
+  };
+
   const launchModel = async (recipe: Recipe): Promise<LaunchResult> => {
     const updatedRecipe: Recipe = {
       ...recipe,
@@ -289,6 +291,8 @@ export const createProcessManager = (
       };
     }
 
+    await cleanupOrphanedInferenceWorkers("before-launch");
+
     const logFile = primaryLogPathFor(config.data_dir, updatedRecipe.id);
     // Best-effort retention to prevent unbounded growth over long-running installs.
     cleanupLogFiles(config.data_dir, {
@@ -309,7 +313,6 @@ export const createProcessManager = (
       }
       let spawnError: string | null = null;
 
-      // Use pipes to capture stdout/stderr for forwarding
       const child = spawn(entry, command.slice(1), {
         stdio: ["ignore", "pipe", "pipe"],
         env,
@@ -320,7 +323,6 @@ export const createProcessManager = (
         spawnError = String(error);
       });
 
-      // Create log file stream
       let logStream: WriteStream | null = null;
       try {
         logStream = createWriteStream(logFile, { flags: "a" });
@@ -330,7 +332,6 @@ export const createProcessManager = (
         });
       }
 
-      // Forward stdout to log file and event manager
       if (child.stdout) {
         const rl = createInterface({
           input: child.stdout,
@@ -346,7 +347,6 @@ export const createProcessManager = (
         });
       }
 
-      // Forward stderr to log file and event manager
       if (child.stderr) {
         const rl = createInterface({
           input: child.stderr,
@@ -362,7 +362,6 @@ export const createProcessManager = (
         });
       }
 
-      // Close log stream when process exits
       child.on("exit", () => {
         if (logStream) {
           logStream.end();
@@ -411,17 +410,14 @@ export const createProcessManager = (
     }
   };
 
-  /**
-   * Evict the running inference process.
-   * @param force - Force kill if true.
-   * @returns Evicted pid or null.
-   */
   const evictModel = async (force: boolean): Promise<number | null> => {
     const current = await findInferenceProcess(config.inference_port);
     if (!current) {
+      await cleanupOrphanedInferenceWorkers("evict-without-active-process");
       return null;
     }
     await killProcess(current.pid, force);
+    await cleanupOrphanedInferenceWorkers("after-evict");
     return current.pid;
   };
 

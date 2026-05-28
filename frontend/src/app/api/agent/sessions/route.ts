@@ -17,6 +17,20 @@ function parseSince(value: string | null): Date | null {
   return new Date(Date.now() - amount * multiplier);
 }
 
+function archiveOptions(searchParams: URLSearchParams): {
+  includeArchived?: boolean;
+  archivedOnly?: boolean;
+} {
+  const archived = searchParams.get("archived")?.toLowerCase();
+  const includeArchived = searchParams.get("includeArchived")?.toLowerCase();
+  return {
+    ...(includeArchived === "1" || includeArchived === "true" ? { includeArchived: true } : {}),
+    ...(archived === "1" || archived === "true" || archived === "only"
+      ? { archivedOnly: true, includeArchived: true }
+      : {}),
+  };
+}
+
 export async function GET(request: NextRequest) {
   const cwdParam = request.nextUrl.searchParams.get("cwd")?.trim() ?? "";
   const sinceParam = request.nextUrl.searchParams.get("since");
@@ -38,7 +52,11 @@ export async function GET(request: NextRequest) {
   if (!existsSync(cwdParam) || !statSync(cwdParam).isDirectory()) {
     return Response.json({ sessions: [] });
   }
-  const sessions = await listSessions(cwdParam, { ...(since ? { since } : {}), ids });
+  const sessions = await listSessions(cwdParam, {
+    ...(since ? { since } : {}),
+    ids,
+    ...archiveOptions(request.nextUrl.searchParams),
+  });
   return Response.json({ sessions });
 }
 

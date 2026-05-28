@@ -1,5 +1,5 @@
-/* CRITICAL */
 @import "../../node_modules/tailwindcss" source("../");
+@import "@xterm/xterm/css/xterm.css";
 @import "./styles/globals/tokens.css";
 @import "./styles/globals/base.css";
 @import "./styles/globals/mobile.css";

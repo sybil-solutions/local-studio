@@ -1,4 +1,3 @@
-// CRITICAL
 "use client";
 
 import { ChevronLeft, DownloadCloud } from "lucide-react";
@@ -29,7 +28,9 @@ export function StepModel({
             <div className="text-sm text-(--dim) uppercase tracking-wider">Recommended</div>
             <h2 className="text-lg font-medium">Pick a starter model</h2>
           </div>
-          <div className="text-xs text-(--dim)">Detected VRAM: {maxVram ? `${maxVram.toFixed(1)} GB` : "CPU"}</div>
+          <div className="text-xs text-(--dim)">
+            Detected VRAM: {maxVram ? `${maxVram.toFixed(1)} GB` : "CPU"}
+          </div>
         </div>
         <div className="grid md:grid-cols-2 gap-4 mt-4">
           {recommendations.map((model) => (
@@ -85,4 +86,3 @@ export function StepModel({
     </div>
   );
 }
-

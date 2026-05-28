@@ -1,4 +1,3 @@
-/* CRITICAL */
 /* Animations */
 @keyframes fade-in {
   from {
@@ -133,4 +132,3 @@
 .animate-cursor-blink {
   animation: blink 0.7s ease-in-out infinite;
 }
-

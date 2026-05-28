@@ -1,4 +1,3 @@
-// CRITICAL
 "use client";
 
 type Props = {
@@ -34,4 +33,3 @@ export function DeleteRecipeConfirmModal({ recipeName, onCancel, onConfirm }: Pr
     </div>
   );
 }
-

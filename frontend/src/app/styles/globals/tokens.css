@@ -1,35 +1,40 @@
-/* CRITICAL — theme system
+/* Theme system
 
    Single source of truth for the visual language. Every component reads from
    these CSS variables; no hardcoded colors, radii, or row heights live in
    component files.
 
-   Design philosophy: separation by *contrast* and *spacing*, with explicit
-   theme-driven surfaces for the rail, chat canvas, composer, and borders. */
+   Design philosophy: quiet, grayscale-first, low-saturation. Accents are
+   pulled from the foreground ramp itself so the UI never screams. */
 :root {
-  /* Core surfaces — light mode */
-  --bg: hsl(40, 20%, 96%);
-  --fg: hsl(30, 10%, 10%);
-  --dim: hsl(30, 5%, 44%);
-  --surface: hsl(38, 18%, 92%);
-  --surface-2: hsl(38, 18%, 89%);
-  --surface-3: hsl(38, 18%, 85%);
-  --rail: hsl(38, 18%, 91%);
+  /* Core surfaces — light mode (quiet, clean, no warm tint) */
+  --bg: #fafafa;
+  --fg: #111111;
+  --dim: #666666;
+  --surface: #f3f3f3;
+  --surface-2: #ececec;
+  --surface-3: #e3e3e3;
+  --rail: #f7f7f7;
+  --agent-bg: var(--bg);
+  --sidebar-bg: var(--rail);
 
-  --border: rgba(0, 0, 0, 0.12);
-  --separator: rgba(0, 0, 0, 0.18);
+  --border: rgba(0, 0, 0, 0.06);
+  --separator: rgba(0, 0, 0, 0.09);
 
-  --hover: rgba(0, 0, 0, 0.055);
-  --active: rgba(0, 0, 0, 0.085);
-  --composer: hsl(38, 18%, 92%);
-  --composer-footer: hsl(38, 18%, 91%);
+  --hover: rgba(0, 0, 0, 0.04);
+  --active: rgba(0, 0, 0, 0.07);
+  --composer: #f5f5f5;
+  --composer-footer: #f7f7f7;
 
-  /* Accents */
-  --accent: hsl(217, 91%, 60%);
-  --hl1: hsl(217, 91%, 60%);
-  --hl2: hsl(142, 71%, 45%);
-  --hl3: hsl(38, 92%, 50%);
-  --err: hsl(0, 84%, 60%);
+  /* Accents — pulled from the gray ramp, extremely quiet */
+  --accent: #1a1a1a;
+  --hl1: #525252;
+  --hl2: #404040;
+  --hl3: #616161;
+  --err: #b34040;
+  /* Reference accent — the one sanctioned spot of color, used by file/URL
+     chips inside chat content so references read as actionable. */
+  --link: #2f6fdb;
 
   /* Density / dimensions */
   --sidebar-w: 250px;
@@ -40,7 +45,7 @@
   --thread-w: 720px;
   --composer-w: 760px;
   --composer-radius: 14px;
-  --composer-shadow: 0 12px 36px rgba(0, 0, 0, 0.08);
+  --composer-shadow: 0 12px 36px rgba(0, 0, 0, 0.06);
 
   /* Typography */
   --text-nav: 16px;
@@ -51,32 +56,45 @@
   --app-font-size: 16px;
 }
 
+@media (min-width: 1024px) {
+  :root {
+    --thread-w: 40vw;
+    --composer-w: 40vw;
+  }
+}
+
 :root[data-theme="omlx-dark"],
 .dark {
-  /* Codex-inspired warm grayscale ramp.
-     Reference: /Applications/Codex.app -> index-DJG96UDN.css gray ladder
-     (#0d0d0d, #181818, #212121, #282828, #303030). */
-  --bg: #0d0d0d;
-  --fg: #ededed;
-  --dim: #8a8a8a;
-  --surface: #161616;
-  --surface-2: #1c1c1c;
-  --surface-3: #232323;
-  --rail: #151515;
+  /* Codex-inspired gray ladder, quieter than the original app.
+     Ladder: #0d0d0d #121212 #181818 #212121 #282828 #303030
+             #414141 #5d5d5d #8a8a8a #afafaf #d6d6d6 */
+  --bg: #121212;
+  --fg: #e0e0e0;
+  --dim: #888888;
+  --surface: #181818;
+  --surface-2: #212121;
+  --surface-3: #282828;
+  --rail: #0d0d0d;
+  --agent-bg: var(--rail);
+  --sidebar-bg: var(--bg);
 
-  --border: rgba(255, 255, 255, 0.12);
-  --separator: rgba(255, 255, 255, 0.18);
+  --border: rgba(255, 255, 255, 0.06);
+  --separator: rgba(255, 255, 255, 0.09);
 
-  --hover: rgba(255, 255, 255, 0.07);
-  --active: rgba(255, 255, 255, 0.11);
+  --hover: rgba(255, 255, 255, 0.05);
+  --active: rgba(255, 255, 255, 0.08);
   --composer: #171717;
-  --composer-footer: #151515;
+  --composer-footer: #141414;
 
-  --accent: #ededed;
-  --hl1: hsl(217, 70%, 60%);
-  --hl2: hsl(142, 50%, 50%);
-  --hl3: hsl(38, 80%, 55%);
-  --err: hsl(0, 70%, 60%);
+  /* Accents — grayscale only, no colored noise */
+  --accent: #d6d6d6;
+  --hl1: #5d5d5d;
+  --hl2: #414141;
+  --hl3: #303030;
+  --err: #a85050;
+  /* Muted blue for reference chips — visible against the dark ladder without
+     screaming. */
+  --link: #6ea8fe;
 
   --composer-shadow: 0 18px 60px rgba(0, 0, 0, 0.45);
 }

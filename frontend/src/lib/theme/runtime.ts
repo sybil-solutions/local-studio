@@ -1,4 +1,3 @@
-// CRITICAL
 import {
   DEFAULT_FONT_FAMILY_ID,
   DEFAULT_FONT_SIZE_ID,
@@ -106,6 +105,11 @@ export function applyFontSizeToDocument(fontSizeId: FontSizeId): FontSizeId {
 
   document.documentElement.style.setProperty("--app-font-size", nextSize.cssValue);
   return nextSize.id;
+}
+
+export function applyTokensToDocument(tokens: ThemeTokens): void {
+  if (typeof document === "undefined") return;
+  setThemeTokens(tokens);
 }
 
 export function getThemeBootstrapScript(): string {

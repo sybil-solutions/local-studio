@@ -1,4 +1,3 @@
-// CRITICAL
 import type { ProviderConfig } from "../config/persisted-config";
 
 export const DEFAULT_CHAT_PROVIDER = "openai";

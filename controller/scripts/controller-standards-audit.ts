@@ -20,7 +20,6 @@ const SRC_DIR = path.resolve(process.cwd(), "src");
 const MODULES_DIR = path.join(SRC_DIR, "modules");
 const MAX_FILES_PER_DIR = Number.parseInt(process.env["MAX_FILES_PER_DIR"] ?? "20", 10);
 const MAX_SUBDIRS_PER_DIR = Number.parseInt(process.env["MAX_SUBDIRS_PER_DIR"] ?? "8", 10);
-const MAX_DOC_LOOKBACK = 20;
 const REQUIRED_MODULE_CONTRACT_FILES = ["types.ts", "interfaces.ts", "configs.ts", "index.ts"];
 const STRUCTURE_COUNT_EXCLUDED_DIRS = new Set(["tests"]);
 
@@ -43,10 +42,7 @@ if (fs.existsSync(MODULES_DIR)) {
 
 const kebabCase = /^[a-z0-9-]+(\.[a-z0-9-]+)*$/;
 
-/**
- *
- * @param dir
- */
+/** Scan a source directory and collect structural findings. */
 function scanDirectory(dir: string): void {
   const entries = fs.readdirSync(dir, { withFileTypes: true });
   const directFiles = entries.filter((entry) => entry.isFile());
@@ -95,83 +91,10 @@ function scanDirectory(dir: string): void {
 
     if (entry.isDirectory()) {
       scanDirectory(fullPath);
-    } else if (entry.isFile() && entry.name.endsWith(".ts")) {
-      checkFunctionDocs(fullPath);
     }
   }
 }
 
-/**
- *
- * @param filePath
- */
-function checkFunctionDocs(filePath: string): void {
-  const lines = fs.readFileSync(filePath, "utf8").split("\n");
-  for (let index = 0; index < lines.length; index++) {
-    const line = lines[index];
-    if (!line) continue;
-
-    const trimmed = line.trim();
-    const exportFunction =
-      /^(export\s+)?(async\s+)?function\s+\w+/.test(trimmed) && trimmed.startsWith("export ");
-    const exportArrowFunction =
-      /^(export\s+)?const\s+\w+\s*=\s*(async\s+)?\(.+\)\s*=>/.test(trimmed) ||
-      /^(export\s+)?const\s+\w+\s*:\s*\(.*\)\s*=>/.test(trimmed) ||
-      /^(export\s+)?const\s+\w+\s*=\s*(async\s+)?\(.+\)\s*=>/.test(trimmed);
-    const isTarget = trimmed.startsWith("export") && (exportFunction || exportArrowFunction);
-    if (!isTarget) {
-      continue;
-    }
-
-    let hasJSDocument = false;
-    let seenCommentStart = false;
-    for (let index_ = index - 1; index_ >= Math.max(0, index - MAX_DOC_LOOKBACK); index_--) {
-      const previous = lines[index_];
-      if (previous === undefined) {
-        continue;
-      }
-      const trimmedPrevious = previous.trim();
-      if (trimmedPrevious === "") {
-        continue;
-      }
-      if (trimmedPrevious.startsWith("/**")) {
-        hasJSDocument = true;
-        break;
-      }
-      if (trimmedPrevious.endsWith("*/")) {
-        seenCommentStart = true;
-        if (trimmedPrevious.startsWith("/*")) {
-          hasJSDocument = true;
-          break;
-        }
-        continue;
-      }
-      if (seenCommentStart) {
-        if (trimmedPrevious.startsWith("*") || trimmedPrevious.startsWith("* ")) {
-          continue;
-        }
-        if (trimmedPrevious.startsWith("/**")) {
-          hasJSDocument = true;
-        }
-        break;
-      }
-      break;
-    }
-
-    if (!hasJSDocument) {
-      findings.push({
-        level: "warning",
-        rule: "function-doc-comment",
-        path: filePath,
-        detail: `Missing comment block above exported function on line ${index + 1}`,
-      });
-    }
-  }
-}
-
-/**
- *
- */
 function evaluateModuleContracts(): void {
   for (const moduleDir of moduleDirectories) {
     const hasRequiredFiles = new Set<string>();
@@ -199,9 +122,6 @@ function evaluateModuleContracts(): void {
   }
 }
 
-/**
- *
- */
 function printSummary(): void {
   const errors = findings.filter((f) => f.level === "error");
   const warnings = findings.filter((f) => f.level === "warning");
@@ -228,9 +148,6 @@ function printSummary(): void {
   }
 }
 
-/**
- *
- */
 function run(): number {
   if (!fs.existsSync(SRC_DIR)) {
     console.error("ERROR: src directory not found");

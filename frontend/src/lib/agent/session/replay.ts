@@ -10,7 +10,8 @@ import {
   sessionTitleFromPrompt,
   visibleUserTextFromPi,
 } from "./helpers";
-import type { AssistantBlock, ChatMessage, TextBlock } from "./types";
+import { blocksFromMessageContent, messageTextFromBlocks } from "./message-content";
+import type { AssistantBlock, ChatMessage } from "./types";
 
 type ReplayPiMessage = {
   role?: string;
@@ -18,6 +19,7 @@ type ReplayPiMessage = {
   toolCallId?: string;
   toolName?: string;
   isError?: boolean;
+  stopReason?: string;
 };
 
 type ReplayState = {
@@ -25,56 +27,8 @@ type ReplayState = {
   pendingAssistantId: string | null;
   title: string | null;
   startedAt: string | null;
+  modelId: string | null;
 };
-
-const isRecordArray = (value: unknown): value is Array<Record<string, unknown>> =>
-  Array.isArray(value);
-
-const toolArgs = (part: Record<string, unknown>): Record<string, unknown> | undefined =>
-  part.arguments && typeof part.arguments === "object"
-    ? (part.arguments as Record<string, unknown>)
-    : undefined;
-
-function blockFromContentPart(part: Record<string, unknown>): AssistantBlock | null {
-  if (part.type === "text" && typeof part.text === "string") {
-    return { kind: "text", id: newId("text"), text: part.text };
-  }
-  if (part.type === "thinking" && typeof part.thinking === "string") {
-    return { kind: "thinking", id: newId("thinking"), text: part.thinking };
-  }
-  if (part.type !== "toolCall") return null;
-
-  const args = toolArgs(part);
-  const argsText = JSON.stringify(part.arguments ?? {}, null, 2);
-  return {
-    kind: "tool",
-    id: typeof part.id === "string" ? part.id : newId("tool"),
-    name: typeof part.name === "string" ? part.name : "tool",
-    status: "running",
-    argsText,
-    args,
-    text: argsText,
-  };
-}
-
-function blocksFromMessageContent(
-  content: string | Array<Record<string, unknown>> | undefined,
-): AssistantBlock[] {
-  if (typeof content === "string") {
-    return content ? [{ kind: "text", id: newId("text"), text: content }] : [];
-  }
-  if (!isRecordArray(content)) return [];
-  return content.flatMap((part) => {
-    const block = blockFromContentPart(part);
-    return block ? [block] : [];
-  });
-}
-
-const messageTextFromBlocks = (blocks: AssistantBlock[]): string =>
-  blocks
-    .filter((block): block is TextBlock => block.kind === "text")
-    .map((block) => block.text)
-    .join("\n");
 
 const replayMessageFromEvent = (event: Record<string, unknown>): ReplayPiMessage | null => {
   if (event.type !== "message" && event.type !== "message_end") return null;
@@ -124,7 +78,11 @@ const pendingAssistantCanReceive = (
   const pending = state.messages.find((message) => message.id === state.pendingAssistantId);
   const pendingHasTools = (pending?.blocks ?? []).some((block) => block.kind === "tool");
   const incomingHasTools = incomingBlocks.some((block) => block.kind === "tool");
-  return eventType === "message_end" || (!pendingHasTools && !incomingHasTools);
+  return (
+    eventType === "message_end" ||
+    eventType === "message" ||
+    (!pendingHasTools && !incomingHasTools)
+  );
 };
 
 const appendUserMessage = (state: ReplayState, message: ReplayPiMessage): boolean => {
@@ -145,7 +103,7 @@ const appendAssistantMessage = (
 ): boolean => {
   if (message.role !== "assistant") return false;
 
-  const blocks = blocksFromMessageContent(message.content);
+  const blocks = blocksFromMessageContent(message.content, { stopReason: message.stopReason });
   const text = messageTextFromBlocks(blocks);
   if (pendingAssistantCanReceive(state, eventType, blocks) && state.pendingAssistantId) {
     patchMessage(state, state.pendingAssistantId, (current) => ({ ...current, text, blocks }));
@@ -217,8 +175,18 @@ const applyAssistantPiEvent = (state: ReplayState, event: Record<string, unknown
 };
 
 const applySessionStart = (state: ReplayState, event: Record<string, unknown>): void => {
-  if (state.startedAt || event.type !== "session" || typeof event.timestamp !== "string") return;
-  state.startedAt = event.timestamp;
+  if (event.type === "session") {
+    if (!state.startedAt && typeof event.timestamp === "string") state.startedAt = event.timestamp;
+    if (!state.modelId && typeof event.modelId === "string") state.modelId = event.modelId;
+    if (!state.modelId && typeof event.model === "string") state.modelId = event.model;
+    if (!state.modelId && typeof event.model_id === "string") state.modelId = event.model_id;
+    return;
+  }
+
+  if (event.type === "model_change") {
+    if (typeof event.modelId === "string") state.modelId = event.modelId;
+    if (typeof event.model === "string") state.modelId = event.model;
+  }
 };
 
 // ----- full session replay -----
@@ -227,12 +195,14 @@ export function replaySessionEvents(events: Record<string, unknown>[]): {
   messages: ChatMessage[];
   title: string | null;
   startedAt: string | null;
+  modelId: string | null;
 } {
   const state: ReplayState = {
     messages: [],
     pendingAssistantId: null,
     title: null,
     startedAt: null,
+    modelId: null,
   };
 
   for (const event of events) {
@@ -241,5 +211,10 @@ export function replaySessionEvents(events: Record<string, unknown>[]): {
     applyAssistantPiEvent(state, event);
   }
 
-  return { messages: state.messages, title: state.title, startedAt: state.startedAt };
+  return {
+    messages: state.messages,
+    title: state.title,
+    startedAt: state.startedAt,
+    modelId: state.modelId,
+  };
 }

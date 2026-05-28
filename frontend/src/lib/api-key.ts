@@ -1,3 +1,6 @@
+import { getControllerApiKey } from "./controllers";
+import { getStoredBackendUrl } from "./backend-url";
+
 /**
  * API key management utilities
  */
@@ -12,7 +15,13 @@ export function getApiKey(): string {
   const envKey = process.env.NEXT_PUBLIC_VLLM_STUDIO_API_KEY || process.env.VLLM_STUDIO_API_KEY;
   if (envKey) return envKey;
 
-  return runtimeApiKey;
+  if (runtimeApiKey) return runtimeApiKey;
+
+  if (typeof window !== "undefined") {
+    return getControllerApiKey(getStoredBackendUrl());
+  }
+
+  return "";
 }
 
 /**

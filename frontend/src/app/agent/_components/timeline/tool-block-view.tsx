@@ -1,4 +1,5 @@
-import { useState, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
+import hljs from "highlight.js";
 import {
   AlertTriangle,
   FileText,
@@ -8,7 +9,7 @@ import {
   TerminalSquare,
   Wrench,
 } from "lucide-react";
-import { ChevronDownIcon, GlobeIcon } from "@/components/icons";
+import { GlobeIcon } from "@/components/icons";
 import type { ToolBlock } from "@/lib/agent/session";
 import {
   FILE_WRITE_TOOL_NAMES,
@@ -27,17 +28,17 @@ type ToolMeta = { icon: ReactNode; label: string; detail: string | null };
 function iconForKind(kind: ToolKind): ReactNode {
   switch (kind) {
     case "edit":
-      return <PencilLine className="h-4 w-4" />;
+      return <PencilLine className="h-3.5 w-3.5" />;
     case "search":
-      return <Search className="h-4 w-4" />;
+      return <Search className="h-3.5 w-3.5" />;
     case "read":
-      return <FileText className="h-4 w-4" />;
+      return <FileText className="h-3.5 w-3.5" />;
     case "exec":
-      return <TerminalSquare className="h-4 w-4" />;
+      return <TerminalSquare className="h-3.5 w-3.5" />;
     case "browser":
-      return <GlobeIcon className="h-4 w-4" />;
+      return <GlobeIcon className="h-3.5 w-3.5" />;
     default:
-      return <Wrench className="h-4 w-4" />;
+      return <Wrench className="h-3.5 w-3.5" />;
   }
 }
 
@@ -97,7 +98,7 @@ function toolMeta(block: ToolBlock, filePath?: string | null): ToolMeta {
 function ToolStatus({ status }: { status: ToolBlock["status"] }) {
   if (status === "running") {
     return (
-      <span className="inline-flex items-center gap-1 text-[11px] text-(--dim)">
+      <span className="inline-flex items-center gap-1 text-[9.6px] text-(--accent)">
         <Loader2 className="h-3 w-3 animate-spin" />
         running
       </span>
@@ -105,7 +106,7 @@ function ToolStatus({ status }: { status: ToolBlock["status"] }) {
   }
   if (status === "error") {
     return (
-      <span className="inline-flex items-center gap-1 text-[11px] text-(--err)">
+      <span className="inline-flex items-center gap-1 text-[9.6px] text-(--err)">
         <AlertTriangle className="h-3 w-3" />
         error
       </span>
@@ -128,86 +129,169 @@ function ToolSummary({
   const meta = toolMeta(block, filePath);
   return (
     <details className="group py-0.5" open={open}>
-      <summary className="flex cursor-pointer list-none items-start gap-2 rounded-md py-1 text-(--dim) hover:text-(--fg) [&::-webkit-details-marker]:hidden">
-        <span className="mt-1 flex h-4 w-4 shrink-0 items-center justify-center opacity-80">
+      <summary className="flex min-h-8 cursor-pointer list-none items-center gap-2 rounded-md px-1 py-1 text-(--dim) transition-colors hover:text-(--fg) [&::-webkit-details-marker]:hidden">
+        <span className="flex h-4 w-4 shrink-0 items-center justify-center text-(--dim)">
           {meta.icon}
         </span>
-        <span className="min-w-0 flex-1">
-          <span className="block truncate text-[13px] leading-6">{meta.label}</span>
+        <span className="flex min-w-0 flex-1 items-baseline gap-2">
+          <span className="shrink-0 truncate text-[10.4px] font-medium leading-4 text-(--fg)/90">
+            {meta.label}
+          </span>
           {meta.detail ? (
-            <span className="block truncate font-mono text-[11px] leading-4 opacity-70">
+            <span className="min-w-0 flex-1 truncate text-[10.4px] leading-4 text-(--dim)">
               {meta.detail}
             </span>
           ) : null}
         </span>
         <ToolStatus status={block.status} />
-        {children ? (
-          <ChevronDownIcon className="mt-1 h-3.5 w-3.5 shrink-0 transition-transform group-open:rotate-180" />
-        ) : null}
       </summary>
-      {children ? <div className="ml-6 mt-1">{children}</div> : null}
+      {children ? <div className="ml-6 mt-1 min-w-0">{children}</div> : null}
     </details>
   );
 }
 
 function ToolOutput({ children }: { children: ReactNode }) {
   return (
-    <pre className="max-h-[320px] overflow-auto whitespace-pre-wrap font-mono text-[11px] leading-5 text-(--dim) [overflow-wrap:anywhere]">
+    <pre className="max-h-[320px] max-w-full overflow-auto whitespace-pre font-mono text-[9.6px] leading-4 text-(--fg)/70">
       {children}
     </pre>
   );
 }
 
-export function ToolBlockView({ block }: { block: ToolBlock }) {
-  const isFileWrite = FILE_WRITE_TOOL_NAMES.has(block.name.toLowerCase());
-  const filePath = isFileWrite
-    ? extractFromArgs(block.args, block.argsText, ["path", "file_path", "filePath", "file"])
-    : null;
-  const fileContent = isFileWrite
-    ? extractFromArgs(block.args, block.argsText, ["content", "text", "newText", "new_content"])
-    : null;
-  const patchContent = isFileWrite
-    ? extractFromArgs(block.args, block.argsText, ["patch", "diff", "edits"])
-    : null;
+function HighlightedToolSource({ body, lang }: { body: string; lang: string }) {
+  const highlighted = useMemo(() => {
+    if (!body) return "";
+    try {
+      const result =
+        lang && hljs.getLanguage(lang) ? hljs.highlight(body, { language: lang }) : null;
+      return result ? result.value : hljs.highlightAuto(body).value;
+    } catch {
+      return null;
+    }
+  }, [body, lang]);
+
+  const className =
+    "max-h-[420px] max-w-full overflow-auto rounded-lg border border-(--border)/50 bg-(--surface)/35 p-3 font-mono text-[9.6px] leading-4 text-(--fg)";
+
+  if (highlighted === null) {
+    return <pre className={className}>{body}</pre>;
+  }
+
+  return (
+    <pre className={className}>
+      <code
+        className={lang ? `language-${lang}` : undefined}
+        dangerouslySetInnerHTML={{ __html: highlighted || "&nbsp;" }}
+      />
+    </pre>
+  );
+}
+
+type FileWritePreviewData = {
+  filePath: string | null;
+  fileContent: string | null;
+  patchContent: string | null;
+};
+
+function fileWritePreviewData(block: ToolBlock): FileWritePreviewData | null {
+  const filePath = extractFromArgs(block.args, block.argsText, [
+    "path",
+    "file_path",
+    "filePath",
+    "file",
+  ]);
+  const fileContent = extractFromArgs(block.args, block.argsText, [
+    "content",
+    "text",
+    "newText",
+    "new_content",
+  ]);
+  const patchContent = extractFromArgs(block.args, block.argsText, ["patch", "diff", "edits"]);
+
+  if (fileContent === null && patchContent === null) return null;
+  return { filePath, fileContent, patchContent };
+}
+
+function FileWritePreview({
+  block,
+  filePath,
+  fileContent,
+  patchContent,
+}: {
+  block: ToolBlock;
+  filePath: string | null;
+  fileContent: string | null;
+  patchContent: string | null;
+}) {
   const lang = detectLang(filePath);
   const isHtml = lang === "html";
   const [showPreview, setShowPreview] = useState(false);
+  const body = fileContent ?? patchContent ?? "";
+  const sourceLang = fileContent === null && patchContent !== null ? "diff" : lang;
 
-  if (isFileWrite && (fileContent !== null || patchContent !== null)) {
-    const body = fileContent ?? patchContent ?? "";
-    return (
-      <ToolSummary block={block} filePath={filePath} open={block.status === "running"}>
-        <div className="mb-1 flex items-center justify-between gap-2 text-[10px] uppercase tracking-[0.08em] text-(--dim)">
-          <span>{lang || "source"}</span>
-          {isHtml ? (
-            <button
-              type="button"
-              onClick={() => setShowPreview((value) => !value)}
-              className="rounded-md px-1.5 py-0.5 text-[10px] normal-case tracking-normal text-(--dim) hover:bg-(--hover) hover:text-(--fg)"
-            >
-              {showPreview ? "Source" : "Preview"}
-            </button>
-          ) : null}
-        </div>
-        {isHtml && showPreview ? (
-          <iframe
-            sandbox=""
-            srcDoc={body}
-            className="h-72 w-full rounded-md border border-(--border) bg-white"
-            title={filePath ?? "preview"}
-          />
-        ) : (
-          <pre className="max-h-[420px] overflow-auto whitespace-pre-wrap rounded-md border border-(--border)/70 bg-(--surface)/35 p-2 font-mono text-[11px] leading-5 text-(--fg)">
-            {body}
-          </pre>
-        )}
-        {block.resultText ? (
-          <div className="mt-1 font-mono text-[10px] text-(--dim)">
-            <ToolOutput>{block.resultText}</ToolOutput>
-          </div>
+  return (
+    <ToolSummary block={block} filePath={filePath} open>
+      <div className="mb-1 flex items-center justify-between gap-2 text-[10px] uppercase tracking-[0.08em] text-(--dim)">
+        <span>{sourceLang || "source"}</span>
+        {isHtml ? (
+          <button
+            type="button"
+            onClick={() => setShowPreview((value) => !value)}
+            className="rounded-md px-1.5 py-0.5 text-[10px] normal-case tracking-normal text-(--dim) hover:bg-(--hover) hover:text-(--fg)"
+          >
+            {showPreview ? "Source" : "Preview"}
+          </button>
         ) : null}
-      </ToolSummary>
-    );
+      </div>
+      {isHtml && showPreview ? (
+        <iframe
+          sandbox="allow-scripts"
+          referrerPolicy="no-referrer"
+          srcDoc={body}
+          className="h-72 w-full rounded-md border border-(--border) bg-white"
+          title={filePath ?? "preview"}
+        />
+      ) : (
+        <HighlightedToolSource body={body} lang={sourceLang} />
+      )}
+      {block.resultText ? (
+        <div className="mt-1 font-mono text-[10px] text-(--dim)">
+          <ToolOutput>{block.resultText}</ToolOutput>
+        </div>
+      ) : null}
+    </ToolSummary>
+  );
+}
+
+function diffPreviewData(block: ToolBlock): string | null {
+  const diffText =
+    extractFromArgs(block.args, block.argsText, ["patch", "diff", "edits"]) ?? block.resultText;
+  if (!diffText) return null;
+  if (block.name.toLowerCase().includes("diff")) return diffText;
+  if (/^(diff --git|@@\s+-|\+\+\+ |--- )/m.test(diffText)) return diffText;
+  return null;
+}
+
+function DiffPreview({ block, diffText }: { block: ToolBlock; diffText: string }) {
+  const filePath = toolArg(block, ["path", "file_path", "filePath", "file", "filename"]);
+  return (
+    <ToolSummary block={block} filePath={filePath} open>
+      <div className="mb-1 text-[10px] uppercase tracking-[0.08em] text-(--dim)">diff</div>
+      <HighlightedToolSource body={diffText} lang="diff" />
+    </ToolSummary>
+  );
+}
+
+export function ToolBlockView({ block }: { block: ToolBlock }) {
+  const fileWritePreview = FILE_WRITE_TOOL_NAMES.has(block.name.toLowerCase())
+    ? fileWritePreviewData(block)
+    : null;
+  if (fileWritePreview) {
+    return <FileWritePreview block={block} {...fileWritePreview} />;
+  }
+  const diffPreview = diffPreviewData(block);
+  if (diffPreview) {
+    return <DiffPreview block={block} diffText={diffPreview} />;
   }
 
   // Generic fallback (shells, reads, searches, browser tools, etc.).

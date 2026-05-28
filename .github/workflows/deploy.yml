@@ -1,22 +1,20 @@
-# CRITICAL
 name: Deploy
 
 on:
   push:
     branches: [main]
     paths:
-      - 'controller/**'
-      - 'cli/**'
-      - 'frontend/**'
-      - 'docker-compose.yml'
-      - 'Dockerfile'
+      - "controller/**"
+      - "cli/**"
+      - "frontend/**"
+      - "docker-compose.yml"
+      - "Dockerfile"
 
 permissions:
   contents: write
   deployments: write
 
 jobs:
-  # Deploy Frontend
   deploy-frontend:
     name: Deploy Frontend
     runs-on: ubuntu-latest
@@ -33,30 +31,29 @@ jobs:
         uses: chrnorm/deployment-action@v2
         id: deployment
         with:
-          token: '${{ github.token }}'
-          environment: 'production'
-          initial-status: 'in_progress'
+          token: "${{ github.token }}"
+          environment: "production"
+          initial-status: "in_progress"
 
       - name: Update deployment status
         if: success()
         uses: chrnorm/deployment-action@v2
         with:
-          token: '${{ github.token }}'
-          environment-url: 'https://vllm-studio.example.com'
-          environment: 'production'
-          status: 'success'
+          token: "${{ github.token }}"
+          environment-url: "https://vllm-studio.example.com"
+          environment: "production"
+          status: "success"
           deployment-id: ${{ steps.deployment.outputs.deployment_id }}
 
       - name: Notify on failure
         if: failure()
         uses: chrnorm/deployment-action@v2
         with:
-          token: '${{ github.token }}'
-          environment: 'production'
-          status: 'failure'
+          token: "${{ github.token }}"
+          environment: "production"
+          status: "failure"
           deployment-id: ${{ steps.deployment.outputs.deployment_id }}
 
-  # Track deployment frequency
   track-deployment:
     name: Track Deployment
     runs-on: ubuntu-latest

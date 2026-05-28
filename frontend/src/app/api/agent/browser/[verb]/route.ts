@@ -15,10 +15,7 @@ const ALLOWED_VERBS = new Set([
   "fill",
 ]);
 
-export async function POST(
-  request: NextRequest,
-  context: { params: Promise<{ verb: string }> },
-) {
+export async function POST(request: NextRequest, context: { params: Promise<{ verb: string }> }) {
   const { verb } = await context.params;
   if (!ALLOWED_VERBS.has(verb)) {
     return Response.json({ ok: false, error: `Unknown browser verb: ${verb}` }, { status: 400 });
@@ -30,8 +27,14 @@ export async function POST(
   } catch {
     // empty body is fine
   }
+  const sessionId = typeof payload.sessionId === "string" ? payload.sessionId.trim() : "";
+  if (sessionId) {
+    const browserPayload = { ...payload };
+    delete browserPayload.sessionId;
+    payload = browserPayload;
+  }
   try {
-    const result = await browserBridge.enqueue(verb, payload);
+    const result = await browserBridge.enqueue(verb, payload, sessionId || undefined);
     if (!result.ok) {
       return Response.json({ ok: false, error: result.error || "Browser command failed" });
     }

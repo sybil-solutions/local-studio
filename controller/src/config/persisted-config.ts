@@ -1,4 +1,3 @@
-// CRITICAL
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 
@@ -13,7 +12,8 @@ export interface ProviderConfig {
 export interface PersistedConfig {
   models_dir?: string;
   providers?: ProviderConfig[];
-  selected_runtime_target_ids?: Partial<Record<"vllm" | "sglang" | "llamacpp", string>>;
+  ui_preferences?: Record<string, string>;
+  selected_runtime_target_ids?: Partial<Record<"vllm" | "sglang" | "llamacpp" | "mlx", string>>;
 }
 
 export const getPersistedConfigPath = (dataDirectory: string): string => {

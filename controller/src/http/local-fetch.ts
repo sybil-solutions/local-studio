@@ -1,13 +1,12 @@
-// CRITICAL
-export type LocalFetchOptions = RequestInit & { timeoutMs?: number };
+export type LocalFetchOptions = RequestInit & { host?: string; timeoutMs?: number };
 
 const normalizePath = (path: string): string => {
   if (!path) return "/";
   return path.startsWith("/") ? path : `/${path}`;
 };
 
-export const buildLocalUrl = (port: number, path: string): string =>
-  `http://localhost:${port}${normalizePath(path)}`;
+export const buildLocalUrl = (port: number, path: string, host = "localhost"): string =>
+  `http://${host}:${port}${normalizePath(path)}`;
 
 const combineSignals = (
   primary: AbortSignal | undefined,
@@ -50,8 +49,8 @@ export const fetchLocal = async (
   path: string,
   options: LocalFetchOptions = {}
 ): Promise<Response> => {
-  const { timeoutMs, signal, ...init } = options;
-  const url = buildLocalUrl(port, path);
+  const { host, timeoutMs, signal, ...init } = options;
+  const url = buildLocalUrl(port, path, host);
   const requestSignal = signal ?? undefined;
 
   if (!timeoutMs || timeoutMs <= 0) {

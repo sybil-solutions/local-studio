@@ -1,5 +1,3 @@
-// CRITICAL
-
 export const CONTROLLER_EVENTS = {
   STATUS: "status",
   GPU: "gpu",

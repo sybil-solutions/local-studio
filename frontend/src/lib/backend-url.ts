@@ -1,5 +1,8 @@
+import { normalizeControllerUrl } from "./controllers";
+
 const BACKEND_URL_STORAGE = "vllmstudio_backend_url";
 const BACKEND_URL_COOKIE = "vllmstudio_backend_url";
+export const BACKEND_URL_CHANGED_EVENT = "vllm:backend-url-changed";
 
 function getCookieValue(name: string): string {
   if (typeof document === "undefined") return "";
@@ -16,23 +19,27 @@ function setBackendCookie(url: string): void {
   const trimmed = url.trim();
   const encoded = encodeURIComponent(trimmed);
   const maxAge = trimmed ? 60 * 60 * 24 * 365 : 0; // 1 year or delete
-  const secure = typeof location !== "undefined" && location.protocol === "https:" ? "; Secure" : "";
+  const secure =
+    typeof location !== "undefined" && location.protocol === "https:" ? "; Secure" : "";
   document.cookie = `${encodeURIComponent(BACKEND_URL_COOKIE)}=${encoded}; Path=/; Max-Age=${maxAge}; SameSite=Lax${secure}`;
 }
 
 export function getStoredBackendUrl(): string {
   if (typeof window === "undefined") return "";
   try {
-    return window.localStorage.getItem(BACKEND_URL_STORAGE) || getCookieValue(BACKEND_URL_COOKIE) || "";
+    return normalizeControllerUrl(
+      window.localStorage.getItem(BACKEND_URL_STORAGE) || getCookieValue(BACKEND_URL_COOKIE) || "",
+    );
   } catch {
-    return getCookieValue(BACKEND_URL_COOKIE) || "";
+    return normalizeControllerUrl(getCookieValue(BACKEND_URL_COOKIE) || "");
   }
 }
 
 export function setStoredBackendUrl(url: string): void {
   if (typeof window === "undefined") return;
+  const previous = getStoredBackendUrl();
+  const trimmed = normalizeControllerUrl(url);
   try {
-    const trimmed = url.trim();
     if (trimmed) {
       window.localStorage.setItem(BACKEND_URL_STORAGE, trimmed);
     } else {
@@ -41,7 +48,12 @@ export function setStoredBackendUrl(url: string): void {
     setBackendCookie(trimmed);
   } catch {
     // Ignore storage errors
-    setBackendCookie(url);
+    setBackendCookie(trimmed);
+  }
+  if (trimmed !== previous) {
+    window.dispatchEvent(
+      new CustomEvent(BACKEND_URL_CHANGED_EVENT, { detail: { url: trimmed, previous } }),
+    );
   }
 }
 

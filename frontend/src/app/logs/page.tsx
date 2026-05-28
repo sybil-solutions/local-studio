@@ -1,4 +1,3 @@
-// CRITICAL
 "use client";
 
 import { LogsView } from "./_components/logs-view";

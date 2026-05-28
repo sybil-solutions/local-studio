@@ -119,14 +119,6 @@ export function StopIcon(props: IconProps) {
   );
 }
 
-export function AttachIcon(props: IconProps) {
-  return (
-    <Svg {...props}>
-      <path d="M11 2.5a3.5 3.5 0 0 1 3.5 3.5v6a3 3 0 0 1-6 0V5.5h1.5V12a1.5 1.5 0 0 0 3 0V6a2 2 0 1 0-4 0v6.5a.5.5 0 0 1-1 0V6a3 3 0 0 1 3-3z" />
-    </Svg>
-  );
-}
-
 export function FileIcon(props: IconProps) {
   return (
     <Svg {...props}>
@@ -143,14 +135,6 @@ export function GlobeIcon(props: IconProps) {
       <path d="M1.5 8h13" fill="none" stroke="currentColor" strokeWidth="1.4" />
       <path d="M2.3 5h11.4" fill="none" stroke="currentColor" strokeWidth="1.2" />
       <path d="M2.3 11h11.4" fill="none" stroke="currentColor" strokeWidth="1.2" />
-    </Svg>
-  );
-}
-
-export function ComputerIcon(props: IconProps) {
-  return (
-    <Svg {...props}>
-      <path d="M2 2.5h12v8.5H9.5v1.5H12V14H4v-1.5h2.5V11H2V2.5zm1.5 1.5v5.5h9V4h-9z" />
     </Svg>
   );
 }

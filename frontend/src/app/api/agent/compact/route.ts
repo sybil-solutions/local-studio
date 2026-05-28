@@ -1,8 +1,12 @@
 import { NextRequest } from "next/server";
 import {
+  type ComposerExtensionOverride,
   type ComposerPluginRef,
+  type ComposerPromptTemplateRef,
   type ComposerSkillRef,
+  sanitizeComposerExtensionOverrides,
   sanitizeComposerPlugins,
+  sanitizeComposerPromptTemplates,
   sanitizeComposerSkills,
   selectedContextInstructions,
 } from "@/lib/agent/composer-context";
@@ -18,8 +22,12 @@ type CompactRequest = {
   piSessionId?: string | null;
   customInstructions?: string;
   browserToolEnabled?: boolean;
+  browserSessionId?: string;
+  canvasEnabled?: boolean;
   plugins?: ComposerPluginRef[];
   skills?: ComposerSkillRef[];
+  promptTemplates?: ComposerPromptTemplateRef[];
+  extensionOverrides?: ComposerExtensionOverride[];
 };
 
 function compactInstructions(
@@ -51,10 +59,17 @@ export async function POST(request: NextRequest) {
     const session = piRuntimeManager.getSession(sessionId);
     const plugins = sanitizeComposerPlugins(body.plugins);
     const skills = sanitizeComposerSkills(body.skills);
+    const promptTemplates = sanitizeComposerPromptTemplates(body.promptTemplates);
+    const extensionOverrides = sanitizeComposerExtensionOverrides(body.extensionOverrides);
     await session.ensureStarted(modelId, cwd, piSessionId, {
       browserToolEnabled: body.browserToolEnabled === true,
+      browserSessionId:
+        typeof body.browserSessionId === "string" ? body.browserSessionId.trim() : undefined,
+      canvasEnabled: body.canvasEnabled === true,
       plugins,
       skills,
+      promptTemplates,
+      extensionOverrides,
     });
     const result = await session.compact(
       compactInstructions(plugins, skills, body.customInstructions),

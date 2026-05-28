@@ -1,4 +1,3 @@
-// CRITICAL
 import type { Database } from "bun:sqlite";
 import { openSqliteDatabase } from "./sqlite";
 

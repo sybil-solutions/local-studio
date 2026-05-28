@@ -1,7 +1,6 @@
-// CRITICAL
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState, useSyncExternalStore } from "react";
 import api from "@/lib/api";
 import type { ModelDownload } from "@/lib/types";
 
@@ -32,12 +31,17 @@ export function useDownloads(pollIntervalMs = 2500) {
     }
   }, []);
 
-  useEffect(() => {
-    refresh();
-    if (pollIntervalMs <= 0) return;
-    const interval = setInterval(refresh, pollIntervalMs);
-    return () => clearInterval(interval);
-  }, [pollIntervalMs, refresh]);
+  const subscribeDownloads = useCallback(
+    (_notify: () => void) => {
+      void refresh();
+      if (pollIntervalMs <= 0) return () => {};
+      const interval = setInterval(refresh, pollIntervalMs);
+      return () => clearInterval(interval);
+    },
+    [pollIntervalMs, refresh],
+  );
+
+  useSyncExternalStore(subscribeDownloads, getDownloadsSnapshot, getDownloadsSnapshot);
 
   const startDownload = useCallback(
     async (params: StartDownloadParams) => {
@@ -112,3 +116,5 @@ export function useDownloads(pollIntervalMs = 2500) {
     cancelDownload,
   };
 }
+
+const getDownloadsSnapshot = (): number => 0;

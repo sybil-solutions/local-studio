@@ -1,4 +1,3 @@
-// CRITICAL
 import type { StateCreator } from "zustand";
 
 export interface SidebarState {
@@ -36,7 +35,7 @@ export const createAppSlice: StateCreator<AppSlice, [], [], AppSlice> = (set) =>
     }),
   toggleSidebarMobileOpen: () =>
     set((state) => ({ sidebar: { ...state.sidebar, mobileOpen: !state.sidebar.mobileOpen } })),
-  sidebarWidth: 240,
+  sidebarWidth: 204,
   setSidebarWidth: (sidebarWidth) => set({ sidebarWidth }),
   fileViewerFontSize: 12,
   setFileViewerFontSize: (fileViewerFontSize) => set({ fileViewerFontSize }),

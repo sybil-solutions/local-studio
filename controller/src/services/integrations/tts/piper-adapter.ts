@@ -1,4 +1,3 @@
-// CRITICAL
 import { existsSync } from "node:fs";
 import { resolveBinary } from "../../../core/command";
 import { runCliCommand } from "../cli/cli-runner";
@@ -7,11 +6,6 @@ import { TtsIntegrationError } from "./types";
 
 const DEFAULT_TIMEOUT_MS = 300_000;
 
-/**
- * Run piper CLI and synthesize a WAV output file.
- * @param request - TTS synthesis request.
- * @returns Nothing.
- */
 export const synthesizeWithPiper = async (request: TtsSynthesisRequest): Promise<void> => {
   const configuredPath = process.env["VLLM_STUDIO_TTS_CLI"];
   const cliPath = configuredPath ? resolveBinary(configuredPath) : resolveBinary("piper");
@@ -55,10 +49,15 @@ export const synthesizeWithPiper = async (request: TtsSynthesisRequest): Promise
   }
 
   if (!existsSync(request.outputPath)) {
-    throw new TtsIntegrationError(502, "tts_output_missing", "TTS CLI did not produce an output file", {
-      output_path: request.outputPath,
-      stderr: result.stderr,
-      stdout: result.stdout,
-    });
+    throw new TtsIntegrationError(
+      502,
+      "tts_output_missing",
+      "TTS CLI did not produce an output file",
+      {
+        output_path: request.outputPath,
+        stderr: result.stderr,
+        stdout: result.stdout,
+      }
+    );
   }
 };

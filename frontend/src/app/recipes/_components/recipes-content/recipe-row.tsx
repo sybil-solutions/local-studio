@@ -1,4 +1,3 @@
-// CRITICAL
 "use client";
 
 import { memo, useCallback, type MouseEvent } from "react";

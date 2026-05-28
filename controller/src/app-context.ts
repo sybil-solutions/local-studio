@@ -1,4 +1,3 @@
-// CRITICAL
 import { mkdirSync } from "node:fs";
 import { resolve } from "node:path";
 import type { AppContext } from "./types/context";
@@ -15,11 +14,9 @@ import { DownloadStore } from "./modules/engines/downloads/download-store";
 import { PeakMetricsStore, LifetimeMetricsStore } from "./modules/system/metrics-store";
 import { RecipeStore } from "./modules/models/recipes/recipe-store";
 import { InferenceRequestStore } from "./stores/inference-request-store";
+import { ControllerSettingsStore } from "./stores/controller-settings-store";
+import { ControllerRequestStore } from "./stores/controller-request-store";
 
-/**
- * Create the application dependency container.
- * @returns AppContext instance.
- */
 export const createAppContext = (): AppContext => {
   const config = createConfig();
 
@@ -31,6 +28,8 @@ export const createAppContext = (): AppContext => {
   const peakMetricsStore = new PeakMetricsStore(dbPath);
   const lifetimeMetricsStore = new LifetimeMetricsStore(dbPath);
   const inferenceRequestStore = new InferenceRequestStore(dbPath);
+  const controllerSettingsStore = new ControllerSettingsStore(dbPath);
+  const controllerRequestStore = new ControllerRequestStore(dbPath);
   const eventManager = createEventManager();
   const logger = createLogger(resolveLogLevel("info"), {
     filePath: primaryLogPathFor(config.data_dir, "controller"),
@@ -69,6 +68,8 @@ export const createAppContext = (): AppContext => {
       peakMetricsStore,
       lifetimeMetricsStore,
       inferenceRequestStore,
+      controllerSettingsStore,
+      controllerRequestStore,
     },
   } satisfies AppContext;
 

@@ -4,11 +4,10 @@ import {
   extractToolText,
   newId,
 } from "@/lib/agent/session/helpers";
+import { traceAgentReasoning } from "@/lib/agent/trace-reasoning";
 import type { AssistantBlock, ToolBlock } from "./types";
 
 export type MakeBlockId = (prefix: string) => string;
-
-// ----- block mutation primitives -----
 
 export function appendDelta(
   blocks: AssistantBlock[],
@@ -16,14 +15,56 @@ export function appendDelta(
   delta: string,
   makeId: MakeBlockId = newId,
 ): AssistantBlock[] {
-  const last = blocks[blocks.length - 1];
-  if (last && last.kind === kind) {
-    if (last.text.startsWith(delta)) return blocks;
-    const append = delta.startsWith(last.text) ? delta.slice(last.text.length) : delta;
-    if (!append) return blocks;
-    return [...blocks.slice(0, -1), { ...last, text: last.text + append }];
+  const idx = lastBlockIndex(blocks, kind);
+  const next =
+    idx === -1
+      ? [...blocks, { kind, id: makeId(kind), text: delta }]
+      : appendToTextLikeBlock(blocks, idx, delta);
+  return normalizeReasoningBeforeVisibleText(next);
+}
+
+function lastBlockIndex(blocks: AssistantBlock[], kind: "text" | "thinking"): number {
+  for (let index = blocks.length - 1; index >= 0; index -= 1) {
+    if (blocks[index]?.kind === kind) return index;
   }
-  return [...blocks, { kind, id: makeId(kind), text: delta }];
+  return -1;
+}
+
+function appendToTextLikeBlock(
+  blocks: AssistantBlock[],
+  index: number,
+  delta: string,
+): AssistantBlock[] {
+  const block = blocks[index];
+  if (!block || (block.kind !== "text" && block.kind !== "thinking")) return blocks;
+  if (block.text.startsWith(delta)) return blocks;
+  const append = delta.startsWith(block.text) ? delta.slice(block.text.length) : delta;
+  if (!append) return blocks;
+  const next = blocks.slice();
+  next[index] = { ...block, text: block.text + append };
+  return next;
+}
+
+function normalizeReasoningBeforeVisibleText(blocks: AssistantBlock[]): AssistantBlock[] {
+  const firstToolIndex = blocks.findIndex((block) => block.kind === "tool");
+  const prefix = firstToolIndex === -1 ? blocks : blocks.slice(0, firstToolIndex);
+  const suffix = firstToolIndex === -1 ? [] : blocks.slice(firstToolIndex);
+  const thinking = mergeTextLikeBlocks(prefix.filter((block) => block.kind === "thinking"));
+  const text = mergeTextLikeBlocks(prefix.filter((block) => block.kind === "text"));
+  const other = prefix.filter((block) => block.kind !== "thinking" && block.kind !== "text");
+  return [...thinking, ...text, ...other, ...suffix];
+}
+
+function mergeTextLikeBlocks(blocks: AssistantBlock[]): AssistantBlock[] {
+  const [first, ...rest] = blocks;
+  if (!first || (first.kind !== "text" && first.kind !== "thinking")) return blocks;
+  return [
+    rest.reduce(
+      (merged, block) =>
+        block.kind === first.kind ? { ...merged, text: merged.text + block.text } : merged,
+      first,
+    ),
+  ];
 }
 
 export function upsertTool(
@@ -49,8 +90,6 @@ export function appendEventBlock(
   return [...blocks, { kind: "event", id: makeId("event"), text }];
 }
 
-// ----- streaming tool-call extraction helpers -----
-
 export type StreamingToolCallSnapshot = {
   id: string;
   name: string;
@@ -70,6 +109,21 @@ function contentPartAt(
     if (part?.type === "toolCall") return part;
   }
   return null;
+}
+
+function deltaKindFromMessageUpdate(
+  assistantMessageEvent: Record<string, unknown> | undefined,
+): "text" | "thinking" | null {
+  if (!assistantMessageEvent || typeof assistantMessageEvent.delta !== "string") return null;
+  if (
+    assistantMessageEvent.type === "thinking_delta" ||
+    assistantMessageEvent.type === "reasoning_delta" ||
+    assistantMessageEvent.type === "reasoning_text_delta"
+  ) {
+    return "thinking";
+  }
+  if (assistantMessageEvent.type !== "text_delta") return null;
+  return "text";
 }
 
 export function toolCallSnapshotFromUpdate(
@@ -142,11 +196,16 @@ function applyMessageUpdateToBlocks(
   makeId: MakeBlockId,
 ): AssistantBlock[] | null {
   const ame = event.assistantMessageEvent as Record<string, unknown> | undefined;
-  if (ame?.type === "text_delta" && typeof ame.delta === "string") {
-    return appendDelta(blocks, "text", ame.delta, makeId);
-  }
-  if (ame?.type === "thinking_delta" && typeof ame.delta === "string") {
-    return appendDelta(blocks, "thinking", ame.delta, makeId);
+  const deltaKind = deltaKindFromMessageUpdate(ame);
+  if (deltaKind && typeof ame?.delta === "string") {
+    traceAgentReasoning("block-event.delta", {
+      deltaKind,
+      eventType: event.type,
+      assistantMessageEventType: ame.type,
+      contentIndex: ame.contentIndex,
+      delta: ame.delta,
+    });
+    return appendDelta(blocks, deltaKind, ame.delta, makeId);
   }
   if (ame?.type === "toolcall_start") return applyToolCallStart(blocks, ame, event);
   if (ame?.type === "toolcall_delta") return applyToolCallDelta(blocks, ame, event);

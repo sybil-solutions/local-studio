@@ -1,4 +1,3 @@
-// CRITICAL
 /**
  * API client for vLLM Studio Controller.
  *
@@ -13,9 +12,7 @@ export { scrubTransportFetchErrorMessage } from "./api/core";
 // For client-side calls, use the proxy which handles authentication
 // The proxy adds the API key server-side, avoiding CORS and auth issues
 const isClient = typeof window !== "undefined";
-const clientBaseUrl = isClient
-  ? "/api/proxy"
-  : resolveApiServerBaseUrl();
+const clientBaseUrl = isClient ? "/api/proxy" : resolveApiServerBaseUrl();
 
 const api = createApiClient({ baseUrl: clientBaseUrl, useProxy: isClient });
 export default api;

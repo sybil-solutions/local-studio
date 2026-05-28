@@ -27,11 +27,69 @@ Access these in scripts via environment variables or load them from `.env.local`
 
 - **Agent surface**: `http://localhost:3001/agent`
 - **Run**: `cd frontend && PORT=3001 npm run dev`
+- **Do not run dev unless explicitly asked.** If a dev server is already running, you may use it for verification.
 - Use this local server for fast browser verification unless the user explicitly asks for a different port or deployment target.
+- **Do not build or replace the desktop app unless explicitly asked.** Default to web/dev-server verification or an isolated beta app so the user's real vLLM Studio desktop app is not disturbed.
+- **Beta desktop app for testing**: when desktop verification is explicitly requested, build/install a separate beta app with its own app name, bundle id, and user data path. Do not overwrite `/Applications/vLLM Studio.app` or relaunch the user's production work app while testing feature branches.
+- **Desktop dev mode for iterative UI work**: launch Electron against the local dev server so frontend changes show up without rebuilding the installed app:
+
+```bash
+# Terminal 1
+cd frontend && PORT=3001 npm run dev
+
+# Terminal 2
+cd frontend && npm run desktop:build:main && VLLM_STUDIO_DESKTOP_DEV_SERVER_URL=http://127.0.0.1:3001 npm run desktop:start
+```
+
+- Prefer this desktop dev mode while debugging/iterating on the Mac app.
+
+## Build Modes
+
+Use the right build mode for the situation:
+
+### Fast Desktop Test Build
+
+Use this when the user wants to quickly test the installed Mac app locally.
+
+```bash
+cd frontend && npm run desktop:pack
+```
+
+- `desktop:pack` builds the app directory only (`frontend/dist-desktop/mac-arm64/vLLM Studio.app`).
+- It skips distributable DMG/ZIP/blockmap creation and is much faster than `desktop:dist`.
+- After `desktop:pack`, still replace `/Applications/vLLM Studio.app` using the [Installed Desktop App Update](#installed-desktop-app-update-required) steps.
+- This is for local testing only; it does **not** replace the production/pre-push gate.
+
+### Production / Pre-Push Build
+
+Use this before pushing, releasing, or calling a feature production-ready.
+
+```bash
+git push
+```
+
+The configured pre-push hook (`.githooks/pre-push`) is the production quality gate. It checks conventional commits and runs:
+
+```bash
+npm --prefix frontend run check:quality
+```
+
+For a production desktop artifact, run:
+
+```bash
+cd frontend && npm run desktop:dist
+```
+
+- `desktop:dist` creates the signed app plus DMG/ZIP distributables.
+- Use `desktop:dist` for production/release readiness, not for every quick local visual test.
+- After `desktop:dist`, replace `/Applications/vLLM Studio.app` using the [Installed Desktop App Update](#installed-desktop-app-update-required) steps.
 
 ## Deployment Workflow
 
-After finishing a feature, you **MUST** complete ALL deployment steps. This is not optional.
+After finishing a feature, you **MUST** complete the appropriate deployment steps. This is not optional.
+
+- For a quick user test, use the **Fast Desktop Test Build** path.
+- Before pushing/release/production-ready status, use the **Production / Pre-Push Build** path.
 
 After finishing a feature, follow this checklist:
 
@@ -39,8 +97,9 @@ After finishing a feature, follow this checklist:
 2. **Verify local app**: `curl -s -o /dev/null -w "%{http_code}" http://localhost:3001/agent` (should be 200 when the local dev server is running)
 3. **Remote deploy** (if needed): `./scripts/deploy-remote.sh` (syncs, builds, restarts)
 4. **Verify remote**: check production URLs (see `.env.local` for REMOTE_HOST)
-5. **Desktop Electron update (REQUIRED - ALWAYS DO THIS)**: `cd frontend && npm run desktop:dist`
-6. **Update installed Desktop app** (REQUIRED - ALWAYS DO THIS): See [Installed Desktop App Update](#installed-desktop-app-update-required) section below
+5. **Desktop Electron update for quick local testing**: `cd frontend && npm run desktop:pack`
+6. **Desktop Electron update for production/release**: `cd frontend && npm run desktop:dist`
+7. **Update installed Desktop app** (REQUIRED after either desktop build): See [Installed Desktop App Update](#installed-desktop-app-update-required) section below
 
 ### Installed Desktop App Update (Required)
 
@@ -51,7 +110,7 @@ There must be **one canonical installed app only**:
 - Canonical bundle id: `org.vllm.studio.desktop`
 - Legacy duplicate to remove if present: `~/Applications/vllm-studio-mac.app`
 
-After `desktop:dist`, replace the installed app bundle cleanly. Do not layer a new app bundle on top
+After `desktop:pack` or `desktop:dist`, replace the installed app bundle cleanly. Do not layer a new app bundle on top
 of the old one with plain `ditto`; stale sealed resources will invalidate the code signature.
 
 ```bash

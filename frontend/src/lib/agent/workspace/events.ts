@@ -8,7 +8,6 @@ export const ACTIVE_AGENT_SESSIONS_EVENT = "vllm-studio.agent.activeSessions";
 export const NEW_AGENT_SESSION_EVENT = "vllm-studio.agent.newSession";
 export const ACTIVE_AGENT_SESSION_RENAME_EVENT = "vllm-studio.agent.activeSessionRename";
 export const ACTIVE_AGENT_SESSION_OPEN_EVENT = "vllm-studio.agent.activeSessionOpen";
-export const OPEN_SESSION_SPLIT_EVENT = "vllm-studio.agent.openSessionSplit";
 export const ADD_PROJECT_EVENT = "vllm-studio.agent.addProject";
 export const SESSION_PREFS_CHANGED_EVENT = "vllm-studio.agent.sessionPrefs.changed";
 

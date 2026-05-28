@@ -1,5 +1,4 @@
 #!/usr/bin/env bun
-// CRITICAL
 import { hideCursor, showCursor } from "./ansi";
 import { setupInput } from "./input";
 import { render } from "./render";

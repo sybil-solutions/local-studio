@@ -8,6 +8,7 @@ import { EventEmitter } from "node:events";
 export type BrowserCommand = {
   id: string;
   verb: string;
+  sessionId?: string;
   payload: Record<string, unknown>;
 };
 
@@ -23,19 +24,41 @@ type PendingCommand = {
   reject: (error: Error) => void;
 };
 
+function waitForCommandListener(emitter: EventEmitter, timeoutMs: number): Promise<boolean> {
+  if (emitter.listenerCount("command") > 0) return Promise.resolve(true);
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      emitter.off("newListener", onNewListener);
+      resolve(false);
+    }, timeoutMs);
+    const onNewListener = (eventName: string | symbol) => {
+      if (eventName !== "command") return;
+      clearTimeout(timer);
+      emitter.off("newListener", onNewListener);
+      queueMicrotask(() => resolve(emitter.listenerCount("command") > 0));
+    };
+    emitter.on("newListener", onNewListener);
+  });
+}
+
 class BrowserBridge extends EventEmitter {
   private pending = new Map<string, PendingCommand>();
   private seq = 0;
 
-  enqueue(verb: string, payload: Record<string, unknown>): Promise<BrowserResult> {
-    if (this.listenerCount("command") === 0) {
+  async enqueue(
+    verb: string,
+    payload: Record<string, unknown>,
+    sessionId?: string,
+  ): Promise<BrowserResult> {
+    const connected = await waitForCommandListener(this, 5_000);
+    if (!connected) {
       return Promise.reject(
         new Error(`Browser command '${verb}' could not run because no browser panel is connected.`),
       );
     }
 
     const id = `browser-${Date.now().toString(36)}-${(++this.seq).toString(36)}`;
-    const command: BrowserCommand = { id, verb, payload };
+    const command: BrowserCommand = { id, verb, ...(sessionId ? { sessionId } : {}), payload };
     return new Promise<BrowserResult>((resolve, reject) => {
       this.pending.set(id, { resolve, reject });
       this.emit("command", command);

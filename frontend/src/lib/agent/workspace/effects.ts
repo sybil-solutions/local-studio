@@ -1,12 +1,19 @@
 import type { ActiveAgentSessionSnapshot } from "@/lib/agent/active-sessions";
-import { makeFreshTab, newPaneId, newRuntimeId } from "@/lib/agent/session/helpers";
+import {
+  cleanSessionTitle,
+  makeFreshTab,
+  newPaneId,
+  newRuntimeId,
+} from "@/lib/agent/session/helpers";
 import { findPaneByPiSessionId } from "@/lib/agent/sessions/selectors";
 import type { Project } from "@/lib/agent/projects/types";
-import type { SessionId } from "@/lib/agent/sessions/types";
+import type { Session, SessionId } from "@/lib/agent/sessions/types";
 import type { ToolSelection } from "@/lib/agent/tools/types";
+import type { ComposerSkillRef } from "@/lib/agent/composer-context";
 import type { AgentModel, PaneId, WorkspaceAction, WorkspaceState } from "./types";
 import {
   loadPersistedActiveAgentSessions,
+  sessionMetaForPersistence,
   setupWarningFromPiCheck,
   type WorkspaceStorage,
 } from "./store";
@@ -16,12 +23,16 @@ import {
   ACTIVE_AGENT_SESSION_RENAME_EVENT,
   ACTIVE_AGENT_SESSIONS_EVENT,
   NEW_AGENT_SESSION_EVENT,
-  OPEN_SESSION_SPLIT_EVENT,
   PROJECTS_LOADED_EVENT,
   SESSIONS_CHANGED_EVENT,
 } from "./events";
 
-const EMPTY_SELECTION: ToolSelection = { plugins: [], skills: [] };
+const EMPTY_SELECTION: ToolSelection = {
+  plugins: [],
+  skills: [],
+  promptTemplates: [],
+  extensionOverrides: [],
+};
 
 type SetupCheck = { id: string; ok: boolean; guidance?: string };
 
@@ -69,12 +80,9 @@ const PANE_STATE_ACTIONS = new Set<WorkspaceAction["type"]>([
   "openSessionPayloadInPane",
   "splitPaneWithPayload",
   "focusPane",
-  "focusTab",
   "renameTab",
   "splitTab",
   "closePane",
-  "setPaneTabs",
-  "patchActiveTab",
   "hydrateActiveSessions",
   "urlNavRequested",
 ]);
@@ -88,11 +96,16 @@ const SESSIONS_CHANGED_ACTIONS = new Set<WorkspaceAction["type"]>([
   "renameTab",
   "splitTab",
   "closePane",
-  "setPaneTabs",
+  "setPaneSession",
   "patchActiveTab",
   "hydrateActiveSessions",
   "notifySessionsChanged",
   "urlNavRequested",
+]);
+
+const METADATA_PATCH_ACTIONS = new Set<WorkspaceAction["type"]>([
+  "setPaneSession",
+  "patchActiveTab",
 ]);
 
 function dispatchEvent(deps: WorkspaceEffectDeps, type: string): void {
@@ -125,12 +138,15 @@ export function subscribeWorkspaceWindowEvents(
     const detail = eventDetail(event);
     const projectId = isRecord(detail) ? stringField(detail, "projectId") : undefined;
     const project = projectId ? (findProjectById(projectId) ?? undefined) : undefined;
+    const rawMode = isRecord(detail) ? stringField(detail, "mode") : undefined;
+    const mode = rawMode === "split" || rawMode === "replace" ? rawMode : undefined;
     dispatch({
       type: "openNewSession",
       project,
       tab: makeFreshTab(),
       paneId: newPaneId(),
       runtimeSessionId: newRuntimeId(),
+      ...(mode ? { mode } : {}),
     });
   };
   const onRename = (event: Event) => {
@@ -160,24 +176,8 @@ export function subscribeWorkspaceWindowEvents(
       });
       return;
     }
-    dispatch({ type: "focusTab", paneId, tabId });
+    dispatch({ type: "focusPane", paneId });
   };
-  const onSplitSession = (event: Event) => {
-    const detail = eventDetail(event);
-    const piSessionId = isRecord(detail) ? stringField(detail, "piSessionId") : undefined;
-    const sessionTitle = isRecord(detail) ? stringField(detail, "title") : undefined;
-    if (piSessionId) {
-      dispatch({
-        type: "replaySessionInSplit",
-        piSessionId,
-        sessionTitle,
-        paneId: newPaneId(),
-        runtimeSessionId: newRuntimeId(),
-        tab: makeFreshTab(),
-      });
-    }
-  };
-
   // Fired by ProjectsProvider once its first load settles. We hold off on
   // hydrating active-session snapshots until then so we can filter sessions
   // whose project is no longer installed.
@@ -198,14 +198,12 @@ export function subscribeWorkspaceWindowEvents(
   workspaceWindow.addEventListener(NEW_AGENT_SESSION_EVENT, onNewSession);
   workspaceWindow.addEventListener(ACTIVE_AGENT_SESSION_RENAME_EVENT, onRename);
   workspaceWindow.addEventListener(ACTIVE_AGENT_SESSION_OPEN_EVENT, onOpen);
-  workspaceWindow.addEventListener(OPEN_SESSION_SPLIT_EVENT, onSplitSession);
   workspaceWindow.addEventListener(PROJECTS_LOADED_EVENT, onProjectsLoaded);
 
   return () => {
     workspaceWindow.removeEventListener(NEW_AGENT_SESSION_EVENT, onNewSession);
     workspaceWindow.removeEventListener(ACTIVE_AGENT_SESSION_RENAME_EVENT, onRename);
     workspaceWindow.removeEventListener(ACTIVE_AGENT_SESSION_OPEN_EVENT, onOpen);
-    workspaceWindow.removeEventListener(OPEN_SESSION_SPLIT_EVENT, onSplitSession);
     workspaceWindow.removeEventListener(PROJECTS_LOADED_EVENT, onProjectsLoaded);
     dispatch({ type: "workspaceUnmounted" });
   };
@@ -273,30 +271,39 @@ function computeActiveSessionBroadcast(
   if (!state.hydrated) return null;
   const out: ActiveAgentSessionSnapshot[] = [];
   for (const [paneId, pane] of state.panesById.entries()) {
-    for (const id of pane.sessionIds) {
-      const tab = state.sessions.get(id);
-      if (!tab) continue;
-      if (!(Boolean(tab.piSessionId) || tab.messages.length > 0) || tab.status === "loading")
-        continue;
-      const selection = selectionFor(id);
-      out.push({
-        projectId: tab.projectId ?? "",
-        cwd: tab.cwd ?? "",
-        paneId,
-        tabId: tab.id,
-        piSessionId: tab.piSessionId,
-        modelId: tab.modelId ?? state.selectedModel,
-        title: tab.title,
-        status: tab.status,
-        active: paneId === state.focusedPaneId && tab.id === pane.activeSessionId,
-        startedAt: tab.startedAt,
-        updatedAt: tab.startedAt || new Date().toISOString(),
-        plugins: selection.plugins.length > 0 ? selection.plugins : undefined,
-        skills: selection.skills.length > 0 ? selection.skills : undefined,
-      });
-    }
+    const tab = state.sessions.get(pane.sessionId);
+    if (!tab) continue;
+    if (!(Boolean(tab.piSessionId) || tab.messages.length > 0) || tab.status === "loading")
+      continue;
+    const selection = selectionFor(tab.id);
+    const usedSkills = usedSkillsForSession(tab);
+    out.push({
+      projectId: tab.projectId ?? "",
+      cwd: tab.cwd ?? "",
+      paneId,
+      tabId: tab.id,
+      piSessionId: tab.piSessionId,
+      modelId: tab.modelId ?? state.selectedModel,
+      title: cleanSessionTitle(tab.title) || "Current session",
+      status: tab.status,
+      active: paneId === state.focusedPaneId,
+      startedAt: tab.startedAt,
+      updatedAt: tab.startedAt || new Date().toISOString(),
+      plugins: selection.plugins.length > 0 ? selection.plugins : undefined,
+      skills: selection.skills.length > 0 ? selection.skills : undefined,
+      usedSkills: usedSkills.length > 0 ? usedSkills : undefined,
+    });
   }
   return out;
+}
+
+function usedSkillsForSession(tab: Pick<Session, "messages" | "usedSkills">): ComposerSkillRef[] {
+  const byId = new Map<string, ComposerSkillRef>();
+  for (const skill of tab.usedSkills ?? []) byId.set(skill.id || skill.path || skill.name, skill);
+  for (const message of tab.messages) {
+    for (const skill of message.skills ?? []) byId.set(skill.id || skill.path || skill.name, skill);
+  }
+  return [...byId.values()];
 }
 
 function activeSessionBroadcastKey(sessions: ActiveAgentSessionSnapshot[] | null): string {
@@ -307,7 +314,7 @@ function storedSessionsKey(state: WorkspaceState): string {
   const entries: Array<{ id: string; title: string; cwd?: string }> = [];
   for (const tab of state.sessions.values()) {
     if (!tab.piSessionId) continue;
-    entries.push({ id: tab.piSessionId, title: tab.title, cwd: tab.cwd });
+    entries.push({ id: tab.piSessionId, title: cleanSessionTitle(tab.title), cwd: tab.cwd });
   }
   entries.sort((a, b) => a.id.localeCompare(b.id));
   return JSON.stringify(entries);
@@ -339,9 +346,7 @@ function queueLocatedReplay(
 function queueRecoverableActiveTabReplays(state: WorkspaceState, deps: WorkspaceEffectDeps): void {
   const queued = new Set<string>();
   for (const [paneId, pane] of state.panesById.entries()) {
-    const activeTab =
-      state.sessions.get(pane.activeSessionId) ??
-      (pane.sessionIds[0] ? state.sessions.get(pane.sessionIds[0]) : undefined);
+    const activeTab = state.sessions.get(pane.sessionId);
     if (
       activeTab?.piSessionId &&
       (activeTab.messages.length === 0 ||
@@ -402,15 +407,46 @@ function queueReplayEffects(
 
 function persistActionEffects(
   action: WorkspaceAction,
-  _prevState: WorkspaceState,
+  prevState: WorkspaceState,
   nextState: WorkspaceState,
   deps: WorkspaceEffectDeps,
 ): void {
   if (PANE_STATE_ACTIONS.has(action.type)) {
     writePaneState(deps.storage, nextState, deps.selectionFor);
+    return;
+  }
+  if (
+    METADATA_PATCH_ACTIONS.has(action.type) &&
+    paneMetadataKey(prevState, deps.selectionFor) !== paneMetadataKey(nextState, deps.selectionFor)
+  ) {
+    writePaneState(deps.storage, nextState, deps.selectionFor);
   }
   // Browser/computer tool state persistence now lives in
   // lib/agent/tools/persistence.ts and is driven by ToolsProvider directly.
+}
+
+function paneMetadataKey(
+  state: WorkspaceState,
+  selectionFor: ((sessionId: SessionId) => ToolSelection | null) | undefined,
+): string {
+  const panes: Record<string, unknown> = {};
+  for (const [paneId, pane] of state.panesById.entries()) {
+    panes[paneId] = {
+      sessionId: pane.sessionId,
+      runtimeSessionId: pane.runtimeSessionId,
+      tab: state.sessions.get(pane.sessionId)
+        ? sessionMetaForPersistence(
+            state.sessions.get(pane.sessionId)!,
+            selectionFor?.(pane.sessionId) ?? undefined,
+          )
+        : null,
+    };
+  }
+  return JSON.stringify({
+    layout: state.layout,
+    focusedPaneId: state.focusedPaneId,
+    panes,
+  });
 }
 
 export function runWorkspaceEffect(

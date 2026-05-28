@@ -1,4 +1,3 @@
-// CRITICAL
 import { Filter } from "lucide-react";
 import { RefreshButton } from "@/components/ui-kit/refresh-button";
 

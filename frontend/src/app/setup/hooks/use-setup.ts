@@ -1,7 +1,6 @@
-// CRITICAL
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
 import api from "@/lib/api";
 import type {
@@ -71,9 +70,15 @@ export function useSetup() {
     }
   }, []);
 
-  useEffect(() => {
-    void loadSetupData();
-  }, [loadSetupData]);
+  const subscribeSetupData = useCallback(
+    (_notify: () => void) => {
+      void loadSetupData();
+      return () => {};
+    },
+    [loadSetupData],
+  );
+
+  useSyncExternalStore(subscribeSetupData, getSetupSnapshot, getSetupSnapshot);
 
   const saveSettings = useCallback(async () => {
     if (!modelsDir.trim()) {
@@ -181,7 +186,7 @@ export function useSetup() {
         setCreatedRecipeId(recipe.id);
       }
 
-      await api.launch(recipeId, true);
+      await api.launch(recipeId);
       const ready = await api.waitReady(300);
       if (!ready.ready) {
         throw new Error(ready.error || "The model did not become ready in time.");
@@ -279,3 +284,5 @@ export function useSetup() {
     skipSetup,
   };
 }
+
+const getSetupSnapshot = (): number => 0;

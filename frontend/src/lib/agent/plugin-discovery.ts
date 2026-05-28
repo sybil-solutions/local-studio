@@ -36,24 +36,7 @@ export function defaultPluginRoots(): string[] {
       marketplace.source,
       path.join(marketplace.source, "plugins"),
     ]),
-    ...codexPluginCacheRoots(home),
-    ...codexAppPluginRoots(),
     path.join(home, ".codex", "plugins"),
-  ]);
-}
-
-export function codexPluginCacheRoots(home: string): string[] {
-  const cache = path.join(home, ".codex", "plugins", "cache");
-  return ["openai-bundled", "openai-curated", "openai-primary-runtime"].flatMap((name) => [
-    path.join(cache, name),
-    path.join(cache, name, "plugins"),
-  ]);
-}
-
-export function codexAppPluginRoots(): string[] {
-  return ["openai-bundled", "openai-curated", "openai-primary-runtime"].flatMap((name) => [
-    path.join("/Applications", "Codex.app", "Contents", "Resources", "plugins", name),
-    path.join("/Applications", "Codex.app", "Contents", "Resources", "plugins", name, "plugins"),
   ]);
 }
 
@@ -296,7 +279,7 @@ export function discoverPlugins(
 ): PluginRow[] {
   const codexConfig = readCodexConfig(options.configPath ?? defaultCodexConfigPath());
   const rows = discoverPluginRows(roots, codexConfig, options.maxDepth ?? 8);
-  return sortPluginRows(dedupePluginRows(rows));
+  return sortPluginRows(dedupePluginRows(rows).filter((row) => !isOpenAiPluginRow(row)));
 }
 
 function discoverPluginRows(
@@ -402,6 +385,12 @@ function sortPluginRows(rows: PluginRow[]): PluginRow[] {
   return [...rows]
     .sort((a, b) => a.name.localeCompare(b.name))
     .sort((a, b) => Number(b.enabled) - Number(a.enabled));
+}
+
+function isOpenAiPluginRow(row: PluginRow): boolean {
+  const source = row.source?.toLowerCase() ?? "";
+  if (source.startsWith("openai-")) return true;
+  return row.path.split(path.sep).some((part) => part.startsWith("openai-"));
 }
 
 function preferredPluginRow(current: PluginRow, candidate: PluginRow): PluginRow {

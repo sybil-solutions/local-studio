@@ -1,4 +1,3 @@
-// CRITICAL
 import { getApiKey } from "../api-key";
 import { clearStoredBackendUrl, getStoredBackendUrl } from "../backend-url";
 import { delay } from "../async";
@@ -157,8 +156,14 @@ function isBenignSseTransportFailure(error: unknown, signal?: AbortSignal): bool
 
 export type ApiCore = ReturnType<typeof createApiCore>;
 
-export function createApiCore(params: { baseUrl: string; useProxy: boolean }) {
-  const { baseUrl, useProxy } = params;
+export function createApiCore(params: {
+  baseUrl: string;
+  useProxy: boolean;
+  backendUrlOverride?: string;
+  apiKeyOverride?: string;
+}) {
+  const { baseUrl, useProxy, backendUrlOverride, apiKeyOverride } = params;
+  const hasBackendUrlOverride = Boolean(backendUrlOverride?.trim());
 
   const normalizeSsePayload = (
     event: string,
@@ -199,6 +204,7 @@ export function createApiCore(params: { baseUrl: string; useProxy: boolean }) {
 
   const maybeClearInvalidBackendOverride = (response: Response): void => {
     if (!useProxy) return;
+    if (hasBackendUrlOverride) return;
     if (response.headers.get("x-backend-override-invalid") !== "1") return;
     clearStoredBackendUrl();
   };
@@ -209,13 +215,16 @@ export function createApiCore(params: { baseUrl: string; useProxy: boolean }) {
     retriedWithoutBackendOverride: boolean,
   ): boolean =>
     useProxy &&
+    !hasBackendUrlOverride &&
     response.headers.get("x-backend-override-invalid") === "1" &&
     Boolean(headers["X-Backend-Url"]) &&
     !retriedWithoutBackendOverride;
 
   const responseError = async (response: Response): Promise<Error> => {
     const errorBody: unknown = await response.json().catch(() => ({ detail: "Request failed" }));
-    return new Error(formatHttpErrorMessage(response.status, errorBody));
+    const error = new Error(formatHttpErrorMessage(response.status, errorBody));
+    (error as Error & { status: number }).status = response.status;
+    return error;
   };
 
   const normalizeRequestError = (error: unknown, timeout: number): Error => {
@@ -255,12 +264,12 @@ export function createApiCore(params: { baseUrl: string; useProxy: boolean }) {
   const buildHeaders = (extraHeaders?: HeadersInit): Record<string, string> => {
     const headers: Record<string, string> = { "Content-Type": "application/json" };
 
-    const storedBackendUrl = getStoredBackendUrl();
+    const storedBackendUrl = backendUrlOverride?.trim() || getStoredBackendUrl();
     if (useProxy && storedBackendUrl) {
       headers["X-Backend-Url"] = storedBackendUrl;
     }
 
-    const storedKey = getApiKey();
+    const storedKey = apiKeyOverride?.trim() || getApiKey();
     if (storedKey) {
       headers["Authorization"] = `Bearer ${storedKey}`;
     }
@@ -447,9 +456,7 @@ export function createApiCore(params: { baseUrl: string; useProxy: boolean }) {
       const onAbort = () => {
         try {
           void reader.cancel();
-        } catch {
-          /* ignore */
-        }
+        } catch {}
       };
       if (signal.aborted) {
         onAbort();
@@ -504,9 +511,7 @@ export function createApiCore(params: { baseUrl: string; useProxy: boolean }) {
       const onAbort = () => {
         try {
           void reader.cancel();
-        } catch {
-          /* ignore */
-        }
+        } catch {}
       };
       if (signal.aborted) {
         onAbort();
@@ -518,7 +523,6 @@ export function createApiCore(params: { baseUrl: string; useProxy: boolean }) {
     return { runId, stream: parseSseStream(reader, signal) };
   };
 
-  /** Poll the controller health endpoint. Returns true if reachable. */
   const healthPoll = async (timeoutMs = 5_000): Promise<boolean> => {
     try {
       const url = buildUrl("/health");

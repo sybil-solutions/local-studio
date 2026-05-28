@@ -1,19 +1,16 @@
 # UI Kit
 
-This folder is the standardized visual foundation for frontend surfaces.
+`frontend/src/components/ui-kit/` contains shared visual primitives used by frontend surfaces that need consistent panel, badge, timeline, modal, and metric styling.
 
-## Scope
+## Purpose
 
-- Building blocks: reusable UI primitives for panel surfaces, status badges, timeline markers, pulse labels,
-  modal shells, and shared content surfaces.
-- Styles: shared tone config and class conventions.
-- Themes: all primitives must consume theme variables (`--bg`, `--surface`, `--fg`, `--dim`, `--border`, `--hl1`, `--hl2`, `--hl3`, `--err`).
+The UI kit keeps repeated visual structure out of feature components. Feature components should map data and behavior; UI kit components should provide the reusable surface, tone, and layout primitives.
 
-## Files
+## What Is In Use
 
-- `types.ts`: `UiTone` contract.
-- `configs.ts`: tone mapping + required theme variables.
-- `primitives.tsx`: reusable components:
+- `types.ts`: shared `UiTone` contract.
+- `configs.ts`: tone mappings and theme-variable expectations.
+- `primitives.tsx`: reusable UI components:
   - `UiPanelSurface`
   - `UiStatusBadge`
   - `UiTimelineMarker`
@@ -26,13 +23,12 @@ This folder is the standardized visual foundation for frontend surfaces.
 
 ## Usage Rules
 
-1. New UI work should prefer `@/components/ui-kit` primitives before adding ad-hoc styles.
-2. Do not hardcode colors in new components; use tone config or CSS theme variables.
-3. Keep feature components focused on behavior and data mapping; visual structure belongs in UI kit primitives.
+1. Prefer these primitives when a feature needs an existing shared visual pattern.
+2. Use theme variables and tone config instead of hardcoded colors.
+3. Keep feature-specific data fetching, state, and event handling outside this folder.
 
-## Migration Plan
+## Where To Look
 
-1. Activity tab (completed in this rollout)
-2. Chat message chrome and toolbelt status controls
-3. Shared dashboard/config cards and badges
-4. Remaining page-level controls and modal patterns (in progress)
+- `primitives.tsx`: component implementations.
+- `configs.ts`: tone and theme mapping.
+- `types.ts`: exported UI kit types.

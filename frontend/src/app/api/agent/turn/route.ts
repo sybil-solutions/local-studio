@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { listSessions } from "@/lib/agent/sessions-store";
 import { piRuntimeManager } from "@/lib/agent/pi-runtime";
 import { parseAgentTurnRequest } from "@/lib/agent/contracts/turn";
+import { controlTargetHasActiveTurn } from "@/lib/agent/control-routing";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -31,7 +32,7 @@ function adoptRuntimePiSessionId(session: unknown, piSessionId: string | null | 
   if (typeof runtime.adoptPiSessionId === "function") {
     runtime.adoptPiSessionId(next);
   } else if (!runtime.currentPiSessionId) {
-    // Dev HMR can keep a PiRpcSession instance from the previous module
+    // Dev HMR can keep an older runtime instance from the previous module
     // version alive. Preserve reattach correctness for those sessions too.
     runtime.currentPiSessionId = next;
   }
@@ -50,14 +51,20 @@ export async function POST(request: NextRequest) {
     sessionId,
     modelId,
     message,
+    images,
     cwd,
     piSessionId,
     browserToolEnabled,
+    browserSessionId,
+    canvasEnabled,
     plugins,
     skills,
+    promptTemplates,
+    extensionOverrides,
     mode,
     streamingBehavior,
   } = parsed.value;
+  const commandImages = images.length ? images : undefined;
 
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
@@ -68,23 +75,29 @@ export async function POST(request: NextRequest) {
       });
       try {
         const turnStartedAt = new Date(Date.now() - 2_000);
-        const session = piRuntimeManager.getSession(sessionId);
+        const resolved =
+          mode === "prompt"
+            ? { sessionId, session: piRuntimeManager.getSession(sessionId) }
+            : piRuntimeManager.getSessionForLookup(sessionId, piSessionId);
+        const session = resolved.session;
         const existingStatus = session.status;
         const promptAlreadyActive = existingStatus.active === true;
-        const controlTargetRunning =
-          existingStatus.active === true || existingStatus.running === true;
+        const controlTargetActive = controlTargetHasActiveTurn(existingStatus);
         const effectivePiSessionId =
           mode === "prompt"
             ? piSessionId
-            : controlTargetRunning
+            : controlTargetActive
               ? (existingStatus.piSessionId ?? piSessionId)
               : piSessionId;
-        sse(controller, { type: "status", phase: "starting", sessionId, modelId, cwd }, isOpen);
-        // Control turns are keyed to the Pi process, not to this HTTP stream's
-        // ownership bit. The original prompt stream can detach while Pi keeps
-        // running; if we fall back to `prompt` in that window, steer/queue looks
-        // accepted in the UI but never reaches the active model turn.
-        const ownsPromptStream = mode === "prompt" || !controlTargetRunning;
+        sse(
+          controller,
+          { type: "status", phase: "starting", sessionId: resolved.sessionId, modelId, cwd },
+          isOpen,
+        );
+        // Control turns are keyed to an active Pi turn, not just to a live
+        // runtime process. A completed session can keep its runtime around for
+        // reuse; late steer/queue controls must become normal streamed prompts.
+        const ownsPromptStream = mode === "prompt" || !controlTargetActive;
         const effectiveStreamingBehavior =
           mode === "prompt" && promptAlreadyActive
             ? (streamingBehavior ?? "steer")
@@ -92,26 +105,42 @@ export async function POST(request: NextRequest) {
         if (ownsPromptStream) {
           await session.ensureStarted(modelId, cwd, effectivePiSessionId, {
             browserToolEnabled,
+            browserSessionId,
+            canvasEnabled,
             plugins,
             skills,
+            promptTemplates,
+            extensionOverrides,
           });
         }
         sse(controller, { type: "status", phase: "running", session: session.status }, isOpen);
         if (ownsPromptStream) {
+          const promptOptions = {
+            streamingBehavior: effectiveStreamingBehavior,
+            ...(commandImages ? { images: commandImages } : {}),
+          };
           await session.prompt(
             message,
             (event, seq) => {
               sse(controller, { type: "pi", seq, event }, isOpen);
             },
-            { streamingBehavior: effectiveStreamingBehavior },
+            promptOptions,
           );
         } else if (mode === "steer") {
-          await session.steer(message);
+          if (commandImages) {
+            await session.steer(message, commandImages);
+          } else {
+            await session.steer(message);
+          }
           // Steer is a fire-and-forget control message — events keep flowing on
           // the original prompt's stream. Close ours immediately.
           sse(controller, { type: "status", phase: "queued", queue: "steer" }, isOpen);
         } else if (mode === "follow_up") {
-          await session.followUp(message);
+          if (commandImages) {
+            await session.followUp(message, commandImages);
+          } else {
+            await session.followUp(message);
+          }
           sse(controller, { type: "status", phase: "queued", queue: "follow_up" }, isOpen);
         }
         const status = session.status;

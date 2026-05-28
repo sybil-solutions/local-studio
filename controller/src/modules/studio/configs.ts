@@ -5,7 +5,6 @@ export const STUDIO_MODULE_DEFAULTS: StudioModuleDefaults = {
 };
 
 export const STUDIO_MODEL_RECOMMENDATIONS: StudioModelRecommendation[] = [
-  // --- Flagship / large ---
   {
     id: "meta-llama/Llama-4-Maverick-17B-128E-Instruct",
     name: "Llama 4 Maverick 17Bx128E",
@@ -30,7 +29,6 @@ export const STUDIO_MODEL_RECOMMENDATIONS: StudioModelRecommendation[] = [
     description: "Top-tier open reasoning model, 671B MoE.",
     tags: ["reasoning", "code", "flagship"],
   },
-  // --- High-quality mid-range ---
   {
     id: "meta-llama/Llama-4-Scout-17B-16E-Instruct",
     name: "Llama 4 Scout 17Bx16E",
@@ -71,7 +69,6 @@ export const STUDIO_MODEL_RECOMMENDATIONS: StudioModelRecommendation[] = [
     description: "Google's latest open model — multilingual, vision-ready.",
     tags: ["chat", "multilingual", "vision"],
   },
-  // --- Compact / efficient ---
   {
     id: "Qwen/Qwen3-14B",
     name: "Qwen3 14B",

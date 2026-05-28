@@ -18,6 +18,7 @@ export function GitDiffPanel({ cwd }: { cwd: string | null }) {
   const [loading, setLoading] = useState(false);
   const [draftBranch, setDraftBranch] = useState("");
   const [commitMessage, setCommitMessage] = useState("");
+  const [viewMode, setViewMode] = useState<"unified" | "side-by-side" | "stacked">("unified");
 
   const load = useCallback(async () => {
     if (!cwd) return setPayload(null);
@@ -69,6 +70,8 @@ export function GitDiffPanel({ cwd }: { cwd: string | null }) {
       <GitDiffPanelBody
         cwd={cwd}
         files={files}
+        viewMode={viewMode}
+        onViewMode={setViewMode}
         initGit={() => run({ action: "init" })}
         loading={loading}
         payload={payload}
@@ -230,12 +233,16 @@ function RefSelect({
 function GitDiffPanelBody({
   cwd,
   files,
+  viewMode,
+  onViewMode,
   initGit,
   loading,
   payload,
 }: {
   cwd: string | null;
   files: DiffFile[];
+  viewMode: "unified" | "side-by-side" | "stacked";
+  onViewMode: (mode: "unified" | "side-by-side" | "stacked") => void;
   initGit: () => Promise<void>;
   loading: boolean;
   payload: (Partial<GitState> & { error?: string }) | null;
@@ -255,7 +262,7 @@ function GitDiffPanelBody({
   if (payload?.isRepo === false) return <InitializeGitPanel initGit={initGit} loading={loading} />;
   if (files.length === 0)
     return <EmptyDiffPanel loading={loading} status={payload?.status ?? []} />;
-  return <DiffFileList files={files} />;
+  return <DiffFileList files={files} viewMode={viewMode} onViewMode={onViewMode} />;
 }
 
 function InitializeGitPanel({
@@ -293,9 +300,31 @@ function EmptyDiffPanel({ loading, status }: { loading: boolean; status: string[
   );
 }
 
-function DiffFileList({ files }: { files: DiffFile[] }) {
+function DiffFileList({
+  files,
+  viewMode,
+  onViewMode,
+}: {
+  files: DiffFile[];
+  viewMode: "unified" | "side-by-side" | "stacked";
+  onViewMode: (mode: "unified" | "side-by-side" | "stacked") => void;
+}) {
   return (
     <div className="min-h-0 flex-1 overflow-auto p-2 font-mono text-[11px] leading-5">
+      <div className="sticky top-0 z-10 mb-2 flex items-center justify-end gap-1 bg-(--bg)/95 py-1">
+        <DiffModeButton active={viewMode === "unified"} onClick={() => onViewMode("unified")}>
+          Unified
+        </DiffModeButton>
+        <DiffModeButton
+          active={viewMode === "side-by-side"}
+          onClick={() => onViewMode("side-by-side")}
+        >
+          Side by side
+        </DiffModeButton>
+        <DiffModeButton active={viewMode === "stacked"} onClick={() => onViewMode("stacked")}>
+          Top / bottom
+        </DiffModeButton>
+      </div>
       <div className="flex flex-col gap-2">
         {files.map((file, fileIndex) => (
           <details
@@ -313,24 +342,154 @@ function DiffFileList({ files }: { files: DiffFile[] }) {
                 <span className="text-red-400">-{file.deletions}</span>
               </span>
             </summary>
-            <div className="min-w-max">
-              {file.lines.map((line, index) => (
-                <div
-                  key={`${file.path}-${index}`}
-                  className={`grid grid-cols-[3rem_3rem_1fr] gap-2 border-b border-(--border)/20 px-2 ${diffLineClassName(line.kind)}`}
-                >
-                  <span className="select-none text-right text-(--dim)">{line.oldLine ?? ""}</span>
-                  <span className="select-none text-right text-(--dim)">{line.newLine ?? ""}</span>
-                  <span className="whitespace-pre">
-                    {diffLinePrefix(line.kind)}
-                    {line.text}
-                  </span>
-                </div>
-              ))}
-            </div>
+            {viewMode === "side-by-side" ? (
+              <SideBySideDiff file={file} />
+            ) : viewMode === "stacked" ? (
+              <StackedDiff file={file} />
+            ) : (
+              <UnifiedDiff file={file} />
+            )}
           </details>
         ))}
       </div>
     </div>
   );
+}
+
+function DiffModeButton({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`h-6 rounded px-2 text-[10px] ${
+        active ? "bg-(--surface) text-(--fg)" : "text-(--dim) hover:text-(--fg)"
+      }`}
+    >
+      {children}
+    </button>
+  );
+}
+
+function UnifiedDiff({ file }: { file: DiffFile }) {
+  return (
+    <div className="min-w-max">
+      {file.lines.map((line, index) => (
+        <div
+          key={`${file.path}-${index}`}
+          className={`grid grid-cols-[3rem_3rem_1fr] gap-2 border-b border-(--border)/20 px-2 ${diffLineClassName(line.kind)}`}
+        >
+          <span className="select-none text-right text-(--dim)">{line.oldLine ?? ""}</span>
+          <span className="select-none text-right text-(--dim)">{line.newLine ?? ""}</span>
+          <span className="whitespace-pre">
+            {diffLinePrefix(line.kind)}
+            {line.text}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function SideBySideDiff({ file }: { file: DiffFile }) {
+  const rows = pairDiffLines(file);
+  return (
+    <div className="min-w-[52rem]">
+      {rows.map((row, index) => (
+        <div
+          key={`${file.path}-pair-${index}`}
+          className="grid grid-cols-2 border-b border-(--border)/20"
+        >
+          <DiffCell line={row.left} side="old" />
+          <DiffCell line={row.right} side="new" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function StackedDiff({ file }: { file: DiffFile }) {
+  const oldLines = file.lines.filter((line) => line.kind !== "add");
+  const newLines = file.lines.filter((line) => line.kind !== "del");
+  return (
+    <div className="grid gap-2 p-2">
+      <div className="rounded border border-red-500/20">
+        <div className="border-b border-red-500/20 px-2 py-1 text-[10px] uppercase tracking-wide text-red-300">
+          Before
+        </div>
+        {oldLines.map((line, index) => (
+          <DiffStackLine key={`${file.path}-old-${index}`} line={line} />
+        ))}
+      </div>
+      <div className="rounded border border-emerald-500/20">
+        <div className="border-b border-emerald-500/20 px-2 py-1 text-[10px] uppercase tracking-wide text-emerald-300">
+          After
+        </div>
+        {newLines.map((line, index) => (
+          <DiffStackLine key={`${file.path}-new-${index}`} line={line} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function DiffCell({ line, side }: { line?: DiffFile["lines"][number]; side: "old" | "new" }) {
+  if (!line) {
+    return <div className="min-h-5 border-r border-(--border)/20 bg-(--surface)/20" />;
+  }
+  const lineNumber = side === "old" ? line.oldLine : line.newLine;
+  return (
+    <div
+      className={`grid grid-cols-[3rem_1fr] gap-2 border-r border-(--border)/20 px-2 ${diffLineClassName(line.kind)}`}
+    >
+      <span className="select-none text-right text-(--dim)">{lineNumber ?? ""}</span>
+      <span className="whitespace-pre">
+        {diffLinePrefix(line.kind)}
+        {line.text}
+      </span>
+    </div>
+  );
+}
+
+function DiffStackLine({ line }: { line: DiffFile["lines"][number] }) {
+  return (
+    <div className={`grid grid-cols-[3rem_1fr] gap-2 px-2 ${diffLineClassName(line.kind)}`}>
+      <span className="select-none text-right text-(--dim)">
+        {line.kind === "del" ? line.oldLine : (line.newLine ?? line.oldLine ?? "")}
+      </span>
+      <span className="whitespace-pre">
+        {diffLinePrefix(line.kind)}
+        {line.text}
+      </span>
+    </div>
+  );
+}
+
+function pairDiffLines(file: DiffFile): Array<{
+  left?: DiffFile["lines"][number];
+  right?: DiffFile["lines"][number];
+}> {
+  const rows: Array<{ left?: DiffFile["lines"][number]; right?: DiffFile["lines"][number] }> = [];
+  const pendingDeletes: DiffFile["lines"] = [];
+  for (const line of file.lines) {
+    if (line.kind === "del") {
+      pendingDeletes.push(line);
+      continue;
+    }
+    if (line.kind === "add") {
+      rows.push({ left: pendingDeletes.shift(), right: line });
+      continue;
+    }
+    while (pendingDeletes.length > 0) rows.push({ left: pendingDeletes.shift() });
+    rows.push({ left: line, right: line });
+  }
+  while (pendingDeletes.length > 0) rows.push({ left: pendingDeletes.shift() });
+  return rows;
 }

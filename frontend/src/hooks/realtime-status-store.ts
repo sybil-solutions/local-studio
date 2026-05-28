@@ -1,4 +1,3 @@
-// CRITICAL
 "use client";
 
 import { useSyncExternalStore } from "react";
@@ -10,6 +9,7 @@ import type {
   RuntimeBackendInfo,
 } from "@/lib/types";
 import api from "@/lib/api";
+import { BACKEND_URL_CHANGED_EVENT } from "@/lib/backend-url";
 import type {
   LeaseInfo,
   RealtimeStatusSnapshot,
@@ -41,15 +41,16 @@ function normalizeRuntimeBackends(
 ): RuntimeSummaryData["backends"] {
   return {
     vllm: backends?.vllm ?? unavailableBackend(),
-    mlx: backends?.mlx ?? unavailableBackend(),
     sglang: backends?.sglang ?? unavailableBackend(),
     llamacpp: backends?.llamacpp ?? unavailableBackend(),
+    ...(backends?.mlx ? { mlx: backends.mlx } : {}),
     ...(backends?.exllamav3 ? { exllamav3: backends.exllamav3 } : {}),
   };
 }
 
 const initialSnapshot: RealtimeStatusSnapshot = {
   status: null,
+  statusLoading: true,
   gpus: [],
   metrics: null,
   launchProgress: null,
@@ -80,6 +81,7 @@ function processKey(process: ProcessInfo | null | undefined): string {
 function emitIfChanged(next: RealtimeStatusSnapshot) {
   const changed =
     !areStatusEqual(snapshot.status, next.status) ||
+    snapshot.statusLoading !== next.statusLoading ||
     !areGpusEqual(snapshot.gpus, next.gpus) ||
     !areMetricsEqual(snapshot.metrics, next.metrics) ||
     !areLaunchProgressEqual(snapshot.launchProgress, next.launchProgress) ||
@@ -127,6 +129,14 @@ function scheduleLaunchClear(stage: LaunchProgressData["stage"]) {
 }
 
 async function fetchStatusNow() {
+  if (!snapshot.statusLoading) {
+    emitIfChanged({
+      ...snapshot,
+      statusLoading: true,
+      lastEventAt: Date.now(),
+    });
+  }
+
   const [statusResult, compatibilityResult, gpuResult, metricsResult] = await Promise.allSettled([
     api.getStatus(FAST_STATUS_REQUEST),
     api.getCompatibility(FAST_COMPAT_REQUEST),
@@ -169,6 +179,7 @@ async function fetchStatusNow() {
 
     emitIfChanged({
       status: { running, process, inference_port, launching: status.launching ?? null },
+      statusLoading: false,
       gpus,
       metrics: polledMetrics,
       launchProgress: reconcileLaunchProgress(snapshot.launchProgress, {
@@ -181,7 +192,22 @@ async function fetchStatusNow() {
       lease: snapshot.lease,
       lastEventAt: Date.now(),
     });
+    return;
   }
+
+  emitIfChanged({
+    ...snapshot,
+    statusLoading: false,
+    lastEventAt: Date.now(),
+  });
+}
+
+function resetForControllerSwitch() {
+  emitIfChanged({
+    ...initialSnapshot,
+    lastEventAt: Date.now(),
+  });
+  void fetchStatusNow();
 }
 
 function start() {
@@ -207,6 +233,7 @@ function start() {
       emitIfChanged({
         ...snapshot,
         status: { running, process, inference_port, launching },
+        statusLoading: false,
         metrics: previousProcessKey === nextProcessKey ? snapshot.metrics : null,
         launchProgress: reconcileLaunchProgress(snapshot.launchProgress, { process, launching }),
         lastEventAt: now,
@@ -277,6 +304,7 @@ function start() {
 
       emitIfChanged({
         status: snapshot.status,
+        statusLoading: snapshot.statusLoading,
         gpus: snapshot.gpus,
         metrics: snapshot.metrics,
         launchProgress: snapshot.launchProgress,
@@ -290,6 +318,7 @@ function start() {
   };
 
   window.addEventListener("vllm:controller-event", onControllerEvent as EventListener);
+  window.addEventListener(BACKEND_URL_CHANGED_EVENT, resetForControllerSwitch);
 
   // Initial fetch + polling fallback in case SSE is blocked.
   void fetchStatusNow();

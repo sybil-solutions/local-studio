@@ -1,4 +1,3 @@
-// CRITICAL
 import { NextRequest, NextResponse } from "next/server";
 import { getApiSettings } from "@/lib/api-settings";
 import { resolveVoiceTarget } from "../voice-target";

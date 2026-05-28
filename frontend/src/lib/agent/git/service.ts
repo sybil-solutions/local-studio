@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -41,25 +42,53 @@ export function assertGitCwd(
 }
 
 async function git(cwd: string, args: string[]): Promise<string> {
-  const { stdout } = await execFileAsync("git", args, { cwd, maxBuffer: 12 * 1024 * 1024 });
+  const { stdout } = await execFileAsync("git", args, {
+    cwd,
+    env: cleanGitEnv(),
+    maxBuffer: 12 * 1024 * 1024,
+  });
   return stdout;
+}
+
+function cleanGitEnv(): NodeJS.ProcessEnv {
+  const env = { ...process.env };
+  delete env.GIT_DIR;
+  delete env.GIT_WORK_TREE;
+  delete env.GIT_INDEX_FILE;
+  delete env.GIT_PREFIX;
+  return env;
 }
 
 export async function loadGitState(cwd: string): Promise<GitState> {
   const inside = await git(cwd, ["rev-parse", "--is-inside-work-tree"]).catch(() => "");
   if (inside.trim() !== "true") return emptyGitState(false);
-  const [branch, statusRaw, diff, refsRaw, upstream, remoteUrl] = await Promise.all([
-    git(cwd, ["branch", "--show-current"]).catch(() => ""),
-    git(cwd, ["status", "--short"]),
-    git(cwd, ["diff", "--no-ext-diff", "--src-prefix=a/", "--dst-prefix=b/"]),
-    git(cwd, ["for-each-ref", "--format=%(refname:short)", "refs/heads", "refs/remotes"]).catch(
-      () => "",
-    ),
-    git(cwd, ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"]).catch(() => ""),
-    git(cwd, ["remote", "get-url", "origin"]).catch(() => ""),
-  ]);
+  const hasHead = Boolean(
+    (await git(cwd, ["rev-parse", "--verify", "HEAD"]).catch(() => "")).trim(),
+  );
+  const diffArgs = hasHead
+    ? ["diff", "--no-ext-diff", "HEAD", "--src-prefix=a/", "--dst-prefix=b/"]
+    : ["diff", "--no-ext-diff", "--cached", "--src-prefix=a/", "--dst-prefix=b/"];
+  const numstatArgs = hasHead
+    ? ["diff", "--numstat", "HEAD", "--"]
+    : ["diff", "--numstat", "--cached", "--"];
+  const [branch, statusRaw, diff, numstat, untrackedRaw, refsRaw, upstream, remoteUrl] =
+    await Promise.all([
+      git(cwd, ["branch", "--show-current"]).catch(() => ""),
+      git(cwd, ["status", "--short"]),
+      git(cwd, diffArgs),
+      git(cwd, numstatArgs).catch(() => ""),
+      git(cwd, ["ls-files", "--others", "--exclude-standard", "-z"]).catch(() => ""),
+      git(cwd, ["for-each-ref", "--format=%(refname:short)", "refs/heads", "refs/remotes"]).catch(
+        () => "",
+      ),
+      git(cwd, ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"]).catch(() => ""),
+      git(cwd, ["remote", "get-url", "origin"]).catch(() => ""),
+    ]);
   const current = branch.trim() || null;
-  const { additions, deletions } = diffStats(diff);
+  const trackedStats = numstatStats(numstat);
+  const untrackedStats = await untrackedFileStats(cwd, untrackedRaw);
+  const additions = trackedStats.additions + untrackedStats.additions;
+  const deletions = trackedStats.deletions + untrackedStats.deletions;
   return {
     isRepo: true,
     branch: current,
@@ -135,15 +164,38 @@ function parseRefs(raw: string, current: string | null): GitRef[] {
     .map((name) => ({ name, current: name === current, remote: name.includes("/") }));
 }
 
-function diffStats(diff: string): { additions: number; deletions: number } {
+export function numstatStats(numstat: string): { additions: number; deletions: number } {
   let additions = 0;
   let deletions = 0;
-  for (const line of diff.split("\n")) {
-    if (line.startsWith("+++") || line.startsWith("---")) continue;
-    if (line.startsWith("+")) additions += 1;
-    if (line.startsWith("-")) deletions += 1;
+  for (const line of numstat.split("\n")) {
+    const [added, deleted] = line.split("\t");
+    const addedCount = Number.parseInt(added ?? "", 10);
+    const deletedCount = Number.parseInt(deleted ?? "", 10);
+    if (Number.isFinite(addedCount)) additions += addedCount;
+    if (Number.isFinite(deletedCount)) deletions += deletedCount;
   }
   return { additions, deletions };
+}
+
+async function untrackedFileStats(
+  cwd: string,
+  raw: string,
+): Promise<{ additions: number; deletions: number }> {
+  const files = raw.split("\0").filter(Boolean);
+  const additions = await files.reduce(async (pending, file) => {
+    const count = await pending;
+    const absolutePath = path.resolve(cwd, file);
+    const relative = path.relative(cwd, absolutePath);
+    if (relative.startsWith("..") || path.isAbsolute(relative)) return count;
+    try {
+      const contents = await readFile(absolutePath, "utf8");
+      if (!contents) return count;
+      return count + contents.split("\n").length - (contents.endsWith("\n") ? 1 : 0);
+    } catch {
+      return count;
+    }
+  }, Promise.resolve(0));
+  return { additions, deletions: 0 };
 }
 
 function pullRequestUrl(remoteUrl: string, branch: string | null): string | null {

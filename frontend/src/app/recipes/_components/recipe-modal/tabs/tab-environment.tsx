@@ -1,4 +1,3 @@
-// CRITICAL
 "use client";
 
 import { Code, Plus, Terminal, Variable } from "lucide-react";

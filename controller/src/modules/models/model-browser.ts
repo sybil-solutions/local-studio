@@ -1,4 +1,3 @@
-// CRITICAL
 import { statSync, existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { ModelInfo } from "./types";
@@ -8,11 +7,6 @@ import {
   MODEL_QUANTIZATION_SIGNATURES,
 } from "./configs";
 
-/**
- * Check if a directory looks like a model directory.
- * @param path - Directory path.
- * @returns True if it appears to be a model directory.
- */
 export const looksLikeModelDirectory = (path: string): boolean => {
   if (!existsSync(path)) {
     return false;
@@ -34,22 +28,12 @@ export const looksLikeModelDirectory = (path: string): boolean => {
   }
 };
 
-/**
- * Infer quantization from model name.
- * @param name - Model directory name.
- * @returns Quantization identifier.
- */
 export const inferQuantization = (name: string): string | undefined => {
   const lower = name.toLowerCase();
   const candidates = MODEL_QUANTIZATION_SIGNATURES;
   return candidates.find((value) => lower.includes(value));
 };
 
-/**
- * Read config metadata from config.json.
- * @param modelDirectory - Model directory.
- * @returns Metadata object.
- */
 export const readConfigMetadata = (modelDirectory: string): { architecture: string | null; context_length: number | null } => {
   const configPath = join(modelDirectory, "config.json");
   if (!existsSync(configPath)) {
@@ -78,12 +62,6 @@ export const readConfigMetadata = (modelDirectory: string): { architecture: stri
   }
 };
 
-/**
- * Estimate weight size for a model directory.
- * @param modelDirectory - Model directory.
- * @param recursive - Whether to scan recursively.
- * @returns Total size in bytes.
- */
 export const estimateWeightsSizeBytes = (modelDirectory: string, recursive: boolean): number | null => {
   let total = 0;
   try {
@@ -117,13 +95,6 @@ export const estimateWeightsSizeBytes = (modelDirectory: string, recursive: bool
   return total || null;
 };
 
-/**
- * Discover model directories under provided roots.
- * @param roots - Root paths.
- * @param maxDepth - Maximum depth.
- * @param maxModels - Maximum models to return.
- * @returns List of model directory paths.
- */
 export const discoverModelDirectories = (
   roots: string[],
   maxDepth = 1,
@@ -171,12 +142,6 @@ export const discoverModelDirectories = (
   return discovered;
 };
 
-/**
- * Build model info object for a directory.
- * @param modelDirectory - Model directory.
- * @param recipeIds - Associated recipe ids.
- * @returns Model info.
- */
 export const buildModelInfo = async (modelDirectory: string, recipeIds: string[] = []): Promise<ModelInfo> => {
   const metadata = await readConfigMetadata(modelDirectory);
   let modifiedAt: number | undefined;

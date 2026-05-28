@@ -1,6 +1,7 @@
 "use client";
 
 import { newId, randomIdSegment } from "@/lib/agent/session/helpers";
+import type { AgentImageInput } from "@/lib/agent/contracts/turn";
 
 export type ChatAttachment = {
   id: string;
@@ -10,6 +11,17 @@ export type ChatAttachment = {
   path?: string;
   mode: "text" | "data-url" | "metadata";
   content: string;
+  previewUrl?: string;
+  previewKind?: "image" | "video" | "pdf" | "file";
+};
+
+export type ProjectFileAttachmentInput = {
+  id: string;
+  name: string;
+  path: string;
+  content: string;
+  truncated: boolean;
+  size: number;
 };
 
 export function attachmentDedupKey(file: Pick<ChatAttachment, "name" | "type" | "size" | "path">) {
@@ -22,6 +34,43 @@ export function isImageAttachment(file: Pick<ChatAttachment, "type" | "mode" | "
   return (
     file.type.startsWith("image/") && file.mode === "data-url" && file.content.startsWith("data:")
   );
+}
+
+export function imageInputFromAttachment(
+  file: Pick<ChatAttachment, "type" | "mode" | "content">,
+): AgentImageInput | null {
+  if (!isImageAttachment(file)) return null;
+  const marker = ";base64,";
+  const markerIndex = file.content.indexOf(marker);
+  if (markerIndex === -1) return null;
+  const data = file.content.slice(markerIndex + marker.length).replace(/\s+/g, "");
+  if (!data) return null;
+  return { type: "image", data, mimeType: file.type };
+}
+
+export function isRenderableAttachment(
+  file: Pick<ChatAttachment, "previewKind" | "previewUrl" | "type">,
+) {
+  return Boolean(
+    file.previewUrl &&
+    (file.previewKind === "image" || file.previewKind === "video" || file.previewKind === "pdf"),
+  );
+}
+
+function previewKindFor(type: string): ChatAttachment["previewKind"] {
+  if (type.startsWith("image/")) return "image";
+  if (type.startsWith("video/")) return "video";
+  if (type === "application/pdf") return "pdf";
+  return "file";
+}
+
+function objectUrlFor(file: File): string | undefined {
+  if (typeof URL === "undefined" || typeof URL.createObjectURL !== "function") return undefined;
+  try {
+    return URL.createObjectURL(file);
+  } catch {
+    return undefined;
+  }
 }
 
 function newAttachmentId() {
@@ -53,6 +102,27 @@ function extensionFromMimeType(type: string): string {
   const [, subtype] = normalized.split("/");
   const sanitized = subtype?.replace(/[^a-z0-9]+/g, "").replace(/^x/, "");
   return sanitized || "bin";
+}
+
+export function imageFileFromDataUrlText(value: string): File | null {
+  if (typeof File === "undefined" || typeof atob === "undefined") return null;
+  const trimmed = value.trim();
+  const match = /^data:(image\/[a-z0-9.+-]+);base64,([a-z0-9+/=\s]+)$/i.exec(trimmed);
+  if (!match) return null;
+  const type = match[1] ?? "image/png";
+  const base64 = (match[2] ?? "").replace(/\s+/g, "");
+  if (!base64) return null;
+  try {
+    const binary = atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let index = 0; index < binary.length; index += 1) {
+      bytes[index] = binary.charCodeAt(index);
+    }
+    const extension = extensionFromMimeType(type);
+    return new File([bytes], `pasted-${Date.now().toString(36)}.${extension}`, { type });
+  } catch {
+    return null;
+  }
 }
 
 function fileDisplayName(file: File): string {
@@ -132,6 +202,11 @@ export async function createAttachment(file: File): Promise<ChatAttachment> {
   const name = fileDisplayName(file);
   const type = file.type || "application/octet-stream";
   const path = getDesktopFilePath(file) ?? undefined;
+  const previewKind = previewKindFor(type);
+  const previewUrl =
+    previewKind === "image" || previewKind === "video" || previewKind === "pdf"
+      ? objectUrlFor(file)
+      : undefined;
   if (isTextLike(file, name) && file.size <= 350_000) {
     return {
       id,
@@ -141,9 +216,11 @@ export async function createAttachment(file: File): Promise<ChatAttachment> {
       path,
       mode: "text",
       content: await readFileAsText(file),
+      previewKind,
+      previewUrl,
     };
   }
-  if (file.size <= 1_500_000) {
+  if (previewKind === "image" && file.size <= 1_500_000) {
     return {
       id,
       name,
@@ -152,6 +229,8 @@ export async function createAttachment(file: File): Promise<ChatAttachment> {
       path,
       mode: "data-url",
       content: await readFileAsDataUrl(file),
+      previewKind,
+      previewUrl,
     };
   }
   return {
@@ -163,7 +242,27 @@ export async function createAttachment(file: File): Promise<ChatAttachment> {
     mode: "metadata",
     content: path
       ? `File is too large to inline; it is available on disk at ${path}.`
-      : "File is too large to inline; only metadata is attached.",
+      : previewKind === "pdf"
+        ? "PDF preview is visible in the chat UI, but only metadata is attached to the model."
+        : "File is too large to inline; only metadata is attached.",
+    previewKind,
+    previewUrl,
+  };
+}
+
+export function createProjectFileAttachment(file: ProjectFileAttachmentInput): ChatAttachment {
+  const truncatedMessage = file.size
+    ? `File is too large or binary to inline; it is available on disk at ${file.path}.`
+    : `File is available on disk at ${file.path}.`;
+  return {
+    id: file.id,
+    name: file.name,
+    type: "text/plain",
+    size: file.size,
+    path: file.path,
+    mode: file.truncated ? "metadata" : "text",
+    content: file.truncated ? truncatedMessage : file.content,
+    previewKind: "file",
   };
 }
 
@@ -174,7 +273,9 @@ export function attachmentPrompt(attachments: ChatAttachment[]) {
       const pathInfo = file.path ? `\nLocal path: ${file.path}` : "";
       const header = `Attachment ${index + 1}: ${file.name} (${file.type}, ${formatFileSize(file.size)})${pathInfo}`;
       if (file.mode === "text") return `${header}\n\`\`\`\n${file.content}\n\`\`\``;
-      if (file.mode === "data-url") return `${header}\nData URL:\n${file.content}`;
+      if (file.mode === "data-url" && file.type.startsWith("image/")) {
+        return `${header}\nImage is attached as multimodal input. Do not print or transcribe its base64 data.`;
+      }
       return `${header}\n${file.content}`;
     })
     .join("\n\n");

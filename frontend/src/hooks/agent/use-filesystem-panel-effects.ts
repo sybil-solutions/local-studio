@@ -1,4 +1,12 @@
-import { useEffect, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
+import {
+  useCallback,
+  useRef,
+  useSyncExternalStore,
+  type Dispatch,
+  type MutableRefObject,
+  type SetStateAction,
+} from "react";
+import type { FileOpenRequest } from "@/lib/agent/tools/types";
 
 type FsEntry = {
   name: string;
@@ -20,6 +28,7 @@ type UseFilesystemPanelEffectsParams = {
   cwd: string | null;
   relPath: string;
   openFile: string | null;
+  fileOpenRequest: FileOpenRequest | null;
   lastOpenFileByProject: Record<string, string>;
   cwdRef: MutableRefObject<string | null>;
   setRelPath: Dispatch<SetStateAction<string>>;
@@ -34,12 +43,16 @@ type UseFilesystemPanelEffectsParams = {
   setExpandedDirs: Dispatch<SetStateAction<Set<string>>>;
   setDirChildren: Dispatch<SetStateAction<Map<string, FsEntry[]>>>;
   setDirLoading: Dispatch<SetStateAction<Set<string>>>;
+  setLastOpenFileByProject: (projectPath: string, relPath: string) => void;
 };
+
+const getFilesystemPanelSnapshot = (): number => 0;
 
 export function useFilesystemPanelEffects({
   cwd,
   relPath,
   openFile,
+  fileOpenRequest,
   lastOpenFileByProject,
   cwdRef,
   setRelPath,
@@ -54,18 +67,23 @@ export function useFilesystemPanelEffects({
   setExpandedDirs,
   setDirChildren,
   setDirLoading,
+  setLastOpenFileByProject,
 }: UseFilesystemPanelEffectsParams): void {
-  useEffect(() => {
+  const handledFileOpenRequest = useRef(0);
+
+  const subscribeCwdRef = useCallback(() => {
     cwdRef.current = cwd;
+    return () => undefined;
   }, [cwd, cwdRef]);
 
-  useEffect(() => {
+  const subscribeProjectReset = useCallback(() => {
     setRelPath("");
     setOpenFile(null);
     setSearchQuery("");
     setExpandedDirs(new Set());
     setDirChildren(new Map());
     setDirLoading(new Set());
+    return () => undefined;
   }, [
     cwd,
     setDirChildren,
@@ -76,10 +94,10 @@ export function useFilesystemPanelEffects({
     setSearchQuery,
   ]);
 
-  useEffect(() => {
+  const subscribeEntries = useCallback(() => {
     if (!cwd) {
       setEntries([]);
-      return;
+      return () => undefined;
     }
     let cancelled = false;
     (async () => {
@@ -99,19 +117,32 @@ export function useFilesystemPanelEffects({
     };
   }, [cwd, relPath, setEntries]);
 
-  useEffect(() => {
-    if (!cwd) return;
+  const subscribeRememberedFile = useCallback(() => {
+    if (!cwd) return () => undefined;
     const remembered = lastOpenFileByProject[cwd];
     if (remembered) setOpenFile(remembered);
+    return () => undefined;
   }, [cwd, lastOpenFileByProject, setOpenFile]);
 
-  useEffect(() => {
+  const subscribeFileOpenRequest = useCallback(() => {
+    if (!fileOpenRequest || handledFileOpenRequest.current === fileOpenRequest.id) {
+      return () => undefined;
+    }
+    handledFileOpenRequest.current = fileOpenRequest.id;
+    const rel = relativePathForRequest(fileOpenRequest.path, cwd);
+    if (!rel) return () => undefined;
+    setOpenFile(rel);
+    if (cwd) setLastOpenFileByProject(cwd, rel);
+    return () => undefined;
+  }, [cwd, fileOpenRequest, setLastOpenFileByProject, setOpenFile]);
+
+  const subscribeOpenFile = useCallback(() => {
     if (!cwd || !openFile) {
       setFileContent("");
       setFileTruncated(false);
       setFileSize(0);
       setComments([]);
-      return;
+      return () => undefined;
     }
     let cancelled = false;
     setLoadingFile(true);
@@ -152,4 +183,43 @@ export function useFilesystemPanelEffects({
       cancelled = true;
     };
   }, [cwd, openFile, setComments, setFileContent, setFileSize, setFileTruncated, setLoadingFile]);
+
+  useSyncExternalStore(subscribeCwdRef, getFilesystemPanelSnapshot, getFilesystemPanelSnapshot);
+  useSyncExternalStore(
+    subscribeProjectReset,
+    getFilesystemPanelSnapshot,
+    getFilesystemPanelSnapshot,
+  );
+  useSyncExternalStore(subscribeEntries, getFilesystemPanelSnapshot, getFilesystemPanelSnapshot);
+  useSyncExternalStore(
+    subscribeRememberedFile,
+    getFilesystemPanelSnapshot,
+    getFilesystemPanelSnapshot,
+  );
+  useSyncExternalStore(
+    subscribeFileOpenRequest,
+    getFilesystemPanelSnapshot,
+    getFilesystemPanelSnapshot,
+  );
+  useSyncExternalStore(subscribeOpenFile, getFilesystemPanelSnapshot, getFilesystemPanelSnapshot);
+}
+
+function relativePathForRequest(path: string, cwd: string | null): string | null {
+  let raw = path.trim();
+  if (!raw) return null;
+  if (/^file:\/\//i.test(raw)) {
+    try {
+      raw = decodeURIComponent(new URL(raw).pathname);
+    } catch {
+      return null;
+    }
+  }
+  raw = raw.replace(/^`|`$/g, "").replace(/:\d+(?::\d+)?$/, "");
+  if (!raw || raw.includes("\0")) return null;
+  if (cwd && raw.startsWith(`${cwd.replace(/\/+$/, "")}/`)) {
+    return raw.slice(cwd.replace(/\/+$/, "").length + 1);
+  }
+  if (raw.startsWith("./")) return raw.slice(2);
+  if (!raw.startsWith("/") && !raw.startsWith("../")) return raw;
+  return null;
 }

@@ -2,6 +2,7 @@
 
 import { ReactNode, useState } from "react";
 import type { Layout, PaneId } from "@/lib/agent/workspace/layout";
+import { useSessionDragActive } from "@/hooks/agent/use-pane-grid-effects";
 
 type RenderPane = (paneId: PaneId) => ReactNode;
 
@@ -33,9 +34,7 @@ function readSessionDrop(event: React.DragEvent): SessionDropPayload | null {
     try {
       const parsed = JSON.parse(raw) as SessionDropPayload;
       if (parsed.piSessionId || parsed.tabId) return parsed;
-    } catch {
-      // Fall through to the legacy persisted-session payload.
-    }
+    } catch {}
   }
   const piSessionId = event.dataTransfer.getData("application/x-vllm-session");
   return piSessionId ? { piSessionId } : null;
@@ -108,7 +107,7 @@ function SplitNode({
   onOpenTab: Props["onOpenTab"];
   onResize: Props["onResize"];
 }) {
-  const isRow = layout.direction === "vertical"; // side-by-side = horizontal flex
+  const isRow = layout.direction === "vertical";
   const aPct = `${Math.round(layout.ratio * 100)}%`;
   const bPct = `${Math.round((1 - layout.ratio) * 100)}%`;
 
@@ -166,8 +165,6 @@ function SplitNode({
   );
 }
 
-// A leaf renders a chat pane plus four invisible edge drop targets that turn
-// into a visible drop zone overlay while a session row is being dragged.
 function PaneLeaf({
   paneId,
   renderPane,
@@ -182,6 +179,7 @@ function PaneLeaf({
   const [hoverEdge, setHoverEdge] = useState<null | "center" | "left" | "right" | "top" | "bottom">(
     null,
   );
+  const dragActive = useSessionDragActive();
 
   const onDragOver =
     (edge: "center" | "left" | "right" | "top" | "bottom") =>
@@ -225,32 +223,37 @@ function PaneLeaf({
       {renderPane(paneId)}
 
       {/* Edge drop targets: thin strips along each edge that catch a session
-          row being dragged. The visible highlight only appears while
-          something is being dragged over us. */}
-      <div
-        onDragOver={onDragOver("left")}
-        onDragLeave={() => setHoverEdge((e) => (e === "left" ? null : e))}
-        onDrop={onDrop("vertical", "a")}
-        className="absolute inset-y-0 left-0 z-10 w-6"
-      />
-      <div
-        onDragOver={onDragOver("right")}
-        onDragLeave={() => setHoverEdge((e) => (e === "right" ? null : e))}
-        onDrop={onDrop("vertical", "b")}
-        className="absolute inset-y-0 right-0 z-10 w-6"
-      />
-      <div
-        onDragOver={onDragOver("top")}
-        onDragLeave={() => setHoverEdge((e) => (e === "top" ? null : e))}
-        onDrop={onDrop("horizontal", "a")}
-        className="absolute inset-x-0 top-0 z-10 h-6"
-      />
-      <div
-        onDragOver={onDragOver("bottom")}
-        onDragLeave={() => setHoverEdge((e) => (e === "bottom" ? null : e))}
-        onDrop={onDrop("horizontal", "b")}
-        className="absolute inset-x-0 bottom-0 z-10 h-6"
-      />
+          row being dragged. They are only mounted while a session drag is in
+          progress so they don't steal clicks from the chat-pane header
+          (e.g. the "..." menu or the right sidebar toggle). */}
+      {dragActive ? (
+        <>
+          <div
+            onDragOver={onDragOver("left")}
+            onDragLeave={() => setHoverEdge((e) => (e === "left" ? null : e))}
+            onDrop={onDrop("vertical", "a")}
+            className="absolute inset-y-0 left-0 z-10 w-6"
+          />
+          <div
+            onDragOver={onDragOver("right")}
+            onDragLeave={() => setHoverEdge((e) => (e === "right" ? null : e))}
+            onDrop={onDrop("vertical", "b")}
+            className="absolute inset-y-0 right-0 z-10 w-6"
+          />
+          <div
+            onDragOver={onDragOver("top")}
+            onDragLeave={() => setHoverEdge((e) => (e === "top" ? null : e))}
+            onDrop={onDrop("horizontal", "a")}
+            className="absolute inset-x-0 top-0 z-10 h-6"
+          />
+          <div
+            onDragOver={onDragOver("bottom")}
+            onDragLeave={() => setHoverEdge((e) => (e === "bottom" ? null : e))}
+            onDrop={onDrop("horizontal", "b")}
+            className="absolute inset-x-0 bottom-0 z-10 h-6"
+          />
+        </>
+      ) : null}
 
       {hoverEdge ? (
         <div

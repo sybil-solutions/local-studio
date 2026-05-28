@@ -1,4 +1,3 @@
-// CRITICAL
 /**
  * Shared service utilities and interfaces.
  */

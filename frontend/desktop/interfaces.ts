@@ -10,6 +10,36 @@ export interface ProjectEntry {
   branch: string | null;
 }
 
+export type SessionPrefsPayload = Record<
+  string,
+  { title?: string; pinned?: boolean; hidden?: boolean }
+>;
+
+export type UiPreferencesPayload = Record<string, string>;
+
+export interface PtyStatus {
+  available: boolean;
+  reason: string | null;
+}
+
+export interface PtyOpenOpts {
+  cwd?: string;
+  cols?: number;
+  rows?: number;
+}
+
+export interface PtyBridge {
+  status(): Promise<PtyStatus>;
+  open(opts: PtyOpenOpts): Promise<{ id: string }>;
+  write(id: string, data: string): Promise<void>;
+  resize(id: string, cols: number, rows: number): Promise<void>;
+  close(id: string): Promise<void>;
+  onData(listener: (id: string, chunk: string) => void): () => void;
+  onExit(
+    listener: (id: string, info: { exitCode: number; signal: number | null }) => void,
+  ): () => void;
+}
+
 export interface DesktopBridge {
   getRuntime(): Promise<{
     platform: NodeJS.Platform;
@@ -25,6 +55,13 @@ export interface DesktopBridge {
   listProjects(): Promise<ProjectEntry[]>;
   addProject(directoryPath: string): Promise<ProjectEntry>;
   removeProject(id: string): Promise<{ ok: true }>;
+  /** Durable file-backed session prefs that survive process kill. */
+  loadSessionPrefs(): Promise<SessionPrefsPayload>;
+  saveSessionPrefs(prefs: SessionPrefsPayload): Promise<void>;
+  /** Durable backup for renderer localStorage UI prefs (theme, font, layout). */
+  loadUiPreferences(): Promise<UiPreferencesPayload>;
+  saveUiPreferences(prefs: UiPreferencesPayload): Promise<void>;
+  terminal: PtyBridge;
 }
 
 export interface IpcRequestMap {

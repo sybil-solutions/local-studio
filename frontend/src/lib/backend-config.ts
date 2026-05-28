@@ -1,4 +1,3 @@
-// CRITICAL
 const LOCAL_BACKEND_FALLBACK = "http://localhost:8080";
 const CLIENT_PROXY_FALLBACK = "/api/proxy";
 

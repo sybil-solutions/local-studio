@@ -1,4 +1,3 @@
-// CRITICAL
 import { Search, X } from "lucide-react";
 
 export function DiscoverSearchToolbar({
@@ -32,4 +31,3 @@ export function DiscoverSearchToolbar({
     </div>
   );
 }
-

@@ -1,18 +1,15 @@
-// CRITICAL
 import { config as loadEnvironment } from "dotenv";
 import { z } from "zod";
 import { existsSync } from "node:fs";
 import { basename, resolve } from "node:path";
 import { loadPersistedConfig, type ProviderConfig } from "./persisted-config";
 
-/**
- * Runtime configuration for the controller.
- */
 export interface Config {
   host: string;
   port: number;
   api_key?: string;
   cors_origins?: string[];
+  inference_host: string;
   inference_port: number;
 
   data_dir: string;
@@ -21,15 +18,12 @@ export interface Config {
   sglang_python?: string;
   tabby_api_dir?: string;
   llama_bin?: string;
+  mlx_python?: string;
   exllamav3_command?: string;
   strict_openai_models: boolean;
   providers: ProviderConfig[];
 }
 
-/**
- * Load the closest .env file from current or parent directories.
- * @returns The loaded .env path or undefined.
- */
 export const loadDotEnvironment = (): string | undefined => {
   const candidates = [
     resolve(process.cwd(), ".env"),
@@ -44,10 +38,6 @@ export const loadDotEnvironment = (): string | undefined => {
   return envPath;
 };
 
-/**
- * Create a validated runtime configuration from environment variables.
- * @returns Validated configuration object.
- */
 export const createConfig = (): Config => {
   loadDotEnvironment();
 
@@ -105,6 +95,7 @@ export const createConfig = (): Config => {
     VLLM_STUDIO_API_KEY: z.string().optional(),
     VLLM_STUDIO_ALLOW_UNAUTHENTICATED: z.string().optional(),
     VLLM_STUDIO_CORS_ORIGINS: z.string().optional(),
+    VLLM_STUDIO_INFERENCE_HOST: z.string().default("localhost"),
     VLLM_STUDIO_INFERENCE_PORT: z.coerce.number().int().positive().default(8000),
 
     VLLM_STUDIO_DATA_DIR: z.string().default(defaultDataDirectory),
@@ -113,6 +104,7 @@ export const createConfig = (): Config => {
     VLLM_STUDIO_SGLANG_PYTHON: z.string().optional(),
     VLLM_STUDIO_TABBY_API_DIR: z.string().optional(),
     VLLM_STUDIO_LLAMA_BIN: z.string().optional(),
+    VLLM_STUDIO_MLX_PYTHON: z.string().optional(),
     VLLM_STUDIO_EXLLAMAV3_COMMAND: z.string().optional(),
     VLLM_STUDIO_STRICT_OPENAI_MODELS: z.string().optional(),
   });
@@ -128,6 +120,7 @@ export const createConfig = (): Config => {
   const config: Config = {
     host,
     port: parsed.VLLM_STUDIO_PORT,
+    inference_host: parsed.VLLM_STUDIO_INFERENCE_HOST.trim() || "localhost",
     inference_port: parsed.VLLM_STUDIO_INFERENCE_PORT,
 
     data_dir: resolve(parsed.VLLM_STUDIO_DATA_DIR),
@@ -157,6 +150,9 @@ export const createConfig = (): Config => {
   }
   if (parsed.VLLM_STUDIO_LLAMA_BIN) {
     config.llama_bin = parsed.VLLM_STUDIO_LLAMA_BIN;
+  }
+  if (parsed.VLLM_STUDIO_MLX_PYTHON) {
+    config.mlx_python = parsed.VLLM_STUDIO_MLX_PYTHON;
   }
   if (parsed.VLLM_STUDIO_EXLLAMAV3_COMMAND) {
     const command = parsed.VLLM_STUDIO_EXLLAMAV3_COMMAND.trim();

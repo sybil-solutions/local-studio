@@ -1,4 +1,3 @@
-// CRITICAL
 "use client";
 
 import { ChevronRight, Cpu, DownloadCloud, HardDrive, Loader2 } from "lucide-react";

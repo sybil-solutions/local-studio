@@ -36,11 +36,6 @@ const isQwenMoe = (modelId: string): boolean => {
   );
 };
 
-/**
- * Auto-detect reasoning parser based on model identity.
- * @param recipe - Recipe data.
- * @returns Parser name or undefined.
- */
 export const getDefaultReasoningParser = (recipe: Recipe): ParserName => {
   const modelId = modelIdForRecipe(recipe);
 
@@ -62,11 +57,6 @@ export const getDefaultReasoningParser = (recipe: Recipe): ParserName => {
   return undefined;
 };
 
-/**
- * Auto-detect tool-call parser based on model identity.
- * @param recipe - Recipe data.
- * @returns Parser name or undefined.
- */
 export const getDefaultToolCallParser = (recipe: Recipe): ParserName => {
   const modelId = modelIdForRecipe(recipe);
 
@@ -88,12 +78,6 @@ export const getDefaultToolCallParser = (recipe: Recipe): ParserName => {
   return undefined;
 };
 
-/**
- * Decide whether vLLM should enable expert parallelism for the recipe.
- * @param recipe - Recipe data.
- * @param explicitOverride - Recipe extra arg override value.
- * @returns True when expert parallelism should be enabled.
- */
 export const shouldEnableExpertParallel = (recipe: Recipe, explicitOverride: unknown): boolean => {
   if (explicitOverride === true) {
     return true;

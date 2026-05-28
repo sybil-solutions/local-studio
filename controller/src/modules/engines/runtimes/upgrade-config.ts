@@ -1,5 +1,3 @@
-// CRITICAL — copied from lifecycle/runtime/runtime-upgrade-config.ts
-
 const normalizeEnvironmentCommand = (envKey: string): string | null => {
   const value = process.env[envKey]?.trim();
   return value && value.length > 0 ? value : null;

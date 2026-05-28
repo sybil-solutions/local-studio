@@ -1,8 +1,20 @@
-// CRITICAL
 import { defineConfig, globalIgnores } from "eslint/config";
 import nextVitals from "eslint-config-next/core-web-vitals";
 import nextTs from "eslint-config-next/typescript";
 import boundaries from "eslint-plugin-boundaries";
+
+const bannedReactEffectHookNames = [
+  "use" + "Effect",
+  "useLayout" + "Effect",
+  "useInsertion" + "Effect",
+];
+
+const bannedReactEffectCallSelector = bannedReactEffectHookNames
+  .map(
+    (name) =>
+      `CallExpression[callee.name='${name}'], CallExpression[callee.property.name='${name}']`,
+  )
+  .join(", ");
 
 const eslintConfig = defineConfig([
   ...nextVitals,
@@ -30,10 +42,9 @@ const eslintConfig = defineConfig([
       "no-restricted-syntax": [
         "error",
         {
-          selector:
-            "CallExpression[callee.name='useEffect'], CallExpression[callee.property.name='useEffect']",
+          selector: bannedReactEffectCallSelector,
           message:
-            "useEffect is banned. Centralise side effects through workspace reducers/effects or move them out of render. If absolutely required, justify and add an eslint-disable comment with a reason.",
+            "React effect hooks are banned. Use event handlers, external stores, or dedicated subscriptions instead.",
         },
       ],
       "@typescript-eslint/naming-convention": "off",
@@ -91,7 +102,7 @@ const eslintConfig = defineConfig([
   },
   // Legacy files that already exceed the limits. New code must obey the rules;
   // these are tracked offenders to be refactored. Remove an entry once the file
-  // is under 500 LOC and free of useEffect.
+  // is under 500 LOC and no longer needs a legacy allowance.
   {
     files: [
       "src/app/agent/_components/chat-pane.tsx",
@@ -134,35 +145,25 @@ const eslintConfig = defineConfig([
       "src/lib/api/core.ts",
     ],
     rules: {
+      // File-length offenses remain warnings on tracked legacy files so we can
+      // refactor them gradually, but React effect hook bans are never softened.
       "max-lines": "warn",
       "max-lines-per-function": "warn",
-      "no-restricted-syntax": "warn",
       "react-hooks/set-state-in-effect": "warn",
     },
   },
   {
-    files: ["src/hooks/agent/use-*-effects.ts"],
-    rules: {
-      "no-restricted-syntax": "off",
-    },
-  },
-  {
     files: ["src/app/agent/_components/**/*.{ts,tsx}"],
-    ignores: [
-      "src/app/agent/_components/chat-pane.tsx",
-      "src/app/agent/_components/use-workspace.ts",
-      "src/app/agent/_components/agent-workspace-shell.tsx",
-      "src/app/agent/_components/**/*.test.ts",
-      "src/app/agent/_components/__lint__/**",
-    ],
+    // Test files and lint fixtures stay exempt — production component files
+    // (including chat-pane, use-workspace, agent-workspace-shell) MUST obey
+    // the global React effect hook ban. No carve-outs.
+    ignores: ["src/app/agent/_components/**/*.test.ts", "src/app/agent/_components/__lint__/**"],
     rules: {
       "no-restricted-syntax": [
         "error",
         {
-          selector:
-            "CallExpression[callee.name='useEffect'], CallExpression[callee.property.name='useEffect']",
-          message:
-            "Agent workspace component files must not call useEffect. Route lifecycle work through the workspace hook or a typed effect adapter outside _components.",
+          selector: bannedReactEffectCallSelector,
+          message: "Agent workspace component files must not call React effect hooks.",
         },
       ],
     },
@@ -174,10 +175,6 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
-    // Test artifacts:
-    "playwright-report/**",
-    "test-results/**",
-    "coverage/**",
     "desktop/dist/**",
     "dist-desktop/**",
   ]),

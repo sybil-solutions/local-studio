@@ -1,4 +1,3 @@
-// CRITICAL
 import type { ExtraArgType } from "./extra-arg-fields";
 
 const coerceBoolean = (value: unknown): boolean | undefined => {
@@ -30,4 +29,3 @@ export const coerceValue = (value: unknown, type: ExtraArgType): unknown => {
   if (value === undefined || value === null) return undefined;
   return String(value);
 };
-

@@ -1,7 +1,6 @@
-// CRITICAL
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState, useSyncExternalStore } from "react";
 import api from "@/lib/api";
 import type { ProcessInfo, RecipeWithStatus } from "@/lib/types";
 import { useRealtimeStatus } from "./use-realtime-status";
@@ -32,7 +31,7 @@ export function useModelLifecycle(): ModelLifecycle {
   const [recipes, setRecipes] = useState<RecipeWithStatus[]>([]);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
+  const subscribeRecipes = useCallback((_notify: () => void) => {
     let cancelled = false;
     api
       .getRecipes()
@@ -46,6 +45,8 @@ export function useModelLifecycle(): ModelLifecycle {
       cancelled = true;
     };
   }, []);
+
+  useSyncExternalStore(subscribeRecipes, getModelLifecycleSnapshot, getModelLifecycleSnapshot);
 
   const activeRecipeId = useMemo(() => {
     const process = realtime.status?.process;
@@ -68,7 +69,7 @@ export function useModelLifecycle(): ModelLifecycle {
   const start = useCallback(async (recipeId: string) => {
     setError(null);
     try {
-      await api.launch(recipeId, true);
+      await api.launch(recipeId);
     } catch (caught) {
       const message = (caught as Error).message;
       setError(message);
@@ -78,7 +79,7 @@ export function useModelLifecycle(): ModelLifecycle {
   const stop = useCallback(async () => {
     setError(null);
     try {
-      await api.evict(true);
+      await api.evict();
     } catch (caught) {
       const message = (caught as Error).message;
       setError(message);
@@ -94,3 +95,5 @@ export function useModelLifecycle(): ModelLifecycle {
     stop,
   };
 }
+
+const getModelLifecycleSnapshot = (): number => 0;

@@ -29,8 +29,40 @@ export type ComposerSkillRef = {
   instructions?: string;
 };
 
+export type ComposerPromptTemplateRef = {
+  id: string;
+  name: string;
+  source?: string;
+  path?: string;
+  description?: string;
+  argumentHint?: string;
+};
+
+/**
+ * Lightweight reference for an installed Pi extension/package. Sourced from
+ * `GET /api/agent/extensions`. Used by the `/plugins` slash command to let
+ * the composer toggle extensions on/off for the next turn (and optionally
+ * persist to `<agentDir>/extension-config/enabled.json`).
+ */
+export type ComposerExtensionRef = {
+  /** Stable identifier — package source if known, else absolute path. */
+  id: string;
+  /** Display label (short package name or basename). */
+  name: string;
+  /** Source string from SDK settings ("npm:...", "git:...", "auto", ...). */
+  source: string;
+  /** Absolute path the SDK resolved for this extension. */
+  path: string;
+  /** Pi scope this extension was contributed at. */
+  scope: "user" | "project" | "temporary";
+  /** Origin: package install vs top-level (auto-discovered) drop-in. */
+  origin: "package" | "top-level";
+  /** Persisted enable/disable state (mirrors `enabled.json`). */
+  enabled: boolean;
+};
+
 export type ComposerMention = {
-  kind: "plugin" | "skill";
+  kind: "plugin" | "skill" | "promptTemplate" | "extension";
   query: string;
   start: number;
   end: number;
@@ -105,30 +137,113 @@ export function sanitizeComposerSkills(value: unknown): ComposerSkillRef[] {
   });
 }
 
+/**
+ * Per-turn extension override entry — the user composer telling the runtime
+ * "for this turn, force extension X enabled/disabled regardless of what's in
+ * <agentDir>/extension-config/enabled.json". The runtime applies these on top
+ * of the persisted overrides without writing to disk.
+ */
+export type ComposerExtensionOverride = {
+  /** Source string preferred; falls back to path. */
+  key: string;
+  enabled: boolean;
+};
+
+export function sanitizeComposerExtensionOverrides(value: unknown): ComposerExtensionOverride[] {
+  if (!Array.isArray(value)) return [];
+  const out: ComposerExtensionOverride[] = [];
+  const seen = new Set<string>();
+  for (const item of value) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) continue;
+    const record = item as Record<string, unknown>;
+    const key = typeof record.key === "string" ? record.key.trim() : "";
+    if (!key || seen.has(key)) continue;
+    if (typeof record.enabled !== "boolean") continue;
+    seen.add(key);
+    out.push({ key, enabled: record.enabled });
+  }
+  return out;
+}
+
+export function sanitizeComposerPromptTemplates(value: unknown): ComposerPromptTemplateRef[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item): ComposerPromptTemplateRef[] => {
+    if (!item || typeof item !== "object") return [];
+    const record = item as Record<string, unknown>;
+    const template: ComposerPromptTemplateRef = {
+      id: stringField(record, "id") ?? "",
+      name: stringField(record, "name") ?? "",
+      source: stringField(record, "source"),
+      path: stringField(record, "path"),
+      description: stringField(record, "description"),
+      argumentHint: stringField(record, "argumentHint"),
+    };
+    return template.name || template.id || template.path ? [template] : [];
+  });
+}
+
+/**
+ * Tokens at the very start of the composer that route the slash menu to the
+ * Pi-plugins picker instead of prompt templates. Matched case-insensitively
+ * and required to be followed by a space (or end-of-line) so users can still
+ * fuzzy-search prompt templates whose names happen to start with "plug…".
+ */
+const EXTENSION_SLASH_TOKENS = ["plugins", "plugin", "extensions", "extension"] as const;
+
+function parseExtensionSlash(beforeCaret: string): { token: string; query: string } | null {
+  // Must be the very first token in the composer; capture the keyword (case-
+  // insensitive) and an optional space-separated query.
+  const match = /^\/([a-zA-Z]+)(?:\s+([^\n]{0,80}))?$/.exec(beforeCaret);
+  if (!match) return null;
+  const keyword = (match[1] ?? "").toLowerCase();
+  if (!EXTENSION_SLASH_TOKENS.includes(keyword as (typeof EXTENSION_SLASH_TOKENS)[number])) {
+    return null;
+  }
+  return {
+    token: beforeCaret,
+    query: (match[2] ?? "").trimStart(),
+  };
+}
+
 export function detectComposerMention(value: string, caret = value.length): ComposerMention | null {
   const safeCaret = Math.max(0, Math.min(caret, value.length));
   const beforeCaret = value.slice(0, safeCaret);
+  // `/plugins …` / `/extensions …` — composer-level Pi-plugins picker. Has
+  // to win over the generic prompt-template `/` match so that users can
+  // discover the plugin slash command without it being absorbed by template
+  // fuzzy search.
+  const extensionSlash = parseExtensionSlash(beforeCaret);
+  if (extensionSlash) {
+    return {
+      kind: "extension",
+      query: extensionSlash.query,
+      start: safeCaret - extensionSlash.token.length,
+      end: safeCaret,
+    };
+  }
+  // `/` only triggers a prompt-template mention when it appears at the very
+  // start of the composer (mirrors slash-command semantics from the Pi CLI /
+  // Claude Code editors). This avoids false positives on prose like "and/or".
+  const slashMatch = /^\/([^\n/]{0,80})$/.exec(beforeCaret);
+  if (slashMatch) {
+    const token = `/${slashMatch[1] ?? ""}`;
+    return {
+      kind: "promptTemplate",
+      query: (slashMatch[1] ?? "").trimStart(),
+      start: safeCaret - token.length,
+      end: safeCaret,
+    };
+  }
   const match = /(^|\s)([@$])([^\n@$]{0,80})$/.exec(beforeCaret);
   if (!match) return null;
   const token = `${match[2]}${match[3] ?? ""}`;
+  const kind: ComposerMention["kind"] = match[2] === "@" ? "plugin" : "skill";
   return {
-    kind: match[2] === "@" ? "plugin" : "skill",
+    kind,
     query: (match[3] ?? "").trimStart(),
     start: safeCaret - token.length,
     end: safeCaret,
   };
-}
-
-export function replaceComposerMention(
-  value: string,
-  mention: ComposerMention,
-  label: string,
-): string {
-  const before = value.slice(0, mention.start);
-  const after = value.slice(mention.end);
-  const prefix = before && !/\s$/.test(before) ? `${before} ` : before;
-  const suffix = after && !/^\s/.test(after) ? ` ${after}` : after;
-  return `${prefix}${mention.kind === "plugin" ? "@" : "$"}${label} ${suffix}`.trimStart();
 }
 
 export function consumeComposerMention(value: string, mention: ComposerMention): string {

@@ -1,4 +1,3 @@
-// CRITICAL
 "use client";
 
 import { CheckCircle2, ChevronRight, HardDrive, Pause, Play, XCircle } from "lucide-react";

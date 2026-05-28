@@ -1,14 +1,11 @@
-// CRITICAL
 export default {
   entry: ["src/main.ts", "scripts/**/*.ts"],
   project: ["src/**/*.ts", "scripts/**/*.ts"],
-  test: ["src/**/*.test.ts"],
   ignore: [
     "bun.lockb",
     "node_modules/**",
     "dist/**",
     ".husky/**",
-    "src/**/*.test.ts",
     // Barrel/index files for module exports
     "src/**/index.ts",
     "src/**/external.ts",

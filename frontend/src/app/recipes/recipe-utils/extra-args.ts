@@ -1,10 +1,11 @@
-// CRITICAL
 import type { ExtraArgField } from "./extra-arg-fields";
 import { coerceNumber } from "./coercion";
 
 export const normalizeExtraArgKey = (key: string): string => key.replace(/-/g, "_").toLowerCase();
 
-export const getCandidateKeys = (field: ExtraArgField | { key: string; aliases?: string[] }): string[] => {
+export const getCandidateKeys = (
+  field: ExtraArgField | { key: string; aliases?: string[] },
+): string[] => {
   const keys = new Set<string>();
   keys.add(field.key);
   keys.add(field.key.replace(/-/g, "_"));
@@ -38,7 +39,10 @@ export const getExtraArgValue = (
  * @param key - The argument key to look up.
  * @returns The value if found, or undefined.
  */
-export const getExtraArgValueForKey = (extraArgs: Record<string, unknown>, key: string): unknown => {
+export const getExtraArgValueForKey = (
+  extraArgs: Record<string, unknown>,
+  key: string,
+): unknown => {
   return getExtraArgValue(extraArgs, { key });
 };
 
@@ -101,4 +105,3 @@ export const setExtraArgValueForKey = (
   setExtraArgValue(next, { key }, value);
   return next;
 };
-

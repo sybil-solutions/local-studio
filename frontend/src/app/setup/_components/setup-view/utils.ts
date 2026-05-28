@@ -1,4 +1,3 @@
-// CRITICAL
 import type { ModelDownload } from "@/lib/types";
 import { formatBytes } from "@/lib/formatters";
 

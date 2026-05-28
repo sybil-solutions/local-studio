@@ -1,4 +1,3 @@
-// CRITICAL
 import type {
   CompatibilityReport,
   ConfigData,
@@ -12,18 +11,15 @@ import type { ApiCore, RequestOptions } from "./core";
 
 export function createSystemApi(core: ApiCore) {
   return {
-    launch: (
-      recipeId: string,
-      force = false,
-    ): Promise<{ success: boolean; pid?: number; message: string }> =>
-      core.request(`/launch/${recipeId}?force=${force}`, {
+    launch: (recipeId: string): Promise<{ success: boolean; pid?: number; message: string }> =>
+      core.request(`/launch/${recipeId}`, {
         method: "POST",
         timeout: 30_000,
         retries: 0,
       }),
 
-    evict: (force = false): Promise<{ success: boolean; evicted_pid?: number }> =>
-      core.request(`/evict?force=${force}`, { method: "POST" }),
+    evict: (): Promise<{ success: boolean; evicted_pid?: number }> =>
+      core.request("/evict", { method: "POST" }),
 
     waitReady: (timeout = 300): Promise<{ ready: boolean; elapsed: number; error?: string }> =>
       core.request(`/wait-ready?timeout=${timeout}`),
@@ -92,6 +88,10 @@ export function createSystemApi(core: ApiCore) {
         prefill_tps: number;
         generation_tps: number;
         ttft_ms: number;
+        best_session_id?: string | null;
+        best_session_prefill_tps?: number | null;
+        best_session_generation_tps?: number | null;
+        best_session_ttft_ms?: number | null;
         total_tokens: number;
         total_requests: number;
       }>;

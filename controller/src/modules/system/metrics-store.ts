@@ -1,25 +1,15 @@
-// CRITICAL
 import type { Database } from "bun:sqlite";
 import { openSqliteDatabase } from "../../stores/sqlite";
 
-/**
- *
- */
+/** Stores best observed per-model and per-runtime-session throughput metrics. */
 export class PeakMetricsStore {
   private readonly db: Database;
 
-  /**
-   *
-   * @param dbPath
-   */
   public constructor(dbPath: string) {
     this.db = openSqliteDatabase(dbPath);
     this.migrate();
   }
 
-  /**
-   *
-   */
   private migrate(): void {
     this.db.run(`
       CREATE TABLE IF NOT EXISTS peak_metrics (
@@ -32,12 +22,22 @@ export class PeakMetricsStore {
         updated_at TEXT DEFAULT CURRENT_TIMESTAMP
       )
     `);
+    this.db.run(`
+      CREATE TABLE IF NOT EXISTS peak_metric_sessions (
+        session_id TEXT PRIMARY KEY,
+        model_id TEXT NOT NULL,
+        peak_prefill_tps REAL,
+        peak_generation_tps REAL,
+        best_ttft_ms REAL,
+        started_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    this.db.run(
+      `CREATE INDEX IF NOT EXISTS idx_peak_metric_sessions_model_updated ON peak_metric_sessions(model_id, updated_at)`
+    );
   }
 
-  /**
-   *
-   * @param modelId
-   */
   public get(modelId: string): Record<string, unknown> | null {
     const row = this.db
       .query("SELECT * FROM peak_metrics WHERE model_id = ?")
@@ -45,13 +45,6 @@ export class PeakMetricsStore {
     return row ? { ...row } : null;
   }
 
-  /**
-   * Upserts peak values — only overwrites if the new value is better.
-   * @param modelId
-   * @param prefillTps
-   * @param generationTps
-   * @param ttftMs
-   */
   public updateIfBetter(
     modelId: string,
     prefillTps?: number,
@@ -123,12 +116,6 @@ export class PeakMetricsStore {
     return this.get(modelId) ?? {};
   }
 
-  /**
-   *
-   * @param modelId
-   * @param tokens
-   * @param requests
-   */
   public addTokens(modelId: string, tokens: number, requests = 1): void {
     this.db
       .query(
@@ -145,34 +132,114 @@ export class PeakMetricsStore {
   }
 
   /**
-   *
+   * Snapshot best runtime speeds for one model load/session.
+   * @param sessionId Stable id for the current model runtime session.
+   * @param modelId Model served by the runtime session.
+   * @param prefillTps Observed prefill throughput.
+   * @param generationTps Observed decode throughput.
+   * @param ttftMs Observed time to first token.
    */
+  public updateSessionPeak(
+    sessionId: string,
+    modelId: string,
+    prefillTps?: number,
+    generationTps?: number,
+    ttftMs?: number
+  ): Record<string, unknown> {
+    this.db
+      .query(
+        `
+        INSERT INTO peak_metric_sessions (
+          session_id,
+          model_id,
+          peak_prefill_tps,
+          peak_generation_tps,
+          best_ttft_ms
+        )
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(session_id) DO UPDATE SET
+          model_id = excluded.model_id,
+          peak_prefill_tps = CASE
+            WHEN excluded.peak_prefill_tps IS NULL THEN peak_metric_sessions.peak_prefill_tps
+            WHEN peak_metric_sessions.peak_prefill_tps IS NULL THEN excluded.peak_prefill_tps
+            WHEN excluded.peak_prefill_tps > peak_metric_sessions.peak_prefill_tps THEN excluded.peak_prefill_tps
+            ELSE peak_metric_sessions.peak_prefill_tps
+          END,
+          peak_generation_tps = CASE
+            WHEN excluded.peak_generation_tps IS NULL THEN peak_metric_sessions.peak_generation_tps
+            WHEN peak_metric_sessions.peak_generation_tps IS NULL THEN excluded.peak_generation_tps
+            WHEN excluded.peak_generation_tps > peak_metric_sessions.peak_generation_tps THEN excluded.peak_generation_tps
+            ELSE peak_metric_sessions.peak_generation_tps
+          END,
+          best_ttft_ms = CASE
+            WHEN excluded.best_ttft_ms IS NULL THEN peak_metric_sessions.best_ttft_ms
+            WHEN peak_metric_sessions.best_ttft_ms IS NULL THEN excluded.best_ttft_ms
+            WHEN excluded.best_ttft_ms < peak_metric_sessions.best_ttft_ms THEN excluded.best_ttft_ms
+            ELSE peak_metric_sessions.best_ttft_ms
+          END,
+          updated_at = CURRENT_TIMESTAMP
+      `
+      )
+      .run(sessionId, modelId, prefillTps ?? null, generationTps ?? null, ttftMs ?? null);
+
+    return this.getSession(sessionId) ?? {};
+  }
+
+  public getSession(sessionId: string): Record<string, unknown> | null {
+    const row = this.db
+      .query("SELECT * FROM peak_metric_sessions WHERE session_id = ?")
+      .get(sessionId) as Record<string, unknown> | null;
+    return row ? { ...row } : null;
+  }
+
+  /**
+   * Return the best recorded runtime session for a model.
+   * @param modelId Model id to inspect.
+   */
+  public getBestSession(modelId: string): Record<string, unknown> | null {
+    const row = this.db
+      .query(
+        `
+        SELECT * FROM peak_metric_sessions
+        WHERE model_id = ?
+        ORDER BY
+          COALESCE(peak_generation_tps, 0) DESC,
+          COALESCE(peak_prefill_tps, 0) DESC,
+          updated_at DESC
+        LIMIT 1
+      `
+      )
+      .get(modelId) as Record<string, unknown> | null;
+    return row ? { ...row } : null;
+  }
+
   public getAll(): Array<Record<string, unknown>> {
     const rows = this.db.query("SELECT * FROM peak_metrics ORDER BY model_id").all() as Array<
       Record<string, unknown>
     >;
-    return rows.map((row) => ({ ...row }));
+    return rows.map((row) => {
+      const modelId = String(row["model_id"] ?? "");
+      const bestSession = modelId ? this.getBestSession(modelId) : null;
+      return {
+        ...row,
+        best_session_id: bestSession?.["session_id"] ?? null,
+        best_session_prefill_tps: bestSession?.["peak_prefill_tps"] ?? null,
+        best_session_generation_tps: bestSession?.["peak_generation_tps"] ?? null,
+        best_session_ttft_ms: bestSession?.["best_ttft_ms"] ?? null,
+      };
+    });
   }
 }
 
-/**
- *
- */
+/** Stores lifetime aggregate counters used by the usage dashboard. */
 export class LifetimeMetricsStore {
   private readonly db: Database;
 
-  /**
-   *
-   * @param dbPath
-   */
   public constructor(dbPath: string) {
     this.db = openSqliteDatabase(dbPath);
     this.migrate();
   }
 
-  /**
-   *
-   */
   private migrate(): void {
     this.db.run(`
       CREATE TABLE IF NOT EXISTS lifetime_metrics (
@@ -197,10 +264,6 @@ export class LifetimeMetricsStore {
     }
   }
 
-  /**
-   *
-   * @param key
-   */
   public get(key: string): number {
     const row = this.db.query("SELECT value FROM lifetime_metrics WHERE key = ?").get(key) as {
       value?: number;
@@ -208,9 +271,6 @@ export class LifetimeMetricsStore {
     return row?.value ?? 0;
   }
 
-  /**
-   *
-   */
   public getAll(): Record<string, number> {
     const rows = this.db.query("SELECT key, value FROM lifetime_metrics").all() as Array<{
       key: string;
@@ -219,11 +279,6 @@ export class LifetimeMetricsStore {
     return Object.fromEntries(rows.map((row) => [row.key, row.value]));
   }
 
-  /**
-   *
-   * @param key
-   * @param value
-   */
   public set(key: string, value: number): void {
     this.db
       .query(
@@ -234,11 +289,6 @@ export class LifetimeMetricsStore {
       .run(key, value);
   }
 
-  /**
-   *
-   * @param key
-   * @param delta
-   */
   public increment(key: string, delta: number): number {
     this.db
       .query(
@@ -250,9 +300,6 @@ export class LifetimeMetricsStore {
     return this.get(key);
   }
 
-  /**
-   *
-   */
   public ensureFirstStarted(): void {
     const current = this.get("first_started_at");
     if (current === 0) {
@@ -260,50 +307,26 @@ export class LifetimeMetricsStore {
     }
   }
 
-  /**
-   *
-   * @param wattHours
-   */
   public addEnergy(wattHours: number): void {
     this.increment("energy_wh", wattHours);
   }
 
-  /**
-   *
-   * @param tokens
-   */
   public addTokens(tokens: number): void {
     this.increment("tokens_total", tokens);
   }
 
-  /**
-   *
-   * @param tokens
-   */
   public addPromptTokens(tokens: number): void {
     this.increment("prompt_tokens_total", tokens);
   }
 
-  /**
-   *
-   * @param tokens
-   */
   public addCompletionTokens(tokens: number): void {
     this.increment("completion_tokens_total", tokens);
   }
 
-  /**
-   *
-   * @param seconds
-   */
   public addUptime(seconds: number): void {
     this.increment("uptime_seconds", seconds);
   }
 
-  /**
-   *
-   * @param count
-   */
   public addRequests(count = 1): void {
     this.increment("requests_total", count);
   }

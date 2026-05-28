@@ -1,4 +1,3 @@
-// CRITICAL
 /**
  * GPU + VRAM + metrics types.
  */
@@ -59,6 +58,14 @@ export interface Metrics {
   session_peak_running_requests?: number;
   session_peak_power_watts?: number;
   session_peak_vram_used_gb?: number;
+  session_peak_id?: string | null;
+  session_peak_prefill_tps?: number;
+  session_peak_generation_tps?: number;
+  session_peak_best_ttft_ms?: number;
+  best_session_peak_id?: string | null;
+  best_session_prefill_tps?: number;
+  best_session_generation_tps?: number;
+  best_session_ttft_ms?: number;
   // All-time peak metrics (stored best values)
   peak_prefill_tps?: number;
   peak_generation_tps?: number;
@@ -102,6 +109,10 @@ export interface PeakMetrics {
   prefill_tps: number | null;
   generation_tps: number | null;
   ttft_ms: number | null;
+  best_session_id?: string | null;
+  best_session_prefill_tps?: number | null;
+  best_session_generation_tps?: number | null;
+  best_session_ttft_ms?: number | null;
   total_tokens: number;
   total_requests: number;
 }

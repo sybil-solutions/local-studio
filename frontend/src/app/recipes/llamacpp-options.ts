@@ -1,4 +1,3 @@
-// CRITICAL
 import type { LlamacppOption } from "./llamacpp-options/types";
 import { LLAMACPP_OPTIONS_PART_1A } from "./llamacpp-options/options-part-1a";
 import { LLAMACPP_OPTIONS_PART_1B } from "./llamacpp-options/options-part-1b";

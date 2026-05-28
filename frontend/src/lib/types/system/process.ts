@@ -1,4 +1,3 @@
-// CRITICAL
 /**
  * Process + health types shared across the app.
  */

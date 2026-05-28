@@ -8,7 +8,7 @@
 // Loaded by pi-runtime via `--extension` only when the user has toggled
 // "Browser tool" on in the agent header.
 
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 
 type ToolResult = {
@@ -17,6 +17,7 @@ type ToolResult = {
 };
 
 const FRONTEND_BASE = process.env.VLLM_STUDIO_FRONTEND_BASE ?? "http://127.0.0.1:3000";
+const BROWSER_SESSION_ID = process.env.VLLM_STUDIO_BROWSER_SESSION_ID ?? "";
 const DEFAULT_BROWSER_TOOL_TIMEOUT_MS = 60_000;
 
 function readTimeoutMs(name: string, fallback: number): number {
@@ -54,7 +55,9 @@ async function callBrowserAction(
   const response = await fetch(`${FRONTEND_BASE}/api/agent/browser/${verb}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
+    body: JSON.stringify(
+      BROWSER_SESSION_ID ? { ...payload, sessionId: BROWSER_SESSION_ID } : payload,
+    ),
     signal: controller.signal,
   }).finally(() => {
     clearTimeout(timeout);

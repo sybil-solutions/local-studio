@@ -1,7 +1,15 @@
-import { useEffect } from "react";
+import { useCallback, useSyncExternalStore } from "react";
 
 export function useGitDiffPanelEffects(load: () => Promise<void>): void {
-  useEffect(() => {
-    void load();
-  }, [load]);
+  const subscribe = useCallback(
+    (notify: () => void) => {
+      void load().finally(notify);
+      return () => {};
+    },
+    [load],
+  );
+
+  useSyncExternalStore(subscribe, getGitDiffPanelSnapshot, getGitDiffPanelSnapshot);
 }
+
+const getGitDiffPanelSnapshot = (): number => 0;

@@ -1,4 +1,3 @@
-// CRITICAL
 import type { GpuInfo } from "../../models/types";
 import { runCommand } from "../../../core/command";
 import { resolveAmdSmiBinary, resolveRocmSmiBinary } from "./smi-tools";

@@ -1,7 +1,6 @@
-// CRITICAL
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState, useSyncExternalStore } from "react";
 import api from "@/lib/api";
 import type { PeakMetrics, SortDirection, SortField, UsageStats } from "@/lib/types";
 import { normalizeUsageStats } from "../lib/normalize-usage-stats";
@@ -42,6 +41,11 @@ export function useUsage(source: UsageSource = "provider") {
             prefill_tps: normalizePeakNumber(metric.prefill_tps),
             generation_tps: normalizePeakNumber(metric.generation_tps),
             ttft_ms: normalizePeakNumber(metric.ttft_ms),
+            best_session_id:
+              typeof metric.best_session_id === "string" ? metric.best_session_id : null,
+            best_session_prefill_tps: normalizePeakNumber(metric.best_session_prefill_tps),
+            best_session_generation_tps: normalizePeakNumber(metric.best_session_generation_tps),
+            best_session_ttft_ms: normalizePeakNumber(metric.best_session_ttft_ms),
             total_tokens: normalizePeakNumber(metric.total_tokens) ?? 0,
             total_requests: normalizePeakNumber(metric.total_requests) ?? 0,
           });
@@ -55,9 +59,15 @@ export function useUsage(source: UsageSource = "provider") {
     }
   }, [source]);
 
-  useEffect(() => {
-    loadStats();
-  }, [loadStats]);
+  const subscribeUsageStats = useCallback(
+    (_notify: () => void) => {
+      void loadStats();
+      return () => {};
+    },
+    [loadStats],
+  );
+
+  useSyncExternalStore(subscribeUsageStats, getUsageSnapshot, getUsageSnapshot);
 
   const dailyByModel = useMemo(() => {
     if (!stats || !stats.daily_by_model || !Array.isArray(stats.daily_by_model)) {
@@ -170,3 +180,5 @@ export function useUsage(source: UsageSource = "provider") {
     toggleRow,
   };
 }
+
+const getUsageSnapshot = (): number => 0;
