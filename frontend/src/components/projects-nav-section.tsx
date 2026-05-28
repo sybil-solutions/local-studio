@@ -37,18 +37,13 @@ import {
   ACTIVE_AGENT_SESSION_RENAME_EVENT,
   ADD_PROJECT_EVENT,
   NEW_AGENT_SESSION_EVENT,
-  PROJECTS_CHANGED_EVENT,
+  SESSIONS_CHANGED_EVENT,
 } from "@/lib/agent/workspace/events";
 import { loadPersistedActiveAgentSessions } from "@/lib/agent/workspace/store";
 import { useProjects } from "@/lib/agent/projects/context";
 import { addProjectFromPath, openProjectDirectory } from "@/lib/agent/projects/api";
 import { useClickOutside } from "@/hooks/use-click-outside";
-import {
-  loadSessionPrefs,
-  patchSessionPref,
-  type SessionPref,
-  type SessionPrefs,
-} from "@/lib/agent/session/prefs";
+import { patchSessionPref, type SessionPref, type SessionPrefs } from "@/lib/agent/session/prefs";
 import { cleanSessionTitle } from "@/lib/agent/session/helpers";
 import { isChatsProject, type Project as ProjectEntry } from "@/lib/agent/projects/types";
 type SessionSummary = {
@@ -61,6 +56,8 @@ type SessionSummary = {
   provider: string | null;
   firstUserMessage: string | null;
   turnCount: number;
+  archived: boolean;
+  archivedAt: string | null;
 };
 type PinnedSession = SessionSummary & { project: ProjectEntry };
 type DirectoryBrowserEntry = { name: string; path: string };
@@ -72,7 +69,6 @@ type DirectoryBrowserPayload = {
   error?: string;
 };
 type ActiveAgentSession = ActiveAgentSessionSnapshot;
-const SHOW_HIDDEN_KEY = "vllm-studio.agent.sessionPrefs.showHidden";
 const SESSION_NAV_TITLE_PREFIX = "vllm-studio.agent.sessionNavTitle:";
 const SESSION_MENU_CLASS =
   "absolute right-0 top-5 isolate z-[999] min-w-[150px] rounded-md border border-[#3a3a3a] bg-[#202020] p-1 text-xs text-(--fg) opacity-100 shadow-[0_12px_32px_rgba(0,0,0,0.85)]";
@@ -165,6 +161,29 @@ export function consumeAgentSessionNavTitle(sessionId: string | null | undefined
   } catch {
     return undefined;
   }
+}
+async function setSessionArchive(
+  sessionId: string,
+  project: ProjectEntry,
+  title: string,
+  archived: boolean,
+): Promise<void> {
+  const response = await fetch(`/api/agent/sessions/${encodeURIComponent(sessionId)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      cwd: project.path,
+      archived,
+      projectId: project.id,
+      projectName: project.name,
+      title,
+    }),
+  });
+  const payload = await safeJson<{ error?: string }>(response);
+  if (!response.ok) {
+    throw new Error(payload.error || "Failed to update session archive");
+  }
+  window.dispatchEvent(new Event(SESSIONS_CHANGED_EVENT));
 }
 function ProjectDirectoryPickerModal({
   open,
@@ -738,46 +757,31 @@ function ProjectSessions({
     }
   }, [project.path]);
   useProjectSessionsReloadEffect(reload);
-  const [showHidden, setShowHidden] = useState<boolean>(() => {
-    if (typeof window === "undefined") return false;
-    return window.localStorage.getItem(SHOW_HIDDEN_KEY) === "1";
-  });
-  const toggleShowHidden = () =>
-    setShowHidden((value) => {
-      const next = !value;
-      if (typeof window !== "undefined") {
-        window.localStorage.setItem(SHOW_HIDDEN_KEY, next ? "1" : "0");
-      }
-      return next;
-    });
   const visibleActiveSessions = useMemo(
     () =>
       projectActiveSessions.filter((session) => {
         const pref = activeSessionPref(session, prefs);
         if (pref?.pinned) return false;
         if (session.piSessionId && excludedIds.has(session.piSessionId)) return false;
-        return showHidden || !pref?.hidden;
+        return !pref?.hidden;
       }),
-    [projectActiveSessions, prefs, excludedIds, showHidden],
+    [projectActiveSessions, prefs, excludedIds],
   );
-  const { recent, hidden, allRecent } = useMemo(() => {
+  const recent = useMemo(() => {
     const seen = new Set<string>();
     const recent: SessionSummary[] = [];
-    const hidden: SessionSummary[] = [];
-    const allRecent: SessionSummary[] = [];
     for (const session of sessions ?? []) {
       if (activePiSessionIds.has(session.id)) continue;
       if (excludedIds.has(session.id)) continue;
       if (prefs[session.id]?.pinned) continue;
+      if (prefs[session.id]?.hidden) continue;
       const key = sessionDedupeKey(session);
       if (seen.has(session.id) || seen.has(key)) continue;
       seen.add(session.id);
       seen.add(key);
-      allRecent.push(session);
-      if (prefs[session.id]?.hidden) hidden.push(session);
-      else recent.push(session);
+      recent.push(session);
     }
-    return { recent, hidden, allRecent };
+    return recent;
   }, [sessions, activePiSessionIds, excludedIds, prefs]);
   return (
     <div className="flex flex-col">
@@ -792,7 +796,7 @@ function ProjectSessions({
       ))}
       {loading && !sessions ? (
         <div className="pl-2 pr-2 py-0.5 text-[11px] text-(--dim)">Loading…</div>
-      ) : allRecent.length === 0 && visibleActiveSessions.length === 0 ? (
+      ) : recent.length === 0 && visibleActiveSessions.length === 0 ? (
         <div className="pl-2 pr-2 py-0.5 text-[11px] text-(--dim)">No chats</div>
       ) : (
         <>
@@ -805,27 +809,6 @@ function ProjectSessions({
               pref={prefs[session.id] ?? {}}
             />
           ))}
-          {hidden.length > 0 ? (
-            <button
-              type="button"
-              onClick={toggleShowHidden}
-              className="flex h-6 items-center gap-1 rounded-md pl-2 pr-2 text-[11px] text-(--dim) hover:bg-(--hover) hover:text-(--fg)"
-              title={showHidden ? "Hide hidden sessions" : "Show hidden sessions"}
-            >
-              <EyeOffIcon className="w-3 h-3 shrink-0" />{" "}
-              {showHidden ? `Hide ${hidden.length} hidden` : `Show ${hidden.length} hidden`}
-            </button>
-          ) : null}
-          {showHidden
-            ? hidden.map((session) => (
-                <SessionRow
-                  key={session.id}
-                  project={project}
-                  session={session}
-                  pref={prefs[session.id] ?? {}}
-                />
-              ))
-            : null}{" "}
         </>
       )}{" "}
     </div>
@@ -841,6 +824,7 @@ type SessionNavRowProps = {
   href?: string;
   onOpen?: () => void;
   onPatchPref: (patch: SessionPref) => void;
+  onArchive?: () => void;
   onRenameCommit?: (title: string) => void;
   onRememberTitle?: () => void;
   onDragStart: (event: DragEvent) => void;
@@ -862,6 +846,7 @@ function SessionNavRow({
   href,
   onOpen,
   onPatchPref,
+  onArchive,
   onRenameCommit,
   onRememberTitle,
   onDragStart,
@@ -1017,27 +1002,27 @@ function SessionNavRow({
                 "Pin"
               )}{" "}
             </SessionMenuItem>
-            <SessionMenuItem
-              onClick={() => {
-                setMenuOpen(false);
-                onPatchPref({ hidden: !pref.hidden });
-              }}
-            >
-              {menuItemsWithIcons ? (
-                <span className="inline-flex items-center gap-2">
-                  <EyeOffIcon className="h-4 w-4" /> {pref.hidden ? "Unarchive" : "Archive"}{" "}
-                </span>
-              ) : pref.hidden ? (
-                "Unarchive"
-              ) : (
-                "Archive"
-              )}{" "}
-            </SessionMenuItem>
-            {showClearAction && (pref.title || pref.pinned || pref.hidden) ? (
+            {onArchive ? (
               <SessionMenuItem
                 onClick={() => {
                   setMenuOpen(false);
-                  onPatchPref({ title: undefined, pinned: undefined, hidden: undefined });
+                  onArchive();
+                }}
+              >
+                {menuItemsWithIcons ? (
+                  <span className="inline-flex items-center gap-2">
+                    <EyeOffIcon className="h-4 w-4" /> Archive{" "}
+                  </span>
+                ) : (
+                  "Archive"
+                )}{" "}
+              </SessionMenuItem>
+            ) : null}
+            {showClearAction && (pref.title || pref.pinned) ? (
+              <SessionMenuItem
+                onClick={() => {
+                  setMenuOpen(false);
+                  onPatchPref({ title: undefined, pinned: undefined });
                 }}
               >
                 {" "}
@@ -1128,6 +1113,13 @@ function SessionRow({
       renameRowClass="flex h-6 items-center rounded-md bg-(--surface)/40 pl-3 pr-1"
       href={`/agent?project=${encodeURIComponent(project.id)}&session=${encodeURIComponent(session.id)}`}
       onPatchPref={(patch) => patchSessionPref(session.id, patch)}
+      onArchive={() => {
+        void setSessionArchive(session.id, project, label, true)
+          .then(() => patchSessionPref(session.id, { hidden: undefined }))
+          .catch((error) => {
+            console.warn("[agent] failed to archive session", error);
+          });
+      }}
       onRememberTitle={() => rememberAgentSessionNavTitle(session.id, label)}
       onDragStart={(event) => {
         setAgentSessionDragData(event, {

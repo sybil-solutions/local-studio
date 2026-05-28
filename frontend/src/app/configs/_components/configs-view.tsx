@@ -30,8 +30,7 @@ import {
   type SettingsSectionId,
   type StatusTone,
 } from "@/components/settings-primitives";
-import { SESSION_PREFS_CHANGED_EVENT } from "@/lib/agent/workspace/events";
-import { SESSION_PREFS_KEY } from "@/lib/agent/workspace/store";
+import { SESSIONS_CHANGED_EVENT } from "@/lib/agent/workspace/events";
 interface ConfigsViewProps {
   data: ConfigData | null;
   compatibilityReport: CompatibilityReport | null;
@@ -57,7 +56,7 @@ const SECTIONS: SettingsSectionDef[] = [
   ["connection", "Connection", "Controller URL, API key, voice defaults.", Cable],
   ["system", "System", "Runtime targets, services, storage, hardware.", Cpu],
   ["appearance", "Appearance", "Theme variables, typography, density.", Paintbrush],
-  ["archive", "Archived chats", "Hidden Pi sessions tracked by stable ID.", Archive],
+  ["archive", "Archived chats", "Pi sessions kept out of normal chat lists.", Archive],
   ["plugins", "Plugins", "Codex plugin discovery and composer availability.", Plug],
   [
     "skills",
@@ -444,79 +443,115 @@ function CompatibilitySettings({
   );
 }
 function ArchivedChatsSettings() {
-  type Pref = { title?: string; pinned?: boolean; hidden?: boolean };
   type Session = {
     id: string;
     projectName?: string;
     projectPath?: string;
     firstUserMessage?: string | null;
     updatedAt?: string;
+    archived?: boolean;
+    archivedAt?: string | null;
   };
-  const [prefs, setPrefs] = useState<Record<string, Pref>>(() => {
-    if (typeof window === "undefined") return {};
-    try {
-      const raw = localStorage.getItem(SESSION_PREFS_KEY);
-      return raw ? (JSON.parse(raw) as Record<string, Pref>) : {};
-    } catch {
-      return {};
-    }
-  });
   const [sessions, setSessions] = useState<Session[]>([]);
-  const subscribeArchivedSessions = useCallback((_notify: () => void) => {
-    void fetch("/api/agent/sessions/all?since=365d", { cache: "no-store" })
-      .then((res) => res.json() as Promise<{ sessions?: Session[] }>)
-      .then((payload) => setSessions(payload.sessions ?? []))
-      .catch(() => setSessions([]));
-    return () => {};
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [restoringId, setRestoringId] = useState<string | null>(null);
+  const loadArchivedSessions = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const response = await fetch("/api/agent/sessions/all?archived=1", {
+        cache: "no-store",
+      });
+      const payload = (await response.json()) as { sessions?: Session[]; error?: string };
+      if (!response.ok) throw new Error(payload.error || "Failed to load archived chats");
+      setSessions(payload.sessions ?? []);
+    } catch (loadError) {
+      setSessions([]);
+      setError(loadError instanceof Error ? loadError.message : "Failed to load archived chats");
+    } finally {
+      setLoading(false);
+    }
   }, []);
+  const subscribeArchivedSessions = useCallback(
+    (_notify: () => void) => {
+      void loadArchivedSessions();
+      window.addEventListener(SESSIONS_CHANGED_EVENT, loadArchivedSessions);
+      return () => window.removeEventListener(SESSIONS_CHANGED_EVENT, loadArchivedSessions);
+    },
+    [loadArchivedSessions],
+  );
 
   useSyncExternalStore(subscribeArchivedSessions, getConfigsViewSnapshot, getConfigsViewSnapshot);
-  const archivedIds = Object.entries(prefs)
-    .filter(([, pref]) => pref.hidden)
-    .map(([id]) => id);
-  const byId = new Map(sessions.map((session) => [session.id, session]));
-  const unarchive = (id: string) => {
-    const next = { ...prefs, [id]: { ...prefs[id], hidden: undefined } };
-    if (!next[id].title && !next[id].pinned && !next[id].hidden) delete next[id];
-    localStorage.setItem(SESSION_PREFS_KEY, JSON.stringify(next));
-    window.dispatchEvent(new Event(SESSION_PREFS_CHANGED_EVENT));
-    setPrefs(next);
+  const unarchive = async (session: Session) => {
+    setRestoringId(session.id);
+    setError("");
+    try {
+      const response = await fetch(`/api/agent/sessions/${encodeURIComponent(session.id)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          archived: false,
+          ...(session.projectPath ? { cwd: session.projectPath } : {}),
+        }),
+      });
+      const payload = (await response.json()) as { error?: string };
+      if (!response.ok) throw new Error(payload.error || "Failed to restore chat");
+      setSessions((current) => current.filter((row) => row.id !== session.id));
+      window.dispatchEvent(new Event(SESSIONS_CHANGED_EVENT));
+    } catch (restoreError) {
+      setError(restoreError instanceof Error ? restoreError.message : "Failed to restore chat");
+    } finally {
+      setRestoringId(null);
+    }
   };
   return (
     <SettingsGroup
       title="Archived chats"
-      description="Archived sessions are hidden from normal session lists and restart hydration by stable Pi session ID."
-      actions={<StatusPill>{archivedIds.length} archived</StatusPill>}
+      description="Archived sessions are excluded from normal chat fetches. Restore one here to return it to the sidebar."
+      actions={<StatusPill>{loading ? "loading" : `${sessions.length} archived`}</StatusPill>}
     >
-      {archivedIds.length === 0 ? (
+      {error ? (
+        <SettingsRow
+          label="Archive"
+          description={error}
+          value={<SettingsValue dim>Try refreshing this settings section.</SettingsValue>}
+          status={<StatusPill tone="warning">error</StatusPill>}
+        />
+      ) : null}
+      {!error && sessions.length === 0 ? (
         <SettingsRow
           label="Archive"
           description="Use a session row menu to archive instead of deleting from disk."
-          value={<SettingsValue dim>No archived chats.</SettingsValue>}
-          status={<StatusPill>empty</StatusPill>}
+          value={
+            <SettingsValue dim>
+              {loading ? "Loading archived chats…" : "No archived chats."}
+            </SettingsValue>
+          }
+          status={<StatusPill>{loading ? "loading" : "empty"}</StatusPill>}
         />
       ) : (
-        archivedIds.map((id) => {
-          const session = byId.get(id);
-          const pref = prefs[id] ?? {};
+        sessions.map((session) => {
           return (
             <SettingsRow
-              key={id}
-              label={
-                cleanSessionTitle(pref.title) || cleanSessionTitle(session?.firstUserMessage) || id
-              }
-              description={
-                session?.projectPath ||
-                "Session metadata will hydrate when its project is available."
-              }
-              value={<SettingsValue mono>{id}</SettingsValue>}
+              key={session.id}
+              label={cleanSessionTitle(session.firstUserMessage) || session.id}
+              description={session.projectPath || "Session project metadata is not available."}
+              value={<SettingsValue mono>{session.id}</SettingsValue>}
               status={<StatusPill tone="info">archived</StatusPill>}
-              actions={<SettingsButton onClick={() => unarchive(id)}>Restore</SettingsButton>}
+              actions={
+                <SettingsButton
+                  onClick={() => void unarchive(session)}
+                  disabled={restoringId === session.id}
+                >
+                  {restoringId === session.id ? "Restoring" : "Restore"}
+                </SettingsButton>
+              }
             >
               <div className="text-[12px] text-(--dim)/55">
                 {" "}
-                {session?.projectName ? `${session.projectName} · ` : ""}
-                {session?.updatedAt ?? "no timestamp"}{" "}
+                {session.projectName ? `${session.projectName} · ` : ""}
+                {session.archivedAt ? `archived ${session.archivedAt}` : session.updatedAt}{" "}
               </div>
             </SettingsRow>
           );

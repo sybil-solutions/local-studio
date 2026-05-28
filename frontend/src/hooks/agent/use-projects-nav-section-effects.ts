@@ -29,6 +29,8 @@ type SessionSummary = {
   provider: string | null;
   firstUserMessage: string | null;
   turnCount: number;
+  archived: boolean;
+  archivedAt: string | null;
 };
 
 type PinnedSession = SessionSummary & { project: ProjectEntry };
