@@ -109,7 +109,7 @@ sync_controller() {
   sync_dir controller/src/      "$REMOTE_DIR/controller/src/"
   sync_dir controller/scripts/  "$REMOTE_DIR/controller/scripts/" 2>/dev/null || true
   rsync -az -e "ssh $SSH_OPTS" \
-    controller/package.json controller/tsconfig.json \
+    controller/package.json controller/bun.lock controller/tsconfig.json \
     "$REMOTE:$REMOTE_DIR/controller/" 2>/dev/null
   ok "controller/src → remote"
 }
@@ -119,6 +119,7 @@ sync_frontend() {
   sync_dir frontend/src/ "$REMOTE_DIR/frontend/src/"
   local frontend_files=(
     frontend/package.json
+    frontend/package-lock.json
     frontend/tsconfig.json
     frontend/next.config.ts
     frontend/tailwind.config.ts
@@ -160,8 +161,13 @@ sync_all() {
 
 install_controller() {
   step "Installing controller deps"
-  remote "cd $REMOTE_DIR_SHELL/controller && ~/.bun/bin/bun install --frozen-lockfile 2>&1 | tail -1" || \
-  remote "cd $REMOTE_DIR_SHELL/controller && ~/.bun/bin/bun install 2>&1 | tail -1"
+  if remote "cd $REMOTE_DIR_SHELL/controller && ~/.bun/bin/bun install --frozen-lockfile >/tmp/controller-bun-install.log 2>&1"; then
+    remote "tail -5 /tmp/controller-bun-install.log"
+  else
+    remote "tail -20 /tmp/controller-bun-install.log" || true
+    remote "cd $REMOTE_DIR_SHELL/controller && ~/.bun/bin/bun install >/tmp/controller-bun-install.log 2>&1"
+    remote "tail -5 /tmp/controller-bun-install.log"
+  fi
   ok "bun install"
 }
 
@@ -233,8 +239,20 @@ start_infra() {
 show_status() {
   step "Status"
   echo ""
-  remote bash <<'REMOTE'
+  remote "cd $REMOTE_DIR_SHELL && bash" <<'REMOTE'
 _g='\033[32m' _r='\033[31m' _d='\033[2m' _n='\033[0m'
+
+if [[ -f .env ]]; then
+  set -a
+  # shellcheck disable=SC1091
+  source .env
+  set +a
+fi
+
+auth_headers=()
+if [[ -n "${VLLM_STUDIO_API_KEY:-}" ]]; then
+  auth_headers=(-H "Authorization: Bearer ${VLLM_STUDIO_API_KEY}")
+fi
 
 probe() {
   local label="$1" url="$2"
@@ -277,7 +295,7 @@ for g in d['gpus']:
 fi
 
 # Running model
-curl -s http://localhost:8080/status 2>/dev/null | python3 -c "
+curl -s "${auth_headers[@]}" http://localhost:8080/status 2>/dev/null | python3 -c "
 import sys,json
 d=json.load(sys.stdin)
 if d.get('running'):

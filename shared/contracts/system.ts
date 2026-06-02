@@ -151,7 +151,6 @@ export interface SystemRuntimeInfo {
     sglang: RuntimeBackendInfo;
     llamacpp: RuntimeBackendInfo;
     mlx?: RuntimeBackendInfo;
-    exllamav3?: RuntimeBackendInfo;
   };
 }
 
