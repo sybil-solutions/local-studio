@@ -81,7 +81,9 @@ export function useTerminalPanelEffects({
         rightClickSelectsWord: true,
         fontFamily,
         fontSize: 12,
-        lineHeight: 1.35,
+        // TUIs draw box/block glyphs that must tile edge-to-edge; any extra
+        // leading leaves gaps and breaks their layout, so keep lineHeight at 1.
+        lineHeight: 1.0,
         theme: {
           background: "#070707",
           foreground: "#f2f2f2",

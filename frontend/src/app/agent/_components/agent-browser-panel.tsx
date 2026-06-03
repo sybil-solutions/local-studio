@@ -215,10 +215,27 @@ export function AgentBrowserPanel({
         <GitDiffPanel cwd={activeProject?.path ?? null} />
       ) : tools.computer.tab === "plugins" ? (
         <PluginsPanel />
-      ) : (
-        <TerminalPanel cwd={activeProject?.path ?? null} />
-      )}
+      ) : null}
+
+      <PersistentTerminal
+        active={tools.computer.tab === "terminal"}
+        cwd={activeProject?.path ?? null}
+      />
     </aside>
+  );
+}
+
+// Keep the terminal mounted once first opened so its PTY survives tab switches
+// (unmounting kills the shell and loses scrollback — the "terminal resets" bug).
+// Hidden via CSS rather than conditional rendering when another tab is active.
+function PersistentTerminal({ active, cwd }: { active: boolean; cwd: string | null }) {
+  const [everActive, setEverActive] = useState(active);
+  if (active && !everActive) setEverActive(true);
+  if (!everActive) return null;
+  return (
+    <div className={active ? "flex min-h-0 flex-1 flex-col" : "hidden"}>
+      <TerminalPanel cwd={cwd} />
+    </div>
   );
 }
 
@@ -431,8 +448,12 @@ function ComputerLauncherPanel({
               }`}
             >
               <Icon className="mb-3 h-5 w-5 text-(--dim)/70 transition-colors group-hover:text-(--fg)/75" />
-              <span className="text-[length:var(--fs-lg)] font-semibold tracking-tight">{card.title}</span>
-              <span className="mt-1.5 text-[length:var(--fs-base)] text-(--dim)">{card.description}</span>
+              <span className="text-[length:var(--fs-lg)] font-semibold tracking-tight">
+                {card.title}
+              </span>
+              <span className="mt-1.5 text-[length:var(--fs-base)] text-(--dim)">
+                {card.description}
+              </span>
             </button>
           );
         })}

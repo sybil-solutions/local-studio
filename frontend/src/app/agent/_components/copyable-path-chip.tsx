@@ -39,7 +39,14 @@ export function CopyablePathChip({
       >
         <FileText className="chat-ref-chip-icon" aria-hidden />
       </button>
-      <span className="chat-ref-chip-label">{children}</span>
+      <button
+        type="button"
+        onClick={() => onOpen(value)}
+        className="chat-ref-chip-label cursor-pointer bg-transparent text-left"
+        title={`Open ${value}`}
+      >
+        {children}
+      </button>
       <button
         type="button"
         onClick={handleCopy}
