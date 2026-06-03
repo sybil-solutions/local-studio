@@ -29,7 +29,7 @@ Access these in scripts via environment variables or load them from `.env.local`
 - **Run**: `cd frontend && PORT=3001 npm run dev`
 - **Do not run dev unless explicitly asked.** If a dev server is already running, you may use it for verification.
 - Use this local server for fast browser verification unless the user explicitly asks for a different port or deployment target.
-- **Always rebuild the desktop app after any frontend change.** The desktop app bundles its own copy of the frontend (embedded standalone Next server), so `./scripts/deploy-remote.sh frontend` and any web/remote deploy update only the homelab web UI (`:3000`) — they do **not** update the desktop app. Whenever you touch `frontend/`, rebuild and reinstall the canonical app per [Deployment Workflow](#deployment-workflow). (`rm -rf "/Applications/vLLM Studio.app"` is part of the documented reinstall — confirm with the user before that destructive step.)
+- **Always rebuild and reinstall the desktop app after any frontend change.** The desktop app bundles its own copy of the frontend (embedded standalone Next server), so `./scripts/deploy-remote.sh frontend` and any web/remote deploy update only the homelab web UI (`:3000`) — they do **not** update the desktop app. Whenever you touch `frontend/`, rebuild and reinstall the canonical app into `/Applications/vLLM Studio.app` per [Deployment Workflow](#deployment-workflow). The user has explicitly approved the documented clean reinstall step (`rm -rf "/Applications/vLLM Studio.app"` followed by `ditto`); do not leave rebuilt desktop apps only under `frontend/dist-desktop/`.
 - **Beta desktop app (exception, for risky feature-branch testing only)**: if you need to test without touching the user's working app, build/install a separate beta app with its own app name, bundle id, and user data path. This is the exception — the default is to rebuild and reinstall the canonical `/Applications/vLLM Studio.app`.
 - **Desktop dev mode for iterative UI work**: launch Electron against the local dev server so frontend changes show up without rebuilding the installed app:
 
@@ -57,7 +57,7 @@ cd frontend && npm run desktop:pack
 
 - `desktop:pack` builds the app directory only (`frontend/dist-desktop/mac-arm64/vLLM Studio.app`).
 - It skips distributable DMG/ZIP/blockmap creation and is much faster than `desktop:dist`.
-- After `desktop:pack`, still replace `/Applications/vLLM Studio.app` using the [Installed Desktop App Update](#installed-desktop-app-update-required) steps.
+- After `desktop:pack`, always replace `/Applications/vLLM Studio.app` using the [Installed Desktop App Update](#installed-desktop-app-update-required) steps.
 - This is for local testing only; it does **not** replace the production/pre-push gate.
 
 ### Production / Pre-Push Build
@@ -82,7 +82,7 @@ cd frontend && npm run desktop:dist
 
 - `desktop:dist` creates the signed app plus DMG/ZIP distributables.
 - Use `desktop:dist` for production/release readiness, not for every quick local visual test.
-- After `desktop:dist`, replace `/Applications/vLLM Studio.app` using the [Installed Desktop App Update](#installed-desktop-app-update-required) steps.
+- After `desktop:dist`, always replace `/Applications/vLLM Studio.app` using the [Installed Desktop App Update](#installed-desktop-app-update-required) steps.
 
 ## Deployment Workflow
 
