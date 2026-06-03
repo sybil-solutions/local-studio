@@ -10,7 +10,7 @@
 // `builtins.ts` and already own their bundled `.mcp.json`. Only their
 // enable/disable state is overlaid via the `disabledBuiltins` set.
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { resolveDataDir } from "@/lib/data-dir";
 import type { McpServerDef, McpServerEntry } from "./types";
@@ -143,11 +143,4 @@ export function setServerEnabled(id: string, enabled: boolean, isBuiltin: boolea
   if (!entry) return;
   entry.enabled = enabled;
   writeStore(store);
-}
-
-/** Ensure every stored server has a current `.mcp.json` (e.g. after upgrade). */
-export function ensureMaterialized(): void {
-  for (const entry of readStore().servers) {
-    if (!existsSync(serverConfigPath(entry.def.id))) materializeServerConfig(entry.def);
-  }
 }

@@ -7,7 +7,6 @@ export {
   removeServer,
   setServerEnabled,
   serverConfigPath,
-  ensureMaterialized,
   disabledBuiltinIds,
 } from "./store";
 export type { McpServerDef, McpServerEntry, McpServerSource, McpCatalogueEntry } from "./types";
