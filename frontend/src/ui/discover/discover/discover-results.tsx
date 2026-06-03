@@ -2,9 +2,9 @@
 
 import { Fragment, useMemo, useState } from "react";
 import { RefreshCw } from "lucide-react";
-import { Table, TBody, THead, TH, TRow } from "@/ui";
+import { HuggingFaceModelCardModal, Table, TBody, THead, TH, TRow } from "@/ui";
 import type { HuggingFaceModel, ModelDownload } from "@/lib/types";
-import { normalizeModelId } from "../utils";
+import { isDerivativeModel, modelRecencyMs, originalModelKey } from "@/lib/huggingface";
 import { ModelRow } from "./discover-results/model-row";
 
 export function DiscoverResults({
@@ -43,10 +43,14 @@ export function DiscoverResults({
   onResumeDownload: (downloadId: string) => Promise<void>;
 }) {
   const [expandedGroupKeys, setExpandedGroupKeys] = useState<string[]>([]);
+  const [selectedModelCard, setSelectedModelCard] = useState<{
+    model: HuggingFaceModel;
+    variants: HuggingFaceModel[];
+  } | null>(null);
   const groupedModels = useMemo(() => {
     const groups = new Map<string, HuggingFaceModel[]>();
     filteredModels.forEach((model) => {
-      const key = normalizeModelId(model.modelId) || model.modelId.toLowerCase();
+      const key = originalModelKey(model);
       const existing = groups.get(key);
       if (existing) {
         existing.push(model);
@@ -55,14 +59,29 @@ export function DiscoverResults({
       }
     });
 
-    return Array.from(groups.entries()).map(([key, variants]) => {
-      const sortedVariants = [...variants].sort((left, right) => right.downloads - left.downloads);
-      return {
-        key,
-        lead: sortedVariants[0] as HuggingFaceModel,
-        variants: sortedVariants,
-      };
-    });
+    return Array.from(groups.entries())
+      .map(([key, variants]) => {
+        const sortedVariants = [...variants].sort((left, right) => {
+          const derivativeDelta =
+            (isDerivativeModel(left) ? 1 : 0) - (isDerivativeModel(right) ? 1 : 0);
+          if (derivativeDelta !== 0) return derivativeDelta;
+          if (right.likes !== left.likes) return right.likes - left.likes;
+          const recencyDelta = modelRecencyMs(right) - modelRecencyMs(left);
+          if (recencyDelta !== 0) return recencyDelta;
+          return right.downloads - left.downloads;
+        });
+        return {
+          key,
+          lead: sortedVariants[0] as HuggingFaceModel,
+          variants: sortedVariants,
+        };
+      })
+      .sort((left, right) => {
+        if (right.lead.likes !== left.lead.likes) return right.lead.likes - left.lead.likes;
+        const recencyDelta = modelRecencyMs(right.lead) - modelRecencyMs(left.lead);
+        if (recencyDelta !== 0) return recencyDelta;
+        return right.lead.downloads - left.lead.downloads;
+      });
   }, [filteredModels]);
 
   const toggleGroup = (groupKey: string) => {
@@ -145,6 +164,9 @@ export function DiscoverResults({
                   onToggleExpand={
                     group.variants.length > 1 ? () => toggleGroup(group.key) : undefined
                   }
+                  onOpenModelCard={() =>
+                    setSelectedModelCard({ model: group.lead, variants: group.variants })
+                  }
                 />
                 {expanded &&
                   group.variants
@@ -162,6 +184,9 @@ export function DiscoverResults({
                         onPauseDownload={onPauseDownload}
                         onResumeDownload={onResumeDownload}
                         child
+                        onOpenModelCard={() =>
+                          setSelectedModelCard({ model, variants: group.variants })
+                        }
                       />
                     ))}
               </Fragment>
@@ -188,6 +213,12 @@ export function DiscoverResults({
           </button>
         </div>
       )}
+      <HuggingFaceModelCardModal
+        open={Boolean(selectedModelCard)}
+        model={selectedModelCard?.model ?? null}
+        variants={selectedModelCard?.variants ?? []}
+        onClose={() => setSelectedModelCard(null)}
+      />
     </>
   );
 }

@@ -6,7 +6,7 @@
 // — there is no filesystem scavenging of `~/.codex` or `Codex.app` anymore.
 
 import { builtinServerDefs, BUILTIN_SOURCE } from "./builtins";
-import { disabledBuiltinIds, listStoredServers, serverConfigPath } from "./store";
+import { disabledBuiltinIds, listStoredServers, serverConfigPath, serverTags } from "./store";
 import type { McpServerDef } from "./types";
 
 /**
@@ -25,12 +25,17 @@ export type PluginRow = {
   shortDescription?: string;
   source?: string;
   category?: string;
+  tags?: string[];
   capabilities?: string[];
   skillPath?: string;
   mcpConfigPath?: string;
 };
 
-function builtinRow(def: McpServerDef & { mcpConfigPath?: string }, enabled: boolean): PluginRow {
+function builtinRow(
+  def: McpServerDef & { mcpConfigPath?: string },
+  enabled: boolean,
+  tags: string[],
+): PluginRow {
   return {
     id: def.id,
     name: def.name,
@@ -42,6 +47,7 @@ function builtinRow(def: McpServerDef & { mcpConfigPath?: string }, enabled: boo
     ...(def.shortDescription ? { shortDescription: def.shortDescription } : {}),
     source: BUILTIN_SOURCE,
     ...(def.category ? { category: def.category } : {}),
+    ...(tags.length || def.tags?.length ? { tags: tags.length ? tags : def.tags } : {}),
     ...(def.mcpConfigPath ? { mcpConfigPath: def.mcpConfigPath } : {}),
     ...(def.skillPath ? { skillPath: def.skillPath } : {}),
   };
@@ -59,6 +65,7 @@ function storedRow(def: McpServerDef, source: string, enabled: boolean): PluginR
     ...(def.shortDescription ? { shortDescription: def.shortDescription } : {}),
     source,
     ...(def.category ? { category: def.category } : {}),
+    ...(def.tags?.length ? { tags: def.tags } : {}),
     mcpConfigPath: serverConfigPath(def.id),
     ...(def.skillPath ? { skillPath: def.skillPath } : {}),
   };
@@ -67,7 +74,10 @@ function storedRow(def: McpServerDef, source: string, enabled: boolean): PluginR
 /** All MCP servers (builtin + stored) as PluginRows. */
 export function discoverMcpServers(): PluginRow[] {
   const disabled = disabledBuiltinIds();
-  const builtins = builtinServerDefs().map((def) => builtinRow(def, !disabled.has(def.id)));
+  const tags = serverTags();
+  const builtins = builtinServerDefs().map((def) =>
+    builtinRow(def, !disabled.has(def.id), tags[def.id] ?? []),
+  );
   const stored = listStoredServers().map((entry) =>
     storedRow(entry.def, entry.source, entry.enabled),
   );

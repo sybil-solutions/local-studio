@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useMemo, useState, useSyncExternalStore } from "react";
-import { RefreshCw, Save } from "lucide-react";
+import { useCallback, useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
+import { Cpu, HardDrive, Network, RefreshCw, Save } from "lucide-react";
 import { Button, StatusPill } from "@/ui";
 import { Drawer, DrawerBody, DrawerFooter, DrawerHeader } from "@/ui/drawer";
 import api from "@/lib/api";
@@ -220,9 +220,9 @@ export function RecipeModal({
   };
 
   return (
-    <Drawer>
+    <Drawer width={860}>
       <DrawerHeader
-        title={recipe.id ? "Edit recipe" : "New recipe"}
+        title={recipe.id ? recipe.name || "Edit recipe" : "New recipe"}
         badge={
           <StatusPill tone="info" variant="badge" className="shrink-0">
             {formatBackendLabel(recipe.backend)}
@@ -234,34 +234,41 @@ export function RecipeModal({
       <RecipeModalTabBar activeTab={activeTab} onSelectTab={setActiveTab} />
 
       <DrawerBody>
-        <RecipeModalTabContent
-          activeTab={activeTab}
-          recipe={recipe}
-          onChange={applyRecipeChange}
-          availableModels={availableModels}
-          modelServedNames={modelServedNames}
-          isLlamacpp={isLlamacpp}
-          getExtraArgValueForKey={getExtraArgValueForKeyLocal}
-          setExtraArgValueForKey={setExtraArgValueForKeyLocal}
-          envVarEntries={envVarEntries}
-          onAddEnvVar={handleAddEnvVar}
-          onChangeEnvVar={handleEnvVarChange}
-          onRemoveEnvVar={handleRemoveEnvVar}
-          extraArgsText={extraArgsText}
-          extraArgsError={extraArgsError}
-          onExtraArgsChange={handleExtraArgsChange}
-          llamaConfigLoading={llamaConfigLoading}
-          llamaConfigHelp={llamaConfigHelp}
-          recipeSourceText={recipeSourceText}
-          recipeSourceError={recipeSourceError}
-          onRecipeSourceChange={handleRecipeSourceChange}
-          onFormatRecipeSource={handleRecipeSourceFormat}
-          commandText={commandText}
-          generatedCommand={generatedCommand}
-          hasCommandOverride={hasCommandOverride}
-          onCommandChange={handleCommandChange}
-          onResetCommand={handleCommandReset}
-        />
+        <div className="space-y-4">
+          <RecipeModalSummary
+            recipe={recipe}
+            backend={backend}
+            commandOverridden={hasCommandOverride}
+          />
+          <RecipeModalTabContent
+            activeTab={activeTab}
+            recipe={recipe}
+            onChange={applyRecipeChange}
+            availableModels={availableModels}
+            modelServedNames={modelServedNames}
+            isLlamacpp={isLlamacpp}
+            getExtraArgValueForKey={getExtraArgValueForKeyLocal}
+            setExtraArgValueForKey={setExtraArgValueForKeyLocal}
+            envVarEntries={envVarEntries}
+            onAddEnvVar={handleAddEnvVar}
+            onChangeEnvVar={handleEnvVarChange}
+            onRemoveEnvVar={handleRemoveEnvVar}
+            extraArgsText={extraArgsText}
+            extraArgsError={extraArgsError}
+            onExtraArgsChange={handleExtraArgsChange}
+            llamaConfigLoading={llamaConfigLoading}
+            llamaConfigHelp={llamaConfigHelp}
+            recipeSourceText={recipeSourceText}
+            recipeSourceError={recipeSourceError}
+            onRecipeSourceChange={handleRecipeSourceChange}
+            onFormatRecipeSource={handleRecipeSourceFormat}
+            commandText={commandText}
+            generatedCommand={generatedCommand}
+            hasCommandOverride={hasCommandOverride}
+            onCommandChange={handleCommandChange}
+            onResetCommand={handleCommandReset}
+          />
+        </div>
       </DrawerBody>
 
       <DrawerFooter
@@ -298,6 +305,64 @@ export function RecipeModal({
         </Button>
       </DrawerFooter>
     </Drawer>
+  );
+}
+
+function RecipeModalSummary({
+  recipe,
+  backend,
+  commandOverridden,
+}: {
+  recipe: RecipeEditor;
+  backend: Backend;
+  commandOverridden: boolean;
+}) {
+  return (
+    <div className="grid gap-2 md:grid-cols-3">
+      <SummaryCell
+        icon={<Cpu className="h-3.5 w-3.5" />}
+        label="Backend"
+        value={formatBackendLabel(backend)}
+      />
+      <SummaryCell
+        icon={<HardDrive className="h-3.5 w-3.5" />}
+        label="Model"
+        value={recipe.model_path || "Select a model"}
+      />
+      <SummaryCell
+        icon={<Network className="h-3.5 w-3.5" />}
+        label="API name"
+        value={recipe.served_model_name || recipe.name || "Generated"}
+        badge={commandOverridden ? "command override" : undefined}
+      />
+    </div>
+  );
+}
+
+function SummaryCell({
+  icon,
+  label,
+  value,
+  badge,
+}: {
+  icon: ReactNode;
+  label: string;
+  value: string;
+  badge?: string;
+}) {
+  return (
+    <div className="min-w-0 rounded-md border border-(--ui-border) bg-(--ui-surface) px-3 py-2">
+      <div className="mb-1 flex items-center gap-1.5 text-[length:var(--fs-xs)] uppercase tracking-[0.12em] text-(--ui-muted)">
+        {icon}
+        {label}
+      </div>
+      <div className="truncate text-[length:var(--fs-md)] font-medium text-(--ui-fg)" title={value}>
+        {value}
+      </div>
+      {badge ? (
+        <div className="mt-1 text-[length:var(--fs-xs)] text-(--ui-warning)">{badge}</div>
+      ) : null}
+    </div>
   );
 }
 

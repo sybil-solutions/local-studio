@@ -28,7 +28,12 @@ export function Drawer({
         "relative flex shrink-0 flex-col border-l border-(--ui-border) bg-(--ui-bg)",
         className,
       )}
-      style={{ width: `${width}px`, minWidth: "min(420px, 40%)", maxWidth: "min(820px, 65%)", ...style }}
+      style={{
+        width: `${width}px`,
+        minWidth: "min(420px, 40%)",
+        maxWidth: "min(960px, 76%)",
+        ...style,
+      }}
     >
       {children}
     </aside>

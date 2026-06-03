@@ -1,0 +1,275 @@
+"use client";
+
+import { useCallback, useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
+import { Download, ExternalLink, Heart, RefreshCw, Sparkles } from "lucide-react";
+import type { HuggingFaceModel } from "@/lib/types";
+import {
+  engagementTier,
+  hfModelUrl,
+  modelDisplayName,
+  quantizationLabels,
+  type HuggingFaceModelCardPayload,
+} from "@/lib/huggingface";
+import { formatBytes, formatNumber } from "@/lib/formatters";
+import { Button } from "./button";
+import { UiModal, UiModalHeader } from "./modal";
+import { StatusPill } from "./status";
+import { ModelLogo } from "./model-logo";
+
+export function HuggingFaceModelCardModal({
+  model,
+  variants = [],
+  open,
+  onClose,
+}: {
+  model: HuggingFaceModel | null;
+  variants?: HuggingFaceModel[];
+  open: boolean;
+  onClose: () => void;
+}) {
+  const [payload, setPayload] = useState<HuggingFaceModelCardPayload | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const modelId = model?.modelId ?? "";
+
+  const load = useCallback(async () => {
+    if (!modelId) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const response = await fetch(
+        `/api/huggingface/model-card?modelId=${encodeURIComponent(modelId)}`,
+        { cache: "no-store" },
+      );
+      const data = (await response.json()) as HuggingFaceModelCardPayload & { error?: string };
+      if (!response.ok) throw new Error(data.error || "Unable to load model card.");
+      setPayload(data);
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : "Unable to load model card.");
+      setPayload(null);
+    } finally {
+      setLoading(false);
+    }
+  }, [modelId]);
+
+  const subscribe = useCallback(
+    (_notify: () => void) => {
+      if (open && modelId) void load();
+      return () => {};
+    },
+    [load, modelId, open],
+  );
+
+  useSyncExternalStore(subscribe, getModelCardSnapshot, getModelCardSnapshot);
+
+  const title = model ? modelDisplayName(model.modelId) : "Model";
+  const stats = useMemo(() => {
+    const downloads = payload?.downloads ?? model?.downloads ?? 0;
+    const likes = payload?.likes ?? model?.likes ?? 0;
+    return {
+      downloads,
+      likes,
+      tier: engagementTier(likes, downloads),
+    };
+  }, [model, payload]);
+
+  if (!model) return null;
+
+  return (
+    <UiModal isOpen={open} onClose={onClose} maxWidth="max-w-4xl" className="overflow-hidden">
+      <UiModalHeader
+        title={title}
+        icon={<ModelLogo modelId={model.modelId} author={payload?.author ?? model.author} />}
+        onClose={onClose}
+        actions={
+          <div className="flex items-center gap-1.5">
+            <StatusPill
+              tone={stats.tier === "heavy" ? "good" : stats.tier === "warm" ? "info" : "default"}
+              variant="badge"
+            >
+              {stats.tier === "heavy" ? "high signal" : stats.tier}
+            </StatusPill>
+            <a href={hfModelUrl(model.modelId)} target="_blank" rel="noopener noreferrer">
+              <Button variant="icon" size="sm" title="Open on Hugging Face">
+                <ExternalLink className="h-3.5 w-3.5" />
+              </Button>
+            </a>
+          </div>
+        }
+        closeIcon="x"
+      />
+      <div className="max-h-[78vh] overflow-y-auto p-5">
+        <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_260px]">
+          <section className="min-w-0 space-y-4">
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-[length:var(--fs-sm)] text-(--ui-muted)">
+              <span className="inline-flex items-center gap-1.5">
+                <Download className="h-3.5 w-3.5" />
+                {formatNumber(stats.downloads)} downloads
+              </span>
+              <span className="inline-flex items-center gap-1.5">
+                <Heart className="h-3.5 w-3.5" />
+                {formatNumber(stats.likes)} likes
+              </span>
+              {payload?.pipeline_tag || model.pipeline_tag ? (
+                <StatusPill variant="badge">
+                  {payload?.pipeline_tag ?? model.pipeline_tag}
+                </StatusPill>
+              ) : null}
+              {payload?.library_name || model.library_name ? (
+                <StatusPill variant="badge">
+                  {payload?.library_name ?? model.library_name}
+                </StatusPill>
+              ) : null}
+            </div>
+
+            <div className="rounded-md border border-(--ui-border) bg-(--ui-surface)">
+              <div className="flex h-9 items-center justify-between border-b border-(--ui-border) px-3">
+                <div className="flex min-w-0 items-center gap-2 text-[length:var(--fs-sm)] font-medium text-(--ui-fg)">
+                  <Sparkles className="h-3.5 w-3.5 text-(--ui-info)" />
+                  Model card
+                </div>
+                {loading ? (
+                  <RefreshCw className="h-3.5 w-3.5 animate-spin text-(--ui-muted)" />
+                ) : null}
+              </div>
+              <div className="p-3">
+                {error ? (
+                  <p className="text-[length:var(--fs-sm)] text-(--ui-danger)">{error}</p>
+                ) : null}
+                {!error && readmeSummary(payload?.readme) ? (
+                  <pre className="max-h-[460px] whitespace-pre-wrap font-sans text-[length:var(--fs-md)] leading-6 text-(--ui-fg)/85">
+                    {readmeSummary(payload?.readme)}
+                  </pre>
+                ) : null}
+                {!error && !loading && !readmeSummary(payload?.readme) ? (
+                  <p className="text-[length:var(--fs-sm)] text-(--ui-muted)">
+                    No README content was returned for this model.
+                  </p>
+                ) : null}
+              </div>
+            </div>
+          </section>
+
+          <aside className="space-y-4">
+            <MetadataPanel payload={payload} model={model} />
+            <QuantPanel variants={variants} />
+            <FilesPanel payload={payload} />
+          </aside>
+        </div>
+      </div>
+    </UiModal>
+  );
+}
+
+function MetadataPanel({
+  payload,
+  model,
+}: {
+  payload: HuggingFaceModelCardPayload | null;
+  model: HuggingFaceModel;
+}) {
+  const rows = [
+    ["Author", payload?.author ?? model.author ?? model.modelId.split("/")[0]],
+    ["Updated", formatDate(payload?.lastModified ?? model.lastModified)],
+    ["Created", formatDate(payload?.createdAt ?? model.createdAt)],
+    ["Revision", payload?.sha ? payload.sha.slice(0, 10) : "main"],
+  ];
+  return (
+    <Panel title="Repository">
+      {rows.map(([label, value]) => (
+        <div
+          key={label}
+          className="flex items-baseline justify-between gap-3 text-[length:var(--fs-sm)]"
+        >
+          <span className="text-(--ui-muted)">{label}</span>
+          <span className="min-w-0 truncate text-right font-mono text-(--ui-fg)">{value}</span>
+        </div>
+      ))}
+    </Panel>
+  );
+}
+
+function QuantPanel({ variants }: { variants: HuggingFaceModel[] }) {
+  const quantized = variants.filter((variant) => quantizationLabels(variant).length > 0);
+  return (
+    <Panel title="Quantizations">
+      {quantized.length ? (
+        <div className="space-y-2">
+          {quantized.slice(0, 10).map((variant) => (
+            <div key={variant._id} className="min-w-0">
+              <div
+                className="truncate text-[length:var(--fs-sm)] text-(--ui-fg)"
+                title={variant.modelId}
+              >
+                {variant.modelId}
+              </div>
+              <div className="mt-1 flex flex-wrap gap-1">
+                {quantizationLabels(variant).map((label) => (
+                  <StatusPill key={label} tone="warning" variant="badge">
+                    {label}
+                  </StatusPill>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="text-[length:var(--fs-sm)] text-(--ui-muted)">
+          No quantized variants were grouped under this original.
+        </p>
+      )}
+    </Panel>
+  );
+}
+
+function FilesPanel({ payload }: { payload: HuggingFaceModelCardPayload | null }) {
+  const files = (payload?.siblings ?? []).filter((file) => file.rfilename).slice(0, 8);
+  if (!files.length) return null;
+  return (
+    <Panel title="Files">
+      <div className="space-y-1.5">
+        {files.map((file) => (
+          <div
+            key={file.rfilename}
+            className="flex items-center justify-between gap-2 text-[length:var(--fs-sm)]"
+          >
+            <span className="min-w-0 truncate font-mono text-(--ui-fg)" title={file.rfilename}>
+              {file.rfilename}
+            </span>
+            {typeof file.size === "number" ? (
+              <span className="shrink-0 text-(--ui-muted)">{formatBytes(file.size)}</span>
+            ) : null}
+          </div>
+        ))}
+      </div>
+    </Panel>
+  );
+}
+
+function Panel({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section className="rounded-md border border-(--ui-border) bg-(--ui-surface) p-3">
+      <h3 className="mb-2 text-[length:var(--fs-sm)] font-medium text-(--ui-fg)">{title}</h3>
+      <div className="space-y-2">{children}</div>
+    </section>
+  );
+}
+
+function readmeSummary(readme?: string): string {
+  if (!readme) return "";
+  return readme
+    .replace(/^---[\s\S]*?---\s*/m, "")
+    .replace(/<[^>]+>/g, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim()
+    .slice(0, 6000);
+}
+
+function formatDate(value?: string): string {
+  if (!value) return "unknown";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "unknown";
+  return date.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+}
+
+const getModelCardSnapshot = (): number => 0;

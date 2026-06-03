@@ -14,7 +14,7 @@ import {
   Pause,
   Play,
 } from "lucide-react";
-import { Button, StatusPill, TCell, TRow } from "@/ui";
+import { Button, ModelLogo, StatusPill, TCell, TRow } from "@/ui";
 import type { HuggingFaceModel, ModelDownload } from "@/lib/types";
 import { formatNumber } from "@/lib/formatters";
 import { resolveModelRowView, type ModelRowDownloadAction } from "./model-row-model";
@@ -33,6 +33,7 @@ interface ModelRowProps {
   expanded?: boolean;
   onToggleExpand?: () => void;
   child?: boolean;
+  onOpenModelCard?: () => void;
 }
 
 export const ModelRow = memo(function ModelRow({
@@ -49,6 +50,7 @@ export const ModelRow = memo(function ModelRow({
   expanded = false,
   onToggleExpand,
   child = false,
+  onOpenModelCard,
 }: ModelRowProps) {
   const view = useMemo(
     () =>
@@ -64,7 +66,11 @@ export const ModelRow = memo(function ModelRow({
   );
 
   return (
-    <TRow className={view.rowClasses}>
+    <TRow
+      className={view.rowClasses}
+      onClick={onOpenModelCard}
+      interactive={Boolean(onOpenModelCard)}
+    >
       <TCell className="px-4 py-3">
         <div className={`flex items-center gap-2 ${child ? "pl-5" : ""}`}>
           {view.hasVariants && !child && (
@@ -72,7 +78,10 @@ export const ModelRow = memo(function ModelRow({
               variant="icon"
               size="sm"
               type="button"
-              onClick={onToggleExpand}
+              onClick={(event) => {
+                event.stopPropagation();
+                onToggleExpand?.();
+              }}
               className="shrink-0"
               title={expanded ? "Collapse variants" : "Expand variants"}
             >
@@ -83,13 +92,17 @@ export const ModelRow = memo(function ModelRow({
               )}
             </Button>
           )}
+          <ModelLogo modelId={model.modelId} author={model.author} size="sm" />
           <div className="text-sm font-medium text-(--fg) truncate max-w-xs" title={model.modelId}>
             {model.modelId}
           </div>
           <Button
             variant="icon"
             size="sm"
-            onClick={() => onCopyModelId(model.modelId)}
+            onClick={(event) => {
+              event.stopPropagation();
+              onCopyModelId(model.modelId);
+            }}
             className="shrink-0"
             title="Copy model ID"
           >
@@ -101,7 +114,9 @@ export const ModelRow = memo(function ModelRow({
           </Button>
         </div>
         {view.variantLabel && (
-          <div className="text-[length:var(--fs-sm)] text-(--dim) mt-1 pl-7">{view.variantLabel}</div>
+          <div className="text-[length:var(--fs-sm)] text-(--dim) mt-1 pl-7">
+            {view.variantLabel}
+          </div>
         )}
       </TCell>
       <TCell className="px-4 py-3">
@@ -143,7 +158,7 @@ export const ModelRow = memo(function ModelRow({
           </div>
         </div>
       </TCell>
-      <TCell align="right" className="px-4 py-3">
+      <TCell align="right" className="px-4 py-3" onClick={(event) => event.stopPropagation()}>
         <a
           href={view.modelUrl}
           target="_blank"
@@ -154,7 +169,7 @@ export const ModelRow = memo(function ModelRow({
           <ExternalLink className="h-4 w-4" />
         </a>
       </TCell>
-      <TCell align="right" className="px-4 py-3">
+      <TCell align="right" className="px-4 py-3" onClick={(event) => event.stopPropagation()}>
         <DownloadAction
           action={view.downloadAction}
           onPauseDownload={onPauseDownload}

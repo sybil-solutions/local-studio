@@ -1,4 +1,5 @@
 import { QUANTIZATION_TAGS } from "./config";
+import { normalizeModelId as normalizeHfModelId, quantizationLabels } from "@/lib/huggingface";
 
 export function extractProvider(modelId: string): string {
   const parts = modelId.split("/");
@@ -9,20 +10,14 @@ export function extractProvider(modelId: string): string {
 }
 
 export function extractQuantizations(tags: string[]): string[] {
-  const quantizations: string[] = [];
+  const labels = quantizationLabels({ modelId: "", tags });
+  if (labels.length) return labels;
   const tagLower = tags.map((t) => t.toLowerCase());
-
-  for (const quant of QUANTIZATION_TAGS) {
-    if (tagLower.includes(quant.toLowerCase())) {
-      quantizations.push(quant.toUpperCase());
-    }
-  }
-
-  return quantizations;
+  return QUANTIZATION_TAGS.filter((quant) => tagLower.includes(quant.toLowerCase())).map((quant) =>
+    quant.toUpperCase(),
+  );
 }
 
 export function normalizeModelId(modelId: string): string {
-  return modelId
-    .toLowerCase()
-    .replace(/[-_](awq|gptq|gguf|exl2|fp8|fp16|bf16|int8|int4|w4a16|w8a16)[-_]?/gi, "");
+  return normalizeHfModelId(modelId);
 }

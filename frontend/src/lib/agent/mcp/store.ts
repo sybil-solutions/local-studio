@@ -20,9 +20,11 @@ type StoreFile = {
   servers: McpServerEntry[];
   /** Builtin server ids the user has explicitly disabled. */
   disabledBuiltins: string[];
+  /** User labels for builtin + stored servers. */
+  serverTags: Record<string, string[]>;
 };
 
-const EMPTY_STORE: StoreFile = { version: 1, servers: [], disabledBuiltins: [] };
+const EMPTY_STORE: StoreFile = { version: 1, servers: [], disabledBuiltins: [], serverTags: {} };
 
 function mcpRoot(): string {
   const root = path.join(resolveDataDir(), "mcp");
@@ -42,6 +44,7 @@ function readStore(): StoreFile {
       version: 1,
       servers: Array.isArray(parsed.servers) ? parsed.servers : [],
       disabledBuiltins: Array.isArray(parsed.disabledBuiltins) ? parsed.disabledBuiltins : [],
+      serverTags: isRecord(parsed.serverTags) ? normalizeTagsRecord(parsed.serverTags) : {},
     };
   } catch {
     return { ...EMPTY_STORE };
@@ -96,6 +99,11 @@ export function disabledBuiltinIds(): Set<string> {
   return new Set(readStore().disabledBuiltins);
 }
 
+/** User labels attached to builtin + stored servers. */
+export function serverTags(): Record<string, string[]> {
+  return readStore().serverTags;
+}
+
 /**
  * Add or update a user server. Always (re)materializes its `.mcp.json`. Returns
  * the stored entry. `id` collision overwrites in place (edit).
@@ -143,4 +151,46 @@ export function setServerEnabled(id: string, enabled: boolean, isBuiltin: boolea
   if (!entry) return;
   entry.enabled = enabled;
   writeStore(store);
+}
+
+export function setServerTags(id: string, tags: string[]): void {
+  const store = readStore();
+  const normalized = normalizeTags(tags);
+  if (normalized.length) {
+    store.serverTags[id] = normalized;
+  } else {
+    delete store.serverTags[id];
+  }
+  const entry = store.servers.find((existing) => existing.def.id === id);
+  if (entry) {
+    if (normalized.length) entry.def.tags = normalized;
+    else delete entry.def.tags;
+  }
+  writeStore(store);
+}
+
+function normalizeTags(tags: string[]): string[] {
+  const seen = new Set<string>();
+  for (const tag of tags) {
+    const normalized = tag
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9_.-]+/g, "-")
+      .replace(/^-+|-+$/g, "");
+    if (normalized) seen.add(normalized);
+  }
+  return [...seen].slice(0, 8);
+}
+
+function normalizeTagsRecord(value: Record<string, unknown>): Record<string, string[]> {
+  const out: Record<string, string[]> = {};
+  for (const [key, raw] of Object.entries(value)) {
+    if (Array.isArray(raw))
+      out[key] = normalizeTags(raw.filter((item): item is string => typeof item === "string"));
+  }
+  return out;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }

@@ -17,6 +17,7 @@ export type McpServerDef = {
   description?: string;
   shortDescription?: string;
   category?: string;
+  tags?: string[];
   transport: "stdio";
   command: string;
   args?: string[];
@@ -48,6 +49,11 @@ export type McpCatalogueEntry = {
   category: string;
   command: string;
   args?: string[];
+  tags?: string[];
+  registry?: "curated" | "glama";
+  registryUrl?: string;
+  repositoryUrl?: string;
+  attributes?: string[];
   /** Default env keys (value may be a placeholder the user replaces). */
   env?: Record<string, string>;
   /** Which env keys are mandatory before the server can launch. */

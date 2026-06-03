@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useRef, useState, useSyncExternalStore } from "react";
+import type { HuggingFaceModel } from "@/lib/types";
 import {
   DownloadStatusSection,
   ExploreControls,
@@ -9,6 +10,7 @@ import {
 import { useExplore } from "./use-explore";
 import { useDownloads } from "@/hooks/use-downloads";
 import api from "@/lib/api";
+import { HuggingFaceModelCardModal } from "@/ui";
 
 export function ExploreTab() {
   const {
@@ -37,6 +39,10 @@ export function ExploreTab() {
   } = useDownloads();
   const [expandedKeys, setExpandedKeys] = useState<Set<string>>(new Set());
   const [localModelIds, setLocalModelIds] = useState<Set<string>>(new Set());
+  const [selectedModelCard, setSelectedModelCard] = useState<{
+    model: HuggingFaceModel;
+    variants: HuggingFaceModel[];
+  } | null>(null);
   const completedSet = useRef<Set<string>>(new Set());
 
   const loadLocalModels = useCallback(async () => {
@@ -151,6 +157,13 @@ export function ExploreTab() {
         pauseDownload={handlePause}
         resumeDownload={handleResume}
         loadMore={loadMore}
+        openModelCard={(model, variants) => setSelectedModelCard({ model, variants })}
+      />
+      <HuggingFaceModelCardModal
+        open={Boolean(selectedModelCard)}
+        model={selectedModelCard?.model ?? null}
+        variants={selectedModelCard?.variants ?? []}
+        onClose={() => setSelectedModelCard(null)}
       />
     </div>
   );

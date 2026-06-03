@@ -11,7 +11,7 @@ import {
 } from "lucide-react";
 import type { HuggingFaceModel, ModelDownload } from "@/lib/types";
 import { formatBytes, formatNumber } from "@/lib/formatters";
-import { ModelButton, ModelRow, ModelStatus, type ModelStatusTone } from "@/ui";
+import { ModelButton, ModelLogo, ModelRow, ModelStatus, type ModelStatusTone } from "@/ui";
 import { extractProvider, extractQuantizations } from "@/ui/discover/utils";
 
 function ExploreVramCell({ needGb, poolGb }: { needGb: number | null; poolGb: number }) {
@@ -53,6 +53,7 @@ export const ExploreModelRow = memo(function ExploreModelRow({
   displayLikes,
   weightEstimateGb,
   pooledVramGb,
+  onOpenModelCard,
 }: {
   model: HuggingFaceModel;
   isLocal: boolean;
@@ -70,6 +71,7 @@ export const ExploreModelRow = memo(function ExploreModelRow({
   displayLikes?: number;
   weightEstimateGb?: number | null;
   pooledVramGb: number;
+  onOpenModelCard?: () => void;
 }) {
   const provider = useMemo(() => extractProvider(model.modelId), [model.modelId]);
   const quants = useMemo(() => extractQuantizations(model.tags), [model.tags]);
@@ -87,14 +89,20 @@ export const ExploreModelRow = memo(function ExploreModelRow({
     <ModelRow
       label={rowLabel(model.modelId, child)}
       description={rowDescription(provider, variantCount, child)}
+      onClick={onOpenModelCard}
       value={
-        <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-[length:var(--fs-md)] text-(--dim)">
-          <span className="font-mono text-(--fg)">
-            {quants.length ? quants.join(", ") : "format unknown"}
-          </span>
-          <ExploreVramCell needGb={weightEstimateGb ?? null} poolGb={pooledVramGb} />
-          <span>{formatNumber(displayDownloads ?? model.downloads)} downloads</span>
-          <span>{formatNumber(displayLikes ?? model.likes)} likes</span>
+        <div className="flex min-w-0 items-center gap-3">
+          <ModelLogo modelId={model.modelId} author={model.author} size={child ? "sm" : "md"} />
+          <div className="min-w-0">
+            <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-[length:var(--fs-md)] text-(--dim)">
+              <span className="font-mono text-(--fg)">
+                {quants.length ? quants.join(", ") : child ? "derivative" : "original"}
+              </span>
+              <ExploreVramCell needGb={weightEstimateGb ?? null} poolGb={pooledVramGb} />
+              <span>{formatNumber(displayDownloads ?? model.downloads)} downloads</span>
+              <span>{formatNumber(displayLikes ?? model.likes)} likes</span>
+            </div>
+          </div>
         </div>
       }
       status={<ModelStatus tone={download.tone}>{download.label}</ModelStatus>}
@@ -247,5 +255,5 @@ function rowLabel(modelId: string, child?: boolean) {
 }
 
 function rowDescription(provider: string, variantCount: number, child?: boolean) {
-  return `${provider}${variantCount > 1 && !child ? ` · ${variantCount} variants` : ""}`;
+  return `${provider}${variantCount > 1 && !child ? ` · ${variantCount - 1} quantized variants` : ""}`;
 }

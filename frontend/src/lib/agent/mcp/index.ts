@@ -6,7 +6,9 @@ export {
   upsertServer,
   removeServer,
   setServerEnabled,
+  setServerTags,
   serverConfigPath,
+  serverTags,
   disabledBuiltinIds,
 } from "./store";
 export type { McpServerDef, McpServerEntry, McpServerSource, McpCatalogueEntry } from "./types";

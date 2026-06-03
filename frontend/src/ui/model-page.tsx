@@ -14,6 +14,8 @@ type ModelRowProps = {
   status?: ReactNode;
   actions?: ReactNode;
   children?: ReactNode;
+  className?: string;
+  onClick?: () => void;
 };
 
 export function ModelSection({
@@ -51,26 +53,73 @@ export function ModelRow({
   status,
   actions,
   children,
+  className,
+  onClick,
 }: ModelRowProps) {
+  const interactive = Boolean(onClick);
   return (
-    <div className="group px-1 py-2.5 transition-colors hover:bg-(--ui-hover)/35">
+    <div
+      className={cx(
+        "group px-1 py-2.5 transition-colors hover:bg-(--ui-hover)/35",
+        interactive
+          ? "cursor-pointer rounded-md focus:outline-none focus:ring-1 focus:ring-(--ui-info)/45"
+          : "",
+        className,
+      )}
+      onClick={onClick}
+      onKeyDown={
+        interactive
+          ? (event) => {
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                onClick?.();
+              }
+            }
+          : undefined
+      }
+      role={interactive ? "button" : undefined}
+      tabIndex={interactive ? 0 : undefined}
+    >
       <div className="grid min-h-7 grid-cols-1 gap-2 md:grid-cols-[minmax(150px,0.44fr)_minmax(0,1fr)] md:items-center md:gap-5">
         <div className="min-w-0">
-          <div className="truncate text-[length:var(--fs-md)] font-medium text-(--ui-fg)" title={label}>
+          <div
+            className="truncate text-[length:var(--fs-md)] font-medium text-(--ui-fg)"
+            title={label}
+          >
             {label}
           </div>
           {description ? (
-            <div className="mt-0.5 truncate text-[length:var(--fs-sm)] text-(--ui-muted)" title={description}>
+            <div
+              className="mt-0.5 truncate text-[length:var(--fs-sm)] text-(--ui-muted)"
+              title={description}
+            >
               {description}
             </div>
           ) : null}
         </div>
         <div className="flex min-w-0 items-center justify-between gap-3">
-          <div className="min-w-0 flex-1">
+          <div
+            className="min-w-0 flex-1"
+            onClick={control && interactive ? (event) => event.stopPropagation() : undefined}
+          >
             {control ?? value ?? <ModelValue dim>Not reported yet</ModelValue>}
           </div>
-          {status ? <div className="shrink-0">{status}</div> : null}
-          {actions ? <div className="flex shrink-0 items-center gap-1">{actions}</div> : null}
+          {status ? (
+            <div
+              className="shrink-0"
+              onClick={interactive ? (event) => event.stopPropagation() : undefined}
+            >
+              {status}
+            </div>
+          ) : null}
+          {actions ? (
+            <div
+              className="flex shrink-0 items-center gap-1"
+              onClick={interactive ? (event) => event.stopPropagation() : undefined}
+            >
+              {actions}
+            </div>
+          ) : null}
         </div>
       </div>
       {children ? <div className="mt-2 md:ml-[calc(150px+1.25rem)]">{children}</div> : null}

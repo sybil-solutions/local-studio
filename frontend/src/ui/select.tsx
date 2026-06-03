@@ -32,7 +32,7 @@ const Select = forwardRef<HTMLSelectElement, SelectProps>(function Select(
       <select
         ref={ref}
         id={selectId}
-        className={`w-full rounded-lg border border-(--ui-border) bg-(--ui-bg) px-3 py-2 text-sm text-(--ui-fg) transition-all focus:border-(--ui-accent) focus:outline-none focus:ring-1 focus:ring-(--ui-accent)/20 ${className}`}
+        className={`h-8 w-full rounded-md border border-(--ui-separator) bg-(--ui-bg) px-2.5 text-[length:var(--fs-base)] text-(--ui-fg) transition-all focus:border-(--ui-info)/50 focus:outline-none focus:ring-1 focus:ring-(--ui-info)/20 ${className}`}
         {...props}
       >
         {placeholder && <option value="">{placeholder}</option>}

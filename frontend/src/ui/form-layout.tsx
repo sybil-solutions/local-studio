@@ -16,12 +16,17 @@ export function FormSection({
   className?: string;
 }) {
   return (
-    <section className={cx("space-y-4", className)}>
-      <div className="flex items-center gap-2 border-b border-(--ui-border)/50 pb-2 text-(--ui-fg)">
-        {icon ? <span className="text-(--ui-accent)">{icon}</span> : null}
-        <span className="text-sm font-medium">{title}</span>
+    <section
+      className={cx(
+        "overflow-hidden rounded-md border border-(--ui-border) bg-(--ui-surface)",
+        className,
+      )}
+    >
+      <div className="flex h-9 items-center gap-2 border-b border-(--ui-border) px-3 text-(--ui-fg)">
+        {icon ? <span className="text-(--ui-info)">{icon}</span> : null}
+        <span className="text-[length:var(--fs-sm)] font-medium">{title}</span>
       </div>
-      {children}
+      {children ? <div className="space-y-3 p-3">{children}</div> : null}
     </section>
   );
 }
@@ -40,7 +45,12 @@ export function CheckboxRow({
   className?: string;
 }) {
   return (
-    <div className={cx("rounded-md border border-(--ui-border) bg-(--ui-bg) p-3", className)}>
+    <div
+      className={cx(
+        "rounded-md border border-(--ui-separator) bg-(--ui-bg) p-2.5 transition-colors hover:bg-(--ui-hover)/25",
+        className,
+      )}
+    >
       <Checkbox
         checked={checked}
         onChange={onChange}

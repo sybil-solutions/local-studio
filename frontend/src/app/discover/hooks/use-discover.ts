@@ -3,6 +3,7 @@
 import { useCallback, useMemo, useState, useSyncExternalStore } from "react";
 import api from "@/lib/api";
 import type { HuggingFaceModel, ModelInfo, ModelRecommendation } from "@/lib/types";
+import { fetchHuggingFaceModels } from "@/lib/huggingface-client";
 import { extractProvider, extractQuantizations, normalizeModelId } from "@/ui/discover/utils";
 
 export function useDiscover() {
@@ -15,7 +16,7 @@ export function useDiscover() {
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [task, setTask] = useState("text-generation");
-  const [sort, setSort] = useState("trending");
+  const [sort, setSort] = useState("likes");
   const [library, setLibrary] = useState("");
   const [showFilters, setShowFilters] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -105,14 +106,7 @@ export function useDiscover() {
         params.set("full", "false");
         params.set("offset", String(append ? page * PAGE_SIZE : 0));
 
-        const response = await fetch(`/api/proxy/v1/huggingface/models?${params.toString()}`);
-        if (!response.ok) {
-          const errorData = await response
-            .json()
-            .catch(() => ({ detail: "Failed to fetch models" }));
-          throw new Error(errorData.detail || "Failed to fetch models");
-        }
-        const data = await response.json();
+        const data = await fetchHuggingFaceModels(params);
 
         if (append) {
           setModels((prev) => [...prev, ...data]);

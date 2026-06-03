@@ -31,7 +31,7 @@ const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
         <input
           ref={ref}
           id={inputId}
-          className={`w-full rounded-lg border border-(--ui-border) bg-(--ui-bg) px-3 py-2 text-sm text-(--ui-fg) transition-all placeholder:text-(--ui-muted)/50 focus:border-(--ui-accent) focus:outline-none focus:ring-1 focus:ring-(--ui-accent)/20 ${icon ? "pl-10" : ""} ${error ? "border-(--ui-danger)" : ""} ${className}`}
+          className={`h-8 w-full rounded-md border border-(--ui-separator) bg-(--ui-bg) px-2.5 text-[length:var(--fs-base)] text-(--ui-fg) transition-all placeholder:text-(--ui-muted)/50 focus:border-(--ui-info)/50 focus:outline-none focus:ring-1 focus:ring-(--ui-info)/20 ${icon ? "pl-9" : ""} ${error ? "border-(--ui-danger)" : ""} ${className}`}
           {...props}
         />
       </div>

@@ -3,6 +3,14 @@
 import { useCallback, useMemo, useState, useSyncExternalStore } from "react";
 import api from "@/lib/api";
 import type { GPU, HuggingFaceModel, ModelRecommendation } from "@/lib/types";
+import { fetchHuggingFaceModels } from "@/lib/huggingface-client";
+import {
+  engagementTier,
+  isDerivativeModel,
+  modelFamilyName,
+  modelRecencyMs,
+  originalModelKey,
+} from "@/lib/huggingface";
 import {
   filterRecommendationsWithinPool,
   hasHfEngagementStats,
@@ -11,12 +19,7 @@ import {
   sumGpuMemoryPoolGb,
 } from "@/ui/recipes/recipes-content/explore-eligibility";
 import { readExplorePoolOverrideGb, writeExplorePoolOverrideGb } from "./explore-pool-storage";
-import {
-  modelRecencyMs,
-  resolveGroupNeedGb,
-} from "@/ui/recipes/recipes-content/explore-model-stats";
-
-import { normalizeModelId } from "@/ui/discover/utils";
+import { resolveGroupNeedGb } from "@/ui/recipes/recipes-content/explore-model-stats";
 
 export interface ModelGroup {
   key: string;
@@ -27,6 +30,7 @@ export interface ModelGroup {
   maxLikes: number;
   lastModifiedMs: number;
   needGb: number | null;
+  tier: "heavy" | "warm" | "fresh";
 }
 
 function groupPassesExploreFilters(group: ModelGroup, search: string): boolean {
@@ -34,12 +38,12 @@ function groupPassesExploreFilters(group: ModelGroup, search: string): boolean {
   // When the user searches, relevance matters more than the Explore recency gate;
   // otherwise well-known models disappear and the page looks broken.
   if (search.trim().length > 0) return true;
+  if (group.tier === "heavy" || group.tier === "warm") return true;
   return isRecentlyCreatedOnHf(group.lead);
 }
 
 export function exploreGroupKey(modelId: string): string {
-  const normalized = normalizeModelId(modelId) || modelId.toLowerCase();
-  return normalized.split("/").filter(Boolean).pop() ?? normalized;
+  return modelFamilyName(modelId) || modelId.toLowerCase();
 }
 
 export function derivativeScore(model: HuggingFaceModel, search: string): number {
@@ -122,17 +126,12 @@ export function useExplore() {
         const params = new URLSearchParams();
         if (search) params.set("search", search);
         params.set("filter", "text-generation");
-        params.set("sort", search.trim().length > 0 ? "downloads" : "trending");
+        params.set("sort", search.trim().length > 0 ? "downloads" : "likes");
         params.set("limit", String(PAGE_SIZE));
         params.set("full", "false");
         params.set("offset", String(pageIndex * PAGE_SIZE));
 
-        const response = await fetch(`/api/proxy/v1/huggingface/models?${params.toString()}`);
-        if (!response.ok) {
-          const errorData = await response.json().catch(() => ({ detail: "Failed to fetch" }));
-          throw new Error(errorData.detail || "Failed to fetch");
-        }
-        const data = (await response.json()) as HuggingFaceModel[];
+        const data = await fetchHuggingFaceModels(params);
 
         if (append) {
           setModels((prev) => [...prev, ...data]);
@@ -197,7 +196,7 @@ export function useExplore() {
     const seen = new Set<string>();
 
     for (const model of models) {
-      const key = exploreGroupKey(model.modelId);
+      const key = originalModelKey(model);
       const existing = groups.get(key);
       if (existing) {
         existing.push(model);
@@ -212,8 +211,8 @@ export function useExplore() {
 
     return Array.from(groups.entries()).map(([key, variants]) => {
       const sorted = [...variants].sort((a, b) => {
-        const derivativeDelta = derivativeScore(a, search) - derivativeScore(b, search);
-        if (derivativeDelta !== 0) return derivativeDelta;
+        const leadDelta = leadPreferenceScore(a, search) - leadPreferenceScore(b, search);
+        if (leadDelta !== 0) return leadDelta;
         const tm = modelRecencyMs(b) - modelRecencyMs(a);
         if (tm !== 0) return tm;
         if (b.downloads !== a.downloads) return b.downloads - a.downloads;
@@ -224,7 +223,8 @@ export function useExplore() {
       const maxLikes = sorted.reduce((m, v) => Math.max(m, v.likes), 0);
       const lastModifiedMs = sorted.reduce((m, v) => Math.max(m, modelRecencyMs(v)), 0);
       const needGb = resolveGroupNeedGb(key, recByKey, lead);
-      return { key, lead, variants: sorted, maxDownloads, maxLikes, lastModifiedMs, needGb };
+      const tier = engagementTier(maxLikes, maxDownloads);
+      return { key, lead, variants: sorted, maxDownloads, maxLikes, lastModifiedMs, needGb, tier };
     });
   }, [models, recByKey, search]);
 
@@ -235,12 +235,11 @@ export function useExplore() {
       if (aSpot && !bSpot) return -1;
       if (!aSpot && bSpot) return 1;
 
+      if (b.maxLikes !== a.maxLikes) return b.maxLikes - a.maxLikes;
       const ta = a.lastModifiedMs;
       const tb = b.lastModifiedMs;
       if (tb !== ta) return tb - ta;
-
       if (b.maxDownloads !== a.maxDownloads) return b.maxDownloads - a.maxDownloads;
-      if (b.maxLikes !== a.maxLikes) return b.maxLikes - a.maxLikes;
 
       if (poolGb > 0) {
         const ea = a.needGb;
@@ -289,6 +288,14 @@ export function useExplore() {
     loadMore,
     refresh,
   };
+}
+
+function leadPreferenceScore(model: HuggingFaceModel, search: string): number {
+  let score = derivativeScore(model, search);
+  if (isDerivativeModel(model)) score += 100;
+  if (model.likes >= 1000) score -= 10;
+  if (model.likes >= 250) score -= 4;
+  return score;
 }
 
 const getExploreSnapshot = (): number => 0;

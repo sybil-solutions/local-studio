@@ -77,6 +77,9 @@ export { ColorField } from "./color-field";
 export { StatusDot, StatusPill } from "./status";
 export type { UiTone, StatusPillVariant } from "./status";
 
+export { ModelLogo } from "./model-logo";
+export { HuggingFaceModelCardModal } from "./huggingface-model-card";
+
 export { LeftSidebar } from "./left-sidebar";
 export { ModelStopConfirm } from "./model-stop-confirm";
 export {

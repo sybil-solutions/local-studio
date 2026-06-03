@@ -1,6 +1,6 @@
 import { ExternalLink, RefreshCw, Search } from "lucide-react";
 import { ModelButton, ModelSection, ModelInput, ModelRow, ModelValue, ModelStatus } from "@/ui";
-import type { ModelDownload } from "@/lib/types";
+import type { HuggingFaceModel } from "@/lib/types";
 import { ExploreModelRow } from "./explore-model-row";
 import { estimateRoughWeightsGb } from "./explore-model-stats";
 import type { ModelGroup } from "./use-explore";
@@ -231,6 +231,7 @@ export function ExploreResultsSection({
   pauseDownload,
   resumeDownload,
   loadMore,
+  openModelCard,
 }: {
   groups: ModelGroup[];
   expandedKeys: Set<string>;
@@ -247,11 +248,12 @@ export function ExploreResultsSection({
   pauseDownload: (id: string) => void;
   resumeDownload: (id: string) => void;
   loadMore: () => void;
+  openModelCard: (model: HuggingFaceModel, variants: HuggingFaceModel[]) => void;
 }) {
   return (
     <ModelSection
       title="Model results"
-      description="Rows preserve provider, format, VRAM fit, engagement, download state, and source link."
+      description="Original models stay at the top level; quantized derivatives appear only after expanding an original. Click any row for the model card."
       actions={
         <ModelStatus tone={groups.length ? "good" : error ? "warning" : "default"}>
           {groups.length ? `${groups.length} models` : "defaults"}
@@ -272,6 +274,7 @@ export function ExploreResultsSection({
               startDownload,
               pauseDownload,
               resumeDownload,
+              openModelCard,
             }),
           )
         : fallbackRows(search, loading)}
@@ -320,6 +323,7 @@ function exploreGroupRows({
   startDownload,
   pauseDownload,
   resumeDownload,
+  openModelCard,
 }: {
   group: ModelGroup;
   expanded: boolean;
@@ -331,6 +335,7 @@ function exploreGroupRows({
   startDownload: (modelId: string) => void;
   pauseDownload: (id: string) => void;
   resumeDownload: (id: string) => void;
+  openModelCard: (model: HuggingFaceModel, variants: HuggingFaceModel[]) => void;
 }) {
   const rows = [
     <ExploreModelRow
@@ -349,6 +354,7 @@ function exploreGroupRows({
       displayLikes={group.maxLikes}
       weightEstimateGb={group.needGb}
       pooledVramGb={maxVramGb}
+      onOpenModelCard={() => openModelCard(group.lead, group.variants)}
     />,
   ];
   if (!expanded) return rows;
@@ -370,6 +376,7 @@ function exploreGroupRows({
           child
           weightEstimateGb={estimateRoughWeightsGb(variant)}
           pooledVramGb={maxVramGb}
+          onOpenModelCard={() => openModelCard(variant, group.variants)}
         />
       )),
   );
