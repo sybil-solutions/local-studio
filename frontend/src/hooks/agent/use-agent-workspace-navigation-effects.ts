@@ -24,10 +24,11 @@ export function requestWorkspaceUrlNavigation({
   const projectId = searchParams.get("project");
   const sessionId = searchParams.get("session");
   const newParam = searchParams.get("new");
+  const openParam = searchParams.get("open");
   const splitParam = searchParams.get("split");
   const key =
-    projectId || sessionId || newParam
-      ? `${projectId ?? ""}|${sessionId ?? ""}|${newParam ?? ""}|${splitParam ?? ""}`
+    projectId || sessionId || newParam || openParam
+      ? `${projectId ?? ""}|${sessionId ?? ""}|${newParam ?? ""}|${openParam ?? ""}|${splitParam ?? ""}`
       : "";
   if (!key || lastHandledNavKey === key) return;
 

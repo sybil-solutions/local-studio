@@ -35,6 +35,7 @@ export function useTimelineScrollEffects({
   const onChangeRef = useRef(onStickToBottomChange);
   const programmaticScrollUntilRef = useRef(0);
   const userScrollIntentUntilRef = useRef(0);
+  const lastScrollTopRef = useRef(0);
 
   // Mirror prop + callback into refs in the commit phase (never during render).
   const subscribeStickRef = useCallback(() => {
@@ -56,6 +57,7 @@ export function useTimelineScrollEffects({
     const pinToBottom = () => {
       programmaticScrollUntilRef.current = Date.now() + 200;
       el.scrollTop = el.scrollHeight;
+      lastScrollTopRef.current = el.scrollTop;
     };
     const setStick = (next: boolean) => {
       if (stickRef.current === next) return;
@@ -84,14 +86,20 @@ export function useTimelineScrollEffects({
       userScrollIntentUntilRef.current = Date.now() + 300;
     };
     const onScroll = () => {
-      if (Date.now() < programmaticScrollUntilRef.current) return;
+      const now = Date.now();
+      const previousScrollTop = lastScrollTopRef.current;
+      lastScrollTopRef.current = el.scrollTop;
+      if (now < programmaticScrollUntilRef.current) return;
       if (atBottom()) {
         setStick(true);
         return;
       }
-      if (Date.now() < userScrollIntentUntilRef.current) setStick(false);
+      if (now < userScrollIntentUntilRef.current || el.scrollTop < previousScrollTop - 1) {
+        setStick(false);
+      }
     };
     const onUserLayoutChange = () => {
+      userScrollIntentUntilRef.current = Date.now() + 2_000;
       setStick(false);
     };
     let touchY: number | null = null;
@@ -129,6 +137,7 @@ export function useTimelineScrollEffects({
         ? null
         : new IntersectionObserver(
             (entries) => {
+              if (Date.now() < userScrollIntentUntilRef.current) return;
               if (entries.some((entry) => entry.isIntersecting)) setStick(true);
             },
             { root: el, rootMargin: `0px 0px ${AT_BOTTOM_THRESHOLD_PX}px 0px` },
@@ -158,6 +167,7 @@ export function useTimelineScrollEffects({
     mutationObserver?.observe(listEl, { childList: true, subtree: true, characterData: true });
 
     // Initial alignment.
+    lastScrollTopRef.current = el.scrollTop;
     if (stickRef.current) pinToBottom();
 
     return () => {
@@ -189,6 +199,7 @@ export function useTimelineScrollEffects({
     ) {
       programmaticScrollUntilRef.current = Date.now() + 200;
       el.scrollTop = el.scrollHeight;
+      lastScrollTopRef.current = el.scrollTop;
     }
     return () => undefined;
   }, [stickToBottom, scrollerRef]);

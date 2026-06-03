@@ -30,7 +30,11 @@ import { ComputerStatusPanel } from "./computer-status-panel";
 import { FilesystemPanel } from "./filesystem-panel";
 import { GitDiffPanel } from "./git-diff-panel";
 import { PluginsPanel } from "./plugins-panel";
-import { TerminalPanel } from "./terminal-panel";
+import {
+  PersistentTerminals,
+  uniqueTerminalKeys,
+  type TerminalOwner,
+} from "./persistent-terminals";
 import type { WorkspaceHandles } from "./use-workspace";
 
 type AgentBrowserPanelHandles = Pick<
@@ -56,12 +60,6 @@ type AgentBrowserPanelProps = {
     deletions: number;
     statusCount: number;
   } | null;
-};
-
-type TerminalOwner = {
-  key: string;
-  sessionId: string | null;
-  cwd: string | null;
 };
 
 function createSideChatSession(
@@ -98,18 +96,20 @@ export function AgentBrowserPanel({
   const isElectron = typeof navigator !== "undefined" && /electron/i.test(navigator.userAgent);
   const terminalOwner = useMemo<TerminalOwner | null>(() => {
     if (focusedSession) {
+      const sessionKey = `session:${focusedSession.id}`;
+      const piKey = focusedSession.piSessionId ? `pi:${focusedSession.piSessionId}` : null;
       return {
-        key: `session:${focusedSession.id}`,
-        sessionId: focusedSession.id,
+        mountKey: sessionKey,
+        matchKeys: uniqueTerminalKeys([sessionKey, piKey ?? ""]),
         cwd: activeProject?.path ?? focusedSession.cwd ?? null,
       };
     }
     if (activeProject) {
-      return { key: `project:${activeProject.id}`, sessionId: null, cwd: activeProject.path };
+      const projectKey = `project:${activeProject.id}`;
+      return { mountKey: projectKey, matchKeys: [projectKey], cwd: activeProject.path };
     }
     return null;
   }, [activeProject, focusedSession]);
-  const sessionIdSignature = sessions.map((session) => session.id).join("\0");
   const navigateBrowser = (value: string) => {
     const next = normalizeBrowserInput(value, activeProject?.path ?? "");
     if (!next) return;
@@ -150,11 +150,9 @@ export function AgentBrowserPanel({
     setSideChatSession(createSideChatSession(activeProject ?? null, focusedSession, activeModelId));
     tools.closeComputerTab("side-chat");
   }, [activeModelId, activeProject, focusedSession, tools]);
-  if (!tools.computer.open) return null;
-
   return (
     <aside
-      className="relative flex shrink-0 flex-col border-l border-(--border) bg-(--agent-bg)"
+      className={`${tools.computer.open ? "relative flex" : "hidden"} shrink-0 flex-col border-l border-(--border) bg-(--agent-bg)`}
       ref={registerComputerAside}
       style={{ width: `${tools.computer.width}px`, minWidth: "max(280px, 25%)", maxWidth: "65%" }}
     >
@@ -241,48 +239,10 @@ export function AgentBrowserPanel({
       ) : null}
 
       <PersistentTerminals
-        active={tools.computer.tab === "terminal"}
+        active={tools.computer.open && tools.computer.tab === "terminal"}
         owner={terminalOwner}
-        sessionIdSignature={sessionIdSignature}
       />
     </aside>
-  );
-}
-
-// Keep terminal panels mounted per session once opened so each session keeps its
-// own PTY and scrollback while the user navigates elsewhere.
-function PersistentTerminals({
-  active,
-  owner,
-  sessionIdSignature,
-}: {
-  active: boolean;
-  owner: TerminalOwner | null;
-  sessionIdSignature: string;
-}) {
-  const [terminals, setTerminals] = useState<TerminalOwner[]>([]);
-  const sessionIds = new Set(sessionIdSignature ? sessionIdSignature.split("\0") : []);
-  const prunedTerminals = terminals.filter(
-    (terminal) => !terminal.sessionId || sessionIds.has(terminal.sessionId),
-  );
-  const liveTerminals = prunedTerminals.length === terminals.length ? terminals : prunedTerminals;
-  const nextTerminals =
-    active && owner && !liveTerminals.some((terminal) => terminal.key === owner.key)
-      ? [...liveTerminals, owner]
-      : liveTerminals;
-  if (nextTerminals !== terminals) setTerminals(nextTerminals);
-  if (!nextTerminals.length) return null;
-  return (
-    <>
-      {nextTerminals.map((terminal) => {
-        const visible = active && terminal.key === owner?.key;
-        return (
-          <div key={terminal.key} className={visible ? "flex min-h-0 flex-1 flex-col" : "hidden"}>
-            <TerminalPanel cwd={terminal.cwd} />
-          </div>
-        );
-      })}
-    </>
   );
 }
 
