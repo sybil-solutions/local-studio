@@ -35,18 +35,18 @@ export function PersistentTerminals({
     active && owner
       ? terminals.findIndex((terminal) => terminalKeysMatch(terminal.matchKeys, owner.matchKeys))
       : -1;
-  const nextTerminals =
-    active && owner && ownerIndex < 0
-      ? [...terminals, owner]
-      : active && owner && ownerIndex >= 0
-        ? terminals.map((terminal, index) => {
-            if (index !== ownerIndex) return terminal;
-            const matchKeys = mergeTerminalKeys(terminal.matchKeys, owner.matchKeys);
-            return matchKeys.length === terminal.matchKeys.length
-              ? terminal
-              : { ...terminal, matchKeys };
-          })
-        : terminals;
+  let nextTerminals = terminals;
+  if (active && owner && ownerIndex < 0) {
+    nextTerminals = [...terminals, owner];
+  } else if (active && owner && ownerIndex >= 0) {
+    const current = terminals[ownerIndex];
+    const matchKeys = mergeTerminalKeys(current.matchKeys, owner.matchKeys);
+    if (matchKeys.length !== current.matchKeys.length) {
+      nextTerminals = terminals.map((terminal, index) =>
+        index === ownerIndex ? { ...terminal, matchKeys } : terminal,
+      );
+    }
+  }
   if (nextTerminals !== terminals) setTerminals(nextTerminals);
   if (!nextTerminals.length) return null;
   return (
