@@ -269,8 +269,8 @@ function reduceSessionEditAction(
       };
     case "patchActiveTab":
       return patchActiveTab(state, { paneId: action.paneId, patch: action.patch });
-    case "urlNavRequested":
-      return applyUrlNavigation(state, {
+    case "urlNavRequested": {
+      const next = applyUrlNavigation(state, {
         key: action.key,
         project: action.project,
         sessionId: action.sessionId,
@@ -281,6 +281,10 @@ function reduceSessionEditAction(
         runtimeSessionId: action.runtimeSessionId,
         tab: action.tab,
       });
+      return next === state
+        ? state
+        : { ...next, hydrated: action.newSession || Boolean(action.sessionId) || next.hydrated };
+    }
     default:
       return null;
   }
