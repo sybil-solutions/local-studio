@@ -366,14 +366,19 @@ export function useWorkspace(): UseWorkspaceResult {
     ): Promise<BrowserCommandResult> => {
       const isElectron = typeof navigator !== "undefined" && /electron/i.test(navigator.userAgent);
       const currentTools = toolsRef.current;
-      // Route the model's browser activity to the browser tab WITHOUT popping the
-      // computer panel open — the user controls panel visibility (the "browser
-      // opens whenever I prompt" annoyance).
-      currentTools.selectComputerTabWithoutOpening("browser");
+      // A `navigate` is real, intentional browser use: open the panel so the
+      // webview host mounts and the user can watch. Passive verbs (get-url,
+      // get-text, screenshot, etc.) only register/select the browser tab without
+      // popping the panel — that combination fixes both the "browser opens on
+      // every prompt" annoyance and the model losing browser access when the
+      // panel is closed.
       currentTools.setBrowserEnabled(true);
       if (verb === "navigate") {
+        currentTools.setComputerTab("browser");
         const nextUrl = sanitizePublicBrowserUrl(String(payload.url || ""));
         if (nextUrl) currentTools.setBrowserUrl(nextUrl, nextUrl);
+      } else {
+        currentTools.selectComputerTabWithoutOpening("browser");
       }
       if (verb !== "get-url") {
         await waitForBrowserHost(() => browserRef.current, isElectron);
