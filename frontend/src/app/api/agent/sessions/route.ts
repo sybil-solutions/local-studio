@@ -2,40 +2,16 @@ import { NextRequest } from "next/server";
 import path from "node:path";
 import { existsSync, statSync } from "node:fs";
 import { listSessions } from "@/lib/agent/sessions-store";
+import { archiveQueryOptions, parseRelativeSince } from "./session-query";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-function parseSince(value: string | null): Date | null {
-  if (!value) return null;
-  const match = value.match(/^(\d+)([dhm])$/);
-  if (!match) return null;
-  const amount = Number(match[1]);
-  if (!Number.isFinite(amount) || amount <= 0) return null;
-  const unit = match[2];
-  const multiplier = unit === "d" ? 86_400_000 : unit === "h" ? 3_600_000 : 60_000;
-  return new Date(Date.now() - amount * multiplier);
-}
-
-function archiveOptions(searchParams: URLSearchParams): {
-  includeArchived?: boolean;
-  archivedOnly?: boolean;
-} {
-  const archived = searchParams.get("archived")?.toLowerCase();
-  const includeArchived = searchParams.get("includeArchived")?.toLowerCase();
-  return {
-    ...(includeArchived === "1" || includeArchived === "true" ? { includeArchived: true } : {}),
-    ...(archived === "1" || archived === "true" || archived === "only"
-      ? { archivedOnly: true, includeArchived: true }
-      : {}),
-  };
-}
 
 export async function GET(request: NextRequest) {
   const cwdParam = request.nextUrl.searchParams.get("cwd")?.trim() ?? "";
   const sinceParam = request.nextUrl.searchParams.get("since");
   const idsParam = request.nextUrl.searchParams.get("ids");
-  const since = parseSince(sinceParam);
+  const since = parseRelativeSince(sinceParam);
   const ids = idsParam
     ? idsParam
         .split(",")
@@ -55,7 +31,7 @@ export async function GET(request: NextRequest) {
   const sessions = await listSessions(cwdParam, {
     ...(since ? { since } : {}),
     ids,
-    ...archiveOptions(request.nextUrl.searchParams),
+    ...archiveQueryOptions(request.nextUrl.searchParams),
   });
   return Response.json({ sessions });
 }
