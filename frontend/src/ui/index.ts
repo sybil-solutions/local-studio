@@ -95,6 +95,7 @@ export type { ManagedRuntimeInstallBackend } from "./runtime-targets";
 
 export { ModelLogo } from "./model-logo";
 export { HuggingFaceModelCardModal } from "./huggingface-model-card";
+export { AgentModelPicker } from "./agent-model-picker";
 
 export { LeftSidebar } from "./left-sidebar";
 export { ModelStopConfirm } from "./model-stop-confirm";
