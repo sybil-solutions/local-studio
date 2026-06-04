@@ -23,13 +23,8 @@ import type { Project } from "@/lib/agent/projects/types";
 import type { Session } from "@/lib/agent/sessions/types";
 import { makeFreshTab, newRuntimeId } from "@/lib/agent/session/helpers";
 import type { AgentModel } from "@/lib/agent/workspace/types";
-import { AgentBrowser, type AgentBrowserHandle } from "./agent-browser";
-import { CanvasPanel } from "./canvas-panel";
-import { ChatPane } from "./chat-pane";
-import { ComputerStatusPanel } from "./computer-status-panel";
-import { FilesystemPanel } from "./filesystem-panel";
-import { GitDiffPanel } from "./git-diff-panel";
 import { uniqueTerminalKeys, type TerminalOwner } from "@/lib/agent/terminal-owners";
+import { ComputerTabPanel, type SideChatTabsUpdater } from "./computer-tab-panel";
 import { PersistentTerminals } from "./persistent-terminals";
 import type { WorkspaceHandles } from "./use-workspace";
 
@@ -74,6 +69,34 @@ function createSideChatSession(
   };
 }
 
+function terminalOwnerFor(
+  activeProject: Project | null,
+  focusedSession: Session | null,
+): TerminalOwner | null {
+  if (focusedSession) {
+    const sessionKey = `session:${focusedSession.id}`;
+    const piKey = focusedSession.piSessionId ? `pi:${focusedSession.piSessionId}` : null;
+    return {
+      mountKey: sessionKey,
+      matchKeys: uniqueTerminalKeys([sessionKey, piKey ?? ""]),
+      cwd: activeProject?.path ?? focusedSession.cwd ?? null,
+    };
+  }
+  if (!activeProject) return null;
+  const projectKey = `project:${activeProject.id}`;
+  return { mountKey: projectKey, matchKeys: [projectKey], cwd: activeProject.path };
+}
+
+function closePersistedTerminalOwners() {
+  const closedOwners = clearPersistentTerminalOwners();
+  const terminalBridge = (
+    window as unknown as {
+      vllmStudioDesktop?: { terminal?: { closeOwner?: (ownerKey: string) => Promise<void> } };
+    }
+  ).vllmStudioDesktop?.terminal;
+  for (const owner of closedOwners) void terminalBridge?.closeOwner?.(owner.mountKey);
+}
+
 export function AgentBrowserPanel({
   handles,
   activeProject,
@@ -90,22 +113,10 @@ export function AgentBrowserPanel({
   const { registerComputerAside, startComputerResize, registerBrowserHandle, runBrowserCommand } =
     handles;
   const isElectron = typeof navigator !== "undefined" && /electron/i.test(navigator.userAgent);
-  const terminalOwner = useMemo<TerminalOwner | null>(() => {
-    if (focusedSession) {
-      const sessionKey = `session:${focusedSession.id}`;
-      const piKey = focusedSession.piSessionId ? `pi:${focusedSession.piSessionId}` : null;
-      return {
-        mountKey: sessionKey,
-        matchKeys: uniqueTerminalKeys([sessionKey, piKey ?? ""]),
-        cwd: activeProject?.path ?? focusedSession.cwd ?? null,
-      };
-    }
-    if (activeProject) {
-      const projectKey = `project:${activeProject.id}`;
-      return { mountKey: projectKey, matchKeys: [projectKey], cwd: activeProject.path };
-    }
-    return null;
-  }, [activeProject, focusedSession]);
+  const terminalOwner = useMemo(
+    () => terminalOwnerFor(activeProject, focusedSession),
+    [activeProject, focusedSession],
+  );
   const navigateBrowser = (value: string) => {
     const next = normalizeBrowserInput(value, activeProject?.path ?? "");
     if (!next) return;
@@ -127,18 +138,13 @@ export function AgentBrowserPanel({
     );
     tools.setComputerTab("side-chat");
   }, [activeModelId, activeProject, focusedSession, tools]);
-  const updateSideChatTabs = useCallback(
-    (nextTabsOrUpdater: Session[] | ((tabs: Session[]) => Session[])) => {
-      setSideChatSession((current) => {
-        const nextTabs =
-          typeof nextTabsOrUpdater === "function"
-            ? nextTabsOrUpdater([current])
-            : nextTabsOrUpdater;
-        return nextTabs.at(-1) ?? current;
-      });
-    },
-    [],
-  );
+  const updateSideChatTabs = useCallback((nextTabsOrUpdater: SideChatTabsUpdater) => {
+    setSideChatSession((current) => {
+      const nextTabs =
+        typeof nextTabsOrUpdater === "function" ? nextTabsOrUpdater([current]) : nextTabsOrUpdater;
+      return nextTabs.at(-1) ?? current;
+    });
+  }, []);
   const renameSideChat = useCallback((tabId: string, title: string) => {
     setSideChatSession((current) => (current?.id === tabId ? { ...current, title } : current));
   }, []);
@@ -153,13 +159,7 @@ export function AgentBrowserPanel({
         return;
       }
       if (closing === "terminal") {
-        const closedOwners = clearPersistentTerminalOwners();
-        const terminalBridge = (
-          window as unknown as {
-            vllmStudioDesktop?: { terminal?: { closeOwner?: (ownerKey: string) => Promise<void> } };
-          }
-        ).vllmStudioDesktop?.terminal;
-        for (const owner of closedOwners) void terminalBridge?.closeOwner?.(owner.mountKey);
+        closePersistedTerminalOwners();
       }
       tools.closeComputerTab(closing);
     },
@@ -186,68 +186,24 @@ export function AgentBrowserPanel({
         onShowLauncher={() => tools.setComputerTab("tools")}
       />
 
-      {tools.computer.tab === "status" ? (
-        <ComputerStatusPanel
-          activeProject={activeProject}
-          activeModel={activeModel}
-          focusedSession={focusedSession}
-          sessions={sessions}
-          gitSummary={gitSummary}
-          onCompactSession={handles.compactFocusedSession}
-        />
-      ) : tools.computer.tab === "tools" ? (
-        <ComputerLauncherPanel
-          activeTab={tools.computer.tab}
-          onSelectTab={tools.setComputerTab}
-          onStartSideChat={openSideChat}
-        />
-      ) : tools.computer.tab === "canvas" ? (
-        <CanvasPanel />
-      ) : tools.computer.tab === "side-chat" ? (
-        <ChatPane
-          paneId="computer-side-chat"
-          runtimeSessionId={sideChatSession.runtimeSessionId}
-          modelId={sideChatSession.modelId ?? focusedSession?.modelId ?? activeModelId}
-          modelName={activeModel?.name ?? null}
-          modelsLoading={false}
-          contextWindow={activeModel?.contextWindow ?? 0}
-          cwd={sideChatSession.cwd ?? activeProject?.path ?? focusedSession?.cwd ?? ""}
-          projectName={activeProject?.name ?? null}
-          browserToolEnabled={false}
-          onToggleBrowserTool={() => tools.setComputerTab("browser")}
-          canvasEnabled={false}
-          onToggleCanvas={tools.toggleCanvas}
-          isFocused
-          onFocus={() => undefined}
-          tabs={[sideChatSession]}
-          activeTabId={sideChatSession.id}
-          onTabsChange={updateSideChatTabs}
-          onRenameSession={renameSideChat}
-          onClose={closeSideChat}
-          rightPanelOpen
-          onToggleRightPanel={() => tools.setComputerOpen(false)}
-          showHeader={false}
-        />
-      ) : tools.computer.tab === "browser" ? (
-        <AgentBrowser
-          ref={registerBrowserHandle}
-          url={tools.browser.url}
-          inputValue={tools.browser.input}
-          onInputChange={tools.setBrowserInput}
-          onNavigate={navigateBrowser}
-          onLocationChange={(next) => tools.setBrowserUrl(next, next)}
-          onClose={() => tools.setComputerOpen(false)}
-          isElectron={isElectron}
-        />
-      ) : tools.computer.tab === "files" ? (
-        <section className="flex min-h-0 flex-1 flex-col">
-          <div className="min-h-0 flex-1">
-            <FilesystemPanel cwd={activeProject?.path ?? null} />
-          </div>
-        </section>
-      ) : tools.computer.tab === "diff" ? (
-        <GitDiffPanel cwd={activeProject?.path ?? null} />
-      ) : null}
+      <ComputerTabPanel
+        activeModel={activeModel}
+        activeModelId={activeModelId}
+        activeProject={activeProject}
+        focusedSession={focusedSession}
+        gitSummary={gitSummary}
+        isElectron={isElectron}
+        onCloseSideChat={closeSideChat}
+        onCompactSession={handles.compactFocusedSession}
+        onNavigateBrowser={navigateBrowser}
+        onOpenSideChat={openSideChat}
+        onRenameSideChat={renameSideChat}
+        onUpdateSideChatTabs={updateSideChatTabs}
+        registerBrowserHandle={registerBrowserHandle}
+        sessions={sessions}
+        sideChatSession={sideChatSession}
+        tools={tools}
+      />
 
       <PersistentTerminals
         active={tools.computer.open && tools.computer.tab === "terminal"}
@@ -385,83 +341,5 @@ function ComputerHeader({
         </button>
       </div>
     </div>
-  );
-}
-
-function ComputerLauncherPanel({
-  activeTab,
-  onSelectTab,
-  onStartSideChat,
-}: {
-  activeTab: ComputerTab;
-  onSelectTab: (tab: ComputerTab) => void;
-  onStartSideChat: () => void;
-}) {
-  const cards = [
-    {
-      key: "files",
-      title: "Files",
-      description: "Browse project files",
-      icon: FolderTree,
-      onClick: () => onSelectTab("files"),
-    },
-    {
-      key: "side-chat",
-      title: "Side chat",
-      description: "Start a side conversation",
-      icon: MessageSquarePlus,
-      onClick: onStartSideChat,
-    },
-    {
-      key: "browser",
-      title: "Browser",
-      description: "Open a website",
-      icon: Globe2,
-      onClick: () => onSelectTab("browser"),
-    },
-    {
-      key: "diff",
-      title: "Review",
-      description: "View code changes",
-      icon: GitBranch,
-      onClick: () => onSelectTab("diff"),
-    },
-    {
-      key: "terminal",
-      title: "Terminal",
-      description: "Start an interactive shell",
-      icon: TerminalSquare,
-      onClick: () => onSelectTab("terminal"),
-    },
-  ] as const;
-  return (
-    <section className="min-h-0 flex-1 overflow-y-auto bg-(--agent-bg) px-5 py-7">
-      <div className="mx-auto flex max-w-[30rem] flex-col gap-3">
-        {cards.map((card) => {
-          const Icon = card.icon;
-          const selected = card.key !== "side-chat" && activeTab === card.key;
-          return (
-            <button
-              key={card.key}
-              type="button"
-              onClick={card.onClick}
-              className={`group flex min-h-24 flex-col items-center justify-center rounded-xl border px-5 py-5 text-center transition-colors ${
-                selected
-                  ? "border-(--border) bg-(--surface) text-(--fg)/80"
-                  : "border-transparent bg-black/20 text-(--fg)/75 hover:border-(--border) hover:bg-(--surface)/70"
-              }`}
-            >
-              <Icon className="mb-3 h-5 w-5 text-(--dim)/70 transition-colors group-hover:text-(--fg)/75" />
-              <span className="text-[length:var(--fs-lg)] font-semibold tracking-tight">
-                {card.title}
-              </span>
-              <span className="mt-1.5 text-[length:var(--fs-base)] text-(--dim)">
-                {card.description}
-              </span>
-            </button>
-          );
-        })}
-      </div>
-    </section>
   );
 }
