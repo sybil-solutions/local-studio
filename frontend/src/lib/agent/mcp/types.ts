@@ -1,10 +1,9 @@
 // Types for the MCP server system. An `McpServerDef` fully describes how to
 // launch a stdio MCP server; an `McpServerEntry` adds runtime state (enabled +
-// where it came from). These replace the old multi-source Codex `PluginRow`
-// discovery — every server here is first-party, curated, or user-added, and
-// always launchable (no Codex-signed-runtime constraints).
+// where it came from). These replace the old multi-source plugin discovery:
+// every server here is a curated or user-added MCP server.
 
-export type McpServerSource = "builtin" | "marketplace" | "manual";
+export type McpServerSource = "marketplace" | "manual";
 
 /**
  * A launchable stdio MCP server. `command`/`args`/`env`/`cwd` map 1:1 onto the

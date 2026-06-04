@@ -5,10 +5,6 @@
 // server's `<dataDir>/mcp/<id>/.mcp.json` so the proven runtime path
 // (pi-runtime-helpers `pluginMcpConfigs` → VLLM_STUDIO_MCP_PLUGIN_CONFIGS →
 // mcp-plugin.ts) can launch it without any further translation.
-//
-// Builtins (computer-use, chrome) are NOT stored here — they come from
-// `builtins.ts` and already own their bundled `.mcp.json`. Only their
-// enable/disable state is overlaid via the `disabledBuiltins` set.
 
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
@@ -18,9 +14,9 @@ import type { McpServerDef, McpServerEntry } from "./types";
 type StoreFile = {
   version: 1;
   servers: McpServerEntry[];
-  /** Builtin server ids the user has explicitly disabled. */
+  /** Legacy field retained so older stores continue to parse cleanly. */
   disabledBuiltins: string[];
-  /** User labels for builtin + stored servers. */
+  /** User labels for stored servers. */
   serverTags: Record<string, string[]>;
 };
 
@@ -94,16 +90,6 @@ export function listStoredServers(): McpServerEntry[] {
   return readStore().servers;
 }
 
-/** Builtin ids the user has disabled. */
-export function disabledBuiltinIds(): Set<string> {
-  return new Set(readStore().disabledBuiltins);
-}
-
-/** User labels attached to builtin + stored servers. */
-export function serverTags(): Record<string, string[]> {
-  return readStore().serverTags;
-}
-
 /**
  * Add or update a user server. Always (re)materializes its `.mcp.json`. Returns
  * the stored entry. `id` collision overwrites in place (edit).
@@ -123,7 +109,7 @@ export function upsertServer(def: McpServerDef, source: "manual" | "marketplace"
   return entry;
 }
 
-/** Remove a stored server by id. Builtins cannot be removed (only disabled). */
+/** Remove a stored server by id. */
 export function removeServer(id: string): boolean {
   const store = readStore();
   const next = store.servers.filter((entry) => entry.def.id !== id);
@@ -133,20 +119,9 @@ export function removeServer(id: string): boolean {
   return true;
 }
 
-/**
- * Toggle enable state for any server id. For a stored server this flips its
- * `enabled` flag; for a builtin id it adds/removes from `disabledBuiltins`.
- */
-export function setServerEnabled(id: string, enabled: boolean, isBuiltin: boolean): void {
+/** Toggle enable state for a stored server id. */
+export function setServerEnabled(id: string, enabled: boolean): void {
   const store = readStore();
-  if (isBuiltin) {
-    const set = new Set(store.disabledBuiltins);
-    if (enabled) set.delete(id);
-    else set.add(id);
-    store.disabledBuiltins = [...set];
-    writeStore(store);
-    return;
-  }
   const entry = store.servers.find((existing) => existing.def.id === id);
   if (!entry) return;
   entry.enabled = enabled;

@@ -15,7 +15,6 @@ import {
 import { StatusPill } from "../status";
 import { ConfigureEntryPanel, RegistryRow, ServerPill } from "./plugins-page-parts";
 import {
-  BUILTIN_SOURCE,
   type CatalogueEntry,
   type McpServer,
   type RegistryPayload,
@@ -208,7 +207,7 @@ export function PluginsPage() {
       <div className="mx-auto w-full max-w-6xl px-4 py-5 sm:px-6 lg:py-7">
         <PageHeader
           eyebrow="Tooling"
-          title="Plugin"
+          title="Plugins"
           status={
             <StatusPill tone={enabledCount ? "good" : "default"}>
               {loading ? "syncing" : `${enabledCount} enabled`}
@@ -259,18 +258,14 @@ export function PluginsPage() {
                         >
                           {server.enabled ? "Disable" : "Enable"}
                         </SettingsButton>
-                        {server.source !== BUILTIN_SOURCE ? (
-                          <SettingsButton
-                            tone="danger"
-                            onClick={() =>
-                              void post({ action: "remove", id: server.id }, server.id)
-                            }
-                            disabled={busyId === server.id}
-                            title="Remove MCP server"
-                          >
-                            <Trash2 className="h-3 w-3" />
-                          </SettingsButton>
-                        ) : null}
+                        <SettingsButton
+                          tone="danger"
+                          onClick={() => void post({ action: "remove", id: server.id }, server.id)}
+                          disabled={busyId === server.id}
+                          title="Remove MCP server"
+                        >
+                          <Trash2 className="h-3 w-3" />
+                        </SettingsButton>
                       </>
                     }
                   >
@@ -316,7 +311,7 @@ export function PluginsPage() {
                     <SettingsInput
                       value={search}
                       onChange={setSearch}
-                      placeholder="GitHub, Postgres, browser automation..."
+                      placeholder="GitHub, Postgres, filesystem..."
                       className="pl-8"
                     />
                   </div>

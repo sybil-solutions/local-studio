@@ -45,8 +45,6 @@ type McpPayload = {
   error?: string;
 };
 
-const BUILTIN_SOURCE = "builtin";
-
 export function PluginsSettings() {
   const [servers, setServers] = useState<McpServer[]>([]);
   const [catalogue, setCatalogue] = useState<CatalogueEntry[]>([]);
@@ -172,7 +170,7 @@ export function PluginsSettings() {
 
       <SettingsGroup
         title="MCP servers"
-        description="Tools the model can use, provided by MCP servers. @-mention a server in the composer to load its tools for that turn. Built-in servers ship with the app; added servers run locally over stdio."
+        description="Tools the model can use, provided by MCP servers. @-mention a server in the composer to load its tools for that turn. Added servers run locally over stdio."
         actions={
           <StatusPill tone={enabledCount ? "good" : "default"}>
             {enabledCount} enabled · {servers.length} total
@@ -195,15 +193,13 @@ export function PluginsSettings() {
                   >
                     {server.enabled ? "Disable" : "Enable"}
                   </SettingsButton>
-                  {server.source !== BUILTIN_SOURCE ? (
-                    <SettingsButton
-                      tone="danger"
-                      onClick={() => removeServer(server)}
-                      disabled={busyId === server.id}
-                    >
-                      Remove
-                    </SettingsButton>
-                  ) : null}
+                  <SettingsButton
+                    tone="danger"
+                    onClick={() => removeServer(server)}
+                    disabled={busyId === server.id}
+                  >
+                    Remove
+                  </SettingsButton>
                 </div>
               }
             />
@@ -370,9 +366,6 @@ function parseEnvLines(text: string): Record<string, string> {
 }
 
 function ServerPill({ server }: { server: McpServer }) {
-  if (server.source === BUILTIN_SOURCE) {
-    return <StatusPill tone={server.enabled ? "good" : "default"}>built-in</StatusPill>;
-  }
   return <StatusPill tone={server.enabled ? "info" : "default"}>mcp</StatusPill>;
 }
 

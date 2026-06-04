@@ -46,5 +46,3 @@ export type RegistryPayload = {
   entries: CatalogueEntry[];
   error?: string;
 };
-
-export const BUILTIN_SOURCE = "builtin";

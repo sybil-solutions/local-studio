@@ -48,7 +48,7 @@ const tabs = [
   { href: "/", label: "Status", icon: Gauge },
   { href: "/usage", label: "Usage", icon: Microchip },
   { href: "/recipes", label: "Models", icon: HardDrive },
-  { href: "/plugins", label: "Plugin", icon: Plug },
+  { href: "/plugins", label: "Plugins", icon: Plug },
   { href: "/server", label: "Server", icon: Globe },
 ];
 

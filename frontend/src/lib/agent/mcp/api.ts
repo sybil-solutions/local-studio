@@ -2,7 +2,6 @@ import {
   MCP_CATALOGUE,
   discoverMcpServers,
   findCatalogueEntry,
-  isBuiltinServerId,
   removeServer,
   setServerEnabled,
   setServerTags,
@@ -31,7 +30,7 @@ export function handleMcpAction(body: Record<string, unknown> | null) {
       if (!id || typeof body.enabled !== "boolean") {
         return mcpBadRequest("set_enabled requires { id, enabled }.");
       }
-      setServerEnabled(id, body.enabled, isBuiltinServerId(id));
+      setServerEnabled(id, body.enabled);
       return { status: 200, payload: mcpSnapshot(true) };
     }
 
@@ -46,9 +45,6 @@ export function handleMcpAction(body: Record<string, unknown> | null) {
     case "remove": {
       const id = typeof body.id === "string" ? body.id : "";
       if (!id) return mcpBadRequest("remove requires { id }.");
-      if (isBuiltinServerId(id)) {
-        return mcpBadRequest("Builtin servers can't be removed, only disabled.");
-      }
       removeServer(id);
       return { status: 200, payload: mcpSnapshot(true) };
     }
