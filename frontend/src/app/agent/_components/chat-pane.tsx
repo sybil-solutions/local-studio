@@ -5,7 +5,6 @@ import {
   useMemo,
   useRef,
   useState,
-  useSyncExternalStore,
   type ClipboardEvent,
   type DragEvent,
   type ReactNode,
@@ -22,22 +21,19 @@ import {
 } from "@/ui/agent-composer-context";
 import { AgentQueuePanel } from "@/ui/agent-queue-panel";
 import {
+  useChatPaneContextAttachEffect,
   useChatPaneMentionEffects,
   useChatPaneRegisterHandleEffect,
   useChatPaneStickToBottomEffect,
 } from "@/hooks/agent/use-chat-pane-effects";
 import { useProjectsNavSessionPrefs } from "@/hooks/agent/use-projects-nav-section-effects";
 import {
-  activateComposerPlugin,
   activeComposerPlugins,
   byQuery,
   detectComposerMention,
-  consumeComposerMention,
   selectedContextPrompt,
   type ComposerMention,
   type ComposerPluginRef,
-  type ComposerPromptTemplateRef,
-  type ComposerSkillRef,
 } from "@/lib/agent/composer-context";
 import {
   AgentTurnSsePayload,
@@ -70,7 +66,6 @@ import {
   attachmentDedupKey,
   attachmentPrompt,
   createAttachment,
-  createProjectFileAttachment,
   dataTransferHasFiles,
   filesFromDataTransfer,
   imageFileFromDataUrlText,
@@ -78,6 +73,7 @@ import {
   type ChatAttachment,
 } from "./chat-attachments";
 import { Timeline } from "./timeline/timeline";
+import { useComposerMentionSelection } from "./use-composer-mention-selection";
 export type {
   AgentTurnSsePayload,
   AssistantBlock,
@@ -200,42 +196,11 @@ export function ChatPane({
     activeTabId: activeTab?.id,
     setStickToBottom,
   });
-  // Consume "attach as context" requests (e.g. file comments from the
-  // filesystem panel) into this pane's composer attachments. Only the focused
-  // pane consumes a given request; a handled-id guard prevents re-adding.
-  // Uses useSyncExternalStore (not useEffect) per this repo's workspace rule.
-  const contextAttachRequest = tools.contextAttachRequest;
-  const handledContextAttachRef = useRef(0);
-  const subscribeContextAttach = useCallback(() => {
-    if (
-      contextAttachRequest &&
-      isFocused &&
-      handledContextAttachRef.current !== contextAttachRequest.id
-    ) {
-      handledContextAttachRef.current = contextAttachRequest.id;
-      const attachment: ChatAttachment = {
-        id: newId("ctx"),
-        name: contextAttachRequest.label,
-        type: "text/plain",
-        size: contextAttachRequest.content.length,
-        ...(contextAttachRequest.path ? { path: contextAttachRequest.path } : {}),
-        mode: "text",
-        content: contextAttachRequest.content,
-        previewKind: "file",
-      };
-      setAttachments((current) => {
-        const nextKey = attachmentDedupKey(attachment);
-        if (current.some((file) => attachmentDedupKey(file) === nextKey)) return current;
-        return [...current, attachment];
-      });
-    }
-    return () => undefined;
-  }, [contextAttachRequest, isFocused]);
-  useSyncExternalStore(
-    subscribeContextAttach,
-    getChatPaneEffectSnapshot,
-    getChatPaneEffectSnapshot,
-  );
+  useChatPaneContextAttachEffect({
+    contextAttachRequest: tools.contextAttachRequest,
+    isFocused,
+    setAttachments,
+  });
   const mentionRows = useMemo<MentionRow[]>(() => {
     if (!mention) return [];
     if (mention.kind === "skill") {
@@ -328,103 +293,16 @@ export function ChatPane({
     },
     [activeTab, displayedSessionTitle, onRenameSession, patchActiveSessionPrefs],
   );
-  const selectMentionRow = useCallback(
-    async (entry: MentionRow) => {
-      if (!activeTab || !mention) return;
-      const selectedMention = mention;
-      if (entry.kind === "file") {
-        const input = consumeComposerMention(activeTab.input, selectedMention);
-        updateTab(activeTab.id, (tab) => ({ ...tab, input }));
-        const loaded = await fetch(
-          `/api/agent/fs/file?cwd=${encodeURIComponent(cwd)}&path=${encodeURIComponent(entry.row.rel)}`,
-          { cache: "no-store" },
-        )
-          .then((response) =>
-            response.ok
-              ? (response.json() as Promise<{
-                  content: string;
-                  truncated: boolean;
-                  size: number;
-                }>)
-              : null,
-          )
-          .catch(() => null);
-        const attachment = createProjectFileAttachment({
-          id: entry.row.id,
-          name: entry.row.name,
-          path: entry.row.path,
-          content: loaded?.content ?? "",
-          truncated: loaded?.truncated ?? true,
-          size: loaded?.size ?? 0,
-        });
-        setAttachments((current) => {
-          const nextKey = attachmentDedupKey(attachment);
-          if (current.some((file) => attachmentDedupKey(file) === nextKey)) return current;
-          return [...current, attachment];
-        });
-        setMention(null);
-        requestAnimationFrame(() => textareaRef.current?.focus());
-        return;
-      }
-      const row = entry.row;
-      const input = consumeComposerMention(activeTab.input, selectedMention);
-      let selectedRow = row;
-      if ("path" in row && row.path) {
-        const endpoint =
-          selectedMention.kind === "skill"
-            ? `/api/agent/skills/load?path=${encodeURIComponent(row.path)}`
-            : selectedMention.kind === "promptTemplate"
-              ? `/api/agent/prompt-templates/load?path=${encodeURIComponent(row.path)}`
-              : `/api/agent/plugins/load?path=${encodeURIComponent(row.path)}`;
-        const loaded = await fetch(endpoint, { cache: "no-store" })
-          .then((res) =>
-            res.ok
-              ? (res.json() as Promise<{
-                  skill?: ComposerSkillRef;
-                  plugin?: ComposerPluginRef;
-                  template?: ComposerPromptTemplateRef;
-                }>)
-              : null,
-          )
-          .catch(() => null);
-        selectedRow = loaded?.skill
-          ? { ...row, ...loaded.skill, id: row.id }
-          : loaded?.plugin
-            ? { ...row, ...loaded.plugin, id: row.id }
-            : loaded?.template
-              ? { ...row, ...loaded.template, id: row.id }
-              : row;
-      }
-      updateTab(activeTab.id, (tab) => ({ ...tab, input }));
-      const current = tools.selectionFor(activeTab.id);
-      if (selectedMention.kind === "plugin") {
-        if (!current.plugins.some((plugin) => plugin.id === selectedRow.id)) {
-          tools.setSelection(activeTab.id, {
-            ...current,
-            plugins: [...current.plugins, activateComposerPlugin(selectedRow as ComposerPluginRef)],
-          });
-        }
-      } else if (selectedMention.kind === "skill") {
-        if (!current.skills.some((skill) => skill.id === selectedRow.id)) {
-          tools.setSelection(activeTab.id, {
-            ...current,
-            skills: [...current.skills, selectedRow as ComposerSkillRef],
-          });
-        }
-      } else if (
-        selectedMention.kind === "promptTemplate" &&
-        !current.promptTemplates.some((template) => template.id === selectedRow.id)
-      ) {
-        tools.setSelection(activeTab.id, {
-          ...current,
-          promptTemplates: [...current.promptTemplates, selectedRow as ComposerPromptTemplateRef],
-        });
-      }
-      setMention(null);
-      requestAnimationFrame(() => textareaRef.current?.focus());
-    },
-    [activeTab, cwd, mention, tools, updateTab],
-  );
+  const selectMentionRow = useComposerMentionSelection({
+    activeTab,
+    mention,
+    cwd,
+    tools,
+    updateTab,
+    setAttachments,
+    setMention,
+    textareaRef,
+  });
   const removeLoadedContext = useCallback(
     (kind: "plugin" | "skill" | "promptTemplate", id: string) => {
       if (!activeTab) return;
@@ -1070,5 +948,3 @@ export function ChatPane({
     </section>
   );
 }
-
-const getChatPaneEffectSnapshot = (): number => 0;
