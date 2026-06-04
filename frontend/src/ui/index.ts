@@ -99,6 +99,9 @@ export {
   SettingsValue,
   SettingsButton,
   SettingsInput,
+  SettingsTextarea,
+  SettingsNotice,
+  SettingsActions,
 } from "./settings";
 export type { SettingsSectionDef, SettingsSectionId, StatusTone } from "./settings";
 

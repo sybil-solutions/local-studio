@@ -2,7 +2,7 @@
 
 import { useCallback, useMemo, useState, useSyncExternalStore } from "react";
 import { Globe, Plug, ShieldCheck, type LucideIcon } from "lucide-react";
-import { SettingsLayout, type SettingsSectionDef } from "../settings";
+import { SettingsLayout, SettingsNotice, type SettingsSectionDef } from "../settings";
 import { CuratedQuickAddPanel } from "./plugins-curated-quick-add";
 import { InstalledMcpServersPanel } from "./plugins-installed-servers";
 import { ManualMcpServerPanel } from "./plugins-manual-server";
@@ -313,9 +313,9 @@ export function PluginsPage() {
         eyebrow="Tooling"
       >
         {error ? (
-          <div className="mb-4 rounded-md border border-(--ui-danger)/40 bg-(--ui-danger)/10 px-3 py-2 text-[length:var(--fs-sm)] text-(--ui-danger)">
+          <SettingsNotice tone="danger" className="mb-4">
             {error}
-          </div>
+          </SettingsNotice>
         ) : null}
         {activeSection === "custom" ? (
           <div className="space-y-5">

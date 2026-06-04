@@ -1,7 +1,14 @@
 "use client";
 
 import { EmptySafeNotice } from "../list";
-import { SettingsButton, SettingsGroup, SettingsInput, SettingsRow } from "../settings";
+import {
+  SettingsActions,
+  SettingsButton,
+  SettingsGroup,
+  SettingsInput,
+  SettingsRow,
+  SettingsTextarea,
+} from "../settings";
 
 export function ManualMcpServerPanel({
   open,
@@ -71,16 +78,16 @@ export function ManualMcpServerPanel({
           <SettingsRow
             label="Environment"
             control={
-              <textarea
+              <SettingsTextarea
                 value={env}
-                onChange={(event) => onEnvChange(event.target.value)}
+                onChange={onEnvChange}
                 placeholder={"API_KEY=...\nANOTHER=..."}
                 rows={4}
-                className="w-full resize-none rounded-md border border-(--ui-separator) bg-(--ui-bg) px-2.5 py-1.5 text-[length:var(--fs-base)] text-(--ui-fg) outline-none placeholder:text-(--ui-muted)/50 focus:border-(--ui-info)/50"
+                focusTone="info"
               />
             }
           />
-          <div className="flex justify-end gap-1 px-3.5 py-2">
+          <SettingsActions>
             <SettingsButton onClick={onCancel}>Cancel</SettingsButton>
             <SettingsButton
               tone="primary"
@@ -89,7 +96,7 @@ export function ManualMcpServerPanel({
             >
               Add server
             </SettingsButton>
-          </div>
+          </SettingsActions>
         </>
       ) : (
         <EmptySafeNotice>Use a command like `npx`, `uvx`, `node`, or `python`.</EmptySafeNotice>

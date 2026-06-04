@@ -1,10 +1,13 @@
 import { useCallback, useMemo, useState, useSyncExternalStore } from "react";
 import {
   EmptySafeNotice,
+  SettingsActions,
   SettingsButton,
   SettingsGroup,
   SettingsInput,
+  SettingsNotice,
   SettingsRow,
+  SettingsTextarea,
   SettingsValue,
   StatusPill,
 } from "@/ui";
@@ -162,11 +165,7 @@ export function PluginsSettings() {
 
   return (
     <div className="space-y-5">
-      {error ? (
-        <div className="rounded-md border border-(--ui-danger)/40 bg-(--ui-danger)/10 px-3 py-2 text-[length:var(--fs-sm)] text-(--ui-danger)">
-          {error}
-        </div>
-      ) : null}
+      {error ? <SettingsNotice tone="danger">{error}</SettingsNotice> : null}
 
       <SettingsGroup
         title="MCP servers"
@@ -256,7 +255,7 @@ export function PluginsSettings() {
                       No configuration needed.
                     </div>
                   )}
-                  <div className="flex justify-end gap-1 pb-1">
+                  <SettingsActions flush className="pb-1">
                     <SettingsButton onClick={() => setCatalogueDraft(null)}>Cancel</SettingsButton>
                     <SettingsButton
                       tone="primary"
@@ -265,7 +264,7 @@ export function PluginsSettings() {
                     >
                       Add server
                     </SettingsButton>
-                  </div>
+                  </SettingsActions>
                 </div>
               ) : null}
             </div>
@@ -321,16 +320,15 @@ export function PluginsSettings() {
               label="Environment"
               description="One KEY=value per line. Use for API keys or tokens."
               control={
-                <textarea
+                <SettingsTextarea
                   value={manualEnv}
-                  onChange={(event) => setManualEnv(event.target.value)}
+                  onChange={setManualEnv}
                   placeholder={"API_KEY=...\nANOTHER=..."}
                   rows={3}
-                  className="w-full resize-none rounded-md border border-(--ui-separator) bg-(--ui-bg) px-2.5 py-1.5 text-[length:var(--fs-base)] text-(--ui-fg) outline-none placeholder:text-(--ui-muted)/50 focus:border-(--ui-accent)/40"
                 />
               }
             />
-            <div className="flex justify-end gap-1">
+            <SettingsActions flush>
               <SettingsButton onClick={() => setManualOpen(false)}>Cancel</SettingsButton>
               <SettingsButton
                 tone="primary"
@@ -339,7 +337,7 @@ export function PluginsSettings() {
               >
                 Add server
               </SettingsButton>
-            </div>
+            </SettingsActions>
           </div>
         ) : (
           <EmptySafeNotice>
