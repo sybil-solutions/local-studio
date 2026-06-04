@@ -46,6 +46,14 @@ const isSectionId = (value: string): value is PluginsSectionId =>
   SECTIONS.some((section) => section.id === value);
 
 export function PluginsPage() {
+  return <PluginsManager mode="page" />;
+}
+
+export function PluginsSettingsSection() {
+  return <PluginsManager mode="settings" />;
+}
+
+function PluginsManager({ mode }: { mode: "page" | "settings" }) {
   const [activeSection, setActiveSection] = useState<PluginsSectionId>(() => {
     if (typeof window === "undefined") return "custom";
     const hash = window.location.hash.replace("#", "");
@@ -300,6 +308,123 @@ export function PluginsPage() {
       ? "searching registry"
       : `${enabledCount} enabled`;
 
+  const errorNotice = error ? (
+    <SettingsNotice tone="danger" className="mb-4">
+      {error}
+    </SettingsNotice>
+  ) : null;
+  const customPanel = (
+    <div className="space-y-5">
+      <InstalledMcpServersPanel
+        servers={servers}
+        enabledCount={enabledCount}
+        busyId={busyId}
+        tagDrafts={tagDrafts}
+        onToggleServer={(server) =>
+          void post({ action: "set_enabled", id: server.id, enabled: !server.enabled }, server.id)
+        }
+        onRemoveServer={(server) => void post({ action: "remove", id: server.id }, server.id)}
+        onTagDraftChange={(server, value) =>
+          setTagDrafts((drafts) => ({ ...drafts, [server.id]: value }))
+        }
+        onSaveTags={saveTags}
+      />
+      <ManualMcpServerPanel
+        open={manualOpen}
+        name={manualName}
+        command={manualCommand}
+        args={manualArgs}
+        tags={manualTags}
+        env={manualEnv}
+        busy={busyId === "manual"}
+        onToggleOpen={() => setManualOpen((open) => !open)}
+        onNameChange={setManualName}
+        onCommandChange={setManualCommand}
+        onArgsChange={setManualArgs}
+        onTagsChange={setManualTags}
+        onEnvChange={setManualEnv}
+        onCancel={() => setManualOpen(false)}
+        onSubmit={submitManual}
+      />
+      <RegistrySourcesPanel
+        sources={registrySources}
+        loading={registryLoading}
+        open={registryOpen}
+        name={registryName}
+        url={registryUrl}
+        busyId={busyId}
+        onToggleOpen={() => setRegistryOpen((open) => !open)}
+        onNameChange={setRegistryName}
+        onUrlChange={setRegistryUrl}
+        onCancel={() => setRegistryOpen(false)}
+        onSubmit={submitRegistry}
+        onToggleSource={(source) =>
+          void postRegistry(
+            {
+              action: "set_registry_enabled",
+              id: source.id,
+              enabled: !source.enabled,
+            },
+            `${source.id}:enabled`,
+          )
+        }
+        onRemoveSource={(source) =>
+          void postRegistry({ action: "remove_registry", id: source.id }, `${source.id}:remove`)
+        }
+      />
+    </div>
+  );
+  const registryPanel = (
+    <RegistrySearchPanel
+      entries={registry}
+      loading={registryLoading}
+      search={search}
+      installedNames={installedNames}
+      busyId={busyId}
+      onSearchChange={setSearch}
+      onConfigure={beginConfigureEntry}
+    />
+  );
+  const curatedPanel = (
+    <CuratedQuickAddPanel
+      entries={curated}
+      installedNames={installedNames}
+      busyId={busyId}
+      loading={loading}
+      onConfigure={beginConfigureEntry}
+    />
+  );
+  const configurePanel = configureEntry ? (
+    <ConfigureEntryPanel
+      entry={configureEntry}
+      command={configureCommand}
+      args={configureArgs}
+      tags={configureTags}
+      env={configureEnv}
+      busy={busyId === configureEntry.id}
+      onCommandChange={setConfigureCommand}
+      onArgsChange={setConfigureArgs}
+      onTagsChange={setConfigureTags}
+      onEnvChange={setConfigureEnv}
+      onCancel={() => setConfigureEntry(null)}
+      onSubmit={submitConfiguredEntry}
+    />
+  ) : null;
+
+  if (mode === "settings") {
+    return (
+      <>
+        {errorNotice}
+        <div className="space-y-5">
+          {customPanel}
+          {registryPanel}
+          {curatedPanel}
+        </div>
+        {configurePanel}
+      </>
+    );
+  }
+
   return (
     <>
       <SettingsLayout
@@ -312,114 +437,13 @@ export function PluginsPage() {
         onSelectSection={selectSection}
         eyebrow="Tooling"
       >
-        {error ? (
-          <SettingsNotice tone="danger" className="mb-4">
-            {error}
-          </SettingsNotice>
-        ) : null}
-        {activeSection === "custom" ? (
-          <div className="space-y-5">
-            <InstalledMcpServersPanel
-              servers={servers}
-              enabledCount={enabledCount}
-              busyId={busyId}
-              tagDrafts={tagDrafts}
-              onToggleServer={(server) =>
-                void post(
-                  { action: "set_enabled", id: server.id, enabled: !server.enabled },
-                  server.id,
-                )
-              }
-              onRemoveServer={(server) => void post({ action: "remove", id: server.id }, server.id)}
-              onTagDraftChange={(server, value) =>
-                setTagDrafts((drafts) => ({ ...drafts, [server.id]: value }))
-              }
-              onSaveTags={saveTags}
-            />
-            <ManualMcpServerPanel
-              open={manualOpen}
-              name={manualName}
-              command={manualCommand}
-              args={manualArgs}
-              tags={manualTags}
-              env={manualEnv}
-              busy={busyId === "manual"}
-              onToggleOpen={() => setManualOpen((open) => !open)}
-              onNameChange={setManualName}
-              onCommandChange={setManualCommand}
-              onArgsChange={setManualArgs}
-              onTagsChange={setManualTags}
-              onEnvChange={setManualEnv}
-              onCancel={() => setManualOpen(false)}
-              onSubmit={submitManual}
-            />
-            <RegistrySourcesPanel
-              sources={registrySources}
-              open={registryOpen}
-              name={registryName}
-              url={registryUrl}
-              busyId={busyId}
-              onToggleOpen={() => setRegistryOpen((open) => !open)}
-              onNameChange={setRegistryName}
-              onUrlChange={setRegistryUrl}
-              onCancel={() => setRegistryOpen(false)}
-              onSubmit={submitRegistry}
-              onToggleSource={(source) =>
-                void postRegistry(
-                  {
-                    action: "set_registry_enabled",
-                    id: source.id,
-                    enabled: !source.enabled,
-                  },
-                  `${source.id}:enabled`,
-                )
-              }
-              onRemoveSource={(source) =>
-                void postRegistry(
-                  { action: "remove_registry", id: source.id },
-                  `${source.id}:remove`,
-                )
-              }
-            />
-          </div>
-        ) : null}
-        {activeSection === "registry" ? (
-          <RegistrySearchPanel
-            entries={registry}
-            loading={registryLoading}
-            search={search}
-            installedNames={installedNames}
-            busyId={busyId}
-            onSearchChange={setSearch}
-            onConfigure={beginConfigureEntry}
-          />
-        ) : null}
-        {activeSection === "curated" ? (
-          <CuratedQuickAddPanel
-            entries={curated}
-            installedNames={installedNames}
-            busyId={busyId}
-            onConfigure={beginConfigureEntry}
-          />
-        ) : null}
+        {errorNotice}
+        {activeSection === "custom" ? customPanel : null}
+        {activeSection === "registry" ? registryPanel : null}
+        {activeSection === "curated" ? curatedPanel : null}
       </SettingsLayout>
 
-      {configureEntry ? (
-        <ConfigureEntryPanel
-          entry={configureEntry}
-          command={configureCommand}
-          args={configureArgs}
-          tags={configureTags}
-          env={configureEnv}
-          busy={busyId === configureEntry.id}
-          onCommandChange={setConfigureCommand}
-          onArgsChange={setConfigureArgs}
-          onTagsChange={setConfigureTags}
-          onEnvChange={setConfigureEnv}
-          onCancel={() => setConfigureEntry(null)}
-          onSubmit={submitConfiguredEntry}
-        />
-      ) : null}
+      {configurePanel}
     </>
   );
 }

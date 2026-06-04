@@ -194,6 +194,7 @@ function BackendRow({
 
   return (
     <SettingsRow
+      variant="resource"
       label={meta.label}
       description={meta.description}
       value={

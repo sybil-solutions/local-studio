@@ -47,6 +47,7 @@ export function InstalledMcpServersPanel({
         servers.map((server) => (
           <SettingsRow
             key={server.id}
+            variant="resource"
             label={server.displayName ?? server.name}
             description={serverDescription(server)}
             value={<SettingsValue mono>{serverLocation(server)}</SettingsValue>}

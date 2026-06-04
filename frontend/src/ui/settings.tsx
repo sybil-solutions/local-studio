@@ -32,6 +32,7 @@ type RowProps = {
   status?: ReactNode;
   actions?: ReactNode;
   children?: ReactNode;
+  variant?: "settings" | "resource";
 };
 
 export function SettingsLayout<Id extends SettingsSectionId = SettingsSectionId>({

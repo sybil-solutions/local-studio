@@ -87,6 +87,7 @@ export function ManagedRuntimeInstallRows({
     return (
       <SettingsRow
         key={backend}
+        variant="resource"
         label={`${meta.label} managed venv`}
         description={`${action} latest ${meta.label} in the controller-managed Python environment.`}
         value={
@@ -163,6 +164,7 @@ export function RuntimeTargetRow({
 
   return (
     <SettingsRow
+      variant="resource"
       label={target.label || meta?.label || target.backend}
       description={<RuntimeTargetMeta target={target} />}
       control={<RuntimeTargetSummary target={target} />}

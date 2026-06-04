@@ -21,7 +21,7 @@ import {
 } from "./agent-settings-sections";
 import { AppearanceSettings } from "./appearance-settings";
 import { EnginesSection } from "./engines-section";
-import { PluginsSettings } from "./plugins-settings";
+import { PluginsSettingsSection } from "../plugins/plugins-page";
 import { ServicesSettings, SystemSettings } from "./system-settings-section";
 import { getConfigsViewSnapshot } from "./configs-view-snapshot";
 interface ConfigsViewProps {
@@ -161,7 +161,7 @@ export function ConfigsView({
       ) : null}
       {activeSection === "appearance" ? <AppearanceSettings /> : null}{" "}
       {activeSection === "archive" ? <ArchivedChatsSettings /> : null}
-      {activeSection === "plugins" ? <PluginsSettings /> : null}{" "}
+      {activeSection === "plugins" ? <PluginsSettingsSection /> : null}{" "}
       {activeSection === "skills" ? <SkillsSettings /> : null}
       {activeSection === "setup" ? <SetupChecksSettings /> : null}{" "}
     </SettingsLayout>

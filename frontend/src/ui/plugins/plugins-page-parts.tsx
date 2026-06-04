@@ -25,6 +25,7 @@ export function RegistryRow({
   const source = registryLabel(entry);
   return (
     <SettingsRow
+      variant="resource"
       label={entry.displayName}
       description={compact ? (entry.shortDescription ?? entry.description) : entry.description}
       value={

@@ -1,5 +1,6 @@
 "use client";
 
+import { EmptySafeNotice } from "../list";
 import {
   SettingsButton,
   SettingsGroup,
@@ -23,6 +24,7 @@ export function RegistrySourcesPanel({
   onSubmit,
   onToggleSource,
   onRemoveSource,
+  loading = false,
 }: {
   sources: RegistrySource[];
   open: boolean;
@@ -36,6 +38,7 @@ export function RegistrySourcesPanel({
   onSubmit: () => void;
   onToggleSource: (source: RegistrySource) => void;
   onRemoveSource: (source: RegistrySource) => void;
+  loading?: boolean;
 }) {
   return (
     <SettingsGroup
@@ -43,38 +46,47 @@ export function RegistrySourcesPanel({
       description="The official MCP Registry is always available. Add compatible registries only when you trust their operators."
       actions={<SettingsButton onClick={onToggleOpen}>{open ? "Close" : "Add"}</SettingsButton>}
     >
-      {sources.map((source) => (
-        <SettingsRow
-          key={source.id}
-          label={source.name}
-          description={source.url}
-          value={<SettingsValue>{source.builtIn ? "official" : "custom"}</SettingsValue>}
-          status={
-            <StatusPill tone={source.enabled ? "good" : "default"}>
-              {source.enabled ? "enabled" : "disabled"}
-            </StatusPill>
-          }
-          actions={
-            source.builtIn ? null : (
-              <>
-                <SettingsButton
-                  onClick={() => onToggleSource(source)}
-                  disabled={busyId === `${source.id}:enabled`}
-                >
-                  {source.enabled ? "Disable" : "Enable"}
-                </SettingsButton>
-                <SettingsButton
-                  tone="danger"
-                  onClick={() => onRemoveSource(source)}
-                  disabled={busyId === `${source.id}:remove`}
-                >
-                  Remove
-                </SettingsButton>
-              </>
-            )
-          }
-        />
-      ))}
+      {sources.length ? (
+        sources.map((source) => (
+          <SettingsRow
+            key={source.id}
+            variant="resource"
+            label={source.name}
+            description={source.url}
+            value={<SettingsValue>{source.builtIn ? "official" : "custom"}</SettingsValue>}
+            status={
+              <StatusPill tone={source.enabled ? "good" : "default"}>
+                {source.enabled ? "enabled" : "disabled"}
+              </StatusPill>
+            }
+            actions={
+              source.builtIn ? null : (
+                <>
+                  <SettingsButton
+                    onClick={() => onToggleSource(source)}
+                    disabled={busyId === `${source.id}:enabled`}
+                  >
+                    {source.enabled ? "Disable" : "Enable"}
+                  </SettingsButton>
+                  <SettingsButton
+                    tone="danger"
+                    onClick={() => onRemoveSource(source)}
+                    disabled={busyId === `${source.id}:remove`}
+                  >
+                    Remove
+                  </SettingsButton>
+                </>
+              )
+            }
+          />
+        ))
+      ) : (
+        <EmptySafeNotice>
+          {loading
+            ? "Loading registry sources..."
+            : "Official registry source did not load. Refresh to retry."}
+        </EmptySafeNotice>
+      )}
       {open ? (
         <>
           <SettingsRow

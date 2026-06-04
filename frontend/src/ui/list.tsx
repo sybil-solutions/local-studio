@@ -73,6 +73,7 @@ export function ListRow({
   actions,
   children,
   className,
+  variant = "settings",
 }: {
   label: string;
   description?: ReactNode;
@@ -82,7 +83,41 @@ export function ListRow({
   actions?: ReactNode;
   children?: ReactNode;
   className?: string;
+  variant?: "settings" | "resource";
 }) {
+  if (variant === "resource") {
+    return (
+      <div className={cx("px-3.5 py-3 transition-colors hover:bg-(--ui-hover)/35", className)}>
+        <div className="grid min-h-8 grid-cols-1 gap-2 md:grid-cols-[minmax(180px,0.85fr)_minmax(190px,1fr)_auto] md:items-center md:gap-4">
+          <div className="min-w-0">
+            <div
+              className="truncate text-[length:var(--fs-base)] font-medium text-(--ui-fg)"
+              title={label}
+            >
+              {label}
+            </div>
+            {description ? (
+              <div className="mt-0.5 text-[length:var(--fs-sm)] leading-snug text-(--ui-muted)">
+                {description}
+              </div>
+            ) : null}
+          </div>
+          <div className="min-w-0">{control ?? value ?? null}</div>
+          <div className="flex items-center justify-end gap-1.5">
+            {status ? <div className="shrink-0">{status}</div> : null}
+            {actions ? <div className="flex shrink-0 items-center gap-1.5">{actions}</div> : null}
+          </div>
+        </div>
+        {children ? (
+          <div className="mt-2 grid grid-cols-1 gap-1.5 md:grid-cols-[minmax(180px,0.85fr)_minmax(0,1fr)] md:gap-4">
+            <div className="hidden md:block" />
+            <div className="min-w-0">{children}</div>
+          </div>
+        ) : null}
+      </div>
+    );
+  }
+
   return (
     <div className={cx("px-3.5 py-2.5 transition-colors hover:bg-(--ui-hover)/35", className)}>
       {/* Shared 2-column grid pins a fixed label column so every control across
