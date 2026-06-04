@@ -235,12 +235,6 @@ function pluginRefLabel(plugin: ComposerPluginRef): string {
   return plugin.source ? `@${plugin.name} (${plugin.source})` : `@${plugin.name}`;
 }
 
-function pluginNameIncludes(plugin: ComposerPluginRef, needle: string): boolean {
-  return [plugin.id, plugin.name, plugin.displayName, plugin.path]
-    .filter((value): value is string => Boolean(value))
-    .some((value) => value.toLowerCase().includes(needle));
-}
-
 function searchableText(row: {
   name: string;
   displayName?: string;
