@@ -39,7 +39,9 @@ export function PageHeader({
     <div className="mb-5 flex min-h-8 items-center justify-between gap-3">
       <div className="min-w-0">
         {eyebrow ? (
-          <div className="text-[length:var(--fs-xs)] uppercase tracking-[0.14em] text-(--ui-muted)">{eyebrow}</div>
+          <div className="text-[length:var(--fs-xs)] uppercase tracking-[0.14em] text-(--ui-muted)">
+            {eyebrow}
+          </div>
         ) : null}
         <h2 className="mt-1 truncate text-[length:var(--fs-3xl)] font-medium tracking-[-0.02em] text-(--ui-fg)">
           {title}
@@ -67,8 +69,8 @@ export function SectionNav<Id extends string = string>({
   onSelectItem: (item: Id) => void;
 }) {
   return (
-    <nav aria-label={label} className="-mx-1 overflow-x-auto pb-1 lg:mx-0 lg:overflow-visible">
-      <div className="flex min-w-max gap-1 lg:min-w-0 lg:flex-col">
+    <nav aria-label={label} className="-mx-1 pb-1 lg:mx-0">
+      <div className="flex flex-wrap gap-1 lg:flex-col lg:flex-nowrap">
         {items.map((item) => {
           const active = activeItem === item.id;
           return (
@@ -77,7 +79,7 @@ export function SectionNav<Id extends string = string>({
               type="button"
               onClick={() => onSelectItem(item.id)}
               className={cx(
-                "group grid h-8 grid-cols-[18px_1fr] items-center gap-2.5 rounded-md px-2.5 text-left text-[length:var(--fs-md)] transition-colors lg:w-full",
+                "group grid h-8 max-w-[calc(50%_-_0.125rem)] min-w-0 grid-cols-[18px_minmax(0,1fr)] items-center gap-2.5 rounded-md px-2.5 text-left text-[length:var(--fs-md)] transition-colors sm:max-w-none lg:w-full",
                 active
                   ? "bg-(--ui-hover) text-(--ui-fg)"
                   : "text-(--ui-muted) hover:bg-(--ui-hover) hover:text-(--ui-fg)",
