@@ -89,31 +89,32 @@ export function ListRow({
 
   if (variant === "resource") {
     return (
-      <div className={cx("px-3.5 py-3 transition-colors hover:bg-(--ui-hover)/35", className)}>
-        <div className="grid min-h-8 grid-cols-1 gap-2 md:grid-cols-[minmax(0,1fr)_auto] md:items-start md:gap-4">
-          <div className="min-w-0 space-y-1">
-            <div className="min-w-0">
-              <div
-                className="min-w-0 truncate text-[length:var(--fs-base)] font-medium text-(--ui-fg)"
-                title={label}
-              >
-                {label}
-              </div>
+      <div className={cx("px-4 py-3.5 transition-colors hover:bg-(--ui-hover)/35", className)}>
+        <div className="flex min-h-8 flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0 flex-1 space-y-1">
+            <div className="min-w-0 text-[length:var(--fs-base)] font-medium leading-snug text-(--ui-fg)">
+              {label}
             </div>
             {description ? (
               <div className="text-[length:var(--fs-sm)] leading-relaxed text-(--ui-muted)">
                 {description}
               </div>
             ) : null}
-            {primaryValue ? <div className="min-w-0 text-(--ui-muted)">{primaryValue}</div> : null}
           </div>
-          <div className="flex items-center justify-end gap-1.5">
+          <div className="flex shrink-0 items-center gap-1.5 sm:pt-0.5">
             {status ? <div className="shrink-0">{status}</div> : null}
             {actions ? <div className="flex shrink-0 items-center gap-1.5">{actions}</div> : null}
           </div>
         </div>
+        {primaryValue ? (
+          <div className="mt-2 min-w-0 rounded-md border border-(--ui-separator) bg-(--ui-bg)/55 px-2.5 py-2 text-(--ui-muted)">
+            {primaryValue}
+          </div>
+        ) : null}
         {children ? (
-          <div className="mt-2 min-w-0 space-y-1.5 text-[length:var(--fs-sm)]">{children}</div>
+          <div className="mt-2 min-w-0 space-y-1.5 text-[length:var(--fs-sm)] leading-relaxed">
+            {children}
+          </div>
         ) : null}
       </div>
     );

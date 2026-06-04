@@ -75,7 +75,7 @@ export function StepHardware({
 
       <SettingsGroup
         title="Runtime setup"
-        description="Controller-managed Python environment for the guided vLLM launch path."
+        description="Controller-managed Python environments for guided local inference."
       >
         <ManagedRuntimeInstallRows
           backends={SETUP_RUNTIME_BACKENDS}

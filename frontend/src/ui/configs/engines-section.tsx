@@ -7,6 +7,8 @@ import api from "@/lib/api";
 import type { EngineJob, RuntimeBackendInfo, RuntimeTarget, SystemRuntimeInfo } from "@/lib/types";
 import {
   ENGINE_META,
+  MANAGED_RUNTIME_BACKENDS,
+  ManagedRuntimeInstallRows,
   RuntimeTargetRows,
   RuntimeTargetStatus,
   SettingsButton,
@@ -14,6 +16,8 @@ import {
   SettingsRow,
   SettingsValue,
   StatusPill,
+  isManagedRuntimeTarget,
+  type ManagedRuntimeInstallBackend,
 } from "@/ui";
 import {
   hasHydratedEngineRows,
@@ -146,9 +150,34 @@ function EngineRows({
     },
     [onJobCreated],
   );
+  const handleManagedInstall = useCallback(
+    async (backend: ManagedRuntimeInstallBackend) => {
+      await api.createRuntimeJob({ backend, type: "install" });
+      await onJobCreated();
+    },
+    [onJobCreated],
+  );
 
   if (view.kind === "targets") {
-    return <RuntimeTargetRows targets={view.targets} jobs={jobs} onAction={handleTargetAction} />;
+    const discoveredTargets = view.targets.filter((target) => !isManagedRuntimeTarget(target));
+    return (
+      <>
+        <ManagedRuntimeInstallRows
+          backends={MANAGED_RUNTIME_BACKENDS}
+          targets={view.targets}
+          jobs={jobs}
+          onInstall={handleManagedInstall}
+          onUpdateTarget={handleTargetAction}
+        />
+        {discoveredTargets.length > 0 ? (
+          <RuntimeTargetRows
+            targets={discoveredTargets}
+            jobs={jobs}
+            onAction={handleTargetAction}
+          />
+        ) : null}
+      </>
+    );
   }
   if (view.kind === "backends") {
     return view.rows.map(({ id, info }) => (

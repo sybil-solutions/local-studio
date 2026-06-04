@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowUpCircle, DownloadCloud, Info, Loader2 } from "lucide-react";
+import { ArrowUpCircle, DownloadCloud, Loader2 } from "lucide-react";
 import type { EngineBackend, EngineJob, RuntimeTarget } from "@/lib/types";
 import { SettingsButton, SettingsRow, SettingsValue } from "./settings";
 import { StatusPill, type UiTone } from "./status";
@@ -82,14 +82,15 @@ export function ManagedRuntimeInstallRows({
       ? jobForRuntimeTarget(jobs, installedTarget)
       : managedInstallJob(jobs, backend);
     const running = isRunningEngineJob(job);
-    const canUpdate = Boolean(installedTarget?.capabilities.canUpdate && onUpdateTarget);
+    const updateTarget = installedTarget?.capabilities.canUpdate ? installedTarget : undefined;
+    const onAction = updateTarget ? onUpdateTarget : onInstall;
     const action = installedTarget ? "Update" : "Install";
     return (
       <SettingsRow
         key={backend}
         variant="resource"
-        label={`${meta.label} managed venv`}
-        description={`${action} latest ${meta.label} in the controller-managed Python environment.`}
+        label={`${meta.label} latest venv`}
+        description={`Create or update the controller-managed Python environment for ${meta.label}.`}
         value={
           <SettingsValue mono truncate>
             {target?.pythonPath ?? `$DATA_DIR/runtime/venvs/${backend}-latest`}
@@ -109,9 +110,9 @@ export function ManagedRuntimeInstallRows({
         actions={
           <SettingsButton
             onClick={() =>
-              void (installedTarget ? onUpdateTarget?.(installedTarget) : onInstall(backend))
+              void (updateTarget ? onUpdateTarget?.(updateTarget) : onInstall(backend))
             }
-            disabled={running || (installedTarget ? !canUpdate : false)}
+            disabled={running || !onAction}
           >
             {running ? (
               <Loader2 className="h-3 w-3 animate-spin" />
@@ -120,7 +121,7 @@ export function ManagedRuntimeInstallRows({
             ) : (
               <DownloadCloud className="h-3 w-3" />
             )}
-            {running ? job?.status : action}
+            {running ? job?.status : installedTarget ? action : "Create venv"}
           </SettingsButton>
         }
       >
@@ -212,6 +213,9 @@ function RuntimeTargetAction({
   const running = isRunningEngineJob(job);
   const canUpdate = target.capabilities.canUpdate;
   const disabled = running || !canUpdate || !onAction;
+  if (!running && (!canUpdate || !onAction)) {
+    return null;
+  }
   return (
     <SettingsButton
       onClick={() => void onAction?.(target)}
@@ -220,10 +224,8 @@ function RuntimeTargetAction({
     >
       {running ? (
         <Loader2 className="h-3 w-3 animate-spin" />
-      ) : canUpdate ? (
-        <ArrowUpCircle className="h-3 w-3" />
       ) : (
-        <Info className="h-3 w-3" />
+        <ArrowUpCircle className="h-3 w-3" />
       )}
       {running ? job?.status : canUpdate ? (target.installed ? "Update" : "Install") : "Managed"}
     </SettingsButton>
@@ -255,7 +257,7 @@ function RuntimeTargetMeta({ target }: { target: RuntimeTarget }) {
 function RuntimeTargetSummary({ target }: { target: RuntimeTarget }) {
   const location = pathForTarget(target);
   return (
-    <div className="min-w-0 flex-1 text-left">
+    <div className="min-w-0 text-left">
       <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
         <span className="font-mono text-[length:var(--fs-md)] text-(--ui-fg)/85">
           {target.installed ? (target.version ?? "installed") : "not installed"}
@@ -268,7 +270,7 @@ function RuntimeTargetSummary({ target }: { target: RuntimeTarget }) {
       </div>
       {location ? (
         <div
-          className="mt-0.5 min-w-0 truncate font-mono text-[length:var(--fs-sm)] text-(--ui-muted)"
+          className="mt-1 min-w-0 break-all font-mono text-[length:var(--fs-sm)] leading-relaxed text-(--ui-muted)"
           title={location}
         >
           {location}
@@ -325,7 +327,7 @@ export function RuntimeJobMessage({ job }: { job: EngineJob }) {
 export function RuntimeUpdateDetails({ update }: { update: NonNullable<RuntimeTarget["update"]> }) {
   const pinHint = update.changes.find((change) => change.startsWith("Set "));
   return (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[length:var(--fs-sm)] text-(--ui-muted)">
+    <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[length:var(--fs-sm)] text-(--ui-muted)">
       <span>
         Update available:{" "}
         <span className="font-mono text-(--ui-fg)/70">
