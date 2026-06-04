@@ -1,5 +1,6 @@
 import {
   useCallback,
+  useRef,
   useSyncExternalStore,
   type Dispatch,
   type RefObject,
@@ -7,7 +8,9 @@ import {
 } from "react";
 
 import type { ComposerMention } from "@/lib/agent/composer-context";
-import type { ChatPaneHandle } from "@/lib/agent/session";
+import { newId, type ChatPaneHandle } from "@/lib/agent/session";
+import type { ContextAttachRequest } from "@/lib/agent/tools/types";
+import { attachmentDedupKey, type ChatAttachment } from "@/app/agent/_components/chat-attachments";
 
 const getChatPaneSnapshot = (): number => 0;
 
@@ -87,6 +90,45 @@ export function useChatPaneMentionEffects({
 
   useSyncExternalStore(subscribeMentionIndex, getChatPaneSnapshot, getChatPaneSnapshot);
   useSyncExternalStore(subscribeMentionRows, getChatPaneSnapshot, getChatPaneSnapshot);
+}
+
+export function useChatPaneContextAttachEffect({
+  contextAttachRequest,
+  isFocused,
+  setAttachments,
+}: {
+  contextAttachRequest: ContextAttachRequest | null;
+  isFocused: boolean;
+  setAttachments: Dispatch<SetStateAction<ChatAttachment[]>>;
+}): void {
+  const handledContextAttachRef = useRef(0);
+  const subscribeContextAttach = useCallback(() => {
+    if (
+      contextAttachRequest &&
+      isFocused &&
+      handledContextAttachRef.current !== contextAttachRequest.id
+    ) {
+      handledContextAttachRef.current = contextAttachRequest.id;
+      const attachment: ChatAttachment = {
+        id: newId("ctx"),
+        name: contextAttachRequest.label,
+        type: "text/plain",
+        size: contextAttachRequest.content.length,
+        ...(contextAttachRequest.path ? { path: contextAttachRequest.path } : {}),
+        mode: "text",
+        content: contextAttachRequest.content,
+        previewKind: "file",
+      };
+      setAttachments((current) => {
+        const nextKey = attachmentDedupKey(attachment);
+        if (current.some((file) => attachmentDedupKey(file) === nextKey)) return current;
+        return [...current, attachment];
+      });
+    }
+    return () => undefined;
+  }, [contextAttachRequest, isFocused, setAttachments]);
+
+  useSyncExternalStore(subscribeContextAttach, getChatPaneSnapshot, getChatPaneSnapshot);
 }
 
 export function useChatPaneRegisterHandleEffect({
