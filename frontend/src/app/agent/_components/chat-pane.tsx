@@ -26,7 +26,6 @@ import {
   useChatPaneRegisterHandleEffect,
   useChatPaneStickToBottomEffect,
 } from "@/hooks/agent/use-chat-pane-effects";
-import { useProjectsNavSessionPrefs } from "@/hooks/agent/use-projects-nav-section-effects";
 import {
   activeComposerPlugins,
   byQuery,
@@ -41,7 +40,6 @@ import {
   ChatMessage,
   ChatPaneHandle,
   EventBlock,
-  cleanSessionTitle,
   isPlaceholderSessionTitle,
   newId,
   QueuedMessage,
@@ -58,7 +56,6 @@ import {
   endSessionSubmit,
   type SessionSubmitGuard,
 } from "@/lib/agent/sessions/submit-guard";
-import { copySessionPref, patchSessionPref } from "@/lib/agent/session/prefs";
 import { promptRequestsBrowser } from "@/lib/agent/browser/intent";
 import { useTools } from "@/lib/agent/tools/context";
 import {
@@ -71,6 +68,7 @@ import {
   type ChatAttachment,
 } from "./chat-attachments";
 import { Timeline } from "./timeline/timeline";
+import { useChatPaneSessionTitle } from "./use-chat-pane-session-title";
 import { useComposerMentionSelection } from "./use-composer-mention-selection";
 import { useComposerTextareaBehavior } from "./use-composer-textarea-behavior";
 export type {
@@ -170,7 +168,6 @@ export function ChatPane({
   const [fileMentionRows, setFileMentionRows] = useState<FileMentionRow[]>([]);
   const [compacting, setCompacting] = useState(false);
   const tools = useTools();
-  const sessionPrefs = useProjectsNavSessionPrefs();
   const pluginRows = tools.pluginCatalogue;
   const skillRows = tools.skillCatalogue;
   const promptTemplateRows = tools.promptTemplateCatalogue;
@@ -232,59 +229,20 @@ export function ChatPane({
     },
     [onTabsChange],
   );
-  const sessionPrefKeys = useMemo(
-    () =>
-      [
-        activeTab?.piSessionId,
-        paneId && activeTab?.id ? `tab:${paneId}:${activeTab.id}` : null,
-      ].filter((value): value is string => Boolean(value)),
-    [activeTab?.id, activeTab?.piSessionId, paneId],
-  );
-  const sessionPrefTitle = sessionPrefKeys.reduce((title, key) => {
-    const nextTitle = cleanSessionTitle(sessionPrefs[key]?.title);
-    return nextTitle || title;
-  }, "");
-  // Rule: if the visible session is empty (no rendered messages, no input,
-  // not actively running) the header is blank. This covers three different
-  // cases that all looked broken before:
-  //   - a brand-new starter tab opened via "+" (no piSessionId yet)
-  //   - a persisted chat being restored before replay has filled in messages
-  //   - a freshly cleared/forked session waiting for its first turn
-  // Once the user types or pi streams the first message in, the real title
-  // takes over.
-  const sessionLooksEmpty =
-    !activeTab || (activeTab.messages.length === 0 && !activeTab.input.trim() && !running);
-  const displayedSessionTitle = sessionLooksEmpty
-    ? ""
-    : sessionPrefTitle || cleanSessionTitle(activeTab?.title) || "";
-  const sessionPinned = sessionPrefKeys.some((key) => Boolean(sessionPrefs[key]?.pinned));
-  const patchActiveSessionPrefs = useCallback(
-    (patch: { title?: string; pinned?: boolean }) => {
-      for (const key of sessionPrefKeys) patchSessionPref(key, patch);
-    },
-    [sessionPrefKeys],
-  );
-  const togglePinnedSession = useCallback(() => {
-    if (sessionPrefKeys.length === 0) return;
-    patchActiveSessionPrefs({ pinned: !sessionPinned });
-  }, [patchActiveSessionPrefs, sessionPinned, sessionPrefKeys.length]);
-  const handlePiSessionIdChange = useCallback(
-    (piSessionId: string) => {
-      if (paneId && activeTabId) copySessionPref(`tab:${paneId}:${activeTabId}`, piSessionId);
-      onPiSessionIdChange?.(piSessionId);
-    },
-    [activeTabId, onPiSessionIdChange, paneId],
-  );
-  const renameActiveSession = useCallback(
-    (nextTitle: string) => {
-      if (!activeTab) return;
-      const trimmed = cleanSessionTitle(nextTitle);
-      if (!trimmed || trimmed === displayedSessionTitle) return;
-      onRenameSession(activeTab.id, trimmed);
-      patchActiveSessionPrefs({ title: trimmed });
-    },
-    [activeTab, displayedSessionTitle, onRenameSession, patchActiveSessionPrefs],
-  );
+  const {
+    displayedSessionTitle,
+    sessionPinned,
+    togglePinnedSession,
+    handlePiSessionIdChange,
+    renameActiveSession,
+  } = useChatPaneSessionTitle({
+    activeTab,
+    activeTabId,
+    paneId,
+    running: Boolean(running),
+    onPiSessionIdChange,
+    onRenameSession,
+  });
   const selectMentionRow = useComposerMentionSelection({
     activeTab,
     mention,
