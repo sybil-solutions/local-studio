@@ -10,9 +10,9 @@ import {
   type DragEvent,
   type ReactNode,
 } from "react";
-import { Code2, Loader2, Plus } from "lucide-react";
-import { CloseIcon, FileIcon, GlobeIcon, SendIcon, StopIcon } from "@/ui/icons";
+import { CloseIcon, FileIcon } from "@/ui/icons";
 import { AgentChatPaneHeader } from "@/ui/agent-chat-pane-header";
+import { AgentComposerActions } from "@/ui/agent-composer-actions";
 import { AgentComposerStatusBar } from "@/ui/agent-composer-status-bar";
 import {
   AgentLoadedContextTabs,
@@ -1083,118 +1083,21 @@ export function ChatPane({
             placeholder=""
             className="min-h-[44px] max-h-[50vh] w-full resize-none overflow-y-auto bg-transparent px-4 py-2.5 text-[length:var(--fs-lg)] leading-[1.6] tracking-normal text-(--fg) outline-none placeholder:text-(--dim)/60"
           />
-          <div className="agent-composer-actions-row flex min-h-8 items-center gap-1.5 bg-transparent px-3 pb-1.5 pt-0.5 text-xs">
-            {" "}
-            <input
-              ref={fileInputRef}
-              type="file"
-              multiple
-              className="hidden"
-              onChange={(event) => void attachFiles(event.currentTarget.files)}
-            />
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={readingAttachments || running}
-              className="inline-flex !h-7 !min-h-7 !w-7 !min-w-7 shrink-0 items-center justify-center text-(--dim) hover:text-(--fg)/80 disabled:opacity-30"
-              aria-label="Attach files"
-              title="Attach files (or paste/drop into composer)"
-            >
-              {" "}
-              <Plus className="h-3.5 w-3.5" />
-            </button>{" "}
-            <button
-              type="button"
-              onClick={onToggleBrowserTool}
-              aria-pressed={browserToolEnabled}
-              title={
-                browserToolEnabled
-                  ? "Browser tool: ON — agent can drive the browser"
-                  : "Browser tool: OFF — click to let the agent navigate, click, fill, and read pages"
-              }
-              className={`inline-flex !h-7 !min-h-7 !w-7 !min-w-7 shrink-0 items-center justify-center rounded-md ${browserToolEnabled ? "text-(--accent)/70 hover:text-(--accent)" : "text-(--dim)/75 hover:text-(--fg)/80"}`}
-            >
-              <span className="relative inline-flex">
-                {" "}
-                <GlobeIcon className="h-3.5 w-3.5" />
-              </span>
-            </button>{" "}
-            <button
-              type="button"
-              onClick={onToggleCanvas}
-              aria-pressed={canvasEnabled}
-              title={
-                canvasEnabled
-                  ? "Canvas: ON — shared scratchboard tools loaded; model reads/writes the canvas"
-                  : "Canvas: OFF — click to share a scratchboard with the model (notes, plans, links, state)"
-              }
-              className={`inline-flex !h-7 !min-h-7 !w-7 !min-w-7 shrink-0 items-center justify-center rounded-md ${canvasEnabled ? "text-(--accent)/70 hover:text-(--accent)" : "text-(--dim)/75 hover:text-(--fg)/80"}`}
-            >
-              <Code2 className="h-3.5 w-3.5" />
-            </button>{" "}
-            <div className="ml-auto flex shrink-0 items-center gap-1">
-              {running ? (
-                <>
-                  {" "}
-                  {activeTab?.status === "starting" ? (
-                    <span
-                      className="inline-flex !h-7 !min-h-7 shrink-0 items-center gap-1.5 px-2 text-[length:var(--fs-sm)] text-(--dim)"
-                      title="Waiting for the model to start"
-                    >
-                      {" "}
-                      <Loader2 className="h-3 w-3 animate-spin" />
-                      Starting…{" "}
-                    </span>
-                  ) : activeTab?.input.trim() ? (
-                    <>
-                      <button
-                        type="button"
-                        onClick={() => void queueMessage()}
-                        className="inline-flex !h-7 !min-h-7 shrink-0 items-center px-1.5 text-[length:var(--fs-sm)] text-(--dim) underline-offset-2 hover:text-(--fg) hover:underline"
-                        title="Queue (Tab)"
-                      >
-                        {" "}
-                        Queue
-                      </button>{" "}
-                      <button
-                        type="submit"
-                        className="inline-flex !h-7 !min-h-7 shrink-0 items-center gap-1 rounded-md bg-(--accent)/10 px-2 text-[length:var(--fs-sm)] text-(--accent)/75 hover:bg-(--accent)/15 hover:text-(--fg)/85"
-                        title="Steer (Enter): interrupt current turn and send"
-                      >
-                        <SendIcon className="h-3 w-3" /> Steer{" "}
-                      </button>
-                    </>
-                  ) : null}
-                  <button
-                    type="button"
-                    onClick={() => void abortTurn()}
-                    disabled={activeTab?.status === "starting"}
-                    className="inline-flex !h-7 !min-h-7 !w-7 !min-w-7 shrink-0 items-center justify-center rounded-md text-(--dim) hover:text-(--fg) disabled:opacity-30 disabled:hover:text-(--dim)"
-                    aria-label="Pause"
-                    title="Pause (Esc)"
-                  >
-                    <StopIcon className="h-3 w-3" />
-                  </button>{" "}
-                </>
-              ) : (
-                <button
-                  type="submit"
-                  disabled={
-                    (!activeTab?.input.trim() && attachments.length === 0) || readingAttachments
-                  }
-                  className="inline-flex !h-7 !min-h-7 !w-7 !min-w-7 shrink-0 items-center justify-center text-(--dim)/85 hover:text-(--fg)/85 disabled:opacity-30"
-                  aria-label="Send"
-                  title="Send (Enter) · Queue (Tab)"
-                >
-                  {activeTab?.status === "starting" ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  ) : (
-                    <SendIcon className="h-3.5 w-3.5" />
-                  )}{" "}
-                </button>
-              )}{" "}
-            </div>
-          </div>{" "}
+          <AgentComposerActions
+            fileInputRef={fileInputRef}
+            onAttachFiles={(files) => void attachFiles(files)}
+            readingAttachments={readingAttachments}
+            running={Boolean(running)}
+            status={activeTab?.status}
+            input={activeTab?.input ?? ""}
+            attachmentsCount={attachments.length}
+            browserToolEnabled={browserToolEnabled}
+            onToggleBrowserTool={onToggleBrowserTool}
+            canvasEnabled={canvasEnabled}
+            onToggleCanvas={onToggleCanvas}
+            onQueueMessage={() => void queueMessage()}
+            onAbortTurn={() => void abortTurn()}
+          />
         </div>
         <AgentComposerStatusBar
           cwd={cwd}
