@@ -100,6 +100,7 @@ export { AgentQueuePanel } from "./agent-queue-panel";
 export { AgentAttachmentTray } from "./agent-attachment-tray";
 export type { AgentComposerAttachment } from "./agent-attachment-tray";
 export { AgentComposerActions } from "./agent-composer-actions";
+export { AgentComposerTextArea } from "./agent-composer-textarea";
 export { AgentChatPaneHeader } from "./agent-chat-pane-header";
 export { AgentComposerStatusBar } from "./agent-composer-status-bar";
 export { AgentLoadedContextTabs, AgentMentionPicker } from "./agent-composer-context";

@@ -5,7 +5,6 @@ import {
   useMemo,
   useRef,
   useState,
-  type ClipboardEvent,
   type DragEvent,
   type ReactNode,
 } from "react";
@@ -13,6 +12,7 @@ import { AgentAttachmentTray } from "@/ui/agent-attachment-tray";
 import { AgentChatPaneHeader } from "@/ui/agent-chat-pane-header";
 import { AgentComposerActions } from "@/ui/agent-composer-actions";
 import { AgentComposerStatusBar } from "@/ui/agent-composer-status-bar";
+import { AgentComposerTextArea } from "@/ui/agent-composer-textarea";
 import {
   AgentLoadedContextTabs,
   AgentMentionPicker,
@@ -30,7 +30,6 @@ import { useProjectsNavSessionPrefs } from "@/hooks/agent/use-projects-nav-secti
 import {
   activeComposerPlugins,
   byQuery,
-  detectComposerMention,
   selectedContextPrompt,
   type ComposerMention,
   type ComposerPluginRef,
@@ -68,12 +67,12 @@ import {
   createAttachment,
   dataTransferHasFiles,
   filesFromDataTransfer,
-  imageFileFromDataUrlText,
   imageInputFromAttachment,
   type ChatAttachment,
 } from "./chat-attachments";
 import { Timeline } from "./timeline/timeline";
 import { useComposerMentionSelection } from "./use-composer-mention-selection";
+import { useComposerTextareaBehavior } from "./use-composer-textarea-behavior";
 export type {
   AgentTurnSsePayload,
   AssistantBlock,
@@ -159,15 +158,8 @@ export function ChatPane({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const composerSubmitInFlightRef = useRef<SessionSubmitGuard>(new Set());
   const controlSubmitInFlightRef = useRef<SessionSubmitGuard>(new Set());
-  // Track the height we last *applied* to the composer textarea so we can
-  // skip the "height: auto" reset on every keystroke. Resetting to auto
-  // collapses the textarea for one paint before the new scrollHeight is
-  // re-applied, which the user sees as flicker once the composer is
-  // multi-line. We only need that reset when content might have *shrunk*
-  // (i.e., when the value got shorter than before).
   const lastAppliedComposerHeightRef = useRef(0);
   const lastComposerValueLengthRef = useRef(0);
-  const [isMultiline, setIsMultiline] = useState(false);
   const [stickToBottom, setStickToBottom] = useState(true);
   const [attachments, setAttachments] = useState<ChatAttachment[]>([]);
   const [readingAttachments, setReadingAttachments] = useState(false);
@@ -303,6 +295,11 @@ export function ChatPane({
     setMention,
     textareaRef,
   });
+  const resetComposerHeight = useCallback(() => {
+    if (textareaRef.current) textareaRef.current.style.height = "";
+    lastAppliedComposerHeightRef.current = 0;
+    lastComposerValueLengthRef.current = 0;
+  }, []);
   const removeLoadedContext = useCallback(
     (kind: "plugin" | "skill" | "promptTemplate", id: string) => {
       if (!activeTab) return;
@@ -420,10 +417,7 @@ export function ChatPane({
       }
       setStickToBottom(true);
       setAttachments([]);
-      setIsMultiline(false);
-      if (textareaRef.current) textareaRef.current.style.height = "";
-      lastAppliedComposerHeightRef.current = 0;
-      lastComposerValueLengthRef.current = 0;
+      resetComposerHeight();
       if (fileInputRef.current) fileInputRef.current.value = "";
       await engine.submitPrompt({ ...args, targetSessionId: targetId });
     },
@@ -435,6 +429,7 @@ export function ChatPane({
       ensureBrowserToolForText,
       modelId,
       readingAttachments,
+      resetComposerHeight,
       tools,
     ],
   );
@@ -458,10 +453,7 @@ export function ChatPane({
             ? [...(t.queue ?? []), { id: queuedId, mode, text, sent: true }]
             : t.queue,
       }));
-      setIsMultiline(false);
-      if (textareaRef.current) textareaRef.current.style.height = "";
-      lastAppliedComposerHeightRef.current = 0;
-      lastComposerValueLengthRef.current = 0;
+      resetComposerHeight();
       const result = await engine.sendControl(mode, text, runtime, tab.id, tab.piSessionId);
       updateTab(tab.id, (t) => ({
         ...t,
@@ -469,7 +461,7 @@ export function ChatPane({
         ...(result.ok ? {} : { input: text, error: result.error || "Message failed" }),
       }));
     },
-    [engine, ensureBrowserToolForText, updateTab],
+    [engine, ensureBrowserToolForText, resetComposerHeight, updateTab],
   );
   const sendMessage = useCallback(
     async (event: FormEvent) => {
@@ -649,52 +641,6 @@ export function ChatPane({
     },
     [activeTab, running, updateTab],
   );
-  const handleComposerPaste = useCallback(
-    (event: ClipboardEvent<HTMLTextAreaElement>) => {
-      const files = filesFromDataTransfer(event.clipboardData);
-      if (files.length === 0) {
-        const text = event.clipboardData.getData("text/plain");
-        const pastedImage = imageFileFromDataUrlText(text);
-        if (pastedImage) {
-          event.preventDefault();
-          void attachFiles([pastedImage]);
-          return;
-        }
-        // Insert plain text ourselves in ONE atomic update. Letting the browser
-        // natively insert a large multi-line paste makes the controlled value
-        // round-trip through the reducer mid-insertion, so the textarea visibly
-        // fills line-by-line and the auto-resize fires repeatedly (flicker +
-        // resize). Splicing at the caret and updating once avoids that.
-        if (!text || !activeTab) return;
-        event.preventDefault();
-        const element = event.currentTarget;
-        const start = element.selectionStart ?? element.value.length;
-        const end = element.selectionEnd ?? element.value.length;
-        const current = activeTab.input ?? "";
-        const nextValue = current.slice(0, start) + text + current.slice(end);
-        const nextCaret = start + text.length;
-        updateTab(activeTab.id, (tab) => ({ ...tab, input: nextValue }));
-        setMention(null);
-        // Resize once after React commits the new value, and restore the caret
-        // to just after the inserted text.
-        requestAnimationFrame(() => {
-          const node = textareaRef.current;
-          if (!node) return;
-          node.setSelectionRange(nextCaret, nextCaret);
-          node.style.height = "auto";
-          const next = node.scrollHeight;
-          node.style.height = `${next}px`;
-          lastAppliedComposerHeightRef.current = next;
-          lastComposerValueLengthRef.current = nextValue.length;
-          setIsMultiline(next > 38);
-        });
-        return;
-      }
-      event.preventDefault();
-      void attachFiles(files);
-    },
-    [activeTab, attachFiles, updateTab],
-  );
   const handleComposerDragOver = useCallback(
     (event: DragEvent<HTMLDivElement>) => {
       if (!dataTransferHasFiles(event.dataTransfer)) return;
@@ -722,6 +668,25 @@ export function ChatPane({
     if (!activeTab) return;
     await engine.abortTurn(activeTab.id);
   }, [activeTab, engine]);
+  const { handleComposerPaste, handleComposerChange, handleComposerKeyDown } =
+    useComposerTextareaBehavior({
+      activeTab,
+      mention,
+      mentionRows,
+      mentionIndex,
+      running: Boolean(running),
+      textareaRef,
+      lastAppliedComposerHeightRef,
+      lastComposerValueLengthRef,
+      resetComposerHeight,
+      updateTab,
+      setMention,
+      setMentionIndex,
+      selectMentionRow,
+      queueMessage,
+      abortTurn,
+      attachFiles,
+    });
   const loadAndReplay = useCallback(
     async (piSessionId: string) => {
       if (!activeTabId) return;
@@ -830,93 +795,12 @@ export function ChatPane({
             attachments={attachments}
             onRemove={(id) => setAttachments((current) => current.filter((item) => item.id !== id))}
           />
-          <textarea
-            ref={textareaRef}
-            rows={1}
+          <AgentComposerTextArea
+            inputRef={textareaRef}
             value={activeTab?.input ?? ""}
             onPaste={handleComposerPaste}
-            onChange={(event) => {
-              const value = event.target.value;
-              if (!activeTab) return;
-              updateTab(activeTab.id, (tab) => ({ ...tab, input: value }));
-              setMention(detectComposerMention(value, event.currentTarget.selectionStart));
-              const element = event.currentTarget;
-              if (!value) {
-                element.style.height = "";
-                lastAppliedComposerHeightRef.current = 0;
-                lastComposerValueLengthRef.current = 0;
-                setIsMultiline(false);
-                setMention(null);
-                return;
-              }
-              const prevLength = lastComposerValueLengthRef.current;
-              lastComposerValueLengthRef.current = value.length;
-              const shrinking = value.length < prevLength;
-              // When the content shrinks we have to briefly let the textarea
-              // collapse so `scrollHeight` reflects the new minimum.
-              // When the content only grows, we can skip the "height: auto"
-              // reset — that reset is what causes the one-frame flicker
-              // every keystroke in a multi-line composer.
-              if (shrinking) {
-                element.style.height = "auto";
-              }
-              const next = element.scrollHeight;
-              if (!shrinking && next === lastAppliedComposerHeightRef.current) {
-                // Height didn't change while growing — skip the write
-                // entirely. Re-assigning the same `style.height` still
-                // forces a style recompute on Electron/Chromium and
-                // contributes to the perceptible shake.
-                return;
-              }
-              element.style.height = `${next}px`;
-              lastAppliedComposerHeightRef.current = next;
-              setIsMultiline(next > 38);
-            }}
-            onKeyDown={(event) => {
-              if (mention) {
-                if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-                  event.preventDefault();
-                  setMentionIndex((index) => {
-                    if (mentionRows.length === 0) return 0;
-                    const delta = event.key === "ArrowDown" ? 1 : -1;
-                    return (index + delta + mentionRows.length) % mentionRows.length;
-                  });
-                  return;
-                }
-                if (event.key === "Escape") {
-                  event.preventDefault();
-                  setMention(null);
-                  return;
-                }
-                if ((event.key === "Enter" || event.key === "Tab") && mentionRows[mentionIndex]) {
-                  event.preventDefault();
-                  selectMentionRow(mentionRows[mentionIndex]);
-                  return;
-                }
-              }
-              if (event.key === "Enter" && !event.shiftKey) {
-                event.preventDefault();
-                event.currentTarget.form?.requestSubmit();
-                return;
-              }
-              if (event.key === "Tab" && !event.shiftKey) {
-                if (!activeTab?.input.trim()) return;
-                event.preventDefault();
-                void queueMessage();
-                return;
-              }
-              if (
-                event.key === "Escape" ||
-                (event.key === "." && (event.metaKey || event.ctrlKey))
-              ) {
-                if (running) {
-                  event.preventDefault();
-                  void abortTurn();
-                }
-              }
-            }}
-            placeholder=""
-            className="min-h-[44px] max-h-[50vh] w-full resize-none overflow-y-auto bg-transparent px-4 py-2.5 text-[length:var(--fs-lg)] leading-[1.6] tracking-normal text-(--fg) outline-none placeholder:text-(--dim)/60"
+            onChange={handleComposerChange}
+            onKeyDown={handleComposerKeyDown}
           />
           <AgentComposerActions
             fileInputRef={fileInputRef}
