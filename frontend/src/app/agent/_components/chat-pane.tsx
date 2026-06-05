@@ -1,5 +1,5 @@
 "use client";
-import { FormEvent, useCallback, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useMemo, useRef, useState, type ReactNode } from "react";
 import { AgentAttachmentTray } from "@/ui/agent-attachment-tray";
 import { AgentChatPaneHeader } from "@/ui/agent-chat-pane-header";
 import { AgentComposerActions } from "@/ui/agent-composer-actions";
@@ -18,13 +18,7 @@ import {
   useChatPaneRegisterHandleEffect,
   useChatPaneStickToBottomEffect,
 } from "@/hooks/agent/use-chat-pane-effects";
-import {
-  activeComposerPlugins,
-  byQuery,
-  selectedContextPrompt,
-  type ComposerMention,
-  type ComposerPluginRef,
-} from "@/lib/agent/composer-context";
+import { byQuery, type ComposerMention } from "@/lib/agent/composer-context";
 import {
   AgentTurnSsePayload,
   AssistantBlock,
@@ -32,8 +26,6 @@ import {
   ChatMessage,
   ChatPaneHandle,
   EventBlock,
-  isPlaceholderSessionTitle,
-  newId,
   QueuedMessage,
   SessionTab,
   TextBlock,
@@ -43,15 +35,9 @@ import {
   visibleQueuedMessages,
 } from "@/lib/agent/session";
 import { useSessionEngine } from "@/lib/agent/sessions/engine";
-import {
-  beginSessionSubmit,
-  endSessionSubmit,
-  type SessionSubmitGuard,
-} from "@/lib/agent/sessions/submit-guard";
-import { promptRequestsBrowser } from "@/lib/agent/browser/intent";
 import { useTools } from "@/lib/agent/tools/context";
-import { attachmentPrompt, imageInputFromAttachment } from "./chat-attachments";
 import { Timeline } from "./timeline/timeline";
+import { useChatPaneSendFlow } from "./use-chat-pane-send-flow";
 import { useChatPaneSessionTitle } from "./use-chat-pane-session-title";
 import { useComposerAttachments } from "./use-composer-attachments";
 import { useComposerMentionSelection } from "./use-composer-mention-selection";
@@ -139,8 +125,6 @@ export function ChatPane({
 }: Props) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const composerSubmitInFlightRef = useRef<SessionSubmitGuard>(new Set());
-  const controlSubmitInFlightRef = useRef<SessionSubmitGuard>(new Set());
   const lastAppliedComposerHeightRef = useRef(0);
   const lastComposerValueLengthRef = useRef(0);
   const [stickToBottom, setStickToBottom] = useState(true);
@@ -293,277 +277,23 @@ export function ChatPane({
     updateSession,
     selectionFor: tools.selectionFor,
   });
-  const ensureBrowserToolForText = useCallback(
-    (text: string) => {
-      if (!promptRequestsBrowser(text)) return;
-      tools.setComputerTab("browser");
-      tools.setBrowserEnabled(true);
-    },
-    [tools],
-  );
-  const buildPromptArgs = useCallback(
-    (sessionId: string, rawText: string) => {
-      const text = rawText.trim();
-      const attachedText = attachmentPrompt(attachments);
-      const attachmentSummary =
-        attachments.length > 0
-          ? `Attached: ${attachments.map((file) => file.name).join(", ")}`
-          : "";
-      const userText = text || attachmentSummary;
-      const displayText = [text, attachmentSummary].filter(Boolean).join("\n\n");
-      const selection = tools.selectionFor(sessionId);
-      const contextText = selectedContextPrompt(
-        text,
-        activeComposerPlugins(selection.plugins),
-        selection.skills,
-      );
-      const prompt = [contextText, attachedText].filter(Boolean).join("\n\n");
-      const images = attachments.flatMap((file) => {
-        const image = imageInputFromAttachment(file);
-        return image ? [image] : [];
-      });
-      const messageAttachments = attachments.map((file) => {
-        // Prefer the durable inline data URL over the ephemeral blob: URL when
-        // available — blob URLs are tied to the composer document and become
-        // stale once a session is persisted and replayed, which is why image
-        // attachments rendered fine in the composer but not in chat history.
-        const durablePreviewUrl =
-          file.mode === "data-url" && file.content.startsWith("data:")
-            ? file.content
-            : file.previewUrl;
-        return {
-          id: file.id,
-          name: file.name,
-          type: file.type,
-          size: file.size,
-          path: file.path,
-          mode: file.mode,
-          content: file.content,
-          previewKind: file.previewKind,
-          previewUrl: durablePreviewUrl,
-        };
-      });
-      return {
-        text,
-        prompt,
-        displayText,
-        userText,
-        images,
-        attachments: messageAttachments,
-        plugins: activeComposerPlugins(selection.plugins) as ComposerPluginRef[],
-        skills: selection.skills,
-        promptTemplates: selection.promptTemplates,
-      };
-    },
-    [attachments, tools],
-  );
-  const submitPrompt = useCallback(
-    async (rawText: string, targetTabId?: string) => {
-      const targetId = targetTabId ?? activeTab?.id;
-      if (!targetId) return;
-      if ((!rawText.trim() && attachments.length === 0) || !modelId || readingAttachments) return;
-      const args = buildPromptArgs(targetId, rawText);
-      ensureBrowserToolForText(args.userText);
-      // `args` already snapshotted the tagged plugins/skills (buildPromptArgs),
-      // so they still ride this outgoing turn. Clear their composer pills on send
-      // so a tagged `@plugin` (and `$skill`) goes out with the message instead of
-      // lingering above the textarea for the next turn.
-      const currentSelection = tools.selectionFor(targetId);
-      if (currentSelection.skills.length > 0 || currentSelection.plugins.length > 0) {
-        tools.setSelection(targetId, { ...currentSelection, skills: [], plugins: [] });
-      }
-      setStickToBottom(true);
-      clearAttachments();
-      resetComposerHeight();
-      await engine.submitPrompt({ ...args, targetSessionId: targetId });
-    },
-    [
+  const { sendMessage, queueMessage, removeQueued, editQueued, steerQueued, abortTurn } =
+    useChatPaneSendFlow({
       activeTab,
-      attachments.length,
-      buildPromptArgs,
+      attachments,
       clearAttachments,
+      cwd,
       engine,
-      ensureBrowserToolForText,
       modelId,
       readingAttachments,
       resetComposerHeight,
-      tools,
-    ],
-  );
-  const queueAndSendControl = useCallback(
-    async (
-      mode: "steer" | "follow_up",
-      text: string,
-      tab: SessionTab,
-      runtime: string,
-      cwdHint?: string,
-    ) => {
-      ensureBrowserToolForText(text);
-      const queuedId = newId("queue");
-      updateTab(tab.id, (t) => ({
-        ...t,
-        ...(cwdHint ? { cwd: t.cwd || cwdHint } : {}),
-        input: "",
-        error: "",
-        queue:
-          mode === "follow_up"
-            ? [...(t.queue ?? []), { id: queuedId, mode, text, sent: true }]
-            : t.queue,
-      }));
-      resetComposerHeight();
-      const result = await engine.sendControl(mode, text, runtime, tab.id, tab.piSessionId);
-      updateTab(tab.id, (t) => ({
-        ...t,
-        queue: result.ok ? t.queue : (t.queue ?? []).filter((item) => item.id !== queuedId),
-        ...(result.ok ? {} : { input: text, error: result.error || "Message failed" }),
-      }));
-    },
-    [engine, ensureBrowserToolForText, resetComposerHeight, updateTab],
-  );
-  const sendMessage = useCallback(
-    async (event: FormEvent) => {
-      event.preventDefault();
-      if (!activeTab) return;
-      const text = activeTab.input.trim();
-      const runtime = activeTab.runtimeSessionId || runtimeSessionId;
-      if (running) {
-        if (!text || isPlaceholderSessionTitle(text) || readingAttachments) return;
-        if (!modelId) {
-          updateTab(activeTab.id, (t) => ({ ...t, error: "Select a model to send." }));
-          return;
-        }
-        if (!beginSessionSubmit(controlSubmitInFlightRef.current, activeTab.id)) return;
-        setMention(null);
-        try {
-          await queueAndSendControl("steer", text, activeTab, runtime);
-        } finally {
-          endSessionSubmit(controlSubmitInFlightRef.current, activeTab.id);
-        }
-        return;
-      }
-      if (
-        ((!text || isPlaceholderSessionTitle(text)) && attachments.length === 0) ||
-        readingAttachments
-      ) {
-        return;
-      }
-      if (!modelId) {
-        updateTab(activeTab.id, (t) => ({ ...t, error: "Select a model to send." }));
-        return;
-      }
-      if (!beginSessionSubmit(composerSubmitInFlightRef.current, activeTab.id)) return;
-      setMention(null);
-      try {
-        await submitPrompt(text, activeTab.id);
-      } finally {
-        endSessionSubmit(composerSubmitInFlightRef.current, activeTab.id);
-      }
-    },
-    [
-      activeTab,
-      attachments.length,
-      modelId,
-      queueAndSendControl,
-      readingAttachments,
-      running,
+      running: Boolean(running),
       runtimeSessionId,
-      submitPrompt,
+      setMention,
+      setStickToBottom,
+      tools,
       updateTab,
-    ],
-  );
-  const queueMessage = useCallback(async () => {
-    if (!activeTab) return;
-    const text = activeTab.input.trim();
-    if (!text || isPlaceholderSessionTitle(text)) return;
-    if (!modelId) {
-      updateTab(activeTab.id, (t) => ({ ...t, error: "Select a model to send." }));
-      return;
-    }
-    // Queue follows the same contract as Steer: trust the user's
-    // explicit intent and let the server route follow_up vs. fresh
-    // prompt based on the live runtime state. The prompt stream can still be
-    // in flight here, so follow-up controls must not share its in-flight guard.
-    if (running) {
-      if (!beginSessionSubmit(controlSubmitInFlightRef.current, activeTab.id)) return;
-      setMention(null);
-      try {
-        const runtime = activeTab.runtimeSessionId || runtimeSessionId;
-        await queueAndSendControl("follow_up", text, activeTab, runtime, cwd);
-      } finally {
-        endSessionSubmit(controlSubmitInFlightRef.current, activeTab.id);
-      }
-      return;
-    }
-    if (!beginSessionSubmit(composerSubmitInFlightRef.current, activeTab.id)) return;
-    setMention(null);
-    try {
-      await submitPrompt(text, activeTab.id);
-    } finally {
-      endSessionSubmit(composerSubmitInFlightRef.current, activeTab.id);
-    }
-  }, [
-    activeTab,
-    cwd,
-    modelId,
-    queueAndSendControl,
-    running,
-    runtimeSessionId,
-    submitPrompt,
-    updateTab,
-  ]);
-  const removeQueued = useCallback(
-    (queueId: string) => {
-      if (!activeTab) return;
-      updateTab(activeTab.id, (tab) => ({
-        ...tab,
-        queue: (tab.queue ?? []).filter((entry) => entry.id !== queueId),
-      }));
-    },
-    [activeTab, updateTab],
-  );
-  const editQueued = useCallback(
-    (queueId: string, text: string) => {
-      if (!activeTab) return;
-      updateTab(activeTab.id, (tab) => ({
-        ...tab,
-        queue: (tab.queue ?? []).map((entry) =>
-          entry.id === queueId ? { ...entry, text } : entry,
-        ),
-      }));
-    },
-    [activeTab, updateTab],
-  );
-  const steerQueued = useCallback(
-    async (queueId: string) => {
-      if (!activeTab) return;
-      const item = (activeTab.queue ?? []).find((entry) => entry.id === queueId);
-      if (!item) return;
-      // Promote a queued follow-up to an immediate steer: drop it from the queue
-      // and inject it into the running turn. Re-add on failure so the message is
-      // never silently lost.
-      const runtime = activeTab.runtimeSessionId || runtimeSessionId;
-      removeQueued(queueId);
-      const result = await engine.sendControl(
-        "steer",
-        item.text,
-        runtime,
-        activeTab.id,
-        activeTab.piSessionId,
-      );
-      if (!result.ok) {
-        updateTab(activeTab.id, (t) => ({
-          ...t,
-          queue: [...(t.queue ?? []), item],
-          error: result.error || "Steer failed",
-        }));
-      }
-    },
-    [activeTab, engine, removeQueued, runtimeSessionId, updateTab],
-  );
-  const abortTurn = useCallback(async () => {
-    if (!activeTab) return;
-    await engine.abortTurn(activeTab.id);
-  }, [activeTab, engine]);
+    });
   const { handleComposerPaste, handleComposerChange, handleComposerKeyDown } =
     useComposerTextareaBehavior({
       activeTab,
