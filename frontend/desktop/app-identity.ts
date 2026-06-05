@@ -1,14 +1,44 @@
 import { app } from "electron";
 import path from "node:path";
+import { migrateLegacyUserData } from "./logic/user-data-migration";
 
+const CANONICAL_APP_NAME = "vLLM Studio";
+const LEGACY_USER_DATA_NAME = "frontend";
 const devAppName = process.env.VLLM_STUDIO_DESKTOP_APP_NAME?.trim();
 const devUserDataDir = process.env.VLLM_STUDIO_DESKTOP_USER_DATA_DIR?.trim();
+const releaseChannel = process.env.VLLM_STUDIO_DESKTOP_CHANNEL?.trim().toLowerCase();
+const nonStablePackagedChannel =
+  app.isPackaged && (releaseChannel === "beta" || releaseChannel === "alpha");
 
-if (devAppName) {
-  app.setName(devAppName);
-  process.title = devAppName;
+if (nonStablePackagedChannel) {
+  throw new Error(
+    `Packaged ${releaseChannel} desktop builds are disabled in the stable builder config. Use a separate Electron Builder config with its own app id, product name, and user-data path.`,
+  );
 }
 
-if (devUserDataDir) {
-  app.setPath("userData", path.resolve(devUserDataDir));
+const appName = devAppName || (app.isPackaged ? CANONICAL_APP_NAME : app.getName());
+if (devAppName || app.isPackaged) {
+  app.setName(appName);
+  process.title = appName;
+}
+
+const appDataDir = app.getPath("appData");
+const userDataDir = devUserDataDir
+  ? path.resolve(devUserDataDir)
+  : app.isPackaged
+    ? path.join(appDataDir, appName)
+    : app.getPath("userData");
+
+app.setPath("userData", userDataDir);
+
+if (app.isPackaged && appName === CANONICAL_APP_NAME && !devAppName && !devUserDataDir) {
+  const migrated = migrateLegacyUserData({
+    legacyDir: path.join(appDataDir, LEGACY_USER_DATA_NAME),
+    targetDir: userDataDir,
+  });
+  if (migrated.length > 0) {
+    console.info(
+      `[desktop] Migrated ${migrated.length} legacy user-data paths from ${LEGACY_USER_DATA_NAME}`,
+    );
+  }
 }
