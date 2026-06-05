@@ -5,7 +5,21 @@ import { getUpstreamTimeoutMs } from "./proxy-timeouts";
 const OVERRIDE_ALLOWLIST_ENV_KEY = "VLLM_STUDIO_PROXY_OVERRIDE_ALLOWLIST";
 const PROXY_ACCESS_LOGS_ENABLED = process.env.VLLM_STUDIO_PROXY_ACCESS_LOGS === "true";
 const PROXY_ERROR_LOG_THROTTLE_MS = 30_000;
+const CLEAR_BACKEND_OVERRIDE_COOKIE = "vllmstudio_backend_url=; Path=/; Max-Age=0; SameSite=Lax";
 const proxyErrorLogTimes = new Map<string, number>();
+
+type ClientInfo = { ip: string; country: string; ua: string };
+
+type ProxyTargetResolution =
+  | {
+      apiKey: string;
+      backendUrl: string;
+      blockedOverrideCleared: boolean;
+      defaultBackendUrl: string;
+      overrideUrl: string | null;
+      strictOverride: boolean;
+    }
+  | { blockedResponse: NextResponse };
 
 export async function GET(
   request: NextRequest,
@@ -39,7 +53,7 @@ export async function DELETE(
   return handleRequest(request, "DELETE", path);
 }
 
-function getClientInfo(request: NextRequest) {
+function getClientInfo(request: NextRequest): ClientInfo {
   const ip =
     request.headers.get("CF-Connecting-IP") ||
     request.headers.get("X-Forwarded-For")?.split(",")[0]?.trim() ||
@@ -131,6 +145,73 @@ function isTrustedPrivateOverride(urlString: string, defaultBackendUrl: string):
 
 function buildTargetUrl(backendUrl: string, path: string[], searchParams: string): string {
   return `${backendUrl}/${path.join("/")}${searchParams ? `?${searchParams}` : ""}`;
+}
+
+function clearBackendOverrideHeaders(): Record<string, string> {
+  return {
+    "X-Backend-Override-Invalid": "1",
+    "Set-Cookie": CLEAR_BACKEND_OVERRIDE_COOKIE,
+  };
+}
+
+function blockedHeaderOverrideResponse(): NextResponse {
+  return NextResponse.json(
+    {
+      error:
+        "Backend override blocked: private/local addresses must be allowlisted via VLLM_STUDIO_PROXY_OVERRIDE_ALLOWLIST",
+    },
+    {
+      status: 403,
+      headers: clearBackendOverrideHeaders(),
+    },
+  );
+}
+
+async function resolveProxyTarget(
+  request: NextRequest,
+  client: ClientInfo,
+): Promise<ProxyTargetResolution> {
+  const settings = await getApiSettings();
+  const overrideHeaderUrl = normalizeBackendUrl(request.headers.get("x-backend-url"));
+  const strictOverride = request.headers.get("x-backend-strict") === "1";
+  const overrideCookieUrl = normalizeBackendUrl(
+    request.cookies.get("vllmstudio_backend_url")?.value ?? null,
+  );
+  const defaultBackendUrl = normalizeBackendUrl(settings.backendUrl) ?? settings.backendUrl;
+  let overrideUrl = overrideHeaderUrl ?? overrideCookieUrl;
+
+  if (overrideUrl && isPrivateUrl(overrideUrl)) {
+    const trusted = isTrustedPrivateOverride(overrideUrl, defaultBackendUrl);
+    if (!trusted && overrideHeaderUrl) {
+      console.warn(
+        `[PROXY BLOCKED] ip=${client.ip} | override=redacted | reason=private-address-not-allowlisted`,
+      );
+      return { blockedResponse: blockedHeaderOverrideResponse() };
+    }
+    if (!trusted) {
+      console.warn(
+        `[PROXY OVERRIDE IGNORED] ip=${client.ip} | override=redacted | reason=private-cookie-not-allowlisted`,
+      );
+      overrideUrl = null;
+      return {
+        apiKey: settings.apiKey,
+        backendUrl: defaultBackendUrl,
+        blockedOverrideCleared: true,
+        defaultBackendUrl,
+        overrideUrl,
+        strictOverride,
+      };
+    }
+  }
+
+  return {
+    apiKey: settings.apiKey,
+    backendUrl: overrideUrl ?? defaultBackendUrl,
+    blockedOverrideCleared: false,
+    defaultBackendUrl,
+    overrideUrl,
+    strictOverride,
+  };
 }
 
 function isAbortError(error: unknown): boolean {
@@ -283,94 +364,135 @@ async function fetchWithOptionalFallback(
   }
 }
 
+function getForwardedSearchParams(request: NextRequest): {
+  apiKeyQuery: string | null;
+  searchParams: string;
+} {
+  const url = new URL(request.url);
+  const forwardedParams = new URLSearchParams(url.searchParams);
+  const apiKeyQuery = forwardedParams.get("api_key");
+  if (apiKeyQuery) forwardedParams.delete("api_key");
+  return { apiKeyQuery, searchParams: forwardedParams.toString() };
+}
+
+function buildProxyRequestHeaders(
+  request: NextRequest,
+  apiKey: string,
+  apiKeyQuery: string | null,
+): Headers {
+  const headers = new Headers();
+  const accept = request.headers.get("accept");
+  const contentType = request.headers.get("content-type");
+  const incomingAuth = request.headers.get("authorization");
+  if (accept) headers.set("Accept", accept);
+  if (contentType) headers.set("Content-Type", contentType);
+  if (incomingAuth) headers.set("Authorization", incomingAuth);
+  else if (apiKeyQuery) headers.set("Authorization", `Bearer ${apiKeyQuery}`);
+  else if (apiKey) headers.set("Authorization", `Bearer ${apiKey}`);
+  return headers;
+}
+
+function buildFallbackTargetUrl({
+  defaultBackendUrl,
+  overrideUrl,
+  path,
+  searchParams,
+}: {
+  defaultBackendUrl: string;
+  overrideUrl: string | null;
+  path: string[];
+  searchParams: string;
+}): string | null {
+  return overrideUrl && defaultBackendUrl !== overrideUrl
+    ? buildTargetUrl(defaultBackendUrl, path, searchParams)
+    : null;
+}
+
+function logProxyAccess({
+  client,
+  hasAuth,
+  method,
+  overrideUrl,
+  path,
+}: {
+  client: ClientInfo;
+  hasAuth: boolean;
+  method: string;
+  overrideUrl: string | null;
+  path: string[];
+}): void {
+  if (!PROXY_ACCESS_LOGS_ENABLED) return;
+  console.log(
+    `[PROXY] ip=${client.ip} | country=${client.country} | method=${method} | path=/${path.join("/")} | backend=configured | override=${overrideUrl ? "yes" : "no"} | auth=${hasAuth ? "present" : "none"}`,
+  );
+}
+
+function invalidOverrideHeaders(invalidateOverride: boolean): Record<string, string> {
+  return invalidateOverride ? clearBackendOverrideHeaders() : {};
+}
+
+async function toProxyNextResponse(
+  response: Response,
+  context: {
+    client: ClientInfo;
+    invalidateOverride: boolean;
+    method: string;
+    path: string[];
+  },
+): Promise<NextResponse> {
+  const contentType = response.headers.get("content-type") || "application/json";
+  if (contentType.includes("text/event-stream") && response.body) {
+    const runId = response.headers.get("x-run-id");
+    return new NextResponse(
+      proxyResponseStream(response.body, {
+        client: context.client,
+        method: context.method,
+        path: context.path,
+      }),
+      {
+        status: response.status,
+        headers: {
+          "Content-Type": contentType,
+          "Cache-Control": response.headers.get("cache-control") || "no-cache",
+          ...invalidOverrideHeaders(context.invalidateOverride),
+          ...(runId ? { "X-Run-Id": runId } : {}),
+        },
+      },
+    );
+  }
+
+  const data = await response.text();
+  return new NextResponse(data, {
+    status: response.status,
+    headers: {
+      "Content-Type": contentType,
+      ...invalidOverrideHeaders(context.invalidateOverride),
+    },
+  });
+}
+
 async function handleRequest(request: NextRequest, method: string, path: string[]) {
   const startTime = Date.now();
   const client = getClientInfo(request);
 
   try {
-    // Get dynamic settings
-    const settings = await getApiSettings();
-    const overrideHeaderUrl = normalizeBackendUrl(request.headers.get("x-backend-url"));
-    const strictOverride = request.headers.get("x-backend-strict") === "1";
-    const overrideCookieUrl = normalizeBackendUrl(
-      request.cookies.get("vllmstudio_backend_url")?.value ?? null,
-    );
-    const defaultBackendUrl = normalizeBackendUrl(settings.backendUrl) ?? settings.backendUrl;
+    const target = await resolveProxyTarget(request, client);
+    if ("blockedResponse" in target) return target.blockedResponse;
 
-    let overrideUrl = overrideHeaderUrl ?? overrideCookieUrl;
-    const overrideSource = overrideHeaderUrl ? "header" : overrideCookieUrl ? "cookie" : null;
-    let blockedOverrideCleared = false;
-
-    if (overrideUrl && isPrivateUrl(overrideUrl)) {
-      const trusted = isTrustedPrivateOverride(overrideUrl, defaultBackendUrl);
-      if (!trusted) {
-        if (overrideSource === "header") {
-          console.warn(
-            `[PROXY BLOCKED] ip=${client.ip} | override=redacted | reason=private-address-not-allowlisted`,
-          );
-          return NextResponse.json(
-            {
-              error:
-                "Backend override blocked: private/local addresses must be allowlisted via VLLM_STUDIO_PROXY_OVERRIDE_ALLOWLIST",
-            },
-            {
-              status: 403,
-              headers: {
-                "X-Backend-Override-Invalid": "1",
-                "Set-Cookie": "vllmstudio_backend_url=; Path=/; Max-Age=0; SameSite=Lax",
-              },
-            },
-          );
-        }
-
-        console.warn(
-          `[PROXY OVERRIDE IGNORED] ip=${client.ip} | override=redacted | reason=private-cookie-not-allowlisted`,
-        );
-        overrideUrl = null;
-        blockedOverrideCleared = true;
-      }
-    }
-
-    const backendUrl = overrideUrl ?? defaultBackendUrl;
-    const API_KEY = settings.apiKey;
-
-    const url = new URL(request.url);
-    const forwardedParams = new URLSearchParams(url.searchParams);
-    const apiKeyQuery = forwardedParams.get("api_key");
     // Never forward credentials to the controller as query params.
-    if (apiKeyQuery) forwardedParams.delete("api_key");
-    const searchParams = forwardedParams.toString();
-    const targetUrl = buildTargetUrl(backendUrl, path, searchParams);
-    const fallbackTargetUrl =
-      overrideUrl && defaultBackendUrl !== overrideUrl
-        ? buildTargetUrl(defaultBackendUrl, path, searchParams)
-        : null;
+    const { apiKeyQuery, searchParams } = getForwardedSearchParams(request);
+    const targetUrl = buildTargetUrl(target.backendUrl, path, searchParams);
+    const fallbackTargetUrl = buildFallbackTargetUrl({
+      defaultBackendUrl: target.defaultBackendUrl,
+      overrideUrl: target.overrideUrl,
+      path,
+      searchParams,
+    });
     const hasAuth = Boolean(request.headers.get("authorization"));
-
-    if (PROXY_ACCESS_LOGS_ENABLED) {
-      console.log(
-        `[PROXY] ip=${client.ip} | country=${client.country} | method=${method} | path=/${path.join("/")} | backend=configured | override=${overrideUrl ? "yes" : "no"} | auth=${hasAuth ? "present" : "none"}`,
-      );
-    }
-
-    const headers: HeadersInit = {
-      ...(request.headers.get("accept") ? { Accept: request.headers.get("accept") as string } : {}),
-    };
-
-    const incomingContentType = request.headers.get("content-type");
-    if (incomingContentType) headers["Content-Type"] = incomingContentType;
-
-    // Prefer per-user Authorization header passed from the browser; fallback to configured API key.
-    const incomingAuth = request.headers.get("authorization");
-    if (incomingAuth) {
-      headers["Authorization"] = incomingAuth;
-    } else if (apiKeyQuery) {
-      headers["Authorization"] = `Bearer ${apiKeyQuery}`;
-    } else if (API_KEY) {
-      headers["Authorization"] = `Bearer ${API_KEY}`;
-    }
+    logProxyAccess({ client, hasAuth, method, overrideUrl: target.overrideUrl, path });
 
     const body = method !== "GET" && method !== "DELETE" ? await request.text() : undefined;
+    const headers = buildProxyRequestHeaders(request, target.apiKey, apiKeyQuery);
 
     const { response, usedFallback } = await fetchWithOptionalFallback(
       targetUrl,
@@ -380,47 +502,16 @@ async function handleRequest(request: NextRequest, method: string, path: string[
         client,
         method,
         path,
-        overrideUsed: Boolean(overrideUrl),
-        strictOverride,
+        overrideUsed: Boolean(target.overrideUrl),
+        strictOverride: target.strictOverride,
       },
     );
 
-    const contentType = response.headers.get("content-type") || "application/json";
-    const invalidateOverride = usedFallback || blockedOverrideCleared;
-
-    if (contentType.includes("text/event-stream") && response.body) {
-      const runId = response.headers.get("x-run-id");
-      return new NextResponse(
-        proxyResponseStream(response.body, {
-          client,
-          method,
-          path,
-        }),
-        {
-          status: response.status,
-          headers: {
-            "Content-Type": contentType,
-            "Cache-Control": response.headers.get("cache-control") || "no-cache",
-            ...(invalidateOverride ? { "X-Backend-Override-Invalid": "1" } : {}),
-            ...(invalidateOverride
-              ? { "Set-Cookie": "vllmstudio_backend_url=; Path=/; Max-Age=0; SameSite=Lax" }
-              : {}),
-            ...(runId ? { "X-Run-Id": runId } : {}),
-          },
-        },
-      );
-    }
-
-    const data = await response.text();
-    return new NextResponse(data, {
-      status: response.status,
-      headers: {
-        "Content-Type": contentType,
-        ...(invalidateOverride ? { "X-Backend-Override-Invalid": "1" } : {}),
-        ...(invalidateOverride
-          ? { "Set-Cookie": "vllmstudio_backend_url=; Path=/; Max-Age=0; SameSite=Lax" }
-          : {}),
-      },
+    return toProxyNextResponse(response, {
+      client,
+      invalidateOverride: usedFallback || target.blockedOverrideCleared,
+      method,
+      path,
     });
   } catch (error) {
     const duration = Date.now() - startTime;
