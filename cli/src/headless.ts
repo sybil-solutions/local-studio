@@ -2,16 +2,30 @@ import * as api from "./api";
 
 type CommandHandler = () => Promise<void>;
 
+const printJson = (value: unknown, pretty = false): void => {
+  console.log(JSON.stringify(value, null, pretty ? 2 : undefined));
+};
+
+const showJson =
+  (load: () => Promise<unknown>): CommandHandler =>
+  async () => {
+    printJson(await load(), true);
+  };
+
+const exitJson = (value: unknown, ok: boolean): never => {
+  printJson(value);
+  process.exit(ok ? 0 : 1);
+};
+
 const COMMANDS: Record<string, CommandHandler> = {
-  status: async () => console.log(JSON.stringify(await api.fetchStatus(), null, 2)),
-  gpus: async () => console.log(JSON.stringify(await api.fetchGPUs(), null, 2)),
-  recipes: async () => console.log(JSON.stringify(await api.fetchRecipes(), null, 2)),
-  config: async () => console.log(JSON.stringify(await api.fetchConfig(), null, 2)),
-  metrics: async () => console.log(JSON.stringify(await api.fetchLifetimeMetrics(), null, 2)),
+  status: showJson(api.fetchStatus),
+  gpus: showJson(api.fetchGPUs),
+  recipes: showJson(api.fetchRecipes),
+  config: showJson(api.fetchConfig),
+  metrics: showJson(api.fetchLifetimeMetrics),
   evict: async () => {
     const ok = await api.evictModel();
-    console.log(JSON.stringify({ success: ok }));
-    process.exit(ok ? 0 : 1);
+    exitJson({ success: ok }, ok);
   },
   launch: async () => {
     const id = process.argv[3];
@@ -20,8 +34,7 @@ const COMMANDS: Record<string, CommandHandler> = {
       process.exit(1);
     }
     const ok = await api.launchRecipe(id);
-    console.log(JSON.stringify({ success: ok, recipe_id: id }));
-    process.exit(ok ? 0 : 1);
+    exitJson({ success: ok, recipe_id: id }, ok);
   },
   help: async () => {
     console.log(`vllm-studio - Model lifecycle management CLI

@@ -23,6 +23,10 @@ const state: AppState = {
   error: null,
 };
 
+function rejectionMessage(result: PromiseRejectedResult, fallback: string): string {
+  return result.reason instanceof Error ? result.reason.message : fallback;
+}
+
 async function refresh(): Promise<void> {
   const results = await Promise.allSettled([
     api.fetchGPUs(),
@@ -34,36 +38,19 @@ async function refresh(): Promise<void> {
 
   const errors: string[] = [];
   if (results[0].status === "fulfilled") state.gpus = results[0].value;
-  else
-    errors.push(
-      results[0].reason instanceof Error ? results[0].reason.message : "Failed to fetch GPUs"
-    );
+  else errors.push(rejectionMessage(results[0], "Failed to fetch GPUs"));
 
   if (results[1].status === "fulfilled") state.recipes = results[1].value;
-  else
-    errors.push(
-      results[1].reason instanceof Error ? results[1].reason.message : "Failed to fetch recipes"
-    );
+  else errors.push(rejectionMessage(results[1], "Failed to fetch recipes"));
 
   if (results[2].status === "fulfilled") state.status = results[2].value;
-  else
-    errors.push(
-      results[2].reason instanceof Error ? results[2].reason.message : "Failed to fetch status"
-    );
+  else errors.push(rejectionMessage(results[2], "Failed to fetch status"));
 
   if (results[3].status === "fulfilled") state.config = results[3].value;
-  else
-    errors.push(
-      results[3].reason instanceof Error ? results[3].reason.message : "Failed to fetch config"
-    );
+  else errors.push(rejectionMessage(results[3], "Failed to fetch config"));
 
   if (results[4].status === "fulfilled") state.lifetime = results[4].value;
-  else
-    errors.push(
-      results[4].reason instanceof Error
-        ? results[4].reason.message
-        : "Failed to fetch lifetime metrics"
-    );
+  else errors.push(rejectionMessage(results[4], "Failed to fetch lifetime metrics"));
 
   const hasRecipes = state.recipes.length > 0;
   if (!hasRecipes) state.selectedIndex = 0;
