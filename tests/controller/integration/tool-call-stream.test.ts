@@ -1,6 +1,10 @@
 import { describe, expect, test } from "bun:test";
 
 import { createToolCallStream } from "../../../controller/src/modules/proxy/tool-call-stream";
+import {
+  createThinkRewriter,
+  thinkingTagPrefixIsPartial,
+} from "../../../controller/src/modules/proxy/think-rewriter";
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
@@ -76,7 +80,9 @@ describe("createToolCallStream SSE framing", () => {
       // Must NOT be a merged event (would contain an embedded newline).
       expect(value).not.toContain("\n");
       const parsed = JSON.parse(value) as {
-        choices?: Array<{ delta?: { tool_calls?: Array<{ function?: { name?: string } }> } }>;
+        choices?: Array<{
+          delta?: { tool_calls?: Array<{ function?: { name?: string } }> };
+        }>;
       };
       const toolCalls = parsed.choices?.[0]?.delta?.tool_calls;
       if (Array.isArray(toolCalls) && toolCalls.length > 0) {
@@ -107,5 +113,35 @@ describe("createToolCallStream SSE framing", () => {
       expect(() => JSON.parse(value)).not.toThrow();
     }
     expect(events).toContain("[DONE]");
+  });
+});
+
+describe("think rewriter", () => {
+  test("carries partial analysis tags across chunk boundaries", () => {
+    const rewriter = createThinkRewriter();
+
+    expect(thinkingTagPrefixIsPartial("<anal")).toBe(true);
+    expect(rewriter.rewrite("<anal")).toEqual({
+      content: "",
+      reasoningAppend: "",
+    });
+    expect(rewriter.rewrite("ysis>plan</analysis>answer")).toEqual({
+      content: "answer",
+      reasoningAppend: "plan",
+    });
+    expect(rewriter.drainCarry()).toBe("");
+  });
+
+  test("recognizes thinking aliases with attributes", () => {
+    const rewriter = createThinkRewriter();
+
+    expect(thinkingTagPrefixIsPartial("<thinking ")).toBe(true);
+    expect(thinkingTagPrefixIsPartial("</thinking")).toBe(true);
+    expect(
+      rewriter.rewrite('<thinking mode="deep">reason</thinking>answer'),
+    ).toEqual({
+      content: "answer",
+      reasoningAppend: "reason",
+    });
   });
 });
