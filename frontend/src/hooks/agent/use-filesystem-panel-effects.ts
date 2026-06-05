@@ -7,22 +7,7 @@ import {
   type SetStateAction,
 } from "react";
 import type { FileOpenRequest } from "@/lib/agent/tools/types";
-
-type FsEntry = {
-  name: string;
-  path: string;
-  rel: string;
-  kind: "file" | "directory";
-  size?: number;
-  modifiedAt?: string;
-};
-
-type Comment = {
-  id: string;
-  line: number;
-  body: string;
-  createdAt: string;
-};
+import type { FileComment, FsEntry } from "@/lib/agent/filesystem-types";
 
 type UseFilesystemPanelEffectsParams = {
   cwd: string | null;
@@ -38,7 +23,7 @@ type UseFilesystemPanelEffectsParams = {
   setFileTruncated: Dispatch<SetStateAction<boolean>>;
   setFileSize: Dispatch<SetStateAction<number>>;
   setLoadingFile: Dispatch<SetStateAction<boolean>>;
-  setComments: Dispatch<SetStateAction<Comment[]>>;
+  setComments: Dispatch<SetStateAction<FileComment[]>>;
   setSearchQuery: Dispatch<SetStateAction<string>>;
   setExpandedDirs: Dispatch<SetStateAction<Set<string>>>;
   setDirChildren: Dispatch<SetStateAction<Map<string, FsEntry[]>>>;
@@ -164,7 +149,7 @@ export function useFilesystemPanelEffects({
           size?: number;
           error?: string;
         };
-        const commentsBody = (await commentsResponse.json()) as { comments?: Comment[] };
+        const commentsBody = (await commentsResponse.json()) as { comments?: FileComment[] };
         if (cancelled) return;
         setFileContent(fileBody.content ?? "");
         setFileTruncated(fileBody.truncated ?? false);

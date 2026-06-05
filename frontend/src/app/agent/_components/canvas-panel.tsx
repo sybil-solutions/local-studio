@@ -4,7 +4,7 @@ import { useState } from "react";
 import { Code2 } from "lucide-react";
 
 import { useTools } from "@/lib/agent/tools/context";
-import { RenderedPreview, detectPreviewKind } from "./filesystem-panel";
+import { RenderedPreview, detectPreviewKind } from "./filesystem-preview";
 
 // The canvas is a shared human↔model buffer. It can hold Markdown, HTML, or
 // JSX, so by default we render it (kind inferred from the content) and offer an
