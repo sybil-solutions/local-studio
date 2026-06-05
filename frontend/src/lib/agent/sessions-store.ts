@@ -17,6 +17,14 @@ type ListSessionsOptions = {
   archivedOnly?: boolean;
 };
 
+type NormalizedListSessionsOptions = {
+  sinceMs?: number;
+  wantedIds: Set<string>;
+  wantedIdList: string[];
+  includeArchived: boolean;
+  archivedOnly: boolean;
+};
+
 type PiMessageContent = string | Array<{ type?: string; text?: string }>;
 
 type UserTurn = {
@@ -154,46 +162,76 @@ function summaryRelevantTime(summary: SessionSummary, archivedOnly: boolean): nu
   return Number.isFinite(timestamp) ? timestamp : 0;
 }
 
+function normalizeListOptions(options: ListSessionsOptions): NormalizedListSessionsOptions {
+  const wantedIds = new Set((options.ids ?? []).map((id) => id.trim()).filter(Boolean));
+  const sinceMs = options.since?.getTime();
+  return {
+    sinceMs: Number.isFinite(sinceMs) ? sinceMs : undefined,
+    wantedIds,
+    wantedIdList: [...wantedIds],
+    includeArchived: Boolean(options.includeArchived),
+    archivedOnly: Boolean(options.archivedOnly),
+  };
+}
+
+function summaryMatchesListOptions(
+  summary: SessionSummary,
+  options: NormalizedListSessionsOptions,
+) {
+  if (options.archivedOnly) {
+    return (
+      summary.archived &&
+      (options.sinceMs === undefined || summaryRelevantTime(summary, true) >= options.sinceMs)
+    );
+  }
+  return options.includeArchived || !summary.archived;
+}
+
+async function readListCandidate(
+  dir: string,
+  filename: string,
+  options: NormalizedListSessionsOptions,
+): Promise<SessionSummary | null> {
+  try {
+    if (!filename.endsWith(".jsonl")) return null;
+    if (
+      options.wantedIdList.length > 0 &&
+      !options.wantedIdList.some((id) => filename.includes(id) || filename.startsWith(id))
+    ) {
+      return null;
+    }
+    const filepath = path.join(dir, filename);
+    const stats = statSync(filepath);
+    if (
+      options.sinceMs !== undefined &&
+      !options.archivedOnly &&
+      stats.mtime.getTime() < options.sinceMs
+    ) {
+      return null;
+    }
+    const summary = await readSessionSummary(filepath, filename);
+    if (!summary?.id) return null;
+    if (options.wantedIds.size > 0 && !options.wantedIds.has(summary.id)) return null;
+    const decorated = applySessionMetadata(summary);
+    return summaryMatchesListOptions(decorated, options) ? decorated : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function listSessions(
   cwd: string,
   options: ListSessionsOptions = {},
 ): Promise<SessionSummary[]> {
   const summariesById = new Map<string, SessionSummary>();
-  const wantedIds = new Set((options.ids ?? []).map((id) => id.trim()).filter(Boolean));
-  const wantedIdList = [...wantedIds];
+  const normalizedOptions = normalizeListOptions(options);
   for (const dir of sessionsDirsForCwd(cwd)) {
     if (!existsSync(dir)) continue;
-    const entries = readdirSync(dir).filter((name) => name.endsWith(".jsonl"));
-    for (const filename of entries) {
-      try {
-        if (
-          wantedIds.size > 0 &&
-          !wantedIdList.some((id) => filename.includes(id) || filename.startsWith(id))
-        ) {
-          continue;
-        }
-        const filepath = path.join(dir, filename);
-        const stats = statSync(filepath);
-        if (options.since && !options.archivedOnly && stats.mtime < options.since) continue;
-        const summary = await readSessionSummary(filepath, filename);
-        if (!summary?.id) continue;
-        if (wantedIds.size > 0 && !wantedIds.has(summary.id)) continue;
-        const decorated = applySessionMetadata(summary);
-        if (options.archivedOnly && !decorated.archived) continue;
-        if (!options.archivedOnly && !options.includeArchived && decorated.archived) continue;
-        if (
-          options.since &&
-          options.archivedOnly &&
-          summaryRelevantTime(decorated, true) < options.since.getTime()
-        ) {
-          continue;
-        }
-        const existing = summariesById.get(summary.id);
-        if (!existing || decorated.updatedAt > existing.updatedAt) {
-          summariesById.set(summary.id, decorated);
-        }
-      } catch {
-        // skip corrupted files
+    for (const filename of readdirSync(dir)) {
+      const summary = await readListCandidate(dir, filename, normalizedOptions);
+      const existing = summary ? summariesById.get(summary.id) : null;
+      if (summary && (!existing || summary.updatedAt > existing.updatedAt)) {
+        summariesById.set(summary.id, summary);
       }
     }
   }
