@@ -1,16 +1,14 @@
-import { SettingsGroup, SettingsRow, SettingsValue, StatusPill, type StatusTone } from "@/ui";
+import {
+  SettingsFactRows,
+  SettingsGroup,
+  SettingsRow,
+  SettingsValue,
+  StatusPill,
+  type SettingsFactRow,
+  type StatusTone,
+} from "@/ui";
 import type { ApiConnectionSettings } from "@/lib/configs/types";
 import type { CompatibilityCheck, CompatibilityReport, ConfigData, ServiceInfo } from "@/lib/types";
-
-type SettingsFactRow = {
-  label: string;
-  value: string | number;
-  key?: string;
-  description?: string;
-  mono?: boolean;
-  dim?: boolean;
-  status?: { label: string; tone?: StatusTone };
-};
 
 export function ServicesSettings({
   data,
@@ -310,23 +308,6 @@ function CompatibilitySettings({
       )}
     </SettingsGroup>
   );
-}
-function SettingsFactRows({ rows }: { rows: SettingsFactRow[] }) {
-  return rows.map((row) => (
-    <SettingsRow
-      key={row.key ?? row.label}
-      label={row.label}
-      description={row.description}
-      value={
-        <SettingsValue mono={row.mono} dim={row.dim}>
-          {row.value}
-        </SettingsValue>
-      }
-      status={
-        row.status ? <StatusPill tone={row.status.tone}>{row.status.label}</StatusPill> : undefined
-      }
-    />
-  ));
 }
 function serviceFactRow(service: ServiceInfo): SettingsFactRow {
   return {

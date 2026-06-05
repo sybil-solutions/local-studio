@@ -127,7 +127,6 @@ export function ConfigsView({
       onReload={onReload}
       onSelectSection={selectSection}
     >
-      {" "}
       {activeSection === "connection" ? (
         <ApiConnectionSection
           apiSettingsLoading={apiSettingsLoading}
@@ -153,11 +152,11 @@ export function ConfigsView({
           />
         </div>
       ) : null}
-      {activeSection === "appearance" ? <AppearanceSettings /> : null}{" "}
+      {activeSection === "appearance" ? <AppearanceSettings /> : null}
       {activeSection === "archive" ? <ArchivedChatsSettings /> : null}
-      {activeSection === "plugins" ? <PluginsSettingsSection /> : null}{" "}
+      {activeSection === "plugins" ? <PluginsSettingsSection /> : null}
       {activeSection === "skills" ? <SkillsSettings /> : null}
-      {activeSection === "setup" ? <SetupChecksSettings /> : null}{" "}
+      {activeSection === "setup" ? <SetupChecksSettings /> : null}
     </SettingsLayout>
   );
 }

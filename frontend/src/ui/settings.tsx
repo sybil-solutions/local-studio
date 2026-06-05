@@ -115,6 +115,46 @@ export function SettingsValue({
   );
 }
 
+export type SettingsFactRow = {
+  label: string;
+  value: ReactNode;
+  key?: string | number;
+  description?: ReactNode;
+  mono?: boolean;
+  dim?: boolean;
+  truncate?: boolean;
+  status?: { label: ReactNode; tone?: StatusTone };
+  actions?: ReactNode;
+  children?: ReactNode;
+};
+
+export function SettingsFactRows({ rows }: { rows: SettingsFactRow[] }) {
+  return (
+    <>
+      {rows.map((row) => (
+        <SettingsRow
+          key={row.key ?? row.label}
+          label={row.label}
+          description={row.description}
+          value={
+            <SettingsValue mono={row.mono} dim={row.dim} truncate={row.truncate}>
+              {row.value}
+            </SettingsValue>
+          }
+          status={
+            row.status ? (
+              <StatusPill tone={row.status.tone}>{row.status.label}</StatusPill>
+            ) : undefined
+          }
+          actions={row.actions}
+        >
+          {row.children}
+        </SettingsRow>
+      ))}
+    </>
+  );
+}
+
 export function SettingsButton({
   children,
   onClick,

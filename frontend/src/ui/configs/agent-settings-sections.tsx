@@ -1,5 +1,11 @@
 import { useCallback, useState, useSyncExternalStore } from "react";
-import { SettingsButton, SettingsGroup, SettingsRow, SettingsValue, StatusPill } from "@/ui";
+import {
+  SettingsButton,
+  SettingsFactRows,
+  SettingsGroup,
+  StatusPill,
+  type SettingsFactRow,
+} from "@/ui";
 import { cleanSessionTitle } from "@/lib/agent/session/helpers";
 import { SESSIONS_CHANGED_EVENT } from "@/lib/agent/workspace/events";
 import { useSidebarStatus } from "@/hooks/use-sidebar-status";
@@ -68,58 +74,57 @@ export function ArchivedChatsSettings() {
       setRestoringId(null);
     }
   };
+  const archiveRows: SettingsFactRow[] = error
+    ? [
+        {
+          key: "archive-error",
+          label: "Archive",
+          description: error,
+          value: "Try refreshing this settings section.",
+          dim: true,
+          status: { label: "error", tone: "warning" },
+        },
+      ]
+    : sessions.length === 0
+      ? [
+          {
+            key: "archive-empty",
+            label: "Archive",
+            description: "Use a session row menu to archive instead of deleting from disk.",
+            value: loading ? "Loading archived chats…" : "No archived chats.",
+            dim: true,
+            status: { label: loading ? "loading" : "empty" },
+          },
+        ]
+      : sessions.map((session) => ({
+          key: session.id,
+          label: cleanSessionTitle(session.firstUserMessage) || session.id,
+          description: session.projectPath || "Session project metadata is not available.",
+          value: session.id,
+          mono: true,
+          status: { label: "archived", tone: "info" },
+          actions: (
+            <SettingsButton
+              onClick={() => void unarchive(session)}
+              disabled={restoringId === session.id}
+            >
+              {restoringId === session.id ? "Restoring" : "Restore"}
+            </SettingsButton>
+          ),
+          children: (
+            <div className="text-[length:var(--fs-md)] text-(--dim)/55">
+              {session.projectName ? `${session.projectName} · ` : ""}
+              {session.archivedAt ? `archived ${session.archivedAt}` : session.updatedAt}
+            </div>
+          ),
+        }));
   return (
     <SettingsGroup
       title="Archived chats"
       description="Archived sessions are excluded from normal chat fetches. Restore one here to return it to the sidebar."
       actions={<StatusPill>{loading ? "loading" : `${sessions.length} archived`}</StatusPill>}
     >
-      {error ? (
-        <SettingsRow
-          label="Archive"
-          description={error}
-          value={<SettingsValue dim>Try refreshing this settings section.</SettingsValue>}
-          status={<StatusPill tone="warning">error</StatusPill>}
-        />
-      ) : null}
-      {!error && sessions.length === 0 ? (
-        <SettingsRow
-          label="Archive"
-          description="Use a session row menu to archive instead of deleting from disk."
-          value={
-            <SettingsValue dim>
-              {loading ? "Loading archived chats…" : "No archived chats."}
-            </SettingsValue>
-          }
-          status={<StatusPill>{loading ? "loading" : "empty"}</StatusPill>}
-        />
-      ) : (
-        sessions.map((session) => {
-          return (
-            <SettingsRow
-              key={session.id}
-              label={cleanSessionTitle(session.firstUserMessage) || session.id}
-              description={session.projectPath || "Session project metadata is not available."}
-              value={<SettingsValue mono>{session.id}</SettingsValue>}
-              status={<StatusPill tone="info">archived</StatusPill>}
-              actions={
-                <SettingsButton
-                  onClick={() => void unarchive(session)}
-                  disabled={restoringId === session.id}
-                >
-                  {restoringId === session.id ? "Restoring" : "Restore"}
-                </SettingsButton>
-              }
-            >
-              <div className="text-[length:var(--fs-md)] text-(--dim)/55">
-                {" "}
-                {session.projectName ? `${session.projectName} · ` : ""}
-                {session.archivedAt ? `archived ${session.archivedAt}` : session.updatedAt}{" "}
-              </div>
-            </SettingsRow>
-          );
-        })
-      )}
+      <SettingsFactRows rows={archiveRows} />
     </SettingsGroup>
   );
 }
@@ -135,6 +140,27 @@ export function SkillsSettings() {
   }, []);
 
   useSyncExternalStore(subscribeSkills, getConfigsViewSnapshot, getConfigsViewSnapshot);
+  const skillRows: SettingsFactRow[] =
+    skills.length === 0
+      ? [
+          {
+            key: "skill-discovery-empty",
+            label: "Skill discovery",
+            description: "No SKILL.md entries were found in the configured roots.",
+            value: "Empty discovery result",
+            dim: true,
+            status: { label: "empty", tone: "warning" },
+          },
+        ]
+      : skills.slice(0, 80).map((skill) => ({
+          key: skill.id,
+          label: skill.name,
+          description: "Available in the composer with $.",
+          value: `${skill.source} · ${skill.path}`,
+          mono: true,
+          truncate: true,
+          status: { label: "discovered", tone: "info" },
+        }));
   return (
     <SettingsGroup
       title="Skills"
@@ -143,26 +169,7 @@ export function SkillsSettings() {
         <StatusPill tone={skills.length ? "good" : "warning"}>{skills.length} skills</StatusPill>
       }
     >
-      {skills.length === 0 ? (
-        <SettingsRow
-          label="Skill discovery"
-          description="No SKILL.md entries were found in the configured roots."
-          value={<SettingsValue dim>Empty discovery result</SettingsValue>}
-          status={<StatusPill tone="warning">empty</StatusPill>}
-        />
-      ) : (
-        skills
-          .slice(0, 80)
-          .map((skill) => (
-            <SettingsRow
-              key={skill.id}
-              label={skill.name}
-              description="Available in the composer with $."
-              value={<SettingsValue mono>{`${skill.source} · ${skill.path}`}</SettingsValue>}
-              status={<StatusPill tone="info">discovered</StatusPill>}
-            />
-          ))
-      )}{" "}
+      <SettingsFactRows rows={skillRows} />
     </SettingsGroup>
   );
 }
@@ -188,6 +195,14 @@ export function SetupChecksSettings() {
   };
   const rows = [...checks, controllerCheck];
   const blockers = rows.filter((check) => !check.ok);
+  const setupRows: SettingsFactRow[] = rows.map((check) => ({
+    key: check.id,
+    label: check.label,
+    description: check.guidance,
+    value: check.value,
+    mono: true,
+    status: { label: check.ok ? "ok" : "missing", tone: check.ok ? "good" : "warning" },
+  }));
   return (
     <SettingsGroup
       title="First-time setup"
@@ -198,19 +213,7 @@ export function SetupChecksSettings() {
         </StatusPill>
       }
     >
-      {rows.map((check) => (
-        <SettingsRow
-          key={check.id}
-          label={check.label}
-          description={check.guidance}
-          value={<SettingsValue mono>{check.value}</SettingsValue>}
-          status={
-            <StatusPill tone={check.ok ? "good" : "warning"}>
-              {check.ok ? "ok" : "missing"}
-            </StatusPill>
-          }
-        />
-      ))}{" "}
+      <SettingsFactRows rows={setupRows} />
     </SettingsGroup>
   );
 }

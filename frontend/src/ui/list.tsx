@@ -170,6 +170,8 @@ export function RowValue({
   truncate?: boolean;
   className?: string;
 }) {
+  const value =
+    children === null || children === undefined || children === "" ? "Not set" : children;
   return (
     <div
       className={cx(
@@ -181,7 +183,7 @@ export function RowValue({
       )}
       title={typeof children === "string" ? children : undefined}
     >
-      {children || "Not set"}
+      {value}
     </div>
   );
 }

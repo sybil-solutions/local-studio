@@ -126,6 +126,7 @@ export { SessionsCommand } from "./sessions-command";
 // Page-specialized adapters kept in /ui so library swaps happen in one place.
 export {
   SettingsLayout,
+  SettingsFactRows,
   SettingsGroup,
   SettingsRow,
   SettingsValue,
@@ -135,7 +136,12 @@ export {
   SettingsNotice,
   SettingsActions,
 } from "./settings";
-export type { SettingsSectionDef, SettingsSectionId, StatusTone } from "./settings";
+export type {
+  SettingsFactRow,
+  SettingsSectionDef,
+  SettingsSectionId,
+  StatusTone,
+} from "./settings";
 
 export {
   ModelSection,
