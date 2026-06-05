@@ -980,6 +980,7 @@ world"}</arguments></tool_call>`,
         frontend_url: expect.any(String),
       }),
     );
+    expect(configBody.environment).not.toHaveProperty("litellm_url");
     expect(configBody.runtime).toEqual(expect.any(Object));
 
     const specResponse = await app.request("/api/spec");
