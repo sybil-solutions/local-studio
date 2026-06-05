@@ -69,7 +69,7 @@ export function SectionNav<Id extends string = string>({
   onSelectItem: (item: Id) => void;
 }) {
   return (
-    <nav aria-label={label} className="-mx-1 pb-1 lg:mx-0">
+    <nav aria-label={label} className="pb-1">
       <div className="flex flex-wrap gap-1 lg:flex-col lg:flex-nowrap">
         {items.map((item) => {
           const active = activeItem === item.id;

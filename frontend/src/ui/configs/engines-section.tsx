@@ -9,6 +9,7 @@ import {
   ENGINE_META,
   MANAGED_RUNTIME_BACKENDS,
   ManagedRuntimeInstallRows,
+  RowDetailLine,
   RuntimeTargetRows,
   RuntimeTargetStatus,
   SettingsButton,
@@ -253,12 +254,14 @@ function BackendRow({
       }
     >
       {info.python_path || info.binary_path ? (
-        <SettingsValue mono dim truncate>
+        <RowDetailLine mono truncate size="md">
           {info.python_path ?? info.binary_path}
-        </SettingsValue>
+        </RowDetailLine>
       ) : null}
       {state.status === "error" && state.message ? (
-        <p className="truncate text-[length:var(--fs-sm)] text-(--err)">{state.message}</p>
+        <RowDetailLine tone="danger" truncate>
+          {state.message}
+        </RowDetailLine>
       ) : null}
     </SettingsRow>
   );

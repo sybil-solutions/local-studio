@@ -2,7 +2,7 @@
 
 import { ArrowUpCircle, DownloadCloud, Loader2 } from "lucide-react";
 import type { EngineBackend, EngineJob, RuntimeTarget } from "@/lib/types";
-import { RowFacts, type RowFact } from "./list";
+import { RowDetailLine, RowFacts, type RowFact } from "./list";
 import { SettingsButton, SettingsRow, SettingsValue } from "./settings";
 import { StatusPill, type UiTone } from "./status";
 
@@ -151,7 +151,7 @@ export function RuntimeTargetRows({
   ));
 }
 
-export function RuntimeTargetRow({
+function RuntimeTargetRow({
   target,
   job,
   onAction,
@@ -190,12 +190,8 @@ export function RuntimeTargetRow({
       {target.capabilities.canUpdate && target.update ? (
         <RuntimeUpdateDetails update={target.update} />
       ) : null}
-      {!target.capabilities.canUpdate ? (
-        <p className="text-[length:var(--fs-sm)] text-(--ui-muted)">{unsupportedReason}</p>
-      ) : null}
-      {healthMessage ? (
-        <p className="text-[length:var(--fs-sm)] text-(--ui-warning)">{healthMessage}</p>
-      ) : null}
+      {!target.capabilities.canUpdate ? <RowDetailLine>{unsupportedReason}</RowDetailLine> : null}
+      {healthMessage ? <RowDetailLine tone="warning">{healthMessage}</RowDetailLine> : null}
     </SettingsRow>
   );
 }
@@ -304,25 +300,32 @@ export function RuntimeTargetStatus({
   );
 }
 
-export function RuntimeJobMessage({ job }: { job: EngineJob }) {
+function RuntimeJobMessage({ job }: { job: EngineJob }) {
+  const tone = job.status === "error" ? "danger" : "muted";
   return (
-    <div
-      className={`space-y-1 text-[length:var(--fs-md)] ${job.status === "error" ? "text-(--ui-danger)/80" : "text-(--ui-muted)"}`}
-    >
-      <p>{job.message}</p>
-      {job.command ? <p className="truncate font-mono">{job.command}</p> : null}
-      {job.error || job.outputTail ? (
-        <p className="line-clamp-3 whitespace-pre-wrap font-mono">{job.error ?? job.outputTail}</p>
+    <>
+      <RowDetailLine tone={tone} size="md">
+        {job.message}
+      </RowDetailLine>
+      {job.command ? (
+        <RowDetailLine mono truncate tone={tone} size="md">
+          {job.command}
+        </RowDetailLine>
       ) : null}
-    </div>
+      {job.error || job.outputTail ? (
+        <RowDetailLine mono clamp tone={tone} size="md">
+          {job.error ?? job.outputTail}
+        </RowDetailLine>
+      ) : null}
+    </>
   );
 }
 
-export function RuntimeUpdateDetails({ update }: { update: NonNullable<RuntimeTarget["update"]> }) {
+function RuntimeUpdateDetails({ update }: { update: NonNullable<RuntimeTarget["update"]> }) {
   const pinHint = update.changes.find((change) => change.startsWith("Set "));
   return (
-    <div className="space-y-1 text-[length:var(--fs-sm)] text-(--ui-muted)">
-      <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
+    <>
+      <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-(--ui-muted)">
         <span>
           Update available:{" "}
           <span className="font-mono text-(--ui-fg)/70">
@@ -343,8 +346,8 @@ export function RuntimeUpdateDetails({ update }: { update: NonNullable<RuntimeTa
           release notes
         </a>
       </div>
-      {pinHint ? <p className="text-(--ui-muted)/70">{pinHint}</p> : null}
-    </div>
+      {pinHint ? <RowDetailLine className="text-(--ui-muted)/70">{pinHint}</RowDetailLine> : null}
+    </>
   );
 }
 

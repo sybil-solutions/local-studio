@@ -223,6 +223,57 @@ export function RowFacts({ items, className }: { items: RowFact[]; className?: s
   );
 }
 
+type RowDetailTone = "muted" | "warning" | "danger";
+type RowDetailSize = "inherit" | "sm" | "md";
+
+const rowDetailToneClass: Record<RowDetailTone, string> = {
+  muted: "text-(--ui-muted)",
+  warning: "text-(--ui-warning)",
+  danger: "text-(--ui-danger)/80",
+};
+
+const rowDetailSizeClass: Record<RowDetailSize, string> = {
+  inherit: "",
+  sm: "text-[length:var(--fs-sm)]",
+  md: "text-[length:var(--fs-md)]",
+};
+
+export function RowDetailLine({
+  children,
+  tone = "muted",
+  size = "inherit",
+  mono = false,
+  truncate = false,
+  clamp = false,
+  title,
+  className,
+}: {
+  children: ReactNode;
+  tone?: RowDetailTone;
+  size?: RowDetailSize;
+  mono?: boolean;
+  truncate?: boolean;
+  clamp?: boolean;
+  title?: string;
+  className?: string;
+}) {
+  return (
+    <p
+      className={cx(
+        rowDetailToneClass[tone],
+        rowDetailSizeClass[size],
+        mono ? "font-mono" : "",
+        truncate ? "truncate" : "",
+        clamp ? "line-clamp-3 whitespace-pre-wrap" : "",
+        className,
+      )}
+      title={title ?? (typeof children === "string" ? children : undefined)}
+    >
+      {children}
+    </p>
+  );
+}
+
 export function EmptySafeNotice({ children }: { children: ReactNode }) {
   return (
     <div className="px-3.5 py-2.5 text-[length:var(--fs-md)] leading-relaxed text-(--ui-muted)">

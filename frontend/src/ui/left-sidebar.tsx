@@ -204,7 +204,7 @@ export function LeftSidebar({ children }: { children: ReactNode }) {
             aria-label="Resize sidebar"
             title="Resize sidebar"
             onMouseDown={startSidebarResize}
-            className={`absolute right-0 top-0 z-[60] h-full w-2 translate-x-1 cursor-col-resize transition-colors ${
+            className={`absolute right-0 top-0 z-[60] h-full w-2 cursor-col-resize transition-colors ${
               sidebarResizing ? "bg-(--accent)/25" : "hover:bg-(--accent)/20"
             }`}
           />

@@ -66,7 +66,15 @@ export type { TableProps, THeadProps, TBodyProps, TRowProps, THProps, TCellProps
 export { AppPage, PageHeader, SectionNav, RefreshIconButton } from "./page";
 export type { SectionNavItem } from "./page";
 
-export { ListGroup, ListRow, RowFacts, RowValue, EmptySafeNotice, KeyValueRow } from "./list";
+export {
+  ListGroup,
+  ListRow,
+  RowDetailLine,
+  RowFacts,
+  RowValue,
+  EmptySafeNotice,
+  KeyValueRow,
+} from "./list";
 export type { RowFact } from "./list";
 
 export { Toggle } from "./toggle";
@@ -83,11 +91,8 @@ export {
   MANAGED_RUNTIME_BACKENDS,
   SETUP_RUNTIME_BACKENDS,
   ManagedRuntimeInstallRows,
-  RuntimeJobMessage,
-  RuntimeTargetRow,
   RuntimeTargetRows,
   RuntimeTargetStatus,
-  RuntimeUpdateDetails,
   isManagedRuntimeTarget,
   isRunningEngineJob,
   jobForRuntimeTarget,
