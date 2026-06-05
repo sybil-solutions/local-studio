@@ -1,8 +1,13 @@
 import { NextRequest } from "next/server";
 import { listSessions } from "@/lib/agent/sessions-store";
 import { piRuntimeManager } from "@/lib/agent/pi-runtime";
-import { parseAgentTurnRequest } from "@/lib/agent/contracts/turn";
+import {
+  parseAgentTurnRequest,
+  type AgentImageInput,
+  type AgentTurnRequest,
+} from "@/lib/agent/contracts/turn";
 import { controlTargetHasActiveTurn } from "@/lib/agent/control-routing";
+import type { PiAgentSession, PiAgentStatus } from "@/lib/agent/pi-runtime-types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -38,6 +43,115 @@ function adoptRuntimePiSessionId(session: unknown, piSessionId: string | null | 
   }
 }
 
+type ResolvedTurnSession = {
+  effectivePiSessionId: string | null;
+  effectiveStreamingBehavior: AgentTurnRequest["streamingBehavior"];
+  ownsPromptStream: boolean;
+  session: PiAgentSession;
+  sessionId: string;
+};
+
+type TurnStreamState = {
+  close: () => void;
+  isOpen: () => boolean;
+};
+
+function createTurnStreamState(request: NextRequest): TurnStreamState {
+  let open = true;
+  request.signal.addEventListener("abort", () => {
+    open = false;
+  });
+  return {
+    close: () => {
+      open = false;
+    },
+    isOpen: () => open,
+  };
+}
+
+function resolveTurnSession(turn: AgentTurnRequest): ResolvedTurnSession {
+  const resolved =
+    turn.mode === "prompt"
+      ? { sessionId: turn.sessionId, session: piRuntimeManager.getSession(turn.sessionId) }
+      : piRuntimeManager.getSessionForLookup(turn.sessionId, turn.piSessionId);
+  const status = resolved.session.status;
+  const controlTargetActive = controlTargetHasActiveTurn(status);
+  return {
+    effectivePiSessionId: effectivePiSessionId(turn, status, controlTargetActive),
+    effectiveStreamingBehavior: effectiveStreamingBehavior(turn, status),
+    ownsPromptStream: turn.mode === "prompt" || !controlTargetActive,
+    session: resolved.session,
+    sessionId: resolved.sessionId,
+  };
+}
+
+function effectivePiSessionId(
+  turn: AgentTurnRequest,
+  status: PiAgentStatus,
+  controlTargetActive: boolean,
+) {
+  if (turn.mode === "prompt") return turn.piSessionId;
+  return controlTargetActive ? (status.piSessionId ?? turn.piSessionId) : turn.piSessionId;
+}
+
+function effectiveStreamingBehavior(turn: AgentTurnRequest, status: PiAgentStatus) {
+  if (turn.mode === "prompt" && status.active === true) return turn.streamingBehavior ?? "steer";
+  return turn.streamingBehavior;
+}
+
+async function ensurePromptRuntime(turn: AgentTurnRequest, resolved: ResolvedTurnSession) {
+  if (!resolved.ownsPromptStream) return;
+  await resolved.session.ensureStarted(turn.modelId, turn.cwd, resolved.effectivePiSessionId, {
+    browserToolEnabled: turn.browserToolEnabled,
+    browserSessionId: turn.browserSessionId,
+    canvasEnabled: turn.canvasEnabled,
+    plugins: turn.plugins,
+    skills: turn.skills,
+    promptTemplates: turn.promptTemplates,
+  });
+}
+
+async function dispatchTurn(
+  turn: AgentTurnRequest,
+  resolved: ResolvedTurnSession,
+  commandImages: AgentImageInput[] | undefined,
+  emit: (payload: unknown) => void,
+) {
+  if (resolved.ownsPromptStream) {
+    await resolved.session.prompt(
+      turn.message,
+      (event, seq) => {
+        emit({ type: "pi", seq, event });
+      },
+      {
+        streamingBehavior: resolved.effectiveStreamingBehavior,
+        ...(commandImages ? { images: commandImages } : {}),
+      },
+    );
+    return;
+  }
+
+  if (turn.mode === "steer") {
+    await resolved.session.steer(turn.message, commandImages);
+    // Steer is a fire-and-forget control message — events keep flowing on
+    // the original prompt's stream. Close ours immediately.
+    emit({ type: "status", phase: "queued", queue: "steer" });
+    return;
+  }
+
+  if (turn.mode === "follow_up") {
+    await resolved.session.followUp(turn.message, commandImages);
+    emit({ type: "status", phase: "queued", queue: "follow_up" });
+  }
+}
+
+async function resolvePiSessionId(session: PiAgentSession, since: Date) {
+  const status = session.status;
+  if (status.piSessionId || !status.cwd) return status.piSessionId;
+  const recent = await listSessions(status.cwd, { since });
+  return recent[0]?.id ?? null;
+}
+
 export async function POST(request: NextRequest) {
   let rawBody: unknown;
   try {
@@ -47,123 +161,36 @@ export async function POST(request: NextRequest) {
   }
   const parsed = parseAgentTurnRequest(rawBody);
   if (!parsed.ok) return Response.json({ error: parsed.error }, { status: 400 });
-  const {
-    sessionId,
-    modelId,
-    message,
-    images,
-    cwd,
-    piSessionId,
-    browserToolEnabled,
-    browserSessionId,
-    canvasEnabled,
-    plugins,
-    skills,
-    promptTemplates,
-    mode,
-    streamingBehavior,
-  } = parsed.value;
-  const commandImages = images.length ? images : undefined;
+  const turn = parsed.value;
+  const commandImages = turn.images.length ? turn.images : undefined;
 
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
-      let open = true;
-      const isOpen = () => open;
-      request.signal.addEventListener("abort", () => {
-        open = false;
-      });
+      const streamState = createTurnStreamState(request);
+      const emit = (payload: unknown) => sse(controller, payload, streamState.isOpen);
       try {
         const turnStartedAt = new Date(Date.now() - 2_000);
-        const resolved =
-          mode === "prompt"
-            ? { sessionId, session: piRuntimeManager.getSession(sessionId) }
-            : piRuntimeManager.getSessionForLookup(sessionId, piSessionId);
-        const session = resolved.session;
-        const existingStatus = session.status;
-        const promptAlreadyActive = existingStatus.active === true;
-        const controlTargetActive = controlTargetHasActiveTurn(existingStatus);
-        const effectivePiSessionId =
-          mode === "prompt"
-            ? piSessionId
-            : controlTargetActive
-              ? (existingStatus.piSessionId ?? piSessionId)
-              : piSessionId;
-        sse(
-          controller,
-          { type: "status", phase: "starting", sessionId: resolved.sessionId, modelId, cwd },
-          isOpen,
-        );
-        // Control turns are keyed to an active Pi turn, not just to a live
-        // runtime process. A completed session can keep its runtime around for
-        // reuse; late steer/queue controls must become normal streamed prompts.
-        const ownsPromptStream = mode === "prompt" || !controlTargetActive;
-        const effectiveStreamingBehavior =
-          mode === "prompt" && promptAlreadyActive
-            ? (streamingBehavior ?? "steer")
-            : streamingBehavior;
-        if (ownsPromptStream) {
-          await session.ensureStarted(modelId, cwd, effectivePiSessionId, {
-            browserToolEnabled,
-            browserSessionId,
-            canvasEnabled,
-            plugins,
-            skills,
-            promptTemplates,
-          });
-        }
-        sse(controller, { type: "status", phase: "running", session: session.status }, isOpen);
-        if (ownsPromptStream) {
-          const promptOptions = {
-            streamingBehavior: effectiveStreamingBehavior,
-            ...(commandImages ? { images: commandImages } : {}),
-          };
-          await session.prompt(
-            message,
-            (event, seq) => {
-              sse(controller, { type: "pi", seq, event }, isOpen);
-            },
-            promptOptions,
-          );
-        } else if (mode === "steer") {
-          if (commandImages) {
-            await session.steer(message, commandImages);
-          } else {
-            await session.steer(message);
-          }
-          // Steer is a fire-and-forget control message — events keep flowing on
-          // the original prompt's stream. Close ours immediately.
-          sse(controller, { type: "status", phase: "queued", queue: "steer" }, isOpen);
-        } else if (mode === "follow_up") {
-          if (commandImages) {
-            await session.followUp(message, commandImages);
-          } else {
-            await session.followUp(message);
-          }
-          sse(controller, { type: "status", phase: "queued", queue: "follow_up" }, isOpen);
-        }
-        const status = session.status;
-        let resolvedPiSessionId = status.piSessionId;
-        if (!resolvedPiSessionId && status.cwd) {
-          const recent = await listSessions(status.cwd, { since: turnStartedAt });
-          resolvedPiSessionId = recent[0]?.id ?? null;
-        }
-        adoptRuntimePiSessionId(session, resolvedPiSessionId);
-        sse(
-          controller,
-          { type: "status", phase: "done", piSessionId: resolvedPiSessionId },
-          isOpen,
-        );
+        const resolved = resolveTurnSession(turn);
+        emit({
+          type: "status",
+          phase: "starting",
+          sessionId: resolved.sessionId,
+          modelId: turn.modelId,
+          cwd: turn.cwd,
+        });
+        await ensurePromptRuntime(turn, resolved);
+        emit({ type: "status", phase: "running", session: resolved.session.status });
+        await dispatchTurn(turn, resolved, commandImages, emit);
+        const resolvedPiSessionId = await resolvePiSessionId(resolved.session, turnStartedAt);
+        adoptRuntimePiSessionId(resolved.session, resolvedPiSessionId);
+        emit({ type: "status", phase: "done", piSessionId: resolvedPiSessionId });
       } catch (error) {
-        sse(
-          controller,
-          {
-            type: "error",
-            error: error instanceof Error ? error.message : "Pi agent turn failed",
-          },
-          isOpen,
-        );
+        emit({
+          type: "error",
+          error: error instanceof Error ? error.message : "Pi agent turn failed",
+        });
       } finally {
-        open = false;
+        streamState.close();
         try {
           controller.close();
         } catch {
