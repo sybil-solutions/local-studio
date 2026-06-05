@@ -86,28 +86,8 @@ function toCatalogueEntry(row: RegistryServerRow, source: McpRegistrySource): Mc
   const server = row.server;
   const selectedPackage = selectInstallablePackage(server.packages ?? []);
   const launch = selectedPackage ? launchFromPackage(selectedPackage) : null;
-  const env = selectedPackage ? envDefaults(selectedPackage.environmentVariables ?? []) : undefined;
-  const requiredEnv = selectedPackage
-    ? (selectedPackage.environmentVariables ?? [])
-        .filter((entry) => entry.isRequired && entry.name)
-        .map((entry) => String(entry.name))
-    : [];
   const remoteOnly = !selectedPackage && Boolean(server.remotes?.length);
   const registry = source.builtIn ? "official" : "custom";
-  const packageTags = selectedPackage
-    ? [selectedPackage.registryType, selectedPackage.transport.type]
-    : remoteOnly
-      ? ["remote"]
-      : ["metadata"];
-  const attributes = [
-    `registry:${source.name}`,
-    `version:${server.version}`,
-    ...(row._meta?.["io.modelcontextprotocol.registry/official"]?.status
-      ? [`status:${row._meta["io.modelcontextprotocol.registry/official"].status}`]
-      : []),
-    ...(selectedPackage ? [`package:${selectedPackage.registryType}`] : []),
-    ...(remoteOnly ? ["remote-only"] : []),
-  ];
 
   return {
     id: `${registry}:${source.id}:${server.name}:${server.version}`,
@@ -120,25 +100,68 @@ function toCatalogueEntry(row: RegistryServerRow, source: McpRegistrySource): Mc
     args: launch?.args ?? [],
     tags: [
       registry,
-      ...packageTags,
-      ...(server.repository?.source ? [server.repository.source] : []),
+      ...packageTagsFor(selectedPackage, remoteOnly),
+      ...repositorySourceTags(server.repository),
     ],
     registry,
     registryName: source.name,
     registrySourceId: source.id,
     registryUrl: versionUrl(source.url, server.name, server.version),
     repositoryUrl: server.repository?.url,
-    attributes,
-    env,
-    requiredEnv,
-    homepage: server.websiteUrl ?? server.repository?.url ?? source.url,
+    attributes: registryAttributes(row, source, selectedPackage, remoteOnly),
+    env: selectedPackage ? envDefaults(selectedPackage.environmentVariables ?? []) : undefined,
+    requiredEnv: selectedPackage
+      ? requiredEnvironmentNames(selectedPackage.environmentVariables ?? [])
+      : [],
+    homepage: homepageForServer(server, source),
     installable: Boolean(launch),
-    unsupportedReason: launch
-      ? undefined
-      : remoteOnly
-        ? "Remote MCP transports are listed, but this app currently installs stdio servers."
-        : "No supported stdio package is listed for this server.",
+    unsupportedReason: unsupportedReasonFor(launch, remoteOnly),
   };
+}
+
+function registryAttributes(
+  row: RegistryServerRow,
+  source: McpRegistrySource,
+  selectedPackage: RegistryPackage | null,
+  remoteOnly: boolean,
+): string[] {
+  const officialStatus = row._meta?.["io.modelcontextprotocol.registry/official"]?.status;
+  return [
+    `registry:${source.name}`,
+    `version:${row.server.version}`,
+    ...(officialStatus ? [`status:${officialStatus}`] : []),
+    ...(selectedPackage ? [`package:${selectedPackage.registryType}`] : []),
+    ...(remoteOnly ? ["remote-only"] : []),
+  ];
+}
+
+function packageTagsFor(selectedPackage: RegistryPackage | null, remoteOnly: boolean): string[] {
+  if (selectedPackage) return [selectedPackage.registryType, selectedPackage.transport.type];
+  return remoteOnly ? ["remote"] : ["metadata"];
+}
+
+function repositorySourceTags(repository: RegistryServer["repository"]): string[] {
+  return repository?.source ? [repository.source] : [];
+}
+
+function requiredEnvironmentNames(inputs: RegistryInput[]): string[] {
+  return inputs
+    .filter((entry) => entry.isRequired && entry.name)
+    .map((entry) => String(entry.name));
+}
+
+function homepageForServer(server: RegistryServer, source: McpRegistrySource): string {
+  return server.websiteUrl ?? server.repository?.url ?? source.url;
+}
+
+function unsupportedReasonFor(
+  launch: { command: string; args: string[] } | null,
+  remoteOnly: boolean,
+): string | undefined {
+  if (launch) return undefined;
+  return remoteOnly
+    ? "Remote MCP transports are listed, but this app currently installs stdio servers."
+    : "No supported stdio package is listed for this server.";
 }
 
 function selectInstallablePackage(packages: RegistryPackage[]): RegistryPackage | null {
