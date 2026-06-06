@@ -95,7 +95,6 @@ export type { UiTone, StatusPillVariant } from "./status";
 export {
   ENGINE_META,
   MANAGED_RUNTIME_BACKENDS,
-  SETUP_RUNTIME_BACKENDS,
   ManagedRuntimeInstallRows,
   RuntimeTargetRows,
   RuntimeTargetStatus,

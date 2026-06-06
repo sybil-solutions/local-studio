@@ -184,7 +184,12 @@ export async function POST(request: NextRequest) {
         await dispatchTurn(turn, resolved, commandImages, emit);
         const resolvedPiSessionId = await resolvePiSessionId(resolved.session, turnStartedAt);
         adoptRuntimePiSessionId(resolved.session, resolvedPiSessionId);
-        emit({ type: "status", phase: "done", piSessionId: resolvedPiSessionId });
+        emit({
+          type: "status",
+          phase: "done",
+          piSessionId: resolvedPiSessionId,
+          session: resolved.session.status,
+        });
       } catch (error) {
         emit({
           type: "error",

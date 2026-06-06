@@ -179,6 +179,13 @@ export function ToolsProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const setComputerOpen = useCallback((open: boolean) => {
+    if (!open) {
+      setBrowser((current) => {
+        if (!current.enabled) return current;
+        writeBrowserEnabled(false);
+        return { ...current, enabled: false };
+      });
+    }
     setComputer((current) =>
       current.open === open
         ? current
@@ -192,13 +199,23 @@ export function ToolsProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const toggleComputerOpen = useCallback(() => {
-    setComputer((current) => ({
-      ...current,
-      open: !current.open,
-      tab: !current.open ? current.tab || "status" : current.tab,
-      tabs: uniqueComputerTabs(current.tabs.length ? current.tabs : ["status"]),
-    }));
-  }, []);
+    if (computer.open) {
+      setBrowser((current) => {
+        if (!current.enabled) return current;
+        writeBrowserEnabled(false);
+        return { ...current, enabled: false };
+      });
+    }
+    setComputer((current) => {
+      const nextOpen = !current.open;
+      return {
+        ...current,
+        open: nextOpen,
+        tab: nextOpen ? current.tab || "status" : current.tab,
+        tabs: uniqueComputerTabs(current.tabs.length ? current.tabs : ["status"]),
+      };
+    });
+  }, [computer.open]);
 
   const setComputerTab = useCallback((tab: ComputerTab) => {
     setComputer((current) => {
@@ -209,13 +226,12 @@ export function ToolsProvider({ children }: { children: ReactNode }) {
         : { ...current, open: true, tab, tabs };
     });
     writeComputerTab(tab);
-    if (tab === "browser") {
-      setBrowser((current) => {
-        if (current.enabled) return current;
-        writeBrowserEnabled(true);
-        return { ...current, enabled: true };
-      });
-    }
+    setBrowser((current) => {
+      const enabled = tab === "browser";
+      if (current.enabled === enabled) return current;
+      writeBrowserEnabled(enabled);
+      return { ...current, enabled };
+    });
   }, []);
 
   // Register + select a tab WITHOUT force-opening the computer panel. Used when
@@ -240,6 +256,13 @@ export function ToolsProvider({ children }: { children: ReactNode }) {
 
   const closeComputerTab = useCallback((tab: ComputerTab) => {
     if (tab === "status" || tab === "tools") return;
+    if (tab === "browser") {
+      setBrowser((current) => {
+        if (!current.enabled) return current;
+        writeBrowserEnabled(false);
+        return { ...current, enabled: false };
+      });
+    }
     setComputer((current) => {
       const tabs = uniqueComputerTabs(current.tabs.filter((item) => item !== tab));
       const activeTab = current.tab === tab ? (tabs[tabs.length - 1] ?? "status") : current.tab;

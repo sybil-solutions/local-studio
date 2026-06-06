@@ -33,6 +33,14 @@ export type RuntimeStatus = {
   contextUsage?: RuntimeContextUsage | null;
 };
 
+export function runtimeContextUsage(
+  status: RuntimeStatus | null | undefined,
+  fallback: RuntimeContextUsage | null | undefined,
+): RuntimeContextUsage | null {
+  if (status) return status.contextUsage ?? null;
+  return fallback ?? null;
+}
+
 export type RuntimeSessionSummary = {
   sessionId: string;
   status: RuntimeStatus;
@@ -115,7 +123,7 @@ export type CompactSessionArgs = {
 };
 
 export type CompactSessionResult = {
-  status?: { piSessionId?: string | null };
+  status?: RuntimeStatus;
 };
 
 export async function compactSession(args: CompactSessionArgs): Promise<CompactSessionResult> {
@@ -126,7 +134,7 @@ export async function compactSession(args: CompactSessionArgs): Promise<CompactS
   });
   const payload = await safeJson<{
     error?: string;
-    status?: { piSessionId?: string | null };
+    status?: RuntimeStatus;
   }>(response);
   if (!response.ok) throw new Error(payload.error || "Compaction failed");
   return payload;

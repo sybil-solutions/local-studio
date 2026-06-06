@@ -51,6 +51,14 @@ export function applyPiEventToSession(
 
   if (appendUserMessageFromPiEvent(deps, sessionId, event)) return;
 
+  if (isSuccessfulCompactionEvent(event)) {
+    deps.updateSession(sessionId, (session) => ({
+      ...session,
+      contextUsage: null,
+      tokenStats: undefined,
+    }));
+  }
+
   const usage = usageFromEvent(event);
   if (usage) {
     deps.updateSession(sessionId, (session) => ({ ...session, tokenStats: usage }));
@@ -86,6 +94,35 @@ export function applyPiEventToSession(
     });
     return blocks ? { ...msg, blocks } : msg;
   });
+}
+
+function isSuccessfulCompactionEvent(event: Record<string, unknown>): boolean {
+  const type = typeof event.type === "string" ? event.type.toLowerCase() : "";
+  if (!type.includes("compact") && !type.includes("compaction")) return false;
+  if (isFailedCompactionEvent(event)) return false;
+  if (type.includes("start") || type.includes("begin")) return false;
+  return true;
+}
+
+function isFailedCompactionEvent(event: Record<string, unknown>): boolean {
+  if (
+    event.error ||
+    event.errorMessage ||
+    event.aborted ||
+    event.cancelled ||
+    event.canceled ||
+    event.failed
+  ) {
+    return true;
+  }
+  if (event.type === "compaction_end" && event.result == null) return true;
+  const status =
+    typeof event.status === "string"
+      ? event.status
+      : typeof (event.result as { status?: unknown } | undefined)?.status === "string"
+        ? (event.result as { status: string }).status
+        : "";
+  return /abort|cancel|error|fail/.test(status.toLowerCase());
 }
 
 function currentAssistantId(

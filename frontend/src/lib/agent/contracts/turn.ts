@@ -33,8 +33,27 @@ export type AgentTurnRequest = {
   streamingBehavior?: AgentStreamingBehavior;
 };
 
+export type AgentTurnRuntimeStatus = {
+  active?: boolean;
+  running?: boolean;
+  piSessionId?: string | null;
+  modelId?: string | null;
+  eventSeq?: number;
+  contextUsage?: {
+    tokens: number | null;
+    contextWindow: number;
+    percent: number | null;
+    shouldCompact: boolean;
+  } | null;
+};
+
 export type AgentTurnSsePayload =
-  | { type: "status"; phase: string; piSessionId?: string | null }
+  | {
+      type: "status";
+      phase: string;
+      piSessionId?: string | null;
+      session?: AgentTurnRuntimeStatus;
+    }
   | { type: "error"; error: string }
   | { type: "pi"; seq?: number; event: Record<string, unknown> };
 
@@ -98,7 +117,14 @@ export function parseAgentTurnSsePayload(line: string): AgentTurnSsePayload | nu
   try {
     const payload = JSON.parse(line.slice(6)) as Partial<AgentTurnSsePayload>;
     if (payload.type === "status" && typeof payload.phase === "string") {
-      return { type: "status", phase: payload.phase, piSessionId: payload.piSessionId };
+      return {
+        type: "status",
+        phase: payload.phase,
+        piSessionId: payload.piSessionId,
+        session: objectRecord(payload.session)
+          ? (payload.session as AgentTurnRuntimeStatus)
+          : undefined,
+      };
     }
     if (payload.type === "error" && typeof payload.error === "string") {
       return { type: "error", error: payload.error };

@@ -39,8 +39,8 @@
     "precommit": "lint-staged --config .lintstagedrc.json && npm run typecheck"
   },
   "dependencies": {
-    "@earendil-works/pi-ai": "0.75.5",
-    "@earendil-works/pi-coding-agent": "0.75.5",
+    "@earendil-works/pi-ai": "0.78.1",
+    "@earendil-works/pi-coding-agent": "0.78.1",
     "@lydell/node-pty": "^1.2.0-beta.12",
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/addon-web-links": "^0.13.0-beta.220",

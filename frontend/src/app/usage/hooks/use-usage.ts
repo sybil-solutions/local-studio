@@ -28,12 +28,15 @@ export function useUsage(source: UsageSource = "provider") {
       setError(null);
       const fetchUsage =
         source === "pi-sessions" ? api.getPiSessionsUsageStats() : api.getUsageStats();
-      const [usageData, peakData] = await Promise.all([fetchUsage, api.getPeakMetrics()]);
+      const [usageData, peakResult] = await Promise.all([
+        fetchUsage,
+        api.getPeakMetrics().catch(() => ({ metrics: [] })),
+      ]);
       setStats(normalizeUsageStats(usageData));
 
-      if (Array.isArray(peakData.metrics)) {
+      if (Array.isArray(peakResult.metrics)) {
         const metricsMap = new Map<string, PeakMetrics>();
-        for (const metric of peakData.metrics) {
+        for (const metric of peakResult.metrics) {
           const modelId = typeof metric.model_id === "string" ? metric.model_id : "";
           if (!modelId) continue;
           metricsMap.set(modelId, {

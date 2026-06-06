@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useMemo, useState, type ReactNode } from "react";
+import { Button, UiModal, UiModalHeader } from "@/ui";
 import { ChevronDownIcon, PlusIcon } from "@/ui/icons";
 import {
   useActiveAgentSessionsEffect,
@@ -46,6 +47,8 @@ export function ProjectsNavSection({ expanded }: { expanded: boolean }) {
   );
   const [addError, setAddError] = useState("");
   const [directoryModalOpen, setDirectoryModalOpen] = useState(false);
+  const [projectRemoveConfirm, setProjectRemoveConfirm] = useState<ProjectEntry | null>(null);
+  const [removingProjectId, setRemovingProjectId] = useState<string | null>(null);
   const [pinnedSessions, setPinnedSessions] = useState<PinnedSession[]>([]);
   const prefs = useSessionPrefs();
   const pinnedPrefIds = useMemo(
@@ -143,6 +146,19 @@ export function ProjectsNavSection({ expanded }: { expanded: boolean }) {
       setAddError(error instanceof Error ? error.message : "Failed to add project");
     }
   };
+  const confirmProjectRemove = useCallback(async () => {
+    if (!projectRemoveConfirm) return;
+    setAddError("");
+    setRemovingProjectId(projectRemoveConfirm.id);
+    try {
+      await removeProjectAndCloseRow(projectRemoveConfirm.id);
+      setProjectRemoveConfirm(null);
+    } catch (error) {
+      setAddError(error instanceof Error ? error.message : "Failed to remove project");
+    } finally {
+      setRemovingProjectId(null);
+    }
+  }, [projectRemoveConfirm, removeProjectAndCloseRow]);
   const toggle = (id: string) =>
     setOpenIds((current) => {
       const next = new Set(current);
@@ -175,6 +191,12 @@ export function ProjectsNavSection({ expanded }: { expanded: boolean }) {
         error={addError}
         onClose={() => setDirectoryModalOpen(false)}
         onSelect={(directoryPath) => void handleDirectoryPicked(directoryPath)}
+      />
+      <ProjectRemoveConfirmModal
+        project={projectRemoveConfirm}
+        removing={Boolean(projectRemoveConfirm && removingProjectId === projectRemoveConfirm.id)}
+        onCancel={() => setProjectRemoveConfirm(null)}
+        onConfirm={() => void confirmProjectRemove()}
       />
       {pinnedSessions.length > 0 || pinnedActiveSessions.length > 0 ? (
         <div className="flex flex-col">
@@ -261,18 +283,66 @@ export function ProjectsNavSection({ expanded }: { expanded: boolean }) {
               prefs={prefs}
               excludedIds={pinnedRenderedIds}
               onToggle={() => toggle(project.id)}
+              onNewChatStart={() => {
+                setProjectsExpanded(true);
+                setOpenIds((current) => {
+                  if (current.has(project.id)) return current;
+                  const next = new Set(current);
+                  next.add(project.id);
+                  return next;
+                });
+              }}
               onRemove={() => {
                 setAddError("");
-                void removeProjectAndCloseRow(project.id).catch((error) => {
-                  setAddError(error instanceof Error ? error.message : "Failed to remove project");
-                });
+                setProjectRemoveConfirm(project);
               }}
             />
           ))
         )
       ) : null}
-      {addError ? <div className="px-2 py-1 text-[length:var(--fs-sm)] text-red-400">{addError}</div> : null}{" "}
+      {addError ? (
+        <div className="px-2 py-1 text-[length:var(--fs-sm)] text-red-400">{addError}</div>
+      ) : null}{" "}
     </div>
+  );
+}
+
+function ProjectRemoveConfirmModal({
+  project,
+  removing,
+  onCancel,
+  onConfirm,
+}: {
+  project: ProjectEntry | null;
+  removing: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  if (!project) return null;
+  return (
+    <UiModal isOpen onClose={removing ? () => {} : onCancel} maxWidth="max-w-md">
+      <UiModalHeader title="Remove project" onClose={removing ? undefined : onCancel} />
+      <div className="space-y-5 p-6">
+        <div className="space-y-2 text-[length:var(--fs-sm)] text-(--ui-muted)">
+          <p>
+            Remove <span className="font-medium text-(--ui-fg)">{project.name}</span> from the
+            sidebar?
+          </p>
+          <p className="break-all font-mono text-[length:var(--fs-xs)] text-(--dim)">
+            {project.path}
+          </p>
+          <p>This does not delete files from disk or archive existing sessions.</p>
+        </div>
+        <div className="flex justify-end gap-3">
+          <Button variant="secondary" onClick={onCancel} disabled={removing}>
+            Cancel
+          </Button>
+          <Button variant="danger" onClick={onConfirm} disabled={removing}>
+            {removing ? "Removing..." : "Remove"}
+          </Button>
+        </div>
+      </div>
+    </UiModal>
   );
 }
 function SidebarSectionHeader({

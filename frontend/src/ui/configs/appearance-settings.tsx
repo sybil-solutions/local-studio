@@ -12,14 +12,7 @@ import {
   type ThemeTokens,
 } from "@/lib/themes";
 import { applyTokensToDocument, applyUiControl } from "@/lib/theme/runtime";
-import {
-  ColorField,
-  ListGroup,
-  ListRow,
-  SegmentedControl,
-  type SegmentedItem,
-  Slider,
-} from "@/ui";
+import { ColorField, ListGroup, ListRow, SegmentedControl, type SegmentedItem, Slider } from "@/ui";
 
 /* ------------------------------------------------------------------ */
 /*  Helpers                                                           */
@@ -137,7 +130,9 @@ export function AppearanceSettings() {
 
   const currentTheme = THEME_BY_ID.get(themeId) ?? THEMES[0];
 
-  const [mode, setMode] = useState<ThemeMode>(() => (isLightTheme(currentTheme) ? "light" : "dark"));
+  const [mode, setMode] = useState<ThemeMode>(() =>
+    isLightTheme(currentTheme) ? "light" : "dark",
+  );
 
   const groups = useMemo(() => {
     const map = new Map<string, ThemeMeta[]>();
@@ -223,14 +218,7 @@ export function AppearanceSettings() {
     { key: "surface", label: "Surface", description: "Cards & panels" },
   ];
 
-  const advancedTokens: Array<keyof ThemeTokens> = [
-    "dim",
-    "border",
-    "hl1",
-    "hl2",
-    "hl3",
-    "err",
-  ];
+  const advancedTokens: Array<keyof ThemeTokens> = ["dim", "border", "hl1", "hl2", "hl3", "err"];
 
   /* ---------------------------------------------------------------- */
 
@@ -240,7 +228,9 @@ export function AppearanceSettings() {
       <ListGroup
         title="Theme"
         description="Use light, dark, or match your system."
-        actions={<SegmentedControl items={MODE_ITEMS} value={mode} onChange={applyMode} size="sm" />}
+        actions={
+          <SegmentedControl items={MODE_ITEMS} value={mode} onChange={applyMode} size="sm" />
+        }
       >
         <ListRow
           label="Active theme"
@@ -283,7 +273,11 @@ export function AppearanceSettings() {
             label={row.label}
             description={row.description}
             control={
-              <ColorField value={customTokens[row.key]} onChange={(v) => patchToken(row.key, v)} />
+              <ColorField
+                value={customTokens[row.key]}
+                label={`${row.label} color`}
+                onChange={(v) => patchToken(row.key, v)}
+              />
             }
           />
         ))}
@@ -295,7 +289,13 @@ export function AppearanceSettings() {
           <ListRow
             key={key}
             label={`--${key}`}
-            control={<ColorField value={customTokens[key]} onChange={(v) => patchToken(key, v)} />}
+            control={
+              <ColorField
+                value={customTokens[key]}
+                label={`--${key} color`}
+                onChange={(v) => patchToken(key, v)}
+              />
+            }
           />
         ))}
       </ListGroup>
@@ -424,7 +424,9 @@ export function AppearanceSettings() {
                     onClick={() => toggleGroup(group)}
                     className="flex w-full items-center justify-between px-3.5 py-2 text-left hover:bg-(--ui-hover)"
                   >
-                    <span className="text-[length:var(--fs-md)] font-medium text-(--ui-fg)">{group}</span>
+                    <span className="text-[length:var(--fs-md)] font-medium text-(--ui-fg)">
+                      {group}
+                    </span>
                     <span className="flex items-center gap-1.5 text-[length:var(--fs-sm)] text-(--ui-muted)">
                       {themes.length}
                       <ChevronDown
@@ -445,7 +447,9 @@ export function AppearanceSettings() {
                             }`}
                           >
                             <div className="min-w-0">
-                              <div className="text-[length:var(--fs-base)] text-(--ui-fg)">{theme.name}</div>
+                              <div className="text-[length:var(--fs-base)] text-(--ui-fg)">
+                                {theme.name}
+                              </div>
                               <div className="truncate text-[length:var(--fs-sm)] text-(--ui-muted)">
                                 {theme.description}
                               </div>

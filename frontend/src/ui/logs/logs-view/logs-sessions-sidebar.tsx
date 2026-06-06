@@ -27,6 +27,11 @@ export function LogsSessionsSidebar({
   onDeleteSession: (sessionId: string) => void;
   formatDateTime: (dateValue: string) => string;
 }) {
+  const countLabel =
+    filter.trim() && filteredSessions.length !== sessions.length
+      ? `${filteredSessions.length} of ${sessions.length}`
+      : String(sessions.length);
+  const countNoun = filteredSessions.length === 1 ? "session" : "sessions";
   const renderFilter = () => (
     <SearchInput value={filter} onChange={onFilterChange} placeholder="Filter..." />
   );
@@ -53,7 +58,9 @@ export function LogsSessionsSidebar({
           <div className="text-sm font-medium text-(--fg) truncate">
             {session.model || session.id}
           </div>
-          <div className="text-[length:var(--fs-sm)] text-(--dim) mt-1">{formatDateTime(session.created_at)}</div>
+          <div className="text-[length:var(--fs-sm)] text-(--dim) mt-1">
+            {formatDateTime(session.created_at)}
+          </div>
           {session.backend && (
             <StatusPill tone="info" variant="badge" className="mt-1.5">
               {session.backend}
@@ -105,7 +112,7 @@ export function LogsSessionsSidebar({
         </div>
         <div className="flex-1 overflow-y-auto">{renderSessions()}</div>
         <div className="p-3 border-t border-(--border) text-[length:var(--fs-sm)] text-(--dim)">
-          {sessions.length} session{sessions.length !== 1 ? "s" : ""}
+          {countLabel} {countNoun}
         </div>
       </div>
 
@@ -127,7 +134,7 @@ export function LogsSessionsSidebar({
         </div>
         <div className="flex-1 overflow-y-auto">{renderSessions()}</div>
         <div className="p-3 border-t border-(--border) text-[length:var(--fs-sm)] text-(--dim)">
-          {sessions.length} session{sessions.length !== 1 ? "s" : ""}
+          {countLabel} {countNoun}
         </div>
       </div>
     </>

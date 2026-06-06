@@ -1,6 +1,7 @@
 // Browser URL normalization for the embedded browser tool. Handles file://,
 // relative paths under the project cwd, http(s), localhost, and a search-engine
-// fallback for free-text input.
+// fallback for free-text input. Keep the fallback away from Google because the
+// embedded WebKit view can get trapped on Google bot-protection refresh loops.
 
 import { sanitizeLocalFileUrl } from "@/lib/sanitize-embedded-browser-url";
 import { DEFAULT_BROWSER_URL } from "./persistence";
@@ -58,5 +59,5 @@ export function normalizeBrowserInput(raw: string, cwd: string): string {
   if (value.includes("/") && cwd) {
     return encodeFilePath(resolveRelativeFilePath(cwd, value));
   }
-  return `https://www.google.com/search?q=${encodeURIComponent(value)}`;
+  return `https://duckduckgo.com/?q=${encodeURIComponent(value)}`;
 }

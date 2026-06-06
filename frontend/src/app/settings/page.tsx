@@ -6,6 +6,11 @@ import { useConfigs } from "../configs/hooks/use-configs";
 import { SetupView } from "@/ui/setup/setup-view";
 import { useSetup } from "../setup/hooks/use-setup";
 
+const hasSettingsHash = () => {
+  if (typeof window === "undefined") return true;
+  return window.location.hash.length > 1;
+};
+
 export default function SettingsPage() {
   const configs = useConfigs();
   const setup = useSetup();
@@ -15,6 +20,7 @@ export default function SettingsPage() {
   });
 
   const showSetupWizard =
+    !hasSettingsHash() &&
     !configs.isInitialLoading &&
     configs.backendOnline === false &&
     !setupComplete &&

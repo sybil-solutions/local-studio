@@ -30,10 +30,12 @@ function readableText(hex: string): string {
 export function ColorField({
   value,
   onChange,
+  label = "Pick color",
   className,
 }: {
   value: string;
   onChange: (next: string) => void;
+  label?: string;
   className?: string;
 }) {
   const hex = toHex6(value);
@@ -52,14 +54,17 @@ export function ColorField({
         className="h-3 w-3 shrink-0 rounded-full ring-1 ring-black/25"
         style={{ backgroundColor: value }}
       />
-      <span className="font-mono text-[length:var(--fs-md)] uppercase tabular-nums" style={{ color: textColor }}>
+      <span
+        className="font-mono text-[length:var(--fs-md)] uppercase tabular-nums"
+        style={{ color: textColor }}
+      >
         {hex}
       </span>
       <input
         type="color"
         value={pickerValue}
         onChange={(event) => onChange(event.target.value)}
-        aria-label="Pick color"
+        aria-label={label}
         className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
       />
     </label>

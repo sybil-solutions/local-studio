@@ -18,7 +18,6 @@ export interface HardwareProfile {
 
 export interface ModelFit {
   status: FitStatus;
-  label: string;
   reason: string;
   tone: FitTone;
   score: number;
@@ -93,7 +92,6 @@ export function scoreModelFit({
 
   return {
     status: fit.status,
-    label: fit.label,
     reason: fitReason({
       modelId: model.modelId,
       needGb,
@@ -127,21 +125,16 @@ function fitFromNeed(
   needGb: number | null,
   poolGb: number,
   appleMlx: boolean,
-): { status: FitStatus; label: string; tone: FitTone; scoreBoost: number } {
+): { status: FitStatus; tone: FitTone; scoreBoost: number } {
   if (poolGb <= 0 || needGb == null || !Number.isFinite(needGb)) {
-    return {
-      status: "unknown",
-      label: appleMlx ? "mlx-ready" : "unknown",
-      tone: "default",
-      scoreBoost: 0,
-    };
+    return { status: "unknown", tone: "default", scoreBoost: appleMlx ? 8 : 0 };
   }
   const effectiveNeed = appleMlx ? needGb * 0.88 : needGb;
   const ratio = effectiveNeed / poolGb;
-  if (ratio <= 0.72) return { status: "best", label: "best fit", tone: "good", scoreBoost: 34 };
-  if (ratio <= 0.92) return { status: "fits", label: "fits", tone: "info", scoreBoost: 24 };
-  if (ratio <= 1.15) return { status: "stretch", label: "stretch", tone: "warning", scoreBoost: 6 };
-  return { status: "too-large", label: "too large", tone: "danger", scoreBoost: -40 };
+  if (ratio <= 0.72) return { status: "best", tone: "good", scoreBoost: 34 };
+  if (ratio <= 0.92) return { status: "fits", tone: "info", scoreBoost: 24 };
+  if (ratio <= 1.15) return { status: "stretch", tone: "warning", scoreBoost: 6 };
+  return { status: "too-large", tone: "danger", scoreBoost: -40 };
 }
 
 function fitReason({

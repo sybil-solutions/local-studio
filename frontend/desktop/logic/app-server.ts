@@ -173,10 +173,10 @@ export async function startFrontendServer(
   const child = fork(serverScript, {
     cwd: serverRoot,
     stdio: "pipe",
-    // Own process group so stray SIGINT/SIGTERM delivered to Electron's group
-    // can't terminate the Next server (it catches those and exits 0). We still
-    // hold the handle and stop it explicitly via the pid.
-    detached: true,
+    // Keep the embedded Next server attached to Electron. A detached child can
+    // survive a main-process exit with closed stdio pipes and spin while the
+    // desktop app itself is gone.
+    detached: false,
     env: {
       ...process.env,
       NODE_ENV: "production",

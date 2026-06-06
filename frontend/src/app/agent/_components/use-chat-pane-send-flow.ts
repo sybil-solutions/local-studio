@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useRef, type FormEvent } from "react";
+import { browserContextPrompt } from "@/lib/agent/browser/context";
 import { promptRequestsBrowser } from "@/lib/agent/browser/intent";
 import {
   activeComposerPlugins,
@@ -27,6 +28,7 @@ type UpdateTab = (tabId: string, patch: (tab: SessionTab) => SessionTab) => void
 type UseChatPaneSendFlowOptions = {
   activeTab: SessionTab | null;
   attachments: ChatAttachment[];
+  browserToolEnabled: boolean;
   clearAttachments: () => void;
   cwd: string;
   engine: SessionEngine;
@@ -44,6 +46,7 @@ type UseChatPaneSendFlowOptions = {
 export function useChatPaneSendFlow({
   activeTab,
   attachments,
+  browserToolEnabled,
   clearAttachments,
   cwd,
   engine,
@@ -70,7 +73,7 @@ export function useChatPaneSendFlow({
   );
 
   const buildPromptArgs = useCallback(
-    (sessionId: string, rawText: string) => {
+    (sessionId: string, rawText: string, effectiveBrowserEnabled = browserToolEnabled) => {
       const text = rawText.trim();
       const attachedText = attachmentPrompt(attachments);
       const attachmentSummary =
@@ -85,7 +88,13 @@ export function useChatPaneSendFlow({
         activeComposerPlugins(selection.plugins),
         selection.skills,
       );
-      const prompt = [contextText, attachedText].filter(Boolean).join("\n\n");
+      const browserContextText = browserContextPrompt({
+        enabled: effectiveBrowserEnabled,
+        backend: tools.browser.backend,
+        url: tools.browser.url,
+        modelId,
+      });
+      const prompt = [browserContextText, contextText, attachedText].filter(Boolean).join("\n\n");
       const images = attachments.flatMap((file) => {
         const image = imageInputFromAttachment(file);
         return image ? [image] : [];
@@ -117,12 +126,13 @@ export function useChatPaneSendFlow({
         userText,
         images,
         attachments: messageAttachments,
+        browserToolEnabled: effectiveBrowserEnabled,
         plugins: activeComposerPlugins(selection.plugins) as ComposerPluginRef[],
         skills: selection.skills,
         promptTemplates: selection.promptTemplates,
       };
     },
-    [attachments, tools],
+    [attachments, browserToolEnabled, modelId, tools],
   );
 
   const submitPrompt = useCallback(
@@ -130,8 +140,10 @@ export function useChatPaneSendFlow({
       const targetId = targetTabId ?? activeTab?.id;
       if (!targetId) return;
       if ((!rawText.trim() && attachments.length === 0) || !modelId || readingAttachments) return;
-      const args = buildPromptArgs(targetId, rawText);
-      ensureBrowserToolForText(args.userText);
+      const browserRequested = promptRequestsBrowser(rawText);
+      const effectiveBrowserEnabled = browserToolEnabled || browserRequested;
+      const args = buildPromptArgs(targetId, rawText, effectiveBrowserEnabled);
+      if (browserRequested) ensureBrowserToolForText(args.userText);
       const currentSelection = tools.selectionFor(targetId);
       if (currentSelection.skills.length > 0 || currentSelection.plugins.length > 0) {
         tools.setSelection(targetId, { ...currentSelection, skills: [], plugins: [] });
@@ -144,6 +156,7 @@ export function useChatPaneSendFlow({
     [
       activeTab,
       attachments.length,
+      browserToolEnabled,
       buildPromptArgs,
       clearAttachments,
       engine,

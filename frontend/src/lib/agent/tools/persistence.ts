@@ -13,8 +13,8 @@ export const COMPUTER_TABS_KEY = "vllm-studio.agent.computer.tabs";
 export const COMPUTER_CANVAS_ENABLED_KEY = "vllm-studio.agent.computer.canvasEnabled";
 export const COMPUTER_CANVAS_TEXT_KEY = "vllm-studio.agent.computer.canvasText";
 
-export const DEFAULT_BROWSER_URL = "https://www.google.com";
-export const DEFAULT_BROWSER_BACKEND: BrowserBackend = "parchi";
+export const DEFAULT_BROWSER_URL = "about:blank";
+export const DEFAULT_BROWSER_BACKEND: BrowserBackend = "embedded";
 export const DEFAULT_COMPUTER_WIDTH = 440;
 export const MIN_COMPUTER_WIDTH = 280;
 export const MAX_COMPUTER_WIDTH = 1800;

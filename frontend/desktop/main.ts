@@ -29,6 +29,9 @@ let frontendHealthTimer: NodeJS.Timeout | undefined;
 let frontendHealthFailures = 0;
 let restartAttempts = 0;
 let lastRestartAt = 0;
+let shutdownPromise: Promise<void> | undefined;
+let quitAfterShutdown = false;
+let relaunchAfterShutdown = false;
 const expectedFrontendStopPids = new Set<number>();
 
 const HEALTH_CHECK_INTERVAL_MS = 5_000;
@@ -291,12 +294,15 @@ function registerIpcHandlers(): void {
 }
 
 async function shutdown(): Promise<void> {
-  if (appState === "stopping") return;
-  appState = "stopping";
-  stopFrontendHealthMonitor();
-  killAllPtys();
-  await stopFrontendServer(frontendServer);
-  frontendServer = undefined;
+  if (shutdownPromise) return shutdownPromise;
+  shutdownPromise = (async () => {
+    appState = "stopping";
+    stopFrontendHealthMonitor();
+    killAllPtys();
+    await stopFrontendServer(frontendServer);
+    frontendServer = undefined;
+  })();
+  return shutdownPromise;
 }
 
 async function run(): Promise<void> {
@@ -307,6 +313,10 @@ async function run(): Promise<void> {
   }
 
   app.on("second-instance", () => {
+    if (appState === "stopping") {
+      relaunchAfterShutdown = true;
+      return;
+    }
     if (!mainWindow) return;
     if (mainWindow.isMinimized()) mainWindow.restore();
     mainWindow.focus();
@@ -324,8 +334,18 @@ async function run(): Promise<void> {
     }
   });
 
-  app.on("before-quit", () => {
-    void shutdown();
+  app.on("before-quit", (event) => {
+    if (quitAfterShutdown) return;
+    event.preventDefault();
+    void shutdown()
+      .catch((error) => {
+        log.error(`Shutdown failed: ${error instanceof Error ? error.stack : String(error)}`);
+      })
+      .finally(() => {
+        if (relaunchAfterShutdown) app.relaunch();
+        quitAfterShutdown = true;
+        app.quit();
+      });
   });
 
   app.on("render-process-gone", (_event, webContents, details) => {

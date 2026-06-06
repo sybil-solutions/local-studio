@@ -2,6 +2,7 @@
 
 import { useCallback, useState, useSyncExternalStore } from "react";
 import api from "@/lib/api";
+import { createApiClient } from "@/lib/api/create-api-client";
 import { getApiKey, setApiKey, clearApiKey } from "@/lib/api-key";
 import { resolveSettingsDefaultBackendUrl } from "@/lib/backend-config";
 import { getStoredBackendUrl, setStoredBackendUrl, clearStoredBackendUrl } from "@/lib/backend-url";
@@ -11,6 +12,7 @@ import type { CompatibilityReport, ConfigData } from "@/lib/types";
 import type { ApiConnectionSettings, ConnectionStatus } from "@/lib/configs/types";
 
 const FAST_STATUS_REQUEST = { timeout: 5_000, retries: 0 } as const;
+const CONNECTION_TEST_REQUEST = { timeout: 10_000, retries: 0 } as const;
 const FAST_COMPAT_REQUEST = { timeout: 20_000, retries: 0 } as const;
 const FAST_CONFIG_REQUEST = { timeout: 20_000, retries: 0 } as const;
 
@@ -99,21 +101,24 @@ export function useConfigs() {
         setStatusMessage("Missing API URL");
         return;
       }
-      const res = await fetch(`${baseUrl}/status`);
-      if (res.ok) {
-        setConnectionStatus("connected");
-        setStatusMessage("Connected");
-      } else {
-        setConnectionStatus("error");
-        setStatusMessage(`Error: ${res.status}`);
-      }
-    } catch {
+
+      const apiKey = apiSettings.apiKey?.includes("••••") ? "" : apiSettings.apiKey;
+      const probe = createApiClient({
+        baseUrl: "/api/proxy",
+        useProxy: true,
+        backendUrlOverride: baseUrl,
+        apiKeyOverride: apiKey,
+      });
+      await probe.getStatus(CONNECTION_TEST_REQUEST);
+      setConnectionStatus("connected");
+      setStatusMessage("Connected");
+    } catch (e) {
       setConnectionStatus("error");
-      setStatusMessage("Connection failed");
+      setStatusMessage((e as Error).message || "Connection failed");
     } finally {
       setTesting(false);
     }
-  }, [apiSettings.backendUrl]);
+  }, [apiSettings.apiKey, apiSettings.backendUrl]);
 
   const checkBackendHealth = useCallback(async () => {
     try {

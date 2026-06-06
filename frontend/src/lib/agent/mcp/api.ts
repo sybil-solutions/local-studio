@@ -75,6 +75,14 @@ function handleAddFromCatalogue(body: Record<string, unknown>) {
   const missing = (entry.requiredEnv ?? []).filter((key) => !env[key]?.trim());
   if (missing.length) return mcpBadRequest(`Missing required values: ${missing.join(", ")}.`);
   const extraArgs = parseArgs(body.args);
+  const template = entry.args ?? [];
+  if (extraArgs && !argsStartWithTemplate(extraArgs, template)) {
+    return mcpBadRequest(`${entry.displayName} launch arguments must keep the reviewed prefix.`);
+  }
+  const args = extraArgs ?? entry.args;
+  if (entry.requiresTargetArg && !hasExplicitTargetArg(args, entry.args)) {
+    return mcpBadRequest(`${entry.displayName} requires a local path argument.`);
+  }
   upsertServer(
     {
       id: `mcp:${entry.name}:${Date.now().toString(36)}`,
@@ -86,7 +94,7 @@ function handleAddFromCatalogue(body: Record<string, unknown>) {
       ...(entry.tags?.length ? { tags: entry.tags } : {}),
       transport: "stdio",
       command: entry.command,
-      args: extraArgs ?? entry.args,
+      args,
       ...(Object.keys(env).length ? { env } : {}),
     },
     "marketplace",
@@ -153,6 +161,35 @@ function parseArgs(value: unknown): string[] | undefined {
   if (!Array.isArray(value)) return undefined;
   const args = value.filter((item): item is string => typeof item === "string");
   return args.length ? args : undefined;
+}
+
+function argsStartWithTemplate(args: string[], template: string[]): boolean {
+  if (!template.length) return true;
+  if (args.length < template.length) return false;
+  return template.every((part, index) => args[index] === part);
+}
+
+function hasExplicitTargetArg(args: string[] | undefined, template: string[] | undefined): boolean {
+  if (!args?.length) return false;
+  const templateLength = template?.length ?? 0;
+  const targets = args.slice(templateLength).filter((arg) => {
+    const value = arg.trim();
+    return value && !value.startsWith("-");
+  });
+  return targets.length > 0 && targets.every(isExplicitLocalPathArg);
+}
+
+function isExplicitLocalPathArg(arg: string): boolean {
+  const value = arg.trim();
+  return (
+    value === "." ||
+    value === ".." ||
+    value.startsWith("/") ||
+    value.startsWith("~/") ||
+    value.startsWith("./") ||
+    value.startsWith("../") ||
+    /^[A-Za-z]:[\\/]/.test(value)
+  );
 }
 
 function parseTags(value: unknown): string[] {

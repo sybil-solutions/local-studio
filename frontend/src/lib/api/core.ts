@@ -273,9 +273,11 @@ export function createApiCore(params: {
       headers["X-Backend-Strict"] = "1";
     }
 
-    const storedKey = apiKeyOverride?.trim() || getApiKey();
+    const storedKey = apiKeyOverride === undefined ? getApiKey() : apiKeyOverride.trim();
     if (storedKey) {
       headers["Authorization"] = `Bearer ${storedKey}`;
+    } else if (apiKeyOverride !== undefined) {
+      headers["X-Backend-Suppress-Auth"] = "1";
     }
 
     if (extraHeaders) {

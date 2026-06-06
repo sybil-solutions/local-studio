@@ -104,6 +104,10 @@ Then force LaunchServices to re-register the replaced bundle before relaunching 
 
 ```bash
 killall "vLLM Studio" >/dev/null 2>&1 || true
+for i in $(seq 1 20); do
+  pgrep -x "vLLM Studio" >/dev/null || break
+  sleep 0.5
+done
 /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "/Applications/vLLM Studio.app"
 open "/Applications/vLLM Studio.app"
 ```

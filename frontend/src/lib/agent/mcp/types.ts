@@ -61,6 +61,8 @@ export type McpCatalogueEntry = {
   env?: Record<string, string>;
   /** Which env keys are mandatory before the server can launch. */
   requiredEnv?: string[];
+  /** Whether a curated local server needs an explicit target path argument. */
+  requiresTargetArg?: boolean;
   /** Optional homepage/docs link. */
   homepage?: string;
 };

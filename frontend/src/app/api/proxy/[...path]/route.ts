@@ -385,8 +385,10 @@ function buildProxyRequestHeaders(
   const accept = request.headers.get("accept");
   const contentType = request.headers.get("content-type");
   const incomingAuth = request.headers.get("authorization");
+  const suppressAuth = request.headers.get("x-backend-suppress-auth") === "1";
   if (accept) headers.set("Accept", accept);
   if (contentType) headers.set("Content-Type", contentType);
+  if (suppressAuth) return headers;
   if (incomingAuth) headers.set("Authorization", incomingAuth);
   else if (allowQueryApiKey && apiKeyQuery) headers.set("Authorization", `Bearer ${apiKeyQuery}`);
   else if (apiKey) headers.set("Authorization", `Bearer ${apiKey}`);

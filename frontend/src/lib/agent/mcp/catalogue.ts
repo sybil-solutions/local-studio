@@ -20,7 +20,8 @@ export const MCP_CATALOGUE: McpCatalogueEntry[] = [
     tags: ["local", "files", "reference"],
     registry: "curated",
     command: "npx",
-    args: ["-y", "@modelcontextprotocol/server-filesystem", "."],
+    args: ["-y", "@modelcontextprotocol/server-filesystem"],
+    requiresTargetArg: true,
     homepage: "https://github.com/modelcontextprotocol/servers/tree/main/src/filesystem",
   },
   {
@@ -48,6 +49,7 @@ export const MCP_CATALOGUE: McpCatalogueEntry[] = [
     registry: "curated",
     command: "npx",
     args: ["-y", "@modelcontextprotocol/server-git"],
+    requiresTargetArg: true,
     homepage: "https://github.com/modelcontextprotocol/servers/tree/main/src/git",
   },
   {
@@ -62,6 +64,7 @@ export const MCP_CATALOGUE: McpCatalogueEntry[] = [
     registry: "curated",
     command: "npx",
     args: ["-y", "@modelcontextprotocol/server-sqlite"],
+    requiresTargetArg: true,
     homepage: "https://github.com/modelcontextprotocol/servers/tree/main/src/sqlite",
   },
   {

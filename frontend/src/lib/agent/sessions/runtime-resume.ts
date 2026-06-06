@@ -1,6 +1,11 @@
 import { isAgentEndEvent } from "@/lib/agent/pi-events";
 import { newId, nowLabel, piSessionIdFromEvent } from "@/lib/agent/session";
-import type { RuntimeEventPayload, RuntimeEventSubscription, RuntimeStatus } from "./api";
+import {
+  runtimeContextUsage,
+  type RuntimeEventPayload,
+  type RuntimeEventSubscription,
+  type RuntimeStatus,
+} from "./api";
 import { drainQueuedTurnAfterAgentEnd, type QueuedTurnSubmitArgs } from "./queue-drain";
 import type { Session, SessionId } from "./types";
 
@@ -81,7 +86,7 @@ function applyRuntimeStatusPayload(
   deps.updateSession(deps.sessionId, (session) => ({
     ...session,
     piSessionId: payload.session?.piSessionId || session.piSessionId,
-    contextUsage: payload.session?.contextUsage ?? session.contextUsage ?? null,
+    contextUsage: runtimeContextUsage(payload.session, session.contextUsage),
     status: idle ? "idle" : "running",
     activeAssistantId: idle ? undefined : session.activeAssistantId,
   }));
@@ -155,7 +160,7 @@ async function reconcileRuntimeLiveness(
     deps.updateSession(deps.sessionId, (session) => ({
       ...session,
       piSessionId: status.piSessionId || session.piSessionId,
-      contextUsage: status.contextUsage ?? session.contextUsage ?? null,
+      contextUsage: runtimeContextUsage(status, session.contextUsage),
       status: "running",
     }));
     return;
@@ -165,7 +170,12 @@ async function reconcileRuntimeLiveness(
   deps.flushPiEvents?.(deps.sessionId);
   deps.updateSession(deps.sessionId, (session) =>
     session.status === "running" || session.status === "starting"
-      ? { ...session, status: "idle", activeAssistantId: undefined }
+      ? {
+          ...session,
+          status: "idle",
+          activeAssistantId: undefined,
+          contextUsage: runtimeContextUsage(status, session.contextUsage),
+        }
       : session,
   );
 }

@@ -269,7 +269,10 @@ export function useWorkspace(): UseWorkspaceResult {
 
   const { browserEvents, dispatch, runBrowserCommand } = controller;
 
-  useBrowserEventsEffects({ browserEvents, enabled: tools.browser.enabled });
+  useBrowserEventsEffects({
+    browserEvents,
+    enabled: tools.browser.enabled && tools.computer.open && tools.computer.tab === "browser",
+  });
 
   const subscribeWorkspaceModelStorage = useCallback(
     (_notify: () => void) => {

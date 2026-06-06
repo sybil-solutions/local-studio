@@ -26,6 +26,7 @@ import {
   type FormEvent,
 } from "react";
 import { ArrowLeftIcon, ArrowRightIcon, CloseIcon, ReloadIcon } from "@/ui/icons";
+import { MarkdownContent } from "@/ui/markdown-content";
 import { useAgentBrowserEffects } from "@/hooks/agent/use-agent-browser-effects";
 import { useLocalhostSitesEffects } from "@/hooks/agent/use-localhost-sites-effects";
 import { DEFAULT_BROWSER_URL } from "@/lib/agent/tools/persistence";
@@ -48,6 +49,7 @@ type ReadablePage = {
   url: string;
   title: string;
   text: string;
+  markdown?: string;
   contentType?: string;
 };
 
@@ -91,6 +93,7 @@ export const AgentBrowser = forwardRef<AgentBrowserHandle, Props>(function Agent
   const [localSites, setLocalSites] = useState<LocalhostSite[]>([]);
   const [localSitesLoading, setLocalSitesLoading] = useState(false);
   const [localSitesError, setLocalSitesError] = useState<string | null>(null);
+  const [contextOpen, setContextOpen] = useState(false);
   const showStartPage = !hasOpenedUrl && url === DEFAULT_BROWSER_URL;
   const addressValue = showStartPage && inputValue === DEFAULT_BROWSER_URL ? "" : inputValue;
 
@@ -257,6 +260,17 @@ export const AgentBrowser = forwardRef<AgentBrowserHandle, Props>(function Agent
         </button>
       </form>
 
+      {!showStartPage ? (
+        <BrowserContextStrip
+          url={url}
+          readingMode={readingMode}
+          page={readable}
+          loading={readingLoading}
+          open={contextOpen}
+          onToggle={() => setContextOpen((value) => !value)}
+        />
+      ) : null}
+
       <div className="min-h-0 flex-1 bg-(--bg)">
         {showStartPage ? (
           <LocalhostStartPage
@@ -309,6 +323,85 @@ export const AgentBrowser = forwardRef<AgentBrowserHandle, Props>(function Agent
   );
 });
 
+function BrowserContextStrip({
+  url,
+  readingMode,
+  page,
+  loading,
+  open,
+  onToggle,
+}: {
+  url: string;
+  readingMode: boolean;
+  page: ReadablePage | null;
+  loading: boolean;
+  open: boolean;
+  onToggle: () => void;
+}) {
+  const host = browserHost(url);
+  const readerChars = page ? (page.markdown ?? page.text).length : 0;
+  return (
+    <div className="shrink-0 border-b border-(--border) bg-(--surface)/45 px-3 py-2 text-[length:var(--fs-xs)] text-(--dim)">
+      <button
+        type="button"
+        onClick={onToggle}
+        className="flex w-full items-center justify-between gap-3 text-left"
+        aria-expanded={open}
+      >
+        <span className="min-w-0">
+          <span className="font-medium text-(--fg)">Model context</span>
+          <span className="ml-2 truncate font-mono">{host}</span>
+        </span>
+        <span className="shrink-0 text-(--dim)">{open ? "Hide" : "Show"}</span>
+      </button>
+      <div className="mt-2 flex flex-wrap gap-1.5">
+        <ContextPill>browser tools active</ContextPill>
+        <ContextPill>{readingMode ? "reader" : "live"}</ContextPill>
+        <ContextPill>
+          {readingMode
+            ? loading
+              ? "reading..."
+              : `${readerChars.toLocaleString()} chars`
+            : "DOM + screenshot on demand"}
+        </ContextPill>
+      </div>
+      {open ? (
+        <dl className="mt-2 grid gap-1.5 font-mono text-[length:var(--fs-xs)]">
+          <ContextRow label="url" value={url} />
+          <ContextRow
+            label="title"
+            value={page?.title || (readingMode && loading ? "loading" : "")}
+          />
+          <ContextRow
+            label="type"
+            value={page?.contentType || (readingMode ? "unknown" : "live webview")}
+          />
+        </dl>
+      ) : null}
+    </div>
+  );
+}
+
+function ContextPill({ children }: { children: string }) {
+  return (
+    <span className="rounded border border-(--border) bg-(--bg)/70 px-1.5 py-0.5 text-(--dim)">
+      {children}
+    </span>
+  );
+}
+
+function ContextRow({ label, value }: { label: string; value: string }) {
+  if (!value) return null;
+  return (
+    <div className="grid grid-cols-[3.5rem_minmax(0,1fr)] gap-2">
+      <dt className="text-(--dim)">{label}</dt>
+      <dd className="truncate text-(--fg)/80" title={value}>
+        {value}
+      </dd>
+    </div>
+  );
+}
+
 function LocalhostStartPage({
   sites,
   loading,
@@ -359,8 +452,12 @@ function LocalhostStartPage({
             className="mb-3 flex w-full items-center justify-between rounded-xl border border-(--border) bg-(--surface)/70 px-4 py-3 text-left hover:bg-(--surface)"
           >
             <span className="min-w-0">
-              <span className="block truncate text-[length:var(--fs-base)] font-medium">Open “{query.trim()}”</span>
-              <span className="mt-1 block text-[length:var(--fs-sm)] text-(--dim)">Navigate in the browser</span>
+              <span className="block truncate text-[length:var(--fs-base)] font-medium">
+                Open “{query.trim()}”
+              </span>
+              <span className="mt-1 block text-[length:var(--fs-sm)] text-(--dim)">
+                Navigate in the browser
+              </span>
             </span>
             <span className="text-lg text-(--dim)">↗</span>
           </button>
@@ -417,13 +514,17 @@ function LocalhostSiteRow({
           <span className="block h-1.5 w-16 rounded-full bg-black/15" />
           <span className="block h-1.5 w-11 rounded-full bg-black/15" />
         </span>
-        <span className="truncate text-[length:var(--fs-2xs)] font-semibold text-black/70">{site.title}</span>
+        <span className="truncate text-[length:var(--fs-2xs)] font-semibold text-black/70">
+          {site.title}
+        </span>
       </span>
       <span className="min-w-0 flex-1">
         <span className="block truncate text-[length:var(--fs-lg)] font-semibold tracking-tight text-(--fg)">
           {site.title}
         </span>
-        <span className="mt-1 block truncate text-[length:var(--fs-base)] text-(--dim)">{site.displayUrl}</span>
+        <span className="mt-1 block truncate text-[length:var(--fs-base)] text-(--dim)">
+          {site.displayUrl}
+        </span>
       </span>
       {site.current ? (
         <span className="rounded-md border border-(--border) px-2 py-1 text-[length:var(--fs-sm)] text-(--dim)">
@@ -468,15 +569,27 @@ function ReadingView({
       </div>
     );
   }
-  const segments = renderSegments(page.text, page.url, onLinkClick);
   return (
     <div className="size-full overflow-y-auto bg-(--bg) px-4 py-3 text-sm leading-6 text-(--fg)">
       <div className="mx-auto max-w-3xl">
         <div className="text-xs text-(--dim)">{page.url}</div>
         <h1 className="mt-1 text-base font-semibold tracking-tight text-(--fg)">{page.title}</h1>
-        <article className="mt-3 whitespace-pre-wrap break-words text-[length:var(--fs-base)] leading-6 text-(--fg)">
-          {segments}
-        </article>
+        <MarkdownContent
+          markdown={page.markdown ?? page.text}
+          className="mt-3 text-[length:var(--fs-base)] text-(--fg)"
+          components={{
+            a: ({ children, href }) => (
+              <button
+                type="button"
+                onClick={() => onLinkClick(resolveBrowserHref(href ?? "", page.url))}
+                className="text-(--accent) underline-offset-2 hover:underline"
+                title={href}
+              >
+                {children}
+              </button>
+            ),
+          }}
+        />
       </div>
     </div>
   );
@@ -490,33 +603,10 @@ function resolveBrowserHref(href: string, baseUrl: string): string {
   }
 }
 
-function renderSegments(text: string, baseUrl: string, onLinkClick: (url: string) => void) {
-  const out: React.ReactNode[] = [];
-  const linkRe = /\[([^\]]+)\]\(([^)]+)\)/g;
-  let lastIndex = 0;
-  let match: RegExpExecArray | null;
-  let key = 0;
-  while ((match = linkRe.exec(text)) !== null) {
-    if (match.index > lastIndex) {
-      out.push(<span key={key++}>{text.slice(lastIndex, match.index)}</span>);
-    }
-    const label = match[1];
-    const href = match[2];
-    out.push(
-      <button
-        key={key++}
-        type="button"
-        onClick={() => onLinkClick(resolveBrowserHref(href, baseUrl))}
-        className="text-(--accent) underline-offset-2 hover:underline"
-        title={href}
-      >
-        {label}
-      </button>,
-    );
-    lastIndex = match.index + match[0].length;
+function browserHost(url: string): string {
+  try {
+    return new URL(url).host || url;
+  } catch {
+    return url;
   }
-  if (lastIndex < text.length) {
-    out.push(<span key={key++}>{text.slice(lastIndex)}</span>);
-  }
-  return out;
 }

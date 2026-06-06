@@ -274,6 +274,11 @@ function renderWorkspacePane({
 }: WorkspacePaneRenderContext) {
   const view = selectWorkspacePaneView(paneId, state, projects);
   if (!view) return null;
+  const browserPanelOpen =
+    view.isFocused &&
+    tools.browser.enabled &&
+    tools.computer.open &&
+    tools.computer.tab === "browser";
 
   return (
     <ChatPane
@@ -297,12 +302,17 @@ function renderWorkspacePane({
           loading={state.modelsLoading}
         />
       }
-      browserToolEnabled={view.isFocused && tools.browser.enabled}
+      browserToolEnabled={browserPanelOpen}
       browserBackend={tools.browser.backend}
       onToggleBrowserBackend={tools.toggleBrowserBackend}
       onToggleBrowserTool={() => {
+        if (browserPanelOpen) {
+          tools.closeComputerTab("browser");
+          tools.setBrowserEnabled(false);
+          return;
+        }
         tools.setComputerTab("browser");
-        tools.setBrowserEnabled(!tools.browser.enabled);
+        tools.setBrowserEnabled(true);
       }}
       canvasEnabled={view.isFocused && tools.computer.canvasEnabled}
       onToggleCanvas={tools.toggleCanvas}

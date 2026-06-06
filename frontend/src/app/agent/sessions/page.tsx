@@ -136,10 +136,11 @@ export default function AgentSessionsPage() {
   // is happening across every project.
   const summary = useMemo(() => {
     const total = sessions?.length ?? 0;
+    const visible = rows.length;
     const runningCount = activeSessions.filter((s) => isRunning(s.status)).length;
     const projectsCount = projects.length;
-    return { total, runningCount, projectsCount };
-  }, [sessions, activeSessions, projects]);
+    return { total, visible, runningCount, projectsCount };
+  }, [sessions, rows.length, activeSessions, projects]);
 
   function toggleSort(field: SortField) {
     if (field === sortField) {
@@ -165,7 +166,14 @@ export default function AgentSessionsPage() {
             </p>
           </div>
           <div className="flex items-center gap-3">
-            <SummaryChip label="Sessions" value={summary.total} />
+            <SummaryChip
+              label="Sessions"
+              value={
+                summary.visible === summary.total
+                  ? summary.total
+                  : `${summary.visible}/${summary.total}`
+              }
+            />
             <SummaryChip
               label="Running"
               value={summary.runningCount}
@@ -251,13 +259,19 @@ export default function AgentSessionsPage() {
             <tbody>
               {sessions === null ? (
                 <tr>
-                  <td colSpan={6} className="px-3 py-8 text-center text-[length:var(--fs-md)] text-(--dim)">
+                  <td
+                    colSpan={6}
+                    className="px-3 py-8 text-center text-[length:var(--fs-md)] text-(--dim)"
+                  >
                     Loading…
                   </td>
                 </tr>
               ) : rows.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-3 py-10 text-center text-[length:var(--fs-md)] text-(--dim)">
+                  <td
+                    colSpan={6}
+                    className="px-3 py-10 text-center text-[length:var(--fs-md)] text-(--dim)"
+                  >
                     No sessions match these filters.
                   </td>
                 </tr>
@@ -291,7 +305,9 @@ export default function AgentSessionsPage() {
                           {label}
                         </Link>
                         {running ? (
-                          <span className="ml-2 text-[length:var(--fs-xs)] text-(--dim)">{status}</span>
+                          <span className="ml-2 text-[length:var(--fs-xs)] text-(--dim)">
+                            {status}
+                          </span>
                         ) : null}
                       </td>
                       <td className="px-3 py-2 text-(--dim)">
@@ -329,7 +345,7 @@ function SummaryChip({
   accent = false,
 }: {
   label: string;
-  value: number;
+  value: number | string;
   accent?: boolean;
 }) {
   return (
@@ -338,7 +354,9 @@ function SummaryChip({
         accent ? "bg-(--hl2)/15 text-(--fg)" : "bg-(--surface) text-(--dim)"
       }`}
     >
-      <span className="uppercase tracking-[var(--section-tracking)] text-[length:var(--fs-xs)]">{label}</span>
+      <span className="uppercase tracking-[var(--section-tracking)] text-[length:var(--fs-xs)]">
+        {label}
+      </span>
       <span className="font-mono tabular-nums text-(--fg)">{value}</span>
     </div>
   );

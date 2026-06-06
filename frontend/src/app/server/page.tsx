@@ -28,15 +28,21 @@ export default function ServerPage() {
     /\/+$/,
     "",
   );
-  const docsUrl = `${backendUrl}/api/docs`;
+  const docsUrl = "/api/proxy/api/docs";
+  const docsSpecUrl = "/api/proxy/api/spec";
+  const docsSrcDoc = useMemo(() => swaggerSrcDoc(docsSpecUrl), [docsSpecUrl]);
 
   return (
     <AppPage className="flex h-full min-h-0 flex-col overflow-hidden">
       <header className="border-b border-(--border) px-5 py-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <div className="text-[length:var(--fs-xs)] uppercase tracking-[0.16em] text-(--dim)">Server</div>
-            <h1 className="mt-1 text-[length:var(--fs-3xl)] font-semibold tracking-[-0.015em]">Controller</h1>
+            <div className="text-[length:var(--fs-xs)] uppercase tracking-[0.16em] text-(--dim)">
+              Server
+            </div>
+            <h1 className="mt-1 text-[length:var(--fs-3xl)] font-semibold tracking-[-0.015em]">
+              Controller
+            </h1>
             <p className="mt-1 text-xs text-(--dim)">{backendUrl}</p>
           </div>
           <div className="flex items-center gap-2">
@@ -139,8 +145,9 @@ export default function ServerPage() {
                 </a>
               </div>
               <iframe
-                src={docsUrl}
+                srcDoc={docsSrcDoc}
                 title="Controller API docs"
+                sandbox="allow-scripts allow-same-origin allow-popups"
                 className="min-h-0 flex-1 bg-white"
               />
             </section>
@@ -149,6 +156,34 @@ export default function ServerPage() {
       </section>
     </AppPage>
   );
+}
+
+function swaggerSrcDoc(specUrl: string): string {
+  return `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>vLLM Studio API Docs</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swagger-ui-dist/swagger-ui.css" />
+    <style>
+      html, body, #swagger-ui { margin: 0; min-height: 100%; background: #fff; }
+      .swagger-ui .topbar { display: none; }
+    </style>
+  </head>
+  <body>
+    <div id="swagger-ui"></div>
+    <script src="https://cdn.jsdelivr.net/npm/swagger-ui-dist/swagger-ui-bundle.js" crossorigin="anonymous"></script>
+    <script>
+      window.onload = function () {
+        window.ui = SwaggerUIBundle({
+          dom_id: "#swagger-ui",
+          url: ${JSON.stringify(specUrl)}
+        });
+      };
+    </script>
+  </body>
+</html>`;
 }
 
 function HealthPill({ label, ok }: { label: string; ok: boolean }) {

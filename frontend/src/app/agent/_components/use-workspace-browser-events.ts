@@ -117,12 +117,13 @@ export function createBrowserEvents(
         const session = command.sessionId
           ? resolveSession(command.sessionId)
           : { focused: null, known: true };
-        if (command.sessionId && !session.known) {
+        if (command.sessionId && (!session.known || session.focused !== command.sessionId)) {
           void postBrowserResult(command.id, {
             ok: false,
-            error: session.focused
-              ? `Browser is connected to ${session.focused}; the requesting session ${command.sessionId} is no longer open.`
-              : `Browser is not connected to the requesting session (${command.sessionId}).`,
+            error:
+              session.known && session.focused
+                ? `Browser is connected to focused session ${session.focused}; the requesting session ${command.sessionId} is not focused.`
+                : `Browser is not connected to the requesting session (${command.sessionId}).`,
           });
           return;
         }

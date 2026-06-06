@@ -30,6 +30,7 @@ interface SetupViewProps {
   setStep: (step: number) => void;
   loading: boolean;
   error: string | null;
+  loadWarning: string | null;
   settings: StudioSettings | null;
   modelsDir: string;
   setModelsDir: (value: string) => void;
@@ -74,6 +75,7 @@ export function SetupView({
   setStep,
   loading,
   error,
+  loadWarning,
   settings,
   modelsDir,
   setModelsDir,
@@ -142,11 +144,18 @@ export function SetupView({
           </Alert>
         )}
 
+        {loadWarning && !error && (
+          <Alert variant="warning" icon={<AlertTriangle className="h-4 w-4" />} className="mb-6">
+            {loadWarning}
+          </Alert>
+        )}
+
         {!loading && step === 0 && (
           <StepWelcome
             modelsDir={modelsDir}
             setModelsDir={setModelsDir}
             settings={settings}
+            diagnostics={diagnostics}
             saveSettings={saveSettings}
             savingSettings={savingSettings}
           />

@@ -28,6 +28,7 @@ export function useSetup() {
   const [step, setStep] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [loadWarning, setLoadWarning] = useState<string | null>(null);
   const [settings, setSettings] = useState<StudioSettings | null>(null);
   const [modelsDir, setModelsDir] = useState("");
   const [diagnostics, setDiagnostics] = useState<StudioDiagnostics | null>(null);
@@ -63,31 +64,80 @@ export function useSetup() {
     setRuntimeJobs(jobPayload.jobs);
   }, []);
 
+  const loadSecondarySetupData = useCallback(async (initialWarnings: string[]) => {
+    const warnings = [...initialWarnings];
+    const [recommendationsResult, targetResult, jobResult] = await Promise.allSettled([
+      withSetupTimeout(api.getModelRecommendations(), "model recommendations"),
+      withSetupTimeout(api.getRuntimeTargets(), "runtime targets"),
+      withSetupTimeout(api.getRuntimeJobs(), "runtime jobs"),
+    ]);
+
+    if (recommendationsResult.status === "fulfilled") {
+      setRecommendations(recommendationsResult.value.recommendations || []);
+      setMaxVram(recommendationsResult.value.max_vram_gb ?? 0);
+    } else {
+      setRecommendations([]);
+      setMaxVram(0);
+      warnings.push(`model recommendations: ${setupErrorMessage(recommendationsResult.reason)}`);
+    }
+
+    if (targetResult.status === "fulfilled") {
+      setRuntimeTargets(targetResult.value.targets);
+    } else {
+      setRuntimeTargets([]);
+      warnings.push(`runtime targets: ${setupErrorMessage(targetResult.reason)}`);
+    }
+
+    if (jobResult.status === "fulfilled") {
+      setRuntimeJobs(jobResult.value.jobs);
+    } else {
+      setRuntimeJobs([]);
+      warnings.push(`runtime jobs: ${setupErrorMessage(jobResult.reason)}`);
+    }
+
+    setLoadWarning(formatLoadWarning(warnings));
+  }, []);
+
   const loadSetupData = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
-      const [settingsRes, diagnosticsRes, recommendationsRes, targetPayload, jobPayload] =
-        await Promise.all([
-          api.getStudioSettings(),
-          api.getStudioDiagnostics(),
-          api.getModelRecommendations(),
-          api.getRuntimeTargets().catch(() => ({ targets: [] })),
-          api.getRuntimeJobs().catch(() => ({ jobs: [] })),
-        ]);
-      setSettings(settingsRes);
-      setModelsDir(settingsRes.effective.models_dir);
-      setDiagnostics(diagnosticsRes);
-      setRecommendations(recommendationsRes.recommendations || []);
-      setRuntimeTargets(targetPayload.targets);
-      setRuntimeJobs(jobPayload.jobs);
-      setMaxVram(recommendationsRes.max_vram_gb ?? 0);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load setup data");
+      setLoadWarning(null);
+      const warnings: string[] = [];
+      const [settingsResult, diagnosticsResult] = await Promise.allSettled([
+        withSetupTimeout(api.getStudioSettings(), "settings"),
+        withSetupTimeout(api.getStudioDiagnostics(), "controller diagnostics"),
+      ]);
+
+      if (settingsResult.status === "fulfilled") {
+        setSettings(settingsResult.value);
+        setModelsDir(settingsResult.value.effective.models_dir);
+      } else {
+        setSettings(null);
+        warnings.push(`settings: ${setupErrorMessage(settingsResult.reason)}`);
+      }
+
+      if (diagnosticsResult.status === "fulfilled") {
+        setDiagnostics(diagnosticsResult.value);
+        if (settingsResult.status === "rejected") {
+          setModelsDir(diagnosticsResult.value.config.models_dir || "");
+        }
+      } else {
+        setDiagnostics(null);
+        warnings.push(`controller diagnostics: ${setupErrorMessage(diagnosticsResult.reason)}`);
+      }
+
+      setRecommendations([]);
+      setMaxVram(0);
+      setRuntimeTargets([]);
+      setRuntimeJobs([]);
+      setLoadWarning(formatLoadWarning(warnings));
+
+      void loadSecondarySetupData(warnings);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [loadSecondarySetupData]);
 
   const subscribeSetupData = useCallback(
     (_notify: () => void) => {
@@ -286,6 +336,7 @@ export function useSetup() {
     setStep,
     loading,
     error,
+    loadWarning,
     settings,
     modelsDir,
     setModelsDir,
@@ -327,3 +378,20 @@ export function useSetup() {
 }
 
 const getSetupSnapshot = (): number => 0;
+
+function withSetupTimeout<T>(promise: Promise<T>, label: string, timeoutMs = 8_000): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) => {
+      setTimeout(() => reject(new Error(`${label} timed out`)), timeoutMs);
+    }),
+  ]);
+}
+
+function formatLoadWarning(warnings: string[]): string | null {
+  return warnings.length ? `Some setup data could not load: ${warnings.join("; ")}` : null;
+}
+
+function setupErrorMessage(reason: unknown): string {
+  return reason instanceof Error ? reason.message : "unavailable";
+}

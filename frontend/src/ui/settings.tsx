@@ -167,6 +167,7 @@ export function SettingsButton({
   title,
   tone = "default",
   type = "button",
+  "aria-label": ariaLabel,
 }: {
   children: ReactNode;
   onClick?: () => void;
@@ -174,6 +175,7 @@ export function SettingsButton({
   title?: string;
   tone?: "default" | "primary" | "danger";
   type?: "button" | "submit";
+  "aria-label"?: string;
 }) {
   const classes =
     tone === "primary"
@@ -188,6 +190,7 @@ export function SettingsButton({
       onClick={onClick}
       disabled={disabled}
       title={title}
+      aria-label={ariaLabel}
       className={cx(
         "inline-flex h-7 items-center justify-center gap-1.5 rounded-md px-2.5 text-[length:var(--fs-sm)] font-normal transition-colors disabled:pointer-events-none disabled:opacity-45",
         classes,
@@ -247,27 +250,33 @@ export function SettingsActions({
 type SettingsControlTone = "accent" | "info";
 
 export function SettingsInput({
+  id,
   value,
   onChange,
   onBlur,
   placeholder,
   type = "text",
   className = "",
+  "aria-label": ariaLabel,
 }: {
+  id?: string;
   value: string;
   onChange: (value: string) => void;
   onBlur?: () => void;
   placeholder?: string;
   type?: "text" | "password";
   className?: string;
+  "aria-label"?: string;
 }) {
   return (
     <input
+      id={id}
       type={type}
       value={value}
       onChange={(event) => onChange(event.target.value)}
       onBlur={onBlur}
       placeholder={placeholder}
+      aria-label={ariaLabel}
       className={cx(
         "h-7 w-full rounded-md border border-(--ui-separator) bg-(--ui-bg) px-2.5 text-[length:var(--fs-base)] text-(--ui-fg) outline-none transition placeholder:text-(--ui-muted)/50 focus:border-(--ui-accent)/40",
         className,

@@ -11,6 +11,7 @@ type Props = {
   isPinned: boolean;
   isMenuOpen: boolean;
   launchDisabled: boolean;
+  launchDisabledReason?: string | null;
   onTogglePin: (recipeId: string) => void;
   onToggleMenu: (recipeId: string) => void;
   onLaunch: (recipeId: string) => void;
@@ -31,6 +32,7 @@ export const RecipeRow = memo(function RecipeRow({
   isPinned,
   isMenuOpen,
   launchDisabled,
+  launchDisabledReason,
   onTogglePin,
   onToggleMenu,
   onLaunch,
@@ -62,6 +64,7 @@ export const RecipeRow = memo(function RecipeRow({
     ? `${recipe.max_model_len.toLocaleString()} ctx`
     : "ctx auto";
   const description = `${modelName} · ${formatBackendLabel(recipe.backend)} · ${context}`;
+  const launchTitle = launchDisabledReason ?? "Launch recipe";
 
   return (
     <ModelRow
@@ -76,7 +79,7 @@ export const RecipeRow = memo(function RecipeRow({
               <Square className="h-3 w-3" />
             </ModelButton>
           ) : (
-            <ModelButton onClick={handleLaunch} disabled={launchDisabled} title="Launch">
+            <ModelButton onClick={handleLaunch} disabled={launchDisabled} title={launchTitle}>
               <Play className="h-3 w-3" />
             </ModelButton>
           )}
@@ -100,9 +103,10 @@ export const RecipeRow = memo(function RecipeRow({
                 </button>
                 <button
                   onClick={handleRequestDelete}
-                  className="w-full px-3 py-2 text-left text-[length:var(--fs-md)] text-(--err) hover:bg-(--err)/10"
+                  title={`Open delete confirmation for ${recipe.name}`}
+                  className="w-full border-t border-(--border) px-3 py-2 text-left text-[length:var(--fs-md)] text-(--err) hover:bg-(--err)/10"
                 >
-                  Delete
+                  Delete recipe...
                 </button>
               </div>
             ) : null}

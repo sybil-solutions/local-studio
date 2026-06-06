@@ -25,7 +25,6 @@ import {
   type ComposerPromptTemplateRef,
   type ComposerSkillRef,
 } from "@/lib/agent/composer-context";
-import { promptRequestsBrowser } from "@/lib/agent/browser/intent";
 import type { Session, SessionId } from "@/lib/agent/sessions/types";
 import type { BrowserBackend, ToolSelection } from "@/lib/agent/tools/types";
 import * as api from "./api";
@@ -214,7 +213,7 @@ export function useSessionEngine(deps: UseSessionEngineDeps): SessionEngine {
       const plugins = activeComposerPlugins(selection.plugins ?? EMPTY_PLUGINS);
       const skills = selection.skills ?? EMPTY_SKILLS;
       const promptTemplates = selection.promptTemplates ?? EMPTY_PROMPT_TEMPLATES;
-      const browserEnabledForTurn = browserToolEnabled || promptRequestsBrowser(text);
+      const browserEnabledForTurn = browserToolEnabled;
       const message = selectedContextPrompt(text, plugins, skills);
       const ensureAssistantId = () => {
         const current = tabsRef.current.find((tab) => tab.id === sessionId);
@@ -263,6 +262,7 @@ export function useSessionEngine(deps: UseSessionEngineDeps): SessionEngine {
               updateSession(sessionId, (session) => ({
                 ...session,
                 piSessionId: payload.piSessionId || session.piSessionId,
+                contextUsage: api.runtimeContextUsage(payload.session, session.contextUsage),
                 status: statusAfterControlPhase(session.status, payload.phase, {
                   queuedControlAccepted,
                 }),
@@ -396,6 +396,7 @@ export function useSessionEngine(deps: UseSessionEngineDeps): SessionEngine {
           modelId: replayModelId,
         } = replaySessionEvents(replayEvents);
         const tokenStats = [...replayEvents]
+          .slice(latestCompactionBoundaryIndex(replayEvents) + 1)
           .reverse()
           .map(usageFromEvent)
           .find((stats): stats is TokenStats => Boolean(stats));
@@ -408,8 +409,8 @@ export function useSessionEngine(deps: UseSessionEngineDeps): SessionEngine {
           modelId: session.modelId || replayModelId || runtimeStatus?.modelId || modelId,
           title: title ?? session.title,
           startedAt: startedAt ?? session.startedAt,
-          tokenStats: tokenStats ?? session.tokenStats,
-          contextUsage: runtimeStatus?.contextUsage ?? session.contextUsage ?? null,
+          tokenStats: tokenStats ?? undefined,
+          contextUsage: api.runtimeContextUsage(runtimeStatus, session.contextUsage),
           status: runtimeActive ? "running" : "idle",
           activeAssistantId: undefined,
           lastEventSeq: replaySeq,
@@ -437,7 +438,7 @@ export function useSessionEngine(deps: UseSessionEngineDeps): SessionEngine {
           modelId,
           cwd: cwd.trim() || undefined,
           piSessionId: session.piSessionId,
-          browserToolEnabled: browserToolEnabled || promptRequestsBrowser(session.input),
+          browserToolEnabled,
           browserSessionId: session.runtimeSessionId || runtimeSessionId,
           browserBackend,
           canvasEnabled,
@@ -450,6 +451,11 @@ export function useSessionEngine(deps: UseSessionEngineDeps): SessionEngine {
         });
         const nextSessionId = result.status?.piSessionId || session.piSessionId;
         if (nextSessionId) await loadAndReplay(nextSessionId, sessionId);
+        updateSession(sessionId, (s) => ({
+          ...s,
+          contextUsage: api.runtimeContextUsage(result.status ?? null, null),
+          tokenStats: undefined,
+        }));
       } catch (error) {
         updateSession(sessionId, (s) => ({
           ...s,
@@ -481,4 +487,36 @@ export function useSessionEngine(deps: UseSessionEngineDeps): SessionEngine {
     }),
     [submitPrompt, sendControl, loadRuntimeStatusCb, abortTurn, loadAndReplay, compact],
   );
+}
+
+function latestCompactionBoundaryIndex(events: Record<string, unknown>[]): number {
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index];
+    const type = typeof event?.type === "string" ? event.type.toLowerCase() : "";
+    if (isSuccessfulCompactionBoundary(event, type)) return index;
+  }
+  return -1;
+}
+
+function isSuccessfulCompactionBoundary(event: Record<string, unknown>, type: string): boolean {
+  if (!type.includes("compact") && !type.includes("compaction")) return false;
+  if (type.includes("start") || type.includes("begin")) return false;
+  if (
+    event.error ||
+    event.errorMessage ||
+    event.aborted ||
+    event.cancelled ||
+    event.canceled ||
+    event.failed
+  ) {
+    return false;
+  }
+  if (event.type === "compaction_end" && event.result == null) return false;
+  const status =
+    typeof event.status === "string"
+      ? event.status
+      : typeof (event.result as { status?: unknown } | undefined)?.status === "string"
+        ? (event.result as { status: string }).status
+        : "";
+  return !/abort|cancel|error|fail/.test(status.toLowerCase());
 }

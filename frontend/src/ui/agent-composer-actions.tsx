@@ -40,6 +40,8 @@ export function AgentComposerActions({
 }) {
   const inputHasText = Boolean(input.trim());
   const starting = status === "starting";
+  const browserBackendLabel = browserBackend === "parchi" ? "Parchi relay" : "embedded panel";
+  const browserBackendTarget = browserBackend === "parchi" ? "embedded panel" : "Parchi relay";
 
   return (
     <div className="agent-composer-actions-row flex min-h-8 items-center gap-1.5 bg-transparent px-3 pb-1.5 pt-0.5 text-xs">
@@ -64,6 +66,7 @@ export function AgentComposerActions({
         type="button"
         onClick={onToggleBrowserTool}
         aria-pressed={browserToolEnabled}
+        aria-label="Browser tools"
         title={
           browserToolEnabled
             ? "Browser tool: ON — agent can drive the browser"
@@ -79,6 +82,7 @@ export function AgentComposerActions({
         <button
           type="button"
           onClick={onToggleBrowserBackend}
+          aria-label={`Browser backend: ${browserBackendLabel}. Switch to ${browserBackendTarget}.`}
           className="inline-flex !h-7 !min-h-7 shrink-0 items-center rounded-md px-1.5 font-mono text-[10px] uppercase tracking-normal text-(--dim) hover:bg-(--bg-soft) hover:text-(--fg)/85"
           title={
             browserBackend === "parchi"
@@ -93,6 +97,7 @@ export function AgentComposerActions({
         type="button"
         onClick={onToggleCanvas}
         aria-pressed={canvasEnabled}
+        aria-label="Canvas context"
         title={
           canvasEnabled
             ? "Canvas: ON — shared scratchboard tools loaded; model reads/writes the canvas"

@@ -60,6 +60,12 @@ export function RecipesTable({
   onNewRecipe,
 }: Props) {
   const emptyBecauseSearch = Boolean(filter.trim()) && recipes.length === 0;
+  const launchDisabledReason = launching
+    ? "A launch is already in progress."
+    : runningRecipeId
+      ? "Stop the running model before launching another recipe."
+      : null;
+
   return (
     <ModelSection
       title="Launch recipes"
@@ -79,6 +85,17 @@ export function RecipesTable({
         />
       ) : null}
 
+      {launchDisabledReason ? (
+        <ModelRow
+          label="Launch controls"
+          description={launchDisabledReason}
+          value={
+            <ModelValue dim>Launch buttons are locked until the controller is ready.</ModelValue>
+          }
+          status={<ModelStatus tone="info">locked</ModelStatus>}
+        />
+      ) : null}
+
       {recipes.length
         ? recipes.map((recipe) => (
             <RecipeRow
@@ -87,6 +104,7 @@ export function RecipesTable({
               isPinned={pinnedRecipes.has(recipe.id)}
               isMenuOpen={recipeMenuOpen === recipe.id}
               launchDisabled={launching || Boolean(runningRecipeId)}
+              launchDisabledReason={launchDisabledReason}
               onTogglePin={onTogglePin}
               onToggleMenu={onToggleMenu}
               onLaunch={onLaunch}

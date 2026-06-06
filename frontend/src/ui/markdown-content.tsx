@@ -14,7 +14,15 @@ const markdownComponents: Components = {
   ),
 };
 
-export function MarkdownContent({ markdown, className }: { markdown: string; className?: string }) {
+export function MarkdownContent({
+  markdown,
+  className,
+  components,
+}: {
+  markdown: string;
+  className?: string;
+  components?: Components;
+}) {
   return (
     <div
       className={cx(
@@ -22,7 +30,11 @@ export function MarkdownContent({ markdown, className }: { markdown: string; cla
         className,
       )}
     >
-      <ReactMarkdown skipHtml remarkPlugins={MARKDOWN_PLUGINS} components={markdownComponents}>
+      <ReactMarkdown
+        skipHtml
+        remarkPlugins={MARKDOWN_PLUGINS}
+        components={{ ...markdownComponents, ...components }}
+      >
         {markdown}
       </ReactMarkdown>
     </div>

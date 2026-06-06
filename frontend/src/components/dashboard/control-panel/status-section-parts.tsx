@@ -229,11 +229,19 @@ export function RuntimeMetricGrid({ metrics }: { metrics: RuntimeMetricView[] })
   );
 }
 
-function RuntimeMetric({ label, value }: RuntimeMetricView) {
+function RuntimeMetric({ label, title, value }: RuntimeMetricView) {
   return (
-    <div className="flex min-w-0 items-baseline justify-between gap-2 border-t border-(--border)/25 pt-1">
+    <div
+      className="flex min-w-0 items-baseline justify-between gap-2 border-t border-(--border)/25 pt-1"
+      title={title}
+    >
       <dt className="truncate uppercase tracking-[0.12em]">{label}</dt>
-      <dd className="truncate text-(--fg)">{value}</dd>
+      <dd
+        className="truncate text-(--fg)"
+        aria-label={title ? `${label}: ${value}. ${title}` : undefined}
+      >
+        {value}
+      </dd>
     </div>
   );
 }

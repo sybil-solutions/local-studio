@@ -4,7 +4,6 @@ import {
   setSplitRatio as setLayoutSplitRatio,
   splitLeaf,
 } from "@/lib/agent/workspace/layout";
-import type { Project } from "@/lib/agent/projects/types";
 import type { Session, SessionId, SessionsMap } from "@/lib/agent/sessions/types";
 import {
   isEmptyStarterSession,
@@ -215,55 +214,12 @@ export function restorePaneState(
   });
 }
 
-function findEmptyStarterInPane(
-  state: WorkspaceState,
-  pane: PaneState,
-  project: Project | undefined,
-): Session | null {
-  const session = state.sessions.get(pane.sessionId);
-  if (!session || !isEmptyStarterSession(session)) return null;
-  if (project?.id && session.projectId && session.projectId !== project.id) return null;
-  if (project?.path && session.cwd && session.cwd !== project.path) return null;
-  return session;
-}
-
 export function openNewSessionInFocusedPane(
   state: WorkspaceState,
   payload: OpenNewSessionPayload,
 ): WorkspaceState {
   const pane = state.panesById.get(state.focusedPaneId);
   if (!pane) return state;
-  // Reuse an existing empty starter tab (avoid piling up blanks). The user's
-  // mode choice doesn't matter here — there's nothing to displace. Reset the
-  // starter's title/error/status so a stale carryover (e.g. a title persisted
-  // by restorePaneState from before the user cleared its messages) can't bleed
-  // into the freshly opened session's header.
-  const existing = findEmptyStarterInPane(state, pane, payload.project);
-  if (existing) {
-    const freshTitle = isSession(payload.tab) ? payload.tab.title : "New session";
-    const starterPatch: Partial<Session> = {
-      title: freshTitle,
-      piSessionId: null,
-      messages: [],
-      input: "",
-      error: "",
-      status: "idle",
-      startedAt: undefined,
-      tokenStats: undefined,
-      usedSkills: undefined,
-      contextUsage: null,
-      activeAssistantId: undefined,
-      lastEventSeq: undefined,
-      queue: undefined,
-      modelId: existing.modelId || state.selectedModel || undefined,
-      ...(payload.project ? { projectId: payload.project.id, cwd: payload.project.path } : {}),
-    };
-    const sessions = patchSessionInMap(state.sessions, existing.id, starterPatch);
-    return setPane(withSessions(state, sessions), state.focusedPaneId, {
-      ...pane,
-      sessionId: existing.id,
-    });
-  }
   if (!isSession(payload.tab)) return state;
   const session: Session = {
     ...payload.tab,

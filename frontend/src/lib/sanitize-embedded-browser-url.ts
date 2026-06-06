@@ -46,6 +46,8 @@ function isBlockedIpv4(host: string): boolean {
 
 function isPrivateIpv6(host: string): boolean {
   const normalized = host.replace(/^\[|\]$/g, "").toLowerCase();
+  const mappedIpv4 = ipv4FromMappedIpv6(normalized);
+  if (mappedIpv4) return isPrivateIpv4(mappedIpv4);
   return (
     normalized === "::" ||
     normalized === "::1" ||
@@ -53,6 +55,25 @@ function isPrivateIpv6(host: string): boolean {
     normalized.startsWith("fd") ||
     /^fe[89ab]/.test(normalized)
   );
+}
+
+function ipv4FromMappedIpv6(host: string): [number, number, number, number] | null {
+  const tail = host.startsWith("::ffff:")
+    ? host.slice("::ffff:".length)
+    : host.startsWith("0:0:0:0:0:ffff:")
+      ? host.slice("0:0:0:0:0:ffff:".length)
+      : "";
+  if (!tail) return null;
+  const dotted = ipv4Octets(tail);
+  if (dotted) return dotted;
+  const parts = tail.split(":");
+  if (parts.length !== 2) return null;
+  const words = parts.map((part) => Number.parseInt(part, 16));
+  if (words.some((word) => !Number.isInteger(word) || word < 0 || word > 0xffff)) {
+    return null;
+  }
+  const [high, low] = words as [number, number];
+  return [high >> 8, high & 0xff, low >> 8, low & 0xff];
 }
 
 function isBlockedPublicHost(host: string): boolean {

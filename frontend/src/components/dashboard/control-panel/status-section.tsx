@@ -50,7 +50,7 @@ export function StatusSection({
     metrics,
     platformKind,
   });
-  const samples = useMetricSamples(view.sampleInput);
+  const trendData = useMetricSamples(view.sampleInput);
 
   return (
     <section className="px-2 pt-2 pb-5">
@@ -74,7 +74,7 @@ export function StatusSection({
       />
       <StatusMetricStrip compactMetrics={view.compactMetrics} metricColumns={view.metricColumns} />
       <RuntimeMetricGrid metrics={view.runtimeMetrics} />
-      <MetricTrends samples={samples} />
+      <MetricTrends samples={trendData.samples} peaks={trendData.peaks} />
     </section>
   );
 }

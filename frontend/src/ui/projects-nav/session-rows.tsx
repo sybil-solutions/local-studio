@@ -30,6 +30,7 @@ export function ProjectRow({
   open,
   onToggle,
   onRemove,
+  onNewChatStart,
   activeSessions,
   prefs,
   excludedIds,
@@ -39,6 +40,7 @@ export function ProjectRow({
   open: boolean;
   onToggle: () => void;
   onRemove?: () => void;
+  onNewChatStart?: () => void;
   activeSessions: ActiveAgentSession[];
   prefs: SessionPrefs;
   excludedIds: ReadonlySet<string>;
@@ -91,6 +93,7 @@ export function ProjectRow({
             projectId={project.id}
             label={`New chat in ${project.name}`}
             className="flex h-5 w-5 items-center justify-center text-(--dim)/55 hover:text-(--fg)/80"
+            onNavigateStart={onNewChatStart}
           />
         </div>
         {onRemove ? (
@@ -347,10 +350,12 @@ export function NewChatPlusButton({
   projectId,
   label,
   className,
+  onNavigateStart,
 }: {
   projectId: string;
   label: string;
   className: string;
+  onNavigateStart?: () => void;
 }) {
   const router = useRouter();
   const href = `/agent?project=${encodeURIComponent(projectId)}&new=1`;
@@ -362,6 +367,7 @@ export function NewChatPlusButton({
           if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
           event.preventDefault();
           event.stopPropagation();
+          onNavigateStart?.();
           router.push(
             `/agent?project=${encodeURIComponent(projectId)}&new=${Date.now().toString(36)}`,
           );

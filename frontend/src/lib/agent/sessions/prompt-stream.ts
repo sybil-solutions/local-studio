@@ -13,7 +13,6 @@ import {
   type ComposerPromptTemplateRef,
   type ComposerSkillRef,
 } from "@/lib/agent/composer-context";
-import { promptRequestsBrowser } from "@/lib/agent/browser/intent";
 import type { AgentImageInput } from "@/lib/agent/contracts/turn";
 import type { BrowserBackend, ToolSelection } from "@/lib/agent/tools/types";
 import { traceAgentReasoning } from "@/lib/agent/trace-reasoning";
@@ -38,6 +37,7 @@ export type SubmitArgs = {
   userText: string;
   images?: AgentImageInput[];
   attachments?: ChatMessageAttachment[];
+  browserToolEnabled?: boolean;
   plugins?: ComposerPluginRef[];
   skills?: ComposerSkillRef[];
   promptTemplates?: ComposerPromptTemplateRef[];
@@ -113,7 +113,7 @@ function createPromptTurnContext(
 
   return {
     assistantId: newId("assistant"),
-    browserEnabledForTurn: deps.browserToolEnabled || promptRequestsBrowser(args.userText),
+    browserEnabledForTurn: args.browserToolEnabled ?? deps.browserToolEnabled,
     plugins,
     promptTemplates,
     runtime: selected.runtimeSessionId || deps.runtimeSessionId,
@@ -237,6 +237,7 @@ function applyPromptStatusPayload(
   deps.updateSession(context.sessionId, (session) => ({
     ...session,
     piSessionId: payload.piSessionId || session.piSessionId,
+    contextUsage: api.runtimeContextUsage(payload.session, session.contextUsage),
     status: (phase === "done" ? "idle" : phase) as SessionStatus,
     activeAssistantId: phase === "done" ? undefined : session.activeAssistantId,
   }));
@@ -321,7 +322,7 @@ async function finalizePromptTurn(
     status: runtimeStillActive ? "running" : "idle",
     activeAssistantId: runtimeStillActive ? context.assistantId : undefined,
     error: state.streamError && !runtimeStillActive ? state.streamError : session.error,
-    contextUsage: runtimeStatus?.contextUsage ?? session.contextUsage ?? null,
+    contextUsage: api.runtimeContextUsage(runtimeStatus, session.contextUsage),
   }));
 }
 

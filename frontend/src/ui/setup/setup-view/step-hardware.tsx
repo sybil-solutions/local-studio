@@ -6,9 +6,9 @@ import {
   Card,
   Checkbox,
   FactGrid,
+  MANAGED_RUNTIME_BACKENDS,
   ManagedRuntimeInstallRows,
   RuntimeTargetRows,
-  SETUP_RUNTIME_BACKENDS,
   SettingsGroup,
   SettingsNotice,
   isManagedRuntimeTarget,
@@ -66,10 +66,10 @@ export function StepHardware({
 
       <SettingsGroup
         title="Runtime setup"
-        description="Controller-managed Python environments for guided local inference."
+        description="Controller-managed Python environments for guided inference on the active target."
       >
         <ManagedRuntimeInstallRows
-          backends={SETUP_RUNTIME_BACKENDS}
+          backends={MANAGED_RUNTIME_BACKENDS}
           jobs={runtimeJobs}
           targets={runtimeTargets}
           onInstall={installRuntime}

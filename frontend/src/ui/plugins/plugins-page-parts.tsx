@@ -1,5 +1,6 @@
 "use client";
 
+import { useId } from "react";
 import { ExternalLink, Plus, ShieldCheck } from "lucide-react";
 import { Button } from "../button";
 import { EmptySafeNotice } from "../list";
@@ -7,7 +8,7 @@ import { ModelButton } from "../model-page";
 import { SettingsButton, SettingsGroup, SettingsInput, SettingsRow } from "../settings";
 import { StatusPill } from "../status";
 import { type CatalogueEntry } from "./plugins-types";
-import { missingRequiredEnv } from "./plugins-utils";
+import { missingRequiredEnv, parseArgsText } from "./plugins-utils";
 
 export function RegistryRow({
   entry,
@@ -50,12 +51,18 @@ export function RegistryRow({
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex h-7 items-center justify-center rounded-md px-2 text-(--ui-muted) transition-colors hover:bg-(--ui-hover) hover:text-(--ui-fg)"
-              title="Open registry profile"
+              aria-label={`Open registry profile for ${entry.displayName}`}
+              title={`Open registry profile for ${entry.displayName}`}
             >
               <ExternalLink className="h-3.5 w-3.5" />
             </a>
           ) : null}
-          <SettingsButton onClick={onConfigure} disabled={busy}>
+          <SettingsButton
+            onClick={onConfigure}
+            disabled={busy}
+            aria-label={`${added ? "Add another" : entry.command ? "Add" : "Configure"} ${entry.displayName}`}
+            title={`${added ? "Add another" : entry.command ? "Add" : "Configure"} ${entry.displayName}`}
+          >
             {added ? "Add another" : entry.command ? "Add" : "Configure"}
           </SettingsButton>
         </>
@@ -91,16 +98,36 @@ export function ConfigureEntryPanel({
   onCancel: () => void;
   onSubmit: () => void;
 }) {
+  const titleId = useId();
+  const commandId = useId();
+  const argsId = useId();
+  const tagsId = useId();
+  const needsTarget = Boolean(entry.requiresTargetArg);
+  const hasTarget = !needsTarget || hasExplicitTargetArg(entry, args);
+  const canSubmit =
+    Boolean(command.trim()) && !busy && !missingRequiredEnv(entry, env) && hasTarget;
+  const submitTitle = hasTarget
+    ? `Add ${entry.displayName} MCP server`
+    : `Add a local path argument before adding ${entry.displayName}`;
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <button className="absolute inset-0 bg-black/55" aria-label="Close" onClick={onCancel} />
-      <div className="relative z-10 mx-4 w-full max-w-2xl overflow-hidden rounded-md border border-(--ui-border) bg-(--ui-bg) shadow-xl">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        className="relative z-10 mx-4 w-full max-w-2xl overflow-hidden rounded-md border border-(--ui-border) bg-(--ui-bg) shadow-xl"
+      >
         <div className="flex items-center justify-between gap-3 border-b border-(--ui-border) px-4 py-3">
           <div className="min-w-0">
             <div className="text-[length:var(--fs-sm)] uppercase tracking-[0.14em] text-(--ui-muted)">
               MCP configuration
             </div>
-            <h2 className="truncate text-[length:var(--fs-xl)] font-medium text-(--ui-fg)">
+            <h2
+              id={titleId}
+              className="truncate text-[length:var(--fs-xl)] font-medium text-(--ui-fg)"
+            >
               {entry.displayName}
             </h2>
           </div>
@@ -119,16 +146,29 @@ export function ConfigureEntryPanel({
                     "Choose the local stdio launch command before adding this server.")
               }
               control={
-                <SettingsInput value={command} onChange={onCommandChange} placeholder="npx" />
+                <SettingsInput
+                  id={commandId}
+                  value={command}
+                  onChange={onCommandChange}
+                  placeholder="npx"
+                  aria-label="Command"
+                />
               }
             />
             <SettingsRow
               label="Arguments"
+              description={
+                needsTarget
+                  ? "Add the local directory, repository, or database path this server may access."
+                  : undefined
+              }
               control={
                 <SettingsInput
+                  id={argsId}
                   value={args}
                   onChange={onArgsChange}
                   placeholder="-y @scope/server"
+                  aria-label="Arguments"
                 />
               }
             />
@@ -136,9 +176,11 @@ export function ConfigureEntryPanel({
               label="Tags"
               control={
                 <SettingsInput
+                  id={tagsId}
                   value={tags}
                   onChange={onTagsChange}
                   placeholder="official, github"
+                  aria-label="Tags"
                 />
               }
             />
@@ -157,6 +199,7 @@ export function ConfigureEntryPanel({
                       value={env[key]}
                       onChange={(value) => onEnvChange({ ...env, [key]: value })}
                       placeholder={key}
+                      aria-label={key}
                     />
                   }
                 />
@@ -173,7 +216,8 @@ export function ConfigureEntryPanel({
           <Button
             size="sm"
             onClick={onSubmit}
-            disabled={!command.trim() || busy || missingRequiredEnv(entry, env)}
+            disabled={!canSubmit}
+            title={submitTitle}
             icon={<Plus className="h-3.5 w-3.5" />}
           >
             Add MCP server
@@ -193,4 +237,10 @@ function registryLabel(entry: CatalogueEntry): string {
 function registryTone(entry: CatalogueEntry): "default" | "good" | "info" | "warning" | "danger" {
   if (entry.registry === "custom") return "info";
   return "good";
+}
+
+function hasExplicitTargetArg(entry: CatalogueEntry, args: string): boolean {
+  const parts = parseArgsText(args);
+  const templateLength = entry.args?.length ?? 0;
+  return parts.slice(templateLength).some((part) => part.trim() && !part.trim().startsWith("-"));
 }

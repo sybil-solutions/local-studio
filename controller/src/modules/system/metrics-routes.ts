@@ -269,12 +269,16 @@ export const registerMonitoringRoutes = (app: Hono, context: AppContext): void =
   });
 
   app.get("/v1/metrics/vllm", async (ctx) => {
-    const latest = context.eventManager.getLatestMetrics();
-    if (Object.keys(latest).length > 0) return ctx.json(latest);
-
-    const fallback = await buildCurrentMetrics(context);
-    await context.eventManager.publishMetrics(fallback);
-    return ctx.json(fallback);
+    try {
+      const current = await buildCurrentMetrics(context);
+      await context.eventManager.publishMetrics(current);
+      return ctx.json(current);
+    } catch (error) {
+      context.logger.warn(`Failed to build current metrics: ${(error as Error).message}`);
+      const latest = context.eventManager.getLatestMetrics();
+      if (Object.keys(latest).length > 0) return ctx.json(latest);
+      throw error;
+    }
   });
 
   app.get("/peak-metrics", async (ctx) => {

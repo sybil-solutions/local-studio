@@ -93,7 +93,11 @@ function toolMeta(block: ToolBlock, filePath?: string | null): ToolMeta {
     case "exec":
       return { icon, label: "Ran command", detail: compactToolText(command, 110) };
     case "browser":
-      return { icon, label: "Used browser", detail: compactToolText(url, 110) };
+      return {
+        icon,
+        label: browserToolLabel(block.name),
+        detail: compactToolText(url ?? browserToolDetail(block), 110),
+      };
     default:
       return {
         icon,
@@ -101,6 +105,30 @@ function toolMeta(block: ToolBlock, filePath?: string | null): ToolMeta {
         detail: compactToolText(command ?? query ?? path ?? url, 110),
       };
   }
+}
+
+function browserToolLabel(name: string): string {
+  const normalized = name
+    .toLowerCase()
+    .replace(/^browser_/, "")
+    .replace(/^parchi_/, "");
+  if (normalized.includes("navigate")) return "Browser navigated";
+  if (normalized.includes("get_text")) return "Browser read text";
+  if (normalized.includes("get_html")) return "Browser read HTML";
+  if (normalized.includes("screenshot")) return "Browser captured screenshot";
+  if (normalized.includes("click")) return "Browser clicked";
+  if (normalized.includes("fill")) return "Browser filled field";
+  if (normalized.includes("scroll")) return "Browser scrolled";
+  if (normalized.includes("get_url")) return "Browser checked URL";
+  return "Used browser";
+}
+
+function browserToolDetail(block: ToolBlock): string | null {
+  const stringValue = toolArg(block, ["selector", "value", "tabId", "query"]);
+  const deltaY = block.args?.deltaY;
+  if (stringValue) return stringValue;
+  if (typeof deltaY === "number") return `deltaY ${deltaY}`;
+  return compactToolText(block.resultText, 110);
 }
 
 function ToolStatus({ status }: { status: ToolBlock["status"] }) {
@@ -319,6 +347,38 @@ function ExecPreview({ block, command }: { block: ToolBlock; command: string }) 
   );
 }
 
+function BrowserPreview({ block }: { block: ToolBlock }) {
+  const args = browserToolArgs(block);
+  const display =
+    compactBrowserResult(block.resultText) ||
+    (block.text && block.text !== block.argsText ? compactBrowserResult(block.text) : null);
+  return (
+    <ToolSummary block={block} open={block.status === "running"}>
+      {args ? (
+        <div className="mb-1 rounded-md border border-(--border)/45 bg-(--surface)/30 px-2 py-1 font-mono text-[length:var(--fs-xs)] text-(--fg)/75">
+          {args}
+        </div>
+      ) : null}
+      {display ? <ToolOutput>{display}</ToolOutput> : null}
+    </ToolSummary>
+  );
+}
+
+function browserToolArgs(block: ToolBlock): string | null {
+  if (!block.args || Object.keys(block.args).length === 0) return null;
+  const pairs = Object.entries(block.args).flatMap(([key, value]) => {
+    if (value === undefined || value === null || value === "") return [];
+    const text = typeof value === "string" || typeof value === "number" ? String(value) : "";
+    return text ? [`${key}: ${text}`] : [];
+  });
+  return pairs.length ? pairs.join("  ") : null;
+}
+
+function compactBrowserResult(result: string | null | undefined): string | null {
+  if (!result) return null;
+  return compactToolText(result, 1200);
+}
+
 export function ToolBlockView({ block }: { block: ToolBlock }) {
   const fileWritePreview = FILE_WRITE_TOOL_NAMES.has(block.name.toLowerCase())
     ? fileWritePreviewData(block)
@@ -335,6 +395,9 @@ export function ToolBlockView({ block }: { block: ToolBlock }) {
     if (command) {
       return <ExecPreview block={block} command={command} />;
     }
+  }
+  if (classifyTool(block) === "browser") {
+    return <BrowserPreview block={block} />;
   }
 
   // Generic fallback (reads, searches, browser tools, etc.).

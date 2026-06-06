@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import api from "@/lib/api";
 import { getApiKey } from "@/lib/api-key";
 import type { LogSession } from "@/lib/types";
@@ -131,11 +131,6 @@ export function useLogs() {
     [logLines.length, autoScroll],
   );
 
-  useSyncExternalStore(subscribeLogSessions, getLogsSnapshot, getLogsSnapshot);
-  useSyncExternalStore(subscribeLogContent, getLogsSnapshot, getLogsSnapshot);
-  useSyncExternalStore(subscribeLogStream, getLogsSnapshot, getLogsSnapshot);
-  useSyncExternalStore(subscribeLogAutoscroll, getLogsSnapshot, getLogsSnapshot);
-
   const deleteSession = useCallback(
     async (sessionId: string) => {
       if (sessionId === "controller") {
@@ -168,13 +163,37 @@ export function useLogs() {
     URL.revokeObjectURL(url);
   }, [logLines, selectedSession]);
 
-  const filteredSessions = filter
-    ? sessions.filter(
-        (session) =>
-          session.model?.toLowerCase().includes(filter.toLowerCase()) ||
-          session.id.toLowerCase().includes(filter.toLowerCase()),
-      )
-    : sessions;
+  const filteredSessions = useMemo(() => {
+    const query = filter.trim().toLowerCase();
+    if (!query) return sessions;
+    return sessions.filter(
+      (session) =>
+        session.model?.toLowerCase().includes(query) || session.id.toLowerCase().includes(query),
+    );
+  }, [filter, sessions]);
+
+  const subscribeSelectedSession = useCallback(
+    (_notify: () => void) => {
+      if (filteredSessions.length === 0) {
+        if (selectedSession) {
+          setSelectedSession(null);
+          setLogLines([]);
+        }
+        return () => {};
+      }
+      if (!selectedSession || !filteredSessions.some((session) => session.id === selectedSession)) {
+        setSelectedSession(filteredSessions[0]?.id ?? null);
+      }
+      return () => {};
+    },
+    [filteredSessions, selectedSession],
+  );
+
+  useSyncExternalStore(subscribeLogSessions, getLogsSnapshot, getLogsSnapshot);
+  useSyncExternalStore(subscribeLogContent, getLogsSnapshot, getLogsSnapshot);
+  useSyncExternalStore(subscribeLogStream, getLogsSnapshot, getLogsSnapshot);
+  useSyncExternalStore(subscribeLogAutoscroll, getLogsSnapshot, getLogsSnapshot);
+  useSyncExternalStore(subscribeSelectedSession, getLogsSnapshot, getLogsSnapshot);
 
   const formatDateTime = (dateValue: string) =>
     new Date(dateValue).toLocaleString("en-US", {

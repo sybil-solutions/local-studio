@@ -39,6 +39,64 @@ type Props = {
   activeSessions: ActiveSession[];
 };
 
+type AppDestination = {
+  href: string;
+  label: string;
+  keywords: string;
+  description: string;
+};
+
+const APP_DESTINATIONS: AppDestination[] = [
+  {
+    href: "/",
+    label: "Status",
+    keywords: "dashboard controller gpu metrics decode prefill throughput live historic",
+    description: "Controller, GPU, model status, and live metrics.",
+  },
+  {
+    href: "/usage",
+    label: "Usage",
+    keywords: "tokens requests analytics costs provider pi sessions peaks",
+    description: "Token, request, and model usage analytics.",
+  },
+  {
+    href: "/recipes",
+    label: "Models",
+    keywords: "models recipes launch downloads search hugging face explore",
+    description: "Search models, manage recipes, launches, and downloads.",
+  },
+  {
+    href: "/plugins",
+    label: "Plugins",
+    keywords: "mcp servers registry curated custom tools",
+    description: "MCP servers, registries, and curated plugin setup.",
+  },
+  {
+    href: "/server",
+    label: "Server",
+    keywords: "logs api docs swagger controller endpoints",
+    description: "Server logs and controller API documentation.",
+  },
+  {
+    href: "/agent",
+    label: "Agent",
+    keywords: "chat projects browser terminal tools canvas files",
+    description: "Project-aware agent workspace and tools.",
+  },
+  {
+    href: "/agent/sessions",
+    label: "Agent Sessions",
+    keywords: "history archived transcripts pi sessions runs",
+    description: "Search and inspect stored agent sessions.",
+  },
+  {
+    href: "/settings",
+    label: "Settings",
+    keywords: "connection system appearance archived chats skills setup configuration",
+    description: "Connection, system, appearance, skills, and setup.",
+  },
+];
+
 function formatRelative(iso: string): string {
   const ts = new Date(iso).getTime();
   if (!Number.isFinite(ts)) return "";
@@ -134,6 +192,16 @@ export function SessionsCommand({ open, onClose, activeSessions }: Props) {
       .slice(0, 80);
   }, [sessions, query]);
 
+  const destinationFiltered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return APP_DESTINATIONS.slice(0, 6);
+    return APP_DESTINATIONS.filter((destination) =>
+      `${destination.label} ${destination.keywords} ${destination.description}`
+        .toLowerCase()
+        .includes(q),
+    ).slice(0, 8);
+  }, [query]);
+
   const liveFiltered = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return liveOnlyActives;
@@ -142,15 +210,23 @@ export function SessionsCommand({ open, onClose, activeSessions }: Props) {
     );
   }, [liveOnlyActives, query]);
 
-  const totalRows = liveFiltered.length + filtered.length;
+  const totalRows = destinationFiltered.length + liveFiltered.length + filtered.length;
   const selectedIndex = totalRows > 0 ? Math.min(highlight, totalRows - 1) : 0;
 
   if (!open) return null;
 
   function commit(index: number) {
     if (index < 0) return;
-    if (index < liveFiltered.length) {
-      const session = liveFiltered[index];
+    if (index < destinationFiltered.length) {
+      const destination = destinationFiltered[index];
+      if (!destination) return;
+      router.push(destination.href);
+      onClose();
+      return;
+    }
+    const liveIndex = index - destinationFiltered.length;
+    if (liveIndex < liveFiltered.length) {
+      const session = liveFiltered[liveIndex];
       router.push(
         `/agent?project=${encodeURIComponent(session.projectId)}${
           session.piSessionId ? `&session=${encodeURIComponent(session.piSessionId)}` : ""
@@ -159,7 +235,7 @@ export function SessionsCommand({ open, onClose, activeSessions }: Props) {
       onClose();
       return;
     }
-    const session = filtered[index - liveFiltered.length];
+    const session = filtered[index - destinationFiltered.length - liveFiltered.length];
     if (!session) return;
     router.push(
       `/agent?project=${encodeURIComponent(session.projectId)}&session=${encodeURIComponent(session.id)}`,
@@ -203,23 +279,55 @@ export function SessionsCommand({ open, onClose, activeSessions }: Props) {
               setQuery(event.target.value);
               setHighlight(0);
             }}
-            placeholder="Search every session by prompt, project, or model…"
+            placeholder="Search destinations, sessions, projects, or models…"
             className="flex-1 bg-transparent text-[length:var(--fs-lg)] text-(--fg) outline-none placeholder:text-(--dim)"
           />
-          <kbd className="rounded bg-(--surface-2) px-1.5 py-0.5 text-[length:var(--fs-xs)] text-(--dim)">esc</kbd>
+          <kbd className="rounded bg-(--surface-2) px-1.5 py-0.5 text-[length:var(--fs-xs)] text-(--dim)">
+            esc
+          </kbd>
         </div>
         <div ref={listRef} className="min-h-0 flex-1 overflow-y-auto py-1">
           {sessions === null ? (
-            <div className="px-4 py-6 text-[length:var(--fs-md)] text-(--dim)">Loading sessions…</div>
+            <div className="px-4 py-6 text-[length:var(--fs-md)] text-(--dim)">
+              Loading sessions…
+            </div>
           ) : totalRows === 0 ? (
             <div className="px-4 py-8 text-center text-[length:var(--fs-md)] text-(--dim)">
-              No sessions match “{query}”.
+              No destinations or sessions match “{query}”.
             </div>
           ) : (
             <>
+              {destinationFiltered.length > 0 ? (
+                <SectionLabel>App destinations</SectionLabel>
+              ) : null}
+              {destinationFiltered.map((destination, index) => {
+                const active = selectedIndex === index;
+                return (
+                  <button
+                    key={destination.href}
+                    type="button"
+                    onMouseEnter={() => setHighlight(index)}
+                    onClick={() => commit(index)}
+                    className={`flex w-full items-center gap-3 px-4 py-2 text-left text-[length:var(--fs-base)] transition-colors ${
+                      active ? "bg-(--bg)" : "hover:bg-(--bg)/70"
+                    }`}
+                  >
+                    <Search className="h-3.5 w-3.5 shrink-0 text-(--dim)" />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-(--fg)">{destination.label}</span>
+                      <span className="mt-0.5 block truncate text-[length:var(--fs-sm)] text-(--dim)">
+                        {destination.description}
+                      </span>
+                    </span>
+                    <span className="shrink-0 font-mono text-[length:var(--fs-sm)] text-(--dim)">
+                      {destination.href}
+                    </span>
+                  </button>
+                );
+              })}
               {liveFiltered.length > 0 ? <SectionLabel>Running now</SectionLabel> : null}
               {liveFiltered.map((session, index) => {
-                const i = index;
+                const i = destinationFiltered.length + index;
                 const active = selectedIndex === i;
                 return (
                   <button
@@ -246,7 +354,7 @@ export function SessionsCommand({ open, onClose, activeSessions }: Props) {
               })}
               {filtered.length > 0 ? <SectionLabel>Recent sessions</SectionLabel> : null}
               {filtered.map((session, index) => {
-                const i = liveFiltered.length + index;
+                const i = destinationFiltered.length + liveFiltered.length + index;
                 const active = selectedIndex === i;
                 const running = activeByPiId.has(session.id);
                 const label =

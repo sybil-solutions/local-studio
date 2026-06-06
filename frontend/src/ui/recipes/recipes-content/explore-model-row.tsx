@@ -27,7 +27,7 @@ function ExploreVramCell({
   if (needGb == null || !Number.isFinite(needGb)) {
     return (
       <span className="text-xs text-(--dim)" title={fit?.reason}>
-        {fit?.label ?? "—"}
+        —
       </span>
     );
   }
@@ -48,7 +48,7 @@ function ExploreVramCell({
       className={`text-xs ${over ? "text-(--err)" : "text-(--dim)"}`}
       title={fit?.reason ?? "Estimated footprint vs pooled GPU VRAM"}
     >
-      ~{label} / {Math.round(poolGb)} GB{fit ? ` · ${fit.label}` : ""}
+      ~{label} / {Math.round(poolGb)} GB
     </span>
   );
 }
@@ -128,7 +128,6 @@ export const ExploreModelRow = memo(function ExploreModelRow({
       }
       status={
         <div className="flex flex-col items-end gap-0.5">
-          {fit && !child ? <ModelStatus tone={fit.tone}>{fit.label}</ModelStatus> : null}
           <ModelStatus tone={download.tone}>{download.label}</ModelStatus>
         </div>
       }

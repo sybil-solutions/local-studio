@@ -16,7 +16,7 @@ import {
   type RegistrySource,
   type ServersPayload,
 } from "./plugins-types";
-import { parseArgsText, parseEnvLines, parseTagsText } from "./plugins-utils";
+import { parseArgsText, parseEnvLines, parseTagsText, quoteArgsText } from "./plugins-utils";
 
 type PluginsSectionId = "custom" | "registry" | "curated";
 
@@ -213,7 +213,7 @@ function PluginsManager({ mode }: { mode: "page" | "settings" }) {
   const beginConfigureEntry = (entry: CatalogueEntry) => {
     setConfigureEntry(entry);
     setConfigureCommand(entry.command || "");
-    setConfigureArgs((entry.args ?? []).join(" "));
+    setConfigureArgs(quoteArgsText(entry.args ?? []));
     setConfigureTags((entry.tags ?? [defaultRegistryTag(entry)]).join(", "));
     setConfigureEnv({ ...(entry.env ?? {}) });
   };

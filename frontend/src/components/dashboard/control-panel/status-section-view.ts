@@ -4,9 +4,13 @@ import { toGB, toGBFromMB } from "@/lib/formatters";
 export type MetricSampleInput = {
   key: string;
   generation: number;
+  generationPeak: number;
   prefill: number;
+  prefillPeak: number;
   ttft: number;
+  ttftPeak: number;
   requests: number;
+  requestPeak: number;
   active: boolean;
 };
 
@@ -25,6 +29,7 @@ export type CompactMetricView = {
 
 export type RuntimeMetricView = {
   label: string;
+  title?: string;
   value: string;
 };
 
@@ -59,9 +64,13 @@ export function resolveStatusSectionView({
     sampleInput: {
       key: resolveModelSampleKey(currentProcess, currentRecipe),
       generation: perf.genTps ?? 0,
+      generationPeak: generationPeak(metrics) ?? perf.genTps ?? 0,
       prefill: perf.prefillTps ?? 0,
+      prefillPeak: prefillPeak(metrics) ?? perf.prefillTps ?? 0,
       ttft: perf.ttftMs ?? 0,
+      ttftPeak: ttftPeak(metrics) ?? perf.ttftMs ?? 0,
       requests: perf.sessions,
+      requestPeak: perf.peakReq || perf.sessions,
       active: isRunning,
     },
   };
@@ -153,54 +162,124 @@ function compactMetricViews(
 
 function runtimeMetricViews(metrics: Metrics | null): RuntimeMetricView[] {
   return [
-    { label: "total tokens", value: tokenTotalMetric(metrics) },
-    { label: "prompt tokens", value: tokenMetric(metrics?.prompt_tokens_total) },
-    { label: "completion tokens", value: tokenMetric(metrics?.generation_tokens_total) },
-    { label: "duration", value: durationMetric(metrics?.latency_avg) },
+    {
+      label: "app tokens",
+      title: "Total tokens recorded by the vLLM Studio request log for this model.",
+      value: tokenTotalMetric(metrics),
+    },
+    {
+      label: "engine prompt",
+      title: "Prompt/prefill token counter reported by the running inference engine.",
+      value: tokenMetric(metrics?.prompt_tokens_total),
+    },
+    {
+      label: "engine decode",
+      title: "Decode/completion token counter reported by the running inference engine.",
+      value: tokenMetric(metrics?.generation_tokens_total),
+    },
+    {
+      label: "avg latency",
+      title: "Average request latency recorded by the vLLM Studio request log.",
+      value: durationMetric(metrics?.latency_avg),
+    },
   ];
 }
 
 function generationMaxDetail(metrics: Metrics | null) {
   return speedMaxDetail({
-    session: firstPositive(
-      metrics?.session_peak_generation_tps,
-      metrics?.session_peak_generation_throughput,
-      metrics?.session_peak_generation,
-    ),
-    bestSession: firstPositive(
-      metrics?.best_session_generation_tps,
-      metrics?.session_peak_generation_tps,
-    ),
-    all: firstPositive(metrics?.peak_generation_tps),
+    session: currentSessionGenerationPeak(metrics),
+    bestSession: bestSessionGenerationPeak(metrics),
+    all: allTimeGenerationPeak(metrics),
     digits: 1,
   });
 }
 
 function prefillMaxDetail(metrics: Metrics | null) {
   return speedMaxDetail({
-    session: firstPositive(
-      metrics?.session_peak_prefill_tps,
-      metrics?.session_peak_prompt_throughput,
-      metrics?.session_peak_prefill,
-    ),
-    bestSession: firstPositive(
-      metrics?.best_session_prefill_tps,
-      metrics?.session_peak_prefill_tps,
-    ),
-    all: firstPositive(metrics?.peak_prefill_tps),
+    session: currentSessionPrefillPeak(metrics),
+    bestSession: bestSessionPrefillPeak(metrics),
+    all: allTimePrefillPeak(metrics),
     digits: 1,
   });
 }
 
 function ttftMaxDetail(metrics: Metrics | null) {
   return speedMaxDetail({
-    session: firstPositive(metrics?.session_peak_best_ttft_ms, metrics?.session_peak_ttft_ms),
-    bestSession: firstPositive(metrics?.best_session_ttft_ms, metrics?.session_peak_best_ttft_ms),
-    all: firstPositive(metrics?.peak_ttft_ms),
+    session: currentSessionTtftPeak(metrics),
+    bestSession: bestSessionTtftPeak(metrics),
+    all: allTimeTtftPeak(metrics),
     digits: 0,
     suffix: " ms",
     label: "best",
   });
+}
+
+function generationPeak(metrics: Metrics | null): number | null {
+  return firstPositive(
+    currentSessionGenerationPeak(metrics),
+    bestSessionGenerationPeak(metrics),
+    allTimeGenerationPeak(metrics),
+  );
+}
+
+function prefillPeak(metrics: Metrics | null): number | null {
+  return firstPositive(
+    currentSessionPrefillPeak(metrics),
+    bestSessionPrefillPeak(metrics),
+    allTimePrefillPeak(metrics),
+  );
+}
+
+function ttftPeak(metrics: Metrics | null): number | null {
+  return firstPositive(
+    currentSessionTtftPeak(metrics),
+    bestSessionTtftPeak(metrics),
+    allTimeTtftPeak(metrics),
+  );
+}
+
+function currentSessionGenerationPeak(metrics: Metrics | null): number | null {
+  return firstPositive(
+    metrics?.session_peak_generation_tps,
+    metrics?.session_peak_generation_throughput,
+    metrics?.session_peak_generation,
+  );
+}
+
+function bestSessionGenerationPeak(metrics: Metrics | null): number | null {
+  return firstPositive(metrics?.best_session_generation_tps, metrics?.session_peak_generation_tps);
+}
+
+function allTimeGenerationPeak(metrics: Metrics | null): number | null {
+  return firstPositive(metrics?.peak_generation_tps);
+}
+
+function currentSessionPrefillPeak(metrics: Metrics | null): number | null {
+  return firstPositive(
+    metrics?.session_peak_prefill_tps,
+    metrics?.session_peak_prompt_throughput,
+    metrics?.session_peak_prefill,
+  );
+}
+
+function bestSessionPrefillPeak(metrics: Metrics | null): number | null {
+  return firstPositive(metrics?.best_session_prefill_tps, metrics?.session_peak_prefill_tps);
+}
+
+function allTimePrefillPeak(metrics: Metrics | null): number | null {
+  return firstPositive(metrics?.peak_prefill_tps);
+}
+
+function currentSessionTtftPeak(metrics: Metrics | null): number | null {
+  return firstPositive(metrics?.session_peak_best_ttft_ms, metrics?.session_peak_ttft_ms);
+}
+
+function bestSessionTtftPeak(metrics: Metrics | null): number | null {
+  return firstPositive(metrics?.best_session_ttft_ms, metrics?.session_peak_best_ttft_ms);
+}
+
+function allTimeTtftPeak(metrics: Metrics | null): number | null {
+  return firstPositive(metrics?.peak_ttft_ms);
 }
 
 function metricValue(value: number | null, digits: number): string | null {
@@ -235,18 +314,25 @@ function speedMaxDetail({
   suffix?: string;
   label?: string;
 }): { detail?: string; detailTitle?: string } {
-  const sessionText = metricValue(session, digits);
-  const bestSessionText = metricValue(bestSession, digits);
-  const allText = metricValue(all, digits);
+  const sessionText = positiveMetricValue(session, digits);
+  const bestSessionText = positiveMetricValue(bestSession, digits);
+  const allText = positiveMetricValue(all, digits);
   const rows = [
     sessionText ? `current session ${label}: ${sessionText}${suffix}` : null,
     bestSessionText ? `best session ${label}: ${bestSessionText}${suffix}` : null,
     allText ? `all-time ${label}: ${allText}${suffix}` : null,
   ].filter((row): row is string => Boolean(row));
+  const fallbackText = sessionText ?? bestSessionText ?? allText;
   return {
-    detail: sessionText ? `${label} ${sessionText}${suffix}` : undefined,
+    detail: fallbackText ? `${label} ${fallbackText}${suffix}` : undefined,
     detailTitle: rows.length ? rows.join(" | ") : undefined,
   };
+}
+
+function positiveMetricValue(value: number | null, digits: number): string | null {
+  return typeof value === "number" && Number.isFinite(value) && value > 0
+    ? value.toFixed(digits)
+    : null;
 }
 
 function tokenMetric(...values: Array<number | undefined>): string {

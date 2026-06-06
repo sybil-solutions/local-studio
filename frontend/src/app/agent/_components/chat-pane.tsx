@@ -240,6 +240,7 @@ export function ChatPane({
     useChatPaneSendFlow({
       activeTab,
       attachments,
+      browserToolEnabled,
       clearAttachments,
       cwd,
       engine,

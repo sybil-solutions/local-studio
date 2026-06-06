@@ -134,6 +134,10 @@ rm -rf "$HOME/Applications/vllm-studio-mac.app"
 # replaced bundle first and open it by full path — otherwise `open -a` can
 # fail with error -600 (stale registration / ambiguous name) right after ditto.
 killall "vLLM Studio" >/dev/null 2>&1 || true
+for i in $(seq 1 20); do
+  pgrep -x "vLLM Studio" >/dev/null || break
+  sleep 0.5
+done
 /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "/Applications/vLLM Studio.app"
 open "/Applications/vLLM Studio.app"
 ```

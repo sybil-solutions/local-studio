@@ -18,7 +18,6 @@ import {
   type WorkspaceStorage,
 } from "./store";
 import { writeActiveSessions, writePaneState } from "./persistence";
-import { patchSessionPref } from "@/lib/agent/session/prefs";
 import {
   ACTIVE_AGENT_SESSION_OPEN_EVENT,
   ACTIVE_AGENT_SESSION_RENAME_EVENT,
@@ -286,28 +285,6 @@ function runInitialApiEffects(state: WorkspaceState, deps: WorkspaceEffectDeps):
   }
 }
 
-// Session titles persist in two pref keys: by piSessionId AND by
-// `tab:${paneId}:${tabId}`. Opening a new chat often REUSES the focused pane's
-// empty starter (same paneId + tabId), so the per-tab title pref survives and
-// bleeds the previous chat's title into the fresh session once its first
-// message renders — the "new chat shows an old title" bug. The reducer is pure
-// and can't clear localStorage, which is why earlier in-reducer guards never
-// fixed this. Detect starter reuse (focused pane's sessionId unchanged across
-// the openNewSession action) and drop the stale tab-pref title here.
-function clearStaleStarterTitlePref(
-  action: WorkspaceAction,
-  prevState: WorkspaceState,
-  nextState: WorkspaceState,
-): void {
-  if (action.type !== "openNewSession") return;
-  const paneId = nextState.focusedPaneId;
-  const prevPane = prevState.panesById.get(paneId);
-  const nextPane = nextState.panesById.get(paneId);
-  if (!prevPane || !nextPane) return;
-  if (prevPane.sessionId !== nextPane.sessionId) return; // not a reuse
-  patchSessionPref(`tab:${paneId}:${nextPane.sessionId}`, { title: undefined });
-}
-
 function computeActiveSessionBroadcast(
   state: WorkspaceState,
   selectionFor: (id: SessionId) => ToolSelection,
@@ -505,7 +482,6 @@ export function runWorkspaceEffect(
     return;
   }
 
-  clearStaleStarterTitlePref(action, prevState, nextState);
   persistActionEffects(action, prevState, nextState, deps);
   queueReplayEffects(action, prevState, nextState, deps);
 

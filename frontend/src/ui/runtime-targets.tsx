@@ -27,8 +27,6 @@ export const MANAGED_RUNTIME_BACKENDS: readonly ManagedRuntimeInstallBackend[] =
   "mlx",
 ] as const;
 
-export const SETUP_RUNTIME_BACKENDS: readonly ManagedRuntimeInstallBackend[] = ["vllm"] as const;
-
 export const isRunningEngineJob = (job: EngineJob | undefined): boolean =>
   job?.status === "queued" || job?.status === "running";
 

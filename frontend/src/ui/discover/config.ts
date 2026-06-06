@@ -16,10 +16,10 @@ export const TASKS = [
 
 export const SORT_OPTIONS = [
   { value: "", label: "Relevance", icon: Search },
-  { value: "trending", label: "Trending", icon: TrendingUp },
+  { value: "trendingScore", label: "Trending", icon: TrendingUp },
   { value: "downloads", label: "Most Downloads", icon: Download },
   { value: "likes", label: "Most Likes", icon: Heart },
-  { value: RECENT_HF_MODEL_SORT, label: "Newest", icon: Clock },
+  { value: "createdAt", label: "Newest", icon: Clock },
 ];
 
 export const QUANTIZATION_TAGS = [

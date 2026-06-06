@@ -99,7 +99,10 @@ export function DiscoverView({
   const isBrowsingRecentModels = search.trim().length === 0;
   const activeSort = isBrowsingRecentModels ? RECENT_HF_MODEL_SORT : sort;
   const visibleSortOptions = isBrowsingRecentModels
-    ? SORT_OPTIONS.filter((option) => option.value === RECENT_HF_MODEL_SORT)
+    ? SORT_OPTIONS.filter((option) => option.value === RECENT_HF_MODEL_SORT).map((option) => ({
+        ...option,
+        label: "Recent Trending",
+      }))
     : SORT_OPTIONS;
 
   return (

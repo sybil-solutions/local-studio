@@ -42,7 +42,7 @@ const DERIVATIVE_OWNERS = new Set([
 
 const BASE_MODEL_PREFIX = "base_model:";
 export const RECENT_HF_MODEL_MONTHS = 6;
-export const RECENT_HF_MODEL_SORT = "createdAt";
+export const RECENT_HF_MODEL_SORT = "trendingScore";
 
 export type HuggingFaceModelCardPayload = {
   modelId: string;

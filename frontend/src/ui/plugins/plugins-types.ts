@@ -34,6 +34,7 @@ export type CatalogueEntry = {
   unsupportedReason?: string;
   env?: Record<string, string>;
   requiredEnv?: string[];
+  requiresTargetArg?: boolean;
   homepage?: string;
 };
 

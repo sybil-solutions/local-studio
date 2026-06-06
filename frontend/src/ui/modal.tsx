@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { createContext, useContext, useId, type ReactNode } from "react";
 import { X } from "lucide-react";
 import { cx } from "./utils";
 
@@ -117,7 +117,11 @@ interface UiModalProps {
   maxWidth?: string;
 }
 
+const UiModalTitleIdContext = createContext<string | null>(null);
+
 function UiModal({ isOpen, onClose, children, className, maxWidth = "max-w-lg" }: UiModalProps) {
+  const titleId = useId();
+
   if (!isOpen) return null;
 
   return (
@@ -128,13 +132,16 @@ function UiModal({ isOpen, onClose, children, className, maxWidth = "max-w-lg" }
         aria-label="Close"
       />
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
         className={cx(
           "relative z-10 w-full rounded-xl border border-(--ui-border) bg-(--ui-surface) shadow-xl",
           maxWidth,
           className,
         )}
       >
-        {children}
+        <UiModalTitleIdContext.Provider value={titleId}>{children}</UiModalTitleIdContext.Provider>
       </div>
     </div>
   );
@@ -161,6 +168,8 @@ function UiModalHeader({
   showCloseButton = true,
   closeIcon,
 }: UiModalHeaderProps) {
+  const titleId = useContext(UiModalTitleIdContext);
+
   return (
     <div
       className={cx(
@@ -170,7 +179,9 @@ function UiModalHeader({
     >
       <div className="flex items-center gap-2">
         {icon}
-        <h2 className="text-lg font-semibold">{title}</h2>
+        <h2 id={titleId ?? undefined} className="text-lg font-semibold">
+          {title}
+        </h2>
       </div>
       <div className="flex items-center gap-2">
         {actions}
