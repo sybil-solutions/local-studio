@@ -548,6 +548,84 @@ world"}</arguments></tool_call>`,
     });
   });
 
+  test("tool XML parser extracts invoke parameter blocks", async () => {
+    const { parseToolCallsFromContent, stripToolCallsFromContent } =
+      await import("../../../controller/src/modules/proxy/tool-call-parser");
+
+    const content =
+      '<invoke name="set_goal"> <parameter name="objective">Deep research on 0xsero</parameter> </invoke>';
+    const [call] = parseToolCallsFromContent(content);
+
+    expect(call?.function.name).toBe("set_goal");
+    expect(JSON.parse(call?.function.arguments ?? "{}")).toEqual({
+      objective: "Deep research on 0xsero",
+    });
+    expect(stripToolCallsFromContent(content).trim()).toBe("");
+  });
+
+  test("stream proxy extracts invoke XML tool calls without visible content", async () => {
+    const { createToolCallStream } =
+      await import("../../../controller/src/modules/proxy/tool-call-stream");
+    const encoder = new TextEncoder();
+    const upstream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(
+          encoder.encode(
+            `data: ${JSON.stringify({
+              choices: [
+                {
+                  index: 0,
+                  delta: {
+                    content:
+                      '<invoke name="set_goal"> <parameter name="objective">Deep research on 0xsero</parameter> </invoke>',
+                  },
+                },
+              ],
+            })}\n\n`,
+          ),
+        );
+        controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+        controller.close();
+      },
+    });
+
+    const events = await collectSseJson(
+      createToolCallStream(upstream.getReader()),
+    );
+    const visibleContent = events
+      .flatMap((event) =>
+        Array.isArray(event["choices"])
+          ? event["choices"].map((choice) =>
+              String(
+                ((choice as { delta?: Record<string, unknown> }).delta?.[
+                  "content"
+                ] as string | undefined) ?? "",
+              ),
+            )
+          : [],
+      )
+      .join("");
+    const toolEvent = events.find((event) => {
+      const choices = event["choices"];
+      if (!Array.isArray(choices)) return false;
+      const firstChoice = choices[0] as
+        | { delta?: Record<string, unknown> }
+        | undefined;
+      return Array.isArray(firstChoice?.delta?.tool_calls);
+    }) as { choices?: Array<{ delta?: Record<string, unknown> }> } | undefined;
+
+    expect(visibleContent).not.toContain("<invoke");
+    expect(toolEvent?.choices?.[0]?.delta?.tool_calls).toEqual([
+      expect.objectContaining({
+        type: "function",
+        function: expect.objectContaining({
+          name: "set_goal",
+          arguments: JSON.stringify({ objective: "Deep research on 0xsero" }),
+        }),
+      }),
+    ]);
+  });
+
   test("status route reports no active runtime on an isolated test port", async () => {
     const app = await createTestApp();
     const response = await app.request("/status");

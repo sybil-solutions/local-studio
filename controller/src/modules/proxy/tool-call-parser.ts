@@ -65,6 +65,18 @@ const parseParameterBlocks = (block: string): Record<string, unknown> | null => 
   return found ? args : null;
 };
 
+const parseInvokeToolCalls = (content: string, startIndex: number): ToolCall[] => {
+  const toolCalls: ToolCall[] = [];
+  const invokePattern = /<invoke\s+name=(["']?)([^"'\s>]+)\1[^>]*>([\s\S]*?)<\/invoke>/gi;
+  for (const match of content.matchAll(invokePattern)) {
+    const name = String(match[2] ?? "").trim();
+    if (!name) continue;
+    const args = parseParameterBlocks(String(match[3] ?? "")) ?? {};
+    toolCalls.push(buildToolCall(name, args, startIndex + toolCalls.length));
+  }
+  return toolCalls;
+};
+
 const extractBalancedValue = (input: string, start: number): string | null => {
   let index = start;
   while (index < input.length && /\s/.test(input[index] ?? "")) {
@@ -160,6 +172,7 @@ export const stripToolCallsFromContent = (content: string): string => {
   if (!content) return "";
   let cleaned = content;
   cleaned = cleaned.replace(/<tool_call>[\s\S]*?<\/tool_call>/gi, "");
+  cleaned = cleaned.replace(/<invoke\s+name=(["']?)[^"'\s>]+\1[^>]*>[\s\S]*?<\/invoke>/gi, "");
   cleaned = cleaned.replace(/<?use_mcp[\s_]*tool>[\s\S]*?<\/use_mcp[\s_]*tool>/gi, "");
   cleaned = cleaned.replace(/(^|\n)[^\n]*\{[^\n]*\}[^\n]*(?=\n|$)/g, (line) => {
     return parseJsonToolCalls(line, 0).length > 0 ? (line.startsWith("\n") ? "\n" : "") : line;
@@ -204,6 +217,10 @@ export const parseToolCallsFromContent = (content: string): ToolCall[] => {
     }
 
     toolCalls.push(buildToolCall(toolName, args ?? {}, toolCalls.length));
+  }
+
+  if (toolCalls.length === 0) {
+    toolCalls.push(...parseInvokeToolCalls(content, 0));
   }
 
   if (toolCalls.length === 0) {
