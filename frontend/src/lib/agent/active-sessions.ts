@@ -99,6 +99,7 @@ export function mergeActiveAgentSessions(
   prefs: ActiveSessionPrefs = {},
 ): ActiveAgentSessionSnapshot[] {
   const byKey = new Map<string, ActiveAgentSessionSnapshot>();
+  let focusedKey: string | null = null;
   for (const session of previous) {
     if (!isHidden(session, prefs)) byKey.set(sessionStorageKey(session), session);
   }
@@ -106,6 +107,27 @@ export function mergeActiveAgentSessions(
     if (isHidden(session, prefs)) continue;
     const target = resolveMergeTarget(byKey, session);
     byKey.set(target.key, applyIncomingSnapshot(session, target));
+    if (session.focused === true) focusedKey = target.key;
   }
-  return [...byKey.values()].sort((a, b) => startTime(b) - startTime(a));
+  return normalizeFocusedSession(
+    [...byKey.values()].sort((a, b) => startTime(b) - startTime(a)),
+    focusedKey,
+  );
+}
+
+function normalizeFocusedSession(
+  sessions: ActiveAgentSessionSnapshot[],
+  preferredKey: string | null,
+): ActiveAgentSessionSnapshot[] {
+  const focusedKey = preferredKey ?? firstFocusedSessionKey(sessions);
+  if (!focusedKey) return sessions;
+  return sessions.map((session) => {
+    const focused = sessionStorageKey(session) === focusedKey;
+    return session.focused === focused ? session : { ...session, focused };
+  });
+}
+
+function firstFocusedSessionKey(sessions: ActiveAgentSessionSnapshot[]): string | null {
+  const focused = sessions.find((session) => session.focused === true);
+  return focused ? sessionStorageKey(focused) : null;
 }

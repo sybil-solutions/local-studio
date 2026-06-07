@@ -113,17 +113,24 @@ export function ComputerStatusPanel({
 }
 
 function summarizeSessions(sessions: Session[]): StatusTotals {
-  return sessions.reduce(
-    (acc, session) => ({
+  const seen = new Set<string>();
+  return sessions.reduce((acc, session) => {
+    const key = session.piSessionId ? `pi:${session.piSessionId}` : `tab:${session.id}`;
+    if (seen.has(key)) return acc;
+    seen.add(key);
+    return {
       read: acc.read + (session.tokenStats?.read ?? 0),
       write: acc.write + (session.tokenStats?.write ?? 0),
-      current: acc.current + (session.tokenStats?.current ?? 0),
+      current: Math.max(acc.current, session.tokenStats?.current ?? 0),
       messages: acc.messages + session.messages.length,
       queued: acc.queued + (session.queue?.length ?? 0),
       running: acc.running + (isSessionRunning(session) ? 1 : 0),
-    }),
-    { read: 0, write: 0, current: 0, messages: 0, queued: 0, running: 0 },
-  );
+    };
+  }, initialStatusTotals());
+}
+
+function initialStatusTotals(): StatusTotals {
+  return { read: 0, write: 0, current: 0, messages: 0, queued: 0, running: 0 };
 }
 
 function sessionTitle(session: Session | null): string {
@@ -271,7 +278,7 @@ function SessionSummary({
       <div className="truncate text-sm font-medium text-(--fg)">{title}</div>
       <div className="mt-2 grid grid-cols-3 gap-3 font-mono">
         <MiniStat label="session" value={formatTokenCount(sessionTokens)} />
-        <MiniStat label="all" value={formatTokenCount(allTokens)} />
+        <MiniStat label="max" value={formatTokenCount(allTokens)} />
         <MiniStat label="msgs" value={String(messageCount)} />
       </div>
     </div>

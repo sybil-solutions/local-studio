@@ -1172,6 +1172,44 @@ test("agent session merge preserves multiple running sessions instead of normali
   );
 });
 
+test("agent session merge clears stale focused rows when another session is focused", () => {
+  const previous: ActiveAgentSessionSnapshot[] = [
+    {
+      projectId: "personal",
+      cwd: "/workspace/personal",
+      paneId: "p-old",
+      tabId: "tab-old",
+      runtimeSessionId: "rt-old",
+      piSessionId: "pi-old",
+      title: "Old focused",
+      status: "idle",
+      focused: true,
+      updatedAt: "2026-05-26T12:00:01.000Z",
+    },
+  ];
+
+  const incoming: ActiveAgentSessionSnapshot[] = [
+    {
+      projectId: "personal",
+      cwd: "/workspace/personal",
+      paneId: "p-new",
+      tabId: "tab-new",
+      runtimeSessionId: "rt-new",
+      piSessionId: "pi-new",
+      title: "New focused",
+      status: "running",
+      focused: true,
+      updatedAt: "2026-05-26T12:00:02.000Z",
+    },
+  ];
+
+  const merged = mergeActiveAgentSessions(previous, incoming);
+
+  assert.equal(merged.find((session) => session.piSessionId === "pi-new")?.focused, true);
+  assert.equal(merged.find((session) => session.piSessionId === "pi-old")?.focused, false);
+  assert.equal(merged.filter((session) => session.focused === true).length, 1);
+});
+
 test("completed runtime remains running but not active after the prompt promise settles", () => {
   const status = piStatusFromEvents({
     running: true,
