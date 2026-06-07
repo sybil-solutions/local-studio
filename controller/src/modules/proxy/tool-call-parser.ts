@@ -34,6 +34,17 @@ const coerceArguments = (value: unknown): string => {
   }
 };
 
+const toolCallRecordFromParsed = (parsed: unknown): { name: string; args: unknown } | null => {
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+  const record = parsed as Record<string, unknown>;
+  const name = String(record["tool"] ?? record["name"] ?? "").trim();
+  if (!name) return null;
+  return {
+    name,
+    args: record["args"] ?? record["arguments"] ?? record["parameters"] ?? {},
+  };
+};
+
 const parseParameterBlocks = (block: string): Record<string, unknown> | null => {
   const args: Record<string, unknown> = {};
   const parameterPattern = /<parameter(?:\s+name=|=)([^>\s]+)>([\s\S]*?)<\/parameter>/gi;
@@ -124,6 +135,38 @@ const extractBalancedValue = (input: string, start: number): string | null => {
   return null;
 };
 
+const parseJsonToolCalls = (content: string, startIndex: number): ToolCall[] => {
+  const toolCalls: ToolCall[] = [];
+  let cursor = 0;
+  while (cursor < content.length) {
+    const objectStart = content.indexOf("{", cursor);
+    if (objectStart < 0) break;
+    const raw = extractBalancedValue(content, objectStart);
+    if (!raw) {
+      cursor = objectStart + 1;
+      continue;
+    }
+    const parsed = parseJsonCandidate(raw);
+    const record = toolCallRecordFromParsed(parsed);
+    if (record) {
+      toolCalls.push(buildToolCall(record.name, record.args, startIndex + toolCalls.length));
+    }
+    cursor = objectStart + raw.length;
+  }
+  return toolCalls;
+};
+
+export const stripToolCallsFromContent = (content: string): string => {
+  if (!content) return "";
+  let cleaned = content;
+  cleaned = cleaned.replace(/<tool_call>[\s\S]*?<\/tool_call>/gi, "");
+  cleaned = cleaned.replace(/<?use_mcp[\s_]*tool>[\s\S]*?<\/use_mcp[\s_]*tool>/gi, "");
+  cleaned = cleaned.replace(/(^|\n)[^\n]*\{[^\n]*\}[^\n]*(?=\n|$)/g, (line) => {
+    return parseJsonToolCalls(line, 0).length > 0 ? (line.startsWith("\n") ? "\n" : "") : line;
+  });
+  return cleaned;
+};
+
 const buildToolCall = (name: string, args: unknown, index: number): ToolCall => ({
   index,
   id: createToolCallId(),
@@ -152,18 +195,19 @@ export const parseToolCallsFromContent = (content: string): ToolCall[] => {
     if (!toolName) {
       const jsonCandidate = block.match(/\{[\s\S]*\}/);
       const parsed = jsonCandidate ? parseJsonCandidate(jsonCandidate[0]) : null;
-      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-        const name = String((parsed as Record<string, unknown>)["name"] ?? "").trim();
-        const argumentsValue = (parsed as Record<string, unknown>)["arguments"];
-        if (name) {
-          toolCalls.push(buildToolCall(name, argumentsValue ?? {}, toolCalls.length));
-          continue;
-        }
+      const record = toolCallRecordFromParsed(parsed);
+      if (record) {
+        toolCalls.push(buildToolCall(record.name, record.args, toolCalls.length));
+        continue;
       }
       continue;
     }
 
     toolCalls.push(buildToolCall(toolName, args ?? {}, toolCalls.length));
+  }
+
+  if (toolCalls.length === 0) {
+    toolCalls.push(...parseJsonToolCalls(content, 0));
   }
 
   if (toolCalls.length === 0) {

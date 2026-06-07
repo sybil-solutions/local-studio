@@ -1,5 +1,9 @@
 import { randomUUID } from "node:crypto";
-import { parseToolCallsFromContent, type ToolCall } from "./tool-call-parser";
+import {
+  parseToolCallsFromContent,
+  stripToolCallsFromContent,
+  type ToolCall,
+} from "./tool-call-parser";
 import { REASONING_FIELDS, firstReasoningField } from "./reasoning-fields";
 import { createThinkRewriter, thinkingTagPrefixIsPartial } from "./think-rewriter";
 
@@ -42,9 +46,7 @@ export const createToolCallStream = (
     }
   };
   const stripToolXmlDelta = (text: string): string => {
-    return text
-      .replace(/<tool_call>[\s\S]*?<\/tool_call>/gi, "")
-      .replace(/<?use_mcp[\s_]*tool>[\s\S]*?<\/use_mcp[\s_]*tool>/gi, "");
+    return stripToolCallsFromContent(text);
   };
 
   const normalizeTextDelta = (

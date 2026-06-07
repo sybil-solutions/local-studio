@@ -1,11 +1,9 @@
-import { parseToolCallsFromContent } from "./tool-call-parser";
+import { parseToolCallsFromContent, stripToolCallsFromContent } from "./tool-call-parser";
 import { firstReasoningField } from "./reasoning-fields";
 
 const stripToolCallXmlBlocks = (text: string): string => {
   if (!text) return "";
-  let cleaned = text;
-  cleaned = cleaned.replace(/<tool_call>[\s\S]*?<\/tool_call>/gi, "");
-  cleaned = cleaned.replace(/<?use_mcp[\s_]*tool>[\s\S]*?<\/use_mcp[\s_]*tool>/gi, "");
+  let cleaned = stripToolCallsFromContent(text);
   cleaned = cleaned.replace(/\n{3,}/g, "\n\n");
   return cleaned.trim();
 };
