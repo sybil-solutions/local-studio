@@ -13,7 +13,6 @@ import {
   SESSION_PREFS_CHANGED_EVENT,
   SESSIONS_CHANGED_EVENT,
 } from "@/lib/agent/workspace/events";
-import { persistActiveAgentSessions } from "@/lib/agent/workspace/store";
 import {
   hydrateSessionPrefsFromDesktop,
   loadSessionPrefs,
@@ -103,10 +102,11 @@ export function useActiveAgentSessionsEffect({
     const onActiveSessions = (event: Event) => {
       const detail = (event as CustomEvent<{ sessions?: ActiveAgentSession[] }>).detail;
       const sessions = Array.isArray(detail?.sessions) ? detail.sessions : [];
+      // The broadcaster (workspace effects) already persisted this snapshot
+      // before dispatching — re-persisting here was a double merge+write.
       setActiveSessions(
         sessions.length > 0 ? mergeActiveAgentSessions([], sessions, loadSessionPrefs()) : [],
       );
-      persistActiveAgentSessions(sessions);
     };
     window.addEventListener(ACTIVE_AGENT_SESSIONS_EVENT, onActiveSessions);
     return () => window.removeEventListener(ACTIVE_AGENT_SESSIONS_EVENT, onActiveSessions);

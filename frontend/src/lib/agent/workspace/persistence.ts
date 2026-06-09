@@ -129,7 +129,8 @@ export function writePaneState(
     PANE_STATE_KEY,
     JSON.stringify({ version: 1, layout: state.layout, focusedPaneId: state.focusedPaneId, panes }),
   );
-  setStorage(storage, PANE_LAYOUT_KEY, JSON.stringify(state.layout));
+  // PANE_LAYOUT_KEY is legacy: still read as a restore fallback for very old
+  // profiles (see loadInitialFromStorage) but no longer written.
 }
 
 export function writeActiveSessions(
