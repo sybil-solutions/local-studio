@@ -361,7 +361,7 @@ function ActivityTreeItem({ item }: { item: ActivityTreeItem }) {
 
 function ReasoningLeaf({ block }: { block: ThinkingBlock }) {
   return (
-    <pre className="max-w-full overflow-x-auto whitespace-pre-wrap rounded-lg bg-(--surface)/40 px-3 py-2 font-mono text-[length:var(--fs-xs)] leading-[1.6] text-(--dim)/80">
+    <pre className="max-w-full overflow-x-auto whitespace-pre-wrap px-3 py-1.5 font-mono text-[length:var(--fs-xs)] leading-[1.6] text-(--dim)/80">
       {block.text}
     </pre>
   );

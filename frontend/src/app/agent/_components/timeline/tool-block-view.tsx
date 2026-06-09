@@ -207,7 +207,7 @@ function HighlightedToolSource({ body, lang }: { body: string; lang: string }) {
   }, [body, lang]);
 
   const className =
-    "max-h-[420px] max-w-full overflow-auto rounded-lg border border-(--border)/50 bg-(--surface)/35 p-3 font-mono text-[length:var(--fs-xs)] leading-4 text-(--fg)";
+    "max-h-[420px] max-w-full overflow-auto px-3 py-1.5 font-mono text-[length:var(--fs-xs)] leading-4 text-(--fg)";
 
   if (highlighted === null) {
     return <pre className={className}>{body}</pre>;
