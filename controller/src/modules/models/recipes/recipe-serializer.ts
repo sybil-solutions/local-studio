@@ -1,8 +1,6 @@
-import * as zod from "zod";
+import { z } from "zod";
 import type { Recipe } from "../types";
 import { asRecipeId } from "../../../types/brand";
-
-const z = zod.z ?? (zod as unknown as { default: typeof zod }).default;
 
 /**
  * Normalize raw recipe input before validation.
