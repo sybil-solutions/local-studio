@@ -141,7 +141,7 @@ export function SetupView({
 
         {error && (
           <Alert variant="error" icon={<AlertTriangle className="h-4 w-4" />} className="mb-6">
-            {error}
+            <SetupErrorBody error={error} />
           </Alert>
         )}
 
@@ -223,5 +223,21 @@ export function SetupView({
         )}
       </div>
     </AppPage>
+  );
+}
+
+/** Failed runtime jobs report a headline plus a multi-line command-output tail. */
+function SetupErrorBody({ error }: { error: string }) {
+  const [headline, ...rest] = error.split("\n");
+  const detail = rest.join("\n").trim();
+  return (
+    <>
+      <p className="break-words">{headline}</p>
+      {detail ? (
+        <pre className="mt-2 max-h-48 overflow-y-auto whitespace-pre-wrap break-all font-mono text-xs opacity-90">
+          {detail}
+        </pre>
+      ) : null}
+    </>
   );
 }

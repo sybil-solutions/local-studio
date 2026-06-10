@@ -12,6 +12,10 @@ import type {
   StudioSettings,
 } from "@/lib/types";
 import { useDownloads } from "@/hooks/use-downloads";
+import {
+  describeFailedEngineJob,
+  isTerminalEngineJob,
+} from "@/features/settings/runtime-targets";
 import { buildStarterRecipe } from "./setup-helpers";
 
 type ManagedSetupBackend = Extract<EngineBackend, "vllm" | "sglang" | "mlx">;
@@ -127,6 +131,11 @@ export function useSetup() {
         warnings.push(`controller diagnostics: ${setupErrorMessage(diagnosticsResult.reason)}`);
       }
 
+      if (settingsResult.status === "rejected" && diagnosticsResult.status === "rejected") {
+        setError(CONTROLLER_UNREACHABLE_MESSAGE);
+        return;
+      }
+
       setRecommendations([]);
       setMaxVram(0);
       setRuntimeTargets([]);
@@ -169,20 +178,31 @@ export function useSetup() {
   }, [modelsDir]);
 
   const finishRuntimeJob = useCallback(async (jobId: string): Promise<EngineJob> => {
-    let finalJob = (await api.getRuntimeJob(jobId)).job;
-    for (
-      let attempt = 0;
-      attempt < 120 && (finalJob.status === "queued" || finalJob.status === "running");
-      attempt += 1
-    ) {
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-      finalJob = (await api.getRuntimeJob(jobId)).job;
+    const startedAt = Date.now();
+    let job = await fetchRuntimeJob(jobId);
+    while (!isTerminalEngineJob(job)) {
+      const elapsedMs = Date.now() - startedAt;
+      if (elapsedMs >= RUNTIME_JOB_POLL_CEILING_MS) {
+        throw new Error(
+          `The ${job.backend} ${job.type} is still running on the controller after ` +
+            `${Math.round(RUNTIME_JOB_POLL_CEILING_MS / 60_000)} minutes. It keeps running ` +
+            "server-side — watch it under Settings → Engines or in the controller logs, then " +
+            "reload this page once it finishes.",
+        );
+      }
+      const intervalMs =
+        elapsedMs < RUNTIME_JOB_FAST_POLL_WINDOW_MS
+          ? RUNTIME_JOB_FAST_POLL_MS
+          : RUNTIME_JOB_SLOW_POLL_MS;
+      await new Promise((resolve) => setTimeout(resolve, intervalMs));
+      const next = await fetchRuntimeJob(jobId);
+      job = next;
       setRuntimeJobs((current) => [
-        finalJob,
-        ...current.filter((candidate) => candidate.id !== finalJob.id),
+        next,
+        ...current.filter((candidate) => candidate.id !== next.id),
       ]);
     }
-    return finalJob;
+    return job;
   }, []);
 
   const runRuntimeJob = useCallback(
@@ -195,13 +215,18 @@ export function useSetup() {
           job,
           ...current.filter((candidate) => candidate.id !== job.id),
         ]);
-        await finishRuntimeJob(job.id);
-        await refreshRuntimeState();
+        const finalJob = await finishRuntimeJob(job.id);
+        if (finalJob.status === "error") {
+          setError(describeFailedEngineJob(finalJob));
+        }
         const refreshed = await api.getStudioDiagnostics();
         setDiagnostics(refreshed);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Runtime job failed");
       } finally {
+        // Always re-sync targets/jobs so a job that errored or vanished with a
+        // controller restart does not keep rendering as running.
+        await refreshRuntimeState();
         setUpgrading(false);
       }
     },
@@ -378,6 +403,36 @@ export function useSetup() {
 }
 
 const getSetupSnapshot = (): number => 0;
+
+// Server-side installs can legitimately run for ~30 minutes; poll fast at
+// first, then back off, and only give up well past the server install timeout.
+const RUNTIME_JOB_POLL_CEILING_MS = 35 * 60_000;
+const RUNTIME_JOB_FAST_POLL_WINDOW_MS = 60_000;
+const RUNTIME_JOB_FAST_POLL_MS = 1_000;
+const RUNTIME_JOB_SLOW_POLL_MS = 3_000;
+
+const CONTROLLER_UNREACHABLE_MESSAGE =
+  "The controller is unreachable, so setup cannot start. Start it with " +
+  "`cd controller && bun src/main.ts` and reload this page.";
+
+async function fetchRuntimeJob(jobId: string): Promise<EngineJob> {
+  try {
+    return (await api.getRuntimeJob(jobId)).job;
+  } catch (err) {
+    if (isMissingRuntimeJobError(err)) {
+      // Runtime jobs live in controller memory, so a 404 mid-poll means the
+      // controller restarted and the install died with it.
+      throw new Error(
+        "The controller restarted and lost this install job. Re-run the install.",
+      );
+    }
+    throw err;
+  }
+}
+
+function isMissingRuntimeJobError(err: unknown): boolean {
+  return err instanceof Error && (err as Error & { status?: number }).status === 404;
+}
 
 function withSetupTimeout<T>(promise: Promise<T>, label: string, timeoutMs = 8_000): Promise<T> {
   return Promise.race([

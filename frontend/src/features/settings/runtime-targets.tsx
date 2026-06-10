@@ -37,6 +37,34 @@ export const MANAGED_RUNTIME_BACKENDS: readonly ManagedRuntimeInstallBackend[] =
 export const isRunningEngineJob = (job: EngineJob | undefined): boolean =>
   job?.status === "queued" || job?.status === "running";
 
+export const isTerminalEngineJob = (job: EngineJob): boolean =>
+  job.status === "success" || job.status === "error" || job.status === "cancelled";
+
+const ENGINE_JOB_OUTPUT_TAIL_CHARS = 500;
+
+function clipEngineJobOutputTail(outputTail: string | undefined): string | null {
+  const tail = outputTail?.trim();
+  if (!tail) return null;
+  return tail.length > ENGINE_JOB_OUTPUT_TAIL_CHARS
+    ? `…${tail.slice(-ENGINE_JOB_OUTPUT_TAIL_CHARS)}`
+    : tail;
+}
+
+/** Multi-line failure summary for a job that ended in `error`: message, reason, output tail. */
+export function describeFailedEngineJob(job: EngineJob): string {
+  const headline = job.message?.trim() || `${job.backend} ${job.type} failed`;
+  const lines = [headline];
+  const reason = job.error?.trim();
+  if (reason && reason !== headline) {
+    lines.push(reason);
+  }
+  const tail = clipEngineJobOutputTail(job.outputTail);
+  if (tail) {
+    lines.push(tail);
+  }
+  return lines.join("\n");
+}
+
 export const jobForRuntimeTarget = (
   jobs: EngineJob[],
   target: RuntimeTarget,
@@ -306,7 +334,10 @@ export function RuntimeTargetStatus({
 }
 
 function RuntimeJobMessage({ job }: { job: EngineJob }) {
-  const tone = job.status === "error" ? "danger" : "muted";
+  const failed = job.status === "error";
+  const tone = failed ? "danger" : "muted";
+  const reason = job.error?.trim();
+  const tail = clipEngineJobOutputTail(job.outputTail);
   return (
     <>
       <RowDetailLine tone={tone} size="md">
@@ -317,12 +348,33 @@ function RuntimeJobMessage({ job }: { job: EngineJob }) {
           {job.command}
         </RowDetailLine>
       ) : null}
-      {job.error || job.outputTail ? (
+      {reason && reason !== job.message?.trim() ? (
         <RowDetailLine mono clamp tone={tone} size="md">
-          {job.error ?? job.outputTail}
+          {reason}
         </RowDetailLine>
       ) : null}
+      {tail ? <RuntimeJobOutputTail tail={tail} failed={failed} /> : null}
     </>
+  );
+}
+
+function RuntimeJobOutputTail({ tail, failed }: { tail: string; failed: boolean }) {
+  if (!failed) {
+    return (
+      <RowDetailLine mono clamp size="md">
+        {tail}
+      </RowDetailLine>
+    );
+  }
+  return (
+    <details className="bg-(--ui-bg) border border-(--ui-border) rounded-md overflow-hidden">
+      <summary className="cursor-pointer px-2 py-1 text-[length:var(--fs-sm)] text-(--ui-muted)">
+        Last output
+      </summary>
+      <pre className="px-2 py-1 text-[length:var(--fs-sm)] font-mono text-(--ui-danger)/80 whitespace-pre-wrap break-all">
+        {tail}
+      </pre>
+    </details>
   );
 }
 

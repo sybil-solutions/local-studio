@@ -54,9 +54,11 @@ const helperEndMarker = "function isThinkingContentBlock";
 const originalJoin = `const assistantText = assistantTextParts.map((part) => part.text).join("");`;
 const patchedJoin = `const assistantText = vllmStudioJoinTextParts(assistantTextParts);`;
 
+let found = 0;
 let patched = 0;
 for (const file of targetFiles) {
   if (!existsSync(file)) continue;
+  found += 1;
   let source = readFileSync(file, "utf8");
   let next = source;
   if (!next.includes(helperMarker)) {
@@ -83,6 +85,18 @@ for (const file of targetFiles) {
   }
 }
 
-if (patched > 0) {
+if (found === 0) {
+  // Loud but non-fatal: a missing pi-ai layout means agent streaming will
+  // misrender assistant text, and silence here hides that until runtime.
+  console.warn(
+    [
+      "WARNING: patch-pi-ai-openai-text-boundaries.mjs found no pi-ai openai-completions.js to patch.",
+      "Checked:",
+      ...targetFiles.map((file) => `  - ${file}`),
+      "The @earendil-works/pi-ai package layout may have changed. Agent streaming may misrender",
+      "assistant text (missing paragraph/list boundaries) until this patch script is updated.",
+    ].join("\n"),
+  );
+} else if (patched > 0) {
   console.log(`Patched pi-ai OpenAI assistant text boundaries in ${patched} file(s).`);
 }

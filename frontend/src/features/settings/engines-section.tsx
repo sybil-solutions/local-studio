@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState, useSyncExternalStore } from "react";
+import { useCallback, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { ArrowUpCircle, Check, Loader2, XCircle } from "lucide-react";
 import { useRealtimeStatus } from "@/hooks/use-realtime-status";
 import api from "@/lib/api";
@@ -9,6 +9,7 @@ import {
   RowDetailLine,
   SettingsButton,
   SettingsGroup,
+  SettingsNotice,
   SettingsRow,
   SettingsValue,
   StatusPill,
@@ -20,6 +21,7 @@ import {
   RuntimeTargetRows,
   RuntimeTargetStatus,
   isManagedRuntimeTarget,
+  isRunningEngineJob,
   type ManagedRuntimeInstallBackend,
 } from "./runtime-targets";
 import {
@@ -34,17 +36,39 @@ export function EnginesSection({ runtime }: { runtime?: SystemRuntimeInfo | null
   const { runtimeSummary, status, lease } = useRealtimeStatus();
   const [targets, setTargets] = useState<RuntimeTarget[]>([]);
   const [jobs, setJobs] = useState<EngineJob[]>([]);
+  const [lostJobNotice, setLostJobNotice] = useState<string | null>(null);
+  const knownJobsRef = useRef<EngineJob[]>([]);
 
   const backends = runtime?.backends ?? runtimeSummary?.backends;
   const gpuMon = runtime?.gpu_monitoring ?? runtimeSummary?.gpu_monitoring;
   const activeBackend = status?.process?.backend;
 
   const refreshRuntimeJobs = useCallback(async () => {
+    // Keep the last known payloads on fetch failure: wiping to [] would make a
+    // transient network blip indistinguishable from a controller restart.
     const [targetPayload, jobPayload] = await Promise.all([
-      api.getRuntimeTargets().catch(() => ({ targets: [] })),
-      api.getRuntimeJobs().catch(() => ({ jobs: [] })),
+      api.getRuntimeTargets().catch(() => null),
+      api.getRuntimeJobs().catch(() => null),
     ]);
-    setTargets(targetPayload.targets);
+    if (targetPayload) {
+      setTargets(targetPayload.targets);
+    }
+    if (!jobPayload) return;
+    // Runtime jobs live in controller memory: a running job vanishing from a
+    // successful poll means the controller restarted and the install died.
+    const lostJob = knownJobsRef.current.find(
+      (job) =>
+        isRunningEngineJob(job) && !jobPayload.jobs.some((candidate) => candidate.id === job.id),
+    );
+    if (lostJob) {
+      setLostJobNotice(
+        `The controller restarted while the ${lostJob.backend} ${lostJob.type} job was running, ` +
+          "so the job was lost. Re-run the install.",
+      );
+    } else if (jobPayload.jobs.some((job) => isRunningEngineJob(job))) {
+      setLostJobNotice(null);
+    }
+    knownJobsRef.current = jobPayload.jobs;
     setJobs(jobPayload.jobs);
   }, []);
 
@@ -69,6 +93,11 @@ export function EnginesSection({ runtime }: { runtime?: SystemRuntimeInfo | null
         description="Model-serving runtimes installed on the controller host."
         actions={<HydrationStatus hasRows={hasRows} />}
       >
+        {lostJobNotice ? (
+          <SettingsNotice tone="warning" className="m-3">
+            {lostJobNotice}
+          </SettingsNotice>
+        ) : null}
         <EngineRows
           activeBackend={activeBackend}
           jobs={jobs}
@@ -142,29 +171,49 @@ function EngineRows({
   onJobCreated: () => Promise<void>;
   view: EngineRowsView;
 }) {
+  const [actionError, setActionError] = useState<string | null>(null);
+  const runJob = useCallback(
+    async (payload: {
+      backend: EngineJob["backend"];
+      targetId?: string;
+      type: "install" | "update";
+    }) => {
+      setActionError(null);
+      try {
+        await api.createRuntimeJob(payload);
+        await onJobCreated();
+      } catch (err) {
+        const reason = err instanceof Error ? err.message : "request failed";
+        setActionError(`Could not start the ${payload.backend} ${payload.type}: ${reason}`);
+      }
+    },
+    [onJobCreated],
+  );
   const handleTargetAction = useCallback(
-    async (target: RuntimeTarget) => {
-      await api.createRuntimeJob({
+    (target: RuntimeTarget) =>
+      runJob({
         backend: target.backend,
         targetId: target.id,
         type: target.installed ? "update" : "install",
-      });
-      await onJobCreated();
-    },
-    [onJobCreated],
+      }),
+    [runJob],
   );
   const handleManagedInstall = useCallback(
-    async (backend: ManagedRuntimeInstallBackend) => {
-      await api.createRuntimeJob({ backend, type: "install" });
-      await onJobCreated();
-    },
-    [onJobCreated],
+    (backend: ManagedRuntimeInstallBackend) => runJob({ backend, type: "install" }),
+    [runJob],
   );
+
+  const errorNotice = actionError ? (
+    <SettingsNotice tone="danger" className="m-3">
+      {actionError}
+    </SettingsNotice>
+  ) : null;
 
   if (view.kind === "targets") {
     const discoveredTargets = view.targets.filter((target) => !isManagedRuntimeTarget(target));
     return (
       <>
+        {errorNotice}
         <ManagedRuntimeInstallRows
           backends={MANAGED_RUNTIME_BACKENDS}
           targets={view.targets}
