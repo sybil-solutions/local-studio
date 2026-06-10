@@ -13,7 +13,7 @@ interface CoordinatorDeps { config: Config;
   downloadManager: DownloadManager; abortRunsForModel?: (modelName: string) => number;
 }
 export class EngineCoordinator implements EngineService {
-  private readonly switchLock = new AsyncLock(); private currentRecipe: Recipe | null = null;
+  private readonly switchLock = new AsyncLock();
   private activeLifecycleAbort: AbortController | null = null; private activeLaunchPid: number | null = null;
   private lifecycleIntentSerial = 0; private autoActivationBlocked = false;
  constructor(private readonly deps: CoordinatorDeps) {}
@@ -42,10 +42,9 @@ export class EngineCoordinator implements EngineService {
       }
       const current = await this.deps.processManager.findInferenceProcess(this.deps.config.inference_port); const initialAbort = await abortIfNeeded(recipe);
       if (initialAbort) return initialAbort;
-      if (!recipe && !current) { this.currentRecipe = null;
-        return { ok: true }; }
+      if (!recipe && !current) { return { ok: true }; }
  if (recipe && current && isRecipeRunning(recipe, current)) {
-        this.currentRecipe = recipe; return { ok: true };
+        return { ok: true };
       }
       const killCurrent = async (process: ProcessInfo): Promise<boolean> => { const evictedRecipe = this.findRecipeForProcess(process);
         if (evictedRecipe) { await this.deps.eventManager.publishLaunchProgress(evictedRecipe.id, "stopping", `Stopping ${evictedRecipe.name}...`, 0.1);
@@ -59,8 +58,7 @@ export class EngineCoordinator implements EngineService {
         await delay(500); }
  const postEvictAbort = await abortIfNeeded(recipe);
       if (postEvictAbort) return postEvictAbort;
-      if (!recipe) { this.currentRecipe = null;
-        return { ok: true }; }
+      if (!recipe) { return { ok: true }; }
  await this.deps.eventManager.publishLaunchProgress(recipe.id, "launching", `Starting ${recipe.name}...`, 0.25);
       const launch = await this.deps.processManager.launchModel(recipe); spawnedPid = launch.pid;
       this.activeLaunchPid = launch.pid; if (!launch.success) {
@@ -76,7 +74,7 @@ export class EngineCoordinator implements EngineService {
  if (isAborted()) {
         return publishCancelled(recipe); }
  if (ready.ready) {
-        this.currentRecipe = recipe; await this.deps.eventManager.publishLaunchProgress(recipe.id, "ready", "Model is ready!", 1);
+        await this.deps.eventManager.publishLaunchProgress(recipe.id, "ready", "Model is ready!", 1);
         return { ok: true }; }
  if (launch.pid) {
         await this.deps.processManager.killProcess(launch.pid, true); }
@@ -184,7 +182,7 @@ export class EngineCoordinator implements EngineService {
               to_backend: recipe.backend, from_model: fromModel,
               from_backend: fromBackend, })
           ); }
-        this.currentRecipe = recipe; return { switched: true, error: null };
+        return { switched: true, error: null };
       }
       if (launch.pid) { await this.deps.processManager.killProcess(launch.pid, true);
       } if (publishEvents) {
@@ -199,9 +197,6 @@ export class EngineCoordinator implements EngineService {
         this.activeLaunchPid = null; }
       release(); }
   }
-  getCurrentRecipe(): Recipe | null {
-    return this.currentRecipe; }
-
   async getCurrentProcess(): Promise<ProcessInfo | null> { return this.deps.processManager.findInferenceProcess(this.deps.config.inference_port);
   }
 

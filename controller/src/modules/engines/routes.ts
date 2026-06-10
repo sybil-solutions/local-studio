@@ -86,8 +86,11 @@ export const registerEngineRoutes = (app: Hono, context: AppContext): void => {
     const current = await observeControllerFunction(context, "recipes.list.getCurrentProcess", () =>
       context.engineService.getCurrentProcess()
     );
-    const launchingRecipe = context.engineService.getCurrentRecipe();
-    const launchingId = launchingRecipe?.id ?? null;
+    // launchState is the transitional truth: it marks the recipe between
+    // /launch acceptance and readiness. The process scan is the running truth.
+    // (The old getCurrentRecipe() cache showed a crashed model as "starting"
+    // forever and a launching one as "stopped".)
+    const launchingId = context.launchState.getLaunchingRecipeId();
     const result = recipes.map((recipe) => {
       let status = "stopped";
       if (launchingId === recipe.id) status = "starting";

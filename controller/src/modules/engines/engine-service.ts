@@ -53,7 +53,6 @@ export interface EngineService {
   ): Promise<SetActiveRecipeResult>;
   ensureActive(recipe: Recipe, options?: EnsureActiveOptions): Promise<EnsureActiveResult>;
 
-  getCurrentRecipe(): Recipe | null;
   getCurrentProcess(): Promise<ProcessInfo | null>;
 
   startDownload(request: DownloadRequest): Promise<ModelDownload>;
