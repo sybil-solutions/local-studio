@@ -25,6 +25,9 @@ jobs:
       - name: Cleanup checks
         working-directory: ./controller
         run: bun run check
+      - name: Integration tests
+        working-directory: ./controller
+        run: bun run test:integration
 
   cli:
     runs-on: ubuntu-latest
@@ -62,3 +65,6 @@ jobs:
       - name: Cleanup checks
         working-directory: ./frontend
         run: npm run check:cleanup
+      - name: E2E tests
+        working-directory: ./frontend
+        run: npm run test:e2e

@@ -271,7 +271,8 @@ pkill -f "next dev" 2>/dev/null || true
 fuser -k 3000/tcp >/dev/null 2>&1 || true
 sleep 1
 export BACKEND_URL=http://localhost:8080
-nohup npx next start > /tmp/frontend-stdout.log 2>&1 &
+# Use the standalone start (package.json "start"); "next start" breaks SSE streaming.
+nohup node scripts/start-standalone.mjs > /tmp/frontend-stdout.log 2>&1 &
 REMOTE
   wait_port 3000 frontend 15 || return 1
   ok "frontend :3000 (production)"

@@ -1,5 +1,17 @@
 #!/bin/sh
 set -eu
 
+staged="$(git diff --cached --name-only)"
+
 echo "pre-commit: frontend staged lint/format + typecheck"
 npm --prefix frontend run precommit
+
+if printf '%s\n' "$staged" | grep -q '^controller/'; then
+  echo "pre-commit: controller typecheck"
+  (cd controller && bun run typecheck)
+fi
+
+if printf '%s\n' "$staged" | grep -q '^cli/'; then
+  echo "pre-commit: cli typecheck"
+  (cd cli && bun run typecheck)
+fi

@@ -5,7 +5,9 @@ FROM base AS deps
 WORKDIR /app/frontend
 
 COPY frontend/package.json frontend/package-lock.json* ./
-RUN npm ci
+# Lifecycle scripts (postinstall patch, git-hook prepare) need the full source
+# tree; run them in the builder stage instead.
+RUN npm ci --ignore-scripts
 
 # Rebuild the source code only when needed
 FROM base AS builder
@@ -17,6 +19,8 @@ COPY frontend/ .
 ARG NEXT_PUBLIC_API_URL
 ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
 
+# Apply the pi-ai patch that npm ci --ignore-scripts skipped in the deps stage
+RUN node scripts/patch-pi-ai-openai-text-boundaries.mjs
 RUN npm run build
 
 # Production image, copy all the files and run next
