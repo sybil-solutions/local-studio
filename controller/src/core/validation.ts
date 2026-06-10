@@ -20,11 +20,6 @@ export const optionalString = (
   key: string,
 ): string | undefined => (typeof record[key] === "string" ? (record[key] as string) : undefined);
 
-export const optionalBoolean = (
-  record: Record<string, unknown>,
-  key: string,
-): boolean | undefined => (typeof record[key] === "boolean" ? (record[key] as boolean) : undefined);
-
 /**
  * Optional string-array field. Matches the historical inline guards:
  * non-array values are treated as absent; an array containing non-string

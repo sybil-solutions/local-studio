@@ -1,5 +1,5 @@
 import type { Database } from "bun:sqlite";
-import { openSqliteDatabase } from "./sqlite";
+import { openSqliteDatabase, toFiniteNumber, toNullableNumber } from "./sqlite";
 
 export interface InferenceRequestRecord {
   model: string;
@@ -28,22 +28,6 @@ const buildModelFilter = (
   const params = [...knownModels];
   const placeholders = params.map(() => "?").join(",");
   return { clause: ` AND model IN (${placeholders})`, params };
-};
-
-/**
- * Convert SQLite aggregate values into finite numbers.
- * @param value - Raw SQLite aggregate value.
- * @returns Finite number or zero.
- */
-const toFiniteNumber = (value: unknown): number => {
-  const parsed = Number(value ?? 0);
-  return Number.isFinite(parsed) ? parsed : 0;
-};
-
-const toNullableNumber = (value: unknown): number | null => {
-  if (value === null || value === undefined) return null;
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : null;
 };
 
 /**

@@ -19,6 +19,22 @@ const dropObsoleteTables = (db: Database): void => {
   }
 };
 
+/**
+ * Convert SQLite aggregate values into finite numbers.
+ * @param value - Raw SQLite aggregate value.
+ * @returns Finite number or zero.
+ */
+export const toFiniteNumber = (value: unknown): number => {
+  const parsed = Number(value ?? 0);
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+
+export const toNullableNumber = (value: unknown): number | null => {
+  if (value === null || value === undefined) return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
 export const openSqliteDatabase = (dbPath: string): Database => {
   const db = new Database(dbPath);
   db.run("PRAGMA busy_timeout = 5000");

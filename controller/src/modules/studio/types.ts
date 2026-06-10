@@ -6,7 +6,3 @@ export interface StudioModelRecommendation {
   description: string;
   tags: string[];
 }
-
-export interface StudioModuleDefaults {
-  uiRefreshMs: number;
-}

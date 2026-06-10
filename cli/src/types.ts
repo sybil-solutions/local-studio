@@ -1,18 +1,16 @@
-import type { RecipePayload } from "../../controller/src/modules/shared/recipe-types";
+import type { GPU } from "../../shared/contracts/observability";
+import type { RecipePayload } from "../../shared/contracts/recipes";
 
 export type View = 'dashboard' | 'recipes' | 'status' | 'config';
 
-export interface GPU {
-  index: number;
-  name: string;
-  memory_used: number;
-  memory_total: number;
-  utilization: number;
-  temperature: number;
-  power_draw: number;
-}
+export type GpuSummary = Required<
+  Pick<
+    GPU,
+    "index" | "name" | "memory_used" | "memory_total" | "utilization" | "temperature" | "power_draw"
+  >
+>;
 
-export type Recipe = Pick<
+export type RecipeSummary = Pick<
   RecipePayload,
   "id" | "name" | "model_path" | "backend" | "tensor_parallel_size" | "max_model_len"
 >;
@@ -27,7 +25,7 @@ export interface Status {
   error?: string;
 }
 
-export interface Config {
+export interface ControllerConfig {
   port: number;
   inference_port: number;
   models_dir: string;
@@ -43,10 +41,10 @@ export interface LifetimeMetrics {
 export interface AppState {
   view: View;
   selectedIndex: number;
-  gpus: GPU[];
-  recipes: Recipe[];
+  gpus: GpuSummary[];
+  recipes: RecipeSummary[];
   status: Status;
-  config: Config | null;
+  config: ControllerConfig | null;
   lifetime: LifetimeMetrics;
   error: string | null;
 }

@@ -13,12 +13,6 @@ export interface DownloadRequest {
   hf_token?: string | null;
 }
 
-export interface DownloadHandle {
-  id: string;
-  model_id: string;
-  status: string;
-}
-
 export interface HfModel {
   id: string;
   name?: string;

@@ -66,11 +66,3 @@ export interface GpuInfo {
 }
 
 export type SystemConfigResponse = ConfigData;
-
-export interface ModelsModuleConfig {
-  feature: "models";
-}
-
-export interface ModelBrowserRecord {
-  id: string;
-}

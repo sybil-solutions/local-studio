@@ -125,8 +125,6 @@ const readIntelName = (gpu: IntelPciGpu): string => {
   return "Intel Arc GPU";
 };
 
-export const hasIntelSysfsGpus = (): boolean => discoverIntelPciGpus().length > 0;
-
 export const getGpuInfoFromIntelSysfs = (): GpuInfo[] =>
   discoverIntelPciGpus().map((gpu, index) => {
     const drmDevicePaths = findDrmDevicePaths(gpu.path);

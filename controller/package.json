@@ -12,7 +12,7 @@
     "test:integration": "bun test ../tests/controller/integration",
     "typecheck": "tsc --noEmit",
     "standards": "bun scripts/controller-standards-audit.ts",
-    "check": "knip && jscpd src && depcheck --ignores=\"swagger-ui-dist,lint-staged\" --skip-missing",
+    "check": "knip && jscpd src && depcheck --skip-missing",
     "check:fix": "knip --fix"
   },
   "dependencies": {

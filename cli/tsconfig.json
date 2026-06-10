@@ -6,7 +6,7 @@
     "strict": true,
     "noEmit": true,
     "skipLibCheck": true,
-    "types": ["bun-types"]
+    "types": ["bun"]
   },
   "include": ["src/**/*.ts"],
   "exclude": []

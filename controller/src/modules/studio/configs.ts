@@ -1,8 +1,4 @@
-import type { StudioModelRecommendation, StudioModuleDefaults } from "./types";
-
-export const STUDIO_MODULE_DEFAULTS: StudioModuleDefaults = {
-  uiRefreshMs: 5_000,
-};
+import type { StudioModelRecommendation } from "./types";
 
 export const STUDIO_MODEL_RECOMMENDATIONS: StudioModelRecommendation[] = [
   {

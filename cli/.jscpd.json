@@ -4,8 +4,7 @@
   "ignore": [
     "**/*.test.ts",
     "**/node_modules/**",
-    "vllm-studio",
-    "**/.husky/**"
+    "vllm-studio"
   ],
   "format": ["typescript"],
   "minLines": 5,

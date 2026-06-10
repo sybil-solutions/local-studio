@@ -3,6 +3,7 @@ import { z } from "zod";
 import { existsSync } from "node:fs";
 import { basename, resolve } from "node:path";
 import { loadPersistedConfig, type ProviderConfig } from "./persisted-config";
+import { parseBooleanFlag } from "../core/validation";
 
 export interface Config {
   host: string;
@@ -52,11 +53,6 @@ export const createConfig = (): Config => {
   const isLoopbackHost = (value: string): boolean => {
     const normalized = value.trim().toLowerCase();
     return normalized === "127.0.0.1" || normalized === "localhost" || normalized === "::1";
-  };
-
-  const parseBooleanFlag = (value: string | undefined): boolean => {
-    if (!value) return false;
-    return ["1", "true", "yes", "on"].includes(value.trim().toLowerCase());
   };
 
   const normalizeOrigin = (value: string): string | null => {
@@ -110,10 +106,7 @@ export const createConfig = (): Config => {
   const parsed = schema.parse(process.env);
   const host = parsed.VLLM_STUDIO_HOST.trim() || "127.0.0.1";
 
-  const strictOpenAIModels = parsed.VLLM_STUDIO_STRICT_OPENAI_MODELS;
-  const strictOpenAIModelsEnabled = strictOpenAIModels
-    ? ["1", "true", "yes", "on"].includes(strictOpenAIModels.trim().toLowerCase())
-    : false;
+  const strictOpenAIModelsEnabled = parseBooleanFlag(parsed.VLLM_STUDIO_STRICT_OPENAI_MODELS);
 
   const config: Config = {
     host,

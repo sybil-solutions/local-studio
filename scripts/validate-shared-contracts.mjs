@@ -61,12 +61,11 @@ const allowedFiles = new Set([
   "shared/contracts/usage.ts",
   "controller/src/modules/shared/recipe-types.ts",
   "controller/src/modules/shared/system-types.ts",
-  "controller/src/modules/shared/controller-events.ts",
   "frontend/src/lib/types/recipes.ts",
   "frontend/src/lib/types/system.ts",
   "frontend/src/lib/controller-events-contract.ts",
 ]);
-const scanRoots = ["shared", "controller/src", "frontend/src"];
+const scanRoots = ["shared", "controller/src", "frontend/src", "cli/src"];
 const findings = [];
 const exportedDeclarations = new Map();
 

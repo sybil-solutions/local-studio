@@ -1,4 +1,4 @@
-import type { GPU, Recipe, Status, Config, LifetimeMetrics } from "./types";
+import type { GpuSummary, RecipeSummary, Status, ControllerConfig, LifetimeMetrics } from "./types";
 
 const DEFAULT_BASE_URL = "http://localhost:8080";
 
@@ -110,7 +110,7 @@ async function requestJson<T>(
   return body as T;
 }
 
-export async function fetchGPUs(): Promise<GPU[]> {
+export async function fetchGPUs(): Promise<GpuSummary[]> {
   const data = await requestJson<unknown>("GET", "/gpus");
   if (!isRecord(data) || !Array.isArray(data.gpus)) {
     throw new CliApiError("Invalid response for GET /gpus", "GET", "/gpus");
@@ -127,12 +127,12 @@ export async function fetchGPUs(): Promise<GPU[]> {
   }));
 }
 
-export async function fetchRecipes(): Promise<Recipe[]> {
+export async function fetchRecipes(): Promise<RecipeSummary[]> {
   const data = await requestJson<unknown>("GET", "/recipes");
   if (!Array.isArray(data)) {
     throw new CliApiError("Invalid response for GET /recipes", "GET", "/recipes");
   }
-  return data as Recipe[];
+  return data as RecipeSummary[];
 }
 
 export async function fetchStatus(): Promise<Status> {
@@ -156,7 +156,7 @@ export async function fetchStatus(): Promise<Status> {
   };
 }
 
-export async function fetchConfig(): Promise<Config> {
+export async function fetchConfig(): Promise<ControllerConfig> {
   const data = await requestJson<unknown>("GET", "/config");
   if (!isRecord(data) || !isRecord(data.config)) {
     throw new CliApiError("Invalid response for GET /config", "GET", "/config");

@@ -1,5 +1,5 @@
 import type { Database } from "bun:sqlite";
-import { openSqliteDatabase } from "./sqlite";
+import { openSqliteDatabase, toFiniteNumber, toNullableNumber } from "./sqlite";
 
 export interface ControllerRequestRecord {
   method: string;
@@ -21,17 +21,6 @@ export interface ControllerFunctionCallRecord {
 }
 
 type NumberRow = Record<string, number | string | null>;
-
-const toFiniteNumber = (value: unknown): number => {
-  const parsed = Number(value ?? 0);
-  return Number.isFinite(parsed) ? parsed : 0;
-};
-
-const toNullableNumber = (value: unknown): number | null => {
-  if (value === null || value === undefined) return null;
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : null;
-};
 
 export class ControllerRequestStore {
   private readonly db: Database;
