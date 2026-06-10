@@ -1,6 +1,24 @@
 import type { ModelDownload } from "../types";
 import { openSqliteDatabase } from "../../../stores/sqlite";
-import { parseJsonOrNull } from "../../../core/json";
+
+// --- JSON parsing (merged from core/json.ts) ---
+
+/**
+ * Parse a JSON string, returning `null` on empty input or parse failure.
+ * @param value - JSON string value.
+ * @returns Parsed JSON value or null.
+ */
+function parseJsonOrNull(value: unknown): unknown | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value !== "string") return value;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  try {
+    return JSON.parse(trimmed) as unknown;
+  } catch {
+    return null;
+  }
+}
 
 /** Persists model download state in SQLite. */
 export class DownloadStore {

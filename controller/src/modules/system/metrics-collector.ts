@@ -1,17 +1,16 @@
-import type { AppContext } from "../../../types/context";
-import { getGpuInfo } from "../platform/gpu";
-import { getSystemRuntimeInfo } from "../../engines/runtimes/runtime-info";
-import { delay } from "../../../core/async";
-import { listLogFiles, resolveExistingLogPath, tailFileLines } from "../../../core/log-files";
-import { fetchLocal } from "../../../http/local-fetch";
-import { isRecipeRunning } from "../../models/recipes/recipe-matching";
-import type { ProcessInfo, Recipe } from "../../models/types";
-import {
-  METRICS_COLLECT_INTERVAL_MS,
-  METRICS_HTTP_TIMEOUT_MS,
-  METRICS_RUNTIME_SUMMARY_INTERVAL_MS,
-  METRICS_LIFETIME_UPTIME_INCREMENT_SECONDS,
-} from "./configs";
+import type { AppContext } from "../../types/context";
+import { getGpuInfo } from "./platform/gpu";
+import { getSystemRuntimeInfo } from "../engines/runtimes/runtime-info";
+import { delay } from "../../core/async";
+import { listLogFiles, resolveExistingLogPath, tailFileLines } from "../../core/log-files";
+import { fetchLocal } from "../../http/local-fetch";
+import { isRecipeRunning } from "../models/recipes/recipe-matching";
+import type { ProcessInfo, Recipe } from "../models/types";
+
+const METRICS_HTTP_TIMEOUT_MS = 5_000;
+const METRICS_RUNTIME_SUMMARY_INTERVAL_MS = 30_000;
+const METRICS_COLLECT_INTERVAL_MS = 5_000;
+const METRICS_LIFETIME_UPTIME_INCREMENT_SECONDS = 5;
 
 const LLAMACPP_LOG_TAIL_LINES = 240;
 const LLAMACPP_TPS_STALE_MS = 15_000;

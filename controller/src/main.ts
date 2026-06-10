@@ -1,6 +1,6 @@
 import { createAppContext } from "./app-context";
 import { createApp } from "./http/app";
-import { startMetricsCollector } from "./modules/system/metrics-collector/metrics-collector";
+import { startMetricsCollector } from "./modules/system/metrics-collector";
 
 const metricsDisabled = (): boolean => {
   const raw = process.env["VLLM_STUDIO_DISABLE_METRICS"]?.trim().toLowerCase();

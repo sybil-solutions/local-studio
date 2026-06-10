@@ -9,7 +9,7 @@ export default {
     // Barrel/index files for module exports
     "src/**/index.ts",
     "src/**/external.ts",
-    // Standards-enforced module contract files are public seams even when only external callers import them.
+    // Module contract files are public seams even when only external callers import them.
     "src/modules/**/{configs,interfaces,types}.ts",
     // Schemas used by OpenAPI
     "src/types/schemas.ts",

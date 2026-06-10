@@ -7,7 +7,7 @@ import {
   renameSync,
   statSync,
 } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { dirname, resolve, sep } from "node:path";
 import { randomUUID } from "node:crypto";
 import type { Config } from "../../../config/env";
 import type { Logger } from "../../../core/logger";
@@ -15,10 +15,48 @@ import { Event, type EventManager } from "../../system/event-manager";
 import { CONTROLLER_EVENTS } from "../../../contracts/controller-events";
 import type { DownloadFileInfo, DownloadStatus, ModelDownload } from "../types";
 import type { DownloadStore } from "./download-store";
-import { resolveDownloadRoot, sanitizePathSegments } from "./download-paths";
 import { buildHuggingFaceFileList, fetchHuggingFaceModelInfo } from "./huggingface-api";
-import { sumDownloadedBytes, sumTotalBytes } from "./download-math";
 import { DOWNLOAD_DEFAULT_IGNORE_FILENAMES, DOWNLOAD_PROGRESS_THROTTLE_MS } from "../configs";
+
+// --- Byte accounting (merged from download-math.ts) ---
+
+const sumDownloadedBytes = (files: DownloadFileInfo[]): number => {
+  return files.reduce((total, file) => total + (file.downloaded_bytes || 0), 0);
+};
+
+const sumTotalBytes = (files: DownloadFileInfo[]): number | null => {
+  const known = files.filter((file) => typeof file.size_bytes === "number") as Array<
+    DownloadFileInfo & { size_bytes: number }
+  >;
+  if (known.length === 0) {
+    return null;
+  }
+  return known.reduce((total, file) => total + file.size_bytes, 0);
+};
+
+// --- Path resolution (merged from download-paths.ts) ---
+
+const sanitizePathSegments = (value: string): string[] => {
+  return value
+    .split(/[\\/]/)
+    .map((segment) => segment.trim())
+    .filter((segment) => Boolean(segment) && segment !== "." && segment !== "..");
+};
+
+const resolveDownloadRoot = (
+  config: Config,
+  modelId: string,
+  destination?: string | null
+): string => {
+  const base = resolve(config.models_dir);
+  const segments = destination ? sanitizePathSegments(destination) : sanitizePathSegments(modelId);
+  const target = resolve(base, ...segments);
+  const normalizedBase = base.endsWith(sep) ? base : base + sep;
+  if (!target.startsWith(normalizedBase)) {
+    throw new Error("Invalid destination path");
+  }
+  return target;
+};
 
 type DownloadRequest = {
   model_id: string;
