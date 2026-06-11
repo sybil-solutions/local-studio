@@ -1,8 +1,10 @@
 "use client";
 
+import { useState } from "react";
 import { Plus } from "lucide-react";
 import type { RecipeWithStatus } from "@/lib/types";
 import { ModelButton, ModelRow, ModelSection, ModelStatus, ModelValue } from "@/ui";
+import { AttachLocalAgentsDialog } from "@/features/settings/attach-local-agents-dialog";
 import { RecipeRow } from "./recipe-row";
 
 type Props = {
@@ -59,6 +61,7 @@ export function RecipesTable({
   onRequestDelete,
   onNewRecipe,
 }: Props) {
+  const [attachRecipe, setAttachRecipe] = useState<RecipeWithStatus | null>(null);
   const emptyBecauseSearch = Boolean(filter.trim()) && recipes.length === 0;
   const launchDisabledReason = launching
     ? "A launch is already in progress."
@@ -111,6 +114,7 @@ export function RecipesTable({
               onStop={onStop}
               onEdit={onEdit}
               onRequestDelete={onRequestDelete}
+              onAttachAgents={setAttachRecipe}
             />
           ))
         : TEMPLATE_ROWS.map((row) => (
@@ -132,6 +136,14 @@ export function RecipesTable({
               }
             />
           ))}
+
+      {attachRecipe ? (
+        <AttachLocalAgentsDialog
+          modelId={attachRecipe.served_model_name || attachRecipe.id}
+          modelName={attachRecipe.name}
+          onClose={() => setAttachRecipe(null)}
+        />
+      ) : null}
     </ModelSection>
   );
 }

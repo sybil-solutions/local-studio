@@ -18,6 +18,7 @@ type Props = {
   onStop: () => void;
   onEdit: (recipe: RecipeWithStatus) => void;
   onRequestDelete: (recipeId: string) => void;
+  onAttachAgents: (recipe: RecipeWithStatus) => void;
 };
 
 function statusTone(status: string): ModelStatusTone {
@@ -39,6 +40,7 @@ export const RecipeRow = memo(function RecipeRow({
   onStop,
   onEdit,
   onRequestDelete,
+  onAttachAgents,
 }: Props) {
   const handleTogglePin = useCallback(() => onTogglePin(recipe.id), [onTogglePin, recipe.id]);
   const handleLaunch = useCallback(() => onLaunch(recipe.id), [onLaunch, recipe.id]);
@@ -50,6 +52,11 @@ export const RecipeRow = memo(function RecipeRow({
     [onToggleMenu, recipe.id],
   );
   const handleEdit = useCallback(() => onEdit(recipe), [onEdit, recipe]);
+  const handleAttachAgents = useCallback(() => {
+    // Close the overflow menu before opening the dialog.
+    onToggleMenu(recipe.id);
+    onAttachAgents(recipe);
+  }, [onAttachAgents, onToggleMenu, recipe]);
   const handleRequestDelete = useCallback(
     () => onRequestDelete(recipe.id),
     [onRequestDelete, recipe.id],
@@ -88,7 +95,7 @@ export const RecipeRow = memo(function RecipeRow({
               <MoreVertical className="h-3 w-3" />
             </ModelButton>
             {isMenuOpen ? (
-              <div className="absolute right-0 z-50 mt-1 w-32 overflow-hidden rounded-md border border-(--border) bg-(--surface) shadow-lg">
+              <div className="absolute right-0 z-50 mt-1 w-48 overflow-hidden rounded-md border border-(--border) bg-(--surface) shadow-lg">
                 <button
                   onClick={handleTogglePin}
                   className="w-full px-3 py-2 text-left text-[length:var(--fs-md)] hover:bg-(--hover)"
@@ -100,6 +107,12 @@ export const RecipeRow = memo(function RecipeRow({
                   className="w-full px-3 py-2 text-left text-[length:var(--fs-md)] hover:bg-(--hover)"
                 >
                   Edit
+                </button>
+                <button
+                  onClick={handleAttachAgents}
+                  className="w-full px-3 py-2 text-left text-[length:var(--fs-md)] hover:bg-(--hover)"
+                >
+                  Attach to local agents…
                 </button>
                 <button
                   onClick={handleRequestDelete}
