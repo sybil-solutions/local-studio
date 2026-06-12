@@ -1,5 +1,5 @@
 import { useMemo, useState, type ReactNode } from "react";
-import hljs from "highlight.js";
+import { highlightFenced } from "@/features/agent/highlight-cache";
 import type { ToolBlock } from "@/features/agent/messages";
 import {
   FILE_WRITE_TOOL_NAMES,
@@ -185,23 +185,13 @@ function ToolOutput({ children }: { children: ReactNode }) {
 }
 
 function HighlightedToolSource({ body, lang }: { body: string; lang: string }) {
-  const highlighted = useMemo(() => {
-    if (!body) return "";
-    try {
-      const result =
-        lang && hljs.getLanguage(lang) ? hljs.highlight(body, { language: lang }) : null;
-      return result ? result.value : hljs.highlightAuto(body).value;
-    } catch {
-      return null;
-    }
-  }, [body, lang]);
+  // Shares the curated highlight.js core instance (a dozen languages) via the
+  // memoizing cache — using the full `highlight.js` package here pulled ~190
+  // languages (≈1 MB) into the agent route bundle.
+  const highlighted = useMemo(() => (body ? highlightFenced(lang || null, body) : ""), [body, lang]);
 
   const className =
     "max-h-[420px] max-w-full overflow-auto px-3 py-2 font-mono text-[length:var(--codex-chat-code-font-size)] leading-relaxed text-(--fg)";
-
-  if (highlighted === null) {
-    return <pre className={className}>{body}</pre>;
-  }
 
   return (
     <pre className={className}>

@@ -3,7 +3,7 @@
 import { useCallback, useMemo, useState } from "react";
 import { Virtuoso } from "react-virtuoso";
 import { MessageSquarePlus, Minus } from "lucide-react";
-import hljs from "highlight.js";
+import { highlightFenced } from "@/features/agent/highlight-cache";
 import type { FileComment } from "@/features/agent/filesystem-types";
 
 const EXT_TO_LANG: Record<string, string> = {
@@ -85,12 +85,10 @@ export function FileViewer({
   const highlightedLines = useMemo(() => {
     const lang = languageForPath(filePath);
     if (!lang) return null;
-    try {
-      const result = hljs.highlight(lines.join("\n"), { language: lang });
-      return result.value.split("\n");
-    } catch {
-      return null;
-    }
+    // Shared curated highlight.js core (a dozen languages); languages outside
+    // the set degrade to escaped plain text rather than pulling the full
+    // ~190-language package (≈1 MB) into the bundle.
+    return highlightFenced(lang, lines.join("\n")).split("\n");
   }, [filePath, lines]);
   const commentsByLine = useMemo(() => {
     const map = new Map<number, FileComment[]>();
