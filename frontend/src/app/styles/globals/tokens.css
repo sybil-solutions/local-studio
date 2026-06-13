@@ -46,10 +46,10 @@
   --row-h: 28px;
   --row-h-sm: 24px;
   --row-radius: var(--rad-md);
-  /* Codex thread geometry: 48rem (768px) centered reading column; the
+  /* Codex thread geometry: 57.6rem (922px), right-aligned reading column; the
      composer spans the same column and wears a 24px squircle-ish radius. */
-  --composer-w: 768px;
-  --thread-w: 768px;
+  --composer-w: 922px;
+  --thread-w: 922px;
   --composer-radius: var(--rad-3xl);
   --composer-shadow: 0 12px 36px rgba(0, 0, 0, 0.06);
 
@@ -150,8 +150,8 @@
 
 @media (min-width: 1024px) {
   :root {
-    --composer-w: 768px;
-    --thread-w: 768px;
+    --composer-w: 922px;
+    --thread-w: 922px;
   }
 }
 

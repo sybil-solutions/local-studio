@@ -43,7 +43,7 @@ export function AgentQueuePanel({
   }
 
   return (
-    <div className="mx-auto mb-1 w-[85%] max-w-[var(--composer-w)] overflow-hidden rounded-lg bg-(--composer) px-4 py-2 text-[length:var(--fs-sm)] text-(--fg)">
+    <div className="ml-auto mb-1 w-[85%] max-w-[var(--composer-w)] overflow-hidden rounded-lg bg-(--composer) px-4 py-2 text-[length:var(--fs-sm)] text-(--fg)">
       <button
         type="button"
         onClick={() => onExpandedChange(!expanded)}

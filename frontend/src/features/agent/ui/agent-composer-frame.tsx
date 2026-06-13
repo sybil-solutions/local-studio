@@ -155,7 +155,7 @@ export function AgentComposerFrame({
         className={cx(
           // The Codex composer: a big-radius surface over a hairline border and
           // a soft shadow — the most "designed" object in the pane.
-          "mx-auto w-full max-w-[var(--composer-w)] overflow-visible rounded-[var(--composer-radius)] border border-(--border)/60 bg-(--composer) shadow-[var(--composer-shadow)] transition-colors",
+          "ml-auto w-full max-w-[var(--composer-w)] overflow-visible rounded-[var(--composer-radius)] border border-(--border)/60 bg-(--composer) shadow-[var(--composer-shadow)] transition-colors",
           composerDragActive && "outline outline-1 outline-(--link)/50",
         )}
       >

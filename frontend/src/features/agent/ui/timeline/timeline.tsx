@@ -73,7 +73,7 @@ export function Timeline({
   if (emptyPrompt) {
     return (
       <div className="flex min-h-0 flex-1 overflow-y-auto bg-(--agent-bg) px-6 pb-10 pt-2">
-        <div className="agent-thread-shell mx-auto flex flex-1">
+        <div className="agent-thread-shell ml-auto flex flex-1">
           <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center">
             <p className="max-w-[24ch] text-[clamp(1.45rem,2.6vw,2.1rem)] font-semibold leading-[1.22] tracking-[-0.02em] text-(--fg)/90">
               A dream is something you build for yourself.
@@ -91,7 +91,7 @@ export function Timeline({
       data-timeline-scroller
       className="agent-chat-scroller min-h-0 flex-1 overflow-y-auto bg-(--agent-bg) px-6 pb-1 pt-2 [overflow-anchor:none] [overscroll-behavior:contain] [scroll-behavior:auto] [scrollbar-gutter:stable_both-edges]"
     >
-      <div data-timeline-list className="agent-thread-shell mx-auto flex flex-col">
+      <div data-timeline-list className="agent-thread-shell ml-auto flex flex-col">
         {visibleMessages.map((message, index) => {
           const isLast = index === visibleMessages.length - 1;
           const prevRole = index > 0 ? visibleMessages[index - 1].role : null;
