@@ -38,7 +38,10 @@ import { useProjects, type ProjectsContextValue } from "@/features/agent/project
 import { useTools, type ToolsContextValue } from "@/features/agent/tools/context";
 import { getApiKey, getStoredBackendUrl } from "@/lib/api/connection";
 import { loadSavedControllers, normalizeControllerUrl } from "@/lib/api/controllers";
-import { sanitizePublicBrowserUrl } from "@/features/agent/sanitize-embedded-browser-url";
+import {
+  sanitizeBrowserPaneUrl,
+  sanitizeLocalFileUrl,
+} from "@/features/agent/sanitize-embedded-browser-url";
 import type { Project } from "@/features/agent/projects/types";
 import { paneSessions } from "@/features/agent/runtime/selectors";
 import type { Session, SessionId } from "@/features/agent/runtime/types";
@@ -227,7 +230,10 @@ export function useWorkspace(): UseWorkspaceResult {
       currentTools.setBrowserEnabled(true);
       if (verb === "navigate") {
         currentTools.setComputerTab("browser");
-        const nextUrl = sanitizePublicBrowserUrl(String(payload.url || ""));
+        const raw = String(payload.url || "");
+        const nextUrl = /^file:\/\//i.test(raw)
+          ? sanitizeLocalFileUrl(raw)
+          : sanitizeBrowserPaneUrl(raw);
         if (nextUrl && !hadBrowserHost) currentTools.setBrowserUrl(nextUrl, nextUrl);
       } else {
         currentTools.selectComputerTabWithoutOpening("browser");

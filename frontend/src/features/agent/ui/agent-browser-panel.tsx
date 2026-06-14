@@ -23,7 +23,10 @@ import {
   type TerminalOwnersSnapshot,
 } from "@/features/agent/ui/use-persistent-terminal-owners";
 import { normalizeBrowserInput } from "@/features/agent/tools/browser-url";
-import { sanitizePublicBrowserUrl } from "@/features/agent/sanitize-embedded-browser-url";
+import {
+  sanitizeBrowserPaneUrl,
+  sanitizeLocalFileUrl,
+} from "@/features/agent/sanitize-embedded-browser-url";
 import { useTools } from "@/features/agent/tools/context";
 import type { ComputerTab } from "@/features/agent/tools/types";
 import type { Project } from "@/features/agent/projects/types";
@@ -187,10 +190,15 @@ export function AgentBrowserPanel({
   const navigateBrowser = (value: string) => {
     const next = normalizeBrowserInput(value, activeProject?.path ?? "");
     if (!next) return;
-    if (!sanitizePublicBrowserUrl(next)) {
-      tools.setBrowserUrl(next, next);
-    }
-    void runBrowserCommand("navigate", { url: next });
+    // Accept pane-eligible URLs (public + loopback) and local file:// URLs.
+    // Anything else (private LAN ranges, non-http(s)) is rejected before we
+    // commit it to the address bar or hand it to the browser host.
+    const accepted = /^file:\/\//i.test(next)
+      ? sanitizeLocalFileUrl(next)
+      : sanitizeBrowserPaneUrl(next);
+    if (!accepted) return;
+    tools.setBrowserUrl(accepted, accepted);
+    void runBrowserCommand("navigate", { url: accepted });
   };
   const openSideChat = useCallback(() => {
     setSideChatSession((current) =>

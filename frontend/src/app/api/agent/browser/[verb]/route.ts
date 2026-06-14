@@ -37,8 +37,7 @@ const ALLOWED_VERBS = new Set([
   "reload",
 ]);
 
-const UNAVAILABLE_ERROR =
-  "Browser unavailable: no Chromium found — set VLLM_STUDIO_CHROME_PATH";
+const UNAVAILABLE_ERROR = "Browser unavailable: no Chromium found — set VLLM_STUDIO_CHROME_PATH";
 
 type VerbResult = { ok: boolean; data?: unknown; error?: string };
 
@@ -152,16 +151,18 @@ function requireSelector(payload: Record<string, unknown>): string {
 }
 
 // Chromium-unavailable fallbacks. navigate + get-text drop to reading mode;
-// every interactive verb returns the clear unavailable error.
+// every interactive verb returns the clear unavailable error. The fallback
+// honors pane rules (public + loopback) so local dev servers stay previewable
+// even when there's no headless Chromium to drive a full live surface.
 async function fallbackVerb(verb: string, payload: Record<string, unknown>): Promise<VerbResult> {
   if (verb === "navigate") {
-    const url = sanitizePublicBrowserUrl(String(payload.url ?? ""));
-    if (!url) return { ok: false, error: "valid public http(s) url required" };
+    const url = sanitizeBrowserPaneUrl(String(payload.url ?? ""));
+    if (!url) return { ok: false, error: "valid public or localhost http(s) url required" };
     const reader = await fetchReadable(url);
     return { ok: true, data: { url: reader.url, title: reader.title, readingMode: true } };
   }
   if (verb === "get-text") {
-    const url = sanitizePublicBrowserUrl(String(payload.url ?? ""));
+    const url = sanitizeBrowserPaneUrl(String(payload.url ?? ""));
     if (!url) return { ok: false, error: UNAVAILABLE_ERROR };
     const reader = await fetchReadable(url);
     return { ok: true, data: { text: reader.text, readingMode: true } };
