@@ -2,6 +2,7 @@
 
 import { formatNumber, formatDate } from "@/lib/formatters";
 import { getModelColor } from "@/features/usage/colors";
+import { Stat } from "@/ui";
 
 interface DailyStat {
   date: string;
@@ -183,16 +184,5 @@ export function DailyUsageChart(
         <Stat label="peak day" value={formatNumber(maxDailyTokens)} />
       </dl>
     </section>
-  );
-}
-
-function Stat({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="min-w-0 border-r border-(--border)/40 pr-2 pl-3 first:pl-0 last:border-r-0 sm:pr-4 sm:pl-5">
-      <dt className="truncate font-mono text-[length:var(--fs-2xs)] font-medium uppercase tracking-[0.18em] text-(--dim)/75">
-        {label}
-      </dt>
-      <dd className="mt-1 font-mono text-[length:var(--fs-xl)] leading-none tabular-nums text-(--fg)">{value}</dd>
-    </div>
   );
 }

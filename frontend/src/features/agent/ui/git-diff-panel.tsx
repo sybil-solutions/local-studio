@@ -2,6 +2,7 @@
 
 import { useCallback, useMemo, useState, useSyncExternalStore } from "react";
 import { GitBranchIcon, ReloadIcon } from "@/ui/icons";
+import { ErrorBox, Input, Button } from "@/ui";
 import type { GitAction, GitRef, GitState } from "@/features/agent/contracts";
 import { safeJson } from "@/features/agent/safe-json";
 import {
@@ -137,28 +138,28 @@ function GitWorkflowBar({
           loading={loading}
           onRun={onRun}
         />
-        <input
+        <Input
           value={draftBranch}
           onChange={(event) => onDraftBranch(event.target.value)}
           placeholder="new branch"
           className="h-7 min-w-0 flex-1 rounded border border-(--border) bg-(--bg) px-2 text-(--fg) outline-none"
         />
-        <button
-          type="button"
+        <Button
+          variant="secondary"
+          size="sm"
           disabled={loading || !draftBranch.trim()}
           onClick={() => void onRun({ action: "createBranch", branch: draftBranch.trim() })}
-          className="h-7 rounded border border-(--border) px-2 text-(--fg) disabled:opacity-40"
         >
           Branch
-        </button>
-        <button
-          type="button"
+        </Button>
+        <Button
+          variant="secondary"
+          size="sm"
           disabled={loading || !payload.branch}
           onClick={() => void onRun({ action: "push" })}
-          className="h-7 rounded border border-(--border) px-2 text-(--fg) disabled:opacity-40"
         >
           Push
-        </button>
+        </Button>
         {payload.prUrl ? (
           <a
             className="h-7 rounded border border-(--border) px-2 leading-7 text-(--fg)"
@@ -170,22 +171,22 @@ function GitWorkflowBar({
         ) : null}
       </div>
       <div className="flex flex-wrap items-center gap-2">
-        <input
+        <Input
           value={commitMessage}
           onChange={(event) => onCommitMessage(event.target.value)}
           placeholder={dirty ? "commit message" : "working tree clean"}
           disabled={!dirty}
           className="h-7 min-w-0 flex-1 rounded border border-(--border) bg-(--bg) px-2 text-(--fg) outline-none disabled:opacity-45"
         />
-        <button
-          type="button"
+        <Button
+          variant="secondary"
+          size="sm"
           disabled={loading || !dirty || !commitMessage.trim()}
           onClick={() => void onRun({ action: "commit", message: commitMessage.trim(), paths: [] })}
-          className="h-7 rounded border border-(--border) px-2 text-(--fg) disabled:opacity-40"
           title="Stage all current changes and commit"
         >
           Commit all
-        </button>
+        </Button>
         <span className="font-mono">
           <span className="text-emerald-400">+{payload.additions ?? 0}</span>{" "}
           <span className="text-red-400">-{payload.deletions ?? 0}</span>{" "}
@@ -252,12 +253,7 @@ function GitDiffPanelBody({
         Choose a project directory to view git changes.
       </div>
     );
-  if (payload?.error)
-    return (
-      <div className="m-3 rounded border border-(--err)/30 bg-(--err)/10 p-3 text-xs text-(--err)">
-        {payload.error}
-      </div>
-    );
+  if (payload?.error) return <ErrorBox className="m-3 p-3">{payload.error}</ErrorBox>;
   if (payload?.isRepo === false) return <InitializeGitPanel initGit={initGit} loading={loading} />;
   if (files.length === 0)
     return <EmptyDiffPanel loading={loading} status={payload?.status ?? []} />;
@@ -274,14 +270,15 @@ function InitializeGitPanel({
   return (
     <div className="flex flex-col gap-3 p-4 text-xs text-(--dim)">
       <span>This directory is not a git repository.</span>
-      <button
-        type="button"
+      <Button
+        variant="secondary"
+        size="sm"
         onClick={() => void initGit()}
         disabled={loading}
-        className="w-fit rounded border border-(--border) bg-(--surface) px-2 py-1 text-(--fg) hover:bg-(--bg) disabled:opacity-50"
+        className="w-fit"
       >
         Initialize git repository
-      </button>
+      </Button>
     </div>
   );
 }

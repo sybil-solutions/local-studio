@@ -2,11 +2,18 @@
 
 import { useId } from "react";
 import { ExternalLink, Plus, ShieldCheck } from "lucide-react";
-import { Button } from "@/ui/button";
-import { EmptySafeNotice } from "@/ui/list";
-import { ModelButton } from "@/ui/model-page";
-import { SettingsButton, SettingsGroup, SettingsInput, SettingsRow } from "@/ui/settings";
-import { StatusPill } from "@/ui/status";
+import {
+  Button,
+  EmptySafeNotice,
+  ModelButton,
+  SettingsButton,
+  SettingsGroup,
+  SettingsInput,
+  SettingsRow,
+  StatusPill,
+  UiModal,
+  UiModalHeader,
+} from "@/ui";
 import { type CatalogueEntry } from "./plugins-types";
 import { missingRequiredEnv, parseArgsText } from "./plugins-utils";
 
@@ -98,7 +105,6 @@ export function ConfigureEntryPanel({
   onCancel: () => void;
   onSubmit: () => void;
 }) {
-  const titleId = useId();
   const commandId = useId();
   const argsId = useId();
   const tagsId = useId();
@@ -111,120 +117,105 @@ export function ConfigureEntryPanel({
     : `Add a local path argument before adding ${entry.displayName}`;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
-      <button className="absolute inset-0 bg-black/55" aria-label="Close" onClick={onCancel} />
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={titleId}
-        className="relative z-10 mx-4 w-full max-w-2xl overflow-hidden rounded-md border border-(--ui-border) bg-(--ui-bg) shadow-xl"
-      >
-        <div className="flex items-center justify-between gap-3 border-b border-(--ui-border) px-4 py-3">
-          <div className="min-w-0">
-            <div className="text-[length:var(--fs-sm)] uppercase tracking-[0.14em] text-(--ui-muted)">
-              MCP configuration
-            </div>
-            <h2
-              id={titleId}
-              className="truncate text-[length:var(--fs-xl)] font-medium text-(--ui-fg)"
-            >
-              {entry.displayName}
-            </h2>
-          </div>
+    <UiModal isOpen onClose={onCancel} maxWidth="max-w-2xl">
+      <UiModalHeader
+        title={entry.displayName}
+        onClose={onCancel}
+        actions={
           <StatusPill tone={registryTone(entry)} variant="badge">
             {registryLabel(entry)}
           </StatusPill>
-        </div>
-        <div className="max-h-[70vh] overflow-y-auto p-4">
-          <SettingsGroup title="Launch">
-            <SettingsRow
-              label="Command"
-              description={
-                entry.command
-                  ? "Registry default can be adjusted before adding."
-                  : (entry.unsupportedReason ??
-                    "Choose the local stdio launch command before adding this server.")
-              }
-              control={
-                <SettingsInput
-                  id={commandId}
-                  value={command}
-                  onChange={onCommandChange}
-                  placeholder="npx"
-                  aria-label="Command"
-                />
-              }
-            />
-            <SettingsRow
-              label="Arguments"
-              description={
-                needsTarget
-                  ? "Add the local directory, repository, or database path this server may access."
-                  : undefined
-              }
-              control={
-                <SettingsInput
-                  id={argsId}
-                  value={args}
-                  onChange={onArgsChange}
-                  placeholder="-y @scope/server"
-                  aria-label="Arguments"
-                />
-              }
-            />
-            <SettingsRow
-              label="Tags"
-              control={
-                <SettingsInput
-                  id={tagsId}
-                  value={tags}
-                  onChange={onTagsChange}
-                  placeholder="official, github"
-                  aria-label="Tags"
-                />
-              }
-            />
-          </SettingsGroup>
+        }
+      />
+      <div className="max-h-[70vh] overflow-y-auto p-4">
+        <SettingsGroup title="Launch">
+          <SettingsRow
+            label="Command"
+            description={
+              entry.command
+                ? "Registry default can be adjusted before adding."
+                : (entry.unsupportedReason ??
+                  "Choose the local stdio launch command before adding this server.")
+            }
+            control={
+              <SettingsInput
+                id={commandId}
+                value={command}
+                onChange={onCommandChange}
+                placeholder="npx"
+                aria-label="Command"
+              />
+            }
+          />
+          <SettingsRow
+            label="Arguments"
+            description={
+              needsTarget
+                ? "Add the local directory, repository, or database path this server may access."
+                : undefined
+            }
+            control={
+              <SettingsInput
+                id={argsId}
+                value={args}
+                onChange={onArgsChange}
+                placeholder="-y @scope/server"
+                aria-label="Arguments"
+              />
+            }
+          />
+          <SettingsRow
+            label="Tags"
+            control={
+              <SettingsInput
+                id={tagsId}
+                value={tags}
+                onChange={onTagsChange}
+                placeholder="official, github"
+                aria-label="Tags"
+              />
+            }
+          />
+        </SettingsGroup>
 
-          <SettingsGroup title="Environment">
-            {Object.keys(env).length ? (
-              Object.keys(env).map((key) => (
-                <SettingsRow
-                  key={key}
-                  label={key}
-                  description={entry.requiredEnv?.includes(key) ? "Required" : "Optional"}
-                  control={
-                    <SettingsInput
-                      type="password"
-                      value={env[key]}
-                      onChange={(value) => onEnvChange({ ...env, [key]: value })}
-                      placeholder={key}
-                      aria-label={key}
-                    />
-                  }
-                />
-              ))
-            ) : (
-              <EmptySafeNotice>
-                No environment variables declared by the registry row.
-              </EmptySafeNotice>
-            )}
-          </SettingsGroup>
-        </div>
-        <div className="flex items-center justify-end gap-1 border-t border-(--ui-border) px-4 py-3">
-          <ModelButton onClick={onCancel}>Cancel</ModelButton>
-          <Button
-            size="sm"
-            onClick={onSubmit}
-            disabled={!canSubmit}
-            title={submitTitle}
-            icon={<Plus className="h-3.5 w-3.5" />}
-          >
-            Add MCP server
-          </Button>
-        </div>
+        <SettingsGroup title="Environment">
+          {Object.keys(env).length ? (
+            Object.keys(env).map((key) => (
+              <SettingsRow
+                key={key}
+                label={key}
+                description={entry.requiredEnv?.includes(key) ? "Required" : "Optional"}
+                control={
+                  <SettingsInput
+                    type="password"
+                    value={env[key]}
+                    onChange={(value) => onEnvChange({ ...env, [key]: value })}
+                    placeholder={key}
+                    aria-label={key}
+                  />
+                }
+              />
+            ))
+          ) : (
+            <EmptySafeNotice>
+              No environment variables declared by the registry row.
+            </EmptySafeNotice>
+          )}
+        </SettingsGroup>
       </div>
-    </div>
+      <div className="flex items-center justify-end gap-1 border-t border-(--ui-border) px-4 py-3">
+        <ModelButton onClick={onCancel}>Cancel</ModelButton>
+        <Button
+          size="sm"
+          onClick={onSubmit}
+          disabled={!canSubmit}
+          title={submitTitle}
+          icon={<Plus className="h-3.5 w-3.5" />}
+        >
+          Add MCP server
+        </Button>
+      </div>
+    </UiModal>
   );
 }
 

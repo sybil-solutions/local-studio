@@ -1,4 +1,5 @@
 import type { LaunchProgress } from "@/lib/types";
+import { ProgressBar } from "@/ui";
 import { resolveLaunchToastView, type LaunchToastView } from "./launch-toast-model";
 
 interface LaunchToastProps {
@@ -21,7 +22,7 @@ export function LaunchToast({ launching, launchProgress }: LaunchToastProps) {
         <div className="text-xs font-medium text-(--fg) capitalize">{renderStage(toast)}</div>
         <div className="text-xs text-(--dim)">{toast.message}</div>
       </div>
-      {toast.progressPercent != null && <ProgressBar progressPercent={toast.progressPercent} />}
+      {toast.progressPercent != null && <ProgressBar progress={toast.progressPercent} />}
     </div>
   );
 }
@@ -34,15 +35,4 @@ function renderStage(toast: LaunchToastView) {
     return <span className="text-(--hl2)">{toast.stageText}</span>;
   }
   return toast.stageText;
-}
-
-function ProgressBar({ progressPercent }: { progressPercent: number }) {
-  return (
-    <div className="mt-3 h-0.5 bg-(--dim)/30 rounded-full overflow-hidden">
-      <div
-        className="h-full bg-(--fg)/40 rounded-full transition-all duration-300"
-        style={{ width: `${progressPercent}%` }}
-      />
-    </div>
-  );
 }

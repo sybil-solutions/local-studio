@@ -73,6 +73,12 @@ export { SegmentedControl } from "./segmented-control";
 export type { SegmentedItem } from "./segmented-control";
 export { ColorField } from "./color-field";
 
+// Display primitives
+export { ProgressBar } from "./progress-bar";
+export { Stat } from "./stat";
+export { SectionLabel } from "./section-label";
+export { ErrorBox } from "./error-box";
+
 export { StatusDot, StatusPill } from "./status";
 export type { UiTone, StatusPillVariant } from "./status";
 

@@ -1,5 +1,5 @@
 import { QUANTIZATION_TAGS } from "../config";
-import { Button, Card, Select } from "@/ui";
+import { Button, Card, FormField, Select } from "@/ui";
 
 export function DiscoverFiltersPanel({
   showFilters,
@@ -86,28 +86,33 @@ export function DiscoverFiltersPanel({
       </div>
 
       <div className="mt-4">
-        <label className="block text-xs text-(--dim) mb-2">Hide Quantization Tags</label>
-        <div className="flex flex-wrap gap-2">
-          {QUANTIZATION_TAGS.map((quant) => {
-            const tag = quant.toUpperCase();
-            const active = excludedQuantizations.includes(tag);
-            return (
+        <FormField label="Hide Quantization Tags">
+          <div className="flex flex-wrap gap-2">
+            {QUANTIZATION_TAGS.map((quant) => {
+              const tag = quant.toUpperCase();
+              const active = excludedQuantizations.includes(tag);
+              return (
+                <Button
+                  key={tag}
+                  variant={active ? "danger" : "secondary"}
+                  size="sm"
+                  onClick={() => toggleQuant(tag)}
+                >
+                  {tag}
+                </Button>
+              );
+            })}
+            {excludedQuantizations.length > 0 && (
               <Button
-                key={tag}
-                variant={active ? "danger" : "secondary"}
+                variant="secondary"
                 size="sm"
-                onClick={() => toggleQuant(tag)}
+                onClick={() => onExcludedQuantizationsChange([])}
               >
-                {tag}
+                Clear
               </Button>
-            );
-          })}
-          {excludedQuantizations.length > 0 && (
-            <Button variant="secondary" size="sm" onClick={() => onExcludedQuantizationsChange([])}>
-              Clear
-            </Button>
-          )}
-        </div>
+            )}
+          </div>
+        </FormField>
       </div>
     </Card>
   );

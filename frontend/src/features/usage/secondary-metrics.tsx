@@ -1,6 +1,7 @@
 "use client";
 
 import { formatNumber } from "@/lib/formatters";
+import { Stat, SectionLabel } from "@/ui";
 
 interface TokensPerRequestStats {
   avg: number;
@@ -29,25 +30,6 @@ interface SecondaryMetricsStats {
   hourly_pattern: HourlyPatternData[];
 }
 
-function SectionLabel({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="mb-3 font-mono text-[length:var(--fs-2xs)] font-medium uppercase tracking-[0.18em] text-(--dim)/75">
-      {children}
-    </div>
-  );
-}
-
-function Cell({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="min-w-0 border-r border-(--border)/40 pr-2 pl-3 first:pl-0 last:border-r-0 sm:pr-4 sm:pl-5">
-      <dt className="truncate font-mono text-[length:var(--fs-2xs)] font-medium uppercase tracking-[0.18em] text-(--dim)/75">
-        {label}
-      </dt>
-      <dd className="mt-1 font-mono text-[length:var(--fs-xl)] leading-none tabular-nums text-(--fg)">{value}</dd>
-    </div>
-  );
-}
-
 export function SecondaryMetrics(stats: SecondaryMetricsStats) {
   const maxHourlyRequests = Math.max(
     ...stats.hourly_pattern.map((h: HourlyPatternData) => h.requests),
@@ -63,9 +45,9 @@ export function SecondaryMetrics(stats: SecondaryMetricsStats) {
     <section className="px-2 pt-2 pb-5">
       <SectionLabel>Tokens per request</SectionLabel>
       <dl className="grid grid-cols-3 border-b border-(--border)/40 pb-4">
-        <Cell label="average" value={formatNumber(stats.tokens_per_request.avg)} />
-        <Cell label="prompt" value={formatNumber(stats.tokens_per_request.avg_prompt)} />
-        <Cell label="completion" value={formatNumber(stats.tokens_per_request.avg_completion)} />
+        <Stat label="average" value={formatNumber(stats.tokens_per_request.avg)} />
+        <Stat label="prompt" value={formatNumber(stats.tokens_per_request.avg_prompt)} />
+        <Stat label="completion" value={formatNumber(stats.tokens_per_request.avg_completion)} />
       </dl>
       <dl className="mt-3 grid grid-cols-2 gap-2 font-mono text-[length:var(--fs-sm)] text-(--dim)">
         <div>
@@ -85,9 +67,9 @@ export function SecondaryMetrics(stats: SecondaryMetricsStats) {
       <div className="mt-6">
         <SectionLabel>Cache</SectionLabel>
         <dl className="grid grid-cols-3 border-b border-(--border)/40 pb-4">
-          <Cell label="hit rate" value={`${stats.cache.hit_rate.toFixed(1)}%`} />
-          <Cell label="hits" value={formatNumber(stats.cache.hits)} />
-          <Cell label="misses" value={formatNumber(stats.cache.misses)} />
+          <Stat label="hit rate" value={`${stats.cache.hit_rate.toFixed(1)}%`} />
+          <Stat label="hits" value={formatNumber(stats.cache.hits)} />
+          <Stat label="misses" value={formatNumber(stats.cache.misses)} />
         </dl>
         <dl className="mt-3 grid grid-cols-2 gap-2 font-mono text-[length:var(--fs-sm)] text-(--dim)">
           <div>
@@ -105,9 +87,7 @@ export function SecondaryMetrics(stats: SecondaryMetricsStats) {
 
       <div className="mt-6">
         <div className="mb-3 flex items-center justify-between">
-          <div className="font-mono text-[length:var(--fs-2xs)] font-medium uppercase tracking-[0.18em] text-(--dim)/75">
-            Hourly activity
-          </div>
+          <SectionLabel className="mb-0">Hourly activity</SectionLabel>
           <span className="font-mono text-[length:var(--fs-xs)] text-(--dim)">
             peak {peakHour?.hour ?? 0}:00 ·{" "}
             <span className="tabular-nums text-(--fg)">
@@ -134,7 +114,9 @@ export function SecondaryMetrics(stats: SecondaryMetricsStats) {
                   title={`${i}:00 — ${formatNumber(requests)} requests`}
                 />
                 {i % 6 === 0 ? (
-                  <div className="font-mono text-[length:var(--fs-2xs)] text-(--dim)/60">{i}:00</div>
+                  <div className="font-mono text-[length:var(--fs-2xs)] text-(--dim)/60">
+                    {i}:00
+                  </div>
                 ) : null}
               </div>
             );

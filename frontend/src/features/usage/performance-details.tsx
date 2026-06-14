@@ -1,6 +1,7 @@
 "use client";
 
 import { formatDurationOrUnavailable } from "@/lib/formatters";
+import { ProgressBar, SectionLabel } from "@/ui";
 
 interface LatencyStats {
   avg_ms: number | null;
@@ -16,23 +17,6 @@ interface PerformanceStats {
   ttft: LatencyStats;
 }
 
-function Bar({
-  value,
-  max,
-  colorClass = "bg-(--fg)/30",
-}: {
-  value: number | null;
-  max: number;
-  colorClass?: string;
-}) {
-  const percentage = Math.min(100, ((value ?? 0) / (max > 0 ? max : 1)) * 100);
-  return (
-    <div className="h-1 w-full overflow-hidden bg-(--surface)">
-      <div className={`h-full ${colorClass}`} style={{ width: `${percentage}%` }} />
-    </div>
-  );
-}
-
 function Row({
   label,
   value,
@@ -44,13 +28,14 @@ function Row({
   max: number;
   color?: string;
 }) {
+  const pct = Math.min(100, ((value ?? 0) / (max > 0 ? max : 1)) * 100);
   return (
     <div className="space-y-1.5">
       <div className="flex items-center justify-between font-mono text-[length:var(--fs-sm)]">
         <span className="text-(--dim)">{label}</span>
         <span className="tabular-nums text-(--fg)">{formatDurationOrUnavailable(value)}</span>
       </div>
-      <Bar value={value} max={max} colorClass={color ?? "bg-(--fg)/30"} />
+      <ProgressBar progress={pct} barClassName={color} trackClassName="bg-(--surface)" />
     </div>
   );
 }
@@ -66,9 +51,7 @@ export function PerformanceDetails(stats: PerformanceStats) {
   return (
     <section className="px-2 pt-2 pb-5">
       <div className="mb-3 flex items-center justify-between">
-        <div className="font-mono text-[length:var(--fs-2xs)] font-medium uppercase tracking-[0.18em] text-(--dim)/75">
-          Latency
-        </div>
+        <SectionLabel className="mb-0">Latency</SectionLabel>
         <span className="font-mono text-[length:var(--fs-xs)] uppercase tracking-[0.16em] text-(--dim)/60">
           lower is better
         </span>
@@ -88,9 +71,7 @@ export function PerformanceDetails(stats: PerformanceStats) {
       </div>
 
       <div className="mb-3 mt-5 flex items-center justify-between">
-        <div className="font-mono text-[length:var(--fs-2xs)] font-medium uppercase tracking-[0.18em] text-(--dim)/75">
-          Time to first token
-        </div>
+        <SectionLabel className="mb-0">Time to first token</SectionLabel>
         <span className="font-mono text-[length:var(--fs-xs)] uppercase tracking-[0.16em] text-(--dim)/60">
           lower is better
         </span>
