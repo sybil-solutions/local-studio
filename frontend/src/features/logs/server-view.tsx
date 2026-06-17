@@ -4,13 +4,12 @@ import { useMemo, useState } from "react";
 import { ExternalLink, RefreshCw } from "lucide-react";
 import { AppPage, Button, Checkbox, KeyValueRow, StatusPill, Tabs } from "@/ui";
 import { useLogs } from "@/features/logs/use-logs";
-import { useSidebarStatus } from "@/hooks/use-sidebar-status";
+import { useRealtimeStatusStore } from "@/hooks/realtime-status-store";
 import { getStoredBackendUrl } from "@/lib/api/connection";
 
 type Tab = "logs" | "docs";
 
 export default function ServerPage() {
-  const status = useSidebarStatus();
   const {
     filteredSessions,
     selectedSession,
@@ -23,31 +22,47 @@ export default function ServerPage() {
     handleSelectSession,
     hasLogContent,
   } = useLogs();
+  const realtime = useRealtimeStatusStore();
   const [tab, setTab] = useState<Tab>("logs");
-  const backendUrl = useMemo(() => getStoredBackendUrl() || "http://127.0.0.1:8080", []).replace(
-    /\/+$/,
-    "",
+  const backendUrl = useMemo(
+    () => (getStoredBackendUrl() || "http://127.0.0.1:8080").replace(/\/+$/, ""),
+    [],
   );
   const docsUrl = "/api/proxy/api/docs";
   const docsSpecUrl = "/api/proxy/api/spec";
   const docsSrcDoc = useMemo(() => swaggerSrcDoc(docsSpecUrl), [docsSpecUrl]);
 
+  const summary = realtime.runtimeSummary;
+  const process = realtime.status?.process ?? null;
+  const backends = summary
+    ? ([
+        ["vllm", summary.backends.vllm],
+        ["sglang", summary.backends.sglang],
+        ["llamacpp", summary.backends.llamacpp],
+        summary.backends.mlx ? ["mlx", summary.backends.mlx] : null,
+      ].filter(Boolean) as [string, { installed: boolean; version: string | null }][])
+    : [];
+
   return (
     <AppPage className="flex h-full min-h-0 flex-col overflow-hidden">
       <header className="border-b border-(--border) px-5 py-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <div className="text-[length:var(--fs-xs)] uppercase tracking-[0.16em] text-(--dim)">
+          <div className="min-w-0">
+            <div className="text-[length:var(--fs-xs)] uppercase tracking-[0.16em] text-(--color-foreground-subtle)">
               Server
             </div>
             <h1 className="mt-1 text-[length:var(--fs-3xl)] font-semibold tracking-[-0.015em]">
               Controller
             </h1>
-            <p className="mt-1 text-xs text-(--dim)">{backendUrl}</p>
+            <p className="mt-1 font-mono text-xs text-(--color-foreground-subtle)">{backendUrl}</p>
           </div>
-          <div className="flex items-center gap-2">
-            <HealthPill label="controller" ok={status.online} />
-            <HealthPill label="inference" ok={status.inferenceOnline} />
+          <div className="flex flex-wrap items-center gap-2">
+            <StatusPill tone={realtime.connected ? "good" : "danger"} variant="badge">
+              {realtime.connected ? "controller online" : "controller offline"}
+            </StatusPill>
+            <StatusPill tone={realtime.status?.running ? "good" : "default"} variant="badge">
+              {realtime.status?.running ? "inference serving" : "inference idle"}
+            </StatusPill>
             <Button
               type="button"
               variant="ghost"
@@ -61,27 +76,118 @@ export default function ServerPage() {
         </div>
       </header>
 
-      <section className="grid min-h-0 flex-1 grid-cols-1 gap-0 lg:grid-cols-[260px_minmax(0,1fr)]">
-        <aside className="min-h-0 border-b border-(--border) p-3 lg:border-b-0 lg:border-r">
-          <div className="mb-3 text-[length:var(--fs-xs)] uppercase tracking-[0.16em] text-(--dim)">
-            Server Health
+      <div className="grid min-h-0 flex-1 grid-cols-1 gap-0 overflow-hidden lg:grid-cols-[320px_minmax(0,1fr)]">
+        {/* Status console — the actual server surface */}
+        <aside className="min-h-0 overflow-y-auto border-b border-(--border) lg:border-b-0 lg:border-r">
+          <StatusGroup title="Connection">
+            <KeyValueRow label="URL" value={<span className="font-mono">{backendUrl}</span>} />
+            <KeyValueRow label="Reachable" value={realtime.connected ? "yes" : "no"} />
+            <KeyValueRow label="Inference port" value={realtime.status?.inference_port ?? "—"} />
+            {realtime.lease?.holder ? (
+              <KeyValueRow label="Lease" value={realtime.lease.holder} />
+            ) : null}
+          </StatusGroup>
+
+          <StatusGroup title="Runtime">
+            <KeyValueRow
+              label="Platform"
+              value={
+                summary
+                  ? `${summary.platform.kind} (${summary.platform.vendor ?? "—"})`
+                  : (realtime.platformKind ?? "—")
+              }
+            />
+            <KeyValueRow
+              label="GPU monitoring"
+              value={
+                summary
+                  ? `${summary.gpu_monitoring.available ? "available" : "unavailable"} · ${summary.gpu_monitoring.tool}`
+                  : "—"
+              }
+            />
+            <KeyValueRow label="GPUs detected" value={realtime.gpus.length || "—"} />
+          </StatusGroup>
+
+          <StatusGroup title="Backends">
+            {backends.length > 0 ? (
+              backends.map(([name, info]) => (
+                <div
+                  key={name}
+                  className="flex items-center justify-between py-0.5 text-[length:var(--fs-sm)]"
+                >
+                  <span className="font-mono text-(--color-foreground-subtle)">{name}</span>
+                  {info.installed ? (
+                    <span className="font-mono text-(--color-success)">
+                      {info.version ?? "installed"}
+                    </span>
+                  ) : (
+                    <span className="text-(--color-foreground-subtlest)">not installed</span>
+                  )}
+                </div>
+              ))
+            ) : (
+              <div className="text-[length:var(--fs-sm)] text-(--color-foreground-subtlest)">
+                Detecting…
+              </div>
+            )}
+          </StatusGroup>
+
+          <StatusGroup title="Active process">
+            {process ? (
+              <>
+                <KeyValueRow label="Backend" value={process.backend ?? "—"} />
+                <KeyValueRow label="PID" value={process.pid ?? "—"} />
+                <KeyValueRow
+                  label="Model"
+                  value={process.served_model_name ?? process.model_path ?? "—"}
+                />
+                <KeyValueRow label="Port" value={process.port ?? "—"} />
+              </>
+            ) : (
+              <div className="text-[length:var(--fs-sm)] text-(--color-foreground-subtlest)">
+                No model loaded.
+              </div>
+            )}
+          </StatusGroup>
+
+          {realtime.services.length > 0 ? (
+            <StatusGroup title="Services">
+              {realtime.services.map((svc) => (
+                <div
+                  key={svc.id}
+                  className="flex items-center justify-between py-0.5 text-[length:var(--fs-sm)]"
+                >
+                  <span className="min-w-0 truncate text-(--color-foreground-subtle)">
+                    {svc.id}
+                  </span>
+                  <span
+                    className={`shrink-0 font-mono ${
+                      svc.status === "ok" || svc.status === "healthy"
+                        ? "text-(--color-success)"
+                        : svc.status === "error" || svc.last_error
+                          ? "text-(--color-destructive)"
+                          : "text-(--color-foreground-subtle)"
+                    }`}
+                  >
+                    {svc.status}
+                  </span>
+                </div>
+              ))}
+            </StatusGroup>
+          ) : null}
+
+          <div className="border-t border-(--border) px-4 py-3">
+            <Tabs
+              variant="pill"
+              items={[
+                { id: "logs", label: "Server Logs" },
+                { id: "docs", label: "API Docs" },
+              ]}
+              activeTab={tab}
+              onSelectTab={setTab}
+            />
           </div>
-          <dl className="space-y-2 text-xs">
-            <KeyValueRow label="Controller" value={status.online ? "online" : "offline"} />
-            <KeyValueRow label="Inference" value={status.activityLine} />
-            <KeyValueRow label="Model" value={status.model ?? "none"} />
-          </dl>
-          <Tabs
-            variant="pill"
-            className="mt-5"
-            items={[
-              { id: "logs", label: "Server Logs" },
-              { id: "docs", label: "API Docs" },
-            ]}
-            activeTab={tab}
-            onSelectTab={setTab}
-          />
-          <div className="mt-3 max-h-[42vh] overflow-y-auto">
+          <div className="max-h-[34vh] overflow-y-auto px-2 pb-3">
             {filteredSessions.map((session) => (
               <button
                 key={session.id}
@@ -92,8 +198,8 @@ export default function ServerPage() {
                 }}
                 className={`mb-1 block w-full truncate rounded px-2 py-1.5 text-left text-[length:var(--fs-sm)] ${
                   selectedSession === session.id
-                    ? "bg-(--active) text-(--fg)"
-                    : "text-(--dim) hover:bg-(--hover) hover:text-(--fg)"
+                    ? "bg-(--color-surface) text-(--fg)"
+                    : "text-(--color-foreground-subtle) hover:bg-(--color-surface-hover) hover:text-(--fg)"
                 }`}
                 title={session.id}
               >
@@ -103,11 +209,12 @@ export default function ServerPage() {
           </div>
         </aside>
 
+        {/* Log / docs viewer — secondary panel */}
         <div className="min-h-0 p-4">
           {tab === "logs" ? (
-            <section className="flex h-full min-h-[32rem] flex-col overflow-hidden border border-(--border) bg-(--surface)">
-              <div className="flex min-h-10 items-center justify-between border-b border-(--border) px-3">
-                <div className="truncate font-mono text-xs text-(--dim)">
+            <section className="flex h-full min-h-[32rem] flex-col overflow-hidden rounded-lg border border-(--color-card-border) bg-(--color-card)">
+              <div className="flex min-h-10 items-center justify-between border-b border-(--color-card-border) px-3">
+                <div className="truncate font-mono text-xs text-(--color-foreground-subtle)">
                   {selectedSession ?? "select a log stream"}
                 </div>
                 <Checkbox
@@ -123,23 +230,23 @@ export default function ServerPage() {
                 className="min-h-0 flex-1 overflow-auto p-3 font-mono text-[length:var(--fs-sm)] leading-5 text-(--fg)"
               >
                 {loadingContent ? (
-                  <div className="text-(--dim)">Loading logs…</div>
+                  <div className="text-(--color-foreground-subtle)">Loading logs…</div>
                 ) : hasLogContent ? (
                   renderLogs()
                 ) : (
-                  <div className="text-(--dim)">No log content selected.</div>
+                  <div className="text-(--color-foreground-subtle)">No log content selected.</div>
                 )}
               </div>
             </section>
           ) : (
-            <section className="flex h-full min-h-[32rem] flex-col overflow-hidden border border-(--border) bg-(--surface)">
-              <div className="flex min-h-10 items-center justify-between border-b border-(--border) px-3 text-xs">
-                <span>OpenAPI reference</span>
+            <section className="flex h-full min-h-[32rem] flex-col overflow-hidden rounded-lg border border-(--color-card-border) bg-(--color-card)">
+              <div className="flex min-h-10 items-center justify-between border-b border-(--color-card-border) px-3 text-xs">
+                <span className="text-(--color-foreground-subtle)">OpenAPI reference</span>
                 <a
                   href={docsUrl}
                   target="_blank"
                   rel="noreferrer"
-                  className="inline-flex items-center gap-1 text-(--dim) hover:text-(--fg)"
+                  className="inline-flex items-center gap-1 text-(--color-foreground-subtle) hover:text-(--fg)"
                 >
                   Open <ExternalLink className="h-3 w-3" />
                 </a>
@@ -153,8 +260,19 @@ export default function ServerPage() {
             </section>
           )}
         </div>
-      </section>
+      </div>
     </AppPage>
+  );
+}
+
+function StatusGroup({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="border-b border-(--border) px-4 py-3">
+      <div className="mb-2 text-[length:var(--fs-xs)] font-medium uppercase tracking-[0.16em] text-(--color-foreground-subtlest)">
+        {title}
+      </div>
+      <dl className="space-y-1 text-[length:var(--fs-sm)]">{children}</dl>
+    </div>
   );
 }
 
@@ -184,12 +302,4 @@ function swaggerSrcDoc(specUrl: string): string {
     </script>
   </body>
 </html>`;
-}
-
-function HealthPill({ label, ok }: { label: string; ok: boolean }) {
-  return (
-    <StatusPill tone={ok ? "good" : "danger"} variant="badge">
-      {label}
-    </StatusPill>
-  );
 }
