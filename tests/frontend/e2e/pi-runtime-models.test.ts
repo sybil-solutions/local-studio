@@ -8,11 +8,13 @@ import { refreshPiModels, resolvePiModelSelection } from "@/features/agent/pi-ru
 
 test("Pi model refresh pulls and writes models from every configured controller", async () => {
   const previousDataDir = process.env.VLLM_STUDIO_DATA_DIR;
+  const previousHome = process.env.HOME;
   const previousFetch = globalThis.fetch;
   const dataDir = mkdtempSync(path.join(tmpdir(), "vllm-studio-pi-models-"));
   const requests: Array<{ url: string; authorization: string | null }> = [];
 
   process.env.VLLM_STUDIO_DATA_DIR = dataDir;
+  process.env.HOME = dataDir;
   writeFileSync(
     path.join(dataDir, "api-settings.json"),
     JSON.stringify({
@@ -103,6 +105,8 @@ test("Pi model refresh pulls and writes models from every configured controller"
     globalThis.fetch = previousFetch;
     if (previousDataDir === undefined) delete process.env.VLLM_STUDIO_DATA_DIR;
     else process.env.VLLM_STUDIO_DATA_DIR = previousDataDir;
+    if (previousHome === undefined) delete process.env.HOME;
+    else process.env.HOME = previousHome;
     rmSync(dataDir, { recursive: true, force: true });
   }
 });
