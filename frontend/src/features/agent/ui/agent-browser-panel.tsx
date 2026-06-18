@@ -29,11 +29,10 @@ import {
 } from "@/features/agent/sanitize-embedded-browser-url";
 import { useTools } from "@/features/agent/tools/context";
 import type { ComputerTab } from "@/features/agent/tools/types";
-import type { Project } from "@/features/agent/projects/types";
+import type { GitSummary, Project } from "@/features/agent/projects/types";
 import type { Session } from "@/features/agent/runtime/types";
 import { makeFreshTab, newRuntimeId } from "@/features/agent/messages/helpers";
 import type { AgentModel } from "@/features/agent/workspace/types";
-import type { GitSummary } from "@/features/agent/projects/types";
 import {
   terminalOwnerLabel,
   uniqueTerminalKeys,

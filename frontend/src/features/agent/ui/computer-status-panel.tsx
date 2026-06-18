@@ -5,10 +5,9 @@ import { Code2, Loader2 } from "lucide-react";
 import { formatTokenCount } from "@/features/agent/messages";
 import { useTools } from "@/features/agent/tools/context";
 import type { ComposerSkillRef } from "@/features/agent/composer-context";
-import type { Project } from "@/features/agent/projects/types";
+import type { GitSummary, Project } from "@/features/agent/projects/types";
 import type { Session } from "@/features/agent/runtime/types";
 import type { AgentModel } from "@/features/agent/workspace/types";
-import type { GitSummary } from "@/features/agent/projects/types";
 
 type StatusTotals = {
   read: number;
