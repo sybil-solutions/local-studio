@@ -102,6 +102,10 @@ export type SessionRuntimeController = {
   subscribeActiveRuntimeIds(listener: () => void): () => void;
   /** Current set of actively-working session ids (stable identity until change). */
   getActiveRuntimeIds(): ReadonlySet<string>;
+  /** Session ids that finished working while unseen (drives the sidebar dot). */
+  getUnseenFinishedIds(): ReadonlySet<string>;
+  /** Clear a session's unseen-activity flag (the user opened/looked at it). */
+  markRuntimeSeen(sessionId: string): void;
   /**
    * Reconcile every session against the runtime list right now, then restart
    * the steady poll. Called by the React binding when poll-relevant session
@@ -165,7 +169,12 @@ export function createSessionRuntimeController(
   // the poll sees server-side runtimes regardless of pane membership. A new Set
   // identity is produced only on change, so useSyncExternalStore stays stable.
   let activeRuntimeIds: ReadonlySet<string> = new Set();
+  // Sessions that finished working while not being looked at — the sidebar
+  // "unseen activity" dot. Set when a session leaves the active set; cleared
+  // when the user opens it (markRuntimeSeen) or it starts working again.
+  let unseenFinishedIds: ReadonlySet<string> = new Set();
   const activeRuntimeListeners = new Set<() => void>();
+  const notifyRuntimeListeners = () => activeRuntimeListeners.forEach((listener) => listener());
   const setsEqual = (a: ReadonlySet<string>, b: ReadonlySet<string>): boolean =>
     a.size === b.size && [...a].every((id) => b.has(id));
   const updateActiveRuntimeIds = (entries: RuntimeSessionSummary[]): void => {
@@ -175,9 +184,27 @@ export function createSessionRuntimeController(
       if (entry.sessionId) next.add(entry.sessionId);
       if (entry.status.piSessionId) next.add(entry.status.piSessionId);
     }
-    if (setsEqual(activeRuntimeIds, next)) return;
-    activeRuntimeIds = next;
-    activeRuntimeListeners.forEach((listener) => listener());
+    let nextUnseen: Set<string> | null = null;
+    // Active -> inactive = finished in the background -> unseen.
+    for (const id of activeRuntimeIds) {
+      if (!next.has(id)) (nextUnseen ??= new Set(unseenFinishedIds)).add(id);
+    }
+    // Re-entered active = working again -> not unseen anymore.
+    for (const id of next) {
+      if (unseenFinishedIds.has(id)) (nextUnseen ??= new Set(unseenFinishedIds)).delete(id);
+    }
+    const activeChanged = !setsEqual(activeRuntimeIds, next);
+    if (!activeChanged && !nextUnseen) return;
+    if (activeChanged) activeRuntimeIds = next;
+    if (nextUnseen) unseenFinishedIds = nextUnseen;
+    notifyRuntimeListeners();
+  };
+  const markRuntimeSeen = (sessionId: string): void => {
+    if (!unseenFinishedIds.has(sessionId)) return;
+    const next = new Set(unseenFinishedIds);
+    next.delete(sessionId);
+    unseenFinishedIds = next;
+    notifyRuntimeListeners();
   };
 
   const commit = (sessionId: SessionId, patch: (session: Session) => Session) => {
@@ -576,6 +603,8 @@ export function createSessionRuntimeController(
       return () => activeRuntimeListeners.delete(listener);
     },
     getActiveRuntimeIds: () => activeRuntimeIds,
+    getUnseenFinishedIds: () => unseenFinishedIds,
+    markRuntimeSeen,
     pollNow: () => {
       stopPoll();
       if (!binding || binding.getSessions().length === 0) return;

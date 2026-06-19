@@ -41,6 +41,15 @@ function useActiveRuntimeIds(): ReadonlySet<string> {
   );
 }
 
+/** Session ids that finished working while you weren't looking — the dot. */
+function useUnseenFinishedIds(): ReadonlySet<string> {
+  return useSyncExternalStore(
+    (notify) => sessionRuntimeController().subscribeActiveRuntimeIds(notify),
+    () => sessionRuntimeController().getUnseenFinishedIds(),
+    () => sessionRuntimeController().getUnseenFinishedIds(),
+  );
+}
+
 export function ProjectRow({
   project,
   open,
@@ -167,6 +176,7 @@ export function ProjectSessions({
   const [sessions, setSessions] = useState<SessionSummary[] | null>(null);
   const [loading, setLoading] = useState(false);
   const activeRuntimeIds = useActiveRuntimeIds();
+  const unseenFinishedIds = useUnseenFinishedIds();
   const projectActiveSessions = useMemo(
     () => activeSessions.filter((session) => session.projectId === project.id),
     [activeSessions, project.id],
@@ -289,6 +299,7 @@ export function ProjectSessions({
               session={row.recent}
               pref={prefs[row.recent.id] ?? {}}
               isRunning={activeRuntimeIds.has(row.recent.id)}
+              unseen={unseenFinishedIds.has(row.recent.id)}
             />
           ),
         )
@@ -352,11 +363,13 @@ export function SessionRow({
   session,
   pref,
   isRunning = false,
+  unseen = false,
 }: {
   project: ProjectEntry;
   session: SessionSummary;
   pref: SessionPref;
   isRunning?: boolean;
+  unseen?: boolean;
 }) {
   const label =
     cleanSessionTitle(pref.title) ||
@@ -370,6 +383,7 @@ export function SessionRow({
       initialDraft={cleanSessionTitle(pref.title) || cleanSessionTitle(session.firstUserMessage)}
       age={relativeAge(session.startedAt)}
       isRunning={isRunning}
+      unseen={unseen}
       rowClass="group relative flex h-6 items-center rounded-md pl-3 pr-0 text-(--fg)/72 transition-colors hover:bg-(--hover) hover:text-(--fg)/95"
       renameRowClass="flex h-6 items-center rounded-md bg-(--surface)/40 pl-3 pr-1"
       href={`/agent?project=${encodeURIComponent(project.id)}&session=${encodeURIComponent(session.id)}`}
@@ -381,7 +395,10 @@ export function SessionRow({
             console.warn("[agent] failed to archive session", error);
           });
       }}
-      onRememberTitle={() => rememberAgentSessionNavTitle(session.id, label)}
+      onRememberTitle={() => {
+        rememberAgentSessionNavTitle(session.id, label);
+        sessionRuntimeController().markRuntimeSeen(session.id);
+      }}
       onDragStart={(event) => {
         setAgentSessionDragData(event, {
           piSessionId: session.id,
