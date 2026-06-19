@@ -171,6 +171,18 @@ export function ProjectsNavSection({ expanded }: { expanded: boolean }) {
   // Chats collapses by default — its row count grows fast and most navigation
   // happens via the Pinned strip above it.
   const [chatsExpanded, setChatsExpanded] = useState(false);
+  // When the section is collapsed the per-row running spinner / unseen dot is
+  // hidden, so a turn left streaming in a backgrounded chat would be invisible.
+  // Surface a single accent dot on the collapsed header instead — the "blue
+  // circle" notification. `unseen` already means "active or just-finished while
+  // NOT focused" (see active-sessions.ts), so the chat you're currently watching
+  // never trips it — only background runners and just-finished turns do.
+  const chatsHasActivity = useMemo(() => {
+    if (!chatProject) return false;
+    return activeSessions.some(
+      (session) => session.projectId === chatProject.id && session.unseen === true,
+    );
+  }, [activeSessions, chatProject]);
   const [projectsExpanded, setProjectsExpanded] = useState(true);
   useProjectsNavAddProjectEffect(handleAddProject);
   useActiveAgentSessionsEffect({ setActiveSessions });
@@ -240,6 +252,7 @@ export function ProjectsNavSection({ expanded }: { expanded: boolean }) {
           <SidebarSectionHeader
             label="Chats"
             open={chatsExpanded}
+            indicator={chatsHasActivity}
             onToggle={() => setChatsExpanded((value) => !value)}
             action={
               <NewChatPlusButton
@@ -362,11 +375,14 @@ function SidebarSectionHeader({
   open,
   onToggle,
   action,
+  indicator = false,
 }: {
   label: string;
   open: boolean;
   onToggle: () => void;
   action?: ReactNode;
+  /** Show a "has activity inside" dot — only meaningful while collapsed. */
+  indicator?: boolean;
 }) {
   return (
     <div className="group mt-4 flex h-5 items-center justify-between px-2.5 text-[length:var(--fs-sm)] font-medium text-(--dim)/65">
@@ -377,6 +393,13 @@ function SidebarSectionHeader({
         aria-expanded={open}
       >
         <span>{label}</span>
+        {!open && indicator ? (
+          <span
+            className="h-1.5 w-1.5 shrink-0 rounded-full bg-(--accent)"
+            aria-label={`${label} has unseen activity`}
+            title={`${label} has unseen activity`}
+          />
+        ) : null}
         <ChevronDownIcon
           className={`h-2.5 w-2.5 shrink-0 opacity-0 transition-[opacity,transform] group-hover:opacity-100 group-focus-within:opacity-100 ${open ? "" : "-rotate-90"}`}
         />
