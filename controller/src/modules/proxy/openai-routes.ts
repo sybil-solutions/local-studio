@@ -31,6 +31,31 @@ interface NonRunningModelWarningState {
   suppressed: number;
 }
 
+export interface ModelNotRunningError {
+  error: { message: string; type: "model_not_running"; code: "model_not_running" };
+  detail: string;
+}
+
+/**
+ * The chat proxy never launches a model. When the requested model isn't the
+ * one running, return this OpenAI-shaped 503 body: SDK callers (the pi agent
+ * runtime) read `error.message`, so this surfaces a real instruction instead
+ * of a bare "503 status code (no body)". `detail` is kept for FastAPI-style
+ * callers that already read it.
+ */
+export const modelNotRunningError = (
+  activeModel: string | null,
+  requestedModel: string | null | undefined,
+): ModelNotRunningError => {
+  const message = activeModel
+    ? `Model ${activeModel} is running; ${requestedModel} is not. Launch it from the frontend before sending requests.`
+    : `No model is running. Launch ${requestedModel} from the frontend before sending requests.`;
+  return {
+    error: { message, type: "model_not_running", code: "model_not_running" },
+    detail: message,
+  };
+};
+
 export const ensureStreamingUsageIncluded = (payload: Record<string, unknown>): boolean => {
   if (!Boolean(payload["stream"])) return false;
   const existingStreamOptions =
@@ -281,11 +306,11 @@ export const registerOpenAIRoutes: RouteRegistrar = (app, context) => {
           activeModel,
           source: sourceHeader,
         });
-        throw serviceUnavailable(
-          activeModel
-            ? `Model ${activeModel} is running; ${requestedModel} is not. Launch it from the frontend before sending requests.`
-            : `No model is running. Launch ${requestedModel} from the frontend before sending requests.`
-        );
+        // Return an OpenAI-shaped error so SDK callers (the pi agent runtime)
+        // surface the message instead of a bare "503 status code (no body)" —
+        // the SDK reads `error.message`, not FastAPI's `detail`. Keep `detail`
+        // too for any non-OpenAI caller that already relies on it.
+        return ctx.json(modelNotRunningError(activeModel, requestedModel), { status: 503 });
       }
     }
 
