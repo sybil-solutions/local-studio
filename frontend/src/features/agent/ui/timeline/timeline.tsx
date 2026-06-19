@@ -3,6 +3,7 @@
 import { memo, useCallback, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { AssistantBlock, ChatMessage } from "@/features/agent/messages";
 import { SessionPaneBlockRouter } from "@/features/agent/ui/timeline/session-pane-block-router";
+import { ChevronDownIcon } from "@/ui/icons";
 
 // Mirrors `groupAssistantBlocks`: a message renders something only if it has a
 // non-empty text block or any tool/thinking/event block. Assistant messages
@@ -89,41 +90,68 @@ export function Timeline({
   }
 
   return (
-    <div
-      ref={setScroller}
-      data-timeline-scroller
-      className="agent-chat-scroller min-h-0 flex-1 overflow-y-auto bg-(--agent-bg) px-6 pb-1 pt-2 [overflow-anchor:none] [overscroll-behavior:contain] [scroll-behavior:auto] [scrollbar-gutter:stable_both-edges]"
-    >
-      <div data-timeline-list className="agent-thread-shell mx-auto flex flex-col">
-        {visibleMessages.map((message, index) => {
-          const isLast = index === visibleMessages.length - 1;
-          const prevRole = index > 0 ? visibleMessages[index - 1].role : null;
-          const isGrouped = message.role === prevRole;
-          return (
-            <div
-              key={message.id}
-              className={`[overflow-anchor:none] ${isGrouped ? "pt-2" : "pt-6"} ${isLast ? "pb-4" : ""}`}
-            >
-              <MemoMessage
-                message={message}
-                live={isLast && running}
-                running={running}
-                onForkSession={onForkSession}
-              />
+    <div className="relative flex min-h-0 flex-1 flex-col">
+      <div
+        ref={setScroller}
+        data-timeline-scroller
+        className="agent-chat-scroller min-h-0 flex-1 overflow-y-auto bg-(--agent-bg) px-6 pb-1 pt-2 [overflow-anchor:none] [overscroll-behavior:contain] [scroll-behavior:auto] [scrollbar-gutter:stable_both-edges]"
+      >
+        <div data-timeline-list className="agent-thread-shell mx-auto flex flex-col">
+          {visibleMessages.map((message, index) => {
+            const isLast = index === visibleMessages.length - 1;
+            const prevRole = index > 0 ? visibleMessages[index - 1].role : null;
+            const isGrouped = message.role === prevRole;
+            return (
+              <div
+                key={message.id}
+                className={`[overflow-anchor:none] ${isGrouped ? "pt-2" : "pt-6"} ${isLast ? "pb-4" : ""}`}
+              >
+                <MemoMessage
+                  message={message}
+                  live={isLast && running}
+                  running={running}
+                  onForkSession={onForkSession}
+                />
+              </div>
+            );
+          })}
+          {running && visibleMessages[visibleMessages.length - 1]?.role !== "assistant" ? (
+            // Codex waiting state: a cadenced text shimmer, no spinner. Only shown
+            // before the assistant produces its first block — once blocks stream,
+            // the activity rows carry their own live states.
+            <div className="pt-6 pb-4 [overflow-anchor:none]">
+              <span className="codex-shimmer-text text-[13px] font-medium leading-5">Thinking</span>
             </div>
-          );
-        })}
-        {running && visibleMessages[visibleMessages.length - 1]?.role !== "assistant" ? (
-          // Codex waiting state: a cadenced text shimmer, no spinner. Only shown
-          // before the assistant produces its first block — once blocks stream,
-          // the activity rows carry their own live states.
-          <div className="pt-6 pb-4 [overflow-anchor:none]">
-            <span className="codex-shimmer-text text-[13px] font-medium leading-5">Thinking</span>
-          </div>
-        ) : null}
-        <div ref={setBottom} aria-hidden="true" className="[overflow-anchor:none]" />
+          ) : null}
+          <div ref={setBottom} aria-hidden="true" className="[overflow-anchor:none]" />
+        </div>
       </div>
+      {!stickToBottom && visibleMessages.length > 0 ? (
+        <ScrollToBottomButton
+          running={running}
+          onClick={() => {
+            scroller?.scrollTo({ top: scroller.scrollHeight, behavior: "smooth" });
+            onStickToBottomChange?.(true);
+          }}
+        />
+      ) : null}
     </div>
+  );
+}
+
+/** Floating "jump to latest" affordance, shown only when the user has scrolled
+ * up off the bottom. Nudges to "New messages" while a turn is streaming. */
+function ScrollToBottomButton({ running, onClick }: { running: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="absolute bottom-3 left-1/2 z-10 inline-flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-(--border) bg-(--surface) px-3 py-1 text-[length:var(--fs-xs)] text-(--fg)/85 shadow-[0_6px_20px_rgba(0,0,0,0.35)] backdrop-blur-sm transition-colors hover:text-(--fg)"
+      aria-label="Scroll to latest"
+    >
+      {running ? "New messages" : "Latest"}
+      <ChevronDownIcon className="h-3 w-3" />
+    </button>
   );
 }
 
