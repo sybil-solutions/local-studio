@@ -177,6 +177,19 @@ export const stripToolCallsFromContent = (content: string): string => {
   cleaned = cleaned.replace(/(^|\n)[^\n]*\{[^\n]*\}[^\n]*(?=\n|$)/g, (line) => {
     return parseJsonToolCalls(line, 0).length > 0 ? (line.startsWith("\n") ? "\n" : "") : line;
   });
+  // A tool call that opened but never closed (split across stream deltas, or
+  // truncated) — drop the dangling block from the opening tag to the end so its
+  // half-written arguments don't leak into the answer/reasoning.
+  cleaned = cleaned.replace(/<tool_call>[\s\S]*$/i, "");
+  // Final pass: remove ORPHAN tool-call structural tags. The <parameter>/
+  // <arg_value> dialect, or a fragment whose opening tag arrived in an earlier
+  // delta, can leave a stray tag (e.g. a lone "</arg_value>") that the patterns
+  // above don't match — which then leaks into the visible answer or the
+  // reasoning bubble. These tags never occur in real prose.
+  cleaned = cleaned.replace(
+    /<\/?(?:tool_call|arguments|arg_value|arg_key|invoke|function|parameter)(?:[=\s][^>]*)?>/gi,
+    "",
+  );
   return cleaned;
 };
 

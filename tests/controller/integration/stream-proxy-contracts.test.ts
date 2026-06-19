@@ -424,6 +424,24 @@ world"}</arguments></tool_call>`,
     expect(stripToolCallsFromContent(content).trim()).toBe("");
   });
 
+  test("strips orphan tool-call tags that leak from split/partial tool calls", async () => {
+    const { stripToolCallsFromContent } = await import(
+      "../../../controller/src/modules/proxy/tool-call-parser"
+    );
+    // A lone closing fragment (the screenshot bug): reasoning showed "</arg_value>".
+    expect(stripToolCallsFromContent("</arg_value>").trim()).toBe("");
+    // A tool call split across stream deltas leaves a partial, unmatched block.
+    expect(
+      stripToolCallsFromContent(
+        "Done.\n<tool_call>\n<function=write>\n<parameter=path>\n<arg_value>x",
+      ).trim(),
+    ).toBe("Done.");
+    // Real prose with similar words is untouched.
+    expect(stripToolCallsFromContent("The function returns a value.")).toBe(
+      "The function returns a value.",
+    );
+  });
+
   test("stream proxy extracts invoke XML tool calls without visible content", async () => {
     const { createToolCallStream } =
       await import("../../../controller/src/modules/proxy/tool-call-stream");
