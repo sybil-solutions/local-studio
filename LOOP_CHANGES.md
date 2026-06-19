@@ -84,6 +84,11 @@ audit + per-fix detail in memory `project-chat-session-pipeline-audit`.
 Verified end-to-end: backgrounded running session shows a sidebar spinner; collapsed-Chats "blue circle" appears on navigate-away (absent while focused); reasoning streams visibly then collapses; markdown answer renders clean.
 Observed (unreported, not fixed): composer with a non-loaded model → raw "503 status code (no body)" (nicer message would help); LaTeX `$$…$$` renders raw (no KaTeX).
 
+### New features (2026-06-19, microcommits — LIVE-VERIFIED on glm-5.2)
+- `dd0b19a1` fix(controller): OpenAI-shaped 503 when the requested model isn't running (was bare "503 status code (no body)"; SDK reads `error.message`, not FastAPI `detail`). +`modelNotRunningError()` +2 tests. **Needs controller deploy.**
+- `3e54ee1f` feat(model-picker): green "running" badge on the loaded model + amber warning on the trigger when the SELECTED model isn't running (uses `model.active` from `/v1/models`, which the picker never surfaced). Verified: glm-5.2 badged "running"; selecting nemotron shows "(not running)" + warn dot.
+- `7e367c04` feat(chat): Retry button on the turn-error banner — resends the last user message, clears the error, starts a fresh turn (gated on model set + not running + something to resend). Verified: nemotron 503 → switch to glm-5.2 → Retry → resends and succeeds, error clears.
+
 ### Still owed
-- Deploy the 2 controller fixes (`scripts/deploy-remote.sh controller` — restarts model): `fd118a6c` newlines + `a798ebd0` tag leak.
-- Deferred high-risk: side-chat-via-navbar streaming (local-useState session never enters workspace store → controller never subscribes); reload-mid-stream resume (Next standalone buffers local SSE).
+- Deploy the **3** controller fixes (`scripts/deploy-remote.sh controller` — restarts model): `fd118a6c` newlines + `a798ebd0` tag leak + `dd0b19a1` 503-shape.
+- Deferred high-risk: side-chat-via-navbar streaming (local-useState session never enters workspace store → controller never subscribes — needs a product decision); reload-mid-stream resume (Next standalone buffers local SSE).
