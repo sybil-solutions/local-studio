@@ -128,22 +128,7 @@ function SessionPaneBlockRouterInner({
   onForkSession?: () => void;
 }) {
   if (message.role === "user") {
-    // User turns: a quiet foreground-tinted block sized to its content,
-    // capped by the same composer-width column and anchored to its right edge.
-    return (
-      <article className="flex justify-end">
-        <div className="min-w-0 max-w-full rounded-2xl bg-(--fg)/5 px-4 py-2.5 text-[length:var(--codex-chat-font-size)] leading-[1.625] text-(--fg)/90">
-          <div className="whitespace-pre-wrap break-words">{message.text}</div>
-          {message.attachments?.length ? (
-            <div className="mt-2 grid gap-2">
-              {message.attachments.map((attachment) => (
-                <UserAttachmentPreview key={attachment.id} attachment={attachment} />
-              ))}
-            </div>
-          ) : null}
-        </div>
-      </article>
-    );
+    return <UserMessage message={message} />;
   }
 
   return (
@@ -600,6 +585,43 @@ function assistantContentCopyText(blocks: AssistantBlock[]): string {
     .map((block) => (block.kind === "text" ? block.text : ""))
     .filter(Boolean)
     .join("\n\n");
+}
+
+function UserMessage({ message }: { message: ChatMessage }) {
+  const [copied, setCopied] = useState(false);
+  const copy = async () => {
+    if (!message.text.trim()) return;
+    await navigator.clipboard.writeText(message.text);
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1_200);
+  };
+  // A quiet foreground-tinted block sized to its content, capped by the same
+  // composer-width column and anchored to its right edge. A copy button reveals
+  // on hover to the left of the bubble, mirroring the assistant's copy action.
+  return (
+    <article className="group flex items-start justify-end gap-1">
+      {message.text.trim() ? (
+        <div className="mt-1 shrink-0 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+          <AssistantActionButton
+            label={copied ? "Copied" : "Copy message"}
+            onClick={() => void copy()}
+          >
+            <Copy className="h-3.5 w-3.5" />
+          </AssistantActionButton>
+        </div>
+      ) : null}
+      <div className="min-w-0 max-w-full rounded-2xl bg-(--fg)/5 px-4 py-2.5 text-[length:var(--codex-chat-font-size)] leading-[1.625] text-(--fg)/90">
+        <div className="whitespace-pre-wrap break-words">{message.text}</div>
+        {message.attachments?.length ? (
+          <div className="mt-2 grid gap-2">
+            {message.attachments.map((attachment) => (
+              <UserAttachmentPreview key={attachment.id} attachment={attachment} />
+            ))}
+          </div>
+        ) : null}
+      </div>
+    </article>
+  );
 }
 
 function AssistantMessageActions({
