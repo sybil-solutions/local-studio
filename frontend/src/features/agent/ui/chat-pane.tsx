@@ -298,10 +298,6 @@ export function ChatPane({
   const { selectedPlugins, selectedSkills, selectedPromptTemplates, removeLoadedContext } =
     useComposerLoadedContext({ activeTab, tools });
 
-  const updateSession = useCallback(
-    (sessionId: string, patch: (session: SessionTab) => SessionTab) => updateTab(sessionId, patch),
-    [updateTab],
-  );
   const engine = useSessionEngine({
     tabs,
     activeTabId,
@@ -312,7 +308,7 @@ export function ChatPane({
     browserBackend,
     canvasEnabled: tools.computer.canvasEnabled,
     onPiSessionIdChange: handlePiSessionIdChange,
-    updateSession,
+    updateSession: updateTab,
     selectionFor: tools.selectionFor,
   });
   const { sendMessage, queueMessage, removeQueued, editQueued, steerQueued, abortTurn, retryLast } =
@@ -972,6 +968,22 @@ function useChatPaneSendFlow({
     [engine],
   );
 
+  // Single-flight a submit through one of the in-flight guards: bail if this
+  // session already has a submit pending, clear any open @mention, then run and
+  // always release the guard. Shared by composer send, queue, and retry.
+  const runGuardedSubmit = useCallback(
+    async (guard: SessionSubmitGuard, sessionId: string, run: () => Promise<void>) => {
+      if (!beginSessionSubmit(guard, sessionId)) return;
+      setMention(null);
+      try {
+        await run();
+      } finally {
+        endSessionSubmit(guard, sessionId);
+      }
+    },
+    [setMention],
+  );
+
   const sendMessage = useCallback(
     async (event: FormEvent) => {
       event.preventDefault();
@@ -988,25 +1000,16 @@ function useChatPaneSendFlow({
         updateTab(activeTab.id, (t) => ({ ...t, error: "Select a model to send." }));
         return;
       }
-      const sendAsControl = await runtimeAcceptsControl(activeTab, runtime);
-      if (sendAsControl) {
+      if (await runtimeAcceptsControl(activeTab, runtime)) {
         if (!text) return;
-        if (!beginSessionSubmit(controlSubmitInFlightRef.current, activeTab.id)) return;
-        setMention(null);
-        try {
-          await queueAndSendControl("steer", text, activeTab, runtime);
-        } finally {
-          endSessionSubmit(controlSubmitInFlightRef.current, activeTab.id);
-        }
+        await runGuardedSubmit(controlSubmitInFlightRef.current, activeTab.id, () =>
+          queueAndSendControl("steer", text, activeTab, runtime),
+        );
         return;
       }
-      if (!beginSessionSubmit(composerSubmitInFlightRef.current, activeTab.id)) return;
-      setMention(null);
-      try {
-        await submitPrompt(text, activeTab.id);
-      } finally {
-        endSessionSubmit(composerSubmitInFlightRef.current, activeTab.id);
-      }
+      await runGuardedSubmit(composerSubmitInFlightRef.current, activeTab.id, () =>
+        submitPrompt(text, activeTab.id),
+      );
     },
     [
       activeTab,
@@ -1014,9 +1017,9 @@ function useChatPaneSendFlow({
       modelId,
       queueAndSendControl,
       readingAttachments,
+      runGuardedSubmit,
       runtimeAcceptsControl,
       runtimeSessionId,
-      setMention,
       submitPrompt,
       updateTab,
     ],
@@ -1032,30 +1035,22 @@ function useChatPaneSendFlow({
     }
     const runtime = activeTab.runtimeSessionId || runtimeSessionId;
     if (await runtimeAcceptsControl(activeTab, runtime)) {
-      if (!beginSessionSubmit(controlSubmitInFlightRef.current, activeTab.id)) return;
-      setMention(null);
-      try {
-        await queueAndSendControl("follow_up", text, activeTab, runtime, cwd);
-      } finally {
-        endSessionSubmit(controlSubmitInFlightRef.current, activeTab.id);
-      }
+      await runGuardedSubmit(controlSubmitInFlightRef.current, activeTab.id, () =>
+        queueAndSendControl("follow_up", text, activeTab, runtime, cwd),
+      );
       return;
     }
-    if (!beginSessionSubmit(composerSubmitInFlightRef.current, activeTab.id)) return;
-    setMention(null);
-    try {
-      await submitPrompt(text, activeTab.id);
-    } finally {
-      endSessionSubmit(composerSubmitInFlightRef.current, activeTab.id);
-    }
+    await runGuardedSubmit(composerSubmitInFlightRef.current, activeTab.id, () =>
+      submitPrompt(text, activeTab.id),
+    );
   }, [
     activeTab,
     cwd,
     modelId,
     queueAndSendControl,
+    runGuardedSubmit,
     runtimeAcceptsControl,
     runtimeSessionId,
-    setMention,
     submitPrompt,
     updateTab,
   ]);
@@ -1123,15 +1118,11 @@ function useChatPaneSendFlow({
     const lastUserText = [...activeTab.messages].reverse().find((m) => m.role === "user")?.text;
     const text = (lastUserText ?? activeTab.input).trim();
     if (!text) return;
-    if (!beginSessionSubmit(composerSubmitInFlightRef.current, activeTab.id)) return;
-    updateTab(activeTab.id, (t) => ({ ...t, error: "", input: "" }));
-    setMention(null);
-    try {
+    await runGuardedSubmit(composerSubmitInFlightRef.current, activeTab.id, async () => {
+      updateTab(activeTab.id, (t) => ({ ...t, error: "", input: "" }));
       await submitPrompt(text, activeTab.id);
-    } finally {
-      endSessionSubmit(composerSubmitInFlightRef.current, activeTab.id);
-    }
-  }, [activeTab, modelId, setMention, submitPrompt, updateTab]);
+    });
+  }, [activeTab, modelId, runGuardedSubmit, submitPrompt, updateTab]);
 
   return { sendMessage, queueMessage, removeQueued, editQueued, steerQueued, abortTurn, retryLast };
 }
