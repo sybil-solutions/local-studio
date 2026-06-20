@@ -747,3 +747,100 @@ test("poll-idle is suppressed inside the accept grace window, allowed after it",
   harness.controller.closeAll();
   harness.controller.unbind();
 });
+
+// Regression: a mid-stream user message (steer / follow-up) opens a new bubble
+// and installs a liveAssistantIds redirect so later same-tick events find it
+// before React commits. That redirect MUST be dropped when the turn ends — left
+// set, the NEXT turn's events retarget the prior (settled) bubble, leaving the
+// new bubble empty: tool calls + reasoning render off-screen and no final
+// content appears. This is the "browser-open follow-ups fail in weird ways"
+// report — the browser_context prefix makes the steer echo mismatch, which is
+// what installs the redirect in the first place.
+test("agent_end clears the mid-stream redirect so the next turn targets its own bubble", () => {
+  let session: Session = {
+    id: "s-1",
+    runtimeSessionId: "rt-1",
+    piSessionId: "pi-1",
+    title: "t",
+    messages: [
+      { id: "user-1", role: "user", text: "turn one", timestamp: "" },
+      { id: "assistant-A", role: "assistant", text: "", blocks: [], timestamp: "" },
+    ],
+    status: "running",
+    error: "",
+    input: "",
+    activeAssistantId: "assistant-A",
+  };
+  const handlers: { onPayload: (payload: RuntimeEventPayload) => void; onError: () => void }[] = [];
+  const controller = createSessionRuntimeController({
+    api: {
+      loadRuntimeStatus: async () => null,
+      subscribeRuntimeEvents: (_runtime, _after, _piSessionId, eventHandlers) => {
+        handlers.push(eventHandlers);
+        return { close: () => undefined };
+      },
+    },
+  });
+  controller.bind({
+    commit: (sessionId, patch) => {
+      if (sessionId === session.id) session = patch(session);
+    },
+    getSession: (sessionId) => (sessionId === session.id ? session : undefined),
+    getSessions: () => [session],
+  });
+  controller.reconcile([session]);
+  const emit = (payload: RuntimeEventPayload) => handlers.at(-1)?.onPayload(payload);
+  const userEcho = (text: string): Record<string, unknown> => ({
+    type: "message_start",
+    message: { role: "user", content: [{ type: "text", text }] },
+  });
+  const assistantMessage = (text: string): Record<string, unknown> => ({
+    type: "message",
+    message: { role: "assistant", content: [{ type: "text", text }] },
+  });
+  const blockText = (id: string) =>
+    (session.messages.find((m) => m.id === id)?.blocks ?? []).map((b) => b.text).join("");
+
+  // Turn 1: the prompt echo matches the optimistic bubble (no redirect yet),
+  // then the assistant answers into bubble A.
+  emit({ type: "pi", seq: 1, event: userEcho("turn one") });
+  emit({ type: "pi", seq: 2, event: assistantMessage("answer one") });
+  assert.equal(blockText("assistant-A"), "answer one");
+
+  // A mid-stream steer arrives — no optimistic bubble, so it opens bubble B and
+  // installs the liveAssistantIds redirect.
+  emit({ type: "pi", seq: 3, event: userEcho("steer text") });
+  const bubbleB = session.activeAssistantId;
+  assert.ok(bubbleB && bubbleB !== "assistant-A");
+  emit({ type: "pi", seq: 4, event: assistantMessage("answer steer") });
+  assert.equal(blockText(bubbleB!), "answer steer");
+
+  // Turn 1 ends.
+  emit({ type: "pi", seq: 5, event: { type: "agent_end" } });
+  assert.equal(session.status, "idle");
+
+  // Client optimistically appends turn 2 (mirrors appendOptimisticPrompt).
+  session = {
+    ...session,
+    status: "running",
+    activeAssistantId: "assistant-C",
+    messages: [
+      ...session.messages,
+      { id: "user-2", role: "user", text: "turn two", timestamp: "" },
+      { id: "assistant-C", role: "assistant", text: "", blocks: [], timestamp: "" },
+    ],
+  };
+
+  // Pi echoes "turn two" (matches the optimistic bubble → early return, redirect
+  // untouched), then streams the answer. It must land in bubble C — not the
+  // stale steer bubble B.
+  emit({ type: "pi", seq: 6, event: userEcho("turn two") });
+  emit({ type: "pi", seq: 7, event: assistantMessage("answer two") });
+
+  assert.equal(blockText("assistant-C"), "answer two");
+  assert.equal(blockText(bubbleB!), "answer steer");
+  assert.equal(blockText("assistant-A"), "answer one");
+
+  controller.closeAll();
+  controller.unbind();
+});

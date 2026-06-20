@@ -26,7 +26,7 @@ import {
   normalizeOpenAIModels,
 } from "@/features/agent/models";
 import { applyAssistantPiEventToBlocks } from "@/features/agent/messages/block-event";
-import { runtimeStatusLooksActive } from "@/features/agent/messages/helpers";
+import { runtimeStatusLooksActive, visibleUserTextFromPi } from "@/features/agent/messages/helpers";
 import { blocksFromTurnSnapshots } from "@/features/agent/messages/message-content";
 import { replaySessionEvents } from "@/features/agent/messages/replay";
 import { drainQueueAfterAgentEnd } from "@/features/agent/messages/helpers";
@@ -2140,5 +2140,34 @@ test("skill mentions and selected skill context survive composer prompt construc
   assert.match(
     selectedContextInstructions([], skills),
     /Preserve this selected composer context/,
+  );
+});
+
+// Regression: with the Browser panel open the prompt is prefixed with a
+// <browser_context>…</browser_context> block. When a turn reaches the
+// transcript via Pi's echo (steer/follow-up) or replay, that block must be
+// stripped — otherwise the user bubble renders the raw machine context and the
+// echoed text no longer matches the optimistic bubble (spawning a duplicate
+// bubble + a stale liveAssistantIds redirect).
+test("visibleUserTextFromPi strips a leading browser_context block", () => {
+  const browserBlock = [
+    "<browser_context>",
+    "The in-app Browser is open for this turn.",
+    "Active URL: http://localhost:8765/neon-drift.html.",
+    "</browser_context>",
+  ].join("\n");
+
+  assert.equal(visibleUserTextFromPi(`${browserBlock}\n\ngo on`), "go on");
+  // Also when the prompt is wrapped with Pi's "User prompt:" marker.
+  assert.equal(
+    visibleUserTextFromPi(`some env context\n\nUser prompt:\n${browserBlock}\n\ngo on`),
+    "go on",
+  );
+  // Untouched when there is no browser_context block.
+  assert.equal(visibleUserTextFromPi("just a normal prompt"), "just a normal prompt");
+  // A stray "<browser_context>" mid-text is NOT stripped (anchored to start).
+  assert.equal(
+    visibleUserTextFromPi("explain <browser_context> as a concept"),
+    "explain <browser_context> as a concept",
   );
 });

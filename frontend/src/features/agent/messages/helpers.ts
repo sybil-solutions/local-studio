@@ -1,5 +1,10 @@
 import { piEventIsSuccessfulCompaction } from "@/features/agent/pi-runtime-compaction";
-import type { QueuedMessage, RuntimeLoggedEvent, SessionTab, TokenStats } from "@/features/agent/messages/types";
+import type {
+  QueuedMessage,
+  RuntimeLoggedEvent,
+  SessionTab,
+  TokenStats,
+} from "@/features/agent/messages/types";
 
 export function randomIdSegment(length: number): string {
   const cryptoApi = globalThis.crypto;
@@ -118,7 +123,16 @@ export function cleanSessionTitle(value: string | null | undefined): string {
 export function visibleUserTextFromPi(text: string): string {
   const marker = "\n\nUser prompt:\n";
   const idx = text.lastIndexOf(marker);
-  return stripAttachmentPromptText(idx === -1 ? text : text.slice(idx + marker.length)).trim();
+  const body = idx === -1 ? text : text.slice(idx + marker.length);
+  return stripAttachmentPromptText(stripBrowserContextText(body)).trim();
+}
+
+// The Browser panel prepends a <browser_context>…</browser_context> block to
+// the prompt (browser/context.ts). It is machine context, never the user's
+// words — drop a leading block so echoed/replayed user turns show only what was
+// typed, and so the echoed text still matches the optimistic user bubble.
+function stripBrowserContextText(text: string): string {
+  return text.replace(/^\s*<browser_context>[\s\S]*?<\/browser_context>\s*/i, "");
 }
 
 function stripAttachmentPromptText(text: string): string {

@@ -337,6 +337,12 @@ export function createSessionRuntimeController(
         status: "idle",
         activeAssistantId: undefined,
       }));
+      // The turn is over: drop any mid-stream user-message redirect. The
+      // liveAssistantIds override only bridges the React-commit lag WITHIN a
+      // turn; left set, it would silently retarget the NEXT turn's events onto
+      // this (now settled) bubble, so the next bubble renders empty — tool
+      // calls and reasoning land off-screen and no final content appears.
+      streamContext.liveAssistantIds.delete(sessionId);
       // Queue display reconciliation only: Pi drains its own follow_up queue
       // server-side, so locally we just drop the drained head and any
       // already-sent items from the visible queue.
@@ -560,6 +566,10 @@ export function createSessionRuntimeController(
     noteTurnAccepted: (sessionId) => {
       turnAcceptedAt.set(sessionId, Date.now());
       adoptCursor(sessionId, 0);
+      // A new turn's authoritative bubble is its optimistic activeAssistantId;
+      // discard any stale mid-stream redirect left over from a prior turn that
+      // settled without an agent_end (e.g. idled by the runtime poll).
+      streamContext.liveAssistantIds.delete(sessionId);
     },
     noteReplayHydrated: (sessionId, committedSeq) => adoptCursor(sessionId, committedSeq),
     reconcile: (sessions) => {
