@@ -282,8 +282,23 @@ export function useWorkspace(): UseWorkspaceResult {
         if (key && key !== "vllmstudio_backend_url" && key !== "vllm-studio.controllers") return;
         reload();
       };
+      // Models load once on hydrate; a transient empty/failed initial fetch
+      // (controller briefly slow, model not yet launched, a network blip) would
+      // otherwise strand the picker on "No models" until a manual page reload.
+      // Recover when the user refocuses the window or the network returns — but
+      // only when the list is actually empty and not already loading, so a
+      // populated picker is never re-churned.
+      const recoverIfEmpty = () => {
+        if (stateRef.current.models.length === 0 && !stateRef.current.modelsLoading) reload();
+      };
       window.addEventListener("storage", onStorage);
-      return () => window.removeEventListener("storage", onStorage);
+      window.addEventListener("focus", recoverIfEmpty);
+      window.addEventListener("online", recoverIfEmpty);
+      return () => {
+        window.removeEventListener("storage", onStorage);
+        window.removeEventListener("focus", recoverIfEmpty);
+        window.removeEventListener("online", recoverIfEmpty);
+      };
     },
     [dispatch],
   );
