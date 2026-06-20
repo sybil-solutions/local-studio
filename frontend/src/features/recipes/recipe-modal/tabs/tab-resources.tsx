@@ -2,13 +2,9 @@
 
 import { Cpu, Database, GitBranch, Settings } from "@/ui/icon-registry";
 import { CheckboxRow, FormField, FormSection, Input, Slider } from "@/ui";
-import type { RecipeEditor } from "@/features/recipes/recipe-editor";
-import {
-  ENGINE_LABEL,
-  getEngineOptions,
-  type EngineCapabilities,
-} from "@/features/recipes/engine-capabilities";
+import { ENGINE_LABEL, getEngineOptions } from "@/features/recipes/engine-capabilities";
 import { EngineOptionsSection } from "../engine-options-section";
+import type { RecipeModalSectionProps, RecipeModalTabProps } from "./tab-props";
 
 export function RecipeModalTabResources({
   recipe,
@@ -16,13 +12,7 @@ export function RecipeModalTabResources({
   capabilities,
   getExtraArgValueForKey,
   setExtraArgValueForKey,
-}: {
-  recipe: RecipeEditor;
-  onChange: (next: RecipeEditor) => void;
-  capabilities: EngineCapabilities;
-  getExtraArgValueForKey: (key: string) => unknown;
-  setExtraArgValueForKey: (key: string, value: unknown) => void;
-}) {
+}: RecipeModalTabProps) {
   const options = getEngineOptions(capabilities.options, "resources");
   return (
     <div className="space-y-6">
@@ -80,11 +70,7 @@ export function RecipeModalTabResources({
   );
 }
 
-type SectionProps = {
-  recipe: RecipeEditor;
-  onChange: (next: RecipeEditor) => void;
-  capabilities: EngineCapabilities;
-};
+type SectionProps = RecipeModalSectionProps;
 
 function ParallelismSection({ recipe, onChange, capabilities }: SectionProps) {
   if (capabilities.parallelism === "none") return null;

@@ -3,12 +3,9 @@
 import { Clock, Database, Settings, Zap } from "@/ui/icon-registry";
 import { CheckboxRow, FormField, FormSection, Input, Select } from "@/ui";
 import type { RecipeEditor } from "@/features/recipes/recipe-editor";
-import {
-  ENGINE_LABEL,
-  getEngineOptions,
-  type EngineCapabilities,
-} from "@/features/recipes/engine-capabilities";
+import { ENGINE_LABEL, getEngineOptions } from "@/features/recipes/engine-capabilities";
 import { EngineOptionsSection } from "../engine-options-section";
+import type { RecipeModalSectionProps, RecipeModalTabProps } from "./tab-props";
 
 export function RecipeModalTabPerformance({
   recipe,
@@ -16,13 +13,7 @@ export function RecipeModalTabPerformance({
   capabilities,
   getExtraArgValueForKey,
   setExtraArgValueForKey,
-}: {
-  recipe: RecipeEditor;
-  onChange: (next: RecipeEditor) => void;
-  capabilities: EngineCapabilities;
-  getExtraArgValueForKey: (key: string) => unknown;
-  setExtraArgValueForKey: (key: string, value: unknown) => void;
-}) {
+}: RecipeModalTabProps) {
   const options = getEngineOptions(capabilities.options, "performance");
   return (
     <div className="space-y-6">
@@ -42,11 +33,7 @@ export function RecipeModalTabPerformance({
   );
 }
 
-type SectionProps = {
-  recipe: RecipeEditor;
-  onChange: (next: RecipeEditor) => void;
-  capabilities: EngineCapabilities;
-};
+type SectionProps = RecipeModalSectionProps;
 
 function KvCacheSection({ recipe, onChange, capabilities }: SectionProps) {
   if (!capabilities.kvCacheDtype && !capabilities.blockSize && !capabilities.caching) return null;

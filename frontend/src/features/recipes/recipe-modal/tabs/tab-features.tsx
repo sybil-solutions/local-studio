@@ -2,13 +2,9 @@
 
 import { Brain, MessageSquare, Settings, Wrench } from "@/ui/icon-registry";
 import { CheckboxRow, FormField, FormSection, Input, Select } from "@/ui";
-import type { RecipeEditor } from "@/features/recipes/recipe-editor";
-import {
-  ENGINE_LABEL,
-  getEngineOptions,
-  type EngineCapabilities,
-} from "@/features/recipes/engine-capabilities";
+import { ENGINE_LABEL, getEngineOptions } from "@/features/recipes/engine-capabilities";
 import { EngineOptionsSection } from "../engine-options-section";
+import type { RecipeModalSectionProps, RecipeModalTabProps } from "./tab-props";
 
 export function RecipeModalTabFeatures({
   recipe,
@@ -16,13 +12,7 @@ export function RecipeModalTabFeatures({
   capabilities,
   getExtraArgValueForKey,
   setExtraArgValueForKey,
-}: {
-  recipe: RecipeEditor;
-  onChange: (next: RecipeEditor) => void;
-  capabilities: EngineCapabilities;
-  getExtraArgValueForKey: (key: string) => unknown;
-  setExtraArgValueForKey: (key: string, value: unknown) => void;
-}) {
+}: RecipeModalTabProps) {
   const options = getEngineOptions(capabilities.options, "features");
   return (
     <div className="space-y-6">
@@ -47,11 +37,7 @@ export function RecipeModalTabFeatures({
   );
 }
 
-type SectionProps = {
-  recipe: RecipeEditor;
-  onChange: (next: RecipeEditor) => void;
-  capabilities: EngineCapabilities;
-};
+type SectionProps = RecipeModalSectionProps;
 
 function ToolCallingSection({ recipe, onChange, capabilities }: SectionProps) {
   if (!capabilities.toolCalling) return null;
