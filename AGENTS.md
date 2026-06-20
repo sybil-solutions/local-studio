@@ -6,3 +6,4 @@ Keep code composable and typed, use Effect for async and streaming, use the shar
 Before handoff run `npm --prefix frontend run check:quality`, `npm run check`, `npm --prefix frontend run test`, and `npm run test:integration` when relevant, and never bypass git hooks.
 Every file-changing turn must make one conventional microcommit, while frontend changes must also rebuild and reinstall `/Applications/Local Studio.app` with `desktop:dist`, relaunch it, and confirm `GET /api/desktop-health` returns 200.
 Use the documented local, remote, deployment, and agent-runtime workflows in the repository, keep secrets in ignored `.env.local`, and treat the live browser, controller, installed app, or deployed domain as the acceptance target for visible behavior.
+Treat semantic-release's computed version as the source of truth for stable desktop releases, apply it to package metadata in the release workspace, and keep checked-in package versions as development fallbacks.
