@@ -1,13 +1,17 @@
-import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+} from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const frontend = path.join(root, "frontend");
-const output = path.join(frontend, "dist-desktop");
-const staging = path.join(root, "release-staging");
 
-function frontendVersion() {
+function frontendVersion(frontend) {
   const manifest = JSON.parse(readFileSync(path.join(frontend, "package.json"), "utf8"));
   if (typeof manifest.version !== "string" || !/^\d+\.\d+\.\d+$/.test(manifest.version)) {
     throw new Error("frontend/package.json must contain a semantic version");
@@ -26,23 +30,35 @@ function releaseAssetNames(version) {
   ];
 }
 
-function requireAsset(name) {
+function requireAsset(output, name) {
   const file = path.join(output, name);
   if (!existsSync(file)) throw new Error(`Missing desktop release asset: ${file}`);
   return file;
 }
 
-function releaseAssetName(name) {
-  return name.replaceAll(" ", "-");
+export function stageDesktopRelease(rootDir) {
+  const frontend = path.join(rootDir, "frontend");
+  const output = path.join(frontend, "dist-desktop");
+  const staging = path.join(rootDir, "release-staging");
+  const version = frontendVersion(frontend);
+  const names = releaseAssetNames(version);
+  const aliases = [
+    [`Local Studio-${version}-arm64.dmg`, "Local-Studio-arm64.dmg"],
+    [`Local Studio-${version}-arm64-mac.zip`, "Local-Studio-arm64-mac.zip"],
+  ];
+
+  for (const name of names) requireAsset(output, name);
+  rmSync(staging, { recursive: true, force: true });
+  mkdirSync(staging, { recursive: true });
+  for (const name of names) copyFileSync(requireAsset(output, name), path.join(staging, name));
+  for (const [source, destination] of aliases) {
+    copyFileSync(requireAsset(output, source), path.join(staging, destination));
+  }
+
+  return { files: readdirSync(staging).sort(), staging, version };
 }
 
-const version = frontendVersion();
-const names = releaseAssetNames(version);
-const assets = names.map((name) => [requireAsset(name), path.join(staging, releaseAssetName(name))]);
-
-rmSync(staging, { recursive: true, force: true });
-mkdirSync(staging, { recursive: true });
-for (const [source, destination] of assets) copyFileSync(source, destination);
-copyFileSync(requireAsset(`Local Studio-${version}-arm64.dmg`), path.join(staging, "Local-Studio-arm64.dmg"));
-
-console.log(`Staged ${names.length + 1} Local Studio ${version} assets in ${staging}`);
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  const { files, staging, version } = stageDesktopRelease(root);
+  console.log(`Staged ${files.length} Local Studio ${version} assets in ${staging}`);
+}
