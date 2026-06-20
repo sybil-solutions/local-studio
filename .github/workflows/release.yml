@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   release:
-    runs-on: ubuntu-latest
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
         with:
@@ -27,10 +27,16 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
       # release.config.cjs: semantic-release computes the version and applies it
-      # to package metadata in the release workspace before publishing.
+      # to package metadata, builds signed macOS artifacts, and attaches them to
+      # the GitHub Release before publishing.
       - name: Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           npx -y \
             -p semantic-release@24 \

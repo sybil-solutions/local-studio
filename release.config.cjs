@@ -1,8 +1,8 @@
 /**
  * Monorepo, protected `main`: no npm publish, no direct commits to main.
  * semantic-release is the release version source of truth. The prepare step
- * applies the computed version to package metadata in the release workspace
- * before any desktop artifacts are built or attached.
+ * applies the computed version to package metadata, builds signed desktop
+ * artifacts, and then attaches those artifacts to the GitHub release.
  * @type {import("semantic-release").GlobalConfig}
  */
 module.exports = {
@@ -48,9 +48,32 @@ module.exports = {
     [
       "@semantic-release/exec",
       {
-        prepareCmd: "node scripts/apply-release-version.mjs ${nextRelease.version}",
+        prepareCmd:
+          "node scripts/validate-desktop-release-env.mjs && node scripts/apply-release-version.mjs ${nextRelease.version} && npm --prefix frontend ci && npm --prefix frontend run desktop:dist && node scripts/verify-desktop-release-assets.mjs ${nextRelease.version}",
       },
     ],
-    "@semantic-release/github",
+    [
+      "@semantic-release/github",
+      {
+        assets: [
+          {
+            path: "frontend/dist-desktop/*.dmg",
+            label: "vLLM Studio macOS Apple Silicon DMG",
+          },
+          {
+            path: "frontend/dist-desktop/*.zip",
+            label: "vLLM Studio macOS Apple Silicon ZIP",
+          },
+          {
+            path: "frontend/dist-desktop/*.blockmap",
+            label: "vLLM Studio macOS blockmap",
+          },
+          {
+            path: "frontend/dist-desktop/latest-mac.yml",
+            label: "vLLM Studio macOS update metadata",
+          },
+        ],
+      },
+    ],
   ],
 };
