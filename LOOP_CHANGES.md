@@ -110,6 +110,12 @@ Goal: tighten the repo toward pi-grade cleanliness. **Finding: it's already clea
 - `fac2fb9a` fix(projects-nav): **latent missing import found + fixed.** `session-nav-row.tsx` called `navigateToSessionHref`/`hrefWithOpenNonce` (extracted to `./helpers` earlier) without importing them — the import was lost in a partial commit (same shape as `a9526694`). Added the import; full tree typechecks. +`navigate-to-session.test.ts` (6 cases) pinning the `b59040c3` soft-push→verify→hard-nav fallback + `hrefWithOpenNonce` query handling. Gate green; e2e 192/192.
 - ⚠️ Working tree carries the user's two in-flight refactors (frontend service-refactor *completion*: `mcp/api.ts`/`api-settings.ts` deletions + consumer repointing; controller engine-spec extraction `arg-utils.ts`/`engine-spec.ts`/`specs/*` written 03:33–04:05). NOT committed by this pass — every commit is staged surgically by path.
 
+### Simplification pass (2026-06-20, user: "works perfectly but bloated, clean up every line")
+- `0aa7e52f` refactor(chat-pane): extracted `runGuardedSubmit` — the begin/clear-mention/try-finally/end-submit guard was copy-pasted **5×** across send/queue/retry — and dropped the `updateSession` alias of `updateTab`. Behavior-preserving, e2e 192/192.
+- **User greenlit "runtime is fair game."** Read `session-runtime-controller.ts` (633) and `pi-event-applier.ts` (431) end-to-end. **Finding: the runtime is NOT bloated** — it's tight, essential complexity (event-cursor ordering, reconnect/watchdog, accept-vs-poll grace, flush-before-idle invariants), already consolidated to a single event owner. The old "double event pipeline / 3× session identity" framing is largely already solved; the only remaining runtime duplication is the user's two coalescers (active migration, hands-off). No safe k-line cut exists here — hacking it would manufacture regressions.
+- `aa43f386` refactor(runtime): collapsed `AgentSessionId` + its `SessionId` alias to one name (every consumer already used `SessionId`). Type-only, e2e 192/192. A small, real instance of identity-name de-dup.
+- **Redirect:** real safe cuts live in the UI layer (`features/agent/ui` 11.3k LOC) via repeated-pattern dedup, NOT the runtime. Next passes target there.
+
 ### Still owed
 - (controller fixes deployed — see above)
 - Deferred high-risk: side-chat-via-navbar streaming (local-useState session never enters workspace store → controller never subscribes — needs a product decision); reload-mid-stream resume (Next standalone buffers local SSE).
