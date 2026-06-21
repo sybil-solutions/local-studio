@@ -72,6 +72,14 @@ export type Recipe = RecipePayload;
 
 export interface RecipeWithStatus extends RecipeBase {
   status: "running" | "stopped" | "starting" | "error";
+  crash_loop?: {
+    recipe_id: string;
+    failure_count: number;
+    limit: number;
+    window_ms: number;
+    reset_at: string;
+    blocked: boolean;
+  } | null;
   tp?: number;
   pp?: number;
 }

@@ -6,11 +6,13 @@ import type { Logger } from "../../core/logger"; import type { ProcessManager } 
 import type { RecipeStore } from "../models/recipes/recipe-store"; import { LIFECYCLE_READY_TIMEOUT_MS } from "./configs";
 import type { EngineService, DownloadRequest, HfModel, SetActiveRecipeResult, SetActiveRecipeOptions } from "./engine-service"; import type { ModelDownload } from "../shared/recipe-types";
  import type { DownloadManager } from "./downloads/download-manager";
+import type { LaunchFailureBudget } from "./process/launch-failure-budget";
+import { formatLaunchFailureBudgetMessage } from "./process/launch-failure-budget";
 import { fetchHuggingFaceModelInfo } from "./downloads/huggingface-api";
 interface CoordinatorDeps { config: Config;
   logger: Logger; eventManager: EventManager;
   processManager: ProcessManager; recipeStore: RecipeStore;
-  downloadManager: DownloadManager; abortRunsForModel?: (modelName: string) => number;
+  downloadManager: DownloadManager; launchFailureBudget: LaunchFailureBudget; abortRunsForModel?: (modelName: string) => number;
 }
 export class EngineCoordinator implements EngineService {
   private readonly switchLock = new AsyncLock();
@@ -59,10 +61,17 @@ export class EngineCoordinator implements EngineService {
  const postEvictAbort = await abortIfNeeded(recipe);
       if (postEvictAbort) return postEvictAbort;
       if (!recipe) { return { ok: true }; }
+      const blocked = this.deps.launchFailureBudget.isBlocked(recipe.id);
+      if (blocked) {
+        const message = formatLaunchFailureBudgetMessage(blocked);
+        await this.deps.eventManager.publishLaunchProgress(recipe.id, "error", message, 0);
+        return { ok: false, error: message };
+      }
  await this.deps.eventManager.publishLaunchProgress(recipe.id, "launching", `Starting ${recipe.name}...`, 0.25);
       const launch = await this.deps.processManager.launchModel(recipe); spawnedPid = launch.pid;
       this.activeLaunchPid = launch.pid; if (!launch.success) {
-        await this.deps.eventManager.publishLaunchProgress(recipe.id, "error", launch.message, 0); return { ok: false, error: launch.message };
+        const failure = this.deps.launchFailureBudget.recordFailure(recipe.id);
+        await this.deps.eventManager.publishLaunchProgress(recipe.id, "error", `${launch.message} (${failure.failure_count}/${failure.limit} launch failures in the current window)`, 0); return { ok: false, error: launch.message };
       }
       const postLaunchAbort = await abortIfNeeded(recipe); if (postLaunchAbort) return postLaunchAbort;
  await this.deps.eventManager.publishLaunchProgress(recipe.id, "waiting", "Loading model... (0s)", 0.5);
@@ -74,11 +83,13 @@ export class EngineCoordinator implements EngineService {
  if (isAborted()) {
         return publishCancelled(recipe); }
  if (ready.ready) {
+        this.deps.launchFailureBudget.reset(recipe.id);
         await this.deps.eventManager.publishLaunchProgress(recipe.id, "ready", "Model is ready!", 1);
         return { ok: true }; }
  if (launch.pid) {
         await this.deps.processManager.killProcess(launch.pid, true); }
-      await this.deps.eventManager.publishLaunchProgress(recipe.id, "error", ready.message, 0); return { ok: false, error: ready.message };
+      const failure = this.deps.launchFailureBudget.recordFailure(recipe.id);
+      await this.deps.eventManager.publishLaunchProgress(recipe.id, "error", `${ready.message} (${failure.failure_count}/${failure.limit} launch failures in the current window)`, 0); return { ok: false, error: ready.message };
     } finally { if (this.activeLifecycleAbort === lifecycleAbort) {
         this.activeLifecycleAbort = null; }
       if (this.activeLaunchPid === spawnedPid) { this.activeLaunchPid = null;
@@ -145,6 +156,10 @@ export class EngineCoordinator implements EngineService {
         return { switched: false,
           error: "Model auto-loading is disabled because the model was manually stopped. Start a model from vLLM Studio before sending local inference requests.", };
       }
+      const blocked = this.deps.launchFailureBudget.isBlocked(recipe.id);
+      if (blocked) {
+        return { switched: false, error: formatLaunchFailureBudgetMessage(blocked) };
+      }
       const publishEvents = options.publish_events !== false; const observedProcess = latest ?? existing;
       const fromRecipe = observedProcess ? this.findRecipeForProcess(observedProcess) : null; const fromModel = fromRecipe ? (fromRecipe.served_model_name ?? fromRecipe.id) : observedProcess ? observedProcess.model_path : null;
       const fromBackend = observedProcess?.backend ?? fromRecipe?.backend ?? "unknown";
@@ -161,7 +176,8 @@ export class EngineCoordinator implements EngineService {
         return { switched: true, error: "Model switch cancelled" }; }
       const launch = await this.deps.processManager.launchModel(recipe); launchPid = launch.pid;
       this.activeLaunchPid = launch.pid; if (!launch.success) {
-        const message = `Failed to launch model ${recipe.id}: ${launch.message}`; if (publishEvents) {
+        const failure = this.deps.launchFailureBudget.recordFailure(recipe.id);
+        const message = `Failed to launch model ${recipe.id}: ${launch.message} (${failure.failure_count}/${failure.limit} launch failures in the current window)`; if (publishEvents) {
           await this.deps.eventManager.publish( new Event(CONTROLLER_EVENTS.MODEL_SWITCH, {
               status: "error", to_recipe_id: recipe.id,
               to_model: recipe.served_model_name ?? recipe.id, to_backend: recipe.backend,
@@ -176,6 +192,7 @@ export class EngineCoordinator implements EngineService {
         if (launch.pid) { await this.deps.processManager.killProcess(launch.pid, true);
         } return { switched: true, error: "Model switch cancelled" };
       } if (ready.ready) {
+        this.deps.launchFailureBudget.reset(recipe.id);
         if (publishEvents) { await this.deps.eventManager.publish(
             new Event(CONTROLLER_EVENTS.MODEL_SWITCH, { status: "ready",
               to_recipe_id: recipe.id, to_model: recipe.served_model_name ?? recipe.id,
@@ -185,18 +202,24 @@ export class EngineCoordinator implements EngineService {
         return { switched: true, error: null };
       }
       if (launch.pid) { await this.deps.processManager.killProcess(launch.pid, true);
-      } if (publishEvents) {
+      } const failure = this.deps.launchFailureBudget.recordFailure(recipe.id);
+      const message = `${ready.message} (${failure.failure_count}/${failure.limit} launch failures in the current window)`;
+      if (publishEvents) {
         await this.deps.eventManager.publish( new Event(CONTROLLER_EVENTS.MODEL_SWITCH, {
             status: "error", to_recipe_id: recipe.id,
             to_model: recipe.served_model_name ?? recipe.id, to_backend: recipe.backend,
-            reason: ready.message, })
+            reason: message, })
         ); }
-      return { switched: true, error: ready.message }; } finally {
+      return { switched: true, error: message }; } finally {
       if (this.activeLifecycleAbort === lifecycleAbort) { this.activeLifecycleAbort = null;
       } if (this.activeLaunchPid === launchPid) {
         this.activeLaunchPid = null; }
       release(); }
   }
+  resetLaunchFailureBudget(recipeId: string): void {
+    this.deps.launchFailureBudget.reset(recipeId);
+  }
+
   async getCurrentProcess(): Promise<ProcessInfo | null> { return this.deps.processManager.findInferenceProcess(this.deps.config.inference_port);
   }
 

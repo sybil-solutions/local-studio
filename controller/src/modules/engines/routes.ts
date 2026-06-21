@@ -85,10 +85,11 @@ export const registerEngineRoutes: RouteRegistrar = (app, context) => {
     // forever and a launching one as "stopped".)
     const launchingId = context.launchState.getLaunchingRecipeId();
     const result = recipes.map((recipe) => {
-      let status = "stopped";
+      const crashLoop = context.launchFailureBudget.get(recipe.id);
+      let status = crashLoop?.blocked ? "error" : "stopped";
       if (launchingId === recipe.id) status = "starting";
       if (current && isRecipeRunning(recipe, current)) status = "running";
-      return { ...recipe, status };
+      return { ...recipe, status, crash_loop: crashLoop };
     });
     return ctx.json(result);
   });
@@ -105,6 +106,7 @@ export const registerEngineRoutes: RouteRegistrar = (app, context) => {
     try {
       const recipe = parseRecipe(body);
       context.stores.recipeStore.save(recipe);
+      context.engineService.resetLaunchFailureBudget(recipe.id);
       await context.eventManager.publish(new Event(CONTROLLER_EVENTS.RECIPE_CREATED, { recipe }));
       return ctx.json({ success: true, id: recipe.id });
     } catch (error) {
@@ -118,6 +120,7 @@ export const registerEngineRoutes: RouteRegistrar = (app, context) => {
     try {
       const recipe = parseRecipe({ ...body, id: recipeId });
       context.stores.recipeStore.save(recipe);
+      context.engineService.resetLaunchFailureBudget(recipe.id);
       await context.eventManager.publish(new Event(CONTROLLER_EVENTS.RECIPE_UPDATED, { recipe }));
       return ctx.json({ success: true, id: recipe.id });
     } catch (error) {
@@ -129,6 +132,7 @@ export const registerEngineRoutes: RouteRegistrar = (app, context) => {
     const recipeId = ctx.req.param("recipeId");
     const deleted = context.stores.recipeStore.delete(recipeId);
     if (!deleted) throw notFound("Recipe not found");
+    context.engineService.resetLaunchFailureBudget(recipeId);
     await context.eventManager.publish(
       new Event(CONTROLLER_EVENTS.RECIPE_DELETED, { recipe_id: recipeId })
     );

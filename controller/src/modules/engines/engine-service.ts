@@ -46,6 +46,7 @@ export interface EngineService {
     options?: SetActiveRecipeOptions
   ): Promise<SetActiveRecipeResult>;
   ensureActive(recipe: Recipe, options?: EnsureActiveOptions): Promise<EnsureActiveResult>;
+  resetLaunchFailureBudget(recipeId: string): void;
 
   getCurrentProcess(): Promise<ProcessInfo | null>;
 

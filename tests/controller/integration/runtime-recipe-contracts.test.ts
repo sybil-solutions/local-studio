@@ -216,6 +216,98 @@ describe("controller route contracts", () => {
     );
   });
 
+  test("recipe launch failures trip per-recipe crash-loop budget and reset on edit", async () => {
+    const app = await createTestApp();
+    const recipePayload = {
+      id: "crash-loop-recipe",
+      name: "Crash Loop Recipe",
+      model_path: join(tempDir, "models", "crash-loop-model.gguf"),
+      backend: "llamacpp",
+      llama_bin: "not-llama-server",
+    };
+
+    const createResponse = await app.request("/recipes", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(recipePayload),
+    });
+    expect(createResponse.status).toBe(200);
+
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      const response = await app.request("/launch/crash-loop-recipe", {
+        method: "POST",
+      });
+      const body = await response.json();
+      expect(response.status).toBe(503);
+      expect(body.detail).toContain("Invalid llama_bin");
+      expect(body.detail).not.toContain("budget exhausted");
+    }
+
+    const blockedRecipesResponse = await app.request("/recipes");
+    const blockedRecipes = await blockedRecipesResponse.json();
+    const blockedRecipe = blockedRecipes.find(
+      (recipe: { id: string }) => recipe.id === "crash-loop-recipe",
+    );
+    expect(blockedRecipe).toMatchObject({
+      id: "crash-loop-recipe",
+      status: "error",
+      crash_loop: {
+        recipe_id: "crash-loop-recipe",
+        failure_count: 3,
+        limit: 3,
+        blocked: true,
+      },
+    });
+    expect(blockedRecipe.crash_loop.reset_at).toEqual(expect.any(String));
+
+    const statusResponse = await app.request("/status");
+    const statusBody = await statusResponse.json();
+    expect(statusBody.launch_failures).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          recipe_id: "crash-loop-recipe",
+          failure_count: 3,
+          limit: 3,
+          blocked: true,
+        }),
+      ]),
+    );
+
+    const rejectedResponse = await app.request("/launch/crash-loop-recipe", {
+      method: "POST",
+    });
+    const rejectedBody = await rejectedResponse.json();
+    expect(rejectedResponse.status).toBe(503);
+    expect(rejectedBody.detail).toContain("Launch crash-loop budget exhausted");
+    expect(rejectedBody.detail).toContain("3/3 failed attempts");
+
+    const updateResponse = await app.request("/recipes/crash-loop-recipe", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ ...recipePayload, name: "Edited Crash Loop Recipe" }),
+    });
+    expect(updateResponse.status).toBe(200);
+
+    const resetRecipesResponse = await app.request("/recipes");
+    const resetRecipes = await resetRecipesResponse.json();
+    const resetRecipe = resetRecipes.find(
+      (recipe: { id: string }) => recipe.id === "crash-loop-recipe",
+    );
+    expect(resetRecipe).toMatchObject({
+      id: "crash-loop-recipe",
+      status: "stopped",
+      crash_loop: null,
+    });
+
+    const postResetResponse = await app.request("/launch/crash-loop-recipe", {
+      method: "POST",
+    });
+    const postResetBody = await postResetResponse.json();
+    expect(postResetResponse.status).toBe(503);
+    expect(postResetBody.detail).toContain("Invalid llama_bin");
+    expect(postResetBody.detail).not.toContain("budget exhausted");
+  });
+
   test("runtime and download validation routes persist observable outcomes", async () => {
     const app = await createTestApp();
 

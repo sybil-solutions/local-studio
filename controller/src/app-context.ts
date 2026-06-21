@@ -3,6 +3,10 @@ import { resolve } from "node:path";
 import { createConfig, type Config } from "./config/env";
 import { createEventManager, type EventManager } from "./modules/system/event-manager";
 import { createLaunchState, type LaunchState } from "./modules/engines/process/launch-state";
+import {
+  createLaunchFailureBudget,
+  type LaunchFailureBudget,
+} from "./modules/engines/process/launch-failure-budget";
 import { createMetrics, type ControllerMetrics, type MetricsRegistry } from "./modules/system/metrics";
 import { createProcessManager, type ProcessManager } from "./modules/engines/process/process-manager";
 import { DownloadManager } from "./modules/engines/downloads/download-manager";
@@ -21,6 +25,7 @@ export interface AppContext {
   logger: Logger;
   eventManager: EventManager;
   launchState: LaunchState;
+  launchFailureBudget: LaunchFailureBudget;
   metrics: ControllerMetrics;
   metricsRegistry: MetricsRegistry;
   processManager: ProcessManager;
@@ -80,6 +85,7 @@ export const createAppContext = (): AppContext => {
   }
 
   const launchState = createLaunchState();
+  const launchFailureBudget = createLaunchFailureBudget();
   const { registry: metricsRegistry, metrics } = createMetrics();
   const processManager = createProcessManager(config, logger, eventManager);
   const downloadManager = new DownloadManager(config, downloadStore, eventManager, logger);
@@ -92,6 +98,7 @@ export const createAppContext = (): AppContext => {
     recipeStore,
     downloadManager,
     abortRunsForModel: () => 0,
+    launchFailureBudget,
   });
 
   lifetimeMetricsStore.ensureFirstStarted();
@@ -101,6 +108,7 @@ export const createAppContext = (): AppContext => {
     logger,
     eventManager,
     launchState,
+    launchFailureBudget,
     metrics,
     metricsRegistry,
     processManager,
