@@ -156,7 +156,7 @@ async function startPromptCommand(
       status: "running",
       activeAssistantId: session.activeAssistantId ?? context.assistantId,
     }));
-    sessionRuntimeController().noteTurnAccepted(context.sessionId);
+    sessionRuntimeController().noteTurnAccepted(context.sessionId, context.assistantId);
     if (result.piSessionId) deps.onPiSessionIdChange?.(result.piSessionId);
   }).pipe(
     Effect.catchAll(({ error }) =>
@@ -174,7 +174,7 @@ async function startPromptCommand(
             status: "running",
             activeAssistantId: session.activeAssistantId ?? context.assistantId,
           }));
-          sessionRuntimeController().noteTurnAccepted(context.sessionId);
+          sessionRuntimeController().noteTurnAccepted(context.sessionId, context.assistantId);
           if (status?.piSessionId) deps.onPiSessionIdChange?.(status?.piSessionId);
           return;
         }

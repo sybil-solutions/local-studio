@@ -85,7 +85,7 @@ export type SessionRuntimeController = {
    * and persist the reset. The deliberate backwards move — without it the
    * gate silently drops the entire next turn.
    */
-  noteTurnAccepted(sessionId: SessionId): void;
+  noteTurnAccepted(sessionId: SessionId, assistantId?: string): void;
   /**
    * loadAndReplay hydrated the transcript from canonical + runtime logs up to
    * `committedSeq` (undefined when the runtime is idle): reattach from there
@@ -277,6 +277,9 @@ export function createSessionRuntimeController(
 
   // Resolve (or create) the assistant bubble that live events should target.
   const ensureAssistantId = (sessionId: SessionId): string => {
+    const liveAssistantId = streamContext.liveAssistantIds.get(sessionId);
+    if (liveAssistantId) return liveAssistantId;
+
     const current = getSession(sessionId);
     const existing =
       (current?.activeAssistantId &&
@@ -536,19 +539,22 @@ export function createSessionRuntimeController(
 
     connect();
 
-    const watchdogFiber = Effect.runFork(
-      Effect.sync(() => {
-        if (closed || Date.now() - lastPayloadAt < idleReconnectMs) return;
-        void reconcileLiveness();
-      }).pipe(Effect.repeat(Schedule.spaced(idleReconnectMs))),
-    ) as never;
+    const watchdogFiber =
+      idleReconnectMs > 0
+        ? (Effect.runFork(
+            Effect.sync(() => {
+              if (closed || Date.now() - lastPayloadAt < idleReconnectMs) return;
+              void reconcileLiveness();
+            }).pipe(Effect.repeat(Schedule.spaced(idleReconnectMs))),
+          ) as never)
+        : null;
 
     return {
       key: resumeConnectionKey(runtime, piSessionId),
       close: () => {
         closed = true;
         if (reconnectTimer !== null) clearTimeout(reconnectTimer);
-        void Promise.resolve(Fiber.interrupt(watchdogFiber as never));
+        if (watchdogFiber) void Promise.resolve(Fiber.interrupt(watchdogFiber as never));
         coalescer.flushNow(sessionId);
         sub?.close();
       },
@@ -563,13 +569,14 @@ export function createSessionRuntimeController(
       stopPoll();
       binding = null;
     },
-    noteTurnAccepted: (sessionId) => {
+    noteTurnAccepted: (sessionId, assistantId) => {
       turnAcceptedAt.set(sessionId, Date.now());
       adoptCursor(sessionId, 0);
       // A new turn's authoritative bubble is its optimistic activeAssistantId;
       // discard any stale mid-stream redirect left over from a prior turn that
       // settled without an agent_end (e.g. idled by the runtime poll).
-      streamContext.liveAssistantIds.delete(sessionId);
+      if (assistantId) streamContext.liveAssistantIds.set(sessionId, assistantId);
+      else streamContext.liveAssistantIds.delete(sessionId);
     },
     noteReplayHydrated: (sessionId, committedSeq) => adoptCursor(sessionId, committedSeq),
     reconcile: (sessions) => {

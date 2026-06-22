@@ -7,7 +7,7 @@
     "build": "next build --webpack",
     "start": "node scripts/start-standalone.mjs",
     "start:next": "next start",
-    "test": "tsx --test scripts/test-build-agent-session-options.ts scripts/test-desktop-user-data-migration.ts",
+    "test": "tsx --test scripts/test-build-agent-session-options.ts scripts/test-desktop-user-data-migration.ts scripts/test-session-runtime-controller-ordering.ts",
     "test:e2e": "tsx --test --test-force-exit ../tests/frontend/e2e/*.test.ts",
     "test:e2e:ui": "playwright test",
     "lint": "eslint",
