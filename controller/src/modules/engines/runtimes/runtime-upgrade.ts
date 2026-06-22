@@ -17,29 +17,12 @@ import { RUNTIME_UPGRADE_TIMEOUT_MS } from "../configs";
 export type { RuntimeUpgradeResult } from "../../../../../shared/contracts/system";
 
 export interface RuntimeUpgradeOptions {
-  command?: string;
-  args?: string[];
   version?: string;
   pythonPath?: string | null;
 }
 
-const resolveCommand = (command: string | undefined, envKey: string): string | null => {
-  // A request-supplied command is arbitrary-binary execution as the controller
-  // user. Ignore it unless the operator has explicitly opted in; the
-  // operator-configured env command (and the built-in pip/uv path) still work.
-  const allowRequestCommand =
-    process.env["VLLM_STUDIO_ALLOW_RUNTIME_UPGRADE_COMMAND"] === "true";
-  if (allowRequestCommand && command?.trim()) return command.trim();
-  return getUpgradeCommandFromEnvironment(envKey);
-};
-
-const parseCommandInput = (args: unknown): string[] | null => {
-  if (!Array.isArray(args)) return null;
-  const parsed = args
-    .map((item) => (typeof item === "string" ? item.trim() : ""))
-    .filter((item) => item.length > 0);
-  return parsed.length > 0 ? parsed : null;
-};
+const resolveCommand = (envKey: string): string | null =>
+  getUpgradeCommandFromEnvironment(envKey);
 
 const upgradeTimeoutMessage = (): string =>
   `Upgrade command timed out after ${Math.round(RUNTIME_UPGRADE_TIMEOUT_MS / 60_000)} minutes`;
@@ -71,10 +54,9 @@ export const upgradeSglangRuntime = async (
   config: Config,
   options: RuntimeUpgradeOptions = {}
 ): Promise<RuntimeUpgradeResult> => {
-  const command = resolveCommand(options.command, SGLANG_UPGRADE_ENV);
-  const parsedArguments = parseCommandInput(options.args);
+  const command = resolveCommand(SGLANG_UPGRADE_ENV);
   const python = getSglangRuntimePython(config, options);
-  if (command) return runCommandUpgrade(command, parsedArguments ?? []);
+  if (command) return runCommandUpgrade(command, []);
   const uv = resolveBinary("uv");
   const args = uv
     ? ["pip", "install", "--python", python, "--upgrade", "sglang"]
@@ -106,9 +88,9 @@ export const upgradeSglangRuntime = async (
 
 export const upgradeLlamacppRuntime = async (
   config: Config,
-  options: RuntimeUpgradeOptions
+  _options: RuntimeUpgradeOptions
 ): Promise<RuntimeUpgradeResult> => {
-  const command = resolveCommand(options.command, LLAMACPP_UPGRADE_ENV);
+  const command = resolveCommand(LLAMACPP_UPGRADE_ENV);
   if (!command)
     return {
       success: false,
@@ -117,18 +99,17 @@ export const upgradeLlamacppRuntime = async (
       error: "No llama.cpp upgrade command configured. Set VLLM_STUDIO_LLAMACPP_UPGRADE_CMD.",
       used_command: null,
     };
-  const parsedArguments = parseCommandInput(options.args);
-  const result = await runCommandUpgrade(command, parsedArguments ?? []);
+  const result = await runCommandUpgrade(command, []);
   const runtime = getLlamacppRuntimeInfo(config);
   return { ...result, success: result.success && runtime.installed, version: runtime.version };
 };
 
 export const runPlatformUpgrade = async (
   platform: "cuda" | "rocm",
-  options: RuntimeUpgradeOptions
+  _options: RuntimeUpgradeOptions
 ): Promise<RuntimeUpgradeResult> => {
   const envKey = platform === "cuda" ? CUDA_UPGRADE_ENV : ROCM_UPGRADE_ENV;
-  const command = resolveCommand(options.command, envKey);
+  const command = resolveCommand(envKey);
   if (!command)
     return {
       success: false,
@@ -137,8 +118,7 @@ export const runPlatformUpgrade = async (
       error: `No ${platform.toUpperCase()} upgrade command configured. Set ${envKey}.`,
       used_command: null,
     };
-  const parsedArguments = parseCommandInput(options.args);
-  const result = await runCommandUpgrade(command, parsedArguments ?? []);
+  const result = await runCommandUpgrade(command, []);
   if (!result.success) return result;
   if (platform === "cuda") {
     const info = getCudaInfo();

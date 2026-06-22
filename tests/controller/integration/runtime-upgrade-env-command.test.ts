@@ -1,0 +1,69 @@
+import { describe, expect, test, beforeEach, afterEach } from "bun:test";
+import { createConfig } from "../../../controller/src/config/env";
+import { upgradeVllmRuntime } from "../../../controller/src/modules/engines/runtimes/vllm-runtime";
+import {
+  runPlatformUpgrade,
+  upgradeLlamacppRuntime,
+  upgradeSglangRuntime,
+} from "../../../controller/src/modules/engines/runtimes/runtime-upgrade";
+import { registerControllerTestLifecycle, tempDir } from "./fixtures";
+
+registerControllerTestLifecycle();
+
+const UPGRADE_ENV_KEYS = [
+  "VLLM_STUDIO_VLLM_UPGRADE_CMD",
+  "VLLM_STUDIO_SGLANG_UPGRADE_CMD",
+  "VLLM_STUDIO_LLAMACPP_UPGRADE_CMD",
+  "VLLM_STUDIO_CUDA_UPGRADE_CMD",
+  "VLLM_STUDIO_ROCM_UPGRADE_CMD",
+] as const;
+
+describe("runtime upgrade env-command path", () => {
+  let envSnapshot: Record<string, string | undefined> = {};
+
+  beforeEach(() => {
+    envSnapshot = Object.fromEntries(
+      UPGRADE_ENV_KEYS.map((key) => [key, process.env[key]])
+    );
+    for (const key of UPGRADE_ENV_KEYS) {
+      process.env[key] = "true";
+    }
+    // The test lifecycle skips system python; allow it so vllm-runtime can find a python binary.
+    delete process.env.VLLM_STUDIO_RUNTIME_SKIP_SYSTEM;
+  });
+
+  afterEach(() => {
+    for (const key of UPGRADE_ENV_KEYS) {
+      const value = envSnapshot[key];
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  });
+
+  test("upgradeVllmRuntime uses the operator-configured command", async () => {
+    const result = await upgradeVllmRuntime({});
+    expect(result.used_command).toBe("true");
+  });
+
+  test("upgradeSglangRuntime uses the operator-configured command", async () => {
+    const config = createConfig();
+    const result = await upgradeSglangRuntime(config, {});
+    expect(result.used_command).toBe("true");
+  });
+
+  test("upgradeLlamacppRuntime uses the operator-configured command", async () => {
+    const config = createConfig();
+    const result = await upgradeLlamacppRuntime(config, {});
+    expect(result.used_command).toBe("true");
+  });
+
+  test("runPlatformUpgrade uses the operator-configured command for CUDA", async () => {
+    const result = await runPlatformUpgrade("cuda", {});
+    expect(result.used_command).toBe("true");
+  });
+
+  test("runPlatformUpgrade uses the operator-configured command for ROCm", async () => {
+    const result = await runPlatformUpgrade("rocm", {});
+    expect(result.used_command).toBe("true");
+  });
+});

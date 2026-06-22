@@ -1,7 +1,7 @@
 import type { RouteRegistrar } from "../../http/route-registrar";
 import { delay } from "../../core/async";
 import { HttpStatus, badRequest, notFound, serviceUnavailable } from "../../core/errors";
-import { optionalEnum, optionalStringArray, parseJsonObjectBody } from "../../core/validation";
+import { optionalEnum, parseJsonObjectBody } from "../../core/validation";
 import { observeControllerFunction } from "../../core/function-observability";
 import { parseRecipe } from "../models/recipes/recipe-serializer";
 import { Event } from "../system/event-manager";
@@ -49,21 +49,19 @@ const parseRuntimeJobBody = async (ctx: {
   backend?: (typeof RUNTIME_JOB_BACKENDS)[number];
   targetId?: string;
   type?: (typeof RUNTIME_JOB_TYPES)[number];
-  command?: string;
-  args?: string[];
   version?: string;
   preferBundled?: boolean;
 }> => {
   const record = await parseJsonObjectBody(ctx);
   const backend = optionalEnum(record, "backend", RUNTIME_JOB_BACKENDS);
   const type = optionalEnum(record, "type", RUNTIME_JOB_TYPES, "job type");
-  const args = optionalStringArray(record, "args");
+  if ("command" in record || "args" in record) {
+    throw badRequest("Request-controlled command or args are not allowed for runtime jobs");
+  }
   return {
     ...(backend ? { backend } : {}),
     ...(typeof record["targetId"] === "string" ? { targetId: record["targetId"] } : {}),
     ...(type ? { type } : {}),
-    ...(typeof record["command"] === "string" ? { command: record["command"] } : {}),
-    ...(args ? { args } : {}),
     ...(typeof record["version"] === "string" ? { version: record["version"] } : {}),
     ...(typeof record["prefer_bundled"] === "boolean"
       ? { preferBundled: record["prefer_bundled"] }
@@ -336,8 +334,6 @@ export const registerEngineRoutes: RouteRegistrar = (app, context) => {
       backend: body.backend,
       type: body.type ?? "update",
       ...(body.targetId ? { targetId: body.targetId } : {}),
-      ...(body.command ? { command: body.command } : {}),
-      ...(body.args ? { args: body.args } : {}),
       ...(body.version ? { version: body.version } : {}),
       ...(body.preferBundled !== undefined ? { preferBundled: body.preferBundled } : {}),
       runningProcess: current,
@@ -420,8 +416,6 @@ export const registerEngineRoutes: RouteRegistrar = (app, context) => {
       backend: "vllm",
       type: "update",
       ...(body.targetId ? { targetId: body.targetId } : {}),
-      ...(body.command ? { command: body.command } : {}),
-      ...(body.args ? { args: body.args } : {}),
       ...(body.version ? { version: body.version.trim() } : {}),
       ...(body.preferBundled !== undefined ? { preferBundled: body.preferBundled } : {}),
       runningProcess: current,
@@ -430,41 +424,37 @@ export const registerEngineRoutes: RouteRegistrar = (app, context) => {
   });
 
   app.post("/runtime/sglang/upgrade", async (ctx) => {
-    const body = await parseRuntimeJobBody(ctx);
+    await parseRuntimeJobBody(ctx);
     const job = createEngineJob(context.config, {
       backend: "sglang",
       type: "update",
-      ...(body.args ? { args: body.args } : {}),
     });
     return ctx.json({ job_id: job.id, job });
   });
 
   app.post("/runtime/llamacpp/upgrade", async (ctx) => {
-    const body = await parseRuntimeJobBody(ctx);
+    await parseRuntimeJobBody(ctx);
     const job = createEngineJob(context.config, {
       backend: "llamacpp",
       type: "update",
-      ...(body.args ? { args: body.args } : {}),
     });
     return ctx.json({ job_id: job.id, job });
   });
 
   app.post("/runtime/cuda/upgrade", async (ctx) => {
-    const body = await parseRuntimeJobBody(ctx);
+    await parseRuntimeJobBody(ctx);
     const job = createEngineJob(context.config, {
       backend: "cuda",
       type: "update",
-      ...(body.args ? { args: body.args } : {}),
     });
     return ctx.json({ job_id: job.id, job });
   });
 
   app.post("/runtime/rocm/upgrade", async (ctx) => {
-    const body = await parseRuntimeJobBody(ctx);
+    await parseRuntimeJobBody(ctx);
     const job = createEngineJob(context.config, {
       backend: "rocm",
       type: "update",
-      ...(body.args ? { args: body.args } : {}),
     });
     return ctx.json({ job_id: job.id, job });
   });

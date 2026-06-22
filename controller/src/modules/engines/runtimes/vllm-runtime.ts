@@ -9,14 +9,6 @@ import {
 } from "./upgrade-config";
 import { VLLM_RUNTIME_COMMAND_TIMEOUT_MS, VLLM_UPGRADE_TIMEOUT_MS } from "../configs";
 
-const parseCommandInput = (args: unknown): string[] | null => {
-  if (!Array.isArray(args)) return null;
-  const parsed = args
-    .map((item) => (typeof item === "string" ? item.trim() : ""))
-    .filter((item) => item.length > 0);
-  return parsed.length > 0 ? parsed : null;
-};
-
 const resolveVllmUpgradeTarget = (version?: string): string => {
   const configured =
     version && version.trim().length > 0 ? version.trim() : getVllmUpgradeVersion();
@@ -201,8 +193,6 @@ export const getVllmConfigHelp = async (): Promise<{
 
 type VllmUpgradeOptions = {
   preferBundled?: boolean;
-  command?: string;
-  args?: string[];
   version?: string;
   pythonPath?: string | null;
 };
@@ -228,10 +218,7 @@ export const upgradeVllmRuntime = async (
       used_command: null,
     };
 
-  const preferredCommand =
-    options.command?.trim() ?? getUpgradeCommandFromEnvironment(VLLM_UPGRADE_ENV);
-  const command = preferredCommand;
-  const parsedArguments = parseCommandInput(options.args);
+  const command = getUpgradeCommandFromEnvironment(VLLM_UPGRADE_ENV);
   const preferBundled = options.preferBundled !== false;
   if (!command) {
     const version = resolveVllmUpgradeTarget(options.version);
@@ -270,11 +257,10 @@ export const upgradeVllmRuntime = async (
       used_command: usedCommand,
     };
   }
-  const customArguments = parsedArguments ?? [];
-  const result = await runCommandAsync(command, customArguments, {
+  const result = await runCommandAsync(command, [], {
     timeoutMs: VLLM_UPGRADE_TIMEOUT_MS,
   });
-  const usedCommand = [command, ...customArguments].join(" ");
+  const usedCommand = command;
   if (result.status !== 0)
     return {
       success: false,

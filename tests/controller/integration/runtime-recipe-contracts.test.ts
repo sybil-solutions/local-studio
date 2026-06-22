@@ -652,7 +652,7 @@ describe("controller route contracts", () => {
     const invalidArgsBody = await invalidArgsResponse.json();
     expect(invalidArgsResponse.status).toBe(400);
     expect(invalidArgsBody).toEqual({
-      detail: "args must be an array of strings",
+      detail: "Request-controlled command or args are not allowed for runtime jobs",
     });
 
     for (const route of [
@@ -668,7 +668,9 @@ describe("controller route contracts", () => {
       });
       const body = await response.json();
       expect(response.status).toBe(400);
-      expect(body).toEqual({ detail: "args must be an array of strings" });
+      expect(body).toEqual({
+        detail: "Request-controlled command or args are not allowed for runtime jobs",
+      });
     }
 
     const vllmConfigResponse = await app.request("/runtime/vllm/config");
