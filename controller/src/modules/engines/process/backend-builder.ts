@@ -3,6 +3,10 @@ import { dirname, join } from "node:path";
 import type { Recipe } from "../../models/types";
 import type { Config } from "../../../config/env";
 import { stripForeignFlagKeys } from "../../../../../shared/contracts/engine-args";
+import {
+  appendExtraArguments as appendSharedExtraArgs,
+  appendLlamacppExtraArguments as appendSharedLlamacppExtraArgs,
+} from "../../../../../shared/command-builder";
 import { resolveBinary } from "../../../core/command";
 import { resolveVllmRecipePythonPath } from "../runtimes/vllm-python-path";
 import {
@@ -10,6 +14,26 @@ import {
   getDefaultToolCallParser,
   shouldEnableExpertParallel,
 } from "./model-runtime-defaults";
+
+const BACKEND_ONLY_INTERNAL_KEYS: ReadonlySet<string> = new Set([
+  "llama_bin",
+  "mlx_python",
+  "docker_container",
+  "docker_image",
+  "docker-container",
+]);
+
+const BACKEND_ONLY_LLAMACPP_INTERNAL_KEYS: ReadonlySet<string> = new Set([
+  "llama_bin",
+  "docker_container",
+  "docker_image",
+  "docker-container",
+]);
+
+const ENABLE_EXPERT_PARALLELISM_FALSE_EXCEPTION: ReadonlySet<string> = new Set([
+  "enable_expert_parallelism",
+]);
+
 export const normalizeJsonArgument = (value: unknown): unknown => {
   if (Array.isArray(value)) {
     return value.map((item) => normalizeJsonArgument(item));
@@ -54,72 +78,6 @@ export const getPythonPath = (recipe: Recipe): string | undefined => {
 };
 const getVllmPythonPath = (recipe: Recipe): string | undefined => {
   return resolveVllmRecipePythonPath(recipe.python_path) ?? undefined;
-};
-export const appendExtraArguments = (
-  command: string[],
-  extraArguments: Record<string, unknown>
-): string[] => {
-  const internalKeys = new Set([
-    "venv_path",
-    "env_vars",
-    "visible_devices",
-    "cuda_visible_devices",
-    "hip_visible_devices",
-    "rocr_visible_devices",
-    "description",
-    "tags",
-    "status",
-    "llama_bin",
-    "mlx_python",
-    "launch_command",
-    "custom_command",
-    "docker_container",
-    "docker_image",
-    "docker-container",
-  ]);
-  const jsonStringKeys = new Set(["speculative_config", "default_chat_template_kwargs"]);
-  for (const [key, value] of Object.entries(extraArguments)) {
-    const normalizedKey = key.replace(/-/g, "_").toLowerCase();
-    if (internalKeys.has(normalizedKey)) {
-      continue;
-    }
-    const flag = `--${key.replace(/_/g, "-")}`;
-    if (command.includes(flag)) {
-      continue;
-    }
-    if (value === true) {
-      command.push(flag);
-      continue;
-    }
-    if (value === false) {
-      if (!["enable_expert_parallelism", "enable-expert-parallelism"].includes(normalizedKey)) {
-        command.push(flag);
-      }
-      continue;
-    }
-    if (value === undefined || value === null) {
-      continue;
-    }
-    if (typeof value === "string" && jsonStringKeys.has(normalizedKey)) {
-      const trimmed = value.trim();
-      if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
-        try {
-          const parsed = JSON.parse(trimmed) as unknown;
-          command.push(flag, JSON.stringify(normalizeJsonArgument(parsed)));
-          continue;
-        } catch {
-          command.push(flag, value);
-          continue;
-        }
-      }
-    }
-    if (Array.isArray(value) || (value && typeof value === "object")) {
-      command.push(flag, JSON.stringify(normalizeJsonArgument(value)));
-      continue;
-    }
-    command.push(flag, String(value));
-  }
-  return command;
 };
 const normalizeLaunchCommand = (command: string): string => {
   return command
@@ -255,7 +213,11 @@ export const buildVllmCommand = (recipe: Recipe): string[] => {
   if (recipe.dtype) {
     command.push("--dtype", recipe.dtype);
   }
-  return appendExtraArguments(command, recipe.extra_args);
+  return appendSharedExtraArgs(command, recipe.extra_args, {
+    extraInternalKeys: BACKEND_ONLY_INTERNAL_KEYS,
+    normalizeJson: normalizeJsonArgument,
+    falseBooleanExceptions: ENABLE_EXPERT_PARALLELISM_FALSE_EXCEPTION,
+  });
 };
 const executableBaseName = (value: string): string => {
   return value.split(/[\\/]/).filter(Boolean).at(-1)?.toLowerCase() ?? value.toLowerCase();
@@ -273,7 +235,15 @@ export const buildMlxCommand = (recipe: Recipe, config: Config): string[] => {
   const python = getPythonPath(recipe) || config.mlx_python || "python3";
   const command = [python, "-m", "mlx_lm.server"];
   command.push("--model", recipe.model_path, "--host", recipe.host, "--port", String(recipe.port));
-  return appendExtraArguments(command, stripForeignFlagKeys("mlx", recipe.extra_args));
+  return appendSharedExtraArgs(
+    command,
+    stripForeignFlagKeys("mlx", recipe.extra_args),
+    {
+      extraInternalKeys: BACKEND_ONLY_INTERNAL_KEYS,
+      normalizeJson: normalizeJsonArgument,
+      falseBooleanExceptions: ENABLE_EXPERT_PARALLELISM_FALSE_EXCEPTION,
+    },
+  );
 };
 export const buildBackendCommand = (recipe: Recipe, config: Config): string[] => {
   const launchCommand = getLaunchCommandOverride(recipe);
@@ -306,61 +276,6 @@ const resolveLlamaBinary = (recipe: Recipe, config: Config): string => {
   }
   return resolveBinary("llama-server") ?? "llama-server";
 };
-const appendLlamacppArguments = (
-  command: string[],
-  extraArguments: Record<string, unknown>
-): string[] => {
-  const internalKeys = new Set([
-    "venv_path",
-    "env_vars",
-    "visible_devices",
-    "cuda_visible_devices",
-    "hip_visible_devices",
-    "rocr_visible_devices",
-    "description",
-    "tags",
-    "status",
-    "llama_bin",
-    "docker_container",
-    "docker_image",
-    "docker-container",
-  ]);
-  for (const [key, value] of Object.entries(extraArguments)) {
-    const normalizedKey = key.replace(/-/g, "_").toLowerCase();
-    if (internalKeys.has(normalizedKey)) {
-      continue;
-    }
-    const flag = `--${key.replace(/_/g, "-")}`;
-    if (command.includes(flag)) {
-      continue;
-    }
-    if (value === true) {
-      command.push(flag);
-      continue;
-    }
-    if (value === false) {
-      continue;
-    }
-    if (value === undefined || value === null || value === "") {
-      continue;
-    }
-    if (Array.isArray(value)) {
-      for (const entry of value) {
-        if (entry === undefined || entry === null || entry === "") {
-          continue;
-        }
-        command.push(flag, String(entry));
-      }
-      continue;
-    }
-    if (typeof value === "object") {
-      command.push(flag, JSON.stringify(value));
-      continue;
-    }
-    command.push(flag, String(value));
-  }
-  return command;
-};
 export const buildLlamacppCommand = (recipe: Recipe, config: Config): string[] => {
   const command: string[] = [resolveLlamaBinary(recipe, config)];
   command.push("--model", recipe.model_path, "--host", recipe.host, "--port", String(recipe.port));
@@ -371,7 +286,14 @@ export const buildLlamacppCommand = (recipe: Recipe, config: Config): string[] =
   if (!ctxOverride && recipe.max_model_len > 0) {
     command.push("--ctx-size", String(recipe.max_model_len));
   }
-  return appendLlamacppArguments(command, stripForeignFlagKeys("llamacpp", recipe.extra_args));
+  return appendSharedLlamacppExtraArgs(
+    command,
+    stripForeignFlagKeys("llamacpp", recipe.extra_args),
+    {
+      extraInternalKeys: BACKEND_ONLY_LLAMACPP_INTERNAL_KEYS,
+      skipEmptyString: true,
+    },
+  );
 };
 export const buildSglangCommand = (recipe: Recipe, config: Config): string[] => {
   const python = getPythonPath(recipe) || config.sglang_python || "python";
@@ -414,5 +336,13 @@ export const buildSglangCommand = (recipe: Recipe, config: Config): string[] => 
   if (reasoningParser) {
     command.push("--reasoning-parser", reasoningParser);
   }
-  return appendExtraArguments(command, stripForeignFlagKeys("sglang", recipe.extra_args));
+  return appendSharedExtraArgs(
+    command,
+    stripForeignFlagKeys("sglang", recipe.extra_args),
+    {
+      extraInternalKeys: BACKEND_ONLY_INTERNAL_KEYS,
+      normalizeJson: normalizeJsonArgument,
+      falseBooleanExceptions: ENABLE_EXPERT_PARALLELISM_FALSE_EXCEPTION,
+    },
+  );
 };

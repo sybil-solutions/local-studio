@@ -1,124 +1,16 @@
+import type { Recipe } from "@/lib/types";
 import type { RecipeEditor } from "./recipe-editor";
 import { normalizeExtraArgKey } from "./extra-args";
 import { prepareRecipeForSave } from "./prepare-recipe";
-
-const appendExtraArgsToCommand = (args: string[], extraArgs: Record<string, unknown>): string[] => {
-  const internalKeys = new Set([
-    "venv_path",
-    "env_vars",
-    "visible_devices",
-    "cuda_visible_devices",
-    "hip_visible_devices",
-    "rocr_visible_devices",
-    "description",
-    "tags",
-    "status",
-    "launch_command",
-    "custom_command",
-  ]);
-  const jsonStringKeys = new Set(["speculative_config", "default_chat_template_kwargs"]);
-  const existingFlags = new Set(
-    args.flatMap((line) => line.split(" ").filter((part) => part.startsWith("--"))),
-  );
-
-  for (const [key, value] of Object.entries(extraArgs)) {
-    const normalizedKey = normalizeExtraArgKey(key);
-    if (internalKeys.has(normalizedKey)) continue;
-
-    const flag = `--${key.replace(/_/g, "-")}`;
-    if (existingFlags.has(flag)) continue;
-
-    if (value === true || value === false) {
-      args.push(flag);
-      existingFlags.add(flag);
-      continue;
-    }
-    if (value === undefined || value === null || value === "") continue;
-
-    if (typeof value === "string" && jsonStringKeys.has(normalizedKey)) {
-      const trimmed = value.trim();
-      if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
-        try {
-          const parsed = JSON.parse(trimmed) as unknown;
-          args.push(`${flag} '${JSON.stringify(parsed)}'`);
-          existingFlags.add(flag);
-          continue;
-        } catch {
-          args.push(`${flag} '${value}'`);
-          existingFlags.add(flag);
-          continue;
-        }
-      }
-    }
-
-    if (Array.isArray(value) || (value && typeof value === "object")) {
-      args.push(`${flag} '${JSON.stringify(value)}'`);
-      existingFlags.add(flag);
-      continue;
-    }
-
-    args.push(`${flag} ${value}`);
-    existingFlags.add(flag);
-  }
-
-  return args;
-};
+import {
+  appendExtraArguments,
+  appendLlamacppExtraArguments,
+} from "../../../../shared/command-builder";
 
 const hasExtraArgument = (extraArgs: Record<string, unknown>, key: string): boolean => {
   const normalized = normalizeExtraArgKey(key);
   return Object.keys(extraArgs).some((entry) => normalizeExtraArgKey(entry) === normalized);
 };
-
-const appendLlamacppArgsToCommand = (
-  args: string[],
-  extraArgs: Record<string, unknown>,
-): string[] => {
-  const internalKeys = new Set([
-    "venv_path",
-    "env_vars",
-    "visible_devices",
-    "cuda_visible_devices",
-    "hip_visible_devices",
-    "rocr_visible_devices",
-    "description",
-    "tags",
-    "status",
-  ]);
-
-  for (const [key, value] of Object.entries(extraArgs)) {
-    const normalizedKey = normalizeExtraArgKey(key);
-    if (internalKeys.has(normalizedKey)) continue;
-
-    const flag = `--${key.replace(/_/g, "-")}`;
-    if (args.some((entry) => entry.startsWith(flag))) continue;
-
-    if (value === true) {
-      args.push(flag);
-      continue;
-    }
-    if (value === false) continue;
-    if (value === undefined || value === null || value === "") continue;
-
-    if (Array.isArray(value)) {
-      for (const entry of value) {
-        if (entry === undefined || entry === null || entry === "") continue;
-        args.push(`${flag} ${entry}`);
-      }
-      continue;
-    }
-
-    if (typeof value === "object") {
-      args.push(`${flag} '${JSON.stringify(value)}'`);
-      continue;
-    }
-
-    args.push(`${flag} ${value}`);
-  }
-
-  return args;
-};
-
-type RecipeCommandPayload = ReturnType<typeof prepareRecipeForSave>;
 
 export const generateCommand = (
   recipe: RecipeEditor,
@@ -161,7 +53,7 @@ function appendModelArgument(args: string[], backend: string, modelPath?: string
   else args.push(modelPath);
 }
 
-function appendNetworkArguments(args: string[], backend: string, payload: RecipeCommandPayload) {
+function appendNetworkArguments(args: string[], backend: string, payload: Recipe) {
   if (payload.host && payload.host !== "0.0.0.0") args.push(`--host ${payload.host}`);
   if (payload.port && payload.port !== 8000) args.push(`--port ${payload.port}`);
   if (payload.served_model_name && backend !== "mlx") {
@@ -173,7 +65,7 @@ function appendNetworkArguments(args: string[], backend: string, payload: Recipe
   }
 }
 
-function appendParallelArguments(args: string[], backend: string, payload: RecipeCommandPayload) {
+function appendParallelArguments(args: string[], backend: string, payload: Recipe) {
   if (backend === "llamacpp" || backend === "mlx") return;
   if (payload.tensor_parallel_size && payload.tensor_parallel_size > 1) {
     args.push(`--tensor-parallel-size ${payload.tensor_parallel_size}`);
@@ -183,7 +75,7 @@ function appendParallelArguments(args: string[], backend: string, payload: Recip
   }
 }
 
-function appendContextArguments(args: string[], backend: string, payload: RecipeCommandPayload) {
+function appendContextArguments(args: string[], backend: string, payload: Recipe) {
   const ctxOverride = payload.extra_args?.["ctx-size"] ?? payload.extra_args?.["ctx_size"];
   if (backend === "llamacpp") {
     if (!ctxOverride && payload.max_model_len) args.push(`--ctx-size ${payload.max_model_len}`);
@@ -216,20 +108,22 @@ function appendContextArguments(args: string[], backend: string, payload: Recipe
   }
 }
 
-function appendBackendSpecificArguments(
-  args: string[],
-  backend: string,
-  payload: RecipeCommandPayload,
-) {
+function appendBackendSpecificArguments(args: string[], backend: string, payload: Recipe) {
   if (backend === "llamacpp" || backend === "mlx") {
-    appendLlamacppArgsToCommand(args, payload.extra_args ?? {});
+    appendLlamacppExtraArguments(args, payload.extra_args ?? {}, {
+      shellQuoting: true,
+      skipEmptyString: true,
+    });
     return;
   }
   appendRuntimeOptions(args, backend, payload);
-  appendExtraArgsToCommand(args, payload.extra_args ?? {});
+  appendExtraArguments(args, payload.extra_args ?? {}, {
+    shellQuoting: true,
+    skipEmptyString: true,
+  });
 }
 
-function appendRuntimeOptions(args: string[], backend: string, payload: RecipeCommandPayload) {
+function appendRuntimeOptions(args: string[], backend: string, payload: Recipe) {
   if (payload.quantization) args.push(`--quantization ${payload.quantization}`);
   if (payload.dtype && payload.dtype !== "auto") args.push(`--dtype ${payload.dtype}`);
   if (payload.trust_remote_code) args.push("--trust-remote-code");
@@ -240,7 +134,7 @@ function appendRuntimeOptions(args: string[], backend: string, payload: RecipeCo
   }
 }
 
-function appendToolOptions(args: string[], backend: string, payload: RecipeCommandPayload) {
+function appendToolOptions(args: string[], backend: string, payload: Recipe) {
   if (payload.tool_call_parser) {
     args.push(`--tool-call-parser ${payload.tool_call_parser}`);
     if (backend !== "sglang") args.push("--enable-auto-tool-choice");
