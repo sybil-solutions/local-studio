@@ -13,6 +13,7 @@ export interface Config {
   cors_origins?: string[];
   inference_host: string;
   inference_port: number;
+  allow_unauthenticated: boolean;
 
   data_dir: string;
   db_path: string;
@@ -129,11 +130,13 @@ export const createConfig = (): Config => {
   }
 
   const allowUnauthenticated = parseBooleanFlag(parsed.VLLM_STUDIO_ALLOW_UNAUTHENTICATED);
-  if (!config.api_key && !allowUnauthenticated && !isLoopbackHost(host)) {
+  if (!config.api_key && (!allowUnauthenticated || !isLoopbackHost(host))) {
     throw new Error(
-      "VLLM_STUDIO_API_KEY is required when binding the controller to a non-loopback host. Set VLLM_STUDIO_ALLOW_UNAUTHENTICATED=true only for trusted local environments."
+      "VLLM_STUDIO_API_KEY is required. Set VLLM_STUDIO_ALLOW_UNAUTHENTICATED=true only for trusted local development."
     );
   }
+
+  config.allow_unauthenticated = allowUnauthenticated;
 
   if (parsed.VLLM_STUDIO_SGLANG_PYTHON) {
     config.sglang_python = parsed.VLLM_STUDIO_SGLANG_PYTHON;

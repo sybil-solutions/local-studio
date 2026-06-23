@@ -89,6 +89,11 @@ export function createMutatingAuthMiddleware(context: AppContext): MiddlewareHan
 
     const expectedApiKey = context.config.api_key?.trim();
     if (!expectedApiKey) {
+      // No API key configured and allow_unauthenticated is false -> deny
+      if (!context.config.allow_unauthenticated) {
+        ctx.header("WWW-Authenticate", 'Bearer realm="vllm-studio-controller"');
+        return ctx.json({ detail: "Unauthorized - API key required" }, { status: 401 });
+      }
       return next();
     }
 
