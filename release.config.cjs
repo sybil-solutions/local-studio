@@ -1,6 +1,8 @@
 /**
  * Monorepo, protected `main`: no npm publish, no direct commits to main.
- * Creates Git tag + GitHub Release only (release notes from commits).
+ * semantic-release is the release version source of truth. The prepare step
+ * applies the computed version to package metadata in the release workspace
+ * before any desktop artifacts are built or attached.
  * @type {import("semantic-release").GlobalConfig}
  */
 module.exports = {
@@ -41,6 +43,12 @@ module.exports = {
             { type: "style", section: "Styles", hidden: true },
           ],
         },
+      },
+    ],
+    [
+      "@semantic-release/exec",
+      {
+        prepareCmd: "node scripts/apply-release-version.mjs ${nextRelease.version}",
       },
     ],
     "@semantic-release/github",

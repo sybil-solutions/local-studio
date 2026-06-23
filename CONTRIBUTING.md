@@ -52,3 +52,5 @@ Broad roadmap discussions and unsupported configuration requests may be closed s
 ## Release process
 
 Maintainers merge to `main`. The release workflow runs semantic-release and creates GitHub releases from conventional commits.
+
+semantic-release's computed `nextRelease.version` is the source of truth for stable desktop releases. During the release workflow, `scripts/apply-release-version.mjs` applies that version to the root and frontend package metadata in the release workspace before desktop packaging or release asset publishing. The checked-in package versions are development fallbacks; released app metadata and artifact names should use the semantic-release version.

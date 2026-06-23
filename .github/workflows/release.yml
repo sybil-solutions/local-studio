@@ -26,7 +26,8 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-      # release.config.cjs: GitHub Release + tags only (protected main, no root npm package).
+      # release.config.cjs: semantic-release computes the version and applies it
+      # to package metadata in the release workspace before publishing.
       - name: Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -34,6 +35,7 @@ jobs:
           npx -y \
             -p semantic-release@24 \
             -p @semantic-release/commit-analyzer \
+            -p @semantic-release/exec \
             -p @semantic-release/release-notes-generator \
             -p @semantic-release/github \
             -p conventional-changelog-conventionalcommits@8 \
