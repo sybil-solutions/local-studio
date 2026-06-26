@@ -1,6 +1,6 @@
 {
-  "name": "vLLM Studio",
-  "short_name": "vLLM Studio",
+  "name": "Local Studio",
+  "short_name": "Local Studio",
   "description": "Model management for vLLM and SGLang inference servers",
   "start_url": "/",
   "display": "standalone",

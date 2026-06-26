@@ -2,9 +2,9 @@
 // Single source of truth for the user-data directory.
 //
 // Resolution order:
-//   1. process.env.VLLM_STUDIO_DATA_DIR (set by the desktop main process to
+//   1. process.env.LOCAL_STUDIO_DATA_DIR (set by the desktop main process to
 //      Electron's userData path).
-//   2. ~/.vllm-studio (dev/CLI default).
+//   2. ~/.local-studio (dev/CLI default).
 //
 // One-time migration: when the resolved dir has no api-settings.json, copy
 // the first existing legacy file we can find. After this runs once, the
@@ -24,10 +24,10 @@ function legacyDataDirCandidates(): string[] {
     path.join(process.cwd(), "data"),
     path.join(process.cwd(), "..", "data"),
     path.join(process.cwd(), "frontend", "data"),
-    path.join(homedir(), ".vllm-studio"),
-    path.join(tmpdir(), "vllm-studio"),
+    path.join(homedir(), ".local-studio"),
+    path.join(tmpdir(), "local-studio"),
     // Past Electron userData siblings.
-    path.join(homedir(), "Library", "Application Support", "vllm-studio-app"),
+    path.join(homedir(), "Library", "Application Support", "local-studio-app"),
     path.join(homedir(), "Library", "Application Support", "Electron"),
     path.join(homedir(), "Library", "Application Support", "frontend"),
   ];
@@ -36,8 +36,8 @@ function legacyDataDirCandidates(): string[] {
 export function resolveDataDir(): string {
   if (cachedDataDir) return cachedDataDir;
 
-  const envDir = process.env.VLLM_STUDIO_DATA_DIR?.trim();
-  const dir = envDir && envDir.length > 0 ? envDir : path.join(homedir(), ".vllm-studio");
+  const envDir = process.env.LOCAL_STUDIO_DATA_DIR?.trim();
+  const dir = envDir && envDir.length > 0 ? envDir : path.join(homedir(), ".local-studio");
 
   mkdirSync(dir, { recursive: true });
   try {

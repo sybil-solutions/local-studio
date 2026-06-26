@@ -378,8 +378,8 @@ class BrowserHost {
 
   private async resolveTarget(port: number, targetId: string | null): Promise<CdpTarget> {
     const targets = await fetchTargets(port);
-    const navigable = targets.filter(
-      (target) => target.webSocketDebuggerUrl?.includes("/devtools/page/"),
+    const navigable = targets.filter((target) =>
+      target.webSocketDebuggerUrl?.includes("/devtools/page/"),
     );
     const match = targetId ? navigable.find((target) => target.id === targetId) : navigable[0];
     const target = match ?? navigable[0];
@@ -488,7 +488,10 @@ class BrowserHost {
     return result;
   }
 
-  async click(args: { selector?: string; ref?: string }, pageId?: string): Promise<{ found: boolean }> {
+  async click(
+    args: { selector?: string; ref?: string },
+    pageId?: string,
+  ): Promise<{ found: boolean }> {
     const page = await this.page(pageId);
     const selector = this.resolveSelector(page, args);
     return page.invokeScript<{ found: boolean }>(CLICK_SCRIPT, [selector]);
@@ -567,7 +570,9 @@ class BrowserHost {
   }
 
   async setViewport(width: number, height: number, pageId?: string): Promise<void> {
-    await (await this.page(pageId)).call("Page.setDeviceMetricsOverride", {
+    await (
+      await this.page(pageId)
+    ).call("Page.setDeviceMetricsOverride", {
       width: Math.round(width),
       height: Math.round(height),
       deviceScaleFactor: 1,
@@ -595,9 +600,7 @@ class BrowserHost {
   // compositing screencast frames when nobody is watching.
   private pollUnsubscribe: (() => void) | null = null;
   private pollIdleTimer: ReturnType<typeof setTimeout> | null = null;
-  async pollFrame(
-    pageId?: string,
-  ): Promise<{ frame: ScreencastFrame | null; state: PageState }> {
+  async pollFrame(pageId?: string): Promise<{ frame: ScreencastFrame | null; state: PageState }> {
     const page = await this.page(pageId);
     if (!this.pollUnsubscribe) {
       // A no-op subscriber is enough to make the page start Page.startScreencast;
@@ -707,6 +710,6 @@ function keyEvent(key: string): Record<string, unknown> {
   };
 }
 
-const globalForHost = globalThis as typeof globalThis & { __vllmStudioBrowserHost?: BrowserHost };
-export const browserHost = globalForHost.__vllmStudioBrowserHost ?? new BrowserHost();
-globalForHost.__vllmStudioBrowserHost = browserHost;
+const globalForHost = globalThis as typeof globalThis & { __localStudioBrowserHost?: BrowserHost };
+export const browserHost = globalForHost.__localStudioBrowserHost ?? new BrowserHost();
+globalForHost.__localStudioBrowserHost = browserHost;

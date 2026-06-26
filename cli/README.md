@@ -1,6 +1,6 @@
 # CLI
 
-`cli/` is the Bun command-line client for a vLLM Studio controller. It is useful for quick status checks, model lifecycle commands, and terminal dashboards without opening the frontend.
+`cli/` is the Bun command-line client for a Local Studio controller. It is useful for quick status checks, model lifecycle commands, and terminal dashboards without opening the frontend.
 
 ## What It Does
 
@@ -55,7 +55,7 @@ bun src/main.ts
 
 ## Configuration
 
-- `VLLM_STUDIO_URL`: controller base URL. Defaults to `http://localhost:8080`.
+- `LOCAL_STUDIO_URL`: controller base URL. Defaults to `http://localhost:8080`.
 
 The CLI does not discover local runtimes itself. It asks the connected controller for status, recipes, model lifecycle actions, and metrics.
 
@@ -68,7 +68,7 @@ bun run build
 bun run check
 ```
 
-The build command emits the compiled `vllm-studio` CLI binary.
+The build command emits the compiled `local-studio` CLI binary.
 
 ## Where To Look
 

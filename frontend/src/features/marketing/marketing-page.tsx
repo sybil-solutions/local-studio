@@ -28,31 +28,31 @@ const screenshots: Screenshot[] = [
     src: "/marketing/screenshots/status-dashboard.png",
     title: "Telemetry",
     meta: "live app capture",
-    alt: "vLLM Studio status dashboard showing controllers, decode metrics, VRAM, power, and GPU rows.",
+    alt: "Local Studio status dashboard showing controllers, decode metrics, VRAM, power, and GPU rows.",
   },
   {
     src: "/marketing/screenshots/discover-models.png",
     title: "Models",
     meta: "live app capture",
-    alt: "vLLM Studio Discover Models screen showing searchable model rows and download actions.",
+    alt: "Local Studio Discover Models screen showing searchable model rows and download actions.",
   },
   {
     src: "/marketing/screenshots/system-settings.png",
     title: "Runtime",
     meta: "live app capture",
-    alt: "vLLM Studio System settings showing installed inference engines and service topology.",
+    alt: "Local Studio System settings showing installed inference engines and service topology.",
   },
   {
     src: "/marketing/screenshots/model-library.png",
     title: "Fit",
     meta: "live app capture",
-    alt: "vLLM Studio model library with hardware profile, model results, and downloads.",
+    alt: "Local Studio model library with hardware profile, model results, and downloads.",
   },
   {
     src: "/marketing/screenshots/plugins.png",
     title: "MCP",
     meta: "live app capture",
-    alt: "vLLM Studio Plugins page showing MCP custom server and registry source settings.",
+    alt: "Local Studio Plugins page showing MCP custom server and registry source settings.",
   },
 ];
 
@@ -98,9 +98,9 @@ const downloads = [
 function MarketingNav() {
   return (
     <header className={styles.nav}>
-      <Link href="/download" className={styles.brand} aria-label="vLLM Studio download page">
-        <span className={styles.mark}>vS</span>
-        <span>vLLM Studio</span>
+      <Link href="/download" className={styles.brand} aria-label="Local Studio download page">
+        <span className={styles.mark}>LS</span>
+        <span>Local Studio</span>
       </Link>
       <nav className={styles.navLinks} aria-label="Marketing navigation">
         <Link href="/download#product">Product</Link>
@@ -148,7 +148,7 @@ export function MarketingLandingPage() {
             <div className={styles.heroCopyColumn}>
               <p className={styles.eyebrow}>Local inference control plane</p>
               <h1 id="landing-title" className={styles.heroTitle}>
-                vLLM Studio
+                Local Studio
               </h1>
               <p className={styles.heroCopy}>
                 Controllers, GPUs, models, providers, agents. One operating surface.
@@ -173,7 +173,7 @@ export function MarketingLandingPage() {
               <ScreenshotFrame screenshot={screenshots[0]} priority />
             </div>
           </div>
-          <div className={styles.metricStrip} aria-label="vLLM Studio product scope">
+          <div className={styles.metricStrip} aria-label="Local Studio product scope">
             <div className={styles.metric}>
               <span className={styles.metricLabel}>Serve</span>
               <span className={styles.metricValue}>vLLM / SGLang / MLX / llama.cpp</span>
@@ -319,14 +319,14 @@ export function MarketingLandingPage() {
       </section>
 
       <footer className={styles.footer}>
-        <span>vLLM Studio v0.2.9</span>
+        <span>Local Studio v0.2.9</span>
         <span>Desktop / web / controller / CLI / Pi</span>
       </footer>
     </main>
   );
 }
 
-const dltl = `DLTL: vLLM Studio multi-controller setup
+const dltl = `DLTL: Local Studio multi-controller setup
 
 Role:
 Operate on the real install. Use live controller URLs. Do not expose secrets.
@@ -429,11 +429,11 @@ export function AgentsPage() {
           </div>
 
           <h3 style={{ marginTop: "1.4rem" }}>Useful probes</h3>
-          <pre className={styles.compactBlock}>{`curl -s "$VLLM_STUDIO_URL/status"
-curl -s "$VLLM_STUDIO_URL/gpus"
-curl -s "$VLLM_STUDIO_URL/config"
-curl -s "$VLLM_STUDIO_URL/studio/providers"
-curl -s "$VLLM_STUDIO_URL/studio/provider-models"`}</pre>
+          <pre className={styles.compactBlock}>{`curl -s "$LOCAL_STUDIO_URL/status"
+curl -s "$LOCAL_STUDIO_URL/gpus"
+curl -s "$LOCAL_STUDIO_URL/config"
+curl -s "$LOCAL_STUDIO_URL/studio/providers"
+curl -s "$LOCAL_STUDIO_URL/studio/provider-models"`}</pre>
         </aside>
 
         <article className={styles.steps}>

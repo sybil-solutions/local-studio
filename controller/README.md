@@ -1,6 +1,6 @@
 # Controller
 
-`controller/` is the Bun/Hono backend for vLLM Studio. It exposes the HTTP API that the frontend, desktop app, and CLI use to manage models, proxy inference requests, read runtime status, and inspect usage/system data.
+`controller/` is the Bun/Hono backend for Local Studio. It exposes the HTTP API that the frontend, desktop app, and CLI use to manage models, proxy inference requests, read runtime status, and inspect usage/system data.
 
 ## What It Does
 
@@ -89,11 +89,11 @@ Use `.env.local` for machine-specific secrets and deployment values.
 
 Runtime-related environment variables include:
 
-- `VLLM_STUDIO_SGLANG_PYTHON`: preferred SGLang Python executable.
-- `VLLM_STUDIO_LLAMA_BIN`: preferred llama.cpp `llama-server` executable.
-- `VLLM_STUDIO_MLX_PYTHON`: preferred Python executable containing `mlx-lm`.
-- `VLLM_STUDIO_RUNTIME_SKIP_SYSTEM`: skip system Python/binary discovery when set to `1`.
-- `VLLM_STUDIO_RUNTIME_SKIP_DOCKER`: skip Docker image/container discovery when set to `1`.
+- `LOCAL_STUDIO_SGLANG_PYTHON`: preferred SGLang Python executable.
+- `LOCAL_STUDIO_LLAMA_BIN`: preferred llama.cpp `llama-server` executable.
+- `LOCAL_STUDIO_MLX_PYTHON`: preferred Python executable containing `mlx-lm`.
+- `LOCAL_STUDIO_RUNTIME_SKIP_SYSTEM`: skip system Python/binary discovery when set to `1`.
+- `LOCAL_STUDIO_RUNTIME_SKIP_DOCKER`: skip Docker image/container discovery when set to `1`.
 
 ## Where To Look
 

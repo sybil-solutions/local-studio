@@ -1,6 +1,6 @@
 # Cleanup Log — zcode-clone branch
 
-This branch repainted the entire vLLM Studio frontend to the ZCode design
+This branch repainted the entire Local Studio frontend to the ZCode design
 language, adopted Effect-TS for the session/runtime layer, fixed model-search
 bugs, consolidated duplicated types, moved misplaced components, and reduced all
 complexity warnings to zero.
@@ -17,7 +17,7 @@ CSS into `src/app/styles/globals/tokens.css`:
 - **Neutral grayscale base** + single **sky-blue brand** accent
 - **Rich semantic surface layer**: `--color-surface/card/popover/sidebar/
 header/panel/border/hover/selected/tab/menu/input/tooltip/toast/tag`
-- **Domain tokens** (vllm-studio lacked most): terminal 16-color palette,
+- **Domain tokens** (local-studio lacked most): terminal 16-color palette,
   usage-chart (6 colors), usage-heatmap (5-step sky ramp), git/diff,
   context-breakdown, and a **node taxonomy** (command/file/session/skill/
   subagent) used to color-code engines, tools, and sessions

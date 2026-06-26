@@ -68,9 +68,9 @@ const resolvePythonFromScript = (scriptPath: string | null | undefined): string 
 const resolvePythonBinary = async (preferredPython?: string | null): Promise<string | null> => {
   const candidates: string[] = [];
   if (preferredPython) candidates.push(preferredPython);
-  const override = process.env["VLLM_STUDIO_RUNTIME_PYTHON"];
+  const override = process.env["LOCAL_STUDIO_RUNTIME_PYTHON"];
   if (override) candidates.push(override);
-  const skipSystem = process.env["VLLM_STUDIO_RUNTIME_SKIP_SYSTEM"] === "1";
+  const skipSystem = process.env["LOCAL_STUDIO_RUNTIME_SKIP_SYSTEM"] === "1";
   const systemVllmPython = skipSystem ? null : resolvePythonFromScript(resolveBinary("vllm"));
   if (!skipSystem && systemVllmPython) candidates.push(systemVllmPython);
   const runtimePython = resolveVllmPythonPath();
@@ -86,9 +86,9 @@ const resolvePythonBinary = async (preferredPython?: string | null): Promise<str
 const collectPythonCandidates = (preferredPython?: string | null): string[] => {
   const candidates: string[] = [];
   if (preferredPython) candidates.push(preferredPython);
-  const override = process.env["VLLM_STUDIO_RUNTIME_PYTHON"];
+  const override = process.env["LOCAL_STUDIO_RUNTIME_PYTHON"];
   if (override) candidates.push(override);
-  const skipSystem = process.env["VLLM_STUDIO_RUNTIME_SKIP_SYSTEM"] === "1";
+  const skipSystem = process.env["LOCAL_STUDIO_RUNTIME_SKIP_SYSTEM"] === "1";
   const systemVllmPython = skipSystem ? null : resolvePythonFromScript(resolveBinary("vllm"));
   if (!skipSystem && systemVllmPython) candidates.push(systemVllmPython);
   const runtimePython = resolveVllmPythonPath();

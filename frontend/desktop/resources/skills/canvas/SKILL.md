@@ -1,11 +1,11 @@
 ---
 name: canvas
-description: Shared scratchboard between the human and the model in vLLM Studio. Use it to read the human's running notes/plan and to record concise, durable state (plans, decisions, open questions, links, important values) that should survive across turns and be visible to both sides.
+description: Shared scratchboard between the human and the model in Local Studio. Use it to read the human's running notes/plan and to record concise, durable state (plans, decisions, open questions, links, important values) that should survive across turns and be visible to both sides.
 ---
 
 # Canvas
 
-The canvas is a single plain-text document that the user can see and edit live in the right-hand "Canvas" panel of vLLM Studio. It is **shared** state: anything you write into it is immediately rendered to the user, and anything the user types into it is visible to you on your next read.
+The canvas is a single plain-text document that the user can see and edit live in the right-hand "Canvas" panel of Local Studio. It is **shared** state: anything you write into it is immediately rendered to the user, and anything the user types into it is visible to you on your next read.
 
 This skill is loaded **only when the user has explicitly turned the Canvas toggle ON** in the composer (the `</>` icon next to the browser globe). When this skill is loaded, the following tools are available:
 
@@ -35,7 +35,7 @@ Use the canvas when state should outlive the current message **and** benefit fro
 2. **Append, don't clobber.** Prefer `canvas_append` for incremental updates. Reserve `canvas_write` for cases where you are intentionally rewriting the canvas (e.g., replacing a stale plan with a refreshed one — and in that case, preserve anything the user clearly authored).
 3. **Be concise and structured.** Use short markdown bullet lists or labelled lines (`Plan:`, `Decisions:`, `Open Qs:`). The user is reading this in real time.
 4. **Mirror, don't duplicate.** Don't repeat your full chat reply in the canvas. The canvas should capture only what's worth remembering across turns.
-5. **Per-session.** The canvas is scoped to the currently focused vLLM Studio session. If the user opens or switches sessions, the canvas you see will switch with them — that's expected.
+5. **Per-session.** The canvas is scoped to the currently focused Local Studio session. If the user opens or switches sessions, the canvas you see will switch with them — that's expected.
 
 ## Quick example
 

@@ -9,7 +9,7 @@ import type { GitAction, GitRef, GitState, GitStatusEntry } from "@/features/age
 const execFileAsync = promisify(execFile);
 
 export function configuredGitRoots(): string[] {
-  const raw = process.env.VLLM_STUDIO_GIT_DIFF_ROOTS;
+  const raw = process.env.LOCAL_STUDIO_GIT_DIFF_ROOTS;
   return (raw ? raw.split(path.delimiter) : [os.homedir()])
     .map((entry) => entry.trim())
     .filter(Boolean)

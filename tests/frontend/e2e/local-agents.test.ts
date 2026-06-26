@@ -25,7 +25,7 @@ import {
 const createdHomes: string[] = [];
 
 function makeHome(): string {
-  const home = mkdtempSync(path.join(tmpdir(), "vllm-studio-local-agents-"));
+  const home = mkdtempSync(path.join(tmpdir(), "local-studio-local-agents-"));
   createdHomes.push(home);
   return home;
 }
@@ -137,7 +137,7 @@ test("pi: upserts into an existing same-baseUrl provider without touching its ap
   assert.equal(readJson(configPath).providers.homelab.models.length, 2);
 });
 
-test("pi: creates models.json with a vllm-studio provider when only ~/.pi exists", async () => {
+test("pi: creates models.json with a local-studio provider when only ~/.pi exists", async () => {
   const home = makeHome();
   mkdirSync(path.join(home, ".pi"), { recursive: true });
 
@@ -151,7 +151,7 @@ test("pi: creates models.json with a vllm-studio provider when only ~/.pi exists
   assert.equal(statSync(configPath).mode & 0o777, 0o600);
 
   const written = readJson(configPath);
-  const provider = written.providers["vllm-studio"];
+  const provider = written.providers["local-studio"];
   assert.equal(provider.api, "openai-completions");
   assert.equal(provider.baseUrl, "https://api.homelabai.org/v1");
   assert.equal(provider.apiKey, "sk-studio-key");
@@ -180,7 +180,7 @@ test("pi: writes image input for image-capable models", async () => {
   assert.equal(result.ok, true);
 
   const configPath = path.join(home, ".pi", "agent", "models.json");
-  const model = readJson(configPath).providers["vllm-studio"].models[0];
+  const model = readJson(configPath).providers["local-studio"].models[0];
   assert.equal(model.id, "step-3.7-flash");
   assert.deepEqual(model.input, ["text", "image"]);
 });
@@ -220,9 +220,9 @@ test("opencode: adds a new provider and preserves every other key", async () => 
   assert.deepEqual(written.permission, fixture.permission);
   assert.deepEqual(written.provider.anthropic, fixture.provider.anthropic);
 
-  assert.deepEqual(written.provider["vllm-studio"], {
+  assert.deepEqual(written.provider["local-studio"], {
     npm: "@ai-sdk/openai-compatible",
-    name: "vLLM Studio",
+    name: "Local Studio",
     options: { baseURL: "https://api.homelabai.org/v1", apiKey: "sk-studio-key" },
     models: {
       "deepseek-v4-flash": {

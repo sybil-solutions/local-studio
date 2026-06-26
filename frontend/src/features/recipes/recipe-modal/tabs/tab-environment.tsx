@@ -51,7 +51,7 @@ export function RecipeModalTabEnvironment({
       {isLlamacpp ? (
         <p className="text-xs text-(--ui-muted)">
           llama.cpp uses the configured server binary. Set{" "}
-          <span className="font-mono">VLLM_STUDIO_LLAMA_BIN</span> if you need a custom path.
+          <span className="font-mono">LOCAL_STUDIO_LLAMA_BIN</span> if you need a custom path.
         </p>
       ) : null}
 

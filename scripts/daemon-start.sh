@@ -2,9 +2,9 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-PID_FILE="${VLLM_STUDIO_PID_FILE:-$ROOT/data/controller.pid}"
-LOG_FILE="${VLLM_STUDIO_LOG_FILE:-$ROOT/data/controller.log}"
-BUN_BIN="${VLLM_STUDIO_BUN_BIN:-$HOME/.bun/bin/bun}"
+PID_FILE="${LOCAL_STUDIO_PID_FILE:-$ROOT/data/controller.pid}"
+LOG_FILE="${LOCAL_STUDIO_LOG_FILE:-$ROOT/data/controller.log}"
+BUN_BIN="${LOCAL_STUDIO_BUN_BIN:-$HOME/.bun/bin/bun}"
 
 if [ ! -x "$BUN_BIN" ]; then
   BUN_BIN="bun"

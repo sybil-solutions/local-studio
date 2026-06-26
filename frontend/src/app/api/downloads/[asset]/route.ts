@@ -15,11 +15,11 @@ type DownloadAsset = {
 const assets: Record<string, DownloadAsset> = {
   "mac-dmg": {
     contentType: "application/x-apple-diskimage",
-    pattern: /^vLLM Studio-\d+\.\d+\.\d+-arm64\.dmg$/,
+    pattern: /^Local Studio-\d+\.\d+\.\d+-arm64\.dmg$/,
   },
   "mac-zip": {
     contentType: "application/zip",
-    pattern: /^vLLM Studio-\d+\.\d+\.\d+-arm64-mac\.zip$/,
+    pattern: /^Local Studio-\d+\.\d+\.\d+-arm64-mac\.zip$/,
   },
 };
 

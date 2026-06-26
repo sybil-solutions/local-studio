@@ -14,7 +14,7 @@ export async function register(): Promise<void> {
     }
   ).setDefaultAutoSelectFamilyAttemptTimeout;
   if (typeof setTimeoutFn !== "function") return;
-  const configured = Number(process.env.VLLM_STUDIO_AUTOSELECT_FAMILY_TIMEOUT_MS);
+  const configured = Number(process.env.LOCAL_STUDIO_AUTOSELECT_FAMILY_TIMEOUT_MS);
   const timeoutMs = Number.isFinite(configured) && configured > 0 ? configured : 2000;
   setTimeoutFn(Math.max(timeoutMs, 250));
 }

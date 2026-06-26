@@ -28,7 +28,7 @@ export const resolveRocmSmiTool = (): RuntimeRocmSmiTool | null => {
 };
 
 const readRocmVersion = (): string | null => {
-  const overridden = (process.env["VLLM_STUDIO_ROCM_VERSION_FILE"] ?? "").trim();
+  const overridden = (process.env["LOCAL_STUDIO_ROCM_VERSION_FILE"] ?? "").trim();
   if (overridden) {
     try {
       if (existsSync(overridden)) {

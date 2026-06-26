@@ -31,7 +31,7 @@ import { parseBooleanFlag } from "../../core/validation";
 import { fetchInference } from "../../services/inference-client";
 
 function isMockInferenceEnabled(): boolean {
-  return parseBooleanFlag(process.env["VLLM_STUDIO_MOCK_INFERENCE"]);
+  return parseBooleanFlag(process.env["LOCAL_STUDIO_MOCK_INFERENCE"]);
 }
 
 function recipeMetadata(recipe: Recipe): Record<string, unknown> | undefined {
@@ -90,7 +90,7 @@ export const registerModelsRoutes: RouteRegistrar = (app, context) => {
         id: modelId,
         object: "model",
         created: now,
-        owned_by: "vllm-studio",
+        owned_by: "local-studio",
         active: isActive,
         max_model_len: maxModelLength,
         ...(metadata ? { metadata } : {}),
@@ -101,7 +101,7 @@ export const registerModelsRoutes: RouteRegistrar = (app, context) => {
     // can render a model selector (and avoid "no models" dead-ends on mobile).
     if (models.length === 0 && (isMockInferenceEnabled() || current)) {
       const inferredId =
-        process.env["VLLM_STUDIO_MOCK_MODEL_ID"]?.trim() ||
+        process.env["LOCAL_STUDIO_MOCK_MODEL_ID"]?.trim() ||
         current?.served_model_name ||
         (current?.model_path ? basename(current.model_path) : "") ||
         "mock";
@@ -109,7 +109,7 @@ export const registerModelsRoutes: RouteRegistrar = (app, context) => {
         id: inferredId,
         object: "model",
         created: now,
-        owned_by: "vllm-studio",
+        owned_by: "local-studio",
         active: true,
         max_model_len: activeModelData?.data?.[0]?.max_model_len ?? 32768,
       });
@@ -167,7 +167,7 @@ export const registerModelsRoutes: RouteRegistrar = (app, context) => {
       id: recipe.served_model_name ?? recipe.id,
       object: "model",
       created: Math.floor(Date.now() / 1000),
-      owned_by: "vllm-studio",
+      owned_by: "local-studio",
       active: isActive,
       max_model_len: maxModelLength,
     };

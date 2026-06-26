@@ -7,13 +7,13 @@ import test from "node:test";
 import { refreshPiModels, resolvePiModelSelection } from "@/features/agent/pi-runtime-models";
 
 test("Pi model refresh pulls and writes models from every configured controller", async () => {
-  const previousDataDir = process.env.VLLM_STUDIO_DATA_DIR;
+  const previousDataDir = process.env.LOCAL_STUDIO_DATA_DIR;
   const previousHome = process.env.HOME;
   const previousFetch = globalThis.fetch;
-  const dataDir = mkdtempSync(path.join(tmpdir(), "vllm-studio-pi-models-"));
+  const dataDir = mkdtempSync(path.join(tmpdir(), "local-studio-pi-models-"));
   const requests: Array<{ url: string; authorization: string | null }> = [];
 
-  process.env.VLLM_STUDIO_DATA_DIR = dataDir;
+  process.env.LOCAL_STUDIO_DATA_DIR = dataDir;
   process.env.HOME = dataDir;
   writeFileSync(
     path.join(dataDir, "api-settings.json"),
@@ -64,24 +64,24 @@ test("Pi model refresh pulls and writes models from every configured controller"
         {
           id: "deepseek-v4-flash",
           rawId: "deepseek-v4-flash",
-          providerId: "vllm-studio",
+          providerId: "local-studio",
           controllerName: "primary",
         },
         {
-          id: "vllm-studio-secondary-test-8080/qwen3-coder",
+          id: "local-studio-secondary-test-8080/qwen3-coder",
           rawId: "qwen3-coder",
-          providerId: "vllm-studio-secondary-test-8080",
+          providerId: "local-studio-secondary-test-8080",
           controllerName: "secondary",
         },
       ],
     );
 
     assert.deepEqual(resolvePiModelSelection("deepseek-v4-flash"), {
-      providerId: "vllm-studio",
+      providerId: "local-studio",
       modelId: "deepseek-v4-flash",
     });
-    assert.deepEqual(resolvePiModelSelection("vllm-studio-secondary-test-8080/qwen3-coder"), {
-      providerId: "vllm-studio-secondary-test-8080",
+    assert.deepEqual(resolvePiModelSelection("local-studio-secondary-test-8080/qwen3-coder"), {
+      providerId: "local-studio-secondary-test-8080",
       modelId: "qwen3-coder",
     });
 
@@ -91,20 +91,20 @@ test("Pi model refresh pulls and writes models from every configured controller"
       providers: Record<string, { baseUrl: string; models: Array<{ id: string }> }>;
     };
     assert.deepEqual(Object.keys(modelsConfig.providers).sort(), [
-      "vllm-studio",
-      "vllm-studio-secondary-test-8080",
+      "local-studio",
+      "local-studio-secondary-test-8080",
     ]);
-    assert.deepEqual(modelsConfig.providers["vllm-studio"]?.models.map((model) => model.id), [
+    assert.deepEqual(modelsConfig.providers["local-studio"]?.models.map((model) => model.id), [
       "deepseek-v4-flash",
     ]);
     assert.deepEqual(
-      modelsConfig.providers["vllm-studio-secondary-test-8080"]?.models.map((model) => model.id),
+      modelsConfig.providers["local-studio-secondary-test-8080"]?.models.map((model) => model.id),
       ["qwen3-coder"],
     );
   } finally {
     globalThis.fetch = previousFetch;
-    if (previousDataDir === undefined) delete process.env.VLLM_STUDIO_DATA_DIR;
-    else process.env.VLLM_STUDIO_DATA_DIR = previousDataDir;
+    if (previousDataDir === undefined) delete process.env.LOCAL_STUDIO_DATA_DIR;
+    else process.env.LOCAL_STUDIO_DATA_DIR = previousDataDir;
     if (previousHome === undefined) delete process.env.HOME;
     else process.env.HOME = previousHome;
     rmSync(dataDir, { recursive: true, force: true });

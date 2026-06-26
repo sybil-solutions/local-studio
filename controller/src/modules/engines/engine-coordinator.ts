@@ -144,7 +144,7 @@ export class EngineCoordinator implements EngineService {
     const existing = await this.deps.processManager.findInferenceProcess(this.deps.config.inference_port); if (existing && isRecipeRunning(recipe, existing)) {
       return { switched: false, error: null }; }
     if (this.autoActivationBlocked) { return {
-        switched: false, error: "Model auto-loading is disabled because the model was manually stopped. Start a model from vLLM Studio before sending local inference requests.",
+        switched: false, error: "Model auto-loading is disabled because the model was manually stopped. Start a model from Local Studio before sending local inference requests.",
       }; }
  const intentSerial = ++this.lifecycleIntentSerial;
     const lifecycleAbort = new AbortController(); this.activeLifecycleAbort = lifecycleAbort;
@@ -155,7 +155,7 @@ export class EngineCoordinator implements EngineService {
       if (latest && isRecipeRunning(recipe, latest)) { return { switched: false, error: null };
       } if (this.autoActivationBlocked) {
         return { switched: false,
-          error: "Model auto-loading is disabled because the model was manually stopped. Start a model from vLLM Studio before sending local inference requests.", };
+          error: "Model auto-loading is disabled because the model was manually stopped. Start a model from Local Studio before sending local inference requests.", };
       }
       const blocked = this.deps.launchFailureBudget.isBlocked(recipe.id);
       if (blocked) {

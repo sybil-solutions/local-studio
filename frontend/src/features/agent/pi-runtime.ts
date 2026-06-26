@@ -64,14 +64,14 @@ type PiResourceDiagnostic = {
 // session manager — shares a single map. Resolve via globalThis on every read
 // to defeat closure-bound copies left behind by HMR.
 type DiagnosticsGlobal = typeof globalThis & {
-  __vllmStudioPiResourceDiagnostics?: Map<string, PiResourceDiagnostic[]>;
+  __localStudioPiResourceDiagnostics?: Map<string, PiResourceDiagnostic[]>;
 };
 function diagnosticsMap(): Map<string, PiResourceDiagnostic[]> {
   const g = globalThis as DiagnosticsGlobal;
-  if (!g.__vllmStudioPiResourceDiagnostics) {
-    g.__vllmStudioPiResourceDiagnostics = new Map();
+  if (!g.__localStudioPiResourceDiagnostics) {
+    g.__localStudioPiResourceDiagnostics = new Map();
   }
-  return g.__vllmStudioPiResourceDiagnostics;
+  return g.__localStudioPiResourceDiagnostics;
 }
 
 export function piResourceDiagnostics(agentDir?: string): PiResourceDiagnostic[] {
@@ -143,7 +143,7 @@ class PiSdkSession extends EventEmitter implements PiAgentSession {
           agentDir,
           resourceLoaderOptions: {
             // Do not load user-installed Pi package/drop-in extensions from
-            // settings.json or auto-discovery. vLLM Studio only allows the
+            // settings.json or auto-discovery. Local Studio only allows the
             // first-party extension paths assembled below plus selected MCP
             // servers through mcp-plugin.ts.
             noExtensions: true,
@@ -366,7 +366,7 @@ class PiSdkSession extends EventEmitter implements PiAgentSession {
     if (!normalized && !this.warnedCompactionBoundaryShape) {
       this.warnedCompactionBoundaryShape = true;
       console.warn(
-        "[vLLM Studio] Pi SDK compaction boundary guard could not inspect session messages; stale post-compaction usage may reappear after an SDK shape change.",
+        "[Local Studio] Pi SDK compaction boundary guard could not inspect session messages; stale post-compaction usage may reappear after an SDK shape change.",
       );
     }
   }
@@ -416,9 +416,9 @@ class PiRuntimeManager {
 }
 
 const globalForPi = globalThis as typeof globalThis & {
-  __vllmStudioPiRuntimeManager?: PiRuntimeManager;
+  __localStudioPiRuntimeManager?: PiRuntimeManager;
 };
 
-export const piRuntimeManager = globalForPi.__vllmStudioPiRuntimeManager ?? new PiRuntimeManager();
+export const piRuntimeManager = globalForPi.__localStudioPiRuntimeManager ?? new PiRuntimeManager();
 
-globalForPi.__vllmStudioPiRuntimeManager = piRuntimeManager;
+globalForPi.__localStudioPiRuntimeManager = piRuntimeManager;

@@ -43,7 +43,7 @@ const extractServedModelName = (_args: string[]): string | null => {
 };
 
 const resolvePythonPath = (): string | null => {
-  const explicit = process.env["VLLM_STUDIO_MLX_PYTHON"]?.trim();
+  const explicit = process.env["LOCAL_STUDIO_MLX_PYTHON"]?.trim();
   if (explicit && existsSync(explicit)) return explicit;
 
   const managedCandidates = [

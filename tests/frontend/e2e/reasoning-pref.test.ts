@@ -54,7 +54,7 @@ test("re-showing flips it back to visible", () => {
 
 test("only the explicit '0' sentinel hides reasoning", () => {
   const win = (globalThis as { window: FakeWindow }).window;
-  win.localStorage.setItem("vllm-studio.agent.reasoningVisible", "anything-else");
+  win.localStorage.setItem("local-studio.agent.reasoningVisible", "anything-else");
   assert.equal(loadReasoningVisible(), true);
 });
 

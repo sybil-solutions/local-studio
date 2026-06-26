@@ -12,7 +12,7 @@ function setUpdateState(nextState: DesktopUpdateSnapshot): void {
 }
 
 function resolveFeedUrl(): string | null {
-  const raw = process.env.VLLM_STUDIO_UPDATE_URL?.trim();
+  const raw = process.env.LOCAL_STUDIO_UPDATE_URL?.trim();
   if (!raw) return null;
   // Refuse cleartext update feeds — auto-update over http is trivially
   // MITM-able into shipping an arbitrary binary. Allow http only for loopback
@@ -24,7 +24,7 @@ function resolveFeedUrl(): string | null {
       return null;
     }
   } catch {
-    log.warn("[update] Ignoring malformed VLLM_STUDIO_UPDATE_URL");
+    log.warn("[update] Ignoring malformed LOCAL_STUDIO_UPDATE_URL");
     return null;
   }
   return raw.replace(/\/+$/, "");
@@ -33,7 +33,7 @@ function resolveFeedUrl(): string | null {
 function ensureFeedConfigured(): { ok: true; url: string } | { ok: false; reason: string } {
   const feedUrl = resolveFeedUrl();
   if (!feedUrl) {
-    return { ok: false, reason: "VLLM_STUDIO_UPDATE_URL is not set" };
+    return { ok: false, reason: "LOCAL_STUDIO_UPDATE_URL is not set" };
   }
 
   autoUpdater.setFeedURL({
@@ -53,7 +53,7 @@ export async function checkForUpdates(force = false): Promise<DesktopUpdateSnaps
   if (DESKTOP_CONFIG.disableAutoUpdate) {
     const disabledState = {
       status: "error",
-      message: "Auto update disabled by VLLM_STUDIO_DESKTOP_DISABLE_AUTO_UPDATE",
+      message: "Auto update disabled by LOCAL_STUDIO_DESKTOP_DISABLE_AUTO_UPDATE",
     } satisfies DesktopUpdateSnapshot;
     setUpdateState(disabledState);
     return disabledState;

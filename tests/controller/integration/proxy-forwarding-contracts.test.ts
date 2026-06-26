@@ -48,7 +48,7 @@ describe("controller route contracts", () => {
 
     const target = `http://127.0.0.1:${upstream.port}`;
     // Cross-controller passthrough is deny-by-default; allowlist the test target.
-    process.env.VLLM_STUDIO_CONTROLLER_ROUTE_ALLOWLIST = target;
+    process.env.LOCAL_STUDIO_CONTROLLER_ROUTE_ALLOWLIST = target;
     try {
       const app = await createTestApp();
       const response = await app.request(
@@ -85,7 +85,7 @@ describe("controller route contracts", () => {
         ]),
       );
     } finally {
-      delete process.env.VLLM_STUDIO_CONTROLLER_ROUTE_ALLOWLIST;
+      delete process.env.LOCAL_STUDIO_CONTROLLER_ROUTE_ALLOWLIST;
       await upstream.stop(true);
     }
   });
@@ -119,7 +119,7 @@ describe("controller route contracts", () => {
 
     const target = `http://127.0.0.1:${upstream.port}`;
     // Cross-controller passthrough is deny-by-default; allowlist the test target.
-    process.env.VLLM_STUDIO_CONTROLLER_ROUTE_ALLOWLIST = target;
+    process.env.LOCAL_STUDIO_CONTROLLER_ROUTE_ALLOWLIST = target;
     try {
       const app = await createTestApp();
       const payload = {
@@ -160,7 +160,7 @@ describe("controller route contracts", () => {
         ]),
       );
     } finally {
-      delete process.env.VLLM_STUDIO_CONTROLLER_ROUTE_ALLOWLIST;
+      delete process.env.LOCAL_STUDIO_CONTROLLER_ROUTE_ALLOWLIST;
       await upstream.stop(true);
     }
   });

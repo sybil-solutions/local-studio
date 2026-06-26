@@ -441,7 +441,7 @@ function swaggerSrcDoc(specUrl: string): string {
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>vLLM Studio API Docs</title>
+    <title>Local Studio API Docs</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swagger-ui-dist/swagger-ui.css" />
     <style>
       html, body, #swagger-ui { margin: 0; min-height: 100%; background: #fff; }

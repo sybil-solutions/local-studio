@@ -1,5 +1,5 @@
 /**
- * Server-only support for attaching a vLLM Studio model to locally installed
+ * Server-only support for attaching a Local Studio model to locally installed
  * coding-agent CLIs (pi, opencode, droid, hermes). Detection inspects well-known
  * config directories under a given home dir; attachment merges a provider /
  * model entry into each agent's own config file, preserving everything else
@@ -53,7 +53,7 @@ export interface AttachResult {
 
 type JsonRecord = Record<string, unknown>;
 
-const DEFAULT_PROVIDER_KEY = "vllm-studio";
+const DEFAULT_PROVIDER_KEY = "local-studio";
 
 const isRecord = (value: unknown): value is JsonRecord =>
   Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -270,7 +270,7 @@ function mergeOpencodeConfig(config: JsonRecord, model: LocalAgentModel): Attach
   const key = providerKeyFor((candidate) => candidate in providers);
   providers[key] = {
     npm: "@ai-sdk/openai-compatible",
-    name: "vLLM Studio",
+    name: "Local Studio",
     options: { baseURL: model.baseUrl, apiKey: model.apiKey },
     models: { [model.modelId]: modelEntry },
   };
@@ -278,9 +278,7 @@ function mergeOpencodeConfig(config: JsonRecord, model: LocalAgentModel): Attach
 }
 
 const slugify = (value: string): string =>
-  value
-    .replace(/[^a-zA-Z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
+  value.replace(/[^a-zA-Z0-9]+/g, "-").replace(/^-+|-+$/g, "");
 
 function mergeDroidConfig(config: JsonRecord, model: LocalAgentModel): AttachAction {
   if (!Array.isArray(config["customModels"])) config["customModels"] = [];
@@ -377,7 +375,7 @@ function backupTimestamp(now: Date): string {
 }
 
 async function backupExistingFile(file: string): Promise<string> {
-  const base = `${file}.bak-vllm-studio-${backupTimestamp(new Date())}`;
+  const base = `${file}.bak-local-studio-${backupTimestamp(new Date())}`;
   let backupPath = base;
   let suffix = 2;
   while (await pathExists(backupPath)) {
@@ -474,7 +472,12 @@ async function attachToAgent(
   const plan = await planFor(agent, home, model);
   const { configPath, format } = plan;
   if (!plan.detected) {
-    return { agent, ok: false, configPath, error: `${agent} is not installed (config directory not found)` };
+    return {
+      agent,
+      ok: false,
+      configPath,
+      error: `${agent} is not installed (config directory not found)`,
+    };
   }
 
   let file: { exists: boolean; config?: JsonRecord; error?: string };
@@ -483,7 +486,7 @@ async function attachToAgent(
     if (yamlFile.error) {
       return { agent, ok: false, configPath, error: yamlFile.error };
     }
-    file = { exists: yamlFile.exists, config: (yamlFile.document?.toJS() as JsonRecord | undefined) };
+    file = { exists: yamlFile.exists, config: yamlFile.document?.toJS() as JsonRecord | undefined };
   } else {
     file = await readJsonFile(configPath);
   }

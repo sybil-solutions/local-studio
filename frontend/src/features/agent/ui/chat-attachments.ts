@@ -130,8 +130,8 @@ function isTextLike(file: File, name = file.name) {
 
 function getDesktopFilePath(file: File): string | null {
   if (typeof window === "undefined") return null;
-  const bridge = (window as unknown as { vllmStudioDesktop?: { getPathForFile?: unknown } })
-    .vllmStudioDesktop;
+  const bridge = (window as unknown as { localStudioDesktop?: { getPathForFile?: unknown } })
+    .localStudioDesktop;
   const getPathForFile = bridge?.getPathForFile;
   if (typeof getPathForFile !== "function") return null;
   try {

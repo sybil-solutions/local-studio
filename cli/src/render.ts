@@ -23,7 +23,7 @@ function header(current: View): string {
     )
     .join(' ');
 
-  return `${c.bold('vLLM Studio CLI')} ${c.dim(`v${VERSION}`)}  ${tabStr}`;
+  return `${c.bold('Local Studio CLI')} ${c.dim(`v${VERSION}`)}  ${tabStr}`;
 }
 
 function footer(): string {

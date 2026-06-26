@@ -121,7 +121,7 @@ export function proxy(request: NextRequest) {
 
   const logMsg = `${timestamp} ACCESS ${logParts.join(" | ")}`;
 
-  if (process.env.VLLM_STUDIO_ACCESS_LOGS === "true") {
+  if (process.env.LOCAL_STUDIO_ACCESS_LOGS === "true") {
     console.log(logMsg);
   }
 

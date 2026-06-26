@@ -183,7 +183,7 @@ function projectPathById(projects: readonly Project[], projectId: ProjectId | nu
   return projects.find((project) => project.id === projectId)?.path ?? "";
 }
 
-const SELECTED_PROJECT_KEY = "vllm-studio.agent.selectedProjectId";
+const SELECTED_PROJECT_KEY = "local-studio.agent.selectedProjectId";
 
 function readSelectedProjectId(): string | null {
   if (typeof window === "undefined") return null;

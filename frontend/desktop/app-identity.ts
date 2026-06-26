@@ -2,11 +2,11 @@ import { app } from "electron";
 import path from "node:path";
 import { migrateLegacyUserData } from "./logic/user-data-migration";
 
-const CANONICAL_APP_NAME = "vLLM Studio";
+const CANONICAL_APP_NAME = "Local Studio";
 const LEGACY_USER_DATA_NAME = "frontend";
-const devAppName = process.env.VLLM_STUDIO_DESKTOP_APP_NAME?.trim();
-const devUserDataDir = process.env.VLLM_STUDIO_DESKTOP_USER_DATA_DIR?.trim();
-const releaseChannel = process.env.VLLM_STUDIO_DESKTOP_CHANNEL?.trim().toLowerCase();
+const devAppName = process.env.LOCAL_STUDIO_DESKTOP_APP_NAME?.trim();
+const devUserDataDir = process.env.LOCAL_STUDIO_DESKTOP_USER_DATA_DIR?.trim();
+const releaseChannel = process.env.LOCAL_STUDIO_DESKTOP_CHANNEL?.trim().toLowerCase();
 const nonStablePackagedChannel =
   app.isPackaged && (releaseChannel === "beta" || releaseChannel === "alpha");
 

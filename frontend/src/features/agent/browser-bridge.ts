@@ -95,8 +95,8 @@ class BrowserBridge extends EventEmitter {
 }
 
 const globalForBridge = globalThis as typeof globalThis & {
-  __vllmStudioBrowserBridge?: BrowserBridge;
+  __localStudioBrowserBridge?: BrowserBridge;
 };
 
-export const browserBridge = globalForBridge.__vllmStudioBrowserBridge ?? new BrowserBridge();
-globalForBridge.__vllmStudioBrowserBridge = browserBridge;
+export const browserBridge = globalForBridge.__localStudioBrowserBridge ?? new BrowserBridge();
+globalForBridge.__localStudioBrowserBridge = browserBridge;

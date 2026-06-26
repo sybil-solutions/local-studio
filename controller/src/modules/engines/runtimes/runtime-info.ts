@@ -66,7 +66,7 @@ const computeSystemRuntimeInfo = async (
   ]);
   const pythonForTorch = config.sglang_python || vllmInfo.python_path || "python3";
   const torch = getTorchBuildInfo(pythonForTorch);
-  const forcedSmiTool = process.env["VLLM_STUDIO_GPU_SMI_TOOL"];
+  const forcedSmiTool = process.env["LOCAL_STUDIO_GPU_SMI_TOOL"];
   const hasNvidiaSmi = Boolean(resolveNvidiaSmiBinary());
   const rocmSmiTool = resolveRocmSmiTool();
   const hasRocmSmi = Boolean(rocmSmiTool);

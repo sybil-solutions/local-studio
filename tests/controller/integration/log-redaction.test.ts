@@ -9,15 +9,15 @@ import {
 import { primaryLogPathFor } from "../../../controller/src/core/log-files";
 
 const ENV_KEYS = [
-  "VLLM_STUDIO_DATA_DIR",
-  "VLLM_STUDIO_DB_PATH",
-  "VLLM_STUDIO_MODELS_DIR",
-  "VLLM_STUDIO_HOST",
-  "VLLM_STUDIO_PORT",
-  "VLLM_STUDIO_INFERENCE_PORT",
-  "VLLM_STUDIO_MOCK_INFERENCE",
-  "VLLM_STUDIO_MOCK_MODEL_ID",
-  "VLLM_STUDIO_API_KEY",
+  "LOCAL_STUDIO_DATA_DIR",
+  "LOCAL_STUDIO_DB_PATH",
+  "LOCAL_STUDIO_MODELS_DIR",
+  "LOCAL_STUDIO_HOST",
+  "LOCAL_STUDIO_PORT",
+  "LOCAL_STUDIO_INFERENCE_PORT",
+  "LOCAL_STUDIO_MOCK_INFERENCE",
+  "LOCAL_STUDIO_MOCK_MODEL_ID",
+  "LOCAL_STUDIO_API_KEY",
   "PI_CODING_AGENT_DIR",
 ] as const;
 
@@ -26,19 +26,19 @@ let tempDir: string;
 
 beforeEach(() => {
   envSnapshot = Object.fromEntries(ENV_KEYS.map((key) => [key, process.env[key]]));
-  tempDir = mkdtempSync(join(tmpdir(), "vllm-studio-log-redaction-"));
+  tempDir = mkdtempSync(join(tmpdir(), "local-studio-log-redaction-"));
   Object.assign(process.env, {
-    VLLM_STUDIO_DATA_DIR: tempDir,
-    VLLM_STUDIO_DB_PATH: join(tempDir, "controller.db"),
-    VLLM_STUDIO_MODELS_DIR: join(tempDir, "models"),
-    VLLM_STUDIO_HOST: "127.0.0.1",
-    VLLM_STUDIO_PORT: "18080",
-    VLLM_STUDIO_INFERENCE_PORT: "65534",
-    VLLM_STUDIO_MOCK_INFERENCE: "true",
-    VLLM_STUDIO_MOCK_MODEL_ID: "mock-model",
+    LOCAL_STUDIO_DATA_DIR: tempDir,
+    LOCAL_STUDIO_DB_PATH: join(tempDir, "controller.db"),
+    LOCAL_STUDIO_MODELS_DIR: join(tempDir, "models"),
+    LOCAL_STUDIO_HOST: "127.0.0.1",
+    LOCAL_STUDIO_PORT: "18080",
+    LOCAL_STUDIO_INFERENCE_PORT: "65534",
+    LOCAL_STUDIO_MOCK_INFERENCE: "true",
+    LOCAL_STUDIO_MOCK_MODEL_ID: "mock-model",
     PI_CODING_AGENT_DIR: join(tempDir, "pi-agent"),
   });
-  delete process.env.VLLM_STUDIO_API_KEY;
+  delete process.env.LOCAL_STUDIO_API_KEY;
 });
 
 afterEach(() => {

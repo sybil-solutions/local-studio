@@ -231,8 +231,8 @@ export function ConfigureEntryPanel({
         <SettingsGroup title="Environment">
           {managedOAuthEnvCount ? (
             <SettingsNotice tone="info" className="mb-3">
-              OAuth values are managed by vLLM Studio and injected at launch. Connect the account in
-              Connections above before using this server.
+              OAuth values are managed by Local Studio and injected at launch. Connect the account
+              in Connections above before using this server.
             </SettingsNotice>
           ) : null}
           {visibleEnvKeys.length ? (

@@ -5,8 +5,8 @@ import {
   type TerminalOwner,
 } from "@/features/agent/terminal-owners";
 
-const TERMINAL_OWNERS_KEY = "vllm-studio.agent.terminals.v1";
-const TERMINAL_ACTIVE_OWNER_KEY = "vllm-studio.agent.terminals.activeOwner";
+const TERMINAL_OWNERS_KEY = "local-studio.agent.terminals.v1";
+const TERMINAL_ACTIVE_OWNER_KEY = "local-studio.agent.terminals.activeOwner";
 
 export type TerminalOwnersSnapshot = {
   owners: TerminalOwner[];

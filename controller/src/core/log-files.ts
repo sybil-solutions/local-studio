@@ -29,9 +29,9 @@ export const getLogCleanupDefaultsFromEnvironment = (): Omit<LogCleanupOptions, 
   };
 
   // 0 means "no cap" for size/files and "no age expiry" for days.
-  const days = parseIntOr(process.env["VLLM_STUDIO_LOG_RETENTION_DAYS"], 30);
-  const maxFiles = parseIntOr(process.env["VLLM_STUDIO_LOG_MAX_FILES"], 200);
-  const maxTotalBytes = parseIntOr(process.env["VLLM_STUDIO_LOG_MAX_TOTAL_BYTES"], 1_000_000_000);
+  const days = parseIntOr(process.env["LOCAL_STUDIO_LOG_RETENTION_DAYS"], 30);
+  const maxFiles = parseIntOr(process.env["LOCAL_STUDIO_LOG_MAX_FILES"], 200);
+  const maxTotalBytes = parseIntOr(process.env["LOCAL_STUDIO_LOG_MAX_TOTAL_BYTES"], 1_000_000_000);
 
   const maxAgeMs =
     days <= 0 ? Number.POSITIVE_INFINITY : clampInt(days, 1, 3650) * 24 * 60 * 60 * 1000;

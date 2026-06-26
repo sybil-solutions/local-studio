@@ -44,8 +44,8 @@ Access these in scripts via environment variables or load them from `.env.local`
 - **Run**: `cd frontend && PORT=3001 npm run dev`
 - **Do not run dev unless explicitly asked.** If a dev server is already running, you may use it for verification.
 - Use this local server for fast browser verification unless the user explicitly asks for a different port or deployment target.
-- **Always rebuild and reinstall the desktop app after any frontend change.** The desktop app bundles its own copy of the frontend (embedded standalone Next server), so `./scripts/deploy-remote.sh frontend` and any web/remote deploy update only the homelab web UI (`:3000`) — they do **not** update the desktop app. Whenever you touch `frontend/`, rebuild and reinstall the canonical app into `/Applications/vLLM Studio.app` per [Deployment Workflow](#deployment-workflow). The user has explicitly approved the documented clean reinstall step (`rm -rf "/Applications/vLLM Studio.app"` followed by `ditto`); do not leave rebuilt desktop apps only under `frontend/dist-desktop/`.
-- **Beta desktop app (exception, for risky feature-branch testing only)**: if you need to test without touching the user's working app, build/install a separate beta app with its own app name, bundle id, and user data path. This is the exception — the default is to rebuild and reinstall the canonical `/Applications/vLLM Studio.app`.
+- **Always rebuild and reinstall the desktop app after any frontend change.** The desktop app bundles its own copy of the frontend (embedded standalone Next server), so `./scripts/deploy-remote.sh frontend` and any web/remote deploy update only the homelab web UI (`:3000`) — they do **not** update the desktop app. Whenever you touch `frontend/`, rebuild and reinstall the canonical app into `/Applications/Local Studio.app` per [Deployment Workflow](#deployment-workflow). The user has explicitly approved the documented clean reinstall step (`rm -rf "/Applications/Local Studio.app"` followed by `ditto`); do not leave rebuilt desktop apps only under `frontend/dist-desktop/`.
+- **Beta desktop app (exception, for risky feature-branch testing only)**: if you need to test without touching the user's working app, build/install a separate beta app with its own app name, bundle id, and user data path. This is the exception — the default is to rebuild and reinstall the canonical `/Applications/Local Studio.app`.
 - **Desktop dev mode for iterative UI work**: launch Electron against the local dev server so frontend changes show up without rebuilding the installed app:
 
 ```bash
@@ -53,7 +53,7 @@ Access these in scripts via environment variables or load them from `.env.local`
 cd frontend && PORT=3001 npm run dev
 
 # Terminal 2
-cd frontend && npm run desktop:build:main && VLLM_STUDIO_DESKTOP_DEV_SERVER_URL=http://127.0.0.1:3001 npm run desktop:start
+cd frontend && npm run desktop:build:main && LOCAL_STUDIO_DESKTOP_DEV_SERVER_URL=http://127.0.0.1:3001 npm run desktop:start
 ```
 
 - Prefer this desktop dev mode while debugging/iterating on the Mac app.
@@ -70,9 +70,9 @@ Use this when the user wants to quickly test the installed Mac app locally.
 cd frontend && npm run desktop:pack
 ```
 
-- `desktop:pack` builds the app directory only (`frontend/dist-desktop/mac-arm64/vLLM Studio.app`).
+- `desktop:pack` builds the app directory only (`frontend/dist-desktop/mac-arm64/Local Studio.app`).
 - It skips distributable DMG/ZIP/blockmap creation and is much faster than `desktop:dist`.
-- After `desktop:pack`, always replace `/Applications/vLLM Studio.app` using the [Installed Desktop App Update](#installed-desktop-app-update-required) steps.
+- After `desktop:pack`, always replace `/Applications/Local Studio.app` using the [Installed Desktop App Update](#installed-desktop-app-update-required) steps.
 - This is for local testing only; it does **not** replace the production/pre-push gate.
 
 ### Production / Pre-Push Build
@@ -97,7 +97,7 @@ cd frontend && npm run desktop:dist
 
 - `desktop:dist` creates the signed app plus DMG/ZIP distributables.
 - Use `desktop:dist` for production/release readiness, not for every quick local visual test.
-- After `desktop:dist`, always replace `/Applications/vLLM Studio.app` using the [Installed Desktop App Update](#installed-desktop-app-update-required) steps.
+- After `desktop:dist`, always replace `/Applications/Local Studio.app` using the [Installed Desktop App Update](#installed-desktop-app-update-required) steps.
 
 ## Deployment Workflow
 
@@ -122,49 +122,49 @@ After finishing a feature, follow this checklist:
 Do **not** leave the new desktop build only in `frontend/dist-desktop/`.
 There must be **one canonical installed app only**:
 
-- Canonical app: `/Applications/vLLM Studio.app`
-- Canonical bundle id: `org.vllm.studio.desktop`
-- Legacy duplicate to remove if present: `~/Applications/vllm-studio-mac.app`
+- Canonical app: `/Applications/Local Studio.app`
+- Canonical bundle id: `org.local.studio.desktop`
+- Legacy duplicate to remove if present: `~/Applications/local-studio-mac.app`
 
 After `desktop:pack` or `desktop:dist`, replace the installed app bundle cleanly. Do not layer a new app bundle on top
 of the old one with plain `ditto`; stale sealed resources will invalidate the code signature.
 
 ```bash
 # Apple Silicon
-rm -rf "/Applications/vLLM Studio.app"
-ditto "frontend/dist-desktop/mac-arm64/vLLM Studio.app" "/Applications/vLLM Studio.app"
+rm -rf "/Applications/Local Studio.app"
+ditto "frontend/dist-desktop/mac-arm64/Local Studio.app" "/Applications/Local Studio.app"
 
 # Intel fallback
-rm -rf "/Applications/vLLM Studio.app"
-# ditto "frontend/dist-desktop/mac/vLLM Studio.app" "/Applications/vLLM Studio.app"
+rm -rf "/Applications/Local Studio.app"
+# ditto "frontend/dist-desktop/mac/Local Studio.app" "/Applications/Local Studio.app"
 ```
 
 Then enforce single-install + relaunch:
 
 ```bash
 # Remove old non-canonical app if present
-rm -rf "$HOME/Applications/vllm-studio-mac.app"
+rm -rf "$HOME/Applications/local-studio-mac.app"
 
 # Relaunch canonical app. Force LaunchServices to re-register the freshly
 # replaced bundle first and open it by full path — otherwise `open -a` can
 # fail with error -600 (stale registration / ambiguous name) right after ditto.
-killall "vLLM Studio" >/dev/null 2>&1 || true
+killall "Local Studio" >/dev/null 2>&1 || true
 for i in $(seq 1 20); do
-  pgrep -x "vLLM Studio" >/dev/null || break
+  pgrep -x "Local Studio" >/dev/null || break
   sleep 0.5
 done
-/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "/Applications/vLLM Studio.app"
-open "/Applications/vLLM Studio.app"
+/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "/Applications/Local Studio.app"
+open "/Applications/Local Studio.app"
 ```
 
 Verification (required):
 
 ```bash
-# Must show only /Applications/vLLM Studio.app
+# Must show only /Applications/Local Studio.app
 find /Applications "$HOME/Applications" -maxdepth 1 -type d -iname "*v*llm*studio*.app"
 
-# Must print org.vllm.studio.desktop
-/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "/Applications/vLLM Studio.app/Contents/Info.plist"
+# Must print org.local.studio.desktop
+/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "/Applications/Local Studio.app/Contents/Info.plist"
 ```
 
 ## Agent File System

@@ -6,7 +6,12 @@ import { collectLeaves } from "@/features/agent/workspace/layout";
 import type { ActiveAgentSessionSnapshot } from "@/features/agent/active-sessions";
 import type { Session, SessionId, SessionsMap } from "@/features/agent/runtime/types";
 import type { ToolSelection } from "@/features/agent/tools/types";
-import type { PaneId, PaneState, WorkspaceLayout, WorkspaceState } from "@/features/agent/workspace/types";
+import type {
+  PaneId,
+  PaneState,
+  WorkspaceLayout,
+  WorkspaceState,
+} from "@/features/agent/workspace/types";
 
 import {
   PANE_LAYOUT_KEY,
@@ -18,8 +23,8 @@ import {
 } from "@/features/agent/workspace/store";
 import { makeFreshTab } from "@/features/agent/messages/helpers";
 
-const SESSIONS_COLLAPSED_KEY = "vllm-studio.agent.sessionsCollapsed";
-const SESSIONS_COLLAPSED_CLEANED_KEY = "vllm-studio.agent.sessionsCollapsedCleaned";
+const SESSIONS_COLLAPSED_KEY = "local-studio.agent.sessionsCollapsed";
+const SESSIONS_COLLAPSED_CLEANED_KEY = "local-studio.agent.sessionsCollapsedCleaned";
 
 function readStorage(storage: WorkspaceStorage, key: string): string | null {
   try {

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# vLLM Studio preflight checks. Exits non-zero only when a FAIL check trips.
+# Local Studio preflight checks. Exits non-zero only when a FAIL check trips.
 # Needs only bash, coreutils, and curl.
 set -u
 
@@ -19,7 +19,7 @@ warn() { WARN=$((WARN + 1)); echo "${C_WARN}WARN${C_OFF}  $1"; }
 fail() { FAILED=$((FAILED + 1)); echo "${C_FAIL}FAIL${C_OFF}  $1"; }
 info() { echo "${C_INFO}INFO${C_OFF}  $1"; }
 
-echo "vLLM Studio doctor"
+echo "Local Studio doctor"
 echo ""
 
 # --- Toolchain ---
@@ -78,13 +78,13 @@ port_status 8080 "controller"
 port_status 3000 "frontend"
 
 # --- Directories ---
-MODELS_DIR="${VLLM_STUDIO_MODELS_DIR:-/models}"
+MODELS_DIR="${LOCAL_STUDIO_MODELS_DIR:-/models}"
 if [ -d "$MODELS_DIR" ] && [ -w "$MODELS_DIR" ]; then
   pass "models dir $MODELS_DIR exists and is writable"
 elif [ -d "$MODELS_DIR" ]; then
   warn "models dir $MODELS_DIR exists but is not writable"
 else
-  warn "models dir $MODELS_DIR does not exist — the controller will try to create it (set VLLM_STUDIO_MODELS_DIR to override)"
+  warn "models dir $MODELS_DIR does not exist — the controller will try to create it (set LOCAL_STUDIO_MODELS_DIR to override)"
 fi
 
 DATA_DIR="$ROOT/data"

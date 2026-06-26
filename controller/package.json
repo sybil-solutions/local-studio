@@ -1,5 +1,5 @@
 {
-  "name": "vllm-studio-controller",
+  "name": "local-studio-controller",
   "version": "0.3.2",
   "type": "module",
   "private": true,

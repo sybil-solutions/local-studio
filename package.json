@@ -1,5 +1,5 @@
 {
-  "name": "vllm-studio",
+  "name": "local-studio",
   "version": "0.2.9",
   "private": true,
   "scripts": {

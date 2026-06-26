@@ -305,7 +305,7 @@ export function useSetup() {
         throw new Error(ready.error || "The model did not become ready in time.");
       }
 
-      localStorage.setItem("vllm-studio-setup-complete", "true");
+      localStorage.setItem("local-studio-setup-complete", "true");
       setStep(5);
     } catch (err) {
       setLaunchError(err instanceof Error ? err.message : "Failed to configure and launch");
@@ -341,17 +341,17 @@ export function useSetup() {
   }, []);
 
   const openChat = useCallback(() => {
-    localStorage.setItem("vllm-studio-setup-complete", "true");
+    localStorage.setItem("local-studio-setup-complete", "true");
     router.push("/chat?new=1");
   }, [router]);
 
   const openDashboard = useCallback(() => {
-    localStorage.setItem("vllm-studio-setup-complete", "true");
+    localStorage.setItem("local-studio-setup-complete", "true");
     router.push("/");
   }, [router]);
 
   const skipSetup = useCallback(() => {
-    localStorage.setItem("vllm-studio-setup-complete", "true");
+    localStorage.setItem("local-studio-setup-complete", "true");
     router.push("/");
   }, [router]);
 

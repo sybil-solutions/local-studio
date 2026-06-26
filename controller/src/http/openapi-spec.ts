@@ -3,7 +3,7 @@ import type { AppContext } from "../app-context";
 export const createOpenApiSpec = (context: AppContext): Record<string, unknown> => ({
   openapi: "3.1.0",
   info: {
-    title: "vLLM Studio API",
+    title: "Local Studio API",
     version: "0.3.2",
     description: "Model lifecycle management for vLLM, SGLang, and TabbyAPI inference servers",
   },

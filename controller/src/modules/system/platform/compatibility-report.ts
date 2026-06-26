@@ -104,7 +104,7 @@ export const buildCompatibilityReport = (args: {
           ? "Verify ROCm is installed and GPU tools are available (amd-smi/rocm-smi)."
           : runtime.platform.kind === "cuda"
             ? "Verify NVIDIA drivers are installed and nvidia-smi is accessible."
-            : "Verify GPU drivers are installed and set VLLM_STUDIO_GPU_SMI_TOOL if needed.",
+            : "Verify GPU drivers are installed and set LOCAL_STUDIO_GPU_SMI_TOOL if needed.",
     });
   }
 
@@ -153,7 +153,7 @@ export const buildCompatibilityReport = (args: {
       message: "Inference port is in use by an unknown process.",
       evidence: toEvidence([`inference_port=${args.inference_port}`]),
       suggested_fix:
-        "Stop the process using the inference port, or change VLLM_STUDIO_INFERENCE_PORT to a free port.",
+        "Stop the process using the inference port, or change LOCAL_STUDIO_INFERENCE_PORT to a free port.",
     });
   }
 

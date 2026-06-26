@@ -76,12 +76,12 @@ const resolveSttModelPath = (
   context: AppContext,
   modelField: FormDataEntryValue | null
 ): { requestedModel: string; modelPath: string } => {
-  const requestedModel = parseField(modelField) ?? process.env["VLLM_STUDIO_STT_MODEL"]?.trim();
+  const requestedModel = parseField(modelField) ?? process.env["LOCAL_STUDIO_STT_MODEL"]?.trim();
   if (!requestedModel) {
     throw new SttIntegrationError(
       400,
       "model_missing",
-      "No STT model provided. Set model field or VLLM_STUDIO_STT_MODEL."
+      "No STT model provided. Set model field or LOCAL_STUDIO_STT_MODEL."
     );
   }
 
@@ -104,12 +104,12 @@ const resolveTtsModelPath = (
   modelValue: unknown
 ): { requestedModel: string; modelPath: string } => {
   const explicitModel = typeof modelValue === "string" ? modelValue.trim() : "";
-  const requestedModel = explicitModel || process.env["VLLM_STUDIO_TTS_MODEL"]?.trim();
+  const requestedModel = explicitModel || process.env["LOCAL_STUDIO_TTS_MODEL"]?.trim();
   if (!requestedModel) {
     throw new TtsIntegrationError(
       400,
       "model_missing",
-      "No TTS model provided. Set model field or VLLM_STUDIO_TTS_MODEL."
+      "No TTS model provided. Set model field or LOCAL_STUDIO_TTS_MODEL."
     );
   }
 
@@ -167,7 +167,7 @@ const defaultTranscodeToWav = async (options: {
   sourcePath: string;
   outputPath: string;
 }): Promise<string> => {
-  const ffmpegPath = resolveBinary(process.env["VLLM_STUDIO_FFMPEG_CLI"] ?? "ffmpeg");
+  const ffmpegPath = resolveBinary(process.env["LOCAL_STUDIO_FFMPEG_CLI"] ?? "ffmpeg");
   if (!ffmpegPath) {
     throw new SttIntegrationError(
       503,

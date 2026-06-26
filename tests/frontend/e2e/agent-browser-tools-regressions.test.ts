@@ -5,12 +5,12 @@ import { normalizeBrowserInput } from "@/features/agent/tools/browser-url";
 import { parseArgsText } from "@/features/plugins/plugins-utils";
 
 declare global {
-  var __VLLM_STUDIO_BROWSER_READER_HOST_RESOLVER_FOR_TEST:
+  var __LOCAL_STUDIO_BROWSER_READER_HOST_RESOLVER_FOR_TEST:
     | ((
         hostname: string,
       ) => Promise<(string | { address: string; family: 4 | 6 })[]>)
     | undefined;
-  var __VLLM_STUDIO_BROWSER_READER_REQUEST_FOR_TEST:
+  var __LOCAL_STUDIO_BROWSER_READER_REQUEST_FOR_TEST:
     | ((
         url: string,
         address: { address: string; family: 4 | 6 },
@@ -76,11 +76,11 @@ test("free-text browser searches avoid Google webview refresh loops", () => {
 });
 
 test("desktop browser reader fetch renders public markdown and rejects private urls", async () => {
-  const previousDataDir = process.env.VLLM_STUDIO_DATA_DIR;
+  const previousDataDir = process.env.LOCAL_STUDIO_DATA_DIR;
   let requestCount = 0;
   const connectedAddresses: string[] = [];
-  process.env.VLLM_STUDIO_DATA_DIR = "/tmp/vllm-studio-desktop-test";
-  globalThis.__VLLM_STUDIO_BROWSER_READER_HOST_RESOLVER_FOR_TEST = async (
+  process.env.LOCAL_STUDIO_DATA_DIR = "/tmp/local-studio-desktop-test";
+  globalThis.__LOCAL_STUDIO_BROWSER_READER_HOST_RESOLVER_FOR_TEST = async (
     hostname,
   ) =>
     hostname === "private-dns.test"
@@ -88,7 +88,7 @@ test("desktop browser reader fetch renders public markdown and rejects private u
       : hostname === "mapped-private.test"
         ? ["::ffff:127.0.0.1"]
         : ["93.184.216.34"];
-  globalThis.__VLLM_STUDIO_BROWSER_READER_REQUEST_FOR_TEST = async (
+  globalThis.__LOCAL_STUDIO_BROWSER_READER_REQUEST_FOR_TEST = async (
     url,
     address,
   ) => {
@@ -194,10 +194,10 @@ test("desktop browser reader fetch renders public markdown and rejects private u
       "93.184.216.34",
     ]);
   } finally {
-    delete globalThis.__VLLM_STUDIO_BROWSER_READER_HOST_RESOLVER_FOR_TEST;
-    delete globalThis.__VLLM_STUDIO_BROWSER_READER_REQUEST_FOR_TEST;
-    if (previousDataDir === undefined) delete process.env.VLLM_STUDIO_DATA_DIR;
-    else process.env.VLLM_STUDIO_DATA_DIR = previousDataDir;
+    delete globalThis.__LOCAL_STUDIO_BROWSER_READER_HOST_RESOLVER_FOR_TEST;
+    delete globalThis.__LOCAL_STUDIO_BROWSER_READER_REQUEST_FOR_TEST;
+    if (previousDataDir === undefined) delete process.env.LOCAL_STUDIO_DATA_DIR;
+    else process.env.LOCAL_STUDIO_DATA_DIR = previousDataDir;
   }
 });
 

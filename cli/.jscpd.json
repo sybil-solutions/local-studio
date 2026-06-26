@@ -4,7 +4,7 @@
   "ignore": [
     "**/*.test.ts",
     "**/node_modules/**",
-    "vllm-studio"
+    "local-studio"
   ],
   "format": ["typescript"],
   "minLines": 5,

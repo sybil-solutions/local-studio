@@ -32,14 +32,14 @@ export class TtsIntegrationError extends Error {
 const DEFAULT_TIMEOUT_MS = 300_000;
 
 const synthesizeWithPiper = async (request: TtsSynthesisRequest): Promise<void> => {
-  const configuredPath = process.env["VLLM_STUDIO_TTS_CLI"];
+  const configuredPath = process.env["LOCAL_STUDIO_TTS_CLI"];
   const cliPath = configuredPath ? resolveBinary(configuredPath) : resolveBinary("piper");
 
   if (!cliPath) {
     throw new TtsIntegrationError(
       503,
       "tts_cli_missing",
-      "TTS CLI is not installed. Configure VLLM_STUDIO_TTS_CLI or install piper.",
+      "TTS CLI is not installed. Configure LOCAL_STUDIO_TTS_CLI or install piper.",
       {
         configured_path: configuredPath ?? null,
         expected_binary: "piper",
@@ -88,7 +88,7 @@ const synthesizeWithPiper = async (request: TtsSynthesisRequest): Promise<void> 
 };
 
 export const synthesizeSpeech = async (request: TtsSynthesisRequest): Promise<void> => {
-  const backend = (process.env["VLLM_STUDIO_TTS_BACKEND"] ?? "piper").toLowerCase();
+  const backend = (process.env["LOCAL_STUDIO_TTS_BACKEND"] ?? "piper").toLowerCase();
 
   if (backend === "piper") {
     await synthesizeWithPiper(request);

@@ -39,4 +39,4 @@ const bridge: DesktopBridge = {
   },
 };
 
-contextBridge.exposeInMainWorld("vllmStudioDesktop", bridge);
+contextBridge.exposeInMainWorld("localStudioDesktop", bridge);

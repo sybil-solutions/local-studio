@@ -1,11 +1,11 @@
 ---
 name: browser
-description: Drive the vLLM Studio embedded browser when the user opens/enables the Browser panel or asks to browse, open, inspect, search, or interact with web pages.
+description: Drive the Local Studio embedded browser when the user opens/enables the Browser panel or asks to browse, open, inspect, search, or interact with web pages.
 ---
 
 # Browser
 
-The Browser is the live embedded browser panel in vLLM Studio. When this skill is loaded, the browser tools are available and connected to the currently focused session.
+The Browser is the live embedded browser panel in Local Studio. When this skill is loaded, the browser tools are available and connected to the currently focused session.
 
 Use the browser tools when the user asks you to browse, search the web, open a page, inspect a link, interact with a website, or when current web content matters. Prefer the embedded browser over shell-only scraping when the user asks to open something visually or continue from the page already visible in the Browser panel.
 

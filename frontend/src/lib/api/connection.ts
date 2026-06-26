@@ -26,7 +26,7 @@ export const resolveApiServerBaseUrl = (): string =>
   pickFirstNonEmpty(
     process.env.BACKEND_URL,
     process.env.NEXT_PUBLIC_BACKEND_URL,
-    process.env.VLLM_STUDIO_BACKEND_URL,
+    process.env.LOCAL_STUDIO_BACKEND_URL,
   ) ?? LOCAL_BACKEND_FALLBACK;
 
 /**
@@ -45,14 +45,14 @@ export const resolveSettingsDefaultBackendUrl = (): string =>
 export const resolveControllerEventsBaseUrl = (): string =>
   pickFirstNonEmpty(
     process.env.NEXT_PUBLIC_BACKEND_URL,
-    process.env.VLLM_STUDIO_BACKEND_URL,
+    process.env.LOCAL_STUDIO_BACKEND_URL,
     process.env.BACKEND_URL,
   ) ?? CLIENT_PROXY_FALLBACK;
 
 // --- Browser-stored backend URL ---
 
-const BACKEND_URL_STORAGE = "vllmstudio_backend_url";
-const BACKEND_URL_COOKIE = "vllmstudio_backend_url";
+const BACKEND_URL_STORAGE = "localstudio_backend_url";
+const BACKEND_URL_COOKIE = "localstudio_backend_url";
 export const BACKEND_URL_CHANGED_EVENT = "vllm:backend-url-changed";
 
 function getCookieValue(name: string): string {
@@ -136,7 +136,7 @@ export function getApiKey(): string {
     return getControllerApiKey(getStoredBackendUrl());
   }
 
-  return process.env.VLLM_STUDIO_API_KEY?.trim() || "";
+  return process.env.LOCAL_STUDIO_API_KEY?.trim() || "";
 }
 
 /**

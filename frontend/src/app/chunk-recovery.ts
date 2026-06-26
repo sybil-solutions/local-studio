@@ -6,7 +6,7 @@
 // the current build; the sessionStorage guard makes it idempotent so a reload
 // that does not clear the error can never loop into a refresh storm.
 
-const RELOAD_GUARD_KEY = "vllm-studio:chunk-reloaded";
+const RELOAD_GUARD_KEY = "local-studio:chunk-reloaded";
 
 export function isChunkLoadError(
   error: { name?: string; message?: string } | null | undefined,

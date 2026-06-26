@@ -402,7 +402,7 @@ test("unprojected active sessions hydrate with their cwd", () => {
     snapshots: [
       {
         projectId: "",
-        cwd: "/Users/sero/.vllm-studio",
+        cwd: "/Users/sero/.local-studio",
         paneId: "p-main",
         tabId: "tab-default",
         runtimeSessionId: "rt-default",
@@ -420,7 +420,7 @@ test("unprojected active sessions hydrate with their cwd", () => {
     next.panesById.get("p-main")?.sessionId ?? "",
   );
   assert.equal(active?.piSessionId, "pi-default");
-  assert.equal(active?.cwd, "/Users/sero/.vllm-studio");
+  assert.equal(active?.cwd, "/Users/sero/.local-studio");
   assert.equal(active?.modelId, "nemotron-3-ultra");
 });
 
@@ -433,7 +433,7 @@ test("session replay into a starter adopts cwd and model metadata", () => {
     paneId: "p-replay",
     tab: makeSession("tab-replay", {
       runtimeSessionId: "rt-replay",
-      cwd: "/Users/sero/.vllm-studio",
+      cwd: "/Users/sero/.local-studio",
       modelId: "nemotron-3-ultra",
       title: "Persisted replay",
       startedAt: "2026-06-08T04:00:00.000Z",
@@ -444,7 +444,7 @@ test("session replay into a starter adopts cwd and model metadata", () => {
     next.panesById.get("p-main")?.sessionId ?? "",
   );
   assert.equal(active?.piSessionId, "pi-replay");
-  assert.equal(active?.cwd, "/Users/sero/.vllm-studio");
+  assert.equal(active?.cwd, "/Users/sero/.local-studio");
   assert.equal(active?.modelId, "nemotron-3-ultra");
   assert.equal(active?.startedAt, "2026-06-08T04:00:00.000Z");
 });
@@ -1383,7 +1383,7 @@ test("vllm pi model config uses pi openai-compatible parsing without reasoning c
     {
       id: "step-3.7-flash",
       name: "Step 3.7 Flash",
-      provider: "vllm-studio",
+      provider: "local-studio",
       contextWindow: 262_144,
       maxTokens: 65_536,
       reasoning: true,
@@ -1440,7 +1440,7 @@ test("vllm pi openai serialization keeps tool calls out of assistant content", (
     {
       id: "nex-n2-pro",
       name: "Nex N2 Pro",
-      provider: "vllm-studio",
+      provider: "local-studio",
       contextWindow: 262_144,
       maxTokens: 65_536,
       reasoning: true,
@@ -1484,7 +1484,7 @@ test("vllm pi openai serialization keeps tool calls out of assistant content", (
             },
           ],
           api: "openai-completions",
-          provider: "vllm-studio",
+          provider: "local-studio",
           model: "nex-n2-pro",
           stopReason: "toolUse",
           timestamp: Date.now(),
@@ -1534,7 +1534,7 @@ test("vllm pi openai serialization preserves assistant text part boundaries", ()
     {
       id: "nex-n2-pro",
       name: "Nex N2 Pro",
-      provider: "vllm-studio",
+      provider: "local-studio",
       contextWindow: 262_144,
       maxTokens: 65_536,
       reasoning: false,
@@ -1580,7 +1580,7 @@ test("vllm pi openai serialization preserves assistant text part boundaries", ()
             },
           ],
           api: "openai-completions",
-          provider: "vllm-studio",
+          provider: "local-studio",
           model: "nex-n2-pro",
           stopReason: "stop",
           timestamp: Date.now(),

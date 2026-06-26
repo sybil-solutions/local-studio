@@ -1,13 +1,13 @@
 # Sitegeist Relay Protocol v1
 
-The relay lets an **external agent** (vllm-studio's pi agent) drive a browser **through the
+The relay lets an **external agent** (local-studio's pi agent) drive a browser **through the
 sitegeist Chrome extension**. It replaces the discontinued parchi relay. Goal: clean, small
 (≤1000 LOC), standardised, tested.
 
 ## Topology
 
 ```
-  vllm-studio pi agent  ──HTTP JSON-RPC──▶  RELAY (local process)  ◀──WebSocket──  sitegeist extension
+  local-studio pi agent  ──HTTP JSON-RPC──▶  RELAY (local process)  ◀──WebSocket──  sitegeist extension
    (sitegeist-browser.ts)                    (~/ai/sitegeist/relay)                (background service worker)
 ```
 
@@ -61,7 +61,7 @@ Error codes: `-32601` method not found, `-32602` bad params, `-32000` extension 
 Capability discovery: agent calls `relay.capabilities`; the relay returns the methods the
 connected extension actually implements (so the agent only exposes supported tools).
 
-## vllm-studio side (tools)
+## local-studio side (tools)
 
 The pi extension `sitegeist-browser.ts` registers `sitegeist_*` tools (sitegeist_navigate,
 sitegeist_click, sitegeist_fill, sitegeist_get_text, sitegeist_screenshot, sitegeist_eval,

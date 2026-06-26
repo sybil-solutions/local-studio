@@ -82,70 +82,70 @@ export const createConfig = (): Config => {
   };
 
   const schema = z.object({
-    VLLM_STUDIO_HOST: z.string().default("127.0.0.1"),
-    VLLM_STUDIO_PORT: z.coerce.number().int().positive().default(8080),
-    VLLM_STUDIO_API_KEY: z.string().optional(),
-    VLLM_STUDIO_ALLOW_UNAUTHENTICATED: z.string().optional(),
-    VLLM_STUDIO_CORS_ORIGINS: z.string().optional(),
-    VLLM_STUDIO_INFERENCE_HOST: z.string().default("localhost"),
-    VLLM_STUDIO_INFERENCE_PORT: z.coerce.number().int().positive().default(8000),
+    LOCAL_STUDIO_HOST: z.string().default("127.0.0.1"),
+    LOCAL_STUDIO_PORT: z.coerce.number().int().positive().default(8080),
+    LOCAL_STUDIO_API_KEY: z.string().optional(),
+    LOCAL_STUDIO_ALLOW_UNAUTHENTICATED: z.string().optional(),
+    LOCAL_STUDIO_CORS_ORIGINS: z.string().optional(),
+    LOCAL_STUDIO_INFERENCE_HOST: z.string().default("localhost"),
+    LOCAL_STUDIO_INFERENCE_PORT: z.coerce.number().int().positive().default(8000),
 
-    VLLM_STUDIO_DATA_DIR: z.string().default(defaultDataDirectory),
-    VLLM_STUDIO_DB_PATH: z.string().optional(),
-    VLLM_STUDIO_MODELS_DIR: z.string().default("/models"),
-    VLLM_STUDIO_SGLANG_PYTHON: z.string().optional(),
-    VLLM_STUDIO_TABBY_API_DIR: z.string().optional(),
-    VLLM_STUDIO_LLAMA_BIN: z.string().optional(),
-    VLLM_STUDIO_MLX_PYTHON: z.string().optional(),
-    VLLM_STUDIO_STRICT_OPENAI_MODELS: z.string().optional(),
+    LOCAL_STUDIO_DATA_DIR: z.string().default(defaultDataDirectory),
+    LOCAL_STUDIO_DB_PATH: z.string().optional(),
+    LOCAL_STUDIO_MODELS_DIR: z.string().default("/models"),
+    LOCAL_STUDIO_SGLANG_PYTHON: z.string().optional(),
+    LOCAL_STUDIO_TABBY_API_DIR: z.string().optional(),
+    LOCAL_STUDIO_LLAMA_BIN: z.string().optional(),
+    LOCAL_STUDIO_MLX_PYTHON: z.string().optional(),
+    LOCAL_STUDIO_STRICT_OPENAI_MODELS: z.string().optional(),
   });
 
   const parsed = schema.parse(process.env);
-  const host = parsed.VLLM_STUDIO_HOST.trim() || "127.0.0.1";
+  const host = parsed.LOCAL_STUDIO_HOST.trim() || "127.0.0.1";
 
-  const strictOpenAIModelsEnabled = parseBooleanFlag(parsed.VLLM_STUDIO_STRICT_OPENAI_MODELS);
+  const strictOpenAIModelsEnabled = parseBooleanFlag(parsed.LOCAL_STUDIO_STRICT_OPENAI_MODELS);
 
-  // The db default follows the resolved data dir so overriding VLLM_STUDIO_DATA_DIR
+  // The db default follows the resolved data dir so overriding LOCAL_STUDIO_DATA_DIR
   // alone keeps the database inside it.
-  const dataDirectory = resolve(parsed.VLLM_STUDIO_DATA_DIR);
-  const databasePath = resolve(parsed.VLLM_STUDIO_DB_PATH ?? resolve(dataDirectory, "controller.db"));
+  const dataDirectory = resolve(parsed.LOCAL_STUDIO_DATA_DIR);
+  const databasePath = resolve(parsed.LOCAL_STUDIO_DB_PATH ?? resolve(dataDirectory, "controller.db"));
 
   const config: Config = {
     host,
-    port: parsed.VLLM_STUDIO_PORT,
-    inference_host: parsed.VLLM_STUDIO_INFERENCE_HOST.trim() || "localhost",
-    inference_port: parsed.VLLM_STUDIO_INFERENCE_PORT,
+    port: parsed.LOCAL_STUDIO_PORT,
+    inference_host: parsed.LOCAL_STUDIO_INFERENCE_HOST.trim() || "localhost",
+    inference_port: parsed.LOCAL_STUDIO_INFERENCE_PORT,
 
     data_dir: dataDirectory,
     db_path: databasePath,
-    models_dir: resolve(parsed.VLLM_STUDIO_MODELS_DIR),
+    models_dir: resolve(parsed.LOCAL_STUDIO_MODELS_DIR),
     strict_openai_models: strictOpenAIModelsEnabled,
-    cors_origins: parseCorsOrigins(parsed.VLLM_STUDIO_CORS_ORIGINS),
+    cors_origins: parseCorsOrigins(parsed.LOCAL_STUDIO_CORS_ORIGINS),
     providers: [],
   };
 
-  if (parsed.VLLM_STUDIO_API_KEY) {
-    config.api_key = parsed.VLLM_STUDIO_API_KEY;
+  if (parsed.LOCAL_STUDIO_API_KEY) {
+    config.api_key = parsed.LOCAL_STUDIO_API_KEY;
   }
 
-  const allowUnauthenticated = parseBooleanFlag(parsed.VLLM_STUDIO_ALLOW_UNAUTHENTICATED);
+  const allowUnauthenticated = parseBooleanFlag(parsed.LOCAL_STUDIO_ALLOW_UNAUTHENTICATED);
   if (!config.api_key && !allowUnauthenticated && !isLoopbackHost(host)) {
     throw new Error(
-      "VLLM_STUDIO_API_KEY is required when binding the controller to a non-loopback host. Set VLLM_STUDIO_ALLOW_UNAUTHENTICATED=true only for trusted local environments."
+      "LOCAL_STUDIO_API_KEY is required when binding the controller to a non-loopback host. Set LOCAL_STUDIO_ALLOW_UNAUTHENTICATED=true only for trusted local environments."
     );
   }
 
-  if (parsed.VLLM_STUDIO_SGLANG_PYTHON) {
-    config.sglang_python = parsed.VLLM_STUDIO_SGLANG_PYTHON;
+  if (parsed.LOCAL_STUDIO_SGLANG_PYTHON) {
+    config.sglang_python = parsed.LOCAL_STUDIO_SGLANG_PYTHON;
   }
-  if (parsed.VLLM_STUDIO_TABBY_API_DIR) {
-    config.tabby_api_dir = parsed.VLLM_STUDIO_TABBY_API_DIR;
+  if (parsed.LOCAL_STUDIO_TABBY_API_DIR) {
+    config.tabby_api_dir = parsed.LOCAL_STUDIO_TABBY_API_DIR;
   }
-  if (parsed.VLLM_STUDIO_LLAMA_BIN) {
-    config.llama_bin = parsed.VLLM_STUDIO_LLAMA_BIN;
+  if (parsed.LOCAL_STUDIO_LLAMA_BIN) {
+    config.llama_bin = parsed.LOCAL_STUDIO_LLAMA_BIN;
   }
-  if (parsed.VLLM_STUDIO_MLX_PYTHON) {
-    config.mlx_python = parsed.VLLM_STUDIO_MLX_PYTHON;
+  if (parsed.LOCAL_STUDIO_MLX_PYTHON) {
+    config.mlx_python = parsed.LOCAL_STUDIO_MLX_PYTHON;
   }
 
   const persisted = loadPersistedConfig(config.data_dir);

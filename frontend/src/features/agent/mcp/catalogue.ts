@@ -82,7 +82,7 @@ export const MCP_CATALOGUE: McpCatalogueEntry[] = [
     name: "github",
     displayName: "GitHub",
     description:
-      "GitHub repositories, issues, pull requests, and code search through the official remote MCP endpoint. Connect GitHub once with OAuth; vLLM Studio injects the token into mcp-remote.",
+      "GitHub repositories, issues, pull requests, and code search through the official remote MCP endpoint. Connect GitHub once with OAuth; Local Studio injects the token into mcp-remote.",
     shortDescription: "GitHub via OAuth",
     category: "Engineering",
     tags: ["github", "oauth", "remote", "curated"],
@@ -147,7 +147,7 @@ export const MCP_CATALOGUE: McpCatalogueEntry[] = [
     name: "huggingface",
     displayName: "Hugging Face",
     description:
-      "Official Hugging Face Hub MCP server for models, datasets, Spaces, and paper discovery. Connect Hugging Face once; vLLM Studio injects the token into mcp-remote.",
+      "Official Hugging Face Hub MCP server for models, datasets, Spaces, and paper discovery. Connect Hugging Face once; Local Studio injects the token into mcp-remote.",
     shortDescription: "Hugging Face via OAuth",
     category: "AI",
     tags: ["huggingface", "oauth", "models", "datasets", "remote", "curated"],

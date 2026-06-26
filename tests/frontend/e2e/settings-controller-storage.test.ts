@@ -16,7 +16,7 @@ type WindowLike = {
   dispatchEvent: (event: Event) => boolean;
 };
 
-const STORAGE_KEY = "vllm-studio.controllers";
+const STORAGE_KEY = "local-studio.controllers";
 let previousWindow: unknown;
 let storage: Map<string, string>;
 let dispatchedEvents: string[];

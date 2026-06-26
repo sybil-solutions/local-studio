@@ -11,8 +11,8 @@
 // middleware and Node route handlers; the constant-time comparison here is a
 // pure-JS fallback. Node route guards use node:crypto timingSafeEqual instead.
 
-export const STUDIO_TOKEN_HEADER = "x-vllm-studio-token";
-export const STUDIO_TOKEN_COOKIE = "vllm_studio_token";
+export const STUDIO_TOKEN_HEADER = "x-local-studio-token";
+export const STUDIO_TOKEN_COOKIE = "local_studio_token";
 
 export type AccessDecision =
   | { kind: "allow"; reason: "desktop" | "development" | "no-token" }
@@ -27,15 +27,15 @@ function trimmedEnv(name: string): string {
 // middleware and the node route guards always agree.
 //
 // Gating is OPT-IN: the app is open by default (so a fresh local/desktop setup
-// is unchanged), and only requires a token once VLLM_STUDIO_FRONTEND_TOKEN is
+// is unchanged), and only requires a token once LOCAL_STUDIO_FRONTEND_TOKEN is
 // set. Set the token when serving the frontend on an untrusted network.
 export function resolveAccessPosture(): AccessDecision {
   // The desktop app embeds a loopback-only Next server — always open, even if a
   // token is set elsewhere in the environment.
-  if (trimmedEnv("VLLM_STUDIO_DATA_DIR")) return { kind: "allow", reason: "desktop" };
+  if (trimmedEnv("LOCAL_STUDIO_DATA_DIR")) return { kind: "allow", reason: "desktop" };
   // Local development (`next dev`) is loopback and single-user.
   if (process.env.NODE_ENV !== "production") return { kind: "allow", reason: "development" };
-  const token = trimmedEnv("VLLM_STUDIO_FRONTEND_TOKEN");
+  const token = trimmedEnv("LOCAL_STUDIO_FRONTEND_TOKEN");
   if (token) return { kind: "require-token", token };
   // No token configured: open. Setting the token is the opt-in to gating.
   return { kind: "allow", reason: "no-token" };

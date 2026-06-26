@@ -15,7 +15,7 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   if (!browserHost.isAvailable()) {
     return Response.json(
-      { ok: false, error: "Browser unavailable: no Chromium found — set VLLM_STUDIO_CHROME_PATH" },
+      { ok: false, error: "Browser unavailable: no Chromium found — set LOCAL_STUDIO_CHROME_PATH" },
       { status: 503 },
     );
   }

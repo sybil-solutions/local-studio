@@ -42,14 +42,14 @@ type BoundedResponse = {
 
 declare global {
   // Test-only hooks for simulating DNS answers / responses without real network.
-  var __VLLM_STUDIO_BROWSER_READER_HOST_RESOLVER_FOR_TEST: ReaderHostResolver | undefined;
-  var __VLLM_STUDIO_BROWSER_READER_REQUEST_FOR_TEST:
+  var __LOCAL_STUDIO_BROWSER_READER_HOST_RESOLVER_FOR_TEST: ReaderHostResolver | undefined;
+  var __LOCAL_STUDIO_BROWSER_READER_REQUEST_FOR_TEST:
     | ((url: string, address: ResolvedHostAddress) => Promise<BoundedResponse>)
     | undefined;
 }
 
 async function resolveReaderHost(hostname: string): Promise<ResolvedHostAddress[]> {
-  const testResolver = globalThis.__VLLM_STUDIO_BROWSER_READER_HOST_RESOLVER_FOR_TEST;
+  const testResolver = globalThis.__LOCAL_STUDIO_BROWSER_READER_HOST_RESOLVER_FOR_TEST;
   if (testResolver) return (await testResolver(hostname)).map(normalizeResolvedAddress);
   const results = await lookup(hostname, { all: true, verbatim: true });
   return results.map((result) => ({
@@ -167,13 +167,17 @@ function normalizeResolvedAddress(input: ResolvedHostInput): ResolvedHostAddress
 }
 
 function requestBoundedUrl(url: string, address: ResolvedHostAddress): Promise<BoundedResponse> {
-  const testRequest = globalThis.__VLLM_STUDIO_BROWSER_READER_REQUEST_FOR_TEST;
+  const testRequest = globalThis.__LOCAL_STUDIO_BROWSER_READER_REQUEST_FOR_TEST;
   if (testRequest) return testRequest(url, address);
   const parsed = new URL(url);
   const request = parsed.protocol === "https:" ? httpsRequest : httpRequest;
   const options: RequestOptions = {
     headers: { Accept: ACCEPT, "User-Agent": USER_AGENT },
-    lookup: ((_hostname: string, lookupOptions: unknown, callback: (...args: unknown[]) => void) => {
+    lookup: ((
+      _hostname: string,
+      lookupOptions: unknown,
+      callback: (...args: unknown[]) => void,
+    ) => {
       const wantsAll = Boolean((lookupOptions as { all?: boolean } | undefined)?.all);
       if (wantsAll) callback(null, [address]);
       else callback(null, address.address, address.family);
@@ -249,7 +253,13 @@ function renderReadable(response: BoundedResponse, fallbackUrl: string): ReaderR
     const text = response.body.slice(0, MAX_BYTES);
     if (isMarkdownResponse(finalUrl, contentType)) {
       const markdown = cleanMarkdown(text);
-      return { url: finalUrl, title: markdownTitle(markdown, finalUrl), text: markdown, markdown, contentType };
+      return {
+        url: finalUrl,
+        title: markdownTitle(markdown, finalUrl),
+        text: markdown,
+        markdown,
+        contentType,
+      };
     }
     return { url: finalUrl, title: finalUrl, text, contentType };
   }

@@ -1,7 +1,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 const ARTIFACT_POLICY = `
-vLLM Studio artifact policy:
+Local Studio artifact policy:
 When you use a write, edit, file, or artifact tool to create or update content,
 that tool call is the artifact output. Do not repeat the same file body, HTML,
 source code, patch, or edit payload in assistant text after the tool result.
@@ -15,9 +15,9 @@ file, or artifact tool for that same content, or when the user explicitly asks
 to print or show it after it has already been written.
 `.trim();
 
-export default function vllmStudioAgentPolicy(pi: ExtensionAPI) {
+export default function localStudioAgentPolicy(pi: ExtensionAPI) {
   pi.on("before_agent_start", (event) => {
-    if (event.systemPrompt.includes("vLLM Studio artifact policy:")) return {};
+    if (event.systemPrompt.includes("Local Studio artifact policy:")) return {};
     return { systemPrompt: `${event.systemPrompt.trimEnd()}\n\n${ARTIFACT_POLICY}` };
   });
 }

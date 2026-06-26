@@ -46,16 +46,16 @@ describe("controller route contracts", () => {
       expect.objectContaining({
         id: "mock-model",
         object: "model",
-        owned_by: "vllm-studio",
+        owned_by: "local-studio",
         active: true,
       }),
     ]);
   });
 
   test("model catalog routes expose recipe-backed model details and discovery metadata", async () => {
-    const modelsDir = process.env.VLLM_STUDIO_MODELS_DIR;
+    const modelsDir = process.env.LOCAL_STUDIO_MODELS_DIR;
     if (!modelsDir)
-      throw new Error("VLLM_STUDIO_MODELS_DIR is required for tests");
+      throw new Error("LOCAL_STUDIO_MODELS_DIR is required for tests");
     const modelPath = join(modelsDir, "catalog-route-model");
     mkdirSync(modelPath, { recursive: true });
     writeFileSync(
@@ -96,7 +96,7 @@ describe("controller route contracts", () => {
       expect.objectContaining({
         id: "catalog-route-served",
         object: "model",
-        owned_by: "vllm-studio",
+        owned_by: "local-studio",
         active: false,
         max_model_len: 8192,
       }),
@@ -108,7 +108,7 @@ describe("controller route contracts", () => {
     expect(modelBody).toMatchObject({
       id: "catalog-route-served",
       object: "model",
-      owned_by: "vllm-studio",
+      owned_by: "local-studio",
       active: false,
       max_model_len: 8192,
     });

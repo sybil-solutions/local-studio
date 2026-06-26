@@ -10,12 +10,12 @@ export type Comment = {
 
 type CommentsDocument = {
   // Map of relative path → comments. Stored on disk as
-  // <project>/.vllm-studio/comments.json.
+  // <project>/.local-studio/comments.json.
   files: Record<string, Comment[]>;
 };
 
 function commentsPath(rootCwd: string): string {
-  return path.join(rootCwd, ".vllm-studio", "comments.json");
+  return path.join(rootCwd, ".local-studio", "comments.json");
 }
 
 function readDocument(rootCwd: string): CommentsDocument {
@@ -53,12 +53,7 @@ export function listComments(rootCwd: string, rel: string): Comment[] {
   return doc.files[safe] ?? [];
 }
 
-export function addComment(
-  rootCwd: string,
-  rel: string,
-  line: number,
-  body: string,
-): Comment {
+export function addComment(rootCwd: string, rel: string, line: number, body: string): Comment {
   const safe = ensureRel(rel);
   const doc = readDocument(rootCwd);
   const trimmed = body.trim();

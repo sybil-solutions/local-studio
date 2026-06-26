@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for wanting to improve vLLM Studio. This project moves quickly, so contributions should be small, focused, and easy to review.
+Thanks for wanting to improve Local Studio. This project moves quickly, so contributions should be small, focused, and easy to review.
 
 ## Before opening a PR
 

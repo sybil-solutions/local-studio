@@ -131,7 +131,7 @@ async function waitForServer(url: string, timeoutMs: number): Promise<void> {
 export async function startFrontendServer(
   options: StartFrontendServerOptions = {},
 ): Promise<ServerHandle> {
-  if (process.env.VLLM_STUDIO_DESKTOP_DEV_SERVER_URL) {
+  if (process.env.LOCAL_STUDIO_DESKTOP_DEV_SERVER_URL) {
     const runtime: DesktopServerRuntime = {
       mode: "dev-server",
       port: Number(new URL(DESKTOP_CONFIG.devServerUrl).port || "3000"),
@@ -195,16 +195,16 @@ export async function startFrontendServer(
       PORT: String(port),
       HOSTNAME: "127.0.0.1",
       NEXT_TELEMETRY_DISABLED: "1",
-      VLLM_STUDIO_DATA_DIR: DESKTOP_CONFIG.userDataDir,
-      VLLM_STUDIO_RESOURCES_PATH: process.resourcesPath,
+      LOCAL_STUDIO_DATA_DIR: DESKTOP_CONFIG.userDataDir,
+      LOCAL_STUDIO_RESOURCES_PATH: process.resourcesPath,
       // In packaged Electron, process.cwd() is "/" — pi-runtime.resolveDefaultAgentCwd
       // does the right thing (prefers the most-recently-added project, falls back
       // to $HOME) when this env is empty, so leave it unset unless the operator
       // explicitly supplied one.
-      VLLM_STUDIO_AGENT_CWD: process.env.VLLM_STUDIO_AGENT_CWD || app.getPath("home"),
+      LOCAL_STUDIO_AGENT_CWD: process.env.LOCAL_STUDIO_AGENT_CWD || app.getPath("home"),
       // Expose the embedded server's own URL so the pi browser extension can
       // call back into /api/agent/browser/*.
-      VLLM_STUDIO_FRONTEND_BASE: url,
+      LOCAL_STUDIO_FRONTEND_BASE: url,
     },
   });
 

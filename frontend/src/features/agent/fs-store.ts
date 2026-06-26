@@ -14,7 +14,7 @@ const IGNORE_DIRS = new Set([
   "__pycache__",
   ".venv",
   "venv",
-  ".vllm-studio",
+  ".local-studio",
 ]);
 
 // Filesystem roots and top-level system directories that must never serve as a

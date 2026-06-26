@@ -24,18 +24,18 @@ describe("vLLM extra_args allowlist", () => {
   };
 
   beforeEach(() => {
-    savedAllow = process.env["VLLM_STUDIO_ALLOW_UNKNOWN_VLLM_EXTRA_ARGS"];
-    savedStrict = process.env["VLLM_STUDIO_STRICT_VLLM_EXTRA_ARGS"];
-    delete process.env["VLLM_STUDIO_ALLOW_UNKNOWN_VLLM_EXTRA_ARGS"];
-    delete process.env["VLLM_STUDIO_STRICT_VLLM_EXTRA_ARGS"];
+    savedAllow = process.env["LOCAL_STUDIO_ALLOW_UNKNOWN_VLLM_EXTRA_ARGS"];
+    savedStrict = process.env["LOCAL_STUDIO_STRICT_VLLM_EXTRA_ARGS"];
+    delete process.env["LOCAL_STUDIO_ALLOW_UNKNOWN_VLLM_EXTRA_ARGS"];
+    delete process.env["LOCAL_STUDIO_STRICT_VLLM_EXTRA_ARGS"];
     captured.length = 0;
   });
 
   afterEach(() => {
-    if (savedAllow === undefined) delete process.env["VLLM_STUDIO_ALLOW_UNKNOWN_VLLM_EXTRA_ARGS"];
-    else process.env["VLLM_STUDIO_ALLOW_UNKNOWN_VLLM_EXTRA_ARGS"] = savedAllow;
-    if (savedStrict === undefined) delete process.env["VLLM_STUDIO_STRICT_VLLM_EXTRA_ARGS"];
-    else process.env["VLLM_STUDIO_STRICT_VLLM_EXTRA_ARGS"] = savedStrict;
+    if (savedAllow === undefined) delete process.env["LOCAL_STUDIO_ALLOW_UNKNOWN_VLLM_EXTRA_ARGS"];
+    else process.env["LOCAL_STUDIO_ALLOW_UNKNOWN_VLLM_EXTRA_ARGS"] = savedAllow;
+    if (savedStrict === undefined) delete process.env["LOCAL_STUDIO_STRICT_VLLM_EXTRA_ARGS"];
+    else process.env["LOCAL_STUDIO_STRICT_VLLM_EXTRA_ARGS"] = savedStrict;
   });
 
   it("forwards known vLLM flags without modification", () => {
@@ -123,8 +123,8 @@ describe("vLLM extra_args allowlist", () => {
     expect(command).toContain("--attention-backend");
   });
 
-  it("escape hatch VLLM_STUDIO_ALLOW_UNKNOWN_VLLM_EXTRA_ARGS=true forwards everything", () => {
-    process.env["VLLM_STUDIO_ALLOW_UNKNOWN_VLLM_EXTRA_ARGS"] = "true";
+  it("escape hatch LOCAL_STUDIO_ALLOW_UNKNOWN_VLLM_EXTRA_ARGS=true forwards everything", () => {
+    process.env["LOCAL_STUDIO_ALLOW_UNKNOWN_VLLM_EXTRA_ARGS"] = "true";
     const command = ["/opt/venv/bin/vllm", "serve", "/models/test"];
     appendVllmExtraArguments(command, {
       benchmark_notes_20260622: { foo: 1 },
@@ -137,7 +137,7 @@ describe("vLLM extra_args allowlist", () => {
   });
 
   it("strict mode still drops unknown keys", () => {
-    process.env["VLLM_STUDIO_STRICT_VLLM_EXTRA_ARGS"] = "true";
+    process.env["LOCAL_STUDIO_STRICT_VLLM_EXTRA_ARGS"] = "true";
     const command = ["/opt/venv/bin/vllm", "serve", "/models/test"];
     appendVllmExtraArguments(command, {
       "totally-fake-flag": "value",

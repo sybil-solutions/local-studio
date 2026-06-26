@@ -10,8 +10,8 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { after, test } from "node:test";
 
-const dataDir = mkdtempSync(path.join(tmpdir(), "vllm-studio-settings-api-"));
-process.env.VLLM_STUDIO_DATA_DIR = dataDir;
+const dataDir = mkdtempSync(path.join(tmpdir(), "local-studio-settings-api-"));
+process.env.LOCAL_STUDIO_DATA_DIR = dataDir;
 writeFileSync(path.join(dataDir, "api-settings.json"), "{}", "utf-8");
 
 async function loadApiSettings() {

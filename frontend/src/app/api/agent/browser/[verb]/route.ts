@@ -37,7 +37,7 @@ const ALLOWED_VERBS = new Set([
   "reload",
 ]);
 
-const UNAVAILABLE_ERROR = "Browser unavailable: no Chromium found — set VLLM_STUDIO_CHROME_PATH";
+const UNAVAILABLE_ERROR = "Browser unavailable: no Chromium found — set LOCAL_STUDIO_CHROME_PATH";
 
 type VerbResult = { ok: boolean; data?: unknown; error?: string };
 

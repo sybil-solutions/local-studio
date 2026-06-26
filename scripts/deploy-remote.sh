@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Deploy vLLM Studio from this machine to the remote GPU server.
+# Deploy Local Studio from this machine to the remote GPU server.
 #
 # ─── Connection ───────────────────────────────────────────────────────────
 #
@@ -303,8 +303,8 @@ if [[ -f .env ]]; then
 fi
 
 auth_headers=()
-if [[ -n "${VLLM_STUDIO_API_KEY:-}" ]]; then
-  auth_headers=(-H "Authorization: Bearer ${VLLM_STUDIO_API_KEY}")
+if [[ -n "${LOCAL_STUDIO_API_KEY:-}" ]]; then
+  auth_headers=(-H "Authorization: Bearer ${LOCAL_STUDIO_API_KEY}")
 fi
 
 probe() {

@@ -39,7 +39,7 @@ export const createApp = (context: AppContext): Hono => {
   const app = new Hono();
   const allowedCorsOrigins = context.config.cors_origins ?? [];
   const allowedControllerOrigins = parseOriginAllowlist(
-    process.env["VLLM_STUDIO_CONTROLLER_ROUTE_ALLOWLIST"]
+    process.env["LOCAL_STUDIO_CONTROLLER_ROUTE_ALLOWLIST"]
   );
 
   app.use(
@@ -101,7 +101,7 @@ export const createApp = (context: AppContext): Hono => {
       return ctx.json(
         {
           detail:
-            "target controller origin is not allowlisted; set VLLM_STUDIO_CONTROLLER_ROUTE_ALLOWLIST",
+            "target controller origin is not allowlisted; set LOCAL_STUDIO_CONTROLLER_ROUTE_ALLOWLIST",
         },
         { status: 403 }
       );

@@ -97,7 +97,7 @@ export function createMutatingAuthMiddleware(context: AppContext): MiddlewareHan
       return next();
     }
 
-    ctx.header("WWW-Authenticate", 'Bearer realm="vllm-studio-controller"');
+    ctx.header("WWW-Authenticate", 'Bearer realm="local-studio-controller"');
     return ctx.json({ detail: "Unauthorized" }, { status: 401 });
   };
 }

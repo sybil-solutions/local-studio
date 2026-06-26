@@ -6,18 +6,18 @@ import {
   type ComputerTab,
 } from "@/features/agent/tools/types";
 
-export const BROWSER_TOOL_KEY = "vllm-studio.agent.browserToolEnabled";
-export const BROWSER_BACKEND_KEY = "vllm-studio.agent.browserBackend";
+export const BROWSER_TOOL_KEY = "local-studio.agent.browserToolEnabled";
+export const BROWSER_BACKEND_KEY = "local-studio.agent.browserBackend";
 export const BROWSER_TOOL_DEFAULT_OFF_MIGRATION_KEY =
   "***************************************************";
-export const COMPUTER_BROWSER_OPEN_KEY = "vllm-studio.agent.computer.browserOpen";
-export const COMPUTER_FILES_OPEN_KEY = "vllm-studio.agent.computer.filesOpen";
-export const COMPUTER_DEFAULT_CLOSED_STORAGE_ID = "vllm-studio.agent.computer.defaultCollapsedV2";
-export const COMPUTER_WIDTH_KEY = "vllm-studio.agent.computer.width";
-export const COMPUTER_TAB_KEY = "vllm-studio.agent.computer.tab";
-export const COMPUTER_TABS_KEY = "vllm-studio.agent.computer.tabs";
-export const COMPUTER_CANVAS_ENABLED_KEY = "vllm-studio.agent.computer.canvasEnabled";
-export const COMPUTER_CANVAS_TEXT_KEY = "vllm-studio.agent.computer.canvasText";
+export const COMPUTER_BROWSER_OPEN_KEY = "local-studio.agent.computer.browserOpen";
+export const COMPUTER_FILES_OPEN_KEY = "local-studio.agent.computer.filesOpen";
+export const COMPUTER_DEFAULT_CLOSED_STORAGE_ID = "local-studio.agent.computer.defaultCollapsedV2";
+export const COMPUTER_WIDTH_KEY = "local-studio.agent.computer.width";
+export const COMPUTER_TAB_KEY = "local-studio.agent.computer.tab";
+export const COMPUTER_TABS_KEY = "local-studio.agent.computer.tabs";
+export const COMPUTER_CANVAS_ENABLED_KEY = "local-studio.agent.computer.canvasEnabled";
+export const COMPUTER_CANVAS_TEXT_KEY = "local-studio.agent.computer.canvasText";
 
 export const DEFAULT_BROWSER_URL = "about:blank";
 export const DEFAULT_BROWSER_BACKEND: BrowserBackend = "embedded";
@@ -117,7 +117,7 @@ export function migrateToolStorage(): void {
   write(COMPUTER_BROWSER_OPEN_KEY, "0");
   // SESSIONS_COLLAPSED_KEY cleanup is owned by workspace persistence.ts; tools
   // doesn't touch sidebar collapse state.
-  remove("vllm-studio.agent.sessionsCollapsed");
+  remove("local-studio.agent.sessionsCollapsed");
 }
 
 export function loadBrowserState(): BrowserState {

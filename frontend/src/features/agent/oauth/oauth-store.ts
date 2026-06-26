@@ -237,7 +237,7 @@ async function resolveAccountLabel(
       headers: {
         authorization: `Bearer ${accessToken}`,
         accept: "application/json",
-        "user-agent": "vllm-studio",
+        "user-agent": "local-studio",
       },
     });
     if (!response.ok) return "";

@@ -24,7 +24,7 @@ export interface OpenAIModelsResponse {
 export interface AgentModel {
   id: string;
   name: string;
-  provider: "vllm-studio";
+  provider: "local-studio";
   providerId?: string;
   rawId?: string;
   controllerUrl?: string;
@@ -226,7 +226,7 @@ export function normalizeOpenAIModel(model: OpenAIModelListItem): AgentModel {
   return {
     id,
     name,
-    provider: "vllm-studio",
+    provider: "local-studio",
     contextWindow,
     maxTokens,
     reasoning: resolveReasoning(model, metadata, id),

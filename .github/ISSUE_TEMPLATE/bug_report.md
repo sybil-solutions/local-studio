@@ -25,7 +25,7 @@ A clear and concise description of what you expected to happen.
 ## Environment
 
 - **OS**: [e.g. Ubuntu 22.04, macOS 14.0]
-- **vLLM Studio Version**: [e.g. 0.3.1]
+- **Local Studio Version**: [e.g. 0.3.1]
 - **Backend**: [vLLM / SGLang / llama.cpp / MLX]
 - **Model**: [e.g. Llama-3-8B-Instruct]
 

@@ -53,8 +53,8 @@ type PtyBridge = {
 
 function getPtyBridge(): PtyBridge | null {
   if (typeof window === "undefined") return null;
-  const bridge = (window as unknown as { vllmStudioDesktop?: { terminal?: PtyBridge } })
-    .vllmStudioDesktop?.terminal;
+  const bridge = (window as unknown as { localStudioDesktop?: { terminal?: PtyBridge } })
+    .localStudioDesktop?.terminal;
   return bridge ?? null;
 }
 
@@ -137,8 +137,8 @@ function loadWebLinksAddon(
       new webLinksModule.WebLinksAddon((event, uri) => {
         event.preventDefault();
         const opener = (
-          window as unknown as { vllmStudioDesktop?: { openExternal?: (u: string) => void } }
-        ).vllmStudioDesktop?.openExternal;
+          window as unknown as { localStudioDesktop?: { openExternal?: (u: string) => void } }
+        ).localStudioDesktop?.openExternal;
         if (opener) opener(uri);
         else window.open(uri, "_blank", "noopener");
       }),
@@ -373,7 +373,7 @@ function handleTerminalData(
 }
 
 function writeIntro(term: XTerm, cwd: string | null) {
-  term.writeln("\x1b[90mvLLM Studio terminal (fallback mode — no TUI)\x1b[0m");
+  term.writeln("\x1b[90mLocal Studio terminal (fallback mode — no TUI)\x1b[0m");
   if (!cwd) term.writeln("\x1b[31mNo working directory.\x1b[0m");
   writePrompt(term, cwd);
 }

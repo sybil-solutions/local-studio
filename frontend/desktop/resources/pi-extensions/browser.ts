@@ -1,4 +1,4 @@
-// Browser tool extension for vLLM Studio.
+// Browser tool extension for Local Studio.
 //
 // Registers tools the agent can call to drive the embedded webview in the
 // agent surface. Each tool sends an HTTP request to the frontend's browser
@@ -16,8 +16,8 @@ type ToolResult = {
   details: Record<string, unknown>;
 };
 
-const FRONTEND_BASE = process.env.VLLM_STUDIO_FRONTEND_BASE ?? "http://127.0.0.1:3000";
-const BROWSER_SESSION_ID = process.env.VLLM_STUDIO_BROWSER_SESSION_ID ?? "";
+const FRONTEND_BASE = process.env.LOCAL_STUDIO_FRONTEND_BASE ?? "http://127.0.0.1:3000";
+const BROWSER_SESSION_ID = process.env.LOCAL_STUDIO_BROWSER_SESSION_ID ?? "";
 const DEFAULT_BROWSER_TOOL_TIMEOUT_MS = 60_000;
 
 function readTimeoutMs(name: string, fallback: number): number {
@@ -26,7 +26,7 @@ function readTimeoutMs(name: string, fallback: number): number {
 }
 
 const BROWSER_TOOL_TIMEOUT_MS = readTimeoutMs(
-  "VLLM_STUDIO_BROWSER_TOOL_TIMEOUT_MS",
+  "LOCAL_STUDIO_BROWSER_TOOL_TIMEOUT_MS",
   DEFAULT_BROWSER_TOOL_TIMEOUT_MS,
 );
 

@@ -1,4 +1,4 @@
-const TRACE_STORAGE_KEY = "vllm-studio:trace-agent-reasoning";
+const TRACE_STORAGE_KEY = "local-studio:trace-agent-reasoning";
 
 export function agentReasoningTraceEnabled(): boolean {
   if (typeof window === "undefined") return false;

@@ -1,6 +1,6 @@
-# vLLM Studio CLI — Complete Reference
+# Local Studio CLI — Complete Reference
 
-> Comprehensive documentation of the vLLM Studio CLI — every command, its underlying controller API, response structures, error modes, and the interactive TUI.
+> Comprehensive documentation of the Local Studio CLI — every command, its underlying controller API, response structures, error modes, and the interactive TUI.
 > Source: [`cli/src/`](src/) and [`controller/src/`](../controller/src/)
 
 ---
@@ -42,20 +42,20 @@
 
 ```
 ┌─────────────────────────────────────────────┐
-│  vLLM Studio CLI  (Bun / TypeScript)        │
+│  Local Studio CLI  (Bun / TypeScript)        │
 │  ┌───────────────────────────────────────┐  │
 │  │  Headless Mode                        │  │
-│  │  vllm-studio <command>  ──► JSON out  │  │
+│  │  local-studio <command>  ──► JSON out  │  │
 │  └───────────────────────────────────────┘  │
 │  ┌───────────────────────────────────────┐  │
 │  │  Interactive TUI Mode                 │  │
-│  │  vllm-studio  ──► live dashboard     │  │
+│  │  local-studio  ──► live dashboard     │  │
 │  └───────────────────────────────────────┘  │
 └──────────────┬──────────────────────────────┘
                │ HTTP (fetch)
                ▼
 ┌─────────────────────────────────────────────┐
-│  vLLM Studio Controller  (Bun / Hono)       │
+│  Local Studio Controller  (Bun / Hono)       │
 │  Port: 8080 (default)                       │
 │  ┌─────────┬──────────┬───────────────┐    │
 │  │ System  │ Engines  │  Models       │    │
@@ -71,8 +71,8 @@
 ```
 
 - The CLI communicates with the controller over HTTP.
-- Auth is via `X-API-Key` header (from `VLLM_STUDIO_API_KEY` env var).
-- Controller URL is configured via `VLLM_STUDIO_URL` env var (default `http://localhost:8080`).
+- Auth is via `X-API-Key` header (from `LOCAL_STUDIO_API_KEY` env var).
+- Controller URL is configured via `LOCAL_STUDIO_URL` env var (default `http://localhost:8080`).
 - Headless commands output JSON on stdout, errors on stderr, exit codes: 0 = success, 1 = failure.
 
 ---
@@ -81,7 +81,7 @@
 
 | Aspect | Detail |
 |---|---|
-| **Binary** | `cli/vllm-studio` (compiled via `bun build --compile`) |
+| **Binary** | `cli/local-studio` (compiled via `bun build --compile`) |
 | **Source** | `cli/src/main.ts` |
 | **Runtime** | Bun ≥ 1.0 |
 | **Modes** | Headless (args provided) or Interactive TUI (no args) |
@@ -112,7 +112,7 @@ Shows usage information.
 **Output:**
 
 ```
-vllm-studio - Model lifecycle management CLI
+local-studio - Model lifecycle management CLI
 
 Commands:
   status    Show current model status
@@ -120,12 +120,12 @@ Commands:
   recipes   List available model recipes
   config    Show system configuration
   metrics   Show lifetime metrics
-  launch    Launch recipe: vllm-studio launch <id>
+  launch    Launch recipe: local-studio launch <id>
   evict     Stop running model
   help      Show this help
 
 Environment:
-  VLLM_STUDIO_URL  Controller URL (default: http://localhost:8080)
+  LOCAL_STUDIO_URL  Controller URL (default: http://localhost:8080)
 ```
 
 **Exit code:** 0
@@ -313,7 +313,7 @@ Shows the controller's system configuration — ports, directories, and runtime 
     "api_key_configured": true,
     "models_dir": "/models",
     "data_dir": "/home/ser/projects/vllm/lmvllm/data",
-    "db_path": "/home/ser/projects/vllm/lmvllm/data/vllm-studio.db",
+    "db_path": "/home/ser/projects/vllm/lmvllm/data/local-studio.db",
     "sglang_python": "/usr/bin/python3",
     "tabby_api_dir": null,
     "llama_bin": null
@@ -467,7 +467,7 @@ Stops the currently running inference process (unloads the model).
 
 ## 4. Interactive TUI Mode
 
-Run `vllm-studio` (no arguments) for a live-updating curses-like dashboard.
+Run `local-studio` (no arguments) for a live-updating curses-like dashboard.
 
 **Source:** `main.ts` (refresh loop + key handler), `render.ts` (layout compositor), `views/*.ts` (tab content)
 
@@ -522,7 +522,7 @@ Run `vllm-studio` (no arguments) for a live-updating curses-like dashboard.
 ### Layout
 
 ```
-┌─ vLLM Studio CLI v0.1.0  [1]Dashboard [2]Recipes [3]Status [4]Config ─┐
+┌─ Local Studio CLI v0.1.0  [1]Dashboard [2]Recipes [3]Status [4]Config ─┐
 │ ─────────────────────────────────────────────────────────────────────── │
 │                         (tab content)                                   │
 │                                                                         │
@@ -695,7 +695,7 @@ Proxy endpoints forward to the active inference backend (`/health` is answered b
 | HTTP 401/403 | `requestJson()` response.ok | `Request failed for GET /status: 401 Unauthorized` |
 | Invalid JSON response | `fetchGPUs()` validation | `Invalid response for GET /gpus` |
 | Unknown headless command | `runHeadless()` | `Unknown command: foo` |
-| Missing recipe ID (launch) | `COMMANDS.launch` | `Usage: vllm-studio launch <recipe-id>` |
+| Missing recipe ID (launch) | `COMMANDS.launch` | `Usage: local-studio launch <recipe-id>` |
 
 ### TUI Error Handling
 
@@ -718,21 +718,21 @@ HTTP status codes used: `400` (bad request), `401` (unauthorized), `404` (not fo
 
 | Variable | Default | Description | Used In |
 |---|---|---|---|
-| `VLLM_STUDIO_URL` | `http://localhost:8080` | Controller base URL | `api.ts` — `resolveBaseUrl()` |
-| `VLLM_STUDIO_API_KEY` | — | API key sent as `X-API-Key` header | `api.ts` — `resolveApiKey()` |
+| `LOCAL_STUDIO_URL` | `http://localhost:8080` | Controller base URL | `api.ts` — `resolveBaseUrl()` |
+| `LOCAL_STUDIO_API_KEY` | — | API key sent as `X-API-Key` header | `api.ts` — `resolveApiKey()` |
 
 ### How resolution works:
 
 ```typescript
 // Base URL
 function resolveBaseUrl(): string {
-  const configured = process.env.VLLM_STUDIO_URL?.trim() || DEFAULT_BASE_URL;
+  const configured = process.env.LOCAL_STUDIO_URL?.trim() || DEFAULT_BASE_URL;
   return configured.endsWith("/") ? configured.slice(0, -1) : configured;
 }
 
 // API Key
 function resolveApiKey(): string | undefined {
-  return process.env.VLLM_STUDIO_API_KEY?.trim() || undefined;
+  return process.env.LOCAL_STUDIO_API_KEY?.trim() || undefined;
 }
 ```
 
@@ -827,7 +827,7 @@ interface AppState {
 
 ---
 
-*Document generated from vLLM Studio source code at `cli/src/` and `controller/src/` (researched 2026-05).*
+*Document generated from Local Studio source code at `cli/src/` and `controller/src/` (researched 2026-05).*
 *For the most up-to-date information, consult the source files directly:*
 - `cli/src/api.ts` — API client layer
 - `cli/src/headless.ts` — Headless command handlers

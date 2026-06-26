@@ -28,8 +28,8 @@ export type PromptTemplateSource = {
 export function defaultPromptTemplateSources(): PromptTemplateSource[] {
   const home = homedir();
   return [
-    { source: "vllm-studio", dir: path.join(resolveDataDir(), "pi-agent", "prompt-templates") },
-    { source: "vllm-studio", dir: path.join(resolveDataDir(), "pi-agent", "prompts") },
+    { source: "local-studio", dir: path.join(resolveDataDir(), "pi-agent", "prompt-templates") },
+    { source: "local-studio", dir: path.join(resolveDataDir(), "pi-agent", "prompts") },
     { source: "~/.pi", dir: path.join(home, ".pi", "prompts") },
     { source: "~/.pi", dir: path.join(home, ".pi", "agent", "prompts") },
     { source: "~/.claude", dir: path.join(home, ".claude", "prompts") },

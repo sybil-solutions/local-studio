@@ -69,7 +69,7 @@ export async function GET(
       ? `${def.displayName} connected · plugin installed`
       : `${def.displayName} connected`,
     catalogueId
-      ? `vLLM Studio connected ${def.displayName} and installed the managed MCP server. You can close this tab.`
-      : `vLLM Studio now has a refreshable ${def.displayName} token. You can close this tab.`,
+      ? `Local Studio connected ${def.displayName} and installed the managed MCP server. You can close this tab.`
+      : `Local Studio now has a refreshable ${def.displayName} token. You can close this tab.`,
   );
 }

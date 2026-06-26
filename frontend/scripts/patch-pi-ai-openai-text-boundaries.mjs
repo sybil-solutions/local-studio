@@ -11,10 +11,10 @@ const targetFiles = [
   ),
 ];
 
-const helperMarker = "function vllmStudioJoinTextParts";
+const helperMarker = "function localStudioJoinTextParts";
 const helper =
   [
-    "function vllmStudioTextPartBoundary(left, right) {",
+    "function localStudioTextPartBoundary(left, right) {",
     '    if (!left || !right || /\\s$/.test(left) || /^\\s/.test(right))',
     '        return "";',
     '    if (/^[-*+]$/.test(right) && /[.:;!?]["\')\\]]?$/.test(left))',
@@ -27,21 +27,21 @@ const helper =
     '        return "\\n";',
     '    return "";',
     "}",
-    "function vllmStudioLineEndsWithBareListMarker(text) {",
+    "function localStudioLineEndsWithBareListMarker(text) {",
     "    return /(?:^|\\n)[ \\t]*[-*+]$/.test(text);",
     "}",
-    "function vllmStudioJoinTextPart(left, right) {",
-    "    const boundary = vllmStudioTextPartBoundary(left, right);",
+    "function localStudioJoinTextPart(left, right) {",
+    "    const boundary = localStudioTextPartBoundary(left, right);",
     '    const nextRight = boundary.includes("\\n") && /^[-*+](?=\\S)/.test(right)',
     '        ? `${right.slice(0, 1)} ${right.slice(1)}`',
     "        : right;",
-    '    const prefix = vllmStudioLineEndsWithBareListMarker(left) && /^\\S/.test(nextRight) ? " " : "";',
+    '    const prefix = localStudioLineEndsWithBareListMarker(left) && /^\\S/.test(nextRight) ? " " : "";',
     "    return left + boundary + prefix + nextRight;",
     "}",
-    "function vllmStudioJoinTextParts(parts) {",
+    "function localStudioJoinTextParts(parts) {",
     "    return parts",
     "        .map((part) => part.text)",
-    '        .reduce((text, partText) => vllmStudioJoinTextPart(text, partText), "");',
+    '        .reduce((text, partText) => localStudioJoinTextPart(text, partText), "");',
     "}",
   ].join("\n") + "\n";
 
@@ -49,10 +49,10 @@ const injectionPoint = `function isTextContentBlock(block) {
     return block.type === "text";
 }
 `;
-const helperStartMarker = "function vllmStudioTextPartBoundary";
+const helperStartMarker = "function localStudioTextPartBoundary";
 const helperEndMarker = "function isThinkingContentBlock";
 const originalJoin = `const assistantText = assistantTextParts.map((part) => part.text).join("");`;
-const patchedJoin = `const assistantText = vllmStudioJoinTextParts(assistantTextParts);`;
+const patchedJoin = `const assistantText = localStudioJoinTextParts(assistantTextParts);`;
 
 let found = 0;
 let patched = 0;

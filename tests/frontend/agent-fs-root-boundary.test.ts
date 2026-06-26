@@ -41,25 +41,25 @@ describe("agent filesystem root boundary", () => {
   let projectId: string;
 
   beforeEach(() => {
-    originalProjectsFile = process.env.VLLM_STUDIO_PROJECTS_FILE;
+    originalProjectsFile = process.env.LOCAL_STUDIO_PROJECTS_FILE;
     const testDir = mkdtempSync(
-      path.join(tmpdir(), "vllm-studio-agentfs-test-"),
+      path.join(tmpdir(), "local-studio-agentfs-test-"),
     );
     projectDir = path.join(testDir, "project");
     projectsFile = path.join(testDir, "projects.json");
     mkdirSync(projectDir, { recursive: true });
     mkdirSync(path.join(projectDir, "sub"));
     writeFileSync(path.join(projectDir, "file.txt"), "hello");
-    process.env.VLLM_STUDIO_PROJECTS_FILE = projectsFile;
+    process.env.LOCAL_STUDIO_PROJECTS_FILE = projectsFile;
     projectId = addProjectToStore(projectDir).id;
   });
 
   afterEach(() => {
     removeProjectFromStore(projectId);
     if (originalProjectsFile === undefined) {
-      delete process.env.VLLM_STUDIO_PROJECTS_FILE;
+      delete process.env.LOCAL_STUDIO_PROJECTS_FILE;
     } else {
-      process.env.VLLM_STUDIO_PROJECTS_FILE = originalProjectsFile;
+      process.env.LOCAL_STUDIO_PROJECTS_FILE = originalProjectsFile;
     }
     rmSync(path.dirname(projectDir), { recursive: true, force: true });
   });
@@ -84,7 +84,7 @@ describe("agent filesystem root boundary", () => {
 
   it("rejects an unregistered absolute cwd", async () => {
     const otherDir = mkdtempSync(
-      path.join(tmpdir(), "vllm-studio-agentfs-other-"),
+      path.join(tmpdir(), "local-studio-agentfs-other-"),
     );
     try {
       await rejectsWith(

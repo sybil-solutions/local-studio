@@ -96,7 +96,7 @@ export const upgradeLlamacppRuntime = async (
       success: false,
       version: null,
       output: null,
-      error: "No llama.cpp upgrade command configured. Set VLLM_STUDIO_LLAMACPP_UPGRADE_CMD.",
+      error: "No llama.cpp upgrade command configured. Set LOCAL_STUDIO_LLAMACPP_UPGRADE_CMD.",
       used_command: null,
     };
   const result = await runCommandUpgrade(command, []);

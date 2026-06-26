@@ -66,12 +66,12 @@ export const OAUTH_PROVIDERS: OAuthProvider[] = [
       include_granted_scopes: "true",
     },
     clientIdEnvVars: [
-      "VLLM_STUDIO_GOOGLE_OAUTH_CLIENT_ID",
+      "LOCAL_STUDIO_GOOGLE_OAUTH_CLIENT_ID",
       "GOOGLE_OAUTH_CLIENT_ID",
       "GOOGLE_CLIENT_ID",
     ],
     clientSecretEnvVars: [
-      "VLLM_STUDIO_GOOGLE_OAUTH_CLIENT_SECRET",
+      "LOCAL_STUDIO_GOOGLE_OAUTH_CLIENT_SECRET",
       "GOOGLE_OAUTH_CLIENT_SECRET",
       "GOOGLE_CLIENT_SECRET",
     ],
@@ -92,8 +92,8 @@ export const OAUTH_PROVIDERS: OAuthProvider[] = [
     authEndpoint: "https://github.com/login/oauth/authorize",
     tokenEndpoint: "https://github.com/login/oauth/access_token",
     scopes: ["repo", "read:org", "read:user"],
-    clientIdEnvVars: ["VLLM_STUDIO_GITHUB_OAUTH_CLIENT_ID", "GITHUB_OAUTH_CLIENT_ID"],
-    clientSecretEnvVars: ["VLLM_STUDIO_GITHUB_OAUTH_CLIENT_SECRET", "GITHUB_OAUTH_CLIENT_SECRET"],
+    clientIdEnvVars: ["LOCAL_STUDIO_GITHUB_OAUTH_CLIENT_ID", "GITHUB_OAUTH_CLIENT_ID"],
+    clientSecretEnvVars: ["LOCAL_STUDIO_GITHUB_OAUTH_CLIENT_SECRET", "GITHUB_OAUTH_CLIENT_SECRET"],
     envMapping: {
       // The GitHub MCP server reads its token from GITHUB_PERSONAL_ACCESS_TOKEN;
       // an OAuth user-to-server token works in place of a PAT.
@@ -111,8 +111,8 @@ export const OAUTH_PROVIDERS: OAuthProvider[] = [
     authEndpoint: "https://huggingface.co/oauth/authorize",
     tokenEndpoint: "https://huggingface.co/oauth/token",
     scopes: ["openid", "profile", "email", "read-repos", "inference-api"],
-    clientIdEnvVars: ["VLLM_STUDIO_HF_OAUTH_CLIENT_ID", "HF_OAUTH_CLIENT_ID"],
-    clientSecretEnvVars: ["VLLM_STUDIO_HF_OAUTH_CLIENT_SECRET", "HF_OAUTH_CLIENT_SECRET"],
+    clientIdEnvVars: ["LOCAL_STUDIO_HF_OAUTH_CLIENT_ID", "HF_OAUTH_CLIENT_ID"],
+    clientSecretEnvVars: ["LOCAL_STUDIO_HF_OAUTH_CLIENT_SECRET", "HF_OAUTH_CLIENT_SECRET"],
     envMapping: {
       accessToken: "HF_TOKEN",
     },

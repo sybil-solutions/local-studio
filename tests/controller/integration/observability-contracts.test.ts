@@ -30,7 +30,7 @@ describe("controller route contracts", () => {
     expect(prometheusResponse.headers.get("content-type")).toContain(
       "text/plain",
     );
-    expect(prometheusText).toContain("vllm_studio");
+    expect(prometheusText).toContain("local_studio");
 
     const currentMetricsResponse = await app.request("/v1/metrics/vllm");
     const currentMetricsBody = await currentMetricsResponse.json();

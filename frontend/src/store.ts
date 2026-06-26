@@ -117,7 +117,7 @@ const storage = createJSONStorage(() =>
 export const useAppStore = create<AppStore>()(
   devtools(
     persist(createAppStoreImpl, {
-      name: "vllm-studio-state",
+      name: "local-studio-state",
       storage,
       skipHydration: true,
       partialize: (state) => ({
@@ -157,7 +157,7 @@ export const useAppStore = create<AppStore>()(
         applyStoredUiControls();
       },
     }),
-    { name: "vllm-studio" },
+    { name: "local-studio" },
   ),
 );
 

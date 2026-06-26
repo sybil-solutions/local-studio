@@ -4,7 +4,7 @@ import tsParser from "@typescript-eslint/parser";
 /** @type {import("eslint").Linter.FlatConfig[]} */
 const config = [
   {
-    ignores: ["vllm-studio", "node_modules", "knip.ts"],
+    ignores: ["local-studio", "node_modules", "knip.ts"],
   },
   {
     files: ["**/*.ts"],

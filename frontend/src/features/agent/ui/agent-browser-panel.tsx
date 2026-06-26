@@ -116,9 +116,9 @@ function terminalOwnerFor(
 function terminalBridge() {
   return (
     window as unknown as {
-      vllmStudioDesktop?: { terminal?: { closeOwner?: (ownerKey: string) => Promise<void> } };
+      localStudioDesktop?: { terminal?: { closeOwner?: (ownerKey: string) => Promise<void> } };
     }
-  ).vllmStudioDesktop?.terminal;
+  ).localStudioDesktop?.terminal;
 }
 
 function closePersistedTerminalOwners() {

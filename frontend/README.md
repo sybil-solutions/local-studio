@@ -1,6 +1,6 @@
 # Frontend
 
-`frontend/` is the Next.js user interface for vLLM Studio and the source for the macOS Electron desktop app. It provides the agent workspace, controller settings, usage views, recipes, logs, setup screens, and browser-facing API routes.
+`frontend/` is the Next.js user interface for Local Studio and the source for the macOS Electron desktop app. It provides the agent workspace, controller settings, usage views, recipes, logs, setup screens, and browser-facing API routes.
 
 ## What It Does
 
@@ -86,7 +86,7 @@ npm run desktop:dist
 
 - `desktop:pack` builds a local app bundle for quick installation.
 - `desktop:dist` builds signed DMG/ZIP artifacts for release.
-- The canonical installed app is `/Applications/vLLM Studio.app`.
+- The canonical installed app is `/Applications/Local Studio.app`.
 
 ## Controller Connection
 
@@ -94,7 +94,7 @@ Controller URL resolution is implemented in `src/lib/backend-config.ts`. Common 
 
 - `BACKEND_URL`
 - `NEXT_PUBLIC_BACKEND_URL`
-- `VLLM_STUDIO_BACKEND_URL`
+- `LOCAL_STUDIO_BACKEND_URL`
 
 When no URL is configured, the frontend falls back to `http://localhost:8080`. Saved controller settings are managed through the app settings surface.
 

@@ -1,5 +1,8 @@
 import { NextResponse } from "next/server";
-import { refreshPiModels, type PiControllerModelsRequest } from "@/features/agent/pi-runtime-models";
+import {
+  refreshPiModels,
+  type PiControllerModelsRequest,
+} from "@/features/agent/pi-runtime-models";
 import { errorMessage, jsonError } from "@/app/api/_lib/route-helpers";
 
 export const runtime = "nodejs";
@@ -24,7 +27,7 @@ function parseControllers(value: unknown): PiControllerModelsRequest[] {
 export async function GET() {
   try {
     const { models } = await refreshPiModels();
-    return NextResponse.json({ provider: "vllm-studio", models });
+    return NextResponse.json({ provider: "local-studio", models });
   } catch (error) {
     return jsonError(errorMessage(error, "Failed to load /v1/models"), 502);
   }
@@ -35,7 +38,7 @@ export async function POST(request: Request) {
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
     const controllers = parseControllers(body.controllers);
     const { models } = await refreshPiModels(controllers);
-    return NextResponse.json({ provider: "vllm-studio", models });
+    return NextResponse.json({ provider: "local-studio", models });
   } catch (error) {
     return jsonError(errorMessage(error, "Failed to load /v1/models"), 502);
   }

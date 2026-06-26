@@ -17,12 +17,12 @@ export class CliApiError extends Error {
 }
 
 function resolveBaseUrl(): string {
-  const configured = process.env.VLLM_STUDIO_URL?.trim() || DEFAULT_BASE_URL;
+  const configured = process.env.LOCAL_STUDIO_URL?.trim() || DEFAULT_BASE_URL;
   return configured.endsWith("/") ? configured.slice(0, -1) : configured;
 }
 
 function resolveApiKey(): string | undefined {
-  return process.env.VLLM_STUDIO_API_KEY?.trim() || undefined;
+  return process.env.LOCAL_STUDIO_API_KEY?.trim() || undefined;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

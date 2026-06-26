@@ -164,7 +164,7 @@ function runtimeMetricViews(metrics: Metrics | null): RuntimeMetricView[] {
   return [
     {
       label: "app tokens",
-      title: "Total tokens recorded by the vLLM Studio request log for this model.",
+      title: "Total tokens recorded by the Local Studio request log for this model.",
       value: tokenTotalMetric(metrics),
     },
     {
@@ -179,7 +179,7 @@ function runtimeMetricViews(metrics: Metrics | null): RuntimeMetricView[] {
     },
     {
       label: "avg latency",
-      title: "Average request latency recorded by the vLLM Studio request log.",
+      title: "Average request latency recorded by the Local Studio request log.",
       value: durationMetric(metrics?.latency_avg),
     },
   ];

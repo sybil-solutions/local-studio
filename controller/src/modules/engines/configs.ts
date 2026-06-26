@@ -2,7 +2,7 @@
 // Large MoE models in Docker (weights + AOT compile + full CUDA-graph capture)
 // can take well over the 5-minute default, so allow an env override.
 const parseReadyTimeoutMs = (): number => {
-  const raw = process.env["VLLM_STUDIO_READY_TIMEOUT_MS"];
+  const raw = process.env["LOCAL_STUDIO_READY_TIMEOUT_MS"];
   const parsed = raw ? Number(raw) : NaN;
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 300_000;
 };

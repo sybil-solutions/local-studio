@@ -23,8 +23,8 @@ async function loadSessionModules() {
 
 test("archived durable agent sessions are hidden by default and restorable", async () => {
   const previousPiAgentDir = process.env.PI_CODING_AGENT_DIR;
-  const previousDataDir = process.env.VLLM_STUDIO_DATA_DIR;
-  const root = mkdtempSync(path.join(tmpdir(), "vllm-studio-session-archive-"));
+  const previousDataDir = process.env.LOCAL_STUDIO_DATA_DIR;
+  const root = mkdtempSync(path.join(tmpdir(), "local-studio-session-archive-"));
   const cwd = path.join(root, "workspace");
   const piAgentDir = path.join(root, "pi-agent");
   const dataDir = path.join(root, "data");
@@ -47,7 +47,7 @@ test("archived durable agent sessions are hidden by default and restorable", asy
           cwd,
           timestamp: "2026-05-28T12:00:00.000Z",
           modelId: "deepseek-v4-flash",
-          provider: "vllm-studio",
+          provider: "local-studio",
         }),
         JSON.stringify({
           type: "user_message",
@@ -58,7 +58,7 @@ test("archived durable agent sessions are hidden by default and restorable", asy
     );
 
     process.env.PI_CODING_AGENT_DIR = piAgentDir;
-    process.env.VLLM_STUDIO_DATA_DIR = dataDir;
+    process.env.LOCAL_STUDIO_DATA_DIR = dataDir;
 
     const { listArchivedSessionMetadata, listSessions, setSessionArchived } =
       await loadSessionModules();
@@ -108,8 +108,8 @@ test("archived durable agent sessions are hidden by default and restorable", asy
     if (previousPiAgentDir === undefined)
       delete process.env.PI_CODING_AGENT_DIR;
     else process.env.PI_CODING_AGENT_DIR = previousPiAgentDir;
-    if (previousDataDir === undefined) delete process.env.VLLM_STUDIO_DATA_DIR;
-    else process.env.VLLM_STUDIO_DATA_DIR = previousDataDir;
+    if (previousDataDir === undefined) delete process.env.LOCAL_STUDIO_DATA_DIR;
+    else process.env.LOCAL_STUDIO_DATA_DIR = previousDataDir;
     rmSync(root, { recursive: true, force: true });
   }
 });

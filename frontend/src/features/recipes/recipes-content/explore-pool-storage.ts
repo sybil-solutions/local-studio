@@ -1,4 +1,4 @@
-const STORAGE_KEY = "vllmstudio_explore_pool_gb";
+const STORAGE_KEY = "localstudio_explore_pool_gb";
 
 export function readExplorePoolOverrideGb(): number | null {
   if (typeof window === "undefined") return null;

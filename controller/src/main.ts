@@ -4,7 +4,7 @@ import { detectGpuMonitoringTool } from "./modules/system/platform/gpu";
 import { startMetricsCollector } from "./modules/system/metrics-collector";
 
 const metricsDisabled = (): boolean => {
-  const raw = process.env["VLLM_STUDIO_DISABLE_METRICS"]?.trim().toLowerCase();
+  const raw = process.env["LOCAL_STUDIO_DISABLE_METRICS"]?.trim().toLowerCase();
   return raw === "1" || raw === "true" || raw === "yes" || raw === "on";
 };
 
@@ -15,7 +15,7 @@ let stopMetrics: (() => void) | null = null;
 
 const startBackgroundMetrics = (): (() => void) => {
   if (metricsDisabled()) {
-    context.logger.warn("Metrics collector disabled by VLLM_STUDIO_DISABLE_METRICS");
+    context.logger.warn("Metrics collector disabled by LOCAL_STUDIO_DISABLE_METRICS");
     return () => {};
   }
   try {
@@ -42,7 +42,7 @@ const start = (): void => {
 const logBootSummary = (port: number): void => {
   const { config } = context;
   const modelsDirectoryState = getModelsDirectoryState();
-  const authMode = config.api_key ? "api-key" : "unauthenticated (no VLLM_STUDIO_API_KEY)";
+  const authMode = config.api_key ? "api-key" : "unauthenticated (no LOCAL_STUDIO_API_KEY)";
   context.logger.info(
     [
       "Boot summary:",

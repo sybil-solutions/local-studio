@@ -99,7 +99,7 @@ export const createLogger = (level: LogLevel, options: LoggerOptions = {}): Logg
 };
 
 export const resolveLogLevel = (fallback: LogLevel): LogLevel => {
-  const raw = process.env["VLLM_STUDIO_LOG_LEVEL"]?.toLowerCase();
+  const raw = process.env["LOCAL_STUDIO_LOG_LEVEL"]?.toLowerCase();
   if (raw === "debug" || raw === "info" || raw === "warn" || raw === "error") {
     return raw;
   }

@@ -16,7 +16,7 @@ export default function SettingsPage() {
   const setup = useSetup();
   const [setupComplete] = useState(() => {
     if (typeof window === "undefined") return false;
-    return localStorage.getItem("vllm-studio-setup-complete") === "true";
+    return localStorage.getItem("local-studio-setup-complete") === "true";
   });
 
   const showSetupWizard =

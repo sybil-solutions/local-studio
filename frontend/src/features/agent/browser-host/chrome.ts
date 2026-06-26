@@ -15,9 +15,9 @@ import path from "node:path";
 const CHROME_LAUNCH_TIMEOUT_MS = 15_000;
 
 // Where Chromium keeps its profile. Stable so we reuse one profile dir and the
-// smoke/cleanup steps can target it via `pkill -f vllm-studio-browser-profile`.
+// smoke/cleanup steps can target it via `pkill -f local-studio-browser-profile`.
 function chromeDataDir(): string {
-  return path.join(os.tmpdir(), "vllm-studio-browser-profile");
+  return path.join(os.tmpdir(), "local-studio-browser-profile");
 }
 
 function platformChromeCandidates(): string[] {
@@ -45,7 +45,7 @@ function resolveOnPath(binary: string): string | null {
 
 // Discovery order: explicit env override first, then platform defaults.
 export function findChromeBinary(): string | null {
-  const override = process.env.VLLM_STUDIO_CHROME_PATH?.trim();
+  const override = process.env.LOCAL_STUDIO_CHROME_PATH?.trim();
   if (override) return existsSync(override) ? override : null;
   for (const candidate of platformChromeCandidates()) {
     if (existsSync(candidate)) return candidate;
@@ -141,7 +141,7 @@ class ChromeManager {
     if (this.launching) return this.launching;
     const binary = findChromeBinary();
     if (!binary) {
-      throw new Error("Browser unavailable: no Chromium found — set VLLM_STUDIO_CHROME_PATH");
+      throw new Error("Browser unavailable: no Chromium found — set LOCAL_STUDIO_CHROME_PATH");
     }
     this.launching = launchChrome(binary)
       .then((proc) => {
@@ -169,8 +169,8 @@ class ChromeManager {
 }
 
 const globalForChrome = globalThis as typeof globalThis & {
-  __vllmStudioChromeManager?: ChromeManager;
+  __localStudioChromeManager?: ChromeManager;
 };
 
-export const chromeManager = globalForChrome.__vllmStudioChromeManager ?? new ChromeManager();
-globalForChrome.__vllmStudioChromeManager = chromeManager;
+export const chromeManager = globalForChrome.__localStudioChromeManager ?? new ChromeManager();
+globalForChrome.__localStudioChromeManager = chromeManager;

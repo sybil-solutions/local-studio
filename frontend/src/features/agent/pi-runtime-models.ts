@@ -12,7 +12,7 @@ import {
   type AgentModel,
 } from "@/features/agent/models";
 
-const PROVIDER_ID = "vllm-studio";
+const PROVIDER_ID = "local-studio";
 const USER_PI_PREFIX = "user-pi-";
 
 function userPiAgentDir(): string {
@@ -71,7 +71,7 @@ function userPiModelToAgentModel(
     id: `${qualifiedProviderId}/${rawId}`,
     rawId,
     name: `${name} · ${providerName}`,
-    provider: "vllm-studio",
+    provider: "local-studio",
     providerId: qualifiedProviderId,
     controllerName: providerName,
     contextWindow: model.contextWindow ?? 128_000,
@@ -280,7 +280,7 @@ async function writePiModelsConfig(
       {
         baseUrl: `${controller.url}/v1`,
         api: "openai-completions",
-        apiKey: controller.apiKey || "vllm-studio",
+        apiKey: controller.apiKey || "local-studio",
         authHeader: Boolean(controller.apiKey),
         compat: {
           supportsDeveloperRole: false,
@@ -292,7 +292,7 @@ async function writePiModelsConfig(
   );
 
   // Merge user-pi providers so the SDK runtime can route to them.
-  // Each provider ID is prefixed to avoid colliding with vLLM Studio's own.
+  // Each provider ID is prefixed to avoid colliding with Local Studio's own.
   const mergedProviders: Record<string, unknown> = { ...vllmProviders };
   for (const [name, config] of Object.entries(userPiProviders)) {
     const qualifiedId = `${USER_PI_PREFIX}${name}`;
@@ -343,7 +343,7 @@ export async function refreshPiModels(
 
   // Load providers from ~/.pi/agent/models.json so models configured in the
   // user's standalone Pi install (kimi, openrouter, cerebras, etc.) are
-  // available in the agent model picker alongside vLLM Studio's own backend.
+  // available in the agent model picker alongside Local Studio's own backend.
   const userPiProviders = await loadUserPiProviders();
   const userPiModels: AgentModel[] = [];
   for (const [providerName, config] of Object.entries(userPiProviders)) {

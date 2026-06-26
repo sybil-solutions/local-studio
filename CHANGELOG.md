@@ -65,7 +65,7 @@ All notable changes to this project are documented in this file.
 
 ### Changed
 
-- OpenAI proxy model activation now supports policy control via `VLLM_STUDIO_OPENAI_MODEL_ACTIVATION_POLICY`:
+- OpenAI proxy model activation now supports policy control via `LOCAL_STUDIO_OPENAI_MODEL_ACTIVATION_POLICY`:
   - `load_if_idle` (default): reuse currently running model and rewrite request model when needed
   - `switch_on_request`: switch active model to requested recipe before proxying
 - lifecycle coordinator now aborts active chat runs when model eviction occurs

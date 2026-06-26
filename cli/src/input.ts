@@ -14,7 +14,7 @@ const KEY_MAP: Record<string, string> = {
 export function setupInput(onKey: KeyHandler): () => void {
   const stdin = process.stdin;
   if (!stdin.isTTY) {
-    console.error('Error: vllm-studio requires an interactive terminal (TTY)');
+    console.error('Error: local-studio requires an interactive terminal (TTY)');
     process.exit(1);
   }
   stdin.setRawMode(true);

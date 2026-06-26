@@ -33,9 +33,9 @@ import {
 type ControllerEntry = SavedController & { id: string };
 
 /**
- * Rebuild the unified list: every controller stored in `vllm-studio.controllers`
+ * Rebuild the unified list: every controller stored in `local-studio.controllers`
  * is a first-class entry, the currently active controller (from
- * `vllmstudio_backend_url`) is just whichever row matches. If the active URL
+ * `localstudio_backend_url`) is just whichever row matches. If the active URL
  * isn't yet saved, we synthesize an entry for it so toggling away doesn't
  * lose it.
  */

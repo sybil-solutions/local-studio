@@ -424,7 +424,7 @@
 }
 
 /* ──────────────────────────────────────────────────────────────────────────
-   Legacy vllm-studio token names — repointed onto the Codex-like system so every
+   Legacy local-studio token names — repointed onto the Codex-like system so every
    existing component re-skins without class-name changes. `--bg/--fg/--dim/
    --surface, --rail, --border and friends all resolve to the same values.
    ────────────────────────────────────────────────────────────────────────── */
@@ -514,7 +514,7 @@
   --row-h: 28px;
   --row-h-sm: 24px;
   --row-radius: var(--rad-md);
-  /* Composer / thread geometry preserved from vllm-studio. */
+  /* Composer / thread geometry preserved from local-studio. */
   --composer-w: clamp(25vw, 46rem, 50vw);
   --thread-w: 900px;
   --composer-radius: 18px;

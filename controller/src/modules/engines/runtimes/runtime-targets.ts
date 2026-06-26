@@ -165,13 +165,13 @@ const collectPythonTargets = async (
   const configured =
     backend === "vllm"
       ? [
-          process.env["VLLM_STUDIO_RUNTIME_PYTHON"],
-          ...splitEnvironmentList(process.env["VLLM_STUDIO_VLLM_PYTHONS"]),
-          ...splitEnvironmentList(process.env["VLLM_STUDIO_RUNTIME_PYTHONS"]),
+          process.env["LOCAL_STUDIO_RUNTIME_PYTHON"],
+          ...splitEnvironmentList(process.env["LOCAL_STUDIO_VLLM_PYTHONS"]),
+          ...splitEnvironmentList(process.env["LOCAL_STUDIO_RUNTIME_PYTHONS"]),
         ]
       : backend === "sglang"
-        ? [config.sglang_python, ...splitEnvironmentList(process.env["VLLM_STUDIO_SGLANG_PYTHONS"])]
-        : [config.mlx_python, ...splitEnvironmentList(process.env["VLLM_STUDIO_MLX_PYTHONS"])];
+        ? [config.sglang_python, ...splitEnvironmentList(process.env["LOCAL_STUDIO_SGLANG_PYTHONS"])]
+        : [config.mlx_python, ...splitEnvironmentList(process.env["LOCAL_STUDIO_MLX_PYTHONS"])];
   for (const { candidate, probe } of await probePythonCandidates(backend, unique(configured))) {
     addTarget(
       targets,
@@ -216,7 +216,7 @@ const collectPythonTargets = async (
   }
 
   const systemPython =
-    process.env["VLLM_STUDIO_RUNTIME_SKIP_SYSTEM"] === "1"
+    process.env["LOCAL_STUDIO_RUNTIME_SKIP_SYSTEM"] === "1"
       ? null
       : (resolveBinary("python3") ?? resolveBinary("python"));
   if (systemPython) {
@@ -241,7 +241,7 @@ const collectPythonTargets = async (
   const spec = getEngineSpec(backend);
   if (spec.cliBinary && spec.probeBinary) {
     const binary =
-      process.env["VLLM_STUDIO_RUNTIME_SKIP_SYSTEM"] === "1" ? null : resolveBinary(spec.cliBinary);
+      process.env["LOCAL_STUDIO_RUNTIME_SKIP_SYSTEM"] === "1" ? null : resolveBinary(spec.cliBinary);
     if (binary) {
       const probe: BinaryProbeResult = await spec.probeBinary(binary);
       addTarget(
@@ -294,7 +294,7 @@ const collectLlamacppTargets = async (
   }
 
   const systemBinary =
-    process.env["VLLM_STUDIO_RUNTIME_SKIP_SYSTEM"] === "1" ? null : resolveBinary("llama-server");
+    process.env["LOCAL_STUDIO_RUNTIME_SKIP_SYSTEM"] === "1" ? null : resolveBinary("llama-server");
   if (systemBinary) {
     const probe = await probeBinaryRuntime(systemBinary);
     addTarget(
@@ -316,7 +316,7 @@ const collectLlamacppTargets = async (
 };
 
 const collectDockerTargets = (backend: EngineBackend): RuntimeTarget[] => {
-  if (process.env["VLLM_STUDIO_RUNTIME_SKIP_DOCKER"] === "1") return [];
+  if (process.env["LOCAL_STUDIO_RUNTIME_SKIP_DOCKER"] === "1") return [];
   const docker = resolveBinary("docker");
   if (!docker) return [];
   const targets: RuntimeTarget[] = [];

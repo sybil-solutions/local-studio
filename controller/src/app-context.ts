@@ -80,7 +80,7 @@ export const createAppContext = (): AppContext => {
   modelsDirectoryState = ensureModelsDirectory(config.models_dir);
   if (modelsDirectoryState === "missing") {
     logger.warn(
-      `Models directory ${config.models_dir} does not exist and could not be created; set VLLM_STUDIO_MODELS_DIR to a writable path`
+      `Models directory ${config.models_dir} does not exist and could not be created; set LOCAL_STUDIO_MODELS_DIR to a writable path`
     );
   }
 

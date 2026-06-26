@@ -22,14 +22,14 @@ export const createMetrics = (): { registry: MetricsRegistry; metrics: Controlle
   const registry = new Registry();
 
   const modelSwitchesTotal = new Counter({
-    name: "vllm_studio_model_switches_total",
+    name: "local_studio_model_switches_total",
     help: "Total number of model switches",
     labelNames: ["recipe_id", "backend"],
     registers: [registry],
   });
 
   const modelSwitchDuration = new Histogram({
-    name: "vllm_studio_model_switch_duration_seconds",
+    name: "local_studio_model_switch_duration_seconds",
     help: "Time taken to switch models",
     labelNames: ["recipe_id"],
     buckets: [10, 30, 60, 120, 300, 600],
@@ -37,62 +37,62 @@ export const createMetrics = (): { registry: MetricsRegistry; metrics: Controlle
   });
 
   const modelLaunchFailures = new Counter({
-    name: "vllm_studio_model_launch_failures_total",
+    name: "local_studio_model_launch_failures_total",
     help: "Total number of failed model launches",
     labelNames: ["recipe_id"],
     registers: [registry],
   });
 
   const activeModelInfo = new Gauge({
-    name: "vllm_studio_active_model",
+    name: "local_studio_active_model",
     help: "Currently active model information",
     labelNames: ["model_path", "backend", "served_model_name"],
     registers: [registry],
   });
 
   const inferenceServerUp = new Gauge({
-    name: "vllm_studio_inference_server_up",
+    name: "local_studio_inference_server_up",
     help: "Whether inference server is running (1=up, 0=down)",
     registers: [registry],
   });
 
   const gpuMemoryUsed = new Gauge({
-    name: "vllm_studio_gpu_memory_used_bytes",
+    name: "local_studio_gpu_memory_used_bytes",
     help: "GPU memory used in bytes",
     labelNames: ["gpu_id", "gpu_name"],
     registers: [registry],
   });
 
   const gpuMemoryTotal = new Gauge({
-    name: "vllm_studio_gpu_memory_total_bytes",
+    name: "local_studio_gpu_memory_total_bytes",
     help: "Total GPU memory in bytes",
     labelNames: ["gpu_id", "gpu_name"],
     registers: [registry],
   });
 
   const gpuUtilization = new Gauge({
-    name: "vllm_studio_gpu_utilization_percent",
+    name: "local_studio_gpu_utilization_percent",
     help: "GPU utilization percentage",
     labelNames: ["gpu_id", "gpu_name"],
     registers: [registry],
   });
 
   const gpuTemperature = new Gauge({
-    name: "vllm_studio_gpu_temperature_celsius",
+    name: "local_studio_gpu_temperature_celsius",
     help: "GPU temperature in Celsius",
     labelNames: ["gpu_id", "gpu_name"],
     registers: [registry],
   });
 
   const sseActiveConnections = new Gauge({
-    name: "vllm_studio_sse_active_connections",
+    name: "local_studio_sse_active_connections",
     help: "Number of active SSE connections",
     labelNames: ["channel"],
     registers: [registry],
   });
 
   const sseEventsPublished = new Counter({
-    name: "vllm_studio_sse_events_published_total",
+    name: "local_studio_sse_events_published_total",
     help: "Total SSE events published",
     labelNames: ["event_type"],
     registers: [registry],

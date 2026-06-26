@@ -16,12 +16,12 @@ function getDesktopBridge(): {
   if (typeof window === "undefined") return null;
   const bridge = (
     window as {
-      vllmStudioDesktop?: {
+      localStudioDesktop?: {
         loadSessionPrefs?: () => Promise<SessionPrefs>;
         saveSessionPrefs?: (prefs: SessionPrefs) => Promise<void>;
       };
     }
-  ).vllmStudioDesktop;
+  ).localStudioDesktop;
   if (!bridge?.loadSessionPrefs || !bridge?.saveSessionPrefs) return null;
   return bridge as {
     loadSessionPrefs(): Promise<SessionPrefs>;

@@ -286,7 +286,7 @@ export function useWorkspace(): UseWorkspaceResult {
       };
       const onStorage = (event: StorageEvent | Event) => {
         const key = (event as StorageEvent).key;
-        if (key && key !== "vllmstudio_backend_url" && key !== "vllm-studio.controllers") return;
+        if (key && key !== "localstudio_backend_url" && key !== "local-studio.controllers") return;
         reload();
       };
       // Models load once on hydrate; a transient empty/failed initial fetch

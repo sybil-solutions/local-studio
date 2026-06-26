@@ -7,21 +7,21 @@ import { afterEach, test } from "node:test";
 import { createApiClient } from "@/lib/api/create-api-client";
 
 const originalFetch = globalThis.fetch;
-const originalApiKey = process.env.VLLM_STUDIO_API_KEY;
-const originalDataDir = process.env.VLLM_STUDIO_DATA_DIR;
+const originalApiKey = process.env.LOCAL_STUDIO_API_KEY;
+const originalDataDir = process.env.LOCAL_STUDIO_DATA_DIR;
 const dataDirs: string[] = [];
 
 afterEach(() => {
   globalThis.fetch = originalFetch;
   if (originalApiKey === undefined) {
-    delete process.env.VLLM_STUDIO_API_KEY;
+    delete process.env.LOCAL_STUDIO_API_KEY;
   } else {
-    process.env.VLLM_STUDIO_API_KEY = originalApiKey;
+    process.env.LOCAL_STUDIO_API_KEY = originalApiKey;
   }
   if (originalDataDir === undefined) {
-    delete process.env.VLLM_STUDIO_DATA_DIR;
+    delete process.env.LOCAL_STUDIO_DATA_DIR;
   } else {
-    process.env.VLLM_STUDIO_DATA_DIR = originalDataDir;
+    process.env.LOCAL_STUDIO_DATA_DIR = originalDataDir;
   }
   for (const dir of dataDirs.splice(0)) {
     rmSync(dir, { recursive: true, force: true });
@@ -44,7 +44,7 @@ function installStatusFetch(assertHeaders: (headers: Headers) => void): void {
 }
 
 test("explicit empty API key override suppresses stored-key authorization fallback", async () => {
-  process.env.VLLM_STUDIO_API_KEY = "stored-controller-secret";
+  process.env.LOCAL_STUDIO_API_KEY = "stored-controller-secret";
   installStatusFetch((headers) => {
     assert.equal(headers.get("X-Backend-Url"), "https://typed-controller.example");
     assert.equal(headers.get("X-Backend-Strict"), "1");
@@ -63,9 +63,9 @@ test("explicit empty API key override suppresses stored-key authorization fallba
 });
 
 test("proxy suppress-auth header prevents saved settings key from reaching override backend", async () => {
-  const dataDir = mkdtempSync(path.join(tmpdir(), "vllm-studio-proxy-auth-"));
+  const dataDir = mkdtempSync(path.join(tmpdir(), "local-studio-proxy-auth-"));
   dataDirs.push(dataDir);
-  process.env.VLLM_STUDIO_DATA_DIR = dataDir;
+  process.env.LOCAL_STUDIO_DATA_DIR = dataDir;
   writeFileSync(
     path.join(dataDir, "api-settings.json"),
     JSON.stringify({
@@ -111,7 +111,7 @@ test("proxy suppress-auth header prevents saved settings key from reaching overr
 });
 
 test("omitted API key override still uses the active stored key", async () => {
-  process.env.VLLM_STUDIO_API_KEY = "stored-controller-secret";
+  process.env.LOCAL_STUDIO_API_KEY = "stored-controller-secret";
   installStatusFetch((headers) => {
     assert.equal(headers.get("Authorization"), "Bearer stored-controller-secret");
   });

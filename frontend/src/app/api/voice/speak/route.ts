@@ -35,7 +35,7 @@ const buildSilentWav = (durationMs = 650): Uint8Array => {
 
 export async function POST(request: NextRequest) {
   try {
-    if ((process.env["VLLM_STUDIO_MOCK_VOICE"] ?? "").trim() === "1") {
+    if ((process.env["LOCAL_STUDIO_MOCK_VOICE"] ?? "").trim() === "1") {
       const mockAudio = buildSilentWav();
       return new NextResponse(mockAudio as unknown as BodyInit, {
         status: 200,

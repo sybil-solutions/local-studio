@@ -56,7 +56,7 @@ describe("controller route contracts", () => {
       port: 18080,
       inference_port: 65534,
       api_key_configured: false,
-      models_dir: process.env.VLLM_STUDIO_MODELS_DIR,
+      models_dir: process.env.LOCAL_STUDIO_MODELS_DIR,
       data_dir: tempDir,
       db_path: join(tempDir, "controller.db"),
     });
@@ -86,7 +86,7 @@ describe("controller route contracts", () => {
     expect(specResponse.status).toBe(200);
     expect(specBody).toMatchObject({
       openapi: "3.1.0",
-      info: { title: "vLLM Studio API" },
+      info: { title: "Local Studio API" },
     });
     expect(specBody.paths).toEqual(
       expect.objectContaining({
@@ -162,7 +162,7 @@ describe("controller route contracts", () => {
     const settingsBody = await settingsResponse.json();
     expect(settingsResponse.status).toBe(200);
     expect(settingsBody.effective.models_dir).toBe(
-      process.env.VLLM_STUDIO_MODELS_DIR,
+      process.env.LOCAL_STUDIO_MODELS_DIR,
     );
 
     const settingsUpdateResponse = await app.request("/studio/settings", {
@@ -275,9 +275,9 @@ describe("controller route contracts", () => {
   });
 
   test("studio operational routes expose storage contracts and validate model file actions", async () => {
-    const modelsDir = process.env.VLLM_STUDIO_MODELS_DIR;
+    const modelsDir = process.env.LOCAL_STUDIO_MODELS_DIR;
     if (!modelsDir)
-      throw new Error("VLLM_STUDIO_MODELS_DIR is required for tests");
+      throw new Error("LOCAL_STUDIO_MODELS_DIR is required for tests");
     const modelPath = join(modelsDir, "studio-route-model");
     const targetRoot = join(modelsDir, "archive");
     const movedModelPath = join(targetRoot, "studio-route-model");
@@ -501,7 +501,7 @@ describe("controller route contracts", () => {
     expect(missingModelResponse.status).toBe(400);
     expect(missingModelBody).toEqual({
       code: "model_missing",
-      error: "No TTS model provided. Set model field or VLLM_STUDIO_TTS_MODEL.",
+      error: "No TTS model provided. Set model field or LOCAL_STUDIO_TTS_MODEL.",
     });
 
     const rows = readControllerRequestRows();

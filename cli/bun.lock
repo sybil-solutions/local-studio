@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "vllm-studio-cli",
+      "name": "local-studio-cli",
       "devDependencies": {
         "@types/bun": "1.3.6",
         "@typescript-eslint/eslint-plugin": "8.43.0",

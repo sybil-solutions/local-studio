@@ -1,4 +1,4 @@
-const CONTROLLERS_STORAGE_KEY = "vllm-studio.controllers";
+const CONTROLLERS_STORAGE_KEY = "local-studio.controllers";
 export const CONTROLLERS_CHANGED_EVENT = "vllm:controllers-changed";
 
 export type SavedController = {

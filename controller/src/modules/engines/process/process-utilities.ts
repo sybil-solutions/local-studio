@@ -101,7 +101,7 @@ export const buildEnvironment = (recipe: Recipe): Record<string, string> => {
   const rocrVisibleDevices =
     readExtraArgument("rocr_visible_devices") ?? readExtraArgument("ROCR_VISIBLE_DEVICES");
 
-  const forcedTool = (process.env["VLLM_STUDIO_GPU_SMI_TOOL"] ?? "").trim().toLowerCase();
+  const forcedTool = (process.env["LOCAL_STUDIO_GPU_SMI_TOOL"] ?? "").trim().toLowerCase();
   const platform =
     forcedTool === "nvidia-smi"
       ? "cuda"

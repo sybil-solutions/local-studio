@@ -34,7 +34,7 @@ const resolveHfToken = (
   const bodyToken = typeof body?.["hf_token"] === "string" ? String(body?.["hf_token"]) : null;
   const headerToken = ctx.req.header("x-hf-token") ?? ctx.req.header("x-huggingface-token") ?? null;
   const envToken =
-    process.env["VLLM_STUDIO_HF_TOKEN"] ??
+    process.env["LOCAL_STUDIO_HF_TOKEN"] ??
     process.env["HF_TOKEN"] ??
     process.env["HUGGINGFACE_TOKEN"] ??
     null;

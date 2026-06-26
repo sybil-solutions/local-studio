@@ -35,7 +35,7 @@ export function useRecipesContentModel() {
 
   const subscribePinnedRecipes = useCallback((_notify: () => void) => {
     try {
-      const saved = localStorage.getItem("vllm-studio-pinned-recipes");
+      const saved = localStorage.getItem("local-studio-pinned-recipes");
       if (saved) setPinnedRecipes(new Set(JSON.parse(saved)));
     } catch {}
     return () => {};
@@ -55,7 +55,7 @@ export function useRecipesContentModel() {
       } else {
         next.add(recipeId);
       }
-      localStorage.setItem("vllm-studio-pinned-recipes", JSON.stringify([...next]));
+      localStorage.setItem("local-studio-pinned-recipes", JSON.stringify([...next]));
       return next;
     });
   }, []);

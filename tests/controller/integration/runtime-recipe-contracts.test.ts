@@ -477,7 +477,7 @@ describe("controller route contracts", () => {
       "utf8",
     );
     chmodSync(llamaBin, 0o755);
-    process.env.VLLM_STUDIO_LLAMA_BIN = llamaBin;
+    process.env.LOCAL_STUDIO_LLAMA_BIN = llamaBin;
     const sglangPython = join(tempDir, "python-sglang-test");
     writeFileSync(
       sglangPython,
@@ -491,7 +491,7 @@ describe("controller route contracts", () => {
       "utf8",
     );
     chmodSync(sglangPython, 0o755);
-    process.env.VLLM_STUDIO_SGLANG_PYTHON = sglangPython;
+    process.env.LOCAL_STUDIO_SGLANG_PYTHON = sglangPython;
     const mlxPython = join(tempDir, "python-mlx-test");
     writeFileSync(
       mlxPython,
@@ -505,7 +505,7 @@ describe("controller route contracts", () => {
       "utf8",
     );
     chmodSync(mlxPython, 0o755);
-    process.env.VLLM_STUDIO_MLX_PYTHON = mlxPython;
+    process.env.LOCAL_STUDIO_MLX_PYTHON = mlxPython;
     const app = await createTestApp();
 
     const targetsResponse = await app.request("/runtime/targets");

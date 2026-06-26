@@ -9,12 +9,12 @@ function readSeconds(name: string, fallback: number): number {
   return Math.trunc(raw);
 }
 
-export default function vllmStudioTimeouts(pi: ExtensionAPI) {
+export default function localStudioTimeouts(pi: ExtensionAPI) {
   const defaultTimeout = readSeconds(
-    "VLLM_STUDIO_BASH_TIMEOUT_SECONDS",
+    "LOCAL_STUDIO_BASH_TIMEOUT_SECONDS",
     DEFAULT_BASH_TIMEOUT_SECONDS,
   );
-  const maxTimeout = readSeconds("VLLM_STUDIO_BASH_MAX_TIMEOUT_SECONDS", MAX_BASH_TIMEOUT_SECONDS);
+  const maxTimeout = readSeconds("LOCAL_STUDIO_BASH_MAX_TIMEOUT_SECONDS", MAX_BASH_TIMEOUT_SECONDS);
 
   pi.on("tool_call", (event) => {
     if (!isToolCallEventType("bash", event)) return;

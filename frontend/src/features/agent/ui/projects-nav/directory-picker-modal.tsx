@@ -61,7 +61,7 @@ export function ProjectDirectoryPickerModal({
       />
       <div className="space-y-4 p-5 text-sm text-(--fg)">
         <p className="text-xs leading-5 text-(--dim)">
-          Browse folders on the machine running vLLM Studio, or paste an absolute path.
+          Browse folders on the machine running Local Studio, or paste an absolute path.
         </p>
         <div className="flex gap-2">
           <input

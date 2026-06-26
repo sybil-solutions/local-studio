@@ -39,7 +39,7 @@ const server = spawn("node", ["server.js"], {
   stdio: "inherit",
   env: {
     ...process.env,
-    VLLM_STUDIO_AGENT_CWD: process.env.VLLM_STUDIO_AGENT_CWD || resolve(projectRoot, ".."),
+    LOCAL_STUDIO_AGENT_CWD: process.env.LOCAL_STUDIO_AGENT_CWD || resolve(projectRoot, ".."),
   },
 });
 

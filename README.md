@@ -1,6 +1,6 @@
-# vLLM Studio
+# Local Studio
 
-vLLM Studio is a local-first workstation for running, managing, and using self-hosted LLM backends. It combines a controller API, a Next.js/Electron interface, and a small CLI so one machine can launch models, watch GPU/runtime state, chat with OpenAI-compatible endpoints, and run agent sessions against local or remote controllers.
+Local Studio is a local-first workstation for running, managing, and using self-hosted LLM backends. It combines a controller API, a Next.js/Electron interface, and a small CLI so one machine can launch models, watch GPU/runtime state, chat with OpenAI-compatible endpoints, and run agent sessions against local or remote controllers.
 
 ## What Is A Controller?
 
@@ -39,7 +39,7 @@ bun install
 bun src/main.ts
 ```
 
-The controller listens on `127.0.0.1:8080`. Its data directory and SQLite database are created automatically. Model weights live in `VLLM_STUDIO_MODELS_DIR` (default `/models`); the controller tries to create it on startup and warns if it cannot, so make sure that path is writable or point the variable somewhere that is.
+The controller listens on `127.0.0.1:8080`. Its data directory and SQLite database are created automatically. Model weights live in `LOCAL_STUDIO_MODELS_DIR` (default `/models`); the controller tries to create it on startup and warns if it cannot, so make sure that path is writable or point the variable somewhere that is.
 
 Start the frontend in a second terminal:
 
@@ -53,7 +53,7 @@ npm run dev
 
 Then open <http://localhost:3000/setup>. The recipes database starts empty; the setup wizard walks through choosing a models directory, installing an engine for your hardware, downloading a model, launching it, and running a benchmark. (You can also create recipes manually on the recipes page.)
 
-Engine installs (vLLM/SGLang/MLX) are managed by the controller into `<data dir>/runtime/venvs/<backend>-latest`, using `uv` when present and pip otherwise. llama.cpp, CUDA, and ROCm upgrades require operator-configured env commands (`VLLM_STUDIO_LLAMACPP_UPGRADE_CMD`, etc.).
+Engine installs (vLLM/SGLang/MLX) are managed by the controller into `<data dir>/runtime/venvs/<backend>-latest`, using `uv` when present and pip otherwise. llama.cpp, CUDA, and ROCm upgrades require operator-configured env commands (`LOCAL_STUDIO_LLAMACPP_UPGRADE_CMD`, etc.).
 
 Optional CLI:
 
@@ -145,7 +145,7 @@ The controller runs in production the same way as in development: `bun src/main.
 
 ## Remote / LAN Deployment
 
-The controller binds to `127.0.0.1` by default. Binding a non-loopback host (for example `VLLM_STUDIO_HOST=0.0.0.0`) requires `VLLM_STUDIO_API_KEY` to be set — startup throws without it. On a trusted LAN you can instead set `VLLM_STUDIO_ALLOW_UNAUTHENTICATED=true` explicitly to opt out of authentication.
+The controller binds to `127.0.0.1` by default. Binding a non-loopback host (for example `LOCAL_STUDIO_HOST=0.0.0.0`) requires `LOCAL_STUDIO_API_KEY` to be set — startup throws without it. On a trusted LAN you can instead set `LOCAL_STUDIO_ALLOW_UNAUTHENTICATED=true` explicitly to opt out of authentication.
 
 Point the frontend at a remote controller with `BACKEND_URL` or `NEXT_PUBLIC_API_URL` (default `http://localhost:8080`).
 
@@ -184,11 +184,11 @@ Common environment variables:
 
 - `BACKEND_URL`
 - `NEXT_PUBLIC_BACKEND_URL`
-- `VLLM_STUDIO_BACKEND_URL`
+- `LOCAL_STUDIO_BACKEND_URL`
 
 If none are provided, frontend code falls back to `http://localhost:8080`. Controller management and switching is available from the app settings surface.
 
-The CLI uses `VLLM_STUDIO_URL`, defaulting to `http://localhost:8080`.
+The CLI uses `LOCAL_STUDIO_URL`, defaulting to `http://localhost:8080`.
 
 ## Runtime Backends
 

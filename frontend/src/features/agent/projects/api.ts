@@ -10,8 +10,8 @@ type DesktopBridge = {
 
 function getDesktopBridge(): DesktopBridge | null {
   if (typeof window === "undefined") return null;
-  const candidate = (window as unknown as { vllmStudioDesktop?: Partial<DesktopBridge> })
-    .vllmStudioDesktop;
+  const candidate = (window as unknown as { localStudioDesktop?: Partial<DesktopBridge> })
+    .localStudioDesktop;
   if (!candidate) return null;
   const hasBridgeMethod =
     typeof candidate.openDirectory === "function" ||

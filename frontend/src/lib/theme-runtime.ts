@@ -10,7 +10,7 @@ import {
   type ThemeTokens,
 } from "@/lib/themes";
 
-const STORE_KEY = "vllm-studio-state";
+const STORE_KEY = "local-studio-state";
 const DEFAULT_THEME_ID: ThemeId = "zai-dark";
 
 const THEME_TOKENS_BY_ID = Object.fromEntries(
@@ -116,7 +116,7 @@ export function applyTokensToDocument(tokens: ThemeTokens): void {
    These set the canonical CSS variables that the whole UI derives from, so a
    handful of values re-theme everything uniformly. Persisted to localStorage and
    re-applied on load. */
-const UI_CONTROLS_KEY = "vllm-studio.uiControls";
+const UI_CONTROLS_KEY = "local-studio.uiControls";
 
 export function applyUiControl(name: string, value: string): void {
   if (typeof document === "undefined") return;

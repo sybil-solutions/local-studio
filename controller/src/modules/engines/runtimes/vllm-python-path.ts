@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import { DEFAULT_CANONICAL_PYTHON_PATH } from "../configs";
 
 const getExplicitPythonOverride = (): string | null => {
-  const explicit = process.env["VLLM_STUDIO_RUNTIME_PYTHON"]?.trim();
+  const explicit = process.env["LOCAL_STUDIO_RUNTIME_PYTHON"]?.trim();
   if (!explicit) {
     return null;
   }

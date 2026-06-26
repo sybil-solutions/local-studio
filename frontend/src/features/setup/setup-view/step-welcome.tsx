@@ -33,7 +33,7 @@ export function StepWelcome({
     <Card padding="lg" className="space-y-5">
       <div className="flex items-center gap-3">
         <Rocket className="h-5 w-5 text-(--hl1)" />
-        <h2 className="text-lg font-medium">Welcome to vLLM Studio</h2>
+        <h2 className="text-lg font-medium">Welcome to Local Studio</h2>
       </div>
       <p className="text-sm text-(--dim)">
         This desktop wizard configures the active controller. Model files, runtime checks, and

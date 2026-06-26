@@ -116,7 +116,7 @@ export function createProjectsStore(options: ProjectsStoreOptions): ProjectsStor
   const { projectsFilePath, chatsProjectId, emptyPathMessage } = options;
 
   function chatsProject(): ProjectEntry {
-    const chatsPath = path.join(homedir(), ".vllm-studio");
+    const chatsPath = path.join(homedir(), ".local-studio");
     mkdirSync(chatsPath, { recursive: true });
     return withMeta({
       id: chatsProjectId,

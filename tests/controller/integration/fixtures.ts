@@ -7,20 +7,20 @@ import { join } from "node:path";
 type EnvSnapshot = Record<string, string | undefined>;
 
 const ENV_KEYS = [
-  "VLLM_STUDIO_DATA_DIR",
-  "VLLM_STUDIO_DB_PATH",
-  "VLLM_STUDIO_MODELS_DIR",
-  "VLLM_STUDIO_HOST",
-  "VLLM_STUDIO_PORT",
-  "VLLM_STUDIO_INFERENCE_PORT",
-  "VLLM_STUDIO_MOCK_INFERENCE",
-  "VLLM_STUDIO_MOCK_MODEL_ID",
-  "VLLM_STUDIO_API_KEY",
-  "VLLM_STUDIO_RUNTIME_SKIP_DOCKER",
-  "VLLM_STUDIO_RUNTIME_SKIP_SYSTEM",
-  "VLLM_STUDIO_LLAMA_BIN",
-  "VLLM_STUDIO_SGLANG_PYTHON",
-  "VLLM_STUDIO_MLX_PYTHON",
+  "LOCAL_STUDIO_DATA_DIR",
+  "LOCAL_STUDIO_DB_PATH",
+  "LOCAL_STUDIO_MODELS_DIR",
+  "LOCAL_STUDIO_HOST",
+  "LOCAL_STUDIO_PORT",
+  "LOCAL_STUDIO_INFERENCE_PORT",
+  "LOCAL_STUDIO_MOCK_INFERENCE",
+  "LOCAL_STUDIO_MOCK_MODEL_ID",
+  "LOCAL_STUDIO_API_KEY",
+  "LOCAL_STUDIO_RUNTIME_SKIP_DOCKER",
+  "LOCAL_STUDIO_RUNTIME_SKIP_SYSTEM",
+  "LOCAL_STUDIO_LLAMA_BIN",
+  "LOCAL_STUDIO_SGLANG_PYTHON",
+  "LOCAL_STUDIO_MLX_PYTHON",
   "PI_CODING_AGENT_DIR",
 ] as const;
 
@@ -51,21 +51,21 @@ export function registerControllerTestLifecycle() {
     envSnapshot = Object.fromEntries(
       ENV_KEYS.map((key) => [key, process.env[key]]),
     );
-    tempDir = mkdtempSync(join(tmpdir(), "vllm-studio-controller-test-"));
+    tempDir = mkdtempSync(join(tmpdir(), "local-studio-controller-test-"));
     Object.assign(process.env, {
-      VLLM_STUDIO_DATA_DIR: tempDir,
-      VLLM_STUDIO_DB_PATH: join(tempDir, "controller.db"),
-      VLLM_STUDIO_MODELS_DIR: join(tempDir, "models"),
-      VLLM_STUDIO_HOST: "127.0.0.1",
-      VLLM_STUDIO_PORT: "18080",
-      VLLM_STUDIO_INFERENCE_PORT: "65534",
-      VLLM_STUDIO_MOCK_INFERENCE: "true",
-      VLLM_STUDIO_MOCK_MODEL_ID: "mock-model",
-      VLLM_STUDIO_RUNTIME_SKIP_DOCKER: "1",
-      VLLM_STUDIO_RUNTIME_SKIP_SYSTEM: "1",
+      LOCAL_STUDIO_DATA_DIR: tempDir,
+      LOCAL_STUDIO_DB_PATH: join(tempDir, "controller.db"),
+      LOCAL_STUDIO_MODELS_DIR: join(tempDir, "models"),
+      LOCAL_STUDIO_HOST: "127.0.0.1",
+      LOCAL_STUDIO_PORT: "18080",
+      LOCAL_STUDIO_INFERENCE_PORT: "65534",
+      LOCAL_STUDIO_MOCK_INFERENCE: "true",
+      LOCAL_STUDIO_MOCK_MODEL_ID: "mock-model",
+      LOCAL_STUDIO_RUNTIME_SKIP_DOCKER: "1",
+      LOCAL_STUDIO_RUNTIME_SKIP_SYSTEM: "1",
       PI_CODING_AGENT_DIR: join(tempDir, "pi-agent"),
     });
-    delete process.env.VLLM_STUDIO_API_KEY;
+    delete process.env.LOCAL_STUDIO_API_KEY;
   });
 
   afterEach(async () => {
@@ -94,8 +94,8 @@ export async function createTestHarness() {
 }
 
 export function readControllerRequestRows(): ControllerRequestRow[] {
-  const dbPath = process.env.VLLM_STUDIO_DB_PATH;
-  if (!dbPath) throw new Error("VLLM_STUDIO_DB_PATH is required for tests");
+  const dbPath = process.env.LOCAL_STUDIO_DB_PATH;
+  if (!dbPath) throw new Error("LOCAL_STUDIO_DB_PATH is required for tests");
   const db = new Database(dbPath, { readonly: true });
   try {
     return db
@@ -111,8 +111,8 @@ export function readControllerRequestRows(): ControllerRequestRow[] {
 }
 
 export function readControllerFunctionCallRows(): ControllerFunctionCallRow[] {
-  const dbPath = process.env.VLLM_STUDIO_DB_PATH;
-  if (!dbPath) throw new Error("VLLM_STUDIO_DB_PATH is required for tests");
+  const dbPath = process.env.LOCAL_STUDIO_DB_PATH;
+  if (!dbPath) throw new Error("LOCAL_STUDIO_DB_PATH is required for tests");
   const db = new Database(dbPath, { readonly: true });
   try {
     return db

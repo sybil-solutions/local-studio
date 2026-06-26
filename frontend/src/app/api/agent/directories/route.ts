@@ -29,7 +29,7 @@ function isLoopbackHost(host: string | null): boolean {
 }
 
 function configuredRoots(): string[] {
-  const raw = process.env.VLLM_STUDIO_DIRECTORY_BROWSER_ROOTS;
+  const raw = process.env.LOCAL_STUDIO_DIRECTORY_BROWSER_ROOTS;
   if (!raw) return [path.resolve(os.homedir())];
   return raw
     .split(path.delimiter)
@@ -53,7 +53,7 @@ function resolveAllowedPath(input: string | null, roots: string[]): string | nul
 
 export async function GET(request: NextRequest) {
   const roots = configuredRoots();
-  const remoteBrowserEnabled = process.env.VLLM_STUDIO_ENABLE_REMOTE_DIRECTORY_BROWSER === "1";
+  const remoteBrowserEnabled = process.env.LOCAL_STUDIO_ENABLE_REMOTE_DIRECTORY_BROWSER === "1";
   if (!isLoopbackHost(request.headers.get("host")) && !(remoteBrowserEnabled && roots.length > 0)) {
     return jsonError("Directory browsing is only available locally", 403);
   }

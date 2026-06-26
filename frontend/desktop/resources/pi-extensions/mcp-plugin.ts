@@ -75,15 +75,15 @@ function readTimeoutMs(name: string, fallback: number): number {
   return Number.isFinite(value) && value > 0 ? Math.trunc(value) : fallback;
 }
 
-const TOOL_TIMEOUT_MS = readTimeoutMs("VLLM_STUDIO_MCP_TOOL_TIMEOUT_MS", DEFAULT_TOOL_TIMEOUT_MS);
+const TOOL_TIMEOUT_MS = readTimeoutMs("LOCAL_STUDIO_MCP_TOOL_TIMEOUT_MS", DEFAULT_TOOL_TIMEOUT_MS);
 // Startup must tolerate a cold `npx -y <pkg>` / `uvx` download on first launch,
 // which routinely takes longer than a few seconds. Configurable so a slow link
 // can raise it further.
-const STARTUP_TIMEOUT_MS = readTimeoutMs("VLLM_STUDIO_MCP_STARTUP_TIMEOUT_MS", 20_000);
+const STARTUP_TIMEOUT_MS = readTimeoutMs("LOCAL_STUDIO_MCP_STARTUP_TIMEOUT_MS", 20_000);
 
 function readPluginConfigs(): McpPluginConfig[] {
   try {
-    const parsed = JSON.parse(process.env.VLLM_STUDIO_MCP_PLUGIN_CONFIGS || "[]") as unknown;
+    const parsed = JSON.parse(process.env.LOCAL_STUDIO_MCP_PLUGIN_CONFIGS || "[]") as unknown;
     if (!Array.isArray(parsed)) return [];
     return parsed.flatMap((entry) => {
       if (!entry || typeof entry !== "object") return [];
@@ -180,7 +180,7 @@ class McpClient {
       {
         protocolVersion: "2024-11-05",
         capabilities: {},
-        clientInfo: { name: "vllm-studio", version: "0.1.0" },
+        clientInfo: { name: "local-studio", version: "0.1.0" },
       },
       STARTUP_TIMEOUT_MS,
     );

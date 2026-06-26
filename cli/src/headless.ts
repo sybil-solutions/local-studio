@@ -30,14 +30,14 @@ const COMMANDS: Record<string, CommandHandler> = {
   launch: async () => {
     const id = process.argv[3];
     if (!id) {
-      console.error("Usage: vllm-studio launch <recipe-id>");
+      console.error("Usage: local-studio launch <recipe-id>");
       process.exit(1);
     }
     const ok = await api.launchRecipe(id);
     exitJson({ success: ok, recipe_id: id }, ok);
   },
   help: async () => {
-    console.log(`vllm-studio - Model lifecycle management CLI
+    console.log(`local-studio - Model lifecycle management CLI
 
 Commands:
   status    Show current model status
@@ -45,12 +45,12 @@ Commands:
   recipes   List available model recipes
   config    Show system configuration
   metrics   Show lifetime metrics
-  launch    Launch recipe: vllm-studio launch <id>
+  launch    Launch recipe: local-studio launch <id>
   evict     Stop running model
   help      Show this help
 
 Environment:
-  VLLM_STUDIO_URL  Controller URL (default: http://localhost:8080)
+  LOCAL_STUDIO_URL  Controller URL (default: http://localhost:8080)
 
 Notes:
   - Headless commands emit JSON on stdout when successful.
@@ -65,7 +65,7 @@ export async function runHeadless(): Promise<void> {
     const cmd = process.argv[2] || "help";
     const handler = COMMANDS[cmd];
     if (!handler) {
-      throw new Error(`Unknown command: ${cmd}\nRun 'vllm-studio help' for usage.`);
+      throw new Error(`Unknown command: ${cmd}\nRun 'local-studio help' for usage.`);
     }
 
     await handler();

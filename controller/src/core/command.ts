@@ -101,7 +101,7 @@ export const resolveBinary = (binaryName: string): string | null => {
   }
 
   const searchPaths: string[] = [];
-  const runtimeOverride = process.env["VLLM_STUDIO_RUNTIME_BIN"];
+  const runtimeOverride = process.env["LOCAL_STUDIO_RUNTIME_BIN"];
   const runtimeBin = runtimeOverride ?? (process.env["SNAP"] ? resolve(process.cwd(), "runtime", "bin") : null);
   if (runtimeBin && existsSync(runtimeBin)) {
     searchPaths.push(runtimeBin);

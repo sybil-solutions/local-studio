@@ -3,20 +3,20 @@ type DesktopUiPreferencesBridge = {
   saveUiPreferences?: (prefs: Record<string, string>) => Promise<void>;
 };
 
-const CONTROLLERS_STORAGE_KEY = "vllm-studio.controllers";
-const BACKEND_URL_STORAGE_KEY = "vllmstudio_backend_url";
+const CONTROLLERS_STORAGE_KEY = "local-studio.controllers";
+const BACKEND_URL_STORAGE_KEY = "localstudio_backend_url";
 const CONTROLLERS_CHANGED_EVENT = "vllm:controllers-changed";
 const BACKEND_URL_CHANGED_EVENT = "vllm:backend-url-changed";
 
 const DURABLE_EXACT_KEYS = new Set([
-  "vllm-studio-state",
-  "vllm-studio.customThemeTokens",
+  "local-studio-state",
+  "local-studio.customThemeTokens",
   CONTROLLERS_STORAGE_KEY,
-  "vllm-studio-setup-complete",
+  "local-studio-setup-complete",
   BACKEND_URL_STORAGE_KEY,
 ]);
 
-const DURABLE_KEY_PREFIXES = ["vllm-studio.", "vllm-studio-", "vllmstudio_", "vllm_studio_"];
+const DURABLE_KEY_PREFIXES = ["local-studio.", "local-studio-", "localstudio_", "local_studio_"];
 
 let saveTimer: number | null = null;
 
@@ -25,9 +25,9 @@ function bridge(): DesktopUiPreferencesBridge | null {
   return (
     (
       window as {
-        vllmStudioDesktop?: DesktopUiPreferencesBridge;
+        localStudioDesktop?: DesktopUiPreferencesBridge;
       }
-    ).vllmStudioDesktop ?? null
+    ).localStudioDesktop ?? null
   );
 }
 

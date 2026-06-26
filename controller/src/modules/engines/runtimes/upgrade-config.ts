@@ -8,12 +8,12 @@ const normalizeTextOrDefault = (envKey: string, fallbackValue: string): string =
   return value && value.length > 0 ? value : fallbackValue;
 };
 
-export const LLAMACPP_UPGRADE_ENV = "VLLM_STUDIO_LLAMACPP_UPGRADE_CMD";
-export const SGLANG_UPGRADE_ENV = "VLLM_STUDIO_SGLANG_UPGRADE_CMD";
-export const VLLM_UPGRADE_ENV = "VLLM_STUDIO_VLLM_UPGRADE_CMD";
-export const CUDA_UPGRADE_ENV = "VLLM_STUDIO_CUDA_UPGRADE_CMD";
-export const ROCM_UPGRADE_ENV = "VLLM_STUDIO_ROCM_UPGRADE_CMD";
-export const VLLM_UPGRADE_VERSION_ENV = "VLLM_STUDIO_VLLM_UPGRADE_VERSION";
+export const LLAMACPP_UPGRADE_ENV = "LOCAL_STUDIO_LLAMACPP_UPGRADE_CMD";
+export const SGLANG_UPGRADE_ENV = "LOCAL_STUDIO_SGLANG_UPGRADE_CMD";
+export const VLLM_UPGRADE_ENV = "LOCAL_STUDIO_VLLM_UPGRADE_CMD";
+export const CUDA_UPGRADE_ENV = "LOCAL_STUDIO_CUDA_UPGRADE_CMD";
+export const ROCM_UPGRADE_ENV = "LOCAL_STUDIO_ROCM_UPGRADE_CMD";
+export const VLLM_UPGRADE_VERSION_ENV = "LOCAL_STUDIO_VLLM_UPGRADE_VERSION";
 // Empty default means "upgrade the controller-owned runtime to the package
 // manager's latest vLLM" instead of showing a stale hard-coded target as if it
 // were the installed version.

@@ -153,8 +153,8 @@ export function useSettings() {
       setData(configData);
       setCompatibilityReport(compatibility);
       setBackendOnline(true);
-      if (typeof window !== "undefined" && !localStorage.getItem("vllm-studio-setup-complete")) {
-        localStorage.setItem("vllm-studio-setup-complete", "true");
+      if (typeof window !== "undefined" && !localStorage.getItem("local-studio-setup-complete")) {
+        localStorage.setItem("local-studio-setup-complete", "true");
       }
     } catch (e) {
       setError((e as Error).message);

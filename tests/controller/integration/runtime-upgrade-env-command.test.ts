@@ -11,11 +11,11 @@ import { registerControllerTestLifecycle, tempDir } from "./fixtures";
 registerControllerTestLifecycle();
 
 const UPGRADE_ENV_KEYS = [
-  "VLLM_STUDIO_VLLM_UPGRADE_CMD",
-  "VLLM_STUDIO_SGLANG_UPGRADE_CMD",
-  "VLLM_STUDIO_LLAMACPP_UPGRADE_CMD",
-  "VLLM_STUDIO_CUDA_UPGRADE_CMD",
-  "VLLM_STUDIO_ROCM_UPGRADE_CMD",
+  "LOCAL_STUDIO_VLLM_UPGRADE_CMD",
+  "LOCAL_STUDIO_SGLANG_UPGRADE_CMD",
+  "LOCAL_STUDIO_LLAMACPP_UPGRADE_CMD",
+  "LOCAL_STUDIO_CUDA_UPGRADE_CMD",
+  "LOCAL_STUDIO_ROCM_UPGRADE_CMD",
 ] as const;
 
 describe("runtime upgrade env-command path", () => {
@@ -29,7 +29,7 @@ describe("runtime upgrade env-command path", () => {
       process.env[key] = "true";
     }
     // The test lifecycle skips system python; allow it so vllm-runtime can find a python binary.
-    delete process.env.VLLM_STUDIO_RUNTIME_SKIP_SYSTEM;
+    delete process.env.LOCAL_STUDIO_RUNTIME_SKIP_SYSTEM;
   });
 
   afterEach(() => {

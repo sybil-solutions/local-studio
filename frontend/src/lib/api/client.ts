@@ -1,5 +1,5 @@
 /**
- * Default API client singleton for the vLLM Studio controller.
+ * Default API client singleton for the Local Studio controller.
  */
 import { createApiClient } from "./create-api-client";
 import { resolveApiServerBaseUrl } from "./connection";

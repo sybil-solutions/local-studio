@@ -6,6 +6,6 @@
   "ignore-binaries": [
     "bun",
     "bunx",
-    "vllm-studio"
+    "local-studio"
   ]
 }

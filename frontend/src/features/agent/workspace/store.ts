@@ -20,10 +20,10 @@ import type {
 
 export { isEmptyStarterTab } from "@/features/agent/workspace/pane-controller";
 
-export const PANE_LAYOUT_KEY = "vllm-studio.agent.paneLayout";
-export const PANE_STATE_KEY = "vllm-studio.agent.paneState";
-export const ACTIVE_AGENT_SESSIONS_SNAPSHOT_KEY = "vllm-studio.agent.activeSessions.snapshot";
-export const SESSION_PREFS_KEY = "vllm-studio.agent.sessionPrefs";
+export const PANE_LAYOUT_KEY = "local-studio.agent.paneLayout";
+export const PANE_STATE_KEY = "local-studio.agent.paneState";
+export const ACTIVE_AGENT_SESSIONS_SNAPSHOT_KEY = "local-studio.agent.activeSessions.snapshot";
+export const SESSION_PREFS_KEY = "local-studio.agent.sessionPrefs";
 
 export type WorkspaceStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">;
 

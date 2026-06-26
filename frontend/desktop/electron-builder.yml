@@ -1,5 +1,5 @@
-appId: org.vllm.studio.desktop
-productName: vLLM Studio
+appId: org.local.studio.desktop
+productName: Local Studio
 asar: true
 
 # Postflight guard: assert the packed app actually contains the embedded Next

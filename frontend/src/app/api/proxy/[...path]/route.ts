@@ -2,10 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { getApiSettings } from "@/lib/services/settings-service";
 import { getUpstreamTimeoutMs } from "./proxy-timeouts";
 
-const OVERRIDE_ALLOWLIST_ENV_KEY = "VLLM_STUDIO_PROXY_OVERRIDE_ALLOWLIST";
-const PROXY_ACCESS_LOGS_ENABLED = process.env.VLLM_STUDIO_PROXY_ACCESS_LOGS === "true";
+const OVERRIDE_ALLOWLIST_ENV_KEY = "LOCAL_STUDIO_PROXY_OVERRIDE_ALLOWLIST";
+const PROXY_ACCESS_LOGS_ENABLED = process.env.LOCAL_STUDIO_PROXY_ACCESS_LOGS === "true";
 const PROXY_ERROR_LOG_THROTTLE_MS = 30_000;
-const CLEAR_BACKEND_OVERRIDE_COOKIE = "vllmstudio_backend_url=; Path=/; Max-Age=0; SameSite=Lax";
+const CLEAR_BACKEND_OVERRIDE_COOKIE = "localstudio_backend_url=; Path=/; Max-Age=0; SameSite=Lax";
 const proxyErrorLogTimes = new Map<string, number>();
 
 type ClientInfo = { ip: string; country: string; ua: string };
@@ -114,7 +114,7 @@ function getTrustedOverrideOrigins(defaultBackendUrl: string): Set<string> {
 // https://attacker.example) receive the configured bearer key.
 function isTrustedOverride(urlString: string, defaultBackendUrl: string): boolean {
   // Desktop app (Electron) runs entirely locally — trust private targets.
-  if (process.env.VLLM_STUDIO_DATA_DIR) return true;
+  if (process.env.LOCAL_STUDIO_DATA_DIR) return true;
 
   const targetOrigin = normalizeOrigin(urlString);
   if (!targetOrigin) return false;
@@ -137,7 +137,7 @@ function blockedHeaderOverrideResponse(): NextResponse {
   return NextResponse.json(
     {
       error:
-        "Backend override blocked: private/local addresses must be allowlisted via VLLM_STUDIO_PROXY_OVERRIDE_ALLOWLIST",
+        "Backend override blocked: private/local addresses must be allowlisted via LOCAL_STUDIO_PROXY_OVERRIDE_ALLOWLIST",
     },
     {
       status: 403,
@@ -154,7 +154,7 @@ async function resolveProxyTarget(
   const overrideHeaderUrl = normalizeBackendUrl(request.headers.get("x-backend-url"));
   const strictOverride = request.headers.get("x-backend-strict") === "1";
   const overrideCookieUrl = normalizeBackendUrl(
-    request.cookies.get("vllmstudio_backend_url")?.value ?? null,
+    request.cookies.get("localstudio_backend_url")?.value ?? null,
   );
   const defaultBackendUrl = normalizeBackendUrl(settings.backendUrl) ?? settings.backendUrl;
   let overrideUrl = overrideHeaderUrl ?? overrideCookieUrl;

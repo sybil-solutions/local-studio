@@ -1,4 +1,4 @@
-// Canvas tool extension for vLLM Studio.
+// Canvas tool extension for Local Studio.
 //
 // Gives Pi a shared scratchboard it can read and update. The renderer also
 // edits this same document through /api/agent/canvas, so the human and model
@@ -12,7 +12,7 @@ type ToolResult = {
   details: Record<string, unknown>;
 };
 
-const FRONTEND_BASE = process.env.VLLM_STUDIO_FRONTEND_BASE ?? "http://127.0.0.1:3000";
+const FRONTEND_BASE = process.env.LOCAL_STUDIO_FRONTEND_BASE ?? "http://127.0.0.1:3000";
 const CANVAS_TOOL_TIMEOUT_MS = 20_000;
 
 function result(text: string, details: Record<string, unknown> = {}): ToolResult {
@@ -47,7 +47,7 @@ export default function registerCanvasExtension(pi: ExtensionAPI) {
     name: "canvas_read",
     label: "Canvas: Read",
     description:
-      "Read the shared vLLM Studio canvas scratchboard. Use it to pick up notes left by the human or previous model steps.",
+      "Read the shared Local Studio canvas scratchboard. Use it to pick up notes left by the human or previous model steps.",
     parameters: Type.Object({}),
     async execute(_id, _params, signal) {
       try {
@@ -64,7 +64,7 @@ export default function registerCanvasExtension(pi: ExtensionAPI) {
     name: "canvas_write",
     label: "Canvas: Write",
     description:
-      "Replace the shared vLLM Studio canvas scratchboard with concise notes, plans, links, or state the human and model should both see.",
+      "Replace the shared Local Studio canvas scratchboard with concise notes, plans, links, or state the human and model should both see.",
     parameters: Type.Object({
       text: Type.String({ description: "Full replacement canvas text" }),
     }),
@@ -82,7 +82,7 @@ export default function registerCanvasExtension(pi: ExtensionAPI) {
   pi.registerTool({
     name: "canvas_append",
     label: "Canvas: Append",
-    description: "Append a short note to the shared vLLM Studio canvas scratchboard.",
+    description: "Append a short note to the shared Local Studio canvas scratchboard.",
     parameters: Type.Object({
       text: Type.String({ description: "Text to append to the canvas" }),
     }),

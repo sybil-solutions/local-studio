@@ -189,7 +189,7 @@ export const registerStudioRoutes: RouteRegistrar = (app, context) => {
     const runtime = await getVllmRuntimeInfo();
     const disks = [getDiskInfo(context.config.data_dir), getDiskInfo(context.config.models_dir)];
     return ctx.json({
-      app_version: process.env["VLLM_STUDIO_VERSION"] ?? "dev",
+      app_version: process.env["LOCAL_STUDIO_VERSION"] ?? "dev",
       timestamp: new Date().toISOString(),
       platform: platform(),
       arch: arch(),

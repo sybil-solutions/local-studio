@@ -272,7 +272,7 @@ test("active-session broadcasts persist before the event and dedup by content", 
   const order: string[] = [];
   const originalSet = storage.setItem.bind(storage);
   storage.setItem = (key, value) => {
-    if (key === "vllm-studio.agent.activeSessions.snapshot") order.push("persist");
+    if (key === "local-studio.agent.activeSessions.snapshot") order.push("persist");
     originalSet(key, value);
   };
   harness.window.addEventListener(ACTIVE_AGENT_SESSIONS_EVENT, () => order.push("event"));

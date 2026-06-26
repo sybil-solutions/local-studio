@@ -1,5 +1,5 @@
 # Infrastructure services only — provisions remote-host infra (postgres,
-# consumed by litellm on that host). The vLLM Studio app itself does not
+# consumed by litellm on that host). The Local Studio app itself does not
 # consume postgres.
 # Controller and frontend run natively on the host (not in Docker)
 # because they need nvidia-smi access and host process visibility.
@@ -7,7 +7,7 @@
 services:
   postgres:
     image: postgres:16
-    container_name: vllm-studio-postgres
+    container_name: local-studio-postgres
     # Bind to loopback only — the native controller connects from the same host.
     # Do not expose Postgres on all interfaces.
     ports:
@@ -16,7 +16,7 @@ services:
       - POSTGRES_USER=${POSTGRES_USER:-postgres}
       # Set POSTGRES_PASSWORD in .env.local; the default is for local dev only.
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
-      - POSTGRES_DB=${POSTGRES_DB:-vllm_studio}
+      - POSTGRES_DB=${POSTGRES_DB:-local_studio}
     volumes:
       - ./data/postgres:/var/lib/postgresql/data
     restart: unless-stopped

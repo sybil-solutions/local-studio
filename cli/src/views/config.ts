@@ -26,8 +26,8 @@ export function renderConfig(state: AppState): string {
   lines.push('');
 
   lines.push(c.bold('  Environment'));
-  const url = process.env.VLLM_STUDIO_URL || 'http://localhost:8080';
-  lines.push(`    VLLM_STUDIO_URL: ${c.dim(url)}`);
+  const url = process.env.LOCAL_STUDIO_URL || 'http://localhost:8080';
+  lines.push(`    LOCAL_STUDIO_URL: ${c.dim(url)}`);
 
   return lines.join('\n');
 }

@@ -24,7 +24,7 @@ import type {
 // runtime engine consume it).
 type TranscriptStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">;
 
-export const TRANSCRIPT_CACHE_KEY = "vllm-studio.agent.transcripts.v1";
+export const TRANSCRIPT_CACHE_KEY = "local-studio.agent.transcripts.v1";
 
 // Sizes are approximated by JSON string length (char count) — a cheap,
 // deterministic proxy that keeps us comfortably under the ~5MB localStorage

@@ -136,7 +136,7 @@ export const appendExtraArguments = (
  * `glm-5-2-504b-term` recipe from booting).
  *
  * Behaviour:
- *   - Unknown keys are dropped unless `VLLM_STUDIO_ALLOW_UNKNOWN_VLLM_EXTRA_ARGS`
+ *   - Unknown keys are dropped unless `LOCAL_STUDIO_ALLOW_UNKNOWN_VLLM_EXTRA_ARGS`
  *     is set to `true` (escape hatch for forked vLLM builds outside the
  *     allowlist).
  *   - Each drop is logged via `logger` (or `console.warn` as a fallback) so the
@@ -149,7 +149,7 @@ export const appendVllmExtraArguments = (
   extraArguments: Record<string, unknown>,
   logger?: Logger,
 ): string[] => {
-  const allowUnknown = process.env["VLLM_STUDIO_ALLOW_UNKNOWN_VLLM_EXTRA_ARGS"] === "true";
+  const allowUnknown = process.env["LOCAL_STUDIO_ALLOW_UNKNOWN_VLLM_EXTRA_ARGS"] === "true";
   if (allowUnknown) {
     return appendExtraArguments(command, extraArguments);
   }
@@ -163,14 +163,14 @@ export const appendVllmExtraArguments = (
       filtered[key] = value;
     }
   }
-  const strict = process.env["VLLM_STUDIO_STRICT_VLLM_EXTRA_ARGS"] === "true";
+  const strict = process.env["LOCAL_STUDIO_STRICT_VLLM_EXTRA_ARGS"] === "true";
   for (const key of unknown) {
     const noteLike = looksLikeNotesKey(key);
     const detail: Record<string, unknown> = {
       key,
       hint: noteLike
         ? "vLLM has no such flag; store notes under recipe.description or recipe.metadata"
-        : "Add the flag to KNOWN_VLLM_EXTRA_ARG_KEYS in shared/contracts/engine-args.ts, or set VLLM_STUDIO_ALLOW_UNKNOWN_VLLM_EXTRA_ARGS=true as a temporary escape hatch",
+        : "Add the flag to KNOWN_VLLM_EXTRA_ARG_KEYS in shared/contracts/engine-args.ts, or set LOCAL_STUDIO_ALLOW_UNKNOWN_VLLM_EXTRA_ARGS=true as a temporary escape hatch",
     };
     if (logger) {
       if (strict) {
@@ -248,7 +248,7 @@ const getLaunchCommandOverride = (recipe: Recipe): string[] | null => {
   // A recipe launch_command/custom_command is arbitrary-binary execution as the
   // controller user. Honour it only when the operator has opted in; otherwise
   // ignore the override and build the command from the structured recipe fields.
-  if (process.env["VLLM_STUDIO_ALLOW_CUSTOM_LAUNCH_COMMAND"] !== "true") {
+  if (process.env["LOCAL_STUDIO_ALLOW_CUSTOM_LAUNCH_COMMAND"] !== "true") {
     return null;
   }
   const command = splitLaunchCommand(override);
@@ -312,8 +312,8 @@ const buildDockerEnvFlags = (recipe: Recipe): string[] => {
  * port directly, and a per-recipe named volume persists the JIT compile cache.
  */
 export const wrapVllmInDocker = (recipe: Recipe, image: string, inner: string[]): string[] => {
-  const name = `vllm-studio-${sanitizeDockerName(recipe.id)}`;
-  const jitVolume = `vllm-studio-jit-${sanitizeDockerName(recipe.id)}`;
+  const name = `local-studio-${sanitizeDockerName(recipe.id)}`;
+  const jitVolume = `local-studio-jit-${sanitizeDockerName(recipe.id)}`;
   const model = recipe.model_path;
   const flags = [
     "docker",

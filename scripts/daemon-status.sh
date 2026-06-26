@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-PID_FILE="${VLLM_STUDIO_PID_FILE:-$ROOT/data/controller.pid}"
+PID_FILE="${LOCAL_STUDIO_PID_FILE:-$ROOT/data/controller.pid}"
 
 if [ ! -f "$PID_FILE" ]; then
   echo "Controller not running."

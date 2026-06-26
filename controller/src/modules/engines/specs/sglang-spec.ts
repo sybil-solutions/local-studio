@@ -167,7 +167,7 @@ const probeBinary = async (binary: string): Promise<BinaryProbeResult> => {
  * venv, explicit env overrides, and the system sglang binary's shebang.
  */
 const resolvePythonPath = (): string | null => {
-  const explicit = process.env["VLLM_STUDIO_SGLANG_PYTHON"]?.trim();
+  const explicit = process.env["LOCAL_STUDIO_SGLANG_PYTHON"]?.trim();
   if (explicit && existsSync(explicit)) return explicit;
 
   const managedCandidates = [

@@ -1,11 +1,11 @@
 ---
 name: plan
-description: Shared task plan between the human and the model in vLLM Studio. Use it to maintain a Cursor-style checklist for any multi-step task so the human can watch progress live in the Plan panel. Always use the plan tools for this instead of writing a plan to a Markdown file in the workspace.
+description: Shared task plan between the human and the model in Local Studio. Use it to maintain a Cursor-style checklist for any multi-step task so the human can watch progress live in the Plan panel. Always use the plan tools for this instead of writing a plan to a Markdown file in the workspace.
 ---
 
 # Plan
 
-The plan is a single Markdown checklist that the user sees and can edit live in the right-hand "Plan" panel of vLLM Studio. It is **shared** state: anything you write is rendered immediately as a checklist, and status the user toggles in the panel is visible to you on your next read.
+The plan is a single Markdown checklist that the user sees and can edit live in the right-hand "Plan" panel of Local Studio. It is **shared** state: anything you write is rendered immediately as a checklist, and status the user toggles in the panel is visible to you on your next read.
 
 Two tools are available:
 

@@ -9,7 +9,7 @@ import { migrateLegacyUserData } from "../desktop/logic/user-data-migration";
 test("desktop legacy user-data migration copies missing state without overwriting canonical state", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "vllm-userdata-migrate-"));
   const legacyDir = path.join(root, "frontend");
-  const targetDir = path.join(root, "vLLM Studio");
+  const targetDir = path.join(root, "Local Studio");
 
   mkdirSync(path.join(legacyDir, "Local Storage"), { recursive: true });
   mkdirSync(path.join(legacyDir, "mcp"), { recursive: true });

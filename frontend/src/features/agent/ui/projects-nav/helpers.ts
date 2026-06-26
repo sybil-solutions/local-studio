@@ -10,7 +10,7 @@ import { ADD_PROJECT_EVENT, SESSIONS_CHANGED_EVENT } from "@/lib/workspace-event
 import type { Project as ProjectEntry } from "@/features/agent/projects/types";
 import type { ActiveAgentSession, SessionSummary } from "./types";
 
-const SESSION_NAV_TITLE_PREFIX = "vllm-studio.agent.sessionNavTitle:";
+const SESSION_NAV_TITLE_PREFIX = "local-studio.agent.sessionNavTitle:";
 
 export function setAgentSessionDragData(
   event: DragEvent,

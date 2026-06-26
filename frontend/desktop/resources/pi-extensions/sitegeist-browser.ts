@@ -1,9 +1,9 @@
-// Sitegeist browser tool extension for vLLM Studio.
+// Sitegeist browser tool extension for Local Studio.
 //
 // Registers Pi `sitegeist_*` tools that each make one HTTP JSON-RPC 2.0 call to
 // the local sitegeist relay (`${SITEGEIST_RELAY_URL}/rpc`), which forwards to the
 // sitegeist Chrome extension over WebSocket. Enable through
-// VLLM_STUDIO_BROWSER_BACKEND=sitegeist while the browser tool toggle is on.
+// LOCAL_STUDIO_BROWSER_BACKEND=sitegeist while the browser tool toggle is on.
 // Protocol: docs/sitegeist-relay-protocol.md.
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
@@ -22,7 +22,9 @@ const DEFAULT_TIMEOUT_MS = 120_000;
 const RELAY_URL = (process.env.SITEGEIST_RELAY_URL || DEFAULT_RELAY_URL).replace(/\/+$/, "");
 const RELAY_TOKEN = process.env.SITEGEIST_RELAY_TOKEN ?? "";
 const RELAY_SESSION_ID =
-  process.env.SITEGEIST_RELAY_SESSION_ID || process.env.VLLM_STUDIO_BROWSER_SESSION_ID || "default";
+  process.env.SITEGEIST_RELAY_SESSION_ID ||
+  process.env.LOCAL_STUDIO_BROWSER_SESSION_ID ||
+  "default";
 const TIMEOUT_MS = (() => {
   const value = Number(process.env.SITEGEIST_RELAY_TOOL_TIMEOUT_MS);
   return Number.isFinite(value) && value > 0 ? Math.trunc(value) : DEFAULT_TIMEOUT_MS;
@@ -238,7 +240,9 @@ async function relayCapabilities(): Promise<Set<string> | null> {
     const controller = new AbortController();
     const result = await callRelay("relay.capabilities", {}, controller.signal);
     const methods = (result as { methods?: unknown })?.methods;
-    return Array.isArray(methods) ? new Set(methods.filter((m): m is string => typeof m === "string")) : null;
+    return Array.isArray(methods)
+      ? new Set(methods.filter((m): m is string => typeof m === "string"))
+      : null;
   } catch {
     return null;
   }
