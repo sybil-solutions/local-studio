@@ -40,6 +40,6 @@ This addendum introduces commit hygiene rules for agent execution.
 - `PiSdkSession` sets `resourceLoaderOptions.noExtensions = true`; only
   first-party extension paths returned by `buildAgentSessionOptions` are loaded
   through `additionalExtensionPaths`.
-- MCP servers are selected through `/api/agent/plugins`, discovered from the
+- MCP servers are selected through `/api/mcp/servers`, discovered from the
   local MCP store, and bridged by `desktop/resources/pi-extensions/mcp-plugin.ts`.
   Keep new tool integrations behind that MCP store/settings path.

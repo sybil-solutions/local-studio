@@ -11,6 +11,7 @@ import {
   SettingsInput,
   SettingsNotice,
   SettingsRow,
+  SettingsTextarea,
   StatusPill,
   UiModal,
   UiModalHeader,
@@ -23,7 +24,7 @@ import {
   parseArgsText,
 } from "./plugins-utils";
 
-export function RegistryRow({
+export function CuratedMcpRow({
   entry,
   added,
   busy,
@@ -36,7 +37,6 @@ export function RegistryRow({
   compact?: boolean;
   onConfigure: () => void;
 }) {
-  const source = registryLabel(entry);
   const actionLabel = isManagedOAuthEntry(entry)
     ? added
       ? "Reconnect"
@@ -53,9 +53,9 @@ export function RegistryRow({
       description={compact ? (entry.shortDescription ?? entry.description) : entry.description}
       value={
         <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-          <StatusPill tone={registryTone(entry)} variant="badge">
+          <StatusPill tone={curatedTone()} variant="badge">
             <ShieldCheck className="mr-1 h-3 w-3" />
-            {source}
+            Curated
           </StatusPill>
           <StatusPill variant="badge">{entry.category}</StatusPill>
           {(entry.tags ?? []).slice(0, compact ? 2 : 4).map((tag) => (
@@ -67,14 +67,14 @@ export function RegistryRow({
       }
       actions={
         <>
-          {entry.homepage || entry.registryUrl || entry.repositoryUrl ? (
+          {entry.homepage || entry.repositoryUrl ? (
             <a
-              href={entry.registryUrl ?? entry.homepage ?? entry.repositoryUrl}
+              href={entry.homepage ?? entry.repositoryUrl}
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex h-7 items-center justify-center rounded-md px-2 text-(--ui-muted) transition-colors hover:bg-(--ui-hover) hover:text-(--ui-fg)"
-              aria-label={`Open registry profile for ${entry.displayName}`}
-              title={`Open registry profile for ${entry.displayName}`}
+              aria-label={`Open docs for ${entry.displayName}`}
+              title={`Open docs for ${entry.displayName}`}
             >
               <ExternalLink className="h-3.5 w-3.5" />
             </a>
@@ -90,6 +90,39 @@ export function RegistryRow({
         </>
       }
     />
+  );
+}
+
+export function McpJsonConfigPanel({
+  configText,
+  busy,
+  onChange,
+  onSave,
+}: {
+  configText: string;
+  busy: boolean;
+  onChange: (value: string) => void;
+  onSave: () => void;
+}) {
+  return (
+    <SettingsGroup
+      title="MCP JSON"
+      description="Edit the canonical mcp_servers config directly. Save regenerates the runtime .mcp.json files used by agent turns."
+      actions={
+        <SettingsButton tone="primary" onClick={onSave} disabled={busy || !configText.trim()}>
+          Save JSON
+        </SettingsButton>
+      }
+    >
+      <SettingsTextarea
+        value={configText}
+        onChange={onChange}
+        rows={14}
+        focusTone="info"
+        className="font-mono text-[length:var(--fs-xs)]"
+        placeholder={'{\n  "version": 1,\n  "mcp_servers": {}\n}'}
+      />
+    </SettingsGroup>
   );
 }
 
@@ -140,8 +173,8 @@ export function ConfigureEntryPanel({
         title={entry.displayName}
         onClose={onCancel}
         actions={
-          <StatusPill tone={registryTone(entry)} variant="badge">
-            {registryLabel(entry)}
+          <StatusPill tone={curatedTone()} variant="badge">
+            Curated
           </StatusPill>
         }
       />
@@ -151,9 +184,8 @@ export function ConfigureEntryPanel({
             label="Command"
             description={
               entry.command
-                ? "Registry default can be adjusted before adding."
-                : (entry.unsupportedReason ??
-                  "Choose the local stdio launch command before adding this server.")
+                ? "Curated default can be adjusted before adding."
+                : "Choose the local stdio launch command before adding this server."
             }
             control={
               <SettingsInput
@@ -224,7 +256,7 @@ export function ConfigureEntryPanel({
             <EmptySafeNotice>
               {managedOAuthEnvCount
                 ? "No manual environment variables are needed."
-                : "No environment variables declared by the registry row."}
+                : "No environment variables declared by this curated server."}
             </EmptySafeNotice>
           )}
         </SettingsGroup>
@@ -245,14 +277,7 @@ export function ConfigureEntryPanel({
   );
 }
 
-function registryLabel(entry: CatalogueEntry): string {
-  if (entry.registry === "official") return "Official";
-  if (entry.registry === "custom") return entry.registryName ?? "Registry";
-  return "Curated";
-}
-
-function registryTone(entry: CatalogueEntry): "default" | "good" | "info" | "warning" | "danger" {
-  if (entry.registry === "custom") return "info";
+function curatedTone(): "default" | "good" | "info" | "warning" | "danger" {
   return "good";
 }
 

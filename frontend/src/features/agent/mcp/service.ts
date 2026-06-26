@@ -5,7 +5,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { MCP_CATALOGUE, findCatalogueEntry } from "@/features/agent/mcp/catalogue";
 import {
+  readMcpConfigText,
   removeServer,
+  saveMcpConfigText,
   setServerEnabled,
   setServerTags,
   upsertServer,
@@ -16,7 +18,7 @@ import type { McpServerDef } from "@/features/agent/mcp/types";
 // Re-export discovery so the snapshot/load routes import a single module.
 export { discoverMcpServers };
 
-// Shared handlers re-exported by both `/api/agent/plugins` and `/api/mcp/servers`.
+// Shared handlers for the `/api/mcp/servers` route.
 export function mcpServersGet(request: NextRequest) {
   const includeDisabled = request.nextUrl.searchParams.get("includeDisabled") === "1";
   return NextResponse.json(mcpSnapshot(includeDisabled));
@@ -31,7 +33,7 @@ export async function mcpServersPost(request: NextRequest) {
 export function mcpSnapshot(includeDisabled: boolean) {
   const all = discoverMcpServers();
   const servers = includeDisabled ? all : all.filter((row) => row.enabled);
-  return { servers, plugins: servers, catalogue: MCP_CATALOGUE };
+  return { servers, catalogue: MCP_CATALOGUE, configText: readMcpConfigText() };
 }
 
 export function mcpBadRequest(error: string) {
@@ -58,6 +60,8 @@ export function handleMcpAction(body: Record<string, unknown> | null) {
       return handleAddFromCatalogue(body);
     case "add_manual":
       return handleAddManual(body);
+    case "save_config":
+      return handleSaveConfig(body);
     default:
       return mcpBadRequest(`Unknown action: ${String(body.action)}.`);
   }
@@ -81,9 +85,11 @@ export function installManagedOAuthCatalogueServer(catalogueId: string) {
       transport: "stdio",
       command: entry.command,
       ...(entry.args?.length ? { args: entry.args } : {}),
+      ...(entry.cwd ? { cwd: entry.cwd } : {}),
       env: entry.env,
+      ...(entry.tools ? { tools: entry.tools } : {}),
     },
-    "marketplace",
+    "curated",
   );
   return mcpOk();
 }
@@ -139,9 +145,11 @@ function handleAddFromCatalogue(body: Record<string, unknown>) {
       transport: "stdio",
       command: entry.command,
       args,
+      ...(entry.cwd ? { cwd: entry.cwd } : {}),
       ...(Object.keys(env).length ? { env } : {}),
+      ...(entry.tools ? { tools: entry.tools } : {}),
     },
-    "marketplace",
+    "curated",
   );
   return mcpOk();
 }
@@ -152,6 +160,17 @@ function handleAddManual(body: Record<string, unknown>) {
   if (!name || !command) return mcpBadRequest("add_manual requires { name, command }.");
   upsertServer(manualServerDef(body, name, command), "manual");
   return mcpOk();
+}
+
+function handleSaveConfig(body: Record<string, unknown>) {
+  const configText = typeof body.configText === "string" ? body.configText : "";
+  if (!configText.trim()) return mcpBadRequest("save_config requires { configText }.");
+  try {
+    saveMcpConfigText(configText);
+    return mcpOk();
+  } catch (error) {
+    return mcpBadRequest(error instanceof Error ? error.message : "Invalid MCP JSON.");
+  }
 }
 
 function manualServerDef(

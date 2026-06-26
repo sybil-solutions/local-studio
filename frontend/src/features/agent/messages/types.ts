@@ -39,7 +39,7 @@ export type ChatMessageAttachment = {
   path?: string;
   mode: "text" | "data-url" | "metadata";
   content: string;
-  previewKind?: "image" | "video" | "pdf" | "file";
+  previewKind?: "image" | "video" | "audio" | "pdf" | "file";
   previewUrl?: string;
 };
 

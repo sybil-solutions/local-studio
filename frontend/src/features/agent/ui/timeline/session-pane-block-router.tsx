@@ -317,6 +317,16 @@ function UserAttachmentPreview({ attachment }: { attachment: ChatMessageAttachme
       </figure>
     );
   }
+  if (attachment.previewKind === "audio" && attachment.previewUrl) {
+    return (
+      <figure className="rounded-md border border-(--border) bg-black/30 p-2" title={title}>
+        <audio src={attachment.previewUrl} className="w-full" controls />
+        <figcaption className="truncate pt-1 font-mono text-[length:var(--fs-xs)] text-(--dim)">
+          {attachment.name} · {size}
+        </figcaption>
+      </figure>
+    );
+  }
   if (attachment.previewKind === "pdf" && attachment.previewUrl) {
     return (
       <div

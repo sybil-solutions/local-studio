@@ -6,8 +6,6 @@ import { discoverMcpServers } from "@/features/agent/mcp/service";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-// Read the SKILL.md text under a server's skill dir (depth-bounded) so the
-// composer can attach the server's tool guidance when it's @-mentioned.
 function readSkillMarkdown(dir: string, maxChars = 8000): string | undefined {
   const chunks: string[] = [];
   const visit = (current: string, depth: number) => {
@@ -42,13 +40,13 @@ export async function GET(request: NextRequest) {
   const queryPath = request.nextUrl.searchParams.get("path") ?? "";
   if (!queryPath) return NextResponse.json({ error: "path is required" }, { status: 400 });
   const resolved = path.resolve(queryPath);
-  const plugin = discoverMcpServers().find(
+  const server = discoverMcpServers().find(
     (row) => row.path && path.resolve(row.path) === resolved,
   );
-  if (!plugin) return NextResponse.json({ error: "Server not found" }, { status: 404 });
+  if (!server) return NextResponse.json({ error: "Server not found" }, { status: 404 });
   const instructions =
-    plugin.skillPath && existsSync(plugin.skillPath)
-      ? readSkillMarkdown(plugin.skillPath)
+    server.skillPath && existsSync(server.skillPath)
+      ? readSkillMarkdown(server.skillPath)
       : undefined;
-  return NextResponse.json({ plugin: instructions ? { ...plugin, instructions } : plugin });
+  return NextResponse.json({ server: instructions ? { ...server, instructions } : server });
 }

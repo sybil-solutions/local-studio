@@ -127,7 +127,7 @@ function serverStatus(server: McpServer): NonNullable<SettingsFactRow["status"]>
       tone: "default",
     };
   }
-  const sourceLabel = server.source === "marketplace" ? "marketplace" : "manual";
+  const sourceLabel = server.source === "curated" ? "curated" : "manual";
   if (server.ready) {
     return {
       label: (

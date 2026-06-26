@@ -229,6 +229,7 @@ export function useComposerMentionRows({
 type ContextRow = ComposerPluginRef | ComposerSkillRef | ComposerPromptTemplateRef;
 type LoadedContextRow = {
   skill?: ComposerSkillRef;
+  server?: ComposerPluginRef;
   plugin?: ComposerPluginRef;
   template?: ComposerPromptTemplateRef;
 };
@@ -296,18 +297,20 @@ async function loadContextRow(row: ContextRow, kind: ComposerMention["kind"]): P
   const loaded = await jsonOrNull<LoadedContextRow>(loadEndpoint(kind, row.path));
   return loaded?.skill
     ? { ...row, ...loaded.skill, id: row.id }
-    : loaded?.plugin
-      ? { ...row, ...loaded.plugin, id: row.id }
-      : loaded?.template
-        ? { ...row, ...loaded.template, id: row.id }
-        : row;
+    : loaded?.server
+      ? { ...row, ...loaded.server, id: row.id }
+      : loaded?.plugin
+        ? { ...row, ...loaded.plugin, id: row.id }
+        : loaded?.template
+          ? { ...row, ...loaded.template, id: row.id }
+          : row;
 }
 
 function loadEndpoint(kind: ComposerMention["kind"], path: string): string {
   const encoded = encodeURIComponent(path);
   if (kind === "skill") return `/api/agent/skills/load?path=${encoded}`;
   if (kind === "promptTemplate") return `/api/agent/prompt-templates/load?path=${encoded}`;
-  return `/api/agent/plugins/load?path=${encoded}`;
+  return `/api/mcp/servers/load?path=${encoded}`;
 }
 
 function applySelectedContext(

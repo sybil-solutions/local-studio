@@ -113,6 +113,29 @@ test("oversized image attachments explain the inline image limit", async () => {
   assert.match(attachment.content, /only metadata is attached to the model/);
 });
 
+test("media attachments classify audio, video, and PDF previews", async () => {
+  const [audio, video, pdf] = await Promise.all([
+    createAttachment(
+      new File([new Uint8Array([1, 2, 3])], "tone.wav", { type: "audio/wav" }),
+    ),
+    createAttachment(
+      new File([new Uint8Array([4, 5, 6])], "clip.mp4", { type: "video/mp4" }),
+    ),
+    createAttachment(
+      new File([new Uint8Array([7, 8, 9])], "brief.pdf", {
+        type: "application/pdf",
+      }),
+    ),
+  ]);
+
+  assert.equal(audio.previewKind, "audio");
+  assert.equal(video.previewKind, "video");
+  assert.equal(pdf.previewKind, "pdf");
+  assert.match(audio.content, /Media preview is visible/);
+  assert.match(video.content, /Media preview is visible/);
+  assert.match(pdf.content, /PDF preview is visible/);
+});
+
 test("MCP plugin slash and at-mention context persist selected plugin state", () => {
   const slashMention = detectComposerMention(
     "/plugins browser",

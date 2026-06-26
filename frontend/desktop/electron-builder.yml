@@ -27,6 +27,7 @@ extraResources:
       # Never bundle runtime state into the shipped app — standalone/**/data can
       # contain api-settings.json (live API key) and pi-agent/auth.json.
       - "!**/data/**"
+      - "!**/dist-desktop/**"
       - "!**/*.log"
   - from: .next/static
     to: app/frontend/.next/standalone/.next/static
@@ -46,6 +47,10 @@ extraResources:
       - "**/*"
   - from: desktop/resources/pi-extensions
     to: desktop/resources/pi-extensions
+    filter:
+      - "**/*"
+  - from: desktop/resources/mcp
+    to: desktop/resources/mcp
     filter:
       - "**/*"
   - from: desktop/resources/skills

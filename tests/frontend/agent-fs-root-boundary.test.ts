@@ -13,6 +13,7 @@ import path from "node:path";
 import {
   listDirectory,
   readFileSnippet,
+  writeFileContent,
 } from "../../frontend/src/features/agent/fs-store";
 import {
   addProjectToStore,
@@ -41,7 +42,9 @@ describe("agent filesystem root boundary", () => {
 
   beforeEach(() => {
     originalProjectsFile = process.env.VLLM_STUDIO_PROJECTS_FILE;
-    const testDir = mkdtempSync(path.join(tmpdir(), "vllm-studio-agentfs-test-"));
+    const testDir = mkdtempSync(
+      path.join(tmpdir(), "vllm-studio-agentfs-test-"),
+    );
     projectDir = path.join(testDir, "project");
     projectsFile = path.join(testDir, "projects.json");
     mkdirSync(projectDir, { recursive: true });
@@ -73,8 +76,16 @@ describe("agent filesystem root boundary", () => {
     assert.equal(result.truncated, false);
   });
 
+  it("writes a file inside a registered project directory", async () => {
+    await writeFileContent(projectDir, "file.txt", "updated");
+    const result = await readFileSnippet(projectDir, "file.txt");
+    assert.equal(result.content, "updated");
+  });
+
   it("rejects an unregistered absolute cwd", async () => {
-    const otherDir = mkdtempSync(path.join(tmpdir(), "vllm-studio-agentfs-other-"));
+    const otherDir = mkdtempSync(
+      path.join(tmpdir(), "vllm-studio-agentfs-other-"),
+    );
     try {
       await rejectsWith(
         () => listDirectory(otherDir, ""),
@@ -88,6 +99,10 @@ describe("agent filesystem root boundary", () => {
   it("rejects traversal outside the project root", async () => {
     await rejectsWith(
       () => listDirectory(projectDir, ".."),
+      "Path escapes project root",
+    );
+    await rejectsWith(
+      () => writeFileContent(projectDir, "../outside.txt", "nope"),
       "Path escapes project root",
     );
   });

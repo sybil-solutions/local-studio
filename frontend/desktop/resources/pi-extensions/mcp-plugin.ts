@@ -9,6 +9,12 @@ type McpServerConfig = {
   args?: string[];
   cwd?: string;
   env?: Record<string, string>;
+  tools?: {
+    include?: string[];
+    exclude?: string[];
+    resources?: boolean;
+    prompts?: boolean;
+  };
 };
 
 // MCP servers can be launched from config the caller influences, so the child
@@ -137,7 +143,7 @@ class McpClient {
     // Resolve cwd "." (or any relative cwd) against the .mcp.json's own dir,
     // then resolve path-like commands against that cwd. Bare PATH executables
     // (e.g. "node", no separator) and absolute commands stay as-is.
-    const cwd = path.resolve(baseDir, config.cwd || ".");
+    const cwd = path.resolve(baseDir, expandHome(config.cwd || "."));
     const command = resolveServerCommand(config.command ?? "", cwd);
     this.child = spawn(command, config.args ?? [], {
       cwd,
@@ -294,6 +300,24 @@ function resolveServerCommand(command: string, cwd: string): string {
   return isPathLike ? path.resolve(cwd, command) : command;
 }
 
+function expandHome(value: string): string {
+  if (value === "~") return process.env.HOME || value;
+  if (value.startsWith("~/")) return path.join(process.env.HOME || "~", value.slice(2));
+  return value.replace(/\$\{HOME\}/g, process.env.HOME || "");
+}
+
+function filteredTools(serverConfig: McpServerConfig, tools: McpTool[]): McpTool[] {
+  const selection = serverConfig.tools;
+  if (!selection) return tools;
+  const include = new Set(selection.include ?? []);
+  const exclude = new Set(selection.exclude ?? []);
+  return tools.filter((tool) => {
+    if (include.size) return include.has(tool.name);
+    if (exclude.has(tool.name)) return false;
+    return true;
+  });
+}
+
 async function registerOneServer(
   pi: ExtensionAPI,
   plugin: McpPluginConfig,
@@ -315,7 +339,7 @@ async function registerOneServer(
       status.state = "failed";
       status.error = message;
     });
-    tools = await client.init();
+    tools = filteredTools(serverConfig, await client.init());
     process.once("exit", () => client.dispose());
     status.state = "ready";
     status.tools = tools.map((tool) => tool.name);

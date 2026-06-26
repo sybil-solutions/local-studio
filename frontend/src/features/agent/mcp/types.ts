@@ -3,7 +3,14 @@
 // where it came from). These replace the old multi-source plugin discovery:
 // every server here is a curated or user-added MCP server.
 
-export type McpServerSource = "marketplace" | "manual";
+export type McpServerSource = "curated" | "manual";
+
+export type McpToolSelection = {
+  include?: string[];
+  exclude?: string[];
+  resources?: boolean;
+  prompts?: boolean;
+};
 
 /**
  * A launchable stdio MCP server. `command`/`args`/`env`/`cwd` map 1:1 onto the
@@ -22,6 +29,7 @@ export type McpServerDef = {
   args?: string[];
   env?: Record<string, string>;
   cwd?: string;
+  tools?: McpToolSelection;
   /** Absolute path to a bundled skill dir (SKILL.md) describing the tools. */
   skillPath?: string;
 };
@@ -48,15 +56,11 @@ export type McpCatalogueEntry = {
   category: string;
   command: string;
   args?: string[];
+  cwd?: string;
   tags?: string[];
-  registry?: "curated" | "official" | "custom";
-  registryName?: string;
-  registrySourceId?: string;
-  registryUrl?: string;
   repositoryUrl?: string;
   attributes?: string[];
-  installable?: boolean;
-  unsupportedReason?: string;
+  tools?: McpToolSelection;
   /** Default env keys (value may be a placeholder the user replaces). */
   env?: Record<string, string>;
   /** Which env keys are mandatory before the server can launch. */
@@ -71,4 +75,24 @@ export type McpCatalogueEntry = {
   requiresTargetArg?: boolean;
   /** Optional homepage/docs link. */
   homepage?: string;
+};
+
+export type McpConfigServer = {
+  command: string;
+  args?: string[];
+  cwd?: string;
+  env?: Record<string, string>;
+  enabled?: boolean;
+  displayName?: string;
+  description?: string;
+  shortDescription?: string;
+  category?: string;
+  tags?: string[];
+  source?: McpServerSource;
+  tools?: McpToolSelection;
+};
+
+export type McpConfigFile = {
+  version: 1;
+  mcp_servers: Record<string, McpConfigServer>;
 };

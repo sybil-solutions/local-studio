@@ -1,21 +1,15 @@
-// MCP server discovery → PluginRow.
-//
-// Exposes only user-stored MCP servers (manual/marketplace) in the `PluginRow`
-// shape the rest of the app already consumes (composer catalogue, settings UI,
-// runtime ref). There is no filesystem scavenging of bundled desktop-control or
-// browser-control experiments here.
+// MCP server discovery.
 
 import { existsSync } from "node:fs";
 import { execFileSync } from "node:child_process";
+import path from "node:path";
 import { listStoredServers, serverConfigPath } from "@/features/agent/mcp/store";
 import type { McpServerDef } from "@/features/agent/mcp/types";
 
 /**
- * Row shape returned to clients. Mirrors the legacy PluginRow surface the
- * composer/settings already read (`name`, `mcpConfigPath`, `skillPath`,
- * `enabled`, …) so no consumer needs to change.
+ * Row shape returned to clients and used by the composer/runtime.
  */
-export type PluginRow = {
+export type McpServerRow = {
   id: string;
   name: string;
   displayName?: string;
@@ -34,16 +28,23 @@ export type PluginRow = {
 };
 
 /** Check whether a command binary is available on the system PATH. */
-function isCommandAvailable(command: string): boolean {
+function isCommandAvailable(command: string, cwd = "."): boolean {
   try {
     // `command -v` works on both macOS and Linux
-    execFileSync("command", ["-v", command], { stdio: "ignore", shell: true, timeout: 3_000 });
+    execFileSync("/bin/sh", ["-lc", 'command -v "$1"', "sh", command], {
+      stdio: "ignore",
+      timeout: 3_000,
+    });
     return true;
   } catch {
     // Try direct path check for absolute/relative paths
     if (command.includes("/") || command.includes("\\") || command.includes(".")) {
       try {
-        return existsSync(command);
+        const resolvedCwd = path.resolve(expandHome(cwd));
+        const resolvedCommand = path.isAbsolute(command)
+          ? command
+          : path.resolve(resolvedCwd, command);
+        return existsSync(resolvedCommand);
       } catch {
         return false;
       }
@@ -52,9 +53,15 @@ function isCommandAvailable(command: string): boolean {
   }
 }
 
-function storedRow(def: McpServerDef, source: string, enabled: boolean): PluginRow {
+function expandHome(value: string): string {
+  if (value === "~") return process.env.HOME || value;
+  if (value.startsWith("~/")) return path.join(process.env.HOME || "~", value.slice(2));
+  return value.replace(/\$\{HOME\}/g, process.env.HOME || "");
+}
+
+function storedRow(def: McpServerDef, source: string, enabled: boolean): McpServerRow {
   const configReady = existsSync(serverConfigPath(def.id));
-  const commandReady = isCommandAvailable(def.command);
+  const commandReady = isCommandAvailable(def.command, def.cwd);
   return {
     id: def.id,
     name: def.name,
@@ -73,7 +80,7 @@ function storedRow(def: McpServerDef, source: string, enabled: boolean): PluginR
   };
 }
 
-/** All installed MCP servers as PluginRows. */
-export function discoverMcpServers(): PluginRow[] {
+/** All installed MCP servers. */
+export function discoverMcpServers(): McpServerRow[] {
   return listStoredServers().map((entry) => storedRow(entry.def, entry.source, entry.enabled));
 }

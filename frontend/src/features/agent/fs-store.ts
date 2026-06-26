@@ -153,3 +153,15 @@ export async function readFileSnippet(
   }
   return { content: buf.toString("utf-8"), truncated: false, size: stats.size };
 }
+
+export async function writeFileContent(
+  rootCwd: string,
+  relPath: string,
+  content: string,
+): Promise<void> {
+  const root = resolveProjectRoot(rootCwd);
+  const target = ensureInside(root, path.resolve(root, relPath));
+  const stats = await fs.stat(target);
+  if (!stats.isFile()) throw new Error("Not a file");
+  await fs.writeFile(target, content, "utf8");
+}

@@ -13,7 +13,7 @@ export type ChatAttachment = {
   mode: "text" | "data-url" | "metadata";
   content: string;
   previewUrl?: string;
-  previewKind?: "image" | "video" | "pdf" | "file";
+  previewKind?: "image" | "video" | "audio" | "pdf" | "file";
 };
 
 export type ProjectFileAttachmentInput = {
@@ -55,6 +55,7 @@ export function imageInputFromAttachment(
 function previewKindFor(type: string): ChatAttachment["previewKind"] {
   if (type.startsWith("image/")) return "image";
   if (type.startsWith("video/")) return "video";
+  if (type.startsWith("audio/")) return "audio";
   if (type === "application/pdf") return "pdf";
   return "file";
 }
@@ -192,10 +193,9 @@ export async function createAttachment(file: File): Promise<ChatAttachment> {
   const type = file.type || "application/octet-stream";
   const path = getDesktopFilePath(file) ?? undefined;
   const previewKind = previewKindFor(type);
-  const previewUrl =
-    previewKind === "image" || previewKind === "video" || previewKind === "pdf"
-      ? objectUrlFor(file)
-      : undefined;
+  const previewUrl = ["image", "video", "audio", "pdf"].includes(previewKind ?? "")
+    ? objectUrlFor(file)
+    : undefined;
   if (isTextLike(file, name) && file.size <= MAX_INLINE_TEXT_ATTACHMENT_BYTES) {
     return {
       id,
@@ -234,7 +234,9 @@ export async function createAttachment(file: File): Promise<ChatAttachment> {
         ? `File is too large to inline; it is available on disk at ${path}.`
         : previewKind === "pdf"
           ? "PDF preview is visible in the chat UI, but only metadata is attached to the model."
-          : "File is too large to inline; only metadata is attached.";
+          : previewKind === "audio" || previewKind === "video"
+            ? "Media preview is visible in the chat UI, but only metadata is attached to the model."
+            : "File is too large to inline; only metadata is attached.";
   return {
     id,
     name,

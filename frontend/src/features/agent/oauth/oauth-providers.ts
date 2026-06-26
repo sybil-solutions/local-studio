@@ -58,6 +58,7 @@ export const OAUTH_PROVIDERS: OAuthProvider[] = [
       "https://www.googleapis.com/auth/gmail.readonly",
       "https://www.googleapis.com/auth/gmail.send",
       "https://www.googleapis.com/auth/gmail.modify",
+      "https://www.googleapis.com/auth/calendar",
     ],
     authParams: {
       access_type: "offline",
@@ -83,7 +84,7 @@ export const OAUTH_PROVIDERS: OAuthProvider[] = [
     refreshable: true,
     oidcEmail: true,
     description:
-      "Connect Google once. OAuth-capable MCP servers (Gmail, Workspace) use the refreshable token automatically; no plugin env or key fields are needed.",
+      "Connect Google once. OAuth-capable MCP servers (Gmail, Calendar, Workspace) use the refreshable token automatically; no plugin env or key fields are needed.",
   },
   {
     id: "github",
@@ -103,6 +104,23 @@ export const OAUTH_PROVIDERS: OAuthProvider[] = [
     accountField: "login",
     description:
       "Connect GitHub with OAuth instead of pasting a personal access token. The GitHub MCP server uses the connected token automatically.",
+  },
+  {
+    id: "huggingface",
+    displayName: "Hugging Face",
+    authEndpoint: "https://huggingface.co/oauth/authorize",
+    tokenEndpoint: "https://huggingface.co/oauth/token",
+    scopes: ["openid", "profile", "email", "read-repos", "inference-api"],
+    clientIdEnvVars: ["VLLM_STUDIO_HF_OAUTH_CLIENT_ID", "HF_OAUTH_CLIENT_ID"],
+    clientSecretEnvVars: ["VLLM_STUDIO_HF_OAUTH_CLIENT_SECRET", "HF_OAUTH_CLIENT_SECRET"],
+    envMapping: {
+      accessToken: "HF_TOKEN",
+    },
+    refreshable: false,
+    accountEndpoint: "https://huggingface.co/oauth/userinfo",
+    accountField: "preferred_username",
+    description:
+      "Connect Hugging Face once. The official Hugging Face MCP server receives the connected token automatically.",
   },
 ];
 

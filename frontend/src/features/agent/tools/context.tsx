@@ -555,9 +555,9 @@ async function loadToolsCatalogue(): Promise<{
   promptTemplates: ComposerPromptTemplateRef[];
 }> {
   const [plugins, skills, promptTemplates] = await Promise.all([
-    fetch("/api/agent/plugins?includeDisabled=1", { cache: "no-store" })
-      .then((res) => res.json() as Promise<{ plugins?: ComposerPluginRef[] }>)
-      .then((payload) => payload.plugins ?? [])
+    fetch("/api/mcp/servers?includeDisabled=1", { cache: "no-store" })
+      .then((res) => res.json() as Promise<{ servers?: ComposerPluginRef[] }>)
+      .then((payload) => payload.servers ?? [])
       .catch(() => [] as ComposerPluginRef[]),
     fetch("/api/agent/skills", { cache: "no-store" })
       .then((res) => res.json() as Promise<{ skills?: ComposerSkillRef[] }>)

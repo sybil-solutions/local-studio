@@ -9,7 +9,16 @@ import {
   type MutableRefObject,
   type SetStateAction,
 } from "react";
-import { Code, Monitor, Minus, MessageSquarePlus, PanelLeftOpen, Plus } from "@/ui/icon-registry";
+import {
+  Code,
+  Monitor,
+  Minus,
+  MessageSquarePlus,
+  PanelRightOpen,
+  Plus,
+  Save,
+  SquarePen,
+} from "@/ui/icon-registry";
 import { useAppStore } from "@/store";
 import { useTools } from "@/features/agent/tools/context";
 import type { FileOpenRequest } from "@/features/agent/tools/types";
@@ -19,16 +28,22 @@ import { RenderedPreview, previewKindForOpenFile } from "@/features/agent/ui/fil
 import { Breadcrumb, TreeFileList } from "@/features/agent/ui/filesystem-tree";
 
 type Props = { cwd: string | null };
+// The file browser intentionally keeps navigation, preview, comments, and edit
+// state together so a selected file behaves as one pane.
+// eslint-disable-next-line complexity
 export function FilesystemPanel({ cwd }: Props) {
   const [relPath, setRelPath] = useState("");
   const [entries, setEntries] = useState<FsEntry[]>([]);
   const [openFile, setOpenFile] = useState<string | null>(null);
   const [fileContent, setFileContent] = useState<string>("");
+  const [draftContent, setDraftContent] = useState<string>("");
   const [fileTruncated, setFileTruncated] = useState(false);
   const [fileSize, setFileSize] = useState(0);
   const [loadingFile, setLoadingFile] = useState(false);
+  const [savingFile, setSavingFile] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [comments, setComments] = useState<FileComment[]>([]);
-  const [viewMode, setViewMode] = useState<"preview" | "code">("code");
+  const [viewMode, setViewMode] = useState<"preview" | "code" | "edit">("code");
   const [searchQuery, setSearchQuery] = useState("");
   const [expandedDirs, setExpandedDirs] = useState<Set<string>>(new Set());
   const [dirChildren, setDirChildren] = useState<Map<string, FsEntry[]>>(new Map());
@@ -52,9 +67,11 @@ export function FilesystemPanel({ cwd }: Props) {
     setEntries,
     setOpenFile,
     setFileContent,
+    setDraftContent,
     setFileTruncated,
     setFileSize,
     setLoadingFile,
+    setSaveError,
     setComments,
     setSearchQuery,
     setExpandedDirs,
@@ -117,6 +134,37 @@ export function FilesystemPanel({ cwd }: Props) {
   );
   const lines = useMemo(() => fileContent.split("\n"), [fileContent]);
   const previewKind = useMemo(() => previewKindForOpenFile(openFile), [openFile]);
+  const dirty = draftContent !== fileContent;
+  const saveFile = useCallback(async () => {
+    if (!cwd || !openFile || fileTruncated) return;
+    setSavingFile(true);
+    setSaveError(null);
+    try {
+      const response = await fetch(
+        `/api/agent/fs/file?cwd=${encodeURIComponent(cwd)}&path=${encodeURIComponent(openFile)}`,
+        {
+          method: "PUT",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ content: draftContent }),
+        },
+      );
+      const payload = (await response.json()) as {
+        content?: string;
+        truncated?: boolean;
+        size?: number;
+        error?: string;
+      };
+      if (!response.ok || payload.error) throw new Error(payload.error || "Save failed.");
+      setFileContent(payload.content ?? draftContent);
+      setDraftContent(payload.content ?? draftContent);
+      setFileTruncated(payload.truncated ?? false);
+      setFileSize(payload.size ?? draftContent.length);
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : "Save failed.");
+    } finally {
+      setSavingFile(false);
+    }
+  }, [cwd, draftContent, fileTruncated, openFile]);
   const addComment = useCallback(
     async (line: number, body: string) => {
       if (!cwd || !openFile || !body.trim()) return;
@@ -167,9 +215,9 @@ export function FilesystemPanel({ cwd }: Props) {
     );
   }
   return (
-    <div className="relative flex h-full min-h-0 bg-(--color-panel)">
+    <div className="relative flex h-full min-h-0 flex-row-reverse bg-(--color-panel)">
       {fileListOpen ? (
-        <div className="flex w-[236px] shrink-0 flex-col border-r border-(--border)/80 bg-(--sidebar-bg)">
+        <div className="flex w-[236px] shrink-0 flex-col border-l border-(--border)/80 bg-(--sidebar-bg)">
           <div className="flex h-9 shrink-0 items-center border-b border-(--border)/80">
             <div className="min-w-0 flex-1">
               <Breadcrumb relPath={relPath} onRoot={() => setRelPath("")} />
@@ -227,24 +275,22 @@ export function FilesystemPanel({ cwd }: Props) {
         <button
           type="button"
           onClick={() => setFileListOpen(true)}
-          className="absolute left-2 top-2 z-20 inline-flex h-7 w-7 items-center justify-center rounded-md border border-(--border) bg-(--color-input) text-(--fg) shadow-[0_4px_16px_rgba(0,0,0,0.35)] hover:bg-(--hover)"
+          className="absolute right-2 top-2 z-20 inline-flex h-7 w-7 items-center justify-center rounded-md border border-(--border) bg-(--color-input) text-(--fg) shadow-[0_4px_16px_rgba(0,0,0,0.35)] hover:bg-(--hover)"
           title="Show file list"
           aria-label="Show file list"
         >
-          <PanelLeftOpen className="h-3.5 w-3.5" />
+          <PanelRightOpen className="h-3.5 w-3.5" />
         </button>
       ) : null}
       <div className="flex min-w-0 flex-1 flex-col">
-        {" "}
         {!openFile ? (
           <div className="flex h-full items-center justify-center text-[length:var(--fs-sm)] text-(--dim)">
             Select a file to view.
           </div>
         ) : fileTruncated ? (
           <div className="flex h-full flex-col items-center justify-center gap-1 text-center text-[length:var(--fs-sm)] text-(--dim)">
-            {" "}
             <span>Binary or too large to render</span>
-            <span className="font-mono">{(fileSize / 1024).toFixed(1)} KB</span>{" "}
+            <span className="font-mono">{(fileSize / 1024).toFixed(1)} KB</span>
           </div>
         ) : loadingFile ? (
           <div className="flex h-full items-center justify-center text-[length:var(--fs-sm)] text-(--dim)">
@@ -252,9 +298,9 @@ export function FilesystemPanel({ cwd }: Props) {
           </div>
         ) : (
           <>
-            {/* Toolbar: file name + view toggle + font size */}{" "}
+            {/* Toolbar: file name + view toggle + font size */}
             <div
-              className={`flex h-9 shrink-0 items-center justify-between gap-1 border-b border-(--border)/80 bg-(--color-header) px-2 ${fileListOpen ? "" : "pl-10"}`}
+              className={`flex h-9 shrink-0 items-center justify-between gap-1 border-b border-(--border)/80 bg-(--color-header) px-2 ${fileListOpen ? "" : "pr-10"}`}
             >
               <div className="min-w-0 flex-1 truncate font-mono text-[length:var(--fs-sm)] text-(--dim)">
                 {openFile}
@@ -271,6 +317,24 @@ export function FilesystemPanel({ cwd }: Props) {
                     {comments.length}
                   </button>
                 )}
+                <button
+                  type="button"
+                  onClick={() => setViewMode("edit")}
+                  className={`mr-1 inline-flex h-6 items-center gap-1 rounded-md border border-(--border)/80 bg-(--color-input) px-1.5 text-[length:var(--fs-xs)] ${viewMode === "edit" ? "text-(--fg)" : "text-(--dim) hover:text-(--fg)"}`}
+                  title="Edit file"
+                >
+                  <SquarePen className="h-3 w-3" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void saveFile()}
+                  disabled={!dirty || savingFile || fileTruncated}
+                  className="mr-1 inline-flex h-6 items-center gap-1 rounded-md border border-(--border)/80 bg-(--color-input) px-1.5 text-[length:var(--fs-xs)] text-(--dim) hover:text-(--fg) disabled:cursor-not-allowed disabled:opacity-40"
+                  title={dirty ? "Save file" : "No changes to save"}
+                >
+                  <Save className="h-3 w-3" />
+                  {savingFile ? "Saving" : "Save"}
+                </button>
                 {previewKind && (
                   <div className="mr-1 flex items-center gap-0.5 rounded-md border border-(--border)/80 bg-(--color-input) p-0.5">
                     <button
@@ -312,7 +376,20 @@ export function FilesystemPanel({ cwd }: Props) {
                 </div>
               </div>
             </div>
-            {previewKind && viewMode === "preview" ? (
+            {saveError ? (
+              <div className="border-b border-(--err)/30 bg-(--err)/10 px-2 py-1 text-[length:var(--fs-xs)] text-(--err)">
+                {saveError}
+              </div>
+            ) : null}
+            {viewMode === "edit" ? (
+              <textarea
+                value={draftContent}
+                onChange={(event) => setDraftContent(event.target.value)}
+                spellCheck={false}
+                className="min-h-0 flex-1 resize-none overflow-auto bg-(--bg) p-2 font-mono text-(--fg) outline-none"
+                style={{ fontSize, lineHeight: `${Math.round(fontSize * 1.5)}px` }}
+              />
+            ) : previewKind && viewMode === "preview" ? (
               <RenderedPreview content={fileContent} kind={previewKind} />
             ) : (
               <FileViewer
@@ -343,9 +420,11 @@ type UseFilesystemPanelEffectsParams = {
   setEntries: Dispatch<SetStateAction<FsEntry[]>>;
   setOpenFile: Dispatch<SetStateAction<string | null>>;
   setFileContent: Dispatch<SetStateAction<string>>;
+  setDraftContent: Dispatch<SetStateAction<string>>;
   setFileTruncated: Dispatch<SetStateAction<boolean>>;
   setFileSize: Dispatch<SetStateAction<number>>;
   setLoadingFile: Dispatch<SetStateAction<boolean>>;
+  setSaveError: Dispatch<SetStateAction<string | null>>;
   setComments: Dispatch<SetStateAction<FileComment[]>>;
   setSearchQuery: Dispatch<SetStateAction<string>>;
   setExpandedDirs: Dispatch<SetStateAction<Set<string>>>;
@@ -367,9 +446,11 @@ function useFilesystemPanelEffects({
   setEntries,
   setOpenFile,
   setFileContent,
+  setDraftContent,
   setFileTruncated,
   setFileSize,
   setLoadingFile,
+  setSaveError,
   setComments,
   setSearchQuery,
   setExpandedDirs,
@@ -387,6 +468,12 @@ function useFilesystemPanelEffects({
   const subscribeProjectReset = useCallback(() => {
     setRelPath("");
     setOpenFile(null);
+    setFileContent("");
+    setDraftContent("");
+    setFileTruncated(false);
+    setFileSize(0);
+    setSaveError(null);
+    setComments([]);
     setSearchQuery("");
     setExpandedDirs(new Set());
     setDirChildren(new Map());
@@ -394,9 +481,15 @@ function useFilesystemPanelEffects({
     return () => undefined;
   }, [
     cwd,
+    setComments,
     setDirChildren,
     setDirLoading,
+    setDraftContent,
     setExpandedDirs,
+    setFileContent,
+    setFileSize,
+    setFileTruncated,
+    setSaveError,
     setOpenFile,
     setRelPath,
     setSearchQuery,
@@ -447,13 +540,16 @@ function useFilesystemPanelEffects({
   const subscribeOpenFile = useCallback(() => {
     if (!cwd || !openFile) {
       setFileContent("");
+      setDraftContent("");
       setFileTruncated(false);
       setFileSize(0);
+      setSaveError(null);
       setComments([]);
       return () => undefined;
     }
     let cancelled = false;
     setLoadingFile(true);
+    setSaveError(null);
     (async () => {
       try {
         const [fileResponse, commentsResponse] = await Promise.all([
@@ -474,13 +570,16 @@ function useFilesystemPanelEffects({
         };
         const commentsBody = (await commentsResponse.json()) as { comments?: FileComment[] };
         if (cancelled) return;
-        setFileContent(fileBody.content ?? "");
+        const nextContent = fileBody.content ?? "";
+        setFileContent(nextContent);
+        setDraftContent(nextContent);
         setFileTruncated(fileBody.truncated ?? false);
         setFileSize(fileBody.size ?? 0);
         setComments(commentsBody.comments ?? []);
       } catch {
         if (!cancelled) {
           setFileContent("");
+          setDraftContent("");
           setComments([]);
         }
       } finally {
@@ -490,7 +589,17 @@ function useFilesystemPanelEffects({
     return () => {
       cancelled = true;
     };
-  }, [cwd, openFile, setComments, setFileContent, setFileSize, setFileTruncated, setLoadingFile]);
+  }, [
+    cwd,
+    openFile,
+    setComments,
+    setDraftContent,
+    setFileContent,
+    setFileSize,
+    setFileTruncated,
+    setLoadingFile,
+    setSaveError,
+  ]);
 
   useSyncExternalStore(subscribeCwdRef, getFilesystemPanelSnapshot, getFilesystemPanelSnapshot);
   useSyncExternalStore(

@@ -1,22 +1,15 @@
 "use client";
 
-import { effectInterval, effectTimeout } from "@/lib/effect-timers";
+import { effectInterval } from "@/lib/effect-timers";
 
 import { useCallback, useMemo, useState, useSyncExternalStore } from "react";
 import { AppPage, PageHeader, RefreshIconButton, SettingsNotice } from "@/ui";
 import { ConnectionsPanel } from "./plugins-connections";
+import { CuratedMcpSearchPanel } from "./plugins-curated-mcp-search";
 import { InstalledMcpServersPanel } from "./plugins-installed-servers";
 import { ManualMcpServerPanel } from "./plugins-manual-server";
-import { ConfigureEntryPanel } from "./plugins-page-parts";
-import { RegistrySearchPanel } from "./plugins-registry-search";
-import { RegistrySourcesPanel } from "./plugins-registry-sources";
-import {
-  type CatalogueEntry,
-  type McpServer,
-  type RegistryPayload,
-  type RegistrySource,
-  type ServersPayload,
-} from "./plugins-types";
+import { ConfigureEntryPanel, McpJsonConfigPanel } from "./plugins-page-parts";
+import { type CatalogueEntry, type McpServer, type ServersPayload } from "./plugins-types";
 import {
   oauthProviderIdForEntry,
   parseArgsText,
@@ -36,14 +29,12 @@ export function PluginsSettingsSection() {
 function PluginsManager({ mode }: { mode: "page" | "settings" }) {
   const [servers, setServers] = useState<McpServer[]>([]);
   const [catalogue, setCatalogue] = useState<CatalogueEntry[]>([]);
-  const [registry, setRegistry] = useState<CatalogueEntry[]>([]);
-  const [registrySources, setRegistrySources] = useState<RegistrySource[]>([]);
   const [search, setSearch] = useState("");
   const [busyId, setBusyId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [registryLoading, setRegistryLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [tagDrafts, setTagDrafts] = useState<Record<string, string>>({});
+  const [configText, setConfigText] = useState("");
   const [configureEntry, setConfigureEntry] = useState<CatalogueEntry | null>(null);
   const [configureCommand, setConfigureCommand] = useState("");
   const [configureArgs, setConfigureArgs] = useState("");
@@ -55,13 +46,11 @@ function PluginsManager({ mode }: { mode: "page" | "settings" }) {
   const [manualArgs, setManualArgs] = useState("");
   const [manualEnv, setManualEnv] = useState("");
   const [manualTags, setManualTags] = useState("custom");
-  const [registryOpen, setRegistryOpen] = useState(false);
-  const [registryName, setRegistryName] = useState("");
-  const [registryUrl, setRegistryUrl] = useState("");
 
   const applyServersPayload = useCallback((payload: ServersPayload) => {
-    setServers(payload.servers ?? payload.plugins ?? []);
+    setServers(payload.servers ?? []);
     setCatalogue(payload.catalogue ?? []);
+    if (typeof payload.configText === "string") setConfigText(payload.configText);
     if (payload.error) setError(payload.error);
   }, []);
 
@@ -80,25 +69,6 @@ function PluginsManager({ mode }: { mode: "page" | "settings" }) {
     }
   }, [applyServersPayload]);
 
-  const loadRegistry = useCallback(async () => {
-    setRegistryLoading(true);
-    try {
-      const response = await fetch(`/api/mcp/registry?q=${encodeURIComponent(search)}&limit=28`, {
-        cache: "no-store",
-      });
-      const payload = (await response.json()) as RegistryPayload;
-      if (!response.ok) throw new Error(payload.error || "Failed to search MCP registry.");
-      setRegistry(payload.entries ?? []);
-      setRegistrySources(payload.registries ?? []);
-      setError(payload.warnings?.length ? payload.warnings.join("; ") : null);
-    } catch (loadError) {
-      setRegistry([]);
-      setError(loadError instanceof Error ? loadError.message : "Failed to search MCP registry.");
-    } finally {
-      setRegistryLoading(false);
-    }
-  }, [search]);
-
   const subscribeServers = useCallback(
     (_notify: () => void) => {
       void loadServers();
@@ -107,16 +77,7 @@ function PluginsManager({ mode }: { mode: "page" | "settings" }) {
     [loadServers],
   );
 
-  const subscribeRegistry = useCallback(
-    (_notify: () => void) => {
-      const timer = effectTimeout(() => void loadRegistry(), 250);
-      return () => timer.cancel();
-    },
-    [loadRegistry],
-  );
-
   useSyncExternalStore(subscribeServers, getPluginsSnapshot, getPluginsSnapshot);
-  useSyncExternalStore(subscribeRegistry, getPluginsSnapshot, getPluginsSnapshot);
 
   const post = useCallback(
     async (body: unknown, busyKey: string) => {
@@ -140,46 +101,15 @@ function PluginsManager({ mode }: { mode: "page" | "settings" }) {
     [applyServersPayload],
   );
 
-  const postRegistry = useCallback(
-    async (body: unknown, busyKey: string) => {
-      setBusyId(busyKey);
-      setError(null);
-      try {
-        const response = await fetch("/api/mcp/registry", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify(body),
-        });
-        const payload = (await response.json()) as RegistryPayload;
-        if (!response.ok || payload.error) {
-          throw new Error(payload.error || "Registry update failed.");
-        }
-        setRegistrySources(payload.registries ?? []);
-        await loadRegistry();
-        return true;
-      } catch (postError) {
-        setError(postError instanceof Error ? postError.message : "Registry update failed.");
-        return false;
-      } finally {
-        setBusyId(null);
-      }
-    },
-    [loadRegistry],
-  );
-
   const enabledCount = servers.filter((server) => server.enabled).length;
   const installedNames = useMemo(
     () => new Set(servers.map((server) => server.name.toLowerCase())),
     [servers],
   );
-  const curated = catalogue.filter((entry) => entry.registry === "curated");
   const browseEntries = useMemo(() => {
     const query = search.trim().toLowerCase();
-    return dedupeEntries([
-      ...curated.filter((entry) => matchesEntrySearch(entry, query)),
-      ...registry,
-    ]);
-  }, [curated, registry, search]);
+    return catalogue.filter((entry) => matchesEntrySearch(entry, query));
+  }, [catalogue, search]);
 
   const beginConfigureEntry = (entry: CatalogueEntry) => {
     const providerId = oauthProviderIdForEntry(entry);
@@ -206,17 +136,13 @@ function PluginsManager({ mode }: { mode: "page" | "settings" }) {
     setConfigureEntry(entry);
     setConfigureCommand(entry.command || "");
     setConfigureArgs(quoteArgsText(entry.args ?? []));
-    setConfigureTags((entry.tags ?? [defaultRegistryTag(entry)]).join(", "));
+    setConfigureTags((entry.tags ?? [defaultCuratedTag(entry)]).join(", "));
     setConfigureEnv({ ...(entry.env ?? {}) });
   };
 
   const submitConfiguredEntry = () => {
     if (!configureEntry) return;
-    if (
-      configureEntry.registry === "curated" &&
-      configureEntry.command &&
-      configureCommand === configureEntry.command
-    ) {
+    if (configureEntry.command && configureCommand === configureEntry.command) {
       void post(
         {
           action: "add_from_catalogue",
@@ -241,18 +167,6 @@ function PluginsManager({ mode }: { mode: "page" | "settings" }) {
       },
       configureEntry.id,
     ).then(() => setConfigureEntry(null));
-  };
-
-  const submitRegistry = () => {
-    void postRegistry(
-      { action: "add_registry", name: registryName.trim(), url: registryUrl.trim() },
-      "registry:add",
-    ).then((ok) => {
-      if (!ok) return;
-      setRegistryOpen(false);
-      setRegistryName("");
-      setRegistryUrl("");
-    });
   };
 
   const submitManual = () => {
@@ -286,14 +200,13 @@ function PluginsManager({ mode }: { mode: "page" | "settings" }) {
 
   const refreshAll = useCallback(() => {
     void loadServers();
-    void loadRegistry();
-  }, [loadRegistry, loadServers]);
+  }, [loadServers]);
 
-  const layoutStatus = loading
-    ? "syncing servers"
-    : registryLoading
-      ? "searching registry"
-      : `${enabledCount} enabled`;
+  const saveMcpConfig = useCallback(() => {
+    void post({ action: "save_config", configText }, "mcp-config");
+  }, [configText, post]);
+
+  const layoutStatus = loading ? "syncing servers" : `${enabledCount} enabled`;
 
   const errorNotice = error ? (
     <SettingsNotice tone="danger" className="mb-4">
@@ -334,38 +247,18 @@ function PluginsManager({ mode }: { mode: "page" | "settings" }) {
         onCancel={() => setManualOpen(false)}
         onSubmit={submitManual}
       />
-      <RegistrySourcesPanel
-        sources={registrySources}
-        loading={registryLoading}
-        open={registryOpen}
-        name={registryName}
-        url={registryUrl}
-        busyId={busyId}
-        onToggleOpen={() => setRegistryOpen((open) => !open)}
-        onNameChange={setRegistryName}
-        onUrlChange={setRegistryUrl}
-        onCancel={() => setRegistryOpen(false)}
-        onSubmit={submitRegistry}
-        onToggleSource={(source) =>
-          void postRegistry(
-            {
-              action: "set_registry_enabled",
-              id: source.id,
-              enabled: !source.enabled,
-            },
-            `${source.id}:enabled`,
-          )
-        }
-        onRemoveSource={(source) =>
-          void postRegistry({ action: "remove_registry", id: source.id }, `${source.id}:remove`)
-        }
+      <McpJsonConfigPanel
+        configText={configText}
+        busy={busyId === "mcp-config"}
+        onChange={setConfigText}
+        onSave={saveMcpConfig}
       />
     </div>
   );
-  const registryPanel = (
-    <RegistrySearchPanel
+  const curatedPanel = (
+    <CuratedMcpSearchPanel
       entries={browseEntries}
-      loading={registryLoading}
+      loading={loading}
       search={search}
       installedNames={installedNames}
       busyId={busyId}
@@ -396,7 +289,7 @@ function PluginsManager({ mode }: { mode: "page" | "settings" }) {
         {errorNotice}
         <div className="space-y-5">
           {connectionsPanel}
-          {registryPanel}
+          {curatedPanel}
           {customPanel}
         </div>
         {configurePanel}
@@ -412,17 +305,13 @@ function PluginsManager({ mode }: { mode: "page" | "settings" }) {
           title="Plugins"
           status={layoutStatus}
           actions={
-            <RefreshIconButton
-              onClick={refreshAll}
-              loading={loading || registryLoading}
-              label="Refresh plugins"
-            />
+            <RefreshIconButton onClick={refreshAll} loading={loading} label="Refresh plugins" />
           }
         />
         {errorNotice}
         <div className="space-y-5">
           {connectionsPanel}
-          {registryPanel}
+          {curatedPanel}
           {customPanel}
         </div>
       </div>
@@ -432,10 +321,8 @@ function PluginsManager({ mode }: { mode: "page" | "settings" }) {
   );
 }
 
-function defaultRegistryTag(entry: CatalogueEntry): string {
-  if (entry.registry === "official") return "official-registry";
-  if (entry.registry === "custom") return "custom-registry";
-  return "curated";
+function defaultCuratedTag(entry: CatalogueEntry): string {
+  return entry.tags?.[0] ?? "curated";
 }
 
 function matchesEntrySearch(entry: CatalogueEntry, query: string): boolean {
@@ -450,27 +337,6 @@ function matchesEntrySearch(entry: CatalogueEntry, query: string): boolean {
   ]
     .filter((value): value is string => Boolean(value))
     .some((value) => value.toLowerCase().includes(query));
-}
-
-function dedupeEntries(entries: CatalogueEntry[]): CatalogueEntry[] {
-  const seen = new Set<string>();
-  return entries.filter((entry) => {
-    const key = entryDedupeKey(entry);
-    if (!key) return true;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
-}
-
-// Curated entries are listed before registry results, so collapsing by the
-// visible label keeps the vetted entry and drops registry rows that surface the
-// same server under a reverse-DNS name (e.g. "io.github.../filesystem-mcp").
-function entryDedupeKey(entry: CatalogueEntry): string {
-  return (entry.displayName || entry.name)
-    .toLowerCase()
-    .replace(/\(.*?\)/g, "")
-    .replace(/[^a-z0-9]+/g, "");
 }
 
 const getPluginsSnapshot = (): number => 0;

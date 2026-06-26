@@ -12,7 +12,7 @@ export type AgentComposerAttachment = {
   mode: "text" | "data-url" | "metadata";
   content: string;
   previewUrl?: string;
-  previewKind?: "image" | "video" | "pdf" | "file";
+  previewKind?: "image" | "video" | "audio" | "pdf" | "file";
 };
 
 export function AgentAttachmentTray({
@@ -67,6 +67,14 @@ function AttachmentPreview({ file }: { file: AgentComposerAttachment }) {
     return <video src={file.previewUrl} className="h-7 w-7 shrink-0 rounded object-cover" muted />;
   }
 
+  if (isRenderableAttachment(file) && file.previewKind === "audio") {
+    return (
+      <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded border border-(--border) bg-(--bg) font-mono text-[length:var(--fs-2xs)] text-(--fg)">
+        AUD
+      </span>
+    );
+  }
+
   return <FileIcon className="h-3 w-3 shrink-0" />;
 }
 
@@ -81,6 +89,9 @@ function isRenderableAttachment(
 ) {
   return Boolean(
     file.previewUrl &&
-    (file.previewKind === "image" || file.previewKind === "video" || file.previewKind === "pdf"),
+    (file.previewKind === "image" ||
+      file.previewKind === "video" ||
+      file.previewKind === "audio" ||
+      file.previewKind === "pdf"),
   );
 }
