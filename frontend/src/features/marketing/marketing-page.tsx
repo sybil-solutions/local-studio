@@ -26,32 +26,32 @@ type Screenshot = {
 const screenshots: Screenshot[] = [
   {
     src: "/marketing/screenshots/status-dashboard.png",
-    title: "Controller telemetry",
-    meta: "real vLLM Studio screenshot",
+    title: "Telemetry",
+    meta: "live app capture",
     alt: "vLLM Studio status dashboard showing controllers, decode metrics, VRAM, power, and GPU rows.",
   },
   {
     src: "/marketing/screenshots/discover-models.png",
-    title: "Model discovery",
-    meta: "real vLLM Studio screenshot",
+    title: "Models",
+    meta: "live app capture",
     alt: "vLLM Studio Discover Models screen showing searchable model rows and download actions.",
   },
   {
     src: "/marketing/screenshots/system-settings.png",
-    title: "Runtime settings",
-    meta: "real vLLM Studio screenshot",
+    title: "Runtime",
+    meta: "live app capture",
     alt: "vLLM Studio System settings showing installed inference engines and service topology.",
   },
   {
     src: "/marketing/screenshots/model-library.png",
-    title: "Hardware fit",
-    meta: "real vLLM Studio screenshot",
+    title: "Fit",
+    meta: "live app capture",
     alt: "vLLM Studio model library with hardware profile, model results, and downloads.",
   },
   {
     src: "/marketing/screenshots/plugins.png",
-    title: "Agent plugins",
-    meta: "real vLLM Studio screenshot",
+    title: "MCP",
+    meta: "live app capture",
     alt: "vLLM Studio Plugins page showing MCP custom server and registry source settings.",
   },
 ];
@@ -59,37 +59,37 @@ const screenshots: Screenshot[] = [
 const capabilities: Array<{ icon: LucideIcon; title: string; copy: string }> = [
   {
     icon: ServerCog,
-    title: "Controller-first operations",
-    copy: "Run one local controller or switch across GPU hosts. Status, launches, logs, usage, recipes, and proxy routes stay behind one clean control surface.",
+    title: "Controllers",
+    copy: "Local or remote. Same status, launch, logs, metrics, and proxy surface.",
   },
   {
     icon: HardDrive,
-    title: "Model lifecycle without ceremony",
-    copy: "Discover models, download weights, manage runtime targets, launch recipes, evict processes, and keep hardware fit visible before a model burns VRAM.",
+    title: "Models",
+    copy: "Find, fit, download, launch, evict. VRAM stays visible.",
   },
   {
     icon: PlugZap,
-    title: "Agents with MCP routing",
-    copy: "The agent surface uses the Pi runtime and local MCP registry so tools, skills, prompt templates, browser control, and project state are all reachable from the same workspace.",
+    title: "Agents",
+    copy: "Pi runtime, MCP tools, skills, browser, files, project state.",
   },
 ];
 
 const downloads = [
   {
-    title: "macOS Apple Silicon DMG",
-    copy: "Signed desktop app bundle packaged from this repo's current v0.2.9 arm64 artifact.",
+    title: "Mac DMG",
+    copy: "Apple Silicon desktop build.",
     href: "/api/downloads/mac-dmg",
     meta: ["macOS", "arm64", "DMG"],
   },
   {
-    title: "macOS Apple Silicon ZIP",
-    copy: "Portable app archive for users who prefer to inspect or move the bundle manually.",
+    title: "Mac ZIP",
+    copy: "Same app, archive format.",
     href: "/api/downloads/mac-zip",
     meta: ["macOS", "arm64", "ZIP"],
   },
   {
-    title: "Agent setup runbook",
-    copy: "A DLTL-style instruction page for connecting controllers, providers, runtime backends, MCP servers, and Pi agent sessions.",
+    title: "Agents",
+    copy: "DLTL for controllers, providers, runtimes, MCP, Pi.",
     href: "/agents",
     meta: ["DLTL", "controllers", "providers"],
   },
@@ -144,14 +144,12 @@ export function MarketingLandingPage() {
         </div>
         <div className={styles.heroScrim} aria-hidden="true" />
         <div className={styles.heroInner}>
-          <p className={styles.eyebrow}>Local-first LLM operations</p>
+          <p className={styles.eyebrow}>Local inference control plane</p>
           <h1 id="landing-title" className={styles.heroTitle}>
             vLLM Studio
           </h1>
           <p className={styles.heroCopy}>
-            A desktop and web control plane for self-hosted inference: launch models, watch GPU
-            state, switch controllers, route OpenAI-compatible providers, and hand real tools to
-            agents without losing the machine-level picture.
+            One surface for controllers, GPUs, models, providers, and agents.
           </p>
           <div className={styles.heroActions}>
             <Link className={styles.button} href="/api/downloads/mac-dmg" prefetch={false} download>
@@ -165,19 +163,19 @@ export function MarketingLandingPage() {
           </div>
           <div className={styles.metricStrip} aria-label="vLLM Studio product scope">
             <div className={styles.metric}>
-              <span className={styles.metricLabel}>Backends</span>
+              <span className={styles.metricLabel}>Serve</span>
               <span className={styles.metricValue}>vLLM / SGLang / MLX / llama.cpp</span>
             </div>
             <div className={styles.metric}>
-              <span className={styles.metricLabel}>Controller</span>
+              <span className={styles.metricLabel}>Control</span>
               <span className={styles.metricValue}>local or remote</span>
             </div>
             <div className={styles.metric}>
-              <span className={styles.metricLabel}>Proxy</span>
+              <span className={styles.metricLabel}>Route</span>
               <span className={styles.metricValue}>OpenAI-compatible</span>
             </div>
             <div className={styles.metric}>
-              <span className={styles.metricLabel}>Agents</span>
+              <span className={styles.metricLabel}>Tool</span>
               <span className={styles.metricValue}>Pi + MCP</span>
             </div>
           </div>
@@ -187,15 +185,13 @@ export function MarketingLandingPage() {
       <section id="product" className={styles.section} aria-labelledby="product-title">
         <div className={styles.sectionHeader}>
           <div>
-            <p className={styles.sectionKicker}>Real interface, real machine state</p>
+            <p className={styles.sectionKicker}>Actual app, no mock glass</p>
             <h2 id="product-title" className={styles.sectionTitle}>
-              The product is the proof.
+              The machine stays in frame.
             </h2>
           </div>
           <p className={styles.sectionLead}>
-            The funnel uses actual vLLM Studio screenshots from the installed app. Dense status
-            rows, runtime targets, model discovery, and plugin wiring are not illustrations; they
-            are the operating surface.
+            Status, runtime, models, plugins. The working surfaces are the pitch.
           </p>
         </div>
         <div className={styles.screenshotGrid}>
@@ -224,7 +220,7 @@ export function MarketingLandingPage() {
 
       <section className={`${styles.section} ${styles.quoteBand}`} aria-label="Operating thesis">
         <blockquote className={styles.quote}>
-          Local inference gets good when controllers, models, and agents share the same map.
+          Control the stack before the stack controls you.
         </blockquote>
         <ul className={styles.terminalList}>
           <li>{"GET /status -> active model, pid, backend, port"}</li>
@@ -237,14 +233,13 @@ export function MarketingLandingPage() {
       <section className={styles.section} aria-labelledby="gallery-title">
         <div className={styles.sectionHeader}>
           <div>
-            <p className={styles.sectionKicker}>Screenshots included</p>
+            <p className={styles.sectionKicker}>Operator surfaces</p>
             <h2 id="gallery-title" className={styles.sectionTitle}>
-              From runtime to agent tools.
+              Runtime. Fit. Tools.
             </h2>
           </div>
           <p className={styles.sectionLead}>
-            Operators can see the path from a GPU host to a running model to an agent workspace:
-            controller connection, runtime installation, model fit, provider routing, and MCP.
+            The app is for the moment when a model, a GPU box, and an agent all need the same truth.
           </p>
         </div>
         <div className={styles.screenshotGrid}>
@@ -262,12 +257,11 @@ export function MarketingLandingPage() {
             <div>
               <p className={styles.sectionKicker}>Download</p>
               <h2 id="downloads-title" className={styles.sectionTitle}>
-                Start with the desktop app. Add controllers as your fleet grows.
+                Download the app. Point it at the machines.
               </h2>
             </div>
             <p className={styles.sectionLead}>
-              The current local artifacts are served through the app, while the agent page gives a
-              concrete setup path for local, remote, and provider-backed inference.
+              Mac artifacts are served here. Agents get their own runbook.
             </p>
           </div>
           <div className={styles.downloadGrid}>
@@ -314,76 +308,72 @@ export function MarketingLandingPage() {
 
       <footer className={styles.footer}>
         <span>vLLM Studio v0.2.9</span>
-        <span>Desktop, web UI, controller API, CLI, Pi agent runtime</span>
+        <span>Desktop / web / controller / CLI / Pi</span>
       </footer>
     </main>
   );
 }
 
-const dltl = `DLTL: Configure vLLM Studio for multiple controllers, providers, and agents
+const dltl = `DLTL: vLLM Studio multi-controller setup
 
 Role:
-You are an implementation agent operating on a real vLLM Studio install. Work against the live machine, live controller URLs, and current repo state. Never print, commit, or hardcode credentials.
+Operate on the real install. Use live controller URLs. Do not expose secrets.
 
 Hard rules:
 - Never use max_tokens.
-- With vLLM or SGLang, never add --disable-cuda-graphs and never add --enforce-eager.
+- For vLLM/SGLang, never add --disable-cuda-graphs or --enforce-eager.
 - Do not bypass SSH host-key verification.
-- Prefer stored controller/provider settings, environment variables, or local secure files over inline secrets.
-
-Goal:
-Create a usable multi-controller, multi-provider vLLM Studio setup. The human should be able to switch between local and remote controllers, route provider/model requests, launch or inspect vLLM/SGLang/llama.cpp/MLX recipes, and run Pi agent sessions with MCP tools selected in the composer.
+- Keep keys in env, secure local files, or app settings.
 
 Controller setup:
-1. Start or verify each controller. Local default is http://localhost:8080. Remote GPU controllers should expose the controller API, not the raw inference port.
-2. For every controller, verify GET /status, GET /gpus, GET /config, and GET /v1/models. If auth is enabled, send X-API-Key.
-3. In the app, open Settings -> Connection. Add each controller URL with a human-readable name and its API key if required.
-4. Switch the active controller with the radio selector, then run the connection test. Do not delete other saved controllers.
-5. Confirm Settings -> System shows runtime targets for vLLM, SGLang, llama.cpp, or MLX as appropriate for that host.
+1. Verify each controller with GET /status, /gpus, /config, /v1/models.
+2. Local default: http://localhost:8080.
+3. Remote GPU boxes expose controller API, not raw inference ports.
+4. Add each URL in Settings -> Connection. Keep all saved controllers.
+5. Switch active target and confirm Settings -> System runtime state.
 
 Provider setup:
-1. Treat providers as OpenAI-compatible upstreams with a /v1 API. Examples can include another vLLM Studio controller proxy, LM Studio, Ollama's OpenAI-compatible endpoint, or a cloud provider.
-2. Create providers through the controller API:
+1. Providers are OpenAI-compatible /v1 upstreams.
+2. Create through the active controller:
    POST /studio/providers
    {
-     "id": "short-id",
-     "name": "Human name",
+     "id": "local-lmstudio",
+     "name": "LM Studio",
      "base_url": "https://provider.example/v1",
      "api_key": "$PROVIDER_API_KEY",
      "enabled": true
    }
-3. Verify GET /studio/providers returns the provider with has_api_key: true.
-4. Verify GET /studio/provider-models lists reachable models for enabled providers.
-5. Route a provider model by requesting model: "short-id/model-name". The controller strips "short-id/" and forwards the request to that provider.
+3. Verify GET /studio/providers and /studio/provider-models.
+4. Route as model: "provider-id/model-name".
 
-Runtime setup:
-1. Use vLLM recipes for CUDA-oriented high-throughput serving.
-2. Use SGLang recipes for structured generation or multi-turn serving where that backend fits.
-3. Use llama.cpp recipes for GGUF and CPU/Metal/CUDA llama-server flows.
-4. Use MLX recipes on Apple Silicon.
-5. Launch models through the controller recipe/runtime endpoints or the app UI. Chat proxy calls should not silently switch or launch models.
+Runtime map:
+- vLLM: CUDA throughput.
+- SGLang: structured and multi-turn serving.
+- llama.cpp: GGUF / llama-server.
+- MLX: Apple Silicon.
+- Launch through recipes/UI. Do not make chat proxy calls silently launch models.
 
-Agent and MCP setup:
-1. Open Plugins -> Custom and add MCP servers by command, args, env, and tags.
-2. Keep secrets in env/local secure files. Do not paste provider keys into prompts or logs.
-3. Open /agent. Select the controller-backed model or provider/model route the agent should use.
-4. Select the MCP tools the session needs in the composer. Keep the tool set narrow enough to audit.
-5. Send a smoke prompt that asks the agent to list its active model, controller, and available MCP tools.
+Agent setup:
+1. Add MCP servers in Plugins -> Custom.
+2. Open /agent.
+3. Pick the controller model or provider/model route.
+4. Select only the needed MCP tools.
+5. Smoke test: model, controller, tools.
 
 Acceptance checks:
-- Settings -> Connection lists every controller and can switch active targets.
-- Settings -> System shows runtime state for the active controller.
-- GET /studio/provider-models returns provider model IDs for enabled providers.
-- /v1/chat/completions works for the active local model and for at least one provider/model route.
+- Settings switches controllers.
+- System shows runtime state.
+- /studio/provider-models lists enabled upstreams.
+- /v1/chat/completions works locally and through one provider route.
 - /agent can complete a turn using the selected model and selected MCP tools.
-- No credentials appear in git diff, terminal logs, screenshots, or committed files.`;
+- No secrets in diff, logs, screenshots, or commits.`;
 
 const setupChecks = [
-  "Controller URLs are normalized without trailing /v1 in the saved controller list.",
-  "Provider base URLs include the upstream /v1 path when the upstream expects it.",
-  "The active controller API key is sent as X-API-Key; provider keys stay inside controller provider config.",
-  "A requested model shaped as provider/model routes to the provider; default model names route to the active inference backend.",
-  "The Pi agent runtime runs inside the frontend process and uses MCP servers selected through the app's plugin surface.",
+  "Controllers stay saved; switching is non-destructive.",
+  "Provider keys live in controller config, not prompts.",
+  "provider/model routes to that provider.",
+  "Default model names hit the active backend.",
+  "Pi sessions load only selected MCP tools.",
 ];
 
 export function AgentsPage() {
@@ -391,14 +381,12 @@ export function AgentsPage() {
     <main className={styles.shell}>
       <MarketingNav />
       <section className={styles.agentHero} aria-labelledby="agents-title">
-        <p className={styles.eyebrow}>DLTL runbook</p>
+        <p className={styles.eyebrow}>Agent field note</p>
         <h1 id="agents-title" className={styles.agentTitle}>
-          Agents that can set the machine up.
+          Set up the stack.
         </h1>
         <p className={styles.agentLead}>
-          This page is written for another coding agent. It tells the agent how to wire vLLM Studio
-          across controllers, OpenAI-compatible providers, runtime backends, MCP tools, and Pi agent
-          sessions without leaking secrets or breaking serving assumptions.
+          A compact DLTL for controllers, providers, runtimes, MCP, and Pi.
         </p>
         <div className={styles.heroActions}>
           <Link className={styles.button} href="/api/downloads/mac-dmg" prefetch={false} download>
@@ -418,10 +406,7 @@ export function AgentsPage() {
             <Network size={18} aria-hidden="true" />
           </div>
           <h2>Scope</h2>
-          <p>
-            The target configuration has one or more controllers, multiple OpenAI-compatible
-            providers, managed runtime targets, and an agent workspace that can choose MCP tools.
-          </p>
+          <p>Multi-controller. Multi-provider. Runtime-aware. Tool-gated.</p>
           <div className={styles.checklist}>
             {setupChecks.map((check) => (
               <div className={styles.checkItem} key={check}>
@@ -441,7 +426,7 @@ curl -s "$VLLM_STUDIO_URL/studio/provider-models"`}</pre>
 
         <article className={styles.steps}>
           <div className={styles.stepsHeader}>
-            <span className={styles.smallCaps}>Copy into an agent task</span>
+            <span className={styles.smallCaps}>Agent instructions</span>
             <span className={styles.pill}>DLTL</span>
           </div>
           <pre className={styles.codeBlock}>{dltl}</pre>
@@ -451,15 +436,12 @@ curl -s "$VLLM_STUDIO_URL/studio/provider-models"`}</pre>
       <section className={styles.section} aria-labelledby="agent-screenshots-title">
         <div className={styles.sectionHeader}>
           <div>
-            <p className={styles.sectionKicker}>Screenshots agents should recognize</p>
+            <p className={styles.sectionKicker}>Where to look</p>
             <h2 id="agent-screenshots-title" className={styles.sectionTitle}>
-              Controllers, runtimes, plugins.
+              Runtime. MCP. Models.
             </h2>
           </div>
-          <p className={styles.sectionLead}>
-            These are the relevant real vLLM Studio surfaces for the runbook: system runtime state,
-            plugin registration, and model search/download.
-          </p>
+          <p className={styles.sectionLead}>The setup path is visible in the app.</p>
         </div>
         <div className={styles.screenshotGrid}>
           <ScreenshotFrame screenshot={screenshots[2]} />
@@ -476,17 +458,17 @@ curl -s "$VLLM_STUDIO_URL/studio/provider-models"`}</pre>
             {
               icon: Boxes,
               title: "Controllers",
-              copy: "Bun/Hono controller APIs own lifecycle, logs, metrics, recipes, provider config, and the OpenAI-compatible proxy.",
+              copy: "Lifecycle, logs, metrics, recipes, provider config, proxy.",
             },
             {
               icon: Zap,
               title: "Providers",
-              copy: "Enabled provider rows expose remote OpenAI-compatible model lists and route chat by provider/model naming.",
+              copy: "OpenAI-compatible upstreams addressed as provider/model.",
             },
             {
               icon: TerminalSquare,
               title: "Pi agents",
-              copy: "The frontend runtime starts Pi sessions, loads selected MCP servers, and keeps project context inside the app workspace.",
+              copy: "Selected MCP, project context, browser, files.",
             },
           ].map(({ icon: Icon, title, copy }) => (
             <article className={styles.capability} key={title}>
