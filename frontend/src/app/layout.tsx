@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import Script from "next/script";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { LeftSidebar } from "@/features/shell/left-sidebar";
@@ -80,13 +81,13 @@ export default function RootLayout({
         <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
         <link rel="icon" href="/mocks/logo-1.svg" type="image/svg+xml" />
         <meta name="mobile-web-app-capable" content="yes" />
-        <script
-          dangerouslySetInnerHTML={{
-            __html: bootScript,
-          }}
-        />
       </head>
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
+        <Script
+          id="boot"
+          strategy="beforeInteractive"
+          dangerouslySetInnerHTML={{ __html: bootScript }}
+        />
         <Providers>
           <LeftSidebar>{children}</LeftSidebar>
         </Providers>

@@ -129,7 +129,7 @@ function isAuthRequiredError(error: unknown): boolean {
 function start(): void {
   if (started || typeof window === "undefined") return;
   started = true;
-  reload();
+  queueMicrotask(reload);
   window.addEventListener("storage", reload);
   window.addEventListener(BACKEND_URL_CHANGED_EVENT, reload);
   window.addEventListener(CONTROLLERS_CHANGED_EVENT, reload);
