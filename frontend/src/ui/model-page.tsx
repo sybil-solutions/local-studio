@@ -72,7 +72,7 @@ export function ModelActiveSummary({
 }) {
   return (
     <div className="px-1 py-2">
-      <div className="grid min-h-7 grid-cols-1 gap-2 md:grid-cols-[minmax(150px,0.44fr)_minmax(0,1fr)] md:items-center md:gap-5">
+      <div className="grid min-h-7 grid-cols-1 gap-2 md:grid-cols-[minmax(180px,0.32fr)_minmax(0,1fr)] md:items-center md:gap-5">
         <div className="flex min-w-0 items-center gap-2.5">
           {leading ? <span className="shrink-0 opacity-80">{leading}</span> : null}
           <div className="min-w-0">
@@ -159,7 +159,7 @@ export function ModelRow({
       role={interactive ? "button" : undefined}
       tabIndex={interactive ? 0 : undefined}
     >
-      <div className="grid min-h-7 grid-cols-1 gap-2 md:grid-cols-[minmax(150px,0.44fr)_minmax(0,1fr)] md:items-center md:gap-5">
+      <div className="grid min-h-7 grid-cols-1 gap-2 md:grid-cols-[minmax(180px,0.32fr)_minmax(0,1fr)] md:items-center md:gap-5">
         <div className="flex min-w-0 items-center gap-2.5">
           {leading ? <span className="shrink-0">{leading}</span> : null}
           <div className="min-w-0">
@@ -204,7 +204,7 @@ export function ModelRow({
           ) : null}
         </div>
       </div>
-      {children ? <div className="mt-2 md:ml-[calc(150px+1.25rem)]">{children}</div> : null}
+      {children ? <div className="mt-2 md:ml-[calc(180px+1.25rem)]">{children}</div> : null}
     </div>
   );
 }
