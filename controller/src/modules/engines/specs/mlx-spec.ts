@@ -11,13 +11,14 @@ import {
   hasModuleInvocation,
 } from "../argument-utilities";
 import type { EngineSpec, InstallOptions } from "../engine-spec";
-import { installIntoManagedVenv } from "../runtimes/managed-venv";
+import { installIntoManagedVenv, managedVenvPython } from "../runtimes/managed-venv";
 
 const MLX_IMPORT_PROBE =
   "import json, sys\ntry:\n import mlx_lm\n print(json.dumps({'version': getattr(mlx_lm, '__version__', None) or 'installed', 'python': sys.executable}))\nexcept Exception:\n print(json.dumps({'version': None, 'python': sys.executable}))";
 
 const buildMlxCommand = (recipe: Recipe, config: Config): string[] => {
-  const python = getPythonPath(recipe) || config.mlx_python || "python3";
+  const managedPython = managedVenvPython(config, "mlx");
+  const python = getPythonPath(recipe) || config.mlx_python || (existsSync(managedPython) ? managedPython : "python3");
   const command = [python, "-m", "mlx_lm.server"];
   command.push("--model", recipe.model_path, "--host", recipe.host, "--port", String(recipe.port));
   return appendExtraArguments(command, stripForeignFlagKeys("mlx", recipe.extra_args));

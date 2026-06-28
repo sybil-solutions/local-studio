@@ -22,7 +22,7 @@ import type {
   EngineSpec,
   InstallOptions,
 } from "../engine-spec";
-import { installIntoManagedVenv } from "../runtimes/managed-venv";
+import { installIntoManagedVenv, managedVenvPython } from "../runtimes/managed-venv";
 import {
   getUpgradeCommandFromEnvironment,
   runEnvironmentUpgradeCommand,
@@ -49,8 +49,14 @@ const resolveSglangCliBinary = (pythonPath: string | null): string | null => {
  * back to `python -m sglang.launch_server` (legacy module invocation).
  */
 const buildSglangCommand = (recipe: Recipe, config: Config): string[] => {
-  const python = getPythonPath(recipe) || config.sglang_python || "python";
-  const cliBinary = resolveSglangCliBinary(getPythonPath(recipe) ?? null) ?? resolveSglangCliBinary(config.sglang_python ?? null);
+  const recipePython = getPythonPath(recipe) ?? null;
+  const managedPython = managedVenvPython(config, "sglang");
+  const resolvedManagedPython = existsSync(managedPython) ? managedPython : null;
+  const python = recipePython || config.sglang_python || resolvedManagedPython || "python";
+  const cliBinary =
+    resolveSglangCliBinary(recipePython) ??
+    resolveSglangCliBinary(config.sglang_python ?? null) ??
+    resolveSglangCliBinary(resolvedManagedPython);
 
   let command: string[];
 
