@@ -7,6 +7,12 @@ import { AppPage, PageHeader, RefreshIconButton, SettingsNotice } from "@/ui";
 import { CuratedMcpSearchPanel } from "./plugins-curated-mcp-search";
 import { InstalledMcpServersPanel } from "./plugins-installed-servers";
 import { ManualMcpServerPanel } from "./plugins-manual-server";
+import {
+  OAuthConnectionsPanel,
+  oauthBusyId,
+  type OAuthClientDrafts,
+  type OAuthStatusView,
+} from "./plugins-oauth-connections";
 import { ConfigureEntryPanel, McpJsonConfigPanel } from "./plugins-page-parts";
 import { type CatalogueEntry, type McpServer, type ServersPayload } from "./plugins-types";
 import {
@@ -28,6 +34,8 @@ export function PluginsSettingsSection() {
 function PluginsManager({ mode }: { mode: "page" | "settings" }) {
   const [servers, setServers] = useState<McpServer[]>([]);
   const [catalogue, setCatalogue] = useState<CatalogueEntry[]>([]);
+  const [oauthStatuses, setOAuthStatuses] = useState<OAuthStatusView[]>([]);
+  const [oauthDrafts, setOAuthDrafts] = useState<OAuthClientDrafts>({});
   const [search, setSearch] = useState("");
   const [busyId, setBusyId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -53,6 +61,23 @@ function PluginsManager({ mode }: { mode: "page" | "settings" }) {
     if (payload.error) setError(payload.error);
   }, []);
 
+  const applyOAuthStatuses = useCallback((providers: OAuthStatusView[]) => {
+    setOAuthStatuses(providers);
+  }, []);
+
+  const loadOAuthStatuses = useCallback(async () => {
+    try {
+      const response = await fetch("/api/oauth", { cache: "no-store" });
+      const payload = (await response.json()) as { providers?: OAuthStatusView[]; error?: string };
+      if (!response.ok) throw new Error(payload.error || "Failed to load OAuth connections.");
+      applyOAuthStatuses(payload.providers ?? []);
+    } catch (loadError) {
+      setError(
+        loadError instanceof Error ? loadError.message : "Failed to load OAuth connections.",
+      );
+    }
+  }, [applyOAuthStatuses]);
+
   const loadServers = useCallback(async () => {
     setLoading(true);
     try {
@@ -71,9 +96,10 @@ function PluginsManager({ mode }: { mode: "page" | "settings" }) {
   const subscribeServers = useCallback(
     (_notify: () => void) => {
       void loadServers();
+      void loadOAuthStatuses();
       return () => {};
     },
-    [loadServers],
+    [loadOAuthStatuses, loadServers],
   );
 
   useSyncExternalStore(subscribeServers, getPluginsSnapshot, getPluginsSnapshot);
@@ -110,47 +136,100 @@ function PluginsManager({ mode }: { mode: "page" | "settings" }) {
     return catalogue.filter((entry) => matchesEntrySearch(entry, query));
   }, [catalogue, search]);
 
-  const assertOAuthClientReady = useCallback(
-    async (providerId: string, displayName: string): Promise<boolean> => {
-      try {
-        const response = await fetch(`/api/oauth/${providerId}`, { cache: "no-store" });
-        const status = (await response.json()) as { hasCredentials?: boolean };
-        if (!status.hasCredentials) {
-          setError(`Set up ${displayName} OAuth client in Connections above before connecting.`);
-          return false;
-        }
-      } catch {}
-      return true;
+  const pollOAuthResult = useCallback(
+    (busyKey: string) => {
+      let elapsed = 0;
+      const poll = effectInterval(() => {
+        elapsed += 1;
+        void Promise.all([loadServers(), loadOAuthStatuses()]).then(() => {
+          if (elapsed >= 40) {
+            poll.cancel();
+            setBusyId((current) => (current === busyKey ? null : current));
+          }
+        });
+      }, 1500);
     },
-    [],
+    [loadOAuthStatuses, loadServers],
   );
+
+  const openOAuth = useCallback(
+    (providerId: string, catalogueId?: string) => {
+      const busyKey = catalogueId ?? oauthBusyId(providerId, "connect");
+      setBusyId(busyKey);
+      setError(null);
+      const params = catalogueId ? `?catalogueId=${encodeURIComponent(catalogueId)}` : "";
+      window.open(`/api/oauth/${providerId}/start${params}`, "_blank", "noopener,noreferrer");
+      pollOAuthResult(busyKey);
+    },
+    [pollOAuthResult],
+  );
+
+  const saveOAuthClient = useCallback(
+    async (providerId: string) => {
+      const draft = oauthDrafts[providerId];
+      if (!draft) return;
+      const busyKey = oauthBusyId(providerId, "save");
+      setBusyId(busyKey);
+      setError(null);
+      try {
+        const response = await fetch(`/api/oauth/${providerId}`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            action: "save_client",
+            clientId: draft.clientId,
+            clientSecret: draft.clientSecret,
+          }),
+        });
+        const status = (await response.json()) as OAuthStatusView & { error?: string };
+        if (!response.ok || status.error)
+          throw new Error(status.error || "OAuth client save failed.");
+        setOAuthStatuses((current) => [
+          ...current.filter((item) => item.providerId !== providerId),
+          status,
+        ]);
+        setOAuthDrafts((current) => ({
+          ...current,
+          [providerId]: { clientId: "", clientSecret: "" },
+        }));
+      } catch (saveError) {
+        setError(saveError instanceof Error ? saveError.message : "OAuth client save failed.");
+      } finally {
+        setBusyId((current) => (current === busyKey ? null : current));
+      }
+    },
+    [oauthDrafts],
+  );
+
+  const disconnectOAuth = useCallback(async (providerId: string) => {
+    const busyKey = oauthBusyId(providerId, "disconnect");
+    setBusyId(busyKey);
+    setError(null);
+    try {
+      const response = await fetch(`/api/oauth/${providerId}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "disconnect" }),
+      });
+      const status = (await response.json()) as OAuthStatusView & { error?: string };
+      if (!response.ok || status.error) throw new Error(status.error || "OAuth disconnect failed.");
+      setOAuthStatuses((current) => [
+        ...current.filter((item) => item.providerId !== providerId),
+        status,
+      ]);
+    } catch (disconnectError) {
+      setError(
+        disconnectError instanceof Error ? disconnectError.message : "OAuth disconnect failed.",
+      );
+    } finally {
+      setBusyId((current) => (current === busyKey ? null : current));
+    }
+  }, []);
 
   const beginConfigureEntry = (entry: CatalogueEntry) => {
     const providerId = oauthProviderIdForEntry(entry);
     if (providerId) {
-      setBusyId(entry.id);
-      setError(null);
-      void (async () => {
-        if (!(await assertOAuthClientReady(providerId, entry.displayName))) {
-          setBusyId(null);
-          return;
-        }
-        window.open(
-          `/api/oauth/${providerId}/start?catalogueId=${encodeURIComponent(entry.id)}`,
-          "_blank",
-          "noopener,noreferrer",
-        );
-        let elapsed = 0;
-        const poll = effectInterval(() => {
-          elapsed += 1;
-          void loadServers().then(() => {
-            if (elapsed >= 40) {
-              poll.cancel();
-              setBusyId(null);
-            }
-          });
-        }, 1500);
-      })();
+      openOAuth(providerId, entry.id);
       return;
     }
     setConfigureEntry(entry);
@@ -274,6 +353,19 @@ function PluginsManager({ mode }: { mode: "page" | "settings" }) {
       />
     </div>
   );
+  const connectionsPanel = (
+    <OAuthConnectionsPanel
+      statuses={oauthStatuses}
+      drafts={oauthDrafts}
+      busyId={busyId}
+      onDraftChange={(providerId, draft) =>
+        setOAuthDrafts((drafts) => ({ ...drafts, [providerId]: draft }))
+      }
+      onSaveClient={saveOAuthClient}
+      onConnect={(providerId) => openOAuth(providerId)}
+      onDisconnect={disconnectOAuth}
+    />
+  );
   const curatedPanel = (
     <CuratedMcpSearchPanel
       entries={browseEntries}
@@ -307,6 +399,7 @@ function PluginsManager({ mode }: { mode: "page" | "settings" }) {
       <>
         {errorNotice}
         <div className="space-y-5">
+          {connectionsPanel}
           {curatedPanel}
           {customPanel}
         </div>
@@ -328,6 +421,7 @@ function PluginsManager({ mode }: { mode: "page" | "settings" }) {
         />
         {errorNotice}
         <div className="space-y-5">
+          {connectionsPanel}
           {curatedPanel}
           {customPanel}
         </div>
