@@ -1,66 +1,70 @@
-# Connect Gmail / Google Workspace — once and done
+# Connect OAuth MCP providers
 
-This is the only manual setup you ever do for Google in Local Studio. After it,
-Local Studio holds a long-lived refresh token that auto-refreshes forever; you
-never paste another key or secret.
+Local Studio can connect curated MCP servers without asking users to paste
+provider tokens into plugin settings. Each provider is connected once in
+**Settings -> Plugins -> Connections**. Local Studio stores the OAuth material
+locally and injects fresh values into the managed MCP server at launch.
 
-You do this in two places, one time each:
+This guide covers the currently managed providers:
 
-1. **Google Cloud Console** — create one OAuth "Desktop app" client (gives a
-   client ID + client secret). ~5 minutes. Never repeated.
-2. **Local Studio** — paste those two values into Settings → Plugins →
-   Connections, then click Connect once. Google does a one-time consent, Local
-   Studio stores the refresh token, the Gmail/Calendar MCP server installs
-   itself. Never repeated.
+- **Google** for Gmail and Calendar.
+- **GitHub** for repositories, issues, pull requests, and code search.
+- **Hugging Face** for Hub models, datasets, Spaces, papers, and inference.
 
-Why this is safe and stable:
-- The OAuth client is type **Desktop app**. Google allows loopback redirects
-  (`http://127.0.0.1:<port>`) for Desktop clients with **no registered redirect
-  URI**, so the embedded server's port can be anything and nothing breaks.
-- The consent screen stays in **Testing** status with your own Google account
-  added as a test user. That bypasses Google's sensitive-scope verification
-  process. Do not publish the consent screen.
-- `access_type=offline` + `prompt=consent` (Local Studio sends these already)
-  guarantee Google issues a refresh token on the first consent. The refresh
-  token persists as long as it is used periodically; the MCP server uses it
-  automatically, so it stays alive.
-- The client ID/secret for a Desktop client are not actually secret and never
-  rotate. You can re-view them in the console anytime.
+## Local Studio
 
----
+1. Open Local Studio.
+2. Go to **Settings -> Plugins -> Connections**.
+3. For each provider, paste its OAuth client ID and client secret.
+4. Click **Save client**.
+5. Click **Connect** and finish the provider consent screen.
+6. Go to **Plugins** and add the curated server if it was not installed by the
+   connect flow.
 
-## Part 1 — Google Cloud Console (one time, ~5 min)
+The callback URL is shown by Local Studio if a provider is not configured yet.
+For the dev server on port `3001`, the callbacks are:
 
-### 1. Open the console and pick a project
+```text
+Google:       http://localhost:3001/api/oauth/google/callback
+GitHub:       http://localhost:3001/api/oauth/github/callback
+Hugging Face: http://localhost:3001/api/oauth/huggingface/callback
+```
+
+The packaged desktop app uses `http://127.0.0.1:<port>` and persists the port in
+the app data directory so the origin stays stable across restarts. If a provider
+requires an exact callback URL, use the URL Local Studio shows on that machine.
+
+## Google for Gmail and Calendar
+
+This is the only manual setup users do for Google. After consent, Local Studio
+holds a long-lived refresh token and refreshes access tokens automatically.
+
+Why this is stable:
+
+- The OAuth client is type **Desktop app**. Google accepts loopback redirects
+  such as `http://127.0.0.1:<port>` for Desktop clients without registered
+  redirect URIs.
+- The consent screen can stay in **Testing** with the user's Google account
+  added as a test user. Do not publish the consent screen.
+- Local Studio sends `access_type=offline` and `prompt=consent`, so Google
+  returns a refresh token on the first consent.
+
+### Google Cloud Console
 
 1. Go to <https://console.cloud.google.com/>.
-2. Top-left project dropdown → **New Project**.
-   - Name: `local-studio` (anything).
-   - Location: `No organization` (or your personal org).
-   - **Create**. Wait for it to finish, then select it.
-
-### 2. Enable the APIs Local Studio uses
-
-Open each link and click **Enable**:
-
-- Gmail: <https://console.cloud.google.com/apis/library/gmail.googleapis.com>
-- Calendar: <https://console.cloud.google.com/apis/library/calendar-json.googleapis.com>
-
-(Drive is optional — only enable <https://console.cloud.google.com/apis/library/drive.googleapis.com> if you also want the Drive MCP tools.)
-
-### 3. Configure the OAuth consent screen
-
-1. <https://console.cloud.google.com/apis/credentials/consent>.
-2. **User type: External** → **Create**.
-3. **App registration → App information**:
+2. Use the project dropdown to create or select a project.
+3. Enable the APIs:
+   - Gmail: <https://console.cloud.google.com/apis/library/gmail.googleapis.com>
+   - Calendar: <https://console.cloud.google.com/apis/library/calendar-json.googleapis.com>
+4. Open <https://console.cloud.google.com/apis/credentials/consent>.
+5. Choose **External** and create the consent screen.
+6. Set:
    - App name: `Local Studio`
-   - User support email: your Google account email
-   - Developer contact information → Email: your Google account email
-   - **Save and Continue**.
-4. **Scopes** step → **Add or Remove Scopes**. Paste these exact scopes into
-   the filter box one at a time and tick each:
+   - User support email: the user's Google account
+   - Developer contact email: the user's Google account
+7. Add these scopes:
 
-   ```
+   ```text
    openid
    email
    https://www.googleapis.com/auth/gmail.readonly
@@ -69,86 +73,87 @@ Open each link and click **Enable**:
    https://www.googleapis.com/auth/calendar
    ```
 
-   Click **Update** → **Save and Continue**.
-5. **Test users** step → **Add Users** → paste your own Google account email
-   (the one you will sign in with) → **Add** → **Save and Continue**.
-6. Summary → back at the consent screen, confirm **Publishing status:
-   In testing**. Do not click **Publish**.
+8. Add the same Google account as a test user.
+9. Confirm the publishing status is **In testing**.
+10. Open <https://console.cloud.google.com/apis/credentials>.
+11. Create credentials with **OAuth client ID -> Desktop app**.
+12. Name it `Local Studio`.
+13. Copy the client ID and client secret into Local Studio's Google connection.
 
-### 4. Create the OAuth client ID (Desktop app type)
+Do not create a Web client for Google. A Google Web client causes
+`redirect_uri_mismatch` in the local loopback flow.
 
-1. <https://console.cloud.google.com/apis/credentials>.
-2. **+ Create Credentials → OAuth client ID**.
-3. **Application type: Desktop app** (this is the important one — not Web).
-   - Name: `Local Studio`
-   - **Create**.
-4. The modal shows your **Client ID** and **Client secret**. Copy both. (You
-   can always get them back: Credentials list → the "Local Studio (Desktop)"
-   row → edit — the secret is shown in the panel, not hidden-only-once.)
+## GitHub
 
-You now have two strings:
+GitHub requires an OAuth app owned by the GitHub account or organization that
+will authorize Local Studio.
 
-```
-Client ID     xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx.apps.googleusercontent.com
-Client secret GOCSPX-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-```
+1. Open <https://github.com/settings/developers>.
+2. Choose **OAuth Apps -> New OAuth App**.
+3. Set:
+   - Application name: `Local Studio`
+   - Homepage URL: `http://localhost:3001` for dev, or the Local Studio origin
+     shown in the setup page.
+   - Authorization callback URL: the exact GitHub callback URL shown by Local
+     Studio, for example `http://localhost:3001/api/oauth/github/callback`.
+4. Register the app.
+5. Generate a client secret.
+6. Copy the client ID and client secret into Local Studio's GitHub connection.
+7. Click **Connect** and approve the requested scopes.
 
-Keep them handy for Part 2.
+Local Studio requests `repo`, `read:org`, and `read:user`, then injects the
+connected token as `GITHUB_PERSONAL_ACCESS_TOKEN` for the GitHub MCP server.
 
-### 5. (Nothing else.) No redirect URI configuration.
+## Hugging Face
 
-A Desktop client has no "Authorized redirect URIs" field. Local Studio uses
-`http://127.0.0.1:<embedded port>/api/oauth/google/callback` and Google
-accepts any loopback redirect for this client type. You are done in the
-console forever.
+Hugging Face requires an OAuth app in the user's Hugging Face account settings.
 
----
+1. Open <https://huggingface.co/settings/applications>.
+2. Create a new OAuth application.
+3. Set:
+   - Application name: `Local Studio`
+   - Redirect URI: the exact Hugging Face callback URL shown by Local Studio,
+     for example `http://localhost:3001/api/oauth/huggingface/callback`.
+4. Save the app.
+5. Copy the client ID and client secret into Local Studio's Hugging Face
+   connection.
+6. Click **Connect** and approve the requested scopes.
 
-## Part 2 — Local Studio (one time, ~30 sec)
+Local Studio requests `openid`, `profile`, `email`, `read-repos`, and
+`inference-api`, then injects the connected token as `HF_TOKEN` for the Hugging
+Face MCP server.
 
-1. Open Local Studio. Go to **Settings → Plugins → Connections**.
-2. Under **Google**, paste:
-   - **Client ID** → the value from Part 1 step 4.
-   - **Client secret** → the value from Part 1 step 4.
-   - **Save**. (Local Studio stores these locally; it never sends them
-     anywhere except to Google's token endpoint at consent/refresh time.)
-3. Status should now read **Ready** (client configured, not yet connected).
-4. Go to **Plugins** and find the Gmail / Google Workspace curated plugin.
-   Click **Connect**.
+## What Other Users Need
 
-   What happens automatically:
-   - Local Studio opens Google's consent page in your browser.
-   - You pick your Google account, consent to the scopes.
-   - Google redirects back to Local Studio's loopback callback.
-   - Local Studio exchanges the code for tokens and stores the **refresh
-     token** locally.
-   - The managed Gmail/Calendar MCP server installs and enables itself using
-   the connected token.
-   - The browser tab says "Google connected · plugin installed" and closes
-   itself.
+Every user needs their own OAuth apps unless Local Studio ships a hosted,
+verified OAuth broker or a bundled public client for that provider. The local
+app cannot safely reuse another user's client secret, and provider dashboards
+generally bind OAuth apps to the account or organization that owns them.
 
-Done. Status now reads **Connected** with your account email.
+The per-user path is:
 
----
+1. Install Local Studio.
+2. Open **Settings -> Plugins -> Connections**.
+3. Use the callback URL shown there to create provider OAuth apps.
+4. Save each provider's client ID and client secret locally.
+5. Click **Connect** once per provider.
+6. Add the curated MCP servers: GitHub, Gmail, Calendar, and Hugging Face.
 
-## After this — nothing
+For a smoother product experience, Local Studio could later add a hosted
+OAuth broker. In that model, users would only click **Connect**, the broker
+would hold the verified provider clients, and Local Studio would receive local
+tokens after consent. That is a product and security deployment, not something
+the local-only app can fake with static docs.
 
-- The refresh token auto-refreshes. You do not click Connect again.
-- Restarting Local Studio, the desktop app, or your machine changes nothing.
-- Reinstalling Local Studio: the connected credentials live in the app's
-  data dir. If you wipe that, re-enter the same Client ID/secret (you still
-  have them from Part 1) and click Connect once more — the consent is a
-  single click because Google remembers the grant.
+## If Something Breaks
 
-## If something breaks
-
-- **"redirect_uri_mismatch"**: you created a Web application client instead of
-  a Desktop app client. Delete it and redo Part 1 step 4 with type **Desktop
-  app**.
-- **"access_denied" / "unverified app" during consent**: you forgot to add
-  your Google account email as a test user (Part 1 step 3.5), or you
-  accidentally published the consent screen. Add yourself as a test user and
-  keep status In testing.
-- **Refresh token stops working after months of no use**: just click Connect
-  once. Google issues a fresh refresh token. Your Client ID/secret are
-  unchanged.
+- **Google `redirect_uri_mismatch`**: the Google client was created as Web
+  instead of Desktop. Delete it and create a Desktop app client.
+- **Google `access_denied` or unverified app**: add the signing-in account as
+  a test user and keep the consent screen in Testing.
+- **GitHub or Hugging Face callback mismatch**: update the provider app's
+  callback URL to the exact URL shown by Local Studio.
+- **Connected server still launches with blank token env**: open
+  **Settings -> Plugins -> Connections** and confirm the provider says
+  **connected**. Then reconnect or restart Local Studio so managed tokens are
+  injected into the MCP server config before launch.
