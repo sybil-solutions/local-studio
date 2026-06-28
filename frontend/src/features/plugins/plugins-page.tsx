@@ -15,10 +15,17 @@ import {
 import {
   Boxes,
   ChevronRight,
+  Clock,
+  Database,
   ExternalLink,
+  File,
+  GitBranch,
+  Globe,
+  Monitor,
   MoreVertical,
   Search,
   Settings,
+  type LucideIcon,
 } from "@/ui/icon-registry";
 import { CuratedMcpSearchPanel } from "./plugins-curated-mcp-search";
 import { InstalledMcpServersPanel } from "./plugins-installed-servers";
@@ -599,7 +606,7 @@ function PluginMarketplace({
                 className="flex h-12 w-12 items-center justify-center rounded-xl border border-(--ui-border) bg-(--ui-surface) text-[length:var(--fs-lg)] font-semibold text-(--ui-fg) transition hover:bg-(--ui-hover)"
                 title={entry.displayName}
               >
-                {pluginInitials(entry)}
+                <PluginLogo entry={entry} size="sm" />
               </button>
             ))
           ) : (
@@ -723,7 +730,7 @@ function PluginRow({
         onClick={onOpen}
         className="flex h-12 w-12 items-center justify-center rounded-xl border border-(--ui-border) bg-(--ui-surface) text-[length:var(--fs-lg)] font-semibold text-(--ui-fg)"
       >
-        {pluginInitials(entry)}
+        <PluginLogo entry={entry} size="sm" />
       </button>
       <button type="button" onClick={onOpen} className="min-w-0 text-left">
         <div className="truncate text-[length:var(--fs-lg)] font-medium text-(--ui-fg)">
@@ -781,7 +788,7 @@ function PluginDetailView({
       <div className="mb-10 flex items-start justify-between gap-6">
         <div>
           <div className="mb-6 flex h-20 w-20 items-center justify-center rounded-2xl border border-(--ui-border) bg-(--ui-surface) text-[length:var(--fs-2xl)] font-semibold text-(--ui-fg)">
-            {pluginInitials(entry)}
+            <PluginLogo entry={entry} size="lg" />
           </div>
           <h1 className="text-[length:var(--fs-4xl)] font-semibold text-(--ui-fg)">
             {entry.displayName}
@@ -830,7 +837,7 @@ function PluginDetailView({
         <div className="flex items-center justify-between gap-4">
           <div className="flex min-w-0 items-center gap-4">
             <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-(--ui-border) bg-(--ui-surface) text-[length:var(--fs-lg)] font-semibold text-(--ui-fg)">
-              {pluginInitials(entry)}
+              <PluginLogo entry={entry} size="sm" />
             </div>
             <div className="min-w-0">
               <div className="text-[length:var(--fs-lg)] font-medium text-(--ui-fg)">
@@ -932,16 +939,97 @@ function pluginConnectionStatus(
   return { label: "Not installed", tone: "default" };
 }
 
-function pluginInitials(entry: CatalogueEntry): string {
-  const compact: Record<string, string> = {
-    github: "GH",
-    gmail: "GM",
-    calendar: "31",
-    huggingface: "HF",
-    filesystem: "FS",
-    "computer-use": "CU",
+function PluginLogo({ entry, size }: { entry: CatalogueEntry; size: "sm" | "lg" }) {
+  const className = size === "lg" ? "h-12 w-12" : "h-7 w-7";
+  if (entry.name === "github") return <GitHubLogo className={className} />;
+  if (entry.name === "gmail") return <GmailLogo className={className} />;
+  if (entry.name === "calendar") return <GoogleCalendarLogo className={className} />;
+  if (entry.name === "huggingface") return <HuggingFaceLogo className={className} />;
+  const Icon = pluginLucideIcon(entry);
+  return <Icon className={className} strokeWidth={1.8} />;
+}
+
+function GitHubLogo({ className }: { className: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} aria-hidden="true">
+      <path
+        fill="currentColor"
+        d="M12 .7a11.3 11.3 0 0 0-3.57 22.02c.57.1.78-.25.78-.55v-2.1c-3.16.69-3.83-1.35-3.83-1.35-.52-1.31-1.27-1.66-1.27-1.66-1.03-.7.08-.69.08-.69 1.14.08 1.74 1.17 1.74 1.17 1.01 1.73 2.65 1.23 3.3.94.1-.73.4-1.23.72-1.51-2.52-.29-5.18-1.26-5.18-5.61 0-1.24.44-2.25 1.17-3.04-.12-.29-.51-1.44.11-3 0 0 .96-.31 3.12 1.16a10.77 10.77 0 0 1 5.68 0c2.16-1.47 3.11-1.16 3.11-1.16.62 1.56.23 2.71.11 3 .73.79 1.17 1.8 1.17 3.04 0 4.36-2.66 5.32-5.19 5.6.41.36.77 1.05.77 2.12v3.13c0 .31.21.66.79.55A11.3 11.3 0 0 0 12 .7Z"
+      />
+    </svg>
+  );
+}
+
+function GmailLogo({ className }: { className: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} aria-hidden="true">
+      <path
+        fill="#EA4335"
+        d="M3.2 5.5 12 12l8.8-6.5v12.1a1.9 1.9 0 0 1-1.9 1.9h-2.5V10.8L12 14.1 7.6 10.8v8.7H5.1a1.9 1.9 0 0 1-1.9-1.9Z"
+      />
+      <path fill="#34A853" d="M16.4 19.5V10.8l4.4-3.3v10.1a1.9 1.9 0 0 1-1.9 1.9Z" />
+      <path fill="#FBBC04" d="M3.2 7.5v10.1a1.9 1.9 0 0 0 1.9 1.9h2.5V10.8Z" />
+      <path fill="#4285F4" d="M16.4 10.8V19.5h2.5a1.9 1.9 0 0 0 1.9-1.9V7.5Z" />
+      <path
+        fill="#C5221F"
+        d="M3.2 5.5c0-1.1 1.25-1.73 2.13-1.06L12 9.4l6.67-4.96c.88-.67 2.13-.04 2.13 1.06v2L12 14.1 3.2 7.5Z"
+      />
+    </svg>
+  );
+}
+
+function GoogleCalendarLogo({ className }: { className: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} aria-hidden="true">
+      <rect x="3" y="3" width="18" height="18" rx="3.5" fill="#4285F4" />
+      <path fill="#FFFFFF" d="M6 8h12v10.5H6Z" />
+      <path fill="#188038" d="M6 5.5A2.5 2.5 0 0 1 8.5 3H12v5H6Z" />
+      <path fill="#FBBC04" d="M12 3h3.5A2.5 2.5 0 0 1 18 5.5V8h-6Z" />
+      <path fill="#EA4335" d="M6 8h12v2H6Z" />
+      <text
+        x="12"
+        y="16.35"
+        textAnchor="middle"
+        fontSize="6.4"
+        fontWeight="700"
+        fontFamily="ui-sans-serif, system-ui, sans-serif"
+        fill="#3C4043"
+      >
+        31
+      </text>
+    </svg>
+  );
+}
+
+function HuggingFaceLogo({ className }: { className: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} aria-hidden="true">
+      <circle cx="12" cy="12" r="10" fill="#FFD21E" />
+      <circle cx="8.7" cy="10" r="1.25" fill="#3B2F14" />
+      <circle cx="15.3" cy="10" r="1.25" fill="#3B2F14" />
+      <path
+        fill="#3B2F14"
+        d="M8.2 13.9c.75 1.7 2.1 2.58 3.8 2.58s3.05-.88 3.8-2.58c.18-.4-.14-.8-.58-.66A10.3 10.3 0 0 1 12 13.8c-1.1 0-2.16-.18-3.22-.56-.44-.14-.76.26-.58.66Z"
+      />
+      <path
+        fill="#3B2F14"
+        d="M4.8 12.4c-.1-1.67.65-2.75 1.85-2.87.58-.06 1.1.24 1.17.74.08.55-.34.98-.88 1.08-.56.11-.8.58-.7 1.39.1.76-.16 1.2-.7 1.28-.49.07-.7-.43-.74-1.62Zm14.4 0c.1-1.67-.65-2.75-1.85-2.87-.58-.06-1.1.24-1.17.74-.08.55.34.98.88 1.08.56.11.8.58.7 1.39-.1.76.16 1.2.7 1.28.49.07.7-.43.74-1.62Z"
+      />
+    </svg>
+  );
+}
+
+function pluginLucideIcon(entry: CatalogueEntry): LucideIcon {
+  const icons: Record<string, LucideIcon> = {
+    filesystem: File,
+    fetch: Globe,
+    git: GitBranch,
+    sqlite: Database,
+    time: Clock,
+    sitegeist: Globe,
+    "computer-use": Monitor,
   };
-  return compact[entry.name] ?? entry.displayName.slice(0, 2).toUpperCase();
+  return icons[entry.name] ?? Boxes;
 }
 
 function pluginSubtitle(entry: CatalogueEntry): string {
