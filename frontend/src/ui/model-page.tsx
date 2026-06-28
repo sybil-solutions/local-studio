@@ -71,56 +71,51 @@ export function ModelActiveSummary({
   progress?: ReactNode;
 }) {
   return (
-    <div className="px-1 py-3">
-      <div className="grid gap-3 rounded-md border border-(--ui-border)/65 bg-(--ui-surface)/45 p-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-start">
-        <div className="flex min-w-0 gap-3">
-          {leading ? <div className="mt-0.5 shrink-0">{leading}</div> : null}
+    <div className="px-1 py-2">
+      <div className="grid min-h-7 grid-cols-1 gap-2 md:grid-cols-[minmax(150px,0.44fr)_minmax(0,1fr)] md:items-center md:gap-5">
+        <div className="flex min-w-0 items-center gap-2.5">
+          {leading ? <span className="shrink-0 opacity-80">{leading}</span> : null}
+          <div className="min-w-0">
+            <div className="truncate text-[length:var(--fs-md)] font-medium text-(--ui-fg)">
+              Active model
+            </div>
+            <div className="mt-0.5 truncate text-[length:var(--fs-sm)] text-(--ui-muted)">
+              Controller-loaded recipe
+            </div>
+          </div>
+        </div>
+        <div className="flex min-w-0 items-center justify-between gap-3">
           <div className="min-w-0 flex-1">
-            <div className="flex min-w-0 flex-wrap items-center gap-2">
+            <div className="flex min-w-0 items-center gap-2">
               <div
-                className="min-w-0 truncate text-[length:var(--fs-lg)] font-medium text-(--ui-fg)"
+                className="min-w-0 truncate font-mono text-[length:var(--fs-md)] text-(--ui-fg)"
                 title={typeof title === "string" ? title : undefined}
               >
                 {title}
               </div>
               {status ? <div className="shrink-0">{status}</div> : null}
             </div>
-            {subtitle ? (
-              <div
-                className="mt-1 truncate font-mono text-[length:var(--fs-sm)] text-(--ui-muted)"
-                title={typeof subtitle === "string" ? subtitle : undefined}
-              >
-                {subtitle}
-              </div>
-            ) : null}
-            {details?.length ? (
-              <dl className="mt-3 grid gap-x-4 gap-y-1.5 sm:grid-cols-2 xl:grid-cols-4">
-                {details.map((item) => (
-                  <div
-                    key={String(item.label)}
-                    className="min-w-0 border-l border-(--ui-border)/70 pl-2"
-                  >
-                    <dt className="font-mono text-[length:var(--fs-2xs)] uppercase tracking-[0.14em] text-(--ui-muted)">
-                      {item.label}
-                    </dt>
-                    <dd
-                      className="mt-0.5 truncate font-mono text-[length:var(--fs-sm)] text-(--ui-fg)"
-                      title={typeof item.value === "string" ? item.value : undefined}
-                    >
-                      {item.value}
-                    </dd>
-                  </div>
-                ))}
-              </dl>
-            ) : null}
+            <div className="mt-0.5 flex min-w-0 flex-wrap gap-x-3 gap-y-0.5 font-mono text-[length:var(--fs-xs)] text-(--ui-muted)">
+              {subtitle ? (
+                <span
+                  className="max-w-full truncate"
+                  title={typeof subtitle === "string" ? subtitle : undefined}
+                >
+                  {subtitle}
+                </span>
+              ) : null}
+              {details?.map((item) => (
+                <span key={String(item.label)} className="shrink-0">
+                  {item.label} <span className="text-(--ui-fg)">{item.value}</span>
+                </span>
+              ))}
+            </div>
             {progress ? (
-              <div className="mt-3 text-[length:var(--fs-sm)] text-(--ui-muted)">{progress}</div>
+              <div className="mt-1 text-[length:var(--fs-sm)] text-(--ui-muted)">{progress}</div>
             ) : null}
           </div>
+          {actions ? <div className="flex shrink-0 items-center gap-1">{actions}</div> : null}
         </div>
-        {actions ? (
-          <div className="flex shrink-0 items-center justify-end gap-1">{actions}</div>
-        ) : null}
       </div>
     </div>
   );

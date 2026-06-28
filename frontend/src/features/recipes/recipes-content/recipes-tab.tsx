@@ -89,28 +89,6 @@ export function RecipesTab({
           </ModelStatus>
         }
       >
-        <ModelActiveSummary
-          title={activeTitle}
-          subtitle={activeSubtitle}
-          leading={
-            activeRecipe ? <ModelLogo modelId={modelIdFromPath(activeRecipe.model_path)} /> : null
-          }
-          status={
-            <ModelStatus tone={runningRecipeId ? "good" : loading ? "info" : "default"}>
-              {runningRecipeId ? "live" : loading ? "syncing" : "idle"}
-            </ModelStatus>
-          }
-          details={activeDetails}
-          progress={launchProgressMessage}
-          actions={
-            runningRecipeId ? (
-              <ModelButton onClick={onEvictModel} tone="danger">
-                <Square className="h-3 w-3" />
-                Stop
-              </ModelButton>
-            ) : null
-          }
-        />
         <ModelRow
           label="Search recipes"
           description="Name, path, or served model."
@@ -131,6 +109,28 @@ export function RecipesTab({
               <Plus className="h-3 w-3" />
               New
             </ModelButton>
+          }
+        />
+        <ModelActiveSummary
+          title={activeTitle}
+          subtitle={activeSubtitle}
+          leading={
+            activeRecipe ? <ModelLogo modelId={modelIdFromPath(activeRecipe.model_path)} /> : null
+          }
+          status={
+            <ModelStatus tone={runningRecipeId ? "good" : loading ? "info" : "default"}>
+              {runningRecipeId ? "live" : loading ? "syncing" : "idle"}
+            </ModelStatus>
+          }
+          details={activeDetails}
+          progress={launchProgressMessage}
+          actions={
+            runningRecipeId ? (
+              <ModelButton onClick={onEvictModel} tone="danger">
+                <Square className="h-3 w-3" />
+                Stop
+              </ModelButton>
+            ) : null
           }
         />
       </ModelSection>
