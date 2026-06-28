@@ -39,7 +39,9 @@ function isMutatingRequest(method: string): boolean {
 }
 
 function isPublicRequest(method: string, path: string): boolean {
-  return method.toUpperCase() === "OPTIONS" || PUBLIC_PATHS.has(path);
+  if (method.toUpperCase() === "OPTIONS") return true;
+  const normalized = path.endsWith("/") && path.length > 1 ? path.slice(0, -1) : path;
+  return PUBLIC_PATHS.has(normalized);
 }
 
 function getClientIpFromRequestHeaders(header: (name: string) => string | undefined): string {

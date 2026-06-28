@@ -35,13 +35,48 @@ export const createLogger = (level: LogLevel, options: LoggerOptions = {}): Logg
     error: 40,
   };
 
-  const shouldLog = (target: LogLevel): boolean => priority[target] >= priority[level];
+const shouldLog = (target: LogLevel): boolean => priority[target] >= priority[level];
 
-  const format = (message: string, details?: Record<string, unknown>): string => {
+const SENSITIVE_KEYS = new Set([
+  "api_key",
+  "apikey",
+  "api-key",
+  "password",
+  "passwd",
+  "secret",
+  "token",
+  "access_token",
+  "access-token",
+  "refresh_token",
+  "refresh-token",
+  "authorization",
+  "auth",
+  "private_key",
+  "private-key",
+  "privatekey",
+]);
+
+const filterSensitiveData = (obj: Record<string, unknown>): Record<string, unknown> => {
+  const filtered: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(obj)) {
+    const lowerKey = key.toLowerCase();
+    if (SENSITIVE_KEYS.has(lowerKey) || lowerKey.includes("password") || lowerKey.includes("secret") || lowerKey.includes("token")) {
+      filtered[key] = "[REDACTED]";
+    } else if (value && typeof value === "object" && !Array.isArray(value)) {
+      filtered[key] = filterSensitiveData(value as Record<string, unknown>);
+    } else {
+      filtered[key] = value;
+    }
+  }
+  return filtered;
+};
+
+const format = (message: string, details?: Record<string, unknown>): string => {
     if (!details || Object.keys(details).length === 0) {
       return message;
     }
-    return `${message} ${JSON.stringify(details)}`;
+    const filtered = filterSensitiveData(details);
+    return `${message} ${JSON.stringify(filtered)}`;
   };
 
   const toFileLine = (target: LogLevel, message: string, details?: Record<string, unknown>): string => {
