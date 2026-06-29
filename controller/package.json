@@ -19,9 +19,9 @@
     "@earendil-works/pi-ai": "0.78.1",
     "@hono/swagger-ui": "0.5.3",
     "dotenv": "16.6.1",
+    "effect": "^4.0.0-beta.90",
     "hono": "4.6.12",
-    "prom-client": "15.1.3",
-    "zod": "3.25.76"
+    "prom-client": "15.1.3"
   },
   "devDependencies": {
     "@types/node": "24.6.0",

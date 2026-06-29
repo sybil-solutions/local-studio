@@ -1,3 +1,5 @@
+import { Effect } from "effect";
+
 export type LocalFetchOptions = RequestInit & { host?: string; timeoutMs?: number };
 
 const normalizePath = (path: string): string => {
@@ -44,30 +46,37 @@ const combineSignals = (
   };
 };
 
-export const fetchLocal = async (
+export const fetchLocalEffect = (
   port: number,
   path: string,
   options: LocalFetchOptions = {}
-): Promise<Response> => {
+): Effect.Effect<Response, unknown> => {
   const { host, timeoutMs, signal, ...init } = options;
   const url = buildLocalUrl(port, path, host);
   const requestSignal = signal ?? undefined;
 
   if (!timeoutMs || timeoutMs <= 0) {
     if (!requestSignal) {
-      return fetch(url, init);
+      return Effect.tryPromise(() => fetch(url, init));
     }
-    return fetch(url, { ...init, signal: requestSignal });
+    return Effect.tryPromise(() => fetch(url, { ...init, signal: requestSignal }));
   }
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   const combined = combineSignals(requestSignal, controller.signal);
-
-  try {
-    return await fetch(url, { ...init, signal: combined.signal });
-  } finally {
-    clearTimeout(timer);
-    combined.cleanup();
-  }
+  return Effect.tryPromise(() => fetch(url, { ...init, signal: combined.signal })).pipe(
+    Effect.ensuring(
+      Effect.sync(() => {
+      clearTimeout(timer);
+      combined.cleanup();
+      }),
+    ),
+  );
 };
+
+export const fetchLocal = (
+  port: number,
+  path: string,
+  options: LocalFetchOptions = {}
+): Promise<Response> => Effect.runPromise(fetchLocalEffect(port, path, options));

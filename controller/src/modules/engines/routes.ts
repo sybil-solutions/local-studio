@@ -155,12 +155,13 @@ export const registerEngineRoutes: RouteRegistrar = (app, context) => {
         requested_recipe_id: recipeId,
         source,
       });
-      throw new HttpStatus(
-        409,
-        activeRecipeId === recipeId
-          ? `Launch already in progress for ${recipeId}`
-          : `Launch already in progress for ${activeRecipeId}; refusing to queue ${recipeId}`
-      );
+      throw new HttpStatus({
+        status: 409,
+        detail:
+          activeRecipeId === recipeId
+            ? `Launch already in progress for ${recipeId}`
+            : `Launch already in progress for ${activeRecipeId}; refusing to queue ${recipeId}`,
+      });
     }
     const current = await context.processManager.findInferenceProcess(
       context.config.inference_port
@@ -172,10 +173,10 @@ export const registerEngineRoutes: RouteRegistrar = (app, context) => {
         requested_recipe_id: recipeId,
         source,
       });
-      throw new HttpStatus(
-        409,
-        `Model ${current.served_model_name ?? current.model_path} is already running; evict it before launching ${recipeId}`
-      );
+      throw new HttpStatus({
+        status: 409,
+        detail: `Model ${current.served_model_name ?? current.model_path} is already running; evict it before launching ${recipeId}`,
+      });
     }
     context.logger.info("Accepted launch request", { recipe_id: recipeId, source });
     const controller = new AbortController();

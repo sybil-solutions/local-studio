@@ -1,32 +1,40 @@
-export const delay = (milliseconds: number): Promise<void> =>
-  new Promise((resolve) => setTimeout(resolve, milliseconds));
+import { Deferred, Effect, Option } from "effect";
 
-/** FIFO async mutex for controller operations that must not overlap. */
+export const delayEffect = (milliseconds: number): Effect.Effect<void> => Effect.sleep(milliseconds);
+
+export const delay = (milliseconds: number): Promise<void> => Effect.runPromise(delayEffect(milliseconds));
+
 export class AsyncLock {
   private queue: Array<() => void> = [];
   private locked = false;
 
-  public async acquire(): Promise<() => void> {
+  public acquireEffect(): Effect.Effect<() => void> {
     if (!this.locked) {
       this.locked = true;
-      return () => this.release();
+      return Effect.succeed(() => this.release());
     }
 
-    return new Promise((resolve) => {
+    return Effect.callback<() => void>((resume) => {
       this.queue.push(() => {
         this.locked = true;
-        resolve(() => this.release());
+        resume(Effect.succeed(() => this.release()));
       });
     });
   }
 
-  public async acquireWithTimeout(timeoutMs: number): Promise<(() => void) | null> {
-    const timeoutPromise = new Promise<null>((resolve) => {
-      setTimeout(() => resolve(null), timeoutMs);
-    });
-    const acquirePromise = this.acquire().then((release) => release);
-    const result = await Promise.race([timeoutPromise, acquirePromise]);
-    return result;
+  public acquire(): Promise<() => void> {
+    return Effect.runPromise(this.acquireEffect());
+  }
+
+  public acquireWithTimeoutEffect(timeoutMs: number): Effect.Effect<(() => void) | null> {
+    return this.acquireEffect().pipe(
+      Effect.timeoutOption(timeoutMs),
+      Effect.map((result) => (Option.isSome(result) ? result.value : null)),
+    );
+  }
+
+  public acquireWithTimeout(timeoutMs: number): Promise<(() => void) | null> {
+    return Effect.runPromise(this.acquireWithTimeoutEffect(timeoutMs));
   }
 
   public release(): void {
@@ -39,13 +47,12 @@ export class AsyncLock {
   }
 }
 
-/** Bounded async queue with backpressure — drops oldest items when full. */
 export class AsyncQueue<TValue> {
   private readonly capacity: number;
   private readonly items: TValue[] = [];
   private readonly resolvers: Array<{
-    resolve: (value: TValue) => void;
-    reject: (error: Error) => void;
+    deferred: Deferred.Deferred<TValue, Error>;
+    cleanup: () => void;
   }> = [];
   private closed = false;
   private evictedCount = 0;
@@ -60,7 +67,8 @@ export class AsyncQueue<TValue> {
     }
     const resolver = this.resolvers.shift();
     if (resolver) {
-      resolver.resolve(item);
+      resolver.cleanup();
+      void Effect.runPromise(Deferred.succeed(resolver.deferred, item));
       return true;
     }
     if (this.capacity <= 0) {
@@ -101,34 +109,31 @@ export class AsyncQueue<TValue> {
     while (this.resolvers.length > 0) {
       const resolver = this.resolvers.shift();
       if (resolver) {
-        resolver.reject(new Error("Queue closed"));
+        resolver.cleanup();
+        void Effect.runPromise(Deferred.fail(resolver.deferred, new Error("Queue closed")));
       }
     }
   }
 
-  public async shift(signal?: AbortSignal): Promise<TValue> {
+  public shiftEffect(signal?: AbortSignal): Effect.Effect<TValue, Error> {
     if (this.items.length > 0) {
-      return this.items.shift() as TValue;
+      return Effect.succeed(this.items.shift() as TValue);
     }
 
-    return new Promise((resolve, reject) => {
-      const onAbort = (): void => {
-        signal?.removeEventListener("abort", onAbort);
-        reject(new Error("Queue aborted"));
-      };
-      if (signal) {
-        signal.addEventListener("abort", onAbort, { once: true });
-      }
-      this.resolvers.push({
-        resolve: (value) => {
-          signal?.removeEventListener("abort", onAbort);
-          resolve(value);
-        },
-        reject: (error) => {
-          signal?.removeEventListener("abort", onAbort);
-          reject(error);
-        },
-      });
-    });
+    const deferred = Deferred.makeUnsafe<TValue, Error>();
+    const cleanup = (): void => signal?.removeEventListener("abort", onAbort);
+    const onAbort = (): void => {
+      const index = this.resolvers.findIndex((entry) => entry.deferred === deferred);
+      if (index >= 0) this.resolvers.splice(index, 1);
+      cleanup();
+      void Effect.runPromise(Deferred.fail(deferred, new Error("Queue aborted")));
+    };
+    if (signal) signal.addEventListener("abort", onAbort, { once: true });
+    this.resolvers.push({ deferred, cleanup });
+    return Deferred.await(deferred);
+  }
+
+  public shift(signal?: AbortSignal): Promise<TValue> {
+    return Effect.runPromise(this.shiftEffect(signal));
   }
 }

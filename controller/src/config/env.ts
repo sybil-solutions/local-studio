@@ -1,10 +1,15 @@
 import { config as loadEnvironment } from "dotenv";
-import { z } from "zod";
+import { Schema } from "effect";
 import { existsSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadPersistedConfig, type ProviderConfig } from "./persisted-config";
 import { parseBooleanFlag } from "../core/validation";
+
+const positiveIntegerSchema = Schema.Number.check(
+  Schema.isInt(),
+  Schema.isGreaterThan(0),
+);
 
 export interface Config {
   host: string;
@@ -81,26 +86,44 @@ export const createConfig = (): Config => {
     ];
   };
 
-  const schema = z.object({
-    LOCAL_STUDIO_HOST: z.string().default("127.0.0.1"),
-    LOCAL_STUDIO_PORT: z.coerce.number().int().positive().default(8080),
-    LOCAL_STUDIO_API_KEY: z.string().optional(),
-    LOCAL_STUDIO_ALLOW_UNAUTHENTICATED: z.string().optional(),
-    LOCAL_STUDIO_CORS_ORIGINS: z.string().optional(),
-    LOCAL_STUDIO_INFERENCE_HOST: z.string().default("localhost"),
-    LOCAL_STUDIO_INFERENCE_PORT: z.coerce.number().int().positive().default(8000),
+  const environmentSchema = Schema.Struct({
+    LOCAL_STUDIO_HOST: Schema.String,
+    LOCAL_STUDIO_PORT: positiveIntegerSchema,
+    LOCAL_STUDIO_API_KEY: Schema.optional(Schema.String),
+    LOCAL_STUDIO_ALLOW_UNAUTHENTICATED: Schema.optional(Schema.String),
+    LOCAL_STUDIO_CORS_ORIGINS: Schema.optional(Schema.String),
+    LOCAL_STUDIO_INFERENCE_HOST: Schema.String,
+    LOCAL_STUDIO_INFERENCE_PORT: positiveIntegerSchema,
 
-    LOCAL_STUDIO_DATA_DIR: z.string().default(defaultDataDirectory),
-    LOCAL_STUDIO_DB_PATH: z.string().optional(),
-    LOCAL_STUDIO_MODELS_DIR: z.string().default("/models"),
-    LOCAL_STUDIO_SGLANG_PYTHON: z.string().optional(),
-    LOCAL_STUDIO_TABBY_API_DIR: z.string().optional(),
-    LOCAL_STUDIO_LLAMA_BIN: z.string().optional(),
-    LOCAL_STUDIO_MLX_PYTHON: z.string().optional(),
-    LOCAL_STUDIO_STRICT_OPENAI_MODELS: z.string().optional(),
+    LOCAL_STUDIO_DATA_DIR: Schema.String,
+    LOCAL_STUDIO_DB_PATH: Schema.optional(Schema.String),
+    LOCAL_STUDIO_MODELS_DIR: Schema.String,
+    LOCAL_STUDIO_SGLANG_PYTHON: Schema.optional(Schema.String),
+    LOCAL_STUDIO_TABBY_API_DIR: Schema.optional(Schema.String),
+    LOCAL_STUDIO_LLAMA_BIN: Schema.optional(Schema.String),
+    LOCAL_STUDIO_MLX_PYTHON: Schema.optional(Schema.String),
+    LOCAL_STUDIO_STRICT_OPENAI_MODELS: Schema.optional(Schema.String),
   });
 
-  const parsed = schema.parse(process.env);
+  const coercePositiveInteger = (
+    key: "LOCAL_STUDIO_PORT" | "LOCAL_STUDIO_INFERENCE_PORT",
+    fallback: number,
+  ): number => {
+    const value = process.env[key];
+    return value === undefined ? fallback : Number(value);
+  };
+
+  const parsed = Schema.decodeUnknownSync(environmentSchema, {
+    onExcessProperty: "preserve",
+  })({
+    ...process.env,
+    LOCAL_STUDIO_HOST: process.env["LOCAL_STUDIO_HOST"] ?? "127.0.0.1",
+    LOCAL_STUDIO_PORT: coercePositiveInteger("LOCAL_STUDIO_PORT", 8080),
+    LOCAL_STUDIO_INFERENCE_HOST: process.env["LOCAL_STUDIO_INFERENCE_HOST"] ?? "localhost",
+    LOCAL_STUDIO_INFERENCE_PORT: coercePositiveInteger("LOCAL_STUDIO_INFERENCE_PORT", 8000),
+    LOCAL_STUDIO_DATA_DIR: process.env["LOCAL_STUDIO_DATA_DIR"] ?? defaultDataDirectory,
+    LOCAL_STUDIO_MODELS_DIR: process.env["LOCAL_STUDIO_MODELS_DIR"] ?? "/models",
+  });
   const host = parsed.LOCAL_STUDIO_HOST.trim() || "127.0.0.1";
 
   const strictOpenAIModelsEnabled = parseBooleanFlag(parsed.LOCAL_STUDIO_STRICT_OPENAI_MODELS);

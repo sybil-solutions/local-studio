@@ -1,6 +1,19 @@
-import { z } from "zod";
+import { Schema } from "effect";
 import type { Recipe } from "../types";
 import { asRecipeId } from "../types";
+
+const integerSchema = Schema.Number.check(Schema.isInt());
+
+const nullableStringSchema = Schema.Union([Schema.Null, Schema.String]);
+
+const coerceNumber = (value: unknown, fallback: number): number =>
+  value === undefined ? fallback : Number(value);
+
+const coerceNullableNumber = (value: unknown): number | null =>
+  value === undefined || value === null ? null : Number(value);
+
+const coerceBoolean = (value: unknown, fallback: boolean): boolean =>
+  value === undefined ? fallback : Boolean(value);
 
 /**
  * Normalize raw recipe input before validation.
@@ -88,39 +101,37 @@ export const normalizeRecipeInput = (raw: unknown): Record<string, unknown> => {
 };
 
 /**
- * Zod schema for validated recipe input.
+ * Effect v4 schema for validated recipe input.
  */
-export const recipeSchema = z.object({
-  id: z.string(),
-  name: z.string(),
-  model_path: z.string(),
-  backend: z.enum(["vllm", "sglang", "llamacpp", "mlx"]).default("vllm"),
-  env_vars: z.record(z.string()).nullable().optional(),
-  tensor_parallel_size: z.coerce.number().int().default(1),
-  pipeline_parallel_size: z.coerce.number().int().default(1),
-  max_model_len: z.coerce.number().int().default(32768),
-  gpu_memory_utilization: z.coerce.number().default(0.9),
-  kv_cache_dtype: z.string().default("auto"),
-  max_num_seqs: z.coerce.number().int().default(256),
+export const recipeSchema = Schema.Struct({
+  id: Schema.String,
+  name: Schema.String,
+  model_path: Schema.String,
+  backend: Schema.Literals(["vllm", "sglang", "llamacpp", "mlx"]),
+  env_vars: Schema.Union([Schema.Null, Schema.Record(Schema.String, Schema.String)]),
+  tensor_parallel_size: integerSchema,
+  pipeline_parallel_size: integerSchema,
+  max_model_len: integerSchema,
+  gpu_memory_utilization: Schema.Number,
+  kv_cache_dtype: Schema.String,
+  max_num_seqs: integerSchema,
   // Defaults to true (unchanged from before) so launching models that need
   // custom modeling code keeps working out of the box. Security-conscious
   // operators can flip the default off with
   // LOCAL_STUDIO_DEFAULT_TRUST_REMOTE_CODE=false.
-  trust_remote_code: z.coerce
-    .boolean()
-    .default(process.env["LOCAL_STUDIO_DEFAULT_TRUST_REMOTE_CODE"] !== "false"),
-  tool_call_parser: z.string().nullable().optional(),
-  reasoning_parser: z.string().nullable().optional(),
-  enable_auto_tool_choice: z.coerce.boolean().default(false),
-  quantization: z.string().nullable().optional(),
-  dtype: z.string().nullable().optional(),
-  host: z.string().default("0.0.0.0"),
-  port: z.coerce.number().int().default(8000),
-  served_model_name: z.string().nullable().optional(),
-  python_path: z.string().nullable().optional(),
-  extra_args: z.record(z.unknown()).default({}),
-  max_thinking_tokens: z.coerce.number().int().nullable().optional(),
-  thinking_mode: z.string().default("conservative"),
+  trust_remote_code: Schema.Boolean,
+  tool_call_parser: nullableStringSchema,
+  reasoning_parser: nullableStringSchema,
+  enable_auto_tool_choice: Schema.Boolean,
+  quantization: nullableStringSchema,
+  dtype: nullableStringSchema,
+  host: Schema.String,
+  port: integerSchema,
+  served_model_name: nullableStringSchema,
+  python_path: nullableStringSchema,
+  extra_args: Schema.Record(Schema.String, Schema.Unknown),
+  max_thinking_tokens: Schema.Union([Schema.Null, integerSchema]),
+  thinking_mode: Schema.String,
 });
 
 /**
@@ -130,7 +141,35 @@ export const recipeSchema = z.object({
  */
 export const parseRecipe = (raw: unknown): Recipe => {
   const normalized = normalizeRecipeInput(raw);
-  const parsed = recipeSchema.parse(normalized);
+  const parsed = Schema.decodeUnknownSync(recipeSchema, {
+    onExcessProperty: "preserve",
+  })({
+    ...normalized,
+    backend: normalized["backend"] ?? "vllm",
+    env_vars: normalized["env_vars"] ?? null,
+    tensor_parallel_size: coerceNumber(normalized["tensor_parallel_size"], 1),
+    pipeline_parallel_size: coerceNumber(normalized["pipeline_parallel_size"], 1),
+    max_model_len: coerceNumber(normalized["max_model_len"], 32768),
+    gpu_memory_utilization: coerceNumber(normalized["gpu_memory_utilization"], 0.9),
+    kv_cache_dtype: normalized["kv_cache_dtype"] ?? "auto",
+    max_num_seqs: coerceNumber(normalized["max_num_seqs"], 256),
+    trust_remote_code: coerceBoolean(
+      normalized["trust_remote_code"],
+      process.env["LOCAL_STUDIO_DEFAULT_TRUST_REMOTE_CODE"] !== "false",
+    ),
+    tool_call_parser: normalized["tool_call_parser"] ?? null,
+    reasoning_parser: normalized["reasoning_parser"] ?? null,
+    enable_auto_tool_choice: coerceBoolean(normalized["enable_auto_tool_choice"], false),
+    quantization: normalized["quantization"] ?? null,
+    dtype: normalized["dtype"] ?? null,
+    host: normalized["host"] ?? "0.0.0.0",
+    port: coerceNumber(normalized["port"], 8000),
+    served_model_name: normalized["served_model_name"] ?? null,
+    python_path: normalized["python_path"] ?? null,
+    extra_args: normalized["extra_args"] ?? {},
+    max_thinking_tokens: coerceNullableNumber(normalized["max_thinking_tokens"]),
+    thinking_mode: normalized["thinking_mode"] ?? "conservative",
+  });
   const environmentVariables = parsed.env_vars
     ? Object.fromEntries(
         Object.entries(parsed.env_vars).map(([key, value]) => [key, String(value)])

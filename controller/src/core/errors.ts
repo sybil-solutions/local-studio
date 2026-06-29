@@ -1,18 +1,15 @@
-export class HttpStatus extends Error {
-  public readonly status: number;
-  public readonly detail: string;
+import { Schema } from "effect";
 
-  public constructor(status: number, detail: string) {
-    super(detail);
-    this.status = status;
-    this.detail = detail;
-  }
-}
+export class HttpStatus extends Schema.TaggedErrorClass<HttpStatus>()("HttpStatus", {
+  status: Schema.Number,
+  detail: Schema.String,
+}) {}
 
 export const isHttpStatus = (value: unknown): value is HttpStatus => value instanceof HttpStatus;
 
-export const notFound = (detail: string): HttpStatus => new HttpStatus(404, detail);
+export const notFound = (detail: string): HttpStatus => new HttpStatus({ status: 404, detail });
 
-export const badRequest = (detail: string): HttpStatus => new HttpStatus(400, detail);
+export const badRequest = (detail: string): HttpStatus => new HttpStatus({ status: 400, detail });
 
-export const serviceUnavailable = (detail: string): HttpStatus => new HttpStatus(503, detail);
+export const serviceUnavailable = (detail: string): HttpStatus =>
+  new HttpStatus({ status: 503, detail });
