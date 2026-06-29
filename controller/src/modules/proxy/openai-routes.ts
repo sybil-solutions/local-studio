@@ -216,7 +216,7 @@ export const registerOpenAIRoutes: RouteRegistrar = (app, context) => {
       if (ctx.req.raw.signal.aborted) {
         return ctx.body(null, { status: 499 });
       }
-      throw new HttpStatus(400, "Invalid request body");
+      throw new HttpStatus({ status: 400, detail: "Invalid request body" });
     }
 
     let parsed: Record<string, unknown> = {};
@@ -254,7 +254,7 @@ export const registerOpenAIRoutes: RouteRegistrar = (app, context) => {
         bodyChanged = true;
       }
     } catch {
-      throw new HttpStatus(400, "Invalid JSON body");
+      throw new HttpStatus({ status: 400, detail: "Invalid JSON body" });
     }
 
     const providerModel = requestedModel
@@ -412,6 +412,12 @@ export const registerOpenAIRoutes: RouteRegistrar = (app, context) => {
     const KEEPALIVE_BYTES = sseEncoder.encode(": keepalive\n\n");
     const KEEPALIVE_INTERVAL_MS = 15_000;
     let keepaliveId: ReturnType<typeof setInterval> | null = null;
+    const stopKeepalive = () => {
+      if (keepaliveId) {
+        clearInterval(keepaliveId);
+        keepaliveId = null;
+      }
+    };
 
     const responseStream = new ReadableStream<Uint8Array>({
       async start(controller) {
@@ -431,7 +437,7 @@ export const registerOpenAIRoutes: RouteRegistrar = (app, context) => {
             signal: clientSignal,
           });
         } catch (error) {
-          if (keepaliveId) { clearInterval(keepaliveId); keepaliveId = null; }
+          stopKeepalive();
           if (clientSignal.aborted) {
             try { controller.close(); } catch { /* already closed */ }
             return;
@@ -449,9 +455,8 @@ export const registerOpenAIRoutes: RouteRegistrar = (app, context) => {
           return;
         }
 
-        if (keepaliveId) { clearInterval(keepaliveId); keepaliveId = null; }
-
         if (!upstreamResponse.ok) {
+          stopKeepalive();
           let errorBody = "";
           try { errorBody = await upstreamResponse.text(); } catch { /* ignore */ }
           try {
@@ -469,6 +474,7 @@ export const registerOpenAIRoutes: RouteRegistrar = (app, context) => {
 
         const reader = upstreamResponse.body?.getReader();
         if (!reader) {
+          stopKeepalive();
           const errorPayload = JSON.stringify({
             error: {
               message: providerRouting
@@ -526,6 +532,7 @@ export const registerOpenAIRoutes: RouteRegistrar = (app, context) => {
           while (true) {
             const { done, value } = await pipeReader.read();
             if (done) break;
+            stopKeepalive();
             controller.enqueue(value);
           }
         } catch (error) {
@@ -538,7 +545,7 @@ export const registerOpenAIRoutes: RouteRegistrar = (app, context) => {
       },
 
       cancel() {
-        if (keepaliveId) { clearInterval(keepaliveId); keepaliveId = null; }
+        stopKeepalive();
       },
     });
 
