@@ -1,4 +1,5 @@
 import type { GpuSummary, RecipeSummary, Status, ControllerConfig, LifetimeMetrics } from "./types";
+import { Effect } from "effect";
 
 const DEFAULT_BASE_URL = "http://localhost:8080";
 
@@ -47,15 +48,25 @@ function toOptionalFiniteNumber(value: unknown): number | undefined {
   return undefined;
 }
 
-async function parseBody(response: Response): Promise<unknown> {
-  const text = await response.text();
-  if (!text) return null;
-  try {
-    return JSON.parse(text);
-  } catch {
-    return text;
-  }
-}
+const parseBodyEffect = (response: Response): Effect.Effect<unknown, CliApiError> =>
+  Effect.gen(function* () {
+    const text = yield* Effect.tryPromise({
+      try: () => response.text(),
+      catch: (error) =>
+        new CliApiError(
+          `Failed to read response body: ${error instanceof Error ? error.message : String(error)}`,
+          "GET",
+          "unknown",
+          response.status,
+        ),
+    });
+    if (!text) return null;
+    try {
+      return JSON.parse(text) as unknown;
+    } catch {
+      return text;
+    }
+  });
 
 function extractErrorMessage(body: unknown, fallback: string): string {
   if (typeof body === "string" && body.trim()) return body.trim();
@@ -70,50 +81,45 @@ function extractErrorMessage(body: unknown, fallback: string): string {
   return fallback;
 }
 
-async function requestJson<T>(
+function requestJsonEffect<T>(
   method: "GET" | "POST",
   path: string,
   options: { body?: unknown } = {}
-): Promise<T> {
+): Effect.Effect<T, CliApiError> {
   const url = `${resolveBaseUrl()}${path}`;
-  let response: Response;
-  try {
-    response = await fetch(url, {
-      method,
-      headers: {
-        ...(options.body ? { "Content-Type": "application/json" } : {}),
-        ...(resolveApiKey() ? { "X-API-Key": resolveApiKey() } : {}),
+  return Effect.gen(function* () {
+    const response = yield* Effect.tryPromise({
+      try: () =>
+        fetch(url, {
+          method,
+          headers: {
+            ...(options.body ? { "Content-Type": "application/json" } : {}),
+            ...(resolveApiKey() ? { "X-API-Key": resolveApiKey() } : {}),
+          },
+          body: options.body ? JSON.stringify(options.body) : undefined,
+        }),
+      catch: (error) => {
+        const message = error instanceof Error ? error.message : String(error);
+        return new CliApiError(`Network error calling ${method} ${path}: ${message}`, method, path);
       },
-      body: options.body ? JSON.stringify(options.body) : undefined,
     });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    throw new CliApiError(
-      `Network error calling ${method} ${path}: ${message}`,
-      method,
-      path,
-      null
-    );
-  }
 
-  const body = await parseBody(response);
-  if (!response.ok) {
-    const reason = extractErrorMessage(body, `${response.status} ${response.statusText}`.trim());
-    throw new CliApiError(
-      `Request failed for ${method} ${path}: ${reason}`,
-      method,
-      path,
-      response.status
-    );
-  }
+    const body = yield* parseBodyEffect(response);
+    if (!response.ok) {
+      const reason = extractErrorMessage(body, `${response.status} ${response.statusText}`.trim());
+      return yield* Effect.fail(
+        new CliApiError(`Request failed for ${method} ${path}: ${reason}`, method, path, response.status),
+      );
+    }
 
-  return body as T;
+    return body as T;
+  });
 }
 
-export async function fetchGPUs(): Promise<GpuSummary[]> {
-  const data = await requestJson<unknown>("GET", "/gpus");
+export const fetchGPUsEffect = Effect.gen(function* () {
+  const data = yield* requestJsonEffect<unknown>("GET", "/gpus");
   if (!isRecord(data) || !Array.isArray(data.gpus)) {
-    throw new CliApiError("Invalid response for GET /gpus", "GET", "/gpus");
+    return yield* Effect.fail(new CliApiError("Invalid response for GET /gpus", "GET", "/gpus"));
   }
 
   return data.gpus.filter(isRecord).map((gpu, index) => ({
@@ -125,20 +131,20 @@ export async function fetchGPUs(): Promise<GpuSummary[]> {
     temperature: toFiniteNumber(gpu.temperature),
     power_draw: toFiniteNumber(gpu.power_draw),
   }));
-}
+});
 
-export async function fetchRecipes(): Promise<RecipeSummary[]> {
-  const data = await requestJson<unknown>("GET", "/recipes");
+export const fetchRecipesEffect = Effect.gen(function* () {
+  const data = yield* requestJsonEffect<unknown>("GET", "/recipes");
   if (!Array.isArray(data)) {
-    throw new CliApiError("Invalid response for GET /recipes", "GET", "/recipes");
+    return yield* Effect.fail(new CliApiError("Invalid response for GET /recipes", "GET", "/recipes"));
   }
   return data as RecipeSummary[];
-}
+});
 
-export async function fetchStatus(): Promise<Status> {
-  const data = await requestJson<unknown>("GET", "/status");
+export const fetchStatusEffect = Effect.gen(function* () {
+  const data = yield* requestJsonEffect<unknown>("GET", "/status");
   if (!isRecord(data)) {
-    throw new CliApiError("Invalid response for GET /status", "GET", "/status");
+    return yield* Effect.fail(new CliApiError("Invalid response for GET /status", "GET", "/status"));
   }
 
   const processInfo = isRecord(data.process) ? data.process : undefined;
@@ -154,12 +160,12 @@ export async function fetchStatus(): Promise<Status> {
     port: toOptionalFiniteNumber(processInfo?.port),
     error: typeof data.error === "string" ? data.error : undefined,
   };
-}
+});
 
-export async function fetchConfig(): Promise<ControllerConfig> {
-  const data = await requestJson<unknown>("GET", "/config");
+export const fetchConfigEffect = Effect.gen(function* () {
+  const data = yield* requestJsonEffect<unknown>("GET", "/config");
   if (!isRecord(data) || !isRecord(data.config)) {
-    throw new CliApiError("Invalid response for GET /config", "GET", "/config");
+    return yield* Effect.fail(new CliApiError("Invalid response for GET /config", "GET", "/config"));
   }
 
   const config = data.config;
@@ -169,12 +175,14 @@ export async function fetchConfig(): Promise<ControllerConfig> {
     models_dir: typeof config.models_dir === "string" ? config.models_dir : "",
     data_dir: typeof config.data_dir === "string" ? config.data_dir : "",
   };
-}
+});
 
-export async function fetchLifetimeMetrics(): Promise<LifetimeMetrics> {
-  const data = await requestJson<unknown>("GET", "/lifetime-metrics");
+export const fetchLifetimeMetricsEffect = Effect.gen(function* () {
+  const data = yield* requestJsonEffect<unknown>("GET", "/lifetime-metrics");
   if (!isRecord(data)) {
-    throw new CliApiError("Invalid response for GET /lifetime-metrics", "GET", "/lifetime-metrics");
+    return yield* Effect.fail(
+      new CliApiError("Invalid response for GET /lifetime-metrics", "GET", "/lifetime-metrics"),
+    );
   }
 
   return {
@@ -182,16 +190,25 @@ export async function fetchLifetimeMetrics(): Promise<LifetimeMetrics> {
     total_requests: toFiniteNumber(data.requests_total),
     total_energy_kwh: toFiniteNumber(data.energy_kwh),
   };
-}
+});
 
-export async function launchRecipe(id: string): Promise<boolean> {
-  const data = await requestJson<unknown>("POST", `/launch/${id}`);
+export const launchRecipeEffect = (id: string) =>
+  Effect.gen(function* () {
+    const data = yield* requestJsonEffect<unknown>("POST", `/launch/${id}`);
   if (isRecord(data) && typeof data.success === "boolean") return data.success;
   return true;
-}
+  });
 
-export async function evictModel(): Promise<boolean> {
-  const data = await requestJson<unknown>("POST", "/evict");
-  if (isRecord(data) && typeof data.success === "boolean") return data.success;
-  return true;
-}
+export const evictModelEffect = Effect.gen(function* () {
+  const data = yield* requestJsonEffect<unknown>("POST", "/evict");
+  return isRecord(data) && typeof data.success === "boolean" ? data.success : true;
+});
+
+export const fetchGPUs = (): Promise<GpuSummary[]> => Effect.runPromise(fetchGPUsEffect);
+export const fetchRecipes = (): Promise<RecipeSummary[]> => Effect.runPromise(fetchRecipesEffect);
+export const fetchStatus = (): Promise<Status> => Effect.runPromise(fetchStatusEffect);
+export const fetchConfig = (): Promise<ControllerConfig> => Effect.runPromise(fetchConfigEffect);
+export const fetchLifetimeMetrics = (): Promise<LifetimeMetrics> =>
+  Effect.runPromise(fetchLifetimeMetricsEffect);
+export const launchRecipe = (id: string): Promise<boolean> => Effect.runPromise(launchRecipeEffect(id));
+export const evictModel = (): Promise<boolean> => Effect.runPromise(evictModelEffect);

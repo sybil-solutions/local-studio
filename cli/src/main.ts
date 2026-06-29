@@ -3,14 +3,9 @@ import { hideCursor, showCursor } from "./ansi";
 import { setupInput } from "./input";
 import { render } from "./render";
 import * as api from "./api";
+import { runHeadless } from "./headless";
 import type { AppState, View } from "./types";
-
-// Route to headless mode if CLI args provided
-if (process.argv.length > 2) {
-  const { runHeadless } = await import("./headless");
-  await runHeadless();
-  process.exit(process.exitCode ?? 0);
-}
+import { Effect, Fiber, Result, Schedule } from "effect";
 
 const state: AppState = {
   view: "dashboard",
@@ -23,34 +18,34 @@ const state: AppState = {
   error: null,
 };
 
-function rejectionMessage(result: PromiseRejectedResult, fallback: string): string {
-  return result.reason instanceof Error ? result.reason.message : fallback;
+function failureMessage(error: unknown, fallback: string): string {
+  return error instanceof Error ? error.message : fallback;
 }
 
-async function refresh(): Promise<void> {
-  const results = await Promise.allSettled([
-    api.fetchGPUs(),
-    api.fetchRecipes(),
-    api.fetchStatus(),
-    api.fetchConfig(),
-    api.fetchLifetimeMetrics(),
+const refreshEffect = Effect.gen(function* () {
+  const results = yield* Effect.all([
+    Effect.result(api.fetchGPUsEffect),
+    Effect.result(api.fetchRecipesEffect),
+    Effect.result(api.fetchStatusEffect),
+    Effect.result(api.fetchConfigEffect),
+    Effect.result(api.fetchLifetimeMetricsEffect),
   ] as const);
 
   const errors: string[] = [];
-  if (results[0].status === "fulfilled") state.gpus = results[0].value;
-  else errors.push(rejectionMessage(results[0], "Failed to fetch GPUs"));
+  if (Result.isSuccess(results[0])) state.gpus = results[0].success;
+  else errors.push(failureMessage(results[0].failure, "Failed to fetch GPUs"));
 
-  if (results[1].status === "fulfilled") state.recipes = results[1].value;
-  else errors.push(rejectionMessage(results[1], "Failed to fetch recipes"));
+  if (Result.isSuccess(results[1])) state.recipes = results[1].success;
+  else errors.push(failureMessage(results[1].failure, "Failed to fetch recipes"));
 
-  if (results[2].status === "fulfilled") state.status = results[2].value;
-  else errors.push(rejectionMessage(results[2], "Failed to fetch status"));
+  if (Result.isSuccess(results[2])) state.status = results[2].success;
+  else errors.push(failureMessage(results[2].failure, "Failed to fetch status"));
 
-  if (results[3].status === "fulfilled") state.config = results[3].value;
-  else errors.push(rejectionMessage(results[3], "Failed to fetch config"));
+  if (Result.isSuccess(results[3])) state.config = results[3].success;
+  else errors.push(failureMessage(results[3].failure, "Failed to fetch config"));
 
-  if (results[4].status === "fulfilled") state.lifetime = results[4].value;
-  else errors.push(rejectionMessage(results[4], "Failed to fetch lifetime metrics"));
+  if (Result.isSuccess(results[4])) state.lifetime = results[4].success;
+  else errors.push(failureMessage(results[4].failure, "Failed to fetch lifetime metrics"));
 
   const hasRecipes = state.recipes.length > 0;
   if (!hasRecipes) state.selectedIndex = 0;
@@ -58,22 +53,24 @@ async function refresh(): Promise<void> {
 
   state.error = errors.length > 0 ? errors[0] : null;
   render(state);
+});
+
+function refresh(): Promise<void> {
+  return Effect.runPromise(refreshEffect);
 }
 
 const VIEWS: View[] = ["dashboard", "recipes", "status", "config"];
 let cleanupInput: () => void = (): void => {
   /* no-op */
 };
-const refreshTimer = setInterval(() => {
-  void refresh();
-}, 2000);
-
-if (typeof refreshTimer.unref === "function") {
-  refreshTimer.unref();
-}
+const refreshFiber = Effect.runFork(
+  Effect.sync(() => {
+    void refresh();
+  }).pipe(Effect.repeat(Schedule.spaced(2000))),
+);
 
 function cleanup(): void {
-  clearInterval(refreshTimer);
+  void Effect.runPromise(Fiber.interrupt(refreshFiber));
   cleanupInput?.();
   showCursor();
   process.exit(0);
@@ -92,36 +89,52 @@ function handleKey(key: string): void {
     state.selectedIndex = Math.min(maxIndex, state.selectedIndex + 1);
   }
   if (key === "enter" && state.view === "recipes" && state.recipes[state.selectedIndex]) {
-    api
-      .launchRecipe(state.recipes[state.selectedIndex].id)
-      .then((ok) => {
+    void Effect.runPromise(
+      api.launchRecipeEffect(state.recipes[state.selectedIndex].id).pipe(
+        Effect.tap((ok) =>
+          Effect.sync(() => {
         if (!ok) state.error = "Launch request did not succeed";
-      })
-      .catch((error: unknown) => {
-        state.error = error instanceof Error ? error.message : "Failed to launch recipe";
-      })
-      .finally(() => {
-        void refresh();
-      });
+          }),
+        ),
+        Effect.catch((error) =>
+          Effect.sync(() => {
+            state.error = failureMessage(error, "Failed to launch recipe");
+          }),
+        ),
+        Effect.andThen(refreshEffect),
+      ),
+    );
   }
   if (key === "e" && state.status.running) {
-    api
-      .evictModel()
-      .then((ok) => {
+    void Effect.runPromise(
+      api.evictModelEffect.pipe(
+        Effect.tap((ok) =>
+          Effect.sync(() => {
         if (!ok) state.error = "Evict request did not succeed";
-      })
-      .catch((error: unknown) => {
-        state.error = error instanceof Error ? error.message : "Failed to evict model";
-      })
-      .finally(() => {
-        void refresh();
-      });
+          }),
+        ),
+        Effect.catch((error) =>
+          Effect.sync(() => {
+            state.error = failureMessage(error, "Failed to evict model");
+          }),
+        ),
+        Effect.andThen(refreshEffect),
+      ),
+    );
   }
   render(state);
 }
 
-hideCursor();
-cleanupInput = setupInput(handleKey);
-process.on("SIGINT", cleanup);
-process.on("SIGTERM", cleanup);
-await refresh();
+function startTui(): void {
+  hideCursor();
+  cleanupInput = setupInput(handleKey);
+  process.on("SIGINT", cleanup);
+  process.on("SIGTERM", cleanup);
+  void refresh();
+}
+
+if (process.argv.length > 2) {
+  void runHeadless().finally(() => process.exit(process.exitCode ?? 0));
+} else {
+  startTui();
+}

@@ -28,5 +28,8 @@
   },
   "engines": {
     "bun": ">=1.0.0"
+  },
+  "dependencies": {
+    "effect": "^4.0.0-beta.90"
   }
 }

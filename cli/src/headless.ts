@@ -1,16 +1,15 @@
 import * as api from "./api";
+import { Effect } from "effect";
 
-type CommandHandler = () => Promise<void>;
+type CommandHandler = Effect.Effect<void, unknown>;
 
 const printJson = (value: unknown, pretty = false): void => {
   console.log(JSON.stringify(value, null, pretty ? 2 : undefined));
 };
 
 const showJson =
-  (load: () => Promise<unknown>): CommandHandler =>
-  async () => {
-    printJson(await load(), true);
-  };
+  (load: Effect.Effect<unknown, unknown>): CommandHandler =>
+  load.pipe(Effect.andThen((value) => Effect.sync(() => printJson(value, true))));
 
 const exitJson = (value: unknown, ok: boolean): never => {
   printJson(value);
@@ -18,25 +17,25 @@ const exitJson = (value: unknown, ok: boolean): never => {
 };
 
 const COMMANDS: Record<string, CommandHandler> = {
-  status: showJson(api.fetchStatus),
-  gpus: showJson(api.fetchGPUs),
-  recipes: showJson(api.fetchRecipes),
-  config: showJson(api.fetchConfig),
-  metrics: showJson(api.fetchLifetimeMetrics),
-  evict: async () => {
-    const ok = await api.evictModel();
+  status: showJson(api.fetchStatusEffect),
+  gpus: showJson(api.fetchGPUsEffect),
+  recipes: showJson(api.fetchRecipesEffect),
+  config: showJson(api.fetchConfigEffect),
+  metrics: showJson(api.fetchLifetimeMetricsEffect),
+  evict: Effect.gen(function* () {
+    const ok = yield* api.evictModelEffect;
     exitJson({ success: ok }, ok);
-  },
-  launch: async () => {
+  }),
+  launch: Effect.gen(function* () {
     const id = process.argv[3];
     if (!id) {
       console.error("Usage: local-studio launch <recipe-id>");
       process.exit(1);
     }
-    const ok = await api.launchRecipe(id);
+    const ok = yield* api.launchRecipeEffect(id);
     exitJson({ success: ok, recipe_id: id }, ok);
-  },
-  help: async () => {
+  }),
+  help: Effect.sync(() => {
     console.log(`local-studio - Model lifecycle management CLI
 
 Commands:
@@ -57,21 +56,29 @@ Notes:
   - Non-zero exit code indicates command failure.
 
 Run without arguments for interactive TUI mode.`);
-  },
+  }),
 };
 
-export async function runHeadless(): Promise<void> {
-  try {
-    const cmd = process.argv[2] || "help";
-    const handler = COMMANDS[cmd];
-    if (!handler) {
-      throw new Error(`Unknown command: ${cmd}\nRun 'local-studio help' for usage.`);
-    }
+export function runHeadless(): Promise<void> {
+  return Effect.runPromise(
+    Effect.gen(function* () {
+      const cmd = process.argv[2] || "help";
+      const handler = COMMANDS[cmd];
+      if (!handler) {
+        return yield* Effect.fail(
+          new Error(`Unknown command: ${cmd}\nRun 'local-studio help' for usage.`),
+        );
+      }
 
-    await handler();
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    console.error(message);
-    process.exit(1);
-  }
+      yield* handler;
+    }).pipe(
+      Effect.catch((error) =>
+        Effect.sync(() => {
+          const message = error instanceof Error ? error.message : String(error);
+          console.error(message);
+          process.exit(1);
+        }),
+      ),
+    ),
+  );
 }
