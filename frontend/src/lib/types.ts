@@ -86,18 +86,8 @@ export interface RecipeWithStatus extends RecipeBase {
 
 // --- Docker environments (a recipe pinned to an official engine image) ---
 
-export type EnvironmentEngineId = "vllm" | "sglang" | "llamacpp";
-
-export interface Environment {
-  id: string;
-  name: string;
-  recipeId: string;
-  engineId: EnvironmentEngineId;
-  version: string;
-  variant: string | null;
-  createdAt: string;
-  updatedAt: string;
-}
+export type { Environment, EnvironmentEngineId } from "../../../shared/contracts/environments";
+import type { Environment, EnvironmentEngineId } from "../../../shared/contracts/environments";
 
 export interface EnvironmentWithStatus extends Environment {
   image: string;
