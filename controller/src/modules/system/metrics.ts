@@ -12,7 +12,6 @@ export interface MetricsRegistry {
 }
 
 export interface ControllerMetrics {
-  recordModelSwitch: (recipeId: string, backend: string, durationSeconds: number, success: boolean) => void;
   updateActiveModel: (modelPath?: string | null, backend?: string | null, servedName?: string | null) => void;
   updateGpuMetrics: (gpus: Record<string, unknown>[]) => void;
   updateSseMetrics: (stats: Record<string, unknown>) => void;
@@ -20,28 +19,6 @@ export interface ControllerMetrics {
 
 export const createMetrics = (): { registry: MetricsRegistry; metrics: ControllerMetrics } => {
   const registry = new Registry();
-
-  const modelSwitchesTotal = new Counter({
-    name: "local_studio_model_switches_total",
-    help: "Total number of model switches",
-    labelNames: ["recipe_id", "backend"],
-    registers: [registry],
-  });
-
-  const modelSwitchDuration = new Histogram({
-    name: "local_studio_model_switch_duration_seconds",
-    help: "Time taken to switch models",
-    labelNames: ["recipe_id"],
-    buckets: [10, 30, 60, 120, 300, 600],
-    registers: [registry],
-  });
-
-  const modelLaunchFailures = new Counter({
-    name: "local_studio_model_launch_failures_total",
-    help: "Total number of failed model launches",
-    labelNames: ["recipe_id"],
-    registers: [registry],
-  });
 
   const activeModelInfo = new Gauge({
     name: "local_studio_active_model",
@@ -101,14 +78,6 @@ export const createMetrics = (): { registry: MetricsRegistry; metrics: Controlle
   let lastEventCount = 0;
 
   const metrics: ControllerMetrics = {
-    recordModelSwitch: (recipeId, backend, durationSeconds, success) => {
-      if (success) {
-        modelSwitchesTotal.labels({ recipe_id: recipeId, backend }).inc();
-        modelSwitchDuration.labels({ recipe_id: recipeId }).observe(durationSeconds);
-      } else {
-        modelLaunchFailures.labels({ recipe_id: recipeId }).inc();
-      }
-    },
     updateActiveModel: (modelPath, backend, servedName) => {
       activeModelInfo.reset();
       const labels = {

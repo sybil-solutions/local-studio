@@ -16,12 +16,12 @@
      weight all derive from these via calc(), so a handful of values re-theme
      the whole app uniformly. Defaults reproduce the Codex-like density. */
   --ui-scale: 1; /* master text-size multiplier — scales the entire type ramp */
-  --leading: 1.5; /* base line-height */
+  --leading: 1.55; /* base line-height */
   --leading-tight: 1.25;
   --weight-normal: 400;
   --weight-medium: 500;
   --weight-strong: 600;
-  --radius-base: 7px; /* master corner radius — the radius ramp scales from it */
+  --radius-base: 10px; /* master corner radius — the radius ramp scales from it */
   --border-width: 1px;
   --space-base: 4px; /* base spacing unit */
 
@@ -125,13 +125,13 @@
   --color-background-win-alt: #e9ebec;
   --color-background-alt: color-mix(in oklab, var(--color-background) 70%, transparent);
 
-  --color-brand: #000;
+  --color-brand: #1a1a1a;
   --color-accent: #ebf4ff;
   --color-find-highlight: #fff4eb;
   --color-find-highlight-active: #ffb26b;
 
-  --color-border: #0d0d0d1a;
-  --color-border-hover: #0d0d0d24;
+  --color-border: #0d0d0d14;
+  --color-border-hover: #0d0d0d1f;
   --color-hover: #0d0d0d0b;
   --color-selected: #0d0d0d12;
 
@@ -225,11 +225,11 @@
   --color-foreground-subtlest: color-mix(in oklab, var(--color-neutral-800) 40%, transparent);
   --color-foreground-inverse: #fff;
 
-  --color-success: #1e8a3e;
+  --color-success: #2e8f52;
   --color-success-foreground: #fff;
-  --color-destructive: #e03131;
+  --color-destructive: #cc4a4a;
   --color-destructive-foreground: #fff;
-  --color-warning: #e07b00;
+  --color-warning: #c97b2d;
   --color-warning-foreground: #fff;
 
   --color-diff-added: #1e8a3e;
@@ -289,13 +289,13 @@
   --color-background-win-alt: #202020;
   --color-background-alt: color-mix(in oklab, var(--color-background-win-alt) 60%, transparent);
 
-  --color-brand: #fff;
+  --color-brand: #f2f2f0;
   --color-accent: #1c2734;
   --color-find-highlight: #3a2a18;
   --color-find-highlight-active: #d48a4c;
 
-  --color-border: #ffffff14;
-  --color-border-hover: #ffffff24;
+  --color-border: #ffffff10;
+  --color-border-hover: #ffffff1e;
   --color-hover: #ffffff0f;
   --color-selected: #ffffff17;
 
@@ -380,7 +380,7 @@
   --color-menu: #222222;
   --color-menu-hover: #2b2b2b;
 
-  --color-primary: #fff;
+  --color-primary: #f2f2f0;
   --color-primary-foreground: #000;
   --color-secondary: #2b2b2b;
 
@@ -389,11 +389,11 @@
   --color-foreground-subtlest: color-mix(in oklab, #e7e7e7 34%, transparent);
   --color-foreground-inverse: #000;
 
-  --color-success: #46bf72;
+  --color-success: #5cb87f;
   --color-success-foreground: #000;
-  --color-destructive: #ff5c5c;
+  --color-destructive: #e57373;
   --color-destructive-foreground: #000;
-  --color-warning: #d48a4c;
+  --color-warning: #cf9060;
   --color-warning-foreground: #000;
 
   --color-diff-added: #46bf72;
@@ -509,7 +509,7 @@
 .dark,
 :root[data-theme="zai-dark"],
 :root[data-theme="omlx-dark"] {
-  --composer-shadow: 0 18px 42px rgba(0, 0, 0, 0.42);
+  --composer-shadow: 0 14px 34px rgba(0, 0, 0, 0.3);
 }
 
 @media (min-width: 1024px) {
