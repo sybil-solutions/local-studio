@@ -1,6 +1,4 @@
-// Client-side session contracts shared between sessions-page, sessions-command,
-// and the API route. Kept separate from server-only imports so client bundles
-// don't pull in route-handler code.
+import type { ActiveAgentSessionSnapshot } from "@/features/agent/active-sessions";
 
 export type AggregatedSession = {
   id: string;
@@ -14,19 +12,19 @@ export type AggregatedSession = {
   filename: string;
 };
 
-export type ActiveSession = {
-  projectId: string;
-  cwd: string;
-  paneId: string;
-  tabId: string;
-  piSessionId: string | null;
-  title: string;
-  status: string;
-  focused?: boolean;
-  updatedAt: string;
-};
+export type ActiveSession = Pick<
+  ActiveAgentSessionSnapshot,
+  | "projectId"
+  | "cwd"
+  | "paneId"
+  | "tabId"
+  | "piSessionId"
+  | "title"
+  | "status"
+  | "focused"
+  | "updatedAt"
+>;
 
-/** Sort fields for the sessions table (distinct from the usage-table SortField). */
 export type SessionSortField = "updatedAt" | "projectName";
 
 /**

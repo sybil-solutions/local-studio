@@ -107,6 +107,6 @@ export type SessionTab = {
 };
 
 export type RuntimeLoggedEvent = {
-  seq?: number;
-  event?: Record<string, unknown>;
+  readonly seq?: number;
+  readonly event?: Record<string, unknown>;
 };

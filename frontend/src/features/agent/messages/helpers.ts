@@ -279,35 +279,30 @@ function userTextFromEvent(event: Record<string, unknown>): string | null {
   return text ? text : null;
 }
 
-export function mergeCanonicalAndRuntimeEvents(
+function canonicalEventsBeforeRuntimeTail(
   canonicalEvents: Record<string, unknown>[],
-  runtimeEvents: RuntimeLoggedEvent[] = [],
+  runtime: Record<string, unknown>[],
 ): Record<string, unknown>[] {
-  const runtime = runtimeEvents
-    .filter((entry) => entry.event && typeof entry.event === "object")
-    .sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0))
-    .map((entry) => entry.event as Record<string, unknown>);
-
-  // The runtime event log re-renders every turn it covers (a live, streaming
-  // copy). Replaying the canonical (settled) copies of those same turns
-  // alongside it duplicates each turn. The runtime covers a contiguous tail of
-  // the conversation, so keep canonical only up to where that tail begins — the
-  // last canonical occurrence of the runtime's first user message — then let the
-  // runtime own those turns.
-  let canonicalPrefix = canonicalEvents;
   const firstRuntimeUser = runtime
     .map(userTextFromEvent)
     .find((text): text is string => Boolean(text));
-  if (firstRuntimeUser) {
-    let cut = -1;
-    for (let index = canonicalEvents.length - 1; index >= 0; index -= 1) {
-      if (userTextFromEvent(canonicalEvents[index]) === firstRuntimeUser) {
-        cut = index;
-        break;
-      }
+  if (!firstRuntimeUser) return canonicalEvents;
+  for (let index = canonicalEvents.length - 1; index >= 0; index -= 1) {
+    if (userTextFromEvent(canonicalEvents[index]) === firstRuntimeUser) {
+      return canonicalEvents.slice(0, index);
     }
-    if (cut !== -1) canonicalPrefix = canonicalEvents.slice(0, cut);
   }
+  return canonicalEvents;
+}
+
+export function mergeCanonicalAndRuntimeEvents(
+  canonicalEvents: Record<string, unknown>[],
+  runtimeEvents: readonly RuntimeLoggedEvent[] = [],
+): Record<string, unknown>[] {
+  const runtime = [...runtimeEvents]
+    .sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0))
+    .flatMap((entry) => (entry.event && typeof entry.event === "object" ? [entry.event] : []));
+  const canonicalPrefix = canonicalEventsBeforeRuntimeTail(canonicalEvents, runtime);
 
   const merged: Record<string, unknown>[] = [];
   const seen = new Set<string>();

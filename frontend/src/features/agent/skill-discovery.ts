@@ -1,6 +1,7 @@
-import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { existsSync, readdirSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
+import { matchSource, readCapped, sortedRows } from "@/features/agent/discovery-core";
 
 export type SkillRow = {
   id: string;
@@ -65,34 +66,22 @@ function skillNameFromDir(dir: string): string {
   return path.basename(dir).replace(/[-_]+/g, " ").trim() || path.basename(dir);
 }
 
-function isInside(candidate: string, root: string): boolean {
-  const relative = path.relative(path.resolve(root), path.resolve(candidate));
-  return Boolean(relative) && !relative.startsWith("..") && !path.isAbsolute(relative);
-}
-
 export function loadSkillInstructions(
   skillPath: string,
   sources: SkillSource[] = defaultSkillSources(),
   maxChars = 6000,
 ): SkillRow | null {
   const resolved = path.resolve(skillPath);
-  if (
-    !sources.some(
-      (source) => isInside(resolved, source.dir) || path.resolve(source.dir) === resolved,
-    )
-  ) {
-    return null;
-  }
+  const source = matchSource(resolved, sources);
+  if (!source) return null;
   const file = path.join(resolved, "SKILL.md");
   if (!existsSync(file)) return null;
-  const source = sources.find(
-    (item) => isInside(resolved, item.dir) || path.resolve(item.dir) === resolved,
-  );
-  const instructions = readFileSync(file, "utf8").slice(0, maxChars).trim();
+  const instructions = readCapped(file, maxChars);
+  if (instructions === null) return null;
   return {
-    id: `${source?.source ?? "skill"}:${skillNameFromDir(resolved).toLowerCase()}`,
+    id: `${source.source}:${skillNameFromDir(resolved).toLowerCase()}`,
     name: skillNameFromDir(resolved),
-    source: source?.source ?? "skill",
+    source: source.source,
     path: resolved,
     instructions,
   };
@@ -124,12 +113,10 @@ export function discoverSkills(
       const candidate = path.join(dir, entry);
       try {
         if (statSync(candidate).isDirectory()) visit(candidate, source, depth + 1);
-      } catch {
-        // ignore unreadable paths
-      }
+      } catch {}
     }
   };
 
   for (const { source, dir } of sources) visit(dir, source, 0);
-  return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name));
+  return sortedRows(byName);
 }

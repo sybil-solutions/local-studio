@@ -1,15 +1,8 @@
-// Discover prompt templates (.md files with a name/description front matter)
-// that we expose alongside skills in the composer. Templates are
-// passed to the SDK runtime via `resourceLoaderOptions.additionalPromptTemplatePaths`,
-// so the agent can expand them like `/template-name` shortcuts. This mirrors
-// the layout used by the Pi CLI and Claude Code so dropping a file in
-// `<dataDir>/pi-agent/prompts/` or `~/.claude/prompts/` makes it discoverable
-// without code changes.
-
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 import { resolveDataDir } from "@/lib/data-dir";
+import { matchSource, readCapped, sortedRows } from "@/features/agent/discovery-core";
 
 export type PromptTemplateRow = {
   id: string;
@@ -109,7 +102,7 @@ export function discoverPromptTemplates(
       if (row && !byKey.has(row.id)) byKey.set(row.id, row);
     }
   }
-  return [...byKey.values()].sort((a, b) => a.name.localeCompare(b.name));
+  return sortedRows(byKey);
 }
 
 export function loadPromptTemplateInstructions(
@@ -118,18 +111,11 @@ export function loadPromptTemplateInstructions(
   maxChars = 6000,
 ): (PromptTemplateRow & { instructions: string }) | null {
   const resolved = path.resolve(templatePath);
-  const match = sources.find((source) => {
-    const dir = path.resolve(source.dir);
-    const relative = path.relative(dir, resolved);
-    return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
-  });
+  const match = matchSource(resolved, sources);
   if (!match) return null;
   const row = templateRowFromFile(resolved, match.source);
   if (!row) return null;
-  try {
-    const instructions = readFileSync(resolved, "utf8").slice(0, maxChars).trim();
-    return { ...row, instructions };
-  } catch {
-    return null;
-  }
+  const instructions = readCapped(resolved, maxChars);
+  if (instructions === null) return null;
+  return { ...row, instructions };
 }

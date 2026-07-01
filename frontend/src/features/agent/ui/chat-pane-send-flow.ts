@@ -79,7 +79,7 @@ export function useChatPaneSendFlow({
         enabled: effectiveBrowserEnabled,
         backend: tools.browser.backend,
         url: tools.browser.url,
-        modelId,
+        vision: modelSupportsVision,
       });
       const prompt = [browserContextText, contextText, attachedText].filter(Boolean).join("\n\n");
       const images = modelSupportsVision

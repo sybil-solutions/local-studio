@@ -3,7 +3,6 @@ import { safeJson } from "@/features/agent/safe-json";
 import {
   parseAgentTurnCommandResult,
   type AgentTurnCommandResult,
-  type RuntimeLoggedEvent,
 } from "@/features/agent/messages";
 import type { AgentImageInput } from "@/features/agent/contracts";
 import type { BrowserBackend } from "@/features/agent/tools/types";
@@ -14,18 +13,14 @@ import type {
 
 import {
   decodeRuntimeEventPayload,
+  decodeRuntimeSessions,
+  decodeRuntimeStatusResponse,
   type RuntimeContextUsage,
+  type RuntimeEventPayload,
+  type RuntimeSessionSummary,
+  type RuntimeStatus,
 } from "@/features/agent/runtime/runtime-schema";
-export type { RuntimeContextUsage };
-export type RuntimeStatus = {
-  active?: boolean;
-  running?: boolean;
-  piSessionId?: string | null;
-  modelId?: string | null;
-  eventSeq?: number;
-  events?: RuntimeLoggedEvent[];
-  contextUsage?: RuntimeContextUsage | null;
-};
+export type { RuntimeContextUsage, RuntimeEventPayload, RuntimeSessionSummary, RuntimeStatus };
 
 export function runtimeContextUsage(
   status: RuntimeStatus | null | undefined,
@@ -50,17 +45,12 @@ const safeJsonEffect = <T>(response: Response): Effect.Effect<T, unknown> =>
     catch: (error) => error,
   });
 
-export type RuntimeSessionSummary = {
-  sessionId: string;
-  status: RuntimeStatus;
-};
-
 export function listRuntimeSessions(): Promise<RuntimeSessionSummary[]> {
   return Effect.runPromise(
     Effect.gen(function* () {
       const response = yield* fetchEffect("/api/agent/runtime/sessions", { cache: "no-store" });
-      const payload = yield* safeJsonEffect<{ sessions?: RuntimeSessionSummary[] }>(response);
-      return Array.isArray(payload.sessions) ? payload.sessions : [];
+      const payload = yield* safeJsonEffect<unknown>(response);
+      return decodeRuntimeSessions(payload);
     }).pipe(Effect.catch(() => Effect.succeed([]))),
   );
 }
@@ -76,18 +66,10 @@ export function loadRuntimeStatus(
       const response = yield* fetchEffect(`/api/agent/runtime/status?${params.toString()}`, {
         cache: "no-store",
       });
-      const payload = yield* safeJsonEffect<{
-        status?: {
-          active?: boolean;
-          running?: boolean;
-          piSessionId?: string | null;
-          modelId?: string | null;
-          eventSeq?: number;
-          contextUsage?: RuntimeContextUsage | null;
-        };
-        events?: RuntimeLoggedEvent[];
-      }>(response);
-      return payload.status ? { ...payload.status, events: payload.events ?? [] } : null;
+      const payload = yield* safeJsonEffect<unknown>(response);
+      const decoded = decodeRuntimeStatusResponse(payload);
+      if (!decoded) return null;
+      return { ...decoded.status, events: decoded.events ?? [] };
     }).pipe(Effect.catch(() => Effect.succeed(null))),
   );
 }
@@ -206,15 +188,6 @@ export function submitTurnCommand(args: SubmitTurnArgs): Promise<AgentTurnComman
   );
 }
 
-/**
- * Subscribe to the runtime's per-session event stream. Returns an
- * unsubscribe function that closes the EventSource. Callers handle `onError`
- * (e.g. probe runtime status to see if the session still exists).
- */
-export type RuntimeEventPayload =
-  | { type: "status"; phase: string; session?: RuntimeStatus }
-  | { type: "pi"; seq?: number; event: Record<string, unknown> };
-
 export type RuntimeEventSubscription = { close: () => void };
 
 export function subscribeRuntimeEvents(
@@ -238,7 +211,7 @@ export function subscribeRuntimeEvents(
     }
     const payload = decodeRuntimeEventPayload(parsed);
     if (!payload) return;
-    handlers.onPayload(payload as unknown as RuntimeEventPayload);
+    handlers.onPayload(payload);
   };
   source.onerror = handlers.onError;
   return {
