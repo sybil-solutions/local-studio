@@ -5,6 +5,7 @@ import {
   FolderTree,
   GitBranch,
   Globe2,
+  ListChecks,
   MessageSquarePlus,
   TerminalSquare,
 } from "@/ui/icon-registry";
@@ -234,6 +235,7 @@ function ComputerLauncherPanel({
       key: "plan",
       title: "Plan",
       description: "Plan and track to-dos",
+      icon: ListChecks,
       onClick: () => tools.setComputerTab("plan"),
     },
     {

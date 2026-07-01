@@ -7,6 +7,7 @@ import {
   FolderTree,
   GitBranch,
   Globe2,
+  ListChecks,
   MessageSquarePlus,
   PanelRight,
   Plus,
@@ -342,6 +343,7 @@ const TAB_OPTIONS: Array<{
     tab: "plan",
     label: "Plan",
     description: "Plan and to-do checklist",
+    icon: ListChecks,
   },
   {
     tab: "browser",
@@ -393,10 +395,7 @@ function ComputerHeader({
       ? { label: "Status", icon: Activity }
       : {
           label: TAB_LABELS[candidate],
-          icon:
-            candidate === "plan"
-              ? undefined
-              : (TAB_OPTIONS.find((item) => item.tab === candidate)?.icon ?? PanelRight),
+          icon: TAB_OPTIONS.find((item) => item.tab === candidate)?.icon ?? PanelRight,
         };
   return (
     <div className="relative flex h-10 shrink-0 items-center gap-1 border-b border-(--border)/85 bg-(--color-header) px-1.5 text-[length:var(--fs-sm)]">
