@@ -85,7 +85,7 @@ export interface EngineSpec {
   probeBinary?: (binary: string) => Promise<BinaryProbeResult>;
 
   /** Engine-specific Python path resolver for venv discovery. */
-  resolvePythonPath?: () => string | null;
+  resolvePythonPath?: (config: Config) => string | null;
 
   /** Get detailed runtime info (async). Replaces the sync functions in runtime-info.ts. */
   getRuntimeInfo?: (

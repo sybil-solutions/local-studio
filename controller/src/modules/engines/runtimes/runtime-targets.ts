@@ -14,6 +14,7 @@ import {
   probeBinaryRuntime,
   probePythonRuntime,
   splitEnvironmentList,
+  type PythonProbeBackend,
 } from "./runtime-target-probes";
 import { getEngineSpec } from "../engine-spec";
 import type { BinaryProbeResult } from "../engine-spec";
@@ -141,7 +142,7 @@ const collectVenvPythonFiles = (config: Config): string[] => {
 // Probes independent candidates concurrently; the returned pairs preserve
 // candidate order so addTarget keeps its order-dependent dedupe behavior.
 const probePythonCandidates = (
-  backend: "vllm" | "sglang" | "mlx",
+  backend: PythonProbeBackend,
   candidates: string[]
 ): Promise<Array<{ candidate: string; probe: Awaited<ReturnType<typeof probePythonRuntime>> }>> =>
   Promise.all(
@@ -152,7 +153,7 @@ const probePythonCandidates = (
   );
 
 const collectPythonTargets = async (
-  backend: "vllm" | "sglang" | "mlx",
+  backend: PythonProbeBackend,
   config: Config,
   runningProcess?: ProcessInfo | null
 ): Promise<RuntimeTarget[]> => {
@@ -189,7 +190,7 @@ const collectPythonTargets = async (
     );
   }
 
-  const enginePythonPath = getEngineSpec(backend).resolvePythonPath?.() ?? null;
+  const enginePythonPath = getEngineSpec(backend).resolvePythonPath?.(config) ?? null;
   const projectManaged =
     backend === "vllm"
       ? unique([enginePythonPath, ...collectVenvPythonFiles(config)])

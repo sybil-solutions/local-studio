@@ -9,7 +9,7 @@ import {
   getVllmRuntimeInfo,
   installVllmRuntime,
 } from "../runtimes/vllm-runtime";
-import { probeVllmBinaryRuntime } from "../runtimes/runtime-target-probes";
+import { normalizePackageSpec, probeVllmBinaryRuntime } from "../runtimes/runtime-target-probes";
 import { resolveVllmPythonPath } from "../runtimes/vllm-python-path";
 import {
   CONTAINER_VLLM_BIN,
@@ -111,14 +111,8 @@ const buildVllmCommand = (recipe: Recipe, config: Config): string[] => {
   return dockerImage ? wrapVllmInDocker(recipe, dockerImage, built) : built;
 };
 
-const managedPackageSpec = (version?: string | null): string => {
-  const packageName = "vllm";
-  const normalized = version?.trim();
-  if (!normalized) return packageName;
-  return normalized.includes("==") || normalized.endsWith(".whl")
-    ? normalized
-    : `${packageName}==${normalized}`;
-};
+const managedPackageSpec = (version?: string | null): string =>
+  normalizePackageSpec("vllm", version);
 
 const detectInvocation = (args: string[]): boolean => {
   if (hasModuleInvocation(args, "vllm.entrypoints.openai.api_server")) return true;
@@ -178,7 +172,7 @@ export const vllmSpec: EngineSpec = {
   extractModelPath,
   extractServedModelName,
   probeBinary,
-  resolvePythonPath: resolveVllmPythonPath,
+  resolvePythonPath: (config: Config) => resolveVllmPythonPath(config.data_dir),
   getRuntimeInfo: getRuntimeInfoAsync,
   getConfigHelp,
 };

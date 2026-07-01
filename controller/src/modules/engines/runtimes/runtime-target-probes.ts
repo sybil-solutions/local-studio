@@ -1,8 +1,19 @@
 import { existsSync, readFileSync } from "node:fs";
 import { basename, resolve } from "node:path";
 import { resolveBinary, runCommandAsync } from "../../../core/command";
+import { VLLM_RUNTIME_COMMAND_TIMEOUT_MS } from "../configs";
 
-const PYTHON_VERSION_PROBES: Record<"vllm" | "sglang" | "mlx", string> = {
+export type PythonProbeBackend = "vllm" | "sglang" | "mlx";
+
+export const normalizePackageSpec = (packageName: string, version?: string | null): string => {
+  const normalized = version?.trim();
+  if (!normalized) return packageName;
+  return normalized.includes("==") || normalized.endsWith(".whl")
+    ? normalized
+    : `${packageName}==${normalized}`;
+};
+
+const PYTHON_VERSION_PROBES: Record<PythonProbeBackend, string> = {
   vllm: "import json, sys\ntry:\n import vllm\n print(json.dumps({'version': vllm.__version__, 'python': sys.executable}))\nexcept Exception as e:\n print(json.dumps({'version': None, 'python': sys.executable, 'error': str(e)}))",
   sglang:
     "import json, sys\ntry:\n import sglang\n print(json.dumps({'version': getattr(sglang, '__version__', None), 'python': sys.executable}))\nexcept Exception as e:\n print(json.dumps({'version': None, 'python': sys.executable, 'error': str(e)}))",
@@ -51,32 +62,37 @@ export const parseCommandBinary = (args: string[]): string | null => {
   return resolvePathOrBinary(first) ?? first;
 };
 
-export const probePythonRuntime = async (
-  backend: "vllm" | "sglang" | "mlx",
-  python: string
-): Promise<{
+export interface PythonRuntimeProbe {
   installed: boolean;
   version: string | null;
   pythonPath: string | null;
+  runnable: boolean;
   message?: string | undefined;
-}> => {
+}
+
+export const probePythonRuntime = async (
+  backend: PythonProbeBackend,
+  python: string
+): Promise<PythonRuntimeProbe> => {
   const check = await runCommandAsync(python, ["--version"], { timeoutMs: 2_000 });
   if (check.status !== 0) {
     return {
       installed: false,
       version: null,
       pythonPath: pathExists(python) ? resolve(python) : python,
+      runnable: false,
       message: "Python executable is not runnable",
     };
   }
   const result = await runCommandAsync(python, ["-c", PYTHON_VERSION_PROBES[backend]], {
-    timeoutMs: 5_000,
+    timeoutMs: VLLM_RUNTIME_COMMAND_TIMEOUT_MS,
   });
   if (result.status !== 0) {
     return {
       installed: false,
       version: null,
       pythonPath: python,
+      runnable: true,
       message: result.stderr || `${backend} import probe failed`,
     };
   }
@@ -90,6 +106,7 @@ export const probePythonRuntime = async (
       installed: Boolean(parsed.version),
       version: parsed.version ?? null,
       pythonPath: parsed.python ?? python,
+      runnable: true,
       message: parsed.version
         ? undefined
         : (parsed.error ?? `${backend} is not installed in this Python`),
@@ -99,9 +116,45 @@ export const probePythonRuntime = async (
       installed: false,
       version: null,
       pythonPath: python,
+      runnable: true,
       message: "Unable to parse runtime probe output",
     };
   }
+};
+
+export const probeBackendRuntime = async (
+  backend: PythonProbeBackend,
+  candidates: Array<string | null | undefined>
+): Promise<PythonRuntimeProbe> => {
+  const unique = candidates.filter(
+    (candidate, index, all): candidate is string =>
+      Boolean(candidate) && all.indexOf(candidate) === index
+  );
+  let fallback: PythonRuntimeProbe | null = null;
+  for (const candidate of unique) {
+    const probe = await probePythonRuntime(backend, candidate);
+    if (probe.installed) return probe;
+    if (!fallback && probe.runnable) fallback = probe;
+  }
+  return (
+    fallback ?? {
+      installed: false,
+      version: null,
+      pythonPath: null,
+      runnable: false,
+      message: `No runnable Python found for ${backend}`,
+    }
+  );
+};
+
+export const probeRunningProcessPython = async (
+  pid: number
+): Promise<string | null> => {
+  const result = await runCommandAsync("ps", ["-p", String(pid), "-o", "args="], {
+    timeoutMs: 3_000,
+  });
+  if (result.status !== 0 || !result.stdout) return null;
+  return parseCommandPython(result.stdout.trim().split(/\s+/));
 };
 
 const parseLlamaVersion = (output: string): string | null => {
@@ -128,7 +181,7 @@ export const compareVersions = (left: string | null, right: string | null): numb
   return 0;
 };
 
-const resolvePythonFromScript = (scriptPath: string | null | undefined): string | null => {
+export const resolvePythonFromScript = (scriptPath: string | null | undefined): string | null => {
   if (!scriptPath || !existsSync(scriptPath)) return null;
   try {
     const firstLine = readFileSync(scriptPath, "utf8").split("\n")[0]?.trim() ?? "";

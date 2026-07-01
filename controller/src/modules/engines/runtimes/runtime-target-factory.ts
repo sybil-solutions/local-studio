@@ -6,6 +6,7 @@ import {
   SGLANG_UPGRADE_ENV,
   VLLM_UPGRADE_VERSION_ENV,
 } from "./upgrade-config";
+import { normalizePackageSpec } from "./runtime-target-probes";
 
 type RuntimeTargetSource = RuntimeTarget["source"];
 type RuntimeTargetKind = RuntimeTarget["kind"];
@@ -61,10 +62,7 @@ const RELEASE_NOTES: Record<EngineBackend, string> = {
 };
 
 const packageSpecForTarget = (backend: EngineBackend): string => {
-  if (backend === "vllm") {
-    const target = getVllmUpgradeVersion().trim();
-    return target ? `vllm==${target}` : "vllm";
-  }
+  if (backend === "vllm") return normalizePackageSpec("vllm", getVllmUpgradeVersion());
   if (backend === "sglang") return "sglang";
   if (backend === "mlx") return "mlx-lm";
   return "configured llama.cpp upgrade command";
