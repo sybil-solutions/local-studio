@@ -103,17 +103,24 @@ remains.
 - [ ] `engine-capabilities.ts` VLLM/SGLANG blocks field-identical — spread.
 - [ ] `store.ts` module-level window listeners on import — move into an
       explicit init called from providers; delete dead `lastWasMobile`.
-- [ ] `proxy-target.ts` treats `LOCAL_STUDIO_DATA_DIR` as a desktop-mode
-      flag — replace with an explicit env the Electron main process sets.
+- [x] `proxy-target.ts` desktop-mode flag — now `LOCAL_STUDIO_DESKTOP=1`,
+      set by the Electron main process (2026-07-01).
 - [ ] `shared/contracts/usage.ts`: controller never imports it — type the
       `/usage` handlers, shrink the frontend re-normalizer, move
       `SortField`/`SortDirection` into the usage feature.
-- [ ] `cli/CLI_REFERENCE.md` section 5 snapshots the controller API and has
-      drifted (no `/environments`) — cut it, point at `/docs` swagger.
-- [ ] `docker-compose.yml` provisions a foreign postgres for litellm — move
-      to host provisioning or a clearly-marked deploy dir.
-- [ ] Workspace versions are decorative and inconsistent (0.2.9/0.3.2/0.1.0;
-      semantic-release only tags) — align or document.
+- [x] `cli/CLI_REFERENCE.md` controller-API snapshot cut; points at the live
+      `/docs` swagger (2026-07-01).
+- [ ] `docker-compose.yml` provisions a foreign postgres for litellm — left
+      in place deliberately: `deploy-remote.sh` rsyncs it by path and the
+      remote host runs it live; move only with a coordinated deploy change.
+- [ ] Desktop artifact versioning: electron-builder stamps artifacts and the
+      self-hosted update feed (`LOCAL_STUDIO_UPDATE_URL` + latest.yml) from
+      `frontend/package.json` (0.2.9), while semantic-release tags an
+      unrelated v1.57.x stream from commits. Two version streams that never
+      meet — align them (bump frontend version in the desktop:dist flow from
+      the latest tag, or add a release step that PRs the version bump).
+      Until then the package.json versions must NOT be hand-edited: the
+      update feed compares against them.
 
 ## Open issues
 
