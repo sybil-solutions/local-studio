@@ -13,15 +13,15 @@ import {
   type UpdateTab,
 } from "@/features/agent/ui/chat-pane-composer";
 import { type ComposerMention } from "@/features/agent/composer-context";
+import { useChatPaneDerivedState } from "@/features/agent/ui/chat-pane-derived-state";
 import {
   useChatPaneContextAttachEffect,
-  useChatPaneDerivedState,
   useChatPaneMentionEffects,
-  useChatPaneRuntimeHandle,
-  useChatPaneSendFlow,
-  useChatPaneSessionTitle,
   useChatPaneStickToBottomEffect,
-} from "@/features/agent/ui/chat-pane-hooks";
+} from "@/features/agent/ui/chat-pane-ui-effects";
+import { useChatPaneRuntimeHandle } from "@/features/agent/ui/chat-pane-runtime-handle";
+import { useChatPaneSessionTitle } from "@/features/agent/ui/chat-pane-session-title";
+import { useChatPaneSendFlow } from "@/features/agent/ui/chat-pane-send-flow";
 import { useProjectsNavSessionPrefs } from "@/features/agent/ui/projects-nav/use-projects-nav-effects";
 import {
   AssistantBlock,

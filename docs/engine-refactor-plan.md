@@ -358,7 +358,24 @@ the audit commands below at the start of each iteration to see current counts.
         (`skill mentions...composer prompt construction`) is pre-existing,
         verified via `git stash` against the unmodified file, unrelated
         subsystem — see "Discovered issues" below.)
-  - [ ] `frontend/src/features/agent/ui/chat-pane-hooks.tsx` (736)
+  - [x] `frontend/src/features/agent/ui/chat-pane-hooks.tsx` (was 736, fixed
+        2026-07-01: deleted the barrel file entirely — it had exactly one
+        consumer (`chat-pane.tsx`) — and split its 8 hooks into 6 cohesive
+        files: `chat-pane-snapshot.ts` (4, the shared no-op
+        `useSyncExternalStore` snapshot getter every other file imports, so
+        it isn't duplicated 4x), `chat-pane-derived-state.ts` (35),
+        `chat-pane-ui-effects.ts` (140, the 3 small UI-sync hooks:
+        stick-to-bottom, mention rows, context-attach), `chat-pane-
+        runtime-handle.ts` (58), `chat-pane-session-title.ts` (90), and
+        `chat-pane-send-flow.ts` (417, the big one — kept as one file since
+        it's a single cohesive send/queue/steer/retry flow and 417 lines is
+        still comfortably under 500, not worth fragmenting further). Verified
+        via `git stash`/`git stash pop` that the 4 e2e test failures beyond
+        the already-known "skill mentions" one are also pre-existing on the
+        unmodified tree (215 tests, 210 pass, 5 fail — identical before and
+        after) — see "Discovered issues" below, not caused by this split.
+        Frontend lint/typecheck/cycles/ui-structure/deadcode/dupes/depcheck/
+        build all green.
   - [ ] `frontend/src/features/agent/browser-host/browser-host.ts` (715)
   - [ ] `frontend/src/features/agent/runtime/session-runtime-controller.ts` (709)
   - [ ] `frontend/src/hooks/realtime-status-store.ts` (678)
@@ -446,6 +463,18 @@ the audit commands below at the start of each iteration to see current counts.
   Needs its own look: either the patch's search pattern is stale vs. the
   currently pinned `@earendil-works/pi-ai` version, or the pinned version
   drifted without the patch being updated.
+- 3 more pre-existing e2e failures found 2026-07-01 while verifying the
+  `chat-pane-hooks.tsx` split (confirmed via `git stash` — same 3 fail on the
+  unmodified tree, so unrelated to that split): `agent-browser-tools-
+  regressions.test.ts` — "file tagging turns an @ mention into one durable
+  project-file attachment" (`kind: 'file'` vs expected `kind: 'plugin'`) and
+  "MCP plugin slash and at-mention context persist selected plugin state";
+  `agent-workspace-regressions.test.ts` — "pane state round-trips durable
+  session metadata and drops transcripts" (expects `{plugins, skills,
+  promptTemplates}` on restored pane state, gets `undefined`). All three look
+  like the same underlying plugin/skill-context persistence area as the
+  already-known "skill mentions" failure — plausibly one root cause across
+  all 4, not yet investigated.
 
 ## Iteration log
 
@@ -628,3 +657,19 @@ the audit commands below at the start of each iteration to see current counts.
   start flow (on a host with Docker + GPU + a real downloaded model) is
   still owed — every iteration so far has only verified the side-effect-free
   paths automatically.
+
+- **2026-07-01 (iter 10)**: with Part A complete, pivoted back to Part C.
+  Split `chat-pane-hooks.tsx` (736 → deleted, 6 new files under 420 lines
+  each) — see the checklist above for the breakdown. Extracted a shared
+  `chat-pane-snapshot.ts` for the trivial no-op `useSyncExternalStore`
+  snapshot getter every hook needs, rather than letting 4+ files each define
+  their own copy. While verifying the split via `git stash`, discovered 3
+  MORE pre-existing e2e failures beyond the one already known from iteration
+  2 (all plugin/skill-persistence related, possibly one root cause) —
+  documented in "Discovered issues" rather than silently ignored. Frontend
+  gate green end to end (lint/typecheck/cycles/ui-structure/deadcode/dupes/
+  depcheck/build). Next iteration: continue down the file-size list
+  (`browser-host.ts` 715, `session-runtime-controller.ts` 709, or
+  `realtime-status-store.ts` 678 are next) — same read-fully-then-split
+  discipline, and keep using `git stash` to separate "pre-existing failure"
+  from "did I just break this" before assuming a refactor is safe.
