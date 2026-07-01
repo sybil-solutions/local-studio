@@ -4,7 +4,7 @@ import { effectInterval, effectTimeout } from "@/lib/effect-timers";
 
 import { useCallback, useMemo, useRef, useState } from "react";
 import { ArrowUpCircle, Check, Loader2, XCircle } from "@/ui/icon-registry";
-import { useRealtimeStatus } from "@/hooks/use-realtime-status";
+import { useRealtimeStatusStore } from "@/hooks/realtime-status-store";
 import { useMountSubscription } from "@/hooks/use-mount-subscription";
 import api from "@/lib/api/client";
 import type { EngineJob, RuntimeBackendInfo, RuntimeTarget, SystemRuntimeInfo } from "@/lib/types";
@@ -36,7 +36,7 @@ import {
 type UpgradeState = { status: "idle" | "upgrading" | "success" | "error"; message?: string };
 
 export function EnginesSection({ runtime }: { runtime?: SystemRuntimeInfo | null }) {
-  const { runtimeSummary, status, lease } = useRealtimeStatus();
+  const { runtimeSummary, status, lease } = useRealtimeStatusStore();
   const [targets, setTargets] = useState<RuntimeTarget[]>([]);
   const [jobs, setJobs] = useState<EngineJob[]>([]);
   const [lostJobNotice, setLostJobNotice] = useState<string | null>(null);

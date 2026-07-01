@@ -4,7 +4,8 @@
  * order and any fields this feature doesn't know about survive untouched.
  */
 import type { AttachAction, LocalAgentModel } from "./local-agent-types";
-import { isRecord, sameBaseUrl, type JsonRecord } from "./local-agent-config-file-io";
+import { sameBaseUrl, type JsonRecord } from "./local-agent-config-file-io";
+import { isRecord } from "@/lib/guards";
 
 const DEFAULT_PROVIDER_KEY = "local-studio";
 

@@ -7,11 +7,9 @@ import { chmod, copyFile, mkdir, readFile, rename, stat, writeFile } from "node:
 import { randomBytes } from "node:crypto";
 import path from "node:path";
 import YAML from "yaml";
+import { isRecord } from "@/lib/guards";
 
 export type JsonRecord = Record<string, unknown>;
-
-export const isRecord = (value: unknown): value is JsonRecord =>
-  Boolean(value) && typeof value === "object" && !Array.isArray(value);
 
 const normalizeBaseUrl = (url: string): string => url.trim().replace(/\/+$/, "");
 
