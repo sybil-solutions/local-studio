@@ -171,8 +171,6 @@ export default function UsagePage() {
           modelsForChart={modelsForChart}
           modelColorIndex={modelColorIndex}
           period={period}
-          allTimeTokens={totals.total_tokens}
-          allTimeRequests={totals.total_requests}
         />
 
         <ModelPerformanceTable

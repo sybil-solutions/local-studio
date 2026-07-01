@@ -24,8 +24,6 @@ interface DailyUsageProps {
   modelsForChart: string[];
   modelColorIndex: Map<string, number>;
   period: UsagePeriod;
-  allTimeTokens: number;
-  allTimeRequests: number;
 }
 
 interface ModelDataItem {
@@ -153,8 +151,6 @@ export function DailyUsageChart({
   modelsForChart,
   modelColorIndex,
   period,
-  allTimeTokens,
-  allTimeRequests,
 }: DailyUsageProps) {
   const sectionRef = useRef<HTMLElement>(null);
   const [hovered, setHovered] = useState<HoverState | null>(null);
@@ -339,9 +335,7 @@ export function DailyUsageChart({
         </div>
       ) : null}
 
-      <dl className="mt-4 grid grid-cols-2 border-b border-(--border)/40 pb-4 sm:grid-cols-4">
-        <Stat label="all-time tokens" value={formatNumber(allTimeTokens)} />
-        <Stat label="all-time requests" value={formatNumber(allTimeRequests)} />
+      <dl className="mt-4 grid grid-cols-2 border-b border-(--border)/40 pb-4">
         <Stat label="tokens in view" value={formatNumber(totalTokensInPeriod)} />
         <Stat label="requests in view" value={formatNumber(totalRequestsInPeriod)} />
       </dl>
