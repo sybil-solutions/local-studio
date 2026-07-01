@@ -35,11 +35,11 @@ export function DiscoverHeader({
           <Filter className="h-4 w-4" />
           <span className="hidden sm:inline">Filters</span>
         </button>
-        {RefreshButton({
-          onRefresh,
-          loading,
-          className: "hover:bg-(--surface) disabled:opacity-50",
-        })}
+        <RefreshButton
+          onRefresh={onRefresh}
+          loading={loading}
+          className="hover:bg-(--surface) disabled:opacity-50"
+        />
       </div>
     </div>
   );

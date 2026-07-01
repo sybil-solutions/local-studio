@@ -1,7 +1,7 @@
 "use client";
 
 import type { Key, ReactNode } from "react";
-import { cx } from "./utils";
+import { cx } from "@/ui/utils";
 
 export type FactGridItem = {
   label: ReactNode;

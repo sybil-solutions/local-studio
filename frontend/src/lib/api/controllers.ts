@@ -1,4 +1,4 @@
-const CONTROLLERS_STORAGE_KEY = "local-studio.controllers";
+export const CONTROLLERS_STORAGE_KEY = "local-studio.controllers";
 const LEGACY_CONTROLLERS_STORAGE_KEY = [["v", "llm-studio"].join(""), "controllers"].join(".");
 export const CONTROLLERS_CHANGED_EVENT = "vllm:controllers-changed";
 

@@ -15,7 +15,7 @@ import { ExternalLink } from "@/ui/icon-registry";
 import { highlightFenced } from "@/features/agent/highlight-cache";
 import { normalizeBrowserInput } from "@/features/agent/tools/browser-url";
 import { useTools } from "@/features/agent/tools/context";
-import { CopyablePathChip } from "@/ui/copyable-path-chip";
+import { CopyablePathChip } from "@/features/agent/ui/copyable-path-chip";
 
 const FILE_REF_PATTERN =
   /^(?:file:\/\/|~\/|\.{1,2}\/|\/|[\w.-]+\/)[^\s`'")]+(?:\.[A-Za-z0-9][A-Za-z0-9_-]*)(?::\d+(?::\d+)?)?$/;

@@ -1,7 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { cx } from "./utils";
+import { cx } from "@/ui/utils";
 
 export interface MetricSegment {
   label: string;

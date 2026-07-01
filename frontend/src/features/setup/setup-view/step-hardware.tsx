@@ -1,7 +1,8 @@
 "use client";
 
 import { ChevronRight, Cpu } from "@/ui/icon-registry";
-import { Button, Card, Checkbox, FactGrid, SettingsGroup, SettingsNotice } from "@/ui";
+import { Button, Card, Checkbox, SettingsGroup, SettingsNotice } from "@/ui";
+import { FactGrid } from "@/features/setup/fact-grid";
 import {
   MANAGED_RUNTIME_BACKENDS,
   ManagedRuntimeInstallRows,

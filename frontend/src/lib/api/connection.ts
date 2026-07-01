@@ -51,8 +51,7 @@ export const resolveControllerEventsBaseUrl = (): string =>
 
 // --- Browser-stored backend URL ---
 
-const BACKEND_URL_STORAGE = "localstudio_backend_url";
-const BACKEND_URL_COOKIE = "localstudio_backend_url";
+export const BACKEND_URL_STORAGE_KEY = "localstudio_backend_url";
 const LEGACY_BACKEND_URL_STORAGE = [["v", "llmstudio"].join(""), "backend_url"].join("_");
 const LEGACY_BACKEND_URL_COOKIE = LEGACY_BACKEND_URL_STORAGE;
 export const BACKEND_URL_CHANGED_EVENT = "vllm:backend-url-changed";
@@ -74,27 +73,27 @@ function setBackendCookie(url: string): void {
   const maxAge = trimmed ? 60 * 60 * 24 * 365 : 0; // 1 year or delete
   const secure =
     typeof location !== "undefined" && location.protocol === "https:" ? "; Secure" : "";
-  document.cookie = `${encodeURIComponent(BACKEND_URL_COOKIE)}=${encoded}; Path=/; Max-Age=${maxAge}; SameSite=Lax${secure}`;
+  document.cookie = `${encodeURIComponent(BACKEND_URL_STORAGE_KEY)}=${encoded}; Path=/; Max-Age=${maxAge}; SameSite=Lax${secure}`;
 }
 
 export function getStoredBackendUrl(): string {
   if (typeof window === "undefined") return "";
   try {
     const stored = normalizeControllerUrl(
-      window.localStorage.getItem(BACKEND_URL_STORAGE) ||
-        getCookieValue(BACKEND_URL_COOKIE) ||
+      window.localStorage.getItem(BACKEND_URL_STORAGE_KEY) ||
+        getCookieValue(BACKEND_URL_STORAGE_KEY) ||
         window.localStorage.getItem(LEGACY_BACKEND_URL_STORAGE) ||
         getCookieValue(LEGACY_BACKEND_URL_COOKIE) ||
         "",
     );
-    if (stored && !window.localStorage.getItem(BACKEND_URL_STORAGE)) {
-      window.localStorage.setItem(BACKEND_URL_STORAGE, stored);
+    if (stored && !window.localStorage.getItem(BACKEND_URL_STORAGE_KEY)) {
+      window.localStorage.setItem(BACKEND_URL_STORAGE_KEY, stored);
       setBackendCookie(stored);
     }
     return stored;
   } catch {
     return normalizeControllerUrl(
-      getCookieValue(BACKEND_URL_COOKIE) || getCookieValue(LEGACY_BACKEND_URL_COOKIE) || "",
+      getCookieValue(BACKEND_URL_STORAGE_KEY) || getCookieValue(LEGACY_BACKEND_URL_COOKIE) || "",
     );
   }
 }
@@ -105,9 +104,9 @@ export function setStoredBackendUrl(url: string): void {
   const trimmed = normalizeControllerUrl(url);
   try {
     if (trimmed) {
-      window.localStorage.setItem(BACKEND_URL_STORAGE, trimmed);
+      window.localStorage.setItem(BACKEND_URL_STORAGE_KEY, trimmed);
     } else {
-      window.localStorage.removeItem(BACKEND_URL_STORAGE);
+      window.localStorage.removeItem(BACKEND_URL_STORAGE_KEY);
     }
     setBackendCookie(trimmed);
   } catch {
@@ -124,7 +123,7 @@ export function setStoredBackendUrl(url: string): void {
 export function clearStoredBackendUrl(): void {
   if (typeof window === "undefined") return;
   try {
-    window.localStorage.removeItem(BACKEND_URL_STORAGE);
+    window.localStorage.removeItem(BACKEND_URL_STORAGE_KEY);
     window.localStorage.removeItem(LEGACY_BACKEND_URL_STORAGE);
     setBackendCookie("");
     document.cookie = `${encodeURIComponent(LEGACY_BACKEND_URL_COOKIE)}=; Path=/; Max-Age=0; SameSite=Lax`;

@@ -1,7 +1,8 @@
 "use client";
 
 import { formatNumber } from "@/lib/formatters";
-import { MetricPanel, MiniBarChart, SectionLabel } from "@/ui";
+import { SectionLabel } from "@/ui";
+import { MetricPanel, MiniBarChart } from "@/features/usage/metric-visuals";
 
 interface TokensPerRequestStats {
   avg: number;

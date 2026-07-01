@@ -1,7 +1,8 @@
 "use client";
 
 import { Activity, LayoutDashboard, Loader2, MessageCircle } from "@/ui/icon-registry";
-import { Alert, Button, Card, FactGrid } from "@/ui";
+import { Alert, Button, Card } from "@/ui";
+import { FactGrid } from "@/features/setup/fact-grid";
 
 interface SetupBenchmarkResult {
   prompt_tokens: number;

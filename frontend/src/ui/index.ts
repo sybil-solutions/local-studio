@@ -2,8 +2,6 @@
 export { Button } from "./button";
 export type { ButtonProps, ButtonVariant, ButtonSize } from "./button";
 
-export { FactGrid } from "./fact-grid";
-export type { FactGridColumns, FactGridItem, FactGridVariant } from "./fact-grid";
 export { MarkdownContent } from "./markdown-content";
 export { RightDetailPanel } from "./right-detail-panel";
 export type { RightDetailPanelProps } from "./right-detail-panel";
@@ -83,8 +81,6 @@ export { ColorField } from "./color-field";
 
 // Display primitives
 export { ProgressBar } from "./progress-bar";
-export { MetricMeter, MetricPanel, MiniBarChart, StackedMetricBar } from "./metric-visuals";
-export type { MetricSegment, MiniBarDatum } from "./metric-visuals";
 export { Stat } from "./stat";
 export { SectionLabel } from "./section-label";
 export { ErrorBox } from "./error-box";
@@ -94,8 +90,6 @@ export type { UiTone, StatusPillVariant } from "./status";
 
 export { ModelLogo } from "./model-logo";
 export { HuggingFaceModelCardPanel } from "./huggingface-model-card";
-
-export { ModelStopConfirm } from "./model-stop-confirm";
 
 // Page-specialized adapters kept in /ui so library swaps happen in one place.
 export {
@@ -125,7 +119,6 @@ export {
   ModelInput,
 } from "./model-page";
 export type { ModelStatusTone, ModelSummaryItem } from "./model-page";
-export { CopyablePathChip } from "./copyable-path-chip";
 
 // Icons (also importable directly from "@/ui/icons").
 export { SitegeistIcon, PanelIcon } from "./icons";

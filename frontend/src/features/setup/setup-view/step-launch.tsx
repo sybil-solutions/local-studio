@@ -1,7 +1,8 @@
 "use client";
 
 import { Loader2, Rocket } from "@/ui/icon-registry";
-import { Alert, Button, Card, FactGrid } from "@/ui";
+import { Alert, Button, Card } from "@/ui";
+import { FactGrid } from "@/features/setup/fact-grid";
 
 export function StepLaunch({
   selectedModel,

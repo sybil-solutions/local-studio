@@ -1,12 +1,10 @@
+import { CONTROLLERS_CHANGED_EVENT, CONTROLLERS_STORAGE_KEY } from "@/lib/api/controllers";
+import { BACKEND_URL_CHANGED_EVENT, BACKEND_URL_STORAGE_KEY } from "@/lib/api/connection";
+
 type DesktopUiPreferencesBridge = {
   loadUiPreferences?: () => Promise<Record<string, string>>;
   saveUiPreferences?: (prefs: Record<string, string>) => Promise<void>;
 };
-
-const CONTROLLERS_STORAGE_KEY = "local-studio.controllers";
-const BACKEND_URL_STORAGE_KEY = "localstudio_backend_url";
-const CONTROLLERS_CHANGED_EVENT = "vllm:controllers-changed";
-const BACKEND_URL_CHANGED_EVENT = "vllm:backend-url-changed";
 
 const DURABLE_EXACT_KEYS = new Set([
   "local-studio-state",

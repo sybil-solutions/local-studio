@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState, type ReactNode } from "react";
+import type { ReactNode } from "react";
 import { Download, ExternalLink, Heart, RefreshCw, Sparkles } from "@/ui/icon-registry";
 import type { HuggingFaceModel } from "@/lib/types";
 import {
@@ -11,7 +11,7 @@ import {
   type HuggingFaceModelCardPayload,
 } from "@/lib/huggingface";
 import { formatBytes, formatNumber } from "@/lib/formatters";
-import { useMountSubscription } from "@/hooks/use-mount-subscription";
+import { useModelCardPayload } from "@/hooks/use-model-card-payload";
 import { Button } from "./button";
 import { MarkdownContent } from "./markdown-content";
 import { RightDetailPanel } from "./right-detail-panel";
@@ -115,38 +115,6 @@ export function HuggingFaceModelCardPanel({
       </div>
     </RightDetailPanel>
   );
-}
-
-function useModelCardPayload(modelId: string, open: boolean) {
-  const [payload, setPayload] = useState<HuggingFaceModelCardPayload | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const load = useCallback(async () => {
-    if (!modelId) return;
-    setLoading(true);
-    setError(null);
-    try {
-      const response = await fetch(
-        `/api/huggingface/model-card?modelId=${encodeURIComponent(modelId)}`,
-        { cache: "no-store" },
-      );
-      const data = (await response.json()) as HuggingFaceModelCardPayload & { error?: string };
-      if (!response.ok) throw new Error(data.error || "Unable to load model card.");
-      setPayload(data);
-    } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : "Unable to load model card.");
-      setPayload(null);
-    } finally {
-      setLoading(false);
-    }
-  }, [modelId]);
-
-  useMountSubscription(() => {
-    if (open && modelId) void load();
-  }, [load, modelId, open]);
-
-  return { error, loading, payload };
 }
 
 function modelCardStats(
