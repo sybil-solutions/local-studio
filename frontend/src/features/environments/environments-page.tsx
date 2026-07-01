@@ -32,6 +32,7 @@ export default function EnvironmentsPage() {
     handleDelete,
     handleStart,
     handleStop,
+    handlePullImage,
   } = useEnvironments();
 
   const pageStateRender = PageState({
@@ -158,6 +159,17 @@ export default function EnvironmentsPage() {
                       </TCell>
                       <TCell align="right">
                         <div className="flex justify-end gap-2">
+                          {!environment.imagePulled && !environment.running ? (
+                            <Button
+                              variant="secondary"
+                              disabled={busy}
+                              onClick={() =>
+                                void handlePullImage(environment.id, environment.image)
+                              }
+                            >
+                              {busy ? "Pulling…" : "Pull image"}
+                            </Button>
+                          ) : null}
                           {environment.running ? (
                             <Button
                               variant="secondary"

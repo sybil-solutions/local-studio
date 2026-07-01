@@ -110,6 +110,40 @@ export function useEnvironments() {
     [loadAll],
   );
 
+  const handlePullImage = useCallback(
+    async (id: string, image: string) => {
+      setPendingActionId(id);
+      setError(null);
+      try {
+        const pull = await api.pullEngineImage(image);
+        if (pull.status === "failed") {
+          setError(pull.error ?? `Failed to pull ${image}`);
+          return;
+        }
+        let settled = pull.status === "done";
+        while (!settled) {
+          await new Promise((resolve) => setTimeout(resolve, 2000));
+          const infos = await api.getEngineImages();
+          const current = infos
+            .flatMap((info) => info.pulls)
+            .find((entry) => entry.image === image);
+          if (!current || current.status !== "pulling") {
+            settled = true;
+            if (current?.status === "failed") {
+              setError(current.error ?? `Failed to pull ${image}`);
+            }
+          }
+        }
+        await loadAll();
+      } catch (pullError) {
+        setError(pullError instanceof Error ? pullError.message : String(pullError));
+      } finally {
+        setPendingActionId(null);
+      }
+    },
+    [loadAll],
+  );
+
   const handleStop = useCallback(
     async (id: string) => {
       setPendingActionId(id);
@@ -138,5 +172,6 @@ export function useEnvironments() {
     handleDelete,
     handleStart,
     handleStop,
+    handlePullImage,
   };
 }

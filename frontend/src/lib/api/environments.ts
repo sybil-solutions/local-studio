@@ -1,4 +1,9 @@
-import type { EnvironmentPayload, EnvironmentWithStatus } from "../types";
+import type {
+  EngineImagePull,
+  EngineImagesInfo,
+  EnvironmentPayload,
+  EnvironmentWithStatus,
+} from "../types";
 import { encodePathSegments, type ApiCore } from "./core";
 
 export function createEnvironmentsApi(core: ApiCore) {
@@ -23,6 +28,14 @@ export function createEnvironmentsApi(core: ApiCore) {
     stopEnvironment: (id: string, force = false): Promise<{ stopped: boolean }> =>
       core.request(`/environments/${encodePathSegments(id)}/stop${force ? "?force=1" : ""}`, {
         method: "POST",
+      }),
+
+    getEngineImages: (): Promise<EngineImagesInfo[]> => core.request("/environments/images"),
+
+    pullEngineImage: (image: string): Promise<EngineImagePull> =>
+      core.request("/environments/images/pull", {
+        method: "POST",
+        body: JSON.stringify({ image }),
       }),
   };
 }

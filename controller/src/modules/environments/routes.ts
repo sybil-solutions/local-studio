@@ -11,6 +11,7 @@ import {
   stopEnvironment,
 } from "./environment-process";
 import { resolveImageForEnvironment } from "./image-registry";
+import { isKnownEngineImage, listEngineImages, startEngineImagePull } from "./engine-images";
 import type { Environment } from "./types";
 
 const withStatus = (
@@ -34,6 +35,19 @@ export const registerEnvironmentRoutes: RouteRegistrar = (app, context) => {
       .list()
       .map((environment) => withStatus(environment, pulledImages));
     return ctx.json(environments);
+  });
+
+  app.get("/environments/images", (ctx) => ctx.json(listEngineImages()));
+
+  app.post("/environments/images/pull", async (ctx) => {
+    const body = await parseJsonObjectBody(ctx);
+    const image = optionalString(body, "image");
+    if (!image) throw badRequest("image is required");
+    if (!isKnownEngineImage(image)) {
+      throw badRequest(`"${image}" is not a known engine image repository`);
+    }
+    if (!resolveBinary("docker")) throw serviceUnavailable("docker is not installed or not on PATH");
+    return ctx.json(startEngineImagePull(image));
   });
 
   app.get("/environments/:environmentId", (ctx) => {

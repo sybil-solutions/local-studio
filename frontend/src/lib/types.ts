@@ -100,6 +100,21 @@ export interface EnvironmentPayload {
   image?: string;
 }
 
+export interface EngineImagePull {
+  image: string;
+  status: "pulling" | "done" | "failed";
+  startedAt: string;
+  error: string | null;
+}
+
+export interface EngineImagesInfo {
+  id: EnvironmentEngineId;
+  repository: string;
+  defaultImage: string;
+  images: Array<{ image: string; tag: string; size: string }>;
+  pulls: EngineImagePull[];
+}
+
 // --- Launch progress ---
 
 export type LaunchStage =
