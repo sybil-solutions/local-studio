@@ -316,6 +316,36 @@ const collectLlamacppTargets = async (
   return targets;
 };
 
+const collectExllamav3Targets = async (
+  config: Config,
+  runningProcess?: ProcessInfo | null
+): Promise<RuntimeTarget[]> => {
+  const targets: RuntimeTarget[] = [];
+  const running = collectRunningTargets(runningProcess).filter(
+    (target) => target.backend === "exllamav3"
+  );
+  for (const target of running) addTarget(targets, target);
+  if (config.tabby_api_dir) {
+    const mainPath = join(config.tabby_api_dir, "main.py");
+    const installed = existsSync(mainPath);
+    addTarget(
+      targets,
+      makeRuntimeTarget({
+        backend: "exllamav3",
+        kind: "binary",
+        source: "configured",
+        key: config.tabby_api_dir,
+        label: `TabbyAPI configured (${basename(config.tabby_api_dir)})`,
+        installed,
+        version: null,
+        binaryPath: installed ? mainPath : null,
+        healthMessage: installed ? undefined : "main.py not found in TabbyAPI directory",
+      })
+    );
+  }
+  return targets;
+};
+
 const collectDockerTargets = (backend: EngineBackend): RuntimeTarget[] => {
   if (process.env["LOCAL_STUDIO_RUNTIME_SKIP_DOCKER"] === "1") return [];
   const docker = resolveBinary("docker");
@@ -326,6 +356,7 @@ const collectDockerTargets = (backend: EngineBackend): RuntimeTarget[] => {
     sglang: /(^|[/:_-])sglang($|[/:_-])/i,
     llamacpp: /(llama\.cpp|llamacpp|llama-server)/i,
     mlx: /(mlx-lm|mlx_lm|mlx)/i,
+    exllamav3: /(tabbyapi|tabby-api|exllamav3|exllama)/i,
   };
   const imageResult = runCommand(docker, ["images", "--format", "{{.Repository}}:{{.Tag}}"], 3_000);
   if (imageResult.status === 0) {
@@ -413,7 +444,7 @@ const withSelection = (targets: RuntimeTarget[], config: Config): RuntimeTarget[
 };
 
 const sortTargets = (targets: RuntimeTarget[]): RuntimeTarget[] => {
-  const backendOrder: Record<EngineBackend, number> = { vllm: 0, sglang: 1, llamacpp: 2, mlx: 3 };
+  const backendOrder: Record<EngineBackend, number> = { vllm: 0, sglang: 1, llamacpp: 2, mlx: 3, exllamav3: 4 };
   return [...targets].sort(
     (first, second) =>
       backendOrder[first.backend] - backendOrder[second.backend] ||
@@ -436,7 +467,7 @@ export const getRuntimeTargets = async (
   ) {
     return targetsCache.value;
   }
-  const backends: EngineBackend[] = ["vllm", "sglang", "llamacpp", "mlx"];
+  const backends: EngineBackend[] = ["vllm", "sglang", "llamacpp", "mlx", "exllamav3"];
   const targets: RuntimeTarget[] = [];
   // Probe backends concurrently, but merge in the fixed backend order so
   // addTarget's order-dependent dedupe/priority behavior is unchanged.
@@ -444,7 +475,9 @@ export const getRuntimeTargets = async (
     backends.map((backend) =>
       backend === "llamacpp"
         ? collectLlamacppTargets(config, runningProcess)
-        : collectPythonTargets(backend, config, runningProcess)
+        : backend === "exllamav3"
+          ? collectExllamav3Targets(config, runningProcess)
+          : collectPythonTargets(backend, config, runningProcess)
     )
   );
   backends.forEach((backend, index) => {

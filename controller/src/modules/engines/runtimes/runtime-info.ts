@@ -57,11 +57,12 @@ const computeSystemRuntimeInfo = async (
   const types = Array.from(
     new Set(gpus.map((gpu) => gpu.name).filter((name) => name && name !== "Unknown"))
   );
-  const [vllmInfo, sglangInfo, llamaInfo, mlxInfo] = await Promise.all([
+  const [vllmInfo, sglangInfo, llamaInfo, mlxInfo, exllamav3Info] = await Promise.all([
     getVllmRuntimeInfo(),
     getEngineSpec("sglang").getRuntimeInfo!(config, runningProcess),
     getEngineSpec("llamacpp").getRuntimeInfo!(config, runningProcess),
     getEngineSpec("mlx").getRuntimeInfo!(config, runningProcess),
+    getEngineSpec("exllamav3").getRuntimeInfo!(config, runningProcess),
   ]);
   const pythonForTorch = config.sglang_python || vllmInfo.python_path || "python3";
   const torch = getTorchBuildInfo(pythonForTorch);
@@ -96,6 +97,7 @@ const computeSystemRuntimeInfo = async (
       sglang: sglangInfo,
       llamacpp: llamaInfo,
       mlx: mlxInfo,
+      exllamav3: exllamav3Info,
     },
   };
 };

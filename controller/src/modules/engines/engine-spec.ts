@@ -26,6 +26,7 @@ import { vllmSpec } from "./specs/vllm-spec";
 import { sglangSpec } from "./specs/sglang-spec";
 import { llamacppSpec } from "./specs/llamacpp-spec";
 import { mlxSpec } from "./specs/mlx-spec";
+import { exllamav3Spec } from "./specs/exllamav3-spec";
 
 export interface BinaryProbeResult {
   installed: boolean;
@@ -102,6 +103,7 @@ const SPECS: Record<EngineBackend, EngineSpec> = {
   sglang: sglangSpec,
   llamacpp: llamacppSpec,
   mlx: mlxSpec,
+  exllamav3: exllamav3Spec,
 };
 
 export const getEngineSpec = (backend: EngineBackend): EngineSpec => SPECS[backend];
@@ -116,4 +118,4 @@ export const detectEngineFromArguments = (args: string[]): EngineBackend | null 
   return null;
 };
 
-export { vllmSpec, sglangSpec, llamacppSpec, mlxSpec };
+export { vllmSpec, sglangSpec, llamacppSpec, mlxSpec, exllamav3Spec };

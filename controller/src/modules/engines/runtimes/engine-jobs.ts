@@ -73,6 +73,7 @@ const updateRunningJob = (id: string, updates: Partial<EngineJob>): void => {
 const describeDefaultCommand = (options: CreateEngineJobOptions): string => {
   if (isPlatformBackend(options.backend)) return `configured ${options.backend.toUpperCase()} upgrade command`;
   if (options.backend === "llamacpp") return "configured llama.cpp upgrade command";
+  if (options.backend === "exllamav3") return "configured TabbyAPI upgrade command";
   if (options.type === "install" && isManagedPythonBackend(options.backend)) {
     return `python -m venv $DATA_DIR/runtime/venvs/${managedVenvName(options.backend)} && pip install ${managedPackageSpec(options.backend, options.version)}`;
   }
