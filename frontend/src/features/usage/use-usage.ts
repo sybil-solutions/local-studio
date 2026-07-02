@@ -121,6 +121,7 @@ export function useUsage(source: UsageSource = "provider") {
         prompt_tokens: entry.prompt_tokens,
         completion_tokens: entry.completion_tokens,
         avg_latency_ms: 0,
+        cache_hit_rate: entry.cache_hit_rate,
       }));
   }, [stats, selectedModel]);
 
@@ -162,6 +163,10 @@ export function useUsage(source: UsageSource = "provider") {
         case "speed":
           aVal = a.tokens_per_sec ?? 0;
           bVal = b.tokens_per_sec ?? 0;
+          break;
+        case "cache_hit_rate":
+          aVal = a.cache_hit_rate;
+          bVal = b.cache_hit_rate;
           break;
         default:
           return 0;

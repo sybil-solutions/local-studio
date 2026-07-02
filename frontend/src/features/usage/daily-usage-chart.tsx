@@ -13,6 +13,7 @@ interface DailyStat {
   prompt_tokens: number;
   completion_tokens: number;
   requests: number;
+  cache_hit_rate?: number;
 }
 
 interface DailyUsageProps {
@@ -166,6 +167,11 @@ export function DailyUsageChart({
   const totalTokensInPeriod = chartBuckets.reduce((sum, bucket) => sum + bucket.total_tokens, 0);
   const totalRequestsInPeriod = chartBuckets.reduce((sum, bucket) => sum + bucket.requests, 0);
   const avgDailyTokens = Math.round(totalTokensInPeriod / (chartBuckets.length || 1));
+  const daysWithCache = stats.daily.filter((d) => d.cache_hit_rate != null && d.cache_hit_rate > 0);
+  const avgCacheHitRate =
+    daysWithCache.length > 0
+      ? daysWithCache.reduce((sum, d) => sum + (d.cache_hit_rate ?? 0), 0) / daysWithCache.length
+      : null;
 
   const buildBucketItems = (bucket: BucketData): ModelDataItem[] => {
     const items: ModelDataItem[] = [];
@@ -335,9 +341,14 @@ export function DailyUsageChart({
         </div>
       ) : null}
 
-      <dl className="mt-4 grid grid-cols-2 border-b border-(--border)/40 pb-4">
+      <dl
+        className={`mt-4 grid border-b border-(--border)/40 pb-4 ${avgCacheHitRate != null ? "grid-cols-3" : "grid-cols-2"}`}
+      >
         <Stat label="tokens in view" value={formatNumber(totalTokensInPeriod)} />
         <Stat label="requests in view" value={formatNumber(totalRequestsInPeriod)} />
+        {avgCacheHitRate != null ? (
+          <Stat label="avg cache hit" value={`${avgCacheHitRate.toFixed(1)}%`} />
+        ) : null}
       </dl>
 
       {hovered ? (
