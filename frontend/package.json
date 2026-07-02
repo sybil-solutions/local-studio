@@ -70,7 +70,6 @@
     "electron-builder": "26.8.1",
     "eslint": "9.39.2",
     "eslint-config-next": "16.2.7",
-    "eslint-plugin-boundaries": "5.3.1",
     "jscpd": "4.0.7",
     "knip": "5.82.1",
     "lint-staged": "15.2.11",

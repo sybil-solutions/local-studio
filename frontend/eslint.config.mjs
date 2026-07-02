@@ -1,7 +1,6 @@
 import { defineConfig, globalIgnores } from "eslint/config";
 import nextVitals from "eslint-config-next/core-web-vitals";
 import nextTs from "eslint-config-next/typescript";
-import boundaries from "eslint-plugin-boundaries";
 
 const bannedReactEffectHookNames = [
   "use" + "Effect",
@@ -20,18 +19,6 @@ const eslintConfig = defineConfig([
   ...nextVitals,
   ...nextTs,
   {
-    plugins: {
-      boundaries,
-    },
-    settings: {
-      "boundaries/elements": [
-        { type: "app", pattern: "src/app/**" },
-        { type: "features", pattern: "src/features/**" },
-        { type: "hooks", pattern: "src/hooks/**" },
-        { type: "lib", pattern: "src/lib/**" },
-        { type: "store", pattern: "src/store.ts" },
-      ],
-    },
     rules: {
       complexity: ["warn", { max: 20 }],
       "max-depth": ["warn", 4],
@@ -52,18 +39,6 @@ const eslintConfig = defineConfig([
       "react-hooks/static-components": "off",
       "react-hooks/purity": "off",
       "react-hooks/immutability": "off",
-      "boundaries/element-types": [
-        "warn",
-        {
-          default: "allow",
-          rules: [
-            {
-              from: ["app"],
-              disallow: ["app"],
-            },
-          ],
-        },
-      ],
     },
   },
   {
