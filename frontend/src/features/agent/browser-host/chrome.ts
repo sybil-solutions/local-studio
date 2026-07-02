@@ -170,7 +170,18 @@ class ChromeManager {
 
 const globalForChrome = globalThis as typeof globalThis & {
   __localStudioChromeManager?: ChromeManager;
+  __localStudioChromeExitHook?: boolean;
 };
 
 export const chromeManager = globalForChrome.__localStudioChromeManager ?? new ChromeManager();
 globalForChrome.__localStudioChromeManager = chromeManager;
+
+// Kill the spawned Chromium when the server process exits, so a normal
+// shutdown / restart doesn't orphan a headless browser holding the fixed
+// profile-dir lock. Registered once (guarded), synchronous (safe in "exit").
+// Next's graceful SIGTERM/SIGINT handling calls process.exit, which fires this;
+// a raw SIGKILL can't be intercepted by anything.
+if (!globalForChrome.__localStudioChromeExitHook && typeof process !== "undefined") {
+  globalForChrome.__localStudioChromeExitHook = true;
+  process.on("exit", () => chromeManager.stop());
+}

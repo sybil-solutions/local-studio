@@ -141,6 +141,14 @@ class BrowserHost {
 
   private async freshPage(): Promise<HostedPage> {
     const port = await this.port();
+    // freshPage is a recovery path: the current active page is unusable ("Not
+    // attached"). Close it so its CDP WebSocket doesn't leak — a new attach
+    // below replaces it.
+    const previous = this.activeId ? this.pages.get(this.activeId) : undefined;
+    if (previous) {
+      this.pages.delete(previous.id);
+      previous.close();
+    }
     const target = await createBlankPage(port);
     const hosted = await HostedPage.attach(target, this.timeoutMs);
     this.pages.set(hosted.id, hosted);
