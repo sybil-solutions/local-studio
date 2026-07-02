@@ -1,5 +1,5 @@
 import { Schema } from "effect";
-import { asEnvironmentId, type Environment } from "./types";
+import type { Environment } from "./types";
 
 const nullableStringSchema = Schema.Union([Schema.Null, Schema.String]);
 
@@ -27,5 +27,5 @@ export const parseEnvironment = (raw: unknown): Environment => {
     createdAt: data["createdAt"] ?? now,
     updatedAt: data["updatedAt"] ?? now,
   });
-  return { ...parsed, id: asEnvironmentId(parsed.id) };
+  return parsed;
 };
