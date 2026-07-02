@@ -162,8 +162,7 @@ REMOTE_PATH=/home/user/project
 ./scripts/deploy-remote.sh status       # inspect remote processes
 ```
 
-Local daemon helpers: `./scripts/daemon-start.sh`, `daemon-status.sh`,
-`daemon-stop.sh`.
+Local daemon helper: `./scripts/daemon.sh {start|stop|status}`.
 
 ## Validation
 
