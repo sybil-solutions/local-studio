@@ -76,6 +76,13 @@ export function PlanPanel({
 
   usePlanDocument({ sessionId, editing, setMarkdown, setLoading });
 
+  // Cancel a pending debounced save on unmount so it can't fire a post-unmount POST.
+  useMountSubscription(() => {
+    return () => {
+      if (saveTimer.current) clearTimeout(saveTimer.current);
+    };
+  }, []);
+
   const persist = useCallback(
     (value: string) => {
       if (saveTimer.current) clearTimeout(saveTimer.current);

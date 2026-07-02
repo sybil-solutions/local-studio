@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Code2 } from "@/ui/icon-registry";
 
 import { useTools } from "@/features/agent/tools/context";
@@ -14,7 +14,9 @@ export function CanvasPanel() {
   const text = tools.computer.canvasText;
   const [editing, setEditing] = useState(false);
   const hasContent = text.trim().length > 0;
-  const kind = detectPreviewKind(text);
+  // detectPreviewKind runs several regex scans over the whole buffer; memoize so
+  // it doesn't rerun on unrelated renders (e.g. the Edit toggle).
+  const kind = useMemo(() => detectPreviewKind(text), [text]);
   const showPreview = !editing && hasContent;
   return (
     <section className="flex min-h-0 flex-1 flex-col">

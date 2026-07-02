@@ -281,7 +281,11 @@ function mergeConsecutiveAssistantMessages(messages: ChatMessage[]): ChatMessage
     }
     merged[merged.length - 1] = {
       ...previous,
-      id: `${previous.id}:${message.id}`,
+      // Anchor the merged id on the first segment (already unique). Concatenating
+      // each new segment's id grew the id — and thus the React key — on every
+      // tool boundary within a turn, remounting the whole assistant <article>
+      // mid-stream and collapsing expanded reasoning/tool disclosures.
+      id: previous.id,
       text: [previous.text, message.text].filter(Boolean).join("\n"),
       blocks: [...(previous.blocks ?? []), ...(message.blocks ?? [])],
       streamCalls: [...(previous.streamCalls ?? []), ...(message.streamCalls ?? [])],

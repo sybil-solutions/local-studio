@@ -69,6 +69,23 @@ function objectUrlFor(file: File): string | undefined {
   }
 }
 
+/**
+ * Release an attachment's blob preview URL. Safe to call for any attachment;
+ * a no-op unless previewUrl is a `blob:` URL (data: URLs and the durable
+ * inline content are left alone). Call when an attachment is discarded before
+ * being sent — a sent attachment's blob may still be referenced by the message.
+ */
+export function revokeAttachmentPreview(attachment: Pick<ChatAttachment, "previewUrl">): void {
+  const url = attachment.previewUrl;
+  if (!url || !url.startsWith("blob:")) return;
+  if (typeof URL === "undefined" || typeof URL.revokeObjectURL !== "function") return;
+  try {
+    URL.revokeObjectURL(url);
+  } catch {
+    // best-effort
+  }
+}
+
 function newAttachmentId() {
   return newId("file");
 }

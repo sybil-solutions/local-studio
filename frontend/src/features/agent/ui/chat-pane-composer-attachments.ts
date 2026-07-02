@@ -6,6 +6,7 @@ import {
   createAttachment,
   dataTransferHasFiles,
   filesFromDataTransfer,
+  revokeAttachmentPreview,
   type ChatAttachment,
 } from "@/features/agent/ui/chat-attachments";
 import type { UpdateTab } from "@/features/agent/ui/chat-pane-composer";
@@ -80,7 +81,13 @@ export function useComposerAttachments({
   );
 
   const removeAttachment = useCallback((id: string) => {
-    setAttachments((current) => current.filter((item) => item.id !== id));
+    setAttachments((current) => {
+      // The removed attachment is discarded before sending, so its blob preview
+      // URL will never be referenced by a message — reclaim it now.
+      const removed = current.find((item) => item.id === id);
+      if (removed) revokeAttachmentPreview(removed);
+      return current.filter((item) => item.id !== id);
+    });
   }, []);
 
   const clearAttachments = useCallback(() => {
