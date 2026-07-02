@@ -23,6 +23,7 @@ export interface Config {
   db_path: string;
   models_dir: string;
   sglang_python?: string;
+  tabby_api_dir?: string;
   llama_bin?: string;
   mlx_python?: string;
   strict_openai_models: boolean;
@@ -98,6 +99,7 @@ export const createConfig = (): Config => {
     LOCAL_STUDIO_DB_PATH: Schema.optional(Schema.String),
     LOCAL_STUDIO_MODELS_DIR: Schema.String,
     LOCAL_STUDIO_SGLANG_PYTHON: Schema.optional(Schema.String),
+    LOCAL_STUDIO_TABBY_API_DIR: Schema.optional(Schema.String),
     LOCAL_STUDIO_LLAMA_BIN: Schema.optional(Schema.String),
     LOCAL_STUDIO_MLX_PYTHON: Schema.optional(Schema.String),
     LOCAL_STUDIO_STRICT_OPENAI_MODELS: Schema.optional(Schema.String),
@@ -158,6 +160,9 @@ export const createConfig = (): Config => {
 
   if (parsed.LOCAL_STUDIO_SGLANG_PYTHON) {
     config.sglang_python = parsed.LOCAL_STUDIO_SGLANG_PYTHON;
+  }
+  if (parsed.LOCAL_STUDIO_TABBY_API_DIR) {
+    config.tabby_api_dir = parsed.LOCAL_STUDIO_TABBY_API_DIR;
   }
   if (parsed.LOCAL_STUDIO_LLAMA_BIN) {
     config.llama_bin = parsed.LOCAL_STUDIO_LLAMA_BIN;
