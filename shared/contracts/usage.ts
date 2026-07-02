@@ -153,6 +153,9 @@ export interface UsageStats {
     tokens_per_sec: number | null;
     prefill_tps: number | null;
     generation_tps: number | null;
+    cache_read: number;
+    cache_write: number;
+    cache_hit_rate: number;
   }>;
   daily: Array<{
     date: string;
@@ -163,6 +166,9 @@ export interface UsageStats {
     prompt_tokens: number;
     completion_tokens: number;
     avg_latency_ms: number;
+    cache_read: number;
+    cache_write: number;
+    cache_hit_rate: number;
   }>;
   daily_by_model?: Array<{
     date: string;
@@ -173,6 +179,9 @@ export interface UsageStats {
     total_tokens: number;
     prompt_tokens: number;
     completion_tokens: number;
+    cache_read: number;
+    cache_write: number;
+    cache_hit_rate: number;
   }>;
   hourly_pattern: Array<{
     hour: number;
@@ -182,3 +191,4 @@ export interface UsageStats {
   }>;
   controller?: ControllerUsageStats;
 }
+

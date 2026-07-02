@@ -540,6 +540,9 @@ describe("controller route contracts", () => {
         prompt_tokens: 11,
         completion_tokens: 7,
         success_rate: 100,
+        cache_read: 5,
+        cache_write: 3,
+        cache_hit_rate: expect.closeTo(62.5, 1),
       }),
     ]);
 

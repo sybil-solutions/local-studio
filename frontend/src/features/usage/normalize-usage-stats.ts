@@ -208,6 +208,9 @@ export function normalizeUsageStats(input: UsageStats | null | undefined): Usage
       tokens_per_sec: nullableNum(model.tokens_per_sec),
       prefill_tps: nullableNum(model.prefill_tps),
       generation_tps: nullableNum(model.generation_tps),
+      cache_read: num(model.cache_read),
+      cache_write: num(model.cache_write),
+      cache_hit_rate: num(model.cache_hit_rate),
     })),
     daily: array(s.daily).map((day) => ({
       date: text(day.date, ""),
@@ -218,6 +221,9 @@ export function normalizeUsageStats(input: UsageStats | null | undefined): Usage
       prompt_tokens: num(day.prompt_tokens),
       completion_tokens: num(day.completion_tokens),
       avg_latency_ms: num(day.avg_latency_ms),
+      cache_read: num(day.cache_read),
+      cache_write: num(day.cache_write),
+      cache_hit_rate: num(day.cache_hit_rate),
     })),
     daily_by_model: array(s.daily_by_model).map((day, index) => ({
       date: text(day.date, ""),
@@ -228,6 +234,9 @@ export function normalizeUsageStats(input: UsageStats | null | undefined): Usage
       total_tokens: num(day.total_tokens),
       prompt_tokens: num(day.prompt_tokens),
       completion_tokens: num(day.completion_tokens),
+      cache_read: num(day.cache_read),
+      cache_write: num(day.cache_write),
+      cache_hit_rate: num(day.cache_hit_rate),
     })),
     hourly_pattern: array(s.hourly_pattern).map((hour) => ({
       hour: num(hour.hour),

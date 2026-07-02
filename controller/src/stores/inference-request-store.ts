@@ -178,7 +178,9 @@ export class InferenceRequestStore {
            COALESCE(SUM(completion_tokens), 0) as completion_tokens,
            COALESCE(SUM(prompt_tokens), 0) + COALESCE(SUM(completion_tokens), 0) as total_tokens,
            AVG(duration_ms) as avg_latency_ms,
-           AVG(ttft_ms) as avg_ttft_ms
+           AVG(ttft_ms) as avg_ttft_ms,
+           COALESCE(SUM(cache_read_tokens), 0) as cache_read,
+           COALESCE(SUM(cache_write_tokens), 0) as cache_write
          FROM inference_requests
          WHERE 1=1${filter.clause}
          GROUP BY model
@@ -196,7 +198,9 @@ export class InferenceRequestStore {
            COALESCE(SUM(prompt_tokens), 0) as prompt_tokens,
            COALESCE(SUM(completion_tokens), 0) as completion_tokens,
            COALESCE(SUM(prompt_tokens), 0) + COALESCE(SUM(completion_tokens), 0) as total_tokens,
-           AVG(duration_ms) as avg_latency_ms
+           AVG(duration_ms) as avg_latency_ms,
+           COALESCE(SUM(cache_read_tokens), 0) as cache_read,
+           COALESCE(SUM(cache_write_tokens), 0) as cache_write
          FROM inference_requests
          WHERE 1=1${filter.clause}
          GROUP BY DATE(created_at)
@@ -213,7 +217,9 @@ export class InferenceRequestStore {
            SUM(CASE WHEN status >= 200 AND status < 300 THEN 1 ELSE 0 END) as successful,
            COALESCE(SUM(prompt_tokens), 0) as prompt_tokens,
            COALESCE(SUM(completion_tokens), 0) as completion_tokens,
-           COALESCE(SUM(prompt_tokens), 0) + COALESCE(SUM(completion_tokens), 0) as total_tokens
+           COALESCE(SUM(prompt_tokens), 0) + COALESCE(SUM(completion_tokens), 0) as total_tokens,
+           COALESCE(SUM(cache_read_tokens), 0) as cache_read,
+           COALESCE(SUM(cache_write_tokens), 0) as cache_write
          FROM inference_requests
          WHERE 1=1${filter.clause}
          GROUP BY DATE(created_at), model
@@ -292,6 +298,8 @@ export class InferenceRequestStore {
       if (previous === 0) return current === 0 ? 0 : null;
       return ((current - previous) / previous) * 100;
     };
+    const calcCacheHitRate = (read: number, write: number): number =>
+      read + write > 0 ? (read / (read + write)) * 100 : 0;
 
     return {
       totals: {
@@ -339,7 +347,7 @@ export class InferenceRequestStore {
         misses: cacheMisses,
         hit_tokens: cacheHits,
         miss_tokens: cacheMisses,
-        hit_rate: cacheHits + cacheMisses > 0 ? (cacheHits / (cacheHits + cacheMisses)) * 100 : 0,
+        hit_rate: calcCacheHitRate(cacheHits, cacheMisses),
       },
       week_over_week: {
         this_week: {
@@ -397,6 +405,12 @@ export class InferenceRequestStore {
           tokens_per_sec: null,
           prefill_tps: null,
           generation_tps: null,
+          cache_read: toFiniteNumber(row["cache_read"]),
+          cache_write: toFiniteNumber(row["cache_write"]),
+          cache_hit_rate: calcCacheHitRate(
+            toFiniteNumber(row["cache_read"]),
+            toFiniteNumber(row["cache_write"])
+          ),
         };
       }),
       daily: daily.map((row) => {
@@ -411,6 +425,12 @@ export class InferenceRequestStore {
           prompt_tokens: toFiniteNumber(row["prompt_tokens"]),
           completion_tokens: toFiniteNumber(row["completion_tokens"]),
           avg_latency_ms: toFiniteNumber(row["avg_latency_ms"]),
+          cache_read: toFiniteNumber(row["cache_read"]),
+          cache_write: toFiniteNumber(row["cache_write"]),
+          cache_hit_rate: calcCacheHitRate(
+            toFiniteNumber(row["cache_read"]),
+            toFiniteNumber(row["cache_write"])
+          ),
         };
       }),
       daily_by_model: dailyByModel.map((row) => {
@@ -425,6 +445,12 @@ export class InferenceRequestStore {
           total_tokens: toFiniteNumber(row["total_tokens"]),
           prompt_tokens: toFiniteNumber(row["prompt_tokens"]),
           completion_tokens: toFiniteNumber(row["completion_tokens"]),
+          cache_read: toFiniteNumber(row["cache_read"]),
+          cache_write: toFiniteNumber(row["cache_write"]),
+          cache_hit_rate: calcCacheHitRate(
+            toFiniteNumber(row["cache_read"]),
+            toFiniteNumber(row["cache_write"])
+          ),
         };
       }),
       hourly_pattern: hourly.map((row) => ({

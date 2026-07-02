@@ -131,6 +131,15 @@ export function ModelPerformanceTable({
             >
               Speed
             </SortableTH>
+            <SortableTH
+              field="cache_hit_rate"
+              currentField={sortField}
+              direction={sortDirection}
+              onSort={handleSort}
+              align="right"
+            >
+              Cache hit %
+            </SortableTH>
           </TRow>
         </THead>
         <TBody className="divide-y-0">
@@ -194,10 +203,13 @@ export function ModelPerformanceTable({
                   <TCell align="right" className="px-2 py-2 font-mono">
                     {renderSpeedDisplay(resolveSpeedDisplay(model, peak))}
                   </TCell>
+                  <TCell align="right" className="px-2 py-2 font-mono tabular-nums text-(--dim)">
+                    {model.cache_hit_rate.toFixed(1)}%
+                  </TCell>
                 </TRow>
                 {isExpanded ? (
                   <TRow className="border-b border-(--border)/25 hover:bg-transparent">
-                    <TCell colSpan={7} className="px-2 py-3">
+                    <TCell colSpan={8} className="px-2 py-3">
                       <ExpandedModel model={model} peak={peak} modelColor={modelColor} />
                     </TCell>
                   </TRow>

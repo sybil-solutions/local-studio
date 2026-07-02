@@ -1,6 +1,14 @@
 import type { PeakMetrics } from "@/lib/types";
 
-export type SortField = "model" | "requests" | "tokens" | "success" | "latency" | "ttft" | "speed";
+export type SortField =
+  | "model"
+  | "requests"
+  | "tokens"
+  | "success"
+  | "latency"
+  | "ttft"
+  | "speed"
+  | "cache_hit_rate";
 export type SortDirection = "asc" | "desc";
 
 export interface ModelData {
@@ -17,6 +25,7 @@ export interface ModelData {
   completion_tokens: number;
   avg_tokens: number;
   p50_latency_ms: number | null;
+  cache_hit_rate: number;
 }
 
 export type SpeedDisplay =

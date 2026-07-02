@@ -32,12 +32,17 @@ type ModelUsage = {
   total_tokens: number;
   prompt_tokens: number;
   completion_tokens: number;
+  cache_read: number;
+  cache_write: number;
 };
 
 const numberValue = (value: unknown): number => {
   const parsed = Number(value ?? 0);
   return Number.isFinite(parsed) ? parsed : 0;
 };
+
+const cacheHitRate = (read: number, write: number): number =>
+  read + write > 0 ? (read / (read + write)) * 100 : 0;
 
 const textValue = (value: unknown): string | null =>
   typeof value === "string" && value.trim() ? value.trim() : null;
@@ -74,7 +79,7 @@ const upsertUsage = (
   map: Map<string, ModelUsage>,
   key: string,
   model: string,
-  usage: { prompt: number; completion: number; total: number },
+  usage: { prompt: number; completion: number; total: number; cacheRead: number; cacheWrite: number },
   date?: string
 ): void => {
   const existing =
@@ -87,12 +92,16 @@ const upsertUsage = (
       total_tokens: 0,
       prompt_tokens: 0,
       completion_tokens: 0,
+      cache_read: 0,
+      cache_write: 0,
     } satisfies ModelUsage);
   existing.requests += 1;
   existing.successful += 1;
   existing.prompt_tokens += usage.prompt;
   existing.completion_tokens += usage.completion;
   existing.total_tokens += usage.total;
+  existing.cache_read += usage.cacheRead;
+  existing.cache_write += usage.cacheWrite;
   map.set(key, existing);
 };
 
@@ -316,6 +325,7 @@ export const getUsageFromPiSessions = (
       tokens_per_sec: null,
       prefill_tps: null,
       generation_tps: null,
+      cache_hit_rate: cacheHitRate(row.cache_read, row.cache_write),
     })),
     daily: daily.map((row) => ({
       date: row.date ?? "",
@@ -326,8 +336,16 @@ export const getUsageFromPiSessions = (
       prompt_tokens: row.prompt_tokens,
       completion_tokens: row.completion_tokens,
       avg_latency_ms: 0,
+      cache_read: row.cache_read,
+      cache_write: row.cache_write,
+      cache_hit_rate: cacheHitRate(row.cache_read, row.cache_write),
     })),
-    daily_by_model: dailyByModel.map((row) => ({ ...row, date: row.date ?? "", success_rate: 100 })),
+    daily_by_model: dailyByModel.map((row) => ({
+      ...row,
+      date: row.date ?? "",
+      success_rate: 100,
+      cache_hit_rate: cacheHitRate(row.cache_read, row.cache_write),
+    })),
     hourly_pattern: hourly,
   };
 };
