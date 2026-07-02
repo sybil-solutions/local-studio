@@ -4,7 +4,7 @@ import type { ChildProcess } from "node:child_process";
 import { Effect } from "effect";
 import type { Config } from "../../../config/env";
 import { resolveBinary, runCommandAsyncEffect } from "../../../core/command";
-import type { RuntimeUpgradeResult, EngineBackend } from "../../../../../shared/contracts/system";
+import type { RuntimeUpgradeResult, EngineBackend } from "@local-studio/contracts/system";
 import { ENGINE_INSTALL_TIMEOUT_MS, RUNTIME_UPGRADE_TIMEOUT_MS } from "../configs";
 import { probePythonRuntime } from "./runtime-target-probes";
 

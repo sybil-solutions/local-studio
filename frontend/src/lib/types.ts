@@ -2,7 +2,7 @@
  * Shared frontend types: re-exports of the shared contracts plus the
  * frontend-only view models used across multiple features.
  */
-import type { RecipeBase, RecipePayload } from "../../../shared/contracts/recipes";
+import type { RecipeBase, RecipePayload } from "@local-studio/contracts/recipes";
 
 // --- Shared contract re-exports ---
 
@@ -16,7 +16,7 @@ export type {
   RecipeBase,
   RecipePayload,
   StorageInfo,
-} from "../../../shared/contracts/recipes";
+} from "@local-studio/contracts/recipes";
 
 export type {
   CompatibilityCheck,
@@ -42,9 +42,9 @@ export type {
   ServiceInfo,
   SystemConfig,
   SystemRuntimeInfo,
-} from "../../../shared/contracts/system";
+} from "@local-studio/contracts/system";
 
-export type { ControllerUsageStats, UsageStats } from "../../../shared/contracts/usage";
+export type { ControllerUsageStats, UsageStats } from "@local-studio/contracts/usage";
 
 export type {
   GPU,
@@ -55,7 +55,7 @@ export type {
   StudioDiagnostics,
   StudioSettings,
   VRAMCalculation,
-} from "../../../shared/contracts/observability";
+} from "@local-studio/contracts/observability";
 
 // --- Recipes ---
 
@@ -81,8 +81,8 @@ export interface RecipeWithStatus extends RecipeBase {
 
 // --- Docker environments (a recipe pinned to an official engine image) ---
 
-export type { Environment, EnvironmentEngineId } from "../../../shared/contracts/environments";
-import type { Environment, EnvironmentEngineId } from "../../../shared/contracts/environments";
+export type { Environment, EnvironmentEngineId } from "@local-studio/contracts/environments";
+import type { Environment, EnvironmentEngineId } from "@local-studio/contracts/environments";
 
 export interface EnvironmentWithStatus extends Environment {
   image: string;
@@ -104,7 +104,7 @@ export type {
   EngineImage,
   EngineImagePull,
   EngineImagesInfo,
-} from "../../../shared/contracts/environments";
+} from "@local-studio/contracts/environments";
 
 // --- Launch progress ---
 

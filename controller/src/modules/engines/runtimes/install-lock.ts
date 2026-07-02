@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { Effect } from "effect";
 import type { Config } from "../../../config/env";
 import { delayEffect } from "../../../core/async";
-import type { EngineBackend } from "../../../../../shared/contracts/system";
+import type { EngineBackend } from "@local-studio/contracts/system";
 import { ENGINE_INSTALL_TIMEOUT_MS } from "../configs";
 import { pidExists } from "../process/process-utilities";
 

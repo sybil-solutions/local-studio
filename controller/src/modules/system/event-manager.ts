@@ -1,5 +1,5 @@
 import { AsyncLock, AsyncQueue } from "../../core/async";
-import { CONTROLLER_EVENTS } from "../../../../shared/contracts/controller-events";
+import { CONTROLLER_EVENTS } from "@local-studio/contracts/controller-events";
 
 /** Controller event that can be serialized to an SSE frame. */
 export class Event {

@@ -7,7 +7,7 @@ import {
   isInternalRecipeKey,
   isJsonStringArgumentKey,
   looksLikeNotesKey,
-} from "../../../../../shared/contracts/engine-args";
+} from "@local-studio/contracts/engine-args";
 import type { Logger } from "../../../core/logger";
 import { resolveBinary } from "../../../core/command";
 import { resolveVllmRecipePythonPath } from "../runtimes/vllm-python-path";

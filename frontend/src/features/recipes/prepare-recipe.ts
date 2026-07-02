@@ -1,5 +1,5 @@
 import type { Recipe } from "@/lib/types";
-import { stripForeignFlagKeys } from "../../../../shared/contracts/engine-args";
+import { stripForeignFlagKeys } from "@local-studio/contracts/engine-args";
 import type { RecipeEditor } from "./recipe-editor";
 import { EXTRA_ARG_FIELDS } from "./extra-arg-fields";
 import {

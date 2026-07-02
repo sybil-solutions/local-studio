@@ -1,4 +1,4 @@
-import type { EngineBackend, RuntimeTarget } from "../../../../../shared/contracts/system";
+import type { EngineBackend, RuntimeTarget } from "@local-studio/contracts/system";
 import {
   getVllmUpgradeVersion,
   isUpgradeCommandConfigured,

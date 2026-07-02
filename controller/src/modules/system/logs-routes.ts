@@ -6,7 +6,7 @@ import type { RouteRegistrar } from "../../http/route-registrar";
 import { badRequest, notFound } from "../../core/errors";
 import { findObservedInferenceProcess } from "../../core/function-observability";
 import { streamAsyncStrings, buildSseHeaders, withSseHeartbeat } from "../../http/sse";
-import { CONTROLLER_EVENTS } from "../../../../shared/contracts/controller-events";
+import { CONTROLLER_EVENTS } from "@local-studio/contracts/controller-events";
 import { Event } from "./event-manager";
 import { isRecipeRunning } from "../models/recipes/recipe-matching";
 import {

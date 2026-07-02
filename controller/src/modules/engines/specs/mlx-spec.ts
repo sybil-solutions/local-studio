@@ -4,9 +4,9 @@ import type { ProcessInfo, Recipe } from "../../models/types";
 import type {
   RuntimeBackendInfo,
   RuntimeUpgradeResult,
-} from "../../../../../shared/contracts/system";
+} from "@local-studio/contracts/system";
 import { appendExtraArguments, getPythonPath } from "../process/backend-builder";
-import { stripForeignFlagKeys } from "../../../../../shared/contracts/engine-args";
+import { stripForeignFlagKeys } from "@local-studio/contracts/engine-args";
 import { extractFlag, hasModuleInvocation } from "../argument-utilities";
 import type { EngineSpec, InstallOptions } from "../engine-spec";
 import { installIntoManagedVenv, managedVenvPython } from "../runtimes/managed-venv";

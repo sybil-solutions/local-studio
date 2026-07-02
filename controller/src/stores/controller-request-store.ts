@@ -1,5 +1,5 @@
 import type { Database } from "bun:sqlite";
-import type { ControllerUsageStats } from "../../../shared/contracts/usage";
+import type { ControllerUsageStats } from "@local-studio/contracts/usage";
 import { openSqliteDatabase, toFiniteNumber, toNullableNumber } from "./sqlite";
 
 export interface ControllerRequestRecord {

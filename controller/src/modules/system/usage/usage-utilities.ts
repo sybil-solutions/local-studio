@@ -1,4 +1,4 @@
-import type { UsageStats } from "../../../../../shared/contracts/usage";
+import type { UsageStats } from "@local-studio/contracts/usage";
 
 export const calcChange = (current: number, previous: number): number | null => {
   if (!previous || previous === 0) return null;

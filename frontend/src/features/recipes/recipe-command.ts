@@ -1,7 +1,7 @@
 import {
   isInternalRecipeKey,
   isJsonStringArgumentKey,
-} from "../../../../shared/contracts/engine-args";
+} from "@local-studio/contracts/engine-args";
 import type { RecipeEditor } from "./recipe-editor";
 import { normalizeExtraArgKey } from "./extra-args";
 import { prepareRecipeForSave } from "./prepare-recipe";

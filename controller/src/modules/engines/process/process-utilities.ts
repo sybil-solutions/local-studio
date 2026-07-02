@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { dirname } from "node:path";
 import type { Recipe } from "../../models/types";
-import type { Backend } from "../../../../../shared/contracts/recipes";
+import type { Backend } from "@local-studio/contracts/recipes";
 import { detectEngineFromArguments } from "../engine-spec";
 import { extractFlag as extractFlagUtility } from "../argument-utilities";
 import { resolveVllmRecipePythonPath } from "../runtimes/vllm-python-path";

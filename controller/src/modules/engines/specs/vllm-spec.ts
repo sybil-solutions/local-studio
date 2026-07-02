@@ -3,7 +3,7 @@ import { dirname, join } from "node:path";
 import type { Config } from "../../../config/env";
 import { resolveBinary } from "../../../core/command";
 import type { ProcessInfo, Recipe } from "../../models/types";
-import type { RuntimeBackendInfo } from "../../../../../shared/contracts/system";
+import type { RuntimeBackendInfo } from "@local-studio/contracts/system";
 import {
   getVllmConfigHelp,
   getVllmRuntimeInfo,

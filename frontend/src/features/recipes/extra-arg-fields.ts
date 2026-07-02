@@ -2,7 +2,7 @@ import {
   ENGINE_ARG_SPECS,
   engineArgKey,
   type EngineArgType,
-} from "../../../../shared/contracts/engine-args";
+} from "@local-studio/contracts/engine-args";
 import type { RecipeEditor } from "./recipe-editor";
 
 export type { EngineArgType as ExtraArgType };

@@ -1,0 +1,9 @@
+{
+  "name": "@local-studio/contracts",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./*": "./contracts/*.ts"
+  }
+}

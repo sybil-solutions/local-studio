@@ -5,11 +5,11 @@ export {
   getBrowserEventChannelForControllerEvent,
   getControllerEventDomain,
   isControllerStreamEventType,
-} from "../../../shared/contracts/controller-events";
+} from "@local-studio/contracts/controller-events";
 
 export type {
   ControllerBrowserEventChannel,
   ControllerEventDomain,
   ControllerEventType,
   ControllerStreamEventType,
-} from "../../../shared/contracts/controller-events";
+} from "@local-studio/contracts/controller-events";

@@ -1,4 +1,4 @@
-import { INTERNAL_RECIPE_KEYS } from "../../../../shared/contracts/engine-args";
+import { INTERNAL_RECIPE_KEYS } from "@local-studio/contracts/engine-args";
 import { LLAMACPP_OPTION_KEYS } from "./llamacpp-options";
 import { MLX_OPTION_KEYS } from "./mlx-options";
 import { EXTRA_ARG_FIELDS } from "./extra-arg-fields";

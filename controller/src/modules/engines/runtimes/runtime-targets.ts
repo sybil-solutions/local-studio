@@ -8,7 +8,7 @@ import type {
   EngineBackend,
   RuntimeBackendInfo,
   RuntimeTarget,
-} from "../../../../../shared/contracts/system";
+} from "@local-studio/contracts/system";
 import { detectBackend, listProcesses } from "../process/process-utilities";
 import { makeRuntimeTarget } from "./runtime-target-factory";
 import {

@@ -12,7 +12,7 @@ import { randomUUID } from "node:crypto";
 import type { Config } from "../../../config/env";
 import type { Logger } from "../../../core/logger";
 import { Event, type EventManager } from "../../system/event-manager";
-import { CONTROLLER_EVENTS } from "../../../../../shared/contracts/controller-events";
+import { CONTROLLER_EVENTS } from "@local-studio/contracts/controller-events";
 import type { DownloadFileInfo, DownloadStatus, ModelDownload } from "../types";
 import type { DownloadStore } from "./download-store";
 import { buildHuggingFaceFileList, fetchHuggingFaceModelInfo } from "./huggingface-api";

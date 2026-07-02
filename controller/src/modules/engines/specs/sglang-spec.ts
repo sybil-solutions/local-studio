@@ -6,13 +6,13 @@ import type { ProcessInfo, Recipe } from "../../models/types";
 import type {
   RuntimeBackendInfo,
   RuntimeUpgradeResult,
-} from "../../../../../shared/contracts/system";
+} from "@local-studio/contracts/system";
 import {
   getDefaultReasoningParser,
   getDefaultToolCallParser,
 } from "../process/model-runtime-defaults";
 import { appendExtraArguments, getExtraArgument, getPythonPath } from "../process/backend-builder";
-import { stripForeignFlagKeys } from "../../../../../shared/contracts/engine-args";
+import { stripForeignFlagKeys } from "@local-studio/contracts/engine-args";
 import {
   extractFlag,
   hasCliServeInvocation,

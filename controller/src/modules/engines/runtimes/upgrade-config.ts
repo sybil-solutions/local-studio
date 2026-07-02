@@ -1,6 +1,6 @@
 import type { ChildProcess } from "node:child_process";
 import { runCommandAsync } from "../../../core/command";
-import type { RuntimeUpgradeResult } from "../../../../../shared/contracts/system";
+import type { RuntimeUpgradeResult } from "@local-studio/contracts/system";
 
 const normalizeEnvironmentCommand = (envKey: string): string | null => {
   const value = process.env[envKey]?.trim();

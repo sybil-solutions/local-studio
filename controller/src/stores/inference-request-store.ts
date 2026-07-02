@@ -1,5 +1,5 @@
 import type { Database } from "bun:sqlite";
-import type { UsageStats } from "../../../shared/contracts/usage";
+import type { UsageStats } from "@local-studio/contracts/usage";
 import { openSqliteDatabase, toFiniteNumber, toNullableNumber } from "./sqlite";
 
 export interface InferenceRequestRecord {

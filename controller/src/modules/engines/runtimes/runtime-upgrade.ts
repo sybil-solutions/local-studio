@@ -1,7 +1,7 @@
 import { runCommandAsync } from "../../../core/command";
 import { getCudaInfo } from "./runtime-info";
 import { getRocmInfo, resolveRocmSmiTool } from "../../system/platform/rocm-info";
-import type { RuntimeUpgradeResult } from "../../../../../shared/contracts/system";
+import type { RuntimeUpgradeResult } from "@local-studio/contracts/system";
 import {
   CUDA_UPGRADE_ENV,
   getUpgradeCommandFromEnvironment,
@@ -9,7 +9,7 @@ import {
 } from "./upgrade-config";
 import { RUNTIME_UPGRADE_TIMEOUT_MS } from "../configs";
 
-export type { RuntimeUpgradeResult } from "../../../../../shared/contracts/system";
+export type { RuntimeUpgradeResult } from "@local-studio/contracts/system";
 
 export interface RuntimeUpgradeOptions {
   version?: string;

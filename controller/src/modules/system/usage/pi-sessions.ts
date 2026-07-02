@@ -1,7 +1,7 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import type { UsageStats } from "../../../../../shared/contracts/usage";
+import type { UsageStats } from "@local-studio/contracts/usage";
 import { calcChange } from "./usage-utilities";
 
 type UsageAccumulator = {

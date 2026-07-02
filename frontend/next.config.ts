@@ -36,6 +36,8 @@ const nextConfig: NextConfig = {
       "./node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai/dist/**/*.js",
     ],
   },
+  // Ships raw .ts sources (no build step) — Next must transpile it.
+  transpilePackages: ["@local-studio/contracts"],
   turbopack: {
     root: path.join(__dirname, ".."),
     resolveAlias: {

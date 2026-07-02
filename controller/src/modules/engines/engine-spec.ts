@@ -12,7 +12,7 @@ import type {
   EngineBackend,
   RuntimeBackendInfo,
   RuntimeUpgradeResult,
-} from "../../../../shared/contracts/system";
+} from "@local-studio/contracts/system";
 import type { InstallProgressUpdate } from "./runtimes/managed-venv";
 
 export type { InstallProgressUpdate };

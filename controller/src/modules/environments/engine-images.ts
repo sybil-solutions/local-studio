@@ -6,7 +6,7 @@ import type {
   EngineImage,
   EngineImagePull,
   EngineImagesInfo,
-} from "../../../../shared/contracts/environments";
+} from "@local-studio/contracts/environments";
 
 export type { EngineImage, EngineImagePull, EngineImagesInfo };
 

@@ -4,7 +4,7 @@ import { optionalEnum, parseJsonObjectBody } from "../../core/validation";
 import { observeControllerFunction } from "../../core/function-observability";
 import { parseRecipe } from "../models/recipes/recipe-serializer";
 import { Event } from "../system/event-manager";
-import { CONTROLLER_EVENTS } from "../../../../shared/contracts/controller-events";
+import { CONTROLLER_EVENTS } from "@local-studio/contracts/controller-events";
 import { isRecipeRunning } from "../models/recipes/recipe-matching";
 import type { ProcessInfo } from "../models/types";
 import { getVllmConfigHelp, getVllmRuntimeInfo } from "./runtimes/vllm-runtime";

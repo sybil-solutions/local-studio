@@ -1,1 +1,1 @@
-export type { Environment, EnvironmentEngineId } from "../../../../shared/contracts/environments";
+export type { Environment, EnvironmentEngineId } from "@local-studio/contracts/environments";

@@ -6,7 +6,7 @@ import type {
   EngineJob,
   RuntimeTarget,
   RuntimeUpgradeResult,
-} from "../../../../../shared/contracts/system";
+} from "@local-studio/contracts/system";
 import { getEngineSpec, type InstallOptions } from "../engine-spec";
 import { acquireEngineInstallLock, installLockTimeoutMessage } from "./install-lock";
 import { runPlatformUpgrade } from "./runtime-upgrade";

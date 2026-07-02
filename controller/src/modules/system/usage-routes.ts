@@ -1,4 +1,4 @@
-import type { UsageStats } from "../../../../shared/contracts/usage";
+import type { UsageStats } from "@local-studio/contracts/usage";
 import { observeControllerFunction } from "../../core/function-observability";
 import type { RouteRegistrar } from "../../http/route-registrar";
 import type { AppContext } from "../../app-context";
