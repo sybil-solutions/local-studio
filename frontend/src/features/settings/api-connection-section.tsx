@@ -20,15 +20,8 @@ import {
 } from "@/lib/api/controllers";
 import { getStoredBackendUrl, setApiKey, setStoredBackendUrl } from "@/lib/api/connection";
 import { scheduleDurableUiPreferencesSave } from "@/lib/desktop-ui-preferences";
-import {
-  SettingsButton,
-  SettingsGroup,
-  SettingsInput,
-  SettingsRow,
-  SettingsValue,
-  StatusPill,
-  type StatusTone,
-} from "@/ui";
+import { StatusPill } from "@/ui";
+import { SettingsButton, SettingsGroup, SettingsInput, SettingsRow, SettingsValue, type StatusTone } from "./settings-ui";
 
 type ControllerEntry = SavedController & { id: string };
 

@@ -9,7 +9,7 @@ import {
   Paintbrush,
   ServerCog,
 } from "@/ui/icon-registry";
-import { SettingsLayout, type SettingsSectionDef, type SettingsSectionId } from "@/ui";
+import { SettingsLayout, type SettingsSectionDef, type SettingsSectionId } from "./settings-ui";
 import type { CompatibilityReport, ConfigData } from "@/lib/types";
 import type { ApiConnectionSettings, ConnectionStatus } from "./types";
 import { ApiConnectionSection } from "./api-connection-section";

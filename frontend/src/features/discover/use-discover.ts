@@ -5,6 +5,7 @@ import api from "@/lib/api/client";
 import type { ModelInfo, ModelRecommendation } from "@/lib/types";
 import { useHuggingFaceModelSearch } from "@/hooks/use-huggingface-model-search";
 import { useMountSubscription } from "@/hooks/use-mount-subscription";
+import { useCopiedValue } from "@/hooks/use-copied-flag";
 import { RECENT_HF_MODEL_SORT } from "@/lib/huggingface";
 import { extractProvider, extractQuantizations, normalizeModelId } from "@/features/discover/utils";
 
@@ -18,7 +19,7 @@ export function useDiscover() {
   const [sort, setSort] = useState("");
   const [library, setLibrary] = useState("");
   const [showFilters, setShowFilters] = useState(false);
-  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [copiedId, markCopiedId] = useCopiedValue<string>(2000);
   const [providerFilter, setProviderFilter] = useState("");
   const [excludedQuantizations, setExcludedQuantizations] = useState<string[]>([]);
 
@@ -100,11 +101,13 @@ export function useDiscover() {
     [localModelMap],
   );
 
-  const copyModelId = useCallback((modelId: string) => {
-    navigator.clipboard.writeText(modelId);
-    setCopiedId(modelId);
-    setTimeout(() => setCopiedId(null), 2000);
-  }, []);
+  const copyModelId = useCallback(
+    (modelId: string) => {
+      navigator.clipboard.writeText(modelId);
+      markCopiedId(modelId);
+    },
+    [markCopiedId],
+  );
 
   const providers = useMemo(() => {
     const providerSet = new Set<string>();

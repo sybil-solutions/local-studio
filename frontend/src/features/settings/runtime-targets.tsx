@@ -2,16 +2,8 @@
 
 import { ArrowUpCircle, DownloadCloud, Loader2 } from "@/ui/icon-registry";
 import type { EngineBackend, EngineJob, RuntimeTarget } from "@/lib/types";
-import {
-  RowDetailLine,
-  RowFacts,
-  SettingsButton,
-  SettingsRow,
-  SettingsValue,
-  StatusPill,
-  type RowFact,
-  type UiTone,
-} from "@/ui";
+import { RowDetailLine, RowFacts, StatusPill, type RowFact, type UiTone } from "@/ui";
+import { SettingsButton, SettingsRow, SettingsValue } from "./settings-ui";
 
 export const ENGINE_META: Record<string, { label: string; description: string }> = {
   vllm: {

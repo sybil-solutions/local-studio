@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import { Compass, Download, HardDrive } from "@/ui/icon-registry";
 import type { ModelInfo, RecipeWithStatus } from "@/lib/types";
 import type { RecipeEditor } from "@/features/recipes/recipe-editor";
-import { SettingsLayout } from "@/ui/settings";
+import { SettingsLayout } from "@/features/settings/settings-ui";
 import type { RecipesContentTab } from "./recipes-content-model";
 import type { RecipesTableProps } from "./types";
 import { DeleteRecipeConfirmModal } from "./delete-recipe-confirm-modal";

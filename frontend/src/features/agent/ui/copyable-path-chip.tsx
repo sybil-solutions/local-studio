@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useState, type ReactNode } from "react";
+import { useCallback, type ReactNode } from "react";
 import { Copy, FileText } from "@/ui/icon-registry";
+import { useCopiedFlag } from "@/hooks/use-copied-flag";
 
 /**
  * A file-path reference chip: an "open" affordance plus a copy-to-clipboard
@@ -17,17 +18,11 @@ export function CopyablePathChip({
   children: ReactNode;
   onOpen: (path: string) => void;
 }) {
-  const [copied, setCopied] = useState(false);
+  const [copied, markCopied] = useCopiedFlag();
   const handleCopy = useCallback(() => {
     if (typeof navigator === "undefined" || !navigator.clipboard) return;
-    void navigator.clipboard.writeText(value).then(
-      () => {
-        setCopied(true);
-        setTimeout(() => setCopied(false), 1200);
-      },
-      () => undefined,
-    );
-  }, [value]);
+    void navigator.clipboard.writeText(value).then(markCopied, () => undefined);
+  }, [value, markCopied]);
   return (
     <span className="chat-ref-chip" role="group" title={value}>
       <button

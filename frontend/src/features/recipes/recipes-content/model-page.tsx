@@ -1,8 +1,8 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { StatusPill, type UiTone } from "./status";
-import { cx } from "./utils";
+import { StatusPill, type UiTone } from "@/ui";
+import { cx } from "@/ui/utils";
 
 export type ModelStatusTone = UiTone;
 export type ModelRowHighlight = "none" | "success";

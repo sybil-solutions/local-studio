@@ -1,10 +1,20 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { AppPage, PageHeader, RefreshIconButton, SectionNav, type SectionNavItem } from "./page";
-import { ListGroup, ListRow, RowValue, EmptySafeNotice } from "./list";
-import { StatusPill, type UiTone } from "./status";
-import { cx } from "./utils";
+import {
+  AppPage,
+  PageHeader,
+  RefreshIconButton,
+  SectionNav,
+  ListGroup,
+  ListRow,
+  RowValue,
+  EmptySafeNotice,
+  StatusPill,
+  type SectionNavItem,
+  type UiTone,
+} from "@/ui";
+import { cx } from "@/ui/utils";
 
 export type SettingsSectionId = string;
 export type StatusTone = UiTone;

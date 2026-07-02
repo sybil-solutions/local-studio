@@ -4,7 +4,7 @@ import { Pause, Play, X } from "@/ui/icon-registry";
 import { useDownloads } from "@/hooks/use-downloads";
 import { formatBytes } from "@/lib/formatters";
 import type { ModelDownload } from "@/lib/types";
-import { ModelButton, ModelRow, ModelSection, ModelStatus, ModelValue } from "@/ui";
+import { ModelButton, ModelRow, ModelSection, ModelStatus, ModelValue } from "./model-page";
 
 export function downloadProgressText(
   download: Pick<ModelDownload, "downloaded_bytes" | "total_bytes">,

@@ -1,5 +1,6 @@
-import { useState, type ReactNode } from "react";
+import type { ReactNode } from "react";
 import { Copy, GitFork } from "@/ui/icon-registry";
+import { useCopiedFlag } from "@/hooks/use-copied-flag";
 
 export function AssistantActionButton({
   label,
@@ -33,12 +34,11 @@ export function AssistantMessageActions({
   copyText: string;
   onForkSession?: () => void;
 }) {
-  const [copied, setCopied] = useState(false);
+  const [copied, markCopied] = useCopiedFlag();
   const copy = async () => {
     if (!copyText.trim()) return;
     await navigator.clipboard.writeText(copyText);
-    setCopied(true);
-    window.setTimeout(() => setCopied(false), 1_200);
+    markCopied();
   };
   return (
     <div className="mt-2 flex items-center gap-1 text-(--dim)/65">

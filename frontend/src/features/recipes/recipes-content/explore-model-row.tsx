@@ -11,7 +11,8 @@ import {
 } from "@/ui/icon-registry";
 import type { HuggingFaceModel, ModelDownload } from "@/lib/types";
 import { formatBytes } from "@/lib/formatters";
-import { ModelButton, ModelLogo, ModelRow, ModelStatus, type ModelStatusTone } from "@/ui";
+import { ModelLogo } from "@/ui";
+import { ModelButton, ModelRow, ModelStatus, type ModelStatusTone } from "./model-page";
 import { extractProvider } from "@/lib/huggingface";
 import { extractQuantizations } from "@/features/discover/utils";
 import type { ModelFit } from "./hardware-profile";

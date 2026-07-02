@@ -6,9 +6,9 @@ import React, {
   memo,
   useCallback,
   useMemo,
-  useState,
   type ReactNode,
 } from "react";
+import { useCopiedFlag } from "@/hooks/use-copied-flag";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { ExternalLink } from "@/ui/icon-registry";
@@ -52,17 +52,11 @@ class MarkdownErrorBoundary extends React.Component<
 }
 
 function CodeBlockCopyButton({ code }: { code: string }) {
-  const [copied, setCopied] = useState(false);
+  const [copied, markCopied] = useCopiedFlag();
   const handleCopy = useCallback(() => {
     if (typeof navigator === "undefined" || !navigator.clipboard) return;
-    void navigator.clipboard.writeText(code).then(
-      () => {
-        setCopied(true);
-        setTimeout(() => setCopied(false), 1200);
-      },
-      () => undefined,
-    );
-  }, [code]);
+    void navigator.clipboard.writeText(code).then(markCopied, () => undefined);
+  }, [code, markCopied]);
   return (
     <button
       type="button"

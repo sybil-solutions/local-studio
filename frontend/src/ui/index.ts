@@ -91,34 +91,5 @@ export type { UiTone, StatusPillVariant } from "./status";
 export { ModelLogo } from "./model-logo";
 export { HuggingFaceModelCardPanel } from "./huggingface-model-card";
 
-// Page-specialized adapters kept in /ui so library swaps happen in one place.
-export {
-  SettingsLayout,
-  SettingsFactRows,
-  SettingsGroup,
-  SettingsRow,
-  SettingsValue,
-  SettingsButton,
-  SettingsInput,
-  SettingsNotice,
-} from "./settings";
-export type {
-  SettingsFactRow,
-  SettingsSectionDef,
-  SettingsSectionId,
-  StatusTone,
-} from "./settings";
-
-export {
-  ModelSection,
-  ModelActiveSummary,
-  ModelRow,
-  ModelValue,
-  ModelStatus,
-  ModelButton,
-  ModelInput,
-} from "./model-page";
-export type { ModelStatusTone, ModelSummaryItem } from "./model-page";
-
 // Icons (also importable directly from "@/ui/icons").
 export { SitegeistIcon, PanelIcon } from "./icons";

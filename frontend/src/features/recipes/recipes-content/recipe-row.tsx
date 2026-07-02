@@ -3,14 +3,8 @@
 import { memo, useCallback, type MouseEvent } from "react";
 import { MoreVertical, Play, Square } from "@/ui/icon-registry";
 import type { RecipeWithStatus } from "@/lib/types";
-import {
-  ModelButton,
-  ModelLogo,
-  ModelRow,
-  ModelStatus,
-  ModelValue,
-  type ModelStatusTone,
-} from "@/ui";
+import { ModelLogo } from "@/ui";
+import { ModelButton, ModelRow, ModelStatus, ModelValue, type ModelStatusTone } from "./model-page";
 import { modelIdFromPath } from "@/lib/huggingface";
 import { engineNodeStyle, formatBackendLabel } from "@/features/recipes/recipe-labels";
 

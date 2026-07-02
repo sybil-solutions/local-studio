@@ -1,5 +1,5 @@
-import { useState } from "react";
 import { Copy } from "@/ui/icon-registry";
+import { useCopiedFlag } from "@/hooks/use-copied-flag";
 import type { ChatMessage, ChatMessageAttachment } from "@/features/agent/messages";
 import { AssistantActionButton } from "@/features/agent/ui/timeline/assistant-message-actions";
 
@@ -84,12 +84,11 @@ function UserAttachmentPreview({ attachment }: { attachment: ChatMessageAttachme
 }
 
 export function UserMessage({ message }: { message: ChatMessage }) {
-  const [copied, setCopied] = useState(false);
+  const [copied, markCopied] = useCopiedFlag();
   const copy = async () => {
     if (!message.text.trim()) return;
     await navigator.clipboard.writeText(message.text);
-    setCopied(true);
-    window.setTimeout(() => setCopied(false), 1_200);
+    markCopied();
   };
   // A quiet foreground-tinted block sized to its content, capped by the same
   // composer-width column and anchored to its right edge. A copy button reveals
