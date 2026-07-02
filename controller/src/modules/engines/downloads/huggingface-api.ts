@@ -15,6 +15,9 @@ const matchesAny = (value: string, patterns: string[]): boolean => {
   return patterns.some((pattern) => compileGlob(pattern).test(value));
 };
 
+/** Injectable HTTP boundary so download logic is testable without network access. */
+export type FetchLike = (url: string, init?: RequestInit) => Promise<Response>;
+
 export type HuggingFaceModelInfo = {
   modelId?: string;
   sha?: string;
@@ -25,6 +28,7 @@ export const fetchHuggingFaceModelInfo = async (
   modelId: string,
   revision?: string | null,
   hfToken?: string | null,
+  fetchImpl: FetchLike = fetch,
 ): Promise<HuggingFaceModelInfo> => {
   const encodedModelId = modelId.split("/").map(encodeURIComponent).join("/");
   const url = new URL(`https://huggingface.co/api/models/${encodedModelId}`);
@@ -35,7 +39,7 @@ export const fetchHuggingFaceModelInfo = async (
   if (hfToken) {
     headers["Authorization"] = `Bearer ${hfToken}`;
   }
-  const response = await fetch(url.toString(), { headers });
+  const response = await fetchImpl(url.toString(), { headers });
   if (!response.ok) {
     const text = await response.text();
     throw new Error(`Hugging Face API error: ${response.status} ${text}`);

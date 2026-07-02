@@ -1,12 +1,74 @@
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { existsSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
+import type { Readable } from "node:stream";
 import { Effect } from "effect";
 
 export type CommandResult = {
   status: number | null;
   stdout: string;
   stderr: string;
+};
+
+export type RunSyncOptions = {
+  /** Kill the command after this long. Omit for no timeout (matches bare `spawnSync`). */
+  timeoutMs?: number | undefined;
+};
+
+export type SpawnDetachedOptions = {
+  env?: NodeJS.ProcessEnv | undefined;
+  /** "pipe" exposes stdout/stderr for log capture; "ignore" discards them. */
+  stdio: "pipe" | "ignore";
+};
+
+/** Minimal view of a detached child process; satisfied by `ChildProcess`. */
+export interface SpawnedProcess {
+  readonly pid?: number | undefined;
+  readonly exitCode: number | null;
+  readonly stdout: Readable | null;
+  readonly stderr: Readable | null;
+  on(event: "error", listener: (error: Error) => void): void;
+  on(event: "exit", listener: () => void): void;
+  unref(): void;
+}
+
+/**
+ * Injectable process boundary. Production code takes a `ProcessRunner`
+ * defaulting to `realProcessRunner`; tests substitute a scripted fake so spawn
+ * logic (constructed argv, exit handling, output capture) is testable without
+ * touching the host.
+ */
+export interface ProcessRunner {
+  runSync(command: string, args: string[], options?: RunSyncOptions): CommandResult;
+  spawnDetached(command: string, args: string[], options: SpawnDetachedOptions): SpawnedProcess;
+}
+
+export const realProcessRunner: ProcessRunner = {
+  runSync: (command, args, options = {}) => {
+    try {
+      const result = spawnSync(command, args, {
+        ...(options.timeoutMs !== undefined ? { timeout: options.timeoutMs } : {}),
+        env: process.env,
+      });
+      return {
+        status: result.status,
+        stdout: result.stdout ? result.stdout.toString("utf-8").trim() : "",
+        stderr: result.stderr ? result.stderr.toString("utf-8").trim() : "",
+      };
+    } catch (error) {
+      return {
+        status: null,
+        stdout: "",
+        stderr: error instanceof Error ? error.message : String(error),
+      };
+    }
+  },
+  spawnDetached: (command, args, options) =>
+    spawn(command, args, {
+      stdio: options.stdio === "pipe" ? ["ignore", "pipe", "pipe"] : "ignore",
+      ...(options.env ? { env: options.env } : {}),
+      detached: true,
+    }),
 };
 
 export type AsyncCommandResult = CommandResult & {
@@ -31,22 +93,7 @@ export const runCommandEffect = (
   args: string[],
   timeoutMs = DEFAULT_TIMEOUT_MS,
 ): Effect.Effect<CommandResult> =>
-  Effect.sync(() => {
-    try {
-      const result = spawnSync(command, args, { timeout: timeoutMs, env: process.env });
-      return {
-        status: result.status,
-        stdout: result.stdout ? result.stdout.toString("utf-8").trim() : "",
-        stderr: result.stderr ? result.stderr.toString("utf-8").trim() : "",
-      };
-    } catch (error) {
-      return {
-        status: null,
-        stdout: "",
-        stderr: error instanceof Error ? error.message : String(error),
-      };
-    }
-  });
+  Effect.sync(() => realProcessRunner.runSync(command, args, { timeoutMs }));
 
 export const runCommand = (
   command: string,

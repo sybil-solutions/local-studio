@@ -15,7 +15,11 @@ import { Event, type EventManager } from "../../system/event-manager";
 import { CONTROLLER_EVENTS } from "@local-studio/contracts/controller-events";
 import type { DownloadFileInfo, DownloadStatus, ModelDownload } from "../types";
 import type { DownloadStore } from "./download-store";
-import { buildHuggingFaceFileList, fetchHuggingFaceModelInfo } from "./huggingface-api";
+import {
+  buildHuggingFaceFileList,
+  fetchHuggingFaceModelInfo,
+  type FetchLike,
+} from "./huggingface-api";
 import { DOWNLOAD_DEFAULT_IGNORE_FILENAMES, DOWNLOAD_PROGRESS_THROTTLE_MS } from "../configs";
 
 const sumDownloadedBytes = (files: DownloadFileInfo[]): number => {
@@ -79,6 +83,7 @@ export class DownloadManager {
     private readonly store: DownloadStore,
     private readonly eventManager: EventManager,
     private readonly logger: Logger,
+    private readonly fetchImpl: FetchLike = fetch,
   ) {
     this.rehydrate();
   }
@@ -120,7 +125,7 @@ export class DownloadManager {
     this.ensureModelsDirectoryWritable();
     const hfToken = request.hf_token ?? null;
 
-    const info = await fetchHuggingFaceModelInfo(modelId, request.revision, hfToken);
+    const info = await fetchHuggingFaceModelInfo(modelId, request.revision, hfToken, this.fetchImpl);
     const files = buildHuggingFaceFileList(info, allowPatterns, ignorePatterns);
     if (files.length === 0) {
       throw new Error("No downloadable files found for this model");
@@ -341,7 +346,7 @@ export class DownloadManager {
     file.downloaded_bytes = existing;
     currentDownload = this.persistFileUpdate(currentDownload, file);
 
-    const response = await fetch(url, { headers, signal: controller.signal });
+    const response = await this.fetchImpl(url, { headers, signal: controller.signal });
     if (response.status === 416) {
       if (file.size_bytes && existing >= file.size_bytes) {
         renameSync(temporaryPath, localPath);

@@ -1,5 +1,3 @@
-import { spawn, spawnSync } from "node:child_process";
-import type { ChildProcess } from "node:child_process";
 import { createWriteStream } from "node:fs";
 import type { WriteStream } from "node:fs";
 import { createInterface } from "node:readline";
@@ -12,6 +10,7 @@ import {
   primaryLogPathFor,
 } from "../../../core/log-files";
 import type { Logger } from "../../../core/logger";
+import { realProcessRunner, type ProcessRunner } from "../../../core/command";
 import type { LaunchResult, ProcessInfo, Recipe } from "../../models/types";
 import type { EventManager } from "../../system/event-manager";
 import { buildBackendCommand } from "./backend-builder";
@@ -36,6 +35,7 @@ export const createProcessManager = (
   config: Config,
   logger: Logger,
   eventManager?: EventManager,
+  runner: ProcessRunner = realProcessRunner,
 ): ProcessManager => {
   type ProcessTableEntry = {
     pid: number;
@@ -159,9 +159,9 @@ export const createProcessManager = (
     for (const name of names) {
       const action = force ? "kill" : "stop";
       const args = force ? [action, name] : [action, "--time", "2", name];
-      let result = spawnSync("docker", args, { stdio: "ignore" });
+      let result = runner.runSync("docker", args);
       if (result.status !== 0) {
-        result = spawnSync("sudo", ["-n", "docker", ...args], { stdio: "ignore" });
+        result = runner.runSync("sudo", ["-n", "docker", ...args]);
       }
       if (result.status !== 0) {
         logger.warn("Failed to stop docker inference container", { name, action });
@@ -176,9 +176,9 @@ export const createProcessManager = (
     if (dockerIndex < 0 || command[dockerIndex + 1] !== "run") return;
     const name = extractFlag(command.slice(dockerIndex + 2), "--name");
     if (!name) return;
-    const result = spawnSync("docker", ["rm", "-f", name], { stdio: "ignore" });
+    const result = runner.runSync("docker", ["rm", "-f", name]);
     if (result.status !== 0) {
-      spawnSync("sudo", ["-n", "docker", "rm", "-f", name], { stdio: "ignore" });
+      runner.runSync("sudo", ["-n", "docker", "rm", "-f", name]);
     }
   };
 
@@ -187,20 +187,18 @@ export const createProcessManager = (
       process.kill(pid, signal);
       return true;
     } catch {
-      const result = spawnSync("sudo", ["-n", "kill", `-${signal}`, String(pid)], {
-        stdio: "ignore",
-      });
+      const result = runner.runSync("sudo", ["-n", "kill", `-${signal}`, String(pid)]);
       return result.status === 0;
     }
   };
 
   const listProcessTable = (): ProcessTableEntry[] => {
     try {
-      const result = spawnSync("ps", ["-eo", "pid=,ppid=,stat=,args="]);
+      const result = runner.runSync("ps", ["-eo", "pid=,ppid=,stat=,args="]);
       if (result.status !== 0) {
         return [];
       }
-      const output = result.stdout.toString("utf-8").trim();
+      const output = result.stdout;
       if (!output) {
         return [];
       }
@@ -319,11 +317,7 @@ export const createProcessManager = (
       }
       let spawnError: string | null = null;
 
-      const child = spawn(entry, command.slice(1), {
-        stdio: ["ignore", "pipe", "pipe"],
-        env,
-        detached: true,
-      }) as ChildProcess;
+      const child = runner.spawnDetached(entry, command.slice(1), { env, stdio: "pipe" });
 
       child.on("error", (error) => {
         spawnError = String(error);

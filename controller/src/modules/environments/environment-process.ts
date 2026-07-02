@@ -1,7 +1,12 @@
-import { spawn } from "node:child_process";
 import { Effect } from "effect";
 import { delayEffect } from "../../core/async";
-import { resolveBinary, runCommand, runCommandEffect } from "../../core/command";
+import {
+  realProcessRunner,
+  resolveBinary,
+  runCommand,
+  runCommandEffect,
+  type ProcessRunner,
+} from "../../core/command";
 import type { Recipe } from "../models/types";
 import { buildEnvironmentContainerCommand, environmentContainerName } from "./container-command";
 import { resolveImageForEnvironment } from "./image-registry";
@@ -43,6 +48,7 @@ export const listPulledImages = (): Set<string> => {
 const startEnvironmentEffect = (
   environment: Environment,
   recipe: Recipe,
+  runner: ProcessRunner,
 ): Effect.Effect<EnvironmentStartResult> =>
   Effect.gen(function* () {
     const image = resolveImageForEnvironment(environment);
@@ -56,7 +62,7 @@ const startEnvironmentEffect = (
     if (!entry) return { started: false, message: "Invalid container command" };
 
     let spawnError: string | null = null;
-    const child = spawn(entry, command.slice(1), { stdio: "ignore", detached: true });
+    const child = runner.spawnDetached(entry, command.slice(1), { stdio: "ignore" });
     child.on("error", (error) => {
       spawnError = String(error);
     });
@@ -73,8 +79,9 @@ const startEnvironmentEffect = (
 export const startEnvironment = (
   environment: Environment,
   recipe: Recipe,
+  runner: ProcessRunner = realProcessRunner,
 ): Promise<EnvironmentStartResult> =>
-  Effect.runPromise(startEnvironmentEffect(environment, recipe));
+  Effect.runPromise(startEnvironmentEffect(environment, recipe, runner));
 
 const stopEnvironmentEffect = (environmentId: string, force: boolean): Effect.Effect<boolean> =>
   Effect.gen(function* () {
