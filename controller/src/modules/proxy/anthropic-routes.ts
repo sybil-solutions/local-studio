@@ -25,6 +25,30 @@ import {
 const KEEPALIVE_INTERVAL_MS = 15_000;
 const ANTHROPIC_SOURCE_HEADERS = ["x-vllm-source", "x-source", "user-agent"] as const;
 
+const TOKENIZE_UPSTREAMS = [
+  { path: "/tokenize", body: (model: unknown, prompt: string) => ({ model, prompt }) },
+  { path: "/v1/token/encode", body: (_model: unknown, prompt: string) => ({ text: prompt }) },
+] as const;
+
+const countUpstreamTokens = async (
+  context: Parameters<RouteRegistrar>[1],
+  model: unknown,
+  prompt: string
+): Promise<number | null> => {
+  for (const upstream of TOKENIZE_UPSTREAMS) {
+    const response = await fetchInference(context, upstream.path, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(upstream.body(model, prompt)),
+    });
+    if (response.status !== 200) continue;
+    const data = (await response.json()) as { tokens?: unknown[]; length?: number };
+    if (typeof data.length === "number") return data.length;
+    if (Array.isArray(data.tokens)) return data.tokens.length;
+  }
+  return null;
+};
+
 export const registerAnthropicRoutes: RouteRegistrar = (app, context) => {
   const warnNonRunningModel = createNonRunningModelWarner(context.logger);
 
@@ -39,17 +63,9 @@ export const registerAnthropicRoutes: RouteRegistrar = (app, context) => {
     }
     const prompt = anthropicPromptText(body);
     try {
-      const response = await fetchInference(context, "/tokenize", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ model: body["model"], prompt }),
-      });
-      if (response.status === 200) {
-        const data = (await response.json()) as { tokens?: unknown[] };
-        const tokens = Array.isArray(data.tokens) ? data.tokens : [];
-        return ctx.json({ input_tokens: tokens.length });
-      }
-      return ctx.json(anthropicErrorBody(`Tokenization failed: ${response.status}`), {
+      const count = await countUpstreamTokens(context, body["model"], prompt);
+      if (count !== null) return ctx.json({ input_tokens: count });
+      return ctx.json(anthropicErrorBody("Tokenization is not supported by the running backend"), {
         status: 502,
       });
     } catch (error) {
