@@ -1,4 +1,4 @@
-export type Backend = "vllm" | "sglang" | "llamacpp" | "mlx";
+export type Backend = "vllm" | "sglang" | "llamacpp" | "mlx" | "exllamav3";
 
 /**
  * Canonical recipe shape as sent over the wire.

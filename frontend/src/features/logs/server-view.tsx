@@ -426,6 +426,7 @@ function deriveBackends(
     ["sglang", summary.backends.sglang],
     ["llamacpp", summary.backends.llamacpp],
     summary.backends.mlx ? ["mlx", summary.backends.mlx] : null,
+    summary.backends.exllamav3 ? ["exllamav3", summary.backends.exllamav3] : null,
   ];
   return entries.filter((e): e is [string, BackendInfo] => e !== null);
 }

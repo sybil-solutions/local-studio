@@ -1,7 +1,7 @@
 import type { RuntimeBackendInfo, RuntimeTarget, SystemRuntimeInfo } from "@/lib/types";
 export { ENGINE_META } from "./runtime-targets";
 
-export const FALLBACK_ENGINES = ["vllm", "sglang", "llamacpp", "mlx"] as const;
+export const FALLBACK_ENGINES = ["vllm", "sglang", "llamacpp", "mlx", "exllamav3"] as const;
 
 export type EngineRowsView =
   | { kind: "backends"; rows: Array<{ id: string; info: RuntimeBackendInfo }> }
@@ -43,6 +43,7 @@ function isInferenceTarget(target: RuntimeTarget): boolean {
     target.backend === "vllm" ||
     target.backend === "sglang" ||
     target.backend === "llamacpp" ||
-    target.backend === "mlx"
+    target.backend === "mlx" ||
+    target.backend === "exllamav3"
   );
 }

@@ -24,6 +24,10 @@ export const ENGINE_META: Record<string, { label: string; description: string }>
     description: "GGUF inference through CPU, Metal, or CUDA builds.",
   },
   mlx: { label: "MLX", description: "Apple Silicon inference through mlx-lm." },
+  exllamav3: {
+    label: "ExLlamaV3",
+    description: "EXL3 quantized inference through TabbyAPI.",
+  },
 };
 
 export type ManagedRuntimeInstallBackend = Extract<EngineBackend, "vllm" | "sglang" | "mlx">;

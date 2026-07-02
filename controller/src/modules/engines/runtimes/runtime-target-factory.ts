@@ -59,6 +59,7 @@ const RELEASE_NOTES: Record<EngineBackend, string> = {
   sglang: "https://github.com/sgl-project/sglang/releases",
   llamacpp: "https://github.com/ggml-org/llama.cpp/releases",
   mlx: "https://github.com/ml-explore/mlx-lm/releases",
+  exllamav3: "https://github.com/theroyallab/tabbyAPI/releases",
 };
 
 const packageSpecForTarget = (backend: EngineBackend): string => {

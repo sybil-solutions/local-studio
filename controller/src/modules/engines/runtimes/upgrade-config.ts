@@ -41,6 +41,7 @@ const normalizeTextOrDefault = (envKey: string, fallbackValue: string): string =
 };
 
 export const LLAMACPP_UPGRADE_ENV = "LOCAL_STUDIO_LLAMACPP_UPGRADE_CMD";
+export const EXLLAMAV3_UPGRADE_ENV = "LOCAL_STUDIO_EXLLAMAV3_UPGRADE_CMD";
 export const SGLANG_UPGRADE_ENV = "LOCAL_STUDIO_SGLANG_UPGRADE_CMD";
 export const VLLM_UPGRADE_ENV = "LOCAL_STUDIO_VLLM_UPGRADE_CMD";
 export const CUDA_UPGRADE_ENV = "LOCAL_STUDIO_CUDA_UPGRADE_CMD";

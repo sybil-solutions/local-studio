@@ -126,11 +126,37 @@ const MLX: EngineCapabilities = {
   pythonPath: true,
 };
 
+const EXLLAMAV3: EngineCapabilities = {
+  backend: "exllamav3",
+  tabs: ["general", "model", "environment", "command"],
+  options: "none",
+  contextLength: false,
+  seed: false,
+  advancedModelLoading: false,
+  quantization: false,
+  trustRemoteCode: false,
+  parallelism: "none",
+  gpuMemoryUtil: false,
+  visibleDevices: false,
+  memoryManagement: false,
+  kvCacheDtype: false,
+  blockSize: false,
+  caching: false,
+  schedulerAdvanced: false,
+  maxNumSeqs: false,
+  cudaGraphs: false,
+  toolCalling: false,
+  reasoning: false,
+  chatTemplates: false,
+  pythonPath: true,
+};
+
 const CAPABILITIES: Record<Backend, EngineCapabilities> = {
   vllm: VLLM,
   sglang: SGLANG,
   llamacpp: LLAMACPP,
   mlx: MLX,
+  exllamav3: EXLLAMAV3,
 };
 
 export const getEngineCapabilities = (backend: Backend | undefined): EngineCapabilities =>
@@ -151,4 +177,5 @@ export const ENGINE_LABEL: Record<Backend, string> = {
   sglang: "SGLang",
   llamacpp: "llama.cpp",
   mlx: "MLX",
+  exllamav3: "ExLlamaV3",
 };

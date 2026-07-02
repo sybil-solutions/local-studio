@@ -327,6 +327,7 @@ const BACKEND_ITEMS: SegmentedItem<Backend>[] = [
   { id: "sglang", label: "SGLang" },
   { id: "llamacpp", label: "llama.cpp" },
   { id: "mlx", label: "MLX" },
+  { id: "exllamav3", label: "ExLlamaV3" },
 ];
 
 function RecipeModalSummary({
@@ -381,7 +382,7 @@ function RecipeModalSummary({
   );
 }
 
-const BACKENDS = new Set<Backend>(["vllm", "sglang", "llamacpp", "mlx"]);
+const BACKENDS = new Set<Backend>(["vllm", "sglang", "llamacpp", "mlx", "exllamav3"]);
 
 function getCommandOverride(recipe: RecipeEditor): string | null {
   const launchCommand = recipe.extra_args?.["launch_command"];

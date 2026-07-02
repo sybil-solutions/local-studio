@@ -1,5 +1,6 @@
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
+import type { EngineBackend } from "../../../shared/contracts/system";
 
 export interface ProviderConfig {
   id: string;
@@ -12,7 +13,7 @@ export interface ProviderConfig {
 export interface PersistedConfig {
   models_dir?: string;
   providers?: ProviderConfig[];
-  selected_runtime_target_ids?: Partial<Record<"vllm" | "sglang" | "llamacpp" | "mlx", string>>;
+  selected_runtime_target_ids?: Partial<Record<EngineBackend, string>>;
 }
 
 export const getPersistedConfigPath = (dataDirectory: string): string => {

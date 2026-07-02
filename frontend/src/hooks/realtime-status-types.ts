@@ -23,6 +23,7 @@ export interface RuntimeSummaryData {
     sglang: RuntimeBackendInfo;
     llamacpp: RuntimeBackendInfo;
     mlx?: RuntimeBackendInfo;
+    exllamav3?: RuntimeBackendInfo;
   };
 }
 

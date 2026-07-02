@@ -1,5 +1,6 @@
 import type {
   ModelDownload,
+  EngineBackend,
   EngineJob,
   ModelInfo,
   ModelRecommendation,
@@ -188,7 +189,7 @@ export function createStudioApi(core: ApiCore) {
       core.request("/runtime/targets"),
 
     createRuntimeJob: (payload: {
-      backend: "vllm" | "sglang" | "llamacpp" | "mlx";
+      backend: EngineBackend;
       targetId?: string;
       type?: "install" | "update" | "download" | "inspect";
       command?: string;
