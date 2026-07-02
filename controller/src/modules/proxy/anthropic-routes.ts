@@ -9,7 +9,7 @@ import {
   anthropicPromptText,
   anthropicRequestToOpenAI,
   openAIResponseToAnthropic,
-  type JsonRecord,
+  type WireRecord,
 } from "./anthropic-messages";
 import { createAnthropicStreamTranslator, parseSseLine } from "./anthropic-messages-stream";
 import {
@@ -53,9 +53,9 @@ export const registerAnthropicRoutes: RouteRegistrar = (app, context) => {
   const warnNonRunningModel = createNonRunningModelWarner(context.logger);
 
   app.post("/v1/messages/count_tokens", async (ctx) => {
-    let body: JsonRecord;
+    let body: WireRecord;
     try {
-      body = (await ctx.req.json()) as JsonRecord;
+      body = (await ctx.req.json()) as WireRecord;
     } catch {
       return ctx.json(anthropicErrorBody("Invalid JSON body", "invalid_request_error"), {
         status: 400,
@@ -74,9 +74,9 @@ export const registerAnthropicRoutes: RouteRegistrar = (app, context) => {
   });
 
   app.post("/v1/messages", async (ctx) => {
-    let body: JsonRecord;
+    let body: WireRecord;
     try {
-      body = (await ctx.req.json()) as JsonRecord;
+      body = (await ctx.req.json()) as WireRecord;
     } catch {
       if (ctx.req.raw.signal.aborted) return ctx.body(null, { status: 499 });
       throw new HttpStatus({ status: 400, detail: "Invalid JSON body" });
@@ -139,9 +139,9 @@ export const registerAnthropicRoutes: RouteRegistrar = (app, context) => {
         if (clientSignal.aborted) return ctx.body(null, { status: 499 });
         throw error;
       }
-      let result: JsonRecord;
+      let result: WireRecord;
       try {
-        result = (await response.json()) as JsonRecord;
+        result = (await response.json()) as WireRecord;
       } catch {
         if (clientSignal.aborted) return ctx.body(null, { status: 499 });
         return ctx.json(anthropicErrorBody(`Upstream returned ${response.status}`), {
@@ -152,7 +152,7 @@ export const registerAnthropicRoutes: RouteRegistrar = (app, context) => {
         const upstreamError = result["error"];
         const message =
           typeof upstreamError === "object" && upstreamError !== null
-            ? String((upstreamError as JsonRecord)["message"] ?? response.status)
+            ? String((upstreamError as WireRecord)["message"] ?? response.status)
             : String(result["detail"] ?? response.status);
         return ctx.json(anthropicErrorBody(message), { status: response.status });
       }

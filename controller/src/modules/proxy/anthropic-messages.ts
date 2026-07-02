@@ -1,6 +1,6 @@
-export type JsonRecord = Record<string, unknown>;
+export type WireRecord = Record<string, unknown>;
 
-const isRecord = (value: unknown): value is JsonRecord =>
+const isRecord = (value: unknown): value is WireRecord =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
 const asArray = (value: unknown): unknown[] => (Array.isArray(value) ? value : []);
@@ -12,7 +12,7 @@ const textFromBlocks = (blocks: unknown): string =>
     .map((block) => block["text"] as string)
     .join("\n");
 
-const systemToOpenAI = (system: unknown): JsonRecord | null => {
+const systemToOpenAI = (system: unknown): WireRecord | null => {
   if (typeof system === "string" && system.length > 0) {
     return { role: "system", content: system };
   }
@@ -23,7 +23,7 @@ const systemToOpenAI = (system: unknown): JsonRecord | null => {
   return null;
 };
 
-const imageBlockToOpenAI = (source: JsonRecord): JsonRecord | null => {
+const imageBlockToOpenAI = (source: WireRecord): WireRecord | null => {
   if (source["type"] === "base64" && typeof source["data"] === "string") {
     const mediaType = typeof source["media_type"] === "string" ? source["media_type"] : "image/png";
     return { type: "image_url", image_url: { url: `data:${mediaType};base64,${source["data"]}` } };
@@ -40,7 +40,7 @@ const toolResultContent = (content: unknown): string => {
   return "";
 };
 
-const toolUseToCall = (block: JsonRecord): JsonRecord => ({
+const toolUseToCall = (block: WireRecord): WireRecord => ({
   id: typeof block["id"] === "string" ? block["id"] : "",
   type: "function",
   function: {
@@ -49,9 +49,9 @@ const toolUseToCall = (block: JsonRecord): JsonRecord => ({
   },
 });
 
-const userBlocksToMessages = (blocks: unknown[]): JsonRecord[] => {
-  const messages: JsonRecord[] = [];
-  const parts: JsonRecord[] = [];
+const userBlocksToMessages = (blocks: unknown[]): WireRecord[] => {
+  const messages: WireRecord[] = [];
+  const parts: WireRecord[] = [];
   for (const block of blocks) {
     if (!isRecord(block)) continue;
     if (block["type"] === "tool_result") {
@@ -81,9 +81,9 @@ const userBlocksToMessages = (blocks: unknown[]): JsonRecord[] => {
   return messages;
 };
 
-const assistantBlocksToMessage = (blocks: unknown[]): JsonRecord => {
+const assistantBlocksToMessage = (blocks: unknown[]): WireRecord => {
   const textParts: string[] = [];
-  const toolCalls: JsonRecord[] = [];
+  const toolCalls: WireRecord[] = [];
   for (const block of blocks) {
     if (!isRecord(block)) continue;
     if (block["type"] === "text" && typeof block["text"] === "string") {
@@ -93,12 +93,12 @@ const assistantBlocksToMessage = (blocks: unknown[]): JsonRecord => {
       toolCalls.push(toolUseToCall(block));
     }
   }
-  const message: JsonRecord = { role: "assistant", content: textParts.join("\n") || null };
+  const message: WireRecord = { role: "assistant", content: textParts.join("\n") || null };
   if (toolCalls.length > 0) message["tool_calls"] = toolCalls;
   return message;
 };
 
-const messageToOpenAI = (message: JsonRecord): JsonRecord[] => {
+const messageToOpenAI = (message: WireRecord): WireRecord[] => {
   const role = message["role"];
   const content = message["content"];
   if (typeof content === "string") {
@@ -109,7 +109,7 @@ const messageToOpenAI = (message: JsonRecord): JsonRecord[] => {
   return userBlocksToMessages(blocks);
 };
 
-const toolToOpenAI = (tool: JsonRecord): JsonRecord => ({
+const toolToOpenAI = (tool: WireRecord): WireRecord => ({
   type: "function",
   function: {
     name: typeof tool["name"] === "string" ? tool["name"] : "",
@@ -128,14 +128,14 @@ const toolChoiceToOpenAI = (choice: unknown): unknown => {
   return undefined;
 };
 
-export const anthropicRequestToOpenAI = (body: JsonRecord): JsonRecord => {
-  const messages: JsonRecord[] = [];
+export const anthropicRequestToOpenAI = (body: WireRecord): WireRecord => {
+  const messages: WireRecord[] = [];
   const system = systemToOpenAI(body["system"]);
   if (system) messages.push(system);
   for (const message of asArray(body["messages"])) {
     if (isRecord(message)) messages.push(...messageToOpenAI(message));
   }
-  const openai: JsonRecord = { model: body["model"], messages };
+  const openai: WireRecord = { model: body["model"], messages };
   if (typeof body["max_tokens"] === "number") openai["max_tokens"] = body["max_tokens"];
   if (typeof body["temperature"] === "number") openai["temperature"] = body["temperature"];
   if (typeof body["top_p"] === "number") openai["top_p"] = body["top_p"];
@@ -159,7 +159,7 @@ const STOP_REASONS: Record<string, string> = {
 export const mapStopReason = (finishReason: unknown): string =>
   (typeof finishReason === "string" && STOP_REASONS[finishReason]) || "end_turn";
 
-const parseToolArguments = (value: unknown): JsonRecord => {
+const parseToolArguments = (value: unknown): WireRecord => {
   if (typeof value !== "string" || value.length === 0) return {};
   try {
     const parsed: unknown = JSON.parse(value);
@@ -169,7 +169,7 @@ const parseToolArguments = (value: unknown): JsonRecord => {
   }
 };
 
-const toolCallToBlock = (call: JsonRecord): JsonRecord => {
+const toolCallToBlock = (call: WireRecord): WireRecord => {
   const fn = isRecord(call["function"]) ? call["function"] : {};
   return {
     type: "tool_use",
@@ -179,10 +179,10 @@ const toolCallToBlock = (call: JsonRecord): JsonRecord => {
   };
 };
 
-export const openAIResponseToAnthropic = (result: JsonRecord): JsonRecord => {
+export const openAIResponseToAnthropic = (result: WireRecord): WireRecord => {
   const choice = asArray(result["choices"]).filter(isRecord)[0] ?? {};
   const message = isRecord(choice["message"]) ? choice["message"] : {};
-  const content: JsonRecord[] = [];
+  const content: WireRecord[] = [];
   if (typeof message["content"] === "string" && message["content"].length > 0) {
     content.push({ type: "text", text: message["content"] });
   }
@@ -205,12 +205,12 @@ export const openAIResponseToAnthropic = (result: JsonRecord): JsonRecord => {
   };
 };
 
-export const anthropicErrorBody = (message: string, type = "api_error"): JsonRecord => ({
+export const anthropicErrorBody = (message: string, type = "api_error"): WireRecord => ({
   type: "error",
   error: { type, message },
 });
 
-export const anthropicPromptText = (body: JsonRecord): string => {
+export const anthropicPromptText = (body: WireRecord): string => {
   const parts: string[] = [];
   if (typeof body["system"] === "string") parts.push(body["system"]);
   if (Array.isArray(body["system"])) parts.push(textFromBlocks(body["system"]));

@@ -1,11 +1,11 @@
-import { mapStopReason, type JsonRecord } from "./anthropic-messages";
+import { mapStopReason, type WireRecord } from "./anthropic-messages";
 
-const isRecord = (value: unknown): value is JsonRecord =>
+const isRecord = (value: unknown): value is WireRecord =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
 const asArray = (value: unknown): unknown[] => (Array.isArray(value) ? value : []);
 
-const sseFrame = (event: string, data: JsonRecord): string =>
+const sseFrame = (event: string, data: WireRecord): string =>
   `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
 
 interface OpenBlock {
@@ -14,9 +14,9 @@ interface OpenBlock {
 }
 
 export interface AnthropicStreamTranslator {
-  translateChunk: (chunk: JsonRecord) => string[];
+  translateChunk: (chunk: WireRecord) => string[];
   finish: () => string[];
-  usage: () => JsonRecord | null;
+  usage: () => WireRecord | null;
 }
 
 export const createAnthropicStreamTranslator = (requestModel: string): AnthropicStreamTranslator => {
@@ -29,7 +29,7 @@ export const createAnthropicStreamTranslator = (requestModel: string): Anthropic
   let outputTokens = 0;
   let sawUsage = false;
 
-  const startMessage = (chunk: JsonRecord): string => {
+  const startMessage = (chunk: WireRecord): string => {
     started = true;
     const id = typeof chunk["id"] === "string" ? chunk["id"] : "msg_local";
     const model = typeof chunk["model"] === "string" ? chunk["model"] : requestModel;
@@ -83,7 +83,7 @@ export const createAnthropicStreamTranslator = (requestModel: string): Anthropic
     );
   };
 
-  const emitToolDelta = (frames: string[], call: JsonRecord): void => {
+  const emitToolDelta = (frames: string[], call: WireRecord): void => {
     const callIndex = typeof call["index"] === "number" ? call["index"] : 0;
     const fn = isRecord(call["function"]) ? call["function"] : {};
     let block = openTools.get(callIndex);
@@ -116,7 +116,7 @@ export const createAnthropicStreamTranslator = (requestModel: string): Anthropic
     }
   };
 
-  const captureUsage = (chunk: JsonRecord): void => {
+  const captureUsage = (chunk: WireRecord): void => {
     const usage = chunk["usage"];
     if (!isRecord(usage)) return;
     sawUsage = true;
@@ -124,7 +124,7 @@ export const createAnthropicStreamTranslator = (requestModel: string): Anthropic
     if (typeof usage["completion_tokens"] === "number") outputTokens = usage["completion_tokens"];
   };
 
-  const translateChunk = (chunk: JsonRecord): string[] => {
+  const translateChunk = (chunk: WireRecord): string[] => {
     const frames: string[] = [];
     if (!started) frames.push(startMessage(chunk));
     captureUsage(chunk);
@@ -159,13 +159,13 @@ export const createAnthropicStreamTranslator = (requestModel: string): Anthropic
     return frames;
   };
 
-  const usage = (): JsonRecord | null =>
+  const usage = (): WireRecord | null =>
     sawUsage ? { prompt_tokens: inputTokens, completion_tokens: outputTokens } : null;
 
   return { translateChunk, finish, usage };
 };
 
-export const parseSseLine = (line: string): JsonRecord | "done" | null => {
+export const parseSseLine = (line: string): WireRecord | "done" | null => {
   const trimmed = line.trim();
   if (!trimmed.startsWith("data:")) return null;
   const payload = trimmed.slice(5).trim();
