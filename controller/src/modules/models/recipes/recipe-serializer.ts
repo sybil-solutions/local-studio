@@ -107,7 +107,7 @@ export const recipeSchema = Schema.Struct({
   id: Schema.String,
   name: Schema.String,
   model_path: Schema.String,
-  backend: Schema.Literals(["vllm", "sglang", "llamacpp", "mlx"]),
+  backend: Schema.Literals(["vllm", "sglang", "llamacpp", "mlx", "exllamav3"]),
   env_vars: Schema.Union([Schema.Null, Schema.Record(Schema.String, Schema.String)]),
   tensor_parallel_size: integerSchema,
   pipeline_parallel_size: integerSchema,

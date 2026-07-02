@@ -39,7 +39,7 @@ const resolveHfToken = (
   return bodyToken || headerToken || envToken;
 };
 
-const RUNTIME_JOB_BACKENDS = ["vllm", "sglang", "llamacpp", "mlx", "cuda", "rocm"] as const;
+const RUNTIME_JOB_BACKENDS = ["vllm", "sglang", "llamacpp", "mlx", "exllamav3", "cuda", "rocm"] as const;
 const RUNTIME_JOB_TYPES = ["install", "update", "download", "inspect"] as const;
 
 const parseRuntimeJobBody = async (ctx: {
