@@ -36,30 +36,30 @@ gates green, commits, and updates this doc.
   metrics-routes, logs-routes, models/routes, tokenization-routes) → one helper. SAFE.
 - [x] C6 (c5dd16b9) remove (createEngineCoordinator/createEventManager; other create* are real closure factories, kept) `create*` one-line factory wrappers (createEngineCoordinator etc.). SAFE.
 - [x] C7 (c5dd16b9) `main.ts` metricsDisabled() duplicates `parseBooleanFlag` (validation.ts:41). SAFE.
-- [ ] C8 inline tiny per-module `configs.ts` constant files (audio 7, proxy 6, system 5,
+- [x] C8 (f1cf3313) inline tiny per-module `configs.ts` constant files (audio 7, proxy 6, system 5,
   models 15, engines 20 lines); keep studio/configs.ts. SAFE.
-- [ ] C9 delete `modules/shared/{system,recipe}-types.ts` re-export shims → import
+- [x] C9 (f1cf3313) delete `modules/shared/{system,recipe}-types.ts` re-export shims → import
   shared/contracts directly. SAFE.
-- [ ] C10 provider serializer dup ×4 in `studio/provider-routes.ts` → serializeProvider
+- [x] C10 (f1cf3313) provider serializer dup ×4 in `studio/provider-routes.ts` → serializeProvider
   + parseProviderBody. SAFE.
-- [ ] C11 standardize `parseJsonObjectBody` (core/validation.ts:10) in routes that
+- [x] C11 (f1cf3313) standardize `parseJsonObjectBody` (core/validation.ts:10) in routes that
   hand-roll `req.json().catch`. SAFE.
-- [ ] C12 MEDIUM dead route `/api/title` (proxy/chat-title-routes.ts, ~70 lines) — only
+- [x] C12 (a771fcba) dead route `/api/title` (proxy/chat-title-routes.ts, ~70 lines) — only
   the integration test calls it; verify no external client (grep pi runtime) then cut.
-- [ ] C13 MEDIUM dead cross-controller passthrough `/controllers/route/*`
+- [x] C13 (a5b65200) dead cross-controller passthrough `/controllers/route/*`
   (http/app.ts:22-37,85-137 + LOCAL_STUDIO_CONTROLLER_ROUTE_ALLOWLIST). NOTE memory
   says frontend "Add controller" feature exists — verify /controllers/route vs
   /controllers before cutting.
-- [ ] C14 MEDIUM dead `/lifetime-metrics` (+ maybe LifetimeMetricsStore).
-- [ ] C15 MEDIUM dead `/v1/tokenize` + `/v1/detokenize` — CAUTION: reachable by external
+- [x] C14 (a771fcba) dead `/lifetime-metrics` route (store kept — live via inference accounting) (+ maybe LifetimeMetricsStore).
+- [x] C15 (a771fcba) dead `/v1/tokenize` + `/v1/detokenize` — CAUTION: reachable by external
   OpenAI clients via proxy; grep pi/droid runtimes first.
-- [ ] C16 MEDIUM dead `GET /runtime/targets/:id` + `/health` probe.
+- [x] C16 (a771fcba) dead `GET /runtime/targets/:id` + `/health` probe.
 - [ ] C17 MEDIUM flag audit: STRICT_OPENAI_MODELS readers; vLLM extra-args escape
   hatches; MOCK_INFERENCE (used by E2E? verify).
 - [ ] C18 RISKY inline single-use `*Effect` variants (function-observability,
   local-fetch, command.ts resolveBinary, async.ts) then consider dropping `effect`
   dep entirely (only trivial usage remains + env.ts Schema + errors.ts TaggedError).
-- [ ] C19 MEDIUM `/api/docs` swagger UI + `@hono/swagger-ui` dep + openapi-spec.ts
+- [SKIP] C19 `/api/docs` is user-facing: Server pane links to /api/proxy/api/docs (server-view.tsx:388). KEEP. `/api/docs` swagger UI + `@hono/swagger-ui` dep + openapi-spec.ts
   (255 lines) — /api/spec is proxied by frontend; verify what reads it.
 - [ ] C20 move runtime-target capability booleans onto EngineSpec (factory loops
   generically).
@@ -76,13 +76,13 @@ gates green, commits, and updates this doc.
   (all 6 consumers there); drop ui/index.ts:112-121. SAFE.
 - [x] F3 (a9e60da7) move (as features/settings/settings-ui.tsx; setup + recipes cross-feature consumers exist and are boundary-legal) `ui/settings.tsx` (8 exports) → features/settings/ (all 4 consumers
   there); drop ui/index.ts:95-110. SAFE.
-- [ ] F4 fold 7-line `features/agent/messages/index.ts` barrel — CHECK
+- [SKIP] F4 messages barrel has 24 importers — real aggregation point (also re-exports contracts); folding = churn. fold 7-line `features/agent/messages/index.ts` barrel — CHECK
   scripts/validate-barrel-dir-siblings.mjs convention first.
-- [ ] F5 MEDIUM merge single-consumer twins (grep importers first, keep parent <500
+- [SKIP] F5 all candidates fail criteria: filesystem-panel (612 post-merge), use-workspace (571), git-diff-panel (642) exceed 500 lines; agent-browser-effects + quick-panel-bridge have 2 importers each. merge single-consumer twins (grep importers first, keep parent <500
   lines): filesystem-panel-effects, use-workspace-effects, git-diff-panel-model,
   agent-browser-effects, quick-panel-bridge (13 lines). Do NOT merge chat-pane*
   cluster (all files substantial).
-- [ ] F6 MEDIUM collapse hooks/realtime-status-{equality,types}.ts into store if
+- [SKIP] F6 types has 6 importers; equality merge makes store 600+ lines, net-negative. collapse hooks/realtime-status-{equality,types}.ts into store if
   single-importer.
 - [ ] F7 PRODUCT settings/local-agent-* cluster (~750 lines) — real feature landed
   07c8db90 (attach-local-agents); KEEP unless user retires it. Not a cut.
@@ -135,6 +135,15 @@ Dropdown/Popover. Two token systems: `--ui-*` (12 files) vs legacy `--fg/--dim/
   batch committed (24b12fad).
 
 ## Iteration log
+
+- **I2 (2026-07-02)**: commits f1cf3313 (C8-C11: micro-configs inlined, type shims
+  deleted, provider routes deduped, body parsing standardized, −57), a771fcba
+  (C12/C14/C15/C16: four dead route groups −251), a5b65200 (C13: controllers/route
+  passthrough −243 + env knob). F4-F6 + C19 measured and SKIPPED with reasons
+  (churn/net-negative/user-facing). Full root gate green incl. 126 integration
+  tests. Cumulative branch delta so far: ~−800 lines, 13 files deleted, 8 routes
+  + 2 env vars removed. Next: U-track (U3 Spinner, U5 dots need token-value check
+  first, U2 token map), C17 flag audit, C18 Effect inlining, C20, G2-G4.
 
 - **I1 wrap (2026-07-02)**: commits 24b12fad (CI/docs), ffc1baa9 (telemetry bug+docs),
   c5dd16b9 (controller cuts −127, gate hardened, broken test imports fixed),
