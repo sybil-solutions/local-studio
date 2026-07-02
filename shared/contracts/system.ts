@@ -34,7 +34,7 @@ export interface RuntimeBackendInfo {
   upgrade_command_available?: boolean;
 }
 
-export type EngineBackend = "vllm" | "sglang" | "llamacpp" | "mlx";
+export type EngineBackend = "vllm" | "sglang" | "llamacpp" | "mlx" | "exllamav3";
 
 export type RuntimeKind = "venv" | "docker" | "binary" | "system";
 
@@ -148,6 +148,7 @@ export interface SystemRuntimeInfo {
     sglang: RuntimeBackendInfo;
     llamacpp: RuntimeBackendInfo;
     mlx?: RuntimeBackendInfo;
+    exllamav3?: RuntimeBackendInfo;
   };
 }
 
