@@ -25,6 +25,7 @@ export const COMPUTER_TAB_IDS = [
   "diff",
   "terminal",
   "plan",
+  "inspector",
 ] as const;
 
 export type ComputerTab = (typeof COMPUTER_TAB_IDS)[number];

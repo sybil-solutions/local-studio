@@ -7,6 +7,7 @@ import {
   Globe2,
   ListChecks,
   MessageSquarePlus,
+  ScanSearch,
   TerminalSquare,
 } from "@/ui/icon-registry";
 import type { ToolsContextValue } from "@/features/agent/tools/context";
@@ -45,6 +46,11 @@ const LazyGitDiffPanel = lazy(() =>
 const LazyPlanPanel = lazy(() =>
   import("@/features/agent/ui/plan-panel").then(({ PlanPanel }) => ({
     default: PlanPanel,
+  })),
+);
+const LazyInspectorPanel = lazy(() =>
+  import("@/features/agent/ui/inspector-panel").then(({ InspectorPanel }) => ({
+    default: InspectorPanel,
   })),
 );
 
@@ -96,6 +102,7 @@ export function ComputerTabPanel(props: ComputerTabPanelProps) {
         }
       />
     ),
+    inspector: <LazyInspectorPanel session={props.focusedSession} />,
     terminal: null,
   };
   return <Suspense fallback={<ComputerTabFallback />}>{panels[props.tools.computer.tab]}</Suspense>;
@@ -251,6 +258,13 @@ function ComputerLauncherPanel({
       description: "View code changes",
       icon: GitBranch,
       onClick: () => tools.setComputerTab("diff"),
+    },
+    {
+      key: "inspector",
+      title: "Inspector",
+      description: "Per-turn tools, files, and context",
+      icon: ScanSearch,
+      onClick: () => tools.setComputerTab("inspector"),
     },
     {
       key: "terminal",
