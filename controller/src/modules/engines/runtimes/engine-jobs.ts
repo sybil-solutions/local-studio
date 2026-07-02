@@ -218,9 +218,29 @@ const runJob = async (
   }
 };
 
+// Keep at most this many finished (success/error/cancelled) job records. The
+// map is module-lifetime, so without pruning it grows one entry per job for the
+// life of the controller. Active jobs are never pruned.
+const MAX_FINISHED_JOBS = 50;
+
+const pruneFinishedJobs = (): void => {
+  const finished = [...jobs.values()]
+    .filter((job) => job.status === "success" || job.status === "error" || job.status === "cancelled")
+    .sort((first, second) => first.startedAt.localeCompare(second.startedAt));
+  const excess = finished.length - MAX_FINISHED_JOBS;
+  for (let index = 0; index < excess; index += 1) {
+    const stale = finished[index];
+    if (stale) {
+      jobs.delete(stale.id);
+      jobChildren.delete(stale.id);
+    }
+  }
+};
+
 export const createEngineJob = (config: Config, options: CreateEngineJobOptions): EngineJob => {
   const job = createJobRecord(options);
   jobs.set(job.id, job);
+  pruneFinishedJobs();
   void runJob(config, job, options);
   return job;
 };

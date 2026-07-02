@@ -10,16 +10,28 @@ export class AsyncLock {
   private queue: Array<() => void> = [];
   private locked = false;
 
+  // Each acquire hands back a single-use release closure. Guarding against a
+  // double-call is essential: releasing twice would pop two waiters and grant
+  // the lock to both, silently breaking mutual exclusion.
+  private guardedRelease(): () => void {
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      this.release();
+    };
+  }
+
   public acquire(): Promise<() => void> {
     if (!this.locked) {
       this.locked = true;
-      return Promise.resolve(() => this.release());
+      return Promise.resolve(this.guardedRelease());
     }
 
     return new Promise((resolve) => {
       this.queue.push(() => {
         this.locked = true;
-        resolve(() => this.release());
+        resolve(this.guardedRelease());
       });
     });
   }
@@ -108,6 +120,11 @@ export class AsyncQueue<TValue> {
   public shift(signal?: AbortSignal): Promise<TValue> {
     if (this.items.length > 0) {
       return Promise.resolve(this.items.shift() as TValue);
+    }
+    // A closed, drained queue will never push or close again, so a resolver
+    // registered below would never settle. Reject instead of hanging.
+    if (this.closed) {
+      return Promise.reject(new Error("Queue closed"));
     }
     // An already-aborted signal never dispatches `abort` to a listener added
     // afterwards, so registering below would hang forever and leak the resolver.

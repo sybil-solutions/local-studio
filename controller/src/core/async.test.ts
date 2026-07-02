@@ -20,6 +20,25 @@ describe("AsyncLock", () => {
     expect(order).toEqual([1, -1, 2, -2, 3, -3]);
   });
 
+  test("the release closure is idempotent — a double-call cannot free two waiters", async () => {
+    const lock = new AsyncLock();
+    const first = await lock.acquire();
+    let bAcquired = false;
+    let cAcquired = false;
+    void lock.acquire().then(() => {
+      bAcquired = true;
+    });
+    void lock.acquire().then(() => {
+      cAcquired = true;
+    });
+    first();
+    first(); // second call must be a no-op
+    await new Promise((resolve) => setTimeout(resolve, 1));
+    // Only one waiter may hold the lock; the double-release must not admit both.
+    expect(bAcquired).toBe(true);
+    expect(cAcquired).toBe(false);
+  });
+
   test("second acquire blocks until the first releases", async () => {
     const lock = new AsyncLock();
     const first = await lock.acquire();
@@ -87,6 +106,12 @@ describe("AsyncQueue", () => {
     // The aborted waiter must not steal the next pushed item.
     queue.push(42);
     expect(await queue.shift()).toBe(42);
+  });
+
+  test("shift on a closed drained queue rejects instead of hanging", async () => {
+    const queue = new AsyncQueue<number>(4);
+    queue.close();
+    await expect(queue.shift()).rejects.toThrow("Queue closed");
   });
 
   test("shift with an already-aborted signal rejects instead of hanging", async () => {
