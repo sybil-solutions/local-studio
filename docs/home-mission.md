@@ -59,6 +59,7 @@ Guiding question at every step: **how can I make this a home for people?**
 | 2026-07-03 | W1 residue: wizard visual walkthrough in browser (do with W4 polish pass) | todo |
 | 2026-07-03 | W2 DONE: install-controller.sh + desktop IPC + settings deploy panel — 7e4fdfaf. Verified live twice on Spark (:8090 ls-deploy-test, :8091 ls-deploy-test2, both systemd units healthy & remotely reachable). UI panel visual QA queued with W4 | done |
 | 2026-07-03 | Spark state: LFM2.5 live :8000 (lfm2-5 recipe, main controller :8080); test controllers :8090/:8091 (throwaway dirs ls-deploy-test*, NOT deleted per no-wipe rule) | note |
+| 2026-07-03 | W3 CORE DONE — 03f4b02d: MCP client (verified vs server-everything), ssh-remote server (verified vs Spark), connectors.json service+pool, pi bridge extension, API routes, Connectors settings section w/ verified catalog (github/google/gmail/x/computer npm pkgs all exist). Remaining: live pi-turn E2E (frontend rebuild in flight), visual QA w/ W4 | in flight |
 
 ## W3 design (decided 2026-07-03, implement exactly this)
 Connector = MCP server entry. Schema mirrors de-facto mcp.json (Claude/Cursor
