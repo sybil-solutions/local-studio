@@ -12,6 +12,7 @@ import { registerNavigationPolicy } from "./logic/security";
 import { startFrontendServer, stopFrontendServer, type ServerHandle } from "./logic/app-server";
 import { checkForUpdates, getUpdateState, initializeAutoUpdates } from "./logic/update-manager";
 import { addProject, listProjectsWithMeta, removeProject } from "./logic/projects-store";
+import { deployController } from "./logic/controller-deploy";
 import {
   hideQuickPanel,
   resizeQuickPanelToHome,
@@ -231,6 +232,20 @@ function registerIpcHandlers(): void {
       throw error;
     }
   });
+
+  ipcMain.handle(
+    "desktop:controller-deploy",
+    async (event, options: { host: string; port?: number; installDir?: string }) => {
+      const resourcesPath = app.isPackaged
+        ? path.join(process.resourcesPath, "app", "scripts")
+        : path.join(app.getAppPath(), "..", "scripts");
+      return deployController(options, resourcesPath, (line) => {
+        if (!event.sender.isDestroyed()) {
+          event.sender.send("desktop:controller-deploy-log", { line });
+        }
+      });
+    },
+  );
 
   ipcMain.handle("desktop:list-projects", async () => listProjectsWithMeta());
 

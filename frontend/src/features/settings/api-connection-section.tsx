@@ -24,6 +24,7 @@ import {
   setStoredBackendUrl,
 } from "@/lib/api/connection";
 import { scheduleDurableUiPreferencesSave } from "@/lib/desktop-ui-preferences";
+import { DeployControllerPanel } from "./deploy-controller-panel";
 import { StatusPill, Spinner } from "@/ui";
 import {
   SettingsButton,
@@ -233,6 +234,18 @@ export function ApiConnectionSection({
           </SettingsButton>
         </div>
       </SettingsGroup>
+
+      <DeployControllerPanel
+        onDeployed={(controller) => {
+          const url = normalizeControllerUrl(controller.url);
+          if (!url) return;
+          const entry: ControllerEntry = { ...controller, url, id: url };
+          if (!entries.find((row) => row.id === url)) {
+            persist([...entries, entry]);
+          }
+          activate(entry);
+        }}
+      />
 
       <SettingsGroup
         title="Connection"

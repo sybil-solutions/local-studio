@@ -49,6 +49,14 @@ Guiding question at every step: **how can I make this a home for people?**
 | when | what | state |
 |---|---|---|
 | 2026-07-03 | Mission set up, branch cut, Spark recon done | done |
+| 2026-07-03 | W1: starter presets (controller `/studio/presets` + wizard rail + remote-provider connect + first-run redirect) — d92024e4 | done, verified route live on Spark |
+| 2026-07-03 | W1: LFM2.5 single-file GGUF download via allow_patterns verified on Spark (5.15 GB, resume-after-restart worked) | done |
+| 2026-07-03 | W1: managed llama.cpp installer (source build w/ CUDACXX) — 50d5ceb7 + fix; build job running on Spark | in flight |
+| 2026-07-03 | W5: /site build delegated (static instrument-sheet page) | in flight |
+| 2026-07-03 | NOTE: GitHub releases have no installer assets — need desktop:dist upload for real one-click download | todo |
+| 2026-07-03 | W1 VERIFIED E2E on Spark: managed llama.cpp CUDA build OK → lfm2-5 recipe → launch → real completion (clean content + reasoning_content). Remote provider create/delete verified. LFM2.5 left running on :8000 | done |
+| 2026-07-03 | W5: /site committed (444 lines, self-contained, amber instrument sheet, OS-aware download) | done, assets pending |
+| 2026-07-03 | W1 residue: wizard visual walkthrough in browser (do with W4 polish pass) | todo |
 
 ## Rules
 - Gates green before every commit (`npm run check` etc. per repo convention).

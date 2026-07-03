@@ -45,6 +45,8 @@ extraResources:
     to: app/frontend/.next/standalone/frontend/public
     filter:
       - "**/*"
+  - from: ../scripts/install-controller.sh
+    to: app/scripts/install-controller.sh
   - from: desktop/resources/pi-extensions
     to: desktop/resources/pi-extensions
     filter:

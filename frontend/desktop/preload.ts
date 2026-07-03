@@ -43,6 +43,15 @@ const bridge: DesktopBridge = {
     focusMainAndNavigate: (projectId, sessionId) =>
       ipcRenderer.invoke("desktop:focus-main-and-navigate", projectId, sessionId),
   },
+  controllerDeploy: {
+    start: (options) => ipcRenderer.invoke("desktop:controller-deploy", options),
+    onLog: (listener) => {
+      const handler = (_event: Electron.IpcRendererEvent, payload: { line: string }) =>
+        listener(payload.line);
+      ipcRenderer.on("desktop:controller-deploy-log", handler);
+      return () => ipcRenderer.removeListener("desktop:controller-deploy-log", handler);
+    },
+  },
 };
 
 contextBridge.exposeInMainWorld("localStudioDesktop", bridge);

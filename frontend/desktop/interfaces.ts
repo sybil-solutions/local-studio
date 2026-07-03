@@ -48,6 +48,24 @@ export interface QuickPanelBridge {
   focusMainAndNavigate(projectId: string, sessionId?: string): Promise<void>;
 }
 
+export interface ControllerDeployResultPayload {
+  ok: boolean;
+  url?: string;
+  apiKey?: string;
+  error?: string;
+}
+
+export interface ControllerDeployBridge {
+  /** Deploy a controller to an ssh host; resolves with url + api key. */
+  start(options: {
+    host: string;
+    port?: number;
+    installDir?: string;
+  }): Promise<ControllerDeployResultPayload>;
+  /** Streamed installer output lines for the in-flight deploy. */
+  onLog(listener: (line: string) => void): () => void;
+}
+
 export interface DesktopBridge {
   getRuntime(): Promise<{
     platform: NodeJS.Platform;
@@ -71,5 +89,6 @@ export interface DesktopBridge {
   saveUiPreferences(prefs: UiPreferencesPayload): Promise<void>;
   terminal: PtyBridge;
   quickPanel: QuickPanelBridge;
+  controllerDeploy: ControllerDeployBridge;
 }
 

@@ -44,20 +44,24 @@ export const installManagedLlamacpp = async (
   }
 
   const root = managedLlamacppRoot(options.config);
-  const sourceDir = resolve(root, "src");
+  const sourceDirectory = resolve(root, "src");
   mkdirSync(root, { recursive: true });
 
   const nvcc = findNvcc();
   // cmake resolves the CUDA compiler itself; a controller launched from a
   // service unit usually lacks /usr/local/cuda/bin on PATH, so point CUDACXX
   // at the nvcc we found instead of relying on the inherited environment.
-  const buildEnv = nvcc ? { ...process.env, CUDACXX: nvcc } : undefined;
+  const buildEnvironment = nvcc ? { ...process.env, CUDACXX: nvcc } : undefined;
 
-  const run = (command: string, args: string[], cwd?: string) =>
+  const run = (
+    command: string,
+    args: string[],
+    cwd?: string,
+  ): ReturnType<typeof runCommandAsync> =>
     runCommandAsync(command, args, {
       timeoutMs: MANAGED_BUILD_TIMEOUT_MS,
       ...(cwd ? { cwd } : {}),
-      ...(buildEnv ? { env: buildEnv } : {}),
+      ...(buildEnvironment ? { env: buildEnvironment } : {}),
       ...(options.onSpawn ? { onSpawn: options.onSpawn } : {}),
     });
 
@@ -74,12 +78,12 @@ export const installManagedLlamacpp = async (
     used_command: stage,
   });
 
-  if (!existsSync(sourceDir)) {
-    const clone = await run("git", ["clone", "--depth", "1", LLAMACPP_REPO, sourceDir]);
+  if (!existsSync(sourceDirectory)) {
+    const clone = await run("git", ["clone", "--depth", "1", LLAMACPP_REPO, sourceDirectory]);
     if (clone.status !== 0) return fail("git clone", clone);
   } else {
     // Refresh best-effort; an offline box can still rebuild what it has.
-    await run("git", ["-C", sourceDir, "pull", "--ff-only"]);
+    await run("git", ["-C", sourceDirectory, "pull", "--ff-only"]);
   }
 
   const cmakeFlags = [
@@ -91,14 +95,14 @@ export const installManagedLlamacpp = async (
     "-DLLAMA_BUILD_EXAMPLES=OFF",
     ...(nvcc ? ["-DGGML_CUDA=ON"] : []),
   ];
-  const configure = await run("cmake", cmakeFlags, sourceDir);
+  const configure = await run("cmake", cmakeFlags, sourceDirectory);
   if (configure.status !== 0) return fail("cmake configure", configure);
 
   const jobs = String(Math.max(1, cpus().length - 1));
   const build = await run(
     "cmake",
     ["--build", "build", "--target", "llama-server", "-j", jobs],
-    sourceDir,
+    sourceDirectory,
   );
   if (build.status !== 0) return fail("cmake build", build);
 
