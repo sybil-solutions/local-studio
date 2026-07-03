@@ -69,7 +69,7 @@ const parseRuntimeJobBody = async (ctx: {
 };
 
 export const registerEngineRoutes: RouteRegistrar = (app, context) => {
-  const launchAbortControllers = new Map<string, AbortController>();
+  const launchAbortControllers = new Map<string, { controller: AbortController; mode: "exclusive" | "shared" }>();
   const getObservedProcess = (label: string): Promise<ProcessInfo | null> =>
     observeControllerFunction(context, `${label}.getCurrentProcess`, () =>
       context.engineService.getCurrentProcess()
@@ -187,7 +187,7 @@ export const registerEngineRoutes: RouteRegistrar = (app, context) => {
       }
       context.logger.info("Accepted shared launch request", { recipe_id: recipeId, port, source });
       const controller = new AbortController();
-      launchAbortControllers.set(recipeId, controller);
+      launchAbortControllers.set(recipeId, { controller, mode: "shared" });
       context.launchState.markLaunching(recipeId);
       try {
         const result = await context.engineService.launchSharedInstance(recipe, {
@@ -203,7 +203,7 @@ export const registerEngineRoutes: RouteRegistrar = (app, context) => {
         context.instanceRegistry.markReady(recipeId);
         return ctx.json({ success: true, message: "Launch started", mode: "shared", port });
       } finally {
-        if (launchAbortControllers.get(recipeId) === controller) {
+        if (launchAbortControllers.get(recipeId)?.controller === controller) {
           launchAbortControllers.delete(recipeId);
         }
         if (context.launchState.getLaunchingRecipeId() === recipeId) {
@@ -230,7 +230,7 @@ export const registerEngineRoutes: RouteRegistrar = (app, context) => {
     }
     context.logger.info("Accepted launch request", { recipe_id: recipeId, source });
     const controller = new AbortController();
-    launchAbortControllers.set(recipeId, controller);
+    launchAbortControllers.set(recipeId, { controller, mode: "exclusive" });
     context.launchState.markLaunching(recipeId);
     try {
       const result = await context.engineService.setActiveRecipe(recipe, {
@@ -242,7 +242,7 @@ export const registerEngineRoutes: RouteRegistrar = (app, context) => {
       }
       return ctx.json({ success: true, message: "Launch started" });
     } finally {
-      if (launchAbortControllers.get(recipeId) === controller) {
+      if (launchAbortControllers.get(recipeId)?.controller === controller) {
         launchAbortControllers.delete(recipeId);
       }
       if (context.launchState.getLaunchingRecipeId() === recipeId) {
@@ -253,10 +253,15 @@ export const registerEngineRoutes: RouteRegistrar = (app, context) => {
 
   app.post("/launch/:recipeId/cancel", async (ctx) => {
     const recipeId = ctx.req.param("recipeId");
-    const controller = launchAbortControllers.get(recipeId);
-    if (!controller) throw notFound(`No launch in progress for ${recipeId}`);
-    controller.abort();
-    const result = await context.engineService.setActiveRecipe(null, { signal: controller.signal });
+    const entry = launchAbortControllers.get(recipeId);
+    if (!entry) throw notFound(`No launch in progress for ${recipeId}`);
+    entry.controller.abort();
+    if (entry.mode === "shared") {
+      // Shared launches clean up via the abort signal inside launchSharedInstance;
+      // calling setActiveRecipe(null) would evict the primary model.
+      return ctx.json({ success: true, message: `Shared launch of ${recipeId} cancelled` });
+    }
+    const result = await context.engineService.setActiveRecipe(null, { signal: entry.controller.signal });
     if (!result.ok) throw serviceUnavailable(result.error);
     return ctx.json({ success: true, message: `Launch of ${recipeId} cancelled` });
   });
