@@ -7,6 +7,11 @@ import {
   createLaunchFailureBudget,
   type LaunchFailureBudget,
 } from "./modules/engines/process/launch-failure-budget";
+import {
+  createInstanceRegistry,
+  type InstanceRegistry,
+} from "./modules/engines/process/instance-registry";
+import { isRecipeRunning } from "./modules/models/recipes/recipe-matching";
 import { createProcessManager, type ProcessManager } from "./modules/engines/process/process-manager";
 import { DownloadManager } from "./modules/engines/downloads/download-manager";
 import { createEngineCoordinator, type EngineCoordinator } from "./modules/engines/engine-coordinator";
@@ -29,6 +34,7 @@ export interface AppContext {
   processManager: ProcessManager;
   downloadManager: DownloadManager;
   engineService: EngineCoordinator;
+  instanceRegistry: InstanceRegistry;
   stores: {
     recipeStore: RecipeStore;
     environmentStore: EnvironmentStore;
@@ -97,6 +103,17 @@ export const createAppContext = (): AppContext => {
     launchFailureBudget,
   });
 
+  const instanceRegistry = createInstanceRegistry({
+    ports: config.instance_ports,
+    processManager,
+    resolveRecipeId: (proc) => {
+      for (const recipe of recipeStore.list()) {
+        if (isRecipeRunning(recipe, proc, { allowEitherPathContains: true })) return recipe.id;
+      }
+      return null;
+    },
+  });
+
   lifetimeMetricsStore.ensureFirstStarted();
 
   const baseContext = {
@@ -108,6 +125,7 @@ export const createAppContext = (): AppContext => {
     processManager,
     downloadManager,
     engineService,
+    instanceRegistry,
     stores: {
       recipeStore,
       environmentStore,

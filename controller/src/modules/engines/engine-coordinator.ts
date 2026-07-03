@@ -13,6 +13,7 @@ import type {
   EngineService,
   SetActiveRecipeResult,
   SetActiveRecipeOptions,
+  LaunchInstanceResult,
 } from "./engine-service";
 import type { LaunchFailureBudget } from "./process/launch-failure-budget";
 import { formatLaunchFailureBudgetMessage } from "./process/launch-failure-budget";
@@ -135,7 +136,7 @@ export class EngineCoordinator implements EngineService {
         `Starting ${recipe.name}...`,
         0.25
       );
-      const launch = await this.deps.processManager.launchModel(recipe);
+      const launch = await this.deps.processManager.launchModel(recipe, this.deps.config.inference_port);
       spawnedPid = launch.pid;
       this.activeLaunchPid = launch.pid;
       if (!launch.success) {
@@ -161,6 +162,7 @@ export class EngineCoordinator implements EngineService {
         pid: launch.pid,
         logFilePath: launch.log_file ?? primaryLogPathFor(this.deps.config.data_dir, recipe.id),
         timeoutMs: LIFECYCLE_READY_TIMEOUT_MS,
+        port: this.deps.config.inference_port,
       };
       if (lifecycleAbort) {
         waitOptions.cancel = lifecycleAbort.signal;
@@ -201,8 +203,8 @@ export class EngineCoordinator implements EngineService {
       release();
     }
   }
-  private probeHealth(path: string): Promise<boolean> {
-    return fetchLocal(this.deps.config.inference_port, path, {
+  private probeHealth(path: string, port: number): Promise<boolean> {
+    return fetchLocal(port, path, {
       host: this.deps.config.inference_host,
       timeoutMs: 5000,
     })
@@ -212,6 +214,7 @@ export class EngineCoordinator implements EngineService {
 
   private async pollHealthy(options: {
     healthPath: string;
+    port: number;
     timeoutMs: number;
     failure?: () => string | null;
   }): Promise<{ ready: boolean; message: string | null }> {
@@ -219,14 +222,14 @@ export class EngineCoordinator implements EngineService {
     while (Date.now() - start < options.timeoutMs) {
       const failed = options.failure?.();
       if (failed) return { ready: false, message: failed };
-      if (await this.probeHealth(options.healthPath)) return { ready: true, message: null };
+      if (await this.probeHealth(options.healthPath, options.port)) return { ready: true, message: null };
       await delay(2000);
     }
     return { ready: false, message: null };
   }
 
   async waitForHealthy(timeoutMs: number): Promise<boolean> {
-    const result = await this.pollHealthy({ healthPath: "/health", timeoutMs });
+    const result = await this.pollHealthy({ healthPath: "/health", port: this.deps.config.inference_port, timeoutMs });
     return result.ready;
   }
 
@@ -236,9 +239,11 @@ export class EngineCoordinator implements EngineService {
     logFilePath: string | null;
     cancel?: AbortSignal;
     timeoutMs?: number;
+    port?: number;
   }): Promise<{ ready: true } | { ready: false; message: string }> {
     const result = await this.pollHealthy({
       healthPath: getEngineSpec(options.recipe.backend).healthPath,
+      port: options.port ?? this.deps.config.inference_port,
       timeoutMs: options.timeoutMs ?? LIFECYCLE_READY_TIMEOUT_MS,
       failure: () => {
         if (options.cancel?.aborted) return "Launch cancelled";
@@ -269,6 +274,91 @@ export class EngineCoordinator implements EngineService {
 
   async getCurrentProcess(): Promise<ProcessInfo | null> {
     return this.deps.processManager.findInferenceProcess(this.deps.config.inference_port);
+  }
+
+  async launchSharedInstance(
+    recipe: Recipe,
+    options: { port: number; signal?: AbortSignal }
+  ): Promise<LaunchInstanceResult> {
+    const release = await this.switchLock.acquire();
+    let spawnedPid: number | null = null;
+    try {
+      const blocked = this.deps.launchFailureBudget.isBlocked(recipe.id);
+      if (blocked) {
+        const message = formatLaunchFailureBudgetMessage(blocked);
+        await this.deps.eventManager.publishLaunchProgress(recipe.id, "error", message, 0);
+        return { ok: false, error: message };
+      }
+      await this.deps.eventManager.publishLaunchProgress(
+        recipe.id,
+        "launching",
+        `Starting ${recipe.name}...`,
+        0.25
+      );
+      const launch = await this.deps.processManager.launchModel(recipe, options.port);
+      spawnedPid = launch.pid;
+      if (!launch.success) {
+        const failure = this.deps.launchFailureBudget.recordFailure(recipe.id);
+        await this.deps.eventManager.publishLaunchProgress(
+          recipe.id,
+          "error",
+          `${launch.message} (${failure.failure_count}/${failure.limit} launch failures in the current window)`,
+          0
+        );
+        return { ok: false, error: launch.message };
+      }
+      if (options.signal?.aborted) {
+        if (launch.pid) await this.deps.processManager.killProcess(launch.pid, true);
+        const failure = this.deps.launchFailureBudget.recordFailure(recipe.id);
+        await this.deps.eventManager.publishLaunchProgress(
+          recipe.id,
+          "error",
+          `Launch cancelled (${failure.failure_count}/${failure.limit} launch failures in the current window)`,
+          0
+        );
+        return { ok: false, error: "Launch cancelled" };
+      }
+      await this.deps.eventManager.publishLaunchProgress(
+        recipe.id,
+        "waiting",
+        "Loading model... (0s)",
+        0.5
+      );
+      const waitOptions: Parameters<typeof this.waitForReady>[0] = {
+        recipe,
+        pid: launch.pid,
+        logFilePath: launch.log_file ?? primaryLogPathFor(this.deps.config.data_dir, recipe.id),
+        timeoutMs: LIFECYCLE_READY_TIMEOUT_MS,
+        port: options.port,
+      };
+      if (options.signal) {
+        waitOptions.cancel = options.signal;
+      }
+      const ready = await this.waitForReady(waitOptions);
+      if (ready.ready) {
+        this.deps.launchFailureBudget.reset(recipe.id);
+        await this.deps.eventManager.publishLaunchProgress(
+          recipe.id,
+          "ready",
+          "Model is ready!",
+          1
+        );
+        return { ok: true, pid: launch.pid! };
+      }
+      if (launch.pid) {
+        await this.deps.processManager.killProcess(launch.pid, true);
+      }
+      const failure = this.deps.launchFailureBudget.recordFailure(recipe.id);
+      await this.deps.eventManager.publishLaunchProgress(
+        recipe.id,
+        "error",
+        `${ready.message} (${failure.failure_count}/${failure.limit} launch failures in the current window)`,
+        0
+      );
+      return { ok: false, error: ready.message };
+    } finally {
+      release();
+    }
   }
 }
 export const createEngineCoordinator = (deps: CoordinatorDeps): EngineCoordinator => {
