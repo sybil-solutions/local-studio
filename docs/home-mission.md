@@ -60,6 +60,42 @@ Guiding question at every step: **how can I make this a home for people?**
 | 2026-07-03 | W2 DONE: install-controller.sh + desktop IPC + settings deploy panel — 7e4fdfaf. Verified live twice on Spark (:8090 ls-deploy-test, :8091 ls-deploy-test2, both systemd units healthy & remotely reachable). UI panel visual QA queued with W4 | done |
 | 2026-07-03 | Spark state: LFM2.5 live :8000 (lfm2-5 recipe, main controller :8080); test controllers :8090/:8091 (throwaway dirs ls-deploy-test*, NOT deleted per no-wipe rule) | note |
 
+## W3 design (decided 2026-07-03, implement exactly this)
+Connector = MCP server entry. Schema mirrors de-facto mcp.json (Claude/Cursor
+compatible) → registry-compatible + reproducible.
+1. `<agent dataDir>/connectors.json` (0600, write-rename like
+   settings-service.ts): `{ connectors: [{ id, name, transport: "stdio"|"http",
+   command?, args?, env?, url?, headers?, enabled }] }`.
+2. `services/agent-runtime/src/connectors-service.ts` — CRUD + masking (env
+   values masked in views like maskApiKey); Next API routes
+   `/api/agent/connectors` (GET/POST/PUT/DELETE) + `/api/agent/connectors/test`
+   (connect → tools/list → {ok, toolCount, toolNames}).
+3. Minimal MCP stdio+http client `services/agent-runtime/src/mcp-client.ts`
+   (initialize / tools/list / tools/call; newline-delimited JSON-RPC for stdio,
+   POST for streamable-http). No new deps.
+4. Bridge extension `frontend/desktop/resources/pi-extensions/connectors.ts`:
+   reads connectors.json path from env `LOCAL_STUDIO_CONNECTORS_PATH`, connects
+   enabled servers, pi.registerTool per MCP tool as `<connectorId>_<tool>`
+   (TypeBox schema from the MCP inputSchema via Type.Unsafe), execute proxies
+   tools/call. Register in runtimeExtensionPaths + env injection
+   (pi-runtime-helpers.ts:260,286) when any enabled connector exists.
+   NOTE: extension runs inside agent-runtime process; reuse mcp-client via
+   HTTP bridge to Next route `/api/agent/connectors/call` instead of importing
+   (extensions are jiti-loaded standalone files — follow browser.ts pattern of
+   fetch(FRONTEND_BASE)).
+5. Built-in ssh computer connector: `frontend/desktop/resources/mcp/ssh-remote.mjs`
+   stdio MCP server (env SSH_HOST) exposing run_command / read_file /
+   write_file / list_dir over `ssh -o BatchMode=yes` (crib framing from
+   sitegeist-relay.mjs). Catalog entry per machine.
+6. Settings UI "Connectors" section (features/settings/connectors-section.tsx):
+   list + enable/disable + add-from-catalog + custom; catalog: GitHub
+   (`npx -y @modelcontextprotocol/server-github`, GITHUB_PERSONAL_ACCESS_TOKEN),
+   Gmail/Google/YouTube/X entries (verify exact npm packages via web search
+   before baking — placeholders must be real), Remote computer (ssh-remote.mjs,
+   host field), Custom.
+7. E2E verify headless with `npx -y @modelcontextprotocol/server-everything`
+   + ssh-remote against spark-2822; then a live pi turn calling a connector tool.
+
 ## Rules
 - Gates green before every commit (`npm run check` etc. per repo convention).
 - Never wipe data; never kill the pop-os controller (kills live model).
