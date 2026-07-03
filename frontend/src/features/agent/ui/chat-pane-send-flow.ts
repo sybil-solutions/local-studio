@@ -7,7 +7,6 @@ import {
   isPlaceholderSessionTitle,
   newId,
   nowLabel,
-  runtimeStatusLooksActive,
   type SessionTab,
 } from "@/features/agent/messages";
 import { type SessionEngine } from "@/features/agent/runtime/engine";
@@ -204,23 +203,6 @@ export function useChatPaneSendFlow({
     [engine, resetComposerHeight, updateTab],
   );
 
-  const runtimeAcceptsControl = useCallback(
-    (tab: SessionTab, runtime: string) =>
-      Effect.runPromise(
-        Effect.gen(function* () {
-          if (tab.status !== "running" && tab.status !== "starting") return false;
-          const status = yield* Effect.tryPromise({
-            try: () => engine.loadRuntimeStatus(runtime, tab.piSessionId),
-            catch: () => null,
-          });
-          if (!status) return true;
-          if (!runtimeStatusLooksActive(status)) return false;
-          return !status.piSessionId || !tab.piSessionId || status.piSessionId === tab.piSessionId;
-        }),
-      ),
-    [engine],
-  );
-
   // Single-flight a submit through one of the in-flight guards: bail if this
   // session already has a submit pending, clear any open @mention, then run and
   // always release the guard. Shared by composer send, queue, and retry.
@@ -257,7 +239,7 @@ export function useChatPaneSendFlow({
       return Effect.runPromise(
         Effect.gen(function* () {
           const acceptsControl = yield* Effect.tryPromise({
-            try: () => runtimeAcceptsControl(activeTab, runtime),
+            try: () => engine.acceptsControl(activeTab, runtime),
             catch: () => false,
           });
           if (acceptsControl) {
@@ -284,11 +266,11 @@ export function useChatPaneSendFlow({
     [
       activeTab,
       attachments.length,
+      engine,
       modelId,
       queueAndSendControl,
       readingAttachments,
       runGuardedSubmit,
-      runtimeAcceptsControl,
       submitPrompt,
       updateTab,
     ],
@@ -306,7 +288,7 @@ export function useChatPaneSendFlow({
     return Effect.runPromise(
       Effect.gen(function* () {
         const acceptsControl = yield* Effect.tryPromise({
-          try: () => runtimeAcceptsControl(activeTab, runtime),
+          try: () => engine.acceptsControl(activeTab, runtime),
           catch: () => false,
         });
         if (acceptsControl) {
@@ -331,10 +313,10 @@ export function useChatPaneSendFlow({
   }, [
     activeTab,
     cwd,
+    engine,
     modelId,
     queueAndSendControl,
     runGuardedSubmit,
-    runtimeAcceptsControl,
     submitPrompt,
     updateTab,
   ]);

@@ -60,8 +60,14 @@ export type SessionEngine = {
   abortTurn: (sessionId: SessionId) => Promise<void>;
   loadAndReplay: (piSessionId: string, sessionId: SessionId) => Promise<void>;
   compact: (sessionId: SessionId) => Promise<void>;
-  /** Helpers exposed for the composer's send/queue logic. */
-  acceptsControl: typeof runtimeStatusAcceptsControl;
+  /** Probe whether the session's live runtime accepts steer/follow-up right
+   * now: running/starting locally, and the runtime's reported pi session (if
+   * any) matches ours. A failed probe counts as accepting — the turn API
+   * itself is the authority and will reject if not. */
+  acceptsControl: (
+    tab: { status: Session["status"]; piSessionId?: string | null },
+    runtime: string,
+  ) => Promise<boolean>;
 };
 
 export function useSessionEngine(deps: UseSessionEngineDeps): SessionEngine {
@@ -375,6 +381,18 @@ export function useSessionEngine(deps: UseSessionEngineDeps): SessionEngine {
     ],
   );
 
+  const acceptsControl = useCallback(
+    async (
+      tab: { status: Session["status"]; piSessionId?: string | null },
+      runtime: string,
+    ): Promise<boolean> => {
+      if (tab.status !== "running" && tab.status !== "starting") return false;
+      const status = await loadRuntimeStatusCb(runtime, tab.piSessionId).catch(() => null);
+      return runtimeStatusAcceptsControl(status, tab.piSessionId);
+    },
+    [loadRuntimeStatusCb],
+  );
+
   return useMemo<SessionEngine>(
     () => ({
       submitPrompt,
@@ -383,8 +401,8 @@ export function useSessionEngine(deps: UseSessionEngineDeps): SessionEngine {
       abortTurn,
       loadAndReplay,
       compact,
-      acceptsControl: runtimeStatusAcceptsControl,
+      acceptsControl,
     }),
-    [submitPrompt, sendControl, loadRuntimeStatusCb, abortTurn, loadAndReplay, compact],
+    [submitPrompt, sendControl, loadRuntimeStatusCb, abortTurn, loadAndReplay, compact, acceptsControl],
   );
 }

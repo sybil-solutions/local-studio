@@ -37,4 +37,4 @@ export function referencedSessionIds(state: WorkspaceState): Set<SessionId> {
 
 // Moved to shared/agent/agent-turn.ts so the agent runtime package's /turn
 // handler can share it; re-exported here for frontend callers.
-export { controlTargetHasActiveTurn } from "../../../../../shared/agent/agent-turn";
+export { controlTargetHasActiveTurn } from "@shared/agent/agent-turn";

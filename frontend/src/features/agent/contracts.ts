@@ -1,4 +1,4 @@
-import type { AgentImageInput } from "../../../../shared/agent/agent-image-input";
+import type { AgentImageInput } from "@shared/agent/agent-image-input";
 
 export type { AgentImageInput };
 // The turn wire contract + generic body-field helpers live in
@@ -10,7 +10,7 @@ export {
   stringArray,
   boolField,
   parseAgentTurnRequest,
-} from "../../../../shared/agent/agent-turn";
+} from "@shared/agent/agent-turn";
 export type {
   ParseResult,
   AgentTurnMode,
@@ -18,7 +18,7 @@ export type {
   AgentTurnRequest,
   AgentTurnRuntimeStatus,
   AgentTurnCommandResult,
-} from "../../../../shared/agent/agent-turn";
+} from "@shared/agent/agent-turn";
 import {
   objectRecord,
   stringField,
@@ -26,7 +26,7 @@ import {
   type ParseResult,
   type AgentTurnRuntimeStatus,
   type AgentTurnCommandResult,
-} from "../../../../shared/agent/agent-turn";
+} from "@shared/agent/agent-turn";
 
 export type GitRef = { name: string; current: boolean; remote: boolean };
 export type GitStatusEntry = { code: string; path: string };

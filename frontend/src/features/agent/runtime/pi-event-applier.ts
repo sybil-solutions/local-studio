@@ -22,7 +22,7 @@ import {
   usageFromEvent,
   visibleUserTextFromPi,
 } from "@/features/agent/messages";
-import { isAgentEndEvent, piEventIsSuccessfulCompaction } from "../../../../../shared/agent/pi-events";
+import { isAgentEndEvent, piEventIsSuccessfulCompaction } from "@shared/agent/pi-events";
 import { traceAgentReasoning } from "@/features/agent/trace-reasoning";
 import type { Session, SessionId } from "@/features/agent/runtime/types";
 

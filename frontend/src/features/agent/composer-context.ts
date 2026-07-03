@@ -7,11 +7,11 @@ export {
   sanitizeComposerPromptTemplates,
   selectedContextPrompt,
   selectedContextInstructions,
-} from "../../../../shared/agent/composer-refs";
+} from "@shared/agent/composer-refs";
 export type {
   ComposerSkillRef,
   ComposerPromptTemplateRef,
-} from "../../../../shared/agent/composer-refs";
+} from "@shared/agent/composer-refs";
 
 export type ComposerMention = {
   kind: "file" | "skill" | "promptTemplate";

@@ -93,4 +93,4 @@ export function decodeRuntimeSessions(raw: unknown): RuntimeSessionSummary[] {
 
 // Canonical type lives in shared/agent/context-usage.ts (shared with the agent
 // runtime package); RuntimeContextUsageSchema above must stay in sync with it.
-export type { RuntimeContextUsage } from "../../../../../shared/agent/context-usage";
+export type { RuntimeContextUsage } from "@shared/agent/context-usage";

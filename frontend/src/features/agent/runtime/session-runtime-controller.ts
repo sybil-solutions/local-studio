@@ -8,7 +8,7 @@
 // runtime status. (Turn-intent status — "starting", accept, abort — stays
 // with prompt-stream/engine; hydration status with loadAndReplay.)
 
-import { isAgentEndEvent } from "../../../../../shared/agent/pi-events";
+import { isAgentEndEvent } from "@shared/agent/pi-events";
 import { drainQueueAfterAgentEnd, piSessionIdFromEvent } from "@/features/agent/messages";
 import {
   listRuntimeSessions,

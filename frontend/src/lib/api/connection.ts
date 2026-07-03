@@ -2,7 +2,7 @@
  * Controller connection state: where the controller lives (env defaults +
  * browser-stored backend URL) and how we authenticate against it (API key).
  */
-import { pickFirstNonEmpty } from "../../../../shared/agent/backend-url";
+import { pickFirstNonEmpty } from "@shared/agent/backend-url";
 import { getControllerApiKey, normalizeControllerUrl } from "./controllers";
 
 // --- Env-derived defaults ---
@@ -24,7 +24,7 @@ export const resolveApiServerBaseUrl = (): string =>
 // resolveSettingsDefaultBackendUrl lives in shared/agent/backend-url.ts so the
 // agent runtime package's settings service can share it; re-exported here for
 // frontend callers.
-export { resolveSettingsDefaultBackendUrl } from "../../../../shared/agent/backend-url";
+export { resolveSettingsDefaultBackendUrl } from "@shared/agent/backend-url";
 
 /**
  * Client-side controller event stream base URL.

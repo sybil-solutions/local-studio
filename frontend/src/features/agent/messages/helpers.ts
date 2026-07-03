@@ -1,8 +1,8 @@
-import { piEventIsSuccessfulCompaction } from "../../../../../shared/agent/pi-events";
+import { piEventIsSuccessfulCompaction } from "@shared/agent/pi-events";
 import {
   cleanSessionTitle,
   isPlaceholderSessionTitle,
-} from "../../../../../shared/agent/session-title";
+} from "@shared/agent/session-title";
 
 export { cleanSessionTitle, isPlaceholderSessionTitle };
 import type {
