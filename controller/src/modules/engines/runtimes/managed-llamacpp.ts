@@ -25,8 +25,11 @@ const missingTool = (tool: string): RuntimeUpgradeResult => ({
   used_command: null,
 });
 
-const hasCudaToolchain = (): boolean =>
-  Boolean(resolveBinary("nvcc")) || existsSync("/usr/local/cuda/bin/nvcc");
+const findNvcc = (): string | null => {
+  const onPath = resolveBinary("nvcc");
+  if (onPath) return onPath;
+  return existsSync("/usr/local/cuda/bin/nvcc") ? "/usr/local/cuda/bin/nvcc" : null;
+};
 
 /**
  * Default llama.cpp installer: shallow-clone upstream and build `llama-server`
@@ -44,10 +47,17 @@ export const installManagedLlamacpp = async (
   const sourceDir = resolve(root, "src");
   mkdirSync(root, { recursive: true });
 
+  const nvcc = findNvcc();
+  // cmake resolves the CUDA compiler itself; a controller launched from a
+  // service unit usually lacks /usr/local/cuda/bin on PATH, so point CUDACXX
+  // at the nvcc we found instead of relying on the inherited environment.
+  const buildEnv = nvcc ? { ...process.env, CUDACXX: nvcc } : undefined;
+
   const run = (command: string, args: string[], cwd?: string) =>
     runCommandAsync(command, args, {
       timeoutMs: MANAGED_BUILD_TIMEOUT_MS,
       ...(cwd ? { cwd } : {}),
+      ...(buildEnv ? { env: buildEnv } : {}),
       ...(options.onSpawn ? { onSpawn: options.onSpawn } : {}),
     });
 
@@ -79,7 +89,7 @@ export const installManagedLlamacpp = async (
     "-DLLAMA_CURL=OFF",
     "-DLLAMA_BUILD_TESTS=OFF",
     "-DLLAMA_BUILD_EXAMPLES=OFF",
-    ...(hasCudaToolchain() ? ["-DGGML_CUDA=ON"] : []),
+    ...(nvcc ? ["-DGGML_CUDA=ON"] : []),
   ];
   const configure = await run("cmake", cmakeFlags, sourceDir);
   if (configure.status !== 0) return fail("cmake configure", configure);
