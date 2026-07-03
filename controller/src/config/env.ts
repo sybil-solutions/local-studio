@@ -27,6 +27,7 @@ export interface Config {
   mlx_python?: string;
   strict_openai_models: boolean;
   providers: ProviderConfig[];
+  instance_ports: number[];
 }
 
 export const loadDotEnvironment = (): string | undefined => {
@@ -85,6 +86,22 @@ export const createConfig = (): Config => {
     ];
   };
 
+  const parseInstancePorts = (value: string | undefined): number[] => {
+    if (!value?.trim()) return [];
+    const ports = new Set<number>();
+    for (const part of value.split(",")) {
+      const range = part.trim().match(/^(\d+)\s*-\s*(\d+)$/);
+      if (range) {
+        const start = Number(range[1]); const end = Number(range[2]);
+        if (start > 0 && end >= start && end - start <= 64) for (let p = start; p <= end; p++) ports.add(p);
+        continue;
+      }
+      const single = Number(part.trim());
+      if (Number.isInteger(single) && single > 0) ports.add(single);
+    }
+    return [...ports];
+  };
+
   const environmentSchema = Schema.Struct({
     LOCAL_STUDIO_HOST: Schema.String,
     LOCAL_STUDIO_PORT: positiveIntegerSchema,
@@ -101,6 +118,7 @@ export const createConfig = (): Config => {
     LOCAL_STUDIO_LLAMA_BIN: Schema.optional(Schema.String),
     LOCAL_STUDIO_MLX_PYTHON: Schema.optional(Schema.String),
     LOCAL_STUDIO_STRICT_OPENAI_MODELS: Schema.optional(Schema.String),
+    LOCAL_STUDIO_INSTANCE_PORTS: Schema.optional(Schema.String),
   });
 
   const coercePositiveInteger = (
@@ -143,6 +161,9 @@ export const createConfig = (): Config => {
     strict_openai_models: strictOpenAIModelsEnabled,
     cors_origins: parseCorsOrigins(parsed.LOCAL_STUDIO_CORS_ORIGINS),
     providers: [],
+    instance_ports: parseInstancePorts(parsed.LOCAL_STUDIO_INSTANCE_PORTS).filter(
+      (p) => p !== parsed.LOCAL_STUDIO_INFERENCE_PORT && p !== parsed.LOCAL_STUDIO_PORT,
+    ),
   };
 
   if (parsed.LOCAL_STUDIO_API_KEY) {

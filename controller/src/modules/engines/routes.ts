@@ -88,6 +88,7 @@ export const registerEngineRoutes: RouteRegistrar = (app, context) => {
       let status = crashLoop?.blocked ? "error" : "stopped";
       if (launchingId === recipe.id) status = "starting";
       if (current && isRecipeRunning(recipe, current)) status = "running";
+      else if (context.instanceRegistry.get(recipe.id)?.phase === "ready") status = "running";
       return { ...recipe, status, crash_loop: crashLoop };
     });
     return ctx.json(result);
@@ -142,6 +143,8 @@ export const registerEngineRoutes: RouteRegistrar = (app, context) => {
     const recipeId = ctx.req.param("recipeId");
     const recipe = context.stores.recipeStore.get(recipeId);
     if (!recipe) throw notFound("Recipe not found");
+    const body = await ctx.req.json().catch(() => ({})) as Record<string, unknown>;
+    const mode = optionalEnum(body, "mode", ["exclusive", "shared"] as const) ?? "exclusive";
     const source =
       ctx.req.header("x-vllm-source") ??
       ctx.req.header("x-source") ??
@@ -163,6 +166,53 @@ export const registerEngineRoutes: RouteRegistrar = (app, context) => {
             : `Launch already in progress for ${activeRecipeId}; refusing to queue ${recipeId}`,
       });
     }
+
+    if (mode === "shared") {
+      if (context.config.instance_ports.length === 0) {
+        throw badRequest("Shared launches require LOCAL_STUDIO_INSTANCE_PORTS to be configured");
+      }
+      const existing = context.instanceRegistry.get(recipeId);
+      if (existing) {
+        throw new HttpStatus({
+          status: 409,
+          detail: `Recipe ${recipeId} is already running as an instance on port ${existing.port}`,
+        });
+      }
+      const port = context.instanceRegistry.reserve(recipeId);
+      if (port === null) {
+        throw new HttpStatus({
+          status: 409,
+          detail: `Instance port pool exhausted (${context.config.instance_ports.length} ports); stop an instance first`,
+        });
+      }
+      context.logger.info("Accepted shared launch request", { recipe_id: recipeId, port, source });
+      const controller = new AbortController();
+      launchAbortControllers.set(recipeId, controller);
+      context.launchState.markLaunching(recipeId);
+      try {
+        const result = await context.engineService.launchSharedInstance(recipe, {
+          port,
+          signal: controller.signal,
+        });
+        if (!result.ok) {
+          context.instanceRegistry.release(recipeId);
+          if (result.error.toLowerCase().includes("cancelled")) throw badRequest(result.error);
+          throw serviceUnavailable(result.error);
+        }
+        context.instanceRegistry.attachPid(recipeId, result.pid);
+        context.instanceRegistry.markReady(recipeId);
+        return ctx.json({ success: true, message: "Launch started", mode: "shared", port });
+      } finally {
+        if (launchAbortControllers.get(recipeId) === controller) {
+          launchAbortControllers.delete(recipeId);
+        }
+        if (context.launchState.getLaunchingRecipeId() === recipeId) {
+          context.launchState.markIdle();
+        }
+      }
+    }
+
+    // Exclusive mode (default) — existing behavior
     const current = await context.processManager.findInferenceProcess(
       context.config.inference_port
     );
@@ -215,6 +265,32 @@ export const registerEngineRoutes: RouteRegistrar = (app, context) => {
     const result = await context.engineService.setActiveRecipe(null);
     if (!result.ok) throw serviceUnavailable(result.error);
     return ctx.json({ success: true, evicted_pid: null });
+  });
+
+  app.get("/instances", async (ctx) => {
+    await context.instanceRegistry.reconcile();
+    const instances = context.instanceRegistry.list();
+    const enriched = instances.map((inst) => {
+      const recipe = context.stores.recipeStore.get(inst.recipe_id);
+      return { ...inst, name: recipe?.name ?? null };
+    });
+    return ctx.json({ instances: enriched });
+  });
+
+  app.post("/instances/:recipeId/stop", async (ctx) => {
+    const recipeId = ctx.req.param("recipeId");
+    const instance = context.instanceRegistry.get(recipeId);
+    if (!instance) throw notFound(`No running instance for ${recipeId}`);
+    if (instance.pid === null) {
+      context.instanceRegistry.release(recipeId);
+      return ctx.json({ success: true });
+    }
+    const stopped = await context.processManager.killProcess(instance.pid, true);
+    if (!stopped) {
+      throw serviceUnavailable(`Failed to stop instance pid ${instance.pid}`);
+    }
+    context.instanceRegistry.release(recipeId);
+    return ctx.json({ success: true });
   });
 
   app.get("/wait-ready", async (ctx) => {

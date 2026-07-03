@@ -28,7 +28,7 @@ import { getEngineSpec } from "../engine-spec";
 
 export interface ProcessManager {
   findInferenceProcess: (port: number) => Promise<ProcessInfo | null>;
-  launchModel: (recipe: Recipe) => Promise<LaunchResult>;
+  launchModel: (recipe: Recipe, portOverride?: number) => Promise<LaunchResult>;
   killProcess: (pid: number, force: boolean) => Promise<boolean>;
 }
 
@@ -270,10 +270,10 @@ export const createProcessManager = (
   const cleanupOrphanedInferenceWorkers = (reason: string): Promise<number> =>
     Effect.runPromise(cleanupOrphanedInferenceWorkersEffect(reason));
 
-  const launchModel = async (recipe: Recipe): Promise<LaunchResult> => {
+  const launchModel = async (recipe: Recipe, portOverride?: number): Promise<LaunchResult> => {
     const updatedRecipe: Recipe = {
       ...recipe,
-      port: config.inference_port,
+      port: portOverride ?? config.inference_port,
     };
     let command: string[] | null = null;
     try {

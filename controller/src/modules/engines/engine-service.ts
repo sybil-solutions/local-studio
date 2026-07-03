@@ -3,6 +3,7 @@ import type { Recipe, ProcessInfo } from "../models/types";
 export type { Recipe, ProcessInfo };
 
 export type SetActiveRecipeResult = { ok: true } | { ok: false; error: string };
+export type LaunchInstanceResult = { ok: true; pid: number } | { ok: false; error: string };
 
 /** Options for setting the active recipe. */
 export interface SetActiveRecipeOptions {
@@ -19,7 +20,10 @@ export interface EngineService {
     options?: SetActiveRecipeOptions
   ): Promise<SetActiveRecipeResult>;
   resetLaunchFailureBudget(recipeId: string): void;
-
   getCurrentProcess(): Promise<ProcessInfo | null>;
   waitForHealthy(timeoutMs: number): Promise<boolean>;
+  launchSharedInstance(
+    recipe: Recipe,
+    options: { port: number; signal?: AbortSignal }
+  ): Promise<LaunchInstanceResult>;
 }

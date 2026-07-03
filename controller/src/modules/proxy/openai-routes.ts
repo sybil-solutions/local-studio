@@ -3,7 +3,7 @@ import { HttpStatus, notFound } from "../../core/errors";
 import { isRecipeRunning } from "../models/recipes/recipe-matching";
 import type { RouteRegistrar } from "../../http/route-registrar";
 import type { Recipe } from "../models/types";
-import { buildInferenceUrl } from "../../http/local-fetch";
+import { buildInferenceUrl, buildLocalUrl } from "../../http/local-fetch";
 import {
   DEFAULT_CHAT_PROVIDER,
   parseProviderModel,
@@ -137,37 +137,35 @@ export const registerOpenAIRoutes: RouteRegistrar = (app, context) => {
       throw notFound(`Model not managed: ${requestedModel}`);
     }
 
-    // Chat proxy never launches or switches models. The frontend's explicit
-    // /engines/* and /recipes/:id/launch endpoints are the only authorized
-    // path to control which model is running. If the requested model isn't
-    // running, reject with 503 so the caller can ask the frontend to launch
-    // it instead of silently thrashing the GPU.
+    // Resolve target port: check primary first, then shared instances.
+    let targetPort = context.config.inference_port;
     if (matchedRecipe) {
       const current = await context.processManager.findInferenceProcess(
         context.config.inference_port
       );
-      const matches =
+      const primaryMatches =
         current && isRecipeRunning(matchedRecipe, current, { allowEitherPathContains: true });
-      if (!matches) {
-        const activeModel = current?.served_model_name ?? current?.model_path ?? null;
-        warnNonRunningModel({
-          requestedModel,
-          requestedRecipeId: matchedRecipe.id,
-          activeModel,
-          source: sourceHeader,
-        });
-        // Return an OpenAI-shaped error so SDK callers (the pi agent runtime)
-        // surface the message instead of a bare "503 status code (no body)" —
-        // the SDK reads `error.message`, not FastAPI's `detail`. Keep `detail`
-        // too for any non-OpenAI caller that already relies on it.
-        return ctx.json(modelNotRunningError(activeModel, requestedModel), { status: 503 });
+      if (!primaryMatches) {
+        const instance = context.instanceRegistry.get(matchedRecipe.id);
+        if (instance?.phase === "ready") {
+          targetPort = instance.port;
+        } else {
+          const activeModel = current?.served_model_name ?? current?.model_path ?? null;
+          warnNonRunningModel({
+            requestedModel,
+            requestedRecipeId: matchedRecipe.id,
+            activeModel,
+            source: sourceHeader,
+          });
+          return ctx.json(modelNotRunningError(activeModel, requestedModel), { status: 503 });
+        }
       }
     }
 
     const upstreamUrl =
       providerRouting && requestedModel
         ? `${providerRouting.baseUrl.replace(/\/+$/, "")}/v1/chat/completions`
-        : buildInferenceUrl(context, "/v1/chat/completions");
+        : buildLocalUrl(targetPort, "/v1/chat/completions", context.config.inference_host);
     const inferenceKey = process.env["INFERENCE_API_KEY"] ?? "";
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
