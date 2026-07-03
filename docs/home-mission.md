@@ -112,6 +112,27 @@ compatible) → registry-compatible + reproducible.
   remote preset's model id is a config value, fine, but live chat tests must
   target whatever model is actually launched.
 
+## Final state (2026-07-03 night, end of loop)
+- W1 ✅ W2 ✅ W3 ✅ — all Spark-verified end-to-end (tasks complete).
+- W5 ✅ — /site done, rendered-QA'd desktop + mobile (screenshots in
+  scratchpad), macOS direct-download wired. Signed arm64 dmg/zip built +
+  staged in `release-staging/`. Publish is one command — see
+  `docs/publish-desktop-release.md` (left to user: it flips public
+  `releases/latest`).
+- W4 ◐ PARTIAL — done: wizard preset-primary + "More models" collapse, mono
+  instrument metadata on preset cards, honest /site platform states. App
+  routes render 200 with no SSR crashes (new imports safe). NOT done:
+  app-wide pixel-level Hermes refinement of every component — that's a large,
+  taste-driven pass best done with the user watching; Chrome extension was
+  offline tonight so live app pixel-QA of setup/deploy/connectors is still
+  owed. Next session: reconnect Chrome ext, walk the wizard + settings
+  Connectors + Deploy panel, refine spacing/typography toward dashboard's
+  instrument-sheet convention (Card rounded-lg → hairline, text-sm →
+  fs tokens, mono uppercase legends).
+- Branch loop/home-for-people is UNPUSHED (per rule). Nothing deployed to
+  pop-os. Spark left with: LFM2.5 on :8000, test controllers :8090/:8091,
+  computer-spark connector in ~/.local-studio/connectors.json.
+
 ## Rules
 - Gates green before every commit (`npm run check` etc. per repo convention).
 - Never wipe data; never kill the pop-os controller (kills live model).
