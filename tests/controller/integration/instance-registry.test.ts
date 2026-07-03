@@ -4,6 +4,7 @@ import {
   createTestHarness,
   registerControllerTestLifecycle,
 } from "./fixtures";
+import type { LaunchInstanceResult } from "../../../controller/src/modules/engines/engine-service";
 
 registerControllerTestLifecycle();
 
@@ -170,6 +171,70 @@ describe("instance launch routes", () => {
     const found = recipes.find((r: { id: string }) => r.id === "inst-recipe");
     expect(found).toBeDefined();
     expect(found.status).toBe("running");
+  });
+
+  test("shared launch cancel does not call setActiveRecipe", async () => {
+    process.env.LOCAL_STUDIO_INSTANCE_PORTS = "8700";
+    const { app, context } = await createTestHarness();
+    await saveRecipe(app, "cancel-recipe", "cancel-model");
+
+    let setActiveRecipeCalled = false;
+    const originalSetActive = context.engineService.setActiveRecipe.bind(context.engineService);
+    context.engineService.setActiveRecipe = async (...args) => {
+      setActiveRecipeCalled = true;
+      return originalSetActive(...args);
+    };
+
+    const { promise: launchStarted, resolve: signalLaunchStarted } =
+      Promise.withResolvers<void>();
+    const { promise: launchDone, resolve: resolveLaunch } =
+      Promise.withResolvers<LaunchInstanceResult>();
+
+    context.engineService.launchSharedInstance = async (_recipe, options) => {
+      signalLaunchStarted();
+      // Wait for the abort signal, simulating a long-running launch
+      if (options.signal) {
+        const { promise: aborted, resolve: onAbort } = Promise.withResolvers<void>();
+        if (options.signal.aborted) {
+          onAbort();
+        } else {
+          options.signal.addEventListener("abort", () => onAbort(), { once: true });
+        }
+        await aborted;
+      }
+      const result: LaunchInstanceResult = {
+        ok: false,
+        error: "Launch cancelled",
+      };
+      resolveLaunch(result);
+      return result;
+    };
+
+    // Start shared launch in background
+    const launchPromise = app.request("/launch/cancel-recipe", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ mode: "shared" }),
+    });
+
+    // Wait until the launch handler has entered launchSharedInstance
+    await launchStarted;
+
+    // Cancel while launch is in flight
+    const cancelResponse = await app.request("/launch/cancel-recipe/cancel", {
+      method: "POST",
+    });
+    expect(cancelResponse.status).toBe(200);
+    const cancelBody = await cancelResponse.json();
+    expect(cancelBody.message).toContain("Shared launch");
+
+    // Wait for launch route to finish
+    await launchDone;
+    const launchResponse = await launchPromise;
+    expect(launchResponse.status).toBe(400);
+
+    // The critical assertion: setActiveRecipe was never called
+    expect(setActiveRecipeCalled).toBe(false);
   });
 });
 
