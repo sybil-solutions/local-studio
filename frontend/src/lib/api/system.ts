@@ -7,7 +7,7 @@ import type {
   UsageStats,
   VRAMCalculation,
 } from "../types";
-import type { ApiCore, RequestOptions } from "./core";
+import { encodePathSegments, type ApiCore, type RequestOptions } from "./core";
 
 const MB = 1024 * 1024;
 
@@ -49,7 +49,7 @@ export function normalizeGpuAliases(list: unknown): GPU[] {
 export function createSystemApi(core: ApiCore) {
   return {
     launch: (recipeId: string): Promise<{ success: boolean; pid?: number; message: string }> =>
-      core.request(`/launch/${recipeId}`, {
+      core.request(`/launch/${encodePathSegments(recipeId)}`, {
         method: "POST",
         timeout: 30_000,
         retries: 0,
@@ -58,8 +58,15 @@ export function createSystemApi(core: ApiCore) {
     evict: (): Promise<{ success: boolean; evicted_pid?: number }> =>
       core.request("/evict", { method: "POST" }),
 
+    // The controller long-polls up to `timeout` seconds; the client-side fetch
+    // timeout must outlive it or a real model load (>30s) surfaces as a
+    // spurious launch error. No retries: re-entering the long poll after a
+    // timeout would silently double the wait.
     waitReady: (timeout = 300): Promise<{ ready: boolean; elapsed: number; error?: string }> =>
-      core.request(`/wait-ready?timeout=${timeout}`),
+      core.request(`/wait-ready?timeout=${timeout}`, {
+        timeout: (timeout + 15) * 1000,
+        retries: 0,
+      }),
 
     getOpenAIModels: (): Promise<{
       data: Array<{ id: string; root?: string; max_model_len?: number }>;
@@ -120,9 +127,7 @@ export function createSystemApi(core: ApiCore) {
         method: "POST",
       }),
 
-    getPeakMetrics: (
-      modelId?: string,
-    ): Promise<{
+    getPeakMetrics: (): Promise<{
       metrics?: Array<{
         model_id: string;
         prefill_tps: number;
@@ -136,10 +141,7 @@ export function createSystemApi(core: ApiCore) {
         total_requests: number;
       }>;
       error?: string;
-    }> => {
-      const query = modelId ? `?model_id=${modelId}` : "";
-      return core.request(`/peak-metrics${query}`);
-    },
+    }> => core.request("/peak-metrics"),
 
     getUsageStats: (): Promise<UsageStats> => core.request("/usage"),
 

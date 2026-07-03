@@ -108,10 +108,13 @@ export function useRecipesContentModel() {
       if (recipeToSave.id) {
         await api.updateRecipe(recipeToSave.id, recipeToSave);
       } else {
-        const id = recipeToSave.name
+        const slug = recipeToSave.name
           .toLowerCase()
           .replace(/[^a-z0-9]+/g, "-")
           .replace(/^-|-$/g, "");
+        // A name with no ASCII alphanumerics slugs to "" — an empty id creates
+        // a ghost recipe that can't be edited, deleted, or launched.
+        const id = slug || `recipe-${Date.now()}`;
         await api.createRecipe({ ...recipeToSave, id });
       }
       await loadRecipes();
@@ -146,7 +149,7 @@ export function useRecipesContentModel() {
         const timeoutId = setTimeout(() => controller.abort(), 5000);
 
         try {
-          await fetch(`/api/proxy/launch/${recipeId}`, {
+          await fetch(`/api/proxy/launch/${encodeURIComponent(recipeId)}`, {
             method: "POST",
             signal: controller.signal,
           });

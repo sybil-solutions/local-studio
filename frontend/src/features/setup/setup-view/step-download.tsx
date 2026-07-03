@@ -1,6 +1,14 @@
 "use client";
 
-import { CheckCircle2, ChevronRight, HardDrive, Pause, Play, XCircle } from "@/ui/icon-registry";
+import {
+  CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
+  HardDrive,
+  Pause,
+  Play,
+  XCircle,
+} from "@/ui/icon-registry";
 import { Button, Card } from "@/ui";
 import type { ModelDownload } from "@/lib/types";
 import { formatBytes, progressPercent } from "./utils";
@@ -14,6 +22,7 @@ export function StepDownload({
   resumeDownload,
   cancelDownload,
   continueToLaunch,
+  backToModels,
 }: {
   selectedModel: string;
   modelsDir: string;
@@ -23,6 +32,7 @@ export function StepDownload({
   resumeDownload: (id: string) => void;
   cancelDownload: (id: string) => void;
   continueToLaunch: () => void;
+  backToModels: () => void;
 }) {
   return (
     <div className="space-y-5">
@@ -73,7 +83,7 @@ export function StepDownload({
                   Resume
                 </Button>
               )}
-              {activeDownload.status !== "completed" && (
+              {activeDownload.status !== "completed" && activeDownload.status !== "canceled" && (
                 <Button
                   variant="danger"
                   size="sm"
@@ -81,6 +91,16 @@ export function StepDownload({
                   icon={<XCircle className="h-3.5 w-3.5" />}
                 >
                   Cancel
+                </Button>
+              )}
+              {activeDownload.status === "canceled" && (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={backToModels}
+                  icon={<ChevronLeft className="h-3.5 w-3.5" />}
+                >
+                  Back to model selection
                 </Button>
               )}
             </div>

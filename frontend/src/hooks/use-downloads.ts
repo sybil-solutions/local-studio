@@ -34,9 +34,10 @@ export function useDownloads(pollIntervalMs = 2500) {
     }
   }, []);
 
-  const hasActive = downloads.some(
-    (d) => d.status === "downloading" || d.status === "paused" || d.status === "failed",
-  );
+  // Only in-flight/resumable-soon states justify the fast poll; terminal
+  // states (failed/canceled/completed) don't change server-side, so they fall
+  // back to the slow poll instead of holding the fast interval forever.
+  const hasActive = downloads.some((d) => d.status === "downloading" || d.status === "paused");
 
   useMountSubscription(() => {
     void refresh();

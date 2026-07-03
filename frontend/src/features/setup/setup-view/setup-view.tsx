@@ -198,6 +198,7 @@ export function SetupView({
             resumeDownload={resumeDownload}
             cancelDownload={cancelDownload}
             continueToLaunch={() => setStep(4)}
+            backToModels={() => setStep(2)}
           />
         )}
 

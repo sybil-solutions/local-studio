@@ -54,6 +54,15 @@ export function useSetup() {
   const { benchmarking, benchmarkResult, benchmarkError, runSetupBenchmark, resetBenchmark } =
     useSetupBenchmark();
 
+  // Long-lived Effect fibers started from this hook (runtime installs poll for
+  // up to 35 minutes) are interrupted when the setup page unmounts, instead of
+  // polling on and setting state against an unmounted hook.
+  const [lifecycle] = useState(() => ({ abort: new AbortController() }));
+  useMountSubscription(() => {
+    lifecycle.abort = new AbortController();
+    return () => lifecycle.abort.abort();
+  }, [lifecycle]);
+
   const downloadsState = useDownloads(2000);
 
   const activeDownload = useMemo(() => {
@@ -208,10 +217,6 @@ export function useSetup() {
     );
   }, [modelsDir]);
 
-  const finishRuntimeJob = useCallback((jobId: string): Promise<EngineJob> => {
-    return Effect.runPromise(finishRuntimeJobEffect(jobId, setRuntimeJobs));
-  }, []);
-
   const runRuntimeJob = useCallback(
     (payload: { backend: EngineBackend; targetId?: string; type: "install" | "update" }) => {
       setUpgrading(true);
@@ -223,7 +228,9 @@ export function useSetup() {
             job,
             ...current.filter((candidate) => candidate.id !== job.id),
           ]);
-          const finalJob = yield* requestEffect(() => finishRuntimeJob(job.id));
+          // Run the poll loop in this fiber (not behind a nested runPromise)
+          // so the unmount abort actually interrupts it.
+          const finalJob = yield* finishRuntimeJobEffect(job.id, setRuntimeJobs);
           if (finalJob.status === "error") {
             setError(describeFailedEngineJob(finalJob));
           }
@@ -242,9 +249,13 @@ export function useSetup() {
             }),
           ),
         ),
-      );
+        { signal: lifecycle.abort.signal },
+      ).catch(() => {
+        // Rejection here means the fiber was interrupted by unmount (real
+        // failures were already surfaced through setError above).
+      });
     },
-    [finishRuntimeJob, refreshRuntimeState],
+    [lifecycle, refreshRuntimeState],
   );
 
   const installRuntime = useCallback(
@@ -323,7 +334,11 @@ export function useSetup() {
           );
         }
 
-        localStorage.setItem("local-studio-setup-complete", "true");
+        // localStorage can throw (private mode, quota); the launch already
+        // succeeded at this point, so never let that surface as a launch error.
+        try {
+          localStorage.setItem("local-studio-setup-complete", "true");
+        } catch {}
         setStep(5);
       }).pipe(
         Effect.catch((err) =>

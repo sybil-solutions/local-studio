@@ -119,7 +119,9 @@ export const normalizeRecipeInput = (raw: unknown): Record<string, unknown> => {
  * Effect v4 schema for validated recipe input.
  */
 export const recipeSchema = Schema.Struct({
-  id: Schema.String,
+  // An empty id would create a ghost recipe that can't be fetched, updated,
+  // deleted, or launched (routes address recipes by /recipes/:recipeId).
+  id: Schema.String.check(Schema.isNonEmpty()),
   name: Schema.String,
   model_path: Schema.String,
   backend: Schema.Literals(["vllm", "sglang", "llamacpp", "mlx"]),

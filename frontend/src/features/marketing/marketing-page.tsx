@@ -3,7 +3,6 @@ import {
   Boxes,
   CheckCircle2,
   DownloadCloud,
-  ExternalLink,
   Gauge,
   GitFork,
   HardDrive,
@@ -272,7 +271,6 @@ export function MarketingLandingPage() {
           </div>
           <div className={styles.downloadGrid}>
             {downloads.map((download) => {
-              const isExternal = download.href.startsWith("http");
               const Icon = download.href === "/agents" ? GitFork : DownloadCloud;
               return (
                 <article className={styles.downloadCard} key={download.title}>
@@ -289,21 +287,14 @@ export function MarketingLandingPage() {
                     ))}
                   </div>
                   <div className={styles.downloadActions}>
-                    {isExternal ? (
-                      <a className={styles.ghostButton} href={download.href}>
-                        {download.href === "/agents" ? "Open page" : "Download"}
-                        <ExternalLink size={15} aria-hidden="true" />
-                      </a>
-                    ) : (
-                      <Link
-                        className={styles.ghostButton}
-                        href={download.href}
-                        prefetch={false}
-                        download={download.href.startsWith("/api/downloads")}
-                      >
-                        {download.href === "/agents" ? "Open page" : "Download"}
-                      </Link>
-                    )}
+                    <Link
+                      className={styles.ghostButton}
+                      href={download.href}
+                      prefetch={false}
+                      download={download.href.startsWith("/api/downloads")}
+                    >
+                      {download.href === "/agents" ? "Open page" : "Download"}
+                    </Link>
                   </div>
                 </article>
               );
@@ -313,7 +304,7 @@ export function MarketingLandingPage() {
       </section>
 
       <footer className={styles.footer}>
-        <span>Local Studio v0.2.9</span>
+        <span>Local Studio</span>
         <span>Desktop / web / controller / CLI / Pi</span>
       </footer>
     </main>

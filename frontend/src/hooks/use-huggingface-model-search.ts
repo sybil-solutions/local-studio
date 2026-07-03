@@ -2,7 +2,7 @@
 
 import { effectTimeout } from "@/lib/effect-timers";
 
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import type { HuggingFaceModel } from "@/lib/types";
 import { fetchHuggingFaceModels, isRecentHuggingFaceModel } from "@/lib/huggingface";
 import { useMountSubscription } from "@/hooks/use-mount-subscription";
@@ -25,9 +25,14 @@ export function useHuggingFaceModelSearch(
   const [error, setError] = useState<string | null>(null);
   const [page, setPage] = useState(0);
   const [hasMore, setHasMore] = useState(true);
+  // Request-sequence guard: a slow response from a superseded fetch (e.g. a
+  // page-2 append for the previous query) must not splice into the results of
+  // a newer search.
+  const requestSeqRef = useRef(0);
 
   const fetchModels = useCallback(
     async (append: boolean, pageIndex: number) => {
+      const requestId = ++requestSeqRef.current;
       setLoading(true);
       setError(null);
       try {
@@ -40,6 +45,7 @@ export function useHuggingFaceModelSearch(
         params.set("offset", String(pageIndex * PAGE_SIZE));
 
         const data = await fetchHuggingFaceModels(params);
+        if (requestId !== requestSeqRef.current) return;
         const visibleData = isBrowsing ? data.filter(isRecentHuggingFaceModel) : data;
 
         if (append) {
@@ -55,9 +61,10 @@ export function useHuggingFaceModelSearch(
         // only gate on the raw page size, not the filtered count.
         setHasMore(data.length === PAGE_SIZE);
       } catch (e) {
+        if (requestId !== requestSeqRef.current) return;
         setError((e as Error).message);
       } finally {
-        setLoading(false);
+        if (requestId === requestSeqRef.current) setLoading(false);
       }
     },
     [search, configureParams],
