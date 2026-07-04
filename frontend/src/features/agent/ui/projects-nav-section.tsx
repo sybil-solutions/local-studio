@@ -159,15 +159,7 @@ export function ProjectsNavSection({ expanded }: { expanded: boolean }) {
       else next.add(id);
       return next;
     });
-  // Chats collapses by default — its row count grows fast and most navigation
-  // happens via the Pinned strip above it.
   const [chatsExpanded, setChatsExpanded] = useState(false);
-  // When the section is collapsed the per-row running spinner / unseen dot is
-  // hidden, so a turn left streaming in a backgrounded chat would be invisible.
-  // Surface a single accent dot on the collapsed header instead — the "blue
-  // circle" notification. `unseen` already means "active or just-finished while
-  // NOT focused" (see active-sessions.ts), so the chat you're currently watching
-  // never trips it — only background runners and just-finished turns do.
   const chatsHasActivity = useMemo(() => {
     if (!chatProject) return false;
     return activeSessions.some(
@@ -191,7 +183,6 @@ export function ProjectsNavSection({ expanded }: { expanded: boolean }) {
   }
   return (
     <div className="flex shrink-0 flex-col">
-      {" "}
       <ProjectDirectoryPickerModal
         open={directoryModalOpen}
         error={addError}
@@ -206,9 +197,9 @@ export function ProjectsNavSection({ expanded }: { expanded: boolean }) {
       />
       {pinnedSessions.length > 0 || pinnedActiveSessions.length > 0 ? (
         <div className="flex flex-col">
-          <div className="mt-4 flex h-5 items-center px-2.5 text-[length:var(--fs-sm)] font-normal text-(--dim)/65">
+          <div className="mt-4 flex h-5 items-center px-2.5 text-[length:var(--fs-sm)] font-normal text-(--dim)/85">
             Pinned
-          </div>{" "}
+          </div>
           {pinnedActiveSessions.map(({ session, project }) => (
             <ActiveSessionRow
               key={`${session.paneId}:${session.tabId}`}
@@ -235,9 +226,9 @@ export function ProjectsNavSection({ expanded }: { expanded: boolean }) {
                   pref={prefs[session.id] ?? {}}
                 />
               ),
-            )}{" "}
+            )}
         </div>
-      ) : null}{" "}
+      ) : null}
       <SidebarSectionHeader
         label="Projects"
         open={projectsExpanded}
@@ -261,7 +252,6 @@ export function ProjectsNavSection({ expanded }: { expanded: boolean }) {
             onClick={handleAddProject}
             className="px-2 py-1 text-left text-[length:var(--fs-md)] text-(--dim) hover:text-(--fg)"
           >
-            {" "}
             No projects yet — pick a folder to get started.
           </button>
         ) : (
@@ -318,7 +308,7 @@ export function ProjectsNavSection({ expanded }: { expanded: boolean }) {
       ) : null}
       {addError ? (
         <div className="px-2 py-1 text-[length:var(--fs-sm)] text-red-400">{addError}</div>
-      ) : null}{" "}
+      ) : null}
     </div>
   );
 }
@@ -372,11 +362,10 @@ function SidebarSectionHeader({
   open: boolean;
   onToggle: () => void;
   action?: ReactNode;
-  /** Show a "has activity inside" dot — only meaningful while collapsed. */
   indicator?: boolean;
 }) {
   return (
-    <div className="group mt-4 flex h-5 items-center justify-between px-2.5 text-[length:var(--fs-sm)] font-normal text-(--dim)/65">
+    <div className="group mt-4 flex h-5 items-center justify-between px-2.5 text-[length:var(--fs-sm)] font-normal text-(--dim)/85">
       <button
         type="button"
         onClick={onToggle}

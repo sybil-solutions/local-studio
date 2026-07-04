@@ -64,6 +64,14 @@ function clampSidebarWidth(width: number): number {
   return Math.min(SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, Math.round(width)));
 }
 
+function mobilePageTitle(pathname: string): string {
+  if (pathname.startsWith("/agent")) return "Chat";
+  if (pathname.startsWith("/settings") || pathname.startsWith("/configs")) return "Settings";
+  if (pathname.startsWith("/logs")) return "Logs";
+  const tab = tabs.find((entry) => isRouteActive(pathname, entry.href));
+  return tab?.label ?? "Local Studio";
+}
+
 function isRouteActive(pathname: string, href: string): boolean {
   if (href === "/") {
     return pathname === "/" || pathname === "/discover";
@@ -74,11 +82,6 @@ function isRouteActive(pathname: string, href: string): boolean {
   return pathname.startsWith(href);
 }
 
-/**
- * Left navigation rail. Desktop keeps a compact rail. Mobile/PWA uses a top
- * app bar with a hamburger drawer instead of a bottom tab bar, keeping the
- * viewport clear for dense telemetry and agent panes.
- */
 export function LeftSidebar({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -218,8 +221,6 @@ export function LeftSidebar({ children }: { children: ReactNode }) {
         >
           {isExpanded ? (
             <>
-              {/* Header — Codex idiom: panel toggle + back/forward arrows
-                  grouped on the left. */}
               <div className="sticky top-0 z-50 flex h-10 shrink-0 items-center gap-1 border-b border-(--border)/35 bg-(--sidebar-bg) px-1.5">
                 <button
                   onClick={() => setDesktopSidebarPinnedOpen(false)}
@@ -247,9 +248,7 @@ export function LeftSidebar({ children }: { children: ReactNode }) {
                 </button>
               </div>
 
-              {/* Primary nav — Codex sidebar idiom: 14px rows with quiet icons,
-                  rounded-md hover, normal-case muted section labels. */}
-              <nav className="flex-1 min-h-0 flex flex-col px-2 py-0.5 overflow-y-auto overflow-x-hidden">
+              <nav className="flex-1 min-h-0 flex flex-col px-3 py-0.5 overflow-y-auto overflow-x-hidden">
                 {chatsProjectId ? (
                   <Link
                     href={`/agent?project=${encodeURIComponent(chatsProjectId)}&new=1`}
@@ -260,7 +259,7 @@ export function LeftSidebar({ children }: { children: ReactNode }) {
                         `/agent?project=${encodeURIComponent(chatsProjectId)}&new=${Date.now().toString(36)}`,
                       );
                     }}
-                    className="mb-0.5 flex h-8 shrink-0 items-center gap-2.5 rounded-md px-2.5 text-(--color-foreground-subtle) transition-colors hover:bg-(--color-surface-hover) hover:text-(--fg)"
+                    className="mb-0.5 flex h-8 shrink-0 items-center gap-2.5 rounded-md px-2.5 text-(--fg)/90 transition-colors hover:bg-(--color-surface-hover) hover:text-(--fg)"
                     title="New chat"
                   >
                     <SquarePen className="h-4 w-4 shrink-0 opacity-60" strokeWidth={1.5} />
@@ -272,7 +271,7 @@ export function LeftSidebar({ children }: { children: ReactNode }) {
                 <button
                   type="button"
                   onClick={() => setSearchOpen(true)}
-                  className="mb-1 flex h-8 shrink-0 items-center gap-2.5 rounded-md px-2.5 text-(--color-foreground-subtle) transition-colors hover:bg-(--color-surface-hover) hover:text-(--fg)"
+                  className="mb-1 flex h-8 shrink-0 items-center gap-2.5 rounded-md px-2.5 text-(--fg)/90 transition-colors hover:bg-(--color-surface-hover) hover:text-(--fg)"
                   title="Search sessions (⌘K)"
                 >
                   <SearchIcon className="h-4 w-4 shrink-0 opacity-60" strokeWidth={1.5} />
@@ -281,7 +280,7 @@ export function LeftSidebar({ children }: { children: ReactNode }) {
                   </span>
                 </button>
 
-                <div className="mb-1 mt-4 px-2.5 text-[length:var(--fs-sm)] font-normal text-(--color-foreground-subtlest)">
+                <div className="mb-1 mt-4 px-2.5 text-[length:var(--fs-sm)] font-normal text-(--dim)/85">
                   Workspace
                 </div>
                 {tabs.map((tab) => (
@@ -296,22 +295,16 @@ export function LeftSidebar({ children }: { children: ReactNode }) {
                 <ProjectsNavSection expanded={isExpanded} />
               </nav>
 
-              <div className="shrink-0 px-2 py-2">
+              <div className="shrink-0 px-3 py-2">
                 <Link
                   href="/settings"
                   title="Settings"
-                  className={`group relative flex h-8 shrink-0 items-center gap-2.5 rounded-md px-2.5 transition-colors ${
+                  className={`group flex h-8 shrink-0 items-center gap-2.5 rounded-md px-2.5 transition-colors ${
                     isRouteActive(pathname, "/settings")
                       ? "bg-(--color-surface-hover) font-medium text-(--fg)"
-                      : "text-(--color-foreground-subtle) hover:bg-(--color-surface-hover) hover:text-(--fg)"
+                      : "text-(--fg)/90 hover:bg-(--color-surface-hover) hover:text-(--fg)"
                   }`}
                 >
-                  {isRouteActive(pathname, "/settings") ? (
-                    <span
-                      aria-hidden
-                      className="absolute left-0 top-1/2 h-4 w-[2px] -translate-y-1/2 rounded-full bg-(--fg)/50"
-                    />
-                  ) : null}
                   <Settings
                     className={`h-4 w-4 shrink-0 ${
                       isRouteActive(pathname, "/settings") ? "text-(--fg)/85" : "opacity-60"
@@ -332,7 +325,7 @@ export function LeftSidebar({ children }: { children: ReactNode }) {
       <div className="mobile-pwa-topbar md:hidden fixed left-0 right-0 top-0 z-40 border-b border-(--border)/70 bg-(--bg) px-4">
         <Link href="/" className="flex min-w-0 items-center gap-2.5">
           <span className="truncate text-[length:var(--fs-base)] font-semibold tracking-tight text-(--fg)">
-            Status
+            {mobilePageTitle(pathname)}
           </span>
         </Link>
         <div className="flex items-center gap-2">
@@ -454,8 +447,6 @@ function NavItemMobile({
   );
 }
 
-/* ---------- Desktop variants use the `group-hover` collapsed state ---------- */
-
 function NavItemDesktop({
   href,
   label,
@@ -471,19 +462,12 @@ function NavItemDesktop({
     <Link
       href={href}
       title={label}
-      className={`group relative flex h-8 items-center gap-2.5 rounded-md px-2.5 transition-colors shrink-0 ${
+      className={`group flex h-8 items-center gap-2.5 rounded-md px-2.5 transition-colors shrink-0 ${
         active
           ? "bg-(--color-surface-hover) font-medium text-(--fg)"
-          : "text-(--color-foreground-subtle) hover:bg-(--color-surface-hover) hover:text-(--fg)"
+          : "text-(--fg)/90 hover:bg-(--color-surface-hover) hover:text-(--fg)"
       }`}
     >
-      {/* Codex idiom: a quiet left-edge hairline marks the active route. */}
-      {active ? (
-        <span
-          aria-hidden
-          className="absolute left-0 top-1/2 h-4 w-[2px] -translate-y-1/2 rounded-full bg-(--fg)/50"
-        />
-      ) : null}
       <Icon
         className={`h-4 w-4 shrink-0 ${active ? "text-(--fg)/85" : "opacity-60"}`}
         strokeWidth={1.75}

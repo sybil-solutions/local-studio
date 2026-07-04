@@ -3,14 +3,21 @@
 import Link from "next/link";
 import { Spinner } from "@/ui";
 import { useRouter } from "next/navigation";
-import { useRef, useState, type DragEvent, type MouseEvent, type ReactNode } from "react";
+import {
+  useRef,
+  useState,
+  type ComponentType,
+  type DragEvent,
+  type MouseEvent,
+  type ReactNode,
+} from "react";
 import { useClickOutside } from "@/features/agent/hooks/use-click-outside";
-import { CloseIcon, EyeOffIcon, MoreIcon, PinIcon } from "@/ui/icons";
+import { Archive, MoreIcon, Pin, PinOff, SquarePen, X } from "@/ui/icon-registry";
 import type { SessionPref } from "@/features/agent/messages/prefs";
 import { hrefWithOpenNonce, navigateToSessionHref } from "./helpers";
 
 const SESSION_MENU_CLASS =
-  "absolute right-0 top-5 isolate z-[999] min-w-[150px] rounded-md border border-(--color-card-border) bg-(--color-popover) p-1 text-xs text-(--fg) opacity-100 shadow-[0_12px_32px_rgba(0,0,0,0.45)]";
+  "absolute right-0 top-6 isolate z-[999] min-w-[164px] rounded-lg border border-(--color-popover-border) bg-(--color-popover) p-1 shadow-[0_8px_28px_rgba(0,0,0,0.45)]";
 
 type SessionNavRowProps = {
   pref: SessionPref;
@@ -28,13 +35,10 @@ type SessionNavRowProps = {
   onDragStart: (event: DragEvent) => void;
   onContextMenu?: boolean;
   isRunning?: boolean;
-  /** Show the "unseen activity" dot — the session updated while not focused. */
   unseen?: boolean;
   canDoubleClickRename?: boolean;
   showClearAction?: boolean;
-  menuIconClass?: string;
   renameInputClass?: string;
-  menuItemsWithIcons?: boolean;
 };
 
 export function SessionNavRow({
@@ -56,9 +60,7 @@ export function SessionNavRow({
   unseen = false,
   canDoubleClickRename = false,
   showClearAction = false,
-  menuIconClass = "h-3 w-3",
   renameInputClass = "text-[length:var(--fs-md)]",
-  menuItemsWithIcons = false,
 }: SessionNavRowProps) {
   const [renaming, setRenaming] = useState(false);
   const [draft, setDraft] = useState(initialDraft);
@@ -104,10 +106,6 @@ export function SessionNavRow({
       className={`${rowClass} ${menuOpen ? "z-[900]" : "z-0"}`}
       onContextMenu={handleContextMenu}
     >
-      <SessionPinButton
-        pinned={Boolean(pref.pinned)}
-        onToggle={() => onPatchPref({ pinned: !pref.pinned })}
-      />
       <SessionOpenTarget
         age={age}
         canDoubleClickRename={canDoubleClickRename}
@@ -128,7 +126,7 @@ export function SessionNavRow({
             event.stopPropagation();
             setMenuOpen((value) => !value);
           }}
-          className={`inline-flex h-6 w-6 items-center justify-center rounded-md bg-(--hover)/95 text-(--dim) shadow-[0_0_14px_rgba(0,0,0,0.18)] backdrop-blur-sm transition-[opacity,color] hover:text-(--fg) ${
+          className={`inline-flex h-6 w-6 items-center justify-center rounded-md text-(--dim) transition-[opacity,color,background-color] hover:bg-(--color-surface-hover) hover:text-(--fg) ${
             menuOpen
               ? "pointer-events-auto opacity-100"
               : "pointer-events-none opacity-0 group-hover:pointer-events-auto group-hover:opacity-100 focus-visible:pointer-events-auto focus-visible:opacity-100"
@@ -136,11 +134,10 @@ export function SessionNavRow({
           aria-label="Session options"
           title="Session options"
         >
-          <MoreIcon className={`pointer-events-none ${menuIconClass}`} />
+          <MoreIcon className="pointer-events-none h-3.5 w-3.5" />
         </button>
         {menuOpen ? (
           <SessionOptionsMenu
-            menuItemsWithIcons={menuItemsWithIcons}
             onArchive={onArchive}
             onClear={() => onPatchPref({ title: undefined, pinned: undefined })}
             onClose={() => setMenuOpen(false)}
@@ -293,7 +290,7 @@ function SessionRowContent({
         {label}
       </span>
       {age ? (
-        <span className="shrink-0 pl-1.5 pr-1 font-mono text-[length:var(--fs-md)] text-(--dim)">
+        <span className="shrink-0 pl-1.5 pr-1 text-[length:var(--fs-md)] text-(--dim) transition-opacity group-hover:opacity-0">
           {age}
         </span>
       ) : null}
@@ -302,7 +299,6 @@ function SessionRowContent({
 }
 
 function SessionOptionsMenu({
-  menuItemsWithIcons,
   onArchive,
   onClear,
   onClose,
@@ -311,7 +307,6 @@ function SessionOptionsMenu({
   pref,
   showClearAction,
 }: {
-  menuItemsWithIcons: boolean;
   onArchive?: () => void;
   onClear: () => void;
   onClose: () => void;
@@ -321,111 +316,60 @@ function SessionOptionsMenu({
   showClearAction: boolean;
 }) {
   const showClear = showClearAction && (pref.title || pref.pinned);
+  const run = (action: () => void) => () => {
+    onClose();
+    action();
+  };
 
   return (
     <div className={SESSION_MENU_CLASS} role="menu">
-      <SessionMenuItem
-        onClick={() => {
-          onClose();
-          onRename();
-        }}
-      >
+      <SessionMenuItem Icon={SquarePen} onClick={run(onRename)}>
         Rename
       </SessionMenuItem>
-      <SessionMenuItem
-        onClick={() => {
-          onClose();
-          onPin();
-        }}
-      >
-        <PinLabel menuItemsWithIcons={menuItemsWithIcons} pinned={Boolean(pref.pinned)} />
+      <SessionMenuItem Icon={pref.pinned ? PinOff : Pin} onClick={run(onPin)}>
+        {pref.pinned ? "Unpin" : "Pin"}
       </SessionMenuItem>
       {onArchive ? (
-        <SessionMenuItem
-          onClick={() => {
-            onClose();
-            onArchive();
-          }}
-        >
-          <ArchiveLabel menuItemsWithIcons={menuItemsWithIcons} />
+        <SessionMenuItem Icon={Archive} onClick={run(onArchive)}>
+          Archive
         </SessionMenuItem>
       ) : null}
       {showClear ? (
-        <SessionMenuItem
-          onClick={() => {
-            onClose();
-            onClear();
-          }}
-        >
-          <span className="inline-flex items-center gap-2 text-(--err)">
-            <CloseIcon className="h-4 w-4" /> Clear
-          </span>
-        </SessionMenuItem>
+        <>
+          <div className="mx-1 my-1 h-px bg-(--border)" />
+          <SessionMenuItem Icon={X} danger onClick={run(onClear)}>
+            Clear
+          </SessionMenuItem>
+        </>
       ) : null}
     </div>
   );
 }
 
-function PinLabel({
-  menuItemsWithIcons,
-  pinned,
+function SessionMenuItem({
+  Icon,
+  danger = false,
+  onClick,
+  children,
 }: {
-  menuItemsWithIcons: boolean;
-  pinned: boolean;
-}) {
-  if (!menuItemsWithIcons) return pinned ? "Unpin" : "Pin";
-  return (
-    <span className="inline-flex items-center gap-2">
-      <PinIcon className="h-4 w-4" /> {pinned ? "Unpin" : "Pin"}
-    </span>
-  );
-}
-
-function ArchiveLabel({ menuItemsWithIcons }: { menuItemsWithIcons: boolean }) {
-  if (!menuItemsWithIcons) return "Archive";
-  return (
-    <span className="inline-flex items-center gap-2">
-      <EyeOffIcon className="h-4 w-4" /> Archive
-    </span>
-  );
-}
-
-function SessionPinButton({
-  pinned,
-  onToggle,
-  disabled = false,
-}: {
-  pinned: boolean;
-  onToggle: () => void;
-  disabled?: boolean;
+  Icon: ComponentType<{ className?: string; strokeWidth?: number }>;
+  danger?: boolean;
+  onClick: () => void;
+  children: ReactNode;
 }) {
   return (
     <button
       type="button"
-      onClick={(event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        if (!disabled) onToggle();
-      }}
-      disabled={disabled}
-      className={`pointer-events-none absolute left-1.5 top-1/2 z-20 inline-flex h-5 w-5 shrink-0 -translate-y-1/2 scale-90 items-center justify-center rounded-md bg-(--hover)/95 opacity-0 shadow-[0_0_14px_rgba(0,0,0,0.18)] backdrop-blur-sm transition-[opacity,transform,color] duration-300 ease-out hover:text-(--fg) group-hover:pointer-events-auto group-hover:scale-100 group-hover:opacity-100 focus-visible:pointer-events-auto focus-visible:scale-100 focus-visible:opacity-100 disabled:opacity-20 ${pinned ? "text-(--fg)" : "text-(--fg)/78"}`}
-      aria-pressed={pinned}
-      aria-label={pinned ? "Unpin session" : "Pin session"}
-      title={pinned ? "Unpin session" : "Pin session"}
-    >
-      <PinIcon className="h-3.5 w-3.5" />
-    </button>
-  );
-}
-
-function SessionMenuItem({ onClick, children }: { onClick: () => void; children: ReactNode }) {
-  return (
-    <button
-      type="button"
+      role="menuitem"
       onClick={onClick}
-      className="block w-full rounded-sm px-2 py-1 text-left text-xs text-(--fg) hover:bg-(--color-menu-hover)"
+      className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[length:var(--fs-md)] transition-colors ${
+        danger
+          ? "text-(--err) hover:bg-(--err)/10"
+          : "text-(--fg)/90 hover:bg-(--color-menu-hover) hover:text-(--fg)"
+      }`}
     >
-      {children}
+      <Icon className={`h-3.5 w-3.5 shrink-0 ${danger ? "" : "opacity-60"}`} strokeWidth={1.75} />
+      <span className="truncate">{children}</span>
     </button>
   );
 }
