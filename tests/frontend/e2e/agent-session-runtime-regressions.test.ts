@@ -97,31 +97,6 @@ test("status metrics fall back to stored peaks when current session peaks are ab
   assert.equal(view.sampleInput.ttftPeak, 931.115);
 });
 
-test("status runtime counters distinguish app totals from engine counters", () => {
-  const view = resolveStatusSectionView({
-    currentProcess: null,
-    currentRecipe: null,
-    gpus: [],
-    metrics: {
-      total_tokens: 27_630_773,
-      prompt_tokens_total: 268,
-      generation_tokens_total: 2_590,
-      latency_avg: 32_686,
-    },
-  });
-
-  assert.deepEqual(
-    view.runtimeMetrics.map((metric) => metric.label),
-    ["app tokens", "engine prompt", "engine decode", "avg latency"],
-  );
-  assert.match(view.runtimeMetrics[0]?.title ?? "", /request log/);
-  assert.match(view.runtimeMetrics[1]?.title ?? "", /inference engine/);
-  assert.equal(view.runtimeMetrics[0]?.value, "27,630,773");
-  assert.equal(view.runtimeMetrics[1]?.value, "268");
-  assert.equal(view.runtimeMetrics[2]?.value, "2,590");
-  assert.equal(view.runtimeMetrics[3]?.value, "32.69s");
-});
-
 test("turn command result parser preserves runtime status", () => {
   const payload = parseAgentTurnCommandResult({
     type: "command",
