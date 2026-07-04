@@ -405,3 +405,70 @@ test("legacy chat-only persisted payloads still restore as chat panes", () => {
   assert.equal(session.cwd, "/old-project");
   assert.equal(session.title, "Old chat");
 });
+
+test("url ?new=1 replaces a focused terminal pane even when a sibling chat pane exists", () => {
+  const a = chatSession({ piSessionId: "pi-a" });
+  const b = chatSession({ piSessionId: "pi-b" });
+  const withTerminal = openTerminalPane(twoChatPaneState(a, b), { sourcePaneId: "p-a" });
+  assert.equal(withTerminal.focusedPaneId, "p-a");
+  const fresh = chatSession();
+
+  const next = applyUrlNavigation(withTerminal, {
+    key: "nav-term-new",
+    project: null,
+    newSession: true,
+    tab: fresh,
+  });
+
+  assert.deepEqual(collectLeaves(next.layout), ["p-a", "p-b"]);
+  assert.equal(asChat(next.panesById.get("p-a")).sessionId, fresh.id);
+  assert.equal(asChat(next.panesById.get("p-b")).sessionId, b.id);
+  assert.equal(next.focusedPaneId, "p-a");
+  assert.ok(next.sessions.has(fresh.id));
+  assert.ok(next.sessions.has(b.id));
+  assert.equal(next.sessions.has(a.id), false);
+});
+
+test("url session replay lands in the focused terminal pane instead of the sibling chat pane", () => {
+  const a = chatSession({ piSessionId: "pi-a" });
+  const b = chatSession({ piSessionId: "pi-b" });
+  const withTerminal = openTerminalPane(twoChatPaneState(a, b), { sourcePaneId: "p-a" });
+  const replayTab = chatSession();
+
+  const next = applyUrlNavigation(withTerminal, {
+    key: "nav-term-replay",
+    project: null,
+    sessionId: "pi-replay",
+    tab: replayTab,
+  });
+
+  assert.deepEqual(collectLeaves(next.layout), ["p-a", "p-b"]);
+  assert.equal(asChat(next.panesById.get("p-a")).sessionId, replayTab.id);
+  assert.equal(next.sessions.get(replayTab.id)?.piSessionId, "pi-replay");
+  assert.equal(asChat(next.panesById.get("p-b")).sessionId, b.id);
+  assert.equal(next.sessions.get(b.id)?.piSessionId, "pi-b");
+  assert.equal(next.focusedPaneId, "p-a");
+  assert.equal(next.sessions.has(a.id), false);
+});
+
+test("url replay of a session already open in the sibling pane focuses it and keeps the terminal", () => {
+  const a = chatSession({ piSessionId: "pi-a" });
+  const b = chatSession({ piSessionId: "pi-b" });
+  const withTerminal = openTerminalPane(twoChatPaneState(a, b), { sourcePaneId: "p-a" });
+
+  const next = applyUrlNavigation(withTerminal, {
+    key: "nav-term-sibling",
+    project: null,
+    sessionId: "pi-b",
+    tab: chatSession(),
+  });
+
+  assert.equal(next.focusedPaneId, "p-b");
+  assert.deepEqual(collectLeaves(next.layout), ["p-a", "p-b"]);
+  const terminal = asTerminal(next.panesById.get("p-a"));
+  assert.equal(terminal.mountKey, `pane-session:${a.id}`);
+  assert.equal(terminal.ownerSessionId, a.id);
+  assert.equal(asChat(next.panesById.get("p-b")).sessionId, b.id);
+  assert.ok(next.sessions.has(a.id));
+  assert.ok(next.sessions.has(b.id));
+});
