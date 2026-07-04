@@ -10,7 +10,6 @@ export type { LucideIcon } from "lucide-react";
 // Custom solid SVG icons (agent surface)
 export {
   ChatIcon,
-  PinIcon,
   PlusIcon,
   CloseIcon,
   TrashIcon,
@@ -23,7 +22,6 @@ export {
   FileIcon,
   GlobeIcon,
   GitBranchIcon,
-  EyeOffIcon,
   SitegeistIcon,
   PanelIcon,
   MoreIcon,

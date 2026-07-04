@@ -38,15 +38,6 @@ export function ChatIcon(props: IconProps) {
   );
 }
 
-export function PinIcon(props: IconProps) {
-  // Solid push-pin glyph.
-  return (
-    <Svg {...props}>
-      <path d="M9.5 1.2 14.8 6.5l-2.4.6-2.5 2.5.4 2.5-1 1-3-3L2.5 14l-.4-.4 4.8-4.8-3-3 1-1 2.5.4 2.5-2.5.6-2.4z" />
-    </Svg>
-  );
-}
-
 export function PlusIcon(props: IconProps) {
   return (
     <Svg {...props}>
@@ -143,14 +134,6 @@ export function GitBranchIcon(props: IconProps) {
   return (
     <Svg {...props}>
       <path d="M4 2a2 2 0 0 1 .8 3.8v4.4a2 2 0 1 1-1.6 0V5.8A2 2 0 0 1 4 2zm8 0a2 2 0 0 1 .8 3.8C12.6 8.5 10.5 9 8.8 9.2A2 2 0 1 1 7.4 7.7c1.5-.2 3.2-.6 3.7-2A2 2 0 0 1 12 2z" />
-    </Svg>
-  );
-}
-
-export function EyeOffIcon(props: IconProps) {
-  return (
-    <Svg {...props}>
-      <path d="M2 1.4 14.6 14 13.4 15.2 11 12.8a8 8 0 0 1-3 .6c-3.5 0-6.4-2.5-7-5.4a7.5 7.5 0 0 1 2.7-3.6L.8 2.6 2 1.4zm6 3a3 3 0 0 1 3 3c0 .4 0 .7-.2 1l-1.4-1.4a1.5 1.5 0 0 0-2-2L6 2.6a8 8 0 0 1 2-.2c3.5 0 6.4 2.5 7 5.4a7.5 7.5 0 0 1-2.5 3.4L11 9.6a3 3 0 0 0-3-5.2z" />
     </Svg>
   );
 }
