@@ -27,12 +27,6 @@ export type CompactMetricView = {
   value: string | null;
 };
 
-export type RuntimeMetricView = {
-  label: string;
-  title?: string;
-  value: string;
-};
-
 type PeakKind = "generation" | "prefill" | "ttft";
 type PeakTier = "session" | "bestSession" | "all";
 
@@ -91,7 +85,6 @@ export function resolveStatusSectionView({
     isRunning,
     metricColumns: metricColumnViews(metrics, perf),
     modelName: resolveModelName(currentProcess, currentRecipe),
-    runtimeMetrics: runtimeMetricViews(metrics),
     sampleInput: {
       key: resolveModelSampleKey(currentProcess, currentRecipe),
       generation: perf.genTps ?? 0,
@@ -191,31 +184,6 @@ function compactMetricViews(
   ];
 }
 
-function runtimeMetricViews(metrics: Metrics | null): RuntimeMetricView[] {
-  return [
-    {
-      label: "app tokens",
-      title: "Total tokens recorded by the Local Studio request log for this model.",
-      value: tokenTotalMetric(metrics),
-    },
-    {
-      label: "engine prompt",
-      title: "Prompt/prefill token counter reported by the running inference engine.",
-      value: tokenMetric(metrics?.prompt_tokens_total),
-    },
-    {
-      label: "engine decode",
-      title: "Decode/completion token counter reported by the running inference engine.",
-      value: tokenMetric(metrics?.generation_tokens_total),
-    },
-    {
-      label: "avg latency",
-      title: "Average request latency recorded by the Local Studio request log.",
-      value: durationMetric(metrics?.latency_avg),
-    },
-  ];
-}
-
 function readField(metrics: Metrics | null, field: keyof Metrics): number | null {
   const value = metrics?.[field];
   return typeof value === "number" ? value : null;
@@ -296,30 +264,6 @@ function positiveMetricValue(value: number | null, digits: number): string | nul
   return typeof value === "number" && Number.isFinite(value) && value > 0
     ? value.toFixed(digits)
     : null;
-}
-
-function tokenMetric(...values: Array<number | undefined>): string {
-  const value = values.find(
-    (item) => typeof item === "number" && Number.isFinite(item) && item >= 0,
-  );
-  return typeof value === "number" ? Math.round(value).toLocaleString() : "0";
-}
-
-function tokenTotalMetric(metrics: Metrics | null): string {
-  const explicit = tokenMetric(metrics?.total_tokens, metrics?.tokens_total);
-  if (explicit !== "0") return explicit;
-  if (
-    typeof metrics?.prompt_tokens_total === "number" &&
-    typeof metrics.generation_tokens_total === "number"
-  ) {
-    return tokenMetric(metrics.prompt_tokens_total + metrics.generation_tokens_total);
-  }
-  return explicit;
-}
-
-function durationMetric(value: number | undefined): string {
-  if (!value || value <= 0) return "0ms";
-  return value > 1000 ? `${(value / 1000).toFixed(2)}s` : `${value.toFixed(0)}ms`;
 }
 
 function gpuMemoryUsed(gpu: GPU): number {

@@ -1,7 +1,7 @@
 "use client";
 
 import type { GPU, Metrics, ProcessInfo, RecipeWithStatus, RuntimePlatformKind } from "@/lib/types";
-import { RuntimeMetricGrid, StatusHeader, StatusMetricStrip } from "./status-section-parts";
+import { StatusHeader, StatusMetricStrip } from "./status-section-parts";
 import { MetricTrends, useMetricSamples } from "./status-section-trends";
 import { resolveStatusSectionView } from "./status-section-view";
 
@@ -73,7 +73,6 @@ export function StatusSection({
         recipes={recipes}
       />
       <StatusMetricStrip compactMetrics={view.compactMetrics} metricColumns={view.metricColumns} />
-      <RuntimeMetricGrid metrics={view.runtimeMetrics} />
       <MetricTrends samples={trendData.samples} peaks={trendData.peaks} />
     </section>
   );

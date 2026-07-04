@@ -14,8 +14,9 @@ export function GpuSection({ gpus }: GpuSectionProps) {
   const sortedGpus = [...gpus].sort((a, b) => gpuMemoryTotal(b) - gpuMemoryTotal(a));
   const hasGpus = sortedGpus.length > 0;
   const [expanded, setExpanded] = useState(true);
+  const names = new Set(sortedGpus.map((gpu) => gpu.name).filter(Boolean));
+  const gpuModelLabel = names.size === 1 ? [...names][0].replace(/^NVIDIA\s+/, "") : null;
 
-  // Aggregates — one summary row beats N×4 individual bars.
   const totalUsed = sortedGpus.reduce((s, g) => s + gpuMemoryUsed(g), 0);
   const totalCap = sortedGpus.reduce((s, g) => s + gpuMemoryTotal(g), 0);
   const totalPower = sortedGpus.reduce((s, g) => s + (g.power_draw || 0), 0);
@@ -62,13 +63,18 @@ export function GpuSection({ gpus }: GpuSectionProps) {
         className="group flex w-full items-center gap-4 text-left"
         aria-expanded={expanded}
       >
-        <div className="flex shrink-0 items-baseline gap-2">
+        <div className="flex min-w-0 shrink-0 items-baseline gap-2">
           <span className="text-[length:var(--fs-xs)] font-medium uppercase tracking-[0.18em] text-(--dim)">
             GPUs
           </span>
           <span className="font-mono text-[length:var(--fs-xs)] tabular-nums text-(--dim)/65">
             {sortedGpus.length}
           </span>
+          {gpuModelLabel ? (
+            <span className="hidden truncate text-[length:var(--fs-xs)] text-(--dim)/60 md:inline">
+              {gpuModelLabel}
+            </span>
+          ) : null}
         </div>
 
         <div className="flex min-w-0 flex-1 items-center gap-2.5">
@@ -139,14 +145,10 @@ function GpuRow({ gpu }: { gpu: GPU }) {
 
   return (
     <div className="flex items-center gap-3 py-0.5 font-mono text-[length:var(--fs-sm)] tabular-nums">
-      <span className="w-8 shrink-0 text-(--fg)/85">G{label}</span>
-      <span
-        className="min-w-0 flex-1 truncate text-[length:var(--fs-xs)] text-(--dim)/75"
-        title={gpu.name}
-      >
-        {gpu.name}
+      <span className="w-8 shrink-0 text-(--fg)/85" title={gpu.name}>
+        G{label}
       </span>
-      <div className="flex w-[8rem] shrink-0 items-center gap-2">
+      <div className="flex min-w-0 flex-1 items-center gap-2">
         <div className="h-[2px] flex-1 overflow-hidden rounded-[var(--rad-2xs)] bg-(--dim)/15">
           <div className="h-full bg-(--fg)/45" style={{ width: `${memPct}%` }} />
         </div>

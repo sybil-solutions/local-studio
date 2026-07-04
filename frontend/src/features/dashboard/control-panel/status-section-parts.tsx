@@ -8,7 +8,7 @@ import { useModelLifecycle } from "@/features/dashboard/use-model-lifecycle";
 import type { ProcessInfo, RecipeWithStatus, RuntimePlatformKind } from "@/lib/types";
 import { useAppStore } from "@/store";
 import { ModelsDropdown } from "./status-section-models-dropdown";
-import type { CompactMetricView, MetricColumnView, RuntimeMetricView } from "./status-section-view";
+import type { CompactMetricView, MetricColumnView } from "./status-section-view";
 
 export function StatusHeader({
   backend,
@@ -230,33 +230,6 @@ export function StatusMetricStrip({
         <MetricCell key={metric.label} label={metric.label} value={metric.value ?? "0"} />
       ))}
     </dl>
-  );
-}
-
-export function RuntimeMetricGrid({ metrics }: { metrics: RuntimeMetricView[] }) {
-  return (
-    <dl className="mt-3 grid gap-2 font-mono text-[length:var(--fs-xs)] text-(--dim) sm:grid-cols-4">
-      {metrics.map((metric) => (
-        <RuntimeMetric key={metric.label} {...metric} />
-      ))}
-    </dl>
-  );
-}
-
-function RuntimeMetric({ label, title, value }: RuntimeMetricView) {
-  return (
-    <div
-      className="flex min-w-0 items-baseline justify-between gap-2 border-t border-(--border)/25 pt-1"
-      title={title}
-    >
-      <dt className="truncate uppercase tracking-[0.12em]">{label}</dt>
-      <dd
-        className="truncate text-(--fg)"
-        aria-label={title ? `${label}: ${value}. ${title}` : undefined}
-      >
-        {value}
-      </dd>
-    </div>
   );
 }
 
