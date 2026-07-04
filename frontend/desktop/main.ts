@@ -15,10 +15,12 @@ import { addProject, listProjectsWithMeta, removeProject } from "./logic/project
 import { deployController } from "./logic/controller-deploy";
 import {
   hideQuickPanel,
+  resetQuickPanel,
   resizeQuickPanelToHome,
   resizeQuickPanelToThread,
   toggleQuickPanel,
 } from "./logic/quick-panel-window";
+import { getStoredQuickPanelHotkey, setStoredQuickPanelHotkey } from "./logic/desktop-settings";
 import {
   closePty,
   closePtyByOwner,
@@ -331,7 +333,17 @@ function registerIpcHandlers(): void {
   ipcMain.handle("desktop:quick-panel-dismiss", async () => {
     hideQuickPanel();
     resizeQuickPanelToHome();
+    resetQuickPanel();
   });
+
+  ipcMain.handle("desktop:quick-panel-get-hotkey", async () => ({
+    hotkey: quickPanelHotkey ?? getStoredQuickPanelHotkey() ?? DESKTOP_CONFIG.quickPanel.hotkey,
+    defaultHotkey: DESKTOP_CONFIG.quickPanel.hotkey,
+  }));
+
+  ipcMain.handle("desktop:quick-panel-set-hotkey", async (_, hotkey: unknown) =>
+    setQuickPanelHotkey(hotkey),
+  );
 
   ipcMain.handle(
     "desktop:focus-main-and-navigate",
@@ -354,19 +366,71 @@ function registerIpcHandlers(): void {
       mainWindow.focus();
       hideQuickPanel();
       resizeQuickPanelToHome();
+      // The thread now lives in the main window; next quick-panel open starts fresh.
+      resetQuickPanel();
     },
   );
 }
 
+let quickPanelHotkey: string | null = null;
+
+function onQuickPanelHotkey(): void {
+  if (!frontendServer) return;
+  toggleQuickPanel(frontendServer.runtime.url);
+}
+
 function registerQuickPanelHotkey(): void {
-  const accelerator = DESKTOP_CONFIG.quickPanel.hotkey;
-  const registered = globalShortcut.register(accelerator, () => {
-    if (!frontendServer) return;
-    toggleQuickPanel(frontendServer.runtime.url);
-  });
-  if (!registered) {
-    log.warn(`Failed to register quick panel hotkey: ${accelerator}`);
+  const accelerator = getStoredQuickPanelHotkey() ?? DESKTOP_CONFIG.quickPanel.hotkey;
+  if (globalShortcut.register(accelerator, onQuickPanelHotkey)) {
+    quickPanelHotkey = accelerator;
+    return;
   }
+  log.warn(`Failed to register quick panel hotkey: ${accelerator}`);
+  // A stored hotkey can become unregisterable (claimed by another app, or a
+  // stale/invalid accelerator). Fall back to the default so the panel keeps
+  // a working hotkey instead of silently having none.
+  const fallback = DESKTOP_CONFIG.quickPanel.hotkey;
+  if (accelerator !== fallback && globalShortcut.register(fallback, onQuickPanelHotkey)) {
+    quickPanelHotkey = fallback;
+  }
+}
+
+function setQuickPanelHotkey(hotkey: unknown): { ok: boolean; hotkey: string; error?: string } {
+  const current = quickPanelHotkey ?? DESKTOP_CONFIG.quickPanel.hotkey;
+  if (typeof hotkey !== "string" || !hotkey.trim()) {
+    return { ok: false, hotkey: current, error: "Hotkey must be a non-empty string" };
+  }
+  const next = hotkey.trim();
+  if (next === quickPanelHotkey) {
+    setStoredQuickPanelHotkey(next);
+    return { ok: true, hotkey: next };
+  }
+
+  let registered = false;
+  try {
+    registered = globalShortcut.register(next, onQuickPanelHotkey);
+  } catch {
+    registered = false; // invalid accelerator strings throw
+  }
+  if (!registered) {
+    return {
+      ok: false,
+      hotkey: current,
+      error: `Could not register "${next}" — it may be invalid or already in use by another app`,
+    };
+  }
+
+  if (quickPanelHotkey && quickPanelHotkey !== next) {
+    try {
+      globalShortcut.unregister(quickPanelHotkey);
+    } catch {
+      // best effort; unregisterAll on quit still cleans up
+    }
+  }
+  quickPanelHotkey = next;
+  setStoredQuickPanelHotkey(next);
+  log.info(`Quick panel hotkey set to ${next}`);
+  return { ok: true, hotkey: next };
 }
 
 async function shutdown(): Promise<void> {

@@ -12,9 +12,9 @@ export const DESKTOP_CONFIG = {
   disableAutoUpdate: process.env.LOCAL_STUDIO_DESKTOP_DISABLE_AUTO_UPDATE === "true",
   userDataDir: app.getPath("userData"),
   quickPanel: {
-    hotkey: process.env.LOCAL_STUDIO_DESKTOP_QUICK_PANEL_HOTKEY ?? "CommandOrControl+Shift+K",
-    homeWindow: { width: 360, height: 140 },
-    threadWindow: { width: 420, height: 480 },
+    hotkey: process.env.LOCAL_STUDIO_DESKTOP_QUICK_PANEL_HOTKEY ?? "CommandOrControl+,",
+    homeWindow: { width: 520, height: 340 },
+    threadWindow: { width: 560, height: 640 },
     topInsetPx: 96,
   },
 };

@@ -5,6 +5,7 @@ import {
   Cable,
   Cpu,
   GraduationCap,
+  Keyboard,
   type LucideIcon,
   Paintbrush,
   Plug,
@@ -21,6 +22,7 @@ import {
   SkillsSettings,
 } from "./agent-settings-sections";
 import { AppearanceSettings } from "./appearance-settings";
+import { QuickPanelSettings } from "./quick-panel-settings";
 import { EnginesSection } from "./engines-section";
 import { ServicesSettings, SystemSettings } from "./system-settings-section";
 import { useMountSubscription } from "@/hooks/use-mount-subscription";
@@ -48,6 +50,7 @@ const SECTIONS: SettingsSectionDef[] = [
   ["system", "System", "Runtime targets, services, storage, hardware.", Cpu],
   ["connectors", "Connectors", "MCP servers: accounts, services, your machines.", Plug],
   ["appearance", "Appearance", "Theme variables, typography, density.", Paintbrush],
+  ["desktop", "Desktop", "Quick panel hotkey and desktop app behavior.", Keyboard],
   ["archive", "Archived chats", "Pi sessions kept out of normal chat lists.", Archive],
   [
     "skills",
@@ -152,6 +155,7 @@ export function SettingsView({
       ) : null}
       {activeSection === "connectors" ? <ConnectorsSection /> : null}
       {activeSection === "appearance" ? <AppearanceSettings /> : null}
+      {activeSection === "desktop" ? <QuickPanelSettings /> : null}
       {activeSection === "archive" ? <ArchivedChatsSettings /> : null}
       {activeSection === "skills" ? <SkillsSettings /> : null}
       {activeSection === "setup" ? <SetupChecksSettings /> : null}
