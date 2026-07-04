@@ -36,10 +36,9 @@ export function referencedSessionIds(state: WorkspaceState): Set<SessionId> {
   for (const pane of state.panesById.values()) {
     const sessionId = paneSessionId(pane);
     if (sessionId) ids.add(sessionId);
+    if (pane.kind === "terminal" && pane.ownerSessionId) ids.add(pane.ownerSessionId);
   }
   return ids;
 }
 
-// Moved to shared/agent/agent-turn.ts so the agent runtime package's /turn
-// handler can share it; re-exported here for frontend callers.
 export { controlTargetHasActiveTurn } from "@shared/agent/agent-turn";

@@ -12,9 +12,12 @@ import {
 import { collectLeaves } from "../src/features/agent/workspace/layout";
 import {
   applyUrlNavigation,
+  canRestoreTerminalOwner,
   closePane,
+  focusPane,
   openTerminalPane,
 } from "../src/features/agent/workspace/pane-controller";
+import { reducer } from "../src/features/agent/workspace/reducer";
 import {
   PANE_STATE_KEY,
   createInitialState,
@@ -42,6 +45,15 @@ function stateWithChatPane(session: Session): WorkspaceState {
     ...createInitialState(),
     sessions: new Map([[session.id, session]]),
     panesById: new Map<string, PaneState>([["p-init", { sessionId: session.id }]]),
+    focusedPaneId: "p-init",
+  };
+}
+
+function stateWithSessionlessPane(): WorkspaceState {
+  return {
+    ...createInitialState(),
+    sessions: new Map(),
+    panesById: new Map<string, PaneState>([["p-init", { sessionId: "ghost" }]]),
     focusedPaneId: "p-init",
   };
 }
@@ -110,83 +122,206 @@ function effectDeps(): { deps: WorkspaceEffectDeps; closed: string[] } {
   return { deps, closed };
 }
 
-test("openTerminalPane splits a single chat pane and inherits owner identity from the source session", () => {
+test("openTerminalPane replaces the source chat pane in place and inherits the owner identity", () => {
   const session = chatSession({ cwd: "/repo/demo", piSessionId: "pi-source" });
   const state = stateWithChatPane(session);
 
-  const next = openTerminalPane(state, { sourcePaneId: "p-init", newPaneId: "p-term" });
+  const next = openTerminalPane(state, { sourcePaneId: "p-init" });
 
-  assert.deepEqual(collectLeaves(next.layout), ["p-init", "p-term"]);
-  const term = asTerminal(next.panesById.get("p-term"));
-  assert.equal(term.mountKey, "pane:p-term");
+  assert.deepEqual(collectLeaves(next.layout), ["p-init"]);
+  const term = asTerminal(next.panesById.get("p-init"));
+  assert.equal(term.mountKey, `pane-session:${session.id}`);
   assert.equal(term.cwd, "/repo/demo");
+  assert.equal(term.title, "Terminal");
   assert.equal(term.ownerSessionId, session.id);
   assert.equal(term.ownerPiSessionId, "pi-source");
-  assert.equal(next.focusedPaneId, "p-term");
-  assert.equal(asChat(next.panesById.get("p-init")).sessionId, session.id);
+  assert.equal(next.focusedPaneId, "p-init");
   assert.equal(next.sessions.get(session.id), session);
 });
 
-test("openTerminalPane with two leaves replaces the sibling pane and prunes its orphaned session", () => {
+test("openTerminalPane without a backing session falls back to the pane mountKey and null ownership", () => {
+  const next = openTerminalPane(stateWithSessionlessPane(), { sourcePaneId: "p-init" });
+
+  assert.deepEqual(collectLeaves(next.layout), ["p-init"]);
+  const term = asTerminal(next.panesById.get("p-init"));
+  assert.equal(term.mountKey, "pane:p-init");
+  assert.equal(term.cwd, null);
+  assert.equal(term.ownerSessionId, null);
+  assert.equal(term.ownerPiSessionId, null);
+  assert.equal(next.focusedPaneId, "p-init");
+});
+
+test("openTerminalPane on an existing terminal pane only moves focus and keeps the mountKey stable", () => {
   const a = chatSession({ cwd: "/repo/a", piSessionId: "pi-a" });
   const b = chatSession({ piSessionId: "pi-b" });
-  const state = twoChatPaneState(a, b);
+  const first = openTerminalPane(twoChatPaneState(a, b), { sourcePaneId: "p-a" });
+  const shifted = focusPane(first, { paneId: "p-b" });
 
-  const next = openTerminalPane(state, { sourcePaneId: "p-a", newPaneId: "p-fresh" });
+  const again = openTerminalPane(shifted, { sourcePaneId: "p-a" });
 
-  assert.deepEqual(collectLeaves(next.layout), ["p-a", "p-b"]);
-  assert.equal(next.panesById.has("p-fresh"), false);
-  const term = asTerminal(next.panesById.get("p-b"));
-  assert.equal(term.mountKey, "pane:p-fresh");
-  assert.equal(term.cwd, "/repo/a");
-  assert.equal(term.ownerSessionId, a.id);
-  assert.equal(term.ownerPiSessionId, "pi-a");
-  assert.equal(next.focusedPaneId, "p-b");
+  assert.equal(again.focusedPaneId, "p-a");
+  assert.deepEqual(asTerminal(again.panesById.get("p-a")), asTerminal(first.panesById.get("p-a")));
+  assert.equal(asTerminal(again.panesById.get("p-a")).mountKey, `pane-session:${a.id}`);
+  assert.deepEqual(collectLeaves(again.layout), ["p-a", "p-b"]);
+  assert.equal(asChat(again.panesById.get("p-b")).sessionId, b.id);
+  assert.equal(again.sessions.get(a.id), a);
+  assert.equal(again.sessions.get(b.id), b);
+});
+
+test("openTerminalPane with an unknown source pane returns the same state object", () => {
+  const state = stateWithChatPane(chatSession());
+  assert.equal(openTerminalPane(state, { sourcePaneId: "p-missing" }), state);
+});
+
+test("reducer openTerminalPane targets the focused pane by default and an explicit source pane otherwise", () => {
+  const session = chatSession({ cwd: "/repo/red", piSessionId: "pi-red" });
+  const byDefault = reducer(stateWithChatPane(session), { type: "openTerminalPane" });
+  assert.equal(
+    asTerminal(byDefault.panesById.get("p-init")).mountKey,
+    `pane-session:${session.id}`,
+  );
+  assert.equal(byDefault.focusedPaneId, "p-init");
+
+  const a = chatSession();
+  const b = chatSession({ cwd: "/repo/b" });
+  const explicit = reducer(twoChatPaneState(a, b), {
+    type: "openTerminalPane",
+    sourcePaneId: "p-b",
+  });
+  assert.equal(asTerminal(explicit.panesById.get("p-b")).mountKey, `pane-session:${b.id}`);
+  assert.equal(asChat(explicit.panesById.get("p-a")).sessionId, a.id);
+  assert.equal(explicit.focusedPaneId, "p-b");
+});
+
+test("referencedSessionIds counts terminal owners while chat selectors treat terminals as sessionless", () => {
+  const session = chatSession({ piSessionId: "pi-chat" });
+  const terminal: TerminalPaneState = {
+    kind: "terminal",
+    mountKey: "pane-session:owner-b",
+    cwd: "/repo/demo",
+    title: "Terminal",
+    ownerSessionId: "owner-b",
+    ownerPiSessionId: "pi-owner-b",
+  };
+  const state: WorkspaceState = {
+    ...stateWithChatPane(session),
+    layout: {
+      kind: "split",
+      direction: "vertical",
+      ratio: 0.5,
+      a: { kind: "leaf", paneId: "p-init" },
+      b: { kind: "leaf", paneId: "p-term" },
+    },
+    panesById: new Map<string, PaneState>([
+      ["p-init", { sessionId: session.id }],
+      ["p-term", terminal],
+    ]),
+    focusedPaneId: "p-term",
+  };
+
+  assert.deepEqual(referencedSessionIds(state), new Set([session.id, "owner-b"]));
+  assert.equal(paneSessionId(terminal), null);
+  assert.equal(activeSession(state, "p-term"), null);
+  assert.equal(activeSession(state, "p-init")?.id, session.id);
+  assert.equal(findPaneByPiSessionId(state, "pi-owner-b"), null);
+  assert.equal(findPaneByPiSessionId(state, "pi-chat")?.paneId, "p-init");
+});
+
+test("closing a sibling pane keeps the terminal's owner session alive for restore", () => {
+  const a = chatSession({ piSessionId: "pi-a" });
+  const owner = chatSession({ cwd: "/repo/own", piSessionId: "pi-owner" });
+  const withTerm = openTerminalPane(twoChatPaneState(a, owner), { sourcePaneId: "p-b" });
+
+  const next = closePane(withTerm, { paneId: "p-a" });
+
+  assert.deepEqual(collectLeaves(next.layout), ["p-b"]);
+  assert.equal(next.sessions.get(owner.id), owner);
+  assert.equal(next.sessions.has(a.id), false);
+  assert.equal(canRestoreTerminalOwner(next, "p-b"), true);
+});
+
+test("closing a single-leaf terminal restores the owner chat session in place", () => {
+  const session = chatSession({ cwd: "/repo/demo", piSessionId: "pi-owner" });
+  const withTerm = openTerminalPane(stateWithChatPane(session), { sourcePaneId: "p-init" });
+
+  const next = closePane(withTerm, { paneId: "p-init" });
+
+  assert.deepEqual(collectLeaves(next.layout), ["p-init"]);
+  assert.equal(asChat(next.panesById.get("p-init")).sessionId, session.id);
+  assert.equal(next.focusedPaneId, "p-init");
+  assert.equal(next.sessions.get(session.id), session);
+});
+
+test("closing a single-leaf terminal without a restorable owner returns the same state object", () => {
+  const ghostTerm = openTerminalPane(stateWithSessionlessPane(), { sourcePaneId: "p-init" });
+  assert.equal(closePane(ghostTerm, { paneId: "p-init" }), ghostTerm);
+
+  const session = chatSession({ piSessionId: "pi-stuck" });
+  const owned = openTerminalPane(stateWithChatPane(session), { sourcePaneId: "p-init" });
+  const pruned: WorkspaceState = { ...owned, sessions: new Map() };
+  assert.equal(closePane(pruned, { paneId: "p-init" }), pruned);
+});
+
+test("canRestoreTerminalOwner is true only for terminal panes whose owner is still stored", () => {
+  const session = chatSession({ piSessionId: "pi-owner" });
+  const chatState = stateWithChatPane(session);
+  const term = openTerminalPane(chatState, { sourcePaneId: "p-init" });
+  const orphaned: WorkspaceState = { ...term, sessions: new Map() };
+  const ghostTerm = openTerminalPane(stateWithSessionlessPane(), { sourcePaneId: "p-init" });
+
+  assert.equal(canRestoreTerminalOwner(term, "p-init"), true);
+  assert.equal(canRestoreTerminalOwner(chatState, "p-init"), false);
+  assert.equal(canRestoreTerminalOwner(term, "p-missing"), false);
+  assert.equal(canRestoreTerminalOwner(orphaned, "p-init"), false);
+  assert.equal(canRestoreTerminalOwner(ghostTerm, "p-init"), false);
+});
+
+test("closing one of several panes removes the leaf and prunes its orphaned session", () => {
+  const a = chatSession({ piSessionId: "pi-a" });
+  const b = chatSession({ piSessionId: "pi-b" });
+  const state: WorkspaceState = { ...twoChatPaneState(a, b), focusedPaneId: "p-b" };
+
+  const next = closePane(state, { paneId: "p-b" });
+
+  assert.deepEqual(collectLeaves(next.layout), ["p-a"]);
+  assert.equal(next.panesById.has("p-b"), false);
+  assert.equal(next.focusedPaneId, "p-a");
   assert.equal(next.sessions.has(b.id), false);
   assert.equal(next.sessions.get(a.id), a);
 });
 
-test("openTerminalPane with an invalid source pane returns the state unchanged", () => {
-  const state = stateWithChatPane(chatSession());
-  assert.equal(openTerminalPane(state, { sourcePaneId: "p-missing", newPaneId: "p-term" }), state);
-});
-
-test("closing the terminal pane triggers closeTerminalOwner exactly once with its mountKey", () => {
+test("restoring the owner via closePane triggers closeTerminalOwner exactly once with the removed mountKey", () => {
   const session = chatSession({ cwd: "/repo/demo", piSessionId: "pi-owner" });
-  const prev = openTerminalPane(stateWithChatPane(session), {
-    sourcePaneId: "p-init",
-    newPaneId: "p-term",
-  });
-  const next = closePane(prev, { paneId: "p-term" });
-  const { deps, closed } = effectDeps();
-
-  runWorkspaceEffect({ type: "closePane", paneId: "p-term" }, prev, next, deps);
-
-  assert.deepEqual(closed, ["pane:p-term"]);
-});
-
-test("closing the chat pane leaves the surviving terminal's owner untouched", () => {
-  const session = chatSession({ cwd: "/repo/demo", piSessionId: "pi-owner" });
-  const prev = openTerminalPane(stateWithChatPane(session), {
-    sourcePaneId: "p-init",
-    newPaneId: "p-term",
-  });
+  const prev = openTerminalPane(stateWithChatPane(session), { sourcePaneId: "p-init" });
   const next = closePane(prev, { paneId: "p-init" });
   const { deps, closed } = effectDeps();
 
   runWorkspaceEffect({ type: "closePane", paneId: "p-init" }, prev, next, deps);
 
-  assert.equal(asTerminal(next.panesById.get("p-term")).mountKey, "pane:p-term");
-  assert.deepEqual(closed, []);
+  assert.deepEqual(closed, [`pane-session:${session.id}`]);
 });
 
-test("url ?new=1 navigation while a terminal pane is focused retargets the chat leaf", () => {
-  const original = chatSession({ piSessionId: "pi-original" });
-  const withTerminal = openTerminalPane(stateWithChatPane(original), {
-    sourcePaneId: "p-init",
-    newPaneId: "p-term",
-  });
-  assert.equal(withTerminal.focusedPaneId, "p-term");
+test("opening a terminal and unrelated dispatches never trigger closeTerminalOwner", () => {
+  const session = chatSession({ cwd: "/repo/demo", piSessionId: "pi-owner" });
+  const prev = stateWithChatPane(session);
+  const opened = openTerminalPane(prev, { sourcePaneId: "p-init" });
+  const open = effectDeps();
+  runWorkspaceEffect({ type: "openTerminalPane", sourcePaneId: "p-init" }, prev, opened, open.deps);
+  assert.deepEqual(open.closed, []);
+
+  const a = chatSession();
+  const b = chatSession();
+  const withTerm = openTerminalPane(twoChatPaneState(a, b), { sourcePaneId: "p-a" });
+  const shifted = focusPane(withTerm, { paneId: "p-b" });
+  const focus = effectDeps();
+  runWorkspaceEffect({ type: "focusPane", paneId: "p-b" }, withTerm, shifted, focus.deps);
+  assert.deepEqual(focus.closed, []);
+});
+
+test("url ?new=1 replaces a focused single-leaf terminal with the fresh chat tab", () => {
+  const original = chatSession({ cwd: "/repo/orig", piSessionId: "pi-original" });
+  const withTerminal = openTerminalPane(stateWithChatPane(original), { sourcePaneId: "p-init" });
+  assert.equal(withTerminal.focusedPaneId, "p-init");
   const fresh = chatSession();
 
   const next = applyUrlNavigation(withTerminal, {
@@ -196,42 +331,48 @@ test("url ?new=1 navigation while a terminal pane is focused retargets the chat 
     tab: fresh,
   });
 
-  assert.equal(next.panesById.get("p-term"), withTerminal.panesById.get("p-term"));
-  assert.deepEqual(collectLeaves(next.layout), ["p-init", "p-term"]);
+  assert.deepEqual(collectLeaves(next.layout), ["p-init"]);
   assert.equal(asChat(next.panesById.get("p-init")).sessionId, fresh.id);
   assert.equal(next.focusedPaneId, "p-init");
   assert.ok(next.sessions.has(fresh.id));
   assert.equal(next.sessions.has(original.id), false);
+
+  const { deps, closed } = effectDeps();
+  runWorkspaceEffect(
+    {
+      type: "urlNavRequested",
+      key: "nav-new-1",
+      project: null,
+      newSession: true,
+      paneId: "p-init",
+      tab: fresh,
+    },
+    withTerminal,
+    next,
+    deps,
+  );
+  assert.deepEqual(closed, [`pane-session:${original.id}`]);
 });
 
-test("writePaneState/restorePersistedPaneState round-trips a mixed chat+terminal workspace", () => {
+test("writePaneState/restorePersistedPaneState round-trips a single-leaf terminal workspace", () => {
   const session = chatSession({
     cwd: "/repo/work",
     piSessionId: "pi-round",
     title: "Round trip",
   });
-  const state = openTerminalPane(stateWithChatPane(session), {
-    sourcePaneId: "p-init",
-    newPaneId: "p-term",
-  });
+  const state = openTerminalPane(stateWithChatPane(session), { sourcePaneId: "p-init" });
   const { storage, map } = fakeStorage();
 
   writePaneState(storage, state);
   const raw = map.get(PANE_STATE_KEY) ?? assert.fail("pane state was not persisted");
 
   const persisted = JSON.parse(raw) as { panes: Record<string, unknown> };
-  assert.deepEqual(persisted.panes["p-term"], state.panesById.get("p-term"));
+  assert.deepEqual(persisted.panes["p-init"], state.panesById.get("p-init"));
 
   const restored = restorePersistedPaneState(raw) ?? assert.fail("restore returned null");
-  assert.deepEqual(collectLeaves(restored.layout), ["p-init", "p-term"]);
-  assert.equal(restored.focusedPaneId, "p-term");
-  assert.deepEqual(restored.panesById.get("p-term"), state.panesById.get("p-term"));
-  assert.equal(asChat(restored.panesById.get("p-init")).sessionId, session.id);
-  const restoredSession =
-    restored.sessions.get(session.id) ?? assert.fail("chat session was not restored");
-  assert.equal(restoredSession.piSessionId, "pi-round");
-  assert.equal(restoredSession.cwd, "/repo/work");
-  assert.equal(restoredSession.title, "Round trip");
+  assert.deepEqual(collectLeaves(restored.layout), ["p-init"]);
+  assert.equal(restored.focusedPaneId, "p-init");
+  assert.deepEqual(restored.panesById.get("p-init"), state.panesById.get("p-init"));
 });
 
 test("legacy chat-only persisted payloads still restore as chat panes", () => {
@@ -263,38 +404,4 @@ test("legacy chat-only persisted payloads still restore as chat panes", () => {
   assert.equal(session.piSessionId, "pi-old");
   assert.equal(session.cwd, "/old-project");
   assert.equal(session.title, "Old chat");
-});
-
-test("session selectors ignore terminal panes and their owner references", () => {
-  const session = chatSession({ piSessionId: "pi-chat" });
-  const terminal: TerminalPaneState = {
-    kind: "terminal",
-    mountKey: "pane:p-term",
-    cwd: "/repo/demo",
-    title: "Terminal",
-    ownerSessionId: "ghost-session",
-    ownerPiSessionId: "pi-ghost",
-  };
-  const state: WorkspaceState = {
-    ...stateWithChatPane(session),
-    layout: {
-      kind: "split",
-      direction: "vertical",
-      ratio: 0.5,
-      a: { kind: "leaf", paneId: "p-init" },
-      b: { kind: "leaf", paneId: "p-term" },
-    },
-    panesById: new Map<string, PaneState>([
-      ["p-init", { sessionId: session.id }],
-      ["p-term", terminal],
-    ]),
-    focusedPaneId: "p-term",
-  };
-
-  assert.equal(paneSessionId(terminal), null);
-  assert.equal(activeSession(state, "p-term"), null);
-  assert.equal(activeSession(state, "p-init")?.id, session.id);
-  assert.deepEqual(referencedSessionIds(state), new Set([session.id]));
-  assert.equal(findPaneByPiSessionId(state, "pi-ghost"), null);
-  assert.equal(findPaneByPiSessionId(state, "pi-chat")?.paneId, "p-init");
 });

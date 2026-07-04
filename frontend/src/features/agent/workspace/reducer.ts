@@ -144,14 +144,6 @@ function reduceWorkspaceStatus(
     case "setError":
       return { ...state, error: action.error };
     case "hydrateActiveSessions":
-      // Auto-restore is a one-shot: it only runs before the user has touched the
-      // workspace. Once we're hydrated — by a prior restore OR an explicit action
-      // such as creating a session — a late-arriving PROJECTS_LOADED must not
-      // clobber the focused pane. This was the "+ opens an old chat" bug: clicking
-      // "+" before projects finished loading created a fresh empty session, then
-      // this restore ran and — because the session had no piSessionId/messages —
-      // sailed past the content guard in hydrateSessionSnapshots and replaced it
-      // with the previously focused (old) chat.
       if (state.hydrated) return state;
       return action.hasExplicitSessionNav
         ? { ...state, hydrated: true }
@@ -176,8 +168,7 @@ function reducePaneLayoutAction(
       return closePane(state, { paneId: action.paneId });
     case "openTerminalPane":
       return openTerminalPane(state, {
-        sourcePaneId: action.sourcePaneId,
-        newPaneId: action.newPaneId,
+        sourcePaneId: action.sourcePaneId ?? state.focusedPaneId,
       });
     default:
       return null;
@@ -247,10 +238,6 @@ function reduceSessionEditAction(
         paneId: action.paneId,
         tab: action.tab,
       });
-      // Explicitly opening a chat marks the workspace as user-touched so a late
-      // auto-restore can't swap it out for an old session (see
-      // hydrateActiveSessions). Only when the navigation actually changed state
-      // — a deduped/no-op nav returns the same reference and must not latch.
       return next === state
         ? state
         : { ...next, hydrated: action.newSession || Boolean(action.sessionId) || next.hydrated };

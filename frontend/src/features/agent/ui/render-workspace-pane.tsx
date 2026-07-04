@@ -15,6 +15,7 @@ import type {
 } from "@/features/agent/workspace/types";
 import { activeSession } from "@/features/agent/runtime/selectors";
 import { collectLeaves } from "@/features/agent/workspace/layout";
+import { canRestoreTerminalOwner } from "@/features/agent/workspace/pane-controller";
 import type { WorkspaceHandles } from "@/features/agent/ui/use-workspace";
 
 export type WorkspacePaneRenderContext = {
@@ -120,7 +121,7 @@ export function renderWorkspacePane({
         key={paneId}
         paneId={paneId}
         pane={pane}
-        canClose={collectLeaves(state.layout).length > 1}
+        canClose={collectLeaves(state.layout).length > 1 || canRestoreTerminalOwner(state, paneId)}
         onFocus={() => dispatch({ type: "focusPane", paneId })}
         onClose={() => handles.closePane(paneId)}
       />

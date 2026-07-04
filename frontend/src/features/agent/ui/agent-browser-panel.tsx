@@ -55,6 +55,7 @@ type AgentBrowserPanelHandles = Pick<
   | "registerBrowserHandle"
   | "runBrowserCommand"
   | "compactFocusedSession"
+  | "openTerminalPane"
 >;
 
 type AgentBrowserPanelProps = {
@@ -132,6 +133,10 @@ function closePersistedTerminalOwner(ownerKey: string) {
   if (owner) void terminalBridge()?.closeOwner?.(owner.mountKey);
 }
 
+function acceptedBrowserUrl(url: string): string | null {
+  return /^file:\/\//i.test(url) ? sanitizeLocalFileUrl(url) : sanitizeBrowserPaneUrl(url);
+}
+
 export function AgentBrowserPanel({
   handles,
   activeProject,
@@ -202,12 +207,7 @@ export function AgentBrowserPanel({
   const navigateBrowser = (value: string) => {
     const next = normalizeBrowserInput(value, focusedSession?.cwd ?? activeProject?.path ?? "");
     if (!next) return;
-    // Accept pane-eligible URLs (public + loopback) and local file:// URLs.
-    // Anything else (private LAN ranges, non-http(s)) is rejected before we
-    // commit it to the address bar or hand it to the browser host.
-    const accepted = /^file:\/\//i.test(next)
-      ? sanitizeLocalFileUrl(next)
-      : sanitizeBrowserPaneUrl(next);
+    const accepted = acceptedBrowserUrl(next);
     if (!accepted) return;
     tools.setBrowserUrl(accepted, accepted);
     void runBrowserCommand("navigate", { url: accepted });
@@ -304,7 +304,7 @@ export function AgentBrowserPanel({
         onCompactSession={handles.compactFocusedSession}
         onNavigateBrowser={navigateBrowser}
         onOpenSideChat={openSideChat}
-        onOpenTerminal={openTerminalForFocusedSession}
+        onOpenTerminal={() => handles.openTerminalPane()}
         onRenameSideChat={renameSideChat}
         onUpdateSideChatTabs={updateSideChatTabs}
         registerBrowserHandle={registerBrowserHandle}
@@ -395,10 +395,6 @@ function ComputerHeader({
   onCloseTab: (tab: ComputerTab) => void;
   onShowLauncher: () => void;
 }) {
-  // The launcher ("tools") is reached via the Plus button, so it never
-  // appears as a row entry. Status IS a real row tab again. Terminal owners get
-  // their own right-sidebar tabs, so the generic terminal tab is only shown
-  // before the first terminal has been created/restored.
   const visibleTabs = openTabs.filter(
     (openTab) =>
       openTab !== "tools" && (openTab !== "terminal" || terminalState.owners.length === 0),

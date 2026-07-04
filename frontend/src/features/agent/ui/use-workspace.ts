@@ -54,7 +54,7 @@ export type WorkspaceHandles = {
   openSessionPayloadInPane: (paneId: PaneId, payload: SessionDropPayload) => void;
   renameTab: (paneId: PaneId, tabId: string, title: string) => void;
   splitTabIntoNewPane: (paneId: PaneId, tabId: string) => void;
-  openTerminalPane: (paneId: PaneId) => void;
+  openTerminalPane: (paneId?: PaneId) => void;
   registerPaneHandle: (paneId: PaneId, handle: ChatPaneHandle | null) => void;
   compactFocusedSession: () => Promise<void>;
   runBrowserCommand: (
@@ -86,9 +86,6 @@ export type UseWorkspaceResult = {
 };
 
 export type UseWorkspaceOptions = {
-  /** Isolated throwaway workspace (quick panel): starts from a fresh session
-   * instead of restoring the persisted workspace, and keeps all persistence
-   * writes in memory so it never clobbers the main window's saved state. */
   ephemeral?: boolean;
 };
 
@@ -188,8 +185,6 @@ function api(): WorkspaceEffectDeps["api"] {
 export function useWorkspace({ ephemeral = false }: UseWorkspaceOptions = {}): UseWorkspaceResult {
   const projects = useProjects();
   const projectsRef = useRef(projects);
-  // Tools are only read imperatively (inside event handlers), so subscribe via
-  // the non-rendering ref: workspace state must not re-render on tools churn.
   const toolsRef = useToolsRef();
   useMountSubscription(() => {
     projectsRef.current = projects;
@@ -246,12 +241,6 @@ export function useWorkspace({ ephemeral = false }: UseWorkspaceOptions = {}): U
       const isElectron = typeof navigator !== "undefined" && /electron/i.test(navigator.userAgent);
       const currentTools = toolsRef.current;
       const hadBrowserHost = Boolean(browserRef.current?.webview);
-      // A `navigate` is real, intentional browser use: open the panel so the
-      // webview host mounts and the user can watch. Passive verbs (get-url,
-      // get-text, screenshot, etc.) only register/select the browser tab without
-      // popping the panel — that combination fixes both the "browser opens on
-      // every prompt" annoyance and the model losing browser access when the
-      // panel is closed.
       currentTools.setBrowserEnabled(true);
       if (verb === "navigate") {
         currentTools.setComputerTab("browser");
@@ -301,20 +290,9 @@ export function useWorkspace({ ephemeral = false }: UseWorkspaceOptions = {}): U
       if (key && key !== BACKEND_URL_STORAGE_KEY && key !== CONTROLLERS_STORAGE_KEY) return;
       reload();
     };
-    // Models load once on hydrate; a transient empty/failed initial fetch
-    // (controller briefly slow, model not yet launched, a network blip) would
-    // otherwise strand the picker on "No models" until a manual page reload.
-    // Recover when the user refocuses the window or the network returns — but
-    // only when the list is actually empty and not already loading, so a
-    // populated picker is never re-churned.
     const recoverIfEmpty = () => {
       if (stateRef.current.models.length === 0 && !stateRef.current.modelsLoading) reload();
     };
-    // The initial hydrate load can lose the startup race with the embedded
-    // proxy / controller coming up (a transient "fetch failed"), leaving the
-    // list empty with no focus event to recover it (the window is already
-    // focused on first paint). Retry a few times, backing off, until the list
-    // populates — then the timers no-op.
     const retryTimers = [900, 2500, 6000].map((ms) => window.setTimeout(recoverIfEmpty, ms));
     window.addEventListener("storage", onStorage);
     window.addEventListener("focus", recoverIfEmpty);
@@ -347,8 +325,8 @@ export function useWorkspace({ ephemeral = false }: UseWorkspaceOptions = {}): U
           newPaneId: newPaneId(),
           tab: makeFreshTab(),
         }),
-      openTerminalPane: (paneId: PaneId) =>
-        dispatch({ type: "openTerminalPane", sourcePaneId: paneId, newPaneId: newPaneId() }),
+      openTerminalPane: (paneId?: PaneId) =>
+        dispatch({ type: "openTerminalPane", ...(paneId ? { sourcePaneId: paneId } : {}) }),
       registerPaneHandle: (paneId: PaneId, handle: ChatPaneHandle | null) => {
         if (handle) paneHandlesRef.current.set(paneId, handle);
         else paneHandlesRef.current.delete(paneId);

@@ -83,10 +83,11 @@ function replacePaneSession(
   return { ...next, focusedPaneId: paneId };
 }
 
-function copySession(source: Session, fallback: Session | undefined): Session | null {
+function copySessionWithFreshRuntimeId(
+  source: Session,
+  fallback: Session | undefined,
+): Session | null {
   if (!isSession(fallback)) return null;
-  // The copy's fresh id is also its runtime key, so a fork never shares the
-  // source's runtime (the shared piSessionId is guarded by the controller).
   return { ...source, id: fallback.id };
 }
 
@@ -151,8 +152,6 @@ function chatTargetPaneId(state: WorkspaceState): PaneId {
   return state.focusedPaneId;
 }
 
-// Internal: the only entry point is applyUrlNavigation (`?new=1`), which
-// always replaces the focused pane.
 function openNewSessionInFocusedPane(
   state: WorkspaceState,
   payload: OpenNewSessionPayload,
@@ -170,7 +169,6 @@ function openNewSessionInFocusedPane(
   return replacePaneSession(state, targetPaneId, session);
 }
 
-// Internal: reached via applyUrlNavigation (`?session=`).
 function replaySessionInFocusedPane(
   state: WorkspaceState,
   payload: ReplaySessionPayload,
@@ -188,8 +186,6 @@ function replaySessionInFocusedPane(
 
   if (targetSession) {
     const sessions = patchSessionInMap(state.sessions, targetSession.id, {
-      // Adopt project info from the incoming tab if the starter has none yet
-      // — replay carries the project context the workspace doesn't track.
       projectId: targetSession.projectId ?? payload.tab?.projectId,
       cwd: targetSession.cwd ?? payload.tab?.cwd,
       modelId: targetSession.modelId ?? payload.tab?.modelId,
@@ -210,7 +206,6 @@ function replaySessionInFocusedPane(
   return replacePaneSession(state, targetPaneId, session);
 }
 
-// Internal: reached via applyUrlNavigation (`?session=&split=1`).
 function replaySessionInSplitPane(
   state: WorkspaceState,
   payload: ReplaySessionInSplitPayload,
@@ -247,7 +242,7 @@ export function openSessionPayloadInPane(
   if (payload.payload.paneId && payload.payload.tabId) {
     const sourceSession = state.sessions.get(payload.payload.tabId);
     if (!sourceSession) return state;
-    const session = copySession(sourceSession, payload.tab);
+    const session = copySessionWithFreshRuntimeId(sourceSession, payload.tab);
     return session ? replacePaneSession(state, payload.paneId, session) : state;
   }
   return { ...state, focusedPaneId: payload.paneId };
@@ -275,7 +270,7 @@ export function splitPaneWithPayload(
   const sourceSession = payload.payload.tabId ? state.sessions.get(payload.payload.tabId) : null;
   const session =
     (!payload.payload.piSessionId && sourceSession
-      ? copySession(sourceSession, baseSession)
+      ? copySessionWithFreshRuntimeId(sourceSession, baseSession)
       : null) ?? baseSession;
   return (
     splitPaneWithSession(state, {
@@ -318,7 +313,7 @@ export function splitTabIntoNewPane(
   if (!sourcePane || paneSessionId(sourcePane) !== payload.sourceTabId) return state;
   const sourceSession = state.sessions.get(payload.sourceTabId);
   if (!sourceSession || !isSession(payload.tab)) return state;
-  const session = copySession(sourceSession, payload.tab);
+  const session = copySessionWithFreshRuntimeId(sourceSession, payload.tab);
   if (!session) return state;
   const targetPaneId = leaves.length >= 2 ? siblingPaneId(state, state.focusedPaneId) : null;
   if (targetPaneId) return replacePaneSession(state, targetPaneId, session);
@@ -331,9 +326,28 @@ export function splitTabIntoNewPane(
   );
 }
 
+function restoredTerminalOwnerPane(state: WorkspaceState, paneId: PaneId): WorkspaceState | null {
+  const pane = state.panesById.get(paneId);
+  if (pane?.kind !== "terminal" || !pane.ownerSessionId) return null;
+  if (!state.sessions.has(pane.ownerSessionId)) return null;
+  return {
+    ...setPane(state, paneId, { sessionId: pane.ownerSessionId }),
+    focusedPaneId: paneId,
+  };
+}
+
+export function canRestoreTerminalOwner(state: WorkspaceState, paneId: PaneId): boolean {
+  const pane = state.panesById.get(paneId);
+  return (
+    pane?.kind === "terminal" &&
+    Boolean(pane.ownerSessionId && state.sessions.has(pane.ownerSessionId))
+  );
+}
+
 export function closePane(state: WorkspaceState, payload: { paneId: PaneId }): WorkspaceState {
   const leaves = collectLeaves(state.layout);
-  if (leaves.length <= 1 || !leaves.includes(payload.paneId)) return state;
+  if (!leaves.includes(payload.paneId)) return state;
+  if (leaves.length <= 1) return restoredTerminalOwnerPane(state, payload.paneId) ?? state;
   const nextPanes = new Map(state.panesById);
   nextPanes.delete(payload.paneId);
   const remaining = leaves.filter((id) => id !== payload.paneId);
@@ -350,28 +364,22 @@ export function closePane(state: WorkspaceState, payload: { paneId: PaneId }): W
 
 export function openTerminalPane(
   state: WorkspaceState,
-  payload: { sourcePaneId: PaneId; newPaneId: PaneId },
+  payload: { sourcePaneId: PaneId },
 ): WorkspaceState {
-  if (!validPaneId(payload.newPaneId) || !leafExists(state, payload.sourcePaneId)) return state;
-  const sourceSessionId = paneSessionId(state.panesById.get(payload.sourcePaneId));
+  if (!leafExists(state, payload.sourcePaneId)) return state;
+  const source = state.panesById.get(payload.sourcePaneId);
+  if (source?.kind === "terminal") return { ...state, focusedPaneId: payload.sourcePaneId };
+  const sourceSessionId = paneSessionId(source);
   const session = sourceSessionId ? state.sessions.get(sourceSessionId) : undefined;
   const pane: TerminalPaneState = {
     kind: "terminal",
-    mountKey: `pane:${payload.newPaneId}`,
+    mountKey: session ? `pane-session:${session.id}` : `pane:${payload.sourcePaneId}`,
     cwd: session?.cwd ?? null,
     title: "Terminal",
     ownerSessionId: session?.id ?? null,
     ownerPiSessionId: session?.piSessionId ?? null,
   };
-  const sibling = siblingPaneId(state, payload.sourcePaneId);
-  if (sibling) {
-    return pruneOrphanSessions({ ...setPane(state, sibling, pane), focusedPaneId: sibling });
-  }
-  return {
-    ...setPane(state, payload.newPaneId, pane),
-    layout: splitLeaf(state.layout, payload.sourcePaneId, payload.newPaneId, "vertical", "b"),
-    focusedPaneId: payload.newPaneId,
-  };
+  return { ...setPane(state, payload.sourcePaneId, pane), focusedPaneId: payload.sourcePaneId };
 }
 
 export function setPaneSession(
@@ -401,11 +409,6 @@ export function applyUrlNavigation(
   const { paneId, tab, sessionTitle } = payload;
   const project = payload.project ?? undefined;
   if (payload.newSession && !payload.sessionId) {
-    // URL-driven `new=1` shares the dropdown's default "New session" intent:
-    // always replace the focused pane. The legacy "split when busy" heuristic
-    // made the same URL produce different results depending on what the
-    // focused pane currently held, which is the source of the "sometimes
-    // opens, sometimes doesn't" complaint about new chats.
     return openNewSessionInFocusedPane(marked, { project, tab });
   }
   if (payload.sessionId && payload.split) {

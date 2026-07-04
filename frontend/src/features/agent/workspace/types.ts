@@ -29,7 +29,6 @@ export type TerminalPaneState = {
 export type PaneState = ChatPaneState | TerminalPaneState;
 
 export type WorkspaceState = {
-  /** Flat collection of all sessions referenced by any pane. */
   sessions: SessionsMap;
   models: AgentModel[];
   selectedModel: string;
@@ -88,7 +87,7 @@ export type WorkspaceAction =
       tab: Session;
     }
   | { type: "closePane"; paneId: PaneId }
-  | { type: "openTerminalPane"; sourcePaneId: PaneId; newPaneId: PaneId }
+  | { type: "openTerminalPane"; sourcePaneId?: PaneId }
   | { type: "setPaneSession"; paneId: PaneId; session: Session }
   | {
       type: "patchSession";
