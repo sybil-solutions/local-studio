@@ -4,6 +4,44 @@ import { useMemo } from "react";
 import { ChevronDown, ChevronRight, File, Folder } from "@/ui/icon-registry";
 import type { FsEntry } from "@/features/agent/filesystem-types";
 
+const TONE_GROUPS: [string, string[]][] = [
+  [
+    "text-(--link)",
+    [
+      "ts",
+      "tsx",
+      "js",
+      "jsx",
+      "mjs",
+      "cjs",
+      "py",
+      "rs",
+      "go",
+      "rb",
+      "java",
+      "c",
+      "cpp",
+      "h",
+      "swift",
+      "kt",
+    ],
+  ],
+  ["text-(--warn)", ["css", "scss", "sass", "less", "sh", "bash", "zsh", "fish"]],
+  ["text-(--ok)", ["json", "yaml", "yml", "toml", "ini", "env", "lock"]],
+  ["text-(--fg) opacity-60", ["md", "mdx", "txt", "rst"]],
+  ["text-(--err) opacity-70", ["png", "jpg", "jpeg", "gif", "webp", "svg", "mp4", "mov"]],
+];
+
+const FILE_TONE_BY_EXT: Record<string, string> = Object.fromEntries(
+  TONE_GROUPS.flatMap(([tone, exts]) => exts.map((ext) => [ext, tone] as const)),
+);
+
+function fileTone(name: string): string {
+  const dot = name.lastIndexOf(".");
+  const ext = dot >= 0 ? name.slice(dot + 1).toLowerCase() : "";
+  return FILE_TONE_BY_EXT[ext] ?? "text-(--dim)";
+}
+
 function formatEntrySize(size: number): string {
   if (size < 1024) return `${size}B`;
   if (size < 1024 * 1024) return `${(size / 1024).toFixed(0)}K`;
@@ -106,7 +144,7 @@ export function TreeFileList({
                 {isDir ? (
                   <Folder className="h-3.5 w-3.5 shrink-0 text-(--dim)" />
                 ) : (
-                  <File className="h-3.5 w-3.5 shrink-0 text-(--dim)" />
+                  <File className={`h-3.5 w-3.5 shrink-0 ${fileTone(entry.name)}`} />
                 )}
                 <span className="flex-1 truncate">{entry.name}</span>
                 {!isDir && entry.size != null && entry.size > 0 ? (
