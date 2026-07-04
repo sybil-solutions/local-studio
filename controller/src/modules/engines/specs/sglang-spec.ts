@@ -212,7 +212,7 @@ const getRuntimeInfoAsync = async (
 const getConfigHelp = async (config: Config): Promise<ConfigHelpResult> => {
   const sglangBin = resolveBinary("sglang");
   if (sglangBin) {
-    const result = await runCommandAsync(sglangBin, ["serve", "--help"], { timeoutMs: 15_000 });
+    const result = await runCommandAsync(sglangBin, ["serve", "--help"], { timeoutMs: 5_000 });
     if (result.status === 0) {
       return { config: result.stdout || null, error: null };
     }
@@ -220,7 +220,7 @@ const getConfigHelp = async (config: Config): Promise<ConfigHelpResult> => {
 
   const python = resolvePythonPath(config) ?? "python3";
   const result = await runCommandAsync(python, ["-m", "sglang.launch_server", "--help"], {
-    timeoutMs: 15_000,
+    timeoutMs: 5_000,
   });
   if (result.status !== 0) {
     return {

@@ -312,6 +312,10 @@ export function ChatPane({
   const canExport = Boolean(
     activeTab?.messages.some((message) => message.role !== "system" && message.text.trim()),
   );
+  const loadEarlierHistory = useCallback(
+    () => (activeTabId ? engine.loadEarlier(activeTabId) : Promise.resolve()),
+    [activeTabId, engine],
+  );
   return (
     <section
       onMouseDownCapture={onFocus}
@@ -373,6 +377,8 @@ export function ChatPane({
           running={Boolean(running)}
           onForkSession={onForkSession}
           emptyPrompt={Boolean(showEmptyPrompt)}
+          hasEarlier={activeTab?.historyCursor != null}
+          onLoadEarlier={loadEarlierHistory}
         />
       </div>
       <AgentComposerFrame

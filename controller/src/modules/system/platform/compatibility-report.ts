@@ -6,7 +6,7 @@ import type {
   RuntimeRocmSmiTool,
   SystemRuntimeInfo,
 } from "../../models/types";
-import { runCommand } from "../../../core/command";
+import { runCommand, runCommandAsync } from "../../../core/command";
 import { resolveAmdSmiBinary, resolveNvidiaSmiBinary, resolveRocmSmiBinary } from "./smi-tools";
 
 const toEvidence = (lines: Array<string | null | undefined>): string | null => {
@@ -65,6 +65,59 @@ export const probeGpuMonitoring = (
     if (rocm) {
       const result = runCommand(rocm, ["--showproductname"], 2_000);
       if (result.status === 0) return { available: true, tool: "rocm-smi" };
+    }
+
+    return { available: false, tool: null };
+  }
+
+  return { available: false, tool: null };
+};
+
+/**
+ * Async mirror of probeGpuMonitoring so the system-runtime snapshot never
+ * blocks the event loop on smi tool probes. Same inputs, same output shape.
+ */
+export const probeGpuMonitoringAsync = async (
+  kind: SystemRuntimeInfo["platform"]["kind"],
+  rocmTool: RuntimeRocmSmiTool | null,
+): Promise<{ available: boolean; tool: RuntimeGpuMonitoringTool | null }> => {
+  const probe = async (binary: string, args: string[]): Promise<boolean> => {
+    const result = await runCommandAsync(binary, args, { timeoutMs: 2_000 });
+    return result.status === 0;
+  };
+
+  if (kind === "cuda") {
+    const binary = resolveNvidiaSmiBinary();
+    if (!binary) return { available: false, tool: "nvidia-smi" };
+    return {
+      available: await probe(binary, ["--query-gpu=name", "--format=csv,noheader,nounits"]),
+      tool: "nvidia-smi",
+    };
+  }
+
+  if (kind === "rocm") {
+    const preferred = rocmTool ?? (resolveAmdSmiBinary() ? "amd-smi" : null);
+
+    if (preferred === "amd-smi") {
+      const binary = resolveAmdSmiBinary();
+      if (!binary) return { available: false, tool: "amd-smi" };
+      return { available: await probe(binary, ["version"]), tool: "amd-smi" };
+    }
+
+    if (preferred === "rocm-smi") {
+      const binary = resolveRocmSmiBinary();
+      if (!binary) return { available: false, tool: "rocm-smi" };
+      return { available: await probe(binary, ["--showproductname"]), tool: "rocm-smi" };
+    }
+
+    const amd = resolveAmdSmiBinary();
+    if (amd && (await probe(amd, ["version"]))) {
+      return { available: true, tool: "amd-smi" };
+    }
+
+    const rocm = resolveRocmSmiBinary();
+    if (rocm && (await probe(rocm, ["--showproductname"]))) {
+      return { available: true, tool: "rocm-smi" };
     }
 
     return { available: false, tool: null };

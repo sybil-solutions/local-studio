@@ -1,6 +1,8 @@
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { createReadStream } from "node:fs";
+import { readdir, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { createInterface } from "node:readline";
 import type { UsageStats } from "@local-studio/contracts/usage";
 import { calcChange } from "./usage-utilities";
 
@@ -52,22 +54,112 @@ const piSessionsRoot = (): string =>
     ? join(process.env["PI_CODING_AGENT_DIR"], "sessions")
     : join(homedir(), ".pi", "agent", "sessions");
 
-const collectJsonlFiles = (root: string): string[] => {
-  if (!existsSync(root)) return [];
-  const files: string[] = [];
-  const visit = (directory: string): void => {
-    for (const entry of readdirSync(directory)) {
-      const path = join(directory, entry);
-      const stats = statSync(path);
-      if (stats.isDirectory()) {
-        visit(path);
-      } else if (stats.isFile() && entry.endsWith(".jsonl")) {
-        files.push(path);
+type JsonlFile = { path: string; mtimeMs: number; size: number };
+
+// One assistant-usage event extracted from a session line. Cached per source
+// file so unchanged files are parsed once; the now-relative aggregation (recent
+// activity windows) is recomputed cheaply per request from these records.
+type ParsedRecord = {
+  sessionId: string;
+  model: string;
+  timestamp: number;
+  prompt: number;
+  completion: number;
+  total: number;
+  cacheRead: number;
+  cacheWrite: number;
+};
+
+// Files this large are streamed line-by-line (never buffered whole) so a
+// multi-GB session log cannot OOM the controller. Streaming is used for every
+// file regardless, but the cap documents the concern and guards the log line.
+const LARGE_FILE_BYTES = 256 * 1024 * 1024;
+
+const collectJsonlFiles = async (root: string): Promise<JsonlFile[]> => {
+  const files: JsonlFile[] = [];
+  const visit = async (directory: string): Promise<void> => {
+    let entries;
+    try {
+      entries = await readdir(directory, { withFileTypes: true });
+    } catch {
+      return; // missing/inaccessible directory (e.g. root not present yet)
+    }
+    for (const entry of entries) {
+      const path = join(directory, entry.name);
+      if (entry.isDirectory()) {
+        await visit(path);
+      } else if (entry.isFile() && entry.name.endsWith(".jsonl")) {
+        try {
+          const stats = await stat(path);
+          files.push({ path, mtimeMs: stats.mtimeMs, size: stats.size });
+        } catch {
+          // file vanished between readdir and stat — skip
+        }
       }
     }
   };
-  visit(root);
+  await visit(root);
   return files;
+};
+
+// Per-file cache keyed by (path, mtimeMs, size): identical (path, mtime, size)
+// means unchanged content, so the parsed records are reused without re-reading.
+const fileRecordCache = new Map<
+  string,
+  { mtimeMs: number; size: number; records: ParsedRecord[] }
+>();
+
+const parseFileRecords = async (file: JsonlFile): Promise<ParsedRecord[]> => {
+  const cached = fileRecordCache.get(file.path);
+  if (cached && cached.mtimeMs === file.mtimeMs && cached.size === file.size) {
+    return cached.records;
+  }
+  if (file.size > LARGE_FILE_BYTES) {
+    console.warn(
+      `[pi-sessions] streaming large session file (${Math.round(file.size / (1024 * 1024))} MB): ${file.path}`,
+    );
+  }
+  const records: ParsedRecord[] = [];
+  let sessionId = file.path;
+  let currentModel: string | null = null;
+  const reader = createInterface({
+    input: createReadStream(file.path, { encoding: "utf8" }),
+    crlfDelay: Infinity,
+  });
+  try {
+    for await (const line of reader) {
+      if (!line.trim()) continue;
+      let event: Record<string, unknown>;
+      try {
+        event = JSON.parse(line) as Record<string, unknown>;
+      } catch {
+        continue;
+      }
+      if (event["type"] === "session") {
+        sessionId = textValue(event["id"]) ?? sessionId;
+      } else if (event["type"] === "model_change") {
+        currentModel = textValue(event["modelId"]) ?? currentModel;
+      }
+      const usage = parseAssistantUsage(event, currentModel);
+      if (usage) {
+        records.push({
+          sessionId,
+          model: usage.model,
+          timestamp: usage.timestamp.getTime(),
+          prompt: usage.prompt,
+          completion: usage.completion,
+          total: usage.total,
+          cacheRead: usage.cacheRead,
+          cacheWrite: usage.cacheWrite,
+        });
+      }
+    }
+  } catch {
+    reader.close();
+    return records;
+  }
+  fileRecordCache.set(file.path, { mtimeMs: file.mtimeMs, size: file.size, records });
+  return records;
 };
 
 const upsertUsage = (
@@ -189,11 +281,22 @@ const parseAssistantUsage = (
   };
 };
 
-export const getUsageFromPiSessions = (
+// Whole-result cache: analytics endpoint, not real-time. Collapses bursty
+// dashboard polling into one aggregation. Keyed by root + model filter.
+const RESULT_TTL_MS = 30_000;
+const resultCache = new Map<string, { at: number; value: Omit<UsageStats, "controller"> | null }>();
+
+export const getUsageFromPiSessions = async (
   root = piSessionsRoot(),
   now = new Date(),
   knownModels?: Set<string>, // if provided, only these model names are included
-): Omit<UsageStats, "controller"> | null => {
+): Promise<Omit<UsageStats, "controller"> | null> => {
+  const cacheKey = `${root} ${knownModels ? [...knownModels].sort().join(",") : ""}`;
+  const cachedResult = resultCache.get(cacheKey);
+  if (cachedResult && Date.now() - cachedResult.at < RESULT_TTL_MS) {
+    return cachedResult.value;
+  }
+
   const accumulator: UsageAccumulator = {
     totalRequests: 0,
     promptTokens: 0,
@@ -214,29 +317,31 @@ export const getUsageFromPiSessions = (
     cacheMissTokens: 0,
   };
 
-  for (const file of collectJsonlFiles(root)) {
-    let sessionId = file;
-    let currentModel: string | null = null;
-    for (const line of readFileSync(file, "utf8").split(/\r?\n/)) {
-      if (!line.trim()) continue;
-      let event: Record<string, unknown>;
-      try {
-        event = JSON.parse(line) as Record<string, unknown>;
-      } catch {
-        continue;
-      }
-      if (event["type"] === "session") {
-        sessionId = textValue(event["id"]) ?? sessionId;
-      } else if (event["type"] === "model_change") {
-        currentModel = textValue(event["modelId"]) ?? currentModel;
-      }
-      const usage = parseAssistantUsage(event, currentModel);
-      if (usage && (!knownModels || knownModels.has(usage.model)))
-        addAssistantUsage(accumulator, sessionId, usage.model, usage.timestamp, usage, now);
+  const files = await collectJsonlFiles(root);
+  const livePaths = new Set(files.map((file) => file.path));
+  for (const path of fileRecordCache.keys()) {
+    if (!livePaths.has(path)) fileRecordCache.delete(path); // drop deleted files
+  }
+
+  for (const file of files) {
+    const records = await parseFileRecords(file);
+    for (const record of records) {
+      if (knownModels && !knownModels.has(record.model)) continue;
+      addAssistantUsage(
+        accumulator,
+        record.sessionId,
+        record.model,
+        new Date(record.timestamp),
+        record,
+        now,
+      );
     }
   }
 
-  if (accumulator.totalRequests === 0) return null;
+  if (accumulator.totalRequests === 0) {
+    resultCache.set(cacheKey, { at: Date.now(), value: null });
+    return null;
+  }
   const byModel = [...accumulator.byModel.values()]
     .sort((a, b) => b.total_tokens - a.total_tokens)
     .slice(0, 25);
@@ -257,7 +362,7 @@ export const getUsageFromPiSessions = (
     .slice(0, 5);
   const successRate = accumulator.totalRequests ? 100 : 0;
 
-  return {
+  const result: Omit<UsageStats, "controller"> = {
     totals: {
       total_tokens: accumulator.totalTokens,
       prompt_tokens: accumulator.promptTokens,
@@ -334,4 +439,7 @@ export const getUsageFromPiSessions = (
     })),
     hourly_pattern: hourly,
   };
+
+  resultCache.set(cacheKey, { at: Date.now(), value: result });
+  return result;
 };

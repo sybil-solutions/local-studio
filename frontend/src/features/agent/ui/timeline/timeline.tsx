@@ -27,6 +27,9 @@ type TimelineProps = {
   emptyPrompt?: boolean;
   stickToBottom?: boolean;
   onStickToBottomChange?: (value: boolean) => void;
+  /** Older history remains unread beyond the loaded tail (shows "Load earlier"). */
+  hasEarlier?: boolean;
+  onLoadEarlier?: () => Promise<void> | void;
 };
 
 const MemoMessage = memo(
@@ -59,6 +62,8 @@ export function Timeline({
   emptyPrompt = false,
   stickToBottom = true,
   onStickToBottomChange,
+  hasEarlier = false,
+  onLoadEarlier,
 }: TimelineProps) {
   const [scroller, setScroller] = useState<HTMLDivElement | null>(null);
   const [bottom, setBottom] = useState<HTMLDivElement | null>(null);
@@ -100,6 +105,9 @@ export function Timeline({
           className="agent-chat-scroller min-h-0 min-w-0 flex-1 overflow-y-auto bg-(--agent-bg) px-6 pb-1 pt-2 [overflow-anchor:auto] [overscroll-behavior:contain] [scroll-behavior:auto] [scrollbar-gutter:stable]"
         >
           <div data-timeline-list className="agent-thread-shell mx-auto flex flex-col">
+            {hasEarlier && onLoadEarlier ? (
+              <LoadEarlierButton onLoadEarlier={onLoadEarlier} />
+            ) : null}
             {visibleMessages.map((message, index) => {
               const isLast = index === visibleMessages.length - 1;
               const prevRole = index > 0 ? visibleMessages[index - 1].role : null;
@@ -139,6 +147,29 @@ export function Timeline({
           />
         ) : null}
       </div>
+    </div>
+  );
+}
+
+/** Top-of-thread affordance for tail-loaded sessions: fetches the previous page
+ * of older history and prepends it. Rendered only while a history cursor
+ * remains (older events exist beyond what is loaded). */
+function LoadEarlierButton({ onLoadEarlier }: { onLoadEarlier: () => Promise<void> | void }) {
+  const [pending, setPending] = useState(false);
+  return (
+    <div className="flex justify-center pt-4">
+      <button
+        type="button"
+        disabled={pending}
+        onClick={() => {
+          setPending(true);
+          void Promise.resolve(onLoadEarlier()).finally(() => setPending(false));
+        }}
+        className="inline-flex items-center gap-1.5 rounded-full border border-(--border) bg-(--surface) px-3 py-1 text-[length:var(--fs-xs)] text-(--fg)/70 transition-colors hover:text-(--fg) disabled:opacity-60"
+        aria-label="Load earlier messages"
+      >
+        {pending ? "Loading earlier…" : "Load earlier messages"}
+      </button>
     </div>
   );
 }

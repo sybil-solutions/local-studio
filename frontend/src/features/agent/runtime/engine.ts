@@ -59,6 +59,8 @@ export type SessionEngine = {
   ) => Promise<api.RuntimeStatus | null>;
   abortTurn: (sessionId: SessionId) => Promise<void>;
   loadAndReplay: (piSessionId: string, sessionId: SessionId) => Promise<void>;
+  /** Fetch and prepend the previous page of older history (tail paging). */
+  loadEarlier: (sessionId: SessionId) => Promise<void>;
   compact: (sessionId: SessionId) => Promise<void>;
   /** Probe whether the session's live runtime accepts steer/follow-up right
    * now: running/starting locally, and the runtime's reported pi session (if
@@ -88,6 +90,9 @@ export function useSessionEngine(deps: UseSessionEngineDeps): SessionEngine {
   tabsRef.current = tabs;
   const selectionForRef = useRef(selectionFor);
   selectionForRef.current = selectionFor;
+  // Sessions with an in-flight "load earlier" page, so a double click / repeated
+  // scroll doesn't fetch and prepend the same chunk twice.
+  const loadingEarlierRef = useRef<Set<SessionId>>(new Set());
 
   const loadRuntimeStatusCb = useCallback(api.loadRuntimeStatus, []);
 
@@ -245,19 +250,26 @@ export function useSessionEngine(deps: UseSessionEngineDeps): SessionEngine {
             status: "loading",
             error: "",
           }));
-          const replayResult = yield* Effect.tryPromise({
-            try: () => api.loadCanonicalSession(piSessionId, cwd),
-            catch: (error) => error,
-          }).pipe(Effect.result);
+          // Canonical replay and the runtime-status probe are independent — the
+          // status key is derived synchronously — so run them concurrently
+          // instead of blocking the (now tail-limited) canonical read on the
+          // status round-trip.
+          const runtimeId = sessionRuntimeController().connectionKey(sessionId);
+          const [replayResult, runtimeStatus] = yield* Effect.all(
+            [
+              Effect.tryPromise({
+                try: () => api.loadCanonicalSession(piSessionId, cwd),
+                catch: (error) => error,
+              }).pipe(Effect.result),
+              Effect.tryPromise({
+                try: () => api.loadRuntimeStatus(runtimeId, piSessionId),
+                catch: () => null,
+              }),
+            ],
+            { concurrency: "unbounded" },
+          );
           if (replayResult._tag === "Success") {
-            const { events } = replayResult.success;
-            // Override-aware runtime key: after a server restart the session's
-            // runtime may live under an adopted server key.
-            const runtimeId = sessionRuntimeController().connectionKey(sessionId);
-            const runtimeStatus = yield* Effect.tryPromise({
-              try: () => api.loadRuntimeStatus(runtimeId, piSessionId),
-              catch: () => null,
-            });
+            const { events, cursor, meta } = replayResult.success;
             const runtimeActive = runtimeCanHydrateCanonicalSession(runtimeStatus, piSessionId);
             const replayEvents = mergeCanonicalAndRuntimeEvents(
               events,
@@ -278,13 +290,20 @@ export function useSessionEngine(deps: UseSessionEngineDeps): SessionEngine {
               messages: messages.length > 0 ? messages : session.messages,
               piSessionId,
               cwd: session.cwd || cwd,
-              modelId: session.modelId || replayModelId || runtimeStatus?.modelId || modelId,
-              title: title ?? session.title,
-              startedAt: startedAt ?? session.startedAt,
+              // Head-scan meta carries the real session model/title; the fold's
+              // own title would be the tail slice's first user message, not the
+              // session's first prompt.
+              modelId:
+                session.modelId || meta?.modelId || replayModelId || runtimeStatus?.modelId || modelId,
+              title: meta?.title ?? title ?? session.title,
+              startedAt: meta?.startedAt ?? startedAt ?? session.startedAt,
               tokenStats: tokenStats ?? undefined,
               contextUsage: api.runtimeContextUsage(runtimeStatus, session.contextUsage),
               status: runtimeActive ? "running" : "idle",
               activeAssistantId: undefined,
+              // A non-null cursor means the tail load left older history unread;
+              // the timeline shows a "Load earlier" affordance while it is set.
+              historyCursor: messages.length > 0 ? cursor : session.historyCursor ?? null,
               error: "",
             }));
             // Reattach the live stream from the hydrated cursor so EventSource
@@ -296,11 +315,6 @@ export function useSessionEngine(deps: UseSessionEngineDeps): SessionEngine {
             // session idle (which would drop the live stream — reconcile only
             // subscribes for live statuses): keep the seeded history, mark it running,
             // and reset the cursor so the reattached SSE replays the runtime backlog.
-            const runtimeId = sessionRuntimeController().connectionKey(sessionId);
-            const runtimeStatus = yield* Effect.tryPromise({
-              try: () => api.loadRuntimeStatus(runtimeId, piSessionId),
-              catch: () => null,
-            });
             if (runtimeCanHydrateCanonicalSession(runtimeStatus, piSessionId)) {
               updateSession(sessionId, (session) => ({
                 ...session,
@@ -321,6 +335,43 @@ export function useSessionEngine(deps: UseSessionEngineDeps): SessionEngine {
         }),
       ),
     [cwd, modelId, updateSession],
+  );
+
+  // Page the previous (older) chunk of a tail-loaded transcript into view and
+  // prepend it. Each page is snapped to a user-turn boundary and abuts the
+  // current first message exactly (cursor = first loaded byte), so folding the
+  // page on its own and prepending is equivalent to a single larger fold.
+  const loadEarlier = useCallback(
+    (sessionId: SessionId): Promise<void> => {
+      const session = tabsRef.current.find((tab) => tab.id === sessionId);
+      const cursor = session?.historyCursor;
+      if (!session || !session.piSessionId || !cwd || cursor == null) return Promise.resolve();
+      if (loadingEarlierRef.current.has(sessionId)) return Promise.resolve();
+      loadingEarlierRef.current.add(sessionId);
+      const piSessionId = session.piSessionId;
+      return Effect.runPromise(
+        Effect.gen(function* () {
+          const result = yield* Effect.tryPromise({
+            try: () => api.loadCanonicalSession(piSessionId, cwd, { before: cursor }),
+            catch: (error) => error,
+          }).pipe(Effect.result);
+          if (result._tag !== "Success") return;
+          const { messages: earlier } = foldSessionEvents(result.success.events);
+          updateSession(sessionId, (current) => ({
+            ...current,
+            messages: earlier.length > 0 ? [...earlier, ...current.messages] : current.messages,
+            historyCursor: result.success.cursor,
+          }));
+        }).pipe(
+          Effect.ensuring(
+            Effect.sync(() => {
+              loadingEarlierRef.current.delete(sessionId);
+            }),
+          ),
+        ),
+      );
+    },
+    [cwd, updateSession],
   );
 
   const compact = useCallback(
@@ -400,9 +451,19 @@ export function useSessionEngine(deps: UseSessionEngineDeps): SessionEngine {
       loadRuntimeStatus: loadRuntimeStatusCb,
       abortTurn,
       loadAndReplay,
+      loadEarlier,
       compact,
       acceptsControl,
     }),
-    [submitPrompt, sendControl, loadRuntimeStatusCb, abortTurn, loadAndReplay, compact, acceptsControl],
+    [
+      submitPrompt,
+      sendControl,
+      loadRuntimeStatusCb,
+      abortTurn,
+      loadAndReplay,
+      loadEarlier,
+      compact,
+      acceptsControl,
+    ],
   );
 }

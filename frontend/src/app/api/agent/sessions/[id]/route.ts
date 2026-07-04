@@ -9,17 +9,27 @@ import { isRecord } from "@/lib/guards";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-// Stream the JSONL events as a newline-delimited JSON response so the renderer
-// can parse incrementally and feed each event through applyPiEvent without
-// holding the entire history in memory at once.
+function parseNonNegativeIntParam(request: NextRequest, key: string): number | undefined {
+  const raw = request.nextUrl.searchParams.get(key);
+  if (raw === null) return undefined;
+  const value = Number.parseInt(raw, 10);
+  return Number.isFinite(value) && value >= 0 ? value : undefined;
+}
+
+// Load a page of the session JSONL. `tail=N` returns only the last N transcript
+// messages (snapped to a user-turn boundary) plus a `cursor` byte offset;
+// `before=<cursor>` pages to the previous (older) chunk. Paging keeps a
+// multi-GB canonical log from being buffered whole into one response.
 export async function GET(request: NextRequest, context: { params: Promise<{ id: string }> }) {
   const { id } = await context.params;
   const result = requireAbsoluteCwd(request);
   if (result.response) return result.response;
   if (!id) return jsonError("session id is required");
 
-  const events = await loadSession(result.cwd, id);
-  return Response.json({ events });
+  const tail = parseNonNegativeIntParam(request, "tail");
+  const before = parseNonNegativeIntParam(request, "before");
+  const { events, cursor, meta } = await loadSession(result.cwd, id, { tail, before });
+  return Response.json({ events, cursor, meta });
 }
 
 function isValidSessionId(value: string): boolean {

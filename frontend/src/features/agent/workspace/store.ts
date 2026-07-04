@@ -74,6 +74,7 @@ export function createInitialState(): WorkspaceState {
     error: "",
     hydrated: false,
     lastHandledNavKey: "",
+    paneStateRestored: false,
   };
 }
 

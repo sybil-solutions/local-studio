@@ -118,7 +118,7 @@ test("turn command result parser preserves runtime status", () => {
   assert.equal(payload?.status?.contextUsage, null);
 });
 
-test("new chat url navigation replaces the focused chat with a fresh runtime", () => {
+test("new chat url navigation opens a fresh runtime in a new split pane", () => {
   const oldSession = makeSession("s-old", {
     piSessionId: "pi-old",
     title: "Old debugging chat",
@@ -145,12 +145,16 @@ test("new chat url navigation replaces the focused chat with a fresh runtime", (
     tab: freshSession,
   });
 
-  const pane = next.panesById.get("p-main");
-  assert.equal(pane?.sessionId, "s-fresh");
+  // The focused pane held a real (non-starter) chat, so the new chat must
+  // appear on a visibly NEW surface: a split pane that takes focus. Replacing
+  // the focused pane in place looked like the + button did nothing.
+  const newPane = next.panesById.get("p-url-new");
+  assert.equal(newPane?.sessionId, "s-fresh");
+  assert.equal(next.focusedPaneId, "p-url-new");
   assert.equal(next.sessions.get("s-fresh")?.id, "s-fresh");
   // The previous chat was mid-turn (status: running). Starting a new chat must
-  // NOT destroy it — it keeps streaming in the background and stays reachable
-  // from the sidebar. (It is pruned later, once it settles.)
+  // NOT destroy it — it keeps streaming in its own pane and stays reachable.
+  assert.equal(next.panesById.get("p-main")?.sessionId, "s-old");
   assert.equal(next.sessions.has("s-old"), true);
   assert.equal(next.sessions.get("s-old")?.status, "running");
   const active = next.sessions.get("s-fresh");

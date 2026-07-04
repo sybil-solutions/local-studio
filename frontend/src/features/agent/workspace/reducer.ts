@@ -145,7 +145,9 @@ function reduceWorkspaceStatus(
       return { ...state, error: action.error };
     case "hydrateActiveSessions":
       if (state.hydrated) return state;
-      return action.hasExplicitSessionNav
+      // A durable pane-state restore is authoritative — never rebuild panes from
+      // chat snapshots on top of it (that clobbers a restored terminal main pane).
+      return action.hasExplicitSessionNav || state.paneStateRestored
         ? { ...state, hydrated: true }
         : hydrateSessionSnapshots(state, action.snapshots, action.projects);
     default:

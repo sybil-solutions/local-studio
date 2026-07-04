@@ -18,7 +18,6 @@ import { primaryLogPathFor } from "./core/log-files";
 import { DownloadStore } from "./modules/engines/downloads/download-store";
 import { PeakMetricsStore, LifetimeMetricsStore } from "./modules/system/metrics-store";
 import { RecipeStore } from "./modules/models/recipes/recipe-store";
-import { EnvironmentStore } from "./modules/environments/environment-store";
 import { InferenceRequestStore } from "./stores/inference-request-store";
 import { ControllerSettingsStore } from "./stores/controller-settings-store";
 import { ControllerRequestStore } from "./stores/controller-request-store";
@@ -34,7 +33,6 @@ export interface AppContext {
   engineService: EngineCoordinator;
   stores: {
     recipeStore: RecipeStore;
-    environmentStore: EnvironmentStore;
     downloadStore: DownloadStore;
     peakMetricsStore: PeakMetricsStore;
     lifetimeMetricsStore: LifetimeMetricsStore;
@@ -68,7 +66,6 @@ export const createAppContext = (): AppContext => {
   const dbPath = resolve(config.db_path);
 
   const recipeStore = new RecipeStore(dbPath);
-  const environmentStore = new EnvironmentStore(dbPath);
   const downloadStore = new DownloadStore(dbPath);
   const peakMetricsStore = new PeakMetricsStore(dbPath);
   const lifetimeMetricsStore = new LifetimeMetricsStore(dbPath);
@@ -113,7 +110,6 @@ export const createAppContext = (): AppContext => {
     engineService,
     stores: {
       recipeStore,
-      environmentStore,
       downloadStore,
       peakMetricsStore,
       lifetimeMetricsStore,

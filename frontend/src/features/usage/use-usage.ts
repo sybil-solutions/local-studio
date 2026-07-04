@@ -40,10 +40,13 @@ export function useUsage(source: UsageSource = "provider") {
       setError(null);
       const fetchUsage =
         source === "pi-sessions" ? api.getPiSessionsUsageStats() : api.getUsageStats();
-      const [usageData, peakResult] = await Promise.all([
-        fetchUsage,
-        api.getPeakMetrics().catch(() => ({ metrics: [] })),
-      ]);
+      // Peak metrics are keyed by this controller's served models and are only
+      // rendered for the provider source; skip the round-trip for pi-sessions.
+      const fetchPeaks =
+        source === "pi-sessions"
+          ? Promise.resolve({ metrics: [] as [] })
+          : api.getPeakMetrics().catch(() => ({ metrics: [] }));
+      const [usageData, peakResult] = await Promise.all([fetchUsage, fetchPeaks]);
       const normalized = normalizeUsageStats(usageData);
       writePageCache(`usage:stats:${source}`, normalized);
       setStats(normalized);

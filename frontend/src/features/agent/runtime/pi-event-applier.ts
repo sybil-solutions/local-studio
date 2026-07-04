@@ -163,17 +163,14 @@ function resolveAssistantTarget(
   ctx: SessionStreamContext,
 ): { session: Session; targetId: string } {
   const pinned = ctx.liveAssistantIds.get(session.id);
+  // The active bubble is almost always the LAST message (bubbles append at the
+  // end), so validate it by scanning backward — folding a long replayed log
+  // must not rescan the whole transcript from the front for every event.
   const active =
-    session.activeAssistantId &&
-    session.messages.some((message) => message.id === session.activeAssistantId)
+    session.activeAssistantId && messageIndexById(session.messages, session.activeAssistantId) >= 0
       ? session.activeAssistantId
       : undefined;
-  const existing =
-    pinned ??
-    active ??
-    (ctx.replay
-      ? undefined
-      : [...session.messages].reverse().find((message) => message.role === "assistant")?.id);
+  const existing = pinned ?? active ?? (ctx.replay ? undefined : lastAssistantId(session.messages));
   if (existing) {
     return {
       targetId: existing,
@@ -280,19 +277,35 @@ function assistantWithTool(messages: ChatMessage[], toolCallId: string): string 
   return null;
 }
 
+// Backward id lookup: patch/target lookups land on (or near) the last message,
+// so scanning from the end is O(1) in practice instead of O(N) per event.
+function messageIndexById(messages: ChatMessage[], id: string): number {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    if (messages[index].id === id) return index;
+  }
+  return -1;
+}
+
+function lastAssistantId(messages: ChatMessage[]): string | undefined {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    if (messages[index].role === "assistant") return messages[index].id;
+  }
+  return undefined;
+}
+
 function patchAssistantMessage(
   session: Session,
   assistantId: string,
   patch: (msg: ChatMessage) => ChatMessage,
 ): Session {
-  let changed = false;
-  const messages = session.messages.map((message) => {
-    if (message.id !== assistantId) return message;
-    const next = patch(message);
-    if (next !== message) changed = true;
-    return next;
-  });
-  return changed ? { ...session, messages } : session;
+  const index = messageIndexById(session.messages, assistantId);
+  if (index < 0) return session;
+  const current = session.messages[index];
+  const next = patch(current);
+  if (next === current) return session;
+  const messages = session.messages.slice();
+  messages[index] = next;
+  return { ...session, messages };
 }
 
 // Accumulate one content snapshot per LLM call and rebuild the bubble's blocks
@@ -389,12 +402,28 @@ function hasToolCallPart(content: Array<Record<string, unknown>>): boolean {
   return content.some((part) => part.type === "toolCall");
 }
 
+// Cheap structural size proxy for comparing two snapshots of the same growing
+// content ("which frame is further along"). Both call sites only ever compare
+// snapshots of one logical message, where growth means longer text/thinking,
+// longer streamed tool arguments, or more parts — all captured below without
+// JSON.stringify-ing multi-MB cumulative content on every streamed frame.
 function contentPayloadLength(content: Array<Record<string, unknown>>): number {
-  try {
-    return JSON.stringify(content).length;
-  } catch {
-    return content.length;
+  let total = 0;
+  for (const part of content) {
+    total += 1;
+    if (typeof part.text === "string") total += part.text.length;
+    if (typeof part.thinking === "string") total += part.thinking.length;
+    const args = part.arguments;
+    if (typeof args === "string") {
+      total += args.length;
+    } else if (args && typeof args === "object") {
+      for (const [key, value] of Object.entries(args as Record<string, unknown>)) {
+        total += key.length + 1;
+        if (typeof value === "string") total += value.length;
+      }
+    }
   }
+  return total;
 }
 
 function snapshotToolArgsText(

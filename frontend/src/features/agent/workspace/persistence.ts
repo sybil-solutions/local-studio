@@ -102,7 +102,9 @@ export function loadInitialFromStorage(storage: WorkspaceStorage): LoadedFromSto
   const restoredState = rawState ? restorePersistedPaneState(rawState) : null;
   if (restoredState) {
     const { selections, legacyRuntimeKeys, ...workspace } = restoredState;
-    return { workspace, selections, legacyRuntimeKeys };
+    // Flag the durable-restore path so hydrateActiveSessions trusts this layout
+    // (incl. a terminal main pane) instead of rebuilding panes from chat snapshots.
+    return { workspace: { ...workspace, paneStateRestored: true }, selections, legacyRuntimeKeys };
   }
 
   const rawLayout = readStorage(storage, PANE_LAYOUT_KEY);

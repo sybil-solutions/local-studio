@@ -79,33 +79,6 @@ export interface RecipeWithStatus extends RecipeBase {
   pp?: number;
 }
 
-// --- Docker environments (a recipe pinned to an official engine image) ---
-
-export type { Environment, EnvironmentEngineId } from "@local-studio/contracts/environments";
-import type { Environment, EnvironmentEngineId } from "@local-studio/contracts/environments";
-
-export interface EnvironmentWithStatus extends Environment {
-  image: string;
-  imagePulled: boolean;
-  running: boolean;
-}
-
-export interface EnvironmentPayload {
-  id: string;
-  name: string;
-  recipeId: string;
-  engineId: EnvironmentEngineId;
-  version: string;
-  variant?: string;
-  image?: string;
-}
-
-export type {
-  EngineImage,
-  EngineImagePull,
-  EngineImagesInfo,
-} from "@local-studio/contracts/environments";
-
 // --- Launch progress ---
 
 export type LaunchStage =

@@ -19,15 +19,19 @@ type WorkspaceNavigationDeps = {
 
 type PersistedSession = ReturnType<typeof loadPersistedActiveAgentSessions>[number];
 
-function navigationKey(
-  projectId: string | null,
-  sessionId: string | null,
-  newParam: string | null,
-  openParam: string | null,
-  splitParam: string | null,
-): string {
-  if (!(projectId || sessionId || newParam || openParam)) return "";
-  return `${projectId ?? ""}|${sessionId ?? ""}|${newParam ?? ""}|${openParam ?? ""}|${splitParam ?? ""}`;
+type NavigationParams = {
+  projectId: string | null;
+  sessionId: string | null;
+  newParam: string | null;
+  openParam: string | null;
+  splitParam: string | null;
+  terminalParam: string | null;
+};
+
+function navigationKey(params: NavigationParams): string {
+  const { projectId, sessionId, newParam, openParam, splitParam, terminalParam } = params;
+  if (!(projectId || sessionId || newParam || openParam || terminalParam)) return "";
+  return `${projectId ?? ""}|${sessionId ?? ""}|${newParam ?? ""}|${openParam ?? ""}|${splitParam ?? ""}|${terminalParam ?? ""}`;
 }
 
 function persistedSessionFor(sessionId: string | null): PersistedSession | null {
@@ -73,7 +77,15 @@ function requestWorkspaceUrlNavigation({
   const newParam = searchParams.get("new");
   const openParam = searchParams.get("open");
   const splitParam = searchParams.get("split");
-  const key = navigationKey(projectId, sessionId, newParam, openParam, splitParam);
+  const terminalParam = searchParams.get("terminal");
+  const key = navigationKey({
+    projectId,
+    sessionId,
+    newParam,
+    openParam,
+    splitParam,
+    terminalParam,
+  });
   if (!key || lastHandledNavKey === key) return;
 
   const persistedSession = persistedSessionFor(sessionId);
@@ -100,6 +112,11 @@ function requestWorkspaceUrlNavigation({
     paneId: newPaneId(),
     tab,
   });
+  // Unbound "New terminal" fallback: `terminal=1` (paired with `new`) scopes the
+  // focused pane above, then converts it to a terminal inheriting the project cwd.
+  if (terminalParam) {
+    dispatch({ type: "openTerminalPane" });
+  }
 }
 
 export function useAgentWorkspaceNavigationEffects({

@@ -48,6 +48,7 @@ export default function SettingsPage() {
       onApiSettingsChange={configs.setApiSettings}
       onTestConnection={configs.testConnection}
       onSaveSettings={configs.saveApiSettings}
+      onSystemSectionActive={configs.ensureConfigLoaded}
     />
   );
 }

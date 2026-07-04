@@ -47,7 +47,10 @@ function highlightUncached(language: string | null, code: string): string {
     if (language && hljs.getLanguage(language)) {
       return hljs.highlight(code, { language, ignoreIllegals: true }).value;
     }
-    return hljs.highlightAuto(code).value;
+    // Untagged blocks render as escaped plaintext. highlightAuto runs the code
+    // through every registered grammar — the worst-case path — and opening an
+    // old session hits it once per untagged block in the whole transcript.
+    return escapeHighlightHtml(code);
   } catch {
     return escapeHighlightHtml(code);
   }

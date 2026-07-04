@@ -167,18 +167,27 @@ export function DailyUsageChart({
   const totalRequestsInPeriod = chartBuckets.reduce((sum, bucket) => sum + bucket.requests, 0);
   const avgDailyTokens = Math.round(totalTokensInPeriod / (chartBuckets.length || 1));
 
-  const buildBucketItems = (bucket: BucketData): ModelDataItem[] => {
-    const items: ModelDataItem[] = [];
-    for (const model of modelsForChart) {
-      const tokens = bucket.dates.reduce(
-        (sum, date) => sum + (dailyByModel.get(model)?.get(date)?.total_tokens ?? 0),
-        0,
-      );
-      if (tokens > 0) items.push({ model, tokens, color: colorFor(model) });
+  // Per-bucket stacked model breakdown. Previously recomputed 2-3x per render
+  // (render loop, hover handler, and again inside the bar renderer); memoize it
+  // once per (buckets, model map, models, colors) so each bucket is built once.
+  const bucketItemsByKey = useMemo(() => {
+    const map = new Map<string, ModelDataItem[]>();
+    if (dailyByModel.size === 0) return map;
+    for (const bucket of chartBuckets) {
+      const items: ModelDataItem[] = [];
+      for (const model of modelsForChart) {
+        const tokens = bucket.dates.reduce(
+          (sum, date) => sum + (dailyByModel.get(model)?.get(date)?.total_tokens ?? 0),
+          0,
+        );
+        if (tokens > 0)
+          items.push({ model, tokens, color: getModelColor(modelColorIndex.get(model) ?? 0) });
+      }
+      items.sort((a, b) => b.tokens - a.tokens);
+      map.set(bucket.key, items);
     }
-    items.sort((a, b) => b.tokens - a.tokens);
-    return items;
-  };
+    return map;
+  }, [chartBuckets, dailyByModel, modelsForChart, modelColorIndex]);
 
   const handleBarEnter = (event: MouseEvent<HTMLDivElement>, bucket: BucketData) => {
     if (bucket.total_tokens === 0) {
@@ -191,7 +200,7 @@ export function DailyUsageChart({
     const sectionRect = section.getBoundingClientRect();
     const items =
       dailyByModel.size > 0
-        ? buildBucketItems(bucket)
+        ? (bucketItemsByKey.get(bucket.key) ?? [])
         : [
             { model: "Completion", tokens: bucket.completion_tokens, color: getModelColor(0) },
             { model: "Prompt", tokens: bucket.prompt_tokens, color: getModelColor(1) },
@@ -227,7 +236,7 @@ export function DailyUsageChart({
       <div className="overflow-x-auto border-b border-(--border)/40 pb-3">
         <div className="grid min-w-full auto-cols-fr grid-flow-col gap-1 sm:gap-1.5">
           {chartBuckets.map((bucket, index) => {
-            const dayItems = dailyByModel.size > 0 ? buildBucketItems(bucket) : [];
+            const dayItems = dailyByModel.size > 0 ? (bucketItemsByKey.get(bucket.key) ?? []) : [];
             // Thin the axis labels when buckets outnumber the space for them —
             // 48 daily columns can't each carry a date without smearing.
             const labelStride = Math.ceil(chartBuckets.length / 8);

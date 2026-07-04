@@ -43,10 +43,11 @@ interface SettingsViewProps {
   onApiSettingsChange: (nextSettings: ApiConnectionSettings) => void;
   onTestConnection: () => void;
   onSaveSettings: () => void;
+  onSystemSectionActive: () => void;
 }
 const sectionIcon = (Icon: LucideIcon) => <Icon className="h-3.5 w-3.5" />;
 const SECTIONS: SettingsSectionDef[] = [
-  ["connection", "Connection", "Controller URL, API key, voice defaults.", Cable],
+  ["connection", "Connection", "Controller URL and API key.", Cable],
   ["system", "System", "Runtime targets, services, storage, hardware.", Cpu],
   ["connectors", "Connectors", "MCP servers: accounts, services, your machines.", Plug],
   ["appearance", "Appearance", "Theme variables, typography, density.", Paintbrush],
@@ -89,6 +90,7 @@ export function SettingsView({
   onApiSettingsChange,
   onTestConnection,
   onSaveSettings,
+  onSystemSectionActive,
 }: SettingsViewProps) {
   const [activeSection, setActiveSection] = useState<SettingsSectionId>(() => {
     if (typeof window === "undefined") return "connection";
@@ -96,17 +98,22 @@ export function SettingsView({
     return normalizeSectionId(hash) ?? "connection";
   });
   useMountSubscription(() => {
+    // Deep-linked straight into System (e.g. #system): load its data now.
+    if (activeSection === "system") onSystemSectionActive();
     if (typeof window === "undefined") return;
     const onHashChange = () => {
       const hash = window.location.hash.replace("#", "");
       const normalized = normalizeSectionId(hash);
-      if (normalized) setActiveSection(normalized);
+      if (!normalized) return;
+      setActiveSection(normalized);
+      if (normalized === "system") onSystemSectionActive();
     };
     window.addEventListener("hashchange", onHashChange);
     return () => window.removeEventListener("hashchange", onHashChange);
   }, []);
   const selectSection = (section: SettingsSectionId) => {
     setActiveSection(section);
+    if (section === "system") onSystemSectionActive();
     if (typeof window !== "undefined") {
       window.history.replaceState(null, "", `#${section}`);
     }

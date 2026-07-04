@@ -87,26 +87,56 @@ export function abortSession(sessionId: string): Promise<void> {
   );
 }
 
+export type CanonicalSessionMeta = {
+  title: string | null;
+  modelId: string | null;
+  startedAt: string | null;
+  piSessionId: string | null;
+};
+
 export type CanonicalSessionResult = {
   events: Record<string, unknown>[];
+  // Byte-offset cursor to pass as `before` to load the previous (older) page,
+  // or null when this page already reaches the start of the session log.
+  cursor: number | null;
+  // Session metadata from a head-scan; present on an initial tail load only.
+  meta: CanonicalSessionMeta | null;
 };
+
+// Default page size for the initial tail load — enough to fill a long scrollback
+// while keeping a giant log from being read/parsed whole.
+export const DEFAULT_SESSION_TAIL = 500;
+
+export type LoadCanonicalSessionOptions = { tail?: number; before?: number };
 
 export function loadCanonicalSession(
   piSessionId: string,
   cwd: string,
+  options: LoadCanonicalSessionOptions = {},
 ): Promise<CanonicalSessionResult> {
   return Effect.runPromise(
     Effect.gen(function* () {
+      const params = new URLSearchParams({ cwd });
+      const tail = options.before === undefined ? (options.tail ?? DEFAULT_SESSION_TAIL) : undefined;
+      if (tail !== undefined) params.set("tail", String(tail));
+      if (options.before !== undefined) params.set("before", String(options.before));
       const response = yield* fetchEffect(
-        `/api/agent/sessions/${encodeURIComponent(piSessionId)}?cwd=${encodeURIComponent(cwd)}`,
+        `/api/agent/sessions/${encodeURIComponent(piSessionId)}?${params.toString()}`,
         { cache: "no-store" },
       );
-      const payload = yield* safeJsonEffect<{ events?: Record<string, unknown>[]; error?: string }>(
-        response,
-      );
+      const payload = yield* safeJsonEffect<{
+        events?: Record<string, unknown>[];
+        cursor?: number | null;
+        meta?: CanonicalSessionMeta | null;
+        error?: string;
+      }>(response);
       if (!response.ok)
         return yield* Effect.fail(new Error(payload.error || "Failed to load session"));
-      return { events: payload.events ?? [] };
+      return {
+        events: payload.events ?? [],
+        cursor: payload.cursor ?? null,
+        meta: payload.meta ?? null,
+      };
     }),
   );
 }

@@ -98,7 +98,7 @@ export const getVllmConfigHelp = async (): Promise<{
   const args = vllmBin
     ? ["serve", "--help"]
     : ["-m", "vllm.entrypoints.openai.api_server", "--help"];
-  const result = await runCommandAsync(command, args, { timeoutMs: 15_000 });
+  const result = await runCommandAsync(command, args, { timeoutMs: 5_000 });
   if (result.status !== 0)
     return { config: result.stdout || null, error: result.stderr || "Failed to fetch vLLM config" };
   return { config: result.stdout || null, error: null };

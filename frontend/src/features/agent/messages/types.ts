@@ -98,6 +98,9 @@ export type SessionTab = {
   contextUsage?: import("@/features/agent/runtime/runtime-schema").RuntimeContextUsage | null;
   activeAssistantId?: string;
   lastEventSeq?: number;
+  // Byte-offset cursor into the canonical log for paging older history into
+  // view ("load earlier"); null/undefined once the whole log is loaded.
+  historyCursor?: number | null;
   skills?: ComposerSkillRef[];
   // Outgoing pending follow-up messages. Drawn as chips above the input until
   // Pi `queue_update` reconciles the canonical queue. Steering messages are

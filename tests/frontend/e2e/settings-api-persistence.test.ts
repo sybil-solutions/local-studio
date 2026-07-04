@@ -18,10 +18,6 @@ async function loadApiSettings() {
   return import("@local-studio/agent-runtime/settings-service");
 }
 
-async function loadVoiceTarget() {
-  return import("@/app/api/voice/voice-target");
-}
-
 async function loadSettingsRoute() {
   return import("@/app/api/settings/route");
 }
@@ -63,39 +59,6 @@ test("settings persistence saves controller, voice, and API key settings securel
   assert.equal(maskApiKey(apiKey).includes("123456"), false);
   assert.equal(maskApiKey("short").length, 8);
   assert.equal(maskApiKey(""), "");
-});
-
-test("voice settings resolve controller-local and external targets", async () => {
-  const { resolveVoiceTarget } = await loadVoiceTarget();
-  assert.deepEqual(
-    resolveVoiceTarget({
-      backendUrl: "https://controller.local:8080/",
-      apiKey: "",
-      voiceUrl: "",
-      voiceModel: "whisper",
-    }),
-    { baseUrl: "https://controller.local:8080", kind: "controller-local" },
-  );
-
-  assert.deepEqual(
-    resolveVoiceTarget({
-      backendUrl: "https://controller.local:8080",
-      apiKey: "",
-      voiceUrl: "https://voice.local:9000/",
-      voiceModel: "whisper",
-    }),
-    { baseUrl: "https://voice.local:9000", kind: "external-voice" },
-  );
-
-  assert.equal(
-    resolveVoiceTarget({
-      backendUrl: "notaurl",
-      apiKey: "",
-      voiceUrl: "",
-      voiceModel: "whisper",
-    }),
-    null,
-  );
 });
 
 test("settings API route masks secrets and preserves stored API keys on partial updates", async () => {

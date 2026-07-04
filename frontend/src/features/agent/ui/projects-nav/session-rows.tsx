@@ -1,8 +1,15 @@
 "use client";
 
-import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useMemo, useState, useSyncExternalStore } from "react";
+import {
+  useCallback,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type ComponentType,
+  type MouseEvent,
+} from "react";
 import { safeJson } from "@/features/agent/safe-json";
 import { sessionRuntimeController } from "@/features/agent/runtime/session-runtime-controller";
 import { cleanSessionTitle } from "@/features/agent/messages/helpers";
@@ -11,10 +18,12 @@ import {
   type SessionPref,
   type SessionPrefs,
 } from "@/features/agent/messages/prefs";
+import { useClickOutside } from "@/features/agent/hooks/use-click-outside";
 import { useProjectSessionsReloadEffect } from "@/features/agent/ui/projects-nav/use-projects-nav-effects";
 import { workspaceCommands } from "@/features/agent/workspace/commands";
 import type { Project as ProjectEntry } from "@/features/agent/projects/types";
 import { ChatIcon, Folder, FolderOpen, PlusIcon, TrashIcon } from "@/ui/icons";
+import { Terminal } from "@/ui/icon-registry";
 import {
   mergeActiveSessionPref,
   patchActiveSessionPref,
@@ -115,11 +124,12 @@ export function ProjectRow({
             />
           ) : null}
         </button>
-        <div className="absolute right-1.5 top-1/2 -translate-y-1/2 opacity-0 transition-opacity group-hover:opacity-100">
+        <div className="absolute right-1.5 top-1/2 -translate-y-1/2">
           <NewChatPlusButton
             projectId={project.id}
+            project={project}
             label={`New chat in ${project.name}`}
-            className="flex h-5 w-5 items-center justify-center text-(--dim)/55 hover:text-(--fg)/80"
+            className="flex h-5 w-5 items-center justify-center text-(--dim)/55 opacity-0 transition-opacity hover:text-(--fg)/80 group-hover:opacity-100"
             onNavigateStart={onNewChatStart}
           />
         </div>
@@ -426,38 +436,113 @@ export function SessionRow({
   );
 }
 
+const NEW_CHAT_MENU_CLASS =
+  "absolute right-0 top-6 isolate z-[999] min-w-[164px] rounded-lg border border-(--color-popover-border) bg-(--color-popover) p-1 shadow-[0_8px_28px_rgba(0,0,0,0.45)]";
+
 export function NewChatPlusButton({
   projectId,
+  project,
   label,
   className,
   onNavigateStart,
 }: {
   projectId: string;
+  /** Full project entry — enables direct workspace commands when on /agent. */
+  project?: ProjectEntry;
   label: string;
   className: string;
   onNavigateStart?: () => void;
 }) {
   const router = useRouter();
-  const href = `/agent?project=${encodeURIComponent(projectId)}&new=1`;
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+  useClickOutside(menuRef, menuOpen, () => setMenuOpen(false));
+
+  // On /agent the workspace is bound, so open directly (guaranteed-visible new
+  // surface). Elsewhere fall back to URL navigation the mount effect handles.
+  const openNewChat = () => {
+    onNavigateStart?.();
+    if (project && workspaceCommands().isBound()) {
+      workspaceCommands().newChat(project);
+      return;
+    }
+    router.push(`/agent?project=${encodeURIComponent(projectId)}&new=${Date.now().toString(36)}`);
+  };
+  const openNewTerminal = () => {
+    onNavigateStart?.();
+    if (project && workspaceCommands().isBound()) {
+      workspaceCommands().openTerminal(project);
+      return;
+    }
+    router.push(
+      `/agent?project=${encodeURIComponent(projectId)}&new=${Date.now().toString(36)}&terminal=1`,
+    );
+  };
+  const runItem = (action: () => void) => (event: MouseEvent) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setMenuOpen(false);
+    action();
+  };
+
   return (
-    <div className="relative flex items-center justify-center leading-none">
-      <Link
-        href={href}
+    <div ref={menuRef} className="relative flex items-center justify-center leading-none">
+      <button
+        type="button"
         onClick={(event) => {
-          if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
           event.preventDefault();
           event.stopPropagation();
-          onNavigateStart?.();
-          router.push(
-            `/agent?project=${encodeURIComponent(projectId)}&new=${Date.now().toString(36)}`,
-          );
+          setMenuOpen((value) => !value);
         }}
-        className={className}
+        onKeyDown={(event) => {
+          if (event.key === "Escape") setMenuOpen(false);
+        }}
+        className={`${className} ${menuOpen ? "opacity-100" : ""}`}
         aria-label={label}
+        aria-haspopup="menu"
+        aria-expanded={menuOpen}
         title={label}
       >
         <PlusIcon className="block h-3.5 w-3.5" />
-      </Link>
+      </button>
+      {menuOpen ? (
+        <div
+          className={NEW_CHAT_MENU_CLASS}
+          role="menu"
+          onKeyDown={(event) => {
+            if (event.key === "Escape") setMenuOpen(false);
+          }}
+        >
+          <NewChatMenuItem Icon={ChatIcon} onClick={runItem(openNewChat)}>
+            New chat
+          </NewChatMenuItem>
+          <NewChatMenuItem Icon={Terminal} onClick={runItem(openNewTerminal)}>
+            New terminal
+          </NewChatMenuItem>
+        </div>
+      ) : null}
     </div>
+  );
+}
+
+function NewChatMenuItem({
+  Icon,
+  onClick,
+  children,
+}: {
+  Icon: ComponentType<{ className?: string }>;
+  onClick: (event: MouseEvent) => void;
+  children: string;
+}) {
+  return (
+    <button
+      type="button"
+      role="menuitem"
+      onClick={onClick}
+      className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[length:var(--fs-md)] text-(--fg)/90 transition-colors hover:bg-(--color-menu-hover) hover:text-(--fg)"
+    >
+      <Icon className="h-3.5 w-3.5 shrink-0 opacity-60" />
+      <span className="truncate">{children}</span>
+    </button>
   );
 }

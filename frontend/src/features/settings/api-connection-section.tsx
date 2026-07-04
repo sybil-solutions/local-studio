@@ -272,42 +272,6 @@ export function ApiConnectionSection({
           }
         />
       </SettingsGroup>
-
-      <SettingsGroup
-        title="Voice"
-        description="Optional transcription endpoint used by voice workflows."
-      >
-        <SettingsRow
-          label="Voice URL"
-          description="Leave unset to keep voice disabled without breaking settings."
-          control={
-            <SettingsInput
-              value={apiSettings.voiceUrl}
-              placeholder="https://voice.example.com"
-              onChange={(voiceUrl) => onApiSettingsChange({ ...apiSettings, voiceUrl })}
-              className="w-64"
-            />
-          }
-          status={
-            <StatusPill tone={apiSettings.voiceUrl ? "info" : "default"}>
-              {apiSettings.voiceUrl ? "custom" : "off"}
-            </StatusPill>
-          }
-        />
-        <SettingsRow
-          label="Voice model"
-          description="Stable default stays populated even when no voice backend is configured."
-          control={
-            <SettingsInput
-              value={apiSettings.voiceModel}
-              placeholder="whisper-large-v3-turbo"
-              onChange={(voiceModel) => onApiSettingsChange({ ...apiSettings, voiceModel })}
-              className="w-64"
-            />
-          }
-          status={<StatusPill>{apiSettings.voiceModel ? "ready" : "default"}</StatusPill>}
-        />
-      </SettingsGroup>
     </div>
   );
 }

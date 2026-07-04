@@ -35,6 +35,10 @@ export type Session = {
   activeAssistantId?: string;
   lastEventSeq?: number;
   queue?: QueuedMessage[];
+  // Byte-offset cursor into the canonical log for paging older history into
+  // view ("load earlier"). Set when a tail load left earlier events unread;
+  // null/undefined once the whole log is loaded.
+  historyCursor?: number | null;
 };
 
 export type SessionsMap = ReadonlyMap<SessionId, Session>;

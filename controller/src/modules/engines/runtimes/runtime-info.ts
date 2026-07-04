@@ -10,13 +10,13 @@ import type {
   SystemRuntimeInfo,
 } from "../../models/types";
 import type { Config } from "../../../config/env";
-import { resolveBinary, runCommand } from "../../../core/command";
-import { getGpuInfo } from "../../system/platform/gpu";
+import { resolveBinary, runCommand, runCommandAsync } from "../../../core/command";
+import { getGpuInfo, queryNvidiaSmiSnapshot } from "../../system/platform/gpu";
 import { getVllmRuntimeInfo } from "./vllm-runtime";
-import { probeGpuMonitoring } from "../../system/platform/compatibility-report";
+import { probeGpuMonitoringAsync } from "../../system/platform/compatibility-report";
 import { getRocmInfo, resolveRocmSmiTool } from "../../system/platform/rocm-info";
 import { resolveNvidiaSmiBinary } from "../../system/platform/smi-tools";
-import { getTorchBuildInfo } from "../../system/platform/torch-info";
+import { getTorchBuildInfoAsync } from "../../system/platform/torch-info";
 import { getEngineSpec } from "../engine-spec";
 import {
   isUpgradeCommandConfigured,
@@ -53,22 +53,32 @@ const computeSystemRuntimeInfo = async (
   config: Config,
   runningProcess?: ProcessInfo | null,
 ): Promise<SystemRuntimeInfo> => {
-  const gpus = getGpuInfo();
-  const types = Array.from(
-    new Set(gpus.map((gpu) => gpu.name).filter((name) => name && name !== "Unknown")),
-  );
-  const [vllmInfo, sglangInfo, llamaInfo, mlxInfo] = await Promise.all([
-    getVllmRuntimeInfo(),
-    getEngineSpec("sglang").getRuntimeInfo!(config, runningProcess),
-    getEngineSpec("llamacpp").getRuntimeInfo!(config, runningProcess),
-    getEngineSpec("mlx").getRuntimeInfo!(config, runningProcess),
-  ]);
-  const pythonForTorch = config.sglang_python || vllmInfo.python_path || "python3";
-  const torch = getTorchBuildInfo(pythonForTorch);
   const forcedSmiTool = process.env["LOCAL_STUDIO_GPU_SMI_TOOL"];
   const hasNvidiaSmi = Boolean(resolveNvidiaSmiBinary());
   const rocmSmiTool = resolveRocmSmiTool();
   const hasRocmSmi = Boolean(rocmSmiTool);
+  const nvidiaAllowed = !forcedSmiTool?.trim() || forcedSmiTool.trim() === "nvidia-smi";
+
+  // All probes are async and run concurrently. One nvidia-smi invocation feeds
+  // GPU info, the driver version, and the monitoring probe on CUDA hosts.
+  const vllmInfoPromise = getVllmRuntimeInfo();
+  const torchPromise = (async (): Promise<RuntimeTorchBuildInfo> => {
+    const pythonForTorch =
+      config.sglang_python || (await vllmInfoPromise).python_path || "python3";
+    return getTorchBuildInfoAsync(pythonForTorch);
+  })();
+  const [nvidiaSnapshot, vllmInfo, sglangInfo, llamaInfo, mlxInfo, torch] = await Promise.all([
+    nvidiaAllowed && hasNvidiaSmi ? queryNvidiaSmiSnapshot() : Promise.resolve(null),
+    vllmInfoPromise,
+    getEngineSpec("sglang").getRuntimeInfo!(config, runningProcess),
+    getEngineSpec("llamacpp").getRuntimeInfo!(config, runningProcess),
+    getEngineSpec("mlx").getRuntimeInfo!(config, runningProcess),
+    torchPromise,
+  ]);
+  const gpus = nvidiaSnapshot && nvidiaSnapshot.gpus.length > 0 ? nvidiaSnapshot.gpus : getGpuInfo();
+  const types = Array.from(
+    new Set(gpus.map((gpu) => gpu.name).filter((name) => name && name !== "Unknown")),
+  );
   const kind = detectPlatformKind({ forcedSmiTool, torch, hasNvidiaSmi, hasRocmSmi });
   const platform: RuntimePlatformInfo = {
     kind,
@@ -76,14 +86,22 @@ const computeSystemRuntimeInfo = async (
     rocm: kind === "rocm" ? getRocmInfo(rocmSmiTool) : null,
     torch,
   };
-  const gpuMonitoring = probeGpuMonitoring(kind, rocmSmiTool);
+  const [gpuMonitoring, cuda] = await Promise.all([
+    kind === "cuda" && nvidiaSnapshot
+      ? Promise.resolve({ available: nvidiaSnapshot.available, tool: "nvidia-smi" as const })
+      : probeGpuMonitoringAsync(kind, rocmSmiTool),
+    kind === "cuda"
+      ? getCudaInfoAsync(nvidiaSnapshot?.driverVersion ?? null)
+      : Promise.resolve({
+          driver_version: null,
+          cuda_version: null,
+          upgrade_command_available: false,
+        }),
+  ]);
   return {
     platform,
     gpu_monitoring: gpuMonitoring,
-    cuda:
-      kind === "cuda"
-        ? getCudaInfo()
-        : { driver_version: null, cuda_version: null, upgrade_command_available: false },
+    cuda,
     gpus: { count: gpus.length, types },
     backends: {
       vllm: {
@@ -186,6 +204,42 @@ export const getCudaInfo = (): RuntimeCudaInfo => {
   }
   if (!cudaVersion) {
     const nvccResult = runCommand("nvcc", ["--version"]);
+    if (nvccResult.status === 0) {
+      cudaVersion = extractNvccVersion(nvccResult.stdout) ?? extractNvccVersion(nvccResult.stderr);
+    }
+  }
+  return {
+    driver_version: driverVersion,
+    cuda_version: cudaVersion,
+    upgrade_command_available: isUpgradeCommandConfigured(CUDA_UPGRADE_ENV),
+  };
+};
+
+/**
+ * Async mirror of getCudaInfo for the system-runtime snapshot. Accepts a driver
+ * version already parsed from the shared nvidia-smi snapshot so the driver
+ * query is not repeated; only the CUDA-version lookups run here.
+ */
+const getCudaInfoAsync = async (knownDriverVersion: string | null): Promise<RuntimeCudaInfo> => {
+  const nvidiaSmi = process.env["NVIDIA_SMI_PATH"] || "nvidia-smi";
+  let driverVersion = knownDriverVersion;
+  let cudaVersion: string | null = null;
+  if (!driverVersion) {
+    const driverResult = await runCommandAsync(
+      nvidiaSmi,
+      ["--query-gpu=driver_version", "--format=csv,noheader,nounits"],
+      { timeoutMs: 5_000 },
+    );
+    if (driverResult.status === 0 && driverResult.stdout) {
+      driverVersion = driverResult.stdout.split("\n")[0]?.trim() || null;
+    }
+  }
+  const smiResult = await runCommandAsync(nvidiaSmi, [], { timeoutMs: 5_000 });
+  if (smiResult.status === 0) {
+    cudaVersion = extractCudaVersion(smiResult.stdout) ?? extractCudaVersion(smiResult.stderr);
+  }
+  if (!cudaVersion) {
+    const nvccResult = await runCommandAsync("nvcc", ["--version"], { timeoutMs: 5_000 });
     if (nvccResult.status === 0) {
       cudaVersion = extractNvccVersion(nvccResult.stdout) ?? extractNvccVersion(nvccResult.stderr);
     }

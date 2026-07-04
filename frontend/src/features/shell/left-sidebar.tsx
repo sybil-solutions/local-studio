@@ -15,7 +15,6 @@ import {
   ChevronRight,
   Microchip,
   HardDrive,
-  Boxes,
   Search as SearchIcon,
   Globe,
   Settings,
@@ -48,7 +47,6 @@ const tabs = [
   { href: "/", label: "Status", icon: Gauge },
   { href: "/usage", label: "Usage", icon: Microchip },
   { href: "/recipes", label: "Models", icon: HardDrive },
-  { href: "/environments", label: "Environments", icon: Boxes },
   { href: "/server", label: "Server", icon: Globe },
 ];
 
@@ -63,7 +61,7 @@ function clampSidebarWidth(width: number): number {
 
 function mobilePageTitle(pathname: string): string {
   if (pathname.startsWith("/agent")) return "Chat";
-  if (pathname.startsWith("/settings") || pathname.startsWith("/configs")) return "Settings";
+  if (pathname.startsWith("/settings")) return "Settings";
   if (pathname.startsWith("/logs")) return "Logs";
   const tab = tabs.find((entry) => isRouteActive(pathname, entry.href));
   return tab?.label ?? "Local Studio";
@@ -74,7 +72,7 @@ function isRouteActive(pathname: string, href: string): boolean {
     return pathname === "/" || pathname === "/discover";
   }
   if (href === "/settings") {
-    return pathname.startsWith("/settings") || pathname.startsWith("/configs");
+    return pathname.startsWith("/settings");
   }
   return pathname.startsWith(href);
 }
@@ -169,7 +167,9 @@ export function LeftSidebar({ children }: { children: ReactNode }) {
     pathname.startsWith("/setup") ||
     pathname.startsWith("/download") ||
     pathname.startsWith("/agents") ||
-    pathname.startsWith("/quick")
+    pathname.startsWith("/quick") ||
+    pathname.startsWith("/landing") ||
+    pathname.startsWith("/docs")
   ) {
     return <div className="h-full w-full">{children}</div>;
   }

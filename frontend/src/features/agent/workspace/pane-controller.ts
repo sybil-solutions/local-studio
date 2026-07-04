@@ -166,7 +166,25 @@ function openNewSessionInFocusedPane(
     cwd: payload.project?.path,
     modelId: payload.tab.modelId || state.selectedModel || undefined,
   };
-  return replacePaneSession(state, targetPaneId, session);
+  // Reuse the focused pane only when it's an empty starter chat — the composer
+  // is already there, so scoping it to the project is a real, visible change.
+  // Otherwise (a pane with a live/older chat, or a terminal) open a fresh split
+  // pane so a NEW surface is guaranteed to appear; if the layout is already
+  // split (2 panes), replace the focused pane in place instead of nesting a 3rd.
+  const activeId = paneSessionId(pane);
+  const active = activeId ? state.sessions.get(activeId) : undefined;
+  const focusedIsEmptyStarter =
+    pane.kind !== "terminal" && Boolean(active) && isEmptyStarterSession(active!);
+  if (focusedIsEmptyStarter || collectLeaves(state.layout).length >= 2) {
+    return replacePaneSession(state, targetPaneId, session);
+  }
+  return (
+    splitPaneWithSession(state, {
+      sourcePaneId: targetPaneId,
+      session,
+      newPaneId: payload.newPaneId,
+    }) ?? replacePaneSession(state, targetPaneId, session)
+  );
 }
 
 function replaySessionInFocusedPane(
@@ -409,7 +427,7 @@ export function applyUrlNavigation(
   const { paneId, tab, sessionTitle } = payload;
   const project = payload.project ?? undefined;
   if (payload.newSession && !payload.sessionId) {
-    return openNewSessionInFocusedPane(marked, { project, tab });
+    return openNewSessionInFocusedPane(marked, { project, tab, newPaneId: payload.paneId });
   }
   if (payload.sessionId && payload.split) {
     return replaySessionInSplitPane(marked, {
@@ -431,7 +449,7 @@ export function applyUrlNavigation(
 
 type SessionPayload = { tab?: Session };
 
-type OpenNewSessionPayload = SessionPayload & { project?: Project };
+type OpenNewSessionPayload = SessionPayload & { project?: Project; newPaneId?: PaneId };
 type ReplaySessionPayload = SessionPayload & { piSessionId: string; sessionTitle?: string };
 type ReplaySessionInSplitPayload = ReplaySessionPayload & { paneId?: PaneId };
 type OpenSessionPayloadInPanePayload = SessionPayload & {
