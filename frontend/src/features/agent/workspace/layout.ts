@@ -73,6 +73,30 @@ export function splitLeaf(
   });
 }
 
+export const MAX_LAYOUT_COLS = 3;
+export const MAX_LAYOUT_ROWS = 2;
+
+export function layoutGridSize(layout: Layout): { cols: number; rows: number } {
+  if (layout.kind === "leaf") return { cols: 1, rows: 1 };
+  const a = layoutGridSize(layout.a);
+  const b = layoutGridSize(layout.b);
+  return layout.direction === "vertical"
+    ? { cols: a.cols + b.cols, rows: Math.max(a.rows, b.rows) }
+    : { cols: Math.max(a.cols, b.cols), rows: a.rows + b.rows };
+}
+
+export function splitLeafWithinLimits(
+  layout: Layout,
+  paneId: PaneId,
+  newPaneId: PaneId,
+  direction: "vertical" | "horizontal",
+  side: "a" | "b",
+): Layout | null {
+  const next = splitLeaf(layout, paneId, newPaneId, direction, side);
+  const { cols, rows } = layoutGridSize(next);
+  return cols <= MAX_LAYOUT_COLS && rows <= MAX_LAYOUT_ROWS ? next : null;
+}
+
 // Update the ratio of a split given a delta in pixels along its drag axis.
 export function setSplitRatio(layout: Layout, splitPath: number[], ratio: number): Layout {
   if (splitPath.length === 0 || layout.kind !== "split") return layout;

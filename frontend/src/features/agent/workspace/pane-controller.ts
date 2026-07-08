@@ -2,7 +2,7 @@ import {
   collectLeaves,
   removeLeaf,
   setSplitRatio as setLayoutSplitRatio,
-  splitLeaf,
+  splitLeafWithinLimits,
 } from "@/features/agent/workspace/layout";
 import type { Session, SessionId, SessionsMap } from "@/features/agent/runtime/types";
 import {
@@ -104,13 +104,15 @@ function splitPaneWithSession(
   const { sourcePaneId, session, newPaneId, direction = "vertical", side = "b" } = payload;
   if (!validPaneId(newPaneId)) return null;
   if (!leafExists(state, sourcePaneId)) return null;
+  const layout = splitLeafWithinLimits(state.layout, sourcePaneId, newPaneId, direction, side);
+  if (!layout) return null;
   const nextPanes = new Map(state.panesById);
   nextPanes.set(newPaneId, { sessionId: session.id });
   return {
     ...state,
     sessions: setSessionInMap(state.sessions, session),
     panesById: nextPanes,
-    layout: splitLeaf(state.layout, sourcePaneId, newPaneId, direction, side),
+    layout,
     focusedPaneId: newPaneId,
   };
 }
@@ -427,12 +429,14 @@ export function openProjectTerminal(
     });
   }
   if (!validPaneId(payload.newPaneId)) return state;
+  const layout = splitLeafWithinLimits(state.layout, focusedId, payload.newPaneId, "vertical", "b");
+  if (!layout) return state;
   const nextPanes = new Map(state.panesById);
   nextPanes.set(payload.newPaneId, projectTerminalPane(`pane:${payload.newPaneId}`, payload.cwd));
   return {
     ...state,
     panesById: nextPanes,
-    layout: splitLeaf(state.layout, focusedId, payload.newPaneId, "vertical", "b"),
+    layout,
     focusedPaneId: payload.newPaneId,
   };
 }
@@ -444,18 +448,20 @@ export function splitTerminalPane(
   const source = state.panesById.get(payload.sourcePaneId);
   if (source?.kind !== "terminal") return state;
   if (!validPaneId(payload.newPaneId) || !leafExists(state, payload.sourcePaneId)) return state;
+  const layout = splitLeafWithinLimits(
+    state.layout,
+    payload.sourcePaneId,
+    payload.newPaneId,
+    payload.direction,
+    "b",
+  );
+  if (!layout) return state;
   const nextPanes = new Map(state.panesById);
   nextPanes.set(payload.newPaneId, projectTerminalPane(`pane:${payload.newPaneId}`, source.cwd));
   return {
     ...state,
     panesById: nextPanes,
-    layout: splitLeaf(
-      state.layout,
-      payload.sourcePaneId,
-      payload.newPaneId,
-      payload.direction,
-      "b",
-    ),
+    layout,
     focusedPaneId: payload.newPaneId,
   };
 }
