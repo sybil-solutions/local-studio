@@ -53,11 +53,17 @@ function collectDurableUiPreferences(): Record<string, string> {
   return out;
 }
 
+function withoutControllerCredentials(prefs: Record<string, string>): Record<string, string> {
+  const { ...rest } = prefs;
+  delete rest[CONTROLLERS_STORAGE_KEY];
+  return rest;
+}
+
 async function loadControllerUiPreferences(): Promise<Record<string, string>> {
   try {
     const { default: api } = await import("@/lib/api/client");
     const settings = await api.getStudioSettings();
-    return settings.persisted.ui_preferences ?? {};
+    return withoutControllerCredentials(settings.persisted.ui_preferences ?? {});
   } catch {
     return {};
   }
@@ -66,7 +72,7 @@ async function loadControllerUiPreferences(): Promise<Record<string, string>> {
 async function saveControllerUiPreferences(prefs: Record<string, string>): Promise<void> {
   try {
     const { default: api } = await import("@/lib/api/client");
-    await api.updateStudioSettings({ ui_preferences: prefs });
+    await api.updateStudioSettings({ ui_preferences: withoutControllerCredentials(prefs) });
   } catch {
     // The controller can be unavailable during first boot/offline desktop use.
     // The desktop bridge remains a local fallback and the next UI change retries.
