@@ -17,7 +17,7 @@ export function browserContextPrompt({
   const activeUrl = url && url !== "about:blank" ? url : "about:blank";
   return [
     "<browser_context>",
-    "The in-app Browser is open for this turn. Browser tools are available only because the Browser panel is open.",
+    "A server-side browser is available this turn via the browser_* tools; navigation and reads run on the host, and the user may optionally watch it in the Browser panel.",
     `Backend: ${backend}.`,
     `Active URL: ${activeUrl}.`,
     "The page body has not been preloaded into this prompt. To inspect it, call browser_get_text or browser_get_html first.",

@@ -14,7 +14,6 @@ import type { ComputerTab } from "@/features/agent/tools/types";
 import type { Project, GitSummary } from "@/features/agent/projects/types";
 import type { Session } from "@/features/agent/runtime/types";
 import type { AgentModel } from "@/features/agent/workspace/types";
-import type { AgentBrowserHandle } from "@/features/agent/ui/agent-browser";
 import { ChatPane } from "@/features/agent/ui/chat-pane";
 
 const LazyAgentBrowser = lazy(() =>
@@ -69,7 +68,6 @@ type ComputerTabPanelProps = {
   onOpenTerminal: () => void;
   onRenameSideChat: (tabId: string, title: string) => void;
   onUpdateSideChatTabs: (nextTabsOrUpdater: SideChatTabsUpdater) => void;
-  registerBrowserHandle: (handle: AgentBrowserHandle | null) => void;
   sessions: Session[];
   sideChatSession: Session;
   tools: ToolsContextValue;
@@ -171,15 +169,9 @@ function SideChatTab({
   );
 }
 
-function BrowserTab({
-  isElectron,
-  onNavigateBrowser,
-  registerBrowserHandle,
-  tools,
-}: ComputerTabPanelProps) {
+function BrowserTab({ isElectron, onNavigateBrowser, tools }: ComputerTabPanelProps) {
   return (
     <LazyAgentBrowser
-      ref={registerBrowserHandle}
       url={tools.browser.url}
       inputValue={tools.browser.input}
       onInputChange={tools.setBrowserInput}

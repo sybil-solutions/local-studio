@@ -50,12 +50,7 @@ import type { WorkspaceHandles } from "@/features/agent/ui/use-workspace";
 
 type AgentBrowserPanelHandles = Pick<
   WorkspaceHandles,
-  | "registerComputerAside"
-  | "startComputerResize"
-  | "registerBrowserHandle"
-  | "runBrowserCommand"
-  | "compactFocusedSession"
-  | "openTerminalPane"
+  "registerComputerAside" | "startComputerResize" | "compactFocusedSession" | "openTerminalPane"
 >;
 
 type AgentBrowserPanelProps = {
@@ -150,8 +145,7 @@ export function AgentBrowserPanel({
   const [sideChatSession, setSideChatSession] = useState<Session>(() =>
     createSideChatSession(null, null, ""),
   );
-  const { registerComputerAside, startComputerResize, registerBrowserHandle, runBrowserCommand } =
-    handles;
+  const { registerComputerAside, startComputerResize } = handles;
   const isElectron = typeof navigator !== "undefined" && /electron/i.test(navigator.userAgent);
   const terminalOwner = useMemo(
     () => terminalOwnerFor(activeProject, focusedSession),
@@ -210,7 +204,12 @@ export function AgentBrowserPanel({
     const accepted = acceptedBrowserUrl(next);
     if (!accepted) return;
     tools.setBrowserUrl(accepted, accepted);
-    void runBrowserCommand("navigate", { url: accepted });
+    if (/^file:\/\//i.test(accepted)) return;
+    void fetch("/api/agent/browser/navigate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url: accepted }),
+    }).catch(() => undefined);
   };
   const openSideChat = useCallback(
     (draft?: SideChatDraft) => {
@@ -307,7 +306,6 @@ export function AgentBrowserPanel({
         onOpenTerminal={() => handles.openTerminalPane()}
         onRenameSideChat={renameSideChat}
         onUpdateSideChatTabs={updateSideChatTabs}
-        registerBrowserHandle={registerBrowserHandle}
         sessions={sessions}
         sideChatSession={sideChatSession}
         tools={tools}

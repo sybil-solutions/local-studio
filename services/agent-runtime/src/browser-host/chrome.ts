@@ -25,11 +25,41 @@ function platformChromeCandidates(): string[] {
   if (process.platform === "darwin") {
     return [
       "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+      "/Applications/Google Chrome Beta.app/Contents/MacOS/Google Chrome Beta",
+      "/Applications/Google Chrome Canary.app/Contents/MacOS/Google Chrome Canary",
       "/Applications/Chromium.app/Contents/MacOS/Chromium",
+      "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser",
+      "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
+      "/Applications/Arc.app/Contents/MacOS/Arc",
+      "/Applications/Vivaldi.app/Contents/MacOS/Vivaldi",
     ];
   }
-  // Linux (and anything else): resolve common binary names on PATH.
-  return ["chromium-browser", "chromium", "google-chrome-stable", "google-chrome"]
+  if (process.platform === "win32") {
+    const roots = [
+      process.env["PROGRAMFILES"],
+      process.env["PROGRAMFILES(X86)"],
+      process.env["LOCALAPPDATA"],
+    ].filter((value): value is string => Boolean(value));
+    const suffixes = [
+      "Google\\Chrome\\Application\\chrome.exe",
+      "Google\\Chrome Beta\\Application\\chrome.exe",
+      "Chromium\\Application\\chrome.exe",
+      "BraveSoftware\\Brave-Browser\\Application\\brave.exe",
+      "Microsoft\\Edge\\Application\\msedge.exe",
+      "Vivaldi\\Application\\vivaldi.exe",
+    ];
+    return roots.flatMap((root) => suffixes.map((suffix) => path.join(root, suffix)));
+  }
+  return [
+    "chromium-browser",
+    "chromium",
+    "google-chrome-stable",
+    "google-chrome",
+    "brave-browser",
+    "microsoft-edge",
+    "microsoft-edge-stable",
+    "vivaldi-stable",
+  ]
     .map(resolveOnPath)
     .filter((value): value is string => Boolean(value));
 }

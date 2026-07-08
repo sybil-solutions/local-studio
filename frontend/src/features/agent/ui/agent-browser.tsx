@@ -12,19 +12,8 @@
  *    `/api/agent/browser/fetch`, strips scripts/styles, and renders clean
  *    text with markdown links. Always works because we're not relying on the
  *    upstream's CSP/X-Frame-Options.
- *
- * The exported `WebviewElement` is the same handle the workspace's tool
- * bridge needs (executeJavaScript / loadURL / capturePage) so the agent can
- * still drive the browser when the user opts in.
  */
-import {
-  forwardRef,
-  useCallback,
-  useImperativeHandle,
-  useRef,
-  useState,
-  type FormEvent,
-} from "react";
+import { useCallback, useRef, useState, type FormEvent } from "react";
 import { ArrowLeftIcon, ArrowRightIcon, CloseIcon, ReloadIcon } from "@/ui/icons";
 import { DEFAULT_BROWSER_URL } from "@/features/agent/tools/persistence";
 import {
@@ -39,7 +28,7 @@ import {
 import { LocalhostStartPage } from "@/features/agent/ui/agent-browser-start-page";
 import { ReadingView, type ReadablePage } from "@/features/agent/ui/agent-browser-reading-view";
 
-export type WebviewElement = HTMLElement & {
+type WebviewElement = HTMLElement & {
   goBack: () => void;
   goForward: () => void;
   reload: () => void;
@@ -65,14 +54,15 @@ type Props = {
   isElectron: boolean;
 };
 
-export type AgentBrowserHandle = {
-  webview: WebviewElement | null;
-};
-
-export const AgentBrowser = forwardRef<AgentBrowserHandle, Props>(function AgentBrowser(
-  { url, inputValue, onInputChange, onNavigate, onLocationChange, onClose, isElectron },
-  ref,
-) {
+export function AgentBrowser({
+  url,
+  inputValue,
+  onInputChange,
+  onNavigate,
+  onLocationChange,
+  onClose,
+  isElectron,
+}: Props) {
   const webviewRef = useRef<WebviewElement | null>(null);
   // Live mode is the server-side screencast; it is the default everywhere and
   // falls back to reading mode only when the host has no Chromium.
@@ -90,16 +80,6 @@ export const AgentBrowser = forwardRef<AgentBrowserHandle, Props>(function Agent
   const [localSitesError, setLocalSitesError] = useState<string | null>(null);
   const showStartPage = !hasOpenedUrl && url === DEFAULT_BROWSER_URL;
   const addressValue = showStartPage && inputValue === DEFAULT_BROWSER_URL ? "" : inputValue;
-
-  useImperativeHandle(
-    ref,
-    () => ({
-      get webview() {
-        return webviewRef.current;
-      },
-    }),
-    [],
-  );
 
   const fetchReadable = useCallback(async (target: string) => {
     setReadingLoading(true);
@@ -272,6 +252,12 @@ export const AgentBrowser = forwardRef<AgentBrowserHandle, Props>(function Agent
           <CloseIcon className="h-3.5 w-3.5 pointer-events-none" />
         </button>
       </form>
+      {liveUnavailable ? (
+        <div className="shrink-0 border-b border-(--err)/40 bg-(--err)/10 px-3 py-2 text-[length:var(--fs-xs)] text-(--err)">
+          {liveUnavailable}. Set LOCAL_STUDIO_CHROME_PATH to a Chromium-based browser binary to
+          enable the live view and screenshots; reading mode is active meanwhile.
+        </div>
+      ) : null}
 
       <div className="min-h-0 flex-1 bg-(--bg)">
         {showStartPage ? (
@@ -326,4 +312,4 @@ export const AgentBrowser = forwardRef<AgentBrowserHandle, Props>(function Agent
       </div>
     </section>
   );
-});
+}

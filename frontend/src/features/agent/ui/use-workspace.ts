@@ -31,25 +31,15 @@ import {
   loadSavedControllers,
   normalizeControllerUrl,
 } from "@/lib/api/controllers";
-import {
-  sanitizeBrowserPaneUrl,
-  sanitizeLocalFileUrl,
-} from "@/features/agent/sanitize-embedded-browser-url";
 import { paneSessions } from "@/features/agent/runtime/selectors";
-import {
-  runBrowserPanelCommand,
-  type BrowserCommandResult,
-} from "@/features/agent/browser/command";
 import {
   useWorkspaceHydrationEffects,
   useWorkspaceRuntimeSync,
 } from "@/features/agent/ui/use-workspace-effects";
 import type { ChatPaneHandle, SessionTab } from "@/features/agent/ui/chat-pane";
-import type { AgentBrowserHandle } from "@/features/agent/ui/agent-browser";
 import type { SessionDropPayload } from "@/features/agent/ui/pane-grid";
 
 export type WorkspaceHandles = {
-  registerBrowserHandle: (handle: AgentBrowserHandle | null) => void;
   registerComputerAside: (element: HTMLElement | null) => void;
   openSessionPayloadInPane: (paneId: PaneId, payload: SessionDropPayload) => void;
   renameTab: (paneId: PaneId, tabId: string, title: string) => void;
@@ -58,10 +48,6 @@ export type WorkspaceHandles = {
   splitTerminal: (paneId: PaneId, direction: "vertical" | "horizontal") => void;
   registerPaneHandle: (paneId: PaneId, handle: ChatPaneHandle | null) => void;
   compactFocusedSession: () => Promise<void>;
-  runBrowserCommand: (
-    verb: string,
-    payload: Record<string, unknown>,
-  ) => Promise<BrowserCommandResult>;
   setSplitRatio: (path: number[], ratio: number) => void;
   setPaneTabs: (
     paneId: PaneId,
@@ -112,24 +98,6 @@ function createWorkspaceWindow(source: Window): WorkspaceWindow {
     removeEventListener: source.removeEventListener.bind(source),
     setTimeout: source.setTimeout.bind(source),
   };
-}
-
-function waitForBrowserHost(
-  getHandle: () => AgentBrowserHandle | null,
-  timeoutMs = 2_500,
-): Promise<void> {
-  if (getHandle()?.webview || typeof window === "undefined") return Promise.resolve();
-  const startedAt = Date.now();
-  const { promise, resolve } = Promise.withResolvers<void>();
-  const tick = () => {
-    if (getHandle()?.webview || Date.now() - startedAt >= timeoutMs) {
-      resolve();
-      return;
-    }
-    window.setTimeout(tick, 40);
-  };
-  tick();
-  return promise;
 }
 
 function agentModelControllersPayload() {
@@ -193,7 +161,6 @@ export function useWorkspace({ ephemeral = false }: UseWorkspaceOptions = {}): U
   const [state, setState] = useState<WorkspaceState>(createInitialState);
   const stateRef = useRef(state);
   const paneHandlesRef = useRef<Map<PaneId, ChatPaneHandle>>(new Map());
-  const browserRef = useRef<AgentBrowserHandle | null>(null);
   const computerAsideRef = useRef<HTMLElement | null>(null);
 
   const replayQueueRef = useRef<SessionReplayQueue | null>(null);
@@ -235,38 +202,10 @@ export function useWorkspace({ ephemeral = false }: UseWorkspaceOptions = {}): U
       if (deps) runWorkspaceEffect(action, prev, next, deps);
     };
 
-    const runBrowserCommand = async (
-      verb: string,
-      payload: Record<string, unknown>,
-    ): Promise<BrowserCommandResult> => {
-      const isElectron = typeof navigator !== "undefined" && /electron/i.test(navigator.userAgent);
-      const currentTools = toolsRef.current;
-      const hadBrowserHost = Boolean(browserRef.current?.webview);
-      currentTools.setBrowserEnabled(true);
-      if (verb === "navigate") {
-        currentTools.setComputerTab("browser");
-        const raw = String(payload.url || "");
-        const nextUrl = /^file:\/\//i.test(raw)
-          ? sanitizeLocalFileUrl(raw)
-          : sanitizeBrowserPaneUrl(raw);
-        if (nextUrl && !hadBrowserHost) currentTools.setBrowserUrl(nextUrl, nextUrl);
-      } else {
-        currentTools.selectComputerTabWithoutOpening("browser");
-      }
-      if (verb !== "get-url") {
-        await waitForBrowserHost(() => browserRef.current);
-      }
-      return runBrowserPanelCommand(verb, payload, {
-        browser: browserRef.current,
-        currentUrl: toolsRef.current.browser.url,
-        setBrowserUrl: toolsRef.current.setBrowserUrl,
-        isElectron,
-      });
-    };
-    return { dispatch: workspaceDispatch, runBrowserCommand };
+    return { dispatch: workspaceDispatch };
   }, [queueSessionReplay, ephemeral]);
 
-  const { dispatch, runBrowserCommand } = controller;
+  const { dispatch } = controller;
 
   useMountSubscription(() => {
     if (typeof window === "undefined") return;
@@ -308,9 +247,6 @@ export function useWorkspace({ ephemeral = false }: UseWorkspaceOptions = {}): U
 
   const handles = useMemo<WorkspaceHandles>(
     () => ({
-      registerBrowserHandle: (handle: AgentBrowserHandle | null) => {
-        browserRef.current = handle;
-      },
       registerComputerAside: (element: HTMLElement | null) => {
         computerAsideRef.current = element;
       },
@@ -344,7 +280,6 @@ export function useWorkspace({ ephemeral = false }: UseWorkspaceOptions = {}): U
         const handle = paneHandlesRef.current.get(stateRef.current.focusedPaneId);
         await handle?.compact();
       },
-      runBrowserCommand,
       setSplitRatio: (path: number[], ratio: number) =>
         dispatch({ type: "setSplitRatio", path, ratio }),
       setPaneTabs: (
@@ -431,7 +366,7 @@ export function useWorkspace({ ephemeral = false }: UseWorkspaceOptions = {}): U
         }
       },
     }),
-    [dispatch, getReplayQueue, runBrowserCommand],
+    [dispatch, getReplayQueue],
   );
 
   useWorkspaceHydrationEffects({ dispatch, projectsRef, toolsRef, skipRestore: ephemeral });

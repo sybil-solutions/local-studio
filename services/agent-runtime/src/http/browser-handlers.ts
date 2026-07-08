@@ -44,6 +44,8 @@ const ALLOWED_VERBS = new Set([
 
 const UNAVAILABLE_ERROR = "Browser unavailable: no Chromium found — set LOCAL_STUDIO_CHROME_PATH";
 
+let lastFallbackUrl = "";
+
 type VerbResult = { ok: boolean; data?: unknown; error?: string };
 
 export async function handleBrowserVerb(request: Request, verb: string): Promise<Response> {
@@ -154,22 +156,30 @@ function requireSelector(payload: Record<string, unknown>): string {
   return selector;
 }
 
-// Chromium-unavailable fallbacks. navigate + get-text drop to reading mode;
-// every interactive verb returns the clear unavailable error. The fallback
-// honors pane rules (public + loopback) so local dev servers stay previewable
-// even when there's no headless Chromium to drive a full live surface.
+// Chromium-unavailable fallbacks. navigate/get-url/get-text/get-html degrade to
+// reading mode (remembering the last navigated URL per process so reads work
+// without a url arg); every other verb returns the clear unavailable error. The
+// fallback honors pane rules (public + loopback) so local dev servers stay
+// previewable even when there's no headless Chromium to drive a full surface.
 async function fallbackVerb(verb: string, payload: Record<string, unknown>): Promise<VerbResult> {
   if (verb === "navigate") {
     const url = sanitizeBrowserPaneUrl(String(payload.url ?? ""));
     if (!url) return { ok: false, error: "valid public or localhost http(s) url required" };
     const reader = await fetchReadable(url);
+    lastFallbackUrl = reader.url;
     return { ok: true, data: { url: reader.url, title: reader.title, readingMode: true } };
   }
-  if (verb === "get-text") {
-    const url = sanitizeBrowserPaneUrl(String(payload.url ?? ""));
+  if (verb === "get-url") {
+    return { ok: true, data: { url: lastFallbackUrl, title: "" } };
+  }
+  if (verb === "get-text" || verb === "get-html") {
+    const url = sanitizeBrowserPaneUrl(String(payload.url ?? "")) || lastFallbackUrl;
     if (!url) return { ok: false, error: UNAVAILABLE_ERROR };
     const reader = await fetchReadable(url);
-    return { ok: true, data: { text: reader.text, readingMode: true } };
+    lastFallbackUrl = reader.url;
+    return verb === "get-text"
+      ? { ok: true, data: { text: reader.text, readingMode: true } }
+      : { ok: true, data: { html: reader.markdown ?? reader.text, readingMode: true } };
   }
   return { ok: false, error: UNAVAILABLE_ERROR };
 }

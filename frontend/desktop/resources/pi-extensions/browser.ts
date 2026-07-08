@@ -1,13 +1,3 @@
-// Browser tool extension for Local Studio.
-//
-// Registers tools the agent can call to drive the embedded webview in the
-// agent surface. Each tool sends an HTTP request to the frontend's browser
-// bridge API; the renderer receives the command via SSE, runs it against the
-// active <webview>, and posts the result back.
-//
-// Loaded by pi-runtime via `--extension` only when the user has toggled
-// "Browser tool" on in the agent header.
-
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 
