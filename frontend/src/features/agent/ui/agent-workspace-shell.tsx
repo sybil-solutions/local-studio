@@ -114,6 +114,8 @@ export function AgentWorkspaceShell({
             focusedTab={focusedTab}
             sessions={state.sessions}
             selectedModel={state.selectedModel}
+            models={state.models}
+            modelsLoading={state.modelsLoading}
             focusedModel={focusedModel}
             focusedGitSummary={focusedGitSummary}
           />
@@ -130,6 +132,8 @@ function WorkspaceComputerPanel({
   focusedTab,
   sessions,
   selectedModel,
+  models,
+  modelsLoading,
   focusedModel,
   focusedGitSummary,
 }: {
@@ -139,6 +143,8 @@ function WorkspaceComputerPanel({
   focusedTab: ReturnType<typeof focusedSession>;
   sessions: WorkspaceState["sessions"];
   selectedModel: string;
+  models: AgentModel[];
+  modelsLoading: boolean;
   focusedModel: AgentModel | null;
   focusedGitSummary: ReturnType<ProjectsContextValue["gitSummary"]>;
 }) {
@@ -153,6 +159,8 @@ function WorkspaceComputerPanel({
         activeModelId={focusedTab?.modelId ?? selectedModel}
         activeModel={focusedModel}
         gitSummary={focusedGitSummary}
+        models={models}
+        modelsLoading={modelsLoading}
       />
     </Suspense>
   );

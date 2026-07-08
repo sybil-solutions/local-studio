@@ -60,6 +60,8 @@ type AgentBrowserPanelProps = {
   sessions: Session[];
   activeModelId: string;
   activeModel: AgentModel | null;
+  models: AgentModel[];
+  modelsLoading: boolean;
   gitSummary?: GitSummary | null;
 };
 
@@ -139,6 +141,8 @@ export function AgentBrowserPanel({
   sessions,
   activeModelId,
   activeModel,
+  models,
+  modelsLoading,
   gitSummary,
 }: AgentBrowserPanelProps) {
   const tools = useTools();
@@ -298,6 +302,8 @@ export function AgentBrowserPanel({
         activeProject={activeProject}
         focusedSession={focusedSession}
         gitSummary={gitSummary}
+        models={models}
+        modelsLoading={modelsLoading}
         isElectron={isElectron}
         onCloseSideChat={closeSideChat}
         onCompactSession={handles.compactFocusedSession}

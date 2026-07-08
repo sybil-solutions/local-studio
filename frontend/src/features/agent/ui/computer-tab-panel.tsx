@@ -14,6 +14,7 @@ import type { ComputerTab } from "@/features/agent/tools/types";
 import type { Project, GitSummary } from "@/features/agent/projects/types";
 import type { Session } from "@/features/agent/runtime/types";
 import type { AgentModel } from "@/features/agent/workspace/types";
+import { AgentModelPicker } from "@/features/agent/ui/agent-model-picker";
 import { ChatPane } from "@/features/agent/ui/chat-pane";
 
 const LazyAgentBrowser = lazy(() =>
@@ -60,6 +61,8 @@ type ComputerTabPanelProps = {
   activeProject: Project | null;
   focusedSession: Session | null;
   gitSummary?: GitSummary | null;
+  models: AgentModel[];
+  modelsLoading: boolean;
   isElectron: boolean;
   onCloseSideChat: () => void;
   onCompactSession?: () => Promise<void>;
@@ -129,6 +132,8 @@ function SideChatTab({
   activeModelId,
   activeProject,
   focusedSession,
+  models,
+  modelsLoading,
   onCloseSideChat,
   onRenameSideChat,
   onUpdateSideChatTabs,
@@ -136,18 +141,29 @@ function SideChatTab({
   tools,
 }: ComputerTabPanelProps) {
   const modelId = sideChatSession.modelId ?? focusedSession?.modelId ?? activeModelId;
+  const selectedModel = models.find((model) => model.id === modelId) ?? activeModel;
   const cwd = sideChatSession.cwd ?? focusedSession?.cwd ?? activeProject?.path ?? "";
   return (
     <section className="flex min-h-0 flex-1 flex-col">
       <ChatPane
         paneId="computer-side-chat"
         modelId={modelId}
-        modelName={activeModel?.name ?? modelId}
-        modelSupportsVision={activeModel?.vision ?? false}
-        modelsLoading={false}
-        contextWindow={activeModel?.contextWindow ?? 0}
+        modelName={selectedModel?.name ?? modelId}
+        modelSupportsVision={selectedModel?.vision ?? false}
+        modelsLoading={modelsLoading}
+        contextWindow={selectedModel?.contextWindow ?? 0}
         cwd={cwd}
         projectName={activeProject?.name ?? null}
+        modelSelector={
+          <AgentModelPicker
+            models={models}
+            selectedModel={modelId}
+            onSelect={(nextModelId) =>
+              onUpdateSideChatTabs((tabs) => tabs.map((tab) => ({ ...tab, modelId: nextModelId })))
+            }
+            loading={modelsLoading}
+          />
+        }
         browserToolEnabled={false}
         browserBackend={tools.browser.backend}
         onToggleBrowserBackend={tools.toggleBrowserBackend}
