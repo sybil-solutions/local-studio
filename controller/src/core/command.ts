@@ -1,6 +1,5 @@
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
-import { existsSync, statSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { delimiter, join, resolve } from "node:path";
 import type { Readable } from "node:stream";
 import { Effect } from "effect";
 
@@ -161,54 +160,32 @@ export const runCommandAsync = (
   options: AsyncCommandOptions,
 ): Promise<AsyncCommandResult> => Effect.runPromise(runCommandAsyncEffect(command, args, options));
 
-const isExecutableFile = (filePath: string): boolean => {
-  try {
-    const stats = statSync(filePath);
-    return stats.isFile();
-  } catch {
-    return false;
-  }
+const runtimeBinDirectory = (): string | null =>
+  process.env["LOCAL_STUDIO_RUNTIME_BIN"] ??
+  (process.env["SNAP"] ? resolve(process.cwd(), "runtime", "bin") : null);
+
+const homeBinDirectories = (): string[] => {
+  const directories: string[] = [];
+  const home = process.env["HOME"];
+  if (home) directories.push(join(home, ".local", "bin"), join(home, "bin"));
+  const user = process.env["USER"] ?? process.env["LOGNAME"];
+  if (user) directories.push(join("/home", user, ".local", "bin"), join("/home", user, "bin"));
+  return directories;
 };
+
+const binarySearchPath = (): string => {
+  const runtimeBin = runtimeBinDirectory();
+  const pathEntries = (process.env["PATH"] ?? "").split(delimiter).filter(Boolean);
+  return [...(runtimeBin ? [runtimeBin] : []), ...pathEntries, ...homeBinDirectories()].join(
+    delimiter,
+  );
+};
+
+const isExplicitPath = (binaryName: string): boolean =>
+  binaryName.includes("/") || binaryName.includes("\\");
 
 export const resolveBinary = (binaryName: string): string | null => {
   if (!binaryName) return null;
-
-  if (binaryName.includes("/")) {
-    const resolved = resolve(binaryName);
-    return isExecutableFile(resolved) ? resolved : null;
-  }
-
-  const searchPaths: string[] = [];
-  const runtimeOverride = process.env["LOCAL_STUDIO_RUNTIME_BIN"];
-  const runtimeBin =
-    runtimeOverride ?? (process.env["SNAP"] ? resolve(process.cwd(), "runtime", "bin") : null);
-  if (runtimeBin && existsSync(runtimeBin)) {
-    searchPaths.push(runtimeBin);
-  }
-
-  const pathValue = process.env["PATH"];
-  if (pathValue) {
-    for (const entry of pathValue.split(":")) {
-      if (entry) searchPaths.push(entry);
-    }
-  }
-
-  const home = process.env["HOME"];
-  if (home) {
-    searchPaths.push(join(home, ".local", "bin"));
-    searchPaths.push(join(home, "bin"));
-  }
-
-  const user = process.env["USER"] ?? process.env["LOGNAME"];
-  if (user) {
-    searchPaths.push(join("/home", user, ".local", "bin"));
-    searchPaths.push(join("/home", user, "bin"));
-  }
-
-  for (const entry of searchPaths) {
-    const candidate = join(entry, binaryName);
-    if (isExecutableFile(candidate)) return candidate;
-  }
-
-  return null;
+  if (isExplicitPath(binaryName)) return Bun.which(resolve(binaryName));
+  return Bun.which(binaryName, { PATH: binarySearchPath() });
 };
