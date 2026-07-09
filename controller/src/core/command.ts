@@ -173,9 +173,14 @@ const homeBinDirectories = (): string[] => {
   return directories;
 };
 
+const sanitizePathEntry = (entry: string): string => entry.trim().replace(/^"|"$/g, "");
+
 const binarySearchPath = (): string => {
   const runtimeBin = runtimeBinDirectory();
-  const pathEntries = (process.env["PATH"] ?? "").split(delimiter).filter(Boolean);
+  const pathEntries = (process.env["PATH"] ?? "")
+    .split(delimiter)
+    .map(sanitizePathEntry)
+    .filter(Boolean);
   return [...(runtimeBin ? [runtimeBin] : []), ...pathEntries, ...homeBinDirectories()].join(
     delimiter,
   );
