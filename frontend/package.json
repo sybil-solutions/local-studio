@@ -3,6 +3,7 @@
   "version": "0.2.9",
   "private": true,
   "scripts": {
+    "predev": "node scripts/link-services-node-modules.mjs",
     "dev": "next dev",
     "build": "next build --webpack",
     "start": "node scripts/start-standalone.mjs",

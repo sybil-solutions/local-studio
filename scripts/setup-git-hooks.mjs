@@ -23,6 +23,7 @@ try {
   runGit(["rev-parse", "--git-dir"]);
   runGit(["config", "core.hooksPath", ".githooks"]);
   markHooksExecutable();
-} catch {
+} catch (error) {
+  console.error(`[setup-git-hooks] skipped: ${error}`);
   process.exit(0);
 }
