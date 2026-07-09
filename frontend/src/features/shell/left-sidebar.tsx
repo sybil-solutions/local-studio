@@ -360,6 +360,7 @@ export function LeftSidebar({ children }: { children: ReactNode }) {
               <div className="shrink-0 px-3 py-2">
                 <Link
                   href="/settings"
+                  prefetch={false}
                   title="Settings"
                   className={`group flex h-8 shrink-0 items-center gap-2.5 rounded-md px-2.5 transition-colors ${
                     isRouteActive(pathname, "/settings")
@@ -517,6 +518,7 @@ function NavItemMobile({
   return (
     <Link
       href={href}
+      prefetch={false}
       onClick={onClick}
       className={`mb-1 flex h-12 items-center gap-3 border-l-2 px-2 text-sm font-medium transition-colors ${
         active
@@ -544,6 +546,7 @@ function NavItemDesktop({
   return (
     <Link
       href={href}
+      prefetch={false}
       title={label}
       className={`group flex h-8 items-center gap-2.5 rounded-md px-2.5 transition-colors shrink-0 ${
         active

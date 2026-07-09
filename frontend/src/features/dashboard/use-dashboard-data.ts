@@ -15,7 +15,7 @@ export function useDashboardData() {
   );
   const gpus = realtime.gpus.length > 0 ? realtime.gpus : [];
   const recipesState = useDashboardRecipes(currentProcess);
-  const lifecycle = useModelLifecycle();
+  const lifecycle = useModelLifecycle(recipesState.recipes);
   const actions = useDashboardActions();
 
   const navigate = (path: string) => () => router.push(path);
