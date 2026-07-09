@@ -59,6 +59,14 @@ const McpToolsResultSchema = Schema.Struct({
 
 type JsonRpcResponse = typeof JsonRpcResponseSchema.Type;
 
+export function stdioLaunchCommand(
+  command: string,
+  args: string[],
+): { command: string; args: string[] } {
+  if (process.platform !== "win32") return { command, args };
+  return { command: "cmd.exe", args: ["/c", command, ...args] };
+}
+
 class StdioMcpConnection implements McpConnection {
   private child: ChildProcess;
   private nextId = 1;
@@ -71,7 +79,8 @@ class StdioMcpConnection implements McpConnection {
   private stderrTail = "";
 
   constructor(target: StdioTarget) {
-    this.child = spawn(target.command, target.args ?? [], {
+    const launch = stdioLaunchCommand(target.command, target.args ?? []);
+    this.child = spawn(launch.command, launch.args, {
       stdio: ["pipe", "pipe", "pipe"],
       env: { ...process.env, ...(target.env ?? {}) },
       ...(target.cwd ? { cwd: target.cwd } : {}),
