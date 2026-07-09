@@ -46,20 +46,32 @@ const APP_DESTINATIONS: AppDestination[] = [
     description: "Search models, manage recipes, launches, and downloads.",
   },
   {
+    href: "/configure",
+    label: "Configure",
+    keywords: "engine runtime launch parameters presets templates",
+    description: "Configure model engines and launch parameters.",
+  },
+  {
+    href: "/agent",
+    label: "Workbench",
+    keywords: "agent chat projects browser terminal tools canvas files",
+    description: "Project-aware chat, terminals, files, and tools.",
+  },
+  {
+    href: "/integrations",
+    label: "Integrations",
+    keywords: "mcp connectors plugins skills tools services accounts",
+    description: "Connect MCP tools and inspect local skills.",
+  },
+  {
     href: "/server",
     label: "Server",
     keywords: "logs api docs swagger controller endpoints",
     description: "Server logs and controller API documentation.",
   },
   {
-    href: "/agent",
-    label: "Agent",
-    keywords: "chat projects browser terminal tools canvas files",
-    description: "Project-aware agent workspace and tools.",
-  },
-  {
     href: "/agent/sessions",
-    label: "Agent Sessions",
+    label: "Chat history",
     keywords: "history archived transcripts pi sessions runs",
     description: "Search and inspect stored agent sessions.",
   },
@@ -144,7 +156,7 @@ export function SessionsCommand({ open, onClose, activeSessions }: Props) {
 
   const destinationFiltered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return APP_DESTINATIONS.slice(0, 6);
+    if (!q) return APP_DESTINATIONS.slice(0, 8);
     return APP_DESTINATIONS.filter((destination) =>
       `${destination.label} ${destination.keywords} ${destination.description}`
         .toLowerCase()

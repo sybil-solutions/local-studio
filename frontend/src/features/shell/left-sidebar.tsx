@@ -25,6 +25,8 @@ import {
   Square,
   X,
   Wrench,
+  MessageSquare,
+  Plug,
 } from "@/ui/icon-registry";
 import { useShallow } from "zustand/react/shallow";
 import { useAppStore } from "@/store";
@@ -55,9 +57,11 @@ type IconComponent = ComponentType<{ className?: string; strokeWidth?: number }>
 
 const tabs = [
   { href: "/", label: "Status", icon: Gauge },
-  { href: "/usage", label: "Usage", icon: Microchip },
+  { href: "/agent", label: "Workbench", icon: MessageSquare },
   { href: "/recipes", label: "Models", icon: HardDrive },
   { href: "/configure", label: "Configure", icon: Wrench },
+  { href: "/usage", label: "Usage", icon: Microchip },
+  { href: "/integrations", label: "Integrations", icon: Plug },
   { href: "/server", label: "Server", icon: Globe },
 ];
 
@@ -88,7 +92,7 @@ function clampSidebarWidth(width: number): number {
 }
 
 function mobilePageTitle(pathname: string): string {
-  if (pathname.startsWith("/agent")) return "Chat";
+  if (pathname.startsWith("/agent")) return "Workbench";
   if (pathname.startsWith("/settings")) return "Settings";
   if (pathname.startsWith("/logs")) return "Logs";
   const tab = tabs.find((entry) => isRouteActive(pathname, entry.href));

@@ -4,11 +4,9 @@ import {
   Archive,
   Cable,
   Cpu,
-  GraduationCap,
   Keyboard,
   type LucideIcon,
   Paintbrush,
-  Plug,
   ServerCog,
   Terminal,
 } from "@/ui/icon-registry";
@@ -16,12 +14,7 @@ import { SettingsLayout, type SettingsSectionDef, type SettingsSectionId } from 
 import type { CompatibilityReport, ConfigData } from "@/lib/types";
 import type { ApiConnectionSettings, ConnectionStatus } from "./types";
 import { ApiConnectionSection } from "./api-connection-section";
-import { ConnectorsSection } from "./connectors-section";
-import {
-  ArchivedChatsSettings,
-  SetupChecksSettings,
-  SkillsSettings,
-} from "./agent-settings-sections";
+import { ArchivedChatsSettings, SetupChecksSettings } from "./agent-settings-sections";
 import { AppearanceSettings } from "./appearance-settings";
 import { QuickPanelSettings } from "./quick-panel-settings";
 import { TerminalSettings } from "./terminal-settings";
@@ -51,17 +44,10 @@ const sectionIcon = (Icon: LucideIcon) => <Icon className="h-3.5 w-3.5" />;
 const SECTIONS: SettingsSectionDef[] = [
   ["connection", "Connection", "Controller URL and API key.", Cable],
   ["system", "System", "Runtime targets, services, storage, hardware.", Cpu],
-  ["connectors", "Connectors", "MCP servers: accounts, services, your machines.", Plug],
   ["appearance", "Appearance", "Theme variables, typography, density.", Paintbrush],
   ["desktop", "Desktop", "Quick panel hotkey and desktop app behavior.", Keyboard],
   ["terminal", "Terminal", "Terminal shortcuts and text size.", Terminal],
   ["archive", "Archived chats", "Pi sessions kept out of normal chat lists.", Archive],
-  [
-    "skills",
-    "Skills",
-    "Normalized local skills from Codex, Pi, Claude, Factory, OpenCode.",
-    GraduationCap,
-  ],
   ["setup", "Setup", "First-run checks for Pi, controller, and local directories.", ServerCog],
 ].map(([id, label, description, Icon]) => ({
   id: id as SettingsSectionId,
@@ -101,7 +87,6 @@ export function SettingsView({
     return normalizeSectionId(hash) ?? "connection";
   });
   useMountSubscription(() => {
-    // Deep-linked straight into System (e.g. #system): load its data now.
     if (activeSection === "system") onSystemSectionActive();
     if (typeof window === "undefined") return;
     const onHashChange = () => {
@@ -163,12 +148,10 @@ export function SettingsView({
           />
         </div>
       ) : null}
-      {activeSection === "connectors" ? <ConnectorsSection /> : null}
       {activeSection === "appearance" ? <AppearanceSettings /> : null}
       {activeSection === "desktop" ? <QuickPanelSettings /> : null}
       {activeSection === "terminal" ? <TerminalSettings /> : null}
       {activeSection === "archive" ? <ArchivedChatsSettings /> : null}
-      {activeSection === "skills" ? <SkillsSettings /> : null}
       {activeSection === "setup" ? <SetupChecksSettings /> : null}
     </SettingsLayout>
   );
