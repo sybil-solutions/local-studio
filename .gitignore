@@ -36,6 +36,7 @@ data/
 
 # Node.js
 node_modules/
+services/node_modules
 .next/
 .turbo/
 
