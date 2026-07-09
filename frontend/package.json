@@ -7,6 +7,7 @@
     "build": "next build --webpack",
     "start": "node scripts/start-standalone.mjs",
     "perf:audit": "node scripts/perf-audit.mjs",
+    "perf:browser": "node scripts/browser-perf-audit.mjs",
     "test": "bun test scripts",
     "test:e2e": "bun test ../tests/frontend",
     "lint": "eslint",
