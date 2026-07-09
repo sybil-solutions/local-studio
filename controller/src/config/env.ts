@@ -1,7 +1,8 @@
 import { config as loadEnvironment } from "dotenv";
 import { Schema } from "effect";
 import { existsSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { homedir } from "node:os";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadPersistedConfig, type ProviderConfig } from "./persisted-config";
 import { parseBooleanFlag } from "../core/validation";
@@ -39,6 +40,9 @@ export const loadDotEnvironment = (): string | undefined => {
   }
   return envPath;
 };
+
+const defaultModelsDirectory = (): string =>
+  process.platform === "win32" ? join(homedir(), "models") : "/models";
 
 export const createConfig = (): Config => {
   loadDotEnvironment();
@@ -117,7 +121,7 @@ export const createConfig = (): Config => {
     LOCAL_STUDIO_INFERENCE_HOST: process.env["LOCAL_STUDIO_INFERENCE_HOST"] ?? "localhost",
     LOCAL_STUDIO_INFERENCE_PORT: coercePositiveInteger("LOCAL_STUDIO_INFERENCE_PORT", 8000),
     LOCAL_STUDIO_DATA_DIR: process.env["LOCAL_STUDIO_DATA_DIR"] ?? defaultDataDirectory,
-    LOCAL_STUDIO_MODELS_DIR: process.env["LOCAL_STUDIO_MODELS_DIR"] ?? "/models",
+    LOCAL_STUDIO_MODELS_DIR: process.env["LOCAL_STUDIO_MODELS_DIR"] ?? defaultModelsDirectory(),
   });
   const host = parsed.LOCAL_STUDIO_HOST.trim() || "127.0.0.1";
 
