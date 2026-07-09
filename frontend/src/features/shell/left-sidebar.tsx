@@ -65,6 +65,7 @@ const tabs = [
 const SIDEBAR_MIN_WIDTH = 188;
 const SIDEBAR_MAX_WIDTH = 320;
 const SIDEBAR_DEFAULT_WIDTH = 224;
+const PROJECTS_NAV_IDLE_DELAY_MS = 1800;
 
 let projectsNavSectionPromise: Promise<ProjectsNavSectionComponent> | null = null;
 let sessionsCommandPromise: Promise<SessionsCommandComponent> | null = null;
@@ -191,7 +192,14 @@ export function LeftSidebar({ children }: { children: ReactNode }) {
       return;
     }
     if (!isExpanded) return;
-    return requestIdleWork(() => setProjectsNavReady(true));
+    let cancelIdle: (() => void) | null = null;
+    const delay = window.setTimeout(() => {
+      cancelIdle = requestIdleWork(() => setProjectsNavReady(true));
+    }, PROJECTS_NAV_IDLE_DELAY_MS);
+    return () => {
+      window.clearTimeout(delay);
+      cancelIdle?.();
+    };
   }, [hidesAppSidebar, isExpanded, mobileMenuOpen, projectsNavImmediate, projectsNavReady]);
 
   useMountSubscription(() => {
@@ -267,6 +275,9 @@ export function LeftSidebar({ children }: { children: ReactNode }) {
         </div>
       ) : null}
       <aside
+        onPointerEnter={() => {
+          if (!hidesAppSidebar && !projectsNavReady) setProjectsNavReady(true);
+        }}
         className={`relative hidden md:flex sticky top-0 h-[100dvh] border-r border-(--border) bg-(--sidebar-bg) flex-col shrink-0 z-40 overflow-hidden shadow-[inset_-1px_0_rgba(255,255,255,0.02)] ${
           sidebarResizing ? "" : "transition-[width] duration-150 ease-out"
         } ${isExpanded ? "" : "w-0 border-r-0"}`}
