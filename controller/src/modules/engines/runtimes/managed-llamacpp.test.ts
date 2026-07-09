@@ -6,6 +6,7 @@ import { join } from "node:path";
 import {
   assetCudaVersion,
   managedLlamaServerPath,
+  parseDriverCudaVersion,
   pickCudaAsset,
   type ReleaseAsset,
 } from "./managed-llamacpp";
@@ -31,6 +32,14 @@ describe("assetCudaVersion", () => {
     expect(assetCudaVersion("llama-b9940-bin-win-cuda-12.4-x64.zip")).toBeCloseTo(12.04);
     expect(assetCudaVersion("cudart-llama-bin-win-cuda-13.3-x64.zip")).toBeCloseTo(13.03);
     expect(assetCudaVersion("llama-b9940-bin-win-vulkan-x64.zip")).toBe(0);
+  });
+});
+
+describe("parseDriverCudaVersion", () => {
+  test("reads classic and UMD nvidia-smi banners", () => {
+    expect(parseDriverCudaVersion("| NVIDIA-SMI 555.85    Driver Version: 555.85    CUDA Version: 12.5 |")).toBeCloseTo(12.5);
+    expect(parseDriverCudaVersion("| NVIDIA-SMI 610.47    Driver Version: 610.47    CUDA UMD Version: 13.3 |")).toBeCloseTo(13.3);
+    expect(parseDriverCudaVersion("no gpu here")).toBeNull();
   });
 });
 

@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readdirSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, renameSync, rmSync } from "node:fs";
 import { cpus } from "node:os";
 import { join, resolve } from "node:path";
 import type { Config } from "../../../config/env";
@@ -60,11 +60,15 @@ export const assetCudaVersion = (name: string): number => {
   return Number(match[1]) + Number(match[2] ?? 0) / 100;
 };
 
+export const parseDriverCudaVersion = (output: string): number | null => {
+  const match = output.match(/CUDA (?:UMD )?Version:\s*([\d.]+)/);
+  return match?.[1] ? Number.parseFloat(match[1]) : null;
+};
+
 const detectDriverCudaVersion = async (): Promise<number | null> => {
   const result = await runCommandAsync("nvidia-smi", [], { timeoutMs: 10_000 });
   if (result.status !== 0) return null;
-  const match = result.stdout.match(/CUDA Version:\s*([\d.]+)/);
-  return match?.[1] ? Number.parseFloat(match[1]) : null;
+  return parseDriverCudaVersion(result.stdout);
 };
 
 export const pickCudaAsset = (
@@ -82,9 +86,17 @@ export const pickCudaAsset = (
   return compatible.at(-1) ?? candidates[0] ?? null;
 };
 
+const RELEASE_QUERY_TIMEOUT_MS = 30_000;
+
+const windowsBundledTar = (): string | null => {
+  const systemTar = join(process.env["SystemRoot"] ?? "C:\\Windows", "System32", "tar.exe");
+  return existsSync(systemTar) ? systemTar : null;
+};
+
 const fetchLatestReleaseAssets = async (): Promise<ReleaseAsset[]> => {
   const response = await fetch(LLAMACPP_LATEST_RELEASE_API, {
     headers: { Accept: "application/vnd.github+json", "User-Agent": "local-studio" },
+    signal: AbortSignal.timeout(RELEASE_QUERY_TIMEOUT_MS),
   });
   if (!response.ok) throw new Error(`GitHub release query failed: HTTP ${response.status}`);
   const release = (await response.json()) as { assets?: ReleaseAsset[] };
@@ -92,7 +104,9 @@ const fetchLatestReleaseAssets = async (): Promise<ReleaseAsset[]> => {
 };
 
 const downloadReleaseAsset = async (asset: ReleaseAsset, directory: string): Promise<string> => {
-  const response = await fetch(asset.browser_download_url);
+  const response = await fetch(asset.browser_download_url, {
+    signal: AbortSignal.timeout(MANAGED_BUILD_TIMEOUT_MS),
+  });
   if (!response.ok) throw new Error(`Download failed for ${asset.name}: HTTP ${response.status}`);
   const filePath = join(directory, asset.name);
   await Bun.write(filePath, response);
@@ -110,11 +124,12 @@ const prebuiltFailure = (error: string, output?: string | null): RuntimeUpgradeR
 const installPrebuiltWindowsLlamacpp = async (
   options: InstallOptions,
 ): Promise<RuntimeUpgradeResult> => {
-  const tar = resolveBinary("tar");
+  const tar = windowsBundledTar();
   if (!tar) return missingTool("tar");
 
   const root = managedLlamacppRoot(options.config);
   const downloadDirectory = join(root, "downloads");
+  const stagingDirectory = join(root, "prebuilt-staging");
   const prebuiltDirectory = managedPrebuiltRoot(options.config);
 
   try {
@@ -141,10 +156,10 @@ const installPrebuiltWindowsLlamacpp = async (
       await downloadReleaseAsset(cudartAsset, downloadDirectory),
     ];
 
-    rmSync(prebuiltDirectory, { recursive: true, force: true });
-    mkdirSync(prebuiltDirectory, { recursive: true });
+    rmSync(stagingDirectory, { recursive: true, force: true });
+    mkdirSync(stagingDirectory, { recursive: true });
     for (const archive of archives) {
-      const extract = await runCommandAsync(tar, ["-xf", archive, "-C", prebuiltDirectory], {
+      const extract = await runCommandAsync(tar, ["-xf", archive, "-C", stagingDirectory], {
         timeoutMs: MANAGED_BUILD_TIMEOUT_MS,
         ...(options.onSpawn ? { onSpawn: options.onSpawn } : {}),
       });
@@ -152,12 +167,14 @@ const installPrebuiltWindowsLlamacpp = async (
         return prebuiltFailure(extract.stderr || `Extraction failed for ${archive}`);
       }
     }
-    rmSync(downloadDirectory, { recursive: true, force: true });
+    if (!findFileUnder(stagingDirectory, "llama-server.exe")) {
+      return prebuiltFailure(`Extraction finished but llama-server.exe was not found in ${stagingDirectory}`);
+    }
+
+    rmSync(prebuiltDirectory, { recursive: true, force: true });
+    renameSync(stagingDirectory, prebuiltDirectory);
 
     const binary = managedLlamaServerPath(options.config);
-    if (!existsSync(binary)) {
-      return prebuiltFailure(`Extraction finished but llama-server.exe was not found in ${prebuiltDirectory}`);
-    }
     const version = await runCommandAsync(binary, ["--version"], { timeoutMs: 60_000 });
     return {
       success: true,
@@ -169,6 +186,9 @@ const installPrebuiltWindowsLlamacpp = async (
     };
   } catch (error) {
     return prebuiltFailure(String(error));
+  } finally {
+    rmSync(downloadDirectory, { recursive: true, force: true });
+    rmSync(stagingDirectory, { recursive: true, force: true });
   }
 };
 
