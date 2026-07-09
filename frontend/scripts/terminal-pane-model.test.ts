@@ -10,6 +10,7 @@ import {
   referencedSessionIds,
 } from "../src/features/agent/runtime/selectors";
 import { collectLeaves } from "../src/features/agent/workspace/layout";
+import { isTerminalOwnerVisible } from "../src/features/agent/terminal-owners";
 import {
   applyUrlNavigation,
   canRestoreTerminalOwner,
@@ -530,6 +531,27 @@ test("chat row replay replaces a terminal split with just the selected chat", ()
   assert.equal(next.focusedPaneId, "p-replay");
 });
 
+test("past session replay keeps replace navigation single-pane even with a restored terminal", () => {
+  const a = chatSession({ piSessionId: "pi-a" });
+  const b = chatSession({ piSessionId: "pi-b" });
+  const withTerminal = openTerminalPane(twoChatPaneState(a, b), { sourcePaneId: "p-a" });
+  const action = {
+    type: "urlNavRequested",
+    key: "proj-1|pi-replay|||||1",
+    project: null,
+    sessionId: "pi-replay",
+    tab: chatSession(),
+    replaceWorkspace: true,
+    paneId: "p-replay",
+  } as const;
+
+  const next = reducer(withTerminal, action);
+
+  assert.deepEqual(collectLeaves(next.layout), ["p-replay"]);
+  assert.equal(asChat(next.panesById.get("p-replay")).sessionId, action.tab.id);
+  assert.equal(next.panesById.size, 1);
+});
+
 test("chat row replay remembers detached terminal panes without closing their owners", () => {
   const a = chatSession({ piSessionId: "pi-a", projectId: "project-a" });
   const b = chatSession({ piSessionId: "pi-b" });
@@ -643,6 +665,43 @@ test("terminal panes register terminal owners without broadcasting project sessi
   );
   assert.ok(remembered[0]?.matchKeys.includes("pane:p-term"));
   assert.ok(remembered[0]?.matchKeys.includes("project:proj-1"));
+});
+
+test("project terminal tab shows persisted terminals after switching to a different chat", () => {
+  assert.equal(
+    isTerminalOwnerVisible(
+      {
+        mountKey: "pane-session:a",
+        matchKeys: ["pane-session:a", "session:a", "pi:pi-a", "project:proj-1"],
+        cwd: "/repo/proj",
+        title: "Terminal",
+        kind: "session",
+        sessionId: "a",
+        piSessionId: "pi-a",
+        projectId: "proj-1",
+      },
+      { id: "b", piSessionId: "pi-b", projectId: "proj-1" },
+      "proj-1",
+    ),
+    true,
+  );
+  assert.equal(
+    isTerminalOwnerVisible(
+      {
+        mountKey: "pane-session:a",
+        matchKeys: ["pane-session:a", "session:a", "pi:pi-a", "project:proj-1"],
+        cwd: "/repo/proj",
+        title: "Terminal",
+        kind: "session",
+        sessionId: "a",
+        piSessionId: "pi-a",
+        projectId: "proj-1",
+      },
+      { id: "b", piSessionId: "pi-b", projectId: "proj-2" },
+      "proj-2",
+    ),
+    false,
+  );
 });
 
 test("legacy terminal active-session snapshots are ignored when loading project rows", () => {

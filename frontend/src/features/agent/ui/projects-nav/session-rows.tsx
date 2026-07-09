@@ -363,7 +363,7 @@ export function ActiveSessionRow({
       rowClass={rowClass}
       href={
         session.piSessionId
-          ? `/agent?project=${encodeURIComponent(project.id)}&session=${encodeURIComponent(session.piSessionId)}`
+          ? `/agent?project=${encodeURIComponent(project.id)}&session=${encodeURIComponent(session.piSessionId)}&replace=1`
           : undefined
       }
       onOpen={() => {

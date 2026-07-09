@@ -255,7 +255,7 @@ export default function AgentSessionsPage() {
                     </TCell>
                     <TCell className="px-3 py-2 text-(--fg)">
                       <Link
-                        href={`/agent?project=${encodeURIComponent(session.projectId)}&session=${encodeURIComponent(session.id)}`}
+                        href={`/agent?project=${encodeURIComponent(session.projectId)}&session=${encodeURIComponent(session.id)}&replace=1`}
                         className="line-clamp-1 hover:underline"
                         title={label}
                       >

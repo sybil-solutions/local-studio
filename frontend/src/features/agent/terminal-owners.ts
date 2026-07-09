@@ -44,16 +44,13 @@ export function isTerminalOwnerVisible(
   focusedSession: TerminalFocus | null,
   activeProjectId: string | null,
 ): boolean {
+  const projectId = focusedSession?.projectId ?? activeProjectId;
   if (focusedSession) {
     if (owner.piSessionId != null && owner.piSessionId === (focusedSession.piSessionId ?? null)) {
       return true;
     }
     if (owner.sessionId === focusedSession.id) return true;
-    return (
-      owner.sessionId == null &&
-      owner.piSessionId == null &&
-      (owner.projectId ?? null) === (focusedSession.projectId ?? null)
-    );
+    return owner.projectId == null || owner.projectId === projectId;
   }
-  return owner.projectId == null || owner.projectId === activeProjectId;
+  return owner.projectId == null || owner.projectId === projectId;
 }
