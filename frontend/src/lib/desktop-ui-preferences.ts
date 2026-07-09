@@ -22,9 +22,15 @@ const EXCLUDED_DURABLE_KEYS = new Set([
 ]);
 
 const EXCLUDED_DURABLE_PREFIXES = ["local-studio.agent.transcript."];
-const UI_PREFERENCES_REQUEST = { timeout: 1_500, retries: 0 } as const;
+const UI_PREFERENCES_TIMEOUT_MS = 1_500;
 
 let saveTimer: number | null = null;
+
+type StudioSettingsPayload = {
+  persisted?: {
+    ui_preferences?: Record<string, string>;
+  };
+};
 
 function bridge(): DesktopUiPreferencesBridge | null {
   if (typeof window === "undefined") return null;
@@ -65,9 +71,13 @@ function withoutControllerCredentials(prefs: Record<string, string>): Record<str
 
 async function loadControllerUiPreferences(): Promise<Record<string, string>> {
   try {
-    const { default: api } = await import("@/lib/api/client");
-    const settings = await api.getStudioSettings(UI_PREFERENCES_REQUEST);
-    return withoutControllerCredentials(settings.persisted.ui_preferences ?? {});
+    const response = await fetch("/api/settings", {
+      cache: "no-store",
+      signal: AbortSignal.timeout(UI_PREFERENCES_TIMEOUT_MS),
+    });
+    if (!response.ok) return {};
+    const settings = (await response.json()) as StudioSettingsPayload;
+    return withoutControllerCredentials(settings.persisted?.ui_preferences ?? {});
   } catch {
     return {};
   }
@@ -75,8 +85,12 @@ async function loadControllerUiPreferences(): Promise<Record<string, string>> {
 
 async function saveControllerUiPreferences(prefs: Record<string, string>): Promise<void> {
   try {
-    const { default: api } = await import("@/lib/api/client");
-    await api.updateStudioSettings({ ui_preferences: withoutControllerCredentials(prefs) });
+    await fetch("/api/settings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ui_preferences: withoutControllerCredentials(prefs) }),
+      signal: AbortSignal.timeout(UI_PREFERENCES_TIMEOUT_MS),
+    });
   } catch {
     // The controller can be unavailable during first boot/offline desktop use.
     // The desktop bridge remains a local fallback and the next UI change retries.

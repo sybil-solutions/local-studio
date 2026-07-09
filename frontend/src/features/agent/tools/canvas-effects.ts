@@ -25,6 +25,13 @@ export function syncCanvasEffect(
   );
 }
 
+export function runSyncCanvasEffect(
+  sessionId: SessionId | null | undefined,
+  payload: { enabled: boolean; text?: string },
+): void {
+  void Effect.runPromise(syncCanvasEffect(sessionId, payload));
+}
+
 function loadCanvasEffect(
   query: string,
 ): Effect.Effect<{ enabled?: boolean; text?: string }, unknown> {

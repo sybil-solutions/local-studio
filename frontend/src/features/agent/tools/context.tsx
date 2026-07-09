@@ -7,11 +7,13 @@ import {
   useMemo,
   useRef,
   useState,
+  type ComponentType,
   type Context,
+  type Dispatch,
   type ReactNode,
+  type SetStateAction,
 } from "react";
 import { usePathname } from "next/navigation";
-import { Effect } from "effect";
 import type {
   ComposerPromptTemplateRef,
   ComposerSkillRef,
@@ -43,8 +45,6 @@ import {
   writeComputerWidth,
 } from "@/features/agent/tools/persistence";
 import { useMountSubscription } from "@/hooks/use-mount-subscription";
-import { syncCanvasEffect, useCanvasEffects } from "@/features/agent/tools/canvas-effects";
-import { useToolsCatalogueEffects } from "@/features/agent/tools/catalogue-effects";
 
 // The tools surface is provided as four narrow contexts (actions / computer /
 // browser / selections) so a state change in one slice never re-renders
@@ -100,6 +100,57 @@ const ToolSelectionsContext = createContext<ToolSelectionsValue | null>(null);
 // must not re-render on tools churn — see `useToolsRef`.
 const ToolsRefContext = createContext<{ current: ToolsContextValue } | null>(null);
 
+type ToolsEffectsBridgeProps = {
+  catalogueEnabled: boolean;
+  canvasEffectsEnabled: boolean;
+  setComputer: Dispatch<SetStateAction<ComputerState>>;
+  activeCanvasSessionId: SessionId | null;
+  onCatalogueLoaded: (payload: {
+    skills: ComposerSkillRef[];
+    promptTemplates: ComposerPromptTemplateRef[];
+  }) => void;
+};
+
+type ToolsEffectsBridgeComponent = ComponentType<ToolsEffectsBridgeProps>;
+
+let toolsEffectsBridgePromise: Promise<ToolsEffectsBridgeComponent> | null = null;
+
+function loadToolsEffectsBridge(): Promise<ToolsEffectsBridgeComponent> {
+  toolsEffectsBridgePromise ??= import("@/features/agent/tools/effects-bridge").then(
+    (mod) => mod.ToolsEffectsBridge,
+  );
+  return toolsEffectsBridgePromise;
+}
+
+function syncCanvasInBackground(
+  sessionId: SessionId | null,
+  payload: { enabled: boolean; text?: string },
+): void {
+  void import("@/features/agent/tools/canvas-effects").then((mod) => {
+    mod.runSyncCanvasEffect(sessionId, payload);
+  });
+}
+
+function LazyToolsEffectsBridge(props: ToolsEffectsBridgeProps) {
+  const enabled = props.catalogueEnabled || props.canvasEffectsEnabled;
+  const [ToolsEffectsBridge, setToolsEffectsBridge] = useState<ToolsEffectsBridgeComponent | null>(
+    null,
+  );
+
+  useMountSubscription(() => {
+    if (!enabled || ToolsEffectsBridge) return;
+    let cancelled = false;
+    void loadToolsEffectsBridge().then((Component) => {
+      if (!cancelled) setToolsEffectsBridge(() => Component);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [ToolsEffectsBridge, enabled]);
+
+  return enabled && ToolsEffectsBridge ? <ToolsEffectsBridge {...props} /> : null;
+}
+
 function buildInitialBrowser(): BrowserState {
   if (typeof window === "undefined") {
     return { enabled: false, backend: "embedded", url: "", input: "" };
@@ -137,22 +188,22 @@ export function ToolsProvider({ children }: { children: ReactNode }) {
     ComposerPromptTemplateRef[]
   >([]);
   const selectionsRef = useRef<Map<SessionId, ToolSelection>>(new Map());
-  // Bump on every selection mutation so consumers re-render.
   const [selectionVersion, setSelectionVersion] = useState(0);
   const activeCanvasSessionRef = useRef<SessionId | null>(null);
   const [activeCanvasSessionId, setActiveCanvasSessionIdState] = useState<SessionId | null>(null);
-  useToolsCatalogueEffects({
-    enabled: catalogueEnabled,
-    onLoaded: ({ skills, promptTemplates }) => {
+  const handleCatalogueLoaded = useCallback(
+    ({
+      skills,
+      promptTemplates,
+    }: {
+      skills: ComposerSkillRef[];
+      promptTemplates: ComposerPromptTemplateRef[];
+    }) => {
       setSkillCatalogue(skills);
       setPromptTemplateCatalogue(promptTemplates);
     },
-  });
-  useCanvasEffects({
-    enabled: canvasEffectsEnabled,
-    setComputer,
-    sessionId: activeCanvasSessionId,
-  });
+    [],
+  );
 
   const setActiveCanvasSession = useCallback((sessionId: SessionId | null) => {
     activeCanvasSessionRef.current = sessionId;
@@ -307,10 +358,7 @@ export function ToolsProvider({ children }: { children: ReactNode }) {
       current.canvasEnabled === enabled ? current : { ...current, canvasEnabled: enabled },
     );
     writeComputerCanvasEnabled(enabled);
-    // Best-effort server sync; the use-canvas-effects hook owns full hydration
-    // and reconciliation. Failures here are harmless because the next mount
-    // will re-read the server-side document.
-    void Effect.runPromise(syncCanvasEffect(activeCanvasSessionRef.current, { enabled }));
+    syncCanvasInBackground(activeCanvasSessionRef.current, { enabled });
   }, []);
 
   const toggleCanvas = useCallback(() => {
@@ -319,12 +367,11 @@ export function ToolsProvider({ children }: { children: ReactNode }) {
       const tabs = next ? uniqueComputerTabs([...current.tabs, "canvas"]) : current.tabs;
       writeComputerCanvasEnabled(next);
       if (next) writeComputerTabs(tabs);
-      void Effect.runPromise(syncCanvasEffect(activeCanvasSessionRef.current, { enabled: next }));
+      syncCanvasInBackground(activeCanvasSessionRef.current, { enabled: next });
       return {
         ...current,
         canvasEnabled: next,
         tabs,
-        // When enabling the canvas, focus it; when disabling, fall back to status.
         tab: next ? "canvas" : current.tab === "canvas" ? "status" : current.tab,
         open: next ? true : current.open,
       };
@@ -336,9 +383,7 @@ export function ToolsProvider({ children }: { children: ReactNode }) {
       current.canvasText === text ? current : { ...current, canvasText: text },
     );
     writeComputerCanvasText(text);
-    void Effect.runPromise(
-      syncCanvasEffect(activeCanvasSessionRef.current, { enabled: true, text }),
-    );
+    syncCanvasInBackground(activeCanvasSessionRef.current, { enabled: true, text });
   }, []);
 
   const requestFileOpen = useCallback((path: string) => {
@@ -490,7 +535,16 @@ export function ToolsProvider({ children }: { children: ReactNode }) {
       <ComputerToolsContext.Provider value={computer}>
         <BrowserToolsContext.Provider value={browser}>
           <ToolSelectionsContext.Provider value={selections}>
-            <ToolsRefContext.Provider value={valueRef}>{children}</ToolsRefContext.Provider>
+            <ToolsRefContext.Provider value={valueRef}>
+              <LazyToolsEffectsBridge
+                catalogueEnabled={catalogueEnabled}
+                canvasEffectsEnabled={canvasEffectsEnabled}
+                setComputer={setComputer}
+                activeCanvasSessionId={activeCanvasSessionId}
+                onCatalogueLoaded={handleCatalogueLoaded}
+              />
+              {children}
+            </ToolsRefContext.Provider>
           </ToolSelectionsContext.Provider>
         </BrowserToolsContext.Provider>
       </ComputerToolsContext.Provider>

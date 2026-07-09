@@ -2,11 +2,9 @@
 
 import { useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Effect } from "effect";
 import { Search } from "@/ui/icon-registry";
 import { ChatIcon, Folder } from "@/ui/icons";
 import { cleanSessionTitle } from "@/features/agent/messages/helpers";
-import { safeJson } from "@/features/agent/safe-json";
 import { useMountSubscription } from "@/hooks/use-mount-subscription";
 
 import {
@@ -101,25 +99,14 @@ export function SessionsCommand({ open, onClose, activeSessions }: Props) {
   useMountSubscription(() => {
     if (!open) return;
     let cancelled = false;
-    void Effect.runPromise(
-      Effect.gen(function* () {
-        const response = yield* Effect.tryPromise({
-          try: () => fetch("/api/agent/sessions/all?since=30d", { cache: "no-store" }),
-          catch: (error) => error,
-        });
-        const payload = yield* Effect.tryPromise({
-          try: () => safeJson<{ sessions?: AggregatedSession[] }>(response),
-          catch: (error) => error,
-        });
-        if (!cancelled) setSessions(payload.sessions ?? []);
-      }).pipe(
-        Effect.catch(() =>
-          Effect.sync(() => {
-            if (!cancelled) setSessions([]);
-          }),
-        ),
-      ),
-    );
+    void import("@/features/agent/ui/sessions-command-effects")
+      .then((mod) => mod.loadAggregatedSessions())
+      .then((nextSessions) => {
+        if (!cancelled) setSessions(nextSessions);
+      })
+      .catch(() => {
+        if (!cancelled) setSessions([]);
+      });
     return () => {
       cancelled = true;
     };
@@ -135,12 +122,8 @@ export function SessionsCommand({ open, onClose, activeSessions }: Props) {
     return () => cancelAnimationFrame(frame);
   }, [open]);
 
-  // Index active sessions by piSessionId so we can mark stored sessions that
-  // are currently running in a pane.
   const activeByPiId = useMemo(() => indexActiveByPiId(activeSessions), [activeSessions]);
 
-  // Active sessions that aren't yet persisted to disk (no piSessionId yet, or
-  // running tabs we want to surface ahead of stored history).
   const liveOnlyActives = useMemo(
     () => activeSessions.filter((session) => isRunning(session.status)),
     [activeSessions],
