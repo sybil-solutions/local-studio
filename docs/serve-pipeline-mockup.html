@@ -1,0 +1,1666 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Serve Pipeline — locked feature mockup</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #0c0c0d;
+      --bg-elev: #121214;
+      --surface: #161618;
+      --surface-2: #1c1c1f;
+      --surface-3: #222226;
+      --border: rgba(255, 255, 255, 0.08);
+      --border-strong: rgba(255, 255, 255, 0.14);
+      --fg: #ececee;
+      --dim: #8b8b93;
+      --muted: #5c5c66;
+      --accent: #c9a227;
+      --accent-dim: rgba(201, 162, 39, 0.14);
+      --accent-border: rgba(201, 162, 39, 0.35);
+      --ok: #3d9a6a;
+      --ok-dim: rgba(61, 154, 106, 0.14);
+      --warn: #c9852a;
+      --warn-dim: rgba(201, 133, 42, 0.14);
+      --err: #c45c5c;
+      --err-dim: rgba(196, 92, 92, 0.14);
+      --sky: #6aa8c9;
+      --sky-dim: rgba(106, 168, 201, 0.12);
+      --font: "IBM Plex Sans", system-ui, sans-serif;
+      --mono: "IBM Plex Mono", ui-monospace, monospace;
+      --r: 8px;
+      --hair: 1px;
+    }
+
+    * { box-sizing: border-box; }
+    html, body { margin: 0; min-height: 100%; }
+    body {
+      font-family: var(--font);
+      background:
+        radial-gradient(ellipse 80% 50% at 10% -10%, rgba(201, 162, 39, 0.06), transparent 50%),
+        radial-gradient(ellipse 60% 40% at 100% 0%, rgba(106, 168, 201, 0.05), transparent 45%),
+        var(--bg);
+      color: var(--fg);
+      font-size: 14px;
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    code, .mono { font-family: var(--mono); font-size: 0.9em; }
+    button { font-family: inherit; cursor: pointer; }
+    button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    .shell {
+      display: grid;
+      grid-template-columns: 240px 1fr;
+      min-height: 100vh;
+    }
+    @media (max-width: 960px) {
+      .shell { grid-template-columns: 1fr; }
+      .nav { position: sticky; top: 0; z-index: 20; border-right: none; border-bottom: var(--hair) solid var(--border); }
+    }
+
+    .nav {
+      background: var(--bg-elev);
+      border-right: var(--hair) solid var(--border);
+      padding: 20px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .brand {
+      padding: 4px 10px 18px;
+      border-bottom: var(--hair) solid var(--border);
+      margin-bottom: 12px;
+    }
+    .brand-kicker {
+      font-family: var(--mono);
+      font-size: 10px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--accent);
+    }
+    .brand-title {
+      font-size: 15px;
+      font-weight: 600;
+      margin-top: 4px;
+    }
+    .brand-sub {
+      font-size: 11px;
+      color: var(--dim);
+      margin-top: 4px;
+      line-height: 1.4;
+    }
+    .nav-section {
+      font-family: var(--mono);
+      font-size: 10px;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--muted);
+      padding: 14px 10px 6px;
+    }
+    .nav-btn {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      width: 100%;
+      text-align: left;
+      border: var(--hair) solid transparent;
+      background: transparent;
+      color: var(--dim);
+      border-radius: 6px;
+      padding: 8px 10px;
+      font-size: 13px;
+      transition: background 0.12s, color 0.12s, border-color 0.12s;
+    }
+    .nav-btn:hover { background: var(--surface); color: var(--fg); }
+    .nav-btn.active {
+      background: var(--accent-dim);
+      border-color: var(--accent-border);
+      color: var(--fg);
+    }
+    .nav-btn .n {
+      font-family: var(--mono);
+      font-size: 10px;
+      color: var(--muted);
+      min-width: 16px;
+    }
+    .nav-btn.active .n { color: var(--accent); }
+
+    .main {
+      padding: 28px 32px 64px;
+      max-width: 1120px;
+    }
+    @media (max-width: 640px) { .main { padding: 18px 14px 48px; } }
+
+    .panel { display: none; animation: fadeUp 0.28s ease both; }
+    .panel.active { display: block; }
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(6px); }
+      to { opacity: 1; transform: none; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .panel { animation: none; }
+      * { transition: none !important; }
+    }
+
+    .eyebrow {
+      font-family: var(--mono);
+      font-size: 10px;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--accent);
+      margin-bottom: 8px;
+    }
+    h1 {
+      font-size: 26px;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+      margin: 0 0 8px;
+      line-height: 1.2;
+    }
+    h2 {
+      font-size: 16px;
+      font-weight: 600;
+      margin: 0 0 10px;
+      letter-spacing: -0.01em;
+    }
+    h3 {
+      font-size: 13px;
+      font-weight: 600;
+      margin: 0 0 8px;
+    }
+    .lead {
+      color: var(--dim);
+      max-width: 62ch;
+      margin: 0 0 24px;
+      font-size: 14.5px;
+    }
+
+    .hero {
+      border: var(--hair) solid var(--accent-border);
+      background: linear-gradient(135deg, var(--accent-dim), transparent 60%), var(--surface);
+      border-radius: var(--r);
+      padding: 22px 24px;
+      margin-bottom: 20px;
+    }
+    .hero p { margin: 0; color: var(--dim); max-width: 68ch; }
+    .hero strong { color: var(--fg); font-weight: 600; }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+    }
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+    }
+    @media (max-width: 800px) {
+      .grid-2, .grid-3 { grid-template-columns: 1fr; }
+    }
+
+    .card {
+      background: var(--surface);
+      border: var(--hair) solid var(--border);
+      border-radius: var(--r);
+      padding: 16px;
+      min-width: 0;
+    }
+    .card.elev {
+      background: var(--surface-2);
+      border-color: var(--border-strong);
+    }
+    .card.recessed {
+      background: var(--bg-elev);
+    }
+    .card.kill {
+      border-color: rgba(196, 92, 92, 0.3);
+      background: linear-gradient(180deg, var(--err-dim), var(--surface));
+    }
+    .card.keep {
+      border-color: rgba(61, 154, 106, 0.3);
+      background: linear-gradient(180deg, var(--ok-dim), var(--surface));
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      font-family: var(--mono);
+      font-size: 10px;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      padding: 3px 8px;
+      border-radius: 999px;
+      border: var(--hair) solid var(--border);
+      color: var(--dim);
+      background: var(--bg);
+    }
+    .pill.ok { color: #8fd4ae; border-color: rgba(61, 154, 106, 0.4); background: var(--ok-dim); }
+    .pill.warn { color: #e0b56a; border-color: rgba(201, 133, 42, 0.4); background: var(--warn-dim); }
+    .pill.err { color: #e0a0a0; border-color: rgba(196, 92, 92, 0.4); background: var(--err-dim); }
+    .pill.sky { color: #9cc9e0; border-color: rgba(106, 168, 201, 0.4); background: var(--sky-dim); }
+    .pill.accent { color: #e6d08a; border-color: var(--accent-border); background: var(--accent-dim); }
+
+    .dot {
+      width: 6px; height: 6px; border-radius: 50%;
+      background: currentColor;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+    th, td {
+      text-align: left;
+      padding: 9px 10px;
+      border-bottom: var(--hair) solid var(--border);
+      vertical-align: top;
+    }
+    th {
+      font-family: var(--mono);
+      font-size: 10px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--muted);
+      font-weight: 500;
+    }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: rgba(255,255,255,0.015); }
+    td code {
+      background: var(--bg);
+      border: var(--hair) solid var(--border);
+      padding: 1px 5px;
+      border-radius: 4px;
+      font-size: 11.5px;
+    }
+
+    .flow {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: stretch;
+      gap: 0;
+      margin: 18px 0;
+    }
+    .flow-step {
+      flex: 1 1 120px;
+      min-width: 110px;
+      background: var(--surface);
+      border: var(--hair) solid var(--border);
+      padding: 12px 14px;
+      position: relative;
+    }
+    .flow-step:first-child { border-radius: var(--r) 0 0 var(--r); }
+    .flow-step:last-child { border-radius: 0 var(--r) var(--r) 0; }
+    .flow-step + .flow-step { border-left: none; }
+    .flow-step .idx {
+      font-family: var(--mono);
+      font-size: 10px;
+      color: var(--accent);
+      letter-spacing: 0.08em;
+    }
+    .flow-step .name { font-weight: 600; font-size: 13px; margin-top: 4px; }
+    .flow-step .desc { font-size: 11.5px; color: var(--dim); margin-top: 4px; line-height: 1.35; }
+    .flow-step.done { background: var(--ok-dim); border-color: rgba(61,154,106,0.35); }
+    .flow-step.active {
+      background: var(--accent-dim);
+      border-color: var(--accent-border);
+      box-shadow: inset 0 0 0 1px var(--accent-border);
+      z-index: 1;
+    }
+    @media (max-width: 700px) {
+      .flow-step { border-radius: var(--r) !important; border: var(--hair) solid var(--border) !important; }
+      .flow-step + .flow-step { margin-top: 6px; }
+    }
+
+    .app-chrome {
+      border: var(--hair) solid var(--border-strong);
+      border-radius: 10px;
+      overflow: hidden;
+      background: var(--bg);
+      box-shadow: 0 20px 50px rgba(0,0,0,0.35);
+    }
+    .app-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 14px;
+      background: var(--bg-elev);
+      border-bottom: var(--hair) solid var(--border);
+    }
+    .app-bar-left {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 12px;
+      color: var(--dim);
+    }
+    .app-bar-left strong { color: var(--fg); font-weight: 600; }
+    .app-body {
+      display: grid;
+      grid-template-columns: 180px 1fr;
+      min-height: 520px;
+    }
+    @media (max-width: 720px) {
+      .app-body { grid-template-columns: 1fr; }
+      .app-side { display: none; }
+    }
+    .app-side {
+      border-right: var(--hair) solid var(--border);
+      background: var(--bg-elev);
+      padding: 12px 10px;
+    }
+    .app-side .side-item {
+      padding: 7px 10px;
+      border-radius: 5px;
+      font-size: 12px;
+      color: var(--dim);
+      margin-bottom: 2px;
+    }
+    .app-side .side-item.on {
+      background: var(--surface-2);
+      color: var(--fg);
+      border: var(--hair) solid var(--border);
+    }
+    .app-content { padding: 16px 18px; background: var(--bg); }
+    .app-content h2 { font-size: 15px; }
+
+    .toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+      margin-bottom: 14px;
+    }
+    .search {
+      flex: 1 1 180px;
+      background: var(--surface);
+      border: var(--hair) solid var(--border);
+      border-radius: 6px;
+      padding: 8px 11px;
+      color: var(--dim);
+      font-size: 12.5px;
+      font-family: var(--mono);
+    }
+
+    .btn {
+      border: var(--hair) solid var(--border-strong);
+      background: var(--surface-2);
+      color: var(--fg);
+      border-radius: 6px;
+      padding: 7px 12px;
+      font-size: 12.5px;
+      font-weight: 500;
+      transition: background 0.12s, border-color 0.12s;
+    }
+    .btn:hover:not(:disabled) { background: var(--surface-3); }
+    .btn.primary {
+      background: var(--accent);
+      border-color: transparent;
+      color: #1a1404;
+      font-weight: 600;
+    }
+    .btn.primary:hover:not(:disabled) { filter: brightness(1.06); }
+    .btn.ghost {
+      background: transparent;
+      border-color: var(--border);
+      color: var(--dim);
+    }
+    .btn.danger {
+      background: var(--err-dim);
+      border-color: rgba(196,92,92,0.4);
+      color: #e0a0a0;
+    }
+    .btn.sm { padding: 5px 9px; font-size: 11.5px; }
+
+    .model-row {
+      display: grid;
+      grid-template-columns: 1fr auto auto;
+      gap: 12px;
+      align-items: center;
+      padding: 11px 12px;
+      border: var(--hair) solid var(--border);
+      border-radius: 7px;
+      background: var(--surface);
+      margin-bottom: 8px;
+      cursor: pointer;
+      transition: border-color 0.12s, background 0.12s;
+    }
+    .model-row:hover { border-color: var(--border-strong); background: var(--surface-2); }
+    .model-row.selected {
+      border-color: var(--accent-border);
+      background: var(--accent-dim);
+    }
+    .model-row .title { font-weight: 600; font-size: 13px; }
+    .model-row .meta { font-size: 11.5px; color: var(--dim); margin-top: 2px; font-family: var(--mono); }
+    .model-row .size { font-family: var(--mono); font-size: 11.5px; color: var(--dim); }
+
+    .progress {
+      height: 4px;
+      background: var(--surface-3);
+      border-radius: 2px;
+      overflow: hidden;
+      margin-top: 8px;
+    }
+    .progress > i {
+      display: block;
+      height: 100%;
+      background: var(--accent);
+      width: 0%;
+      transition: width 0.3s ease;
+    }
+
+    .runtime-card {
+      border: var(--hair) solid var(--border);
+      border-radius: 7px;
+      padding: 12px;
+      background: var(--surface);
+      cursor: pointer;
+      transition: border-color 0.12s, background 0.12s;
+      margin-bottom: 8px;
+    }
+    .runtime-card:hover { border-color: var(--border-strong); }
+    .runtime-card.selected {
+      border-color: var(--accent-border);
+      background: var(--accent-dim);
+    }
+    .runtime-card.disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+    .runtime-card .row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+    }
+    .runtime-card .label { font-weight: 600; font-size: 13px; }
+    .runtime-card .hint { font-size: 11.5px; color: var(--dim); margin-top: 4px; font-family: var(--mono); }
+
+    .form-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+    @media (max-width: 640px) { .form-grid { grid-template-columns: 1fr; } }
+    .field label {
+      display: block;
+      font-family: var(--mono);
+      font-size: 10px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 5px;
+    }
+    .field .value {
+      background: var(--bg);
+      border: var(--hair) solid var(--border);
+      border-radius: 6px;
+      padding: 8px 10px;
+      font-family: var(--mono);
+      font-size: 12px;
+      color: var(--fg);
+    }
+    .field .value.dim { color: var(--dim); }
+
+    .log {
+      font-family: var(--mono);
+      font-size: 11.5px;
+      line-height: 1.55;
+      background: var(--bg);
+      border: var(--hair) solid var(--border);
+      border-radius: 6px;
+      padding: 10px 12px;
+      color: var(--dim);
+      max-height: 160px;
+      overflow: auto;
+      white-space: pre-wrap;
+    }
+    .log .ok { color: #8fd4ae; }
+    .log .warn { color: #e0b56a; }
+    .log .info { color: #9cc9e0; }
+
+    .status-strip {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+      padding: 10px 12px;
+      background: var(--surface);
+      border: var(--hair) solid var(--border);
+      border-radius: 7px;
+      margin-bottom: 14px;
+      font-size: 12px;
+    }
+    .status-strip .sep { color: var(--muted); }
+
+    .callout {
+      border-left: 2px solid var(--accent);
+      background: var(--accent-dim);
+      padding: 10px 14px;
+      border-radius: 0 6px 6px 0;
+      color: var(--dim);
+      font-size: 13px;
+      margin: 14px 0;
+    }
+    .callout.err { border-left-color: var(--err); background: var(--err-dim); }
+    .callout.ok { border-left-color: var(--ok); background: var(--ok-dim); }
+    .callout strong { color: var(--fg); }
+
+    .list-kill {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+    }
+    .list-kill li {
+      display: grid;
+      grid-template-columns: 88px 1fr;
+      gap: 10px;
+      padding: 8px 0;
+      border-bottom: var(--hair) solid var(--border);
+      font-size: 13px;
+    }
+    .list-kill li:last-child { border-bottom: none; }
+    .list-kill .tag {
+      font-family: var(--mono);
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: #e0a0a0;
+      padding-top: 2px;
+    }
+    .list-kill.keep .tag { color: #8fd4ae; }
+
+    .steps-rail {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 16px;
+      flex-wrap: wrap;
+    }
+    .steps-rail button {
+      border: var(--hair) solid var(--border);
+      background: var(--surface);
+      color: var(--dim);
+      border-radius: 999px;
+      padding: 5px 11px;
+      font-size: 11.5px;
+      font-family: var(--mono);
+    }
+    .steps-rail button.on {
+      background: var(--accent-dim);
+      border-color: var(--accent-border);
+      color: var(--fg);
+    }
+    .steps-rail button.done {
+      color: #8fd4ae;
+      border-color: rgba(61,154,106,0.35);
+    }
+
+    .footer-actions {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+      margin-top: 16px;
+      padding-top: 14px;
+      border-top: var(--hair) solid var(--border);
+    }
+
+    .spec-block {
+      font-family: var(--mono);
+      font-size: 11.5px;
+      line-height: 1.55;
+      background: var(--bg);
+      border: var(--hair) solid var(--border);
+      border-radius: 6px;
+      padding: 14px;
+      overflow-x: auto;
+      white-space: pre;
+      color: #c8c8ce;
+    }
+    .spec-block .k { color: #9cc9e0; }
+    .spec-block .s { color: #8fd4ae; }
+    .spec-block .c { color: var(--muted); }
+
+    .kv {
+      display: grid;
+      grid-template-columns: 140px 1fr;
+      gap: 6px 12px;
+      font-size: 13px;
+    }
+    .kv dt { color: var(--muted); font-family: var(--mono); font-size: 11px; padding-top: 2px; }
+    .kv dd { margin: 0; color: var(--fg); }
+
+    .split-mock {
+      display: grid;
+      grid-template-columns: 1.15fr 0.85fr;
+      gap: 14px;
+    }
+    @media (max-width: 900px) { .split-mock { grid-template-columns: 1fr; } }
+
+    .badge-row { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 0; }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <aside class="nav">
+      <div class="brand">
+        <div class="brand-kicker">Local Studio · locked design</div>
+        <div class="brand-title">Serve Pipeline</div>
+        <div class="brand-sub">One feature. Get weights → pick runtime → configure → serve. Everything else dies.</div>
+      </div>
+      <div class="nav-section">Spec</div>
+      <button class="nav-btn active" data-panel="overview"><span class="n">01</span> Overview</button>
+      <button class="nav-btn" data-panel="model"><span class="n">02</span> Data model</button>
+      <button class="nav-btn" data-panel="api"><span class="n">03</span> API surface</button>
+      <button class="nav-btn" data-panel="delete"><span class="n">04</span> Delete list</button>
+      <div class="nav-section">Experience</div>
+      <button class="nav-btn" data-panel="mock"><span class="n">05</span> Interactive mockup</button>
+      <button class="nav-btn" data-panel="states"><span class="n">06</span> State machine</button>
+      <button class="nav-btn" data-panel="acceptance"><span class="n">07</span> Acceptance</button>
+    </aside>
+
+    <main class="main">
+      <!-- 01 OVERVIEW -->
+      <section class="panel active" id="panel-overview">
+        <div class="eyebrow">Feature lock · v1</div>
+        <h1>Serve Pipeline</h1>
+        <p class="lead">
+          Replace the fractured engine / download / recipe / docker / environments / discover
+          surface with <strong>one noun</strong> and <strong>one flow</strong>. A user can go from
+          “I want that model” to “it is serving on my controller” without leaving Models.
+        </p>
+
+        <div class="hero">
+          <p>
+            <strong>Product promise:</strong> Every model you can run is a
+            <code class="mono">Serve</code> — weights on disk, a chosen runtime
+            (managed venv · system binary · Docker image), and serve settings.
+            Launch always uses that Serve. Nothing else is a second path.
+          </p>
+          <div class="badge-row">
+            <span class="pill accent"><span class="dot"></span> single surface</span>
+            <span class="pill ok"><span class="dot"></span> runtime is real</span>
+            <span class="pill sky"><span class="dot"></span> docker is a runtime kind</span>
+            <span class="pill warn"><span class="dot"></span> old paths deleted</span>
+          </div>
+        </div>
+
+        <div class="flow" aria-label="Canonical pipeline">
+          <div class="flow-step">
+            <div class="idx">01</div>
+            <div class="name">Get</div>
+            <div class="desc">Browse, recommend, or paste HF id. Download weights into models_dir.</div>
+          </div>
+          <div class="flow-step">
+            <div class="idx">02</div>
+            <div class="name">Runtime</div>
+            <div class="desc">Pick how it runs: managed engine, system install, or Docker image. Install if missing.</div>
+          </div>
+          <div class="flow-step">
+            <div class="idx">03</div>
+            <div class="name">Configure</div>
+            <div class="desc">Backend defaults + resources. Path, port, name auto-filled from download.</div>
+          </div>
+          <div class="flow-step">
+            <div class="idx">04</div>
+            <div class="name">Serve</div>
+            <div class="desc">One launch path. Health ready → Status + Chat. Stop/evict same surface.</div>
+          </div>
+        </div>
+
+        <div class="grid-2" style="margin-top: 8px;">
+          <div class="card keep">
+            <h3>In scope (v1)</h3>
+            <ul style="margin:0; padding-left:18px; color:var(--dim); font-size:13px;">
+              <li>Models page owns Get + Serve list + editor</li>
+              <li>Setup wizard is a thin first-run skin over the same pipeline</li>
+              <li>Runtime selection is persisted <em>and used at launch</em></li>
+              <li>Docker only as runtime kind for engines that support it (vLLM first; SGLang when image contract known)</li>
+              <li>Post-download always offers Create Serve</li>
+            </ul>
+          </div>
+          <div class="card kill">
+            <h3>Explicitly out of scope</h3>
+            <ul style="margin:0; padding-left:18px; color:var(--dim); font-size:13px;">
+              <li>No Environments page / CRUD / start-stop dual lifecycle</li>
+              <li>No separate Discover page</li>
+              <li>No docker RuntimeTarget that cannot launch</li>
+              <li>No secret-only <code>extra_args.docker_image</code> without UI</li>
+              <li>No fire-and-forget second launch client</li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="callout" style="margin-top:18px;">
+          <strong>Lock rule.</strong> If a code path can put weights on disk or start an inference
+          process without going through a Serve entity + the single launch coordinator, it is deleted.
+        </div>
+      </section>
+
+      <!-- 02 DATA MODEL -->
+      <section class="panel" id="panel-model">
+        <div class="eyebrow">Contracts</div>
+        <h1>One entity: Serve</h1>
+        <p class="lead">
+          Rename in product language to “Serve” (UI). Wire type can stay <code>Recipe</code>
+          during migration, then rename. Runtime is a first-class field — not a side channel.
+        </p>
+
+        <div class="grid-2">
+          <div class="card recessed">
+            <h3>Serve (canonical)</h3>
+            <div class="spec-block"><span class="c">// shared/contracts/serve.ts</span>
+<span class="k">type</span> RuntimeKind = <span class="s">"managed_venv"</span> | <span class="s">"system"</span> | <span class="s">"docker"</span> | <span class="s">"binary"</span>
+
+<span class="k">interface</span> ServeRuntime {
+  kind: RuntimeKind
+  <span class="c">// managed_venv → backend id resolves path</span>
+  <span class="c">// system/binary → absolute path</span>
+  <span class="c">// docker → image ref, e.g. vllm/vllm-openai:v0.8.5</span>
+  ref: <span class="k">string</span>
+  label?: <span class="k">string</span>
+}
+
+<span class="k">interface</span> Serve {
+  id: <span class="k">string</span>
+  name: <span class="k">string</span>
+  backend: <span class="s">"vllm"</span> | <span class="s">"sglang"</span> | <span class="s">"llamacpp"</span> | <span class="s">"mlx"</span>
+  model_path: <span class="k">string</span>
+  runtime: ServeRuntime
+  served_model_name?: <span class="k">string</span>
+  <span class="c">// resources + engine args (existing fields)</span>
+  max_model_len: <span class="k">number</span>
+  gpu_memory_utilization: <span class="k">number</span>
+  tensor_parallel_size: <span class="k">number</span>
+  extra_args: Record&lt;<span class="k">string</span>, unknown&gt;
+  env_vars?: Record&lt;<span class="k">string</span>, <span class="k">string</span>&gt;
+}</div>
+          </div>
+          <div>
+            <div class="card" style="margin-bottom:12px;">
+              <h3>Runtime catalog (discovery only)</h3>
+              <p style="margin:0 0 10px; color:var(--dim); font-size:13px;">
+                Discovered targets feed the picker. They are not launchable by themselves.
+                Launch only happens from a Serve whose <code>runtime</code> was set.
+              </p>
+              <div class="spec-block"><span class="k">interface</span> RuntimeOption {
+  id: <span class="k">string</span>
+  backend: EngineBackend
+  kind: RuntimeKind
+  label: <span class="k">string</span>
+  ref: <span class="k">string</span>
+  installed: <span class="k">boolean</span>
+  canInstall: <span class="k">boolean</span>
+  version?: <span class="k">string</span> | <span class="k">null</span>
+}</div>
+            </div>
+            <div class="card">
+              <h3>Invariants (non-negotiable)</h3>
+              <dl class="kv">
+                <dt>I1</dt>
+                <dd><code>buildCommand(serve)</code> reads <code>serve.runtime</code> only — never global “selected target” alone.</dd>
+                <dt>I2</dt>
+                <dd>Docker Serves set <code>runtime.kind = "docker"</code>. No parallel <code>extra_args.docker_image</code>.</dd>
+                <dt>I3</dt>
+                <dd>Completed download → always can create Serve with <code>model_path = target_dir</code> (or GGUF file).</dd>
+                <dt>I4</dt>
+                <dd>One launch entry: <code>POST /launch/:id</code> → coordinator → process manager.</dd>
+                <dt>I5</dt>
+                <dd>Managed install writes a RuntimeOption the next Serve picker can select.</dd>
+              </dl>
+            </div>
+          </div>
+        </div>
+
+        <div class="card" style="margin-top:14px;">
+          <h3>Migration from today</h3>
+          <table>
+            <thead>
+              <tr><th>Today</th><th>Tomorrow</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>Recipe</code> + optional <code>extra_args.docker_image</code></td>
+                <td><code>Serve.runtime</code> first-class; migrate docker_image → runtime on read</td>
+              </tr>
+              <tr>
+                <td><code>selected_runtime_target_ids</code> global map</td>
+                <td>Default suggestion for new Serves only; each Serve stores its own runtime</td>
+              </tr>
+              <tr>
+                <td>Docker RuntimeTarget <code>canLaunch: true</code></td>
+                <td><code>canInstall: false</code>, used only as RuntimeOption catalog row</td>
+              </tr>
+              <tr>
+                <td><code>DEFAULT_CANONICAL_PYTHON_PATH</code> above managed venv</td>
+                <td>Managed venv first; machine path only if still exists and user picks system</td>
+              </tr>
+              <tr>
+                <td>Environments table / routes</td>
+                <td>Gone permanently — docker is a Serve runtime</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- 03 API -->
+      <section class="panel" id="panel-api">
+        <div class="eyebrow">Controller</div>
+        <h1>Compressed API surface</h1>
+        <p class="lead">Fewer endpoints. Clear ownership. No theater routes.</p>
+
+        <div class="card" style="margin-bottom:14px;">
+          <table>
+            <thead>
+              <tr><th>Method</th><th>Path</th><th>Role</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><span class="pill">GET</span></td>
+                <td><code>/serves</code> <span style="color:var(--muted)">(alias <code>/recipes</code> during migrate)</span></td>
+                <td>List Serves + status (stopped / starting / running / error)</td>
+              </tr>
+              <tr>
+                <td><span class="pill">POST</span></td>
+                <td><code>/serves</code></td>
+                <td>Create from body or from download id (<code>from_download</code>)</td>
+              </tr>
+              <tr>
+                <td><span class="pill">PUT</span></td>
+                <td><code>/serves/:id</code></td>
+                <td>Update config including runtime</td>
+              </tr>
+              <tr>
+                <td><span class="pill">DELETE</span></td>
+                <td><code>/serves/:id</code></td>
+                <td>Delete Serve (not weights)</td>
+              </tr>
+              <tr>
+                <td><span class="pill sky">POST</span></td>
+                <td><code>/launch/:id</code></td>
+                <td><strong>Only</strong> launch path → coordinator</td>
+              </tr>
+              <tr>
+                <td><span class="pill">POST</span></td>
+                <td><code>/evict</code> · <code>/launch/:id/cancel</code></td>
+                <td>Stop / cancel</td>
+              </tr>
+              <tr>
+                <td><span class="pill">GET/POST</span></td>
+                <td><code>/studio/downloads*</code></td>
+                <td>Unchanged download manager</td>
+              </tr>
+              <tr>
+                <td><span class="pill">GET</span></td>
+                <td><code>/runtime/options</code></td>
+                <td>Catalog of RuntimeOptions (replaces /runtime/targets for UI)</td>
+              </tr>
+              <tr>
+                <td><span class="pill">POST</span></td>
+                <td><code>/runtime/jobs</code></td>
+                <td>install / update managed engines only</td>
+              </tr>
+              <tr>
+                <td><span class="pill err">DELETE</span></td>
+                <td><code>/environments*</code></td>
+                <td>Already gone — keep dead</td>
+              </tr>
+              <tr>
+                <td><span class="pill err">DELETE</span></td>
+                <td><code>POST /runtime/targets/:id/select</code></td>
+                <td>Global select theater — remove</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="grid-2">
+          <div class="card recessed">
+            <h3>Create from download</h3>
+            <div class="spec-block">POST /serves
+{
+  <span class="s">"from_download"</span>: <span class="s">"&lt;download-uuid&gt;"</span>,
+  <span class="s">"backend"</span>: <span class="s">"vllm"</span>,
+  <span class="s">"runtime"</span>: {
+    <span class="s">"kind"</span>: <span class="s">"managed_venv"</span>,
+    <span class="s">"ref"</span>: <span class="s">"vllm"</span>
+  }
+}
+<span class="c">// server fills model_path, name, defaults</span></div>
+          </div>
+          <div class="card recessed">
+            <h3>Launch resolves runtime</h3>
+            <div class="spec-block"><span class="c">// process/backend-builder</span>
+<span class="k">if</span> (serve.runtime.kind === <span class="s">"docker"</span>) {
+  <span class="k">return</span> wrapInDocker(serve, serve.runtime.ref, inner)
+}
+<span class="k">if</span> (serve.runtime.kind === <span class="s">"managed_venv"</span>) {
+  python = managedVenvPython(serve.backend)
+}
+<span class="k">if</span> (serve.runtime.kind === <span class="s">"system"</span> || <span class="s">"binary"</span>) {
+  use serve.runtime.ref
+}</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 04 DELETE -->
+      <section class="panel" id="panel-delete">
+        <div class="eyebrow">Cleanup contract</div>
+        <h1>What we delete when this locks</h1>
+        <p class="lead">Implement Serve Pipeline, then cut these without replacement. No “keep for later.”</p>
+
+        <div class="grid-2">
+          <div class="card kill">
+            <h3>Product / routes</h3>
+            <ul class="list-kill">
+              <li><span class="tag">delete</span><span><code>/discover</code> + <code>features/discover/*</code> — Explore lives inside Models Get tab</span></li>
+              <li><span class="tag">delete</span><span>Environments docs, contract validator entries, leftover comments</span></li>
+              <li><span class="tag">delete</span><span>Global runtime select UI/API (<code>/runtime/targets/:id/select</code>)</span></li>
+              <li><span class="tag">delete</span><span>Recipes page fire-and-forget launch fetch (5s abort)</span></li>
+              <li><span class="tag">delete</span><span>Second logs-only page deep-link if Server owns logs (optional follow-up)</span></li>
+            </ul>
+          </div>
+          <div class="card kill">
+            <h3>Controller internals</h3>
+            <ul class="list-kill">
+              <li><span class="tag">delete</span><span><code>getDockerImage</code> / <code>extra_args.docker_image</code> dual key after migration</span></li>
+              <li><span class="tag">delete</span><span>Docker RuntimeTarget <code>canLaunch: true</code> lie</span></li>
+              <li><span class="tag">delete</span><span><code>DEFAULT_CANONICAL_PYTHON_PATH</code> automatic preference (keep as optional system option if present)</span></li>
+              <li><span class="tag">delete</span><span>Unconsumed download SSE if UI stays poll-only — or wire SSE and drop poll; pick one</span></li>
+              <li><span class="tag">delete</span><span>Engine job types <code>download</code>/<code>inspect</code> if never implemented</span></li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="card keep" style="margin-top:14px;">
+          <h3>Keep (rebuild around, don’t rewrite from zero)</h3>
+          <ul class="list-kill keep">
+            <li><span class="tag">keep</span><span>DownloadManager + store (weights path)</span></li>
+            <li><span class="tag">keep</span><span>EngineCoordinator + ProcessManager launch/kill/docker stop</span></li>
+            <li><span class="tag">keep</span><span>EngineSpec registry + managed-venv install jobs</span></li>
+            <li><span class="tag">keep</span><span>Recipe store / serializer → evolve into Serve</span></li>
+            <li><span class="tag">keep</span><span>Setup wizard as first-run skin over same APIs</span></li>
+            <li><span class="tag">keep</span><span><code>buildDockerRunArguments</code> / process-manager docker kill</span></li>
+          </ul>
+        </div>
+      </section>
+
+      <!-- 05 MOCKUP -->
+      <section class="panel" id="panel-mock">
+        <div class="eyebrow">Click through</div>
+        <h1>Interactive experience</h1>
+        <p class="lead">
+          This is the locked UX. Click through Get → Runtime → Configure → Serve.
+          State is simulated so you can feel the handoffs that are missing today.
+        </p>
+
+        <div class="steps-rail" id="mock-steps">
+          <button type="button" class="on" data-step="0">1 · Get</button>
+          <button type="button" data-step="1">2 · Runtime</button>
+          <button type="button" data-step="2">3 · Configure</button>
+          <button type="button" data-step="3">4 · Serve</button>
+          <button type="button" data-step="4">5 · Ready</button>
+        </div>
+
+        <div class="status-strip" id="mock-status">
+          <span class="pill"><span class="dot"></span> idle</span>
+          <span class="sep">·</span>
+          <span>No model selected</span>
+        </div>
+
+        <div class="app-chrome">
+          <div class="app-bar">
+            <div class="app-bar-left">
+              <strong>Local Studio</strong>
+              <span>·</span>
+              <span>Models</span>
+              <span class="pill sm accent" id="mock-controller">controller · spark-2822</span>
+            </div>
+            <div class="app-bar-left">
+              <span class="pill ok" id="mock-gpu">4× GPU · 384 GB</span>
+            </div>
+          </div>
+          <div class="app-body">
+            <div class="app-side">
+              <div class="side-item">Status</div>
+              <div class="side-item">Usage</div>
+              <div class="side-item on">Models</div>
+              <div class="side-item">Configure</div>
+              <div class="side-item">Server</div>
+              <div class="side-item">Settings</div>
+            </div>
+            <div class="app-content" id="mock-screen">
+              <!-- filled by JS -->
+            </div>
+          </div>
+        </div>
+
+        <div class="callout" style="margin-top:16px;">
+          <strong>What this mockup proves:</strong> download completion does not dump you into a blank
+          recipe form. Runtime is chosen before launch and is visible on the Serve card. Docker is a
+          radio option with a real image ref, not a hidden JSON key.
+        </div>
+      </section>
+
+      <!-- 06 STATES -->
+      <section class="panel" id="panel-states">
+        <div class="eyebrow">Lifecycle</div>
+        <h1>State machine</h1>
+        <p class="lead">One status field on the Serve. UI and SSE speak the same language.</p>
+
+        <div class="card" style="margin-bottom:14px;">
+          <div class="flow">
+            <div class="flow-step"><div class="idx">—</div><div class="name">empty</div><div class="desc">No weights</div></div>
+            <div class="flow-step"><div class="idx">↓</div><div class="name">downloading</div><div class="desc">Queue + progress</div></div>
+            <div class="flow-step"><div class="idx">↓</div><div class="name">ready_weights</div><div class="desc">On disk</div></div>
+            <div class="flow-step"><div class="idx">↓</div><div class="name">configuring</div><div class="desc">Serve draft</div></div>
+            <div class="flow-step"><div class="idx">↓</div><div class="name">stopped</div><div class="desc">Saved Serve</div></div>
+            <div class="flow-step"><div class="idx">↓</div><div class="name">starting</div><div class="desc">Launch budget</div></div>
+            <div class="flow-step"><div class="idx">↓</div><div class="name">running</div><div class="desc">Healthy</div></div>
+            <div class="flow-step"><div class="idx">!</div><div class="name">error</div><div class="desc">Crash loop / fail</div></div>
+          </div>
+        </div>
+
+        <div class="grid-2">
+          <div class="card">
+            <h3>Download states (file layer)</h3>
+            <table>
+              <thead><tr><th>Status</th><th>UI</th></tr></thead>
+              <tbody>
+                <tr><td><code>queued</code></td><td>Waiting</td></tr>
+                <tr><td><code>downloading</code></td><td>Progress bar + pause</td></tr>
+                <tr><td><code>paused</code></td><td>Resume</td></tr>
+                <tr><td><code>completed</code></td><td><strong>Create Serve</strong> primary CTA</td></tr>
+                <tr><td><code>error</code> / <code>cancelled</code></td><td>Retry / dismiss</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="card">
+            <h3>Serve process states</h3>
+            <table>
+              <thead><tr><th>Status</th><th>Rules</th></tr></thead>
+              <tbody>
+                <tr><td><code>stopped</code></td><td>Default; Launch enabled if runtime valid</td></tr>
+                <tr><td><code>starting</code></td><td>SSE launch_progress; cancel allowed</td></tr>
+                <tr><td><code>running</code></td><td>Evict / Stop; appears on Status + /v1/models</td></tr>
+                <tr><td><code>error</code></td><td>Budget blocked or launch fail; show log tail</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="card" style="margin-top:14px;">
+          <h3>Error honesty</h3>
+          <table>
+            <thead><tr><th>Failure</th><th>Message shape</th></tr></thead>
+            <tbody>
+              <tr><td>Runtime missing</td><td>“vLLM is not installed. Install managed venv or pick Docker.” → Install button</td></tr>
+              <tr><td>Docker image missing</td><td>“Image not present. Pull <code>ref</code> or pick another runtime.”</td></tr>
+              <tr><td>Weights incomplete</td><td>Block Create Serve until download completed</td></tr>
+              <tr><td>Port busy / other model</td><td>Existing evict-or-fail coordinator behavior</td></tr>
+              <tr><td>Health timeout</td><td>error + log tail; runtime.kind visible so docker vs venv is diagnosable</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- 07 ACCEPTANCE -->
+      <section class="panel" id="panel-acceptance">
+        <div class="eyebrow">Ship gate</div>
+        <h1>Acceptance criteria</h1>
+        <p class="lead">Lock when all of these are true. Then delete the kill list.</p>
+
+        <div class="card" style="margin-bottom:14px;">
+          <table>
+            <thead><tr><th>#</th><th>Criterion</th><th>How to verify</th></tr></thead>
+            <tbody>
+              <tr>
+                <td>A1</td>
+                <td>From Models Get, download a HF model → Create Serve → Launch → <code>/health</code> ready without opening Settings or a second page.</td>
+                <td>Manual + e2e on Spark</td>
+              </tr>
+              <tr>
+                <td>A2</td>
+                <td>Serve with <code>runtime.kind=docker</code> actually runs <code>docker run … image</code>; Serve with managed_venv does not.</td>
+                <td>process-manager spawn test + live</td>
+              </tr>
+              <tr>
+                <td>A3</td>
+                <td>No UI path shows a Docker target as “active runtime” that launch ignores.</td>
+                <td>UI review + unit</td>
+              </tr>
+              <tr>
+                <td>A4</td>
+                <td><code>/discover</code> gone or 308 → Models Get; no features/discover.</td>
+                <td>route list</td>
+              </tr>
+              <tr>
+                <td>A5</td>
+                <td>Setup wizard calls same Create-from-download + launch APIs as Models.</td>
+                <td>shared helper test</td>
+              </tr>
+              <tr>
+                <td>A6</td>
+                <td>Recipes/Serves page launch uses same client as dashboard (SSE progress).</td>
+                <td>code search + e2e</td>
+              </tr>
+              <tr>
+                <td>A7</td>
+                <td>Contracts validator + ux-stories no longer mention Environments.</td>
+                <td>docs gate</td>
+              </tr>
+              <tr>
+                <td>A8</td>
+                <td>Managed install then Create Serve preselects that managed runtime without manual path paste.</td>
+                <td>manual</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="grid-3">
+          <div class="card elev">
+            <h3>PR 1 — Contracts</h3>
+            <p style="margin:0; color:var(--dim); font-size:13px;">ServeRuntime type, migrate docker_image, demote canonical python, kill select route.</p>
+          </div>
+          <div class="card elev">
+            <h3>PR 2 — Launch wire</h3>
+            <p style="margin:0; color:var(--dim); font-size:13px;">buildCommand reads serve.runtime; docker wrap for vLLM; options catalog.</p>
+          </div>
+          <div class="card elev">
+            <h3>PR 3 — UI spine</h3>
+            <p style="margin:0; color:var(--dim); font-size:13px;">Models Get/Serve tabs, Create from download, runtime picker, unify launch, delete discover.</p>
+          </div>
+        </div>
+
+        <div class="hero" style="margin-top:18px;">
+          <p>
+            <strong>Decision to lock:</strong> Approve this mockup = accept Serve Pipeline as the only
+            engine→weights→config→run product path. Implementation follows the three PRs above;
+            anything not on the keep list is eligible for deletion in the same series.
+          </p>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script>
+    const panels = document.querySelectorAll(".panel");
+    const navBtns = document.querySelectorAll(".nav-btn");
+    navBtns.forEach((btn) => {
+      btn.addEventListener("click", () => {
+        navBtns.forEach((b) => b.classList.remove("active"));
+        btn.classList.add("active");
+        panels.forEach((p) => p.classList.remove("active"));
+        document.getElementById("panel-" + btn.dataset.panel).classList.add("active");
+        if (btn.dataset.panel === "mock") renderMock();
+      });
+    });
+
+    const models = [
+      {
+        id: "nvidia/Qwen3.6-35B-A3B-NVFP4",
+        name: "Qwen3.6 35B NVFP4",
+        size: "20 GB",
+        backend: "vllm",
+        tags: "local · reasoning · recommended",
+        gguf: false,
+      },
+      {
+        id: "LiquidAI/LFM2.5-8B-A1B-GGUF",
+        name: "LFM2.5 8B Q4_K_M",
+        size: "5 GB",
+        backend: "llamacpp",
+        tags: "local · fast · gguf",
+        gguf: true,
+        ggufFile: "LFM2.5-8B-A1B-Q4_K_M.gguf",
+      },
+      {
+        id: "Qwen/Qwen3-32B",
+        name: "Qwen3 32B",
+        size: "64 GB",
+        backend: "vllm",
+        tags: "chat · reasoning",
+        gguf: false,
+      },
+    ];
+
+    const runtimes = {
+      vllm: [
+        { kind: "managed_venv", ref: "vllm", label: "Managed vLLM venv", hint: "data/runtime/venvs/vllm-latest", installed: true, installable: true },
+        { kind: "system", ref: "/opt/venvs/active/vllm-latest/bin/python", label: "System Python (homelab)", hint: "only if path exists", installed: false, installable: false },
+        { kind: "docker", ref: "vllm/vllm-openai:v0.8.5", label: "Docker · vllm-openai", hint: "discovered image · GPU passthrough", installed: true, installable: false },
+        { kind: "docker", ref: "voipmonitor/vllm-b12x:latest", label: "Docker · custom fork", hint: "forked image · /opt/venv/bin/vllm", installed: true, installable: false },
+      ],
+      sglang: [
+        { kind: "managed_venv", ref: "sglang", label: "Managed SGLang venv", hint: "data/runtime/venvs/sglang-latest", installed: false, installable: true },
+      ],
+      llamacpp: [
+        { kind: "binary", ref: "managed:llama-server", label: "Managed llama-server", hint: "CUDA build via install job", installed: true, installable: true },
+        { kind: "binary", ref: "/usr/local/bin/llama-server", label: "System llama-server", hint: "PATH binary", installed: false, installable: false },
+      ],
+      mlx: [
+        { kind: "managed_venv", ref: "mlx", label: "Managed MLX venv", hint: "Apple Silicon only", installed: false, installable: true },
+      ],
+    };
+
+    const state = {
+      step: 0,
+      selectedModel: null,
+      downloadPct: 0,
+      downloadDone: false,
+      downloading: false,
+      selectedRuntime: null,
+      serveId: null,
+      launching: false,
+      running: false,
+      log: [],
+      installBusy: false,
+    };
+
+    const stepBtns = () => document.querySelectorAll("#mock-steps button");
+
+    function setStatus(pillClass, pillText, detail) {
+      const el = document.getElementById("mock-status");
+      el.innerHTML =
+        `<span class="pill ${pillClass}"><span class="dot"></span> ${pillText}</span>` +
+        `<span class="sep">·</span><span>${detail}</span>`;
+    }
+
+    function pushLog(kind, line) {
+      state.log.push({ kind, line });
+      if (state.log.length > 12) state.log.shift();
+    }
+
+    function syncStepRail() {
+      stepBtns().forEach((b) => {
+        const s = Number(b.dataset.step);
+        b.classList.toggle("on", s === state.step);
+        b.classList.toggle("done", s < state.step);
+      });
+    }
+
+    function selectModel(id) {
+      state.selectedModel = models.find((m) => m.id === id);
+      state.downloadPct = 0;
+      state.downloadDone = false;
+      state.downloading = false;
+      state.selectedRuntime = null;
+      state.serveId = null;
+      state.running = false;
+      state.launching = false;
+      state.log = [];
+      renderMock();
+    }
+
+    function startDownload() {
+      if (!state.selectedModel || state.downloading || state.downloadDone) return;
+      state.downloading = true;
+      state.downloadPct = 0;
+      setStatus("warn", "downloading", state.selectedModel.id);
+      renderMock();
+      const tick = () => {
+        if (!state.downloading) return;
+        state.downloadPct = Math.min(100, state.downloadPct + 12 + Math.random() * 18);
+        if (state.downloadPct >= 100) {
+          state.downloadPct = 100;
+          state.downloading = false;
+          state.downloadDone = true;
+          pushLog("ok", `download complete → /models/${state.selectedModel.id}`);
+          setStatus("ok", "weights ready", "Create Serve available");
+          renderMock();
+          return;
+        }
+        renderMock();
+        setTimeout(tick, 280);
+      };
+      setTimeout(tick, 280);
+    }
+
+    function pickRuntime(index) {
+      const m = state.selectedModel;
+      if (!m) return;
+      const list = runtimes[m.backend] || [];
+      const rt = list[index];
+      if (!rt || (!rt.installed && !rt.installable)) return;
+      if (!rt.installed && rt.installable) {
+        state.installBusy = true;
+        setStatus("warn", "installing", rt.label);
+        renderMock();
+        setTimeout(() => {
+          rt.installed = true;
+          state.installBusy = false;
+          state.selectedRuntime = { ...rt };
+          pushLog("ok", `runtime ready · ${rt.kind} · ${rt.ref}`);
+          setStatus("ok", "runtime ready", rt.label);
+          renderMock();
+        }, 900);
+        return;
+      }
+      state.selectedRuntime = { ...rt };
+      pushLog("info", `runtime selected · ${rt.kind} · ${rt.ref}`);
+      setStatus("sky", "runtime set", rt.label);
+      renderMock();
+    }
+
+    function createServe() {
+      if (!state.selectedModel || !state.downloadDone || !state.selectedRuntime) return;
+      const m = state.selectedModel;
+      state.serveId = m.gguf ? "lfm2-5" : m.id.split("/").pop().toLowerCase().replace(/[^a-z0-9]+/g, "-");
+      pushLog("ok", `serve created · id=${state.serveId}`);
+      pushLog("info", `model_path=/models/${m.id}${m.gguf ? "/" + m.ggufFile : ""}`);
+      pushLog("info", `runtime=${state.selectedRuntime.kind}:${state.selectedRuntime.ref}`);
+      state.step = 2;
+      setStatus("sky", "configured", state.serveId);
+      renderMock();
+    }
+
+    function launchServe() {
+      if (!state.serveId || state.launching || state.running) return;
+      state.launching = true;
+      state.step = 3;
+      setStatus("warn", "starting", state.serveId);
+      const rt = state.selectedRuntime;
+      if (rt.kind === "docker") {
+        pushLog("info", `docker run --gpus all --name local-studio-${state.serveId} ${rt.ref}`);
+      } else if (rt.kind === "managed_venv") {
+        pushLog("info", `spawn ${rt.ref}-latest/bin/vllm serve …`);
+      } else {
+        pushLog("info", `spawn ${rt.ref} …`);
+      }
+      renderMock();
+      setTimeout(() => {
+        pushLog("info", "health probe …");
+        renderMock();
+      }, 500);
+      setTimeout(() => {
+        state.launching = false;
+        state.running = true;
+        state.step = 4;
+        pushLog("ok", "ready · /health 200 · port 8000");
+        setStatus("ok", "running", `${state.serveId} · ${rt.kind}`);
+        renderMock();
+      }, 1400);
+    }
+
+    function resetMock() {
+      state.step = 0;
+      state.selectedModel = null;
+      state.downloadPct = 0;
+      state.downloadDone = false;
+      state.downloading = false;
+      state.selectedRuntime = null;
+      state.serveId = null;
+      state.launching = false;
+      state.running = false;
+      state.log = [];
+      state.installBusy = false;
+      setStatus("", "idle", "No model selected");
+      renderMock();
+    }
+
+    function goStep(n) {
+      if (n === 0) {
+        state.step = 0;
+        renderMock();
+        return;
+      }
+      if (n >= 1 && !state.downloadDone) return;
+      if (n >= 2 && !state.selectedRuntime) return;
+      if (n >= 3 && !state.serveId) return;
+      if (n >= 4 && !state.running) return;
+      state.step = n;
+      renderMock();
+    }
+
+    function renderMock() {
+      syncStepRail();
+      const root = document.getElementById("mock-screen");
+      const m = state.selectedModel;
+      const rt = state.selectedRuntime;
+
+      if (state.step === 0) {
+        root.innerHTML = `
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+            <h2 style="margin:0;">Get a model</h2>
+            <div class="pill sky">Get · Runtime · Configure · Serve</div>
+          </div>
+          <div class="toolbar">
+            <div class="search">Search Hugging Face or paste owner/name…</div>
+            <button class="btn sm ghost" type="button">Recommended</button>
+            <button class="btn sm ghost" type="button">On disk</button>
+          </div>
+          ${models
+            .map(
+              (model) => `
+            <div class="model-row ${m && m.id === model.id ? "selected" : ""}" data-model="${model.id}">
+              <div>
+                <div class="title">${model.name}</div>
+                <div class="meta">${model.id} · ${model.tags} · engine ${model.backend}</div>
+                ${
+                  m && m.id === model.id && (state.downloading || state.downloadDone)
+                    ? `<div class="progress"><i style="width:${state.downloadPct}%"></i></div>
+                       <div class="meta" style="margin-top:4px;">${
+                         state.downloadDone
+                           ? "Download complete · /models/" + model.id
+                           : "Downloading… " + Math.round(state.downloadPct) + "%"
+                       }</div>`
+                    : ""
+                }
+              </div>
+              <div class="size">${model.size}</div>
+              <div>
+                ${
+                  m && m.id === model.id && state.downloadDone
+                    ? `<span class="pill ok">on disk</span>`
+                    : m && m.id === model.id && state.downloading
+                      ? `<span class="pill warn">downloading</span>`
+                      : `<button class="btn sm primary pick-dl" data-model="${model.id}" type="button">Get</button>`
+                }
+              </div>
+            </div>`
+            )
+            .join("")}
+          <div class="footer-actions">
+            <span style="color:var(--dim); font-size:12px;">Selecting Get starts download and locks the recommended engine for this model.</span>
+            <button class="btn primary" type="button" id="to-runtime" ${state.downloadDone ? "" : "disabled"}>Continue to Runtime →</button>
+          </div>`;
+
+        root.querySelectorAll(".model-row").forEach((row) => {
+          row.addEventListener("click", (e) => {
+            if (e.target.closest("button")) return;
+            selectModel(row.dataset.model);
+          });
+        });
+        root.querySelectorAll(".pick-dl").forEach((btn) => {
+          btn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            selectModel(btn.dataset.model);
+            startDownload();
+          });
+        });
+        const cont = root.querySelector("#to-runtime");
+        if (cont) cont.addEventListener("click", () => { state.step = 1; renderMock(); });
+        return;
+      }
+
+      if (state.step === 1) {
+        const list = runtimes[m.backend] || [];
+        root.innerHTML = `
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+            <h2 style="margin:0;">Runtime</h2>
+            <span class="pill">${m.backend}</span>
+          </div>
+          <p style="margin:0 0 12px; color:var(--dim); font-size:12.5px;">
+            How <strong style="color:var(--fg)">${m.name}</strong> will run on this controller.
+            Selection is stored on the Serve — launch will use it.
+          </p>
+          ${list
+            .map((r, i) => {
+              const selected = rt && rt.ref === r.ref && rt.kind === r.kind;
+              const disabled = !r.installed && !r.installable;
+              return `
+              <div class="runtime-card ${selected ? "selected" : ""} ${disabled ? "disabled" : ""}" data-rt="${i}">
+                <div class="row">
+                  <div class="label">${r.label}</div>
+                  <div>
+                    ${r.installed ? `<span class="pill ok">ready</span>` : r.installable ? `<span class="pill warn">install</span>` : `<span class="pill err">missing</span>`}
+                    <span class="pill">${r.kind}</span>
+                  </div>
+                </div>
+                <div class="hint">${r.ref}</div>
+                <div class="hint">${r.hint}</div>
+              </div>`;
+            })
+            .join("")}
+          ${state.installBusy ? `<div class="callout">Installing managed runtime…</div>` : ""}
+          <div class="footer-actions">
+            <button class="btn ghost" type="button" id="back-get">← Get</button>
+            <button class="btn primary" type="button" id="to-config" ${rt && rt.installed ? "" : "disabled"}>Continue to Configure →</button>
+          </div>`;
+        root.querySelectorAll(".runtime-card:not(.disabled)").forEach((card) => {
+          card.addEventListener("click", () => pickRuntime(Number(card.dataset.rt)));
+        });
+        root.querySelector("#back-get").addEventListener("click", () => { state.step = 0; renderMock(); });
+        root.querySelector("#to-config").addEventListener("click", () => {
+          if (!state.serveId) createServe();
+          else { state.step = 2; renderMock(); }
+        });
+        return;
+      }
+
+      if (state.step === 2) {
+        const path = m.gguf
+          ? `/models/${m.id}/${m.ggufFile}`
+          : `/models/${m.id}`;
+        root.innerHTML = `
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+            <h2 style="margin:0;">Configure Serve</h2>
+            <span class="pill accent">${state.serveId || "draft"}</span>
+          </div>
+          <div class="form-grid">
+            <div class="field"><label>Name</label><div class="value">${m.name}</div></div>
+            <div class="field"><label>Backend</label><div class="value">${m.backend}</div></div>
+            <div class="field" style="grid-column:1/-1"><label>Model path</label><div class="value">${path}</div></div>
+            <div class="field" style="grid-column:1/-1"><label>Runtime</label><div class="value">${rt.kind} · ${rt.ref}</div></div>
+            <div class="field"><label>Max model len</label><div class="value">${m.gguf ? "32768" : "131072"}</div></div>
+            <div class="field"><label>GPU mem util</label><div class="value">${m.gguf ? "n/a" : "0.90"}</div></div>
+            <div class="field"><label>Tensor parallel</label><div class="value">1</div></div>
+            <div class="field"><label>Served name</label><div class="value dim">${m.gguf ? "lfm2.5" : "qwen3.6-35b"}</div></div>
+          </div>
+          <div class="callout ok" style="margin-top:12px;">
+            <strong>Auto-filled from download + runtime.</strong> Advanced engine flags stay in a secondary panel (existing recipe tabs), not a second product.
+          </div>
+          <div class="footer-actions">
+            <button class="btn ghost" type="button" id="back-rt">← Runtime</button>
+            <button class="btn primary" type="button" id="to-launch">Save & continue to Serve →</button>
+          </div>`;
+        root.querySelector("#back-rt").addEventListener("click", () => { state.step = 1; renderMock(); });
+        root.querySelector("#to-launch").addEventListener("click", () => { state.step = 3; setStatus("sky", "stopped", state.serveId); renderMock(); });
+        return;
+      }
+
+      if (state.step === 3 || state.step === 4) {
+        root.innerHTML = `
+          <div class="split-mock">
+            <div>
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+                <h2 style="margin:0;">Serve</h2>
+                <span class="pill ${state.running ? "ok" : state.launching ? "warn" : ""}">${
+                  state.running ? "running" : state.launching ? "starting" : "stopped"
+                }</span>
+              </div>
+              <div class="card elev" style="margin-bottom:12px;">
+                <div style="font-weight:600; margin-bottom:6px;">${m.name}</div>
+                <div class="meta mono" style="color:var(--dim); font-size:11.5px; font-family:var(--mono);">
+                  id ${state.serveId}<br/>
+                  runtime ${rt.kind} · ${rt.ref}<br/>
+                  backend ${m.backend} · port 8000
+                </div>
+                <div style="margin-top:12px; display:flex; gap:8px; flex-wrap:wrap;">
+                  ${
+                    state.running
+                      ? `<button class="btn danger sm" type="button" id="evict">Stop</button>
+                         <button class="btn primary sm" type="button" id="open-chat">Open chat</button>`
+                      : `<button class="btn primary sm" type="button" id="launch" ${state.launching ? "disabled" : ""}>${
+                          state.launching ? "Starting…" : "Launch"
+                        }</button>`
+                  }
+                  <button class="btn ghost sm" type="button" id="back-cfg">Edit config</button>
+                </div>
+              </div>
+              <div class="log" id="serve-log">${state.log
+                .map((l) => `<div class="${l.kind}">${l.line}</div>`)
+                .join("") || '<div class="info">Waiting for launch…</div>'}</div>
+            </div>
+            <div>
+              <h3 style="margin-top:0;">Your Serves</h3>
+              <div class="model-row selected" style="cursor:default;">
+                <div>
+                  <div class="title">${m.name}</div>
+                  <div class="meta">${rt.kind}${state.running ? " · :8000" : ""}</div>
+                </div>
+                <div></div>
+                <span class="pill ${state.running ? "ok" : ""}">${state.running ? "live" : "draft"}</span>
+              </div>
+              <div class="model-row" style="cursor:default; opacity:0.55;">
+                <div>
+                  <div class="title">Previous example</div>
+                  <div class="meta">managed_venv · stopped</div>
+                </div>
+                <div></div>
+                <span class="pill">stopped</span>
+              </div>
+              ${
+                state.running
+                  ? `<div class="callout ok" style="margin-top:12px;"><strong>Ready.</strong> Status dashboard and Chat both see served_model_name via /v1/models. One launch path did this.</div>`
+                  : `<div class="callout" style="margin-top:12px;"><strong>Launch</strong> is the same action as Status page Start — shared API client + SSE progress.</div>`
+              }
+              <div class="footer-actions" style="border:none; padding-top:8px;">
+                <button class="btn ghost sm" type="button" id="reset">Reset demo</button>
+              </div>
+            </div>
+          </div>`;
+        const launch = root.querySelector("#launch");
+        if (launch) launch.addEventListener("click", launchServe);
+        const evict = root.querySelector("#evict");
+        if (evict)
+          evict.addEventListener("click", () => {
+            state.running = false;
+            state.step = 3;
+            pushLog("warn", "evicted · process stopped");
+            setStatus("sky", "stopped", state.serveId);
+            renderMock();
+          });
+        const chat = root.querySelector("#open-chat");
+        if (chat)
+          chat.addEventListener("click", () => {
+            pushLog("ok", "→ /agent?new=1 (mock)");
+            renderMock();
+          });
+        root.querySelector("#back-cfg").addEventListener("click", () => {
+          state.step = 2;
+          renderMock();
+        });
+        root.querySelector("#reset").addEventListener("click", resetMock);
+      }
+    }
+
+    stepBtns().forEach((b) => {
+      b.addEventListener("click", () => goStep(Number(b.dataset.step)));
+    });
+
+    renderMock();
+  </script>
+</body>
+</html>
