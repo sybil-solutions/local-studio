@@ -9,7 +9,9 @@ import { DEFAULT_BROWSER_URL } from "@/features/agent/tools/persistence";
 function encodeFilePath(pathValue: string): string {
   const normalized = pathValue.replace(/\\/g, "/");
   const withLeadingSlash = normalized.startsWith("/") ? normalized : `/${normalized}`;
-  return `file://${withLeadingSlash.split("/").map(encodeURIComponent).join("/")}`;
+  const encodeSegment = (segment: string): string =>
+    /^[A-Za-z]:$/.test(segment) ? segment : encodeURIComponent(segment);
+  return `file://${withLeadingSlash.split("/").map(encodeSegment).join("/")}`;
 }
 
 const WINDOWS_ABSOLUTE_PATH = /^[A-Za-z]:[\\/]/;

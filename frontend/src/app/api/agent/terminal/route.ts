@@ -22,6 +22,8 @@ function windowsPosixShell(): string | null {
 }
 
 function terminalShell(): string | undefined {
+  const configured = process.env["LOCAL_STUDIO_TERMINAL_SHELL"]?.trim();
+  if (configured) return configured;
   if (process.platform !== "win32") return undefined;
   return windowsPosixShell() ?? undefined;
 }
