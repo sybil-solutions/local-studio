@@ -26,7 +26,7 @@ if (devAppName || app.isPackaged) {
 const appDataDir = app.getPath("appData");
 const userDataDir = devUserDataDir
   ? path.resolve(devUserDataDir)
-  : app.isPackaged
+  : devAppName || app.isPackaged
     ? path.join(appDataDir, appName)
     : app.getPath("userData");
 
