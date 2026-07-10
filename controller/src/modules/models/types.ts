@@ -1,8 +1,5 @@
 import type { Backend as SharedBackend, RecipeBase } from "@local-studio/contracts/recipes";
-import type {
-  GPU,
-  ProcessInfo as PublicProcessInfo,
-} from "@local-studio/contracts/observability";
+import type { GPU, ProcessInfo as PublicProcessInfo } from "@local-studio/contracts/observability";
 import type { ConfigData } from "@local-studio/contracts/system";
 
 export type { ModelInfo } from "@local-studio/contracts/recipes";
@@ -58,6 +55,6 @@ export interface LaunchResult {
   log_file: string | null;
 }
 
-export type GpuInfo = Required<Omit<GPU, "id">>;
+export type GpuInfo = Omit<GPU, "id"> & Required<Pick<GPU, "power_draw" | "power_limit">>;
 
 export type SystemConfigResponse = ConfigData;

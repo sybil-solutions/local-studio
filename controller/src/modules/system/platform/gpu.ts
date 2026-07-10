@@ -13,6 +13,8 @@ import {
 } from "./smi-tools";
 
 const NVIDIA_SMI_GPU_FIELDS = [
+  "uuid",
+  "pci.bus_id",
   "name",
   "memory.total",
   "memory.used",
@@ -26,12 +28,17 @@ const NVIDIA_SMI_GPU_FIELDS = [
 // driver_version is appended after the GPU fields so one nvidia-smi invocation
 // can feed GPU info, CUDA driver info, and the monitoring probe.
 const NVIDIA_SMI_SNAPSHOT_QUERY = [...NVIDIA_SMI_GPU_FIELDS, "driver_version"].join(",");
-const NVIDIA_SMI_ARGS = [`--query-gpu=${NVIDIA_SMI_SNAPSHOT_QUERY}`, "--format=csv,noheader,nounits"];
+const NVIDIA_SMI_ARGS = [
+  `--query-gpu=${NVIDIA_SMI_SNAPSHOT_QUERY}`,
+  "--format=csv,noheader,nounits",
+];
 const NVIDIA_SMI_TIMEOUT_MS = 5_000;
 
 const parseNvidiaSmiGpuLine = (line: string, index: number): GpuInfo => {
   const parts = line.split(",").map((value) => value.trim());
   const [
+    rawUuid,
+    rawPciBusId,
     rawName,
     memoryTotal,
     memoryUsed,
@@ -42,6 +49,12 @@ const parseNvidiaSmiGpuLine = (line: string, index: number): GpuInfo => {
     powerLimit,
   ] = parts;
   const name = rawName ?? "Unknown";
+  const identity = (value: string | undefined): string | undefined => {
+    if (!value || /^(?:N\/A|\[Not Supported\])$/i.test(value)) return undefined;
+    return value;
+  };
+  const uuid = identity(rawUuid);
+  const pciBusId = identity(rawPciBusId);
   const toFiniteNumber = (value: string | undefined): number => {
     const parsed = Number(value ?? 0);
     return Number.isFinite(parsed) ? parsed : 0;
@@ -57,6 +70,8 @@ const parseNvidiaSmiGpuLine = (line: string, index: number): GpuInfo => {
   const memoryUsedMb = toMb(memoryUsed) || fallbackUsedMb;
   const memoryFreeMb = toMb(memoryFree) || fallbackFreeMb;
   return {
+    ...(uuid ? { uuid } : {}),
+    ...(pciBusId ? { pci_bus_id: pciBusId } : {}),
     index,
     name,
     memory_total_mb: memoryTotalMb,
@@ -79,7 +94,6 @@ const splitSmiLines = (stdout: string): string[] =>
 const parseNvidiaSmiGpuOutput = (stdout: string): GpuInfo[] =>
   splitSmiLines(stdout).map(parseNvidiaSmiGpuLine);
 
-/** Driver version is the 9th column of the snapshot query (after the GPU fields). */
 const parseNvidiaSmiDriverVersion = (stdout: string): string | null => {
   const firstLine = splitSmiLines(stdout)[0];
   if (!firstLine) return null;

@@ -2,6 +2,8 @@ import type { SystemConfig } from "./system";
 
 export interface GPU {
   id?: string;
+  uuid?: string;
+  pci_bus_id?: string;
   index: number;
   name: string;
   memory_total_mb: number;
