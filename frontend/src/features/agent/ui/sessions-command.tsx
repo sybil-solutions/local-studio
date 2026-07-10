@@ -208,14 +208,14 @@ export function SessionsCommand({ open, onClose, activeSessions }: Props) {
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
       <button
-        className="absolute inset-0 bg-black/55 backdrop-blur-sm"
+        className="absolute inset-0 bg-(--color-background)/85 backdrop-blur-[5px]"
         onClick={onClose}
         aria-label="Close session search"
       />
       <div
         role="dialog"
         aria-modal="true"
-        className="relative z-10 flex max-h-[68vh] w-[min(720px,92vw)] flex-col overflow-hidden rounded-2xl border border-(--border) bg-(--surface) shadow-[0_24px_80px_rgba(0,0,0,0.5)]"
+        className="relative z-10 flex max-h-[68vh] w-[min(720px,92vw)] flex-col overflow-hidden rounded-2xl border border-(--color-popover-border) bg-(--color-popover) shadow-[0_24px_80px_rgba(0,0,0,0.62),inset_0_1px_0_rgba(255,255,255,0.035)]"
         onKeyDown={(event) => {
           if (event.key === "ArrowDown") {
             event.preventDefault();

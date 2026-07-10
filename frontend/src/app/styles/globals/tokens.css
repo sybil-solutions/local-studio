@@ -309,9 +309,9 @@
   --color-card-selected: var(--color-input);
   --color-card-border: var(--color-border);
 
-  --color-popover: #181818f0;
-  --color-popover-header: #181818f0;
-  --color-popover-border: var(--color-border);
+  --color-popover: #1a1a1a;
+  --color-popover-header: #1e1e1e;
+  --color-popover-border: #ffffff1a;
 
   --color-input: #242424;
   --color-input-focused: var(--color-input);

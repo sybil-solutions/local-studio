@@ -47,7 +47,7 @@ export function ModelsDropdown({
         Models ▾
       </button>
       {open ? (
-        <div className="absolute right-0 z-30 mt-1 w-[22rem] rounded-[var(--rad-xs)] border border-(--border) bg-(--surface) shadow-lg">
+        <div className="absolute right-0 z-30 mt-1 w-[22rem] rounded-[var(--rad-xs)] border border-(--color-popover-border) bg-(--color-popover) shadow-[0_16px_44px_rgba(0,0,0,0.48)]">
           <div className="grid grid-cols-[minmax(0,1fr)_auto] border-b border-(--border)">
             <input
               autoFocus

@@ -25,7 +25,7 @@ export function Drawer({
   return (
     <aside
       className={cx(
-        "relative flex shrink-0 flex-col border-l border-(--ui-border) bg-(--ui-bg)",
+        "relative flex shrink-0 flex-col border-l border-(--color-popover-border) bg-(--color-popover) shadow-[-24px_0_80px_rgba(0,0,0,0.38)]",
         className,
       )}
       style={{
@@ -54,7 +54,7 @@ export function DrawerHeader({
   return (
     <header
       className={cx(
-        "flex h-9 shrink-0 items-center gap-2 border-b border-(--ui-border) px-2 text-[length:var(--fs-sm)]",
+        "flex h-10 shrink-0 items-center gap-2 border-b border-(--color-popover-border) bg-(--color-popover-header) px-3 text-[length:var(--fs-sm)]",
         className,
       )}
     >
@@ -87,7 +87,7 @@ export function DrawerFooter({
   return (
     <footer
       className={cx(
-        "flex h-10 shrink-0 items-center justify-between gap-3 border-t border-(--ui-border) bg-(--ui-bg) px-2 text-[length:var(--fs-sm)]",
+        "flex h-11 shrink-0 items-center justify-between gap-3 border-t border-(--color-popover-border) bg-(--color-popover-header) px-3 text-[length:var(--fs-sm)]",
         className,
       )}
     >

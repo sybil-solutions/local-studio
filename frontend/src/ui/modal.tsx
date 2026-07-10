@@ -85,7 +85,7 @@ function UiModal({ isOpen, onClose, children, className, maxWidth = "max-w-lg" }
         type="button"
         tabIndex={-1}
         aria-hidden="true"
-        className="absolute inset-0 z-0 bg-(--bg)/75 backdrop-blur-[2px]"
+        className="absolute inset-0 z-0 bg-(--color-background)/85 backdrop-blur-[5px]"
         onClick={onClose}
       />
       <div
@@ -95,7 +95,7 @@ function UiModal({ isOpen, onClose, children, className, maxWidth = "max-w-lg" }
         aria-modal="true"
         aria-labelledby={titleId}
         className={cx(
-          "relative z-10 max-h-full w-full overflow-hidden rounded-[var(--rad-xl)] border border-(--color-popover-border) bg-(--color-popover) shadow-2xl outline-none",
+          "relative z-10 max-h-full w-full overflow-hidden rounded-[var(--rad-xl)] border border-(--color-popover-border) bg-(--color-popover) shadow-[0_24px_80px_rgba(0,0,0,0.62),inset_0_1px_0_rgba(255,255,255,0.035)] outline-none",
           maxWidth,
           className,
         )}
@@ -131,7 +131,10 @@ function UiModalHeader({
 
   return (
     <div
-      className={cx("flex min-h-12 items-center justify-between gap-3 px-5 pb-2 pt-4", className)}
+      className={cx(
+        "flex min-h-13 items-center justify-between gap-3 border-b border-(--color-popover-border) bg-(--color-popover-header) px-5 py-3.5",
+        className,
+      )}
     >
       <div className="flex items-center gap-2">
         {icon}

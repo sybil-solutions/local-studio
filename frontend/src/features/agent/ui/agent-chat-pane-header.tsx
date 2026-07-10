@@ -10,7 +10,7 @@ import { CloseIcon, MoreIcon } from "@/ui/icons";
 import { preloadTerminalPanel } from "@/features/agent/ui/terminal-panel";
 
 const CHAT_HEADER_MENU_CLASS =
-  "absolute left-0 top-7 isolate z-[999] min-w-[160px] rounded-lg border border-(--border) bg-(--surface-2)/95 p-1 text-xs text-(--fg) opacity-100 shadow-[0_8px_24px_rgba(0,0,0,0.35)] backdrop-blur-md";
+  "absolute left-0 top-7 isolate z-[999] min-w-[160px] rounded-lg border border-(--color-popover-border) bg-(--color-popover) p-1 text-xs text-(--fg) opacity-100 shadow-[0_12px_32px_rgba(0,0,0,0.48)]";
 
 export function AgentChatPaneHeader({
   title,
