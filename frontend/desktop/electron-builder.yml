@@ -90,6 +90,7 @@ mac:
     NSMicrophoneUsageDescription: Record your own voice to create a private, local voice profile.
 
 win:
+  icon: desktop/resources/icon.ico
   target:
     - target: nsis
       arch:

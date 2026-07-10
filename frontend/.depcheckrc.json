@@ -1,6 +1,7 @@
 {
   "ignores": [
     "ws",
+    "cross-env",
     "hono",
     "@hono/node-server",
     "@types/ws",
