@@ -26,6 +26,26 @@ describe("controller route contracts", () => {
     expect(body.detail).toBe("model is required");
   });
 
+  test("vram calculator estimates a single-file gguf model", async () => {
+    const app = await createTestApp();
+    const modelsDirectory = join(tempDir, "models");
+    mkdirSync(modelsDirectory, { recursive: true });
+    const ggufPath = join(modelsDirectory, "tiny.gguf");
+    writeFileSync(ggufPath, Buffer.alloc(4 * 1024 * 1024));
+
+    const response = await app.request("/vram-calculator", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ model: ggufPath, context_length: 2048 }),
+    });
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.model_size_gb).toBeCloseTo(4 / 1024, 5);
+    expect(body.total_gb).toBeGreaterThan(0);
+    expect(typeof body.fits_in_vram).toBe("boolean");
+  });
+
   test("system introspection routes expose stable contracts and observability", async () => {
     const app = await createTestApp();
 

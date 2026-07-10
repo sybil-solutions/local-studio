@@ -78,6 +78,17 @@ export const estimateWeightsSizeBytes = (
   modelDirectory: string,
   recursive: boolean,
 ): number | null => {
+  try {
+    const stats = statSync(modelDirectory);
+    if (stats.isFile()) {
+      const isWeightFile = MODEL_BROWSER_WEIGHT_EXTENSIONS.some((extension) =>
+        modelDirectory.toLowerCase().endsWith(extension),
+      );
+      return isWeightFile && stats.size > 0 ? stats.size : null;
+    }
+  } catch {
+    return null;
+  }
   let total = 0;
   try {
     const entries = readdirSync(modelDirectory, { withFileTypes: true });
