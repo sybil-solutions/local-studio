@@ -384,7 +384,6 @@ export function ChatPane({
         onInitGit={onInitGit}
         onOpenStatus={openComputerStatus}
         onQueueExpandedChange={setQueueExpanded}
-        onQueueMessage={() => void queueMessage()}
         onRemoveAttachment={removeAttachment}
         onRemoveLoadedContext={removeLoadedContext}
         onRemoveQueued={removeQueued}

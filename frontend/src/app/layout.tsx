@@ -1,20 +1,9 @@
 import type { Metadata, Viewport } from "next";
 import Script from "next/script";
-import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { LeftSidebar } from "@/features/shell/left-sidebar";
 import { getThemeBootstrapScript } from "@/lib/theme-runtime";
 import { Providers } from "./providers";
-
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
 
 export const viewport: Viewport = {
   width: "device-width",
@@ -82,7 +71,7 @@ export default function RootLayout({
         <link rel="icon" href="/mocks/logo-1.svg" type="image/svg+xml" />
         <meta name="mobile-web-app-capable" content="yes" />
       </head>
-      <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
+      <body>
         <Script
           id="boot"
           strategy="beforeInteractive"

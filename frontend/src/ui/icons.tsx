@@ -94,14 +94,6 @@ export function ReloadIcon(props: IconProps) {
   );
 }
 
-export function SendIcon(props: IconProps) {
-  return (
-    <Svg {...props}>
-      <path d="M1.4 1 15 8 1.4 15l1.6-5.5L9 8 3 6.5 1.4 1z" />
-    </Svg>
-  );
-}
-
 export function StopIcon(props: IconProps) {
   return (
     <Svg {...props}>

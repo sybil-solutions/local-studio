@@ -24,7 +24,7 @@ export function CopyablePathChip({
     void navigator.clipboard.writeText(value).then(markCopied, () => undefined);
   }, [value, markCopied]);
   return (
-    <span className="chat-ref-chip" role="group" title={value}>
+    <span className="chat-ref-chip chat-ref-path" role="group" title={value}>
       <button
         type="button"
         onClick={() => onOpen(value)}

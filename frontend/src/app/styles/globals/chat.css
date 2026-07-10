@@ -169,9 +169,6 @@
   color: color-mix(in srgb, var(--fg) 94%, transparent);
 }
 
-/* Reference chips — file paths and external links render as compact, themed
-   chips with a leading icon so they read as actionable inside prose. Scoped
-   with two classes so they outrank the bare `.chat-markdown a` reset. */
 .chat-markdown a {
   color: var(--link, #6ea8fe);
   text-decoration: none;
@@ -183,22 +180,23 @@
   gap: 0.28em;
   max-width: 100%;
   vertical-align: baseline;
-  margin: 0 1px;
-  padding: 0.5px 6px 0.5px 5px;
-  border-radius: 6px;
-  font-family:
-    var(--codex-chat-mono-font-family), ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 12px;
-  line-height: 17px;
-  font-weight: 450;
+  margin: 0;
+  padding: 0 2px;
+  border-radius: 4px;
+  font-size: inherit;
+  line-height: inherit;
+  font-weight: 500;
   color: var(--link, #6ea8fe);
-  background: var(--color-input);
-  border: 1px solid var(--border);
+  background: transparent;
   text-decoration: none;
   cursor: pointer;
-  transition:
-    background 0.13s ease,
-    border-color 0.13s ease;
+  transition: background 0.13s ease;
+}
+
+.chat-markdown .chat-ref-path {
+  font-family: var(--codex-chat-mono-font-family);
+  font-size: var(--codex-chat-code-font-size);
+  line-height: 17px;
 }
 
 .chat-markdown .chat-ref-chip[role="group"] {
@@ -232,8 +230,7 @@
 }
 
 .chat-markdown .chat-ref-chip:hover {
-  background: var(--color-hover);
-  border-color: var(--border-hover);
+  background: color-mix(in srgb, var(--fg) 7%, transparent);
 }
 
 .chat-markdown .chat-ref-chip-icon {

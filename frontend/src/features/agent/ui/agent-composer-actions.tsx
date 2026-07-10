@@ -2,9 +2,9 @@
 
 import type { ReactNode, RefObject } from "react";
 import { Spinner } from "@/ui";
-import { Code2, Plus } from "@/ui/icon-registry";
+import { ArrowUp, Code2, Plus } from "@/ui/icon-registry";
 import type { BrowserBackend } from "@/features/agent/tools/types";
-import { GlobeIcon, PanelIcon, SendIcon, SitegeistIcon, StopIcon } from "@/ui/icons";
+import { GlobeIcon, PanelIcon, SitegeistIcon, StopIcon } from "@/ui/icons";
 
 export function AgentComposerActions({
   fileInputRef,
@@ -20,7 +20,6 @@ export function AgentComposerActions({
   onToggleBrowserTool,
   canvasEnabled,
   onToggleCanvas,
-  onQueueMessage,
   onAbortTurn,
   modelSelector,
 }: {
@@ -37,7 +36,6 @@ export function AgentComposerActions({
   onToggleBrowserTool: () => void;
   canvasEnabled: boolean;
   onToggleCanvas: () => void;
-  onQueueMessage: () => void;
   onAbortTurn: () => void;
   modelSelector?: ReactNode;
 }) {
@@ -126,30 +124,20 @@ export function AgentComposerActions({
                 Starting…
               </span>
             ) : inputHasText ? (
-              <>
-                <button
-                  type="button"
-                  onClick={onQueueMessage}
-                  className="inline-flex !h-7 !min-h-7 shrink-0 items-center px-1.5 text-[length:var(--fs-sm)] text-(--dim) underline-offset-2 hover:text-(--fg) hover:underline"
-                  title="Queue (Tab)"
-                >
-                  Queue
-                </button>
-                <button
-                  type="submit"
-                  className="inline-flex !h-7 !min-h-7 shrink-0 items-center gap-1 rounded-md bg-(--hover) px-2 text-[length:var(--fs-sm)] text-(--fg)/80 hover:text-(--fg)"
-                  title="Steer (Enter): interrupt current turn and send"
-                >
-                  <SendIcon className="h-3 w-3" /> Steer
-                </button>
-              </>
+              <button
+                type="submit"
+                className="inline-flex !h-7 !min-h-7 !w-7 !min-w-7 shrink-0 items-center justify-center rounded-full bg-(--fg) text-(--bg) transition-opacity hover:opacity-85"
+                aria-label="Steer current task"
+                title="Steer current task (Enter) · Queue instead (Tab)"
+              >
+                <ArrowUp className="h-3.5 w-3.5 stroke-[2.25]" />
+              </button>
             ) : null}
-            {/* Codex's morphing submit: while streaming the circle becomes Stop. */}
             <button
               type="button"
               onClick={onAbortTurn}
               disabled={starting}
-              className="inline-flex !h-7 !min-h-7 !w-7 !min-w-7 shrink-0 items-center justify-center rounded-full bg-(--fg) text-(--bg) transition-opacity hover:opacity-85 disabled:opacity-30"
+              className={`inline-flex !h-7 !min-h-7 !w-7 !min-w-7 shrink-0 items-center justify-center rounded-full transition-opacity hover:opacity-85 disabled:opacity-30 ${inputHasText ? "bg-(--hover) text-(--fg)" : "bg-(--fg) text-(--bg)"}`}
               aria-label="Stop"
               title="Stop (Esc)"
             >
@@ -164,7 +152,7 @@ export function AgentComposerActions({
             aria-label="Send"
             title="Send (Enter) · Queue (Tab)"
           >
-            {starting ? <Spinner size="sm" /> : <SendIcon className="h-3.5 w-3.5" />}
+            {starting ? <Spinner size="sm" /> : <ArrowUp className="h-3.5 w-3.5 stroke-[2.25]" />}
           </button>
         )}
       </div>

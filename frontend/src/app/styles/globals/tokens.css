@@ -551,6 +551,7 @@
 
   --app-height: 100vh;
   --app-font-size: 16px;
+  --app-font-weight: 445;
 
   /* Type ramp — fixed steps × --ui-scale. */
   --fs-2xs: calc(9px * var(--ui-scale));
@@ -630,18 +631,20 @@
   --color-background: var(--bg);
   --color-foreground: var(--fg);
   --color-separator: var(--separator);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono:
+    ui-monospace, "SFMono-Regular", "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
 
   /* Type scale: Tailwind text-* read the themed ramp. */
   --text-2xs: calc(10px * var(--ui-scale));
-  --text-xs: calc(12px * var(--ui-scale));
-  --text-sm: calc(14px * var(--ui-scale));
-  --text-base: calc(16px * var(--ui-scale));
-  --text-lg: calc(18px * var(--ui-scale));
-  --text-xl: calc(20px * var(--ui-scale));
-  --text-2xl: calc(24px * var(--ui-scale));
-  --text-3xl: calc(30px * var(--ui-scale));
+  --text-xs: calc(11px * var(--ui-scale));
+  --text-sm: calc(12px * var(--ui-scale));
+  --text-base: calc(14px * var(--ui-scale));
+  --text-lg: calc(16px * var(--ui-scale));
+  --text-xl: calc(28px * var(--ui-scale));
+  --text-2xl: calc(36px * var(--ui-scale));
+  --text-3xl: calc(48px * var(--ui-scale));
+  --text-4xl: calc(72px * var(--ui-scale));
 
   /* Radius scale: Tailwind rounded-* read the themed ramp. */
   --radius-sm: var(--rad-sm);

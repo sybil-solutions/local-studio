@@ -60,7 +60,6 @@ export type AgentComposerFrameProps = {
   onInitGit?: () => void;
   onOpenStatus: () => void;
   onQueueExpandedChange: (expanded: boolean) => void;
-  onQueueMessage: () => void;
   onRemoveAttachment: (id: string) => void;
   onRemoveLoadedContext: (kind: LoadedContextKind, id: string) => void;
   onRemoveQueued: (queueId: string) => void;
@@ -110,7 +109,6 @@ export function AgentComposerFrame({
   onInitGit,
   onOpenStatus,
   onQueueExpandedChange,
-  onQueueMessage,
   onRemoveAttachment,
   onRemoveLoadedContext,
   onRemoveQueued,
@@ -148,8 +146,6 @@ export function AgentComposerFrame({
         onDragLeave={onComposerDragLeave}
         onDrop={onComposerDrop}
         className={cx(
-          // The Codex composer: a lifted charcoal surface over a hairline
-          // border, with a soft shadow and compact radius.
           "mx-auto w-full max-w-[var(--composer-w)] overflow-visible rounded-[var(--composer-radius)] border border-(--border) bg-(--composer) shadow-[var(--composer-shadow)] transition-colors",
           composerDragActive && "outline outline-1 outline-(--link)/50",
         )}
@@ -196,13 +192,10 @@ export function AgentComposerFrame({
           onToggleBrowserTool={onToggleBrowserTool}
           canvasEnabled={canvasEnabled}
           onToggleCanvas={onToggleCanvas}
-          onQueueMessage={onQueueMessage}
           onAbortTurn={onAbortTurn}
           modelSelector={modelSelector}
         />
       </div>
-      {/* Codex keeps the model picker inside the composer footer; the status
-          line below carries workspace context (cwd, branch, diff, tokens). */}
       <AgentComposerStatusBar
         cwd={cwd}
         gitBranch={gitBranch}

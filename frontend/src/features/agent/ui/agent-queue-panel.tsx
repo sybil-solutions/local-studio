@@ -2,7 +2,8 @@
 
 import { useState, type ReactNode } from "react";
 import type { QueuedMessage } from "@/features/agent/messages";
-import { CloseIcon, SendIcon } from "@/ui/icons";
+import { ArrowUp } from "@/ui/icon-registry";
+import { CloseIcon } from "@/ui/icons";
 import { cx } from "@/ui/utils";
 
 type AgentQueuePanelProps = {
@@ -111,7 +112,7 @@ export function AgentQueuePanel({
                   disabled={!running}
                   onClick={() => onSteer(item.id)}
                 >
-                  <SendIcon className="h-3 w-3" />
+                  <ArrowUp className="h-3 w-3 stroke-[2.25]" />
                 </QueueIconButton>
                 <QueueIconButton
                   label="Remove queued message"
