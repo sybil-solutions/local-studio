@@ -1,5 +1,5 @@
 import { exec } from "node:child_process";
-import { statSync } from "node:fs";
+import { existsSync, statSync } from "node:fs";
 import path from "node:path";
 import { promisify } from "node:util";
 import { NextRequest } from "next/server";
@@ -12,6 +12,19 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const execAsync = promisify(exec);
+
+function windowsPosixShell(): string | null {
+  const roots = [
+    process.env["ProgramFiles"] ?? "C:\\Program Files",
+    process.env["ProgramFiles(x86)"] ?? "C:\\Program Files (x86)",
+  ];
+  return roots.map((root) => path.join(root, "Git", "bin", "bash.exe")).find(existsSync) ?? null;
+}
+
+function terminalShell(): string | undefined {
+  if (process.platform !== "win32") return undefined;
+  return windowsPosixShell() ?? undefined;
+}
 
 function assertTerminalCwd(
   request: NextRequest,
@@ -48,10 +61,12 @@ export async function POST(request: NextRequest) {
   const parsed = parseTerminalRunRequest(body);
   if (!parsed.ok) return jsonError(parsed.error);
   try {
+    const shell = terminalShell();
     const { stdout, stderr } = await execAsync(parsed.value.command, {
       cwd,
       maxBuffer: 2 * 1024 * 1024,
       timeout: 60_000,
+      ...(shell ? { shell } : {}),
     });
     return Response.json({ ok: true, command: parsed.value.command, stdout, stderr, exitCode: 0 });
   } catch (err) {
