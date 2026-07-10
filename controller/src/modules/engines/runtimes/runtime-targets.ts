@@ -294,7 +294,7 @@ const collectLlamacppTargets = async (
       targets,
       makeRuntimeTarget({
         backend: "llamacpp",
-        kind: candidate.includes("/") ? "binary" : "system",
+        kind: candidate.includes("/") || candidate.includes("\\") ? "binary" : "system",
         source: "configured",
         key: probe.binaryPath ?? candidate,
         label: `llama.cpp configured (${basename(probe.binaryPath ?? candidate)})`,
