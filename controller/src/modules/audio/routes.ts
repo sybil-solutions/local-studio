@@ -46,7 +46,16 @@ export const registerAudioRoutes = (
     const cleanupPaths = new Set<string>();
 
     try {
-      const formData = await boundedFormData(ctx.req.raw, MAX_STT_REQUEST_BYTES);
+      const formData = await boundedFormData(ctx.req.raw, MAX_STT_REQUEST_BYTES).catch(
+        (error) => {
+          if (error instanceof RequestBodyTooLargeError) throw error;
+          throw new SttIntegrationError(
+            400,
+            "invalid_multipart",
+            "Request body must be multipart/form-data",
+          );
+        },
+      );
       const file = formData.get("file");
       if (!(file instanceof File)) {
         throw new SttIntegrationError(400, "file_missing", "Multipart field 'file' is required");
