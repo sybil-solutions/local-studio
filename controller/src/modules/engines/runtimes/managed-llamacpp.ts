@@ -39,6 +39,18 @@ export const managedLlamaServerPath = (config: Pick<Config, "data_dir">): string
   return resolve(managedLlamacppRoot(config), "src", "build", "bin", "llama-server");
 };
 
+export const resolveLlamaServerHelpBinary = (
+  config: Pick<Config, "data_dir" | "llama_bin">,
+): string => {
+  const configured = config.llama_bin || "llama-server";
+  const resolved =
+    resolveBinary(configured) ?? (existsSync(configured) ? resolve(configured) : null);
+  if (resolved) return resolved;
+  const managed = managedLlamaServerPath(config);
+  if (!config.llama_bin && existsSync(managed)) return managed;
+  return configured;
+};
+
 const missingTool = (tool: string): RuntimeUpgradeResult => ({
   success: false,
   version: null,

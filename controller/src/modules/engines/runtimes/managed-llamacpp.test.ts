@@ -1,13 +1,14 @@
 import { describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 
 import {
   assetCudaVersion,
   managedLlamaServerPath,
   parseDriverCudaVersion,
   pickCudaAsset,
+  resolveLlamaServerHelpBinary,
   type ReleaseAsset,
 } from "./managed-llamacpp";
 
@@ -88,5 +89,48 @@ describe("managedLlamaServerPath", () => {
     expect(managedLlamaServerPath({ data_dir: "/data" })).toBe(
       "/data/runtime/llamacpp/src/build/bin/llama-server",
     );
+  });
+});
+
+describe("resolveLlamaServerHelpBinary", () => {
+  test("falls back to the managed install when llama_bin is unset", () => {
+    const dataDirectory = mkdtempSync(join(tmpdir(), "managed-llamacpp-help-"));
+    try {
+      const managed = managedLlamaServerPath({ data_dir: dataDirectory });
+      mkdirSync(dirname(managed), { recursive: true });
+      writeFileSync(managed, "");
+      expect(
+        resolveLlamaServerHelpBinary({ data_dir: dataDirectory, llama_bin: "" }),
+      ).toBe(managed);
+    } finally {
+      rmSync(dataDirectory, { recursive: true, force: true });
+    }
+  });
+
+  test("keeps the bare command when nothing is installed", () => {
+    const dataDirectory = mkdtempSync(join(tmpdir(), "managed-llamacpp-help-"));
+    try {
+      expect(
+        resolveLlamaServerHelpBinary({ data_dir: dataDirectory, llama_bin: "" }),
+      ).toBe("llama-server");
+    } finally {
+      rmSync(dataDirectory, { recursive: true, force: true });
+    }
+  });
+
+  test("prefers an explicitly configured llama_bin path", () => {
+    const dataDirectory = mkdtempSync(join(tmpdir(), "managed-llamacpp-help-"));
+    try {
+      const configured = join(dataDirectory, "custom-llama-server");
+      writeFileSync(configured, "");
+      const managed = managedLlamaServerPath({ data_dir: dataDirectory });
+      mkdirSync(dirname(managed), { recursive: true });
+      writeFileSync(managed, "");
+      expect(
+        resolveLlamaServerHelpBinary({ data_dir: dataDirectory, llama_bin: configured }),
+      ).toBe(resolve(configured));
+    } finally {
+      rmSync(dataDirectory, { recursive: true, force: true });
+    }
   });
 });
