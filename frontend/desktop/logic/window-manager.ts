@@ -2,7 +2,7 @@ import { app, BrowserWindow } from "electron";
 import path from "node:path";
 import { DESKTOP_CONFIG } from "../configs";
 import { log } from "../helpers/logger";
-import { hardenWebContents } from "./security";
+import { hardenWebContents, registerMicrophonePermissionPolicy } from "./security";
 
 async function memorySummary(): Promise<string> {
   try {
@@ -36,7 +36,9 @@ export function createMainWindow(appUrl: string): BrowserWindow {
     },
   });
 
-  hardenWebContents(window, new URL(appUrl).origin);
+  const appOrigin = new URL(appUrl).origin;
+  hardenWebContents(window, appOrigin);
+  registerMicrophonePermissionPolicy(window, appOrigin);
 
   let lastRendererReloadAt = 0;
   window.webContents.on("render-process-gone", (_event, details) => {

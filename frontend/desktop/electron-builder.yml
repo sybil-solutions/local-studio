@@ -86,6 +86,8 @@ mac:
   gatekeeperAssess: false
   entitlements: desktop/resources/entitlements.mac.plist
   entitlementsInherit: desktop/resources/entitlements.mac.plist
+  extendInfo:
+    NSMicrophoneUsageDescription: Record your own voice to create a private, local voice profile.
 
 win:
   target:
