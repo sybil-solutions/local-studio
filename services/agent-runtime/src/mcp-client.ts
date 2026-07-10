@@ -64,7 +64,15 @@ export function stdioLaunchCommand(
   args: string[],
 ): { command: string; args: string[] } {
   if (process.platform !== "win32") return { command, args };
-  return { command: "cmd.exe", args: ["/c", command, ...args] };
+  return { command: process.env["ComSpec"] ?? "cmd.exe", args: ["/c", command, ...args] };
+}
+
+function killProcessTree(child: ChildProcess): void {
+  if (process.platform === "win32" && child.pid) {
+    spawn("taskkill", ["/pid", String(child.pid), "/T", "/F"], { stdio: "ignore" });
+    return;
+  }
+  child.kill("SIGTERM");
 }
 
 class StdioMcpConnection implements McpConnection {
@@ -170,7 +178,7 @@ class StdioMcpConnection implements McpConnection {
   }
 
   close(): void {
-    this.child.kill("SIGTERM");
+    killProcessTree(this.child);
   }
 }
 
