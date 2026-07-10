@@ -31,26 +31,15 @@ import {
 import { useShallow } from "zustand/react/shallow";
 import { useAppStore } from "@/store";
 import { useMountSubscription } from "@/hooks/use-mount-subscription";
-import { ACTIVE_AGENT_SESSIONS_EVENT } from "@/lib/workspace-events";
-
-type ActiveSessionDetail = {
-  projectId: string;
-  cwd: string;
-  paneId: string;
-  tabId: string;
-  piSessionId: string | null;
-  title: string;
-  status: string;
-  focused?: boolean;
-  updatedAt: string;
-};
+import { useOpenSessions } from "@/features/agent/ui/use-open-sessions";
+import type { ActiveSession } from "@/features/agent/session-contracts";
 
 type ProjectsNavSectionComponent = ComponentType<{ expanded: boolean }>;
 
 type SessionsCommandComponent = ComponentType<{
   open: boolean;
   onClose: () => void;
-  activeSessions: ActiveSessionDetail[];
+  activeSessions: readonly ActiveSession[];
 }>;
 
 type IconComponent = ComponentType<{ className?: string; strokeWidth?: number }>;
@@ -143,7 +132,7 @@ export function LeftSidebar({ children }: { children: ReactNode }) {
   const clampedSidebarWidth = clampSidebarWidth(sidebarWidth);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
-  const [activeSessions, setActiveSessions] = useState<ActiveSessionDetail[]>([]);
+  const activeSessions = useOpenSessions();
   const [sidebarResizing, setSidebarResizing] = useState(false);
   const [projectsNavReady, setProjectsNavReady] = useState(projectsNavImmediate);
   const [ProjectsNavSection, setProjectsNavSection] = useState<ProjectsNavSectionComponent | null>(
@@ -170,15 +159,6 @@ export function LeftSidebar({ children }: { children: ReactNode }) {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, []);
-
-  useMountSubscription(() => {
-    const onActive = (event: Event) => {
-      const detail = (event as CustomEvent<{ sessions?: ActiveSessionDetail[] }>).detail;
-      setActiveSessions(Array.isArray(detail?.sessions) ? detail.sessions : []);
-    };
-    window.addEventListener(ACTIVE_AGENT_SESSIONS_EVENT, onActive);
-    return () => window.removeEventListener(ACTIVE_AGENT_SESSIONS_EVENT, onActive);
   }, []);
 
   useMountSubscription(() => {

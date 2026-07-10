@@ -1,16 +1,5 @@
-import type { ActiveAgentSessionSnapshot } from "@/features/agent/active-sessions";
-import { makeFreshTab } from "@/features/agent/messages/helpers";
 import { patchSession as patchSessionInMap } from "@/features/agent/runtime/store";
-import type { Project } from "@/features/agent/projects/types";
-import type { Session, SessionId } from "@/features/agent/runtime/types";
-import type {
-  AgentModel,
-  PaneId,
-  PaneState,
-  WorkspaceAction,
-  WorkspaceLayout,
-  WorkspaceState,
-} from "@/features/agent/workspace/types";
+import type { AgentModel, WorkspaceAction, WorkspaceState } from "@/features/agent/workspace/types";
 import {
   applyUrlNavigation,
   closePane,
@@ -25,34 +14,6 @@ import {
   renameTab,
 } from "@/features/agent/workspace/pane-controller";
 
-function layoutFromPaneIds(paneIds: PaneId[]): WorkspaceLayout {
-  if (paneIds.length <= 1) return { kind: "leaf", paneId: paneIds[0] ?? "p-init" };
-  const [first, ...rest] = paneIds;
-  return {
-    kind: "split",
-    direction: "vertical",
-    ratio: 0.5,
-    a: { kind: "leaf", paneId: first },
-    b: layoutFromPaneIds(rest),
-  };
-}
-
-function tabFromSnapshot(session: ActiveAgentSessionSnapshot): Session {
-  const fresh = makeFreshTab();
-  return {
-    ...fresh,
-    id: session.tabId || fresh.id,
-    piSessionId: session.piSessionId,
-    projectId: session.projectId,
-    cwd: session.cwd,
-    modelId: session.modelId,
-    title: session.title || "Loading session",
-    status: "loading",
-    startedAt: session.startedAt ?? session.updatedAt,
-    usedSkills: session.usedSkills,
-  };
-}
-
 function chooseModelId(
   models: AgentModel[],
   currentModelId: string,
@@ -65,55 +26,6 @@ function chooseModelId(
     return currentModelId;
   }
   return models.find((model) => model.active)?.id || models[0]?.id || "";
-}
-
-function hydrateSessionSnapshots(
-  state: WorkspaceState,
-  snapshots: ActiveAgentSessionSnapshot[],
-  projects: Project[],
-): WorkspaceState {
-  const paneStateAlreadyRestored = [...state.sessions.values()].some(
-    (session) => Boolean(session.piSessionId) || session.messages.length > 0,
-  );
-  if (paneStateAlreadyRestored) return { ...state, hydrated: true };
-
-  const restorable = snapshots.filter(
-    (session) =>
-      (!session.projectId && Boolean(session.cwd)) ||
-      projects.some((project) => project.id === session.projectId || project.path === session.cwd),
-  );
-  if (restorable.length === 0) return { ...state, hydrated: true };
-
-  const grouped = new Map<PaneId, ActiveAgentSessionSnapshot[]>();
-  for (const session of restorable) {
-    const current = grouped.get(session.paneId) ?? [];
-    current.push(session);
-    grouped.set(session.paneId, current);
-  }
-
-  const paneIds = [...grouped.keys()];
-  const panesById = new Map<PaneId, PaneState>();
-  const sessions = new Map<SessionId, Session>();
-  for (const paneId of paneIds) {
-    const group = grouped.get(paneId) ?? [];
-    const restored = group.map(tabFromSnapshot);
-    const focusedSessionId = group.find((session) => session.focused)?.tabId || restored[0]?.id;
-    const session =
-      restored.find((tab) => tab.id === focusedSessionId) ?? restored[0] ?? makeFreshTab();
-    sessions.set(session.id, session);
-    panesById.set(paneId, { sessionId: session.id });
-  }
-
-  const focusedSnapshot = restorable.find((session) => session.focused) ?? restorable[0];
-
-  return {
-    ...state,
-    sessions,
-    panesById,
-    layout: layoutFromPaneIds(paneIds),
-    focusedPaneId: focusedSnapshot.paneId,
-    hydrated: true,
-  };
 }
 
 function reduceWorkspaceStatus(
@@ -142,11 +54,6 @@ function reduceWorkspaceStatus(
       return { ...state, setupWarning: action.warning };
     case "setError":
       return { ...state, error: action.error };
-    case "hydrateActiveSessions":
-      if (state.hydrated) return state;
-      return action.hasExplicitSessionNav || state.paneStateRestored
-        ? { ...state, hydrated: true }
-        : hydrateSessionSnapshots(state, action.snapshots, action.projects);
     default:
       return null;
   }

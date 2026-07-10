@@ -89,10 +89,7 @@ function createMemoryStorage(): Pick<Storage, "getItem" | "setItem" | "removeIte
 function createWorkspaceWindow(source: Window): WorkspaceWindow {
   return {
     Event,
-    CustomEvent,
     dispatchEvent: source.dispatchEvent.bind(source),
-    addEventListener: source.addEventListener.bind(source),
-    removeEventListener: source.removeEventListener.bind(source),
     setTimeout: source.setTimeout.bind(source),
   };
 }
@@ -184,7 +181,6 @@ export function useWorkspace({ ephemeral = false }: UseWorkspaceOptions = {}): U
         api: api(),
         dispatch: workspaceDispatch,
         queueReplay: queueSessionReplay,
-        findProjectById: (id) => projectsRef.current.findById(id),
         selectionFor: (id) => toolsRef.current.selectionFor(id),
       };
     };
@@ -356,7 +352,7 @@ export function useWorkspace({ ephemeral = false }: UseWorkspaceOptions = {}): U
     [dispatch, getReplayQueue],
   );
 
-  useWorkspaceHydrationEffects({ dispatch, projectsRef, toolsRef, skipRestore: ephemeral });
+  useWorkspaceHydrationEffects({ dispatch, toolsRef, skipRestore: ephemeral });
   useWorkspaceRuntimeSync({ dispatch, sessions: [...state.sessions.values()] });
 
   return { state, dispatch, handles };

@@ -4,12 +4,12 @@ import { useCallback, useMemo, useState, type ReactNode } from "react";
 import { Button, UiModal, UiModalHeader } from "@/ui";
 import { ChevronDownIcon, PlusIcon } from "@/ui/icons";
 import {
-  useActiveAgentSessionsEffect,
   usePinnedSessionsEffect,
   useProjectsNavAddProjectEffect,
   useProjectsNavSessionPrefs,
 } from "@/features/agent/ui/projects-nav/use-projects-nav-effects";
-import { loadPersistedActiveAgentSessions } from "@/features/agent/workspace/store";
+import { useOpenSessions } from "@/features/agent/ui/use-open-sessions";
+import type { OpenAgentSession } from "@/features/agent/session-index";
 import { useProjects } from "@/features/agent/projects/context";
 import { addProjectFromPath, openProjectDirectory } from "@/features/agent/projects/api";
 import { isChatsProject, type Project as ProjectEntry } from "@/features/agent/projects/types";
@@ -22,7 +22,7 @@ import {
   SessionRow,
 } from "./projects-nav/session-rows";
 import { mergeActiveSessionPref } from "./projects-nav/helpers";
-import type { ActiveAgentSession, PinnedActiveSession, PinnedSession } from "./projects-nav/types";
+import type { PinnedSession } from "./projects-nav/types";
 
 export function ProjectsNavSection({ expanded }: { expanded: boolean }) {
   const projectsContext = useProjects();
@@ -33,16 +33,12 @@ export function ProjectsNavSection({ expanded }: { expanded: boolean }) {
   const removeProject = projectsContext.removeProject;
   const refreshProjects = projectsContext.refresh;
   const [openIds, setOpenIds] = useState<Set<string>>(new Set());
-  const [activeSessions, setActiveSessions] = useState<ActiveAgentSession[]>(() =>
-    loadPersistedActiveAgentSessions(),
-  );
+  const activeSessions = useOpenSessions();
   const [addError, setAddError] = useState("");
   const [directoryModalOpen, setDirectoryModalOpen] = useState(false);
   const [projectRemoveConfirm, setProjectRemoveConfirm] = useState<ProjectEntry | null>(null);
   const [removingProjectId, setRemovingProjectId] = useState<string | null>(null);
-  const [pinnedSessions, setPinnedSessions] = useState<Array<PinnedSession | PinnedActiveSession>>(
-    [],
-  );
+  const [pinnedSessions, setPinnedSessions] = useState<PinnedSession[]>([]);
   const prefs = useProjectsNavSessionPrefs();
   const pinnedPrefIds = useMemo(
     () =>
@@ -60,17 +56,8 @@ export function ProjectsNavSection({ expanded }: { expanded: boolean }) {
         .sort(),
     [prefs],
   );
-  const activePiSessionIds = useMemo(
-    () =>
-      activeSessions
-        .map((session) => session.piSessionId)
-        .filter((id): id is string => Boolean(id))
-        .sort(),
-    [activeSessions],
-  );
   const pinnedPrefIdsKey = pinnedPrefIds.join("\u0000");
   const hiddenPrefIdsKey = hiddenPrefIds.join("\u0000");
-  const activePiSessionIdsKey = activePiSessionIds.join("\u0000");
   const projectsById = useMemo(
     () => new Map(projects.map((project) => [project.id, project] as const)),
     [projects],
@@ -83,18 +70,13 @@ export function ProjectsNavSection({ expanded }: { expanded: boolean }) {
           return pref.pinned && !pref.hidden;
         })
         .map((session) => ({ session, project: projectsById.get(session.projectId) }))
-        .filter((entry): entry is { session: ActiveAgentSession; project: ProjectEntry } =>
+        .filter((entry): entry is { session: OpenAgentSession; project: ProjectEntry } =>
           Boolean(entry.project),
         ),
     [activeSessions, prefs, projectsById],
   );
   const pinnedActiveSessionIds = useMemo(
-    () =>
-      new Set(
-        pinnedActiveSessions.map(
-          ({ session }) => session.piSessionId ?? `tab:${session.paneId}:${session.tabId}`,
-        ),
-      ),
+    () => new Set(pinnedActiveSessions.map(({ session }) => session.threadId ?? session.id)),
     [pinnedActiveSessions],
   );
   const pinnedRenderedIds = useMemo(() => {
@@ -159,7 +141,7 @@ export function ProjectsNavSection({ expanded }: { expanded: boolean }) {
       else next.add(id);
       return next;
     });
-  const [chatsExpanded, setChatsExpanded] = useState(false);
+  const [chatsExpanded, setChatsExpanded] = useState(true);
   const chatsHasActivity = useMemo(() => {
     if (!chatProject) return false;
     return activeSessions.some(
@@ -168,10 +150,7 @@ export function ProjectsNavSection({ expanded }: { expanded: boolean }) {
   }, [activeSessions, chatProject]);
   const [projectsExpanded, setProjectsExpanded] = useState(true);
   useProjectsNavAddProjectEffect(handleAddProject);
-  useActiveAgentSessionsEffect({ setActiveSessions });
   usePinnedSessionsEffect({
-    activePiSessionIdsKey,
-    activeSessions,
     expanded,
     hiddenPrefIdsKey,
     pinnedPrefIdsKey,
@@ -202,7 +181,7 @@ export function ProjectsNavSection({ expanded }: { expanded: boolean }) {
           </div>
           {pinnedActiveSessions.map(({ session, project }) => (
             <ActiveSessionRow
-              key={`${session.paneId}:${session.tabId}`}
+              key={session.id}
               project={project}
               session={session}
               pref={mergeActiveSessionPref(session, prefs)}
@@ -210,23 +189,14 @@ export function ProjectsNavSection({ expanded }: { expanded: boolean }) {
           ))}
           {pinnedSessions
             .filter((session) => !pinnedActiveSessionIds.has(session.id))
-            .map((session) =>
-              "paneId" in session ? (
-                <ActiveSessionRow
-                  key={`${session.paneId}:${session.tabId}`}
-                  project={session.project}
-                  session={session}
-                  pref={mergeActiveSessionPref(session, prefs)}
-                />
-              ) : (
-                <SessionRow
-                  key={`${session.project.id}:${session.id}`}
-                  project={session.project}
-                  session={session}
-                  pref={prefs[session.id] ?? {}}
-                />
-              ),
-            )}
+            .map((session) => (
+              <SessionRow
+                key={`${session.project.id}:${session.id}`}
+                project={session.project}
+                session={session}
+                pref={prefs[session.id] ?? {}}
+              />
+            ))}
         </div>
       ) : null}
       <SidebarSectionHeader

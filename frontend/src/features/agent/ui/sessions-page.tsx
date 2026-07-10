@@ -16,15 +16,14 @@ import {
   TCell,
 } from "@/ui";
 import { cleanSessionTitle } from "@/features/agent/messages/helpers";
+import { useOpenSessions } from "@/features/agent/ui/use-open-sessions";
 import { useMountSubscription } from "@/hooks/use-mount-subscription";
 import { safeJson } from "@/features/agent/safe-json";
-import { ACTIVE_AGENT_SESSIONS_EVENT } from "@/lib/workspace-events";
 
 import {
-  type ActiveSession,
   type AggregatedSession,
   type SessionSortField,
-  indexActiveByPiId,
+  indexOpenByThreadId,
 } from "@/features/agent/session-contracts";
 
 type StatusFilter = "all" | "running" | "idle";
@@ -45,7 +44,7 @@ function formatRelative(iso: string): string {
 
 export default function AgentSessionsPage() {
   const [sessions, setSessions] = useState<AggregatedSession[] | null>(null);
-  const [activeSessions, setActiveSessions] = useState<ActiveSession[]>([]);
+  const activeSessions = useOpenSessions();
   const [loading, setLoading] = useState(false);
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
@@ -70,16 +69,7 @@ export default function AgentSessionsPage() {
     void reload();
   }, [reload]);
 
-  useMountSubscription(() => {
-    const onActive = (event: Event) => {
-      const detail = (event as CustomEvent<{ sessions?: ActiveSession[] }>).detail;
-      setActiveSessions(Array.isArray(detail?.sessions) ? detail.sessions : []);
-    };
-    window.addEventListener(ACTIVE_AGENT_SESSIONS_EVENT, onActive);
-    return () => window.removeEventListener(ACTIVE_AGENT_SESSIONS_EVENT, onActive);
-  }, []);
-
-  const activeByPiId = useMemo(() => indexActiveByPiId(activeSessions), [activeSessions]);
+  const openByThreadId = useMemo(() => indexOpenByThreadId(activeSessions), [activeSessions]);
 
   const projects = useMemo(() => {
     const seen = new Map<string, string>();
@@ -94,8 +84,8 @@ export default function AgentSessionsPage() {
     const q = query.trim().toLowerCase();
     const filtered = all.filter((session) => {
       if (projectFilter !== "all" && session.projectId !== projectFilter) return false;
-      if (statusFilter === "running" && !activeByPiId.has(session.id)) return false;
-      if (statusFilter === "idle" && activeByPiId.has(session.id)) return false;
+      if (statusFilter === "running" && !openByThreadId.has(session.id)) return false;
+      if (statusFilter === "idle" && openByThreadId.has(session.id)) return false;
       if (!q) return true;
       const haystack =
         `${session.firstUserMessage ?? ""} ${session.projectName} ${session.modelId ?? ""}`.toLowerCase();
@@ -108,7 +98,7 @@ export default function AgentSessionsPage() {
       return sortDir === "asc" ? cmp : -cmp;
     });
     return sorted;
-  }, [sessions, query, projectFilter, statusFilter, activeByPiId, sortField, sortDir]);
+  }, [sessions, query, projectFilter, statusFilter, openByThreadId, sortField, sortDir]);
 
   const summary = useMemo(() => {
     const total = sessions?.length ?? 0;
@@ -234,8 +224,8 @@ export default function AgentSessionsPage() {
               </TRow>
             ) : (
               rows.map((session) => {
-                const running = activeByPiId.has(session.id);
-                const status = activeByPiId.get(session.id)?.status ?? "idle";
+                const running = openByThreadId.has(session.id);
+                const status = openByThreadId.get(session.id)?.status ?? "idle";
                 const label =
                   cleanSessionTitle(session.firstUserMessage) ||
                   `Session ${session.id.slice(0, 8)}`;

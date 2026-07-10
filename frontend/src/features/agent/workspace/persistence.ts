@@ -1,9 +1,4 @@
-// Workspace localStorage IO. writePaneState/writeActiveSessions are the ONLY
-// workspace writers of browser storage, and runWorkspaceEffect is their only
-// caller — persistence happens as a post-dispatch effect, never inline.
-
 import { collectLeaves } from "@/features/agent/workspace/layout";
-import type { ActiveAgentSessionSnapshot } from "@/features/agent/active-sessions";
 import type { Session, SessionId, SessionsMap } from "@/features/agent/runtime/types";
 import type { ToolSelection } from "@/features/agent/tools/types";
 import type {
@@ -16,7 +11,6 @@ import type {
 import {
   PANE_LAYOUT_KEY,
   PANE_STATE_KEY,
-  persistActiveAgentSessions,
   restorePersistedPaneState,
   type PersistedPaneEntry,
   sessionMetaForPersistence,
@@ -27,6 +21,7 @@ import { makeFreshTab } from "@/features/agent/messages/helpers";
 const SESSIONS_COLLAPSED_KEY = "local-studio.agent.sessionsCollapsed";
 const SESSIONS_COLLAPSED_CLEANED_KEY = "local-studio.agent.sessionsCollapsedCleaned";
 const LEGACY_TRANSCRIPT_CACHE_KEY = "local-studio.agent.transcripts.v1";
+const LEGACY_ACTIVE_SESSIONS_KEY = "local-studio.agent.activeSessions.snapshot";
 
 function readStorage(storage: WorkspaceStorage, key: string): string | null {
   try {
@@ -39,17 +34,13 @@ function readStorage(storage: WorkspaceStorage, key: string): string | null {
 function setStorage(storage: WorkspaceStorage, key: string, value: string): void {
   try {
     storage.setItem(key, value);
-  } catch {
-    // Ignore quota/private-mode failures; workspace state remains in memory.
-  }
+  } catch {}
 }
 
 function removeStorage(storage: WorkspaceStorage, key: string): void {
   try {
     storage.removeItem(key);
-  } catch {
-    // Ignore storage failures; migrations are best-effort.
-  }
+  } catch {}
 }
 
 function restoreLegacyLayout(rawLayout: string): {
@@ -82,16 +73,12 @@ function migrateStorage(storage: WorkspaceStorage): void {
     setStorage(storage, SESSIONS_COLLAPSED_CLEANED_KEY, "1");
   }
   removeStorage(storage, LEGACY_TRANSCRIPT_CACHE_KEY);
+  removeStorage(storage, LEGACY_ACTIVE_SESSIONS_KEY);
 }
 
 export type LoadedFromStorage = {
   workspace: Partial<WorkspaceState>;
-  /** Per-session tool selections recovered from the persisted shape. */
   selections: Map<SessionId, ToolSelection>;
-  /**
-   * Legacy pre-alias runtime keys by session id, read once from old persisted
-   * state to seed the runtime controller's connection-key override.
-   */
   legacyRuntimeKeys: Map<SessionId, string>;
 };
 
@@ -102,7 +89,7 @@ export function loadInitialFromStorage(storage: WorkspaceStorage): LoadedFromSto
   const restoredState = rawState ? restorePersistedPaneState(rawState) : null;
   if (restoredState) {
     const { selections, legacyRuntimeKeys, ...workspace } = restoredState;
-    return { workspace: { ...workspace, paneStateRestored: true }, selections, legacyRuntimeKeys };
+    return { workspace, selections, legacyRuntimeKeys };
   }
 
   const rawLayout = readStorage(storage, PANE_LAYOUT_KEY);
@@ -130,17 +117,4 @@ export function writePaneState(
     PANE_STATE_KEY,
     JSON.stringify({ version: 1, layout: state.layout, focusedPaneId: state.focusedPaneId, panes }),
   );
-  // PANE_LAYOUT_KEY is legacy: still read as a restore fallback for very old
-  // profiles (see loadInitialFromStorage) but no longer written.
-}
-
-export function writeActiveSessions(
-  storage: WorkspaceStorage,
-  sessions: ActiveAgentSessionSnapshot[],
-): void {
-  try {
-    persistActiveAgentSessions(sessions, storage);
-  } catch {
-    // Ignore quota/private-mode failures; the broadcast still updates listeners.
-  }
 }

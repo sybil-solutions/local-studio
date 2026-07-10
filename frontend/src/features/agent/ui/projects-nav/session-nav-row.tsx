@@ -14,7 +14,6 @@ import {
 import { useClickOutside } from "@/features/agent/hooks/use-click-outside";
 import { Archive, MoreIcon, Pin, PinOff, SquarePen, X } from "@/ui/icon-registry";
 import type { SessionPref } from "@/features/agent/messages/prefs";
-import { workspaceCommands } from "@/features/agent/workspace/commands";
 import { hrefWithOpenNonce, navigateToSessionHref } from "./helpers";
 
 const SESSION_MENU_CLASS =
@@ -236,10 +235,7 @@ function SessionOpenTarget({
           onRememberTitle?.();
           if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
           event.preventDefault();
-          if (onOpen && workspaceCommands().isBound()) {
-            onOpen();
-            return;
-          }
+          onOpen?.();
           navigateToSessionHref(router, hrefWithOpenNonce(href));
         }}
         onDragStart={onDragStart}

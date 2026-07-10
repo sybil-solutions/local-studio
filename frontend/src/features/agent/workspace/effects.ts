@@ -1,9 +1,8 @@
-import type { ActiveAgentSessionSnapshot } from "@/features/agent/active-sessions";
 import { Effect } from "effect";
 import { cleanSessionTitle } from "@/features/agent/messages/helpers";
 import { findPaneByPiSessionId, paneSessionId } from "@/features/agent/runtime/selectors";
-import type { Project } from "@/features/agent/projects/types";
 import type { Session, SessionId } from "@/features/agent/runtime/types";
+import { publishOpenSessions, type OpenAgentSession } from "@/features/agent/session-index";
 import type { ToolSelection } from "@/features/agent/tools/types";
 import type { ComposerSkillRef } from "@/features/agent/composer-context";
 import type {
@@ -13,19 +12,13 @@ import type {
   WorkspaceState,
 } from "@/features/agent/workspace/types";
 import {
-  loadPersistedActiveAgentSessions,
   sessionMetaForPersistence,
   setupWarningFromPiCheck,
   type WorkspaceStorage,
 } from "@/features/agent/workspace/store";
-import { writeActiveSessions, writePaneState } from "@/features/agent/workspace/persistence";
+import { writePaneState } from "@/features/agent/workspace/persistence";
 import { writeTranscriptSnapshot } from "@/features/agent/workspace/transcript-cache";
-import {
-  ACTIVE_AGENT_SESSIONS_EVENT,
-  PROJECTS_LOADED_EVENT,
-  SESSIONS_CHANGED_EVENT,
-} from "@/lib/workspace-events";
-import { isRecord } from "@/lib/guards";
+import { SESSIONS_CHANGED_EVENT } from "@/lib/workspace-events";
 
 const EMPTY_SELECTION: ToolSelection = {
   skills: [],
@@ -41,10 +34,7 @@ export type WorkspaceApi = {
 
 export type WorkspaceWindow = {
   Event: typeof Event;
-  CustomEvent: typeof CustomEvent;
   dispatchEvent: (event: Event) => boolean;
-  addEventListener: Window["addEventListener"];
-  removeEventListener: Window["removeEventListener"];
   setTimeout?: (handler: () => void, timeout: number) => unknown;
 };
 
@@ -56,9 +46,6 @@ export type WorkspaceEffectDeps = {
   api: WorkspaceApi;
   dispatch?: WorkspaceDispatch;
   queueReplay: (paneId: PaneId, piSessionId: string) => void;
-  /** Resolve a project by id from the projects context (workspace doesn't own project state). */
-  findProjectById?: (id: string) => Project | null;
-  /** Resolve a session's tool selection from the tools context. */
   selectionFor?: (sessionId: SessionId) => ToolSelection;
 };
 
@@ -71,7 +58,6 @@ const PANE_STATE_ACTIONS = new Set<WorkspaceAction["type"]>([
   "renameTab",
   "splitTab",
   "closePane",
-  "hydrateActiveSessions",
   "urlNavRequested",
 ]);
 
@@ -84,7 +70,6 @@ const SESSIONS_CHANGED_ACTIONS = new Set<WorkspaceAction["type"]>([
   "setPaneSession",
   "patchSession",
   "patchActiveTab",
-  "hydrateActiveSessions",
   "notifySessionsChanged",
   "urlNavRequested",
 ]);
@@ -97,42 +82,6 @@ const METADATA_PATCH_ACTIONS = new Set<WorkspaceAction["type"]>([
 
 function dispatchEvent(deps: WorkspaceEffectDeps, type: string): void {
   deps.window.dispatchEvent(new deps.window.Event(type));
-}
-
-function dispatchCustomEvent<T>(deps: WorkspaceEffectDeps, type: string, detail: T): void {
-  deps.window.dispatchEvent(new deps.window.CustomEvent<T>(type, { detail }));
-}
-
-function eventDetail(event: Event): unknown {
-  return "detail" in event ? event.detail : undefined;
-}
-
-export function subscribeWorkspaceWindowEvents(
-  workspaceWindow: WorkspaceWindow,
-  dispatch: WorkspaceDispatch,
-): () => void {
-  // Fired by ProjectsProvider once its first load settles. We hold off on
-  // hydrating active-session snapshots until then so we can filter sessions
-  // whose project is no longer installed.
-  const onProjectsLoaded = (event: Event) => {
-    const detail = eventDetail(event);
-    const projects =
-      isRecord(detail) && Array.isArray(detail.projects) ? (detail.projects as Project[]) : [];
-    const params =
-      typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
-    const restoreWorkspace = params?.get("restore") !== "0";
-    dispatch({
-      type: "hydrateActiveSessions",
-      snapshots: restoreWorkspace ? loadPersistedActiveAgentSessions() : [],
-      projects,
-      hasExplicitSessionNav:
-        !restoreWorkspace || Boolean(params?.get("session") || params?.get("new")),
-    });
-  };
-
-  workspaceWindow.addEventListener(PROJECTS_LOADED_EVENT, onProjectsLoaded);
-
-  return () => workspaceWindow.removeEventListener(PROJECTS_LOADED_EVENT, onProjectsLoaded);
 }
 
 function scheduleSessionsRefresh(deps: WorkspaceEffectDeps): void {
@@ -205,38 +154,39 @@ function runInitialApiEffects(state: WorkspaceState, deps: WorkspaceEffectDeps):
   }
 }
 
-function activeSessionSnapshot(
+function openSessionSnapshot(
   state: WorkspaceState,
   tab: Session,
   selectionFor: (id: SessionId) => ToolSelection,
   paneId: string,
   focused: boolean,
-): ActiveAgentSessionSnapshot {
+): OpenAgentSession {
   const selection = selectionFor(tab.id);
   const usedSkills = usedSkillsForSession(tab);
   return {
+    id: tab.id,
+    threadId: tab.piSessionId,
     projectId: tab.projectId ?? "",
     cwd: tab.cwd ?? "",
     paneId,
-    tabId: tab.id,
-    piSessionId: tab.piSessionId,
     modelId: tab.modelId ?? state.selectedModel,
     title: cleanSessionTitle(tab.title) || (paneId ? "Current session" : "Background session"),
     status: tab.status,
     focused,
+    unseen: false,
     startedAt: tab.startedAt,
-    updatedAt: tab.startedAt || new Date().toISOString(),
+    updatedAt: tab.startedAt ?? "",
     skills: selection.skills.length > 0 ? selection.skills : undefined,
     usedSkills: usedSkills.length > 0 ? usedSkills : undefined,
   };
 }
 
-function computeActiveSessionBroadcast(
+function openSessionsFromWorkspace(
   state: WorkspaceState,
   selectionFor: (id: SessionId) => ToolSelection,
-): ActiveAgentSessionSnapshot[] | null {
+): OpenAgentSession[] | null {
   if (!state.hydrated) return null;
-  const out: ActiveAgentSessionSnapshot[] = [];
+  const out: OpenAgentSession[] = [];
   const inPane = new Set<SessionId>();
   for (const [paneId, pane] of state.panesById.entries()) {
     const sessionId = paneSessionId(pane);
@@ -245,18 +195,12 @@ function computeActiveSessionBroadcast(
     inPane.add(tab.id);
     if (!(Boolean(tab.piSessionId) || tab.messages.length > 0) || tab.status === "loading")
       continue;
-    out.push(
-      activeSessionSnapshot(state, tab, selectionFor, paneId, paneId === state.focusedPaneId),
-    );
+    out.push(openSessionSnapshot(state, tab, selectionFor, paneId, paneId === state.focusedPaneId));
   }
-  // Sessions still working after the user navigated away keep no pane, but
-  // pruneSessions keeps them alive in the store. Surface them so a turn started
-  // in another chat stays visible (and re-openable) in the sidebar instead of
-  // running invisibly in the background.
   for (const tab of state.sessions.values()) {
     if (inPane.has(tab.id)) continue;
     if (tab.status !== "running" && tab.status !== "starting") continue;
-    out.push(activeSessionSnapshot(state, tab, selectionFor, "", false));
+    out.push(openSessionSnapshot(state, tab, selectionFor, "", false));
   }
   return out;
 }
@@ -270,10 +214,6 @@ function usedSkillsForSession(tab: Pick<Session, "messages" | "usedSkills">): Co
   return [...byId.values()];
 }
 
-function activeSessionBroadcastKey(sessions: ActiveAgentSessionSnapshot[] | null): string {
-  return JSON.stringify(sessions ?? null);
-}
-
 function storedSessionsKey(state: WorkspaceState): string {
   const entries: Array<{ id: string; title: string; cwd?: string }> = [];
   for (const tab of state.sessions.values()) {
@@ -284,17 +224,7 @@ function storedSessionsKey(state: WorkspaceState): string {
   return JSON.stringify(entries);
 }
 
-// Cheap O(sessions) fingerprint of everything the active-session broadcast
-// snapshot actually depends on: hydration, the selected-model fallback, focus,
-// pane membership, and each session's identity/status/skill scalars. It
-// deliberately reads `messages.length` (not message bodies) and `usedSkills`
-// length — a streaming text delta grows the last message in place without
-// changing any of these, so the signature is stable across the entire token
-// stream of a turn. Tool selection (plugins/skills) is intentionally excluded:
-// it does not flow through a workspace dispatch, so gating on it would never
-// help and only the next session-field change re-broadcasts it (unchanged from
-// the prior every-dispatch behavior).
-export function activeBroadcastSignature(state: WorkspaceState): string {
+function openSessionsSignature(state: WorkspaceState): string {
   if (!state.hydrated) return "\u0000unhydrated";
   const parts: string[] = [`m:${state.selectedModel ?? ""}`, `f:${state.focusedPaneId ?? ""}`];
   for (const [paneId, pane] of state.panesById.entries())
@@ -309,22 +239,15 @@ export function activeBroadcastSignature(state: WorkspaceState): string {
   return parts.join("\n");
 }
 
-function broadcastActiveSessions(
+function publishWorkspaceSessions(
   prevState: WorkspaceState,
   nextState: WorkspaceState,
   deps: WorkspaceEffectDeps,
 ): void {
-  // Hot path: a coalesced text delta dispatches patchSession on every animation
-  // frame. The broadcast snapshot can't change unless a broadcast-relevant
-  // scalar changed, so short-circuit on the cheap signature BEFORE the
-  // O(sessions x messages) double walk + JSON.stringify that follows.
-  if (activeBroadcastSignature(prevState) === activeBroadcastSignature(nextState)) return;
+  if (openSessionsSignature(prevState) === openSessionsSignature(nextState)) return;
   const selectionFor = deps.selectionFor ?? (() => EMPTY_SELECTION);
-  const previous = computeActiveSessionBroadcast(prevState, selectionFor);
-  const next = computeActiveSessionBroadcast(nextState, selectionFor);
-  if (!next || activeSessionBroadcastKey(previous) === activeSessionBroadcastKey(next)) return;
-  writeActiveSessions(deps.storage, next);
-  dispatchCustomEvent(deps, ACTIVE_AGENT_SESSIONS_EVENT, { sessions: next });
+  const next = openSessionsFromWorkspace(nextState, selectionFor);
+  if (next) publishOpenSessions(next);
 }
 
 function queueLocatedReplay(
@@ -356,15 +279,6 @@ function queueReplayEffects(
     case "urlNavRequested":
       if (action.sessionId) queueLocatedReplay(action.sessionId, nextState, deps);
       return;
-    case "hydrateActiveSessions": {
-      const queued = new Set<string>();
-      for (const snapshot of action.snapshots) {
-        if (!snapshot.piSessionId || queued.has(snapshot.piSessionId)) continue;
-        queued.add(snapshot.piSessionId);
-        queueLocatedReplay(snapshot.piSessionId, nextState, deps);
-      }
-      return;
-    }
     default:
       return;
   }
@@ -386,8 +300,6 @@ function persistActionEffects(
   ) {
     writePaneState(deps.storage, nextState, deps.selectionFor);
   }
-  // Browser/computer tool state persistence now lives in
-  // features/agent/tools/persistence.ts and is driven by ToolsProvider directly.
 }
 
 function paneMetadataKey(
@@ -416,8 +328,6 @@ function isSettledStatus(status: string): boolean {
   return status === "idle" || status === "done";
 }
 
-// Cheap content fingerprint — enough to tell "this session's transcript moved"
-// without serializing every message on every dispatch.
 function transcriptSignature(session: Session): string {
   const last = session.messages[session.messages.length - 1];
   return [
@@ -430,10 +340,6 @@ function transcriptSignature(session: Session): string {
   ].join("|");
 }
 
-// Persist the crash-recovery transcript fallback once a session settles with
-// new content. Gated on settle + signature change so it writes about once per
-// completed turn, never per streamed token. The canonical pi JSONL stays the
-// source of truth; this only backstops a failed/empty replay on restore.
 function persistSettledTranscripts(
   prevState: WorkspaceState,
   nextState: WorkspaceState,
@@ -466,7 +372,7 @@ export function runWorkspaceEffect(
     runInitialApiEffects(nextState, deps);
   }
 
-  broadcastActiveSessions(prevState, nextState, deps);
+  publishWorkspaceSessions(prevState, nextState, deps);
   if (SESSIONS_CHANGED_ACTIONS.has(action.type)) {
     persistSettledTranscripts(prevState, nextState, deps);
   }

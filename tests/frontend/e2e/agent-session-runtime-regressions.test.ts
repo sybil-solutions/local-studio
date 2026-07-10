@@ -1,13 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-// Clean subpath export — resolvable now that the suite runs under bun (tsx
-// could not load pi-ai and forced a deep node_modules dist import here).
 import { convertMessages } from "@earendil-works/pi-ai/openai-completions";
-import {
-  mergeActiveAgentSessions,
-  type ActiveAgentSessionSnapshot,
-} from "@/features/agent/active-sessions";
-import { hasExplicitSessionNavigation } from "@/features/agent/ui/use-workspace-effects";
 import {
   initialRuntimeStatusPhase,
   replayAfterCursor,
@@ -39,7 +32,10 @@ import {
 } from "@/features/agent/runtime/effect-coalescer";
 import { isEmptyStarterSession, pruneSessions } from "@/features/agent/runtime/store";
 import { beginSessionSubmit, endSessionSubmit } from "@/features/agent/runtime/prompt-stream";
-import { controlTargetHasActiveTurn, referencedSessionIds } from "@/features/agent/runtime/selectors";
+import {
+  controlTargetHasActiveTurn,
+  referencedSessionIds,
+} from "@/features/agent/runtime/selectors";
 import {
   acceptRuntimeSeq,
   adoptExternalCursor,
@@ -47,18 +43,11 @@ import {
 } from "@/features/agent/runtime/runtime-cursor";
 import { workspaceCommands } from "@/features/agent/workspace/commands";
 import { reducer } from "@/features/agent/workspace/reducer";
-import type {
-  WorkspaceAction,
-  WorkspaceState,
-} from "@/features/agent/workspace/types";
+import type { WorkspaceAction, WorkspaceState } from "@/features/agent/workspace/types";
 import { collectLeaves } from "@/features/agent/workspace/layout";
 import { groupAssistantBlocks } from "@/features/agent/ui/timeline/activity-grouping";
 import { resolveStatusSectionView } from "@/features/dashboard/control-panel/status-section-view";
-import {
-  makePiEventApplierHarness,
-  makeSession,
-  makeState,
-} from "./agent-fixtures";
+import { makePiEventApplierHarness, makeSession, makeState } from "./agent-fixtures";
 
 test("status metrics fall back to stored peaks when current session peaks are absent", () => {
   const view = resolveStatusSectionView({
@@ -88,10 +77,7 @@ test("status metrics fall back to stored peaks when current session peaks are ab
   assert.equal(view.metricColumns[0]?.detail, "max 137.4");
   assert.equal(view.metricColumns[2]?.detail, "max 62245.3");
   assert.equal(view.metricColumns[1]?.detail, "best 931 ms");
-  assert.match(
-    view.metricColumns[1]?.detailTitle ?? "",
-    /all-time best: 79 ms/,
-  );
+  assert.match(view.metricColumns[1]?.detailTitle ?? "", /all-time best: 79 ms/);
   assert.equal(view.sampleInput.generationPeak, 137.4226);
   assert.equal(view.sampleInput.prefillPeak, 62_245.2748);
   assert.equal(view.sampleInput.ttftPeak, 931.115);
@@ -217,9 +203,7 @@ test("new chat replaces an empty starter with fresh identity", () => {
     tab: makeSession("s-fresh"),
   });
 
-  const active = next.sessions.get(
-    next.panesById.get("p-main")?.sessionId ?? "",
-  );
+  const active = next.sessions.get(next.panesById.get("p-main")?.sessionId ?? "");
   assert.equal(active?.id, "s-fresh");
   assert.equal(next.sessions.has("s-starter"), false);
   assert.equal(active?.title, "New session");
@@ -228,42 +212,6 @@ test("new chat replaces an empty starter with fresh identity", () => {
   assert.equal(active?.tokenStats, undefined);
   assert.equal(active?.contextUsage, undefined);
   assert.equal(active?.usedSkills, undefined);
-});
-
-test("explicit new-session navigation blocks persisted active-session hydration", () => {
-  const params = new URLSearchParams("project=personal&new=first-click");
-  const oldSnapshot = {
-    projectId: "personal",
-    cwd: "/workspace/personal",
-    paneId: "p-main",
-    tabId: "tab-old",
-    runtimeSessionId: "rt-old",
-    piSessionId: "pi-old",
-    title: "Old restored chat",
-    status: "running" as const,
-    focused: true,
-  };
-
-  assert.equal(hasExplicitSessionNavigation(params), true);
-
-  const next = reducer(
-    { ...makeState(), hydrated: false },
-    {
-      type: "hydrateActiveSessions",
-      projects: [
-        { id: "personal", name: "personal", path: "/workspace/personal" },
-      ],
-      snapshots: [oldSnapshot],
-      hasExplicitSessionNav: hasExplicitSessionNavigation(params),
-    },
-  );
-
-  const active = next.sessions.get(
-    next.panesById.get("p-main")?.sessionId ?? "",
-  );
-  assert.equal(active?.piSessionId, null);
-  assert.notEqual(active?.id, "tab-old");
-  assert.equal(next.hydrated, true);
 });
 
 test("pruning keeps still-working sessions that lost their pane but drops settled ones", () => {
@@ -325,78 +273,6 @@ test("session submit guards block duplicate sends only within the same session",
   assert.equal(beginSessionSubmit(guard, "s-old"), true);
 });
 
-test("agent session navigation restores running SDK sessions with runtime identity", () => {
-  const state = { ...makeState(), hydrated: false };
-  const usedSkills = [
-    { id: "skill-browser", name: "browser", path: "/skills/browser" },
-  ];
-
-  const next = reducer(state, {
-    type: "hydrateActiveSessions",
-    projects: [
-      { id: "personal", name: "personal", path: "/workspace/personal" },
-    ],
-    snapshots: [
-      {
-        projectId: "personal",
-        cwd: "/workspace/personal",
-        paneId: "p-main",
-        tabId: "tab-deepseek",
-        runtimeSessionId: "rt-deepseek",
-        piSessionId: "pi-deepseek",
-        modelId: "deepseek-v4-flash",
-        title: "Still running",
-        status: "running",
-        focused: true,
-        updatedAt: "2026-05-26T12:00:00.000Z",
-        usedSkills,
-      },
-    ],
-  });
-
-  const restoredPane = next.panesById.get("p-main");
-  assert.equal(next.hydrated, true);
-  assert.equal(next.focusedPaneId, "p-main");
-  assert.equal(restoredPane?.sessionId, "tab-deepseek");
-  const restored = next.sessions.get("tab-deepseek");
-  // The legacy snapshot runtime key is NOT copied onto the session — the
-  // session id is the runtime key; legacy keys only seed the controller's
-  // connection-key override (see use-workspace-effects).
-  assert.equal(restored?.piSessionId, "pi-deepseek");
-  assert.equal(restored?.modelId, "deepseek-v4-flash");
-  assert.deepEqual(restored?.usedSkills, usedSkills);
-});
-
-test("unprojected active sessions hydrate with their cwd", () => {
-  const state = { ...makeState(), hydrated: false };
-
-  const next = reducer(state, {
-    type: "hydrateActiveSessions",
-    projects: [],
-    snapshots: [
-      {
-        projectId: "",
-        cwd: "/Users/sero/.local-studio",
-        paneId: "p-main",
-        tabId: "tab-default",
-        piSessionId: "pi-default",
-        modelId: "nemotron-3-ultra",
-        title: "Default chat",
-        status: "idle",
-        focused: true,
-        updatedAt: "2026-06-08T04:00:00.000Z",
-      },
-    ],
-  });
-
-  const active = next.sessions.get(
-    next.panesById.get("p-main")?.sessionId ?? "",
-  );
-  assert.equal(active?.piSessionId, "pi-default");
-  assert.equal(active?.cwd, "/Users/sero/.local-studio");
-  assert.equal(active?.modelId, "nemotron-3-ultra");
-});
-
 test("session replay into a starter adopts cwd and model metadata", () => {
   const next = reducer(makeState(), {
     type: "urlNavRequested",
@@ -412,149 +288,11 @@ test("session replay into a starter adopts cwd and model metadata", () => {
     }),
   });
 
-  const active = next.sessions.get(
-    next.panesById.get("p-main")?.sessionId ?? "",
-  );
+  const active = next.sessions.get(next.panesById.get("p-main")?.sessionId ?? "");
   assert.equal(active?.piSessionId, "pi-replay");
   assert.equal(active?.cwd, "/Users/sero/.local-studio");
   assert.equal(active?.modelId, "nemotron-3-ultra");
   assert.equal(active?.startedAt, "2026-06-08T04:00:00.000Z");
-});
-
-test("agent session merge upgrades tab identity to pi identity without dropping focus", () => {
-  const previous: ActiveAgentSessionSnapshot[] = [
-    {
-      projectId: "personal",
-      cwd: "/workspace/personal",
-      paneId: "p-main",
-      tabId: "tab-1",
-      runtimeSessionId: "rt-live",
-      piSessionId: null,
-      title: "Draft",
-      status: "starting",
-      focused: true,
-      updatedAt: "2026-05-26T12:00:00.000Z",
-    },
-  ];
-
-  const incoming: ActiveAgentSessionSnapshot[] = [
-    {
-      projectId: "personal",
-      cwd: "/workspace/personal",
-      paneId: "p-main",
-      tabId: "tab-1",
-      runtimeSessionId: "rt-live",
-      piSessionId: "pi-live",
-      modelId: "deepseek-v4-flash",
-      title: "Live",
-      status: "running",
-      updatedAt: "2026-05-26T12:00:01.000Z",
-      usedSkills: [{ id: "skill-code", name: "code" }],
-    },
-  ];
-
-  const merged = mergeActiveAgentSessions(previous, incoming);
-
-  assert.equal(merged.length, 1);
-  assert.equal(merged[0]?.piSessionId, "pi-live");
-  assert.equal(merged[0]?.focused, true);
-  assert.equal(merged[0]?.runtimeSessionId, "rt-live");
-  assert.equal(merged[0]?.modelId, "deepseek-v4-flash");
-  assert.deepEqual(merged[0]?.usedSkills, [{ id: "skill-code", name: "code" }]);
-});
-
-test("agent session merge preserves multiple running sessions instead of normalizing to one active row", () => {
-  const incoming: ActiveAgentSessionSnapshot[] = [
-    {
-      projectId: "personal",
-      cwd: "/workspace/personal",
-      paneId: "p-main",
-      tabId: "tab-live",
-      runtimeSessionId: "rt-live",
-      piSessionId: "pi-live",
-      title: "Live",
-      status: "running",
-      focused: true,
-      updatedAt: "2026-05-26T12:00:02.000Z",
-    },
-    {
-      projectId: "personal",
-      cwd: "/workspace/personal",
-      paneId: "p-side",
-      tabId: "tab-side",
-      runtimeSessionId: "rt-side",
-      piSessionId: "pi-side",
-      modelId: "deepseek-v4-flash",
-      title: "Side live",
-      status: "running",
-      updatedAt: "2026-05-26T12:00:03.000Z",
-    },
-  ];
-
-  const merged = mergeActiveAgentSessions([], incoming);
-
-  assert.equal(merged.length, 2);
-  assert.deepEqual(
-    merged
-      .map((session) => [session.piSessionId, session.status])
-      .sort((a, b) => String(a[0]).localeCompare(String(b[0]))),
-    [
-      ["pi-live", "running"],
-      ["pi-side", "running"],
-    ],
-  );
-  assert.equal(
-    merged.find((session) => session.piSessionId === "pi-live")?.focused,
-    true,
-  );
-  assert.equal(
-    merged.find((session) => session.piSessionId === "pi-side")?.modelId,
-    "deepseek-v4-flash",
-  );
-});
-
-test("agent session merge clears stale focused rows when another session is focused", () => {
-  const previous: ActiveAgentSessionSnapshot[] = [
-    {
-      projectId: "personal",
-      cwd: "/workspace/personal",
-      paneId: "p-old",
-      tabId: "tab-old",
-      runtimeSessionId: "rt-old",
-      piSessionId: "pi-old",
-      title: "Old focused",
-      status: "idle",
-      focused: true,
-      updatedAt: "2026-05-26T12:00:01.000Z",
-    },
-  ];
-
-  const incoming: ActiveAgentSessionSnapshot[] = [
-    {
-      projectId: "personal",
-      cwd: "/workspace/personal",
-      paneId: "p-new",
-      tabId: "tab-new",
-      runtimeSessionId: "rt-new",
-      piSessionId: "pi-new",
-      title: "New focused",
-      status: "running",
-      focused: true,
-      updatedAt: "2026-05-26T12:00:02.000Z",
-    },
-  ];
-
-  const merged = mergeActiveAgentSessions(previous, incoming);
-
-  assert.equal(
-    merged.find((session) => session.piSessionId === "pi-new")?.focused,
-    true,
-  );
-  assert.equal(
-    merged.find((session) => session.piSessionId === "pi-old")?.focused,
-    false,
-  );
-  assert.equal(merged.filter((session) => session.focused === true).length, 1);
 });
 
 test("completed runtime remains running but not active after the prompt promise settles", () => {
@@ -690,14 +428,8 @@ test("runtime event cursor resets for a new prompt on the same Pi session", () =
 });
 
 test("control routing uses active turn state, not runtime process existence", () => {
-  assert.equal(
-    controlTargetHasActiveTurn({ active: true, running: true }),
-    true,
-  );
-  assert.equal(
-    controlTargetHasActiveTurn({ active: false, running: true }),
-    false,
-  );
+  assert.equal(controlTargetHasActiveTurn({ active: true, running: true }), true);
+  assert.equal(controlTargetHasActiveTurn({ active: false, running: true }), false);
 });
 
 test("splitting a session is idempotent when navigating to an already open pi session", () => {
@@ -832,9 +564,7 @@ test("follow-up queue drains after agent end while steer messages stay out of th
   ]);
 
   assert.equal(next?.text, "next prompt");
-  assert.deepEqual(remaining, [
-    { id: "q-after", mode: "follow_up", text: "after that" },
-  ]);
+  assert.deepEqual(remaining, [{ id: "q-after", mode: "follow_up", text: "after that" }]);
 });
 
 test("text deltas stay visible answer text when partial history already has reasoning", () => {
@@ -1053,25 +783,14 @@ test("text delta coalescer preserves alternating text and reasoning order", () =
     assistantMessageEvent: { type, delta },
   });
 
-  coalescer.enqueuePiEvent(
-    "s-main",
-    event("text_delta", "Visible A."),
-  );
-  coalescer.enqueuePiEvent(
-    "s-main",
-    event("reasoning_delta", "Thinking B."),
-  );
-  coalescer.enqueuePiEvent(
-    "s-main",
-    event("text_delta", "Visible C."),
-  );
+  coalescer.enqueuePiEvent("s-main", event("text_delta", "Visible A."));
+  coalescer.enqueuePiEvent("s-main", event("reasoning_delta", "Thinking B."));
+  coalescer.enqueuePiEvent("s-main", event("text_delta", "Visible C."));
   coalescer.flushNow("s-main");
 
   assert.deepEqual(
     applied.map((entry) => {
-      const ame = entry.assistantMessageEvent as
-        | Record<string, unknown>
-        | undefined;
+      const ame = entry.assistantMessageEvent as Record<string, unknown> | undefined;
       return { type: ame?.type, delta: ame?.delta };
     }),
     [
@@ -1093,32 +812,18 @@ test("final answer snapshots preserve paragraph and list boundaries between text
     "- There is no visible liquid medium.\n\n",
     "So: the wax behavior is the biggest problem.",
   ];
-  const blocks = blocksFromTurnSnapshots([
-    parts.map((text) => ({ type: "text", text })),
-  ]);
+  const blocks = blocksFromTurnSnapshots([parts.map((text) => ({ type: "text", text }))]);
 
   assert.equal(blocks.length, 1);
-  assert.equal(
-    blocks[0]?.kind === "text" ? blocks[0].text : "",
-    parts.join(""),
-  );
+  assert.equal(blocks[0]?.kind === "text" ? blocks[0].text : "", parts.join(""));
 });
 
 test("final answer snapshots concatenate text parts verbatim without synthesizing whitespace", () => {
-  const parts = [
-    "Examples:\n- ",
-    "General software engineering skills.\n- ",
-    "UI/docs skills.",
-  ];
-  const blocks = blocksFromTurnSnapshots([
-    parts.map((text) => ({ type: "text", text })),
-  ]);
+  const parts = ["Examples:\n- ", "General software engineering skills.\n- ", "UI/docs skills."];
+  const blocks = blocksFromTurnSnapshots([parts.map((text) => ({ type: "text", text }))]);
 
   assert.equal(blocks.length, 1);
-  assert.equal(
-    blocks[0]?.kind === "text" ? blocks[0].text : "",
-    parts.join(""),
-  );
+  assert.equal(blocks[0]?.kind === "text" ? blocks[0].text : "", parts.join(""));
 });
 
 test("final answer snapshot merge keeps word continuations together", () => {
@@ -1171,9 +876,8 @@ test("live pre-tool text collapses with the following tool call", () => {
 });
 
 test("tool call deltas use pi-provided partial arguments", () => {
-  const findTool = (
-    blocks: NonNullable<ReturnType<typeof applyAssistantPiEventToBlocks>>,
-  ) => blocks.find((block) => block.kind === "tool");
+  const findTool = (blocks: NonNullable<ReturnType<typeof applyAssistantPiEventToBlocks>>) =>
+    blocks.find((block) => block.kind === "tool");
   let blocks =
     applyAssistantPiEventToBlocks([], {
       type: "message_update",
@@ -1224,10 +928,7 @@ test("tool call deltas use pi-provided partial arguments", () => {
 
   tool = findTool(blocks);
   assert.equal(tool?.kind, "tool");
-  assert.equal(
-    tool?.kind === "tool" ? tool.args?.path : undefined,
-    "/tmp/file.txt",
-  );
+  assert.equal(tool?.kind === "tool" ? tool.args?.path : undefined, "/tmp/file.txt");
   assert.equal(tool?.kind === "tool" ? tool.args?.content : undefined, "hello");
 });
 
@@ -1294,9 +995,7 @@ test("live assistant snapshots keep streaming file tool previews from partial to
     },
   });
 
-  const assistant = harness
-    .session()
-    .messages.find((message) => message.id === "a-main");
+  const assistant = harness.session().messages.find((message) => message.id === "a-main");
   const tool = assistant?.blocks?.find((block) => block.kind === "tool");
   assert.equal(tool?.kind, "tool");
   assert.equal(tool?.kind === "tool" ? tool.name : undefined, "createfile");
@@ -1331,9 +1030,7 @@ test("live assistant snapshots preserve legacy tool-call argument deltas", () =>
     });
   }
 
-  const assistant = harness
-    .session()
-    .messages.find((message) => message.id === "a-main");
+  const assistant = harness.session().messages.find((message) => message.id === "a-main");
   const tool = assistant?.blocks?.find((block) => block.kind === "tool");
   assert.equal(tool?.kind, "tool");
   assert.equal(
@@ -1374,10 +1071,7 @@ test("nex n2 models infer vision support from sparse openai model rows", () => {
   });
 
   assert.equal(model?.vision, true);
-  assert.deepEqual(modelsToPiModels(model ? [model] : [])[0]?.input, [
-    "text",
-    "image",
-  ]);
+  assert.deepEqual(modelsToPiModels(model ? [model] : [])[0]?.input, ["text", "image"]);
 });
 
 test("step 3.7 flash models infer vision support from sparse openai model rows", () => {
@@ -1393,10 +1087,7 @@ test("step 3.7 flash models infer vision support from sparse openai model rows",
 
   assert.equal(inferVisionSupport("step-3.7-flash"), true);
   assert.equal(model?.vision, true);
-  assert.deepEqual(modelsToPiModels(model ? [model] : [])[0]?.input, [
-    "text",
-    "image",
-  ]);
+  assert.deepEqual(modelsToPiModels(model ? [model] : [])[0]?.input, ["text", "image"]);
 });
 
 test("vllm pi openai serialization keeps tool calls out of assistant content", () => {
@@ -1486,10 +1177,7 @@ test("vllm pi openai serialization keeps tool calls out of assistant content", (
     },
   ]);
   assert.equal((messages[1] as Record<string, unknown>).role, "tool");
-  assert.equal(
-    (messages[1] as Record<string, unknown>).tool_call_id,
-    "call-write",
-  );
+  assert.equal((messages[1] as Record<string, unknown>).tool_call_id, "call-write");
   assert.equal((messages[2] as Record<string, unknown>).role, "user");
 });
 
@@ -1600,10 +1288,8 @@ test("reasoning then pre-tool narration then tool keeps activity together", () =
     },
   };
 
-  const afterReasoning =
-    applyAssistantPiEventToBlocks([], reasoningEvent) ?? [];
-  const afterText =
-    applyAssistantPiEventToBlocks(afterReasoning, textEvent) ?? [];
+  const afterReasoning = applyAssistantPiEventToBlocks([], reasoningEvent) ?? [];
+  const afterText = applyAssistantPiEventToBlocks(afterReasoning, textEvent) ?? [];
   const blocks = applyAssistantPiEventToBlocks(afterText, toolEvent) ?? [];
 
   assert.equal(blocks[0]?.kind, "thinking");
@@ -1639,10 +1325,8 @@ test("visible answer text after a tool call stays after the collapsed activity",
     },
   };
 
-  const afterNarration =
-    applyAssistantPiEventToBlocks([], narrationEvent) ?? [];
-  const afterTool =
-    applyAssistantPiEventToBlocks(afterNarration, toolStartEvent) ?? [];
+  const afterNarration = applyAssistantPiEventToBlocks([], narrationEvent) ?? [];
+  const afterTool = applyAssistantPiEventToBlocks(afterNarration, toolStartEvent) ?? [];
   const blocks = applyAssistantPiEventToBlocks(afterTool, answerEvent) ?? [];
 
   assert.equal(blocks[0]?.kind, "thinking");
@@ -1676,18 +1360,14 @@ test("late reasoning deltas move before visible text without splitting the answe
   };
 
   const afterStart = applyAssistantPiEventToBlocks([], textStart) ?? [];
-  const afterReasoning =
-    applyAssistantPiEventToBlocks(afterStart, reasoningEvent) ?? [];
+  const afterReasoning = applyAssistantPiEventToBlocks(afterStart, reasoningEvent) ?? [];
   const blocks = applyAssistantPiEventToBlocks(afterReasoning, textRest) ?? [];
 
   assert.equal(blocks.length, 2);
   assert.equal(blocks[0]?.kind, "thinking");
   assert.equal(blocks[0]?.text, "The model reasoned before answering.");
   assert.equal(blocks[1]?.kind, "text");
-  assert.equal(
-    blocks[1]?.text,
-    "Speculative decoding optimizes inference latency.",
-  );
+  assert.equal(blocks[1]?.text, "Speculative decoding optimizes inference latency.");
 });
 
 test("tool_execution_start collapses pending narration with tool activity", () => {
@@ -1793,9 +1473,7 @@ test("replay patches streamed assistant final messages instead of duplicating th
     },
   ]);
 
-  const assistantMessages = messages.filter(
-    (message) => message.role === "assistant",
-  );
+  const assistantMessages = messages.filter((message) => message.role === "assistant");
   assert.equal(assistantMessages.length, 1);
   assert.equal(assistantMessages[0]?.blocks?.[0]?.kind, "thinking");
   assert.equal(assistantMessages[0]?.blocks?.[1]?.kind, "tool");
@@ -1830,9 +1508,7 @@ test("live final assistant messages hydrate placeholders when no deltas streamed
     },
   });
 
-  const assistant = harness
-    .session()
-    .messages.find((message) => message.id === "a-main");
+  const assistant = harness.session().messages.find((message) => message.id === "a-main");
   assert.equal(
     assistant?.text,
     "A KV cache stores prior attention keys and values so generation can reuse them.",
@@ -1868,9 +1544,7 @@ test("live final assistant messages do not duplicate streamed blocks", () => {
     },
   });
 
-  const assistant = harness
-    .session()
-    .messages.find((message) => message.id === "a-main");
+  const assistant = harness.session().messages.find((message) => message.id === "a-main");
   assert.equal(assistant?.blocks?.length, 1);
   assert.equal(assistant?.blocks?.[0]?.kind, "text");
   assert.equal(assistant?.blocks?.[0]?.text, "Already streamed.");
@@ -1910,9 +1584,7 @@ test("live final assistant messages reconcile partial streamed text", () => {
     },
   });
 
-  const assistant = harness
-    .session()
-    .messages.find((message) => message.id === "a-main");
+  const assistant = harness.session().messages.find((message) => message.id === "a-main");
   assert.equal(assistant?.blocks?.length, 2);
   assert.equal(assistant?.blocks?.[0]?.kind, "thinking");
   assert.equal(
@@ -1920,10 +1592,7 @@ test("live final assistant messages reconcile partial streamed text", () => {
     "The model reasoned before answering, even if the final payload listed it second.",
   );
   assert.equal(assistant?.blocks?.[1]?.kind, "text");
-  assert.equal(
-    assistant?.blocks?.[1]?.text,
-    "Speculative decoding optimizes inference latency.",
-  );
+  assert.equal(assistant?.blocks?.[1]?.text, "Speculative decoding optimizes inference latency.");
 });
 
 test("assistant message_end error becomes visible without replay navigation", () => {
@@ -1952,9 +1621,7 @@ test("assistant message_end error becomes visible without replay navigation", ()
     },
   });
 
-  const assistant = harness
-    .session()
-    .messages.find((message) => message.id === "a-main");
+  const assistant = harness.session().messages.find((message) => message.id === "a-main");
   assert.equal(harness.session().error, "fetch failed");
   assert.equal(assistant?.blocks?.at(-1)?.kind, "event");
   assert.equal(assistant?.blocks?.at(-1)?.text, "fetch failed");
@@ -1986,9 +1653,7 @@ test("settled assistant error messages hydrate visible error blocks", () => {
     },
   });
 
-  const assistant = harness
-    .session()
-    .messages.find((message) => message.id === "a-main");
+  const assistant = harness.session().messages.find((message) => message.id === "a-main");
   assert.equal(harness.session().error, "provider overloaded");
   assert.equal(assistant?.blocks?.[0]?.kind, "event");
   assert.equal(assistant?.blocks?.[0]?.text, "provider overloaded");
@@ -2065,10 +1730,7 @@ test("activity group ids stay stable as streaming blocks append", () => {
 
   const firstActivity = first.find((item) => item.kind === "activity-group");
   const secondActivity = second.find((item) => item.kind === "activity-group");
-  if (
-    firstActivity?.kind !== "activity-group" ||
-    secondActivity?.kind !== "activity-group"
-  ) {
+  if (firstActivity?.kind !== "activity-group" || secondActivity?.kind !== "activity-group") {
     throw new Error("expected activity groups");
   }
   assert.equal(firstActivity.id, secondActivity.id);
@@ -2098,14 +1760,8 @@ test("skill mentions and selected skill context survive composer prompt construc
     start: 4,
     end: 12,
   });
-  assert.match(
-    selectedContextPrompt("open the page", skills),
-    /Loaded skills:/,
-  );
-  assert.match(
-    selectedContextPrompt("open the page", skills),
-    /Use browser tools/,
-  );
+  assert.match(selectedContextPrompt("open the page", skills), /Loaded skills:/);
+  assert.match(selectedContextPrompt("open the page", skills), /Use browser tools/);
   assert.match(
     selectedContextInstructions(skills) ?? "",
     /Preserve this selected composer context/,
@@ -2180,7 +1836,12 @@ test("a tool-free final settled message appends its summary instead of being dro
   });
   ev({
     type: "message",
-    message: { role: "toolResult", toolCallId: "tc1", toolName: "edit_file", content: [{ type: "text", text: "ok" }] },
+    message: {
+      role: "toolResult",
+      toolCallId: "tc1",
+      toolName: "edit_file",
+      content: [{ type: "text", text: "ok" }],
+    },
   });
   // The closing summary arrives as its own tool-free settled message.
   ev({
@@ -2236,7 +1897,13 @@ test("a steer echo clears the optimistic pending bubble and opens the reply bubb
     messages: [
       { id: "u1", role: "user", text: "do a thing", timestamp: "" },
       { id: "a1", role: "assistant", text: "", blocks: [], timestamp: "" },
-      { id: "steer1", role: "user", text: "actually, do it differently", pending: true, timestamp: "" },
+      {
+        id: "steer1",
+        role: "user",
+        text: "actually, do it differently",
+        pending: true,
+        timestamp: "",
+      },
     ],
     status: "running",
     error: "",

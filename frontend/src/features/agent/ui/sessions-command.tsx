@@ -10,13 +10,13 @@ import { useMountSubscription } from "@/hooks/use-mount-subscription";
 import {
   type ActiveSession,
   type AggregatedSession,
-  indexActiveByPiId,
+  indexOpenByThreadId,
 } from "@/features/agent/session-contracts";
 
 type Props = {
   open: boolean;
   onClose: () => void;
-  activeSessions: ActiveSession[];
+  activeSessions: readonly ActiveSession[];
 };
 
 type AppDestination = {
@@ -134,7 +134,7 @@ export function SessionsCommand({ open, onClose, activeSessions }: Props) {
     return () => cancelAnimationFrame(frame);
   }, [open]);
 
-  const activeByPiId = useMemo(() => indexActiveByPiId(activeSessions), [activeSessions]);
+  const openByThreadId = useMemo(() => indexOpenByThreadId(activeSessions), [activeSessions]);
 
   const liveOnlyActives = useMemo(
     () => activeSessions.filter((session) => isRunning(session.status)),
@@ -191,7 +191,7 @@ export function SessionsCommand({ open, onClose, activeSessions }: Props) {
       const session = liveFiltered[liveIndex];
       router.push(
         `/agent?project=${encodeURIComponent(session.projectId)}${
-          session.piSessionId ? `&session=${encodeURIComponent(session.piSessionId)}` : ""
+          session.threadId ? `&session=${encodeURIComponent(session.threadId)}` : ""
         }&replace=1`,
       );
       onClose();
@@ -293,7 +293,7 @@ export function SessionsCommand({ open, onClose, activeSessions }: Props) {
                 const active = selectedIndex === i;
                 return (
                   <button
-                    key={`live:${session.paneId}:${session.tabId}`}
+                    key={`live:${session.id}`}
                     type="button"
                     onMouseEnter={() => setHighlight(i)}
                     onClick={() => commit(i)}
@@ -318,7 +318,7 @@ export function SessionsCommand({ open, onClose, activeSessions }: Props) {
               {filtered.map((session, index) => {
                 const i = destinationFiltered.length + liveFiltered.length + index;
                 const active = selectedIndex === i;
-                const running = activeByPiId.has(session.id);
+                const running = openByThreadId.has(session.id);
                 const label =
                   cleanSessionTitle(session.firstUserMessage) ||
                   `Session ${session.id.slice(0, 8)}`;

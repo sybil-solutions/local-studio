@@ -1,13 +1,7 @@
 import { consumeAgentSessionNavTitle } from "@/features/agent/ui/projects-nav/helpers";
 import type { WorkspaceDispatch } from "@/features/agent/workspace/effects";
 import type { ProjectsContextValue } from "@/features/agent/projects/context";
-import { newPaneId } from "@/features/agent/messages/helpers";
-import { sessionRuntimeController } from "@/features/agent/runtime/session-runtime-controller";
-import {
-  loadPersistedActiveAgentSessions,
-  persistedActiveSessionFor,
-  replayTabForPersisted,
-} from "@/features/agent/workspace/store";
+import { makeFreshTab, newPaneId } from "@/features/agent/messages/helpers";
 import { useMountSubscription } from "@/hooks/use-mount-subscription";
 
 export type SearchParamsReader = {
@@ -20,8 +14,6 @@ type WorkspaceNavigationDeps = {
   searchParams: SearchParamsReader;
   dispatch: WorkspaceDispatch;
 };
-
-type PersistedSession = ReturnType<typeof loadPersistedActiveAgentSessions>[number];
 
 type NavigationParams = {
   projectId: string | null;
@@ -38,13 +30,15 @@ function navigationKey(params: NavigationParams): string {
   return `${projectId ?? ""}|${sessionId ?? ""}|${newParam ?? ""}|${openParam ?? ""}|${splitParam ?? ""}|${replaceParam ?? ""}`;
 }
 
-function projectForNavigation(
-  projects: ProjectsContextValue,
-  projectId: string | null,
-  persistedSession: PersistedSession | null,
-) {
+export function sessionIdForNavigation(
+  sessionId: string | null,
+  newParam: string | null,
+): string | null {
+  return newParam === null ? sessionId : null;
+}
+
+function projectForNavigation(projects: ProjectsContextValue, projectId: string | null) {
   if (projectId) return projects.findById(projectId);
-  if (persistedSession?.projectId) return projects.findById(persistedSession.projectId);
   return null;
 }
 
@@ -57,12 +51,13 @@ function requestWorkspaceUrlNavigation({
   const projectId = searchParams.get("project");
   const sessionId = searchParams.get("session");
   const newParam = searchParams.get("new");
+  const requestedSessionId = sessionIdForNavigation(sessionId, newParam);
   const openParam = searchParams.get("open");
   const splitParam = searchParams.get("split");
   const replaceParam = searchParams.get("replace");
   const key = navigationKey({
     projectId,
-    sessionId,
+    sessionId: requestedSessionId,
     newParam,
     openParam,
     splitParam,
@@ -70,24 +65,24 @@ function requestWorkspaceUrlNavigation({
   });
   if (!key || lastHandledNavKey === key) return;
 
-  const persistedSession = persistedActiveSessionFor(sessionId);
-  const project = projectForNavigation(projects, projectId, persistedSession);
+  const project = projectForNavigation(projects, projectId);
   if (projectId && !project) return;
 
   if (project) projects.selectProject(project);
-  const sessionTitle = sessionId ? consumeAgentSessionNavTitle(sessionId) : undefined;
+  const sessionTitle = requestedSessionId
+    ? consumeAgentSessionNavTitle(requestedSessionId)
+    : undefined;
 
-  const tab = replayTabForPersisted(persistedSession);
-  // Legacy upgrade seed: an entry persisted while running under a pre-alias
-  // rt-* runtime key must reattach to that key (see active-sessions.ts).
-  if (persistedSession?.runtimeSessionId) {
-    sessionRuntimeController().seedConnectionKey(tab.id, persistedSession.runtimeSessionId);
-  }
+  const tab = {
+    ...makeFreshTab(),
+    projectId: project?.id,
+    cwd: project?.path,
+  };
   dispatch({
     type: "urlNavRequested",
     key,
     project,
-    sessionId,
+    sessionId: requestedSessionId,
     ...(sessionTitle ? { sessionTitle } : {}),
     newSession: newParam !== null,
     split: splitParam === "1",
@@ -95,19 +90,28 @@ function requestWorkspaceUrlNavigation({
     paneId: newPaneId(),
     tab,
   });
-  consumeOneShotNavParams();
+  consumeOneShotNavParams(projectId, requestedSessionId);
 }
 
-function consumeOneShotNavParams(): void {
-  if (typeof window === "undefined") return;
-  const url = new URL(window.location.href);
-  let changed = false;
-  for (const param of ["new", "terminal", "split", "open", "replace"]) {
-    if (!url.searchParams.has(param)) continue;
+export function settledAgentNavigationHref(
+  currentHref: string,
+  projectId: string | null,
+  sessionId: string | null,
+): string {
+  const url = new URL(currentHref);
+  if (projectId) url.searchParams.set("project", projectId);
+  else url.searchParams.delete("project");
+  if (sessionId) url.searchParams.set("session", sessionId);
+  else url.searchParams.delete("session");
+  for (const param of ["new", "terminal", "split", "open", "replace"])
     url.searchParams.delete(param);
-    changed = true;
-  }
-  if (changed) window.history.replaceState(window.history.state, "", url);
+  return url.toString();
+}
+
+function consumeOneShotNavParams(projectId: string | null, sessionId: string | null): void {
+  if (typeof window === "undefined") return;
+  const href = settledAgentNavigationHref(window.location.href, projectId, sessionId);
+  if (href !== window.location.href) window.history.replaceState(window.history.state, "", href);
 }
 
 export function useAgentWorkspaceNavigationEffects({

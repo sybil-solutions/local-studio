@@ -1,4 +1,4 @@
-import { PROJECTS_LOADED_EVENT, SESSIONS_CHANGED_EVENT } from "@/lib/workspace-events";
+import { SESSIONS_CHANGED_EVENT } from "@/lib/workspace-events";
 import * as defaultApi from "@/features/agent/projects/api";
 import type { GitSummary, Project, ProjectId } from "@/features/agent/projects/types";
 
@@ -41,9 +41,6 @@ const notify = (target: BrowserWindowLike | null, eventName: string): void => {
   target?.dispatchEvent(new Event(eventName));
 };
 
-const loadedEvent = (projects: Project[]): Event =>
-  new CustomEvent<{ projects: Project[] }>(PROJECTS_LOADED_EVENT, { detail: { projects } });
-
 export function createProjectsStore(dependencies: ProjectsStoreDependencies = {}): ProjectsStore {
   const api = dependencies.api ?? defaultApi;
   const readSelection = dependencies.readSelectedProjectId ?? readSelectedProjectId;
@@ -51,12 +48,8 @@ export function createProjectsStore(dependencies: ProjectsStoreDependencies = {}
   const getWindow = dependencies.getWindow ?? getBrowserWindow;
   const listeners = new Set<() => void>();
   let started = false;
-  let firstLoad = false;
   let lastGitFetch: string | null = null;
   let snapshot: ProjectsSnapshot = {
-    // Seed from the last-known list so entering /agent doesn't block the
-    // sidebar and URL navigation (?project=…&new=/terminal=) on the projects
-    // fetch — the refresh below reconciles stale entries.
     projects: readCachedProjects(),
     loaded: false,
     selectedId: readSelection(),
@@ -111,8 +104,6 @@ export function createProjectsStore(dependencies: ProjectsStoreDependencies = {}
       projects = await api.loadProjects();
       writeCachedProjects(projects);
     } catch {
-      // Swallow — we still mark loaded so consumers don't wait forever. Keep
-      // the cache-seeded list rather than blanking the sidebar on a blip.
       projects = snapshot.projects;
     }
     const previousSelectedId = snapshot.selectedId;
@@ -120,10 +111,6 @@ export function createProjectsStore(dependencies: ProjectsStoreDependencies = {}
     update({ ...snapshot, projects, loaded: true, selectedId });
     if (selectedId !== previousSelectedId) writeSelection(selectedId);
     void loadGitSummary(projectPathById(projects, selectedId));
-    if (!firstLoad) {
-      firstLoad = true;
-      getWindow()?.dispatchEvent(loadedEvent(projects));
-    }
   };
 
   const start = (): void => {
@@ -213,9 +200,7 @@ function writeCachedProjects(projects: Project[]): void {
   if (typeof window === "undefined") return;
   try {
     window.localStorage.setItem(PROJECTS_CACHE_KEY, JSON.stringify(projects));
-  } catch {
-    // Ignore quota/private-mode failures; the cache is a warm-start hint only.
-  }
+  } catch {}
 }
 
 function readSelectedProjectId(): string | null {
@@ -232,7 +217,5 @@ function writeSelectedProjectId(id: string | null): void {
   try {
     if (id) window.localStorage.setItem(SELECTED_PROJECT_KEY, id);
     else window.localStorage.removeItem(SELECTED_PROJECT_KEY);
-  } catch {
-    // Ignore storage failures; selection persists in memory.
-  }
+  } catch {}
 }

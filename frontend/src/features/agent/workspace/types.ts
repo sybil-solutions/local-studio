@@ -1,4 +1,3 @@
-import type { ActiveAgentSessionSnapshot } from "@/features/agent/active-sessions";
 import type { AgentModel } from "@/features/agent/models";
 import type { Project } from "@/features/agent/projects/types";
 import type { Session, SessionId, SessionsMap } from "@/features/agent/runtime/types";
@@ -31,7 +30,6 @@ export type WorkspaceState = {
   error: string;
   hydrated: boolean;
   lastHandledNavKey: string;
-  paneStateRestored?: boolean;
 };
 
 export type WorkspaceSessionPayload = {
@@ -98,10 +96,4 @@ export type WorkspaceAction =
       paneId: PaneId;
       replaceWorkspace?: boolean;
       tab: Session;
-    }
-  | {
-      type: "hydrateActiveSessions";
-      snapshots: ActiveAgentSessionSnapshot[];
-      projects: Project[];
-      hasExplicitSessionNav?: boolean;
     };

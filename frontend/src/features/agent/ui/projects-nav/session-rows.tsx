@@ -5,6 +5,7 @@ import { useCallback, useMemo, useRef, useState, useSyncExternalStore } from "re
 import { safeJson } from "@/features/agent/safe-json";
 import { sessionRuntimeController } from "@/features/agent/runtime/session-runtime-controller";
 import { cleanSessionTitle } from "@/features/agent/messages/helpers";
+import { sessionRows } from "@/features/agent/session-index";
 import {
   patchSessionPref,
   type SessionPref,
@@ -14,14 +15,12 @@ import { useMountSubscription } from "@/hooks/use-mount-subscription";
 import { useProjectSessionsReloadEffect } from "@/features/agent/ui/projects-nav/use-projects-nav-effects";
 import { workspaceCommands } from "@/features/agent/workspace/commands";
 import type { Project as ProjectEntry } from "@/features/agent/projects/types";
-import { useProjects } from "@/features/agent/projects/context";
 import { ChatIcon, Folder, FolderOpen, PlusIcon, TrashIcon } from "@/ui/icons";
 import {
   mergeActiveSessionPref,
   patchActiveSessionPref,
   relativeAge,
   rememberAgentSessionNavTitle,
-  sessionDedupeKey,
   setAgentSessionDragData,
   setSessionArchive,
 } from "./helpers";
@@ -30,12 +29,6 @@ import type { ActiveAgentSession, SessionSummary } from "./types";
 
 const SESSIONS_PAGE_SIZE = 5;
 
-/**
- * The set of session ids the runtime currently reports as actively working —
- * including sessions running in the BACKGROUND (not open in any pane). Lets the
- * sidebar show a working indicator on history rows so a turn started in another
- * chat isn't invisible after you switch away.
- */
 function useActiveRuntimeIds(): ReadonlySet<string> {
   return useSyncExternalStore(
     (notify) => sessionRuntimeController().subscribeActiveRuntimeIds(notify),
@@ -44,7 +37,6 @@ function useActiveRuntimeIds(): ReadonlySet<string> {
   );
 }
 
-/** Session ids that finished working while you weren't looking — the dot. */
 function useUnseenFinishedIds(): ReadonlySet<string> {
   return useSyncExternalStore(
     (notify) => sessionRuntimeController().subscribeActiveRuntimeIds(notify),
@@ -69,7 +61,7 @@ export function ProjectRow({
   onToggle: () => void;
   onRemove?: () => void;
   onNewChatStart?: () => void;
-  activeSessions: ActiveAgentSession[];
+  activeSessions: readonly ActiveAgentSession[];
   prefs: SessionPrefs;
   excludedIds: ReadonlySet<string>;
   icon?: "folder" | "chat";
@@ -119,7 +111,6 @@ export function ProjectRow({
         <div className="absolute right-1.5 top-1/2 -translate-y-1/2">
           <NewChatPlusButton
             projectId={project.id}
-            project={project}
             label={`New task in ${project.name}`}
             className="flex h-5 w-5 items-center justify-center text-(--dim)/55 opacity-0 transition-opacity hover:text-(--fg)/80 group-hover:opacity-100"
             onNavigateStart={onNewChatStart}
@@ -173,7 +164,7 @@ export function ProjectSessions({
   excludedIds,
 }: {
   project: ProjectEntry;
-  activeSessions: ActiveAgentSession[];
+  activeSessions: readonly ActiveAgentSession[];
   prefs: SessionPrefs;
   excludedIds: ReadonlySet<string>;
 }) {
@@ -185,15 +176,6 @@ export function ProjectSessions({
   const projectActiveSessions = useMemo(
     () => activeSessions.filter((session) => session.projectId === project.id),
     [activeSessions, project.id],
-  );
-  const activePiSessionIds = useMemo(
-    () =>
-      new Set(
-        projectActiveSessions
-          .map((session) => session.piSessionId)
-          .filter((id): id is string => Boolean(id)),
-      ),
-    [projectActiveSessions],
   );
   const reload = useCallback(async () => {
     setLoading(true);
@@ -218,69 +200,21 @@ export function ProjectSessions({
       projectActiveSessions.filter((session) => {
         const pref = mergeActiveSessionPref(session, prefs);
         if (pref?.pinned) return false;
-        if (session.piSessionId && excludedIds.has(session.piSessionId)) return false;
+        if (session.threadId && excludedIds.has(session.threadId)) return false;
         return !pref?.hidden;
       }),
     [projectActiveSessions, prefs, excludedIds],
   );
   const recent = useMemo(() => {
-    const seen = new Set<string>();
-    const recentSessions: SessionSummary[] = [];
-    for (const session of sessions ?? []) {
-      if (activePiSessionIds.has(session.id)) continue;
-      if (excludedIds.has(session.id)) continue;
-      if (prefs[session.id]?.pinned) continue;
-      if (prefs[session.id]?.hidden) continue;
-      const key = sessionDedupeKey(session);
-      if (seen.has(session.id) || seen.has(key)) continue;
-      seen.add(session.id);
-      seen.add(key);
-      recentSessions.push(session);
-    }
-    return recentSessions;
-  }, [sessions, activePiSessionIds, excludedIds, prefs]);
-
-  // Original start time per session id, from the server history list (stable —
-  // it does not change when a session is opened). Used to anchor an open
-  // session to its real position even if its live snapshot's startedAt was
-  // reset on open.
-  const historyStartByPiId = useMemo(() => {
-    const map = new Map<string, number>();
-    for (const session of sessions ?? []) {
-      const at = Date.parse(session.startedAt) || 0;
-      if (at) map.set(session.id, at);
-    }
-    return map;
-  }, [sessions]);
-
-  // ONE list ordered by stable start time. Open sessions are NOT promoted to a
-  // separate top block — that made opening a chat reshuffle the sidebar and lose
-  // the user's place. Each session keeps its position whether or not it's open;
-  // the open one just renders as a live ActiveSessionRow in situ.
-  const orderedRows = useMemo<NavRow[]>(() => {
-    const rows: NavRow[] = [];
-    for (const session of visibleActiveSessions) {
-      const historyStart = session.piSessionId
-        ? historyStartByPiId.get(session.piSessionId)
-        : undefined;
-      rows.push({
-        kind: "active",
-        key: `${session.paneId}:${session.tabId}`,
-        sortAt: historyStart ?? (Date.parse(session.startedAt ?? session.updatedAt) || 0),
-        active: session,
-      });
-    }
-    for (const session of recent) {
-      rows.push({
-        kind: "recent",
-        key: session.id,
-        sortAt: Date.parse(session.startedAt) || 0,
-        recent: session,
-      });
-    }
-    rows.sort((a, b) => b.sortAt - a.sortAt);
-    return rows;
-  }, [visibleActiveSessions, recent, historyStartByPiId]);
+    return (sessions ?? []).filter(
+      (session) =>
+        !excludedIds.has(session.id) && !prefs[session.id]?.pinned && !prefs[session.id]?.hidden,
+    );
+  }, [sessions, excludedIds, prefs]);
+  const orderedRows = useMemo(
+    () => sessionRows(visibleActiveSessions, recent),
+    [visibleActiveSessions, recent],
+  );
   const visibleRows = orderedRows.slice(0, visibleLimit);
   const hasMore = orderedRows.length > visibleLimit || (sessions?.length ?? 0) > visibleLimit;
 
@@ -292,21 +226,21 @@ export function ProjectSessions({
         <div className="pl-2 pr-2 py-0.5 text-[length:var(--fs-sm)] text-(--dim)">No chats</div>
       ) : (
         visibleRows.map((row) =>
-          row.kind === "active" ? (
+          row.kind === "open" ? (
             <ActiveSessionRow
               key={row.key}
               project={project}
-              session={row.active}
-              pref={mergeActiveSessionPref(row.active, prefs)}
+              session={row.session}
+              pref={mergeActiveSessionPref(row.session, prefs)}
             />
           ) : (
             <SessionRow
               key={row.key}
               project={project}
-              session={row.recent}
-              pref={prefs[row.recent.id] ?? {}}
-              isRunning={activeRuntimeIds.has(row.recent.id)}
-              unseen={unseenFinishedIds.has(row.recent.id)}
+              session={row.session}
+              pref={prefs[row.session.id] ?? {}}
+              isRunning={activeRuntimeIds.has(row.session.id)}
+              unseen={unseenFinishedIds.has(row.session.id)}
             />
           ),
         )
@@ -324,10 +258,6 @@ export function ProjectSessions({
   );
 }
 
-type NavRow =
-  | { kind: "active"; key: string; sortAt: number; active: ActiveAgentSession }
-  | { kind: "recent"; key: string; sortAt: number; recent: SessionSummary };
-
 export function ActiveSessionRow({
   project,
   session,
@@ -337,7 +267,6 @@ export function ActiveSessionRow({
   session: ActiveAgentSession;
   pref: SessionPref;
 }) {
-  const projects = useProjects();
   const label =
     cleanSessionTitle(pref.title) || cleanSessionTitle(session.title) || "Current session";
   const isFocused = session.focused === true;
@@ -350,29 +279,31 @@ export function ActiveSessionRow({
       initialDraft={cleanSessionTitle(pref.title) || cleanSessionTitle(session.title)}
       age={relativeAge(session.startedAt ?? session.updatedAt)}
       rowClass={rowClass}
-      href={
-        session.piSessionId
-          ? `/agent?project=${encodeURIComponent(project.id)}&session=${encodeURIComponent(session.piSessionId)}&replace=1`
-          : undefined
-      }
+      href={`/agent?project=${encodeURIComponent(project.id)}${
+        session.threadId ? `&session=${encodeURIComponent(session.threadId)}&replace=1` : ""
+      }`}
       onOpen={() => {
-        if (!session.piSessionId) {
-          workspaceCommands().focusSession(session.paneId, session.tabId);
-          return;
-        }
-        projects.selectProject(project);
-        workspaceCommands().openSession(project, session.piSessionId, label);
+        if (!session.threadId) workspaceCommands().focusSession(session.paneId, session.id);
       }}
       onPatchPref={(patch) => patchActiveSessionPref(session, patch)}
       onRenameCommit={(trimmed) =>
         workspaceCommands().renameSession(
           session.paneId,
-          session.tabId,
+          session.id,
           cleanSessionTitle(trimmed) || cleanSessionTitle(session.title) || label,
         )
       }
-      onRememberTitle={() => rememberAgentSessionNavTitle(session.piSessionId, label)}
-      onDragStart={(event) => setAgentSessionDragData(event, session)}
+      onRememberTitle={() => rememberAgentSessionNavTitle(session.threadId, label)}
+      onDragStart={(event) =>
+        setAgentSessionDragData(event, {
+          piSessionId: session.threadId,
+          projectId: session.projectId,
+          cwd: session.cwd,
+          paneId: session.paneId,
+          tabId: session.id,
+          title: session.title,
+        })
+      }
       isRunning={session.status !== "idle" && session.status !== "done"}
       unseen={session.unseen === true && !isFocused}
       canDoubleClickRename
@@ -394,7 +325,6 @@ export function SessionRow({
   isRunning?: boolean;
   unseen?: boolean;
 }) {
-  const projects = useProjects();
   const label =
     cleanSessionTitle(pref.title) ||
     cleanSessionTitle(session.firstUserMessage) ||
@@ -412,10 +342,6 @@ export function SessionRow({
       renameRowClass="flex h-6.5 items-center rounded-md bg-(--surface)/40 pl-3 pr-1"
       href={`/agent?project=${encodeURIComponent(project.id)}&session=${encodeURIComponent(session.id)}&replace=1`}
       onPatchPref={(patch) => patchSessionPref(session.id, patch)}
-      onOpen={() => {
-        projects.selectProject(project);
-        workspaceCommands().openSession(project, session.id, label);
-      }}
       onArchive={() => {
         void setSessionArchive(session.id, project, label, true)
           .then(() => patchSessionPref(session.id, { hidden: undefined }))
@@ -443,13 +369,11 @@ export function SessionRow({
 
 export function NewChatPlusButton({
   projectId,
-  project,
   label,
   className,
   onNavigateStart,
 }: {
   projectId: string;
-  project?: ProjectEntry;
   label: string;
   className: string;
   onNavigateStart?: () => void;
@@ -457,10 +381,6 @@ export function NewChatPlusButton({
   const router = useRouter();
   const openNewChat = () => {
     onNavigateStart?.();
-    if (project && workspaceCommands().isBound()) {
-      workspaceCommands().newChat(project);
-      return;
-    }
     router.push(
       `/agent?project=${encodeURIComponent(projectId)}&new=${Date.now().toString(36)}&replace=1`,
     );

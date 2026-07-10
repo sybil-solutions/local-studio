@@ -8,7 +8,7 @@ import {
 } from "@/features/agent/messages/prefs";
 import { ADD_PROJECT_EVENT, SESSIONS_CHANGED_EVENT } from "@/lib/workspace-events";
 import type { Project as ProjectEntry } from "@/features/agent/projects/types";
-import type { ActiveAgentSession, SessionSummary } from "./types";
+import type { ActiveAgentSession } from "./types";
 
 const SESSION_NAV_TITLE_PREFIX = "local-studio.agent.sessionNavTitle:";
 
@@ -30,17 +30,12 @@ export function setAgentSessionDragData(
   event.dataTransfer.effectAllowed = "copy";
 }
 
-function activeSessionPrefKeys(
-  session: Pick<ActiveAgentSession, "piSessionId" | "paneId" | "tabId">,
-): string[] {
-  return [
-    session.piSessionId,
-    session.paneId && session.tabId ? `tab:${session.paneId}:${session.tabId}` : null,
-  ].filter((value): value is string => Boolean(value));
+function activeSessionPrefKeys(session: Pick<ActiveAgentSession, "threadId" | "id">): string[] {
+  return [session.threadId, session.id].filter((value): value is string => Boolean(value));
 }
 
 export function mergeActiveSessionPref(
-  session: Pick<ActiveAgentSession, "piSessionId" | "paneId" | "tabId">,
+  session: Pick<ActiveAgentSession, "threadId" | "id">,
   prefs: SessionPrefs,
 ): SessionPref {
   const merged: SessionPref = {};
@@ -72,23 +67,11 @@ export function relativeAge(value?: string | null): string {
   return `${weeks}w`;
 }
 
-export function sessionDedupeKey(session: SessionSummary): string {
-  const label = (session.firstUserMessage || "Untitled session")
-    .replace(/\s+/g, " ")
-    .trim()
-    .toLowerCase();
-  return `${label}:${relativeAge(session.startedAt)}`;
-}
-
 export function triggerAddProjectFlow() {
   if (typeof window === "undefined") return;
   window.dispatchEvent(new Event(ADD_PROJECT_EVENT));
 }
 
-/**
- * Append a short, monotonic `open=` nonce so a repeat click on the *same*
- * session still produces a distinct href (Next would otherwise dedupe the URL).
- */
 export function hrefWithOpenNonce(href: string): string {
   const separator = href.includes("?") ? "&" : "?";
   return `${href}${separator}open=${Date.now().toString(36)}`;

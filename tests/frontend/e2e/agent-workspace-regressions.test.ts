@@ -1,13 +1,8 @@
-// Characterization tests for the workspace/pane layer ahead of its ownership
-// consolidation. These pin CURRENT behavior of persistence round-trips, the
-// legacy layout fallback, the active-sessions broadcast, the hydration
-// one-shot guard, the sessions-refresh double fire, and URL-nav dedup — so the
-// refactor can verify against a fixed contract instead of live users.
 import assert from "node:assert/strict";
 import test from "node:test";
 
 import { runWorkspaceEffect, type WorkspaceEffectDeps } from "@/features/agent/workspace/effects";
-import { ACTIVE_AGENT_SESSIONS_EVENT, SESSIONS_CHANGED_EVENT } from "@/lib/workspace-events";
+import { SESSIONS_CHANGED_EVENT } from "@/lib/workspace-events";
 import { loadInitialFromStorage, writePaneState } from "@/features/agent/workspace/persistence";
 import { reducer } from "@/features/agent/workspace/reducer";
 import {
@@ -17,7 +12,6 @@ import {
   type WorkspaceStorage,
 } from "@/features/agent/workspace/store";
 import type { WorkspaceState } from "@/features/agent/workspace/types";
-import { makeFreshTab } from "@/features/agent/messages/helpers";
 import { createSessionReplayQueue } from "@/features/agent/workspace/replay-queue";
 import { readTranscriptSnapshot } from "@/features/agent/workspace/transcript-cache";
 import type { Session } from "@/features/agent/runtime/types";
@@ -168,7 +162,9 @@ test("pane state round-trips durable session metadata and drops transcripts", ()
   assert.equal(restoredRich?.title, "GPU planning");
   assert.equal(restoredRich?.input, "draft text");
   assert.equal(restoredRich?.lastEventSeq, 17);
-  assert.deepEqual(restoredRich?.queue, [{ id: "q-1", mode: "follow_up", text: "next", sent: true }]);
+  assert.deepEqual(restoredRich?.queue, [
+    { id: "q-1", mode: "follow_up", text: "next", sent: true },
+  ]);
   // Transcripts live in canonical session storage, never pane-state.
   assert.deepEqual(restoredRich?.messages, []);
   assert.equal(loaded.workspace.panesById?.get("p-main")?.sessionId, "s-rich");
@@ -187,7 +183,11 @@ test("restore surfaces a legacy tab-level runtime key and ignores pane-level cop
       layout: { kind: "leaf", paneId: "p-1" },
       focusedPaneId: "p-1",
       panes: {
-        "p-1": { activeTabId: "s-1", tabs: [tab], ...(paneRuntime ? { runtimeSessionId: paneRuntime } : {}) },
+        "p-1": {
+          activeTabId: "s-1",
+          tabs: [tab],
+          ...(paneRuntime ? { runtimeSessionId: paneRuntime } : {}),
+        },
       },
     });
 
@@ -224,10 +224,7 @@ test("legacy PANE_LAYOUT_KEY fallback restores layout with fresh starters", () =
   );
 
   const loaded = loadInitialFromStorage(storage);
-  assert.deepEqual(
-    [...(loaded.workspace.panesById?.keys() ?? [])],
-    ["p-a", "p-b"],
-  );
+  assert.deepEqual([...(loaded.workspace.panesById?.keys() ?? [])], ["p-a", "p-b"]);
   for (const pane of loaded.workspace.panesById?.values() ?? []) {
     const session = loaded.workspace.sessions?.get(pane.sessionId);
     assert.equal(session?.piSessionId, null);
@@ -249,288 +246,12 @@ test("legacy PANE_LAYOUT_KEY fallback restores layout with fresh starters", () =
       version: 1,
       layout: { kind: "leaf", paneId: "p-modern" },
       focusedPaneId: "p-modern",
-      panes: { "p-modern": { activeTabId: "s-m", tabs: [{ id: "s-m", runtimeSessionId: "rt-m" }] } },
+      panes: {
+        "p-modern": { activeTabId: "s-m", tabs: [{ id: "s-m", runtimeSessionId: "rt-m" }] },
+      },
     }),
   );
   assert.equal(loadInitialFromStorage(both).workspace.focusedPaneId, "p-modern");
-});
-
-// ----- active sessions broadcast (effects.ts) -----
-
-test("active-session broadcasts persist before the event and dedup by content", () => {
-  const session = makeSession("s-live");
-  const prev = makeState(session);
-  const withPi = { ...session, piSessionId: "pi-live", title: "Live chat" };
-  const next: WorkspaceState = {
-    ...prev,
-    sessions: new Map([[withPi.id, withPi]]),
-  };
-  const { deps, storage, harness } = makeEffectDeps();
-  const order: string[] = [];
-  const originalSet = storage.setItem.bind(storage);
-  storage.setItem = (key, value) => {
-    if (key === "local-studio.agent.activeSessions.snapshot") order.push("persist");
-    originalSet(key, value);
-  };
-  harness.window.addEventListener(ACTIVE_AGENT_SESSIONS_EVENT, () => order.push("event"));
-
-  const action = {
-    type: "patchSession",
-    sessionId: "s-live",
-    patch: { piSessionId: "pi-live" },
-  } as const;
-  runWorkspaceEffect(action, prev, next, deps);
-
-  const broadcasts = harness.fired.filter((entry) => entry.type === ACTIVE_AGENT_SESSIONS_EVENT);
-  assert.equal(broadcasts.length, 1);
-  const detail = broadcasts[0]?.detail as { sessions: { tabId: string; focused: boolean }[] };
-  assert.equal(detail.sessions.length, 1);
-  assert.equal(detail.sessions[0]?.tabId, "s-live");
-  assert.equal(detail.sessions[0]?.focused, true);
-  assert.deepEqual(order, ["persist", "event"]);
-
-  // Identical prev/next: content key unchanged -> no second broadcast.
-  runWorkspaceEffect(action, next, next, deps);
-  assert.equal(
-    harness.fired.filter((entry) => entry.type === ACTIVE_AGENT_SESSIONS_EVENT).length,
-    1,
-  );
-});
-
-test("broadcasts surface running sessions that lost their pane as background entries", () => {
-  const pane = makeSession("s-pane", {
-    piSessionId: "pi-pane",
-    title: "Pane chat",
-    startedAt: "2026-06-19T10:00:00.000Z",
-  });
-  const background = makeSession("s-bg", {
-    piSessionId: "pi-bg",
-    status: "running",
-    title: "Background chat",
-    startedAt: "2026-06-19T09:00:00.000Z",
-  });
-  const prev = makeState(pane);
-  // The background turn is alive in the store (pruneSessions kept it) but no
-  // pane references it — the user navigated to s-pane.
-  const next: WorkspaceState = {
-    ...prev,
-    sessions: new Map([
-      [pane.id, pane],
-      [background.id, background],
-    ]),
-  };
-  const { deps, harness } = makeEffectDeps();
-
-  runWorkspaceEffect(
-    { type: "patchSession", sessionId: "s-bg", patch: { status: "running" } },
-    prev,
-    next,
-    deps,
-  );
-
-  const detail = harness.fired.find((entry) => entry.type === ACTIVE_AGENT_SESSIONS_EVENT)
-    ?.detail as {
-    sessions: { tabId: string; paneId: string; focused: boolean; status: string }[];
-  };
-  const bg = detail.sessions.find((entry) => entry.tabId === "s-bg");
-  assert.ok(bg, "background session should be broadcast");
-  // Orphan entries carry no pane and are never focused, but keep their status.
-  assert.equal(bg.paneId, "");
-  assert.equal(bg.focused, false);
-  assert.equal(bg.status, "running");
-  // The pane session is still broadcast and focused.
-  const focused = detail.sessions.find((entry) => entry.tabId === "s-pane");
-  assert.equal(focused?.focused, true);
-});
-
-test("settled sessions outside a pane are not broadcast as background entries", () => {
-  const pane = makeSession("s-pane2", {
-    piSessionId: "pi-pane2",
-    title: "Pane chat",
-    startedAt: "2026-06-19T10:00:00.000Z",
-  });
-  const settled = makeSession("s-old", {
-    piSessionId: "pi-old",
-    status: "done",
-    title: "Old chat",
-    startedAt: "2026-06-19T08:00:00.000Z",
-  });
-  // prev: pane session not yet broadcastable (no piSessionId), settled orphan
-  // present. next: pane session gains its piSessionId — this is what changes the
-  // broadcast key and fires the event. The settled orphan must stay absent
-  // throughout.
-  const prevPane = { ...pane, piSessionId: null };
-  const prev: WorkspaceState = {
-    ...makeState(prevPane),
-    sessions: new Map([
-      [prevPane.id, prevPane],
-      [settled.id, settled],
-    ]),
-  };
-  const next: WorkspaceState = {
-    ...prev,
-    sessions: new Map([
-      [pane.id, pane],
-      [settled.id, settled],
-    ]),
-  };
-  const { deps, harness } = makeEffectDeps();
-
-  runWorkspaceEffect(
-    { type: "patchSession", sessionId: "s-pane2", patch: { piSessionId: "pi-pane2" } },
-    prev,
-    next,
-    deps,
-  );
-
-  const detail = harness.fired.find((entry) => entry.type === ACTIVE_AGENT_SESSIONS_EVENT)
-    ?.detail as { sessions: { tabId: string }[] } | undefined;
-  // Only the pane session — the settled orphan stays out of the active list.
-  assert.deepEqual(
-    (detail?.sessions ?? []).map((entry) => entry.tabId),
-    ["s-pane2"],
-  );
-});
-
-test("broadcasts skip loading placeholders and wait for hydration", () => {
-  const loading = makeSession("s-loading", { piSessionId: "pi-x", status: "loading" });
-  const ready = makeSession("s-ready", { piSessionId: "pi-y" });
-  const base = makeState(ready);
-  const next: WorkspaceState = {
-    ...base,
-    sessions: new Map([
-      [ready.id, ready],
-      [loading.id, loading],
-    ]),
-    layout: {
-      kind: "split",
-      direction: "vertical",
-      ratio: 0.5,
-      a: { kind: "leaf", paneId: "p-main" },
-      b: { kind: "leaf", paneId: "p-loading" },
-    },
-    panesById: new Map([
-      ["p-main", { sessionId: ready.id }],
-      ["p-loading", { sessionId: loading.id }],
-    ]),
-  };
-  const prev: WorkspaceState = { ...next, sessions: new Map([[ready.id, { ...ready, piSessionId: null }]]) };
-  const { deps, harness } = makeEffectDeps();
-
-  runWorkspaceEffect(
-    { type: "patchSession", sessionId: "s-ready", patch: { piSessionId: "pi-y" } },
-    prev,
-    next,
-    deps,
-  );
-  const detail = harness.fired.find((entry) => entry.type === ACTIVE_AGENT_SESSIONS_EVENT)
-    ?.detail as { sessions: { tabId: string }[] };
-  assert.deepEqual(
-    detail.sessions.map((entry) => entry.tabId),
-    ["s-ready"],
-  );
-
-  // Unhydrated workspaces never broadcast (placeholder titles must not
-  // overwrite the snapshot store before replay completes).
-  const { deps: deps2, harness: harness2 } = makeEffectDeps();
-  runWorkspaceEffect(
-    { type: "patchSession", sessionId: "s-ready", patch: { piSessionId: "pi-y" } },
-    { ...prev, hydrated: false },
-    { ...next, hydrated: false },
-    deps2,
-  );
-  assert.equal(
-    harness2.fired.filter((entry) => entry.type === ACTIVE_AGENT_SESSIONS_EVENT).length,
-    0,
-  );
-});
-
-// ----- hydration one-shot guard (reducer.ts) -----
-
-function snapshotFor(paneId: string, tabId: string) {
-  return {
-    projectId: "",
-    cwd: "/workspace/demo",
-    paneId,
-    tabId,
-    runtimeSessionId: `rt-${tabId}`,
-    piSessionId: `pi-${tabId}`,
-    title: "Restored chat",
-    status: "idle",
-    focused: true,
-    updatedAt: "2026-06-09T10:00:00.000Z",
-  };
-}
-
-test("any session content anywhere blocks the entire snapshot restore", () => {
-  // CURRENT (deliberately too-broad) behavior: one pane with content causes
-  // hydrateActiveSessions to skip restoring EVERY pane and just latch
-  // hydrated. The consolidation will narrow this per-pane; update this test
-  // when that lands.
-  const withContent = makeSession("s-content", { piSessionId: "pi-content" });
-  const state = { ...makeState(withContent), hydrated: false };
-
-  const next = reducer(state, {
-    type: "hydrateActiveSessions",
-    snapshots: [snapshotFor("p-other", "s-restored")],
-    projects: [],
-    hasExplicitSessionNav: false,
-  });
-
-  assert.equal(next.hydrated, true);
-  assert.equal(next.sessions, state.sessions);
-  assert.equal(next.panesById, state.panesById);
-});
-
-test("url navigation latches hydration so late restores cannot clobber a fresh chat", () => {
-  const state = { ...makeState(), hydrated: false };
-  const fresh = makeFreshTab();
-
-  const opened = reducer(state, {
-    type: "urlNavRequested",
-    key: "nav-1",
-    project: null,
-    newSession: true,
-    paneId: "p-url",
-    tab: fresh,
-  });
-  assert.equal(opened.hydrated, true);
-  assert.equal(opened.sessions.has(fresh.id), true);
-
-  // The '+ opens an old chat' guard: a late-arriving snapshot restore is a
-  // full no-op once hydrated.
-  const afterRestore = reducer(opened, {
-    type: "hydrateActiveSessions",
-    snapshots: [snapshotFor("p-old", "s-old")],
-    projects: [],
-    hasExplicitSessionNav: false,
-  });
-  assert.equal(afterRestore, opened);
-
-  // A deduped (no-op) navigation must NOT latch hydration.
-  const unhydrated = { ...makeState(), hydrated: false, lastHandledNavKey: "nav-dup" };
-  const deduped = reducer(unhydrated, {
-    type: "urlNavRequested",
-    key: "nav-dup",
-    project: null,
-    newSession: true,
-    paneId: "p-x",
-    tab: makeFreshTab(),
-  });
-  assert.equal(deduped, unhydrated);
-  assert.equal(deduped.hydrated, false);
-});
-
-test("explicit session navigation skips the snapshot restore entirely", () => {
-  const state = { ...makeState(), hydrated: false };
-  const next = reducer(state, {
-    type: "hydrateActiveSessions",
-    snapshots: [snapshotFor("p-old", "s-old")],
-    projects: [],
-    hasExplicitSessionNav: true,
-  });
-  assert.equal(next.hydrated, true);
-  assert.equal(next.sessions, state.sessions);
 });
 
 // ----- sessions-changed refresh double fire (effects.ts) -----
@@ -562,10 +283,7 @@ test("session list refreshes fire immediately and again after the settle delay",
   // No content change -> no fire at all.
   const { deps: deps2, harness: harness2 } = makeEffectDeps();
   runWorkspaceEffect({ type: "focusPane", paneId: "p-main" }, prev, prev, deps2);
-  assert.equal(
-    harness2.fired.filter((entry) => entry.type === SESSIONS_CHANGED_EVENT).length,
-    0,
-  );
+  assert.equal(harness2.fired.filter((entry) => entry.type === SESSIONS_CHANGED_EVENT).length, 0);
 });
 
 // ----- session replay queue (workspace/replay-queue.ts) -----
@@ -633,7 +351,10 @@ test("queued replays drop onto fresh starters instead of resurrecting old chats"
 
   assert.deepEqual(harness.replays, []);
   // The pending entry is consumed, not retried forever.
-  harness.setSession("p-1", makeSession("s-restored", { piSessionId: "pi-old", status: "loading" }));
+  harness.setSession(
+    "p-1",
+    makeSession("s-restored", { piSessionId: "pi-old", status: "loading" }),
+  );
   harness.queue.notifyHandleRegistered("p-1");
   harness.runTimers();
   assert.deepEqual(harness.replays, []);
@@ -641,7 +362,10 @@ test("queued replays drop onto fresh starters instead of resurrecting old chats"
 
 test("replays onto restored loading sessions fire exactly once when the handle registers", () => {
   const harness = makeReplayHarness();
-  harness.setSession("p-1", makeSession("s-restored", { piSessionId: "pi-keep", status: "loading" }));
+  harness.setSession(
+    "p-1",
+    makeSession("s-restored", { piSessionId: "pi-keep", status: "loading" }),
+  );
 
   // Queued before the pane mounted: nothing fires yet.
   harness.queue.queue("p-1", "pi-keep");

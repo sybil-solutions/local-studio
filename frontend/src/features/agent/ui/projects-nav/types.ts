@@ -1,15 +1,10 @@
-import type { ActiveAgentSessionSnapshot } from "@/features/agent/active-sessions";
+import type { OpenAgentSession } from "@/features/agent/session-index";
 import type { SessionSummary } from "@/features/agent/session-summary";
 import type { Project as ProjectEntry } from "@/features/agent/projects/types";
 
 export type { SessionSummary } from "@/features/agent/session-summary";
 
 export type PinnedSession = SessionSummary & { project: ProjectEntry };
-export type PinnedActiveSession = ActiveAgentSessionSnapshot & {
-  id: string;
-  firstUserMessage: string | null;
-  project: ProjectEntry;
-};
 
 export type DirectoryBrowserEntry = {
   name: string;
@@ -24,4 +19,4 @@ export type DirectoryBrowserPayload = {
   error?: string;
 };
 
-export type ActiveAgentSession = ActiveAgentSessionSnapshot;
+export type ActiveAgentSession = OpenAgentSession;
