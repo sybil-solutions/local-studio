@@ -48,8 +48,8 @@ export class EngineCoordinator {
     options: SetActiveRecipeOptions = {},
   ): Promise<SetActiveRecipeResult> {
     const intentSerial = ++this.lifecycleIntentSerial;
+    this.activeLifecycleAbort?.abort();
     if (!recipe) {
-      this.activeLifecycleAbort?.abort();
       if (this.activeLaunchPid) {
         await this.deps.processManager.killProcess(this.activeLaunchPid, true);
       }
@@ -107,10 +107,6 @@ export class EngineCoordinator {
         if (leaseFailure) return leaseFailure;
         return { ok: true };
       }
-      if (recipe && current) {
-        const leaseFailure = await this.prepareRecipeGpuLease(recipe, false);
-        if (leaseFailure) return leaseFailure;
-      }
       const killCurrent = async (process: ProcessInfo): Promise<boolean> => {
         const evictedRecipe = this.findRecipeForProcess(process);
         if (evictedRecipe) {
@@ -135,8 +131,6 @@ export class EngineCoordinator {
       if (current && (!recipe || !isRecipeRunning(recipe, current))) {
         const stopped = await killCurrent(current);
         if (!stopped) {
-          const currentRecipe = this.findRecipeForProcess(current);
-          if (currentRecipe) await this.prepareRecipeGpuLease(currentRecipe, true);
           return { ok: false, error: `Failed to stop process ${current.pid}` };
         }
         releaseLeaseOnCancel = true;

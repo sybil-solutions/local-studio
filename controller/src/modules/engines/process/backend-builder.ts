@@ -12,6 +12,9 @@ import type { Logger } from "../../../core/logger";
 import { resolveBinary } from "../../../core/command";
 import { managedLlamaServerPath } from "../runtimes/managed-llamacpp";
 import { getEngineSpec } from "../engine-spec";
+import { getGpuInfo } from "../../system/platform/gpu";
+import { resolveRecipeGpuUuids } from "../../system/gpu-leases";
+import type { GpuInfo } from "../../models/types";
 
 export const normalizeJsonArgument = (value: unknown): unknown => {
   if (Array.isArray(value)) {
@@ -248,7 +251,11 @@ const DOCKER_JIT_MOUNT = "/cache/jit";
  * NCCL build treats an empty `NCCL_GRAPH_FILE` as a fatal error, so recipes set
  * it to `/dev/null` and that override must reach the container.
  */
-const DOCKER_ENV_SKIP_KEYS = new Set(["NCCL_GRAPH_DUMP_FILE", "VLLM_B12X_MLA_EXTEND_MAX_CHUNKS"]);
+const DOCKER_ENV_SKIP_KEYS = new Set([
+  "CUDA_VISIBLE_DEVICES",
+  "NCCL_GRAPH_DUMP_FILE",
+  "VLLM_B12X_MLA_EXTEND_MAX_CHUNKS",
+]);
 
 export const sanitizeDockerName = (value: string): string => {
   const cleaned = value.replace(/[^a-zA-Z0-9_.-]/g, "-").replace(/^[^a-zA-Z0-9]+/, "");
@@ -272,6 +279,15 @@ const buildDockerEnvironmentFlags = (recipe: Recipe): string[] => {
   addEnvironment(recipe.env_vars);
   addEnvironment(getExtraArgument(recipe.extra_args, "env_vars"));
   return flags;
+};
+
+export const buildDockerGpuFlags = (recipe: Recipe, gpus: readonly GpuInfo[]): string[] => {
+  const resolution = resolveRecipeGpuUuids(recipe, gpus);
+  const resolved = resolution.unresolvedTokens.length === 0 ? resolution.uuids.join(",") : "";
+  const selector = resolved || resolution.selector?.trim() || "";
+  return selector
+    ? ["--gpus", `device=${selector}`, "-e", `CUDA_VISIBLE_DEVICES=${selector}`]
+    : ["--gpus", "all"];
 };
 
 export interface DockerRunOptions {
@@ -311,15 +327,13 @@ export const buildDockerRunArguments = ({
     "--rm",
     "--name",
     name,
-    "--gpus",
-    "all",
+    ...buildDockerGpuFlags(recipe, getGpuInfo()),
     "--network",
     "host",
     "--ipc",
     "host",
     "--shm-size",
     "32g",
-    "--privileged",
     "--ulimit",
     "memlock=-1",
     "--ulimit",

@@ -142,7 +142,6 @@ describe("process manager launch/stop via the process seam", () => {
         "host",
         "--shm-size",
         "32g",
-        "--privileged",
         "--ulimit",
         "memlock=-1",
         "--ulimit",

@@ -16,9 +16,7 @@ import {
   looksLikeWav,
   parseField,
   parseJsonMode,
-  parseJsonReplace,
   parseMode,
-  parseReplace,
   resolveSttModelPath,
   resolveTtsModelPath,
 } from "./helpers";
@@ -50,11 +48,10 @@ export const registerAudioRoutes = (
       }
 
       const mode = parseMode(formData.get("mode"));
-      const replace = parseReplace(formData.get("replace"));
       const language = parseField(formData.get("language"));
       const { modelPath } = resolveSttModelPath(context, formData.get("model"));
 
-      const conflict = await ensureServiceLease(context, mode, replace, "stt");
+      const conflict = await ensureServiceLease(context, mode, "stt");
       if (conflict) {
         return ctx.json(conflict, { status: 409 });
       }
@@ -163,10 +160,9 @@ export const registerAudioRoutes = (
       }
 
       const mode = parseJsonMode(body["mode"]);
-      const replace = parseJsonReplace(body["replace"]);
       const { modelPath } = resolveTtsModelPath(context, body["model"]);
 
-      const conflict = await ensureServiceLease(context, mode, replace, "tts");
+      const conflict = await ensureServiceLease(context, mode, "tts");
       if (conflict) {
         return ctx.json(conflict, { status: 409 });
       }

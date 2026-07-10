@@ -7,7 +7,6 @@ import type { SttMode } from "../../services/stt";
 import { TtsIntegrationError } from "../../services/tts";
 import type { TtsMode } from "../../services/tts";
 const AUDIO_DEFAULT_MODE = "strict";
-const AUDIO_REPLACE_TRUE_VALUES = ["1", "true", "yes", "on"];
 const AUDIO_TRANSCODE_TIMEOUT_MS = 60_000;
 
 export const parseField = (value: FormDataEntryValue | null): string | undefined => {
@@ -24,12 +23,6 @@ export const parseMode = (value: FormDataEntryValue | null): SttMode => {
   throw new SttIntegrationError(400, "invalid_mode", "mode must be strict or best_effort");
 };
 
-export const parseReplace = (value: FormDataEntryValue | null): boolean => {
-  const replaceValue = parseField(value);
-  if (!replaceValue) return false;
-  return AUDIO_REPLACE_TRUE_VALUES.includes(replaceValue.toLowerCase());
-};
-
 export const parseJsonMode = (value: unknown): TtsMode => {
   if (typeof value !== "string" || value.trim().length === 0) {
     return AUDIO_DEFAULT_MODE;
@@ -39,19 +32,6 @@ export const parseJsonMode = (value: unknown): TtsMode => {
     return normalized;
   }
   throw new TtsIntegrationError(400, "invalid_mode", "mode must be strict or best_effort");
-};
-
-export const parseJsonReplace = (value: unknown): boolean => {
-  if (typeof value === "boolean") {
-    return value;
-  }
-  if (typeof value === "number") {
-    return value === 1;
-  }
-  if (typeof value === "string") {
-    return AUDIO_REPLACE_TRUE_VALUES.includes(value.trim().toLowerCase());
-  }
-  return false;
 };
 
 export const looksLikeWav = (bytes: Uint8Array): boolean => {
@@ -130,24 +110,10 @@ export const resolveTtsModelPath = (
 export const ensureServiceLease = async (
   context: AppContext,
   mode: SttMode | TtsMode,
-  replace: boolean,
   serviceId: "stt" | "tts",
 ): Promise<Record<string, unknown> | null> => {
   const holder = await context.processManager.findInferenceProcess(context.config.inference_port);
   if (!holder) {
-    return null;
-  }
-
-  if (replace) {
-    const result = await context.engineService.setActiveRecipe(null);
-    if (!result.ok) {
-      return {
-        code: "gpu_lease_evict_failed",
-        requested_service: { id: serviceId },
-        holder_service: { id: "llm" },
-        error: result.error,
-      };
-    }
     return null;
   }
 
@@ -159,7 +125,7 @@ export const ensureServiceLease = async (
     code: "gpu_lease_conflict",
     requested_service: { id: serviceId },
     holder_service: { id: "llm" },
-    actions: ["replace", "best_effort"],
+    actions: ["best_effort"],
   };
 };
 

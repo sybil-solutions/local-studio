@@ -3,6 +3,8 @@ import type { Config } from "../../../controller/src/config/env";
 import { getEngineSpec } from "../../../controller/src/modules/engines/engine-spec";
 import { parseRecipe } from "../../../controller/src/modules/models/recipes/recipe-serializer";
 import type { Recipe } from "../../../controller/src/modules/models/types";
+import { buildDockerGpuFlags } from "../../../controller/src/modules/engines/process/backend-builder";
+import type { GpuInfo } from "../../../controller/src/modules/models/types";
 
 const baseRecipe = (
   runtime: Recipe["runtime"],
@@ -67,6 +69,7 @@ describe("vLLM Docker runtime", () => {
     expect(command[1]).toBe("run");
     expect(pairIndex(command, "--network", "host")).toBeGreaterThanOrEqual(0);
     expect(command).toContain("--gpus");
+    expect(command).not.toContain("--privileged");
     expect(command).toContain(image);
     const imageIndex = command.indexOf(image);
     expect(command[imageIndex + 1]).toBe("/opt/venv/bin/vllm");
@@ -75,6 +78,49 @@ describe("vLLM Docker runtime", () => {
     expect(
       pairIndex(command, "-v", "/mnt/llm_models/GLM-5.2-504B:/mnt/llm_models/GLM-5.2-504B:ro"),
     ).toBeGreaterThanOrEqual(0);
+  });
+
+  it("exposes only the four PRO UUIDs when the 3090 interrupts numeric ordering", () => {
+    const uuid = (suffix: string): string => `GPU-00000000-0000-0000-0000-${suffix}`;
+    const gpu = (index: number, name: string, value: string): GpuInfo => ({
+      uuid: value,
+      index,
+      name,
+      memory_total_mb: 96_000,
+      memory_used_mb: 0,
+      memory_free_mb: 96_000,
+      utilization_pct: 0,
+      temp_c: 30,
+      power_draw: 0,
+      power_limit: 0,
+    });
+    const proUuids = [
+      uuid("000000000001"),
+      uuid("000000000002"),
+      uuid("000000000003"),
+      uuid("000000000004"),
+    ];
+    const rtx3090 = uuid("000000003090");
+    const host = [
+      gpu(0, "NVIDIA RTX PRO 6000 Blackwell", proUuids[0] ?? ""),
+      gpu(1, "NVIDIA RTX PRO 6000 Blackwell", proUuids[1] ?? ""),
+      gpu(2, "NVIDIA RTX PRO 6000 Blackwell", proUuids[2] ?? ""),
+      gpu(3, "NVIDIA GeForce RTX 3090", rtx3090),
+      gpu(4, "NVIDIA RTX PRO 6000 Blackwell", proUuids[3] ?? ""),
+    ];
+    const flags = buildDockerGpuFlags(
+      baseRecipe({ kind: "docker", ref: image }, {}, { CUDA_VISIBLE_DEVICES: "0,1,2,4" }),
+      host,
+    );
+    const selector = proUuids.join(",");
+
+    expect(flags).toEqual([
+      "--gpus",
+      `device=${selector}`,
+      "-e",
+      `CUDA_VISIBLE_DEVICES=${selector}`,
+    ]);
+    expect(flags.join(" ")).not.toContain(rtx3090);
   });
 
   it("forwards NCCL_GRAPH_FILE and skips NCCL_GRAPH_DUMP_FILE", () => {
