@@ -169,8 +169,14 @@ export function launchChrome(binary: string): Promise<ChromeProcess> {
       if (endpoint) finish(null, endpoint);
     };
 
+    let launcherExitCode: number | null = null;
+
     const timer = setTimeout(() => {
-      finish(new Error("Timed out waiting for Chromium DevTools endpoint"));
+      const detail =
+        launcherExitCode === null
+          ? ""
+          : ` (launcher exited ${launcherExitCode}; stderr: ${stderrBuffer.slice(-200).trim() || "empty"})`;
+      finish(new Error(`Timed out waiting for Chromium DevTools endpoint${detail}`));
     }, CHROME_LAUNCH_TIMEOUT_MS);
 
     const portFilePoll = setInterval(() => {
@@ -182,6 +188,7 @@ export function launchChrome(binary: string): Promise<ChromeProcess> {
     child.once("error", (error) => finish(error));
     child.once("exit", (code) => {
       if (settled) return;
+      launcherExitCode = code;
       if (process.platform === "win32" && code === 0) return;
       finish(new Error(`Chromium exited before ready (code ${code ?? "null"})`));
     });
@@ -193,18 +200,25 @@ export function launchChrome(binary: string): Promise<ChromeProcess> {
 class ChromeManager {
   private process: ChromeProcess | null = null;
   private launching: Promise<ChromeProcess> | null = null;
+  private launchAttempted = false;
 
   isAvailable(): boolean {
     return findChromeBinary() !== null;
   }
 
   async ensure(): Promise<ChromeProcess> {
-    if (this.process) return this.process;
+    if (this.process) {
+      if (this.process.child.exitCode === null) return this.process;
+      if (await isBrowserResponding(this.process.port)) return this.process;
+      this.process = null;
+    }
     if (this.launching) return this.launching;
     const binary = findChromeBinary();
     if (!binary) {
       throw new Error("Browser unavailable: no Chromium found — set LOCAL_STUDIO_CHROME_PATH");
     }
+    this.launchAttempted = true;
+    killDetachedWindowsChromes();
     this.launching = launchChrome(binary)
       .then((proc) => {
         this.process = proc;
@@ -226,9 +240,19 @@ class ChromeManager {
   stop(): void {
     const proc = this.process;
     this.process = null;
-    if (!proc) return;
-    proc.child.kill("SIGKILL");
-    killDetachedWindowsChromes();
+    if (proc) proc.child.kill("SIGKILL");
+    if (proc || this.launchAttempted) killDetachedWindowsChromes();
+  }
+}
+
+async function isBrowserResponding(port: number): Promise<boolean> {
+  try {
+    const response = await fetch(`http://127.0.0.1:${port}/json/version`, {
+      signal: AbortSignal.timeout(1_000),
+    });
+    return response.ok;
+  } catch {
+    return false;
   }
 }
 
