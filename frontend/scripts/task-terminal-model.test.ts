@@ -5,7 +5,11 @@ import { makeFreshTab } from "../src/features/agent/messages/helpers";
 import type { Project } from "../src/features/agent/projects/types";
 import { terminalOwnerFor, terminalKeysMatch } from "../src/features/agent/terminal-owners";
 import { collectLeaves } from "../src/features/agent/workspace/layout";
-import { restorePersistedPaneState } from "../src/features/agent/workspace/store";
+import { openTerminalPane } from "../src/features/agent/workspace/pane-controller";
+import {
+  createInitialState,
+  restorePersistedPaneState,
+} from "../src/features/agent/workspace/store";
 
 function persistedWorkspace(
   panes: Record<string, unknown>,
@@ -15,7 +19,7 @@ function persistedWorkspace(
   return JSON.stringify({ version: 1, panes, layout, focusedPaneId });
 }
 
-test("legacy terminal panes are removed while restoring chat tasks", () => {
+test("terminal panes restore beside chat tasks", () => {
   const restored = restorePersistedPaneState(
     persistedWorkspace(
       {
@@ -25,8 +29,13 @@ test("legacy terminal panes are removed while restoring chat tasks", () => {
         },
         "p-terminal": {
           kind: "terminal",
-          mountKey: "project:repo",
-          cwd: "/repo",
+          owner: {
+            mountKey: "project:repo",
+            matchKeys: ["project:repo"],
+            cwd: "/repo",
+            title: "Repo",
+            kind: "project",
+          },
         },
       },
       {
@@ -41,19 +50,24 @@ test("legacy terminal panes are removed while restoring chat tasks", () => {
   );
 
   assert.ok(restored);
-  assert.deepEqual(collectLeaves(restored.layout), ["p-chat"]);
-  assert.deepEqual([...restored.panesById.keys()], ["p-chat"]);
-  assert.equal(restored.focusedPaneId, "p-chat");
+  assert.deepEqual(collectLeaves(restored.layout), ["p-chat", "p-terminal"]);
+  assert.equal(restored.panesById.get("p-terminal")?.kind, "terminal");
+  assert.equal(restored.focusedPaneId, "p-terminal");
 });
 
-test("a legacy terminal-only workspace falls back to a fresh task", () => {
+test("terminal-only workspaces restore", () => {
   const restored = restorePersistedPaneState(
     persistedWorkspace(
       {
         "p-terminal": {
           kind: "terminal",
-          mountKey: "project:repo",
-          cwd: "/repo",
+          owner: {
+            mountKey: "project:repo",
+            matchKeys: ["project:repo"],
+            cwd: "/repo",
+            title: "Repo",
+            kind: "project",
+          },
         },
       },
       { kind: "leaf", paneId: "p-terminal" },
@@ -61,7 +75,34 @@ test("a legacy terminal-only workspace falls back to a fresh task", () => {
     ),
   );
 
-  assert.equal(restored, null);
+  assert.ok(restored);
+  assert.equal(restored.panesById.get("p-terminal")?.kind, "terminal");
+});
+
+test("opening a terminal creates one durable workspace pane", () => {
+  const initial = createInitialState();
+  const owner = {
+    mountKey: "project:repo",
+    matchKeys: ["project:repo"],
+    cwd: "/repo",
+    title: "Repo",
+    kind: "project" as const,
+  };
+  const opened = openTerminalPane(initial, {
+    paneId: initial.focusedPaneId,
+    newPaneId: "p-terminal",
+    owner,
+  });
+  const reopened = openTerminalPane(opened, {
+    paneId: initial.focusedPaneId,
+    newPaneId: "p-terminal-again",
+    owner,
+  });
+
+  assert.deepEqual(collectLeaves(opened.layout), ["p-init", "p-terminal"]);
+  assert.equal(opened.panesById.get("p-terminal")?.kind, "terminal");
+  assert.deepEqual(collectLeaves(reopened.layout), ["p-init", "p-terminal"]);
+  assert.equal(reopened.focusedPaneId, "p-terminal");
 });
 
 test("a task owns one stable terminal across runtime adoption", () => {

@@ -23,6 +23,7 @@ import type {
   WorkspaceSessionPayload,
   WorkspaceState,
 } from "@/features/agent/workspace/types";
+import { terminalKeysMatch, type TerminalOwner } from "@/features/agent/terminal-owners";
 
 function isSession(value: Session | undefined): value is Session {
   return Boolean(value && typeof value.id === "string" && value.id.length > 0);
@@ -143,6 +144,35 @@ function splitPaneWithSession(
     layout,
     focusedPaneId: newPaneId,
   };
+}
+
+function terminalPaneId(state: WorkspaceState, owner: TerminalOwner): PaneId | null {
+  for (const [paneId, pane] of state.panesById.entries()) {
+    if (pane.kind === "terminal" && terminalKeysMatch(pane.owner.matchKeys, owner.matchKeys)) {
+      return paneId;
+    }
+  }
+  return null;
+}
+
+export function openTerminalPane(
+  state: WorkspaceState,
+  payload: { paneId: PaneId; newPaneId: PaneId; owner: TerminalOwner },
+): WorkspaceState {
+  const existing = terminalPaneId(state, payload.owner);
+  if (existing) return { ...state, focusedPaneId: existing };
+  if (!leafExists(state, payload.paneId)) return state;
+  const layout = splitLeafWithinLimits(
+    state.layout,
+    payload.paneId,
+    payload.newPaneId,
+    "vertical",
+    "b",
+  );
+  if (!layout) return state;
+  const panesById = new Map(state.panesById);
+  panesById.set(payload.newPaneId, { kind: "terminal", owner: payload.owner });
+  return { ...state, panesById, layout, focusedPaneId: payload.newPaneId };
 }
 
 function siblingPaneId(state: WorkspaceState, sourcePaneId: PaneId): PaneId | null {

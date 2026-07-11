@@ -22,6 +22,7 @@ import type {
   WorkspaceAction,
   WorkspaceState,
 } from "@/features/agent/workspace/types";
+import type { TerminalOwner } from "@/features/agent/terminal-owners";
 import { useProjects } from "@/features/agent/projects/context";
 import { useToolsRef } from "@/features/agent/tools/context";
 import { BACKEND_URL_STORAGE_KEY, getApiKey, getStoredBackendUrl } from "@/lib/api/connection";
@@ -43,6 +44,7 @@ export type WorkspaceHandles = {
   openSessionPayloadInPane: (paneId: PaneId, payload: SessionDropPayload) => void;
   renameTab: (paneId: PaneId, tabId: string, title: string) => void;
   splitTabIntoNewPane: (paneId: PaneId, tabId: string) => void;
+  openTerminalPane: (paneId: PaneId, owner: TerminalOwner) => void;
   registerPaneHandle: (paneId: PaneId, handle: ChatPaneHandle | null) => void;
   compactFocusedSession: () => Promise<void>;
   setSplitRatio: (path: number[], ratio: number) => void;
@@ -254,6 +256,8 @@ export function useWorkspace({ ephemeral = false }: UseWorkspaceOptions = {}): U
           newPaneId: newPaneId(),
           tab: makeFreshTab(),
         }),
+      openTerminalPane: (paneId: PaneId, owner: TerminalOwner) =>
+        dispatch({ type: "openTerminalPane", paneId, newPaneId: newPaneId(), owner }),
       registerPaneHandle: (paneId: PaneId, handle: ChatPaneHandle | null) => {
         if (handle) paneHandlesRef.current.set(paneId, handle);
         else paneHandlesRef.current.delete(paneId);

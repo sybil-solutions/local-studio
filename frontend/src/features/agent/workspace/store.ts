@@ -1,4 +1,4 @@
-import { clampLayoutToLimits, collectLeaves, removeLeaf } from "@/features/agent/workspace/layout";
+import { clampLayoutToLimits, collectLeaves } from "@/features/agent/workspace/layout";
 import { cleanSessionTitle, makeFreshTab } from "@/features/agent/messages/helpers";
 import type { Session, SessionId } from "@/features/agent/runtime/types";
 import type { ToolSelection } from "@/features/agent/tools/types";
@@ -9,6 +9,7 @@ import type {
   WorkspaceLayout,
   WorkspaceState,
 } from "@/features/agent/workspace/types";
+import type { TerminalOwner, TerminalOwnerKind } from "@/features/agent/terminal-owners";
 
 export const PANE_LAYOUT_KEY = "local-studio.agent.paneLayout";
 export const PANE_STATE_KEY = "local-studio.agent.paneState";
@@ -21,6 +22,12 @@ type PersistedPaneRecord = {
   activeTabId?: unknown;
   runtimeSessionId?: unknown;
   kind?: unknown;
+  owner?: unknown;
+  mountKey?: unknown;
+  matchKeys?: unknown;
+  cwd?: unknown;
+  title?: unknown;
+  terminalKind?: unknown;
 };
 
 type PersistedPaneState = {
@@ -30,7 +37,9 @@ type PersistedPaneState = {
   panes: Record<string, PersistedPaneRecord>;
 };
 
-export type PersistedPaneEntry = { activeTabId: string; tabs: PersistedSessionMeta[] };
+export type PersistedPaneEntry =
+  | { kind?: "chat"; activeTabId: string; tabs: PersistedSessionMeta[] }
+  | { kind: "terminal"; owner: TerminalOwner };
 
 export function createInitialState(): WorkspaceState {
   const session = makeFreshTab();
@@ -173,16 +182,29 @@ function focusedPersistedPaneId(focusedPaneId: unknown, leaves: PaneId[]): PaneI
     : leaves[0];
 }
 
-function removeLegacyTerminalPanes(
-  layout: WorkspaceLayout,
-  panes: Record<string, PersistedPaneRecord>,
-): WorkspaceLayout | null {
-  let next: WorkspaceLayout | null = layout;
-  for (const paneId of collectLeaves(layout)) {
-    if (panes[paneId]?.kind !== "terminal" || !next) continue;
-    next = removeLeaf(next, paneId);
-  }
-  return next;
+function terminalOwnerKind(value: unknown): TerminalOwnerKind {
+  return value === "project" ? "project" : "session";
+}
+
+function stringArray(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string")
+    : [];
+}
+
+function restoreTerminalOwner(pane: PersistedPaneRecord): TerminalOwner | null {
+  const source =
+    pane.owner && typeof pane.owner === "object" ? (pane.owner as PersistedPaneRecord) : pane;
+  const mountKey = typeof source.mountKey === "string" ? source.mountKey.trim() : "";
+  if (!mountKey) return null;
+  const matchKeys = stringArray(source.matchKeys);
+  return {
+    mountKey,
+    matchKeys: [...new Set([mountKey, ...matchKeys])],
+    cwd: typeof source.cwd === "string" ? source.cwd : null,
+    title: typeof source.title === "string" && source.title.trim() ? source.title : "Terminal",
+    kind: terminalOwnerKind(source.terminalKind ?? source.kind),
+  };
 }
 
 export function restorePersistedPaneState(raw: string): RestoredPaneState | null {
@@ -190,9 +212,7 @@ export function restorePersistedPaneState(raw: string): RestoredPaneState | null
   if (!parsed) return null;
 
   const persistedPanes = parsed.panes && typeof parsed.panes === "object" ? parsed.panes : {};
-  const chatLayout = removeLegacyTerminalPanes(parsed.layout as WorkspaceLayout, persistedPanes);
-  if (!chatLayout) return null;
-  const layout = clampLayoutToLimits(chatLayout, () => false);
+  const layout = clampLayoutToLimits(parsed.layout as WorkspaceLayout, () => false);
   const leaves = collectLeaves(layout);
   if (leaves.length === 0) return null;
 
@@ -203,6 +223,12 @@ export function restorePersistedPaneState(raw: string): RestoredPaneState | null
 
   for (const paneId of leaves) {
     const pane = persistedPanes[paneId] ?? {};
+    if (pane.kind === "terminal") {
+      const owner = restoreTerminalOwner(pane);
+      if (!owner) return null;
+      panesById.set(paneId, { kind: "terminal", owner });
+      continue;
+    }
     const rawTabs = Array.isArray(pane.tabs) ? pane.tabs : [];
     const restored = restoreTabsWithSelections(rawTabs);
     const activeSessionId = activePersistedTabId(pane, restored.tabs);
@@ -212,7 +238,7 @@ export function restorePersistedPaneState(raw: string): RestoredPaneState | null
     if (selection) selections.set(session.id, selection);
     const legacyRuntimeKey = restored.legacyRuntimeKeys.get(session.id);
     if (legacyRuntimeKey) legacyRuntimeKeys.set(session.id, legacyRuntimeKey);
-    panesById.set(paneId, { sessionId: session.id });
+    panesById.set(paneId, { kind: "chat", sessionId: session.id });
   }
 
   return {

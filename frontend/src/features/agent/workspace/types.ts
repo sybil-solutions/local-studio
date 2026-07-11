@@ -2,6 +2,7 @@ import type { AgentModel } from "@/features/agent/models";
 import type { Project } from "@/features/agent/projects/types";
 import type { Session, SessionId, SessionsMap } from "@/features/agent/runtime/types";
 import type { Layout, PaneId } from "@/features/agent/workspace/layout";
+import type { TerminalOwner } from "@/features/agent/terminal-owners";
 
 export type { PaneId } from "@/features/agent/workspace/layout";
 export type { SessionId } from "@/features/agent/runtime/types";
@@ -16,7 +17,12 @@ export type ChatPaneState = {
   sessionId: SessionId;
 };
 
-export type PaneState = ChatPaneState;
+export type TerminalPaneState = {
+  kind: "terminal";
+  owner: TerminalOwner;
+};
+
+export type PaneState = ChatPaneState | TerminalPaneState;
 
 export type WorkspaceState = {
   sessions: SessionsMap;
@@ -65,6 +71,12 @@ export type WorkspaceAction =
       payload: WorkspaceSessionPayload;
       newPaneId: PaneId;
       tab: Session;
+    }
+  | {
+      type: "openTerminalPane";
+      paneId: PaneId;
+      newPaneId: PaneId;
+      owner: TerminalOwner;
     }
   | { type: "focusPane"; paneId: PaneId }
   | {

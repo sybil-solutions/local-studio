@@ -2,6 +2,7 @@
 
 import { AgentModelPicker } from "@/features/agent/ui/agent-model-picker";
 import { ChatPane } from "@/features/agent/ui/chat-pane";
+import { TerminalPanel } from "@/features/agent/ui/terminal-panel";
 import type { ProjectsContextValue } from "@/features/agent/projects/context";
 import type { useTools } from "@/features/agent/tools/context";
 import type { Project } from "@/features/agent/projects/types";
@@ -12,6 +13,9 @@ import type {
   PaneId,
   WorkspaceState,
 } from "@/features/agent/workspace/types";
+import { terminalOwnerFor } from "@/features/agent/terminal-owners";
+import { CloseIcon } from "@/ui/icons";
+import { TerminalSquare } from "@/ui/icon-registry";
 import { activeSession } from "@/features/agent/runtime/selectors";
 import { collectLeaves } from "@/features/agent/workspace/layout";
 import type { WorkspaceHandles } from "@/features/agent/ui/use-workspace";
@@ -81,7 +85,7 @@ function selectWorkspacePaneView(
   projects: ProjectsContextValue,
 ): WorkspacePaneView | null {
   const pane = state.panesById.get(paneId);
-  if (!pane) return null;
+  if (!pane || pane.kind === "terminal") return null;
   const session = activeSession(state, paneId);
   const project = projects.resolveProject(session);
   const modelId = resolvePaneModelId(session?.modelId, state.selectedModel, state.models);
@@ -103,6 +107,55 @@ function selectWorkspacePaneView(
   };
 }
 
+function TerminalWorkspacePane({
+  paneId,
+  title,
+  cwd,
+  ownerKey,
+  focused,
+  canClose,
+  onFocus,
+  onClose,
+}: {
+  paneId: PaneId;
+  title: string;
+  cwd: string | null;
+  ownerKey: string;
+  focused: boolean;
+  canClose: boolean;
+  onFocus: () => void;
+  onClose: () => void;
+}) {
+  return (
+    <section
+      className={`flex min-h-0 min-w-0 flex-1 flex-col bg-(--color-terminal-bg) ${
+        focused ? "ring-1 ring-inset ring-(--accent)/45" : ""
+      }`}
+      onMouseDown={onFocus}
+      data-pane-id={paneId}
+    >
+      <header className="flex h-10 shrink-0 items-center gap-2 border-b border-(--border)/85 bg-(--color-header) px-3 text-xs">
+        <TerminalSquare className="h-3.5 w-3.5 text-(--dim)" />
+        <span className="min-w-0 flex-1 truncate font-medium text-(--fg)" title={title}>
+          {title}
+        </span>
+        {canClose ? (
+          <button
+            type="button"
+            className="inline-flex h-7 w-7 items-center justify-center rounded-md text-(--dim) hover:bg-(--surface) hover:text-(--fg)"
+            onClick={onClose}
+            aria-label="Close terminal pane"
+            title="Close terminal pane"
+          >
+            <CloseIcon className="h-3 w-3" />
+          </button>
+        ) : null}
+      </header>
+      <TerminalPanel cwd={cwd} ownerKey={ownerKey} />
+    </section>
+  );
+}
+
 export function renderWorkspacePane({
   paneId,
   state,
@@ -112,6 +165,22 @@ export function renderWorkspacePane({
   handles,
   compact = false,
 }: WorkspacePaneRenderContext) {
+  const pane = state.panesById.get(paneId);
+  if (pane?.kind === "terminal") {
+    const canClose = collectLeaves(state.layout).length > 1;
+    return (
+      <TerminalWorkspacePane
+        paneId={paneId}
+        title={pane.owner.title}
+        cwd={pane.owner.cwd}
+        ownerKey={pane.owner.mountKey}
+        focused={state.focusedPaneId === paneId}
+        canClose={canClose}
+        onFocus={() => dispatch({ type: "focusPane", paneId })}
+        onClose={() => handles.closePane(paneId)}
+      />
+    );
+  }
   const view = selectWorkspacePaneView(paneId, state, projects);
   if (!view) return null;
 
@@ -160,7 +229,10 @@ export function renderWorkspacePane({
       onRenameSession={(tabId, title) => handles.renameTab(view.paneId, tabId, title)}
       onClose={view.canClose ? () => handles.closePane(view.paneId) : undefined}
       onForkSession={() => handles.splitTabIntoNewPane(view.paneId, view.pane.sessionId)}
-      onOpenTerminal={() => tools.setComputerTab("terminal")}
+      onOpenTerminal={() => {
+        const owner = terminalOwnerFor(view.project, view.session);
+        if (owner) handles.openTerminalPane(view.paneId, owner);
+      }}
       rightPanelOpen={tools.computer.open}
       onToggleRightPanel={tools.toggleComputerOpen}
       onRegisterHandle={(handle) => handles.registerPaneHandle(view.paneId, handle)}

@@ -58,6 +58,7 @@ const PANE_STATE_ACTIONS = new Set<WorkspaceAction["type"]>([
   "setSplitRatio",
   "openSessionPayloadInPane",
   "splitPaneWithPayload",
+  "openTerminalPane",
   "focusPane",
   "focusPaneSession",
   "renameTab",
@@ -69,6 +70,7 @@ const PANE_STATE_ACTIONS = new Set<WorkspaceAction["type"]>([
 const SESSIONS_CHANGED_ACTIONS = new Set<WorkspaceAction["type"]>([
   "openSessionPayloadInPane",
   "splitPaneWithPayload",
+  "openTerminalPane",
   "renameTab",
   "splitTab",
   "closePane",
@@ -231,8 +233,12 @@ function storedSessionsKey(state: WorkspaceState): string {
 function openSessionsSignature(state: WorkspaceState): string {
   if (!state.hydrated) return "\u0000unhydrated";
   const parts: string[] = [`m:${state.selectedModel ?? ""}`, `f:${state.focusedPaneId ?? ""}`];
-  for (const [paneId, pane] of state.panesById.entries())
-    parts.push(`P:${paneId}>${pane.sessionId}`);
+  for (const [paneId, pane] of state.panesById.entries()) {
+    const sessionId = paneSessionId(pane);
+    parts.push(
+      pane.kind === "terminal" ? `T:${paneId}>${pane.owner.mountKey}` : `P:${paneId}>${sessionId}`,
+    );
+  }
   for (const tab of state.sessions.values()) {
     parts.push(
       `S:${tab.id}|${tab.status}|${tab.piSessionId ?? ""}|` +
@@ -323,12 +329,16 @@ function paneMetadataKey(
 ): string {
   const panes: Record<string, unknown> = {};
   for (const [paneId, pane] of state.panesById.entries()) {
+    if (pane.kind === "terminal") {
+      panes[paneId] = { kind: "terminal", owner: pane.owner };
+      continue;
+    }
     const sessionId = paneSessionId(pane);
     const session = sessionId ? state.sessions.get(sessionId) : undefined;
     panes[paneId] = {
-      sessionId: pane.sessionId,
+      sessionId,
       tab: session
-        ? sessionMetaForPersistence(session, selectionFor?.(pane.sessionId) ?? undefined)
+        ? sessionMetaForPersistence(session, selectionFor?.(sessionId ?? "") ?? undefined)
         : null,
     };
   }

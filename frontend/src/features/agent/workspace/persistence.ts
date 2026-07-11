@@ -104,6 +104,10 @@ export function writePaneState(
 ): void {
   const panes: Record<string, PersistedPaneEntry> = {};
   for (const [paneId, pane] of state.panesById.entries()) {
+    if (pane.kind === "terminal") {
+      panes[paneId] = { kind: "terminal", owner: pane.owner };
+      continue;
+    }
     const session = state.sessions.get(pane.sessionId);
     panes[paneId] = {
       activeTabId: pane.sessionId,

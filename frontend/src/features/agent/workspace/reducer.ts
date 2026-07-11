@@ -6,6 +6,7 @@ import {
   focusPane,
   focusPaneSession,
   openSessionPayloadInPane,
+  openTerminalPane,
   patchActiveTab,
   setPaneSession,
   setWorkspaceSplitRatio,
@@ -76,6 +77,8 @@ function reducePaneLayoutAction(
       });
     case "closePane":
       return closePane(state, { paneId: action.paneId });
+    case "openTerminalPane":
+      return openTerminalPane(state, action);
     default:
       return null;
   }
