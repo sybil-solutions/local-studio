@@ -267,6 +267,11 @@ function queueLocatedReplay(
   if (located) deps.queueReplay(located.paneId, piSessionId);
 }
 
+function needsCanonicalReplay(state: WorkspaceState, piSessionId: string): boolean {
+  const located = findPaneByPiSessionId(state, piSessionId);
+  return !located || located.session.status === "idle";
+}
+
 function queueReplayEffects(
   action: WorkspaceAction,
   prevState: WorkspaceState,
@@ -278,13 +283,13 @@ function queueReplayEffects(
     case "splitPaneWithPayload":
       if (
         action.payload.piSessionId &&
-        !findPaneByPiSessionId(prevState, action.payload.piSessionId)
+        needsCanonicalReplay(prevState, action.payload.piSessionId)
       ) {
         queueLocatedReplay(action.payload.piSessionId, nextState, deps);
       }
       return;
     case "urlNavRequested":
-      if (action.sessionId && !findPaneByPiSessionId(prevState, action.sessionId)) {
+      if (action.sessionId && needsCanonicalReplay(prevState, action.sessionId)) {
         queueLocatedReplay(action.sessionId, nextState, deps);
       }
       return;

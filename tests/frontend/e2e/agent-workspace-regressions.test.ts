@@ -315,6 +315,33 @@ test("url navigation does not replay an already-open session", () => {
   assert.deepEqual(replays, []);
 });
 
+test("url navigation refreshes an already-open settled session", () => {
+  const session = makeSession("s-open", {
+    piSessionId: "pi-open",
+    messages: [{ id: "u-1", role: "user", text: "stale transcript" }],
+    status: "idle",
+  });
+  const prev = makeState(session);
+  const next = { ...prev, lastHandledNavKey: "open-existing" };
+  const { deps, replays } = makeEffectDeps();
+
+  runWorkspaceEffect(
+    {
+      type: "urlNavRequested",
+      key: "open-existing",
+      project: null,
+      sessionId: "pi-open",
+      paneId: "p-unused",
+      tab: makeSession("s-unused"),
+    },
+    prev,
+    next,
+    deps,
+  );
+
+  assert.deepEqual(replays, [{ paneId: "p-main", piSessionId: "pi-open" }]);
+});
+
 // ----- session replay queue (workspace/replay-queue.ts) -----
 
 type ReplayHarness = {
@@ -445,6 +472,42 @@ test("replay queue preserves a populated live transcript", () => {
   harness.runTimers();
 
   assert.deepEqual(harness.replays, []);
+});
+
+test("replay queue refreshes a populated idle transcript from canonical history", () => {
+  const harness = makeReplayHarness();
+  harness.setHandle("p-1", true);
+  harness.setSession(
+    "p-1",
+    makeSession("s-idle", {
+      piSessionId: "pi-idle",
+      messages: [{ id: "u-1", role: "user", text: "stale transcript" }],
+      status: "idle",
+    }),
+  );
+
+  harness.queue.queue("p-1", "pi-idle");
+  harness.runTimers();
+
+  assert.deepEqual(harness.replays, [{ paneId: "p-1", piSessionId: "pi-idle" }]);
+});
+
+test("replay queue refreshes a cached transcript while canonical history loads", () => {
+  const harness = makeReplayHarness();
+  harness.setHandle("p-1", true);
+  harness.setSession(
+    "p-1",
+    makeSession("s-loading", {
+      piSessionId: "pi-loading",
+      messages: [{ id: "u-1", role: "user", text: "cached transcript" }],
+      status: "loading",
+    }),
+  );
+
+  harness.queue.queue("p-1", "pi-loading");
+  harness.runTimers();
+
+  assert.deepEqual(harness.replays, [{ paneId: "p-1", piSessionId: "pi-loading" }]);
 });
 
 test("a replay queued for a pane that never mounts stays inert", () => {
