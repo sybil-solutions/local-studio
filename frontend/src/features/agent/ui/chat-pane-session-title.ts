@@ -3,6 +3,21 @@ import { cleanSessionTitle, type SessionTab } from "@/features/agent/messages";
 import { copySessionPref, patchSessionPref } from "@/features/agent/messages/prefs";
 import { useProjectsNavSessionPrefs } from "@/features/agent/ui/projects-nav/use-projects-nav-effects";
 
+export function resolveDisplayedSessionTitle({
+  activeTab,
+  running,
+  sessionPrefTitle,
+}: {
+  activeTab: SessionTab | null;
+  running: boolean;
+  sessionPrefTitle: string;
+}): string {
+  if (!activeTab) return "New task";
+  const sessionLooksEmpty = activeTab.messages.length === 0 && !activeTab.input.trim() && !running;
+  if (sessionLooksEmpty) return "New task";
+  return sessionPrefTitle || cleanSessionTitle(activeTab.title) || "New task";
+}
+
 export function useChatPaneSessionTitle({
   activeTab,
   activeTabId,
@@ -31,12 +46,11 @@ export function useChatPaneSessionTitle({
     const nextTitle = cleanSessionTitle(sessionPrefs[key]?.title);
     return nextTitle || title;
   }, "");
-  // Empty starter/restored tabs stay visually untitled until user content arrives.
-  const sessionLooksEmpty =
-    !activeTab || (activeTab.messages.length === 0 && !activeTab.input.trim() && !running);
-  const displayedSessionTitle = sessionLooksEmpty
-    ? ""
-    : sessionPrefTitle || cleanSessionTitle(activeTab?.title) || "";
+  const displayedSessionTitle = resolveDisplayedSessionTitle({
+    activeTab,
+    running,
+    sessionPrefTitle,
+  });
   const sessionPinned = sessionPrefKeys.some((key) => Boolean(sessionPrefs[key]?.pinned));
   const patchActiveSessionPrefs = useCallback(
     (patch: { title?: string; pinned?: boolean }) => {

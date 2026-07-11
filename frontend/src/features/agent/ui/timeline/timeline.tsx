@@ -3,6 +3,7 @@
 import { memo, useCallback, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { AssistantBlock, ChatMessage } from "@/features/agent/messages";
 import { SessionPaneBlockRouter } from "@/features/agent/ui/timeline/session-pane-block-router";
+import { AgentEmptyPrompt } from "@/features/agent/ui/agent-empty-prompt";
 import { ChevronDownIcon } from "@/ui/icons";
 import { useMountSubscription } from "@/hooks/use-mount-subscription";
 
@@ -81,18 +82,7 @@ export function Timeline({
   });
 
   if (emptyPrompt) {
-    return (
-      <div className="flex min-h-0 flex-1 overflow-y-auto bg-(--agent-bg) px-6 pb-10 pt-2">
-        <div className="agent-thread-shell mx-auto flex flex-1">
-          <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center">
-            <p className="max-w-[24ch] text-[clamp(1.45rem,2.6vw,2.1rem)] font-semibold leading-[1.22] tracking-[-0.02em] text-(--fg)/90">
-              A dream is something you build for yourself.
-            </p>
-            <p className="text-[length:var(--fs-xl)] text-(--dim)">Just talk to it.</p>
-          </div>
-        </div>
-      </div>
-    );
+    return <AgentEmptyPrompt />;
   }
 
   return (

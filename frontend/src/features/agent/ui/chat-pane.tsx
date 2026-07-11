@@ -2,6 +2,7 @@
 import dynamic from "next/dynamic";
 import { useCallback, useRef, useState, type ReactNode } from "react";
 import { AgentChatPaneHeader } from "@/features/agent/ui/agent-chat-pane-header";
+import { AgentEmptyPrompt } from "@/features/agent/ui/agent-empty-prompt";
 import { AgentComposerFrame } from "@/features/agent/ui/agent-composer-frame";
 import { AgentPluginPicker } from "@/features/agent/ui/agent-plugin-picker";
 import { type FileMentionRow } from "@/features/agent/ui/agent-composer-context";
@@ -51,21 +52,6 @@ function downloadTextFile(filename: string, content: string): void {
   anchor.click();
   anchor.remove();
   URL.revokeObjectURL(url);
-}
-
-function EmptyPromptTimeline() {
-  return (
-    <div className="flex min-h-0 flex-1 overflow-y-auto bg-(--agent-bg) px-6 pb-10 pt-2">
-      <div className="agent-thread-shell mx-auto flex flex-1">
-        <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center">
-          <p className="max-w-[24ch] text-[clamp(1.45rem,2.6vw,2.1rem)] font-semibold leading-[1.22] tracking-[-0.02em] text-(--fg)/90">
-            A dream is something you build for yourself.
-          </p>
-          <p className="text-[length:var(--fs-xl)] text-(--dim)">Just talk to it.</p>
-        </div>
-      </div>
-    </div>
-  );
 }
 
 function TimelineFallback() {
@@ -347,7 +333,7 @@ export function ChatPane({
       ) : null}
       <div className="flex min-h-0 min-w-0 flex-1">
         {showEmptyPrompt ? (
-          <EmptyPromptTimeline />
+          <AgentEmptyPrompt />
         ) : (
           <Timeline
             key={activeTab?.id ?? "empty"}

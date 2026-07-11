@@ -55,6 +55,7 @@ import type { WorkspaceAction, WorkspaceState } from "@/features/agent/workspace
 import { collectLeaves } from "@/features/agent/workspace/layout";
 import { groupAssistantBlocks } from "@/features/agent/ui/timeline/activity-grouping";
 import { resolveStatusSectionView } from "@/features/dashboard/control-panel/status-section-view";
+import { resolveDisplayedSessionTitle } from "@/features/agent/ui/chat-pane-session-title";
 import { makePiEventApplierHarness, makeSession, makeState } from "./agent-fixtures";
 
 test("status metrics fall back to stored peaks when current session peaks are absent", () => {
@@ -110,6 +111,17 @@ test("selected controller host telemetry appears in the main status metrics", ()
       detailTitle: "AMD EPYC 7443P 24-Core Processor · 48 cores",
     },
   ]);
+});
+
+test("empty task panes retain a compact task title", () => {
+  assert.equal(
+    resolveDisplayedSessionTitle({
+      activeTab: makeSession("empty-task", { messages: [], input: "", title: "New session" }),
+      running: false,
+      sessionPrefTitle: "",
+    }),
+    "New task",
+  );
 });
 
 test("turn command result parser preserves runtime status", () => {
