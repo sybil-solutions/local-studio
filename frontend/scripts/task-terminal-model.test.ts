@@ -6,7 +6,11 @@ import type { Project } from "../src/features/agent/projects/types";
 import { terminalOwnerFor, terminalKeysMatch } from "../src/features/agent/terminal-owners";
 import { terminalResumeNotice } from "../src/features/agent/ui/terminal-panel";
 import { collectLeaves } from "../src/features/agent/workspace/layout";
-import { openTerminalPane } from "../src/features/agent/workspace/pane-controller";
+import {
+  applyUrlNavigation,
+  openSessionPayloadInPane,
+  openTerminalPane,
+} from "../src/features/agent/workspace/pane-controller";
 import {
   createInitialState,
   restorePersistedPaneState,
@@ -113,6 +117,59 @@ test("restored terminals explain whether their PTY was resumed", () => {
     "[previous terminal process is no longer running; started a new shell]",
   );
   assert.equal(terminalResumeNotice(false, false), null);
+});
+
+test("task navigation preserves a focused terminal pane", () => {
+  const initial = createInitialState();
+  const withTerminal = openTerminalPane(initial, {
+    paneId: initial.focusedPaneId,
+    newPaneId: "p-terminal",
+    owner: {
+      mountKey: "project:repo",
+      matchKeys: ["project:repo"],
+      cwd: "/repo",
+      title: "Repo",
+      kind: "project",
+    },
+  });
+  const navigated = applyUrlNavigation(withTerminal, {
+    key: "new-task",
+    project: null,
+    newSession: true,
+    replaceWorkspace: true,
+    paneId: "p-new",
+    tab: makeFreshTab(),
+  });
+
+  assert.equal(navigated.panesById.get("p-terminal")?.kind, "terminal");
+  assert.equal(navigated.focusedPaneId, "p-init");
+  const chatPane = navigated.panesById.get("p-init");
+  assert.ok(chatPane && chatPane.kind !== "terminal" && chatPane.sessionId);
+});
+
+test("dropping a task on a terminal preserves the terminal pane", () => {
+  const initial = createInitialState();
+  const withTerminal = openTerminalPane(initial, {
+    paneId: initial.focusedPaneId,
+    newPaneId: "p-terminal",
+    owner: {
+      mountKey: "project:repo",
+      matchKeys: ["project:repo"],
+      cwd: "/repo",
+      title: "Repo",
+      kind: "project",
+    },
+  });
+  const opened = openSessionPayloadInPane(withTerminal, {
+    paneId: "p-terminal",
+    payload: { piSessionId: "pi-new", title: "Dropped task" },
+    tab: makeFreshTab(),
+  });
+  const chatPane = opened.panesById.get("p-init");
+
+  assert.equal(opened.panesById.get("p-terminal")?.kind, "terminal");
+  assert.ok(chatPane && chatPane.kind !== "terminal");
+  assert.equal(opened.sessions.get(chatPane.sessionId)?.piSessionId, "pi-new");
 });
 
 test("a task owns one stable terminal across runtime adoption", () => {
