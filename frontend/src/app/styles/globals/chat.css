@@ -501,9 +501,12 @@
 
 .syntax-highlight .hljs-keyword,
 .syntax-highlight .hljs-selector-tag,
+.syntax-highlight .hljs-selector-id,
 .syntax-highlight .hljs-literal,
 .syntax-highlight .hljs-section,
-.syntax-highlight .hljs-link {
+.syntax-highlight .hljs-link,
+.syntax-highlight .hljs-attribute,
+.syntax-highlight .hljs-property {
   color: var(--color-syntax-keyword);
 }
 
@@ -521,7 +524,6 @@
 }
 
 .syntax-highlight .hljs-attr,
-.syntax-highlight .hljs-attribute,
 .syntax-highlight .hljs-variable,
 .syntax-highlight .hljs-template-variable,
 .syntax-highlight .hljs-selector-class,
@@ -549,6 +551,24 @@
 
 .syntax-highlight .hljs-strong {
   font-weight: 600;
+}
+
+.filesystem-panel {
+  container-type: inline-size;
+}
+
+.filesystem-file-list-toggle {
+  display: none;
+}
+
+@container (max-width: 40rem) {
+  .filesystem-file-list {
+    display: none;
+  }
+
+  .filesystem-file-list-toggle {
+    display: inline-flex;
+  }
 }
 
 .agent-composer-shell {

@@ -232,9 +232,9 @@ export function FilesystemPanel({ cwd }: Props) {
     );
   }
   return (
-    <div className="relative flex h-full min-h-0 flex-row-reverse bg-(--color-panel)">
+    <div className="filesystem-panel relative flex h-full min-h-0 flex-row-reverse bg-(--color-panel)">
       {fileListOpen ? (
-        <div className="flex w-[236px] shrink-0 flex-col border-l border-(--border)/80 bg-(--sidebar-bg)">
+        <div className="filesystem-file-list flex w-[236px] shrink-0 flex-col border-l border-(--border)/80 bg-(--sidebar-bg)">
           <div className="flex h-9 shrink-0 items-center border-b border-(--border)/80">
             <div className="min-w-0 flex-1">
               <Breadcrumb relPath={relPath} onRoot={() => setRelPath("")} />
@@ -391,6 +391,17 @@ export function FilesystemPanel({ cwd }: Props) {
                     <Plus className="h-3 w-3" />
                   </button>
                 </div>
+                {fileListOpen ? (
+                  <button
+                    type="button"
+                    onClick={() => setFileListOpen(false)}
+                    className="filesystem-file-list-toggle ml-1 inline-flex h-6 items-center gap-1 rounded-md border border-(--border)/80 bg-(--color-input) px-1.5 text-[length:var(--fs-xs)] text-(--dim) hover:text-(--fg)"
+                    title="Hide file list"
+                    aria-label="Hide file list"
+                  >
+                    <FolderTree className="h-3 w-3" />
+                  </button>
+                ) : null}
                 {!fileListOpen ? (
                   <button
                     type="button"

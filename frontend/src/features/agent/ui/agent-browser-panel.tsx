@@ -237,7 +237,7 @@ export function AgentBrowserPanel({
       ref={registerComputerAside}
       tabIndex={-1}
       onKeyDown={handleComputerKeyDown}
-      style={{ width: `${tools.computer.width}px`, minWidth: "max(280px, 25%)", maxWidth: "65%" }}
+      style={{ width: `${tools.computer.width}px`, minWidth: "max(280px, 25%)", maxWidth: "50%" }}
     >
       <div
         role="separator"

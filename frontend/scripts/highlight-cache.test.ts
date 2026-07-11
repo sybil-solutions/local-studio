@@ -3,7 +3,10 @@ import test from "node:test";
 import { highlightFenced, highlightLines } from "../src/features/agent/highlight-cache";
 
 test("highlights code languages used by the filesystem and tool previews", () => {
-  assert.match(highlightFenced("css", ".card { color: red; }"), /hljs-selector-class/);
+  const css = highlightFenced("css", "#panel { position: absolute; border: 1px solid #fff; }");
+  assert.match(css, /hljs-selector-id/);
+  assert.match(css, /hljs-attribute/);
+  assert.match(css, /hljs-number/);
   assert.match(highlightFenced("java", "class Studio {}"), /hljs-keyword/);
   assert.match(highlightFenced("toml", "port = 8080"), /hljs-attr/);
 });

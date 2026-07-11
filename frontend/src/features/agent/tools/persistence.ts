@@ -25,7 +25,7 @@ export const DEFAULT_COMPUTER_WIDTH = 440;
 export const MIN_COMPUTER_WIDTH = 280;
 export const MAX_COMPUTER_WIDTH = 1800;
 export const MIN_CHAT_WIDTH_WHEN_COMPUTER_OPEN = 340;
-export const COMPUTER_SNAP_RATIOS = [0.25, 0.35, 0.5, 0.65] as const;
+export const COMPUTER_SNAP_RATIOS = [0.25, 0.35, 0.5] as const;
 
 const COMPUTER_TABS: readonly ComputerTab[] = COMPUTER_TAB_IDS;
 
