@@ -353,16 +353,35 @@ function isSettledStatus(status: string): boolean {
   return status === "idle" || status === "done";
 }
 
+const transcriptSignatureCache = new WeakMap<Session, string>();
+
 function transcriptSignature(session: Session): string {
-  const last = session.messages[session.messages.length - 1];
-  return [
-    session.piSessionId ?? "",
-    session.status,
-    session.messages.length,
-    last?.id ?? "",
-    last?.text.length ?? 0,
-    last?.blocks?.length ?? 0,
-  ].join("|");
+  const cached = transcriptSignatureCache.get(session);
+  if (cached) return cached;
+  const signature = JSON.stringify({
+    piSessionId: session.piSessionId,
+    status: session.status,
+    title: session.title,
+    messages: session.messages.map((message) => ({
+      id: message.id,
+      role: message.role,
+      text: message.text,
+      timestamp: message.timestamp,
+      skills: message.skills,
+      blocks: message.blocks,
+      attachments: message.attachments?.map((attachment) => ({
+        id: attachment.id,
+        name: attachment.name,
+        type: attachment.type,
+        size: attachment.size,
+        mode: attachment.mode,
+        path: attachment.path,
+        previewKind: attachment.previewKind,
+      })),
+    })),
+  });
+  transcriptSignatureCache.set(session, signature);
+  return signature;
 }
 
 function persistSettledTranscripts(
