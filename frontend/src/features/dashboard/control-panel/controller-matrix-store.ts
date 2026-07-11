@@ -28,6 +28,9 @@ export type ControllerSnapshot = SavedController & {
   authRequired: boolean;
   running: boolean;
   modelName: string | null;
+  nodeCount: number | null;
+  cpu: string | null;
+  memoryGb: number | null;
 };
 
 export interface ControllerMatrixSnapshot {
@@ -61,6 +64,9 @@ function row({
   modelName,
   online,
   running,
+  nodeCount,
+  cpu,
+  memoryGb,
 }: {
   authRequired: boolean;
   controller: SavedController;
@@ -68,8 +74,22 @@ function row({
   modelName: string | null;
   online: boolean;
   running: boolean;
+  nodeCount: number | null;
+  cpu: string | null;
+  memoryGb: number | null;
 }): ControllerSnapshot {
-  return { ...controller, index, primary: index === 0, online, authRequired, running, modelName };
+  return {
+    ...controller,
+    index,
+    primary: index === 0,
+    online,
+    authRequired,
+    running,
+    modelName,
+    nodeCount,
+    cpu,
+    memoryGb,
+  };
 }
 
 function pendingRow(controller: SavedController, index: number): ControllerSnapshot {
@@ -80,6 +100,9 @@ function pendingRow(controller: SavedController, index: number): ControllerSnaps
     modelName: null,
     online: false,
     running: false,
+    nodeCount: null,
+    cpu: null,
+    memoryGb: null,
   });
 }
 
@@ -105,6 +128,9 @@ export function controllerSnapshotAfterFailure({
     modelName: previous?.modelName ?? null,
     online: preserveOnline,
     running: preserveOnline && Boolean(previous?.running),
+    nodeCount: previous?.nodeCount ?? null,
+    cpu: previous?.cpu ?? null,
+    memoryGb: previous?.memoryGb ?? null,
   });
 }
 
@@ -137,7 +163,10 @@ function rowsEqual(a: ControllerSnapshot[], b: ControllerSnapshot[]): boolean {
       row.running === other.running &&
       row.modelName === other.modelName &&
       row.primary === other.primary &&
-      row.index === other.index
+      row.index === other.index &&
+      row.nodeCount === other.nodeCount &&
+      row.cpu === other.cpu &&
+      row.memoryGb === other.memoryGb
     );
   });
 }
@@ -184,6 +213,12 @@ async function pollController(
   });
   try {
     const status = await api.getStatus(POLL_REQUEST);
+    const [diagnostics, rigs] = await Promise.allSettled([
+      api.getStudioDiagnostics(),
+      api.getRigs(),
+    ]);
+    const host = diagnostics.status === "fulfilled" ? diagnostics.value : null;
+    const rigPayload = rigs.status === "fulfilled" ? rigs.value : null;
     pollFailures.delete(controller.url);
     return row({
       authRequired: false,
@@ -192,6 +227,9 @@ async function pollController(
       modelName: modelNameFor(status.process),
       online: true,
       running: status.running,
+      nodeCount: rigPayload?.rigs.reduce((count, rig) => count + rig.nodes.length, 0) ?? null,
+      cpu: host ? hostCpu(host.cpu_model, host.cpu_cores) : null,
+      memoryGb: host ? Math.round(host.memory_total / 1024 ** 3) : null,
     });
   } catch (error) {
     const auth = isAuthRequiredError(error);
@@ -207,6 +245,12 @@ async function pollController(
       previous: snapshot.rows.find((candidate) => sameUrl(candidate.url, controller.url)),
     });
   }
+}
+
+function hostCpu(model: string | null, cores: number): string | null {
+  const name = model?.trim();
+  if (name && name !== "unknown") return `${name} · ${cores} cores`;
+  return cores > 0 ? `${cores} cores` : null;
 }
 
 function modelNameFor(

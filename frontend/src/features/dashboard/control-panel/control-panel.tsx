@@ -109,6 +109,24 @@ function ControllerTab({
       {controller.modelName ? (
         <span className="max-w-[14rem] truncate text-(--dim)">{controller.modelName}</span>
       ) : null}
+      {controller.nodeCount && controller.nodeCount > 1 ? (
+        <span className="font-mono text-[length:var(--fs-2xs)] text-(--dim)">
+          {controller.nodeCount} nodes
+        </span>
+      ) : null}
+      {controller.memoryGb ? (
+        <span className="font-mono text-[length:var(--fs-2xs)] text-(--dim)">
+          {controller.memoryGb}G RAM
+        </span>
+      ) : null}
+      {controller.cpu ? (
+        <span
+          className="max-w-[13rem] truncate text-[length:var(--fs-xs)] text-(--dim)"
+          title={controller.cpu}
+        >
+          {controller.cpu}
+        </span>
+      ) : null}
       <span className="font-mono text-[length:var(--fs-2xs)] uppercase tracking-wide text-(--dim)">
         {state}
       </span>

@@ -11,6 +11,9 @@ const previous = {
   authRequired: false,
   running: true,
   modelName: "glm-5.2",
+  nodeCount: 2,
+  cpu: "AMD EPYC · 48 cores",
+  memoryGb: 504,
 };
 
 test("transient poll failures retain controller state", () => {
@@ -24,6 +27,8 @@ test("transient poll failures retain controller state", () => {
   assert.equal(next.online, true);
   assert.equal(next.running, true);
   assert.equal(next.modelName, "glm-5.2");
+  assert.equal(next.nodeCount, 2);
+  assert.equal(next.memoryGb, 504);
 });
 
 test("sustained failures mark offline without dropping model details", () => {
