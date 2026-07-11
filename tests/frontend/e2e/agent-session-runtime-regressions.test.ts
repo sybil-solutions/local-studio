@@ -19,6 +19,7 @@ import {
 import { piStatusFromEvents } from "@local-studio/agent-runtime/pi-runtime-state";
 import {
   applyLocalProviderSettings,
+  hasReachedLocalToolRoundLimit,
   shouldRestartAfterPromptError,
 } from "@local-studio/agent-runtime/pi-runtime";
 import { inferVisionSupport, normalizeOpenAIModels } from "@/features/agent/models";
@@ -131,6 +132,11 @@ test("local providers use a long idle deadline with bounded retries", () => {
       provider: { timeoutMs: 3_600_000, maxRetries: 0, maxRetryDelayMs: 60_000 },
     },
   });
+});
+
+test("local agent tool rounds stop before an unbounded loop", () => {
+  assert.equal(hasReachedLocalToolRoundLimit(23), false);
+  assert.equal(hasReachedLocalToolRoundLimit(24), true);
 });
 
 test("new chat url navigation opens a fresh runtime in a new split pane", () => {

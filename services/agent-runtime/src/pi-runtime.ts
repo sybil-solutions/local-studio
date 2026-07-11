@@ -34,6 +34,11 @@ import type {
 } from "./pi-runtime-types";
 
 const LOCAL_PROVIDER_TIMEOUT_MS = 3_600_000;
+const LOCAL_AGENT_TOOL_ROUND_LIMIT = 24;
+
+export function hasReachedLocalToolRoundLimit(rounds: number): boolean {
+  return rounds >= LOCAL_AGENT_TOOL_ROUND_LIMIT;
+}
 
 export function applyLocalProviderSettings(
   settingsManager: { applyOverrides: (settings: Record<string, unknown>) => void },
@@ -106,6 +111,9 @@ class PiSdkSession extends EventEmitter implements PiAgentSession {
   private currentModelId = "";
   private currentStartOptions: RuntimeStartOptions = {};
   private agentDir = "";
+  private activeToolRounds = 0;
+  private toolBudgetReached = false;
+  private defaultToolNames: string[] = [];
 
   ensureStarted(
     modelId: string,
@@ -134,6 +142,9 @@ class PiSdkSession extends EventEmitter implements PiAgentSession {
         this.eventLog = [];
         this.activePromptCount = 0;
         this.lastError = null;
+        this.activeToolRounds = 0;
+        this.toolBudgetReached = false;
+        this.defaultToolNames = [];
 
         const { models, agentDir } = yield* Effect.tryPromise({
           try: () => refreshPiModels(),
@@ -240,6 +251,7 @@ class PiSdkSession extends EventEmitter implements PiAgentSession {
         this.currentPiSessionId = runtime.session.sessionId || desiredSessionId;
         this.currentFingerprint = fingerprint;
         this.currentStartOptions = options;
+        this.defaultToolNames = runtime.session.getActiveToolNames();
         this.unsubscribe = runtime.session.subscribe((event) => this.recordEvent(event));
       }.bind(this),
     );
@@ -258,6 +270,9 @@ class PiSdkSession extends EventEmitter implements PiAgentSession {
     onEvent: (event: PiEvent, seq: number) => void,
     options: { streamingBehavior?: "steer" | "followUp"; images?: AgentImageInput[] },
   ): Effect.Effect<void, unknown> {
+    this.restoreToolsAfterBudget();
+    this.activeToolRounds = 0;
+    this.toolBudgetReached = false;
     const listener = (logged: LoggedPiEvent) => onEvent(logged.event, logged.seq);
     this.on("loggedEvent", listener);
     this.activePromptCount += 1;
@@ -440,9 +455,28 @@ class PiSdkSession extends EventEmitter implements PiAgentSession {
     };
     this.eventLog.push(logged);
     if (this.eventLog.length > 2_000) this.eventLog.splice(0, this.eventLog.length - 2_000);
+    this.limitToolRounds(event);
     this.emit("loggedEvent", logged);
     this.emit("event", event);
   }
+
+  private restoreToolsAfterBudget(): void {
+    if (!this.toolBudgetReached || this.defaultToolNames.length === 0) return;
+    this.runtime?.session.setActiveToolsByName(this.defaultToolNames);
+  }
+
+  private limitToolRounds(event: AgentSessionEvent): void {
+    if (this.toolBudgetReached || !isToolUseMessage(event)) return;
+    this.activeToolRounds += 1;
+    if (!hasReachedLocalToolRoundLimit(this.activeToolRounds)) return;
+    this.runtime?.session.setActiveToolsByName([]);
+    this.toolBudgetReached = true;
+  }
+}
+
+function isToolUseMessage(event: AgentSessionEvent): boolean {
+  if (event.type !== "message_end") return false;
+  return event.message.role === "assistant" && event.message.stopReason === "toolUse";
 }
 
 function piEventsAfter(eventLog: LoggedPiEvent[], seq: number): LoggedPiEvent[] {
