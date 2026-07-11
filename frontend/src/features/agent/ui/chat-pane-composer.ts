@@ -51,6 +51,10 @@ export function useComposerLoadedContext({
           kind === "promptTemplate"
             ? current.promptTemplates.filter((template) => template.id !== id)
             : current.promptTemplates,
+        plugins:
+          kind === "plugin"
+            ? current.plugins.filter((plugin) => plugin.id !== id)
+            : current.plugins,
       });
     },
     [activeTab, tools],
@@ -59,6 +63,7 @@ export function useComposerLoadedContext({
   return {
     selectedSkills: activeSelection.skills,
     selectedPromptTemplates: activeSelection.promptTemplates,
+    selectedPlugins: activeSelection.plugins,
     removeLoadedContext,
   };
 }

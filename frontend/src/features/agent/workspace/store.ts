@@ -105,13 +105,15 @@ export function selectionFromPersistedTab(value: unknown): ToolSelection | null 
   if (!value || typeof value !== "object") return null;
   const tab = value as PersistedTabShape & {
     promptTemplates?: ToolSelection["promptTemplates"];
+    plugins?: ToolSelection["plugins"];
   };
   const skills = Array.isArray(tab.skills) ? tab.skills : [];
   const promptTemplates = Array.isArray(tab.promptTemplates) ? tab.promptTemplates : [];
-  if (skills.length === 0 && promptTemplates.length === 0) {
+  const plugins = Array.isArray(tab.plugins) ? tab.plugins : [];
+  if (skills.length === 0 && promptTemplates.length === 0 && plugins.length === 0) {
     return null;
   }
-  return { skills, promptTemplates };
+  return { skills, promptTemplates, plugins };
 }
 
 export type RestoredPaneState = {
@@ -248,6 +250,7 @@ export function sessionMetaForPersistence(
       ...(selection.promptTemplates.length > 0
         ? { promptTemplates: selection.promptTemplates }
         : {}),
+      ...(selection.plugins.length > 0 ? { plugins: selection.plugins } : {}),
     };
   }
   return base;

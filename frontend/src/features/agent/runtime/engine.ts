@@ -112,7 +112,7 @@ export function useSessionEngine(deps: UseSessionEngineDeps): SessionEngine {
           const skills = selection.skills ?? EMPTY_SKILLS;
           const promptTemplates = selection.promptTemplates ?? EMPTY_PROMPT_TEMPLATES;
           const browserEnabledForTurn = browserToolEnabled;
-          const message = selectedContextPrompt(text, skills);
+          const message = selectedContextPrompt(text, skills, selection.plugins);
           const result = yield* Effect.tryPromise({
             try: () =>
               api.submitTurnCommand({

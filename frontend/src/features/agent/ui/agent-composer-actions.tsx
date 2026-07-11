@@ -21,6 +21,7 @@ export function AgentComposerActions({
   canvasEnabled,
   onToggleCanvas,
   onAbortTurn,
+  pluginSelector,
   modelSelector,
 }: {
   fileInputRef: RefObject<HTMLInputElement | null>;
@@ -37,6 +38,7 @@ export function AgentComposerActions({
   canvasEnabled: boolean;
   onToggleCanvas: () => void;
   onAbortTurn: () => void;
+  pluginSelector?: ReactNode;
   modelSelector?: ReactNode;
 }) {
   const inputHasText = Boolean(input.trim());
@@ -111,6 +113,7 @@ export function AgentComposerActions({
       >
         <Code2 className="h-3.5 w-3.5" />
       </button>
+      {pluginSelector}
       <div className="ml-auto flex shrink-0 items-center gap-1">
         {modelSelector}
         {running ? (

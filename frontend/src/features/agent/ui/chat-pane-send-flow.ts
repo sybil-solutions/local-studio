@@ -71,7 +71,7 @@ export function useChatPaneSendFlow({
       const userText = text || attachmentSummary;
       const displayText = [text, attachmentSummary].filter(Boolean).join("\n\n");
       const selection = tools.selectionFor(sessionId);
-      const contextText = selectedContextPrompt(text, selection.skills);
+      const contextText = selectedContextPrompt(text, selection.skills, selection.plugins);
       const browserContextText = browserContextPrompt({
         enabled: effectiveBrowserEnabled,
         backend: tools.browser.backend,

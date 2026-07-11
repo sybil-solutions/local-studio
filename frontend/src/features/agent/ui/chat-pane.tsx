@@ -3,6 +3,7 @@ import dynamic from "next/dynamic";
 import { useCallback, useRef, useState, type ReactNode } from "react";
 import { AgentChatPaneHeader } from "@/features/agent/ui/agent-chat-pane-header";
 import { AgentComposerFrame } from "@/features/agent/ui/agent-composer-frame";
+import { AgentPluginPicker } from "@/features/agent/ui/agent-plugin-picker";
 import { type FileMentionRow } from "@/features/agent/ui/agent-composer-context";
 import {
   useComposerLoadedContext,
@@ -238,8 +239,14 @@ export function ChatPane({
     lastAppliedComposerHeightRef,
     lastComposerValueLengthRef,
   });
-  const { selectedSkills, selectedPromptTemplates, removeLoadedContext } = useComposerLoadedContext(
-    { activeTab, tools },
+  const { selectedSkills, selectedPromptTemplates, selectedPlugins, removeLoadedContext } =
+    useComposerLoadedContext({ activeTab, tools });
+  const setSelectedPlugins = useCallback(
+    (plugins: typeof selectedPlugins) => {
+      if (!activeTab) return;
+      tools.setSelection(activeTab.id, { ...tools.selectionFor(activeTab.id), plugins });
+    },
+    [activeTab, selectedPlugins, tools],
   );
 
   const engine = useSessionEngine({
@@ -372,6 +379,9 @@ export function ChatPane({
         mentionRows={mentionRows}
         modelSupportsVision={modelSupportsVision}
         modelSelector={modelSelector}
+        pluginSelector={
+          <AgentPluginPicker selected={selectedPlugins} onChange={setSelectedPlugins} />
+        }
         onAbortTurn={() => void abortTurn()}
         onAttachFiles={(files) => void attachFiles(files)}
         onComposerChange={handleComposerChange}
@@ -399,6 +409,7 @@ export function ChatPane({
         readingAttachments={readingAttachments}
         running={Boolean(running)}
         selectedSkills={selectedSkills}
+        selectedPlugins={selectedPlugins}
         status={activeTab?.status}
         textareaRef={textareaRef}
       />

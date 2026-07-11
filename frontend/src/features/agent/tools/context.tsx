@@ -430,7 +430,8 @@ export function ToolsProvider({ children }: { children: ReactNode }) {
       if (
         current &&
         current.skills === selection.skills &&
-        current.promptTemplates === selection.promptTemplates
+        current.promptTemplates === selection.promptTemplates &&
+        current.plugins === selection.plugins
       ) {
         return;
       }
@@ -448,7 +449,8 @@ export function ToolsProvider({ children }: { children: ReactNode }) {
       if (
         existing &&
         existing.skills === selection.skills &&
-        existing.promptTemplates === selection.promptTemplates
+        existing.promptTemplates === selection.promptTemplates &&
+        existing.plugins === selection.plugins
       ) {
         continue;
       }

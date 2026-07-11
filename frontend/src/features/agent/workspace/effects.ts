@@ -27,6 +27,7 @@ import { SESSIONS_CHANGED_EVENT } from "@/lib/workspace-events";
 const EMPTY_SELECTION: ToolSelection = {
   skills: [],
   promptTemplates: [],
+  plugins: [],
 };
 
 type SetupCheck = { id: string; ok: boolean; guidance?: string };

@@ -11,6 +11,7 @@ import type {
 } from "react";
 import type {
   ComposerMention,
+  ComposerPluginRef,
   ComposerPromptTemplateRef,
   ComposerSkillRef,
 } from "@/features/agent/composer-context";
@@ -48,6 +49,7 @@ export type AgentComposerFrameProps = {
   mentionRows: MentionRow[];
   modelSupportsVision: boolean;
   modelSelector?: ReactNode;
+  pluginSelector?: ReactNode;
   onAbortTurn: () => void;
   onAttachFiles: (files: FileList | null) => void;
   onComposerChange: ChangeEventHandler<HTMLTextAreaElement>;
@@ -75,6 +77,7 @@ export type AgentComposerFrameProps = {
   readingAttachments: boolean;
   running: boolean;
   selectedSkills: ComposerSkillRef[];
+  selectedPlugins: ComposerPluginRef[];
   status?: string;
   textareaRef: RefObject<HTMLTextAreaElement | null>;
 };
@@ -97,6 +100,7 @@ export function AgentComposerFrame({
   mentionRows,
   modelSupportsVision,
   modelSelector,
+  pluginSelector,
   onAbortTurn,
   onAttachFiles,
   onComposerChange,
@@ -124,6 +128,7 @@ export function AgentComposerFrame({
   readingAttachments,
   running,
   selectedSkills,
+  selectedPlugins,
   status,
   textareaRef,
 }: AgentComposerFrameProps) {
@@ -158,6 +163,7 @@ export function AgentComposerFrame({
         <AgentLoadedContextTabs
           skills={selectedSkills}
           promptTemplates={promptTemplates}
+          plugins={selectedPlugins}
           onRemove={onRemoveLoadedContext}
         />
         <AgentMentionPicker
@@ -193,6 +199,7 @@ export function AgentComposerFrame({
           canvasEnabled={canvasEnabled}
           onToggleCanvas={onToggleCanvas}
           onAbortTurn={onAbortTurn}
+          pluginSelector={pluginSelector}
           modelSelector={modelSelector}
         />
       </div>

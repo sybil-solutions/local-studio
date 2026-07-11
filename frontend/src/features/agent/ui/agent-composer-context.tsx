@@ -1,8 +1,9 @@
 "use client";
 
-import { AtSign, FileText, Slash, Sparkles } from "@/ui/icon-registry";
+import { AtSign, FileText, Plug, Slash, Sparkles } from "@/ui/icon-registry";
 import type {
   ComposerMention,
+  ComposerPluginRef,
   ComposerPromptTemplateRef,
   ComposerSkillRef,
 } from "@/features/agent/composer-context";
@@ -21,18 +22,20 @@ export type MentionRow =
   | { kind: "promptTemplate"; row: ComposerPromptTemplateRef }
   | { kind: "file"; row: FileMentionRow };
 
-export type LoadedContextKind = "skill" | "promptTemplate";
+export type LoadedContextKind = "skill" | "promptTemplate" | "plugin";
 
 export function AgentLoadedContextTabs({
   skills,
   promptTemplates,
+  plugins,
   onRemove,
 }: {
   skills: ComposerSkillRef[];
   promptTemplates: ComposerPromptTemplateRef[];
+  plugins: ComposerPluginRef[];
   onRemove: (kind: LoadedContextKind, id: string) => void;
 }) {
-  if (skills.length + promptTemplates.length === 0) return null;
+  if (skills.length + promptTemplates.length + plugins.length === 0) return null;
 
   return (
     <div className="flex flex-wrap gap-x-3 gap-y-1 px-4 pt-2 text-[length:var(--fs-sm)]">
@@ -52,6 +55,15 @@ export function AgentLoadedContextTabs({
           label={template.name}
           title={template.description ?? template.path}
           onRemove={() => onRemove("promptTemplate", template.id)}
+        />
+      ))}
+      {plugins.map((plugin) => (
+        <LoadedContextTab
+          key={`plugin-${plugin.id}`}
+          prefix="#"
+          label={plugin.name}
+          title={plugin.description ?? plugin.name}
+          onRemove={() => onRemove("plugin", plugin.id)}
         />
       ))}
     </div>
@@ -101,7 +113,7 @@ function LoadedContextTab({
   title,
   onRemove,
 }: {
-  prefix: "$" | "/";
+  prefix: "$" | "/" | "#";
   label: string;
   title?: string;
   onRemove: () => void;
@@ -213,7 +225,7 @@ function emptyMentionLabel(kind: ComposerMention["kind"]) {
   return "slash commands";
 }
 
-const LOADED_TAB_META: Record<"$" | "/", { Icon: typeof AtSign; classes: string }> = {
+const LOADED_TAB_META: Record<"$" | "/" | "#", { Icon: typeof AtSign; classes: string }> = {
   $: {
     Icon: Sparkles,
     classes: "border-emerald-500/30 bg-emerald-500/10 text-emerald-300",
@@ -221,6 +233,10 @@ const LOADED_TAB_META: Record<"$" | "/", { Icon: typeof AtSign; classes: string 
   "/": {
     Icon: Slash,
     classes: "border-amber-500/30 bg-amber-500/10 text-amber-300",
+  },
+  "#": {
+    Icon: Plug,
+    classes: "border-violet-500/30 bg-violet-500/10 text-violet-300",
   },
 };
 

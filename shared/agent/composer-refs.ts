@@ -23,6 +23,13 @@ export type ComposerPromptTemplateRef = {
   argumentHint?: string;
 };
 
+export type ComposerPluginRef = {
+  id: string;
+  name: string;
+  description?: string;
+  capabilities?: string[];
+};
+
 function stringField(record: Record<string, unknown>, key: string): string | undefined {
   const value = record[key];
   return typeof value === "string" && value.trim() ? value : undefined;
@@ -61,20 +68,48 @@ export function sanitizeComposerPromptTemplates(value: unknown): ComposerPromptT
   });
 }
 
-export function selectedContextPrompt(text: string, skills: ComposerSkillRef[] = []): string {
-  const lines = selectedContextLines(skills);
+export function sanitizeComposerPlugins(value: unknown): ComposerPluginRef[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item): ComposerPluginRef[] => {
+    if (!item || typeof item !== "object") return [];
+    const record = item as Record<string, unknown>;
+    const capabilities = Array.isArray(record.capabilities)
+      ? record.capabilities.filter((entry): entry is string => typeof entry === "string")
+      : undefined;
+    const plugin: ComposerPluginRef = {
+      id: stringField(record, "id") ?? "",
+      name: stringField(record, "name") ?? "",
+      description: stringField(record, "description"),
+      capabilities,
+    };
+    return plugin.name || plugin.id ? [plugin] : [];
+  });
+}
+
+export function selectedContextPrompt(
+  text: string,
+  skills: ComposerSkillRef[] = [],
+  plugins: ComposerPluginRef[] = [],
+): string {
+  const lines = selectedContextLines(skills, plugins);
   if (!lines.length) return text;
   return [`Composer context:\n${lines.join("\n")}`, "User prompt:", text].join("\n\n");
 }
 
-export function selectedContextInstructions(skills: ComposerSkillRef[] = []): string | undefined {
-  const lines = selectedContextLines(skills);
+export function selectedContextInstructions(
+  skills: ComposerSkillRef[] = [],
+  plugins: ComposerPluginRef[] = [],
+): string | undefined {
+  const lines = selectedContextLines(skills, plugins);
   if (!lines.length) return undefined;
   return ["Preserve this selected composer context after compaction.", ...lines].join("\n");
 }
 
-function selectedContextLines(skills: ComposerSkillRef[] = []): string[] {
-  return selectedSkillContextLines(skills);
+function selectedContextLines(
+  skills: ComposerSkillRef[] = [],
+  plugins: ComposerPluginRef[] = [],
+): string[] {
+  return [...selectedSkillContextLines(skills), ...selectedPluginContextLines(plugins)];
 }
 
 function selectedSkillContextLines(skills: ComposerSkillRef[] = []): string[] {
@@ -85,4 +120,18 @@ function selectedSkillContextLines(skills: ComposerSkillRef[] = []): string[] {
 function skillContextLine(skill: ComposerSkillRef): string {
   const label = `$${skill.name}${skill.path ? ` (${skill.path})` : ""}`;
   return skill.instructions ? `${label}\n${skill.instructions}` : label;
+}
+
+function selectedPluginContextLines(plugins: ComposerPluginRef[]): string[] {
+  if (!plugins.length) return [];
+  return [
+    "Selected plugins:",
+    ...plugins.map((plugin) => {
+      const description = plugin.description?.replace(/[.!?]?$/, ".") ?? "Use its connected tools when relevant.";
+      const capabilities = plugin.capabilities?.length
+        ? ` Available capabilities: ${plugin.capabilities.join(", ")}.`
+        : "";
+      return `#${plugin.name}: ${description}${capabilities}`;
+    }),
+  ];
 }

@@ -5,12 +5,14 @@
 export {
   sanitizeComposerSkills,
   sanitizeComposerPromptTemplates,
+  sanitizeComposerPlugins,
   selectedContextPrompt,
   selectedContextInstructions,
 } from "@shared/agent/composer-refs";
 export type {
   ComposerSkillRef,
   ComposerPromptTemplateRef,
+  ComposerPluginRef,
 } from "@shared/agent/composer-refs";
 
 export type ComposerMention = {

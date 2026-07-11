@@ -7,6 +7,7 @@
 //    sessions stay independent of tool choice.
 
 import type {
+  ComposerPluginRef,
   ComposerPromptTemplateRef,
   ComposerSkillRef,
 } from "@/features/agent/composer-context";
@@ -65,6 +66,7 @@ export type ContextAttachRequest = {
 export type ToolSelection = {
   skills: ComposerSkillRef[];
   promptTemplates: ComposerPromptTemplateRef[];
+  plugins: ComposerPluginRef[];
 };
 
 export type ToolSelectionMap = ReadonlyMap<SessionId, ToolSelection>;
@@ -72,4 +74,5 @@ export type ToolSelectionMap = ReadonlyMap<SessionId, ToolSelection>;
 export const EMPTY_SELECTION: ToolSelection = {
   skills: [],
   promptTemplates: [],
+  plugins: [],
 };
