@@ -216,10 +216,14 @@ path) is the exception, only for risky feature-branch testing.
 
 ## Agent runtime + filesystem
 
-- The agent page uses `@earendil-works/pi-coding-agent` directly in the Next.js
-  Node process (no `pi --mode rpc` subprocess, no bundled CLI). Entry point:
-  `src/features/agent/pi-runtime.ts` → `piRuntimeManager.getSession(id)`.
-  Extensions/skills are wired in `src/features/agent/pi-runtime-helpers.ts`.
+- The agent runtime is the standalone `services/agent-runtime` process, built on
+  `@earendil-works/pi-coding-agent` (entry `services/agent-runtime/src/pi-runtime.ts`;
+  extensions/skills wired in `services/agent-runtime/src/pi-runtime-helpers.ts`). The
+  `/agent` page reaches it through the `src/app/api/agent/*` route handlers:
+  `proxy-to-runtime.ts` forwards to the service when `LOCAL_STUDIO_AGENT_RUNTIME_URL`
+  is set (so SSE flushes past the standalone server), else the routes fall back to
+  in-process handlers. Client-side session state lives in `src/features/agent/runtime/`
+  (`session-runtime-controller.ts`).
 - Agent file read/write in chat is local-only, stored under `data/agentfs`. The
   filesystem root boundary (`src/features/agent/fs-store.ts`) trusts the caller's
   workspace cwd while rejecting filesystem roots and system directories. If file
