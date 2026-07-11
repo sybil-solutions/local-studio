@@ -561,16 +561,6 @@
   display: none;
 }
 
-@container (max-width: 40rem) {
-  .filesystem-file-list {
-    display: none;
-  }
-
-  .filesystem-file-list-toggle {
-    display: inline-flex;
-  }
-}
-
 .agent-composer-shell {
   container-type: inline-size;
   width: min(100%, var(--composer-w));
