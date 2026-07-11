@@ -17,3 +17,23 @@ export function messageRenders(message: ChatMessage): boolean {
     block.kind === "text" ? block.text.trim() !== "" : true,
   );
 }
+
+export function mergeConsecutiveAssistantMessages(messages: ChatMessage[]): ChatMessage[] {
+  const merged: ChatMessage[] = [];
+  for (const message of messages) {
+    const previous = merged[merged.length - 1];
+    if (message.role !== "assistant" || previous?.role !== "assistant") {
+      merged.push(message);
+      continue;
+    }
+    merged[merged.length - 1] = {
+      ...previous,
+      id: previous.id,
+      text: [previous.text, message.text].filter(Boolean).join("\n"),
+      blocks: [...assistantBlocksForMessage(previous), ...assistantBlocksForMessage(message)],
+      streamCalls: [...(previous.streamCalls ?? []), ...(message.streamCalls ?? [])],
+      timestamp: message.timestamp ?? previous.timestamp,
+    };
+  }
+  return merged;
+}

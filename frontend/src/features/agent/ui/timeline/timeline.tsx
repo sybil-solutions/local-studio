@@ -6,7 +6,10 @@ import { SessionPaneBlockRouter } from "@/features/agent/ui/timeline/session-pan
 import { AgentEmptyPrompt } from "@/features/agent/ui/agent-empty-prompt";
 import { ChevronDownIcon } from "@/ui/icons";
 import { useMountSubscription } from "@/hooks/use-mount-subscription";
-import { messageRenders } from "@/features/agent/ui/timeline/message-visibility";
+import {
+  mergeConsecutiveAssistantMessages,
+  messageRenders,
+} from "@/features/agent/ui/timeline/message-visibility";
 
 type TimelineProps = {
   messages: ChatMessage[];
@@ -277,30 +280,6 @@ function formatPromptTime(timestamp?: string): string {
   return new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit" }).format(
     new Date(parsed),
   );
-}
-
-function mergeConsecutiveAssistantMessages(messages: ChatMessage[]): ChatMessage[] {
-  const merged: ChatMessage[] = [];
-  for (const message of messages) {
-    const previous = merged[merged.length - 1];
-    if (message.role !== "assistant" || previous?.role !== "assistant") {
-      merged.push(message);
-      continue;
-    }
-    merged[merged.length - 1] = {
-      ...previous,
-      // Anchor the merged id on the first segment (already unique). Concatenating
-      // each new segment's id grew the id — and thus the React key — on every
-      // tool boundary within a turn, remounting the whole assistant <article>
-      // mid-stream and collapsing expanded reasoning/tool disclosures.
-      id: previous.id,
-      text: [previous.text, message.text].filter(Boolean).join("\n"),
-      blocks: [...(previous.blocks ?? []), ...(message.blocks ?? [])],
-      streamCalls: [...(previous.streamCalls ?? []), ...(message.streamCalls ?? [])],
-      timestamp: message.timestamp ?? previous.timestamp,
-    };
-  }
-  return merged;
 }
 
 const AT_BOTTOM_THRESHOLD_PX = 80;
