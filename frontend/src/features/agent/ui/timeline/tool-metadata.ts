@@ -31,19 +31,60 @@ const LANG_BY_EXT: Record<string, string> = {
   py: "py",
   rs: "rs",
   go: "go",
+  java: "java",
+  c: "c",
+  h: "c",
+  cpp: "cpp",
+  hpp: "cpp",
+  cs: "csharp",
+  swift: "swift",
+  kt: "kotlin",
+  kts: "kotlin",
+  rb: "ruby",
+  lua: "lua",
   sh: "sh",
+  bash: "bash",
+  zsh: "zsh",
+  fish: "shell",
   yml: "yaml",
   yaml: "yaml",
   toml: "toml",
   sql: "sql",
+  graphql: "graphql",
+  gql: "graphql",
+  dockerfile: "dockerfile",
+  mk: "makefile",
+  make: "makefile",
 };
+
+const TOOL_FILE_PATH_KEYS = [
+  "path",
+  "file_path",
+  "filePath",
+  "file",
+  "filename",
+  "target_file",
+  "uri",
+  "ref_id",
+];
 
 export function detectLang(filePath: string | null | undefined): string {
   if (!filePath) return "";
+  const name = filePath.replace(/\\/g, "/").split("/").pop()?.toLowerCase() ?? "";
+  if (name === "dockerfile" || name.startsWith("dockerfile.")) return "dockerfile";
+  if (name === "makefile" || name.startsWith("makefile.")) return "makefile";
   const dot = filePath.lastIndexOf(".");
   if (dot === -1) return "";
   const ext = filePath.slice(dot + 1).toLowerCase();
   return LANG_BY_EXT[ext] ?? "";
+}
+
+export function toolFilePath(block: ToolBlock): string | null {
+  return toolArg(block, TOOL_FILE_PATH_KEYS);
+}
+
+export function toolResultText(block: ToolBlock): string {
+  return block.resultText || (block.text !== block.argsText ? block.text : "");
 }
 
 // Try to extract a streaming-friendly preview of "what file is being written"

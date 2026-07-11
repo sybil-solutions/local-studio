@@ -283,8 +283,16 @@
    This is the live default (set on <html data-theme="zai-dark">).
    ────────────────────────────────────────────────────────────────────────── */
 .theme-zai-dark,
+.theme-zai-sky,
+.theme-zai-violet,
+.theme-zai-emerald,
+.theme-zai-rose,
 .dark,
 :root[data-theme="zai-dark"],
+:root[data-theme="zai-sky"],
+:root[data-theme="zai-violet"],
+:root[data-theme="zai-emerald"],
+:root[data-theme="zai-rose"],
 :root[data-theme="omlx-dark"] {
   color-scheme: dark;
 

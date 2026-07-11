@@ -11,7 +11,9 @@ import {
   fileBasename,
   humanizeToolName,
   toolArg,
+  toolFilePath,
   toolKindNodeColor,
+  toolResultText,
   toolVerb,
 } from "@/features/agent/ui/timeline/tool-metadata";
 
@@ -32,16 +34,7 @@ function previewHtmlDocument(source: string): string {
 }
 
 function toolMeta(block: ToolBlock, filePath?: string | null): ToolMeta {
-  const path = toolArg(block, [
-    "path",
-    "file_path",
-    "filePath",
-    "file",
-    "filename",
-    "target_file",
-    "uri",
-    "ref_id",
-  ]);
+  const path = toolFilePath(block);
   const query = toolArg(block, ["query", "q", "pattern", "search", "search_query", "needle"]);
   const command = toolArg(block, ["cmd", "command", "script", "shell", "input"]);
   const url = toolArg(block, ["url", "href"]);
@@ -195,14 +188,26 @@ function ToolOutput({ children }: { children: ReactNode }) {
   );
 }
 
-function HighlightedToolSource({ body, lang }: { body: string; lang: string }) {
+function HighlightedToolSource({
+  body,
+  lang,
+  surface = false,
+}: {
+  body: string;
+  lang: string;
+  surface?: boolean;
+}) {
   const highlighted = useMemo(
     () => (body ? highlightFenced(lang || null, body) : ""),
     [body, lang],
   );
 
-  const className =
-    "max-h-[420px] max-w-full overflow-auto px-3 py-2 font-mono text-[length:var(--codex-chat-code-font-size)] leading-relaxed text-(--fg)";
+  const className = [
+    "max-h-[420px] max-w-full overflow-auto px-3 py-2 font-mono text-[length:var(--codex-chat-code-font-size)] leading-relaxed text-(--fg)",
+    surface ? "whitespace-pre rounded-lg border border-(--border) bg-(--color-input)" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
 
   return (
     <pre className={className}>
@@ -426,6 +431,18 @@ function compactBrowserResult(result: string | null | undefined): string | null 
   return compactToolText(result, 1200);
 }
 
+function readSourcePreview(
+  block: ToolBlock,
+): { body: string; filePath: string; lang: string } | null {
+  if (classifyTool(block) !== "read") return null;
+  const body = toolResultText(block);
+  if (!body) return null;
+  const filePath = toolFilePath(block);
+  const lang = detectLang(filePath);
+  if (!filePath || !lang) return null;
+  return { body, filePath, lang };
+}
+
 export function ToolBlockView({ block }: { block: ToolBlock }) {
   const fileWritePreview = FILE_WRITE_TOOL_NAMES.has(block.name.toLowerCase())
     ? fileWritePreviewData(block)
@@ -451,8 +468,16 @@ export function ToolBlockView({ block }: { block: ToolBlock }) {
     return <BrowserPreview block={block} />;
   }
 
-  const display =
-    block.resultText || (block.text && block.text !== block.argsText ? block.text : "");
+  const sourcePreview = readSourcePreview(block);
+  if (sourcePreview) {
+    return (
+      <ToolSummary block={block} filePath={sourcePreview.filePath} open>
+        <HighlightedToolSource body={sourcePreview.body} lang={sourcePreview.lang} surface />
+      </ToolSummary>
+    );
+  }
+
+  const display = toolResultText(block);
   return (
     <ToolSummary block={block} open={block.status === "running"}>
       {display ? <ToolOutput>{display}</ToolOutput> : null}
