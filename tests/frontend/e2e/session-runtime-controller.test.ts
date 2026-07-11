@@ -558,6 +558,31 @@ test("definitively inactive runtime closes, flushes pending text, then idles", a
   harness.close();
 });
 
+test("definitively inactive runtime settles a running tool badge", async () => {
+  const harness = createControllerHarness({ status: { active: false } });
+
+  harness.emit({
+    type: "pi",
+    seq: 1,
+    event: { type: "tool_execution_start", toolCallId: "call-1", toolName: "bash" },
+  });
+  const running = harness
+    .session()
+    .messages.at(-1)
+    ?.blocks?.find((block) => block.kind === "tool");
+  assert.equal(running?.kind === "tool" ? running.status : null, "running");
+
+  harness.fail();
+  await settle();
+
+  const settled = harness
+    .session()
+    .messages.at(-1)
+    ?.blocks?.find((block) => block.kind === "tool");
+  assert.equal(settled?.kind === "tool" ? settled.status : null, "done");
+  harness.close();
+});
+
 test("done status payloads settle the session idle and keep the pi session id", () => {
   const harness = createControllerHarness();
 

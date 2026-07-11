@@ -9,7 +9,11 @@
 // with prompt-stream/engine; hydration status with loadAndReplay.)
 
 import { isAgentEndEvent } from "@shared/agent/pi-events";
-import { drainQueueAfterAgentEnd, piSessionIdFromEvent } from "@/features/agent/messages";
+import {
+  drainQueueAfterAgentEnd,
+  finalizeRunningToolBlocks,
+  piSessionIdFromEvent,
+} from "@/features/agent/messages";
 import {
   listRuntimeSessions,
   loadRuntimeStatus,
@@ -130,6 +134,25 @@ function patchRuntimeStatus(status: RuntimeStatus): Partial<Session> {
   };
 }
 
+function settleRuntimeSession(session: Session): Session {
+  return {
+    ...session,
+    status: "idle",
+    activeAssistantId: undefined,
+    messages: session.messages.map((message) =>
+      message.role === "assistant" && message.blocks
+        ? { ...message, blocks: finalizeRunningToolBlocks(message.blocks) }
+        : message,
+    ),
+  };
+}
+
+function hasRunningToolBlocks(session: Session): boolean {
+  return session.messages.some((message) =>
+    message.blocks?.some((block) => block.kind === "tool" && block.status === "running"),
+  );
+}
+
 function sameRuntimePatch(session: Session, patch: Partial<Session>, status: string): boolean {
   return (
     session.status === status &&
@@ -243,12 +266,22 @@ export function createSessionRuntimeController(
     payload: Extract<RuntimeEventPayload, { type: "status" }>,
   ) => {
     const idle = payload.phase === "done" || payload.phase === "idle";
+    if (idle) {
+      coalescer.flushNow(sessionId);
+      commit(sessionId, (session) =>
+        settleRuntimeSession({
+          ...session,
+          piSessionId: payload.session?.piSessionId || session.piSessionId,
+          contextUsage: runtimeContextUsage(payload.session, session.contextUsage),
+        }),
+      );
+      return;
+    }
     commit(sessionId, (session) => ({
       ...session,
       piSessionId: payload.session?.piSessionId || session.piSessionId,
       contextUsage: runtimeContextUsage(payload.session, session.contextUsage),
-      status: idle ? "idle" : "running",
-      activeAssistantId: idle ? undefined : session.activeAssistantId,
+      status: "running",
     }));
   };
 
@@ -439,14 +472,15 @@ export function createSessionRuntimeController(
     const patch = patchRuntimeStatus(status);
     commit(session.id, (current) => {
       if (current.status !== "running") return current;
-      if (sameRuntimePatch(current, patch, "idle") && !current.activeAssistantId) {
+      if (
+        sameRuntimePatch(current, patch, "idle") &&
+        !current.activeAssistantId &&
+        !hasRunningToolBlocks(current)
+      ) {
         return current;
       }
       return {
-        ...current,
-        ...patch,
-        status: "idle",
-        activeAssistantId: undefined,
+        ...settleRuntimeSession({ ...current, ...patch }),
       };
     });
   };
@@ -539,12 +573,10 @@ export function createSessionRuntimeController(
           coalescer.flushNow(sessionId);
           commit(sessionId, (session) =>
             session.status === "running" || session.status === "starting"
-              ? {
+              ? settleRuntimeSession({
                   ...session,
-                  status: "idle",
-                  activeAssistantId: undefined,
                   contextUsage: runtimeContextUsage(status, session.contextUsage),
-                }
+                })
               : session,
           );
         }),
