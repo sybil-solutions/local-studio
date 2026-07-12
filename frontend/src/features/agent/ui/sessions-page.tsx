@@ -20,11 +20,8 @@ import { useOpenSessions } from "@/features/agent/ui/use-open-sessions";
 import { useMountSubscription } from "@/hooks/use-mount-subscription";
 import { safeJson } from "@/features/agent/safe-json";
 
-import {
-  type AggregatedSession,
-  type SessionSortField,
-  indexOpenByThreadId,
-} from "@/features/agent/session-contracts";
+import { type SessionSortField, indexOpenByThreadId } from "@/features/agent/session-contracts";
+import type { AggregatedSession } from "@shared/agent/session-summary";
 
 type StatusFilter = "all" | "running" | "idle";
 

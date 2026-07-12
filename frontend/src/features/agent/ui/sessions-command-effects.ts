@@ -1,6 +1,6 @@
 import { Effect } from "effect";
 import { safeJson } from "@/features/agent/safe-json";
-import type { AggregatedSession } from "@/features/agent/session-contracts";
+import type { AggregatedSession } from "@shared/agent/session-summary";
 
 export function loadAggregatedSessions(): Promise<AggregatedSession[]> {
   return Effect.runPromise(

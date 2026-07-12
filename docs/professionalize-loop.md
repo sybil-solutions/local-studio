@@ -58,4 +58,18 @@ and logic, keep code DRY.
 ## Iteration log
 - **I1 (18:05)**: Branch created. Recovered keepalive fix via cherry-pick (e956b021) after a
   stash mishap (old stash@{0} briefly popped; resurrected files parked in scratchpad/old-stash-files;
-  stash entry preserved untouched). Starting I1b.
+  stash entry preserved untouched). I1b: gates CI job added, stale validator entry pruned,
+  AGENTS.md test doc fixed (4a3034a6).
+- **I2 (18:20)**: Trash + config alignment: PROGRESS.md removed, frontend depcheck → .depcheckrc.json,
+  jscpd minTokens aligned at 200 (controller has 0 clones at stricter bar). Issue #146 closed.
+  knip clean in both packages — dead-export debt is already policed by gates.
+- **I3 (18:30)**: Test story: tests/frontend/e2e → tests/frontend/regression (they're node:test module
+  regressions, not e2e); scripts/CI/README/AGENTS renamed to match; frontend unit tests added to root
+  check:frontend. 236/236 pass. NOTE: AGENTS.md forbids --no-verify — loop now commits/pushes with
+  hooks enabled (pushes batched since pre-push runs full check:quality).
+- **I4 (18:35)**: AggregatedSession defined once in shared/agent/session-summary.ts (extends
+  SessionSummary — the old feature-side copy silently omitted cwd/provider/archived/archivedAt that
+  the server actually sends); route + 3 UI consumers import the canonical type.
+- NOTE for final handoff: AGENTS.md requires a desktop rebuild after frontend changes ship — owed
+  once the loop PR merges, not per-iteration.
+- Next: I6 (collapse per-backend upgrade routes, #145) then I7 DRY sweeps (ps parsers, SSE keepalive).

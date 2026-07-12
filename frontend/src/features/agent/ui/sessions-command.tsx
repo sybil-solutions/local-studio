@@ -7,11 +7,8 @@ import { ChatIcon, Folder } from "@/ui/icons";
 import { cleanSessionTitle } from "@/features/agent/messages/helpers";
 import { useMountSubscription } from "@/hooks/use-mount-subscription";
 
-import {
-  type ActiveSession,
-  type AggregatedSession,
-  indexOpenByThreadId,
-} from "@/features/agent/session-contracts";
+import { type ActiveSession, indexOpenByThreadId } from "@/features/agent/session-contracts";
+import type { AggregatedSession } from "@shared/agent/session-summary";
 
 type Props = {
   open: boolean;

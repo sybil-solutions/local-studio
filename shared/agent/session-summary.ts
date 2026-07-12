@@ -10,3 +10,9 @@ export type SessionSummary = {
   archived: boolean;
   archivedAt: string | null;
 };
+
+export type AggregatedSession = SessionSummary & {
+  projectId: string;
+  projectName: string;
+  projectPath: string;
+};
