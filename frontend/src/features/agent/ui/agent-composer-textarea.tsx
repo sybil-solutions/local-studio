@@ -29,7 +29,7 @@ export function AgentComposerTextArea({
       onChange={onChange}
       onKeyDown={onKeyDown}
       placeholder="Ask for follow-up changes"
-      className="min-h-[54px] max-h-[50vh] w-full resize-none overflow-y-auto bg-transparent px-4 pb-1.5 pt-3 text-[length:var(--fs-lg)] leading-[1.55] tracking-normal text-(--fg) outline-none placeholder:text-(--dim)/45"
+      className="min-h-[54px] max-h-[50vh] w-full resize-none overflow-y-auto bg-transparent px-4 pb-1.5 pt-3 text-[length:var(--fs-lg)] leading-normal tracking-normal text-(--fg) outline-none placeholder:text-(--hl2)"
     />
   );
 }

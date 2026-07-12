@@ -73,7 +73,7 @@ export function AgentModelPicker({
       />
       {open ? (
         <div
-          className="absolute bottom-full right-0 z-10 mb-1.5 min-w-48 rounded-lg border border-(--color-popover-border) bg-(--color-popover) p-1 shadow-[0_12px_32px_rgba(0,0,0,0.48)]"
+          className="absolute bottom-full right-0 z-10 mb-1.5 min-w-48 rounded-2xl border border-(--color-popover-border) bg-(--color-popover) p-1.5 shadow-[0px_16px_32px_-8px_rgba(0,0,0,0.3),0px_0px_0px_0.5px_rgba(0,0,0,0.1)]"
           role="menu"
           aria-label="Models"
           onKeyDown={(event) => handleMenuKeyDown(event, close)}
@@ -97,7 +97,7 @@ export function AgentModelPicker({
           )}
           {groups.length > 1 && activeGroup ? (
             <div
-              className="absolute bottom-0 right-[calc(100%+4px)] max-h-72 w-max min-w-52 max-w-80 overflow-y-auto rounded-lg border border-(--color-popover-border) bg-(--color-popover) p-1 shadow-[0_12px_32px_rgba(0,0,0,0.48)]"
+              className="absolute bottom-0 right-[calc(100%+4px)] max-h-72 w-max min-w-52 max-w-80 overflow-y-auto rounded-2xl border border-(--color-popover-border) bg-(--color-popover) p-1.5 shadow-[0px_16px_32px_-8px_rgba(0,0,0,0.3),0px_0px_0px_0.5px_rgba(0,0,0,0.1)]"
               role="menu"
               aria-label={activeGroup.name}
               onMouseEnter={() => setActiveGroupKey(activeGroup.key)}
@@ -138,7 +138,7 @@ function ModelPickerTrigger({
       onClick={onToggle}
       disabled={disabled}
       className={cx(
-        "group/model inline-flex !h-7 !min-h-7 !min-w-0 items-center justify-between gap-1 rounded-lg bg-transparent pl-2 pr-1.5 text-[13px] whitespace-nowrap text-(--dim) transition-colors hover:bg-(--hover) hover:text-(--fg) active:translate-y-px disabled:opacity-60",
+        "group/model inline-flex !h-7 !min-h-7 !min-w-0 items-center justify-between gap-1 rounded-lg bg-transparent pl-2 pr-1.5 text-[length:var(--fs-base)] whitespace-nowrap text-(--hl2) transition-colors hover:bg-(--hover) hover:text-(--fg) active:translate-y-px disabled:opacity-60",
         open && "bg-(--hover) text-(--fg)",
       )}
       title={notRunning ? `${title} is not running — launch it or pick a running model` : title}
@@ -169,7 +169,7 @@ function ModelGroupOption({
       type="button"
       role="menuitem"
       className={cx(
-        "flex min-h-8 w-full min-w-0 items-center gap-2 rounded-md px-2 text-left text-[13px] text-(--fg) transition-colors hover:bg-(--hover) focus-visible:bg-(--hover) focus-visible:outline-none active:translate-y-px",
+        "flex min-h-8 w-full min-w-0 items-center gap-2 rounded-[10px] px-2.5 text-left text-[length:var(--fs-base)] text-(--fg) transition-colors hover:bg-(--hover) focus-visible:bg-(--hover) focus-visible:outline-none active:translate-y-px",
         active && "bg-(--hover)",
       )}
       onMouseEnter={onActivate}
@@ -222,7 +222,7 @@ function ModelOption({
       aria-checked={selected}
       onClick={() => onSelect(model.id)}
       className={cx(
-        "flex min-h-8 w-full min-w-0 items-center gap-2 rounded-md pl-2 pr-2 text-left text-[13px] text-(--fg) transition-colors hover:bg-(--hover) focus-visible:bg-(--hover) focus-visible:outline-none active:translate-y-px",
+        "flex min-h-8 w-full min-w-0 items-center gap-2 rounded-[10px] pl-2.5 pr-2.5 text-left text-[length:var(--fs-base)] text-(--fg) transition-colors hover:bg-(--hover) focus-visible:bg-(--hover) focus-visible:outline-none active:translate-y-px",
         selected && "bg-(--color-input)",
       )}
     >

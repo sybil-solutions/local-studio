@@ -44,11 +44,11 @@ export function AgentComposerActions({
   const usingSitegeist = browserBackend === "sitegeist";
   const browserBackendLabel = usingSitegeist ? "Sitegeist relay" : "embedded panel";
   const browserBackendTarget = usingSitegeist ? "embedded panel" : "Sitegeist relay";
-  const inactiveIconClass = "text-(--dim)/75 hover:bg-(--hover) hover:text-(--fg)/85";
-  const activeIconClass = "bg-(--hover) text-(--fg)/85 hover:text-(--fg)";
+  const inactiveIconClass = "text-(--hl2) hover:bg-(--hover) hover:text-(--fg)";
+  const activeIconClass = "bg-(--active) text-(--fg)";
 
   return (
-    <div className="agent-composer-actions-row flex min-h-8 items-center gap-1.5 bg-transparent px-3 pb-1.5 pt-0.5 text-xs">
+    <div className="agent-composer-actions-row flex min-h-8 items-center gap-1 bg-transparent px-2.5 pb-2 pt-0.5 text-xs">
       <input
         ref={fileInputRef}
         type="file"
@@ -60,11 +60,11 @@ export function AgentComposerActions({
         type="button"
         onClick={() => fileInputRef.current?.click()}
         disabled={readingAttachments || running}
-        className="inline-flex !h-7 !min-h-7 !w-7 !min-w-7 shrink-0 items-center justify-center rounded-md text-(--dim)/75 hover:bg-(--hover) hover:text-(--fg)/85 disabled:opacity-30"
+        className="inline-flex !h-7 !min-h-7 !w-7 !min-w-7 shrink-0 items-center justify-center rounded-full text-(--hl2) hover:bg-(--hover) hover:text-(--fg) disabled:opacity-30"
         aria-label="Attach files"
         title="Attach files (or paste/drop into composer)"
       >
-        <Plus className="h-3.5 w-3.5" />
+        <Plus className="h-[18px] w-[18px]" strokeWidth={1.5} />
       </button>
       <button
         type="button"
@@ -76,10 +76,10 @@ export function AgentComposerActions({
             ? "Browser tool: ON — agent can drive the browser"
             : "Browser tool: OFF — click to let the agent navigate, click, fill, and read pages"
         }
-        className={`inline-flex !h-7 !min-h-7 !w-7 !min-w-7 shrink-0 items-center justify-center rounded-md ${browserToolEnabled ? activeIconClass : inactiveIconClass}`}
+        className={`inline-flex !h-7 !min-h-7 !w-7 !min-w-7 shrink-0 items-center justify-center rounded-full ${browserToolEnabled ? activeIconClass : inactiveIconClass}`}
       >
         <span className="relative inline-flex">
-          <GlobeIcon className="h-3.5 w-3.5" />
+          <GlobeIcon className="h-4 w-4" />
         </span>
       </button>
       {browserToolEnabled ? (
@@ -87,13 +87,13 @@ export function AgentComposerActions({
           type="button"
           onClick={onToggleBrowserBackend}
           aria-label={`Browser backend: ${browserBackendLabel}. Switch to ${browserBackendTarget}.`}
-          className={`inline-flex !h-7 !min-h-7 !w-7 !min-w-7 shrink-0 items-center justify-center rounded-md ${usingSitegeist ? activeIconClass : inactiveIconClass}`}
+          className={`inline-flex !h-7 !min-h-7 !w-7 !min-w-7 shrink-0 items-center justify-center rounded-full ${usingSitegeist ? activeIconClass : inactiveIconClass}`}
           title={`Browser: ${browserBackendLabel}. Click to use ${browserBackendTarget}.`}
         >
           {usingSitegeist ? (
-            <SitegeistIcon className="h-3.5 w-3.5" />
+            <SitegeistIcon className="h-4 w-4" />
           ) : (
-            <PanelIcon className="h-3.5 w-3.5" />
+            <PanelIcon className="h-4 w-4" />
           )}
         </button>
       ) : null}
@@ -107,9 +107,9 @@ export function AgentComposerActions({
             ? "Canvas: ON — shared scratchboard tools loaded; model reads/writes the canvas"
             : "Canvas: OFF — click to share a scratchboard with the model (notes, plans, links, state)"
         }
-        className={`inline-flex !h-7 !min-h-7 !w-7 !min-w-7 shrink-0 items-center justify-center rounded-md ${canvasEnabled ? activeIconClass : inactiveIconClass}`}
+        className={`inline-flex !h-7 !min-h-7 !w-7 !min-w-7 shrink-0 items-center justify-center rounded-full ${canvasEnabled ? activeIconClass : inactiveIconClass}`}
       >
-        <Code2 className="h-3.5 w-3.5" />
+        <Code2 className="h-4 w-4" strokeWidth={1.5} />
       </button>
       <div className="ml-auto flex shrink-0 items-center gap-1">
         {modelSelector}
