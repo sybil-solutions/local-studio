@@ -72,4 +72,13 @@ and logic, keep code DRY.
   the server actually sends); route + 3 UI consumers import the canonical type.
 - NOTE for final handoff: AGENTS.md requires a desktop rebuild after frontend changes ship — owed
   once the loop PR merges, not per-iteration.
-- Next: I6 (collapse per-backend upgrade routes, #145) then I7 DRY sweeps (ps parsers, SSE keepalive).
+- **I5 (18:50)**: Upgrade-route collapse (054c48b5): five per-backend handlers → one
+  /runtime/:backend/upgrade validated against RUNTIME_JOB_BACKENDS; frontend's five
+  upgradeXRuntime methods → one upgradeRuntime(); dropped stale RuntimeCommandPayload
+  (command/args have been rejected server-side since the hardening). #145 closed.
+- **I6 (19:05)**: process-inventory.ts (02c4dcf7): three independent ps parsers unified behind
+  the ProcessRunner seam; listProcesses/buildProcessTree/listProcessTable all derive from
+  listProcessInventory(). 139 unit + 114 integration green.
+- Next: I7b SSE keepalive unification (CAUTION: hot chat path — use stream-proxy test harness,
+  validate frame content not just green tests), I8 rig-routes validators → core/validation
+  helpers, then Effect V4 deepening (engine-coordinator phases), EngineSpec deepening.
