@@ -1,10 +1,58 @@
 import { describe, expect, test } from "bun:test";
 
-import { collectSseJson, registerControllerTestLifecycle } from "./fixtures";
+import { collectSseJson, createTestHarness, registerControllerTestLifecycle } from "./fixtures";
 
 registerControllerTestLifecycle();
 
 describe("controller route contracts", () => {
+  test("stream proxy keeps heartbeats alive after the first upstream chunk", async () => {
+    const { buildChatCompletionsStreamResponse } = await import(
+      "../../../controller/src/modules/proxy/chat-completions-stream"
+    );
+    const encoder = new TextEncoder();
+    const upstream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(
+          encoder.encode(
+            `data: ${JSON.stringify({
+              choices: [{ index: 0, delta: { reasoning_content: "thinking" } }],
+            })}\n\n`,
+          ),
+        );
+        setTimeout(() => {
+          controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+          controller.close();
+        }, 200);
+      },
+    });
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async () =>
+      new Response(upstream, { status: 200, headers: { "content-type": "text/event-stream" } });
+    try {
+      const { context } = await createTestHarness();
+      const response = buildChatCompletionsStreamResponse({
+        upstreamUrl: "http://upstream.test/v1/chat/completions",
+        headers: {},
+        body: "{}",
+        clientSignal: new AbortController().signal,
+        matchedRecipe: null,
+        sourceHeader: null,
+        sessionId: null,
+        recordedModel: "mock-model",
+        recordedProvider: "local",
+        requestStart: performance.now(),
+        requestProvider: "local",
+        providerRouting: null,
+        context,
+        keepaliveIntervalMs: 20,
+      });
+      const output = await response.text();
+      expect((output.match(/: keepalive/g) ?? []).length).toBeGreaterThanOrEqual(2);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
   test("stream proxy keeps content with null tool_calls as answer text", async () => {
     const { createToolCallStream } = await import(
       "../../../controller/src/modules/proxy/tool-call-stream"

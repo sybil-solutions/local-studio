@@ -24,6 +24,7 @@ export interface ChatCompletionsStreamParameters {
   requestProvider: string;
   providerRouting: ProviderRouteConfig | null;
   context: Pick<AppContext, "logger" | "stores">;
+  keepaliveIntervalMs?: number;
 }
 
 /**
@@ -48,6 +49,7 @@ export const buildChatCompletionsStreamResponse = (
     requestProvider,
     providerRouting,
     context,
+    keepaliveIntervalMs = KEEPALIVE_INTERVAL_MS,
   } = parameters;
 
   const sseEncoder = new TextEncoder();
@@ -72,7 +74,7 @@ export const buildChatCompletionsStreamResponse = (
             keepaliveId = null;
           }
         }
-      }, KEEPALIVE_INTERVAL_MS);
+      }, keepaliveIntervalMs);
 
       let upstreamResponse: Response;
       try {
@@ -194,7 +196,6 @@ export const buildChatCompletionsStreamResponse = (
         while (true) {
           const { done, value } = await pipeReader.read();
           if (done) break;
-          stopKeepalive();
           controller.enqueue(value);
         }
       } catch (error) {
@@ -202,6 +203,7 @@ export const buildChatCompletionsStreamResponse = (
           context.logger.error("Stream pipe error", { error: String(error) });
         }
       } finally {
+        stopKeepalive();
         try {
           controller.close();
         } catch {
