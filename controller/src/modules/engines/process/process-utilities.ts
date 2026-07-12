@@ -3,7 +3,10 @@ import { dirname } from "node:path";
 import type { Recipe } from "../../models/types";
 import type { Backend } from "@local-studio/contracts/recipes";
 import { detectEngineFromArguments } from "../engine-spec";
-import { extractFlag as extractFlagUtility } from "../argument-utilities";
+import {
+  extractFlag as extractFlagUtility,
+  getExtraArgument,
+} from "../argument-utilities";
 import { isManagedPythonBackend, managedVenvPython } from "../runtimes/managed-venv";
 import type { Config } from "../../../config/env";
 
@@ -69,7 +72,7 @@ export const buildEnvironment = (
   }
 
   const extraEnvironment =
-    recipe.extra_args["env_vars"] || recipe.extra_args["env-vars"] || recipe.extra_args["envVars"];
+    getExtraArgument(recipe.extra_args, "env_vars") ?? recipe.extra_args["envVars"];
   if (extraEnvironment && typeof extraEnvironment === "object") {
     for (const [key, value] of Object.entries(extraEnvironment as Record<string, unknown>)) {
       if (value !== undefined && value !== null) {
@@ -82,35 +85,22 @@ export const buildEnvironment = (
     env[key] = value;
   }
 
-  const readExtraArgument = (key: string): unknown => {
-    if (Object.prototype.hasOwnProperty.call(recipe.extra_args, key)) {
-      return recipe.extra_args[key];
-    }
-    const kebab = key.replace(/_/g, "-");
-    if (Object.prototype.hasOwnProperty.call(recipe.extra_args, kebab)) {
-      return recipe.extra_args[kebab];
-    }
-    const snake = key.replace(/-/g, "_");
-    if (Object.prototype.hasOwnProperty.call(recipe.extra_args, snake)) {
-      return recipe.extra_args[snake];
-    }
-    return undefined;
-  };
-
   const isDefined = (value: unknown): boolean => {
     return value !== undefined && value !== null && value !== false;
   };
 
   const visibleDevices =
-    readExtraArgument("visible_devices") ??
-    readExtraArgument("VISIBLE_DEVICES") ??
-    readExtraArgument("CUDA_VISIBLE_DEVICES") ??
-    readExtraArgument("cuda_visible_devices") ??
-    readExtraArgument("cuda-visible-devices");
+    getExtraArgument(recipe.extra_args, "visible_devices") ??
+    getExtraArgument(recipe.extra_args, "VISIBLE_DEVICES") ??
+    getExtraArgument(recipe.extra_args, "CUDA_VISIBLE_DEVICES") ??
+    getExtraArgument(recipe.extra_args, "cuda_visible_devices") ??
+    getExtraArgument(recipe.extra_args, "cuda-visible-devices");
   const hipVisibleDevices =
-    readExtraArgument("hip_visible_devices") ?? readExtraArgument("HIP_VISIBLE_DEVICES");
+    getExtraArgument(recipe.extra_args, "hip_visible_devices") ??
+    getExtraArgument(recipe.extra_args, "HIP_VISIBLE_DEVICES");
   const rocrVisibleDevices =
-    readExtraArgument("rocr_visible_devices") ?? readExtraArgument("ROCR_VISIBLE_DEVICES");
+    getExtraArgument(recipe.extra_args, "rocr_visible_devices") ??
+    getExtraArgument(recipe.extra_args, "ROCR_VISIBLE_DEVICES");
 
   const forcedTool = (process.env["LOCAL_STUDIO_GPU_SMI_TOOL"] ?? "").trim().toLowerCase();
   const platform =

@@ -3,6 +3,7 @@ import { chmod, link, mkdir, readFile, rmdir, stat, unlink, writeFile } from "no
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Effect, Schema, Semaphore } from "effect";
+import { getExtraArgument } from "../engines/argument-utilities";
 import type { GpuInfo, Recipe } from "../models/types";
 
 const fullNvidiaUuid =
@@ -320,19 +321,9 @@ function isUnknownRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
-function extraArgument(extraArguments: Record<string, unknown>, key: string): unknown {
-  if (Object.prototype.hasOwnProperty.call(extraArguments, key)) return extraArguments[key];
-  const kebab = key.replace(/_/g, "-");
-  if (Object.prototype.hasOwnProperty.call(extraArguments, kebab)) return extraArguments[kebab];
-  const snake = key.replace(/-/g, "_");
-  return Object.prototype.hasOwnProperty.call(extraArguments, snake)
-    ? extraArguments[snake]
-    : undefined;
-}
-
 function directVisibilitySelector(recipe: Recipe): string | null {
   for (const key of directVisibilityKeys) {
-    const value = extraArgument(recipe.extra_args, key);
+    const value = getExtraArgument(recipe.extra_args, key);
     if (value === undefined || value === null) continue;
     return value === false ? null : String(value);
   }
@@ -342,7 +333,7 @@ function directVisibilitySelector(recipe: Recipe): string | null {
 function environmentVisibilitySelector(recipe: Recipe): string | null {
   let selector = recipe.env_vars?.["CUDA_VISIBLE_DEVICES"] ?? null;
   const extraEnvironment =
-    recipe.extra_args["env_vars"] || recipe.extra_args["env-vars"] || recipe.extra_args["envVars"];
+    getExtraArgument(recipe.extra_args, "env_vars") ?? recipe.extra_args["envVars"];
   if (!isUnknownRecord(extraEnvironment)) return selector;
   const value = extraEnvironment["CUDA_VISIBLE_DEVICES"];
   if (value !== undefined && value !== null) selector = String(value);

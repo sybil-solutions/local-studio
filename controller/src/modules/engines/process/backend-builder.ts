@@ -13,6 +13,9 @@ import { resolveBinary } from "../../../core/command";
 import { managedLlamaServerPath } from "../runtimes/managed-llamacpp";
 import { getEngineSpec } from "../engine-spec";
 import { resolveRecipeGpuUuids } from "../../system/gpu-leases";
+import { getExtraArgument } from "../argument-utilities";
+
+export { getExtraArgument };
 
 export const normalizeJsonArgument = (value: unknown): unknown => {
   if (Array.isArray(value)) {
@@ -29,20 +32,45 @@ export const normalizeJsonArgument = (value: unknown): unknown => {
   }
   return value;
 };
-export const getExtraArgument = (extraArguments: Record<string, unknown>, key: string): unknown => {
-  if (Object.prototype.hasOwnProperty.call(extraArguments, key)) {
-    return extraArguments[key];
+
+type ExtraArgumentSerializer = (flag: string, key: string, value: unknown) => string[];
+
+const appendSerializedArguments = (
+  command: string[],
+  extraArguments: Record<string, unknown>,
+  serialize: ExtraArgumentSerializer,
+): string[] => {
+  for (const [key, value] of Object.entries(extraArguments)) {
+    if (isInternalRecipeKey(key)) continue;
+    const flag = `--${key.replace(/_/g, "-")}`;
+    if (command.includes(flag)) continue;
+    command.push(...serialize(flag, key, value));
   }
-  const kebab = key.replace(/_/g, "-");
-  if (Object.prototype.hasOwnProperty.call(extraArguments, kebab)) {
-    return extraArguments[kebab];
-  }
-  const snake = key.replace(/-/g, "_");
-  if (Object.prototype.hasOwnProperty.call(extraArguments, snake)) {
-    return extraArguments[snake];
-  }
-  return undefined;
+  return command;
 };
+
+const serializeExtraArgument: ExtraArgumentSerializer = (flag, key, value) => {
+  if (value === true) return [flag];
+  if (value === false) {
+    return key.replace(/-/g, "_").toLowerCase() === "enable_expert_parallelism" ? [] : [flag];
+  }
+  if (value === undefined || value === null) return [];
+  if (typeof value === "string" && isJsonStringArgumentKey(key)) {
+    const trimmed = value.trim();
+    if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+      try {
+        return [flag, JSON.stringify(normalizeJsonArgument(JSON.parse(trimmed) as unknown))];
+      } catch {
+        return [flag, value];
+      }
+    }
+  }
+  if (Array.isArray(value) || (value && typeof value === "object")) {
+    return [flag, JSON.stringify(normalizeJsonArgument(value))];
+  }
+  return [flag, String(value)];
+};
+
 export const getPythonPath = (recipe: Recipe): string | undefined => {
   if (recipe.python_path && existsSync(recipe.python_path)) {
     return recipe.python_path;
@@ -59,50 +87,7 @@ export const getPythonPath = (recipe: Recipe): string | undefined => {
 export const appendExtraArguments = (
   command: string[],
   extraArguments: Record<string, unknown>,
-): string[] => {
-  for (const [key, value] of Object.entries(extraArguments)) {
-    const normalizedKey = key.replace(/-/g, "_").toLowerCase();
-    if (isInternalRecipeKey(key)) {
-      continue;
-    }
-    const flag = `--${key.replace(/_/g, "-")}`;
-    if (command.includes(flag)) {
-      continue;
-    }
-    if (value === true) {
-      command.push(flag);
-      continue;
-    }
-    if (value === false) {
-      if (!["enable_expert_parallelism", "enable-expert-parallelism"].includes(normalizedKey)) {
-        command.push(flag);
-      }
-      continue;
-    }
-    if (value === undefined || value === null) {
-      continue;
-    }
-    if (typeof value === "string" && isJsonStringArgumentKey(key)) {
-      const trimmed = value.trim();
-      if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
-        try {
-          const parsed = JSON.parse(trimmed) as unknown;
-          command.push(flag, JSON.stringify(normalizeJsonArgument(parsed)));
-          continue;
-        } catch {
-          command.push(flag, value);
-          continue;
-        }
-      }
-    }
-    if (Array.isArray(value) || (value && typeof value === "object")) {
-      command.push(flag, JSON.stringify(normalizeJsonArgument(value)));
-      continue;
-    }
-    command.push(flag, String(value));
-  }
-  return command;
-};
+): string[] => appendSerializedArguments(command, extraArguments, serializeExtraArgument);
 
 /**
  * Filter `extraArguments` against the vLLM `serve` flag allowlist and pass the
@@ -409,42 +394,20 @@ export const resolveLlamaBinary = (recipe: Recipe, config: Config): string => {
   const managed = managedLlamaServerPath(config);
   return resolveBinary("llama-server") ?? (existsSync(managed) ? managed : "llama-server");
 };
+
+const serializeLlamacppArgument: ExtraArgumentSerializer = (flag, _key, value) => {
+  if (value === true) return [flag];
+  if (value === false || value === undefined || value === null || value === "") return [];
+  if (Array.isArray(value)) {
+    return value.flatMap((entry) =>
+      entry === undefined || entry === null || entry === "" ? [] : [flag, String(entry)],
+    );
+  }
+  if (typeof value === "object") return [flag, JSON.stringify(value)];
+  return [flag, String(value)];
+};
+
 export const appendLlamacppArguments = (
   command: string[],
   extraArguments: Record<string, unknown>,
-): string[] => {
-  for (const [key, value] of Object.entries(extraArguments)) {
-    if (isInternalRecipeKey(key)) {
-      continue;
-    }
-    const flag = `--${key.replace(/_/g, "-")}`;
-    if (command.includes(flag)) {
-      continue;
-    }
-    if (value === true) {
-      command.push(flag);
-      continue;
-    }
-    if (value === false) {
-      continue;
-    }
-    if (value === undefined || value === null || value === "") {
-      continue;
-    }
-    if (Array.isArray(value)) {
-      for (const entry of value) {
-        if (entry === undefined || entry === null || entry === "") {
-          continue;
-        }
-        command.push(flag, String(entry));
-      }
-      continue;
-    }
-    if (typeof value === "object") {
-      command.push(flag, JSON.stringify(value));
-      continue;
-    }
-    command.push(flag, String(value));
-  }
-  return command;
-};
+): string[] => appendSerializedArguments(command, extraArguments, serializeLlamacppArgument);

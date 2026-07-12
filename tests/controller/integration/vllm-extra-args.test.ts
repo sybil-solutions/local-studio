@@ -2,8 +2,62 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 
 import {
   appendExtraArguments,
+  appendLlamacppArguments,
   appendVllmExtraArguments,
 } from "../../../controller/src/modules/engines/process/backend-builder";
+
+describe("CLI extra_args serialization", () => {
+  const extraArguments = {
+    "existing-flag": "ignored",
+    enabled: true,
+    disabled: false,
+    enable_expert_parallelism: false,
+    empty: "",
+    list: ["first", "second"],
+    object: { "nested-key": 1 },
+    description: "internal",
+    missing: null,
+  };
+
+  it("preserves the generic backend argument policy", () => {
+    const command = ["runtime", "--existing-flag", "original"];
+
+    appendExtraArguments(command, extraArguments);
+
+    expect(command).toEqual([
+      "runtime",
+      "--existing-flag",
+      "original",
+      "--enabled",
+      "--disabled",
+      "--empty",
+      "",
+      "--list",
+      '["first","second"]',
+      "--object",
+      '{"nested_key":1}',
+    ]);
+  });
+
+  it("preserves the llama.cpp argument policy", () => {
+    const command = ["llama-server", "--existing-flag", "original"];
+
+    appendLlamacppArguments(command, extraArguments);
+
+    expect(command).toEqual([
+      "llama-server",
+      "--existing-flag",
+      "original",
+      "--enabled",
+      "--list",
+      "first",
+      "--list",
+      "second",
+      "--object",
+      '{"nested-key":1}',
+    ]);
+  });
+});
 
 describe("vLLM extra_args allowlist", () => {
   let savedAllow: string | undefined;
