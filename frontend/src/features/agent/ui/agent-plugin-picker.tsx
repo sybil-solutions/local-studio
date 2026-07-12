@@ -10,6 +10,7 @@ import type { ComposerPluginRef } from "@/features/agent/composer-context";
 import { Check, Plug } from "@/ui/icon-registry";
 import { useMountSubscription } from "@/hooks/use-mount-subscription";
 import { cx } from "@/ui/utils";
+import { MenuSurface } from "@/ui";
 
 function isAvailable(plugin: PluginRuntimeView): boolean {
   return plugin.tools.state === "enabled" && (!plugin.account || plugin.account.connected);
@@ -92,10 +93,11 @@ export function AgentPluginPicker({
         ) : null}
       </button>
       {open ? (
-        <div
+        <MenuSurface
+          elevation="menu"
           role="menu"
           aria-label="Connected plugins"
-          className="absolute bottom-full left-0 z-20 mb-1.5 w-72 rounded-lg border border-(--color-popover-border) bg-(--color-popover) p-1 shadow-[0_12px_32px_rgba(0,0,0,0.48)]"
+          className="absolute bottom-full left-0 z-20 mb-1.5 w-72 rounded-lg p-1"
         >
           <div className="px-2 py-1.5 text-[length:var(--fs-xs)] font-medium text-(--dim)">
             Plugins for this chat
@@ -135,7 +137,7 @@ export function AgentPluginPicker({
           >
             Manage plugins
           </a>
-        </div>
+        </MenuSurface>
       ) : null}
     </div>
   );

@@ -33,6 +33,16 @@ import {
   resolveTtsModelPath,
 } from "./helpers";
 
+async function removeTemporaryFiles(paths: Iterable<string>): Promise<void> {
+  await Promise.all(
+    [...paths].map(async (pathValue) => {
+      try {
+        await unlink(pathValue);
+      } catch {}
+    }),
+  );
+}
+
 export const registerAudioRoutes = (
   app: Hono,
   context: AppContext,
@@ -136,15 +146,7 @@ export const registerAudioRoutes = (
         { status: 500 },
       );
     } finally {
-      await Promise.all(
-        [...cleanupPaths].map(async (pathValue) => {
-          try {
-            await unlink(pathValue);
-          } catch {
-            // Ignore cleanup failures.
-          }
-        }),
-      );
+      await removeTemporaryFiles(cleanupPaths);
     }
   });
 
@@ -263,15 +265,7 @@ export const registerAudioRoutes = (
         { status: 500 },
       );
     } finally {
-      await Promise.all(
-        [...cleanupPaths].map(async (pathValue) => {
-          try {
-            await unlink(pathValue);
-          } catch {
-            // Ignore cleanup failures.
-          }
-        }),
-      );
+      await removeTemporaryFiles(cleanupPaths);
     }
   });
 };

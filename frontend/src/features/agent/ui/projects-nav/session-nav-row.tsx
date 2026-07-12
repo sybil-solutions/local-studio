@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Spinner } from "@/ui";
+import { MenuSurface, Spinner } from "@/ui";
 import { useRouter } from "next/navigation";
 import {
   useRef,
@@ -15,9 +15,6 @@ import { useClickOutside } from "@/features/agent/hooks/use-click-outside";
 import { Archive, MoreIcon, Pin, PinOff, SquarePen, X } from "@/ui/icon-registry";
 import type { SessionPref } from "@/features/agent/messages/prefs";
 import { hrefWithOpenNonce, navigateToSessionHref } from "./helpers";
-
-const SESSION_MENU_CLASS =
-  "absolute right-0 top-6 isolate z-[999] min-w-[164px] rounded-lg border border-(--color-popover-border) bg-(--color-popover) p-1 shadow-[0_8px_28px_rgba(0,0,0,0.45)]";
 
 type SessionNavRowProps = {
   pref: SessionPref;
@@ -323,7 +320,11 @@ function SessionOptionsMenu({
   };
 
   return (
-    <div className={SESSION_MENU_CLASS} role="menu">
+    <MenuSurface
+      elevation="menu-sm"
+      role="menu"
+      className="absolute right-0 top-6 isolate z-[999] min-w-[164px] rounded-lg p-1"
+    >
       <SessionMenuItem Icon={SquarePen} onClick={run(onRename)}>
         Rename
       </SessionMenuItem>
@@ -343,7 +344,7 @@ function SessionOptionsMenu({
           </SessionMenuItem>
         </>
       ) : null}
-    </div>
+    </MenuSurface>
   );
 }
 

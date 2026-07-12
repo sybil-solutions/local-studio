@@ -552,6 +552,15 @@
   --composer-radius: 18px;
   --composer-shadow: 0 12px 36px rgba(0, 0, 0, 0.06);
 
+  /* Elevation — floating surface shadows (menus, dropdowns, modals, drawers). */
+  --shadow-menu: 0 12px 32px rgba(0, 0, 0, 0.48);
+  --shadow-menu-sm: 0 8px 28px rgba(0, 0, 0, 0.45);
+  --shadow-menu-lg: 0 12px 36px rgba(0, 0, 0, 0.65);
+  --shadow-dropdown: 0 16px 44px rgba(0, 0, 0, 0.48);
+  --shadow-modal: 0 24px 80px rgba(0, 0, 0, 0.62), inset 0 1px 0 rgba(255, 255, 255, 0.035);
+  --shadow-pill: 0 6px 20px rgba(0, 0, 0, 0.35);
+  --shadow-drawer: -24px 0 80px rgba(0, 0, 0, 0.38);
+
   /* Typography */
   --text-nav: var(--fs-xl);
   --text-section: var(--fs-base);

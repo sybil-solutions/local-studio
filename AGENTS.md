@@ -140,6 +140,13 @@ The pre-push hook (`.githooks/pre-push`) checks conventional commits and runs
   the last tag, cuts the next tag, and publishes a GitHub Release with generated
   notes. There is no npm publish (private monorepo, protected `main`). To cut a
   release, push conventional commits to `main`; do not tag by hand.
+- **Weekly release PRs:** work lands through a rolling weekly release PR into
+  `main`, named `{date-week}` using ISO year-week — e.g. `2026-W28`. There is
+  always exactly one open release PR at a time. The moment a release PR merges,
+  open the next week's PR (branch `release/<year>-W<week>`, title `<year>-W<week>`)
+  so the next batch of commits has a home. Feature/fix branches merge into the
+  current week's release PR; the release PR merges into `main`, which triggers
+  the automated semantic-release above.
 
 ## Sensitive configuration
 
@@ -216,10 +223,14 @@ path) is the exception, only for risky feature-branch testing.
 
 ## Agent runtime + filesystem
 
-- The agent page uses `@earendil-works/pi-coding-agent` directly in the Next.js
-  Node process (no `pi --mode rpc` subprocess, no bundled CLI). Entry point:
-  `src/features/agent/pi-runtime.ts` → `piRuntimeManager.getSession(id)`.
-  Extensions/skills are wired in `src/features/agent/pi-runtime-helpers.ts`.
+- The agent runtime is the standalone `services/agent-runtime` process, built on
+  `@earendil-works/pi-coding-agent` (entry `services/agent-runtime/src/pi-runtime.ts`;
+  extensions/skills wired in `services/agent-runtime/src/pi-runtime-helpers.ts`). The
+  `/agent` page reaches it through the `src/app/api/agent/*` route handlers:
+  `proxy-to-runtime.ts` forwards to the service when `LOCAL_STUDIO_AGENT_RUNTIME_URL`
+  is set (so SSE flushes past the standalone server), else the routes fall back to
+  in-process handlers. Client-side session state lives in `src/features/agent/runtime/`
+  (`session-runtime-controller.ts`).
 - Agent file read/write in chat is local-only, stored under `data/agentfs`. The
   filesystem root boundary (`src/features/agent/fs-store.ts`) trusts the caller's
   workspace cwd while rejecting filesystem roots and system directories. If file

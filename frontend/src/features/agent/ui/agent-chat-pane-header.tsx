@@ -8,9 +8,7 @@ import { useReasoningVisible } from "@/features/agent/messages/use-reasoning-vis
 import { useAppStore } from "@/store";
 import { CloseIcon, MoreIcon } from "@/ui/icons";
 import { preloadTerminalPanel } from "@/features/agent/ui/terminal-panel";
-
-const CHAT_HEADER_MENU_CLASS =
-  "absolute left-0 top-7 isolate z-[999] min-w-[160px] rounded-lg border border-(--color-popover-border) bg-(--color-popover) p-1 text-xs text-(--fg) opacity-100 shadow-[0_12px_32px_rgba(0,0,0,0.48)]";
+import { MenuSurface } from "@/ui";
 
 export function AgentChatPaneHeader({
   title,
@@ -108,7 +106,11 @@ export function AgentChatPaneHeader({
           <MoreIcon className="pointer-events-none h-3.5 w-3.5" />
         </button>
         {open ? (
-          <div className={CHAT_HEADER_MENU_CLASS} role="menu">
+          <MenuSurface
+            elevation="menu"
+            role="menu"
+            className="absolute left-0 top-7 isolate z-[999] min-w-[160px] rounded-lg p-1 text-xs text-(--fg) opacity-100"
+          >
             <HeaderMenuItem onClick={startRename}>Rename</HeaderMenuItem>
             <HeaderMenuItem
               onClick={() => {
@@ -144,7 +146,7 @@ export function AgentChatPaneHeader({
             >
               {reasoningVisible ? "Hide reasoning" : "Show reasoning"}
             </HeaderMenuItem>
-          </div>
+          </MenuSurface>
         ) : null}
       </div>
       <div className="flex shrink-0 items-center gap-1">

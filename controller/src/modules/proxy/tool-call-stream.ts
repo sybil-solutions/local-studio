@@ -49,10 +49,6 @@ export const createToolCallStream = (
       // upstream already torn down; ignore.
     }
   };
-  const stripToolXmlDelta = (text: string): string => {
-    return stripToolCallsFromContent(text);
-  };
-
   const normalizeTextDelta = (
     history: Map<string, { text: string; snapshot: boolean }>,
     key: string,
@@ -179,7 +175,7 @@ export const createToolCallStream = (
   ): void => {
     if (!content) return;
     visibleContentBuffer += content;
-    const cleaned = stripToolXmlDelta(content);
+    const cleaned = stripToolCallsFromContent(content);
     const chunk = buildFlushChunk({ content: cleaned });
     if (chunk) enqueueDataEvent(controller, chunk);
   };
@@ -191,8 +187,8 @@ export const createToolCallStream = (
     const carryLooksLikeThink = thinkingTagPrefixIsPartial(tail.trim());
     const chunk =
       contentThink.inThink() || carryLooksLikeThink
-        ? buildFlushChunk({ reasoning_content: stripToolXmlDelta(tail) })
-        : buildFlushChunk({ content: stripToolXmlDelta(tail) });
+        ? buildFlushChunk({ reasoning_content: stripToolCallsFromContent(tail) })
+        : buildFlushChunk({ content: stripToolCallsFromContent(tail) });
     if (chunk) enqueueDataEvent(controller, chunk);
   };
 
@@ -326,7 +322,7 @@ export const createToolCallStream = (
               if (rewritten.content) {
                 visibleContentBuffer += rewritten.content;
               }
-              const cleanedContent = stripToolXmlDelta(rewritten.content);
+              const cleanedContent = stripToolCallsFromContent(rewritten.content);
               if (cleanedContent) {
                 delta["content"] = cleanedContent;
               } else if ("content" in delta) {
@@ -347,7 +343,7 @@ export const createToolCallStream = (
             }
 
             if (reasoning) {
-              delta["reasoning_content"] = stripToolXmlDelta(reasoning);
+              delta["reasoning_content"] = stripToolCallsFromContent(reasoning);
             } else if (REASONING_FIELDS.some((field) => field in delta)) {
               delete delta["reasoning_content"];
             }

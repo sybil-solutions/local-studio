@@ -1,5 +1,5 @@
 import { timingSafeEqual } from "node:crypto";
-import type { MiddlewareHandler } from "hono";
+import type { Context, MiddlewareHandler } from "hono";
 import type { AppContext } from "../app-context";
 
 const MUTATING_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
@@ -36,6 +36,27 @@ function isReadRateLimitExempt(method: string, path: string): boolean {
 
 function isMutatingRequest(method: string): boolean {
   return MUTATING_METHODS.has(method.toUpperCase());
+}
+
+function bumpRateLimit(
+  store: Map<string, MutatingRateLimitEntry>,
+  key: string,
+  now: number,
+  windowMs: number,
+): MutatingRateLimitEntry {
+  const existing = store.get(key);
+  const entry: MutatingRateLimitEntry =
+    existing && existing.resetAt > now
+      ? { count: existing.count + 1, resetAt: existing.resetAt }
+      : { count: 1, resetAt: now + windowMs };
+  store.set(key, entry);
+  return entry;
+}
+
+function rateLimitExceeded(ctx: Context, resetAt: number, now: number): Response {
+  const retryAfterSeconds = Math.max(Math.ceil((resetAt - now) / 1000), 1);
+  ctx.header("Retry-After", String(retryAfterSeconds));
+  return ctx.json({ detail: "Rate limit exceeded" }, { status: 429 });
 }
 
 function isPublicRequest(method: string, path: string): boolean {
@@ -150,14 +171,7 @@ export function createMutatingRateLimitMiddleware(
     const clientIp = getClientIpFromRequestHeaders((name) => ctx.req.header(name));
     const key = buildMutatingRateLimitKey(ctx.req.path, ctx.req.method, clientIp);
 
-    const existing = mutatingRateLimitStore.get(key);
-    const inWindow = Boolean(existing && existing.resetAt > now);
-
-    const entry: MutatingRateLimitEntry = inWindow
-      ? { count: existing!.count + 1, resetAt: existing!.resetAt }
-      : { count: 1, resetAt: now + windowMs };
-
-    mutatingRateLimitStore.set(key, entry);
+    const entry = bumpRateLimit(mutatingRateLimitStore, key, now, windowMs);
 
     const remaining = Math.max(maxRequests - entry.count, 0);
     ctx.header("X-RateLimit-Limit", String(maxRequests));
@@ -165,9 +179,7 @@ export function createMutatingRateLimitMiddleware(
     ctx.header("X-RateLimit-Reset", String(Math.ceil(entry.resetAt / 1000)));
 
     if (entry.count > maxRequests) {
-      const retryAfterSeconds = Math.max(Math.ceil((entry.resetAt - now) / 1000), 1);
-      ctx.header("Retry-After", String(retryAfterSeconds));
-      return ctx.json({ detail: "Rate limit exceeded" }, { status: 429 });
+      return rateLimitExceeded(ctx, entry.resetAt, now);
     }
 
     pruneRateLimitStore(mutatingRateLimitStore, now);
@@ -187,8 +199,6 @@ export function createReadRateLimitMiddleware(
   const maxRequests = options.maxRequests ?? DEFAULT_READ_RATE_LIMIT_MAX_REQUESTS;
 
   return async (ctx, next) => {
-    // Mutations are covered by their own (stricter) limiter; only throttle reads
-    // here, and skip streaming / monitoring endpoints entirely.
     if (isMutatingRequest(ctx.req.method) || isReadRateLimitExempt(ctx.req.method, ctx.req.path)) {
       return next();
     }
@@ -197,17 +207,10 @@ export function createReadRateLimitMiddleware(
     const clientIp = getClientIpFromRequestHeaders((name) => ctx.req.header(name));
     const key = buildMutatingRateLimitKey(ctx.req.path, ctx.req.method, clientIp);
 
-    const existing = readRateLimitStore.get(key);
-    const inWindow = Boolean(existing && existing.resetAt > now);
-    const entry: MutatingRateLimitEntry = inWindow
-      ? { count: existing!.count + 1, resetAt: existing!.resetAt }
-      : { count: 1, resetAt: now + windowMs };
-    readRateLimitStore.set(key, entry);
+    const entry = bumpRateLimit(readRateLimitStore, key, now, windowMs);
 
     if (entry.count > maxRequests) {
-      const retryAfterSeconds = Math.max(Math.ceil((entry.resetAt - now) / 1000), 1);
-      ctx.header("Retry-After", String(retryAfterSeconds));
-      return ctx.json({ detail: "Rate limit exceeded" }, { status: 429 });
+      return rateLimitExceeded(ctx, entry.resetAt, now);
     }
 
     pruneRateLimitStore(readRateLimitStore, now);

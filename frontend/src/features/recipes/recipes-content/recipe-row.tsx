@@ -4,6 +4,7 @@ import { memo, useCallback, type MouseEvent } from "react";
 import { MoreVertical, Play, Square } from "@/ui/icon-registry";
 import type { RecipeWithStatus } from "@/lib/types";
 import { ModelLogo } from "@/ui/model-logo";
+import { MenuSurface } from "@/ui";
 import { ModelButton, ModelRow, ModelStatus, type ModelStatusTone } from "./model-page";
 import { modelIdFromPath } from "@/lib/huggingface";
 import { engineNodeStyle, formatBackendLabel } from "@/features/recipes/recipe-labels";
@@ -147,7 +148,10 @@ export const RecipeRow = memo(function RecipeRow({
               <MoreVertical className="h-3 w-3" />
             </ModelButton>
             {isMenuOpen ? (
-              <div className="absolute right-0 z-50 mt-1 w-48 overflow-hidden rounded-md border border-(--color-popover-border) bg-(--color-popover) shadow-[0_16px_44px_rgba(0,0,0,0.48)]">
+              <MenuSurface
+                elevation="dropdown"
+                className="absolute right-0 z-50 mt-1 w-48 overflow-hidden rounded-md"
+              >
                 <button
                   onClick={handleTogglePin}
                   className="w-full px-3 py-2 text-left text-[length:var(--fs-md)] text-(--fg) hover:bg-(--color-menu-hover)"
@@ -173,7 +177,7 @@ export const RecipeRow = memo(function RecipeRow({
                 >
                   Delete Serve…
                 </button>
-              </div>
+              </MenuSurface>
             ) : null}
           </div>
         </>

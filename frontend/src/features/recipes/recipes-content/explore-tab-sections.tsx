@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from "react";
 import { ArrowDownUp, Check, Filter, Gauge, RefreshCw } from "@/ui/icon-registry";
-import { SearchInput } from "@/ui";
+import { MenuSurface, SearchInput } from "@/ui";
 import { ModelButton, ModelSection, ModelRow, ModelValue, ModelStatus } from "./model-page";
 import type { HuggingFaceModel } from "@/lib/types";
 import { ExploreModelRow } from "./explore-model-row";
@@ -162,12 +162,15 @@ function IconPopover({
             aria-hidden
             tabIndex={-1}
           />
-          <div className="absolute right-0 top-full z-50 mt-1 w-48 rounded-lg border border-(--color-popover-border) bg-(--color-popover) py-1 shadow-[0_16px_44px_rgba(0,0,0,0.48)]">
+          <MenuSurface
+            elevation="dropdown"
+            className="absolute right-0 top-full z-50 mt-1 w-48 rounded-lg py-1"
+          >
             <div className="px-2.5 py-1.5 text-[length:var(--fs-xs)] font-medium uppercase tracking-wide text-(--ui-muted)">
               {label}
             </div>
             {children(() => setOpen(false))}
-          </div>
+          </MenuSurface>
         </>
       ) : null}
     </div>

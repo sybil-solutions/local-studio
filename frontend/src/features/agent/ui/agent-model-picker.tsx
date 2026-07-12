@@ -11,6 +11,7 @@ import {
 import { Check, ChevronDown } from "@/ui/icon-registry";
 import type { AgentModel } from "@/features/agent/workspace/types";
 import { cx } from "@/ui/utils";
+import { MenuSurface } from "@/ui";
 
 type AgentModelPickerProps = {
   models: AgentModel[];
@@ -72,8 +73,9 @@ export function AgentModelPicker({
         }}
       />
       {open ? (
-        <div
-          className="absolute bottom-full right-0 z-10 mb-1.5 min-w-48 rounded-lg border border-(--color-popover-border) bg-(--color-popover) p-1 shadow-[0_12px_32px_rgba(0,0,0,0.48)]"
+        <MenuSurface
+          elevation="menu"
+          className="absolute bottom-full right-0 z-10 mb-1.5 min-w-48 rounded-lg p-1"
           role="menu"
           aria-label="Models"
           onKeyDown={(event) => handleMenuKeyDown(event, close)}
@@ -96,8 +98,9 @@ export function AgentModelPicker({
             />
           )}
           {groups.length > 1 && activeGroup ? (
-            <div
-              className="absolute bottom-0 right-[calc(100%+4px)] max-h-72 w-max min-w-52 max-w-80 overflow-y-auto rounded-lg border border-(--color-popover-border) bg-(--color-popover) p-1 shadow-[0_12px_32px_rgba(0,0,0,0.48)]"
+            <MenuSurface
+              elevation="menu"
+              className="absolute bottom-0 right-[calc(100%+4px)] max-h-72 w-max min-w-52 max-w-80 overflow-y-auto rounded-lg p-1"
               role="menu"
               aria-label={activeGroup.name}
               onMouseEnter={() => setActiveGroupKey(activeGroup.key)}
@@ -107,9 +110,9 @@ export function AgentModelPicker({
                 selectedModel={selectedModel}
                 onSelect={select}
               />
-            </div>
+            </MenuSurface>
           ) : null}
-        </div>
+        </MenuSurface>
       ) : null}
     </div>
   );

@@ -24,6 +24,9 @@ export type { SearchInputProps } from "./search-input";
 export { UiModal, UiModalHeader } from "./modal";
 export type { UiModalProps, UiModalHeaderProps } from "./modal";
 
+export { MenuSurface } from "./menu-surface";
+export type { MenuSurfaceProps, MenuElevation } from "./menu-surface";
+
 export { Tabs } from "./tabs";
 export type { TabsProps, TabItem, TabVariant } from "./tabs";
 

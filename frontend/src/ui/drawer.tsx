@@ -25,7 +25,7 @@ export function Drawer({
   return (
     <aside
       className={cx(
-        "relative flex shrink-0 flex-col border-l border-(--color-popover-border) bg-(--color-popover) shadow-[-24px_0_80px_rgba(0,0,0,0.38)]",
+        "relative flex shrink-0 flex-col border-l border-(--color-popover-border) bg-(--color-popover) shadow-(--shadow-drawer)",
         className,
       )}
       style={{

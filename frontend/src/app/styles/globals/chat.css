@@ -357,13 +357,13 @@
   position: absolute;
   top: 0;
   bottom: 0;
-  left: max(0.75rem, calc(50% - (var(--composer-w) / 2) - 5rem));
+  left: calc(var(--space-base) * 3);
   z-index: 12;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
   justify-content: center;
-  gap: 10px;
+  gap: var(--space-base);
   max-height: 60vh;
   width: 4.75rem;
   pointer-events: none;
