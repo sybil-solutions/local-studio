@@ -79,6 +79,21 @@ and logic, keep code DRY.
 - **I6 (19:05)**: process-inventory.ts (02c4dcf7): three independent ps parsers unified behind
   the ProcessRunner seam; listProcesses/buildProcessTree/listProcessTable all derive from
   listProcessInventory(). 139 unit + 114 integration green.
-- Next: I7b SSE keepalive unification (CAUTION: hot chat path — use stream-proxy test harness,
-  validate frame content not just green tests), I8 rig-routes validators → core/validation
-  helpers, then Effect V4 deepening (engine-coordinator phases), EngineSpec deepening.
+- **I7 (19:35) — deliberate SKIPS (do not re-propose):**
+  - SSE keepalive unification: chat path's keepalive is intentionally different from
+    http/sse.ts withSseHeartbeat (immediate first byte before upstream connect = the Cloudflare
+    502 fix; fixed-interval vs idle-gated; byte-aligned frames vs strings). Unifying restructures
+    the hottest Cloudflare-tuned path to save ~30 lines. Not worth the regression risk.
+  - rig-routes Schema rewrite: validators are local, precise, merge-with-current semantics with
+    UI-facing error messages; Schema conversion is churn, not depth.
+- **I8 (19:50)**: session-status module (8e8d83df): SessionStatus union tightened (was `| string`
+  = no checking; "done" was a tool-block status leaked into the union); isWorkingStatus() replaces
+  session-index's stringly re-derivation; settleTurn/settleTurnFinalizingTools replace 5 copies;
+  SessionTab.status shares the union. All suites green.
+  KNOWN QUIRK (pre-existing): `bun test ../tests/frontend scripts` combined in ONE invocation
+  fails 1 assertion (build-agent-session-options FRONTEND_BASE) — order/module-resolution
+  cross-talk; CI and all scripts run the suites separately, where both are green.
+- Next: EngineSpec deepening (I9) — move vllm command-build/probe/install bodies into
+  specs/vllm-spec.ts; unify the four "/runtime/:backend info" paths on RuntimeTarget discovery.
+  Then docs refresh (README/AGENTS accuracy), component extraction (>400-line tsx), Effect
+  boundary validation for raw ctx.req.json() routes.
