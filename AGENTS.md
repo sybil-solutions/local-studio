@@ -140,6 +140,13 @@ The pre-push hook (`.githooks/pre-push`) checks conventional commits and runs
   the last tag, cuts the next tag, and publishes a GitHub Release with generated
   notes. There is no npm publish (private monorepo, protected `main`). To cut a
   release, push conventional commits to `main`; do not tag by hand.
+- **Weekly release PRs:** work lands through a rolling weekly release PR into
+  `main`, named `{date-week}` using ISO year-week — e.g. `2026-W28`. There is
+  always exactly one open release PR at a time. The moment a release PR merges,
+  open the next week's PR (branch `release/<year>-W<week>`, title `<year>-W<week>`)
+  so the next batch of commits has a home. Feature/fix branches merge into the
+  current week's release PR; the release PR merges into `main`, which triggers
+  the automated semantic-release above.
 
 ## Sensitive configuration
 
