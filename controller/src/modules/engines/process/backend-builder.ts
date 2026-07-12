@@ -3,14 +3,9 @@ import { join } from "node:path";
 import type { Recipe } from "../../models/types";
 import type { Config } from "../../../config/env";
 import {
-  getUnknownVllmExtraArgKeys as getUnknownVllmExtraArgumentKeys,
   isInternalRecipeKey,
   isJsonStringArgumentKey,
-  looksLikeNotesKey,
 } from "@local-studio/contracts/engine-args";
-import type { Logger } from "../../../core/logger";
-import { resolveBinary } from "../../../core/command";
-import { managedLlamaServerPath } from "../runtimes/managed-llamacpp";
 import { getEngineSpec } from "../engine-spec";
 import { resolveRecipeGpuUuids } from "../../system/gpu-leases";
 import { getExtraArgument } from "../argument-utilities";
@@ -33,9 +28,9 @@ export const normalizeJsonArgument = (value: unknown): unknown => {
   return value;
 };
 
-type ExtraArgumentSerializer = (flag: string, key: string, value: unknown) => string[];
+export type ExtraArgumentSerializer = (flag: string, key: string, value: unknown) => string[];
 
-const appendSerializedArguments = (
+export const appendSerializedArguments = (
   command: string[],
   extraArguments: Record<string, unknown>,
   serialize: ExtraArgumentSerializer,
@@ -88,71 +83,6 @@ export const appendExtraArguments = (
   command: string[],
   extraArguments: Record<string, unknown>,
 ): string[] => appendSerializedArguments(command, extraArguments, serializeExtraArgument);
-
-/**
- * Filter `extraArguments` against the vLLM `serve` flag allowlist and pass the
- * remainder to `appendExtraArguments`. Unknown keys would otherwise be
- * forwarded verbatim, which crashes vLLM with `unrecognized arguments`
- * (real-world example: `benchmark_notes_20260622` blocks the
- * `glm-5-2-504b-term` recipe from booting).
- *
- * Behaviour:
- *   - Unknown keys are dropped unless `LOCAL_STUDIO_ALLOW_UNKNOWN_VLLM_EXTRA_ARGS`
- *     is set to `true` (escape hatch for forked vLLM builds outside the
- *     allowlist).
- *   - Each drop is logged via `logger` (or `console.warn` as a fallback) so the
- *     upstream recipe can be cleaned up.
- *   - Keys that look like free-form notes/annotations are advised to live
- *     under `description` / `metadata` instead.
- */
-export const appendVllmExtraArguments = (
-  command: string[],
-  extraArguments: Record<string, unknown>,
-  logger?: Logger,
-): string[] => {
-  const allowUnknown = process.env["LOCAL_STUDIO_ALLOW_UNKNOWN_VLLM_EXTRA_ARGS"] === "true";
-  if (allowUnknown) {
-    return appendExtraArguments(command, extraArguments);
-  }
-  const unknown = getUnknownVllmExtraArgumentKeys(extraArguments);
-  if (unknown.length === 0) {
-    return appendExtraArguments(command, extraArguments);
-  }
-  const filtered: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(extraArguments)) {
-    if (!unknown.includes(key)) {
-      filtered[key] = value;
-    }
-  }
-  const strict = process.env["LOCAL_STUDIO_STRICT_VLLM_EXTRA_ARGS"] === "true";
-  for (const key of unknown) {
-    const noteLike = looksLikeNotesKey(key);
-    const detail: Record<string, unknown> = {
-      key,
-      hint: noteLike
-        ? "vLLM has no such flag; store notes under recipe.description or recipe.metadata"
-        : "Add the flag to KNOWN_VLLM_EXTRA_ARG_KEYS in shared/contracts/engine-args.ts, or set LOCAL_STUDIO_ALLOW_UNKNOWN_VLLM_EXTRA_ARGS=true as a temporary escape hatch",
-    };
-    if (logger) {
-      if (strict) {
-        logger.error(
-          "[vllm-extra-args] dropping unknown vLLM extra_args key in strict mode",
-          detail,
-        );
-      } else {
-        logger.warn("[vllm-extra-args] dropping unknown vLLM extra_args key", detail);
-      }
-    } else if (strict) {
-      console.error(
-        "[vllm-extra-args] dropping unknown vLLM extra_args key in strict mode",
-        detail,
-      );
-    } else {
-      console.warn("[vllm-extra-args] dropping unknown vLLM extra_args key", detail);
-    }
-  }
-  return appendExtraArguments(command, filtered);
-};
 
 const normalizeLaunchCommand = (command: string): string => {
   return command
@@ -222,9 +152,6 @@ const getLaunchCommandOverride = (recipe: Recipe): string[] | null => {
   return command.length > 0 ? command : null;
 };
 
-/** In-container path to the vLLM CLI for forked Docker images. */
-export const CONTAINER_VLLM_BIN = "/opt/venv/bin/vllm";
-const DOCKER_JIT_MOUNT = "/cache/jit";
 
 /**
  * Env keys that must NOT be forwarded into the container; the image's own baked
@@ -336,34 +263,6 @@ export const buildDockerRunArguments = ({
   return flags;
 };
 
-export const wrapVllmInDocker = (recipe: Recipe, image: string, inner: string[]): string[] => {
-  const jitVolume = `local-studio-jit-${sanitizeDockerName(recipe.id)}`;
-  return buildDockerRunArguments({
-    recipe,
-    image,
-    inner,
-    extraEnv: {
-      XDG_CACHE_HOME: DOCKER_JIT_MOUNT,
-      CUDA_CACHE_PATH: DOCKER_JIT_MOUNT,
-      VLLM_CACHE_DIR: `${DOCKER_JIT_MOUNT}/vllm`,
-      TRITON_CACHE_DIR: `${DOCKER_JIT_MOUNT}/triton`,
-    },
-    extraVolumes: [`${jitVolume}:${DOCKER_JIT_MOUNT}`],
-  });
-};
-
-const executableBaseName = (value: string): string => {
-  return value.split(/[\\/]/).filter(Boolean).at(-1)?.toLowerCase() ?? value.toLowerCase();
-};
-const isAllowedLlamaServerBinary = (value: string): boolean => {
-  const name = executableBaseName(value);
-  return name === "llama-server" || name === "llama-server.exe";
-};
-const rejectPathTraversal = (value: string, label: string): void => {
-  if (value.split(/[\\/]+/).includes("..")) {
-    throw new Error(`Invalid ${label}: path traversal is not allowed`);
-  }
-};
 export const buildBackendCommand = (
   recipe: Recipe,
   config: Config,
@@ -378,36 +277,3 @@ export const buildBackendCommand = (
   }
   return getEngineSpec(recipe.backend).buildCommand(recipe, config);
 };
-export const resolveLlamaBinary = (recipe: Recipe, config: Config): string => {
-  const override = getExtraArgument(recipe.extra_args, "llama_bin") ?? config.llama_bin;
-  if (typeof override === "string" && override.trim()) {
-    rejectPathTraversal(override, "llama_bin");
-    if (!isAllowedLlamaServerBinary(override)) {
-      throw new Error("Invalid llama_bin: only llama-server executables are allowed");
-    }
-    const resolved = resolveBinary(override);
-    if (resolved) {
-      return resolved;
-    }
-    throw new Error(`Invalid llama_bin: executable "${override}" was not found`);
-  }
-  const managed = managedLlamaServerPath(config);
-  return resolveBinary("llama-server") ?? (existsSync(managed) ? managed : "llama-server");
-};
-
-const serializeLlamacppArgument: ExtraArgumentSerializer = (flag, _key, value) => {
-  if (value === true) return [flag];
-  if (value === false || value === undefined || value === null || value === "") return [];
-  if (Array.isArray(value)) {
-    return value.flatMap((entry) =>
-      entry === undefined || entry === null || entry === "" ? [] : [flag, String(entry)],
-    );
-  }
-  if (typeof value === "object") return [flag, JSON.stringify(value)];
-  return [flag, String(value)];
-};
-
-export const appendLlamacppArguments = (
-  command: string[],
-  extraArguments: Record<string, unknown>,
-): string[] => appendSerializedArguments(command, extraArguments, serializeLlamacppArgument);

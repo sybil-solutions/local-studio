@@ -1,10 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 
-import {
-  appendExtraArguments,
-  appendLlamacppArguments,
-  appendVllmExtraArguments,
-} from "../../../controller/src/modules/engines/process/backend-builder";
+import { appendExtraArguments } from "../../../controller/src/modules/engines/process/backend-builder";
+import { appendLlamacppArguments } from "../../../controller/src/modules/engines/specs/llamacpp-spec";
+import { appendVllmExtraArguments } from "../../../controller/src/modules/engines/specs/vllm-spec";
 
 describe("CLI extra_args serialization", () => {
   const extraArguments = {

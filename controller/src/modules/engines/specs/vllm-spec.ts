@@ -11,10 +11,15 @@ import {
 import { normalizePackageSpec, probeVllmBinaryRuntime } from "../runtimes/runtime-target-probes";
 import { resolveVllmPythonPath } from "../runtimes/vllm-python-path";
 import {
-  CONTAINER_VLLM_BIN,
-  appendVllmExtraArguments,
+  getUnknownVllmExtraArgKeys as getUnknownVllmExtraArgumentKeys,
+  looksLikeNotesKey,
+} from "@local-studio/contracts/engine-args";
+import type { Logger } from "../../../core/logger";
+import {
+  appendExtraArguments,
+  buildDockerRunArguments,
   getExtraArgument,
-  wrapVllmInDocker,
+  sanitizeDockerName,
 } from "../process/backend-builder";
 import { managedVenvPython } from "../runtimes/managed-venv";
 import {
@@ -29,6 +34,92 @@ import {
   positionalAfterServe,
 } from "../argument-utilities";
 import type { BinaryProbeResult, ConfigHelpResult, EngineSpec } from "../engine-spec";
+
+/** In-container path to the vLLM CLI for forked Docker images. */
+export const CONTAINER_VLLM_BIN = "/opt/venv/bin/vllm";
+const DOCKER_JIT_MOUNT = "/cache/jit";
+
+/**
+ * Filter `extraArguments` against the vLLM `serve` flag allowlist and pass the
+ * remainder to `appendExtraArguments`. Unknown keys would otherwise be
+ * forwarded verbatim, which crashes vLLM with `unrecognized arguments`
+ * (real-world example: `benchmark_notes_20260622` blocks the
+ * `glm-5-2-504b-term` recipe from booting).
+ *
+ * Behaviour:
+ *   - Unknown keys are dropped unless `LOCAL_STUDIO_ALLOW_UNKNOWN_VLLM_EXTRA_ARGS`
+ *     is set to `true` (escape hatch for forked vLLM builds outside the
+ *     allowlist).
+ *   - Each drop is logged via `logger` (or `console.warn` as a fallback) so the
+ *     upstream recipe can be cleaned up.
+ *   - Keys that look like free-form notes/annotations are advised to live
+ *     under `description` / `metadata` instead.
+ */
+export const appendVllmExtraArguments = (
+  command: string[],
+  extraArguments: Record<string, unknown>,
+  logger?: Logger,
+): string[] => {
+  const allowUnknown = process.env["LOCAL_STUDIO_ALLOW_UNKNOWN_VLLM_EXTRA_ARGS"] === "true";
+  if (allowUnknown) {
+    return appendExtraArguments(command, extraArguments);
+  }
+  const unknown = getUnknownVllmExtraArgumentKeys(extraArguments);
+  if (unknown.length === 0) {
+    return appendExtraArguments(command, extraArguments);
+  }
+  const filtered: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(extraArguments)) {
+    if (!unknown.includes(key)) {
+      filtered[key] = value;
+    }
+  }
+  const strict = process.env["LOCAL_STUDIO_STRICT_VLLM_EXTRA_ARGS"] === "true";
+  for (const key of unknown) {
+    const noteLike = looksLikeNotesKey(key);
+    const detail: Record<string, unknown> = {
+      key,
+      hint: noteLike
+        ? "vLLM has no such flag; store notes under recipe.description or recipe.metadata"
+        : "Add the flag to KNOWN_VLLM_EXTRA_ARG_KEYS in shared/contracts/engine-args.ts, or set LOCAL_STUDIO_ALLOW_UNKNOWN_VLLM_EXTRA_ARGS=true as a temporary escape hatch",
+    };
+    if (logger) {
+      if (strict) {
+        logger.error(
+          "[vllm-extra-args] dropping unknown vLLM extra_args key in strict mode",
+          detail,
+        );
+      } else {
+        logger.warn("[vllm-extra-args] dropping unknown vLLM extra_args key", detail);
+      }
+    } else if (strict) {
+      console.error(
+        "[vllm-extra-args] dropping unknown vLLM extra_args key in strict mode",
+        detail,
+      );
+    } else {
+      console.warn("[vllm-extra-args] dropping unknown vLLM extra_args key", detail);
+    }
+  }
+  return appendExtraArguments(command, filtered);
+};
+
+export const wrapVllmInDocker = (recipe: Recipe, image: string, inner: string[]): string[] => {
+  const jitVolume = `local-studio-jit-${sanitizeDockerName(recipe.id)}`;
+  return buildDockerRunArguments({
+    recipe,
+    image,
+    inner,
+    extraEnv: {
+      XDG_CACHE_HOME: DOCKER_JIT_MOUNT,
+      CUDA_CACHE_PATH: DOCKER_JIT_MOUNT,
+      VLLM_CACHE_DIR: `${DOCKER_JIT_MOUNT}/vllm`,
+      TRITON_CACHE_DIR: `${DOCKER_JIT_MOUNT}/triton`,
+    },
+    extraVolumes: [`${jitVolume}:${DOCKER_JIT_MOUNT}`],
+  });
+};
+
 
 export const buildVllmRecipeArguments = (recipe: Recipe): string[] => {
   const command: string[] = ["--host", recipe.host, "--port", String(recipe.port)];
