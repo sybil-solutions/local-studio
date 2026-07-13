@@ -20,6 +20,7 @@ import {
   fetchHuggingFaceModelInfo,
   type FetchLike,
 } from "./huggingface-api";
+import { trackWriterFailure, waitForWriterDrain } from "./stream-backpressure";
 import { DOWNLOAD_DEFAULT_IGNORE_FILENAMES, DOWNLOAD_PROGRESS_THROTTLE_MS } from "../configs";
 
 const sumDownloadedBytes = (files: DownloadFileInfo[]): number => {
@@ -372,9 +373,14 @@ export class DownloadManager {
       currentDownload = this.persistFileUpdate(currentDownload, file);
     }
     const writer = createWriteStream(temporaryPath, { flags: shouldAppend ? "a" : "w" });
+    const writerFailure = trackWriterFailure(writer);
     const reader = response.body?.getReader();
     if (!reader) {
-      await closeWriter(writer);
+      try {
+        await closeWriter(writer);
+      } finally {
+        writerFailure.dispose();
+      }
       throw new Error("Download response has no body");
     }
 
@@ -382,17 +388,18 @@ export class DownloadManager {
     let downloaded = baseExisting;
     try {
       while (true) {
+        writerFailure.throwIfFailed();
         const { done, value } = await reader.read();
+        writerFailure.throwIfFailed();
         if (done) {
           break;
         }
         if (value) {
           const ok = writer.write(Buffer.from(value));
+          writerFailure.throwIfFailed();
           if (!ok) {
-            await new Promise<void>((resolveDrain, rejectDrain) => {
-              writer.once("drain", resolveDrain);
-              writer.once("error", rejectDrain);
-            });
+            await waitForWriterDrain(writer);
+            writerFailure.throwIfFailed();
           }
           downloaded += value.length;
           file.downloaded_bytes = downloaded;
@@ -404,7 +411,11 @@ export class DownloadManager {
         }
       }
     } finally {
-      await closeWriter(writer);
+      try {
+        await closeWriter(writer);
+      } finally {
+        writerFailure.dispose();
+      }
     }
 
     file.downloaded_bytes = downloaded;
