@@ -102,6 +102,24 @@ describe("agent filesystem root boundary", () => {
     );
   });
 
+  it("rejects windows system directories as cwd", async () => {
+    if (process.platform !== "win32") return;
+    const systemDirs = [
+      "C:\\Windows",
+      "C:\\Program Files",
+      "C:\\Users",
+      "\\\\?\\C:\\Windows",
+      "\\\\localhost\\C$\\Windows",
+    ];
+    if (existsSync("C:\\PROGRA~1")) systemDirs.push("C:\\PROGRA~1");
+    for (const systemDir of systemDirs) {
+      await rejectsWith(
+        () => listDirectory(systemDir, ""),
+        "Path is not an allowed workspace root",
+      );
+    }
+  });
+
   it("rejects traversal outside the project root", async () => {
     await rejectsWith(
       () => listDirectory(projectDir, ".."),
