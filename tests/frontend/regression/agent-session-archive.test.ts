@@ -4,11 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-function encodeCwdForPi(cwd: string): string {
-  const normalized = path.resolve(cwd).replace(/\\+/g, "/");
-  const collapsed = normalized.replace(/^\//, "").replace(/\/+/g, "-");
-  return `--${collapsed}--`;
-}
+import { encodeCwdForPi } from "@local-studio/agent-runtime/sessions-store";
 
 async function loadSessionModules() {
   const [

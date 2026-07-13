@@ -9,11 +9,15 @@ import { DEFAULT_BROWSER_URL } from "@/features/agent/tools/persistence";
 function encodeFilePath(pathValue: string): string {
   const normalized = pathValue.replace(/\\/g, "/");
   const withLeadingSlash = normalized.startsWith("/") ? normalized : `/${normalized}`;
-  return `file://${withLeadingSlash.split("/").map(encodeURIComponent).join("/")}`;
+  const encodeSegment = (segment: string): string =>
+    /^[A-Za-z]:$/.test(segment) ? segment : encodeURIComponent(segment);
+  return `file://${withLeadingSlash.split("/").map(encodeSegment).join("/")}`;
 }
 
+const WINDOWS_ABSOLUTE_PATH = /^[A-Za-z]:[\\/]/;
+
 function resolveRelativeFilePath(cwd: string, value: string): string {
-  const segments = `${cwd.replace(/\/+$/, "")}/${value}`.split("/");
+  const segments = `${cwd.replace(/[\\/]+$/, "")}/${value}`.split(/[\\/]/);
   const resolved: string[] = [];
   for (const segment of segments) {
     if (!segment || segment === ".") continue;
@@ -23,11 +27,14 @@ function resolveRelativeFilePath(cwd: string, value: string): string {
     }
     resolved.push(segment);
   }
-  return `/${resolved.join("/")}`;
+  const joined = resolved.join("/");
+  return WINDOWS_ABSOLUTE_PATH.test(cwd) ? joined : `/${joined}`;
 }
 
 function expandHomeFilePath(cwd: string, value: string): string | null {
-  const homeMatch = cwd.match(/^(\/Users\/[^/]+|\/home\/[^/]+)(?:\/|$)/);
+  const homeMatch = cwd.match(
+    /^(\/Users\/[^/]+|\/home\/[^/]+|[A-Za-z]:[\\/]Users[\\/][^\\/]+)(?:[\\/]|$)/,
+  );
   if (!homeMatch) return null;
   return `${homeMatch[1]}${value.slice(1)}`;
 }
@@ -42,7 +49,7 @@ export function normalizeBrowserInput(raw: string, cwd: string): string {
     const expanded = expandHomeFilePath(cwd, value);
     if (expanded) return encodeFilePath(expanded);
   }
-  if (value.startsWith("/")) return encodeFilePath(value);
+  if (value.startsWith("/") || WINDOWS_ABSOLUTE_PATH.test(value)) return encodeFilePath(value);
   if ((value.startsWith("./") || value.startsWith("../")) && cwd) {
     return encodeFilePath(resolveRelativeFilePath(cwd, value));
   }
@@ -56,7 +63,7 @@ export function normalizeBrowserInput(raw: string, cwd: string): string {
   if (/^[\w-]+(\.[\w-]+)+([/:?#].*)?$/.test(value)) {
     return `https://${value}`;
   }
-  if (value.includes("/") && cwd) {
+  if ((value.includes("/") || value.includes("\\")) && cwd) {
     return encodeFilePath(resolveRelativeFilePath(cwd, value));
   }
   return `https://duckduckgo.com/?q=${encodeURIComponent(value)}`;
