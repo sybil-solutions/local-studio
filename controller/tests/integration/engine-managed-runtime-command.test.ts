@@ -3,7 +3,10 @@ import { chmodSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { createConfig } from "../../src/config/env";
 import { getEngineSpec } from "../../src/modules/engines/engine-spec";
-import { managedVenvPython } from "../../src/modules/engines/runtimes/managed-venv";
+import {
+  managedVenvPython,
+  venvConsoleScriptPath,
+} from "../../src/modules/engines/runtimes/managed-venv";
 import type { Recipe } from "../../src/modules/models/types";
 import { registerControllerTestLifecycle, tempDir } from "./fixtures";
 
@@ -46,7 +49,7 @@ describe("managed runtime launch commands", () => {
   test("sglang launch prefers the controller-managed CLI", () => {
     const config = createConfig();
     const python = managedVenvPython(config, "sglang");
-    const sglang = join(dirname(python), "sglang");
+    const sglang = venvConsoleScriptPath(python, "sglang");
     writeExecutable(python);
     writeExecutable(sglang);
 

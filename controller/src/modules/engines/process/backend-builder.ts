@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { join } from "node:path";
+import { venvPythonPath } from "../runtimes/managed-venv";
 import type { Recipe } from "../../models/types";
 import type { Config } from "../../../config/env";
 import {
@@ -72,7 +72,7 @@ export const getPythonPath = (recipe: Recipe): string | undefined => {
   }
   const venvPath = getExtraArgument(recipe.extra_args, "venv_path");
   if (typeof venvPath === "string") {
-    const pythonBin = join(venvPath, "bin", "python");
+    const pythonBin = venvPythonPath(venvPath);
     if (existsSync(pythonBin)) {
       return pythonBin;
     }

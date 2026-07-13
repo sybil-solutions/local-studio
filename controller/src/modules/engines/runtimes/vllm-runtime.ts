@@ -1,5 +1,5 @@
 import { existsSync, readdirSync, statSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { join, resolve } from "node:path";
 import { resolveBinary, runCommandAsync } from "../../../core/command";
 import { resolveVllmPythonPath } from "./vllm-python-path";
 import {
@@ -9,7 +9,7 @@ import {
   VLLM_UPGRADE_ENV,
 } from "./upgrade-config";
 import { VLLM_UPGRADE_TIMEOUT_MS, ENGINE_INSTALL_TIMEOUT_MS } from "../configs";
-import { installIntoManagedVenv } from "./managed-venv";
+import { installIntoManagedVenv, venvConsoleScriptPath } from "./managed-venv";
 import {
   normalizePackageSpec,
   probeBackendRuntime,
@@ -61,7 +61,7 @@ const resolveBundledWheel = (): { path: string; version: string | null } | null 
 
 const resolveVllmBinary = (pythonPath: string | null): string | null => {
   if (pythonPath) {
-    const vllmBin = join(dirname(pythonPath), "vllm");
+    const vllmBin = venvConsoleScriptPath(pythonPath, "vllm");
     if (existsSync(vllmBin)) return vllmBin;
   }
   return resolveBinary("vllm");

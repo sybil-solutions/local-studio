@@ -1,4 +1,5 @@
 import { existsSync, readdirSync, statSync } from "node:fs";
+import { venvPythonPath } from "./managed-venv";
 import { basename, dirname, join, resolve } from "node:path";
 import type { Config } from "../../../config/env";
 import { loadPersistedConfig, savePersistedConfig } from "../../../config/persisted-config";
@@ -128,13 +129,13 @@ const collectVenvPythonFiles = (config: Config): string[] => {
     if (!existsSync(root)) continue;
     try {
       const stats = statSync(root);
-      if (stats.isDirectory() && existsSync(join(root, "bin", "python"))) {
-        candidates.push(join(root, "bin", "python"));
+      if (stats.isDirectory() && existsSync(venvPythonPath(root))) {
+        candidates.push(venvPythonPath(root));
       }
       if (!stats.isDirectory()) continue;
       for (const entry of readdirSync(root, { withFileTypes: true })) {
         if (!entry.isDirectory()) continue;
-        const python = join(root, entry.name, "bin", "python");
+        const python = venvPythonPath(join(root, entry.name));
         if (existsSync(python)) candidates.push(python);
       }
     } catch {

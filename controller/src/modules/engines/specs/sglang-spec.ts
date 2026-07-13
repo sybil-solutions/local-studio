@@ -1,5 +1,4 @@
 import { existsSync } from "node:fs";
-import { dirname, join } from "node:path";
 import type { Config } from "../../../config/env";
 import { resolveBinary, runCommandAsync } from "../../../core/command";
 import type { ProcessInfo, Recipe } from "../../models/types";
@@ -25,7 +24,7 @@ import type {
   EngineSpec,
   InstallOptions,
 } from "../engine-spec";
-import { installIntoManagedVenv, managedVenvPython } from "../runtimes/managed-venv";
+import { installIntoManagedVenv, managedVenvPython, venvConsoleScriptPath } from "../runtimes/managed-venv";
 import {
   getUpgradeCommandFromEnvironment,
   runEnvironmentUpgradeCommand,
@@ -45,7 +44,7 @@ import {
  */
 const resolveSglangCliBinary = (pythonPath: string | null): string | null => {
   if (!pythonPath) return null;
-  const sglangBin = join(dirname(pythonPath), "sglang");
+  const sglangBin = venvConsoleScriptPath(pythonPath, "sglang");
   return existsSync(sglangBin) ? sglangBin : null;
 };
 

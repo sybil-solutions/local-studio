@@ -1,4 +1,3 @@
-import { dirname, join } from "node:path";
 import type { Config } from "../../../config/env";
 import { resolveBinary } from "../../../core/command";
 import type { ProcessInfo, Recipe } from "../../models/types";
@@ -21,7 +20,7 @@ import {
   getExtraArgument,
   sanitizeDockerName,
 } from "../process/backend-builder";
-import { managedVenvPython } from "../runtimes/managed-venv";
+import { managedVenvPython, venvConsoleScriptPath } from "../runtimes/managed-venv";
 import {
   getDefaultReasoningParser,
   getDefaultToolCallParser,
@@ -167,7 +166,7 @@ export const buildVllmRecipeArguments = (recipe: Recipe): string[] => {
 const pythonCommand = (pythonPath: string): { command: string[]; usesServe: boolean } => {
   const python = resolveBinary(pythonPath);
   if (!python) throw new Error(`vLLM Python runtime was not found at ${pythonPath}`);
-  const vllmBinary = resolveBinary(join(dirname(python), "vllm"));
+  const vllmBinary = resolveBinary(venvConsoleScriptPath(python, "vllm"));
   return vllmBinary
     ? { command: [vllmBinary, "serve"], usesServe: true }
     : {

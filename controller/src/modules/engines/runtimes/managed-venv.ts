@@ -22,10 +22,20 @@ export const managedVenvPath = (
   backend: ManagedPythonBackend,
 ): string => join(config.data_dir, "runtime", "venvs", managedVenvName(backend));
 
+export const venvPythonPath = (venvDirectory: string): string =>
+  process.platform === "win32"
+    ? join(venvDirectory, "Scripts", "python.exe")
+    : join(venvDirectory, "bin", "python");
+
+export const venvConsoleScriptPath = (pythonPath: string, scriptName: string): string =>
+  process.platform === "win32"
+    ? join(dirname(pythonPath), `${scriptName}.exe`)
+    : join(dirname(pythonPath), scriptName);
+
 export const managedVenvPython = (
   config: Pick<Config, "data_dir">,
   backend: ManagedPythonBackend,
-): string => join(managedVenvPath(config, backend), "bin", "python");
+): string => venvPythonPath(managedVenvPath(config, backend));
 
 export interface InstallProgressUpdate {
   progress?: number;
@@ -60,7 +70,7 @@ const createVenvEffect = (
   options: ManagedInstallOptions,
 ): Effect.Effect<RuntimeUpgradeResult | null> =>
   Effect.gen(function* () {
-    const venvPython = join(venvDirectory, "bin", "python");
+    const venvPython = venvPythonPath(venvDirectory);
     if (existsSync(venvPython)) return null;
     mkdirSync(dirname(venvDirectory), { recursive: true });
     options.onProgress?.({ message: `Creating ${options.backend} virtual environment...` });
@@ -128,7 +138,7 @@ const installIntoManagedVenvEffect = (
     }
 
     const venvDirectory = managedVenvPath(options.config, options.backend);
-    const venvPython = join(venvDirectory, "bin", "python");
+    const venvPython = venvPythonPath(venvDirectory);
     const targetPython = options.pythonPath ?? venvPython;
 
     if (options.createManagedVenv !== false && !options.pythonPath) {
