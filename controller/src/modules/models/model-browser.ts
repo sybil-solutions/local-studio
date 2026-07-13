@@ -1,5 +1,5 @@
 import { statSync, existsSync, readdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import type { ModelInfo } from "./types";
 const MODEL_BROWSER_WEIGHT_EXTENSIONS = [".safetensors", ".bin", ".gguf"] as const;
 const MODEL_BROWSER_CONFIG_FILENAMES = ["config.json"] as const;
@@ -168,7 +168,7 @@ export const buildModelInfo = async (
   } catch {
     modifiedAt = undefined;
   }
-  const name = modelDirectory.split("/").pop() ?? modelDirectory;
+  const name = basename(modelDirectory);
   return {
     name,
     path: modelDirectory,

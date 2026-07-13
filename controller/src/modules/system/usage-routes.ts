@@ -1,4 +1,5 @@
 import type { UsageStats } from "@local-studio/contracts/usage";
+import { modelBasename } from "../../core/paths";
 import { observeControllerFunction } from "../../core/function-observability";
 import type { RouteRegistrar } from "../../http/route-registrar";
 import type { AppContext } from "../../app-context";
@@ -26,7 +27,7 @@ const collectKnownModels = (context: AppContext): Set<string> => {
   const modelPath = latest["model_path"];
   if (typeof modelPath === "string" && modelPath) {
     knownModels.add(modelPath);
-    knownModels.add(modelPath.split("/").pop() ?? modelPath);
+    knownModels.add(modelBasename(modelPath) ?? modelPath);
   }
   return knownModels;
 };

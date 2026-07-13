@@ -1,4 +1,5 @@
 import type { AppContext } from "../../app-context";
+import { modelBasename } from "../../core/paths";
 import { getGpuInfo } from "./platform/gpu";
 import { getSystemRuntimeInfo } from "../engines/runtimes/runtime-info";
 import { delay } from "../../core/async";
@@ -73,7 +74,7 @@ export const startMetricsCollector = (context: AppContext): (() => void) => {
         try {
           const runtime = await getSystemRuntimeInfo(context.config);
           const leaseHolder = current
-            ? (current.served_model_name ?? current.model_path?.split("/").pop() ?? "inference")
+            ? (current.served_model_name ?? modelBasename(current.model_path) ?? "inference")
             : null;
           await context.eventManager.publishRuntimeSummary({
             platform: runtime.platform,
@@ -114,7 +115,7 @@ export const startMetricsCollector = (context: AppContext): (() => void) => {
 
       if (current) {
         const modelId =
-          current.served_model_name ?? current.model_path?.split("/").pop() ?? "unknown";
+          current.served_model_name ?? modelBasename(current.model_path) ?? "unknown";
 
         if (sessionModelId !== modelId) {
           sessionModelId = modelId;

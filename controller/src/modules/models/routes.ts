@@ -1,4 +1,4 @@
-import { basename, dirname, resolve } from "node:path";
+import { basename, dirname, isAbsolute, resolve } from "node:path";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import type { RouteRegistrar } from "../../http/route-registrar";
@@ -205,7 +205,7 @@ export const registerModelsRoutes: RouteRegistrar = (app, context) => {
       const existingNames = recipesByBasename.get(name) ?? [];
       existingNames.push(recipe.id);
       recipesByBasename.set(name, existingNames);
-      if (modelPath.startsWith("/")) {
+      if (isAbsolute(modelPath)) {
         const canonical = expandUserPath(modelPath);
         const existingPaths = recipesByPath.get(canonical) ?? [];
         existingPaths.push(recipe.id);
@@ -237,11 +237,11 @@ export const registerModelsRoutes: RouteRegistrar = (app, context) => {
 
     for (const recipe of recipes) {
       const modelPath = recipe.model_path?.trim();
-      if (!modelPath || !modelPath.startsWith("/")) {
+      if (!modelPath || !isAbsolute(modelPath)) {
         continue;
       }
       const parent = dirname(expandUserPath(modelPath));
-      if (parent === "/") {
+      if (parent === dirname(parent)) {
         continue;
       }
       addRoot(parent, "recipe_parent", recipe.id);
