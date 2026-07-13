@@ -419,6 +419,18 @@ describe("controller route contracts", () => {
   test("audio routes reject invalid requests with structured observable errors", async () => {
     const app = await createTestApp();
 
+    const invalidMultipartResponse = await app.request("/v1/audio/transcriptions", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ model: "x" }),
+    });
+    const invalidMultipartBody = await invalidMultipartResponse.json();
+    expect(invalidMultipartResponse.status).toBe(400);
+    expect(invalidMultipartBody).toEqual({
+      code: "invalid_multipart",
+      error: "Request body must be multipart/form-data",
+    });
+
     const missingFileForm = new FormData();
     missingFileForm.set("model", "missing-stt-model");
     const missingFileResponse = await app.request("/v1/audio/transcriptions", {
