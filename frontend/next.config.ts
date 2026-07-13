@@ -2,6 +2,9 @@ import type { NextConfig } from "next";
 import path from "path";
 
 const nextConfig: NextConfig = {
+  // Workaround for Next.js 16 bug: when unset, config.generateBuildId becomes
+  // undefined, but generateBuildId() calls it as a function without a guard.
+  generateBuildId: () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8),
   output: "standalone",
   images: { unoptimized: true },
   allowedDevOrigins: ["127.0.0.1", "localhost"],

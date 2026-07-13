@@ -1,11 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import { chmodSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { createConfig } from "../../../controller/src/config/env";
-import { createLogger } from "../../../controller/src/core/logger";
-import { createProcessManager } from "../../../controller/src/modules/engines/process/process-manager";
-import type { Recipe } from "../../../controller/src/modules/models/types";
-import { FakeProcessRunner } from "../../support/controller/fake-process-runner";
+import { createConfig } from "../../src/config/env";
+import { createLogger } from "../../src/core/logger";
+import { createProcessManager } from "../../src/modules/engines/process/process-manager";
+import type { Recipe } from "../../src/modules/models/types";
+import { FakeProcessRunner } from "../support/fake-process-runner";
 import { registerControllerTestLifecycle, tempDir } from "./fixtures";
 
 registerControllerTestLifecycle();

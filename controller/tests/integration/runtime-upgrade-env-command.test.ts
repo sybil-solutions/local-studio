@@ -1,8 +1,8 @@
 import { describe, expect, test, beforeEach, afterEach } from "bun:test";
-import { createConfig } from "../../../controller/src/config/env";
-import { getEngineSpec } from "../../../controller/src/modules/engines/engine-spec";
-import { runPlatformUpgrade } from "../../../controller/src/modules/engines/runtimes/runtime-upgrade";
-import { registerControllerTestLifecycle, tempDir } from "./fixtures";
+import { createConfig } from "../../src/config/env";
+import { getEngineSpec } from "../../src/modules/engines/engine-spec";
+import { runPlatformUpgrade } from "../../src/modules/engines/runtimes/runtime-upgrade";
+import { registerControllerTestLifecycle } from "./fixtures";
 
 registerControllerTestLifecycle();
 

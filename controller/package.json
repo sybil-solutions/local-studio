@@ -10,7 +10,7 @@
     "lint:fix": "eslint . --fix",
     "format": "prettier --write \"src/**/*.ts\"",
     "test:unit": "bun test src",
-    "test:integration": "bun test ../tests/controller/integration",
+    "test:integration": "bun test tests/integration",
     "typecheck": "tsc --noEmit",
     "standards": "bun scripts/controller-standards-audit.ts",
     "check": "knip && jscpd src && depcheck --skip-missing && bun run standards",
@@ -35,5 +35,8 @@
     "knip": "5.44.2",
     "prettier": "3.4.2",
     "typescript": "5.9.2"
+  },
+  "engines": {
+    "bun": ">=1.1"
   }
 }

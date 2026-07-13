@@ -18,8 +18,8 @@
     "skipLibCheck": true,
     "resolveJsonModule": true,
     "paths": {
-      "@local-studio/contracts/*": ["../shared/contracts/*.ts"]
+      "@local-studio/contracts/*": ["./contracts/*.ts"]
     }
   },
-  "include": ["src/**/*.ts", "scripts/**/*.ts", "../shared/contracts/**/*.ts"]
+  "include": ["src/**/*.ts", "scripts/**/*.ts", "contracts/**/*.ts"]
 }

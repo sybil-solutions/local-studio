@@ -1,10 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import { chmodSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { createConfig } from "../../../controller/src/config/env";
-import { getEngineSpec } from "../../../controller/src/modules/engines/engine-spec";
-import { managedVenvPython } from "../../../controller/src/modules/engines/runtimes/managed-venv";
-import type { Recipe } from "../../../controller/src/modules/models/types";
+import { createConfig } from "../../src/config/env";
+import { getEngineSpec } from "../../src/modules/engines/engine-spec";
+import { managedVenvPython } from "../../src/modules/engines/runtimes/managed-venv";
+import type { Recipe } from "../../src/modules/models/types";
 import { registerControllerTestLifecycle, tempDir } from "./fixtures";
 
 registerControllerTestLifecycle();

@@ -1,4 +1,4 @@
-import { inferModelVision, resolveModelVision } from "../contracts/model-capabilities";
+import { inferModelVision, resolveModelVision } from "../../controller/contracts/model-capabilities";
 
 export interface OpenAIModelListItem {
   id: string;

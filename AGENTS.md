@@ -60,7 +60,7 @@ These apply to all new and edited code. Existing code is legacy; do not
 ### DRY
 
 - Do not duplicate logic. If two call sites share logic, extract it once.
-- Do not reinvent types; reuse `shared/contracts` and existing `@/lib` types.
+- Do not reinvent types; reuse `controller/contracts` (the `@local-studio/contracts` package) and existing `@/lib` types.
 - The `check:dupes` (jscpd) and `check:deadcode` (knip) gates enforce this.
 
 ### Fewest lines that say it

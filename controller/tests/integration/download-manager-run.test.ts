@@ -1,13 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { createConfig } from "../../../controller/src/config/env";
-import { delay } from "../../../controller/src/core/async";
-import { createLogger } from "../../../controller/src/core/logger";
-import { DownloadManager } from "../../../controller/src/modules/engines/downloads/download-manager";
-import { DownloadStore } from "../../../controller/src/modules/engines/downloads/download-store";
-import type { FetchLike } from "../../../controller/src/modules/engines/downloads/huggingface-api";
-import { EventManager } from "../../../controller/src/modules/system/event-manager";
+import { createConfig } from "../../src/config/env";
+import { delay } from "../../src/core/async";
+import { createLogger } from "../../src/core/logger";
+import { DownloadManager } from "../../src/modules/engines/downloads/download-manager";
+import { DownloadStore } from "../../src/modules/engines/downloads/download-store";
+import type { FetchLike } from "../../src/modules/engines/downloads/huggingface-api";
+import { EventManager } from "../../src/modules/system/event-manager";
 import { registerControllerTestLifecycle } from "./fixtures";
 
 registerControllerTestLifecycle();

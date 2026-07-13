@@ -17,5 +17,5 @@
     "skipLibCheck": true,
     "noEmit": true
   },
-  "include": ["contracts/**/*.ts"]
+  "include": ["agent/**/*.ts"]
 }

@@ -10,7 +10,7 @@ import {
   inferReasoningSupport,
   type AgentModel,
 } from "../../../shared/agent/models";
-import { resolveModelVision } from "../../../shared/contracts/model-capabilities";
+import { resolveModelVision } from "../../../controller/contracts/model-capabilities";
 
 const PROVIDER_ID = "local-studio";
 const USER_PI_PREFIX = "user-pi-";

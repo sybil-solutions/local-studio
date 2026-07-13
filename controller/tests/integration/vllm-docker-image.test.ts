@@ -1,9 +1,9 @@
 import { describe, expect, it } from "bun:test";
-import type { Config } from "../../../controller/src/config/env";
-import { getEngineSpec } from "../../../controller/src/modules/engines/engine-spec";
-import { parseRecipe } from "../../../controller/src/modules/models/recipes/recipe-serializer";
-import type { Recipe } from "../../../controller/src/modules/models/types";
-import { buildDockerGpuFlags } from "../../../controller/src/modules/engines/process/backend-builder";
+import type { Config } from "../../src/config/env";
+import { getEngineSpec } from "../../src/modules/engines/engine-spec";
+import { parseRecipe } from "../../src/modules/models/recipes/recipe-serializer";
+import type { Recipe } from "../../src/modules/models/types";
+import { buildDockerGpuFlags } from "../../src/modules/engines/process/backend-builder";
 
 const baseRecipe = (
   runtime: Recipe["runtime"],

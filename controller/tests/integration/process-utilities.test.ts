@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
 
-import type { Config } from "../../../controller/src/config/env";
-import { getEngineSpec } from "../../../controller/src/modules/engines/engine-spec";
-import { detectBackend } from "../../../controller/src/modules/engines/process/process-utilities";
+import type { Config } from "../../src/config/env";
+import { getEngineSpec } from "../../src/modules/engines/engine-spec";
+import { detectBackend } from "../../src/modules/engines/process/process-utilities";
 
 describe("process utilities", () => {
   test("does not classify frontend server paths as vLLM inference", () => {

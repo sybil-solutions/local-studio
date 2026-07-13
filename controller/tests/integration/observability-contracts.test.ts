@@ -339,8 +339,8 @@ describe("controller route contracts", () => {
 
   test("usage still returns requested controller observability when inference aggregation fails", async () => {
     const [{ createAppContext }, { createApp }] = await Promise.all([
-      import("../../../controller/src/app-context"),
-      import("../../../controller/src/http/app"),
+      import("../../src/app-context"),
+      import("../../src/http/app"),
     ]);
     const context = createAppContext();
     const aggregate = context.stores.inferenceRequestStore.aggregate.bind(

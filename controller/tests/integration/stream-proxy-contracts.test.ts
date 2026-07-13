@@ -7,7 +7,7 @@ registerControllerTestLifecycle();
 describe("controller route contracts", () => {
   test("stream proxy keeps heartbeats alive after the first upstream chunk", async () => {
     const { buildChatCompletionsStreamResponse } = await import(
-      "../../../controller/src/modules/proxy/chat-completions-stream"
+      "../../src/modules/proxy/chat-completions-stream"
     );
     const encoder = new TextEncoder();
     const upstream = new ReadableStream<Uint8Array>({
@@ -55,7 +55,7 @@ describe("controller route contracts", () => {
 
   test("stream proxy keeps content with null tool_calls as answer text", async () => {
     const { createToolCallStream } = await import(
-      "../../../controller/src/modules/proxy/tool-call-stream"
+      "../../src/modules/proxy/tool-call-stream"
     );
     const encoder = new TextEncoder();
     const upstream = new ReadableStream<Uint8Array>({
@@ -119,7 +119,7 @@ describe("controller route contracts", () => {
 
   test("stream proxy keeps same-delta content visible when tool_calls are present", async () => {
     const { createToolCallStream } = await import(
-      "../../../controller/src/modules/proxy/tool-call-stream"
+      "../../src/modules/proxy/tool-call-stream"
     );
     const encoder = new TextEncoder();
     const upstream = new ReadableStream<Uint8Array>({
@@ -164,7 +164,7 @@ describe("controller route contracts", () => {
 
   test("stream proxy splits implicit thinking close tags without duplicating answer text", async () => {
     const { createToolCallStream } = await import(
-      "../../../controller/src/modules/proxy/tool-call-stream"
+      "../../src/modules/proxy/tool-call-stream"
     );
     const encoder = new TextEncoder();
     const upstream = new ReadableStream<Uint8Array>({
@@ -202,7 +202,7 @@ describe("controller route contracts", () => {
 
   test("stream proxy buffers split implicit thinking until the close tag arrives", async () => {
     const { createToolCallStream } = await import(
-      "../../../controller/src/modules/proxy/tool-call-stream"
+      "../../src/modules/proxy/tool-call-stream"
     );
     const encoder = new TextEncoder();
     const upstream = new ReadableStream<Uint8Array>({
@@ -249,7 +249,7 @@ describe("controller route contracts", () => {
 
   test("stream proxy normalizes openai-compatible reasoning aliases", async () => {
     const { createToolCallStream } = await import(
-      "../../../controller/src/modules/proxy/tool-call-stream"
+      "../../src/modules/proxy/tool-call-stream"
     );
     const encoder = new TextEncoder();
     const upstream = new ReadableStream<Uint8Array>({
@@ -285,7 +285,7 @@ describe("controller route contracts", () => {
 
   test("message normalizer maps reasoning aliases to reasoning_content", async () => {
     const { normalizeReasoningAndContentInMessage } = await import(
-      "../../../controller/src/modules/proxy/reasoning"
+      "../../src/modules/proxy/reasoning"
     );
     const message: Record<string, unknown> = {
       role: "assistant",
@@ -302,7 +302,7 @@ describe("controller route contracts", () => {
 
   test("stream proxy still extracts XML tool calls after stripping visible content", async () => {
     const { createToolCallStream } = await import(
-      "../../../controller/src/modules/proxy/tool-call-stream"
+      "../../src/modules/proxy/tool-call-stream"
     );
     const encoder = new TextEncoder();
     const upstream = new ReadableStream<Uint8Array>({
@@ -348,7 +348,7 @@ describe("controller route contracts", () => {
 
   test("stream proxy extracts bare JSON tool lines without showing them as content", async () => {
     const { createToolCallStream } = await import(
-      "../../../controller/src/modules/proxy/tool-call-stream"
+      "../../src/modules/proxy/tool-call-stream"
     );
     const encoder = new TextEncoder();
     const upstream = new ReadableStream<Uint8Array>({
@@ -427,7 +427,7 @@ describe("controller route contracts", () => {
 
   test("tool XML parser repairs malformed JSON arguments through pi-ai", async () => {
     const { parseToolCallsFromContent } = await import(
-      "../../../controller/src/modules/proxy/tool-call-parser"
+      "../../src/modules/proxy/tool-call-parser"
     );
 
     const [call] = parseToolCallsFromContent(
@@ -443,7 +443,7 @@ world"}</arguments></tool_call>`,
 
   test("tool XML parser extracts invoke parameter blocks", async () => {
     const { parseToolCallsFromContent, stripToolCallsFromContent } = await import(
-      "../../../controller/src/modules/proxy/tool-call-parser"
+      "../../src/modules/proxy/tool-call-parser"
     );
 
     const content =
@@ -459,7 +459,7 @@ world"}</arguments></tool_call>`,
 
   test("strips orphan tool-call tags that leak from split/partial tool calls", async () => {
     const { stripToolCallsFromContent } = await import(
-      "../../../controller/src/modules/proxy/tool-call-parser"
+      "../../src/modules/proxy/tool-call-parser"
     );
     // A lone closing fragment (the screenshot bug): reasoning showed "</arg_value>".
     expect(stripToolCallsFromContent("</arg_value>").trim()).toBe("");
@@ -477,7 +477,7 @@ world"}</arguments></tool_call>`,
 
   test("stream proxy extracts invoke XML tool calls without visible content", async () => {
     const { createToolCallStream } = await import(
-      "../../../controller/src/modules/proxy/tool-call-stream"
+      "../../src/modules/proxy/tool-call-stream"
     );
     const encoder = new TextEncoder();
     const upstream = new ReadableStream<Uint8Array>({

@@ -25,7 +25,7 @@
       "@/*": ["./src/*"],
       "@local-studio/agent-runtime": ["../services/agent-runtime/src/index.ts"],
       "@local-studio/agent-runtime/*": ["../services/agent-runtime/src/*.ts"],
-      "@local-studio/contracts/*": ["../shared/contracts/*.ts"],
+      "@local-studio/contracts/*": ["../controller/contracts/*.ts"],
       "@shared/agent/*": ["../shared/agent/*.ts"]
     }
   },
@@ -35,7 +35,9 @@
     "**/*.tsx",
     ".next/types/**/*.ts",
     "**/*.mts",
-    ".next/dev/types/**/*.ts"
+    ".next/dev/types/**/*.ts",
+    "./.next/types/**/*.ts",
+    "./.next/dev/types/**/*.ts"
   ],
   "exclude": ["node_modules", "knip.ts", "desktop/**", "dist-desktop/**"]
 }

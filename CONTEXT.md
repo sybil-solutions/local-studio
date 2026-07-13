@@ -7,7 +7,7 @@ when code drifts from these names, the code is wrong.
 
 - **Recipe** — a saved, launchable model configuration (model path, backend,
   parallelism, memory, parsers, extra args). Stored in SQLite via
-  `recipeStore`; schema in `shared/contracts/recipes.ts` +
+  `recipeStore`; schema in `controller/contracts/recipes.ts` +
   `controller/src/modules/models/recipes/recipe-serializer.ts`. A recipe is
   *configured*; it says nothing about whether anything is running.
 - **Backend / Engine** — the inference server family a recipe launches:
@@ -72,7 +72,7 @@ when code drifts from these names, the code is wrong.
 - **Controller** — the Bun/Hono backend as a whole; also "a controller" =
   one reachable instance the UI points at.
 - **Contracts** — types crossing the controller↔frontend HTTP boundary live in
-  `shared/contracts/` exactly once; frontend↔agent-runtime shapes live in
+  `controller/contracts/`  exactly once; frontend↔agent-runtime shapes live in
   `shared/agent/`. The `check:contracts` gate enforces single definition.
 - **Gates** — the layered checks (`npm run check`: contracts, structure,
   frontend quality, controller checks + unit tests). CI runs them all; a

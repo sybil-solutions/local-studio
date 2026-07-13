@@ -12,7 +12,7 @@
       "@/*": ["../../frontend/src/*"],
       "@local-studio/agent-runtime": ["../../services/agent-runtime/src/index.ts"],
       "@local-studio/agent-runtime/*": ["../../services/agent-runtime/src/*.ts"],
-      "@local-studio/contracts/*": ["../../shared/contracts/*.ts"],
+      "@local-studio/contracts/*": ["../../controller/contracts/*.ts"],
       "@shared/agent/*": ["../../shared/agent/*.ts"],
       "@earendil-works/pi-ai/openai-completions": [
         "../../frontend/node_modules/@earendil-works/pi-ai/dist/providers/openai-completions.js"

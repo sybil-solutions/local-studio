@@ -172,7 +172,6 @@ function ModelGroupOption({
         "flex min-h-8 w-full min-w-0 items-center gap-2 rounded-md px-2 text-left text-[13px] text-(--fg) transition-colors hover:bg-(--hover) focus-visible:bg-(--hover) focus-visible:outline-none active:translate-y-px",
         active && "bg-(--hover)",
       )}
-      onMouseEnter={onActivate}
       onFocus={onActivate}
       onClick={onActivate}
     >

@@ -3,7 +3,7 @@ import { Database } from "bun:sqlite";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { delay } from "../../../controller/src/core/async";
+import { delay } from "../../src/core/async";
 
 type EnvSnapshot = Record<string, string | undefined>;
 
@@ -85,8 +85,8 @@ export async function createTestApp() {
 
 export async function createTestHarness() {
   const [{ createAppContext }, { createApp }] = await Promise.all([
-    import("../../../controller/src/app-context"),
-    import("../../../controller/src/http/app"),
+    import("../../src/app-context"),
+    import("../../src/http/app"),
   ]);
   const context = createAppContext();
   return { app: createApp(context), context };

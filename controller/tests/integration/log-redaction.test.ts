@@ -2,8 +2,8 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { redactLogLine } from "../../../controller/src/core/log-redaction";
-import { primaryLogPathFor } from "../../../controller/src/core/log-files";
+import { redactLogLine } from "../../src/core/log-redaction";
+import { primaryLogPathFor } from "../../src/core/log-files";
 
 const ENV_KEYS = [
   "LOCAL_STUDIO_DATA_DIR",
@@ -154,8 +154,8 @@ describe("GET /logs/:sessionId redaction", () => {
     );
 
     const [{ createAppContext }, { createApp }] = await Promise.all([
-      import("../../../controller/src/app-context"),
-      import("../../../controller/src/http/app"),
+      import("../../src/app-context"),
+      import("../../src/http/app"),
     ]);
     const context = createAppContext();
     const app = createApp(context);

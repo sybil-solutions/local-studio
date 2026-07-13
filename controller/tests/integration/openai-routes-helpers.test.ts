@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { modelNotRunningError } from "../../../controller/src/modules/proxy/openai-routes";
+import { modelNotRunningError } from "../../src/modules/proxy/openai-routes";
 
 // The chat proxy never launches a model. When the wrong model is requested it
 // returns a 503 — but the body MUST be OpenAI-shaped (`error.message`) or the

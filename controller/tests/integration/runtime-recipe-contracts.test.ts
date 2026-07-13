@@ -808,10 +808,10 @@ describe("controller route contracts", () => {
 
   test("managed runtime install helpers stay inside controller data dir", async () => {
     const { managedPackageSpec, managedVenvPath } = await import(
-      "../../../controller/src/modules/engines/runtimes/engine-jobs"
+      "../../src/modules/engines/runtimes/engine-jobs"
     );
     const { getSglangRuntimePython } = await import(
-      "../../../controller/src/modules/engines/runtimes/runtime-upgrade"
+      "../../src/modules/engines/runtimes/runtime-upgrade"
     );
     const selectedSglangPython = join(
       tempDir,

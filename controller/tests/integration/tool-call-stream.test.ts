@@ -1,10 +1,10 @@
 import { describe, expect, test } from "bun:test";
 
-import { createToolCallStream } from "../../../controller/src/modules/proxy/tool-call-stream";
+import { createToolCallStream } from "../../src/modules/proxy/tool-call-stream";
 import {
   createThinkRewriter,
   thinkingTagPrefixIsPartial,
-} from "../../../controller/src/modules/proxy/reasoning";
+} from "../../src/modules/proxy/reasoning";
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
