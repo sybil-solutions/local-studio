@@ -66,7 +66,7 @@ export function ProjectRow({
 
   return (
     <div className="flex flex-col">
-      <div className="group relative flex h-9 items-center rounded-[10px] pl-2 pr-1.5 text-(--fg) transition-colors hover:bg-(--hover)">
+      <div className="group relative flex h-8 items-center rounded-lg pl-2 pr-1.5 text-(--fg) transition-colors hover:bg-(--hover)">
         <button
           type="button"
           onClick={handleToggle}
@@ -74,18 +74,18 @@ export function ProjectRow({
           className="flex min-w-0 flex-1 items-center gap-2 px-0 pr-8 text-left"
         >
           {icon === "chat" ? (
-            <ChatIcon className="h-4 w-4 shrink-0 opacity-70 transition-opacity group-hover:opacity-90" />
+            <ChatIcon className="h-3.5 w-3.5 shrink-0 opacity-70 transition-opacity group-hover:opacity-90" />
           ) : (
-            <span className="relative h-4 w-4 shrink-0 opacity-70 transition-opacity group-hover:opacity-90">
+            <span className="relative h-3.5 w-3.5 shrink-0 opacity-70 transition-opacity group-hover:opacity-90">
               <Folder
-                className={`absolute inset-0 h-4 w-4 transition-all duration-150 ${open ? "scale-90 opacity-0" : "scale-100 opacity-100"}`}
+                className={`absolute inset-0 h-3.5 w-3.5 transition-all duration-150 ${open ? "scale-90 opacity-0" : "scale-100 opacity-100"}`}
               />
               <FolderOpen
-                className={`absolute inset-0 h-4 w-4 transition-all duration-150 ${open ? "scale-100 opacity-100" : "scale-90 opacity-0"}`}
+                className={`absolute inset-0 h-3.5 w-3.5 transition-all duration-150 ${open ? "scale-100 opacity-100" : "scale-90 opacity-0"}`}
               />
             </span>
           )}
-          <span className="truncate text-[length:var(--fs-base)] font-normal">{project.name}</span>
+          <span className="truncate text-[length:var(--fs-md)] font-normal">{project.name}</span>
           {!project.exists ? (
             <span
               className="h-1.5 w-1.5 shrink-0 rounded-full bg-(--warn)"
@@ -235,7 +235,7 @@ export function ProjectSessions({
         <button
           type="button"
           onClick={() => setVisibleLimit((value) => value + SESSIONS_PAGE_SIZE)}
-          className="flex h-8 items-center rounded-[10px] pl-3 pr-2 text-left text-[length:var(--fs-sm)] text-(--dim) transition-colors hover:bg-(--hover) hover:text-(--fg)"
+          className="flex h-7 items-center rounded-lg pl-3 pr-2 text-left text-[length:var(--fs-sm)] text-(--dim) transition-colors hover:bg-(--hover) hover:text-(--fg)"
         >
           Show more
         </button>
@@ -258,7 +258,7 @@ export function ActiveSessionRow({
   const label =
     cleanSessionTitle(pref.title) || cleanSessionTitle(session.title) || "Current session";
   const isFocused = session.focused === true;
-  const rowClass = `group relative flex h-8 items-center rounded-[10px] pl-3 pr-0 transition-colors ${isFocused ? "bg-(--active) text-(--fg)" : "text-(--fg)/85 hover:bg-(--hover) hover:text-(--fg)"}`;
+  const rowClass = `group relative flex h-7 items-center rounded-lg pl-3 pr-0 transition-colors ${isFocused ? "bg-(--active) text-(--fg)" : "text-(--fg)/85 hover:bg-(--hover) hover:text-(--fg)"}`;
 
   return (
     <SessionNavRow
@@ -333,7 +333,7 @@ export function SessionRow({
       age={relativeAge(session.startedAt)}
       isRunning={isRunning}
       unseen={unseen}
-      rowClass="group relative flex h-8 items-center rounded-[10px] pl-3 pr-0 text-(--fg)/85 transition-colors hover:bg-(--hover) hover:text-(--fg)"
+      rowClass="group relative flex h-7 items-center rounded-lg pl-3 pr-0 text-(--fg)/85 transition-colors hover:bg-(--hover) hover:text-(--fg)"
       renameRowClass="flex h-8 items-center rounded-[10px] bg-(--surface)/40 pl-3 pr-1"
       href={`/agent?project=${encodeURIComponent(project.id)}&session=${encodeURIComponent(session.id)}&replace=1`}
       onPatchPref={(patch) => patchSessionPref(session.id, patch)}

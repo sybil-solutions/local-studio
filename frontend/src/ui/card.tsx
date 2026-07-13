@@ -45,7 +45,7 @@ function Card({
 }: CardProps) {
   return (
     <div
-      className={`rounded-[var(--rad-2xl)] bg-(--ui-surface) ${bordered ? "border border-(--ui-border)" : ""} ${paddingClasses[padding]} ${className}`}
+      className={`rounded-[var(--rad-lg)] bg-(--ui-surface) ${bordered ? "border border-(--ui-border)" : ""} ${paddingClasses[padding]} ${className}`}
     >
       <CardHeading title={title} description={description} />
       {children}

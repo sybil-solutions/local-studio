@@ -287,7 +287,7 @@ function SessionRowContent({
           title="Unseen activity"
         />
       ) : null}
-      <span className="min-w-0 flex-1 truncate text-[length:var(--fs-base)] font-normal leading-5">
+      <span className="min-w-0 flex-1 truncate text-[length:var(--fs-md)] font-normal leading-5">
         {label}
       </span>
       {age ? (
