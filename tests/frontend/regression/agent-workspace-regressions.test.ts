@@ -502,3 +502,24 @@ test("an in-flight (running) turn is not cached until it settles", () => {
 
   assert.equal(readTranscriptSnapshot("pi-1", storage), null);
 });
+
+test("detached side chats remain patchable by the runtime controller", () => {
+  const sideChat = makeSession("side-chat", { status: "running" });
+  const registered = reducer(makeState(), { type: "setDetachedSession", session: sideChat });
+  const streamed = reducer(registered, {
+    type: "patchSession",
+    sessionId: sideChat.id,
+    patch: (session) => ({
+      ...session,
+      messages: [{ id: "a1", role: "assistant", text: "Visible immediately" }],
+    }),
+  });
+
+  assert.equal(streamed.sessions.get(sideChat.id)?.messages[0]?.text, "Visible immediately");
+
+  const removed = reducer(streamed, {
+    type: "removeDetachedSession",
+    sessionId: sideChat.id,
+  });
+  assert.equal(removed.sessions.has(sideChat.id), false);
+});

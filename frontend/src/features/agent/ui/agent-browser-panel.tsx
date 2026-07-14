@@ -50,7 +50,11 @@ import type { WorkspaceHandles } from "@/features/agent/ui/use-workspace";
 
 type AgentBrowserPanelHandles = Pick<
   WorkspaceHandles,
-  "registerComputerAside" | "startComputerResize" | "compactFocusedSession"
+  | "registerComputerAside"
+  | "startComputerResize"
+  | "compactFocusedSession"
+  | "updateDetachedSession"
+  | "removeDetachedSession"
 >;
 
 type AgentBrowserPanelProps = {
@@ -115,9 +119,11 @@ export function AgentBrowserPanel({
   gitSummary,
 }: AgentBrowserPanelProps) {
   const tools = useTools();
-  const [sideChatSession, setSideChatSession] = useState<Session>(() =>
+  const [sideChatSeed, setSideChatSeed] = useState<Session>(() =>
     createSideChatSession(null, null, ""),
   );
+  const sideChatSession =
+    sessions.find((session) => session.id === sideChatSeed.id) ?? sideChatSeed;
   const { registerComputerAside, startComputerResize } = handles;
   const isElectron = typeof navigator !== "undefined" && /electron/i.test(navigator.userAgent);
   const terminalOwner = useMemo(
@@ -182,15 +188,17 @@ export function AgentBrowserPanel({
     (draft?: SideChatDraft) => {
       if (draft) {
         const next = createSideChatSession(activeProject ?? null, focusedSession, activeModelId);
-        setSideChatSession({
+        const drafted = {
           ...next,
           title: draft.title.trim().slice(0, 80) || "Plan task",
           input: draft.input,
-        });
+        };
+        setSideChatSeed(drafted);
+        handles.updateDetachedSession(drafted, () => drafted);
         tools.setComputerTab("side-chat");
         return;
       }
-      setSideChatSession((current) =>
+      handles.updateDetachedSession(sideChatSeed, (current) =>
         current.messages.length
           ? current
           : {
@@ -203,22 +211,33 @@ export function AgentBrowserPanel({
       );
       tools.setComputerTab("side-chat");
     },
-    [activeModelId, activeProject, focusedSession, tools],
+    [activeModelId, activeProject, focusedSession, handles, sideChatSeed, tools],
   );
-  const updateSideChatTabs = useCallback((nextTabsOrUpdater: SideChatTabsUpdater) => {
-    setSideChatSession((current) => {
-      const nextTabs =
-        typeof nextTabsOrUpdater === "function" ? nextTabsOrUpdater([current]) : nextTabsOrUpdater;
-      return nextTabs.at(-1) ?? current;
-    });
-  }, []);
-  const renameSideChat = useCallback((tabId: string, title: string) => {
-    setSideChatSession((current) => (current?.id === tabId ? { ...current, title } : current));
-  }, []);
+  const updateSideChatTabs = useCallback(
+    (nextTabsOrUpdater: SideChatTabsUpdater) => {
+      handles.updateDetachedSession(sideChatSeed, (current) => {
+        const nextTabs =
+          typeof nextTabsOrUpdater === "function"
+            ? nextTabsOrUpdater([current])
+            : nextTabsOrUpdater;
+        return nextTabs.at(-1) ?? current;
+      });
+    },
+    [handles, sideChatSeed],
+  );
+  const renameSideChat = useCallback(
+    (tabId: string, title: string) => {
+      handles.updateDetachedSession(sideChatSeed, (current) =>
+        current.id === tabId ? { ...current, title } : current,
+      );
+    },
+    [handles, sideChatSeed],
+  );
   const closeSideChat = useCallback(() => {
-    setSideChatSession(createSideChatSession(activeProject ?? null, focusedSession, activeModelId));
+    handles.removeDetachedSession(sideChatSeed.id);
+    setSideChatSeed(createSideChatSession(activeProject ?? null, focusedSession, activeModelId));
     tools.closeComputerTab("side-chat");
-  }, [activeModelId, activeProject, focusedSession, tools]);
+  }, [activeModelId, activeProject, focusedSession, handles, sideChatSeed.id, tools]);
   const closeComputerTab = useCallback(
     (closing: ComputerTab) => {
       if (closing === "side-chat") {

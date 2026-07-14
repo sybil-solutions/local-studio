@@ -72,6 +72,8 @@ const SESSIONS_CHANGED_ACTIONS = new Set<WorkspaceAction["type"]>([
   "splitTab",
   "closePane",
   "setPaneSession",
+  "setDetachedSession",
+  "removeDetachedSession",
   "patchSession",
   "patchActiveTab",
   "notifySessionsChanged",

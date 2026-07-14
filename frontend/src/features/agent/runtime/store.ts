@@ -6,6 +6,13 @@ export function setSession(sessions: SessionsMap, session: Session): SessionsMap
   return next;
 }
 
+export function removeSession(sessions: SessionsMap, id: SessionId): SessionsMap {
+  if (!sessions.has(id)) return sessions;
+  const next = new Map(sessions);
+  next.delete(id);
+  return next;
+}
+
 export function patchSession(
   sessions: SessionsMap,
   id: SessionId,

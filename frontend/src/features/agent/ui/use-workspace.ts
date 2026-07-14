@@ -31,6 +31,7 @@ import {
   normalizeControllerUrl,
 } from "@/lib/api/controllers";
 import { paneSessions } from "@/features/agent/runtime/selectors";
+import type { Session, UpdateSession } from "@/features/agent/runtime/types";
 import {
   useWorkspaceHydrationEffects,
   useWorkspaceRuntimeSync,
@@ -50,6 +51,8 @@ export type WorkspaceHandles = {
     paneId: PaneId,
     tabs: SessionTab[] | ((tabs: SessionTab[]) => SessionTab[]),
   ) => void;
+  updateDetachedSession: (fallback: Session, patch: Parameters<UpdateSession>[1]) => void;
+  removeDetachedSession: (sessionId: string) => void;
   closePane: (paneId: PaneId) => void;
   splitPaneWithPayload: (
     paneId: PaneId,
@@ -281,6 +284,12 @@ export function useWorkspace({ ephemeral = false }: UseWorkspaceOptions = {}): U
           session,
         });
       },
+      updateDetachedSession: (fallback: Session, patch: Parameters<UpdateSession>[1]) => {
+        const current = stateRef.current.sessions.get(fallback.id) ?? fallback;
+        dispatch({ type: "setDetachedSession", session: patch(current) });
+      },
+      removeDetachedSession: (sessionId: string) =>
+        dispatch({ type: "removeDetachedSession", sessionId }),
       closePane: (paneId: PaneId) => dispatch({ type: "closePane", paneId }),
       splitPaneWithPayload: (
         paneId: PaneId,

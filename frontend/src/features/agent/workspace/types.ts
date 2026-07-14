@@ -83,6 +83,8 @@ export type WorkspaceAction =
     }
   | { type: "closePane"; paneId: PaneId }
   | { type: "setPaneSession"; paneId: PaneId; session: Session }
+  | { type: "setDetachedSession"; session: Session }
+  | { type: "removeDetachedSession"; sessionId: SessionId }
   | {
       type: "patchSession";
       sessionId: SessionId;

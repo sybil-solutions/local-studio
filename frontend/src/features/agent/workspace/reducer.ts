@@ -1,4 +1,8 @@
-import { patchSession as patchSessionInMap } from "@/features/agent/runtime/store";
+import {
+  patchSession as patchSessionInMap,
+  removeSession,
+  setSession,
+} from "@/features/agent/runtime/store";
 import type { AgentModel, WorkspaceAction, WorkspaceState } from "@/features/agent/workspace/types";
 import {
   applyUrlNavigation,
@@ -126,6 +130,10 @@ function reduceSessionEditAction(
       });
     case "setPaneSession":
       return setPaneSession(state, { paneId: action.paneId, session: action.session });
+    case "setDetachedSession":
+      return { ...state, sessions: setSession(state.sessions, action.session) };
+    case "removeDetachedSession":
+      return { ...state, sessions: removeSession(state.sessions, action.sessionId) };
     case "patchSession":
       return {
         ...state,
