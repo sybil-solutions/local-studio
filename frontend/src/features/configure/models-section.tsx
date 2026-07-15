@@ -37,7 +37,7 @@ export function ModelsSection({ state }: { state: ConfigureState }) {
 
   return (
     <div className="space-y-5">
-      <div className="rounded-[var(--rad-xl)] bg-(--ui-surface) p-4 sm:flex sm:items-center sm:justify-between sm:gap-5">
+      <div className="rounded-xl border border-(--ui-border) bg-(--ui-surface) p-5 sm:flex sm:items-center sm:justify-between sm:gap-5">
         <div>
           <h3 className="text-[length:var(--fs-lg)] font-medium text-(--ui-fg)">
             Launch settings live in Models
@@ -49,8 +49,7 @@ export function ModelsSection({ state }: { state: ConfigureState }) {
         </div>
         <Link
           href="/recipes"
-          className="mt-4 inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full bg-(--color-primary) px-3.5 text-[length:var(--fs-sm)] font-medium text-(--color-primary-foreground) transition-opacity hover:opacity-90 sm:mt-0"
-          style={{ color: "var(--color-primary-foreground)" }}
+          className="mt-4 inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-(--ui-border) bg-(--surface-3) px-3 text-[length:var(--fs-sm)] font-medium text-(--ui-fg) transition-colors hover:bg-(--ui-hover) sm:mt-0"
         >
           Open model settings
           <ArrowRightIcon className="h-3.5 w-3.5" />
@@ -69,7 +68,7 @@ export function ModelsSection({ state }: { state: ConfigureState }) {
         </span>
       </div>
 
-      <ListGroup title="Saved profiles">
+      <ListGroup title="Profiles">
         {recipes.map((recipe) => (
           <div
             key={recipe.id}

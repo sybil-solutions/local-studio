@@ -110,15 +110,15 @@ function RigCard({
   );
 
   return (
-    <section className="overflow-hidden rounded-2xl bg-(--ui-surface)">
-      <header className="space-y-4 border-b border-(--ui-separator)/60 px-5 pb-4 pt-5">
+    <section className="overflow-hidden rounded-xl border border-(--ui-border) bg-(--ui-surface)">
+      <header className="space-y-4 border-b border-(--ui-separator) px-5 py-4">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="min-w-0">
             <InlineRename
               value={displayName}
               label={`machine group ${displayName}`}
               onRename={(name) => state.renameRig(rig.id, name)}
-              textClassName="text-[length:var(--fs-3xl)] font-semibold tracking-[-0.015em] text-(--ui-fg)"
+              textClassName="text-[length:var(--fs-xl)] font-medium tracking-[-0.01em] text-(--ui-fg)"
             />
             {rig.description ? (
               <p className="mt-0.5 text-[length:var(--fs-sm)] text-(--ui-muted)">
@@ -137,25 +137,17 @@ function RigCard({
         <PooledMemoryBar nodes={nodes} totalGb={totalGb} />
       </header>
 
-      <div className="space-y-3 px-5 py-4">
+      <div className="divide-y divide-(--ui-separator)">
         {head ? renderNode(head) : null}
         {head && workers.length > 0 ? (
-          <div className="flex items-center gap-3 px-1 text-[length:var(--fs-xs)] text-(--ui-muted)/80">
+          <div className="flex items-center gap-3 px-5 py-2 text-[length:var(--fs-xs)] text-(--ui-muted)/80">
             <span className="ml-6 h-3 w-px bg-(--ui-separator)" />
             {workers.length === 1 ? "1 worker joins" : `${workers.length} workers join`} the head
             over the local network
           </div>
         ) : null}
         {workers.length > 0 ? (
-          <div
-            className={cx(
-              "grid grid-cols-1 gap-3",
-              workers.length > 1 ? "2xl:grid-cols-2" : "",
-              head ? "border-l border-(--ui-separator)/50 pl-4 ml-6" : "",
-            )}
-          >
-            {workers.map(renderNode)}
-          </div>
+          <div className="divide-y divide-(--ui-separator)">{workers.map(renderNode)}</div>
         ) : null}
         {rig.nodes.length === 0 ? (
           <EmptySafeNotice>
@@ -165,7 +157,7 @@ function RigCard({
         ) : null}
       </div>
 
-      <footer className="flex items-center justify-between border-t border-(--ui-separator)/60 px-5 py-3">
+      <footer className="flex items-center justify-between border-t border-(--ui-separator) px-5 py-3">
         <Button
           variant="secondary"
           size="sm"
@@ -240,22 +232,7 @@ export function RigsSection({ state }: { state: ConfigureState }) {
   };
 
   return (
-    <div className="space-y-6">
-      {state.rigs.some((rig) => rig.nodes.some((node) => node.id === state.localNodeId)) ? (
-        <div className="flex items-start gap-3 rounded-[var(--rad-xl)] bg-(--ui-surface) p-4">
-          <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-(--ui-success)" />
-          <div>
-            <h3 className="text-[length:var(--fs-lg)] font-medium text-(--ui-fg)">
-              This machine is ready
-            </h3>
-            <p className="mt-1 text-[length:var(--fs-sm)] leading-relaxed text-(--ui-muted)">
-              You do not need to configure anything else to run a model. Add machines only for a
-              multi-computer setup.
-            </p>
-          </div>
-        </div>
-      ) : null}
-
+    <div className="space-y-5">
       {state.rigs.map((rig) => (
         <RigCard
           key={rig.id}

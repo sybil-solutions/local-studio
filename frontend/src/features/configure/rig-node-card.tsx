@@ -3,7 +3,6 @@
 import { RIG_HARDWARE_TYPE_LABELS, RIG_NODE_ROLE_LABELS } from "@local-studio/contracts/rigs";
 import { Button, StatusPill } from "@/ui";
 import { SquarePen, Trash2 } from "@/ui/icon-registry";
-import { cx } from "@/ui/utils";
 import type { RigAccelerator, RigNode } from "@/lib/types";
 import { HardwareArt } from "./hardware-art";
 import { InlineRename } from "./inline-rename";
@@ -30,38 +29,25 @@ export function RigNodeCard({
   onEdit: () => void;
   onDelete?: () => void;
 }) {
-  const isHead = node.role === "head";
   const endpoint = [node.hostname, node.address].filter(
     (value, index, all) => value && all.indexOf(value) === index,
   );
 
   return (
-    <div
-      className={cx(
-        "group relative flex gap-4 rounded-xl bg-(--surface-3) p-4 transition-colors hover:bg-(--ui-hover)",
-        isHead ? "ring-1 ring-(--ui-accent)/25" : "",
-      )}
-    >
-      <div
-        className={cx(
-          "flex h-24 w-32 shrink-0 items-center justify-center rounded-lg",
-          isHead
-            ? "bg-gradient-to-b from-(--ui-accent)/12 to-(--ui-bg) ring-1 ring-(--ui-accent)/20"
-            : "bg-(--ui-bg)",
-        )}
-      >
-        <HardwareArt type={node.hardware_type} className="h-18 w-full opacity-90" />
+    <div className="group relative flex gap-4 px-5 py-4 transition-colors hover:bg-(--ui-hover)/40">
+      <div className="flex h-12 w-14 shrink-0 items-center justify-center rounded-lg border border-(--ui-border) bg-(--surface-3)">
+        <HardwareArt type={node.hardware_type} className="h-9 w-full opacity-90" />
       </div>
 
-      <div className="min-w-0 flex-1 space-y-1.5">
+      <div className="min-w-0 flex-1 space-y-1">
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
           <InlineRename
             value={node.name}
             label={`device ${node.name}`}
             onRename={onRename}
-            textClassName="font-mono text-[length:var(--fs-xl)] font-semibold tracking-[-0.01em] text-(--ui-fg)"
+            textClassName="text-[length:var(--fs-base)] font-medium text-(--ui-fg)"
           />
-          <StatusPill tone={isHead ? "info" : "default"}>
+          <StatusPill tone={node.role === "head" ? "info" : "default"}>
             {RIG_NODE_ROLE_LABELS[node.role]}
           </StatusPill>
           {isLocal ? <StatusPill tone="good">This machine</StatusPill> : null}
@@ -75,7 +61,7 @@ export function RigNodeCard({
         {node.accelerators.map((accelerator) => (
           <p
             key={accelerator.name}
-            className="truncate text-[length:var(--fs-base)] font-medium text-(--ui-fg)/90"
+            className="truncate text-[length:var(--fs-sm)] text-(--ui-fg)/90"
           >
             {acceleratorLine(accelerator)}
           </p>
@@ -98,7 +84,7 @@ export function RigNodeCard({
         ) : null}
       </div>
 
-      <div className="absolute right-3 top-3 flex gap-1 opacity-60 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
+      <div className="absolute right-4 top-3 flex gap-1 opacity-60 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
         <Button
           variant="icon"
           size="sm"
