@@ -9,14 +9,17 @@ import { formatNumber } from "@/lib/formatters";
 import type { UsageStats } from "@/lib/types";
 
 const SOURCES = [
-  { id: "pi-sessions", label: "Lifetime" },
-  { id: "provider", label: "Controller" },
+  { id: "provider", label: "Lifetime" },
+  { id: "pi-sessions", label: "Agent sessions" },
 ] satisfies Array<{ id: UsageSource; label: string }>;
 
 const sourceDescription = (source: UsageSource): string =>
   source === "pi-sessions"
-    ? "All recorded coding-agent activity · cached context included"
+    ? "Coding-agent session records · cached context included"
     : "Every request recorded by this controller";
+
+const sourceTitle = (source: UsageSource): string =>
+  source === "pi-sessions" ? "Agent-session tokens" : "Lifetime tokens";
 
 const activeDays = (stats: UsageStats): number =>
   stats.daily.filter((day) => day.total_tokens > 0).length;
@@ -35,7 +38,7 @@ const tokenParts = (stats: UsageStats): Array<{ label: string; value: number }> 
 };
 
 export default function UsagePage() {
-  const [source, setSource] = useState<UsageSource>("pi-sessions");
+  const [source, setSource] = useState<UsageSource>("provider");
   const { stats, loading, error, loadStats } = useUsage(source);
 
   if (loading && !stats) return <UsageSkeleton />;
@@ -63,7 +66,7 @@ export default function UsagePage() {
 
         <section className="pt-14 text-center sm:pt-20">
           <p className="text-[length:var(--fs-sm)] font-medium text-(--ui-muted)">
-            Lifetime tokens
+            {sourceTitle(source)}
           </p>
           <div className="mt-2 text-[clamp(2.75rem,7vw,4.75rem)] font-medium leading-none tracking-[-0.055em] tabular-nums text-(--ui-fg)">
             {formatNumber(stats.totals.total_tokens)}
@@ -73,7 +76,11 @@ export default function UsagePage() {
           </p>
         </section>
 
-        <Card padding="sm" className="mx-auto mt-10 max-w-[55rem] bg-(--ui-surface)/70 sm:mt-12">
+        <Card
+          bordered={false}
+          padding="sm"
+          className="mx-auto mt-10 max-w-[55rem] bg-(--ui-surface) sm:mt-12"
+        >
           <dl className="grid grid-cols-2 divide-x divide-(--ui-border) sm:grid-cols-4">
             <ProfileStat label="Requests" value={formatNumber(stats.totals.total_requests)} />
             <ProfileStat label="Sessions" value={formatNumber(stats.totals.unique_sessions)} />
@@ -82,7 +89,7 @@ export default function UsagePage() {
           </dl>
         </Card>
 
-        <section className="mx-auto mt-12 max-w-[55rem] sm:mt-16">
+        <section className="mx-auto mt-12 max-w-[55rem] rounded-[var(--rad-xl)] bg-(--ui-surface)/60 p-4 sm:mt-16 sm:p-5">
           <div className="mb-4 flex items-baseline justify-between gap-4">
             <h2 className="text-[length:var(--fs-md)] font-medium text-(--ui-fg)">
               Token activity
@@ -92,9 +99,13 @@ export default function UsagePage() {
           <TokenActivityHeatmap daily={stats.daily} />
         </section>
 
-        <section className="mx-auto mt-12 grid max-w-[55rem] gap-10 border-t border-(--ui-border) pt-8 sm:grid-cols-2 sm:gap-14">
-          <TokenMix stats={stats} />
-          <ModelUsage stats={stats} />
+        <section className="mx-auto mt-5 grid max-w-[55rem] gap-3 sm:grid-cols-2">
+          <div className="rounded-[var(--rad-xl)] bg-(--ui-surface)/60 p-5">
+            <TokenMix stats={stats} />
+          </div>
+          <div className="rounded-[var(--rad-xl)] bg-(--ui-surface)/60 p-5">
+            <ModelUsage stats={stats} />
+          </div>
         </section>
       </PageContainer>
     </AppPage>
