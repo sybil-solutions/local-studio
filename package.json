@@ -1,11 +1,12 @@
 {
   "name": "local-studio",
-  "version": "0.2.9",
+  "version": "2.0.0",
   "private": true,
   "scripts": {
     "doctor": "bash scripts/doctor.sh",
     "release:notes": "node scripts/release-statement.mjs",
     "release:check-commits": "node scripts/check-conventional-commits.mjs --range origin/main..HEAD",
+    "release:stage-desktop": "node scripts/stage-desktop-release.mjs",
     "setup:git-hooks": "node scripts/setup-git-hooks.mjs",
     "check": "npm run check:contracts && npm run check:structure && npm run check:frontend && npm run check:controller",
     "check:contracts": "node scripts/validate-shared-contracts.mjs",

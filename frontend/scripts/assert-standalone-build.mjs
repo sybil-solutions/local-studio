@@ -1,33 +1,48 @@
 #!/usr/bin/env node
-// Preflight guard for `desktop:dist` / `desktop:pack`.
-//
-// electron-builder copies the embedded Next server from `.next/standalone`
-// (extraResources in desktop/electron-builder.yml). If `npm run build` did not
-// produce a standalone server, electron-builder has been observed to log
-// "file source doesn't exist from=.../.next/standalone" yet still exit 0 and
-// ship a signed bundle that crashes at launch with "Missing standalone server
-// build". Assert the source exists BEFORE electron-builder runs so the build
-// fails here, loudly and early, instead of producing a broken artifact.
-import { existsSync } from "node:fs";
-import { resolve } from "node:path";
+import { existsSync, readdirSync } from "node:fs";
+import { relative, resolve } from "node:path";
 
 const projectRoot = resolve(import.meta.dirname, "..");
 const standaloneBase = resolve(projectRoot, ".next", "standalone");
-
-// Mirror the runtime resolution in desktop/configs.ts + app-server.ts
-// (resolveStandaloneServerRoot): nested `frontend/server.js` first, then the
-// flat `server.js` fallback.
 const candidates = [
   resolve(standaloneBase, "frontend", "server.js"),
   resolve(standaloneBase, "server.js"),
 ];
 
-if (!candidates.some((candidate) => existsSync(candidate))) {
-  console.error("\n  standalone build check FAILED\n");
-  console.error("  Missing the embedded Next standalone server.");
-  console.error(`  Looked for:\n    ${candidates.join("\n    ")}`);
-  console.error('  Run "npm run build" first (it produces .next/standalone).\n');
-  process.exit(1);
+function filesUnder(directory) {
+  return readdirSync(directory, { recursive: true, withFileTypes: true })
+    .filter((entry) => entry.isFile())
+    .map((entry) => resolve(entry.parentPath, entry.name));
 }
 
-console.log("  standalone server build present");
+function isRuntimeFile(file) {
+  const path = relative(standaloneBase, file).replaceAll("\\", "/");
+  return [
+    "server.js",
+    "package.json",
+    ".next/",
+    "public/",
+    "node_modules/",
+    "frontend/server.js",
+    "frontend/package.json",
+    "frontend/.next/",
+    "frontend/public/",
+    "frontend/node_modules/",
+  ].some((prefix) => path === prefix || path.startsWith(prefix));
+}
+
+if (!candidates.some((candidate) => existsSync(candidate))) {
+  throw new Error(`Missing standalone server: ${candidates.join(", ")}`);
+}
+
+const unexpected = filesUnder(standaloneBase).filter((file) => !isRuntimeFile(file));
+
+if (unexpected.length > 0) {
+  throw new Error(
+    `Standalone build contains non-runtime files:\n${unexpected
+      .map((file) => relative(standaloneBase, file))
+      .join("\n")}`,
+  );
+}
+
+console.log("  standalone server build is minimal");
