@@ -487,7 +487,7 @@ test("a settled turn writes its transcript to the crash-recovery cache", () => {
   assert.equal(restored?.[1].text, "Here is the plan.");
 });
 
-test("an in-flight (running) turn is not cached until it settles", () => {
+test("a running turn seeds its transcript for crash recovery", () => {
   const { deps, storage } = makeEffectDeps();
   const idle = makeSession("s-1", { piSessionId: "pi-1", status: "idle", messages: [] });
   const running = makeSession("s-1", {
@@ -500,7 +500,9 @@ test("an in-flight (running) turn is not cached until it settles", () => {
 
   runWorkspaceEffect({ type: "patchSession", sessionId: "s-1", patch: {} }, prev, next, deps);
 
-  assert.equal(readTranscriptSnapshot("pi-1", storage), null);
+  const restored = readTranscriptSnapshot("pi-1", storage);
+  assert.equal(restored?.length, 1);
+  assert.equal(restored?.[0]?.text, "streaming…");
 });
 
 test("detached side chats remain patchable by the runtime controller", () => {
