@@ -13,6 +13,7 @@ import {
 } from "@/features/agent/workspace/store";
 import type { WorkspaceState } from "@/features/agent/workspace/types";
 import { createSessionReplayQueue } from "@/features/agent/workspace/replay-queue";
+import { writeSessionDrafts } from "@/features/agent/workspace/session-drafts";
 import { readTranscriptSnapshot } from "@/features/agent/workspace/transcript-cache";
 import type { Session } from "@/features/agent/runtime/types";
 import type { ToolSelection } from "@/features/agent/tools/types";
@@ -33,6 +34,7 @@ function makeSession(id: string, patch: Partial<Session> = {}): Session {
 function makeState(session = makeSession("s-main")): WorkspaceState {
   return {
     sessions: new Map([[session.id, session]]),
+    sessionDrafts: new Map(),
     models: [],
     selectedModel: "",
     modelsLoading: false,
@@ -43,6 +45,7 @@ function makeState(session = makeSession("s-main")): WorkspaceState {
     error: "",
     hydrated: true,
     lastHandledNavKey: "",
+    lastHandledNavIntent: "",
   };
 }
 
@@ -114,7 +117,7 @@ function makeEffectDeps(overrides: Partial<WorkspaceEffectDeps> = {}) {
 
 // ----- persistence round-trip (writePaneState -> loadInitialFromStorage) -----
 
-test("pane state round-trips durable session metadata and drops transcripts", () => {
+test("pane state and session drafts round-trip durable metadata and drop transcripts", () => {
   const rich = makeSession("s-rich", {
     piSessionId: "pi-rich",
     title: "GPU planning",
@@ -152,6 +155,7 @@ test("pane state round-trips durable session metadata and drops transcripts", ()
     promptTemplates: [],
   };
 
+  writeSessionDrafts(storage, new Map([["pi-rich", rich.input]]));
   writePaneState(storage, state, (sessionId) => (sessionId === rich.id ? selection : null));
   const loaded = loadInitialFromStorage(storage);
 

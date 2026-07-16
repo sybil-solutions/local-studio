@@ -17,6 +17,11 @@ import {
   type WorkspaceStorage,
 } from "@/features/agent/workspace/store";
 import { makeFreshTab } from "@/features/agent/messages/helpers";
+import {
+  loadSessionDrafts,
+  restoreSessionDrafts,
+  sessionDraftsWithSessions,
+} from "@/features/agent/workspace/session-drafts";
 import { readTranscriptSnapshot } from "@/features/agent/workspace/transcript-cache";
 
 const SESSIONS_COLLAPSED_KEY = "local-studio.agent.sessionsCollapsed";
@@ -85,18 +90,46 @@ export type LoadedFromStorage = {
 
 export function loadInitialFromStorage(storage: WorkspaceStorage): LoadedFromStorage {
   migrateStorage(storage);
+  const storedDrafts = loadSessionDrafts(storage);
 
   const rawState = readStorage(storage, PANE_STATE_KEY);
   const restoredState = rawState ? restorePersistedPaneState(rawState) : null;
   if (restoredState) {
     const { selections, legacyRuntimeKeys, ...workspace } = restoredState;
-    workspace.sessions = seedCachedTranscripts(workspace.sessions, storage);
-    return { workspace, selections, legacyRuntimeKeys };
+    const sessions = restoreSessionDrafts(
+      seedCachedTranscripts(workspace.sessions, storage),
+      storedDrafts,
+    );
+    return {
+      workspace: {
+        ...workspace,
+        sessions,
+        sessionDrafts: sessionDraftsWithSessions(storedDrafts, sessions),
+      },
+      selections,
+      legacyRuntimeKeys,
+    };
   }
 
   const rawLayout = readStorage(storage, PANE_LAYOUT_KEY);
   const restoredLayout = rawLayout ? restoreLegacyLayout(rawLayout) : null;
-  return { workspace: restoredLayout ?? {}, selections: new Map(), legacyRuntimeKeys: new Map() };
+  if (!restoredLayout) {
+    return {
+      workspace: storedDrafts.size > 0 ? { sessionDrafts: storedDrafts } : {},
+      selections: new Map(),
+      legacyRuntimeKeys: new Map(),
+    };
+  }
+  const sessions = restoreSessionDrafts(restoredLayout.sessions, storedDrafts);
+  return {
+    workspace: {
+      ...restoredLayout,
+      sessions,
+      sessionDrafts: sessionDraftsWithSessions(storedDrafts, sessions),
+    },
+    selections: new Map(),
+    legacyRuntimeKeys: new Map(),
+  };
 }
 
 function seedCachedTranscripts(

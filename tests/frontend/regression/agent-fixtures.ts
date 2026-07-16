@@ -21,6 +21,7 @@ export function makeSession(id: string, patch: Partial<Session> = {}): Session {
 export function makeState(session = makeSession("s-main")): WorkspaceState {
   return {
     sessions: new Map([[session.id, session]]),
+    sessionDrafts: new Map(),
     models: [],
     selectedModel: "",
     modelsLoading: false,
@@ -31,6 +32,7 @@ export function makeState(session = makeSession("s-main")): WorkspaceState {
     error: "",
     hydrated: true,
     lastHandledNavKey: "",
+    lastHandledNavIntent: "",
   };
 }
 

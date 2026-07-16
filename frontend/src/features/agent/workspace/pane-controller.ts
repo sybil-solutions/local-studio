@@ -23,6 +23,7 @@ import type {
   WorkspaceSessionPayload,
   WorkspaceState,
 } from "@/features/agent/workspace/types";
+import { restoreSessionDraft } from "@/features/agent/workspace/session-drafts";
 
 function isSession(value: Session | undefined): value is Session {
   return Boolean(value && typeof value.id === "string" && value.id.length > 0);
@@ -94,11 +95,12 @@ function replacePaneSession(
 ): WorkspaceState {
   const pane = state.panesById.get(paneId);
   if (!pane || !isSession(session)) return state;
-  const sessions = setSessionInMap(state.sessions, session);
+  const restored = restoreSessionDraft(session, state.sessionDrafts);
+  const sessions = setSessionInMap(state.sessions, restored);
   const next = pruneOrphanSessions(
-    setPane(withSessions(state, sessions), paneId, { sessionId: session.id }),
+    setPane(withSessions(state, sessions), paneId, { sessionId: restored.id }),
   );
-  return pruneDuplicatePiSessions({ ...next, focusedPaneId: paneId }, session);
+  return pruneDuplicatePiSessions({ ...next, focusedPaneId: paneId }, restored);
 }
 
 function focusSessionAsOnlyPane(
@@ -124,13 +126,14 @@ function replaceWorkspaceSession(
   session: Session | undefined,
 ): WorkspaceState {
   if (!validPaneId(paneId) || !isSession(session)) return state;
+  const restored = restoreSessionDraft(session, state.sessionDrafts);
   const next = pruneOrphanSessions({
-    ...withSessions(state, setSessionInMap(state.sessions, session)),
+    ...withSessions(state, setSessionInMap(state.sessions, restored)),
     layout: { kind: "leaf", paneId },
-    panesById: new Map([[paneId, { sessionId: session.id }]]),
+    panesById: new Map([[paneId, { sessionId: restored.id }]]),
     focusedPaneId: paneId,
   });
-  return pruneDuplicatePiSessions(next, session);
+  return pruneDuplicatePiSessions(next, restored);
 }
 
 function copySessionWithFreshRuntimeId(
@@ -154,13 +157,14 @@ function splitPaneWithSession(
   const { sourcePaneId, session, newPaneId, direction = "vertical", side = "b" } = payload;
   if (!validPaneId(newPaneId)) return null;
   if (!leafExists(state, sourcePaneId)) return null;
+  const restored = restoreSessionDraft(session, state.sessionDrafts);
   const layout = splitLeafWithinLimits(state.layout, sourcePaneId, newPaneId, direction, side);
   if (!layout) return null;
   const nextPanes = new Map(state.panesById);
-  nextPanes.set(newPaneId, { sessionId: session.id });
+  nextPanes.set(newPaneId, { sessionId: restored.id });
   return {
     ...state,
-    sessions: setSessionInMap(state.sessions, session),
+    sessions: setSessionInMap(state.sessions, restored),
     panesById: nextPanes,
     layout,
     focusedPaneId: newPaneId,
@@ -275,6 +279,7 @@ function adoptReplaySession(
   target: Session,
   payload: ReplaySessionPayload,
 ): WorkspaceState {
+  const input = state.sessionDrafts.get(payload.piSessionId) ?? target.input;
   const sessions = patchSessionInMap(state.sessions, target.id, {
     projectId: target.projectId ?? payload.tab?.projectId,
     cwd: target.cwd ?? payload.tab?.cwd,
@@ -282,6 +287,7 @@ function adoptReplaySession(
     piSessionId: payload.piSessionId,
     title: replaySessionTitle(payload.sessionTitle, target.title || "Loading session"),
     startedAt: target.startedAt ?? payload.tab?.startedAt,
+    input,
   });
   return setPane(withSessions(state, sessions), paneId, { sessionId: target.id });
 }

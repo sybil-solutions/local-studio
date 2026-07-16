@@ -21,6 +21,7 @@ import {
   type WorkspaceStorage,
 } from "@/features/agent/workspace/store";
 import { writePaneState } from "@/features/agent/workspace/persistence";
+import { writeSessionDrafts } from "@/features/agent/workspace/session-drafts";
 import { writeTranscriptSnapshot } from "@/features/agent/workspace/transcript-cache";
 import { SESSIONS_CHANGED_EVENT } from "@/lib/workspace-events";
 
@@ -310,6 +311,9 @@ function persistActionEffects(
   nextState: WorkspaceState,
   deps: WorkspaceEffectDeps,
 ): void {
+  if (prevState.sessionDrafts !== nextState.sessionDrafts) {
+    writeSessionDrafts(deps.storage, nextState.sessionDrafts);
+  }
   if (PANE_STATE_ACTIONS.has(action.type)) {
     writePaneState(deps.storage, nextState, deps.selectionFor);
     return;

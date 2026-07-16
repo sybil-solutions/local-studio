@@ -41,6 +41,7 @@ export function createInitialState(): WorkspaceState {
   const session = makeFreshTab();
   return {
     sessions: new Map([[session.id, session]]),
+    sessionDrafts: new Map(),
     models: [],
     selectedModel: "",
     modelsLoading: true,
@@ -70,7 +71,7 @@ type PersistedTabShape = Partial<Session> & {
 
 export type PersistedSessionMeta = Omit<
   Session,
-  "messages" | "error" | "status" | "activeAssistantId"
+  "messages" | "error" | "status" | "activeAssistantId" | "input"
 > &
   PersistedToolSelectionFields;
 
@@ -227,7 +228,6 @@ export function sessionMetaForPersistence(
     modelId: tab.modelId,
     title: cleanSessionTitle(tab.title) || "New session",
     startedAt: tab.startedAt,
-    input: tab.input,
     tokenStats: tab.tokenStats,
     usedSkills: tab.usedSkills,
     lastEventSeq: tab.lastEventSeq,
