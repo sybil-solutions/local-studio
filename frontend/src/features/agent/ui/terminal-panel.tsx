@@ -20,7 +20,6 @@ export function preloadTerminalPanel(): void {
   void import("@xterm/xterm");
   void import("@xterm/addon-fit");
   void import("@xterm/addon-web-links").catch(() => null);
-  void import("@xterm/addon-webgl").catch(() => null);
 }
 
 export function TerminalPanel({ cwd, ownerKey }: { cwd: string | null; ownerKey: string }) {
@@ -142,22 +141,6 @@ function buildTerminalTheme(cssVar: (name: string) => string): Record<string, st
 
 type ITerminalLoadable = { loadAddon(addon: unknown): void };
 
-function loadWebglAddon(
-  term: ITerminalLoadable,
-  webglModule: {
-    WebglAddon: new () => { onContextLoss?: (cb: () => void) => void; dispose(): void };
-  } | null,
-): void {
-  // GPU renderer for crisp, fast glyphs; falls back to the DOM renderer when
-  // WebGL is unavailable (headless, software rendering, context loss).
-  if (!webglModule) return;
-  try {
-    const addon = new webglModule.WebglAddon();
-    addon.onContextLoss?.(() => addon.dispose());
-    term.loadAddon(addon);
-  } catch {}
-}
-
 function loadWebLinksAddon(
   term: ITerminalLoadable,
   webLinksModule: {
@@ -222,11 +205,10 @@ function useTerminalPanelEffects({
     async function boot() {
       const element = containerRef.current;
       if (!element) return;
-      const [{ Terminal }, { FitAddon }, webLinksModule, webglModule] = await Promise.all([
+      const [{ Terminal }, { FitAddon }, webLinksModule] = await Promise.all([
         import("@xterm/xterm"),
         import("@xterm/addon-fit"),
         import("@xterm/addon-web-links").catch(() => null),
-        import("@xterm/addon-webgl").catch(() => null),
       ]);
       if (refs.disposed) return;
       const styles = getComputedStyle(element);
@@ -252,7 +234,6 @@ function useTerminalPanelEffects({
       const fit = new FitAddon();
       term.loadAddon(fit);
       loadWebLinksAddon(term, webLinksModule);
-      loadWebglAddon(term, webglModule);
       term.attachCustomKeyEventHandler(terminalKeyHandler(stateRef));
       term.open(element);
       fit.fit();
