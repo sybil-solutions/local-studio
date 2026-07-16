@@ -137,6 +137,40 @@ test("an async completion stays owned by its session after the pane switches", (
   assert.deepEqual(next.sessions.get("session-b")?.messages, []);
 });
 
+test("durable runtime adoption atomically collapses local session aliases", () => {
+  const initial = createInitialState();
+  const local = session("local-session");
+  const alias = session("runtime-alias", { piSessionId: "thread-1" });
+  const state = {
+    ...initial,
+    layout: {
+      kind: "split" as const,
+      direction: "vertical" as const,
+      ratio: 0.5,
+      a: { kind: "leaf" as const, paneId: "p-init" },
+      b: { kind: "leaf" as const, paneId: "p-second" },
+    },
+    panesById: new Map([
+      ["p-init", { sessionId: local.id }],
+      ["p-second", { sessionId: alias.id }],
+    ]),
+    sessions: new Map([
+      [local.id, local],
+      [alias.id, alias],
+    ]),
+  };
+  const next = reducer(state, {
+    type: "patchSession",
+    sessionId: local.id,
+    patch: { piSessionId: "thread-1", status: "running" },
+  });
+
+  assert.deepEqual([...next.sessions.keys()], [local.id]);
+  assert.equal(next.sessions.get(local.id)?.piSessionId, "thread-1");
+  assert.equal(next.panesById.get("p-init")?.sessionId, local.id);
+  assert.equal(next.panesById.get("p-second")?.sessionId, local.id);
+});
+
 test("a superseded route completion cannot reopen the previous session", () => {
   const initial = createInitialState();
   const latest = reducer(initial, {

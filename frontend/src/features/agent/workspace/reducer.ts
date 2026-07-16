@@ -6,6 +6,7 @@ import {
 import type { AgentModel, WorkspaceAction, WorkspaceState } from "@/features/agent/workspace/types";
 import {
   applyUrlNavigation,
+  claimCanonicalSession,
   closePane,
   focusPane,
   focusPaneSession,
@@ -171,11 +172,14 @@ function patchWorkspaceSession(
   const sessions = patchSessionInMap(state.sessions, sessionId, patch);
   const after = sessions.get(sessionId);
   if (!after || after === before) return state;
-  return {
-    ...state,
-    sessions,
-    sessionDrafts: updateSessionDrafts(state.sessionDrafts, before, after),
-  };
+  return claimCanonicalSession(
+    {
+      ...state,
+      sessions,
+      sessionDrafts: updateSessionDrafts(state.sessionDrafts, before, after),
+    },
+    after,
+  );
 }
 
 export function reducer(state: WorkspaceState, action: WorkspaceAction): WorkspaceState {

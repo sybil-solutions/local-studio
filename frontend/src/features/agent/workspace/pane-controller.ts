@@ -59,23 +59,23 @@ function pruneOrphanSessions(state: WorkspaceState): WorkspaceState {
   return withSessions(state, pruneSessions(state.sessions, referencedSessionIds(state)));
 }
 
-function pruneDuplicatePiSessions(state: WorkspaceState, canonical: Session): WorkspaceState {
+export function claimCanonicalSession(state: WorkspaceState, canonical: Session): WorkspaceState {
   if (!canonical.piSessionId) return state;
-  const referenced = referencedSessionIds(state);
+  const duplicateIds = new Set(
+    [...state.sessions]
+      .filter(
+        ([id, session]) => id !== canonical.id && session.piSessionId === canonical.piSessionId,
+      )
+      .map(([id]) => id),
+  );
+  if (duplicateIds.size === 0) return state;
   const sessions = new Map(state.sessions);
-  let changed = false;
-  for (const [id, session] of sessions) {
-    if (
-      id === canonical.id ||
-      session.piSessionId !== canonical.piSessionId ||
-      referenced.has(id)
-    ) {
-      continue;
-    }
-    sessions.delete(id);
-    changed = true;
+  for (const id of duplicateIds) sessions.delete(id);
+  const panesById = new Map(state.panesById);
+  for (const [paneId, pane] of panesById) {
+    if (duplicateIds.has(pane.sessionId)) panesById.set(paneId, { sessionId: canonical.id });
   }
-  return changed ? { ...state, sessions } : state;
+  return { ...state, sessions, panesById };
 }
 
 function focusExistingSession(
@@ -100,7 +100,7 @@ function replacePaneSession(
   const next = pruneOrphanSessions(
     setPane(withSessions(state, sessions), paneId, { sessionId: restored.id }),
   );
-  return pruneDuplicatePiSessions({ ...next, focusedPaneId: paneId }, restored);
+  return claimCanonicalSession({ ...next, focusedPaneId: paneId }, restored);
 }
 
 function focusSessionAsOnlyPane(
@@ -117,7 +117,7 @@ function focusSessionAsOnlyPane(
     focusedPaneId: paneId,
   });
   const session = next.sessions.get(sessionId);
-  return session ? pruneDuplicatePiSessions(next, session) : next;
+  return session ? claimCanonicalSession(next, session) : next;
 }
 
 function replaceWorkspaceSession(
@@ -133,7 +133,7 @@ function replaceWorkspaceSession(
     panesById: new Map([[paneId, { sessionId: restored.id }]]),
     focusedPaneId: paneId,
   });
-  return pruneDuplicatePiSessions(next, restored);
+  return claimCanonicalSession(next, restored);
 }
 
 function copySessionWithFreshRuntimeId(
