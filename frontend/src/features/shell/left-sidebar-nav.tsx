@@ -43,14 +43,7 @@ export function isRouteActive(pathname: string, href: string): boolean {
 }
 
 export function routeHidesAppSidebar(pathname: string): boolean {
-  return (
-    pathname.startsWith("/setup") ||
-    pathname.startsWith("/download") ||
-    pathname.startsWith("/agents") ||
-    pathname.startsWith("/quick") ||
-    pathname.startsWith("/landing") ||
-    pathname.startsWith("/docs")
-  );
+  return pathname.startsWith("/setup") || pathname.startsWith("/quick");
 }
 
 export function ProjectsNavPlaceholder() {
