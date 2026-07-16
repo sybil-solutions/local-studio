@@ -54,6 +54,14 @@ function workspaceClassName(mode: QuickPanelMode): string {
   );
 }
 
+function workspaceSessionIdentity(session: ReturnType<typeof focusedSession>) {
+  if (!session) return { sessionId: null, viewKey: null, viewAlias: null };
+  if (!session.piSessionId) {
+    return { sessionId: session.id, viewKey: session.id, viewAlias: null };
+  }
+  return { sessionId: session.id, viewKey: session.piSessionId, viewAlias: session.id };
+}
+
 export function shouldShowProjectEmptyState(
   projects: ProjectsContextValue,
   projectParam: string | null,
@@ -85,10 +93,12 @@ export function AgentWorkspaceShell({
   });
 
   const focusedTab = focusedSession(state);
+  const activeSessionIdentity = workspaceSessionIdentity(focusedTab);
   const activeProject = projects.resolveProject(focusedTab) ?? projects.selectedProject;
-  useActiveCanvasSessionEffects({
-    sessionId: focusedTab?.id ?? null,
+  useActiveSessionEffects({
+    ...activeSessionIdentity,
     setActiveCanvasSession: tools.setActiveCanvasSession,
+    setActiveComputerSession: tools.setActiveComputerSession,
   });
   const focusedModel =
     state.models.find((model) => model.id === (focusedTab?.modelId ?? state.selectedModel)) ?? null;
@@ -340,16 +350,25 @@ function ProjectEmptyState() {
   );
 }
 
-function useActiveCanvasSessionEffects({
+function useActiveSessionEffects({
   sessionId,
+  viewKey,
+  viewAlias,
   setActiveCanvasSession,
+  setActiveComputerSession,
 }: {
   sessionId: SessionId | null;
+  viewKey: string | null;
+  viewAlias: string | null;
   setActiveCanvasSession: (id: SessionId | null) => void;
+  setActiveComputerSession: ReturnType<typeof useTools>["setActiveComputerSession"];
 }): void {
   useMountSubscription(() => {
     setActiveCanvasSession(sessionId);
-  }, [sessionId, setActiveCanvasSession]);
+    setActiveComputerSession(
+      viewKey ? { key: viewKey, aliases: viewAlias ? [viewAlias] : [] } : null,
+    );
+  }, [sessionId, viewKey, viewAlias, setActiveCanvasSession, setActiveComputerSession]);
 }
 
 export function AgentWorkspace({ compact }: { compact?: boolean } = {}) {

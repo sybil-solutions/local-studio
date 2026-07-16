@@ -105,18 +105,6 @@ type ChatPaneFileMentionRow = {
   source: string;
 };
 
-export function useChatPaneStickToBottomEffect({
-  activeTabId,
-  setStickToBottom,
-}: {
-  activeTabId: string | null | undefined;
-  setStickToBottom: Dispatch<SetStateAction<boolean>>;
-}): void {
-  useMountSubscription(() => {
-    setStickToBottom(true);
-  }, [activeTabId, setStickToBottom]);
-}
-
 export function useChatPaneMentionEffects({
   cwd,
   mention,

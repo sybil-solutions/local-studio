@@ -20,7 +20,6 @@ import {
   useChatPaneDerivedState,
   useChatPaneMentionEffects,
   useChatPaneRuntimeHandle,
-  useChatPaneStickToBottomEffect,
 } from "@/features/agent/ui/chat-pane-hooks";
 import { useChatPaneSessionTitle } from "@/features/agent/ui/chat-pane-session-title";
 import { useChatPaneSendFlow } from "@/features/agent/ui/chat-pane-send-flow";
@@ -115,6 +114,8 @@ function ChatTranscript({
   onForkSession?: () => void;
   loadEarlierHistory: () => Promise<void>;
 }) {
+  const viewKey = activeTab?.piSessionId ?? activeTab?.id ?? null;
+  const viewAlias = activeTab?.piSessionId ? activeTab.id : null;
   if (composerOnly) return null;
   return (
     <div className={terminalView ? "hidden" : "flex min-h-0 min-w-0 flex-1"}>
@@ -127,6 +128,8 @@ function ChatTranscript({
           onStickToBottomChange={setStickToBottom}
           messages={activeTab?.messages ?? []}
           running={running}
+          viewKey={viewKey}
+          viewAlias={viewAlias}
           onForkSession={onForkSession}
           hasEarlier={activeTab?.historyCursor != null}
           onLoadEarlier={loadEarlierHistory}
@@ -266,10 +269,6 @@ export function ChatPane({
     running: Boolean(running),
     updateTab,
     fileInputRef,
-  });
-  useChatPaneStickToBottomEffect({
-    activeTabId: activeTab?.id,
-    setStickToBottom,
   });
   useChatPaneContextAttachEffect({
     contextAttachRequest: tools.contextAttachRequest,

@@ -46,6 +46,12 @@ import {
   writeComputerWidth,
 } from "@/features/agent/tools/persistence";
 import { useMountSubscription } from "@/hooks/use-mount-subscription";
+import {
+  computerSessionView,
+  patchSessionView,
+  readSessionView,
+  type SessionViewIdentity,
+} from "@/features/agent/workspace/session-view-state";
 
 // The tools surface is provided as four narrow contexts (actions / computer /
 // browser / selections) so a state change in one slice never re-renders
@@ -65,6 +71,7 @@ type ToolsActions = {
   selectComputerTabWithoutOpening: (tab: ComputerTab) => void;
   closeComputerTab: (tab: ComputerTab) => void;
   setComputerWidth: (width: number) => void;
+  setActiveComputerSession: (identity: SessionViewIdentity | null) => void;
   setCanvasEnabled: (enabled: boolean) => void;
   toggleCanvas: () => void;
   setCanvasText: (text: string) => void;
@@ -180,6 +187,7 @@ export function ToolsProvider({ children }: { children: ReactNode }) {
   const canvasEffectsEnabled = pathname === "/agent" || pathname === "/quick";
   const [browser, setBrowser] = useState<BrowserState>(() => buildInitialBrowser());
   const [computer, setComputer] = useState<ComputerState>(() => buildInitialComputer());
+  const activeComputerSessionRef = useRef<SessionViewIdentity | null>(null);
   const [fileOpenRequest, setFileOpenRequest] = useState<FileOpenRequest | null>(null);
   const [contextAttachRequest, setContextAttachRequest] = useState<ContextAttachRequest | null>(
     null,
@@ -192,6 +200,17 @@ export function ToolsProvider({ children }: { children: ReactNode }) {
   const [selectionVersion, setSelectionVersion] = useState(0);
   const activeCanvasSessionRef = useRef<SessionId | null>(null);
   const [activeCanvasSessionId, setActiveCanvasSessionIdState] = useState<SessionId | null>(null);
+  const updateComputer = useCallback<Dispatch<SetStateAction<ComputerState>>>((update) => {
+    setComputer((current) => {
+      const next = typeof update === "function" ? update(current) : update;
+      if (next === current) return current;
+      const identity = activeComputerSessionRef.current;
+      if (identity) {
+        patchSessionView(window.localStorage, identity, { computer: computerSessionView(next) });
+      }
+      return next;
+    });
+  }, []);
   const handleCatalogueLoaded = useCallback(
     ({
       skills,
@@ -251,88 +270,119 @@ export function ToolsProvider({ children }: { children: ReactNode }) {
     setBrowser((current) => ({ ...current, input }));
   }, []);
 
-  const setComputerOpen = useCallback((open: boolean) => {
-    setComputer((current) => computerPanelVisibility(current, open));
-  }, []);
+  const setComputerOpen = useCallback(
+    (open: boolean) => {
+      updateComputer((current) => computerPanelVisibility(current, open));
+    },
+    [updateComputer],
+  );
 
   const toggleComputerOpen = useCallback(() => {
-    setComputer((current) => computerPanelVisibility(current, !current.open));
-  }, []);
+    updateComputer((current) => computerPanelVisibility(current, !current.open));
+  }, [updateComputer]);
 
-  const setComputerTab = useCallback((tab: ComputerTab) => {
-    setComputer((current) => {
-      const tabs = uniqueComputerTabs([...current.tabs, tab]);
-      writeComputerTabs(tabs);
-      return current.tab === tab && current.tabs === tabs
-        ? current
-        : { ...current, open: true, tab, tabs };
-    });
-    writeComputerTab(tab);
-    setBrowser((current) => {
-      const enabled = tab === "browser";
-      if (current.enabled === enabled) return current;
-      writeBrowserEnabled(enabled);
-      return { ...current, enabled };
-    });
-  }, []);
+  const setComputerTab = useCallback(
+    (tab: ComputerTab) => {
+      updateComputer((current) => {
+        const tabs = uniqueComputerTabs([...current.tabs, tab]);
+        writeComputerTabs(tabs);
+        return current.tab === tab && current.tabs === tabs
+          ? current
+          : { ...current, open: true, tab, tabs };
+      });
+      writeComputerTab(tab);
+      setBrowser((current) => {
+        const enabled = tab === "browser";
+        if (current.enabled === enabled) return current;
+        writeBrowserEnabled(enabled);
+        return { ...current, enabled };
+      });
+    },
+    [updateComputer],
+  );
 
   // Register + select a tab WITHOUT force-opening the computer panel. Used when
   // the model drives a background tool (e.g. the browser): it should route to the
   // right tab and pre-select it, but must not pop the panel open on every prompt
   // — the user controls whether the panel is visible.
-  const selectComputerTabWithoutOpening = useCallback((tab: ComputerTab) => {
-    setComputer((current) => {
-      const tabs = uniqueComputerTabs([...current.tabs, tab]);
-      writeComputerTabs(tabs);
-      writeComputerTab(tab);
-      return current.tab === tab && current.tabs === tabs ? current : { ...current, tab, tabs };
-    });
-    if (tab === "browser") {
-      setBrowser((current) => {
-        if (current.enabled) return current;
-        writeBrowserEnabled(true);
-        return { ...current, enabled: true };
+  const selectComputerTabWithoutOpening = useCallback(
+    (tab: ComputerTab) => {
+      updateComputer((current) => {
+        const tabs = uniqueComputerTabs([...current.tabs, tab]);
+        writeComputerTabs(tabs);
+        writeComputerTab(tab);
+        return current.tab === tab && current.tabs === tabs ? current : { ...current, tab, tabs };
       });
-    }
-  }, []);
+      if (tab === "browser") {
+        setBrowser((current) => {
+          if (current.enabled) return current;
+          writeBrowserEnabled(true);
+          return { ...current, enabled: true };
+        });
+      }
+    },
+    [updateComputer],
+  );
 
-  const closeComputerTab = useCallback((tab: ComputerTab) => {
-    if (tab === "status" || tab === "tools") return;
-    if (tab === "browser") {
-      setBrowser((current) => {
-        if (!current.enabled) return current;
-        writeBrowserEnabled(false);
-        return { ...current, enabled: false };
+  const closeComputerTab = useCallback(
+    (tab: ComputerTab) => {
+      if (tab === "status" || tab === "tools") return;
+      if (tab === "browser") {
+        setBrowser((current) => {
+          if (!current.enabled) return current;
+          writeBrowserEnabled(false);
+          return { ...current, enabled: false };
+        });
+      }
+      updateComputer((current) => {
+        const tabs = uniqueComputerTabs(current.tabs.filter((item) => item !== tab));
+        const activeTab = current.tab === tab ? (tabs[tabs.length - 1] ?? "status") : current.tab;
+        writeComputerTabs(tabs);
+        writeComputerTab(activeTab);
+        return { ...current, tab: activeTab, tabs };
       });
-    }
+    },
+    [updateComputer],
+  );
+
+  const setComputerWidth = useCallback(
+    (width: number) => {
+      if (!Number.isFinite(width)) return;
+      const clamped = clampComputerWidth(width);
+      updateComputer((current) =>
+        current.width === clamped ? current : { ...current, width: clamped },
+      );
+      writeComputerWidth(clamped);
+    },
+    [updateComputer],
+  );
+
+  const setActiveComputerSession = useCallback((identity: SessionViewIdentity | null) => {
+    const previous = activeComputerSessionRef.current;
+    if (previous?.key === identity?.key) return;
     setComputer((current) => {
-      const tabs = uniqueComputerTabs(current.tabs.filter((item) => item !== tab));
-      const activeTab = current.tab === tab ? (tabs[tabs.length - 1] ?? "status") : current.tab;
-      writeComputerTabs(tabs);
-      writeComputerTab(activeTab);
-      return { ...current, tab: activeTab, tabs };
+      if (previous) {
+        patchSessionView(window.localStorage, previous, { computer: computerSessionView(current) });
+      }
+      activeComputerSessionRef.current = identity;
+      const restored = identity ? readSessionView(window.localStorage, identity)?.computer : null;
+      return restored ? { ...current, ...restored } : { ...current, open: false };
     });
   }, []);
 
-  const setComputerWidth = useCallback((width: number) => {
-    if (!Number.isFinite(width)) return;
-    const clamped = clampComputerWidth(width);
-    setComputer((current) =>
-      current.width === clamped ? current : { ...current, width: clamped },
-    );
-    writeComputerWidth(clamped);
-  }, []);
-
-  const setCanvasEnabled = useCallback((enabled: boolean) => {
-    setComputer((current) =>
-      current.canvasEnabled === enabled ? current : { ...current, canvasEnabled: enabled },
-    );
-    writeComputerCanvasEnabled(enabled);
-    syncCanvasInBackground(activeCanvasSessionRef.current, { enabled });
-  }, []);
+  const setCanvasEnabled = useCallback(
+    (enabled: boolean) => {
+      updateComputer((current) =>
+        current.canvasEnabled === enabled ? current : { ...current, canvasEnabled: enabled },
+      );
+      writeComputerCanvasEnabled(enabled);
+      syncCanvasInBackground(activeCanvasSessionRef.current, { enabled });
+    },
+    [updateComputer],
+  );
 
   const toggleCanvas = useCallback(() => {
-    setComputer((current) => {
+    updateComputer((current) => {
       const next = !current.canvasEnabled;
       const tabs = next ? uniqueComputerTabs([...current.tabs, "canvas"]) : current.tabs;
       writeComputerCanvasEnabled(next);
@@ -346,26 +396,32 @@ export function ToolsProvider({ children }: { children: ReactNode }) {
         open: next ? true : current.open,
       };
     });
-  }, []);
+  }, [updateComputer]);
 
-  const setCanvasText = useCallback((text: string) => {
-    setComputer((current) =>
-      current.canvasText === text ? current : { ...current, canvasText: text },
-    );
-    writeComputerCanvasText(text);
-    syncCanvasInBackground(activeCanvasSessionRef.current, { enabled: true, text });
-  }, []);
+  const setCanvasText = useCallback(
+    (text: string) => {
+      updateComputer((current) =>
+        current.canvasText === text ? current : { ...current, canvasText: text },
+      );
+      writeComputerCanvasText(text);
+      syncCanvasInBackground(activeCanvasSessionRef.current, { enabled: true, text });
+    },
+    [updateComputer],
+  );
 
-  const requestFileOpen = useCallback((path: string) => {
-    const clean = path.trim();
-    if (!clean) return;
-    setComputer((current) => ({ ...current, open: true, tab: "files" }));
-    writeComputerTab("files");
-    setFileOpenRequest((current) => ({
-      id: (current?.id ?? 0) + 1,
-      path: clean,
-    }));
-  }, []);
+  const requestFileOpen = useCallback(
+    (path: string) => {
+      const clean = path.trim();
+      if (!clean) return;
+      updateComputer((current) => ({ ...current, open: true, tab: "files" }));
+      writeComputerTab("files");
+      setFileOpenRequest((current) => ({
+        id: (current?.id ?? 0) + 1,
+        path: clean,
+      }));
+    },
+    [updateComputer],
+  );
 
   const requestContextAttach = useCallback(
     (request: { label: string; path?: string; content: string }) => {
@@ -445,6 +501,7 @@ export function ToolsProvider({ children }: { children: ReactNode }) {
       selectComputerTabWithoutOpening,
       closeComputerTab,
       setComputerWidth,
+      setActiveComputerSession,
       setCanvasEnabled,
       toggleCanvas,
       setCanvasText,
@@ -467,6 +524,7 @@ export function ToolsProvider({ children }: { children: ReactNode }) {
       selectComputerTabWithoutOpening,
       closeComputerTab,
       setComputerWidth,
+      setActiveComputerSession,
       setCanvasEnabled,
       toggleCanvas,
       setCanvasText,
@@ -509,7 +567,7 @@ export function ToolsProvider({ children }: { children: ReactNode }) {
               <LazyToolsEffectsBridge
                 catalogueEnabled={catalogueEnabled}
                 canvasEffectsEnabled={canvasEffectsEnabled}
-                setComputer={setComputer}
+                setComputer={updateComputer}
                 activeCanvasSessionId={activeCanvasSessionId}
                 onCatalogueLoaded={handleCatalogueLoaded}
               />
