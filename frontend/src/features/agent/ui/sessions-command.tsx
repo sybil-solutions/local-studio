@@ -37,34 +37,17 @@ const APP_DESTINATIONS: AppDestination[] = [
     description: "Token, request, and model usage analytics.",
   },
   {
-    href: "/recipes",
-    label: "Models",
-    keywords: "models recipes launch downloads search hugging face explore",
-    description: "Search models, manage recipes, launches, and downloads.",
-  },
-  {
     href: "/configure",
     label: "Configure",
-    keywords: "engine runtime launch parameters presets templates",
-    description: "Configure model engines and launch parameters.",
+    keywords:
+      "machines hardware models recipes launch downloads integrations mcp connectors plugins skills server logs api docs swagger controller engines runtime",
+    description: "Manage machines, models, integrations, and the controller.",
   },
   {
     href: "/agent",
     label: "Workbench",
     keywords: "agent chat projects browser terminal tools canvas files",
     description: "Project-aware chat, terminals, files, and tools.",
-  },
-  {
-    href: "/integrations",
-    label: "Integrations",
-    keywords: "mcp connectors plugins skills tools services accounts",
-    description: "Connect MCP tools and inspect local skills.",
-  },
-  {
-    href: "/server",
-    label: "Server",
-    keywords: "logs api docs swagger controller endpoints",
-    description: "Server logs and controller API documentation.",
   },
   {
     href: "/agent/sessions",

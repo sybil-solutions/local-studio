@@ -52,15 +52,7 @@ export {
 } from "./page";
 export type { SectionNavItem, PageWidth } from "./page";
 
-export {
-  ListGroup,
-  ListRow,
-  RowDetailLine,
-  RowFacts,
-  RowValue,
-  EmptySafeNotice,
-  KeyValueRow,
-} from "./list";
+export { ListRow, RowDetailLine, RowFacts, RowValue, EmptySafeNotice, KeyValueRow } from "./list";
 export type { RowFact } from "./list";
 
 export { Slider } from "./slider";

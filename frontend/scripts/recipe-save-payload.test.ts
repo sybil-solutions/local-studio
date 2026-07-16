@@ -3,7 +3,7 @@ import test from "node:test";
 import { prepareRecipeForSave } from "@/features/recipes/prepare-recipe";
 import { DEFAULT_RECIPE } from "@/features/recipes/recipes-content/default-recipe";
 
-test("configure rename payload excludes runtime-only recipe state", () => {
+test("recipe save payload excludes runtime-only state", () => {
   const recipe = {
     ...DEFAULT_RECIPE,
     name: "Renamed Serve",

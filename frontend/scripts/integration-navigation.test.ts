@@ -15,7 +15,10 @@ test("integration navigation selects skills from a hash", () => {
 });
 
 test("integration navigation forwards legacy settings hashes", () => {
-  assert.equal(legacyIntegrationHref("#connectors"), "/integrations#connectors");
-  assert.equal(legacyIntegrationHref("#skills"), "/integrations#skills");
+  assert.equal(
+    legacyIntegrationHref("#connectors"),
+    "/configure?integration=connectors#integrations",
+  );
+  assert.equal(legacyIntegrationHref("#skills"), "/configure?integration=skills#integrations");
   assert.equal(legacyIntegrationHref("#system"), null);
 });

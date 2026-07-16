@@ -1,1 +1,5 @@
-export { default } from "@/features/logs/server-view";
+import { permanentRedirect } from "next/navigation";
+
+export default function ServerRedirect() {
+  permanentRedirect("/configure#server");
+}

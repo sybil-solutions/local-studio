@@ -5,16 +5,13 @@ import api from "@/lib/api/client";
 import type { RigNodePayload } from "@/lib/api/rigs";
 import { readPageCache, writePageCache } from "@/lib/page-data-cache";
 import { useMountSubscription } from "@/hooks/use-mount-subscription";
-import type { Rig, RigsPayload, RecipeWithStatus } from "@/lib/types";
-import { prepareRecipeForSave } from "@/features/recipes/prepare-recipe";
+import type { Rig, RigsPayload } from "@/lib/types";
 
 const RIGS_CACHE_KEY = "configure:rigs";
-const RECIPES_CACHE_KEY = "configure:recipes";
 
 export interface ConfigureState {
   rigs: Rig[];
   localNodeId: string;
-  recipes: RecipeWithStatus[];
   loading: boolean;
   refreshing: boolean;
   error: string | null;
@@ -26,15 +23,11 @@ export interface ConfigureState {
   addNode: (rigId: string, payload: RigNodePayload & { name: string }) => Promise<void>;
   updateNode: (rigId: string, nodeId: string, payload: RigNodePayload) => Promise<void>;
   deleteNode: (rigId: string, nodeId: string) => Promise<void>;
-  renameRecipe: (recipe: RecipeWithStatus, name: string) => Promise<void>;
 }
 
 export function useConfigure(): ConfigureState {
   const [rigsPayload, setRigsPayload] = useState<RigsPayload | null>(() =>
     readPageCache<RigsPayload>(RIGS_CACHE_KEY),
-  );
-  const [recipes, setRecipes] = useState<RecipeWithStatus[]>(
-    () => readPageCache<RecipeWithStatus[]>(RECIPES_CACHE_KEY) ?? [],
   );
   const [loading, setLoading] = useState(rigsPayload === null);
   const [refreshing, setRefreshing] = useState(false);
@@ -44,17 +37,9 @@ export function useConfigure(): ConfigureState {
     setRefreshing(true);
     setError(null);
     try {
-      const [rigsResult, recipesResult] = await Promise.allSettled([
-        api.getRigs(),
-        api.getRecipes(),
-      ]);
-      if (rigsResult.status !== "fulfilled") throw rigsResult.reason;
-      writePageCache(RIGS_CACHE_KEY, rigsResult.value);
-      setRigsPayload(rigsResult.value);
-      if (recipesResult.status === "fulfilled") {
-        writePageCache(RECIPES_CACHE_KEY, recipesResult.value.recipes);
-        setRecipes(recipesResult.value.recipes);
-      }
+      const rigs = await api.getRigs();
+      writePageCache(RIGS_CACHE_KEY, rigs);
+      setRigsPayload(rigs);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -135,19 +120,9 @@ export function useConfigure(): ConfigureState {
     [applyRig],
   );
 
-  const renameRecipe = useCallback(async (recipe: RecipeWithStatus, name: string) => {
-    await api.updateRecipe(recipe.id, prepareRecipeForSave({ ...recipe, name }));
-    setRecipes((current) => {
-      const next = current.map((entry) => (entry.id === recipe.id ? { ...entry, name } : entry));
-      writePageCache(RECIPES_CACHE_KEY, next);
-      return next;
-    });
-  }, []);
-
   return {
     rigs: rigsPayload?.rigs ?? [],
     localNodeId: rigsPayload?.local_node_id ?? "local",
-    recipes,
     loading,
     refreshing,
     error,
@@ -159,6 +134,5 @@ export function useConfigure(): ConfigureState {
     addNode,
     updateNode,
     deleteNode,
-    renameRecipe,
   };
 }

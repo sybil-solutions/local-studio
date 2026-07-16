@@ -1,12 +1,24 @@
 "use client";
 
-import { useMemo } from "react";
+import { useCallback, useMemo } from "react";
 import type { RecipesTableProps } from "./types";
-import { useRecipesContentModel } from "./recipes-content-model";
+import { useRecipesContentModel, type RecipesContentTab } from "./recipes-content-model";
 import { RecipesContentView } from "./recipes-content-view";
 
-export function RecipesContent() {
+export function RecipesContent({ embedded = false }: { embedded?: boolean }) {
   const model = useRecipesContentModel();
+  const setTab = model.setTab;
+  const selectTab = useCallback(
+    (tab: RecipesContentTab) => {
+      setTab(tab);
+      if (!embedded) return;
+      const url = new URL(window.location.href);
+      url.searchParams.set("tab", tab);
+      url.hash = "models";
+      window.history.replaceState(null, "", url);
+    },
+    [embedded, setTab],
+  );
 
   const table = useMemo<RecipesTableProps>(
     () => ({
@@ -39,8 +51,9 @@ export function RecipesContent() {
 
   return (
     <RecipesContentView
+      embedded={embedded}
       tab={model.tab}
-      setTab={model.setTab}
+      setTab={selectTab}
       loading={model.loading}
       refreshing={model.refreshing}
       filter={model.filter}

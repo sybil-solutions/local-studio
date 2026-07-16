@@ -81,7 +81,7 @@ const nextConfig: NextConfig = {
     return [
       {
         source: "/models",
-        destination: "/recipes",
+        destination: "/configure#models",
         permanent: true,
       },
     ];

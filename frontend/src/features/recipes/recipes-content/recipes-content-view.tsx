@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import { Compass, Download, HardDrive } from "@/ui/icon-registry";
 import type { ModelDownload, ModelInfo, RecipeWithStatus, RuntimeTarget } from "@/lib/types";
 import type { RecipeEditor } from "@/features/recipes/recipe-editor";
-import { RefreshButton, TabbedPage } from "@/ui";
+import { RefreshButton, TabbedPage, Tabs } from "@/ui";
 import type { RecipesContentTab } from "./recipes-content-model";
 import type { RecipesTableProps } from "./types";
 import { DeleteRecipeConfirmModal } from "./delete-recipe-confirm-modal";
@@ -14,6 +14,7 @@ import { ExploreTab } from "./explore-tab";
 import { DownloadsTab } from "./downloads-tab";
 
 type Props = {
+  embedded?: boolean;
   tab: RecipesContentTab;
   setTab: (tab: RecipesContentTab) => void;
   loading: boolean;
@@ -67,6 +68,7 @@ const TAB_HEADINGS: Record<RecipesContentTab, { title: string; description: stri
 
 export function RecipesContentView(props: Props) {
   const {
+    embedded = false,
     tab,
     setTab,
     loading,
@@ -97,54 +99,72 @@ export function RecipesContentView(props: Props) {
     table,
   } = props;
   const heading = TAB_HEADINGS[tab];
+  const content = (
+    <section>
+      <h2 className="text-[length:var(--fs-2xl)] font-medium tracking-[-0.015em] text-(--ui-fg)">
+        {heading.title}
+      </h2>
+      <p className="mt-1 text-[length:var(--fs-sm)] text-(--ui-muted)">{heading.description}</p>
+      <div className="mt-6">
+        {tab === "serves" ? (
+          <RecipesTab
+            loading={loading}
+            filter={filter}
+            setFilter={setFilter}
+            recipes={recipes}
+            sortedRecipes={sortedRecipes}
+            runningRecipeId={runningRecipeId}
+            runningRecipeName={runningRecipeName}
+            launchProgressMessage={launchProgressMessage}
+            onEvictModel={onEvictModel}
+            onNewRecipe={onNewRecipe}
+            table={table}
+          />
+        ) : tab === "get" ? (
+          <ExploreTab />
+        ) : (
+          <DownloadsTab onCreateServe={onCreateServeFromDownload} />
+        )}
+      </div>
+    </section>
+  );
 
   return (
     <>
-      <TabbedPage
-        eyebrow="Model library"
-        title="Models"
-        description="Manage model profiles, downloads, and the model marketplace available to Local Studio."
-        width="md"
-        tabs={MODEL_TABS}
-        activeTab={tab}
-        onSelectTab={setTab}
-        actions={
-          <RefreshButton
-            onRefresh={onRefresh}
-            loading={refreshing || loading}
-            label="Refresh models"
-            className="h-8 w-8"
-          />
-        }
-      >
-        <section>
-          <h2 className="text-[length:var(--fs-2xl)] font-medium tracking-[-0.015em] text-(--ui-fg)">
-            {heading.title}
-          </h2>
-          <p className="mt-1 text-[length:var(--fs-sm)] text-(--ui-muted)">{heading.description}</p>
-          <div className="mt-6">
-            {tab === "serves" ? (
-              <RecipesTab
-                loading={loading}
-                filter={filter}
-                setFilter={setFilter}
-                recipes={recipes}
-                sortedRecipes={sortedRecipes}
-                runningRecipeId={runningRecipeId}
-                runningRecipeName={runningRecipeName}
-                launchProgressMessage={launchProgressMessage}
-                onEvictModel={onEvictModel}
-                onNewRecipe={onNewRecipe}
-                table={table}
-              />
-            ) : tab === "get" ? (
-              <ExploreTab />
-            ) : (
-              <DownloadsTab onCreateServe={onCreateServeFromDownload} />
-            )}
+      {embedded ? (
+        <div className="space-y-6">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-(--ui-separator) pb-3">
+            <Tabs variant="pill" items={MODEL_TABS} activeTab={tab} onSelectTab={setTab} />
+            <RefreshButton
+              onRefresh={onRefresh}
+              loading={refreshing || loading}
+              label="Refresh models"
+              className="h-8 w-8"
+            />
           </div>
-        </section>
-      </TabbedPage>
+          {content}
+        </div>
+      ) : (
+        <TabbedPage
+          eyebrow="Model library"
+          title="Models"
+          description="Manage model profiles, downloads, and the model marketplace available to Local Studio."
+          width="md"
+          tabs={MODEL_TABS}
+          activeTab={tab}
+          onSelectTab={setTab}
+          actions={
+            <RefreshButton
+              onRefresh={onRefresh}
+              loading={refreshing || loading}
+              label="Refresh models"
+              className="h-8 w-8"
+            />
+          }
+        >
+          {content}
+        </TabbedPage>
+      )}
 
       {modalOpen && modalRecipe ? (
         <div className="fixed inset-0 z-50 flex justify-end">

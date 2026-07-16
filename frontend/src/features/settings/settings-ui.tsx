@@ -32,6 +32,8 @@ type LayoutProps<Id extends SettingsSectionId = SettingsSectionId> = {
   onSelectSection: (section: Id) => void;
   eyebrow?: string;
   refreshLabel?: string;
+  showRefresh?: boolean;
+  width?: "default" | "wide";
   children: ReactNode;
 };
 
@@ -56,19 +58,32 @@ export function SettingsLayout<Id extends SettingsSectionId = SettingsSectionId>
   onSelectSection,
   eyebrow,
   refreshLabel = `Refresh ${title.toLowerCase()}`,
+  showRefresh = true,
+  width = "default",
   children,
 }: LayoutProps<Id>) {
   const active = sections.find((section) => section.id === activeSection);
+  const layoutWidth =
+    width === "wide"
+      ? "max-w-[96rem] lg:grid-cols-[176px_minmax(0,70rem)]"
+      : "max-w-[72rem] lg:grid-cols-[176px_minmax(0,48rem)]";
 
   return (
     <AppPage>
-      <div className="mx-auto grid w-full max-w-[72rem] grid-cols-1 gap-6 px-4 py-5 sm:px-6 lg:grid-cols-[176px_minmax(0,48rem)] lg:justify-center lg:gap-10 lg:py-8">
+      <div
+        className={cx(
+          "mx-auto grid w-full grid-cols-1 gap-6 px-4 py-5 sm:px-6 lg:justify-center lg:gap-10 lg:py-8",
+          layoutWidth,
+        )}
+      >
         <aside className="min-w-0 lg:sticky lg:top-8 lg:self-start">
           <div className="mb-5 hidden items-center justify-between gap-3 px-2 lg:flex">
             <h1 className="text-[length:var(--fs-xl)] font-medium tracking-[-0.01em] text-(--ui-fg)">
               {title}
             </h1>
-            <RefreshIconButton onClick={onReload} loading={loading} label={refreshLabel} />
+            {showRefresh ? (
+              <RefreshIconButton onClick={onReload} loading={loading} label={refreshLabel} />
+            ) : null}
           </div>
           <SectionNav
             label={`${title} sections`}
@@ -94,12 +109,16 @@ export function SettingsLayout<Id extends SettingsSectionId = SettingsSectionId>
                 </p>
               ) : null}
             </div>
-            <div className="flex shrink-0 items-center gap-2 text-[length:var(--fs-xs)] text-(--ui-muted)">
-              {status}
-              <span className="lg:hidden">
-                <RefreshIconButton onClick={onReload} loading={loading} label={refreshLabel} />
-              </span>
-            </div>
+            {status || showRefresh ? (
+              <div className="flex shrink-0 items-center gap-2 text-[length:var(--fs-xs)] text-(--ui-muted)">
+                {status}
+                {showRefresh ? (
+                  <span className="lg:hidden">
+                    <RefreshIconButton onClick={onReload} loading={loading} label={refreshLabel} />
+                  </span>
+                ) : null}
+              </div>
+            ) : null}
           </header>
           <div>{children}</div>
         </section>

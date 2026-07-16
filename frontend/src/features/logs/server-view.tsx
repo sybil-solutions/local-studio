@@ -13,6 +13,10 @@ type Tab = "logs" | "docs";
 type BackendInfo = { installed: boolean; version: string | null };
 
 export default function ServerPage() {
+  return <ServerContent />;
+}
+
+export function ServerContent({ embedded = false }: { embedded?: boolean }) {
   const logs = useLogs();
   const realtime = useRealtimeStatusStore();
   const [tab, setTab] = useState<Tab>("logs");
@@ -22,9 +26,10 @@ export default function ServerPage() {
   );
   const docsSrcDoc = useMemo(() => swaggerSrcDoc("/api/proxy/api/spec"), []);
 
-  return (
-    <AppPage className="flex h-full min-h-0 flex-col overflow-hidden">
+  const content = (
+    <>
       <ServerHeader
+        embedded={embedded}
         backendUrl={backendUrl}
         connected={realtime.connected}
         running={Boolean(realtime.status?.running)}
@@ -56,11 +61,22 @@ export default function ServerPage() {
           docsSrcDoc={docsSrcDoc}
         />
       </div>
-    </AppPage>
+    </>
   );
+
+  if (embedded) {
+    return (
+      <div className="flex min-h-[44rem] flex-col overflow-hidden rounded-xl border border-(--ui-border) bg-(--ui-surface)">
+        {content}
+      </div>
+    );
+  }
+
+  return <AppPage className="flex h-full min-h-0 flex-col overflow-hidden">{content}</AppPage>;
 }
 
 function ServerHeader({
+  embedded,
   backendUrl,
   connected,
   running,
@@ -68,6 +84,7 @@ function ServerHeader({
   selectedSession,
   onRefresh,
 }: {
+  embedded: boolean;
   backendUrl: string;
   connected: boolean;
   running: boolean;
@@ -76,18 +93,26 @@ function ServerHeader({
   onRefresh: () => void;
 }) {
   return (
-    <header className="border-b border-(--border) px-5 py-4">
+    <header className={`border-b border-(--border) ${embedded ? "px-4 py-3" : "px-5 py-4"}`}>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
-          <div className="text-[length:var(--fs-xs)] uppercase tracking-[0.16em] text-(--color-foreground-subtle)">
-            Server
-          </div>
-          <h1 className="mt-1 text-[length:var(--fs-3xl)] font-semibold tracking-[-0.015em]">
-            Controller
-          </h1>
-          <CensoredApiUrl className="mt-1 block font-mono text-xs text-(--color-foreground-subtle)">
-            {backendUrl}
-          </CensoredApiUrl>
+          {embedded ? (
+            <CensoredApiUrl className="block font-mono text-xs text-(--color-foreground-subtle)">
+              {backendUrl}
+            </CensoredApiUrl>
+          ) : (
+            <>
+              <div className="text-[length:var(--fs-xs)] uppercase tracking-[0.16em] text-(--color-foreground-subtle)">
+                Server
+              </div>
+              <h1 className="mt-1 text-[length:var(--fs-3xl)] font-semibold tracking-[-0.015em]">
+                Controller
+              </h1>
+              <CensoredApiUrl className="mt-1 block font-mono text-xs text-(--color-foreground-subtle)">
+                {backendUrl}
+              </CensoredApiUrl>
+            </>
+          )}
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <StatusPill tone={connected ? "good" : "danger"} variant="badge">
@@ -419,8 +444,6 @@ function StatusGroup({ title, children }: { title: string; children: ReactNode }
     </div>
   );
 }
-
-// --- Pure helpers (keep JSX complexity low) ---
 
 function deriveBackends(
   summary: RealtimeStatusSnapshot["runtimeSummary"],

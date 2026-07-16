@@ -1,5 +1,5 @@
-import { IntegrationsPage } from "@/features/integrations/integrations-page";
+import { permanentRedirect } from "next/navigation";
 
-export default function Page() {
-  return <IntegrationsPage />;
+export default function IntegrationsRedirect() {
+  permanentRedirect("/configure#integrations");
 }

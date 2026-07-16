@@ -1,26 +1,62 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
-import { ErrorBox, RefreshButton, StatusPill, TabbedPage } from "@/ui";
-import { Boxes, ChevronRight, Server } from "@/ui/icon-registry";
+import { ErrorBox, StatusPill } from "@/ui";
+import {
+  Boxes,
+  ChevronRight,
+  Gauge,
+  Monitor,
+  Plug,
+  Server,
+  type LucideIcon,
+} from "@/ui/icon-registry";
+import { useMountSubscription } from "@/hooks/use-mount-subscription";
+import { SettingsLayout, type SettingsSectionDef } from "@/features/settings/settings-ui";
+import { RecipesContent } from "@/features/recipes/recipes-content/recipes-content";
+import { IntegrationsContent } from "@/features/integrations/integrations-page";
+import { ServerContent } from "@/features/logs/server-view";
 import { useConfigure } from "./use-configure";
 import { RigsSection } from "./rigs-section";
-import { ModelsSection } from "./models-section";
+import { configureSectionFromHash, type ConfigureSectionId } from "./configure-navigation";
 
-type ConfigureSectionId = "overview" | "rig" | "models";
+const sectionIcon = (Icon: LucideIcon) => <Icon className="h-3.5 w-3.5" />;
 
-const CONFIGURE_SECTIONS = [
-  { id: "overview", label: "Overview" },
-  { id: "rig", label: "Machines" },
-  { id: "models", label: "Model Profiles" },
-] satisfies Array<{ id: ConfigureSectionId; label: string }>;
+const CONFIGURE_SECTIONS: SettingsSectionDef<ConfigureSectionId>[] = [
+  {
+    id: "overview",
+    label: "Overview",
+    description: "Workspace hardware, models, integrations, and controller tools.",
+    icon: sectionIcon(Gauge),
+  },
+  {
+    id: "rig",
+    label: "Machines",
+    description: "Hardware available for running local and remote models.",
+    icon: sectionIcon(Monitor),
+  },
+  {
+    id: "models",
+    label: "Models",
+    description: "Find weights, manage serves, and monitor downloads.",
+    icon: sectionIcon(Boxes),
+  },
+  {
+    id: "integrations",
+    label: "Integrations",
+    description: "Plugins, connectors, accounts, and reusable skills.",
+    icon: sectionIcon(Plug),
+  },
+  {
+    id: "server",
+    label: "Server",
+    description: "Controller health, runtime details, logs, and API docs.",
+    icon: sectionIcon(Server),
+  },
+];
 
-const initialSection = (): ConfigureSectionId => {
-  if (typeof window === "undefined") return "overview";
-  if (window.location.hash === "#rig") return "rig";
-  if (window.location.hash === "#models") return "models";
-  return "overview";
-};
+const initialSection = (): ConfigureSectionId =>
+  typeof window === "undefined" ? "overview" : configureSectionFromHash(window.location.hash);
 
 function OverviewRow({
   icon,
@@ -34,7 +70,7 @@ function OverviewRow({
   title: string;
   description: string;
   detail: string;
-  ready: boolean;
+  ready?: boolean;
   onOpen: () => void;
 }) {
   return (
@@ -49,7 +85,9 @@ function OverviewRow({
       <span className="min-w-0 flex-1">
         <span className="flex flex-wrap items-center gap-2">
           <span className="text-[length:var(--fs-lg)] font-medium text-(--ui-fg)">{title}</span>
-          <StatusPill tone={ready ? "good" : "default"}>{ready ? "Ready" : "Not set"}</StatusPill>
+          {ready === undefined ? null : (
+            <StatusPill tone={ready ? "good" : "default"}>{ready ? "Ready" : "Not set"}</StatusPill>
+          )}
         </span>
         <span className="mt-1 block text-[length:var(--fs-sm)] leading-relaxed text-(--ui-muted)">
           {description}
@@ -70,6 +108,12 @@ export default function ConfigurePage() {
   const state = useConfigure();
   const [section, setSection] = useState<ConfigureSectionId>(initialSection);
 
+  useMountSubscription(() => {
+    const onHashChange = () => setSection(configureSectionFromHash(window.location.hash));
+    window.addEventListener("hashchange", onHashChange);
+    return () => window.removeEventListener("hashchange", onHashChange);
+  }, []);
+
   const selectSection = (next: ConfigureSectionId) => {
     setSection(next);
     window.history.replaceState(null, "", next === "overview" ? "#overview" : `#${next}`);
@@ -85,26 +129,21 @@ export default function ConfigurePage() {
       ),
     0,
   );
-  const runningProfiles = state.recipes.filter((recipe) => recipe.status === "running").length;
+  const machineSection = section === "overview" || section === "rig";
 
   return (
-    <TabbedPage
-      eyebrow="Workspace"
+    <SettingsLayout
+      sections={CONFIGURE_SECTIONS}
+      activeSection={section}
       title="Configure"
-      description="Manage the machines and model profiles available to Local Studio."
-      width="sm"
-      tabs={CONFIGURE_SECTIONS}
-      activeTab={section}
-      onSelectTab={selectSection}
-      actions={
-        <RefreshButton
-          onRefresh={state.reload}
-          loading={state.refreshing || state.loading}
-          className="h-8 w-8"
-        />
-      }
+      eyebrow="Workspace"
+      width="wide"
+      loading={state.refreshing || state.loading}
+      showRefresh={machineSection}
+      onReload={state.reload}
+      onSelectSection={selectSection}
     >
-      {state.error ? <ErrorBox>{state.error}</ErrorBox> : null}
+      {machineSection && state.error ? <ErrorBox>{state.error}</ErrorBox> : null}
 
       {section === "overview" ? (
         <div className="space-y-7">
@@ -115,7 +154,7 @@ export default function ConfigurePage() {
             </p>
             <div className="mt-4 divide-y divide-(--ui-separator) overflow-hidden rounded-xl border border-(--ui-border) bg-(--ui-surface)">
               <OverviewRow
-                icon={<Server className="h-5 w-5" />}
+                icon={<Monitor className="h-5 w-5" />}
                 title="Machines"
                 description="Computers that provide CPU, memory, and GPUs for inference."
                 detail={`${machines.length} machine${machines.length === 1 ? "" : "s"}${gpuMemory ? ` · ${gpuMemory} GB GPU` : ""}`}
@@ -124,11 +163,24 @@ export default function ConfigurePage() {
               />
               <OverviewRow
                 icon={<Boxes className="h-5 w-5" />}
-                title="Model profiles"
-                description="Saved launch configurations for engines, GPUs, and context limits."
-                detail={`${state.recipes.length} saved${runningProfiles ? ` · ${runningProfiles} running` : ""}`}
-                ready={state.recipes.length > 0}
+                title="Models"
+                description="Find weights, create serving profiles, and manage downloads."
+                detail="Get · serve · download"
                 onOpen={() => selectSection("models")}
+              />
+              <OverviewRow
+                icon={<Plug className="h-5 w-5" />}
+                title="Integrations"
+                description="Connect capability bundles, tools, services, accounts, and skills."
+                detail="Plugins · connectors · skills"
+                onOpen={() => selectSection("integrations")}
+              />
+              <OverviewRow
+                icon={<Server className="h-5 w-5" />}
+                title="Server"
+                description="Inspect the controller, inference runtime, logs, and API reference."
+                detail="Health · logs · API docs"
+                onOpen={() => selectSection("server")}
               />
             </div>
           </section>
@@ -146,33 +198,11 @@ export default function ConfigurePage() {
         </div>
       ) : null}
 
-      {section === "rig" ? (
-        <section>
-          <h2 className="text-[length:var(--fs-2xl)] font-medium tracking-[-0.015em] text-(--ui-fg)">
-            Machines
-          </h2>
-          <p className="mt-1 text-[length:var(--fs-sm)] text-(--ui-muted)">
-            Hardware available for running models. Detected specifications update automatically.
-          </p>
-          <div className="mt-6">
-            <RigsSection state={state} />
-          </div>
-        </section>
-      ) : null}
+      {section === "rig" ? <RigsSection state={state} /> : null}
 
-      {section === "models" ? (
-        <section>
-          <h2 className="text-[length:var(--fs-2xl)] font-medium tracking-[-0.015em] text-(--ui-fg)">
-            Model Profiles
-          </h2>
-          <p className="mt-1 text-[length:var(--fs-sm)] text-(--ui-muted)">
-            Saved configurations that define how each model launches and appears in the API.
-          </p>
-          <div className="mt-6">
-            <ModelsSection state={state} />
-          </div>
-        </section>
-      ) : null}
-    </TabbedPage>
+      {section === "models" ? <RecipesContent embedded /> : null}
+      {section === "integrations" ? <IntegrationsContent /> : null}
+      {section === "server" ? <ServerContent embedded /> : null}
+    </SettingsLayout>
   );
 }

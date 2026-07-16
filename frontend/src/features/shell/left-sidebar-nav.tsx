@@ -2,26 +2,15 @@
 
 import Link from "next/link";
 import { type ComponentType } from "react";
-import {
-  Gauge,
-  Microchip,
-  HardDrive,
-  Globe,
-  Wrench,
-  MessageSquare,
-  Plug,
-} from "@/ui/icon-registry";
+import { Gauge, Microchip, Wrench, MessageSquare } from "@/ui/icon-registry";
 
 export type IconComponent = ComponentType<{ className?: string; strokeWidth?: number }>;
 
 export const tabs = [
   { href: "/", label: "Status", icon: Gauge },
   { href: "/agent", label: "Workbench", icon: MessageSquare },
-  { href: "/recipes", label: "Models", icon: HardDrive },
   { href: "/configure", label: "Configure", icon: Wrench },
   { href: "/usage", label: "Usage", icon: Microchip },
-  { href: "/integrations", label: "Integrations", icon: Plug },
-  { href: "/server", label: "Server", icon: Globe },
 ];
 
 export function mobilePageTitle(pathname: string): string {

@@ -1,68 +1,7 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
-import { ChevronDown } from "@/ui/icon-registry";
+import type { ReactNode } from "react";
 import { cx } from "./utils";
-
-export function ListGroup({
-  title,
-  description,
-  actions,
-  children,
-  className,
-  collapsible = false,
-  defaultOpen = true,
-}: {
-  title: string;
-  description?: string;
-  actions?: ReactNode;
-  children: ReactNode;
-  className?: string;
-  collapsible?: boolean;
-  defaultOpen?: boolean;
-}) {
-  const [open, setOpen] = useState(defaultOpen);
-  const showBody = collapsible ? open : true;
-  return (
-    <section className={cx("mb-8 last:mb-0", className)}>
-      {title || actions ? (
-        <div className="mb-2 flex items-end justify-between gap-3 px-4">
-          {collapsible ? (
-            <button
-              type="button"
-              onClick={() => setOpen((value) => !value)}
-              aria-expanded={open}
-              className="group flex items-center gap-1.5 text-(--ui-muted) hover:text-(--ui-fg)"
-            >
-              <ChevronDown
-                className={cx("h-3 w-3 transition-transform", open ? "" : "-rotate-90")}
-                aria-hidden
-              />
-              <h3 className="text-[length:var(--fs-md)] font-semibold tracking-[-0.005em]">
-                {title}
-              </h3>
-            </button>
-          ) : (
-            <h3 className="text-[length:var(--fs-md)] font-semibold tracking-[-0.005em] text-(--ui-muted)">
-              {title}
-            </h3>
-          )}
-          {actions ? <div className="shrink-0">{actions}</div> : null}
-        </div>
-      ) : null}
-      {showBody ? (
-        <div className="overflow-hidden rounded-lg border border-(--ui-border) bg-(--ui-surface) shadow-[0_1px_0_rgba(255,255,255,0.02)_inset] [&>*+*]:before:pointer-events-none [&>*+*]:before:absolute [&>*+*]:before:left-4 [&>*+*]:before:right-0 [&>*+*]:before:top-0 [&>*+*]:before:h-px [&>*+*]:before:bg-(--ui-separator) [&>*]:relative">
-          {children}
-        </div>
-      ) : null}
-      {description && showBody ? (
-        <p className="mt-2 px-4 text-[length:var(--fs-sm)] leading-relaxed text-(--ui-muted)">
-          {description}
-        </p>
-      ) : null}
-    </section>
-  );
-}
 
 export function ListRow({
   label,
