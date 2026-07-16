@@ -66,6 +66,9 @@ npm run desktop:dist
 `desktop:pack` creates a fast local bundle. `desktop:dist` creates the signed
 DMG, updater ZIP, blockmaps, and update metadata. The only canonical install is
 `/Applications/Local Studio.app` with bundle id `org.local.studio.desktop`.
+Run `APPLE_KEYCHAIN_PROFILE=vllm-studio-notarize npm run
+desktop:dist:notarized` to submit and staple the app when the Apple developer
+team has an active agreement.
 
 ## Controller Connection
 

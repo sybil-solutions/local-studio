@@ -184,14 +184,20 @@ analyzes commits since the last tag, cuts the next tag (`feat` → minor, other
 release types → patch, breaking → major), and publishes generated notes. There
 is no npm publish and tags are never created by hand.
 
-The public macOS build is produced on a Developer ID-equipped Mac. After
-`npm --prefix frontend run desktop:dist`, stage the signed DMG, updater ZIP,
-blockmaps, metadata, and stable website alias with:
+The public macOS build is produced on a Developer ID-equipped Mac. Stage the
+signed DMG, updater ZIP, blockmaps, metadata, and stable website alias after the
+build completes:
 
 ```bash
+npm --prefix frontend run desktop:dist
 npm run release:stage-desktop
 gh release upload "v$(node -p 'require("./frontend/package.json").version')" release-staging/*
 ```
+
+Run `APPLE_KEYCHAIN_PROFILE=vllm-studio-notarize npm --prefix frontend run
+desktop:dist:notarized` when the Apple developer team has an active distribution
+agreement. Electron Builder then submits and staples the notarization ticket
+before creating the archives.
 
 Remove `frontend/dist-desktop/` and `release-staging/` after installation and
 upload; neither directory belongs in git.
