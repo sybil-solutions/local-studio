@@ -90,7 +90,9 @@ function legacyIsSuccessfulCompactionBoundary(
 const stableJson = (value: unknown) => `${JSON.stringify(value, null, 2)}\n`;
 
 test("foldSessionEvents over the sanitized canonical fixture matches the checked-in golden", () => {
-  const events = parseJsonl(readFileSync(join(fixturesDir, "replay-canonical-session.jsonl"), "utf8"));
+  const events = parseJsonl(
+    readFileSync(join(fixturesDir, "replay-canonical-session.jsonl"), "utf8"),
+  );
   const projection = replayProjection(events);
 
   if (process.env.UPDATE_GOLDENS) {
@@ -101,12 +103,16 @@ test("foldSessionEvents over the sanitized canonical fixture matches the checked
 });
 
 test("fold tokenStats equals the legacy loadAndReplay scan over the fixture", () => {
-  const events = parseJsonl(readFileSync(join(fixturesDir, "replay-canonical-session.jsonl"), "utf8"));
+  const events = parseJsonl(
+    readFileSync(join(fixturesDir, "replay-canonical-session.jsonl"), "utf8"),
+  );
   assert.deepEqual(foldSessionEvents(events).tokenStats ?? null, legacyTokenStats(events));
 });
 
 test("replay projection is deterministic across runs (no wall-clock leakage)", () => {
-  const events = parseJsonl(readFileSync(join(fixturesDir, "replay-canonical-session.jsonl"), "utf8"));
+  const events = parseJsonl(
+    readFileSync(join(fixturesDir, "replay-canonical-session.jsonl"), "utf8"),
+  );
   assert.deepEqual(replayProjection(events), replayProjection(events));
 });
 
@@ -176,7 +182,6 @@ test(
       );
       compared += 1;
     }
-    // eslint-disable-next-line no-console
     console.log(`parity sweep: ${compared} compared, ${recorded} newly recorded`);
   },
 );
