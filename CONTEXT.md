@@ -17,8 +17,8 @@ when code drifts from these names, the code is wrong.
   `specs/<backend>-spec.ts`, nowhere else.
 - **Runtime target** — a discovered place an engine could run from (managed
   venv, system python/binary, Docker image), with priorities and persisted
-  selection (`runtimes/runtime-targets.ts`). Distinct from the engine spec's
-  probe chain; unifying the two is an open design item.
+  selection (`runtimes/runtime-targets.ts`). It is distinct from the engine
+  spec's probe chain.
 - **Launch / Evict** — the only sanctioned transitions of the single running
   model, via `POST /launch/:recipeId` and `POST /evict`. The chat proxy never
   launches or switches models.
@@ -59,9 +59,10 @@ when code drifts from these names, the code is wrong.
 - **Turn** — one prompt → agent-end cycle. Turn intent (starting/accept/abort)
   belongs to prompt-stream/engine; hydration belongs to loadAndReplay; the
   session-runtime-controller reconciles live events, cursors, and reconnects.
-- **Pane / Tab / Workspace** — the UI layout domain (`features/agent/workspace/`):
-  a workspace holds panes; a `SessionTab` is a pane's persisted session shell.
-  Persistence coerces hydrated tabs to `status: "idle"`.
+- **Pane / Tab / Workspace** — the Workbench layout domain
+  (`features/agent/workspace/`): a workspace holds panes; a `SessionTab` is a
+  pane's persisted session shell. Persistence coerces hydrated tabs to
+  `status: "idle"`.
 - **Agent runtime** — `services/agent-runtime/`: the embedded
   pi-coding-agent host (sessions-store, projects-store, pi-runtime). The
   frontend's `/api/agent/*` routes either proxy to it (`proxy-to-runtime.ts`)
@@ -71,6 +72,9 @@ when code drifts from these names, the code is wrong.
 
 - **Controller** — the Bun/Hono backend as a whole; also "a controller" =
   one reachable instance the UI points at.
+- **Configure** — the canonical `/configure` surface for machines, models,
+  integrations, and server controls. Legacy `/recipes`, `/integrations`,
+  `/discover`, and `/server` routes redirect into its sections.
 - **Contracts** — types crossing the controller↔frontend HTTP boundary live in
   `controller/contracts/`  exactly once; frontend↔agent-runtime shapes live in
   `shared/agent/`. The `check:contracts` gate enforces single definition.

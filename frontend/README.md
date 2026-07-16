@@ -1,61 +1,45 @@
 # Frontend
 
-`frontend/` is the Next.js user interface for Local Studio and the source for the macOS Electron desktop app. It provides the agent workspace, controller settings, usage views, recipes, logs, setup screens, and browser-facing API routes.
+`frontend/` is the Next.js 16 and React 19 interface for Local Studio and the
+source of the macOS Electron app. The web and desktop builds share the same
+routes, agent runtime integration, controller API bridge, and UI kit.
 
-## What It Does
+## Product Surface
 
-- Renders the main web and desktop UI.
-- Connects to one or more controllers.
-- Hosts `/agent`, including session navigation, Pi agent integration, skills, extensions, terminal/browser panes, and local file surfaces.
-- Surfaces controller runtime targets for vLLM, SGLang, llama.cpp, and MLX in Settings.
-- Provides API routes that bridge the UI to controller and local desktop/runtime capabilities.
-- Builds the Electron shell and production desktop artifacts.
+- `/` — controller and hardware status.
+- `/agent` — Workbench sessions, panes, Pi agent runtime, terminals, browser,
+  files, skills, and extensions.
+- `/configure` — overview, machines, models, integrations, and server controls.
+- `/usage` — inference and session usage.
+- `/settings` — application, connection, appearance, agent, and setup settings.
+- `/logs` — controller log sessions.
 
-## What Is In Use
-
-- Next.js 16 App Router.
-- React 19 and TypeScript.
-- Tailwind CSS v4.
-- Zustand state stores.
-- `@earendil-works/pi-coding-agent` for the agent runtime.
-- Electron and electron-builder for the desktop app.
-- xterm.js for terminal UI.
+`/recipes`, `/discover`, `/integrations`, and `/server` are compatibility
+redirects into Configure. New navigation must target the canonical route.
 
 ## Architecture
 
 ```mermaid
 flowchart TB
-    subgraph UI["App routes"]
-        Agent["/agent"]
-        Settings["/settings"]
-        Usage["/usage"]
-        Recipes["/recipes"]
-        Logs["/logs"]
-        Server["/server"]
-    end
-
-    subgraph APIs["API routes"]
-        AgentApi["/api/agent/*"]
-        ProxyApi["/api/proxy/*"]
-        SettingsApi["/api/settings"]
-        DownloadsApi["/api/downloads/*"]
-    end
-
-    UI --> APIs
-    APIs --> Controller["Controller API"]
-    Settings --> Targets["Runtime targets"]
-    Targets --> Controller
-    Agent --> Pi["Pi coding agent SDK"]
-    Desktop["desktop/ Electron main process"] --> UI
+    Desktop["Electron main process"] --> Routes["Next.js app routes"]
+    Browser["Web browser"] --> Routes
+    Routes --> AgentApi["/api/agent/*"]
+    Routes --> ControllerApi["controller proxy routes"]
+    AgentApi --> Pi["embedded Pi agent runtime"]
+    ControllerApi --> Controller["Local Studio controller"]
+    Configure["/configure"] --> ControllerApi
+    Workbench["/agent"] --> AgentApi
 ```
 
-## Prerequisites
+The agent runtime is consumed from `services/agent-runtime/` as raw TypeScript
+through `transpilePackages`. Shared controller HTTP shapes come from
+`@local-studio/contracts`; frontend and agent-runtime shapes come from
+`shared/agent/`.
 
-- Node.js 20+.
-- npm.
-- A reachable controller for most runtime features. Defaults to `http://localhost:8080`.
+## Requirements and Commands
 
-## Common Commands
+Node.js 22.19+, npm, and a reachable controller are required for the full
+surface. The default controller URL is `http://localhost:8080`.
 
 ```bash
 npm ci
@@ -67,15 +51,10 @@ npm run lint
 npm run check:quality
 ```
 
-Development server:
+`npm run start` uses `scripts/start-standalone.mjs`; plain `next start` does not
+preserve the streaming runtime contract.
 
-```bash
-npm run dev
-```
-
-Only run the dev server when you intentionally want local interactive verification.
-
-## Desktop App
+## Desktop
 
 ```bash
 npm run desktop:build:main
@@ -84,31 +63,24 @@ npm run desktop:pack
 npm run desktop:dist
 ```
 
-- `desktop:pack` builds a local app bundle for quick installation.
-- `desktop:dist` builds signed DMG/ZIP artifacts for release.
-- The canonical installed app is `/Applications/Local Studio.app`.
+`desktop:pack` creates a fast local bundle. `desktop:dist` creates the signed
+DMG, updater ZIP, blockmaps, and update metadata. The only canonical install is
+`/Applications/Local Studio.app` with bundle id `org.local.studio.desktop`.
 
 ## Controller Connection
 
-Controller URL resolution is implemented in `src/lib/backend-config.ts`. Common environment variables are:
+Controller URL resolution lives in `src/lib/backend-config.ts` and accepts
+`BACKEND_URL`, `NEXT_PUBLIC_BACKEND_URL`, or `LOCAL_STUDIO_BACKEND_URL`. Durable
+desktop preferences preserve controller URLs locally without copying controller
+credentials into the controller database.
 
-- `BACKEND_URL`
-- `NEXT_PUBLIC_BACKEND_URL`
-- `LOCAL_STUDIO_BACKEND_URL`
+## Code Map
 
-When no URL is configured, the frontend falls back to `http://localhost:8080`. Saved controller settings are managed through the app settings surface.
-
-Settings also renders controller-provided runtime targets. The target rows come from `/runtime/targets` and include direct Python or binary targets for vLLM, SGLang, llama.cpp, and MLX when the controller can discover them.
-
-## Where To Look
-
-- `src/app/`: thin route shells (e.g. `src/app/agent/page.tsx`, `src/app/settings/page.tsx`) that delegate to feature modules in `src/features/*`.
-- `src/features/agent/`: agent workspace runtime, messages, hooks, and UI.
-- `src/app/api/agent/`: local agent/session/browser/runtime API routes.
-- `src/app/api/proxy/`: controller proxy route.
-- `src/features/settings/`: settings UI.
-- `src/features/settings/engines-section.tsx` and `src/features/settings/engines-section-model.ts`: runtime target rows and settings models.
-- `src/app/usage/`: usage UI.
-- `src/lib/backend-config.ts`: controller URL selection.
-- `src/ui/`: shared frontend UI primitives.
-- `desktop/`: Electron main process and desktop build config.
+- `src/app/` — thin route and API shells.
+- `src/features/agent/` — Workbench sessions, messages, workspace, and UI.
+- `src/features/configure/` — consolidated controller configuration.
+- `src/features/settings/` — application settings and runtime target controls.
+- `src/features/integrations/` — plugins, connectors, skills, and speech.
+- `src/lib/` and `src/hooks/` — shared modules with multiple feature consumers.
+- `src/ui/` — shared primitives and ZCode design tokens.
+- `desktop/` — Electron main process, resources, signing, and packaging.
