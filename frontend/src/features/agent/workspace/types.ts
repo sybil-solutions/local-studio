@@ -30,6 +30,7 @@ export type WorkspaceState = {
   error: string;
   hydrated: boolean;
   lastHandledNavKey: string;
+  lastHandledNavIntent: string;
 };
 
 export type WorkspaceSessionPayload = {
@@ -95,6 +96,7 @@ export type WorkspaceAction =
   | {
       type: "urlNavRequested";
       key: string;
+      intent?: string;
       project: Project | null;
       sessionId?: string | null;
       sessionTitle?: string;

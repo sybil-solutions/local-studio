@@ -51,6 +51,7 @@ export function createInitialState(): WorkspaceState {
     error: "",
     hydrated: false,
     lastHandledNavKey: "",
+    lastHandledNavIntent: "",
   };
 }
 

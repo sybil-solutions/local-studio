@@ -61,6 +61,7 @@ export function workspaceNavigationAction(
   return {
     type: "urlNavRequested",
     key,
+    ...(params.openParam ? { intent: params.openParam } : {}),
     project,
     sessionId: params.sessionId,
     ...(sessionTitle ? { sessionTitle } : {}),

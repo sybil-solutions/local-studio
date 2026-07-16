@@ -28,6 +28,7 @@ import {
   rememberAgentSessionNavTitle,
   setAgentSessionDragData,
   setSessionArchive,
+  hrefWithOpenNonce,
 } from "./helpers";
 import { SessionNavRow } from "./session-nav-row";
 import type { ActiveAgentSession, SessionSummary } from "./types";
@@ -426,7 +427,9 @@ export function NewChatPlusButton({
   const router = useRouter();
   const openNewChat = () => {
     onNavigateStart?.();
-    const href = `/agent?project=${encodeURIComponent(project.id)}&new=${Date.now().toString(36)}&replace=1`;
+    const href = hrefWithOpenNonce(
+      `/agent?project=${encodeURIComponent(project.id)}&new=1&replace=1`,
+    );
     const action = workspaceNavigationActionForHref(href, project);
     if (action) workspaceCommands().navigate(action);
     router.push(href);

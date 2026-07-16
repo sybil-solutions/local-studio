@@ -144,6 +144,7 @@ function reduceSessionEditAction(
     case "urlNavRequested": {
       const next = applyUrlNavigation(state, {
         key: action.key,
+        intent: action.intent,
         project: action.project,
         sessionId: action.sessionId,
         sessionTitle: action.sessionTitle,

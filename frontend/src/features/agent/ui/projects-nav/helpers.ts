@@ -11,6 +11,15 @@ import type { Project as ProjectEntry } from "@/features/agent/projects/types";
 import type { ActiveAgentSession } from "./types";
 
 const SESSION_NAV_TITLE_PREFIX = "local-studio.agent.sessionNavTitle:";
+let lastNavigationTimestamp = 0;
+let navigationSequence = 0;
+
+function nextNavigationIntent(): string {
+  const timestamp = Date.now();
+  navigationSequence = timestamp === lastNavigationTimestamp ? navigationSequence + 1 : 0;
+  lastNavigationTimestamp = timestamp;
+  return `${timestamp.toString(36)}.${navigationSequence.toString(36)}`;
+}
 
 export function setAgentSessionDragData(
   event: DragEvent,
@@ -80,7 +89,7 @@ export function triggerAddProjectFlow() {
 
 export function hrefWithOpenNonce(href: string): string {
   const separator = href.includes("?") ? "&" : "?";
-  return `${href}${separator}open=${Date.now().toString(36)}`;
+  return `${href}${separator}open=${nextNavigationIntent()}`;
 }
 
 export function navigateToSessionHref(

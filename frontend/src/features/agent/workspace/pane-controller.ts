@@ -461,10 +461,15 @@ export function applyUrlNavigation(
   payload: UrlNavigationPayload,
 ): WorkspaceState {
   if (state.lastHandledNavKey === payload.key) return state;
+  if (supersededNavigationIntent(payload.intent, state.lastHandledNavIntent)) return state;
   if (!payload.project && !payload.sessionId && !payload.newSession) {
     return state;
   }
-  const marked: WorkspaceState = { ...state, lastHandledNavKey: payload.key };
+  const marked: WorkspaceState = {
+    ...state,
+    lastHandledNavKey: payload.key,
+    lastHandledNavIntent: payload.intent ?? state.lastHandledNavIntent,
+  };
   const { paneId, tab, sessionTitle } = payload;
   const project = payload.project ?? undefined;
   if (payload.newSession && !payload.sessionId) {
@@ -527,6 +532,7 @@ type SplitTabPayload = SessionPayload & {
 };
 type UrlNavigationPayload = SessionPayload & {
   key: string;
+  intent?: string;
   project: Project | null;
   sessionId?: string | null;
   sessionTitle?: string;
@@ -535,3 +541,19 @@ type UrlNavigationPayload = SessionPayload & {
   paneId?: PaneId;
   replaceWorkspace?: boolean;
 };
+
+function navigationIntentParts(intent: string): [number, number] | null {
+  const [timestampRaw, sequenceRaw = "0"] = intent.split(".", 2);
+  const timestamp = Number.parseInt(timestampRaw, 36);
+  const sequence = Number.parseInt(sequenceRaw, 36);
+  return Number.isFinite(timestamp) && Number.isFinite(sequence) ? [timestamp, sequence] : null;
+}
+
+export function supersededNavigationIntent(incoming: string | undefined, current: string): boolean {
+  if (!incoming || !current) return false;
+  const incomingParts = navigationIntentParts(incoming);
+  const currentParts = navigationIntentParts(current);
+  if (!incomingParts || !currentParts) return incoming === current;
+  if (incomingParts[0] !== currentParts[0]) return incomingParts[0] < currentParts[0];
+  return incomingParts[1] <= currentParts[1];
+}
