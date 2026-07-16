@@ -3,6 +3,7 @@ import { cleanSessionTitle, isPlaceholderSessionTitle } from "@shared/agent/sess
 
 export { cleanSessionTitle, isPlaceholderSessionTitle };
 import type {
+  ChatMessage,
   QueuedMessage,
   RuntimeLoggedEvent,
   SessionTab,
@@ -339,6 +340,15 @@ export function mergeCanonicalAndRuntimeEvents(
     ...canonicalEventsBeforeRuntimeTail(canonicalEvents, runtime),
     ...runtime,
   ]);
+}
+
+export function reconcileReplayMessages(
+  current: ChatMessage[],
+  canonical: ChatMessage[],
+): ChatMessage[] {
+  if (canonical.length === 0) return current;
+  if (canonical.length >= current.length) return canonical;
+  return current;
 }
 
 export function makeFreshTab(): SessionTab {

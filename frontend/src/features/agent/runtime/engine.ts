@@ -3,6 +3,7 @@ import { Effect } from "effect";
 import {
   finalizeRunningToolBlocks,
   mergeCanonicalAndRuntimeEvents,
+  reconcileReplayMessages,
   replayCursorAfterRuntimeHydration,
   runtimeStatusAcceptsControl,
 } from "@/features/agent/messages";
@@ -270,9 +271,7 @@ export function useSessionEngine(deps: UseSessionEngineDeps): SessionEngine {
             const replaySeq = replayCursorAfterRuntimeHydration(runtimeStatus, piSessionId);
             updateSession(sessionId, (session) => ({
               ...session,
-              // Canonical wins when it has content; an empty replay keeps whatever we
-              // seeded from the cache so a transiently-empty log can't blank history.
-              messages: messages.length > 0 ? messages : session.messages,
+              messages: reconcileReplayMessages(session.messages, messages),
               piSessionId,
               cwd: session.cwd || cwd,
               // Head-scan meta carries the real session model/title; the fold's
