@@ -1,4 +1,3 @@
-// OS detection: label the primary download button and mark the matching row.
 (function () {
   var ua = navigator.userAgent;
   var os = /Mac/i.test(ua) ? "mac" : /Win/i.test(ua) ? "win" : /Linux|X11/i.test(ua) ? "linux" : null;
@@ -7,8 +6,6 @@
   var primary = document.getElementById("download-primary");
   var alt = document.getElementById("download-alt");
 
-  // Only macOS (Apple silicon) ships an installer today; on other platforms
-  // point the primary button at the releases page and say so plainly.
   if (os === "mac") {
     if (primary) primary.textContent = "Download for macOS (.dmg)";
     if (alt) alt.textContent = "Apple silicon. Windows and Linux builds are on the way.";
