@@ -1,5 +1,6 @@
 import { CONTROLLERS_CHANGED_EVENT, CONTROLLERS_STORAGE_KEY } from "@/lib/api/controllers";
 import { BACKEND_URL_CHANGED_EVENT, BACKEND_URL_STORAGE_KEY } from "@/lib/api/connection";
+import { Schema } from "effect";
 
 type DesktopUiPreferencesBridge = {
   loadUiPreferences?: () => Promise<Record<string, string>>;
@@ -23,8 +24,13 @@ const EXCLUDED_DURABLE_KEYS = new Set([
 
 const EXCLUDED_DURABLE_PREFIXES = ["local-studio.agent.transcript."];
 const UI_PREFERENCES_TIMEOUT_MS = 1_500;
+const ControllerPreferenceSchema = Schema.Record(Schema.String, Schema.Unknown);
 
 let saveTimer: number | null = null;
+
+type ControllerPreference = typeof ControllerPreferenceSchema.Type;
+
+type ParsedJson = { valid: true; value: unknown } | { valid: false };
 
 type StudioSettingsPayload = {
   persisted?: {
@@ -91,51 +97,85 @@ async function saveControllerUiPreferences(prefs: Record<string, string>): Promi
       body: JSON.stringify({ ui_preferences: withoutControllerCredentials(prefs) }),
       signal: AbortSignal.timeout(UI_PREFERENCES_TIMEOUT_MS),
     });
+  } catch {}
+}
+
+function parseJson(value: string): ParsedJson {
+  try {
+    const parsed: unknown = JSON.parse(value);
+    return { valid: true, value: parsed };
   } catch {
-    // The controller can be unavailable during first boot/offline desktop use.
-    // The desktop bridge remains a local fallback and the next UI change retries.
+    return { valid: false };
   }
 }
 
-function mergeControllersPreference(
-  currentValue: string | null,
-  incomingValue: string,
-): string | null {
+function controllerPreference(value: unknown): ControllerPreference | null {
   try {
-    const current = JSON.parse(currentValue || "[]") as unknown;
-    const incoming = JSON.parse(incomingValue) as unknown;
-    if (!Array.isArray(incoming)) return null;
-    const byUrl = new Map<string, Record<string, unknown>>();
-    for (const entry of Array.isArray(current) ? current : []) {
-      if (!entry || typeof entry !== "object" || Array.isArray(entry)) continue;
-      const url =
-        typeof (entry as { url?: unknown }).url === "string" ? (entry as { url: string }).url : "";
-      if (url) byUrl.set(url, entry as Record<string, unknown>);
-    }
-    for (const entry of incoming) {
-      if (!entry || typeof entry !== "object" || Array.isArray(entry)) continue;
-      const incomingEntry = entry as Record<string, unknown>;
-      const url = typeof incomingEntry.url === "string" ? incomingEntry.url : "";
-      if (!url) continue;
-      const currentEntry = byUrl.get(url);
-      byUrl.set(url, {
-        ...incomingEntry,
-        ...(currentEntry ?? {}),
-        apiKey:
-          typeof currentEntry?.apiKey === "string" && currentEntry.apiKey.trim()
-            ? currentEntry.apiKey
-            : incomingEntry.apiKey,
-        name:
-          typeof currentEntry?.name === "string" && currentEntry.name.trim()
-            ? currentEntry.name
-            : incomingEntry.name,
-      });
-    }
-    const merged = JSON.stringify([...byUrl.values()]);
-    return merged === (currentValue || "") ? null : merged;
+    return Schema.decodeUnknownSync(ControllerPreferenceSchema)(value);
   } catch {
     return null;
   }
+}
+
+function controllerPreferences(value: unknown): ControllerPreference[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((entry) => {
+    const preference = controllerPreference(entry);
+    return preference ? [preference] : [];
+  });
+}
+
+function preferenceUrl(preference: ControllerPreference): string | null {
+  const url = preference.url;
+  return typeof url === "string" && url ? url : null;
+}
+
+function preferredString(
+  current: ControllerPreference | undefined,
+  incoming: ControllerPreference,
+  key: "apiKey" | "name",
+): unknown {
+  const currentValue = current?.[key];
+  return typeof currentValue === "string" && currentValue.trim() ? currentValue : incoming[key];
+}
+
+function mergedControllerPreference(
+  current: ControllerPreference | undefined,
+  incoming: ControllerPreference,
+): ControllerPreference {
+  return {
+    ...incoming,
+    ...(current ?? {}),
+    apiKey: preferredString(current, incoming, "apiKey"),
+    name: preferredString(current, incoming, "name"),
+  };
+}
+
+function preferencesByUrl(preferences: ControllerPreference[]): Map<string, ControllerPreference> {
+  const byUrl = new Map<string, ControllerPreference>();
+  for (const preference of preferences) {
+    const url = preferenceUrl(preference);
+    if (url) byUrl.set(url, preference);
+  }
+  return byUrl;
+}
+
+export function mergeControllersPreference(
+  currentValue: string | null,
+  incomingValue: string,
+): string | null {
+  const current = parseJson(currentValue || "[]");
+  const incoming = parseJson(incomingValue);
+  if (!current.valid || !incoming.valid || !Array.isArray(incoming.value)) return null;
+  const byUrl = preferencesByUrl(controllerPreferences(current.value));
+  for (const incomingPreference of controllerPreferences(incoming.value)) {
+    const url = preferenceUrl(incomingPreference);
+    if (url) {
+      byUrl.set(url, mergedControllerPreference(byUrl.get(url), incomingPreference));
+    }
+  }
+  const merged = JSON.stringify([...byUrl.values()]);
+  return merged === (currentValue || "") ? null : merged;
 }
 
 function applyMissingPreferences(prefs: Record<string, string>): Set<string> {
@@ -152,8 +192,6 @@ function applyMissingPreferences(prefs: Record<string, string>): Set<string> {
       }
       continue;
     }
-    // Renderer storage wins when present; controller/database is the durable
-    // rebuild/reinstall fallback, not a stale override while the user is active.
     if (currentValue === null) {
       window.localStorage.setItem(key, value);
       applied.add(key);
@@ -188,7 +226,6 @@ export async function hydrateDurableUiPreferences(): Promise<void> {
     const prefs = await desktop.loadUiPreferences();
     for (const key of applyMissingPreferences(prefs)) applied.add(key);
   } catch {
-    // Keep localStorage-only behavior if the desktop bridge is unavailable.
   } finally {
     dispatchHydratedPreferenceEvents(applied);
   }
