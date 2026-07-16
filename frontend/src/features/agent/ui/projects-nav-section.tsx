@@ -20,7 +20,12 @@ import {
   useProjectsNavSessionPrefs,
 } from "@/features/agent/ui/projects-nav/use-projects-nav-effects";
 import { useOpenSessions, useSessionActivity } from "@/features/agent/ui/use-open-sessions";
-import { sessionActivity, type OpenAgentSession } from "@/features/agent/session-index";
+import {
+  sessionActivity,
+  uniqueOpenSessions,
+  type OpenAgentSession,
+} from "@/features/agent/session-index";
+import { isLocalSessionPrefKey } from "@/features/agent/messages/prefs";
 import { useProjects } from "@/features/agent/projects/context";
 import { addProjectFromPath, openProjectDirectory } from "@/features/agent/projects/api";
 import { isChatsProject, type Project as ProjectEntry } from "@/features/agent/projects/types";
@@ -56,7 +61,7 @@ export function ProjectsNavSection({ expanded }: { expanded: boolean }) {
   const pinnedPrefIds = useMemo(
     () =>
       Object.entries(prefs)
-        .filter(([, pref]) => pref.pinned && !pref.hidden)
+        .filter(([id, pref]) => pref.pinned && !pref.hidden && !isLocalSessionPrefKey(id))
         .map(([id]) => id)
         .sort(),
     [prefs],
@@ -77,7 +82,7 @@ export function ProjectsNavSection({ expanded }: { expanded: boolean }) {
   );
   const pinnedActiveSessions = useMemo(
     () =>
-      activeSessions
+      uniqueOpenSessions(activeSessions)
         .filter((session) => {
           const pref = mergeActiveSessionPref(session, prefs);
           return pref.pinned && !pref.hidden;
@@ -319,7 +324,7 @@ export function ProjectsNavSection({ expanded }: { expanded: boolean }) {
         onDragEnd={() => setDragSection(null)}
         action={
           <NewChatPlusButton
-            projectId={chatProject.id}
+            project={chatProject}
             label="New task"
             className="flex h-5 w-5 items-center justify-center rounded text-(--dim) transition-colors hover:text-(--fg)"
           />
@@ -417,7 +422,7 @@ export function ProjectsNavSection({ expanded }: { expanded: boolean }) {
           </div>
           {pinnedActiveSessions.map(({ session, project }) => (
             <ActiveSessionRow
-              key={session.id}
+              key={session.threadId ?? session.id}
               project={project}
               session={session}
               pref={mergeActiveSessionPref(session, prefs)}

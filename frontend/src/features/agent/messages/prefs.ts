@@ -76,24 +76,34 @@ export function saveSessionPrefs(prefs: SessionPrefs): void {
 }
 
 export function patchSessionPref(piSessionId: string, patch: SessionPref): void {
+  patchCanonicalSessionPref(piSessionId, [], patch);
+}
+
+function hasSessionPref(pref: SessionPref): boolean {
+  return Boolean(pref.title || pref.pinned || pref.hidden);
+}
+
+export function patchCanonicalSessionPref(
+  primaryKey: string,
+  aliasKeys: readonly string[],
+  patch: SessionPref = {},
+): void {
+  if (!primaryKey) return;
   const all = loadSessionPrefs();
-  const current = all[piSessionId] ?? {};
-  const next: SessionPref = { ...current, ...patch };
-  // Drop the entry entirely once every flag is cleared so localStorage doesn't
-  // grow without bound.
-  if (!next.title && !next.pinned && !next.hidden) {
-    delete all[piSessionId];
-  } else {
-    all[piSessionId] = next;
+  const aliases = [...new Set(aliasKeys.filter((key) => key && key !== primaryKey))];
+  if (Object.keys(patch).length === 0 && !aliases.some((key) => hasSessionPref(all[key] ?? {}))) {
+    return;
   }
+  let current: SessionPref = {};
+  for (const key of aliases) current = { ...current, ...(all[key] ?? {}) };
+  current = { ...current, ...(all[primaryKey] ?? {}) };
+  const next: SessionPref = { ...current, ...patch };
+  for (const key of aliases) delete all[key];
+  if (hasSessionPref(next)) all[primaryKey] = next;
+  else delete all[primaryKey];
   saveSessionPrefs(all);
 }
 
-export function copySessionPref(fromKey: string, toKey: string): void {
-  if (!fromKey || !toKey || fromKey === toKey) return;
-  const all = loadSessionPrefs();
-  const source = all[fromKey];
-  if (!source?.title && !source?.pinned && !source?.hidden) return;
-  all[toKey] = { ...(all[toKey] ?? {}), ...source };
-  saveSessionPrefs(all);
+export function isLocalSessionPrefKey(key: string): boolean {
+  return key.startsWith("tab:") || key.startsWith("tab-");
 }

@@ -1,6 +1,6 @@
 import { useCallback, useMemo } from "react";
 import { cleanSessionTitle, type SessionTab } from "@/features/agent/messages";
-import { copySessionPref, patchSessionPref } from "@/features/agent/messages/prefs";
+import { patchCanonicalSessionPref } from "@/features/agent/messages/prefs";
 import { useProjectsNavSessionPrefs } from "@/features/agent/ui/projects-nav/use-projects-nav-effects";
 
 export function useChatPaneSessionTitle({
@@ -19,13 +19,13 @@ export function useChatPaneSessionTitle({
   onRenameSession: (tabId: string, title: string) => void;
 }) {
   const sessionPrefs = useProjectsNavSessionPrefs();
+  const localPrefKey = paneId && activeTab?.id ? `tab:${paneId}:${activeTab.id}` : null;
   const sessionPrefKeys = useMemo(
     () =>
-      [
-        activeTab?.piSessionId,
-        paneId && activeTab?.id ? `tab:${paneId}:${activeTab.id}` : null,
-      ].filter((value): value is string => Boolean(value)),
-    [activeTab?.id, activeTab?.piSessionId, paneId],
+      [activeTab?.id, localPrefKey, activeTab?.piSessionId].filter((value): value is string =>
+        Boolean(value),
+      ),
+    [activeTab?.id, activeTab?.piSessionId, localPrefKey],
   );
   const sessionPrefTitle = sessionPrefKeys.reduce((title, key) => {
     const nextTitle = cleanSessionTitle(sessionPrefs[key]?.title);
@@ -40,9 +40,10 @@ export function useChatPaneSessionTitle({
   const sessionPinned = sessionPrefKeys.some((key) => Boolean(sessionPrefs[key]?.pinned));
   const patchActiveSessionPrefs = useCallback(
     (patch: { title?: string; pinned?: boolean }) => {
-      for (const key of sessionPrefKeys) patchSessionPref(key, patch);
+      const primary = activeTab?.piSessionId ?? localPrefKey ?? activeTab?.id;
+      if (primary) patchCanonicalSessionPref(primary, sessionPrefKeys, patch);
     },
-    [sessionPrefKeys],
+    [activeTab?.id, activeTab?.piSessionId, localPrefKey, sessionPrefKeys],
   );
   const togglePinnedSession = useCallback(() => {
     if (sessionPrefKeys.length === 0) return;
@@ -50,7 +51,7 @@ export function useChatPaneSessionTitle({
   }, [patchActiveSessionPrefs, sessionPinned, sessionPrefKeys.length]);
   const handlePiSessionIdChange = useCallback(
     (piSessionId: string) => {
-      if (paneId && activeTabId) copySessionPref(`tab:${paneId}:${activeTabId}`, piSessionId);
+      patchCanonicalSessionPref(piSessionId, [activeTabId, `tab:${paneId}:${activeTabId}`]);
       // Once a fresh chat earns its persistent id, swap the throwaway `?new=`
       // nonce in the address bar for `?session=<piSessionId>` so a reload
       // reattaches to (or at least reopens) this conversation instead of

@@ -118,3 +118,19 @@ test("same-title history rows remain distinct", () => {
     ["thread-1", "thread-2"],
   );
 });
+
+test("multiple local aliases for one open thread render one row", () => {
+  const rows = sessionRows(
+    [
+      openSession({ id: "task-a", threadId: "thread-1", focused: false }),
+      openSession({ id: "task-b", threadId: "thread-1", focused: true }),
+      openSession({ id: "task-c", threadId: "thread-1", focused: false }),
+    ],
+    [historySession("thread-1", "2026-07-10T12:00:00.000Z")],
+  );
+
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0]?.kind, "open");
+  assert.equal(rows[0]?.key, "thread-1");
+  assert.equal(rows[0]?.kind === "open" ? rows[0].session.id : null, "task-b");
+});

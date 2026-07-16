@@ -18,6 +18,7 @@ import {
 import { useMountSubscription } from "@/hooks/use-mount-subscription";
 import { useProjectSessionsReloadEffect } from "@/features/agent/ui/projects-nav/use-projects-nav-effects";
 import { workspaceCommands } from "@/features/agent/workspace/commands";
+import { workspaceNavigationActionForHref } from "@/features/agent/ui/agent-workspace-navigation";
 import type { Project as ProjectEntry } from "@/features/agent/projects/types";
 import { ChatIcon, Folder, FolderOpen, PlusIcon, TrashIcon } from "@/ui/icons";
 import {
@@ -113,7 +114,7 @@ export function ProjectRow({
         </button>
         <div className="absolute right-1.5 top-1/2 -translate-y-1/2">
           <NewChatPlusButton
-            projectId={project.id}
+            project={project}
             label={`New task in ${project.name}`}
             className="flex h-5 w-5 items-center justify-center text-(--dim)/55 opacity-0 transition-opacity hover:text-(--fg)/80 group-hover:opacity-100"
             onNavigateStart={onNewChatStart}
@@ -353,6 +354,10 @@ export function SessionRow({
       rowClass="group relative flex h-7 items-center rounded-lg pl-3 pr-0 text-(--fg)/85 transition-colors hover:bg-(--hover) hover:text-(--fg)"
       renameRowClass="flex h-8 items-center rounded-[10px] bg-(--surface)/40 pl-3 pr-1"
       href={`/agent?project=${encodeURIComponent(project.id)}&session=${encodeURIComponent(session.id)}&replace=1`}
+      onOpen={(href) => {
+        const action = workspaceNavigationActionForHref(href, project, label);
+        if (action) workspaceCommands().navigate(action);
+      }}
       onPatchPref={(patch) => patchSessionPref(session.id, patch)}
       onArchive={() => {
         void setSessionArchive(session.id, project, label, true)
@@ -380,12 +385,12 @@ export function SessionRow({
 }
 
 export function NewChatPlusButton({
-  projectId,
+  project,
   label,
   className,
   onNavigateStart,
 }: {
-  projectId: string;
+  project: ProjectEntry;
   label: string;
   className: string;
   onNavigateStart?: () => void;
@@ -393,9 +398,10 @@ export function NewChatPlusButton({
   const router = useRouter();
   const openNewChat = () => {
     onNavigateStart?.();
-    router.push(
-      `/agent?project=${encodeURIComponent(projectId)}&new=${Date.now().toString(36)}&replace=1`,
-    );
+    const href = `/agent?project=${encodeURIComponent(project.id)}&new=${Date.now().toString(36)}&replace=1`;
+    const action = workspaceNavigationActionForHref(href, project);
+    if (action) workspaceCommands().navigate(action);
+    router.push(href);
   };
 
   return (

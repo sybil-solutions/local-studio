@@ -8,22 +8,61 @@ type RuntimeLookupEntry<TSession> = {
   session: TSession;
 };
 
-export function findRuntimeSessionForLookup<
-  TSession extends { status: { piSessionId?: string | null } },
->(
+type RuntimeLookupStatus = {
+  piSessionId?: string | null;
+  active?: boolean;
+  running?: boolean;
+  eventSeq?: number;
+};
+
+type RuntimeLookupSession = { status: RuntimeLookupStatus };
+
+export function findRuntimeSessionForLookup<TSession extends RuntimeLookupSession>(
   entries: Iterable<RuntimeLookupEntry<TSession>>,
   sessionId: string,
   piSessionId?: string | null,
 ): RuntimeLookupEntry<TSession> | null {
   const snapshot = [...entries];
   const exact = snapshot.find((entry) => entry.sessionId === sessionId);
-  if (exact) return exact;
   const target = piSessionId?.trim();
-  if (target) {
-    const piMatch = snapshot.find((entry) => entry.session.status.piSessionId === target);
-    if (piMatch) return piMatch;
+  if (!target) return exact ?? null;
+  const matches = snapshot.filter(
+    (entry) =>
+      entry.session.status.piSessionId === target ||
+      (entry.sessionId === sessionId && !entry.session.status.piSessionId),
+  );
+  return matches.reduce<RuntimeLookupEntry<TSession> | null>(
+    (best, candidate) =>
+      !best || runtimeLookupOutranks(candidate, best, sessionId) ? candidate : best,
+    null,
+  );
+}
+
+function runtimeLookupOutranks<TSession extends RuntimeLookupSession>(
+  candidate: RuntimeLookupEntry<TSession>,
+  current: RuntimeLookupEntry<TSession>,
+  requestedSessionId: string,
+): boolean {
+  const candidateRank = runtimeLookupRank(candidate, requestedSessionId);
+  const currentRank = runtimeLookupRank(current, requestedSessionId);
+  for (let index = 0; index < candidateRank.length; index += 1) {
+    if (candidateRank[index] !== currentRank[index]) {
+      return candidateRank[index] > currentRank[index];
+    }
   }
-  return null;
+  return false;
+}
+
+function runtimeLookupRank<TSession extends RuntimeLookupSession>(
+  entry: RuntimeLookupEntry<TSession>,
+  requestedSessionId: string,
+): [number, number, number, number] {
+  return [
+    entry.session.status.active === true ? 1 : 0,
+    entry.session.status.running === true ? 1 : 0,
+    entry.sessionId === requestedSessionId ? 1 : 0,
+    entry.session.status.eventSeq ?? 0,
+  ];
 }
 
 export function piStatusFromEvents(input: {

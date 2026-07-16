@@ -27,7 +27,7 @@ type SessionNavRowProps = {
   rowClass: string;
   renameRowClass?: string;
   href?: string;
-  onOpen?: () => void;
+  onOpen?: (href: string) => void;
   onPatchPref: (patch: SessionPref) => void;
   onArchive?: () => void;
   onRenameCommit?: (title: string) => void;
@@ -208,7 +208,7 @@ function SessionOpenTarget({
   unseen: boolean;
   label: string;
   onDragStart: (event: DragEvent) => void;
-  onOpen?: () => void;
+  onOpen?: (href: string) => void;
   onRememberTitle?: () => void;
   onStartRename: () => void;
 }) {
@@ -235,8 +235,9 @@ function SessionOpenTarget({
           onRememberTitle?.();
           if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
           event.preventDefault();
-          onOpen?.();
-          navigateToSessionHref(router, hrefWithOpenNonce(href));
+          const targetHref = hrefWithOpenNonce(href);
+          onOpen?.(targetHref);
+          navigateToSessionHref(router, targetHref);
         }}
         onDragStart={onDragStart}
         className="flex min-w-0 flex-1 items-center gap-1"
@@ -254,7 +255,7 @@ function SessionOpenTarget({
       onDragStart={onDragStart}
       onClick={() => {
         onRememberTitle?.();
-        onOpen?.();
+        onOpen?.("");
       }}
       aria-label={label}
       className="flex min-w-0 flex-1 items-center gap-1 text-left"

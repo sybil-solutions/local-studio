@@ -1,4 +1,5 @@
 import { useCallback, useSyncExternalStore, type Dispatch, type SetStateAction } from "react";
+import type { AggregatedSession } from "@shared/agent/session-summary";
 
 import { safeJson } from "@/features/agent/safe-json";
 import type { Project as ProjectEntry } from "@/features/agent/projects/types";
@@ -16,6 +17,10 @@ import {
 import { useMountSubscription } from "@/hooks/use-mount-subscription";
 
 type PinnedSession = SessionSummary & { project: ProjectEntry };
+
+function uniquePinnedSessions(sessions: readonly PinnedSession[]): PinnedSession[] {
+  return [...new Map(sessions.map((session) => [session.id, session])).values()];
+}
 
 let cachedSessionPrefs: SessionPrefs = {};
 let cachedSessionPrefsKey = "";
@@ -112,29 +117,28 @@ export function usePinnedSessionsEffect({
     const pinnedIds = new Set(pinnedIdsList);
     const hiddenIds = new Set(hiddenPrefIdsKey.split("\u0000").filter(Boolean));
     const idsParam = encodeURIComponent(pinnedIdsList.join(","));
+    const projectsById = new Map(projects.map((project) => [project.id, project]));
     (async () => {
-      const rows = await Promise.all(
-        projects.map(async (project) => {
-          try {
-            const response = await fetch(
-              `/api/agent/sessions?cwd=${encodeURIComponent(project.path)}&since=30d&ids=${idsParam}`,
-              { cache: "no-store" },
-            );
-            const payload = await safeJson<{ sessions?: SessionSummary[] }>(response);
-            return (payload.sessions ?? [])
-              .filter((session) => pinnedIds.has(session.id) && !hiddenIds.has(session.id))
-              .map((session) => ({ ...session, project }));
-          } catch {
-            return [];
-          }
-        }),
-      );
-      if (!cancelled) {
-        setPinnedSessions(
-          rows
-            .flat()
-            .sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime()),
-        );
+      try {
+        const response = await fetch(`/api/agent/sessions/all?since=30d&ids=${idsParam}`, {
+          cache: "no-store",
+        });
+        const payload = await safeJson<{ sessions?: AggregatedSession[] }>(response);
+        const rows = (payload.sessions ?? []).flatMap((session) => {
+          const project = projectsById.get(session.projectId);
+          return project && pinnedIds.has(session.id) && !hiddenIds.has(session.id)
+            ? [{ ...session, project }]
+            : [];
+        });
+        if (!cancelled) {
+          setPinnedSessions(
+            uniquePinnedSessions(rows).sort(
+              (a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime(),
+            ),
+          );
+        }
+      } catch {
+        if (!cancelled) setPinnedSessions([]);
       }
     })();
     return () => {

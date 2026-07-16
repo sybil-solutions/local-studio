@@ -80,7 +80,7 @@ type ResolvedTurnSession = {
 function resolveTurnSession(turn: AgentTurnRequest): ResolvedTurnSession | null {
   const resolved =
     turn.mode === "prompt"
-      ? { sessionId: turn.sessionId, session: piRuntimeManager.getSession(turn.sessionId) }
+      ? piRuntimeManager.getSessionForLookup(turn.sessionId, turn.piSessionId)
       : piRuntimeManager.findSessionForLookup(turn.sessionId, turn.piSessionId);
   if (!resolved) return null;
   const status = resolved.session.status;

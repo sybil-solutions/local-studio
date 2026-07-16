@@ -452,6 +452,40 @@ test("runtime lookup prefers the exact local session over an older pi match", ()
   assert.equal(resolved?.session.marker, "current");
 });
 
+test("runtime lookup prefers an active pi match over an idle local alias", () => {
+  const sessions = [
+    {
+      sessionId: "rt-current",
+      session: { status: { piSessionId: "pi-shared", active: false }, marker: "idle" },
+    },
+    {
+      sessionId: "rt-live",
+      session: { status: { piSessionId: "pi-shared", active: true }, marker: "live" },
+    },
+  ];
+
+  const resolved = findRuntimeSessionForLookup(sessions, "rt-current", "pi-shared");
+
+  assert.equal(resolved?.session.marker, "live");
+});
+
+test("runtime lookup never routes a persistent thread to an exact alias for another thread", () => {
+  const sessions = [
+    {
+      sessionId: "rt-current",
+      session: { status: { piSessionId: "pi-old", active: true }, marker: "wrong" },
+    },
+    {
+      sessionId: "rt-other",
+      session: { status: { piSessionId: "pi-target", active: false }, marker: "target" },
+    },
+  ];
+
+  const resolved = findRuntimeSessionForLookup(sessions, "rt-current", "pi-target");
+
+  assert.equal(resolved?.session.marker, "target");
+});
+
 test("finished runtime event streams replay missed pi events before idle status", () => {
   assert.equal(initialRuntimeStatusPhase(false, 3), null);
   assert.equal(

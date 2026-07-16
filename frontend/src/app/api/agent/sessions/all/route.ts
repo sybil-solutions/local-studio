@@ -12,6 +12,11 @@ export const dynamic = "force-dynamic";
 export async function GET(request: NextRequest) {
   const sinceParam = request.nextUrl.searchParams.get("since");
   const since = parseRelativeSince(sinceParam) ?? undefined;
+  const ids = request.nextUrl.searchParams
+    .get("ids")
+    ?.split(",")
+    .map((id) => id.trim())
+    .filter(Boolean);
   const archive = archiveQueryOptions(request.nextUrl.searchParams);
   const projects = listProjectsFromStore();
   const aggregated: AggregatedSession[] = [];
@@ -22,6 +27,7 @@ export async function GET(request: NextRequest) {
         if (!existsSync(project.path) || !statSync(project.path).isDirectory()) return;
         const sessions = await listSessions(project.path, {
           ...(since && !archive.archivedOnly ? { since } : {}),
+          ids,
           ...archive,
         });
         for (const summary of sessions) {

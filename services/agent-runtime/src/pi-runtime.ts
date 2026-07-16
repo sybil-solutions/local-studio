@@ -47,7 +47,9 @@ function runtimeFingerprint(
 }
 
 export function shouldRestartAfterPromptError(error: unknown): boolean {
-  return error instanceof Error && /Cannot continue from message role: assistant/i.test(error.message);
+  return (
+    error instanceof Error && /Cannot continue from message role: assistant/i.test(error.message)
+  );
 }
 
 type PiResourceDiagnostic = {
@@ -443,12 +445,15 @@ class PiRuntimeManager {
     sessionId = DEFAULT_SESSION_ID,
     piSessionId?: string | null,
   ): { sessionId: string; session: PiAgentSession } {
-    return (
-      this.findSessionForLookup(sessionId, piSessionId) ?? {
-        sessionId,
-        session: this.getSession(sessionId),
-      }
-    );
+    const resolved = this.findSessionForLookup(sessionId, piSessionId);
+    if (resolved) return resolved;
+    const target = piSessionId?.trim();
+    const exactPiSessionId = this.sessions.get(sessionId)?.status.piSessionId;
+    const runtimeSessionId =
+      target && exactPiSessionId && exactPiSessionId !== target
+        ? `${sessionId}:${target}`
+        : sessionId;
+    return { sessionId: runtimeSessionId, session: this.getSession(runtimeSessionId) };
   }
 
   findSessionForLookup(

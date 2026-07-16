@@ -69,7 +69,7 @@ export function sessionActivity(
   return "idle";
 }
 
-function uniqueOpenSessions(sessions: readonly OpenAgentSession[]): OpenAgentSession[] {
+export function uniqueOpenSessions(sessions: readonly OpenAgentSession[]): OpenAgentSession[] {
   const byKey = new Map<string, OpenAgentSession>();
   for (const session of sessions) {
     const key = session.threadId ?? session.id;
