@@ -30,13 +30,12 @@ import {
   loadSavedControllers,
   normalizeControllerUrl,
 } from "@/lib/api/controllers";
-import { paneSessions } from "@/features/agent/runtime/selectors";
 import type { Session, UpdateSession } from "@/features/agent/runtime/types";
 import {
   useWorkspaceHydrationEffects,
   useWorkspaceRuntimeSync,
 } from "@/features/agent/ui/use-workspace-effects";
-import type { ChatPaneHandle, SessionTab } from "@/features/agent/ui/chat-pane";
+import type { ChatPaneHandle } from "@/features/agent/ui/chat-pane";
 import type { SessionDropPayload } from "@/features/agent/ui/pane-grid";
 
 export type WorkspaceHandles = {
@@ -47,10 +46,7 @@ export type WorkspaceHandles = {
   registerPaneHandle: (paneId: PaneId, handle: ChatPaneHandle | null) => void;
   compactFocusedSession: () => Promise<void>;
   setSplitRatio: (path: number[], ratio: number) => void;
-  setPaneTabs: (
-    paneId: PaneId,
-    tabs: SessionTab[] | ((tabs: SessionTab[]) => SessionTab[]),
-  ) => void;
+  updateSession: UpdateSession;
   updateDetachedSession: (fallback: Session, patch: Parameters<UpdateSession>[1]) => void;
   removeDetachedSession: (sessionId: string) => void;
   closePane: (paneId: PaneId) => void;
@@ -268,22 +264,7 @@ export function useWorkspace({ ephemeral = false }: UseWorkspaceOptions = {}): U
       },
       setSplitRatio: (path: number[], ratio: number) =>
         dispatch({ type: "setSplitRatio", path, ratio }),
-      setPaneTabs: (
-        paneId: PaneId,
-        tabs: SessionTab[] | ((tabs: SessionTab[]) => SessionTab[]),
-      ) => {
-        const pane = stateRef.current.panesById.get(paneId);
-        if (!pane) return;
-        const current = paneSessions(stateRef.current, paneId);
-        const next = typeof tabs === "function" ? tabs(current) : tabs;
-        const session = next.at(-1) ?? current[0];
-        if (!session) return;
-        dispatch({
-          type: "setPaneSession",
-          paneId,
-          session,
-        });
-      },
+      updateSession: (sessionId, patch) => dispatch({ type: "patchSession", sessionId, patch }),
       updateDetachedSession: (fallback: Session, patch: Parameters<UpdateSession>[1]) => {
         const current = stateRef.current.sessions.get(fallback.id) ?? fallback;
         dispatch({ type: "setDetachedSession", session: patch(current) });

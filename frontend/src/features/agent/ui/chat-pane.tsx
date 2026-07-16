@@ -26,6 +26,7 @@ import { useChatPaneSessionTitle } from "@/features/agent/ui/chat-pane-session-t
 import { useChatPaneSendFlow } from "@/features/agent/ui/chat-pane-send-flow";
 import { ChatPaneHandle, SessionTab } from "@/features/agent/messages";
 import { useSessionEngine } from "@/features/agent/runtime/engine";
+import type { UpdateSession } from "@/features/agent/runtime/types";
 import { useTools } from "@/features/agent/tools/context";
 import type { GitSummary } from "@/features/agent/projects/types";
 import type { BrowserBackend } from "@/features/agent/tools/types";
@@ -159,7 +160,7 @@ type Props = {
   onPiSessionIdChange?: (sessionId: string) => void;
   tabs: SessionTab[];
   activeTabId: string;
-  onTabsChange: (tabs: SessionTab[] | ((tabs: SessionTab[]) => SessionTab[])) => void;
+  onUpdateSession: UpdateSession;
   onRenameSession: (tabId: string, title: string) => void;
   onClose?: () => void;
   onForkSession?: () => void;
@@ -195,7 +196,7 @@ export function ChatPane({
   onPiSessionIdChange,
   tabs,
   activeTabId,
-  onTabsChange,
+  onUpdateSession,
   onRenameSession,
   onClose,
   onForkSession,
@@ -248,14 +249,7 @@ export function ChatPane({
     window.addEventListener(OPEN_TERMINAL_EVENT, onOpenTerminalEvent);
     return () => window.removeEventListener(OPEN_TERMINAL_EVENT, onOpenTerminalEvent);
   }, [isFocused]);
-  const updateTab = useCallback(
-    (tabId: string, patch: (tab: SessionTab) => SessionTab) => {
-      onTabsChange((currentTabs) =>
-        currentTabs.map((tab) => (tab.id === tabId ? patch(tab) : tab)),
-      );
-    },
-    [onTabsChange],
-  );
+  const updateTab = onUpdateSession;
   const {
     attachments,
     setAttachments,

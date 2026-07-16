@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, lazy, type ReactNode } from "react";
+import { Suspense, lazy, useCallback, type ReactNode } from "react";
 import {
   FolderTree,
   GitBranch,
@@ -13,7 +13,7 @@ import {
 import type { ToolsContextValue } from "@/features/agent/tools/context";
 import type { ComputerTab } from "@/features/agent/tools/types";
 import type { Project, GitSummary } from "@/features/agent/projects/types";
-import type { Session } from "@/features/agent/runtime/types";
+import type { Session, UpdateSession } from "@/features/agent/runtime/types";
 import type { AgentModel } from "@/features/agent/workspace/types";
 import { AgentModelPicker } from "@/features/agent/ui/agent-model-picker";
 import { ChatPane } from "@/features/agent/ui/chat-pane";
@@ -150,6 +150,11 @@ function SideChatTab({
   const modelId = sideChatSession.modelId ?? focusedSession?.modelId ?? activeModelId;
   const selectedModel = models.find((model) => model.id === modelId) ?? activeModel;
   const cwd = sideChatSession.cwd ?? focusedSession?.cwd ?? activeProject?.path ?? "";
+  const updateSession = useCallback<UpdateSession>(
+    (sessionId, patch) =>
+      onUpdateSideChatTabs((tabs) => tabs.map((tab) => (tab.id === sessionId ? patch(tab) : tab))),
+    [onUpdateSideChatTabs],
+  );
   return (
     <section className="flex min-h-0 flex-1 flex-col">
       <ChatPane
@@ -181,7 +186,7 @@ function SideChatTab({
         onFocus={() => undefined}
         tabs={[sideChatSession]}
         activeTabId={sideChatSession.id}
-        onTabsChange={onUpdateSideChatTabs}
+        onUpdateSession={updateSession}
         onRenameSession={onRenameSideChat}
         onClose={onCloseSideChat}
         rightPanelOpen

@@ -93,3 +93,45 @@ test("history navigation reattaches the running workspace session and removes al
   assert.deepEqual([...next.sessions.keys()], [running.id]);
   assert.equal(next.sessions.get(running.id)?.messages[0]?.text, "hello");
 });
+
+test("an async completion stays owned by its session after the pane switches", () => {
+  const initial = createInitialState();
+  const originalId = initial.panesById.get("p-init")?.sessionId;
+  assert.ok(originalId);
+  const started = reducer(initial, {
+    type: "patchSession",
+    sessionId: originalId,
+    patch: (current) => ({
+      ...current,
+      status: "starting",
+      messages: [{ id: "user-a", role: "user", text: "from A" }],
+    }),
+  });
+  const switched = reducer(started, {
+    type: "urlNavRequested",
+    key: "project-1||new-next|||1",
+    project,
+    sessionId: null,
+    newSession: true,
+    split: false,
+    replaceWorkspace: true,
+    paneId: "p-throwaway",
+    tab: session("session-b"),
+  });
+  const next = reducer(switched, {
+    type: "patchSession",
+    sessionId: originalId,
+    patch: (current) => ({
+      ...current,
+      status: "running",
+      messages: [...current.messages, { id: "assistant-a", role: "assistant", text: "for A" }],
+    }),
+  });
+
+  assert.equal(next.panesById.get("p-init")?.sessionId, "session-b");
+  assert.deepEqual(
+    next.sessions.get(originalId)?.messages.map((message) => message.text),
+    ["from A", "for A"],
+  );
+  assert.deepEqual(next.sessions.get("session-b")?.messages, []);
+});
