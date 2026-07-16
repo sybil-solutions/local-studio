@@ -1,45 +1,157 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>vLLM Studio Download</title>
-    <meta
-      name="description"
-      content="Download fresh prebuilt vLLM Studio release artifacts from GitHub."
-    />
-    <link rel="stylesheet" href="./styles.css" />
-  </head>
-  <body>
-    <main class="page">
-      <p class="eyebrow">vLLM Studio</p>
-      <h1>Download.</h1>
-      <p class="lede">Fresh canonical release builds.</p>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Local Studio — a home for your local AI</title>
+<meta name="description" content="Local Studio is a native desktop app for local AI: chat with local and remote models, an agent that can use your computer, and one-screen GPU operations.">
+<link rel="stylesheet" href="site.css">
+</head>
+<body>
 
-      <div class="actions">
-        <a id="download-link" href="https://github.com/0xSero/vllm-studio/releases/latest">Latest release</a>
-        <a id="all-releases-link" href="https://github.com/0xSero/vllm-studio/releases">All releases</a>
+<header class="masthead">
+  <div class="wrap masthead-row">
+    <span class="wordmark">LOCAL STUDIO</span>
+    <nav class="masthead-nav">
+      <a href="#download">Download</a>
+      <a href="#models">Models</a>
+      <a href="https://github.com/sybil-solutions/local-studio">GitHub</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+
+  <section class="hero">
+    <div class="wrap">
+      <p class="legend">NATIVE DESKTOP · MACOS / WINDOWS / LINUX</p>
+      <h1>A home for your models.</h1>
+      <p class="hero-sub">Local Studio runs your local AI the way you run the rest of your machine:
+      chat with local and remote models, hand real work to an agent, and operate your
+      GPUs from one screen. Your hardware, your weights, your desk.</p>
+      <div class="hero-actions">
+        <!--
+          Direct per-asset links use the releases/latest/download/<asset> pattern.
+          Assets are named for stability across versions:
+            Local-Studio-arm64.dmg        (macOS, Apple silicon — built & signed)
+            Local-Studio-Setup.exe        (Windows — not built yet)
+            Local-Studio.AppImage         (Linux — not built yet)
+          The macOS button links direct; other platforms fall back to the
+          releases page until their installers ship.
+        -->
+        <a id="download-primary" class="btn btn-primary"
+           href="https://github.com/sybil-solutions/local-studio/releases/latest/download/Local-Studio-arm64.dmg">Download for macOS</a>
+        <a class="btn-quiet" href="https://github.com/sybil-solutions/local-studio/releases">all releases</a>
       </div>
+      <p id="download-alt" class="hero-alt"></p>
+    </div>
+  </section>
 
-      <section class="section">
-        <h2>Latest published version</h2>
-        <p id="release-version">Loading latest release…</p>
-      </section>
+  <section id="download" class="sheet">
+    <div class="wrap">
+      <h2 class="legend rule-legend">DOWNLOAD</h2>
+      <div class="dl-grid">
+        <a class="dl-row" data-os="mac" href="https://github.com/sybil-solutions/local-studio/releases/latest/download/Local-Studio-arm64.dmg">
+          <span class="dl-os">macOS</span>
+          <span class="dl-meta">.dmg · Apple silicon</span>
+          <span class="dl-go">get →</span>
+        </a>
+        <a class="dl-row" data-os="win" href="https://github.com/sybil-solutions/local-studio/releases">
+          <span class="dl-os">Windows</span>
+          <span class="dl-meta">.exe · x64 · soon</span>
+          <span class="dl-go">releases →</span>
+        </a>
+        <a class="dl-row" data-os="linux" href="https://github.com/sybil-solutions/local-studio/releases">
+          <span class="dl-os">Linux</span>
+          <span class="dl-meta">.AppImage · x64 · soon</span>
+          <span class="dl-go">releases →</span>
+        </a>
+      </div>
+    </div>
+  </section>
 
-      <section class="section">
-        <h2>Direct downloads</h2>
-        <p id="release-status">Fetching release assets…</p>
-        <ul id="asset-list"></ul>
-      </section>
+  <section id="models" class="sheet">
+    <div class="wrap">
+      <h2 class="legend rule-legend">START WITH THREE MODELS</h2>
+      <p class="sheet-note">Pick one to see the whole app working in minutes. All three install or connect with one click.</p>
+      <div class="model-table">
+        <div class="model-row">
+          <div class="model-name">
+            <span class="model-title">Qwen3.6 35B</span>
+            <span class="model-desc">The daily driver. Strong general model with room for agent work.</span>
+          </div>
+          <dl class="model-meta">
+            <div><dt>mode</dt><dd>local</dd></div>
+            <div><dt>backend</dt><dd>vLLM</dd></div>
+            <div><dt>quant</dt><dd>FP4</dd></div>
+            <div><dt>needs</dt><dd>~20 GB VRAM</dd></div>
+          </dl>
+        </div>
+        <div class="model-row">
+          <div class="model-name">
+            <span class="model-title">LFM2.5 8B</span>
+            <span class="model-desc">Small and quick. Runs well on a laptop; good first model.</span>
+          </div>
+          <dl class="model-meta">
+            <div><dt>mode</dt><dd>local</dd></div>
+            <div><dt>backend</dt><dd>llama.cpp</dd></div>
+            <div><dt>size</dt><dd>~5 GB</dd></div>
+            <div><dt>needs</dt><dd>CPU or any GPU</dd></div>
+          </dl>
+        </div>
+        <div class="model-row">
+          <div class="model-name">
+            <span class="model-title">DeepSeek V4 Flash</span>
+            <span class="model-desc">Frontier-class over the wire. Nothing to download.</span>
+          </div>
+          <dl class="model-meta">
+            <div><dt>mode</dt><dd>remote</dd></div>
+            <div><dt>backend</dt><dd>endpoint</dd></div>
+            <div><dt>size</dt><dd>0 B local</dd></div>
+            <div><dt>needs</dt><dd>an API key</dd></div>
+          </dl>
+        </div>
+      </div>
+    </div>
+  </section>
 
-      <section class="section">
-        <h2>Notes</h2>
-        <p>Desktop app + bundled server.</p>
-        <p>macOS + Linux first.</p>
-        <p>No envs. No keys.</p>
-      </section>
-    </main>
+  <section id="features" class="sheet">
+    <div class="wrap">
+      <h2 class="legend rule-legend">WHAT IT DOES</h2>
+      <ul class="feature-list">
+        <li>
+          <span class="feature-key">chat &amp; agent</span>
+          <span class="feature-body">Talk to any model, or hand it the keyboard — the agent can read files, run commands, and use your computer.</span>
+        </li>
+        <li>
+          <span class="feature-key">operations</span>
+          <span class="feature-body">Launch, evict, and watch models with live VRAM, throughput, and controller state on one screen.</span>
+        </li>
+        <li>
+          <span class="feature-key">discover</span>
+          <span class="feature-body">Browse models with the right backend and quantization picked for your hardware; download in one click.</span>
+        </li>
+        <li>
+          <span class="feature-key">connect</span>
+          <span class="feature-body">Remote endpoints and your other machines sit in the same picker as local weights.</span>
+        </li>
+        <li>
+          <span class="feature-key">offline</span>
+          <span class="feature-body">Local models don't need the network, and neither does the app.</span>
+        </li>
+      </ul>
+    </div>
+  </section>
 
-    <script type="module" src="./main.js"></script>
-  </body>
+</main>
+
+<footer class="footer">
+  <div class="wrap footer-row">
+    <span>Local Studio · <a href="https://github.com/sybil-solutions/local-studio">github.com/sybil-solutions/local-studio</a></span>
+    <span class="footer-quiet">Open source, MIT licensed. Runs on your machine.</span>
+  </div>
+</footer>
+
+<script src="site.js"></script>
+</body>
 </html>
