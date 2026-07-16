@@ -1,11 +1,6 @@
 import type { PaneId, PaneState, WorkspaceState } from "@/features/agent/workspace/types";
 import type { Session, SessionId } from "@/features/agent/runtime/types";
 
-export function paneSessions(state: WorkspaceState, paneId: PaneId): Session[] {
-  const session = activeSession(state, paneId);
-  return session ? [session] : [];
-}
-
 export function paneSessionId(pane: PaneState | undefined): SessionId | null {
   return pane?.sessionId ?? null;
 }
