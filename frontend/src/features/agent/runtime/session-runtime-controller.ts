@@ -379,7 +379,7 @@ export function createSessionRuntimeController(
       if (seenPiIds.has(session.piSessionId)) sharedPiIds.add(session.piSessionId);
       else seenPiIds.add(session.piSessionId);
     }
-    for (const session of sessions) {
+    for (const session of sessions.filter((entry) => entry.status !== "loading")) {
       const connectionKey = connectionKeyFor(session);
       const direct = byRuntime.get(connectionKey);
       const piMatch =
