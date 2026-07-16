@@ -32,6 +32,7 @@ import {
 } from "@/features/agent/tools/types";
 import {
   clampComputerWidth,
+  computerPanelVisibility,
   loadBrowserState,
   loadComputerState,
   migrateToolStorage,
@@ -251,43 +252,12 @@ export function ToolsProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const setComputerOpen = useCallback((open: boolean) => {
-    if (!open) {
-      setBrowser((current) => {
-        if (!current.enabled) return current;
-        writeBrowserEnabled(false);
-        return { ...current, enabled: false };
-      });
-    }
-    setComputer((current) =>
-      current.open === open
-        ? current
-        : {
-            ...current,
-            open,
-            tab: open ? current.tab || "status" : current.tab,
-            tabs: uniqueComputerTabs(current.tabs.length ? current.tabs : ["status"]),
-          },
-    );
+    setComputer((current) => computerPanelVisibility(current, open));
   }, []);
 
   const toggleComputerOpen = useCallback(() => {
-    if (computer.open) {
-      setBrowser((current) => {
-        if (!current.enabled) return current;
-        writeBrowserEnabled(false);
-        return { ...current, enabled: false };
-      });
-    }
-    setComputer((current) => {
-      const nextOpen = !current.open;
-      return {
-        ...current,
-        open: nextOpen,
-        tab: nextOpen ? current.tab || "status" : current.tab,
-        tabs: uniqueComputerTabs(current.tabs.length ? current.tabs : ["status"]),
-      };
-    });
-  }, [computer.open]);
+    setComputer((current) => computerPanelVisibility(current, !current.open));
+  }, []);
 
   const setComputerTab = useCallback((tab: ComputerTab) => {
     setComputer((current) => {

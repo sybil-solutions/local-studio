@@ -168,9 +168,8 @@ function WorkspaceComputerPanel({
   focusedModel: AgentModel | null;
   focusedGitSummary: ReturnType<ProjectsContextValue["gitSummary"]>;
 }) {
-  if (!open) return null;
   return (
-    <Suspense fallback={<ComputerPanelFallback />}>
+    <Suspense fallback={open ? <ComputerPanelFallback /> : null}>
       <LazyAgentBrowserPanel
         handles={handles}
         activeProject={activeProject}
@@ -239,7 +238,7 @@ function WorkspacePaneContent({
 
 function ComputerPanelFallback() {
   return (
-    <aside className="relative flex w-[360px] shrink-0 flex-col border-l border-(--border) bg-(--color-panel)">
+    <aside className="relative flex w-[360px] shrink-0 flex-col bg-(--color-panel) shadow-[var(--elev-side-panel)]">
       <div className="h-[var(--h-toolbar-pane)] shrink-0 border-b border-(--border) bg-(--color-header)" />
       <div className="flex min-h-0 flex-1 items-center justify-center text-xs text-(--dim)">
         Loading tools...

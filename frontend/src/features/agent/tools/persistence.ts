@@ -179,6 +179,14 @@ export function uniqueComputerTabs(tabs: ComputerTab[]): ComputerTab[] {
   return out.includes("status") ? out : ["status", ...out];
 }
 
+export function computerPanelVisibility(current: ComputerState, open: boolean): ComputerState {
+  const tabs = uniqueComputerTabs(current.tabs.length ? current.tabs : ["status"]);
+  const tabsUnchanged =
+    tabs.length === current.tabs.length && tabs.every((tab, index) => tab === current.tabs[index]);
+  if (current.open === open && tabsUnchanged) return current;
+  return { ...current, open, tabs };
+}
+
 export function writeBrowserEnabled(enabled: boolean): void {
   write(BROWSER_TOOL_KEY, enabled ? "1" : "0");
 }

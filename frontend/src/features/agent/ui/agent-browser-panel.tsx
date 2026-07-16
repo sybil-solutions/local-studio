@@ -253,7 +253,7 @@ export function AgentBrowserPanel({
   );
   return (
     <aside
-      className={`${tools.computer.open ? "relative flex" : "hidden"} shrink-0 flex-col border-l border-(--border) bg-(--color-panel) shadow-[inset_1px_0_rgba(255,255,255,0.02)]`}
+      className={`${tools.computer.open ? "relative flex" : "hidden"} shrink-0 flex-col bg-(--color-panel) shadow-[var(--elev-side-panel)]`}
       ref={registerComputerAside}
       tabIndex={-1}
       onKeyDown={handleComputerKeyDown}
