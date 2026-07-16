@@ -9,17 +9,17 @@ import { formatNumber } from "@/lib/formatters";
 import type { UsageStats } from "@/lib/types";
 
 const SOURCES = [
-  { id: "provider", label: "Lifetime" },
   { id: "pi-sessions", label: "Agent sessions" },
+  { id: "provider", label: "Proxy" },
 ] satisfies Array<{ id: UsageSource; label: string }>;
 
 const sourceDescription = (source: UsageSource): string =>
   source === "pi-sessions"
     ? "Coding-agent session records · cached context included"
-    : "Every request recorded by this controller";
+    : "Requests proxied through this controller";
 
 const sourceTitle = (source: UsageSource): string =>
-  source === "pi-sessions" ? "Agent-session tokens" : "Lifetime tokens";
+  source === "pi-sessions" ? "Agent-session tokens" : "Proxied tokens";
 
 const activeDays = (stats: UsageStats): number =>
   stats.daily.filter((day) => day.total_tokens > 0).length;
@@ -38,7 +38,7 @@ const tokenParts = (stats: UsageStats): Array<{ label: string; value: number }> 
 };
 
 export default function UsagePage() {
-  const [source, setSource] = useState<UsageSource>("provider");
+  const [source, setSource] = useState<UsageSource>("pi-sessions");
   const { stats, loading, error, loadStats } = useUsage(source);
 
   if (loading && !stats) return <UsageSkeleton />;
