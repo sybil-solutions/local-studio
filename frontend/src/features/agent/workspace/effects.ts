@@ -379,6 +379,42 @@ function persistSettledTranscripts(
   }
 }
 
+function persistTurnStartTranscripts(
+  prevState: WorkspaceState,
+  nextState: WorkspaceState,
+  deps: WorkspaceEffectDeps,
+): void {
+  for (const [id, session] of nextState.sessions) {
+    if (!session.piSessionId || session.messages.length === 0) continue;
+    if (session.status !== "running" && session.status !== "starting") continue;
+    const before = prevState.sessions.get(id);
+    if (!before || before.status === session.status) continue;
+    writeTranscriptSnapshot(
+      session.piSessionId,
+      session.messages,
+      cleanSessionTitle(session.title),
+      deps.storage,
+    );
+  }
+}
+
+function persistExitedTranscripts(
+  prevState: WorkspaceState,
+  nextState: WorkspaceState,
+  deps: WorkspaceEffectDeps,
+): void {
+  for (const [id, session] of prevState.sessions) {
+    if (!session.piSessionId || session.messages.length === 0) continue;
+    if (nextState.sessions.has(id)) continue;
+    writeTranscriptSnapshot(
+      session.piSessionId,
+      session.messages,
+      cleanSessionTitle(session.title),
+      deps.storage,
+    );
+  }
+}
+
 export function runWorkspaceEffect(
   action: WorkspaceAction,
   prevState: WorkspaceState,
@@ -395,6 +431,8 @@ export function runWorkspaceEffect(
   publishWorkspaceSessions(prevState, nextState, deps);
   if (SESSIONS_CHANGED_ACTIONS.has(action.type)) {
     persistSettledTranscripts(prevState, nextState, deps);
+    persistTurnStartTranscripts(prevState, nextState, deps);
+    persistExitedTranscripts(prevState, nextState, deps);
   }
   if (
     SESSIONS_CHANGED_ACTIONS.has(action.type) &&
