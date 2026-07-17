@@ -13,9 +13,13 @@ import {
   evaluateRequestBoundary,
   splitAllowedValues,
 } from "@/lib/security/request-boundary";
+import {
+  FRONTEND_CALLBACK_TOKEN_HEADER,
+  isFrontendCallbackRoute,
+} from "@shared/agent/frontend-callback-auth";
 
-const TOKEN_MAX_AGE_SECONDS = 60 * 60 * 24 * 30;
 const PROCESS_CSRF_TOKEN = crypto.randomUUID();
+const credentialQueryKeys = new Set(["api_key", "key", "token", "access_token"]);
 
 function denyResponse(isApi: boolean, status: number, message: string): NextResponse {
   if (isApi) {
@@ -27,34 +31,46 @@ function denyResponse(isApi: boolean, status: number, message: string): NextResp
   return new NextResponse(message, { status });
 }
 
+function permitsAccessEntry(request: NextRequest): boolean {
+  const path = request.nextUrl.pathname;
+  if (path === "/access" || (path === "/api/auth/session" && request.method === "POST")) {
+    return true;
+  }
+  return (
+    isFrontendCallbackRoute(request.method, path) &&
+    Boolean(request.headers.get(FRONTEND_CALLBACK_TOKEN_HEADER))
+  );
+}
+
+function credentialQueryResponse(request: NextRequest): NextResponse | null {
+  const sanitizedUrl = request.nextUrl.clone();
+  const keys = [...sanitizedUrl.searchParams.keys()].filter((key) =>
+    credentialQueryKeys.has(key.toLowerCase()),
+  );
+  if (keys.length === 0) return null;
+  for (const key of keys) sanitizedUrl.searchParams.delete(key);
+  const isApi = request.nextUrl.pathname.startsWith("/api/");
+  if (!isApi && (request.method === "GET" || request.method === "HEAD")) {
+    return NextResponse.redirect(sanitizedUrl, 303);
+  }
+  return denyResponse(isApi, 400, "Credential query parameters are not accepted.");
+}
+
 function enforceAccess(request: NextRequest): NextResponse | null {
   const posture = resolveAccessPosture();
-  if (posture.kind === "allow") return null;
-
-  const url = request.nextUrl;
-  const isApi = url.pathname.startsWith("/api/");
-
-  const queryToken = url.searchParams.get("token");
-  if (queryToken && timingSafeStringEqual(queryToken.trim(), posture.token)) {
-    const clean = url.clone();
-    clean.searchParams.delete("token");
-    const redirect = NextResponse.redirect(clean);
-    redirect.cookies.set(STUDIO_TOKEN_COOKIE, posture.token, {
-      httpOnly: true,
-      sameSite: "lax",
-      secure: url.protocol === "https:",
-      path: "/",
-      maxAge: TOKEN_MAX_AGE_SECONDS,
-    });
-    return redirect;
+  const isApi = request.nextUrl.pathname.startsWith("/api/");
+  if (posture.kind === "configuration-error") {
+    return denyResponse(isApi, 503, posture.message);
   }
+  if (posture.kind === "allow") return null;
+  if (permitsAccessEntry(request)) return null;
 
   const presented = presentedToken(
     request.headers.get(STUDIO_TOKEN_HEADER),
     request.cookies.get(STUDIO_TOKEN_COOKIE)?.value,
   );
   if (presented && timingSafeStringEqual(presented, posture.token)) return null;
-
+  if (!isApi) return NextResponse.redirect(new URL("/access", request.url), 303);
   return denyResponse(isApi, 401, "Unauthorized");
 }
 
@@ -81,6 +97,8 @@ export function proxy(request: NextRequest) {
       boundary.error,
     );
   }
+  const queryResponse = credentialQueryResponse(request);
+  if (queryResponse) return queryResponse;
   const denied = enforceAccess(request);
   if (denied) return denied;
 
@@ -95,9 +113,9 @@ export function proxy(request: NextRequest) {
   const method = request.method;
   const path = request.nextUrl.pathname;
   const sanitizedUrl = request.nextUrl.clone();
-  for (const sensitiveKey of ["api_key", "key", "token", "access_token"]) {
-    if (sanitizedUrl.searchParams.has(sensitiveKey)) {
-      sanitizedUrl.searchParams.set(sensitiveKey, "[redacted]");
+  for (const key of sanitizedUrl.searchParams.keys()) {
+    if (credentialQueryKeys.has(key.toLowerCase())) {
+      sanitizedUrl.searchParams.set(key, "[redacted]");
     }
   }
   const query = sanitizedUrl.search || "";

@@ -1,11 +1,14 @@
 import { NextRequest } from "next/server";
 import { listDirectory } from "@/features/agent/fs-store";
 import { errorMessage, jsonError, requireAbsoluteCwd } from "@/app/api/_lib/route-helpers";
+import { requireApiAccess } from "@/lib/auth/guard";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
+  const denied = requireApiAccess(request);
+  if (denied) return denied;
   const result = requireAbsoluteCwd(request, { mustExist: true });
   if (result.response) return result.response;
   const relPath = request.nextUrl.searchParams.get("path")?.trim() ?? "";

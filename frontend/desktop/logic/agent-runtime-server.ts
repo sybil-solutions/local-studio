@@ -14,9 +14,12 @@ export type AgentRuntimeHandle = {
 };
 
 type StartAgentRuntimeOptions = {
+  callbackToken?: string;
   frontendUrl: string;
   preferredPort?: number;
 };
+
+const CALLBACK_TOKEN_ENV = "LOCAL_STUDIO_FRONTEND_CALLBACK_TOKEN";
 
 let currentAgentRuntime: ChildProcess | null = null;
 
@@ -40,6 +43,16 @@ function agentRuntimeEntry(): string {
         "dist",
         "standalone.mjs",
       );
+}
+
+function runtimeEnvironment(): NodeJS.ProcessEnv {
+  const environment = { ...process.env };
+  for (const key of Object.keys(environment)) {
+    if (key.startsWith("LOCAL_STUDIO_FRONTEND_") || key === "LOCAL_STUDIO_DESKTOP") {
+      delete environment[key];
+    }
+  }
+  return environment;
 }
 
 async function isAgentRuntimeHealthy(url: string): Promise<boolean> {
@@ -110,7 +123,7 @@ export async function startAgentRuntime(
     stdio: "pipe",
     detached: false,
     env: {
-      ...process.env,
+      ...runtimeEnvironment(),
       PATH: resolveAugmentedPath(),
       PORT: String(port),
       LOCAL_STUDIO_DATA_DIR: DESKTOP_CONFIG.userDataDir,
@@ -119,6 +132,7 @@ export async function startAgentRuntime(
       LOCAL_STUDIO_AGENT_CWD: process.env.LOCAL_STUDIO_AGENT_CWD || app.getPath("home"),
       LOCAL_STUDIO_FRONTEND_BASE: options.frontendUrl,
       LOCAL_STUDIO_LITTER_BRIDGE_SECRET: litterBridgeSecret,
+      ...(options.callbackToken ? { [CALLBACK_TOKEN_ENV]: options.callbackToken } : {}),
     },
   });
 

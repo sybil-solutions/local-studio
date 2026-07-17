@@ -268,11 +268,6 @@ export function uniqueExistingPaths(values: Array<string | null | undefined>): s
   });
 }
 
-export function deriveFrontendBase(env: NodeJS.ProcessEnv = process.env): string {
-  const port = env.PORT || "3000";
-  return `http://127.0.0.1:${port}`;
-}
-
 function shouldLoadBrowserTool(options: RuntimeStartOptions): boolean {
   return options.browserToolEnabled === true;
 }
@@ -325,12 +320,10 @@ function runtimeEnvInjections(
   options: RuntimeStartOptions,
   env: NodeJS.ProcessEnv,
 ): Record<string, string> {
-  const frontendBase = env.LOCAL_STUDIO_FRONTEND_BASE ?? deriveFrontendBase(env);
   const relay = readSitegeistRelayEnv(env);
   return {
     LOCAL_STUDIO_BROWSER_SESSION_ID: options.browserSessionId ?? "",
     LOCAL_STUDIO_PLAN_SESSION_ID: options.planSessionId ?? "",
-    LOCAL_STUDIO_FRONTEND_BASE: frontendBase,
     SITEGEIST_RELAY_URL: env.SITEGEIST_RELAY_URL ?? relay.SITEGEIST_RELAY_URL ?? "",
     SITEGEIST_RELAY_TOKEN: env.SITEGEIST_RELAY_TOKEN ?? relay.SITEGEIST_RELAY_TOKEN ?? "",
     SITEGEIST_RELAY_SESSION_ID: options.browserSessionId ?? "",

@@ -2,8 +2,10 @@
 // dynamically behind the NEXT_RUNTIME gate) so the edge-runtime compile of
 // instrumentation.ts never sees the `node:net` import.
 import { Effect } from "effect";
+import { captureFrontendCallbackCredential } from "./lib/auth/callback-credential";
 
 export function register(): Promise<void> {
+  captureFrontendCallbackCredential();
   return Effect.runPromise(
     Effect.gen(function* () {
       const net = yield* Effect.tryPromise({

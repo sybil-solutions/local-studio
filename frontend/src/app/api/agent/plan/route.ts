@@ -1,19 +1,19 @@
 import { NextRequest } from "next/server";
 import { readAgentPlan, writeAgentPlan } from "@/features/agent/plan-store";
-import { requireApiAccess } from "@/lib/auth/guard";
+import { requireCallbackOrApiAccess } from "@/lib/auth/guard";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
-  const denied = requireApiAccess(request);
+  const denied = requireCallbackOrApiAccess(request);
   if (denied) return denied;
   const sessionId = request.nextUrl.searchParams.get("sessionId");
   return Response.json(await readAgentPlan(sessionId));
 }
 
 export async function POST(request: NextRequest) {
-  const denied = requireApiAccess(request);
+  const denied = requireCallbackOrApiAccess(request);
   if (denied) return denied;
   const sessionId = request.nextUrl.searchParams.get("sessionId");
   const body = (await request.json().catch(() => null)) as {

@@ -2,6 +2,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Tool, ToolAnnotations } from "@modelcontextprotocol/sdk/types.js";
+import { frontendSafeEnvironment } from "../../../shared/agent/frontend-environment.mjs";
 
 export type McpToolAnnotations = ToolAnnotations;
 export type McpToolInfo = Tool;
@@ -67,7 +68,7 @@ const transportFor = (target: McpTarget) => {
     return new StdioClientTransport({
       command: target.command,
       args: target.args ?? [],
-      env: { ...processEnvironment(), ...(target.env ?? {}) },
+      env: frontendSafeEnvironment({ ...processEnvironment(), ...(target.env ?? {}) }),
       ...(target.cwd ? { cwd: target.cwd } : {}),
       stderr: "pipe",
     });
