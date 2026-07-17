@@ -91,6 +91,12 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: npm --prefix frontend run desktop:dist:notarized
 
+      - name: Verify signed and notarized desktop app
+        run: |
+          codesign --verify --deep --strict --verbose=2 "frontend/dist-desktop/mac-arm64/Local Studio.app"
+          xcrun stapler validate "frontend/dist-desktop/mac-arm64/Local Studio.app"
+          spctl --assess --type execute --verbose=2 "frontend/dist-desktop/mac-arm64/Local Studio.app"
+
       - name: Stage desktop assets
         run: npm run release:stage-desktop
 

@@ -36,6 +36,10 @@ function requireAsset(output, name) {
   return file;
 }
 
+function releaseAssetName(name) {
+  return name.replaceAll(" ", "-");
+}
+
 export function stageDesktopRelease(rootDir) {
   const frontend = path.join(rootDir, "frontend");
   const output = path.join(frontend, "dist-desktop");
@@ -50,7 +54,9 @@ export function stageDesktopRelease(rootDir) {
   for (const name of names) requireAsset(output, name);
   rmSync(staging, { recursive: true, force: true });
   mkdirSync(staging, { recursive: true });
-  for (const name of names) copyFileSync(requireAsset(output, name), path.join(staging, name));
+  for (const name of names) {
+    copyFileSync(requireAsset(output, name), path.join(staging, releaseAssetName(name)));
+  }
   for (const [source, destination] of aliases) {
     copyFileSync(requireAsset(output, source), path.join(staging, destination));
   }

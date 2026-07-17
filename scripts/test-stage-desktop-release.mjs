@@ -13,6 +13,12 @@ const assetNames = [
   `Local Studio-${version}-arm64-mac.zip.blockmap`,
   "latest-mac.yml",
 ];
+const updaterMetadata = `version: ${version}
+files:
+  - url: Local-Studio-${version}-arm64-mac.zip
+  - url: Local-Studio-${version}-arm64.dmg
+path: Local-Studio-${version}-arm64-mac.zip
+`;
 
 async function createFixture(files = assetNames) {
   const root = await mkdtemp(path.join(os.tmpdir(), "local-studio-stage-assets-"));
@@ -22,19 +28,21 @@ async function createFixture(files = assetNames) {
     path.join(root, "frontend", "package.json"),
     `${JSON.stringify({ version }, null, 2)}\n`,
   );
-  for (const file of files) await writeFile(path.join(output, file), file);
+  for (const file of files) {
+    await writeFile(path.join(output, file), file === "latest-mac.yml" ? updaterMetadata : file);
+  }
   return root;
 }
 
-test("stages exact updater names and stable download aliases", async () => {
+test("stages updater-compatible names and stable download aliases", async () => {
   const root = await createFixture();
   const { files, staging } = stageDesktopRelease(root);
 
   assert.deepEqual(files, [
-    `Local Studio-${version}-arm64-mac.zip`,
-    `Local Studio-${version}-arm64-mac.zip.blockmap`,
-    `Local Studio-${version}-arm64.dmg`,
-    `Local Studio-${version}-arm64.dmg.blockmap`,
+    `Local-Studio-${version}-arm64-mac.zip`,
+    `Local-Studio-${version}-arm64-mac.zip.blockmap`,
+    `Local-Studio-${version}-arm64.dmg`,
+    `Local-Studio-${version}-arm64.dmg.blockmap`,
     "Local-Studio-arm64-mac.zip",
     "Local-Studio-arm64.dmg",
     "latest-mac.yml",
@@ -47,6 +55,7 @@ test("stages exact updater names and stable download aliases", async () => {
     await readFile(path.join(staging, "Local-Studio-arm64-mac.zip"), "utf8"),
     `Local Studio-${version}-arm64-mac.zip`,
   );
+  assert.equal(await readFile(path.join(staging, "latest-mac.yml"), "utf8"), updaterMetadata);
 });
 
 test("fails before staging when a required updater asset is missing", async () => {
