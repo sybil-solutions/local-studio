@@ -13,20 +13,24 @@ permissions:
 
 jobs:
   release:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: write
       issues: write
       pull-requests: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
         with:
           fetch-depth: 0
           ref: ${{ github.sha }}
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: 22.19.0
+          cache: npm
+
+      - name: Install release dependencies
+        run: npm ci --ignore-scripts
 
       - name: Verify tested main revision
         id: revision
@@ -44,11 +48,4 @@ jobs:
         if: steps.revision.outputs.current == 'true'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          npx -y \
-            -p semantic-release@24 \
-            -p @semantic-release/commit-analyzer \
-            -p @semantic-release/release-notes-generator \
-            -p @semantic-release/github \
-            -p conventional-changelog-conventionalcommits@8 \
-            semantic-release
+        run: npm run release:semantic
