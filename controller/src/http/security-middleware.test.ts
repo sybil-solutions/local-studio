@@ -4,16 +4,16 @@ import type { Hono } from "hono";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { AppContext } from "../../src/app-context";
+import type { AppContext } from "../app-context";
 import {
   createConfig,
   isWildcardHost,
   normalizeControllerHost,
   normalizeHttpOrigin,
-} from "../../src/config/env";
-import { delay } from "../../src/core/async";
-import { primaryLogPathFor } from "../../src/core/log-files";
-import { normalizeRequestAuthority } from "../../src/http/security-middleware";
+} from "../config/env";
+import { delay } from "../core/async";
+import { primaryLogPathFor } from "../core/log-files";
+import { normalizeRequestAuthority } from "./security-middleware";
 
 const ENV_KEYS = [
   "LOCAL_STUDIO_DATA_DIR",
@@ -33,7 +33,7 @@ const ENV_KEYS = [
   "PI_CODING_AGENT_DIR",
 ] as const;
 
-type EnvSnapshot = Record<(typeof ENV_KEYS)[number], string | undefined>;
+type EnvironmentSnapshot = Record<(typeof ENV_KEYS)[number], string | undefined>;
 
 type ControllerRequestRow = {
   method: string;
@@ -46,16 +46,18 @@ type ControllerRequestRow = {
   user_agent: string | null;
 };
 
-let envSnapshot: EnvSnapshot;
-let tempDir: string;
+let environmentSnapshot: EnvironmentSnapshot;
+let temporaryDirectory: string;
 
 beforeEach(() => {
-  envSnapshot = Object.fromEntries(ENV_KEYS.map((key) => [key, process.env[key]])) as EnvSnapshot;
-  tempDir = mkdtempSync(join(tmpdir(), "local-studio-controller-security-"));
+  environmentSnapshot = Object.fromEntries(
+    ENV_KEYS.map((key) => [key, process.env[key]]),
+  ) as EnvironmentSnapshot;
+  temporaryDirectory = mkdtempSync(join(tmpdir(), "local-studio-controller-security-"));
   Object.assign(process.env, {
-    LOCAL_STUDIO_DATA_DIR: tempDir,
-    LOCAL_STUDIO_DB_PATH: join(tempDir, "controller.db"),
-    LOCAL_STUDIO_MODELS_DIR: join(tempDir, "models"),
+    LOCAL_STUDIO_DATA_DIR: temporaryDirectory,
+    LOCAL_STUDIO_DB_PATH: join(temporaryDirectory, "controller.db"),
+    LOCAL_STUDIO_MODELS_DIR: join(temporaryDirectory, "models"),
     LOCAL_STUDIO_HOST: "127.0.0.1",
     LOCAL_STUDIO_PORT: "18080",
     LOCAL_STUDIO_INFERENCE_PORT: "65534",
@@ -63,35 +65,35 @@ beforeEach(() => {
     LOCAL_STUDIO_MOCK_MODEL_ID: "mock-model",
     LOCAL_STUDIO_RUNTIME_SKIP_DOCKER: "1",
     LOCAL_STUDIO_RUNTIME_SKIP_SYSTEM: "1",
-    PI_CODING_AGENT_DIR: join(tempDir, "pi-agent"),
+    PI_CODING_AGENT_DIR: join(temporaryDirectory, "pi-agent"),
   });
-  delete process.env.LOCAL_STUDIO_API_KEY;
-  delete process.env.LOCAL_STUDIO_ALLOW_UNAUTHENTICATED;
-  delete process.env.LOCAL_STUDIO_ALLOWED_HOSTS;
-  delete process.env.LOCAL_STUDIO_CORS_ORIGINS;
+  delete process.env["LOCAL_STUDIO_API_KEY"];
+  delete process.env["LOCAL_STUDIO_ALLOW_UNAUTHENTICATED"];
+  delete process.env["LOCAL_STUDIO_ALLOWED_HOSTS"];
+  delete process.env["LOCAL_STUDIO_CORS_ORIGINS"];
 });
 
 afterEach(async () => {
   for (const key of ENV_KEYS) {
-    const value = envSnapshot[key];
+    const value = environmentSnapshot[key];
     if (value === undefined) delete process.env[key];
     else process.env[key] = value;
   }
   await delay(50);
-  rmSync(tempDir, { recursive: true, force: true });
+  rmSync(temporaryDirectory, { recursive: true, force: true });
 });
 
 const createTestHarness = async (): Promise<{ app: Hono; context: AppContext }> => {
   const [{ createAppContext }, { createApp }] = await Promise.all([
-    import("../../src/app-context"),
-    import("../../src/http/app"),
+    import("../app-context"),
+    import("./app"),
   ]);
   const context = createAppContext();
   return { app: createApp(context), context };
 };
 
 const readControllerRequestRows = (): ControllerRequestRow[] => {
-  const dbPath = process.env.LOCAL_STUDIO_DB_PATH;
+  const dbPath = process.env["LOCAL_STUDIO_DB_PATH"];
   if (!dbPath) throw new Error("LOCAL_STUDIO_DB_PATH is required for tests");
   const database = new Database(dbPath, { readonly: true });
   try {
@@ -113,21 +115,25 @@ type GuardRequest = {
   token?: string;
 };
 
-const request = (app: Hono, path: string, options: GuardRequest = {}): Promise<Response> => {
+const request = async (
+  app: Hono,
+  path: string,
+  options: GuardRequest = {},
+): Promise<Response> => {
   const headers: Record<string, string> = {};
-  if (options.host !== undefined) headers.host = options.host;
-  if (options.origin !== undefined) headers.origin = options.origin;
-  if (options.token !== undefined) headers.authorization = `Bearer ${options.token}`;
+  if (options.host !== undefined) headers["host"] = options.host;
+  if (options.origin !== undefined) headers["origin"] = options.origin;
+  if (options.token !== undefined) headers["authorization"] = `Bearer ${options.token}`;
   return app.request(`http://localhost:18080${path}`, { method: "POST", headers });
 };
 
 const stubEviction = (context: AppContext): (() => number) => {
   let calls = 0;
-  context.engineService.setActiveRecipe = async () => {
+  context.engineService.setActiveRecipe = async (): Promise<{ ok: true }> => {
     calls += 1;
     return { ok: true };
   };
-  return () => calls;
+  return (): number => calls;
 };
 
 const expectForbidden = async (response: Response): Promise<void> => {
@@ -221,9 +227,9 @@ describe("keyless controller request boundary", () => {
   });
 
   test("supports a concrete keyless LAN host and configured frontend origin", async () => {
-    process.env.LOCAL_STUDIO_HOST = "192.168.1.10";
-    process.env.LOCAL_STUDIO_ALLOW_UNAUTHENTICATED = "true";
-    process.env.LOCAL_STUDIO_CORS_ORIGINS = "https://studio.lan";
+    process.env["LOCAL_STUDIO_HOST"] = "192.168.1.10";
+    process.env["LOCAL_STUDIO_ALLOW_UNAUTHENTICATED"] = "true";
+    process.env["LOCAL_STUDIO_CORS_ORIGINS"] = "https://studio.lan";
     const { app, context } = await createTestHarness();
     const evictionCalls = stubEviction(context);
 
@@ -250,11 +256,11 @@ describe("keyless controller request boundary", () => {
   });
 
   test("requires explicit authorities for keyless wildcard binds", () => {
-    process.env.LOCAL_STUDIO_ALLOW_UNAUTHENTICATED = "true";
-    delete process.env.LOCAL_STUDIO_ALLOWED_HOSTS;
+    process.env["LOCAL_STUDIO_ALLOW_UNAUTHENTICATED"] = "true";
+    delete process.env["LOCAL_STUDIO_ALLOWED_HOSTS"];
 
     for (const host of ["0.0.0.0", "::", "0", "0x0", "00.00.00.00", "0.0.0.00"]) {
-      process.env.LOCAL_STUDIO_HOST = host;
+      process.env["LOCAL_STUDIO_HOST"] = host;
       expect(() => createConfig()).toThrow(
         "LOCAL_STUDIO_ALLOWED_HOSTS is required for a keyless wildcard controller bind",
       );
@@ -262,10 +268,10 @@ describe("keyless controller request boundary", () => {
   });
 
   test("enforces explicit authorities on a keyless wildcard bind", async () => {
-    process.env.LOCAL_STUDIO_HOST = "0.0.0.0";
-    process.env.LOCAL_STUDIO_ALLOW_UNAUTHENTICATED = "true";
-    process.env.LOCAL_STUDIO_ALLOWED_HOSTS = "studio.lan,192.168.1.10";
-    process.env.LOCAL_STUDIO_CORS_ORIGINS = "https://studio.lan";
+    process.env["LOCAL_STUDIO_HOST"] = "0.0.0.0";
+    process.env["LOCAL_STUDIO_ALLOW_UNAUTHENTICATED"] = "true";
+    process.env["LOCAL_STUDIO_ALLOWED_HOSTS"] = "studio.lan,192.168.1.10";
+    process.env["LOCAL_STUDIO_CORS_ORIGINS"] = "https://studio.lan";
     const { app, context } = await createTestHarness();
     const evictionCalls = stubEviction(context);
 
@@ -294,10 +300,10 @@ describe("keyless controller request boundary", () => {
   });
 
   test("enforces explicit authorities on an IPv6 wildcard bind", async () => {
-    process.env.LOCAL_STUDIO_HOST = "::";
-    process.env.LOCAL_STUDIO_ALLOW_UNAUTHENTICATED = "true";
-    process.env.LOCAL_STUDIO_ALLOWED_HOSTS = "::1,studio-v6.lan";
-    process.env.LOCAL_STUDIO_CORS_ORIGINS = "http://[::1]:3000";
+    process.env["LOCAL_STUDIO_HOST"] = "::";
+    process.env["LOCAL_STUDIO_ALLOW_UNAUTHENTICATED"] = "true";
+    process.env["LOCAL_STUDIO_ALLOWED_HOSTS"] = "::1,studio-v6.lan";
+    process.env["LOCAL_STUDIO_CORS_ORIGINS"] = "http://[::1]:3000";
     const { app, context } = await createTestHarness();
     const evictionCalls = stubEviction(context);
 
@@ -326,8 +332,8 @@ describe("keyless controller request boundary", () => {
   });
 
   test("rejects malformed explicit authority configuration", () => {
-    process.env.LOCAL_STUDIO_HOST = "0.0.0.0";
-    process.env.LOCAL_STUDIO_ALLOW_UNAUTHENTICATED = "true";
+    process.env["LOCAL_STUDIO_HOST"] = "0.0.0.0";
+    process.env["LOCAL_STUDIO_ALLOW_UNAUTHENTICATED"] = "true";
 
     for (const value of [
       "http://studio.lan",
@@ -339,14 +345,14 @@ describe("keyless controller request boundary", () => {
       "0x0",
       "studio.lan,",
     ]) {
-      process.env.LOCAL_STUDIO_ALLOWED_HOSTS = value;
+      process.env["LOCAL_STUDIO_ALLOWED_HOSTS"] = value;
       expect(() => createConfig()).toThrow("LOCAL_STUDIO_ALLOWED_HOSTS must contain");
     }
   });
 
   test("leaves API-key-protected remote behavior unchanged", async () => {
-    process.env.LOCAL_STUDIO_HOST = "localhost.";
-    process.env.LOCAL_STUDIO_API_KEY = "controller-secret";
+    process.env["LOCAL_STUDIO_HOST"] = "localhost.";
+    process.env["LOCAL_STUDIO_API_KEY"] = "controller-secret";
     const { app, context } = await createTestHarness();
     const evictionCalls = stubEviction(context);
 
