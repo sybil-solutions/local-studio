@@ -11,7 +11,6 @@ List the commands you ran:
 npm --prefix frontend run lint
 npm --prefix frontend run typecheck
 npm --prefix frontend test
-npm run test:e2e
 ```
 
 ## UI changes

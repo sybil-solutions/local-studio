@@ -8,7 +8,6 @@ import { isRecord } from "@/lib/guards";
 type TranscriptStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">;
 
 export const TRANSCRIPT_CACHE_PREFIX = "local-studio.agent.transcript.v2.";
-const LEGACY_TRANSCRIPT_CACHE_KEY = "local-studio.agent.transcripts.v1";
 
 const MAX_MESSAGES_PER_SESSION = 200;
 const MAX_CHARS_PER_SESSION = 512 * 1024;
@@ -115,16 +114,6 @@ function evictStaleSessions(storage: TranscriptStorage, keepKey: string): void {
     .sort((a, b) => a.updatedAt - b.updatedAt);
   for (const { key } of dated.slice(0, keys.length - MAX_SESSIONS)) {
     storage.removeItem(key);
-  }
-}
-
-export function purgeLegacyTranscriptCache(
-  storage: TranscriptStorage | null = defaultStorage(),
-): void {
-  try {
-    storage?.removeItem(LEGACY_TRANSCRIPT_CACHE_KEY);
-  } catch {
-    return;
   }
 }
 

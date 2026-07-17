@@ -60,14 +60,6 @@ export function imageInputsFromAttachments(attachments: readonly ChatAttachment[
   });
 }
 
-export function inlineImageAttachmentStats(attachments: readonly ChatAttachment[]) {
-  const images = attachments.filter(isImageAttachment);
-  return {
-    count: images.length,
-    bytes: images.reduce((total, image) => total + image.size, 0),
-  };
-}
-
 function imageAttachmentLimitError(attachments: readonly ChatAttachment[]) {
   return agentImageSizesLimitError(
     attachments.filter(isImageAttachment).map((image) => image.size),

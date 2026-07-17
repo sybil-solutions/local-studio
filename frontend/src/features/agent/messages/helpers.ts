@@ -154,7 +154,7 @@ export function runtimeStatusAcceptsControl(
   status: { active?: boolean; piSessionId?: string | null } | null,
   piSessionId?: string | null,
 ): boolean {
-  if (!status) return true;
+  if (!status) return false;
   if (!status.active) return false;
   return !status.piSessionId || !piSessionId || status.piSessionId === piSessionId;
 }

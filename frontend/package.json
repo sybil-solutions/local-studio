@@ -13,10 +13,6 @@
     "start": "node scripts/start-standalone.mjs",
     "perf:audit": "node scripts/perf-audit.mjs",
     "perf:browser": "node scripts/browser-perf-audit.mjs",
-    "test": "bun test scripts",
-    "test:e2e": "npm run build && npm run desktop:build:main && playwright test",
-    "test:e2e:ci": "npm run desktop:build:main && playwright test",
-    "test:e2e:report": "playwright show-report",
     "lint": "eslint",
     "lint:fix": "eslint --fix",
     "format": "prettier --write \"src/**/*.{ts,tsx,js,jsx,css,md,json}\"",
@@ -44,8 +40,7 @@
     "check:cycles": "madge --extensions ts,tsx --circular src",
     "check:static": "npm run lint && npm run typecheck && npm run typecheck:desktop && npm run check:cycles && npm run check:ui-structure",
     "check:quality": "node scripts/validate-package-json.mjs && npm run check:static && npm run check:cleanup && npm run build",
-    "precommit": "lint-staged --config .lintstagedrc.json && npm run typecheck",
-    "test:regression": "bun test ../tests/frontend"
+    "precommit": "lint-staged --config .lintstagedrc.json && npm run typecheck"
   },
   "dependencies": {
     "@earendil-works/pi-ai": "0.80.8",

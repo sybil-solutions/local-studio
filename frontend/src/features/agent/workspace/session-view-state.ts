@@ -1,5 +1,4 @@
 import { Schema } from "effect";
-import type { Session } from "@/features/agent/runtime/types";
 import {
   COMPUTER_TAB_IDS,
   type ComputerState,
@@ -102,14 +101,6 @@ function writeSessionViews(
       JSON.stringify({ version: 1, views: Object.fromEntries(entries) }),
     );
   } catch {}
-}
-
-export function sessionViewIdentity(
-  session: Pick<Session, "id" | "piSessionId"> | null | undefined,
-): SessionViewIdentity | null {
-  if (!session) return null;
-  const key = session.piSessionId ?? session.id;
-  return { key, aliases: session.piSessionId ? [session.id] : [] };
 }
 
 export function readSessionView(

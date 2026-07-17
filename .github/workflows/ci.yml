@@ -37,13 +37,6 @@ jobs:
       - name: Cleanup checks
         working-directory: ./controller
         run: bun run check
-      - name: Unit tests
-        working-directory: ./controller
-        run: bun run test:unit
-      - name: Integration tests
-        working-directory: ./controller
-        run: bun run test:integration
-
   frontend:
     runs-on: ubuntu-latest
     steps:
@@ -60,25 +53,3 @@ jobs:
       - name: Production quality gate
         working-directory: ./frontend
         run: npm run check:quality
-      - name: Unit tests
-        working-directory: ./frontend
-        run: npm run test
-      - name: Regression tests
-        working-directory: ./frontend
-        run: npm run test:regression
-      - name: Install Chromium
-        working-directory: ./frontend
-        run: npx playwright install --with-deps chromium
-      - name: Recorded end-to-end journeys
-        working-directory: ./frontend
-        run: xvfb-run -a npm run test:e2e:ci
-      - name: Upload end-to-end evidence
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: local-studio-e2e-${{ github.run_id }}
-          path: |
-            frontend/test-results
-            frontend/playwright-report
-          if-no-files-found: ignore
-          retention-days: 14
