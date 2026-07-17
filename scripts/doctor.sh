@@ -112,7 +112,7 @@ echo ""
 echo "Summary: $PASS pass, $WARN warn, $FAILED fail"
 echo ""
 echo "Quick start:"
-echo "  cd controller && bun install && bun src/main.ts   # controller on 127.0.0.1:8080"
+echo "  cd controller && bun install && bun run start     # controller on 127.0.0.1:8080"
 echo "  cd frontend && npm ci && npm run dev              # frontend on http://localhost:3000"
 echo "  open http://localhost:3000/setup                  # first-run setup wizard"
 

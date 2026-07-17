@@ -90,7 +90,7 @@ Start the controller (listens on `127.0.0.1:8080`, data dir + SQLite created
 automatically, model weights in `LOCAL_STUDIO_MODELS_DIR`, default `/models`):
 
 ```bash
-cd controller && bun install && bun src/main.ts
+cd controller && bun install && bun run start
 ```
 
 Start the frontend in a second terminal, then open
@@ -136,7 +136,7 @@ cd frontend && npm run build && npm run start
 
 `npm run start` launches the standalone server (`scripts/start-standalone.mjs`).
 Never use plain `next start` — it breaks SSE streaming. The controller runs the
-same way in production as in development: `bun src/main.ts`.
+same way in production as in development: `bun run start`.
 
 ## Remote / LAN deployment
 

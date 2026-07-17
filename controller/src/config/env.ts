@@ -1,10 +1,10 @@
-import { config as loadEnvironment } from "dotenv";
+import { parse as parseEnvironment } from "dotenv";
 import { Schema } from "effect";
-import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadPersistedConfig, type ProviderConfig } from "./persisted-config";
+import { readOwnerOnlyTextFile } from "../core/private-files";
 import { parseBooleanFlag } from "../core/validation";
 
 const positiveIntegerSchema = Schema.Number.check(Schema.isInt(), Schema.isGreaterThan(0));
@@ -34,11 +34,15 @@ export const loadDotEnvironment = (): string | undefined => {
     resolve(process.cwd(), "..", "..", ".env"),
   ];
 
-  const envPath = candidates.find((pathValue) => existsSync(pathValue));
-  if (envPath) {
-    loadEnvironment({ path: envPath });
+  for (const envPath of candidates) {
+    const content = readOwnerOnlyTextFile(envPath);
+    if (content === null) continue;
+    for (const [key, value] of Object.entries(parseEnvironment(content))) {
+      if (process.env[key] === undefined) process.env[key] = value;
+    }
+    return envPath;
   }
-  return envPath;
+  return undefined;
 };
 
 const defaultModelsDirectory = (): string =>

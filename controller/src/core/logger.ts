@@ -1,6 +1,6 @@
-import { createWriteStream, mkdirSync } from "node:fs";
 import type { WriteStream } from "node:fs";
-import { dirname } from "node:path";
+import { createPrivateLogStream } from "./log-files";
+import { createLogPayloadRedactor, redactLogValue } from "./log-redaction";
 
 export type LogLevel = "debug" | "info" | "warn" | "error";
 
@@ -18,11 +18,13 @@ export interface Logger {
 }
 
 export const createLogger = (level: LogLevel, options: LoggerOptions = {}): Logger => {
+  const redactor = createLogPayloadRedactor();
   const stream = ((): WriteStream | null => {
     if (!options.filePath) return null;
     try {
-      mkdirSync(dirname(options.filePath), { recursive: true });
-      return createWriteStream(options.filePath, { flags: "a" });
+      const opened = createPrivateLogStream(options.filePath);
+      opened.on("error", Boolean);
+      return opened;
     } catch {
       return null;
     }
@@ -39,65 +41,67 @@ export const createLogger = (level: LogLevel, options: LoggerOptions = {}): Logg
 
   const format = (message: string, details?: Record<string, unknown>): string => {
     if (!details || Object.keys(details).length === 0) {
-      return message;
+      return redactor.redact(message);
     }
-    return `${message} ${JSON.stringify(details)}`;
+    return redactor.redact(`${message} ${JSON.stringify(redactLogValue(details))}`);
   };
 
-  const toFileLine = (
+  const toLine = (target: LogLevel, message: string): string => {
+    const ts = new Date().toISOString();
+    return `${ts} ${target.toUpperCase()} ${message}`;
+  };
+
+  const writeConsole = (writeLine: (message: string) => void, line: string): void => {
+    try {
+      writeLine(line);
+    } catch {
+      return;
+    }
+  };
+
+  const writeFile = (line: string): void => {
+    if (!stream) return;
+    try {
+      stream.write(`${line}\n`);
+    } catch {
+      return;
+    }
+  };
+
+  const publishLine = (line: string, target: LogLevel): void => {
+    if (!options.onLine) return;
+    try {
+      void Promise.allSettled([options.onLine(line, { level: target })]);
+    } catch {
+      return;
+    }
+  };
+
+  const write = (
     target: LogLevel,
+    consoleWrite: (message: string) => void,
     message: string,
     details?: Record<string, unknown>,
-  ): string => {
-    const ts = new Date().toISOString();
-    const base = format(message, details);
-    return `${ts} ${target.toUpperCase()} ${base}\n`;
-  };
-
-  const tryWrite = (target: LogLevel, message: string, details?: Record<string, unknown>): void => {
-    const line = toFileLine(target, message, details);
-
-    if (stream) {
-      try {
-        stream.write(line);
-      } catch {
-        // best-effort
-      }
-    }
-
-    if (options.onLine) {
-      try {
-        void options.onLine(line.trimEnd(), { level: target });
-      } catch {
-        // best-effort
-      }
-    }
+  ): void => {
+    if (!shouldLog(target)) return;
+    const line = toLine(target, format(message, details));
+    writeConsole(consoleWrite, line);
+    writeFile(line);
+    publishLine(line, target);
   };
 
   return {
     debug: (message, details): void => {
-      if (shouldLog("debug")) {
-        console.debug(format(message, details));
-        tryWrite("debug", message, details);
-      }
+      write("debug", console.debug, message, details);
     },
     info: (message, details): void => {
-      if (shouldLog("info")) {
-        console.info(format(message, details));
-        tryWrite("info", message, details);
-      }
+      write("info", console.info, message, details);
     },
     warn: (message, details): void => {
-      if (shouldLog("warn")) {
-        console.warn(format(message, details));
-        tryWrite("warn", message, details);
-      }
+      write("warn", console.warn, message, details);
     },
     error: (message, details): void => {
-      if (shouldLog("error")) {
-        console.error(format(message, details));
-        tryWrite("error", message, details);
-      }
+      write("error", console.error, message, details);
     },
   };
 };

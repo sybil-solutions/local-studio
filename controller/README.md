@@ -24,7 +24,9 @@
 
 ```mermaid
 flowchart TB
-    Main["src/main.ts"] --> App["src/http/app.ts"]
+    Main["src/main.ts compatibility entry"] --> Bootstrap["src/bootstrap.ts"]
+    Bootstrap --> Lifecycle["src/controller-lifecycle.ts"]
+    Lifecycle --> App["src/http/app.ts"]
     App --> Security["security middleware"]
     App --> Engines["modules/engines"]
     App --> Models["modules/models"]
@@ -54,8 +56,8 @@ flowchart TB
 
 ```bash
 bun install
-bun src/main.ts
-bun --watch src/main.ts
+bun run start
+bun run dev
 bun run typecheck
 bun run lint
 bun run check
@@ -96,7 +98,9 @@ Runtime-related environment variables include:
 
 ## Where To Look
 
-- `src/main.ts`: server boot.
+- `src/bootstrap.ts`: process hardening and server entry point.
+- `src/main.ts`: compatibility entry routed through the hardened bootstrap.
+- `src/controller-lifecycle.ts`: server lifecycle.
 - `src/app-context.ts`: shared controller dependencies.
 - `src/http/app.ts`: HTTP app and route mounting.
 - `src/modules/engines/`: lifecycle, recipes, downloads, runtime process management, and runtime target discovery.

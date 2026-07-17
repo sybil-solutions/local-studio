@@ -12,7 +12,7 @@ const RUNTIME_JOB_SLOW_POLL_MS = 3_000;
 
 export const CONTROLLER_UNREACHABLE_MESSAGE =
   "The controller is unreachable, so setup cannot start. Start it with " +
-  "`cd controller && bun src/main.ts` and reload this page.";
+  "`cd controller && bun run start` and reload this page.";
 
 export const requestEffect = <T>(load: () => Promise<T>): Effect.Effect<T, unknown> =>
   Effect.tryPromise({ try: load, catch: (error) => error });

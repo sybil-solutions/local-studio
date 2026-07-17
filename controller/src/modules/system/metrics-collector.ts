@@ -327,6 +327,7 @@ export const startMetricsCollector = (context: AppContext): (() => void) => {
   const loop = async (): Promise<void> => {
     while (running) {
       await collect();
+      if (!running) return;
       await delay(METRICS_COLLECT_INTERVAL_MS);
     }
   };

@@ -1,5 +1,6 @@
 import { Database } from "bun:sqlite";
-import { chmodSync } from "node:fs";
+import { lstatSync } from "node:fs";
+import { ensurePrivateFile, repairOwnerOnlyFile } from "../core/private-files";
 
 const OBSOLETE_TABLES = [
   "jobs",
@@ -14,6 +15,28 @@ const OBSOLETE_TABLES = [
 ] as const;
 
 const sweptPaths = new Set<string>();
+const SQLITE_SIDECAR_SUFFIXES = ["-wal", "-shm", "-journal"] as const;
+
+const errorCode = (error: unknown): unknown =>
+  error !== null && typeof error === "object" ? Reflect.get(error, "code") : undefined;
+
+const hardenSqliteSidecars = (dbPath: string): void => {
+  for (const suffix of SQLITE_SIDECAR_SUFFIXES) {
+    const sidecar = `${dbPath}${suffix}`;
+    try {
+      const stat = lstatSync(sidecar);
+      if (!stat.isFile() || stat.isSymbolicLink() || !repairOwnerOnlyFile(sidecar)) {
+        throw new Error(`Unsafe private database sidecar: ${sidecar}`);
+      }
+    } catch (error) {
+      if (errorCode(error) === "ENOENT") continue;
+      if (error instanceof Error && error.message.startsWith("Unsafe private database sidecar:")) {
+        throw error;
+      }
+      throw new Error(`Unsafe private database sidecar: ${sidecar}`);
+    }
+  }
+};
 
 const dropObsoleteTables = (db: Database, dbPath: string): void => {
   if (sweptPaths.has(dbPath)) return;
@@ -40,17 +63,22 @@ export const toNullableNumber = (value: unknown): number | null => {
 };
 
 export const openSqliteDatabase = (dbPath: string): Database => {
-  const db = new Database(dbPath);
-  db.run("PRAGMA busy_timeout = 5000");
-  // The DB can hold recipe env_vars / launch_command (potential secrets); keep
-  // it owner-only rather than relying on the process umask.
   if (dbPath !== ":memory:") {
-    try {
-      chmodSync(dbPath, 0o600);
-    } catch {
-      // Best effort: some filesystems (or in-memory paths) do not support chmod.
-    }
+    ensurePrivateFile(dbPath);
+    hardenSqliteSidecars(dbPath);
   }
-  dropObsoleteTables(db, dbPath);
-  return db;
+  const db = new Database(dbPath);
+  try {
+    if (dbPath !== ":memory:") {
+      if (!repairOwnerOnlyFile(dbPath)) throw new Error(`Unsafe private database: ${dbPath}`);
+      hardenSqliteSidecars(dbPath);
+    }
+    db.run("PRAGMA busy_timeout = 5000");
+    dropObsoleteTables(db, dbPath);
+    if (dbPath !== ":memory:") hardenSqliteSidecars(dbPath);
+    return db;
+  } catch (error) {
+    db.close();
+    throw error;
+  }
 };

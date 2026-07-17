@@ -12,7 +12,7 @@
     "check:contracts": "node scripts/validate-shared-contracts.mjs",
     "check:structure": "node scripts/validate-barrel-dir-siblings.mjs",
     "check:frontend": "npm --prefix frontend run check:quality",
-    "check:controller": "cd controller && bun run typecheck && bun run lint && bun run check",
+    "check:controller": "cd controller && bun run typecheck && bun run lint && bun run check && bun run test",
     "dev:agent-runtime": "npm --prefix services/agent-runtime run build && node services/agent-runtime/dist/server.js",
     "desktop:build": "cd frontend && npm run desktop:build",
     "desktop:dist": "cd frontend && npm run desktop:dist",

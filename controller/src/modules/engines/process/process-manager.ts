@@ -1,14 +1,19 @@
-import { createWriteStream } from "node:fs";
 import type { WriteStream } from "node:fs";
-import { createInterface } from "node:readline";
 import { Effect } from "effect";
 import type { Config } from "../../../config/env";
 import { delay, delayEffect } from "../../../core/async";
 import {
   cleanupLogFiles,
+  createPrivateLogStream,
   getLogCleanupDefaultsFromEnvironment,
   primaryLogPathFor,
 } from "../../../core/log-files";
+import { redactLogLine } from "../../../core/log-redaction";
+import {
+  createRedactedRecordMultiplexer,
+  redactedRecordPayload,
+  type RedactedRecord,
+} from "../../../core/redacted-record-multiplexer";
 import type { Logger } from "../../../core/logger";
 import { realProcessRunner, type ProcessRunner } from "../../../core/command";
 import type { LaunchResult, ProcessInfo, Recipe } from "../../models/types";
@@ -262,7 +267,7 @@ export const createProcessManager = (
     try {
       command = buildBackendCommand(updatedRecipe, config, options.gpuUuids !== undefined);
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = redactLogLine(error instanceof Error ? error.message : String(error));
       return {
         success: false,
         pid: null,
@@ -290,9 +295,52 @@ export const createProcessManager = (
     });
     const env = buildEnvironment(updatedRecipe, config);
 
+    type OutputLabel = "stdout" | "stderr" | "error";
+    let logStream: WriteStream | null = null;
+    try {
+      logStream = createPrivateLogStream(logFile);
+      logStream.on("error", () => {
+        logStream = null;
+      });
+    } catch (logError) {
+      logger.warn("Failed to open log file", { error: String(logError) });
+    }
+    const recentOutput: string[] = [];
+    const output = createRedactedRecordMultiplexer<OutputLabel>();
+    let outputFinalized = false;
+    const captureRecords = (records: readonly RedactedRecord<OutputLabel>[]): void => {
+      for (const record of records) {
+        recentOutput.push(record.value);
+        if (recentOutput.length > 60) recentOutput.shift();
+        if (logStream) {
+          try {
+            logStream.write(`${record.value}${record.ending}`);
+          } catch {
+            logStream = null;
+          }
+        }
+        eventManager?.publishLogLine(updatedRecipe.id, record.value).catch(() => undefined);
+      }
+    };
+    const captureRecord = (label: OutputLabel, value: string): string => {
+      const records = output.writeRecord(label, value);
+      captureRecords(records);
+      return redactedRecordPayload(records);
+    };
+    const finalizeOutput = (): void => {
+      if (outputFinalized) return;
+      captureRecords(output.flush());
+      outputFinalized = true;
+      if (logStream) {
+        logStream.end();
+        logStream = null;
+      }
+    };
+
     try {
       const entry = command[0];
       if (!entry) {
+        finalizeOutput();
         return {
           success: false,
           pid: null,
@@ -301,61 +349,37 @@ export const createProcessManager = (
         };
       }
       let spawnError: string | null = null;
-
       const child = runner.spawnDetached(entry, command.slice(1), { env, stdio: "pipe" });
-
-      child.on("error", (error) => {
-        spawnError = String(error);
-      });
-
-      let logStream: WriteStream | null = null;
-      try {
-        logStream = createWriteStream(logFile, { flags: "a" });
-      } catch (logError) {
-        logger.warn("Failed to open log file", {
-          error: String(logError),
-        });
-      }
-
-      // Keep a rolling tail of the process output. Launch logs stream live to
-      // subscribers of `logs:<recipeId>`, but a fast-failing launch (e.g. an
-      // argparse "invalid choice" error) exits before the UI subscribes to that
-      // channel, so the live stream drops them — only the log file keeps them.
-      // We replay this tail in the failure result so the UI shows WHY a launch
-      // died instead of a bare "Process exited early".
-      const recentOutput: string[] = [];
-      const captureLine = (line: string): void => {
-        recentOutput.push(line);
-        if (recentOutput.length > 60) recentOutput.shift();
-        if (logStream) {
-          logStream.write(line + "\n");
-        }
-        if (eventManager) {
-          eventManager.publishLogLine(updatedRecipe.id, line).catch(() => {});
-        }
+      let openStreams = 0;
+      let childExited = false;
+      const finishExitedOutput = (): void => {
+        if (childExited && openStreams === 0) finalizeOutput();
       };
-
-      if (child.stdout) {
-        createInterface({ input: child.stdout, crlfDelay: Infinity }).on("line", captureLine);
-      }
-
-      if (child.stderr) {
-        createInterface({ input: child.stderr, crlfDelay: Infinity }).on("line", captureLine);
-      }
-
-      child.on("exit", () => {
-        if (logStream) {
-          logStream.end();
-        }
+      const captureStream = (
+        label: OutputLabel,
+        stream: NonNullable<typeof child.stdout>,
+      ): void => {
+        openStreams += 1;
+        stream.on("data", (chunk: unknown) => captureRecords(output.write(label, chunk)));
+        stream.on("end", () => {
+          openStreams -= 1;
+          finishExitedOutput();
+        });
+      };
+      if (child.stdout) captureStream("stdout", child.stdout);
+      if (child.stderr) captureStream("stderr", child.stderr);
+      child.on("error", (error) => {
+        spawnError = captureRecord("error", String(error));
       });
-
+      child.on("exit", () => {
+        childExited = true;
+        finishExitedOutput();
+      });
       child.unref();
 
       await delay(3000);
       if (spawnError) {
-        if (logStream) {
-          logStream.end();
-        }
+        finalizeOutput();
         return {
           success: false,
           pid: null,
@@ -364,12 +388,7 @@ export const createProcessManager = (
         };
       }
       if (child.exitCode !== null) {
-        if (logStream) {
-          logStream.end();
-        }
-        // Surface the tail of the process output so the failure is diagnosable
-        // from the UI (e.g. an invalid CLI flag, a missing kernel/import) rather
-        // than a bare "exited early".
+        finalizeOutput();
         const tail = recentOutput
           .slice(-20)
           .filter((line) => line.trim().length > 0)
@@ -380,7 +399,7 @@ export const createProcessManager = (
         if (eventManager) {
           void eventManager
             .publishLaunchProgress(updatedRecipe.id, "error", message)
-            .catch(() => {});
+            .catch(() => undefined);
         }
         return {
           success: false,
@@ -396,11 +415,13 @@ export const createProcessManager = (
         log_file: logFile,
       };
     } catch (error) {
-      logger.error("Launch failed", { error: String(error) });
+      const message = captureRecord("error", String(error));
+      finalizeOutput();
+      logger.error("Launch failed", { error: message });
       return {
         success: false,
         pid: null,
-        message: String(error),
+        message,
         log_file: logFile,
       };
     }

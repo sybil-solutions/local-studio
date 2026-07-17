@@ -15,6 +15,7 @@ import { DownloadManager } from "./modules/engines/downloads/download-manager";
 import { EngineCoordinator } from "./modules/engines/engine-coordinator";
 import { createLogger, resolveLogLevel, type Logger } from "./core/logger";
 import { primaryLogPathFor } from "./core/log-files";
+import { ensurePrivateDirectory } from "./core/private-files";
 import { DownloadStore } from "./modules/engines/downloads/download-store";
 import { PeakMetricsStore, LifetimeMetricsStore } from "./modules/system/metrics-store";
 import { RecipeStore } from "./modules/models/recipes/recipe-store";
@@ -73,7 +74,7 @@ const ensureModelsDirectory = (modelsDirectory: string): ModelsDirectoryState =>
 export const createAppContext = (): AppContext => {
   const config = createConfig();
 
-  mkdirSync(config.data_dir, { recursive: true });
+  ensurePrivateDirectory(config.data_dir);
   const dbPath = resolve(config.db_path);
 
   const recipeStore = new RecipeStore(dbPath);
