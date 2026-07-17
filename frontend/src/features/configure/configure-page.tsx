@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
+import { useSearchParams } from "next/navigation";
 import { ErrorBox, StatusPill } from "@/ui";
 import {
   Boxes,
@@ -55,9 +56,6 @@ const CONFIGURE_SECTIONS: SettingsSectionDef<ConfigureSectionId>[] = [
   },
 ];
 
-const initialSection = (): ConfigureSectionId =>
-  typeof window === "undefined" ? "overview" : configureSectionFromHash(window.location.hash);
-
 function OverviewRow({
   icon,
   title,
@@ -106,17 +104,28 @@ function OverviewRow({
 
 export default function ConfigurePage() {
   const state = useConfigure();
-  const [section, setSection] = useState<ConfigureSectionId>(initialSection);
+  const searchParams = useSearchParams();
+  const requestedSection = configureSectionFromHash(searchParams.get("section") ?? "");
+  const [section, setSection] = useState<ConfigureSectionId>(requestedSection);
 
   useMountSubscription(() => {
-    const onHashChange = () => setSection(configureSectionFromHash(window.location.hash));
+    const syncSection = () => {
+      const hashSection = configureSectionFromHash(window.location.hash);
+      setSection(hashSection === "overview" ? requestedSection : hashSection);
+    };
+    syncSection();
+    const onHashChange = () => syncSection();
     window.addEventListener("hashchange", onHashChange);
     return () => window.removeEventListener("hashchange", onHashChange);
-  }, []);
+  }, [requestedSection]);
 
   const selectSection = (next: ConfigureSectionId) => {
     setSection(next);
-    window.history.replaceState(null, "", next === "overview" ? "#overview" : `#${next}`);
+    const params = new URLSearchParams(window.location.search);
+    if (next === "overview") params.delete("section");
+    else params.set("section", next);
+    const query = params.size ? `?${params.toString()}` : "";
+    window.history.replaceState(null, "", `${window.location.pathname}${query}#${next}`);
   };
 
   const machines = state.rigs.flatMap((rig) => rig.nodes);

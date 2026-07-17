@@ -1,5 +1,5 @@
 import { permanentRedirect } from "next/navigation";
 
 export default function DiscoverRedirect() {
-  permanentRedirect("/configure#models");
+  permanentRedirect("/configure?section=models#models");
 }

@@ -1,5 +1,5 @@
 import { permanentRedirect } from "next/navigation";
 
 export default function ServerRedirect() {
-  permanentRedirect("/configure#server");
+  permanentRedirect("/configure?section=server#server");
 }

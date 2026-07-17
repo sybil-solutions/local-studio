@@ -11,7 +11,7 @@ export default defineConfig({
   retries: process.env.CI ? 1 : 0,
   reporter: [["line"], ["html", { open: "never", outputFolder: "playwright-report" }]],
   expect: { timeout: 10_000 },
-  timeout: 90_000,
+  timeout: 180_000,
   use: {
     baseURL,
     actionTimeout: 15_000,

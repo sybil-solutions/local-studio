@@ -8,6 +8,7 @@ import { useRealtimeStatusStore } from "@/hooks/realtime-status-store";
 import type { RealtimeStatusSnapshot } from "@/hooks/realtime-status-types";
 import { getStoredBackendUrl } from "@/lib/api/connection";
 import { CensoredApiUrl } from "@/ui/api-url-censor";
+import { OpenApiPanel } from "./openapi-panel";
 
 type Tab = "logs" | "docs";
 type BackendInfo = { installed: boolean; version: string | null };
@@ -24,8 +25,6 @@ export function ServerContent({ embedded = false }: { embedded?: boolean }) {
     () => (getStoredBackendUrl() || "http://127.0.0.1:8080").replace(/\/+$/, ""),
     [],
   );
-  const docsSrcDoc = useMemo(() => swaggerSrcDoc("/api/proxy/api/spec"), []);
-
   const content = (
     <>
       <ServerHeader
@@ -58,7 +57,6 @@ export function ServerContent({ embedded = false }: { embedded?: boolean }) {
           logRef={logs.logRef}
           hasLogContent={logs.hasLogContent}
           renderLogs={logs.renderLogs}
-          docsSrcDoc={docsSrcDoc}
         />
       </div>
     </>
@@ -341,10 +339,9 @@ function ServerViewerPanel(props: {
   logRef: React.RefObject<HTMLDivElement | null>;
   hasLogContent: boolean;
   renderLogs: () => ReactNode;
-  docsSrcDoc: string;
 }) {
   if (props.tab === "logs") return <LogsPanel {...props} />;
-  return <DocsPanel docsSrcDoc={props.docsSrcDoc} />;
+  return <DocsPanel />;
 }
 
 function LogsPanel({
@@ -408,7 +405,7 @@ function LogContent({
   return <div className="text-(--color-foreground-subtle)">No log content selected.</div>;
 }
 
-function DocsPanel({ docsSrcDoc }: { docsSrcDoc: string }) {
+function DocsPanel() {
   return (
     <div className="min-h-0 p-4">
       <section className="flex h-full min-h-[32rem] flex-col overflow-hidden rounded-lg border border-(--color-card-border) bg-(--color-card)">
@@ -423,12 +420,7 @@ function DocsPanel({ docsSrcDoc }: { docsSrcDoc: string }) {
             Open <ExternalLink className="h-3 w-3" />
           </a>
         </div>
-        <iframe
-          srcDoc={docsSrcDoc}
-          title="Controller API docs"
-          sandbox="allow-scripts allow-same-origin allow-popups"
-          className="min-h-0 flex-1 bg-white"
-        />
+        <OpenApiPanel />
       </section>
     </div>
   );
@@ -462,32 +454,4 @@ function serviceToneClass(status: string, lastError?: string | null): string {
   if (status === "ok" || status === "healthy") return "text-(--color-success)";
   if (status === "error" || lastError) return "text-(--color-destructive)";
   return "text-(--color-foreground-subtle)";
-}
-
-function swaggerSrcDoc(specUrl: string): string {
-  return `<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Local Studio API Docs</title>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swagger-ui-dist/swagger-ui.css" />
-    <style>
-      html, body, #swagger-ui { margin: 0; min-height: 100%; background: #fff; }
-      .swagger-ui .topbar { display: none; }
-    </style>
-  </head>
-  <body>
-    <div id="swagger-ui"></div>
-    <script src="https://cdn.jsdelivr.net/npm/swagger-ui-dist/swagger-ui-bundle.js" crossorigin="anonymous"></script>
-    <script>
-      window.onload = function () {
-        window.ui = SwaggerUIBundle({
-          dom_id: "#swagger-ui",
-          url: ${JSON.stringify(specUrl)}
-        });
-      };
-    </script>
-  </body>
-</html>`;
 }

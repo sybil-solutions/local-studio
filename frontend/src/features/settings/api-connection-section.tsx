@@ -53,6 +53,7 @@ function subscribeToStorage(callback: () => void): () => void {
 
 let cachedEntriesKey = "";
 let cachedEntries: ControllerEntry[] = [];
+const serverEntries: ControllerEntry[] = [];
 
 function controllerEntriesKey(entries: ControllerEntry[]): string {
   return JSON.stringify(
@@ -103,7 +104,7 @@ export function ApiConnectionSection({
   onSave: () => void;
 }) {
   const activeUrl = apiSettings.backendUrl;
-  const entries = useSyncExternalStore(subscribeToStorage, readEntries, readEntries);
+  const entries = useSyncExternalStore(subscribeToStorage, readEntries, () => serverEntries);
   const setEntries = (next: ControllerEntry[]) => {
     saveSavedControllers(next);
     scheduleDurableUiPreferencesSave();
