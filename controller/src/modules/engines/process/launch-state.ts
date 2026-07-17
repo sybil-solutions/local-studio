@@ -1,25 +1,46 @@
-export interface LaunchStateSnapshot {
-  phase: "idle" | "launching";
-  recipeId: string | null;
+import { randomUUID } from "node:crypto";
+
+export interface LaunchAttempt {
+  readonly attemptId: string;
+  readonly recipeId: string;
 }
 
+export interface LaunchStateSnapshot {
+  readonly phase: "idle" | "launching";
+  readonly recipeId: string | null;
+}
+
+export type LaunchAcquisition =
+  | { readonly acquired: true; readonly attempt: LaunchAttempt }
+  | { readonly acquired: false; readonly activeAttempt: LaunchAttempt };
+
 export interface LaunchState {
+  getActiveAttempt: () => LaunchAttempt | null;
   getLaunchingRecipeId: () => string | null;
   getState: () => LaunchStateSnapshot;
-  markLaunching: (recipeId: string) => void;
-  markIdle: () => void;
+  release: (attemptId: string) => boolean;
+  tryAcquire: (recipeId: string) => LaunchAcquisition;
 }
 
 export const createLaunchState = (): LaunchState => {
-  let state: LaunchStateSnapshot = { phase: "idle", recipeId: null };
+  let activeAttempt: LaunchAttempt | null = null;
   return {
-    getLaunchingRecipeId: (): string | null => state.recipeId,
-    getState: (): LaunchStateSnapshot => state,
-    markLaunching: (recipeId: string): void => {
-      state = { phase: "launching", recipeId };
+    getActiveAttempt: (): LaunchAttempt | null => activeAttempt,
+    getLaunchingRecipeId: (): string | null => activeAttempt?.recipeId ?? null,
+    getState: (): LaunchStateSnapshot => ({
+      phase: activeAttempt ? "launching" : "idle",
+      recipeId: activeAttempt?.recipeId ?? null,
+    }),
+    release: (attemptId: string): boolean => {
+      if (activeAttempt?.attemptId !== attemptId) return false;
+      activeAttempt = null;
+      return true;
     },
-    markIdle: (): void => {
-      state = { phase: "idle", recipeId: null };
+    tryAcquire: (recipeId: string): LaunchAcquisition => {
+      if (activeAttempt) return { acquired: false, activeAttempt };
+      const attempt = Object.freeze({ attemptId: randomUUID(), recipeId });
+      activeAttempt = attempt;
+      return { acquired: true, attempt };
     },
   };
 };
