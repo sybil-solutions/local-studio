@@ -14,6 +14,9 @@
     "perf:audit": "node scripts/perf-audit.mjs",
     "perf:browser": "node scripts/browser-perf-audit.mjs",
     "test": "bun test scripts",
+    "test:e2e": "npm run build && npm run desktop:build:main && playwright test",
+    "test:e2e:ci": "npm run desktop:build:main && playwright test",
+    "test:e2e:report": "playwright show-report",
     "lint": "eslint",
     "lint:fix": "eslint --fix",
     "format": "prettier --write \"src/**/*.{ts,tsx,js,jsx,css,md,json}\"",
@@ -72,6 +75,7 @@
     "zustand": "4.5.7"
   },
   "devDependencies": {
+    "@playwright/test": "1.61.1",
     "@tailwindcss/postcss": "4.1.18",
     "@types/node": "20.19.27",
     "@types/react": "19.2.7",
@@ -87,6 +91,7 @@
     "knip": "5.82.1",
     "lint-staged": "15.5.2",
     "madge": "8.0.0",
+    "playwright": "1.61.1",
     "prettier": "3.8.0",
     "tailwindcss": "4.1.18",
     "typescript": "5.9.3"

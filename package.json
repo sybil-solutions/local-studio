@@ -15,6 +15,7 @@
     "check:controller": "cd controller && bun run typecheck && bun run lint && bun run check && bun run test:unit",
     "test:controller:integration": "cd controller && bun run test:integration",
     "test:frontend:regression": "npm --prefix frontend run test:regression",
+    "test:e2e": "npm --prefix frontend run test:e2e",
     "test:integration": "npm run test:controller:integration && npm run test:frontend:regression",
     "dev:agent-runtime": "npm --prefix services/agent-runtime run build && node services/agent-runtime/dist/server.js",
     "desktop:build": "cd frontend && npm run desktop:build",

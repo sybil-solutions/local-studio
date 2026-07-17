@@ -6,11 +6,12 @@ const config = {
     "desktop/preload.ts",
     "desktop/app-identity.ts",
     "desktop/resources/pi-extensions/*.ts",
+    "e2e/**/*.spec.ts",
     // Unit tests run via `bun test scripts` — the npm script no longer names a
     // file glob knip can pick entries from, so list them explicitly.
     "scripts/*.test.ts",
   ],
-  project: ["src/**/*.{ts,tsx}", "desktop/**/*.{ts,tsx}", "scripts/*.{ts,tsx}"],
+  project: ["src/**/*.{ts,tsx}", "desktop/**/*.{ts,tsx}", "e2e/**/*.ts", "scripts/*.{ts,tsx}"],
   ignore: [".next/**", "node_modules/**"],
   ignoreIssues: {
     // IpcRequestMap is unreferenced; desktop/ is outside the frontend cleanup scope,
