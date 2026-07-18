@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync } from "node:fs";
 import { resolve } from "node:path";
+import { Context, Layer } from "effect";
 import { createConfig, type Config } from "./config/env";
 import { EventManager } from "./modules/system/event-manager";
 import { createLaunchState, type LaunchState } from "./modules/engines/process/launch-state";
@@ -148,3 +149,9 @@ export const createAppContext = (): AppContext => {
 
   return baseContext;
 };
+
+export class AppContextService extends Context.Service<AppContextService, AppContext>()(
+  "local-studio/AppContext",
+) {}
+
+export const AppContextLive = Layer.sync(AppContextService, createAppContext);

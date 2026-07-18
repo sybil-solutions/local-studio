@@ -1,4 +1,6 @@
-import { createAppContext, getModelsDirectoryState } from "./app-context";
+import { Effect, Fiber } from "effect";
+import { AppContextService, getModelsDirectoryState, type AppContext } from "./app-context";
+import { createControllerRuntime } from "./core/effect-runtime";
 import { createApp } from "./http/app";
 import { detectGpuMonitoringTool } from "./modules/system/platform/gpu";
 import { startMetricsCollector } from "./modules/system/metrics-collector";
@@ -7,13 +9,7 @@ import { parseBooleanFlag } from "./core/validation";
 const metricsDisabled = (): boolean =>
   parseBooleanFlag(process.env["LOCAL_STUDIO_DISABLE_METRICS"]);
 
-const context = createAppContext();
-const app = createApp(context);
-let server: ReturnType<typeof Bun.serve> | null = null;
-let stopMetrics: (() => void) | null = null;
-let shuttingDown = false;
-
-const startBackgroundMetrics = (): (() => void) => {
+const startBackgroundMetrics = (context: AppContext): (() => void) => {
   if (metricsDisabled()) {
     context.logger.warn("Metrics collector disabled by LOCAL_STUDIO_DISABLE_METRICS");
     return () => {};
@@ -26,8 +22,12 @@ const startBackgroundMetrics = (): (() => void) => {
   }
 };
 
-const start = (): void => {
-  server = Bun.serve({
+const start = (
+  context: AppContext,
+  runtime: ReturnType<typeof createControllerRuntime>,
+): { server: ReturnType<typeof Bun.serve>; stopMetrics: () => void } => {
+  const app = createApp(context, runtime);
+  const server = Bun.serve({
     port: context.config.port,
     hostname: context.config.host,
     fetch: app.fetch,
@@ -35,11 +35,11 @@ const start = (): void => {
   });
 
   context.logger.info(`Controller listening on ${context.config.host}:${server.port}`);
-  logBootSummary(server.port ?? context.config.port);
-  stopMetrics = startBackgroundMetrics();
+  logBootSummary(context, server.port ?? context.config.port);
+  return { server, stopMetrics: startBackgroundMetrics(context) };
 };
 
-const logBootSummary = (port: number): void => {
+const logBootSummary = (context: AppContext, port: number): void => {
   const { config } = context;
   const modelsDirectoryState = getModelsDirectoryState();
   const authMode = config.api_key ? "api-key" : "unauthenticated (no LOCAL_STUDIO_API_KEY)";
@@ -56,22 +56,41 @@ const logBootSummary = (port: number): void => {
   );
 };
 
-const shutdown = async (): Promise<void> => {
+const runtime = createControllerRuntime();
+const program = Effect.scoped(
+  Effect.gen(function* () {
+    const context = yield* AppContextService;
+    yield* Effect.acquireRelease(
+      Effect.sync(() => start(context, runtime)),
+      ({ server, stopMetrics }) =>
+        Effect.gen(function* () {
+          yield* Effect.sync(stopMetrics);
+          yield* Effect.sync(() => server.stop());
+          yield* Effect.tryPromise({
+            try: () => context.speechService.shutdown(),
+            catch: (error) => error,
+          }).pipe(
+            Effect.catch((error) =>
+              Effect.sync(() => {
+                context.logger.error("Speech service failed to stop", { error: String(error) });
+              }),
+            ),
+          );
+        }),
+    );
+    return yield* Effect.never;
+  }),
+);
+const fiber = runtime.runFork(program);
+let shuttingDown = false;
+
+const shutdown = (): void => {
   if (shuttingDown) return;
   shuttingDown = true;
-  stopMetrics?.();
-  stopMetrics = null;
-  if (typeof server?.stop === "function") {
-    server.stop();
-  }
-  server = null;
-  await context.speechService.shutdown().catch((error) => {
-    context.logger.error("Speech service failed to stop", { error: String(error) });
-  });
-  process.exit(0);
+  void Effect.runPromise(
+    Fiber.interrupt(fiber).pipe(Effect.andThen(runtime.disposeEffect)),
+  ).finally(() => process.exit(0));
 };
 
-process.on("SIGINT", () => void shutdown());
-process.on("SIGTERM", () => void shutdown());
-
-start();
+process.on("SIGINT", shutdown);
+process.on("SIGTERM", shutdown);

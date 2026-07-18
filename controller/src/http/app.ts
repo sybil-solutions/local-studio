@@ -1,7 +1,9 @@
 import { Hono } from "hono";
 import { swaggerUI } from "@hono/swagger-ui";
 import { cors } from "hono/cors";
+import { Effect } from "effect";
 import type { AppContext } from "../app-context";
+import type { ControllerRuntime } from "../core/effect-runtime";
 import { isHttpStatus } from "../core/errors";
 import { registerEngineRoutes } from "../modules/engines/routes";
 import { registerSystemRoutes } from "../modules/system/routes";
@@ -21,8 +23,9 @@ import {
   createControllerRequestObservabilityMiddleware,
   TELEMETRY_SKIP_PATHS,
 } from "./observability-middleware";
+import { effectHandler } from "./effect-handler";
 
-export const createApp = (context: AppContext): Hono => {
+export const createApp = (context: AppContext, runtime: ControllerRuntime): Hono => {
   const app = new Hono();
   const allowedCorsOrigins = context.config.cors_origins ?? [];
 
@@ -62,7 +65,10 @@ export const createApp = (context: AppContext): Hono => {
   registerAudioRoutes(app, context);
   registerAllProxyRoutes(app, context);
 
-  app.get("/health", (ctx) => ctx.json({ status: "ok" }));
+  app.get(
+    "/health",
+    effectHandler(runtime, (ctx) => Effect.succeed(ctx.json({ status: "ok" }))),
+  );
 
   // OpenAPI documentation endpoints
   app.get("/api/spec", (ctx) => ctx.json(createOpenApiSpec(context)));
