@@ -1,9 +1,12 @@
 {
   "ignores": [
-    "ws",
-    "hono",
     "@hono/node-server",
-    "@types/ws",
+    "@modelcontextprotocol/sdk",
+    "playwright-core",
+    "proper-lockfile",
+    "semver",
+    "@types/proper-lockfile",
+    "@types/semver",
     "@types/react",
     "@types/react-dom",
     "@types/node",

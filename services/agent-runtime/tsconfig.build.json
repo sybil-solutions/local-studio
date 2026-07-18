@@ -22,10 +22,7 @@
     "lib": ["esnext", "dom"],
     "paths": {
       "effect": ["../../frontend/node_modules/effect"],
-      // Point at @types/ws (not the ws implementation dir) so the build sees
-      // the type declarations; runtime resolution still finds the real ws via
-      // the services/node_modules -> frontend/node_modules bridge.
-      "ws": ["../../frontend/node_modules/@types/ws"],
+      "playwright-core": ["../../frontend/node_modules/playwright-core"],
       "hono": ["../../frontend/node_modules/hono"],
       "@hono/node-server": ["../../frontend/node_modules/@hono/node-server"],
       "@earendil-works/pi-ai": ["../../frontend/node_modules/@earendil-works/pi-ai"],
