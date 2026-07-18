@@ -1,12 +1,15 @@
-import { existsSync, mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, renameSync, rmSync } from "node:fs";
 import { cpus } from "node:os";
-import { resolve } from "node:path";
+import { join, resolve } from "node:path";
 import type { Config } from "../../../config/env";
 import { resolveBinary, runCommandAsync } from "../../../core/command";
 import type { RuntimeUpgradeResult } from "@local-studio/contracts/system";
+import { extractCudaVersion } from "./cuda-version";
 import type { InstallOptions } from "../engine-spec";
 
 const LLAMACPP_REPO = "https://github.com/ggml-org/llama.cpp";
+const LLAMACPP_LATEST_RELEASE_API =
+  "https://api.github.com/repos/ggml-org/llama.cpp/releases/latest";
 // Source builds on modest hardware need far more than the generic 10-minute
 // upgrade budget; a CUDA build on an ARM box runs 20-30 minutes cold.
 const MANAGED_BUILD_TIMEOUT_MS = 45 * 60_000;
@@ -14,14 +17,47 @@ const MANAGED_BUILD_TIMEOUT_MS = 45 * 60_000;
 export const managedLlamacppRoot = (config: Pick<Config, "data_dir">): string =>
   resolve(config.data_dir, "runtime", "llamacpp");
 
-export const managedLlamaServerPath = (config: Pick<Config, "data_dir">): string =>
-  resolve(managedLlamacppRoot(config), "src", "build", "bin", "llama-server");
+const managedPrebuiltRoot = (config: Pick<Config, "data_dir">): string =>
+  resolve(managedLlamacppRoot(config), "prebuilt");
+
+const findFileUnder = (root: string, fileName: string): string | null => {
+  if (!existsSync(root)) return null;
+  const entries = readdirSync(root, { recursive: true, encoding: "utf8" });
+  const match = entries.find(
+    (entry) => entry.split(/[\\/]/).at(-1)?.toLowerCase() === fileName,
+  );
+  return match ? resolve(root, match) : null;
+};
+
+export const managedLlamaServerPath = (config: Pick<Config, "data_dir">): string => {
+  if (process.platform === "win32") {
+    return (
+      findFileUnder(managedPrebuiltRoot(config), "llama-server.exe") ??
+      resolve(managedPrebuiltRoot(config), "llama-server.exe")
+    );
+  }
+  return resolve(managedLlamacppRoot(config), "src", "build", "bin", "llama-server");
+};
+
+export const resolveLlamaServerHelpBinary = (
+  config: Pick<Config, "data_dir" | "llama_bin">,
+  resolveOnPath: (binary: string) => string | null = resolveBinary,
+): string => {
+  const explicit = config.llama_bin?.trim();
+  const configured = explicit || "llama-server";
+  const resolved =
+    resolveOnPath(configured) ?? (existsSync(configured) ? resolve(configured) : null);
+  if (resolved) return resolved;
+  const managed = managedLlamaServerPath(config);
+  if (!explicit && existsSync(managed)) return managed;
+  return configured;
+};
 
 const missingTool = (tool: string): RuntimeUpgradeResult => ({
   success: false,
   version: null,
   output: null,
-  error: `llama.cpp source build needs "${tool}" on PATH. Install it (or set LOCAL_STUDIO_LLAMACPP_UPGRADE_CMD / LOCAL_STUDIO_LLAMA_BIN) and retry.`,
+  error: `llama.cpp install needs "${tool}" on PATH. Install it (or set LOCAL_STUDIO_LLAMACPP_UPGRADE_CMD / LOCAL_STUDIO_LLAMA_BIN) and retry.`,
   used_command: null,
 });
 
@@ -31,14 +67,178 @@ const findNvcc = (): string | null => {
   return existsSync("/usr/local/cuda/bin/nvcc") ? "/usr/local/cuda/bin/nvcc" : null;
 };
 
-/**
- * Default llama.cpp installer: shallow-clone upstream and build `llama-server`
- * into the controller-managed data dir. Used when no upgrade command is
- * configured, so first-run onboarding works without any manual setup.
- */
+export type ReleaseAsset = { name: string; browser_download_url: string; digest?: string };
+
+export const assetCudaVersion = (name: string): number => {
+  const match = name.match(/cuda-(\d+)(?:\.(\d+))?/);
+  if (!match) return 0;
+  return Number(match[1]) + Number(match[2] ?? 0) / 100;
+};
+
+export const parseDriverCudaVersion = (output: string): number | null => {
+  const version = extractCudaVersion(output);
+  return version ? Number.parseFloat(version) : null;
+};
+
+const detectDriverCudaVersion = async (): Promise<number | null> => {
+  const result = await runCommandAsync("nvidia-smi", [], { timeoutMs: 10_000 });
+  if (result.status !== 0) return null;
+  return parseDriverCudaVersion(result.stdout);
+};
+
+export const pickCudaAsset = (
+  assets: ReleaseAsset[],
+  pattern: RegExp,
+  maxCudaVersion: number | null,
+): ReleaseAsset | null => {
+  const candidates = assets
+    .filter((asset) => pattern.test(asset.name))
+    .sort((first, second) => assetCudaVersion(first.name) - assetCudaVersion(second.name));
+  if (maxCudaVersion === null) return candidates[0] ?? null;
+  const compatible = candidates.filter(
+    (candidate) => assetCudaVersion(candidate.name) <= maxCudaVersion,
+  );
+  return compatible.at(-1) ?? candidates[0] ?? null;
+};
+
+const RELEASE_QUERY_TIMEOUT_MS = 30_000;
+
+const windowsBundledTar = (): string | null => {
+  const systemTar = join(process.env["SystemRoot"] ?? "C:\\Windows", "System32", "tar.exe");
+  return existsSync(systemTar) ? systemTar : null;
+};
+
+const fetchLatestReleaseAssets = async (): Promise<ReleaseAsset[]> => {
+  const response = await fetch(LLAMACPP_LATEST_RELEASE_API, {
+    headers: { Accept: "application/vnd.github+json", "User-Agent": "local-studio" },
+    signal: AbortSignal.timeout(RELEASE_QUERY_TIMEOUT_MS),
+  });
+  if (!response.ok) throw new Error(`GitHub release query failed: HTTP ${response.status}`);
+  const release = (await response.json()) as { assets?: ReleaseAsset[] };
+  return release.assets ?? [];
+};
+
+const verifyAssetDigest = async (filePath: string, asset: ReleaseAsset): Promise<void> => {
+  const expected = asset.digest?.startsWith("sha256:")
+    ? asset.digest.slice("sha256:".length)
+    : null;
+  if (!expected) return;
+  const hasher = new Bun.CryptoHasher("sha256");
+  hasher.update(await Bun.file(filePath).arrayBuffer());
+  if (hasher.digest("hex") !== expected) {
+    throw new Error(`Checksum mismatch for ${asset.name}`);
+  }
+};
+
+const downloadReleaseAsset = async (asset: ReleaseAsset, directory: string): Promise<string> => {
+  const response = await fetch(asset.browser_download_url, {
+    signal: AbortSignal.timeout(MANAGED_BUILD_TIMEOUT_MS),
+  });
+  if (!response.ok) throw new Error(`Download failed for ${asset.name}: HTTP ${response.status}`);
+  const filePath = join(directory, asset.name);
+  await Bun.write(filePath, response);
+  await verifyAssetDigest(filePath, asset);
+  return filePath;
+};
+
+const prebuiltFailure = (error: string, output?: string | null): RuntimeUpgradeResult => ({
+  success: false,
+  version: null,
+  output: output ?? null,
+  error,
+  used_command: "windows prebuilt install",
+});
+
+const installPrebuiltWindowsLlamacpp = async (
+  options: InstallOptions,
+): Promise<RuntimeUpgradeResult> => {
+  const tar = windowsBundledTar();
+  if (!tar) return missingTool("tar");
+
+  const root = managedLlamacppRoot(options.config);
+  const downloadDirectory = join(root, "downloads");
+  const stagingDirectory = join(root, "prebuilt-staging");
+  const retiredDirectory = join(root, "prebuilt-old");
+  const prebuiltDirectory = managedPrebuiltRoot(options.config);
+  try {
+    rmSync(retiredDirectory, { recursive: true, force: true });
+  } catch {
+    return prebuiltFailure(`A previous install is still running; stop it and retry (${retiredDirectory} is locked)`);
+  }
+
+  try {
+    const assets = await fetchLatestReleaseAssets();
+    const driverCuda = await detectDriverCudaVersion();
+    const serverAsset = pickCudaAsset(assets, /^llama-.+-bin-win-cuda-.+-x64\.zip$/, driverCuda);
+    if (!serverAsset) {
+      return prebuiltFailure("No Windows CUDA build found in the latest llama.cpp release");
+    }
+    const serverCuda = assetCudaVersion(serverAsset.name);
+    const cudartAsset =
+      assets.find(
+        (asset) =>
+          /^cudart-.+-win-cuda-.+-x64\.zip$/.test(asset.name) &&
+          assetCudaVersion(asset.name) === serverCuda,
+      ) ?? null;
+    if (!cudartAsset) {
+      return prebuiltFailure(`No cudart runtime asset matches ${serverAsset.name}`);
+    }
+
+    mkdirSync(downloadDirectory, { recursive: true });
+    const archives = [
+      await downloadReleaseAsset(serverAsset, downloadDirectory),
+      await downloadReleaseAsset(cudartAsset, downloadDirectory),
+    ];
+
+    rmSync(stagingDirectory, { recursive: true, force: true });
+    mkdirSync(stagingDirectory, { recursive: true });
+    for (const archive of archives) {
+      const extract = await runCommandAsync(tar, ["-xf", archive, "-C", stagingDirectory], {
+        timeoutMs: MANAGED_BUILD_TIMEOUT_MS,
+        ...(options.onSpawn ? { onSpawn: options.onSpawn } : {}),
+      });
+      if (extract.status !== 0) {
+        return prebuiltFailure(extract.stderr || `Extraction failed for ${archive}`);
+      }
+    }
+    if (!findFileUnder(stagingDirectory, "llama-server.exe")) {
+      return prebuiltFailure(`Extraction finished but llama-server.exe was not found in ${stagingDirectory}`);
+    }
+
+    if (existsSync(prebuiltDirectory)) renameSync(prebuiltDirectory, retiredDirectory);
+    renameSync(stagingDirectory, prebuiltDirectory);
+    try {
+      rmSync(retiredDirectory, { recursive: true, force: true });
+    } catch {
+      void 0;
+    }
+
+    const binary = managedLlamaServerPath(options.config);
+    const version = await runCommandAsync(binary, ["--version"], { timeoutMs: 60_000 });
+    if (version.status !== 0) {
+      return prebuiltFailure(
+        `Installed binary failed to run: ${(version.stderr || version.stdout).trim() || "unknown error"}`,
+      );
+    }
+    return {
+      success: true,
+      version: (version.stdout || version.stderr).trim() || null,
+      output: `Installed ${serverAsset.name} at ${binary}`,
+      error: null,
+      used_command: "windows prebuilt install",
+    };
+  } catch (error) {
+    return prebuiltFailure(String(error));
+  } finally {
+    rmSync(downloadDirectory, { recursive: true, force: true });
+    rmSync(stagingDirectory, { recursive: true, force: true });
+  }
+};
+
 export const installManagedLlamacpp = async (
   options: InstallOptions,
 ): Promise<RuntimeUpgradeResult> => {
+  if (process.platform === "win32") return installPrebuiltWindowsLlamacpp(options);
   for (const tool of ["git", "cmake"]) {
     if (!resolveBinary(tool)) return missingTool(tool);
   }

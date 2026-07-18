@@ -176,7 +176,6 @@ export const getLlamacppRuntimeInfo = (config: Config): RuntimeBackendInfo => {
   };
 };
 
-
 const extractNvccVersion = (output: string): string | null => {
   const match = output.match(/release\s+([0-9.]+)/i);
   if (match) return match[1] ?? null;
