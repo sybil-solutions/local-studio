@@ -1,5 +1,5 @@
 import type { Rig, RigNode, RigsPayload } from "../types";
-import { encodePathSegments, type ApiCore } from "./core";
+import type { ApiCore } from "./core";
 
 export interface RigNodePayload {
   name?: string;
@@ -23,54 +23,58 @@ export interface RigNodePayload {
 
 export function createRigsApi(core: ApiCore) {
   return {
-    getRigs: (): Promise<RigsPayload> => core.request("/studio/rigs"),
+    getRigs: (): Promise<RigsPayload> => core.rpcJson(core.rpc.studio.rigs.$get()),
 
     createRig: (payload: {
       name: string;
       description?: string | null;
     }): Promise<{ success: boolean; rig: Rig }> =>
-      core.request("/studio/rigs", { method: "POST", body: JSON.stringify(payload) }),
+      core.rpcJson(
+        core.rpc.studio.rigs.$post(undefined, { init: { body: JSON.stringify(payload) } }),
+      ),
 
     updateRig: (
       id: string,
       payload: { name?: string; description?: string | null },
     ): Promise<{ success: boolean; rig: Rig }> =>
-      core.request(`/studio/rigs/${encodePathSegments(id)}`, {
-        method: "PUT",
-        body: JSON.stringify(payload),
-      }),
+      core.rpcJson(
+        core.rpc.studio.rigs[":rigId"].$put(
+          { param: { rigId: id } },
+          { init: { body: JSON.stringify(payload) } },
+        ),
+      ),
 
     deleteRig: (id: string): Promise<{ success: boolean }> =>
-      core.request(`/studio/rigs/${encodePathSegments(id)}`, { method: "DELETE" }),
+      core.rpcJson(core.rpc.studio.rigs[":rigId"].$delete({ param: { rigId: id } })),
 
     addRigNode: (
       rigId: string,
       payload: RigNodePayload & { name: string },
     ): Promise<{ success: boolean; rig: Rig; node: RigNode }> =>
-      core.request(`/studio/rigs/${encodePathSegments(rigId)}/nodes`, {
-        method: "POST",
-        body: JSON.stringify(payload),
-      }),
+      core.rpcJson(
+        core.rpc.studio.rigs[":rigId"].nodes.$post(
+          { param: { rigId } },
+          { init: { body: JSON.stringify(payload) } },
+        ),
+      ),
 
     updateRigNode: (
       rigId: string,
       nodeId: string,
       payload: RigNodePayload,
     ): Promise<{ success: boolean; rig: Rig; node: RigNode }> =>
-      core.request(
-        `/studio/rigs/${encodePathSegments(rigId)}/nodes/${encodePathSegments(nodeId)}`,
-        {
-          method: "PUT",
-          body: JSON.stringify(payload),
-        },
+      core.rpcJson(
+        core.rpc.studio.rigs[":rigId"].nodes[":nodeId"].$put(
+          { param: { rigId, nodeId } },
+          { init: { body: JSON.stringify(payload) } },
+        ),
       ),
 
     deleteRigNode: (rigId: string, nodeId: string): Promise<{ success: boolean; rig: Rig }> =>
-      core.request(
-        `/studio/rigs/${encodePathSegments(rigId)}/nodes/${encodePathSegments(nodeId)}`,
-        {
-          method: "DELETE",
-        },
+      core.rpcJson(
+        core.rpc.studio.rigs[":rigId"].nodes[":nodeId"].$delete({
+          param: { rigId, nodeId },
+        }),
       ),
   };
 }
