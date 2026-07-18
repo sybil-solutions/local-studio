@@ -30,7 +30,7 @@ export interface ProcessManager {
   confirmInferenceStopped: (port: number) => Effect.Effect<boolean>;
   launchModel: (recipe: Recipe, options?: LaunchModelOptions) => Effect.Effect<LaunchResult>;
   killProcess: (pid: number, force: boolean) => Effect.Effect<boolean>;
-  shutdown: () => Effect.Effect<void>;
+  shutdown: () => Effect.Effect<boolean>;
 }
 
 export interface LaunchModelOptions {
@@ -511,12 +511,16 @@ const buildProcessManager = (
     );
   };
 
-  const shutdown = (): Effect.Effect<void> =>
+  const shutdown = (): Effect.Effect<boolean> =>
     Effect.gen(function* () {
-      const pids = [...activeResources]
-        .map((resources) => resources.pid)
-        .filter((pid): pid is number => pid !== null);
-      yield* Effect.forEach(pids, (pid) => killProcessEffect(pid, true), { discard: true });
+      const pids = [
+        ...new Set(
+          [...activeResources]
+            .map((resources) => resources.pid)
+            .filter((pid): pid is number => pid !== null),
+        ),
+      ];
+      const stopped = yield* Effect.forEach(pids, (pid) => killProcessEffect(pid, true));
       yield* Effect.forEach(
         [...activeResources],
         (resources) =>
@@ -525,6 +529,7 @@ const buildProcessManager = (
             : releaseResources(resources),
         { discard: true },
       );
+      return stopped.every(Boolean);
     });
 
   return {

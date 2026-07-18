@@ -384,15 +384,10 @@ export class EngineCoordinator {
           coordinator.switchLock.withPermit(
             Effect.gen(function* () {
               yield* coordinator.stopLivenessMonitor();
-              const current = yield* coordinator.deps.processManager.findInferenceProcess(
-                coordinator.deps.config.inference_port,
-              );
-              if (current) yield* coordinator.deps.processManager.killProcess(current.pid, true);
-              yield* coordinator.deps.processManager.shutdown();
-              const stopped = yield* coordinator.confirmInferenceStopped();
+              const stopped = yield* coordinator.deps.processManager.shutdown();
               if (!stopped) {
                 return yield* Effect.fail(
-                  operationError("shutdown-engine", "Inference workers are still running"),
+                  operationError("shutdown-engine", "Owned inference processes are still running"),
                 );
               }
               yield* coordinator.releaseLlmGpuLease();
