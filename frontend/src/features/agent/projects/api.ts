@@ -29,9 +29,14 @@ export async function loadProjects(): Promise<Project[]> {
   return payload.projects ?? [];
 }
 
-export async function openProjectDirectory(): Promise<Project | null> {
+export type OpenProjectDirectoryResult =
+  | { source: "desktop"; project: Project | null }
+  | { source: "fallback" };
+
+export async function openProjectDirectory(): Promise<OpenProjectDirectoryResult> {
   const bridge = getDesktopBridge();
-  return bridge?.openDirectory ? bridge.openDirectory() : null;
+  if (!bridge?.openDirectory) return { source: "fallback" };
+  return { source: "desktop", project: await bridge.openDirectory() };
 }
 
 export async function addProjectFromPath(path: string): Promise<Project> {

@@ -77,8 +77,10 @@ const ErrorResponseSchema = Schema.Struct({
 });
 
 const MAX_REFERENCE_BYTES = 20 * 1024 * 1024;
+const MAX_TRANSCRIPTION_BYTES = 100 * 1024 * 1024;
 const MAX_PREVIEW_BYTES = 20 * 1024 * 1024;
 const VOICE_UPLOAD_TIMEOUT_MS = 130_000;
+const TRANSCRIPTION_TIMEOUT_MS = 130_000;
 const SPEECH_PREVIEW_TIMEOUT_MS = 370_000;
 
 export class SpeechApiError extends Error {
@@ -193,6 +195,34 @@ async function readBoundedAudio(response: Response): Promise<Blob> {
 
 export function createSpeechApi(core: ApiCore) {
   return {
+    transcribeAudio: async (input: { recording: File; signal?: AbortSignal }): Promise<string> => {
+      if (!input.recording.size) throw new Error("Recording is empty");
+      if (input.recording.size > MAX_TRANSCRIPTION_BYTES) {
+        throw new Error("Recording must be 100 MB or smaller");
+      }
+      const form = new FormData();
+      form.set("file", input.recording, input.recording.name);
+      form.set("mode", "best_effort");
+      const response = await checkedResponse(
+        await timedFetch(
+          core.buildUrl("/v1/audio/transcriptions"),
+          {
+            method: "POST",
+            headers: multipartHeaders(core),
+            body: form,
+            credentials: "include",
+          },
+          TRANSCRIPTION_TIMEOUT_MS,
+          "Audio transcription",
+          input.signal,
+        ),
+      );
+      const payload = (await response.json()) as { text?: unknown };
+      if (typeof payload.text !== "string" || !payload.text.trim()) {
+        throw new Error("Transcription returned no text");
+      }
+      return payload.text.trim();
+    },
     getSpeechStatus: async (): Promise<SpeechStatus> =>
       decodeStatus(
         await core.request<unknown>("/v1/audio/status", {
