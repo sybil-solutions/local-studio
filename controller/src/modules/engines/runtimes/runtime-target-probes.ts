@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { basename, resolve } from "node:path";
 import { resolveBinary, runCommandAsync } from "../../../core/command";
+import { splitCommand } from "../process/process-inventory";
 import { VLLM_RUNTIME_COMMAND_TIMEOUT_MS } from "../configs";
 
 export type PythonProbeBackend = "vllm" | "sglang" | "mlx";
@@ -147,12 +148,28 @@ export const probeBackendRuntime = async (
   );
 };
 
+const readProcessCommandLine = async (pid: number): Promise<string | null> => {
+  const result =
+    process.platform === "win32"
+      ? await runCommandAsync(
+          "powershell",
+          [
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            `(Get-CimInstance Win32_Process -Filter "ProcessId=${pid}").CommandLine`,
+          ],
+          { timeoutMs: 15_000 },
+        )
+      : await runCommandAsync("ps", ["-p", String(pid), "-o", "args="], { timeoutMs: 3_000 });
+  if (result.status !== 0 || !result.stdout.trim()) return null;
+  return result.stdout.trim();
+};
+
 export const probeRunningProcessPython = async (pid: number): Promise<string | null> => {
-  const result = await runCommandAsync("ps", ["-p", String(pid), "-o", "args="], {
-    timeoutMs: 3_000,
-  });
-  if (result.status !== 0 || !result.stdout) return null;
-  return parseCommandPython(result.stdout.trim().split(/\s+/));
+  const commandLine = await readProcessCommandLine(pid);
+  if (!commandLine) return null;
+  return parseCommandPython(splitCommand(commandLine));
 };
 
 const parseLlamaVersion = (output: string): string | null => {

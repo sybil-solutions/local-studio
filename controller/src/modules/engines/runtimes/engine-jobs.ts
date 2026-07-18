@@ -1,4 +1,4 @@
-import type { ChildProcess } from "node:child_process";
+import { spawnSync, type ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import type { Config } from "../../../config/env";
 import type {
@@ -250,11 +250,20 @@ export const listEngineJobs = (): EngineJob[] =>
 
 export const getEngineJob = (id: string): EngineJob | null => jobs.get(id) ?? null;
 
+const terminateJobChild = (child: ChildProcess | undefined): void => {
+  if (!child) return;
+  if (process.platform === "win32" && child.pid) {
+    spawnSync("taskkill", ["/PID", String(child.pid), "/T", "/F"]);
+    return;
+  }
+  child.kill("SIGTERM");
+};
+
 export const cancelEngineJob = (id: string): EngineJob | null => {
   const job = jobs.get(id);
   if (!job) return null;
   if (job.status === "success" || job.status === "error" || job.status === "cancelled") return job;
-  jobChildren.get(id)?.kill("SIGTERM");
+  terminateJobChild(jobChildren.get(id));
   return updateJob(id, {
     status: "cancelled",
     progress: 1,
