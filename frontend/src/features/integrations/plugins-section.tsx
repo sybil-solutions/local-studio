@@ -10,6 +10,7 @@ import { ApiErrorResponseSchema } from "@local-studio/agent-runtime/api-contract
 import { Alert, Button, SearchInput, StatusPill, UiModal, UiModalHeader } from "@/ui";
 import { Eye, X } from "@/ui/icon-registry";
 import { useMountSubscription } from "@/hooks/use-mount-subscription";
+import { decodeDesktopBridgeJson, embeddedDesktopBridge } from "@/lib/embedded-desktop-bridge";
 import {
   SettingsButton,
   SettingsGroup,
@@ -23,6 +24,8 @@ import { speechStatusLabel, speechStatusTone } from "./chatterbox-voice-model";
 import { useSpeechStore, type SpeechSnapshot } from "./chatterbox-voice-store";
 
 type PluginStatus = { label: string; tone: StatusTone };
+const exact = { onExcessProperty: "error" } as const;
+const decodePlugins = Schema.decodeUnknownSync(PluginRuntimeResponseSchema, exact);
 
 function responseError(body: unknown, fallback: string): string {
   try {
@@ -35,7 +38,31 @@ function responseError(body: unknown, fallback: string): string {
 async function pluginResponse(response: Response, fallback: string) {
   const body: unknown = await response.json().catch(() => null);
   if (!response.ok) throw new Error(responseError(body, fallback));
-  return Schema.decodeUnknownSync(PluginRuntimeResponseSchema)(body);
+  return decodePlugins(body);
+}
+
+async function listManagedPlugins() {
+  const bridge = await embeddedDesktopBridge();
+  return bridge
+    ? decodeDesktopBridgeJson(await bridge.plugins.list(), decodePlugins)
+    : pluginResponse(
+        await fetch("/api/agent/plugins", { cache: "no-store" }),
+        "Plugin discovery failed",
+      );
+}
+
+async function setManagedPluginEnabled(id: string, enabled: boolean) {
+  const bridge = await embeddedDesktopBridge();
+  return bridge
+    ? decodeDesktopBridgeJson(await bridge.plugins.setEnabled(id, enabled), decodePlugins)
+    : pluginResponse(
+        await fetch(`/api/agent/plugins/${encodeURIComponent(id)}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ enabled }),
+        }),
+        "Plugin activation failed",
+      );
 }
 
 function capabilitySummary(plugin: PluginRuntimeView): string {
@@ -243,9 +270,8 @@ export function PluginsSection() {
 
   const loadPlugins = useCallback(() => {
     const generation = ++requestGeneration.current;
-    return fetch("/api/agent/plugins", { cache: "no-store" })
-      .then(async (response) => {
-        const payload = await pluginResponse(response, "Plugin discovery failed");
+    return listManagedPlugins()
+      .then((payload) => {
         if (generation !== requestGeneration.current) return;
         setPlugins(payload.plugins);
         setError("");
@@ -282,12 +308,7 @@ export function PluginsSection() {
     setBusyId(plugin.id);
     setError("");
     try {
-      const response = await fetch(`/api/agent/plugins/${encodeURIComponent(plugin.id)}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ enabled }),
-      });
-      const payload = await pluginResponse(response, "Plugin activation failed");
+      const payload = await setManagedPluginEnabled(plugin.id, enabled);
       if (generation !== requestGeneration.current) return;
       setPlugins(payload.plugins);
       setPending(null);

@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { readFile, realpath } from "node:fs/promises";
 import path from "node:path";
 import { Effect, Schema } from "effect";
+import { connectorExecutionMatches } from "./connector-configuration";
 import { closePooledConnection, probeConnector } from "./connector-pool";
 import { listConnectors, upsertConnectors, type ConnectorConfig } from "./connectors-service";
 import { getGoogleAccount, type GoogleAccountView } from "./google-account";
@@ -28,6 +29,8 @@ export {
 } from "./plugin-runtime-contract";
 
 const StringRecord = Schema.Record(Schema.String, Schema.String);
+const PLUGIN_PERMISSION_REVIEW_REQUIRED =
+  "Review connector tool permissions before enabling this plugin";
 
 const StdioServerSchema = Schema.Struct({
   type: Schema.optional(Schema.Literal("stdio")),
@@ -140,6 +143,8 @@ async function resolvedServer(
         args,
         env: { ...(server.env ?? {}) },
         cwd: await containedRealPath(root, server.cwd ?? "."),
+        allowTools: [],
+        permissionReviewed: false,
         origin,
         enabled: false,
       },
@@ -160,6 +165,8 @@ async function resolvedServer(
         ...(server.headers ?? {}),
         ...(bearerToken ? { Authorization: `Bearer ${bearerToken}` } : {}),
       },
+      allowTools: [],
+      permissionReviewed: false,
       origin,
       enabled: false,
     },
@@ -252,6 +259,15 @@ function pluginToolsView(
       serverCount: servers.length,
       allowedToolCount,
       mode: "observe",
+    };
+  }
+  if (current.some((connector) => !connector.permissionReviewed)) {
+    return {
+      state: "configuration_required",
+      serverCount: servers.length,
+      allowedToolCount: 0,
+      mode: null,
+      reason: PLUGIN_PERMISSION_REVIEW_REQUIRED,
     };
   }
   if (reconciliationError) {
@@ -439,21 +455,32 @@ async function reconcileEnabledPluginConnectors(
     );
     if (stale.length === 0) continue;
     try {
+      const disabled = stale.map((connector) => ({
+        ...connector,
+        allowTools: [],
+        permissionReviewed: false,
+        enabled: false,
+      }));
+      connectors = await upsertConnectors(disabled);
+      disabled.forEach((connector) => closePooledConnection(connector.id));
       const servers = await Effect.runPromise(loadPluginServers(bundle));
       const replacements = stale.map((connector) => {
-        const replacement = servers.find(
+        return servers.find(
           (server) => server.connector?.origin?.binding === connector.origin?.binding,
         )?.connector;
-        if (!replacement || !connector.allowTools?.length) {
-          throw new PluginRuntimeError(409, "Reconnect to approve the updated plugin");
-        }
-        return { ...replacement, allowTools: connector.allowTools, enabled: true };
       });
-      const updated = await Effect.runPromise(enabledObserveConnectors(replacements));
-      connectors = await upsertConnectors(updated);
-      updated.forEach((connector) => closePooledConnection(connector.id));
-    } catch (error) {
-      errors.set(bundle.plugin.id, error instanceof Error ? error.message : "Plugin update failed");
+      const staged = stale.map(
+        (connector, index) =>
+          replacements[index] ?? disabled.find((candidate) => candidate.id === connector.id),
+      );
+      const available = staged.filter((connector): connector is ConnectorConfig =>
+        Boolean(connector),
+      );
+      connectors = await upsertConnectors(available);
+      available.forEach((connector) => closePooledConnection(connector.id));
+      errors.set(bundle.plugin.id, PLUGIN_PERMISSION_REVIEW_REQUIRED);
+    } catch {
+      errors.set(bundle.plugin.id, "Plugin connector update failed");
     }
   }
   return { connectors, errors };
@@ -531,36 +558,59 @@ function enabledObserveConnectors(
         })),
       );
       return probed.map(({ connector, probe }) => {
+        if (!connector.permissionReviewed) {
+          throw new PluginRuntimeError(409, PLUGIN_PERMISSION_REVIEW_REQUIRED);
+        }
         if (!probe.ok) {
           throw new PluginRuntimeError(
             502,
-            `${connector.name} failed to start: ${probe.error ?? "MCP probe failed"}`,
+            `${connector.name} failed to start: Connector probe failed`,
           );
         }
-        const requested = connector.allowTools ? new Set(connector.allowTools) : null;
-        const allowTools = probe.tools
-          .filter(
-            (tool) =>
-              tool.annotations?.readOnlyHint === true && (!requested || requested.has(tool.name)),
+        const advertised = new Map(probe.tools.map((tool) => [tool.name, tool]));
+        if (
+          connector.allowTools.some(
+            (tool) => advertised.get(tool)?.annotations?.readOnlyHint !== true,
           )
-          .map((tool) => tool.name);
-        if (allowTools.length === 0) {
-          throw new PluginRuntimeError(
-            409,
-            `${connector.name} does not declare any read-only tools`,
-          );
+        ) {
+          throw new PluginRuntimeError(409, `${connector.name} reviewed tool grant changed`);
         }
-        if (requested && allowTools.length !== requested.size) {
-          throw new PluginRuntimeError(409, `${connector.name} read-only contract changed`);
-        }
-        return { ...connector, allowTools, enabled: true };
+        return { ...connector, enabled: true };
       });
     },
     catch: (error) =>
       error instanceof PluginRuntimeError
         ? error
-        : new PluginRuntimeError(502, `Plugin probe failed: ${error}`),
+        : new PluginRuntimeError(502, "Plugin connector probe failed"),
   });
+}
+
+function reviewedPluginConnector(
+  connector: ConnectorConfig,
+  current: ConnectorConfig[],
+): ConnectorConfig {
+  const reviewed = current.find(
+    (candidate) =>
+      candidate.id === connector.id &&
+      candidate.permissionReviewed &&
+      connectorExecutionMatches(candidate, connector),
+  );
+  return reviewed
+    ? { ...connector, allowTools: [...reviewed.allowTools], permissionReviewed: true }
+    : connector;
+}
+
+function stagePluginConnectorReview(
+  connectors: ConnectorConfig[],
+): Effect.Effect<never, PluginRuntimeError> {
+  return Effect.tryPromise({
+    try: () => upsertConnectors(connectors.map((connector) => ({ ...connector, enabled: false }))),
+    catch: () => new PluginRuntimeError(500, "Failed to stage plugin connector review"),
+  }).pipe(
+    Effect.flatMap(() =>
+      Effect.fail(new PluginRuntimeError(409, PLUGIN_PERMISSION_REVIEW_REQUIRED)),
+    ),
+  );
 }
 
 export function setPluginEnabled(
@@ -621,9 +671,13 @@ export function setPluginEnabled(
           new PluginRuntimeError(409, reason ?? "Plugin has no executable MCP server"),
         );
       }
-      changed = yield* enabledObserveConnectors(
-        servers.flatMap((server) => (server.connector ? [server.connector] : [])),
-      );
+      const candidates = servers
+        .flatMap((server) => (server.connector ? [server.connector] : []))
+        .map((connector) => reviewedPluginConnector(connector, owned));
+      if (candidates.some((connector) => !connector.permissionReviewed)) {
+        return yield* stagePluginConnectorReview(candidates);
+      }
+      changed = yield* enabledObserveConnectors(candidates);
     } else {
       if (owned.length === 0) {
         return {

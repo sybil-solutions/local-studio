@@ -1,5 +1,9 @@
-interface Window {
-  localStudioDesktop?: {
-    openExternal?(url: string): Promise<boolean>;
-  };
+import type { DesktopBridge } from "../desktop/interfaces";
+
+declare global {
+  interface Window {
+    localStudioDesktop?: DesktopBridge;
+  }
 }
+
+export {};

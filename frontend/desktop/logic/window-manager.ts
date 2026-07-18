@@ -3,6 +3,7 @@ import path from "node:path";
 import { DESKTOP_CONFIG } from "../configs";
 import { log } from "../helpers/logger";
 import { hardenWebContents, registerMicrophonePermissionPolicy } from "./security";
+import { rendererNavigationGeneration } from "./renderer-navigation-generation";
 
 async function memorySummary(): Promise<string> {
   try {
@@ -37,6 +38,7 @@ export function createMainWindow(appUrl: string): BrowserWindow {
   });
 
   const appOrigin = new URL(appUrl).origin;
+  rendererNavigationGeneration(window.webContents);
   hardenWebContents(window, appOrigin);
   registerMicrophonePermissionPolicy(window, appOrigin);
 

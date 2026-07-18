@@ -18,6 +18,7 @@ export interface StdioTarget {
   args?: string[];
   env?: Record<string, string>;
   cwd?: string;
+  isolated?: boolean;
 }
 
 export interface HttpTarget {
@@ -67,7 +68,9 @@ const transportFor = (target: McpTarget) => {
     return new StdioClientTransport({
       command: target.command,
       args: target.args ?? [],
-      env: { ...processEnvironment(), ...(target.env ?? {}) },
+      env: target.isolated
+        ? { NODE_ENV: "production", ...(target.env ?? {}) }
+        : { ...processEnvironment(), ...(target.env ?? {}) },
       ...(target.cwd ? { cwd: target.cwd } : {}),
       stderr: "pipe",
     });

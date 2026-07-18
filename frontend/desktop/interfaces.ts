@@ -79,12 +79,40 @@ export interface ControllerDeployBridge {
   onLog(listener: (line: string) => void): () => void;
 }
 
+export interface ConnectorApprovalsBridge {
+  list(): Promise<unknown>;
+  decide(requestId: string, decision: "approve" | "deny"): Promise<void>;
+}
+
+export interface ConnectorManagementBridge {
+  list(): Promise<unknown>;
+  save(payload: string): Promise<unknown>;
+  remove(id: string): Promise<unknown>;
+  probe(id: string): Promise<string>;
+}
+
+export interface PluginManagementBridge {
+  list(): Promise<string>;
+  setEnabled(id: string, enabled: boolean): Promise<string>;
+}
+
+export type GoogleAccountId = "gmail" | "google-calendar";
+
+export interface GoogleAccountManagementBridge {
+  get(): Promise<string>;
+  saveClient(payload: string): Promise<string>;
+  disconnect(account: GoogleAccountId): Promise<string>;
+  beginAuthorization(account: GoogleAccountId): Promise<string>;
+  cancelAuthorization(account: GoogleAccountId): Promise<string>;
+}
+
 export interface DesktopBridge {
   getRuntime(): Promise<{
     platform: NodeJS.Platform;
     appVersion: string;
     chromeVersion: string;
     electronVersion: string;
+    mode?: "dev-server" | "embedded-standalone";
   }>;
   openExternal(url: string): Promise<boolean>;
   getUpdateStatus(): Promise<DesktopUpdateSnapshot>;
@@ -103,4 +131,8 @@ export interface DesktopBridge {
   terminal: PtyBridge;
   quickPanel: QuickPanelBridge;
   controllerDeploy: ControllerDeployBridge;
+  connectorApprovals: ConnectorApprovalsBridge;
+  connectors: ConnectorManagementBridge;
+  plugins: PluginManagementBridge;
+  googleAccount: GoogleAccountManagementBridge;
 }

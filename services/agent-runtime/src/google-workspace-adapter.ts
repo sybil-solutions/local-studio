@@ -61,6 +61,7 @@ export function googleWorkspaceConnector(
     url: binding.endpoint,
     auth: { type: "oauth", provider: "google-workspace", account: id },
     allowTools: [...binding.observeTools],
+    permissionReviewed: true,
     origin: { kind: "account-adapter", id, binding: "google-workspace" },
     enabled,
   };

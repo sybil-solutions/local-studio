@@ -1,14 +1,5 @@
-// Connector bridge extension for Local Studio.
-//
-// At session start it asks the frontend for the tool inventory of every
-// enabled connector (MCP servers configured in Settings → Connectors) and
-// registers each MCP tool as `<connectorId>_<toolName>`. Tool calls proxy
-// through the frontend's pooled MCP connections, so one stdio server serves
-// every session.
-//
-// Loaded by pi-runtime only when at least one connector is enabled.
-
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { Effect, Fiber, Schema } from "effect";
 import { Type } from "typebox";
 
 type ToolResult = {
@@ -19,55 +10,107 @@ type ToolResult = {
 const FRONTEND_BASE = process.env.LOCAL_STUDIO_FRONTEND_BASE ?? "http://127.0.0.1:3000";
 const CALL_TIMEOUT_MS = 120_000;
 
-interface InventoryTool {
-  name: string;
-  description?: string;
-  inputSchema?: Record<string, unknown>;
-}
+const InventoryToolSchema = Schema.Struct({
+  name: Schema.String,
+  description: Schema.optional(Schema.String),
+  inputSchema: Schema.optional(Schema.Record(Schema.String, Schema.Unknown)),
+});
 
-interface InventoryConnector {
-  id: string;
-  name: string;
-  tools: InventoryTool[];
-  error?: string;
-}
+const InventoryConnectorSchema = Schema.Struct({
+  id: Schema.String,
+  name: Schema.String,
+  tools: Schema.Array(InventoryToolSchema),
+  error: Schema.optional(Schema.String),
+});
+
+const InventoryResponseSchema = Schema.Struct({
+  connectors: Schema.Array(InventoryConnectorSchema),
+});
+
+const ToolCallResponseSchema = Schema.Struct({
+  ok: Schema.optional(Schema.Boolean),
+  result: Schema.optional(Schema.Unknown),
+  error: Schema.optional(Schema.String),
+});
+
+const McpContentBlockSchema = Schema.Struct({
+  type: Schema.optional(Schema.String),
+  text: Schema.optional(Schema.String),
+});
+
+const McpResultSchema = Schema.Struct({
+  content: Schema.optional(Schema.Array(McpContentBlockSchema)),
+});
 
 const textResult = (text: string, details: Record<string, unknown>): ToolResult => ({
   content: [{ type: "text", text }],
   details,
 });
 
-/** Render an MCP tools/call result (content blocks) as plain text. */
-const renderMcpResult = (result: unknown): string => {
-  if (result && typeof result === "object" && Array.isArray((result as { content?: unknown[] }).content)) {
-    const blocks = (result as { content: Array<{ type?: string; text?: string }> }).content;
-    const texts = blocks
-      .map((block) => (block.type === "text" && block.text ? block.text : JSON.stringify(block)))
-      .join("\n");
-    return texts || "(empty result)";
+function timedSignal(timeoutMs: number, parent?: AbortSignal) {
+  const controller = new AbortController();
+  const abort = () => controller.abort();
+  parent?.addEventListener("abort", abort, { once: true });
+  if (parent?.aborted) controller.abort();
+  const timer = Effect.runFork(
+    Effect.gen(function* () {
+      yield* Effect.sleep(timeoutMs);
+      controller.abort();
+    }),
+  );
+  return {
+    signal: controller.signal,
+    close: () => {
+      parent?.removeEventListener("abort", abort);
+      void Effect.runPromise(Fiber.interrupt(timer));
+    },
+  };
+}
+
+function renderMcpResult(result: unknown): string {
+  try {
+    const blocks = Schema.decodeUnknownSync(McpResultSchema)(result).content;
+    if (blocks) {
+      return (
+        blocks
+          .map((block) =>
+            block.type === "text" && block.text ? block.text : (JSON.stringify(block) ?? ""),
+          )
+          .join("\n") || "(empty result)"
+      );
+    }
+  } catch {}
+  return JSON.stringify(result ?? null) ?? "null";
+}
+
+async function cancelSessionApprovals(sessionId: string): Promise<void> {
+  const timed = timedSignal(10_000);
+  try {
+    await fetch(
+      `${FRONTEND_BASE}/api/agent/connectors/approvals?session_id=${encodeURIComponent(sessionId)}`,
+      { method: "DELETE", signal: timed.signal },
+    ).catch(() => undefined);
+  } finally {
+    timed.close();
   }
-  return JSON.stringify(result ?? null);
-};
+}
 
 async function callConnectorTool(
+  sessionId: string,
   connectorId: string,
   tool: string,
   args: Record<string, unknown>,
-  signal: AbortSignal,
+  signal?: AbortSignal,
 ): Promise<ToolResult> {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), CALL_TIMEOUT_MS);
-  const abort = () => controller.abort();
-  signal.addEventListener("abort", abort, { once: true });
-  if (signal.aborted) controller.abort();
+  const timed = timedSignal(CALL_TIMEOUT_MS, signal);
   try {
     const response = await fetch(`${FRONTEND_BASE}/api/agent/connectors/call`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ connector_id: connectorId, tool, args }),
-      signal: controller.signal,
+      body: JSON.stringify({ session_id: sessionId, connector_id: connectorId, tool, args }),
+      signal: timed.signal,
     });
-    const payload = (await response.json()) as { ok?: boolean; result?: unknown; error?: string };
+    const payload = Schema.decodeUnknownSync(ToolCallResponseSchema)(await response.json());
     if (!response.ok || !payload.ok) {
       return textResult(`${connectorId}/${tool} failed: ${payload.error ?? response.status}`, {
         connectorId,
@@ -77,6 +120,7 @@ async function callConnectorTool(
     }
     return textResult(renderMcpResult(payload.result), { connectorId, tool });
   } catch (error) {
+    if (timed.signal.aborted) await cancelSessionApprovals(sessionId);
     const message = error instanceof Error ? error.message : String(error);
     return textResult(`${connectorId}/${tool} failed: ${message}`, {
       connectorId,
@@ -85,23 +129,27 @@ async function callConnectorTool(
       failed: true,
     });
   } finally {
-    clearTimeout(timeout);
-    signal.removeEventListener("abort", abort);
+    timed.close();
   }
 }
 
 export default async function connectorsExtension(pi: ExtensionAPI): Promise<void> {
-  let inventory: InventoryConnector[] = [];
+  let inventory: readonly (typeof InventoryConnectorSchema.Type)[];
+  const timed = timedSignal(30_000);
   try {
     const response = await fetch(`${FRONTEND_BASE}/api/agent/connectors/call`, {
-      signal: AbortSignal.timeout(30_000),
+      signal: timed.signal,
     });
-    const payload = (await response.json()) as { connectors?: InventoryConnector[] };
-    inventory = payload.connectors ?? [];
+    inventory = Schema.decodeUnknownSync(InventoryResponseSchema)(await response.json()).connectors;
   } catch {
-    // Frontend unreachable or no connectors — register nothing.
     return;
+  } finally {
+    timed.close();
   }
+
+  pi.on("session_shutdown", async (_event, ctx) => {
+    await cancelSessionApprovals(ctx.sessionManager.getSessionId());
+  });
 
   for (const connector of inventory) {
     for (const tool of connector.tools) {
@@ -110,15 +158,15 @@ export default async function connectorsExtension(pi: ExtensionAPI): Promise<voi
         name: qualifiedName,
         label: `${connector.name}: ${tool.name}`,
         description: tool.description || `${tool.name} via the ${connector.name} connector`,
-        // MCP tools carry their own JSON Schema; pass it through untyped.
         parameters: Type.Unsafe<Record<string, unknown>>(
           tool.inputSchema ?? { type: "object", properties: {} },
         ),
-        async execute(_id, params, signal) {
+        async execute(_id, params, signal, _onUpdate, ctx) {
           return callConnectorTool(
+            ctx.sessionManager.getSessionId(),
             connector.id,
             tool.name,
-            (params ?? {}) as Record<string, unknown>,
+            params ?? {},
             signal,
           );
         },
