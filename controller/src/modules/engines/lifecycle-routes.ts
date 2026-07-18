@@ -98,10 +98,7 @@ export const registerLifecycleRoutes: RouteRegistrar = (app, context) => {
           return yield* Effect.fail(notFound(`No launch in progress for ${recipeId}`));
         }
         controller.abort();
-        const result = yield* context.engineService.setActiveRecipe(null, {
-          signal: controller.signal,
-        });
-        if (!result.ok) return yield* Effect.fail(serviceUnavailable(result.error));
+        yield* context.engineService.cancelActiveLaunch();
         return ctx.json({ success: true, message: `Launch of ${recipeId} cancelled` });
       }),
     ),

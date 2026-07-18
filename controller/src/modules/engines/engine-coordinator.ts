@@ -76,7 +76,9 @@ export class EngineCoordinator {
       this.activeLifecycleAbort?.abort();
       const preempt =
         !recipe && this.activeLaunchPid
-          ? this.deps.processManager.killProcess(this.activeLaunchPid, true).pipe(Effect.asVoid)
+          ? this.deps.processManager
+              .killOwnedProcess(this.activeLaunchPid, true)
+              .pipe(Effect.asVoid)
           : Effect.void;
       return preempt.pipe(
         Effect.flatMap(() =>
@@ -108,8 +110,11 @@ export class EngineCoordinator {
     const relinquishLease = (): Effect.Effect<void, EngineOperationError> =>
       leaseOwned
         ? Effect.gen(function* () {
-            if (spawnedPid) yield* coordinator.deps.processManager.killProcess(spawnedPid, true);
-            yield* coordinator.releaseLlmGpuLeaseAfterStop(spawnedPid);
+            const stopped = spawnedPid
+              ? yield* coordinator.deps.processManager.killOwnedProcess(spawnedPid, true)
+              : true;
+            if (stopped) yield* coordinator.releaseLlmGpuLease();
+            else yield* coordinator.startLivenessMonitor(spawnedPid, "owned");
             leaseOwned = false;
           })
         : Effect.void;
@@ -159,7 +164,6 @@ export class EngineCoordinator {
       if (current && (!recipe || !isRecipeRunning(recipe, current))) {
         const stopped = yield* coordinator.killCurrent(current);
         if (!stopped) {
-          yield* coordinator.startLivenessMonitor(current.pid);
           return lifecycleFailure(`Failed to stop process ${current.pid}`);
         }
         if (!(yield* coordinator.releaseLlmGpuLeaseAfterStop(current.pid))) {
@@ -221,7 +225,7 @@ export class EngineCoordinator {
       if (ready.ready) {
         coordinator.deps.launchFailureBudget.reset(recipe.id);
         yield* coordinator.publishLaunchProgress(recipe.id, "ready", "Model is ready!", 1);
-        if (launch.pid) yield* coordinator.startLivenessMonitor(launch.pid);
+        if (launch.pid) yield* coordinator.startLivenessMonitor(launch.pid, "owned");
         retainLease = true;
         return lifecycleSuccess();
       }
@@ -357,6 +361,18 @@ export class EngineCoordinator {
     this.deps.launchFailureBudget.reset(recipeId);
   }
 
+  cancelActiveLaunch(): Effect.Effect<void, EngineOperationError> {
+    return Effect.suspend(() => {
+      this.lifecycleIntentSerial += 1;
+      this.activeLifecycleAbort?.abort();
+      const launchPid = this.activeLaunchPid;
+      const preempt = launchPid
+        ? this.deps.processManager.killOwnedProcess(launchPid, true).pipe(Effect.asVoid)
+        : Effect.void;
+      return preempt.pipe(Effect.flatMap(() => this.switchLock.withPermit(Effect.void)));
+    });
+  }
+
   getCurrentProcess(): Effect.Effect<ProcessInfo | null> {
     return this.deps.processManager.findInferenceProcess(this.deps.config.inference_port);
   }
@@ -376,7 +392,7 @@ export class EngineCoordinator {
       this.activeLifecycleAbort?.abort();
       const launchPid = this.activeLaunchPid;
       const preempt = launchPid
-        ? this.deps.processManager.killProcess(launchPid, true).pipe(Effect.asVoid)
+        ? this.deps.processManager.killOwnedProcess(launchPid, true).pipe(Effect.asVoid)
         : Effect.void;
       const coordinator = this;
       return preempt.pipe(
@@ -487,13 +503,28 @@ export class EngineCoordinator {
     });
   }
 
-  private startLivenessMonitor(pid: number | null): Effect.Effect<void> {
+  private startLivenessMonitor(
+    pid: number | null,
+    ownership: "observed" | "owned" = "observed",
+  ): Effect.Effect<void> {
     const serial = ++this.livenessSerial;
     const interval = this.deps.livenessPollIntervalMs ?? 1_000;
     const coordinator = this;
     const monitor = Effect.gen(function* () {
       while (true) {
         yield* Effect.sleep(interval);
+        if (ownership === "owned") {
+          if (!pid || (yield* coordinator.deps.processManager.confirmOwnedProcessStopped(pid))) {
+            break;
+          }
+          if (
+            !coordinator.processExists(pid) &&
+            (yield* coordinator.deps.processManager.killOwnedProcess(pid, true))
+          ) {
+            break;
+          }
+          continue;
+        }
         if (pid && coordinator.processExists(pid)) continue;
         if (yield* coordinator.confirmInferenceStopped()) break;
       }

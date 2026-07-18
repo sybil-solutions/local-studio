@@ -1,5 +1,6 @@
-import { createWriteStream } from "node:fs";
+import { createWriteStream, readFileSync } from "node:fs";
 import type { WriteStream } from "node:fs";
+import { createHash } from "node:crypto";
 import { createInterface, type Interface } from "node:readline";
 import { Cause, Effect, Exit, Fiber, Queue } from "effect";
 import type { Config } from "../../../config/env";
@@ -30,6 +31,8 @@ export interface ProcessManager {
   confirmInferenceStopped: (port: number) => Effect.Effect<boolean>;
   launchModel: (recipe: Recipe, options?: LaunchModelOptions) => Effect.Effect<LaunchResult>;
   killProcess: (pid: number, force: boolean) => Effect.Effect<boolean>;
+  killOwnedProcess: (pid: number, force: boolean) => Effect.Effect<boolean>;
+  confirmOwnedProcessStopped: (pid: number) => Effect.Effect<boolean>;
   shutdown: () => Effect.Effect<boolean>;
 }
 
@@ -40,6 +43,8 @@ export interface LaunchModelOptions {
 interface LaunchResources {
   readonly child: SpawnedProcess;
   readonly pid: number | null;
+  readonly ownedPids: Set<number>;
+  readonly containerName: string | null;
   readonly queue: Queue.Queue<string | null>;
   readonly readers: Interface[];
   readonly logStream: WriteStream | null;
@@ -49,6 +54,8 @@ interface LaunchResources {
   logFiber: Fiber.Fiber<void, never> | null;
   released: boolean;
 }
+
+const ownershipEnvironmentKey = "LOCAL_STUDIO_ENGINE_OWNER";
 
 const recipeForLaunch = (recipe: Recipe, port: number, options: LaunchModelOptions): Recipe => {
   const updated = { ...recipe, port };
@@ -61,13 +68,134 @@ const recipeForLaunch = (recipe: Recipe, port: number, options: LaunchModelOptio
   };
 };
 
+const dockerContainerNameForCommand = (command: string[]): string | null => {
+  const dockerIndex = command.findIndex(
+    (argument) => argument === "docker" || argument.endsWith("/docker"),
+  );
+  if (dockerIndex < 0 || command[dockerIndex + 1] !== "run") return null;
+  return extractFlag(command.slice(dockerIndex + 2), "--name") ?? null;
+};
+
+const ownershipMarkerFor = (config: Config): string =>
+  createHash("sha256")
+    .update(`${config.data_dir}\0${config.inference_port}`)
+    .digest("hex")
+    .slice(0, 32);
+
+const commandWithOwnershipMarker = (command: string[], marker: string): string[] => {
+  const dockerIndex = command.findIndex(
+    (argument) => argument === "docker" || argument.endsWith("/docker"),
+  );
+  if (dockerIndex < 0 || command[dockerIndex + 1] !== "run") return command;
+  const updated = [...command];
+  updated.splice(dockerIndex + 2, 0, "--env", `${ownershipEnvironmentKey}=${marker}`);
+  return updated;
+};
+
+const markedProcessInventory = (runner: ProcessRunner, marker: string): ProcessInventoryEntry[] => {
+  const inventory = listProcessInventory(runner).filter((entry) => !entry.stat.includes("Z"));
+  const expected = `${ownershipEnvironmentKey}=${marker}`;
+  if (process.platform === "linux") {
+    return inventory.filter((entry) => {
+      try {
+        return readFileSync(`/proc/${entry.pid}/environ`, "utf8").split("\0").includes(expected);
+      } catch {
+        return false;
+      }
+    });
+  }
+  const result = runner.runSync("ps", ["eww", "-axo", "pid=,command="]);
+  if (result.status !== 0) return [];
+  const markedPids = new Set(
+    result.stdout
+      .split("\n")
+      .filter((line) => line.includes(expected))
+      .map((line) => Number(line.trim().match(/^(\d+)/)?.[1]))
+      .filter((pid) => Number.isInteger(pid) && pid > 0),
+  );
+  return inventory.filter((entry) => markedPids.has(entry.pid));
+};
+
+const runDockerCommand = (
+  runner: ProcessRunner,
+  args: string[],
+): ReturnType<ProcessRunner["runSync"]> => {
+  const result = runner.runSync("docker", args);
+  return result.status === 0 ? result : runner.runSync("sudo", ["-n", "docker", ...args]);
+};
+
+const markedDockerContainerNames = (runner: ProcessRunner, marker: string): string[] => {
+  const containers = runDockerCommand(runner, ["ps", "--format", "{{.Names}}"]);
+  if (containers.status !== 0) return [];
+  const expected = `${ownershipEnvironmentKey}=${marker}`;
+  return containers.stdout
+    .split("\n")
+    .map((name) => name.trim())
+    .filter(Boolean)
+    .filter((name) => {
+      const inspected = runDockerCommand(runner, [
+        "inspect",
+        "--format",
+        "{{range .Config.Env}}{{println .}}{{end}}",
+        name,
+      ]);
+      return inspected.status === 0 && inspected.stdout.split("\n").includes(expected);
+    });
+};
+
+const processGroupMembers = (runner: ProcessRunner, pgid: number | undefined): number[] =>
+  pgid === undefined
+    ? []
+    : listProcessInventory(runner)
+        .filter((entry) => entry.pgid === pgid)
+        .map((entry) => entry.pid);
+
+const removeStaleDockerContainerForCommand = (command: string[], runner: ProcessRunner): void => {
+  const name = dockerContainerNameForCommand(command);
+  if (!name) return;
+  const result = runner.runSync("docker", ["rm", "-f", name]);
+  if (result.status !== 0) runner.runSync("sudo", ["-n", "docker", "rm", "-f", name]);
+};
+
+const dockerContainerNameForPid = (pid: number, runner: ProcessRunner): string | null => {
+  if (process.platform !== "linux") return null;
+  let cgroup = "";
+  try {
+    cgroup = readFileSync(`/proc/${pid}/cgroup`, "utf8");
+  } catch {
+    return null;
+  }
+  const containerId = cgroup.match(/(?:docker[\/-]|cri-containerd-)([0-9a-f]{12,64})/i)?.[1];
+  if (!containerId) return null;
+  let result = runner.runSync("docker", ["ps", "--no-trunc", "--format", "{{.ID}} {{.Names}}"]);
+  if (result.status !== 0) {
+    result = runner.runSync("sudo", [
+      "-n",
+      "docker",
+      "ps",
+      "--no-trunc",
+      "--format",
+      "{{.ID}} {{.Names}}",
+    ]);
+  }
+  if (result.status !== 0) return null;
+  for (const line of result.stdout.split("\n")) {
+    const [id, name] = line.trim().split(/\s+/, 2);
+    if (id && (id.startsWith(containerId) || containerId.startsWith(id))) return name ?? null;
+  }
+  return null;
+};
+
 const buildProcessManager = (
   config: Config,
   logger: Logger,
   eventManager?: EventManager,
   runner: ProcessRunner = realProcessRunner,
 ): ProcessManager => {
+  const ownershipMarker = ownershipMarkerFor(config);
   const activeResources = new Set<LaunchResources>();
+  const ownedProcessGroups = new Map<number, number>();
+  const ownedContainerNames = new Map<number, string>();
 
   const closeLogStream = (stream: WriteStream | null): Effect.Effect<void> => {
     if (!stream || stream.closed || stream.destroyed) return Effect.void;
@@ -157,40 +285,70 @@ const buildProcessManager = (
       return null;
     });
 
-  const killProcessEffect = (pid: number, force: boolean): Effect.Effect<boolean> =>
+  const killProcessEffect = (
+    pid: number,
+    force: boolean,
+    ownership: "observed" | "owned" = "observed",
+  ): Effect.Effect<boolean> =>
     Effect.gen(function* () {
-      if (!pidExists(pid)) {
+      const resolvedOwnership =
+        ownership === "owned" || ownedProcessGroups.has(pid) ? "owned" : "observed";
+      const ownedResources =
+        resolvedOwnership === "owned"
+          ? [...activeResources].filter(
+              (resources) => resources.pid === pid || resources.ownedPids.has(pid),
+            )
+          : [];
+      const targetPgid =
+        resolvedOwnership === "owned"
+          ? ownedProcessGroups.get(pid)
+          : listProcessInventory(runner).find((entry) => entry.pid === pid && entry.pgid === pid)
+              ?.pgid;
+      const groupMembers = (): number[] => processGroupMembers(runner, targetPgid);
+      const knownOwnedPids = new Set([
+        ...ownedResources.flatMap((resources) => [...resources.ownedPids]),
+        ...groupMembers(),
+      ]);
+      if (!pidExists(pid) && [...knownOwnedPids].every((candidate) => !pidExists(candidate))) {
+        ownedProcessGroups.delete(pid);
+        ownedContainerNames.delete(pid);
         yield* stopResourcesForPid(pid);
         return true;
       }
       const tree = buildProcessTree();
       const children = new Set<number>();
-      collectChildren(tree, pid, children);
-      const allPids = [...children, pid];
+      const roots = knownOwnedPids.size > 0 ? knownOwnedPids : new Set([pid]);
+      for (const root of roots) collectChildren(tree, root, children);
+      const allPids = [...new Set([...children, ...roots])];
+      for (const resources of ownedResources) {
+        for (const candidate of allPids) resources.ownedPids.add(candidate);
+      }
 
-      stopDockerContainersForProcesses(allPids, force);
+      stopDockerContainersForProcesses(allPids, force, resolvedOwnership);
 
       const signal = force ? "SIGKILL" : "SIGTERM";
       for (const childPid of allPids) {
         sendSignal(childPid, signal);
       }
 
+      const currentPids = (): number[] => [...new Set([...allPids, ...groupMembers()])];
+      const allStopped = (): boolean => currentPids().every((candidate) => !pidExists(candidate));
       const deadline = Date.now() + (force ? 15_000 : 10_000);
       while (Date.now() < deadline) {
-        if (!pidExists(pid)) {
+        if (allStopped()) {
           break;
         }
         yield* Effect.sleep(250);
       }
 
-      if (pidExists(pid)) {
-        stopDockerContainersForProcesses(allPids, true);
-        if (!sendSignal(pid, "SIGKILL")) {
-          return false;
+      if (!allStopped()) {
+        stopDockerContainersForProcesses(allPids, true, resolvedOwnership);
+        for (const candidate of currentPids()) {
+          if (pidExists(candidate)) sendSignal(candidate, "SIGKILL");
         }
         const finalDeadline = Date.now() + 5_000;
         while (Date.now() < finalDeadline) {
-          if (!pidExists(pid)) {
+          if (allStopped()) {
             break;
           }
           yield* Effect.sleep(250);
@@ -198,41 +356,43 @@ const buildProcessManager = (
       }
 
       yield* Effect.sleep(force ? 500 : 1000);
-      const stopped = !pidExists(pid);
-      if (stopped) yield* stopResourcesForPid(pid);
+      const stopped = allStopped();
+      if (stopped) {
+        ownedProcessGroups.delete(pid);
+        ownedContainerNames.delete(pid);
+        yield* stopResourcesForPid(pid);
+      }
       return stopped;
     });
 
-  const stopDockerContainersForProcesses = (pids: number[], force: boolean): void => {
+  const stopDockerContainersForProcesses = (
+    pids: number[],
+    force: boolean,
+    ownership: "observed" | "owned",
+  ): void => {
     const pidSet = new Set(pids);
     const names = new Set<string>();
-    const inferencePorts = new Set<number>();
     const processes = listProcesses();
+
+    if (ownership === "owned") {
+      for (const pid of pidSet) {
+        const name = ownedContainerNames.get(pid);
+        if (name) names.add(name);
+      }
+    }
 
     for (const proc of processes) {
       if (!pidSet.has(proc.pid)) continue;
-      const port = Number(extractFlag(proc.args, "--port"));
-      if (Number.isFinite(port) && port > 0) inferencePorts.add(port);
-
+      if (ownership === "observed") {
+        const cgroupName = dockerContainerNameForPid(proc.pid, runner);
+        if (cgroupName) names.add(cgroupName);
+      }
       const dockerIndex = proc.args.findIndex(
         (argument) => argument === "docker" || argument.endsWith("/docker"),
       );
       if (dockerIndex < 0 || proc.args[dockerIndex + 1] !== "run") continue;
       const name = extractFlag(proc.args.slice(dockerIndex + 2), "--name");
       if (name) names.add(name);
-    }
-
-    if (inferencePorts.size > 0) {
-      for (const proc of processes) {
-        const dockerIndex = proc.args.findIndex(
-          (argument) => argument === "docker" || argument.endsWith("/docker"),
-        );
-        if (dockerIndex < 0 || proc.args[dockerIndex + 1] !== "run") continue;
-        const dockerPort = Number(extractFlag(proc.args, "--port"));
-        if (!inferencePorts.has(dockerPort)) continue;
-        const name = extractFlag(proc.args.slice(dockerIndex + 2), "--name");
-        if (name) names.add(name);
-      }
     }
 
     for (const name of names) {
@@ -248,19 +408,6 @@ const buildProcessManager = (
     }
   };
 
-  const removeStaleDockerContainerForCommand = (command: string[]): void => {
-    const dockerIndex = command.findIndex(
-      (argument) => argument === "docker" || argument.endsWith("/docker"),
-    );
-    if (dockerIndex < 0 || command[dockerIndex + 1] !== "run") return;
-    const name = extractFlag(command.slice(dockerIndex + 2), "--name");
-    if (!name) return;
-    const result = runner.runSync("docker", ["rm", "-f", name]);
-    if (result.status !== 0) {
-      runner.runSync("sudo", ["-n", "docker", "rm", "-f", name]);
-    }
-  };
-
   const sendSignal = (pid: number, signal: NodeJS.Signals): boolean => {
     try {
       process.kill(pid, signal);
@@ -271,53 +418,30 @@ const buildProcessManager = (
     }
   };
 
-  const isOrphanedInferenceWorker = (entry: ProcessInventoryEntry): boolean => {
-    if (entry.ppid !== 1 || entry.stat.includes("Z")) {
-      return false;
-    }
-    return entry.command.includes("VLLM::Worker");
-  };
-
-  const cleanupOrphanedInferenceWorkersEffect = (reason: string): Effect.Effect<number> =>
-    Effect.gen(function* () {
-      const workers = listProcessInventory(runner).filter(isOrphanedInferenceWorker);
-      if (workers.length === 0) {
-        return 0;
-      }
-
-      for (const worker of workers) {
-        logger.warn("Killing orphaned inference worker", {
-          pid: worker.pid,
-          reason,
-          command: worker.command,
-        });
-        sendSignal(worker.pid, "SIGTERM");
-      }
-
-      const deadline = Date.now() + 2_000;
-      while (Date.now() < deadline && workers.some((worker) => pidExists(worker.pid))) {
-        yield* Effect.sleep(200);
-      }
-
-      for (const worker of workers) {
-        if (pidExists(worker.pid)) {
-          logger.warn("Force killing orphaned inference worker", {
-            pid: worker.pid,
-            reason,
-            command: worker.command,
-          });
-          sendSignal(worker.pid, "SIGKILL");
-        }
-      }
-
-      return workers.length;
-    });
-
   const confirmInferenceStopped = (port: number): Effect.Effect<boolean> =>
+    findInferenceProcess(port).pipe(Effect.map((running) => running === null));
+
+  const cleanupMarkedOwnedProcesses = (): Effect.Effect<boolean> =>
     Effect.gen(function* () {
-      yield* cleanupOrphanedInferenceWorkersEffect("confirm-stopped");
-      const running = yield* findInferenceProcess(port);
-      return running === null && !listProcessInventory(runner).some(isOrphanedInferenceWorker);
+      const marked = markedProcessInventory(runner, ownershipMarker);
+      for (const entry of marked) {
+        const root = entry.pgid > 0 ? entry.pgid : entry.pid;
+        ownedProcessGroups.set(root, root);
+        const containerName = dockerContainerNameForPid(entry.pid, runner);
+        if (containerName) ownedContainerNames.set(root, containerName);
+      }
+      const containers = markedDockerContainerNames(runner, ownershipMarker);
+      const containersStopped = containers.map(
+        (name) => runDockerCommand(runner, ["kill", name]).status === 0,
+      );
+      const processesStopped = yield* Effect.forEach([...ownedProcessGroups.keys()], (pid) =>
+        killProcessEffect(pid, true, "owned"),
+      );
+      if (![...containersStopped, ...processesStopped].every(Boolean)) return false;
+      return (
+        markedProcessInventory(runner, ownershipMarker).length === 0 &&
+        markedDockerContainerNames(runner, ownershipMarker).length === 0
+      );
     });
 
   const launchModel = (
@@ -349,8 +473,16 @@ const buildProcessManager = (
         };
       }
 
-      yield* cleanupOrphanedInferenceWorkersEffect("before-launch");
-      removeStaleDockerContainerForCommand(command);
+      if (!(yield* cleanupMarkedOwnedProcesses())) {
+        return {
+          success: false,
+          pid: null,
+          message: "Owned inference workers are still stopping",
+          log_file: primaryLogPathFor(config.data_dir, updatedRecipe.id),
+        };
+      }
+      command = commandWithOwnershipMarker(command, ownershipMarker);
+      removeStaleDockerContainerForCommand(command, runner);
 
       const logFile = primaryLogPathFor(config.data_dir, updatedRecipe.id);
       cleanupLogFiles(config.data_dir, {
@@ -358,6 +490,7 @@ const buildProcessManager = (
         excludePaths: new Set([logFile]),
       });
       const env = buildEnvironment(updatedRecipe, config);
+      env[ownershipEnvironmentKey] = ownershipMarker;
 
       try {
         const entry = command[0];
@@ -373,6 +506,7 @@ const buildProcessManager = (
 
         const child = runner.spawnDetached(entry, command.slice(1), { env, stdio: "pipe" });
         spawnedPid = child.pid ?? null;
+        if (spawnedPid) ownedProcessGroups.set(spawnedPid, spawnedPid);
 
         let logStream: WriteStream | null = null;
         try {
@@ -400,6 +534,8 @@ const buildProcessManager = (
         const resources: LaunchResources = {
           child,
           pid: spawnedPid,
+          ownedPids: new Set(spawnedPid ? [spawnedPid] : []),
+          containerName: dockerContainerNameForCommand(command),
           queue: logQueue,
           readers,
           logStream,
@@ -410,6 +546,9 @@ const buildProcessManager = (
           released: false,
         };
         spawnedResources = resources;
+        if (spawnedPid && resources.containerName) {
+          ownedContainerNames.set(spawnedPid, resources.containerName);
+        }
         activeResources.add(resources);
         resources.logFiber = yield* Effect.gen(function* () {
           while (true) {
@@ -453,7 +592,7 @@ const buildProcessManager = (
 
         yield* Effect.sleep(3000);
         if (spawnError) {
-          if (spawnedPid) yield* killProcessEffect(spawnedPid, true);
+          if (spawnedPid) yield* killProcessEffect(spawnedPid, true, "owned");
           else if (resources.logFiber) yield* Fiber.interrupt(resources.logFiber);
           return {
             success: false,
@@ -475,6 +614,7 @@ const buildProcessManager = (
           if (eventManager) {
             yield* eventManager.publishLaunchProgress(updatedRecipe.id, "error", message);
           }
+          if (spawnedPid) yield* killProcessEffect(spawnedPid, true, "owned");
           return {
             success: false,
             pid: null,
@@ -489,7 +629,7 @@ const buildProcessManager = (
           log_file: logFile,
         };
       } catch (error) {
-        if (spawnedPid) yield* killProcessEffect(spawnedPid, true);
+        if (spawnedPid) yield* killProcessEffect(spawnedPid, true, "owned");
         logger.error("Launch failed", { error: String(error) });
         return {
           success: false,
@@ -501,7 +641,7 @@ const buildProcessManager = (
     }).pipe(
       Effect.onExit((exit) => {
         if (!Exit.isFailure(exit) || !Cause.hasInterrupts(exit.cause)) return Effect.void;
-        if (spawnedPid) return killProcessEffect(spawnedPid, true).pipe(Effect.asVoid);
+        if (spawnedPid) return killProcessEffect(spawnedPid, true, "owned").pipe(Effect.asVoid);
         if (!spawnedResources) return Effect.void;
         Queue.offerUnsafe(spawnedResources.queue, null);
         return spawnedResources.logFiber
@@ -514,13 +654,14 @@ const buildProcessManager = (
   const shutdown = (): Effect.Effect<boolean> =>
     Effect.gen(function* () {
       const pids = [
-        ...new Set(
-          [...activeResources]
+        ...new Set([
+          ...ownedProcessGroups.keys(),
+          ...[...activeResources]
             .map((resources) => resources.pid)
             .filter((pid): pid is number => pid !== null),
-        ),
+        ]),
       ];
-      const stopped = yield* Effect.forEach(pids, (pid) => killProcessEffect(pid, true));
+      const stopped = yield* Effect.forEach(pids, (pid) => killProcessEffect(pid, true, "owned"));
       yield* Effect.forEach(
         [...activeResources],
         (resources) =>
@@ -532,11 +673,31 @@ const buildProcessManager = (
       return stopped.every(Boolean);
     });
 
+  const confirmOwnedProcessStopped = (pid: number): Effect.Effect<boolean> =>
+    Effect.gen(function* () {
+      const resources = [...activeResources].filter((entry) => entry.pid === pid);
+      const pgid = ownedProcessGroups.get(pid);
+      const pids = new Set([
+        ...resources.flatMap((entry) => [...entry.ownedPids]),
+        ...processGroupMembers(runner, pgid),
+      ]);
+      if (pids.size === 0) pids.add(pid);
+      const stopped = [...pids].every((candidate) => !pidExists(candidate));
+      if (stopped) {
+        ownedProcessGroups.delete(pid);
+        ownedContainerNames.delete(pid);
+        yield* stopResourcesForPid(pid);
+      }
+      return stopped;
+    });
+
   return {
     findInferenceProcess,
     confirmInferenceStopped,
     launchModel,
     killProcess: killProcessEffect,
+    killOwnedProcess: (pid, force) => killProcessEffect(pid, force, "owned"),
+    confirmOwnedProcessStopped,
     shutdown,
   };
 };
