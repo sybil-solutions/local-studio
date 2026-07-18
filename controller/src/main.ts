@@ -1,4 +1,4 @@
-import { Effect, Fiber } from "effect";
+import { Cause, Effect, Exit, Fiber } from "effect";
 import { AppContextService, getModelsDirectoryState, type AppContext } from "./app-context";
 import { createControllerRuntime } from "./core/effect-runtime";
 import { createApp } from "./http/app";
@@ -83,6 +83,12 @@ const program = Effect.scoped(
 );
 const fiber = runtime.runFork(program);
 let shuttingDown = false;
+
+fiber.addObserver((exit) => {
+  if (shuttingDown || Exit.isSuccess(exit)) return;
+  console.error(Cause.pretty(exit.cause));
+  void runtime.dispose().finally(() => process.exit(1));
+});
 
 const shutdown = (): void => {
   if (shuttingDown) return;
