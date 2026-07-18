@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { Schema } from "effect";
+import { Effect, Schema } from "effect";
 import {
   ConnectorToolCallSchema,
   type ConnectorApprovalState,
@@ -14,6 +14,7 @@ import {
 import { enabledConnectors } from "@local-studio/agent-runtime/connectors-service";
 import { connectorApprovalBroker } from "@local-studio/agent-runtime/connector-approval";
 import { connectorToolRisk } from "@local-studio/agent-runtime/connector-policy";
+import { refreshEnabledPluginConnectors } from "@local-studio/agent-runtime/plugin-runtime";
 import { requireApiAccess } from "@/lib/auth/guard";
 
 export const runtime = "nodejs";
@@ -29,6 +30,7 @@ function approvalError(state: ConnectorApprovalState): string {
 export async function GET(request: NextRequest) {
   const denied = requireApiAccess(request);
   if (denied) return denied;
+  await Effect.runPromise(refreshEnabledPluginConnectors());
   const connectors = await enabledConnectors();
   const inventory = await Promise.all(
     connectors.map(async (connector) => {
@@ -71,6 +73,14 @@ export async function POST(request: NextRequest) {
   }
   const args = body.args ?? {};
   try {
+    const pluginOrigin = (await enabledConnectors()).find(
+      (connector) => connector.id === body.connector_id && connector.origin?.kind === "plugin",
+    )?.origin;
+    if (pluginOrigin?.kind === "plugin") {
+      await Effect.runPromise(
+        refreshEnabledPluginConnectors(undefined, new Set([pluginOrigin.id])),
+      );
+    }
     const connector = await authorizedConnectorTool(body.connector_id, body.tool);
     const risk = connectorToolRisk(connector, body.tool);
     if (risk !== "read") {

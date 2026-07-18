@@ -421,6 +421,7 @@ describe("connector call route", () => {
   let pluginRoot: string;
   const calls: string[] = [];
   const requests: FakeCall[] = [];
+  let pluginTools = [{ name: "observe", annotations: { readOnlyHint: true } }];
   const previousDataDir = process.env.LOCAL_STUDIO_DATA_DIR;
   const originalFetch = globalThis.fetch;
 
@@ -460,13 +461,7 @@ describe("connector call route", () => {
           ? {
               tools:
                 url === "http://plugin.test/mcp"
-                  ? [
-                      {
-                        name: "observe",
-                        inputSchema: { type: "object" },
-                        annotations: { readOnlyHint: true },
-                      },
-                    ]
+                  ? pluginTools
                   : [
                       { name: "search_repositories", inputSchema: { type: "object" } },
                       { name: "create_issue", inputSchema: { type: "object" } },
@@ -514,7 +509,7 @@ describe("connector call route", () => {
   });
 
   afterAll(async () => {
-    closePooledConnection("github");
+    await closePooledConnection("github");
     globalThis.fetch = originalFetch;
     await rm(dataDir, { recursive: true, force: true });
     if (previousDataDir === undefined) delete process.env.LOCAL_STUDIO_DATA_DIR;
@@ -700,7 +695,7 @@ describe("connector call route", () => {
         ],
       }),
     );
-    closePooledConnection("github");
+    await closePooledConnection("github");
     connectorApprovalBroker.decide(approval.id, "approve");
     const result = await response;
     expect(result.status).toBe(403);
@@ -752,12 +747,49 @@ describe("connector call route", () => {
       enabled: false,
     });
     if (!pending) throw new Error("Plugin connector was not staged for review");
-    await upsertConnector({
-      ...pending,
-      allowTools: ["observe"],
-      permissionReviewed: true,
-      enabled: false,
-    });
+    const review = async () => {
+      const tested = await probeConnectorHttp(
+        new Request("http://localhost/api/agent/connectors/test", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: pending.id }),
+        }),
+      );
+      expect(tested.status).toBe(200);
+      const identity: unknown = await tested.json();
+      if (identity === null || typeof identity !== "object") {
+        throw new Error("Plugin review identity is missing");
+      }
+      const artifactDigest = Reflect.get(identity, "artifact_digest");
+      const inventoryDigest = Reflect.get(identity, "inventory_digest");
+      if (typeof artifactDigest !== "string" || typeof inventoryDigest !== "string") {
+        throw new Error("Plugin review identity is invalid");
+      }
+      const saved = await saveConnectorHttp(
+        new Request("http://localhost/api/agent/connectors", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            id: pending.id,
+            name: pending.name,
+            transport: pending.transport,
+            ...(pending.command ? { command: pending.command } : {}),
+            ...(pending.args ? { args: pending.args } : {}),
+            ...(pending.env ? { env: pending.env } : {}),
+            ...(pending.cwd ? { cwd: pending.cwd } : {}),
+            ...(pending.url ? { url: pending.url } : {}),
+            ...(pending.headers ? { headers: pending.headers } : {}),
+            allowTools: ["observe"],
+            permissionReviewed: true,
+            reviewedArtifactDigest: artifactDigest,
+            reviewedInventoryDigest: inventoryDigest,
+            enabled: false,
+          }),
+        }),
+      );
+      expect(saved.status).toBe(200);
+    };
+    await review();
     expect((await activation()).status).toBe(200);
     expect((await listConnectors()).find((connector) => connector.id === pending.id)).toMatchObject(
       {
@@ -766,6 +798,79 @@ describe("connector call route", () => {
         enabled: true,
       },
     );
+
+    const approved = (await listConnectors()).find((connector) => connector.id === pending.id);
+    if (!approved) throw new Error("Approved plugin connector is missing");
+    await upsertConnector({ ...approved, url: "http://changed-plugin.test/mcp" });
+    expect((await listPlugins(new Request("http://localhost/api/agent/plugins"))).status).toBe(200);
+    expect((await listConnectors()).find((connector) => connector.id === pending.id)).toMatchObject(
+      {
+        url: "http://plugin.test/mcp",
+        allowTools: [],
+        permissionReviewed: false,
+        enabled: false,
+      },
+    );
+    expect((await activation()).status).toBe(409);
+    await review();
+    expect((await activation()).status).toBe(200);
+
+    await writeFile(join(pluginRoot, "runtime.js"), "export const changed = true;\n");
+    const beforeCalls = calls.filter((tool) => tool === "observe").length;
+    const blocked = await callConnector(
+      new Request("http://localhost/api/agent/connectors/call", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          session_id: "plugin-artifact-drift",
+          connector_id: pending.id,
+          tool: "observe",
+          args: {},
+        }),
+      }),
+    );
+    expect(blocked.status).toBe(500);
+    expect(calls.filter((tool) => tool === "observe")).toHaveLength(beforeCalls);
+    expect((await listConnectors()).find((connector) => connector.id === pending.id)).toMatchObject(
+      {
+        allowTools: [],
+        permissionReviewed: false,
+        enabled: false,
+      },
+    );
+
+    expect((await activation()).status).toBe(409);
+    await review();
+    expect((await activation()).status).toBe(200);
+
+    pluginTools = [
+      { name: "observe", annotations: { readOnlyHint: true } },
+      { name: "new-observe", annotations: { readOnlyHint: true } },
+    ];
+    const inventoryBlocked = await callConnector(
+      new Request("http://localhost/api/agent/connectors/call", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          session_id: "plugin-inventory-drift",
+          connector_id: pending.id,
+          tool: "observe",
+          args: {},
+        }),
+      }),
+    );
+    expect(inventoryBlocked.status).toBe(500);
+    expect((await listConnectors()).find((connector) => connector.id === pending.id)).toMatchObject(
+      {
+        allowTools: [],
+        permissionReviewed: false,
+        enabled: false,
+      },
+    );
+    pluginTools = [{ name: "observe", annotations: { readOnlyHint: true } }];
+    expect((await activation()).status).toBe(409);
+    await review();
+    expect((await activation()).status).toBe(200);
 
     await writeFile(
       join(pluginRoot, ".codex-plugin", "plugin.json"),
@@ -780,7 +885,7 @@ describe("connector call route", () => {
         enabled: false,
       },
     );
-  });
+  }, 15_000);
 
   test("keeps connector inventory and calls free of configuration writes", async () => {
     const connectorsFile = join(dataDir, "connectors.json");
@@ -788,13 +893,12 @@ describe("connector call route", () => {
     const stored = JSON.stringify({
       connectors: [
         {
-          id: "plugin-fixture-stale",
-          name: "Fixture stale",
+          id: "github",
+          name: "GitHub",
           transport: "http",
-          url: "http://plugin.test/mcp",
-          allowTools: ["observe", "observe"],
+          url: "http://connector.test/mcp",
+          allowTools: ["create_issue", "create_issue"],
           permissionReviewed: true,
-          origin: { kind: "plugin", id: "fixture-plugin", version: "1.0.0" },
           enabled: true,
         },
       ],
@@ -813,8 +917,8 @@ describe("connector call route", () => {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             session_id: "non-mutating-call",
-            connector_id: "plugin-fixture-stale",
-            tool: "observe",
+            connector_id: "github",
+            tool: "create_issue",
             args: {},
           }),
         }),
@@ -824,7 +928,7 @@ describe("connector call route", () => {
       expect((await response).status).toBe(200);
       expect(await readFile(connectorsFile, "utf8")).toBe(stored);
     } finally {
-      closePooledConnection("plugin-fixture-stale");
+      closePooledConnection("github");
       await writeFile(connectorsFile, originalConnectors);
     }
   });

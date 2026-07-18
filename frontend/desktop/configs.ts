@@ -1,5 +1,6 @@
 import { app } from "electron";
 import path from "node:path";
+import { verifiedPackagedRuntime } from "./runtime-identity";
 
 const DEFAULT_DEV_SERVER_URL = "http://127.0.0.1:3000";
 
@@ -38,5 +39,15 @@ export function resolveStaticAssetsSource(): { staticDir: string; publicDir: str
   return {
     staticDir: path.resolve(__dirname, "..", "..", ".next", "static"),
     publicDir: path.resolve(__dirname, "..", "..", "public"),
+  };
+}
+
+export function resolvePackagedRuntimeEnvironment(): NodeJS.ProcessEnv {
+  if (!app.isPackaged) return {};
+  const runtimeDir = path.join(process.resourcesPath, "app", "runtime");
+  const runtime = verifiedPackagedRuntime(runtimeDir);
+  return {
+    LOCAL_STUDIO_NODE_RUNTIME: runtime.nodeRuntime,
+    LOCAL_STUDIO_NODE_RUNTIME_MANIFEST: runtime.manifestPath,
   };
 }

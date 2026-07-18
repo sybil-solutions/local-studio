@@ -17,11 +17,43 @@ export const ConnectorApprovalStateSchema = Schema.Union([
   Schema.Literal("cancelled"),
 ]);
 
+const ConnectorExecutableFileSchema = Schema.Struct({
+  index: Schema.Number,
+  source: Schema.String,
+  path: Schema.String,
+  snapshotArgument: Schema.String,
+  snapshotPath: Schema.String,
+  digest: Schema.String,
+  mode: Schema.Number,
+});
+
+const ConnectorExecutableBindingSchema = Schema.Struct({
+  format: Schema.Literal("local-studio-executable-v1"),
+  command: Schema.String,
+  resolvedCommand: Schema.String,
+  snapshotCommand: Schema.String,
+  commandDigest: Schema.String,
+  commandMode: Schema.Number,
+  runtimeDigest: Schema.optional(Schema.String),
+  sourceRoot: Schema.String,
+  sourceCwd: Schema.String,
+  snapshotRoot: Schema.String,
+  snapshotCwd: Schema.String,
+  artifactDigest: Schema.String,
+  artifactContentDigest: Schema.String,
+  snapshotDigest: Schema.String,
+  digest: Schema.String,
+  files: Schema.Array(ConnectorExecutableFileSchema),
+});
+
 const ConnectorOriginSchema = Schema.Struct({
   kind: Schema.String,
   id: Schema.String,
   version: Schema.optional(Schema.String),
   binding: Schema.optional(Schema.String),
+  artifactDigest: Schema.optional(Schema.String),
+  inventoryDigest: Schema.optional(Schema.String),
+  executable: Schema.optional(ConnectorExecutableBindingSchema),
 });
 
 const ConnectorAuthReferenceSchema = Schema.Struct({
@@ -91,6 +123,8 @@ const CustomConnectorUpsertInputSchema = Schema.Struct({
   cwd: Schema.optional(Schema.String),
   url: Schema.optional(Schema.String),
   headers: Schema.optional(StringRecordSchema),
+  reviewedArtifactDigest: Schema.optional(Schema.String),
+  reviewedInventoryDigest: Schema.optional(Schema.String),
 });
 
 export const ConnectorUpsertInputSchema = Schema.Union([
@@ -112,6 +146,8 @@ export const ConnectorTestResponseSchema = Schema.Struct({
   tool_count: Schema.Number,
   tool_names: Schema.Array(Schema.String),
   tools: Schema.Array(ConnectorToolPermissionSchema),
+  artifact_digest: Schema.optional(Schema.String),
+  inventory_digest: Schema.String,
   error: Schema.optional(Schema.String),
 });
 export const ConnectorSshPathResponseSchema = Schema.Struct({
@@ -200,6 +236,7 @@ export const ConnectorApprovalDecisionSchema = Schema.Struct({
 });
 
 export type ConnectorOrigin = typeof ConnectorOriginSchema.Type;
+export type ConnectorExecutableBinding = typeof ConnectorExecutableBindingSchema.Type;
 export type ConnectorAuthReference = typeof ConnectorAuthReferenceSchema.Type;
 export type StoredConnectorConfig = typeof StoredConnectorConfigSchema.Type;
 export type ConnectorConfig = typeof ConnectorConfigSchema.Type;

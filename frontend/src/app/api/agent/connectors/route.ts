@@ -1,14 +1,16 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { Effect } from "effect";
 import {
   decodeConnectorUpsertPayload,
   listConnectors,
   removeConnector,
   toConnectorView,
-  upsertConnectorInput,
 } from "@local-studio/agent-runtime/connectors-service";
 import { closePooledConnection } from "@local-studio/agent-runtime/connector-pool";
+import { saveManagedConnector } from "@local-studio/agent-runtime/settings-management";
 import { denyEmbeddedDesktopHttp } from "@/lib/auth/embedded-desktop-http";
 import { requireApiAccess } from "@/lib/auth/guard";
+import { settingsManagementFailure } from "@/lib/settings-management-http";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -35,14 +37,10 @@ export async function POST(request: NextRequest) {
   if (denied) return denied;
   try {
     const input = decodeConnectorUpsertPayload(await request.text());
-    const connectors = await upsertConnectorInput(input);
-    closePooledConnection(input.id);
+    const connectors = await Effect.runPromise(saveManagedConnector(input));
     return connectorsResponse(connectors);
   } catch (error) {
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Connector could not be saved" },
-      { status: 409 },
-    );
+    return settingsManagementFailure(error, "Connector could not be saved");
   }
 }
 

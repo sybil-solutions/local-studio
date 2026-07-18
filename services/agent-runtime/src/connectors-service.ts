@@ -11,7 +11,10 @@ import {
   type StoredConnectorConfig,
 } from "./connector-contract";
 import { resolveDataDir } from "./data-dir";
-import { connectorExecutionMatches } from "./connector-configuration";
+import {
+  connectorAuthorizationMatches,
+  connectorExecutionMatches,
+} from "./connector-configuration";
 import {
   GOOGLE_WORKSPACE_BINDINGS,
   googleWorkspaceConnectorAccount,
@@ -45,6 +48,14 @@ type ConnectorState = {
 };
 
 export type ConnectorUpsertInput = typeof ConnectorUpsertInputSchema.Type;
+export type ConnectorStateUpdate = {
+  expected: ConnectorConfig | null;
+  replacement: ConnectorConfig;
+};
+export type ConnectorStateUpdateResult = {
+  connectors: ConnectorConfig[];
+  committed: boolean;
+};
 
 const exact = { onExcessProperty: "error" } as const;
 
@@ -63,8 +74,17 @@ function normalizedAllowTools(tools: readonly string[] | undefined): string[] {
 
 export function normalizeStoredConnector(stored: StoredConnectorConfig): NormalizedConnector {
   const explicitGrant = stored.allowTools !== undefined;
-  const allowTools = normalizedAllowTools(stored.allowTools);
-  const permissionReviewed = explicitGrant && stored.permissionReviewed !== false;
+  const normalizedTools = normalizedAllowTools(stored.allowTools);
+  const executableIdentityComplete =
+    stored.transport !== "stdio" || Boolean(stored.origin?.executable);
+  const pluginIdentityComplete =
+    stored.origin?.kind !== "plugin" ||
+    Boolean(
+      stored.origin.artifactDigest && stored.origin.inventoryDigest && executableIdentityComplete,
+    );
+  const permissionReviewed =
+    explicitGrant && stored.permissionReviewed !== false && pluginIdentityComplete;
+  const allowTools = permissionReviewed ? normalizedTools : [];
   const enabled = stored.enabled && permissionReviewed;
   const normalized: ConnectorConfig = {
     ...stored,
@@ -219,7 +239,7 @@ export async function upsertConnector(connector: ConnectorConfig): Promise<Conne
   return upsertConnectors([connector]);
 }
 
-export function upsertConnectors(incoming: ConnectorConfig[]): Promise<ConnectorConfig[]> {
+function persistIncomingConnectors(incoming: ConnectorConfig[]): Promise<ConnectorConfig[]> {
   return withConnectorAccess(async () => {
     const connectors = await readAndMigrateConnectors();
     for (const candidate of incoming) {
@@ -229,13 +249,16 @@ export function upsertConnectors(incoming: ConnectorConfig[]): Promise<Connector
       if (existing?.origin?.kind === "catalog" && connector.origin?.kind !== "catalog") {
         throw new Error(`Catalog connector "${connector.id}" configuration is immutable`);
       }
-      const merged = protectManagedConnector({
+      const stored = protectManagedConnector({
         ...connector,
         env: mergeSecrets(connector.env, existing?.env),
         headers: mergeSecrets(connector.headers, existing?.headers),
+        cwd: connector.cwd ?? existing?.cwd,
+        origin: connector.origin ?? existing?.origin,
+        auth: connector.auth ?? existing?.auth,
       });
-      if (index === -1) connectors.push(merged);
-      else connectors[index] = merged;
+      if (index === -1) connectors.push(stored);
+      else connectors[index] = stored;
     }
     await writeConnectors(connectors);
     return connectors;
@@ -320,6 +343,60 @@ export function upsertConnectorInput(input: ConnectorUpsertInput): Promise<Conne
     else connectors[index] = connector;
     await writeConnectors(connectors);
     return connectors;
+  });
+}
+
+export function upsertConnectors(incoming: ConnectorConfig[]): Promise<ConnectorConfig[]> {
+  return persistIncomingConnectors(incoming);
+}
+
+export function replaceConnectorsIfCurrent(
+  updates: readonly ConnectorStateUpdate[],
+): Promise<ConnectorStateUpdateResult> {
+  return withConnectorAccess(async () => {
+    const replacements = updates.map(({ expected, replacement }) => {
+      if (expected && expected.id !== replacement.id) {
+        throw new Error("Connector state update id does not match");
+      }
+      return { expected, replacement: protectManagedConnector(replacement) };
+    });
+    const ids = replacements.map(({ replacement }) => replacement.id);
+    if (new Set(ids).size !== ids.length) {
+      throw new Error("Connector state update ids must be unique");
+    }
+    const connectors = await readAndMigrateConnectors();
+    const committed = replacements.every(({ expected, replacement }) => {
+      const current = connectors.find((connector) => connector.id === replacement.id);
+      if (current?.origin?.kind === "catalog" && replacement.origin?.kind !== "catalog") {
+        throw new Error(`Catalog connector "${replacement.id}" configuration is immutable`);
+      }
+      return expected
+        ? Boolean(current && connectorAuthorizationMatches(current, expected))
+        : current === undefined;
+    });
+    if (!committed) return { connectors, committed: false };
+    for (const { replacement } of replacements) {
+      const index = connectors.findIndex((connector) => connector.id === replacement.id);
+      if (index === -1) connectors.push(replacement);
+      else connectors[index] = replacement;
+    }
+    if (replacements.length > 0) await writeConnectors(connectors);
+    return { connectors, committed: true };
+  });
+}
+
+export function replaceConnectorIfUnchanged(
+  expected: ConnectorConfig,
+  replacement: ConnectorConfig,
+): Promise<boolean> {
+  return withConnectorAccess(async () => {
+    const connectors = await readAndMigrateConnectors();
+    const index = connectors.findIndex((entry) => entry.id === expected.id);
+    const current = connectors[index];
+    if (!current || !connectorAuthorizationMatches(current, expected)) return false;
+    connectors[index] = protectManagedConnector(replacement);
+    await writeConnectors(connectors);
+    return true;
   });
 }
 

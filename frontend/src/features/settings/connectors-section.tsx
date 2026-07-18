@@ -23,6 +23,11 @@ interface CatalogEntry {
   envFields: Array<{ key: string; label: string; placeholder?: string }>;
 }
 
+type ConnectorReviewIdentity = {
+  artifactDigest?: string;
+  inventoryDigest: string;
+};
+
 const CATALOG: CatalogEntry[] = [
   {
     id: "github",
@@ -121,6 +126,7 @@ function connectorUpdatePayload(
   connector: ConnectorView,
   enabled: boolean,
   allowTools: readonly string[],
+  identity?: ConnectorReviewIdentity,
 ) {
   const managedCatalogId = catalogId(connector);
   if (managedCatalogId) {
@@ -145,6 +151,12 @@ function connectorUpdatePayload(
     ...(connector.headers ? { headers: connector.headers } : {}),
     allowTools,
     permissionReviewed: true,
+    ...(identity?.artifactDigest
+      ? {
+          reviewedArtifactDigest: identity.artifactDigest,
+          reviewedInventoryDigest: identity.inventoryDigest,
+        }
+      : {}),
     enabled,
   };
 }
@@ -236,6 +248,7 @@ function ConnectorRow({
   const [error, setError] = useState<string | null>(null);
   const [permissions, setPermissions] = useState<readonly ConnectorToolPermission[] | null>(null);
   const [selected, setSelected] = useState<readonly string[]>(connector.allowTools);
+  const [reviewIdentity, setReviewIdentity] = useState<ConnectorReviewIdentity | null>(null);
 
   const loadPermissions = useCallback(async () => {
     setTesting(true);
@@ -244,6 +257,10 @@ function ConnectorRow({
       const result = await probeConfiguredConnector(connector.id);
       if (!result.ok) throw new Error(result.error ?? "Connector discovery failed");
       setPermissions(result.tools);
+      setReviewIdentity({
+        ...(result.artifact_digest ? { artifactDigest: result.artifact_digest } : {}),
+        inventoryDigest: result.inventory_digest,
+      });
       setSelected(
         result.tools
           .filter((tool) =>
@@ -258,6 +275,7 @@ function ConnectorRow({
       const message = caught instanceof Error ? caught.message : "Connector discovery failed";
       setTestResult(message);
       setError(message);
+      setReviewIdentity(null);
     } finally {
       setTesting(false);
     }
@@ -267,9 +285,13 @@ function ConnectorRow({
     if (!connector.permissionReviewed) void loadPermissions();
   }, [connector.permissionReviewed, loadPermissions]);
 
-  const updateConnector = async (enabled: boolean, grant = connector.allowTools) => {
+  const updateConnector = async (
+    enabled: boolean,
+    grant = connector.allowTools,
+    identity?: ConnectorReviewIdentity,
+  ) => {
     const { connectors } = await saveManagedConnector(
-      connectorUpdatePayload(connector, enabled, grant),
+      connectorUpdatePayload(connector, enabled, grant, identity),
     );
     onChanged(connectors);
   };
@@ -298,8 +320,9 @@ function ConnectorRow({
       const grant = permissions
         .filter((tool) => selected.includes(tool.name))
         .map((tool) => tool.name);
-      await updateConnector(true, grant);
+      await updateConnector(true, grant, reviewIdentity ?? undefined);
       setPermissions(null);
+      setReviewIdentity(null);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Permission grant could not be saved");
     } finally {
@@ -363,7 +386,10 @@ function ConnectorRow({
           busy={saving}
           onToggle={togglePermission}
           onSave={() => void saveGrant()}
-          onCancel={() => setPermissions(null)}
+          onCancel={() => {
+            setPermissions(null);
+            setReviewIdentity(null);
+          }}
         />
       ) : null}
     </div>

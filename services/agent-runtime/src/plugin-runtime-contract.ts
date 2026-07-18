@@ -72,5 +72,4 @@ export type PluginEnabledInput = typeof PluginEnabledInputSchema.Type;
 export type PluginActivationInput = typeof PluginActivationInputSchema.Type;
 export type PluginActivationResult = {
   plugins: PluginRuntimeView[];
-  connectorIds: string[];
 };

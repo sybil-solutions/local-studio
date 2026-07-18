@@ -89,7 +89,7 @@ export function enableGoogleWorkspaceAdapter(
       }
       const enabled = { ...connector, enabled: true, allowTools };
       const saved = await upsertConnectors([enabled]);
-      closePooledConnection(enabled.id);
+      await closePooledConnection(enabled.id);
       return saved;
     },
     catch: (error) => new Error(`Google Workspace adapter failed: ${error}`),
@@ -132,7 +132,7 @@ export function restoreGoogleWorkspaceAdapter(
         owned.length || enabled
           ? await upsertConnectors([googleWorkspaceConnector(id, enabled)])
           : current;
-      closePooledConnection(GOOGLE_WORKSPACE_BINDINGS[id].connectorId);
+      await closePooledConnection(GOOGLE_WORKSPACE_BINDINGS[id].connectorId);
       return saved;
     },
     catch: (error) => new Error(`Google Workspace adapter restore failed: ${error}`),
@@ -148,7 +148,7 @@ export function disableGoogleWorkspaceAdapter(
       const owned = ownedGoogleWorkspaceConnectors(current, id);
       const disabled = owned.map((connector) => ({ ...connector, enabled: false }));
       const saved = disabled.length ? await upsertConnectors(disabled) : current;
-      owned.forEach((connector) => closePooledConnection(connector.id));
+      await Promise.all(owned.map((connector) => closePooledConnection(connector.id)));
       return saved;
     },
     catch: (error) => new Error(`Google Workspace disconnect failed: ${error}`),

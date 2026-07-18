@@ -1,11 +1,17 @@
 import { Effect, Schema } from "effect";
 import {
   ConnectorTestResponseSchema,
+  type ConnectorConfig,
   type ConnectorTestResponse,
 } from "./connector-contract";
+import { connectorInventoryDigest } from "./connector-inventory";
 import { connectorToolPermissions } from "./connector-policy";
 import { closePooledConnection, probeConnector } from "./connector-pool";
-import { listConnectors } from "./connectors-service";
+import {
+  inspectConnectors,
+  upsertConnectorInput,
+  type ConnectorUpsertInput,
+} from "./connectors-service";
 import {
   GoogleAccountResponseSchema,
   GoogleAuthorizationResponseSchema,
@@ -35,7 +41,13 @@ import {
   type PluginActivationInput,
   type PluginRuntimeResponse,
 } from "./plugin-runtime-contract";
-import { listPluginRuntimeViews, PluginRuntimeError, setPluginEnabled } from "./plugin-runtime";
+import {
+  listPluginRuntimeViews,
+  PluginRuntimeError,
+  refreshEnabledPluginConnectors,
+  setPluginEnabled,
+  updatePluginConnectorGrant,
+} from "./plugin-runtime";
 
 export class SettingsManagementError extends Error {
   constructor(
@@ -85,8 +97,15 @@ export function probeManagedConnector(
 ): Effect.Effect<ConnectorTestResponse, SettingsManagementError> {
   return Effect.tryPromise({
     try: async () => {
-      const connector = (await listConnectors()).find((entry) => entry.id === id);
+      let connector = (await inspectConnectors()).find((entry) => entry.id === id);
       if (!connector) throw new SettingsManagementError(404, "unknown connector");
+      if (connector.origin?.kind === "plugin") {
+        await Effect.runPromise(
+          refreshEnabledPluginConnectors(undefined, new Set([connector.origin.id])),
+        );
+        connector = (await inspectConnectors()).find((entry) => entry.id === id);
+        if (!connector) throw new SettingsManagementError(404, "unknown connector");
+      }
       const result = await probeConnector(connector);
       const tools = connectorToolPermissions(connector, result.tools);
       return decodeConnectorTest({
@@ -94,11 +113,51 @@ export function probeManagedConnector(
         tool_count: tools.length,
         tool_names: tools.map((tool) => tool.name).slice(0, 40),
         tools,
+        ...(connector.origin?.kind === "plugin" && connector.origin.artifactDigest
+          ? { artifact_digest: connector.origin.artifactDigest }
+          : {}),
+        inventory_digest: connectorInventoryDigest(result.tools),
         ...(result.error ? { error: result.error } : {}),
       });
     },
     catch: (error) => settingsError(error, "Connector discovery failed"),
   });
+}
+
+function pluginGrantInput(input: ConnectorUpsertInput) {
+  if ("catalogId" in input) {
+    throw new SettingsManagementError(409, "Plugin connector review is invalid");
+  }
+  return {
+    id: input.id,
+    allowTools: input.allowTools ?? [],
+    permissionReviewed: input.permissionReviewed === true,
+    enabled: input.enabled ?? false,
+    ...(input.reviewedArtifactDigest
+      ? { reviewedArtifactDigest: input.reviewedArtifactDigest }
+      : {}),
+    ...(input.reviewedInventoryDigest
+      ? { reviewedInventoryDigest: input.reviewedInventoryDigest }
+      : {}),
+  };
+}
+
+export function saveManagedConnector(
+  input: ConnectorUpsertInput,
+): Effect.Effect<ConnectorConfig[], SettingsManagementError> {
+  return Effect.tryPromise({
+    try: async () => {
+      const stored = (await inspectConnectors()).find((connector) => connector.id === input.id);
+      return stored?.origin?.kind === "plugin"
+        ? Effect.runPromise(updatePluginConnectorGrant(pluginGrantInput(input)))
+        : upsertConnectorInput(input);
+    },
+    catch: (error) => settingsError(error, "Connector could not be saved"),
+  }).pipe(
+    Effect.ensuring(
+      Effect.promise(() => closePooledConnection(input.id).catch(() => undefined)),
+    ),
+  );
 }
 
 export function listManagedPlugins(): Effect.Effect<
@@ -115,7 +174,6 @@ export function setManagedPluginEnabled(
   input: PluginActivationInput,
 ): Effect.Effect<PluginRuntimeResponse, SettingsManagementError> {
   return setPluginEnabled(input.id, input.enabled).pipe(
-    Effect.tap((result) => Effect.sync(() => result.connectorIds.forEach(closePooledConnection))),
     Effect.map((result) => decodePlugins({ plugins: result.plugins })),
     Effect.mapError((error) => settingsError(error, "Plugin activation failed")),
   );

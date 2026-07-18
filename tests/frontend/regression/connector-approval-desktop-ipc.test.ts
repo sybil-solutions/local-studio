@@ -133,7 +133,13 @@ const emptyManagement: ConnectorManagementPort = {
   list: async () => ({ connectors: [] }),
   save: async () => ({ connectors: [] }),
   remove: async () => ({ connectors: [] }),
-  probe: async () => ({ ok: true, tool_count: 0, tool_names: [], tools: [] }),
+  probe: async () => ({
+    ok: true,
+    tool_count: 0,
+    tool_names: [],
+    tools: [],
+    inventory_digest: "sha256:empty",
+  }),
   listPlugins: async () => ({ plugins: [] }),
   setPluginEnabled: async () => ({ plugins: [] }),
   getGoogleAccount: async () => googleAccountResponse,
@@ -405,7 +411,13 @@ describe("desktop connector private IPC", () => {
       ...emptyManagement,
       probe: async (id) => {
         calls.push(`probe:${id}`);
-        return { ok: true, tool_count: 0, tool_names: [], tools: [] };
+        return {
+          ok: true,
+          tool_count: 0,
+          tool_names: [],
+          tools: [],
+          inventory_digest: "sha256:empty",
+        };
       },
       listPlugins: async () => {
         calls.push("plugins:list");
@@ -443,6 +455,7 @@ describe("desktop connector private IPC", () => {
       tool_count: 0,
       tool_names: [],
       tools: [],
+      inventory_digest: "sha256:empty",
     });
     expect(JSON.parse(await Effect.runPromise(client.listPlugins()))).toEqual({ plugins: [] });
     expect(JSON.parse(await Effect.runPromise(client.setPluginEnabled("github", true)))).toEqual({

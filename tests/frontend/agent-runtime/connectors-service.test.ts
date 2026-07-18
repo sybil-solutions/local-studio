@@ -12,10 +12,15 @@ import {
   protectManagedConnector,
   decodeConnectorUpsertPayload,
   listConnectors,
+  removeConnector,
+  replaceConnectorsIfCurrent,
   upsertConnectorInput,
   upsertConnectors,
 } from "../../../services/agent-runtime/src/connectors-service";
-import type { StoredConnectorConfig } from "../../../services/agent-runtime/src/connector-contract";
+import type {
+  ConnectorConfig,
+  StoredConnectorConfig,
+} from "../../../services/agent-runtime/src/connector-contract";
 import {
   catalogConnectorConfiguration,
   connectorToolRisk,
@@ -70,6 +75,71 @@ describe("connector grants", () => {
     expect(() => assertConnectorToolAllowed(reviewed, "new_tool")).toThrow(
       ConnectorToolDeniedError,
     );
+  });
+
+  test("migrates legacy plugin grants without artifact or inventory identity fail closed", () => {
+    const legacy = normalizeStoredConnector(
+      connector({
+        allowTools: ["observe"],
+        permissionReviewed: true,
+        origin: { kind: "plugin", id: "fixture", version: "1.0.0", binding: "server" },
+      }),
+    );
+    expect(legacy.connector).toMatchObject({
+      allowTools: [],
+      permissionReviewed: false,
+      enabled: false,
+    });
+    expect(legacy.migrated).toBe(true);
+  });
+
+  test("preserves plugin grants bound to artifact and inventory identity", () => {
+    const normalized = normalizeStoredConnector(
+      connector({
+        allowTools: ["observe"],
+        permissionReviewed: true,
+        origin: {
+          kind: "plugin",
+          id: "fixture",
+          version: "1.0.0",
+          binding: "server",
+          artifactDigest: "sha256:artifact",
+          inventoryDigest: "sha256:inventory",
+        },
+      }),
+    );
+    expect(normalized.connector).toMatchObject({
+      allowTools: ["observe"],
+      permissionReviewed: true,
+      enabled: true,
+    });
+    expect(normalized.migrated).toBe(false);
+  });
+
+  test("migrates a stdio plugin grant without executable identity fail closed", () => {
+    const normalized = normalizeStoredConnector(
+      connector({
+        transport: "stdio",
+        url: undefined,
+        command: "/usr/bin/fixture",
+        allowTools: ["observe"],
+        permissionReviewed: true,
+        origin: {
+          kind: "plugin",
+          id: "fixture",
+          version: "1.0.0",
+          binding: "server",
+          artifactDigest: "sha256:artifact",
+          inventoryDigest: "sha256:inventory",
+        },
+      }),
+    );
+    expect(normalized.connector).toMatchObject({
+      allowTools: [],
+      permissionReviewed: false,
+      enabled: false,
+    });
+    expect(normalized.migrated).toBe(true);
   });
 
   test("rejects executable drift while retaining a catalog risk identity", () => {
@@ -248,5 +318,55 @@ describe("connector grants", () => {
     if (!downgraded) throw new Error("Plugin connector was not updated");
     expect(downgraded?.origin).toBeUndefined();
     expect(connectorToolRisk(downgraded, "read")).toBe("critical");
+  });
+});
+
+describe("connector state compare-and-swap", () => {
+  const current = (id: string): ConnectorConfig => ({
+    id,
+    name: id,
+    transport: "http",
+    url: `http://${id}.test/mcp`,
+    allowTools: ["observe"],
+    permissionReviewed: true,
+    enabled: true,
+  });
+
+  test("keeps an explicit removal instead of applying a stale replacement", async () => {
+    const original = current("cas-removed");
+    await upsertConnectors([original]);
+    await removeConnector(original.id);
+    const result = await replaceConnectorsIfCurrent([
+      { expected: original, replacement: { ...original, enabled: false } },
+    ]);
+    expect(result.committed).toBe(false);
+    expect(result.connectors.some((entry) => entry.id === original.id)).toBe(false);
+    expect((await listConnectors()).some((entry) => entry.id === original.id)).toBe(false);
+  });
+
+  test("rejects a concurrent edit atomically across every target", async () => {
+    const first = current("cas-first");
+    const second = current("cas-second");
+    await upsertConnectors([first, second]);
+    await upsertConnectors([{ ...second, name: "concurrent edit" }]);
+    const result = await replaceConnectorsIfCurrent([
+      { expected: first, replacement: { ...first, enabled: false } },
+      { expected: second, replacement: { ...second, enabled: false } },
+    ]);
+    expect(result.committed).toBe(false);
+    expect(result.connectors.find((entry) => entry.id === first.id)?.enabled).toBe(true);
+    expect(result.connectors.find((entry) => entry.id === second.id)).toMatchObject({
+      name: "concurrent edit",
+      enabled: true,
+    });
+  });
+
+  test("does not overwrite a concurrently created expected-absence target", async () => {
+    const replacement = current("cas-created");
+    const concurrent = { ...replacement, name: "concurrent owner", enabled: false };
+    await upsertConnectors([concurrent]);
+    const result = await replaceConnectorsIfCurrent([{ expected: null, replacement }]);
+    expect(result.committed).toBe(false);
+    expect(result.connectors.find((entry) => entry.id === replacement.id)).toEqual(concurrent);
   });
 });

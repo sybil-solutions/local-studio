@@ -2,7 +2,12 @@ import { app } from "electron";
 import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fork, type ChildProcess } from "node:child_process";
-import { DESKTOP_CONFIG, resolveStandaloneBaseDir, resolveStaticAssetsSource } from "../configs";
+import {
+  DESKTOP_CONFIG,
+  resolvePackagedRuntimeEnvironment,
+  resolveStandaloneBaseDir,
+  resolveStaticAssetsSource,
+} from "../configs";
 import type { DesktopServerRuntime } from "../types";
 import { log } from "../helpers/logger";
 import { registerOAuthVault } from "./oauth-vault";
@@ -228,6 +233,7 @@ export async function startFrontendServer(
       LOCAL_STUDIO_DESKTOP: "1",
       LOCAL_STUDIO_DATA_DIR: DESKTOP_CONFIG.userDataDir,
       LOCAL_STUDIO_RESOURCES_PATH: process.resourcesPath,
+      ...resolvePackagedRuntimeEnvironment(),
       LOCAL_STUDIO_SSH_REMOTE_MCP_PATH: path.join(
         process.resourcesPath,
         "desktop",

@@ -482,7 +482,7 @@ async function verifyGoogleWorkspaceAccess(
       throw new GoogleAccountError(502, "Google read-only access could not be verified");
     }
   } finally {
-    connection.close();
+    await connection.close();
   }
 }
 

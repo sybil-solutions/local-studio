@@ -18,7 +18,6 @@ import {
   listConnectors,
   removeConnector,
   toConnectorView,
-  upsertConnectorInput,
 } from "@local-studio/agent-runtime/connectors-service";
 import { closePooledConnection } from "@local-studio/agent-runtime/connector-pool";
 import { getGlobalSingleton } from "@local-studio/agent-runtime/instances";
@@ -30,6 +29,7 @@ import {
   listManagedPlugins,
   probeManagedConnector,
   saveManagedGoogleClient,
+  saveManagedConnector,
   setManagedPluginEnabled,
   SettingsManagementError,
 } from "@local-studio/agent-runtime/settings-management";
@@ -121,8 +121,7 @@ const connectorManagement: ConnectorManagementPort = {
   list: async () => decodeConnectors({ connectors: (await listConnectors()).map(toConnectorView) }),
   save: async (payload) => {
     const input = decodeConnectorUpsertPayload(payload);
-    const connectors = await upsertConnectorInput(input);
-    closePooledConnection(input.id);
+    const connectors = await Effect.runPromise(saveManagedConnector(input));
     return decodeConnectors({ connectors: connectors.map(toConnectorView) });
   },
   remove: async (id) => {
