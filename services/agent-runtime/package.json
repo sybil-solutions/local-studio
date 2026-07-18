@@ -18,8 +18,11 @@
     "@earendil-works/pi-ai": "0.80.8",
     "@earendil-works/pi-coding-agent": "0.80.8",
     "@hono/node-server": "1.19.14",
+    "@modelcontextprotocol/sdk": "1.29.0",
     "effect": "4.0.0-beta.90",
     "hono": "4.12.30",
+    "proper-lockfile": "4.1.2",
+    "semver": "7.8.5",
     "ws": "8.21.0"
   }
 }
