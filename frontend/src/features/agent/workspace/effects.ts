@@ -23,6 +23,7 @@ import {
 import { writePaneState } from "@/features/agent/workspace/persistence";
 import { writeSessionDrafts } from "@/features/agent/workspace/session-drafts";
 import { writeTranscriptSnapshot } from "@/features/agent/workspace/transcript-cache";
+import { readDefaultAgentModel } from "@/features/agent/workspace/model-preference";
 import { SESSIONS_CHANGED_EVENT } from "@/lib/workspace-events";
 
 const EMPTY_SELECTION: ToolSelection = {
@@ -128,7 +129,11 @@ function runInitialApiEffects(state: WorkspaceState, deps: WorkspaceEffectDeps):
           const normalized = normalizeModelsPayload(payload);
           if (normalized.error) return yield* Effect.fail(new Error(normalized.error));
           deps.dispatch?.({ type: "setError", error: "" });
-          deps.dispatch?.({ type: "setModels", models: normalized.models });
+          deps.dispatch?.({
+            type: "setModels",
+            models: normalized.models,
+            preferredModelId: readDefaultAgentModel(deps.storage),
+          });
           if (normalized.models.length > 0) {
             deps.dispatch?.({ type: "setSetupWarning", warning: "" });
           } else {
