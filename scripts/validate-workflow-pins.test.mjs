@@ -221,6 +221,120 @@ test("rejects malformed workflow YAML", () => {
   assert.match(validateWorkflowSource("jobs: [", "broken.yml").join("\n"), /broken\.yml/);
 });
 
+const runnerArchitectureEnvironment = "LOCAL_STUDIO_DESKTOP_SMOKE_ARCH: ${{ runner.arch }}";
+
+const invalidRunnerArchitecturePlacements = [
+  [
+    "workflow environment",
+    `env:
+  ${runnerArchitectureEnvironment}
+jobs:
+  test:
+    runs-on: macos-15
+    steps:
+      - run: npm ci
+`,
+  ],
+  [
+    "job environment",
+    `jobs:
+  test:
+    runs-on: macos-15
+    env:
+      ${runnerArchitectureEnvironment}
+    steps:
+      - run: npm ci
+`,
+  ],
+  [
+    "workflow defaults",
+    `defaults:
+  run:
+    env:
+      ${runnerArchitectureEnvironment}
+jobs:
+  test:
+    runs-on: macos-15
+    steps:
+      - run: npm ci
+`,
+  ],
+  [
+    "job container environment",
+    `jobs:
+  test:
+    runs-on: macos-15
+    container:
+      image: node@sha256:${"a".repeat(64)}
+      env:
+        ${runnerArchitectureEnvironment}
+    steps:
+      - run: npm ci
+`,
+  ],
+  [
+    "nested step object environment",
+    `jobs:
+  test:
+    runs-on: macos-15
+    steps:
+      - run: npm ci
+        with:
+          env:
+            ${runnerArchitectureEnvironment}
+`,
+  ],
+  [
+    "nested step list environment",
+    `jobs:
+  test:
+    runs-on: macos-15
+    steps:
+      - run: npm ci
+        nested:
+          - env:
+              ${runnerArchitectureEnvironment}
+`,
+  ],
+  [
+    "object key impersonating a step index",
+    `jobs:
+  test:
+    runs-on: macos-15
+    steps:
+      "0":
+        env:
+          ${runnerArchitectureEnvironment}
+`,
+  ],
+];
+
+for (const [name, source] of invalidRunnerArchitecturePlacements) {
+  test(`rejects runner architecture in ${name}`, () => {
+    assert.match(
+      validateWorkflowSource(source, "runner-context.yml").join("\n"),
+      /LOCAL_STUDIO_DESKTOP_SMOKE_ARCH.*not allowlisted/,
+    );
+  });
+}
+
+test("accepts runner architecture in step environments", () => {
+  assert.deepEqual(
+    validateWorkflowSource(`jobs:
+  test:
+    runs-on: macos-15
+    steps:
+      - run: npm ci
+        env:
+          ${runnerArchitectureEnvironment}
+      - run: npm ci
+        env:
+          ${runnerArchitectureEnvironment}
+`, "runner-context.yml"),
+    [],
+  );
+});
+
 test("validates every workflow file in a directory", () => {
   const directory = mkdtempSync(join(tmpdir(), "workflow-pins-"));
   try {
@@ -676,7 +790,36 @@ test("keeps executable workflow graphs and sensitive permissions least-privilege
   const ci = parsed("ci.yml");
   assert.equal(ci.jobs.controller.needs, "gates");
   assert.equal(ci.jobs.frontend.needs, "gates");
-  assert.deepEqual(ci.jobs.release.needs, ["gates", "controller", "frontend", "agent-runtime"]);
+  assert.deepEqual(ci.jobs["desktop-smoke"].needs, ["controller", "frontend"]);
+  assert.equal(ci.jobs["desktop-smoke"]["runs-on"], "macos-15");
+  assert.equal(ci.jobs["desktop-smoke"].env, undefined);
+  for (const name of ["Build unpacked desktop app", "Smoke-test packaged desktop app"]) {
+    assert.deepEqual(ci.jobs["desktop-smoke"].steps.find((step) => step.name === name).env, {
+      LOCAL_STUDIO_DESKTOP_SMOKE_ARCH: "${{ runner.arch }}",
+    });
+  }
+  assert.equal(
+    ci.jobs["desktop-smoke"].steps.find((step) => step.name === "Install dependencies").run,
+    "npm --prefix frontend ci --legacy-peer-deps",
+  );
+  assert.equal(
+    ci.jobs["desktop-smoke"].steps.find(
+      (step) => step.name === "Upload bounded failure diagnostics",
+    ).uses,
+    "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02",
+  );
+  const frontendPackage = JSON.parse(readFileSync(join(process.cwd(), "frontend", "package.json")));
+  assert.equal(
+    frontendPackage.scripts["desktop:pack"],
+    "node scripts/desktop-package-smoke-pack.mjs",
+  );
+  assert.deepEqual(ci.jobs.release.needs, [
+    "gates",
+    "controller",
+    "frontend",
+    "agent-runtime",
+    "desktop-smoke",
+  ]);
   const security = parsed("security.yml");
   assert.deepEqual(security.permissions, { contents: "read" });
   assert.deepEqual(security.jobs.codeql.permissions, {

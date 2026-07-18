@@ -9,6 +9,7 @@ const CONTAINER_IMAGE_PATTERN = /^[^\s@]+@sha256:[0-9a-f]{64}$/;
 const EXACT_VERSION_PATTERN = /^\d+\.\d+\.\d+$/;
 const SUPPORTED_BUN_VERSION = "1.3.6";
 const GATED_WORKFLOWS = new Set(["ci.yml", "pages.yml", "security.yml"]);
+const RUNNER_ARCHITECTURE_ENVIRONMENT = "LOCAL_STUDIO_DESKTOP_SMOKE_ARCH";
 const LOCAL_COMMANDS = new Set([
   "depcheck",
   "depcheck --skip-missing",
@@ -28,6 +29,7 @@ const SHELL_WRAPPERS = new Set(["bash", "command", "env", "eval", "sh"]);
 const ALLOWED_ENVIRONMENT = new Map([
   ["GITHUB_TOKEN", "${{ secrets.GITHUB_TOKEN }}"],
   ["TESTED_SHA", "${{ github.sha }}"],
+  [RUNNER_ARCHITECTURE_ENVIRONMENT, "${{ runner.arch }}"],
 ]);
 
 const location = (path) => path.join(".");
@@ -532,6 +534,17 @@ const workingContext = (value, path, context) => {
     : { context, errors: resolved.errors };
 };
 
+const isStepEnvironmentPath = (path) =>
+  path.length === 4 &&
+  path[0] === "jobs" &&
+  typeof path[1] === "string" &&
+  path[2] === "steps" &&
+  Number.isInteger(path[3]);
+
+const environmentAllowed = (name, configured, path) =>
+  ALLOWED_ENVIRONMENT.get(name) === configured &&
+  (name !== RUNNER_ARCHITECTURE_ENVIRONMENT || isStepEnvironmentPath(path));
+
 const validateEnvironment = (value, path) => {
   if (!Object.hasOwn(value, "env")) return [];
   const environment = value.env;
@@ -539,7 +552,7 @@ const validateEnvironment = (value, path) => {
     return [`${location([...path, "env"])} must be an allowlisted environment map`];
   }
   return Object.entries(environment).flatMap(([name, configured]) =>
-    ALLOWED_ENVIRONMENT.get(name) === configured
+    environmentAllowed(name, configured, path)
       ? []
       : [`${location([...path, "env", name])} is not allowlisted`],
   );
@@ -558,7 +571,7 @@ const validateScalar = (key, value, path, context) => {
 
 const validateValue = (value, path, context) => {
   if (Array.isArray(value)) {
-    return value.flatMap((entry, index) => validateValue(entry, [...path, String(index)], context));
+    return value.flatMap((entry, index) => validateValue(entry, [...path, index], context));
   }
   if (!value || typeof value !== "object") return [];
   const scoped = workingContext(value, path, context);
