@@ -1,4 +1,5 @@
 import { dirname, join } from "node:path";
+import { Effect } from "effect";
 import type { Config } from "../../../config/env";
 import { resolveBinary } from "../../../core/command";
 import type { ProcessInfo, Recipe } from "../../models/types";
@@ -35,26 +36,9 @@ import {
 } from "../argument-utilities";
 import type { BinaryProbeResult, ConfigHelpResult, EngineSpec } from "../engine-spec";
 
-/** In-container path to the vLLM CLI for forked Docker images. */
 export const CONTAINER_VLLM_BIN = "/opt/venv/bin/vllm";
 const DOCKER_JIT_MOUNT = "/cache/jit";
 
-/**
- * Filter `extraArguments` against the vLLM `serve` flag allowlist and pass the
- * remainder to `appendExtraArguments`. Unknown keys would otherwise be
- * forwarded verbatim, which crashes vLLM with `unrecognized arguments`
- * (real-world example: `benchmark_notes_20260622` blocks the
- * `glm-5-2-504b-term` recipe from booting).
- *
- * Behaviour:
- *   - Unknown keys are dropped unless `LOCAL_STUDIO_ALLOW_UNKNOWN_VLLM_EXTRA_ARGS`
- *     is set to `true` (escape hatch for forked vLLM builds outside the
- *     allowlist).
- *   - Each drop is logged via `logger` (or `console.warn` as a fallback) so the
- *     upstream recipe can be cleaned up.
- *   - Keys that look like free-form notes/annotations are advised to live
- *     under `description` / `metadata` instead.
- */
 export const appendVllmExtraArguments = (
   command: string[],
   extraArguments: Record<string, unknown>,
@@ -119,7 +103,6 @@ export const wrapVllmInDocker = (recipe: Recipe, image: string, inner: string[])
     extraVolumes: [`${jitVolume}:${DOCKER_JIT_MOUNT}`],
   });
 };
-
 
 export const buildVllmRecipeArguments = (recipe: Recipe): string[] => {
   const command: string[] = ["--host", recipe.host, "--port", String(recipe.port)];
@@ -228,34 +211,32 @@ const extractServedModelName = (args: string[]): string | null => {
   return extractFlag(args, "--served-model-name") ?? null;
 };
 
-const probeBinary = async (binary: string): Promise<BinaryProbeResult> => {
-  const result = await probeVllmBinaryRuntime(binary);
-  return {
-    installed: result.installed,
-    version: result.version,
-    binaryPath: result.binaryPath,
-    ...(result.pythonPath ? { pythonPath: result.pythonPath } : {}),
-    ...(result.message ? { message: result.message } : {}),
-  };
-};
+const probeBinary = (binary: string): Effect.Effect<BinaryProbeResult> =>
+  probeVllmBinaryRuntime(binary).pipe(
+    Effect.map((result) => ({
+      installed: result.installed,
+      version: result.version,
+      binaryPath: result.binaryPath,
+      ...(result.pythonPath ? { pythonPath: result.pythonPath } : {}),
+      ...(result.message ? { message: result.message } : {}),
+    })),
+  );
 
-const getRuntimeInfoAsync = async (
+const getRuntimeInfo = (
   _config: Config,
   _runningProcess?: Pick<ProcessInfo, "pid" | "backend"> | null,
-): Promise<RuntimeBackendInfo> => {
-  const info = await getVllmRuntimeInfo();
-  return {
-    installed: info.installed,
-    version: info.version,
-    python_path: info.python_path,
-    binary_path: info.vllm_bin,
-    upgrade_command_available: Boolean(info.python_path),
-  };
-};
+): Effect.Effect<RuntimeBackendInfo> =>
+  getVllmRuntimeInfo().pipe(
+    Effect.map((info) => ({
+      installed: info.installed,
+      version: info.version,
+      python_path: info.python_path,
+      binary_path: info.vllm_bin,
+      upgrade_command_available: Boolean(info.python_path),
+    })),
+  );
 
-const getConfigHelp = async (_config: Config): Promise<ConfigHelpResult> => {
-  return getVllmConfigHelp();
-};
+const getConfigHelp = (_config: Config): Effect.Effect<ConfigHelpResult> => getVllmConfigHelp();
 
 export const vllmSpec: EngineSpec = {
   id: "vllm",
@@ -269,6 +250,6 @@ export const vllmSpec: EngineSpec = {
   extractServedModelName,
   probeBinary,
   resolvePythonPath: (config: Config) => resolveVllmPythonPath(config.data_dir),
-  getRuntimeInfo: getRuntimeInfoAsync,
+  getRuntimeInfo,
   getConfigHelp,
 };

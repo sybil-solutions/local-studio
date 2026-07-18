@@ -1,12 +1,14 @@
+import { Effect } from "effect";
+import { notFound } from "../../core/errors";
+import { decodeJsonBody } from "../../core/validation";
+import { effectHandler } from "../../http/effect-handler";
 import type { RouteRegistrar } from "../../http/route-registrar";
-import { badRequest, notFound } from "../../core/errors";
-import { parseJsonObjectBody } from "../../core/validation";
+import { DownloadRequestSchema, DownloadTokenSchema } from "./downloads/download-manager";
 
 const resolveHfToken = (
   ctx: { req: { header: (name: string) => string | undefined } },
-  body?: Record<string, unknown>,
+  bodyToken?: string | null,
 ): string | null => {
-  const bodyToken = typeof body?.["hf_token"] === "string" ? String(body?.["hf_token"]) : null;
   const headerToken = ctx.req.header("x-hf-token") ?? ctx.req.header("x-huggingface-token") ?? null;
   const envToken =
     process.env["LOCAL_STUDIO_HF_TOKEN"] ??
@@ -17,57 +19,71 @@ const resolveHfToken = (
 };
 
 export const registerDownloadRoutes: RouteRegistrar = (app, context) => {
-  app.get("/studio/downloads", async (ctx) => {
-    const downloads = context.downloadManager.list();
-    return ctx.json({ downloads });
-  });
+  app.get(
+    "/studio/downloads",
+    effectHandler((ctx) =>
+      context.downloadManager.list().pipe(Effect.map((downloads) => ctx.json({ downloads }))),
+    ),
+  );
 
-  app.get("/studio/downloads/:downloadId", async (ctx) => {
-    const id = ctx.req.param("downloadId");
-    const download = context.downloadManager.get(id);
-    if (!download) throw notFound("Download not found");
-    return ctx.json({ download });
-  });
+  app.get(
+    "/studio/downloads/:downloadId",
+    effectHandler((ctx) =>
+      context.downloadManager
+        .get(ctx.req.param("downloadId") ?? "")
+        .pipe(
+          Effect.flatMap((download) =>
+            download
+              ? Effect.succeed(ctx.json({ download }))
+              : Effect.fail(notFound("Download not found")),
+          ),
+        ),
+    ),
+  );
 
-  app.post("/studio/downloads", async (ctx) => {
-    const body = await parseJsonObjectBody(ctx);
-    const modelId = typeof body["model_id"] === "string" ? body["model_id"] : null;
-    if (!modelId) throw badRequest("model_id is required");
-    const download = await context.downloadManager.start({
-      model_id: modelId,
-      revision: typeof body["revision"] === "string" ? body["revision"] : null,
-      destination_dir: typeof body["destination_dir"] === "string" ? body["destination_dir"] : null,
-      allow_patterns: Array.isArray(body["allow_patterns"])
-        ? body["allow_patterns"].map(String)
-        : null,
-      ignore_patterns: Array.isArray(body["ignore_patterns"])
-        ? body["ignore_patterns"].map(String)
-        : null,
-      hf_token: resolveHfToken(ctx, body),
-    });
-    return ctx.json({ download });
-  });
+  app.post(
+    "/studio/downloads",
+    effectHandler((ctx) =>
+      Effect.gen(function* () {
+        const body = yield* decodeJsonBody(ctx, DownloadRequestSchema);
+        const download = yield* context.downloadManager.start({
+          ...body,
+          hf_token: resolveHfToken(ctx, body.hf_token),
+        });
+        return ctx.json({ download });
+      }),
+    ),
+  );
 
-  app.post("/studio/downloads/:downloadId/pause", async (ctx) => {
-    const id = ctx.req.param("downloadId");
-    if (!context.downloadManager.get(id)) throw notFound("Download not found");
-    const download = context.downloadManager.pause(id);
-    return ctx.json({ download });
-  });
+  app.post(
+    "/studio/downloads/:downloadId/pause",
+    effectHandler((ctx) =>
+      context.downloadManager
+        .pause(ctx.req.param("downloadId") ?? "")
+        .pipe(Effect.map((download) => ctx.json({ download }))),
+    ),
+  );
 
-  app.post("/studio/downloads/:downloadId/resume", async (ctx) => {
-    const body = await parseJsonObjectBody(ctx);
-    const token = resolveHfToken(ctx, body);
-    const id = ctx.req.param("downloadId");
-    if (!context.downloadManager.get(id)) throw notFound("Download not found");
-    const download = context.downloadManager.resume(id, token ?? null);
-    return ctx.json({ download });
-  });
+  app.post(
+    "/studio/downloads/:downloadId/resume",
+    effectHandler((ctx) =>
+      Effect.gen(function* () {
+        const body = yield* decodeJsonBody(ctx, DownloadTokenSchema);
+        const download = yield* context.downloadManager.resume(
+          ctx.req.param("downloadId") ?? "",
+          resolveHfToken(ctx, body.hf_token),
+        );
+        return ctx.json({ download });
+      }),
+    ),
+  );
 
-  app.post("/studio/downloads/:downloadId/cancel", async (ctx) => {
-    const id = ctx.req.param("downloadId");
-    if (!context.downloadManager.get(id)) throw notFound("Download not found");
-    const download = context.downloadManager.cancel(id);
-    return ctx.json({ download });
-  });
+  app.post(
+    "/studio/downloads/:downloadId/cancel",
+    effectHandler((ctx) =>
+      context.downloadManager
+        .cancel(ctx.req.param("downloadId") ?? "")
+        .pipe(Effect.map((download) => ctx.json({ download }))),
+    ),
+  );
 };

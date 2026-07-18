@@ -1,6 +1,7 @@
 import { existsSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
-import { resolveBinary, runCommandAsync } from "../../../core/command";
+import { Effect } from "effect";
+import { resolveBinary, runCommandAsyncEffect } from "../../../core/command";
 import { resolveVllmPythonPath } from "./vllm-python-path";
 import {
   getUpgradeCommandFromEnvironment,
@@ -31,14 +32,17 @@ const collectPythonCandidates = (): Array<string | null> => {
   ];
 };
 
-const resolvePythonBinary = async (): Promise<string | null> => {
-  for (const candidate of collectPythonCandidates()) {
-    if (!candidate) continue;
-    const result = await runCommandAsync(candidate, ["--version"], { timeoutMs: 2_000 });
-    if (result.status === 0) return candidate;
-  }
-  return null;
-};
+const resolvePythonBinary = (): Effect.Effect<string | null> =>
+  Effect.gen(function* () {
+    for (const candidate of collectPythonCandidates()) {
+      if (!candidate) continue;
+      const result = yield* runCommandAsyncEffect(candidate, ["--version"], {
+        timeoutMs: 2_000,
+      });
+      if (result.status === 0) return candidate;
+    }
+    return null;
+  });
 
 const resolveBundledWheel = (): { path: string; version: string | null } | null => {
   const runtimeDirectory = resolve(process.cwd(), "runtime", "wheels");
@@ -67,46 +71,52 @@ const resolveVllmBinary = (pythonPath: string | null): string | null => {
   return resolveBinary("vllm");
 };
 
-export const getVllmRuntimeInfo = async (): Promise<{
+export const getVllmRuntimeInfo = (): Effect.Effect<{
   installed: boolean;
   version: string | null;
   python_path: string | null;
   vllm_bin: string | null;
   upgrade_command_available: boolean;
   bundled_wheel: { path: string; version: string | null } | null;
-}> => {
-  const bundledWheel = resolveBundledWheel();
-  const probe = await probeBackendRuntime("vllm", collectPythonCandidates());
-  return {
-    installed: probe.installed,
-    version: probe.version,
-    python_path: probe.pythonPath,
-    vllm_bin: resolveVllmBinary(probe.pythonPath),
-    upgrade_command_available: Boolean(probe.pythonPath && probe.runnable),
-    bundled_wheel: bundledWheel,
-  };
-};
+}> =>
+  Effect.gen(function* () {
+    const bundledWheel = resolveBundledWheel();
+    const probe = yield* probeBackendRuntime("vllm", collectPythonCandidates());
+    return {
+      installed: probe.installed,
+      version: probe.version,
+      python_path: probe.pythonPath,
+      vllm_bin: resolveVllmBinary(probe.pythonPath),
+      upgrade_command_available: Boolean(probe.pythonPath && probe.runnable),
+      bundled_wheel: bundledWheel,
+    };
+  });
 
-export const getVllmConfigHelp = async (): Promise<{
+export const getVllmConfigHelp = (): Effect.Effect<{
   config: string | null;
   error: string | null;
-}> => {
-  const pythonPath = await resolvePythonBinary();
-  const vllmBin = resolveVllmBinary(pythonPath);
-  if (!pythonPath && !vllmBin) return { config: null, error: "vLLM runtime not available" };
-  const command = vllmBin ?? pythonPath ?? "";
-  const args = vllmBin
-    ? ["serve", "--help"]
-    : ["-m", "vllm.entrypoints.openai.api_server", "--help"];
-  const result = await runCommandAsync(command, args, { timeoutMs: 5_000 });
-  if (result.status !== 0)
-    return { config: result.stdout || null, error: result.stderr || "Failed to fetch vLLM config" };
-  return { config: result.stdout || null, error: null };
-};
+}> =>
+  Effect.gen(function* () {
+    const pythonPath = yield* resolvePythonBinary();
+    const vllmBin = resolveVllmBinary(pythonPath);
+    if (!pythonPath && !vllmBin) return { config: null, error: "vLLM runtime not available" };
+    const command = vllmBin ?? pythonPath ?? "";
+    const args = vllmBin
+      ? ["serve", "--help"]
+      : ["-m", "vllm.entrypoints.openai.api_server", "--help"];
+    const result = yield* runCommandAsyncEffect(command, args, { timeoutMs: 5_000 });
+    if (result.status !== 0) {
+      return {
+        config: result.stdout || null,
+        error: result.stderr || "Failed to fetch vLLM config",
+      };
+    }
+    return { config: result.stdout || null, error: null };
+  });
 
-export const installVllmRuntime = async (
+export const installVllmRuntime = (
   options: InstallOptions,
-): Promise<RuntimeUpgradeResult> => {
+): Effect.Effect<RuntimeUpgradeResult> => {
   const envCommand = getUpgradeCommandFromEnvironment(VLLM_UPGRADE_ENV);
   if (envCommand) {
     return runEnvironmentUpgradeCommand(envCommand, options.onSpawn, VLLM_UPGRADE_TIMEOUT_MS);
