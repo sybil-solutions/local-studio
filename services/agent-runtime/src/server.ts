@@ -18,6 +18,18 @@ import {
   handleBrowserVerb,
   handleBrowserViewport,
 } from "./http/browser-handlers";
+import {
+  handleProviderLogin,
+  handleProviderLoginCancel,
+  handleProviderLoginJob,
+  handleProviderLoginRespond,
+  handleProviderLogout,
+  handleProviderModels,
+  handleProvidersList,
+} from "./http/provider-handlers";
+import { markAgentRuntimeProcess } from "./provider-hub";
+
+markAgentRuntimeProcess();
 
 const app = new Hono();
 
@@ -32,6 +44,24 @@ app.get("/api/agent/runtime/sessions", () => handleRuntimeSessions());
 app.get("/api/agent/runtime/status", (c) => handleRuntimeStatus(c.req.raw));
 app.get("/api/agent/runtime/events", (c) => handleRuntimeEvents(c.req.raw));
 app.get("/api/agent/setup-checks", () => handleSetupChecks());
+
+app.get("/api/agent/providers", () => handleProvidersList());
+app.get("/api/agent/providers/models", () => handleProviderModels());
+app.get("/api/agent/providers/login/:jobId", (c) =>
+  handleProviderLoginJob(c.req.raw, c.req.param("jobId")),
+);
+app.post("/api/agent/providers/login/:jobId/respond", (c) =>
+  handleProviderLoginRespond(c.req.raw, c.req.param("jobId")),
+);
+app.post("/api/agent/providers/login/:jobId/cancel", (c) =>
+  handleProviderLoginCancel(c.req.param("jobId")),
+);
+app.post("/api/agent/providers/:providerId/login", (c) =>
+  handleProviderLogin(c.req.raw, c.req.param("providerId")),
+);
+app.post("/api/agent/providers/:providerId/logout", (c) =>
+  handleProviderLogout(c.req.param("providerId")),
+);
 
 app.get("/api/agent/browser/fetch", (c) => handleBrowserFetch(c.req.raw));
 app.get("/api/agent/browser/frame", () => handleBrowserFrame());

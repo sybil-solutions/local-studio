@@ -18,6 +18,7 @@ import {
   type RuntimeStartOptions,
 } from "./pi-runtime-helpers";
 import { refreshPiModels, resolvePiModelSelection } from "./pi-runtime-models";
+import { getProviderHub } from "./provider-hub";
 import { findRuntimeSessionForLookup, piStatusFromEvents } from "./pi-runtime-state";
 import { findSessionFile } from "./sessions-store";
 import { getGlobalSingleton } from "./instances";
@@ -129,6 +130,14 @@ class PiSdkSession extends EventEmitter implements PiAgentSession {
         const providerId = selectedModel.providerId ?? resolvedSelection.providerId;
         const backendModelId = selectedModel.rawId ?? resolvedSelection.modelId;
 
+        // One shared ModelRuntime across sessions and the provider hub: a
+        // sign-in completed in settings is live for the next turn, and
+        // hub-registered providers (including the e2e seam) resolve here.
+        const sharedModelRuntime = yield* Effect.tryPromise({
+          try: () => getProviderHub(),
+          catch: (error) => error,
+        });
+
         const sessionOptions = buildAgentSessionOptionsSync({ options });
         applyRuntimeEnvInjections(sessionOptions.envInjections);
         const sessionManager = SessionManager.create(resolvedCwd);
@@ -146,6 +155,7 @@ class PiSdkSession extends EventEmitter implements PiAgentSession {
                         createAgentSessionServices({
                           cwd,
                           agentDir,
+                          modelRuntime: sharedModelRuntime,
                           resourceLoaderOptions: {
                             noExtensions: true,
                             additionalSkillPaths: sessionOptions.skills,
