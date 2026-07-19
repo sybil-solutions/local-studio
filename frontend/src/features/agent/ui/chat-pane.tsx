@@ -1,10 +1,25 @@
 "use client";
 import dynamic from "next/dynamic";
-import { useCallback, useRef, useState, type ReactNode } from "react";
+import { useRouter } from "next/navigation";
+import { useCallback, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { useMountSubscription } from "@/hooks/use-mount-subscription";
 import { AgentChatPaneHeader } from "@/features/agent/ui/agent-chat-pane-header";
 import { AgentComposerFrame } from "@/features/agent/ui/agent-composer-frame";
-import { type FileMentionRow } from "@/features/agent/ui/agent-composer-context";
+import {
+  type FileMentionRow,
+  type MentionRow,
+} from "@/features/agent/ui/agent-composer-context";
+import { builtinCommandProvider } from "@/features/agent/composer/builtin-commands";
+import {
+  promptTemplateCommandProvider,
+  skillCommandProvider,
+} from "@/features/agent/composer/catalogue-commands";
+import {
+  createComposerCommandRegistry,
+  parseSlashInvocation,
+  type SlashInvocation,
+} from "@/features/agent/composer/command-registry";
+import { deriveComposerVisual } from "@/features/agent/composer/composer-visual-state";
 import {
   useComposerLoadedContext,
   useComposerMentionRows,
@@ -13,8 +28,16 @@ import {
   type UpdateTab,
 } from "@/features/agent/ui/chat-pane-composer";
 import { useComposerAttachments } from "@/features/agent/ui/chat-pane-composer-attachments";
-import { useComposerMentionSelection } from "@/features/agent/ui/chat-pane-composer-mention-selection";
-import { type ComposerMention } from "@/features/agent/composer-context";
+import {
+  applyContextRow,
+  useComposerMentionSelection,
+} from "@/features/agent/ui/chat-pane-composer-mention-selection";
+import {
+  consumeComposerMention,
+  type ComposerMention,
+  type ComposerPromptTemplateRef,
+  type ComposerSkillRef,
+} from "@/features/agent/composer-context";
 import {
   useChatPaneContextAttachEffect,
   useChatPaneDerivedState,
@@ -211,6 +234,7 @@ export function ChatPane({
   showHeader = true,
   composerOnly = false,
 }: Props) {
+  const router = useRouter();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const lastAppliedComposerHeightRef = useRef(0);
@@ -275,12 +299,6 @@ export function ChatPane({
     isFocused,
     setAttachments,
   });
-  const mentionRows = useComposerMentionRows({
-    fileMentionRows,
-    mention,
-    promptTemplateRows: tools.promptTemplateCatalogue,
-    skillRows: tools.skillCatalogue,
-  });
   useChatPaneMentionEffects({
     cwd,
     mention,
@@ -338,6 +356,117 @@ export function ChatPane({
     updateSession: updateTab,
     selectionFor: tools.selectionFor,
   });
+  const { compacting, compactSession } = useChatPaneRuntimeHandle({
+    activeTab,
+    activeTabId,
+    engine,
+    modelId,
+    isFocused,
+    onRegisterHandle,
+    running: Boolean(running),
+  });
+  const openComputerStatus = useCallback(() => {
+    tools.setComputerTab("status");
+    tools.setComputerOpen(true);
+  }, [tools]);
+  const exportSession = useCallback(() => {
+    if (!activeTab) return;
+    const markdown = sessionToMarkdown(activeTab.messages, displayedSessionTitle);
+    downloadTextFile(exportFilenameFromTitle(displayedSessionTitle), markdown);
+  }, [activeTab, displayedSessionTitle]);
+  const canExport = Boolean(
+    activeTab?.messages.some((message) => message.role !== "system" && message.text.trim()),
+  );
+  const openTerminalAction = terminalOwner ? toggleTerminalView : onOpenTerminal;
+  const applyTemplate = useCallback(
+    (row: ComposerPromptTemplateRef) =>
+      activeTab ? applyContextRow(activeTab.id, "promptTemplate", row, tools) : Promise.resolve(),
+    [activeTab, tools],
+  );
+  const applySkill = useCallback(
+    (row: ComposerSkillRef) =>
+      activeTab ? applyContextRow(activeTab.id, "skill", row, tools) : Promise.resolve(),
+    [activeTab, tools],
+  );
+  const commandRegistry = useMemo(
+    () =>
+      createComposerCommandRegistry([
+        builtinCommandProvider({
+          compact: () => void compactSession(),
+          openStatus: openComputerStatus,
+          toggleBrowserTool: onToggleBrowserTool,
+          toggleCanvas: onToggleCanvas,
+          openPlugins: () => router.push("/integrations"),
+          ...(openTerminalAction ? { openTerminal: openTerminalAction } : {}),
+          ...(onForkSession ? { forkSession: onForkSession } : {}),
+          ...(canExport ? { exportSession } : {}),
+        }),
+        promptTemplateCommandProvider({
+          templates: tools.promptTemplateCatalogue,
+          applyTemplate,
+        }),
+        skillCommandProvider({ skills: tools.skillCatalogue, applySkill }),
+      ]),
+    [
+      applySkill,
+      applyTemplate,
+      canExport,
+      compactSession,
+      exportSession,
+      onForkSession,
+      onToggleBrowserTool,
+      onToggleCanvas,
+      openComputerStatus,
+      openTerminalAction,
+      router,
+      tools.promptTemplateCatalogue,
+      tools.skillCatalogue,
+    ],
+  );
+  const commandContext = useMemo(
+    () => ({ running: Boolean(running), compacting }),
+    [running, compacting],
+  );
+  const commandMatches = useMemo(
+    () =>
+      mention?.kind === "command" ? commandRegistry.match(mention.query, commandContext) : [],
+    [commandContext, commandRegistry, mention],
+  );
+  const mentionRows = useComposerMentionRows({
+    commandRows: commandMatches,
+    fileMentionRows,
+    mention,
+    skillRows: tools.skillCatalogue,
+  });
+  const runCommandInvocation = useCallback(
+    async (invocation: SlashInvocation) => {
+      if (!activeTab) return;
+      const execution = commandRegistry.execute(invocation, commandContext);
+      if (!execution) return;
+      const tabId = activeTab.id;
+      const outcome = await execution;
+      if (outcome.kind === "error") {
+        updateTab(tabId, (tab) => ({ ...tab, error: outcome.message }));
+      } else {
+        const nextInput = outcome.kind === "set-input" ? outcome.input : "";
+        updateTab(tabId, (tab) => ({ ...tab, input: nextInput, error: "" }));
+        if (!nextInput) resetComposerHeight();
+      }
+      setMention(null);
+      requestAnimationFrame(() => textareaRef.current?.focus());
+    },
+    [activeTab, commandContext, commandRegistry, resetComposerHeight, updateTab],
+  );
+  const handleSelectMention = useCallback(
+    (entry: MentionRow): Promise<void> => {
+      if (entry.kind === "command" && activeTab && mention) {
+        const args = consumeComposerMention(activeTab.input, mention).trim();
+        return runCommandInvocation({ name: entry.row.name, args });
+      }
+      return selectMentionRow(entry);
+    },
+    [activeTab, mention, runCommandInvocation, selectMentionRow],
+  );
   const { sendMessage, queueMessage, removeQueued, editQueued, steerQueued, abortTurn } =
     useChatPaneSendFlow({
       activeTab,
@@ -370,15 +499,23 @@ export function ChatPane({
       updateTab,
       setMention,
       setMentionIndex,
-      selectMentionRow,
+      selectMentionRow: handleSelectMention,
       queueMessage,
       abortTurn,
       attachFiles,
     });
-  const openComputerStatus = useCallback(() => {
-    tools.setComputerTab("status");
-    tools.setComputerOpen(true);
-  }, [tools]);
+  const handleComposerSubmit = useCallback(
+    (event: FormEvent) => {
+      const invocation = parseSlashInvocation(activeTab?.input ?? "");
+      if (invocation && commandRegistry.find(invocation.name, commandContext)) {
+        event.preventDefault();
+        void runCommandInvocation(invocation);
+        return;
+      }
+      void sendMessage(event);
+    },
+    [activeTab, commandContext, commandRegistry, runCommandInvocation, sendMessage],
+  );
   const handleTranscript = useCallback(
     (transcript: string) => {
       if (!activeTab) return;
@@ -394,27 +531,14 @@ export function ChatPane({
     },
     [activeTab, updateTab],
   );
-  useChatPaneRuntimeHandle({
-    activeTab,
-    activeTabId,
-    engine,
-    modelId,
-    isFocused,
-    onRegisterHandle,
-    running: Boolean(running),
-  });
-  const exportSession = useCallback(() => {
-    if (!activeTab) return;
-    const markdown = sessionToMarkdown(activeTab.messages, displayedSessionTitle);
-    downloadTextFile(exportFilenameFromTitle(displayedSessionTitle), markdown);
-  }, [activeTab, displayedSessionTitle]);
-  const canExport = Boolean(
-    activeTab?.messages.some((message) => message.role !== "system" && message.text.trim()),
-  );
   const loadEarlierHistory = useCallback(
     () => (activeTabId ? engine.loadEarlier(activeTabId) : Promise.resolve()),
     [activeTabId, engine],
   );
+  const composerVisual = deriveComposerVisual({
+    compacting,
+    hasMessages: (activeTab?.messages.length ?? 0) > 0,
+  });
   return (
     <section
       onMouseDownCapture={onFocus}
@@ -460,6 +584,7 @@ export function ChatPane({
       <div className={terminalView ? "hidden" : "contents"}>
         <AgentComposerFrame
           attachments={attachments}
+          banner={composerVisual.banner}
           browserToolEnabled={browserToolEnabled}
           browserBackend={browserBackend}
           canvasEnabled={canvasEnabled}
@@ -491,13 +616,14 @@ export function ChatPane({
           onRemoveAttachment={removeAttachment}
           onRemoveLoadedContext={removeLoadedContext}
           onRemoveQueued={removeQueued}
-          onSelectMention={(entry) => void selectMentionRow(entry)}
+          onSelectMention={(entry) => void handleSelectMention(entry)}
           onSteerQueued={(queueId) => void steerQueued(queueId)}
-          onSubmit={sendMessage}
+          onSubmit={handleComposerSubmit}
           onTranscript={handleTranscript}
           onToggleBrowserBackend={onToggleBrowserBackend}
           onToggleBrowserTool={onToggleBrowserTool}
           onToggleCanvas={onToggleCanvas}
+          placeholder={composerVisual.placeholder}
           promptTemplates={selectedPromptTemplates}
           queueExpanded={queueExpanded}
           queueItems={visibleQueueItems}

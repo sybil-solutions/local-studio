@@ -16,6 +16,8 @@ import type {
 } from "@/features/agent/composer-context";
 import type { QueuedMessage } from "@/features/agent/messages";
 import type { BrowserBackend } from "@/features/agent/tools/types";
+import type { ComposerBanner } from "@/features/agent/composer/composer-visual-state";
+import { Spinner } from "@/ui";
 import type { GitSummary } from "@/features/agent/projects/types";
 import { AgentAttachmentTray, type AgentComposerAttachment } from "./agent-attachment-tray";
 import { AgentComposerActions } from "./agent-composer-actions";
@@ -32,6 +34,7 @@ import { cx } from "@/ui/utils";
 
 export type AgentComposerFrameProps = {
   attachments: AgentComposerAttachment[];
+  banner: ComposerBanner | null;
   browserToolEnabled: boolean;
   browserBackend: BrowserBackend;
   canvasEnabled: boolean;
@@ -70,6 +73,7 @@ export type AgentComposerFrameProps = {
   onToggleBrowserBackend: () => void;
   onToggleBrowserTool: () => void;
   onToggleCanvas: () => void;
+  placeholder: string;
   promptTemplates: ComposerPromptTemplateRef[];
   queueExpanded: boolean;
   queueItems: QueuedMessage[];
@@ -84,6 +88,7 @@ export type AgentComposerFrameProps = {
 
 export function AgentComposerFrame({
   attachments,
+  banner,
   browserToolEnabled,
   browserBackend,
   canvasEnabled,
@@ -122,6 +127,7 @@ export function AgentComposerFrame({
   onToggleBrowserBackend,
   onToggleBrowserTool,
   onToggleCanvas,
+  placeholder,
   promptTemplates,
   queueExpanded,
   queueItems,
@@ -154,6 +160,12 @@ export function AgentComposerFrame({
         onRemove={onRemoveQueued}
         onSteer={onSteerQueued}
       />
+      {banner ? (
+        <div className="mx-auto flex w-full max-w-[var(--composer-w)] items-center gap-2 pb-2 pl-1 text-[length:var(--fs-sm)] text-(--dim)">
+          <Spinner size="xs" />
+          {banner.label}
+        </div>
+      ) : null}
       <div
         onDragOver={onComposerDragOver}
         onDragLeave={onComposerDragLeave}
@@ -190,7 +202,7 @@ export function AgentComposerFrame({
           onPaste={onComposerPaste}
           onChange={onComposerChange}
           onKeyDown={onComposerKeyDown}
-          placeholder={floating ? "Ask anything" : undefined}
+          placeholder={placeholder}
         />
         <AgentComposerActions
           fileInputRef={fileInputRef}

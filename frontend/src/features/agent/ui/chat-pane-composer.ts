@@ -19,9 +19,9 @@ import {
   byQuery,
   detectComposerMention,
   type ComposerMention,
-  type ComposerPromptTemplateRef,
   type ComposerSkillRef,
 } from "@/features/agent/composer-context";
+import type { ComposerCommand } from "@/features/agent/composer/command-types";
 import { type SessionTab } from "@/features/agent/messages";
 import type { ToolsContextValue } from "@/features/agent/tools/context";
 import {
@@ -64,16 +64,16 @@ export function useComposerLoadedContext({
 }
 
 type UseComposerMentionRowsOptions = {
+  commandRows: ComposerCommand[];
   fileMentionRows: FileMentionRow[];
   mention: ComposerMention | null;
-  promptTemplateRows: ComposerPromptTemplateRef[];
   skillRows: ComposerSkillRef[];
 };
 
 export function useComposerMentionRows({
+  commandRows,
   fileMentionRows,
   mention,
-  promptTemplateRows,
   skillRows,
 }: UseComposerMentionRowsOptions): MentionRow[] {
   return useMemo<MentionRow[]>(() => {
@@ -81,11 +81,9 @@ export function useComposerMentionRows({
     if (mention.kind === "skill") {
       return byQuery(skillRows, mention.query, 8).map((row) => ({ kind: "skill", row }));
     }
-    if (mention.kind === "promptTemplate") {
-      return byQuery(promptTemplateRows, mention.query, 8).map((row) => ({
-        kind: "promptTemplate" as const,
-        row,
-      }));
+    if (mention.kind === "command") {
+      // Already registry-matched against the query; just wrap for the picker.
+      return commandRows.map((row) => ({ kind: "command" as const, row }));
     }
     const q = mention.query.trim().toLowerCase();
     const files = fileMentionRows
@@ -95,7 +93,7 @@ export function useComposerMentionRows({
       .slice(0, 5)
       .map((row) => ({ kind: "file" as const, row }));
     return files.slice(0, 8);
-  }, [fileMentionRows, mention, promptTemplateRows, skillRows]);
+  }, [commandRows, fileMentionRows, mention, skillRows]);
 }
 
 export function useComposerTextareaHeightSync({
