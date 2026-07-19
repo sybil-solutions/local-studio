@@ -3,7 +3,7 @@ import { hostname } from "node:os";
 import { access, readFile } from "node:fs/promises";
 import { join, resolve, sep } from "node:path";
 import { Effect, Schema } from "effect";
-import type { RouteRegistrar } from "../../http/route-registrar";
+import { documentRoute, defineRoutes, mergeRoutes } from "../../http/route-registrar";
 import type { SystemConfigResponse } from "../models/types";
 import { badRequest, notFound } from "../../core/errors";
 import { decodeJsonBody } from "../../core/validation";
@@ -48,7 +48,7 @@ const ModelConfigSchema = Schema.Struct({
   head_dim: Schema.optionalKey(ModelDimensionSchema),
 });
 
-export const registerSystemRoutes: RouteRegistrar = (app, context) => {
+export const registerSystemRoutes = defineRoutes((app, context) => {
   const checkService = (
     host: string,
     port: number,
@@ -83,224 +83,232 @@ export const registerSystemRoutes: RouteRegistrar = (app, context) => {
       return Effect.sync(cleanup);
     });
 
-  app.get(
-    "/status",
-    effectHandler((ctx) =>
-      Effect.gen(function* () {
-        const current = yield* findObservedInferenceProcess(context, "status");
-        return ctx.json({
-          running: Boolean(current),
-          process: current,
-          inference_port: context.config.inference_port,
-          launching: context.launchState.getLaunchingRecipeId(),
-          launch_failures: context.launchFailureBudget.listActive(),
-        });
-      }),
-    ),
-  );
-
-  app.get(
-    "/gpus",
-    effectHandler((ctx) =>
-      getGpuInfo().pipe(Effect.map((gpus) => ctx.json({ count: gpus.length, gpus }))),
-    ),
-  );
-
-  app.get(
-    "/compat",
-    effectHandler((ctx) =>
-      Effect.gen(function* () {
-        const known = yield* findObservedInferenceProcess(context, "compat");
-        const runtime = yield* getSystemRuntimeInfo(context.config, known);
-        const portOpen = yield* checkService(
-          SYSTEM_SERVICE_CHECK_HOST,
-          context.config.inference_port,
-          SYSTEM_COMPAT_SERVICE_CHECK_TIMEOUT_MS,
-        );
-        return ctx.json(
-          buildCompatibilityReport({
-            runtime,
+  return mergeRoutes(
+    app.get(
+      "/status",
+      documentRoute,
+      effectHandler((ctx) =>
+        Effect.gen(function* () {
+          const current = yield* findObservedInferenceProcess(context, "status");
+          return ctx.json({
+            running: Boolean(current),
+            process: current,
             inference_port: context.config.inference_port,
-            inference_port_open: portOpen,
-            inference_process_known: Boolean(known),
-            gpu_monitoring: runtime.gpu_monitoring,
-          }),
-        );
-      }),
+            launching: context.launchState.getLaunchingRecipeId(),
+            launch_failures: context.launchFailureBudget.listActive(),
+          });
+        }),
+      ),
     ),
-  );
 
-  app.post(
-    "/vram-calculator",
-    effectHandler((ctx) =>
-      Effect.gen(function* () {
-        const body = yield* decodeJsonBody(ctx, VramCalculatorBodySchema);
-        const model = body.model.trim();
-        const contextLength = body.context_length;
-        const tpSize = body.tp_size ?? 1;
-        const kvDtype = body.kv_dtype ?? "auto";
+    app.get(
+      "/gpus",
+      documentRoute,
+      effectHandler((ctx) =>
+        getGpuInfo().pipe(Effect.map((gpus) => ctx.json({ count: gpus.length, gpus }))),
+      ),
+    ),
 
-        if (!model) return yield* Effect.fail(badRequest("model is required"));
-
-        const resolved = resolve(model);
-        const modelsRoot = resolve(context.config.models_dir);
-        const rootPrefix = modelsRoot.endsWith(sep) ? modelsRoot : modelsRoot + sep;
-        if (!resolved.startsWith(rootPrefix)) {
-          return yield* Effect.fail(badRequest("model must be inside models_dir"));
-        }
-        const modelExists = yield* Effect.tryPromise({
-          try: () => access(resolved),
-          catch: (error) => error,
-        }).pipe(
-          Effect.as(true),
-          Effect.catch(() => Effect.succeed(false)),
-        );
-        if (!modelExists) return yield* Effect.fail(notFound("Model path not found"));
-
-        const weightsBytes = yield* estimateWeightsSizeBytes(resolved, false);
-        if (!weightsBytes || weightsBytes <= 0) {
-          return yield* Effect.fail(notFound("Model weights not found"));
-        }
-
-        const configPath = join(resolved, "config.json");
-        const config = yield* Effect.tryPromise({
-          try: () => readFile(configPath, "utf-8"),
-          catch: (error) => error,
-        }).pipe(
-          Effect.flatMap((raw) =>
-            Effect.try({
-              try: () => JSON.parse(raw) as unknown,
-              catch: (error) => error,
+    app.get(
+      "/compat",
+      documentRoute,
+      effectHandler((ctx) =>
+        Effect.gen(function* () {
+          const known = yield* findObservedInferenceProcess(context, "compat");
+          const runtime = yield* getSystemRuntimeInfo(context.config, known);
+          const portOpen = yield* checkService(
+            SYSTEM_SERVICE_CHECK_HOST,
+            context.config.inference_port,
+            SYSTEM_COMPAT_SERVICE_CHECK_TIMEOUT_MS,
+          );
+          return ctx.json(
+            buildCompatibilityReport({
+              runtime,
+              inference_port: context.config.inference_port,
+              inference_port_open: portOpen,
+              inference_process_known: Boolean(known),
+              gpu_monitoring: runtime.gpu_monitoring,
             }),
-          ),
-          Effect.flatMap((value) => Schema.decodeUnknownEffect(ModelConfigSchema)(value)),
-          Effect.catch(() => Schema.decodeUnknownEffect(ModelConfigSchema)({})),
-        );
-        const layerCount = config.num_hidden_layers ?? config.n_layer ?? config.num_layers;
-        const hiddenSize = config.hidden_size ?? config.n_embd ?? config.d_model ?? config.dim;
-        const headCount = config.num_attention_heads ?? config.n_head ?? config.num_heads;
-        const keyValueHeadCount = config.num_key_value_heads ?? config.num_kv_heads ?? headCount;
-        const headDim =
-          config.head_dim ?? (hiddenSize && headCount ? hiddenSize / headCount : undefined);
+          );
+        }),
+      ),
+    ),
 
-        const kvBytesPerValue = kvDtype.toLowerCase() === "fp8" ? 1 : 2;
-        let kvCacheBytes = 0;
-        if (layerCount && keyValueHeadCount && headDim) {
-          kvCacheBytes =
-            contextLength * layerCount * keyValueHeadCount * headDim * 2 * kvBytesPerValue;
-        }
+    app.post(
+      "/vram-calculator",
+      documentRoute,
+      effectHandler((ctx) =>
+        Effect.gen(function* () {
+          const body = yield* decodeJsonBody(ctx, VramCalculatorBodySchema);
+          const model = body.model.trim();
+          const contextLength = body.context_length;
+          const tpSize = body.tp_size ?? 1;
+          const kvDtype = body.kv_dtype ?? "auto";
 
-        const weightsTotalGb = weightsBytes / 1024 ** 3;
-        const weightsPerGpuGb = weightsTotalGb / tpSize;
-        const kvCachePerGpuGb = kvCacheBytes > 0 ? kvCacheBytes / 1024 ** 3 / tpSize : 0;
-        const activationsPerGpuGb = Math.max(0.5, weightsPerGpuGb * 0.1);
-        const overheadPerGpuGb = 2.0;
-        const perGpuGb = weightsPerGpuGb + kvCachePerGpuGb + activationsPerGpuGb + overheadPerGpuGb;
-        const totalGb = perGpuGb * tpSize;
+          if (!model) return yield* Effect.fail(badRequest("model is required"));
 
-        const gpus = yield* getGpuInfo();
-        let perGpuCapacityGb = 0;
-        if (gpus.length >= tpSize && tpSize > 0) {
-          const candidates = gpus.slice(0, tpSize).map((gpu) => gpu.memory_total_mb / 1024);
-          perGpuCapacityGb = Math.min(...candidates);
-        }
+          const resolved = resolve(model);
+          const modelsRoot = resolve(context.config.models_dir);
+          const rootPrefix = modelsRoot.endsWith(sep) ? modelsRoot : modelsRoot + sep;
+          if (!resolved.startsWith(rootPrefix)) {
+            return yield* Effect.fail(badRequest("model must be inside models_dir"));
+          }
+          const modelExists = yield* Effect.tryPromise({
+            try: () => access(resolved),
+            catch: (error) => error,
+          }).pipe(
+            Effect.as(true),
+            Effect.catch(() => Effect.succeed(false)),
+          );
+          if (!modelExists) return yield* Effect.fail(notFound("Model path not found"));
 
-        const fits = perGpuCapacityGb > 0 ? perGpuGb <= perGpuCapacityGb : true;
-        const utilizationPercent = perGpuCapacityGb > 0 ? (perGpuGb / perGpuCapacityGb) * 100 : 0;
+          const weightsBytes = yield* estimateWeightsSizeBytes(resolved, false);
+          if (!weightsBytes || weightsBytes <= 0) {
+            return yield* Effect.fail(notFound("Model weights not found"));
+          }
 
-        return ctx.json({
-          model_size_gb: weightsTotalGb,
-          context_memory_gb: kvCachePerGpuGb * tpSize,
-          overhead_gb: overheadPerGpuGb,
-          total_gb: totalGb,
-          fits_in_vram: fits,
-          fits,
-          utilization_percent: utilizationPercent,
-          breakdown: {
-            model_weights_gb: weightsPerGpuGb,
-            kv_cache_gb: kvCachePerGpuGb,
-            activations_gb: activationsPerGpuGb,
-            per_gpu_gb: perGpuGb,
+          const configPath = join(resolved, "config.json");
+          const config = yield* Effect.tryPromise({
+            try: () => readFile(configPath, "utf-8"),
+            catch: (error) => error,
+          }).pipe(
+            Effect.flatMap((raw) =>
+              Effect.try({
+                try: () => JSON.parse(raw) as unknown,
+                catch: (error) => error,
+              }),
+            ),
+            Effect.flatMap((value) => Schema.decodeUnknownEffect(ModelConfigSchema)(value)),
+            Effect.catch(() => Schema.decodeUnknownEffect(ModelConfigSchema)({})),
+          );
+          const layerCount = config.num_hidden_layers ?? config.n_layer ?? config.num_layers;
+          const hiddenSize = config.hidden_size ?? config.n_embd ?? config.d_model ?? config.dim;
+          const headCount = config.num_attention_heads ?? config.n_head ?? config.num_heads;
+          const keyValueHeadCount = config.num_key_value_heads ?? config.num_kv_heads ?? headCount;
+          const headDim =
+            config.head_dim ?? (hiddenSize && headCount ? hiddenSize / headCount : undefined);
+
+          const kvBytesPerValue = kvDtype.toLowerCase() === "fp8" ? 1 : 2;
+          let kvCacheBytes = 0;
+          if (layerCount && keyValueHeadCount && headDim) {
+            kvCacheBytes =
+              contextLength * layerCount * keyValueHeadCount * headDim * 2 * kvBytesPerValue;
+          }
+
+          const weightsTotalGb = weightsBytes / 1024 ** 3;
+          const weightsPerGpuGb = weightsTotalGb / tpSize;
+          const kvCachePerGpuGb = kvCacheBytes > 0 ? kvCacheBytes / 1024 ** 3 / tpSize : 0;
+          const activationsPerGpuGb = Math.max(0.5, weightsPerGpuGb * 0.1);
+          const overheadPerGpuGb = 2.0;
+          const perGpuGb =
+            weightsPerGpuGb + kvCachePerGpuGb + activationsPerGpuGb + overheadPerGpuGb;
+          const totalGb = perGpuGb * tpSize;
+
+          const gpus = yield* getGpuInfo();
+          let perGpuCapacityGb = 0;
+          if (gpus.length >= tpSize && tpSize > 0) {
+            const candidates = gpus.slice(0, tpSize).map((gpu) => gpu.memory_total_mb / 1024);
+            perGpuCapacityGb = Math.min(...candidates);
+          }
+
+          const fits = perGpuCapacityGb > 0 ? perGpuGb <= perGpuCapacityGb : true;
+          const utilizationPercent = perGpuCapacityGb > 0 ? (perGpuGb / perGpuCapacityGb) * 100 : 0;
+
+          return ctx.json({
+            model_size_gb: weightsTotalGb,
+            context_memory_gb: kvCachePerGpuGb * tpSize,
+            overhead_gb: overheadPerGpuGb,
             total_gb: totalGb,
-          },
-        });
-      }),
+            fits_in_vram: fits,
+            fits,
+            utilization_percent: utilizationPercent,
+            breakdown: {
+              model_weights_gb: weightsPerGpuGb,
+              kv_cache_gb: kvCachePerGpuGb,
+              activations_gb: activationsPerGpuGb,
+              per_gpu_gb: perGpuGb,
+              total_gb: totalGb,
+            },
+          });
+        }),
+      ),
     ),
-  );
 
-  app.get(
-    "/config",
-    effectHandler((ctx) =>
-      Effect.gen(function* () {
-        const services: Array<{
-          name: string;
-          port: number;
-          internal_port: number;
-          protocol: string;
-          status: string;
-          description?: string | null;
-        }> = [];
-        services.push({
-          name: "Controller",
-          port: context.config.port,
-          internal_port: context.config.port,
-          protocol: "http",
-          status: "running",
-          description: "Controller service (Bun/Hono)",
-        });
-
-        const current = yield* findObservedInferenceProcess(context, "config");
-        const inferenceStatus = current ? "running" : "stopped";
-
-        services.push({
-          name: "Inference runtime",
-          port: context.config.inference_port,
-          internal_port: context.config.inference_port,
-          protocol: "http",
-          status: inferenceStatus,
-          description: "Inference backend (vLLM, SGLang, llama.cpp, or MLX)",
-        });
-
-        const frontendReachable = yield* checkService("localhost", 3000);
-        services.push({
-          name: "Frontend",
-          port: 3000,
-          internal_port: 3000,
-          protocol: "http",
-          status: frontendReachable ? "running" : "stopped",
-          description: "Next.js web UI",
-        });
-
-        const runtime = yield* getSystemRuntimeInfo(context.config, current);
-
-        const payload: SystemConfigResponse = {
-          config: {
-            host: context.config.host,
+    app.get(
+      "/config",
+      documentRoute,
+      effectHandler((ctx) =>
+        Effect.gen(function* () {
+          const services: Array<{
+            name: string;
+            port: number;
+            internal_port: number;
+            protocol: string;
+            status: string;
+            description?: string | null;
+          }> = [];
+          services.push({
+            name: "Controller",
             port: context.config.port,
-            inference_port: context.config.inference_port,
-            api_key_configured: Boolean(context.config.api_key),
-            models_dir: context.config.models_dir,
-            data_dir: context.config.data_dir,
-            db_path: context.config.db_path,
-            sglang_python: context.config.sglang_python ?? null,
-            llama_bin: context.config.llama_bin ?? null,
-            mlx_python: context.config.mlx_python ?? null,
-          },
-          services,
-          environment: {
-            controller_url: `http://${hostname()}:${context.config.port}`,
-            inference_url: `http://${hostname()}:${context.config.inference_port}`,
-            frontend_url: `http://${hostname()}:3000`,
-          },
-          runtime,
-        };
+            internal_port: context.config.port,
+            protocol: "http",
+            status: "running",
+            description: "Controller service (Bun/Hono)",
+          });
 
-        return ctx.json(payload);
-      }),
+          const current = yield* findObservedInferenceProcess(context, "config");
+          const inferenceStatus = current ? "running" : "stopped";
+
+          services.push({
+            name: "Inference runtime",
+            port: context.config.inference_port,
+            internal_port: context.config.inference_port,
+            protocol: "http",
+            status: inferenceStatus,
+            description: "Inference backend (vLLM, SGLang, llama.cpp, or MLX)",
+          });
+
+          const frontendReachable = yield* checkService("localhost", 3000);
+          services.push({
+            name: "Frontend",
+            port: 3000,
+            internal_port: 3000,
+            protocol: "http",
+            status: frontendReachable ? "running" : "stopped",
+            description: "Next.js web UI",
+          });
+
+          const runtime = yield* getSystemRuntimeInfo(context.config, current);
+
+          const payload: SystemConfigResponse = {
+            config: {
+              host: context.config.host,
+              port: context.config.port,
+              inference_port: context.config.inference_port,
+              api_key_configured: Boolean(context.config.api_key),
+              models_dir: context.config.models_dir,
+              data_dir: context.config.data_dir,
+              db_path: context.config.db_path,
+              sglang_python: context.config.sglang_python ?? null,
+              llama_bin: context.config.llama_bin ?? null,
+              mlx_python: context.config.mlx_python ?? null,
+            },
+            services,
+            environment: {
+              controller_url: `http://${hostname()}:${context.config.port}`,
+              inference_url: `http://${hostname()}:${context.config.inference_port}`,
+              frontend_url: `http://${hostname()}:3000`,
+            },
+            runtime,
+          };
+
+          return ctx.json(payload);
+        }),
+      ),
     ),
-  );
 
-  registerMonitoringRoutes(app, context);
-  registerLogsRoutes(app, context);
-  registerUsageRoutes(app, context);
-};
+    registerMonitoringRoutes(app, context),
+    registerLogsRoutes(app, context),
+    registerUsageRoutes(app, context),
+  );
+});

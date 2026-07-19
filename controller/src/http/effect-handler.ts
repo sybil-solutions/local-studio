@@ -29,11 +29,9 @@ const runControllerEffect = <A, E>(
   });
 
 export const effectHandler =
-  (
-    handler: (
-      context: Context<ControllerEnvironment>,
-    ) => ControllerEffect<Response | TypedResponse<unknown>, unknown>,
-  ): Handler<ControllerEnvironment> =>
+  <Result extends Response | TypedResponse<unknown>>(
+    handler: (context: Context<ControllerEnvironment>) => ControllerEffect<Result, unknown>,
+  ): Handler<ControllerEnvironment, string, {}, Promise<Result>> =>
   (context) =>
     runControllerEffect(context.get("controllerRuntime"), handler(context));
 

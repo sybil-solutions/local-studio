@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { basename, resolve } from "node:path";
 import { Effect, Schema } from "effect";
+import { coerce, compare } from "semver";
 import { resolveBinary, runCommandAsyncEffect } from "../../../core/command";
 import { VLLM_RUNTIME_COMMAND_TIMEOUT_MS } from "../configs";
 
@@ -177,14 +178,10 @@ export const compareVersions = (left: string | null, right: string | null): numb
   if (!left && !right) return 0;
   if (!left) return -1;
   if (!right) return 1;
-  const leftParts = left.split(/[.+-]/).map((part) => Number.parseInt(part, 10) || 0);
-  const rightParts = right.split(/[.+-]/).map((part) => Number.parseInt(part, 10) || 0);
-  const length = Math.max(leftParts.length, rightParts.length);
-  for (let index = 0; index < length; index += 1) {
-    const diff = (leftParts[index] ?? 0) - (rightParts[index] ?? 0);
-    if (diff !== 0) return diff;
-  }
-  return 0;
+  const leftVersion = coerce(left);
+  const rightVersion = coerce(right);
+  if (!leftVersion || !rightVersion) return left.localeCompare(right);
+  return compare(leftVersion, rightVersion);
 };
 
 export const resolvePythonFromScript = (scriptPath: string | null | undefined): string | null => {

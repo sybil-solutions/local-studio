@@ -1,16 +1,17 @@
 "use client";
 
 import { useState } from "react";
-import type { GPU, Metrics, ProcessInfo } from "@/lib/types";
+import type { GPU, Metrics, ProcessInfo, RuntimePlatformKind } from "@/lib/types";
 import { toGBFromMB } from "@/lib/formatters";
 
 interface GpuSectionProps {
   metrics: Metrics | null;
   gpus: GPU[];
   currentProcess: ProcessInfo | null;
+  platformKind: RuntimePlatformKind | null;
 }
 
-export function GpuSection({ gpus }: GpuSectionProps) {
+export function GpuSection({ gpus, platformKind }: GpuSectionProps) {
   const sortedGpus = [...gpus].sort((a, b) => gpuMemoryTotal(b) - gpuMemoryTotal(a));
   const hasGpus = sortedGpus.length > 0;
   const [expanded, setExpanded] = useState(true);
@@ -21,32 +22,37 @@ export function GpuSection({ gpus }: GpuSectionProps) {
   const totalCap = sortedGpus.reduce((s, g) => s + gpuMemoryTotal(g), 0);
   const totalPower = sortedGpus.reduce((s, g) => s + (g.power_draw || 0), 0);
   const totalPowerLimit = sortedGpus.reduce((s, g) => s + (g.power_limit || 0), 0);
-  const utils = sortedGpus.map((g) => g.utilization_pct);
+  const utils = sortedGpus
+    .filter((gpu) => gpu.utilization_available !== false)
+    .map((g) => g.utilization_pct);
   const avgUtil = utils.length > 0 ? utils.reduce((s, v) => s + v, 0) / utils.length : 0;
   const temps = sortedGpus.map((g) => g.temp_c).filter((t) => t > 0);
   const maxTemp = temps.length > 0 ? Math.max(...temps) : 0;
   const memPct = totalCap > 0 ? clamp((totalUsed / totalCap) * 100, 0, 100) : 0;
 
   if (!hasGpus) {
+    const metal = platformKind === "metal";
     return (
       <section className="mt-4 border-t border-(--separator) px-2 pt-3 pb-4">
         <div className="flex w-full items-center gap-4 text-left">
           <div className="flex shrink-0 items-baseline gap-2">
-            <span className="text-[length:var(--fs-sm)] font-medium text-(--hl2)">GPUs</span>
+            <span className="text-[length:var(--fs-sm)] font-medium text-(--hl2)">
+              {metal ? "Metal GPU" : "GPUs"}
+            </span>
             <span className="font-mono text-[length:var(--fs-xs)] tabular-nums text-(--dim)/65">
-              0
+              {metal ? "available" : "0"}
             </span>
           </div>
           <div className="flex min-w-0 flex-1 items-center gap-2.5">
             <div className="h-[3px] min-w-[5rem] flex-1 max-w-[18rem] overflow-hidden rounded-[var(--rad-2xs)] bg-(--dim)/15" />
             <span className="font-mono text-[length:var(--fs-sm)] tabular-nums text-(--fg)/85">
-              0.0<span className="text-(--dim)/65">/0G</span>
+              —
             </span>
           </div>
           <div className="hidden items-baseline gap-5 font-mono text-[length:var(--fs-sm)] tabular-nums sm:flex">
-            <Aggregate label="util" value="0%" />
-            <Aggregate label="temp" value="0°" />
-            <Aggregate label="pwr" value="0/0W" />
+            <Aggregate label="util" value="—" />
+            <Aggregate label="temp" value="—" />
+            <Aggregate label="pwr" value="—" />
           </div>
         </div>
       </section>
@@ -81,19 +87,27 @@ export function GpuSection({ gpus }: GpuSectionProps) {
             />
           </div>
           <span className="font-mono text-[length:var(--fs-sm)] tabular-nums text-(--fg)/85">
-            {totalUsed.toFixed(1)}
-            <span className="text-(--dim)/65">/{totalCap.toFixed(0)}G</span>
+            {sortedGpus.some((gpu) => gpu.memory_usage_available !== false)
+              ? totalUsed.toFixed(1)
+              : "—"}
+            <span className="text-(--dim)/65">
+              /{totalCap.toFixed(0)}G{sortedGpus.some((gpu) => gpu.memory_shared) ? " unified" : ""}
+            </span>
           </span>
         </div>
 
         <div className="hidden items-baseline gap-5 font-mono text-[length:var(--fs-sm)] tabular-nums sm:flex">
-          <Aggregate label="util" value={`${Math.round(avgUtil)}%`} />
+          <Aggregate label="util" value={utils.length > 0 ? `${Math.round(avgUtil)}%` : "—"} />
           <Aggregate label="temp" value={maxTemp > 0 ? `${Math.round(maxTemp)}°` : "—"} />
           <Aggregate
             label="pwr"
-            value={`${Math.round(totalPower)}${
-              totalPowerLimit > 0 ? `/${Math.round(totalPowerLimit)}` : ""
-            }W`}
+            value={
+              sortedGpus.some((gpu) => gpu.power_available !== false)
+                ? `${Math.round(totalPower)}${
+                    totalPowerLimit > 0 ? `/${Math.round(totalPowerLimit)}` : ""
+                  }W`
+                : "—"
+            }
           />
         </div>
 
@@ -152,16 +166,18 @@ function GpuRow({ gpu, showName }: { gpu: GPU; showName: boolean }) {
           <div className="h-full bg-(--fg)/45" style={{ width: `${memPct}%` }} />
         </div>
         <span className="text-(--fg)/80">
-          {memUsed.toFixed(1)}
+          {gpu.memory_usage_available === false ? "—" : memUsed.toFixed(1)}
           <span className="text-(--dim)/55">/{memTotal.toFixed(0)}G</span>
         </span>
       </div>
-      <span className="w-9 shrink-0 text-right text-(--dim)">{Math.round(util)}%</span>
+      <span className="w-9 shrink-0 text-right text-(--dim)">
+        {gpu.utilization_available === false ? "—" : `${Math.round(util)}%`}
+      </span>
       <span className="w-7 shrink-0 text-right text-(--dim)">
-        {temp > 0 ? `${Math.round(temp)}°` : "—"}
+        {gpu.temperature_available === false || temp <= 0 ? "—" : `${Math.round(temp)}°`}
       </span>
       <span className="w-14 shrink-0 text-right text-(--dim)">
-        {power > 0
+        {gpu.power_available !== false && power > 0
           ? `${Math.round(power)}${powerLimit > 0 ? `/${Math.round(powerLimit)}` : ""}W`
           : "—"}
       </span>

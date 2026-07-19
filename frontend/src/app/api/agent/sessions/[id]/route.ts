@@ -124,7 +124,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
   if (lookup instanceof Response) return lookup;
 
   try {
-    const archiveState = setSessionArchived(
+    const archiveState = await setSessionArchived(
       id,
       body.archived,
       new Date(),

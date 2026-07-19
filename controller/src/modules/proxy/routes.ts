@@ -1,8 +1,7 @@
-import type { RouteRegistrar } from "../../http/route-registrar";
+import { defineRoutes, mergeRoutes } from "../../http/route-registrar";
 import { registerOpenAIRoutes } from "./openai-routes";
 import { registerTokenizationRoutes } from "./tokenization-routes";
 
-export const registerAllProxyRoutes: RouteRegistrar = (app, context) => {
-  registerOpenAIRoutes(app, context);
-  registerTokenizationRoutes(app, context);
-};
+export const registerAllProxyRoutes = defineRoutes((app, context) => {
+  return mergeRoutes(registerOpenAIRoutes(app, context), registerTokenizationRoutes(app, context));
+});

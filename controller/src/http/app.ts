@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { swaggerUI } from "@hono/swagger-ui";
 import { cors } from "hono/cors";
+import { openAPIRouteHandler } from "hono-openapi";
 import { Effect } from "effect";
 import type { AppContext } from "../app-context";
 import type { ControllerRuntime } from "../core/effect-runtime";
@@ -13,7 +14,7 @@ import { registerAllProxyRoutes } from "../modules/proxy/routes";
 import { registerStudioRoutes } from "../modules/studio/routes";
 import { registerAudioRoutes } from "../modules/audio/routes";
 import { registerSpeechRoutes } from "../modules/speech/routes";
-import { createOpenApiSpec } from "./openapi-spec";
+import { documentRoute, mergeRoutes, type ControllerRouteApp } from "./route-registrar";
 import {
   createMutatingAuthMiddleware,
   createMutatingRateLimitMiddleware,
@@ -30,10 +31,18 @@ import {
   type ControllerEnvironment,
 } from "./effect-handler";
 
+type ControllerApplication = ReturnType<typeof registerSystemRoutes> &
+  ReturnType<typeof registerEngineRoutes> &
+  ReturnType<typeof registerModelsRoutes> &
+  ReturnType<typeof registerStudioRoutes> &
+  ReturnType<typeof registerSpeechRoutes> &
+  ReturnType<typeof registerAudioRoutes> &
+  ReturnType<typeof registerAllProxyRoutes>;
+
 export const createApp = (
   context: AppContext,
   runtime: ControllerRuntime,
-): Hono<ControllerEnvironment> => {
+): ControllerApplication => {
   const app = new Hono<ControllerEnvironment>();
   const allowedCorsOrigins = context.config.cors_origins ?? [];
 
@@ -78,26 +87,49 @@ export const createApp = (
   app.use("*", createReadRateLimitMiddleware(context));
   app.use("*", createMutatingAuthMiddleware(context));
 
-  registerSystemRoutes(app, context);
-  registerEngineRoutes(app, context);
-  registerModelsRoutes(app, context);
-  registerStudioRoutes(app, context);
-  registerSpeechRoutes(app, context);
-  registerAudioRoutes(app, context);
-  registerAllProxyRoutes(app, context);
-
-  app.get(
-    "/health",
-    effectHandler((ctx) => Effect.succeed(ctx.json({ status: "ok" }))),
+  const routes = mergeRoutes(
+    registerSystemRoutes(app, context),
+    registerEngineRoutes(app, context),
+    registerModelsRoutes(app, context),
+    registerStudioRoutes(app, context),
+    registerSpeechRoutes(app, context),
+    registerAudioRoutes(app, context),
+    registerAllProxyRoutes(app, context),
+    app.get(
+      "/health",
+      documentRoute,
+      effectHandler((ctx) => Effect.succeed(ctx.json({ status: "ok" }))),
+    ),
   );
 
-  app.get("/api/spec", (ctx) => ctx.json(createOpenApiSpec(context)));
+  const documentedRoutes = mergeRoutes(
+    routes,
+    app.get(
+      "/api/spec",
+      openAPIRouteHandler(routes as ControllerRouteApp, {
+        includeEmptyPaths: true,
+        exclude: ["/*", "/api/spec", "/api/docs"],
+        documentation: {
+          info: {
+            title: "Local Studio API",
+            version: "2.0.0",
+            description: "Model lifecycle management for local and remote inference runtimes",
+          },
+          servers: [
+            {
+              url: `http://localhost:${context.config.port}`,
+              description: "Local Studio controller",
+            },
+          ],
+        },
+      }),
+    ),
+    app.get("/api/docs", swaggerUI({ url: "/api/spec" })),
+  );
 
-  app.get("/api/docs", swaggerUI({ url: "/api/spec" }));
+  documentedRoutes.notFound((ctx) => ctx.json({ detail: "Not Found" }, { status: 404 }));
 
-  app.notFound((ctx) => ctx.json({ detail: "Not Found" }, { status: 404 }));
-
-  app.onError((error, ctx) => {
+  documentedRoutes.onError((error, ctx) => {
     if (isHttpStatus(error)) {
       return Response.json({ detail: error.detail }, { status: error.status });
     }
@@ -123,5 +155,5 @@ export const createApp = (
     return ctx.json({ detail: "Internal Server Error" }, { status: 500 });
   });
 
-  return app;
+  return documentedRoutes as ControllerApplication;
 };

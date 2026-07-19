@@ -1,11 +1,24 @@
 "use client";
 
-import React, { Children, isValidElement, memo, useCallback, useMemo, type ReactNode } from "react";
+import React, {
+  Children,
+  isValidElement,
+  memo,
+  useCallback,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
+import { useMountSubscription } from "@/hooks/use-mount-subscription";
 import { useCopiedFlag } from "@/features/agent/ui/use-copied-flag";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { ExternalLink } from "@/ui/icon-registry";
-import { highlightFenced } from "@/features/agent/highlight-cache";
+import {
+  escapeHighlightHtml,
+  highlightFenced,
+  peekHighlightFenced,
+} from "@/features/agent/highlight-cache";
 import { normalizeBrowserInput } from "@/features/agent/tools/browser-url";
 import { useToolsActions } from "@/features/agent/tools/context";
 import { CopyablePathChip } from "@/features/agent/ui/copyable-path-chip";
@@ -75,6 +88,8 @@ function codeLanguage(children: ReactNode): string | null {
   return match ? match[1] : null;
 }
 
+const HIGHLIGHT_SETTLE_MS = 150;
+
 const FencedCodeBlock = memo(function FencedCodeBlock({
   code,
   language,
@@ -82,7 +97,22 @@ const FencedCodeBlock = memo(function FencedCodeBlock({
   code: string;
   language: string | null;
 }) {
-  const highlightedHtml = useMemo(() => highlightFenced(language, code), [code, language]);
+  // A block that was highlighted before renders its cached HTML immediately.
+  // A new (usually still-streaming) block renders escaped plaintext and only
+  // runs hljs once its text stops changing for a beat — per-frame cost stays
+  // O(escape) instead of O(tokenize whole block), and the highlight LRU never
+  // fills up with partial snapshots.
+  const cached = peekHighlightFenced(language, code);
+  const [settled, setSettled] = useState<{ code: string; html: string } | null>(null);
+  useMountSubscription(() => {
+    if (cached !== undefined) return;
+    const timer = window.setTimeout(() => {
+      setSettled({ code, html: highlightFenced(language, code) });
+    }, HIGHLIGHT_SETTLE_MS);
+    return () => window.clearTimeout(timer);
+  }, [cached === undefined, code, language]);
+  const highlightedHtml =
+    cached ?? (settled && settled.code === code ? settled.html : escapeHighlightHtml(code));
   const codeClassName = [
     "syntax-highlight",
     "hljs",
@@ -134,7 +164,7 @@ const components: Components = {
   ),
   p: ({ node: _n, ...props }) => (
     <p
-      className="my-3 max-w-full break-words text-[length:var(--codex-chat-font-size)] leading-[1.625] tracking-normal first:mt-0 last:mb-0 [overflow-wrap:anywhere]"
+      className="my-3 max-w-full break-words text-[length:var(--codex-chat-font-size)] leading-[1.5] tracking-normal first:mt-0 last:mb-0 [overflow-wrap:anywhere]"
       {...props}
     />
   ),
@@ -142,7 +172,7 @@ const components: Components = {
   ol: ({ node: _n, ...props }) => <ol className="my-2 list-decimal pl-4" {...props} />,
   li: ({ node: _n, ...props }) => (
     <li
-      className="text-[length:var(--codex-chat-font-size)] leading-[1.625] tracking-normal"
+      className="text-[length:var(--codex-chat-font-size)] leading-[1.5] tracking-normal"
       {...props}
     />
   ),

@@ -35,13 +35,19 @@ export function ControlPanel(props: DashboardLayoutProps) {
         onNavigateLogs={props.onNavigateLogs}
         onBenchmark={props.onBenchmark}
         benchmarking={props.benchmarking}
+        benchmarkResult={props.benchmarkResult}
         recipes={recipes}
         lifecycleStatus={props.lifecycleStatus}
         onLaunch={props.onLaunch}
         onNewRecipe={props.onNewRecipe}
         onViewAll={props.onViewAll}
       />
-      <GpuSection metrics={metrics} gpus={gpus} currentProcess={currentProcess} />
+      <GpuSection
+        metrics={metrics}
+        gpus={gpus}
+        currentProcess={currentProcess}
+        platformKind={props.platformKind}
+      />
       <ActivityStrip {...props} />
     </div>
   );

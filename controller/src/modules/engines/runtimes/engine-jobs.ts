@@ -93,14 +93,6 @@ export const managedPackageSpec = (
   version?: string | null,
 ): string => getEngineSpec(backend).managedPackageSpec(version);
 
-const unsupportedMlxUpdate: RuntimeUpgradeResult = {
-  success: false,
-  version: null,
-  output: null,
-  error: "MLX runtime updates are not supported by the controller yet.",
-  used_command: null,
-};
-
 const cancelledResult: RuntimeUpgradeResult = {
   success: false,
   version: null,
@@ -125,7 +117,6 @@ const runEngineInstall = (
   target: RuntimeTarget | null,
 ): Effect.Effect<RuntimeUpgradeResult, EngineOperationError> =>
   Effect.gen(function* () {
-    if (backend === "mlx" && options.type === "update") return unsupportedMlxUpdate;
     const lock = yield* acquireEngineInstallLock(config, backend, {
       onWait: (): void =>
         updateRunningJob(job.id, { message: `waiting for in-progress ${backend} install...` }),

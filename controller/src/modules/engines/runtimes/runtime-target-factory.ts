@@ -29,12 +29,12 @@ const createCapabilities = (target: {
   canUpdate:
     (target.backend === "vllm" &&
       target.installed &&
-      (target.kind === "venv" || (target.kind === "system" && Boolean(target.pythonPath)))) ||
+      target.kind === "venv") ||
     (target.backend === "sglang" &&
       target.installed &&
       (target.kind === "venv" ||
-        (target.kind === "system" && Boolean(target.pythonPath)) ||
         isUpgradeCommandConfigured(SGLANG_UPGRADE_ENV))) ||
+    (target.backend === "mlx" && target.installed && target.kind === "venv") ||
     (target.backend === "llamacpp" && isUpgradeCommandConfigured(LLAMACPP_UPGRADE_ENV)),
   canInspectOptions:
     target.backend !== "sglang" &&

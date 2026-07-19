@@ -113,11 +113,46 @@ function userTurnFromEvent(event: Record<string, unknown>): UserTurn {
 
 const SUMMARY_SCAN_LINE_CAP = 2000;
 
+// Summary scans are the sidebar's hot path: every refresh re-lists every
+// session file for every project. The scanned fields (header + first user
+// message) are immutable once both are found — only `updatedAt` tracks the
+// file — so cache the scan result per filepath and re-read a file only when
+// the scan was incomplete and the file has since changed.
+type SummaryCacheEntry = {
+  mtimeMs: number;
+  complete: boolean;
+  core: Omit<SessionSummary, "updatedAt" | "archived" | "archivedAt"> | null;
+};
+const summaryCache = new Map<string, SummaryCacheEntry>();
+const SUMMARY_CACHE_MAX_ENTRIES = 8192;
+
+function summaryFromCore(
+  core: SummaryCacheEntry["core"],
+  mtime: Date,
+): SessionSummary | null {
+  if (!core) return null;
+  return { ...core, updatedAt: mtime.toISOString(), archived: false, archivedAt: null };
+}
+
+function rememberSummary(filepath: string, entry: SummaryCacheEntry): void {
+  summaryCache.delete(filepath);
+  summaryCache.set(filepath, entry);
+  while (summaryCache.size > SUMMARY_CACHE_MAX_ENTRIES) {
+    const oldest = summaryCache.keys().next().value;
+    if (oldest === undefined) break;
+    summaryCache.delete(oldest);
+  }
+}
+
 async function readSessionSummary(
   filepath: string,
   filename: string,
 ): Promise<SessionSummary | null> {
   const stats = statSync(filepath);
+  const cached = summaryCache.get(filepath);
+  if (cached && (cached.complete || cached.mtimeMs === stats.mtimeMs)) {
+    return summaryFromCore(cached.core, stats.mtime);
+  }
   let header: Record<string, unknown> | null = null;
   let firstUserMessage: string | null = null;
 
@@ -148,20 +183,24 @@ async function readSessionSummary(
     stream.destroy();
   }
 
-  if (!header) return null;
-  return {
-    id: typeof header.id === "string" ? header.id : "",
-    filename,
-    cwd: typeof header.cwd === "string" ? header.cwd : "",
-    startedAt:
-      typeof header.timestamp === "string" ? header.timestamp : stats.birthtime.toISOString(),
-    updatedAt: stats.mtime.toISOString(),
-    modelId: typeof header.modelId === "string" ? header.modelId : null,
-    provider: typeof header.provider === "string" ? header.provider : null,
-    firstUserMessage,
-    archived: false,
-    archivedAt: null,
-  };
+  const core = header
+    ? {
+        id: typeof header.id === "string" ? header.id : "",
+        filename,
+        cwd: typeof header.cwd === "string" ? header.cwd : "",
+        startedAt:
+          typeof header.timestamp === "string" ? header.timestamp : stats.birthtime.toISOString(),
+        modelId: typeof header.modelId === "string" ? header.modelId : null,
+        provider: typeof header.provider === "string" ? header.provider : null,
+        firstUserMessage,
+      }
+    : null;
+  rememberSummary(filepath, {
+    mtimeMs: stats.mtimeMs,
+    complete: Boolean(header && firstUserMessage),
+    core,
+  });
+  return summaryFromCore(core, stats.mtime);
 }
 
 function applySessionMetadata(summary: SessionSummary): SessionSummary {

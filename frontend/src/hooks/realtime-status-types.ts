@@ -16,7 +16,7 @@ export interface StatusData {
 }
 
 export interface RuntimeSummaryData {
-  platform: { kind: RuntimePlatformKind; vendor: "nvidia" | "amd" | null };
+  platform: { kind: RuntimePlatformKind; vendor: "nvidia" | "amd" | "apple" | null };
   gpu_monitoring: RuntimeGpuMonitoringInfo;
   backends: {
     vllm: RuntimeBackendInfo;

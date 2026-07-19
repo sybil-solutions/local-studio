@@ -2,6 +2,7 @@ import { readdir, readFile, realpath } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
 import { Effect, Schema } from "effect";
+import { coerce, compare } from "semver";
 import { resolveDataDir } from "./data-dir";
 import { resolveBundledPluginDirectory } from "./plugin-resources";
 
@@ -77,19 +78,11 @@ export function defaultPluginSources(): PluginSource[] {
   ];
 }
 
-function versionParts(version: string): number[] {
-  return version.match(/\d+/g)?.map(Number) ?? [0];
-}
-
 function compareVersions(left: string, right: string): number {
-  const leftParts = versionParts(left);
-  const rightParts = versionParts(right);
-  const length = Math.max(leftParts.length, rightParts.length);
-  for (let index = 0; index < length; index += 1) {
-    const difference = (leftParts[index] ?? 0) - (rightParts[index] ?? 0);
-    if (difference !== 0) return difference;
-  }
-  return left.localeCompare(right);
+  const leftVersion = coerce(left);
+  const rightVersion = coerce(right);
+  if (!leftVersion || !rightVersion) return left.localeCompare(right);
+  return compare(leftVersion, rightVersion) || left.localeCompare(right);
 }
 
 function pluginView(manifest: PluginManifest, source: string): PluginView {

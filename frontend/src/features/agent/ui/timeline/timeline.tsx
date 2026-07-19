@@ -74,9 +74,10 @@ export function Timeline({
   const [scroller, setScroller] = useState<HTMLDivElement | null>(null);
   const [bottom, setBottom] = useState<HTMLDivElement | null>(null);
 
+  const [mergeCache] = useState(() => new Map<string, MergedRun>());
   const visibleMessages = useMemo(
-    () => mergeConsecutiveAssistantMessages(messages.filter(messageRenders)),
-    [messages],
+    () => mergeConsecutiveAssistantMessages(messages.filter(messageRenders), mergeCache),
+    [messages, mergeCache],
   );
 
   useTimelineScrollEffects({
@@ -315,28 +316,72 @@ function formatPromptTime(timestamp?: string): string {
   );
 }
 
-function mergeConsecutiveAssistantMessages(messages: ChatMessage[]): ChatMessage[] {
+type MergedRun = { segments: ChatMessage[]; merged: ChatMessage };
+const MERGE_CACHE_MAX_ENTRIES = 512;
+
+// Streaming commits a fresh `messages` array every animation frame, so this
+// merge runs per frame. The per-run cache keeps a merged turn's object
+// identity stable while its segments are unchanged — otherwise every settled
+// multi-segment turn would get a new identity each frame and its MemoMessage
+// would re-render for the whole stream.
+function mergeConsecutiveAssistantMessages(
+  messages: ChatMessage[],
+  cache: Map<string, MergedRun>,
+): ChatMessage[] {
   const merged: ChatMessage[] = [];
+  let run: ChatMessage[] = [];
+  const flushRun = () => {
+    if (run.length === 0) return;
+    if (run.length === 1) {
+      merged.push(run[0]);
+    } else {
+      merged.push(mergeRun(run, cache));
+    }
+    run = [];
+  };
   for (const message of messages) {
-    const previous = merged[merged.length - 1];
-    if (message.role !== "assistant" || previous?.role !== "assistant") {
-      merged.push(message);
+    if (message.role === "assistant") {
+      run.push(message);
       continue;
     }
-    merged[merged.length - 1] = {
-      ...previous,
-      // Anchor the merged id on the first segment (already unique). Concatenating
-      // each new segment's id grew the id — and thus the React key — on every
-      // tool boundary within a turn, remounting the whole assistant <article>
-      // mid-stream and collapsing expanded reasoning/tool disclosures.
-      id: previous.id,
-      text: [previous.text, message.text].filter(Boolean).join("\n"),
-      blocks: [...(previous.blocks ?? []), ...(message.blocks ?? [])],
-      streamCalls: [...(previous.streamCalls ?? []), ...(message.streamCalls ?? [])],
-      timestamp: message.timestamp ?? previous.timestamp,
-    };
+    flushRun();
+    merged.push(message);
   }
+  flushRun();
   return merged;
+}
+
+function mergeRun(run: ChatMessage[], cache: Map<string, MergedRun>): ChatMessage {
+  const first = run[0];
+  const cached = cache.get(first.id);
+  if (
+    cached &&
+    cached.segments.length === run.length &&
+    cached.segments.every((segment, index) => segment === run[index])
+  ) {
+    return cached.merged;
+  }
+  const combined: ChatMessage = {
+    ...first,
+    // Anchor the merged id on the first segment (already unique). Concatenating
+    // each new segment's id grew the id — and thus the React key — on every
+    // tool boundary within a turn, remounting the whole assistant <article>
+    // mid-stream and collapsing expanded reasoning/tool disclosures.
+    id: first.id,
+    text: run
+      .map((segment) => segment.text)
+      .filter(Boolean)
+      .join("\n"),
+    blocks: run.flatMap((segment) => segment.blocks ?? []),
+    streamCalls: run.flatMap((segment) => segment.streamCalls ?? []),
+    timestamp: run.reduce<string | undefined>(
+      (timestamp, segment) => segment.timestamp ?? timestamp,
+      undefined,
+    ),
+  };
+  if (cache.size >= MERGE_CACHE_MAX_ENTRIES) cache.clear();
+  cache.set(first.id, { segments: run, merged: combined });
+  return combined;
 }
 
 const AT_BOTTOM_THRESHOLD_PX = 80;

@@ -3,7 +3,7 @@ import { unlink } from "node:fs/promises";
 import { createInterface } from "node:readline";
 import { PassThrough } from "node:stream";
 import { Effect, Schema, Stream } from "effect";
-import type { RouteRegistrar } from "../../http/route-registrar";
+import { documentRoute, defineRoutes, mergeRoutes } from "../../http/route-registrar";
 import { badRequest, notFound } from "../../core/errors";
 import { findObservedInferenceProcess } from "../../core/function-observability";
 import { buildSseHeaders, toReadableByteStream, withSseHeartbeat } from "../../http/sse";
@@ -80,7 +80,7 @@ const terminateChild = (child: ReturnType<typeof spawn>): Effect.Effect<void> =>
     yield* Effect.raceFirst(waitForChildExit(child), Effect.sleep(1_000));
   });
 
-export const registerLogsRoutes: RouteRegistrar = (app, context) => {
+export const registerLogsRoutes = defineRoutes((app, context) => {
   let lastCleanupAt = 0;
 
   const maybeCleanup = (): void => {
@@ -191,204 +191,215 @@ export const registerLogsRoutes: RouteRegistrar = (app, context) => {
       ),
     ).pipe(Stream.interruptWhen(abortEffect(signal)));
 
-  app.get(
-    "/logs",
-    effectHandler((ctx) =>
-      Effect.gen(function* () {
-        yield* Effect.sync(maybeCleanup);
-        const current = yield* findObservedInferenceProcess(context, "logs");
-        const entries = yield* Effect.try({
-          try: () => listLogFiles(context.config.data_dir),
-          catch: (error) => error,
-        });
-        type LogSessionRow = {
-          id: string;
-          recipe_id: string;
-          recipe_name: string | null;
-          model_path: string | null;
-          model: string;
-          backend: string | null;
-          created_at: string;
-          status: string;
-        };
-        const sessions: LogSessionRow[] = [];
-        let controllerSession: LogSessionRow | null = null;
-        for (const entry of entries) {
-          const sessionId = entry.sessionId;
-          const recipe = yield* context.stores.recipeStore.get(sessionId);
-          const modifiedAt = new Date(entry.mtimeMs).toISOString();
-          let status = "stopped";
-          if (
-            current &&
-            recipe &&
-            isRecipeRunning(recipe, current, { allowCurrentContainsRecipePath: true })
-          ) {
-            status = "running";
-          }
-          const row = {
-            id: sessionId,
-            recipe_id: recipe?.id ?? sessionId,
-            recipe_name: recipe?.name ?? null,
-            model_path: recipe?.model_path ?? null,
-            model: recipe ? (recipe.served_model_name ?? recipe.name) : sessionId,
-            backend: recipe?.backend ?? null,
-            created_at: modifiedAt,
-            status,
+  return mergeRoutes(
+    app.get(
+      "/logs",
+      documentRoute,
+      effectHandler((ctx) =>
+        Effect.gen(function* () {
+          yield* Effect.sync(maybeCleanup);
+          const current = yield* findObservedInferenceProcess(context, "logs");
+          const entries = yield* Effect.try({
+            try: () => listLogFiles(context.config.data_dir),
+            catch: (error) => error,
+          });
+          type LogSessionRow = {
+            id: string;
+            recipe_id: string;
+            recipe_name: string | null;
+            model_path: string | null;
+            model: string;
+            backend: string | null;
+            created_at: string;
+            status: string;
           };
-          if (sessionId === "controller") {
-            controllerSession = row;
-          } else {
-            sessions.push(row);
+          const sessions: LogSessionRow[] = [];
+          let controllerSession: LogSessionRow | null = null;
+          for (const entry of entries) {
+            const sessionId = entry.sessionId;
+            const recipe = yield* context.stores.recipeStore.get(sessionId);
+            const modifiedAt = new Date(entry.mtimeMs).toISOString();
+            let status = "stopped";
+            if (
+              current &&
+              recipe &&
+              isRecipeRunning(recipe, current, { allowCurrentContainsRecipePath: true })
+            ) {
+              status = "running";
+            }
+            const row = {
+              id: sessionId,
+              recipe_id: recipe?.id ?? sessionId,
+              recipe_name: recipe?.name ?? null,
+              model_path: recipe?.model_path ?? null,
+              model: recipe ? (recipe.served_model_name ?? recipe.name) : sessionId,
+              backend: recipe?.backend ?? null,
+              created_at: modifiedAt,
+              status,
+            };
+            if (sessionId === "controller") {
+              controllerSession = row;
+            } else {
+              sessions.push(row);
+            }
           }
-        }
-        if (controllerSession) sessions.push(controllerSession);
-        return ctx.json({ sessions });
-      }),
+          if (controllerSession) sessions.push(controllerSession);
+          return ctx.json({ sessions });
+        }),
+      ),
     ),
-  );
 
-  app.get(
-    "/logs/:sessionId",
-    effectHandler((ctx) =>
-      Effect.gen(function* () {
-        const sessionId = yield* decodeSessionId(ctx.req.param("sessionId") ?? "");
-        const limitRaw = ctx.req.query("limit");
-        const query = yield* Schema.decodeUnknownEffect(LogLimitQuerySchema)(
-          limitRaw === undefined ? {} : { limit: limitRaw },
-        ).pipe(Effect.mapError(() => badRequest("Invalid log limit")));
-        const limit = query.limit ?? 2000;
-        const dockerContainer = yield* getDockerContainerForSession(sessionId);
-        if (dockerContainer) {
-          const dockerLines = (yield* readDockerLogLines(dockerContainer, limit)).map(
-            redactLogLine,
+    app.get(
+      "/logs/:sessionId",
+      documentRoute,
+      effectHandler((ctx) =>
+        Effect.gen(function* () {
+          const sessionId = yield* decodeSessionId(ctx.req.param("sessionId") ?? "");
+          const limitRaw = ctx.req.query("limit");
+          const query = yield* Schema.decodeUnknownEffect(LogLimitQuerySchema)(
+            limitRaw === undefined ? {} : { limit: limitRaw },
+          ).pipe(Effect.mapError(() => badRequest("Invalid log limit")));
+          const limit = query.limit ?? 2000;
+          const dockerContainer = yield* getDockerContainerForSession(sessionId);
+          if (dockerContainer) {
+            const dockerLines = (yield* readDockerLogLines(dockerContainer, limit)).map(
+              redactLogLine,
+            );
+            if (dockerLines.length > 0) {
+              return ctx.json({
+                id: sessionId,
+                logs: dockerLines,
+                content: dockerLines.join("\n"),
+              });
+            }
+          }
+          const path = yield* Effect.sync(() =>
+            resolveExistingLogPath(context.config.data_dir, sessionId),
           );
-          if (dockerLines.length > 0) {
-            return ctx.json({ id: sessionId, logs: dockerLines, content: dockerLines.join("\n") });
+          if (!path) return yield* Effect.fail(notFound("Log not found"));
+          const lines = (yield* Effect.try({
+            try: () => tailFileLines(path, limit),
+            catch: (error) => error,
+          }))
+            .map((line) => line.replace(/\n$/, ""))
+            .map(redactLogLine);
+          return ctx.json({ id: sessionId, logs: lines, content: lines.join("\n") });
+        }),
+      ),
+    ),
+
+    app.delete(
+      "/logs/:sessionId",
+      documentRoute,
+      effectHandler((ctx) =>
+        Effect.gen(function* () {
+          const sessionId = yield* decodeSessionId(ctx.req.param("sessionId") ?? "");
+          if (sessionId === "controller") {
+            return yield* Effect.fail(badRequest("controller logs cannot be deleted via API"));
           }
-        }
-        const path = yield* Effect.sync(() =>
-          resolveExistingLogPath(context.config.data_dir, sessionId),
-        );
-        if (!path) return yield* Effect.fail(notFound("Log not found"));
-        const lines = (yield* Effect.try({
-          try: () => tailFileLines(path, limit),
-          catch: (error) => error,
-        }))
-          .map((line) => line.replace(/\n$/, ""))
-          .map(redactLogLine);
-        return ctx.json({ id: sessionId, logs: lines, content: lines.join("\n") });
-      }),
+          const primary = primaryLogPathFor(context.config.data_dir, sessionId);
+          const fallback = fallbackLogPathFor(sessionId);
+          const removals = yield* Effect.forEach([primary, fallback], (path) =>
+            Effect.tryPromise({ try: () => unlink(path), catch: (error) => error }).pipe(
+              Effect.as(true),
+              Effect.catch(() => Effect.succeed(false)),
+            ),
+          );
+          const deleted = removals.some(Boolean);
+          if (!deleted) return yield* Effect.fail(notFound("Log not found"));
+          return ctx.json({ success: true });
+        }),
+      ),
     ),
-  );
 
-  app.delete(
-    "/logs/:sessionId",
-    effectHandler((ctx) =>
-      Effect.gen(function* () {
-        const sessionId = yield* decodeSessionId(ctx.req.param("sessionId") ?? "");
-        if (sessionId === "controller") {
-          return yield* Effect.fail(badRequest("controller logs cannot be deleted via API"));
-        }
-        const primary = primaryLogPathFor(context.config.data_dir, sessionId);
-        const fallback = fallbackLogPathFor(sessionId);
-        const removals = yield* Effect.forEach([primary, fallback], (path) =>
-          Effect.tryPromise({ try: () => unlink(path), catch: (error) => error }).pipe(
-            Effect.as(true),
-            Effect.catch(() => Effect.succeed(false)),
-          ),
-        );
-        const deleted = removals.some(Boolean);
-        if (!deleted) return yield* Effect.fail(notFound("Log not found"));
-        return ctx.json({ success: true });
-      }),
+    app.get(
+      "/events",
+      documentRoute,
+      effectHandler((ctx) =>
+        Effect.sync(() => {
+          const signal = ctx.req.raw.signal;
+          const frames = context.eventManager
+            .subscribe("default", signal)
+            .pipe(Stream.map((event) => event.toSse()));
+          return new Response(toReadableByteStream(withSseHeartbeat(frames, 15_000, signal)), {
+            headers: buildSseHeaders(),
+          });
+        }),
+      ),
     ),
-  );
 
-  app.get(
-    "/events",
-    effectHandler((ctx) =>
-      Effect.sync(() => {
-        const signal = ctx.req.raw.signal;
-        const frames = context.eventManager
-          .subscribe("default", signal)
-          .pipe(Stream.map((event) => event.toSse()));
-        return new Response(toReadableByteStream(withSseHeartbeat(frames, 15_000, signal)), {
-          headers: buildSseHeaders(),
-        });
-      }),
-    ),
-  );
-
-  app.get(
-    "/logs/:sessionId/stream",
-    effectHandler((ctx) =>
-      Effect.gen(function* () {
-        const sessionId = yield* decodeSessionId(ctx.req.param("sessionId") ?? "");
-        const tailRaw = ctx.req.query("tail");
-        const query = yield* Schema.decodeUnknownEffect(LogTailQuerySchema)(
-          tailRaw === undefined ? {} : { tail: tailRaw },
-        ).pipe(Effect.mapError(() => badRequest("Invalid log tail")));
-        const replayLimit = query.tail ?? 2000;
-        const path = yield* Effect.sync(() =>
-          resolveExistingLogPath(context.config.data_dir, sessionId),
-        );
-        const dockerContainer = yield* getDockerContainerForSession(sessionId);
-        const signal = ctx.req.raw.signal;
-        const frameForLine = (line: string): string =>
-          new Event(CONTROLLER_EVENTS.LOG, {
-            session_id: sessionId,
-            line: redactLogLine(line),
-          }).toSse();
-        const replay = dockerContainer
-          ? streamDockerLogLines(dockerContainer, replayLimit, signal).pipe(
-              Stream.map(frameForLine),
-            )
-          : path && replayLimit > 0
-            ? Stream.fromEffect(
-                Effect.try({
-                  try: () => tailFileLines(path, replayLimit),
-                  catch: (error) => error,
-                }),
-              ).pipe(
-                Stream.flatMap(Stream.fromIterable),
-                Stream.filter((line) => line.length > 0),
+    app.get(
+      "/logs/:sessionId/stream",
+      documentRoute,
+      effectHandler((ctx) =>
+        Effect.gen(function* () {
+          const sessionId = yield* decodeSessionId(ctx.req.param("sessionId") ?? "");
+          const tailRaw = ctx.req.query("tail");
+          const query = yield* Schema.decodeUnknownEffect(LogTailQuerySchema)(
+            tailRaw === undefined ? {} : { tail: tailRaw },
+          ).pipe(Effect.mapError(() => badRequest("Invalid log tail")));
+          const replayLimit = query.tail ?? 2000;
+          const path = yield* Effect.sync(() =>
+            resolveExistingLogPath(context.config.data_dir, sessionId),
+          );
+          const dockerContainer = yield* getDockerContainerForSession(sessionId);
+          const signal = ctx.req.raw.signal;
+          const frameForLine = (line: string): string =>
+            new Event(CONTROLLER_EVENTS.LOG, {
+              session_id: sessionId,
+              line: redactLogLine(line),
+            }).toSse();
+          const replay = dockerContainer
+            ? streamDockerLogLines(dockerContainer, replayLimit, signal).pipe(
                 Stream.map(frameForLine),
               )
-            : Stream.empty;
-        const live = dockerContainer
-          ? Stream.empty
-          : context.eventManager.subscribe(`logs:${sessionId}`, signal).pipe(
-              Stream.map((event) => {
-                if (
-                  event.type === CONTROLLER_EVENTS.LOG &&
-                  typeof event.data["line"] === "string"
-                ) {
-                  return new Event(CONTROLLER_EVENTS.LOG, {
-                    ...event.data,
-                    line: redactLogLine(event.data["line"]),
-                  }).toSse();
-                }
-                return event.toSse();
-              }),
-            );
-        const frames = replay.pipe(
-          Stream.concat(live),
-          Stream.catch((error) =>
-            Stream.succeed(
-              new Event(CONTROLLER_EVENTS.LOG, {
-                session_id: sessionId,
-                line: redactLogLine(`Log stream failed: ${String(error)}`),
-              }).toSse(),
+            : path && replayLimit > 0
+              ? Stream.fromEffect(
+                  Effect.try({
+                    try: () => tailFileLines(path, replayLimit),
+                    catch: (error) => error,
+                  }),
+                ).pipe(
+                  Stream.flatMap(Stream.fromIterable),
+                  Stream.filter((line) => line.length > 0),
+                  Stream.map(frameForLine),
+                )
+              : Stream.empty;
+          const live = dockerContainer
+            ? Stream.empty
+            : context.eventManager.subscribe(`logs:${sessionId}`, signal).pipe(
+                Stream.map((event) => {
+                  if (
+                    event.type === CONTROLLER_EVENTS.LOG &&
+                    typeof event.data["line"] === "string"
+                  ) {
+                    return new Event(CONTROLLER_EVENTS.LOG, {
+                      ...event.data,
+                      line: redactLogLine(event.data["line"]),
+                    }).toSse();
+                  }
+                  return event.toSse();
+                }),
+              );
+          const frames = replay.pipe(
+            Stream.concat(live),
+            Stream.catch((error) =>
+              Stream.succeed(
+                new Event(CONTROLLER_EVENTS.LOG, {
+                  session_id: sessionId,
+                  line: redactLogLine(`Log stream failed: ${String(error)}`),
+                }).toSse(),
+              ),
             ),
-          ),
-        );
-        return new Response(toReadableByteStream(withSseHeartbeat(frames, 15_000, signal)), {
-          headers: buildSseHeaders({
-            "Cache-Control": "no-cache, no-transform",
-            Connection: "keep-alive",
-          }),
-        });
-      }),
+          );
+          return new Response(toReadableByteStream(withSseHeartbeat(frames, 15_000, signal)), {
+            headers: buildSseHeaders({
+              "Cache-Control": "no-cache, no-transform",
+              Connection: "keep-alive",
+            }),
+          });
+        }),
+      ),
     ),
   );
-};
+});

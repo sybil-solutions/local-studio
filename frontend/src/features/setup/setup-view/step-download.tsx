@@ -11,6 +11,7 @@ import {
 } from "@/ui/icon-registry";
 import { Button, Card } from "@/ui";
 import type { ModelDownload } from "@/lib/types";
+import { countAdditionalQueuedDownloads } from "../setup-downloads";
 import { formatBytes, progressPercent } from "./utils";
 
 export function StepDownload({
@@ -34,6 +35,8 @@ export function StepDownload({
   continueToLaunch: () => void;
   backToModels: () => void;
 }) {
+  const additionalQueuedDownloads = countAdditionalQueuedDownloads(downloads, activeDownload?.id);
+
   return (
     <div className="space-y-5">
       <Card padding="lg">
@@ -133,9 +136,9 @@ export function StepDownload({
         </Button>
       </Card>
 
-      {downloads.length > 1 && (
+      {additionalQueuedDownloads > 0 && (
         <div className="text-xs text-(--dim)">
-          Additional downloads in queue: {downloads.length - 1}
+          Additional downloads in queue: {additionalQueuedDownloads}
         </div>
       )}
     </div>

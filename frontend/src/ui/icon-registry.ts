@@ -126,6 +126,7 @@ export {
   Settings,
   ShieldCheck,
   Slash,
+  Smartphone,
   Sparkles,
   Square,
   SquarePen,

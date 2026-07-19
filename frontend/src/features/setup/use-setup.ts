@@ -30,12 +30,17 @@ import {
   saveSettingsEffect,
 } from "./setup-actions";
 import { useSetupBenchmark } from "./use-setup-benchmark";
+import { selectSetupDownload } from "./setup-downloads";
+import { ggufFileOptions, manualDownloadPreset, type GgufFileOption } from "./setup-model-files";
+import { loadSetupProgress, updateSetupProgress } from "./setup-progress";
+import type { HuggingFaceModelCardPayload } from "@/lib/huggingface";
 
 type ManagedSetupBackend = Extract<EngineBackend, "vllm" | "sglang" | "mlx">;
 
 export function useSetup() {
   const router = useRouter();
-  const [step, setStep] = useState(0);
+  const [initialProgress] = useState(loadSetupProgress);
+  const [step, setStepState] = useState(initialProgress.step);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [loadWarning, setLoadWarning] = useState<string | null>(null);
@@ -44,21 +49,52 @@ export function useSetup() {
   const [diagnostics, setDiagnostics] = useState<StudioDiagnostics | null>(null);
   const [recommendations, setRecommendations] = useState<ModelRecommendation[]>([]);
   const [presets, setPresets] = useState<StarterPreset[]>([]);
-  const [selectedPreset, setSelectedPreset] = useState<StarterPreset | null>(null);
+  const [selectedPreset, setSelectedPreset] = useState<StarterPreset | null>(
+    initialProgress.selectedPreset,
+  );
   const [remoteApiKey, setRemoteApiKey] = useState("");
   const [connectingRemote, setConnectingRemote] = useState(false);
   const [remoteError, setRemoteError] = useState<string | null>(null);
   const [runtimeTargets, setRuntimeTargets] = useState<RuntimeTarget[]>([]);
   const [runtimeJobs, setRuntimeJobs] = useState<EngineJob[]>([]);
   const [maxVram, setMaxVram] = useState(0);
-  const [selectedModel, setSelectedModel] = useState<string>("");
-  const [manualModelId, setManualModelId] = useState("");
+  const [selectedModel, setSelectedModel] = useState(initialProgress.selectedModel);
+  const [manualModelId, setManualModelIdState] = useState(initialProgress.manualModelId);
+  const [manualGgufOptions, setManualGgufOptions] = useState<GgufFileOption[]>([]);
+  const [manualGgufFile, setManualGgufFile] = useState("");
+  const [resolvingManualModel, setResolvingManualModel] = useState(false);
   const [savingSettings, setSavingSettings] = useState(false);
   const [upgrading, setUpgrading] = useState(false);
-  const [hardwareConfirmed, setHardwareConfirmed] = useState(false);
+  const [hardwareConfirmed, setHardwareConfirmedState] = useState(
+    initialProgress.hardwareConfirmed,
+  );
   const [configuringRecipe, setConfiguringRecipe] = useState(false);
   const [launchError, setLaunchError] = useState<string | null>(null);
-  const [createdRecipeId, setCreatedRecipeId] = useState<string | null>(null);
+  const [createdRecipeId, setCreatedRecipeIdState] = useState<string | null>(
+    initialProgress.createdRecipeId,
+  );
+
+  const setStep = useCallback((value: number) => {
+    setStepState(value);
+    updateSetupProgress({ step: value });
+  }, []);
+
+  const setManualModelId = useCallback((value: string) => {
+    setManualModelIdState(value);
+    setManualGgufOptions([]);
+    setManualGgufFile("");
+    updateSetupProgress({ manualModelId: value });
+  }, []);
+
+  const setHardwareConfirmed = useCallback((value: boolean) => {
+    setHardwareConfirmedState(value);
+    updateSetupProgress({ hardwareConfirmed: value });
+  }, []);
+
+  const setCreatedRecipeId = useCallback((value: string | null) => {
+    setCreatedRecipeIdState(value);
+    updateSetupProgress({ createdRecipeId: value });
+  }, []);
 
   const { benchmarking, benchmarkResult, benchmarkError, runSetupBenchmark, resetBenchmark } =
     useSetupBenchmark();
@@ -71,10 +107,10 @@ export function useSetup() {
 
   const downloadsState = useDownloads(2000);
 
-  const activeDownload = useMemo(() => {
-    if (!selectedModel) return null;
-    return downloadsState.downloads.find((download) => download.model_id === selectedModel) ?? null;
-  }, [downloadsState.downloads, selectedModel]);
+  const activeDownload = useMemo(
+    () => selectSetupDownload(downloadsState.downloads, selectedModel, selectedPreset),
+    [downloadsState.downloads, selectedModel, selectedPreset],
+  );
 
   const refreshRuntimeState = useCallback(() => {
     return Effect.runPromise(refreshRuntimeStateEffect({ setRuntimeTargets, setRuntimeJobs }));
@@ -166,9 +202,23 @@ export function useSetup() {
       if (!modelId) return Promise.resolve();
       setSelectedModel(modelId);
       setSelectedPreset(preset ?? null);
+      updateSetupProgress({
+        selectedModel: modelId,
+        selectedPreset: preset ?? null,
+        createdRecipeId: null,
+      });
       setLaunchError(null);
       setCreatedRecipeId(null);
       resetBenchmark();
+      const completedDownload = selectSetupDownload(
+        downloadsState.downloads.filter((download) => download.status === "completed"),
+        modelId,
+        preset ?? null,
+      );
+      if (completedDownload) {
+        setStep(3);
+        return Promise.resolve();
+      }
       return Effect.runPromise(
         beginDownloadEffect(modelId, preset, {
           startDownload: downloadsState.startDownload,
@@ -177,7 +227,7 @@ export function useSetup() {
         }),
       );
     },
-    [downloadsState, resetBenchmark],
+    [downloadsState, resetBenchmark, setCreatedRecipeId, setStep],
   );
 
   const beginPresetSetup = useCallback(
@@ -212,11 +262,34 @@ export function useSetup() {
     [remoteApiKey, router],
   );
 
-  const submitManualModel = useCallback(() => {
+  const submitManualModel = useCallback(async () => {
     const trimmed = manualModelId.trim();
-    if (!trimmed) return Promise.resolve();
-    return beginDownload(trimmed);
-  }, [manualModelId, beginDownload]);
+    if (!trimmed || resolvingManualModel) return;
+    setResolvingManualModel(true);
+    setError(null);
+    try {
+      const signal = AbortSignal.any([lifecycle.abort.signal, AbortSignal.timeout(12_000)]);
+      const response = await fetch(
+        `/api/huggingface/model-card?modelId=${encodeURIComponent(trimmed)}`,
+        { cache: "no-store", signal },
+      );
+      const payload = (await response.json()) as HuggingFaceModelCardPayload & { error?: string };
+      if (!response.ok) throw new Error(payload.error || "Failed to inspect the model repository");
+      const options = ggufFileOptions(payload);
+      setManualGgufOptions(options);
+      const selected =
+        options.find((option) => option.value === manualGgufFile) ??
+        (options.length === 1 ? options[0] : undefined);
+      if (options.length > 1 && !selected) return;
+      await beginDownload(trimmed, manualDownloadPreset(trimmed, selected));
+    } catch (cause) {
+      if (!(cause instanceof DOMException && cause.name === "AbortError")) {
+        setError(cause instanceof Error ? cause.message : "Failed to inspect the model repository");
+      }
+    } finally {
+      setResolvingManualModel(false);
+    }
+  }, [beginDownload, lifecycle, manualGgufFile, manualModelId, resolvingManualModel]);
   const continueFromHardware = useCallback(() => {
     if (!hardwareConfirmed) return;
     setStep(2);
@@ -279,6 +352,10 @@ export function useSetup() {
     selectedModel,
     manualModelId,
     setManualModelId,
+    manualGgufOptions,
+    manualGgufFile,
+    setManualGgufFile,
+    resolvingManualModel,
     savingSettings,
     upgrading,
     hardwareConfirmed,

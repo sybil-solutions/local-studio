@@ -16,7 +16,9 @@ export function useDashboardData() {
   const gpus = realtime.gpus.length > 0 ? realtime.gpus : [];
   const recipesState = useDashboardRecipes(currentProcess);
   const lifecycle = useModelLifecycle(recipesState.recipes);
-  const actions = useDashboardActions();
+  const actions = useDashboardActions(
+    currentProcess?.served_model_name ?? currentProcess?.model_path ?? null,
+  );
 
   const navigate = (path: string) => () => router.push(path);
 
@@ -37,6 +39,7 @@ export function useDashboardData() {
     isStatusLoading: realtime.statusLoading,
     inferencePort: realtime.status?.inference_port,
     benchmarking: actions.benchmarking,
+    benchmarkResult: actions.benchmarkResult,
     launching: lifecycle.status === "starting",
     lifecycleStatus: lifecycle.status,
     onLaunch: lifecycle.start,

@@ -164,7 +164,7 @@ REMOTE_PATH=/home/user/project
 ./scripts/deploy-remote.sh status       # inspect remote processes
 ```
 
-Local daemon helper: `./scripts/daemon.sh {start|stop|status}`.
+Local daemon helper: `./scripts/daemon.sh {start|stop|status}`. The controller installer registers a persistent user service automatically (`launchd` on macOS and `systemd --user` on Linux), so installed controllers return after login without a manual daemon command.
 
 ## Validation
 

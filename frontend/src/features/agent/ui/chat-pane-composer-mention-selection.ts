@@ -20,6 +20,7 @@ type LoadedContextRow = {
   skill?: ComposerSkillRef;
   template?: ComposerPromptTemplateRef;
 };
+type SelectionTools = Pick<ToolsContextValue, "selectionFor" | "setSelection">;
 
 export function useComposerMentionSelection({
   activeTab,
@@ -34,7 +35,7 @@ export function useComposerMentionSelection({
   activeTab: SessionTab | null;
   mention: ComposerMention | null;
   cwd: string;
-  tools: Pick<ToolsContextValue, "selectionFor" | "setSelection">;
+  tools: SelectionTools;
   updateTab: (tabId: string, patch: (tab: SessionTab) => SessionTab) => void;
   setAttachments: Dispatch<SetStateAction<ChatAttachment[]>>;
   setMention: Dispatch<SetStateAction<ComposerMention | null>>;
@@ -42,22 +43,21 @@ export function useComposerMentionSelection({
 }) {
   return useCallback(
     (entry: MentionRow) => {
-      if (!activeTab || !mention) return Promise.resolve();
+      // Command rows are executed by the pane's command runner, not here.
+      if (!activeTab || !mention || entry.kind === "command") return Promise.resolve();
 
       return Effect.runPromise(
         Effect.gen(function* () {
+          const input = consumeComposerMention(activeTab.input, mention);
+          updateTab(activeTab.id, (tab) => ({ ...tab, input }));
           if (entry.kind === "file") {
-            const input = consumeComposerMention(activeTab.input, mention);
-            updateTab(activeTab.id, (tab) => ({ ...tab, input }));
             const attachment = yield* loadProjectFileAttachmentEffect(cwd, entry.row);
             addUniqueAttachment(setAttachments, attachment);
           } else {
-            const selectedRow = yield* loadContextRowEffect(entry.row, mention.kind);
-            const input = consumeComposerMention(activeTab.input, mention);
-            updateTab(activeTab.id, (tab) => ({ ...tab, input }));
-            if (mention.kind !== "file") {
-              applySelectedContext(activeTab.id, mention.kind, selectedRow, tools);
-            }
+            yield* Effect.tryPromise({
+              try: () => applyContextRow(activeTab.id, "skill", entry.row, tools),
+              catch: (error) => error,
+            });
           }
 
           setMention(null);
@@ -66,6 +66,25 @@ export function useComposerMentionSelection({
       );
     },
     [activeTab, cwd, mention, setAttachments, setMention, textareaRef, tools, updateTab],
+  );
+}
+
+/**
+ * Load a skill or prompt template's full body and add it to the session's
+ * tool selection. Shared by `$`-mention selection and the composer command
+ * providers, so both paths stay behaviourally identical.
+ */
+export function applyContextRow(
+  sessionId: string,
+  kind: "skill" | "promptTemplate",
+  row: ContextRow,
+  tools: SelectionTools,
+): Promise<void> {
+  return Effect.runPromise(
+    Effect.gen(function* () {
+      const loaded = yield* loadContextRowEffect(row, kind);
+      applySelectedContext(sessionId, kind, loaded, tools);
+    }),
   );
 }
 
@@ -90,7 +109,7 @@ function loadProjectFileAttachmentEffect(
 
 function loadContextRowEffect(
   row: ContextRow,
-  kind: ComposerMention["kind"],
+  kind: "skill" | "promptTemplate",
 ): Effect.Effect<ContextRow> {
   if (!row.path) return Effect.succeed(row);
   const rowPath = row.path;
@@ -104,7 +123,7 @@ function loadContextRowEffect(
   });
 }
 
-function loadEndpoint(kind: ComposerMention["kind"], path: string): string {
+function loadEndpoint(kind: "skill" | "promptTemplate", path: string): string {
   const encoded = encodeURIComponent(path);
   if (kind === "skill") return `/api/agent/skills/load?path=${encoded}`;
   return `/api/agent/prompt-templates/load?path=${encoded}`;
@@ -112,9 +131,9 @@ function loadEndpoint(kind: ComposerMention["kind"], path: string): string {
 
 function applySelectedContext(
   sessionId: string,
-  kind: ComposerMention["kind"],
+  kind: "skill" | "promptTemplate",
   selectedRow: ContextRow,
-  tools: Pick<ToolsContextValue, "selectionFor" | "setSelection">,
+  tools: SelectionTools,
 ) {
   const current = tools.selectionFor(sessionId);
   if (kind === "skill" && !current.skills.some((skill) => skill.id === selectedRow.id)) {

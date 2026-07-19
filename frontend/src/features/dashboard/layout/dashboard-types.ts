@@ -18,6 +18,7 @@ export interface DashboardLayoutProps {
   launching: boolean;
   lifecycleStatus: "idle" | "starting" | "ready" | "error";
   benchmarking: boolean;
+  benchmarkResult: number | null;
   launchProgress: LaunchProgress | null;
   platformKind: RuntimePlatformKind | null;
   runtimeSummary?: RuntimeSummaryData | null;
