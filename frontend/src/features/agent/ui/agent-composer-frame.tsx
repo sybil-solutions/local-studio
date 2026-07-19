@@ -31,6 +31,7 @@ import { AgentComposerStatusBar } from "./agent-composer-status-bar";
 import { AgentComposerTextArea } from "./agent-composer-textarea";
 import { AgentQueuePanel } from "./agent-queue-panel";
 import { cx } from "@/ui/utils";
+import { Folder } from "@/ui/icon-registry";
 
 export type AgentComposerFrameProps = {
   attachments: AgentComposerAttachment[];
@@ -74,6 +75,7 @@ export type AgentComposerFrameProps = {
   onToggleBrowserTool: () => void;
   onToggleCanvas: () => void;
   placeholder: string;
+  projectRow?: { label: string; onPick: () => void } | null;
   promptTemplates: ComposerPromptTemplateRef[];
   queueExpanded: boolean;
   queueItems: QueuedMessage[];
@@ -128,6 +130,7 @@ export function AgentComposerFrame({
   onToggleBrowserTool,
   onToggleCanvas,
   placeholder,
+  projectRow,
   promptTemplates,
   queueExpanded,
   queueItems,
@@ -166,6 +169,18 @@ export function AgentComposerFrame({
           <Spinner size="xs" />
           {banner.label}
         </div>
+      ) : null}
+      {projectRow ? (
+        // Codex fresh-thread "Choose project" row: a quiet tone step between
+        // page and composer, chat-size text, folder glyph.
+        <button
+          type="button"
+          onClick={projectRow.onPick}
+          className="mx-auto mb-1.5 flex w-full max-w-[var(--composer-w)] items-center gap-2.5 rounded-2xl bg-(--fg)/[0.03] px-4 py-3 text-left text-[length:var(--codex-chat-font-size)] text-(--fg)/85 transition-colors hover:bg-(--fg)/[0.05]"
+        >
+          <Folder className="h-4 w-4 shrink-0 text-(--fg)/60" strokeWidth={1.75} />
+          <span className="truncate">{projectRow.label}</span>
+        </button>
       ) : null}
       <div
         onDragOver={onComposerDragOver}

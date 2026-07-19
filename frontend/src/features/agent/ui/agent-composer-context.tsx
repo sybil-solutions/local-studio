@@ -1,6 +1,19 @@
 "use client";
 
-import { AtSign, FileText, Slash, Sparkles } from "@/ui/icon-registry";
+import {
+  AtSign,
+  Boxes,
+  CircleDot,
+  Download,
+  FilePenLine,
+  FileText,
+  Gauge,
+  GitFork,
+  Globe,
+  Slash,
+  Sparkles,
+  TerminalSquare,
+} from "@/ui/icon-registry";
 import type {
   ComposerMention,
   ComposerPromptTemplateRef,
@@ -139,7 +152,7 @@ function MentionRowItem({
   // Command rows follow the Codex menu layout: title on the left, dim
   // right-aligned description filling the row.
   if (entry.kind === "command") {
-    const Icon = COMMAND_ICONS[entry.row.icon];
+    const Icon = BUILTIN_COMMAND_ICONS[entry.row.name] ?? COMMAND_ICONS[entry.row.icon];
     return (
       <button
         type="button"
@@ -211,6 +224,18 @@ const COMMAND_ICONS: Record<ComposerCommand["icon"], typeof Slash> = {
   command: Slash,
   template: FileText,
   skill: Sparkles,
+};
+
+// Codex leads each command row with a semantic glyph, not a uniform slash.
+const BUILTIN_COMMAND_ICONS: Record<string, typeof Slash> = {
+  compact: CircleDot,
+  status: Gauge,
+  browser: Globe,
+  canvas: FilePenLine,
+  plugins: Boxes,
+  terminal: TerminalSquare,
+  fork: GitFork,
+  export: Download,
 };
 
 const LOADED_TAB_META: Record<"$" | "/", { Icon: typeof AtSign; classes: string }> = {

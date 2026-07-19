@@ -5,10 +5,7 @@ import { useCallback, useMemo, useRef, useState, type FormEvent, type ReactNode 
 import { useMountSubscription } from "@/hooks/use-mount-subscription";
 import { AgentChatPaneHeader } from "@/features/agent/ui/agent-chat-pane-header";
 import { AgentComposerFrame } from "@/features/agent/ui/agent-composer-frame";
-import {
-  type FileMentionRow,
-  type MentionRow,
-} from "@/features/agent/ui/agent-composer-context";
+import { type FileMentionRow, type MentionRow } from "@/features/agent/ui/agent-composer-context";
 import { builtinCommandProvider } from "@/features/agent/composer/builtin-commands";
 import {
   promptTemplateCommandProvider,
@@ -20,6 +17,15 @@ import {
   type SlashInvocation,
 } from "@/features/agent/composer/command-registry";
 import { deriveComposerVisual } from "@/features/agent/composer/composer-visual-state";
+import { ADD_PROJECT_EVENT } from "@/lib/workspace-events";
+
+function composerProjectRow(show: boolean, projectName: string | null) {
+  if (!show) return null;
+  return {
+    label: projectName ?? "Choose project",
+    onPick: () => window.dispatchEvent(new Event(ADD_PROJECT_EVENT)),
+  };
+}
 import {
   useComposerLoadedContext,
   useComposerMentionRows,
@@ -428,8 +434,7 @@ export function ChatPane({
     [running, compacting],
   );
   const commandMatches = useMemo(
-    () =>
-      mention?.kind === "command" ? commandRegistry.match(mention.query, commandContext) : [],
+    () => (mention?.kind === "command" ? commandRegistry.match(mention.query, commandContext) : []),
     [commandContext, commandRegistry, mention],
   );
   const mentionRows = useComposerMentionRows({
@@ -624,6 +629,7 @@ export function ChatPane({
           onToggleBrowserTool={onToggleBrowserTool}
           onToggleCanvas={onToggleCanvas}
           placeholder={composerVisual.placeholder}
+          projectRow={composerProjectRow(composerVisual.showProjectRow, projectName)}
           promptTemplates={selectedPromptTemplates}
           queueExpanded={queueExpanded}
           queueItems={visibleQueueItems}

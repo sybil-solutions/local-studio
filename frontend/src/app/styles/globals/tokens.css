@@ -376,7 +376,8 @@
 
   --color-popover: var(--gray-750);
   --color-popover-header: var(--gray-700);
-  --color-popover-border: #ffffff1a;
+  /* Codex dropdowns float on shadow alone — no hairline. */
+  --color-popover-border: transparent;
 
   --color-input: #ffffff0d;
   --color-input-focused: var(--color-input);

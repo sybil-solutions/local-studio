@@ -9,6 +9,8 @@ export type ComposerBanner = {
 export type ComposerVisual = {
   placeholder: string;
   banner: ComposerBanner | null;
+  /** Codex shows a "Choose project" row above the composer on fresh threads. */
+  showProjectRow: boolean;
 };
 
 export function deriveComposerVisual({
@@ -21,5 +23,6 @@ export function deriveComposerVisual({
   return {
     placeholder: hasMessages ? "Ask for follow-up changes" : "Do anything",
     banner: compacting ? { id: "compacting", label: "Context compacting" } : null,
+    showProjectRow: !hasMessages,
   };
 }
