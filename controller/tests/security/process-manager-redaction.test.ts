@@ -4,12 +4,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { EventEmitter } from "node:events";
 import { PassThrough, Readable } from "node:stream";
-import type { Config } from "../../../config/env";
-import type { ProcessRunner, SpawnedProcess } from "../../../core/command";
-import type { Logger } from "../../../core/logger";
-import { asRecipeId, type Recipe } from "../../models/types";
-import { EventManager } from "../../system/event-manager";
-import { createProcessManager } from "./process-manager";
+import { Effect } from "effect";
+import type { Config } from "../../src/config/env";
+import type { ProcessRunner, SpawnedProcess } from "../../src/core/command";
+import type { Logger } from "../../src/core/logger";
+import { asRecipeId, type Recipe } from "../../src/modules/models/types";
+import { makeProcessManager } from "../../src/modules/engines/process/process-manager";
+import { EventManager } from "../../src/modules/system/event-manager";
 
 const STRUCTURED_SECRET = "SYNTHETIC_ENGINE_STRUCTURED_SECRET";
 const ARGV_SECRET = "SYNTHETIC_ENGINE_ARGV_SECRET";
@@ -75,13 +76,14 @@ const logger: Logger = {
   info: () => undefined,
   warn: () => undefined,
   error: () => undefined,
+  shutdown: () => Effect.void,
 };
 
 class CapturingEventManager extends EventManager {
   public readonly lines: string[] = [];
 
-  public override async publishLogLine(_sessionId: string, line: string): Promise<void> {
-    this.lines.push(line);
+  public override publishLogLine(_sessionId: string, line: string): Effect.Effect<void> {
+    return Effect.sync(() => this.lines.push(line)).pipe(Effect.asVoid);
   }
 }
 
@@ -183,17 +185,19 @@ const runner: ProcessRunner = {
   spawnDetached: () => failedChild(),
 };
 
+const launch = async (binary: string, processRunner: ProcessRunner, events?: EventManager) => {
+  const manager = await Effect.runPromise(
+    makeProcessManager(configFor(binary), logger, events, processRunner),
+  );
+  return Effect.runPromise(manager.launchModel(recipe()));
+};
+
 test("redacts split engine output in persisted and failure tails", async () => {
   const binary = join(directory, "llama-server");
   writeFileSync(binary, "");
   chmodSync(binary, 0o755);
   const events = new CapturingEventManager();
-  const result = await createProcessManager(
-    configFor(binary),
-    logger,
-    events,
-    runner,
-  ).launchModel(recipe());
+  const result = await launch(binary, runner, events);
   let persisted = "";
   for (let attempt = 0; attempt < 100; attempt += 1) {
     persisted = readFileSync(result.log_file ?? "", "utf8");
@@ -233,12 +237,7 @@ test("shares ordered redaction state across merged engine output", async () => {
     ...runner,
     spawnDetached: () => crossStreamFailedChild(),
   };
-  const result = await createProcessManager(
-    configFor(binary),
-    logger,
-    undefined,
-    crossStreamRunner,
-  ).launchModel(recipe());
+  const result = await launch(binary, crossStreamRunner);
   let persisted = "";
   for (let attempt = 0; attempt < 100; attempt += 1) {
     persisted = readFileSync(result.log_file ?? "", "utf8");
@@ -262,12 +261,7 @@ test("redacts query continuations in engine persistence failure tails and events
     spawnDetached: queryContinuationFailedChild,
   };
   const events = new CapturingEventManager();
-  const result = await createProcessManager(
-    configFor(binary),
-    logger,
-    events,
-    queryRunner,
-  ).launchModel(recipe());
+  const result = await launch(binary, queryRunner, events);
   const persisted = readFileSync(result.log_file ?? "", "utf8");
   const surfaces = `${result.message}\n${persisted}\n${events.lines.join("\n")}`;
 
@@ -286,12 +280,7 @@ for (const interleaving of INTERLEAVINGS) {
       spawnDetached: () => interleavedFailedChild(interleaving),
     };
     const events = new CapturingEventManager();
-    const result = await createProcessManager(
-      configFor(binary),
-      logger,
-      events,
-      interleavedRunner,
-    ).launchModel(recipe());
+    const result = await launch(binary, interleavedRunner, events);
     const persisted = readFileSync(result.log_file ?? "", "utf8");
 
     expect(result.success).toBe(false);
@@ -311,12 +300,7 @@ test("redacts runtime errors through prior ordered output state", async () => {
     spawnDetached: runtimeErrorChild,
   };
   const events = new CapturingEventManager();
-  const result = await createProcessManager(
-    configFor(binary),
-    logger,
-    events,
-    runtimeErrorRunner,
-  ).launchModel(recipe());
+  const result = await launch(binary, runtimeErrorRunner, events);
   const persisted = readFileSync(result.log_file ?? "", "utf8");
 
   expect(result.success).toBe(false);

@@ -2,14 +2,20 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { Effect, Stream } from "effect";
 import { Hono } from "hono";
-import { createAppContext, type AppContext } from "../../app-context";
+import { AppContextService, type AppContext } from "../../src/app-context";
+import { createControllerRuntime, type ControllerRuntime } from "../../src/core/effect-runtime";
+import {
+  controllerRuntimeMiddleware,
+  type ControllerEnvironment,
+} from "../../src/http/effect-handler";
 import {
   createLogsRouteRegistrar,
   DOCKER_LOG_CONTEXT_LINES,
   type DockerLogSnapshot,
   type DockerLogSource,
-} from "./logs-routes";
+} from "../../src/modules/system/logs-routes";
 
 const SECRET = "SYNTHETIC_DOCKER_TAIL_SECRET";
 const NORMALIZED_SECRET = "SYNTHETIC_DOCKER_NORMALIZED_SECRET";
@@ -25,9 +31,10 @@ const ENVIRONMENT_KEYS = [
 
 let context: AppContext;
 let directory: string;
+let runtime: ControllerRuntime;
 const originalEnvironment = new Map<string, string | undefined>();
 
-beforeAll(() => {
+beforeAll(async () => {
   directory = mkdtempSync(join(tmpdir(), "local-studio-log-routes-"));
   for (const key of ENVIRONMENT_KEYS) originalEnvironment.set(key, process.env[key]);
   process.env["LOCAL_STUDIO_DATA_DIR"] = join(directory, "data");
@@ -35,10 +42,12 @@ beforeAll(() => {
   process.env["LOCAL_STUDIO_HOST"] = "127.0.0.1";
   process.env["LOCAL_STUDIO_INFERENCE_HOST"] = "127.0.0.1";
   process.env["LOCAL_STUDIO_MODELS_DIR"] = join(directory, "models");
-  context = createAppContext();
+  runtime = createControllerRuntime();
+  context = await runtime.runPromise(AppContextService);
 });
 
-afterAll(() => {
+afterAll(async () => {
+  await runtime.dispose();
   for (const key of ENVIRONMENT_KEYS) {
     const value = originalEnvironment.get(key);
     if (value === undefined) delete process.env[key];
@@ -62,17 +71,19 @@ class FiniteDockerLogSource implements DockerLogSource {
     private readonly followedLines: readonly string[] = [],
   ) {}
 
-  public snapshot(_container: string, limit: number): DockerLogSnapshot {
-    this.requestedLimits.push(limit);
-    return this.snapshotValue;
+  public snapshot(_container: string, limit: number): Effect.Effect<DockerLogSnapshot> {
+    return Effect.sync(() => {
+      this.requestedLimits.push(limit);
+      return this.snapshotValue;
+    });
   }
 
-  public async *follow(
+  public follow(
     _container: string,
     _snapshot: DockerLogSnapshot,
     _signal: AbortSignal,
-  ): AsyncIterable<string> {
-    for (const line of this.followedLines) yield line;
+  ): Stream.Stream<string> {
+    return Stream.fromIterable(this.followedLines);
   }
 }
 
@@ -81,15 +92,11 @@ class ControlledDockerLogSource implements DockerLogSource {
   public returned = 0;
   public signal: AbortSignal | null = null;
 
-  public snapshot(): DockerLogSnapshot {
-    return snapshot([], true);
+  public snapshot(): Effect.Effect<DockerLogSnapshot> {
+    return Effect.succeed(snapshot([], true));
   }
 
-  public async *follow(
-    _container: string,
-    _snapshot: DockerLogSnapshot,
-    signal: AbortSignal,
-  ): AsyncIterable<string> {
+  private async *lines(signal: AbortSignal): AsyncIterable<string> {
     this.signal = signal;
     try {
       while (true) {
@@ -100,13 +107,22 @@ class ControlledDockerLogSource implements DockerLogSource {
       this.returned += 1;
     }
   }
+
+  public follow(
+    _container: string,
+    _snapshot: DockerLogSnapshot,
+    signal: AbortSignal,
+  ): Stream.Stream<string, unknown> {
+    return Stream.fromAsyncIterable(this.lines(signal), (error) => error);
+  }
 }
 
-const appFor = (dockerLogs: DockerLogSource): Hono => {
-  const app = new Hono();
+const appFor = (dockerLogs: DockerLogSource): Hono<ControllerEnvironment> => {
+  const app = new Hono<ControllerEnvironment>();
+  app.use("*", controllerRuntimeMiddleware(runtime));
   createLogsRouteRegistrar({
     dockerLogs,
-    dockerContainer: () => "synthetic-container",
+    dockerContainer: () => Effect.succeed("synthetic-container"),
   })(app, context);
   return app;
 };
@@ -144,10 +160,10 @@ test("fails closed after an oversized Docker record", async () => {
 });
 
 test("fails closed across Docker SSE replay and live multiline boundaries", async () => {
-  const dockerLogs = new FiniteDockerLogSource(
-    snapshot([SECRET], false),
-    ['end" trailing diagnostic', "ordinary live diagnostic"],
-  );
+  const dockerLogs = new FiniteDockerLogSource(snapshot([SECRET], false), [
+    'end" trailing diagnostic',
+    "ordinary live diagnostic",
+  ]);
   const response = await appFor(dockerLogs).request("/logs/synthetic/stream?tail=1");
   const content = await response.text();
 
@@ -159,10 +175,9 @@ test("fails closed across Docker SSE replay and live multiline boundaries", asyn
 });
 
 test("preserves ordinary Docker SSE replay and live records from a complete snapshot", async () => {
-  const dockerLogs = new FiniteDockerLogSource(
-    snapshot(["ordinary replay diagnostic"], true),
-    ["ordinary live diagnostic"],
-  );
+  const dockerLogs = new FiniteDockerLogSource(snapshot(["ordinary replay diagnostic"], true), [
+    "ordinary live diagnostic",
+  ]);
   const response = await appFor(dockerLogs).request("/logs/synthetic/stream?tail=1");
   const content = await response.text();
 
@@ -203,8 +218,12 @@ test("keeps Docker SSE production pull-bound and returns the source on cancellat
   const reader = response.body?.getReader();
   expect(reader).toBeDefined();
 
-  const first = await reader?.read();
-  expect(new TextDecoder().decode(first?.value)).toContain("ordinary live 1");
+  let content = "";
+  for (let attempt = 0; attempt < 3 && !content.includes("ordinary live 1"); attempt += 1) {
+    const next = await reader?.read();
+    content += new TextDecoder().decode(next?.value);
+  }
+  expect(content).toContain("ordinary live 1");
   expect(dockerLogs.produced).toBeLessThan(4);
   expect(dockerLogs.signal).toBe(request.signal);
   await reader?.cancel();

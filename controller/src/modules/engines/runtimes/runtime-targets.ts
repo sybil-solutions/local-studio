@@ -1,8 +1,9 @@
 import { existsSync, readdirSync, statSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
+import { Effect } from "effect";
 import type { Config } from "../../../config/env";
 import { loadPersistedConfig, savePersistedConfig } from "../../../config/persisted-config";
-import { resolveBinary, runCommand } from "../../../core/command";
+import { resolveBinary, runCommandEffect } from "../../../core/command";
 import type { ProcessInfo } from "../../models/types";
 import type {
   EngineBackend,
@@ -20,8 +21,9 @@ import {
   probePythonRuntime,
   splitEnvironmentList,
   type PythonProbeBackend,
+  type PythonRuntimeProbe,
 } from "./runtime-target-probes";
-import { getEngineSpec } from "../engine-spec";
+import { type EngineOperationError, getEngineSpec } from "../engine-spec";
 import type { BinaryProbeResult } from "../engine-spec";
 
 const ENGINE_LABEL_FOR_BACKEND: Record<string, string> = {
@@ -144,246 +146,252 @@ const collectVenvPythonFiles = (config: Config): string[] => {
   return candidates;
 };
 
-// Probes independent candidates concurrently; the returned pairs preserve
-// candidate order so addTarget keeps its order-dependent dedupe behavior.
 const probePythonCandidates = (
   backend: PythonProbeBackend,
   candidates: string[],
-): Promise<Array<{ candidate: string; probe: Awaited<ReturnType<typeof probePythonRuntime>> }>> =>
-  Promise.all(
-    candidates.map(async (candidate) => ({
-      candidate,
-      probe: await probePythonRuntime(backend, candidate),
-    })),
+): Effect.Effect<Array<{ candidate: string; probe: PythonRuntimeProbe }>> =>
+  Effect.forEach(
+    candidates,
+    (candidate) =>
+      probePythonRuntime(backend, candidate).pipe(Effect.map((probe) => ({ candidate, probe }))),
+    { concurrency: "unbounded" },
   );
 
-const collectPythonTargets = async (
+const collectPythonTargets = (
   backend: PythonProbeBackend,
   config: Config,
   runningProcess?: ProcessInfo | null,
-): Promise<RuntimeTarget[]> => {
-  const targets: RuntimeTarget[] = [];
-  const running = collectRunningTargets(runningProcess).filter(
-    (target) => target.backend === backend,
-  );
-  for (const target of running) addTarget(targets, target);
+): Effect.Effect<RuntimeTarget[], EngineOperationError> =>
+  Effect.gen(function* () {
+    const targets: RuntimeTarget[] = [];
+    const running = collectRunningTargets(runningProcess).filter(
+      (target) => target.backend === backend,
+    );
+    for (const target of running) addTarget(targets, target);
 
-  const configured =
-    backend === "vllm"
-      ? [
-          process.env["LOCAL_STUDIO_RUNTIME_PYTHON"],
-          ...splitEnvironmentList(process.env["LOCAL_STUDIO_VLLM_PYTHONS"]),
-          ...splitEnvironmentList(process.env["LOCAL_STUDIO_RUNTIME_PYTHONS"]),
-        ]
-      : backend === "sglang"
+    const configured =
+      backend === "vllm"
         ? [
-            config.sglang_python,
-            ...splitEnvironmentList(process.env["LOCAL_STUDIO_SGLANG_PYTHONS"]),
+            process.env["LOCAL_STUDIO_RUNTIME_PYTHON"],
+            ...splitEnvironmentList(process.env["LOCAL_STUDIO_VLLM_PYTHONS"]),
+            ...splitEnvironmentList(process.env["LOCAL_STUDIO_RUNTIME_PYTHONS"]),
           ]
-        : [config.mlx_python, ...splitEnvironmentList(process.env["LOCAL_STUDIO_MLX_PYTHONS"])];
-  for (const { candidate, probe } of await probePythonCandidates(backend, unique(configured))) {
-    addTarget(
-      targets,
-      makeRuntimeTarget({
-        backend,
-        kind: "venv",
-        source: "configured",
-        key: probe.pythonPath ?? candidate,
-        label: `${backend} configured (${basename(probe.pythonPath ?? candidate)})`,
-        installed: probe.installed,
-        version: probe.version,
-        pythonPath: probe.pythonPath ?? candidate,
-        healthMessage: probe.message,
-      }),
-    );
-  }
+        : backend === "sglang"
+          ? [
+              config.sglang_python,
+              ...splitEnvironmentList(process.env["LOCAL_STUDIO_SGLANG_PYTHONS"]),
+            ]
+          : [config.mlx_python, ...splitEnvironmentList(process.env["LOCAL_STUDIO_MLX_PYTHONS"])];
+    for (const { candidate, probe } of yield* probePythonCandidates(backend, unique(configured))) {
+      addTarget(
+        targets,
+        makeRuntimeTarget({
+          backend,
+          kind: "venv",
+          source: "configured",
+          key: probe.pythonPath ?? candidate,
+          label: `${backend} configured (${basename(probe.pythonPath ?? candidate)})`,
+          installed: probe.installed,
+          version: probe.version,
+          pythonPath: probe.pythonPath ?? candidate,
+          healthMessage: probe.message,
+        }),
+      );
+    }
 
-  const enginePythonPath = getEngineSpec(backend).resolvePythonPath?.(config) ?? null;
-  const projectManaged =
-    backend === "vllm"
-      ? unique([enginePythonPath, ...collectVenvPythonFiles(config)])
-      : unique([
-          backend === "sglang" ? config.sglang_python : config.mlx_python,
-          enginePythonPath,
-          ...collectVenvPythonFiles(config),
-        ]);
-  for (const { candidate, probe } of await probePythonCandidates(backend, projectManaged)) {
-    addTarget(
-      targets,
-      makeRuntimeTarget({
-        backend,
-        kind: "venv",
-        source: "discovered",
-        key: probe.pythonPath ?? candidate,
-        label: `${backend} venv (${basename(dirname(dirname(probe.pythonPath ?? candidate)))})`,
-        installed: probe.installed,
-        version: probe.version,
-        pythonPath: probe.pythonPath ?? candidate,
-        healthMessage: probe.message,
-      }),
-    );
-  }
+    const enginePythonPath = getEngineSpec(backend).resolvePythonPath?.(config) ?? null;
+    const projectManaged =
+      backend === "vllm"
+        ? unique([enginePythonPath, ...collectVenvPythonFiles(config)])
+        : unique([
+            backend === "sglang" ? config.sglang_python : config.mlx_python,
+            enginePythonPath,
+            ...collectVenvPythonFiles(config),
+          ]);
+    for (const { candidate, probe } of yield* probePythonCandidates(backend, projectManaged)) {
+      addTarget(
+        targets,
+        makeRuntimeTarget({
+          backend,
+          kind: "venv",
+          source: "discovered",
+          key: probe.pythonPath ?? candidate,
+          label: `${backend} venv (${basename(dirname(dirname(probe.pythonPath ?? candidate)))})`,
+          installed: probe.installed,
+          version: probe.version,
+          pythonPath: probe.pythonPath ?? candidate,
+          healthMessage: probe.message,
+        }),
+      );
+    }
 
-  const systemPython =
-    process.env["LOCAL_STUDIO_RUNTIME_SKIP_SYSTEM"] === "1"
-      ? null
-      : (resolveBinary("python3") ?? resolveBinary("python"));
-  if (systemPython) {
-    const probe = await probePythonRuntime(backend, systemPython);
-    addTarget(
-      targets,
-      makeRuntimeTarget({
-        backend,
-        kind: "system",
-        source: "discovered",
-        key: probe.pythonPath ?? systemPython,
-        label: `${backend} system Python`,
-        installed: probe.installed,
-        version: probe.version,
-        pythonPath: probe.pythonPath ?? systemPython,
-        healthMessage: probe.message,
-      }),
-    );
-  }
-
-  // Probe CLI binary (vllm, sglang) using the engine spec's probeBinary.
-  const spec = getEngineSpec(backend);
-  if (spec.cliBinary && spec.probeBinary) {
-    const binary =
+    const systemPython =
       process.env["LOCAL_STUDIO_RUNTIME_SKIP_SYSTEM"] === "1"
         ? null
-        : resolveBinary(spec.cliBinary);
-    if (binary) {
-      const probe: BinaryProbeResult = await spec.probeBinary(binary);
+        : (resolveBinary("python3") ?? resolveBinary("python"));
+    if (systemPython) {
+      const probe = yield* probePythonRuntime(backend, systemPython);
       addTarget(
         targets,
         makeRuntimeTarget({
           backend,
           kind: "system",
           source: "discovered",
-          key: binary,
-          label: `${ENGINE_LABEL_FOR_BACKEND[backend]} system binary`,
+          key: probe.pythonPath ?? systemPython,
+          label: `${backend} system Python`,
           installed: probe.installed,
           version: probe.version,
-          pythonPath: probe.pythonPath ?? null,
+          pythonPath: probe.pythonPath ?? systemPython,
+          healthMessage: probe.message,
+        }),
+      );
+    }
+
+    const spec = getEngineSpec(backend);
+    if (spec.cliBinary && spec.probeBinary) {
+      const binary =
+        process.env["LOCAL_STUDIO_RUNTIME_SKIP_SYSTEM"] === "1"
+          ? null
+          : resolveBinary(spec.cliBinary);
+      if (binary) {
+        const probe: BinaryProbeResult = yield* spec.probeBinary(binary);
+        addTarget(
+          targets,
+          makeRuntimeTarget({
+            backend,
+            kind: "system",
+            source: "discovered",
+            key: binary,
+            label: `${ENGINE_LABEL_FOR_BACKEND[backend]} system binary`,
+            installed: probe.installed,
+            version: probe.version,
+            pythonPath: probe.pythonPath ?? null,
+            binaryPath: probe.binaryPath,
+            healthMessage: probe.message,
+          }),
+        );
+      }
+    }
+
+    return targets;
+  });
+
+const collectLlamacppTargets = (
+  config: Config,
+  runningProcess?: ProcessInfo | null,
+): Effect.Effect<RuntimeTarget[], EngineOperationError> =>
+  Effect.gen(function* () {
+    const targets: RuntimeTarget[] = [];
+    const running = collectRunningTargets(runningProcess).filter(
+      (target) => target.backend === "llamacpp",
+    );
+    for (const target of running) addTarget(targets, target);
+
+    const managedBinary = managedLlamaServerPath(config);
+    const managedCandidate = existsSync(managedBinary) ? managedBinary : undefined;
+    for (const candidate of unique([config.llama_bin, managedCandidate])) {
+      const probe = yield* probeBinaryRuntime(candidate);
+      addTarget(
+        targets,
+        makeRuntimeTarget({
+          backend: "llamacpp",
+          kind: candidate.includes("/") ? "binary" : "system",
+          source: "configured",
+          key: probe.binaryPath ?? candidate,
+          label: `llama.cpp configured (${basename(probe.binaryPath ?? candidate)})`,
+          installed: probe.installed,
+          version: probe.version,
           binaryPath: probe.binaryPath,
           healthMessage: probe.message,
         }),
       );
     }
-  }
 
-  return targets;
-};
-
-const collectLlamacppTargets = async (
-  config: Config,
-  runningProcess?: ProcessInfo | null,
-): Promise<RuntimeTarget[]> => {
-  const targets: RuntimeTarget[] = [];
-  const running = collectRunningTargets(runningProcess).filter(
-    (target) => target.backend === "llamacpp",
-  );
-  for (const target of running) addTarget(targets, target);
-
-  const managedBinary = managedLlamaServerPath(config);
-  const managedCandidate = existsSync(managedBinary) ? managedBinary : undefined;
-  for (const candidate of unique([config.llama_bin, managedCandidate])) {
-    const probe = await probeBinaryRuntime(candidate);
-    addTarget(
-      targets,
-      makeRuntimeTarget({
-        backend: "llamacpp",
-        kind: candidate.includes("/") ? "binary" : "system",
-        source: "configured",
-        key: probe.binaryPath ?? candidate,
-        label: `llama.cpp configured (${basename(probe.binaryPath ?? candidate)})`,
-        installed: probe.installed,
-        version: probe.version,
-        binaryPath: probe.binaryPath,
-        healthMessage: probe.message,
-      }),
-    );
-  }
-
-  const systemBinary =
-    process.env["LOCAL_STUDIO_RUNTIME_SKIP_SYSTEM"] === "1" ? null : resolveBinary("llama-server");
-  if (systemBinary) {
-    const probe = await probeBinaryRuntime(systemBinary);
-    addTarget(
-      targets,
-      makeRuntimeTarget({
-        backend: "llamacpp",
-        kind: "system",
-        source: "discovered",
-        key: probe.binaryPath ?? systemBinary,
-        label: "llama.cpp system binary",
-        installed: probe.installed,
-        version: probe.version,
-        binaryPath: probe.binaryPath,
-        healthMessage: probe.message,
-      }),
-    );
-  }
-  return targets;
-};
-
-const collectDockerTargets = (backend: EngineBackend): RuntimeTarget[] => {
-  if (process.env["LOCAL_STUDIO_RUNTIME_SKIP_DOCKER"] === "1") return [];
-  const docker = resolveBinary("docker");
-  if (!docker) return [];
-  const targets: RuntimeTarget[] = [];
-  const patterns: Record<EngineBackend, RegExp> = {
-    vllm: /(^|[/:_-])vllm($|[/:_-])/i,
-    sglang: /(^|[/:_-])sglang($|[/:_-])/i,
-    llamacpp: /(llama\.cpp|llamacpp|llama-server)/i,
-    mlx: /(mlx-lm|mlx_lm|mlx)/i,
-  };
-  const imageResult = runCommand(docker, ["images", "--format", "{{.Repository}}:{{.Tag}}"], 3_000);
-  if (imageResult.status === 0) {
-    for (const image of imageResult.stdout
-      .split("\n")
-      .map((line) => line.trim())
-      .filter(Boolean)) {
-      if (!patterns[backend].test(image)) continue;
+    const systemBinary =
+      process.env["LOCAL_STUDIO_RUNTIME_SKIP_SYSTEM"] === "1"
+        ? null
+        : resolveBinary("llama-server");
+    if (systemBinary) {
+      const probe = yield* probeBinaryRuntime(systemBinary);
       addTarget(
         targets,
         makeRuntimeTarget({
-          backend,
-          kind: "docker",
+          backend: "llamacpp",
+          kind: "system",
           source: "discovered",
-          key: image,
-          label: `${backend} Docker image (${image})`,
-          installed: true,
-          dockerImage: image,
+          key: probe.binaryPath ?? systemBinary,
+          label: "llama.cpp system binary",
+          installed: probe.installed,
+          version: probe.version,
+          binaryPath: probe.binaryPath,
+          healthMessage: probe.message,
         }),
       );
     }
-  }
-  const psResult = runCommand(docker, ["ps", "--format", "{{.Image}}"], 3_000);
-  if (psResult.status === 0) {
-    for (const image of psResult.stdout
-      .split("\n")
-      .map((line) => line.trim())
-      .filter(Boolean)) {
-      if (!patterns[backend].test(image)) continue;
-      addTarget(
-        targets,
-        makeRuntimeTarget({
-          backend,
-          kind: "docker",
-          source: "running",
-          key: image,
-          label: `${backend} running Docker (${image})`,
-          installed: true,
-          active: true,
-          dockerImage: image,
-        }),
-      );
+    return targets;
+  });
+
+const collectDockerTargets = (backend: EngineBackend): Effect.Effect<RuntimeTarget[]> =>
+  Effect.gen(function* () {
+    if (process.env["LOCAL_STUDIO_RUNTIME_SKIP_DOCKER"] === "1") return [];
+    const docker = resolveBinary("docker");
+    if (!docker) return [];
+    const targets: RuntimeTarget[] = [];
+    const patterns: Record<EngineBackend, RegExp> = {
+      vllm: /(^|[/:_-])vllm($|[/:_-])/i,
+      sglang: /(^|[/:_-])sglang($|[/:_-])/i,
+      llamacpp: /(llama\.cpp|llamacpp|llama-server)/i,
+      mlx: /(mlx-lm|mlx_lm|mlx)/i,
+    };
+    const imageResult = yield* runCommandEffect(
+      docker,
+      ["images", "--format", "{{.Repository}}:{{.Tag}}"],
+      3_000,
+    );
+    if (imageResult.status === 0) {
+      for (const image of imageResult.stdout
+        .split("\n")
+        .map((line) => line.trim())
+        .filter(Boolean)) {
+        if (!patterns[backend].test(image)) continue;
+        addTarget(
+          targets,
+          makeRuntimeTarget({
+            backend,
+            kind: "docker",
+            source: "discovered",
+            key: image,
+            label: `${backend} Docker image (${image})`,
+            installed: true,
+            dockerImage: image,
+          }),
+        );
+      }
     }
-  }
-  return targets;
-};
+    const psResult = yield* runCommandEffect(docker, ["ps", "--format", "{{.Image}}"], 3_000);
+    if (psResult.status === 0) {
+      for (const image of psResult.stdout
+        .split("\n")
+        .map((line) => line.trim())
+        .filter(Boolean)) {
+        if (!patterns[backend].test(image)) continue;
+        addTarget(
+          targets,
+          makeRuntimeTarget({
+            backend,
+            kind: "docker",
+            source: "running",
+            key: image,
+            label: `${backend} running Docker (${image})`,
+            installed: true,
+            active: true,
+            dockerImage: image,
+          }),
+        );
+      }
+    }
+    return targets;
+  });
 
 const collectBundledTargets = (backend: EngineBackend): RuntimeTarget[] => {
   if (backend !== "vllm") return [];
@@ -436,89 +444,91 @@ const sortTargets = (targets: RuntimeTarget[]): RuntimeTarget[] => {
   );
 };
 
-export const getRuntimeTargets = async (
+export const getRuntimeTargets = (
   config: Config,
   runningProcess?: ProcessInfo | null,
-): Promise<RuntimeTarget[]> => {
-  const now = Date.now();
-  if (
-    targetsCache &&
-    targetsCache.expiresAt > now &&
-    targetsCache.configDataDirectory === config.data_dir
-  ) {
-    return targetsCache.value;
-  }
-  const backends: EngineBackend[] = ["vllm", "sglang", "llamacpp", "mlx"];
-  const targets: RuntimeTarget[] = [];
-  // Probe backends concurrently, but merge in the fixed backend order so
-  // addTarget's order-dependent dedupe/priority behavior is unchanged.
-  const backendTargetGroups = await Promise.all(
-    backends.map((backend) =>
-      backend === "llamacpp"
-        ? collectLlamacppTargets(config, runningProcess)
-        : collectPythonTargets(backend, config, runningProcess),
-    ),
+): Effect.Effect<RuntimeTarget[], EngineOperationError> =>
+  Effect.gen(function* () {
+    const now = Date.now();
+    if (
+      targetsCache &&
+      targetsCache.expiresAt > now &&
+      targetsCache.configDataDirectory === config.data_dir
+    ) {
+      return targetsCache.value;
+    }
+    const backends: EngineBackend[] = ["vllm", "sglang", "llamacpp", "mlx"];
+    const targets: RuntimeTarget[] = [];
+    const backendTargetGroups = yield* Effect.forEach(
+      backends,
+      (backend) =>
+        backend === "llamacpp"
+          ? collectLlamacppTargets(config, runningProcess)
+          : collectPythonTargets(backend, config, runningProcess),
+      { concurrency: "unbounded" },
+    );
+    for (const [index, backend] of backends.entries()) {
+      for (const target of backendTargetGroups[index] ?? []) addTarget(targets, target);
+      for (const target of yield* collectDockerTargets(backend)) addTarget(targets, target);
+      for (const target of collectBundledTargets(backend)) addTarget(targets, target);
+    }
+    const selectedTargets = sortTargets(withSelection(targets, config));
+    targetsCache = {
+      expiresAt: now + TARGET_CACHE_TTL_MS,
+      configDataDirectory: config.data_dir,
+      value: selectedTargets,
+    };
+    return selectedTargets;
+  });
+
+export const getRuntimeTarget = (
+  config: Config,
+  targetIdValue: string,
+  runningProcess?: ProcessInfo | null,
+): Effect.Effect<RuntimeTarget | null, EngineOperationError> =>
+  getRuntimeTargets(config, runningProcess).pipe(
+    Effect.map((targets) => targets.find((target) => target.id === targetIdValue) ?? null),
   );
-  backends.forEach((backend, index) => {
-    for (const target of backendTargetGroups[index] ?? []) addTarget(targets, target);
-    for (const target of collectDockerTargets(backend)) addTarget(targets, target);
-    for (const target of collectBundledTargets(backend)) addTarget(targets, target);
-  });
-  const selectedTargets = sortTargets(withSelection(targets, config));
-  targetsCache = {
-    expiresAt: now + TARGET_CACHE_TTL_MS,
-    configDataDirectory: config.data_dir,
-    value: selectedTargets,
-  };
-  return selectedTargets;
-};
 
-export const getRuntimeTarget = async (
+export const selectRuntimeTarget = (
   config: Config,
   targetIdValue: string,
   runningProcess?: ProcessInfo | null,
-): Promise<RuntimeTarget | null> => {
-  const targets = await getRuntimeTargets(config, runningProcess);
-  return targets.find((target) => target.id === targetIdValue) ?? null;
-};
-
-export const selectRuntimeTarget = async (
-  config: Config,
-  targetIdValue: string,
-  runningProcess?: ProcessInfo | null,
-): Promise<RuntimeTarget | null> => {
-  const target = await getRuntimeTarget(config, targetIdValue, runningProcess);
-  if (!target) return null;
-  const persisted = loadPersistedConfig(config.data_dir);
-  savePersistedConfig(config.data_dir, {
-    selected_runtime_target_ids: {
-      ...(persisted.selected_runtime_target_ids ?? {}),
-      [target.backend]: target.id,
-    },
+): Effect.Effect<RuntimeTarget | null, EngineOperationError> =>
+  Effect.gen(function* () {
+    const target = yield* getRuntimeTarget(config, targetIdValue, runningProcess);
+    if (!target) return null;
+    const persisted = loadPersistedConfig(config.data_dir);
+    savePersistedConfig(config.data_dir, {
+      selected_runtime_target_ids: {
+        ...(persisted.selected_runtime_target_ids ?? {}),
+        [target.backend]: target.id,
+      },
+    });
+    targetsCache = null;
+    return { ...target, active: true };
   });
-  targetsCache = null;
-  return { ...target, active: true };
-};
 
-export const getDefaultRuntimeTarget = async (
+export const getDefaultRuntimeTarget = (
   config: Config,
   backend: EngineBackend,
   runningProcess?: ProcessInfo | null,
-): Promise<RuntimeTarget | null> => {
-  const targets = (await getRuntimeTargets(config, runningProcess)).filter(
-    (target) => target.backend === backend,
+): Effect.Effect<RuntimeTarget | null, EngineOperationError> =>
+  getRuntimeTargets(config, runningProcess).pipe(
+    Effect.map((allTargets) => {
+      const targets = allTargets.filter((target) => target.backend === backend);
+      const newestInstalled = targets
+        .filter((target) => target.installed)
+        .sort((first, second) => compareVersions(second.version, first.version))[0];
+      return (
+        targets.find((target) => target.active) ??
+        newestInstalled ??
+        targets.find((target) => target.source === "configured") ??
+        targets[0] ??
+        null
+      );
+    }),
   );
-  const newestInstalled = targets
-    .filter((target) => target.installed)
-    .sort((first, second) => compareVersions(second.version, first.version))[0];
-  return (
-    targets.find((target) => target.active) ??
-    newestInstalled ??
-    targets.find((target) => target.source === "configured") ??
-    targets[0] ??
-    null
-  );
-};
 
 export const runtimeTargetToBackendInfo = (target: RuntimeTarget | null): RuntimeBackendInfo => ({
   installed: target?.installed ?? false,

@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { chmod, readFile, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
-import { Effect } from "effect";
+import { Effect, Schema } from "effect";
 import { resolveBinary } from "../../core/command";
 import { secureSpeechDirectory } from "./storage";
 
@@ -10,13 +10,12 @@ export const MAX_VOICE_UPLOAD_BYTES = 20 * 1024 * 1024;
 const MAX_NORMALIZED_BYTES = 1_100_000;
 const TRANSCODE_TIMEOUT_MS = 60_000;
 
-export class VoiceReferenceError extends Error {
-  public constructor(
-    public readonly status: number,
-    public readonly code: string,
-    message: string,
-  ) {
-    super(message);
+export class VoiceReferenceError extends Schema.TaggedErrorClass<VoiceReferenceError>()(
+  "VoiceReferenceError",
+  { status: Schema.Number, code: Schema.String, message: Schema.String },
+) {
+  constructor(status: number, code: string, message: string) {
+    super({ status, code, message });
   }
 }
 
@@ -25,6 +24,8 @@ export interface NormalizedVoiceReference {
   durationMs: number;
 }
 
+type VoiceInputFormat = "aiff" | "caf" | "flac" | "matroska" | "mov" | "mp3" | "ogg" | "wav";
+
 interface VoiceReferenceDependencies {
   ffmpegPath: () => string | null;
   transcode: (
@@ -32,10 +33,8 @@ interface VoiceReferenceDependencies {
     input: Uint8Array,
     format: VoiceInputFormat,
     output: string,
-  ) => Promise<void>;
+  ) => Effect.Effect<void, VoiceReferenceError>;
 }
-
-type VoiceInputFormat = "aiff" | "caf" | "flac" | "matroska" | "mov" | "mp3" | "ogg" | "wav";
 
 const FFMPEG_ARGS = [
   "-hide_banner",
@@ -58,8 +57,8 @@ const transcode = (
   input: Uint8Array,
   format: VoiceInputFormat,
   output: string,
-): Promise<void> => {
-  const conversion = Effect.callback<void, VoiceReferenceError>((resume) => {
+): Effect.Effect<void, VoiceReferenceError> =>
+  Effect.callback<void, VoiceReferenceError>((resume) => {
     const child = spawn(
       command,
       [
@@ -134,8 +133,6 @@ const transcode = (
         ),
     }),
   );
-  return Effect.runPromise(conversion);
-};
 
 const defaultDependencies: VoiceReferenceDependencies = {
   ffmpegPath: () => resolveBinary(process.env["LOCAL_STUDIO_FFMPEG_CLI"] ?? "ffmpeg"),
@@ -193,51 +190,91 @@ const wavDuration = (audio: Uint8Array): number => {
   return Math.round((dataBytes / byteRate) * 1000);
 };
 
-export const normalizeVoiceReference = async (
+const storageError = (error: unknown): VoiceReferenceError =>
+  new VoiceReferenceError(500, "voice_storage_failed", String(error));
+
+export const normalizeVoiceReference = (
   input: Uint8Array,
   dataDirectory: string,
   dependencies: VoiceReferenceDependencies = defaultDependencies,
-): Promise<NormalizedVoiceReference> => {
-  if (!input.length) {
-    throw new VoiceReferenceError(400, "voice_audio_invalid", "Voice reference is empty");
-  }
-  if (input.length > MAX_VOICE_UPLOAD_BYTES) {
-    throw new VoiceReferenceError(
-      413,
-      "voice_audio_too_large",
-      `Voice reference must be smaller than ${MAX_VOICE_UPLOAD_BYTES / 1024 / 1024} MB`,
-    );
-  }
-  const format = detectedFormat(input);
-  const ffmpeg = dependencies.ffmpegPath();
-  if (!ffmpeg) {
-    throw new VoiceReferenceError(
-      503,
-      "ffmpeg_missing",
-      "FFmpeg is required to create a voice profile",
-    );
-  }
-  const directory = join(dataDirectory, "runtime", "speech", "uploads");
-  const output = join(directory, `${randomUUID()}.wav`);
-  try {
-    secureSpeechDirectory(directory);
-    await writeFile(output, new Uint8Array(), { mode: 0o600, flag: "wx" });
-    await dependencies.transcode(ffmpeg, input, format, output);
-    await chmod(output, 0o600);
-    const audio = await readFile(output);
-    if (audio.length > MAX_NORMALIZED_BYTES) {
-      throw new VoiceReferenceError(400, "voice_audio_invalid", "Voice reference is too long");
-    }
-    const durationMs = wavDuration(audio);
-    if (durationMs < 6_000 || durationMs > 20_000) {
-      throw new VoiceReferenceError(
-        400,
-        "voice_duration_invalid",
-        "Voice reference must be 6 to 20 seconds",
+): Effect.Effect<NormalizedVoiceReference, VoiceReferenceError> =>
+  Effect.gen(function* () {
+    if (!input.length) {
+      return yield* Effect.fail(
+        new VoiceReferenceError(400, "voice_audio_invalid", "Voice reference is empty"),
       );
     }
-    return { audio, durationMs };
-  } finally {
-    await unlink(output).catch(() => undefined);
-  }
-};
+    if (input.length > MAX_VOICE_UPLOAD_BYTES) {
+      return yield* Effect.fail(
+        new VoiceReferenceError(
+          413,
+          "voice_audio_too_large",
+          `Voice reference must be smaller than ${MAX_VOICE_UPLOAD_BYTES / 1024 / 1024} MB`,
+        ),
+      );
+    }
+    const format = yield* Effect.try({
+      try: () => detectedFormat(input),
+      catch: (error) =>
+        error instanceof VoiceReferenceError
+          ? error
+          : new VoiceReferenceError(400, "voice_audio_invalid", String(error)),
+    });
+    const ffmpeg = dependencies.ffmpegPath();
+    if (!ffmpeg) {
+      return yield* Effect.fail(
+        new VoiceReferenceError(
+          503,
+          "ffmpeg_missing",
+          "FFmpeg is required to create a voice profile",
+        ),
+      );
+    }
+    const directory = join(dataDirectory, "runtime", "speech", "uploads");
+    const output = join(directory, `${randomUUID()}.wav`);
+    return yield* Effect.acquireUseRelease(
+      Effect.tryPromise({
+        try: async () => {
+          secureSpeechDirectory(directory);
+          await writeFile(output, new Uint8Array(), { mode: 0o600, flag: "wx" });
+          return output;
+        },
+        catch: storageError,
+      }),
+      (path) =>
+        Effect.gen(function* () {
+          yield* dependencies.transcode(ffmpeg, input, format, path);
+          const audio = yield* Effect.tryPromise({
+            try: async () => {
+              await chmod(path, 0o600);
+              return readFile(path);
+            },
+            catch: storageError,
+          });
+          if (audio.length > MAX_NORMALIZED_BYTES) {
+            return yield* Effect.fail(
+              new VoiceReferenceError(400, "voice_audio_invalid", "Voice reference is too long"),
+            );
+          }
+          const durationMs = yield* Effect.try({
+            try: () => wavDuration(audio),
+            catch: (error) =>
+              error instanceof VoiceReferenceError
+                ? error
+                : new VoiceReferenceError(400, "voice_audio_invalid", String(error)),
+          });
+          if (durationMs < 6_000 || durationMs > 20_000) {
+            return yield* Effect.fail(
+              new VoiceReferenceError(
+                400,
+                "voice_duration_invalid",
+                "Voice reference must be 6 to 20 seconds",
+              ),
+            );
+          }
+          return { audio, durationMs };
+        }),
+      (path) =>
+        Effect.tryPromise({ try: () => unlink(path), catch: () => undefined }).pipe(Effect.ignore),
+    );
+  });

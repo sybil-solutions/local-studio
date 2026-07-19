@@ -26,7 +26,7 @@ import {
   primaryLogPathFor,
   readFileTailBytes,
   tailFileLines,
-} from "./log-files";
+} from "../../src/core/log-files";
 
 const SECRET = "SYNTHETIC_TAIL_SECRET";
 const QUERY_SECRET = "SYNTHETIC_PROBE_SECRET";
@@ -125,7 +125,7 @@ const expectPersistedFilesRedacted = (path: string): void => {
 };
 
 const startLogMigration = (dataDirectory: string): ReturnType<typeof Bun.spawn> => {
-  const modulePath = join(import.meta.dir, "log-files.ts");
+  const modulePath = join(import.meta.dir, "..", "..", "src", "core", "log-files.ts");
   return Bun.spawn({
     cmd: [
       process.execPath,
@@ -193,10 +193,7 @@ test("fails closed when a large untrusted tail may start inside a multiline secr
 test("fails closed when bounded tails start after a split separator", () => {
   const path = join(directory, "large-split-separator.log");
   writeSparseLog(path, 9 * 1024 * 1024);
-  appendFileSync(
-    path,
-    ['"api_key"', ":", " ".repeat(140_000), `"${SECRET}"`].join("\n"),
-  );
+  appendFileSync(path, ['"api_key"', ":", " ".repeat(140_000), `"${SECRET}"`].join("\n"));
 
   const byteTail = readFileTailBytes(path, 1_024);
   const lineTail = tailFileLines(path, 5, 1_024).join("\n");

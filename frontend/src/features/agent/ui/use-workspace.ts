@@ -37,6 +37,10 @@ import {
 } from "@/features/agent/ui/use-workspace-effects";
 import type { ChatPaneHandle } from "@/features/agent/ui/chat-pane";
 import type { SessionDropPayload } from "@/features/agent/ui/pane-grid";
+import {
+  readDefaultAgentModel,
+  writeDefaultAgentModel,
+} from "@/features/agent/workspace/model-preference";
 
 export type WorkspaceHandles = {
   registerComputerAside: (element: HTMLElement | null) => void;
@@ -57,6 +61,7 @@ export type WorkspaceHandles = {
     payload: SessionDropPayload,
   ) => void;
   selectPaneModel: (paneId: PaneId, modelId: string) => void;
+  setDefaultModel: (modelId: string) => void;
   notifySessionsChanged: () => void;
   startComputerResize: (event: ReactMouseEvent<HTMLDivElement>) => void;
   initGitForActiveProject: () => Promise<void>;
@@ -205,7 +210,11 @@ export function useWorkspace({ ephemeral = false }: UseWorkspaceOptions = {}): U
       dispatch({ type: "setError", error: "" });
       void loadAgentModelsPayload()
         .then((models) => {
-          dispatch({ type: "setModels", models: models.models ?? [] });
+          dispatch({
+            type: "setModels",
+            models: models.models ?? [],
+            preferredModelId: readDefaultAgentModel(window.localStorage),
+          });
         })
         .catch((error) => {
           dispatch({
@@ -289,6 +298,10 @@ export function useWorkspace({ ephemeral = false }: UseWorkspaceOptions = {}): U
         }),
       selectPaneModel: (paneId: PaneId, modelId: string) =>
         dispatch({ type: "patchActiveTab", paneId, patch: { modelId } }),
+      setDefaultModel: (modelId: string) => {
+        writeDefaultAgentModel(ephemeral ? createMemoryStorage() : window.localStorage, modelId);
+        dispatch({ type: "setSelectedModel", modelId });
+      },
       notifySessionsChanged: () => dispatch({ type: "notifySessionsChanged" }),
       startComputerResize: (event: ReactMouseEvent<HTMLDivElement>) => {
         if (typeof window === "undefined") return;
@@ -339,7 +352,7 @@ export function useWorkspace({ ephemeral = false }: UseWorkspaceOptions = {}): U
         }
       },
     }),
-    [dispatch, getReplayQueue],
+    [dispatch, ephemeral, getReplayQueue],
   );
 
   useWorkspaceHydrationEffects({ dispatch, toolsRef, skipRestore: ephemeral });

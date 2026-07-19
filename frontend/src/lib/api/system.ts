@@ -58,10 +58,6 @@ export function createSystemApi(core: ApiCore) {
     evict: (): Promise<{ success: boolean; evicted_pid?: number }> =>
       core.request("/evict", { method: "POST" }),
 
-    // The controller long-polls up to `timeout` seconds; the client-side fetch
-    // timeout must outlive it or a real model load (>30s) surfaces as a
-    // spurious launch error. No retries: re-entering the long poll after a
-    // timeout would silently double the wait.
     waitReady: (timeout = 300): Promise<{ ready: boolean; elapsed: number; error?: string }> =>
       core.request(`/wait-ready?timeout=${timeout}`, {
         timeout: (timeout + 15) * 1000,
@@ -102,7 +98,6 @@ export function createSystemApi(core: ApiCore) {
 
     runBenchmark: (
       promptTokens = 1000,
-      maxTokens = 100,
     ): Promise<{
       success?: boolean;
       error?: string;
@@ -123,7 +118,7 @@ export function createSystemApi(core: ApiCore) {
         total_requests: number;
       };
     }> =>
-      core.request(`/benchmark?prompt_tokens=${promptTokens}&max_tokens=${maxTokens}`, {
+      core.request(`/benchmark?prompt_tokens=${promptTokens}`, {
         method: "POST",
       }),
 

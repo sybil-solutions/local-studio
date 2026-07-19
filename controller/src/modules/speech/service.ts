@@ -1,7 +1,7 @@
 import { constants, existsSync, statfsSync } from "node:fs";
 import { open, unlink } from "node:fs/promises";
 import { join, relative, resolve } from "node:path";
-import { Effect, Semaphore } from "effect";
+import { Effect, Fiber, Schema, Semaphore } from "effect";
 import {
   CHATTERBOX_BACKEND,
   CHATTERBOX_MODEL_REVISION,
@@ -48,35 +48,36 @@ const MAXIMUM_QUEUED_SYNTHESIS = 4;
 const MAXIMUM_PENDING_NORMALIZATION = 2;
 const MAXIMUM_TEXT_CHARACTERS = 4096;
 
-export class SpeechServiceError extends Error {
-  constructor(
-    readonly status: number,
-    readonly code: string,
-    message: string,
-  ) {
-    super(message);
-    this.name = "SpeechServiceError";
+export class SpeechServiceError extends Schema.TaggedErrorClass<SpeechServiceError>()(
+  "SpeechServiceError",
+  { status: Schema.Number, code: Schema.String, message: Schema.String },
+) {
+  constructor(status: number, code: string, message: string) {
+    super({ status, code, message });
   }
 }
 
 export interface SpeechEngineState {
-  getCurrentProcess(): Promise<ProcessInfo | null>;
-  getCurrentRecipe(): Promise<Recipe | null>;
+  getCurrentProcess(): Effect.Effect<ProcessInfo | null, unknown>;
+  getCurrentRecipe(): Effect.Effect<Recipe | null, unknown>;
 }
 
 export interface SpeechRuntime {
   readonly paths: { readonly pythonPath: string };
   getState(): ChatterboxRuntimeState;
-  startInstall(gpuUuid: string, options?: ChatterboxInstallOptions): ChatterboxRuntimeState;
-  waitForInstall(): Promise<ChatterboxRuntimeState>;
-  cancelInstall(): Promise<void>;
+  startInstall(
+    gpuUuid: string,
+    options?: ChatterboxInstallOptions,
+  ): Effect.Effect<ChatterboxRuntimeState, unknown>;
+  waitForInstall(): Effect.Effect<ChatterboxRuntimeState, unknown>;
+  cancelInstall(): Effect.Effect<void, unknown>;
 }
 
 export interface SpeechWorker {
-  synthesize(input: ChatterboxSynthesisInput): Promise<ChatterboxSynthesisResult>;
-  shutdown(): Promise<void>;
-  settleTermination(): Promise<void>;
-  terminate(): Promise<void>;
+  synthesize(input: ChatterboxSynthesisInput): Effect.Effect<ChatterboxSynthesisResult, unknown>;
+  shutdown(): Effect.Effect<void, unknown>;
+  settleTermination(): Effect.Effect<void, unknown>;
+  terminate(): Effect.Effect<void, unknown>;
 }
 
 const speechGpuLeaseBrand: unique symbol = Symbol("SpeechGpuLeaseGuard");
@@ -88,15 +89,19 @@ export interface SpeechGpuLeaseGuard {
 }
 
 export interface SpeechVoiceStore {
-  list(): VoiceProfile[];
+  list(): Effect.Effect<VoiceProfile[], unknown>;
   create(input: {
     name: string;
     durationMs: number;
     consent: string;
     audio: Uint8Array;
-  }): Promise<VoiceProfile>;
-  delete(id: string): Promise<boolean>;
-  withPlaintext<A>(id: string, use: (path: string) => Promise<A>): Promise<A>;
+  }): Effect.Effect<VoiceProfile, unknown>;
+  delete(id: string): Effect.Effect<boolean, unknown>;
+  withPlaintext<A, E, R>(
+    id: string,
+    use: (path: string) => Effect.Effect<A, E, R>,
+  ): Effect.Effect<A, E | unknown, R>;
+  close(): Effect.Effect<void, unknown>;
 }
 
 export interface SpeechDiskAvailability {
@@ -130,16 +135,20 @@ export interface SpeechServiceOptions {
   readonly databasePath: string;
   readonly engine: SpeechEngineState;
   readonly gpuLeaseRegistry: GpuLeaseRegistry;
-  readonly gpuInfo: () => GpuInfo[];
+  readonly gpuInfo: () => Effect.Effect<GpuInfo[], unknown>;
   readonly environment?: NodeJS.ProcessEnv | undefined;
   readonly runtime?: SpeechRuntime | undefined;
   readonly voiceStore?: SpeechVoiceStore | undefined;
   readonly workerFactory?: ((lease: SpeechGpuLeaseGuard) => SpeechWorker) | undefined;
   readonly normalizeReference?:
-    ((input: Uint8Array, dataDirectory: string) => Promise<NormalizedVoiceReference>) | undefined;
+    | ((
+        input: Uint8Array,
+        dataDirectory: string,
+      ) => Effect.Effect<NormalizedVoiceReference, VoiceReferenceError>)
+    | undefined;
   readonly diskAvailability?: (() => SpeechDiskAvailability | null) | undefined;
   readonly resolveBinary?: ((name: string) => string | null) | undefined;
-  readonly computeGpuUuids?: (() => Promise<readonly string[]>) | undefined;
+  readonly computeGpuUuids?: (() => Effect.Effect<readonly string[], unknown>) | undefined;
 }
 
 const canonicalUuid = (uuid: string): string => `GPU-${uuid.slice(4).toLowerCase()}`;
@@ -212,32 +221,61 @@ const validatedWave = (audio: Uint8Array): Uint8Array => {
   return bytes;
 };
 
-const readBoundedWave = async (path: string): Promise<Uint8Array> => {
-  const handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
-  try {
-    const stats = await handle.stat();
-    if (!stats.isFile() || stats.size > MAXIMUM_OUTPUT_BYTES) {
-      throw new SpeechServiceError(502, "speech_output_invalid", "Speech worker output is invalid");
-    }
-    const bytes = Buffer.alloc(Math.min(MAXIMUM_OUTPUT_BYTES + 1, stats.size + 1));
-    let offset = 0;
-    while (offset < bytes.length) {
-      const result = await handle.read(bytes, offset, bytes.length - offset, offset);
-      if (result.bytesRead === 0) break;
-      offset += result.bytesRead;
-    }
-    if (offset > MAXIMUM_OUTPUT_BYTES) {
-      throw new SpeechServiceError(502, "speech_output_invalid", "Speech worker output is invalid");
-    }
-    const completed = await handle.stat();
-    if (completed.size !== offset) {
-      throw new SpeechServiceError(502, "speech_output_invalid", "Speech worker output is invalid");
-    }
-    return validatedWave(Buffer.from(bytes.subarray(0, offset)));
-  } finally {
-    await handle.close();
-  }
-};
+const readBoundedWave = (path: string): Effect.Effect<Uint8Array, SpeechServiceError> =>
+  Effect.acquireUseRelease(
+    Effect.tryPromise({
+      try: () => open(path, constants.O_RDONLY | constants.O_NOFOLLOW),
+      catch: (error) => serviceError(error, 502, "speech_output_invalid"),
+    }),
+    (handle) =>
+      Effect.gen(function* () {
+        const stats = yield* Effect.tryPromise({
+          try: () => handle.stat(),
+          catch: (error) => serviceError(error, 502, "speech_output_invalid"),
+        });
+        if (!stats.isFile() || stats.size > MAXIMUM_OUTPUT_BYTES) {
+          throw new SpeechServiceError(
+            502,
+            "speech_output_invalid",
+            "Speech worker output is invalid",
+          );
+        }
+        const bytes = Buffer.alloc(Math.min(MAXIMUM_OUTPUT_BYTES + 1, stats.size + 1));
+        let offset = 0;
+        while (offset < bytes.length) {
+          const result = yield* Effect.tryPromise({
+            try: () => handle.read(bytes, offset, bytes.length - offset, offset),
+            catch: (error) => serviceError(error, 502, "speech_output_invalid"),
+          });
+          if (result.bytesRead === 0) break;
+          offset += result.bytesRead;
+        }
+        if (offset > MAXIMUM_OUTPUT_BYTES) {
+          throw new SpeechServiceError(
+            502,
+            "speech_output_invalid",
+            "Speech worker output is invalid",
+          );
+        }
+        const completed = yield* Effect.tryPromise({
+          try: () => handle.stat(),
+          catch: (error) => serviceError(error, 502, "speech_output_invalid"),
+        });
+        if (completed.size !== offset) {
+          throw new SpeechServiceError(
+            502,
+            "speech_output_invalid",
+            "Speech worker output is invalid",
+          );
+        }
+        return yield* Effect.try({
+          try: () => validatedWave(Buffer.from(bytes.subarray(0, offset))),
+          catch: (error) => serviceError(error, 502, "speech_output_invalid"),
+        });
+      }),
+    (handle) =>
+      Effect.tryPromise({ try: () => handle.close(), catch: () => undefined }).pipe(Effect.ignore),
+  );
 
 const validText = (text: string): string => {
   if (!text.trim())
@@ -264,10 +302,10 @@ export class SpeechService {
   private readonly normalizeReference: (
     input: Uint8Array,
     dataDirectory: string,
-  ) => Promise<NormalizedVoiceReference>;
+  ) => Effect.Effect<NormalizedVoiceReference, VoiceReferenceError>;
   private readonly getDiskAvailability: () => SpeechDiskAvailability | null;
   private readonly findBinary: (name: string) => string | null;
-  private readonly computeGpuUuids: () => Promise<readonly string[]>;
+  private readonly computeGpuUuids: () => Effect.Effect<readonly string[], unknown>;
   private readonly outputDirectory: string;
   private readonly activation = Semaphore.makeUnsafe(1);
   private readonly synthesis = Semaphore.makeUnsafe(1);
@@ -283,9 +321,11 @@ export class SpeechService {
   private pendingNormalization = 0;
   private acceptingSynthesis = true;
   private synthesisEpoch = 0;
-  private installTask: Promise<void> | null = null;
+  private installFiber: Fiber.Fiber<void, never> | null = null;
+  private installGeneration = 0;
   private cancellingInstall = false;
-  private stopTask: Promise<void> | null = null;
+  private readonly stopping = Semaphore.makeUnsafe(1);
+  private closed = false;
 
   constructor(private readonly options: SpeechServiceOptions) {
     this.environment = options.environment ?? process.env;
@@ -311,162 +351,145 @@ export class SpeechService {
       options.diskAvailability ??
       ((): SpeechDiskAvailability | null => diskAvailability(this.dataDirectory));
     this.findBinary = options.resolveBinary ?? resolveBinary;
-    this.computeGpuUuids = options.computeGpuUuids ?? queryNvidiaComputeGpuUuids;
+    this.computeGpuUuids =
+      options.computeGpuUuids ??
+      ((): Effect.Effect<readonly string[], unknown> => queryNvidiaComputeGpuUuids());
   }
 
-  getStatus(): SpeechStatus {
-    const target = this.statusTarget();
+  getStatus(): Effect.Effect<SpeechStatus, unknown> {
     const storage = this.getDiskAvailability();
-    return {
-      backend: CHATTERBOX_BACKEND,
-      package_version: CHATTERBOX_PACKAGE_VERSION,
-      model_revision: CHATTERBOX_MODEL_REVISION,
-      install: installationStatus(this.runtime.getState()),
-      worker: {
-        phase: this.workerPhase,
-        queue_depth: Math.max(0, this.pendingSynthesis - 1),
-        error: this.workerError,
-      },
-      gpu: target,
-      prerequisites: {
-        ffmpeg: Boolean(this.findBinary(this.environment["LOCAL_STUDIO_FFMPEG_CLI"] ?? "ffmpeg")),
-        python_311: Boolean(
-          existsSync(this.runtime.paths.pythonPath) ||
-          this.findBinary("python3.11") ||
-          this.findBinary("uv"),
-        ),
-        storage: {
-          available_bytes: storage?.availableBytes ?? null,
-          required_bytes: REQUIRED_INSTALL_BYTES,
-          ready: Boolean(storage && storage.availableBytes >= REQUIRED_INSTALL_BYTES),
+    return Effect.all([this.statusTarget(), this.voiceStore.list()]).pipe(
+      Effect.map(([target, voices]) => ({
+        backend: CHATTERBOX_BACKEND,
+        package_version: CHATTERBOX_PACKAGE_VERSION,
+        model_revision: CHATTERBOX_MODEL_REVISION,
+        install: installationStatus(this.runtime.getState()),
+        worker: {
+          phase: this.workerPhase,
+          queue_depth: Math.max(0, this.pendingSynthesis - 1),
+          error: this.workerError,
         },
-      },
-      voice_count: this.voiceStore.list().length,
-    };
-  }
-
-  install(input: SpeechInstallInput = {}): Promise<SpeechStatus> {
-    if (this.stopTask) return Promise.reject(stoppingError());
-    const state = this.runtime.getState();
-    if (state.status === "installing" || (state.status === "installed" && !input.repair)) {
-      return Promise.resolve(this.getStatus());
-    }
-    return Effect.runPromise(
-      this.activation.withPermit(
-        Effect.tryPromise({
-          try: async () => {
-            const current = this.runtime.getState();
-            if (
-              current.status === "installing" ||
-              (current.status === "installed" && !input.repair)
-            ) {
-              return this.getStatus();
-            }
-            if (input.repair && this.worker) {
-              await this.stopRuntime(false, true);
-            }
-            this.assertInstallCapacity();
-            const lease = await this.activateSpeech();
-            await this.assertLiveLease(lease);
-            let started: ChatterboxRuntimeState;
-            try {
-              started = this.startRuntimeInstall(lease, input);
-            } catch (error) {
-              if (!this.worker) await this.releaseSpeechLease();
-              throw error;
-            }
-            if (started.status !== "installing") {
-              if (!this.worker) await this.releaseSpeechLease();
-              if (started.status === "error") {
-                throw new SpeechServiceError(500, "speech_install_failed", started.message);
-              }
-              return this.getStatus();
-            }
-            this.startInstallCompletion(lease);
-            return this.getStatus();
+        gpu: target,
+        prerequisites: {
+          ffmpeg: Boolean(this.findBinary(this.environment["LOCAL_STUDIO_FFMPEG_CLI"] ?? "ffmpeg")),
+          python_311: Boolean(
+            existsSync(this.runtime.paths.pythonPath) ||
+              this.findBinary("python3.11") ||
+              this.findBinary("uv"),
+          ),
+          storage: {
+            available_bytes: storage?.availableBytes ?? null,
+            required_bytes: REQUIRED_INSTALL_BYTES,
+            ready: Boolean(storage && storage.availableBytes >= REQUIRED_INSTALL_BYTES),
           },
-          catch: (error) => serviceError(error, 500, "speech_install_failed"),
-        }),
-      ),
+        },
+        voice_count: voices.length,
+      })),
     );
   }
 
-  listVoices(): SpeechVoiceProfile[] {
+  install(input: SpeechInstallInput = {}): Effect.Effect<SpeechStatus, unknown> {
+    if (this.closed) return Effect.fail(stoppingError());
+    const service = this;
+    return this.activation.withPermit(
+      Effect.gen(function* () {
+        const current = service.runtime.getState();
+        if (current.status === "installing" || (current.status === "installed" && !input.repair)) {
+          return yield* service.getStatus();
+        }
+        if (input.repair && service.worker) {
+          yield* service.stopRuntime(false, true);
+        }
+        yield* Effect.try({
+          try: () => service.assertInstallCapacity(),
+          catch: (error) => serviceError(error),
+        });
+        const lease = yield* service.activateSpeech();
+        yield* service.assertLiveLease(lease);
+        const started = yield* service.startRuntimeInstall(lease, input).pipe(
+          Effect.mapError((error) => serviceError(error, 500, "speech_install_failed")),
+          Effect.tapError(() => (service.worker ? Effect.void : service.releaseSpeechLease())),
+        );
+        if (started.status !== "installing") {
+          if (!service.worker) yield* service.releaseSpeechLease();
+          if (started.status === "error") {
+            return yield* Effect.fail(
+              new SpeechServiceError(500, "speech_install_failed", started.message),
+            );
+          }
+          return yield* service.getStatus();
+        }
+        yield* service.startInstallCompletion(lease);
+        return yield* service.getStatus();
+      }),
+    );
+  }
+
+  listVoices(): Effect.Effect<SpeechVoiceProfile[], unknown> {
     return this.voiceStore.list();
   }
 
-  createVoice(input: SpeechVoiceInput): Promise<SpeechVoiceProfile> {
+  createVoice(input: SpeechVoiceInput): Effect.Effect<SpeechVoiceProfile, unknown> {
     if (this.pendingNormalization >= MAXIMUM_PENDING_NORMALIZATION) {
-      return Promise.reject(
+      return Effect.fail(
         new VoiceReferenceError(429, "voice_queue_full", "Voice normalization queue is full"),
       );
     }
     this.pendingNormalization += 1;
-    return Effect.runPromise(
-      this.voiceNormalization
-        .withPermit(
-          Effect.tryPromise({
-            try: async () => {
-              const normalized = await this.normalizeReference(input.audio, this.dataDirectory);
-              return this.voiceStore.create({
-                name: input.name,
-                consent: input.consent,
-                audio: normalized.audio,
-                durationMs: normalized.durationMs,
-              });
-            },
-            catch: (error) => error,
-          }),
-        )
-        .pipe(
-          Effect.ensuring(
-            Effect.sync(() => {
-              this.pendingNormalization -= 1;
+    return this.voiceNormalization
+      .withPermit(
+        this.normalizeReference(input.audio, this.dataDirectory).pipe(
+          Effect.flatMap((normalized) =>
+            this.voiceStore.create({
+              name: input.name,
+              consent: input.consent,
+              audio: normalized.audio,
+              durationMs: normalized.durationMs,
             }),
           ),
         ),
-    );
+      )
+      .pipe(
+        Effect.ensuring(
+          Effect.sync(() => {
+            this.pendingNormalization -= 1;
+          }),
+        ),
+      );
   }
 
-  deleteVoice(id: string): Promise<boolean> {
+  deleteVoice(id: string): Effect.Effect<boolean, unknown> {
     return this.voiceStore.delete(id);
   }
 
-  synthesize(input: SpeechSynthesisInput): Promise<SpeechSynthesisOutput> {
+  synthesize(input: SpeechSynthesisInput): Effect.Effect<SpeechSynthesisOutput, unknown> {
     if (!this.acceptingSynthesis) {
-      return Promise.reject(stoppingError());
+      return Effect.fail(stoppingError());
     }
     if (this.pendingSynthesis >= MAXIMUM_QUEUED_SYNTHESIS + 1) {
-      return Promise.reject(
-        new SpeechServiceError(429, "speech_queue_full", "Speech queue is full"),
-      );
+      return Effect.fail(new SpeechServiceError(429, "speech_queue_full", "Speech queue is full"));
     }
     this.pendingSynthesis += 1;
     const epoch = this.synthesisEpoch;
     const operation = this.synthesis.withPermit(
       Effect.suspend(() =>
         epoch === this.synthesisEpoch
-          ? Effect.tryPromise({
-              try: () => this.synthesizeOne(input, epoch),
-              catch: (error) => error,
-            })
+          ? this.synthesizeOne(input, epoch)
           : Effect.fail(stoppingError()),
       ),
     );
-    return Effect.runPromise(
-      operation.pipe(
-        Effect.ensuring(
-          Effect.sync(() => {
-            this.pendingSynthesis -= 1;
-          }),
-        ),
+    return operation.pipe(
+      Effect.ensuring(
+        Effect.sync(() => {
+          this.pendingSynthesis -= 1;
+        }),
       ),
     );
   }
 
-  stop(): Promise<void> {
-    if (this.installTask) {
-      return Promise.reject(
+  stop(): Effect.Effect<void, SpeechServiceError | unknown> {
+    if (this.installFiber) {
+      return Effect.fail(
         new SpeechServiceError(
           409,
           "speech_installing",
@@ -477,21 +500,24 @@ export class SpeechService {
     return this.stopRuntime(false, true);
   }
 
-  cancelInstall(): Promise<void> {
-    if (!this.installTask) return Promise.resolve();
+  cancelInstall(): Effect.Effect<void, unknown> {
+    if (!this.installFiber) return Effect.void;
     return this.stopRuntime(true, true);
   }
 
-  shutdown(): Promise<void> {
-    return this.stopRuntime(true, false);
+  shutdown(): Effect.Effect<void, unknown> {
+    if (this.closed) return Effect.void;
+    this.closed = true;
+    return this.stopRuntime(true, false).pipe(Effect.onExit(() => this.voiceStore.close()));
   }
 
-  private statusTarget(): SpeechGpuTarget | null {
-    try {
-      return this.resolveTarget(this.options.gpuInfo());
-    } catch {
-      return null;
-    }
+  private statusTarget(): Effect.Effect<SpeechGpuTarget | null> {
+    return this.options.gpuInfo().pipe(
+      Effect.flatMap((gpus) =>
+        Effect.try({ try: () => this.resolveTarget(gpus), catch: () => null }),
+      ),
+      Effect.catch(() => Effect.succeed(null)),
+    );
   }
 
   private resolveTarget(gpus: readonly GpuInfo[]): SpeechGpuTarget {
@@ -567,81 +593,108 @@ export class SpeechService {
     }
   }
 
-  private async activateSpeech(): Promise<SpeechGpuLeaseGuard> {
-    if (this.quarantined) {
-      throw new SpeechServiceError(
-        503,
-        "speech_worker_quarantined",
-        "Speech GPU remains reserved until the previous worker exits",
-      );
-    }
-    const gpus = this.options.gpuInfo();
-    const target = this.resolveTarget(gpus);
-    if (this.leasedGpuUuid && this.leasedGpuUuid !== target.uuid) {
-      throw new SpeechServiceError(
-        409,
-        "speech_gpu_changed",
-        "Stop the speech runtime before changing its GPU",
-      );
-    }
-    const existing = this.liveLease;
-    if (this.installTask && existing?.uuid === target.uuid) {
-      await this.assertLiveLease(existing);
-      return existing;
-    }
-    await this.assertComputeGpuIdle(target.uuid);
-    await this.reconcileModelLeases(gpus);
-    try {
-      await Effect.runPromise(this.options.gpuLeaseRegistry.claim("speech", [target.uuid]));
-    } catch (error) {
-      throw error instanceof GpuLeaseConflict
-        ? new SpeechServiceError(409, "speech_gpu_busy", "The speech GPU is in use by a model")
-        : serviceError(error, 409, "speech_gpu_unavailable");
-    }
-    this.leasedGpuUuid = target.uuid;
-    const lease = {
-      uuid: target.uuid,
-      generation: ++this.leaseGeneration,
-      [speechGpuLeaseBrand]: true,
-    } satisfies SpeechGpuLeaseGuard;
-    this.liveLease = lease;
-    try {
-      await this.assertComputeGpuIdle(target.uuid);
-    } catch (error) {
-      await this.releaseSpeechLease();
-      throw error;
-    }
-    return lease;
+  private activateSpeech(): Effect.Effect<SpeechGpuLeaseGuard, unknown> {
+    const service = this;
+    return Effect.gen(function* () {
+      if (service.quarantined) {
+        return yield* Effect.fail(
+          new SpeechServiceError(
+            503,
+            "speech_worker_quarantined",
+            "Speech GPU remains reserved until the previous worker exits",
+          ),
+        );
+      }
+      const gpus = yield* service.options
+        .gpuInfo()
+        .pipe(Effect.mapError((error) => serviceError(error, 503, "speech_gpu_telemetry_missing")));
+      const target = yield* Effect.try({
+        try: () => service.resolveTarget(gpus),
+        catch: (error) => serviceError(error),
+      });
+      if (service.leasedGpuUuid && service.leasedGpuUuid !== target.uuid) {
+        return yield* Effect.fail(
+          new SpeechServiceError(
+            409,
+            "speech_gpu_changed",
+            "Stop the speech runtime before changing its GPU",
+          ),
+        );
+      }
+      const existing = service.liveLease;
+      if (service.installFiber && existing?.uuid === target.uuid) {
+        yield* service.assertLiveLease(existing);
+        return existing;
+      }
+      yield* service.assertComputeGpuIdle(target.uuid);
+      yield* service.reconcileModelLeases(gpus);
+      yield* service.options.gpuLeaseRegistry
+        .claim("speech", [target.uuid])
+        .pipe(
+          Effect.mapError((error) =>
+            error instanceof GpuLeaseConflict
+              ? new SpeechServiceError(
+                  409,
+                  "speech_gpu_busy",
+                  "The speech GPU is in use by a model",
+                )
+              : serviceError(error, 409, "speech_gpu_unavailable"),
+          ),
+        );
+      service.leasedGpuUuid = target.uuid;
+      const lease = {
+        uuid: target.uuid,
+        generation: ++service.leaseGeneration,
+        [speechGpuLeaseBrand]: true,
+      } satisfies SpeechGpuLeaseGuard;
+      service.liveLease = lease;
+      yield* service
+        .assertComputeGpuIdle(target.uuid)
+        .pipe(Effect.tapError(() => service.releaseSpeechLease()));
+      return lease;
+    });
   }
 
-  private async assertComputeGpuIdle(uuid: string): Promise<void> {
-    let occupied: readonly string[];
-    try {
-      occupied = await this.computeGpuUuids();
-    } catch {
-      throw new SpeechServiceError(
-        503,
-        "speech_gpu_compute_query_failed",
-        "Could not verify speech GPU compute processes",
-      );
-    }
-    if (occupied.some((candidate) => candidate.toLowerCase() === uuid.toLowerCase())) {
-      throw new SpeechServiceError(
-        409,
-        "speech_gpu_compute_busy",
-        "The speech GPU already has an unmanaged compute process",
-      );
-    }
+  private assertComputeGpuIdle(uuid: string): Effect.Effect<void, SpeechServiceError> {
+    return this.computeGpuUuids().pipe(
+      Effect.mapError(
+        () =>
+          new SpeechServiceError(
+            503,
+            "speech_gpu_compute_query_failed",
+            "Could not verify speech GPU compute processes",
+          ),
+      ),
+      Effect.flatMap((occupied) =>
+        occupied.some((candidate) => candidate.toLowerCase() === uuid.toLowerCase())
+          ? Effect.fail(
+              new SpeechServiceError(
+                409,
+                "speech_gpu_compute_busy",
+                "The speech GPU already has an unmanaged compute process",
+              ),
+            )
+          : Effect.void,
+      ),
+    );
   }
 
-  private async assertLiveLease(lease: SpeechGpuLeaseGuard): Promise<void> {
-    this.assertRetainedLease(lease);
-    const leases = await Effect.runPromise(this.options.gpuLeaseRegistry.snapshot());
-    if (!leases.some((current) => current.owner === "speech" && current.uuid === lease.uuid)) {
-      this.liveLease = null;
-      this.leasedGpuUuid = null;
-      throw new SpeechServiceError(409, "speech_lease_expired", "Speech GPU lease expired");
-    }
+  private assertLiveLease(lease: SpeechGpuLeaseGuard): Effect.Effect<void, SpeechServiceError> {
+    return Effect.try({
+      try: () => this.assertRetainedLease(lease),
+      catch: (error) => serviceError(error, 409, "speech_lease_expired"),
+    }).pipe(
+      Effect.andThen(this.options.gpuLeaseRegistry.snapshot()),
+      Effect.flatMap((leases) => {
+        if (leases.some((current) => current.owner === "speech" && current.uuid === lease.uuid))
+          return Effect.void;
+        this.liveLease = null;
+        this.leasedGpuUuid = null;
+        return Effect.fail(
+          new SpeechServiceError(409, "speech_lease_expired", "Speech GPU lease expired"),
+        );
+      }),
+    );
   }
 
   private assertRetainedLease(lease: SpeechGpuLeaseGuard): void {
@@ -653,169 +706,213 @@ export class SpeechService {
   private startRuntimeInstall(
     lease: SpeechGpuLeaseGuard,
     options: SpeechInstallInput,
-  ): ChatterboxRuntimeState {
-    this.assertRetainedLease(lease);
-    return this.runtime.startInstall(lease.uuid, options);
+  ): Effect.Effect<ChatterboxRuntimeState, unknown> {
+    return Effect.try({
+      try: () => this.assertRetainedLease(lease),
+      catch: (error) => error,
+    }).pipe(Effect.andThen(this.runtime.startInstall(lease.uuid, options)));
   }
 
-  private async reconcileModelLeases(gpus: readonly GpuInfo[]): Promise<void> {
-    const process = await this.options.engine.getCurrentProcess();
-    if (!process) {
-      const leases = await Effect.runPromise(this.options.gpuLeaseRegistry.snapshot());
-      if (leases.some((lease) => lease.owner === "llm")) {
-        throw new SpeechServiceError(
-          409,
-          "model_gpu_transition",
-          "A model GPU transition is still in progress",
+  private reconcileModelLeases(gpus: readonly GpuInfo[]): Effect.Effect<void, unknown> {
+    const service = this;
+    return Effect.gen(function* () {
+      const process = yield* service.options.engine.getCurrentProcess();
+      if (!process) {
+        const leases = yield* service.options.gpuLeaseRegistry.snapshot();
+        if (leases.some((lease) => lease.owner === "llm")) {
+          return yield* Effect.fail(
+            new SpeechServiceError(
+              409,
+              "model_gpu_transition",
+              "A model GPU transition is still in progress",
+            ),
+          );
+        }
+        return;
+      }
+      const recipe = yield* service.options.engine.getCurrentRecipe();
+      const confirmed = yield* service.options.engine.getCurrentProcess();
+      if (!confirmed || confirmed.pid !== process.pid) {
+        return yield* Effect.fail(
+          new SpeechServiceError(
+            409,
+            "model_process_changed",
+            "The active model changed while speech was preparing",
+          ),
         );
       }
-      return;
-    }
-    const recipe = await this.options.engine.getCurrentRecipe();
-    const confirmed = await this.options.engine.getCurrentProcess();
-    if (!confirmed || confirmed.pid !== process.pid) {
-      throw new SpeechServiceError(
-        409,
-        "model_process_changed",
-        "The active model changed while speech was preparing",
-      );
-    }
-    if (!recipe) {
-      throw new SpeechServiceError(
-        409,
-        "model_process_unknown",
-        `Running model process ${process.pid} does not match a managed recipe`,
-      );
-    }
-    const resolution = resolveRecipeGpuUuids(recipe, gpus);
-    if (resolution.unresolvedTokens.length > 0) {
-      throw new SpeechServiceError(
-        409,
-        "model_gpu_unresolved",
-        `Model GPU selectors could not be resolved: ${resolution.unresolvedTokens.join(", ")}`,
-      );
-    }
-    if (resolution.uuids.length === 0) {
-      throw new SpeechServiceError(
-        503,
-        "model_gpu_telemetry_missing",
-        "Model GPU isolation could not be verified",
-      );
-    }
-    try {
-      await Effect.runPromise(this.options.gpuLeaseRegistry.replace("llm", resolution.uuids));
-    } catch (error) {
-      throw error instanceof GpuLeaseConflict
-        ? new SpeechServiceError(
+      if (!recipe) {
+        return yield* Effect.fail(
+          new SpeechServiceError(
             409,
-            "model_gpu_conflict",
-            "The active model overlaps the speech GPU",
-          )
-        : serviceError(error, 409, "model_gpu_unavailable");
-    }
+            "model_process_unknown",
+            `Running model process ${process.pid} does not match a managed recipe`,
+          ),
+        );
+      }
+      const resolution = resolveRecipeGpuUuids(recipe, gpus);
+      if (resolution.unresolvedTokens.length > 0) {
+        return yield* Effect.fail(
+          new SpeechServiceError(
+            409,
+            "model_gpu_unresolved",
+            `Model GPU selectors could not be resolved: ${resolution.unresolvedTokens.join(", ")}`,
+          ),
+        );
+      }
+      if (resolution.uuids.length === 0) {
+        return yield* Effect.fail(
+          new SpeechServiceError(
+            503,
+            "model_gpu_telemetry_missing",
+            "Model GPU isolation could not be verified",
+          ),
+        );
+      }
+      yield* service.options.gpuLeaseRegistry
+        .replace("llm", resolution.uuids)
+        .pipe(
+          Effect.mapError((error) =>
+            error instanceof GpuLeaseConflict
+              ? new SpeechServiceError(
+                  409,
+                  "model_gpu_conflict",
+                  "The active model overlaps the speech GPU",
+                )
+              : serviceError(error, 409, "model_gpu_unavailable"),
+          ),
+        );
+    });
   }
 
-  private ensureWorker(): Promise<SpeechWorker> {
-    return Effect.runPromise(
-      this.activation.withPermit(
-        Effect.tryPromise({
-          try: async () => {
-            const runtimeState = this.runtime.getState();
-            if (runtimeState.status === "installing") {
-              throw new SpeechServiceError(
-                409,
-                "speech_installing",
-                "Chatterbox Turbo is still installing",
-              );
-            }
-            if (runtimeState.status !== "installed") {
-              throw new SpeechServiceError(
-                409,
-                "speech_not_installed",
-                "Install Chatterbox Turbo before generating speech",
-              );
-            }
-            if (this.worker) {
-              if (this.quarantined) {
-                throw new SpeechServiceError(
-                  503,
-                  "speech_worker_quarantined",
-                  "Speech GPU remains reserved until the previous worker exits",
-                );
-              }
-              const lease = this.liveLease;
-              if (!lease)
-                throw new SpeechServiceError(
-                  409,
-                  "speech_lease_expired",
-                  "Speech GPU lease expired",
-                );
-              await this.assertLiveLease(lease);
-              return this.worker;
-            }
-            const lease = await this.activateSpeech();
-            await this.assertLiveLease(lease);
-            this.workerPhase = "starting";
-            this.workerError = null;
-            try {
-              this.assertRetainedLease(lease);
-              this.worker = this.workerFactory(lease);
-              return this.worker;
-            } catch (error) {
-              this.workerPhase = "failed";
-              this.workerError = error instanceof Error ? error.message : String(error);
-              await this.releaseSpeechLease();
-              throw error;
-            }
+  private ensureWorker(): Effect.Effect<SpeechWorker, unknown> {
+    const service = this;
+    return this.activation.withPermit(
+      Effect.gen(function* () {
+        const runtimeState = service.runtime.getState();
+        if (runtimeState.status === "installing") {
+          return yield* Effect.fail(
+            new SpeechServiceError(
+              409,
+              "speech_installing",
+              "Chatterbox Turbo is still installing",
+            ),
+          );
+        }
+        if (runtimeState.status !== "installed") {
+          return yield* Effect.fail(
+            new SpeechServiceError(
+              409,
+              "speech_not_installed",
+              "Install Chatterbox Turbo before generating speech",
+            ),
+          );
+        }
+        if (service.worker) {
+          if (service.quarantined) {
+            return yield* Effect.fail(
+              new SpeechServiceError(
+                503,
+                "speech_worker_quarantined",
+                "Speech GPU remains reserved until the previous worker exits",
+              ),
+            );
+          }
+          const lease = service.liveLease;
+          if (!lease)
+            return yield* Effect.fail(
+              new SpeechServiceError(409, "speech_lease_expired", "Speech GPU lease expired"),
+            );
+          yield* service.assertLiveLease(lease);
+          return service.worker;
+        }
+        const lease = yield* service.activateSpeech();
+        yield* service.assertLiveLease(lease);
+        service.workerPhase = "starting";
+        service.workerError = null;
+        return yield* Effect.try({
+          try: () => {
+            service.assertRetainedLease(lease);
+            service.worker = service.workerFactory(lease);
+            return service.worker;
           },
           catch: (error) => serviceError(error),
-        }).pipe(
-          Effect.tapError((error) =>
-            Effect.sync(() => {
-              if (this.worker) return;
-              this.workerPhase = "failed";
-              this.workerError = error.message;
-            }),
-          ),
+        }).pipe(Effect.tapError(() => service.releaseSpeechLease()));
+      }).pipe(
+        Effect.tapError((error) =>
+          Effect.sync(() => {
+            if (service.worker) return;
+            service.workerPhase = "failed";
+            service.workerError = serviceError(error).message;
+          }),
         ),
       ),
     );
   }
 
-  private async synthesizeOne(
+  private synthesizeOne(
     input: SpeechSynthesisInput,
     epoch: number,
-  ): Promise<SpeechSynthesisOutput> {
-    const text = validText(input.text);
-    return this.voiceStore.withPlaintext(input.voiceId, async (voicePath) => {
-      this.assertSynthesisEpoch(epoch);
-      const worker = await this.ensureWorker();
-      this.assertSynthesisEpoch(epoch);
-      this.workerPhase = "busy";
-      this.workerError = null;
-      let result: ChatterboxSynthesisResult;
-      try {
-        result = await worker.synthesize({ text, voicePath });
-      } catch (error) {
-        if (epoch !== this.synthesisEpoch) throw stoppingError();
-        this.quarantineWorker(error);
-        throw error;
-      }
-      let output: string | null = null;
-      try {
-        this.assertSynthesisEpoch(epoch);
-        output = outputChildPath(this.outputDirectory, result.path);
-        const audio = await readBoundedWave(output);
-        this.workerPhase = "ready";
-        return { audio, contentType: "audio/wav", sampleRate: result.sampleRate };
-      } catch (error) {
-        if (epoch !== this.synthesisEpoch) throw stoppingError();
-        this.quarantineWorker(error);
-        throw error;
-      } finally {
-        if (output) await unlink(output).catch(() => undefined);
-      }
+  ): Effect.Effect<SpeechSynthesisOutput, unknown> {
+    const text = Effect.try({
+      try: () => validText(input.text),
+      catch: (error) => error,
     });
+    return text.pipe(
+      Effect.flatMap((validatedText) =>
+        this.voiceStore.withPlaintext(input.voiceId, (voicePath) => {
+          const service = this;
+          let output: string | null = null;
+          return Effect.gen(function* () {
+            yield* Effect.try({
+              try: () => service.assertSynthesisEpoch(epoch),
+              catch: (error) => error,
+            });
+            const worker = yield* service.ensureWorker();
+            yield* Effect.try({
+              try: () => service.assertSynthesisEpoch(epoch),
+              catch: (error) => error,
+            });
+            service.workerPhase = "busy";
+            service.workerError = null;
+            const result = yield* worker
+              .synthesize({ text: validatedText, voicePath })
+              .pipe(
+                Effect.mapError((error) =>
+                  epoch !== service.synthesisEpoch ? stoppingError() : error,
+                ),
+              );
+            yield* Effect.try({
+              try: () => service.assertSynthesisEpoch(epoch),
+              catch: (error) => error,
+            });
+            output = yield* Effect.try({
+              try: () => outputChildPath(service.outputDirectory, result.path),
+              catch: (error) => error,
+            });
+            const audio = yield* readBoundedWave(output!);
+            service.workerPhase = "ready";
+            return { audio, contentType: "audio/wav" as const, sampleRate: result.sampleRate };
+          }).pipe(
+            Effect.tapError((error) =>
+              Effect.sync(() => {
+                if (epoch !== service.synthesisEpoch) return;
+                service.quarantineWorker(error);
+              }),
+            ),
+            Effect.ensuring(
+              Effect.suspend(() =>
+                output
+                  ? Effect.tryPromise({ try: () => unlink(output!), catch: () => undefined }).pipe(
+                      Effect.ignore,
+                    )
+                  : Effect.void,
+              ),
+            ),
+          );
+        }),
+      ),
+    );
   }
 
   private quarantineWorker(error: unknown): void {
@@ -828,98 +925,101 @@ export class SpeechService {
     if (!this.acceptingSynthesis || epoch !== this.synthesisEpoch) throw stoppingError();
   }
 
-  private async terminateWorker(worker: SpeechWorker): Promise<void> {
-    try {
-      await worker.terminate();
-    } catch (error) {
-      this.quarantineWorker(error);
-      throw new SpeechServiceError(
-        503,
-        "speech_worker_exit_unconfirmed",
-        "Speech GPU remains reserved because the worker exit was not confirmed",
-      );
-    }
-  }
-
-  private async stopWorker(): Promise<void> {
-    const activeWorker = this.worker;
-    if (activeWorker) await this.terminateWorker(activeWorker);
-    await Effect.runPromise(this.synthesis.withPermit(Effect.void));
-    const lateWorker = this.worker;
-    if (lateWorker && lateWorker !== activeWorker) await this.terminateWorker(lateWorker);
-    this.worker = null;
-    this.quarantined = false;
-    await this.releaseSpeechLease();
-    this.workerPhase = "stopped";
-    this.workerError = null;
-  }
-
-  private stopRuntime(cancelInstall: boolean, restoreSynthesis: boolean): Promise<void> {
-    const existing = this.stopTask;
-    if (existing) {
-      if (!restoreSynthesis) {
-        this.acceptingSynthesis = false;
-        this.synthesisEpoch += 1;
-        return Effect.runPromise(
-          Effect.tryPromise({ try: () => existing, catch: (error) => error }).pipe(
-            Effect.ensuring(
-              Effect.sync(() => {
-                this.acceptingSynthesis = false;
-              }),
-            ),
-          ),
+  private terminateWorker(worker: SpeechWorker): Effect.Effect<void, SpeechServiceError> {
+    return worker.terminate().pipe(
+      Effect.mapError((error) => {
+        this.quarantineWorker(error);
+        return new SpeechServiceError(
+          503,
+          "speech_worker_exit_unconfirmed",
+          "Speech GPU remains reserved because the worker exit was not confirmed",
         );
-      }
-      return existing;
-    }
-    this.acceptingSynthesis = false;
-    this.synthesisEpoch += 1;
-    if (cancelInstall) this.cancellingInstall = true;
-    const installation = this.installTask;
-    const operation = Effect.tryPromise({
-      try: async () => {
-        if (cancelInstall) {
-          await this.runtime.cancelInstall();
-          await installation;
-        }
-        await this.stopWorker();
-      },
-      catch: (error) =>
-        serviceError(error, 503, cancelInstall ? "speech_shutdown_failed" : "speech_stop_failed"),
-    }).pipe(
-      Effect.ensuring(
+      }),
+    );
+  }
+
+  private stopWorker(): Effect.Effect<void, unknown> {
+    const service = this;
+    return Effect.gen(function* () {
+      const activeWorker = service.worker;
+      if (activeWorker) yield* service.terminateWorker(activeWorker);
+      yield* service.synthesis.withPermit(Effect.void);
+      const lateWorker = service.worker;
+      if (lateWorker && lateWorker !== activeWorker) yield* service.terminateWorker(lateWorker);
+      service.worker = null;
+      service.quarantined = false;
+      yield* service.releaseSpeechLease();
+      service.workerPhase = "stopped";
+      service.workerError = null;
+    });
+  }
+
+  private stopRuntime(
+    cancelInstall: boolean,
+    restoreSynthesis: boolean,
+  ): Effect.Effect<void, unknown> {
+    const service = this;
+    return this.stopping
+      .withPermit(
+        Effect.gen(function* () {
+          service.acceptingSynthesis = false;
+          service.synthesisEpoch += 1;
+          if (cancelInstall) service.cancellingInstall = true;
+          let cancelFailure: SpeechServiceError | null = null;
+          if (cancelInstall) {
+            cancelFailure = yield* service.runtime.cancelInstall().pipe(
+              Effect.match({
+                onFailure: (error) => serviceError(error, 503, "speech_shutdown_failed"),
+                onSuccess: () => null,
+              }),
+            );
+            const fiber = service.installFiber;
+            if (fiber) yield* Fiber.join(fiber);
+          }
+          yield* service
+            .stopWorker()
+            .pipe(
+              Effect.mapError((error) =>
+                serviceError(
+                  error,
+                  503,
+                  cancelInstall ? "speech_shutdown_failed" : "speech_stop_failed",
+                ),
+              ),
+            );
+          if (cancelFailure) yield* Effect.fail(cancelFailure);
+        }),
+      )
+      .pipe(
+        Effect.ensuring(
+          Effect.sync(() => {
+            if (cancelInstall) service.cancellingInstall = false;
+            if (restoreSynthesis && !service.closed) service.acceptingSynthesis = true;
+          }),
+        ),
+      );
+  }
+
+  private releaseSpeechLease(): Effect.Effect<void, unknown> {
+    const uuid = this.leasedGpuUuid;
+    if (!uuid) return Effect.void;
+    return this.options.gpuLeaseRegistry.release("speech", [uuid]).pipe(
+      Effect.tap(() =>
         Effect.sync(() => {
-          if (cancelInstall) this.cancellingInstall = false;
-          if (restoreSynthesis) this.acceptingSynthesis = true;
+          this.leasedGpuUuid = null;
+          this.liveLease = null;
         }),
       ),
+      Effect.asVoid,
     );
-    const task = Effect.runPromise(operation);
-    this.stopTask = task;
-    task.then(
-      () => {
-        if (this.stopTask === task) this.stopTask = null;
-      },
-      () => {
-        if (this.stopTask === task) this.stopTask = null;
-      },
-    );
-    return task;
   }
 
-  private async releaseSpeechLease(): Promise<void> {
-    const uuid = this.leasedGpuUuid;
-    if (!uuid) return;
-    await Effect.runPromise(this.options.gpuLeaseRegistry.release("speech", [uuid]));
-    this.leasedGpuUuid = null;
-    this.liveLease = null;
-  }
-
-  private startInstallCompletion(lease: SpeechGpuLeaseGuard): void {
-    const completion = Effect.tryPromise({
-      try: () => this.runtime.waitForInstall(),
-      catch: (error) => serviceError(error, 500, "speech_install_failed"),
-    }).pipe(
+  private startInstallCompletion(lease: SpeechGpuLeaseGuard): Effect.Effect<void> {
+    const generation = ++this.installGeneration;
+    const service = this;
+    const completion = Effect.yieldNow.pipe(
+      Effect.andThen(this.runtime.waitForInstall()),
+      Effect.mapError((error) => serviceError(error, 500, "speech_install_failed")),
       Effect.flatMap((state) =>
         state.status === "installed" || state.status === "error"
           ? Effect.void
@@ -932,30 +1032,43 @@ export class SpeechService {
             ),
       ),
       Effect.ensuring(
-        this.activation
-          .withPermit(
-            Effect.tryPromise({
-              try: async () => {
-                if (this.liveLease === lease && !this.worker && !this.cancellingInstall) {
-                  await this.releaseSpeechLease();
-                }
-              },
-              catch: (error) => serviceError(error, 500, "speech_lease_release_failed"),
-            }),
-          )
-          .pipe(Effect.orDie),
+        this.activation.withPermit(
+          Effect.suspend(() =>
+            this.liveLease === lease && !this.worker && !this.cancellingInstall
+              ? this.releaseSpeechLease().pipe(
+                  Effect.catch((error) =>
+                    Effect.sync(() => {
+                      this.workerError = serviceError(
+                        error,
+                        500,
+                        "speech_lease_release_failed",
+                      ).message;
+                    }),
+                  ),
+                )
+              : Effect.void,
+          ),
+        ),
+      ),
+      Effect.catch((error) =>
+        Effect.sync(() => {
+          service.workerError = error instanceof Error ? error.message : String(error);
+        }),
+      ),
+      Effect.ensuring(
+        Effect.sync(() => {
+          if (service.installGeneration === generation) service.installFiber = null;
+        }),
       ),
     );
-    const task = Effect.runPromise(completion);
-    this.installTask = task;
-    task.then(
-      () => {
-        if (this.installTask === task) this.installTask = null;
-      },
-      (error: unknown) => {
-        if (this.installTask === task) this.installTask = null;
-        this.workerError = error instanceof Error ? error.message : String(error);
-      },
+    return completion.pipe(
+      Effect.forkDetach({ startImmediately: true }),
+      Effect.tap((fiber) =>
+        Effect.sync(() => {
+          this.installFiber = fiber;
+        }),
+      ),
+      Effect.asVoid,
     );
   }
 }

@@ -3,15 +3,18 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { format } from "node:util";
-import { installConsoleRedaction } from "./console-redaction";
-import { createLogger } from "./logger";
-import { createLogPayloadRedactor, redactLogLine, redactLogValue } from "./log-redaction";
+import { installConsoleRedaction } from "../../src/core/console-redaction";
+import { createLogger } from "../../src/core/logger";
+import {
+  createLogPayloadRedactor,
+  redactLogLine,
+  redactLogValue,
+} from "../../src/core/log-redaction";
 
 const SECRET = "SYNTHETIC_UNIT_REDACTION_SECRET";
 const QUERY_SECRET = "SYNTHETIC_PROBE_SECRET";
 const QUERY_PREFIX = "https://service.invalid/path?process.env.ACCESS_TOKEN=";
-const ENCODED_QUERY_PREFIX =
-  "https://service.invalid/path?process%2Eenv%2EACCESS_TOKEN=";
+const ENCODED_QUERY_PREFIX = "https://service.invalid/path?process%2Eenv%2EACCESS_TOKEN=";
 const NORMALIZED_SECRET_LABELS = [
   "process.env.ACCESS_TOKEN",
   "OPENAI__API__KEY",
@@ -259,17 +262,13 @@ test("fails closed on malformed percent query separator intent", () => {
 
 test("preserves later ordinary query parameters exactly", () => {
   expect(
-    redactLogLine(
-      `https://service.invalid/path?ACCESS_TOKEN=${QUERY_SECRET}&status=healthy`,
-    ),
+    redactLogLine(`https://service.invalid/path?ACCESS_TOKEN=${QUERY_SECRET}&status=healthy`),
   ).toBe("https://service.invalid/path?ACCESS_TOKEN=[redacted]&status=healthy");
   expect(
     redactLogLine(
       `https://service.invalid/path?mode=probe&ACCESS_TOKEN=${QUERY_SECRET}&status=healthy`,
     ),
-  ).toBe(
-    "https://service.invalid/path?mode=probe&ACCESS_TOKEN=[redacted]&status=healthy",
-  );
+  ).toBe("https://service.invalid/path?mode=probe&ACCESS_TOKEN=[redacted]&status=healthy");
 });
 
 test("preserves non-secret query continuations exactly", () => {
@@ -294,16 +293,15 @@ test("bounds encoded query key classification", () => {
   const input = `https://service.invalid/path?${key}=${QUERY_SECRET}`;
   const redactor = createLogPayloadRedactor();
   expect(redactLogLine(input)).toBe(input);
-  expect(
-    [redactor.redactLine(`https://service.invalid/path?${key}=`), redactor.redactLine(QUERY_SECRET)],
-  ).toEqual([`https://service.invalid/path?${key}=`, QUERY_SECRET]);
+  expect([
+    redactor.redactLine(`https://service.invalid/path?${key}=`),
+    redactor.redactLine(QUERY_SECRET),
+  ]).toEqual([`https://service.invalid/path?${key}=`, QUERY_SECRET]);
 });
 
 test("fails closed on malformed percent single-record query values", () => {
   expect(
-    redactLogLine(
-      `https://service.invalid/path?access%ZZtoken=${QUERY_SECRET}&status=healthy`,
-    ),
+    redactLogLine(`https://service.invalid/path?access%ZZtoken=${QUERY_SECRET}&status=healthy`),
   ).toBe("https://service.invalid/path?access%ZZtoken=[redacted]&status=healthy");
 });
 

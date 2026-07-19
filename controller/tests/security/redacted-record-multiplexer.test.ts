@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { createRedactedRecordMultiplexer } from "./redacted-record-multiplexer";
+import { createRedactedRecordMultiplexer } from "../../src/core/redacted-record-multiplexer";
 
 const SECRET = "SYNTHETIC_MULTIPLEXER_SECRET";
 
@@ -82,7 +82,5 @@ test("retains encoded query intent across chunks and flush", () => {
     },
   ]);
   expect(multiplexer.write("stdout", SECRET)).toEqual([]);
-  expect(multiplexer.flush()).toEqual([
-    { label: "stdout", value: "[redacted]", ending: "" },
-  ]);
+  expect(multiplexer.flush()).toEqual([{ label: "stdout", value: "[redacted]", ending: "" }]);
 });

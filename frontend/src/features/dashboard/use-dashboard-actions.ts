@@ -8,7 +8,7 @@ export function useDashboardActions() {
     if (benchmarking) return;
     setBenchmarking(true);
     try {
-      const result = await api.runBenchmark(1000, 100);
+      const result = await api.runBenchmark(1000);
       if (result.error) alert("Benchmark error: " + result.error);
     } catch (e) {
       alert("Benchmark failed: " + (e as Error).message);

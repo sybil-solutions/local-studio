@@ -1,4 +1,5 @@
 import { fetchLocal } from "../../http/local-fetch";
+import { Effect } from "effect";
 
 export type EngineScrape = {
   status: number;
@@ -8,40 +9,45 @@ export type EngineScrape = {
   hasSglang: boolean;
 };
 
-export const scrapeEngineMetrics = async (
-  port: number,
-  timeoutMs: number,
-): Promise<EngineScrape> => {
-  const scrape: EngineScrape = {
-    status: 0,
-    metrics: {},
-    modelName: null,
-    hasVllm: false,
-    hasSglang: false,
-  };
-  try {
-    const response = await fetchLocal(port, "/metrics", { timeoutMs });
-    scrape.status = response.status;
-    if (response.status !== 200) return scrape;
-    const text = await response.text();
-    for (const line of text.split("\n")) {
-      if (line.startsWith("#") || line.trim().length === 0) continue;
-      if (!scrape.hasVllm && line.startsWith("vllm:")) scrape.hasVllm = true;
-      if (!scrape.hasSglang && line.startsWith("sglang:")) scrape.hasSglang = true;
-      if (!scrape.modelName) {
-        const label = line.match(/(?:served_model_name|model_name)="([^"]+)"/);
-        if (label?.[1]) scrape.modelName = label[1];
-      }
-      const match = line.match(/^([a-zA-Z_:][a-zA-Z0-9_:]*)\{?[^}]*\}?\s+([\d.eE+-]+)$/);
-      if (!match?.[1] || !match[2]) continue;
-      const value = Number(match[2]);
-      if (Number.isFinite(value)) scrape.metrics[match[1]] = value;
+const emptyScrape = (): EngineScrape => ({
+  status: 0,
+  metrics: {},
+  modelName: null,
+  hasVllm: false,
+  hasSglang: false,
+});
+
+const parseEngineMetrics = (status: number, text: string): EngineScrape => {
+  const scrape = emptyScrape();
+  scrape.status = status;
+  if (status !== 200) return scrape;
+  for (const line of text.split("\n")) {
+    if (line.startsWith("#") || line.trim().length === 0) continue;
+    if (!scrape.hasVllm && line.startsWith("vllm:")) scrape.hasVllm = true;
+    if (!scrape.hasSglang && line.startsWith("sglang:")) scrape.hasSglang = true;
+    if (!scrape.modelName) {
+      const label = line.match(/(?:served_model_name|model_name)="([^"]+)"/);
+      if (label?.[1]) scrape.modelName = label[1];
     }
-    return scrape;
-  } catch {
-    return scrape;
+    const match = line.match(/^([a-zA-Z_:][a-zA-Z0-9_:]*)\{?[^}]*\}?\s+([\d.eE+-]+)$/);
+    if (!match?.[1] || !match[2]) continue;
+    const value = Number(match[2]);
+    if (Number.isFinite(value)) scrape.metrics[match[1]] = value;
   }
+  return scrape;
 };
+
+export const scrapeEngineMetrics = (port: number, timeoutMs: number): Effect.Effect<EngineScrape> =>
+  fetchLocal(port, "/metrics", { timeoutMs }).pipe(
+    Effect.flatMap((response) =>
+      response.status === 200
+        ? Effect.tryPromise(() => response.text()).pipe(
+            Effect.map((text) => parseEngineMetrics(response.status, text)),
+          )
+        : Effect.succeed(parseEngineMetrics(response.status, "")),
+    ),
+    Effect.catch(() => Effect.succeed(emptyScrape())),
+  );
 
 export type EngineMetricNames = {
   promptTokens: string[];

@@ -10,17 +10,14 @@ export type CommandResult = {
 };
 
 export type RunSyncOptions = {
-  /** Kill the command after this long. Omit for no timeout (matches bare `spawnSync`). */
   timeoutMs?: number | undefined;
 };
 
 export type SpawnDetachedOptions = {
   env?: NodeJS.ProcessEnv | undefined;
-  /** "pipe" exposes stdout/stderr for log capture; "ignore" discards them. */
   stdio: "pipe" | "ignore";
 };
 
-/** Minimal view of a detached child process; satisfied by `ChildProcess`. */
 export interface SpawnedProcess {
   readonly pid?: number | undefined;
   readonly exitCode: number | null;
@@ -31,12 +28,6 @@ export interface SpawnedProcess {
   unref(): void;
 }
 
-/**
- * Injectable process boundary. Production code takes a `ProcessRunner`
- * defaulting to `realProcessRunner`; tests substitute a scripted fake so spawn
- * logic (constructed argv, exit handling, output capture) is testable without
- * touching the host.
- */
 export interface ProcessRunner {
   runSync(command: string, args: string[], options?: RunSyncOptions): CommandResult;
   spawnDetached(command: string, args: string[], options: SpawnDetachedOptions): SpawnedProcess;
@@ -112,12 +103,6 @@ export const runCommandEffect = (
   timeoutMs = DEFAULT_TIMEOUT_MS,
 ): Effect.Effect<CommandResult> =>
   Effect.sync(() => realProcessRunner.runSync(command, args, { timeoutMs }));
-
-export const runCommand = (
-  command: string,
-  args: string[],
-  timeoutMs = DEFAULT_TIMEOUT_MS,
-): CommandResult => Effect.runSync(runCommandEffect(command, args, timeoutMs));
 
 export const runCommandAsyncEffect = (
   command: string,
@@ -228,12 +213,6 @@ export const runCommandAsyncEffect = (
       }),
     );
   });
-
-export const runCommandAsync = (
-  command: string,
-  args: string[],
-  options: AsyncCommandOptions,
-): Promise<AsyncCommandResult> => Effect.runPromise(runCommandAsyncEffect(command, args, options));
 
 const runtimeBinDirectory = (): string | null =>
   process.env["LOCAL_STUDIO_RUNTIME_BIN"] ??

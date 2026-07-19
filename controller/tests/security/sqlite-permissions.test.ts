@@ -11,7 +11,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { openSqliteDatabase } from "./sqlite";
+import { openSqliteDatabase } from "../../src/stores/sqlite";
 
 let directory: string;
 const modeOf = (path: string): number => statSync(path).mode & 0o777;

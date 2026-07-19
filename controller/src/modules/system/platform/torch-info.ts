@@ -1,9 +1,8 @@
 import type { RuntimeTorchBuildInfo } from "../../models/types";
 import type { CommandResult } from "../../../core/command";
-import { runCommandAsync } from "../../../core/command";
+import { runCommandAsyncEffect } from "../../../core/command";
+import { Effect } from "effect";
 
-// `import torch` can take several seconds. This kept the whole event loop frozen
-// when run synchronously; the async variant lets it run off the event loop.
 const TORCH_PROBE_TIMEOUT_MS = 3_000;
 const TORCH_PROBE_ARGS = [
   "-c",
@@ -16,7 +15,9 @@ const EMPTY_TORCH: RuntimeTorchBuildInfo = {
   torch_hip: null,
 };
 
-const parseTorchBuildOutput = (result: Pick<CommandResult, "status" | "stdout">): RuntimeTorchBuildInfo => {
+const parseTorchBuildOutput = (
+  result: Pick<CommandResult, "status" | "stdout">,
+): RuntimeTorchBuildInfo => {
   if (result.status !== 0) return { ...EMPTY_TORCH };
   try {
     const parsed = JSON.parse(result.stdout) as Partial<RuntimeTorchBuildInfo> | null;
@@ -30,7 +31,7 @@ const parseTorchBuildOutput = (result: Pick<CommandResult, "status" | "stdout">)
   }
 };
 
-export const getTorchBuildInfoAsync = async (python: string): Promise<RuntimeTorchBuildInfo> =>
-  parseTorchBuildOutput(
-    await runCommandAsync(python, TORCH_PROBE_ARGS, { timeoutMs: TORCH_PROBE_TIMEOUT_MS }),
+export const getTorchBuildInfo = (python: string): Effect.Effect<RuntimeTorchBuildInfo> =>
+  runCommandAsyncEffect(python, TORCH_PROBE_ARGS, { timeoutMs: TORCH_PROBE_TIMEOUT_MS }).pipe(
+    Effect.map(parseTorchBuildOutput),
   );

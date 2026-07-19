@@ -5,7 +5,12 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
 const SECRET = "SYNTHETIC_CHILD_RUNTIME_SECRET";
-const MODULE_URL = pathToFileURL(join(import.meta.dir, "console-redaction.ts")).href;
+const MODULE_URL = pathToFileURL(
+  join(import.meta.dir, "..", "..", "src", "core", "console-redaction.ts"),
+).href;
+const BOOTSTRAP_URL = pathToFileURL(
+  join(import.meta.dir, "..", "..", "src", "bootstrap.ts"),
+).href;
 let directory: string;
 
 beforeEach(() => {
@@ -78,9 +83,39 @@ const runChild = (mode: string): ReturnType<typeof Bun.spawnSync> => {
 const childOutput = (result: ReturnType<typeof Bun.spawnSync>): string =>
   `${result.stdout?.toString() ?? ""}${result.stderr?.toString() ?? ""}`;
 
+const runBootstrapChild = (): ReturnType<typeof Bun.spawnSync> => {
+  const preload = join(directory, "startup-warning-preload.ts");
+  const fixture = join(directory, "startup-warning.ts");
+  writeFileSync(
+    preload,
+    [
+      "const originalSet = Reflect.set;",
+      "let triggered = false;",
+      "Reflect.set = (target, key, value, receiver = target) => {",
+      "  const result = originalSet(target, key, value, receiver);",
+      '  if (!triggered && target === process && key === "emitWarning") {',
+      "    triggered = true;",
+      '    process.emitWarning(`Authorization: Bearer ${process.env["SYNTHETIC_RUNTIME_SECRET"]}`);',
+      "  }",
+      "  return result;",
+      "};",
+    ].join("\n"),
+  );
+  writeFileSync(fixture, `import ${JSON.stringify(BOOTSTRAP_URL)}; await Bun.sleep(25);`);
+  return Bun.spawnSync({
+    cmd: [process.execPath, "--preload", preload, fixture],
+    cwd: directory,
+    env: { ...process.env, SYNTHETIC_RUNTIME_SECRET: SECRET },
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+};
+
 const expectSafeOutput = (result: ReturnType<typeof Bun.spawnSync>): string => {
   const output = childOutput(result);
-  if (output.includes(SECRET)) throw new Error("Child emitted an unredacted synthetic value");
+  if (output.includes(SECRET)) {
+    throw new Error(output.replaceAll(SECRET, "[unredacted synthetic value]"));
+  }
   expect(output.includes("[redacted]")).toBe(true);
   return output;
 };
@@ -124,6 +159,12 @@ for (const mode of ["cross-chunk-key", "cross-chunk-separator", "output-error", 
 
 test("sanitizes native warnings before Bun reports them", () => {
   const result = runChild("warning");
+  expectSafeOutput(result);
+  expect(result.exitCode).toBe(0);
+});
+
+test("queues startup warnings until console redaction is installed", () => {
+  const result = runBootstrapChild();
   expectSafeOutput(result);
   expect(result.exitCode).toBe(0);
 });

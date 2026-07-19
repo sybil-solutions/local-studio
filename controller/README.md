@@ -24,9 +24,10 @@
 
 ```mermaid
 flowchart TB
-    Main["src/main.ts compatibility entry"] --> Bootstrap["src/bootstrap.ts"]
-    Bootstrap --> Lifecycle["src/controller-lifecycle.ts"]
-    Lifecycle --> App["src/http/app.ts"]
+    Main["src/main.ts"] --> Bootstrap["src/bootstrap.ts process hardening"]
+    Main --> Runtime["src/core/effect-runtime.ts"]
+    Runtime --> Context["src/app-context.ts"]
+    Context --> App["src/http/app.ts"]
     App --> Security["security middleware"]
     App --> Engines["modules/engines"]
     App --> Models["modules/models"]
@@ -98,9 +99,9 @@ Runtime-related environment variables include:
 
 ## Where To Look
 
-- `src/bootstrap.ts`: process hardening and server entry point.
-- `src/main.ts`: compatibility entry routed through the hardened bootstrap.
-- `src/controller-lifecycle.ts`: server lifecycle.
+- `src/bootstrap.ts`: process and console-output hardening loaded before startup.
+- `src/main.ts`: Effect-based server lifecycle and signal handling.
+- `src/core/effect-runtime.ts`: managed controller runtime.
 - `src/app-context.ts`: shared controller dependencies.
 - `src/http/app.ts`: HTTP app and route mounting.
 - `src/modules/engines/`: lifecycle, recipes, downloads, runtime process management, and runtime target discovery.

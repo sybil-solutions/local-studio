@@ -1,5 +1,6 @@
 import type { Logger } from "../../core/logger";
 import type { AppContext } from "../../app-context";
+import { Effect } from "effect";
 import type { Recipe } from "../models/types";
 const PROXY_SESSION_HEADER_NAMES = [
   "x-vllm-session-id",
@@ -24,11 +25,6 @@ export interface NonRunningModelWarnDetails {
   source: string | null;
 }
 
-/**
- * Rate-limits the "rejected chat request for non-running model" log line per
- * (recipe, requested model, active model, source) so a client that keeps
- * hammering the same rejected request doesn't flood the controller log.
- */
 export const createNonRunningModelWarner = (
   logger: Pick<Logger, "warn">,
 ): ((details: NonRunningModelWarnDetails) => void) => {
@@ -89,10 +85,6 @@ export const attachSessionUsage = (
 
   const promptTokens = usage?.["prompt_tokens"] ?? 0;
   const completionTokens = usage?.["completion_tokens"] ?? 0;
-  // Some vLLM builds nest reasoning tokens under completion_tokens_details
-  // rather than the flat field; match inference-accounting's readUsageTotals so
-  // the echoed session usage doesn't report 0 while accounting records the real
-  // value.
   const completionDetails = usage?.["completion_tokens_details"] as
     | Record<string, number>
     | undefined;
@@ -113,20 +105,19 @@ export const attachSessionUsage = (
 export const findRecipeByModel = (
   modelName: string,
   context: Pick<AppContext, "stores">,
-): Recipe | null => {
-  const lower = modelName.toLowerCase();
-  for (const recipe of context.stores.recipeStore.list()) {
-    const served = (recipe.served_model_name ?? "").toLowerCase();
-    if (served === lower || recipe.id.toLowerCase() === lower) {
-      return recipe;
-    }
-    const name = (recipe.name ?? "").toLowerCase();
-    if (name && name === lower) {
-      return recipe;
-    }
-  }
-  return null;
-};
+): Effect.Effect<Recipe | null, unknown> =>
+  context.stores.recipeStore.list().pipe(
+    Effect.map((recipes) => {
+      const lower = modelName.toLowerCase();
+      return (
+        recipes.find((recipe) => {
+          const served = (recipe.served_model_name ?? "").toLowerCase();
+          const name = (recipe.name ?? "").toLowerCase();
+          return served === lower || recipe.id.toLowerCase() === lower || (name && name === lower);
+        }) ?? null
+      );
+    }),
+  );
 
 export const ensureStreamingUsageIncluded = (payload: Record<string, unknown>): boolean => {
   if (!Boolean(payload["stream"])) return false;

@@ -1,4 +1,6 @@
+import { Effect, Schema } from "effect";
 import type { DownloadFileInfo } from "../types";
+import { EngineOperationError } from "../engine-spec";
 
 const escapeRegex = (value: string): string => value.replace(/[.+^${}()|[\]\\]/g, "\\$&");
 
@@ -15,37 +17,75 @@ const matchesAny = (value: string, patterns: string[]): boolean => {
   return patterns.some((pattern) => compileGlob(pattern).test(value));
 };
 
-/** Injectable HTTP boundary so download logic is testable without network access. */
-export type FetchLike = (url: string, init?: RequestInit) => Promise<Response>;
+export type FetchEffect = (
+  url: string,
+  init?: RequestInit,
+) => Effect.Effect<Response, EngineOperationError>;
 
-export type HuggingFaceModelInfo = {
-  modelId?: string;
-  sha?: string;
-  siblings?: Array<{ rfilename: string; size?: number | null }>;
-};
+const operationError = (operation: string, cause: unknown): EngineOperationError =>
+  new EngineOperationError({
+    operation,
+    message: cause instanceof Error ? cause.message : String(cause),
+  });
 
-export const fetchHuggingFaceModelInfo = async (
+export const fetchEffect: FetchEffect = (url, init) =>
+  Effect.tryPromise({
+    try: (signal) =>
+      fetch(url, {
+        ...init,
+        signal: init?.signal ? AbortSignal.any([signal, init.signal]) : signal,
+      }),
+    catch: (cause) => operationError("fetch-hugging-face", cause),
+  });
+
+const HuggingFaceModelInfoSchema = Schema.Struct({
+  modelId: Schema.optional(Schema.String),
+  sha: Schema.optional(Schema.String),
+  siblings: Schema.optional(
+    Schema.Array(
+      Schema.Struct({
+        rfilename: Schema.String,
+        size: Schema.optional(Schema.NullOr(Schema.Number)),
+      }),
+    ),
+  ),
+});
+
+export type HuggingFaceModelInfo = Schema.Schema.Type<typeof HuggingFaceModelInfoSchema>;
+
+export const fetchHuggingFaceModelInfo = (
   modelId: string,
   revision?: string | null,
   hfToken?: string | null,
-  fetchImpl: FetchLike = fetch,
-): Promise<HuggingFaceModelInfo> => {
-  const encodedModelId = modelId.split("/").map(encodeURIComponent).join("/");
-  const url = new URL(`https://huggingface.co/api/models/${encodedModelId}`);
-  if (revision) {
-    url.searchParams.set("revision", revision);
-  }
-  const headers: Record<string, string> = {};
-  if (hfToken) {
-    headers["Authorization"] = `Bearer ${hfToken}`;
-  }
-  const response = await fetchImpl(url.toString(), { headers });
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`Hugging Face API error: ${response.status} ${text}`);
-  }
-  return (await response.json()) as HuggingFaceModelInfo;
-};
+  fetchImpl: FetchEffect = fetchEffect,
+): Effect.Effect<HuggingFaceModelInfo, EngineOperationError> =>
+  Effect.gen(function* () {
+    const encodedModelId = modelId.split("/").map(encodeURIComponent).join("/");
+    const url = new URL(`https://huggingface.co/api/models/${encodedModelId}`);
+    if (revision) url.searchParams.set("revision", revision);
+    const headers: Record<string, string> = {};
+    if (hfToken) headers["Authorization"] = `Bearer ${hfToken}`;
+    const response = yield* fetchImpl(url.toString(), { headers });
+    if (!response.ok) {
+      const body = yield* Effect.tryPromise({
+        try: () => response.text(),
+        catch: (cause) => operationError("read-hugging-face-error", cause),
+      });
+      return yield* Effect.fail(
+        operationError(
+          "fetch-hugging-face-model-info",
+          `Hugging Face API error: ${response.status} ${body}`,
+        ),
+      );
+    }
+    const body = yield* Effect.tryPromise({
+      try: () => response.json(),
+      catch: (cause) => operationError("decode-hugging-face-model-info", cause),
+    });
+    return yield* Schema.decodeUnknownEffect(HuggingFaceModelInfoSchema)(body).pipe(
+      Effect.mapError((cause) => operationError("decode-hugging-face-model-info", cause)),
+    );
+  });
 
 export const buildHuggingFaceFileList = (
   modelInfo: HuggingFaceModelInfo,

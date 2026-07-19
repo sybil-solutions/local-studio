@@ -1,17 +1,23 @@
 import type { Database } from "bun:sqlite";
-import { openSqliteDatabase } from "../../stores/sqlite";
+import { Effect } from "effect";
+import {
+  makeDatabaseCloser,
+  openInitializedDatabase,
+  repositoryEffect,
+  type RepositoryError,
+} from "../../stores/sqlite";
 
-/** Stores best observed per-model and per-runtime-session throughput metrics. */
 export class PeakMetricsStore {
   private readonly db: Database;
+  private readonly closeDatabase: () => Effect.Effect<void, RepositoryError>;
 
   public constructor(dbPath: string) {
-    this.db = openSqliteDatabase(dbPath);
-    this.migrate();
+    this.db = openInitializedDatabase(dbPath, (db) => this.migrate(db));
+    this.closeDatabase = makeDatabaseCloser(this.db, "peak-metrics.close");
   }
 
-  private migrate(): void {
-    this.db.run(`
+  private migrate(db: Database): void {
+    db.run(`
       CREATE TABLE IF NOT EXISTS peak_metrics (
         model_id TEXT PRIMARY KEY,
         prefill_tps REAL,
@@ -22,7 +28,7 @@ export class PeakMetricsStore {
         updated_at TEXT DEFAULT CURRENT_TIMESTAMP
       )
     `);
-    this.db.run(`
+    db.run(`
       CREATE TABLE IF NOT EXISTS peak_metric_sessions (
         session_id TEXT PRIMARY KEY,
         model_id TEXT NOT NULL,
@@ -33,7 +39,7 @@ export class PeakMetricsStore {
         updated_at TEXT DEFAULT CURRENT_TIMESTAMP
       )
     `);
-    this.db.run(
+    db.run(
       `CREATE INDEX IF NOT EXISTS idx_peak_metric_sessions_model_updated ON peak_metric_sessions(model_id, updated_at)`,
     );
   }
@@ -43,6 +49,12 @@ export class PeakMetricsStore {
       .query("SELECT * FROM peak_metrics WHERE model_id = ?")
       .get(modelId) as Record<string, unknown> | null;
     return row ? { ...row } : null;
+  }
+
+  public getEffect(
+    modelId: string,
+  ): Effect.Effect<Record<string, unknown> | null, RepositoryError> {
+    return repositoryEffect("peak-metrics.get", () => this.get(modelId));
   }
 
   public updateIfBetter(
@@ -116,6 +128,17 @@ export class PeakMetricsStore {
     return this.get(modelId) ?? {};
   }
 
+  public updateIfBetterEffect(
+    modelId: string,
+    prefillTps?: number,
+    generationTps?: number,
+    ttftMs?: number,
+  ): Effect.Effect<Record<string, unknown>, RepositoryError> {
+    return repositoryEffect("peak-metrics.update-if-better", () =>
+      this.updateIfBetter(modelId, prefillTps, generationTps, ttftMs),
+    );
+  }
+
   public addTokens(modelId: string, tokens: number, requests = 1): void {
     this.db
       .query(
@@ -131,14 +154,16 @@ export class PeakMetricsStore {
       .run(modelId, tokens, requests);
   }
 
-  /**
-   * Snapshot best runtime speeds for one model load/session.
-   * @param sessionId Stable id for the current model runtime session.
-   * @param modelId Model served by the runtime session.
-   * @param prefillTps Observed prefill throughput.
-   * @param generationTps Observed decode throughput.
-   * @param ttftMs Observed time to first token.
-   */
+  public addTokensEffect(
+    modelId: string,
+    tokens: number,
+    requests = 1,
+  ): Effect.Effect<void, RepositoryError> {
+    return repositoryEffect("peak-metrics.add-tokens", () =>
+      this.addTokens(modelId, tokens, requests),
+    );
+  }
+
   public updateSessionPeak(
     sessionId: string,
     modelId: string,
@@ -185,6 +210,18 @@ export class PeakMetricsStore {
     return this.getSession(sessionId) ?? {};
   }
 
+  public updateSessionPeakEffect(
+    sessionId: string,
+    modelId: string,
+    prefillTps?: number,
+    generationTps?: number,
+    ttftMs?: number,
+  ): Effect.Effect<Record<string, unknown>, RepositoryError> {
+    return repositoryEffect("peak-metric-sessions.update", () =>
+      this.updateSessionPeak(sessionId, modelId, prefillTps, generationTps, ttftMs),
+    );
+  }
+
   public getSession(sessionId: string): Record<string, unknown> | null {
     const row = this.db
       .query("SELECT * FROM peak_metric_sessions WHERE session_id = ?")
@@ -192,10 +229,12 @@ export class PeakMetricsStore {
     return row ? { ...row } : null;
   }
 
-  /**
-   * Return the best recorded runtime session for a model.
-   * @param modelId Model id to inspect.
-   */
+  public getSessionEffect(
+    sessionId: string,
+  ): Effect.Effect<Record<string, unknown> | null, RepositoryError> {
+    return repositoryEffect("peak-metric-sessions.get", () => this.getSession(sessionId));
+  }
+
   public getBestSession(modelId: string): Record<string, unknown> | null {
     const row = this.db
       .query(
@@ -211,6 +250,12 @@ export class PeakMetricsStore {
       )
       .get(modelId) as Record<string, unknown> | null;
     return row ? { ...row } : null;
+  }
+
+  public getBestSessionEffect(
+    modelId: string,
+  ): Effect.Effect<Record<string, unknown> | null, RepositoryError> {
+    return repositoryEffect("peak-metric-sessions.get-best", () => this.getBestSession(modelId));
   }
 
   public getAll(): Array<Record<string, unknown>> {
@@ -229,19 +274,27 @@ export class PeakMetricsStore {
       };
     });
   }
-}
 
-/** Stores lifetime aggregate counters used by the usage dashboard. */
-export class LifetimeMetricsStore {
-  private readonly db: Database;
-
-  public constructor(dbPath: string) {
-    this.db = openSqliteDatabase(dbPath);
-    this.migrate();
+  public getAllEffect(): Effect.Effect<Array<Record<string, unknown>>, RepositoryError> {
+    return repositoryEffect("peak-metrics.get-all", () => this.getAll());
   }
 
-  private migrate(): void {
-    this.db.run(`
+  public close(): Effect.Effect<void, RepositoryError> {
+    return this.closeDatabase();
+  }
+}
+
+export class LifetimeMetricsStore {
+  private readonly db: Database;
+  private readonly closeDatabase: () => Effect.Effect<void, RepositoryError>;
+
+  public constructor(dbPath: string) {
+    this.db = openInitializedDatabase(dbPath, (db) => this.migrate(db));
+    this.closeDatabase = makeDatabaseCloser(this.db, "lifetime-metrics.close");
+  }
+
+  private migrate(db: Database): void {
+    db.run(`
       CREATE TABLE IF NOT EXISTS lifetime_metrics (
         key TEXT PRIMARY KEY,
         value REAL NOT NULL DEFAULT 0,
@@ -258,7 +311,7 @@ export class LifetimeMetricsStore {
       ["first_started_at", 0],
     ];
     for (const [key, value] of defaults) {
-      this.db
+      db
         .query("INSERT OR IGNORE INTO lifetime_metrics (key, value) VALUES (?, ?)")
         .run(key, value);
     }
@@ -271,12 +324,20 @@ export class LifetimeMetricsStore {
     return row?.value ?? 0;
   }
 
+  public getEffect(key: string): Effect.Effect<number, RepositoryError> {
+    return repositoryEffect("lifetime-metrics.get", () => this.get(key));
+  }
+
   public getAll(): Record<string, number> {
     const rows = this.db.query("SELECT key, value FROM lifetime_metrics").all() as Array<{
       key: string;
       value: number;
     }>;
     return Object.fromEntries(rows.map((row) => [row.key, row.value]));
+  }
+
+  public getAllEffect(): Effect.Effect<Record<string, number>, RepositoryError> {
+    return repositoryEffect("lifetime-metrics.get-all", () => this.getAll());
   }
 
   public set(key: string, value: number): void {
@@ -287,6 +348,10 @@ export class LifetimeMetricsStore {
        ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP`,
       )
       .run(key, value);
+  }
+
+  public setEffect(key: string, value: number): Effect.Effect<void, RepositoryError> {
+    return repositoryEffect("lifetime-metrics.set", () => this.set(key, value));
   }
 
   public increment(key: string, delta: number): number {
@@ -300,6 +365,10 @@ export class LifetimeMetricsStore {
     return this.get(key);
   }
 
+  public incrementEffect(key: string, delta: number): Effect.Effect<number, RepositoryError> {
+    return repositoryEffect("lifetime-metrics.increment", () => this.increment(key, delta));
+  }
+
   public ensureFirstStarted(): void {
     const current = this.get("first_started_at");
     if (current === 0) {
@@ -307,27 +376,37 @@ export class LifetimeMetricsStore {
     }
   }
 
-  public addEnergy(wattHours: number): void {
-    this.increment("energy_wh", wattHours);
+  public ensureFirstStartedEffect(): Effect.Effect<void, RepositoryError> {
+    return repositoryEffect("lifetime-metrics.ensure-first-started", () =>
+      this.ensureFirstStarted(),
+    );
   }
 
-  public addTokens(tokens: number): void {
-    this.increment("tokens_total", tokens);
+  public addEnergy(wattHours: number): Effect.Effect<void, RepositoryError> {
+    return this.incrementEffect("energy_wh", wattHours).pipe(Effect.asVoid);
   }
 
-  public addPromptTokens(tokens: number): void {
-    this.increment("prompt_tokens_total", tokens);
+  public addTokens(tokens: number): Effect.Effect<void, RepositoryError> {
+    return this.incrementEffect("tokens_total", tokens).pipe(Effect.asVoid);
   }
 
-  public addCompletionTokens(tokens: number): void {
-    this.increment("completion_tokens_total", tokens);
+  public addPromptTokens(tokens: number): Effect.Effect<void, RepositoryError> {
+    return this.incrementEffect("prompt_tokens_total", tokens).pipe(Effect.asVoid);
   }
 
-  public addUptime(seconds: number): void {
-    this.increment("uptime_seconds", seconds);
+  public addCompletionTokens(tokens: number): Effect.Effect<void, RepositoryError> {
+    return this.incrementEffect("completion_tokens_total", tokens).pipe(Effect.asVoid);
   }
 
-  public addRequests(count = 1): void {
-    this.increment("requests_total", count);
+  public addUptime(seconds: number): Effect.Effect<void, RepositoryError> {
+    return this.incrementEffect("uptime_seconds", seconds).pipe(Effect.asVoid);
+  }
+
+  public addRequests(count = 1): Effect.Effect<void, RepositoryError> {
+    return this.incrementEffect("requests_total", count).pipe(Effect.asVoid);
+  }
+
+  public close(): Effect.Effect<void, RepositoryError> {
+    return this.closeDatabase();
   }
 }

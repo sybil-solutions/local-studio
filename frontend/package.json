@@ -23,6 +23,7 @@
     "check:deadcode": "knip",
     "check:dupes": "jscpd src",
     "check:cleanup": "npm run check:deadcode && npm run check:dupes && npm run depcheck",
+    "check:release-workflow": "node --test scripts/release-workflow.test.mjs",
     "check:ui-structure": "node scripts/validate-ui-structure.mjs",
     "check:fix": "knip --fix",
     "desktop:build:main": "tsc -p desktop/tsconfig.json",
@@ -38,7 +39,7 @@
     "typecheck": "tsc --noEmit",
     "typecheck:desktop": "tsc -p desktop/tsconfig.json",
     "check:cycles": "madge --extensions ts,tsx --circular src",
-    "check:static": "npm run lint && npm run typecheck && npm run typecheck:desktop && npm run check:cycles && npm run check:ui-structure",
+    "check:static": "npm run lint && npm run typecheck && npm run typecheck:desktop && npm run check:cycles && npm run check:release-workflow && npm run check:ui-structure",
     "check:quality": "node scripts/validate-package-json.mjs && npm run check:static && npm run check:cleanup && npm run build",
     "precommit": "lint-staged --config .lintstagedrc.json && npm run typecheck"
   },

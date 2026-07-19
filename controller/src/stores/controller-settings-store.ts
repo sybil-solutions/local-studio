@@ -1,5 +1,11 @@
 import type { Database } from "bun:sqlite";
-import { openSqliteDatabase } from "./sqlite";
+import { Schema, type Effect } from "effect";
+import {
+  makeDatabaseCloser,
+  openInitializedDatabase,
+  repositoryEffect,
+  type RepositoryError,
+} from "./sqlite";
 
 const UI_PREFERENCES_KEY = "ui_preferences";
 
@@ -7,30 +13,19 @@ type SettingRow = {
   value: string;
 };
 
-const isStringRecord = (value: unknown): value is Record<string, string> => {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
-  return Object.values(value).every((entry) => typeof entry === "string");
-};
+const UiPreferencesSchema = Schema.Record(Schema.String, Schema.String);
 
-/**
- * Durable controller-owned settings stored in the controller SQLite database.
- */
 export class ControllerSettingsStore {
   private readonly db: Database;
+  private readonly closeDatabase: () => Effect.Effect<void, RepositoryError>;
 
-  /**
-   * @param dbPath - SQLite database path.
-   */
   public constructor(dbPath: string) {
-    this.db = openSqliteDatabase(dbPath);
-    this.ensureSchema();
+    this.db = openInitializedDatabase(dbPath, (db) => this.ensureSchema(db));
+    this.closeDatabase = makeDatabaseCloser(this.db, "controller-settings.close");
   }
 
-  /**
-   * Create controller settings storage.
-   */
-  private ensureSchema(): void {
-    this.db.run(`
+  private ensureSchema(db: Database): void {
+    db.run(`
       CREATE TABLE IF NOT EXISTS controller_settings (
         key TEXT PRIMARY KEY,
         value TEXT NOT NULL,
@@ -39,26 +34,24 @@ export class ControllerSettingsStore {
     `);
   }
 
-  /**
-   * Load renderer UI preferences backed by the controller database.
-   */
   public getUiPreferences(): Record<string, string> {
     const row = this.db
       .query("SELECT value FROM controller_settings WHERE key = ?")
       .get(UI_PREFERENCES_KEY) as SettingRow | null;
     if (!row) return {};
     try {
-      const parsed = JSON.parse(row.value) as unknown;
-      return isStringRecord(parsed) ? parsed : {};
+      return Schema.decodeUnknownSync(UiPreferencesSchema)(JSON.parse(row.value) as unknown);
     } catch {
       return {};
     }
   }
 
-  /**
-   * Replace the stored renderer UI preference snapshot.
-   * @param preferences - String-valued local UI preference map.
-   */
+  public getUiPreferencesEffect(): Effect.Effect<Record<string, string>, RepositoryError> {
+    return repositoryEffect("controller-settings.get-ui-preferences", () =>
+      this.getUiPreferences(),
+    );
+  }
+
   public saveUiPreferences(preferences: Record<string, string>): Record<string, string> {
     const clean = Object.fromEntries(
       Object.entries(preferences).filter(
@@ -74,5 +67,17 @@ export class ControllerSettingsStore {
       )
       .run(UI_PREFERENCES_KEY, JSON.stringify(clean));
     return clean;
+  }
+
+  public saveUiPreferencesEffect(
+    preferences: Record<string, string>,
+  ): Effect.Effect<Record<string, string>, RepositoryError> {
+    return repositoryEffect("controller-settings.save-ui-preferences", () =>
+      this.saveUiPreferences(preferences),
+    );
+  }
+
+  public close(): Effect.Effect<void, RepositoryError> {
+    return this.closeDatabase();
   }
 }

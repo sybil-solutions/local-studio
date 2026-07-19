@@ -1,12 +1,10 @@
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { Effect } from "effect";
 import type { Config } from "../../../config/env";
-import { resolveBinary, runCommandAsync } from "../../../core/command";
+import { resolveBinary, runCommandAsyncEffect } from "../../../core/command";
 import type { ProcessInfo, Recipe } from "../../models/types";
-import type {
-  RuntimeBackendInfo,
-  RuntimeUpgradeResult,
-} from "@local-studio/contracts/system";
+import type { RuntimeBackendInfo, RuntimeUpgradeResult } from "@local-studio/contracts/system";
 import {
   getDefaultReasoningParser,
   getDefaultToolCallParser,
@@ -39,18 +37,12 @@ import {
   resolvePythonFromScript,
 } from "../runtimes/runtime-target-probes";
 
-/**
- * Resolve the SGLang CLI binary from a Python path's venv.
- * SGLang's pip package installs a `sglang` console script alongside `python`.
- */
 const resolveSglangCliBinary = (pythonPath: string | null): string | null => {
   if (!pythonPath) return null;
   const sglangBin = join(dirname(pythonPath), "sglang");
   return existsSync(sglangBin) ? sglangBin : null;
 };
 
-/** Engine args shared by the native launch and the environment container:
- * everything after the `sglang serve` / `launch_server` head. */
 export const buildSglangRecipeArguments = (recipe: Recipe): string[] => {
   const command: string[] = ["--model-path", recipe.model_path];
   command.push("--host", recipe.host, "--port", String(recipe.port));
@@ -115,7 +107,6 @@ const buildSglangCommand = (recipe: Recipe, config: Config): string[] => {
   return [...head, ...buildSglangRecipeArguments(recipe)];
 };
 
-// `sglang[all]` (not bare `sglang`) so the server runtime, tokenizer, and all backends are pulled in.
 const managedPackageSpec = (version?: string | null): string =>
   normalizePackageSpec("sglang[all]", version);
 
@@ -130,7 +121,6 @@ const extractModelPath = (args: string[]): string | null => {
   if (flagModelPath) return flagModelPath;
   const flagModel = extractFlag(args, "--model");
   if (flagModel) return flagModel;
-  // sglang serve CLI may use positional model path
   return positionalAfterServe(args);
 };
 
@@ -138,37 +128,28 @@ const extractServedModelName = (args: string[]): string | null => {
   return extractFlag(args, "--served-model-name") ?? null;
 };
 
-/**
- * Probe the `sglang` CLI binary for version info.
- * Mirrors probeVllmBinaryRuntime but for SGLang.
- */
-const probeBinary = async (binary: string): Promise<BinaryProbeResult> => {
-  const version = await runCommandAsync(binary, ["--version"], { timeoutMs: 5_000 });
-  if (version.status === 0) {
-    // SGLang --version output format: "sglang, version X.Y.Z"
-    const match = version.stdout.match(/(\d+(?:\.\d+){1,3}[A-Za-z0-9.+-]*)/);
+const probeBinary = (binary: string): Effect.Effect<BinaryProbeResult> =>
+  Effect.gen(function* () {
+    const version = yield* runCommandAsyncEffect(binary, ["--version"], { timeoutMs: 5_000 });
+    if (version.status === 0) {
+      const match = version.stdout.match(/(\d+(?:\.\d+){1,3}[A-Za-z0-9.+-]*)/);
+      return {
+        installed: true,
+        version: match?.[1] ?? (version.stdout.trim() || null),
+        binaryPath: binary,
+      };
+    }
+    const help = yield* runCommandAsyncEffect(binary, ["--help"], { timeoutMs: 5_000 });
+    if (help.status === 0) {
+      return { installed: true, version: null, binaryPath: binary };
+    }
     return {
-      installed: true,
-      version: match?.[1] ?? (version.stdout.trim() || null),
-      binaryPath: binary,
-    };
-  }
-  // Fall back to --help check
-  const help = await runCommandAsync(binary, ["--help"], { timeoutMs: 5_000 });
-  if (help.status === 0) {
-    return {
-      installed: true,
+      installed: false,
       version: null,
       binaryPath: binary,
+      message: version.stderr || "sglang binary is not runnable",
     };
-  }
-  return {
-    installed: false,
-    version: null,
-    binaryPath: binary,
-    message: version.stderr || "sglang binary is not runnable",
-  };
-};
+  });
 
 const resolvePythonPath = (config: Config): string | null => {
   const explicit = process.env["LOCAL_STUDIO_SGLANG_PYTHON"]?.trim();
@@ -186,50 +167,51 @@ const resolvePythonPath = (config: Config): string | null => {
   return resolvePythonFromScript(resolveBinary("sglang"));
 };
 
-const getRuntimeInfoAsync = async (
+const getRuntimeInfo = (
   config: Config,
   runningProcess?: Pick<ProcessInfo, "pid" | "backend"> | null,
-): Promise<RuntimeBackendInfo> => {
-  const runningPython =
-    runningProcess?.backend === "sglang"
-      ? await probeRunningProcessPython(runningProcess.pid)
-      : null;
-  const probe = await probeBackendRuntime("sglang", [
-    runningPython,
-    config.sglang_python,
-    resolvePythonPath(config),
-    "python3",
-    "python",
-  ]);
-  return {
-    installed: probe.installed,
-    version: probe.version,
-    python_path: probe.pythonPath ?? config.sglang_python ?? null,
-    upgrade_command_available: probe.runnable,
-  };
-};
-
-const getConfigHelp = async (config: Config): Promise<ConfigHelpResult> => {
-  const sglangBin = resolveBinary("sglang");
-  if (sglangBin) {
-    const result = await runCommandAsync(sglangBin, ["serve", "--help"], { timeoutMs: 5_000 });
-    if (result.status === 0) {
-      return { config: result.stdout || null, error: null };
-    }
-  }
-
-  const python = resolvePythonPath(config) ?? "python3";
-  const result = await runCommandAsync(python, ["-m", "sglang.launch_server", "--help"], {
-    timeoutMs: 5_000,
-  });
-  if (result.status !== 0) {
+): Effect.Effect<RuntimeBackendInfo> =>
+  Effect.gen(function* () {
+    const runningPython =
+      runningProcess?.backend === "sglang"
+        ? yield* probeRunningProcessPython(runningProcess.pid)
+        : null;
+    const probe = yield* probeBackendRuntime("sglang", [
+      runningPython,
+      config.sglang_python,
+      resolvePythonPath(config),
+      "python3",
+      "python",
+    ]);
     return {
-      config: result.stdout || null,
-      error: result.stderr || "Failed to fetch SGLang config",
+      installed: probe.installed,
+      version: probe.version,
+      python_path: probe.pythonPath ?? config.sglang_python ?? null,
+      upgrade_command_available: probe.runnable,
     };
-  }
-  return { config: result.stdout || null, error: null };
-};
+  });
+
+const getConfigHelp = (config: Config): Effect.Effect<ConfigHelpResult> =>
+  Effect.gen(function* () {
+    const sglangBin = resolveBinary("sglang");
+    if (sglangBin) {
+      const result = yield* runCommandAsyncEffect(sglangBin, ["serve", "--help"], {
+        timeoutMs: 5_000,
+      });
+      if (result.status === 0) return { config: result.stdout || null, error: null };
+    }
+    const python = resolvePythonPath(config) ?? "python3";
+    const result = yield* runCommandAsyncEffect(python, ["-m", "sglang.launch_server", "--help"], {
+      timeoutMs: 5_000,
+    });
+    if (result.status !== 0) {
+      return {
+        config: result.stdout || null,
+        error: result.stderr || "Failed to fetch SGLang config",
+      };
+    }
+    return { config: result.stdout || null, error: null };
+  });
 
 export const getSglangRuntimePython = (
   config: Config,
@@ -238,7 +220,7 @@ export const getSglangRuntimePython = (
   return options.pythonPath?.trim() || config.sglang_python || resolveVllmPythonPath() || "python3";
 };
 
-const installSglang = async (options: InstallOptions): Promise<RuntimeUpgradeResult> => {
+const installSglang = (options: InstallOptions): Effect.Effect<RuntimeUpgradeResult> => {
   const envCommand = getUpgradeCommandFromEnvironment(SGLANG_UPGRADE_ENV);
   if (envCommand) return runEnvironmentUpgradeCommand(envCommand, options.onSpawn);
 
@@ -267,6 +249,6 @@ export const sglangSpec: EngineSpec = {
   extractServedModelName,
   probeBinary,
   resolvePythonPath,
-  getRuntimeInfo: getRuntimeInfoAsync,
+  getRuntimeInfo,
   getConfigHelp,
 };

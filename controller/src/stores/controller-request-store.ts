@@ -1,6 +1,14 @@
 import type { Database } from "bun:sqlite";
 import type { ControllerUsageStats } from "@local-studio/contracts/usage";
-import { openSqliteDatabase, toFiniteNumber, toNullableNumber } from "./sqlite";
+import type { Effect } from "effect";
+import {
+  openInitializedDatabase,
+  makeDatabaseCloser,
+  repositoryEffect,
+  type RepositoryError,
+  toFiniteNumber,
+  toNullableNumber,
+} from "./sqlite";
 
 export interface ControllerRequestRecord {
   method: string;
@@ -28,16 +36,19 @@ const PRUNE_EVERY_N_RECORDS = 1000;
 
 export class ControllerRequestStore {
   private readonly db: Database;
+  private readonly closeDatabase: () => Effect.Effect<void, RepositoryError>;
   private recordsSincePrune = 0;
 
   public constructor(dbPath: string) {
-    this.db = openSqliteDatabase(dbPath);
-    this.migrate();
-    this.prune();
+    this.db = openInitializedDatabase(dbPath, (db) => {
+      this.migrate(db);
+      this.prune(db);
+    });
+    this.closeDatabase = makeDatabaseCloser(this.db, "controller-requests.close");
   }
 
-  private migrate(): void {
-    this.db.run(`
+  private migrate(db: Database): void {
+    db.run(`
       CREATE TABLE IF NOT EXISTS controller_requests (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -51,16 +62,16 @@ export class ControllerRequestStore {
         user_agent TEXT
       )
     `);
-    this.db.run(
+    db.run(
       `CREATE INDEX IF NOT EXISTS idx_controller_requests_created_at ON controller_requests(created_at)`,
     );
-    this.db.run(
+    db.run(
       `CREATE INDEX IF NOT EXISTS idx_controller_requests_path_created ON controller_requests(path, created_at)`,
     );
-    this.db.run(
+    db.run(
       `CREATE INDEX IF NOT EXISTS idx_controller_requests_status_created ON controller_requests(status, created_at)`,
     );
-    this.db.run(`
+    db.run(`
       CREATE TABLE IF NOT EXISTS controller_function_calls (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -71,17 +82,17 @@ export class ControllerRequestStore {
         error_message TEXT
       )
     `);
-    this.db.run(
+    db.run(
       `CREATE INDEX IF NOT EXISTS idx_controller_function_calls_created_at ON controller_function_calls(created_at)`,
     );
-    this.db.run(
+    db.run(
       `CREATE INDEX IF NOT EXISTS idx_controller_function_calls_name_created ON controller_function_calls(function_name, created_at)`,
     );
   }
 
-  private prune(): void {
+  private prune(db: Database = this.db): void {
     for (const table of ["controller_requests", "controller_function_calls"]) {
-      this.db.run(
+      db.run(
         `DELETE FROM ${table} WHERE created_at < datetime('now', '-${RETENTION_DAYS} days')`,
       );
     }
@@ -115,6 +126,10 @@ export class ControllerRequestStore {
     this.maybePrune();
   }
 
+  public recordEffect(record: ControllerRequestRecord): Effect.Effect<void, RepositoryError> {
+    return repositoryEffect("controller-requests.record", () => this.record(record));
+  }
+
   public recordFunctionCall(record: ControllerFunctionCallRecord): void {
     const durationMs = Math.max(0, Math.round(record.duration_ms));
     this.db
@@ -131,6 +146,14 @@ export class ControllerRequestStore {
         record.error_message ?? null,
       );
     this.maybePrune();
+  }
+
+  public recordFunctionCallEffect(
+    record: ControllerFunctionCallRecord,
+  ): Effect.Effect<void, RepositoryError> {
+    return repositoryEffect("controller-function-calls.record", () =>
+      this.recordFunctionCall(record),
+    );
   }
 
   public aggregate(): ControllerUsageStats {
@@ -325,5 +348,13 @@ export class ControllerRequestStore {
         })),
       },
     };
+  }
+
+  public aggregateEffect(): Effect.Effect<ControllerUsageStats, RepositoryError> {
+    return repositoryEffect("controller-requests.aggregate", () => this.aggregate());
+  }
+
+  public close(): Effect.Effect<void, RepositoryError> {
+    return this.closeDatabase();
   }
 }

@@ -128,6 +128,7 @@ type WorkspacePaneProps = {
   view: WorkspacePaneView;
   models: AgentModel[];
   modelsLoading: boolean;
+  defaultModel: string;
   tools: ReturnType<typeof useTools>;
   dispatch: WorkspaceDispatch;
   handles: WorkspaceHandles;
@@ -140,6 +141,7 @@ function sameWorkspacePaneProps(previous: WorkspacePaneProps, next: WorkspacePan
     sameWorkspacePaneView(previous.view, next.view) &&
     previous.models === next.models &&
     previous.modelsLoading === next.modelsLoading &&
+    previous.defaultModel === next.defaultModel &&
     previous.tools.browser.enabled === next.tools.browser.enabled &&
     previous.tools.browser.backend === next.tools.browser.backend &&
     previous.tools.computer.canvasEnabled === next.tools.computer.canvasEnabled &&
@@ -161,6 +163,7 @@ const WorkspacePane = memo(function WorkspacePane({
   view,
   models,
   modelsLoading,
+  defaultModel,
   tools,
   dispatch,
   handles,
@@ -185,7 +188,9 @@ const WorkspacePane = memo(function WorkspacePane({
         <AgentModelPicker
           models={models}
           selectedModel={view.modelId}
+          defaultModel={defaultModel}
           onSelect={(modelId) => handles.selectPaneModel(view.paneId, modelId)}
+          onSetDefault={handles.setDefaultModel}
           loading={modelsLoading}
         />
       }
@@ -242,6 +247,7 @@ export function renderWorkspacePane({
       view={view}
       models={state.models}
       modelsLoading={state.modelsLoading}
+      defaultModel={state.selectedModel}
       tools={tools}
       dispatch={dispatch}
       handles={handles}

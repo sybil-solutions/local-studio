@@ -117,8 +117,7 @@ const fatalMessage = (reason: unknown): string => {
   return redactLogPayload(`Controller fatal error: ${diagnostic}`);
 };
 
-const installProcessRedaction = (): (() => void) => {
-  const originalEmitWarning: unknown = Reflect.get(process, "emitWarning");
+const installProcessRedaction = (originalEmitWarning: unknown): (() => void) => {
   const installedEmitWarning = (...values: unknown[]): unknown =>
     typeof originalEmitWarning === "function"
       ? Reflect.apply(originalEmitWarning, process, values.map(sanitizedWarning))
@@ -183,8 +182,10 @@ const installStreamRedaction = (
   return { flush, restore };
 };
 
-export const installConsoleRedaction = (): (() => void) => {
-  const restoreProcess = installProcessRedaction();
+export const installConsoleRedaction = (
+  originalEmitWarning: unknown = Reflect.get(process, "emitWarning"),
+): (() => void) => {
+  const restoreProcess = installProcessRedaction(originalEmitWarning);
   const multiplexer = createRedactedRecordMultiplexer<ConsoleOutput>();
   let bypassDepth = 0;
   const invoke = (operation: () => unknown): unknown => {

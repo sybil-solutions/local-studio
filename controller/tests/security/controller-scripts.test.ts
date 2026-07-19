@@ -8,6 +8,7 @@ import {
   readFileSync,
   realpathSync,
   rmSync,
+  statSync,
   symlinkSync,
   writeFileSync,
 } from "node:fs";
@@ -167,6 +168,8 @@ const mutationLog = (): string =>
   `${existsSync(systemctlLog) ? readFileSync(systemctlLog, "utf8") : ""}\n${
     existsSync(dockerLog) ? readFileSync(dockerLog, "utf8") : ""
   }`;
+
+const modeOf = (path: string): number => statSync(path).mode & 0o777;
 
 const expectNoControllerMutation = (launchMarker: string): void => {
   const mutations = mutationLog();
@@ -388,10 +391,7 @@ beforeEach(() => {
     join(bin, "ss"),
     'listeners=""; if [ -n "${SYNTHETIC_DEPLOY_LAUNCH_MARKER:-}" ] && [ -f "$SYNTHETIC_DEPLOY_LAUNCH_MARKER" ] && [ -n "${SYNTHETIC_STARTED_LISTENER_PIDS:-}" ]; then listeners="$SYNTHETIC_STARTED_LISTENER_PIDS"; elif [ -n "${SYNTHETIC_LISTENER_PID_FILE:-}" ] && [ -f "$SYNTHETIC_LISTENER_PID_FILE" ]; then listeners=$(cat "$SYNTHETIC_LISTENER_PID_FILE"); fi; for pid in $listeners; do [ ! -f "$LOCAL_STUDIO_PROCESS_PROC_ROOT/$pid/alive" ] || printf "LISTEN 0 128 127.0.0.1:8080 0.0.0.0:* pid=%s\\n" "$pid"; done',
   );
-  writeExecutable(
-    join(bin, "pkill"),
-    'printf "pkill %s\\n" "$*" >> "$SYNTHETIC_SIGNAL_LOG"',
-  );
+  writeExecutable(join(bin, "pkill"), 'printf "pkill %s\\n" "$*" >> "$SYNTHETIC_SIGNAL_LOG"');
   writeExecutable(
     join(bin, "process-pgrep"),
     'for pid in ${SYNTHETIC_PROCESS_PIDS:-}; do [ ! -f "$LOCAL_STUDIO_PROCESS_PROC_ROOT/$pid/alive" ] || printf "%s\\n" "$pid"; done',
@@ -448,6 +448,12 @@ describe("controller script trust boundaries", () => {
     expect(result.exitCode).toBe(0);
     expect(syntheticSignals()).toBe("");
     expect(syntheticProcessAlive(pid)).toBe(true);
+    expect(modeOf(install)).toBe(0o700);
+    expect(modeOf(join(install, ".env"))).toBe(0o600);
+    expect(modeOf(join(install, "data"))).toBe(0o700);
+    expect(modeOf(join(install, "data", "controller.log"))).toBe(0o600);
+    expect(modeOf(join(install, "data", "logs"))).toBe(0o700);
+    expect(modeOf(join(install, "data", "logs", "vllm_controller.log"))).toBe(0o600);
   }, 15_000);
 
   test("non-systemd install replaces only a verified same-install controller", () => {
@@ -505,11 +511,7 @@ describe("controller script trust boundaries", () => {
     });
     writeFileSync(join(fixture, "daemon.pid"), `${pid}\n`);
 
-    const result = runDaemon(
-      DAEMON,
-      "stop",
-      syntheticProcessEnvironment([pid], [pid]),
-    );
+    const result = runDaemon(DAEMON, "stop", syntheticProcessEnvironment([pid], [pid]));
 
     expect(result.exitCode).toBe(1);
     expect(syntheticSignals()).toBe("");
@@ -526,11 +528,7 @@ describe("controller script trust boundaries", () => {
     });
     writeFileSync(join(fixture, "daemon.pid"), `${pid}|424242\n`);
 
-    const result = runDaemon(
-      DAEMON,
-      "stop",
-      syntheticProcessEnvironment([pid], [pid]),
-    );
+    const result = runDaemon(DAEMON, "stop", syntheticProcessEnvironment([pid], [pid]));
 
     expect(result.exitCode).toBe(0);
     expect(syntheticSignals()).toBe(`-TERM ${pid}\n`);
@@ -549,11 +547,7 @@ describe("controller script trust boundaries", () => {
     });
     writeFileSync(join(fixture, "daemon.pid"), `${pid}|424242\n`);
 
-    const result = runDaemon(
-      DAEMON,
-      "stop",
-      syntheticProcessEnvironment([pid], [pid]),
-    );
+    const result = runDaemon(DAEMON, "stop", syntheticProcessEnvironment([pid], [pid]));
 
     expect(result.exitCode).toBe(1);
     expect(syntheticSignals()).toBe("");
@@ -561,9 +555,7 @@ describe("controller script trust boundaries", () => {
   });
 
   test("daemon stores the verified start identity of a launched controller", () => {
-    writeSyntheticDaemonLauncher(
-      'printf "%s\\n" "$pid" > "$SYNTHETIC_LISTENER_PID_FILE"',
-    );
+    writeSyntheticDaemonLauncher('printf "%s\\n" "$pid" > "$SYNTHETIC_LISTENER_PID_FILE"');
 
     const result = runDaemon(DAEMON, "start", syntheticProcessEnvironment([]));
     const record = readFileSync(join(fixture, "daemon.pid"), "utf8").trim();
@@ -732,6 +724,15 @@ describe("controller script trust boundaries", () => {
     expect(readFileSync(systemctlLog, "utf8")).not.toContain(
       "restart local-studio-controller-8080.service",
     );
+    expect(
+      readFileSync(join(serviceRoot, "local-studio-controller-18081.service"), "utf8"),
+    ).toContain("UMask=0077");
+    expect(
+      readFileSync(
+        join(serviceRoot, "vllm-studio-controller.service.d", "10-private-output.conf"),
+        "utf8",
+      ),
+    ).toContain("UMask=0077");
   }, 15_000);
 
   test("refuses to overwrite a foreign unit for the requested port", () => {
@@ -819,7 +820,6 @@ describe("controller script trust boundaries", () => {
 });
 
 describe("controller listener ownership", () => {
-
   test("installer rejects a foreign systemd listener before trusting a healthy endpoint", () => {
     const foreignPid = 41010;
     const healthMarker = join(fixture, "installer-health-requested");

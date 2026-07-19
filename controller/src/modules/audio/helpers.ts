@@ -1,7 +1,8 @@
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
+import { Effect, Schema } from "effect";
 import type { AppContext } from "../../app-context";
-import { resolveBinary, runCommandAsync } from "../../core/command";
+import { resolveBinary, runCommandAsyncEffect } from "../../core/command";
 import { SttIntegrationError } from "../../services/stt";
 import type { SttMode } from "../../services/stt";
 import { TtsIntegrationError } from "../../services/tts";
@@ -23,21 +24,7 @@ export const parseMode = (value: FormDataEntryValue | null): SttMode => {
   throw new SttIntegrationError(400, "invalid_mode", "mode must be strict or best_effort");
 };
 
-export const parseJsonMode = (value: unknown): TtsMode => {
-  if (typeof value !== "string" || value.trim().length === 0) {
-    return AUDIO_DEFAULT_MODE;
-  }
-  const normalized = value.trim().toLowerCase();
-  if (normalized === "strict" || normalized === "best_effort") {
-    return normalized;
-  }
-  throw new TtsIntegrationError(400, "invalid_mode", "mode must be strict or best_effort");
-};
-
 export const looksLikeWav = (bytes: Uint8Array): boolean => {
-  // Verify the RIFF/WAVE header rather than trusting a client-supplied MIME
-  // type: a client sending arbitrary bytes as audio/wav would otherwise skip
-  // transcode and feed non-WAV data straight to the STT engine.
   if (bytes.length < 12) return false;
   const riff = String.fromCharCode(...bytes.slice(0, 4));
   const wave = String.fromCharCode(...bytes.slice(8, 12));
@@ -107,67 +94,81 @@ export const resolveTtsModelPath = (
     TtsIntegrationError,
   );
 
-export const ensureServiceLease = async (
+export const ensureServiceLease = (
   context: AppContext,
   mode: SttMode | TtsMode,
   serviceId: "stt" | "tts",
-): Promise<Record<string, unknown> | null> => {
-  const holder = await context.processManager.findInferenceProcess(context.config.inference_port);
-  if (!holder) {
-    return null;
-  }
-
-  if (mode === "best_effort") {
-    return null;
-  }
-
-  return {
-    code: "gpu_lease_conflict",
-    requested_service: { id: serviceId },
-    holder_service: { id: "llm" },
-    actions: ["best_effort"],
-  };
-};
-
-export const defaultTranscodeToWav = async (options: {
-  sourcePath: string;
-  outputPath: string;
-}): Promise<string> => {
-  const ffmpegPath = resolveBinary(process.env["LOCAL_STUDIO_FFMPEG_CLI"] ?? "ffmpeg");
-  if (!ffmpegPath) {
-    throw new SttIntegrationError(
-      503,
-      "ffmpeg_missing",
-      "ffmpeg is required for non-WAV uploads. Install ffmpeg or upload WAV input.",
-    );
-  }
-
-  const result = await runCommandAsync(
-    ffmpegPath,
-    ["-y", "-i", options.sourcePath, "-ac", "1", "-ar", "16000", "-f", "wav", options.outputPath],
-    { timeoutMs: AUDIO_TRANSCODE_TIMEOUT_MS },
+): Effect.Effect<Record<string, unknown> | null, AudioDependencyError> =>
+  context.processManager.findInferenceProcess(context.config.inference_port).pipe(
+    Effect.mapError(
+      (source) =>
+        new AudioDependencyError({
+          operation: "lease",
+          message: `Could not inspect inference lease: ${String(source)}`,
+          source,
+        }),
+    ),
+    Effect.map((holder) => {
+      if (!holder || mode === "best_effort") return null;
+      return {
+        code: "gpu_lease_conflict",
+        requested_service: { id: serviceId },
+        holder_service: { id: "llm" },
+        actions: ["best_effort"],
+      };
+    }),
   );
 
-  if (result.timedOut) {
-    throw new SttIntegrationError(504, "audio_transcode_timeout", "Audio transcode timed out", {
-      stderr: result.stderr,
-      stdout: result.stdout,
-    });
-  }
+export class AudioDependencyError extends Schema.TaggedErrorClass<AudioDependencyError>()(
+  "AudioDependencyError",
+  {
+    operation: Schema.Literals(["lease"]),
+    message: Schema.String,
+    source: Schema.Unknown,
+  },
+) {}
 
-  if (result.status !== 0) {
-    throw new SttIntegrationError(
-      400,
-      "audio_transcode_failed",
-      "Failed to transcode audio to WAV",
-      {
-        exit_code: result.status,
-        signal: result.signal,
-        stderr: result.stderr,
-        stdout: result.stdout,
-      },
+export const defaultTranscodeToWav = (options: {
+  sourcePath: string;
+  outputPath: string;
+}): Effect.Effect<string, SttIntegrationError> =>
+  Effect.gen(function* () {
+    const ffmpegPath = resolveBinary(process.env["LOCAL_STUDIO_FFMPEG_CLI"] ?? "ffmpeg");
+    if (!ffmpegPath) {
+      return yield* Effect.fail(
+        new SttIntegrationError(
+          503,
+          "ffmpeg_missing",
+          "ffmpeg is required for non-WAV uploads. Install ffmpeg or upload WAV input.",
+        ),
+      );
+    }
+
+    const result = yield* runCommandAsyncEffect(
+      ffmpegPath,
+      ["-y", "-i", options.sourcePath, "-ac", "1", "-ar", "16000", "-f", "wav", options.outputPath],
+      { timeoutMs: AUDIO_TRANSCODE_TIMEOUT_MS },
     );
-  }
 
-  return options.outputPath;
-};
+    if (result.timedOut) {
+      return yield* Effect.fail(
+        new SttIntegrationError(504, "audio_transcode_timeout", "Audio transcode timed out", {
+          stderr: result.stderr,
+          stdout: result.stdout,
+        }),
+      );
+    }
+
+    if (result.status !== 0) {
+      return yield* Effect.fail(
+        new SttIntegrationError(400, "audio_transcode_failed", "Failed to transcode audio to WAV", {
+          exit_code: result.status,
+          signal: result.signal,
+          stderr: result.stderr,
+          stdout: result.stdout,
+        }),
+      );
+    }
+
+    return options.outputPath;
+  });

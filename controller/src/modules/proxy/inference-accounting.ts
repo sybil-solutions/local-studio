@@ -4,6 +4,7 @@ import type {
   InferenceRequestRecord,
   InferenceRequestStore,
 } from "../../stores/inference-request-store";
+import { Effect } from "effect";
 
 interface InferenceAccountingStores {
   lifetimeMetricsStore: Pick<
@@ -80,72 +81,75 @@ const readUsageTotals = (usage: InferenceUsageInput): InferenceUsageTotals => {
 const addLifetimeUsage = (
   stores: InferenceAccountingStores,
   totals: InferenceUsageTotals,
-): void => {
-  if (totals.promptTokens > 0) {
-    stores.lifetimeMetricsStore.addPromptTokens(totals.promptTokens);
-    stores.lifetimeMetricsStore.addTokens(totals.promptTokens);
-  }
-  if (totals.completionTokens > 0) {
-    stores.lifetimeMetricsStore.addCompletionTokens(totals.completionTokens);
-    stores.lifetimeMetricsStore.addTokens(totals.completionTokens);
-  }
-  if (hasBillableTokens(totals)) {
-    stores.lifetimeMetricsStore.addRequests(1);
-  }
-};
+): Effect.Effect<void, unknown> =>
+  Effect.all(
+    [
+      ...(totals.promptTokens > 0
+        ? [
+            stores.lifetimeMetricsStore.addPromptTokens(totals.promptTokens),
+            stores.lifetimeMetricsStore.addTokens(totals.promptTokens),
+          ]
+        : []),
+      ...(totals.completionTokens > 0
+        ? [
+            stores.lifetimeMetricsStore.addCompletionTokens(totals.completionTokens),
+            stores.lifetimeMetricsStore.addTokens(totals.completionTokens),
+          ]
+        : []),
+      ...(hasBillableTokens(totals) ? [stores.lifetimeMetricsStore.addRequests(1)] : []),
+    ],
+    { concurrency: 1, discard: true },
+  );
 
 const tryRecordInference = (
   options: InferenceAccountingOptions,
   record: InferenceRequestRecord,
-): void => {
-  try {
-    options.stores.inferenceRequestStore.record(record);
-  } catch (recordError) {
-    options.logger.warn(`Failed to record inference request: ${(recordError as Error).message}`);
-  }
-};
+): Effect.Effect<void> =>
+  options.stores.inferenceRequestStore
+    .record(record)
+    .pipe(
+      Effect.catch((recordError) =>
+        Effect.sync(() =>
+          options.logger.warn(`Failed to record inference request: ${String(recordError)}`),
+        ),
+      ),
+    );
 
 export const recordNonStreamingInferenceUsage = (
   options: InferenceAccountingOptions,
   input: NonStreamingInferenceRecordInput,
-): InferenceUsageTotals | null => {
-  if (!input.usage) return null;
-
+): Effect.Effect<InferenceUsageTotals | null, unknown> => {
+  if (!input.usage) return Effect.succeed(null);
   const totals = readUsageTotals(input.usage);
-  addLifetimeUsage(options.stores, totals);
-  // Match the streaming path: only write an inference_request row for a
-  // billable response. An upstream 4xx/5xx whose JSON body happens to carry a
-  // zero-token usage object would otherwise pollute the request table.
-  if (hasBillableTokens(totals)) {
-    tryRecordInference(options, {
-      ...input.record,
-      prompt_tokens: totals.promptTokens,
-      completion_tokens: totals.completionTokens,
-      reasoning_tokens: totals.reasoningTokens,
-      cache_read_tokens: totals.cacheReadTokens,
-      cache_write_tokens: totals.cacheWriteTokens,
-      streamed: false,
-    });
-  }
-  return totals;
+  const record = hasBillableTokens(totals)
+    ? tryRecordInference(options, {
+        ...input.record,
+        prompt_tokens: totals.promptTokens,
+        completion_tokens: totals.completionTokens,
+        reasoning_tokens: totals.reasoningTokens,
+        cache_read_tokens: totals.cacheReadTokens,
+        cache_write_tokens: totals.cacheWriteTokens,
+        streamed: false,
+      })
+    : Effect.void;
+  return addLifetimeUsage(options.stores, totals).pipe(Effect.andThen(record), Effect.as(totals));
 };
 
 export const recordStreamingInferenceUsage = (
   options: InferenceAccountingOptions,
   input: StreamingInferenceRecordInput,
-): InferenceUsageTotals => {
+): Effect.Effect<InferenceUsageTotals, unknown> => {
   const totals = readUsageTotals(input.usage);
-  addLifetimeUsage(options.stores, totals);
-  if (hasBillableTokens(totals)) {
-    tryRecordInference(options, {
-      ...input.record,
-      prompt_tokens: totals.promptTokens,
-      completion_tokens: totals.completionTokens,
-      reasoning_tokens: totals.reasoningTokens,
-      cache_read_tokens: totals.cacheReadTokens,
-      cache_write_tokens: totals.cacheWriteTokens,
-      streamed: true,
-    });
-  }
-  return totals;
+  const record = hasBillableTokens(totals)
+    ? tryRecordInference(options, {
+        ...input.record,
+        prompt_tokens: totals.promptTokens,
+        completion_tokens: totals.completionTokens,
+        reasoning_tokens: totals.reasoningTokens,
+        cache_read_tokens: totals.cacheReadTokens,
+        cache_write_tokens: totals.cacheWriteTokens,
+        streamed: true,
+      })
+    : Effect.void;
+  return addLifetimeUsage(options.stores, totals).pipe(Effect.andThen(record), Effect.as(totals));
 };

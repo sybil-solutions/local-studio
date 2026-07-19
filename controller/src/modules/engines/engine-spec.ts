@@ -1,11 +1,5 @@
-/**
- * EngineSpec: a self-contained description of each inference backend, inspired
- * by exo-spark's EngineSpec pattern. Each backend owns its command building,
- * process detection, health endpoint, install action, and binary probing,
- * rather than scattering these concerns across backend-builder,
- * process-utilities, runtime-targets, and runtime-info.
- */
 import type { ChildProcess } from "node:child_process";
+import { Schema, type Effect } from "effect";
 import type { Config } from "../../config/env";
 import type { Recipe, ProcessInfo } from "../models/types";
 import type {
@@ -44,61 +38,32 @@ export interface ConfigHelpResult {
   error: string | null;
 }
 
+export class EngineOperationError extends Schema.TaggedErrorClass<EngineOperationError>()(
+  "EngineOperationError",
+  {
+    operation: Schema.String,
+    message: Schema.String,
+  },
+) {}
+
 export interface EngineSpec {
   readonly id: EngineBackend;
 
-  /** Health endpoint path appended to the inference base URL for readiness checks. */
   readonly healthPath: string;
-
-  /** CLI binary name in the venv bin directory (e.g. "vllm", "sglang"). Null for engines without a CLI binary. */
   readonly cliBinary: string | null;
-
-  /**
-   * Build the full command array (including binary) to serve a recipe.
-   * Replaces the per-backend functions in backend-builder.ts.
-   */
   buildCommand: (recipe: Recipe, config: Config) => string[];
-
-  /**
-   * Managed venv package spec for install/update (e.g. "sglang[all]", "vllm", "mlx-lm").
-   * Replaces managedPackageSpec in engine-jobs.ts.
-   */
   managedPackageSpec: (version?: string | null) => string;
-
-  /**
-   * Idempotent install of this backend into a target Python (when pythonPath is
-   * given) or the controller-owned managed venv (when it is not). Short-circuits
-   * when the backend is already present. Replaces the per-backend upgrade
-   * branches in engine-jobs.ts and runtime-upgrade.ts.
-   */
-  install: (options: InstallOptions) => Promise<RuntimeUpgradeResult>;
-
-  /**
-   * Detect whether a process's args represent this engine's serve invocation.
-   * Replaces the per-backend checks in process-utilities.detectBackend.
-   */
+  install: (options: InstallOptions) => Effect.Effect<RuntimeUpgradeResult, EngineOperationError>;
   detectInvocation: (args: string[]) => boolean;
-
-  /** Extract the model path from a running process's args. */
   extractModelPath: (args: string[]) => string | null;
-
-  /** Extract the served model name from a running process's args. */
   extractServedModelName: (args: string[]) => string | null;
-
-  /** Probe a CLI binary for version/install info. Undefined if the engine has no CLI binary. */
-  probeBinary?: (binary: string) => Promise<BinaryProbeResult>;
-
-  /** Engine-specific Python path resolver for venv discovery. */
+  probeBinary?: (binary: string) => Effect.Effect<BinaryProbeResult, EngineOperationError>;
   resolvePythonPath?: (config: Config) => string | null;
-
-  /** Get detailed runtime info (async). Replaces the sync functions in runtime-info.ts. */
   getRuntimeInfo?: (
     config: Config,
     runningProcess?: Pick<ProcessInfo, "pid" | "backend"> | null,
-  ) => Promise<RuntimeBackendInfo>;
-
-  /** Get config help (--help output) for the recipe editor's command tab. */
-  getConfigHelp?: (config: Config) => Promise<ConfigHelpResult>;
+  ) => Effect.Effect<RuntimeBackendInfo, EngineOperationError>;
+  getConfigHelp?: (config: Config) => Effect.Effect<ConfigHelpResult, EngineOperationError>;
 }
 
 const SPECS: Record<EngineBackend, EngineSpec> = {
@@ -112,7 +77,6 @@ export const getEngineSpec = (backend: EngineBackend): EngineSpec => SPECS[backe
 
 export const ALL_ENGINE_SPECS: readonly EngineSpec[] = Object.values(SPECS);
 
-/** Detect which engine a running process belongs to, or null if unrecognized. */
 export const detectEngineFromArguments = (args: string[]): EngineBackend | null => {
   for (const spec of ALL_ENGINE_SPECS) {
     if (spec.detectInvocation(args)) return spec.id;

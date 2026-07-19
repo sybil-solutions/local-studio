@@ -162,16 +162,15 @@ export function ProjectsNavSection({ expanded }: { expanded: boolean }) {
   const handleAddProject = useCallback(async () => {
     setAddError("");
     try {
-      const desktopProject = await openProjectDirectory();
-      if (desktopProject) {
-        upsertProject(desktopProject);
+      const result = await openProjectDirectory();
+      if (result.source === "fallback") {
+        setDirectoryModalOpen(true);
         return;
       }
+      if (result.project) upsertProject(result.project);
     } catch (error) {
       setAddError(error instanceof Error ? error.message : "Failed to add project");
-      return;
     }
-    setDirectoryModalOpen(true);
   }, [upsertProject]);
   const handleDirectoryPicked = async (directoryPath: string) => {
     setAddError("");

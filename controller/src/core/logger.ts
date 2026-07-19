@@ -1,4 +1,5 @@
 import type { WriteStream } from "node:fs";
+import { Effect } from "effect";
 import { createPrivateLogStream } from "./log-files";
 import { createLogPayloadRedactor, redactLogValue } from "./log-redaction";
 
@@ -6,8 +7,7 @@ export type LogLevel = "debug" | "info" | "warn" | "error";
 
 export interface LoggerOptions {
   filePath?: string;
-  /** Called after formatting a log line (best-effort). Useful for pushing logs to SSE channels. */
-  onLine?: (line: string, meta: { level: LogLevel }) => void | Promise<void>;
+  onLine?: (line: string, meta: { level: LogLevel }) => void;
 }
 
 export interface Logger {
@@ -15,6 +15,7 @@ export interface Logger {
   info: (message: string, details?: Record<string, unknown>) => void;
   warn: (message: string, details?: Record<string, unknown>) => void;
   error: (message: string, details?: Record<string, unknown>) => void;
+  shutdown: () => Effect.Effect<void>;
 }
 
 export const createLogger = (level: LogLevel, options: LoggerOptions = {}): Logger => {
@@ -23,7 +24,7 @@ export const createLogger = (level: LogLevel, options: LoggerOptions = {}): Logg
     if (!options.filePath) return null;
     try {
       const opened = createPrivateLogStream(options.filePath);
-      opened.on("error", Boolean);
+      opened.on("error", () => {});
       return opened;
     } catch {
       return null;
@@ -71,7 +72,7 @@ export const createLogger = (level: LogLevel, options: LoggerOptions = {}): Logg
   const publishLine = (line: string, target: LogLevel): void => {
     if (!options.onLine) return;
     try {
-      void Promise.allSettled([options.onLine(line, { level: target })]);
+      options.onLine(line, { level: target });
     } catch {
       return;
     }
@@ -90,6 +91,35 @@ export const createLogger = (level: LogLevel, options: LoggerOptions = {}): Logg
     publishLine(line, target);
   };
 
+  const shutdown = (): Effect.Effect<void> => {
+    if (!stream || stream.closed || stream.destroyed) return Effect.void;
+    return Effect.callback<void>((resume) => {
+      let completed = false;
+      const cleanup = (): void => {
+        stream.removeListener("close", finish);
+        stream.removeListener("error", finish);
+      };
+      const finish = (): void => {
+        if (completed) return;
+        completed = true;
+        cleanup();
+        resume(Effect.void);
+      };
+      stream.once("close", finish);
+      stream.once("error", finish);
+      stream.end();
+      return Effect.sync(() => {
+        cleanup();
+        if (!stream.closed) stream.destroy();
+      });
+    }).pipe(
+      Effect.timeoutOrElse({
+        duration: 2_000,
+        orElse: () => Effect.sync(() => stream.destroy()),
+      }),
+    );
+  };
+
   return {
     debug: (message, details): void => {
       write("debug", console.debug, message, details);
@@ -103,6 +133,7 @@ export const createLogger = (level: LogLevel, options: LoggerOptions = {}): Logg
     error: (message, details): void => {
       write("error", console.error, message, details);
     },
+    shutdown,
   };
 };
 

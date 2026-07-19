@@ -11,29 +11,39 @@ const earlyFatal = (): never => {
 };
 const handleEarlyException = (): void => earlyFatal();
 const handleEarlyRejection = (): void => earlyFatal();
-let released = false;
 
 Reflect.set(process, "emitWarning", pendingEmitWarning);
 process.on("uncaughtException", handleEarlyException);
 process.on("unhandledRejection", handleEarlyRejection);
 
-const releaseEarlyGuard = (): unknown[][] => {
-  if (released) return [];
-  released = true;
+const releaseEarlyGuard = (): void => {
   process.off("uncaughtException", handleEarlyException);
   process.off("unhandledRejection", handleEarlyRejection);
   if (Reflect.get(process, "emitWarning") === pendingEmitWarning) {
     Reflect.set(process, "emitWarning", originalEmitWarning);
   }
-  return pendingWarnings.splice(0);
 };
 
 try {
-  const { startControllerBootstrap } = await import("./runtime-bootstrap");
-  await startControllerBootstrap(releaseEarlyGuard);
+  const { installConsoleRedaction } = await import("./core/console-redaction");
+  installConsoleRedaction(originalEmitWarning);
+  releaseEarlyGuard();
+  const emitWarning: unknown = Reflect.get(process, "emitWarning");
+  if (typeof emitWarning === "function") {
+    for (const warning of pendingWarnings) Reflect.apply(emitWarning, process, warning);
+  }
 } catch {
   releaseEarlyGuard();
   earlyFatal();
+}
+
+if (import.meta.main) {
+  try {
+    await import("./main");
+  } catch (error) {
+    console.error("Controller startup failed", error);
+    process.exit(1);
+  }
 }
 
 export {};

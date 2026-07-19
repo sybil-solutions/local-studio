@@ -379,6 +379,21 @@ export function ChatPane({
     tools.setComputerTab("status");
     tools.setComputerOpen(true);
   }, [tools]);
+  const handleTranscript = useCallback(
+    (transcript: string) => {
+      if (!activeTab) return;
+      const current = activeTab.input.trimEnd();
+      const next = current ? `${current} ${transcript}` : transcript;
+      updateTab(activeTab.id, (tab) => ({ ...tab, input: next }));
+      requestAnimationFrame(() => {
+        const textarea = textareaRef.current;
+        if (!textarea) return;
+        textarea.focus();
+        textarea.setSelectionRange(next.length, next.length);
+      });
+    },
+    [activeTab, updateTab],
+  );
   useChatPaneRuntimeHandle({
     activeTab,
     activeTabId,
@@ -479,6 +494,7 @@ export function ChatPane({
           onSelectMention={(entry) => void selectMentionRow(entry)}
           onSteerQueued={(queueId) => void steerQueued(queueId)}
           onSubmit={sendMessage}
+          onTranscript={handleTranscript}
           onToggleBrowserBackend={onToggleBrowserBackend}
           onToggleBrowserTool={onToggleBrowserTool}
           onToggleCanvas={onToggleCanvas}
