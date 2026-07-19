@@ -56,6 +56,9 @@ export function createComposerCommandRegistry(
     limit = 8,
   ): ComposerCommand[] => {
     const commands = list(context);
+    // Empty query keeps provider order (builtins → templates → skills) so core
+    // commands lead the menu; byQuery would sort the whole set alphabetically.
+    if (!query.trim()) return commands.slice(0, limit);
     const rows = commands.map((command) => ({
       name: command.name,
       displayName: command.title,
