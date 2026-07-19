@@ -1,11 +1,7 @@
 import { arch, cpus, hostname, platform, release, totalmem } from "node:os";
-import type {
-  Rig,
-  RigAccelerator,
-  RigHardwareType,
-  RigNode,
-} from "@local-studio/contracts/rigs";
+import type { Rig, RigAccelerator, RigHardwareType, RigNode } from "@local-studio/contracts/rigs";
 import type { GpuInfo } from "../models/types";
+import { Effect } from "effect";
 import { getGpuInfo } from "../system/platform/gpu";
 
 export const LOCAL_RIG_NODE_ID = "local";
@@ -85,7 +81,8 @@ const groupAccelerators = (gpus: GpuInfo[]): RigAccelerator[] => {
       count: entry.count,
       memory_gb: entry.memoryMb > 0 ? Math.round(entry.memoryMb / 1024) : null,
       memory_type: known?.memory_type ?? null,
-      memory_bandwidth_gbs: known && known.memory_bandwidth_gbs > 0 ? known.memory_bandwidth_gbs : null,
+      memory_bandwidth_gbs:
+        known && known.memory_bandwidth_gbs > 0 ? known.memory_bandwidth_gbs : null,
       unified_memory: known?.unified_memory ?? false,
     };
   });
@@ -117,29 +114,32 @@ const inferHardwareType = (accelerators: RigAccelerator[]): RigHardwareType => {
   return "custom";
 };
 
-export const buildDetectedNode = (): RigNode => {
-  const cpuList = cpus();
-  const cpuModel = cpuList[0]?.model ?? null;
-  const gpuAccelerators = groupAccelerators(getGpuInfo());
-  const accelerators =
-    gpuAccelerators.length > 0 ? gpuAccelerators : appleSiliconAccelerator(cpuModel);
-  const host = hostname();
-  return {
-    id: LOCAL_RIG_NODE_ID,
-    name: host,
-    hardware_type: inferHardwareType(accelerators),
-    role: "standalone",
-    source: "detected",
-    hostname: host,
-    address: null,
-    os: `${platform()} ${release()}`,
-    cpu_model: cpuModel,
-    cpu_cores: cpuList.length,
-    memory_gb: Math.round(totalmem() / 1024 ** 3),
-    accelerators,
-    notes: null,
-  };
-};
+export const buildDetectedNode = (): Effect.Effect<RigNode> =>
+  getGpuInfo().pipe(
+    Effect.map((gpus) => {
+      const cpuList = cpus();
+      const cpuModel = cpuList[0]?.model ?? null;
+      const gpuAccelerators = groupAccelerators(gpus);
+      const accelerators =
+        gpuAccelerators.length > 0 ? gpuAccelerators : appleSiliconAccelerator(cpuModel);
+      const host = hostname();
+      return {
+        id: LOCAL_RIG_NODE_ID,
+        name: host,
+        hardware_type: inferHardwareType(accelerators),
+        role: "standalone",
+        source: "detected",
+        hostname: host,
+        address: null,
+        os: `${platform()} ${release()}`,
+        cpu_model: cpuModel,
+        cpu_cores: cpuList.length,
+        memory_gb: Math.round(totalmem() / 1024 ** 3),
+        accelerators,
+        notes: null,
+      };
+    }),
+  );
 
 const mergeDetectedNode = (stored: RigNode, detected: RigNode): RigNode => ({
   ...stored,

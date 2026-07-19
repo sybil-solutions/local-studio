@@ -1,29 +1,28 @@
-import { AsyncLock, delay } from "../../core/async";
+import { Effect, Fiber, Semaphore } from "effect";
+import type { Config } from "../../config/env";
 import { primaryLogPathFor, readFileTailBytes } from "../../core/log-files";
 import { fetchLocal } from "../../http/local-fetch";
-import type { EventManager } from "../system/event-manager";
-import { pidExists } from "./process/process-utilities";
-import { isRecipeRunning } from "../models/recipes/recipe-matching";
-import type { ProcessInfo, Recipe } from "../models/types";
-import type { Config } from "../../config/env";
-import type { LaunchModelOptions, ProcessManager } from "./process/process-manager";
 import type { RecipeStore } from "../models/recipes/recipe-store";
-import { LIFECYCLE_READY_TIMEOUT_MS } from "./configs";
-import type { LaunchFailureBudget } from "./process/launch-failure-budget";
-import { formatLaunchFailureBudgetMessage } from "./process/launch-failure-budget";
-import { getEngineSpec } from "./engine-spec";
-import { Effect, Fiber } from "effect";
-import { resolveNvidiaSmiBinary } from "../system/platform/smi-tools";
+import { isRecipeRunning } from "../models/recipes/recipe-matching";
+import type { GpuInfo, ProcessInfo, Recipe } from "../models/types";
+import type { EventManager } from "../system/event-manager";
 import {
   GpuLeaseConflict,
   type GpuLeaseRegistry,
   resolveRecipeGpuUuids,
 } from "../system/gpu-leases";
-import type { GpuInfo } from "../models/types";
+import { resolveNvidiaSmiBinary } from "../system/platform/smi-tools";
+import { LIFECYCLE_READY_TIMEOUT_MS } from "./configs";
+import { EngineOperationError, getEngineSpec } from "./engine-spec";
+import {
+  formatLaunchFailureBudgetMessage,
+  type LaunchFailureBudget,
+} from "./process/launch-failure-budget";
+import type { LaunchModelOptions, ProcessManager } from "./process/process-manager";
+import { pidExists } from "./process/process-utilities";
 
 export type SetActiveRecipeResult = { ok: true } | { ok: false; error: string };
 
-/** Options for setting the active recipe. */
 export interface SetActiveRecipeOptions {
   signal?: AbortSignal;
 }
@@ -35,9 +34,9 @@ interface CoordinatorDeps {
   recipeStore: RecipeStore;
   launchFailureBudget: LaunchFailureBudget;
   gpuLeaseRegistry: GpuLeaseRegistry;
-  gpuInfo: () => GpuInfo[];
+  gpuInfo: () => Effect.Effect<GpuInfo[], unknown>;
   processExists?: (pid: number) => boolean;
-  healthProbe?: (path: string) => Promise<boolean>;
+  healthProbe?: (path: string) => Effect.Effect<boolean, EngineOperationError>;
   livenessPollIntervalMs?: number;
   requiresNvidiaGpuLeases?: () => boolean;
 }
@@ -46,29 +45,58 @@ type RecipeGpuLeaseResult =
   | { readonly ok: true; readonly launchOptions: LaunchModelOptions }
   | { readonly ok: false; readonly error: string };
 
+type ReadyResult = { ready: true } | { ready: false; message: string };
+
+const operationError = (operation: string, cause: unknown): EngineOperationError =>
+  new EngineOperationError({
+    operation,
+    message: cause instanceof Error ? cause.message : String(cause),
+  });
+
+const lifecycleSuccess = (): SetActiveRecipeResult => ({ ok: true });
+const lifecycleFailure = (error: string): SetActiveRecipeResult => ({ ok: false, error });
+
 export class EngineCoordinator {
-  private readonly switchLock = new AsyncLock();
+  private readonly switchLock = Semaphore.makeUnsafe(1);
   private activeLifecycleAbort: AbortController | null = null;
   private activeLaunchPid: number | null = null;
   private lifecycleIntentSerial = 0;
   private livenessFiber: Fiber.Fiber<void, never> | null = null;
   private livenessSerial = 0;
+  private leaseState: "unknown" | "held" | "released" = "unknown";
+
   constructor(private readonly deps: CoordinatorDeps) {}
 
-  async setActiveRecipe(
+  setActiveRecipe(
     recipe: Recipe | null,
     options: SetActiveRecipeOptions = {},
-  ): Promise<SetActiveRecipeResult> {
-    const intentSerial = ++this.lifecycleIntentSerial;
-    this.activeLifecycleAbort?.abort();
-    if (!recipe) {
-      if (this.activeLaunchPid) {
-        await this.deps.processManager.killProcess(this.activeLaunchPid, true);
-      }
-    }
-    const release = await this.switchLock.acquire();
+  ): Effect.Effect<SetActiveRecipeResult, EngineOperationError> {
+    return Effect.suspend(() => {
+      const intentSerial = ++this.lifecycleIntentSerial;
+      this.activeLifecycleAbort?.abort();
+      const preempt =
+        !recipe && this.activeLaunchPid
+          ? this.deps.processManager
+              .killOwnedProcess(this.activeLaunchPid, true)
+              .pipe(Effect.asVoid)
+          : Effect.void;
+      return preempt.pipe(
+        Effect.flatMap(() =>
+          this.switchLock.withPermit(this.runLifecycle(recipe, options, intentSerial)),
+        ),
+      );
+    });
+  }
+
+  private runLifecycle(
+    recipe: Recipe | null,
+    options: SetActiveRecipeOptions,
+    intentSerial: number,
+  ): Effect.Effect<SetActiveRecipeResult, EngineOperationError> {
     let spawnedPid: number | null = null;
     let cancelled = false;
+    let leaseOwned = false;
+    let retainLease = false;
     const lifecycleAbort = recipe ? new AbortController() : null;
     const abortLifecycle = (): void => lifecycleAbort?.abort();
     if (lifecycleAbort) {
@@ -78,330 +106,457 @@ export class EngineCoordinator {
     }
     const isAborted = (): boolean =>
       Boolean(lifecycleAbort?.signal.aborted || intentSerial !== this.lifecycleIntentSerial);
-    const publishCancelled = async (targetRecipe: Recipe): Promise<SetActiveRecipeResult> => {
-      if (cancelled) return { ok: false, error: "Launch cancelled" };
-      cancelled = true;
-      if (spawnedPid) {
-        await this.deps.processManager.killProcess(spawnedPid, true);
-      }
-      if (spawnedPid) await this.releaseLlmGpuLeaseAfterStop(spawnedPid);
-      await this.deps.eventManager.publishLaunchProgress(
-        targetRecipe.id,
-        "cancelled",
-        "Launch cancelled",
-        0,
-      );
-      return { ok: false, error: "Launch cancelled" };
-    };
-    const abortIfNeeded = async (
+    const coordinator = this;
+    const relinquishLease = (): Effect.Effect<void, EngineOperationError> =>
+      leaseOwned
+        ? Effect.gen(function* () {
+            const stopped = spawnedPid
+              ? yield* coordinator.deps.processManager.killOwnedProcess(spawnedPid, true)
+              : true;
+            if (stopped) yield* coordinator.releaseLlmGpuLease();
+            else yield* coordinator.startLivenessMonitor(spawnedPid, "owned");
+            leaseOwned = false;
+          })
+        : Effect.void;
+    const publishCancelled = (
+      targetRecipe: Recipe,
+    ): Effect.Effect<SetActiveRecipeResult, EngineOperationError> =>
+      Effect.gen(function* () {
+        if (cancelled) return lifecycleFailure("Launch cancelled");
+        cancelled = true;
+        yield* relinquishLease();
+        yield* coordinator.publishLaunchProgress(
+          targetRecipe.id,
+          "cancelled",
+          "Launch cancelled",
+          0,
+        );
+        return lifecycleFailure("Launch cancelled");
+      });
+    const abortIfNeeded = (
       targetRecipe: Recipe | null,
-    ): Promise<SetActiveRecipeResult | null> => {
-      if (!isAborted()) return null;
-      if (!targetRecipe) return null;
-      return publishCancelled(targetRecipe);
-    };
-    try {
-      if (recipe && intentSerial !== this.lifecycleIntentSerial) {
-        return { ok: false, error: "Launch cancelled" };
+    ): Effect.Effect<SetActiveRecipeResult | null, EngineOperationError> =>
+      isAborted() && targetRecipe ? publishCancelled(targetRecipe) : Effect.succeed(null);
+
+    return Effect.gen(function* () {
+      if (recipe && intentSerial !== coordinator.lifecycleIntentSerial) {
+        return lifecycleFailure("Launch cancelled");
       }
-      await this.stopLivenessMonitor();
-      const current = await this.deps.processManager.findInferenceProcess(
-        this.deps.config.inference_port,
+      yield* coordinator.stopLivenessMonitor();
+      const current = yield* coordinator.deps.processManager.findInferenceProcess(
+        coordinator.deps.config.inference_port,
       );
-      const initialAbort = await abortIfNeeded(recipe);
+      const initialAbort = yield* abortIfNeeded(recipe);
       if (initialAbort) return initialAbort;
       if (!recipe && !current) {
-        return (await this.releaseLlmGpuLeaseAfterStop(null))
-          ? { ok: true }
-          : { ok: false, error: "Inference workers are still stopping" };
+        return (yield* coordinator.releaseLlmGpuLeaseAfterStop(null))
+          ? lifecycleSuccess()
+          : lifecycleFailure("Inference workers are still stopping");
       }
       if (recipe && current && isRecipeRunning(recipe, current)) {
-        const lease = await this.prepareRecipeGpuLease(recipe);
+        const lease = yield* coordinator.prepareRecipeGpuLease(recipe);
         if (!lease.ok) return lease;
-        this.startLivenessMonitor(current.pid);
-        return { ok: true };
+        leaseOwned = true;
+        retainLease = true;
+        yield* coordinator.startLivenessMonitor(current.pid);
+        return lifecycleSuccess();
       }
-      const killCurrent = async (process: ProcessInfo): Promise<boolean> => {
-        const evictedRecipe = this.findRecipeForProcess(process);
-        if (evictedRecipe) {
-          await this.deps.eventManager.publishLaunchProgress(
-            evictedRecipe.id,
-            "stopping",
-            `Stopping ${evictedRecipe.name}...`,
-            0.1,
-          );
-        }
-        const stopped = await this.deps.processManager.killProcess(process.pid, true);
-        if (evictedRecipe) {
-          await this.deps.eventManager.publishLaunchProgress(
-            evictedRecipe.id,
-            stopped ? "stopped" : "error",
-            stopped ? "Model stopped" : "Model did not stop cleanly",
-            stopped ? 1 : 0,
-          );
-        }
-        return stopped;
-      };
       if (current && (!recipe || !isRecipeRunning(recipe, current))) {
-        const stopped = await killCurrent(current);
+        const stopped = yield* coordinator.killCurrent(current);
         if (!stopped) {
-          this.startLivenessMonitor(current.pid);
-          return { ok: false, error: `Failed to stop process ${current.pid}` };
+          return lifecycleFailure(`Failed to stop process ${current.pid}`);
         }
-        if (!(await this.releaseLlmGpuLeaseAfterStop(current.pid))) {
-          return { ok: false, error: "Inference workers are still stopping" };
+        if (!(yield* coordinator.releaseLlmGpuLeaseAfterStop(current.pid))) {
+          return lifecycleFailure("Inference workers are still stopping");
         }
-        await delay(500);
+        yield* Effect.sleep(500);
       }
-      const postEvictAbort = await abortIfNeeded(recipe);
+      const postEvictAbort = yield* abortIfNeeded(recipe);
       if (postEvictAbort) return postEvictAbort;
       if (!recipe) {
-        await this.releaseLlmGpuLease();
-        return { ok: true };
+        yield* coordinator.releaseLlmGpuLease();
+        return lifecycleSuccess();
       }
-      const lease = await this.prepareRecipeGpuLease(recipe);
+      const lease = yield* coordinator.prepareRecipeGpuLease(recipe);
       if (!lease.ok) return lease;
-      const blocked = this.deps.launchFailureBudget.isBlocked(recipe.id);
+      leaseOwned = true;
+      const blocked = coordinator.deps.launchFailureBudget.isBlocked(recipe.id);
       if (blocked) {
-        await this.releaseLlmGpuLease();
+        yield* relinquishLease();
         const message = formatLaunchFailureBudgetMessage(blocked);
-        await this.deps.eventManager.publishLaunchProgress(recipe.id, "error", message, 0);
-        return { ok: false, error: message };
+        yield* coordinator.publishLaunchProgress(recipe.id, "error", message, 0);
+        return lifecycleFailure(message);
       }
-      await this.deps.eventManager.publishLaunchProgress(
+      yield* coordinator.publishLaunchProgress(
         recipe.id,
         "launching",
         `Starting ${recipe.name}...`,
         0.25,
       );
-      const launch = await this.deps.processManager
-        .launchModel(recipe, lease.launchOptions)
-        .catch(async (error) => {
-          await this.releaseLlmGpuLease();
-          throw error;
-        });
+      const launch = yield* coordinator.deps.processManager.launchModel(
+        recipe,
+        lease.launchOptions,
+      );
       spawnedPid = launch.pid;
-      this.activeLaunchPid = launch.pid;
+      coordinator.activeLaunchPid = launch.pid;
       if (!launch.success) {
-        await this.releaseLlmGpuLease();
-        const failure = this.deps.launchFailureBudget.recordFailure(recipe.id);
-        await this.deps.eventManager.publishLaunchProgress(
+        yield* relinquishLease();
+        const failure = coordinator.deps.launchFailureBudget.recordFailure(recipe.id);
+        yield* coordinator.publishLaunchProgress(
           recipe.id,
           "error",
           `${launch.message} (${failure.failure_count}/${failure.limit} launch failures in the current window)`,
           0,
         );
-        return { ok: false, error: launch.message };
+        return lifecycleFailure(launch.message);
       }
-      const postLaunchAbort = await abortIfNeeded(recipe);
+      const postLaunchAbort = yield* abortIfNeeded(recipe);
       if (postLaunchAbort) return postLaunchAbort;
-      await this.deps.eventManager.publishLaunchProgress(
-        recipe.id,
-        "waiting",
-        "Loading model... (0s)",
-        0.5,
-      );
-      const waitOptions: Parameters<typeof this.waitForReady>[0] = {
+      yield* coordinator.publishLaunchProgress(recipe.id, "waiting", "Loading model... (0s)", 0.5);
+      const ready = yield* coordinator.waitForReady({
         recipe,
         pid: launch.pid,
-        logFilePath: launch.log_file ?? primaryLogPathFor(this.deps.config.data_dir, recipe.id),
+        logFilePath:
+          launch.log_file ?? primaryLogPathFor(coordinator.deps.config.data_dir, recipe.id),
+        ...(lifecycleAbort ? { cancel: lifecycleAbort.signal } : {}),
         timeoutMs: LIFECYCLE_READY_TIMEOUT_MS,
-      };
-      if (lifecycleAbort) {
-        waitOptions.cancel = lifecycleAbort.signal;
-      }
-      const ready = await this.waitForReady(waitOptions);
-      if (isAborted()) {
-        return publishCancelled(recipe);
-      }
+      });
+      if (isAborted()) return yield* publishCancelled(recipe);
       if (ready.ready) {
-        this.deps.launchFailureBudget.reset(recipe.id);
-        await this.deps.eventManager.publishLaunchProgress(
-          recipe.id,
-          "ready",
-          "Model is ready!",
-          1,
-        );
-        if (launch.pid) this.startLivenessMonitor(launch.pid);
-        return { ok: true };
+        coordinator.deps.launchFailureBudget.reset(recipe.id);
+        yield* coordinator.publishLaunchProgress(recipe.id, "ready", "Model is ready!", 1);
+        if (launch.pid) yield* coordinator.startLivenessMonitor(launch.pid, "owned");
+        retainLease = true;
+        return lifecycleSuccess();
       }
-      if (launch.pid) {
-        await this.deps.processManager.killProcess(launch.pid, true);
-      }
-      await this.releaseLlmGpuLeaseAfterStop(launch.pid);
-      const failure = this.deps.launchFailureBudget.recordFailure(recipe.id);
-      await this.deps.eventManager.publishLaunchProgress(
+      yield* relinquishLease();
+      const failure = coordinator.deps.launchFailureBudget.recordFailure(recipe.id);
+      yield* coordinator.publishLaunchProgress(
         recipe.id,
         "error",
         `${ready.message} (${failure.failure_count}/${failure.limit} launch failures in the current window)`,
         0,
       );
-      return { ok: false, error: ready.message };
-    } finally {
-      if (this.activeLifecycleAbort === lifecycleAbort) {
-        this.activeLifecycleAbort = null;
-      }
-      if (this.activeLaunchPid === spawnedPid) {
-        this.activeLaunchPid = null;
-      }
-      options.signal?.removeEventListener("abort", abortLifecycle);
-      release();
-    }
+      return lifecycleFailure(ready.message);
+    }).pipe(
+      Effect.onExit(() => (!retainLease && leaseOwned ? relinquishLease() : Effect.void)),
+      Effect.ensuring(
+        Effect.sync(() => {
+          if (this.activeLifecycleAbort === lifecycleAbort) this.activeLifecycleAbort = null;
+          if (this.activeLaunchPid === spawnedPid) this.activeLaunchPid = null;
+          options.signal?.removeEventListener("abort", abortLifecycle);
+        }),
+      ),
+    );
   }
-  private probeHealth(path: string): Promise<boolean> {
+
+  private killCurrent(current: ProcessInfo): Effect.Effect<boolean, EngineOperationError> {
+    const coordinator = this;
+    return Effect.gen(function* () {
+      const evictedRecipe = yield* coordinator.findRecipeForProcess(current);
+      if (evictedRecipe) {
+        yield* coordinator.publishLaunchProgress(
+          evictedRecipe.id,
+          "stopping",
+          `Stopping ${evictedRecipe.name}...`,
+          0.1,
+        );
+      }
+      const stopped = yield* coordinator.deps.processManager.killProcess(current.pid, true);
+      if (evictedRecipe) {
+        yield* coordinator.publishLaunchProgress(
+          evictedRecipe.id,
+          stopped ? "stopped" : "error",
+          stopped ? "Model stopped" : "Model did not stop cleanly",
+          stopped ? 1 : 0,
+        );
+      }
+      return stopped;
+    });
+  }
+
+  private probeHealth(path: string): Effect.Effect<boolean, EngineOperationError> {
     if (this.deps.healthProbe) return this.deps.healthProbe(path);
     return fetchLocal(this.deps.config.inference_port, path, {
       host: this.deps.config.inference_host,
       timeoutMs: 5000,
-    })
-      .then((response) => response.status === 200)
-      .catch(() => false);
+    }).pipe(
+      Effect.mapError((cause) => operationError("probe-engine-health", cause)),
+      Effect.map((response) => response.status === 200),
+      Effect.catch(() => Effect.succeed(false)),
+    );
   }
 
-  private async pollHealthy(options: {
+  private pollHealthy(options: {
     healthPath: string;
     timeoutMs: number;
     failure?: () => string | null;
-  }): Promise<{ ready: boolean; message: string | null }> {
-    const start = Date.now();
-    while (Date.now() - start < options.timeoutMs) {
-      const failed = options.failure?.();
-      if (failed) return { ready: false, message: failed };
-      if (await this.probeHealth(options.healthPath)) return { ready: true, message: null };
-      await delay(2000);
-    }
-    return { ready: false, message: null };
+  }): Effect.Effect<{ ready: boolean; message: string | null }, EngineOperationError> {
+    const coordinator = this;
+    return Effect.gen(function* () {
+      const start = Date.now();
+      while (Date.now() - start < options.timeoutMs) {
+        const failed = options.failure?.();
+        if (failed) return { ready: false, message: failed };
+        if (yield* coordinator.probeHealth(options.healthPath))
+          return { ready: true, message: null };
+        yield* Effect.sleep(2000);
+      }
+      return { ready: false, message: null };
+    });
   }
 
-  async waitForHealthy(timeoutMs: number): Promise<boolean> {
-    const result = await this.pollHealthy({ healthPath: "/health", timeoutMs });
-    return result.ready;
+  waitForHealthy(timeoutMs: number): Effect.Effect<boolean, EngineOperationError> {
+    return this.pollHealthy({ healthPath: "/health", timeoutMs }).pipe(
+      Effect.map((result) => result.ready),
+    );
   }
 
-  private async waitForReady(options: {
+  private waitForReady(options: {
     recipe: Recipe;
     pid: number | null;
     logFilePath: string | null;
     cancel?: AbortSignal;
     timeoutMs?: number;
-  }): Promise<{ ready: true } | { ready: false; message: string }> {
-    const result = await this.pollHealthy({
+  }): Effect.Effect<ReadyResult, EngineOperationError> {
+    return this.pollHealthy({
       healthPath: getEngineSpec(options.recipe.backend).healthPath,
       timeoutMs: options.timeoutMs ?? LIFECYCLE_READY_TIMEOUT_MS,
       failure: () => {
         if (options.cancel?.aborted) return "Launch cancelled";
         if (options.pid && !this.processExists(options.pid)) {
-          const errorTail = options.logFilePath ? readFileTailBytes(options.logFilePath, 500) : "";
-          return `Model ${options.recipe.id} crashed during startup: ${errorTail.slice(-200)}`;
+          const tail = options.logFilePath ? readFileTailBytes(options.logFilePath, 500) : "";
+          return `Model ${options.recipe.id} crashed during startup: ${tail.slice(-200)}`;
         }
         return null;
       },
-    });
-    if (result.ready) return { ready: true };
-    return {
-      ready: false,
-      message: result.message ?? `Model ${options.recipe.id} failed to become ready (timeout)`,
-    };
+    }).pipe(
+      Effect.map((result) =>
+        result.ready
+          ? { ready: true }
+          : {
+              ready: false,
+              message:
+                result.message ?? `Model ${options.recipe.id} failed to become ready (timeout)`,
+            },
+      ),
+    );
   }
-  private findRecipeForProcess(current: ProcessInfo): Recipe | null {
-    for (const candidate of this.deps.recipeStore.list()) {
-      if (isRecipeRunning(candidate, current, { allowEitherPathContains: true })) {
-        return candidate;
-      }
-    }
-    return null;
+
+  private findRecipeForProcess(
+    current: ProcessInfo,
+  ): Effect.Effect<Recipe | null, EngineOperationError> {
+    return this.deps.recipeStore.list().pipe(
+      Effect.mapError((cause) => operationError("list-recipes", cause)),
+      Effect.map(
+        (recipes) =>
+          recipes.find((candidate) =>
+            isRecipeRunning(candidate, current, { allowEitherPathContains: true }),
+          ) ?? null,
+      ),
+    );
   }
+
   resetLaunchFailureBudget(recipeId: string): void {
     this.deps.launchFailureBudget.reset(recipeId);
   }
 
-  async getCurrentProcess(): Promise<ProcessInfo | null> {
+  cancelActiveLaunch(): Effect.Effect<void, EngineOperationError> {
+    return Effect.suspend(() => {
+      this.lifecycleIntentSerial += 1;
+      this.activeLifecycleAbort?.abort();
+      const launchPid = this.activeLaunchPid;
+      const preempt = launchPid
+        ? this.deps.processManager.killOwnedProcess(launchPid, true).pipe(Effect.asVoid)
+        : Effect.void;
+      return preempt.pipe(Effect.flatMap(() => this.switchLock.withPermit(Effect.void)));
+    });
+  }
+
+  getCurrentProcess(): Effect.Effect<ProcessInfo | null> {
     return this.deps.processManager.findInferenceProcess(this.deps.config.inference_port);
   }
 
-  async getCurrentRecipe(): Promise<Recipe | null> {
-    const process = await this.getCurrentProcess();
-    return process ? this.findRecipeForProcess(process) : null;
+  getCurrentRecipe(): Effect.Effect<Recipe | null> {
+    return this.getCurrentProcess().pipe(
+      Effect.flatMap((current) =>
+        current ? this.findRecipeForProcess(current) : Effect.succeed(null),
+      ),
+      Effect.catch(() => Effect.succeed(null)),
+    );
   }
 
-  private async releaseLlmGpuLease(): Promise<void> {
-    await Effect.runPromise(this.deps.gpuLeaseRegistry.release("llm"));
+  shutdown(): Effect.Effect<void, EngineOperationError> {
+    return Effect.suspend(() => {
+      this.lifecycleIntentSerial += 1;
+      this.activeLifecycleAbort?.abort();
+      const launchPid = this.activeLaunchPid;
+      const preempt = launchPid
+        ? this.deps.processManager.killOwnedProcess(launchPid, true).pipe(Effect.asVoid)
+        : Effect.void;
+      const coordinator = this;
+      return preempt.pipe(
+        Effect.flatMap(() =>
+          coordinator.switchLock.withPermit(
+            Effect.gen(function* () {
+              yield* coordinator.stopLivenessMonitor();
+              const stopped = yield* coordinator.deps.processManager.shutdown();
+              if (!stopped) {
+                return yield* Effect.fail(
+                  operationError("shutdown-engine", "Owned inference processes are still running"),
+                );
+              }
+              yield* coordinator.releaseLlmGpuLease();
+              coordinator.activeLifecycleAbort = null;
+              coordinator.activeLaunchPid = null;
+            }),
+          ),
+        ),
+      );
+    });
   }
 
-  private async prepareRecipeGpuLease(recipe: Recipe): Promise<RecipeGpuLeaseResult> {
-    const resolution = resolveRecipeGpuUuids(recipe, this.deps.gpuInfo());
-    if (resolution.unresolvedTokens.length > 0) {
-      return {
-        ok: false,
-        error: `Cannot resolve GPU selectors: ${resolution.unresolvedTokens.join(", ")}`,
-      };
-    }
-    if (
-      resolution.source === "all" &&
-      resolution.uuids.length === 0 &&
-      this.requiresNvidiaGpuLeases()
-    ) {
-      return { ok: false, error: "Cannot verify GPU isolation for an implicit all-GPU launch" };
-    }
-    const resolved = resolution.unresolvedTokens.length === 0;
-    const claimedUuids = resolved ? resolution.uuids : [];
-    const launchOptions: LaunchModelOptions =
-      resolved && (resolution.source === "recipe" || claimedUuids.length > 0)
-        ? { gpuUuids: claimedUuids }
-        : {};
-    try {
-      await Effect.runPromise(this.deps.gpuLeaseRegistry.replace("llm", claimedUuids));
-      return { ok: true, launchOptions };
-    } catch (error) {
-      return {
-        ok: false,
-        error:
-          error instanceof GpuLeaseConflict
-            ? "The selected model GPU is reserved by local speech"
-            : error instanceof Error
-              ? error.message
-              : String(error),
-      };
-    }
+  private releaseLlmGpuLease(): Effect.Effect<void, EngineOperationError> {
+    if (this.leaseState === "released") return Effect.void;
+    return this.deps.gpuLeaseRegistry.release("llm").pipe(
+      Effect.asVoid,
+      Effect.mapError((cause) => operationError("release-llm-gpu-lease", cause)),
+      Effect.tap(() =>
+        Effect.sync(() => {
+          this.leaseState = "released";
+        }),
+      ),
+    );
   }
 
-  private async stopLivenessMonitor(): Promise<void> {
+  private prepareRecipeGpuLease(
+    recipe: Recipe,
+  ): Effect.Effect<RecipeGpuLeaseResult, EngineOperationError> {
+    const coordinator = this;
+    return Effect.gen(function* () {
+      const gpuInfo = yield* coordinator.deps
+        .gpuInfo()
+        .pipe(Effect.mapError((cause) => operationError("get-gpu-info", cause)));
+      const resolution = resolveRecipeGpuUuids(recipe, gpuInfo);
+      if (resolution.unresolvedTokens.length > 0) {
+        return {
+          ok: false,
+          error: `Cannot resolve GPU selectors: ${resolution.unresolvedTokens.join(", ")}`,
+        } as const;
+      }
+      if (
+        resolution.source === "all" &&
+        resolution.uuids.length === 0 &&
+        coordinator.requiresNvidiaGpuLeases()
+      ) {
+        return {
+          ok: false,
+          error: "Cannot verify GPU isolation for an implicit all-GPU launch",
+        } as const;
+      }
+      const claimedUuids = resolution.uuids;
+      const launchOptions: LaunchModelOptions =
+        resolution.source === "recipe" || claimedUuids.length > 0 ? { gpuUuids: claimedUuids } : {};
+      const claimed = yield* coordinator.deps.gpuLeaseRegistry.replace("llm", claimedUuids).pipe(
+        Effect.as({ ok: true, launchOptions } as const),
+        Effect.catch((error) =>
+          Effect.succeed({
+            ok: false,
+            error:
+              error instanceof GpuLeaseConflict
+                ? "The selected model GPU is reserved by local speech"
+                : error instanceof Error
+                  ? error.message
+                  : String(error),
+          } as const),
+        ),
+      );
+      if (claimed.ok) coordinator.leaseState = "held";
+      return claimed;
+    });
+  }
+
+  private stopLivenessMonitor(): Effect.Effect<void> {
     this.livenessSerial += 1;
     const fiber = this.livenessFiber;
     this.livenessFiber = null;
-    if (fiber) await Effect.runPromise(Fiber.interrupt(fiber));
+    return fiber ? Fiber.interrupt(fiber).pipe(Effect.asVoid) : Effect.void;
   }
 
-  private async confirmInferenceStopped(): Promise<boolean> {
+  private confirmInferenceStopped(): Effect.Effect<boolean> {
     return this.deps.processManager
       .confirmInferenceStopped(this.deps.config.inference_port)
-      .catch(() => false);
+      .pipe(Effect.catch(() => Effect.succeed(false)));
   }
 
-  private async releaseLlmGpuLeaseAfterStop(pid: number | null): Promise<boolean> {
-    if (!(await this.confirmInferenceStopped())) {
-      this.startLivenessMonitor(pid);
-      return false;
-    }
-    await this.releaseLlmGpuLease();
-    return true;
+  private releaseLlmGpuLeaseAfterStop(
+    pid: number | null,
+  ): Effect.Effect<boolean, EngineOperationError> {
+    const coordinator = this;
+    return Effect.gen(function* () {
+      if (!(yield* coordinator.confirmInferenceStopped())) {
+        yield* coordinator.startLivenessMonitor(pid);
+        return false;
+      }
+      yield* coordinator.releaseLlmGpuLease();
+      return true;
+    });
   }
 
-  private startLivenessMonitor(pid: number | null): void {
+  private startLivenessMonitor(
+    pid: number | null,
+    ownership: "observed" | "owned" = "observed",
+  ): Effect.Effect<void> {
     const serial = ++this.livenessSerial;
     const interval = this.deps.livenessPollIntervalMs ?? 1_000;
     const coordinator = this;
     const monitor = Effect.gen(function* () {
       while (true) {
         yield* Effect.sleep(interval);
+        if (ownership === "owned") {
+          if (!pid || (yield* coordinator.deps.processManager.confirmOwnedProcessStopped(pid))) {
+            break;
+          }
+          if (
+            !coordinator.processExists(pid) &&
+            (yield* coordinator.deps.processManager.killOwnedProcess(pid, true))
+          ) {
+            break;
+          }
+          continue;
+        }
         if (pid && coordinator.processExists(pid)) continue;
-        if (yield* Effect.promise(() => coordinator.confirmInferenceStopped())) break;
+        if (yield* coordinator.confirmInferenceStopped()) break;
       }
       if (serial !== coordinator.livenessSerial) return;
       yield* coordinator.deps.gpuLeaseRegistry.release("llm");
-      if (serial === coordinator.livenessSerial) coordinator.livenessFiber = null;
-    }).pipe(Effect.catch(() => Effect.void));
-    this.livenessFiber = Effect.runFork(monitor);
+      coordinator.leaseState = "released";
+    }).pipe(
+      Effect.catch(() => Effect.void),
+      Effect.ensuring(
+        Effect.sync(() => {
+          if (serial === coordinator.livenessSerial) coordinator.livenessFiber = null;
+        }),
+      ),
+    );
+    return monitor.pipe(
+      Effect.forkDetach({ startImmediately: true }),
+      Effect.tap((fiber) =>
+        Effect.sync(() => {
+          this.livenessFiber = fiber;
+        }),
+      ),
+      Effect.asVoid,
+    );
+  }
+
+  private publishLaunchProgress(
+    recipeId: string,
+    stage: string,
+    message: string,
+    progress?: number,
+  ): Effect.Effect<void, EngineOperationError> {
+    return this.deps.eventManager.publishLaunchProgress(recipeId, stage, message, progress);
   }
 
   private processExists(pid: number): boolean {

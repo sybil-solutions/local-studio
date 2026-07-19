@@ -10,7 +10,6 @@ interface SetupBenchmarkResult {
   generation_tps: number;
 }
 
-/** The "run a quick benchmark on the freshly-launched model" step of setup. */
 export function useSetupBenchmark() {
   const [benchmarking, setBenchmarking] = useState(false);
   const [benchmarkResult, setBenchmarkResult] = useState<SetupBenchmarkResult | null>(null);
@@ -22,7 +21,7 @@ export function useSetupBenchmark() {
     setBenchmarkResult(null);
     return Effect.runPromise(
       Effect.gen(function* () {
-        const result = yield* requestEffect(() => api.runBenchmark(1000, 100));
+        const result = yield* requestEffect(() => api.runBenchmark(1000));
         if (result.error) {
           return yield* Effect.fail(new Error(result.error));
         }

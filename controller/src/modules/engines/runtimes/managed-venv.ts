@@ -175,7 +175,7 @@ const installIntoManagedVenvEffect = (
       };
     }
 
-    const probe = yield* Effect.promise(() => probePythonRuntime(options.backend, targetPython));
+    const probe = yield* probePythonRuntime(options.backend, targetPython);
     return {
       success: probe.installed,
       version: probe.version,
@@ -187,4 +187,4 @@ const installIntoManagedVenvEffect = (
 
 export const installIntoManagedVenv = (
   options: ManagedInstallOptions,
-): Promise<RuntimeUpgradeResult> => Effect.runPromise(installIntoManagedVenvEffect(options));
+): Effect.Effect<RuntimeUpgradeResult> => installIntoManagedVenvEffect(options);

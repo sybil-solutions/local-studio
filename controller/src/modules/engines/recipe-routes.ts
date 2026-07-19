@@ -1,75 +1,105 @@
-import type { RouteRegistrar } from "../../http/route-registrar";
+import { Effect, Schema } from "effect";
+import { CONTROLLER_EVENTS } from "@local-studio/contracts/controller-events";
 import { badRequest, notFound } from "../../core/errors";
-import { parseJsonObjectBody } from "../../core/validation";
+import { decodeJsonBody } from "../../core/validation";
+import { effectHandler } from "../../http/effect-handler";
+import type { RouteRegistrar } from "../../http/route-registrar";
+import { isRecipeRunning } from "../models/recipes/recipe-matching";
 import { parseRecipe } from "../models/recipes/recipe-serializer";
 import { Event } from "../system/event-manager";
-import { CONTROLLER_EVENTS } from "@local-studio/contracts/controller-events";
-import { isRecipeRunning } from "../models/recipes/recipe-matching";
 import { createGetObservedProcess } from "./observed-process";
+
+const RecipePayloadSchema = Schema.Record(Schema.String, Schema.Unknown);
 
 export const registerRecipeRoutes: RouteRegistrar = (app, context) => {
   const getObservedProcess = createGetObservedProcess(context);
+  const publish = (event: Event): Effect.Effect<void> => context.eventManager.publish(event);
 
-  app.get("/recipes", async (ctx) => {
-    const recipes = context.stores.recipeStore.list();
-    const current = await getObservedProcess("recipes.list");
-    // launchState is the transitional truth: it marks the recipe between
-    // /launch acceptance and readiness. The process scan is the running truth.
-    // (The old getCurrentRecipe() cache showed a crashed model as "starting"
-    // forever and a launching one as "stopped".)
-    const launchingId = context.launchState.getLaunchingRecipeId();
-    const result = recipes.map((recipe) => {
-      const crashLoop = context.launchFailureBudget.get(recipe.id);
-      let status = crashLoop?.blocked ? "error" : "stopped";
-      if (launchingId === recipe.id) status = "starting";
-      if (current && isRecipeRunning(recipe, current)) status = "running";
-      return { ...recipe, status, crash_loop: crashLoop };
-    });
-    return ctx.json(result);
-  });
+  app.get(
+    "/recipes",
+    effectHandler((ctx) =>
+      Effect.gen(function* () {
+        const recipes = yield* context.stores.recipeStore.list();
+        const current = yield* getObservedProcess("recipes.list");
+        const launchingId = context.launchState.getLaunchingRecipeId();
+        const result = recipes.map((recipe) => {
+          const crashLoop = context.launchFailureBudget.get(recipe.id);
+          let status = crashLoop?.blocked ? "error" : "stopped";
+          if (launchingId === recipe.id) status = "starting";
+          if (current && isRecipeRunning(recipe, current)) status = "running";
+          return { ...recipe, status, crash_loop: crashLoop };
+        });
+        return ctx.json(result);
+      }),
+    ),
+  );
 
-  app.get("/recipes/:recipeId", async (ctx) => {
-    const recipeId = ctx.req.param("recipeId");
-    const recipe = context.stores.recipeStore.get(recipeId);
-    if (!recipe) throw notFound("Recipe not found");
-    return ctx.json(recipe);
-  });
+  app.get(
+    "/recipes/:recipeId",
+    effectHandler((ctx) =>
+      context.stores.recipeStore
+        .get(ctx.req.param("recipeId") ?? "")
+        .pipe(
+          Effect.flatMap((recipe) =>
+            recipe ? Effect.succeed(ctx.json(recipe)) : Effect.fail(notFound("Recipe not found")),
+          ),
+        ),
+    ),
+  );
 
-  app.post("/recipes", async (ctx) => {
-    const body = await parseJsonObjectBody(ctx);
-    try {
-      const recipe = parseRecipe(body);
-      context.stores.recipeStore.save(recipe);
-      context.engineService.resetLaunchFailureBudget(recipe.id);
-      await context.eventManager.publish(new Event(CONTROLLER_EVENTS.RECIPE_CREATED, { recipe }));
-      return ctx.json({ success: true, id: recipe.id });
-    } catch (error) {
-      throw badRequest(String(error));
-    }
-  });
+  app.post(
+    "/recipes",
+    effectHandler((ctx) =>
+      Effect.gen(function* () {
+        const body = yield* decodeJsonBody(ctx, RecipePayloadSchema);
+        const recipe = yield* Effect.try({
+          try: () => parseRecipe(body),
+          catch: (error) => badRequest(String(error)),
+        });
+        yield* context.stores.recipeStore
+          .save(recipe)
+          .pipe(Effect.mapError((error) => badRequest(error.message)));
+        context.engineService.resetLaunchFailureBudget(recipe.id);
+        yield* publish(new Event(CONTROLLER_EVENTS.RECIPE_CREATED, { recipe }));
+        return ctx.json({ success: true, id: recipe.id });
+      }),
+    ),
+  );
 
-  app.put("/recipes/:recipeId", async (ctx) => {
-    const recipeId = ctx.req.param("recipeId");
-    const body = await parseJsonObjectBody(ctx);
-    try {
-      const recipe = parseRecipe({ ...body, id: recipeId });
-      context.stores.recipeStore.save(recipe);
-      context.engineService.resetLaunchFailureBudget(recipe.id);
-      await context.eventManager.publish(new Event(CONTROLLER_EVENTS.RECIPE_UPDATED, { recipe }));
-      return ctx.json({ success: true, id: recipe.id });
-    } catch (error) {
-      throw badRequest(String(error));
-    }
-  });
+  app.put(
+    "/recipes/:recipeId",
+    effectHandler((ctx) =>
+      Effect.gen(function* () {
+        const recipeId = ctx.req.param("recipeId") ?? "";
+        const body = yield* decodeJsonBody(ctx, RecipePayloadSchema);
+        const recipe = yield* Effect.try({
+          try: () => parseRecipe({ ...body, id: recipeId }),
+          catch: (error) => badRequest(String(error)),
+        });
+        yield* context.stores.recipeStore
+          .save(recipe)
+          .pipe(Effect.mapError((error) => badRequest(error.message)));
+        context.engineService.resetLaunchFailureBudget(recipe.id);
+        yield* publish(new Event(CONTROLLER_EVENTS.RECIPE_UPDATED, { recipe }));
+        return ctx.json({ success: true, id: recipe.id });
+      }),
+    ),
+  );
 
-  app.delete("/recipes/:recipeId", async (ctx) => {
-    const recipeId = ctx.req.param("recipeId");
-    const deleted = context.stores.recipeStore.delete(recipeId);
-    if (!deleted) throw notFound("Recipe not found");
-    context.engineService.resetLaunchFailureBudget(recipeId);
-    await context.eventManager.publish(
-      new Event(CONTROLLER_EVENTS.RECIPE_DELETED, { recipe_id: recipeId }),
-    );
-    return ctx.json({ success: true });
-  });
+  app.delete(
+    "/recipes/:recipeId",
+    effectHandler((ctx) =>
+      Effect.gen(function* () {
+        const recipeId = ctx.req.param("recipeId") ?? "";
+        if (!(yield* context.stores.recipeStore.delete(recipeId))) {
+          return yield* Effect.fail(notFound("Recipe not found"));
+        }
+        context.engineService.resetLaunchFailureBudget(recipeId);
+        yield* context.eventManager.publish(
+          new Event(CONTROLLER_EVENTS.RECIPE_DELETED, { recipe_id: recipeId }),
+        );
+        return ctx.json({ success: true });
+      }),
+    ),
+  );
 };

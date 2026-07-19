@@ -24,7 +24,7 @@ export interface ToolCallStreamOptions {
 }
 
 export const createToolCallStream = (
-  reader: ReadableStreamDefaultReader<Uint8Array>,
+  source: ReadableStream<Uint8Array>,
   onUsage?: (usage: StreamUsage) => void,
   onFirstToken?: () => void,
   options: ToolCallStreamOptions = {},
@@ -36,19 +36,10 @@ export const createToolCallStream = (
   let visibleContentBuffer = "";
   let toolCallsFound = false;
   let usageTracked = false;
-  let emittedLines = 0;
-  let downstreamClosed = false;
   let firstTokenTracked = false;
   const contentHistory = new Map<string, { text: string; snapshot: boolean }>();
   const reasoningHistory = new Map<string, { text: string; snapshot: boolean }>();
   const replayCursors = new Map<string, number>();
-  const tearDownUpstream = async (): Promise<void> => {
-    try {
-      await reader.cancel();
-    } catch {
-      // upstream already torn down; ignore.
-    }
-  };
   const stripToolXmlDelta = (text: string): string => {
     return stripToolCallsFromContent(text);
   };
@@ -70,23 +61,12 @@ export const createToolCallStream = (
         else replayCursors.set(key, nextCursor);
         return "";
       }
-      // The supposed replay diverged, so the prefix we suppressed was never a
-      // replay — it was real content whose leading tokens happened to repeat an
-      // earlier prefix (e.g. a new sentence starting with "The "/"Hello"/"\n").
-      // Resurrect exactly what we withheld so no token is silently dropped.
       replayCursors.delete(key);
       const resurrected = previous.text.slice(0, replayCursor);
       const merged = resurrected + text;
       history.set(key, { text: previous.text + merged, snapshot: false });
       return merged;
     }
-    // A cumulative snapshot is STRICTLY longer than what we've accumulated (it
-    // adds new tokens). Using `>=` here misfired when a delta merely EQUALS the
-    // accumulated text — e.g. a second "\n" right after a first "\n" (a blank
-    // line / paragraph break, or the gap before a list). That equal "\n" was
-    // treated as a cumulative snapshot, sliced to "" (dropped), AND flipped the
-    // stream into snapshot mode, mangling everything after it — collapsing
-    // newlines so a list rendered all on one line. Require strictly longer.
     const isCumulative =
       previous.text.length > 0 &&
       text.length > previous.text.length &&
@@ -98,12 +78,6 @@ export const createToolCallStream = (
       return isCumulative ? text.slice(previous.text.length) : text;
     }
 
-    // A shorter NON-WHITESPACE delta that matches the start of the accumulated
-    // text *might* be an upstream replaying from the top; speculatively suppress
-    // it (the divergence branch above resurrects it if the replay never pans
-    // out). A whitespace-only delta (a standalone "\n" between list rows or
-    // paragraphs) is never a replay restart — suppressing it would drop the
-    // newline — so always append it verbatim.
     if (
       text.trim() !== "" &&
       previous.text.length > text.length &&
@@ -123,23 +97,13 @@ export const createToolCallStream = (
   const reasoningThink = createThinkRewriter();
 
   const enqueueLine = (
-    controller: ReadableStreamDefaultController<Uint8Array>,
+    controller: TransformStreamDefaultController<Uint8Array>,
     line: string,
   ): void => {
-    if (downstreamClosed) return;
-    try {
-      controller.enqueue(encoder.encode(`${line}\n`));
-      emittedLines += 1;
-    } catch {
-      downstreamClosed = true;
-      void tearDownUpstream();
-    }
+    controller.enqueue(encoder.encode(`${line}\n`));
   };
-  // Terminate each synthesized `data:` line with a blank line so the SSE parser
-  // dispatches it as its own event; without it, an injected chunk followed by
-  // `data: [DONE]` concatenates to `{...}\n[DONE]` and fails JSON.parse.
   const enqueueDataEvent = (
-    controller: ReadableStreamDefaultController<Uint8Array>,
+    controller: TransformStreamDefaultController<Uint8Array>,
     dataLine: string,
   ): void => {
     enqueueLine(controller, dataLine);
@@ -174,7 +138,7 @@ export const createToolCallStream = (
   };
 
   const emitVisibleContent = (
-    controller: ReadableStreamDefaultController<Uint8Array>,
+    controller: TransformStreamDefaultController<Uint8Array>,
     content: string,
   ): void => {
     if (!content) return;
@@ -184,7 +148,7 @@ export const createToolCallStream = (
     if (chunk) enqueueDataEvent(controller, chunk);
   };
 
-  const flushThinkCarry = (controller: ReadableStreamDefaultController<Uint8Array>): void => {
+  const flushThinkCarry = (controller: TransformStreamDefaultController<Uint8Array>): void => {
     emitVisibleContent(controller, contentThink.drainPendingContent());
     const tail = contentThink.drainCarry();
     if (!tail) return;
@@ -225,7 +189,7 @@ export const createToolCallStream = (
     onFirstToken?.();
   };
 
-  const maybeInjectToolCalls = (controller: ReadableStreamDefaultController<Uint8Array>): void => {
+  const maybeInjectToolCalls = (controller: TransformStreamDefaultController<Uint8Array>): void => {
     if (toolCallsFound || !visibleContentBuffer) return;
     const parsed = parseToolCallsFromContent(visibleContentBuffer);
     if (parsed.length > 0) {
@@ -234,207 +198,160 @@ export const createToolCallStream = (
     }
   };
 
-  type ReaderResult = { done: boolean; value?: Uint8Array | undefined };
+  const flushEvent = (
+    controller: TransformStreamDefaultController<Uint8Array>,
+    lines: string[],
+  ): void => {
+    if (lines.length === 0) return;
 
-  return new ReadableStream<Uint8Array>({
-    async start(controller): Promise<void> {
-      void controller;
-    },
-    async pull(controller): Promise<void> {
-      const flushEvent = (lines: string[]): void => {
-        if (lines.length === 0) return;
+    const dataLines: string[] = [];
+    const otherLines: string[] = [];
+    for (const rawLine of lines) {
+      const trimmedStart = rawLine.trimStart();
+      if (trimmedStart.startsWith("data:")) {
+        dataLines.push(trimmedStart.slice("data:".length).trimStart());
+      } else if (rawLine.length > 0) {
+        otherLines.push(rawLine);
+      }
+    }
 
-        const dataLines: string[] = [];
-        const otherLines: string[] = [];
-        for (const rawLine of lines) {
-          const trimmedStart = rawLine.trimStart();
-          if (trimmedStart.startsWith("data:")) {
-            dataLines.push(trimmedStart.slice("data:".length).trimStart());
-          } else if (rawLine.length > 0) {
-            otherLines.push(rawLine);
-          }
+    if (dataLines.length === 0) {
+      for (const outLine of lines) {
+        enqueueLine(controller, outLine);
+      }
+      return;
+    }
+
+    const data = dataLines.join("\n").trim();
+    if (data === "[DONE]") {
+      flushThinkCarry(controller);
+      maybeInjectToolCalls(controller);
+      for (const outLine of otherLines) {
+        enqueueLine(controller, outLine);
+      }
+      enqueueDataEvent(controller, "data: [DONE]");
+      return;
+    }
+
+    let parsed: Record<string, unknown> | null = null;
+    try {
+      parsed = JSON.parse(data) as Record<string, unknown>;
+    } catch {
+      parsed = null;
+    }
+    if (!parsed) {
+      for (const outLine of lines) {
+        enqueueLine(controller, outLine);
+      }
+      return;
+    }
+
+    parseUsage(parsed);
+    const choices = parsed["choices"];
+    if (Array.isArray(choices)) {
+      for (const [choiceIndex, choice] of choices.entries()) {
+        const choiceRecord = choice as Record<string, unknown>;
+        const hasDelta = choiceRecord["delta"] && typeof choiceRecord["delta"] === "object";
+        const delta = (hasDelta ? choiceRecord["delta"] : choiceRecord["message"]) as
+          | Record<string, unknown>
+          | undefined;
+        if (!delta) continue;
+        const toolCalls = delta["tool_calls"];
+        const hasActiveToolCalls = Array.isArray(toolCalls) && toolCalls.length > 0;
+        if (hasActiveToolCalls) {
+          toolCallsFound = true;
+          trackFirstToken();
         }
-
-        if (dataLines.length === 0) {
-          for (const outLine of lines) {
-            enqueueLine(controller, outLine);
-          }
-          return;
-        }
-
-        const data = dataLines.join("\n").trim();
-        if (data === "[DONE]") {
-          flushThinkCarry(controller);
-          maybeInjectToolCalls(controller);
-          for (const outLine of otherLines) {
-            enqueueLine(controller, outLine);
-          }
-          enqueueDataEvent(controller, "data: [DONE]");
-          return;
-        }
-
-        let parsed: Record<string, unknown> | null = null;
-        try {
-          parsed = JSON.parse(data) as Record<string, unknown>;
-        } catch {
-          parsed = null;
-        }
-        if (!parsed) {
-          for (const outLine of lines) {
-            enqueueLine(controller, outLine);
-          }
-          return;
-        }
-
-        parseUsage(parsed);
-        const choices = parsed["choices"];
-        if (Array.isArray(choices)) {
-          for (const [choiceIndex, choice] of choices.entries()) {
-            const choiceRecord = choice as Record<string, unknown>;
-            const hasDelta = choiceRecord["delta"] && typeof choiceRecord["delta"] === "object";
-            const delta = (hasDelta ? choiceRecord["delta"] : choiceRecord["message"]) as
-              | Record<string, unknown>
-              | undefined;
-            if (!delta) continue;
-            const toolCalls = delta["tool_calls"];
-            const hasActiveToolCalls = Array.isArray(toolCalls) && toolCalls.length > 0;
-            if (hasActiveToolCalls) {
-              toolCallsFound = true;
-              trackFirstToken();
-            }
-            const rawContent = typeof delta["content"] === "string" ? String(delta["content"]) : "";
-            const content = normalizeTextDelta(
-              contentHistory,
-              `${choiceIndex}:content`,
-              rawContent,
+        const rawContent = typeof delta["content"] === "string" ? String(delta["content"]) : "";
+        const content = normalizeTextDelta(
+          contentHistory,
+          `${choiceIndex}:content`,
+          rawContent,
+          !hasDelta,
+        );
+        const rawReasoning = firstReasoningField(delta);
+        const reasoningRaw = rawReasoning
+          ? normalizeTextDelta(
+              reasoningHistory,
+              `${choiceIndex}:reasoning`,
+              rawReasoning,
               !hasDelta,
-            );
-            const rawReasoning = firstReasoningField(delta);
-            const reasoningRaw = rawReasoning
-              ? normalizeTextDelta(
-                  reasoningHistory,
-                  `${choiceIndex}:reasoning`,
-                  rawReasoning,
-                  !hasDelta,
-                )
-              : "";
-            if (content || reasoningRaw) trackFirstToken();
-            let reasoning = "";
-            let reasoningFromContent = "";
-            if (content) {
-              const rewritten = contentThink.rewrite(content, false);
-              if (rewritten.content) {
-                visibleContentBuffer += rewritten.content;
-              }
-              const cleanedContent = stripToolXmlDelta(rewritten.content);
-              if (cleanedContent) {
-                delta["content"] = cleanedContent;
-              } else if ("content" in delta) {
-                delete delta["content"];
-              }
-              reasoningFromContent = rewritten.reasoningAppend;
-            } else if (rawContent && "content" in delta) {
-              delete delta["content"];
-            }
-
-            if (reasoningRaw) {
-              const rewrittenReasoning = reasoningThink.rewrite(reasoningRaw, true);
-              reasoning = `${reasoning}${rewrittenReasoning.reasoningAppend}`;
-            }
-
-            if (reasoningFromContent) {
-              reasoning = `${reasoning}${reasoningFromContent}`;
-            }
-
-            if (reasoning) {
-              delta["reasoning_content"] = stripToolXmlDelta(reasoning);
-            } else if (REASONING_FIELDS.some((field) => field in delta)) {
-              delete delta["reasoning_content"];
-            }
-            delete delta["reasoning"];
-            delete delta["reasoning_text"];
+            )
+          : "";
+        if (content || reasoningRaw) trackFirstToken();
+        let reasoning = "";
+        let reasoningFromContent = "";
+        if (content) {
+          const rewritten = contentThink.rewrite(content, false);
+          if (rewritten.content) {
+            visibleContentBuffer += rewritten.content;
           }
+          const cleanedContent = stripToolXmlDelta(rewritten.content);
+          if (cleanedContent) {
+            delta["content"] = cleanedContent;
+          } else if ("content" in delta) {
+            delete delta["content"];
+          }
+          reasoningFromContent = rewritten.reasoningAppend;
+        } else if (rawContent && "content" in delta) {
+          delete delta["content"];
         }
 
-        for (const outLine of otherLines) {
-          enqueueLine(controller, outLine);
+        if (reasoningRaw) {
+          const rewrittenReasoning = reasoningThink.rewrite(reasoningRaw, true);
+          reasoning = `${reasoning}${rewrittenReasoning.reasoningAppend}`;
         }
-        enqueueDataEvent(controller, `data: ${JSON.stringify(parsed)}`);
-      };
 
-      if (downstreamClosed) {
-        try {
-          controller.close();
-        } catch {}
-        await tearDownUpstream();
-        return;
+        if (reasoningFromContent) {
+          reasoning = `${reasoning}${reasoningFromContent}`;
+        }
+
+        if (reasoning) {
+          delta["reasoning_content"] = stripToolXmlDelta(reasoning);
+        } else if (REASONING_FIELDS.some((field) => field in delta)) {
+          delete delta["reasoning_content"];
+        }
+        delete delta["reasoning"];
+        delete delta["reasoning_text"];
       }
+    }
 
-      const emittedBeforePull = emittedLines;
+    for (const outLine of otherLines) {
+      enqueueLine(controller, outLine);
+    }
+    enqueueDataEvent(controller, `data: ${JSON.stringify(parsed)}`);
+  };
 
-      try {
-        while (!downstreamClosed && emittedLines === emittedBeforePull) {
-          let result: ReaderResult;
-          try {
-            result = await reader.read();
-          } catch {
-            downstreamClosed = true;
-            try {
-              controller.close();
-            } catch {}
-            return;
-          }
-          if (result.done) {
-            // Flush any bytes the streaming decoder is still holding (an
-            // incomplete multibyte char at the final chunk boundary); without
-            // this final decode the trailing character would be dropped.
-            buffer += decoder.decode();
-            if (buffer) {
-              const trailing = buffer.endsWith("\r") ? buffer.slice(0, -1) : buffer;
-              if (trailing.length > 0) {
-                pendingEventLines.push(trailing);
-              }
-              buffer = "";
-            }
-            if (pendingEventLines.length > 0) {
-              flushEvent(pendingEventLines);
-              pendingEventLines = [];
-            }
-            flushThinkCarry(controller);
-            maybeInjectToolCalls(controller);
-            try {
-              controller.close();
-            } catch {}
-            return;
-          }
-
-          const chunk = result.value ?? new Uint8Array();
-          buffer += decoder.decode(chunk, { stream: true });
-          const lines = buffer.split("\n");
-          buffer = lines.pop() ?? "";
-
-          for (const line of lines) {
-            const normalized = line.endsWith("\r") ? line.slice(0, -1) : line;
-            if (normalized === "") {
-              flushEvent(pendingEventLines);
-              pendingEventLines = [];
-              enqueueLine(controller, "");
-              continue;
-            }
-            pendingEventLines.push(normalized);
-          }
+  const transform = new TransformStream<Uint8Array, Uint8Array>({
+    transform(chunk, controller): void {
+      buffer += decoder.decode(chunk, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() ?? "";
+      for (const line of lines) {
+        const normalized = line.endsWith("\r") ? line.slice(0, -1) : line;
+        if (normalized === "") {
+          flushEvent(controller, pendingEventLines);
+          pendingEventLines = [];
+          enqueueLine(controller, "");
+        } else {
+          pendingEventLines.push(normalized);
         }
-      } catch {
-        downstreamClosed = true;
-        await tearDownUpstream();
-        try {
-          controller.close();
-        } catch {}
       }
     },
-    async cancel(): Promise<void> {
-      downstreamClosed = true;
-      await tearDownUpstream();
+    flush(controller): void {
+      buffer += decoder.decode();
+      if (buffer) {
+        const trailing = buffer.endsWith("\r") ? buffer.slice(0, -1) : buffer;
+        if (trailing) pendingEventLines.push(trailing);
+        buffer = "";
+      }
+      if (pendingEventLines.length > 0) {
+        flushEvent(controller, pendingEventLines);
+        pendingEventLines = [];
+      }
+      flushThinkCarry(controller);
+      maybeInjectToolCalls(controller);
     },
   });
+  return source.pipeThrough(transform);
 };

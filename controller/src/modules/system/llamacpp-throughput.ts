@@ -2,6 +2,7 @@ import type { AppContext } from "../../app-context";
 import { listLogFiles, resolveExistingLogPath, tailFileLines } from "../../core/log-files";
 import { isRecipeRunning } from "../models/recipes/recipe-matching";
 import type { ProcessInfo, Recipe } from "../models/types";
+import { Effect } from "effect";
 
 const LLAMACPP_LOG_TAIL_LINES = 240;
 export const LLAMACPP_TPS_STALE_MS = 15_000;
@@ -52,38 +53,49 @@ const parseLlamacppThroughputFromLines = (lines: string[]): LlamacppThroughputSa
   };
 };
 
-const findRunningRecipeForProcess = (context: AppContext, current: ProcessInfo): Recipe | null => {
-  const recipes = context.stores.recipeStore.list();
-  return (
-    recipes.find((recipe) =>
-      isRecipeRunning(recipe, current, {
-        allowCurrentContainsRecipePath: true,
-      }),
-    ) ?? null
+const findRunningRecipeForProcess = (
+  context: AppContext,
+  current: ProcessInfo,
+): Effect.Effect<Recipe | null, unknown> =>
+  context.stores.recipeStore.list().pipe(
+    Effect.map(
+      (recipes) =>
+        recipes.find((recipe) =>
+          isRecipeRunning(recipe, current, {
+            allowCurrentContainsRecipePath: true,
+          }),
+        ) ?? null,
+    ),
   );
-};
 
 export const scrapeLlamacppThroughput = (
   context: AppContext,
   current: ProcessInfo,
-): LlamacppThroughputSample | null => {
-  const recipe = findRunningRecipeForProcess(context, current);
-  const recipeLogPath = recipe ? resolveExistingLogPath(context.config.data_dir, recipe.id) : null;
-  const servedName = (current.served_model_name ?? "").toLowerCase();
-
-  let logPath = recipeLogPath;
-  if (!logPath) {
-    const entries = listLogFiles(context.config.data_dir).filter(
-      (entry) => entry.sessionId !== "controller",
+): Effect.Effect<LlamacppThroughputSample | null, unknown> =>
+  Effect.gen(function* () {
+    const recipe = yield* findRunningRecipeForProcess(context, current);
+    const recipeLogPath = yield* Effect.sync(() =>
+      recipe ? resolveExistingLogPath(context.config.data_dir, recipe.id) : null,
     );
-    const byName =
-      servedName.length > 0
-        ? entries.find((entry) => entry.sessionId.toLowerCase().includes(servedName))
-        : null;
-    logPath = byName?.path ?? entries[0]?.path ?? null;
-  }
+    const servedName = (current.served_model_name ?? "").toLowerCase();
 
-  if (!logPath) return null;
-  const lines = tailFileLines(logPath, LLAMACPP_LOG_TAIL_LINES);
-  return parseLlamacppThroughputFromLines(lines);
-};
+    let logPath = recipeLogPath;
+    if (!logPath) {
+      const entries = (yield* Effect.try({
+        try: () => listLogFiles(context.config.data_dir),
+        catch: (error) => error,
+      })).filter((entry) => entry.sessionId !== "controller");
+      const byName =
+        servedName.length > 0
+          ? entries.find((entry) => entry.sessionId.toLowerCase().includes(servedName))
+          : null;
+      logPath = byName?.path ?? entries[0]?.path ?? null;
+    }
+
+    if (!logPath) return null;
+    const lines = yield* Effect.try({
+      try: () => tailFileLines(logPath, LLAMACPP_LOG_TAIL_LINES),
+      catch: (error) => error,
+    });
+    return parseLlamacppThroughputFromLines(lines);
+  });

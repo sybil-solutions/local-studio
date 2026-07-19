@@ -1,10 +1,8 @@
 import { existsSync } from "node:fs";
+import { Effect } from "effect";
 import type { Config } from "../../../config/env";
 import type { ProcessInfo, Recipe } from "../../models/types";
-import type {
-  RuntimeBackendInfo,
-  RuntimeUpgradeResult,
-} from "@local-studio/contracts/system";
+import type { RuntimeBackendInfo, RuntimeUpgradeResult } from "@local-studio/contracts/system";
 import { appendExtraArguments, getPythonPath } from "../process/backend-builder";
 import { stripForeignFlagKeys } from "@local-studio/contracts/engine-args";
 import { extractFlag, hasModuleInvocation } from "../argument-utilities";
@@ -39,7 +37,6 @@ const extractModelPath = (args: string[]): string | null => {
 };
 
 const extractServedModelName = (_args: string[]): string | null => {
-  // mlx_lm.server has no served-model-name flag; it uses the model path as the ID.
   return null;
 };
 
@@ -51,28 +48,31 @@ const resolvePythonPath = (config: Config): string | null => {
   return existsSync(managed) ? managed : null;
 };
 
-const getRuntimeInfoAsync = async (
+const getRuntimeInfo = (
   config: Config,
   runningProcess?: Pick<ProcessInfo, "pid" | "backend"> | null,
-): Promise<RuntimeBackendInfo> => {
-  const runningPython =
-    runningProcess?.backend === "mlx" ? await probeRunningProcessPython(runningProcess.pid) : null;
-  const probe = await probeBackendRuntime("mlx", [
-    runningPython,
-    config.mlx_python,
-    resolvePythonPath(config),
-    "python3",
-    "python",
-  ]);
-  return {
-    installed: probe.installed,
-    version: probe.version,
-    python_path: probe.pythonPath ?? config.mlx_python ?? null,
-    upgrade_command_available: false,
-  };
-};
+): Effect.Effect<RuntimeBackendInfo> =>
+  Effect.gen(function* () {
+    const runningPython =
+      runningProcess?.backend === "mlx"
+        ? yield* probeRunningProcessPython(runningProcess.pid)
+        : null;
+    const probe = yield* probeBackendRuntime("mlx", [
+      runningPython,
+      config.mlx_python,
+      resolvePythonPath(config),
+      "python3",
+      "python",
+    ]);
+    return {
+      installed: probe.installed,
+      version: probe.version,
+      python_path: probe.pythonPath ?? config.mlx_python ?? null,
+      upgrade_command_available: false,
+    };
+  });
 
-const installMlx = async (options: InstallOptions): Promise<RuntimeUpgradeResult> => {
+const installMlx = (options: InstallOptions): Effect.Effect<RuntimeUpgradeResult> => {
   const packageSpec = managedPackageSpec(options.version);
   const pythonPath = options.pythonPath ?? options.config.mlx_python ?? null;
   return installIntoManagedVenv({
@@ -97,5 +97,5 @@ export const mlxSpec: EngineSpec = {
   extractModelPath,
   extractServedModelName,
   resolvePythonPath,
-  getRuntimeInfo: getRuntimeInfoAsync,
+  getRuntimeInfo,
 };

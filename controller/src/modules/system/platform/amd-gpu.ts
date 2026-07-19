@@ -1,5 +1,6 @@
 import type { GpuInfo } from "../../models/types";
-import { runCommand } from "../../../core/command";
+import { Effect } from "effect";
+import { runCommandAsyncEffect } from "../../../core/command";
 import { resolveAmdSmiBinary, resolveRocmSmiBinary } from "./smi-tools";
 
 type AmdSmiValue = { value?: number; unit?: string } | "N/A" | null;
@@ -202,15 +203,19 @@ export const parseRocmSmiText = (text: string): RocmSmiParsed[] => {
     .sort((a, b) => a.index - b.index);
 };
 
-export const getGpuInfoFromAmdSmi = (): GpuInfo[] => {
-  try {
+export const getGpuInfoFromAmdSmi = (): Effect.Effect<GpuInfo[]> =>
+  Effect.gen(function* () {
     const amdSmi = resolveAmdSmiBinary();
     if (!amdSmi) return [];
 
-    const metricResult = runCommand(amdSmi, ["metric", "--json", "-g", "all"], 5_000);
+    const metricResult = yield* runCommandAsyncEffect(amdSmi, ["metric", "--json", "-g", "all"], {
+      timeoutMs: 5_000,
+    });
     if (metricResult.status !== 0 || !metricResult.stdout) return [];
 
-    const staticResult = runCommand(amdSmi, ["static", "--json", "-g", "all"], 5_000);
+    const staticResult = yield* runCommandAsyncEffect(amdSmi, ["static", "--json", "-g", "all"], {
+      timeoutMs: 5_000,
+    });
     if (staticResult.status !== 0 || !staticResult.stdout) return [];
 
     const metrics = parseAmdSmiMetricJson(metricResult.stdout);
@@ -267,13 +272,10 @@ export const getGpuInfoFromAmdSmi = (): GpuInfo[] => {
         } satisfies GpuInfo;
       })
       .filter((entry): entry is GpuInfo => Boolean(entry));
-  } catch {
-    return [];
-  }
-};
+  });
 
-export const getGpuInfoFromRocmSmi = (): GpuInfo[] => {
-  try {
+export const getGpuInfoFromRocmSmi = (): Effect.Effect<GpuInfo[]> =>
+  Effect.gen(function* () {
     const rocmSmi = resolveRocmSmiBinary();
     if (!rocmSmi) return [];
 
@@ -285,9 +287,9 @@ export const getGpuInfoFromRocmSmi = (): GpuInfo[] => {
       "--showtemp",
       "--showpower",
     ];
-    let result = runCommand(rocmSmi, args, 5_000);
+    let result = yield* runCommandAsyncEffect(rocmSmi, args, { timeoutMs: 5_000 });
     if (result.status !== 0) {
-      result = runCommand(rocmSmi, [], 5_000);
+      result = yield* runCommandAsyncEffect(rocmSmi, [], { timeoutMs: 5_000 });
     }
 
     const combined = [result.stdout, result.stderr].filter(Boolean).join("\n");
@@ -318,7 +320,4 @@ export const getGpuInfoFromRocmSmi = (): GpuInfo[] => {
         power_limit: powerLimit,
       } satisfies GpuInfo;
     });
-  } catch {
-    return [];
-  }
-};
+  });

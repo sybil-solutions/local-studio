@@ -1,9 +1,9 @@
+import { Cause, Effect, Exit } from "effect";
 import type { MiddlewareHandler } from "hono";
 import { isHttpStatus } from "../core/errors";
 import type { AppContext } from "../app-context";
+import { effectMiddleware, type ControllerEnvironment } from "./effect-handler";
 
-// High-frequency polling and streaming paths; recording every hit would grow
-// the telemetry tables without bound and drown real traffic in the stats.
 export const TELEMETRY_SKIP_PATHS = new Set([
   "/health",
   "/metrics",
@@ -30,40 +30,45 @@ function errorMessage(error: unknown): string {
 
 export function createControllerRequestObservabilityMiddleware(
   context: AppContext,
-): MiddlewareHandler {
-  return async (ctx, next) => {
+): MiddlewareHandler<ControllerEnvironment> {
+  return effectMiddleware((ctx, next) => {
     if (TELEMETRY_SKIP_PATHS.has(ctx.req.path)) {
-      await next();
-      return;
+      return Effect.tryPromise({ try: () => next(), catch: (source) => source });
     }
     const start = performance.now();
     const method = ctx.req.method.toUpperCase();
     const path = ctx.req.path;
     const userAgent = ctx.req.header("user-agent") ?? null;
-
-    try {
-      await next();
-      const status = ctx.res.status || 200;
-      context.stores.controllerRequestStore.record({
-        method,
-        path,
-        status,
-        duration_ms: elapsedMs(start),
-        success: status >= 200 && status < 400,
-        user_agent: userAgent,
-      });
-    } catch (error) {
-      context.stores.controllerRequestStore.record({
-        method,
-        path,
-        status: isHttpStatus(error) ? error.status : 500,
-        duration_ms: elapsedMs(start),
-        success: false,
-        error_class: errorClass(error),
-        error_message: errorMessage(error),
-        user_agent: userAgent,
-      });
-      throw error;
-    }
-  };
+    return Effect.tryPromise({ try: () => next(), catch: (source) => source }).pipe(
+      Effect.onExit((exit) => {
+        if (Exit.isSuccess(exit)) {
+          const status = ctx.res.status || 200;
+          return context.stores.controllerRequestStore
+            .recordEffect({
+              method,
+              path,
+              status,
+              duration_ms: elapsedMs(start),
+              success: status >= 200 && status < 400,
+              user_agent: userAgent,
+            })
+            .pipe(Effect.ignore);
+        }
+        const failure = Cause.findErrorOption(exit.cause);
+        const error = failure._tag === "Some" ? failure.value : Cause.squash(exit.cause);
+        return context.stores.controllerRequestStore
+          .recordEffect({
+            method,
+            path,
+            status: isHttpStatus(error) ? error.status : 500,
+            duration_ms: elapsedMs(start),
+            success: false,
+            error_class: errorClass(error),
+            error_message: errorMessage(error),
+            user_agent: userAgent,
+          })
+          .pipe(Effect.ignore);
+      }),
+    );
+  });
 }

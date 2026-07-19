@@ -1,7 +1,8 @@
 import { existsSync } from "node:fs";
 import { freemem, totalmem } from "node:os";
+import { Effect } from "effect";
 import type { GpuInfo, RuntimeGpuMonitoringTool } from "../../models/types";
-import { runCommand, runCommandAsync } from "../../../core/command";
+import { runCommandAsyncEffect } from "../../../core/command";
 import { getGpuInfoFromAmdSmi, getGpuInfoFromRocmSmi } from "./amd-gpu";
 import { getGpuInfoFromIntelSysfs } from "./intel-gpu";
 import { resolveRocmSmiTool } from "./rocm-info";
@@ -25,8 +26,6 @@ const NVIDIA_SMI_GPU_FIELDS = [
   "power.limit",
 ] as const;
 
-// driver_version is appended after the GPU fields so one nvidia-smi invocation
-// can feed GPU info, CUDA driver info, and the monitoring probe.
 const NVIDIA_SMI_SNAPSHOT_QUERY = [...NVIDIA_SMI_GPU_FIELDS, "driver_version"].join(",");
 const NVIDIA_SMI_ARGS = [
   `--query-gpu=${NVIDIA_SMI_SNAPSHOT_QUERY}`,
@@ -102,64 +101,45 @@ const parseNvidiaSmiDriverVersion = (stdout: string): string | null => {
 };
 
 export type NvidiaSmiSnapshot = {
-  /** nvidia-smi exists and the query command exited 0. */
   available: boolean;
   gpus: GpuInfo[];
   driverVersion: string | null;
 };
 
-/**
- * Single async nvidia-smi invocation whose parsed output feeds GPU info, the
- * CUDA driver version, and the GPU-monitoring probe. Returns null when
- * nvidia-smi is not resolvable at all.
- */
-export const queryNvidiaSmiSnapshot = async (): Promise<NvidiaSmiSnapshot | null> => {
+export const queryNvidiaSmiSnapshot = (): Effect.Effect<NvidiaSmiSnapshot | null> => {
   const nvidiaSmi = resolveNvidiaSmiBinary();
-  if (!nvidiaSmi) return null;
-  try {
-    const result = await runCommandAsync(nvidiaSmi, NVIDIA_SMI_ARGS, {
-      timeoutMs: NVIDIA_SMI_TIMEOUT_MS,
-    });
-    if (result.status !== 0 || !result.stdout) {
-      return { available: result.status === 0, gpus: [], driverVersion: null };
-    }
-    return {
-      available: true,
-      gpus: parseNvidiaSmiGpuOutput(result.stdout),
-      driverVersion: parseNvidiaSmiDriverVersion(result.stdout),
-    };
-  } catch {
-    return { available: false, gpus: [], driverVersion: null };
-  }
+  if (!nvidiaSmi) return Effect.succeed(null);
+  return runCommandAsyncEffect(nvidiaSmi, NVIDIA_SMI_ARGS, {
+    timeoutMs: NVIDIA_SMI_TIMEOUT_MS,
+  }).pipe(
+    Effect.map((result) => {
+      if (result.status !== 0 || !result.stdout) {
+        return { available: result.status === 0, gpus: [], driverVersion: null };
+      }
+      return {
+        available: true,
+        gpus: parseNvidiaSmiGpuOutput(result.stdout),
+        driverVersion: parseNvidiaSmiDriverVersion(result.stdout),
+      };
+    }),
+    Effect.catch(() => Effect.succeed({ available: false, gpus: [], driverVersion: null })),
+  );
 };
 
-export const getGpuInfoFromNvidiaSmi = (): GpuInfo[] => {
-  try {
-    const nvidiaSmi = resolveNvidiaSmiBinary();
-    if (!nvidiaSmi) return [];
+export const getGpuInfoFromNvidiaSmi = (): Effect.Effect<GpuInfo[]> =>
+  queryNvidiaSmiSnapshot().pipe(Effect.map((snapshot) => snapshot?.gpus ?? []));
 
-    const result = runCommand(nvidiaSmi, NVIDIA_SMI_ARGS, NVIDIA_SMI_TIMEOUT_MS);
-    if (result.status !== 0 || !result.stdout) return [];
+export const detectGpuMonitoringTool = (): Effect.Effect<RuntimeGpuMonitoringTool | null> =>
+  Effect.gen(function* () {
+    const forced = resolveForcedGpuMonitoringTool();
+    if (forced) return forced;
+    if (resolveNvidiaSmiBinary()) return "nvidia-smi";
+    const rocmTool = resolveRocmSmiTool();
+    if (rocmTool) return rocmTool;
+    if ((yield* getGpuInfoFromIntelSysfs()).length > 0) return "intel-sysfs";
+    return null;
+  });
 
-    return parseNvidiaSmiGpuOutput(result.stdout);
-  } catch {
-    return [];
-  }
-};
-
-/** Tool the cascade in getGpuInfo would use, without running any query commands. */
-export const detectGpuMonitoringTool = (): RuntimeGpuMonitoringTool | null => {
-  const forced = resolveForcedGpuMonitoringTool();
-  if (forced) return forced;
-  if (resolveNvidiaSmiBinary()) return "nvidia-smi";
-  const rocmTool = resolveRocmSmiTool();
-  if (rocmTool) return rocmTool;
-  if (getGpuInfoFromIntelSysfs().length > 0) return "intel-sysfs";
-  return null;
-};
-
-// Logged once per process so CPU-only and missing-driver hosts are distinguishable
-// from "zero GPUs" without spamming every poll.
 let warnedNoGpuTooling = false;
 
 const warnNoGpuToolingOnce = (): void => {
@@ -174,50 +154,52 @@ const warnNoGpuToolingOnce = (): void => {
   console.warn(`No GPUs reported by any monitoring tool; attempted: ${attempted}`);
 };
 
-const collectGpuInfo = (): GpuInfo[] => {
-  const forced = resolveForcedGpuMonitoringTool();
-  if (forced === "nvidia-smi") {
-    return getGpuInfoFromNvidiaSmi();
-  }
-  if (forced === "amd-smi") {
-    return getGpuInfoFromAmdSmi();
-  }
-  if (forced === "rocm-smi") {
-    return getGpuInfoFromRocmSmi();
-  }
-  if (forced === "intel-sysfs") {
-    return getGpuInfoFromIntelSysfs();
-  }
+const collectGpuInfo = (): Effect.Effect<GpuInfo[]> =>
+  Effect.gen(function* () {
+    const forced = resolveForcedGpuMonitoringTool();
+    if (forced === "nvidia-smi") {
+      return yield* getGpuInfoFromNvidiaSmi();
+    }
+    if (forced === "amd-smi") {
+      return yield* getGpuInfoFromAmdSmi();
+    }
+    if (forced === "rocm-smi") {
+      return yield* getGpuInfoFromRocmSmi();
+    }
+    if (forced === "intel-sysfs") {
+      return yield* getGpuInfoFromIntelSysfs();
+    }
 
-  const nvidia = getGpuInfoFromNvidiaSmi();
-  if (nvidia.length > 0) {
-    return nvidia;
-  }
+    const nvidia = yield* getGpuInfoFromNvidiaSmi();
+    if (nvidia.length > 0) {
+      return nvidia;
+    }
 
-  const rocmTool = resolveRocmSmiTool();
-  if (rocmTool === "amd-smi") {
-    const amd = getGpuInfoFromAmdSmi();
-    if (amd.length > 0) return amd;
-    return getGpuInfoFromRocmSmi();
-  }
-  if (rocmTool === "rocm-smi") {
-    const rocm = getGpuInfoFromRocmSmi();
-    if (rocm.length > 0) return rocm;
-    return getGpuInfoFromAmdSmi();
-  }
+    const rocmTool = resolveRocmSmiTool();
+    if (rocmTool === "amd-smi") {
+      const amd = yield* getGpuInfoFromAmdSmi();
+      if (amd.length > 0) return amd;
+      return yield* getGpuInfoFromRocmSmi();
+    }
+    if (rocmTool === "rocm-smi") {
+      const rocm = yield* getGpuInfoFromRocmSmi();
+      if (rocm.length > 0) return rocm;
+      return yield* getGpuInfoFromAmdSmi();
+    }
 
-  const intel = getGpuInfoFromIntelSysfs();
-  if (intel.length > 0) {
-    return intel;
-  }
+    const intel = yield* getGpuInfoFromIntelSysfs();
+    if (intel.length > 0) {
+      return intel;
+    }
 
-  return [];
-};
+    return [];
+  });
 
-export const getGpuInfo = (): GpuInfo[] => {
-  const gpus = collectGpuInfo();
-  if (gpus.length === 0) {
-    warnNoGpuToolingOnce();
-  }
-  return gpus;
-};
+export const getGpuInfo = (): Effect.Effect<GpuInfo[]> =>
+  Effect.gen(function* () {
+    const gpus = yield* collectGpuInfo();
+    if (gpus.length === 0) {
+      yield* Effect.sync(warnNoGpuToolingOnce);
+    }
+    return gpus;
+  });

@@ -13,14 +13,14 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { Effect } from "effect";
-import type { ProcessInventoryEntry } from "./process-inventory";
+import type { ProcessInventoryEntry } from "../../src/modules/engines/process/process-inventory";
 import {
   createProcessOwnershipStore,
   inspectOwnedProcessGroup,
   type ActiveProcessOwnershipRecord,
   type DockerBindingEnvironment,
   type PendingProcessOwnershipRecord,
-} from "./process-ownership";
+} from "../../src/modules/engines/process/process-ownership";
 
 const directories = new Set<string>();
 const START_IDENTITY = "1789000000000";

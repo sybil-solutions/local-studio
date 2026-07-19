@@ -11,14 +11,12 @@ export type CommandResult = {
 };
 
 export type RunSyncOptions = {
-  /** Kill the command after this long. Omit for no timeout (matches bare `spawnSync`). */
   timeoutMs?: number | undefined;
   env?: NodeJS.ProcessEnv | undefined;
 };
 
 export type SpawnDetachedOptions = {
   env?: NodeJS.ProcessEnv | undefined;
-  /** "pipe" exposes stdout/stderr for log capture; "ignore" discards them. */
   stdio: "pipe" | "ignore";
 };
 
@@ -27,7 +25,6 @@ export type ProcessEnvironmentValue =
   | { readonly status: "missing" }
   | { readonly status: "unavailable" };
 
-/** Minimal view of a detached child process; satisfied by `ChildProcess`. */
 export interface SpawnedProcess {
   readonly pid?: number | undefined;
   readonly exitCode: number | null;
@@ -35,16 +32,11 @@ export interface SpawnedProcess {
   readonly stderr: Readable | null;
   on(event: "error", listener: (error: Error) => void): void;
   on(event: "exit", listener: () => void): void;
-  kill(signal: NodeJS.Signals): boolean;
+  removeListener(event: "error", listener: (error: Error) => void): void;
+  removeListener(event: "exit", listener: () => void): void;
   unref(): void;
 }
 
-/**
- * Injectable process boundary. Production code takes a `ProcessRunner`
- * defaulting to `realProcessRunner`; tests substitute a scripted fake so spawn
- * logic (constructed argv, exit handling, output capture) is testable without
- * touching the host.
- */
 export interface ProcessRunner {
   readProcessEnvironmentVariable(pid: number, key: string): ProcessEnvironmentValue;
   runSync(command: string, args: string[], options?: RunSyncOptions): CommandResult;
@@ -52,10 +44,7 @@ export interface ProcessRunner {
   spawnDetached(command: string, args: string[], options: SpawnDetachedOptions): SpawnedProcess;
 }
 
-const readLinuxProcessEnvironmentVariable = (
-  pid: number,
-  key: string,
-): ProcessEnvironmentValue => {
+const readLinuxProcessEnvironmentVariable = (pid: number, key: string): ProcessEnvironmentValue => {
   try {
     const prefix = `${key}=`;
     const entry = readFileSync(`/proc/${pid}/environ`, "utf8")
@@ -78,12 +67,7 @@ const readDarwinProcessEnvironmentVariable = (
     const extended = spawnSync("ps", ["eww", "-p", String(pid), "-o", "command="], {
       encoding: "utf8",
     });
-    if (
-      command.status !== 0 ||
-      extended.status !== 0 ||
-      !command.stdout ||
-      !extended.stdout
-    ) {
+    if (command.status !== 0 || extended.status !== 0 || !command.stdout || !extended.stdout) {
       return { status: "unavailable" };
     }
     const prefix = `${key}=`;
@@ -191,12 +175,6 @@ export const runCommandEffect = (
   timeoutMs = DEFAULT_TIMEOUT_MS,
 ): Effect.Effect<CommandResult> =>
   Effect.sync(() => realProcessRunner.runSync(command, args, { timeoutMs }));
-
-export const runCommand = (
-  command: string,
-  args: string[],
-  timeoutMs = DEFAULT_TIMEOUT_MS,
-): CommandResult => Effect.runSync(runCommandEffect(command, args, timeoutMs));
 
 export const runCommandAsyncEffect = (
   command: string,
@@ -307,12 +285,6 @@ export const runCommandAsyncEffect = (
       }),
     );
   });
-
-export const runCommandAsync = (
-  command: string,
-  args: string[],
-  options: AsyncCommandOptions,
-): Promise<AsyncCommandResult> => Effect.runPromise(runCommandAsyncEffect(command, args, options));
 
 const runtimeBinDirectory = (): string | null =>
   process.env["LOCAL_STUDIO_RUNTIME_BIN"] ??

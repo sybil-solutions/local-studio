@@ -2,13 +2,13 @@ import { expect, test } from "bun:test";
 import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { realProcessRunner, type ProcessRunner } from "../../../core/command";
+import { realProcessRunner, type ProcessRunner } from "../../src/core/command";
 import {
   listProcessInventory,
   normalizeProcessStartIdentity,
   parseInventoryLine,
   readProcessInventory,
-} from "./process-inventory";
+} from "../../src/modules/engines/process/process-inventory";
 
 const runnerWithOutput = (stdout: string, status = 0): ProcessRunner => ({
   readProcessEnvironmentVariable: () => ({ status: "unavailable" }),
@@ -44,11 +44,7 @@ test("normalizes local ps start times to the same instant across time zones", ()
     const warsaw = normalizeProcessStartIdentity("Fri Jul 17 12:00:00 2026");
     process.env.TZ = "America/New_York";
     const newYork = normalizeProcessStartIdentity("Fri Jul 17 06:00:00 2026");
-    expect([utc, warsaw, newYork]).toEqual([
-      "1784282400000",
-      "1784282400000",
-      "1784282400000",
-    ]);
+    expect([utc, warsaw, newYork]).toEqual(["1784282400000", "1784282400000", "1784282400000"]);
   } finally {
     if (originalTimezone === undefined) delete process.env.TZ;
     else process.env.TZ = originalTimezone;
@@ -61,9 +57,7 @@ test("rejects legacy or malformed inventory lines", () => {
 });
 
 test("one malformed row makes the security inventory unavailable", () => {
-  const runner = runnerWithOutput(
-    "42000 1 42000 Fri Jul 17 12:00:00 2026 S python\nmalformed",
-  );
+  const runner = runnerWithOutput("42000 1 42000 Fri Jul 17 12:00:00 2026 S python\nmalformed");
 
   expect(readProcessInventory(runner).status).toBe("unavailable");
   expect(listProcessInventory(runner)).toHaveLength(1);

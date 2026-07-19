@@ -1,13 +1,13 @@
 import { createWriteStream, mkdirSync } from "node:fs";
 import type { WriteStream } from "node:fs";
 import { dirname } from "node:path";
+import { Effect } from "effect";
 
 export type LogLevel = "debug" | "info" | "warn" | "error";
 
 export interface LoggerOptions {
   filePath?: string;
-  /** Called after formatting a log line (best-effort). Useful for pushing logs to SSE channels. */
-  onLine?: (line: string, meta: { level: LogLevel }) => void | Promise<void>;
+  onLine?: (line: string, meta: { level: LogLevel }) => void;
 }
 
 export interface Logger {
@@ -15,6 +15,7 @@ export interface Logger {
   info: (message: string, details?: Record<string, unknown>) => void;
   warn: (message: string, details?: Record<string, unknown>) => void;
   error: (message: string, details?: Record<string, unknown>) => void;
+  shutdown: () => Effect.Effect<void>;
 }
 
 export const createLogger = (level: LogLevel, options: LoggerOptions = {}): Logger => {
@@ -22,7 +23,9 @@ export const createLogger = (level: LogLevel, options: LoggerOptions = {}): Logg
     if (!options.filePath) return null;
     try {
       mkdirSync(dirname(options.filePath), { recursive: true });
-      return createWriteStream(options.filePath, { flags: "a" });
+      const output = createWriteStream(options.filePath, { flags: "a" });
+      output.on("error", () => {});
+      return output;
     } catch {
       return null;
     }
@@ -60,18 +63,43 @@ export const createLogger = (level: LogLevel, options: LoggerOptions = {}): Logg
     if (stream) {
       try {
         stream.write(line);
-      } catch {
-        // best-effort
-      }
+      } catch {}
     }
 
     if (options.onLine) {
       try {
-        void options.onLine(line.trimEnd(), { level: target });
-      } catch {
-        // best-effort
-      }
+        options.onLine(line.trimEnd(), { level: target });
+      } catch {}
     }
+  };
+
+  const shutdown = (): Effect.Effect<void> => {
+    if (!stream || stream.closed || stream.destroyed) return Effect.void;
+    return Effect.callback<void>((resume) => {
+      let completed = false;
+      const cleanup = (): void => {
+        stream.removeListener("close", finish);
+        stream.removeListener("error", finish);
+      };
+      const finish = (): void => {
+        if (completed) return;
+        completed = true;
+        cleanup();
+        resume(Effect.void);
+      };
+      stream.once("close", finish);
+      stream.once("error", finish);
+      stream.end();
+      return Effect.sync(() => {
+        cleanup();
+        if (!stream.closed) stream.destroy();
+      });
+    }).pipe(
+      Effect.timeoutOrElse({
+        duration: 2_000,
+        orElse: () => Effect.sync(() => stream.destroy()),
+      }),
+    );
   };
 
   return {
@@ -99,6 +127,7 @@ export const createLogger = (level: LogLevel, options: LoggerOptions = {}): Logg
         tryWrite("error", message, details);
       }
     },
+    shutdown,
   };
 };
 

@@ -292,11 +292,11 @@ const errorMessage = (error: unknown): string =>
   error instanceof Error ? error.message : String(error);
 
 const completeSuccess = <A, E>(deferred: Deferred.Deferred<A, E>, value: A): void => {
-  Effect.runSync(Deferred.succeed(deferred, value));
+  Deferred.doneUnsafe(deferred, Effect.succeed(value));
 };
 
 const completeFailure = <A, E>(deferred: Deferred.Deferred<A, E>, error: E): void => {
-  Effect.runSync(Deferred.fail(deferred, error));
+  Deferred.doneUnsafe(deferred, Effect.fail(error));
 };
 
 const controlledVoicePath = (voiceDirectory: string, candidate: string): string => {
@@ -405,8 +405,10 @@ export class ChatterboxWorkerClient {
     );
   }
 
-  synthesize(input: ChatterboxSynthesisInput): Promise<ChatterboxSynthesisResult> {
-    return Effect.runPromise(this.synthesizeEffect(input));
+  synthesize(
+    input: ChatterboxSynthesisInput,
+  ): Effect.Effect<ChatterboxSynthesisResult, SpeechWorkerError> {
+    return this.synthesizeEffect(input);
   }
 
   shutdownEffect(): Effect.Effect<void, SpeechWorkerError> {
@@ -493,8 +495,8 @@ export class ChatterboxWorkerClient {
     );
   }
 
-  settleTermination(): Promise<void> {
-    return Effect.runPromise(this.settleTerminationEffect());
+  settleTermination(): Effect.Effect<void, SpeechWorkerError> {
+    return this.settleTerminationEffect();
   }
 
   terminateEffect(): Effect.Effect<void, SpeechWorkerError> {
@@ -502,12 +504,12 @@ export class ChatterboxWorkerClient {
     return session ? this.interruptSessionEffect(session) : Effect.void;
   }
 
-  terminate(): Promise<void> {
-    return Effect.runPromise(this.terminateEffect());
+  terminate(): Effect.Effect<void, SpeechWorkerError> {
+    return this.terminateEffect();
   }
 
-  shutdown(): Promise<void> {
-    return Effect.runPromise(this.shutdownEffect());
+  shutdown(): Effect.Effect<void, SpeechWorkerError> {
+    return this.shutdownEffect();
   }
 
   private synthesizeRequestEffect(request: {

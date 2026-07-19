@@ -2,10 +2,9 @@ import { createHash, randomUUID } from "node:crypto";
 import { createWriteStream } from "node:fs";
 import type { WriteStream } from "node:fs";
 import { basename } from "node:path";
-import { createInterface } from "node:readline";
-import { Effect } from "effect";
+import { createInterface, type Interface } from "node:readline";
+import { Cause, Effect, Exit, Fiber, Queue } from "effect";
 import type { Config } from "../../../config/env";
-import { delay, delayEffect } from "../../../core/async";
 import {
   cleanupLogFiles,
   getLogCleanupDefaultsFromEnvironment,
@@ -17,6 +16,7 @@ import {
   resolveBinaryFromEnvironment,
   type CommandResult,
   type ProcessRunner,
+  type SpawnedProcess,
 } from "../../../core/command";
 import type { LaunchResult, ProcessInfo, Recipe } from "../../models/types";
 import type { EventManager } from "../../system/event-manager";
@@ -46,15 +46,114 @@ import {
 import { getEngineSpec } from "../engine-spec";
 
 export interface ProcessManager {
-  findInferenceProcess: (port: number) => Promise<ProcessInfo | null>;
-  confirmInferenceStopped: (port: number) => Promise<boolean>;
-  launchModel: (recipe: Recipe, options?: LaunchModelOptions) => Promise<LaunchResult>;
-  killProcess: (pid: number, force: boolean) => Promise<boolean>;
+  findInferenceProcess: (port: number) => Effect.Effect<ProcessInfo | null>;
+  confirmInferenceStopped: (port: number) => Effect.Effect<boolean>;
+  launchModel: (recipe: Recipe, options?: LaunchModelOptions) => Effect.Effect<LaunchResult>;
+  killProcess: (pid: number, force: boolean) => Effect.Effect<boolean>;
+  killOwnedProcess: (pid: number, force: boolean) => Effect.Effect<boolean>;
+  confirmOwnedProcessStopped: (pid: number) => Effect.Effect<boolean>;
+  shutdown: () => Effect.Effect<boolean>;
 }
 
 export interface LaunchModelOptions {
   readonly gpuUuids?: readonly string[];
 }
+
+type LaunchResources = {
+  readonly child: SpawnedProcess;
+  readonly pid: number | null;
+  readonly launchId: string | null;
+  readonly queue: Queue.Queue<string | null>;
+  readonly readers: Interface[];
+  readonly logStream: WriteStream | null;
+  readonly onChildError: (error: Error) => void;
+  readonly onChildExit: () => void;
+  readonly onLogError: ((error: Error) => void) | null;
+  logFiber: Fiber.Fiber<void, never> | null;
+  released: boolean;
+};
+
+type LaunchResourceRegistry = {
+  readonly activePids: () => number[];
+  readonly register: (resources: LaunchResources) => void;
+  readonly release: (resources: LaunchResources) => Effect.Effect<void>;
+  readonly stop: (resources: LaunchResources) => Effect.Effect<void>;
+  readonly stopAll: () => Effect.Effect<void>;
+  readonly stopForLaunch: (launchId: string) => Effect.Effect<void>;
+  readonly stopForPid: (pid: number) => Effect.Effect<void>;
+};
+
+const closeLogStream = (stream: WriteStream | null): Effect.Effect<void> => {
+  if (!stream || stream.closed || stream.destroyed) return Effect.void;
+  return Effect.callback<void>((resume) => {
+    let completed = false;
+    const cleanup = (): void => {
+      stream.removeListener("close", onClose);
+      stream.removeListener("error", onError);
+    };
+    const finish = (): void => {
+      if (completed) return;
+      completed = true;
+      cleanup();
+      resume(Effect.void);
+    };
+    const onClose = (): void => finish();
+    const onError = (): void => finish();
+    stream.once("close", onClose);
+    stream.once("error", onError);
+    try {
+      stream.end();
+    } catch {
+      finish();
+    }
+    return Effect.sync(cleanup);
+  });
+};
+
+const createLaunchResourceRegistry = (): LaunchResourceRegistry => {
+  const active = new Set<LaunchResources>();
+  const release = (resources: LaunchResources): Effect.Effect<void> =>
+    Effect.suspend(() => {
+      if (resources.released) return Effect.void;
+      resources.released = true;
+      return Effect.gen(function* () {
+        yield* Effect.sync(() => {
+          for (const reader of resources.readers) reader.close();
+          if (resources.logStream && resources.onLogError) {
+            resources.logStream.removeListener("error", resources.onLogError);
+          }
+          resources.child.removeListener("error", resources.onChildError);
+          resources.child.removeListener("exit", resources.onChildExit);
+        });
+        yield* Queue.shutdown(resources.queue);
+        yield* closeLogStream(resources.logStream);
+        active.delete(resources);
+      });
+    });
+  const stop = (resources: LaunchResources): Effect.Effect<void> => {
+    Queue.offerUnsafe(resources.queue, null);
+    return resources.logFiber
+      ? Fiber.interrupt(resources.logFiber).pipe(Effect.asVoid)
+      : release(resources);
+  };
+  const stopMatching = (predicate: (resources: LaunchResources) => boolean): Effect.Effect<void> =>
+    Effect.forEach([...active].filter(predicate), stop, { discard: true });
+  return {
+    activePids: () => [
+      ...new Set(
+        [...active].map((resources) => resources.pid).filter((pid): pid is number => pid !== null),
+      ),
+    ],
+    register: (resources): void => {
+      active.add(resources);
+    },
+    release,
+    stop,
+    stopAll: () => stopMatching(() => true),
+    stopForLaunch: (launchId) => stopMatching((resources) => resources.launchId === launchId),
+    stopForPid: (pid) => stopMatching((resources) => resources.pid === pid),
+  };
+};
 
 type OwnershipInspection =
   | {
@@ -391,6 +490,74 @@ const sendWindowsSignal = (pid: number, signal: NodeJS.Signals): boolean => {
   }
 };
 
+const createKillWindowsProcess =
+  (
+    runner: ProcessRunner,
+    logger: Logger,
+  ): ((pid: number, force: boolean) => Effect.Effect<boolean>) =>
+  (pid, force) =>
+    Effect.gen(function* () {
+      if (!pidExists(pid)) return true;
+      const tree = buildProcessTree();
+      const children = new Set<number>();
+      collectChildren(tree, pid, children);
+      const allPids = [...children, pid];
+      stopWindowsDockerContainersForProcesses(runner, logger, allPids, force, true);
+      const signal = force ? "SIGKILL" : "SIGTERM";
+      for (const childPid of allPids) sendWindowsSignal(childPid, signal);
+      const deadline = Date.now() + (force ? 15_000 : 10_000);
+      while (Date.now() < deadline && pidExists(pid)) yield* Effect.sleep(250);
+      if (pidExists(pid)) {
+        stopWindowsDockerContainersForProcesses(runner, logger, allPids, true, true);
+        if (!sendWindowsSignal(pid, "SIGKILL")) return false;
+        const finalDeadline = Date.now() + 5_000;
+        while (Date.now() < finalDeadline && pidExists(pid)) yield* Effect.sleep(250);
+      }
+      yield* Effect.sleep(force ? 500 : 1000);
+      return !pidExists(pid);
+    });
+
+const createConfirmSpawnIdentity =
+  (
+    runner: ProcessRunner,
+    processLaunchId: (pid: number) => string | null,
+  ): ((
+    pid: number,
+    launchId: string,
+    exited: () => boolean,
+  ) => Effect.Effect<ProcessInventoryEntry | null>) =>
+  (pid, launchId, exited) =>
+    Effect.gen(function* () {
+      const deadline = Date.now() + 1_000;
+      while (Date.now() < deadline) {
+        const inventory = readProcessInventory(runner);
+        if (inventory.status === "available") {
+          const entry = inventory.entries.find((candidate) => candidate.pid === pid);
+          if (entry) {
+            if (entry.processGroupId !== pid || entry.stat.includes("Z")) return null;
+            if (processLaunchId(pid) === launchId) return entry;
+          }
+        }
+        if (exited()) return null;
+        yield* Effect.sleep(50);
+      }
+      return null;
+    });
+
+const createWindowsLaunchCleanup =
+  (
+    activePids: () => number[],
+    killProcess: (pid: number, force: boolean) => Effect.Effect<boolean>,
+    stopAllResources: () => Effect.Effect<void>,
+  ): (() => Effect.Effect<boolean>) =>
+  () =>
+    Effect.gen(function* () {
+      const stopped = yield* Effect.forEach(activePids(), (pid) => killProcess(pid, true));
+      if (!stopped.every(Boolean)) return false;
+      yield* stopAllResources();
+      return true;
+    });
+
 type LaunchModelDependencies = {
   readonly config: Config;
   readonly logger: Logger;
@@ -399,11 +566,15 @@ type LaunchModelDependencies = {
   readonly supportsOwnedProcessGroups: boolean;
   readonly ownershipStore: ProcessOwnershipStore;
   readonly platform: NodeJS.Platform;
-  readonly waitForStartupReconciliation: () => Promise<boolean>;
+  readonly prepareForLaunch: () => Effect.Effect<boolean>;
   readonly cleanupOwnedProcessGroup: (
     reason: string,
     expected?: ProcessOwnershipRecord,
-  ) => Promise<boolean>;
+  ) => Effect.Effect<boolean>;
+  readonly terminateUnrecordedLaunch: (pid: number) => Effect.Effect<boolean>;
+  readonly registerResources: (resources: LaunchResources) => void;
+  readonly releaseResources: (resources: LaunchResources) => Effect.Effect<void>;
+  readonly stopResources: (resources: LaunchResources) => Effect.Effect<void>;
   readonly prepareDockerLaunch: (
     launchId: string,
     command: readonly string[],
@@ -414,7 +585,7 @@ type LaunchModelDependencies = {
     pid: number,
     launchId: string,
     exited: () => boolean,
-  ) => Promise<ProcessInventoryEntry | null>;
+  ) => Effect.Effect<ProcessInventoryEntry | null>;
 };
 
 const createLaunchModel = (
@@ -428,354 +599,421 @@ const createLaunchModel = (
     supportsOwnedProcessGroups,
     ownershipStore,
     platform,
-    waitForStartupReconciliation,
+    prepareForLaunch,
     cleanupOwnedProcessGroup,
+    terminateUnrecordedLaunch,
+    registerResources,
+    releaseResources,
+    stopResources,
     prepareDockerLaunch,
     forgetDockerLaunch,
     confirmSpawnIdentity,
   } = dependencies;
-  return async (recipe: Recipe, options: LaunchModelOptions = {}): Promise<LaunchResult> => {
-    const updatedRecipe = recipeForLaunch(recipe, config.inference_port, options);
-    let command: string[] | null = null;
-    try {
-      command = buildBackendCommand(updatedRecipe, config, options.gpuUuids !== undefined);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      return {
-        success: false,
-        pid: null,
-        message,
-        log_file: primaryLogPathFor(config.data_dir, updatedRecipe.id),
-      };
-    }
-    if (!command) {
-      return {
-        success: false,
-        pid: null,
-        message: "Invalid launch command",
-        log_file: primaryLogPathFor(config.data_dir, updatedRecipe.id),
-      };
-    }
-
-    const logFile = primaryLogPathFor(config.data_dir, updatedRecipe.id);
-    const startupClean = await waitForStartupReconciliation();
-    const priorLaunchClean =
-      !supportsOwnedProcessGroups ||
-      (startupClean && (await cleanupOwnedProcessGroup("before-launch")));
-    if (!priorLaunchClean) {
-      return {
-        success: false,
-        pid: null,
-        message: "Unable to verify prior Local Studio process ownership",
-        log_file: logFile,
-      };
-    }
-    if (platform === "win32") removeStaleWindowsDockerContainer(runner, command);
-    cleanupLogFiles(config.data_dir, {
-      ...getLogCleanupDefaultsFromEnvironment(),
-      excludePaths: new Set([logFile]),
-    });
-    const launchId = randomUUID();
-    const runtimeKind = commandRuntimeKind(command);
-    const labeledLaunchCommand = supportsOwnedProcessGroups
-      ? commandWithDockerLaunchLabel(command, launchId)
-      : command;
-    const env = {
-      ...buildEnvironment(updatedRecipe, config),
-      LOCAL_STUDIO_LAUNCH_ID: launchId,
-    };
-    if (
-      supportsOwnedProcessGroups &&
-      runtimeKind === "native" &&
-      commandUsesNativePrivilegeWrapper(labeledLaunchCommand, env)
-    ) {
-      return {
-        success: false,
-        pid: null,
-        message: "Native privilege-wrapper launches cannot preserve process ownership",
-        log_file: logFile,
-      };
-    }
-    const dockerLaunch =
-      supportsOwnedProcessGroups && runtimeKind === "docker"
-        ? prepareDockerLaunch(launchId, labeledLaunchCommand, env)
-        : null;
-    if (supportsOwnedProcessGroups && runtimeKind === "docker" && !dockerLaunch) {
-      return {
-        success: false,
-        pid: null,
-        message: "Unable to verify Docker launch authority and daemon",
-        log_file: logFile,
-      };
-    }
-    const launchCommand = dockerLaunch?.command ?? labeledLaunchCommand;
-    const dockerOwnership = dockerLaunch?.ownership ?? null;
-    const entry = launchCommand[0];
-    if (!entry) {
-      return {
-        success: false,
-        pid: null,
-        message: "Invalid launch command",
-        log_file: logFile,
-      };
-    }
-    const ownershipGeneration: PendingProcessOwnershipRecord | null = supportsOwnedProcessGroups
-      ? {
-          version: 1,
-          state: "pending",
-          launchId,
-          recipeId: updatedRecipe.id,
-          backend: updatedRecipe.backend,
-          port: config.inference_port,
-          createdAtMs: Date.now(),
-          runtimeKind,
-          commandFingerprint: commandFingerprint(launchCommand),
-          ...(dockerOwnership ?? {}),
-        }
-      : null;
-    let ownershipRecord: ProcessOwnershipRecord | null = null;
-    let ownershipLaunch: ProcessOwnershipLaunch | null = null;
-    if (ownershipGeneration) {
+  return (recipe: Recipe, options: LaunchModelOptions = {}): Effect.Effect<LaunchResult> =>
+    Effect.gen(function* () {
+      const updatedRecipe = recipeForLaunch(recipe, config.inference_port, options);
+      let command: string[] | null = null;
       try {
-        ownershipLaunch = ownershipStore.beginLaunch(ownershipGeneration);
-        ownershipRecord = ownershipGeneration;
+        command = buildBackendCommand(updatedRecipe, config, options.gpuUuids !== undefined);
       } catch (error) {
-        forgetDockerLaunch(ownershipGeneration);
+        const message = error instanceof Error ? error.message : String(error);
         return {
           success: false,
           pid: null,
-          message: `Unable to persist pending process ownership: ${String(error)}`,
+          message,
+          log_file: primaryLogPathFor(config.data_dir, updatedRecipe.id),
+        };
+      }
+      if (!command) {
+        return {
+          success: false,
+          pid: null,
+          message: "Invalid launch command",
+          log_file: primaryLogPathFor(config.data_dir, updatedRecipe.id),
+        };
+      }
+
+      const logFile = primaryLogPathFor(config.data_dir, updatedRecipe.id);
+      if (!(yield* prepareForLaunch())) {
+        return {
+          success: false,
+          pid: null,
+          message: "Unable to verify prior Local Studio process ownership",
           log_file: logFile,
         };
       }
-    }
-    const expectedGeneration = (): PendingProcessOwnershipRecord => {
-      if (!ownershipGeneration) throw new Error("Launch ownership generation is unavailable");
-      return ownershipGeneration;
-    };
-    const releaseOwnershipLaunch = (): void => {
-      const launch = ownershipLaunch;
-      ownershipLaunch = null;
-      launch?.release();
-    };
-    const removeOwnershipLaunch = (): boolean => {
-      if (!ownershipLaunch) return ownershipRecord ? ownershipStore.remove(ownershipRecord) : true;
-      const launch = ownershipLaunch;
-      ownershipLaunch = null;
-      return launch.remove();
-    };
-    let spawnedChild = false;
-
-    try {
-      let spawnError: string | null = null;
-      let exitCleanup: Promise<boolean> | null = null;
-      const child = runner.spawnDetached(entry, launchCommand.slice(1), { env, stdio: "pipe" });
-      spawnedChild = true;
-      child.on("error", (error) => {
-        spawnError = String(error);
+      if (platform === "win32") removeStaleWindowsDockerContainer(runner, command);
+      cleanupLogFiles(config.data_dir, {
+        ...getLogCleanupDefaultsFromEnvironment(),
+        excludePaths: new Set([logFile]),
       });
-
-      let logStream: WriteStream | null = null;
-      try {
-        logStream = createWriteStream(logFile, { flags: "a" });
-      } catch (logError) {
-        logger.warn("Failed to open log file", { error: String(logError) });
-      }
-
-      const recentOutput: string[] = [];
-      const captureLine = (line: string): void => {
-        recentOutput.push(line);
-        if (recentOutput.length > 60) recentOutput.shift();
-        if (logStream) logStream.write(line + "\n");
-        if (eventManager) eventManager.publishLogLine(updatedRecipe.id, line).catch(() => {});
+      const launchId = randomUUID();
+      const runtimeKind = commandRuntimeKind(command);
+      const labeledLaunchCommand = supportsOwnedProcessGroups
+        ? commandWithDockerLaunchLabel(command, launchId)
+        : command;
+      const env = {
+        ...buildEnvironment(updatedRecipe, config),
+        LOCAL_STUDIO_LAUNCH_ID: launchId,
       };
-      if (child.stdout) {
-        createInterface({ input: child.stdout, crlfDelay: Infinity }).on("line", captureLine);
+      if (
+        supportsOwnedProcessGroups &&
+        runtimeKind === "native" &&
+        commandUsesNativePrivilegeWrapper(labeledLaunchCommand, env)
+      ) {
+        return {
+          success: false,
+          pid: null,
+          message: "Native privilege-wrapper launches cannot preserve process ownership",
+          log_file: logFile,
+        };
       }
-      if (child.stderr) {
-        createInterface({ input: child.stderr, crlfDelay: Infinity }).on("line", captureLine);
+      const dockerLaunch =
+        supportsOwnedProcessGroups && runtimeKind === "docker"
+          ? prepareDockerLaunch(launchId, labeledLaunchCommand, env)
+          : null;
+      if (supportsOwnedProcessGroups && runtimeKind === "docker" && !dockerLaunch) {
+        return {
+          success: false,
+          pid: null,
+          message: "Unable to verify Docker launch authority and daemon",
+          log_file: logFile,
+        };
       }
-      child.on("exit", () => {
-        if (logStream) logStream.end();
-        if (ownershipGeneration) {
-          exitCleanup ??= cleanupOwnedProcessGroup("process-exit", ownershipGeneration);
-        }
-      });
-      child.unref();
-
-      if (supportsOwnedProcessGroups) {
-        if (child.pid === undefined) await delay(25);
-        if (child.pid !== undefined && ownershipRecord?.state === "pending") {
-          try {
-            if (!ownershipLaunch) throw new Error("Process ownership launch scope is unavailable");
-            ownershipRecord = ownershipLaunch.markSpawned({
-              rootPid: child.pid,
-              processGroupId: child.pid,
-            });
-          } catch (error) {
-            releaseOwnershipLaunch();
-            await cleanupOwnedProcessGroup("spawn-persistence-failed", expectedGeneration());
-            if (logStream) logStream.end();
-            return {
-              success: false,
-              pid: null,
-              message: `Unable to persist spawned process ownership: ${String(error)}`,
-              log_file: logFile,
-            };
-          }
-        }
-        if (!spawnError && child.pid !== undefined) {
-          const identity = await confirmSpawnIdentity(
-            child.pid,
+      const launchCommand = dockerLaunch?.command ?? labeledLaunchCommand;
+      const dockerOwnership = dockerLaunch?.ownership ?? null;
+      const entry = launchCommand[0];
+      if (!entry) {
+        return {
+          success: false,
+          pid: null,
+          message: "Invalid launch command",
+          log_file: logFile,
+        };
+      }
+      const ownershipGeneration: PendingProcessOwnershipRecord | null = supportsOwnedProcessGroups
+        ? {
+            version: 1,
+            state: "pending",
             launchId,
-            () => child.exitCode !== null,
-          );
-          if (identity) {
-            const pending = ownershipRecord;
-            if (!pending) throw new Error("Pending process ownership is unavailable");
-            try {
-              const confirmedIdentity = {
-                rootPid: child.pid,
-                processGroupId: identity.processGroupId,
-                startIdentity: identity.startIdentity,
-              };
-              if (pending.state === "active") {
-                if (
-                  pending.rootPid !== confirmedIdentity.rootPid ||
-                  pending.processGroupId !== confirmedIdentity.processGroupId ||
-                  pending.startIdentity !== confirmedIdentity.startIdentity
-                ) {
-                  throw new Error("Active process ownership identity changed");
-                }
-              } else {
-                if (!ownershipLaunch) {
-                  throw new Error("Process ownership launch scope is unavailable");
-                }
-                ownershipRecord = ownershipLaunch.activate(confirmedIdentity);
-              }
-              releaseOwnershipLaunch();
-            } catch (error) {
-              if (ownershipLaunch) releaseOwnershipLaunch();
-              await cleanupOwnedProcessGroup("activation-failed", expectedGeneration());
-              if (logStream) logStream.end();
-              return {
-                success: false,
-                pid: null,
-                message: `Unable to activate process ownership: ${String(error)}`,
-                log_file: logFile,
-              };
-            }
-          } else if (child.exitCode === null) {
-            releaseOwnershipLaunch();
-            await cleanupOwnedProcessGroup("identity-unverified", expectedGeneration());
-            if (logStream) logStream.end();
-            return {
-              success: false,
-              pid: null,
-              message: "Unable to confirm spawned process ownership",
-              log_file: logFile,
-            };
+            recipeId: updatedRecipe.id,
+            backend: updatedRecipe.backend,
+            port: config.inference_port,
+            createdAtMs: Date.now(),
+            runtimeKind,
+            commandFingerprint: commandFingerprint(launchCommand),
+            ...(dockerOwnership ?? {}),
           }
-        } else if (!spawnError) {
-          releaseOwnershipLaunch();
-          await cleanupOwnedProcessGroup("identity-missing", expectedGeneration());
-          if (logStream) logStream.end();
+        : null;
+      let ownershipRecord: ProcessOwnershipRecord | null = null;
+      let ownershipLaunch: ProcessOwnershipLaunch | null = null;
+      if (ownershipGeneration) {
+        try {
+          ownershipLaunch = ownershipStore.beginLaunch(ownershipGeneration);
+          ownershipRecord = ownershipGeneration;
+        } catch (error) {
+          forgetDockerLaunch(ownershipGeneration);
           return {
             success: false,
             pid: null,
-            message: "Spawned process did not report an identity",
+            message: `Unable to persist pending process ownership: ${String(error)}`,
             log_file: logFile,
           };
         }
       }
+      const expectedGeneration = (): PendingProcessOwnershipRecord => {
+        if (!ownershipGeneration) throw new Error("Launch ownership generation is unavailable");
+        return ownershipGeneration;
+      };
+      const releaseOwnershipLaunch = (): void => {
+        const launch = ownershipLaunch;
+        ownershipLaunch = null;
+        launch?.release();
+      };
+      const removeOwnershipLaunch = (): boolean => {
+        if (!ownershipLaunch)
+          return ownershipRecord ? ownershipStore.remove(ownershipRecord) : true;
+        const launch = ownershipLaunch;
+        ownershipLaunch = null;
+        return launch.remove();
+      };
+      let spawnedChild = false;
+      let launchResources: LaunchResources | null = null;
+      let launchSettled = false;
 
-      await delay(3000);
-      if (spawnError) {
-        if (ownershipRecord) {
-          if (child.pid === undefined && ownershipRecord.state === "pending") {
-            if (removeOwnershipLaunch()) forgetDockerLaunch(ownershipRecord);
-          } else {
-            if (ownershipLaunch) releaseOwnershipLaunch();
-            exitCleanup ??= cleanupOwnedProcessGroup("spawn-error", expectedGeneration());
-            await exitCleanup;
+      const cleanupLaunchOwnership = (reason: string): Effect.Effect<void> =>
+        Effect.gen(function* () {
+          if (!ownershipRecord) {
+            if (spawnedChild && launchResources && launchResources.pid !== null) {
+              yield* terminateUnrecordedLaunch(launchResources.pid);
+            }
+            return;
           }
-        }
-        if (logStream) logStream.end();
-        return { success: false, pid: null, message: spawnError, log_file: logFile };
-      }
-      if (child.exitCode !== null) {
-        if (ownershipRecord) {
+          if (!spawnedChild && ownershipRecord.state === "pending") {
+            if (removeOwnershipLaunch()) forgetDockerLaunch(ownershipRecord);
+            return;
+          }
           if (ownershipLaunch) releaseOwnershipLaunch();
-          exitCleanup ??= cleanupOwnedProcessGroup("early-exit", expectedGeneration());
-          await exitCleanup;
+          yield* cleanupOwnedProcessGroup(reason, expectedGeneration());
+        });
+
+      const stopLaunchResources = (): Effect.Effect<void> =>
+        launchResources ? stopResources(launchResources) : Effect.void;
+
+      const cleanupFailedLaunch = (reason: string): Effect.Effect<void> =>
+        cleanupLaunchOwnership(reason).pipe(Effect.andThen(stopLaunchResources));
+
+      const launchEffect = Effect.gen(function* () {
+        try {
+          let spawnError: string | null = null;
+          const logQueue = yield* Queue.sliding<string | null>(256);
+          const child = runner.spawnDetached(entry, launchCommand.slice(1), { env, stdio: "pipe" });
+          spawnedChild = true;
+          const onChildError = (error: Error): void => {
+            spawnError = String(error);
+          };
+          const onChildExit = (): void => {
+            Queue.offerUnsafe(logQueue, null);
+          };
+
+          let logStream: WriteStream | null = null;
+          try {
+            logStream = createWriteStream(logFile, { flags: "a" });
+          } catch (logError) {
+            logger.warn("Failed to open log file", { error: String(logError) });
+          }
+          const onLogError = logStream
+            ? (error: Error): void =>
+                logger.warn("Inference log stream failed", { error: String(error) })
+            : null;
+          if (logStream && onLogError) logStream.on("error", onLogError);
+
+          const recentOutput: string[] = [];
+          const readers: Interface[] = [];
+          const resources: LaunchResources = {
+            child,
+            pid: child.pid ?? null,
+            launchId: ownershipGeneration?.launchId ?? null,
+            queue: logQueue,
+            readers,
+            logStream,
+            onChildError,
+            onChildExit,
+            onLogError,
+            logFiber: null,
+            released: false,
+          };
+          launchResources = resources;
+          registerResources(resources);
+          child.on("error", onChildError);
+          child.on("exit", onChildExit);
+          resources.logFiber = yield* Effect.gen(function* () {
+            while (true) {
+              const line = yield* Queue.take(logQueue);
+              if (line !== null && eventManager)
+                yield* eventManager.publishLogLine(updatedRecipe.id, line);
+              if (line !== null) continue;
+              while (!launchSettled) yield* Effect.sleep(10);
+              if (ownershipGeneration) {
+                yield* cleanupOwnedProcessGroup("process-exit", ownershipGeneration);
+              }
+              return;
+            }
+          }).pipe(
+            Effect.ensuring(releaseResources(resources)),
+            Effect.forkDetach({ startImmediately: true }),
+          );
+          const captureLine = (line: string): void => {
+            recentOutput.push(line);
+            if (recentOutput.length > 60) recentOutput.shift();
+            if (logStream) {
+              try {
+                logStream.write(line + "\n");
+              } catch (error) {
+                logger.warn("Inference log write failed", { error: String(error) });
+              }
+            }
+            Queue.offerUnsafe(logQueue, line);
+          };
+          if (child.stdout) {
+            const reader = createInterface({ input: child.stdout, crlfDelay: Infinity });
+            reader.on("line", captureLine);
+            readers.push(reader);
+          }
+          if (child.stderr) {
+            const reader = createInterface({ input: child.stderr, crlfDelay: Infinity });
+            reader.on("line", captureLine);
+            readers.push(reader);
+          }
+          child.unref();
+
+          if (supportsOwnedProcessGroups) {
+            if (child.pid === undefined) yield* Effect.sleep(25);
+            if (child.pid !== undefined && ownershipRecord?.state === "pending") {
+              try {
+                if (!ownershipLaunch)
+                  throw new Error("Process ownership launch scope is unavailable");
+                ownershipRecord = ownershipLaunch.markSpawned({
+                  rootPid: child.pid,
+                  processGroupId: child.pid,
+                });
+              } catch (error) {
+                releaseOwnershipLaunch();
+                yield* cleanupOwnedProcessGroup("spawn-persistence-failed", expectedGeneration());
+                yield* stopLaunchResources();
+                return {
+                  success: false,
+                  pid: null,
+                  message: `Unable to persist spawned process ownership: ${String(error)}`,
+                  log_file: logFile,
+                };
+              }
+            }
+            if (!spawnError && child.pid !== undefined) {
+              const identity = yield* confirmSpawnIdentity(
+                child.pid,
+                launchId,
+                () => child.exitCode !== null,
+              );
+              if (identity) {
+                const pending = ownershipRecord;
+                if (!pending) throw new Error("Pending process ownership is unavailable");
+                try {
+                  const confirmedIdentity = {
+                    rootPid: child.pid,
+                    processGroupId: identity.processGroupId,
+                    startIdentity: identity.startIdentity,
+                  };
+                  if (pending.state === "active") {
+                    if (
+                      pending.rootPid !== confirmedIdentity.rootPid ||
+                      pending.processGroupId !== confirmedIdentity.processGroupId ||
+                      pending.startIdentity !== confirmedIdentity.startIdentity
+                    ) {
+                      throw new Error("Active process ownership identity changed");
+                    }
+                  } else {
+                    if (!ownershipLaunch) {
+                      throw new Error("Process ownership launch scope is unavailable");
+                    }
+                    ownershipRecord = ownershipLaunch.activate(confirmedIdentity);
+                  }
+                  releaseOwnershipLaunch();
+                } catch (error) {
+                  if (ownershipLaunch) releaseOwnershipLaunch();
+                  yield* cleanupOwnedProcessGroup("activation-failed", expectedGeneration());
+                  yield* stopLaunchResources();
+                  return {
+                    success: false,
+                    pid: null,
+                    message: `Unable to activate process ownership: ${String(error)}`,
+                    log_file: logFile,
+                  };
+                }
+              } else if (child.exitCode === null) {
+                releaseOwnershipLaunch();
+                yield* cleanupOwnedProcessGroup("identity-unverified", expectedGeneration());
+                yield* stopLaunchResources();
+                return {
+                  success: false,
+                  pid: null,
+                  message: "Unable to confirm spawned process ownership",
+                  log_file: logFile,
+                };
+              }
+            } else if (!spawnError) {
+              releaseOwnershipLaunch();
+              yield* cleanupOwnedProcessGroup("identity-missing", expectedGeneration());
+              yield* stopLaunchResources();
+              return {
+                success: false,
+                pid: null,
+                message: "Spawned process did not report an identity",
+                log_file: logFile,
+              };
+            }
+          }
+
+          yield* Effect.sleep(3000);
+          if (spawnError) {
+            yield* cleanupFailedLaunch("spawn-error");
+            return { success: false, pid: null, message: spawnError, log_file: logFile };
+          }
+          if (child.exitCode !== null) {
+            yield* cleanupFailedLaunch("early-exit");
+            const tail = recentOutput
+              .slice(-20)
+              .filter((line) => line.trim().length > 0)
+              .join("\n");
+            const message = tail
+              ? `Process exited early (code ${child.exitCode}):\n${tail}`
+              : `Process exited early (code ${child.exitCode})`;
+            if (eventManager) {
+              yield* eventManager.publishLaunchProgress(updatedRecipe.id, "error", message);
+            }
+            return { success: false, pid: null, message, log_file: logFile };
+          }
+          return {
+            success: true,
+            pid: child.pid ?? null,
+            message: "Process started",
+            log_file: logFile,
+          };
+        } catch (error) {
+          yield* cleanupFailedLaunch("launch-exception");
+          logger.error("Launch failed", { error: String(error) });
+          return {
+            success: false,
+            pid: null,
+            message: String(error),
+            log_file: logFile,
+          };
         }
-        if (logStream) logStream.end();
-        const tail = recentOutput
-          .slice(-20)
-          .filter((line) => line.trim().length > 0)
-          .join("\n");
-        const message = tail
-          ? `Process exited early (code ${child.exitCode}):\n${tail}`
-          : `Process exited early (code ${child.exitCode})`;
-        if (eventManager) {
-          void eventManager
-            .publishLaunchProgress(updatedRecipe.id, "error", message)
-            .catch(() => {});
-        }
-        return { success: false, pid: null, message, log_file: logFile };
-      }
-      return {
-        success: true,
-        pid: child.pid ?? null,
-        message: "Process started",
-        log_file: logFile,
-      };
-    } catch (error) {
-      if (ownershipRecord) {
-        if (!spawnedChild && ownershipRecord.state === "pending") {
-          if (removeOwnershipLaunch()) forgetDockerLaunch(ownershipRecord);
-        } else {
-          if (ownershipLaunch) releaseOwnershipLaunch();
-          await cleanupOwnedProcessGroup("launch-exception", expectedGeneration());
-        }
-      }
-      logger.error("Launch failed", { error: String(error) });
-      return {
-        success: false,
-        pid: null,
-        message: String(error),
-        log_file: logFile,
-      };
-    }
-  };
+      }).pipe(
+        Effect.ensuring(
+          Effect.sync(() => {
+            launchSettled = true;
+          }),
+        ),
+      );
+
+      return yield* launchEffect.pipe(
+        Effect.onExit((exit) =>
+          Exit.isFailure(exit) && Cause.hasInterrupts(exit.cause)
+            ? cleanupFailedLaunch("launch-interrupted")
+            : Effect.void,
+        ),
+      );
+    });
 };
 
 const createFindInferenceProcess =
   (
     runner: ProcessRunner,
-    waitForStartupReconciliation: () => Promise<boolean>,
+    waitForStartupReconciliation: () => Effect.Effect<boolean>,
   ): ProcessManager["findInferenceProcess"] =>
-  async (port: number): Promise<ProcessInfo | null> => {
-    await waitForStartupReconciliation();
-    const processes = listProcesses(runner);
-    for (const proc of processes) {
-      const backend = detectBackend(proc.args);
-      if (!backend) continue;
-      const flagPort = extractFlag(proc.args, "--port");
-      if (flagPort && Number(flagPort) !== port) continue;
-      if (!flagPort && !(backend === "vllm" && port === 8000)) continue;
-      const modelPath = getEngineSpec(backend).extractModelPath(proc.args);
-      const servedModelName = getEngineSpec(backend).extractServedModelName(proc.args);
-      return {
-        pid: proc.pid,
-        backend,
-        model_path: modelPath ?? null,
-        port,
-        served_model_name: servedModelName ?? null,
-      };
-    }
-    return null;
-  };
+  (port: number): Effect.Effect<ProcessInfo | null> =>
+    Effect.gen(function* () {
+      yield* waitForStartupReconciliation();
+      const processes = listProcesses(runner);
+      for (const proc of processes) {
+        const backend = detectBackend(proc.args);
+        if (!backend) continue;
+        const flagPort = extractFlag(proc.args, "--port");
+        if (flagPort && Number(flagPort) !== port) continue;
+        if (!flagPort && !(backend === "vllm" && port === 8000)) continue;
+        const modelPath = getEngineSpec(backend).extractModelPath(proc.args);
+        const servedModelName = getEngineSpec(backend).extractServedModelName(proc.args);
+        return {
+          pid: proc.pid,
+          backend,
+          model_path: modelPath ?? null,
+          port,
+          served_model_name: servedModelName ?? null,
+        };
+      }
+      return null;
+    });
 
 type OwnedDockerActions = {
   readonly stop: (
@@ -932,7 +1170,7 @@ const createOwnedDockerActions = (
         if (Date.now() >= deadline) {
           return consecutiveAbsences >= DOCKER_STABLE_ABSENCE_COUNT ? "clear" : "blocked";
         }
-        yield* delayEffect(DOCKER_SETTLE_INTERVAL_MS);
+        yield* Effect.sleep(DOCKER_SETTLE_INTERVAL_MS);
       }
     });
   const removeGeneration: OwnedDockerActions["removeGeneration"] = (
@@ -1048,23 +1286,28 @@ const createLockedGenerationCleanup = (
 };
 
 const createSuccessfulSingleFlight = (
-  operation: () => Promise<boolean>,
-): (() => Promise<boolean>) => {
-  let current: Promise<boolean> | null = null;
-  return (): Promise<boolean> => {
-    if (current) return current;
-    const attempt = Promise.resolve().then(operation);
-    current = attempt;
-    void attempt.then(
-      (success) => {
-        if (!success && current === attempt) current = null;
-      },
-      () => {
-        if (current === attempt) current = null;
-      },
-    );
-    return attempt;
-  };
+  operation: () => Effect.Effect<boolean>,
+): (() => Effect.Effect<boolean>) => {
+  let complete = false;
+  let running = false;
+  return () =>
+    Effect.gen(function* () {
+      if (complete) return true;
+      while (running) {
+        yield* Effect.sleep(10);
+        if (complete) return true;
+      }
+      running = true;
+      const success = yield* operation().pipe(
+        Effect.ensuring(
+          Effect.sync(() => {
+            running = false;
+          }),
+        ),
+      );
+      if (success) complete = true;
+      return success;
+    });
 };
 
 export const createProcessManager = (
@@ -1075,34 +1318,22 @@ export const createProcessManager = (
   platform: NodeJS.Platform = process.platform,
 ): ProcessManager => {
   const supportsOwnedProcessGroups = platform !== "win32";
+  const {
+    activePids,
+    register: registerResources,
+    release: releaseResources,
+    stop: stopResources,
+    stopAll: stopAllResources,
+    stopForLaunch: stopResourcesForLaunch,
+    stopForPid: stopResourcesForPid,
+  } = createLaunchResourceRegistry();
   const ownershipStore = createProcessOwnershipStore(config.data_dir);
   const { prepareDockerLaunch, forgetDockerLaunch, verifiedDockerBinding } =
     createDockerBindingRegistry(runner);
-  let reconcileStartup = (): Promise<boolean> => Promise.resolve(true);
+  let reconcileStartup = (): Effect.Effect<boolean> => Effect.succeed(true);
   const waitForStartupReconciliation = createSuccessfulSingleFlight(() => reconcileStartup());
   const findInferenceProcess = createFindInferenceProcess(runner, waitForStartupReconciliation);
-
-  const killWindowsProcessEffect = (pid: number, force: boolean): Effect.Effect<boolean> =>
-    Effect.gen(function* () {
-      if (!pidExists(pid)) return true;
-      const tree = buildProcessTree();
-      const children = new Set<number>();
-      collectChildren(tree, pid, children);
-      const allPids = [...children, pid];
-      stopWindowsDockerContainersForProcesses(runner, logger, allPids, force, true);
-      const signal = force ? "SIGKILL" : "SIGTERM";
-      for (const childPid of allPids) sendWindowsSignal(childPid, signal);
-      const deadline = Date.now() + (force ? 15_000 : 10_000);
-      while (Date.now() < deadline && pidExists(pid)) yield* delayEffect(250);
-      if (pidExists(pid)) {
-        stopWindowsDockerContainersForProcesses(runner, logger, allPids, true, true);
-        if (!sendWindowsSignal(pid, "SIGKILL")) return false;
-        const finalDeadline = Date.now() + 5_000;
-        while (Date.now() < finalDeadline && pidExists(pid)) yield* delayEffect(250);
-      }
-      yield* delayEffect(force ? 500 : 1000);
-      return !pidExists(pid);
-    });
+  const killWindowsProcessEffect = createKillWindowsProcess(runner, logger);
 
   const processLaunchId = (pid: number): string | null => {
     const result = runner.readProcessEnvironmentVariable(pid, "LOCAL_STUDIO_LAUNCH_ID");
@@ -1304,7 +1535,7 @@ export const createProcessManager = (
           return "blocked";
         }
         if (inspection.status === "gone") return "gone";
-        yield* delayEffect(200);
+        yield* Effect.sleep(200);
       }
       return "present";
     });
@@ -1424,12 +1655,12 @@ export const createProcessManager = (
   const cleanupOwnedProcessGroup = (
     reason: string,
     expectedGeneration?: ProcessOwnershipRecord,
-  ): Promise<boolean> =>
-    Effect.runPromise(cleanupOwnedProcessGroupEffect(reason, expectedGeneration)).catch(
-      (error: unknown) => {
+  ): Effect.Effect<boolean> =>
+    cleanupOwnedProcessGroupEffect(reason, expectedGeneration).pipe(
+      Effect.catch((error: unknown) => {
         logger.error("Owned process-group cleanup failed", { error: String(error), reason });
-        return false;
-      },
+        return Effect.succeed(false);
+      }),
     );
 
   const killOwnedProcessEffect = (pid: number, force: boolean): Effect.Effect<boolean, Error> =>
@@ -1482,51 +1713,55 @@ export const createProcessManager = (
           );
         }),
       );
-      return result.status === "acquired" && result.value;
+      const stopped = result.status === "acquired" && result.value;
+      if (stopped) yield* stopResourcesForLaunch(expected.launchId);
+      return stopped;
     });
 
-  const killProcess = async (pid: number, force: boolean): Promise<boolean> => {
-    await waitForStartupReconciliation();
-    return Effect.runPromise(
-      supportsOwnedProcessGroups
-        ? killOwnedProcessEffect(pid, force)
-        : killWindowsProcessEffect(pid, force),
-    ).catch((error: unknown) => {
-      logger.error("Process termination failed", { error: String(error), pid });
-      return false;
-    });
-  };
-
-  const confirmInferenceStopped = async (port: number): Promise<boolean> => {
-    const startupClean = await waitForStartupReconciliation();
-    if (!startupClean) return false;
-    if (supportsOwnedProcessGroups && !(await cleanupOwnedProcessGroup("confirm-stopped"))) {
-      return false;
-    }
-    const process = await findInferenceProcess(port);
-    return process === null;
-  };
-
-  const confirmSpawnIdentityEffect = (
-    pid: number,
-    launchId: string,
-    exited: () => boolean,
-  ): Effect.Effect<ProcessInventoryEntry | null> =>
+  const killProcess = (pid: number, force: boolean): Effect.Effect<boolean> =>
     Effect.gen(function* () {
-      const deadline = Date.now() + 1_000;
-      while (Date.now() < deadline) {
-        const inventory = readProcessInventory(runner);
-        if (inventory.status === "available") {
-          const entry = inventory.entries.find((candidate) => candidate.pid === pid);
-          if (entry) {
-            if (entry.processGroupId !== pid || entry.stat.includes("Z")) return null;
-            if (processLaunchId(pid) === launchId) return entry;
-          }
-        }
-        if (exited()) return null;
-        yield* delayEffect(50);
+      yield* waitForStartupReconciliation();
+      const stopped = yield* (
+        supportsOwnedProcessGroups
+          ? killOwnedProcessEffect(pid, force)
+          : killWindowsProcessEffect(pid, force)
+      ).pipe(
+        Effect.catch((error: unknown) => {
+          logger.error("Process termination failed", { error: String(error), pid });
+          return Effect.succeed(false);
+        }),
+      );
+      if (stopped) yield* stopResourcesForPid(pid);
+      return stopped;
+    });
+
+  const confirmInferenceStopped = (port: number): Effect.Effect<boolean> =>
+    Effect.gen(function* () {
+      const startupClean = yield* waitForStartupReconciliation();
+      if (!startupClean) return false;
+      if (supportsOwnedProcessGroups && !(yield* cleanupOwnedProcessGroup("confirm-stopped"))) {
+        return false;
       }
-      return null;
+      const process = yield* findInferenceProcess(port);
+      if (process) return false;
+      yield* stopAllResources();
+      return true;
+    });
+
+  const confirmSpawnIdentityEffect = createConfirmSpawnIdentity(runner, processLaunchId);
+  const cleanupWindowsLaunches = createWindowsLaunchCleanup(
+    activePids,
+    killWindowsProcessEffect,
+    stopAllResources,
+  );
+
+  const prepareForLaunch = (): Effect.Effect<boolean> =>
+    Effect.gen(function* () {
+      if (!supportsOwnedProcessGroups) return yield* cleanupWindowsLaunches();
+      if (!(yield* waitForStartupReconciliation())) return false;
+      const clean = yield* cleanupOwnedProcessGroup("before-launch");
+      if (clean) yield* stopAllResources();
+      return clean;
     });
 
   const launchModel = createLaunchModel({
@@ -1537,23 +1772,73 @@ export const createProcessManager = (
     supportsOwnedProcessGroups,
     ownershipStore,
     platform,
-    waitForStartupReconciliation,
+    prepareForLaunch,
     cleanupOwnedProcessGroup,
+    terminateUnrecordedLaunch: (pid) => killWindowsProcessEffect(pid, true),
+    registerResources,
+    releaseResources,
+    stopResources,
     prepareDockerLaunch,
     forgetDockerLaunch,
-    confirmSpawnIdentity: (pid, launchId, exited) =>
-      Effect.runPromise(confirmSpawnIdentityEffect(pid, launchId, exited)),
+    confirmSpawnIdentity: confirmSpawnIdentityEffect,
   });
 
-  reconcileStartup = (): Promise<boolean> =>
+  reconcileStartup = (): Effect.Effect<boolean> =>
     supportsOwnedProcessGroups
       ? cleanupOwnedProcessGroup("controller-start")
-      : Promise.resolve(true);
+      : Effect.succeed(true);
+
+  const shutdown = (): Effect.Effect<boolean> =>
+    Effect.gen(function* () {
+      const stopped = supportsOwnedProcessGroups
+        ? (yield* waitForStartupReconciliation()) &&
+          (yield* cleanupOwnedProcessGroup("controller-shutdown"))
+        : yield* cleanupWindowsLaunches();
+      yield* stopAllResources();
+      return stopped;
+    });
+
+  const confirmOwnedProcessStopped = (pid: number): Effect.Effect<boolean> =>
+    Effect.gen(function* () {
+      if (!(yield* waitForStartupReconciliation())) return false;
+      if (!supportsOwnedProcessGroups) {
+        const stopped = !pidExists(pid);
+        if (stopped) yield* stopResourcesForPid(pid);
+        return stopped;
+      }
+      const inspection = inspectOwnership();
+      if (inspection.status === "missing") {
+        const stopped = !pidExists(pid);
+        if (stopped) yield* stopResourcesForPid(pid);
+        return stopped;
+      }
+      if (inspection.status === "blocked") return false;
+      const recordMatches =
+        inspection.record.state !== "pending" && inspection.record.rootPid === pid;
+      const memberMatches =
+        inspection.status === "owned" && inspection.members.some((entry) => entry.pid === pid);
+      if (!recordMatches && !memberMatches) return false;
+      if (inspection.status === "owned") return false;
+      const stopped = yield* cleanupOwnedProcessGroup("confirm-owned-stopped", inspection.record);
+      if (stopped) yield* stopResourcesForLaunch(inspection.record.launchId);
+      return stopped;
+    });
 
   return {
     findInferenceProcess,
     confirmInferenceStopped,
     launchModel,
     killProcess,
+    killOwnedProcess: killProcess,
+    confirmOwnedProcessStopped,
+    shutdown,
   };
 };
+
+export const makeProcessManager = (
+  config: Config,
+  logger: Logger,
+  eventManager?: EventManager,
+  runner: ProcessRunner = realProcessRunner,
+): Effect.Effect<ProcessManager> =>
+  Effect.sync(() => createProcessManager(config, logger, eventManager, runner));

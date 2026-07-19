@@ -1,43 +1,23 @@
+import { Effect, Schema } from "effect";
 import { badRequest } from "./errors";
 
-type JsonBodyContext = { req: { json: () => Promise<unknown> } };
+type JsonBodyContext = { req: { raw: Pick<Request, "json"> } };
 
-/**
- * Parse a JSON request body, tolerating an empty/invalid body, and require a
- * plain object. The standard guard used by mutating routes; throws the same
- * `badRequest("Invalid payload")` the routes previously raised inline.
- */
-export const parseJsonObjectBody = async (
+const readJsonBody = (ctx: JsonBodyContext): Effect.Effect<unknown> =>
+  Effect.tryPromise({
+    try: () => ctx.req.raw.json(),
+    catch: () => badRequest("Invalid payload"),
+  }).pipe(Effect.catch(() => Effect.succeed({})));
+
+export const decodeJsonBody = <A>(
   ctx: JsonBodyContext,
-): Promise<Record<string, unknown>> => {
-  const body = await ctx.req.json().catch(() => ({}));
-  if (!body || typeof body !== "object" || Array.isArray(body)) {
-    throw badRequest("Invalid payload");
-  }
-  return body as Record<string, unknown>;
-};
+  schema: Schema.Codec<A, unknown, never, unknown>,
+): Effect.Effect<A, ReturnType<typeof badRequest>> =>
+  readJsonBody(ctx).pipe(
+    Effect.flatMap(Schema.decodeUnknownEffect(schema)),
+    Effect.mapError(() => badRequest("Invalid payload")),
+  );
 
-export const optionalString = (record: Record<string, unknown>, key: string): string | undefined =>
-  typeof record[key] === "string" ? (record[key] as string) : undefined;
-
-/**
- * Optional string-enum field. Matches the historical inline guards: values
- * that are missing, non-string, or empty are treated as absent; only a
- * non-empty string outside `values` is rejected.
- */
-export const optionalEnum = <T extends string>(
-  record: Record<string, unknown>,
-  key: string,
-  values: readonly T[],
-  label?: string,
-): T | undefined => {
-  const value = optionalString(record, key);
-  if (!value) return undefined;
-  if (!values.includes(value as T)) throw badRequest(`Invalid ${label ?? key}`);
-  return value as T;
-};
-
-/** Interpret env-var style truthy strings ("1", "true", "yes", "on"). */
 export const parseBooleanFlag = (raw: unknown): boolean => {
   if (typeof raw === "boolean") return raw;
   if (raw === undefined || raw === null) return false;

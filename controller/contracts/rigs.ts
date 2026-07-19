@@ -1,3 +1,5 @@
+import { Schema } from "effect";
+
 export type RigHardwareType =
   | "dgx-spark"
   | "gpu-desktop"
@@ -77,3 +79,48 @@ export const RIG_NODE_ROLE_LABELS: Record<RigNodeRole, string> = {
   worker: "Worker node",
   standalone: "Standalone",
 };
+
+export const RigAcceleratorInputSchema = Schema.Struct({
+  name: Schema.String,
+  count: Schema.optional(Schema.Number),
+  memory_gb: Schema.optional(Schema.NullOr(Schema.Number)),
+  memory_type: Schema.optional(Schema.NullOr(Schema.String)),
+  memory_bandwidth_gbs: Schema.optional(Schema.NullOr(Schema.Number)),
+  unified_memory: Schema.optional(Schema.Boolean),
+});
+
+export const RigCreateSchema = Schema.Struct({
+  name: Schema.String,
+  description: Schema.optional(Schema.NullOr(Schema.String)),
+});
+
+export const RigUpdateSchema = Schema.Struct({
+  name: Schema.optional(Schema.String),
+  description: Schema.optional(Schema.NullOr(Schema.String)),
+});
+
+export const RigNodeCreateSchema = Schema.Struct({
+  name: Schema.String,
+  hardware_type: Schema.optional(Schema.Literals(RIG_HARDWARE_TYPES)),
+  role: Schema.optional(Schema.Literals(RIG_NODE_ROLES)),
+  hostname: Schema.optional(Schema.NullOr(Schema.String)),
+  address: Schema.optional(Schema.NullOr(Schema.String)),
+  os: Schema.optional(Schema.NullOr(Schema.String)),
+  cpu_model: Schema.optional(Schema.NullOr(Schema.String)),
+  memory_gb: Schema.optional(Schema.NullOr(Schema.Number)),
+  accelerators: Schema.optional(Schema.Array(RigAcceleratorInputSchema)),
+  notes: Schema.optional(Schema.NullOr(Schema.String)),
+});
+
+export const RigNodeUpdateSchema = Schema.Struct({
+  name: Schema.optional(Schema.String),
+  hardware_type: Schema.optional(Schema.Literals(RIG_HARDWARE_TYPES)),
+  role: Schema.optional(Schema.Literals(RIG_NODE_ROLES)),
+  hostname: Schema.optional(Schema.NullOr(Schema.String)),
+  address: Schema.optional(Schema.NullOr(Schema.String)),
+  os: Schema.optional(Schema.NullOr(Schema.String)),
+  cpu_model: Schema.optional(Schema.NullOr(Schema.String)),
+  memory_gb: Schema.optional(Schema.NullOr(Schema.Number)),
+  accelerators: Schema.optional(Schema.Array(RigAcceleratorInputSchema)),
+  notes: Schema.optional(Schema.NullOr(Schema.String)),
+});

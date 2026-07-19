@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { basename, resolve } from "node:path";
-import { resolveBinary, runCommandAsync } from "../../../core/command";
+import { Effect, Schema } from "effect";
+import { resolveBinary, runCommandAsyncEffect } from "../../../core/command";
 import { VLLM_RUNTIME_COMMAND_TIMEOUT_MS } from "../configs";
 
 export type PythonProbeBackend = "vllm" | "sglang" | "mlx";
@@ -19,6 +20,12 @@ const PYTHON_VERSION_PROBES: Record<PythonProbeBackend, string> = {
     "import json, sys\ntry:\n import sglang\n print(json.dumps({'version': getattr(sglang, '__version__', None), 'python': sys.executable}))\nexcept Exception as e:\n print(json.dumps({'version': None, 'python': sys.executable, 'error': str(e)}))",
   mlx: "import json, sys\ntry:\n import mlx_lm\n print(json.dumps({'version': getattr(mlx_lm, '__version__', None) or 'installed', 'python': sys.executable}))\nexcept Exception as e:\n print(json.dumps({'version': None, 'python': sys.executable, 'error': str(e)}))",
 };
+
+const PythonVersionProbeSchema = Schema.Struct({
+  version: Schema.optional(Schema.NullOr(Schema.String)),
+  python: Schema.optional(Schema.NullOr(Schema.String)),
+  error: Schema.optional(Schema.String),
+});
 
 const pathExists = (path: string | null | undefined): boolean => Boolean(path && existsSync(path));
 
@@ -70,90 +77,91 @@ export interface PythonRuntimeProbe {
   message?: string | undefined;
 }
 
-export const probePythonRuntime = async (
+export const probePythonRuntime = (
   backend: PythonProbeBackend,
   python: string,
-): Promise<PythonRuntimeProbe> => {
-  const check = await runCommandAsync(python, ["--version"], { timeoutMs: 2_000 });
-  if (check.status !== 0) {
-    return {
-      installed: false,
-      version: null,
-      pythonPath: pathExists(python) ? resolve(python) : python,
-      runnable: false,
-      message: "Python executable is not runnable",
-    };
-  }
-  const result = await runCommandAsync(python, ["-c", PYTHON_VERSION_PROBES[backend]], {
-    timeoutMs: VLLM_RUNTIME_COMMAND_TIMEOUT_MS,
+): Effect.Effect<PythonRuntimeProbe> =>
+  Effect.gen(function* () {
+    const check = yield* runCommandAsyncEffect(python, ["--version"], { timeoutMs: 2_000 });
+    if (check.status !== 0) {
+      return {
+        installed: false,
+        version: null,
+        pythonPath: pathExists(python) ? resolve(python) : python,
+        runnable: false,
+        message: "Python executable is not runnable",
+      };
+    }
+    const result = yield* runCommandAsyncEffect(python, ["-c", PYTHON_VERSION_PROBES[backend]], {
+      timeoutMs: VLLM_RUNTIME_COMMAND_TIMEOUT_MS,
+    });
+    if (result.status !== 0) {
+      return {
+        installed: false,
+        version: null,
+        pythonPath: python,
+        runnable: true,
+        message: result.stderr || `${backend} import probe failed`,
+      };
+    }
+    try {
+      const parsed = Schema.decodeUnknownSync(PythonVersionProbeSchema)(JSON.parse(result.stdout));
+      return {
+        installed: Boolean(parsed.version),
+        version: parsed.version ?? null,
+        pythonPath: parsed.python ?? python,
+        runnable: true,
+        message: parsed.version
+          ? undefined
+          : (parsed.error ?? `${backend} is not installed in this Python`),
+      };
+    } catch {
+      return {
+        installed: false,
+        version: null,
+        pythonPath: python,
+        runnable: true,
+        message: "Unable to parse runtime probe output",
+      };
+    }
   });
-  if (result.status !== 0) {
-    return {
-      installed: false,
-      version: null,
-      pythonPath: python,
-      runnable: true,
-      message: result.stderr || `${backend} import probe failed`,
-    };
-  }
-  try {
-    const parsed = JSON.parse(result.stdout) as {
-      version?: string | null;
-      python?: string | null;
-      error?: string;
-    };
-    return {
-      installed: Boolean(parsed.version),
-      version: parsed.version ?? null,
-      pythonPath: parsed.python ?? python,
-      runnable: true,
-      message: parsed.version
-        ? undefined
-        : (parsed.error ?? `${backend} is not installed in this Python`),
-    };
-  } catch {
-    return {
-      installed: false,
-      version: null,
-      pythonPath: python,
-      runnable: true,
-      message: "Unable to parse runtime probe output",
-    };
-  }
-};
 
-export const probeBackendRuntime = async (
+export const probeBackendRuntime = (
   backend: PythonProbeBackend,
   candidates: Array<string | null | undefined>,
-): Promise<PythonRuntimeProbe> => {
-  const unique = candidates.filter(
-    (candidate, index, all): candidate is string =>
-      Boolean(candidate) && all.indexOf(candidate) === index,
-  );
-  let fallback: PythonRuntimeProbe | null = null;
-  for (const candidate of unique) {
-    const probe = await probePythonRuntime(backend, candidate);
-    if (probe.installed) return probe;
-    if (!fallback && probe.runnable) fallback = probe;
-  }
-  return (
-    fallback ?? {
-      installed: false,
-      version: null,
-      pythonPath: null,
-      runnable: false,
-      message: `No runnable Python found for ${backend}`,
+): Effect.Effect<PythonRuntimeProbe> =>
+  Effect.gen(function* () {
+    const unique = candidates.filter(
+      (candidate, index, all): candidate is string =>
+        Boolean(candidate) && all.indexOf(candidate) === index,
+    );
+    let fallback: PythonRuntimeProbe | null = null;
+    for (const candidate of unique) {
+      const probe = yield* probePythonRuntime(backend, candidate);
+      if (probe.installed) return probe;
+      if (!fallback && probe.runnable) fallback = probe;
     }
-  );
-};
-
-export const probeRunningProcessPython = async (pid: number): Promise<string | null> => {
-  const result = await runCommandAsync("ps", ["-p", String(pid), "-o", "args="], {
-    timeoutMs: 3_000,
+    return (
+      fallback ?? {
+        installed: false,
+        version: null,
+        pythonPath: null,
+        runnable: false,
+        message: `No runnable Python found for ${backend}`,
+      }
+    );
   });
-  if (result.status !== 0 || !result.stdout) return null;
-  return parseCommandPython(result.stdout.trim().split(/\s+/));
-};
+
+export const probeRunningProcessPython = (pid: number): Effect.Effect<string | null> =>
+  runCommandAsyncEffect("ps", ["-p", String(pid), "-o", "args="], {
+    timeoutMs: 3_000,
+  }).pipe(
+    Effect.map((result) =>
+      result.status !== 0 || !result.stdout
+        ? null
+        : parseCommandPython(result.stdout.trim().split(/\s+/)),
+    ),
+  );
 
 const parseLlamaVersion = (output: string): string | null => {
   const match = output.match(/version\s*[:=]\s*(\d+\s*\([^)]+\)|\S+)/i);
@@ -197,70 +205,72 @@ export const resolvePythonFromScript = (scriptPath: string | null | undefined): 
   }
 };
 
-export const probeBinaryRuntime = async (
+export const probeBinaryRuntime = (
   binary: string,
-): Promise<{
+): Effect.Effect<{
   installed: boolean;
   version: string | null;
   binaryPath: string | null;
   message?: string;
-}> => {
-  const resolved = resolvePathOrBinary(binary);
-  const command = resolved ?? binary;
-  const version = await runCommandAsync(command, ["--version"], { timeoutMs: 3_000 });
-  if (version.status === 0) {
+}> =>
+  Effect.gen(function* () {
+    const resolved = resolvePathOrBinary(binary);
+    const command = resolved ?? binary;
+    const version = yield* runCommandAsyncEffect(command, ["--version"], { timeoutMs: 3_000 });
+    if (version.status === 0) {
+      return {
+        installed: true,
+        version: parseLlamaVersion(version.stdout) ?? parseLlamaVersion(version.stderr),
+        binaryPath: resolved ?? command,
+      };
+    }
+    const help = yield* runCommandAsyncEffect(command, ["--help"], { timeoutMs: 3_000 });
+    if (help.status === 0) {
+      return {
+        installed: true,
+        version: parseLlamaVersion(help.stdout) ?? parseLlamaVersion(help.stderr),
+        binaryPath: resolved ?? command,
+      };
+    }
     return {
-      installed: true,
-      version: parseLlamaVersion(version.stdout) ?? parseLlamaVersion(version.stderr),
-      binaryPath: resolved ?? command,
+      installed: false,
+      version: null,
+      binaryPath: resolved,
+      message: version.stderr || "Binary is not runnable",
     };
-  }
-  const help = await runCommandAsync(command, ["--help"], { timeoutMs: 3_000 });
-  if (help.status === 0) {
-    return {
-      installed: true,
-      version: parseLlamaVersion(help.stdout) ?? parseLlamaVersion(help.stderr),
-      binaryPath: resolved ?? command,
-    };
-  }
-  return {
-    installed: false,
-    version: null,
-    binaryPath: resolved,
-    message: version.stderr || "Binary is not runnable",
-  };
-};
+  });
 
-export const probeVllmBinaryRuntime = async (
+export const probeVllmBinaryRuntime = (
   binary: string,
-): Promise<{
+): Effect.Effect<{
   installed: boolean;
   version: string | null;
   binaryPath: string | null;
   pythonPath: string | null;
   message?: string;
-}> => {
-  const resolved = resolvePathOrBinary(binary);
-  const command = resolved ?? binary;
-  const version = await runCommandAsync(command, ["--version"], { timeoutMs: 3_000 });
-  const pythonPath = resolvePythonFromScript(resolved ?? command);
-  if (version.status === 0) {
+}> =>
+  Effect.gen(function* () {
+    const resolved = resolvePathOrBinary(binary);
+    const command = resolved ?? binary;
+    const version = yield* runCommandAsyncEffect(command, ["--version"], { timeoutMs: 3_000 });
+    const pythonPath = resolvePythonFromScript(resolved ?? command);
+    if (version.status === 0) {
+      return {
+        installed: true,
+        version:
+          parsePackageVersion(version.stdout) ??
+          parsePackageVersion(version.stderr) ??
+          parseLlamaVersion(version.stdout) ??
+          parseLlamaVersion(version.stderr),
+        binaryPath: resolved ?? command,
+        pythonPath,
+      };
+    }
     return {
-      installed: true,
-      version:
-        parsePackageVersion(version.stdout) ??
-        parsePackageVersion(version.stderr) ??
-        parseLlamaVersion(version.stdout) ??
-        parseLlamaVersion(version.stderr),
-      binaryPath: resolved ?? command,
+      installed: false,
+      version: null,
+      binaryPath: resolved,
       pythonPath,
+      message: version.stderr || "vLLM binary is not runnable",
     };
-  }
-  return {
-    installed: false,
-    version: null,
-    binaryPath: resolved,
-    pythonPath,
-    message: version.stderr || "vLLM binary is not runnable",
-  };
-};
+  });

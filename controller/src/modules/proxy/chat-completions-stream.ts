@@ -1,4 +1,5 @@
 import { performance } from "node:perf_hooks";
+import { Effect, Schema, Stream } from "effect";
 import type { AppContext } from "../../app-context";
 import { buildSseHeaders } from "../../http/sse";
 import type { ProviderRouteConfig } from "../../services/provider-routing";
@@ -6,9 +7,18 @@ import type { Recipe } from "../models/types";
 import { getDefaultReasoningParser } from "../engines/process/model-runtime-defaults";
 import { shouldBufferImplicitReasoningContent } from "./reasoning";
 import { recordStreamingInferenceUsage } from "./inference-accounting";
-import { createToolCallStream } from "./tool-call-stream";
+import { createToolCallStream, type StreamUsage } from "./tool-call-stream";
 
 const KEEPALIVE_INTERVAL_MS = 15_000;
+
+export class ChatCompletionsStreamError extends Schema.TaggedErrorClass<ChatCompletionsStreamError>()(
+  "ChatCompletionsStreamError",
+  {
+    stage: Schema.Literals(["connect", "response", "stream"]),
+    message: Schema.String,
+    source: Schema.optional(Schema.Unknown),
+  },
+) {}
 
 export interface ChatCompletionsStreamParameters {
   upstreamUrl: string;
@@ -27,195 +37,165 @@ export interface ChatCompletionsStreamParameters {
   keepaliveIntervalMs?: number;
 }
 
-/**
- * Proxies an upstream chat-completions SSE stream to the client, with a
- * keepalive ping every 15s so Cloudflare doesn't 502 the connection during a
- * long vLLM prefill (no bytes otherwise flow until the first token).
- */
-export const buildChatCompletionsStreamResponse = (
+const errorFrame = (message: string): Uint8Array =>
+  new TextEncoder().encode(
+    `data: ${JSON.stringify({ error: { message, type: "upstream_error" } })}\n\n`,
+  );
+
+const responseErrorFrame = (status: number, body: string): Uint8Array =>
+  new TextEncoder().encode(
+    `data: ${body || JSON.stringify({ error: { message: `Upstream returned ${status}`, type: "upstream_error" } })}\n\n`,
+  );
+
+const responseBodyStream = (
+  upstreamResponse: Response,
   parameters: ChatCompletionsStreamParameters,
-): Response => {
+): Stream.Stream<Uint8Array, never> => {
   const {
-    upstreamUrl,
-    headers,
-    body,
-    clientSignal,
     matchedRecipe,
     sourceHeader,
     sessionId,
     recordedModel,
     recordedProvider,
     requestStart,
-    requestProvider,
     providerRouting,
+    requestProvider,
     context,
-    keepaliveIntervalMs = KEEPALIVE_INTERVAL_MS,
   } = parameters;
+  const source = upstreamResponse.body;
+  if (!source) {
+    return Stream.succeed(
+      errorFrame(
+        providerRouting
+          ? `${requestProvider} backend unavailable`
+          : "Inference backend unavailable",
+      ),
+    );
+  }
+  let ttftMs: number | null = null;
+  let observedUsage: StreamUsage | null = null;
+  const reasoningParser =
+    matchedRecipe && matchedRecipe.reasoning_parser !== null
+      ? matchedRecipe.reasoning_parser
+      : matchedRecipe
+        ? getDefaultReasoningParser(matchedRecipe)
+        : null;
+  const transformed = createToolCallStream(
+    source,
+    (usage) => {
+      observedUsage = usage;
+    },
+    () => {
+      ttftMs ??= Math.max(0, Math.round(performance.now() - requestStart));
+    },
+    {
+      bufferImplicitReasoningContent: shouldBufferImplicitReasoningContent(
+        recordedModel,
+        reasoningParser,
+      ),
+    },
+  );
+  return Stream.fromReadableStream({
+    evaluate: () => transformed,
+    onError: (source) =>
+      new ChatCompletionsStreamError({
+        stage: "stream",
+        message: "Chat completions stream failed",
+        source,
+      }),
+  }).pipe(
+    Stream.catchCause((cause) => {
+      if (!parameters.clientSignal.aborted) {
+        context.logger.error("Stream pipe error", { error: String(cause) });
+      }
+      return Stream.empty;
+    }),
+    Stream.ensuring(
+      Effect.suspend(() =>
+        observedUsage
+          ? recordStreamingInferenceUsage(
+              { logger: context.logger, stores: context.stores },
+              {
+                usage: observedUsage,
+                record: {
+                  model: recordedModel,
+                  source: sourceHeader,
+                  session_id: sessionId,
+                  provider: recordedProvider,
+                  ttft_ms: ttftMs,
+                  duration_ms: Math.round(performance.now() - requestStart),
+                  status: upstreamResponse.status,
+                },
+              },
+            ).pipe(
+              Effect.catch((error) =>
+                Effect.sync(() =>
+                  context.logger.warn("Streaming accounting failed", { error: String(error) }),
+                ),
+              ),
+            )
+          : Effect.void,
+      ),
+    ),
+  );
+};
 
-  const sseEncoder = new TextEncoder();
-  const keepaliveBytes = sseEncoder.encode(": keepalive\n\n");
-  let keepaliveId: ReturnType<typeof setInterval> | null = null;
-  const stopKeepalive = (): void => {
-    if (keepaliveId) {
-      clearInterval(keepaliveId);
-      keepaliveId = null;
-    }
-  };
-
-  const responseStream = new ReadableStream<Uint8Array>({
-    async start(controller): Promise<void> {
-      controller.enqueue(keepaliveBytes);
-      keepaliveId = setInterval(() => {
-        try {
-          controller.enqueue(keepaliveBytes);
-        } catch {
-          if (keepaliveId) {
-            clearInterval(keepaliveId);
-            keepaliveId = null;
-          }
-        }
-      }, keepaliveIntervalMs);
-
-      let upstreamResponse: Response;
-      try {
-        upstreamResponse = await fetch(upstreamUrl, {
+const upstreamStream = (
+  parameters: ChatCompletionsStreamParameters,
+): Stream.Stream<Uint8Array, never> =>
+  Stream.unwrap(
+    Effect.tryPromise({
+      try: (signal) =>
+        fetch(parameters.upstreamUrl, {
           method: "POST",
-          headers,
-          body,
-          signal: clientSignal,
-        });
-      } catch (error) {
-        stopKeepalive();
-        if (clientSignal.aborted) {
-          try {
-            controller.close();
-          } catch {
-            /* already closed */
-          }
-          return;
-        }
-        const errorPayload = JSON.stringify({
-          error: {
-            message: `Upstream connection failed: ${String(error)}`,
-            type: "upstream_error",
-          },
-        });
-        try {
-          controller.enqueue(sseEncoder.encode(`data: ${errorPayload}\n\n`));
-          controller.close();
-        } catch {
-          /* already closed */
-        }
-        return;
-      }
-
-      if (!upstreamResponse.ok) {
-        stopKeepalive();
-        let errorBody = "";
-        try {
-          errorBody = await upstreamResponse.text();
-        } catch {
-          /* ignore */
-        }
-        try {
-          const payload =
-            errorBody ||
-            JSON.stringify({
-              error: {
-                message: `Upstream returned ${upstreamResponse.status}`,
-                type: "upstream_error",
-              },
-            });
-          controller.enqueue(sseEncoder.encode(`data: ${payload}\n\n`));
-          controller.close();
-        } catch {
-          /* already closed */
-        }
-        return;
-      }
-
-      const reader = upstreamResponse.body?.getReader();
-      if (!reader) {
-        stopKeepalive();
-        const errorPayload = JSON.stringify({
-          error: {
-            message: providerRouting
-              ? `${requestProvider} backend unavailable`
-              : "Inference backend unavailable",
-            type: "upstream_error",
-          },
-        });
-        try {
-          controller.enqueue(sseEncoder.encode(`data: ${errorPayload}\n\n`));
-          controller.close();
-        } catch {
-          /* already closed */
-        }
-        return;
-      }
-
-      let ttftMs: number | null = null;
-      const reasoningParser =
-        matchedRecipe && matchedRecipe.reasoning_parser !== null
-          ? matchedRecipe.reasoning_parser
-          : matchedRecipe
-            ? getDefaultReasoningParser(matchedRecipe)
-            : null;
-      const toolCallStream = createToolCallStream(
-        reader,
-        (usage) => {
-          recordStreamingInferenceUsage(
-            { logger: context.logger, stores: context.stores },
-            {
-              usage,
-              record: {
-                model: recordedModel,
-                source: sourceHeader,
-                session_id: sessionId,
-                provider: recordedProvider,
-                ttft_ms: ttftMs,
-                duration_ms: Math.round(performance.now() - requestStart),
-                status: upstreamResponse.status,
-              },
-            },
-          );
-        },
-        () => {
-          ttftMs ??= Math.max(0, Math.round(performance.now() - requestStart));
-        },
-        {
-          bufferImplicitReasoningContent: shouldBufferImplicitReasoningContent(
-            recordedModel,
-            reasoningParser,
+          headers: parameters.headers,
+          body: parameters.body,
+          signal: AbortSignal.any([parameters.clientSignal, signal]),
+        }),
+      catch: (source) =>
+        new ChatCompletionsStreamError({
+          stage: "connect",
+          message: "Chat completions connection failed",
+          source,
+        }),
+    }).pipe(
+      Effect.flatMap((response) => {
+        if (response.ok) return Effect.succeed(responseBodyStream(response, parameters));
+        return Effect.tryPromise({
+          try: () => response.text(),
+          catch: (source) =>
+            new ChatCompletionsStreamError({
+              stage: "response",
+              message: "Chat completions response failed",
+              source,
+            }),
+        }).pipe(
+          Effect.map((body) => Stream.succeed(responseErrorFrame(response.status, body))),
+          Effect.catch(() =>
+            Effect.succeed(Stream.succeed(responseErrorFrame(response.status, ""))),
           ),
-        },
-      );
+        );
+      }),
+      Effect.catch((error) =>
+        Effect.succeed(
+          parameters.clientSignal.aborted
+            ? Stream.empty
+            : Stream.succeed(errorFrame(`Upstream connection failed: ${error.message}`)),
+        ),
+      ),
+    ),
+  );
 
-      const pipeReader = toolCallStream.getReader();
-      try {
-        while (true) {
-          const { done, value } = await pipeReader.read();
-          if (done) break;
-          controller.enqueue(value);
-        }
-      } catch (error) {
-        if (!clientSignal.aborted) {
-          context.logger.error("Stream pipe error", { error: String(error) });
-        }
-      } finally {
-        stopKeepalive();
-        try {
-          controller.close();
-        } catch {
-          /* already closed */
-        }
-      }
-    },
-
-    cancel(): void {
-      stopKeepalive();
-    },
-  });
-
-  return new Response(responseStream, { headers: buildSseHeaders() });
+export const buildChatCompletionsStreamResponse = (
+  parameters: ChatCompletionsStreamParameters,
+): Response => {
+  const keepalive = new TextEncoder().encode(": keepalive\n\n");
+  const heartbeat = Stream.concat(
+    Stream.succeed(keepalive),
+    Stream.tick(parameters.keepaliveIntervalMs ?? KEEPALIVE_INTERVAL_MS).pipe(
+      Stream.map(() => keepalive),
+    ),
+  );
+  const stream = Stream.merge(upstreamStream(parameters), heartbeat, { haltStrategy: "left" });
+  return new Response(Stream.toReadableStream(stream), { headers: buildSseHeaders() });
 };

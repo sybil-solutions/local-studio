@@ -5,6 +5,7 @@ import { Spinner } from "@/ui";
 import { ArrowUp, Code2, Plus } from "@/ui/icon-registry";
 import type { BrowserBackend } from "@/features/agent/tools/types";
 import { GlobeIcon, PanelIcon, SitegeistIcon, StopIcon } from "@/ui/icons";
+import { ComposerDictationButton } from "./composer-dictation-button";
 
 export function AgentComposerActions({
   fileInputRef,
@@ -21,6 +22,7 @@ export function AgentComposerActions({
   canvasEnabled,
   onToggleCanvas,
   onAbortTurn,
+  onTranscript,
   modelSelector,
 }: {
   fileInputRef: RefObject<HTMLInputElement | null>;
@@ -37,6 +39,7 @@ export function AgentComposerActions({
   canvasEnabled: boolean;
   onToggleCanvas: () => void;
   onAbortTurn: () => void;
+  onTranscript: (text: string) => void;
   modelSelector?: ReactNode;
 }) {
   const inputHasText = Boolean(input.trim());
@@ -111,6 +114,11 @@ export function AgentComposerActions({
       >
         <Code2 className="h-4 w-4" strokeWidth={1.5} />
       </button>
+      <ComposerDictationButton
+        disabled={running}
+        inactiveClassName={inactiveIconClass}
+        onTranscript={onTranscript}
+      />
       <div className="ml-auto flex shrink-0 items-center gap-1">
         {modelSelector}
         {running ? (
@@ -137,11 +145,11 @@ export function AgentComposerActions({
               type="button"
               onClick={onAbortTurn}
               disabled={starting}
-              className={`inline-flex !h-7 !min-h-7 !w-7 !min-w-7 shrink-0 items-center justify-center rounded-full transition-opacity hover:opacity-85 disabled:opacity-30 ${inputHasText ? "bg-(--hover) text-(--fg)" : "bg-(--fg) text-(--bg)"}`}
+              className={`inline-flex !h-6 !min-h-6 !w-6 !min-w-6 shrink-0 items-center justify-center rounded-full transition-opacity hover:opacity-85 disabled:opacity-30 ${inputHasText ? "bg-(--hover) text-(--fg)" : "bg-(--fg) text-(--bg)"}`}
               aria-label="Stop"
               title="Stop (Esc)"
             >
-              <StopIcon className="h-3 w-3" />
+              <StopIcon className="h-2.5 w-2.5" />
             </button>
           </>
         ) : (

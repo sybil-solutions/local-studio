@@ -1,4 +1,5 @@
-import { runCommandAsync, type AsyncCommandResult } from "../../../core/command";
+import { Effect } from "effect";
+import { runCommandAsyncEffect, type AsyncCommandResult } from "../../../core/command";
 import { resolveNvidiaSmiBinary } from "./smi-tools";
 
 const FULL_NVIDIA_UUID =
@@ -7,16 +8,16 @@ const QUERY_ARGS = ["--query-compute-apps=gpu_uuid,pid", "--format=csv,noheader,
 
 export interface NvidiaComputeProcessDependencies {
   readonly resolveBinary: () => string | null;
-  readonly runCommand: (
+  readonly execute: (
     command: string,
     args: string[],
-  ) => Promise<Pick<AsyncCommandResult, "exitConfirmed" | "status" | "stdout">>;
+  ) => Effect.Effect<Pick<AsyncCommandResult, "exitConfirmed" | "status" | "stdout">>;
 }
 
 const dependencies: NvidiaComputeProcessDependencies = {
   resolveBinary: resolveNvidiaSmiBinary,
-  runCommand: (command, args) =>
-    runCommandAsync(command, args, { timeoutMs: 5_000, maxOutputBytes: 256 * 1024 }),
+  execute: (command, args) =>
+    runCommandAsyncEffect(command, args, { timeoutMs: 5_000, maxOutputBytes: 256 * 1024 }),
 };
 
 const canonicalUuid = (uuid: string): string => `GPU-${uuid.slice(4).toLowerCase()}`;
@@ -36,14 +37,19 @@ const computeGpuUuids = (stdout: string): readonly string[] => {
   return [...uuids];
 };
 
-export const queryNvidiaComputeGpuUuids = async (
+export const queryNvidiaComputeGpuUuids = (
   injected: NvidiaComputeProcessDependencies = dependencies,
-): Promise<readonly string[]> => {
+): Effect.Effect<readonly string[], Error> => {
   const binary = injected.resolveBinary();
-  if (!binary) throw new Error("NVIDIA compute process telemetry is unavailable");
-  const result = await injected.runCommand(binary, [...QUERY_ARGS]);
-  if (result.status !== 0 || result.exitConfirmed === false) {
-    throw new Error("NVIDIA compute process telemetry failed");
-  }
-  return computeGpuUuids(result.stdout);
+  if (!binary) return Effect.fail(new Error("NVIDIA compute process telemetry is unavailable"));
+  return injected.execute(binary, [...QUERY_ARGS]).pipe(
+    Effect.flatMap((result) =>
+      result.status !== 0 || result.exitConfirmed === false
+        ? Effect.fail(new Error("NVIDIA compute process telemetry failed"))
+        : Effect.try({
+            try: () => computeGpuUuids(result.stdout),
+            catch: (error) => Error(String(error)),
+          }),
+    ),
+  );
 };

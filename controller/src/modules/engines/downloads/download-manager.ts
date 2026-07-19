@@ -7,42 +7,40 @@ import {
   renameSync,
   statSync,
 } from "node:fs";
-import { dirname, resolve, sep } from "node:path";
 import { randomUUID } from "node:crypto";
+import { dirname, resolve, sep } from "node:path";
+import { Effect, Fiber, Schema } from "effect";
+import { CONTROLLER_EVENTS } from "@local-studio/contracts/controller-events";
 import type { Config } from "../../../config/env";
 import type { Logger } from "../../../core/logger";
 import { Event, type EventManager } from "../../system/event-manager";
-import { CONTROLLER_EVENTS } from "@local-studio/contracts/controller-events";
+import { DOWNLOAD_DEFAULT_IGNORE_FILENAMES, DOWNLOAD_PROGRESS_THROTTLE_MS } from "../configs";
+import { EngineOperationError } from "../engine-spec";
 import type { DownloadFileInfo, DownloadStatus, ModelDownload } from "../types";
 import type { DownloadStore } from "./download-store";
 import {
   buildHuggingFaceFileList,
+  fetchEffect,
   fetchHuggingFaceModelInfo,
-  type FetchLike,
+  type FetchEffect,
 } from "./huggingface-api";
 import { trackWriterFailure, waitForWriterDrain } from "./stream-backpressure";
-import { DOWNLOAD_DEFAULT_IGNORE_FILENAMES, DOWNLOAD_PROGRESS_THROTTLE_MS } from "../configs";
 
-const sumDownloadedBytes = (files: DownloadFileInfo[]): number => {
-  return files.reduce((total, file) => total + (file.downloaded_bytes || 0), 0);
-};
+const sumDownloadedBytes = (files: DownloadFileInfo[]): number =>
+  files.reduce((total, file) => total + (file.downloaded_bytes || 0), 0);
 
 const sumTotalBytes = (files: DownloadFileInfo[]): number | null => {
   const known = files.filter((file) => typeof file.size_bytes === "number") as Array<
     DownloadFileInfo & { size_bytes: number }
   >;
-  if (known.length === 0) {
-    return null;
-  }
-  return known.reduce((total, file) => total + file.size_bytes, 0);
+  return known.length === 0 ? null : known.reduce((total, file) => total + file.size_bytes, 0);
 };
 
-const sanitizePathSegments = (value: string): string[] => {
-  return value
+const sanitizePathSegments = (value: string): string[] =>
+  value
     .split(/[\\/]/)
     .map((segment) => segment.trim())
     .filter((segment) => Boolean(segment) && segment !== "." && segment !== "..");
-};
 
 const resolveDownloadRoot = (
   config: Config,
@@ -53,401 +51,525 @@ const resolveDownloadRoot = (
   const segments = destination ? sanitizePathSegments(destination) : sanitizePathSegments(modelId);
   const target = resolve(base, ...segments);
   const normalizedBase = base.endsWith(sep) ? base : base + sep;
-  if (!target.startsWith(normalizedBase)) {
-    throw new Error("Invalid destination path");
-  }
+  if (!target.startsWith(normalizedBase)) throw new Error("Invalid destination path");
   return target;
 };
 
-type DownloadRequest = {
-  model_id: string;
-  revision?: string | null;
-  destination_dir?: string | null;
-  allow_patterns?: string[] | null;
-  ignore_patterns?: string[] | null;
-  hf_token?: string | null;
-};
+export const DownloadRequestSchema = Schema.Struct({
+  model_id: Schema.String.check(Schema.isNonEmpty()),
+  revision: Schema.optional(Schema.NullOr(Schema.String)),
+  destination_dir: Schema.optional(Schema.NullOr(Schema.String)),
+  allow_patterns: Schema.optional(Schema.NullOr(Schema.Array(Schema.String))),
+  ignore_patterns: Schema.optional(Schema.NullOr(Schema.Array(Schema.String))),
+  hf_token: Schema.optional(Schema.NullOr(Schema.String)),
+});
+
+export const DownloadTokenSchema = Schema.Struct({
+  hf_token: Schema.optional(Schema.NullOr(Schema.String)),
+});
+
+export type DownloadRequest = Schema.Schema.Type<typeof DownloadRequestSchema>;
 
 type ActiveDownload = {
   controller: AbortController;
-  running: boolean;
+  fiber: Fiber.Fiber<void, never> | null;
 };
 
 const toTimestamp = (): string => new Date().toISOString();
 
-/** Manages model downloads (queue/pause/resume/cancel), persisting state and emitting progress events. */
+const operationError = (operation: string, cause: unknown): EngineOperationError =>
+  new EngineOperationError({
+    operation,
+    message: cause instanceof Error ? cause.message : String(cause),
+  });
+
+const attempt = <A>(operation: string, evaluate: () => A): Effect.Effect<A, EngineOperationError> =>
+  Effect.try({
+    try: evaluate,
+    catch: (cause) => operationError(operation, cause),
+  });
+
+const closeWriter = (
+  writer: ReturnType<typeof createWriteStream>,
+): Effect.Effect<void, EngineOperationError> =>
+  writer.closed || writer.destroyed
+    ? Effect.void
+    : Effect.callback<void, EngineOperationError>((resume) => {
+        let completed = false;
+        const cleanup = (): void => {
+          writer.removeListener("error", onError);
+          writer.removeListener("close", onClose);
+        };
+        const finish = (effect: Effect.Effect<void, EngineOperationError>): void => {
+          if (completed) return;
+          completed = true;
+          cleanup();
+          resume(effect);
+        };
+        const onError = (cause: unknown): void =>
+          finish(Effect.fail(operationError("close-download-writer", cause)));
+        const onClose = (): void => finish(Effect.void);
+        writer.once("error", onError);
+        writer.once("close", onClose);
+        try {
+          writer.end();
+        } catch (cause) {
+          onError(cause);
+        }
+        return Effect.sync(cleanup);
+      });
+
 export class DownloadManager {
   private readonly active = new Map<string, ActiveDownload>();
 
-  public constructor(
+  private constructor(
     private readonly config: Config,
     private readonly store: DownloadStore,
     private readonly eventManager: EventManager,
     private readonly logger: Logger,
-    private readonly fetchImpl: FetchLike = fetch,
-  ) {
-    this.rehydrate();
+    private readonly fetchImpl: FetchEffect = fetchEffect,
+  ) {}
+
+  public static make(
+    config: Config,
+    store: DownloadStore,
+    eventManager: EventManager,
+    logger: Logger,
+    fetchImpl: FetchEffect = fetchEffect,
+  ): Effect.Effect<DownloadManager, EngineOperationError> {
+    return Effect.gen(function* () {
+      const manager = new DownloadManager(config, store, eventManager, logger, fetchImpl);
+      yield* manager.rehydrate();
+      return manager;
+    });
   }
 
-  /** Marks in-flight downloads as paused after a process restart. */
-  private rehydrate(): void {
-    const downloads = this.store.list();
-    for (const download of downloads) {
-      if (download.status === "downloading" || download.status === "queued") {
-        const updated = {
-          ...download,
-          status: "paused" as DownloadStatus,
-          error: "Restart required",
-        };
-        this.store.save(updated);
-      }
-    }
+  private rehydrate(): Effect.Effect<void, EngineOperationError> {
+    const store = this.store;
+    return Effect.gen(function* () {
+      const downloads = yield* store.list();
+      yield* Effect.forEach(
+        downloads,
+        (download) =>
+          download.status === "downloading" || download.status === "queued"
+            ? store.save({ ...download, status: "paused", error: "Restart required" })
+            : Effect.void,
+        { discard: true },
+      );
+    });
   }
 
-  public list(): ModelDownload[] {
+  public list(): Effect.Effect<ModelDownload[], EngineOperationError> {
     return this.store.list();
   }
 
-  public get(id: string): ModelDownload | null {
+  public get(id: string): Effect.Effect<ModelDownload | null, EngineOperationError> {
     return this.store.get(id);
   }
 
-  public async start(request: DownloadRequest): Promise<ModelDownload> {
-    const modelId = request.model_id?.trim();
-    if (!modelId) {
-      throw new Error("Model id is required");
-    }
-    const allowPatterns = (request.allow_patterns ?? []).filter(Boolean);
-    const ignorePatterns = [
-      ...DOWNLOAD_DEFAULT_IGNORE_FILENAMES,
-      ...(request.ignore_patterns ?? []).filter(Boolean),
-    ];
-    const targetDirectory = resolveDownloadRoot(this.config, modelId, request.destination_dir);
-    this.ensureModelsDirectoryWritable();
-    const hfToken = request.hf_token ?? null;
-
-    const info = await fetchHuggingFaceModelInfo(modelId, request.revision, hfToken, this.fetchImpl);
-    const files = buildHuggingFaceFileList(info, allowPatterns, ignorePatterns);
-    if (files.length === 0) {
-      throw new Error("No downloadable files found for this model");
-    }
-
-    const now = toTimestamp();
-    const download: ModelDownload = {
-      id: randomUUID(),
-      model_id: modelId,
-      revision: info.sha ?? request.revision ?? null,
-      status: "queued",
-      created_at: now,
-      updated_at: now,
-      target_dir: targetDirectory,
-      total_bytes: sumTotalBytes(files),
-      downloaded_bytes: 0,
-      files,
-      error: null,
-    };
-
-    this.store.save(download);
-    void this.runDownload(download.id, hfToken);
-    return download;
+  public start(request: DownloadRequest): Effect.Effect<ModelDownload, EngineOperationError> {
+    const manager = this;
+    return Effect.gen(function* () {
+      const modelId = request.model_id?.trim();
+      if (!modelId)
+        return yield* Effect.fail(operationError("start-download", "Model id is required"));
+      const allowPatterns = (request.allow_patterns ?? []).filter(Boolean);
+      const ignorePatterns = [
+        ...DOWNLOAD_DEFAULT_IGNORE_FILENAMES,
+        ...(request.ignore_patterns ?? []).filter(Boolean),
+      ];
+      const targetDirectory = yield* attempt("resolve-download-root", () =>
+        resolveDownloadRoot(manager.config, modelId, request.destination_dir),
+      );
+      yield* manager.ensureModelsDirectoryWritable();
+      const hfToken = request.hf_token ?? null;
+      const info = yield* fetchHuggingFaceModelInfo(
+        modelId,
+        request.revision,
+        hfToken,
+        manager.fetchImpl,
+      );
+      const files = buildHuggingFaceFileList(info, allowPatterns, ignorePatterns);
+      if (files.length === 0) {
+        return yield* Effect.fail(
+          operationError("start-download", "No downloadable files found for this model"),
+        );
+      }
+      const now = toTimestamp();
+      const download: ModelDownload = {
+        id: randomUUID(),
+        model_id: modelId,
+        revision: info.sha ?? request.revision ?? null,
+        status: "queued",
+        created_at: now,
+        updated_at: now,
+        target_dir: targetDirectory,
+        total_bytes: sumTotalBytes(files),
+        downloaded_bytes: 0,
+        files,
+        error: null,
+      };
+      yield* manager.store.save(download);
+      yield* manager.launchRun(download.id, hfToken);
+      return download;
+    });
   }
 
-  /**
-   * Ensure downloads fail synchronously with a useful setup error instead of
-   * queueing a job that immediately dies with EACCES in the background.
-   */
-  private ensureModelsDirectoryWritable(): void {
-    try {
+  private ensureModelsDirectoryWritable(): Effect.Effect<void, EngineOperationError> {
+    return attempt("prepare-models-directory", () => {
       mkdirSync(this.config.models_dir, { recursive: true });
       accessSync(this.config.models_dir, constants.W_OK);
-    } catch (error) {
-      throw new Error(
-        `Models directory is not writable by the controller: ${this.config.models_dir}. ` +
-          `Update Settings → Models directory to a writable server path. ${String(error)}`,
-      );
-    }
+    }).pipe(
+      Effect.mapError(
+        (error) =>
+          new EngineOperationError({
+            operation: error.operation,
+            message:
+              `Models directory is not writable by the controller: ${this.config.models_dir}. ` +
+              `Update Settings → Models directory to a writable server path. ${error.message}`,
+          }),
+      ),
+    );
   }
 
-  public pause(id: string): ModelDownload {
-    const download = this.store.get(id);
-    if (!download) {
-      throw new Error("Download not found");
-    }
-    download.status = "paused";
-    download.updated_at = toTimestamp();
-    this.store.save(download);
-    this.abortActive(id);
-    this.publishState(download, "paused");
-    return download;
-  }
-
-  public resume(id: string, hfToken: string | null = null): ModelDownload {
-    const download = this.store.get(id);
-    if (!download) {
-      throw new Error("Download not found");
-    }
-    if (download.status === "completed") {
+  public pause(id: string): Effect.Effect<ModelDownload, EngineOperationError> {
+    const manager = this;
+    return Effect.gen(function* () {
+      const download = yield* manager.requireDownload(id);
+      download.status = "paused";
+      download.updated_at = toTimestamp();
+      yield* manager.store.save(download);
+      yield* manager.abortActive(id);
+      yield* manager.publishState(download, "paused");
       return download;
-    }
-    download.status = "queued";
-    download.updated_at = toTimestamp();
-    download.error = null;
-    this.store.save(download);
-    void this.runDownload(download.id, hfToken);
-    this.publishState(download, "queued");
-    return download;
+    });
   }
 
-  public cancel(id: string): ModelDownload {
-    const download = this.store.get(id);
-    if (!download) {
-      throw new Error("Download not found");
-    }
-    download.status = "canceled";
-    download.updated_at = toTimestamp();
-    this.store.save(download);
-    this.abortActive(id);
-    this.publishState(download, "canceled");
-    return download;
+  public resume(
+    id: string,
+    hfToken: string | null = null,
+  ): Effect.Effect<ModelDownload, EngineOperationError> {
+    const manager = this;
+    return Effect.gen(function* () {
+      const download = yield* manager.requireDownload(id);
+      if (download.status === "completed") return download;
+      download.status = "queued";
+      download.updated_at = toTimestamp();
+      download.error = null;
+      yield* manager.store.save(download);
+      yield* manager.launchRun(download.id, hfToken);
+      yield* manager.publishState(download, "queued");
+      return download;
+    });
   }
 
-  private abortActive(id: string): void {
+  public cancel(id: string): Effect.Effect<ModelDownload, EngineOperationError> {
+    const manager = this;
+    return Effect.gen(function* () {
+      const download = yield* manager.requireDownload(id);
+      download.status = "canceled";
+      download.updated_at = toTimestamp();
+      yield* manager.store.save(download);
+      yield* manager.abortActive(id);
+      yield* manager.publishState(download, "canceled");
+      return download;
+    });
+  }
+
+  public shutdown(): Effect.Effect<void> {
+    const manager = this;
+    return Effect.gen(function* () {
+      const active = [...manager.active.values()];
+      for (const download of active) download.controller.abort();
+      yield* Effect.forEach(
+        active,
+        (download) =>
+          download.fiber ? Fiber.interrupt(download.fiber).pipe(Effect.asVoid) : Effect.void,
+        { discard: true },
+      );
+      manager.active.clear();
+    });
+  }
+
+  private requireDownload(id: string): Effect.Effect<ModelDownload, EngineOperationError> {
+    return this.store
+      .get(id)
+      .pipe(
+        Effect.flatMap((download) =>
+          download
+            ? Effect.succeed(download)
+            : Effect.fail(operationError("get-download", "Download not found")),
+        ),
+      );
+  }
+
+  private launchRun(id: string, hfToken: string | null): Effect.Effect<void> {
+    const manager = this;
+    return Effect.gen(function* () {
+      if (manager.active.has(id)) return;
+      const owner: ActiveDownload = { controller: new AbortController(), fiber: null };
+      manager.active.set(id, owner);
+      owner.fiber = yield* Effect.forkDetach(manager.runDownload(id, hfToken, owner));
+    });
+  }
+
+  private abortActive(id: string): Effect.Effect<void> {
     const active = this.active.get(id);
-    if (active) {
-      active.controller.abort();
-      this.active.delete(id);
-    }
+    if (!active) return Effect.void;
+    active.controller.abort();
+    return active.fiber
+      ? Fiber.interrupt(active.fiber).pipe(Effect.asVoid)
+      : Effect.sync(() => this.active.delete(id)).pipe(Effect.asVoid);
   }
 
-  private async runDownload(id: string, hfToken: string | null): Promise<void> {
-    const download = this.store.get(id);
-    if (!download || download.status === "completed" || download.status === "canceled") {
-      return;
-    }
-    if (this.active.has(id)) {
-      return;
-    }
-    const controller = new AbortController();
-    // Identity token for this run. pause() deletes the active entry and a
-    // following resume() starts a NEW run that overwrites it; this token lets a
-    // superseded old run detect it no longer owns the download and make zero
-    // state writes (otherwise its abort-driven catch clobbers the live run's
-    // status to "paused" and its finally deletes the live run's active entry).
-    const self = { controller, running: true };
-    this.active.set(id, self);
-    const stillOwner = (): boolean => this.active.get(id) === self;
-
-    let current = {
-      ...download,
-      status: "downloading" as DownloadStatus,
-      updated_at: toTimestamp(),
-    };
-    this.store.save(current);
-    this.publishState(current, "downloading");
-
-    try {
-      mkdirSync(current.target_dir, { recursive: true });
-
-      for (const file of current.files) {
-        if (controller.signal.aborted) {
-          break;
+  private runDownload(
+    id: string,
+    hfToken: string | null,
+    owner: ActiveDownload,
+  ): Effect.Effect<void, never> {
+    const manager = this;
+    return Effect.gen(function* () {
+      const download = yield* manager.store.get(id);
+      if (!download || download.status === "completed" || download.status === "canceled") return;
+      const controller = owner.controller;
+      const stillOwner = (): boolean => manager.active.get(id) === owner;
+      let current = {
+        ...download,
+        status: "downloading" as DownloadStatus,
+        updated_at: toTimestamp(),
+      };
+      const operation = Effect.gen(function* () {
+        yield* manager.store.save(current);
+        yield* manager.publishState(current, "downloading");
+        yield* attempt("create-download-directory", () =>
+          mkdirSync(current.target_dir, { recursive: true }),
+        );
+        for (const file of current.files) {
+          if (controller.signal.aborted) break;
+          if (current.status === "paused" || current.status === "canceled") break;
+          if (file.status === "completed") continue;
+          yield* manager.downloadFile(current, file, controller, hfToken);
+          current = (yield* manager.store.get(id)) ?? current;
         }
-        if (current.status === "paused" || current.status === "canceled") {
-          break;
-        }
-        if (file.status === "completed") {
-          continue;
-        }
-        await this.downloadFile(current, file, controller, hfToken);
-        current = this.store.get(id) ?? current;
-      }
-
-      // A newer run superseded this one (pause→resume): leave all state to it.
-      if (!stillOwner()) {
-        return;
-      }
-      current = this.store.get(id) ?? current;
-      if (current.status === "paused" || current.status === "canceled") {
-        return;
-      }
-      const allComplete = current.files.every((file) => file.status === "completed");
-      current.status = allComplete ? "completed" : "failed";
-      current.error = allComplete ? null : (current.error ?? "Download incomplete");
-      current.downloaded_bytes = sumDownloadedBytes(current.files);
-      current.total_bytes = current.total_bytes ?? sumTotalBytes(current.files);
-      current.updated_at = toTimestamp();
-      this.store.save(current);
-      this.publishState(current, current.status);
-    } catch (error) {
-      // If a newer run already took over, this run's abort must not rewrite the
-      // live download's status.
-      if (!stillOwner()) {
-        return;
-      }
-      const latest = this.store.get(id) ?? current;
-      if (controller.signal.aborted) {
-        latest.status = latest.status === "canceled" ? "canceled" : "paused";
-      } else {
-        latest.status = "failed";
-      }
-      latest.error = controller.signal.aborted ? latest.error : String(error);
-      latest.downloaded_bytes = sumDownloadedBytes(latest.files);
-      latest.updated_at = toTimestamp();
-      this.store.save(latest);
-      this.publishState(latest, latest.status);
-      if (!controller.signal.aborted) {
-        this.logger.error("Download failed", { error: String(error), id });
-      }
-    } finally {
-      // Only clear the active entry if it is still ours — a newer run may have
-      // replaced it.
-      if (stillOwner()) {
-        this.active.delete(id);
-      }
-    }
+        if (!stillOwner()) return;
+        current = (yield* manager.store.get(id)) ?? current;
+        if (current.status === "paused" || current.status === "canceled") return;
+        const allComplete = current.files.every((file) => file.status === "completed");
+        current.status = allComplete ? "completed" : "failed";
+        current.error = allComplete ? null : (current.error ?? "Download incomplete");
+        current.downloaded_bytes = sumDownloadedBytes(current.files);
+        current.total_bytes = current.total_bytes ?? sumTotalBytes(current.files);
+        current.updated_at = toTimestamp();
+        yield* manager.store.save(current);
+        yield* manager.publishState(current, current.status);
+      }).pipe(
+        Effect.catch((error) => {
+          if (!stillOwner()) return Effect.void;
+          return Effect.gen(function* () {
+            const latest = (yield* manager.store.get(id)) ?? current;
+            latest.status = controller.signal.aborted
+              ? latest.status === "canceled"
+                ? "canceled"
+                : "paused"
+              : "failed";
+            latest.error = controller.signal.aborted ? latest.error : error.message;
+            latest.downloaded_bytes = sumDownloadedBytes(latest.files);
+            latest.updated_at = toTimestamp();
+            yield* manager.store.save(latest);
+            yield* manager.publishState(latest, latest.status);
+            if (!controller.signal.aborted) {
+              manager.logger.error("Download failed", { error: error.message, id });
+            }
+          }).pipe(Effect.catch(() => Effect.void));
+        }),
+        Effect.ensuring(
+          Effect.sync(() => {
+            if (stillOwner()) manager.active.delete(id);
+          }),
+        ),
+      );
+      yield* operation;
+    }).pipe(
+      Effect.catch((error) =>
+        Effect.sync(() => manager.logger.error("Download failed", { error: error.message, id })),
+      ),
+      Effect.ensuring(
+        Effect.sync(() => {
+          if (manager.active.get(id) === owner) manager.active.delete(id);
+        }),
+      ),
+    );
   }
 
-  private async downloadFile(
+  private downloadFile(
     download: ModelDownload,
     file: DownloadFileInfo,
     controller: AbortController,
     hfToken: string | null,
-  ): Promise<void> {
-    const closeWriter = (writer: ReturnType<typeof createWriteStream>): Promise<void> =>
-      new Promise((resolve, reject) => {
-        writer.once("error", reject);
-        writer.once("close", resolve);
-        writer.end();
-      });
-
-    let currentDownload = download;
-    const localPath = resolve(download.target_dir, ...sanitizePathSegments(file.path));
-    const temporaryPath = `${localPath}.part`;
-    mkdirSync(dirname(localPath), { recursive: true });
-
-    const existingFinal = existsSync(localPath) ? statSync(localPath).size : 0;
-    if (file.size_bytes && existingFinal >= file.size_bytes) {
-      file.status = "completed";
-      file.downloaded_bytes = file.size_bytes;
-      currentDownload = this.persistFileUpdate(currentDownload, file);
-      return;
-    }
-
-    const existing = existsSync(temporaryPath) ? statSync(temporaryPath).size : 0;
-    const headers: Record<string, string> = {};
-    if (hfToken) {
-      headers["Authorization"] = `Bearer ${hfToken}`;
-    }
-    if (existing > 0) {
-      headers["Range"] = `bytes=${existing}-`;
-    }
-
-    const url = `https://huggingface.co/${download.model_id}/resolve/${download.revision ?? "main"}/${file.path}`;
-    file.status = "downloading";
-    file.downloaded_bytes = existing;
-    currentDownload = this.persistFileUpdate(currentDownload, file);
-
-    const response = await this.fetchImpl(url, { headers, signal: controller.signal });
-    if (response.status === 416) {
-      if (file.size_bytes && existing >= file.size_bytes) {
-        renameSync(temporaryPath, localPath);
+  ): Effect.Effect<void, EngineOperationError> {
+    const manager = this;
+    return Effect.gen(function* () {
+      let currentDownload = download;
+      const localPath = resolve(download.target_dir, ...sanitizePathSegments(file.path));
+      const temporaryPath = `${localPath}.part`;
+      yield* attempt("create-download-file-directory", () =>
+        mkdirSync(dirname(localPath), { recursive: true }),
+      );
+      const existingFinal = yield* attempt("inspect-downloaded-file", () =>
+        existsSync(localPath) ? statSync(localPath).size : 0,
+      );
+      if (file.size_bytes && existingFinal >= file.size_bytes) {
         file.status = "completed";
         file.downloaded_bytes = file.size_bytes;
-        currentDownload = this.persistFileUpdate(currentDownload, file);
+        yield* manager.persistFileUpdate(currentDownload, file);
         return;
       }
-      throw new Error(`Download range not satisfiable for ${file.path}`);
-    }
-    if (!response.ok && response.status !== 206 && response.status !== 200) {
-      throw new Error(`Download failed: ${response.status} ${response.statusText}`);
-    }
-
-    const shouldAppend = existing > 0 && response.status === 206;
-    const baseExisting = shouldAppend ? existing : 0;
-    const contentLength = Number(response.headers.get("content-length") ?? 0);
-    if (!file.size_bytes && contentLength > 0) {
-      file.size_bytes = contentLength + baseExisting;
-    }
-    if (!shouldAppend && existing > 0) {
-      file.downloaded_bytes = 0;
-      currentDownload = this.persistFileUpdate(currentDownload, file);
-    }
-    const writer = createWriteStream(temporaryPath, { flags: shouldAppend ? "a" : "w" });
-    const writerFailure = trackWriterFailure(writer);
-    const reader = response.body?.getReader();
-    if (!reader) {
-      try {
-        await closeWriter(writer);
-      } finally {
-        writerFailure.dispose();
-      }
-      throw new Error("Download response has no body");
-    }
-
-    let lastUpdate = Date.now();
-    let downloaded = baseExisting;
-    try {
-      while (true) {
-        writerFailure.throwIfFailed();
-        const { done, value } = await reader.read();
-        writerFailure.throwIfFailed();
-        if (done) {
-          break;
+      const existing = yield* attempt("inspect-partial-download", () =>
+        existsSync(temporaryPath) ? statSync(temporaryPath).size : 0,
+      );
+      const headers: Record<string, string> = {};
+      if (hfToken) headers["Authorization"] = `Bearer ${hfToken}`;
+      if (existing > 0) headers["Range"] = `bytes=${existing}-`;
+      const url = `https://huggingface.co/${download.model_id}/resolve/${download.revision ?? "main"}/${file.path}`;
+      file.status = "downloading";
+      file.downloaded_bytes = existing;
+      currentDownload = yield* manager.persistFileUpdate(currentDownload, file);
+      const response = yield* manager.fetchImpl(url, { headers, signal: controller.signal });
+      if (response.status === 416) {
+        if (file.size_bytes && existing >= file.size_bytes) {
+          yield* attempt("finalize-partial-download", () => renameSync(temporaryPath, localPath));
+          file.status = "completed";
+          file.downloaded_bytes = file.size_bytes;
+          yield* manager.persistFileUpdate(currentDownload, file);
+          return;
         }
-        if (value) {
-          const ok = writer.write(Buffer.from(value));
-          writerFailure.throwIfFailed();
-          if (!ok) {
-            await waitForWriterDrain(writer);
-            writerFailure.throwIfFailed();
-          }
-          downloaded += value.length;
-          file.downloaded_bytes = downloaded;
-          if (Date.now() - lastUpdate > DOWNLOAD_PROGRESS_THROTTLE_MS) {
-            currentDownload = this.persistFileUpdate(currentDownload, file);
-            this.publishProgress(currentDownload, file);
-            lastUpdate = Date.now();
-          }
-        }
+        return yield* Effect.fail(
+          operationError("download-file", `Download range not satisfiable for ${file.path}`),
+        );
       }
-    } finally {
-      try {
-        await closeWriter(writer);
-      } finally {
-        writerFailure.dispose();
+      if (!response.ok && response.status !== 206 && response.status !== 200) {
+        return yield* Effect.fail(
+          operationError(
+            "download-file",
+            `Download failed: ${response.status} ${response.statusText}`,
+          ),
+        );
       }
-    }
-
-    file.downloaded_bytes = downloaded;
-    if (file.size_bytes && downloaded < file.size_bytes) {
-      file.status = "error";
-      currentDownload = this.persistFileUpdate(currentDownload, file);
-      throw new Error(`Incomplete download for ${file.path}`);
-    }
-
-    renameSync(temporaryPath, localPath);
-    file.status = "completed";
-    currentDownload = this.persistFileUpdate(currentDownload, file);
-    this.publishProgress(currentDownload, file);
+      const shouldAppend = existing > 0 && response.status === 206;
+      const baseExisting = shouldAppend ? existing : 0;
+      const contentLength = Number(response.headers.get("content-length") ?? 0);
+      if (!file.size_bytes && contentLength > 0) file.size_bytes = contentLength + baseExisting;
+      if (!shouldAppend && existing > 0) {
+        file.downloaded_bytes = 0;
+        currentDownload = yield* manager.persistFileUpdate(currentDownload, file);
+      }
+      const writer = yield* attempt("open-download-writer", () =>
+        createWriteStream(temporaryPath, { flags: shouldAppend ? "a" : "w" }),
+      );
+      const writerFailure = trackWriterFailure(writer);
+      const reader = response.body?.getReader();
+      if (!reader) {
+        yield* closeWriter(writer).pipe(Effect.ensuring(Effect.sync(writerFailure.dispose)));
+        return yield* Effect.fail(
+          operationError("read-download-stream", "Download response has no body"),
+        );
+      }
+      let downloaded = baseExisting;
+      let lastUpdate = Date.now();
+      const consume = Effect.acquireUseRelease(
+        Effect.succeed(reader),
+        (streamReader) =>
+          Effect.gen(function* () {
+            while (true) {
+              yield* attempt("check-download-writer", writerFailure.throwIfFailed);
+              const chunk = yield* Effect.tryPromise({
+                try: () => streamReader.read(),
+                catch: (cause) => operationError("read-download-stream", cause),
+              });
+              yield* attempt("check-download-writer", writerFailure.throwIfFailed);
+              if (chunk.done) break;
+              if (!chunk.value) continue;
+              const writable = yield* attempt("write-download-stream", () =>
+                writer.write(Buffer.from(chunk.value)),
+              );
+              yield* attempt("check-download-writer", writerFailure.throwIfFailed);
+              if (!writable) {
+                yield* waitForWriterDrain(writer).pipe(
+                  Effect.mapError((cause) => operationError("drain-download-writer", cause)),
+                );
+                yield* attempt("check-download-writer", writerFailure.throwIfFailed);
+              }
+              downloaded += chunk.value.length;
+              file.downloaded_bytes = downloaded;
+              if (Date.now() - lastUpdate <= DOWNLOAD_PROGRESS_THROTTLE_MS) continue;
+              currentDownload = yield* manager.persistFileUpdate(currentDownload, file);
+              yield* manager.publishProgress(currentDownload, file);
+              lastUpdate = Date.now();
+            }
+          }),
+        (streamReader) =>
+          Effect.tryPromise({
+            try: () => streamReader.cancel(),
+            catch: () => undefined,
+          }).pipe(
+            Effect.catch(() => Effect.void),
+            Effect.ensuring(
+              Effect.sync(() => {
+                try {
+                  streamReader.releaseLock();
+                } catch {
+                  return;
+                }
+              }),
+            ),
+          ),
+      );
+      yield* consume.pipe(
+        Effect.onExit(() =>
+          closeWriter(writer).pipe(Effect.ensuring(Effect.sync(writerFailure.dispose))),
+        ),
+      );
+      file.downloaded_bytes = downloaded;
+      if (file.size_bytes && downloaded < file.size_bytes) {
+        file.status = "error";
+        yield* manager.persistFileUpdate(currentDownload, file);
+        return yield* Effect.fail(
+          operationError("download-file", `Incomplete download for ${file.path}`),
+        );
+      }
+      yield* attempt("finalize-download-file", () => renameSync(temporaryPath, localPath));
+      file.status = "completed";
+      currentDownload = yield* manager.persistFileUpdate(currentDownload, file);
+      yield* manager.publishProgress(currentDownload, file);
+    });
   }
 
-  private persistFileUpdate(download: ModelDownload, file: DownloadFileInfo): ModelDownload {
-    const latest = this.store.get(download.id) ?? download;
-    const updatedFiles = latest.files.map((entry) =>
-      entry.path === file.path ? { ...file } : entry,
-    );
-    const updated: ModelDownload = {
-      ...latest,
-      files: updatedFiles,
-      downloaded_bytes: sumDownloadedBytes(updatedFiles),
-      total_bytes: latest.total_bytes ?? sumTotalBytes(updatedFiles),
-      updated_at: toTimestamp(),
-    };
-    this.store.save(updated);
-    return updated;
+  private persistFileUpdate(
+    download: ModelDownload,
+    file: DownloadFileInfo,
+  ): Effect.Effect<ModelDownload, EngineOperationError> {
+    const store = this.store;
+    return Effect.gen(function* () {
+      const latest = (yield* store.get(download.id)) ?? download;
+      const updatedFiles = latest.files.map((entry) =>
+        entry.path === file.path ? { ...file } : entry,
+      );
+      const updated: ModelDownload = {
+        ...latest,
+        files: updatedFiles,
+        downloaded_bytes: sumDownloadedBytes(updatedFiles),
+        total_bytes: latest.total_bytes ?? sumTotalBytes(updatedFiles),
+        updated_at: toTimestamp(),
+      };
+      yield* store.save(updated);
+      return updated;
+    });
   }
 
-  private publishProgress(download: ModelDownload, file: DownloadFileInfo): void {
+  private publishProgress(
+    download: ModelDownload,
+    file: DownloadFileInfo,
+  ): Effect.Effect<void, never> {
     const payload = {
       id: download.id,
       model_id: download.model_id,
@@ -461,18 +583,26 @@ export class DownloadManager {
         status: file.status,
       },
     };
-    void this.eventManager.publish(new Event(CONTROLLER_EVENTS.DOWNLOAD_PROGRESS, payload));
+    return this.publishEvent(new Event(CONTROLLER_EVENTS.DOWNLOAD_PROGRESS, payload));
   }
 
-  private publishState(download: ModelDownload, status: DownloadStatus): void {
-    const payload = {
-      id: download.id,
-      model_id: download.model_id,
-      status,
-      downloaded_bytes: download.downloaded_bytes,
-      total_bytes: download.total_bytes,
-      error: download.error,
-    };
-    void this.eventManager.publish(new Event(CONTROLLER_EVENTS.DOWNLOAD_STATE, payload));
+  private publishState(
+    download: ModelDownload,
+    status: DownloadStatus,
+  ): Effect.Effect<void, never> {
+    return this.publishEvent(
+      new Event(CONTROLLER_EVENTS.DOWNLOAD_STATE, {
+        id: download.id,
+        model_id: download.model_id,
+        status,
+        downloaded_bytes: download.downloaded_bytes,
+        total_bytes: download.total_bytes,
+        error: download.error,
+      }),
+    );
+  }
+
+  private publishEvent(event: Event): Effect.Effect<void, never> {
+    return this.eventManager.publish(event);
   }
 }

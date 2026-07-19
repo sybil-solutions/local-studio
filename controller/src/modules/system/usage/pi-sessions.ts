@@ -3,6 +3,7 @@ import { readdir, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
+import { Effect, Schema, Stream } from "effect";
 import type { UsageStats } from "@local-studio/contracts/usage";
 import { calcChange } from "./usage-utilities";
 
@@ -56,9 +57,6 @@ const piSessionsRoot = (): string =>
 
 type JsonlFile = { path: string; mtimeMs: number; size: number };
 
-// One assistant-usage event extracted from a session line. Cached per source
-// file so unchanged files are parsed once; the now-relative aggregation (recent
-// activity windows) is recomputed cheaply per request from these records.
 type ParsedRecord = {
   sessionId: string;
   model: string;
@@ -70,49 +68,44 @@ type ParsedRecord = {
   cacheWrite: number;
 };
 
-// Files this large are streamed line-by-line (never buffered whole) so a
-// multi-GB session log cannot OOM the controller. Streaming is used for every
-// file regardless, but the cap documents the concern and guards the log line.
 const LARGE_FILE_BYTES = 256 * 1024 * 1024;
+const JsonObjectSchema = Schema.Record(Schema.String, Schema.Unknown);
 
-const collectJsonlFiles = async (root: string): Promise<JsonlFile[]> => {
+const collectJsonlFiles = (root: string): Effect.Effect<JsonlFile[]> => {
   const files: JsonlFile[] = [];
-  const visit = async (directory: string): Promise<void> => {
-    let entries;
-    try {
-      entries = await readdir(directory, { withFileTypes: true });
-    } catch {
-      return; // missing/inaccessible directory (e.g. root not present yet)
-    }
-    for (const entry of entries) {
-      const path = join(directory, entry.name);
-      if (entry.isDirectory()) {
-        await visit(path);
-      } else if (entry.isFile() && entry.name.endsWith(".jsonl")) {
-        try {
-          const stats = await stat(path);
-          files.push({ path, mtimeMs: stats.mtimeMs, size: stats.size });
-        } catch {
-          // file vanished between readdir and stat — skip
+  const visit = (directory: string): Effect.Effect<void> =>
+    Effect.gen(function* () {
+      const entries = yield* Effect.tryPromise(() =>
+        readdir(directory, { withFileTypes: true }),
+      ).pipe(Effect.catch(() => Effect.succeed([])));
+      for (const entry of entries) {
+        const path = join(directory, entry.name);
+        if (entry.isDirectory()) {
+          yield* visit(path);
+        } else if (entry.isFile() && entry.name.endsWith(".jsonl")) {
+          yield* Effect.tryPromise(() => stat(path)).pipe(
+            Effect.tap((stats) =>
+              Effect.sync(() => {
+                files.push({ path, mtimeMs: stats.mtimeMs, size: stats.size });
+              }),
+            ),
+            Effect.catch(() => Effect.void),
+          );
         }
       }
-    }
-  };
-  await visit(root);
-  return files;
+    });
+  return visit(root).pipe(Effect.as(files));
 };
 
-// Per-file cache keyed by (path, mtimeMs, size): identical (path, mtime, size)
-// means unchanged content, so the parsed records are reused without re-reading.
 const fileRecordCache = new Map<
   string,
   { mtimeMs: number; size: number; records: ParsedRecord[] }
 >();
 
-const parseFileRecords = async (file: JsonlFile): Promise<ParsedRecord[]> => {
+const parseFileRecords = (file: JsonlFile): Effect.Effect<ParsedRecord[], unknown> => {
   const cached = fileRecordCache.get(file.path);
   if (cached && cached.mtimeMs === file.mtimeMs && cached.size === file.size) {
-    return cached.records;
+    return Effect.succeed(cached.records);
   }
   if (file.size > LARGE_FILE_BYTES) {
     console.warn(
@@ -122,26 +115,39 @@ const parseFileRecords = async (file: JsonlFile): Promise<ParsedRecord[]> => {
   const records: ParsedRecord[] = [];
   let sessionId = file.path;
   let currentModel: string | null = null;
-  const reader = createInterface({
-    input: createReadStream(file.path, { encoding: "utf8" }),
-    crlfDelay: Infinity,
-  });
-  try {
-    for await (const line of reader) {
-      if (!line.trim()) continue;
-      let event: Record<string, unknown>;
-      try {
-        event = JSON.parse(line) as Record<string, unknown>;
-      } catch {
-        continue;
-      }
-      if (event["type"] === "session") {
-        sessionId = textValue(event["id"]) ?? sessionId;
-      } else if (event["type"] === "model_change") {
-        currentModel = textValue(event["modelId"]) ?? currentModel;
-      }
-      const usage = parseAssistantUsage(event, currentModel);
-      if (usage) {
+  const lines = Stream.scoped(
+    Stream.unwrap(
+      Effect.acquireRelease(
+        Effect.sync(() => {
+          const input = createReadStream(file.path, { encoding: "utf8" });
+          const reader = createInterface({ input, crlfDelay: Infinity });
+          return { input, reader };
+        }),
+        ({ input, reader }) =>
+          Effect.sync(() => {
+            reader.close();
+            input.destroy();
+          }),
+      ).pipe(Effect.map(({ reader }) => Stream.fromAsyncIterable(reader, (error) => error))),
+    ),
+  );
+  return lines.pipe(
+    Stream.runForEach((line) =>
+      Effect.sync(() => {
+        if (!line.trim()) return;
+        let event: Record<string, unknown>;
+        try {
+          event = Schema.decodeUnknownSync(JsonObjectSchema)(JSON.parse(line) as unknown);
+        } catch {
+          return;
+        }
+        if (event["type"] === "session") {
+          sessionId = textValue(event["id"]) ?? sessionId;
+        } else if (event["type"] === "model_change") {
+          currentModel = textValue(event["modelId"]) ?? currentModel;
+        }
+        const usage = parseAssistantUsage(event, currentModel);
+        if (!usage) return;
         records.push({
           sessionId,
           model: usage.model,
@@ -152,14 +158,15 @@ const parseFileRecords = async (file: JsonlFile): Promise<ParsedRecord[]> => {
           cacheRead: usage.cacheRead,
           cacheWrite: usage.cacheWrite,
         });
-      }
-    }
-  } catch {
-    reader.close();
-    return records;
-  }
-  fileRecordCache.set(file.path, { mtimeMs: file.mtimeMs, size: file.size, records });
-  return records;
+      }),
+    ),
+    Effect.tap(() =>
+      Effect.sync(() => {
+        fileRecordCache.set(file.path, { mtimeMs: file.mtimeMs, size: file.size, records });
+      }),
+    ),
+    Effect.as(records),
+  );
 };
 
 const upsertUsage = (
@@ -281,165 +288,171 @@ const parseAssistantUsage = (
   };
 };
 
-// Whole-result cache: analytics endpoint, not real-time. Collapses bursty
-// dashboard polling into one aggregation. Keyed by root + model filter.
 const RESULT_TTL_MS = 30_000;
 const resultCache = new Map<string, { at: number; value: Omit<UsageStats, "controller"> | null }>();
 
-export const getUsageFromPiSessions = async (
+export const getUsageFromPiSessions = (
   root = piSessionsRoot(),
   now = new Date(),
-  knownModels?: Set<string>, // if provided, only these model names are included
-): Promise<Omit<UsageStats, "controller"> | null> => {
-  const cacheKey = `${root} ${knownModels ? [...knownModels].sort().join(",") : ""}`;
-  const cachedResult = resultCache.get(cacheKey);
-  if (cachedResult && Date.now() - cachedResult.at < RESULT_TTL_MS) {
-    return cachedResult.value;
-  }
-
-  const accumulator: UsageAccumulator = {
-    totalRequests: 0,
-    promptTokens: 0,
-    completionTokens: 0,
-    totalTokens: 0,
-    sessions: new Set(),
-    byModel: new Map(),
-    daily: new Map(),
-    dailyByModel: new Map(),
-    hourly: new Map(),
-    lastHourRequests: 0,
-    last24hRequests: 0,
-    prev24hRequests: 0,
-    last24hTokens: 0,
-    cacheHits: 0,
-    cacheMisses: 0,
-    cacheHitTokens: 0,
-    cacheMissTokens: 0,
-  };
-
-  const files = await collectJsonlFiles(root);
-  const livePaths = new Set(files.map((file) => file.path));
-  for (const path of fileRecordCache.keys()) {
-    if (!livePaths.has(path)) fileRecordCache.delete(path); // drop deleted files
-  }
-
-  for (const file of files) {
-    const records = await parseFileRecords(file);
-    for (const record of records) {
-      if (knownModels && !knownModels.has(record.model)) continue;
-      addAssistantUsage(
-        accumulator,
-        record.sessionId,
-        record.model,
-        new Date(record.timestamp),
-        record,
-        now,
-      );
+  knownModels?: Set<string>,
+): Effect.Effect<Omit<UsageStats, "controller"> | null> =>
+  Effect.gen(function* () {
+    const cacheKey = `${root}\u0000${knownModels ? [...knownModels].sort().join(",") : ""}`;
+    const cachedResult = resultCache.get(cacheKey);
+    if (cachedResult && Date.now() - cachedResult.at < RESULT_TTL_MS) {
+      return cachedResult.value;
     }
-  }
 
-  if (accumulator.totalRequests === 0) {
-    resultCache.set(cacheKey, { at: Date.now(), value: null });
-    return null;
-  }
-  const byModel = [...accumulator.byModel.values()]
-    .sort((a, b) => b.total_tokens - a.total_tokens)
-    .slice(0, 25);
-  const daily = [...accumulator.daily.values()].sort((a, b) =>
-    String(b.date ?? "").localeCompare(String(a.date ?? "")),
-  );
-  const dailyByModel = [...accumulator.dailyByModel.values()].sort((a, b) =>
-    String(b.date ?? "").localeCompare(String(a.date ?? "")),
-  );
-  const hourly = [...accumulator.hourly.values()].sort((a, b) => a.hour - b.hour);
-  const peakDays = daily
-    .map((row) => ({ date: row.date ?? "", requests: row.requests, tokens: row.total_tokens }))
-    .sort((a, b) => b.requests - a.requests)
-    .slice(0, 5);
-  const peakHours = hourly
-    .map((row) => ({ hour: row.hour, requests: row.requests }))
-    .sort((a, b) => b.requests - a.requests)
-    .slice(0, 5);
-  const successRate = accumulator.totalRequests ? 100 : 0;
+    const accumulator: UsageAccumulator = {
+      totalRequests: 0,
+      promptTokens: 0,
+      completionTokens: 0,
+      totalTokens: 0,
+      sessions: new Set(),
+      byModel: new Map(),
+      daily: new Map(),
+      dailyByModel: new Map(),
+      hourly: new Map(),
+      lastHourRequests: 0,
+      last24hRequests: 0,
+      prev24hRequests: 0,
+      last24hTokens: 0,
+      cacheHits: 0,
+      cacheMisses: 0,
+      cacheHitTokens: 0,
+      cacheMissTokens: 0,
+    };
 
-  const result: Omit<UsageStats, "controller"> = {
-    totals: {
-      total_tokens: accumulator.totalTokens,
-      prompt_tokens: accumulator.promptTokens,
-      completion_tokens: accumulator.completionTokens,
-      total_requests: accumulator.totalRequests,
-      successful_requests: accumulator.totalRequests,
-      failed_requests: 0,
-      success_rate: successRate,
-      unique_sessions: accumulator.sessions.size,
-      unique_users: 0,
-    },
-    latency: { avg_ms: 0, p50_ms: 0, p95_ms: 0, p99_ms: 0, min_ms: 0, max_ms: 0 },
-    ttft: { avg_ms: 0, p50_ms: 0, p95_ms: 0, p99_ms: 0 },
-    tokens_per_request: {
-      avg: Math.round(accumulator.totalTokens / accumulator.totalRequests),
-      avg_prompt: Math.round(accumulator.promptTokens / accumulator.totalRequests),
-      avg_completion: Math.round(accumulator.completionTokens / accumulator.totalRequests),
-      max: byModel.reduce(
-        (max, row) => Math.max(max, Math.round(row.total_tokens / row.requests)),
-        0,
-      ),
-      p50: 0,
-      p95: 0,
-    },
-    cache: {
-      hits: accumulator.cacheHits,
-      misses: accumulator.cacheMisses,
-      hit_tokens: accumulator.cacheHitTokens,
-      miss_tokens: accumulator.cacheMissTokens,
-      hit_rate:
-        accumulator.cacheHits + accumulator.cacheMisses > 0
-          ? (accumulator.cacheHits / (accumulator.cacheHits + accumulator.cacheMisses)) * 100
-          : 0,
-    },
-    week_over_week: {
-      this_week: { requests: 0, tokens: 0, successful: 0 },
-      last_week: { requests: 0, tokens: 0, successful: 0 },
-      change_pct: { requests: null, tokens: null },
-    },
-    recent_activity: {
-      last_hour_requests: accumulator.lastHourRequests,
-      last_24h_requests: accumulator.last24hRequests,
-      prev_24h_requests: accumulator.prev24hRequests,
-      last_24h_tokens: accumulator.last24hTokens,
-      change_24h_pct: calcChange(accumulator.last24hRequests, accumulator.prev24hRequests),
-    },
-    peak_days: peakDays,
-    peak_hours: peakHours,
-    by_model: byModel.map((row) => ({
-      ...row,
-      success_rate: 100,
-      avg_tokens: Math.round(row.total_tokens / row.requests),
-      avg_latency_ms: 0,
-      p50_latency_ms: 0,
-      avg_ttft_ms: 0,
-      tokens_per_sec: null,
-      prefill_tps: null,
-      generation_tps: null,
-    })),
-    daily: daily.map((row) => ({
-      date: row.date ?? "",
-      requests: row.requests,
-      successful: row.successful,
-      success_rate: 100,
-      total_tokens: row.total_tokens,
-      prompt_tokens: row.prompt_tokens,
-      completion_tokens: row.completion_tokens,
-      avg_latency_ms: 0,
-    })),
-    daily_by_model: dailyByModel.map((row) => ({
-      ...row,
-      date: row.date ?? "",
-      success_rate: 100,
-    })),
-    hourly_pattern: hourly,
-  };
+    const files = yield* collectJsonlFiles(root);
+    const livePaths = new Set(files.map((file) => file.path));
+    for (const path of fileRecordCache.keys()) {
+      if (!livePaths.has(path)) fileRecordCache.delete(path);
+    }
 
-  resultCache.set(cacheKey, { at: Date.now(), value: result });
-  return result;
-};
+    for (const file of files) {
+      const records = yield* parseFileRecords(file).pipe(
+        Effect.catch((error) =>
+          Effect.sync(() => {
+            console.warn(`[pi-sessions] failed to read ${file.path}: ${String(error)}`);
+            return [] as ParsedRecord[];
+          }),
+        ),
+      );
+      for (const record of records) {
+        if (knownModels && !knownModels.has(record.model)) continue;
+        addAssistantUsage(
+          accumulator,
+          record.sessionId,
+          record.model,
+          new Date(record.timestamp),
+          record,
+          now,
+        );
+      }
+    }
+
+    if (accumulator.totalRequests === 0) {
+      resultCache.set(cacheKey, { at: Date.now(), value: null });
+      return null;
+    }
+    const byModel = [...accumulator.byModel.values()]
+      .sort((a, b) => b.total_tokens - a.total_tokens)
+      .slice(0, 25);
+    const daily = [...accumulator.daily.values()].sort((a, b) =>
+      String(b.date ?? "").localeCompare(String(a.date ?? "")),
+    );
+    const dailyByModel = [...accumulator.dailyByModel.values()].sort((a, b) =>
+      String(b.date ?? "").localeCompare(String(a.date ?? "")),
+    );
+    const hourly = [...accumulator.hourly.values()].sort((a, b) => a.hour - b.hour);
+    const peakDays = daily
+      .map((row) => ({ date: row.date ?? "", requests: row.requests, tokens: row.total_tokens }))
+      .sort((a, b) => b.requests - a.requests)
+      .slice(0, 5);
+    const peakHours = hourly
+      .map((row) => ({ hour: row.hour, requests: row.requests }))
+      .sort((a, b) => b.requests - a.requests)
+      .slice(0, 5);
+    const successRate = accumulator.totalRequests ? 100 : 0;
+
+    const result: Omit<UsageStats, "controller"> = {
+      totals: {
+        total_tokens: accumulator.totalTokens,
+        prompt_tokens: accumulator.promptTokens,
+        completion_tokens: accumulator.completionTokens,
+        total_requests: accumulator.totalRequests,
+        successful_requests: accumulator.totalRequests,
+        failed_requests: 0,
+        success_rate: successRate,
+        unique_sessions: accumulator.sessions.size,
+        unique_users: 0,
+      },
+      latency: { avg_ms: 0, p50_ms: 0, p95_ms: 0, p99_ms: 0, min_ms: 0, max_ms: 0 },
+      ttft: { avg_ms: 0, p50_ms: 0, p95_ms: 0, p99_ms: 0 },
+      tokens_per_request: {
+        avg: Math.round(accumulator.totalTokens / accumulator.totalRequests),
+        avg_prompt: Math.round(accumulator.promptTokens / accumulator.totalRequests),
+        avg_completion: Math.round(accumulator.completionTokens / accumulator.totalRequests),
+        max: byModel.reduce(
+          (max, row) => Math.max(max, Math.round(row.total_tokens / row.requests)),
+          0,
+        ),
+        p50: 0,
+        p95: 0,
+      },
+      cache: {
+        hits: accumulator.cacheHits,
+        misses: accumulator.cacheMisses,
+        hit_tokens: accumulator.cacheHitTokens,
+        miss_tokens: accumulator.cacheMissTokens,
+        hit_rate:
+          accumulator.cacheHits + accumulator.cacheMisses > 0
+            ? (accumulator.cacheHits / (accumulator.cacheHits + accumulator.cacheMisses)) * 100
+            : 0,
+      },
+      week_over_week: {
+        this_week: { requests: 0, tokens: 0, successful: 0 },
+        last_week: { requests: 0, tokens: 0, successful: 0 },
+        change_pct: { requests: null, tokens: null },
+      },
+      recent_activity: {
+        last_hour_requests: accumulator.lastHourRequests,
+        last_24h_requests: accumulator.last24hRequests,
+        prev_24h_requests: accumulator.prev24hRequests,
+        last_24h_tokens: accumulator.last24hTokens,
+        change_24h_pct: calcChange(accumulator.last24hRequests, accumulator.prev24hRequests),
+      },
+      peak_days: peakDays,
+      peak_hours: peakHours,
+      by_model: byModel.map((row) => ({
+        ...row,
+        success_rate: 100,
+        avg_tokens: Math.round(row.total_tokens / row.requests),
+        avg_latency_ms: 0,
+        p50_latency_ms: 0,
+        avg_ttft_ms: 0,
+        tokens_per_sec: null,
+        prefill_tps: null,
+        generation_tps: null,
+      })),
+      daily: daily.map((row) => ({
+        date: row.date ?? "",
+        requests: row.requests,
+        successful: row.successful,
+        success_rate: 100,
+        total_tokens: row.total_tokens,
+        prompt_tokens: row.prompt_tokens,
+        completion_tokens: row.completion_tokens,
+        avg_latency_ms: 0,
+      })),
+      daily_by_model: dailyByModel.map((row) => ({
+        ...row,
+        date: row.date ?? "",
+        success_rate: 100,
+      })),
+      hourly_pattern: hourly,
+    };
+
+    resultCache.set(cacheKey, { at: Date.now(), value: result });
+    return result;
+  });

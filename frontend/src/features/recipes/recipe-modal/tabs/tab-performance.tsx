@@ -175,18 +175,6 @@ function CudaGraphsSection({
     <FormSection icon={<Zap className="h-4 w-4" />} title="CUDA Graphs & Compilation">
       <div className="grid grid-cols-2 gap-3">
         <CheckboxRow
-          checked={recipe.enforce_eager || false}
-          onChange={(checked) => onChange({ ...recipe, enforce_eager: checked })}
-          label="Enforce Eager Mode"
-          description="Disables CUDA graphs for debugging"
-        />
-        <CheckboxRow
-          checked={recipe.disable_cuda_graph || false}
-          onChange={(checked) => onChange({ ...recipe, disable_cuda_graph: checked })}
-          label="Disable CUDA Graph"
-          description="Skip graph capture for dynamic shapes"
-        />
-        <CheckboxRow
           checked={recipe.use_v2_block_manager || false}
           onChange={(checked) => onChange({ ...recipe, use_v2_block_manager: checked })}
           label="v2 Block Manager"

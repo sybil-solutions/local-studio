@@ -6,7 +6,8 @@ import type {
   RuntimeRocmSmiTool,
   SystemRuntimeInfo,
 } from "../../models/types";
-import { runCommand, runCommandAsync } from "../../../core/command";
+import { Effect } from "effect";
+import { runCommandAsyncEffect } from "../../../core/command";
 import { resolveAmdSmiBinary, resolveNvidiaSmiBinary, resolveRocmSmiBinary } from "./smi-tools";
 
 const toEvidence = (lines: Array<string | null | undefined>): string | null => {
@@ -30,12 +31,18 @@ const addCheck = (
 export const probeGpuMonitoring = (
   kind: SystemRuntimeInfo["platform"]["kind"],
   rocmTool: RuntimeRocmSmiTool | null,
-): { available: boolean; tool: RuntimeGpuMonitoringTool | null } => {
+): Effect.Effect<{ available: boolean; tool: RuntimeGpuMonitoringTool | null }> => {
+  const probe = (binary: string, args: string[]): Effect.Effect<boolean> =>
+    runCommandAsyncEffect(binary, args, { timeoutMs: 2_000 }).pipe(
+      Effect.map((result) => result.status === 0),
+    );
+
   if (kind === "cuda") {
     const binary = resolveNvidiaSmiBinary();
-    if (!binary) return { available: false, tool: "nvidia-smi" };
-    const result = runCommand(binary, ["--query-gpu=name", "--format=csv,noheader,nounits"], 2_000);
-    return { available: result.status === 0, tool: "nvidia-smi" };
+    if (!binary) return Effect.succeed({ available: false, tool: "nvidia-smi" });
+    return probe(binary, ["--query-gpu=name", "--format=csv,noheader,nounits"]).pipe(
+      Effect.map((available) => ({ available, tool: "nvidia-smi" as const })),
+    );
   }
 
   if (kind === "rocm") {
@@ -43,87 +50,34 @@ export const probeGpuMonitoring = (
 
     if (preferred === "amd-smi") {
       const binary = resolveAmdSmiBinary();
-      if (!binary) return { available: false, tool: "amd-smi" };
-      const result = runCommand(binary, ["version"], 2_000);
-      return { available: result.status === 0, tool: "amd-smi" };
+      if (!binary) return Effect.succeed({ available: false, tool: "amd-smi" });
+      return probe(binary, ["version"]).pipe(
+        Effect.map((available) => ({ available, tool: "amd-smi" as const })),
+      );
     }
 
     if (preferred === "rocm-smi") {
       const binary = resolveRocmSmiBinary();
-      if (!binary) return { available: false, tool: "rocm-smi" };
-      const result = runCommand(binary, ["--showproductname"], 2_000);
-      return { available: result.status === 0, tool: "rocm-smi" };
+      if (!binary) return Effect.succeed({ available: false, tool: "rocm-smi" });
+      return probe(binary, ["--showproductname"]).pipe(
+        Effect.map((available) => ({ available, tool: "rocm-smi" as const })),
+      );
     }
 
     const amd = resolveAmdSmiBinary();
-    if (amd) {
-      const result = runCommand(amd, ["version"], 2_000);
-      if (result.status === 0) return { available: true, tool: "amd-smi" };
-    }
-
     const rocm = resolveRocmSmiBinary();
-    if (rocm) {
-      const result = runCommand(rocm, ["--showproductname"], 2_000);
-      if (result.status === 0) return { available: true, tool: "rocm-smi" };
-    }
-
-    return { available: false, tool: null };
+    return Effect.gen(function* () {
+      if (amd && (yield* probe(amd, ["version"]))) {
+        return { available: true, tool: "amd-smi" as const };
+      }
+      if (rocm && (yield* probe(rocm, ["--showproductname"]))) {
+        return { available: true, tool: "rocm-smi" as const };
+      }
+      return { available: false, tool: null };
+    });
   }
 
-  return { available: false, tool: null };
-};
-
-/**
- * Async mirror of probeGpuMonitoring so the system-runtime snapshot never
- * blocks the event loop on smi tool probes. Same inputs, same output shape.
- */
-export const probeGpuMonitoringAsync = async (
-  kind: SystemRuntimeInfo["platform"]["kind"],
-  rocmTool: RuntimeRocmSmiTool | null,
-): Promise<{ available: boolean; tool: RuntimeGpuMonitoringTool | null }> => {
-  const probe = async (binary: string, args: string[]): Promise<boolean> => {
-    const result = await runCommandAsync(binary, args, { timeoutMs: 2_000 });
-    return result.status === 0;
-  };
-
-  if (kind === "cuda") {
-    const binary = resolveNvidiaSmiBinary();
-    if (!binary) return { available: false, tool: "nvidia-smi" };
-    return {
-      available: await probe(binary, ["--query-gpu=name", "--format=csv,noheader,nounits"]),
-      tool: "nvidia-smi",
-    };
-  }
-
-  if (kind === "rocm") {
-    const preferred = rocmTool ?? (resolveAmdSmiBinary() ? "amd-smi" : null);
-
-    if (preferred === "amd-smi") {
-      const binary = resolveAmdSmiBinary();
-      if (!binary) return { available: false, tool: "amd-smi" };
-      return { available: await probe(binary, ["version"]), tool: "amd-smi" };
-    }
-
-    if (preferred === "rocm-smi") {
-      const binary = resolveRocmSmiBinary();
-      if (!binary) return { available: false, tool: "rocm-smi" };
-      return { available: await probe(binary, ["--showproductname"]), tool: "rocm-smi" };
-    }
-
-    const amd = resolveAmdSmiBinary();
-    if (amd && (await probe(amd, ["version"]))) {
-      return { available: true, tool: "amd-smi" };
-    }
-
-    const rocm = resolveRocmSmiBinary();
-    if (rocm && (await probe(rocm, ["--showproductname"]))) {
-      return { available: true, tool: "rocm-smi" };
-    }
-
-    return { available: false, tool: null };
-  }
-
-  return { available: false, tool: null };
+  return Effect.succeed({ available: false, tool: null });
 };
 
 export const buildCompatibilityReport = (args: {
@@ -131,13 +85,11 @@ export const buildCompatibilityReport = (args: {
   inference_port: number;
   inference_port_open: boolean;
   inference_process_known: boolean;
-  gpu_monitoring?: { available: boolean; tool: RuntimeGpuMonitoringTool | null };
+  gpu_monitoring: { available: boolean; tool: RuntimeGpuMonitoringTool | null };
 }): CompatibilityReport => {
   const { runtime } = args;
   const checks: CompatibilityCheck[] = [];
-  const gpuMonitoring =
-    args.gpu_monitoring ??
-    probeGpuMonitoring(runtime.platform.kind, runtime.platform.rocm?.smi_tool ?? null);
+  const gpuMonitoring = args.gpu_monitoring;
 
   if (runtime.gpus.count === 0) {
     addCheck(checks, {

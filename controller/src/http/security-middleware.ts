@@ -1,14 +1,13 @@
 import { timingSafeEqual } from "node:crypto";
-import type { MiddlewareHandler } from "hono";
+import { Effect } from "effect";
+import type { MiddlewareHandler, Next } from "hono";
 import type { AppContext } from "../app-context";
+import { effectMiddleware } from "./effect-handler";
 
 const MUTATING_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 const PUBLIC_PATHS = new Set<string>(["/health"]);
 const DEFAULT_RATE_LIMIT_WINDOW_MS = 60_000;
 const DEFAULT_RATE_LIMIT_MAX_REQUESTS = 120;
-// Reads (GET/HEAD) get a much higher ceiling than mutations, and streaming /
-// monitoring endpoints are exempt so the UI's polling and SSE are never
-// throttled. This closes "GET is unthrottled" without disrupting normal use.
 const DEFAULT_READ_RATE_LIMIT_MAX_REQUESTS = 1200;
 const READ_RATE_LIMIT_EXEMPT_PATHS = new Set<string>([
   "/health",
@@ -18,37 +17,25 @@ const READ_RATE_LIMIT_EXEMPT_PATHS = new Set<string>([
   "/api/docs",
   "/api/spec",
 ]);
+const RATE_LIMIT_STORE_CAP = 10_000;
 
-type MutatingRateLimitEntry = {
-  count: number;
-  resetAt: number;
-};
+type RateLimitEntry = { count: number; resetAt: number };
 
-const mutatingRateLimitStore = new Map<string, MutatingRateLimitEntry>();
-const readRateLimitStore = new Map<string, MutatingRateLimitEntry>();
+const mutatingRateLimitStore = new Map<string, RateLimitEntry>();
+const readRateLimitStore = new Map<string, RateLimitEntry>();
 
-function isReadRateLimitExempt(method: string, path: string): boolean {
-  if (method.toUpperCase() === "OPTIONS") return true;
-  if (READ_RATE_LIMIT_EXEMPT_PATHS.has(path)) return true;
-  // Long-lived SSE / streaming endpoints.
-  return path.endsWith("/stream") || path.endsWith("/events");
-}
+const isReadRateLimitExempt = (method: string, path: string): boolean =>
+  method.toUpperCase() === "OPTIONS" ||
+  READ_RATE_LIMIT_EXEMPT_PATHS.has(path) ||
+  path.endsWith("/stream") ||
+  path.endsWith("/events");
 
-function isMutatingRequest(method: string): boolean {
-  return MUTATING_METHODS.has(method.toUpperCase());
-}
+const isMutatingRequest = (method: string): boolean => MUTATING_METHODS.has(method.toUpperCase());
 
-function isPublicRequest(method: string, path: string): boolean {
-  return method.toUpperCase() === "OPTIONS" || PUBLIC_PATHS.has(path);
-}
+const isPublicRequest = (method: string, path: string): boolean =>
+  method.toUpperCase() === "OPTIONS" || PUBLIC_PATHS.has(path);
 
-function getClientIpFromRequestHeaders(header: (name: string) => string | undefined): string {
-  // Prefer CF-Connecting-IP: behind Cloudflare (the deployment) it is set by
-  // the edge and is NOT client-controllable. X-Forwarded-For's leading entries
-  // ARE client-appendable, so keying the rate limiter on the first XFF entry let
-  // an attacker rotate it per request and never fill a bucket. Fall back to
-  // x-real-ip, then the LAST XFF hop (added by the nearest proxy) — never the
-  // first — and only when no trustworthy header is present.
+const getClientIpFromRequestHeaders = (header: (name: string) => string | undefined): string => {
   const cf = header("cf-connecting-ip")?.trim();
   if (cf) return cf;
   const real = header("x-real-ip")?.trim();
@@ -59,159 +46,120 @@ function getClientIpFromRequestHeaders(header: (name: string) => string | undefi
     .filter((value) => value.length > 0);
   if (forwarded && forwarded.length > 0) return forwarded[forwarded.length - 1]!;
   return "unknown";
-}
+};
 
-const RATE_LIMIT_STORE_CAP = 10_000;
-
-// Bound a rate-limit store: drop expired entries, then — if a flood of still-live
-// entries keeps it over the cap — evict oldest-inserted until under it, so the
-// map can't grow without bound (memory DoS).
-function pruneRateLimitStore(store: Map<string, MutatingRateLimitEntry>, now: number): void {
+const pruneRateLimitStore = (store: Map<string, RateLimitEntry>, now: number): void => {
   if (store.size <= RATE_LIMIT_STORE_CAP) return;
   for (const [key, entry] of store) {
     if (entry.resetAt <= now) store.delete(key);
   }
-  if (store.size > RATE_LIMIT_STORE_CAP) {
-    let toEvict = store.size - RATE_LIMIT_STORE_CAP;
-    for (const key of store.keys()) {
-      store.delete(key);
-      if (--toEvict <= 0) break;
-    }
+  let toEvict = store.size - RATE_LIMIT_STORE_CAP;
+  for (const key of store.keys()) {
+    if (toEvict <= 0) break;
+    store.delete(key);
+    toEvict -= 1;
   }
-}
+};
 
-function extractAuthToken(header: (name: string) => string | undefined): string | null {
+const extractAuthToken = (header: (name: string) => string | undefined): string | null => {
   const bearer = header("authorization");
   if (bearer) {
     const match = bearer.match(/^Bearer\s+(.+)$/i);
-    if (match && match[1]) {
-      return match[1].trim();
-    }
+    if (match?.[1]) return match[1].trim();
   }
-
   const apiKeyHeader = header("x-api-key");
-  if (apiKeyHeader?.trim()) {
-    return apiKeyHeader.trim();
-  }
+  return apiKeyHeader?.trim() || null;
+};
 
-  return null;
-}
-
-function safeTokenEquals(expected: string, provided: string): boolean {
+const safeTokenEquals = (expected: string, provided: string): boolean => {
   const expectedBuffer = Buffer.from(expected);
   const providedBuffer = Buffer.from(provided);
-  if (expectedBuffer.length !== providedBuffer.length) {
-    return false;
-  }
-  return timingSafeEqual(expectedBuffer, providedBuffer);
-}
+  return (
+    expectedBuffer.length === providedBuffer.length &&
+    timingSafeEqual(expectedBuffer, providedBuffer)
+  );
+};
 
-function buildMutatingRateLimitKey(path: string, method: string, clientIp: string): string {
-  return `${clientIp}:${method.toUpperCase()}:${path}`;
-}
+const rateLimitKey = (path: string, method: string, clientIp: string): string =>
+  `${clientIp}:${method.toUpperCase()}:${path}`;
+
+const nextEffect = (next: Next): Effect.Effect<void, unknown> =>
+  Effect.tryPromise({ try: next, catch: (error) => error });
 
 export function createMutatingAuthMiddleware(context: AppContext): MiddlewareHandler {
-  return async (ctx, next) => {
-    if (isPublicRequest(ctx.req.method, ctx.req.path)) {
-      return next();
-    }
-
-    const expectedApiKey = context.config.api_key?.trim();
-    if (!expectedApiKey) {
-      return next();
-    }
-
-    const providedToken = extractAuthToken((name) => ctx.req.header(name));
-    if (providedToken && safeTokenEquals(expectedApiKey, providedToken)) {
-      return next();
-    }
-
-    ctx.header("WWW-Authenticate", 'Bearer realm="local-studio-controller"');
-    return ctx.json({ detail: "Unauthorized" }, { status: 401 });
-  };
+  return effectMiddleware((ctx, next) =>
+    Effect.suspend(() => {
+      if (isPublicRequest(ctx.req.method, ctx.req.path)) return nextEffect(next);
+      const expectedApiKey = context.config.api_key?.trim();
+      if (!expectedApiKey) return nextEffect(next);
+      const providedToken = extractAuthToken((name) => ctx.req.header(name));
+      if (providedToken && safeTokenEquals(expectedApiKey, providedToken)) return nextEffect(next);
+      ctx.header("WWW-Authenticate", 'Bearer realm="local-studio-controller"');
+      return Effect.succeed(ctx.json({ detail: "Unauthorized" }, { status: 401 }));
+    }),
+  );
 }
 
 export function createMutatingRateLimitMiddleware(
   _context: AppContext,
-  options: {
-    windowMs?: number;
-    maxRequests?: number;
-  } = {},
+  options: { windowMs?: number; maxRequests?: number } = {},
 ): MiddlewareHandler {
   const windowMs = options.windowMs ?? DEFAULT_RATE_LIMIT_WINDOW_MS;
   const maxRequests = options.maxRequests ?? DEFAULT_RATE_LIMIT_MAX_REQUESTS;
-
-  return async (ctx, next) => {
-    if (!isMutatingRequest(ctx.req.method)) {
-      return next();
-    }
-
-    const now = Date.now();
-    const clientIp = getClientIpFromRequestHeaders((name) => ctx.req.header(name));
-    const key = buildMutatingRateLimitKey(ctx.req.path, ctx.req.method, clientIp);
-
-    const existing = mutatingRateLimitStore.get(key);
-    const inWindow = Boolean(existing && existing.resetAt > now);
-
-    const entry: MutatingRateLimitEntry = inWindow
-      ? { count: existing!.count + 1, resetAt: existing!.resetAt }
-      : { count: 1, resetAt: now + windowMs };
-
-    mutatingRateLimitStore.set(key, entry);
-
-    const remaining = Math.max(maxRequests - entry.count, 0);
-    ctx.header("X-RateLimit-Limit", String(maxRequests));
-    ctx.header("X-RateLimit-Remaining", String(remaining));
-    ctx.header("X-RateLimit-Reset", String(Math.ceil(entry.resetAt / 1000)));
-
-    if (entry.count > maxRequests) {
-      const retryAfterSeconds = Math.max(Math.ceil((entry.resetAt - now) / 1000), 1);
-      ctx.header("Retry-After", String(retryAfterSeconds));
-      return ctx.json({ detail: "Rate limit exceeded" }, { status: 429 });
-    }
-
-    pruneRateLimitStore(mutatingRateLimitStore, now);
-
-    return next();
-  };
+  return effectMiddleware((ctx, next) =>
+    Effect.suspend(() => {
+      if (!isMutatingRequest(ctx.req.method)) return nextEffect(next);
+      const now = Date.now();
+      const clientIp = getClientIpFromRequestHeaders((name) => ctx.req.header(name));
+      const key = rateLimitKey(ctx.req.path, ctx.req.method, clientIp);
+      const existing = mutatingRateLimitStore.get(key);
+      const entry: RateLimitEntry =
+        existing && existing.resetAt > now
+          ? { count: existing.count + 1, resetAt: existing.resetAt }
+          : { count: 1, resetAt: now + windowMs };
+      mutatingRateLimitStore.set(key, entry);
+      ctx.header("X-RateLimit-Limit", String(maxRequests));
+      ctx.header("X-RateLimit-Remaining", String(Math.max(maxRequests - entry.count, 0)));
+      ctx.header("X-RateLimit-Reset", String(Math.ceil(entry.resetAt / 1000)));
+      if (entry.count > maxRequests) {
+        ctx.header("Retry-After", String(Math.max(Math.ceil((entry.resetAt - now) / 1000), 1)));
+        return Effect.succeed(ctx.json({ detail: "Rate limit exceeded" }, { status: 429 }));
+      }
+      pruneRateLimitStore(mutatingRateLimitStore, now);
+      return nextEffect(next);
+    }),
+  );
 }
 
 export function createReadRateLimitMiddleware(
   _context: AppContext,
-  options: {
-    windowMs?: number;
-    maxRequests?: number;
-  } = {},
+  options: { windowMs?: number; maxRequests?: number } = {},
 ): MiddlewareHandler {
   const windowMs = options.windowMs ?? DEFAULT_RATE_LIMIT_WINDOW_MS;
   const maxRequests = options.maxRequests ?? DEFAULT_READ_RATE_LIMIT_MAX_REQUESTS;
-
-  return async (ctx, next) => {
-    // Mutations are covered by their own (stricter) limiter; only throttle reads
-    // here, and skip streaming / monitoring endpoints entirely.
-    if (isMutatingRequest(ctx.req.method) || isReadRateLimitExempt(ctx.req.method, ctx.req.path)) {
-      return next();
-    }
-
-    const now = Date.now();
-    const clientIp = getClientIpFromRequestHeaders((name) => ctx.req.header(name));
-    const key = buildMutatingRateLimitKey(ctx.req.path, ctx.req.method, clientIp);
-
-    const existing = readRateLimitStore.get(key);
-    const inWindow = Boolean(existing && existing.resetAt > now);
-    const entry: MutatingRateLimitEntry = inWindow
-      ? { count: existing!.count + 1, resetAt: existing!.resetAt }
-      : { count: 1, resetAt: now + windowMs };
-    readRateLimitStore.set(key, entry);
-
-    if (entry.count > maxRequests) {
-      const retryAfterSeconds = Math.max(Math.ceil((entry.resetAt - now) / 1000), 1);
-      ctx.header("Retry-After", String(retryAfterSeconds));
-      return ctx.json({ detail: "Rate limit exceeded" }, { status: 429 });
-    }
-
-    pruneRateLimitStore(readRateLimitStore, now);
-
-    return next();
-  };
+  return effectMiddleware((ctx, next) =>
+    Effect.suspend(() => {
+      if (
+        isMutatingRequest(ctx.req.method) ||
+        isReadRateLimitExempt(ctx.req.method, ctx.req.path)
+      ) {
+        return nextEffect(next);
+      }
+      const now = Date.now();
+      const clientIp = getClientIpFromRequestHeaders((name) => ctx.req.header(name));
+      const key = rateLimitKey(ctx.req.path, ctx.req.method, clientIp);
+      const existing = readRateLimitStore.get(key);
+      const entry: RateLimitEntry =
+        existing && existing.resetAt > now
+          ? { count: existing.count + 1, resetAt: existing.resetAt }
+          : { count: 1, resetAt: now + windowMs };
+      readRateLimitStore.set(key, entry);
+      if (entry.count > maxRequests) {
+        ctx.header("Retry-After", String(Math.max(Math.ceil((entry.resetAt - now) / 1000), 1)));
+        return Effect.succeed(ctx.json({ detail: "Rate limit exceeded" }, { status: 429 }));
+      }
+      pruneRateLimitStore(readRateLimitStore, now);
+      return nextEffect(next);
+    }),
+  );
 }

@@ -13,8 +13,8 @@ import {
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { PassThrough } from "node:stream";
-import { Effect } from "effect";
-import type { Config } from "../../../config/env";
+import { Effect, Fiber } from "effect";
+import type { Config } from "../../src/config/env";
 import {
   resolveBinaryFromEnvironment,
   type CommandResult,
@@ -23,17 +23,20 @@ import {
   type RunSyncOptions,
   type SpawnDetachedOptions,
   type SpawnedProcess,
-} from "../../../core/command";
-import { createLogger } from "../../../core/logger";
-import { asRecipeId, type Recipe } from "../../models/types";
-import { createProcessManager, type ProcessManager } from "./process-manager";
-import type { ProcessInventoryEntry } from "./process-inventory";
+} from "../../src/core/command";
+import { createLogger } from "../../src/core/logger";
+import { asRecipeId, type Recipe } from "../../src/modules/models/types";
+import {
+  createProcessManager,
+  type ProcessManager,
+} from "../../src/modules/engines/process/process-manager";
+import type { ProcessInventoryEntry } from "../../src/modules/engines/process/process-inventory";
 import {
   createProcessOwnershipStore,
   type ActiveProcessOwnershipRecord,
   type DockerBindingEnvironment,
   type PendingProcessOwnershipRecord,
-} from "./process-ownership";
+} from "../../src/modules/engines/process/process-ownership";
 
 const directories = new Set<string>();
 const environmentKeys = ["LOCAL_STUDIO_ALLOW_CUSTOM_LAUNCH_COMMAND", "PATH"] as const;
@@ -59,6 +62,15 @@ const temporaryDirectory = (): string => {
   const directory = mkdtempSync(join(tmpdir(), "local-studio-process-manager-"));
   directories.add(directory);
   return directory;
+};
+
+const waitFor = async (predicate: () => boolean, timeoutMs = 1_000): Promise<void> => {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (predicate()) return;
+    await Bun.sleep(10);
+  }
+  throw new Error("Condition did not become true");
 };
 
 const executable = (directory: string, name: string): string => {
@@ -105,6 +117,19 @@ class FakeSpawnedProcess implements SpawnedProcess {
   public on(event: "exit", listener: () => void): void;
   public on(event: "error" | "exit", listener: ((error: Error) => void) | (() => void)): void {
     this.events.on(event, listener);
+  }
+
+  public removeListener(event: "error", listener: (error: Error) => void): void;
+  public removeListener(event: "exit", listener: () => void): void;
+  public removeListener(
+    event: "error" | "exit",
+    listener: ((error: Error) => void) | (() => void),
+  ): void {
+    this.events.removeListener(event, listener);
+  }
+
+  public listenerCount(event: "error" | "exit"): number {
+    return this.events.listenerCount(event);
   }
 
   public kill(_signal: NodeJS.Signals): boolean {
@@ -291,6 +316,27 @@ const inventoryEntry = (
   args: [command],
 });
 
+const configureNativeSpawn = (runner: FocusedProcessRunner, pid: number): FakeSpawnedProcess[] => {
+  const children: FakeSpawnedProcess[] = [];
+  runner.spawnPid = pid;
+  runner.onSpawn = (spawned, command, args, options): void => {
+    children.push(spawned);
+    const startIdentity = String(createdAtMs());
+    runner.inventory = [inventoryEntry(spawned.pid, startIdentity, [command, ...args].join(" "))];
+    runner.processEnvironment.set(spawned.pid, {
+      LOCAL_STUDIO_LAUNCH_ID: options.env?.["LOCAL_STUDIO_LAUNCH_ID"] ?? "",
+    });
+  };
+  return children;
+};
+
+const expectResourcesReleased = (child: FakeSpawnedProcess): void => {
+  expect(child.listenerCount("error")).toBe(0);
+  expect(child.listenerCount("exit")).toBe(0);
+  expect(child.stdout.listenerCount("data")).toBe(0);
+  expect(child.stderr.listenerCount("data")).toBe(0);
+};
+
 const dockerEnvironment: DockerBindingEnvironment = {
   DOCKER_HOST: null,
   DOCKER_CONTEXT: null,
@@ -340,8 +386,18 @@ const dockerRecord = (
     ...overrides,
   });
 
+const managerForPlatform = (
+  dataDirectory: string,
+  runner: ProcessRunner,
+  platform: NodeJS.Platform,
+): ProcessManager =>
+  createProcessManager(config(dataDirectory), createLogger("error"), undefined, runner, platform);
+
 const managerFor = (dataDirectory: string, runner: ProcessRunner): ProcessManager =>
-  createProcessManager(config(dataDirectory), createLogger("error"), undefined, runner, "linux");
+  managerForPlatform(dataDirectory, runner, "linux");
+
+const runEffect = <Value>(effect: Effect.Effect<Value>): Promise<Value> =>
+  Effect.runPromise(effect);
 
 describe("owned process lifecycle boundaries", () => {
   test("constructing duplicate controllers before bind has no reconciliation side effects", () => {
@@ -376,7 +432,7 @@ describe("owned process lifecycle boundaries", () => {
     runner.inventory = [inventoryEntry(active.rootPid, active.startIdentity)];
     const manager = managerFor(dataDirectory, runner);
 
-    expect(await manager.confirmInferenceStopped(8_000)).toBe(false);
+    expect(await runEffect(manager.confirmInferenceStopped(8_000))).toBe(false);
     expect(runner.signalCount).toBe(0);
     expect(store.read()).toEqual({ status: "found", record: active });
     runner.processEnvironment.set(active.rootPid, {
@@ -389,7 +445,7 @@ describe("owned process lifecycle boundaries", () => {
       return true;
     };
 
-    expect(await manager.confirmInferenceStopped(8_000)).toBe(true);
+    expect(await runEffect(manager.confirmInferenceStopped(8_000))).toBe(true);
     expect(runner.signals).toEqual([{ processGroupId: active.processGroupId, signal: "SIGTERM" }]);
     expect(store.read()).toEqual({ status: "missing" });
   });
@@ -423,10 +479,10 @@ describe("owned process lifecycle boundaries", () => {
     );
     await entered.promise;
     const manager = managerFor(dataDirectory, runner);
-    const first = manager.confirmInferenceStopped(8_000);
+    const first = runEffect(manager.confirmInferenceStopped(8_000));
     await Bun.sleep(20);
     const inventoryReads = runner.inventoryReads;
-    const second = manager.confirmInferenceStopped(8_000);
+    const second = runEffect(manager.confirmInferenceStopped(8_000));
     await Bun.sleep(20);
 
     expect(inventoryReads).toBeGreaterThan(0);
@@ -448,8 +504,10 @@ describe("owned process lifecycle boundaries", () => {
 
     for (const [index, wrapper] of ["sudo", sudo, alias].entries()) {
       const dataDirectory = temporaryDirectory();
-      const result = await managerFor(dataDirectory, runner).launchModel(
-        recipe(`sudo-${index}`, `${wrapper} -n engine`, binaryDirectory),
+      const result = await runEffect(
+        managerFor(dataDirectory, runner).launchModel(
+          recipe(`sudo-${index}`, `${wrapper} -n engine`, binaryDirectory),
+        ),
       );
 
       expect(result).toMatchObject({
@@ -469,19 +527,12 @@ describe("owned process lifecycle boundaries", () => {
     const binaryDirectory = join(dataDirectory, "bin");
     const engine = executable(binaryDirectory, "engine");
     const runner = new FocusedProcessRunner();
-    runner.spawnPid = 43_100;
-    const children: FakeSpawnedProcess[] = [];
-    runner.onSpawn = (spawned, command, args, options): void => {
-      children.push(spawned);
-      const startIdentity = String(createdAtMs());
-      runner.inventory = [inventoryEntry(spawned.pid, startIdentity, [command, ...args].join(" "))];
-      runner.processEnvironment.set(spawned.pid, {
-        LOCAL_STUDIO_LAUNCH_ID: options.env?.["LOCAL_STUDIO_LAUNCH_ID"] ?? "",
-      });
-    };
+    const children = configureNativeSpawn(runner, 43_100);
 
-    const result = await managerFor(dataDirectory, runner).launchModel(
-      recipe("successful-native", engine, binaryDirectory),
+    const result = await runEffect(
+      managerFor(dataDirectory, runner).launchModel(
+        recipe("successful-native", engine, binaryDirectory),
+      ),
     );
     const persisted = createProcessOwnershipStore(dataDirectory).read();
 
@@ -496,9 +547,91 @@ describe("owned process lifecycle boundaries", () => {
       runtimeKind: "native",
     });
     expect(runner.spawnCount).toBe(1);
+    const child = children[0];
+    if (!child) throw new Error("Expected spawned process");
+    expect(child.listenerCount("error")).toBe(1);
+    expect(child.listenerCount("exit")).toBe(1);
     runner.inventory = [];
-    children[0]?.exit(0);
-    await Bun.sleep(20);
+    child.exit(0);
+    await waitFor(() => createProcessOwnershipStore(dataDirectory).read().status === "missing");
+    expectResourcesReleased(child);
+  });
+
+  test("interrupting launch cleans the exact generation and releases process resources", async () => {
+    process.env["LOCAL_STUDIO_ALLOW_CUSTOM_LAUNCH_COMMAND"] = "true";
+    const dataDirectory = temporaryDirectory();
+    const binaryDirectory = join(dataDirectory, "bin");
+    const engine = executable(binaryDirectory, "engine");
+    const runner = new FocusedProcessRunner();
+    const children = configureNativeSpawn(runner, 43_110);
+    runner.signalHandler = (processGroupId): boolean => {
+      runner.inventory = runner.inventory.filter(
+        (entry) => entry.processGroupId !== processGroupId,
+      );
+      return true;
+    };
+    const manager = managerFor(dataDirectory, runner);
+    const fiber = Effect.runFork(
+      manager.launchModel(recipe("interrupted-native", engine, binaryDirectory)),
+    );
+    await waitFor(() => {
+      const ownership = createProcessOwnershipStore(dataDirectory).read();
+      return ownership.status === "found" && ownership.record.state === "active";
+    }, 2_000);
+    await runEffect(Fiber.interrupt(fiber));
+
+    const child = children[0];
+    if (!child) throw new Error("Expected spawned process");
+    expect(runner.signals).toEqual([{ processGroupId: 43_110, signal: "SIGTERM" }]);
+    expect(createProcessOwnershipStore(dataDirectory).read()).toEqual({ status: "missing" });
+    expectResourcesReleased(child);
+  });
+
+  test("interrupting a Windows launch releases its in-memory process resources", async () => {
+    process.env["LOCAL_STUDIO_ALLOW_CUSTOM_LAUNCH_COMMAND"] = "true";
+    const dataDirectory = temporaryDirectory();
+    const binaryDirectory = join(dataDirectory, "bin");
+    const engine = executable(binaryDirectory, "engine");
+    const runner = new FocusedProcessRunner();
+    const children = configureNativeSpawn(runner, 2_000_000_000);
+    const manager = managerForPlatform(dataDirectory, runner, "win32");
+    const fiber = Effect.runFork(
+      manager.launchModel(recipe("interrupted-windows", engine, binaryDirectory)),
+    );
+    await waitFor(() => children[0]?.listenerCount("exit") === 1);
+    await runEffect(Fiber.interrupt(fiber));
+
+    const child = children[0];
+    if (!child) throw new Error("Expected spawned process");
+    expect(createProcessOwnershipStore(dataDirectory).read()).toEqual({ status: "missing" });
+    expectResourcesReleased(child);
+  });
+
+  test("shutdown stops an active owned launch and releases process resources", async () => {
+    process.env["LOCAL_STUDIO_ALLOW_CUSTOM_LAUNCH_COMMAND"] = "true";
+    const dataDirectory = temporaryDirectory();
+    const binaryDirectory = join(dataDirectory, "bin");
+    const engine = executable(binaryDirectory, "engine");
+    const runner = new FocusedProcessRunner();
+    const children = configureNativeSpawn(runner, 43_120);
+    const manager = managerFor(dataDirectory, runner);
+    const launched = await runEffect(
+      manager.launchModel(recipe("shutdown-native", engine, binaryDirectory)),
+    );
+    runner.signalHandler = (processGroupId): boolean => {
+      runner.inventory = runner.inventory.filter(
+        (entry) => entry.processGroupId !== processGroupId,
+      );
+      return true;
+    };
+
+    expect(launched.success).toBe(true);
+    expect(await runEffect(manager.shutdown())).toBe(true);
+    const child = children[0];
+    if (!child) throw new Error("Expected spawned process");
+    expect(runner.signals).toEqual([{ processGroupId: 43_120, signal: "SIGTERM" }]);
+    expect(createProcessOwnershipStore(dataDirectory).read()).toEqual({ status: "missing" });
+    expectResourcesReleased(child);
   });
 
   test("recovers a native pending generation left by a crash before spawn", async () => {
@@ -507,7 +640,9 @@ describe("owned process lifecycle boundaries", () => {
     store.create(pendingRecord(createdAtMs()));
     const runner = new FocusedProcessRunner();
 
-    expect(await managerFor(dataDirectory, runner).confirmInferenceStopped(8_000)).toBe(true);
+    expect(await runEffect(managerFor(dataDirectory, runner).confirmInferenceStopped(8_000))).toBe(
+      true,
+    );
     expect(store.read()).toEqual({ status: "missing" });
     expect(runner.signalCount).toBe(0);
   });
@@ -536,7 +671,9 @@ describe("owned process lifecycle boundaries", () => {
       return true;
     };
 
-    expect(await managerFor(dataDirectory, runner).confirmInferenceStopped(8_000)).toBe(true);
+    expect(await runEffect(managerFor(dataDirectory, runner).confirmInferenceStopped(8_000))).toBe(
+      true,
+    );
     expect(runner.signals).toEqual([{ processGroupId: 43_150, signal: "SIGTERM" }]);
     expect(store.read()).toEqual({ status: "missing" });
   });
@@ -545,7 +682,7 @@ describe("owned process lifecycle boundaries", () => {
     const dataDirectory = temporaryDirectory();
     const runner = new FocusedProcessRunner();
     const manager = managerFor(dataDirectory, runner);
-    expect(await manager.findInferenceProcess(8_000)).toBeNull();
+    expect(await runEffect(manager.findInferenceProcess(8_000))).toBeNull();
     const created = createdAtMs();
     const store = createProcessOwnershipStore(dataDirectory);
     const active = activeRecord(store, pendingRecord(created), 43_200, String(created));
@@ -570,7 +707,7 @@ describe("owned process lifecycle boundaries", () => {
       return true;
     };
 
-    expect(await manager.killProcess(43_201, false)).toBe(true);
+    expect(await runEffect(manager.killProcess(43_201, false))).toBe(true);
     expect(runner.signals).toEqual([
       { processGroupId: active.processGroupId, signal: "SIGTERM" },
       { processGroupId: active.processGroupId, signal: "SIGKILL" },
@@ -583,7 +720,7 @@ describe("owned process lifecycle boundaries", () => {
     const dataDirectory = temporaryDirectory();
     const runner = new FocusedProcessRunner();
     const manager = managerFor(dataDirectory, runner);
-    expect(await manager.findInferenceProcess(8_000)).toBeNull();
+    expect(await runEffect(manager.findInferenceProcess(8_000))).toBeNull();
     const created = createdAtMs();
     const store = createProcessOwnershipStore(dataDirectory);
     const active = activeRecord(store, pendingRecord(created), 43_300, String(created));
@@ -601,7 +738,7 @@ describe("owned process lifecycle boundaries", () => {
       return true;
     };
 
-    expect(await manager.killProcess(43_302, false)).toBe(true);
+    expect(await runEffect(manager.killProcess(43_302, false))).toBe(true);
     expect(runner.signals).toEqual([{ processGroupId: active.processGroupId, signal: "SIGTERM" }]);
     expect(store.read()).toEqual({ status: "missing" });
   });
@@ -611,7 +748,7 @@ describe("owned process lifecycle boundaries", () => {
       const dataDirectory = temporaryDirectory();
       const runner = new FocusedProcessRunner();
       const manager = managerFor(dataDirectory, runner);
-      expect(await manager.findInferenceProcess(8_000)).toBeNull();
+      expect(await runEffect(manager.findInferenceProcess(8_000))).toBeNull();
       const created = createdAtMs();
       const store = createProcessOwnershipStore(dataDirectory);
       const active = activeRecord(store, pendingRecord(created), 43_400, String(created));
@@ -628,7 +765,7 @@ describe("owned process lifecycle boundaries", () => {
       }
       if (mode === "identity-unreadable") runner.unavailableEnvironment.add(active.rootPid);
 
-      expect(await manager.killProcess(active.rootPid, false)).toBe(false);
+      expect(await runEffect(manager.killProcess(active.rootPid, false))).toBe(false);
       expect(runner.signalCount).toBe(0);
       expect(store.read()).toEqual({ status: "found", record: active });
     }
@@ -644,7 +781,9 @@ describe("owned process lifecycle boundaries", () => {
     runner.inventory = [inventoryEntry(44_001, String(created))];
     runner.unavailableEnvironment.add(44_001);
 
-    expect(await managerFor(dataDirectory, runner).confirmInferenceStopped(8_000)).toBe(false);
+    expect(await runEffect(managerFor(dataDirectory, runner).confirmInferenceStopped(8_000))).toBe(
+      false,
+    );
     expect(store.read()).toEqual({ status: "found", record });
     expect(runner.environmentReads).toContain(44_001);
     expect(runner.signalCount).toBe(0);
@@ -662,7 +801,9 @@ describe("owned process lifecycle boundaries", () => {
     const runner = new FocusedProcessRunner();
     runner.inventory = [inventoryEntry(44_002, String(created), command.join(" "))];
 
-    expect(await managerFor(dataDirectory, runner).confirmInferenceStopped(8_000)).toBe(false);
+    expect(await runEffect(managerFor(dataDirectory, runner).confirmInferenceStopped(8_000))).toBe(
+      false,
+    );
     expect(store.read()).toEqual({ status: "found", record });
     expect(runner.signalCount).toBe(0);
   });
@@ -693,7 +834,9 @@ describe("owned process lifecycle boundaries", () => {
       }
     };
 
-    expect(await managerFor(dataDirectory, runner).confirmInferenceStopped(8_000)).toBe(true);
+    expect(await runEffect(managerFor(dataDirectory, runner).confirmInferenceStopped(8_000))).toBe(
+      true,
+    );
     expect(competingRemovalAttempted).toBe(true);
     expect(competingRemoval).toBe(false);
     expect(competingCreationBlocked).toBe(true);
@@ -727,7 +870,7 @@ describe("owned process lifecycle boundaries", () => {
 
     const firstManager = managerFor(dataDirectory, runner);
     managerFor(dataDirectory, runner);
-    expect(await firstManager.confirmInferenceStopped(8_000)).toBe(false);
+    expect(await runEffect(firstManager.confirmInferenceStopped(8_000))).toBe(false);
     expect(runner.signalCount).toBe(0);
     expect(store.read()).toEqual({ status: "found", record: replacement });
   });
@@ -749,7 +892,9 @@ describe("owned process lifecycle boundaries", () => {
     runner.inventory = [inventoryEntry(45_001, String(created - 60_000))];
     runner.unavailableEnvironment.add(45_001);
 
-    expect(await managerFor(dataDirectory, runner).confirmInferenceStopped(8_000)).toBe(true);
+    expect(await runEffect(managerFor(dataDirectory, runner).confirmInferenceStopped(8_000))).toBe(
+      true,
+    );
     expect(store.read()).toEqual({ status: "missing" });
     expect(runner.environmentReads).toEqual([]);
     expect(runner.dockerCommands.length).toBeGreaterThan(0);
@@ -766,7 +911,9 @@ describe("owned process lifecycle boundaries", () => {
     const containerId = "d".repeat(64);
     runner.dockerContainerIds = [containerId];
 
-    expect(await managerFor(dataDirectory, runner).confirmInferenceStopped(8_000)).toBe(true);
+    expect(await runEffect(managerFor(dataDirectory, runner).confirmInferenceStopped(8_000))).toBe(
+      true,
+    );
     expect(store.read()).toEqual({ status: "missing" });
     expect(runner.signalCount).toBe(0);
     expect(runner.dockerCommands).toContainEqual([docker, "rm", "-f", containerId]);
@@ -781,7 +928,7 @@ describe("owned process lifecycle boundaries", () => {
     process.env["PATH"] = secondDirectory;
     const runner = new FocusedProcessRunner();
     const manager = managerFor(dataDirectory, runner);
-    expect(await manager.findInferenceProcess(8_000)).toBeNull();
+    expect(await runEffect(manager.findInferenceProcess(8_000))).toBeNull();
     const created = createdAtMs();
     const store = createProcessOwnershipStore(dataDirectory);
     const active = activeRecord(
@@ -803,7 +950,7 @@ describe("owned process lifecycle boundaries", () => {
       return true;
     };
 
-    expect(await manager.killProcess(active.rootPid, false)).toBe(true);
+    expect(await runEffect(manager.killProcess(active.rootPid, false))).toBe(true);
     expect(runner.dockerCommands).toContainEqual([
       persistedDocker,
       "stop",
@@ -820,7 +967,7 @@ describe("owned process lifecycle boundaries", () => {
     const docker = executable(join(dataDirectory, "bin"), "docker");
     const runner = new FocusedProcessRunner();
     const manager = managerFor(dataDirectory, runner);
-    expect(await manager.findInferenceProcess(8_000)).toBeNull();
+    expect(await runEffect(manager.findInferenceProcess(8_000))).toBeNull();
     const created = createdAtMs();
     const store = createProcessOwnershipStore(dataDirectory);
     const active = activeRecord(store, dockerRecord(created, docker), 45_200, String(created));
@@ -838,7 +985,7 @@ describe("owned process lifecycle boundaries", () => {
       if (lookupCount === 2) runner.dockerContainerIds = [replacementContainer];
     };
 
-    expect(await manager.killProcess(active.rootPid, false)).toBe(false);
+    expect(await runEffect(manager.killProcess(active.rootPid, false))).toBe(false);
     expect(runner.signalCount).toBe(0);
     expect(runner.dockerContainerIds).toEqual([replacementContainer]);
     expect(store.read()).toEqual({ status: "found", record: active });

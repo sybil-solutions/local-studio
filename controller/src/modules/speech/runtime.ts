@@ -9,7 +9,7 @@ import {
 } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { Effect, Schema, Semaphore } from "effect";
+import { Effect, Fiber, Schema, Semaphore } from "effect";
 import {
   CHATTERBOX_MODEL_REVISION,
   CHATTERBOX_PACKAGE_VERSION,
@@ -30,7 +30,10 @@ const InstallRecordSchema = Schema.Struct({
 });
 
 export type ChatterboxInstallStage =
-  "preparing" | "creating_runtime" | "installing_package" | "prefetching_model";
+  | "preparing"
+  | "creating_runtime"
+  | "installing_package"
+  | "prefetching_model";
 
 export type ChatterboxRuntimeState =
   | { readonly status: "not_installed" }
@@ -197,9 +200,9 @@ export class ChatterboxRuntime {
   private readonly dependencies: RuntimeDependencies;
   private readonly installSemaphore = Semaphore.makeUnsafe(1);
   private state: ChatterboxRuntimeState;
-  private installPromise: Promise<ChatterboxRuntimeState> | null = null;
+  private installFiber: Fiber.Fiber<ChatterboxRuntimeState, never> | null = null;
+  private installGeneration = 0;
   private installAbort: AbortController | null = null;
-  private installCancelError: CommandTerminationError | null = null;
 
   constructor(options: ChatterboxRuntimeOptions) {
     this.paths = chatterboxRuntimePaths(options.dataDirectory, options.workerPath);
@@ -219,80 +222,110 @@ export class ChatterboxRuntime {
     return this.state;
   }
 
-  startInstall(gpuUuid: string, options: ChatterboxInstallOptions = {}): ChatterboxRuntimeState {
-    if (
-      this.state.status === "installing" ||
-      (this.state.status === "installed" && !options.repair)
-    ) {
-      return this.state;
-    }
-    if (!validGpuUuid(gpuUuid)) {
-      this.state = { status: "error", gpuUuid, message: "A full NVIDIA GPU UUID is required" };
-      return this.state;
-    }
-    if (options.repair) {
-      rmSync(this.paths.installRecordPath, { force: true });
-      rmSync(`${this.paths.installRecordPath}.tmp`, { force: true });
-    }
-    const abort = new AbortController();
-    this.installAbort = abort;
-    this.installCancelError = null;
-    const installing: ChatterboxRuntimeState = {
-      status: "installing",
-      stage: "preparing",
-      progress: 0.05,
-      gpuUuid,
-    };
-    this.state = installing;
-    const program = this.installSemaphore
-      .withPermit(this.installEffect(gpuUuid, abort.signal))
-      .pipe(
-        Effect.match({
-          onFailure: (error) => {
-            if (abort.signal.aborted && error instanceof CommandTerminationError) {
-              this.installCancelError = error;
-            }
-            this.state = {
-              status: "error",
-              gpuUuid,
-              message: abort.signal.aborted ? "Chatterbox install cancelled" : errorMessage(error),
-            };
-            return this.state;
+  startInstall(
+    gpuUuid: string,
+    options: ChatterboxInstallOptions = {},
+  ): Effect.Effect<ChatterboxRuntimeState, Error> {
+    const runtime = this;
+    return Effect.gen(function* () {
+      if (
+        runtime.state.status === "installing" ||
+        (runtime.state.status === "installed" && !options.repair)
+      ) {
+        return runtime.state;
+      }
+      if (!validGpuUuid(gpuUuid)) {
+        runtime.state = {
+          status: "error",
+          gpuUuid,
+          message: "A full NVIDIA GPU UUID is required",
+        };
+        return runtime.state;
+      }
+      if (options.repair) {
+        yield* Effect.try({
+          try: () => {
+            rmSync(runtime.paths.installRecordPath, { force: true });
+            rmSync(`${runtime.paths.installRecordPath}.tmp`, { force: true });
           },
-          onSuccess: (installed) => {
-            this.state = installed;
-            return installed;
-          },
-        }),
-      );
-    const promise = Effect.runPromise(program);
-    this.installPromise = promise;
-    promise.then(() => {
-      if (this.installPromise === promise) this.installAbort = null;
+          catch: (source) => (source instanceof Error ? source : new Error(String(source))),
+        });
+      }
+      const abort = new AbortController();
+      runtime.installAbort = abort;
+      const installing: ChatterboxRuntimeState = {
+        status: "installing",
+        stage: "preparing",
+        progress: 0.05,
+        gpuUuid,
+      };
+      runtime.state = installing;
+      const generation = ++runtime.installGeneration;
+      const program = runtime.installSemaphore
+        .withPermit(runtime.installEffect(gpuUuid, abort.signal))
+        .pipe(
+          Effect.match({
+            onFailure: (error) => {
+              runtime.state = {
+                status: "error",
+                gpuUuid,
+                message: abort.signal.aborted
+                  ? "Chatterbox install cancelled"
+                  : errorMessage(error),
+              };
+              return runtime.state;
+            },
+            onSuccess: (installed) => {
+              runtime.state = installed;
+              return installed;
+            },
+          }),
+          Effect.ensuring(
+            Effect.sync(() => {
+              if (runtime.installGeneration === generation) runtime.installAbort = null;
+            }),
+          ),
+        );
+      runtime.installFiber = yield* program.pipe(Effect.forkDetach({ startImmediately: true }));
+      return installing;
     });
-    return installing;
   }
 
-  waitForInstall(): Promise<ChatterboxRuntimeState> {
-    return this.installPromise ?? Promise.resolve(this.state);
+  waitForInstall(): Effect.Effect<ChatterboxRuntimeState> {
+    return this.installFiber
+      ? Fiber.await(this.installFiber).pipe(Effect.andThen(Effect.sync(() => this.state)))
+      : Effect.succeed(this.state);
   }
 
   install(
     gpuUuid: string,
     options: ChatterboxInstallOptions = {},
-  ): Promise<ChatterboxRuntimeState> {
-    this.startInstall(gpuUuid, options);
-    return this.waitForInstall();
+  ): Effect.Effect<ChatterboxRuntimeState, Error> {
+    return this.startInstall(gpuUuid, options).pipe(
+      Effect.andThen(Effect.suspend(() => this.waitForInstall())),
+    );
   }
 
-  cancelInstall(): Promise<void> {
+  cancelInstall(): Effect.Effect<void> {
     const abort = this.installAbort;
-    const promise = this.installPromise;
-    if (!abort || !promise) return Promise.resolve();
+    const fiber = this.installFiber;
+    if (!abort || !fiber) return Effect.void;
     abort.abort();
-    return promise.then(() => {
-      if (this.installCancelError) throw this.installCancelError;
-    });
+    return Fiber.interrupt(fiber).pipe(
+      Effect.tap(() =>
+        Effect.sync(() => {
+          this.state = {
+            status: "error",
+            gpuUuid:
+              this.state.status === "installing" || this.state.status === "error"
+                ? this.state.gpuUuid
+                : "",
+            message: "Chatterbox install cancelled",
+          };
+        }),
+      ),
+      Effect.asVoid,
+    );
   }
 
   private setInstalling(gpuUuid: string, stage: ChatterboxInstallStage, progress: number): void {

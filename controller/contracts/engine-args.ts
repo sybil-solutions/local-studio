@@ -1,23 +1,7 @@
 import type { Backend } from "./recipes";
 
-/**
- * Engine-scoped CLI argument policy.
- *
- * vLLM exposes a large surface of structured "convenience" flags in the recipe
- * editor. Those flags are vLLM-specific: forwarding them to llama.cpp, MLX, or
- * SGLang produces an unknown-argument crash or silently wrong behaviour. This
- * module is the single source of truth (shared by the frontend serializer and
- * the controller command builders) for which keys must never leak across
- * engines.
- */
-
 export type EngineArgType = "string" | "number" | "boolean";
 
-/**
- * - `vllm`: vLLM-only secondary flag; stripped before launching other engines.
- * - `shared`: structured editor field whose flag other engines also accept.
- * - `device`: launch-control key handled out-of-band, never emitted as a flag.
- */
 type EngineArgScope = "vllm" | "shared" | "device";
 
 type EngineArgSpec = {
@@ -27,18 +11,10 @@ type EngineArgSpec = {
   readonly aliases?: readonly string[];
 };
 
-/** Canonical kebab-case CLI key for a spec's snake_case field name. */
 export const engineArgKey = (field: string): string => field.replace(/_/g, "-");
 
-/** Normalize a CLI/extra-arg key to canonical kebab-case for comparison. */
-const normalizeEngineArgKey = (key: string): string =>
-  key.replace(/_/g, "-").toLowerCase().trim();
+const normalizeEngineArgKey = (key: string): string => key.replace(/_/g, "-").toLowerCase().trim();
 
-/**
- * The structured extra-arg field table: one row per editor field, in editor
- * display order. CLI keys, engine scoping, and editor field derivations all
- * flow from here.
- */
 export const ENGINE_ARG_SPECS = [
   { field: "tokenizer", type: "string", scope: "vllm" },
   { field: "tokenizer_mode", type: "string", scope: "vllm" },
@@ -61,8 +37,6 @@ export const ENGINE_ARG_SPECS = [
   { field: "max_paddings", type: "number", scope: "vllm" },
   { field: "data_parallel_size", type: "number", scope: "vllm" },
   { field: "enable_expert_parallel", type: "boolean", scope: "vllm" },
-  { field: "enforce_eager", type: "boolean", scope: "vllm" },
-  { field: "disable_cuda_graph", type: "boolean", scope: "vllm" },
   { field: "cuda_graph_max_bs", type: "number", scope: "vllm" },
   { field: "disable_custom_all_reduce", type: "boolean", scope: "vllm" },
   { field: "use_v2_block_manager", type: "boolean", scope: "vllm" },
@@ -138,13 +112,7 @@ const VLLM_ONLY_FLAG_KEYS: readonly string[] = ENGINE_ARG_SPECS.filter(
   (spec) => spec.scope === "vllm",
 ).map((spec) => engineArgKey(spec.field));
 
-/**
- * vLLM flags that SGLang also accepts under the same name. These are kept when
- * scoping arguments for SGLang so legitimate overrides are not dropped.
- * Updated to reflect SGLang's actual server argument surface (2025+).
- */
 const SGLANG_COMPATIBLE_VLLM_KEYS: ReadonlySet<string> = new Set([
-  "disable-cuda-graph",
   "disable-custom-all-reduce",
   "enable-prefix-caching",
   "enable-chunked-prefill",
@@ -181,7 +149,6 @@ const SGLANG_COMPATIBLE_VLLM_KEYS: ReadonlySet<string> = new Set([
 
 const VLLM_ONLY_FLAG_KEY_SET: ReadonlySet<string> = new Set(VLLM_ONLY_FLAG_KEYS);
 
-/** Keys that do not belong to `backend` and must be stripped before launch. */
 const getForeignFlagKeys = (backend: Backend): ReadonlySet<string> => {
   if (backend === "vllm") return new Set();
   if (backend === "sglang") {
@@ -189,14 +156,9 @@ const getForeignFlagKeys = (backend: Backend): ReadonlySet<string> => {
       [...VLLM_ONLY_FLAG_KEY_SET].filter((key) => !SGLANG_COMPATIBLE_VLLM_KEYS.has(key)),
     );
   }
-  // llama.cpp and MLX share no flag namespace with vLLM.
   return VLLM_ONLY_FLAG_KEY_SET;
 };
 
-/**
- * Return a copy of `extraArgs` with any wrong-engine flag keys removed. vLLM
- * recipes are returned untouched (vLLM is the superset).
- */
 export const stripForeignFlagKeys = (
   backend: Backend,
   extraArgs: Record<string, unknown> | null | undefined,
@@ -212,25 +174,11 @@ export const stripForeignFlagKeys = (
   return result;
 };
 
-/**
- * Broad allowlist of vLLM `serve` CLI flags that may safely be forwarded as
- * `extra_args` (canonical kebab-case). Built from the spec table,
- * `SGLANG_COMPATIBLE_VLLM_KEYS`, plus recipe fields the editor exposes as
- * structured inputs.
- *
- * If a flag is not in this set and does not match an experimental prefix,
- * `getUnknownVllmExtraArgKeys` will surface it so the command builder can
- * drop it with a warning instead of blindly forwarding it (which used to
- * crash vLLM with `unrecognized arguments`, e.g. for `benchmark_notes_<date>`
- * annotations that got stored in `extra_args`).
- */
 export const KNOWN_VLLM_EXTRA_ARG_KEYS: ReadonlySet<string> = new Set([
   ...ENGINE_ARG_SPECS.filter((spec) => spec.scope !== "device").map((spec) =>
     engineArgKey(spec.field),
   ),
   ...SGLANG_COMPATIBLE_VLLM_KEYS,
-  // Recipe fields also surfaced via extra_args by the editor (defensively
-  // allowed here so a typo there never blocks launch).
   "tensor-parallel-size",
   "pipeline-parallel-size",
   "max-model-len",
@@ -266,11 +214,6 @@ export const KNOWN_VLLM_EXTRA_ARG_KEYS: ReadonlySet<string> = new Set([
   "tensor-parallel-size-of-mlp",
 ]);
 
-/**
- * Fork-specific or experimental vLLM flag prefixes (voipmonitor/vllm B12X,
- * darkdevotion, etc.) that ship CLI flags outside the open-source surface.
- * Forwarded without per-key enumeration.
- */
 const VLLM_EXPERIMENTAL_PREFIXES: readonly string[] = [
   "b12x-",
   "darkdevotion-",
@@ -280,12 +223,6 @@ const VLLM_EXPERIMENTAL_PREFIXES: readonly string[] = [
   "swap-",
 ];
 
-/**
- * Recipe metadata / launch-control keys that are handled out-of-band by the
- * command builders (env injection, Docker wrapping, launch overrides) and are
- * never emitted as CLI flags. Recognised here so they are not surfaced as
- * "unknown" extra-args (which would log a misleading drop warning every launch).
- */
 export const INTERNAL_RECIPE_KEYS: ReadonlySet<string> = new Set([
   ...ENGINE_ARG_SPECS.filter((spec) => spec.scope === "device").map((spec) =>
     engineArgKey(spec.field),
@@ -307,7 +244,6 @@ export const INTERNAL_RECIPE_KEYS: ReadonlySet<string> = new Set([
 export const isInternalRecipeKey = (key: string): boolean =>
   INTERNAL_RECIPE_KEYS.has(normalizeEngineArgKey(key));
 
-/** Extra-arg keys whose string values are JSON payloads to re-serialize compactly. */
 const JSON_STRING_ARG_KEYS: ReadonlySet<string> = new Set([
   "speculative-config",
   "default-chat-template-kwargs",
@@ -316,11 +252,6 @@ const JSON_STRING_ARG_KEYS: ReadonlySet<string> = new Set([
 export const isJsonStringArgumentKey = (key: string): boolean =>
   JSON_STRING_ARG_KEYS.has(normalizeEngineArgKey(key));
 
-/**
- * Returns true if `key` is a known vLLM extra-arg flag, an internal recipe
- * metadata key handled out-of-band, or a fork-specific prefix we always pass
- * through to the CLI.
- */
 const isKnownVllmExtraArgKey = (key: string): boolean => {
   const normalized = normalizeEngineArgKey(key);
   if (KNOWN_VLLM_EXTRA_ARG_KEYS.has(normalized)) return true;
@@ -328,13 +259,8 @@ const isKnownVllmExtraArgKey = (key: string): boolean => {
   return VLLM_EXPERIMENTAL_PREFIXES.some((prefix) => normalized.startsWith(prefix));
 };
 
-/**
- * Returns the subset of `extraArgs` whose keys are NOT valid vLLM `serve`
- * flags. Notes-style keys (`benchmark_notes_<date>`, anything ending in
- * `_YYYYMMDD`, free-form metadata) fall into this bucket.
- */
 export const getUnknownVllmExtraArgKeys = (
-  extraArgs: Record<string, unknown> | null | undefined
+  extraArgs: Record<string, unknown> | null | undefined,
 ): string[] => {
   const source = extraArgs ?? {};
   const blocked: string[] = [];
@@ -346,10 +272,6 @@ export const getUnknownVllmExtraArgKeys = (
   return blocked;
 };
 
-/**
- * Returns true if `key` looks like a free-form annotation / notes field
- * rather than a CLI flag.
- */
 export const looksLikeNotesKey = (key: string): boolean => {
   const normalized = normalizeEngineArgKey(key);
   if (normalized.startsWith("benchmark-notes")) return true;

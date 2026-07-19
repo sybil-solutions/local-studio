@@ -1,7 +1,8 @@
 import { readdirSync, readFileSync, realpathSync } from "node:fs";
 import { basename, join } from "node:path";
+import { Effect } from "effect";
 import type { GpuInfo } from "../../models/types";
-import { resolveBinary, runCommand } from "../../../core/command";
+import { resolveBinary, runCommandAsyncEffect } from "../../../core/command";
 
 type IntelPciGpu = {
   path: string;
@@ -109,49 +110,60 @@ const findHwmonPaths = (pciPath: string): string[] => {
 const readHwmonMetric = (hwmonPaths: string[], fileName: string): number | null =>
   readFirstNumber(hwmonPaths.map((path) => join(path, fileName)));
 
-const readIntelName = (gpu: IntelPciGpu): string => {
+const readIntelName = (gpu: IntelPciGpu): Effect.Effect<string> => {
   const lspci = resolveBinary("lspci");
   if (lspci) {
-    const result = runCommand(lspci, ["-s", gpu.address.replace(/^0000:/, "")], 2_000);
-    if (result.status === 0 && result.stdout) {
-      const name = result.stdout.replace(/^[0-9a-f:.]+\s+/i, "").trim();
-      if (name) return name;
-    }
+    return runCommandAsyncEffect(lspci, ["-s", gpu.address.replace(/^0000:/, "")], {
+      timeoutMs: 2_000,
+    }).pipe(
+      Effect.map((result) => {
+        if (result.status === 0 && result.stdout) {
+          const name = result.stdout.replace(/^[0-9a-f:.]+\s+/i, "").trim();
+          if (name) return name;
+        }
+        return gpu.deviceId.toLowerCase() === "0xe223" ? "Intel Arc Pro B70" : "Intel Arc GPU";
+      }),
+    );
   }
 
-  if (gpu.deviceId.toLowerCase() === "0xe223") {
-    return "Intel Arc Pro B70";
-  }
-  return "Intel Arc GPU";
+  return Effect.succeed(
+    gpu.deviceId.toLowerCase() === "0xe223" ? "Intel Arc Pro B70" : "Intel Arc GPU",
+  );
 };
 
-export const getGpuInfoFromIntelSysfs = (): GpuInfo[] =>
-  discoverIntelPciGpus().map((gpu, index) => {
-    const drmDevicePaths = findDrmDevicePaths(gpu.path);
-    const memoryTotal =
-      readFirstNumber(drmDevicePaths.map((path) => join(path, "mem_info_vram_total"))) ?? 0;
-    const memoryUsed =
-      readFirstNumber(drmDevicePaths.map((path) => join(path, "mem_info_vram_used"))) ?? 0;
-    const memoryFree = Math.max(0, memoryTotal - memoryUsed);
-    const hwmonPaths = findHwmonPaths(gpu.path);
-    const temperature = Math.round((readHwmonMetric(hwmonPaths, "temp1_input") ?? 0) / 1000);
-    const powerDraw = Number(
-      ((readHwmonMetric(hwmonPaths, "power1_input") ?? 0) / 1_000_000).toFixed(1),
-    );
-    const powerLimit = Number(
-      ((readHwmonMetric(hwmonPaths, "power1_cap") ?? 0) / 1_000_000).toFixed(1),
-    );
-    const toMb = (bytes: number): number => Math.max(0, Math.round(bytes / 1024 / 1024));
+export const getGpuInfoFromIntelSysfs = (): Effect.Effect<GpuInfo[]> =>
+  Effect.sync(discoverIntelPciGpus).pipe(
+    Effect.flatMap((gpus) =>
+      Effect.forEach(gpus, (gpu, index) =>
+        Effect.gen(function* () {
+          const drmDevicePaths = findDrmDevicePaths(gpu.path);
+          const memoryTotal =
+            readFirstNumber(drmDevicePaths.map((path) => join(path, "mem_info_vram_total"))) ?? 0;
+          const memoryUsed =
+            readFirstNumber(drmDevicePaths.map((path) => join(path, "mem_info_vram_used"))) ?? 0;
+          const memoryFree = Math.max(0, memoryTotal - memoryUsed);
+          const hwmonPaths = findHwmonPaths(gpu.path);
+          const temperature = Math.round((readHwmonMetric(hwmonPaths, "temp1_input") ?? 0) / 1000);
+          const powerDraw = Number(
+            ((readHwmonMetric(hwmonPaths, "power1_input") ?? 0) / 1_000_000).toFixed(1),
+          );
+          const powerLimit = Number(
+            ((readHwmonMetric(hwmonPaths, "power1_cap") ?? 0) / 1_000_000).toFixed(1),
+          );
+          const toMb = (bytes: number): number => Math.max(0, Math.round(bytes / 1024 / 1024));
 
-    return {
-      index,
-      name: readIntelName(gpu),
-      memory_total_mb: toMb(memoryTotal),
-      memory_used_mb: toMb(memoryUsed),
-      memory_free_mb: toMb(memoryFree),
-      utilization_pct: 0,
-      temp_c: temperature,
-      power_draw: powerDraw,
-      power_limit: powerLimit,
-    };
-  });
+          return {
+            index,
+            name: yield* readIntelName(gpu),
+            memory_total_mb: toMb(memoryTotal),
+            memory_used_mb: toMb(memoryUsed),
+            memory_free_mb: toMb(memoryFree),
+            utilization_pct: 0,
+            temp_c: temperature,
+            power_draw: powerDraw,
+            power_limit: powerLimit,
+          };
+        }),
+      ),
+    ),
+  );

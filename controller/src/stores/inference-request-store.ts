@@ -1,6 +1,14 @@
 import type { Database } from "bun:sqlite";
 import type { UsageStats } from "@local-studio/contracts/usage";
-import { openSqliteDatabase, toFiniteNumber, toNullableNumber } from "./sqlite";
+import type { Effect } from "effect";
+import {
+  openInitializedDatabase,
+  makeDatabaseCloser,
+  repositoryEffect,
+  type RepositoryError,
+  toFiniteNumber,
+  toNullableNumber,
+} from "./sqlite";
 
 export interface InferenceRequestRecord {
   model: string;
@@ -33,27 +41,17 @@ const buildModelFilter = (
   return { clause: ` AND model IN (${placeholders})`, params };
 };
 
-/**
- * Persistent log of every inference request that traverses the OpenAI
- * proxy. Source of truth for the /usage analytics dashboard.
- */
 export class InferenceRequestStore {
   private readonly db: Database;
+  private readonly closeDatabase: () => Effect.Effect<void, RepositoryError>;
 
-  /**
-   * Create an inference request store.
-   * @param dbPath - SQLite database path.
-   */
   public constructor(dbPath: string) {
-    this.db = openSqliteDatabase(dbPath);
-    this.migrate();
+    this.db = openInitializedDatabase(dbPath, (db) => this.migrate(db));
+    this.closeDatabase = makeDatabaseCloser(this.db, "inference-requests.close");
   }
 
-  /**
-   * Create required database tables and indexes.
-   */
-  private migrate(): void {
-    this.db.run(`
+  private migrate(db: Database): void {
+    db.run(`
       CREATE TABLE IF NOT EXISTS inference_requests (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -73,19 +71,15 @@ export class InferenceRequestStore {
         streamed INTEGER NOT NULL DEFAULT 0
       )
     `);
-    this.db.run(
+    db.run(
       `CREATE INDEX IF NOT EXISTS idx_inference_requests_created_at ON inference_requests(created_at)`,
     );
-    this.db.run(
+    db.run(
       `CREATE INDEX IF NOT EXISTS idx_inference_requests_model_created ON inference_requests(model, created_at)`,
     );
   }
 
-  /**
-   * Persist one completed inference request.
-   * @param record - Request usage and timing record.
-   */
-  public record(record: InferenceRequestRecord): void {
+  private recordSync(record: InferenceRequestRecord): void {
     const promptTokens = Math.max(0, Math.round(record.prompt_tokens));
     const completionTokens = Math.max(0, Math.round(record.completion_tokens));
     const reasoningTokens = Math.max(0, Math.round(record.reasoning_tokens ?? 0));
@@ -118,6 +112,10 @@ export class InferenceRequestStore {
         record.status ?? 200,
         record.streamed ? 1 : 0,
       );
+  }
+
+  public record(record: InferenceRequestRecord): Effect.Effect<void, RepositoryError> {
+    return repositoryEffect("inference-requests.record", () => this.recordSync(record));
   }
 
   public aggregate(knownModels?: ReadonlySet<string>): UsageAggregate | null {
@@ -409,5 +407,15 @@ export class InferenceRequestStore {
         tokens: toFiniteNumber(row["tokens"]),
       })),
     };
+  }
+
+  public aggregateEffect(
+    knownModels?: ReadonlySet<string>,
+  ): Effect.Effect<UsageAggregate | null, RepositoryError> {
+    return repositoryEffect("inference-requests.aggregate", () => this.aggregate(knownModels));
+  }
+
+  public close(): Effect.Effect<void, RepositoryError> {
+    return this.closeDatabase();
   }
 }

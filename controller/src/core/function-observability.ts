@@ -1,3 +1,4 @@
+import { Cause, Effect, Exit } from "effect";
 import type { AppContext } from "../app-context";
 
 function elapsedMs(start: number): number {
@@ -13,37 +14,37 @@ function errorMessage(error: unknown): string {
   return String(error);
 }
 
-export async function observeControllerFunction<T>(
+export const observeControllerFunction = <A, E, R>(
   context: AppContext,
   functionName: string,
-  call: () => T | Promise<T>,
-): Promise<T> {
+  call: () => Effect.Effect<A, E, R>,
+): Effect.Effect<A, E, R> => {
   const start = performance.now();
-  try {
-    const result = await call();
-    context.stores.controllerRequestStore.recordFunctionCall({
-      function_name: functionName,
-      duration_ms: elapsedMs(start),
-      success: true,
-    });
-    return result;
-  } catch (error) {
-    context.stores.controllerRequestStore.recordFunctionCall({
-      function_name: functionName,
-      duration_ms: elapsedMs(start),
-      success: false,
-      error_class: errorClass(error),
-      error_message: errorMessage(error),
-    });
-    throw error;
-  }
-}
+  return Effect.suspend(call).pipe(
+    Effect.onExit((exit) => {
+      if (Exit.isSuccess(exit)) {
+        return context.stores.controllerRequestStore
+          .recordFunctionCallEffect({
+            function_name: functionName,
+            duration_ms: elapsedMs(start),
+            success: true,
+          })
+          .pipe(Effect.ignore);
+      }
+      const error = Cause.prettyErrors(exit.cause)[0] ?? Cause.pretty(exit.cause);
+      return context.stores.controllerRequestStore
+        .recordFunctionCallEffect({
+          function_name: functionName,
+          duration_ms: elapsedMs(start),
+          success: false,
+          error_class: errorClass(error),
+          error_message: errorMessage(error),
+        })
+        .pipe(Effect.ignore);
+    }),
+  );
+};
 
-/**
- * The most common observed call: locate the running inference process on the
- * configured port. `label` prefixes the telemetry function name per call site
- * (e.g. "status" -> "status.findInferenceProcess").
- */
 export const findObservedInferenceProcess = (
   context: AppContext,
   label: string,

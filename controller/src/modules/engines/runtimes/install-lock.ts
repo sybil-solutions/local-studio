@@ -1,8 +1,7 @@
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { Effect } from "effect";
+import { Effect, Schema } from "effect";
 import type { Config } from "../../../config/env";
-import { delayEffect } from "../../../core/async";
 import type { EngineBackend } from "@local-studio/contracts/system";
 import { ENGINE_INSTALL_TIMEOUT_MS } from "../configs";
 import { pidExists } from "../process/process-utilities";
@@ -19,6 +18,10 @@ interface AcquireEngineInstallLockOptions {
   shouldContinue?: (() => boolean) | undefined;
 }
 
+const EngineInstallLockRecordSchema = Schema.Struct({
+  pid: Schema.Number,
+});
+
 const installLockDirectory = (config: Pick<Config, "data_dir">): string =>
   join(config.data_dir, "runtime", "locks");
 
@@ -31,28 +34,23 @@ const nodeErrorCode = (error: unknown): string | null =>
 const releaseInstallLock = (path: string): void => {
   try {
     rmSync(path);
-  } catch {}
+  } catch {
+    return;
+  }
 };
 
-// A lock is stale if its owning process is gone. Nothing but releaseInstallLock
-// (an in-process `finally`) ever removes the file, so a crash/OOM-kill during an
-// install would otherwise orphan it and stall every future install for the full
-// timeout. Reclaim when the recorded pid is dead, or when the file is empty/
-// unparseable (a torn write). PID reuse across a reboot is the residual risk,
-// accepted as far rarer than the crash-during-install case this recovers.
 const isStaleLock = (path: string): boolean => {
   let raw: string;
   try {
     raw = readFileSync(path, "utf-8");
   } catch {
-    // The holder released it between our failed create and this read.
     return true;
   }
   try {
-    const pid = (JSON.parse(raw) as { pid?: unknown }).pid;
-    if (typeof pid !== "number" || !Number.isInteger(pid)) return true;
-    if (pid === process.pid) return false;
-    return !pidExists(pid);
+    const pid = Schema.decodeUnknownSync(EngineInstallLockRecordSchema)(JSON.parse(raw));
+    if (!Number.isInteger(pid.pid)) return true;
+    if (pid.pid === process.pid) return false;
+    return !pidExists(pid.pid);
   } catch {
     return true;
   }
@@ -73,8 +71,6 @@ const tryAcquireInstallLock = (
     return { path, release: () => releaseInstallLock(path) };
   } catch (error) {
     if (nodeErrorCode(error) !== "EEXIST") throw error;
-    // Reclaim a lock whose owner has died, then retry the create exactly once.
-    // A single retry avoids looping if two controllers race to reclaim.
     if (isStaleLock(path)) {
       releaseInstallLock(path);
       try {
@@ -110,7 +106,7 @@ const acquireEngineInstallLockEffect = (
         reportedWait = true;
         options.onWait?.(installLockPath(config, backend));
       }
-      yield* delayEffect(pollMs);
+      yield* Effect.sleep(pollMs);
     }
     return null;
   });
@@ -119,8 +115,8 @@ export const acquireEngineInstallLock = (
   config: Pick<Config, "data_dir">,
   backend: EngineBackend,
   options: AcquireEngineInstallLockOptions = {},
-): Promise<EngineInstallLock | null> =>
-  Effect.runPromise(acquireEngineInstallLockEffect(config, backend, options, Date.now()));
+): Effect.Effect<EngineInstallLock | null> =>
+  acquireEngineInstallLockEffect(config, backend, options, Date.now());
 
 export const installLockTimeoutMessage = (
   backend: EngineBackend,

@@ -1,59 +1,66 @@
 import type { UsageStats } from "@local-studio/contracts/usage";
+import { Effect } from "effect";
 import { observeControllerFunction } from "../../core/function-observability";
 import type { RouteRegistrar } from "../../http/route-registrar";
+import { effectHandler } from "../../http/effect-handler";
 import type { AppContext } from "../../app-context";
 import { getUsageFromPiSessions } from "./usage/pi-sessions";
 import { emptyResponse } from "./usage/usage-utilities";
 
-// Analytics endpoints are not real-time; a short TTL collapses bursty
-// dashboard polling (and repeated aggregation passes) into one computation.
 const USAGE_CACHE_TTL_MS = 15_000;
 
 const withControllerUsage = (
   context: AppContext,
   body: UsageStats,
   includeController: boolean,
-): UsageStats =>
+): Effect.Effect<UsageStats, unknown> =>
   includeController
-    ? { ...body, controller: context.stores.controllerRequestStore.aggregate() }
-    : body;
+    ? context.stores.controllerRequestStore
+        .aggregateEffect()
+        .pipe(Effect.map((controller) => ({ ...body, controller })))
+    : Effect.succeed(body);
 
 export const registerUsageRoutes: RouteRegistrar = (app, context) => {
   let usageCache: { at: number; body: UsageStats } | null = null;
 
-  app.get("/usage", async (ctx) => {
-    const includeController = ctx.req.query("include_controller") === "true";
-    try {
-      if (usageCache && Date.now() - usageCache.at < USAGE_CACHE_TTL_MS) {
-        return ctx.json(withControllerUsage(context, usageCache.body, includeController));
-      }
-      const usage = await observeControllerFunction(
-        context,
-        "usage.aggregateInferenceRequests",
-        () => context.stores.inferenceRequestStore.aggregate(),
+  app.get(
+    "/usage",
+    effectHandler((ctx) => {
+      const includeController = ctx.req.query("include_controller") === "true";
+      const usageEffect = Effect.gen(function* () {
+        if (usageCache && Date.now() - usageCache.at < USAGE_CACHE_TTL_MS) {
+          return yield* withControllerUsage(context, usageCache.body, includeController);
+        }
+        const usage = yield* observeControllerFunction(
+          context,
+          "usage.aggregateInferenceRequests",
+          () => context.stores.inferenceRequestStore.aggregateEffect(),
+        );
+        const body: UsageStats = usage ?? emptyResponse();
+        usageCache = { at: Date.now(), body };
+        return yield* withControllerUsage(context, body, includeController);
+      }).pipe(
+        Effect.catch((error) => {
+          context.logger.error(`[Usage] Error fetching usage stats: ${(error as Error).message}`);
+          return withControllerUsage(context, emptyResponse(), includeController);
+        }),
       );
-      const body: UsageStats = usage ?? emptyResponse();
-      usageCache = { at: Date.now(), body };
-      return ctx.json(withControllerUsage(context, body, includeController));
-    } catch (error) {
-      context.logger.error(`[Usage] Error fetching usage stats: ${(error as Error).message}`);
-      return ctx.json(withControllerUsage(context, emptyResponse(), includeController));
-    }
-  });
+      return usageEffect.pipe(Effect.map((body) => ctx.json(body)));
+    }),
+  );
 
-  app.get("/usage/pi-sessions", async (ctx) => {
-    try {
-      // pi-sessions tab shows ALL pi coding-agent activity, regardless of
-      // whether the model is one of our recipes (so users can see their
-      // external model usage too).
-      const usage = await observeControllerFunction(context, "usage.aggregatePiSessions", () =>
-        getUsageFromPiSessions(),
-      );
-      const body: UsageStats = usage ?? emptyResponse();
-      return ctx.json(body);
-    } catch (error) {
-      context.logger.error(`[Usage] Error fetching pi-sessions usage: ${(error as Error).message}`);
-      return ctx.json(emptyResponse());
-    }
-  });
+  app.get(
+    "/usage/pi-sessions",
+    effectHandler((ctx) =>
+      observeControllerFunction(context, "usage.aggregatePiSessions", getUsageFromPiSessions).pipe(
+        Effect.map((usage) => ctx.json((usage ?? emptyResponse()) as UsageStats)),
+        Effect.catch((error) => {
+          context.logger.error(
+            `[Usage] Error fetching pi-sessions usage: ${(error as Error).message}`,
+          );
+          return Effect.succeed(ctx.json(emptyResponse()));
+        }),
+      ),
+    ),
+  );
 };

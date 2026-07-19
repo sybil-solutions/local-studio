@@ -1,7 +1,8 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { Effect } from "effect";
 import type { RuntimeRocmInfo, RuntimeRocmSmiTool } from "../../models/types";
-import { runCommand } from "../../../core/command";
+import { runCommandAsyncEffect } from "../../../core/command";
 import { resolveAmdSmiBinary, resolveForcedRocmTool, resolveRocmSmiBinary } from "./smi-tools";
 import {
   ROCM_UPGRADE_ENV,
@@ -63,30 +64,33 @@ const readRocmVersion = (): string | null => {
   return null;
 };
 
-export const getRocmInfo = (smiTool: RuntimeRocmSmiTool | null): RuntimeRocmInfo => {
-  const rocmVersion = readRocmVersion();
+export const getRocmInfo = (smiTool: RuntimeRocmSmiTool | null): Effect.Effect<RuntimeRocmInfo> =>
+  Effect.gen(function* () {
+    const rocmVersion = yield* Effect.sync(readRocmVersion);
 
-  let hipVersion: string | null = null;
-  const hipccResult = runCommand("hipcc", ["--version"]);
-  if (hipccResult.status === 0) {
-    hipVersion =
-      parseHipccVersion(hipccResult.stdout) ?? parseHipccVersion(hipccResult.stderr) ?? null;
-  }
-
-  const gpuArch = new Set<string>();
-  const rocminfoResult = runCommand("rocminfo", []);
-  if (rocminfoResult.status === 0 && rocminfoResult.stdout) {
-    const matches = rocminfoResult.stdout.match(/gfx[0-9a-f]+/gi) ?? [];
-    for (const value of matches) {
-      gpuArch.add(value.toLowerCase());
+    let hipVersion: string | null = null;
+    const hipccResult = yield* runCommandAsyncEffect("hipcc", ["--version"], {
+      timeoutMs: 3_000,
+    });
+    if (hipccResult.status === 0) {
+      hipVersion =
+        parseHipccVersion(hipccResult.stdout) ?? parseHipccVersion(hipccResult.stderr) ?? null;
     }
-  }
 
-  return {
-    rocm_version: rocmVersion,
-    hip_version: hipVersion,
-    smi_tool: smiTool,
-    gpu_arch: Array.from(gpuArch),
-    upgrade_command_available: isUpgradeCommandConfigured(ROCM_UPGRADE_ENV),
-  };
-};
+    const gpuArch = new Set<string>();
+    const rocminfoResult = yield* runCommandAsyncEffect("rocminfo", [], { timeoutMs: 3_000 });
+    if (rocminfoResult.status === 0 && rocminfoResult.stdout) {
+      const matches = rocminfoResult.stdout.match(/gfx[0-9a-f]+/gi) ?? [];
+      for (const value of matches) {
+        gpuArch.add(value.toLowerCase());
+      }
+    }
+
+    return {
+      rocm_version: rocmVersion,
+      hip_version: hipVersion,
+      smi_tool: smiTool,
+      gpu_arch: Array.from(gpuArch),
+      upgrade_command_available: isUpgradeCommandConfigured(ROCM_UPGRADE_ENV),
+    };
+  });
