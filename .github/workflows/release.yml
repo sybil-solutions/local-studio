@@ -40,6 +40,7 @@ jobs:
           npx -y \
             -p semantic-release@24 \
             -p @semantic-release/commit-analyzer \
+            -p @semantic-release/exec \
             -p @semantic-release/release-notes-generator \
             -p @semantic-release/github \
             -p conventional-changelog-conventionalcommits@8 \
