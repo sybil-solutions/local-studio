@@ -8,6 +8,7 @@ import { AgentComposerFrame } from "@/features/agent/ui/agent-composer-frame";
 import { type FileMentionRow, type MentionRow } from "@/features/agent/ui/agent-composer-context";
 import { builtinCommandProvider } from "@/features/agent/composer/builtin-commands";
 import { SessionGoalBar } from "@/features/agent/ui/session-goal-bar";
+import { SubagentChips } from "@/features/agent/ui/subagent-chips";
 import {
   promptTemplateCommandProvider,
   skillCommandProvider,
@@ -41,6 +42,15 @@ function diffStatPill(gitSummary: GitSummary | null | undefined, onOpenStatus: (
 function goalBarFor(piSessionId: string | null | undefined, revision: number) {
   if (!piSessionId) return null;
   return <SessionGoalBar piSessionId={piSessionId} revision={revision} />;
+}
+
+function piSessionIdOf(tab: { piSessionId?: string | null } | null | undefined): string | null {
+  return tab?.piSessionId ?? null;
+}
+
+function subagentChipsFor(piSessionId: string | null | undefined) {
+  if (!piSessionId) return null;
+  return <SubagentChips piSessionId={piSessionId} />;
 }
 
 function composerProjectRow(show: boolean, projectName: string | null) {
@@ -419,9 +429,10 @@ export function ChatPane({
     [activeTab, tools],
   );
   const [goalRevision, setGoalRevision] = useState(0);
+  const activePiSessionId = piSessionIdOf(activeTab);
   const goalAction = useCallback(
     async (args: string): Promise<string | null> => {
-      const piSessionId = activeTab?.piSessionId;
+      const piSessionId = activePiSessionId;
       if (!piSessionId) return "Send a first message, then set a goal for this session.";
       if (!args) return "Usage: /goal <objective> — or /goal pause · resume · clear";
       const url = `/api/agent/goal?piSessionId=${encodeURIComponent(piSessionId)}`;
@@ -448,7 +459,7 @@ export function ChatPane({
         return "Failed to update the goal.";
       }
     },
-    [activeTab],
+    [activePiSessionId],
   );
   const commandRegistry = useMemo(
     () =>
@@ -646,7 +657,8 @@ export function ChatPane({
       />
       <div className={terminalView ? "hidden" : "contents"}>
         {diffStatPill(gitSummary, openComputerStatus)}
-        {goalBarFor(activeTab?.piSessionId, goalRevision)}
+        {subagentChipsFor(activePiSessionId)}
+        {goalBarFor(activePiSessionId, goalRevision)}
         <AgentComposerFrame
           attachments={attachments}
           banner={composerVisual.banner}
