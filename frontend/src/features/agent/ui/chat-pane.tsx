@@ -20,6 +20,24 @@ import {
 import { deriveComposerVisual } from "@/features/agent/composer/composer-visual-state";
 import { ADD_PROJECT_EVENT } from "@/lib/workspace-events";
 
+function diffStatPill(gitSummary: GitSummary | null | undefined, onOpenStatus: () => void) {
+  if (!gitSummary?.isRepo || gitSummary.statusCount <= 0) return null;
+  return (
+    <div className="mx-auto mb-1.5 flex w-full max-w-[var(--composer-w)] justify-center">
+      <button
+        type="button"
+        onClick={onOpenStatus}
+        className="flex items-center gap-1.5 rounded-full bg-(--fg)/[0.05] px-3 py-1 text-[length:var(--fs-sm)] tabular-nums text-(--fg)/60 transition-colors hover:bg-(--fg)/[0.08] hover:text-(--fg)/85"
+        title="Open status"
+      >
+        {gitSummary.statusCount} file{gitSummary.statusCount === 1 ? "" : "s"} changed
+        <span className="text-(--ok,#40c977)">+{gitSummary.additions}</span>
+        <span className="text-(--err)">−{gitSummary.deletions}</span>
+      </button>
+    </div>
+  );
+}
+
 function goalBarFor(piSessionId: string | null | undefined, revision: number) {
   if (!piSessionId) return null;
   return <SessionGoalBar piSessionId={piSessionId} revision={revision} />;
@@ -627,6 +645,7 @@ export function ChatPane({
         loadEarlierHistory={loadEarlierHistory}
       />
       <div className={terminalView ? "hidden" : "contents"}>
+        {diffStatPill(gitSummary, openComputerStatus)}
         {goalBarFor(activeTab?.piSessionId, goalRevision)}
         <AgentComposerFrame
           attachments={attachments}
