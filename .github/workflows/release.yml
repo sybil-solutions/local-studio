@@ -6,30 +6,42 @@ on:
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
+  queue: max
 
 permissions:
-  contents: write
-  issues: write
-  pull-requests: write
+  contents: read
 
 jobs:
   release:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: ${{ github.sha }}
 
       - uses: actions/setup-node@v4
         with:
           node-version: 22.19.0
 
+      - name: Verify tested main revision
+        id: revision
+        env:
+          TESTED_SHA: ${{ github.sha }}
+        run: node scripts/release-revision.mjs
+
       - name: Configure git author
+        if: steps.revision.outputs.current == 'true'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
       - name: Release
+        if: steps.revision.outputs.current == 'true'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |

@@ -50,6 +50,9 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
+      - name: Install controller contract dependencies
+        working-directory: ./controller
+        run: bun install
       - name: Install dependencies
         working-directory: ./frontend
         run: npm ci --legacy-peer-deps
