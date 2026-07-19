@@ -1,4 +1,6 @@
 import { spawn, type ChildProcess } from "child_process";
+import { statSync } from "node:fs";
+import { delimiter, extname, isAbsolute, resolve } from "node:path";
 import { Schema } from "effect";
 
 const McpToolAnnotationsSchema = Schema.Struct({
@@ -59,6 +61,139 @@ const McpToolsResultSchema = Schema.Struct({
 
 type JsonRpcResponse = typeof JsonRpcResponseSchema.Type;
 
+type StdioLaunch = {
+  command: string;
+  args: string[];
+  windowsVerbatimArguments?: true;
+};
+
+const CMD_META = /[ !%^&()<>|"]/g;
+const WINDOWS_BATCH = /\.(?:bat|cmd)$/i;
+const WINDOWS_PATH_SEPARATOR = /[\\/]/;
+const CONTROL_CHARACTER = /[\0-\x1f\x7f]/;
+
+function environmentValue(env: NodeJS.ProcessEnv, name: string): string | undefined {
+  const key = Object.keys(env).find((candidate) => candidate.toUpperCase() === name);
+  return key ? env[key] : undefined;
+}
+
+function existingFile(path: string): boolean {
+  try {
+    return statSync(path).isFile();
+  } catch {
+    return false;
+  }
+}
+
+function windowsCommandPath(
+  command: string,
+  env: NodeJS.ProcessEnv,
+  cwd: string,
+): string | undefined {
+  const extensions = (environmentValue(env, "PATHEXT") ?? ".COM;.EXE;.BAT;.CMD")
+    .split(delimiter)
+    .filter(Boolean)
+    .map((extension) => (extension.startsWith(".") ? extension : `.${extension}`));
+
+  const pathEntries = (environmentValue(env, "PATH") ?? "")
+    .split(delimiter)
+    .map((entry) => entry.replace(/^"(.*)"$/, "$1"));
+
+  const hasDirectory = isAbsolute(command) || WINDOWS_PATH_SEPARATOR.test(command);
+  const bases = hasDirectory
+    ? [isAbsolute(command) ? command : resolve(cwd, command)]
+    : [cwd, ...pathEntries].map((directory) => resolve(directory || cwd, command));
+
+  const suffixes = extname(command) ? ["", ...extensions] : extensions;
+
+  for (const base of bases) {
+    for (const suffix of suffixes) {
+      const candidate = `${base}${suffix}`;
+      if (existingFile(candidate)) return candidate;
+    }
+  }
+
+  return undefined;
+}
+
+function assertCmdText(value: string): void {
+  if (CONTROL_CHARACTER.test(value)) {
+    throw new Error("MCP stdio command contains an unsupported control character");
+  }
+}
+
+function quoteWindowsArgument(value: string): string {
+  if (!value.length) return '""';
+  if (!/[ \t\v"]/.test(value)) return value;
+
+  let result = '"';
+
+  for (let index = 0; index <= value.length; index++) {
+    let backslashes = 0;
+
+    while (value[index] === "\\") {
+      index++;
+      backslashes++;
+    }
+
+    if (index === value.length) {
+      result += "\\".repeat(backslashes * 2);
+      break;
+    }
+
+    if (value[index] === '"') {
+      result += "\\".repeat(backslashes * 2 + 1);
+    } else {
+      result += "\\".repeat(backslashes);
+    }
+
+    result += value[index];
+  }
+
+  return `${result}"`;
+}
+
+function escapeCmdCommand(value: string): string {
+  return value.replace(CMD_META, "^$&");
+}
+
+function escapeCmdShimArgument(value: string): string {
+  return quoteWindowsArgument(value).replace(CMD_META, "^$&").replace(CMD_META, "^$&");
+}
+
+export function stdioLaunchCommand(
+  command: string,
+  args: string[],
+  env: NodeJS.ProcessEnv = process.env,
+  cwd: string = process.cwd(),
+): StdioLaunch {
+  if (process.platform !== "win32") return { command, args };
+
+  const resolved = windowsCommandPath(command, env, cwd);
+  if (!resolved || !WINDOWS_BATCH.test(resolved)) {
+    return { command: resolved ?? command, args };
+  }
+
+  assertCmdText(resolved);
+  args.forEach(assertCmdText);
+
+  const commandLine = [escapeCmdCommand(resolved), ...args.map(escapeCmdShimArgument)].join(" ");
+
+  return {
+    command: environmentValue(env, "COMSPEC") ?? "cmd.exe",
+    args: ["/d", "/v:off", "/s", "/c", `"${commandLine}"`],
+    windowsVerbatimArguments: true,
+  };
+}
+
+function killProcessTree(child: ChildProcess): void {
+  if (process.platform === "win32" && child.pid) {
+    spawn("taskkill", ["/pid", String(child.pid), "/T", "/F"], { stdio: "ignore" });
+    return;
+  }
+  child.kill("SIGTERM");
+}
+
 class StdioMcpConnection implements McpConnection {
   private child: ChildProcess;
   private nextId = 1;
@@ -71,10 +206,14 @@ class StdioMcpConnection implements McpConnection {
   private stderrTail = "";
 
   constructor(target: StdioTarget) {
-    this.child = spawn(target.command, target.args ?? [], {
+    const env = { ...process.env, ...(target.env ?? {}) };
+    const cwd = target.cwd ?? process.cwd();
+    const launch = stdioLaunchCommand(target.command, target.args ?? [], env, cwd);
+    this.child = spawn(launch.command, launch.args, {
       stdio: ["pipe", "pipe", "pipe"],
-      env: { ...process.env, ...(target.env ?? {}) },
-      ...(target.cwd ? { cwd: target.cwd } : {}),
+      env,
+      cwd,
+      ...(launch.windowsVerbatimArguments ? { windowsVerbatimArguments: true } : {}),
     });
     this.child.stdout?.on("data", (chunk: Buffer) => this.onData(chunk));
     this.child.stderr?.on("data", (chunk: Buffer) => {
@@ -161,7 +300,7 @@ class StdioMcpConnection implements McpConnection {
   }
 
   close(): void {
-    this.child.kill("SIGTERM");
+    killProcessTree(this.child);
   }
 }
 
