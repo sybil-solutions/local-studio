@@ -3,7 +3,74 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { connectMcp, stdioChildEnvironment, type McpSpawn } from "../src/mcp-client";
+import {
+  connectMcp,
+  McpProtocolError,
+  stdioChildEnvironment,
+  type McpConnection,
+  type McpSpawn,
+} from "../src/mcp-client";
+import { MAX_MCP_STDIO_FRAME_BYTES } from "../src/stdio-json-line-framer";
+
+const stdioFixture = path.join(import.meta.dir, "fixtures", "mcp-stdio-server.mjs");
+
+type FramingFixture = {
+  child: () => ChildProcess;
+  connection: McpConnection;
+};
+
+function framingFixture(
+  mode: string,
+  options: { command?: string; startupEnvironment?: Record<string, string> } = {},
+): FramingFixture {
+  let child: ChildProcess | null = null;
+  const spawnProcess: McpSpawn = (command, args, spawnOptions) => {
+    child = spawn(command, args, spawnOptions);
+    return child;
+  };
+  return {
+    child: () => {
+      if (!child) throw new Error("MCP fixture did not spawn");
+      return child;
+    },
+    connection: connectMcp(
+      {
+        transport: "stdio",
+        command: options.command ?? process.execPath,
+        args: [stdioFixture, mode, String(MAX_MCP_STDIO_FRAME_BYTES)],
+        ...(options.startupEnvironment ? { startupEnvironment: options.startupEnvironment } : {}),
+      },
+      { spawn: spawnProcess, shutdownGraceMs: 50 },
+    ),
+  };
+}
+
+async function rejectionOf(promise: Promise<unknown>): Promise<unknown> {
+  try {
+    await promise;
+    return null;
+  } catch (error) {
+    return error;
+  }
+}
+
+async function closeFramingFixture(fixture: FramingFixture): Promise<void> {
+  const child = fixture.child();
+  const closing = fixture.connection.close();
+  expect(fixture.connection.close()).toBe(closing);
+  await closing;
+  const pid = child.pid;
+  if (pid) expect(processExists(pid)).toBe(false);
+  expect(child.listenerCount("error")).toBe(0);
+  expect(child.listenerCount("exit")).toBe(0);
+  expect(child.listenerCount("close")).toBe(0);
+  expect(child.stdin?.listenerCount("error") ?? 0).toBe(0);
+  expect(child.stdout?.listenerCount("data") ?? 0).toBe(0);
+  expect(child.stdout?.listenerCount("error") ?? 0).toBe(0);
+  expect(child.stdout?.listenerCount("end") ?? 0).toBe(0);
+  expect(child.stderr?.listenerCount("data") ?? 0).toBe(0);
+  expect(child.stderr?.listenerCount("error") ?? 0).toBe(0);
+}
 
 async function bootstrapFailure(
   source: string,
@@ -225,6 +292,7 @@ describe("stdio MCP child environment", () => {
       "process.stdout.write(JSON.stringify({ localStudioBootstrap: 'ready' }) + '\\n')",
       "continue",
       "}",
+      "if (message.id === undefined) continue",
       "const tools = process.env.CONNECTOR_TOKEN === 'pipe-only-connector-secret' ? [{ name: 'isolated', inputSchema: { type: 'object' } }] : [{ name: 'missing', inputSchema: { type: 'object' } }]",
       "const result = message.method === 'initialize' ? { protocolVersion: '2025-03-26', capabilities: {}, serverInfo: { name: 'fixture', version: '1.0.0' } } : message.method === 'tools/list' ? { tools } : {}",
       "process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: message.id, result }) + '\\n')",
@@ -259,7 +327,7 @@ describe("stdio MCP child environment", () => {
       ].join("\n"),
       { expectDescendant: true },
     );
-    expect(failure.message).toContain("bootstrap exceeds 65536 bytes");
+    expect(failure.message).toContain("frame exceeds 65536 bytes");
   });
 
   test("rejects and terminates an invalid bootstrap acknowledgement", async () => {
@@ -269,7 +337,7 @@ describe("stdio MCP child environment", () => {
         "setInterval(() => undefined, 1000)",
       ].join("\n"),
     );
-    expect(failure.message).toContain("invalid bootstrap data");
+    expect(failure.message).toContain("before bootstrap completed");
   });
 
   test("times out a silent bootstrap and terminates its process tree", async () => {
@@ -335,6 +403,7 @@ describe("stdio MCP child environment", () => {
       "buffer = buffer.slice(newline + 1)",
       "newline = buffer.indexOf('\\n')",
       "const message = JSON.parse(line)",
+      "if (message.id === undefined) continue",
       "if (message.method === 'tools/call') continue",
       "const result = message.method === 'initialize' ? { protocolVersion: '2025-03-26', capabilities: {}, serverInfo: { name: 'fixture', version: '1.0.0' } } : message.method === 'tools/list' ? { tools: [{ name: `${process.pid}:${descendant.pid}`, inputSchema: { type: 'object' } }] } : {}",
       "process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: message.id, result }) + '\\n')",
@@ -387,6 +456,7 @@ describe("stdio MCP child environment", () => {
       "buffer = buffer.slice(newline + 1)",
       "newline = buffer.indexOf('\\n')",
       "const message = JSON.parse(line)",
+      "if (message.id === undefined) continue",
       "const result = message.method === 'initialize' ? { protocolVersion: '2025-03-26', capabilities: {}, serverInfo: { name: 'fixture', version: '1.0.0' } } : message.method === 'tools/list' ? { tools: [{ name: `${process.pid}:${descendant.pid}`, inputSchema: { type: 'object' } }] } : {}",
       "process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: message.id, result }) + '\\n', () => { if (message.method === 'tools/list') process.exit(0) })",
       "}",
@@ -413,5 +483,198 @@ describe("stdio MCP child environment", () => {
       await stopProcess(descendantPid);
       await rm(root, { recursive: true, force: true });
     }
+  });
+});
+
+async function expectFramingFailure(
+  mode: string,
+  code: McpProtocolError["code"],
+  options?: { command?: string; startupEnvironment?: Record<string, string> },
+): Promise<void> {
+  const fixture = framingFixture(mode, options);
+  const failure = await rejectionOf(fixture.connection.listTools());
+  expect(failure).toBeInstanceOf(McpProtocolError);
+  expect(failure).toMatchObject({ code });
+  expect(await rejectionOf(fixture.connection.callTool("after", {}))).toBe(failure);
+  await closeFramingFixture(fixture);
+}
+
+describe("stdio MCP protocol framing", () => {
+  test("accepts an initialize frame exactly at four MiB", async () => {
+    const fixture = framingFixture("exact-limit");
+    try {
+      expect((await fixture.connection.listTools()).map((tool) => tool.name)).toEqual([
+        String(fixture.child().pid),
+      ]);
+    } finally {
+      await closeFramingFixture(fixture);
+    }
+  });
+
+  test("accepts notifications and concurrent responses in reverse order", async () => {
+    const fixture = framingFixture("concurrent-reverse-notification");
+    await fixture.connection.listTools();
+    const [first, second] = await Promise.all([
+      fixture.connection.callTool("first", {}),
+      fixture.connection.callTool("second", {}),
+    ]);
+    expect(first).toMatchObject({ content: [{ type: "text", text: "first" }] });
+    expect(second).toMatchObject({ content: [{ type: "text", text: "second" }] });
+    await closeFramingFixture(fixture);
+  });
+
+  for (const mode of ["notification", "notification-no-params", "json-whitespace"] as const) {
+    test(`accepts protocol-valid ${mode} traffic`, async () => {
+      const fixture = framingFixture(mode);
+      expect(await fixture.connection.listTools()).toHaveLength(1);
+      await closeFramingFixture(fixture);
+    });
+  }
+
+  for (const mode of ["ping-string", "ping-number", "unsupported-request"] as const) {
+    test(`forwards ${mode} through the SDK server-request handling`, async () => {
+      const fixture = framingFixture(mode);
+      expect((await fixture.connection.listTools()).map((tool) => tool.name)).toEqual(["handled"]);
+      await expect(fixture.connection.callTool("after", {})).resolves.toMatchObject({ content: [] });
+      await closeFramingFixture(fixture);
+    });
+  }
+
+  test("routes same-chunk traffic after the bootstrap acknowledgement", async () => {
+    const fixture = framingFixture("ready-notification-same-chunk", {
+      startupEnvironment: { FIXTURE_TOKEN: "isolated" },
+    });
+    expect(await fixture.connection.listTools()).toHaveLength(1);
+    await closeFramingFixture(fixture);
+  });
+
+  for (const mode of ["pre-ready-notification", "pre-ready-response"] as const) {
+    test(`rejects ${mode} before bootstrap completes`, async () => {
+      await expectFramingFailure(mode, "unexpected-message", {
+        startupEnvironment: { FIXTURE_TOKEN: "isolated" },
+      });
+    });
+  }
+
+  test("rejects a duplicate bootstrap acknowledgement", async () => {
+    await expectFramingFailure("duplicate-bootstrap", "unexpected-bootstrap", {
+      startupEnvironment: { FIXTURE_TOKEN: "isolated" },
+    });
+  });
+
+  test("rejects malformed JSON during bootstrap", async () => {
+    await expectFramingFailure("bootstrap-malformed", "malformed-json", {
+      startupEnvironment: { FIXTURE_TOKEN: "isolated" },
+    });
+  });
+
+  for (const [mode, code] of [
+    ["limit-plus-one", "frame-too-large"],
+    ["invalid-utf8", "invalid-utf8"],
+    ["malformed-json", "malformed-json"],
+    ["blank-frame", "malformed-json"],
+    ["whitespace-frame", "malformed-json"],
+    ["invalid-rpc-schema", "invalid-json-rpc"],
+    ["invalid-rpc-shape", "invalid-json-rpc"],
+    ["scalar-notification-params", "invalid-json-rpc"],
+    ["array-notification-params", "invalid-json-rpc"],
+    ["null-notification-params", "invalid-json-rpc"],
+    ["scalar-request-params", "invalid-json-rpc"],
+    ["eof-partial", "unexpected-eof"],
+    ["stdout-partial-live", "unexpected-eof"],
+  ] as const) {
+    test(`fails closed on ${mode}`, async () => {
+      await expectFramingFailure(mode, code, {
+        ...(mode === "stdout-partial-live" ? { command: "node" } : {}),
+      });
+    });
+  }
+
+  test("fails terminally when stdout ends while the child remains alive", async () => {
+    const fixture = framingFixture("stdout-clean-live", { command: "node" });
+    const first = await rejectionOf(fixture.connection.listTools());
+    expect(first).toMatchObject({ message: "MCP server output ended" });
+    expect(await rejectionOf(fixture.connection.callTool("after", {}))).toBe(first);
+    await closeFramingFixture(fixture);
+  });
+
+  test("rejects every pending request with one protocol error", async () => {
+    const fixture = framingFixture("pending-malformed");
+    await fixture.connection.listTools();
+    const [first, second] = await Promise.all([
+      rejectionOf(fixture.connection.callTool("first", {})),
+      rejectionOf(fixture.connection.callTool("second", {})),
+    ]);
+    expect(first).toBeInstanceOf(McpProtocolError);
+    expect(first).toMatchObject({ code: "malformed-json" });
+    expect(second).toBe(first);
+    expect(await rejectionOf(fixture.connection.callTool("after", {}))).toBe(first);
+    await closeFramingFixture(fixture);
+  });
+
+  test("bounds parent-exit draining and terminates descendants holding stdout", async () => {
+    const fixture = framingFixture("parent-exit-descendant");
+    await fixture.connection.callTool("warmup", {});
+    const group = fixture.child().pid;
+    if (!group) throw new Error("MCP fixture has no process group");
+    const first = await rejectionOf(fixture.connection.listTools());
+    expect(first).toMatchObject({ message: "MCP server exited" });
+    expect(await rejectionOf(fixture.connection.callTool("after", {}))).toBe(first);
+    await closeFramingFixture(fixture);
+    expect(processGroupExists(group)).toBe(false);
+  });
+
+  test("delivers a final complete response before child-exit teardown", async () => {
+    const fixture = framingFixture("final-response-exit");
+    expect((await fixture.connection.listTools()).map((tool) => tool.name)).toEqual(["final"]);
+    const first = await rejectionOf(fixture.connection.callTool("after", {}));
+    expect(first).toBeInstanceOf(Error);
+    expect(await rejectionOf(fixture.connection.listTools())).toBe(first);
+    await closeFramingFixture(fixture);
+  });
+
+  test("drains the final initialize response before reporting child exit", async () => {
+    const fixture = framingFixture("initialize-response-exit");
+    const first = await rejectionOf(fixture.connection.listTools());
+    expect(first).toBeInstanceOf(Error);
+    if (!(first instanceof Error)) throw new Error("Expected MCP failure");
+    expect(first.message).not.toContain("timed out");
+    expect(await rejectionOf(fixture.connection.callTool("after", {}))).toBe(first);
+    await closeFramingFixture(fixture);
+  });
+
+  test("converges stderr stream errors and clears owned listeners", async () => {
+    const fixture = framingFixture("request-timeout");
+    await fixture.connection.listTools();
+    const pending = fixture.connection.callTool("hang", {});
+    const failure = new Error("fixture stderr failed");
+    fixture.child().stderr?.emit("error", failure);
+    expect(await rejectionOf(pending)).toBe(failure);
+    expect(await rejectionOf(fixture.connection.callTool("after", {}))).toBe(failure);
+    await closeFramingFixture(fixture);
+  });
+
+  test("settles a spawn-close race without retaining listeners", async () => {
+    let child: ChildProcess | null = null;
+    const spawnProcess: McpSpawn = (command, args, options) => {
+      child = spawn(command, args, options);
+      return child;
+    };
+    const connection = connectMcp(
+      {
+        transport: "stdio",
+        command: path.join(tmpdir(), `missing-mcp-${process.pid}`),
+      },
+      { spawn: spawnProcess, shutdownGraceMs: 20 },
+    );
+    const fixture: FramingFixture = {
+      child: () => {
+        if (!child) throw new Error("MCP fixture did not spawn");
+        return child;
+      },
+      connection,
+    };
+    expect(await rejectionOf(connection.listTools())).toBeInstanceOf(Error);
+    await closeFramingFixture(fixture);
   });
 });

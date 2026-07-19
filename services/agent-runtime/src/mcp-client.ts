@@ -1,10 +1,22 @@
 import { spawn, type ChildProcess, type SpawnOptions } from "node:child_process";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import { ReadBuffer, serializeMessage } from "@modelcontextprotocol/sdk/shared/stdio.js";
+import { serializeMessage } from "@modelcontextprotocol/sdk/shared/stdio.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
-import type { JSONRPCMessage, Tool, ToolAnnotations } from "@modelcontextprotocol/sdk/types.js";
+import {
+  JSONRPCMessageSchema,
+  type JSONRPCMessage,
+  type Tool,
+  type ToolAnnotations,
+} from "@modelcontextprotocol/sdk/types.js";
+import {
+  MAX_MCP_STDIO_FRAME_BYTES,
+  McpProtocolError,
+  StdioJsonLineFramer,
+} from "./stdio-json-line-framer";
 import { windowsJobCommand } from "./windows-runtime-helper";
+
+export { McpProtocolError } from "./stdio-json-line-framer";
 
 export type McpToolAnnotations = ToolAnnotations;
 export type McpToolInfo = Tool;
@@ -51,6 +63,7 @@ export type McpClientDependencies = {
 const CLIENT_INFO = { name: "local-studio", version: "2.0.0" };
 const DEFAULT_TIMEOUT_MS = 60_000;
 const DEFAULT_SHUTDOWN_GRACE_MS = 500;
+const STDOUT_DRAIN_TIMEOUT_MS = 100;
 const FORCED_SHUTDOWN_TIMEOUT_MS = 2_000;
 const MAX_STARTUP_BYTES = 64 * 1024;
 const MAX_BOOTSTRAP_BYTES = 64 * 1024;
@@ -138,28 +151,101 @@ const authorizedFetch = (target: HttpTarget): typeof fetch =>
     return response.status === 401 && target.authorize ? send(true) : response;
   };
 
+const errorFrom = (error: unknown): Error =>
+  error instanceof Error ? error : new Error(String(error));
+
+class TerminalFailure {
+  private error: Error | null = null;
+  private readonly rejectors = new Set<(error: Error) => void>();
+
+  get current(): Error | null {
+    return this.error;
+  }
+
+  run<T>(operation: () => Promise<T>): Promise<T> {
+    if (this.error) return Promise.reject(this.error);
+    return new Promise<T>((resolve, reject) => {
+      const rejectTerminal = (error: Error): void => {
+        this.rejectors.delete(rejectTerminal);
+        reject(error);
+      };
+      this.rejectors.add(rejectTerminal);
+      let pending: Promise<T>;
+      try {
+        pending = operation();
+      } catch (error) {
+        this.rejectors.delete(rejectTerminal);
+        reject(errorFrom(error));
+        return;
+      }
+      void pending.then(
+        (value) => {
+          this.rejectors.delete(rejectTerminal);
+          resolve(value);
+        },
+        (error: unknown) => {
+          this.rejectors.delete(rejectTerminal);
+          reject(error);
+        },
+      );
+    });
+  }
+
+  fail(error: Error): Error {
+    if (this.error) return this.error;
+    this.error = error;
+    for (const reject of this.rejectors) reject(error);
+    this.rejectors.clear();
+    return error;
+  }
+}
+
 class OwnedStdioTransport implements Transport {
   readonly onmessage: Transport["onmessage"] = undefined;
   readonly onerror: Transport["onerror"] = undefined;
   readonly onclose: Transport["onclose"] = undefined;
   private child: ChildProcess | null = null;
-  private readonly readBuffer = new ReadBuffer();
+  private readonly framer: StdioJsonLineFramer;
   private readonly platform: NodeJS.Platform;
   private readonly bootstrapTimeoutMs: number;
   private readonly shutdownGraceMs: number;
   private readonly startupPayload: string | null;
-  private bootstrapChunks: Buffer[] = [];
-  private bootstrapBytes = 0;
   private bootstrapComplete = false;
   private closing: Promise<void> | null = null;
   private closeNotified = false;
+  private parentExited = false;
+  private spawned = false;
+  private spawnFailed = false;
+  private stdoutDrainTimer: NodeJS.Timeout | null = null;
   private resolveBootstrap = (): void => undefined;
   private rejectBootstrap = (_error: Error): void => undefined;
   private readonly bootstrapReady: Promise<void>;
+  private stderrTail = "";
+  private readonly onStdoutData = (chunk: Buffer): void => this.receive(chunk);
+  private readonly onStdoutError = (error: Error): void => this.fail(error);
+  private readonly onStdoutEnd = (): void => this.finishOutput();
+  private readonly onStdinError = (error: Error): void => this.fail(error);
+  private readonly onStderrData = (chunk: Buffer): void => {
+    if (!this.startupPayload) {
+      this.stderrTail = `${this.stderrTail}${chunk.toString("utf8")}`.slice(-2_000);
+    }
+  };
+  private readonly onStderrError = (error: Error): void => this.fail(error);
+  private readonly onChildError = (error: Error): void => {
+    if (!this.spawned) this.spawnFailed = true;
+    this.fail(error);
+  };
+  private readonly onChildExit = (): void => {
+    if (this.closing) return;
+    this.parentExited = true;
+    this.stdoutDrainTimer ??= setTimeout(() => this.finishOutput(), STDOUT_DRAIN_TIMEOUT_MS);
+  };
+  private readonly onChildClose = (): void => this.finishOutput();
 
   constructor(
     private readonly target: StdioTarget,
     private readonly dependencies: McpClientDependencies,
+    private readonly terminal: TerminalFailure,
   ) {
     this.platform = dependencies.platform ?? process.platform;
     this.bootstrapTimeoutMs = dependencies.bootstrapTimeoutMs ?? DEFAULT_TIMEOUT_MS;
@@ -174,6 +260,9 @@ class OwnedStdioTransport implements Transport {
       throw new Error("MCP startup data exceeds its size limit");
     }
     this.bootstrapComplete = this.startupPayload === null;
+    this.framer = new StdioJsonLineFramer(
+      this.bootstrapComplete ? MAX_MCP_STDIO_FRAME_BYTES : MAX_BOOTSTRAP_BYTES,
+    );
     this.bootstrapReady = new Promise<void>((resolve, reject) => {
       this.resolveBootstrap = resolve;
       this.rejectBootstrap = reject;
@@ -205,116 +294,158 @@ class OwnedStdioTransport implements Transport {
       ...(this.target.cwd ? { cwd: this.target.cwd } : {}),
     });
     this.child = child;
-    child.stdout?.on("data", (chunk: Buffer) => this.receive(chunk));
-    child.stdout?.on("error", (error: Error) => this.fail(error));
-    child.stdin?.on("error", (error: Error) => this.fail(error));
-    let stderrTail = "";
-    child.stderr?.on("data", (chunk: Buffer) => {
-      if (!this.startupPayload) stderrTail = `${stderrTail}${chunk.toString("utf8")}`.slice(-2_000);
-    });
-    const spawned = new Promise<void>((resolve, reject) => {
-      child.once("spawn", resolve);
-      child.once("error", reject);
-      child.once("close", () => reject(new Error("MCP server exited before startup")));
-    });
-    child.on("error", (error: Error) => this.fail(error));
-    child.on("close", () => {
-      if (this.closing) return;
-      const error = new Error(
-        `MCP server exited${stderrTail ? `: ${stderrTail.trim().split("\n").pop()}` : ""}`,
-      );
-      this.fail(error);
-    });
+    child.stdout?.on("data", this.onStdoutData);
+    child.stdout?.on("error", this.onStdoutError);
+    child.stdout?.on("end", this.onStdoutEnd);
+    child.stdin?.on("error", this.onStdinError);
+    child.stderr?.on("data", this.onStderrData);
+    child.stderr?.on("error", this.onStderrError);
+    child.on("error", this.onChildError);
+    child.on("exit", this.onChildExit);
+    child.on("close", this.onChildClose);
     try {
-      await spawned;
+      await this.waitForSpawn(child);
       if (this.startupPayload) await this.write(this.startupPayload);
       await this.waitForBootstrap();
     } catch (error) {
+      const failure = this.terminal.fail(errorFrom(error));
       await this.close().catch(() => undefined);
-      throw error;
+      throw failure;
     }
   }
 
   send(message: JSONRPCMessage): Promise<void> {
+    const failure = this.terminal.current;
+    if (failure) return Promise.reject(failure);
     if (this.closing) return Promise.reject(new Error("MCP connection is closed"));
-    return this.write(serializeMessage(message));
+    return this.write(serializeMessage(message)).catch((error: unknown) => {
+      this.fail(errorFrom(error));
+      throw this.terminal.current ?? errorFrom(error);
+    });
   }
 
   close(): Promise<void> {
     if (this.closing) return this.closing;
+    const closing = Promise.withResolvers<void>();
+    this.closing = closing.promise;
+    this.clearDrainTimer();
     this.notifyClose();
-    const closing = this.shutdown().finally(() => {
-      this.readBuffer.clear();
-      this.clearBootstrap();
+    void this.shutdown().then(
+      () => closing.resolve(),
+      (error: unknown) => closing.reject(error),
+    ).finally(() => {
+      this.framer.clear();
+      this.removeListeners();
     });
-    this.closing = closing;
-    return closing;
+    return closing.promise;
+  }
+
+  private waitForSpawn(child: ChildProcess): Promise<void> {
+    return new Promise<void>((resolve, reject) => {
+      const cleanup = (): void => {
+        child.off("spawn", onSpawn);
+        child.off("error", onError);
+        child.off("close", onClose);
+      };
+      const onSpawn = (): void => {
+        this.spawned = true;
+        cleanup();
+        resolve();
+      };
+      const onError = (error: Error): void => {
+        cleanup();
+        reject(error);
+      };
+      const onClose = (): void => {
+        cleanup();
+        reject(new Error("MCP server exited before startup"));
+      };
+      child.once("spawn", onSpawn);
+      child.once("error", onError);
+      child.once("close", onClose);
+    });
   }
 
   private receive(chunk: Buffer): void {
-    if (this.bootstrapComplete) {
-      this.readBuffer.append(chunk);
-      this.processMessages();
-      return;
-    }
-    const newline = chunk.indexOf(10);
-    const frameEnd = newline === -1 ? chunk.length : newline;
-    if (this.bootstrapBytes + frameEnd > MAX_BOOTSTRAP_BYTES) {
-      this.fail(new Error(`MCP server bootstrap exceeds ${MAX_BOOTSTRAP_BYTES} bytes`));
-      return;
-    }
-    if (frameEnd > 0) {
-      this.bootstrapChunks.push(chunk.subarray(0, frameEnd));
-      this.bootstrapBytes += frameEnd;
-    }
-    if (newline === -1) return;
-    const line = Buffer.concat(this.bootstrapChunks, this.bootstrapBytes).toString("utf8").trim();
-    const remainder = chunk.subarray(newline + 1);
-    this.clearBootstrap();
     try {
-      const decoded: unknown = JSON.parse(line);
-      if (
-        decoded === null ||
-        typeof decoded !== "object" ||
-        Reflect.get(decoded, "localStudioBootstrap") !== "ready"
-      ) {
-        throw new Error("MCP server returned invalid bootstrap data");
-      }
-      this.bootstrapComplete = true;
-      this.resolveBootstrap();
-      if (remainder) {
-        this.readBuffer.append(Buffer.from(remainder));
-        this.processMessages();
-      }
+      this.framer.push(chunk, (frame) => this.receiveFrame(frame));
     } catch (error) {
-      this.fail(error instanceof Error ? error : new Error(String(error)));
+      this.fail(errorFrom(error));
     }
   }
 
-  private clearBootstrap(): void {
-    this.bootstrapChunks = [];
-    this.bootstrapBytes = 0;
+  private receiveFrame(frame: string): void {
+    const decoded = this.decodeFrame(frame);
+    const bootstrapReady =
+      decoded !== null &&
+      typeof decoded === "object" &&
+      Object.keys(decoded).length === 1 &&
+      Reflect.get(decoded, "localStudioBootstrap") === "ready";
+    if (!this.bootstrapComplete) {
+      if (!bootstrapReady) {
+        throw new McpProtocolError(
+          "unexpected-message",
+          "MCP stdio message arrived before bootstrap completed",
+        );
+      }
+      this.bootstrapComplete = true;
+      this.framer.setMaxFrameBytes(MAX_MCP_STDIO_FRAME_BYTES);
+      this.resolveBootstrap();
+      return;
+    }
+    if (bootstrapReady) {
+      throw new McpProtocolError(
+        "unexpected-bootstrap",
+        "MCP stdio bootstrap arrived outside the bootstrap phase",
+      );
+    }
+    const message = JSONRPCMessageSchema.safeParse(decoded);
+    if (!message.success) {
+      throw new McpProtocolError(
+        "invalid-json-rpc",
+        "MCP stdio frame is not a valid JSON-RPC message",
+      );
+    }
+    this.onmessage?.(message.data);
+  }
+
+  private decodeFrame(frame: string): unknown {
+    const line = frame.trim();
+    if (!line) throw new McpProtocolError("malformed-json", "MCP stdio frame is empty");
+    try {
+      return JSON.parse(line);
+    } catch {
+      throw new McpProtocolError("malformed-json", "MCP stdio frame is not valid JSON");
+    }
+  }
+
+  private outputFailure(message: string): Error {
+    if (this.framer.bufferedBytes) {
+      return new McpProtocolError("unexpected-eof", "MCP stdio ended with an incomplete frame");
+    }
+    const diagnostic = this.stderrTail.trim().split("\n").pop();
+    return new Error(`${message}${diagnostic ? `: ${diagnostic}` : ""}`);
+  }
+
+  private finishOutput(): void {
+    if (this.closing) return;
+    this.clearDrainTimer();
+    this.fail(this.outputFailure(this.parentExited ? "MCP server exited" : "MCP server output ended"));
+  }
+
+  private clearDrainTimer(): void {
+    if (this.stdoutDrainTimer) clearTimeout(this.stdoutDrainTimer);
+    this.stdoutDrainTimer = null;
   }
 
   private fail(error: Error): void {
     if (this.closing) return;
-    this.rejectBootstrap(error);
-    this.onerror?.(error);
+    const failure = this.terminal.fail(error);
+    this.rejectBootstrap(failure);
+    this.onerror?.(failure);
     void this.close().catch((closeError: unknown) => {
-      this.onerror?.(closeError instanceof Error ? closeError : new Error(String(closeError)));
+      this.onerror?.(errorFrom(closeError));
     });
-  }
-
-  private processMessages(): void {
-    while (true) {
-      try {
-        const message = this.readBuffer.readMessage();
-        if (!message) return;
-        this.onmessage?.(message);
-      } catch (error) {
-        this.onerror?.(error instanceof Error ? error : new Error(String(error)));
-      }
-    }
   }
 
   private write(payload: string): Promise<void> {
@@ -350,8 +481,24 @@ class OwnedStdioTransport implements Transport {
     this.onclose?.();
   }
 
+  private removeListeners(): void {
+    const child = this.child;
+    child?.stdout?.off("data", this.onStdoutData);
+    child?.stdout?.off("error", this.onStdoutError);
+    child?.stdout?.off("end", this.onStdoutEnd);
+    child?.stdin?.off("error", this.onStdinError);
+    child?.stderr?.off("data", this.onStderrData);
+    child?.stderr?.off("error", this.onStderrError);
+    child?.off("error", this.onChildError);
+    child?.off("exit", this.onChildExit);
+    child?.off("close", this.onChildClose);
+  }
+
   private async shutdown(): Promise<void> {
     this.child?.stdin?.end();
+    if (!this.parentExited && this.child?.stdout?.readableEnded) {
+      await this.waitForParentExit(Math.min(this.shutdownGraceMs, 50));
+    }
     if (this.treeExited()) return;
     if (this.platform === "win32") {
       if (await this.waitForTreeExit(this.shutdownGraceMs)) return;
@@ -380,6 +527,7 @@ class OwnedStdioTransport implements Transport {
   private treeExited(): boolean {
     const child = this.child;
     const pid = child?.pid;
+    if (this.spawnFailed) return true;
     if (!child || !pid || this.platform === "win32") {
       return !child || child.exitCode !== null || child.signalCode !== null;
     }
@@ -398,50 +546,100 @@ class OwnedStdioTransport implements Transport {
     }
     return this.treeExited();
   }
+
+  private async waitForParentExit(timeoutMs: number): Promise<void> {
+    const deadline = Date.now() + timeoutMs;
+    while (!this.parentExited && !this.exited() && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+  }
+
+  private exited(): boolean {
+    const child = this.child;
+    return !child || child.exitCode !== null || child.signalCode !== null;
+  }
 }
 
 const transportFor = (
   target: McpTarget,
   dependencies: McpClientDependencies,
-): { transport: Transport; signal: AbortSignal | undefined } =>
-  target.transport === "stdio"
-    ? { transport: new OwnedStdioTransport(target, dependencies), signal: undefined }
-    : {
-        transport: new StreamableHTTPClientTransport(new URL(target.url), {
-          requestInit: { headers: target.headers ?? {} },
-          fetch: authorizedFetch(target),
-        }),
-        signal: target.signal,
-      };
+): {
+  transport: Transport;
+  signal: AbortSignal | undefined;
+  terminal: TerminalFailure | null;
+  owned: OwnedStdioTransport | null;
+} => {
+  if (target.transport === "stdio") {
+    const terminal = new TerminalFailure();
+    const owned = new OwnedStdioTransport(target, dependencies, terminal);
+    return {
+      transport: owned,
+      signal: undefined,
+      terminal,
+      owned,
+    };
+  }
+  return {
+    transport: new StreamableHTTPClientTransport(new URL(target.url), {
+      requestInit: { headers: target.headers ?? {} },
+      fetch: authorizedFetch(target),
+    }),
+    signal: target.signal,
+    terminal: null,
+    owned: null,
+  };
+};
 
 class SdkMcpConnection implements McpConnection {
   private readonly client = new Client(CLIENT_INFO, { capabilities: {} });
   private readonly connected: Promise<void>;
   private readonly signal: AbortSignal | undefined;
+  private readonly terminal: TerminalFailure | null;
+  private readonly owned: OwnedStdioTransport | null;
+  private closing: Promise<void> | null = null;
 
   constructor(target: McpTarget, dependencies: McpClientDependencies) {
     const connection = transportFor(target, dependencies);
     this.signal = connection.signal;
-    this.connected = this.client.connect(connection.transport, { signal: this.signal });
-  }
-
-  async listTools(): Promise<McpToolInfo[]> {
-    await this.connected;
-    const result = await this.client.listTools({}, { signal: this.signal });
-    return result.tools;
-  }
-
-  async callTool(name: string, args: Record<string, unknown>): Promise<unknown> {
-    await this.connected;
-    return this.client.callTool(
-      { name, arguments: args },
-      undefined,
-      { signal: this.signal },
+    this.terminal = connection.terminal;
+    this.owned = connection.owned;
+    this.connected = this.run(() =>
+      this.client.connect(connection.transport, { signal: this.signal }),
     );
   }
 
-  async close(): Promise<void> {
-    await this.client.close();
+  listTools(): Promise<McpToolInfo[]> {
+    return this.run(async () => {
+      await this.connected;
+      const result = await this.client.listTools({}, { signal: this.signal });
+      return result.tools;
+    });
+  }
+
+  callTool(name: string, args: Record<string, unknown>): Promise<unknown> {
+    return this.run(async () => {
+      await this.connected;
+      return this.client.callTool(
+        { name, arguments: args },
+        undefined,
+        { signal: this.signal },
+      );
+    });
+  }
+
+  close(): Promise<void> {
+    if (this.closing) return this.closing;
+    this.terminal?.fail(new Error("MCP connection is closed"));
+    const closing = Promise.all([
+      this.client.close(),
+      this.owned?.close() ?? Promise.resolve(),
+    ]).then(() => undefined);
+    this.closing = closing;
+    return closing;
+  }
+
+  private run<T>(operation: () => Promise<T>): Promise<T> {
+    return this.terminal ? this.terminal.run(operation) : operation();
   }
 }
 

@@ -68,6 +68,7 @@ process.stdin.on("data", (chunk) => {
     const message = JSON.parse(buffer.slice(0, newline));
     buffer = buffer.slice(newline + 1);
     newline = buffer.indexOf("\\n");
+    if (message.id === undefined) continue;
     const result = message.method === "initialize"
       ? { protocolVersion: "2025-03-26", capabilities: {}, serverInfo: { name: "lifecycle", version: "1.0.0" } }
       : { tools: [{ name: "observe", inputSchema: { type: "object" } }] };
@@ -140,6 +141,7 @@ process.stdin.on("data", (chunk) => {
     const message = JSON.parse(buffer.slice(0, newline));
     buffer = buffer.slice(newline + 1);
     newline = buffer.indexOf("\\n");
+    if (message.id === undefined) continue;
     const result = message.method === "initialize"
       ? { protocolVersion: "2025-03-26", capabilities: {}, serverInfo: { name: "all", version: "1.0.0" } }
       : { tools: [{ name: "observe", inputSchema: { type: "object" } }] };
