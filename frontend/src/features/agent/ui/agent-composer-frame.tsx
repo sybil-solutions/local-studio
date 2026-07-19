@@ -176,7 +176,7 @@ export function AgentComposerFrame({
         <button
           type="button"
           onClick={projectRow.onPick}
-          className="mx-auto mb-1.5 flex w-full max-w-[var(--composer-w)] items-center gap-2.5 rounded-2xl bg-(--fg)/[0.03] px-4 py-3 text-left text-[length:var(--codex-chat-font-size)] text-(--fg)/85 transition-colors hover:bg-(--fg)/[0.05]"
+          className="mx-auto -mb-4 flex w-full max-w-[var(--composer-w)] items-center gap-2.5 rounded-2xl bg-(--fg)/[0.03] px-4 pb-7 pt-3 text-left text-[length:var(--codex-chat-font-size)] text-(--fg)/85 transition-colors hover:bg-(--fg)/[0.05]"
         >
           <Folder className="h-4 w-4 shrink-0 text-(--fg)/60" strokeWidth={1.75} />
           <span className="truncate">{projectRow.label}</span>
@@ -242,18 +242,21 @@ export function AgentComposerFrame({
           onToggleCanvas={onToggleCanvas}
           onAbortTurn={onAbortTurn}
           onTranscript={onTranscript}
+          onOpenStatus={onOpenStatus}
           modelSelector={modelSelector}
         />
       </div>
-      <AgentComposerStatusBar
-        cwd={cwd}
-        gitBranch={gitBranch}
-        gitSummary={gitSummary}
-        onInitGit={onInitGit}
-        currentContextTokens={currentContextTokens}
-        contextWindow={contextWindow}
-        onOpenStatus={onOpenStatus}
-      />
+      {projectRow ? null : (
+        <AgentComposerStatusBar
+          cwd={cwd}
+          gitBranch={gitBranch}
+          gitSummary={gitSummary}
+          onInitGit={onInitGit}
+          currentContextTokens={currentContextTokens}
+          contextWindow={contextWindow}
+          onOpenStatus={onOpenStatus}
+        />
+      )}
     </form>
   );
 }

@@ -62,6 +62,7 @@
   --red-600: #ba2623;
   --red-900: #4d100e;
   --orange-50: #ffe7d9;
+  --orange-200: #ff9e6c;
   --orange-300: #ff8549;
   --orange-400: #fb6a22;
   --orange-500: #e25507;
@@ -163,7 +164,8 @@
    near-black brand, one blue accent.
    ────────────────────────────────────────────────────────────────────────── */
 .theme-zai-light,
-:root[data-theme="zai-light"] {
+:root[data-theme="zai-light"],
+:root[data-theme="paper"] {
   color-scheme: light;
 
   --animated-gradient-text-strong: #0d0d0d;
@@ -555,7 +557,8 @@
 }
 
 .theme-zai-light,
-:root[data-theme="zai-light"] {
+:root[data-theme="zai-light"],
+:root[data-theme="paper"] {
   --bg: var(--color-background);
   --fg: var(--color-foreground);
   --dim: var(--color-foreground-subtle);

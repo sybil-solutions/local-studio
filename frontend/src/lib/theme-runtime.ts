@@ -45,7 +45,9 @@ function deriveThemeUiTokens(tokens: ThemeTokens): Record<string, string> {
     // 8% active, hairline 8% borders — the same ratios tokens.css encodes.
     "surface-2": `rgba(${ink}, 0.08)`,
     "surface-3": `rgba(${ink}, 0.05)`,
-    rail: isLight ? "#f9f9f9" : tokens.bg,
+    // The rail sits one tone step above the canvas so the body reads darker
+    // than the left navbar (mirrors tokens.css --color-sidebar).
+    rail: isLight ? "#f9f9f9" : `color-mix(in srgb, ${tokens.bg} 97%, #ffffff)`,
     border: `rgba(${ink}, 0.08)`,
     separator: `rgba(${ink}, 0.05)`,
     hover: `rgba(${ink}, 0.05)`,
