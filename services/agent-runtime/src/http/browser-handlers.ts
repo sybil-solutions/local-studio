@@ -337,13 +337,36 @@ function parseLsof(stdout: string): PortCandidate[] {
   return [...byPort.values()].sort((a, b) => a.port - b.port).slice(0, MAX_CANDIDATES);
 }
 
+function parseNetstat(stdout: string): PortCandidate[] {
+  const byPort = new Map<number, PortCandidate>();
+  for (const line of stdout.split(/\r?\n/)) {
+    const listenMatch = line.match(/^\s*TCP\s+\S+:(\d+)\s+\S+\s+LISTENING\b/i);
+    if (!listenMatch) continue;
+    const port = Number(listenMatch[1]);
+    if (!Number.isInteger(port) || port <= 0 || port > 65_535) continue;
+    if (!byPort.has(port)) byPort.set(port, { port });
+  }
+  return [...byPort.values()].sort((a, b) => a.port - b.port).slice(0, MAX_CANDIDATES);
+}
+
+async function readListeningPorts(): Promise<PortCandidate[]> {
+  if (process.platform === "win32") {
+    const { stdout } = await execFileAsync("netstat", ["-ano"], {
+      timeout: LSOF_TIMEOUT_MS,
+      maxBuffer: 4 * 1024 * 1024,
+    });
+    return parseNetstat(stdout);
+  }
+  const { stdout } = await execFileAsync("lsof", ["-nP", "-iTCP", "-sTCP:LISTEN"], {
+    timeout: LSOF_TIMEOUT_MS,
+    maxBuffer: 1024 * 1024,
+  });
+  return parseLsof(stdout);
+}
+
 async function listListeningPorts(): Promise<PortCandidate[]> {
   try {
-    const { stdout } = await execFileAsync("lsof", ["-nP", "-iTCP", "-sTCP:LISTEN"], {
-      timeout: LSOF_TIMEOUT_MS,
-      maxBuffer: 1024 * 1024,
-    });
-    const ports = parseLsof(stdout);
+    const ports = await readListeningPorts();
     if (ports.length > 0) return ports;
   } catch {
     // Fall through to common dev-server ports.

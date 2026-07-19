@@ -7,8 +7,8 @@
 // discovery + process lifecycle; the actual protocol work lives in cdp.ts and
 // browser-host.ts. Server-only: never import from client components.
 
-import { execFileSync, spawn, type ChildProcess } from "node:child_process";
-import { existsSync } from "node:fs";
+import { execFileSync, spawn, spawnSync, type ChildProcess } from "node:child_process";
+import { existsSync, readFileSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { getGlobalSingleton } from "../instances";
@@ -103,10 +103,32 @@ function portFromWsEndpoint(endpoint: string): number {
   }
 }
 
+function devToolsPortFile(dataDir: string): string {
+  return path.join(dataDir, "DevToolsActivePort");
+}
+
+function endpointFromPortFile(dataDir: string): string | null {
+  try {
+    const [port, wsPath] = readFileSync(devToolsPortFile(dataDir), "utf8").split(/\r?\n/);
+    if (!port?.trim() || !wsPath?.trim()) return null;
+    return `ws://127.0.0.1:${port.trim()}${wsPath.trim()}`;
+  } catch {
+    return null;
+  }
+}
+
+function windowsLaunchFlags(): string[] {
+  return process.platform === "win32" ? ["--do-not-de-elevate"] : [];
+}
+
 // Launch headless Chromium with remote debugging on an ephemeral port and parse
 // the `DevTools listening on ws://...` line from stderr to learn the endpoint.
+// Windows launchers can hand off to a relaunched browser process and exit 0
+// (elevation drop), leaving stderr empty — the DevToolsActivePort file in the
+// profile dir is the fallback endpoint source for that path.
 export function launchChrome(binary: string): Promise<ChromeProcess> {
   const dataDir = chromeDataDir();
+  rmSync(devToolsPortFile(dataDir), { force: true });
   const child = spawn(
     binary,
     [
@@ -117,6 +139,7 @@ export function launchChrome(binary: string): Promise<ChromeProcess> {
       "--disable-dev-shm-usage",
       "--window-size=1280,800",
       `--user-data-dir=${dataDir}`,
+      ...windowsLaunchFlags(),
     ],
     { stdio: ["ignore", "ignore", "pipe"] },
   );
@@ -129,6 +152,7 @@ export function launchChrome(binary: string): Promise<ChromeProcess> {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      clearInterval(portFilePoll);
       child.stderr?.off("data", onStderr);
       if (error) {
         child.kill("SIGKILL");
@@ -145,14 +169,28 @@ export function launchChrome(binary: string): Promise<ChromeProcess> {
       if (endpoint) finish(null, endpoint);
     };
 
+    let launcherExitCode: number | null = null;
+
     const timer = setTimeout(() => {
-      finish(new Error("Timed out waiting for Chromium DevTools endpoint"));
+      const detail =
+        launcherExitCode === null
+          ? ""
+          : ` (launcher exited ${launcherExitCode}; stderr: ${stderrBuffer.slice(-200).trim() || "empty"})`;
+      finish(new Error(`Timed out waiting for Chromium DevTools endpoint${detail}`));
     }, CHROME_LAUNCH_TIMEOUT_MS);
+
+    const portFilePoll = setInterval(() => {
+      const endpoint = endpointFromPortFile(dataDir);
+      if (endpoint) finish(null, endpoint);
+    }, 250);
 
     child.stderr?.on("data", onStderr);
     child.once("error", (error) => finish(error));
     child.once("exit", (code) => {
-      if (!settled) finish(new Error(`Chromium exited before ready (code ${code ?? "null"})`));
+      if (settled) return;
+      launcherExitCode = code;
+      if (process.platform === "win32" && code === 0) return;
+      finish(new Error(`Chromium exited before ready (code ${code ?? "null"})`));
     });
   });
 }
@@ -162,18 +200,25 @@ export function launchChrome(binary: string): Promise<ChromeProcess> {
 class ChromeManager {
   private process: ChromeProcess | null = null;
   private launching: Promise<ChromeProcess> | null = null;
+  private launchAttempted = false;
 
   isAvailable(): boolean {
     return findChromeBinary() !== null;
   }
 
   async ensure(): Promise<ChromeProcess> {
-    if (this.process) return this.process;
+    if (this.process) {
+      if (this.process.child.exitCode === null) return this.process;
+      if (await isBrowserResponding(this.process.port)) return this.process;
+      this.process = null;
+    }
     if (this.launching) return this.launching;
     const binary = findChromeBinary();
     if (!binary) {
       throw new Error("Browser unavailable: no Chromium found — set LOCAL_STUDIO_CHROME_PATH");
     }
+    this.launchAttempted = true;
+    killDetachedWindowsChromes();
     this.launching = launchChrome(binary)
       .then((proc) => {
         this.process = proc;
@@ -196,7 +241,29 @@ class ChromeManager {
     const proc = this.process;
     this.process = null;
     if (proc) proc.child.kill("SIGKILL");
+    if (proc || this.launchAttempted) killDetachedWindowsChromes();
   }
+}
+
+async function isBrowserResponding(port: number): Promise<boolean> {
+  try {
+    const response = await fetch(`http://127.0.0.1:${port}/json/version`, {
+      signal: AbortSignal.timeout(1_000),
+    });
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
+function killDetachedWindowsChromes(): void {
+  if (process.platform !== "win32") return;
+  spawnSync("powershell", [
+    "-NoProfile",
+    "-NonInteractive",
+    "-Command",
+    "Get-CimInstance Win32_Process -Filter \"Name='chrome.exe' OR Name='msedge.exe'\" | Where-Object { $_.CommandLine -like '*local-studio-browser-profile*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }",
+  ], { timeout: 10_000 });
 }
 
 export const chromeManager = getGlobalSingleton("chromeManager", () => new ChromeManager());
