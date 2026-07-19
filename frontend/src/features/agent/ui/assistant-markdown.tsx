@@ -164,7 +164,7 @@ const components: Components = {
   ),
   p: ({ node: _n, ...props }) => (
     <p
-      className="my-3 max-w-full break-words text-[length:var(--codex-chat-font-size)] leading-[1.625] tracking-normal first:mt-0 last:mb-0 [overflow-wrap:anywhere]"
+      className="my-3 max-w-full break-words text-[length:var(--codex-chat-font-size)] leading-[1.5] tracking-normal first:mt-0 last:mb-0 [overflow-wrap:anywhere]"
       {...props}
     />
   ),
@@ -172,7 +172,7 @@ const components: Components = {
   ol: ({ node: _n, ...props }) => <ol className="my-2 list-decimal pl-4" {...props} />,
   li: ({ node: _n, ...props }) => (
     <li
-      className="text-[length:var(--codex-chat-font-size)] leading-[1.625] tracking-normal"
+      className="text-[length:var(--codex-chat-font-size)] leading-[1.5] tracking-normal"
       {...props}
     />
   ),

@@ -73,8 +73,7 @@ export function AgentMentionPicker({
   if (!mention) return null;
 
   return (
-    <div className="px-4 pt-2">
-      <MentionPickerHeader kind={mention.kind} query={mention.query} />
+    <div className="px-1.5">
       {rows.length ? (
         <div className="grid gap-1">
           {rows.map((entry, index) => (
@@ -128,28 +127,6 @@ function LoadedContextTab({
   );
 }
 
-function MentionPickerHeader({
-  kind,
-  query,
-}: {
-  kind: "file" | "skill" | "command";
-  query: string;
-}) {
-  const meta = MENTION_KIND_META[kind];
-  return (
-    <div className="mb-1.5 flex items-center gap-2 border-b border-(--separator) pb-1.5 text-[length:var(--fs-sm)]">
-      <meta.Icon className={`h-3.5 w-3.5 ${meta.accentClass}`} />
-      <span className="font-medium text-(--fg)">{meta.title}</span>
-      {query ? (
-        <span className="font-mono text-[length:var(--fs-xs)] text-(--dim)">
-          {query.length > 24 ? `${query.slice(0, 24)}…` : query}
-        </span>
-      ) : null}
-      <span className="ml-auto truncate text-[length:var(--fs-xs)] text-(--dim)">{meta.hint}</span>
-    </div>
-  );
-}
-
 function MentionRowItem({
   entry,
   active,
@@ -168,16 +145,18 @@ function MentionRowItem({
         type="button"
         onMouseDown={(event) => event.preventDefault()}
         onClick={onSelect}
-        className={`flex min-w-0 items-center gap-2 rounded-md px-2 py-1.5 text-left ${
+        className={`flex min-w-0 items-center gap-2 rounded-lg px-2.5 py-[7px] text-left ${
           active
             ? "bg-(--hover) text-(--fg)"
             : "text-(--dim) hover:bg-(--hover)/60 hover:text-(--fg)"
         }`}
       >
         <Icon className="h-3.5 w-3.5 shrink-0 text-(--dim)" />
-        <span className="shrink-0 text-[length:var(--fs-md)] text-(--fg)">{entry.row.title}</span>
+        <span className="shrink-0 text-[length:var(--fs-base)] text-(--fg)/85">
+          {entry.row.title}
+        </span>
         {entry.row.description ? (
-          <span className="ml-auto min-w-0 truncate pl-6 text-right text-[length:var(--fs-sm)] text-(--dim)">
+          <span className="ml-auto min-w-0 truncate pl-6 text-right text-[length:var(--fs-base)] text-(--fg)/45">
             {entry.row.description}
           </span>
         ) : null}
@@ -195,14 +174,14 @@ function MentionRowItem({
       type="button"
       onMouseDown={(event) => event.preventDefault()}
       onClick={onSelect}
-      className={`flex min-w-0 items-center gap-2 rounded-md px-2 py-1.5 text-left ${
+      className={`flex min-w-0 items-center gap-2 rounded-lg px-2.5 py-[7px] text-left ${
         active ? "bg-(--hover) text-(--fg)" : "text-(--dim) hover:bg-(--hover)/60 hover:text-(--fg)"
       }`}
     >
       <Icon className={`h-3.5 w-3.5 shrink-0 ${accent}`} />
       <span className="min-w-0 flex-1">
         <span className="flex items-baseline gap-1.5">
-          <span className="truncate text-[length:var(--fs-md)] text-(--fg)">{title}</span>
+          <span className="truncate text-[length:var(--fs-base)] text-(--fg)/85">{title}</span>
         </span>
         {description ? (
           <span className="block truncate text-[length:var(--fs-xs)] text-(--dim)">

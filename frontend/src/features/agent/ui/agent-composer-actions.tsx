@@ -51,7 +51,7 @@ export function AgentComposerActions({
   const activeIconClass = "bg-(--active) text-(--fg)";
 
   return (
-    <div className="agent-composer-actions-row flex min-h-8 items-center gap-1 bg-transparent px-2.5 pb-2 pt-0.5 text-xs">
+    <div className="agent-composer-actions-row flex min-h-9 items-center gap-1 bg-transparent px-3 pb-2.5 pt-0.5 text-xs">
       <input
         ref={fileInputRef}
         type="file"
@@ -114,13 +114,13 @@ export function AgentComposerActions({
       >
         <Code2 className="h-4 w-4" strokeWidth={1.5} />
       </button>
-      <ComposerDictationButton
-        disabled={running}
-        inactiveClassName={inactiveIconClass}
-        onTranscript={onTranscript}
-      />
       <div className="ml-auto flex shrink-0 items-center gap-1">
         {modelSelector}
+        <ComposerDictationButton
+          disabled={running}
+          inactiveClassName={inactiveIconClass}
+          onTranscript={onTranscript}
+        />
         {running ? (
           <>
             {starting ? (
@@ -134,18 +134,18 @@ export function AgentComposerActions({
             ) : inputHasText ? (
               <button
                 type="submit"
-                className="inline-flex !h-7 !min-h-7 !w-7 !min-w-7 shrink-0 items-center justify-center rounded-full bg-(--fg) text-(--bg) transition-opacity hover:opacity-85"
+                className="inline-flex !h-[30px] !min-h-[30px] !w-[30px] !min-w-[30px] shrink-0 items-center justify-center rounded-full bg-(--fg) text-(--bg) transition-opacity hover:opacity-85"
                 aria-label="Steer current task"
                 title="Steer current task (Enter) · Queue instead (Tab)"
               >
-                <ArrowUp className="h-3.5 w-3.5 stroke-[2.25]" />
+                <ArrowUp className="h-4 w-4 stroke-[2.25]" />
               </button>
             ) : null}
             <button
               type="button"
               onClick={onAbortTurn}
               disabled={starting}
-              className={`inline-flex !h-6 !min-h-6 !w-6 !min-w-6 shrink-0 items-center justify-center rounded-full transition-opacity hover:opacity-85 disabled:opacity-30 ${inputHasText ? "bg-(--hover) text-(--fg)" : "bg-(--fg) text-(--bg)"}`}
+              className={`inline-flex shrink-0 items-center justify-center rounded-full bg-(--fg) text-(--bg) transition-opacity hover:opacity-85 disabled:opacity-30 ${inputHasText ? "!h-6 !min-h-6 !w-6 !min-w-6" : "!h-[30px] !min-h-[30px] !w-[30px] !min-w-[30px]"}`}
               aria-label="Stop"
               title="Stop (Esc)"
             >
@@ -156,11 +156,11 @@ export function AgentComposerActions({
           <button
             type="submit"
             disabled={(!inputHasText && attachmentsCount === 0) || readingAttachments}
-            className="inline-flex !h-7 !min-h-7 !w-7 !min-w-7 shrink-0 items-center justify-center rounded-full bg-(--fg) text-(--bg) transition-opacity hover:opacity-85 disabled:opacity-25"
+            className="inline-flex !h-[30px] !min-h-[30px] !w-[30px] !min-w-[30px] shrink-0 items-center justify-center rounded-full bg-(--fg) text-(--bg) transition-opacity hover:opacity-85 disabled:bg-(--hl3) disabled:opacity-100"
             aria-label="Send"
             title="Send (Enter) · Queue (Tab)"
           >
-            {starting ? <Spinner size="sm" /> : <ArrowUp className="h-3.5 w-3.5 stroke-[2.25]" />}
+            {starting ? <Spinner size="sm" /> : <ArrowUp className="h-4 w-4 stroke-[2.25]" />}
           </button>
         )}
       </div>

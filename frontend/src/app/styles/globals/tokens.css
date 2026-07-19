@@ -533,10 +533,13 @@
   --separator: var(--color-border-light);
   --hover: var(--color-hover);
   --active: var(--color-selected);
-  --composer: var(--color-surface);
-  --composer-footer: var(--color-surface);
-  /* Dark composer reads as a raised surface with no outline. */
+  /* Codex composer surface, exact: gray-750 #282828 over the #181818 page,
+     flat (no outline, no ring). User bubbles share the same elevated tone. */
+  --composer: var(--gray-750);
+  --composer-footer: var(--gray-750);
   --composer-border: transparent;
+  --composer-placeholder: color-mix(in srgb, var(--fg) 32%, transparent);
+  --bubble: var(--gray-750);
 
   /* Accents — grayscale brand + one sanctioned chroma: the blue accent */
   --accent: var(--color-brand);
@@ -566,10 +569,12 @@
   --separator: var(--color-border-light);
   --hover: var(--color-hover);
   --active: var(--color-selected);
-  --composer: var(--color-card);
-  --composer-footer: var(--color-card);
-  /* Light composer keeps a hairline outline over the white canvas. */
-  --composer-border: var(--color-border);
+  --composer: var(--gray-75);
+  --composer-footer: var(--gray-75);
+  /* Light composer: Codex uses the same flat elevated-gray treatment. */
+  --composer-border: transparent;
+  --composer-placeholder: color-mix(in srgb, var(--fg) 40%, transparent);
+  --bubble: var(--gray-75);
 
   --accent: var(--color-brand);
   --hl1: var(--color-foreground-subtle);
@@ -587,7 +592,8 @@
 .dark,
 :root[data-theme="zai-dark"],
 :root[data-theme="omlx-dark"] {
-  --composer-shadow: 0 10px 28px rgba(0, 0, 0, 0.18), inset 0 0 0 1px rgba(255, 255, 255, 0.055);
+  /* Codex dark composer is a flat tone step — no ring, no drop shadow. */
+  --composer-shadow: none;
 }
 
 @media (min-width: 1024px) {
@@ -613,8 +619,9 @@
   --h-toolbar-pane: 40px;
   --composer-w: clamp(25vw, 48rem, 52vw);
   --thread-w: 900px;
-  --composer-radius: 24px;
-  --composer-radius-single: 22px;
+  /* Codex: --radius-4xl (24px) × corner-radius-scale 1.25 ≈ 28px superellipse. */
+  --composer-radius: 28px;
+  --composer-radius-single: 28px;
   --composer-shadow: 0 12px 36px rgba(0, 0, 0, 0.06);
 
   /* Typography */

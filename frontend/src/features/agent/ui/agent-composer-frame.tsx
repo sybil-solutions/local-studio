@@ -161,7 +161,8 @@ export function AgentComposerFrame({
         onSteer={onSteerQueued}
       />
       {banner ? (
-        <div className="mx-auto flex w-full max-w-[var(--composer-w)] items-center gap-2 pb-2 pl-1 text-[length:var(--fs-sm)] text-(--dim)">
+        // Codex compacting banner: flat, chat-size text at ~35% white, no pill.
+        <div className="mx-auto flex w-full max-w-[var(--composer-w)] items-center gap-2 pb-3 pl-1 text-[length:var(--codex-chat-font-size)] text-(--fg)/35">
           <Spinner size="xs" />
           {banner.label}
         </div>
@@ -171,7 +172,7 @@ export function AgentComposerFrame({
         onDragLeave={onComposerDragLeave}
         onDrop={onComposerDrop}
         className={cx(
-          "mx-auto w-full max-w-[var(--composer-w)] overflow-visible rounded-[var(--composer-radius)] border border-(--composer-border) bg-(--composer) shadow-[var(--composer-shadow)] transition-colors",
+          "relative mx-auto w-full max-w-[var(--composer-w)] overflow-visible rounded-[var(--composer-radius)] border border-(--composer-border) bg-(--composer) shadow-[var(--composer-shadow)] transition-colors",
           composerDragActive && "outline outline-1 outline-(--link)/50",
         )}
       >
@@ -185,12 +186,18 @@ export function AgentComposerFrame({
           promptTemplates={promptTemplates}
           onRemove={onRemoveLoadedContext}
         />
-        <AgentMentionPicker
-          mention={mention}
-          rows={mentionRows}
-          activeIndex={mentionIndex}
-          onSelect={onSelectMention}
-        />
+        {mention ? (
+          // Codex: the mention/command menu floats as its own elevated panel
+          // above the composer card, not inside it.
+          <div className="absolute inset-x-0 bottom-full z-20 mb-2 overflow-hidden rounded-[20px] bg-(--composer) py-1.5 shadow-[0_8px_32px_rgba(0,0,0,0.35)]">
+            <AgentMentionPicker
+              mention={mention}
+              rows={mentionRows}
+              activeIndex={mentionIndex}
+              onSelect={onSelectMention}
+            />
+          </div>
+        ) : null}
         <AgentAttachmentTray
           attachments={attachments}
           modelSupportsVision={modelSupportsVision}
