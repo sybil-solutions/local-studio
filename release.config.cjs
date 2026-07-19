@@ -44,6 +44,13 @@ module.exports = {
         },
       },
     ],
+    [
+      "@semantic-release/exec",
+      {
+        prepareCmd: "node scripts/apply-release-version.mjs ${nextRelease.version}",
+        successCmd: 'echo "version=${nextRelease.version}" >> "$GITHUB_OUTPUT"',
+      },
+    ],
     "@semantic-release/github",
   ],
 };

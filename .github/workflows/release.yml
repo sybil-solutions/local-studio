@@ -15,6 +15,9 @@ jobs:
   release:
     if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push'
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.release.outputs.version }}
+      desktop_signing: ${{ steps.desktop_signing.outputs.configured }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -34,13 +37,70 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
       - name: Release
+        id: release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           npx -y \
             -p semantic-release@24 \
             -p @semantic-release/commit-analyzer \
+            -p @semantic-release/exec \
             -p @semantic-release/release-notes-generator \
             -p @semantic-release/github \
             -p conventional-changelog-conventionalcommits@8 \
             semantic-release
+
+      - name: Check desktop signing configuration
+        id: desktop_signing
+        if: steps.release.outputs.version != ''
+        env:
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: node scripts/validate-desktop-release-env.mjs
+
+  desktop:
+    needs: release
+    if: ${{ needs.release.outputs.version != '' && needs.release.outputs.desktop_signing == 'true' }}
+    runs-on: macos-latest
+    env:
+      RELEASE_VERSION: ${{ needs.release.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.19.0
+
+      - name: Apply release version
+        run: node scripts/apply-release-version.mjs "$RELEASE_VERSION"
+
+      - name: Install desktop dependencies
+        run: npm --prefix frontend ci
+
+      - name: Build signed and notarized desktop assets
+        env:
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: npm --prefix frontend run desktop:dist:notarized
+
+      - name: Verify signed and notarized desktop app
+        run: |
+          codesign --verify --deep --strict --verbose=2 "frontend/dist-desktop/mac-arm64/Local Studio.app"
+          xcrun stapler validate "frontend/dist-desktop/mac-arm64/Local Studio.app"
+          spctl --assess --type execute --verbose=2 "frontend/dist-desktop/mac-arm64/Local Studio.app"
+
+      - name: Stage desktop assets
+        run: npm run release:stage-desktop
+
+      - name: Attach desktop assets to the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "v${RELEASE_VERSION}" release-staging/* --clobber

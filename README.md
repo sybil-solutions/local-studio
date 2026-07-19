@@ -184,23 +184,16 @@ analyzes commits since the last tag, cuts the next tag (`feat` → minor, other
 release types → patch, breaking → major), and publishes generated notes. There
 is no npm publish and tags are never created by hand.
 
-The public macOS build is produced on a Developer ID-equipped Mac. Stage the
-signed DMG, updater ZIP, blockmaps, metadata, and stable website alias after the
-build completes:
+After semantic-release publishes a release, a conditional macOS job builds,
+signs, notarizes, and attaches the Apple Silicon desktop assets when `CSC_LINK`,
+`CSC_KEY_PASSWORD`, `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, and
+`APPLE_TEAM_ID` are configured as repository secrets. Missing signing secrets
+skip the desktop job without blocking tags or release notes.
 
-```bash
-npm --prefix frontend run desktop:dist
-npm run release:stage-desktop
-gh release upload "v$(node -p 'require("./frontend/package.json").version')" release-staging/*
-```
-
-Run `APPLE_KEYCHAIN_PROFILE=vllm-studio-notarize npm --prefix frontend run
-desktop:dist:notarized` when the Apple developer team has an active distribution
-agreement. Electron Builder then submits and staples the notarization ticket
-before creating the archives.
-
-Remove `frontend/dist-desktop/` and `release-staging/` after installation and
-upload; neither directory belongs in git.
+The release keeps Electron Builder's versioned DMG, updater ZIP, blockmaps, and
+`latest-mac.yml`, plus stable `Local-Studio-arm64.dmg` and
+`Local-Studio-arm64-mac.zip` aliases. The stable DMG alias backs the website's
+latest-release download URL.
 
 ## Contributing
 
