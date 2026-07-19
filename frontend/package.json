@@ -9,7 +9,7 @@
   "scripts": {
     "predev": "node scripts/link-services-node-modules.mjs",
     "dev": "concurrently -k -n NEXT,AGENT -c cyan,green \"next dev\" \"npm --prefix ../services/agent-runtime run dev\"",
-    "build": "npm --prefix ../services/agent-runtime run bundle && next build && node scripts/assert-standalone-build.mjs",
+    "build": "npm --prefix ../services/agent-runtime run bundle && next build && node scripts/complete-standalone-build.mjs && node scripts/assert-standalone-build.mjs",
     "start": "node scripts/start-standalone.mjs",
     "perf:audit": "node scripts/perf-audit.mjs",
     "perf:browser": "node scripts/browser-perf-audit.mjs",
