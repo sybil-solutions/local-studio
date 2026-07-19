@@ -57,4 +57,18 @@ describe("download stream backpressure", () => {
     failure.dispose();
     expect(writer.listenerCount("error")).toBe(0);
   });
+
+  test("rejects a writer failure immediately after reader completion and before close", async () => {
+    const writer = new PassThrough();
+    const failure = trackWriterFailure(writer);
+    const terminalRead = await Promise.resolve({ done: true as const });
+
+    expect(terminalRead.done).toBe(true);
+    writer.emit("error", new Error("late disk write failure"));
+    writer.emit("close");
+
+    await expect(run(failure.close())).rejects.toThrow("late disk write failure");
+    failure.dispose();
+    expect(writer.listenerCount("error")).toBe(0);
+  });
 });

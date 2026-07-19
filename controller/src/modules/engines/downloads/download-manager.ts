@@ -131,52 +131,32 @@ const attempt = <A>(operation: string, evaluate: () => A): Effect.Effect<A, Engi
     catch: (cause) => operationError(operation, cause),
   });
 
-const closeWriter = (
-  writer: ReturnType<typeof createWriteStream>,
-): Effect.Effect<void, EngineOperationError> =>
-  writer.closed
-    ? Effect.void
-    : Effect.callback<void, EngineOperationError>((resume) => {
-        let completed = false;
-        const cleanup = (): void => {
-          writer.removeListener("error", onError);
-          writer.removeListener("close", onClose);
-        };
-        const finish = (effect: Effect.Effect<void, EngineOperationError>): void => {
-          if (completed) return;
-          completed = true;
-          cleanup();
-          resume(effect);
-        };
-        const onError = (cause: unknown): void =>
-          finish(Effect.fail(operationError("close-download-writer", cause)));
-        const onClose = (): void => finish(Effect.void);
-        writer.once("error", onError);
-        writer.once("close", onClose);
-        try {
-          if (!writer.destroyed) writer.end();
-        } catch (cause) {
-          onError(cause);
-        }
-        return Effect.sync(cleanup);
-      });
-
 type WriterFailure = ReturnType<typeof trackWriterFailure>;
 type DownloadChunk = Awaited<ReturnType<ReadableStreamDefaultReader<Uint8Array>["read"]>>;
+
+const closeWriter = (writerFailure: WriterFailure): Effect.Effect<void, EngineOperationError> =>
+  writerFailure
+    .close()
+    .pipe(Effect.mapError((cause) => operationError("close-download-writer", cause)));
 
 const readDownloadChunk = (
   reader: ReadableStreamDefaultReader<Uint8Array>,
   writerFailure: WriterFailure,
 ): Effect.Effect<DownloadChunk, EngineOperationError> =>
-  Effect.raceFirst(
-    Effect.tryPromise({
-      try: () => reader.read(),
-      catch: (cause) => operationError("read-download-stream", cause),
-    }),
-    writerFailure.failed.pipe(
-      Effect.mapError((cause) => operationError("read-download-stream", cause)),
-    ),
-  );
+  Effect.gen(function* () {
+    yield* attempt("read-download-stream", writerFailure.throwIfFailed);
+    const chunk = yield* Effect.raceFirst(
+      Effect.tryPromise({
+        try: () => reader.read(),
+        catch: (cause) => operationError("read-download-stream", cause),
+      }),
+      writerFailure.failed.pipe(
+        Effect.mapError((cause) => operationError("read-download-stream", cause)),
+      ),
+    );
+    yield* attempt("read-download-stream", writerFailure.throwIfFailed);
+    return chunk;
+  });
 
 export class DownloadManager {
   private readonly active = new Map<string, ActiveDownload>();
@@ -591,7 +571,7 @@ export class DownloadManager {
       const writerFailure = trackWriterFailure(writer);
       const reader = response.body?.getReader();
       if (!reader) {
-        yield* closeWriter(writer).pipe(Effect.ensuring(Effect.sync(writerFailure.dispose)));
+        yield* closeWriter(writerFailure).pipe(Effect.ensuring(Effect.sync(writerFailure.dispose)));
         return yield* Effect.fail(
           operationError("read-download-stream", "Download response has no body"),
         );
@@ -649,7 +629,7 @@ export class DownloadManager {
       );
       yield* consume.pipe(
         Effect.onExit(() =>
-          closeWriter(writer).pipe(Effect.ensuring(Effect.sync(writerFailure.dispose))),
+          closeWriter(writerFailure).pipe(Effect.ensuring(Effect.sync(writerFailure.dispose))),
         ),
       );
       file.downloaded_bytes = downloaded;
