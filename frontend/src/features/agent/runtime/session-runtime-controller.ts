@@ -173,6 +173,25 @@ export function createSessionRuntimeController(
   const connectionKeyFor = (session: Session): string =>
     connectionKeyOverrides.get(session.id) ?? session.id;
 
+  // Sessions evicted from the workspace registry (closed panes, pruned
+  // background sessions) must not leave app-lifetime entries behind in this
+  // singleton's per-session maps. Only truly-gone ids are pruned —
+  // idle-but-open sessions keep their cursor seed.
+  const pruneStaleSessionEntries = (knownIds: ReadonlySet<SessionId>): void => {
+    const maps: Array<Map<SessionId, unknown>> = [
+      cursors,
+      turnAcceptedAt,
+      turnFinishedAt,
+      connectionKeyOverrides,
+      streamContext.liveAssistantIds,
+    ];
+    for (const map of maps) {
+      for (const sessionId of [...map.keys()]) {
+        if (!knownIds.has(sessionId)) map.delete(sessionId);
+      }
+    }
+  };
+
   const commit = (sessionId: SessionId, patch: (session: Session) => Session) => {
     binding?.commit(sessionId, patch);
   };
@@ -646,6 +665,8 @@ export function createSessionRuntimeController(
           attachments.delete(sessionId);
         }
       }
+
+      pruneStaleSessionEntries(new Set(sessions.map((session) => session.id)));
 
       for (const [sessionId, want] of desired) {
         if (attachments.has(sessionId)) continue;

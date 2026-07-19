@@ -1,15 +1,21 @@
 const TRACE_STORAGE_KEY = "local-studio:trace-agent-reasoning";
 
+// This flag is consulted on every streaming event and block render, so cache
+// the localStorage/URL lookup instead of re-reading synchronously each time.
+// Toggling the flag requires a reload, which is how it was used anyway.
+let traceEnabledCache: boolean | null = null;
+
 export function agentReasoningTraceEnabled(): boolean {
   if (typeof window === "undefined") return false;
+  if (traceEnabledCache !== null) return traceEnabledCache;
   try {
-    return (
+    traceEnabledCache =
       window.localStorage.getItem(TRACE_STORAGE_KEY) === "1" ||
-      new URLSearchParams(window.location.search).has("traceAgentReasoning")
-    );
+      new URLSearchParams(window.location.search).has("traceAgentReasoning");
   } catch {
-    return false;
+    traceEnabledCache = false;
   }
+  return traceEnabledCache;
 }
 
 export function traceAgentReasoning(stage: string, payload: unknown): void {

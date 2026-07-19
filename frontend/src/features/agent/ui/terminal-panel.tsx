@@ -218,7 +218,9 @@ function useTerminalPanelEffects({
         cursorBlink: true,
         cursorStyle: "block",
         convertEol: false,
-        scrollback: 50_000,
+        // 10k lines is still deep history; 50k made every kept-alive terminal
+        // hold a multi-MB buffer, which compounds across the mounted MRU set.
+        scrollback: 10_000,
         allowProposedApi: true,
         macOptionIsMeta: true,
         rightClickSelectsWord: true,

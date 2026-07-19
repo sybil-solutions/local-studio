@@ -42,6 +42,8 @@ type Props = {
   onState: (state: BrowserPaneState) => void;
   /** Called once when the host reports no Chromium — the pane should fall back to reading mode. */
   onUnavailable: (error: string) => void;
+  /** Frame polling pauses entirely while the surface is hidden. */
+  visible?: boolean;
 };
 
 const VIEWPORT_MIN = { width: 320, height: 240 };
@@ -57,7 +59,7 @@ function postBrowser(path: string, body: unknown): void {
   }).catch(() => undefined);
 }
 
-export function ScreencastSurface({ url, onState, onUnavailable }: Props) {
+export function ScreencastSurface({ url, onState, onUnavailable, visible = true }: Props) {
   const [container, setContainer] = useState<HTMLDivElement | null>(null);
   const [frameSrc, setFrameSrc] = useState<string | null>(null);
   const [navError, setNavError] = useState<string | null>(null);
@@ -76,13 +78,20 @@ export function ScreencastSurface({ url, onState, onUnavailable }: Props) {
   }, [onState, onUnavailable]);
 
   // ── Frame poll loop: sequential (no overlap), backs off on transient error,
-  // surfaces 503 once as unavailable ────────────────────────────────────
+  // surfaces 503 once as unavailable. Pauses while the pane is hidden (panel
+  // collapsed) and idles at 1s while the document itself is hidden, so a
+  // background browser tab doesn't burn ~9 fetches+JPEG decodes per second. ──
   useMountSubscription(() => {
+    if (!visible) return;
     let disposed = false;
     let timer: EffectTimer | null = null;
 
     const tick = async () => {
       if (disposed) return;
+      if (typeof document !== "undefined" && document.visibilityState === "hidden") {
+        timer = effectTimeout(() => void tick(), 1_000);
+        return;
+      }
       try {
         const response = await fetch("/api/agent/browser/frame", { cache: "no-store" });
         if (response.status === 503) {
@@ -112,7 +121,7 @@ export function ScreencastSurface({ url, onState, onUnavailable }: Props) {
       disposed = true;
       if (timer) timer.cancel();
     };
-  }, []);
+  }, [visible]);
 
   // ── Address-bar navigation: navigate server-side when the desired URL
   // diverges from what the host last reported ────────────────────────────
