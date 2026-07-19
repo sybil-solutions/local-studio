@@ -4,6 +4,7 @@ import {
   ConnectorApprovalsResponseSchema,
   ConnectorTestResponseSchema,
   ConnectorsResponseSchema,
+  GitHubConnectorArtifactStatusSchema,
 } from "@local-studio/agent-runtime/connector-contract";
 import {
   GoogleAccountInputSchema,
@@ -26,6 +27,8 @@ import {
   cancelManagedGoogleAuthorization,
   disconnectManagedGoogleAccount,
   getManagedGoogleAccount,
+  getManagedGitHubConnectorArtifactStatus,
+  installManagedGitHubConnectorArtifact,
   listManagedPlugins,
   probeManagedConnector,
   saveManagedGoogleClient,
@@ -56,6 +59,8 @@ export type ConnectorManagementPort = {
   probe(id: string): Promise<unknown>;
   listPlugins(): Promise<unknown>;
   setPluginEnabled(id: string, enabled: boolean): Promise<unknown>;
+  githubArtifactStatus(): Promise<unknown>;
+  installGitHubArtifact(): Promise<unknown>;
   getGoogleAccount(): Promise<unknown>;
   saveGoogleClient(payload: string): Promise<unknown>;
   disconnectGoogleAccount(account: "gmail" | "google-calendar"): Promise<unknown>;
@@ -88,6 +93,10 @@ const decodeApprovals = Schema.decodeUnknownSync(ConnectorApprovalsResponseSchem
 const decodeConnectors = Schema.decodeUnknownSync(ConnectorsResponseSchema, exact);
 const decodeConnectorTest = Schema.decodeUnknownSync(ConnectorTestResponseSchema, exact);
 const decodePlugins = Schema.decodeUnknownSync(PluginRuntimeResponseSchema, exact);
+const decodeGitHubArtifactStatus = Schema.decodeUnknownSync(
+  GitHubConnectorArtifactStatusSchema,
+  exact,
+);
 const decodeGoogleAccount = Schema.decodeUnknownSync(GoogleAccountResponseSchema, exact);
 const decodeGoogleAuthorization = Schema.decodeUnknownSync(
   GoogleAuthorizationResponseSchema,
@@ -102,6 +111,8 @@ const managementFailureMessages: Partial<
   "probe-connector": "Connector discovery failed",
   "list-plugins": "Plugin discovery failed",
   "set-plugin-enabled": "Plugin activation failed",
+  "github-artifact-status": "GitHub connector artifact status failed",
+  "install-github-artifact": "GitHub connector artifact installation failed",
   "get-google-account": "Google account failed",
   "save-google-client": "Google account failed",
   "disconnect-google-account": "Google account failed",
@@ -132,6 +143,8 @@ const connectorManagement: ConnectorManagementPort = {
   probe: (id) => Effect.runPromise(probeManagedConnector(id)),
   listPlugins: () => Effect.runPromise(listManagedPlugins()),
   setPluginEnabled: (id, enabled) => Effect.runPromise(setManagedPluginEnabled({ id, enabled })),
+  githubArtifactStatus: () => Effect.runPromise(getManagedGitHubConnectorArtifactStatus()),
+  installGitHubArtifact: () => Effect.runPromise(installManagedGitHubConnectorArtifact()),
   getGoogleAccount: () => Effect.runPromise(getManagedGoogleAccount()),
   saveGoogleClient: (payload) =>
     Effect.runPromise(saveManagedGoogleClient(decodeGoogleClientInput(decodedJson(payload)))),
@@ -217,6 +230,12 @@ function serializedResult(request: ConnectorApprovalProcessRequest, result: unkn
     return serialize(decodePlugins(result));
   }
   if (
+    request.operation === "github-artifact-status" ||
+    request.operation === "install-github-artifact"
+  ) {
+    return serialize(decodeGitHubArtifactStatus(result));
+  }
+  if (
     request.operation === "get-google-account" ||
     request.operation === "save-google-client" ||
     request.operation === "disconnect-google-account"
@@ -244,6 +263,8 @@ function managementRequest(
   if (request.operation === "set-plugin-enabled") {
     return management.setPluginEnabled(request.plugin_id, request.enabled);
   }
+  if (request.operation === "github-artifact-status") return management.githubArtifactStatus();
+  if (request.operation === "install-github-artifact") return management.installGitHubArtifact();
   if (request.operation === "get-google-account") return management.getGoogleAccount();
   if (request.operation === "save-google-client") {
     return management.saveGoogleClient(request.payload);

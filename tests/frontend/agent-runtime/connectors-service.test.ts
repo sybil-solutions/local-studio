@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, posix, win32 } from "node:path";
 import {
   filterAllowedConnectorTools,
   ConnectorToolDeniedError,
@@ -25,6 +25,10 @@ import {
   catalogConnectorConfiguration,
   connectorToolRisk,
 } from "../../../services/agent-runtime/src/connector-policy";
+import {
+  GITHUB_MCP_ARTIFACTS,
+  GITHUB_MCP_VERSION,
+} from "../../../services/agent-runtime/src/connector-artifacts";
 
 let dataDir = "";
 let previousDataDir: string | undefined;
@@ -163,15 +167,17 @@ describe("connector grants", () => {
     expect(connectorToolRisk(drifted.connector, "search_repositories")).toBe("critical");
   });
 
-  test("migrates an exact legacy catalog executable into its first-party risk policy", () => {
+  test("migrates an exact legacy generated GitHub connector disabled for review", () => {
     const normalized = normalizeStoredConnector(
       connector({
         id: "github",
+        name: "GitHub",
         transport: "stdio",
         url: undefined,
         command: "npx",
         args: ["-y", "@modelcontextprotocol/server-github"],
         allowTools: ["search_repositories", "create_issue"],
+        permissionReviewed: true,
       }),
     );
     expect(normalized.connector.origin).toMatchObject({
@@ -179,26 +185,72 @@ describe("connector grants", () => {
       id: "github",
     });
     expect(normalized.connector.origin?.version).toBeString();
+    expect(normalized.connector.origin?.artifactDigest).toStartWith("sha256:");
+    expect(normalized.connector.origin?.inventoryDigest).toStartWith("sha256:");
     expect(normalized.connector.command).not.toBe("npx");
+    expect(normalized.connector.args).toEqual([
+      "stdio",
+      "--read-only",
+      "--toolsets=repos,issues,pull_requests",
+    ]);
+    expect(normalized.connector.allowTools).toEqual([]);
+    expect(normalized.connector.permissionReviewed).toBe(false);
+    expect(normalized.connector.enabled).toBe(false);
     expect(connectorToolRisk(normalized.connector, "search_repositories")).toBe("read");
-    expect(connectorToolRisk(normalized.connector, "create_issue")).toBe("mutating");
+    expect(connectorToolRisk(normalized.connector, "create_issue")).toBe("critical");
     expect(normalized.migrated).toBe(true);
   });
 
-  test("upgrades an exact unversioned catalog claim without retaining drifted claims", () => {
+  test("upgrades exact unversioned and prior-version generated claims without retaining grants", () => {
     const exact = normalizeStoredConnector(
       connector({
         id: "github",
+        name: "GitHub",
+        transport: "stdio",
+        url: undefined,
+        command: "/usr/local/bin/npx",
+        args: ["-y", "@modelcontextprotocol/server-github"],
+        allowTools: ["search_repositories"],
+        permissionReviewed: true,
+        origin: { kind: "catalog", id: "github" },
+      }),
+    );
+    expect(exact.connector.origin?.version).toBeString();
+    expect(exact.connector.enabled).toBe(false);
+    expect(exact.connector.permissionReviewed).toBe(false);
+    expect(exact.connector.allowTools).toEqual([]);
+    const windows = normalizeStoredConnector(
+      connector({
+        id: "github",
+        name: "GitHub",
+        transport: "stdio",
+        url: undefined,
+        command: "C:\\Program Files\\nodejs\\npx.cmd",
+        args: ["-y", "@modelcontextprotocol/server-github"],
+        allowTools: ["search_repositories"],
+        permissionReviewed: true,
+        origin: { kind: "catalog", id: "github" },
+      }),
+    );
+    expect(windows.connector.origin).toEqual(exact.connector.origin);
+    expect(windows.connector.enabled).toBe(false);
+    expect(windows.connector.permissionReviewed).toBe(false);
+    expect(windows.connector.allowTools).toEqual([]);
+    const versioned = normalizeStoredConnector(
+      connector({
+        id: "github",
+        name: "GitHub",
         transport: "stdio",
         url: undefined,
         command: "npx",
         args: ["-y", "@modelcontextprotocol/server-github"],
         allowTools: ["search_repositories"],
-        origin: { kind: "catalog", id: "github" },
+        permissionReviewed: true,
+        origin: { kind: "catalog", id: "github", version: "2026-07-19.1" },
       }),
     );
-    expect(exact.connector.origin?.version).toBeString();
-    expect(exact.connector.enabled).toBe(true);
+    expect(versioned.connector.origin).toEqual(exact.connector.origin);
+    expect(versioned.connector.enabled).toBe(false);
     const drifted = normalizeStoredConnector({
       ...exact.connector,
       command: "other",
@@ -207,6 +259,207 @@ describe("connector grants", () => {
     expect(drifted.connector.origin).toBeUndefined();
     expect(drifted.connector.enabled).toBe(false);
     expect(drifted.connector.allowTools).toEqual([]);
+  });
+
+  test("migrates a managed GitHub connector across supported targets and data directories", () => {
+    const current = catalogConnectorConfiguration({
+      id: "github",
+      catalogId: "github",
+      env: { GITHUB_PERSONAL_ACCESS_TOKEN: "secret" },
+      allowTools: ["search_repositories"],
+      permissionReviewed: true,
+      enabled: true,
+    });
+    const currentDigest = current.origin?.artifactDigest;
+    const previous = Object.values(GITHUB_MCP_ARTIFACTS).find(
+      (artifact) => `sha256:${artifact.executableSha256}` !== currentDigest,
+    );
+    const selected = Object.values(GITHUB_MCP_ARTIFACTS).find(
+      (artifact) => `sha256:${artifact.executableSha256}` === currentDigest,
+    );
+    if (!previous || !selected || !current.origin) throw new Error("GitHub artifact unavailable");
+    const previousPaths = previous.platform === "win32" ? win32 : posix;
+    const currentPaths = selected.platform === "win32" ? win32 : posix;
+    const previousConnector: ConnectorConfig = {
+      ...current,
+      command: previousPaths.join(
+        previous.platform === "win32" ? "C:\\Users\\fixture\\Studio" : "/var/tmp/studio",
+        "runtime",
+        "connectors",
+        "github-mcp-server",
+        previous.version,
+        previous.executableName,
+      ),
+      origin: {
+        ...current.origin,
+        artifactDigest: `sha256:${previous.executableSha256}`,
+      },
+    };
+    const movedConnector: ConnectorConfig = {
+      ...current,
+      command: currentPaths.join(
+        selected.platform === "win32" ? "C:\\Users\\fixture\\Moved" : "/var/tmp/moved",
+        "runtime",
+        "connectors",
+        "github-mcp-server",
+        selected.version,
+        selected.executableName,
+      ),
+    };
+    if (!previousConnector.command) throw new Error("GitHub command unavailable");
+    for (const candidate of [previousConnector, movedConnector]) {
+      const normalized = normalizeStoredConnector(candidate);
+      expect(normalized.connector.command).toBe(current.command);
+      expect(normalized.connector.origin).toEqual(current.origin);
+      expect(normalized.connector.env).toEqual({ GITHUB_PERSONAL_ACCESS_TOKEN: "secret" });
+      expect(normalized.connector.allowTools).toEqual([]);
+      expect(normalized.connector.permissionReviewed).toBe(false);
+      expect(normalized.connector.enabled).toBe(false);
+      expect(normalized.migrated).toBe(true);
+    }
+    const customized = [
+      { ...previousConnector, name: "My GitHub" },
+      {
+        ...previousConnector,
+        args: [...(previousConnector.args ?? []), "--custom"],
+      },
+      { ...previousConnector, cwd: "/tmp/custom" },
+      { ...previousConnector, env: { ...previousConnector.env, GITHUB_HOST: "github.example" } },
+      { ...previousConnector, command: "/var/tmp/not-managed/github-mcp-server" },
+      {
+        ...previousConnector,
+        command: previousConnector.command.replace(
+          `${previousPaths.sep}runtime`,
+          `${previousPaths.sep}custom${previousPaths.sep}..${previousPaths.sep}runtime`,
+        ),
+      },
+      {
+        ...previousConnector,
+        origin: { ...previousConnector.origin, version: "unknown" },
+      },
+      {
+        ...previousConnector,
+        origin: { ...previousConnector.origin, artifactDigest: "sha256:unknown" },
+      },
+      {
+        ...previousConnector,
+        origin: { ...previousConnector.origin, inventoryDigest: "sha256:unknown" },
+      },
+    ];
+    for (const candidate of customized) {
+      const normalized = normalizeStoredConnector(candidate);
+      expect(normalized.connector.origin).toBeUndefined();
+      expect(normalized.connector.command).toBe(candidate.command);
+    }
+    const originless = { ...previousConnector, origin: undefined };
+    expect(normalizeStoredConnector(originless)).toEqual({
+      connector: originless,
+      migrated: false,
+    });
+  });
+
+  test("migrates managed GitHub connectors from shallow POSIX and Windows data directories", () => {
+    const current = catalogConnectorConfiguration({
+      id: "github",
+      catalogId: "github",
+      env: { GITHUB_PERSONAL_ACCESS_TOKEN: "secret" },
+      allowTools: ["search_repositories"],
+      permissionReviewed: true,
+      enabled: true,
+    });
+    if (!current.origin) throw new Error("GitHub artifact unavailable");
+    const candidates = [
+      {
+        artifact: GITHUB_MCP_ARTIFACTS["linux-x64"],
+        command: posix.join(
+          "/data",
+          "runtime",
+          "connectors",
+          "github-mcp-server",
+          GITHUB_MCP_VERSION,
+          "github-mcp-server",
+        ),
+      },
+      {
+        artifact: GITHUB_MCP_ARTIFACTS["win32-x64"],
+        command: win32.join(
+          "D:\\LocalStudioData",
+          "runtime",
+          "connectors",
+          "github-mcp-server",
+          GITHUB_MCP_VERSION,
+          "github-mcp-server.exe",
+        ),
+      },
+    ];
+    for (const { artifact, command } of candidates) {
+      const normalized = normalizeStoredConnector({
+        ...current,
+        command,
+        origin: {
+          ...current.origin,
+          artifactDigest: `sha256:${artifact.executableSha256}`,
+        },
+      });
+      expect(normalized.connector.command).toBe(current.command);
+      expect(normalized.connector.env).toEqual({ GITHUB_PERSONAL_ACCESS_TOKEN: "secret" });
+      expect(normalized.connector.allowTools).toEqual([]);
+      expect(normalized.connector.permissionReviewed).toBe(false);
+      expect(normalized.connector.enabled).toBe(false);
+      expect(normalized.migrated).toBe(true);
+    }
+  });
+
+  test("leaves customized legacy GitHub executions originless and unchanged", () => {
+    const base: StoredConnectorConfig = {
+      id: "github",
+      name: "GitHub",
+      transport: "stdio",
+      command: "npx",
+      args: ["-y", "@modelcontextprotocol/server-github"],
+      env: { GITHUB_PERSONAL_ACCESS_TOKEN: "secret" },
+      allowTools: ["search_repositories"],
+      permissionReviewed: true,
+      enabled: true,
+    };
+    const customized = [
+      { ...base, name: "My GitHub" },
+      { ...base, args: [...(base.args ?? []), "--custom"] },
+      { ...base, env: { ...base.env, GITHUB_HOST: "github.example" } },
+      { ...base, cwd: "/tmp/custom-github" },
+      { ...base, command: "npx.cmd" },
+      { ...base, command: "/opt/custom-wrapper/npx" },
+      { ...base, command: "/opt/custom-wrapper/npx.cmd" },
+      { ...base, command: "C:\\Custom\\npx.cmd" },
+    ];
+    for (const candidate of customized) {
+      const normalized = normalizeStoredConnector(candidate);
+      expect(normalized.connector).toEqual(candidate);
+      expect(normalized.connector.origin).toBeUndefined();
+      expect(normalized.migrated).toBe(false);
+    }
+  });
+
+  test("preserves a persisted originless GitHub wrapper", async () => {
+    const file = join(dataDir, "connectors.json");
+    const custom: StoredConnectorConfig = {
+      id: "github",
+      name: "GitHub",
+      transport: "stdio",
+      command: "/opt/custom-wrapper/npx",
+      args: ["-y", "@modelcontextprotocol/server-github"],
+      env: { GITHUB_PERSONAL_ACCESS_TOKEN: "secret" },
+      allowTools: ["search_repositories"],
+      permissionReviewed: true,
+      enabled: true,
+    };
+    try {
+      await writeFile(file, JSON.stringify({ connectors: [custom] }));
+      expect(await listConnectors()).toEqual([custom]);
+      expect(JSON.parse(await readFile(file, "utf8"))).toEqual({ connectors: [custom] });
+    } finally {
+      await rm(file, { force: true });
+    }
   });
 
   test("reconstructs catalog launch fields and preserves only masked approved credentials", async () => {

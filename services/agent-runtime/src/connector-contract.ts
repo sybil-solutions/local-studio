@@ -97,6 +97,16 @@ export const ConnectorsFileSchema = Schema.Struct({
 export const ConnectorsResponseSchema = Schema.Struct({
   connectors: Schema.Array(ConnectorViewSchema),
 });
+export const GitHubConnectorArtifactStatusSchema = Schema.Struct({
+  version: Schema.String,
+  target: Schema.String,
+  state: Schema.Union([
+    Schema.Literal("installed"),
+    Schema.Literal("not-installed"),
+    Schema.Literal("invalid"),
+    Schema.Literal("unsupported"),
+  ]),
+});
 const ConnectorGrantInputFields = {
   id: Schema.String,
   name: Schema.optional(Schema.String),
@@ -241,6 +251,7 @@ export type ConnectorAuthReference = typeof ConnectorAuthReferenceSchema.Type;
 export type StoredConnectorConfig = typeof StoredConnectorConfigSchema.Type;
 export type ConnectorConfig = typeof ConnectorConfigSchema.Type;
 export type ConnectorView = typeof ConnectorViewSchema.Type;
+export type GitHubConnectorArtifactStatus = typeof GitHubConnectorArtifactStatusSchema.Type;
 export type ConnectorRisk = typeof ConnectorRiskSchema.Type;
 export type ConnectorApprovalState = typeof ConnectorApprovalStateSchema.Type;
 export type ConnectorArguments = typeof ConnectorArgumentsSchema.Type;

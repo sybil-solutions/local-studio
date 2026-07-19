@@ -11,6 +11,8 @@ import {
   decodeConnectorApprovalProcessRequest,
   decodeConnectorApprovalProcessResponse,
   decodeConnectorProbeBridgeInput,
+  decodeGitHubArtifactInstallBridgeInput,
+  decodeGitHubArtifactStatusBridgeInput,
   decodeGoogleAccountOperationBridgeInput,
   decodeGoogleClientSaveBridgeInput,
   decodePluginListBridgeInput,
@@ -129,6 +131,12 @@ const approvalInput = {
   },
 };
 
+const githubArtifactStatusResponse = {
+  version: "1.6.0",
+  target: "darwin-arm64",
+  state: "not-installed" as const,
+};
+
 const emptyManagement: ConnectorManagementPort = {
   list: async () => ({ connectors: [] }),
   save: async () => ({ connectors: [] }),
@@ -142,6 +150,8 @@ const emptyManagement: ConnectorManagementPort = {
   }),
   listPlugins: async () => ({ plugins: [] }),
   setPluginEnabled: async () => ({ plugins: [] }),
+  githubArtifactStatus: async () => githubArtifactStatusResponse,
+  installGitHubArtifact: async () => githubArtifactStatusResponse,
   getGoogleAccount: async () => googleAccountResponse,
   saveGoogleClient: async () => googleAccountResponse,
   disconnectGoogleAccount: async () => googleAccountResponse,
@@ -222,12 +232,14 @@ describe("desktop connector private IPC", () => {
     expect(() => decodeConnectorProbeBridgeInput({ id: "github", extra: true })).toThrow();
     expect(decodePluginListBridgeInput("list")).toBe("list");
     expect(() => decodePluginSetEnabledBridgeInput({ id: "github", enabled: "yes" })).toThrow();
+    expect(decodeGitHubArtifactStatusBridgeInput("status")).toBe("status");
+    expect(() => decodeGitHubArtifactStatusBridgeInput("install")).toThrow();
+    expect(decodeGitHubArtifactInstallBridgeInput("install")).toBe("install");
+    expect(() => decodeGitHubArtifactInstallBridgeInput("status")).toThrow();
     expect(decodeGoogleClientSaveBridgeInput('{"clientId":"client"}')).toBe(
       '{"clientId":"client"}',
     );
-    expect(() =>
-      decodeGoogleAccountOperationBridgeInput({ account: "drive" }),
-    ).toThrow();
+    expect(() => decodeGoogleAccountOperationBridgeInput({ account: "drive" })).toThrow();
     expect(() =>
       decodeConnectorApprovalProcessRequest({
         channel: "local-studio:desktop-private:request",
@@ -279,6 +291,25 @@ describe("desktop connector private IPC", () => {
     const disconnected = Effect.runPromise(disconnectedClient.list());
     disconnectedTransport.disconnect();
     await expect(disconnected).rejects.toThrow("disconnected");
+  });
+
+  test("allows artifact installation to outlive the ordinary private request timeout", async () => {
+    const transport = new FakeProcessTransport();
+    const client = createConnectorApprovalProcessClient(transport, 5);
+    const installing = Effect.runPromise(client.installGitHubArtifact());
+    const request = transport.sent.at(-1);
+    if (!request) throw new Error("Private request was not sent");
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    const result = JSON.stringify({ ...githubArtifactStatusResponse, state: "installed" });
+    transport.respond({
+      channel: "local-studio:desktop-private:response",
+      id: request.id,
+      operation: "install-github-artifact",
+      ok: true,
+      result,
+    });
+    expect(await installing).toBe(result);
+    client.close();
   });
 
   test("keeps approvals pending when prepare or arm acknowledgements are lost", async () => {
@@ -427,6 +458,14 @@ describe("desktop connector private IPC", () => {
         calls.push(`plugins:${id}:${enabled}`);
         return { plugins: [] };
       },
+      githubArtifactStatus: async () => {
+        calls.push("github-artifact:status");
+        return githubArtifactStatusResponse;
+      },
+      installGitHubArtifact: async () => {
+        calls.push("github-artifact:install");
+        return { ...githubArtifactStatusResponse, state: "installed" };
+      },
       getGoogleAccount: async () => {
         calls.push("google:get");
         return googleAccountResponse;
@@ -461,6 +500,13 @@ describe("desktop connector private IPC", () => {
     expect(JSON.parse(await Effect.runPromise(client.setPluginEnabled("github", true)))).toEqual({
       plugins: [],
     });
+    expect(JSON.parse(await Effect.runPromise(client.githubArtifactStatus()))).toEqual(
+      githubArtifactStatusResponse,
+    );
+    expect(JSON.parse(await Effect.runPromise(client.installGitHubArtifact()))).toEqual({
+      ...githubArtifactStatusResponse,
+      state: "installed",
+    });
     expect(JSON.parse(await Effect.runPromise(client.getGoogleAccount()))).toEqual(
       googleAccountResponse,
     );
@@ -468,9 +514,9 @@ describe("desktop connector private IPC", () => {
     const savedGoogle = await Effect.runPromise(client.saveGoogleClient(googleClient));
     expect(savedGoogle).not.toContain("secret");
     expect(JSON.parse(savedGoogle)).toEqual(googleAccountResponse);
-    expect(
-      JSON.parse(await Effect.runPromise(client.disconnectGoogleAccount("gmail"))),
-    ).toEqual(googleAccountResponse);
+    expect(JSON.parse(await Effect.runPromise(client.disconnectGoogleAccount("gmail")))).toEqual(
+      googleAccountResponse,
+    );
     expect(
       JSON.parse(await Effect.runPromise(client.beginGoogleAuthorization("google-calendar"))),
     ).toEqual({ authorizationUrl: "https://accounts.test/authorize" });
@@ -481,6 +527,8 @@ describe("desktop connector private IPC", () => {
       "probe:github",
       "plugins:list",
       "plugins:github:true",
+      "github-artifact:status",
+      "github-artifact:install",
       "google:get",
       `google:save:${googleClient}`,
       "google:disconnect:gmail",
@@ -498,6 +546,15 @@ describe("desktop connector private IPC", () => {
     await expect(
       Effect.runPromise(linkedClient(invalidHost).probeConnector("github")),
     ).rejects.toThrow("Connector discovery failed");
+
+    const invalidStatusHost = new FakeProcessHost();
+    registerConnectorApprovalProcessIpc(invalidStatusHost, createConnectorApprovalBroker(), {
+      ...emptyManagement,
+      githubArtifactStatus: async () => ({ ...githubArtifactStatusResponse, secret: true }),
+    });
+    await expect(
+      Effect.runPromise(linkedClient(invalidStatusHost).githubArtifactStatus()),
+    ).rejects.toThrow("GitHub connector artifact status failed");
 
     const lostHost = new FakeProcessHost();
     let probes = 0;

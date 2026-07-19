@@ -96,6 +96,11 @@ export interface PluginManagementBridge {
   setEnabled(id: string, enabled: boolean): Promise<string>;
 }
 
+export interface GitHubArtifactManagementBridge {
+  status(): Promise<string>;
+  install(): Promise<string>;
+}
+
 export type GoogleAccountId = "gmail" | "google-calendar";
 
 export interface GoogleAccountManagementBridge {
@@ -134,5 +139,6 @@ export interface DesktopBridge {
   connectorApprovals: ConnectorApprovalsBridge;
   connectors: ConnectorManagementBridge;
   plugins: PluginManagementBridge;
+  githubArtifact: GitHubArtifactManagementBridge;
   googleAccount: GoogleAccountManagementBridge;
 }

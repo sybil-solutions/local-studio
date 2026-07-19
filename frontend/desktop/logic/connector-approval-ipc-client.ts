@@ -39,6 +39,8 @@ export type ConnectorApprovalProcessClient = {
   probeConnector(id: string): Effect.Effect<string, ConnectorApprovalIpcError>;
   listPlugins(): Effect.Effect<string, ConnectorApprovalIpcError>;
   setPluginEnabled(id: string, enabled: boolean): Effect.Effect<string, ConnectorApprovalIpcError>;
+  githubArtifactStatus(): Effect.Effect<string, ConnectorApprovalIpcError>;
+  installGitHubArtifact(): Effect.Effect<string, ConnectorApprovalIpcError>;
   getGoogleAccount(): Effect.Effect<string, ConnectorApprovalIpcError>;
   saveGoogleClient(payload: string): Effect.Effect<string, ConnectorApprovalIpcError>;
   disconnectGoogleAccount(
@@ -54,6 +56,7 @@ export type ConnectorApprovalProcessClient = {
 };
 
 const REQUEST_TIMEOUT_MS = 5_000;
+const INSTALL_GITHUB_ARTIFACT_TIMEOUT_MS = 75_000;
 
 export function childProcessConnectorApprovalTransport(
   child: ChildProcess,
@@ -131,6 +134,7 @@ export function createConnectorApprovalProcessClient(
   const request = (
     message: ConnectorApprovalProcessRequest,
     operation: ConnectorApprovalProcessResponse["operation"],
+    requestTimeoutMs = timeoutMs,
   ): Effect.Effect<unknown, ConnectorApprovalIpcError> =>
     Effect.callback<unknown, ConnectorApprovalIpcError>((resume) => {
       if (closed || !transport.connected()) {
@@ -161,7 +165,7 @@ export function createConnectorApprovalProcessClient(
       });
     }).pipe(
       Effect.timeoutOrElse({
-        duration: timeoutMs,
+        duration: requestTimeoutMs,
         orElse: () => Effect.fail(new ConnectorApprovalIpcError("Private request timed out")),
       }),
     );
@@ -182,8 +186,9 @@ export function createConnectorApprovalProcessClient(
   const serializedRequest = (
     message: ConnectorApprovalProcessRequest,
     operation: ConnectorApprovalProcessResponse["operation"],
+    requestTimeoutMs = timeoutMs,
   ): Effect.Effect<string, ConnectorApprovalIpcError> =>
-    request(message, operation).pipe(
+    request(message, operation, requestTimeoutMs).pipe(
       Effect.flatMap((result) =>
         typeof result === "string"
           ? Effect.succeed(result)
@@ -296,6 +301,25 @@ export function createConnectorApprovalProcessClient(
           enabled,
         },
         "set-plugin-enabled",
+      ),
+    githubArtifactStatus: () =>
+      serializedRequest(
+        {
+          channel: "local-studio:desktop-private:request",
+          id: messageId(),
+          operation: "github-artifact-status",
+        },
+        "github-artifact-status",
+      ),
+    installGitHubArtifact: () =>
+      serializedRequest(
+        {
+          channel: "local-studio:desktop-private:request",
+          id: messageId(),
+          operation: "install-github-artifact",
+        },
+        "install-github-artifact",
+        INSTALL_GITHUB_ARTIFACT_TIMEOUT_MS,
       ),
     getGoogleAccount: () =>
       serializedRequest(

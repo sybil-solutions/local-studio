@@ -13,6 +13,8 @@ const ResponseOperationSchema = Schema.Union([
   Schema.Literal("probe-connector"),
   Schema.Literal("list-plugins"),
   Schema.Literal("set-plugin-enabled"),
+  Schema.Literal("github-artifact-status"),
+  Schema.Literal("install-github-artifact"),
   Schema.Literal("get-google-account"),
   Schema.Literal("save-google-client"),
   Schema.Literal("disconnect-google-account"),
@@ -36,6 +38,8 @@ export const PluginSetEnabledBridgeInputSchema = Schema.Struct({
   id: Schema.String,
   enabled: Schema.Boolean,
 });
+export const GitHubArtifactStatusBridgeInputSchema = Schema.Literal("status");
+export const GitHubArtifactInstallBridgeInputSchema = Schema.Literal("install");
 export const GoogleAccountGetBridgeInputSchema = Schema.Literal("get");
 export const GoogleClientSaveBridgeInputSchema = Schema.String;
 export const GoogleAccountOperationBridgeInputSchema = Schema.Struct({
@@ -111,6 +115,16 @@ export const ConnectorApprovalProcessRequestSchema = Schema.Union([
   Schema.Struct({
     channel: RequestChannelSchema,
     id: Schema.String,
+    operation: Schema.Literal("github-artifact-status"),
+  }),
+  Schema.Struct({
+    channel: RequestChannelSchema,
+    id: Schema.String,
+    operation: Schema.Literal("install-github-artifact"),
+  }),
+  Schema.Struct({
+    channel: RequestChannelSchema,
+    id: Schema.String,
     operation: Schema.Literal("get-google-account"),
   }),
   Schema.Struct({
@@ -154,6 +168,8 @@ export const ConnectorApprovalProcessResponseSchema = Schema.Union([
       Schema.Literal("probe-connector"),
       Schema.Literal("list-plugins"),
       Schema.Literal("set-plugin-enabled"),
+      Schema.Literal("github-artifact-status"),
+      Schema.Literal("install-github-artifact"),
       Schema.Literal("get-google-account"),
       Schema.Literal("save-google-client"),
       Schema.Literal("disconnect-google-account"),
@@ -245,6 +261,16 @@ export const decodePluginListBridgeInput = Schema.decodeUnknownSync(
 
 export const decodePluginSetEnabledBridgeInput = Schema.decodeUnknownSync(
   PluginSetEnabledBridgeInputSchema,
+  exact,
+);
+
+export const decodeGitHubArtifactStatusBridgeInput = Schema.decodeUnknownSync(
+  GitHubArtifactStatusBridgeInputSchema,
+  exact,
+);
+
+export const decodeGitHubArtifactInstallBridgeInput = Schema.decodeUnknownSync(
+  GitHubArtifactInstallBridgeInputSchema,
   exact,
 );
 

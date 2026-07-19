@@ -72,6 +72,10 @@ const bridge: DesktopBridge = {
     list: () => ipcRenderer.invoke("desktop:plugins:list", "list"),
     setEnabled: (id, enabled) => ipcRenderer.invoke("desktop:plugins:set-enabled", { id, enabled }),
   },
+  githubArtifact: {
+    status: () => ipcRenderer.invoke("desktop:github-artifact:status", "status"),
+    install: () => ipcRenderer.invoke("desktop:github-artifact:install", "install"),
+  },
   googleAccount: {
     get: () => ipcRenderer.invoke("desktop:google-account:get", "get"),
     saveClient: (payload) => ipcRenderer.invoke("desktop:google-account:save-client", payload),

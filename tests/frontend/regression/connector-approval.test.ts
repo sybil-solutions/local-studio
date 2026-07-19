@@ -311,7 +311,7 @@ describe("connector approval authorization", () => {
     }
   });
 
-  test("uses only first-party catalog policy and binds it to the executable", () => {
+  test("uses only first-party catalog policy and binds it to the executable", async () => {
     const github = catalogConnectorConfiguration({
       id: "github",
       catalogId: "github",
@@ -321,15 +321,10 @@ describe("connector approval authorization", () => {
       enabled: true,
     });
     expect(catalogConnectorMatchesOrigin(github)).toBe(true);
-    const runtime = catalogConnectorRuntime(github);
-    expect(runtime).not.toBeNull();
-    expect(runtime?.env.GITHUB_PERSONAL_ACCESS_TOKEN).toBe("token");
-    expect(runtime?.env.NODE_OPTIONS).toBeUndefined();
-    expect(runtime?.env.npm_config_prefix).toBeUndefined();
-    expect(runtime?.cwd).not.toBe(process.cwd());
-    expect(runtime?.env.HOME).toBe(runtime?.cwd);
+    expect(await catalogConnectorRuntime(github)).toBeNull();
+    expect(github.env).toEqual({ GITHUB_PERSONAL_ACCESS_TOKEN: "token" });
     expect(connectorToolRisk(github, "search_repositories")).toBe("read");
-    expect(connectorToolRisk(github, "create_issue")).toBe("mutating");
+    expect(connectorToolRisk(github, "create_issue")).toBe("critical");
     expect(connectorToolRisk(github, "new_tool")).toBe("critical");
     expect(catalogConnectorMatchesOrigin({ ...github, command: "other" })).toBe(false);
     expect(connectorToolRisk({ ...github, command: "other" }, "search_repositories")).toBe(
@@ -421,7 +416,13 @@ describe("connector call route", () => {
   let pluginRoot: string;
   const calls: string[] = [];
   const requests: FakeCall[] = [];
-  let pluginTools = [{ name: "observe", annotations: { readOnlyHint: true } }];
+  let pluginTools = [
+    {
+      name: "observe",
+      inputSchema: { type: "object" as const },
+      annotations: { readOnlyHint: true },
+    },
+  ];
   const previousDataDir = process.env.LOCAL_STUDIO_DATA_DIR;
   const originalFetch = globalThis.fetch;
 
@@ -581,11 +582,8 @@ describe("connector call route", () => {
         ).status,
       ).toBe(403);
       expect(
-        (
-          await getGoogleAccountHttp(
-            new NextRequest("http://127.0.0.1/api/agent/accounts/google"),
-          )
-        ).status,
+        (await getGoogleAccountHttp(new NextRequest("http://127.0.0.1/api/agent/accounts/google")))
+          .status,
       ).toBe(403);
       expect(
         (
@@ -844,8 +842,16 @@ describe("connector call route", () => {
     expect((await activation()).status).toBe(200);
 
     pluginTools = [
-      { name: "observe", annotations: { readOnlyHint: true } },
-      { name: "new-observe", annotations: { readOnlyHint: true } },
+      {
+        name: "observe",
+        inputSchema: { type: "object" },
+        annotations: { readOnlyHint: true },
+      },
+      {
+        name: "new-observe",
+        inputSchema: { type: "object" },
+        annotations: { readOnlyHint: true },
+      },
     ];
     const inventoryBlocked = await callConnector(
       new Request("http://localhost/api/agent/connectors/call", {
@@ -867,7 +873,13 @@ describe("connector call route", () => {
         enabled: false,
       },
     );
-    pluginTools = [{ name: "observe", annotations: { readOnlyHint: true } }];
+    pluginTools = [
+      {
+        name: "observe",
+        inputSchema: { type: "object" },
+        annotations: { readOnlyHint: true },
+      },
+    ];
     expect((await activation()).status).toBe(409);
     await review();
     expect((await activation()).status).toBe(200);

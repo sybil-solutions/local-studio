@@ -1,9 +1,16 @@
 import { Effect, Schema } from "effect";
 import {
   ConnectorTestResponseSchema,
+  GitHubConnectorArtifactStatusSchema,
   type ConnectorConfig,
   type ConnectorTestResponse,
+  type GitHubConnectorArtifactStatus,
 } from "./connector-contract";
+import {
+  getGitHubConnectorArtifactStatus,
+  GitHubConnectorArtifactError,
+  installGitHubConnectorArtifact,
+} from "./connector-artifacts";
 import { connectorInventoryDigest } from "./connector-inventory";
 import { connectorToolPermissions } from "./connector-policy";
 import { closePooledConnection, probeConnector } from "./connector-pool";
@@ -32,10 +39,7 @@ import {
   beginGoogleLoopbackAuthorization,
   cancelGoogleLoopbackAuthorization,
 } from "./google-oauth-loopback";
-import {
-  GOOGLE_WORKSPACE_BINDINGS,
-  GOOGLE_WORKSPACE_PLUGIN_IDS,
-} from "./google-workspace-binding";
+import { GOOGLE_WORKSPACE_BINDINGS, GOOGLE_WORKSPACE_PLUGIN_IDS } from "./google-workspace-binding";
 import {
   PluginRuntimeResponseSchema,
   type PluginActivationInput,
@@ -61,29 +65,50 @@ export class SettingsManagementError extends Error {
 
 const exact = { onExcessProperty: "error" } as const;
 const decodeConnectorTest = Schema.decodeUnknownSync(ConnectorTestResponseSchema, exact);
+const decodeGitHubArtifactStatus = Schema.decodeUnknownSync(
+  GitHubConnectorArtifactStatusSchema,
+  exact,
+);
 const decodePlugins = Schema.decodeUnknownSync(PluginRuntimeResponseSchema, exact);
 const decodeGoogleAccount = Schema.decodeUnknownSync(GoogleAccountResponseSchema, exact);
 const decodeGoogleAuthorization = Schema.decodeUnknownSync(
   GoogleAuthorizationResponseSchema,
   exact,
 );
-const decodeGoogleCancellation = Schema.decodeUnknownSync(
-  GoogleCancellationResponseSchema,
-  exact,
-);
+const decodeGoogleCancellation = Schema.decodeUnknownSync(GoogleCancellationResponseSchema, exact);
 
 function settingsError(error: unknown, fallback: string): SettingsManagementError {
   if (error instanceof SettingsManagementError) return error;
+  if (error instanceof GitHubConnectorArtifactError) {
+    return new SettingsManagementError(error.status, error.message);
+  }
   if (error instanceof GoogleAccountError) {
     return new SettingsManagementError(error.status, error.message);
   }
   if (error instanceof PluginRuntimeError) {
-    return new SettingsManagementError(
-      error.status,
-      error.status < 500 ? error.message : fallback,
-    );
+    return new SettingsManagementError(error.status, error.status < 500 ? error.message : fallback);
   }
   return new SettingsManagementError(500, fallback);
+}
+
+export function getManagedGitHubConnectorArtifactStatus(): Effect.Effect<
+  GitHubConnectorArtifactStatus,
+  SettingsManagementError
+> {
+  return getGitHubConnectorArtifactStatus().pipe(
+    Effect.map(decodeGitHubArtifactStatus),
+    Effect.mapError((error) => settingsError(error, "GitHub MCP status failed")),
+  );
+}
+
+export function installManagedGitHubConnectorArtifact(): Effect.Effect<
+  GitHubConnectorArtifactStatus,
+  SettingsManagementError
+> {
+  return installGitHubConnectorArtifact().pipe(
+    Effect.map(decodeGitHubArtifactStatus),
+    Effect.mapError((error) => settingsError(error, "GitHub MCP installation failed")),
+  );
 }
 
 function closeGoogleConnections(): void {
@@ -154,9 +179,7 @@ export function saveManagedConnector(
     },
     catch: (error) => settingsError(error, "Connector could not be saved"),
   }).pipe(
-    Effect.ensuring(
-      Effect.promise(() => closePooledConnection(input.id).catch(() => undefined)),
-    ),
+    Effect.ensuring(Effect.promise(() => closePooledConnection(input.id).catch(() => undefined))),
   );
 }
 

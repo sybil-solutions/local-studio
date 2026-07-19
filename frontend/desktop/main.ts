@@ -52,6 +52,8 @@ import {
   decodeGoogleAccountGetBridgeInput,
   decodeGoogleAccountOperationBridgeInput,
   decodeGoogleClientSaveBridgeInput,
+  decodeGitHubArtifactInstallBridgeInput,
+  decodeGitHubArtifactStatusBridgeInput,
   decodePluginListBridgeInput,
   decodePluginSetEnabledBridgeInput,
 } from "./logic/connector-approval-ipc-contract";
@@ -410,6 +412,16 @@ function registerIpcHandlers(): void {
   ipcMain.handle("desktop:plugins:set-enabled", async (event, input: unknown) => {
     const { id, enabled } = decodePluginSetEnabledBridgeInput(input);
     return runConnectorRequest(event, false, (client) => client.setPluginEnabled(id, enabled));
+  });
+
+  ipcMain.handle("desktop:github-artifact:status", async (event, input: unknown) => {
+    decodeGitHubArtifactStatusBridgeInput(input);
+    return runConnectorRequest(event, false, (client) => client.githubArtifactStatus());
+  });
+
+  ipcMain.handle("desktop:github-artifact:install", async (event, input: unknown) => {
+    decodeGitHubArtifactInstallBridgeInput(input);
+    return runConnectorRequest(event, false, (client) => client.installGitHubArtifact());
   });
 
   ipcMain.handle("desktop:google-account:get", async (event, input: unknown) => {

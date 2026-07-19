@@ -93,11 +93,7 @@ export function normalizeStoredConnector(stored: StoredConnectorConfig): Normali
     enabled,
   };
   const migratedCatalog =
-    normalized.origin?.kind === "catalog" &&
-    normalized.origin.version === undefined &&
-    normalized.origin.binding === undefined
-      ? migrateLegacyCatalogConnector(normalized)
-      : undefined;
+    normalized.origin?.kind === "catalog" ? migrateLegacyCatalogConnector(normalized) : undefined;
   if (migratedCatalog && migratedCatalog.origin?.id === normalized.origin?.id) {
     return { connector: migratedCatalog, migrated: true };
   }

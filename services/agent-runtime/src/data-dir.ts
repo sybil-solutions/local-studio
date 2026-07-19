@@ -26,6 +26,11 @@ let cachedDataDir: string | null = null;
 let cachedDataDirEnv: string | undefined;
 let migrated = false;
 
+export function dataDirPath(): string {
+  const envDir = process.env.LOCAL_STUDIO_DATA_DIR?.trim();
+  return envDir && envDir.length > 0 ? envDir : path.join(homedir(), ".local-studio");
+}
+
 function legacyDataDirCandidates(): string[] {
   return [
     path.join(process.cwd(), "data"),
@@ -47,7 +52,7 @@ export function resolveDataDir(): string {
   const envDir = process.env.LOCAL_STUDIO_DATA_DIR?.trim();
   if (cachedDataDir && cachedDataDirEnv === envDir) return cachedDataDir;
 
-  const dir = envDir && envDir.length > 0 ? envDir : path.join(homedir(), ".local-studio");
+  const dir = dataDirPath();
 
   mkdirSync(dir, { recursive: true });
   try {

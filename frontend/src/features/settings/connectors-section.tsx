@@ -5,9 +5,11 @@ import { Schema } from "effect";
 import {
   ConnectorTestResponseSchema,
   ConnectorsResponseSchema,
+  GitHubConnectorArtifactStatusSchema,
   type ConnectorRisk,
   type ConnectorToolPermission,
   type ConnectorView,
+  type GitHubConnectorArtifactStatus,
 } from "@local-studio/agent-runtime/connector-contract";
 import { ApiErrorResponseSchema } from "@local-studio/agent-runtime/api-contract";
 import { Plug, Plus, Trash2 } from "@/ui/icon-registry";
@@ -114,6 +116,26 @@ async function probeConfiguredConnector(id: string) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id }),
+      });
+}
+
+async function getGitHubArtifactStatus() {
+  const decode = Schema.decodeUnknownSync(GitHubConnectorArtifactStatusSchema, exact);
+  const bridge = await embeddedDesktopBridge();
+  return bridge
+    ? decodeDesktopBridgeJson(await bridge.githubArtifact.status(), decode)
+    : requestJson("/api/agent/connectors/github", decode);
+}
+
+async function installGitHubArtifact() {
+  const decode = Schema.decodeUnknownSync(GitHubConnectorArtifactStatusSchema, exact);
+  const bridge = await embeddedDesktopBridge();
+  return bridge
+    ? decodeDesktopBridgeJson(await bridge.githubArtifact.install(), decode)
+    : requestJson("/api/agent/connectors/github", decode, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "install" }),
       });
 }
 
@@ -282,8 +304,8 @@ function ConnectorRow({
   }, [connector.allowTools, connector.id, connector.permissionReviewed]);
 
   useMountSubscription(() => {
-    if (!connector.permissionReviewed) void loadPermissions();
-  }, [connector.permissionReviewed, loadPermissions]);
+    if (!connector.permissionReviewed && connector.origin?.id !== "github") void loadPermissions();
+  }, [connector.origin?.id, connector.permissionReviewed, loadPermissions]);
 
   const updateConnector = async (
     enabled: boolean,
@@ -396,24 +418,108 @@ function ConnectorRow({
   );
 }
 
+type CatalogPresentation = {
+  ready: boolean;
+  installOnly: boolean;
+  status: string | null;
+  button: string | null;
+  confirmation: string;
+  disabled: boolean;
+};
+
+function catalogPresentation(
+  entry: CatalogEntry,
+  installed: boolean,
+  artifact: GitHubConnectorArtifactStatus | null,
+  busy: boolean,
+): CatalogPresentation {
+  if (entry.id !== "github") {
+    const added = installed && entry.id !== "computer";
+    return {
+      ready: true,
+      installOnly: false,
+      status: null,
+      button: added ? "Added" : null,
+      confirmation: "Add for review",
+      disabled: busy || added,
+    };
+  }
+  const ready = artifact?.state === "installed";
+  const unavailable = artifact?.state === "unsupported";
+  const installOnly = installed && !ready;
+  return {
+    ready,
+    installOnly,
+    status: artifact
+      ? `GitHub MCP ${artifact.version} · ${artifact.state.replace("-", " ")}`
+      : "GitHub MCP status unavailable",
+    button: unavailable
+      ? "Unavailable"
+      : installOnly
+        ? artifact?.state === "invalid"
+          ? "Repair MCP"
+          : "Install MCP"
+        : installed
+          ? "Added"
+          : null,
+    confirmation: ready ? "Add for review" : "Install MCP & add for review",
+    disabled: busy || unavailable || artifact === null || (installed && ready),
+  };
+}
+
+function CatalogButtonContent({ busy, label }: { busy: boolean; label: string | null }) {
+  if (busy) return <Spinner size="xs" />;
+  if (label) return label;
+  return (
+    <>
+      <Plus className="h-3 w-3" />
+      Add
+    </>
+  );
+}
+
 function CatalogCard({
   entry,
   installed,
+  githubArtifact,
   onChanged,
+  onGitHubArtifactChanged,
 }: {
   entry: CatalogEntry;
   installed: boolean;
+  githubArtifact: GitHubConnectorArtifactStatus | null;
   onChanged: (connectors: readonly ConnectorView[]) => void;
+  onGitHubArtifactChanged: (status: GitHubConnectorArtifactStatus) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [fields, setFields] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const presentation = catalogPresentation(entry, installed, githubArtifact, busy);
+
+  const installArtifact = async () => {
+    const status = await installGitHubArtifact();
+    onGitHubArtifactChanged(status);
+    if (status.state !== "installed") throw new Error("GitHub MCP installation failed");
+  };
+
+  const installOnly = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await installArtifact();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "GitHub MCP installation failed");
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const add = async () => {
     setBusy(true);
     setError(null);
     try {
+      if (!presentation.ready) await installArtifact();
       const host = fields.SSH_HOST?.trim();
       const id = entry.id === "computer" && host ? `computer-${host.split("@").pop()}` : entry.id;
       const { connectors } = await saveManagedConnector({
@@ -434,27 +540,29 @@ function CatalogCard({
     }
   };
 
+  const toggle = () => {
+    if (presentation.installOnly) {
+      void installOnly();
+      return;
+    }
+    setOpen((value) => !value);
+  };
+
   return (
     <div className="border border-(--border) px-3 py-2.5">
       <div className="flex items-center justify-between gap-2">
         <div>
           <div className="text-[length:var(--fs-md)]">{entry.name}</div>
           <div className="text-[11px] text-(--dim)">{entry.description}</div>
+          {presentation.status ? (
+            <div className="mt-1 text-[11px] text-(--dim)">{presentation.status}</div>
+          ) : null}
         </div>
-        <SettingsButton
-          onClick={() => setOpen((value) => !value)}
-          disabled={installed && entry.id !== "computer"}
-        >
-          {installed && entry.id !== "computer" ? (
-            "Added"
-          ) : (
-            <>
-              <Plus className="h-3 w-3" />
-              Add
-            </>
-          )}
+        <SettingsButton onClick={toggle} disabled={presentation.disabled}>
+          <CatalogButtonContent busy={busy} label={presentation.button} />
         </SettingsButton>
       </div>
+      {error ? <div className="mt-2 text-[11px] text-(--err)">{error}</div> : null}
       {open ? (
         <div className="mt-2 space-y-2">
           {entry.envFields.map((field) => (
@@ -470,9 +578,8 @@ function CatalogCard({
               className="font-mono"
             />
           ))}
-          {error ? <div className="text-[11px] text-(--err)">{error}</div> : null}
           <SettingsButton onClick={() => void add()} disabled={busy}>
-            {busy ? <Spinner size="xs" /> : "Install for review"}
+            {busy ? <Spinner size="xs" /> : presentation.confirmation}
           </SettingsButton>
         </div>
       ) : null}
@@ -482,13 +589,17 @@ function CatalogCard({
 
 export function ConnectorsSection() {
   const [connectors, setConnectors] = useState<readonly ConnectorView[]>([]);
+  const [githubArtifact, setGitHubArtifact] = useState<GitHubConnectorArtifactStatus | null>(null);
   const [loaded, setLoaded] = useState(false);
 
   const refresh = useCallback(() => {
-    void listManagedConnectors()
+    const connectorsRequest = listManagedConnectors()
       .then(({ connectors: list }) => setConnectors(list))
-      .catch(() => setConnectors([]))
-      .finally(() => setLoaded(true));
+      .catch(() => setConnectors([]));
+    const artifactRequest = getGitHubArtifactStatus()
+      .then(setGitHubArtifact)
+      .catch(() => setGitHubArtifact(null));
+    void Promise.allSettled([connectorsRequest, artifactRequest]).then(() => setLoaded(true));
   }, []);
 
   useMountSubscription(refresh, [refresh]);
@@ -529,7 +640,9 @@ export function ConnectorsSection() {
               key={entry.id}
               entry={entry}
               installed={installedIds.has(entry.id)}
+              githubArtifact={githubArtifact}
               onChanged={setConnectors}
+              onGitHubArtifactChanged={setGitHubArtifact}
             />
           ))}
         </div>

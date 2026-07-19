@@ -70,9 +70,12 @@ export function beginConnectorSecurityTransition(
   };
 }
 
-const toTarget = (connector: ConnectorConfig, signal?: AbortSignal) => {
+const toTarget = async (connector: ConnectorConfig, signal?: AbortSignal) => {
   if (connector.transport === "stdio") {
-    const catalogRuntime = catalogConnectorRuntime(connector);
+    const catalogRuntime = await catalogConnectorRuntime(connector);
+    if (connector.origin?.kind === "catalog" && !catalogRuntime) {
+      throw new ConnectorToolDeniedError(`Connector "${connector.id}" runtime is unavailable`);
+    }
     const environment = catalogRuntime?.env ?? connector.env ?? {};
     return {
       transport: "stdio" as const,
@@ -151,7 +154,7 @@ async function pooledConnection(connector: ConnectorConfig): Promise<McpConnecti
   const existing = pool.get(connector.id);
   if (existing?.fingerprint === fingerprint) return existing.connection;
   if (existing) await existing.connection.close();
-  const connection = connectMcp(toTarget(connector));
+  const connection = connectMcp(await toTarget(connector));
   pool.set(connector.id, { connection, fingerprint });
   return connection;
 }
@@ -289,7 +292,7 @@ export async function probeConnector(
 ): Promise<{ ok: boolean; tools: McpToolInfo[]; error?: string }> {
   let connection: McpConnection | null = null;
   try {
-    connection = connectMcp(toTarget(connector, signal));
+    connection = connectMcp(await toTarget(connector, signal));
     const tools = await connection.listTools();
     return { ok: true, tools };
   } catch {
