@@ -519,7 +519,7 @@ describe("connector grants", () => {
           cwd: "/tmp",
         }),
       ),
-    ).toThrow("Invalid connector payload");
+    ).toThrow("Connector configuration is invalid");
     const hostile = decodeConnectorUpsertPayload(
       JSON.stringify({
         id: "github",

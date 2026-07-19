@@ -1,6 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { Effect } from "../../../frontend/node_modules/effect/dist/index.js";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { Effect, Schema } from "../../../frontend/node_modules/effect/dist/index.js";
 import {
   createConnectorApprovalProcessClient,
   type ConnectorApprovalProcessTransport,
@@ -33,7 +36,15 @@ import {
   type ConnectorManagementPort,
 } from "../../../frontend/src/instrumentation-connector-approvals";
 import { createConnectorApprovalBroker } from "../../../services/agent-runtime/src/connector-approval";
-import { decodeConnectorUpsertPayload } from "../../../services/agent-runtime/src/connectors-service";
+import {
+  CONNECTOR_MASK_TOKEN,
+  ConnectorsResponseSchema,
+} from "../../../services/agent-runtime/src/connector-contract";
+import {
+  decodeConnectorUpsertPayload,
+  inspectConnectors,
+  upsertConnectors,
+} from "../../../services/agent-runtime/src/connectors-service";
 import { getManagedGoogleAccount } from "../../../frontend/src/features/integrations/google-account-model";
 
 class FakeProcessHost implements ConnectorApprovalProcessHost {
@@ -431,7 +442,88 @@ describe("desktop connector private IPC", () => {
           env: { PATH: "/tmp" },
         }),
       ),
-    ).toThrow("Invalid connector payload");
+    ).toThrow("Connector configuration is invalid");
+  });
+
+  test("uses the shared masking mapper for real private connector management", async () => {
+    const previousDataDir = process.env.LOCAL_STUDIO_DATA_DIR;
+    const dataDir = await mkdtemp(join(tmpdir(), "local-studio-private-connector-secrets-"));
+    const id = "private-connector-secrets";
+    const envSentinel = "private-env-sentinel";
+    const headerSentinel = "private-header-sentinel";
+    process.env.LOCAL_STUDIO_DATA_DIR = dataDir;
+    try {
+      await upsertConnectors([
+        {
+          id,
+          name: id,
+          transport: "http",
+          url: "https://private-connector.example.test/mcp",
+          env: { CREDENTIAL: envSentinel },
+          headers: { Cookie: headerSentinel },
+          allowTools: ["read"],
+          permissionReviewed: true,
+          enabled: true,
+        },
+      ]);
+      const host = new FakeProcessHost();
+      const client = linkedClient(host);
+      registerConnectorApprovalProcessIpc(host, createConnectorApprovalBroker());
+      const decode = Schema.decodeUnknownSync(ConnectorsResponseSchema, {
+        onExcessProperty: "error",
+      });
+      const listed = decode(await Effect.runPromise(client.listConnectors()));
+      const view = listed.connectors.find((connector) => connector.id === id);
+      expect(JSON.stringify(listed)).not.toContain(envSentinel);
+      expect(JSON.stringify(listed)).not.toContain(headerSentinel);
+      expect(view?.env).toEqual({ CREDENTIAL: CONNECTOR_MASK_TOKEN });
+      expect(view?.headers).toEqual({ Cookie: CONNECTOR_MASK_TOKEN });
+      expect(view?.secret_keys).toEqual({ env: ["CREDENTIAL"], headers: ["Cookie"] });
+
+      const saved = decode(
+        await Effect.runPromise(
+          client.saveConnector(
+            JSON.stringify({
+              id,
+              name: id,
+              transport: "http",
+              url: "https://private-connector.example.test/mcp",
+              env: { CREDENTIAL: CONNECTOR_MASK_TOKEN },
+              headers: { Cookie: CONNECTOR_MASK_TOKEN },
+              allowTools: ["read"],
+              permissionReviewed: true,
+              enabled: false,
+            }),
+          ),
+        ),
+      );
+      expect(JSON.stringify(saved)).not.toContain(envSentinel);
+      expect(JSON.stringify(saved)).not.toContain(headerSentinel);
+      expect((await inspectConnectors()).find((connector) => connector.id === id)?.env).toEqual({
+        CREDENTIAL: envSentinel,
+      });
+      await expect(
+        Effect.runPromise(
+          client.saveConnector(
+            JSON.stringify({
+              id,
+              name: id,
+              transport: "http",
+              url: "https://private-connector.example.test/mcp",
+              env: { UNKNOWN: CONNECTOR_MASK_TOKEN },
+              allowTools: ["read"],
+              permissionReviewed: true,
+              enabled: false,
+            }),
+          ),
+        ),
+      ).rejects.toThrow("Connector configuration is invalid");
+      client.close();
+    } finally {
+      if (previousDataDir === undefined) delete process.env.LOCAL_STUDIO_DATA_DIR;
+      else process.env.LOCAL_STUDIO_DATA_DIR = previousDataDir;
+      await rm(dataDir, { recursive: true, force: true });
+    }
   });
 
   test("dispatches every exact settings operation and serializes sanitized responses", async () => {

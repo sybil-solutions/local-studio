@@ -27,7 +27,11 @@ export async function GET(request: NextRequest) {
   if (desktopDenied) return desktopDenied;
   const denied = requireApiAccess(request);
   if (denied) return denied;
-  return connectorsResponse(await listConnectors());
+  try {
+    return connectorsResponse(await listConnectors());
+  } catch (error) {
+    return settingsManagementFailure(error, "Connector discovery failed");
+  }
 }
 
 export async function POST(request: NextRequest) {

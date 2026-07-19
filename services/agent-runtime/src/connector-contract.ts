@@ -1,6 +1,39 @@
 import { Schema } from "effect";
 
-const StringRecordSchema = Schema.Record(Schema.String, Schema.String);
+export const CONNECTOR_MASK_TOKEN = "••••••••";
+
+const MaskableStringRecordSchema = Schema.Record(Schema.String, Schema.String);
+const ConnectorSecretSchema = Schema.String.check(
+  Schema.makeFilter((value) => value !== CONNECTOR_MASK_TOKEN, {
+    expected: "a raw connector secret",
+  }),
+);
+const RawSecretRecordSchema = Schema.Record(Schema.String, ConnectorSecretSchema);
+
+function connectorUrlAuthority(value: string): string | null {
+  return /^[A-Za-z][A-Za-z\d+.-]*:\/\/([^/?#]*)/.exec(value)?.[1] ?? null;
+}
+
+function isConnectorHttpUrl(value: string): boolean {
+  const authority = connectorUrlAuthority(value);
+  if (!authority || authority.includes("@")) return false;
+  try {
+    const url = new URL(value);
+    return (
+      (url.protocol === "http:" || url.protocol === "https:") &&
+      url.username.length === 0 &&
+      url.password.length === 0
+    );
+  } catch {
+    return false;
+  }
+}
+
+export const ConnectorHttpUrlSchema = Schema.String.check(
+  Schema.makeFilter(isConnectorHttpUrl, {
+    expected: "an HTTP(S) connector URL without credentials",
+  }),
+);
 
 export const ConnectorRiskSchema = Schema.Union([
   Schema.Literal("read"),
@@ -68,10 +101,10 @@ const StoredConnectorFields = {
   transport: Schema.Union([Schema.Literal("stdio"), Schema.Literal("http")]),
   command: Schema.optional(Schema.String),
   args: Schema.optional(Schema.Array(Schema.String)),
-  env: Schema.optional(StringRecordSchema),
+  env: Schema.optional(RawSecretRecordSchema),
   cwd: Schema.optional(Schema.String),
-  url: Schema.optional(Schema.String),
-  headers: Schema.optional(StringRecordSchema),
+  url: Schema.optional(ConnectorHttpUrlSchema),
+  headers: Schema.optional(RawSecretRecordSchema),
   auth: Schema.optional(ConnectorAuthReferenceSchema),
   allowTools: Schema.optional(Schema.Array(Schema.String)),
   permissionReviewed: Schema.optional(Schema.Boolean),
@@ -89,7 +122,12 @@ export const StoredConnectorConfigSchema = Schema.Struct(StoredConnectorFields);
 export const ConnectorConfigSchema = Schema.Struct(ConnectorFields);
 export const ConnectorViewSchema = Schema.Struct({
   ...ConnectorFields,
-  secret_keys: Schema.Array(Schema.String),
+  env: Schema.optional(MaskableStringRecordSchema),
+  headers: Schema.optional(MaskableStringRecordSchema),
+  secret_keys: Schema.Struct({
+    env: Schema.Array(Schema.String),
+    headers: Schema.Array(Schema.String),
+  }),
 });
 export const ConnectorsFileSchema = Schema.Struct({
   connectors: Schema.optional(Schema.Array(StoredConnectorConfigSchema)),
@@ -110,7 +148,7 @@ export const GitHubConnectorArtifactStatusSchema = Schema.Struct({
 const ConnectorGrantInputFields = {
   id: Schema.String,
   name: Schema.optional(Schema.String),
-  env: Schema.optional(StringRecordSchema),
+  env: Schema.optional(MaskableStringRecordSchema),
   allowTools: Schema.optional(Schema.Array(Schema.String)),
   permissionReviewed: Schema.optional(Schema.Boolean),
   enabled: Schema.optional(Schema.Boolean),
@@ -131,8 +169,8 @@ const CustomConnectorUpsertInputSchema = Schema.Struct({
   command: Schema.optional(Schema.String),
   args: Schema.optional(Schema.Array(Schema.String)),
   cwd: Schema.optional(Schema.String),
-  url: Schema.optional(Schema.String),
-  headers: Schema.optional(StringRecordSchema),
+  url: Schema.optional(ConnectorHttpUrlSchema),
+  headers: Schema.optional(MaskableStringRecordSchema),
   reviewedArtifactDigest: Schema.optional(Schema.String),
   reviewedInventoryDigest: Schema.optional(Schema.String),
 });

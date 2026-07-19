@@ -341,7 +341,10 @@ function responseEffect(
       }
     });
   }
-  return Effect.tryPromise(() => managementRequest(request, management)).pipe(
+  return Effect.tryPromise({
+    try: () => managementRequest(request, management),
+    catch: (error) => error,
+  }).pipe(
     Effect.flatMap((result) =>
       Effect.try({
         try: () => response(request, serializedResult(request, result)),

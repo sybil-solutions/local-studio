@@ -15,6 +15,7 @@ import { connectorInventoryDigest } from "./connector-inventory";
 import { connectorToolPermissions } from "./connector-policy";
 import { closePooledConnection, probeConnector } from "./connector-pool";
 import {
+  ConnectorConfigurationError,
   inspectConnectors,
   upsertConnectorInput,
   type ConnectorUpsertInput,
@@ -79,6 +80,9 @@ const decodeGoogleCancellation = Schema.decodeUnknownSync(GoogleCancellationResp
 
 function settingsError(error: unknown, fallback: string): SettingsManagementError {
   if (error instanceof SettingsManagementError) return error;
+  if (error instanceof ConnectorConfigurationError) {
+    return new SettingsManagementError(error.status, error.message);
+  }
   if (error instanceof GitHubConnectorArtifactError) {
     return new SettingsManagementError(error.status, error.message);
   }
