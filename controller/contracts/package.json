@@ -5,5 +5,8 @@
   "type": "module",
   "exports": {
     "./*": "./*.ts"
+  },
+  "dependencies": {
+    "effect": "4.0.0-beta.90"
   }
 }
