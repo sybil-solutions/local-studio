@@ -1,3 +1,4 @@
+import "./bootstrap";
 import { Cause, Effect, Exit, Fiber, Schema } from "effect";
 import { AppContextService, getModelsDirectoryState, type AppContext } from "./app-context";
 import { createControllerRuntime, type ControllerRuntime } from "./core/effect-runtime";

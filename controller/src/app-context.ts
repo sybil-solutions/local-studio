@@ -5,6 +5,7 @@ import { Context, Effect, Layer, Schema } from "effect";
 import { createConfig, type Config } from "./config/env";
 import { createLogger, resolveLogLevel, type Logger } from "./core/logger";
 import { primaryLogPathFor } from "./core/log-files";
+import { ensurePrivateDirectory } from "./core/private-files";
 import { DownloadManager } from "./modules/engines/downloads/download-manager";
 import { DownloadStore } from "./modules/engines/downloads/download-store";
 import { EngineCoordinator } from "./modules/engines/engine-coordinator";
@@ -108,13 +109,7 @@ const ensureModelsDirectory = (modelsDirectory: string): Effect.Effect<ModelsDir
 
 export const makeAppContext = Effect.gen(function* () {
   const config = yield* initializeSync("config.load", createConfig);
-  yield* initialize(
-    "data-directory.create",
-    Effect.tryPromise({
-      try: () => mkdir(config.data_dir, { recursive: true }),
-      catch: (source) => source,
-    }),
-  );
+  yield* initializeSync("data-directory.create", () => ensurePrivateDirectory(config.data_dir));
   const dbPath = resolve(config.db_path);
   const eventManager = new EventManager();
   const logger = yield* Effect.acquireRelease(

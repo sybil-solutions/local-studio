@@ -1,12 +1,5 @@
-import {
-  chmodSync,
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  renameSync,
-  writeFileSync,
-} from "node:fs";
 import { resolve } from "node:path";
+import { readPrivateTextFile, writePrivateTextFile } from "../core/private-files";
 
 export interface ProviderConfig {
   id: string;
@@ -28,11 +21,9 @@ export const getPersistedConfigPath = (dataDirectory: string): string => {
 
 export const loadPersistedConfig = (dataDirectory: string): PersistedConfig => {
   const path = getPersistedConfigPath(dataDirectory);
-  if (!existsSync(path)) {
-    return {};
-  }
+  const content = readPrivateTextFile(path);
+  if (content === null) return {};
   try {
-    const content = readFileSync(path, "utf-8");
     const parsed = JSON.parse(content) as PersistedConfig;
     return parsed && typeof parsed === "object" ? parsed : {};
   } catch {
@@ -65,18 +56,6 @@ export const savePersistedConfig = (
       writable[key] = value;
     }
   });
-  mkdirSync(dataDirectory, { recursive: true, mode: 0o700 });
-  // Write-then-rename so a crash mid-write can't truncate the file — a truncated
-  // read is swallowed by loadPersistedConfig, silently resetting models_dir /
-  // providers / selected_runtime_target_ids.
-  const temporaryPath = `${path}.tmp-${process.pid}`;
-  writeFileSync(temporaryPath, JSON.stringify(next, null, 2));
-  renameSync(temporaryPath, path);
-  try {
-    chmodSync(dataDirectory, 0o700);
-    chmodSync(path, 0o600);
-  } catch {
-    // Ignore permission hardening failures on unsupported filesystems.
-  }
+  writePrivateTextFile(path, JSON.stringify(next, null, 2));
   return next;
 };

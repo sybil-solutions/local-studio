@@ -1,14 +1,21 @@
-import { createWriteStream, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import type { WriteStream } from "node:fs";
 import { createHash } from "node:crypto";
-import { createInterface, type Interface } from "node:readline";
+import type { Readable } from "node:stream";
 import { Cause, Effect, Exit, Fiber, Queue } from "effect";
 import type { Config } from "../../../config/env";
 import {
   cleanupLogFiles,
+  createPrivateLogStream,
   getLogCleanupDefaultsFromEnvironment,
   primaryLogPathFor,
 } from "../../../core/log-files";
+import { redactLogLine } from "../../../core/log-redaction";
+import {
+  createRedactedRecordMultiplexer,
+  redactedRecordPayload,
+  type RedactedRecord,
+} from "../../../core/redacted-record-multiplexer";
 import type { Logger } from "../../../core/logger";
 import { realProcessRunner, type ProcessRunner, type SpawnedProcess } from "../../../core/command";
 import type { LaunchResult, ProcessInfo, Recipe } from "../../models/types";
@@ -46,13 +53,35 @@ interface LaunchResources {
   readonly ownedPids: Set<number>;
   readonly containerName: string | null;
   readonly queue: Queue.Queue<string | null>;
-  readonly readers: Interface[];
+  readonly outputStreams: OutputStreamBinding[];
   readonly logStream: WriteStream | null;
   readonly onChildError: (error: Error) => void;
   readonly onChildExit: () => void;
   readonly onLogError: ((error: Error) => void) | null;
+  readonly captureError: (error: unknown) => string;
+  readonly finalizeOutput: () => void;
   logFiber: Fiber.Fiber<void, never> | null;
   released: boolean;
+}
+
+interface OutputStreamBinding {
+  readonly stream: Readable;
+  readonly onData: (chunk: unknown) => void;
+  readonly onEnd: () => void;
+  readonly onError: (error: Error) => void;
+}
+
+type OutputLabel = "stdout" | "stderr" | "error";
+
+interface LaunchOutput {
+  readonly queue: Queue.Queue<string | null>;
+  readonly outputStreams: OutputStreamBinding[];
+  readonly logStream: WriteStream | null;
+  readonly recentOutput: string[];
+  readonly captureError: (error: unknown) => string;
+  readonly finalize: () => void;
+  readonly markExited: () => void;
+  readonly captureStream: (label: OutputLabel, stream: Readable) => void;
 }
 
 const ownershipEnvironmentKey = "LOCAL_STUDIO_ENGINE_OWNER";
@@ -67,6 +96,87 @@ const recipeForLaunch = (recipe: Recipe, port: number, options: LaunchModelOptio
     extra_args: { ...updated.extra_args, visible_devices: selector },
   };
 };
+
+const makeLaunchOutput = (logFile: string, logger: Logger): Effect.Effect<LaunchOutput> =>
+  Effect.gen(function* () {
+    const logStream = ((): WriteStream | null => {
+      try {
+        return createPrivateLogStream(logFile);
+      } catch (error) {
+        logger.warn("Failed to open log file", { error: String(error) });
+        return null;
+      }
+    })();
+    const queue = yield* Queue.sliding<string | null>(256);
+    const outputStreams: OutputStreamBinding[] = [];
+    const recentOutput: string[] = [];
+    const output = createRedactedRecordMultiplexer<OutputLabel>();
+    let exited = false;
+    let openStreams = 0;
+    let finalized = false;
+    const captureRecords = (records: readonly RedactedRecord<OutputLabel>[]): void => {
+      for (const record of records) {
+        recentOutput.push(record.value);
+        if (recentOutput.length > 60) recentOutput.shift();
+        if (logStream) {
+          try {
+            logStream.write(`${record.value}${record.ending}`);
+          } catch (error) {
+            logger.warn("Inference log write failed", { error: String(error) });
+          }
+        }
+        Queue.offerUnsafe(queue, record.value);
+      }
+    };
+    const captureError = (error: unknown): string => {
+      const records = output.writeRecord("error", String(error));
+      captureRecords(records);
+      return redactedRecordPayload(records);
+    };
+    const finalize = (): void => {
+      if (finalized) return;
+      finalized = true;
+      captureRecords(output.flush());
+      Queue.offerUnsafe(queue, null);
+    };
+    const finishExitedOutput = (): void => {
+      if (exited && openStreams === 0) finalize();
+    };
+    const captureStream = (label: OutputLabel, stream: Readable): void => {
+      openStreams += 1;
+      let finished = false;
+      const finish = (): void => {
+        if (finished) return;
+        finished = true;
+        openStreams -= 1;
+        finishExitedOutput();
+      };
+      const onData = (chunk: unknown): void => captureRecords(output.write(label, chunk));
+      const onEnd = (): void => finish();
+      const onError = (error: Error): void => {
+        captureError(error);
+        finish();
+      };
+      stream.on("data", onData);
+      stream.once("end", onEnd);
+      stream.once("error", onError);
+      outputStreams.push({ stream, onData, onEnd, onError });
+    };
+    const markExited = (): void => {
+      exited = true;
+      finishExitedOutput();
+    };
+    return {
+      queue,
+      outputStreams,
+      logStream,
+      recentOutput,
+      captureError,
+      finalize,
+      markExited,
+      captureStream,
+    };
+  });
 
 const dockerContainerNameForCommand = (command: string[]): string | null => {
   const dockerIndex = command.findIndex(
@@ -229,7 +339,13 @@ const buildProcessManager = (
     resources.released = true;
     return Effect.gen(function* () {
       yield* Effect.sync(() => {
-        for (const reader of resources.readers) reader.close();
+        resources.finalizeOutput();
+        for (const binding of resources.outputStreams) {
+          binding.stream.removeListener("data", binding.onData);
+          binding.stream.removeListener("end", binding.onEnd);
+          binding.stream.removeListener("error", binding.onError);
+          binding.stream.destroy();
+        }
         if (resources.logStream && resources.onLogError) {
           resources.logStream.removeListener("error", resources.onLogError);
         }
@@ -249,7 +365,7 @@ const buildProcessManager = (
     Effect.forEach(
       [...activeResources].filter((resources) => resources.pid === pid),
       (resources) => {
-        Queue.offerUnsafe(resources.queue, null);
+        resources.finalizeOutput();
         return resources.logFiber
           ? Fiber.interrupt(resources.logFiber).pipe(Effect.asVoid)
           : releaseResources(resources);
@@ -456,7 +572,7 @@ const buildProcessManager = (
       try {
         command = buildBackendCommand(updatedRecipe, config, options.gpuUuids !== undefined);
       } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
+        const message = redactLogLine(error instanceof Error ? error.message : String(error));
         return {
           success: false,
           pid: null,
@@ -508,24 +624,12 @@ const buildProcessManager = (
         spawnedPid = child.pid ?? null;
         if (spawnedPid) ownedProcessGroups.set(spawnedPid, spawnedPid);
 
-        let logStream: WriteStream | null = null;
-        try {
-          logStream = createWriteStream(logFile, { flags: "a" });
-        } catch (logError) {
-          logger.warn("Failed to open log file", {
-            error: String(logError),
-          });
-        }
-
-        const recentOutput: string[] = [];
-        const logQueue = yield* Queue.sliding<string | null>(256);
-        const readers: Interface[] = [];
+        const launchOutput = yield* makeLaunchOutput(logFile, logger);
+        const { logStream, queue: logQueue, recentOutput } = launchOutput;
         const onChildError = (error: Error): void => {
-          spawnError = String(error);
+          spawnError = launchOutput.captureError(error);
         };
-        const onChildExit = (): void => {
-          Queue.offerUnsafe(logQueue, null);
-        };
+        const onChildExit = (): void => launchOutput.markExited();
         const onLogError = logStream
           ? (error: Error): void =>
               logger.warn("Inference log stream failed", { error: String(error) })
@@ -537,11 +641,13 @@ const buildProcessManager = (
           ownedPids: new Set(spawnedPid ? [spawnedPid] : []),
           containerName: dockerContainerNameForCommand(command),
           queue: logQueue,
-          readers,
+          outputStreams: launchOutput.outputStreams,
           logStream,
           onChildError,
           onChildExit,
           onLogError,
+          captureError: launchOutput.captureError,
+          finalizeOutput: launchOutput.finalize,
           logFiber: null,
           released: false,
         };
@@ -560,30 +666,8 @@ const buildProcessManager = (
           Effect.ensuring(releaseResources(resources)),
           Effect.forkDetach({ startImmediately: true }),
         );
-        const captureLine = (line: string): void => {
-          recentOutput.push(line);
-          if (recentOutput.length > 60) recentOutput.shift();
-          if (logStream) {
-            try {
-              logStream.write(line + "\n");
-            } catch (error) {
-              logger.warn("Inference log write failed", { error: String(error) });
-            }
-          }
-          Queue.offerUnsafe(logQueue, line);
-        };
-
-        if (child.stdout) {
-          const reader = createInterface({ input: child.stdout, crlfDelay: Infinity });
-          reader.on("line", captureLine);
-          readers.push(reader);
-        }
-
-        if (child.stderr) {
-          const reader = createInterface({ input: child.stderr, crlfDelay: Infinity });
-          reader.on("line", captureLine);
-          readers.push(reader);
-        }
+        if (child.stdout) launchOutput.captureStream("stdout", child.stdout);
+        if (child.stderr) launchOutput.captureStream("stderr", child.stderr);
 
         child.on("error", onChildError);
         child.on("exit", onChildExit);
@@ -602,7 +686,7 @@ const buildProcessManager = (
           };
         }
         if (child.exitCode !== null) {
-          Queue.offerUnsafe(logQueue, null);
+          launchOutput.finalize();
           if (resources.logFiber) yield* Fiber.join(resources.logFiber);
           const tail = recentOutput
             .slice(-20)
@@ -629,12 +713,16 @@ const buildProcessManager = (
           log_file: logFile,
         };
       } catch (error) {
+        const message = spawnedResources
+          ? spawnedResources.captureError(error)
+          : redactLogLine(String(error));
+        spawnedResources?.finalizeOutput();
         if (spawnedPid) yield* killProcessEffect(spawnedPid, true, "owned");
-        logger.error("Launch failed", { error: String(error) });
+        logger.error("Launch failed", { error: message });
         return {
           success: false,
           pid: null,
-          message: String(error),
+          message,
           log_file: logFile,
         };
       }
@@ -643,7 +731,7 @@ const buildProcessManager = (
         if (!Exit.isFailure(exit) || !Cause.hasInterrupts(exit.cause)) return Effect.void;
         if (spawnedPid) return killProcessEffect(spawnedPid, true, "owned").pipe(Effect.asVoid);
         if (!spawnedResources) return Effect.void;
-        Queue.offerUnsafe(spawnedResources.queue, null);
+        spawnedResources.finalizeOutput();
         return spawnedResources.logFiber
           ? Fiber.interrupt(spawnedResources.logFiber).pipe(Effect.asVoid)
           : releaseResources(spawnedResources);
