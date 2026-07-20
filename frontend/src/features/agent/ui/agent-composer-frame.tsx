@@ -16,6 +16,8 @@ import type {
 } from "@/features/agent/composer-context";
 import type { QueuedMessage } from "@/features/agent/messages";
 import type { BrowserBackend } from "@/features/agent/tools/types";
+import type { ComposerBanner } from "@/features/agent/composer/composer-visual-state";
+import { Spinner } from "@/ui";
 import type { GitSummary } from "@/features/agent/projects/types";
 import { AgentAttachmentTray, type AgentComposerAttachment } from "./agent-attachment-tray";
 import { AgentComposerActions } from "./agent-composer-actions";
@@ -29,9 +31,11 @@ import { AgentComposerStatusBar } from "./agent-composer-status-bar";
 import { AgentComposerTextArea } from "./agent-composer-textarea";
 import { AgentQueuePanel } from "./agent-queue-panel";
 import { cx } from "@/ui/utils";
+import { Folder } from "@/ui/icon-registry";
 
 export type AgentComposerFrameProps = {
   attachments: AgentComposerAttachment[];
+  banner: ComposerBanner | null;
   browserToolEnabled: boolean;
   browserBackend: BrowserBackend;
   canvasEnabled: boolean;
@@ -70,6 +74,8 @@ export type AgentComposerFrameProps = {
   onToggleBrowserBackend: () => void;
   onToggleBrowserTool: () => void;
   onToggleCanvas: () => void;
+  placeholder: string;
+  projectRow?: { label: string; onPick: () => void } | null;
   promptTemplates: ComposerPromptTemplateRef[];
   queueExpanded: boolean;
   queueItems: QueuedMessage[];
@@ -84,6 +90,7 @@ export type AgentComposerFrameProps = {
 
 export function AgentComposerFrame({
   attachments,
+  banner,
   browserToolEnabled,
   browserBackend,
   canvasEnabled,
@@ -122,6 +129,8 @@ export function AgentComposerFrame({
   onToggleBrowserBackend,
   onToggleBrowserTool,
   onToggleCanvas,
+  placeholder,
+  projectRow,
   promptTemplates,
   queueExpanded,
   queueItems,
@@ -154,12 +163,31 @@ export function AgentComposerFrame({
         onRemove={onRemoveQueued}
         onSteer={onSteerQueued}
       />
+      {banner ? (
+        // Codex compacting banner: flat, chat-size text at ~35% white, no pill.
+        <div className="mx-auto flex w-full max-w-[var(--composer-w)] items-center gap-2 pb-3 pl-1 text-[length:var(--codex-chat-font-size)] text-(--fg)/35">
+          <Spinner size="xs" />
+          {banner.label}
+        </div>
+      ) : null}
+      {projectRow ? (
+        // Codex fresh-thread "Choose project" row: a quiet tone step between
+        // page and composer, chat-size text, folder glyph.
+        <button
+          type="button"
+          onClick={projectRow.onPick}
+          className="mx-auto -mb-4 flex w-full max-w-[var(--composer-w)] items-center gap-2.5 rounded-2xl bg-(--fg)/[0.03] px-4 pb-7 pt-3 text-left text-[length:var(--codex-chat-font-size)] text-(--fg)/85 transition-colors hover:bg-(--fg)/[0.05]"
+        >
+          <Folder className="h-4 w-4 shrink-0 text-(--fg)/60" strokeWidth={1.75} />
+          <span className="truncate">{projectRow.label}</span>
+        </button>
+      ) : null}
       <div
         onDragOver={onComposerDragOver}
         onDragLeave={onComposerDragLeave}
         onDrop={onComposerDrop}
         className={cx(
-          "mx-auto w-full max-w-[var(--composer-w)] overflow-visible rounded-[var(--composer-radius)] border border-(--composer-border) bg-(--composer) shadow-[var(--composer-shadow)] transition-colors",
+          "relative mx-auto w-full max-w-[var(--composer-w)] overflow-visible rounded-[var(--composer-radius)] border border-(--composer-border) bg-(--composer) shadow-[var(--composer-shadow)] transition-colors",
           composerDragActive && "outline outline-1 outline-(--link)/50",
         )}
       >
@@ -173,12 +201,18 @@ export function AgentComposerFrame({
           promptTemplates={promptTemplates}
           onRemove={onRemoveLoadedContext}
         />
-        <AgentMentionPicker
-          mention={mention}
-          rows={mentionRows}
-          activeIndex={mentionIndex}
-          onSelect={onSelectMention}
-        />
+        {mention ? (
+          // Codex: the mention/command menu floats as its own elevated panel
+          // above the composer card, not inside it.
+          <div className="absolute inset-x-0 bottom-full z-20 mb-2 overflow-hidden rounded-[20px] bg-(--composer) py-1.5 shadow-[0_8px_32px_rgba(0,0,0,0.35)]">
+            <AgentMentionPicker
+              mention={mention}
+              rows={mentionRows}
+              activeIndex={mentionIndex}
+              onSelect={onSelectMention}
+            />
+          </div>
+        ) : null}
         <AgentAttachmentTray
           attachments={attachments}
           modelSupportsVision={modelSupportsVision}
@@ -190,7 +224,7 @@ export function AgentComposerFrame({
           onPaste={onComposerPaste}
           onChange={onComposerChange}
           onKeyDown={onComposerKeyDown}
-          placeholder={floating ? "Ask anything" : undefined}
+          placeholder={placeholder}
         />
         <AgentComposerActions
           fileInputRef={fileInputRef}
@@ -208,18 +242,21 @@ export function AgentComposerFrame({
           onToggleCanvas={onToggleCanvas}
           onAbortTurn={onAbortTurn}
           onTranscript={onTranscript}
+          onOpenStatus={onOpenStatus}
           modelSelector={modelSelector}
         />
       </div>
-      <AgentComposerStatusBar
-        cwd={cwd}
-        gitBranch={gitBranch}
-        gitSummary={gitSummary}
-        onInitGit={onInitGit}
-        currentContextTokens={currentContextTokens}
-        contextWindow={contextWindow}
-        onOpenStatus={onOpenStatus}
-      />
+      {projectRow ? null : (
+        <AgentComposerStatusBar
+          cwd={cwd}
+          gitBranch={gitBranch}
+          gitSummary={gitSummary}
+          onInitGit={onInitGit}
+          currentContextTokens={currentContextTokens}
+          contextWindow={contextWindow}
+          onOpenStatus={onOpenStatus}
+        />
+      )}
     </form>
   );
 }

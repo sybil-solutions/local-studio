@@ -147,10 +147,27 @@ export function usePinnedSessionsEffect({
   }, [expanded, hiddenPrefIdsKey, pinnedPrefIdsKey, projects, setPinnedSessions]);
 }
 
+const SESSIONS_RELOAD_DEBOUNCE_MS = 300;
+
 export function useProjectSessionsReloadEffect(reload: () => Promise<void>): void {
   useMountSubscription(() => {
     void reload();
-    window.addEventListener(SESSIONS_CHANGED_EVENT, reload);
-    return () => window.removeEventListener(SESSIONS_CHANGED_EVENT, reload);
+    // Session lifecycle changes fire SESSIONS_CHANGED_EVENT in bursts (every
+    // mounted project row listens, and workspace effects re-dispatch 1.5s
+    // later). A trailing debounce collapses each burst into one disk scan per
+    // project instead of one per event per row.
+    let timer: number | null = null;
+    const scheduleReload = () => {
+      if (timer !== null) window.clearTimeout(timer);
+      timer = window.setTimeout(() => {
+        timer = null;
+        void reload();
+      }, SESSIONS_RELOAD_DEBOUNCE_MS);
+    };
+    window.addEventListener(SESSIONS_CHANGED_EVENT, scheduleReload);
+    return () => {
+      if (timer !== null) window.clearTimeout(timer);
+      window.removeEventListener(SESSIONS_CHANGED_EVENT, scheduleReload);
+    };
   }, [reload]);
 }

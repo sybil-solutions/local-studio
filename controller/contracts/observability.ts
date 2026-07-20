@@ -13,6 +13,11 @@ export interface GPU {
   temp_c: number;
   power_draw?: number;
   power_limit?: number;
+  memory_shared?: boolean;
+  memory_usage_available?: boolean;
+  utilization_available?: boolean;
+  temperature_available?: boolean;
+  power_available?: boolean;
 }
 
 export interface Metrics {

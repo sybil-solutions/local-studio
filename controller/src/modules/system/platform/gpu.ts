@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { freemem, totalmem } from "node:os";
+import { arch, cpus, freemem, platform, totalmem } from "node:os";
 import { Effect } from "effect";
 import type { GpuInfo, RuntimeGpuMonitoringTool } from "../../models/types";
 import { runCommandAsyncEffect } from "../../../core/command";
@@ -190,6 +190,30 @@ const collectGpuInfo = (): Effect.Effect<GpuInfo[]> =>
     const intel = yield* getGpuInfoFromIntelSysfs();
     if (intel.length > 0) {
       return intel;
+    }
+
+    if (platform() === "darwin" && arch() === "arm64") {
+      const cpuName = cpus()[0]?.model?.trim() || "Apple Silicon";
+      const memoryTotalMb = Math.round(totalmem() / 1024 / 1024);
+      return [
+        {
+          id: "apple-metal-0",
+          index: 0,
+          name: `${cpuName} GPU`,
+          memory_total_mb: memoryTotalMb,
+          memory_used_mb: 0,
+          memory_free_mb: memoryTotalMb,
+          utilization_pct: 0,
+          temp_c: 0,
+          power_draw: 0,
+          power_limit: 0,
+          memory_shared: true,
+          memory_usage_available: false,
+          utilization_available: false,
+          temperature_available: false,
+          power_available: false,
+        },
+      ];
     }
 
     return [];

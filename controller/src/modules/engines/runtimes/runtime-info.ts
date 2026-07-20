@@ -1,4 +1,5 @@
 import { existsSync } from "node:fs";
+import { arch, platform as operatingSystem } from "node:os";
 import { resolve } from "node:path";
 import { Effect, Fiber, Semaphore } from "effect";
 import type {
@@ -109,17 +110,26 @@ const computeSystemRuntimeInfo = (
     const types = Array.from(
       new Set(gpus.map((gpu) => gpu.name).filter((name) => name && name !== "Unknown")),
     );
-    const kind = detectPlatformKind({ forcedSmiTool, torch, hasNvidiaSmi, hasRocmSmi });
+    const kind = detectPlatformKind({
+      forcedSmiTool,
+      torch,
+      hasNvidiaSmi,
+      hasRocmSmi,
+      isAppleSilicon: operatingSystem() === "darwin" && arch() === "arm64",
+    });
     const rocm = kind === "rocm" ? yield* getRocmInfo(rocmSmiTool) : null;
     const platform: RuntimePlatformInfo = {
       kind,
-      vendor: kind === "cuda" ? "nvidia" : kind === "rocm" ? "amd" : null,
+      vendor:
+        kind === "cuda" ? "nvidia" : kind === "rocm" ? "amd" : kind === "metal" ? "apple" : null,
       rocm,
       torch,
     };
     const [gpuMonitoring, cuda] = yield* Effect.all(
       [
-        kind === "cuda" && nvidiaSnapshot
+        kind === "metal"
+          ? Effect.succeed({ available: false, tool: "apple-metal" as const })
+          : kind === "cuda" && nvidiaSnapshot
           ? Effect.succeed({ available: nvidiaSnapshot.available, tool: "nvidia-smi" as const })
           : probeGpuMonitoring(kind, rocmSmiTool),
         kind === "cuda"
@@ -157,6 +167,7 @@ export const detectPlatformKind = (args: {
   torch: RuntimeTorchBuildInfo;
   hasNvidiaSmi: boolean;
   hasRocmSmi: boolean;
+  isAppleSilicon?: boolean;
 }): RuntimePlatformKind => {
   const forced = args.forcedSmiTool?.trim();
   if (forced === "nvidia-smi") return "cuda";
@@ -165,6 +176,7 @@ export const detectPlatformKind = (args: {
   if (args.torch.torch_cuda) return "cuda";
   if (args.hasNvidiaSmi) return "cuda";
   if (args.hasRocmSmi) return "rocm";
+  if (args.isAppleSilicon) return "metal";
   return "unknown";
 };
 

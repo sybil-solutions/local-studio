@@ -8,13 +8,10 @@ export {
   selectedContextPrompt,
   selectedContextInstructions,
 } from "@shared/agent/composer-refs";
-export type {
-  ComposerSkillRef,
-  ComposerPromptTemplateRef,
-} from "@shared/agent/composer-refs";
+export type { ComposerSkillRef, ComposerPromptTemplateRef } from "@shared/agent/composer-refs";
 
 export type ComposerMention = {
-  kind: "file" | "skill" | "promptTemplate";
+  kind: "file" | "skill" | "command";
   query: string;
   start: number;
   end: number;
@@ -23,14 +20,14 @@ export type ComposerMention = {
 export function detectComposerMention(value: string, caret = value.length): ComposerMention | null {
   const safeCaret = Math.max(0, Math.min(caret, value.length));
   const beforeCaret = value.slice(0, safeCaret);
-  // `/` only triggers a prompt-template mention when it appears at the very
-  // start of the composer (mirrors slash-command semantics from the Pi CLI /
-  // Claude Code editors). This avoids false positives on prose like "and/or".
+  // `/` only triggers a command mention when it appears at the very start of
+  // the composer (mirrors slash-command semantics from the Pi CLI / Claude
+  // Code editors). This avoids false positives on prose like "and/or".
   const slashMatch = /^\/([^\n/]{0,80})$/.exec(beforeCaret);
   if (slashMatch) {
     const token = `/${slashMatch[1] ?? ""}`;
     return {
-      kind: "promptTemplate",
+      kind: "command",
       query: (slashMatch[1] ?? "").trimStart(),
       start: safeCaret - token.length,
       end: safeCaret,

@@ -10,6 +10,13 @@ import type {
 import { encodePathSegments, type ApiCore, type RequestOptions } from "./core";
 
 const MB = 1024 * 1024;
+const GPU_BOOLEAN_KEYS = [
+  "memory_shared",
+  "memory_usage_available",
+  "utilization_available",
+  "temperature_available",
+  "power_available",
+] as const;
 
 function finiteNumber(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
@@ -18,6 +25,18 @@ function finiteNumber(value: unknown): number | null {
 function legacyMb(value: unknown): number | null {
   const bytes = finiteNumber(value);
   return bytes !== null && bytes > 0 ? bytes / MB : null;
+}
+
+function assignGpuMetadata(gpu: GPU, raw: Record<string, unknown>): void {
+  if (typeof raw["id"] === "string") gpu.id = raw["id"];
+  const powerDraw = finiteNumber(raw["power_draw"]);
+  if (powerDraw !== null) gpu.power_draw = powerDraw;
+  const powerLimit = finiteNumber(raw["power_limit"]);
+  if (powerLimit !== null) gpu.power_limit = powerLimit;
+  for (const key of GPU_BOOLEAN_KEYS) {
+    const value = raw[key];
+    if (typeof value === "boolean") gpu[key] = value;
+  }
 }
 
 export function normalizeGpuAliases(list: unknown): GPU[] {
@@ -36,11 +55,7 @@ export function normalizeGpuAliases(list: unknown): GPU[] {
         finiteNumber(raw["utilization_pct"]) ?? finiteNumber(raw["utilization"]) ?? 0,
       temp_c: finiteNumber(raw["temp_c"]) ?? finiteNumber(raw["temperature"]) ?? 0,
     };
-    if (typeof raw["id"] === "string") gpu.id = raw["id"];
-    const powerDraw = finiteNumber(raw["power_draw"]);
-    if (powerDraw !== null) gpu.power_draw = powerDraw;
-    const powerLimit = finiteNumber(raw["power_limit"]);
-    if (powerLimit !== null) gpu.power_limit = powerLimit;
+    assignGpuMetadata(gpu, raw);
     gpus.push(gpu);
   }
   return gpus;
@@ -51,7 +66,7 @@ export function createSystemApi(core: ApiCore) {
     launch: (recipeId: string): Promise<{ success: boolean; pid?: number; message: string }> =>
       core.request(`/launch/${encodePathSegments(recipeId)}`, {
         method: "POST",
-        timeout: 30_000,
+        timeout: 360_000,
         retries: 0,
       }),
 

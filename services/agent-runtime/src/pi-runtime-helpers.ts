@@ -168,6 +168,13 @@ export function resolveConnectorsExtensionPath(): string | null {
   );
 }
 
+export function resolveSubagentsExtensionPath(): string | null {
+  return resolveBundledPiExtensionPath(
+    "subagents.ts",
+    process.env.LOCAL_STUDIO_SUBAGENTS_EXTENSION_PATH,
+  );
+}
+
 export function resolveTimeoutExtensionPath(): string | null {
   return resolveBundledPiExtensionPath(
     "local-studio-timeouts.ts",
@@ -294,6 +301,7 @@ function runtimeExtensionPaths(options: RuntimeStartOptions): string[] {
     browserExtensionPath,
     options.canvasEnabled === true ? resolveCanvasExtensionPath() : null,
     hasEnabledConnectorsSync() ? resolveConnectorsExtensionPath() : null,
+    resolveSubagentsExtensionPath(),
   ]);
 }
 

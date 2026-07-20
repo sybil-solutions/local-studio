@@ -1,3 +1,4 @@
+import { hc } from "hono/client";
 import { clearStoredBackendUrl, getApiKey, getStoredBackendUrl } from "./connection";
 import { delay } from "../async";
 import { isRecord } from "../guards";
@@ -29,6 +30,30 @@ export interface ChatRunStreamEvent {
   data: Record<string, unknown>;
 }
 
+type RpcRequest = (
+  input?: { param?: Record<string, string>; query?: Record<string, string> },
+  options?: { init?: RequestInit },
+) => Promise<Response>;
+
+interface RpcRoute {
+  $get: RpcRequest;
+  $post: RpcRequest;
+  $put: RpcRequest;
+  $patch: RpcRequest;
+  $delete: RpcRequest;
+}
+
+interface ControllerRpc {
+  recipes: RpcRoute & { ":recipeId": RpcRoute };
+  studio: {
+    rigs: RpcRoute & {
+      ":rigId": RpcRoute & {
+        nodes: RpcRoute & { ":nodeId": RpcRoute };
+      };
+    };
+  };
+}
+
 export type ApiCore = ReturnType<typeof createApiCore>;
 
 export function createApiCore(params: {
@@ -44,14 +69,6 @@ export function createApiCore(params: {
     event: string,
     data: Record<string, unknown>,
   ): ChatRunStreamEvent => {
-    // Backward-compatibility: some older proxy/controller stacks emit SSE frames with
-    // `event: message` (or no event line) and wrap the real event inside nested payloads.
-    //
-    // Supported legacy shapes:
-    // - { event: "run_start", data: { ... } }
-    // - { type: "run_start", data: { ... } }
-    // - { event: "run_start", payload: { ... } }
-    // - { type: "run_start", payload: { ... } }
     const nestedEvent =
       typeof data["event"] === "string"
         ? (data["event"] as string)
@@ -139,9 +156,6 @@ export function createApiCore(params: {
     const storedBackendUrl = backendUrlOverride?.trim() || getStoredBackendUrl();
     if (useProxy && storedBackendUrl) {
       headers["X-Backend-Url"] = storedBackendUrl;
-      // An explicitly selected controller is sticky: never let the proxy
-      // silently fall back to the default and clear the selection just because
-      // the chosen controller is momentarily unreachable.
       headers["X-Backend-Strict"] = "1";
     }
 
@@ -162,7 +176,11 @@ export function createApiCore(params: {
     return headers;
   };
 
-  const request = async <T>(endpoint: string, options: RequestOptions = {}): Promise<T> => {
+  const fetchResponse = async (
+    url: string,
+    endpoint: string,
+    options: RequestOptions = {},
+  ): Promise<Response> => {
     const {
       timeout = DEFAULT_TIMEOUT_MS,
       retries = DEFAULT_RETRIES,
@@ -171,8 +189,6 @@ export function createApiCore(params: {
     } = options;
 
     const headers = buildHeaders(fetchOptions.headers);
-    const url = buildUrl(endpoint);
-
     let lastError: Error | null = null;
     let lastStatus: number | undefined;
     let retriedWithoutBackendOverride = false;
@@ -216,8 +232,7 @@ export function createApiCore(params: {
           throw lastError;
         }
 
-        const text = await response.text();
-        return text ? (JSON.parse(text) as T) : (null as unknown as T);
+        return response;
       } catch (error) {
         clearTimeout(timeoutId);
         lastError = normalizeRequestError(error, timeout);
@@ -233,6 +248,22 @@ export function createApiCore(params: {
 
     throw lastError || new Error("Request failed after retries");
   };
+
+  const request = async <T>(endpoint: string, options: RequestOptions = {}): Promise<T> => {
+    const response = await fetchResponse(buildUrl(endpoint), endpoint, options);
+    const text = await response.text();
+    return text ? (JSON.parse(text) as T) : (null as unknown as T);
+  };
+
+  const rpcFetch: typeof fetch = async (input, init) => {
+    const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+    return fetchResponse(url, url, init ?? {});
+  };
+
+  const rpc = hc(baseUrl, { fetch: rpcFetch }) as unknown as ControllerRpc;
+
+  const rpcJson = async <Result>(response: Promise<Response>): Promise<Result> =>
+    (await response).json() as Promise<Result>;
 
   const parseSseStream = async function* (
     reader: ReadableStreamDefaultReader<Uint8Array>,
@@ -284,8 +315,6 @@ export function createApiCore(params: {
           continue;
         }
 
-        // SSE comment lines (e.g. ": keepalive") — emit a synthetic event
-        // so the stream consumer can reset idle timers.
         if (line.startsWith(":")) {
           yield { event: "keepalive", data: {} };
           continue;
@@ -424,6 +453,8 @@ export function createApiCore(params: {
     buildUrl,
     buildHeaders,
     request,
+    rpc,
+    rpcJson,
     postSseJson,
     getSseJson,
     healthPoll,

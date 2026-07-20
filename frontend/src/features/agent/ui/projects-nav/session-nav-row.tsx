@@ -312,22 +312,20 @@ function SessionRowContent({
 }) {
   return (
     <>
-      {isRunning ? (
-        <Spinner size="xs" className="shrink-0 text-(--link)" />
-      ) : unseen ? (
-        <span
-          className="h-1.5 w-1.5 shrink-0 rounded-full bg-(--link)"
-          aria-label="Unseen activity"
-          title="Unseen activity"
-        />
-      ) : null}
       <span className="min-w-0 flex-1 truncate text-[length:var(--fs-md)] font-normal leading-5">
         {label}
       </span>
-      {age ? (
-        <span className="shrink-0 pl-1.5 pr-1 text-[length:var(--fs-sm)] text-(--hl2) transition-opacity group-hover:opacity-0">
-          {age}
-        </span>
+      {isRunning ? (
+        <Spinner
+          size="xs"
+          className="mr-1 shrink-0 text-(--link) transition-opacity group-hover:opacity-0"
+        />
+      ) : unseen ? (
+        <span
+          className="mr-1 h-1.5 w-1.5 shrink-0 rounded-full bg-(--link) transition-opacity group-hover:opacity-0"
+          aria-label="Unseen activity"
+          title="Unseen activity"
+        />
       ) : null}
     </>
   );

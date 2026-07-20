@@ -13,11 +13,15 @@ import type {
 import { isManagedServeRuntimeTarget } from "@/lib/serve-runtime";
 import { describeFailedEngineJob } from "@/features/settings/runtime-targets";
 import { buildStarterRecipe } from "./setup-helpers";
+import { clearSetupProgress } from "./setup-progress";
 import { finishRuntimeJobEffect, requestEffect } from "./use-setup-effects";
+import { scheduleDurableUiPreferencesSave } from "@/lib/desktop-ui-preferences";
 
 export const markSetupComplete = (): void => {
   try {
     localStorage.setItem("local-studio-setup-complete", "true");
+    clearSetupProgress();
+    scheduleDurableUiPreferencesSave();
   } catch {}
 };
 
@@ -33,8 +37,8 @@ export function saveSettingsEffect(
   }: {
     setSettings: Dispatch<SetStateAction<StudioSettings | null>>;
     setModelsDir: Dispatch<SetStateAction<string>>;
-    setHardwareConfirmed: Dispatch<SetStateAction<boolean>>;
-    setStep: Dispatch<SetStateAction<number>>;
+    setHardwareConfirmed: (value: boolean) => void;
+    setStep: (value: number) => void;
     setError: Dispatch<SetStateAction<string | null>>;
     setSavingSettings: Dispatch<SetStateAction<boolean>>;
   },
@@ -109,7 +113,7 @@ export function beginDownloadEffect(
       model_id: string;
       allow_patterns?: string[];
     }) => Promise<ModelDownload>;
-    setStep: Dispatch<SetStateAction<number>>;
+    setStep: (value: number) => void;
     setError: Dispatch<SetStateAction<string | null>>;
   },
 ) {
@@ -187,8 +191,8 @@ export function configureAndLaunchEffect(
     setConfiguringRecipe,
   }: {
     setRuntimeJobs: Dispatch<SetStateAction<EngineJob[]>>;
-    setCreatedRecipeId: Dispatch<SetStateAction<string | null>>;
-    setStep: Dispatch<SetStateAction<number>>;
+    setCreatedRecipeId: (value: string | null) => void;
+    setStep: (value: number) => void;
     setLaunchError: Dispatch<SetStateAction<string | null>>;
     setConfiguringRecipe: Dispatch<SetStateAction<boolean>>;
   },

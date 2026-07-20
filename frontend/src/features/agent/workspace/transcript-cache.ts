@@ -73,11 +73,18 @@ function sanitizeMessage(message: ChatMessage): ChatMessage {
 }
 
 export function boundMessagesForCache(messages: ChatMessage[]): ChatMessage[] {
-  let kept = messages.slice(-MAX_MESSAGES_PER_SESSION).map(sanitizeMessage);
-  while (kept.length > 1 && JSON.stringify(kept).length > MAX_CHARS_PER_SESSION) {
-    kept = kept.slice(1);
+  const kept = messages.slice(-MAX_MESSAGES_PER_SESSION).map(sanitizeMessage);
+  // Size each message once instead of re-stringifying the whole array per trim
+  // iteration — near the cap that loop stringified ~0.5 MB repeatedly on every
+  // settled turn, on the main thread.
+  const sizes = kept.map((message) => JSON.stringify(message).length + 1);
+  let total = sizes.reduce((sum, size) => sum + size, 2);
+  let start = 0;
+  while (kept.length - start > 1 && total > MAX_CHARS_PER_SESSION) {
+    total -= sizes[start];
+    start += 1;
   }
-  return kept;
+  return start > 0 ? kept.slice(start) : kept;
 }
 
 function parseCachedTranscript(raw: string | null): CachedTranscript | null {

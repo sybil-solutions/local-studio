@@ -85,11 +85,15 @@ export interface EngineJob {
   error?: string;
 }
 
-export type RuntimePlatformKind = "cuda" | "rocm" | "unknown";
+export type RuntimePlatformKind = "cuda" | "rocm" | "metal" | "unknown";
 
 export type RuntimeRocmSmiTool = "amd-smi" | "rocm-smi";
 
-export type RuntimeGpuMonitoringTool = "nvidia-smi" | "intel-sysfs" | RuntimeRocmSmiTool;
+export type RuntimeGpuMonitoringTool =
+  | "nvidia-smi"
+  | "intel-sysfs"
+  | "apple-metal"
+  | RuntimeRocmSmiTool;
 
 export interface RuntimeCudaInfo {
   driver_version: string | null;
@@ -113,7 +117,7 @@ export interface RuntimeTorchBuildInfo {
 
 export interface RuntimePlatformInfo {
   kind: RuntimePlatformKind;
-  vendor: "nvidia" | "amd" | null;
+  vendor: "nvidia" | "amd" | "apple" | null;
   rocm: RuntimeRocmInfo | null;
   torch: RuntimeTorchBuildInfo;
 }

@@ -1,8 +1,9 @@
 "use client";
 
 import { ChevronLeft, DownloadCloud, Zap } from "@/ui/icon-registry";
-import { Button, Card, Input } from "@/ui";
+import { Button, Card, Input, Select } from "@/ui";
 import type { ModelRecommendation, StarterPreset } from "@/lib/types";
+import type { GgufFileOption } from "../setup-model-files";
 
 function PresetCard({
   preset,
@@ -96,6 +97,10 @@ export function StepModel({
   maxVram,
   manualModelId,
   setManualModelId,
+  manualGgufOptions,
+  manualGgufFile,
+  setManualGgufFile,
+  resolvingManualModel,
   beginDownload,
   submitManualModel,
   setStep,
@@ -111,6 +116,10 @@ export function StepModel({
   maxVram: number;
   manualModelId: string;
   setManualModelId: (value: string) => void;
+  manualGgufOptions: GgufFileOption[];
+  manualGgufFile: string;
+  setManualGgufFile: (value: string) => void;
+  resolvingManualModel: boolean;
   beginDownload: (modelId: string) => void;
   submitManualModel: () => void;
   setStep: (step: number) => void;
@@ -192,11 +201,27 @@ export function StepModel({
           <Button
             variant="secondary"
             onClick={submitManualModel}
+            disabled={resolvingManualModel}
             icon={<DownloadCloud className="h-4 w-4" />}
           >
-            Download
+            {resolvingManualModel ? "Inspecting…" : "Download"}
           </Button>
         </div>
+        {manualGgufOptions.length > 1 ? (
+          <div className="mt-3">
+            <Select
+              label="GGUF weights file"
+              value={manualGgufFile}
+              onChange={(event) => setManualGgufFile(event.target.value)}
+              placeholder="Choose one quantization"
+              options={manualGgufOptions}
+            />
+            <p className="mt-2 text-xs text-(--dim)">
+              This repository contains multiple weight variants. Local Studio downloads only the
+              file you select.
+            </p>
+          </div>
+        ) : null}
         <div className="flex items-center gap-3 mt-4">
           <Button
             variant="secondary"

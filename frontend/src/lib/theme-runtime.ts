@@ -45,16 +45,19 @@ function deriveThemeUiTokens(tokens: ThemeTokens): Record<string, string> {
     // 8% active, hairline 8% borders — the same ratios tokens.css encodes.
     "surface-2": `rgba(${ink}, 0.08)`,
     "surface-3": `rgba(${ink}, 0.05)`,
-    rail: isLight ? "#f9f9f9" : tokens.bg,
+    // The rail sits one tone step above the canvas so the body reads darker
+    // than the left navbar (mirrors tokens.css --color-sidebar).
+    rail: isLight ? "#f9f9f9" : `color-mix(in srgb, ${tokens.bg} 97%, #ffffff)`,
     border: `rgba(${ink}, 0.08)`,
     separator: `rgba(${ink}, 0.05)`,
     hover: `rgba(${ink}, 0.05)`,
     active: `rgba(${ink}, 0.08)`,
-    composer: isLight ? "#ffffff" : tokens.surface,
-    "composer-footer": isLight ? "#ffffff" : tokens.surface,
-    "composer-shadow": isLight
-      ? "0 12px 36px rgba(0, 0, 0, 0.06)"
-      : "0 14px 34px rgba(0, 0, 0, 0.3)",
+    // Codex composer, exact: a flat elevated tone step (#282828 over the
+    // #181818 canvas in dark; the mirrored light gray in light) with no
+    // drop shadow and no ring.
+    composer: isLight ? "#f3f3f3" : "#282828",
+    "composer-footer": isLight ? "#f3f3f3" : "#282828",
+    "composer-shadow": "none",
   };
 }
 

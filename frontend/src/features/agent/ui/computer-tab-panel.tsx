@@ -207,6 +207,7 @@ function BrowserTab({ isElectron, onNavigateBrowser, tools }: ComputerTabPanelPr
       onLocationChange={(next) => tools.setBrowserUrl(next, next)}
       onClose={() => tools.setComputerOpen(false)}
       isElectron={isElectron}
+      visible={tools.computer.open}
     />
   );
 }

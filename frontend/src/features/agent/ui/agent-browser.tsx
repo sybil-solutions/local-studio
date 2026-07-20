@@ -52,6 +52,8 @@ type Props = {
   onLocationChange: (value: string) => void;
   onClose: () => void;
   isElectron: boolean;
+  /** Screencast polling pauses while the hosting panel is hidden. */
+  visible?: boolean;
 };
 
 export function AgentBrowser({
@@ -62,6 +64,7 @@ export function AgentBrowser({
   onLocationChange,
   onClose,
   isElectron,
+  visible = true,
 }: Props) {
   const webviewRef = useRef<WebviewElement | null>(null);
   const [initialWebviewUrl] = useState(url);
@@ -300,6 +303,7 @@ export function AgentBrowser({
         ) : (
           <ScreencastSurface
             url={url}
+            visible={visible}
             onState={(state) => {
               setNavState(state);
               if (state.url && state.url !== url) onLocationChange(state.url);

@@ -1,11 +1,25 @@
 "use client";
 
-import { AtSign, FileText, Slash, Sparkles } from "@/ui/icon-registry";
+import {
+  AtSign,
+  Boxes,
+  CircleDot,
+  Download,
+  FilePenLine,
+  FileText,
+  Gauge,
+  GitFork,
+  Globe,
+  Slash,
+  Sparkles,
+  TerminalSquare,
+} from "@/ui/icon-registry";
 import type {
   ComposerMention,
   ComposerPromptTemplateRef,
   ComposerSkillRef,
 } from "@/features/agent/composer-context";
+import type { ComposerCommand } from "@/features/agent/composer/command-types";
 import { CloseIcon } from "@/ui/icons";
 
 export type FileMentionRow = {
@@ -18,7 +32,7 @@ export type FileMentionRow = {
 
 export type MentionRow =
   | { kind: "skill"; row: ComposerSkillRef }
-  | { kind: "promptTemplate"; row: ComposerPromptTemplateRef }
+  | { kind: "command"; row: ComposerCommand }
   | { kind: "file"; row: FileMentionRow };
 
 export type LoadedContextKind = "skill" | "promptTemplate";
@@ -72,8 +86,7 @@ export function AgentMentionPicker({
   if (!mention) return null;
 
   return (
-    <div className="px-4 pt-2">
-      <MentionPickerHeader kind={mention.kind} query={mention.query} />
+    <div className="px-1.5">
       {rows.length ? (
         <div className="grid gap-1">
           {rows.map((entry, index) => (
@@ -127,28 +140,6 @@ function LoadedContextTab({
   );
 }
 
-function MentionPickerHeader({
-  kind,
-  query,
-}: {
-  kind: "file" | "skill" | "promptTemplate";
-  query: string;
-}) {
-  const meta = MENTION_KIND_META[kind];
-  return (
-    <div className="mb-1.5 flex items-center gap-2 border-b border-(--separator) pb-1.5 text-[length:var(--fs-sm)]">
-      <meta.Icon className={`h-3.5 w-3.5 ${meta.accentClass}`} />
-      <span className="font-medium text-(--fg)">{meta.title}</span>
-      {query ? (
-        <span className="font-mono text-[length:var(--fs-xs)] text-(--dim)">
-          {query.length > 24 ? `${query.slice(0, 24)}…` : query}
-        </span>
-      ) : null}
-      <span className="ml-auto truncate text-[length:var(--fs-xs)] text-(--dim)">{meta.hint}</span>
-    </div>
-  );
-}
-
 function MentionRowItem({
   entry,
   active,
@@ -158,25 +149,52 @@ function MentionRowItem({
   active: boolean;
   onSelect: () => void;
 }) {
+  // Command rows follow the Codex menu layout: title on the left, dim
+  // right-aligned description filling the row.
+  if (entry.kind === "command") {
+    const Icon = BUILTIN_COMMAND_ICONS[entry.row.name] ?? COMMAND_ICONS[entry.row.icon];
+    return (
+      <button
+        type="button"
+        onMouseDown={(event) => event.preventDefault()}
+        onClick={onSelect}
+        className={`flex min-w-0 items-center gap-2 rounded-lg px-2.5 py-[7px] text-left ${
+          active
+            ? "bg-(--hover) text-(--fg)"
+            : "text-(--dim) hover:bg-(--hover)/60 hover:text-(--fg)"
+        }`}
+      >
+        <Icon className="h-3.5 w-3.5 shrink-0 text-(--dim)" />
+        <span className="shrink-0 text-[length:var(--fs-base)] text-(--fg)/85">
+          {entry.row.title}
+        </span>
+        {entry.row.description ? (
+          <span className="ml-auto min-w-0 truncate pl-6 text-right text-[length:var(--fs-base)] text-(--fg)/45">
+            {entry.row.description}
+          </span>
+        ) : null}
+      </button>
+    );
+  }
   const kindMeta = MENTION_KIND_META[entry.kind];
   const Icon = entry.kind === "file" ? FileText : kindMeta.Icon;
   const accent = entry.kind === "file" ? "text-(--dim)" : kindMeta.accentClass;
-  const title = mentionRowTitle(entry);
-  const description = mentionRowDescription(entry);
+  const title = entry.kind === "file" ? entry.row.rel : entry.row.name;
+  const description = entry.kind === "file" ? entry.row.path : undefined;
   const source = entry.kind !== "file" ? (entry.row.source ?? "") : "";
   return (
     <button
       type="button"
       onMouseDown={(event) => event.preventDefault()}
       onClick={onSelect}
-      className={`flex min-w-0 items-center gap-2 rounded-md px-2 py-1.5 text-left ${
+      className={`flex min-w-0 items-center gap-2 rounded-lg px-2.5 py-[7px] text-left ${
         active ? "bg-(--hover) text-(--fg)" : "text-(--dim) hover:bg-(--hover)/60 hover:text-(--fg)"
       }`}
     >
       <Icon className={`h-3.5 w-3.5 shrink-0 ${accent}`} />
       <span className="min-w-0 flex-1">
         <span className="flex items-baseline gap-1.5">
-          <span className="truncate text-[length:var(--fs-md)] text-(--fg)">{title}</span>
+          <span className="truncate text-[length:var(--fs-base)] text-(--fg)/85">{title}</span>
         </span>
         {description ? (
           <span className="block truncate text-[length:var(--fs-xs)] text-(--dim)">
@@ -196,22 +214,29 @@ function MentionRowItem({
   );
 }
 
-function mentionRowTitle(entry: MentionRow): string {
-  if (entry.kind === "file") return entry.row.rel;
-  return entry.row.name;
-}
-
-function mentionRowDescription(entry: MentionRow): string | undefined {
-  if (entry.kind === "file") return entry.row.path;
-  if (entry.kind === "promptTemplate") return entry.row.description;
-  return undefined;
-}
-
 function emptyMentionLabel(kind: ComposerMention["kind"]) {
   if (kind === "file") return "files";
   if (kind === "skill") return "skills";
-  return "slash commands";
+  return "commands";
 }
+
+const COMMAND_ICONS: Record<ComposerCommand["icon"], typeof Slash> = {
+  command: Slash,
+  template: FileText,
+  skill: Sparkles,
+};
+
+// Codex leads each command row with a semantic glyph, not a uniform slash.
+const BUILTIN_COMMAND_ICONS: Record<string, typeof Slash> = {
+  compact: CircleDot,
+  status: Gauge,
+  browser: Globe,
+  canvas: FilePenLine,
+  plugins: Boxes,
+  terminal: TerminalSquare,
+  fork: GitFork,
+  export: Download,
+};
 
 const LOADED_TAB_META: Record<"$" | "/", { Icon: typeof AtSign; classes: string }> = {
   $: {
@@ -225,7 +250,7 @@ const LOADED_TAB_META: Record<"$" | "/", { Icon: typeof AtSign; classes: string 
 };
 
 const MENTION_KIND_META: Record<
-  "file" | "skill" | "promptTemplate",
+  "file" | "skill" | "command",
   {
     title: string;
     hint: string;
@@ -245,9 +270,9 @@ const MENTION_KIND_META: Record<
     Icon: Sparkles,
     accentClass: "text-violet-300",
   },
-  promptTemplate: {
-    title: "Slash commands",
-    hint: "Pick a prompt template",
+  command: {
+    title: "Commands",
+    hint: "Run a command · load a template or skill",
     Icon: Slash,
     accentClass: "text-amber-300",
   },

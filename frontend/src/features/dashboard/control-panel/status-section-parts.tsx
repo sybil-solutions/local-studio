@@ -13,6 +13,7 @@ import type { CompactMetricView, MetricColumnView } from "./status-section-view"
 export function StatusHeader({
   backend,
   benchmarking,
+  benchmarkResult,
   currentRecipeId,
   displayPlatformKind,
   displayPort,
@@ -30,6 +31,7 @@ export function StatusHeader({
 }: {
   backend?: ProcessInfo["backend"];
   benchmarking: boolean;
+  benchmarkResult: number | null;
   currentRecipeId?: string;
   displayPlatformKind: RuntimePlatformKind | null;
   displayPort?: number;
@@ -67,6 +69,7 @@ export function StatusHeader({
       </div>
       <StatusHeaderActions
         benchmarking={benchmarking}
+        benchmarkResult={benchmarkResult}
         currentRecipeId={currentRecipeId}
         isRunning={isRunning}
         lifecycleStatus={lifecycleStatus}
@@ -116,6 +119,7 @@ function StatusLine({
 
 function StatusHeaderActions({
   benchmarking,
+  benchmarkResult,
   currentRecipeId,
   isRunning,
   lifecycleStatus,
@@ -127,6 +131,7 @@ function StatusHeaderActions({
   recipes,
 }: {
   benchmarking: boolean;
+  benchmarkResult: number | null;
   currentRecipeId?: string;
   isRunning: boolean;
   lifecycleStatus: "idle" | "starting" | "ready" | "error";
@@ -153,12 +158,17 @@ function StatusHeaderActions({
       ) : null}
       <ActionBtn label="Logs" onClick={onNavigateLogs} />
       <ActionBtn
-        label={isRunning && benchmarking ? "Run" : "Bench"}
+        label={benchmarkButtonLabel(benchmarking, benchmarkResult)}
         onClick={onBenchmark}
         disabled={benchmarking || !isRunning}
       />
     </div>
   );
+}
+
+export function benchmarkButtonLabel(benchmarking: boolean, result: number | null): string {
+  if (benchmarking) return "Benchmarking…";
+  return result === null ? "Bench" : `Bench · ${result.toFixed(1)} tok/s`;
 }
 
 function HeaderThemeToggle() {
@@ -227,7 +237,7 @@ export function StatusMetricStrip({
         />
       ))}
       {compactMetrics.map((metric) => (
-        <MetricCell key={metric.label} label={metric.label} value={metric.value ?? "0"} />
+        <MetricCell key={metric.label} label={metric.label} value={metric.value ?? "—"} />
       ))}
     </dl>
   );

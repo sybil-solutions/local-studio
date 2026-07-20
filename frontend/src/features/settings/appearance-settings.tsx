@@ -74,6 +74,12 @@ function isLightTheme(theme: ThemeMeta): boolean {
   return false;
 }
 
+function readVarString(name: string, fallback: string): string {
+  if (typeof document === "undefined") return fallback;
+  const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  return value.startsWith("#") ? value : fallback;
+}
+
 function readVar(name: string, fallback: number): number {
   if (typeof document === "undefined") return fallback;
   const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
@@ -118,6 +124,35 @@ export function AppearanceSettings() {
   const setRadius = (value: number) => {
     setRadiusBase(value);
     applyUiControl("--radius-base", `${value}px`);
+  };
+
+  const [chatFontSize, setChatFontSize] = useState(() => readVar("--codex-chat-font-size", 16));
+  const [chatLineHeight, setChatLineHeight] = useState(() =>
+    readVar("--codex-chat-line-height", 1.5),
+  );
+  const [chatWidth, setChatWidth] = useState(() => readVar("--composer-w", 48));
+  const [composerTone, setComposerTone] = useState(() => readVarString("--composer", "#282828"));
+  const [bubbleTone, setBubbleTone] = useState(() => readVarString("--bubble", "#282828"));
+  const setChatFont = (value: number) => {
+    setChatFontSize(value);
+    applyUiControl("--codex-chat-font-size", `${value}px`);
+  };
+  const setChatLeading = (value: number) => {
+    setChatLineHeight(value);
+    applyUiControl("--codex-chat-line-height", String(value));
+  };
+  const setChatColumn = (value: number) => {
+    setChatWidth(value);
+    applyUiControl("--composer-w", `${value}rem`);
+  };
+  const setComposer = (value: string) => {
+    setComposerTone(value);
+    applyUiControl("--composer", value);
+    applyUiControl("--composer-footer", value);
+  };
+  const setBubble = (value: string) => {
+    setBubbleTone(value);
+    applyUiControl("--bubble", value);
   };
 
   const currentTheme = THEME_BY_ID.get(themeId) ?? THEMES[0];
@@ -363,6 +398,78 @@ export function AppearanceSettings() {
               </span>
             </div>
           }
+        />
+      </SettingsGroup>
+
+      <SettingsGroup
+        title="Chat & composer"
+        description="Tune the conversation surface independently of the UI chrome."
+      >
+        <SettingsRow
+          label="Chat text size"
+          description="Message and composer text"
+          control={
+            <div className="flex w-full items-center gap-3">
+              <Slider
+                value={chatFontSize}
+                min={13}
+                max={18}
+                step={1}
+                onChange={setChatFont}
+                aria-label="Chat text size"
+              />
+              <span className="w-9 shrink-0 text-right font-mono text-[length:var(--fs-md)] tabular-nums text-(--ui-muted)">
+                {chatFontSize}px
+              </span>
+            </div>
+          }
+        />
+        <SettingsRow
+          label="Chat line height"
+          control={
+            <div className="flex w-full items-center gap-3">
+              <Slider
+                value={chatLineHeight}
+                min={1.3}
+                max={1.8}
+                step={0.05}
+                onChange={setChatLeading}
+                aria-label="Chat line height"
+              />
+              <span className="w-10 shrink-0 text-right font-mono text-[length:var(--fs-md)] tabular-nums text-(--ui-muted)">
+                {chatLineHeight.toFixed(2)}
+              </span>
+            </div>
+          }
+        />
+        <SettingsRow
+          label="Chat column width"
+          description="Maximum width of the thread and composer"
+          control={
+            <div className="flex w-full items-center gap-3">
+              <Slider
+                value={chatWidth}
+                min={40}
+                max={64}
+                step={1}
+                onChange={setChatColumn}
+                aria-label="Chat column width"
+              />
+              <span className="w-12 shrink-0 text-right font-mono text-[length:var(--fs-md)] tabular-nums text-(--ui-muted)">
+                {chatWidth}rem
+              </span>
+            </div>
+          }
+        />
+        <SettingsRow
+          label="Composer tone"
+          description="Surface color of the input card"
+          control={<ColorField value={composerTone} label="Composer tone" onChange={setComposer} />}
+        />
+        <SettingsRow
+          label="Bubble tone"
+          description="Surface color of your messages"
+          control={<ColorField value={bubbleTone} label="Bubble tone" onChange={setBubble} />}
         />
       </SettingsGroup>
 

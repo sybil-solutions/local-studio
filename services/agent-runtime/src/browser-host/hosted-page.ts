@@ -1,7 +1,5 @@
-// Wraps a single CDP page connection: console ring, ref map, screencast fanout.
-
-import { CdpClient, type CdpEvent } from "./cdp";
-import type { SnapshotElement } from "./dom-scripts";
+import { randomUUID } from "node:crypto";
+import { errors, type Page } from "playwright-core";
 
 const CONSOLE_RING_SIZE = 1000;
 
@@ -21,263 +19,284 @@ export type PageState = {
 };
 
 export type ScreencastFrame = { data: string; metadata: Record<string, unknown> };
-export type FrameSubscriber = (frame: ScreencastFrame) => void;
-export type StateSubscriber = (state: PageState) => void;
 
-export type CdpTarget = {
-  id: string;
-  type: string;
-  url: string;
-  title: string;
-  webSocketDebuggerUrl?: string;
-};
-
-function remoteObjectText(value: unknown): string {
-  const object = value as { value?: unknown; description?: string; type?: string } | undefined;
-  if (!object) return "";
-  if (Object.hasOwn(object, "value")) {
-    return typeof object.value === "string" ? object.value : JSON.stringify(object.value);
-  }
-  return object.description ?? object.type ?? "";
-}
+type NavigationDirection = "back" | "forward" | "reload" | null;
 
 export class HostedPage {
-  readonly id: string;
-  private client: CdpClient;
-  private console: ConsoleEntry[] = [];
-  private refMap = new Map<string, string>();
-  private captureEnabled = false;
-  private frameSubscribers = new Set<FrameSubscriber>();
-  private stateSubscribers = new Set<StateSubscriber>();
-  private screencasting = false;
-  private screencastListenersBound = false;
-  // The in-flight (or settled) Page.startScreencast + seed promise. pollFrame
-  // awaits it so the very first poll returns a seeded frame instead of null.
-  private screencastReady: Promise<void> | null = null;
+  readonly id = randomUUID();
+  private consoleEntries: ConsoleEntry[] = [];
+  private frameCapture: Promise<void> | null = null;
+  private historyIndex = 0;
+  private historyLength = 1;
+  private historyInitialized = false;
+  private navigationDirection: NavigationDirection = null;
+  private lastUrl: string;
+  private loading = false;
   latestFrame: ScreencastFrame | null = null;
 
-  private constructor(id: string, client: CdpClient) {
-    this.id = id;
-    this.client = client;
+  private constructor(private readonly playwrightPage: Page) {
+    this.lastUrl = playwrightPage.url();
+    this.bindEvents();
   }
 
-  static async attach(target: CdpTarget, timeoutMs: number): Promise<HostedPage> {
-    const client = await CdpClient.connect(target.webSocketDebuggerUrl as string, timeoutMs);
-    const page = new HostedPage(target.id, client);
-    await page.enableCapture();
-    return page;
+  static attach(page: Page): HostedPage {
+    return new HostedPage(page);
+  }
+
+  matches(page: Page): boolean {
+    return this.playwrightPage === page;
   }
 
   get closed(): boolean {
-    return this.client.closed;
+    return this.playwrightPage.isClosed();
   }
 
   close(): void {
-    this.client.close();
+    if (!this.closed) void this.playwrightPage.close().catch(() => undefined);
   }
 
-  private async enableCapture(): Promise<void> {
-    if (this.captureEnabled) return;
-    await this.client.call("Runtime.enable");
-    await this.client.call("Log.enable");
-    await this.client.call("Page.enable");
-    this.client.on("Runtime.consoleAPICalled", (event) => this.recordConsole(event));
-    this.client.on("Runtime.exceptionThrown", (event) => this.recordException(event));
-    this.client.on("Log.entryAdded", (event) => this.recordLog(event));
-    this.captureEnabled = true;
+  private bindEvents(): void {
+    this.playwrightPage.on("console", (message) => {
+      this.pushConsole({
+        timestamp: new Date().toISOString(),
+        source: "console",
+        level: message.type(),
+        text: message.text(),
+      });
+    });
+    this.playwrightPage.on("pageerror", (error) => {
+      this.pushConsole({
+        timestamp: new Date().toISOString(),
+        source: "exception",
+        level: "error",
+        text: error.message,
+      });
+    });
+    this.playwrightPage.on("crash", () => {
+      this.pushConsole({
+        timestamp: new Date().toISOString(),
+        source: "browser",
+        level: "error",
+        text: "Page crashed",
+      });
+    });
+    this.playwrightPage.on("framenavigated", (frame) => {
+      if (frame !== this.playwrightPage.mainFrame()) return;
+      const url = frame.url();
+      if (url !== this.lastUrl) this.recordNavigation(url);
+      this.loading = false;
+    });
+    this.playwrightPage.on("domcontentloaded", () => {
+      this.loading = false;
+    });
+    this.playwrightPage.on("load", () => {
+      this.loading = false;
+    });
+  }
+
+  private recordNavigation(url: string): void {
+    if (this.navigationDirection === "back") {
+      this.historyIndex = Math.max(0, this.historyIndex - 1);
+    } else if (this.navigationDirection === "forward") {
+      this.historyIndex = Math.min(this.historyLength - 1, this.historyIndex + 1);
+    } else if (this.navigationDirection !== "reload") {
+      this.historyIndex += 1;
+      this.historyLength = this.historyIndex + 1;
+    }
+    this.navigationDirection = null;
+    this.lastUrl = url;
   }
 
   private pushConsole(entry: ConsoleEntry): void {
-    this.console.push(entry);
-    if (this.console.length > CONSOLE_RING_SIZE) {
-      this.console.splice(0, this.console.length - CONSOLE_RING_SIZE);
+    this.consoleEntries.push(entry);
+    if (this.consoleEntries.length > CONSOLE_RING_SIZE) {
+      this.consoleEntries.splice(0, this.consoleEntries.length - CONSOLE_RING_SIZE);
     }
-  }
-
-  private recordConsole(event: CdpEvent): void {
-    const args = (event.params?.args as unknown[]) ?? [];
-    this.pushConsole({
-      timestamp: new Date().toISOString(),
-      source: "console",
-      level: (event.params?.type as string) ?? "log",
-      text: args.map(remoteObjectText).join(" "),
-    });
-  }
-
-  private recordException(event: CdpEvent): void {
-    const details = event.params?.exceptionDetails as { text?: string } | undefined;
-    this.pushConsole({
-      timestamp: new Date().toISOString(),
-      source: "exception",
-      level: "error",
-      text: details?.text ?? "JavaScript exception",
-    });
-  }
-
-  private recordLog(event: CdpEvent): void {
-    const entry = event.params?.entry as { level?: string; text?: string } | undefined;
-    this.pushConsole({
-      timestamp: new Date().toISOString(),
-      source: "browser",
-      level: entry?.level ?? "info",
-      text: entry?.text ?? "",
-    });
   }
 
   drainConsole(limit: number): ConsoleEntry[] {
-    return this.console.slice(Math.max(0, this.console.length - limit));
+    return this.consoleEntries.slice(Math.max(0, this.consoleEntries.length - limit));
   }
 
-  setRefMap(elements: SnapshotElement[]): void {
-    this.refMap.clear();
-    for (const element of elements) {
-      if (element.ref && element.selector) this.refMap.set(element.ref, element.selector);
+  async navigate(url: string, timeout: number): Promise<void> {
+    this.loading = true;
+    try {
+      await this.playwrightPage.goto(url, { waitUntil: "domcontentloaded", timeout });
+    } catch (error) {
+      if (!(error instanceof errors.TimeoutError)) throw error;
+    } finally {
+      this.loading = false;
     }
   }
 
-  resolveRef(ref: string): string | null {
-    return this.refMap.get(ref) ?? null;
+  async goBack(timeout: number): Promise<void> {
+    this.loading = true;
+    this.navigationDirection = "back";
+    try {
+      await this.playwrightPage.goBack({ waitUntil: "domcontentloaded", timeout });
+    } catch (error) {
+      if (!(error instanceof errors.TimeoutError)) throw error;
+    } finally {
+      this.loading = false;
+      this.navigationDirection = null;
+    }
   }
 
-  call(method: string, params?: Record<string, unknown>): Promise<Record<string, unknown>> {
-    return this.client.call(method, params);
+  async goForward(timeout: number): Promise<void> {
+    this.loading = true;
+    this.navigationDirection = "forward";
+    try {
+      await this.playwrightPage.goForward({ waitUntil: "domcontentloaded", timeout });
+    } catch (error) {
+      if (!(error instanceof errors.TimeoutError)) throw error;
+    } finally {
+      this.loading = false;
+      this.navigationDirection = null;
+    }
   }
 
-  // Invoke a page-realm script (an arrow-function string from dom-scripts.ts)
-  // with JSON-serializable args. Throws on an exception inside the page.
-  async invokeScript<T>(script: string, args: unknown[]): Promise<T> {
-    const expression = `(${script})(...${JSON.stringify(args)})`;
-    const result = await this.client.call("Runtime.evaluate", {
-      expression,
-      returnByValue: true,
-      awaitPromise: true,
-    });
-    const exception = (result as { exceptionDetails?: { exception?: { description?: string } } })
-      .exceptionDetails;
-    if (exception) throw new Error(exception.exception?.description ?? "Browser evaluation failed");
-    return (result.result as { value?: T } | undefined)?.value as T;
+  async reload(timeout: number): Promise<void> {
+    this.loading = true;
+    this.navigationDirection = "reload";
+    try {
+      await this.playwrightPage.reload({ waitUntil: "domcontentloaded", timeout });
+    } catch (error) {
+      if (!(error instanceof errors.TimeoutError)) throw error;
+    } finally {
+      this.loading = false;
+      this.navigationDirection = null;
+    }
   }
 
-  // Screencast fanout. The first frame subscriber starts Page.startScreencast;
-  // the last one to leave stops it. Returns the unsubscribe alongside a promise
-  // that resolves once the screencast is started and seeded, so a poller can
-  // await a first frame.
-  subscribeFrames(callback: FrameSubscriber): { unsubscribe: () => void; ready: Promise<void> } {
-    this.frameSubscribers.add(callback);
-    const ready = this.ensureScreencast();
-    return {
-      ready,
-      unsubscribe: () => {
-        this.frameSubscribers.delete(callback);
-        if (this.frameSubscribers.size === 0) void this.stopScreencast();
+  async text(): Promise<string> {
+    return this.playwrightPage
+      .locator("body")
+      .innerText()
+      .catch(() => "");
+  }
+
+  async html(): Promise<string> {
+    return this.playwrightPage.content();
+  }
+
+  async click(selector: string): Promise<boolean> {
+    const locator = this.playwrightPage.locator(selector).first();
+    if ((await locator.count()) === 0) return false;
+    await locator.scrollIntoViewIfNeeded();
+    await locator.click();
+    return true;
+  }
+
+  async fill(selector: string, value: string): Promise<boolean> {
+    const locator = this.playwrightPage.locator(selector).first();
+    if ((await locator.count()) === 0) return false;
+    const tag = await locator.evaluate((element) => element.tagName);
+    await locator.scrollIntoViewIfNeeded();
+    if (tag === "SELECT") await locator.selectOption(value);
+    else await locator.fill(value);
+    return true;
+  }
+
+  pressKey(key: string): Promise<void> {
+    return this.playwrightPage.keyboard.press(key);
+  }
+
+  async scroll(deltaX: number, deltaY: number): Promise<number> {
+    return this.playwrightPage.evaluate(
+      ({ x, y }) => {
+        window.scrollBy(x, y);
+        return window.scrollY;
       },
-    };
+      { x: deltaX, y: deltaY },
+    );
   }
 
-  subscribeState(callback: StateSubscriber): () => void {
-    this.stateSubscribers.add(callback);
-    return () => {
-      this.stateSubscribers.delete(callback);
-    };
-  }
-
-  // One-shot-friendly load listener (Page.enable is already on from capture).
-  subscribeLoad(callback: () => void): () => void {
-    return this.client.on("Page.loadEventFired", callback);
-  }
-
-  private bindScreencastListeners(): void {
-    if (this.screencastListenersBound) return;
-    this.screencastListenersBound = true;
-    this.client.on("Page.screencastFrame", (event) => this.onScreencastFrame(event));
-    this.client.on("Page.frameNavigated", () => void this.emitState());
-    this.client.on("Page.loadEventFired", () => void this.emitState());
-  }
-
-  private onScreencastFrame(event: CdpEvent): void {
-    const data = event.params?.data as string | undefined;
-    const sessionId = event.params?.sessionId as number | undefined;
-    if (typeof sessionId === "number") {
-      void this.client.call("Page.screencastFrameAck", { sessionId }).catch(() => {});
-    }
-    if (typeof data !== "string") return;
-    const frame: ScreencastFrame = {
-      data,
-      metadata: (event.params?.metadata as Record<string, unknown>) ?? {},
-    };
-    this.latestFrame = frame;
-    for (const subscriber of this.frameSubscribers) subscriber(frame);
-  }
-
-  private async emitState(): Promise<void> {
-    if (this.stateSubscribers.size === 0) return;
-    try {
-      const state = await this.readState();
-      for (const subscriber of this.stateSubscribers) subscriber(state);
-    } catch {
-      // Page may be navigating; the next event will carry fresh state.
-    }
-  }
-
-  private ensureScreencast(): Promise<void> {
-    if (this.screencastReady) return this.screencastReady;
-    this.screencasting = true;
-    this.bindScreencastListeners();
-    this.screencastReady = (async () => {
-      await this.client.call("Page.startScreencast", {
-        format: "jpeg",
-        quality: 60,
-        maxWidth: 1280,
-        maxHeight: 800,
-        everyNthFrame: 2,
-      });
-      // everyNthFrame: 2 skips the first composite, so a fully idle page would
-      // never emit a frame. Seed latestFrame + subscribers with one immediate
-      // capture so the panel always has something to render on connect.
-      await this.seedScreencastFrame();
-    })().catch(() => {
-      // Let the next subscribe retry from scratch if startup failed.
-      this.screencasting = false;
-      this.screencastReady = null;
+  async screenshot(type: "png" | "jpeg", quality?: number): Promise<string> {
+    const data = await this.playwrightPage.screenshot({
+      type,
+      ...(type === "jpeg" && quality ? { quality } : {}),
     });
-    return this.screencastReady;
+    return data.toString("base64");
   }
 
-  private async seedScreencastFrame(): Promise<void> {
-    try {
-      const result = (await this.client.call("Page.captureScreenshot", {
-        format: "jpeg",
-        quality: 60,
-        fromSurface: true,
-      })) as { data?: string };
-      if (!result.data) return;
-      const frame: ScreencastFrame = { data: result.data, metadata: {} };
-      this.latestFrame = frame;
-      for (const subscriber of this.frameSubscribers) subscriber(frame);
-    } catch {
-      // A live screencast frame will follow on the next composite.
+  evaluate(expression: string): Promise<unknown> {
+    return this.playwrightPage.evaluate(expression);
+  }
+
+  setViewport(width: number, height: number): Promise<void> {
+    return this.playwrightPage.setViewportSize({
+      width: Math.round(width),
+      height: Math.round(height),
+    });
+  }
+
+  async dispatchMouse(input: {
+    type: "down" | "up" | "move" | "wheel";
+    x: number;
+    y: number;
+    button?: "left" | "right" | "middle";
+    clickCount?: number;
+    deltaX?: number;
+    deltaY?: number;
+  }): Promise<void> {
+    await this.playwrightPage.mouse.move(input.x, input.y);
+    if (input.type === "down") {
+      await this.playwrightPage.mouse.down({
+        button: input.button ?? "left",
+        clickCount: input.clickCount ?? 1,
+      });
+    } else if (input.type === "up") {
+      await this.playwrightPage.mouse.up({
+        button: input.button ?? "left",
+        clickCount: input.clickCount ?? 1,
+      });
+    } else if (input.type === "wheel") {
+      await this.playwrightPage.mouse.wheel(input.deltaX ?? 0, input.deltaY ?? 0);
     }
   }
 
-  private async stopScreencast(): Promise<void> {
-    if (!this.screencasting) return;
-    this.screencasting = false;
-    this.screencastReady = null;
-    await this.client.call("Page.stopScreencast").catch(() => {});
+  async dispatchKey(input: {
+    type: "down" | "up" | "char";
+    key: string;
+    text?: string;
+  }): Promise<void> {
+    if (input.type === "down") await this.playwrightPage.keyboard.down(input.key);
+    else if (input.type === "up") await this.playwrightPage.keyboard.up(input.key);
+    else await this.playwrightPage.keyboard.insertText(input.text ?? input.key);
+  }
+
+  async captureFrame(): Promise<ScreencastFrame | null> {
+    if (this.closed) return null;
+    if (!this.frameCapture) {
+      this.frameCapture = this.screenshot("jpeg", 60)
+        .then((data) => {
+          const frame = { data, metadata: {} };
+          this.latestFrame = frame;
+        })
+        .finally(() => {
+          this.frameCapture = null;
+        });
+    }
+    await this.frameCapture;
+    return this.latestFrame;
+  }
+
+  private async initializeHistory(): Promise<void> {
+    if (this.historyInitialized) return;
+    const length = await this.playwrightPage.evaluate(() => window.history.length).catch(() => 1);
+    this.historyLength = Math.max(1, length);
+    this.historyIndex = this.historyLength - 1;
+    this.historyInitialized = true;
   }
 
   async readState(): Promise<PageState> {
-    const history = (await this.client.call("Page.getNavigationHistory")) as {
-      currentIndex: number;
-      entries: { url: string; title: string }[];
-    };
-    const current = history.entries[history.currentIndex];
+    await this.initializeHistory();
     return {
-      url: current?.url ?? "",
-      title: current?.title ?? "",
-      canGoBack: history.currentIndex > 0,
-      canGoForward: history.currentIndex < history.entries.length - 1,
-      loading: false,
+      url: this.playwrightPage.url(),
+      title: await this.playwrightPage.title().catch(() => ""),
+      canGoBack: this.historyIndex > 0,
+      canGoForward: this.historyIndex < this.historyLength - 1,
+      loading: this.loading,
     };
   }
 }
