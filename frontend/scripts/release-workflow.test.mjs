@@ -57,11 +57,11 @@ test("preserves a pending current release when a stale run enters third", () => 
 test("binds release publication and write permissions to the tested revision", () => {
   const ci = workflow("ci.yml");
   const release = workflow("release.yml");
-  const checkout = release.jobs.release.steps.find((step) => step.uses === "actions/checkout@v4");
-  const revision = release.jobs.release.steps.find((step) => step.id === "revision");
-  const publication = release.jobs.release.steps.find((step) =>
-    String(step.run ?? "").includes("semantic-release"),
+  const checkout = release.jobs.release.steps.find((step) =>
+    String(step.uses ?? "").startsWith("actions/checkout@"),
   );
+  const revision = release.jobs.release.steps.find((step) => step.id === "revision");
+  const publication = release.jobs.release.steps.find((step) => step.name === "Release");
   assert.deepEqual(ci.permissions, { contents: "read" });
   assert.deepEqual(ci.jobs.release.needs, ["gates", "controller", "frontend", "agent-runtime"]);
   assert.deepEqual(ci.jobs.release.permissions, {
@@ -80,10 +80,12 @@ test("binds release publication and write permissions to the tested revision", (
     issues: "write",
     "pull-requests": "write",
   });
+  assert.equal(checkout.uses, "actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5");
   assert.equal(checkout.with.ref, "${{ github.sha }}");
   assert.equal(revision.env.TESTED_SHA, "${{ github.sha }}");
   assert.equal(revision.run, "node scripts/release-revision.mjs");
   assert.ok(release.jobs.release.steps.indexOf(revision) < release.jobs.release.steps.indexOf(publication));
+  assert.equal(publication.run, "npm run release:semantic");
   assert.equal(publication.if, "steps.revision.outputs.current == 'true'");
 });
 
