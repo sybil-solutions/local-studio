@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
+import { Effect } from "effect";
 import type { Hono } from "hono";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -11,8 +12,9 @@ import {
   normalizeControllerHost,
   normalizeHttpOrigin,
 } from "../config/env";
-import { delay } from "../core/async";
+import type { ControllerRuntime } from "../core/effect-runtime";
 import { primaryLogPathFor } from "../core/log-files";
+import type { ControllerEnvironment } from "./effect-handler";
 import { normalizeRequestAuthority } from "./security-middleware";
 
 const ENV_KEYS = [
@@ -48,11 +50,13 @@ type ControllerRequestRow = {
 
 let environmentSnapshot: EnvironmentSnapshot;
 let temporaryDirectory: string;
+let controllerRuntimes: ControllerRuntime[];
 
 beforeEach(() => {
   environmentSnapshot = Object.fromEntries(
     ENV_KEYS.map((key) => [key, process.env[key]]),
   ) as EnvironmentSnapshot;
+  controllerRuntimes = [];
   temporaryDirectory = mkdtempSync(join(tmpdir(), "local-studio-controller-security-"));
   Object.assign(process.env, {
     LOCAL_STUDIO_DATA_DIR: temporaryDirectory,
@@ -74,22 +78,31 @@ beforeEach(() => {
 });
 
 afterEach(async () => {
+  for (const runtime of controllerRuntimes.reverse()) {
+    await runtime.dispose();
+  }
   for (const key of ENV_KEYS) {
     const value = environmentSnapshot[key];
     if (value === undefined) delete process.env[key];
     else process.env[key] = value;
   }
-  await delay(50);
+  await Bun.sleep(50);
   rmSync(temporaryDirectory, { recursive: true, force: true });
 });
 
-const createTestHarness = async (): Promise<{ app: Hono; context: AppContext }> => {
-  const [{ createAppContext }, { createApp }] = await Promise.all([
+const createTestHarness = async (): Promise<{
+  app: Hono<ControllerEnvironment>;
+  context: AppContext;
+}> => {
+  const [{ AppContextService }, { createControllerRuntime }, { createApp }] = await Promise.all([
     import("../app-context"),
+    import("../core/effect-runtime"),
     import("./app"),
   ]);
-  const context = createAppContext();
-  return { app: createApp(context), context };
+  const runtime = createControllerRuntime();
+  controllerRuntimes.push(runtime);
+  const context = await runtime.runPromise(AppContextService);
+  return { app: createApp(context, runtime), context };
 };
 
 const readControllerRequestRows = (): ControllerRequestRow[] => {
@@ -116,7 +129,7 @@ type GuardRequest = {
 };
 
 const request = async (
-  app: Hono,
+  app: Hono<ControllerEnvironment>,
   path: string,
   options: GuardRequest = {},
 ): Promise<Response> => {
@@ -129,10 +142,11 @@ const request = async (
 
 const stubEviction = (context: AppContext): (() => number) => {
   let calls = 0;
-  context.engineService.setActiveRecipe = async (): Promise<{ ok: true }> => {
-    calls += 1;
-    return { ok: true };
-  };
+  context.engineService.setActiveRecipe = (): Effect.Effect<{ readonly ok: true }> =>
+    Effect.sync(() => {
+      calls += 1;
+      return { ok: true as const };
+    });
   return (): number => calls;
 };
 
