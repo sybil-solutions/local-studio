@@ -1,12 +1,18 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { AppPage, Card, PageContainer, PageState, RefreshButton, SegmentedControl } from "@/ui";
 import { TokenActivityHeatmap } from "@/features/usage/token-activity-heatmap";
 import { useUsage, type UsageSource } from "@/features/usage/use-usage";
 import { UsageSkeleton } from "@/features/usage/usage-skeleton";
 import { formatNumber } from "@/lib/formatters";
 import type { UsageStats } from "@/lib/types";
+import { Upload } from "@/ui/icon-registry";
+import {
+  ProfileAvatar,
+  profileImageFromFile,
+  useLocalProfile,
+} from "@/features/shell/local-profile";
 
 const SOURCES = [
   { id: "pi-sessions", label: "Agent sessions" },
@@ -38,8 +44,20 @@ const tokenParts = (stats: UsageStats): Array<{ label: string; value: number }> 
 };
 
 export default function UsagePage() {
-  const [source, setSource] = useState<UsageSource>("pi-sessions");
+  const [source, setSource] = useState<UsageSource>("provider");
   const { stats, loading, error, loadStats } = useUsage(source);
+  const [profile, updateProfile] = useLocalProfile();
+  const [imageError, setImageError] = useState("");
+  const imageInputRef = useRef<HTMLInputElement>(null);
+  const updateImage = async (file: File | undefined) => {
+    if (!file) return;
+    try {
+      updateProfile({ imageUrl: await profileImageFromFile(file) });
+      setImageError("");
+    } catch (nextError) {
+      setImageError(nextError instanceof Error ? nextError.message : "Image failed to load");
+    }
+  };
 
   if (loading && !stats) return <UsageSkeleton />;
 
@@ -56,8 +74,46 @@ export default function UsagePage() {
   return (
     <AppPage>
       <PageContainer width="sm" className="pt-5 sm:pt-7">
-        <header className="flex items-center justify-between gap-3">
-          <h1 className="text-[length:var(--fs-lg)] font-medium text-(--ui-fg)">Usage</h1>
+        <header className="flex items-start justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-3">
+            <button
+              type="button"
+              onClick={() => imageInputRef.current?.click()}
+              className="group relative shrink-0 rounded-full"
+              title="Update profile image"
+              aria-label="Update profile image"
+            >
+              <ProfileAvatar profile={profile} size={38} />
+              <span className="absolute inset-0 flex items-center justify-center rounded-full bg-black/55 opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
+                <Upload className="h-4 w-4 text-white" />
+              </span>
+            </button>
+            <input
+              ref={imageInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={(event) => void updateImage(event.currentTarget.files?.[0])}
+            />
+            <div className="min-w-0">
+              <h1 className="text-[length:var(--fs-xs)] font-medium uppercase tracking-[0.12em] text-(--ui-muted)">
+                Usage
+              </h1>
+              <input
+                value={profile.name}
+                onChange={(event) => updateProfile({ name: event.target.value })}
+                onBlur={() => {
+                  if (!profile.name.trim()) updateProfile({ name: "Studio" });
+                }}
+                aria-label="Profile display name"
+                className="mt-0.5 block h-7 max-w-56 bg-transparent text-[length:var(--fs-lg)] font-medium text-(--ui-fg) outline-none placeholder:text-(--ui-muted)"
+                placeholder="Studio"
+              />
+              {imageError ? (
+                <p className="mt-1 text-[length:var(--fs-xs)] text-(--err)">{imageError}</p>
+              ) : null}
+            </div>
+          </div>
           <div className="flex items-center gap-2">
             <SegmentedControl items={SOURCES} value={source} onChange={setSource} size="sm" />
             <RefreshButton onRefresh={loadStats} loading={loading} className="h-7 w-7" />

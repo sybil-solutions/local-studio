@@ -1,105 +1,75 @@
 "use client";
 
-// Codex-style sidebar footer: a local profile (avatar + display name, stored
-// on this machine) with a small menu, plus the phone entry point and the
-// Settings gear. No accounts — the profile is presentation for this Studio.
-
 import Link from "next/link";
-import { useState } from "react";
-import { Settings, Smartphone } from "@/ui/icon-registry";
+import { useRef, useState } from "react";
+import { Settings, Smartphone, Upload } from "@/ui/icon-registry";
 import { Input, UiModal, UiModalHeader } from "@/ui";
+import {
+  PROFILE_HUES,
+  ProfileAvatar,
+  profileImageFromFile,
+  useLocalProfile,
+} from "@/features/shell/local-profile";
+import { QrCode } from "@/features/shell/qr-code";
 
-const PROFILE_KEY = "local-studio.profile";
-
-type Profile = { name: string; hue: number };
-
-const DEFAULT_PROFILE: Profile = { name: "Studio", hue: 214 };
-const HUES = [214, 262, 152, 24, 340, 46];
-
-function readProfile(): Profile {
-  if (typeof window === "undefined") return DEFAULT_PROFILE;
-  try {
-    const raw = window.localStorage.getItem(PROFILE_KEY);
-    if (!raw) return DEFAULT_PROFILE;
-    const parsed = JSON.parse(raw) as Partial<Profile>;
-    return {
-      name:
-        typeof parsed.name === "string" && parsed.name.trim() ? parsed.name : DEFAULT_PROFILE.name,
-      hue: typeof parsed.hue === "number" ? parsed.hue : DEFAULT_PROFILE.hue,
-    };
-  } catch {
-    return DEFAULT_PROFILE;
-  }
-}
-
-function writeProfile(profile: Profile): void {
-  try {
-    window.localStorage.setItem(PROFILE_KEY, JSON.stringify(profile));
-  } catch {
-    // best-effort
-  }
-}
-
-function initials(name: string): string {
-  const parts = name.trim().split(/\s+/).filter(Boolean);
-  const first = parts[0]?.[0] ?? "S";
-  const second = parts.length > 1 ? (parts[parts.length - 1]?.[0] ?? "") : "";
-  return `${first}${second}`.toUpperCase();
-}
-
-function Avatar({ profile, size = 22 }: { profile: Profile; size?: number }) {
-  return (
-    <span
-      className="flex shrink-0 items-center justify-center rounded-full font-medium text-white"
-      style={{
-        width: size,
-        height: size,
-        fontSize: Math.round(size * 0.42),
-        background: `oklch(0.55 0.13 ${profile.hue})`,
-      }}
-      aria-hidden
-    >
-      {initials(profile.name)}
-    </span>
-  );
-}
-
-function PhoneConnectModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+function PhoneConnectModal({ onClose }: { onClose: () => void }) {
+  const origin = typeof window === "undefined" ? "" : window.location.origin;
+  const [url, setUrl] = useState(origin);
   const [copied, setCopied] = useState(false);
-  if (!open) return null;
-  const origin = typeof window !== "undefined" ? window.location.origin : "";
   const copy = async () => {
     try {
-      await navigator.clipboard.writeText(origin);
+      await navigator.clipboard.writeText(url);
       setCopied(true);
       window.setTimeout(() => setCopied(false), 1500);
-    } catch {
-      // clipboard unavailable
-    }
+    } catch {}
   };
+  const loopback = /^https?:\/\/(127\.0\.0\.1|localhost)(:|\/|$)/i.test(url);
+  const urlTooLong = new TextEncoder().encode(url).length > 78;
   return (
-    <UiModal isOpen={open} onClose={onClose}>
+    <UiModal isOpen onClose={onClose} maxWidth="max-w-sm">
       <UiModalHeader title="Use Studio on your phone" onClose={onClose} />
-      <div className="space-y-3 p-4 text-[length:var(--fs-base)] text-(--fg)/85">
-        <p className="text-(--fg)/70">
-          If this Studio is reachable from your phone — a deployed instance or a tailnet address —
-          open the same URL there. The interface adapts to the smaller screen.
-        </p>
-        <div className="flex items-center gap-2">
-          <code className="min-w-0 flex-1 truncate rounded-lg bg-(--fg)/[0.05] px-3 py-2 font-mono text-[length:var(--fs-md)]">
-            {origin}
-          </code>
-          <button
-            type="button"
-            onClick={() => void copy()}
-            className="shrink-0 rounded-lg border border-(--border) px-3 py-2 text-[length:var(--fs-md)] transition-colors hover:bg-(--hover)"
-          >
-            {copied ? "Copied" : "Copy"}
-          </button>
+      <div className="space-y-4 p-5 text-[length:var(--fs-base)] text-(--fg)/85">
+        <div className="mx-auto flex h-52 w-52 items-center justify-center overflow-hidden rounded-2xl bg-white p-2">
+          {url && !urlTooLong ? (
+            <QrCode value={url} label={`QR code for ${url}`} />
+          ) : (
+            <span className="px-5 text-center text-[length:var(--fs-sm)] text-black/55">
+              {urlTooLong ? "Use a shorter URL" : "Enter a Studio URL"}
+            </span>
+          )}
         </div>
-        <p className="text-[length:var(--fs-sm)] text-(--fg)/45">
-          Direct phone-to-desktop pairing with a QR code is on the roadmap — it will relay through
-          your controller so this machine is never exposed.
+        <div>
+          <label
+            htmlFor="phone-studio-url"
+            className="mb-1.5 block text-[length:var(--fs-sm)] text-(--fg)/55"
+          >
+            Studio URL
+          </label>
+          <div className="flex items-center gap-2">
+            <Input
+              id="phone-studio-url"
+              value={url}
+              maxLength={72}
+              onChange={(event) => setUrl(event.target.value.trim())}
+              className="h-9 min-w-0 flex-1 font-mono text-[length:var(--fs-sm)]"
+              aria-label="Studio URL encoded in QR code"
+            />
+            <button
+              type="button"
+              onClick={() => void copy()}
+              disabled={!url}
+              className="h-9 shrink-0 rounded-lg border border-(--border) px-3 text-[length:var(--fs-sm)] transition-colors hover:bg-(--hover) disabled:opacity-40"
+            >
+              {copied ? "Copied" : "Copy"}
+            </button>
+          </div>
+        </div>
+        <p className="text-[length:var(--fs-sm)] leading-relaxed text-(--fg)/50">
+          {loopback
+            ? "This address only works on this Mac. Replace it with this Studio’s LAN or Tailscale URL before scanning."
+            : urlTooLong
+              ? "The QR code supports Studio URLs up to 78 bytes."
+              : "Scan with your phone camera to open this Studio directly."}
         </p>
       </div>
     </UiModal>
@@ -107,38 +77,62 @@ function PhoneConnectModal({ open, onClose }: { open: boolean; onClose: () => vo
 }
 
 export function ProfileFooter({ settingsActive }: { settingsActive: boolean }) {
-  const [profile, setProfile] = useState<Profile>(readProfile);
+  const [profile, updateProfile] = useLocalProfile();
   const [menuOpen, setMenuOpen] = useState(false);
   const [phoneOpen, setPhoneOpen] = useState(false);
-
-  const update = (patch: Partial<Profile>) => {
-    setProfile((current) => {
-      const next = { ...current, ...patch };
-      writeProfile(next);
-      return next;
-    });
+  const [imageError, setImageError] = useState("");
+  const imageInputRef = useRef<HTMLInputElement>(null);
+  const updateImage = async (file: File | undefined) => {
+    if (!file) return;
+    try {
+      updateProfile({ imageUrl: await profileImageFromFile(file) });
+      setImageError("");
+    } catch (error) {
+      setImageError(error instanceof Error ? error.message : "Image failed to load");
+    }
   };
 
   return (
     <div className="relative">
-      <PhoneConnectModal open={phoneOpen} onClose={() => setPhoneOpen(false)} />
+      {phoneOpen ? <PhoneConnectModal onClose={() => setPhoneOpen(false)} /> : null}
       {menuOpen ? (
-        <div className="absolute bottom-full left-0 z-30 mb-1.5 w-60 rounded-2xl bg-(--color-popover) p-3 shadow-[0px_16px_32px_-8px_rgba(0,0,0,0.35)]">
-          <div className="mb-2 flex items-center gap-2.5">
-            <Avatar profile={profile} size={28} />
+        <div className="absolute bottom-full left-0 z-30 mb-1.5 w-64 rounded-2xl border border-(--color-popover-border) bg-(--color-popover) p-3 shadow-[0px_16px_32px_-8px_rgba(0,0,0,0.35)]">
+          <div className="mb-3 flex items-center gap-2.5">
+            <button
+              type="button"
+              onClick={() => imageInputRef.current?.click()}
+              className="group relative rounded-full"
+              title="Update profile image"
+              aria-label="Update profile image"
+            >
+              <ProfileAvatar profile={profile} size={32} />
+              <span className="absolute inset-0 flex items-center justify-center rounded-full bg-black/55 opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
+                <Upload className="h-3.5 w-3.5 text-white" />
+              </span>
+            </button>
+            <input
+              ref={imageInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={(event) => void updateImage(event.currentTarget.files?.[0])}
+            />
             <Input
               value={profile.name}
-              onChange={(event) => update({ name: event.target.value })}
+              onChange={(event) => updateProfile({ name: event.target.value })}
               placeholder="Display name"
-              className="h-7"
+              className="h-8"
             />
           </div>
-          <div className="mb-2 flex items-center gap-1.5 px-0.5">
-            {HUES.map((hue) => (
+          {imageError ? (
+            <p className="mb-2 text-[length:var(--fs-xs)] text-(--err)">{imageError}</p>
+          ) : null}
+          <div className="mb-2.5 flex items-center gap-1.5 px-0.5">
+            {PROFILE_HUES.map((hue) => (
               <button
                 key={hue}
                 type="button"
-                onClick={() => update({ hue })}
+                onClick={() => updateProfile({ hue })}
                 className={`h-5 w-5 rounded-full transition-transform hover:scale-110 ${
                   profile.hue === hue
                     ? "ring-2 ring-(--fg)/60 ring-offset-2 ring-offset-(--color-popover)"
@@ -148,6 +142,15 @@ export function ProfileFooter({ settingsActive }: { settingsActive: boolean }) {
                 aria-label={`Avatar color ${hue}`}
               />
             ))}
+            {profile.imageUrl ? (
+              <button
+                type="button"
+                onClick={() => updateProfile({ imageUrl: undefined })}
+                className="ml-auto text-[length:var(--fs-xs)] text-(--dim) hover:text-(--fg)"
+              >
+                Remove photo
+              </button>
+            ) : null}
           </div>
           <Link
             href="/settings"
@@ -173,7 +176,7 @@ export function ProfileFooter({ settingsActive }: { settingsActive: boolean }) {
           aria-expanded={menuOpen}
           aria-label="Profile menu"
         >
-          <Avatar profile={profile} />
+          <ProfileAvatar profile={profile} />
           <span className="truncate text-[length:var(--fs-md)] text-(--fg)">{profile.name}</span>
         </button>
         <button

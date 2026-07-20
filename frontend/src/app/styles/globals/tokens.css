@@ -602,7 +602,7 @@
 
 @media (min-width: 1024px) {
   :root {
-    --composer-w: clamp(25vw, 48rem, 52vw);
+    --composer-w: clamp(28rem, 42rem, 48vw);
     --thread-w: 900px;
   }
 }
@@ -621,7 +621,7 @@
   --h-toolbar: 46px;
   --h-toolbar-sm: 36px;
   --h-toolbar-pane: 40px;
-  --composer-w: clamp(25vw, 48rem, 52vw);
+  --composer-w: clamp(28rem, 42rem, 48vw);
   --thread-w: 900px;
   /* Codex: --radius-4xl (24px) × corner-radius-scale 1.25 ≈ 28px superellipse. */
   --composer-radius: 28px;

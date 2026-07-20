@@ -254,11 +254,11 @@ export function AgentBrowserPanel({
   );
   return (
     <aside
-      className={`agent-computer-panel ${tools.computer.open ? "relative flex" : "hidden"} shrink-0 flex-col bg-(--color-panel) shadow-[var(--elev-side-panel)]`}
+      className={`agent-computer-panel ${tools.computer.open ? "relative flex" : "hidden"} min-h-0 shrink-0 flex-col border-l border-(--border) bg-(--color-panel)`}
       ref={registerComputerAside}
       tabIndex={-1}
       onKeyDown={handleComputerKeyDown}
-      style={{ width: `${tools.computer.width}px`, minWidth: 320, maxWidth: 560 }}
+      style={{ width: `${tools.computer.width}px`, minWidth: 280, maxWidth: 560 }}
     >
       <div
         role="separator"

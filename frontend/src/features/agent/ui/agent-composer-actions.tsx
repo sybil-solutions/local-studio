@@ -2,7 +2,7 @@
 
 import type { ReactNode, RefObject } from "react";
 import { Spinner } from "@/ui";
-import { ArrowUp, CircleAlert, Code2, Plus } from "@/ui/icon-registry";
+import { ArrowUp, Code2, Plus } from "@/ui/icon-registry";
 import type { BrowserBackend } from "@/features/agent/tools/types";
 import { GlobeIcon, PanelIcon, SitegeistIcon, StopIcon } from "@/ui/icons";
 import { ComposerDictationButton } from "./composer-dictation-button";
@@ -23,7 +23,6 @@ export function AgentComposerActions({
   onToggleCanvas,
   onAbortTurn,
   onTranscript,
-  onOpenStatus,
   thinkingSelector,
   modelSelector,
 }: {
@@ -42,7 +41,6 @@ export function AgentComposerActions({
   onToggleCanvas: () => void;
   onAbortTurn: () => void;
   onTranscript: (text: string) => void;
-  onOpenStatus?: () => void;
   thinkingSelector?: ReactNode;
   modelSelector?: ReactNode;
 }) {
@@ -73,19 +71,6 @@ export function AgentComposerActions({
       >
         <Plus className="h-4 w-4" strokeWidth={1.75} />
       </button>
-      {onOpenStatus ? (
-        // Codex access chip: the agent runs with full access; the chip opens
-        // the status panel. Orange-200 from the Codex ramp.
-        <button
-          type="button"
-          onClick={onOpenStatus}
-          className="inline-flex !h-[30px] !min-h-[30px] shrink-0 items-center gap-1.5 rounded-lg px-2 text-[length:var(--fs-base)] text-(--orange-200) transition-colors hover:bg-(--hover)"
-          title="Full access — the agent can read, write, and run commands. Opens status."
-        >
-          <CircleAlert className="h-4 w-4" strokeWidth={1.75} />
-          Full access
-        </button>
-      ) : null}
       <button
         type="button"
         onClick={onToggleBrowserTool}

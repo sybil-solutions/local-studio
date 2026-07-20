@@ -33,17 +33,13 @@ export function AgentModelPicker({
   loading,
 }: AgentModelPickerProps) {
   const [open, setOpen] = useState(false);
-  const [activeGroupKey, setActiveGroupKey] = useState<string | null>(null);
   const active = models.find((model) => model.id === selectedModel) ?? null;
   const groups = useMemo(() => groupModelsByController(models), [models]);
-  const selectedGroupKey = active ? controllerGroupKey(active) : groups[0]?.key;
-  const activeGroup = groups.find((group) => group.key === activeGroupKey) ?? null;
   const disabled = loading;
   const triggerLabel = modelTriggerLabel(active, selectedModel, loading, models.length);
   const selectedModelNotRunning = !loading && Boolean(active && active.active === false);
   const close = useCallback(() => {
     setOpen(false);
-    setActiveGroupKey(null);
   }, []);
   const select = useCallback(
     (modelId: string) => {
@@ -78,7 +74,7 @@ export function AgentModelPicker({
       />
       {open ? (
         <div
-          className="absolute bottom-full right-0 z-10 mb-1.5 min-w-48 rounded-2xl border border-(--color-popover-border) bg-(--color-popover) p-1.5 shadow-[0px_16px_32px_-8px_rgba(0,0,0,0.3),0px_0px_0px_0.5px_rgba(0,0,0,0.1)]"
+          className="absolute bottom-full right-0 z-[300] mb-1.5 max-h-[min(26rem,60vh)] w-80 max-w-[calc(100vw-2rem)] overflow-y-auto rounded-2xl border border-(--color-popover-border) bg-(--color-popover) p-1.5 shadow-[0px_16px_32px_-8px_rgba(0,0,0,0.3),0px_0px_0px_0.5px_rgba(0,0,0,0.1)]"
           role="menu"
           aria-label="Models"
           onKeyDown={(event) => handleMenuKeyDown(event, close)}
@@ -94,41 +90,27 @@ export function AgentModelPicker({
                 Open Models
               </Link>
             </div>
-          ) : groups.length > 1 ? (
-            groups.map((group) => (
-              <ModelGroupOption
-                key={group.key}
-                group={group}
-                active={group.key === activeGroupKey}
-                selected={group.key === selectedGroupKey}
-                onActivate={() => setActiveGroupKey(group.key)}
-              />
-            ))
           ) : (
-            <ModelOptions
-              models={groups[0]?.models ?? []}
-              selectedModel={selectedModel}
-              defaultModel={defaultModel}
-              onSelect={select}
-              onSetDefault={onSetDefault}
-            />
+            groups.map((group) => (
+              <div key={group.key} className="not-first:mt-1.5">
+                {groups.length > 1 ? (
+                  <div className="flex h-7 items-center justify-between px-2.5 text-[length:var(--fs-xs)] font-medium text-(--dim)">
+                    <span className="truncate">{group.name}</span>
+                    <span className="font-mono text-[length:var(--fs-2xs)]">
+                      {group.models.length}
+                    </span>
+                  </div>
+                ) : null}
+                <ModelOptions
+                  models={group.models}
+                  selectedModel={selectedModel}
+                  defaultModel={defaultModel}
+                  onSelect={select}
+                  onSetDefault={onSetDefault}
+                />
+              </div>
+            ))
           )}
-          {groups.length > 1 && activeGroup ? (
-            <div
-              className="absolute bottom-0 right-[calc(100%+4px)] max-h-72 w-max min-w-52 max-w-80 overflow-y-auto rounded-2xl border border-(--color-popover-border) bg-(--color-popover) p-1.5 shadow-[0px_16px_32px_-8px_rgba(0,0,0,0.3),0px_0px_0px_0.5px_rgba(0,0,0,0.1)]"
-              role="menu"
-              aria-label={activeGroup.name}
-              onMouseEnter={() => setActiveGroupKey(activeGroup.key)}
-            >
-              <ModelOptions
-                models={activeGroup.models}
-                selectedModel={selectedModel}
-                defaultModel={defaultModel}
-                onSelect={select}
-                onSetDefault={onSetDefault}
-              />
-            </div>
-          ) : null}
         </div>
       ) : null}
     </div>
@@ -171,38 +153,6 @@ function ModelPickerTrigger({
       <span className="max-w-[180px] truncate text-left">{label}</span>
       {notRunning ? <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-(--warn)" /> : null}
       <ChevronDown className="pointer-events-none h-3.5 w-3.5 shrink-0 text-(--dim)" />
-    </button>
-  );
-}
-
-function ModelGroupOption({
-  group,
-  active,
-  selected,
-  onActivate,
-}: {
-  group: ModelGroup;
-  active: boolean;
-  selected: boolean;
-  onActivate: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      role="menuitem"
-      className={cx(
-        "flex min-h-8 w-full min-w-0 items-center gap-2 rounded-[10px] px-2.5 text-left text-[length:var(--fs-base)] text-(--fg) transition-colors hover:bg-(--hover) focus-visible:bg-(--hover) focus-visible:outline-none active:translate-y-px",
-        active && "bg-(--hover)",
-      )}
-      onFocus={onActivate}
-      onClick={onActivate}
-    >
-      <span className="min-w-0 flex-1 truncate">{group.name}</span>
-      <span className="font-mono text-[length:var(--fs-2xs)] text-(--dim)">
-        {group.models.length}
-      </span>
-      {selected ? <Check className="h-3.5 w-3.5 shrink-0 text-(--dim)" /> : null}
-      <ChevronDown className="h-3.5 w-3.5 shrink-0 -rotate-90 text-(--dim)" />
     </button>
   );
 }

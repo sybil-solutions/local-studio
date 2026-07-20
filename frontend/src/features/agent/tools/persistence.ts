@@ -22,9 +22,9 @@ export const COMPUTER_CANVAS_TEXT_KEY = "local-studio.agent.computer.canvasText"
 export const DEFAULT_BROWSER_URL = "about:blank";
 export const DEFAULT_BROWSER_BACKEND: BrowserBackend = "embedded";
 export const DEFAULT_COMPUTER_WIDTH = 440;
-export const MIN_COMPUTER_WIDTH = 320;
+export const MIN_COMPUTER_WIDTH = 280;
 export const MAX_COMPUTER_WIDTH = 560;
-export const MIN_CHAT_WIDTH_WHEN_COMPUTER_OPEN = 560;
+export const MIN_CHAT_WIDTH_WHEN_COMPUTER_OPEN = 360;
 export const COMPUTER_SNAP_WIDTHS = [360, 440, 520] as const;
 
 const COMPUTER_TABS: readonly ComputerTab[] = COMPUTER_TAB_IDS;

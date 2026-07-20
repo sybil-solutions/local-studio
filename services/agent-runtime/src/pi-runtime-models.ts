@@ -251,7 +251,7 @@ async function fetchModelsFromController(
       controllerUrl: backendUrl,
       controllerName: label,
       thinkingLevels: model.reasoning
-        ? ["high" as AgentThinkingLevel]
+        ? (["high", "max"] as AgentThinkingLevel[])
         : ["off" as AgentThinkingLevel],
       name: multipleControllers ? `${model.name} · ${label}` : model.name,
     }),
@@ -312,7 +312,7 @@ async function writePiModelsConfig(
         authHeader: Boolean(controller.apiKey),
         compat: {
           supportsDeveloperRole: false,
-          supportsReasoningEffort: false,
+          supportsReasoningEffort: true,
         },
         models: modelsToPiModels(models),
       },
@@ -442,7 +442,7 @@ function isDeepSeekReasoningModel(model: AgentModel): boolean {
 const VLLM_OPENAI_COMPAT: OpenAICompletionsCompat = {
   supportsStore: false,
   supportsDeveloperRole: false,
-  supportsReasoningEffort: false,
+  supportsReasoningEffort: true,
   supportsStrictMode: false,
   supportsUsageInStreaming: true,
   maxTokensField: "max_tokens",
@@ -468,6 +468,7 @@ export function modelsToPiModels(models: AgentModel[]) {
               medium: "medium",
               high: "high",
               xhigh: "max",
+              max: "max",
             },
           }
         : {}),

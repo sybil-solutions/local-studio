@@ -173,12 +173,10 @@ export function AgentComposerFrame({
         </div>
       ) : null}
       {projectRow ? (
-        // Codex fresh-thread "Choose project" row: a quiet tone step between
-        // page and composer, chat-size text, folder glyph.
         <button
           type="button"
           onClick={projectRow.onPick}
-          className="mx-auto -mb-4 flex w-full max-w-[var(--composer-w)] items-center gap-2.5 rounded-2xl bg-(--fg)/[0.03] px-4 pb-7 pt-3 text-left text-[length:var(--codex-chat-font-size)] text-(--fg)/85 transition-colors hover:bg-(--fg)/[0.05]"
+          className="mx-auto flex h-10 w-full max-w-[var(--composer-w)] items-center gap-2.5 rounded-t-[18px] rounded-b-none border border-b-0 border-(--border) bg-(--fg)/[0.03] px-4 text-left text-[length:var(--codex-chat-font-size)] text-(--fg)/85 transition-colors hover:bg-(--fg)/[0.05]"
         >
           <Folder className="h-4 w-4 shrink-0 text-(--fg)/60" strokeWidth={1.75} />
           <span className="truncate">{projectRow.label}</span>
@@ -189,7 +187,8 @@ export function AgentComposerFrame({
         onDragLeave={onComposerDragLeave}
         onDrop={onComposerDrop}
         className={cx(
-          "relative mx-auto w-full max-w-[var(--composer-w)] overflow-visible rounded-[22px] border border-(--border) bg-(--composer) shadow-[var(--composer-shadow)] transition-colors",
+          "relative mx-auto w-full max-w-[var(--composer-w)] overflow-visible border border-(--border) bg-(--composer) shadow-[var(--composer-shadow)] transition-colors",
+          projectRow ? "rounded-b-[20px] rounded-t-none" : "rounded-[20px]",
           composerDragActive && "outline outline-1 outline-(--link)/50",
         )}
       >
@@ -204,8 +203,6 @@ export function AgentComposerFrame({
           onRemove={onRemoveLoadedContext}
         />
         {mention ? (
-          // Codex: the mention/command menu floats as its own elevated panel
-          // above the composer card, not inside it.
           <div className="absolute inset-x-0 bottom-full z-20 mb-2 overflow-hidden rounded-[20px] bg-(--composer) py-1.5 shadow-[0_8px_32px_rgba(0,0,0,0.35)]">
             <AgentMentionPicker
               mention={mention}
@@ -244,7 +241,6 @@ export function AgentComposerFrame({
           onToggleCanvas={onToggleCanvas}
           onAbortTurn={onAbortTurn}
           onTranscript={onTranscript}
-          onOpenStatus={onOpenStatus}
           thinkingSelector={thinkingSelector}
           modelSelector={modelSelector}
         />
