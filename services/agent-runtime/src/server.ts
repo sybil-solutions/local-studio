@@ -40,15 +40,18 @@ import {
   handleGoalPut,
 } from "./http/automation-handlers";
 import { handleSubagentRun, handleSubagentsList } from "./http/subagent-handlers";
+import { createLitterBridgeGateway } from "./litter-bridge-gateway";
 
 markAgentRuntimeProcess();
 startAutomationScheduler();
 
 const app = new Hono();
+const litterBridgeGateway = createLitterBridgeGateway();
 
 app.get("/health", (c) =>
   c.json({ ok: true, service: "local-studio-agent-runtime", pid: process.pid }),
 );
+app.post("/api/litter-bridge/v1", (c) => litterBridgeGateway.handle(c.req.raw));
 
 app.post("/api/agent/turn", (c) => handleAgentTurn(c.req.raw));
 app.post("/api/agent/abort", (c) => handleAgentAbort(c.req.raw));
@@ -98,7 +101,12 @@ app.post("/api/agent/browser/:verb", (c) => handleBrowserVerb(c.req.raw, c.req.p
 const port = Number(process.env.PORT) > 0 ? Number(process.env.PORT) : 8081;
 
 serve({ fetch: app.fetch, port, hostname: "127.0.0.1" }, (info) => {
+  litterBridgeGateway.publishMetadata(info.port);
   console.log(
     `[agent-runtime] listening on http://127.0.0.1:${info.port} (pid ${process.pid}, node ${process.version})`,
   );
 });
+
+process.once("exit", () => litterBridgeGateway.dispose());
+process.once("SIGINT", () => process.exit(0));
+process.once("SIGTERM", () => process.exit(0));
