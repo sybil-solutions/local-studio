@@ -126,10 +126,7 @@ type SummaryCacheEntry = {
 const summaryCache = new Map<string, SummaryCacheEntry>();
 const SUMMARY_CACHE_MAX_ENTRIES = 8192;
 
-function summaryFromCore(
-  core: SummaryCacheEntry["core"],
-  mtime: Date,
-): SessionSummary | null {
+function summaryFromCore(core: SummaryCacheEntry["core"], mtime: Date): SessionSummary | null {
   if (!core) return null;
   return { ...core, updatedAt: mtime.toISOString(), archived: false, archivedAt: null };
 }
@@ -273,7 +270,9 @@ async function readListCandidate(
   }
 }
 
-function listCandidateFiles(cwd: string): Array<{ dir: string; filename: string; mtimeMs: number }> {
+function listCandidateFiles(
+  cwd: string,
+): Array<{ dir: string; filename: string; mtimeMs: number }> {
   const candidates: Array<{ dir: string; filename: string; mtimeMs: number }> = [];
   for (const dir of sessionsDirsForCwd(cwd)) {
     if (!existsSync(dir)) continue;
@@ -295,9 +294,7 @@ function limitSatisfied(
   nextMtimeMs: number,
 ): boolean {
   if (!limit || summariesById.size < limit) return false;
-  const startTimes = [...summariesById.values()]
-    .map(summaryStartTime)
-    .sort((a, b) => b - a);
+  const startTimes = [...summariesById.values()].map(summaryStartTime).sort((a, b) => b - a);
   return nextMtimeMs < startTimes[limit - 1];
 }
 
@@ -320,19 +317,49 @@ export async function listSessions(
   return options.limit && options.limit > 0 ? summaries.slice(0, options.limit) : summaries;
 }
 
+const PI_SESSION_ID_PATTERN = /^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$/;
+const PI_SESSION_HEADER_BYTE_CAP = 64 * 1024;
+
+function readPiSessionHeaderId(filepath: string): string | null {
+  let fd: number | null = null;
+  try {
+    const size = statSync(filepath).size;
+    const bytesToRead = Math.min(size, PI_SESSION_HEADER_BYTE_CAP);
+    const buffer = Buffer.alloc(bytesToRead);
+    fd = openSync(filepath, "r");
+    const bytesRead = readSync(fd, buffer, 0, bytesToRead, 0);
+    const newline = buffer.indexOf(0x0a, 0);
+    if (newline < 0 && size > PI_SESSION_HEADER_BYTE_CAP) return null;
+    const lineEnd = newline >= 0 ? newline : bytesRead;
+    const header = JSON.parse(buffer.toString("utf8", 0, lineEnd)) as Record<string, unknown>;
+    return header.type === "session" && typeof header.id === "string" ? header.id : null;
+  } catch {
+    return null;
+  } finally {
+    if (fd !== null) closeSync(fd);
+  }
+}
+
 export function findSessionFile(cwd: string, sessionId: string): string | null {
-  const matches: Array<{ filepath: string; mtime: number }> = [];
+  if (!PI_SESSION_ID_PATTERN.test(sessionId)) return null;
+
+  const filenameSuffix = `_${sessionId}.jsonl`;
+  const matches = new Set<string>();
   for (const dir of sessionsDirsForCwd(cwd)) {
     if (!existsSync(dir)) continue;
-    for (const name of readdirSync(dir)) {
-      if (!name.endsWith(".jsonl") || (!name.includes(sessionId) && !name.startsWith(sessionId))) {
-        continue;
+    try {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        if (!entry.isFile() || !entry.name.endsWith(filenameSuffix)) continue;
+        const filepath = path.join(dir, entry.name);
+        if (readPiSessionHeaderId(filepath) !== sessionId) continue;
+        matches.add(filepath);
+        if (matches.size > 1) return null;
       }
-      const filepath = path.join(dir, name);
-      matches.push({ filepath, mtime: statSync(filepath).mtimeMs });
+    } catch {
+      continue;
     }
   }
-  return matches.sort((a, b) => b.mtime - a.mtime)[0]?.filepath ?? null;
+  return matches.values().next().value ?? null;
 }
 
 export type LoadSessionOptions = {

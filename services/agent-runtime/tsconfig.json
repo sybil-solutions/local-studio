@@ -13,7 +13,7 @@
     "types": ["node"],
     "typeRoots": ["../../frontend/node_modules/@types"],
     "paths": {
-      "effect": ["../../frontend/node_modules/effect"],
+      "effect": ["../../frontend/node_modules/effect/dist/index"],
       "playwright-core": ["../../frontend/node_modules/playwright-core"],
       "hono": ["../../frontend/node_modules/hono"],
       "@hono/node-server": ["../../frontend/node_modules/@hono/node-server"],
