@@ -23,6 +23,7 @@ import { proxyToAgentRuntime } from "@/app/api/agent/proxy-to-runtime";
 import { POST as runTerminalRoute } from "@/app/api/agent/terminal/route";
 import { POST as runTurnRoute } from "@/app/api/agent/turn/route";
 import { POST } from "@/app/api/auth/session/route";
+import { getForwardedSearchParams } from "@/app/api/proxy/[...path]/proxy-fetch";
 import {
   STUDIO_TOKEN_COOKIE,
   STUDIO_TOKEN_HEADER,
@@ -57,6 +58,7 @@ const accessVariables = [
   "LOCAL_STUDIO_FRONTEND_ALLOW_UNAUTHENTICATED",
   "LOCAL_STUDIO_FRONTEND_BASE",
   "LOCAL_STUDIO_AGENT_RUNTIME_URL",
+  "LOCAL_STUDIO_ACCESS_LOGS",
   FRONTEND_CALLBACK_TOKEN_ENV,
 ] as const;
 const originalEnvironment = Object.fromEntries(
@@ -509,6 +511,43 @@ test("middleware rejects query tokens and routes browser authentication through 
     }),
   );
   assert.equal(rejectedApiQuery.status, 400);
+
+  const controllerKeyRequest = accessRequest(
+    "https://studio.example/api/proxy/events?tail=0&api_key=controller-secret",
+    { headers: { [STUDIO_TOKEN_HEADER]: "secret" } },
+  );
+  process.env.LOCAL_STUDIO_ACCESS_LOGS = "true";
+  const originalConsoleLog = console.log;
+  const accessLogs: string[] = [];
+  try {
+    console.log = (...values: unknown[]) => accessLogs.push(values.map(String).join(" "));
+    assert.equal(proxy(controllerKeyRequest).status, 200);
+  } finally {
+    console.log = originalConsoleLog;
+    delete process.env.LOCAL_STUDIO_ACCESS_LOGS;
+  }
+  assert.equal(accessLogs.length, 1);
+  assert.equal(accessLogs[0]?.includes("controller-secret"), false);
+  assert.deepEqual(getForwardedSearchParams(controllerKeyRequest), {
+    apiKeyQuery: "controller-secret",
+    searchParams: "tail=0",
+  });
+  for (const [path, key] of [
+    ["api/agent/runtime/status", "api_key"],
+    ["api/proxy/events", "token"],
+    ["api/proxy/events", "key"],
+    ["api/proxy/events", "access_token"],
+    ["api/proxy/events", "API_KEY"],
+  ]) {
+    assert.equal(
+      proxy(
+        accessRequest(`https://studio.example/${path}?${key}=discarded`, {
+          headers: { [STUDIO_TOKEN_HEADER]: "secret" },
+        }),
+      ).status,
+      400,
+    );
+  }
 
   const apiResponse = proxy(accessRequest("https://studio.example/api/agent/terminal"));
   assert.equal(apiResponse.status, 401);

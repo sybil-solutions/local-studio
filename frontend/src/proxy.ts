@@ -44,8 +44,10 @@ function permitsAccessEntry(request: NextRequest): boolean {
 
 function credentialQueryResponse(request: NextRequest): NextResponse | null {
   const sanitizedUrl = request.nextUrl.clone();
-  const keys = [...sanitizedUrl.searchParams.keys()].filter((key) =>
-    credentialQueryKeys.has(key.toLowerCase()),
+  const keys = [...sanitizedUrl.searchParams.keys()].filter(
+    (key) =>
+      credentialQueryKeys.has(key.toLowerCase()) &&
+      !(key === "api_key" && request.nextUrl.pathname.startsWith("/api/proxy/")),
   );
   if (keys.length === 0) return null;
   for (const key of keys) sanitizedUrl.searchParams.delete(key);
