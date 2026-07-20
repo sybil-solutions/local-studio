@@ -17,7 +17,7 @@ export const controllerRuntimeMiddleware =
     return next();
   };
 
-const runControllerEffect = <A, E>(
+export const runControllerEffect = <A, E>(
   runtime: ControllerRuntime,
   effect: ControllerEffect<A, E>,
 ): Promise<A> =>
