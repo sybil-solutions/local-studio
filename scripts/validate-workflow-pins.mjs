@@ -339,7 +339,8 @@ const validateBun = (arguments_, path, context) => {
   if (command === "x") return [`${location(path)} must not download packages dynamically`];
   if (command === "test") return [];
   if (command === "build") {
-    return tail.join(" ") === "src/server.ts --target=node --outfile=dist/standalone.mjs"
+    return tail.join(" ") ===
+      "src/server.ts --target=node --external fsevents --outfile=dist/standalone.mjs"
       ? []
       : [`${location(path)} Bun build invocation is not allowlisted`];
   }

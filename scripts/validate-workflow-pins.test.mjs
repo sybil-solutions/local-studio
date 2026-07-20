@@ -494,6 +494,14 @@ test("rejects shell parsing and command allowlist bypasses", () => {
     validateWorkflowSource(workflow('      - run: |\n          "np\\m" ci\n')),
     [],
   );
+  assert.deepEqual(
+    validateWorkflowSource(
+      workflow(
+        "      - run: bun build src/server.ts --target=node --external fsevents --outfile=dist/standalone.mjs\n",
+      ),
+    ),
+    [],
+  );
 });
 
 test("validates package prefixes, scripts, and working directories conservatively", () => {
