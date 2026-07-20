@@ -793,6 +793,16 @@ test("keeps executable workflow graphs and sensitive permissions least-privilege
   assert.deepEqual(ci.jobs["desktop-smoke"].needs, ["controller", "frontend"]);
   assert.equal(ci.jobs["desktop-smoke"]["runs-on"], "macos-15");
   assert.equal(ci.jobs["desktop-smoke"].env, undefined);
+  assert.deepEqual(
+    ci.jobs["desktop-smoke"].steps.find(
+      (step) => step.name === "Install controller contract dependencies",
+    ),
+    {
+      name: "Install controller contract dependencies",
+      "working-directory": "./controller",
+      run: "bun install --frozen-lockfile",
+    },
+  );
   for (const name of ["Build unpacked desktop app", "Smoke-test packaged desktop app"]) {
     assert.deepEqual(ci.jobs["desktop-smoke"].steps.find((step) => step.name === name).env, {
       LOCAL_STUDIO_DESKTOP_SMOKE_ARCH: "${{ runner.arch }}",
