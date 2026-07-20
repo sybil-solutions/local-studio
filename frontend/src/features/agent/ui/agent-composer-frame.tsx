@@ -52,6 +52,7 @@ export type AgentComposerFrameProps = {
   mentionRows: MentionRow[];
   modelSupportsVision: boolean;
   modelSelector?: ReactNode;
+  thinkingSelector?: ReactNode;
   onAbortTurn: () => void;
   onAttachFiles: (files: FileList | null) => void;
   onComposerChange: ChangeEventHandler<HTMLTextAreaElement>;
@@ -107,6 +108,7 @@ export function AgentComposerFrame({
   mentionRows,
   modelSupportsVision,
   modelSelector,
+  thinkingSelector,
   onAbortTurn,
   onAttachFiles,
   onComposerChange,
@@ -151,7 +153,7 @@ export function AgentComposerFrame({
           ? "bg-transparent p-[calc(var(--space-base)*2)]"
           : dense
             ? "bg-(--agent-bg) px-3 pb-1 pt-1.5"
-            : "bg-(--agent-bg) px-6 pb-2 pt-2.5",
+            : "bg-(--agent-bg) px-5 pb-2 pt-2",
       )}
     >
       <AgentQueuePanel
@@ -187,7 +189,7 @@ export function AgentComposerFrame({
         onDragLeave={onComposerDragLeave}
         onDrop={onComposerDrop}
         className={cx(
-          "relative mx-auto w-full max-w-[var(--composer-w)] overflow-visible rounded-[var(--composer-radius)] border border-(--composer-border) bg-(--composer) shadow-[var(--composer-shadow)] transition-colors",
+          "relative mx-auto w-full max-w-[var(--composer-w)] overflow-visible rounded-[22px] border border-(--border) bg-(--composer) shadow-[var(--composer-shadow)] transition-colors",
           composerDragActive && "outline outline-1 outline-(--link)/50",
         )}
       >
@@ -243,6 +245,7 @@ export function AgentComposerFrame({
           onAbortTurn={onAbortTurn}
           onTranscript={onTranscript}
           onOpenStatus={onOpenStatus}
+          thinkingSelector={thinkingSelector}
           modelSelector={modelSelector}
         />
       </div>

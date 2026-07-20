@@ -16,6 +16,7 @@ import {
 } from "@/features/agent/composer-context";
 import type { Session, SessionId, UpdateSession } from "@/features/agent/runtime/types";
 import type { BrowserBackend, ToolSelection } from "@/features/agent/tools/types";
+import type { AgentThinkingLevel } from "@/features/agent/contracts";
 import * as api from "@/features/agent/runtime/api";
 import {
   runtimeCanHydrateCanonicalSession,
@@ -35,6 +36,7 @@ export type UseSessionEngineDeps = {
   tabs: Session[];
   activeTabId: SessionId;
   modelId: string;
+  thinkingLevel: AgentThinkingLevel;
   cwd: string;
   browserToolEnabled: boolean;
   browserBackend: BrowserBackend;
@@ -81,6 +83,7 @@ export function useSessionEngine(deps: UseSessionEngineDeps): SessionEngine {
     tabs,
     activeTabId,
     modelId,
+    thinkingLevel,
     cwd,
     browserToolEnabled,
     browserBackend,
@@ -121,6 +124,7 @@ export function useSessionEngine(deps: UseSessionEngineDeps): SessionEngine {
               api.submitTurnCommand({
                 sessionId: runtime,
                 modelId,
+                thinkingLevel,
                 message,
                 cwd: cwd.trim() || undefined,
                 piSessionId,
@@ -158,6 +162,7 @@ export function useSessionEngine(deps: UseSessionEngineDeps): SessionEngine {
       canvasEnabled,
       cwd,
       modelId,
+      thinkingLevel,
       onPiSessionIdChange,
       updateSession,
     ],
@@ -173,6 +178,7 @@ export function useSessionEngine(deps: UseSessionEngineDeps): SessionEngine {
           canvasEnabled,
           cwd,
           modelId,
+          thinkingLevel,
           onPiSessionIdChange,
           selectionFor: selectionForRef.current,
           tabsRef,
@@ -183,6 +189,7 @@ export function useSessionEngine(deps: UseSessionEngineDeps): SessionEngine {
     [
       activeTabId,
       modelId,
+      thinkingLevel,
       cwd,
       browserToolEnabled,
       browserBackend,
@@ -384,6 +391,7 @@ export function useSessionEngine(deps: UseSessionEngineDeps): SessionEngine {
               api.compactSession({
                 sessionId: session.id,
                 modelId,
+                thinkingLevel,
                 cwd: cwd.trim() || undefined,
                 piSessionId: session.piSessionId,
                 browserToolEnabled,
@@ -419,7 +427,16 @@ export function useSessionEngine(deps: UseSessionEngineDeps): SessionEngine {
           ),
         ),
       ),
-    [browserToolEnabled, browserBackend, canvasEnabled, cwd, loadAndReplay, modelId, updateSession],
+    [
+      browserToolEnabled,
+      browserBackend,
+      canvasEnabled,
+      cwd,
+      loadAndReplay,
+      modelId,
+      thinkingLevel,
+      updateSession,
+    ],
   );
 
   const acceptsControl = useCallback(

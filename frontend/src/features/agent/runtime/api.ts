@@ -117,7 +117,8 @@ export function loadCanonicalSession(
   return Effect.runPromise(
     Effect.gen(function* () {
       const params = new URLSearchParams({ cwd });
-      const tail = options.before === undefined ? (options.tail ?? DEFAULT_SESSION_TAIL) : undefined;
+      const tail =
+        options.before === undefined ? (options.tail ?? DEFAULT_SESSION_TAIL) : undefined;
       if (tail !== undefined) params.set("tail", String(tail));
       if (options.before !== undefined) params.set("before", String(options.before));
       const response = yield* fetchEffect(
@@ -144,6 +145,7 @@ export function loadCanonicalSession(
 export type CompactSessionArgs = {
   sessionId: string;
   modelId: string;
+  thinkingLevel?: import("@/features/agent/contracts").AgentThinkingLevel;
   cwd?: string;
   piSessionId?: string | null;
   browserToolEnabled: boolean;
@@ -179,6 +181,7 @@ export function compactSession(args: CompactSessionArgs): Promise<CompactSession
 export type SubmitTurnArgs = {
   sessionId: string;
   modelId: string;
+  thinkingLevel?: import("@/features/agent/contracts").AgentThinkingLevel;
   message: string;
   images?: AgentImageInput[];
   cwd?: string;

@@ -26,6 +26,7 @@ import type {
   Model,
   Api,
 } from "@earendil-works/pi-ai";
+import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
 import { inferReasoningSupport, type AgentModel } from "../../../shared/agent/models";
 import { resolveDataDir } from "./data-dir";
 import { getGlobalSingleton } from "./instances";
@@ -366,6 +367,13 @@ function providerModelToAgentModel(
   providerName: string,
   model: Model<Api>,
 ): AgentModel {
+  const reasoning = model.reasoning || inferReasoningSupport(model.id);
+  const compat = model.compat as { supportsReasoningEffort?: boolean } | undefined;
+  const thinkingLevels = !reasoning
+    ? ["off" as const]
+    : compat?.supportsReasoningEffort === false
+      ? ["high" as const]
+      : getSupportedThinkingLevels({ ...model, reasoning });
   return {
     id: `${providerId}/${model.id}`,
     rawId: model.id,
@@ -375,7 +383,8 @@ function providerModelToAgentModel(
     controllerName: providerName,
     contextWindow: model.contextWindow,
     maxTokens: model.maxTokens,
-    reasoning: model.reasoning || inferReasoningSupport(model.id),
+    reasoning,
+    thinkingLevels,
     vision: model.input.includes("image"),
     active: false,
   };

@@ -10,6 +10,9 @@ export {
   stringArray,
   boolField,
   parseAgentTurnRequest,
+  AGENT_THINKING_LEVELS,
+  AgentThinkingLevelSchema,
+  isAgentThinkingLevel,
 } from "@shared/agent/agent-turn";
 export type {
   ParseResult,
@@ -18,6 +21,7 @@ export type {
   AgentTurnRequest,
   AgentTurnRuntimeStatus,
   AgentTurnCommandResult,
+  AgentThinkingLevel,
 } from "@shared/agent/agent-turn";
 import {
   objectRecord,

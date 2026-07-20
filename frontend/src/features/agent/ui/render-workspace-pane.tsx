@@ -177,6 +177,7 @@ const WorkspacePane = memo(function WorkspacePane({
       modelId={view.modelId}
       modelName={view.model?.name ?? view.modelId ?? null}
       modelSupportsVision={view.model?.vision ?? false}
+      modelThinkingLevels={view.model?.thinkingLevels ?? ["off"]}
       modelsLoading={modelsLoading}
       contextWindow={view.model?.contextWindow ?? 0}
       cwd={view.cwd}

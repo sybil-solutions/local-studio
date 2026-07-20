@@ -695,3 +695,25 @@
     opacity: 0.85;
   }
 }
+
+@media (max-width: 899px) {
+  .agent-computer-panel {
+    position: absolute !important;
+    inset-block: 0;
+    right: 0;
+    z-index: 50;
+    width: min(88vw, 440px) !important;
+    min-width: 0 !important;
+    max-width: calc(100vw - 44px) !important;
+  }
+}
+
+.agent-workspace-panel-row[data-multi-pane="true"] .agent-computer-panel {
+  position: absolute !important;
+  inset-block: 0;
+  right: 0;
+  z-index: 50;
+  width: min(88vw, 440px) !important;
+  min-width: 0 !important;
+  max-width: calc(100vw - 44px) !important;
+}

@@ -5,7 +5,9 @@ import { Effect } from "effect";
 import { createAgentSessionRuntime } from "@earendil-works/pi-coding-agent";
 import {
   controlTargetHasActiveTurn,
+  isAgentThinkingLevel,
   parseAgentTurnRequest,
+  type AgentThinkingLevel,
   type AgentTurnCommandResult,
   type AgentTurnRequest,
 } from "../../../../shared/agent/agent-turn";
@@ -94,6 +96,7 @@ function ensurePromptRuntimeEffect(
   return Effect.tryPromise({
     try: () =>
       resolved.session.ensureStarted(turn.modelId, turn.cwd, resolved.effectivePiSessionId, {
+        thinkingLevel: turn.thinkingLevel,
         browserToolEnabled: turn.browserToolEnabled,
         browserSessionId: turn.browserSessionId,
         browserBackend: turn.browserBackend,
@@ -263,6 +266,7 @@ export async function handleAgentAbort(request: Request): Promise<Response> {
 type CompactRequest = {
   sessionId?: string;
   modelId?: string;
+  thinkingLevel?: AgentThinkingLevel;
   cwd?: string;
   piSessionId?: string | null;
   customInstructions?: string;
@@ -302,6 +306,9 @@ function compactRouteEffect(request: Request): Effect.Effect<Response, unknown> 
     const cwd = body.cwd?.trim() || undefined;
     const piSessionId = body.piSessionId?.trim() || null;
     if (!modelId) return jsonError("modelId is required");
+    if (body.thinkingLevel != null && !isAgentThinkingLevel(body.thinkingLevel)) {
+      return jsonError("thinkingLevel must be a supported reasoning level");
+    }
 
     return yield* Effect.gen(function* () {
       const session = piRuntimeManager.getSession(sessionId);
@@ -310,6 +317,7 @@ function compactRouteEffect(request: Request): Effect.Effect<Response, unknown> 
       yield* Effect.tryPromise({
         try: () =>
           session.ensureStarted(modelId, cwd, piSessionId, {
+            thinkingLevel: body.thinkingLevel,
             browserToolEnabled: body.browserToolEnabled === true,
             browserSessionId:
               typeof body.browserSessionId === "string" ? body.browserSessionId.trim() : undefined,

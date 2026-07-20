@@ -20,7 +20,8 @@ export default async function afterPack(context) {
     path.join(standaloneBase, "server.js"),
   ];
 
-  if (!candidates.some((candidate) => existsSync(candidate))) {
+  const standaloneServer = candidates.find((candidate) => existsSync(candidate));
+  if (!standaloneServer) {
     throw new Error(
       [
         "Packaged app is missing the embedded Next standalone server — refusing to sign/ship a broken bundle.",
@@ -29,6 +30,32 @@ export default async function afterPack(context) {
         "Re-run the build (run `npm run build` first if .next/standalone is absent).",
       ].join("\n  "),
     );
+  }
+
+  const standaloneRoot = path.dirname(standaloneServer);
+  const requiredRuntimeFiles = [
+    path.join(
+      standaloneRoot,
+      "node_modules",
+      "@earendil-works",
+      "pi-coding-agent",
+      "dist",
+      "index.js",
+    ),
+    path.join(
+      standaloneRoot,
+      "node_modules",
+      "@earendil-works",
+      "pi-coding-agent",
+      "node_modules",
+      "@earendil-works",
+      "pi-ai",
+      "package.json",
+    ),
+  ];
+  const missingRuntimeFile = requiredRuntimeFiles.find((file) => !existsSync(file));
+  if (missingRuntimeFile) {
+    throw new Error(`Packaged app is missing a Pi runtime dependency: ${missingRuntimeFile}`);
   }
 
   const agentRuntime = path.join(resourcesDir, "app", "agent-runtime", "server.mjs");

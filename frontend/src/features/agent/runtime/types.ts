@@ -6,6 +6,7 @@
 import type { ChatMessage, QueuedMessage, TokenStats } from "@/features/agent/messages/types";
 import type { ComposerSkillRef } from "@/features/agent/composer-context";
 import type { RuntimeContextUsage } from "@/features/agent/runtime/api";
+import type { AgentThinkingLevel } from "@/features/agent/contracts";
 
 // The session identity string — the same value a pane stores as `sessionId`.
 export type SessionId = string;
@@ -23,6 +24,7 @@ export type Session = {
   projectId?: string;
   cwd?: string;
   modelId?: string;
+  thinkingLevel?: AgentThinkingLevel;
   title: string;
   messages: ChatMessage[];
   status: SessionStatus;

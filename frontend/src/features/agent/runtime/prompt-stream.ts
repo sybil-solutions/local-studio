@@ -10,7 +10,7 @@ import type {
   ComposerPromptTemplateRef,
   ComposerSkillRef,
 } from "@/features/agent/composer-context";
-import type { AgentImageInput } from "@/features/agent/contracts";
+import type { AgentImageInput, AgentThinkingLevel } from "@/features/agent/contracts";
 import type { BrowserBackend, ToolSelection } from "@/features/agent/tools/types";
 import * as api from "@/features/agent/runtime/api";
 import type { RuntimeStatus } from "@/features/agent/runtime/api";
@@ -44,6 +44,7 @@ export type PromptStreamDeps = {
   canvasEnabled: boolean;
   cwd: string;
   modelId: string;
+  thinkingLevel: AgentThinkingLevel;
   onPiSessionIdChange?: (piSessionId: string) => void;
   selectionFor: (sessionId: SessionId) => ToolSelection;
   tabsRef: MutableRef<Session[]>;
@@ -228,6 +229,7 @@ function promptTurnRequest(
   return {
     sessionId: context.runtime,
     modelId: deps.modelId,
+    thinkingLevel: deps.thinkingLevel,
     message: args.prompt,
     images: args.images,
     cwd: deps.cwd.trim() || undefined,

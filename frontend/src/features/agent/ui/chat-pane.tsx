@@ -5,6 +5,7 @@ import { useCallback, useMemo, useRef, useState, type FormEvent, type ReactNode 
 import { useMountSubscription } from "@/hooks/use-mount-subscription";
 import { AgentChatPaneHeader } from "@/features/agent/ui/agent-chat-pane-header";
 import { AgentComposerFrame } from "@/features/agent/ui/agent-composer-frame";
+import { AgentThinkingLevelPicker } from "@/features/agent/ui/agent-thinking-level-picker";
 import { type FileMentionRow, type MentionRow } from "@/features/agent/ui/agent-composer-context";
 import { builtinCommandProvider } from "@/features/agent/composer/builtin-commands";
 import { SessionGoalBar } from "@/features/agent/ui/session-goal-bar";
@@ -24,11 +25,11 @@ import { ADD_PROJECT_EVENT } from "@/lib/workspace-events";
 function diffStatPill(gitSummary: GitSummary | null | undefined, onOpenStatus: () => void) {
   if (!gitSummary?.isRepo || gitSummary.statusCount <= 0) return null;
   return (
-    <div className="mx-auto mb-1.5 flex w-full max-w-[var(--composer-w)] justify-center">
+    <div className="mx-auto mb-1 flex w-full max-w-[var(--composer-w)] justify-start">
       <button
         type="button"
         onClick={onOpenStatus}
-        className="flex items-center gap-1.5 rounded-full bg-(--fg)/[0.05] px-3 py-1 text-[length:var(--fs-sm)] tabular-nums text-(--fg)/60 transition-colors hover:bg-(--fg)/[0.08] hover:text-(--fg)/85"
+        className="flex items-center gap-1.5 rounded-lg px-2 py-1 text-[length:var(--fs-xs)] tabular-nums text-(--fg)/50 transition-colors hover:bg-(--fg)/[0.05] hover:text-(--fg)/80"
         title="Open status"
       >
         {gitSummary.statusCount} file{gitSummary.statusCount === 1 ? "" : "s"} changed
@@ -59,6 +60,15 @@ function composerProjectRow(show: boolean, projectName: string | null) {
     label: projectName ?? "Choose project",
     onPick: () => window.dispatchEvent(new Event(ADD_PROJECT_EVENT)),
   };
+}
+
+function effectiveThinkingLevel(
+  levels: readonly AgentThinkingLevel[],
+  saved: AgentThinkingLevel | undefined,
+): AgentThinkingLevel {
+  if (saved && levels.includes(saved)) return saved;
+  if (levels.includes("high")) return "high";
+  return levels.at(-1) ?? "off";
 }
 import {
   useComposerLoadedContext,
@@ -92,6 +102,7 @@ import type { UpdateSession } from "@/features/agent/runtime/types";
 import { useTools } from "@/features/agent/tools/context";
 import type { GitSummary } from "@/features/agent/projects/types";
 import type { BrowserBackend } from "@/features/agent/tools/types";
+import type { AgentThinkingLevel } from "@/features/agent/contracts";
 import {
   exportFilenameFromTitle,
   sessionToMarkdown,
@@ -207,6 +218,7 @@ type Props = {
   modelId: string;
   modelName: string | null;
   modelSupportsVision: boolean;
+  modelThinkingLevels: readonly AgentThinkingLevel[];
   modelsLoading: boolean;
   contextWindow: number;
   cwd: string;
@@ -243,6 +255,7 @@ export function ChatPane({
   modelId,
   modelName,
   modelSupportsVision,
+  modelThinkingLevels,
   modelsLoading,
   contextWindow,
   cwd,
@@ -383,11 +396,20 @@ export function ChatPane({
   const { selectedSkills, selectedPromptTemplates, removeLoadedContext } = useComposerLoadedContext(
     { activeTab, tools },
   );
+  const thinkingLevel = effectiveThinkingLevel(modelThinkingLevels, activeTab?.thinkingLevel);
+  const selectThinkingLevel = useCallback(
+    (level: AgentThinkingLevel) => {
+      if (!activeTab || running) return;
+      updateTab(activeTab.id, (session) => ({ ...session, thinkingLevel: level }));
+    },
+    [activeTab, running, updateTab],
+  );
 
   const engine = useSessionEngine({
     tabs,
     activeTabId,
     modelId,
+    thinkingLevel,
     cwd,
     browserToolEnabled,
     browserBackend,
@@ -678,6 +700,14 @@ export function ChatPane({
           mentionRows={mentionRows}
           modelSupportsVision={modelSupportsVision}
           modelSelector={modelSelector}
+          thinkingSelector={
+            <AgentThinkingLevelPicker
+              value={thinkingLevel}
+              levels={modelThinkingLevels}
+              disabled={Boolean(running)}
+              onSelect={selectThinkingLevel}
+            />
+          }
           onAbortTurn={() => void abortTurn()}
           onAttachFiles={(files) => void attachFiles(files)}
           onComposerChange={handleComposerChange}

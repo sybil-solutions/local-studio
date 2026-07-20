@@ -10,6 +10,7 @@ import {
   ListChecks,
   MessageSquarePlus,
   PanelRight,
+  PanelRightClose,
   Plus,
   ScanSearch,
   TerminalSquare,
@@ -253,11 +254,11 @@ export function AgentBrowserPanel({
   );
   return (
     <aside
-      className={`${tools.computer.open ? "relative flex" : "hidden"} shrink-0 flex-col bg-(--color-panel) shadow-[var(--elev-side-panel)]`}
+      className={`agent-computer-panel ${tools.computer.open ? "relative flex" : "hidden"} shrink-0 flex-col bg-(--color-panel) shadow-[var(--elev-side-panel)]`}
       ref={registerComputerAside}
       tabIndex={-1}
       onKeyDown={handleComputerKeyDown}
-      style={{ width: `${tools.computer.width}px`, minWidth: "max(280px, 25%)", maxWidth: "65%" }}
+      style={{ width: `${tools.computer.width}px`, minWidth: 320, maxWidth: 560 }}
     >
       <div
         role="separator"
@@ -276,6 +277,7 @@ export function AgentBrowserPanel({
         onCloseTerminalOwner={closeTerminalOwner}
         onCloseTab={closeComputerTab}
         onShowLauncher={() => tools.setComputerTab("tools")}
+        onClosePanel={() => tools.setComputerOpen(false)}
       />
 
       <ComputerTabPanel
@@ -377,6 +379,7 @@ function ComputerHeader({
   onCloseTerminalOwner,
   onCloseTab,
   onShowLauncher,
+  onClosePanel,
 }: {
   tab: ComputerTab;
   openTabs: ComputerTab[];
@@ -387,6 +390,7 @@ function ComputerHeader({
   onCloseTerminalOwner: (ownerKey: string) => void;
   onCloseTab: (tab: ComputerTab) => void;
   onShowLauncher: () => void;
+  onClosePanel: () => void;
 }) {
   const visibleTabs = openTabs.filter(
     (openTab) =>
@@ -400,7 +404,7 @@ function ComputerHeader({
           icon: TAB_OPTIONS.find((item) => item.tab === candidate)?.icon ?? PanelRight,
         };
   return (
-    <div className="relative flex h-10 shrink-0 items-center gap-1 border-b border-(--border) bg-(--color-header) px-1.5 text-[length:var(--fs-sm)]">
+    <div className="relative flex h-11 shrink-0 items-center gap-1.5 border-b border-(--border) bg-(--color-header) px-2 text-[length:var(--fs-sm)]">
       <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto overflow-y-hidden [scrollbar-width:thin]">
         {visibleTabs.map((openTab) => {
           const meta = tabMeta(openTab);
@@ -498,6 +502,15 @@ function ComputerHeader({
           aria-pressed={tab === "tools"}
         >
           <Plus className="pointer-events-none h-3.5 w-3.5" />
+        </button>
+        <button
+          type="button"
+          onClick={onClosePanel}
+          className="relative z-10 -my-1 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-(--dim)/75 transition-colors hover:bg-(--hover) hover:text-(--fg)"
+          title="Close controller panel"
+          aria-label="Close controller panel"
+        >
+          <PanelRightClose className="pointer-events-none h-3.5 w-3.5" />
         </button>
       </div>
     </div>

@@ -162,6 +162,7 @@ function SideChatTab({
         modelId={modelId}
         modelName={selectedModel?.name ?? modelId}
         modelSupportsVision={selectedModel?.vision ?? false}
+        modelThinkingLevels={selectedModel?.thinkingLevels ?? ["off"]}
         modelsLoading={modelsLoading}
         contextWindow={selectedModel?.contextWindow ?? 0}
         cwd={cwd}

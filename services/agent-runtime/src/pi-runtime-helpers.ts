@@ -5,6 +5,7 @@ import path from "node:path";
 import { Effect } from "effect";
 import { listProjectsFromStore } from "./projects-store";
 import { hasEnabledConnectorsSync } from "./connectors-service";
+import type { AgentThinkingLevel } from "../../../shared/agent/agent-turn";
 
 export type RuntimeSkillRef = {
   id?: string;
@@ -19,6 +20,7 @@ export type RuntimePromptTemplateRef = {
 };
 
 export type RuntimeStartOptions = {
+  thinkingLevel?: AgentThinkingLevel;
   browserToolEnabled?: boolean;
   browserSessionId?: string;
   browserBackend?: "embedded" | "sitegeist";
@@ -235,6 +237,7 @@ export function runtimeOptionsFingerprint(options: RuntimeStartOptions): string 
     .map((template) => `${template.name ?? ""}:${template.path ?? ""}`)
     .sort();
   return JSON.stringify({
+    thinkingLevel: options.thinkingLevel ?? "high",
     browser: options.browserToolEnabled === true,
     browserBackend: browserBackend(options),
     browserSessionId: options.browserSessionId ?? "",

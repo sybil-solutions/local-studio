@@ -89,6 +89,7 @@ export type SessionTab = {
   projectId?: string;
   cwd?: string;
   modelId?: string;
+  thinkingLevel?: import("@/features/agent/contracts").AgentThinkingLevel;
   title: string;
   messages: ChatMessage[];
   status: import("@/features/agent/runtime/types").SessionStatus;

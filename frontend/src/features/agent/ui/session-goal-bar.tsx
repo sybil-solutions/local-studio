@@ -97,7 +97,7 @@ export function SessionGoalBar({
   return (
     <div
       data-testid="session-goal-bar"
-      className="mx-auto mb-1.5 flex w-full max-w-[var(--composer-w)] items-center gap-2.5 rounded-2xl bg-(--fg)/[0.03] px-4 py-2.5 text-[length:var(--fs-base)]"
+      className="mx-auto mb-1.5 flex w-full max-w-[var(--composer-w)] items-center gap-2 rounded-xl border border-(--border) bg-(--fg)/[0.02] px-3 py-1.5 text-[length:var(--fs-sm)]"
     >
       <span
         className={`h-2 w-2 shrink-0 rounded-full ${
@@ -108,7 +108,7 @@ export function SessionGoalBar({
               : "bg-(--hl3)"
         }`}
       />
-      <span className="shrink-0 text-(--fg)/85">{STATUS_LABEL[goal.status]}</span>
+      <span className="shrink-0 font-medium text-(--fg)/80">{STATUS_LABEL[goal.status]}</span>
       <span className="min-w-0 flex-1 truncate text-(--fg)/45" title={goal.objective}>
         {goal.objective}
       </span>

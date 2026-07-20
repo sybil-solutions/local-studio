@@ -8,6 +8,7 @@ import {
   type MouseEvent,
   type PointerEvent,
 } from "react";
+import Link from "next/link";
 import { Check, ChevronDown, Pin } from "@/ui/icon-registry";
 import type { AgentModel } from "@/features/agent/workspace/types";
 import { cx } from "@/ui/utils";
@@ -37,7 +38,7 @@ export function AgentModelPicker({
   const groups = useMemo(() => groupModelsByController(models), [models]);
   const selectedGroupKey = active ? controllerGroupKey(active) : groups[0]?.key;
   const activeGroup = groups.find((group) => group.key === activeGroupKey) ?? null;
-  const disabled = loading || models.length === 0;
+  const disabled = loading;
   const triggerLabel = modelTriggerLabel(active, selectedModel, loading, models.length);
   const selectedModelNotRunning = !loading && Boolean(active && active.active === false);
   const close = useCallback(() => {
@@ -82,7 +83,18 @@ export function AgentModelPicker({
           aria-label="Models"
           onKeyDown={(event) => handleMenuKeyDown(event, close)}
         >
-          {groups.length > 1 ? (
+          {groups.length === 0 ? (
+            <div className="w-64 px-2.5 py-2 text-[length:var(--fs-sm)] text-(--dim)">
+              <p>No chat models are available.</p>
+              <Link
+                href="/models"
+                onClick={close}
+                className="mt-2 inline-flex h-7 items-center rounded-lg bg-(--active) px-2.5 text-(--fg) hover:bg-(--hover)"
+              >
+                Open Models
+              </Link>
+            </div>
+          ) : groups.length > 1 ? (
             groups.map((group) => (
               <ModelGroupOption
                 key={group.key}
@@ -148,7 +160,7 @@ function ModelPickerTrigger({
       className={cx(
         // Codex: the model control sits at the shared chat size (16px) with
         // primary-strength text; only the chevron reads dim.
-        "group/model inline-flex !h-[30px] !min-h-[30px] !min-w-0 items-center justify-between gap-1 rounded-lg bg-transparent pl-2 pr-1.5 text-[length:var(--codex-chat-font-size)] whitespace-nowrap text-(--fg)/85 transition-colors hover:bg-(--hover) hover:text-(--fg) active:translate-y-px disabled:opacity-60",
+        "group/model inline-flex !h-[30px] !min-h-[30px] !min-w-0 items-center justify-between gap-1 rounded-lg bg-transparent pl-2 pr-1.5 text-[length:var(--fs-base)] whitespace-nowrap text-(--fg)/85 transition-colors hover:bg-(--hover) hover:text-(--fg) active:translate-y-px disabled:opacity-60",
         open && "bg-(--hover) text-(--fg)",
       )}
       title={notRunning ? `${title} is not running — launch it or pick a running model` : title}

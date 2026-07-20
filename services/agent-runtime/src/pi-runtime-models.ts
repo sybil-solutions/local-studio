@@ -4,17 +4,14 @@ import { homedir } from "node:os";
 import path from "node:path";
 import { getApiSettings, type ApiSettings } from "./settings-service";
 import { resolveDataDir } from "./data-dir";
-import {
-  isAgentRuntimeProcess,
-  listProviderAgentModels,
-  reloadProviderHub,
-} from "./provider-hub";
+import { isAgentRuntimeProcess, listProviderAgentModels, reloadProviderHub } from "./provider-hub";
 import type { OpenAICompletionsCompat } from "@earendil-works/pi-ai";
 import {
   normalizeOpenAIModels,
   inferReasoningSupport,
   type AgentModel,
 } from "../../../shared/agent/models";
+import { AGENT_THINKING_LEVELS, type AgentThinkingLevel } from "../../../shared/agent/agent-turn";
 import { resolveModelVision } from "../../../controller/contracts/model-capabilities";
 
 const PROVIDER_ID = "local-studio";
@@ -39,6 +36,7 @@ type PiProviderModel = {
   maxTokens?: number;
   cost?: Record<string, number>;
   compat?: Record<string, unknown>;
+  thinkingLevelMap?: Partial<Record<AgentThinkingLevel, string | null>>;
 };
 
 type PiProviderConfig = {
@@ -70,10 +68,12 @@ function userPiModelToAgentModel(
   providerName: string,
   qualifiedProviderId: string,
   model: PiProviderModel,
+  providerCompat?: Record<string, unknown>,
 ): AgentModel {
   const rawId = model.id;
   const name = model.name ?? rawId;
   const inputs = model.input ?? ["text"];
+  const reasoning = model.reasoning ?? inferReasoningSupport(rawId);
   return {
     id: `${qualifiedProviderId}/${rawId}`,
     rawId,
@@ -83,10 +83,28 @@ function userPiModelToAgentModel(
     controllerName: providerName,
     contextWindow: model.contextWindow ?? 128_000,
     maxTokens: model.maxTokens ?? 65_536,
-    reasoning: model.reasoning ?? inferReasoningSupport(rawId),
+    reasoning,
+    thinkingLevels: supportedPiThinkingLevels(model, reasoning, providerCompat),
     vision: resolveModelVision({ identifiers: [rawId], modalities: [inputs] }),
     active: false,
   };
+}
+
+function supportedPiThinkingLevels(
+  model: PiProviderModel,
+  reasoning: boolean,
+  providerCompat?: Record<string, unknown>,
+): AgentThinkingLevel[] {
+  if (!reasoning) return ["off"];
+  const supportsReasoningEffort =
+    model.compat?.supportsReasoningEffort ?? providerCompat?.supportsReasoningEffort;
+  if (supportsReasoningEffort !== true) return ["high"];
+  return AGENT_THINKING_LEVELS.filter((level) => {
+    const mapped = model.thinkingLevelMap?.[level];
+    if (mapped === null) return false;
+    if (level === "xhigh" || level === "max") return mapped !== undefined;
+    return true;
+  });
 }
 
 export type PiControllerModelsRequest = {
@@ -232,6 +250,9 @@ async function fetchModelsFromController(
       providerId,
       controllerUrl: backendUrl,
       controllerName: label,
+      thinkingLevels: model.reasoning
+        ? ["high" as AgentThinkingLevel]
+        : ["off" as AgentThinkingLevel],
       name: multipleControllers ? `${model.name} · ${label}` : model.name,
     }),
   );
@@ -365,7 +386,9 @@ export async function refreshPiModels(
   for (const [providerName, config] of Object.entries(userPiProviders)) {
     const qualifiedProviderId = `${USER_PI_PREFIX}${providerName}`;
     for (const model of config.models ?? []) {
-      userPiModels.push(userPiModelToAgentModel(providerName, qualifiedProviderId, model));
+      userPiModels.push(
+        userPiModelToAgentModel(providerName, qualifiedProviderId, model, config.compat),
+      );
     }
   }
 

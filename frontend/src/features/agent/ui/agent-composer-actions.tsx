@@ -24,6 +24,7 @@ export function AgentComposerActions({
   onAbortTurn,
   onTranscript,
   onOpenStatus,
+  thinkingSelector,
   modelSelector,
 }: {
   fileInputRef: RefObject<HTMLInputElement | null>;
@@ -42,6 +43,7 @@ export function AgentComposerActions({
   onAbortTurn: () => void;
   onTranscript: (text: string) => void;
   onOpenStatus?: () => void;
+  thinkingSelector?: ReactNode;
   modelSelector?: ReactNode;
 }) {
   const inputHasText = Boolean(input.trim());
@@ -53,7 +55,7 @@ export function AgentComposerActions({
   const activeIconClass = "bg-(--active) text-(--fg)";
 
   return (
-    <div className="agent-composer-actions-row flex min-h-9 items-center gap-1 bg-transparent px-3 pb-2.5 pt-0.5 text-xs">
+    <div className="agent-composer-actions-row flex min-h-9 items-center gap-0.5 bg-transparent px-2.5 pb-2 pt-0 text-xs">
       <input
         ref={fileInputRef}
         type="file"
@@ -77,7 +79,7 @@ export function AgentComposerActions({
         <button
           type="button"
           onClick={onOpenStatus}
-          className="inline-flex !h-[30px] !min-h-[30px] shrink-0 items-center gap-1.5 rounded-full px-2 text-[length:var(--codex-chat-font-size)] text-(--orange-200) transition-colors hover:bg-(--hover)"
+          className="inline-flex !h-[30px] !min-h-[30px] shrink-0 items-center gap-1.5 rounded-lg px-2 text-[length:var(--fs-base)] text-(--orange-200) transition-colors hover:bg-(--hover)"
           title="Full access — the agent can read, write, and run commands. Opens status."
         >
           <CircleAlert className="h-4 w-4" strokeWidth={1.75} />
@@ -129,7 +131,8 @@ export function AgentComposerActions({
       >
         <Code2 className="h-4 w-4" strokeWidth={1.5} />
       </button>
-      <div className="ml-auto flex shrink-0 items-center gap-1">
+      <div className="ml-auto flex min-w-0 shrink items-center gap-0.5">
+        {thinkingSelector}
         {modelSelector}
         <ComposerDictationButton
           disabled={running}
