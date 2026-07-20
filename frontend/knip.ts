@@ -5,6 +5,7 @@ const config = {
     "desktop/preload.ts",
     "desktop/app-identity.ts",
     "desktop/resources/pi-extensions/*.ts",
+    "scripts/start-standalone.mjs",
     "src/**/*.test.ts",
     "desktop/**/*.test.ts",
   ],
