@@ -4,7 +4,12 @@ import { createInterface } from "node:readline";
 import { PassThrough } from "node:stream";
 import { Effect, Schema, Stream } from "effect";
 import type { AppContext } from "../../app-context";
-import { documentRoute, defineRoutes, mergeRoutes } from "../../http/route-registrar";
+import {
+  documentRoute,
+  defineRoutes,
+  mergeRoutes,
+  type ControllerRouteApp,
+} from "../../http/route-registrar";
 import { badRequest, notFound } from "../../core/errors";
 import { findObservedInferenceProcess } from "../../core/function-observability";
 import { buildSseHeaders, toReadableByteStream, withSseHeartbeat } from "../../http/sse";
@@ -105,6 +110,8 @@ export interface DockerLogSource {
     signal: AbortSignal,
   ) => Stream.Stream<string, unknown>;
 }
+
+type LogsRouteRegistrar = (app: ControllerRouteApp, context: AppContext) => ControllerRouteApp;
 
 interface DockerLogRecord {
   readonly timestamp: string | null;
@@ -286,7 +293,9 @@ const redactedDockerSnapshot = (
     }),
   );
 
-const registerLogsRoutesWithDependencies = (dependencies: Partial<LogsRouteDependencies> = {}) =>
+const registerLogsRoutesWithDependencies = (
+  dependencies: Partial<LogsRouteDependencies> = {},
+): LogsRouteRegistrar =>
   defineRoutes((app, context) => {
     const dockerLogs = dependencies.dockerLogs ?? systemDockerLogs;
     let lastCleanupAt = 0;
@@ -550,7 +559,8 @@ const registerLogsRoutesWithDependencies = (dependencies: Partial<LogsRouteDepen
     );
   });
 
-export const createLogsRouteRegistrar = (dependencies: Partial<LogsRouteDependencies> = {}) =>
-  registerLogsRoutesWithDependencies(dependencies);
+export const createLogsRouteRegistrar = (
+  dependencies: Partial<LogsRouteDependencies> = {},
+): LogsRouteRegistrar => registerLogsRoutesWithDependencies(dependencies);
 
 export const registerLogsRoutes = createLogsRouteRegistrar();
