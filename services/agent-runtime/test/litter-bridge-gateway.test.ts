@@ -12,6 +12,8 @@ import {
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { Schema } from "effect";
+import { LitterBridgeControllerActionRequestSchema } from "../../../shared/agent/litter-bridge";
 import {
   canonicalLitterBridgeJson,
   createLitterBridgeGateway,
@@ -21,6 +23,7 @@ import {
   litterBridgeSha256Utf8,
   litterBridgeSignaturePreimage,
   litterBridgeToolHashPreimage,
+  verifyLitterBridgeRequest,
 } from "../src/litter-bridge-gateway";
 
 const NOW = new Date("2026-07-20T18:30:00.000Z");
@@ -68,6 +71,9 @@ const signedRequest = (
       expiresAt: auth.expiresAt,
       nonce: auth.nonce,
       capability: auth.capability,
+      ...(typeof auth.idempotencyKey === "string"
+        ? { idempotencyKey: auth.idempotencyKey }
+        : {}),
       bodyHash,
     }),
     privateKey,
@@ -681,6 +687,57 @@ test("gateway secret and signed body integrity fail closed", async () => {
   const integrity = await gateway.handle(gatewayRequest(tampered));
   assert.equal(integrity.status, 401);
   assert.equal(((await integrity.json()) as Record<string, any>).error.code, "integrity_failed");
+});
+
+test("mutation signature verification binds idempotency without enabling dispatch", async () => {
+  const keys = keyMaterial();
+  const body = signedRequest(
+    keys.privateKey,
+    keys.publicHex,
+    {
+      type: "controller_action_request",
+      protocolVersion: 1,
+      controllerId: CONTROLLER_ID,
+      expectedRevision: 1,
+      action: { type: "evict_model", modelId: "model-a" },
+    },
+    {
+      capability: "models.control",
+      idempotencyKey: "idempotency-1",
+      requestId: "mutation-request-1",
+      nonce: "mutation-nonce-0001",
+    },
+  );
+  const parsed = Schema.decodeUnknownSync(LitterBridgeControllerActionRequestSchema)(body);
+  assert.equal(verifyLitterBridgeRequest(parsed, NOW).ok, true);
+
+  const changed = verifyLitterBridgeRequest(
+    { ...parsed, auth: { ...parsed.auth, idempotencyKey: "idempotency-2" } },
+    NOW,
+  );
+  assert.equal(changed.ok, false);
+  if (changed.ok) assert.fail("Changed idempotency key unexpectedly verified");
+  assert.equal(changed.response.status, 401);
+  assert.equal(((await changed.response.json()) as Record<string, any>).error.code, "unauthorized");
+
+  const { idempotencyKey: _idempotencyKey, ...authWithoutIdempotency } = parsed.auth;
+  const omitted = verifyLitterBridgeRequest(
+    { ...parsed, auth: authWithoutIdempotency } as typeof parsed,
+    NOW,
+  );
+  assert.equal(omitted.ok, false);
+  if (omitted.ok) assert.fail("Missing idempotency key unexpectedly verified");
+  assert.equal(omitted.response.status, 401);
+  assert.equal(((await omitted.response.json()) as Record<string, any>).error.code, "unauthorized");
+
+  const gateway = createLitterBridgeGateway({
+    secret: SECRET,
+    controllerId: CONTROLLER_ID,
+    now: () => new Date(NOW),
+  });
+  const unsupported = await gateway.handle(gatewayRequest(body));
+  assert.equal(unsupported.status, 400);
+  assert.equal(((await unsupported.json()) as Record<string, any>).error.code, "invalid_request");
 });
 
 test("sessions.read rejects cross-controller identity, missing IDs, ambiguity, and extras", async () => {

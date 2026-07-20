@@ -44,6 +44,7 @@ import {
   type LitterBridgeHashReference,
   type LitterBridgeMessageDescriptor,
   type LitterBridgeMessagePart,
+  type LitterBridgeRequest,
   type LitterBridgeSessionDescriptor,
   type LitterBridgeSessionListCursor,
   type LitterBridgeSessionListPage,
@@ -404,13 +405,13 @@ const jsonError = (
   retriable = false,
 ): Response => Response.json(errorResult(code, message, requestId, retriable), { status });
 
-const unsignedRequest = (request: SignedGatewayRequest): JsonRecord => {
+const unsignedRequest = (request: LitterBridgeRequest): JsonRecord => {
   const { auth: _auth, ...unsigned } = request;
   return unsigned;
 };
 
-const verifyRequest = (
-  request: SignedGatewayRequest,
+export const verifyLitterBridgeRequest = (
+  request: LitterBridgeRequest,
   now: Date,
 ): { ok: true; replayKey: string; expiresAt: number } | { ok: false; response: Response } => {
   const { auth } = request;
@@ -463,6 +464,7 @@ const verifyRequest = (
       expiresAt: auth.expiresAt,
       nonce: auth.nonce,
       capability: auth.capability,
+      idempotencyKey: "idempotencyKey" in auth ? auth.idempotencyKey : null,
       bodyHash: auth.bodyHash,
     });
     if (!verifySignature(null, preimage, publicKey, signature)) {
@@ -2297,7 +2299,7 @@ export function createLitterBridgeGateway(options: GatewayOptions = {}) {
       return jsonError(code, "Gateway request is invalid", requestId, 400);
     }
     const requestNow = now();
-    const verified = verifyRequest(parsed, requestNow);
+    const verified = verifyLitterBridgeRequest(parsed, requestNow);
     if (!verified.ok) return verified.response;
     if (parsed.type === "controller_snapshot_request" && parsed.controllerId !== controllerId) {
       return jsonError("not_found", "Controller identity was not found", requestId, 404);
