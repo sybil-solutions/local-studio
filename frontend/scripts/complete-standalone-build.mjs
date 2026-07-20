@@ -14,8 +14,18 @@
 //    runs with its cwd inside this directory) can never be destroyed.
 //
 // assert-standalone-build.mjs then independently verifies the result.
-import { cpSync, existsSync, readdirSync, readFileSync, rmdirSync, statSync, unlinkSync } from "node:fs";
-import { relative, resolve } from "node:path";
+import {
+  cpSync,
+  existsSync,
+  lstatSync,
+  readdirSync,
+  readFileSync,
+  rmdirSync,
+  statSync,
+  symlinkSync,
+  unlinkSync,
+} from "node:fs";
+import { dirname, relative, resolve } from "node:path";
 
 const projectRoot = resolve(import.meta.dirname, "..");
 const repoRoot = resolve(projectRoot, "..");
@@ -40,6 +50,18 @@ for (const dependencyPath of runtimeDependencyPaths) {
     throw new Error(`Missing runtime dependency source: ${dependencyPath}`);
   }
   cpSync(source, resolve(standaloneRoot, dependencyPath), { recursive: true });
+}
+
+const tracedPiAgentDirectory = resolve(standaloneRoot, ".next/node_modules/@earendil-works");
+if (existsSync(tracedPiAgentDirectory)) {
+  const piAgentTarget = resolve(standaloneRoot, "node_modules/@earendil-works/pi-coding-agent");
+  for (const entry of readdirSync(tracedPiAgentDirectory)) {
+    if (!entry.startsWith("pi-coding-agent-")) continue;
+    const link = resolve(tracedPiAgentDirectory, entry);
+    if (!lstatSync(link).isSymbolicLink() || existsSync(link)) continue;
+    unlinkSync(link);
+    symlinkSync(relative(dirname(link), piAgentTarget), link, "dir");
+  }
 }
 
 function isRuntimeFile(file) {
