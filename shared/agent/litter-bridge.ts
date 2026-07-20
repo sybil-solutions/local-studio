@@ -346,6 +346,21 @@ export const LitterBridgeSessionMetadataSchema = Schema.Struct({
   providerId: Schema.NullOr(IdentifierSchema),
 }).pipe(strict);
 
+export const LitterBridgeSessionListCursorSchema = Schema.Struct({
+  type: Schema.Literal("session_list_cursor"),
+  token: OpaqueTokenSchema,
+  revision: LitterBridgeRevisionSchema,
+  hasMore: Schema.Boolean,
+}).pipe(strict);
+
+export const LitterBridgeSessionDescriptorSchema = Schema.Struct({
+  session: LitterBridgeExternalSessionIdentitySchema,
+  metadata: LitterBridgeSessionMetadataSchema,
+  revision: LitterBridgeRevisionSchema,
+  archived: Schema.Boolean,
+  active: Schema.Boolean,
+}).pipe(strict);
+
 export const LitterBridgeMessageRoleSchema = Schema.Literals([
   "system",
   "user",
@@ -467,6 +482,42 @@ export const LitterBridgeSessionReadRequestSchema = Schema.Struct({
   strict,
 );
 
+export const LitterBridgeSessionListRequestSchema = Schema.Struct({
+  type: Schema.Literal("session_list_request"),
+  protocolVersion: LitterBridgeProtocolVersionSchema,
+  auth: SessionsReadAuthSchema,
+  cursor: Schema.NullOr(LitterBridgeSessionListCursorSchema),
+  limit: PositiveIntegerSchema.pipe(Schema.check(Schema.isLessThanOrEqualTo(200))),
+}).pipe(
+  Schema.check(
+    Schema.makeFilter((input) =>
+      input.cursor === null || input.cursor.hasMore
+        ? undefined
+        : "Session list cursor must have more results",
+    ),
+  ),
+  strict,
+);
+
+export const LitterBridgeSessionListPageSchema = Schema.Struct({
+  type: Schema.Literal("session_list_page"),
+  protocolVersion: LitterBridgeProtocolVersionSchema,
+  requestId: IdentifierSchema,
+  controllerId: IdentifierSchema,
+  revision: LitterBridgeRevisionSchema,
+  sessions: Schema.Array(LitterBridgeSessionDescriptorSchema),
+  cursor: Schema.NullOr(LitterBridgeSessionListCursorSchema),
+}).pipe(
+  Schema.check(
+    Schema.makeFilter((input) =>
+      input.cursor === null || (input.cursor.hasMore && input.cursor.revision === input.revision)
+        ? undefined
+        : "Session list cursor must match the page revision",
+    ),
+  ),
+  strict,
+);
+
 export const LitterBridgeSessionPageSchema = Schema.Struct({
   type: Schema.Literal("session_page"),
   protocolVersion: LitterBridgeProtocolVersionSchema,
@@ -553,6 +604,7 @@ export const LitterBridgeControllerActionResultSchema = Schema.Union([
 export const LitterBridgeRequestSchema = Schema.Union([
   LitterBridgeControllerSnapshotRequestSchema,
   LitterBridgeControllerActionRequestSchema,
+  LitterBridgeSessionListRequestSchema,
   LitterBridgeSessionReadRequestSchema,
   LitterBridgeSessionTransferEnvelopeSchema,
   LitterBridgeAgentTurnRequestSchema,
@@ -562,6 +614,7 @@ export const LitterBridgeResponseSchema = Schema.Union([
   LitterBridgeCapabilitiesManifestSchema,
   LitterBridgeControllerSnapshotSchema,
   LitterBridgeControllerActionResultSchema,
+  LitterBridgeSessionListPageSchema,
   LitterBridgeSessionPageSchema,
   LitterBridgeSessionTransferResultSchema,
   LitterBridgeErrorResultSchema,
@@ -599,6 +652,8 @@ export type LitterBridgeExternalSessionIdentity =
   typeof LitterBridgeExternalSessionIdentitySchema.Type;
 export type LitterBridgeSessionOrigin = typeof LitterBridgeSessionOriginSchema.Type;
 export type LitterBridgeSessionMetadata = typeof LitterBridgeSessionMetadataSchema.Type;
+export type LitterBridgeSessionListCursor = typeof LitterBridgeSessionListCursorSchema.Type;
+export type LitterBridgeSessionDescriptor = typeof LitterBridgeSessionDescriptorSchema.Type;
 export type LitterBridgeMessageRole = typeof LitterBridgeMessageRoleSchema.Type;
 export type LitterBridgeMessagePart = typeof LitterBridgeMessagePartSchema.Type;
 export type LitterBridgeMessageDescriptor = typeof LitterBridgeMessageDescriptorSchema.Type;
@@ -610,6 +665,8 @@ export type LitterBridgeTransferCursor = typeof LitterBridgeTransferCursorSchema
 export type LitterBridgeSessionTransferEnvelope =
   typeof LitterBridgeSessionTransferEnvelopeSchema.Type;
 export type LitterBridgeSessionReadRequest = typeof LitterBridgeSessionReadRequestSchema.Type;
+export type LitterBridgeSessionListRequest = typeof LitterBridgeSessionListRequestSchema.Type;
+export type LitterBridgeSessionListPage = typeof LitterBridgeSessionListPageSchema.Type;
 export type LitterBridgeSessionPage = typeof LitterBridgeSessionPageSchema.Type;
 export type LitterBridgeAgentTurnRequest = typeof LitterBridgeAgentTurnRequestSchema.Type;
 export type LitterBridgeTransferAck = typeof LitterBridgeTransferAckSchema.Type;

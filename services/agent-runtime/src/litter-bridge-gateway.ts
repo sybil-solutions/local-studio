@@ -11,6 +11,7 @@ import {
   closeSync,
   existsSync,
   openSync,
+  opendirSync,
   readFileSync,
   readSync,
   readdirSync,
@@ -28,6 +29,8 @@ import {
   LitterBridgeControllerSnapshotRequestSchema,
   LitterBridgeControllerSnapshotSchema,
   LitterBridgeErrorResultSchema,
+  LitterBridgeSessionListPageSchema,
+  LitterBridgeSessionListRequestSchema,
   LitterBridgeSessionPageSchema,
   LitterBridgeSessionReadRequestSchema,
   type LitterBridgeAttachmentDescriptor,
@@ -41,6 +44,10 @@ import {
   type LitterBridgeHashReference,
   type LitterBridgeMessageDescriptor,
   type LitterBridgeMessagePart,
+  type LitterBridgeSessionDescriptor,
+  type LitterBridgeSessionListCursor,
+  type LitterBridgeSessionListPage,
+  type LitterBridgeSessionListRequest,
   type LitterBridgeSessionMetadata,
   type LitterBridgeSessionPage,
   type LitterBridgeSessionReadRequest,
@@ -53,6 +60,7 @@ import { resolveDataDir } from "./data-dir";
 import { listProjectsFromStore, type ProjectEntry } from "./projects-store";
 import { getApiSettings } from "./settings-service";
 import { piRuntimeManager } from "./pi-runtime";
+import { listArchivedSessionMetadata } from "./session-metadata-store";
 
 const BODY_LIMIT_BYTES = 1_000_000;
 const RESPONSE_LIMIT_BYTES = 1_000_000;
@@ -70,6 +78,7 @@ const SESSION_METADATA_SCAN_LINES = 400;
 const SESSION_LINEAGE_LIMIT = 50_000;
 const SESSION_TOOL_LIMIT = 10_000;
 const SESSION_PAGE_ITEM_LIMIT = 200;
+const SESSION_INVENTORY_LIMIT = 10_000;
 const PI_SESSION_ID_PATTERN = /^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$/;
 const SECRET_HEADER = "x-local-studio-litter-bridge-secret";
 const ROUTE_PATH = "/api/litter-bridge/v1";
@@ -98,6 +107,9 @@ type GatewayOptions = {
   projects?: () => TrustedProject[];
   sessionRoots?: string[];
   sessionCursorTtlMs?: number;
+  sessionInventoryLimit?: number;
+  activeSessionIds?: () => ReadonlySet<string>;
+  archivedSessionIds?: () => ReadonlySet<string>;
 };
 type GatewayMetadata = {
   protocolVersion: 1;
@@ -113,7 +125,10 @@ type Section<T> = {
   error: LitterBridgeError | null;
   freshness: LitterBridgeFreshness;
 };
-type SignedGatewayRequest = LitterBridgeControllerSnapshotRequest | LitterBridgeSessionReadRequest;
+type SignedGatewayRequest =
+  | LitterBridgeControllerSnapshotRequest
+  | LitterBridgeSessionListRequest
+  | LitterBridgeSessionReadRequest;
 type SessionFileFingerprint = {
   value: string;
   revision: number;
@@ -156,6 +171,19 @@ type SessionCursorState = {
   expiresAt: number;
   metadata: LitterBridgeSessionMetadata;
   translation: SessionTranslationState;
+};
+type SessionListCursorState = {
+  controllerId: string;
+  deviceId: string;
+  revision: number;
+  inventoryHash: string;
+  offset: number;
+  expiresAt: number;
+};
+type SessionInventory = {
+  sessions: LitterBridgeSessionDescriptor[];
+  revision: number;
+  hash: string;
 };
 type SessionLine = {
   bytes: Buffer;
@@ -802,7 +830,7 @@ const parseSessionLine = (line: SessionLine): JsonRecord | null => {
 
 const readSessionHeader = (
   filepath: string,
-  expectedSessionId: string,
+  expectedSessionId: string | null,
   project: LiveProject,
 ): { header: JsonRecord; headerEnd: number } | null => {
   const fingerprint = sessionFileFingerprint(filepath);
@@ -811,7 +839,15 @@ const readSessionHeader = (
     const line = readSessionLine(fd, fingerprint.size, 0, SESSION_HEADER_LIMIT_BYTES);
     if (!line) return null;
     const header = parseSessionLine(line);
-    if (!header || header.type !== "session" || header.id !== expectedSessionId) return null;
+    if (
+      !header ||
+      header.type !== "session" ||
+      typeof header.id !== "string" ||
+      !PI_SESSION_ID_PATTERN.test(header.id) ||
+      (expectedSessionId !== null && header.id !== expectedSessionId)
+    ) {
+      return null;
+    }
     const version = header.version === undefined ? 1 : safeInteger(header.version);
     if (version === null || version < 1 || version > 3) {
       throw new SessionReadError("section_unavailable", "Session version is unsupported", 422);
@@ -959,6 +995,222 @@ const readSessionMetadata = (resolved: ResolvedSessionFile): LitterBridgeSession
     modelId,
     providerId,
   };
+};
+
+const enumerateSessionInventory = (input: {
+  controllerId: string;
+  projects: TrustedProject[];
+  roots: string[];
+  inventoryLimit: number;
+  activeSessionIds: ReadonlySet<string>;
+  archivedSessionIds: ReadonlySet<string>;
+}): SessionInventory => {
+  const matches = new Map<string, Map<string, ResolvedSessionFile>>();
+  const scannedFiles = new Set<string>();
+  const scannedContexts = new Set<string>();
+  const scannedDirectories = new Set<string>();
+  for (const project of liveProjects(input.projects)) {
+    for (const root of input.roots) {
+      for (const variant of project.variants) {
+        const directory = path.join(root, encodeCwdForPi(variant));
+        let canonicalDirectory: string;
+        try {
+          canonicalDirectory = realpathSync.native(directory);
+          if (!statSync(canonicalDirectory).isDirectory()) continue;
+        } catch {
+          continue;
+        }
+        const directoryContext = `${project.cwd}\0${canonicalDirectory}`;
+        if (scannedDirectories.has(directoryContext)) continue;
+        scannedDirectories.add(directoryContext);
+        let handle;
+        try {
+          handle = opendirSync(canonicalDirectory);
+        } catch {
+          continue;
+        }
+        try {
+          for (let entry = handle.readSync(); entry; entry = handle.readSync()) {
+            if (!entry.isFile() || !entry.name.endsWith(".jsonl")) continue;
+            const candidate = path.join(canonicalDirectory, entry.name);
+            let filepath: string;
+            try {
+              filepath = realpathSync.native(candidate);
+              const relative = path.relative(canonicalDirectory, filepath);
+              if (
+                relative === ".." ||
+                relative.startsWith(`..${path.sep}`) ||
+                path.isAbsolute(relative)
+              ) {
+                continue;
+              }
+            } catch {
+              continue;
+            }
+            if (!scannedFiles.has(filepath)) {
+              scannedFiles.add(filepath);
+              if (scannedFiles.size > input.inventoryLimit) {
+                throw new SessionReadError(
+                  "payload_too_large",
+                  "Session inventory exceeds the discovery limit",
+                  413,
+                );
+              }
+            }
+            const contextKey = `${project.cwd}\0${filepath}`;
+            if (scannedContexts.has(contextKey)) continue;
+            scannedContexts.add(contextKey);
+            try {
+              const headerResult = readSessionHeader(filepath, null, project);
+              if (!headerResult || typeof headerResult.header.id !== "string") continue;
+              const sessionId = headerResult.header.id;
+              const fingerprint = sessionFileFingerprint(filepath);
+              const candidates = matches.get(sessionId) ?? new Map<string, ResolvedSessionFile>();
+              candidates.set(filepath, {
+                ...fingerprint,
+                filepath,
+                cwd: project.cwd,
+                sessionId,
+                header: headerResult.header,
+                headerEnd: headerResult.headerEnd,
+              });
+              matches.set(sessionId, candidates);
+            } catch (error) {
+              if (error instanceof SessionReadError && error.code === "payload_too_large")
+                throw error;
+            }
+          }
+        } finally {
+          handle.closeSync();
+        }
+      }
+    }
+  }
+  const sessions: LitterBridgeSessionDescriptor[] = [];
+  for (const [sessionId, candidates] of matches) {
+    if (candidates.size !== 1) continue;
+    const resolved = candidates.values().next().value;
+    if (!resolved) continue;
+    try {
+      sessions.push({
+        session: {
+          kind: "external_session",
+          authority: "local-studio",
+          installationId: input.controllerId,
+          sessionId,
+        },
+        metadata: readSessionMetadata(resolved),
+        revision: resolved.revision,
+        archived: input.archivedSessionIds.has(sessionId),
+        active: input.activeSessionIds.has(sessionId),
+      });
+    } catch {}
+  }
+  sessions.sort((left, right) => {
+    const byUpdated = right.metadata.updatedAt.localeCompare(left.metadata.updatedAt);
+    return byUpdated || left.session.sessionId.localeCompare(right.session.sessionId);
+  });
+  const hash = litterBridgeSha256Utf8(
+    canonicalLitterBridgeJson(["litter-bridge-session-list-v1", sessions]),
+  );
+  return {
+    sessions,
+    revision: Number.parseInt(hash.slice(0, 13), 16),
+    hash,
+  };
+};
+
+const sessionListCursorDescriptor = (
+  token: string,
+  revision: number,
+): LitterBridgeSessionListCursor => ({
+  type: "session_list_cursor",
+  token,
+  revision,
+  hasMore: true,
+});
+
+const buildSessionListPage = (input: {
+  requestId: string;
+  controllerId: string;
+  revision: number;
+  sessions: LitterBridgeSessionDescriptor[];
+  cursor: LitterBridgeSessionListCursor | null;
+}): LitterBridgeSessionListPage =>
+  Schema.decodeUnknownSync(LitterBridgeSessionListPageSchema)({
+    type: "session_list_page",
+    protocolVersion: LITTER_BRIDGE_PROTOCOL_VERSION,
+    requestId: input.requestId,
+    controllerId: input.controllerId,
+    revision: input.revision,
+    sessions: input.sessions,
+    cursor: input.cursor,
+  });
+
+const pageSessionInventory = (input: {
+  request: LitterBridgeSessionListRequest;
+  controllerId: string;
+  inventory: SessionInventory;
+  offset: number;
+}): {
+  page: LitterBridgeSessionListPage;
+  json: string;
+  nextOffset: number | null;
+  token: string | null;
+} => {
+  if (input.offset < 0 || input.offset > input.inventory.sessions.length) {
+    throw new SessionReadError("integrity_failed", "Session list cursor offset is invalid", 422);
+  }
+  let end = Math.min(input.offset + input.request.limit, input.inventory.sessions.length);
+  const placeholderToken = "A".repeat(43);
+  while (true) {
+    const hasMore = end < input.inventory.sessions.length;
+    const candidate = buildSessionListPage({
+      requestId: input.request.auth.requestId,
+      controllerId: input.controllerId,
+      revision: input.inventory.revision,
+      sessions: input.inventory.sessions.slice(input.offset, end),
+      cursor: hasMore
+        ? sessionListCursorDescriptor(placeholderToken, input.inventory.revision)
+        : null,
+    });
+    if (Buffer.byteLength(JSON.stringify(candidate), "utf8") <= RESPONSE_LIMIT_BYTES) {
+      if (end === input.offset && hasMore) {
+        throw new SessionReadError(
+          "payload_too_large",
+          "Session list entry exceeds the discovery limit",
+          413,
+        );
+      }
+      break;
+    }
+    if (end === input.offset) {
+      throw new SessionReadError(
+        "payload_too_large",
+        "Session list page exceeds the discovery limit",
+        413,
+      );
+    }
+    end -= 1;
+  }
+  const token =
+    end < input.inventory.sessions.length ? randomBytes(32).toString("base64url") : null;
+  const page = buildSessionListPage({
+    requestId: input.request.auth.requestId,
+    controllerId: input.controllerId,
+    revision: input.inventory.revision,
+    sessions: input.inventory.sessions.slice(input.offset, end),
+    cursor: token ? sessionListCursorDescriptor(token, input.inventory.revision) : null,
+  });
+  const json = JSON.stringify(page);
+  if (Buffer.byteLength(json, "utf8") > RESPONSE_LIMIT_BYTES) {
+    throw new SessionReadError(
+      "payload_too_large",
+      "Session list page exceeds the discovery limit",
+      413,
+    );
+  }
+  return { page, json, nextOffset: token ? end : null, token };
 };
 
 const boundedJsonText = (value: unknown): string => {
@@ -1625,8 +1877,25 @@ export function createLitterBridgeGateway(options: GatewayOptions = {}) {
   if (!Number.isSafeInteger(cursorTtlMs) || cursorTtlMs <= 0 || cursorTtlMs > 86_400_000) {
     throw new Error("Invalid Litter bridge cursor lifetime");
   }
+  const inventoryLimit = options.sessionInventoryLimit ?? SESSION_INVENTORY_LIMIT;
+  if (!Number.isSafeInteger(inventoryLimit) || inventoryLimit <= 0 || inventoryLimit > 100_000) {
+    throw new Error("Invalid Litter bridge session inventory limit");
+  }
+  const activeSessionIds =
+    options.activeSessionIds ??
+    (() =>
+      new Set(
+        piRuntimeManager
+          .listSessions()
+          .filter(({ session }) => session.status.active && session.status.piSessionId)
+          .map(({ session }) => session.status.piSessionId as string),
+      ));
+  const archivedSessionIds =
+    options.archivedSessionIds ??
+    (() => new Set(listArchivedSessionMetadata().map((metadata) => metadata.id)));
   const replay = new Map<string, number>();
   const cursors = new Map<string, SessionCursorState>();
+  const listCursors = new Map<string, SessionListCursorState>();
   let revision = 0;
   let lastControlHash = "";
   let published: GatewayMetadata | null = null;
@@ -1660,10 +1929,23 @@ export function createLitterBridgeGateway(options: GatewayOptions = {}) {
       }
       cursors.delete(oldest);
     }
+    for (const [token, state] of listCursors) {
+      if (state.expiresAt <= nowMs) listCursors.delete(token);
+    }
+    while (listCursors.size > CURSOR_STORE_LIMIT) {
+      const oldest = listCursors.keys().next().value;
+      if (oldest === undefined) break;
+      listCursors.delete(oldest);
+    }
   };
 
   const rememberCursor = (token: string, state: SessionCursorState): void => {
     cursors.set(token, state);
+    pruneCursors(now().getTime());
+  };
+
+  const rememberListCursor = (token: string, state: SessionListCursorState): void => {
+    listCursors.set(token, state);
     pruneCursors(now().getTime());
   };
 
@@ -1806,6 +2088,79 @@ export function createLitterBridgeGateway(options: GatewayOptions = {}) {
     });
   };
 
+  const handleSessionList = (
+    request: LitterBridgeSessionListRequest,
+    requestNow: Date,
+  ): Response => {
+    pruneCursors(requestNow.getTime());
+    let offset = 0;
+    let expected: SessionListCursorState | null = null;
+    if (request.cursor) {
+      const state = listCursors.get(request.cursor.token);
+      if (!state || state.expiresAt <= requestNow.getTime()) {
+        listCursors.delete(request.cursor.token);
+        throw new SessionReadError(
+          "invalid_request",
+          "Session list cursor is invalid or expired",
+          400,
+        );
+      }
+      if (state.controllerId !== controllerId) {
+        throw new SessionReadError("not_found", "Session list cursor was not found", 404);
+      }
+      if (state.deviceId !== request.auth.device.deviceId) {
+        throw new SessionReadError(
+          "forbidden",
+          "Session list cursor belongs to another device",
+          403,
+        );
+      }
+      if (request.cursor.revision !== state.revision || request.cursor.hasMore !== true) {
+        throw new SessionReadError("invalid_request", "Session list cursor is invalid", 400);
+      }
+      listCursors.delete(request.cursor.token);
+      offset = state.offset;
+      expected = state;
+    }
+    const inventory = enumerateSessionInventory({
+      controllerId,
+      projects: projects(),
+      roots,
+      inventoryLimit,
+      activeSessionIds: activeSessionIds(),
+      archivedSessionIds: archivedSessionIds(),
+    });
+    if (
+      expected &&
+      (expected.revision !== inventory.revision || expected.inventoryHash !== inventory.hash)
+    ) {
+      throw new SessionReadError(
+        "revision_conflict",
+        "Session inventory changed during discovery",
+        409,
+        true,
+      );
+    }
+    const result = pageSessionInventory({ request, controllerId, inventory, offset });
+    if (result.token && result.nextOffset !== null) {
+      rememberListCursor(result.token, {
+        controllerId,
+        deviceId: request.auth.device.deviceId,
+        revision: inventory.revision,
+        inventoryHash: inventory.hash,
+        offset: result.nextOffset,
+        expiresAt: requestNow.getTime() + cursorTtlMs,
+      });
+    }
+    return new Response(result.json, {
+      status: 200,
+      headers: {
+        "content-type": "application/json; charset=utf-8",
+        "cache-control": "no-store",
+      },
+    });
+  };
+
   const handleSessionRead = (
     request: LitterBridgeSessionReadRequest,
     requestNow: Date,
@@ -1926,6 +2281,8 @@ export function createLitterBridgeGateway(options: GatewayOptions = {}) {
     try {
       if (isRecord(body.value) && body.value.type === "controller_snapshot_request") {
         parsed = Schema.decodeUnknownSync(LitterBridgeControllerSnapshotRequestSchema)(body.value);
+      } else if (isRecord(body.value) && body.value.type === "session_list_request") {
+        parsed = Schema.decodeUnknownSync(LitterBridgeSessionListRequestSchema)(body.value);
       } else if (isRecord(body.value) && body.value.type === "session_read_request") {
         parsed = Schema.decodeUnknownSync(LitterBridgeSessionReadRequestSchema)(body.value);
       } else {
@@ -1959,6 +2316,16 @@ export function createLitterBridgeGateway(options: GatewayOptions = {}) {
       return jsonError("replay_detected", "Request was already processed", requestId, 409);
     }
     replay.set(verified.replayKey, verified.expiresAt);
+    if (parsed.type === "session_list_request") {
+      try {
+        return handleSessionList(parsed, requestNow);
+      } catch (error) {
+        if (error instanceof SessionReadError) {
+          return jsonError(error.code, error.message, requestId, error.status, error.retriable);
+        }
+        return jsonError("internal", "Session discovery failed", requestId, 500);
+      }
+    }
     if (parsed.type === "session_read_request") {
       try {
         return handleSessionRead(parsed, requestNow);

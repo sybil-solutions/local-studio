@@ -6,6 +6,7 @@ import {
   readFileSync,
   realpathSync,
   statSync,
+  utimesSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -51,7 +52,10 @@ const signedRequest = (
     nonce: "nonce-0123456789",
     bodyHash,
     signature: "",
-    capability: unsigned.type === "session_read_request" ? "sessions.read" : "stats.read",
+    capability:
+      unsigned.type === "session_read_request" || unsigned.type === "session_list_request"
+        ? "sessions.read"
+        : "stats.read",
     ...authOverrides,
   };
   auth.signature = sign(
@@ -245,6 +249,62 @@ const sessionReadRequest = (
   );
 };
 
+const sessionListRequest = (
+  privateKey: KeyObject,
+  publicHex: string,
+  input: {
+    cursor?: Record<string, unknown> | null;
+    limit?: number;
+    request?: string;
+    authOverrides?: Record<string, unknown>;
+  } = {},
+) => {
+  const suffix = input.request ?? "1";
+  return signedRequest(
+    privateKey,
+    publicHex,
+    {
+      type: "session_list_request",
+      protocolVersion: 1,
+      cursor: input.cursor ?? null,
+      limit: input.limit ?? 200,
+    },
+    {
+      requestId: `session-list-request-${suffix}`,
+      nonce: `session-list-nonce-${suffix.padStart(16, "0")}`,
+      ...input.authOverrides,
+    },
+  );
+};
+
+const writeListedSession = (
+  fixture: ReturnType<typeof createSessionFixture>,
+  sessionId: string,
+  updatedAt: string,
+  filenamePrefix = updatedAt.replaceAll(":", "-"),
+) => {
+  const filepath = path.join(fixture.sessionDirectory, `${filenamePrefix}_${sessionId}.jsonl`);
+  writeFileSync(
+    filepath,
+    `${JSON.stringify({
+      type: "session",
+      version: 3,
+      id: sessionId,
+      timestamp: updatedAt,
+      cwd: fixture.project,
+    })}\n${JSON.stringify({
+      type: "message",
+      id: `user-${sessionId}`,
+      parentId: null,
+      timestamp: updatedAt,
+      message: { role: "user", content: `Prompt ${sessionId}` },
+    })}\n`,
+  );
+  const time = new Date(updatedAt);
+  utimesSync(filepath, time, time);
+  return filepath;
+};
+
 const fixtureGateway = (
   fixture: ReturnType<typeof createSessionFixture>,
   options: Record<string, unknown> = {},
@@ -343,6 +403,160 @@ test("signed sessions.read exports the exact canonical identity and deterministi
     ),
   );
   assert.equal(page.cursor, null);
+});
+
+test("signed sessions.read discovery is trusted, deterministic, paginated, and replay-safe", async () => {
+  const fixture = createSessionFixture("session-b");
+  const keys = keyMaterial();
+  const tiedTime = "2026-07-20T18:30:00.000Z";
+  utimesSync(fixture.filepath, new Date(tiedTime), new Date(tiedTime));
+  writeListedSession(fixture, "session-a", tiedTime);
+  writeListedSession(fixture, "session-c", "2026-07-20T18:31:00.000Z");
+  writeListedSession(fixture, "session-ambiguous", "2026-07-20T18:32:00.000Z", "first");
+  writeListedSession(fixture, "session-ambiguous", "2026-07-20T18:32:00.000Z", "second");
+  const gateway = fixtureGateway(fixture, {
+    activeSessionIds: () => new Set(["session-c"]),
+    archivedSessionIds: () => new Set(["session-a"]),
+  });
+  const firstRequest = sessionListRequest(keys.privateKey, keys.publicHex, {
+    limit: 2,
+    request: "discovery-first",
+  });
+  const first = await gateway.handle(gatewayRequest(firstRequest));
+  assert.equal(first.status, 200);
+  const firstPage = (await first.json()) as Record<string, any>;
+  assert.equal(firstPage.type, "session_list_page");
+  assert.equal(firstPage.controllerId, CONTROLLER_ID);
+  assert.deepEqual(
+    firstPage.sessions.map((entry: Record<string, any>) => entry.session.sessionId),
+    ["session-c", "session-a"],
+  );
+  assert.deepEqual(firstPage.sessions[0].session, {
+    kind: "external_session",
+    authority: "local-studio",
+    installationId: CONTROLLER_ID,
+    sessionId: "session-c",
+  });
+  assert.equal(firstPage.sessions[0].active, true);
+  assert.equal(firstPage.sessions[1].archived, true);
+  assert.equal(firstPage.cursor.hasMore, true);
+  assert.equal(firstPage.cursor.revision, firstPage.revision);
+
+  const second = await gateway.handle(
+    gatewayRequest(
+      sessionListRequest(keys.privateKey, keys.publicHex, {
+        cursor: firstPage.cursor,
+        limit: 2,
+        request: "discovery-second",
+      }),
+    ),
+  );
+  assert.equal(second.status, 200);
+  const secondPage = (await second.json()) as Record<string, any>;
+  assert.deepEqual(
+    secondPage.sessions.map((entry: Record<string, any>) => entry.session.sessionId),
+    ["session-b"],
+  );
+  assert.equal(secondPage.cursor, null);
+  assert.equal(secondPage.revision, firstPage.revision);
+
+  const replay = await gateway.handle(gatewayRequest(firstRequest));
+  assert.equal(replay.status, 409);
+  assert.equal(((await replay.json()) as Record<string, any>).error.code, "replay_detected");
+});
+
+test("session discovery cursors reject tampering and cross-device use and are single-use", async () => {
+  const fixture = createSessionFixture("session-a");
+  writeListedSession(fixture, "session-b", "2026-07-20T18:31:00.000Z");
+  const owner = keyMaterial();
+  const otherDevice = keyMaterial();
+  let clock = NOW.getTime();
+  const gateway = fixtureGateway(fixture, {
+    now: () => new Date(clock),
+    sessionCursorTtlMs: 1_000,
+  });
+  const first = await gateway.handle(
+    gatewayRequest(
+      sessionListRequest(owner.privateKey, owner.publicHex, {
+        limit: 1,
+        request: "list-cursor-first",
+      }),
+    ),
+  );
+  assert.equal(first.status, 200);
+  const firstPage = (await first.json()) as Record<string, any>;
+  assert.ok(firstPage.cursor);
+
+  const tampered = await gateway.handle(
+    gatewayRequest(
+      sessionListRequest(owner.privateKey, owner.publicHex, {
+        cursor: { ...firstPage.cursor, revision: firstPage.cursor.revision + 1 },
+        request: "list-cursor-tampered",
+      }),
+    ),
+  );
+  assert.equal(tampered.status, 400);
+
+  const crossDevice = await gateway.handle(
+    gatewayRequest(
+      sessionListRequest(otherDevice.privateKey, otherDevice.publicHex, {
+        cursor: firstPage.cursor,
+        request: "list-cursor-cross-device",
+      }),
+    ),
+  );
+  assert.equal(crossDevice.status, 403);
+
+  const continuation = await gateway.handle(
+    gatewayRequest(
+      sessionListRequest(owner.privateKey, owner.publicHex, {
+        cursor: firstPage.cursor,
+        request: "list-cursor-owner",
+      }),
+    ),
+  );
+  assert.equal(continuation.status, 200);
+
+  const reused = await gateway.handle(
+    gatewayRequest(
+      sessionListRequest(owner.privateKey, owner.publicHex, {
+        cursor: firstPage.cursor,
+        request: "list-cursor-reused",
+      }),
+    ),
+  );
+  assert.equal(reused.status, 400);
+
+  const expiring = await gateway.handle(
+    gatewayRequest(
+      sessionListRequest(owner.privateKey, owner.publicHex, {
+        limit: 1,
+        request: "list-cursor-expiring",
+      }),
+    ),
+  );
+  const expiringPage = (await expiring.json()) as Record<string, any>;
+  clock += 2_000;
+  const expired = await gateway.handle(
+    gatewayRequest(
+      sessionListRequest(owner.privateKey, owner.publicHex, {
+        cursor: expiringPage.cursor,
+        request: "list-cursor-expired",
+      }),
+    ),
+  );
+  assert.equal(expired.status, 400);
+});
+
+test("session discovery fails closed when the trusted inventory exceeds its bound", async () => {
+  const fixture = createSessionFixture("session-a");
+  writeListedSession(fixture, "session-b", "2026-07-20T18:31:00.000Z");
+  const keys = keyMaterial();
+  const response = await fixtureGateway(fixture, { sessionInventoryLimit: 1 }).handle(
+    gatewayRequest(sessionListRequest(keys.privateKey, keys.publicHex, { request: "list-bound" })),
+  );
+  assert.equal(response.status, 413);
+  assert.equal(((await response.json()) as Record<string, any>).error.code, "payload_too_large");
 });
 
 test("tool references, results, and descriptor hashes retain Pi order", async () => {

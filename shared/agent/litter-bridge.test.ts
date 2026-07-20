@@ -7,6 +7,8 @@ import {
   LitterBridgeControllerActionRequestSchema,
   LitterBridgeControllerActionSchema,
   LitterBridgeControllerSnapshotSchema,
+  LitterBridgeSessionListPageSchema,
+  LitterBridgeSessionListRequestSchema,
   LitterBridgeSessionPageSchema,
   LitterBridgeSessionReadRequestSchema,
   LitterBridgeSessionTransferEnvelopeSchema,
@@ -316,6 +318,94 @@ describe("Litter bridge contracts", () => {
         session: null,
         cursor: null,
         limit: 50,
+      }),
+    );
+  });
+
+  test("validates strict paginated session discovery", () => {
+    const auth = {
+      device: {
+        deviceId: "device-1",
+        keyId: "device-key-1",
+        algorithm: "ed25519" as const,
+      },
+      requestId: "request-list-1",
+      issuedAt: timestamp,
+      expiresAt: "2026-07-20T12:31:45.000Z",
+      nonce: "nonce_list_1234567890",
+      bodyHash: hash,
+      signature,
+      capability: "sessions.read" as const,
+    };
+    const listCursor = {
+      type: "session_list_cursor" as const,
+      token: "list-cursor-token-1",
+      revision: 8,
+      hasMore: true,
+    };
+    const firstPage = Schema.decodeUnknownSync(LitterBridgeSessionListRequestSchema)({
+      type: "session_list_request",
+      protocolVersion: 1,
+      auth,
+      cursor: null,
+      limit: 50,
+    });
+    const continuation = Schema.decodeUnknownSync(LitterBridgeSessionListRequestSchema)({
+      type: "session_list_request",
+      protocolVersion: 1,
+      auth,
+      cursor: listCursor,
+      limit: 50,
+    });
+    assert.equal(firstPage.cursor, null);
+    assert.equal(continuation.cursor?.token, "list-cursor-token-1");
+    assert.throws(() =>
+      Schema.decodeUnknownSync(LitterBridgeSessionListRequestSchema)({
+        type: "session_list_request",
+        protocolVersion: 1,
+        auth,
+        cursor: { ...listCursor, hasMore: false },
+        limit: 50,
+      }),
+    );
+    assert.throws(() =>
+      Schema.decodeUnknownSync(LitterBridgeSessionListRequestSchema)({
+        type: "session_list_request",
+        protocolVersion: 1,
+        auth,
+        cursor: null,
+        limit: 50,
+        cwd: "/untrusted",
+      }),
+    );
+
+    const page = Schema.decodeUnknownSync(LitterBridgeSessionListPageSchema)({
+      type: "session_list_page",
+      protocolVersion: 1,
+      requestId: "request-list-1",
+      controllerId: "controller-1",
+      revision: 8,
+      sessions: [
+        {
+          session: {
+            kind: "external_session",
+            authority: "local-studio",
+            installationId: "controller-1",
+            sessionId: "session-1",
+          },
+          metadata,
+          revision: 4,
+          archived: false,
+          active: true,
+        },
+      ],
+      cursor: listCursor,
+    });
+    assert.equal(page.sessions[0]?.active, true);
+    assert.throws(() =>
+      Schema.decodeUnknownSync(LitterBridgeSessionListPageSchema)({
+        ...page,
+        cursor: { ...listCursor, revision: 7 },
       }),
     );
   });
