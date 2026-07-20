@@ -362,7 +362,7 @@ describe("download manager target ownership", () => {
 
     const retry = await run(
       manager.start({
-        model_id: "acme/terminal-model",
+        model_id: "acme/terminal-model-retry",
         destination_dir: "terminal",
       }),
     );
