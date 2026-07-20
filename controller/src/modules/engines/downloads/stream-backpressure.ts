@@ -1,8 +1,9 @@
 import type { EventEmitter } from "node:events";
-import { Effect } from "effect";
+import { Deferred, Effect } from "effect";
 
 type WriterFailure = {
   dispose: () => void;
+  failed: Effect.Effect<never, Error>;
   throwIfFailed: () => void;
 };
 
@@ -30,14 +31,18 @@ export const waitForWriterDrain = (writer: EventEmitter): Effect.Effect<void, Er
 
 export const trackWriterFailure = (writer: EventEmitter): WriterFailure => {
   let failure: Error | null = null;
+  const failed = Deferred.makeUnsafe<never, Error>();
   const onError = (error: unknown): void => {
+    if (failure) return;
     failure = toError(error);
+    Deferred.doneUnsafe(failed, Effect.fail(failure));
   };
   writer.on("error", onError);
   return {
     dispose: (): void => {
       writer.removeListener("error", onError);
     },
+    failed: Deferred.await(failed),
     throwIfFailed: (): void => {
       if (failure) throw failure;
     },
