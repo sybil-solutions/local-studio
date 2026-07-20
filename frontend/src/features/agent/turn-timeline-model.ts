@@ -109,12 +109,16 @@ function attachLatestUsageSnapshot(turns: TurnRecord[], session: Session): void 
 }
 
 export function deriveTurnTimeline(session: Session): TurnRecord[] {
+  // Single pass over the transcript: indexOf-per-message made this O(N²) and
+  // it reruns on every streaming frame while the inspector panel is open.
+  const messageIndexById = new Map<string, number>();
+  session.messages.forEach((msg, index) => messageIndexById.set(msg.id, index));
   const assistantMessages = session.messages.filter(
     (msg): msg is ChatMessage & { role: "assistant" } => msg.role === "assistant",
   );
 
   const turns: TurnRecord[] = assistantMessages.map((msg, index) => {
-    const nextMessage = session.messages[session.messages.indexOf(msg) + 1];
+    const nextMessage = session.messages[(messageIndexById.get(msg.id) ?? -2) + 1];
     const startedAt = parseTimestamp(msg.timestamp);
     const endedAt = nextMessage?.timestamp ? parseTimestamp(nextMessage.timestamp) : undefined;
     const durationMs = startedAt && endedAt ? endedAt.getTime() - startedAt.getTime() : undefined;

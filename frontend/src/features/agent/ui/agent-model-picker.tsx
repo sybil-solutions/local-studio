@@ -146,7 +146,9 @@ function ModelPickerTrigger({
       onClick={onToggle}
       disabled={disabled}
       className={cx(
-        "group/model inline-flex !h-7 !min-h-7 !min-w-0 items-center justify-between gap-1 rounded-lg bg-transparent pl-2 pr-1.5 text-[length:var(--fs-md)] whitespace-nowrap text-(--hl2) transition-colors hover:bg-(--hover) hover:text-(--fg) active:translate-y-px disabled:opacity-60",
+        // Codex: the model control sits at the shared chat size (16px) with
+        // primary-strength text; only the chevron reads dim.
+        "group/model inline-flex !h-[30px] !min-h-[30px] !min-w-0 items-center justify-between gap-1 rounded-lg bg-transparent pl-2 pr-1.5 text-[length:var(--codex-chat-font-size)] whitespace-nowrap text-(--fg)/85 transition-colors hover:bg-(--hover) hover:text-(--fg) active:translate-y-px disabled:opacity-60",
         open && "bg-(--hover) text-(--fg)",
       )}
       title={notRunning ? `${title} is not running — launch it or pick a running model` : title}
@@ -154,7 +156,7 @@ function ModelPickerTrigger({
       aria-expanded={open}
       aria-haspopup="menu"
     >
-      <span className="max-w-[148px] truncate text-left">{label}</span>
+      <span className="max-w-[180px] truncate text-left">{label}</span>
       {notRunning ? <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-(--warn)" /> : null}
       <ChevronDown className="pointer-events-none h-3.5 w-3.5 shrink-0 text-(--dim)" />
     </button>

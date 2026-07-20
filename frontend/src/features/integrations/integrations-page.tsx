@@ -2,15 +2,17 @@
 
 import { useState, type ReactNode } from "react";
 import { RefreshButton, Tabs } from "@/ui";
-import { Boxes, GraduationCap, Plug } from "@/ui/icon-registry";
+import { Boxes, Brain, GraduationCap, Plug } from "@/ui/icon-registry";
 import { SkillsSettings } from "@/features/settings/agent-settings-sections";
 import { ConnectorsSection } from "@/features/settings/connectors-section";
 import { PluginsSection } from "./plugins-section";
+import { ModelProvidersSection } from "./model-providers-section";
 import { integrationSectionFromHash, type IntegrationSectionId } from "./integration-navigation";
 
 const INTEGRATION_TABS = [
   { id: "plugins", label: "Plugins", icon: <Boxes className="h-3.5 w-3.5" /> },
   { id: "connectors", label: "Connectors", icon: <Plug className="h-3.5 w-3.5" /> },
+  { id: "models", label: "Models", icon: <Brain className="h-3.5 w-3.5" /> },
   { id: "skills", label: "Skills", icon: <GraduationCap className="h-3.5 w-3.5" /> },
 ] satisfies Array<{ id: IntegrationSectionId; label: string; icon: ReactNode }>;
 
@@ -50,6 +52,7 @@ export function IntegrationsContent() {
       <div key={`${activeSection}-${revision}`}>
         {activeSection === "plugins" ? <PluginsSection /> : null}
         {activeSection === "connectors" ? <ConnectorsSection /> : null}
+        {activeSection === "models" ? <ModelProvidersSection /> : null}
         {activeSection === "skills" ? <SkillsSettings /> : null}
       </div>
     </div>

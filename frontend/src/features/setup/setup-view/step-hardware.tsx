@@ -36,6 +36,10 @@ export function StepHardware({
   continueFromHardware: () => void;
 }) {
   const hardware = buildHardwareSummary(diagnostics);
+  const managedBackends =
+    diagnostics?.platform === "darwin" && diagnostics.arch === "arm64"
+      ? (["mlx"] as const)
+      : MANAGED_RUNTIME_BACKENDS;
   const visibleTargets = runtimeTargets
     .filter(
       (target) =>
@@ -61,12 +65,31 @@ export function StepHardware({
         />
       </Card>
 
+      <Card padding="lg" className="space-y-4">
+        <Checkbox
+          checked={hardwareConfirmed}
+          onChange={setHardwareConfirmed}
+          className="rounded-lg border border-(--ui-border) bg-(--ui-surface)/40 px-4 py-3"
+          label="Configure models and runtimes on this controller."
+          labelClassName="font-normal"
+        />
+        <div className="flex items-center gap-3">
+          <Button
+            onClick={continueFromHardware}
+            disabled={!hardwareConfirmed || upgrading}
+            icon={<ChevronRight className="h-4 w-4" />}
+          >
+            Choose a model
+          </Button>
+        </div>
+      </Card>
+
       <SettingsGroup
         title="Runtime setup"
         description="Controller-managed Python environments for guided inference on the active target."
       >
         <ManagedRuntimeInstallRows
-          backends={MANAGED_RUNTIME_BACKENDS}
+          backends={managedBackends}
           jobs={runtimeJobs}
           targets={runtimeTargets}
           onInstall={installRuntime}
@@ -84,25 +107,6 @@ export function StepHardware({
           </SettingsNotice>
         )}
       </SettingsGroup>
-
-      <Card padding="lg" className="space-y-4">
-        <Checkbox
-          checked={hardwareConfirmed}
-          onChange={setHardwareConfirmed}
-          className="rounded-lg border border-(--ui-border) bg-(--ui-surface)/40 px-4 py-3"
-          label="This is the controller I want Local Studio to configure."
-          labelClassName="font-normal"
-        />
-        <div className="flex items-center gap-3">
-          <Button
-            onClick={continueFromHardware}
-            disabled={!hardwareConfirmed || upgrading}
-            icon={<ChevronRight className="h-4 w-4" />}
-          >
-            Choose a model
-          </Button>
-        </div>
-      </Card>
     </div>
   );
 }

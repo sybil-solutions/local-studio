@@ -62,6 +62,7 @@ export const fetchHuggingFaceModelInfo = (
   Effect.gen(function* () {
     const encodedModelId = modelId.split("/").map(encodeURIComponent).join("/");
     const url = new URL(`https://huggingface.co/api/models/${encodedModelId}`);
+    url.searchParams.set("blobs", "true");
     if (revision) url.searchParams.set("revision", revision);
     const headers: Record<string, string> = {};
     if (hfToken) headers["Authorization"] = `Bearer ${hfToken}`;
@@ -93,6 +94,29 @@ export const buildHuggingFaceFileList = (
   ignorePatterns: string[],
 ): DownloadFileInfo[] => {
   const siblings = modelInfo.siblings ?? [];
+  if (allowPatterns.length === 0) {
+    const primaryGgufFiles = siblings
+      .map((sibling) => sibling.rfilename)
+      .filter(
+        (filename) =>
+          /\.gguf$/i.test(filename) &&
+          !/(?:^|[-_.])(mmproj|projector|adapter|draft)(?:[-_.]|$)/i.test(filename),
+      );
+    const ggufFamilies = new Set(
+      primaryGgufFiles.map((filename) =>
+        filename.replace(/-\d{5}-of-\d{5}\.gguf$/i, ".gguf"),
+      ),
+    );
+    if (ggufFamilies.size > 1) {
+      throw new Error(
+        `Multiple GGUF weight variants found. Choose one file before downloading: ${[
+          ...ggufFamilies,
+        ]
+          .slice(0, 8)
+          .join(", ")}`,
+      );
+    }
+  }
   const files: DownloadFileInfo[] = [];
   for (const sibling of siblings) {
     const filename = sibling.rfilename;

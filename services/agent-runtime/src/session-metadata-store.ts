@@ -1,16 +1,13 @@
 import {
   chmodSync,
-  closeSync,
   existsSync,
   mkdirSync,
-  openSync,
   readFileSync,
   renameSync,
-  statSync,
-  unlinkSync,
   writeFileSync,
 } from "node:fs";
 import path from "node:path";
+import lockfile from "proper-lockfile";
 import { resolveDataDir } from "./data-dir";
 import { isRecord } from "../../../shared/agent/guards";
 
@@ -66,10 +63,6 @@ function storePath(): string {
   return path.join(resolveDataDir(), SESSION_METADATA_FILENAME);
 }
 
-function storeLockPath(filepath = storePath()): string {
-  return `${filepath}.lock`;
-}
-
 function normalizeStore(value: unknown): SessionMetadataStore {
   if (!isRecord(value) || !isRecord(value.sessions)) return defaultStore();
   const sessions: Record<string, StoredSessionMetadata> = {};
@@ -120,53 +113,29 @@ function writeStore(store: SessionMetadataStore): void {
   writeFileSync(tempPath, `${JSON.stringify(store, null, 2)}\n`, "utf-8");
   try {
     chmodSync(tempPath, 0o600);
-  } catch {
-    // best effort
-  }
+  } catch {}
   renameSync(tempPath, filepath);
 }
 
-function sleepSync(ms: number): void {
-  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
-}
-
-function withStoreLock<T>(callback: () => T): T {
+async function withStoreLock<T>(callback: () => T): Promise<T> {
   const filepath = storePath();
   mkdirSync(path.dirname(filepath), { recursive: true });
-  const lockPath = storeLockPath(filepath);
-  for (let attempt = 0; attempt < LOCK_ATTEMPTS; attempt += 1) {
-    let fd: number | null = null;
-    try {
-      fd = openSync(lockPath, "wx", 0o600);
-      try {
-        return callback();
-      } finally {
-        closeSync(fd);
-        try {
-          unlinkSync(lockPath);
-        } catch {
-          // best effort
-        }
-      }
-    } catch (error) {
-      if (fd !== null) {
-        try {
-          closeSync(fd);
-        } catch {
-          // best effort
-        }
-      }
-      const code = (error as NodeJS.ErrnoException).code;
-      if (code !== "EEXIST") throw error;
-      try {
-        if (Date.now() - statSync(lockPath).mtimeMs > LOCK_STALE_MS) unlinkSync(lockPath);
-      } catch {
-        // Another process may have removed it between our checks.
-      }
-      sleepSync(LOCK_RETRY_MS);
-    }
+  const release = await lockfile.lock(filepath, {
+    realpath: false,
+    stale: LOCK_STALE_MS,
+    retries: {
+      retries: LOCK_ATTEMPTS - 1,
+      factor: 1,
+      minTimeout: LOCK_RETRY_MS,
+      maxTimeout: LOCK_RETRY_MS,
+      randomize: false,
+    },
+  });
+  try {
+    return callback();
+  } finally {
+    await release();
   }
-  throw new Error("Timed out waiting for agent session metadata lock");
 }
 
 function cleanOptionalString(value: string | null | undefined): string | undefined {
@@ -222,12 +191,12 @@ export function listArchivedSessionMetadata(): ArchivedSessionMetadata[] {
     });
 }
 
-export function setSessionArchived(
+export async function setSessionArchived(
   sessionId: string,
   archived: boolean,
   now = new Date(),
   metadata?: SessionArchiveMetadataInput,
-): SessionArchiveState {
+): Promise<SessionArchiveState> {
   const id = sessionId.trim();
   if (!id) return { archived: false, archivedAt: null };
   return withStoreLock(() => {

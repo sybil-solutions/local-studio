@@ -17,6 +17,7 @@ interface StatusSectionProps {
   onNavigateLogs: () => void;
   onBenchmark: () => void;
   benchmarking: boolean;
+  benchmarkResult: number | null;
   recipes?: RecipeWithStatus[];
   lifecycleStatus?: "idle" | "starting" | "ready" | "error";
   onLaunch?: (recipeId: string) => Promise<void>;
@@ -36,6 +37,7 @@ export function StatusSection({
   onNavigateLogs,
   onBenchmark,
   benchmarking,
+  benchmarkResult,
   recipes,
   lifecycleStatus = "idle",
   onLaunch,
@@ -57,6 +59,7 @@ export function StatusSection({
       <StatusHeader
         backend={view.backend}
         benchmarking={benchmarking}
+        benchmarkResult={benchmarkResult}
         currentRecipeId={currentRecipe?.id}
         displayPlatformKind={view.displayPlatformKind}
         displayPort={view.displayPort}

@@ -36,6 +36,37 @@ const sumTotalBytes = (files: DownloadFileInfo[]): number | null => {
   return known.length === 0 ? null : known.reduce((total, file) => total + file.size_bytes, 0);
 };
 
+const sameFileSet = (first: DownloadFileInfo[], second: DownloadFileInfo[]): boolean => {
+  const firstPaths = first.map((file) => file.path).sort();
+  const secondPaths = second.map((file) => file.path).sort();
+  return (
+    firstPaths.length === secondPaths.length &&
+    firstPaths.every((path, index) => path === secondPaths[index])
+  );
+};
+
+export const findReusableDownload = (
+  downloads: ModelDownload[],
+  modelId: string,
+  targetDirectory: string,
+  files: DownloadFileInfo[],
+): ModelDownload | null => {
+  const matching = downloads.filter(
+    (download) =>
+      download.model_id === modelId &&
+      download.target_dir === targetDirectory &&
+      sameFileSet(download.files, files),
+  );
+  return (
+    matching.find((download) => download.status === "completed") ??
+    matching.find(
+      (download) => download.status === "downloading" || download.status === "queued",
+    ) ??
+    matching.find((download) => download.status === "paused") ??
+    null
+  );
+};
+
 const sanitizePathSegments = (value: string): string[] =>
   value
     .split(/[\\/]/)
@@ -189,12 +220,21 @@ export class DownloadManager {
         hfToken,
         manager.fetchImpl,
       );
-      const files = buildHuggingFaceFileList(info, allowPatterns, ignorePatterns);
+      const files = yield* attempt("select-download-files", () =>
+        buildHuggingFaceFileList(info, allowPatterns, ignorePatterns),
+      );
       if (files.length === 0) {
         return yield* Effect.fail(
           operationError("start-download", "No downloadable files found for this model"),
         );
       }
+      const existing = findReusableDownload(
+        yield* manager.store.list(),
+        modelId,
+        targetDirectory,
+        files,
+      );
+      if (existing) return existing;
       const now = toTimestamp();
       const download: ModelDownload = {
         id: randomUUID(),
@@ -356,6 +396,7 @@ export class DownloadManager {
         if (current.status === "paused" || current.status === "canceled") return;
         const allComplete = current.files.every((file) => file.status === "completed");
         current.status = allComplete ? "completed" : "failed";
+        current.completed_at = allComplete ? toTimestamp() : null;
         current.error = allComplete ? null : (current.error ?? "Download incomplete");
         current.downloaded_bytes = sumDownloadedBytes(current.files);
         current.total_bytes = current.total_bytes ?? sumTotalBytes(current.files);

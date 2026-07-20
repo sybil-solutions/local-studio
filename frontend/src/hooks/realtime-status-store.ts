@@ -223,6 +223,7 @@ function fallbackRuntimeVendor(
 ): RuntimeSummaryData["platform"]["vendor"] {
   if (kind === "cuda") return "nvidia";
   if (kind === "rocm") return "amd";
+  if (kind === "metal") return "apple";
   return null;
 }
 
@@ -342,16 +343,31 @@ function handleLaunchProgressEvent(data: Record<string, unknown>, now: number) {
 }
 
 type RuntimeSummaryEventPlatform = { kind?: string; vendor?: string | null };
+const RUNTIME_PLATFORM_KINDS = new Set<RuntimeSummaryData["platform"]["kind"]>([
+  "cuda",
+  "rocm",
+  "metal",
+  "unknown",
+]);
+const RUNTIME_PLATFORM_VENDORS = new Set<Exclude<RuntimeSummaryData["platform"]["vendor"], null>>([
+  "nvidia",
+  "amd",
+  "apple",
+]);
 
 function handleRuntimeSummaryEvent(data: Record<string, unknown>, now: number) {
   const platform = data["platform"] as RuntimeSummaryEventPlatform | undefined;
   const nextKind =
-    platform?.kind === "cuda" || platform?.kind === "rocm" || platform?.kind === "unknown"
-      ? platform.kind
+    platform?.kind &&
+    RUNTIME_PLATFORM_KINDS.has(platform.kind as RuntimeSummaryData["platform"]["kind"])
+      ? (platform.kind as RuntimeSummaryData["platform"]["kind"])
       : snapshot.platformKind;
   const nextVendor =
-    platform?.vendor === "nvidia" || platform?.vendor === "amd"
-      ? platform.vendor
+    platform?.vendor &&
+    RUNTIME_PLATFORM_VENDORS.has(
+      platform.vendor as Exclude<RuntimeSummaryData["platform"]["vendor"], null>,
+    )
+      ? (platform.vendor as Exclude<RuntimeSummaryData["platform"]["vendor"], null>)
       : fallbackRuntimeVendor(nextKind);
   const gpuMon = data["gpu_monitoring"] as RuntimeSummaryData["gpu_monitoring"] | undefined;
   const backends = data["backends"] as Partial<RuntimeSummaryData["backends"]> | undefined;

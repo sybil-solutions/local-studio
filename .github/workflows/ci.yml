@@ -52,7 +52,7 @@ jobs:
           bun-version: latest
       - name: Install controller contract dependencies
         working-directory: ./controller
-        run: bun install
+        run: bun install --frozen-lockfile
       - name: Install dependencies
         working-directory: ./frontend
         run: npm ci --legacy-peer-deps

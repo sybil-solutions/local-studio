@@ -1,7 +1,7 @@
 {
   "compilerOptions": {
     "target": "ES2017",
-    "lib": ["esnext"],
+    "lib": ["esnext", "dom"],
     "strict": true,
     "noEmit": true,
     "esModuleInterop": true,
@@ -14,7 +14,7 @@
     "typeRoots": ["../../frontend/node_modules/@types"],
     "paths": {
       "effect": ["../../frontend/node_modules/effect"],
-      "ws": ["../../frontend/node_modules/ws"],
+      "playwright-core": ["../../frontend/node_modules/playwright-core"],
       "hono": ["../../frontend/node_modules/hono"],
       "@hono/node-server": ["../../frontend/node_modules/@hono/node-server"],
       "@earendil-works/pi-ai": ["../../frontend/node_modules/@earendil-works/pi-ai"],

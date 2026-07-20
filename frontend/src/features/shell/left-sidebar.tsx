@@ -24,7 +24,7 @@ import {
 import { MobileNavigationDrawer } from "@/features/shell/left-sidebar-mobile-drawer";
 import { mobilePageTitle, routeHidesAppSidebar } from "@/features/shell/left-sidebar-nav";
 
-const SIDEBAR_MIN_WIDTH = 240;
+const SIDEBAR_MIN_WIDTH = 180;
 const SIDEBAR_MAX_WIDTH = 520;
 const SIDEBAR_DEFAULT_WIDTH = 275;
 

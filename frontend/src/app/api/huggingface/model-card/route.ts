@@ -61,7 +61,7 @@ function isValidModelId(modelId: string): boolean {
 }
 
 function modelApiUrl(modelId: string): string {
-  return `${HF_API}/${modelId.split("/").map(encodeURIComponent).join("/")}?full=true`;
+  return `${HF_API}/${modelId.split("/").map(encodeURIComponent).join("/")}?full=true&blobs=true`;
 }
 
 function readmeUrl(modelId: string): string {

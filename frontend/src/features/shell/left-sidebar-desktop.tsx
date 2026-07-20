@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { ProfileFooter } from "@/features/shell/profile-footer";
 import { type MouseEvent as ReactMouseEvent } from "react";
 import {
   ChevronLeft,
@@ -147,26 +148,7 @@ export function DesktopSidebar({
               </nav>
 
               <div className="shrink-0 border-t border-(--separator) bg-(--sidebar-bg) px-[var(--sidebar-padding-x)] py-2">
-                <Link
-                  href="/settings"
-                  prefetch={false}
-                  title="Settings"
-                  className={`group flex h-[var(--sidebar-row-height)] shrink-0 items-center gap-2.5 rounded-[var(--sidebar-row-radius)] px-2 transition-colors ${
-                    isRouteActive(pathname, "/settings")
-                      ? "bg-(--active) text-(--fg)"
-                      : "text-(--fg) hover:bg-(--hover)"
-                  }`}
-                >
-                  <Settings
-                    className={`h-3.5 w-3.5 shrink-0 ${
-                      isRouteActive(pathname, "/settings") ? "opacity-90" : "opacity-70"
-                    }`}
-                    strokeWidth={1.75}
-                  />
-                  <span className="whitespace-nowrap text-[length:var(--fs-md)] font-normal">
-                    Settings
-                  </span>
-                </Link>
+                <ProfileFooter settingsActive={isRouteActive(pathname, "/settings")} />
               </div>
             </>
           ) : null}

@@ -95,6 +95,7 @@ export function useChatPaneRuntimeHandle({
     onRegisterHandle(handle);
     return () => onRegisterHandle(null);
   }, [handle, onRegisterHandle]);
+  return { compacting, compactSession };
 }
 
 type ChatPaneFileMentionRow = {

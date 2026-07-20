@@ -5,16 +5,33 @@
 #   # or piped over ssh by the desktop app's "Deploy controller" flow.
 #
 # Env overrides:
-#   LOCAL_STUDIO_DIR   install dir            (default: $HOME/local-studio)
-#   LOCAL_STUDIO_PORT  controller port        (default: 8080)
-#   LOCAL_STUDIO_REPO  git repo to clone      (default: official repo)
+#   LOCAL_STUDIO_DIR        source directory
+#   LOCAL_STUDIO_DATA_DIR   persistent controller data directory
+#   LOCAL_STUDIO_MODELS_DIR persistent model directory
+#   LOCAL_STUDIO_HOST       controller bind host
+#   LOCAL_STUDIO_PORT       controller port
+#   LOCAL_STUDIO_REPO       git repo to clone
 #
 # Prints a final machine-readable line on success:
 #   LOCAL_STUDIO_CONTROLLER {"url":"http://<host>:<port>","api_key":"<key>"}
 set -euo pipefail
 umask 077
 
-DIR="${LOCAL_STUDIO_DIR:-$HOME/local-studio}"
+OS_NAME="${LOCAL_STUDIO_OS_NAME:-$(uname -s)}"
+if [ "$OS_NAME" = "Darwin" ]; then
+  DEFAULT_DIR="$HOME/Library/Application Support/Local Studio/controller-source"
+else
+  DEFAULT_DIR="$HOME/local-studio"
+fi
+DIR="${LOCAL_STUDIO_DIR:-$DEFAULT_DIR}"
+if [ "$OS_NAME" = "Darwin" ]; then
+  DEFAULT_DATA_DIR="$HOME/Library/Application Support/Local Studio/controller-data"
+else
+  DEFAULT_DATA_DIR="$DIR/data"
+fi
+DATA_DIR="${LOCAL_STUDIO_DATA_DIR:-$DEFAULT_DATA_DIR}"
+MODELS_DIR="${LOCAL_STUDIO_MODELS_DIR:-$DATA_DIR/models}"
+HOST="${LOCAL_STUDIO_HOST:-0.0.0.0}"
 PORT="${LOCAL_STUDIO_PORT:-8080}"
 REPO="${LOCAL_STUDIO_REPO:-https://github.com/sybil-solutions/local-studio.git}"
 BUN="$HOME/.bun/bin/bun"
@@ -329,8 +346,12 @@ require_checkout_identity
 # --- config ------------------------------------------------------------------
 ENV_FILE="$DIR/.env"
 prepare_private_file "$ENV_FILE"
-if [ -f "$ENV_FILE" ] && grep -q '^LOCAL_STUDIO_API_KEY=' "$ENV_FILE"; then
-  API_KEY="$(grep '^LOCAL_STUDIO_API_KEY=' "$ENV_FILE" | head -1 | cut -d= -f2-)"
+read_env_value() {
+  awk -F= -v key="$1" '$1 == key { sub(/^[^=]*=/, ""); print; exit }' "$ENV_FILE"
+}
+ENV_IDENTITY="$(path_identity "$ENV_FILE")"
+if grep -q '^LOCAL_STUDIO_API_KEY=.' "$ENV_FILE"; then
+  API_KEY="$(read_env_value LOCAL_STUDIO_API_KEY)"
   log "reusing existing API key from .env"
 else
   if command -v openssl >/dev/null 2>&1; then
@@ -338,26 +359,50 @@ else
   else
     API_KEY="$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')"
   fi
-  ENV_TEMP="$(mktemp "$DIR/.env.XXXXXX")"
-  {
-    cat "$ENV_FILE"
-    echo "LOCAL_STUDIO_PORT=$PORT"
-    # A deployed controller exists to be reached from other machines; the API
-    # key is the access control.
-    echo "LOCAL_STUDIO_HOST=0.0.0.0"
-    echo "LOCAL_STUDIO_API_KEY=$API_KEY"
-  } > "$ENV_TEMP"
-  chmod 600 "$ENV_TEMP"
-  mv -f "$ENV_TEMP" "$ENV_FILE"
-  prepare_private_file "$ENV_FILE"
-  log "wrote $ENV_FILE"
 fi
+if [ -z "${LOCAL_STUDIO_HOST:-}" ]; then HOST="$(read_env_value LOCAL_STUDIO_HOST)"; fi
+if [ -z "${LOCAL_STUDIO_PORT:-}" ]; then PORT="$(read_env_value LOCAL_STUDIO_PORT)"; fi
+if [ -z "${LOCAL_STUDIO_DATA_DIR:-}" ]; then DATA_DIR="$(read_env_value LOCAL_STUDIO_DATA_DIR)"; fi
+if [ -z "${LOCAL_STUDIO_MODELS_DIR:-}" ]; then MODELS_DIR="$(read_env_value LOCAL_STUDIO_MODELS_DIR)"; fi
+[ -n "$HOST" ] || HOST="0.0.0.0"
+[ -n "$PORT" ] || PORT="8080"
+[ -n "$DATA_DIR" ] || DATA_DIR="$DEFAULT_DATA_DIR"
+[ -n "$MODELS_DIR" ] || MODELS_DIR="$DATA_DIR/models"
+case "$HOST$PORT$DATA_DIR$MODELS_DIR$API_KEY" in
+  *$'\n'*|*$'\r'*) log "refusing invalid controller configuration"; exit 1 ;;
+esac
+case "$DATA_DIR" in
+  /*) ;;
+  *) DATA_DIR="$PWD/$DATA_DIR" ;;
+esac
+case "$MODELS_DIR" in
+  /*) ;;
+  *) MODELS_DIR="$PWD/$MODELS_DIR" ;;
+esac
+case "/$DATA_DIR/$MODELS_DIR/" in
+  */../*|*/./*) log "refusing non-canonical controller storage path"; exit 1 ;;
+esac
+ENV_TEMP="$(mktemp "$DIR/.env.XXXXXX")"
+require_identity "$ENV_FILE" "$ENV_IDENTITY"
+{
+  grep -vE '^LOCAL_STUDIO_(HOST|PORT|API_KEY|DATA_DIR|MODELS_DIR)=' "$ENV_FILE" || true
+  printf 'LOCAL_STUDIO_HOST=%s\n' "$HOST"
+  printf 'LOCAL_STUDIO_PORT=%s\n' "$PORT"
+  printf 'LOCAL_STUDIO_API_KEY=%s\n' "$API_KEY"
+  printf 'LOCAL_STUDIO_DATA_DIR=%s\n' "$DATA_DIR"
+  printf 'LOCAL_STUDIO_MODELS_DIR=%s\n' "$MODELS_DIR"
+} > "$ENV_TEMP"
+chmod 600 "$ENV_TEMP"
+require_identity "$ENV_FILE" "$ENV_IDENTITY"
+mv -f "$ENV_TEMP" "$ENV_FILE"
 prepare_private_file "$ENV_FILE"
-prepare_private_directory "$DIR/data"
-LOG_FILE="$DIR/data/controller.log"
+log "wrote $ENV_FILE"
+prepare_private_directory "$DATA_DIR"
+prepare_private_directory "$MODELS_DIR"
+LOG_FILE="$DATA_DIR/controller.log"
 prepare_private_file "$LOG_FILE"
-prepare_private_directory "$DIR/data/logs"
-APP_LOG_FILE="$DIR/data/logs/vllm_controller.log"
+prepare_private_directory "$DATA_DIR/logs"
+APP_LOG_FILE="$DATA_DIR/logs/vllm_controller.log"
 prepare_private_file "$APP_LOG_FILE"
 
 # --- service -----------------------------------------------------------------
@@ -409,7 +454,87 @@ stop_started_record() {
 }
 
 SYSTEMD_RUNTIME_DIRECTORY="${LOCAL_STUDIO_SYSTEMD_RUNTIME_DIR:-/run/systemd/system}"
-if command -v systemctl >/dev/null 2>&1 && [ -d "$SYSTEMD_RUNTIME_DIRECTORY" ] && systemctl --user show-environment >/dev/null 2>&1; then
+if [ "$OS_NAME" = "Darwin" ]; then
+  LABEL="org.local.studio.controller"
+  PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
+  xml_escape() {
+    printf '%s' "$1" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g; s/"/\&quot;/g'
+  }
+  prepare_private_directory "$HOME/Library/LaunchAgents"
+  require_safe_file "$PLIST"
+  BUN_XML="$(xml_escape "$BUN")"
+  MAIN_XML="$(xml_escape "$BOOTSTRAP")"
+  DIR_XML="$(xml_escape "$CONTROLLER_DIR")"
+  DATA_XML="$(xml_escape "$DATA_DIR")"
+  MODELS_XML="$(xml_escape "$MODELS_DIR")"
+  API_KEY_XML="$(xml_escape "$API_KEY")"
+  PATH_XML="$(xml_escape "$HOME/.bun/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin")"
+  PLIST_TEMP="$(mktemp "$HOME/Library/LaunchAgents/.local-studio-controller.XXXXXX")"
+  cat > "$PLIST_TEMP" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>$LABEL</string>
+  <key>ProgramArguments</key>
+  <array><string>$BUN_XML</string><string>$MAIN_XML</string></array>
+  <key>WorkingDirectory</key><string>$DIR_XML</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>LOCAL_STUDIO_HOST</key><string>$(xml_escape "$HOST")</string>
+    <key>LOCAL_STUDIO_PORT</key><string>$PORT</string>
+    <key>LOCAL_STUDIO_API_KEY</key><string>$API_KEY_XML</string>
+    <key>LOCAL_STUDIO_DATA_DIR</key><string>$DATA_XML</string>
+    <key>LOCAL_STUDIO_MODELS_DIR</key><string>$MODELS_XML</string>
+    <key>PATH</key><string>$PATH_XML</string>
+  </dict>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>ThrottleInterval</key><integer>5</integer>
+  <key>StandardOutPath</key><string>/dev/null</string>
+  <key>StandardErrorPath</key><string>/dev/null</string>
+</dict>
+</plist>
+PLIST
+  chmod 600 "$PLIST_TEMP"
+  plutil -lint "$PLIST_TEMP" >/dev/null
+  SERVICE="gui/$(id -u)/$LABEL"
+  if launchctl print "$SERVICE" >/dev/null 2>&1; then
+    EXISTING_PID="$(launchctl print "$SERVICE" 2>/dev/null | sed -n 's/^[[:space:]]*pid = \([0-9][0-9]*\)$/\1/p' | tail -1)"
+    EXISTING_RECORD="$(controller_record_for_pid "$EXISTING_PID")" || true
+    if [ -z "$EXISTING_RECORD" ]; then
+      log "refusing foreign launchd controller at $SERVICE"
+      exit 1
+    fi
+    launchctl bootout "$SERVICE"
+  fi
+  controller_require_no_listener "$PORT" || {
+    log "refusing occupied controller port $PORT"
+    exit 1
+  }
+  require_checkout_identity
+  mv -f "$PLIST_TEMP" "$PLIST"
+  prepare_private_file "$PLIST"
+  launchctl bootstrap "gui/$(id -u)" "$PLIST"
+  launchctl enable "$SERVICE"
+  launchctl kickstart -k "$SERVICE"
+  for _ in $(seq 1 100); do
+    STARTED_PID="$(launchctl print "$SERVICE" 2>/dev/null | sed -n 's/^[[:space:]]*pid = \([0-9][0-9]*\)$/\1/p' | tail -1)"
+    if [ -n "$STARTED_PID" ]; then
+      VERIFIED_CONTROLLER_RECORD="$(controller_record_for_pid "$STARTED_PID")" || true
+      if [ -n "$VERIFIED_CONTROLLER_RECORD" ] && controller_record_has_exact_listener "$VERIFIED_CONTROLLER_RECORD"; then
+        break
+      fi
+    fi
+    sleep 0.1
+  done
+  if [ -z "${VERIFIED_CONTROLLER_RECORD:-}" ] || ! controller_record_has_exact_listener "$VERIFIED_CONTROLLER_RECORD"; then
+    launchctl bootout "$SERVICE" >/dev/null 2>&1 || true
+    log "refusing unverified launchd controller process or listener"
+    exit 1
+  fi
+  started="launchd"
+elif command -v systemctl >/dev/null 2>&1 && [ -d "$SYSTEMD_RUNTIME_DIRECTORY" ] && systemctl --user show-environment >/dev/null 2>&1; then
   UNIT_DIR="$HOME/.config/systemd/user"
   # Port-scoped unit name so multiple installs on one box never clobber each
   # other's service definition.
@@ -666,13 +791,15 @@ fi
 # --- health ------------------------------------------------------------------
 log "waiting for controller on :$PORT…"
 for _ in $(seq 1 30); do
-  if { [ "$started" = "systemd" ] && systemd_record_is_current "$UNIT_NAME" "$VERIFIED_CONTROLLER_RECORD"; } ||
+  if { [ "$started" = "launchd" ] && controller_record_has_exact_listener "$VERIFIED_CONTROLLER_RECORD"; } ||
+    { [ "$started" = "systemd" ] && systemd_record_is_current "$UNIT_NAME" "$VERIFIED_CONTROLLER_RECORD"; } ||
     { [ "$started" = "nohup" ] && controller_record_has_exact_listener "$VERIFIED_CONTROLLER_RECORD"; }; then
     if ! curl -fsS --max-time 2 "http://127.0.0.1:$PORT/health" >/dev/null 2>&1; then
       sleep 2
       continue
     fi
-    if { [ "$started" = "systemd" ] && ! systemd_record_is_current "$UNIT_NAME" "$VERIFIED_CONTROLLER_RECORD"; } ||
+    if { [ "$started" = "launchd" ] && ! controller_record_has_exact_listener "$VERIFIED_CONTROLLER_RECORD"; } ||
+      { [ "$started" = "systemd" ] && ! systemd_record_is_current "$UNIT_NAME" "$VERIFIED_CONTROLLER_RECORD"; } ||
       { [ "$started" = "nohup" ] && ! controller_record_has_exact_listener "$VERIFIED_CONTROLLER_RECORD"; }; then
       log "controller ownership changed during health verification"
       exit 1

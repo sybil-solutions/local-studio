@@ -4,6 +4,13 @@ import { useState } from "react";
 import { type TerminalOwner } from "@/features/agent/terminal-owners";
 import { TerminalPanel } from "@/features/agent/ui/terminal-panel";
 
+// Each mounted TerminalPanel is a full xterm instance (renderer + scrollback
+// buffer) plus a PTY attachment, so the set of kept-alive terminals is a
+// bounded MRU rather than every terminal ever opened. Evicted terminals
+// reattach to their still-running shell through the ownerKey PTY path when
+// reactivated; only their rendered scrollback is dropped.
+const MAX_MOUNTED_TERMINALS = 4;
+
 export function PersistentTerminals({
   active,
   activeOwnerKey,
@@ -13,11 +20,13 @@ export function PersistentTerminals({
   activeOwnerKey: string | null;
   terminals: TerminalOwner[];
 }) {
-  const [openedKeys, setOpenedKeys] = useState<ReadonlySet<string>>(new Set());
-  if (active && activeOwnerKey && !openedKeys.has(activeOwnerKey)) {
-    setOpenedKeys(new Set(openedKeys).add(activeOwnerKey));
+  const [openedKeys, setOpenedKeys] = useState<readonly string[]>([]);
+  if (active && activeOwnerKey && openedKeys[openedKeys.length - 1] !== activeOwnerKey) {
+    const reordered = [...openedKeys.filter((key) => key !== activeOwnerKey), activeOwnerKey];
+    setOpenedKeys(reordered.slice(-MAX_MOUNTED_TERMINALS));
   }
-  const opened = terminals.filter((terminal) => openedKeys.has(terminal.mountKey));
+  const mountedKeys = new Set(openedKeys);
+  const opened = terminals.filter((terminal) => mountedKeys.has(terminal.mountKey));
   if (!opened.length) return null;
   return (
     <>

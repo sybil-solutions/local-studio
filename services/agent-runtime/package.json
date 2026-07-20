@@ -1,15 +1,15 @@
 {
   "name": "@local-studio/agent-runtime",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "private": true,
   "type": "module",
-  "description": "Standalone local Pi agent runtime, filesystem services, connectors, and CDP browser host.",
+  "description": "Standalone local Pi agent runtime, filesystem services, connectors, and browser host.",
   "exports": {
     ".": "./src/index.ts",
     "./*": "./src/*.ts"
   },
   "scripts": {
-    "bundle": "bun build src/server.ts --target=node --outfile=dist/standalone.mjs",
+    "bundle": "bun build src/server.ts --target=node --external fsevents --outfile=dist/standalone.mjs",
     "build": "tsc -p tsconfig.build.json && node scripts/postbuild.mjs",
     "dev": "bun --watch src/server.ts",
     "start": "node dist/server.js"
@@ -18,8 +18,12 @@
     "@earendil-works/pi-ai": "0.80.8",
     "@earendil-works/pi-coding-agent": "0.80.8",
     "@hono/node-server": "1.19.14",
+    "@modelcontextprotocol/sdk": "1.29.0",
+    "chromium-bidi": "0.12.0",
     "effect": "4.0.0-beta.90",
     "hono": "4.12.30",
-    "ws": "8.21.0"
+    "playwright-core": "1.61.1",
+    "proper-lockfile": "4.1.2",
+    "semver": "7.8.5"
   }
 }

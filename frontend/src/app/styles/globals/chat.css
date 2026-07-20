@@ -41,14 +41,16 @@
 
 /* Chat markdown */
 :root {
-  /* Codex desktop, exact: system UI at 14px with relaxed 1.625 leading for
-     chat prose; 12px monospace for code. Weight 400 — calm, document-like. */
+  /* Codex desktop v26.7, exact: the ChatGPT text-md ladder — 16px system UI
+     with 24px leading (1.5) for chat prose AND the composer (one shared chat
+     size token, `text-size-chat` upstream); 13px monospace for code.
+     Weight 400 — calm, document-like. */
   --codex-chat-font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --codex-chat-mono-font-family:
     ui-monospace, "SFMono-Regular", "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
-  --codex-chat-font-size: 14px;
-  --codex-chat-line-height: 1.625;
-  --codex-chat-code-font-size: 12px;
+  --codex-chat-font-size: 16px;
+  --codex-chat-line-height: 1.5;
+  --codex-chat-code-font-size: 13px;
   --codex-chat-font-weight: 400;
 }
 
@@ -57,7 +59,8 @@
   font-size: var(--codex-chat-font-size);
   line-height: var(--codex-chat-line-height);
   font-weight: var(--codex-chat-font-weight);
-  color: color-mix(in srgb, var(--fg) 80%, transparent);
+  /* Codex primary chat text: white at 85% over #181818 (sampled #d7d7d7). */
+  color: color-mix(in srgb, var(--fg) 85%, transparent);
   letter-spacing: 0;
 }
 
@@ -127,26 +130,26 @@
 }
 
 .chat-markdown h1 {
-  font-size: 18px;
+  font-size: 20px;
   margin: 1.1rem 0 0.5rem;
   padding-bottom: 0;
   border-bottom: 0;
 }
 
 .chat-markdown h2 {
-  font-size: 16px;
+  font-size: 18px;
   margin: 1rem 0 0.45rem;
   padding-bottom: 0;
   border-bottom: 0;
 }
 
 .chat-markdown h3 {
-  font-size: 14px;
+  font-size: 16px;
   margin: 0.85rem 0 0.35rem;
 }
 
 .chat-markdown h4 {
-  font-size: 13px;
+  font-size: 14px;
   margin: 0.7rem 0 0.3rem;
   color: var(--fg);
 }
@@ -356,7 +359,8 @@
   position: absolute;
   top: 0;
   bottom: 0;
-  left: max(0.75rem, calc(50% - (var(--composer-w) / 2) - 5rem));
+  /* Codex pins the prompt steppers to the pane's left edge. */
+  left: 0.5rem;
   z-index: 12;
   display: flex;
   flex-direction: column;

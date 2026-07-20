@@ -14,7 +14,15 @@ export type ThemeId =
   | "zai-sky"
   | "zai-violet"
   | "zai-emerald"
-  | "zai-rose";
+  | "zai-rose"
+  | "absolutely-dark"
+  | "raycast-dark"
+  | "midnight"
+  | "slate"
+  | "graphite"
+  | "espresso"
+  | "forest"
+  | "paper";
 
 export interface ThemeTokens {
   bg: string;
@@ -104,6 +112,34 @@ const roseAccent = (base: ThemeTokens): ThemeTokens => ({
   accent: "#ff6764",
 });
 
+// Derive the supporting tokens from a bg/fg/surface/accent quartet so new
+// themes stay consistent with the workbench ratios.
+const darkTheme = (bg: string, fg: string, surface: string, accent: string): ThemeTokens => ({
+  bg,
+  fg,
+  dim: `${fg}b3`,
+  border: `${fg}14`,
+  surface,
+  accent,
+  hl1: `${fg}b3`,
+  hl2: `${fg}80`,
+  hl3: "#8f8f8f",
+  err: "#ff6764",
+});
+
+const lightTheme = (bg: string, fg: string, surface: string, accent: string): ThemeTokens => ({
+  bg,
+  fg,
+  dim: `${fg}b3`,
+  border: `${fg}1f`,
+  surface,
+  accent,
+  hl1: `${fg}b3`,
+  hl2: `${fg}80`,
+  hl3: "#8f8f8f",
+  err: "#e02e2a",
+});
+
 export const THEMES: ThemeMeta[] = [
   createTheme(
     "zai-dark",
@@ -141,4 +177,60 @@ export const THEMES: ThemeMeta[] = [
     emeraldAccent(ZAI_DARK),
   ),
   createTheme("zai-rose", "Rose", "Dark with a rose brand accent", "Accents", roseAccent(ZAI_DARK)),
+  createTheme(
+    "absolutely-dark",
+    "Absolutely Dark",
+    "Warm charcoal with a terracotta accent, ported from Codex",
+    "Ported",
+    darkTheme("#2d2d2b", "#f9f9f7", "#373735", "#cc7d5e"),
+  ),
+  createTheme(
+    "raycast-dark",
+    "Raycast Dark",
+    "Near-black launcher tones with an electric blue accent",
+    "Ported",
+    darkTheme("#141414", "#ffffff", "#1e1e1e", "#4fa3f8"),
+  ),
+  createTheme(
+    "midnight",
+    "Midnight",
+    "Blue-black canvas with a soft azure accent",
+    "Atmosphere",
+    darkTheme("#0d1117", "#e6edf3", "#161b22", "#58a6ff"),
+  ),
+  createTheme(
+    "slate",
+    "Slate",
+    "Cool graphite blues with a periwinkle accent",
+    "Atmosphere",
+    darkTheme("#12151a", "#e2e8f0", "#1a1f27", "#7aa2f7"),
+  ),
+  createTheme(
+    "graphite",
+    "Graphite",
+    "Ultra-dark neutral with a pure white accent",
+    "Atmosphere",
+    darkTheme("#0d0d0d", "#ededed", "#171717", "#ffffff"),
+  ),
+  createTheme(
+    "espresso",
+    "Espresso",
+    "Roasted browns with a caramel accent",
+    "Atmosphere",
+    darkTheme("#1a1512", "#f2e9df", "#241d18", "#d9954a"),
+  ),
+  createTheme(
+    "forest",
+    "Forest",
+    "Deep evergreen with a spring-green accent",
+    "Atmosphere",
+    darkTheme("#0f1512", "#e8f2ec", "#18211b", "#4fd08a"),
+  ),
+  createTheme(
+    "paper",
+    "Paper",
+    "Warm paper white with a burnt-sienna accent",
+    "Studio",
+    lightTheme("#faf8f2", "#2a2723", "#ffffff", "#b05f2d"),
+  ),
 ];

@@ -52,6 +52,7 @@ const installerEnvironment = (
   HOME: home,
   USER: "synthetic-user",
   PATH: `${bin}:/usr/bin:/bin`,
+  LOCAL_STUDIO_OS_NAME: "Linux",
   LOCAL_STUDIO_DIR: root,
   LOCAL_STUDIO_PORT: "18081",
   LOCAL_STUDIO_REPO: "https://invalid.test/synthetic",
@@ -496,6 +497,85 @@ describe("controller script trust boundaries", () => {
 
     expect(result.exitCode).toBe(1);
     expect(syntheticSignals()).toBe("");
+    expect(syntheticProcessAlive(pid)).toBe(true);
+  }, 15_000);
+
+  test("launchd install persists credentials and logs with owner-only modes", () => {
+    const pid = 41020;
+    const bun = join(home, ".bun", "bin", "bun");
+    const launchdState = join(fixture, "launchd-state");
+    const launchdLog = join(fixture, "launchd.log");
+    seedSyntheticProcess(pid, {
+      executable: bun,
+      cwd: join(install, "controller"),
+      arguments: [bun, join(install, "controller", "src", "bootstrap.ts")],
+    });
+    writeExecutable(join(bin, "plutil"), "exit 0");
+    writeExecutable(
+      join(bin, "launchctl"),
+      'printf "%s\\n" "$*" >> "$SYNTHETIC_LAUNCHD_LOG"\ncase "${1:-}" in\n  print) [ -f "$SYNTHETIC_LAUNCHD_STATE" ] || exit 1; printf "    pid = %s\\n" "$SYNTHETIC_LAUNCHD_PID" ;;\n  bootstrap) : > "$SYNTHETIC_LAUNCHD_STATE" ;;\n  kickstart) printf "%s\\n" "$SYNTHETIC_LAUNCHD_PID" > "$SYNTHETIC_LISTENER_PID_FILE" ;;\n  bootout) rm -f "$SYNTHETIC_LAUNCHD_STATE" "$SYNTHETIC_LISTENER_PID_FILE" ;;\nesac',
+    );
+
+    const result = runInstaller(
+      install,
+      false,
+      syntheticProcessEnvironment([pid], [], {
+        LOCAL_STUDIO_OS_NAME: "Darwin",
+        SYNTHETIC_LAUNCHD_LOG: launchdLog,
+        SYNTHETIC_LAUNCHD_PID: String(pid),
+        SYNTHETIC_LAUNCHD_STATE: launchdState,
+      }),
+    );
+    const dataDirectory = join(
+      home,
+      "Library",
+      "Application Support",
+      "Local Studio",
+      "controller-data",
+    );
+    const plist = join(home, "Library", "LaunchAgents", "org.local.studio.controller.plist");
+    const plistContents = readFileSync(plist, "utf8");
+
+    expect(result.exitCode).toBe(0);
+    expect(modeOf(plist)).toBe(0o600);
+    expect(modeOf(dataDirectory)).toBe(0o700);
+    expect(modeOf(join(dataDirectory, "controller.log"))).toBe(0o600);
+    expect(modeOf(join(dataDirectory, "logs", "vllm_controller.log"))).toBe(0o600);
+    expect(plistContents).toContain("<string>/dev/null</string>");
+    expect(plistContents).toContain(join(install, "controller", "src", "bootstrap.ts"));
+    expect(plistContents).not.toContain("controller.log</string>");
+    expect(readFileSync(launchdLog, "utf8")).toContain("bootstrap");
+  }, 15_000);
+
+  test("launchd install refuses to replace a foreign loaded service", () => {
+    const pid = 41021;
+    const foreignBun = join(bin, "foreign-launchd-bun");
+    const launchdLog = join(fixture, "foreign-launchd.log");
+    writeExecutable(foreignBun, "exit 0");
+    seedSyntheticProcess(pid, {
+      executable: foreignBun,
+      cwd: join(fixture, "foreign-launchd"),
+      arguments: [foreignBun, join(fixture, "foreign-launchd.ts")],
+    });
+    writeExecutable(join(bin, "plutil"), "exit 0");
+    writeExecutable(
+      join(bin, "launchctl"),
+      'printf "%s\\n" "$*" >> "$SYNTHETIC_LAUNCHD_LOG"\ncase "${1:-}" in\n  print) printf "    pid = %s\\n" "$SYNTHETIC_LAUNCHD_PID" ;;\nesac',
+    );
+
+    const result = runInstaller(
+      install,
+      false,
+      syntheticProcessEnvironment([pid], [], {
+        LOCAL_STUDIO_OS_NAME: "Darwin",
+        SYNTHETIC_LAUNCHD_LOG: launchdLog,
+        SYNTHETIC_LAUNCHD_PID: String(pid),
+      }),
+    );
+
+    expect(result.exitCode).toBe(1);
+    expect(result.stdout?.toString() ?? "").toContain("refusing foreign launchd controller");
+    expect(readFileSync(launchdLog, "utf8")).not.toContain("bootout");
     expect(syntheticProcessAlive(pid)).toBe(true);
   }, 15_000);
 

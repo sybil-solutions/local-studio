@@ -4,7 +4,7 @@
 //  1. tsc does not rewrite module specifiers, but node ESM requires explicit
 //     file extensions — append ".js" (or "/index.js" for directories) to every
 //     extensionless RELATIVE import/export specifier in dist/**/*.js. Bare
-//     package specifiers (effect, hono, the pi SDK, ws) are left alone and
+//     package specifiers (effect, hono, and the pi SDK) are left alone and
 //     resolve at runtime through services/node_modules -> frontend/node_modules.
 //
 //  2. rootDir is the repo root (the sources import ../../shared/agent/*), so

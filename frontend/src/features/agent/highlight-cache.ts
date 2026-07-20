@@ -33,18 +33,28 @@ let registered = false;
 
 export function highlightFenced(language: string | null, code: string): string {
   const normalizedLanguage = normalizeLanguage(language);
-  const key = cacheKey(normalizedLanguage, code);
-  const cached = cache.get(key);
-  if (cached !== undefined) {
-    cache.delete(key);
-    cache.set(key, cached);
-    return cached;
-  }
+  const cached = peekHighlightFenced(normalizedLanguage, code);
+  if (cached !== undefined) return cached;
 
   const highlighted = highlightUncached(normalizedLanguage, code);
-  cache.set(key, highlighted);
+  cache.set(cacheKey(normalizedLanguage, code), highlighted);
   trimCache();
   return highlighted;
+}
+
+/**
+ * Cache-only lookup (with LRU touch) that never tokenizes. Streaming code
+ * blocks use this so a still-growing block renders as plain text instead of
+ * re-running hljs over the whole block every frame and flooding the LRU with
+ * partial snapshots.
+ */
+export function peekHighlightFenced(language: string | null, code: string): string | undefined {
+  const key = cacheKey(normalizeLanguage(language), code);
+  const cached = cache.get(key);
+  if (cached === undefined) return undefined;
+  cache.delete(key);
+  cache.set(key, cached);
+  return cached;
 }
 
 export function highlightLines(language: string | null, lines: readonly string[]): string[] {

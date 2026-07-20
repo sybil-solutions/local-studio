@@ -1,8 +1,9 @@
 import { Effect, Schema } from "effect";
+import type { AppContext } from "../../app-context";
 import { findObservedInferenceProcess } from "../../core/function-observability";
 import { decodeJsonBody } from "../../core/validation";
 import { effectHandler } from "../../http/effect-handler";
-import type { RouteRegistrar } from "../../http/route-registrar";
+import { documentRoute, defineRoutes, mergeRoutes } from "../../http/route-registrar";
 import { fetchInference } from "../../http/local-fetch";
 
 const CountTokensRequestSchema = Schema.Struct({
@@ -32,7 +33,7 @@ const responseTokens = (response: Response): Effect.Effect<number, unknown> =>
   );
 
 const tokenize = (
-  context: Parameters<RouteRegistrar>[1],
+  context: AppContext,
   model: string,
   prompt: string,
 ): Effect.Effect<number, unknown> =>
@@ -61,51 +62,55 @@ const messageText = (messages: readonly unknown[]): string =>
     })
     .join("\n");
 
-export const registerTokenizationRoutes: RouteRegistrar = (app, context) => {
-  app.post(
-    "/v1/count-tokens",
-    effectHandler((ctx) =>
-      Effect.gen(function* () {
-        const current = yield* findObservedInferenceProcess(context, "countTokens");
-        if (!current) return ctx.json({ error: "No model running", num_tokens: 0 });
-        const body = yield* decodeJsonBody(ctx, CountTokensRequestSchema);
-        const model = body.model ?? current.served_model_name ?? "default";
-        return yield* tokenize(context, model, body.text ?? "").pipe(
-          Effect.map((numberTokens) => ctx.json({ num_tokens: numberTokens, model })),
-          Effect.catch((error) =>
-            Effect.succeed(ctx.json({ error: String(error), num_tokens: 0 })),
-          ),
-        );
-      }),
+export const registerTokenizationRoutes = defineRoutes((app, context) => {
+  return mergeRoutes(
+    app.post(
+      "/v1/count-tokens",
+      documentRoute,
+      effectHandler((ctx) =>
+        Effect.gen(function* () {
+          const current = yield* findObservedInferenceProcess(context, "countTokens");
+          if (!current) return ctx.json({ error: "No model running", num_tokens: 0 });
+          const body = yield* decodeJsonBody(ctx, CountTokensRequestSchema);
+          const model = body.model ?? current.served_model_name ?? "default";
+          return yield* tokenize(context, model, body.text ?? "").pipe(
+            Effect.map((numberTokens) => ctx.json({ num_tokens: numberTokens, model })),
+            Effect.catch((error) =>
+              Effect.succeed(ctx.json({ error: String(error), num_tokens: 0 })),
+            ),
+          );
+        }),
+      ),
     ),
-  );
 
-  app.post(
-    "/v1/tokenize-chat-completions",
-    effectHandler((ctx) =>
-      Effect.gen(function* () {
-        const current = yield* findObservedInferenceProcess(context, "tokenizeChatCompletions");
-        if (!current) return ctx.json({ error: "No model running", input_tokens: 0 });
-        const body = yield* decodeJsonBody(ctx, TokenizeChatRequestSchema);
-        const messages = body.messages ?? [];
-        const tools = body.tools ?? [];
-        const model = body.model ?? current.served_model_name ?? "default";
-        const messagesTokens = yield* tokenize(context, model, messageText(messages)).pipe(
-          Effect.orElseSucceed(() => 0),
-        );
-        const toolsTokens =
-          tools.length > 0
-            ? yield* tokenize(context, model, JSON.stringify(tools)).pipe(
-                Effect.orElseSucceed(() => 0),
-              )
-            : 0;
-        const overhead = messages.length * 4;
-        return ctx.json({
-          input_tokens: messagesTokens + toolsTokens + overhead,
-          breakdown: { messages: messagesTokens + overhead, tools: toolsTokens },
-          model,
-        });
-      }),
+    app.post(
+      "/v1/tokenize-chat-completions",
+      documentRoute,
+      effectHandler((ctx) =>
+        Effect.gen(function* () {
+          const current = yield* findObservedInferenceProcess(context, "tokenizeChatCompletions");
+          if (!current) return ctx.json({ error: "No model running", input_tokens: 0 });
+          const body = yield* decodeJsonBody(ctx, TokenizeChatRequestSchema);
+          const messages = body.messages ?? [];
+          const tools = body.tools ?? [];
+          const model = body.model ?? current.served_model_name ?? "default";
+          const messagesTokens = yield* tokenize(context, model, messageText(messages)).pipe(
+            Effect.orElseSucceed(() => 0),
+          );
+          const toolsTokens =
+            tools.length > 0
+              ? yield* tokenize(context, model, JSON.stringify(tools)).pipe(
+                  Effect.orElseSucceed(() => 0),
+                )
+              : 0;
+          const overhead = messages.length * 4;
+          return ctx.json({
+            input_tokens: messagesTokens + toolsTokens + overhead,
+            breakdown: { messages: messagesTokens + overhead, tools: toolsTokens },
+            model,
+          });
+        }),
+      ),
     ),
   );
-};
+});
