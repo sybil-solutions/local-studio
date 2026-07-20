@@ -5,17 +5,17 @@ import type { Hono } from "hono";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { AppContext } from "../app-context";
+import type { AppContext } from "../../src/app-context";
 import {
   createConfig,
   isWildcardHost,
   normalizeControllerHost,
   normalizeHttpOrigin,
-} from "../config/env";
-import type { ControllerRuntime } from "../core/effect-runtime";
-import { primaryLogPathFor } from "../core/log-files";
-import type { ControllerEnvironment } from "./effect-handler";
-import { normalizeRequestAuthority } from "./security-middleware";
+} from "../../src/config/env";
+import type { ControllerRuntime } from "../../src/core/effect-runtime";
+import { primaryLogPathFor } from "../../src/core/log-files";
+import type { ControllerEnvironment } from "../../src/http/effect-handler";
+import { normalizeRequestAuthority } from "../../src/http/security-middleware";
 
 const ENV_KEYS = [
   "LOCAL_STUDIO_DATA_DIR",
@@ -95,9 +95,9 @@ const createTestHarness = async (): Promise<{
   context: AppContext;
 }> => {
   const [{ AppContextService }, { createControllerRuntime }, { createApp }] = await Promise.all([
-    import("../app-context"),
-    import("../core/effect-runtime"),
-    import("./app"),
+    import("../../src/app-context"),
+    import("../../src/core/effect-runtime"),
+    import("../../src/http/app"),
   ]);
   const runtime = createControllerRuntime();
   controllerRuntimes.push(runtime);
