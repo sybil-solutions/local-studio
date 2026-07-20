@@ -2083,7 +2083,7 @@ export function createLitterBridgeGateway(options: GatewayOptions = {}) {
       generatedAt: now().toISOString(),
       revision,
       state,
-      capabilities: ["stats.read", "sessions.read"],
+      capabilities: ["stats.read"],
       sections: { health, status, gpus, metrics, agentRuntime },
     });
   };

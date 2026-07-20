@@ -659,7 +659,7 @@ test("valid signed read returns a strict complete snapshot and replay is rejecte
   assert.equal(snapshot.sections.gpus.value.devices[0].memoryTotalBytes, 1024 * 1024 * 1024);
   assert.equal(snapshot.sections.metrics.value.cacheUsagePercent, 50);
   assert.equal(snapshot.sections.agentRuntime.value.persistedSessionCount, 12);
-  assert.deepEqual(snapshot.capabilities, ["stats.read", "sessions.read"]);
+  assert.deepEqual(snapshot.capabilities, ["stats.read"]);
   const replay = await gateway.handle(gatewayRequest(body));
   assert.equal(replay.status, 409);
   assert.equal(((await replay.json()) as Record<string, any>).error.code, "replay_detected");
