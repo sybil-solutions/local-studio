@@ -1,58 +1,51 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { Effect, Schema } from "effect";
-import { GoogleAccountError } from "@local-studio/agent-runtime/google-account";
+import { GoogleAccountInputSchema } from "@local-studio/agent-runtime/google-account-contract";
 import {
-  beginGoogleLoopbackAuthorization,
-  cancelGoogleLoopbackAuthorization,
-} from "@local-studio/agent-runtime/google-oauth-loopback";
+  beginManagedGoogleAuthorization,
+  cancelManagedGoogleAuthorization,
+} from "@local-studio/agent-runtime/settings-management";
+import { denyEmbeddedDesktopHttp } from "@/lib/auth/embedded-desktop-http";
 import { requireApiAccess } from "@/lib/auth/guard";
+import { settingsManagementFailure } from "@/lib/settings-management-http";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const GoogleAccountInputSchema = Schema.Struct({
-  account: Schema.Union([Schema.Literal("gmail"), Schema.Literal("google-calendar")]),
-});
+const exact = { onExcessProperty: "error" } as const;
 
 export async function POST(request: NextRequest) {
+  const desktopDenied = denyEmbeddedDesktopHttp();
+  if (desktopDenied) return desktopDenied;
   const denied = requireApiAccess(request);
   if (denied) return denied;
   let input: typeof GoogleAccountInputSchema.Type;
   try {
-    input = Schema.decodeUnknownSync(GoogleAccountInputSchema)(await request.json());
+    input = Schema.decodeUnknownSync(GoogleAccountInputSchema, exact)(await request.json());
   } catch {
     return NextResponse.json({ error: "account is required" }, { status: 400 });
   }
   try {
-    return NextResponse.json(
-      await Effect.runPromise(beginGoogleLoopbackAuthorization(input.account)),
-    );
+    return NextResponse.json(await Effect.runPromise(beginManagedGoogleAuthorization(input)));
   } catch (error) {
-    const status = error instanceof GoogleAccountError ? error.status : 500;
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Google sign-in failed" },
-      { status },
-    );
+    return settingsManagementFailure(error, "Google sign-in failed");
   }
 }
 
 export async function DELETE(request: NextRequest) {
+  const desktopDenied = denyEmbeddedDesktopHttp();
+  if (desktopDenied) return desktopDenied;
   const denied = requireApiAccess(request);
   if (denied) return denied;
   let input: typeof GoogleAccountInputSchema.Type;
   try {
-    input = Schema.decodeUnknownSync(GoogleAccountInputSchema)(await request.json());
+    input = Schema.decodeUnknownSync(GoogleAccountInputSchema, exact)(await request.json());
   } catch {
     return NextResponse.json({ error: "account is required" }, { status: 400 });
   }
   try {
-    await Effect.runPromise(cancelGoogleLoopbackAuthorization(input.account));
-    return NextResponse.json({ cancelled: true });
+    return NextResponse.json(await Effect.runPromise(cancelManagedGoogleAuthorization(input)));
   } catch (error) {
-    const status = error instanceof GoogleAccountError ? error.status : 500;
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Google sign-in cancellation failed" },
-      { status },
-    );
+    return settingsManagementFailure(error, "Google sign-in cancellation failed");
   }
 }

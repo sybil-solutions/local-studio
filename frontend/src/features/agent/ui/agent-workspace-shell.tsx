@@ -21,6 +21,7 @@ import { renderWorkspacePane } from "@/features/agent/ui/render-workspace-pane";
 import { useAgentWorkspaceNavigationEffects } from "@/features/agent/ui/agent-workspace-navigation";
 import { useMountSubscription } from "@/hooks/use-mount-subscription";
 import { cx } from "@/ui/utils";
+import { ConnectorApprovalModal } from "@/features/agent/connector-approval/connector-approval-modal";
 
 const LazyAgentBrowserPanel = lazy(() =>
   import("@/features/agent/ui/agent-browser-panel").then(({ AgentBrowserPanel }) => ({
@@ -151,6 +152,7 @@ export function AgentWorkspaceShell({
           />
         ) : null}
       </div>
+      <ConnectorApprovalModal />
     </div>
   );
 }

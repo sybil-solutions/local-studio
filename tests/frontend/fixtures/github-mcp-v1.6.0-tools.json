@@ -1,0 +1,1072 @@
+[
+  {
+    "name": "get_commit",
+    "description": "Get details for a commit from a GitHub repository",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "detail": {
+          "type": "string",
+          "description": "Level of detail to include for changed files. \"none\" omits stats and files entirely. \"stats\" (default) includes per-file metadata: filename, status, and lines-of-code counts (additions, deletions, changes), with no patch content. \"full_patch\" additionally includes the unified diff content for each file and can be very large.",
+          "default": "stats",
+          "enum": [
+            "none",
+            "stats",
+            "full_patch"
+          ]
+        },
+        "owner": {
+          "type": "string",
+          "description": "Repository owner",
+          "x-mcp-header": "owner"
+        },
+        "page": {
+          "type": "number",
+          "description": "Page number for pagination (min 1)",
+          "minimum": 1
+        },
+        "perPage": {
+          "type": "number",
+          "description": "Results per page for pagination (min 1, max 100)",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "repo": {
+          "type": "string",
+          "description": "Repository name",
+          "x-mcp-header": "repo"
+        },
+        "sha": {
+          "type": "string",
+          "description": "Commit SHA, branch name, or tag name"
+        }
+      },
+      "required": [
+        "owner",
+        "repo",
+        "sha"
+      ]
+    },
+    "annotations": {
+      "idempotentHint": false,
+      "readOnlyHint": true,
+      "title": "Get commit details"
+    }
+  },
+  {
+    "name": "get_file_contents",
+    "description": "Get the contents of a file or directory from a GitHub repository",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "owner": {
+          "type": "string",
+          "description": "Repository owner (username or organization)",
+          "x-mcp-header": "owner"
+        },
+        "path": {
+          "type": "string",
+          "description": "Path to file/directory",
+          "default": "/"
+        },
+        "ref": {
+          "type": "string",
+          "description": "Accepts optional git refs such as `refs/tags/{tag}`, `refs/heads/{branch}` or `refs/pull/{pr_number}/head`"
+        },
+        "repo": {
+          "type": "string",
+          "description": "Repository name",
+          "x-mcp-header": "repo"
+        },
+        "sha": {
+          "type": "string",
+          "description": "Accepts optional commit SHA. If specified, it will be used instead of ref"
+        }
+      },
+      "required": [
+        "owner",
+        "repo"
+      ]
+    },
+    "annotations": {
+      "idempotentHint": false,
+      "readOnlyHint": true,
+      "title": "Get file or directory contents"
+    }
+  },
+  {
+    "name": "get_label",
+    "description": "Get a specific label from a repository.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Label name."
+        },
+        "owner": {
+          "type": "string",
+          "description": "Repository owner (username or organization name)",
+          "x-mcp-header": "owner"
+        },
+        "repo": {
+          "type": "string",
+          "description": "Repository name",
+          "x-mcp-header": "repo"
+        }
+      },
+      "required": [
+        "owner",
+        "repo",
+        "name"
+      ]
+    },
+    "annotations": {
+      "idempotentHint": false,
+      "readOnlyHint": true,
+      "title": "Get a specific label from a repository"
+    }
+  },
+  {
+    "name": "get_latest_release",
+    "description": "Get the latest release in a GitHub repository",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "owner": {
+          "type": "string",
+          "description": "Repository owner",
+          "x-mcp-header": "owner"
+        },
+        "repo": {
+          "type": "string",
+          "description": "Repository name",
+          "x-mcp-header": "repo"
+        }
+      },
+      "required": [
+        "owner",
+        "repo"
+      ]
+    },
+    "annotations": {
+      "idempotentHint": false,
+      "readOnlyHint": true,
+      "title": "Get latest release"
+    }
+  },
+  {
+    "name": "get_release_by_tag",
+    "description": "Get a specific release by its tag name in a GitHub repository",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "owner": {
+          "type": "string",
+          "description": "Repository owner",
+          "x-mcp-header": "owner"
+        },
+        "repo": {
+          "type": "string",
+          "description": "Repository name",
+          "x-mcp-header": "repo"
+        },
+        "tag": {
+          "type": "string",
+          "description": "Tag name (e.g., 'v1.0.0')"
+        }
+      },
+      "required": [
+        "owner",
+        "repo",
+        "tag"
+      ]
+    },
+    "annotations": {
+      "idempotentHint": false,
+      "readOnlyHint": true,
+      "title": "Get a release by tag name"
+    }
+  },
+  {
+    "name": "get_tag",
+    "description": "Get details about a specific git tag in a GitHub repository",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "owner": {
+          "type": "string",
+          "description": "Repository owner",
+          "x-mcp-header": "owner"
+        },
+        "repo": {
+          "type": "string",
+          "description": "Repository name",
+          "x-mcp-header": "repo"
+        },
+        "tag": {
+          "type": "string",
+          "description": "Tag name"
+        }
+      },
+      "required": [
+        "owner",
+        "repo",
+        "tag"
+      ]
+    },
+    "annotations": {
+      "idempotentHint": false,
+      "readOnlyHint": true,
+      "title": "Get tag details"
+    }
+  },
+  {
+    "name": "issue_read",
+    "description": "Get information about a specific issue in a GitHub repository.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "issue_number": {
+          "type": "number",
+          "description": "The number of the issue"
+        },
+        "method": {
+          "type": "string",
+          "description": "The read operation to perform on a single issue.\nOptions are:\n1. get - Get issue details. Also returns best-effort hierarchy flags (`has_parent`, `has_children`); `parent` and `sub_issues_summary` are optional relationship summaries.\n2. get_comments - Get issue comments.\n3. get_sub_issues - Get sub-issues (children) of the issue.\n4. get_parent - Get the parent issue, if this issue is a sub-issue of another.\n5. get_labels - Get labels assigned to the issue.\n",
+          "enum": [
+            "get",
+            "get_comments",
+            "get_sub_issues",
+            "get_parent",
+            "get_labels"
+          ]
+        },
+        "owner": {
+          "type": "string",
+          "description": "The owner of the repository",
+          "x-mcp-header": "owner"
+        },
+        "page": {
+          "type": "number",
+          "description": "Page number for pagination (min 1)",
+          "minimum": 1
+        },
+        "perPage": {
+          "type": "number",
+          "description": "Results per page for pagination (min 1, max 100)",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "repo": {
+          "type": "string",
+          "description": "The name of the repository",
+          "x-mcp-header": "repo"
+        }
+      },
+      "required": [
+        "method",
+        "owner",
+        "repo",
+        "issue_number"
+      ]
+    },
+    "annotations": {
+      "idempotentHint": false,
+      "readOnlyHint": true,
+      "title": "Get issue details"
+    }
+  },
+  {
+    "name": "list_branches",
+    "description": "List branches in a GitHub repository",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "owner": {
+          "type": "string",
+          "description": "Repository owner",
+          "x-mcp-header": "owner"
+        },
+        "page": {
+          "type": "number",
+          "description": "Page number for pagination (min 1)",
+          "minimum": 1
+        },
+        "perPage": {
+          "type": "number",
+          "description": "Results per page for pagination (min 1, max 100)",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "repo": {
+          "type": "string",
+          "description": "Repository name",
+          "x-mcp-header": "repo"
+        }
+      },
+      "required": [
+        "owner",
+        "repo"
+      ]
+    },
+    "annotations": {
+      "idempotentHint": false,
+      "readOnlyHint": true,
+      "title": "List branches"
+    }
+  },
+  {
+    "name": "list_commits",
+    "description": "Get list of commits of a branch in a GitHub repository. Returns at least 30 results per page by default, but can return more if specified using the perPage parameter (up to 100).",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "author": {
+          "type": "string",
+          "description": "Author username or email address to filter commits by"
+        },
+        "owner": {
+          "type": "string",
+          "description": "Repository owner",
+          "x-mcp-header": "owner"
+        },
+        "page": {
+          "type": "number",
+          "description": "Page number for pagination (min 1)",
+          "minimum": 1
+        },
+        "path": {
+          "type": "string",
+          "description": "Only commits containing this file path will be returned"
+        },
+        "perPage": {
+          "type": "number",
+          "description": "Results per page for pagination (min 1, max 100)",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "repo": {
+          "type": "string",
+          "description": "Repository name",
+          "x-mcp-header": "repo"
+        },
+        "sha": {
+          "type": "string",
+          "description": "Commit SHA, branch or tag name to list commits of. If not provided, uses the default branch of the repository. If a commit SHA is provided, will list commits up to that SHA."
+        },
+        "since": {
+          "type": "string",
+          "description": "Only commits after this date will be returned (ISO 8601 format: YYYY-MM-DDTHH:MM:SSZ or YYYY-MM-DD)"
+        },
+        "until": {
+          "type": "string",
+          "description": "Only commits before this date will be returned (ISO 8601 format: YYYY-MM-DDTHH:MM:SSZ or YYYY-MM-DD)"
+        }
+      },
+      "required": [
+        "owner",
+        "repo"
+      ]
+    },
+    "annotations": {
+      "idempotentHint": false,
+      "readOnlyHint": true,
+      "title": "List commits"
+    }
+  },
+  {
+    "name": "list_issue_fields",
+    "description": "List issue fields for a repository or organization. Returns field definitions including name, type (text, number, date, single_select), and for single_select fields the list of valid option names. When repo is omitted, returns org-level fields directly.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "owner": {
+          "type": "string",
+          "description": "The account owner of the repository or organization. The name is not case sensitive.",
+          "x-mcp-header": "owner"
+        },
+        "repo": {
+          "type": "string",
+          "description": "The name of the repository. When provided, returns fields for this specific repository (inherited from its organization). When omitted, returns org-level fields directly.",
+          "x-mcp-header": "repo"
+        }
+      },
+      "required": [
+        "owner"
+      ]
+    },
+    "annotations": {
+      "idempotentHint": false,
+      "readOnlyHint": true,
+      "title": "List issue fields"
+    }
+  },
+  {
+    "name": "list_issue_types",
+    "description": "List supported issue types for a repository or its owner organization. When repo is omitted, returns org-level issue types directly.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "owner": {
+          "type": "string",
+          "description": "The account owner of the repository or organization.",
+          "x-mcp-header": "owner"
+        },
+        "repo": {
+          "type": "string",
+          "description": "The name of the repository. When provided, returns issue types for this specific repository. When omitted, returns org-level issue types directly.",
+          "x-mcp-header": "repo"
+        }
+      },
+      "required": [
+        "owner"
+      ]
+    },
+    "annotations": {
+      "idempotentHint": false,
+      "readOnlyHint": true,
+      "title": "List available issue types"
+    }
+  },
+  {
+    "name": "list_issues",
+    "description": "List issues in a GitHub repository. For pagination, use the 'endCursor' from the previous response's 'pageInfo' in the 'after' parameter.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "after": {
+          "type": "string",
+          "description": "Cursor for pagination. Use the cursor from the previous response."
+        },
+        "direction": {
+          "type": "string",
+          "description": "Order direction. If provided, the 'orderBy' also needs to be provided.",
+          "enum": [
+            "ASC",
+            "DESC"
+          ]
+        },
+        "field_filters": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "field_name": {
+                "type": "string",
+                "description": "Name of the custom field (e.g. \"Priority\"). Case-insensitive."
+              },
+              "value": {
+                "type": "string",
+                "description": "Value to filter on. For single-select fields, the option name (e.g. \"P1\"). For dates, YYYY-MM-DD. For numbers, the numeric value as a string. For text, the text value."
+              }
+            },
+            "required": [
+              "field_name",
+              "value"
+            ]
+          },
+          "description": "Filter by custom issue field values. Each entry takes a field_name and a value; the server looks up the field and coerces the value to its type (single-select option name, text, number, or YYYY-MM-DD date)."
+        },
+        "labels": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Filter by labels"
+        },
+        "orderBy": {
+          "type": "string",
+          "description": "Order issues by field. If provided, the 'direction' also needs to be provided.",
+          "enum": [
+            "CREATED_AT",
+            "UPDATED_AT",
+            "COMMENTS"
+          ]
+        },
+        "owner": {
+          "type": "string",
+          "description": "Repository owner",
+          "x-mcp-header": "owner"
+        },
+        "perPage": {
+          "type": "number",
+          "description": "Results per page for pagination (min 1, max 100)",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "repo": {
+          "type": "string",
+          "description": "Repository name",
+          "x-mcp-header": "repo"
+        },
+        "since": {
+          "type": "string",
+          "description": "Filter by date (ISO 8601 timestamp)"
+        },
+        "state": {
+          "type": "string",
+          "description": "Filter by state, by default both open and closed issues are returned when not provided",
+          "enum": [
+            "OPEN",
+            "CLOSED"
+          ]
+        }
+      },
+      "required": [
+        "owner",
+        "repo"
+      ]
+    },
+    "annotations": {
+      "idempotentHint": false,
+      "readOnlyHint": true,
+      "title": "List issues"
+    }
+  },
+  {
+    "name": "list_pull_requests",
+    "description": "List pull requests in a GitHub repository. If the user specifies an author, then DO NOT use this tool and use the search_pull_requests tool instead.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "base": {
+          "type": "string",
+          "description": "Filter by base branch"
+        },
+        "direction": {
+          "type": "string",
+          "description": "Sort direction",
+          "enum": [
+            "asc",
+            "desc"
+          ]
+        },
+        "head": {
+          "type": "string",
+          "description": "Filter by head user/org and branch"
+        },
+        "owner": {
+          "type": "string",
+          "description": "Repository owner",
+          "x-mcp-header": "owner"
+        },
+        "page": {
+          "type": "number",
+          "description": "Page number for pagination (min 1)",
+          "minimum": 1
+        },
+        "perPage": {
+          "type": "number",
+          "description": "Results per page for pagination (min 1, max 100)",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "repo": {
+          "type": "string",
+          "description": "Repository name",
+          "x-mcp-header": "repo"
+        },
+        "sort": {
+          "type": "string",
+          "description": "Sort by",
+          "enum": [
+            "created",
+            "updated",
+            "popularity",
+            "long-running"
+          ]
+        },
+        "state": {
+          "type": "string",
+          "description": "Filter by state",
+          "enum": [
+            "open",
+            "closed",
+            "all"
+          ]
+        }
+      },
+      "required": [
+        "owner",
+        "repo"
+      ]
+    },
+    "annotations": {
+      "idempotentHint": false,
+      "readOnlyHint": true,
+      "title": "List pull requests"
+    }
+  },
+  {
+    "name": "list_releases",
+    "description": "List releases in a GitHub repository",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "owner": {
+          "type": "string",
+          "description": "Repository owner",
+          "x-mcp-header": "owner"
+        },
+        "page": {
+          "type": "number",
+          "description": "Page number for pagination (min 1)",
+          "minimum": 1
+        },
+        "perPage": {
+          "type": "number",
+          "description": "Results per page for pagination (min 1, max 100)",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "repo": {
+          "type": "string",
+          "description": "Repository name",
+          "x-mcp-header": "repo"
+        }
+      },
+      "required": [
+        "owner",
+        "repo"
+      ]
+    },
+    "annotations": {
+      "idempotentHint": false,
+      "readOnlyHint": true,
+      "title": "List releases"
+    }
+  },
+  {
+    "name": "list_repository_collaborators",
+    "description": "List collaborators of a GitHub repository. Results are paginated; the response includes `nextPage`, `prevPage`, `firstPage`, and `lastPage` fields. To get the next page, use the `nextPage` value as the `page` parameter.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "affiliation": {
+          "type": "string",
+          "description": "Filter by affiliation. Can be one of: 'outside' (outside collaborators), 'direct' (all with permissions regardless of org membership), 'all' (all collaborators). Default: 'all'",
+          "enum": [
+            "outside",
+            "direct",
+            "all"
+          ]
+        },
+        "owner": {
+          "type": "string",
+          "description": "Repository owner",
+          "x-mcp-header": "owner"
+        },
+        "page": {
+          "type": "number",
+          "description": "Page number for pagination (default 1, min 1)",
+          "minimum": 1
+        },
+        "perPage": {
+          "type": "number",
+          "description": "Results per page for pagination (default 30, min 1, max 100)",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "repo": {
+          "type": "string",
+          "description": "Repository name",
+          "x-mcp-header": "repo"
+        }
+      },
+      "required": [
+        "owner",
+        "repo"
+      ]
+    },
+    "annotations": {
+      "idempotentHint": false,
+      "readOnlyHint": true,
+      "title": "List repository collaborators"
+    }
+  },
+  {
+    "name": "list_tags",
+    "description": "List git tags in a GitHub repository",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "owner": {
+          "type": "string",
+          "description": "Repository owner",
+          "x-mcp-header": "owner"
+        },
+        "page": {
+          "type": "number",
+          "description": "Page number for pagination (min 1)",
+          "minimum": 1
+        },
+        "perPage": {
+          "type": "number",
+          "description": "Results per page for pagination (min 1, max 100)",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "repo": {
+          "type": "string",
+          "description": "Repository name",
+          "x-mcp-header": "repo"
+        }
+      },
+      "required": [
+        "owner",
+        "repo"
+      ]
+    },
+    "annotations": {
+      "idempotentHint": false,
+      "readOnlyHint": true,
+      "title": "List tags"
+    }
+  },
+  {
+    "name": "pull_request_read",
+    "description": "Get information on a specific pull request in GitHub repository.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "after": {
+          "type": "string",
+          "description": "Cursor for pagination, used only by the get_review_comments method. Pass the endCursor from the previous page's PageInfo to fetch the next page."
+        },
+        "method": {
+          "type": "string",
+          "description": "Action to specify what pull request data needs to be retrieved from GitHub. \nPossible options: \n 1. get - Get details of a specific pull request.\n 2. get_diff - Get the diff of a pull request.\n 3. get_status - Get combined commit status of a head commit in a pull request.\n 4. get_files - Get the list of files changed in a pull request. Use with pagination parameters to control the number of results returned.\n 5. get_commits - Get the list of commits on a pull request. Use with pagination parameters to control the number of results returned.\n 6. get_review_comments - Get review threads on a pull request. Each thread contains logically grouped review comments made on the same code location during pull request reviews. Returns threads with metadata (isResolved, isOutdated, isCollapsed) and their associated comments. Use cursor-based pagination (perPage, after) to control results.\n 7. get_reviews - Get the reviews on a pull request. When asked for review comments, use get_review_comments method. Use with pagination parameters to control the number of results returned.\n 8. get_comments - Get comments on a pull request. Use this if user doesn't specifically want review comments. Use with pagination parameters to control the number of results returned.\n 9. get_check_runs - Get check runs for the head commit of a pull request. Check runs are the individual CI/CD jobs and checks that run on the PR.\n",
+          "enum": [
+            "get",
+            "get_diff",
+            "get_status",
+            "get_files",
+            "get_commits",
+            "get_review_comments",
+            "get_reviews",
+            "get_comments",
+            "get_check_runs"
+          ]
+        },
+        "owner": {
+          "type": "string",
+          "description": "Repository owner",
+          "x-mcp-header": "owner"
+        },
+        "page": {
+          "type": "number",
+          "description": "Page number for pagination (min 1)",
+          "minimum": 1
+        },
+        "perPage": {
+          "type": "number",
+          "description": "Results per page for pagination (min 1, max 100)",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "pullNumber": {
+          "type": "number",
+          "description": "Pull request number"
+        },
+        "repo": {
+          "type": "string",
+          "description": "Repository name",
+          "x-mcp-header": "repo"
+        }
+      },
+      "required": [
+        "method",
+        "owner",
+        "repo",
+        "pullNumber"
+      ]
+    },
+    "annotations": {
+      "idempotentHint": false,
+      "readOnlyHint": true,
+      "title": "Get details for a single pull request"
+    }
+  },
+  {
+    "name": "search_code",
+    "description": "Fast and precise code search across ALL GitHub repositories using GitHub's native search engine. Best for finding exact symbols, functions, classes, or specific code patterns.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "order": {
+          "type": "string",
+          "description": "Sort order for results",
+          "enum": [
+            "asc",
+            "desc"
+          ]
+        },
+        "page": {
+          "type": "number",
+          "description": "Page number for pagination (min 1)",
+          "minimum": 1
+        },
+        "perPage": {
+          "type": "number",
+          "description": "Results per page for pagination (min 1, max 100)",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "query": {
+          "type": "string",
+          "description": "Search query (GitHub code search REST). Implicit AND between terms; supports `OR`, `NOT`, and `\"quoted phrase\"` for exact match. Qualifiers: `repo:owner/repo`, `org:`, `user:`, `language:`, `path:dir` (prefix match), `filename:exact.ext`, `extension:`, `in:file`, `in:path`, `size:`, `is:archived`, `is:fork`. Max 256 chars. Examples: `WithContext language:go org:github`; `\"package main\" repo:o/r`; `func extension:go path:cmd repo:o/r`; `NOT TODO language:go repo:o/r`."
+        },
+        "sort": {
+          "type": "string",
+          "description": "Sort field ('indexed' only)"
+        }
+      },
+      "required": [
+        "query"
+      ]
+    },
+    "annotations": {
+      "idempotentHint": false,
+      "readOnlyHint": true,
+      "title": "Search code"
+    }
+  },
+  {
+    "name": "search_commits",
+    "description": "Search for commits across GitHub repositories using GitHub's commit search syntax. Useful for finding specific changes, authors, or messages across one or many repositories. Searches the default branch only.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "order": {
+          "type": "string",
+          "description": "Sort order",
+          "enum": [
+            "asc",
+            "desc"
+          ]
+        },
+        "page": {
+          "type": "number",
+          "description": "Page number for pagination (min 1)",
+          "minimum": 1
+        },
+        "perPage": {
+          "type": "number",
+          "description": "Results per page for pagination (min 1, max 100)",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "query": {
+          "type": "string",
+          "description": "Commit search query (GitHub commit search REST). Searches commit messages on the default branch only. Scope the search with `repo:owner/repo`, `org:`, or `user:` (queries without a scope qualifier match across all of GitHub and are usually not what you want). Other qualifiers: `author:`, `committer:`, `author-name:`, `committer-name:`, `author-email:`, `committer-email:`, `author-date:`, `committer-date:` (supports `>`, `<`, `>=`, `<=`, and `YYYY-MM-DD..YYYY-MM-DD` ranges), `merge:true|false`, `hash:`, `tree:`, `parent:`, `is:public`. Examples: `repo:owner/repo fix panic`; `org:github author:defunkt committer-date:>=2024-01-01`; `\"refactor cache\" repo:o/r`; `hash:abc1234 repo:o/r`."
+        },
+        "sort": {
+          "type": "string",
+          "description": "Sort by author or committer date (defaults to best match)",
+          "enum": [
+            "author-date",
+            "committer-date"
+          ]
+        }
+      },
+      "required": [
+        "query"
+      ]
+    },
+    "annotations": {
+      "idempotentHint": false,
+      "readOnlyHint": true,
+      "title": "Search commits"
+    }
+  },
+  {
+    "name": "search_issues",
+    "description": "Search for issues in GitHub repositories using issues search syntax already scoped to is:issue",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "order": {
+          "type": "string",
+          "description": "Sort order",
+          "enum": [
+            "asc",
+            "desc"
+          ]
+        },
+        "owner": {
+          "type": "string",
+          "description": "Optional repository owner. If provided with repo, only issues for this repository are listed.",
+          "x-mcp-header": "owner"
+        },
+        "page": {
+          "type": "number",
+          "description": "Page number for pagination (min 1)",
+          "minimum": 1
+        },
+        "perPage": {
+          "type": "number",
+          "description": "Results per page for pagination (min 1, max 100)",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "query": {
+          "type": "string",
+          "description": "Search query using GitHub issues search syntax"
+        },
+        "repo": {
+          "type": "string",
+          "description": "Optional repository name. If provided with owner, only issues for this repository are listed.",
+          "x-mcp-header": "repo"
+        },
+        "sort": {
+          "type": "string",
+          "description": "Sort field by number of matches of categories, defaults to best match",
+          "enum": [
+            "comments",
+            "reactions",
+            "reactions-+1",
+            "reactions--1",
+            "reactions-smile",
+            "reactions-thinking_face",
+            "reactions-heart",
+            "reactions-tada",
+            "interactions",
+            "created",
+            "updated"
+          ]
+        }
+      },
+      "required": [
+        "query"
+      ]
+    },
+    "annotations": {
+      "idempotentHint": false,
+      "readOnlyHint": true,
+      "title": "Search issues"
+    }
+  },
+  {
+    "name": "search_pull_requests",
+    "description": "Search for pull requests in GitHub repositories using issues search syntax already scoped to is:pr",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "order": {
+          "type": "string",
+          "description": "Sort order",
+          "enum": [
+            "asc",
+            "desc"
+          ]
+        },
+        "owner": {
+          "type": "string",
+          "description": "Optional repository owner. If provided with repo, only pull requests for this repository are listed.",
+          "x-mcp-header": "owner"
+        },
+        "page": {
+          "type": "number",
+          "description": "Page number for pagination (min 1)",
+          "minimum": 1
+        },
+        "perPage": {
+          "type": "number",
+          "description": "Results per page for pagination (min 1, max 100)",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "query": {
+          "type": "string",
+          "description": "Search query using GitHub pull request search syntax"
+        },
+        "repo": {
+          "type": "string",
+          "description": "Optional repository name. If provided with owner, only pull requests for this repository are listed.",
+          "x-mcp-header": "repo"
+        },
+        "sort": {
+          "type": "string",
+          "description": "Sort field by number of matches of categories, defaults to best match",
+          "enum": [
+            "comments",
+            "reactions",
+            "reactions-+1",
+            "reactions--1",
+            "reactions-smile",
+            "reactions-thinking_face",
+            "reactions-heart",
+            "reactions-tada",
+            "interactions",
+            "created",
+            "updated"
+          ]
+        }
+      },
+      "required": [
+        "query"
+      ]
+    },
+    "annotations": {
+      "idempotentHint": false,
+      "readOnlyHint": true,
+      "title": "Search pull requests"
+    }
+  },
+  {
+    "name": "search_repositories",
+    "description": "Find GitHub repositories by name, description, readme, topics, or other metadata. Perfect for discovering projects, finding examples, or locating specific repositories across GitHub.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "minimal_output": {
+          "type": "boolean",
+          "description": "Return minimal repository information (default: true). When false, returns full GitHub API repository objects.",
+          "default": true
+        },
+        "order": {
+          "type": "string",
+          "description": "Sort order",
+          "enum": [
+            "asc",
+            "desc"
+          ]
+        },
+        "page": {
+          "type": "number",
+          "description": "Page number for pagination (min 1)",
+          "minimum": 1
+        },
+        "perPage": {
+          "type": "number",
+          "description": "Results per page for pagination (min 1, max 100)",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "query": {
+          "type": "string",
+          "description": "Repository search query. Examples: 'machine learning in:name stars:>1000 language:python', 'topic:react', 'user:facebook'. Supports advanced search syntax for precise filtering."
+        },
+        "sort": {
+          "type": "string",
+          "description": "Sort repositories by field, defaults to best match",
+          "enum": [
+            "stars",
+            "forks",
+            "help-wanted-issues",
+            "updated"
+          ]
+        }
+      },
+      "required": [
+        "query"
+      ]
+    },
+    "annotations": {
+      "idempotentHint": false,
+      "readOnlyHint": true,
+      "title": "Search repositories"
+    }
+  }
+]

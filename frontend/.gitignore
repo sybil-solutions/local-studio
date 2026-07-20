@@ -46,11 +46,12 @@ next-env.d.ts
 
 # desktop artifacts
 /desktop/dist/
-/dist-desktop/
+/dist-desktop
 /dist-installers/
 
 # generated desktop Pi runtime
 /.desktop-pi-runtime/
+/.desktop-runtime/
 
 # local replay-parity goldens over real pi sessions (private content, never commit)
 /scripts/.parity-goldens/

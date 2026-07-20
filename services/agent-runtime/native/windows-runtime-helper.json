@@ -1,0 +1,21 @@
+{
+  "format": "local-studio-windows-runtime-helper-v2",
+  "target": "x86_64-windows-gnu",
+  "zigVersion": "0.16.0",
+  "arguments": [
+    "-O2",
+    "-s",
+    "-municode",
+    "-Wall",
+    "-Wextra",
+    "-Werror",
+    "-ladvapi32",
+    "-lwintrust"
+  ],
+  "sourceSha256": "9451940112793ef6adce2e35e2657b24a515fe9f639793175a1276ebf5032a9d",
+  "binarySha256": "581302d0025b2b4e15d3977705c2c2376b4f0346b164587f3ff95df639cf2bb4",
+  "codeIdentity": {
+    "algorithm": "pe-authenticode-v1",
+    "digest": "f978aeb390043dc0988a7d3efc4f9489628389b7e34d383dfd61fd2ea9ef66f7"
+  }
+}

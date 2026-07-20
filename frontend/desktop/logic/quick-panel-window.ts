@@ -7,6 +7,7 @@ import {
   QUICK_PANEL_MIN_THREAD_SIZE,
 } from "./desktop-settings";
 import { hardenWebContents } from "./security";
+import { rendererNavigationGeneration } from "./renderer-navigation-generation";
 
 let panel: BrowserWindow | null = null;
 let isThreadMode = false;
@@ -94,6 +95,7 @@ function createQuickPanelWindow(appUrl: string): BrowserWindow {
     },
   });
 
+  rendererNavigationGeneration(window.webContents);
   hardenWebContents(window, new URL(appUrl).origin);
   window.on("moved", () => {
     if (applyingBounds) return;
@@ -123,6 +125,10 @@ export function ensureQuickPanel(appUrl: string): BrowserWindow {
     panel = createQuickPanelWindow(appUrl);
   }
   return panel;
+}
+
+export function getQuickPanelWindow(): BrowserWindow | null {
+  return panel && !panel.isDestroyed() ? panel : null;
 }
 
 export function toggleQuickPanel(appUrl: string): void {
