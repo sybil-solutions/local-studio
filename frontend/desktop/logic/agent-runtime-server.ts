@@ -2,7 +2,7 @@ import { app } from "electron";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { fork, type ChildProcess } from "node:child_process";
-import { DESKTOP_CONFIG } from "../configs";
+import { DESKTOP_CONFIG, resolvePackagedRuntimeEnvironment } from "../configs";
 import { log } from "../helpers/logger";
 import { resolveStablePort } from "../helpers/ports";
 import { resolveAugmentedPath } from "../helpers/resolve-path";
@@ -113,6 +113,7 @@ export async function startAgentRuntime(
       PORT: String(port),
       LOCAL_STUDIO_DATA_DIR: DESKTOP_CONFIG.userDataDir,
       LOCAL_STUDIO_RESOURCES_PATH: process.resourcesPath,
+      ...resolvePackagedRuntimeEnvironment(),
       LOCAL_STUDIO_AGENT_CWD: process.env.LOCAL_STUDIO_AGENT_CWD || app.getPath("home"),
       LOCAL_STUDIO_FRONTEND_BASE: options.frontendUrl,
     },

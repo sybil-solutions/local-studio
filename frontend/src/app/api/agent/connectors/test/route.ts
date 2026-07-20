@@ -1,29 +1,29 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { Schema } from "effect";
+import { Effect, Schema } from "effect";
 import { ConnectorTestInputSchema } from "@local-studio/agent-runtime/connector-contract";
-import { listConnectors } from "@local-studio/agent-runtime/connectors-service";
-import { probeConnector } from "@local-studio/agent-runtime/connector-pool";
+import { probeManagedConnector } from "@local-studio/agent-runtime/settings-management";
+import { denyEmbeddedDesktopHttp } from "@/lib/auth/embedded-desktop-http";
 import { requireApiAccess } from "@/lib/auth/guard";
+import { settingsManagementFailure } from "@/lib/settings-management-http";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+const exact = { onExcessProperty: "error" } as const;
 
 export async function POST(request: NextRequest) {
+  const desktopDenied = denyEmbeddedDesktopHttp();
+  if (desktopDenied) return desktopDenied;
   const denied = requireApiAccess(request);
   if (denied) return denied;
   let body: typeof ConnectorTestInputSchema.Type;
   try {
-    body = Schema.decodeUnknownSync(ConnectorTestInputSchema)(await request.json());
+    body = Schema.decodeUnknownSync(ConnectorTestInputSchema, exact)(await request.json());
   } catch {
     return NextResponse.json({ error: "id is required" }, { status: 400 });
   }
-  const connector = (await listConnectors()).find((entry) => entry.id === body.id);
-  if (!connector) return NextResponse.json({ error: "unknown connector" }, { status: 404 });
-  const result = await probeConnector(connector);
-  return NextResponse.json({
-    ok: result.ok,
-    tool_count: result.tools.length,
-    tool_names: result.tools.map((tool) => tool.name).slice(0, 40),
-    ...(result.error ? { error: result.error } : {}),
-  });
+  try {
+    return NextResponse.json(await Effect.runPromise(probeManagedConnector(body.id)));
+  } catch (error) {
+    return settingsManagementFailure(error, "Connector discovery failed");
+  }
 }

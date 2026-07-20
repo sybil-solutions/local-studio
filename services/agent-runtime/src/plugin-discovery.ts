@@ -4,6 +4,7 @@ import path from "node:path";
 import { Effect, Schema } from "effect";
 import { coerce, compare } from "semver";
 import { resolveDataDir } from "./data-dir";
+import { pluginArtifactDigest } from "./plugin-artifact-digest";
 import { resolveBundledPluginDirectory } from "./plugin-resources";
 
 const PluginInterfaceSchema = Schema.Struct({
@@ -53,6 +54,7 @@ export type PluginBundle = {
   plugin: PluginView;
   manifest: PluginManifest;
   rootDir: string;
+  artifactDigest: string;
   trusted: boolean;
 };
 
@@ -60,6 +62,7 @@ type DiscoveredPlugin = {
   bundle: PluginBundle;
   priority: number;
 };
+const EXCLUDED_PLUGIN = Symbol("excluded-plugin");
 
 export class PluginDiscoveryError extends Error {}
 
@@ -108,16 +111,32 @@ function pluginView(manifest: PluginManifest, source: string): PluginView {
 async function manifestInDirectory(
   dir: string,
   source: PluginSource,
-): Promise<DiscoveredPlugin | null> {
+  pluginIds?: ReadonlySet<string>,
+): Promise<DiscoveredPlugin | typeof EXCLUDED_PLUGIN | null> {
   try {
-    const raw = await readFile(path.join(dir, ".codex-plugin", "plugin.json"), "utf8");
+    const rootDir = await realpath(dir);
+    const manifestPath = path.join(rootDir, ".codex-plugin", "plugin.json");
+    const preview = Schema.decodeUnknownSync(PluginManifestSchema)(
+      JSON.parse(await readFile(manifestPath, "utf8")),
+    );
+    if (pluginIds && !pluginIds.has(preview.name)) return EXCLUDED_PLUGIN;
+    const artifactDigest = await Effect.runPromise(pluginArtifactDigest(rootDir));
+    const raw = await readFile(manifestPath, "utf8");
     const manifest = Schema.decodeUnknownSync(PluginManifestSchema)(JSON.parse(raw));
+    if (pluginIds && !pluginIds.has(manifest.name)) return EXCLUDED_PLUGIN;
+    if ((await Effect.runPromise(pluginArtifactDigest(rootDir))) !== artifactDigest) {
+      throw new PluginDiscoveryError("Plugin artifact changed during discovery");
+    }
     const bundled = resolveBundledPluginDirectory();
-    const trusted = bundled
-      ? path.dirname(await realpath(dir)) === (await realpath(bundled))
-      : false;
+    const trusted = bundled ? path.dirname(rootDir) === (await realpath(bundled)) : false;
     return {
-      bundle: { plugin: pluginView(manifest, source.label), manifest, rootDir: dir, trusted },
+      bundle: {
+        plugin: pluginView(manifest, source.label),
+        manifest,
+        rootDir,
+        artifactDigest,
+        trusted,
+      },
       priority: source.priority,
     };
   } catch {
@@ -130,8 +149,10 @@ async function scanDirectory(
   source: PluginSource,
   depth: number,
   maxDepth: number,
+  pluginIds?: ReadonlySet<string>,
 ): Promise<DiscoveredPlugin[]> {
-  const manifest = await manifestInDirectory(dir, source);
+  const manifest = await manifestInDirectory(dir, source, pluginIds);
+  if (manifest === EXCLUDED_PLUGIN) return [];
   if (manifest) return [manifest];
   if (depth >= maxDepth) return [];
   try {
@@ -143,7 +164,7 @@ async function scanDirectory(
     return (
       await Promise.all(
         childDirectories.map((entry) =>
-          scanDirectory(path.join(dir, entry.name), source, depth + 1, maxDepth),
+          scanDirectory(path.join(dir, entry.name), source, depth + 1, maxDepth, pluginIds),
         ),
       )
     ).flat();
@@ -170,11 +191,14 @@ function preferredPlugin(
 export function discoverPluginBundles(
   sources: PluginSource[] = defaultPluginSources(),
   maxDepth = 5,
+  pluginIds?: ReadonlySet<string>,
 ): Effect.Effect<PluginBundle[], PluginDiscoveryError> {
   return Effect.tryPromise({
     try: async () => {
       const discovered = (
-        await Promise.all(sources.map((source) => scanDirectory(source.dir, source, 0, maxDepth)))
+        await Promise.all(
+          sources.map((source) => scanDirectory(source.dir, source, 0, maxDepth, pluginIds)),
+        )
       ).flat();
       const plugins = new Map<string, DiscoveredPlugin>();
       for (const candidate of discovered) {

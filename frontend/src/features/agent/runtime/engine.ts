@@ -196,12 +196,10 @@ export function useSessionEngine(deps: UseSessionEngineDeps): SessionEngine {
     (sessionId: SessionId) =>
       Effect.runPromise(
         Effect.gen(function* () {
-          // Abort by the CONNECTION key (override-aware): after a server
-          // restart the session's runtime lives under a different server key,
-          // and /abort has no piSessionId fallback lookup.
           const runtime = sessionRuntimeController().connectionKey(sessionId);
+          const piSessionId = tabsRef.current.find((tab) => tab.id === sessionId)?.piSessionId;
           yield* Effect.tryPromise({
-            try: () => api.abortSession(runtime),
+            try: () => api.abortSession(runtime, piSessionId),
             catch: (error) => error,
           });
           // Settle the session fully. A direct status write bypasses the reducer
