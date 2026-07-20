@@ -863,10 +863,18 @@ test("stdio MCP environment cannot reintroduce reserved frontend credentials", a
   const operatorMarker = "operator-mcp-marker";
   const callbackMarker = "callback-mcp-marker";
   const script = [
+    'import { createInterface } from "node:readline";',
     'const names = ["LOCAL_STUDIO_DESKTOP", "LOCAL_STUDIO_FRONTEND_BASE", "LOCAL_STUDIO_FRONTEND_CALLBACK_TOKEN", "LOCAL_STUDIO_FRONTEND_TOKEN"];',
-    'process.stdin.once("data", () => {',
-    "  const leaked = names.map((name) => process.env[name]).filter(Boolean);",
-    '  process.stderr.write(`probe:${leaked.join("|") || "scrubbed"}\\n`, () => process.exit(1));',
+    "const leaked = names.map((name) => process.env[name]).filter(Boolean);",
+    'const probe = `probe:${leaked.join("|") || "scrubbed"}`;',
+    "const lines = createInterface({ input: process.stdin });",
+    'lines.on("line", (line) => {',
+    "  const message = JSON.parse(line);",
+    '  if (!("id" in message)) return;',
+    '  const result = message.method === "initialize"',
+    '    ? { protocolVersion: "2025-03-26", capabilities: { tools: {} }, serverInfo: { name: "environment-probe", version: "1.0.0" } }',
+    '    : { tools: [{ name: "environment-probe", description: probe, inputSchema: { type: "object" } }] };',
+    '  process.stdout.write(`${JSON.stringify({ jsonrpc: "2.0", id: message.id, result })}\\n`);',
     "});",
   ].join("\n");
   const connection = connectMcp({
@@ -881,13 +889,11 @@ test("stdio MCP environment cannot reintroduce reserved frontend credentials", a
     },
   });
   try {
-    await assert.rejects(connection.listTools(), (error: unknown) => {
-      assert(error instanceof Error);
-      assert.match(error.message, /probe:scrubbed/);
-      assert.equal(error.message.includes(operatorMarker), false);
-      assert.equal(error.message.includes(callbackMarker), false);
-      return true;
-    });
+    const tools = await connection.listTools();
+    const description = tools[0]?.description;
+    assert.equal(description, "probe:scrubbed");
+    assert.equal(description?.includes(operatorMarker), false);
+    assert.equal(description?.includes(callbackMarker), false);
   } finally {
     connection.close();
   }
