@@ -6,8 +6,21 @@ import {
   timingSafeEqual,
   verify as verifySignature,
 } from "node:crypto";
-import { chmodSync, existsSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
-import { hostname } from "node:os";
+import {
+  chmodSync,
+  closeSync,
+  existsSync,
+  openSync,
+  readFileSync,
+  readSync,
+  readdirSync,
+  realpathSync,
+  renameSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
+import { homedir, hostname } from "node:os";
 import path from "node:path";
 import { Schema } from "effect";
 import {
@@ -15,15 +28,29 @@ import {
   LitterBridgeControllerSnapshotRequestSchema,
   LitterBridgeControllerSnapshotSchema,
   LitterBridgeErrorResultSchema,
+  LitterBridgeSessionPageSchema,
+  LitterBridgeSessionReadRequestSchema,
+  type LitterBridgeAttachmentDescriptor,
   type LitterBridgeControllerSnapshot,
   type LitterBridgeControllerSnapshotRequest,
   type LitterBridgeError,
   type LitterBridgeErrorCode,
   type LitterBridgeErrorResult,
+  type LitterBridgeExternalSessionIdentity,
   type LitterBridgeFreshness,
+  type LitterBridgeHashReference,
+  type LitterBridgeMessageDescriptor,
+  type LitterBridgeMessagePart,
+  type LitterBridgeSessionMetadata,
+  type LitterBridgeSessionPage,
+  type LitterBridgeSessionReadRequest,
+  type LitterBridgeToolDescriptor,
+  type LitterBridgeTransferCursor,
 } from "../../../shared/agent/litter-bridge";
 import { readJsonRequestWithinLimit } from "../../../shared/agent/agent-turn-body";
+import { cleanSessionTitle } from "../../../shared/agent/session-title";
 import { resolveDataDir } from "./data-dir";
+import { listProjectsFromStore, type ProjectEntry } from "./projects-store";
 import { getApiSettings } from "./settings-service";
 import { piRuntimeManager } from "./pi-runtime";
 
@@ -32,6 +59,18 @@ const RESPONSE_LIMIT_BYTES = 1_000_000;
 const REQUEST_MAX_LIFETIME_MS = 60_000;
 const REQUEST_MAX_FUTURE_SKEW_MS = 30_000;
 const REPLAY_STORE_LIMIT = 10_000;
+const CURSOR_STORE_LIMIT = 256;
+const CURSOR_STATE_ITEM_LIMIT = 100_000;
+const CURSOR_TTL_MS = 5 * 60_000;
+const SESSION_LINE_LIMIT_BYTES = 1_000_000;
+const SESSION_READ_CHUNK_BYTES = 64 * 1024;
+const SESSION_HEADER_LIMIT_BYTES = 64 * 1024;
+const SESSION_METADATA_SCAN_BYTES = 1_000_000;
+const SESSION_METADATA_SCAN_LINES = 400;
+const SESSION_LINEAGE_LIMIT = 50_000;
+const SESSION_TOOL_LIMIT = 10_000;
+const SESSION_PAGE_ITEM_LIMIT = 200;
+const PI_SESSION_ID_PATTERN = /^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$/;
 const SECRET_HEADER = "x-local-studio-litter-bridge-secret";
 const ROUTE_PATH = "/api/litter-bridge/v1";
 const SIGNATURE_DOMAIN = Buffer.from("litter-bridge-request-v1", "ascii");
@@ -45,6 +84,8 @@ type RuntimeStats = {
   persistedSessionCount: number | null;
   eventSequence: number | null;
 };
+type TrustedProject = Pick<ProjectEntry, "path" | "exists">;
+type LiveProject = { cwd: string; variants: string[] };
 type GatewayOptions = {
   secret?: string;
   controllerId?: string;
@@ -54,6 +95,9 @@ type GatewayOptions = {
   now?: () => Date;
   fetch?: FetchImplementation;
   runtimeStats?: () => RuntimeStats;
+  projects?: () => TrustedProject[];
+  sessionRoots?: string[];
+  sessionCursorTtlMs?: number;
 };
 type GatewayMetadata = {
   protocolVersion: 1;
@@ -69,6 +113,83 @@ type Section<T> = {
   error: LitterBridgeError | null;
   freshness: LitterBridgeFreshness;
 };
+type SignedGatewayRequest = LitterBridgeControllerSnapshotRequest | LitterBridgeSessionReadRequest;
+type SessionFileFingerprint = {
+  value: string;
+  revision: number;
+  size: number;
+  createdAt: string;
+  updatedAt: string;
+};
+type ResolvedSessionFile = SessionFileFingerprint & {
+  filepath: string;
+  cwd: string;
+  sessionId: string;
+  header: JsonRecord;
+  headerEnd: number;
+};
+type ToolOwner = {
+  toolCallId: string;
+  messageId: string;
+  name: string;
+  argumentsJson: string;
+  argumentsHash: string;
+  startedAt: string;
+  completed: boolean;
+};
+type SessionTranslationState = {
+  lineage: Map<string, string | null>;
+  seenEntryIds: Set<string>;
+  toolOwners: Map<string, ToolOwner>;
+  sequence: number;
+};
+type SessionCursorState = {
+  controllerId: string;
+  deviceId: string;
+  sessionId: string;
+  filepath: string;
+  cwd: string;
+  fingerprint: string;
+  revision: number;
+  offset: number;
+  afterSequence: number;
+  expiresAt: number;
+  metadata: LitterBridgeSessionMetadata;
+  translation: SessionTranslationState;
+};
+type SessionLine = {
+  bytes: Buffer;
+  start: number;
+  end: number;
+  oversizedInert: boolean;
+};
+type SessionArtifacts = {
+  message: LitterBridgeMessageDescriptor | null;
+  tools: LitterBridgeToolDescriptor[];
+  attachments: LitterBridgeAttachmentDescriptor[];
+  entryId: string | null;
+  parentMessageId: string | null;
+  safeOmission: boolean;
+  toolOwnerUpdates: Array<[string, ToolOwner]>;
+};
+type ContentTranslation = {
+  parts: LitterBridgeMessagePart[];
+  attachments: LitterBridgeAttachmentDescriptor[];
+  tools: LitterBridgeToolDescriptor[];
+  toolOwnerUpdates: Array<[string, ToolOwner]>;
+  normalized: unknown[];
+};
+
+class SessionReadError extends Error {
+  constructor(
+    readonly code: LitterBridgeErrorCode,
+    message: string,
+    readonly status: number,
+    readonly retriable = false,
+  ) {
+    super(message);
+  }
+}
 
 const isRecord = (value: unknown): value is JsonRecord =>
   typeof value === "object" && value !== null && !Array.isArray(value);
@@ -144,6 +265,55 @@ export const canonicalLitterBridgeJson = (value: unknown): string => {
 export const litterBridgeBodyHash = (value: unknown): string =>
   createHash("sha256").update(canonicalLitterBridgeJson(value), "utf8").digest("hex");
 
+export const litterBridgeSha256Utf8 = (value: string): string =>
+  createHash("sha256").update(value, "utf8").digest("hex");
+
+export const litterBridgeMessageHashPreimage = (
+  descriptor: Omit<LitterBridgeMessageDescriptor, "contentHash">,
+): string => canonicalLitterBridgeJson(["litter-bridge-message-v1", descriptor]);
+
+export const litterBridgeToolHashPreimage = (descriptor: LitterBridgeToolDescriptor): string =>
+  canonicalLitterBridgeJson(["litter-bridge-tool-v1", descriptor]);
+
+export const litterBridgeSessionHashPreimage = (input: {
+  canonicalSession: LitterBridgeExternalSessionIdentity;
+  metadata: LitterBridgeSessionMetadata;
+  revision: number;
+  messages: readonly LitterBridgeHashReference[];
+  tools: readonly LitterBridgeHashReference[];
+  attachments: readonly LitterBridgeHashReference[];
+}): string => canonicalLitterBridgeJson(["litter-bridge-session-v1", input]);
+
+const stableJson = (value: unknown, ancestors = new Set<object>()): string => {
+  if (value === null) return "null";
+  if (typeof value === "boolean") return value ? "true" : "false";
+  if (typeof value === "string") return JSON.stringify(value);
+  if (typeof value === "number") {
+    if (!Number.isFinite(value))
+      throw new SessionReadError("integrity_failed", "Session JSON is invalid", 422);
+    return JSON.stringify(value);
+  }
+  if (typeof value !== "object" || value === undefined) {
+    throw new SessionReadError("integrity_failed", "Session JSON is invalid", 422);
+  }
+  if (ancestors.has(value)) {
+    throw new SessionReadError("integrity_failed", "Session JSON is invalid", 422);
+  }
+  ancestors.add(value);
+  try {
+    if (Array.isArray(value)) {
+      return `[${value.map((entry) => stableJson(entry, ancestors)).join(",")}]`;
+    }
+    const record = value as JsonRecord;
+    return `{${Object.keys(record)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${stableJson(record[key], ancestors)}`)
+      .join(",")}}`;
+  } finally {
+    ancestors.delete(value);
+  }
+};
+
 const appendLengthPrefixed = (target: Buffer[], value: string): void => {
   const bytes = Buffer.from(value, "utf8");
   if (bytes.length > 0xffff_ffff) throw new Error("Signature field exceeds u32 length");
@@ -206,14 +376,13 @@ const jsonError = (
   retriable = false,
 ): Response => Response.json(errorResult(code, message, requestId, retriable), { status });
 
-const unsignedRequest = (request: LitterBridgeControllerSnapshotRequest): JsonRecord => ({
-  type: request.type,
-  protocolVersion: request.protocolVersion,
-  controllerId: request.controllerId,
-});
+const unsignedRequest = (request: SignedGatewayRequest): JsonRecord => {
+  const { auth: _auth, ...unsigned } = request;
+  return unsigned;
+};
 
 const verifyRequest = (
-  request: LitterBridgeControllerSnapshotRequest,
+  request: SignedGatewayRequest,
   now: Date,
 ): { ok: true; replayKey: string; expiresAt: number } | { ok: false; response: Response } => {
   const { auth } = request;
@@ -468,6 +637,976 @@ const normalizeMetrics = (value: unknown) => {
   };
 };
 
+const strictTimestamp = (value: unknown): string | null => {
+  if (
+    typeof value !== "string" ||
+    !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?Z$/.test(value) ||
+    !Number.isFinite(Date.parse(value))
+  ) {
+    return null;
+  }
+  return value;
+};
+
+const timestampFrom = (event: JsonRecord, message?: JsonRecord): string => {
+  const entryTimestamp = strictTimestamp(event.timestamp);
+  if (entryTimestamp) return entryTimestamp;
+  const messageTimestamp = message?.timestamp;
+  if (
+    typeof messageTimestamp === "number" &&
+    Number.isSafeInteger(messageTimestamp) &&
+    messageTimestamp >= 0
+  ) {
+    return new Date(messageTimestamp).toISOString();
+  }
+  throw new SessionReadError("integrity_failed", "Session timestamp is invalid", 422);
+};
+
+const identifierFrom = (value: unknown, prefix: string): string => {
+  if (typeof value !== "string" || value.length === 0) {
+    throw new SessionReadError("integrity_failed", "Session identifier is invalid", 422);
+  }
+  if (value.trim() === value && Buffer.byteLength(value, "utf8") <= 512) return value;
+  return `${prefix}-${litterBridgeSha256Utf8(value).slice(0, 48)}`;
+};
+
+const optionalIdentifier = (value: unknown): string | null =>
+  typeof value === "string" &&
+  value.length > 0 &&
+  value.trim() === value &&
+  Buffer.byteLength(value, "utf8") <= 512
+    ? value
+    : null;
+
+const shortText = (value: string): string => {
+  let output = "";
+  let bytes = 0;
+  for (const character of value) {
+    const next = Buffer.byteLength(character, "utf8");
+    if (bytes + next > 4_096) break;
+    output += character;
+    bytes += next;
+  }
+  return output;
+};
+
+const sessionFileFingerprint = (filepath: string): SessionFileFingerprint => {
+  const stats = statSync(filepath, { bigint: true });
+  if (!stats.isFile() || stats.size > BigInt(Number.MAX_SAFE_INTEGER)) {
+    throw new SessionReadError("integrity_failed", "Session file is invalid", 422);
+  }
+  const value = litterBridgeSha256Utf8(
+    [stats.dev, stats.ino, stats.size, stats.mtimeNs, stats.ctimeNs].map(String).join(":"),
+  );
+  return {
+    value,
+    revision: Number.parseInt(value.slice(0, 13), 16),
+    size: Number(stats.size),
+    createdAt: new Date(Number(stats.birthtimeMs)).toISOString(),
+    updatedAt: new Date(Number(stats.mtimeMs)).toISOString(),
+  };
+};
+
+const encodeCwdForPi = (cwd: string): string => {
+  const normalized = path.resolve(cwd).replace(/\\+/g, "/");
+  return `--${normalized.replace(/^\//, "").replace(/\/+/g, "-")}--`;
+};
+
+const liveProjects = (projects: TrustedProject[]): LiveProject[] => {
+  const byCwd = new Map<string, LiveProject>();
+  for (const project of projects) {
+    if (!project.exists || typeof project.path !== "string" || !project.path.trim()) continue;
+    try {
+      const lexical = path.resolve(project.path);
+      const canonical = realpathSync.native(lexical);
+      if (!statSync(canonical).isDirectory()) continue;
+      const existing = byCwd.get(canonical);
+      const variants = [...new Set([...(existing?.variants ?? []), lexical, canonical])];
+      byCwd.set(canonical, { cwd: canonical, variants });
+    } catch {}
+  }
+  return [...byCwd.values()].sort((left, right) => left.cwd.localeCompare(right.cwd));
+};
+
+const sessionRootPaths = (dataDir: string, configured?: string[]): string[] => {
+  const roots =
+    configured ??
+    [
+      process.env.PI_CODING_AGENT_DIR
+        ? path.join(process.env.PI_CODING_AGENT_DIR, "sessions")
+        : null,
+      path.join(dataDir, "pi-agent", "sessions"),
+      path.join(homedir(), ".pi", "agent", "sessions"),
+    ].filter((value): value is string => Boolean(value));
+  return [...new Set(roots.map((root) => path.resolve(root)))];
+};
+
+const readSessionLine = (
+  fd: number,
+  size: number,
+  start: number,
+  byteLimit = SESSION_LINE_LIMIT_BYTES,
+): SessionLine | null => {
+  if (start >= size) return null;
+  const chunks: Buffer[] = [];
+  let position = start;
+  let total = 0;
+  while (position < size) {
+    const length = Math.min(SESSION_READ_CHUNK_BYTES, size - position);
+    const buffer = Buffer.allocUnsafe(length);
+    const bytesRead = readSync(fd, buffer, 0, length, position);
+    if (bytesRead <= 0) break;
+    const newline = buffer.subarray(0, bytesRead).indexOf(0x0a);
+    const take = newline >= 0 ? newline : bytesRead;
+    total += take;
+    if (total > byteLimit) {
+      throw new SessionReadError(
+        "payload_too_large",
+        "Session entry exceeds the transfer limit",
+        413,
+      );
+    }
+    if (take > 0) chunks.push(buffer.subarray(0, take));
+    position += newline >= 0 ? newline + 1 : bytesRead;
+    if (newline >= 0) {
+      return {
+        bytes: chunks.length === 1 ? Buffer.from(chunks[0]) : Buffer.concat(chunks, total),
+        start,
+        end: position,
+        oversizedInert: false,
+      };
+    }
+  }
+  if (position !== size) {
+    throw new SessionReadError("integrity_failed", "Session file could not be read", 422);
+  }
+  return {
+    bytes: chunks.length === 1 ? Buffer.from(chunks[0]) : Buffer.concat(chunks, total),
+    start,
+    end: position,
+    oversizedInert: false,
+  };
+};
+
+const parseSessionLine = (line: SessionLine): JsonRecord | null => {
+  const source = line.bytes.toString("utf8").trim();
+  if (!source) return null;
+  try {
+    const parsed = JSON.parse(source) as unknown;
+    if (!isRecord(parsed)) throw new Error("invalid");
+    return parsed;
+  } catch {
+    throw new SessionReadError("integrity_failed", "Session JSON is invalid", 422);
+  }
+};
+
+const readSessionHeader = (
+  filepath: string,
+  expectedSessionId: string,
+  project: LiveProject,
+): { header: JsonRecord; headerEnd: number } | null => {
+  const fingerprint = sessionFileFingerprint(filepath);
+  const fd = openSync(filepath, "r");
+  try {
+    const line = readSessionLine(fd, fingerprint.size, 0, SESSION_HEADER_LIMIT_BYTES);
+    if (!line) return null;
+    const header = parseSessionLine(line);
+    if (!header || header.type !== "session" || header.id !== expectedSessionId) return null;
+    const version = header.version === undefined ? 1 : safeInteger(header.version);
+    if (version === null || version < 1 || version > 3) {
+      throw new SessionReadError("section_unavailable", "Session version is unsupported", 422);
+    }
+    if (typeof header.cwd !== "string") {
+      throw new SessionReadError("integrity_failed", "Session project identity is invalid", 422);
+    }
+    const headerCwd = path.resolve(header.cwd);
+    let canonicalHeaderCwd = headerCwd;
+    try {
+      canonicalHeaderCwd = realpathSync.native(headerCwd);
+    } catch {}
+    if (!project.variants.includes(headerCwd) && canonicalHeaderCwd !== project.cwd) {
+      throw new SessionReadError("integrity_failed", "Session project identity is invalid", 422);
+    }
+    return { header, headerEnd: line.end };
+  } finally {
+    closeSync(fd);
+  }
+};
+
+const resolveSessionFile = (
+  sessionId: string,
+  projects: TrustedProject[],
+  roots: string[],
+): ResolvedSessionFile => {
+  if (!PI_SESSION_ID_PATTERN.test(sessionId)) {
+    throw new SessionReadError("not_found", "Session identity was not found", 404);
+  }
+  const matches = new Map<string, ResolvedSessionFile>();
+  for (const project of liveProjects(projects)) {
+    const directories = new Set<string>();
+    for (const root of roots) {
+      for (const variant of project.variants) {
+        directories.add(path.join(root, encodeCwdForPi(variant)));
+      }
+    }
+    for (const directory of directories) {
+      let entries;
+      try {
+        entries = readdirSync(directory, { withFileTypes: true });
+      } catch {
+        continue;
+      }
+      for (const entry of entries) {
+        if (!entry.isFile() || !entry.name.endsWith(`_${sessionId}.jsonl`)) continue;
+        const candidate = path.join(directory, entry.name);
+        const headerResult = readSessionHeader(candidate, sessionId, project);
+        if (!headerResult) continue;
+        const filepath = realpathSync.native(candidate);
+        const fingerprint = sessionFileFingerprint(filepath);
+        const existing = matches.get(filepath);
+        if (existing && existing.cwd !== project.cwd) {
+          throw new SessionReadError(
+            "not_found",
+            "Session identity was not found or was ambiguous",
+            404,
+          );
+        }
+        matches.set(filepath, {
+          ...fingerprint,
+          filepath,
+          cwd: project.cwd,
+          sessionId,
+          header: headerResult.header,
+          headerEnd: headerResult.headerEnd,
+        });
+        if (matches.size > 1) {
+          throw new SessionReadError(
+            "not_found",
+            "Session identity was not found or was ambiguous",
+            404,
+          );
+        }
+      }
+    }
+  }
+  const resolved = matches.values().next().value;
+  if (!resolved) throw new SessionReadError("not_found", "Session identity was not found", 404);
+  return resolved;
+};
+
+const firstText = (content: unknown): string | null => {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return null;
+  for (const part of content) {
+    if (isRecord(part) && part.type === "text" && typeof part.text === "string") {
+      return part.text;
+    }
+  }
+  return null;
+};
+
+const readSessionMetadata = (resolved: ResolvedSessionFile): LitterBridgeSessionMetadata => {
+  if (Buffer.byteLength(resolved.cwd, "utf8") > 512 || resolved.cwd.trim() !== resolved.cwd) {
+    throw new SessionReadError("section_unavailable", "Session project path is unsupported", 422);
+  }
+  let title: string | null = null;
+  let namedTitle: string | null = null;
+  let modelId = optionalIdentifier(resolved.header.modelId ?? resolved.header.model);
+  let providerId = optionalIdentifier(resolved.header.provider);
+  let offset = resolved.headerEnd;
+  let scannedLines = 0;
+  const scanEnd = Math.min(resolved.size, resolved.headerEnd + SESSION_METADATA_SCAN_BYTES);
+  const fd = openSync(resolved.filepath, "r");
+  try {
+    while (offset < scanEnd && scannedLines < SESSION_METADATA_SCAN_LINES) {
+      const line = readSessionLine(fd, resolved.size, offset);
+      if (!line || line.end > scanEnd) break;
+      offset = line.end;
+      scannedLines += 1;
+      const event = parseSessionLine(line);
+      if (!event) continue;
+      if (event.type === "session_info") {
+        const name = typeof event.name === "string" ? shortText(cleanSessionTitle(event.name)) : "";
+        if (name) namedTitle = name;
+      }
+      if (event.type === "model_change") {
+        modelId = optionalIdentifier(event.modelId ?? event.model) ?? modelId;
+        providerId = optionalIdentifier(event.provider) ?? providerId;
+      }
+      if ((event.type === "message" || event.type === "message_end") && isRecord(event.message)) {
+        const message = event.message;
+        if (message.role === "user" && !title) {
+          const text = firstText(message.content);
+          const cleaned = cleanSessionTitle(text?.slice(0, 120));
+          if (cleaned) title = cleaned;
+        }
+        if (message.role === "assistant") {
+          modelId = optionalIdentifier(message.model) ?? modelId;
+          providerId = optionalIdentifier(message.provider) ?? providerId;
+        }
+      }
+    }
+  } catch (error) {
+    if (!(error instanceof SessionReadError) || error.code !== "payload_too_large") throw error;
+  } finally {
+    closeSync(fd);
+  }
+  return {
+    title: namedTitle ?? title,
+    cwd: resolved.cwd,
+    createdAt: strictTimestamp(resolved.header.timestamp) ?? resolved.createdAt,
+    updatedAt: resolved.updatedAt,
+    modelId,
+    providerId,
+  };
+};
+
+const boundedJsonText = (value: unknown): string => {
+  let parsed = value;
+  if (typeof value === "string") {
+    try {
+      parsed = JSON.parse(value) as unknown;
+    } catch {
+      throw new SessionReadError("integrity_failed", "Tool JSON is invalid", 422);
+    }
+  }
+  if (parsed === undefined) parsed = {};
+  const json = stableJson(parsed);
+  if (Buffer.byteLength(json, "utf8") > BODY_LIMIT_BYTES) {
+    throw new SessionReadError("payload_too_large", "Tool JSON exceeds the transfer limit", 413);
+  }
+  return json;
+};
+
+const decodedBase64 = (value: unknown): Buffer => {
+  if (
+    typeof value !== "string" ||
+    !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(value)
+  ) {
+    throw new SessionReadError("integrity_failed", "Session attachment is invalid", 422);
+  }
+  const bytes = Buffer.from(value, "base64");
+  if (bytes.toString("base64") !== value) {
+    throw new SessionReadError("integrity_failed", "Session attachment is invalid", 422);
+  }
+  return bytes;
+};
+
+const attachmentFromPart = (
+  part: JsonRecord,
+  messageId: string,
+  index: number,
+): { descriptor: LitterBridgeAttachmentDescriptor; normalized: JsonRecord } => {
+  const mediaType = boundedString(part.mimeType ?? part.mediaType);
+  if (!mediaType || Buffer.byteLength(mediaType, "utf8") > 512) {
+    throw new SessionReadError("integrity_failed", "Session attachment type is invalid", 422);
+  }
+  const bytes = decodedBase64(part.data);
+  const contentHash = createHash("sha256").update(bytes).digest("hex");
+  const extension =
+    mediaType
+      .split("/")[1]
+      ?.replace(/[^A-Za-z0-9]/g, "")
+      .slice(0, 16) || "bin";
+  const attachmentId = `attachment-${litterBridgeSha256Utf8(`${messageId}:${index}:${contentHash}`).slice(0, 48)}`;
+  const descriptor: LitterBridgeAttachmentDescriptor = {
+    attachmentId,
+    messageId,
+    fileName: `attachment-${index + 1}.${extension}`,
+    mediaType,
+    byteLength: bytes.byteLength,
+    contentHash,
+    blobId: null,
+    availability: "metadata_only",
+  };
+  return {
+    descriptor,
+    normalized: {
+      type: "attachment_ref",
+      attachmentId,
+      mediaType,
+      byteLength: bytes.byteLength,
+      contentHash,
+      availability: "metadata_only",
+    },
+  };
+};
+
+const translateContent = (
+  content: unknown,
+  messageId: string,
+  role: "system" | "user" | "assistant" | "tool",
+  createdAt: string,
+  translation: SessionTranslationState,
+  messageReasoning: unknown,
+): ContentTranslation => {
+  const parts: LitterBridgeMessagePart[] = [];
+  const attachments: LitterBridgeAttachmentDescriptor[] = [];
+  const tools: LitterBridgeToolDescriptor[] = [];
+  const toolOwnerUpdates: Array<[string, ToolOwner]> = [];
+  const normalized: unknown[] = [];
+  if (typeof messageReasoning === "string" && messageReasoning) {
+    parts.push({ type: "reasoning", text: messageReasoning });
+    normalized.push({ type: "reasoning", text: messageReasoning });
+  } else if (messageReasoning !== undefined && messageReasoning !== null) {
+    throw new SessionReadError("section_unavailable", "Session reasoning is unsupported", 422);
+  }
+  const entries = typeof content === "string" ? [{ type: "text", text: content }] : content;
+  if (!Array.isArray(entries)) {
+    throw new SessionReadError(
+      "section_unavailable",
+      "Session message content is unsupported",
+      422,
+    );
+  }
+  const pendingToolIds = new Set<string>();
+  for (let index = 0; index < entries.length; index += 1) {
+    const part = entries[index];
+    if (!isRecord(part) || typeof part.type !== "string") {
+      throw new SessionReadError("section_unavailable", "Session message part is unsupported", 422);
+    }
+    if (part.type === "text") {
+      if (typeof part.reasoning_content === "string" && part.reasoning_content) {
+        parts.push({ type: "reasoning", text: part.reasoning_content });
+        normalized.push({ type: "reasoning", text: part.reasoning_content });
+      } else if (part.reasoning_content !== undefined && part.reasoning_content !== null) {
+        throw new SessionReadError("section_unavailable", "Session reasoning is unsupported", 422);
+      }
+      if (typeof part.text !== "string") {
+        throw new SessionReadError("integrity_failed", "Session text is invalid", 422);
+      }
+      parts.push({ type: "text", text: part.text });
+      normalized.push({ type: "text", text: part.text });
+      continue;
+    }
+    if (part.type === "thinking" || part.type === "reasoning") {
+      const text = [part.thinking, part.reasoning, part.text].find(
+        (value): value is string => typeof value === "string",
+      );
+      if (text === undefined) {
+        throw new SessionReadError("integrity_failed", "Session reasoning is invalid", 422);
+      }
+      parts.push({ type: "reasoning", text });
+      normalized.push({ type: "reasoning", text });
+      continue;
+    }
+    if (part.type === "image") {
+      const attachment = attachmentFromPart(part, messageId, index);
+      attachments.push(attachment.descriptor);
+      parts.push({ type: "attachment_ref", attachmentId: attachment.descriptor.attachmentId });
+      normalized.push(attachment.normalized);
+      continue;
+    }
+    if (part.type === "toolCall") {
+      if (role !== "assistant") {
+        throw new SessionReadError(
+          "section_unavailable",
+          "Session tool reference is unsupported",
+          422,
+        );
+      }
+      if (typeof part.id !== "string" || !part.id) {
+        throw new SessionReadError("integrity_failed", "Session tool identity is invalid", 422);
+      }
+      if (translation.toolOwners.has(part.id) || pendingToolIds.has(part.id)) {
+        throw new SessionReadError("integrity_failed", "Session tool identity is duplicated", 422);
+      }
+      pendingToolIds.add(part.id);
+      const toolCallId = identifierFrom(part.id, "tool");
+      const name = identifierFrom(part.name, "tool-name");
+      const argumentsJson = boundedJsonText(part.arguments);
+      const argumentsHash = litterBridgeSha256Utf8(argumentsJson);
+      const owner: ToolOwner = {
+        toolCallId,
+        messageId,
+        name,
+        argumentsJson,
+        argumentsHash,
+        startedAt: createdAt,
+        completed: false,
+      };
+      toolOwnerUpdates.push([part.id, owner]);
+      parts.push({ type: "tool_ref", toolCallId });
+      normalized.push({ type: "tool_ref", toolCallId, name, argumentsJson });
+      tools.push({
+        toolCallId,
+        messageId,
+        name,
+        state: "requested",
+        argumentsJson,
+        argumentsHash,
+        resultJson: null,
+        resultHash: null,
+        startedAt: createdAt,
+        completedAt: null,
+      });
+      continue;
+    }
+    throw new SessionReadError("section_unavailable", "Session message part is unsupported", 422);
+  }
+  return { parts, attachments, tools, toolOwnerUpdates, normalized };
+};
+
+const messageDescriptor = (input: {
+  messageId: string;
+  parentMessageId: string | null;
+  sequence: number;
+  role: "system" | "user" | "assistant" | "tool";
+  createdAt: string;
+  parts: LitterBridgeMessagePart[];
+}): LitterBridgeMessageDescriptor => {
+  const descriptor = {
+    ...input,
+    editedAt: null,
+  } satisfies Omit<LitterBridgeMessageDescriptor, "contentHash">;
+  return {
+    ...descriptor,
+    contentHash: litterBridgeSha256Utf8(litterBridgeMessageHashPreimage(descriptor)),
+  };
+};
+
+const eventIdentity = (
+  event: JsonRecord,
+  translation: SessionTranslationState,
+): { entryId: string; parentMessageId: string | null } => {
+  if (typeof event.id !== "string" || !event.id || translation.seenEntryIds.has(event.id)) {
+    throw new SessionReadError("integrity_failed", "Session entry identity is invalid", 422);
+  }
+  let parentMessageId: string | null;
+  if (event.parentId === null) {
+    parentMessageId = null;
+  } else if (typeof event.parentId === "string" && translation.seenEntryIds.has(event.parentId)) {
+    parentMessageId = translation.lineage.get(event.parentId) ?? null;
+  } else {
+    throw new SessionReadError("integrity_failed", "Session entry lineage is invalid", 422);
+  }
+  return { entryId: event.id, parentMessageId };
+};
+
+const translateSessionEvent = (
+  event: JsonRecord,
+  translation: SessionTranslationState,
+): SessionArtifacts => {
+  const { entryId, parentMessageId } = eventIdentity(event, translation);
+  if (
+    event.type === "model_change" ||
+    event.type === "thinking_level_change" ||
+    event.type === "custom" ||
+    event.type === "label" ||
+    event.type === "session_info"
+  ) {
+    return {
+      message: null,
+      tools: [],
+      attachments: [],
+      entryId,
+      parentMessageId,
+      safeOmission: true,
+      toolOwnerUpdates: [],
+    };
+  }
+  if (event.type !== "message" && event.type !== "message_end") {
+    throw new SessionReadError("section_unavailable", "Session entry type is unsupported", 422);
+  }
+  if (!isRecord(event.message) || typeof event.message.role !== "string") {
+    throw new SessionReadError("integrity_failed", "Session message is invalid", 422);
+  }
+  const sourceMessage = event.message;
+  const createdAt = timestampFrom(event, sourceMessage);
+  const wireMessageId = identifierFrom(entryId, "message");
+  if (sourceMessage.role === "toolResult" || sourceMessage.role === "tool") {
+    if (typeof sourceMessage.toolCallId !== "string" || !sourceMessage.toolCallId) {
+      throw new SessionReadError("integrity_failed", "Session tool result is invalid", 422);
+    }
+    const owner = translation.toolOwners.get(sourceMessage.toolCallId);
+    if (!owner || owner.completed) {
+      throw new SessionReadError("integrity_failed", "Session tool lineage is invalid", 422);
+    }
+    if (
+      sourceMessage.toolName !== undefined &&
+      identifierFrom(sourceMessage.toolName, "tool-name") !== owner.name
+    ) {
+      throw new SessionReadError("integrity_failed", "Session tool name is inconsistent", 422);
+    }
+    if (typeof sourceMessage.isError !== "boolean") {
+      throw new SessionReadError("integrity_failed", "Session tool result state is invalid", 422);
+    }
+    const content = translateContent(
+      sourceMessage.content,
+      wireMessageId,
+      "tool",
+      createdAt,
+      translation,
+      sourceMessage.reasoning_content,
+    );
+    const resultJson = boundedJsonText({
+      content: content.normalized,
+      isError: sourceMessage.isError,
+    });
+    const completedOwner = { ...owner, completed: true };
+    const descriptor: LitterBridgeToolDescriptor = {
+      toolCallId: owner.toolCallId,
+      messageId: owner.messageId,
+      name: owner.name,
+      state: sourceMessage.isError ? "failed" : "completed",
+      argumentsJson: owner.argumentsJson,
+      argumentsHash: owner.argumentsHash,
+      resultJson,
+      resultHash: litterBridgeSha256Utf8(resultJson),
+      startedAt: owner.startedAt,
+      completedAt: createdAt,
+    };
+    return {
+      message: messageDescriptor({
+        messageId: wireMessageId,
+        parentMessageId,
+        sequence: translation.sequence + 1,
+        role: "tool",
+        createdAt,
+        parts: content.parts,
+      }),
+      tools: [descriptor],
+      attachments: content.attachments,
+      entryId,
+      parentMessageId,
+      safeOmission: false,
+      toolOwnerUpdates: [[sourceMessage.toolCallId, completedOwner]],
+    };
+  }
+  if (
+    sourceMessage.role !== "system" &&
+    sourceMessage.role !== "user" &&
+    sourceMessage.role !== "assistant"
+  ) {
+    throw new SessionReadError("section_unavailable", "Session message role is unsupported", 422);
+  }
+  const content = translateContent(
+    sourceMessage.content,
+    wireMessageId,
+    sourceMessage.role,
+    createdAt,
+    translation,
+    sourceMessage.reasoning_content,
+  );
+  return {
+    message: messageDescriptor({
+      messageId: wireMessageId,
+      parentMessageId,
+      sequence: translation.sequence + 1,
+      role: sourceMessage.role,
+      createdAt,
+      parts: content.parts,
+    }),
+    tools: content.tools,
+    attachments: content.attachments,
+    entryId,
+    parentMessageId,
+    safeOmission: false,
+    toolOwnerUpdates: content.toolOwnerUpdates,
+  };
+};
+
+const applySessionArtifacts = (
+  artifacts: SessionArtifacts,
+  translation: SessionTranslationState,
+): void => {
+  if (!artifacts.entryId) return;
+  if (translation.seenEntryIds.size >= SESSION_LINEAGE_LIMIT) {
+    throw new SessionReadError(
+      "payload_too_large",
+      "Session lineage exceeds the transfer limit",
+      413,
+    );
+  }
+  translation.seenEntryIds.add(artifacts.entryId);
+  translation.lineage.set(
+    artifacts.entryId,
+    artifacts.message?.messageId ?? artifacts.parentMessageId,
+  );
+  for (const [sourceId, owner] of artifacts.toolOwnerUpdates) {
+    if (
+      !translation.toolOwners.has(sourceId) &&
+      translation.toolOwners.size >= SESSION_TOOL_LIMIT
+    ) {
+      throw new SessionReadError(
+        "payload_too_large",
+        "Session tools exceed the transfer limit",
+        413,
+      );
+    }
+    translation.toolOwners.set(sourceId, owner);
+  }
+  if (artifacts.message) translation.sequence = artifacts.message.sequence;
+};
+
+const cloneTranslationState = (state: SessionTranslationState): SessionTranslationState => ({
+  lineage: new Map(state.lineage),
+  seenEntryIds: new Set(state.seenEntryIds),
+  toolOwners: new Map(state.toolOwners),
+  sequence: state.sequence,
+});
+
+const mergePageTools = (
+  existing: LitterBridgeToolDescriptor[],
+  incoming: LitterBridgeToolDescriptor[],
+): LitterBridgeToolDescriptor[] => {
+  const merged = [...existing];
+  const indexes = new Map(merged.map((tool, index) => [tool.toolCallId, index]));
+  for (const tool of incoming) {
+    const index = indexes.get(tool.toolCallId);
+    if (index === undefined) {
+      indexes.set(tool.toolCallId, merged.length);
+      merged.push(tool);
+      continue;
+    }
+    const previous = merged[index];
+    if (
+      (previous.state !== "requested" && previous.state !== "running") ||
+      (tool.state !== "completed" && tool.state !== "failed" && tool.state !== "cancelled")
+    ) {
+      throw new SessionReadError("integrity_failed", "Session tool state is duplicated", 422);
+    }
+    merged[index] = tool;
+  }
+  return merged;
+};
+
+const buildSessionPage = (input: {
+  requestId: string;
+  pageId: string;
+  controllerId: string;
+  sessionId: string;
+  exportedAt: string;
+  metadata: LitterBridgeSessionMetadata;
+  revision: number;
+  messages: LitterBridgeMessageDescriptor[];
+  tools: LitterBridgeToolDescriptor[];
+  attachments: LitterBridgeAttachmentDescriptor[];
+  cursor: LitterBridgeTransferCursor | null;
+}): LitterBridgeSessionPage => {
+  const canonicalSession: LitterBridgeExternalSessionIdentity = {
+    kind: "external_session",
+    authority: "local-studio",
+    installationId: input.controllerId,
+    sessionId: input.sessionId,
+  };
+  const messageHashes = input.messages.map(({ messageId, contentHash }) => ({
+    id: messageId,
+    sha256: contentHash,
+  }));
+  const toolHashes = input.tools.map((tool) => ({
+    id: tool.toolCallId,
+    sha256: litterBridgeSha256Utf8(litterBridgeToolHashPreimage(tool)),
+  }));
+  const attachmentHashes = input.attachments.map(({ attachmentId, contentHash }) => ({
+    id: attachmentId,
+    sha256: contentHash,
+  }));
+  const sessionHash = litterBridgeSha256Utf8(
+    litterBridgeSessionHashPreimage({
+      canonicalSession,
+      metadata: input.metadata,
+      revision: input.revision,
+      messages: messageHashes,
+      tools: toolHashes,
+      attachments: attachmentHashes,
+    }),
+  );
+  try {
+    return Schema.decodeUnknownSync(LitterBridgeSessionPageSchema)({
+      type: "session_page",
+      protocolVersion: LITTER_BRIDGE_PROTOCOL_VERSION,
+      requestId: input.requestId,
+      pageId: input.pageId,
+      canonicalSession,
+      origin: {
+        application: "local-studio",
+        installationId: input.controllerId,
+        deviceId: null,
+        exportedAt: input.exportedAt,
+      },
+      metadata: input.metadata,
+      revision: input.revision,
+      messages: input.messages,
+      tools: input.tools,
+      attachments: input.attachments,
+      contentHashes: {
+        algorithm: "sha256",
+        session: sessionHash,
+        messages: messageHashes,
+        tools: toolHashes,
+        attachments: attachmentHashes,
+      },
+      cursor: input.cursor,
+    });
+  } catch {
+    throw new SessionReadError("section_unavailable", "Session cannot be represented safely", 422);
+  }
+};
+
+const cursorDescriptor = (
+  token: string,
+  revision: number,
+  afterSequence: number,
+): LitterBridgeTransferCursor => ({
+  type: "session_transfer_cursor",
+  token,
+  revision,
+  afterSequence,
+  hasMore: true,
+});
+
+const readSessionSlice = (input: {
+  request: LitterBridgeSessionReadRequest;
+  controllerId: string;
+  filepath: string;
+  cwd: string;
+  sessionId: string;
+  fingerprint: string;
+  revision: number;
+  offset: number;
+  metadata: LitterBridgeSessionMetadata;
+  translation: SessionTranslationState;
+  now: Date;
+  cursorTtlMs: number;
+}): { page: LitterBridgeSessionPage; json: string; cursorState: SessionCursorState | null } => {
+  const before = sessionFileFingerprint(input.filepath);
+  if (before.value !== input.fingerprint || before.revision !== input.revision) {
+    throw new SessionReadError("revision_conflict", "Session changed during transfer", 409, true);
+  }
+  if (input.offset < 0 || input.offset > before.size) {
+    throw new SessionReadError("integrity_failed", "Session cursor offset is invalid", 422);
+  }
+  const translation = cloneTranslationState(input.translation);
+  const messages: LitterBridgeMessageDescriptor[] = [];
+  const tools: LitterBridgeToolDescriptor[] = [];
+  const attachments: LitterBridgeAttachmentDescriptor[] = [];
+  const pageId = randomUUID();
+  const exportedAt = input.now.toISOString();
+  const placeholderToken = "A".repeat(43);
+  let offset = input.offset;
+  const fd = openSync(input.filepath, "r");
+  try {
+    while (offset < before.size && messages.length < input.request.limit) {
+      const line = readSessionLine(fd, before.size, offset);
+      if (!line) break;
+      const event = parseSessionLine(line);
+      if (!event) {
+        offset = line.end;
+        continue;
+      }
+      if (event.type === "session") {
+        throw new SessionReadError("integrity_failed", "Session contains a duplicate header", 422);
+      }
+      const artifacts = translateSessionEvent(event, translation);
+      if (artifacts.safeOmission) {
+        applySessionArtifacts(artifacts, translation);
+        offset = line.end;
+        continue;
+      }
+      if (!artifacts.message) {
+        throw new SessionReadError("internal", "Session translation failed", 500);
+      }
+      if (
+        artifacts.tools.length > SESSION_PAGE_ITEM_LIMIT ||
+        artifacts.attachments.length > SESSION_PAGE_ITEM_LIMIT
+      ) {
+        throw new SessionReadError(
+          "payload_too_large",
+          "Session message has too many transfer items",
+          413,
+        );
+      }
+      const candidateMessages = [...messages, artifacts.message];
+      const candidateTools = mergePageTools(tools, artifacts.tools);
+      const candidateAttachments = [...attachments, ...artifacts.attachments];
+      if (
+        candidateTools.length > SESSION_PAGE_ITEM_LIMIT ||
+        candidateAttachments.length > SESSION_PAGE_ITEM_LIMIT
+      ) {
+        break;
+      }
+      const candidateCursor =
+        line.end < before.size
+          ? cursorDescriptor(placeholderToken, input.revision, artifacts.message.sequence)
+          : null;
+      const candidate = buildSessionPage({
+        requestId: input.request.auth.requestId,
+        pageId,
+        controllerId: input.controllerId,
+        sessionId: input.sessionId,
+        exportedAt,
+        metadata: input.metadata,
+        revision: input.revision,
+        messages: candidateMessages,
+        tools: candidateTools,
+        attachments: candidateAttachments,
+        cursor: candidateCursor,
+      });
+      if (Buffer.byteLength(JSON.stringify(candidate), "utf8") > RESPONSE_LIMIT_BYTES) {
+        if (messages.length === 0) {
+          throw new SessionReadError(
+            "payload_too_large",
+            "Session page exceeds the transfer limit",
+            413,
+          );
+        }
+        break;
+      }
+      applySessionArtifacts(artifacts, translation);
+      messages.push(artifacts.message);
+      tools.splice(0, tools.length, ...candidateTools);
+      attachments.push(...artifacts.attachments);
+      offset = line.end;
+    }
+  } finally {
+    closeSync(fd);
+  }
+  const after = sessionFileFingerprint(input.filepath);
+  if (after.value !== before.value) {
+    throw new SessionReadError("revision_conflict", "Session changed during transfer", 409, true);
+  }
+  const token = offset < after.size ? randomBytes(32).toString("base64url") : null;
+  const cursor = token ? cursorDescriptor(token, input.revision, translation.sequence) : null;
+  const page = buildSessionPage({
+    requestId: input.request.auth.requestId,
+    pageId,
+    controllerId: input.controllerId,
+    sessionId: input.sessionId,
+    exportedAt,
+    metadata: input.metadata,
+    revision: input.revision,
+    messages,
+    tools,
+    attachments,
+    cursor,
+  });
+  const json = JSON.stringify(page);
+  if (Buffer.byteLength(json, "utf8") > RESPONSE_LIMIT_BYTES) {
+    throw new SessionReadError("payload_too_large", "Session page exceeds the transfer limit", 413);
+  }
+  return {
+    page,
+    json,
+    cursorState: token
+      ? {
+          controllerId: input.controllerId,
+          deviceId: input.request.auth.device.deviceId,
+          sessionId: input.sessionId,
+          filepath: input.filepath,
+          cwd: input.cwd,
+          fingerprint: input.fingerprint,
+          revision: input.revision,
+          offset,
+          afterSequence: translation.sequence,
+          expiresAt: input.now.getTime() + input.cursorTtlMs,
+          metadata: input.metadata,
+          translation,
+        }
+      : null,
+  };
+};
+
 export function createLitterBridgeGateway(options: GatewayOptions = {}) {
   const dataDir = options.dataDir ?? resolveDataDir();
   const secret =
@@ -480,7 +1619,14 @@ export function createLitterBridgeGateway(options: GatewayOptions = {}) {
   const now = options.now ?? (() => new Date());
   const implementation = options.fetch ?? globalThis.fetch;
   const runtimeStats = options.runtimeStats ?? defaultRuntimeStats;
+  const projects = options.projects ?? listProjectsFromStore;
+  const roots = sessionRootPaths(dataDir, options.sessionRoots);
+  const cursorTtlMs = options.sessionCursorTtlMs ?? CURSOR_TTL_MS;
+  if (!Number.isSafeInteger(cursorTtlMs) || cursorTtlMs <= 0 || cursorTtlMs > 86_400_000) {
+    throw new Error("Invalid Litter bridge cursor lifetime");
+  }
   const replay = new Map<string, number>();
+  const cursors = new Map<string, SessionCursorState>();
   let revision = 0;
   let lastControlHash = "";
   let published: GatewayMetadata | null = null;
@@ -494,6 +1640,31 @@ export function createLitterBridgeGateway(options: GatewayOptions = {}) {
       if (oldest === undefined) break;
       replay.delete(oldest);
     }
+  };
+
+  const pruneCursors = (nowMs: number): void => {
+    for (const [token, state] of cursors) {
+      if (state.expiresAt <= nowMs) cursors.delete(token);
+    }
+    let retainedItems = [...cursors.values()].reduce(
+      (count, state) =>
+        count + state.translation.seenEntryIds.size + state.translation.toolOwners.size,
+      0,
+    );
+    while (cursors.size > CURSOR_STORE_LIMIT || retainedItems > CURSOR_STATE_ITEM_LIMIT) {
+      const oldest = cursors.keys().next().value;
+      if (oldest === undefined) break;
+      const state = cursors.get(oldest);
+      if (state) {
+        retainedItems -= state.translation.seenEntryIds.size + state.translation.toolOwners.size;
+      }
+      cursors.delete(oldest);
+    }
+  };
+
+  const rememberCursor = (token: string, state: SessionCursorState): void => {
+    cursors.set(token, state);
+    pruneCursors(now().getTime());
   };
 
   const buildSnapshot = async (
@@ -630,8 +1801,113 @@ export function createLitterBridgeGateway(options: GatewayOptions = {}) {
       generatedAt: now().toISOString(),
       revision,
       state,
-      capabilities: ["stats.read"],
+      capabilities: ["stats.read", "sessions.read"],
       sections: { health, status, gpus, metrics, agentRuntime },
+    });
+  };
+
+  const handleSessionRead = (
+    request: LitterBridgeSessionReadRequest,
+    requestNow: Date,
+  ): Response => {
+    pruneCursors(requestNow.getTime());
+    let filepath: string;
+    let cwd: string;
+    let sessionId: string;
+    let fingerprint: string;
+    let sessionRevision: number;
+    let offset: number;
+    let metadata: LitterBridgeSessionMetadata;
+    let translation: SessionTranslationState;
+    if (request.session) {
+      if (
+        request.session.authority !== "local-studio" ||
+        request.session.installationId !== controllerId
+      ) {
+        throw new SessionReadError("not_found", "Session identity was not found", 404);
+      }
+      const resolved = resolveSessionFile(request.session.sessionId, projects(), roots);
+      metadata = readSessionMetadata(resolved);
+      const afterMetadata = sessionFileFingerprint(resolved.filepath);
+      if (afterMetadata.value !== resolved.value) {
+        throw new SessionReadError(
+          "revision_conflict",
+          "Session changed during transfer",
+          409,
+          true,
+        );
+      }
+      filepath = resolved.filepath;
+      cwd = resolved.cwd;
+      sessionId = resolved.sessionId;
+      fingerprint = resolved.value;
+      sessionRevision = resolved.revision;
+      offset = resolved.headerEnd;
+      translation = {
+        lineage: new Map(),
+        seenEntryIds: new Set(),
+        toolOwners: new Map(),
+        sequence: 0,
+      };
+    } else {
+      const supplied = request.cursor;
+      if (!supplied) {
+        throw new SessionReadError("invalid_request", "Session cursor is invalid", 400);
+      }
+      const state = cursors.get(supplied.token);
+      if (!state || state.expiresAt <= requestNow.getTime()) {
+        cursors.delete(supplied.token);
+        throw new SessionReadError("invalid_request", "Session cursor is invalid or expired", 400);
+      }
+      if (state.controllerId !== controllerId) {
+        throw new SessionReadError("not_found", "Session cursor was not found", 404);
+      }
+      if (state.deviceId !== request.auth.device.deviceId) {
+        throw new SessionReadError("forbidden", "Session cursor belongs to another device", 403);
+      }
+      if (
+        supplied.revision !== state.revision ||
+        supplied.afterSequence !== state.afterSequence ||
+        supplied.hasMore !== true
+      ) {
+        throw new SessionReadError("invalid_request", "Session cursor is invalid", 400);
+      }
+      if (!liveProjects(projects()).some((project) => project.cwd === state.cwd)) {
+        throw new SessionReadError("not_found", "Session project was not found", 404);
+      }
+      cursors.delete(supplied.token);
+      filepath = state.filepath;
+      cwd = state.cwd;
+      sessionId = state.sessionId;
+      fingerprint = state.fingerprint;
+      sessionRevision = state.revision;
+      offset = state.offset;
+      metadata = state.metadata;
+      translation = state.translation;
+    }
+    const result = readSessionSlice({
+      request,
+      controllerId,
+      filepath,
+      cwd,
+      sessionId,
+      fingerprint,
+      revision: sessionRevision,
+      offset,
+      metadata,
+      translation,
+      now: requestNow,
+      cursorTtlMs,
+    });
+    if (result.page.cursor && result.cursorState) {
+      rememberCursor(result.page.cursor.token, result.cursorState);
+    }
+    return new Response(result.json, {
+      status: 200,
+      headers: {
+        "content-type": "application/json; charset=utf-8",
+        "cache-control": "no-store",
+      },
     });
   };
 
@@ -646,9 +1922,15 @@ export function createLitterBridgeGateway(options: GatewayOptions = {}) {
       return jsonError(code, "Gateway request body is invalid", randomUUID(), body.status);
     }
     const requestId = requestIdFrom(body.value);
-    let parsed: LitterBridgeControllerSnapshotRequest;
+    let parsed: SignedGatewayRequest;
     try {
-      parsed = Schema.decodeUnknownSync(LitterBridgeControllerSnapshotRequestSchema)(body.value);
+      if (isRecord(body.value) && body.value.type === "controller_snapshot_request") {
+        parsed = Schema.decodeUnknownSync(LitterBridgeControllerSnapshotRequestSchema)(body.value);
+      } else if (isRecord(body.value) && body.value.type === "session_read_request") {
+        parsed = Schema.decodeUnknownSync(LitterBridgeSessionReadRequestSchema)(body.value);
+      } else {
+        throw new Error("Unsupported request");
+      }
     } catch {
       const suppliedVersion = isRecord(body.value) ? body.value.protocolVersion : null;
       const code =
@@ -657,17 +1939,36 @@ export function createLitterBridgeGateway(options: GatewayOptions = {}) {
           : "invalid_request";
       return jsonError(code, "Gateway request is invalid", requestId, 400);
     }
-    const verified = verifyRequest(parsed, now());
+    const requestNow = now();
+    const verified = verifyRequest(parsed, requestNow);
     if (!verified.ok) return verified.response;
-    if (parsed.controllerId !== controllerId) {
+    if (parsed.type === "controller_snapshot_request" && parsed.controllerId !== controllerId) {
       return jsonError("not_found", "Controller identity was not found", requestId, 404);
     }
-    const nowMs = now().getTime();
+    if (
+      parsed.type === "session_read_request" &&
+      parsed.session &&
+      (parsed.session.authority !== "local-studio" ||
+        parsed.session.installationId !== controllerId)
+    ) {
+      return jsonError("not_found", "Controller identity was not found", requestId, 404);
+    }
+    const nowMs = requestNow.getTime();
     pruneReplay(nowMs);
     if (replay.has(verified.replayKey)) {
       return jsonError("replay_detected", "Request was already processed", requestId, 409);
     }
     replay.set(verified.replayKey, verified.expiresAt);
+    if (parsed.type === "session_read_request") {
+      try {
+        return handleSessionRead(parsed, requestNow);
+      } catch (error) {
+        if (error instanceof SessionReadError) {
+          return jsonError(error.code, error.message, requestId, error.status, error.retriable);
+        }
+        return jsonError("internal", "Session export failed", requestId, 500);
+      }
+    }
     try {
       return Response.json(await buildSnapshot(parsed));
     } catch {

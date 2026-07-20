@@ -1,6 +1,13 @@
 import assert from "node:assert/strict";
 import { generateKeyPairSync, sign, type KeyObject } from "node:crypto";
-import { mkdtempSync, readFileSync, statSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -8,7 +15,11 @@ import {
   canonicalLitterBridgeJson,
   createLitterBridgeGateway,
   litterBridgeBodyHash,
+  litterBridgeMessageHashPreimage,
+  litterBridgeSessionHashPreimage,
+  litterBridgeSha256Utf8,
   litterBridgeSignaturePreimage,
+  litterBridgeToolHashPreimage,
 } from "../src/litter-bridge-gateway";
 
 const NOW = new Date("2026-07-20T18:30:00.000Z");
@@ -24,14 +35,13 @@ const keyMaterial = (): { privateKey: KeyObject; publicHex: string } => {
 const signedRequest = (
   privateKey: KeyObject,
   publicHex: string,
-  overrides: Record<string, unknown> = {},
-) => {
-  const unsigned = {
+  unsigned: Record<string, unknown> = {
     type: "controller_snapshot_request",
     protocolVersion: 1,
     controllerId: CONTROLLER_ID,
-    ...overrides,
-  };
+  },
+  authOverrides: Record<string, unknown> = {},
+) => {
   const bodyHash = litterBridgeBodyHash(unsigned);
   const auth = {
     device: { deviceId: publicHex, keyId: publicHex, algorithm: "ed25519" },
@@ -41,7 +51,8 @@ const signedRequest = (
     nonce: "nonce-0123456789",
     bodyHash,
     signature: "",
-    capability: "stats.read",
+    capability: unsigned.type === "session_read_request" ? "sessions.read" : "stats.read",
+    ...authOverrides,
   };
   auth.signature = sign(
     null,
@@ -118,12 +129,294 @@ const gatewayRequest = (body: unknown, secret = SECRET): Request =>
     body: JSON.stringify(body),
   });
 
+const encodeCwdForPi = (cwd: string): string =>
+  `--${path.resolve(cwd).replace(/^\//, "").replace(/\/+/g, "-")}--`;
+
+const createSessionFixture = (
+  sessionId = "019f7ca0-1f06-78a3-b4f2-58b6672994af",
+  events?: Record<string, unknown>[],
+) => {
+  const directory = mkdtempSync(path.join(tmpdir(), "local-studio-litter-session-"));
+  const project = path.join(directory, "project");
+  const sessionRoot = path.join(directory, "sessions");
+  const sessionDirectory = path.join(sessionRoot, encodeCwdForPi(project));
+  mkdirSync(project, { recursive: true });
+  mkdirSync(sessionDirectory, { recursive: true });
+  const entries = events ?? [
+    {
+      type: "model_change",
+      id: "model-1",
+      parentId: null,
+      timestamp: "2026-07-20T18:29:01.000Z",
+      provider: "provider-a",
+      modelId: "model-a",
+    },
+    {
+      type: "thinking_level_change",
+      id: "thinking-1",
+      parentId: "model-1",
+      timestamp: "2026-07-20T18:29:02.000Z",
+      thinkingLevel: "high",
+    },
+    {
+      type: "message",
+      id: "user-1",
+      parentId: "thinking-1",
+      timestamp: "2026-07-20T18:29:03.000Z",
+      message: { role: "user", content: [{ type: "text", text: "Run the model" }] },
+    },
+    {
+      type: "message",
+      id: "assistant-1",
+      parentId: "user-1",
+      timestamp: "2026-07-20T18:29:04.000Z",
+      message: {
+        role: "assistant",
+        provider: "provider-a",
+        model: "model-a",
+        content: [
+          { type: "thinking", thinking: "Checking" },
+          { type: "text", text: "Done" },
+        ],
+      },
+    },
+  ];
+  const header = {
+    type: "session",
+    version: 3,
+    id: sessionId,
+    timestamp: "2026-07-20T18:29:00.000Z",
+    cwd: project,
+  };
+  const filepath = path.join(sessionDirectory, `2026-07-20T18-29-00_${sessionId}.jsonl`);
+  writeFileSync(
+    filepath,
+    `${[header, ...entries].map((entry) => JSON.stringify(entry)).join("\n")}\n`,
+  );
+  return {
+    directory,
+    project,
+    sessionRoot,
+    sessionDirectory,
+    sessionId,
+    filepath,
+    header,
+    entries,
+  };
+};
+
+const sessionReadRequest = (
+  privateKey: KeyObject,
+  publicHex: string,
+  input: {
+    sessionId?: string;
+    installationId?: string;
+    authority?: "local-studio" | "litter";
+    cursor?: Record<string, unknown> | null;
+    limit?: number;
+    request?: string;
+    authOverrides?: Record<string, unknown>;
+  } = {},
+) => {
+  const suffix = input.request ?? "1";
+  return signedRequest(
+    privateKey,
+    publicHex,
+    {
+      type: "session_read_request",
+      protocolVersion: 1,
+      session:
+        input.cursor === undefined
+          ? {
+              kind: "external_session",
+              authority: input.authority ?? "local-studio",
+              installationId: input.installationId ?? CONTROLLER_ID,
+              sessionId: input.sessionId ?? "019f7ca0-1f06-78a3-b4f2-58b6672994af",
+            }
+          : null,
+      cursor: input.cursor ?? null,
+      limit: input.limit ?? 200,
+    },
+    {
+      requestId: `session-request-${suffix}`,
+      nonce: `session-nonce-${suffix.padStart(16, "0")}`,
+      ...input.authOverrides,
+    },
+  );
+};
+
+const fixtureGateway = (
+  fixture: ReturnType<typeof createSessionFixture>,
+  options: Record<string, unknown> = {},
+) =>
+  createLitterBridgeGateway({
+    secret: SECRET,
+    controllerId: CONTROLLER_ID,
+    dataDir: fixture.directory,
+    now: () => new Date(NOW),
+    projects: () => [{ path: fixture.project, exists: true }],
+    sessionRoots: [fixture.sessionRoot],
+    ...options,
+  });
+
 test("canonical JSON sorts recursively and rejects fractions", () => {
   assert.equal(
     canonicalLitterBridgeJson({ z: [3, { b: true, a: null }], a: "x" }),
     '{"a":"x","z":[3,{"a":null,"b":true}]}',
   );
   assert.throws(() => canonicalLitterBridgeJson({ value: 1.5 }));
+});
+
+test("session hash preimages are explicit canonical UTF-8 vectors", () => {
+  const descriptor = {
+    messageId: "message-1",
+    parentMessageId: null,
+    sequence: 1,
+    role: "user" as const,
+    createdAt: "2026-07-20T18:29:03.000Z",
+    editedAt: null,
+    parts: [{ type: "text" as const, text: "Run the model" }],
+  };
+  const preimage = litterBridgeMessageHashPreimage(descriptor);
+  assert.equal(
+    preimage,
+    '["litter-bridge-message-v1",{"createdAt":"2026-07-20T18:29:03.000Z","editedAt":null,"messageId":"message-1","parentMessageId":null,"parts":[{"text":"Run the model","type":"text"}],"role":"user","sequence":1}]',
+  );
+  assert.equal(
+    litterBridgeSha256Utf8(preimage),
+    "457574c68b62994f9d79b9bc34d3f5835908af259d382ae6e502b9887ed59ff7",
+  );
+});
+
+test("signed sessions.read exports the exact canonical identity and deterministic hashes", async () => {
+  const fixture = createSessionFixture();
+  const keys = keyMaterial();
+  const gateway = fixtureGateway(fixture);
+  const response = await gateway.handle(
+    gatewayRequest(sessionReadRequest(keys.privateKey, keys.publicHex)),
+  );
+  assert.equal(response.status, 200);
+  const page = (await response.json()) as Record<string, any>;
+  assert.deepEqual(page.canonicalSession, {
+    kind: "external_session",
+    authority: "local-studio",
+    installationId: CONTROLLER_ID,
+    sessionId: fixture.sessionId,
+  });
+  assert.equal(page.metadata.cwd, realpathSync(fixture.project));
+  assert.equal(page.metadata.modelId, "model-a");
+  assert.equal(page.metadata.providerId, "provider-a");
+  assert.deepEqual(
+    page.messages.map((message: Record<string, unknown>) => [message.sequence, message.role]),
+    [
+      [1, "user"],
+      [2, "assistant"],
+    ],
+  );
+  assert.deepEqual(page.messages[1].parts, [
+    { type: "reasoning", text: "Checking" },
+    { type: "text", text: "Done" },
+  ]);
+  for (const message of page.messages) {
+    const { contentHash, ...descriptor } = message;
+    assert.equal(contentHash, litterBridgeSha256Utf8(litterBridgeMessageHashPreimage(descriptor)));
+  }
+  assert.deepEqual(
+    page.contentHashes.messages,
+    page.messages.map((message: Record<string, string>) => ({
+      id: message.messageId,
+      sha256: message.contentHash,
+    })),
+  );
+  const { session: sessionHash, ...orderedHashes } = page.contentHashes;
+  assert.equal(
+    sessionHash,
+    litterBridgeSha256Utf8(
+      litterBridgeSessionHashPreimage({
+        canonicalSession: page.canonicalSession,
+        metadata: page.metadata,
+        revision: page.revision,
+        messages: orderedHashes.messages,
+        tools: orderedHashes.tools,
+        attachments: orderedHashes.attachments,
+      }),
+    ),
+  );
+  assert.equal(page.cursor, null);
+});
+
+test("tool references, results, and descriptor hashes retain Pi order", async () => {
+  const fixture = createSessionFixture("tool-session-1", [
+    {
+      type: "message",
+      id: "user-1",
+      parentId: null,
+      timestamp: "2026-07-20T18:29:01.000Z",
+      message: { role: "user", content: "Check status" },
+    },
+    {
+      type: "message",
+      id: "assistant-1",
+      parentId: "user-1",
+      timestamp: "2026-07-20T18:29:02.000Z",
+      message: {
+        role: "assistant",
+        content: [
+          { type: "thinking", thinking: "Inspecting" },
+          { type: "toolCall", id: "call-1", name: "status", arguments: { z: 2, a: 1 } },
+        ],
+      },
+    },
+    {
+      type: "message",
+      id: "tool-1",
+      parentId: "assistant-1",
+      timestamp: "2026-07-20T18:29:03.000Z",
+      message: {
+        role: "toolResult",
+        toolCallId: "call-1",
+        toolName: "status",
+        content: [{ type: "text", text: "healthy" }],
+        isError: false,
+      },
+    },
+  ]);
+  const keys = keyMaterial();
+  const response = await fixtureGateway(fixture).handle(
+    gatewayRequest(
+      sessionReadRequest(keys.privateKey, keys.publicHex, {
+        sessionId: fixture.sessionId,
+        request: "tools",
+      }),
+    ),
+  );
+  assert.equal(response.status, 200);
+  const page = (await response.json()) as Record<string, any>;
+  assert.deepEqual(
+    page.messages.map((message: Record<string, unknown>) => message.role),
+    ["user", "assistant", "tool"],
+  );
+  assert.deepEqual(page.messages[1].parts, [
+    { type: "reasoning", text: "Inspecting" },
+    { type: "tool_ref", toolCallId: "call-1" },
+  ]);
+  assert.equal(page.tools[0].argumentsJson, '{"a":1,"z":2}');
+  assert.equal(page.tools.length, 1);
+  assert.equal(page.tools[0].state, "completed");
+  assert.equal(
+    page.tools[0].resultJson,
+    '{"content":[{"text":"healthy","type":"text"}],"isError":false}',
+  );
+  assert.deepEqual(
+    page.contentHashes.tools.map((entry: Record<string, string>) => entry.id),
+    ["call-1"],
+  );
+  page.tools.forEach((tool: Record<string, unknown>, index: number) => {
+    assert.equal(
+      page.contentHashes.tools[index].sha256,
+      litterBridgeSha256Utf8(litterBridgeToolHashPreimage(tool as any)),
+    );
+  });
 });
 
 test("valid signed read returns a strict complete snapshot and replay is rejected", async () => {
@@ -152,6 +445,7 @@ test("valid signed read returns a strict complete snapshot and replay is rejecte
   assert.equal(snapshot.sections.gpus.value.devices[0].memoryTotalBytes, 1024 * 1024 * 1024);
   assert.equal(snapshot.sections.metrics.value.cacheUsagePercent, 50);
   assert.equal(snapshot.sections.agentRuntime.value.persistedSessionCount, 12);
+  assert.deepEqual(snapshot.capabilities, ["stats.read", "sessions.read"]);
   const replay = await gateway.handle(gatewayRequest(body));
   assert.equal(replay.status, 409);
   assert.equal(((await replay.json()) as Record<string, any>).error.code, "replay_detected");
@@ -173,6 +467,157 @@ test("gateway secret and signed body integrity fail closed", async () => {
   const integrity = await gateway.handle(gatewayRequest(tampered));
   assert.equal(integrity.status, 401);
   assert.equal(((await integrity.json()) as Record<string, any>).error.code, "integrity_failed");
+});
+
+test("sessions.read rejects cross-controller identity, missing IDs, ambiguity, and extras", async () => {
+  const fixture = createSessionFixture();
+  const keys = keyMaterial();
+  const secondRoot = path.join(fixture.directory, "sessions-duplicate");
+  const secondDirectory = path.join(secondRoot, encodeCwdForPi(fixture.project));
+  mkdirSync(secondDirectory, { recursive: true });
+  writeFileSync(
+    path.join(secondDirectory, `duplicate_${fixture.sessionId}.jsonl`),
+    readFileSync(fixture.filepath),
+  );
+  const gateway = fixtureGateway(fixture, { sessionRoots: [fixture.sessionRoot, secondRoot] });
+  const wrongController = await gateway.handle(
+    gatewayRequest(
+      sessionReadRequest(keys.privateKey, keys.publicHex, {
+        installationId: "controller-other",
+        request: "wrong-controller",
+      }),
+    ),
+  );
+  assert.equal(wrongController.status, 404);
+  const missing = await gateway.handle(
+    gatewayRequest(
+      sessionReadRequest(keys.privateKey, keys.publicHex, {
+        sessionId: "missing-session",
+        request: "missing",
+      }),
+    ),
+  );
+  assert.equal(missing.status, 404);
+  const ambiguous = await gateway.handle(
+    gatewayRequest(
+      sessionReadRequest(keys.privateKey, keys.publicHex, {
+        sessionId: fixture.sessionId,
+        request: "ambiguous",
+      }),
+    ),
+  );
+  assert.equal(ambiguous.status, 404);
+  const strictBody = {
+    ...sessionReadRequest(keys.privateKey, keys.publicHex, { request: "extra" }),
+    unexpected: true,
+  };
+  const strict = await gateway.handle(gatewayRequest(strictBody));
+  assert.equal(strict.status, 400);
+  assert.equal(((await strict.json()) as Record<string, any>).error.code, "invalid_request");
+});
+
+test("opaque cursors reject tampering, cross-device use, and expiry", async () => {
+  const fixture = createSessionFixture();
+  const firstKeys = keyMaterial();
+  const secondKeys = keyMaterial();
+  let clock = NOW.getTime();
+  const gateway = fixtureGateway(fixture, {
+    now: () => new Date(clock),
+    sessionCursorTtlMs: 1_000,
+  });
+  const first = await gateway.handle(
+    gatewayRequest(
+      sessionReadRequest(firstKeys.privateKey, firstKeys.publicHex, {
+        limit: 1,
+        request: "cursor-first",
+      }),
+    ),
+  );
+  assert.equal(first.status, 200);
+  const firstPage = (await first.json()) as Record<string, any>;
+  assert.equal(firstPage.messages.length, 1);
+  assert.equal(typeof firstPage.cursor.token, "string");
+  assert.equal(firstPage.cursor.token.includes(fixture.filepath), false);
+  const tamperedCursor = { ...firstPage.cursor, afterSequence: firstPage.cursor.afterSequence + 1 };
+  const tampered = await gateway.handle(
+    gatewayRequest(
+      sessionReadRequest(firstKeys.privateKey, firstKeys.publicHex, {
+        cursor: tamperedCursor,
+        request: "cursor-tampered",
+      }),
+    ),
+  );
+  assert.equal(tampered.status, 400);
+  const crossDevice = await gateway.handle(
+    gatewayRequest(
+      sessionReadRequest(secondKeys.privateKey, secondKeys.publicHex, {
+        cursor: firstPage.cursor,
+        request: "cursor-device",
+      }),
+    ),
+  );
+  assert.equal(crossDevice.status, 403);
+  clock += 2_000;
+  const expired = await gateway.handle(
+    gatewayRequest(
+      sessionReadRequest(firstKeys.privateKey, firstKeys.publicHex, {
+        cursor: firstPage.cursor,
+        request: "cursor-expired",
+      }),
+    ),
+  );
+  assert.equal(expired.status, 400);
+  assert.equal(((await expired.json()) as Record<string, any>).error.code, "invalid_request");
+});
+
+test("session pages stay below the fixed response cap and continue by opaque byte state", async () => {
+  const largeText = "x".repeat(600_000);
+  const fixture = createSessionFixture("large-session-1", [
+    {
+      type: "message",
+      id: "large-user",
+      parentId: null,
+      timestamp: "2026-07-20T18:29:01.000Z",
+      message: { role: "user", content: largeText },
+    },
+    {
+      type: "message",
+      id: "large-assistant",
+      parentId: "large-user",
+      timestamp: "2026-07-20T18:29:02.000Z",
+      message: { role: "assistant", content: largeText },
+    },
+  ]);
+  const keys = keyMaterial();
+  const gateway = fixtureGateway(fixture);
+  const first = await gateway.handle(
+    gatewayRequest(
+      sessionReadRequest(keys.privateKey, keys.publicHex, {
+        sessionId: fixture.sessionId,
+        request: "large-first",
+      }),
+    ),
+  );
+  assert.equal(first.status, 200);
+  const firstBytes = Buffer.from(await first.arrayBuffer());
+  assert.ok(firstBytes.byteLength <= 1_000_000);
+  const firstPage = JSON.parse(firstBytes.toString("utf8")) as Record<string, any>;
+  assert.equal(firstPage.messages.length, 1);
+  assert.ok(firstPage.cursor);
+  const second = await gateway.handle(
+    gatewayRequest(
+      sessionReadRequest(keys.privateKey, keys.publicHex, {
+        cursor: firstPage.cursor,
+        request: "large-second",
+      }),
+    ),
+  );
+  assert.equal(second.status, 200);
+  const secondBytes = Buffer.from(await second.arrayBuffer());
+  assert.ok(secondBytes.byteLength <= 1_000_000);
+  const secondPage = JSON.parse(secondBytes.toString("utf8")) as Record<string, any>;
+  assert.equal(secondPage.messages[0].sequence, 2);
+  assert.equal(secondPage.cursor, null);
 });
 
 test("independent controller failures produce an explicit degraded partial snapshot", async () => {
