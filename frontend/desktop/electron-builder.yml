@@ -11,6 +11,8 @@ asarUnpack:
 files:
   - desktop/dist/**
   - package.json
+  - node_modules/effect/dist/**
+  - node_modules/effect/package.json
   - node_modules/@lydell/node-pty/**
   - node_modules/@lydell/node-pty-${platform}-${arch}/**
 

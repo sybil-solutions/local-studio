@@ -74,12 +74,12 @@ export function loadRuntimeStatus(
   );
 }
 
-export function abortSession(sessionId: string): Promise<void> {
+export function abortSession(sessionId: string, piSessionId?: string | null): Promise<void> {
   return Effect.runPromise(
     fetchEffect("/api/agent/abort", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ sessionId }),
+      body: JSON.stringify({ sessionId, piSessionId }),
     }).pipe(
       Effect.map(() => undefined),
       Effect.catch(() => Effect.succeed(undefined)),
@@ -117,7 +117,8 @@ export function loadCanonicalSession(
   return Effect.runPromise(
     Effect.gen(function* () {
       const params = new URLSearchParams({ cwd });
-      const tail = options.before === undefined ? (options.tail ?? DEFAULT_SESSION_TAIL) : undefined;
+      const tail =
+        options.before === undefined ? (options.tail ?? DEFAULT_SESSION_TAIL) : undefined;
       if (tail !== undefined) params.set("tail", String(tail));
       if (options.before !== undefined) params.set("before", String(options.before));
       const response = yield* fetchEffect(

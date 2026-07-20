@@ -1,10 +1,23 @@
 import { Schema } from "effect";
-import type { GoogleAccountView } from "@local-studio/agent-runtime/google-account-contract";
+import {
+  GoogleAccountResponseSchema,
+  GoogleAuthorizationResponseSchema,
+  GoogleCancellationResponseSchema,
+  type GoogleAccountResponse,
+  type GoogleAccountView,
+  type GoogleAuthorizationResponse,
+  type GoogleCancellationResponse,
+} from "@local-studio/agent-runtime/google-account-contract";
 import type { GoogleWorkspacePluginId } from "@local-studio/agent-runtime/google-workspace-binding";
+import { decodeDesktopBridgeJson, embeddedDesktopBridge } from "@/lib/embedded-desktop-bridge";
 
-export const GoogleCancellationResponseSchema = Schema.Struct({
-  cancelled: Schema.Literal(true),
-});
+const exact = { onExcessProperty: "error" } as const;
+const decodeGoogleAccount = Schema.decodeUnknownSync(GoogleAccountResponseSchema, exact);
+const decodeGoogleAuthorization = Schema.decodeUnknownSync(
+  GoogleAuthorizationResponseSchema,
+  exact,
+);
+const decodeGoogleCancellation = Schema.decodeUnknownSync(GoogleCancellationResponseSchema, exact);
 
 function responseError(body: unknown, fallback: string): string {
   if (!body || typeof body !== "object") return fallback;
@@ -21,6 +34,74 @@ export async function requestJson<T>(
   const body: unknown = await response.json().catch(() => null);
   if (!response.ok) throw new Error(responseError(body, `Request failed (${response.status})`));
   return decode(body);
+}
+
+export async function getManagedGoogleAccount(): Promise<GoogleAccountResponse> {
+  const bridge = await embeddedDesktopBridge();
+  return bridge
+    ? decodeDesktopBridgeJson(await bridge.googleAccount.get(), decodeGoogleAccount)
+    : requestJson("/api/agent/accounts/google", decodeGoogleAccount, { cache: "no-store" });
+}
+
+export async function saveManagedGoogleClient(
+  clientId: string,
+  clientSecret: string,
+): Promise<GoogleAccountResponse> {
+  const payload = JSON.stringify({ clientId, clientSecret });
+  const bridge = await embeddedDesktopBridge();
+  return bridge
+    ? decodeDesktopBridgeJson(await bridge.googleAccount.saveClient(payload), decodeGoogleAccount)
+    : requestJson("/api/agent/accounts/google", decodeGoogleAccount, {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: payload,
+      });
+}
+
+export async function disconnectManagedGoogleAccount(
+  account: GoogleWorkspacePluginId,
+): Promise<GoogleAccountResponse> {
+  const bridge = await embeddedDesktopBridge();
+  return bridge
+    ? decodeDesktopBridgeJson(await bridge.googleAccount.disconnect(account), decodeGoogleAccount)
+    : requestJson("/api/agent/accounts/google", decodeGoogleAccount, {
+        method: "DELETE",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ account }),
+      });
+}
+
+export async function beginManagedGoogleAuthorization(
+  account: GoogleWorkspacePluginId,
+): Promise<GoogleAuthorizationResponse> {
+  const bridge = await embeddedDesktopBridge();
+  return bridge
+    ? decodeDesktopBridgeJson(
+        await bridge.googleAccount.beginAuthorization(account),
+        decodeGoogleAuthorization,
+      )
+    : requestJson("/api/agent/accounts/google/authorize", decodeGoogleAuthorization, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ account }),
+      });
+}
+
+export async function cancelManagedGoogleAuthorization(
+  account: GoogleWorkspacePluginId,
+): Promise<GoogleCancellationResponse> {
+  const bridge = await embeddedDesktopBridge();
+  return bridge
+    ? decodeDesktopBridgeJson(
+        await bridge.googleAccount.cancelAuthorization(account),
+        decodeGoogleCancellation,
+      )
+    : requestJson("/api/agent/accounts/google/authorize", decodeGoogleCancellation, {
+        method: "DELETE",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ account }),
+        keepalive: true,
+      });
 }
 
 export async function openExternal(url: string): Promise<void> {

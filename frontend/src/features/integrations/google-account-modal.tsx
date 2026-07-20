@@ -1,20 +1,19 @@
 "use client";
 
 import { useCallback, useState, type ReactNode } from "react";
-import { Effect, Fiber, Schema } from "effect";
-import {
-  GoogleAccountResponseSchema,
-  GoogleAuthorizationResponseSchema,
-  type GoogleAccountView,
-} from "@local-studio/agent-runtime/google-account-contract";
+import { Effect, Fiber } from "effect";
+import { type GoogleAccountView } from "@local-studio/agent-runtime/google-account-contract";
 import type { GoogleWorkspacePluginId } from "@local-studio/agent-runtime/google-workspace-binding";
 import { Alert, UiModal, UiModalHeader } from "@/ui";
 import { KeyRound, X } from "@/ui/icon-registry";
 import { useMountSubscription } from "@/hooks/use-mount-subscription";
 import {
-  GoogleCancellationResponseSchema,
-  requestJson,
+  beginManagedGoogleAuthorization,
+  cancelManagedGoogleAuthorization,
+  disconnectManagedGoogleAccount,
+  getManagedGoogleAccount,
   openExternal,
+  saveManagedGoogleClient,
   sharedClientWarning,
 } from "./google-account-model";
 import { GoogleAccountLoadState } from "./google-account-load-state";
@@ -47,11 +46,7 @@ export function GoogleAccountModal({
 
   const refresh = useCallback(async (): Promise<boolean> => {
     try {
-      const result = await requestJson<{ account: GoogleAccountView }>(
-        "/api/agent/accounts/google",
-        Schema.decodeUnknownSync(GoogleAccountResponseSchema),
-        { cache: "no-store" },
-      );
+      const result = await getManagedGoogleAccount();
       setAccount(result.account);
       setError("");
       setClientId((current) => current || result.account.clientId || "");
@@ -77,16 +72,7 @@ export function GoogleAccountModal({
   }, [refresh]);
 
   const cancelAuthorizationRequest = useCallback(async (): Promise<void> => {
-    await requestJson(
-      "/api/agent/accounts/google/authorize",
-      Schema.decodeUnknownSync(GoogleCancellationResponseSchema),
-      {
-        method: "DELETE",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ account: accountId }),
-        keepalive: true,
-      },
-    );
+    await cancelManagedGoogleAuthorization(accountId);
   }, [accountId]);
 
   const cancelAuthorization = useCallback(async (): Promise<void> => {
@@ -125,30 +111,14 @@ export function GoogleAccountModal({
     setError("");
     try {
       if (!account?.configured || editing) {
-        const saved = await requestJson<{ account: GoogleAccountView }>(
-          "/api/agent/accounts/google",
-          Schema.decodeUnknownSync(GoogleAccountResponseSchema),
-          {
-            method: "PUT",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ clientId, clientSecret }),
-          },
-        );
+        const saved = await saveManagedGoogleClient(clientId, clientSecret);
         setAccount(saved.account);
         onChanged();
         setEditing(false);
         setClientSecret("");
       }
       lifecycle.active = true;
-      const result = await requestJson<{ authorizationUrl: string }>(
-        "/api/agent/accounts/google/authorize",
-        Schema.decodeUnknownSync(GoogleAuthorizationResponseSchema),
-        {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ account: accountId }),
-        },
-      );
+      const result = await beginManagedGoogleAuthorization(accountId);
       await openExternal(result.authorizationUrl);
       setAwaiting(true);
     } catch (connectError) {
@@ -163,15 +133,7 @@ export function GoogleAccountModal({
     setBusy(true);
     setError("");
     try {
-      const result = await requestJson<{ account: GoogleAccountView }>(
-        "/api/agent/accounts/google",
-        Schema.decodeUnknownSync(GoogleAccountResponseSchema),
-        {
-          method: "DELETE",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ account: accountId }),
-        },
-      );
+      const result = await disconnectManagedGoogleAccount(accountId);
       setAccount(result.account);
       setConfirmingDisconnect(false);
       onChanged();

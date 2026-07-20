@@ -5,6 +5,7 @@ import path from "node:path";
 import { Effect } from "effect";
 import { listProjectsFromStore } from "./projects-store";
 import { hasEnabledConnectorsSync } from "./connectors-service";
+export { resolveBundledMcpServerPath } from "./bundled-mcp-server";
 
 export type RuntimeSkillRef = {
   id?: string;
@@ -146,21 +147,6 @@ export function resolvePlanExtensionPath(): string | null {
 }
 
 /** Bundled stdio MCP servers (desktop/resources/mcp) — same ladder as extensions. */
-export function resolveBundledMcpServerPath(fileName: string): string | null {
-  const candidates = [
-    process.resourcesPath
-      ? path.join(process.resourcesPath, "desktop", "resources", "mcp", fileName)
-      : null,
-    path.resolve(process.cwd(), "frontend", "desktop", "resources", "mcp", fileName),
-    path.resolve(process.cwd(), "desktop", "resources", "mcp", fileName),
-    path.resolve(process.cwd(), "..", "frontend", "desktop", "resources", "mcp", fileName),
-  ].filter((value): value is string => Boolean(value));
-  for (const candidate of candidates) {
-    if (existsSync(candidate)) return candidate;
-  }
-  return null;
-}
-
 export function resolveConnectorsExtensionPath(): string | null {
   return resolveBundledPiExtensionPath(
     "connectors.ts",

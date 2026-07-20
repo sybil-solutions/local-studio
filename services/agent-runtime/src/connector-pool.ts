@@ -1,19 +1,35 @@
 import { connectMcp, type McpConnection, type McpToolInfo } from "./mcp-client";
 import { connectorAuthorizationHeaders } from "./connector-auth";
-import { listConnectors, type ConnectorConfig } from "./connectors-service";
+import {
+  connectorAuthorizationMatches,
+  connectorConfigurationFingerprint,
+} from "./connector-configuration";
+import { inspectConnectors, type ConnectorConfig } from "./connectors-service";
+import { catalogConnectorRuntime } from "./connector-policy";
 
-const pool = new Map<string, McpConnection>();
+const CONNECTOR_INVENTORY_ERROR = "Connector tool inventory failed";
+export const CONNECTOR_CALL_ERROR = "Connector tool call failed";
+export const CONNECTOR_PROBE_ERROR = "Connector probe failed";
+
+type PooledConnection = { connection: McpConnection; fingerprint: string };
+
+const pool = new Map<string, PooledConnection>();
 
 export class ConnectorToolDeniedError extends Error {}
 
 const toTarget = (connector: ConnectorConfig, signal?: AbortSignal) => {
   if (connector.transport === "stdio") {
+    const catalogRuntime = catalogConnectorRuntime(connector);
     return {
       transport: "stdio" as const,
       command: connector.command ?? "",
       args: [...(connector.args ?? [])],
-      env: connector.env ?? {},
-      ...(connector.cwd ? { cwd: connector.cwd } : {}),
+      env: catalogRuntime?.env ?? connector.env ?? {},
+      ...(catalogRuntime
+        ? { cwd: catalogRuntime.cwd, isolated: true }
+        : connector.cwd
+          ? { cwd: connector.cwd }
+          : {}),
     };
   }
   return {
@@ -31,31 +47,51 @@ const toTarget = (connector: ConnectorConfig, signal?: AbortSignal) => {
 };
 
 async function enabledConnector(connectorId: string): Promise<ConnectorConfig> {
-  const connector = (await listConnectors()).find((entry) => entry.id === connectorId);
+  const connector = (await inspectConnectors()).find((entry) => entry.id === connectorId);
   if (!connector) throw new Error(`Unknown connector "${connectorId}"`);
-  if (!connector.enabled) throw new Error(`Connector "${connectorId}" is disabled`);
+  if (!connector.enabled || !connector.permissionReviewed) {
+    throw new Error(`Connector "${connectorId}" is disabled`);
+  }
   return connector;
 }
 
-function allowedTools(connector: ConnectorConfig, tools: McpToolInfo[]): McpToolInfo[] {
-  if (!connector.allowTools) return tools;
+export function filterAllowedConnectorTools(
+  connector: ConnectorConfig,
+  tools: McpToolInfo[],
+): McpToolInfo[] {
+  if (!connector.permissionReviewed) return [];
   const allow = new Set(connector.allowTools);
   return tools.filter((tool) => allow.has(tool.name));
 }
 
-function assertToolAllowed(connector: ConnectorConfig, tool: string): void {
-  if (!connector.allowTools || connector.allowTools.includes(tool)) return;
+export function assertConnectorToolAllowed(connector: ConnectorConfig, tool: string): void {
+  if (connector.permissionReviewed && connector.allowTools.includes(tool)) return;
   throw new ConnectorToolDeniedError(
     `Tool "${tool}" is not allowed for connector "${connector.id}"`,
   );
 }
 
-export async function getPooledConnection(connectorId: string): Promise<McpConnection> {
-  const existing = pool.get(connectorId);
-  if (existing) return existing;
+export async function authorizedConnectorTool(
+  connectorId: string,
+  tool: string,
+): Promise<ConnectorConfig> {
   const connector = await enabledConnector(connectorId);
+  assertConnectorToolAllowed(connector, tool);
+  return connector;
+}
+
+export async function getPooledConnection(connectorId: string): Promise<McpConnection> {
+  const connector = await enabledConnector(connectorId);
+  return pooledConnection(connector);
+}
+
+function pooledConnection(connector: ConnectorConfig): McpConnection {
+  const fingerprint = connectorConfigurationFingerprint(connector);
+  const existing = pool.get(connector.id);
+  if (existing?.fingerprint === fingerprint) return existing.connection;
+  existing?.connection.close();
   const connection = connectMcp(toTarget(connector));
-  pool.set(connectorId, connection);
+  pool.set(connector.id, { connection, fingerprint });
   return connection;
 }
 
@@ -63,32 +99,34 @@ export function closePooledConnection(connectorId: string): void {
   const connection = pool.get(connectorId);
   if (!connection) return;
   pool.delete(connectorId);
-  connection.close();
+  connection.connection.close();
 }
 
 export async function listConnectorTools(connectorId: string): Promise<McpToolInfo[]> {
   const connector = await enabledConnector(connectorId);
   try {
-    const connection = await getPooledConnection(connectorId);
-    return allowedTools(connector, await connection.listTools());
-  } catch (error) {
+    const connection = pooledConnection(connector);
+    return filterAllowedConnectorTools(connector, await connection.listTools());
+  } catch {
     closePooledConnection(connectorId);
-    throw error;
+    throw new Error(CONNECTOR_INVENTORY_ERROR);
   }
 }
 
 export async function callConnectorTool(
-  connectorId: string,
+  approvedConnector: ConnectorConfig,
   tool: string,
   args: Record<string, unknown>,
 ): Promise<unknown> {
-  const connector = await enabledConnector(connectorId);
-  assertToolAllowed(connector, tool);
+  const connector = await authorizedConnectorTool(approvedConnector.id, tool);
+  if (!connectorAuthorizationMatches(connector, approvedConnector)) {
+    throw new ConnectorToolDeniedError("Connector configuration changed after approval");
+  }
   try {
-    return await (await getPooledConnection(connectorId)).callTool(tool, args);
-  } catch (error) {
-    closePooledConnection(connectorId);
-    throw error;
+    return await pooledConnection(connector).callTool(tool, args);
+  } catch {
+    closePooledConnection(connector.id);
+    throw new Error(CONNECTOR_CALL_ERROR);
   }
 }
 
@@ -101,8 +139,8 @@ export async function probeConnector(
     connection = connectMcp(toTarget(connector, signal));
     const tools = await connection.listTools();
     return { ok: true, tools };
-  } catch (error) {
-    return { ok: false, tools: [], error: error instanceof Error ? error.message : String(error) };
+  } catch {
+    return { ok: false, tools: [], error: CONNECTOR_PROBE_ERROR };
   } finally {
     connection?.close();
   }
