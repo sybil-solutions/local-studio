@@ -9,6 +9,7 @@ import {
 import { isManagedPythonBackend, managedVenvPython } from "../runtimes/managed-venv";
 import { listProcessInventory } from "./process-inventory";
 import type { Config } from "../../../config/env";
+import type { ProcessRunner } from "../../../core/command";
 
 export { extractFlagUtility as extractFlag };
 
@@ -17,8 +18,8 @@ export const detectBackend = (args: string[]): Backend | null => {
   return detectEngineFromArguments(args);
 };
 
-export const listProcesses = (): Array<{ pid: number; args: string[] }> =>
-  listProcessInventory()
+export const listProcesses = (runner?: ProcessRunner): Array<{ pid: number; args: string[] }> =>
+  listProcessInventory(runner)
     .filter((entry) => entry.args.length > 0)
     .map(({ pid, args }) => ({ pid, args }));
 

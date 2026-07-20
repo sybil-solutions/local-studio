@@ -1,4 +1,5 @@
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
+import { readFileSync, realpathSync } from "node:fs";
 import { delimiter, join, resolve } from "node:path";
 import type { Readable } from "node:stream";
 import { Effect } from "effect";
@@ -11,12 +12,18 @@ export type CommandResult = {
 
 export type RunSyncOptions = {
   timeoutMs?: number | undefined;
+  env?: NodeJS.ProcessEnv | undefined;
 };
 
 export type SpawnDetachedOptions = {
   env?: NodeJS.ProcessEnv | undefined;
   stdio: "pipe" | "ignore";
 };
+
+export type ProcessEnvironmentValue =
+  | { readonly status: "found"; readonly value: string }
+  | { readonly status: "missing" }
+  | { readonly status: "unavailable" };
 
 export interface SpawnedProcess {
   readonly pid?: number | undefined;
@@ -25,20 +32,77 @@ export interface SpawnedProcess {
   readonly stderr: Readable | null;
   on(event: "error", listener: (error: Error) => void): void;
   on(event: "exit", listener: () => void): void;
+  removeListener(event: "error", listener: (error: Error) => void): void;
+  removeListener(event: "exit", listener: () => void): void;
   unref(): void;
 }
 
 export interface ProcessRunner {
+  readProcessEnvironmentVariable(pid: number, key: string): ProcessEnvironmentValue;
   runSync(command: string, args: string[], options?: RunSyncOptions): CommandResult;
+  signalProcessGroup(processGroupId: number, signal: NodeJS.Signals): boolean;
   spawnDetached(command: string, args: string[], options: SpawnDetachedOptions): SpawnedProcess;
 }
 
+const readLinuxProcessEnvironmentVariable = (pid: number, key: string): ProcessEnvironmentValue => {
+  try {
+    const prefix = `${key}=`;
+    const entry = readFileSync(`/proc/${pid}/environ`, "utf8")
+      .split("\0")
+      .find((candidate) => candidate.startsWith(prefix));
+    return entry ? { status: "found", value: entry.slice(prefix.length) } : { status: "missing" };
+  } catch {
+    return { status: "unavailable" };
+  }
+};
+
+const readDarwinProcessEnvironmentVariable = (
+  pid: number,
+  key: string,
+): ProcessEnvironmentValue => {
+  try {
+    const command = spawnSync("ps", ["ww", "-p", String(pid), "-o", "command="], {
+      encoding: "utf8",
+    });
+    const extended = spawnSync("ps", ["eww", "-p", String(pid), "-o", "command="], {
+      encoding: "utf8",
+    });
+    if (command.status !== 0 || extended.status !== 0 || !command.stdout || !extended.stdout) {
+      return { status: "unavailable" };
+    }
+    const prefix = `${key}=`;
+    const normalizedTokens = (value: string): string[] =>
+      value.split(/\s+/).map((token) => token.replace(/^["']|["']$/g, ""));
+    if (normalizedTokens(command.stdout).some((token) => token.startsWith(prefix))) {
+      return { status: "unavailable" };
+    }
+    const values = [
+      ...new Set(
+        normalizedTokens(extended.stdout)
+          .filter((token) => token.startsWith(prefix))
+          .map((token) => token.slice(prefix.length)),
+      ),
+    ];
+    if (values.length === 0) return { status: "missing" };
+    return values.length === 1 && values[0]
+      ? { status: "found", value: values[0] }
+      : { status: "unavailable" };
+  } catch {
+    return { status: "unavailable" };
+  }
+};
+
 export const realProcessRunner: ProcessRunner = {
+  readProcessEnvironmentVariable: (pid, key) => {
+    if (process.platform === "linux") return readLinuxProcessEnvironmentVariable(pid, key);
+    if (process.platform === "darwin") return readDarwinProcessEnvironmentVariable(pid, key);
+    return { status: "unavailable" };
+  },
   runSync: (command, args, options = {}) => {
     try {
       const result = spawnSync(command, args, {
         ...(options.timeoutMs !== undefined ? { timeout: options.timeoutMs } : {}),
-        env: process.env,
+        env: options.env ?? process.env,
       });
       return {
         status: result.status,
@@ -51,6 +115,14 @@ export const realProcessRunner: ProcessRunner = {
         stdout: "",
         stderr: error instanceof Error ? error.message : String(error),
       };
+    }
+  },
+  signalProcessGroup: (processGroupId, signal) => {
+    try {
+      process.kill(-processGroupId, signal);
+      return true;
+    } catch {
+      return false;
     }
   },
   spawnDetached: (command, args, options) =>
@@ -247,4 +319,20 @@ export const resolveBinary = (binaryName: string): string | null => {
   if (!binaryName) return null;
   if (isExplicitPath(binaryName)) return Bun.which(resolve(binaryName));
   return Bun.which(binaryName, { PATH: binarySearchPath() });
+};
+
+export const resolveBinaryFromEnvironment = (
+  binaryName: string,
+  environment: NodeJS.ProcessEnv,
+): string | null => {
+  if (!binaryName) return null;
+  const resolvedBinary = isExplicitPath(binaryName)
+    ? Bun.which(resolve(binaryName))
+    : Bun.which(binaryName, { PATH: environment["PATH"] ?? "" });
+  if (!resolvedBinary) return null;
+  try {
+    return realpathSync(resolvedBinary);
+  } catch {
+    return null;
+  }
 };
