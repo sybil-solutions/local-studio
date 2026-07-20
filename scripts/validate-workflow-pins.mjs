@@ -26,6 +26,7 @@ const DYNAMIC_EXECUTABLES = new Set(["bunx", "npx", "pnpx"]);
 const SHELL_WRAPPERS = new Set(["bash", "command", "env", "eval", "sh"]);
 const ALLOWED_ENVIRONMENT = new Map([
   ["GITHUB_TOKEN", "${{ secrets.GITHUB_TOKEN }}"],
+  ["TESTED_SHA", "${{ github.sha }}"],
 ]);
 
 const location = (path) => path.join(".");

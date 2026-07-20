@@ -333,6 +333,7 @@ test("rejects shell and environment command-policy bypasses", () => {
     "        env:\n          BASH_ENV: ./scripts/evil.sh\n        run: npm ci",
     "        env:\n          npm_config_script_shell: ./scripts/evil.sh\n        run: npm ci",
     "        env:\n          GITHUB_TOKEN: attacker-controlled\n        run: semantic-release",
+    "        env:\n          TESTED_SHA: attacker-controlled\n        run: node scripts/release-revision.mjs",
   ];
   for (const step of cases) {
     assert.notEqual(
@@ -348,6 +349,17 @@ test("rejects shell and environment command-policy bypasses", () => {
       - env:
           GITHUB_TOKEN: \${{ secrets.GITHUB_TOKEN }}
         run: semantic-release
+`),
+    [],
+  );
+  assert.deepEqual(
+    validateWorkflowSource(`jobs:
+  release:
+    runs-on: ubuntu-24.04
+    steps:
+      - env:
+          TESTED_SHA: \${{ github.sha }}
+        run: node scripts/release-revision.mjs
 `),
     [],
   );
