@@ -54,6 +54,37 @@ const bridge: DesktopBridge = {
       return () => ipcRenderer.removeListener("desktop:controller-deploy-log", handler);
     },
   },
+  connectorApprovals: {
+    list: () => ipcRenderer.invoke("desktop:connector-approvals:list", "list"),
+    decide: (requestId, decision) =>
+      ipcRenderer.invoke("desktop:connector-approvals:decide", {
+        request_id: requestId,
+        decision,
+      }),
+  },
+  connectors: {
+    list: () => ipcRenderer.invoke("desktop:connectors:list", "list"),
+    save: (payload) => ipcRenderer.invoke("desktop:connectors:save", payload),
+    remove: (id) => ipcRenderer.invoke("desktop:connectors:remove", { id }),
+    probe: (id) => ipcRenderer.invoke("desktop:connectors:probe", { id }),
+  },
+  plugins: {
+    list: () => ipcRenderer.invoke("desktop:plugins:list", "list"),
+    setEnabled: (id, enabled) => ipcRenderer.invoke("desktop:plugins:set-enabled", { id, enabled }),
+  },
+  githubArtifact: {
+    status: () => ipcRenderer.invoke("desktop:github-artifact:status", "status"),
+    install: () => ipcRenderer.invoke("desktop:github-artifact:install", "install"),
+  },
+  googleAccount: {
+    get: () => ipcRenderer.invoke("desktop:google-account:get", "get"),
+    saveClient: (payload) => ipcRenderer.invoke("desktop:google-account:save-client", payload),
+    disconnect: (account) => ipcRenderer.invoke("desktop:google-account:disconnect", { account }),
+    beginAuthorization: (account) =>
+      ipcRenderer.invoke("desktop:google-account:begin-authorization", { account }),
+    cancelAuthorization: (account) =>
+      ipcRenderer.invoke("desktop:google-account:cancel-authorization", { account }),
+  },
 };
 
 contextBridge.exposeInMainWorld("localStudioDesktop", bridge);

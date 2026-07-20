@@ -23,22 +23,24 @@
     "check:deadcode": "knip",
     "check:dupes": "jscpd src",
     "check:cleanup": "npm run check:deadcode && npm run check:dupes && npm run depcheck",
+    "check:release-workflow": "node --test scripts/release-workflow.test.mjs",
     "check:ui-structure": "node scripts/validate-ui-structure.mjs",
     "check:fix": "knip --fix",
-    "desktop:build:main": "tsc -p desktop/tsconfig.json",
+    "desktop:build:main": "tsc -p desktop/tsconfig.json && node scripts/copy-desktop-executable-identity.mjs",
+    "desktop:stage:runtime": "node scripts/stage-desktop-runtime.mjs",
     "desktop:start": "electron desktop/dist/main.js",
     "desktop:start:dev": "LOCAL_STUDIO_DESKTOP_DEV_SERVER_URL=http://127.0.0.1:3000 electron desktop/dist/main.js",
     "desktop:start:dev:beta": "LOCAL_STUDIO_DESKTOP_APP_NAME=\"Local Studio Dev\" LOCAL_STUDIO_DESKTOP_USER_DATA_DIR=\"$HOME/Library/Application Support/Local Studio Dev\" LOCAL_STUDIO_DESKTOP_DISABLE_AUTO_UPDATE=true LOCAL_STUDIO_DESKTOP_DEV_SERVER_URL=http://127.0.0.1:3001 electron desktop/dist/main.js",
     "desktop:build": "npm run build && npm run desktop:build:main",
     "desktop:dev": "npm run desktop:build:main && concurrently -k -n NEXT,ELECTRON -c cyan,magenta \"npm run dev\" \"node -e \\\"setTimeout(() => process.exit(0), 3000)\\\" && npm run desktop:start:dev\"",
     "desktop:dev:beta": "npm run desktop:build:main && concurrently -k -n NEXT,ELECTRON -c cyan,magenta \"PORT=3001 npm run dev\" \"node -e \\\"setTimeout(() => process.exit(0), 3000)\\\" && npm run desktop:start:dev:beta\"",
-    "desktop:dist": "npm run desktop:build && electron-builder --config desktop/electron-builder.yml",
-    "desktop:dist:notarized": "npm run desktop:build && electron-builder --config desktop/electron-builder.yml --config.mac.notarize=true",
-    "desktop:pack": "npm run desktop:build && electron-builder --dir --config desktop/electron-builder.yml",
+    "desktop:dist": "npm run desktop:build && node scripts/electron-builder.mjs --config desktop/electron-builder.yml",
+    "desktop:dist:notarized": "npm run desktop:build && node scripts/electron-builder.mjs --config desktop/electron-builder.yml --config.mac.notarize=true",
+    "desktop:pack": "npm run desktop:build && node scripts/electron-builder.mjs --dir --config desktop/electron-builder.yml",
     "typecheck": "tsc --noEmit",
     "typecheck:desktop": "tsc -p desktop/tsconfig.json",
     "check:cycles": "madge --extensions ts,tsx --circular src",
-    "check:static": "npm run lint && npm run typecheck && npm run typecheck:desktop && npm run check:cycles && npm run check:ui-structure",
+    "check:static": "npm run lint && npm run typecheck && npm run typecheck:desktop && npm run check:cycles && npm run check:release-workflow && npm run check:ui-structure",
     "check:quality": "node scripts/validate-package-json.mjs && npm run check:static && npm run check:cleanup && npm run build",
     "precommit": "lint-staged --config .lintstagedrc.json && npm run typecheck"
   },
@@ -98,5 +100,12 @@
   "overrides": {
     "postcss": "^8.5.10"
   },
-  "main": "desktop/dist/main.js"
+  "main": "desktop/dist/main.js",
+  "optionalDependencies": {
+    "node-bin-darwin-arm64": "24.18.0",
+    "node-darwin-x64": "24.18.0",
+    "node-linux-arm64": "24.18.0",
+    "node-linux-x64": "24.18.0",
+    "node-win-x64": "24.18.0"
+  }
 }

@@ -55,11 +55,21 @@ export const PluginRuntimeResponseSchema = Schema.Struct({
   plugins: Schema.Array(PluginRuntimeViewSchema),
 });
 
+export const PluginEnabledInputSchema = Schema.Struct({
+  enabled: Schema.Boolean,
+});
+export const PluginActivationInputSchema = Schema.Struct({
+  id: Schema.String,
+  ...PluginEnabledInputSchema.fields,
+});
+
 export type PluginToolState = typeof PluginToolStateSchema.Type;
 export type PluginToolsView = typeof PluginToolsViewSchema.Type;
 export type PluginHostCapability = typeof PluginHostCapabilitySchema.Type;
 export type PluginRuntimeView = typeof PluginRuntimeViewSchema.Type;
+export type PluginRuntimeResponse = typeof PluginRuntimeResponseSchema.Type;
+export type PluginEnabledInput = typeof PluginEnabledInputSchema.Type;
+export type PluginActivationInput = typeof PluginActivationInputSchema.Type;
 export type PluginActivationResult = {
   plugins: PluginRuntimeView[];
-  connectorIds: string[];
 };

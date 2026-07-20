@@ -6,6 +6,7 @@ const config = {
     "desktop/app-identity.ts",
     "desktop/resources/pi-extensions/*.ts",
     "src/**/*.test.ts",
+    "scripts/electron-builder.mjs",
   ],
   project: ["src/**/*.{ts,tsx}", "desktop/**/*.{ts,tsx}"],
   ignore: [".next/**", "node_modules/**"],

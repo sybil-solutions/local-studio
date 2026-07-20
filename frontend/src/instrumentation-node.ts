@@ -2,8 +2,10 @@
 // dynamically behind the NEXT_RUNTIME gate) so the edge-runtime compile of
 // instrumentation.ts never sees the `node:net` import.
 import { Effect } from "effect";
+import { registerConnectorApprovalProcessIpc } from "./instrumentation-connector-approvals";
 
 export function register(): Promise<void> {
+  registerConnectorApprovalProcessIpc();
   return Effect.runPromise(
     Effect.gen(function* () {
       const net = yield* Effect.tryPromise({
