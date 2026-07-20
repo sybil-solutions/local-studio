@@ -63,7 +63,13 @@ test("binds release publication and write permissions to the tested revision", (
   const revision = release.jobs.release.steps.find((step) => step.id === "revision");
   const publication = release.jobs.release.steps.find((step) => step.name === "Release");
   assert.deepEqual(ci.permissions, { contents: "read" });
-  assert.deepEqual(ci.jobs.release.needs, ["gates", "controller", "frontend", "agent-runtime"]);
+  assert.deepEqual(ci.jobs.release.needs, [
+    "gates",
+    "controller",
+    "frontend",
+    "agent-runtime",
+    "desktop-smoke",
+  ]);
   assert.deepEqual(ci.jobs.release.permissions, {
     contents: "write",
     issues: "write",
