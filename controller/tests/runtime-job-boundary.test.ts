@@ -4,8 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { EngineJob } from "@local-studio/contracts/system";
 import { Effect, Schedule } from "effect";
-import type { ControllerRuntime } from "../../../core/effect-runtime";
-import type { createApp } from "../../../http/app";
+import type { ControllerRuntime } from "../src/core/effect-runtime";
+import type { createApp } from "../src/http/app";
 
 const BASE_ENV_KEYS = [
   "LOCAL_STUDIO_DATA_DIR",
@@ -62,9 +62,9 @@ afterEach(async () => {
 
 const createTestApp = async (): Promise<ReturnType<typeof createApp>> => {
   const [{ AppContextService }, { createControllerRuntime }, { createApp }] = await Promise.all([
-    import("../../../app-context"),
-    import("../../../core/effect-runtime"),
-    import("../../../http/app"),
+    import("../src/app-context"),
+    import("../src/core/effect-runtime"),
+    import("../src/http/app"),
   ]);
   controllerRuntime = createControllerRuntime();
   const context = await controllerRuntime.runPromise(AppContextService);
