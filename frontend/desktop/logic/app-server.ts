@@ -2,7 +2,12 @@ import { app } from "electron";
 import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fork, type ChildProcess } from "node:child_process";
-import { DESKTOP_CONFIG, resolveStandaloneBaseDir, resolveStaticAssetsSource } from "../configs";
+import {
+  DESKTOP_CONFIG,
+  resolvePackagedRuntimeEnvironment,
+  resolveStandaloneBaseDir,
+  resolveStaticAssetsSource,
+} from "../configs";
 import type { DesktopServerRuntime } from "../types";
 import { log } from "../helpers/logger";
 import { registerOAuthVault } from "./oauth-vault";
@@ -13,6 +18,11 @@ import {
   stopAgentRuntime,
   type AgentRuntimeHandle,
 } from "./agent-runtime-server";
+import {
+  childProcessConnectorApprovalTransport,
+  createConnectorApprovalProcessClient,
+  type ConnectorApprovalProcessClient,
+} from "./connector-approval-ipc-client";
 
 // The most recently forked embedded server. A single process-exit hook kills
 // whichever child is current — registering a fresh once("exit") per (re)start
@@ -26,6 +36,7 @@ process.once("exit", () => {
 
 interface ServerHandle {
   agentRuntime: AgentRuntimeHandle;
+  connectorApprovals?: ConnectorApprovalProcessClient;
   runtime: DesktopServerRuntime;
   process?: ChildProcess;
 }
@@ -222,6 +233,14 @@ export async function startFrontendServer(
       LOCAL_STUDIO_DESKTOP: "1",
       LOCAL_STUDIO_DATA_DIR: DESKTOP_CONFIG.userDataDir,
       LOCAL_STUDIO_RESOURCES_PATH: process.resourcesPath,
+      ...resolvePackagedRuntimeEnvironment(),
+      LOCAL_STUDIO_SSH_REMOTE_MCP_PATH: path.join(
+        process.resourcesPath,
+        "desktop",
+        "resources",
+        "mcp",
+        "ssh-remote.mjs",
+      ),
       LOCAL_STUDIO_AGENT_CWD: process.env.LOCAL_STUDIO_AGENT_CWD || app.getPath("home"),
       LOCAL_STUDIO_AGENT_RUNTIME_URL: agentRuntime.url,
       LOCAL_STUDIO_FRONTEND_BASE: url,
@@ -229,6 +248,9 @@ export async function startFrontendServer(
   });
 
   registerOAuthVault(child, DESKTOP_CONFIG.userDataDir);
+  const connectorApprovals = createConnectorApprovalProcessClient(
+    childProcessConnectorApprovalTransport(child),
+  );
 
   child.stdout?.on("data", (chunk: Buffer | string) => {
     log.info(`frontend: ${String(chunk).trim()}`);
@@ -263,6 +285,7 @@ export async function startFrontendServer(
   } catch (error) {
     await stopFrontendServer({
       agentRuntime,
+      connectorApprovals,
       process: child,
       runtime: { mode: "embedded-standalone", port, url },
     });
@@ -271,6 +294,7 @@ export async function startFrontendServer(
 
   return {
     agentRuntime,
+    connectorApprovals,
     runtime: {
       mode: "embedded-standalone",
       port,
@@ -282,6 +306,7 @@ export async function startFrontendServer(
 
 export async function stopFrontendServer(handle?: ServerHandle): Promise<void> {
   if (!handle) return;
+  handle.connectorApprovals?.close();
   if (handle.process) {
     const child = handle.process;
     const pid = child.pid;

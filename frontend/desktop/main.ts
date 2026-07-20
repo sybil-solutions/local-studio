@@ -1,7 +1,17 @@
 import "./app-identity";
-import { app, dialog, globalShortcut, ipcMain, shell, type BrowserWindow } from "electron";
+import {
+  app,
+  BrowserWindow,
+  dialog,
+  globalShortcut,
+  ipcMain,
+  shell,
+  type IpcMainInvokeEvent,
+} from "electron";
 import { existsSync, readFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
 import path from "node:path";
+import { Effect } from "effect";
 import type { DesktopAppState } from "./types";
 import { DESKTOP_CONFIG } from "./configs";
 import { writeJsonAtomic } from "./helpers/fs-json";
@@ -15,6 +25,7 @@ import { addProject, listProjectsWithMeta, removeProject } from "./logic/project
 import { deployController } from "./logic/controller-deploy";
 import {
   hideQuickPanel,
+  getQuickPanelWindow,
   resetQuickPanel,
   resizeQuickPanelToHome,
   resizeQuickPanelToThread,
@@ -31,6 +42,24 @@ import {
   resizePty,
   writePty,
 } from "./logic/pty-manager";
+import {
+  decodeConnectorApprovalDecisionBridgeInput,
+  decodeConnectorApprovalListBridgeInput,
+  decodeConnectorListBridgeInput,
+  decodeConnectorProbeBridgeInput,
+  decodeConnectorRemoveBridgeInput,
+  decodeConnectorSaveBridgeInput,
+  decodeGoogleAccountGetBridgeInput,
+  decodeGoogleAccountOperationBridgeInput,
+  decodeGoogleClientSaveBridgeInput,
+  decodePluginListBridgeInput,
+  decodePluginSetEnabledBridgeInput,
+} from "./logic/connector-approval-ipc-contract";
+import {
+  allowsConnectorApprovalSender,
+  allowsConnectorManagementSender,
+} from "./logic/connector-approval-ipc-sender";
+import { rendererNavigationGeneration } from "./logic/renderer-navigation-generation";
 
 let appState: DesktopAppState = "starting";
 let mainWindow: BrowserWindow | null = null;
@@ -202,13 +231,211 @@ async function restartFrontendServer(port?: number): Promise<void> {
   }
 }
 
+type TrustedConnectorPin = {
+  server: ServerHandle;
+  client: NonNullable<ServerHandle["connectorApprovals"]>;
+  senderWindow: BrowserWindow;
+  senderFrame: NonNullable<IpcMainInvokeEvent["senderFrame"]>;
+  senderUrl: string;
+  navigationGeneration: number;
+  allowQuickPanel: boolean;
+};
+
+function isTrustedConnectorEvent(event: IpcMainInvokeEvent, allowQuickPanel: boolean): boolean {
+  if (!frontendServer) return false;
+  const senderFrame = event.senderFrame;
+  if (!senderFrame) return false;
+  const senderWindow = BrowserWindow.fromWebContents(event.sender);
+  const input = {
+    currentFrontendUrl: frontendServer.runtime.url,
+    mainWindow,
+    quickPanelWindow: getQuickPanelWindow(),
+    senderWindow,
+    senderFrame,
+    mainFrame: event.sender.mainFrame,
+    senderUrl: senderFrame.url,
+    senderDestroyed: event.sender.isDestroyed(),
+    senderWindowDestroyed: senderWindow?.isDestroyed() ?? true,
+  };
+  return allowQuickPanel
+    ? allowsConnectorApprovalSender(input)
+    : allowsConnectorManagementSender(input);
+}
+
+function trustedConnectorPin(
+  event: IpcMainInvokeEvent,
+  allowQuickPanel: boolean,
+): TrustedConnectorPin {
+  const server = frontendServer;
+  const client = server?.connectorApprovals;
+  const senderWindow = BrowserWindow.fromWebContents(event.sender);
+  const senderFrame = event.senderFrame;
+  if (!server || !client || !senderWindow || !senderFrame) {
+    throw new Error("Private connector transport is unavailable");
+  }
+  if (!isTrustedConnectorEvent(event, allowQuickPanel)) {
+    throw new Error("Private connector sender is unavailable");
+  }
+  return {
+    server,
+    client,
+    senderWindow,
+    senderFrame,
+    senderUrl: senderFrame.url,
+    navigationGeneration: rendererNavigationGeneration(event.sender),
+    allowQuickPanel,
+  };
+}
+
+function connectorPinIsCurrent(event: IpcMainInvokeEvent, pin: TrustedConnectorPin): boolean {
+  return (
+    frontendServer === pin.server &&
+    frontendServer.connectorApprovals === pin.client &&
+    BrowserWindow.fromWebContents(event.sender) === pin.senderWindow &&
+    event.senderFrame === pin.senderFrame &&
+    event.sender.mainFrame === pin.senderFrame &&
+    pin.senderFrame.url === pin.senderUrl &&
+    rendererNavigationGeneration(event.sender) === pin.navigationGeneration &&
+    isTrustedConnectorEvent(event, pin.allowQuickPanel)
+  );
+}
+
+async function runPinnedConnectorEffect<A>(
+  event: IpcMainInvokeEvent,
+  pin: TrustedConnectorPin,
+  effect: Effect.Effect<A, unknown>,
+): Promise<A> {
+  const abortController = new AbortController();
+  const abort = () => abortController.abort();
+  const abortNavigation = (
+    _event: Electron.Event,
+    _url: string,
+    _inPlace: boolean,
+    main: boolean,
+  ) => {
+    if (main) abort();
+  };
+  event.sender.once("destroyed", abort);
+  event.sender.on("did-start-navigation", abortNavigation);
+  try {
+    const result = await Effect.runPromise(effect, { signal: abortController.signal });
+    if (!connectorPinIsCurrent(event, pin)) throw new Error("Private connector sender changed");
+    return result;
+  } finally {
+    event.sender.off("destroyed", abort);
+    event.sender.off("did-start-navigation", abortNavigation);
+  }
+}
+
+async function runConnectorRequest<A>(
+  event: IpcMainInvokeEvent,
+  allowQuickPanel: boolean,
+  request: (client: TrustedConnectorPin["client"]) => Effect.Effect<A, unknown>,
+): Promise<A> {
+  const pin = trustedConnectorPin(event, allowQuickPanel);
+  return runPinnedConnectorEffect(event, pin, request(pin.client));
+}
+
+async function decideConnectorApproval(
+  event: IpcMainInvokeEvent,
+  requestId: string,
+  decision: "approve" | "deny",
+): Promise<void> {
+  const pin = trustedConnectorPin(event, true);
+  const transactionId = randomUUID();
+  let released = false;
+  try {
+    await runPinnedConnectorEffect(
+      event,
+      pin,
+      pin.client.prepareDecision(transactionId, requestId, decision),
+    );
+    await runPinnedConnectorEffect(event, pin, pin.client.armDecision(transactionId));
+    if (!connectorPinIsCurrent(event, pin)) throw new Error("Private connector sender changed");
+    await Effect.runPromise(pin.client.commitDecision(transactionId));
+    released = true;
+  } finally {
+    if (!released) {
+      await Effect.runPromise(
+        pin.client.cancelDecision(transactionId).pipe(Effect.catch(() => Effect.void)),
+      );
+    }
+  }
+}
+
 function registerIpcHandlers(): void {
   ipcMain.handle("desktop:get-runtime", async () => ({
     platform: process.platform,
     appVersion: app.getVersion(),
     chromeVersion: process.versions.chrome,
     electronVersion: process.versions.electron,
+    mode: frontendServer?.runtime.mode,
   }));
+
+  ipcMain.handle("desktop:connector-approvals:list", async (event, input: unknown) => {
+    decodeConnectorApprovalListBridgeInput(input);
+    return runConnectorRequest(event, true, (client) => client.list());
+  });
+
+  ipcMain.handle("desktop:connector-approvals:decide", async (event, input: unknown) => {
+    const decision = decodeConnectorApprovalDecisionBridgeInput(input);
+    await decideConnectorApproval(event, decision.request_id, decision.decision);
+  });
+
+  ipcMain.handle("desktop:connectors:list", async (event, input: unknown) => {
+    decodeConnectorListBridgeInput(input);
+    return runConnectorRequest(event, false, (client) => client.listConnectors());
+  });
+
+  ipcMain.handle("desktop:connectors:save", async (event, input: unknown) => {
+    const payload = decodeConnectorSaveBridgeInput(input);
+    return runConnectorRequest(event, false, (client) => client.saveConnector(payload));
+  });
+
+  ipcMain.handle("desktop:connectors:remove", async (event, input: unknown) => {
+    const { id } = decodeConnectorRemoveBridgeInput(input);
+    return runConnectorRequest(event, false, (client) => client.removeConnector(id));
+  });
+
+  ipcMain.handle("desktop:connectors:probe", async (event, input: unknown) => {
+    const { id } = decodeConnectorProbeBridgeInput(input);
+    return runConnectorRequest(event, false, (client) => client.probeConnector(id));
+  });
+
+  ipcMain.handle("desktop:plugins:list", async (event, input: unknown) => {
+    decodePluginListBridgeInput(input);
+    return runConnectorRequest(event, false, (client) => client.listPlugins());
+  });
+
+  ipcMain.handle("desktop:plugins:set-enabled", async (event, input: unknown) => {
+    const { id, enabled } = decodePluginSetEnabledBridgeInput(input);
+    return runConnectorRequest(event, false, (client) => client.setPluginEnabled(id, enabled));
+  });
+
+  ipcMain.handle("desktop:google-account:get", async (event, input: unknown) => {
+    decodeGoogleAccountGetBridgeInput(input);
+    return runConnectorRequest(event, false, (client) => client.getGoogleAccount());
+  });
+
+  ipcMain.handle("desktop:google-account:save-client", async (event, input: unknown) => {
+    const payload = decodeGoogleClientSaveBridgeInput(input);
+    return runConnectorRequest(event, false, (client) => client.saveGoogleClient(payload));
+  });
+
+  ipcMain.handle("desktop:google-account:disconnect", async (event, input: unknown) => {
+    const { account } = decodeGoogleAccountOperationBridgeInput(input);
+    return runConnectorRequest(event, false, (client) => client.disconnectGoogleAccount(account));
+  });
+
+  ipcMain.handle("desktop:google-account:begin-authorization", async (event, input: unknown) => {
+    const { account } = decodeGoogleAccountOperationBridgeInput(input);
+    return runConnectorRequest(event, false, (client) => client.beginGoogleAuthorization(account));
+  });
+
+  ipcMain.handle("desktop:google-account:cancel-authorization", async (event, input: unknown) => {
+    const { account } = decodeGoogleAccountOperationBridgeInput(input);
+    return runConnectorRequest(event, false, (client) => client.cancelGoogleAuthorization(account));
+  });
 
   ipcMain.handle("desktop:open-external", async (_, url: string) => {
     if (!isHttpUrl(url)) return false;

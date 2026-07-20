@@ -1,97 +1,67 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { Effect, Schema } from "effect";
 import {
-  disconnectGoogleAccount,
-  getGoogleAccount,
-  GoogleAccountError,
-  saveGoogleClient,
-} from "@local-studio/agent-runtime/google-account";
-import { closePooledConnection } from "@local-studio/agent-runtime/connector-pool";
-import { disableGoogleWorkspaceAdapter } from "@local-studio/agent-runtime/google-workspace-adapter";
+  GoogleAccountInputSchema,
+  GoogleClientInputSchema,
+} from "@local-studio/agent-runtime/google-account-contract";
 import {
-  GOOGLE_WORKSPACE_BINDINGS,
-  GOOGLE_WORKSPACE_PLUGIN_IDS,
-} from "@local-studio/agent-runtime/google-workspace-binding";
+  disconnectManagedGoogleAccount,
+  getManagedGoogleAccount,
+  saveManagedGoogleClient,
+} from "@local-studio/agent-runtime/settings-management";
+import { denyEmbeddedDesktopHttp } from "@/lib/auth/embedded-desktop-http";
 import { requireApiAccess } from "@/lib/auth/guard";
+import { settingsManagementFailure } from "@/lib/settings-management-http";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const GoogleClientInputSchema = Schema.Struct({
-  clientId: Schema.String,
-  clientSecret: Schema.optional(Schema.String),
-});
-
-const GoogleAccountInputSchema = Schema.Struct({
-  account: Schema.Union([Schema.Literal("gmail"), Schema.Literal("google-calendar")]),
-});
-
-function failure(error: unknown) {
-  const status = error instanceof GoogleAccountError ? error.status : 500;
-  return NextResponse.json(
-    { error: error instanceof Error ? error.message : "Google account failed" },
-    { status },
-  );
-}
-
-function closeGoogleConnections(): void {
-  GOOGLE_WORKSPACE_PLUGIN_IDS.forEach((id) =>
-    closePooledConnection(GOOGLE_WORKSPACE_BINDINGS[id].connectorId),
-  );
-}
+const exact = { onExcessProperty: "error" } as const;
 
 export async function GET(request: NextRequest) {
+  const desktopDenied = denyEmbeddedDesktopHttp();
+  if (desktopDenied) return desktopDenied;
   const denied = requireApiAccess(request);
   if (denied) return denied;
   try {
-    return NextResponse.json({ account: await Effect.runPromise(getGoogleAccount()) });
+    return NextResponse.json(await Effect.runPromise(getManagedGoogleAccount()));
   } catch (error) {
-    return failure(error);
+    return settingsManagementFailure(error, "Google account failed");
   }
 }
 
 export async function PUT(request: NextRequest) {
+  const desktopDenied = denyEmbeddedDesktopHttp();
+  if (desktopDenied) return desktopDenied;
   const denied = requireApiAccess(request);
   if (denied) return denied;
   let input: typeof GoogleClientInputSchema.Type;
   try {
-    input = Schema.decodeUnknownSync(GoogleClientInputSchema)(await request.json());
+    input = Schema.decodeUnknownSync(GoogleClientInputSchema, exact)(await request.json());
   } catch {
     return NextResponse.json({ error: "clientId must be a string" }, { status: 400 });
   }
   try {
-    const account = await Effect.runPromise(saveGoogleClient(input));
-    return NextResponse.json({ account });
+    return NextResponse.json(await Effect.runPromise(saveManagedGoogleClient(input)));
   } catch (error) {
-    return failure(error);
-  } finally {
-    closeGoogleConnections();
+    return settingsManagementFailure(error, "Google account failed");
   }
 }
 
 export async function DELETE(request: NextRequest) {
+  const desktopDenied = denyEmbeddedDesktopHttp();
+  if (desktopDenied) return desktopDenied;
   const denied = requireApiAccess(request);
   if (denied) return denied;
   let input: typeof GoogleAccountInputSchema.Type;
   try {
-    input = Schema.decodeUnknownSync(GoogleAccountInputSchema)(await request.json());
+    input = Schema.decodeUnknownSync(GoogleAccountInputSchema, exact)(await request.json());
   } catch {
     return NextResponse.json({ error: "account is required" }, { status: 400 });
   }
   try {
-    const account = await Effect.runPromise(
-      Effect.gen(function* () {
-        const disconnected = yield* disconnectGoogleAccount(input.account);
-        yield* disableGoogleWorkspaceAdapter(input.account).pipe(
-          Effect.mapError((error) => new GoogleAccountError(500, error.message)),
-        );
-        return disconnected;
-      }),
-    );
-    return NextResponse.json({ account });
+    return NextResponse.json(await Effect.runPromise(disconnectManagedGoogleAccount(input)));
   } catch (error) {
-    return failure(error);
-  } finally {
-    closeGoogleConnections();
+    return settingsManagementFailure(error, "Google account failed");
   }
 }

@@ -3,6 +3,8 @@ productName: Local Studio
 asar: true
 
 afterPack: ./scripts/electron-builder-after-pack.mjs
+afterSign: ./scripts/electron-builder-after-sign.mjs
+beforePack: ./scripts/stage-desktop-runtime.mjs
 
 asarUnpack:
   - "node_modules/@lydell/**/*.node"
@@ -11,10 +13,16 @@ asarUnpack:
 files:
   - desktop/dist/**
   - package.json
+  - node_modules/effect/dist/**
+  - node_modules/effect/package.json
   - node_modules/@lydell/node-pty/**
   - node_modules/@lydell/node-pty-${platform}-${arch}/**
 
 extraResources:
+  - from: .desktop-runtime/${os}-${arch}
+    to: app/runtime
+    filter:
+      - "**/*"
   - from: ../services/agent-runtime/dist/standalone.mjs
     to: app/agent-runtime/server.mjs
   - from: .next/standalone

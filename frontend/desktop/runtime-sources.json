@@ -1,0 +1,90 @@
+{
+  "format": "local-studio-runtime-sources-v2",
+  "nodeVersion": "24.18.0",
+  "license": {
+    "name": "Node.js LICENSE",
+    "sha256": "148eacf7863ef4329224a29398623077200a27194aa075569faf4a0a85566ca5"
+  },
+  "targets": {
+    "darwin-arm64": {
+      "package": {
+        "name": "node-bin-darwin-arm64",
+        "resolved": "https://registry.npmjs.org/node-bin-darwin-arm64/-/node-bin-darwin-arm64-24.18.0.tgz",
+        "integrity": "sha512-zY09C0MTSWkPvJdDN1AnMPFS4KXBPcvhiAElVTikFPW3CVL91hidXMWhARtMabpzgyTTJgH4Nz5WZ4ves4yvZw=="
+      },
+      "upstream": {
+        "url": "https://nodejs.org/dist/v24.18.0/node-v24.18.0-darwin-arm64.tar.gz",
+        "sha256": "e1a97e14c99c803e96c7339403282ea05a499c32f8d83defe9ef5ec66f979ed1",
+        "executableSha256": "ee6fb0e015284d83a91e8ec5213f43a157f8a392b58555301682892ba928c04a",
+        "codeIdentity": {
+          "algorithm": "macho-unsigned-v1",
+          "digest": "40700d6e4d7db19f91765ab01997ef5105edfc5604d1ba72e40689f027143d1a"
+        }
+      }
+    },
+    "darwin-x64": {
+      "package": {
+        "name": "node-darwin-x64",
+        "resolved": "https://registry.npmjs.org/node-darwin-x64/-/node-darwin-x64-24.18.0.tgz",
+        "integrity": "sha512-cmF5odA+EWLqMcjAQ9BYKfI67DQ8p3o11pvgQmgyReKAWFOWP31L8BROXw89p5tH74kzKxKvMmu2o94ZxRuENQ=="
+      },
+      "upstream": {
+        "url": "https://nodejs.org/dist/v24.18.0/node-v24.18.0-darwin-x64.tar.gz",
+        "sha256": "dfd0dbd3e721503434df7b7205e719f61b3a3a31b2bcf9729b8b91fea240f080",
+        "executableSha256": "c5afe80c9fd47c0e1ba3a7221173d061dae04577acc67e21e945d16e34c696c8",
+        "codeIdentity": {
+          "algorithm": "macho-unsigned-v1",
+          "digest": "d0a7c8d6bbd664381711065f9bfeb598f48a02d9baac37d78d55ddcce4caf17d"
+        }
+      }
+    },
+    "linux-arm64": {
+      "package": {
+        "name": "node-linux-arm64",
+        "resolved": "https://registry.npmjs.org/node-linux-arm64/-/node-linux-arm64-24.18.0.tgz",
+        "integrity": "sha512-H0vLI6tjOV96F7exdnh4BhkytUODZU9V3bSizWXLydCSwKdwBPRcCPyxK8Lu2fWuSRfiAXsEYkxLVKs+MuoHKQ=="
+      },
+      "upstream": {
+        "url": "https://nodejs.org/dist/v24.18.0/node-v24.18.0-linux-arm64.tar.xz",
+        "sha256": "58c9520501f6ae2b52d5b210444e24b9d0c029a58c5011b797bc1fe7105886f6",
+        "executableSha256": "6bf69d0eda41a12030d5f28d958cd09ce323bc0c13f1ab4d8bb426933aa08812",
+        "codeIdentity": {
+          "algorithm": "sha256-v1",
+          "digest": "6bf69d0eda41a12030d5f28d958cd09ce323bc0c13f1ab4d8bb426933aa08812"
+        }
+      }
+    },
+    "linux-x64": {
+      "package": {
+        "name": "node-linux-x64",
+        "resolved": "https://registry.npmjs.org/node-linux-x64/-/node-linux-x64-24.18.0.tgz",
+        "integrity": "sha512-K+N5i6l+NYUOlATC3bSZGTgmdDizdW/0f03nz23Vz7pmLeGwpcCVnpZkoFAIFUGFT0/8YrSBUxswo1wucXb0/w=="
+      },
+      "upstream": {
+        "url": "https://nodejs.org/dist/v24.18.0/node-v24.18.0-linux-x64.tar.xz",
+        "sha256": "55aa7153f9d88f28d765fcdad5ae6945b5c0f98a36881703817e4c450fa76742",
+        "executableSha256": "41a74efb34cbde5c7632cdac0cf8bd1a14d0b8d73dc1e82755014d9a9ce70f5c",
+        "codeIdentity": {
+          "algorithm": "sha256-v1",
+          "digest": "41a74efb34cbde5c7632cdac0cf8bd1a14d0b8d73dc1e82755014d9a9ce70f5c"
+        }
+      }
+    },
+    "win32-x64": {
+      "package": {
+        "name": "node-win-x64",
+        "resolved": "https://registry.npmjs.org/node-win-x64/-/node-win-x64-24.18.0.tgz",
+        "integrity": "sha512-vcc8lNCXE6HCMiUZNscutkJ9a+g+8uZN8tI0gz15B4OWTjpWYpJKo9U9UjsE0q+PIVSl71zZ09Solh9In9FOIg=="
+      },
+      "upstream": {
+        "url": "https://nodejs.org/dist/v24.18.0/win-x64/node.exe",
+        "sha256": "9a4eb5f1c29c6a2e93852ead46b999e284a6a5ca8bab4d4e241d587d025a52de",
+        "executableSha256": "9a4eb5f1c29c6a2e93852ead46b999e284a6a5ca8bab4d4e241d587d025a52de",
+        "codeIdentity": {
+          "algorithm": "pe-authenticode-v1",
+          "digest": "d8666eca32257f9e3f6d941a2d47fccf7dff840c62f9527d38500eca5f2a8604"
+        }
+      }
+    }
+  }
+}
