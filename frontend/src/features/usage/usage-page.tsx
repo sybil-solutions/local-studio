@@ -2,8 +2,8 @@
 
 import { useRef, useState } from "react";
 import { AppPage, Card, PageContainer, PageState, RefreshButton, SegmentedControl } from "@/ui";
-import { TokenActivityHeatmap } from "@/features/usage/token-activity-heatmap";
-import { useUsage, type UsageSource } from "@/features/usage/use-usage";
+import { TokenActivityHeatmap, type ActivityPeriod } from "@/features/usage/token-activity-heatmap";
+import { useUsage } from "@/features/usage/use-usage";
 import { UsageSkeleton } from "@/features/usage/usage-skeleton";
 import { formatNumber } from "@/lib/formatters";
 import type { UsageStats } from "@/lib/types";
@@ -14,24 +14,35 @@ import {
   useLocalProfile,
 } from "@/features/shell/local-profile";
 
-const SOURCES = [
-  { id: "pi-sessions", label: "Agent sessions" },
-  { id: "provider", label: "Proxy" },
-] satisfies Array<{ id: UsageSource; label: string }>;
-
-const sourceDescription = (source: UsageSource): string =>
-  source === "pi-sessions"
-    ? "Coding-agent session records · cached context included"
-    : "Requests proxied through this controller";
-
-const sourceTitle = (source: UsageSource): string =>
-  source === "pi-sessions" ? "Agent-session tokens" : "Proxied tokens";
+const ACTIVITY_PERIODS = [
+  { id: "daily", label: "Daily" },
+  { id: "weekly", label: "Weekly" },
+] satisfies Array<{ id: ActivityPeriod; label: string }>;
 
 const activeDays = (stats: UsageStats): number =>
   stats.daily.filter((day) => day.total_tokens > 0).length;
 
-const peakDay = (stats: UsageStats): number =>
-  stats.daily.reduce((peak, day) => Math.max(peak, day.total_tokens), 0);
+const currentStreak = (stats: UsageStats): number => {
+  const activeDays = new Set(
+    stats.daily.filter((day) => day.total_tokens > 0).map((day) => day.date),
+  );
+  const cursor = new Date();
+  cursor.setUTCHours(0, 0, 0, 0);
+  if (!activeDays.has(cursor.toISOString().slice(0, 10)))
+    cursor.setUTCDate(cursor.getUTCDate() - 1);
+  let streak = 0;
+  while (activeDays.has(cursor.toISOString().slice(0, 10))) {
+    streak += 1;
+    cursor.setUTCDate(cursor.getUTCDate() - 1);
+  }
+  return streak;
+};
+
+const percentage = (value: number | null): string =>
+  value === null ? "—" : `${value >= 0 ? "+" : ""}${Math.round(value)}%`;
+
+const milliseconds = (value: number | null): string =>
+  value === null ? "—" : `${Math.round(value)} ms`;
 
 const tokenParts = (stats: UsageStats): Array<{ label: string; value: number }> => {
   const parts = [
@@ -44,8 +55,8 @@ const tokenParts = (stats: UsageStats): Array<{ label: string; value: number }> 
 };
 
 export default function UsagePage() {
-  const [source, setSource] = useState<UsageSource>("provider");
-  const { stats, loading, error, loadStats } = useUsage(source);
+  const { stats, loading, error, loadStats } = useUsage();
+  const [period, setPeriod] = useState<ActivityPeriod>("daily");
   const [profile, updateProfile] = useLocalProfile();
   const [imageError, setImageError] = useState("");
   const imageInputRef = useRef<HTMLInputElement>(null);
@@ -115,20 +126,17 @@ export default function UsagePage() {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <SegmentedControl items={SOURCES} value={source} onChange={setSource} size="sm" />
             <RefreshButton onRefresh={loadStats} loading={loading} className="h-7 w-7" />
           </div>
         </header>
 
         <section className="pt-14 text-center sm:pt-20">
-          <p className="text-[length:var(--fs-sm)] font-medium text-(--ui-muted)">
-            {sourceTitle(source)}
-          </p>
+          <p className="text-[length:var(--fs-sm)] font-medium text-(--ui-muted)">Proxied tokens</p>
           <div className="mt-2 text-[clamp(2.75rem,7vw,4.75rem)] font-medium leading-none tracking-[-0.055em] tabular-nums text-(--ui-fg)">
             {formatNumber(stats.totals.total_tokens)}
           </div>
           <p className="mt-3 text-[length:var(--fs-sm)] text-(--ui-muted)">
-            {sourceDescription(source)}
+            Requests proxied through this controller
           </p>
         </section>
 
@@ -137,11 +145,13 @@ export default function UsagePage() {
           padding="sm"
           className="mx-auto mt-10 max-w-[55rem] bg-(--ui-surface) sm:mt-12"
         >
-          <dl className="grid grid-cols-2 divide-x divide-(--ui-border) sm:grid-cols-4">
+          <dl className="grid grid-cols-2 divide-x divide-y divide-(--ui-border) sm:grid-cols-3 lg:grid-cols-6">
             <ProfileStat label="Requests" value={formatNumber(stats.totals.total_requests)} />
             <ProfileStat label="Sessions" value={formatNumber(stats.totals.unique_sessions)} />
             <ProfileStat label="Active days" value={formatNumber(activeDays(stats))} />
-            <ProfileStat label="Peak day" value={formatNumber(peakDay(stats))} />
+            <ProfileStat label="Active streak" value={`${currentStreak(stats)} days`} />
+            <ProfileStat label="Success rate" value={`${Math.round(stats.totals.success_rate)}%`} />
+            <ProfileStat label="P95 latency" value={milliseconds(stats.latency.p95_ms)} />
           </dl>
         </Card>
 
@@ -150,17 +160,30 @@ export default function UsagePage() {
             <h2 className="text-[length:var(--fs-md)] font-medium text-(--ui-fg)">
               Token activity
             </h2>
-            <span className="text-[length:var(--fs-xs)] text-(--ui-muted)">Past year</span>
+            <div className="flex items-center gap-3">
+              <span className="hidden text-[length:var(--fs-xs)] text-(--ui-muted) sm:inline">
+                {period === "daily" ? "Past year" : "Past 53 weeks"}
+              </span>
+              <SegmentedControl
+                items={ACTIVITY_PERIODS}
+                value={period}
+                onChange={setPeriod}
+                size="sm"
+              />
+            </div>
           </div>
-          <TokenActivityHeatmap daily={stats.daily} />
+          <TokenActivityHeatmap key={period} daily={stats.daily} period={period} />
         </section>
 
-        <section className="mx-auto mt-5 grid max-w-[55rem] gap-3 sm:grid-cols-2">
+        <section className="mx-auto mt-5 grid max-w-[55rem] gap-3 sm:grid-cols-2 lg:grid-cols-3">
           <div className="rounded-[var(--rad-xl)] bg-(--ui-surface)/60 p-5">
             <TokenMix stats={stats} />
           </div>
           <div className="rounded-[var(--rad-xl)] bg-(--ui-surface)/60 p-5">
             <ModelUsage stats={stats} />
+          </div>
+          <div className="rounded-[var(--rad-xl)] bg-(--ui-surface)/60 p-5">
+            <ProxyPace stats={stats} />
           </div>
         </section>
       </PageContainer>
@@ -239,6 +262,32 @@ function ModelUsage({ stats }: { stats: UsageStats }) {
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+function ProxyPace({ stats }: { stats: UsageStats }) {
+  const metrics = [
+    { label: "Last hour", value: formatNumber(stats.recent_activity.last_hour_requests) },
+    { label: "Last 24 hours", value: formatNumber(stats.recent_activity.last_24h_requests) },
+    { label: "24h change", value: percentage(stats.recent_activity.change_24h_pct) },
+    { label: "Week over week", value: percentage(stats.week_over_week.change_pct.tokens) },
+    { label: "Cache hit rate", value: `${Math.round(stats.cache.hit_rate)}%` },
+    { label: "Average TTFT", value: milliseconds(stats.ttft.avg_ms) },
+  ];
+  return (
+    <div>
+      <h2 className="mb-4 text-[length:var(--fs-md)] font-medium text-(--ui-fg)">Proxy pace</h2>
+      <dl className="grid grid-cols-2 gap-x-5 gap-y-4">
+        {metrics.map((metric) => (
+          <div key={metric.label}>
+            <dd className="text-[length:var(--fs-md)] font-medium tabular-nums text-(--ui-fg)">
+              {metric.value}
+            </dd>
+            <dt className="mt-0.5 text-[length:var(--fs-xs)] text-(--ui-muted)">{metric.label}</dt>
+          </div>
+        ))}
+      </dl>
     </div>
   );
 }

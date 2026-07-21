@@ -7,11 +7,9 @@ import { readPageCache, writePageCache } from "@/lib/page-data-cache";
 import type { UsageStats } from "@/lib/types";
 import { normalizeUsageStats } from "@/features/usage/normalize-usage-stats";
 
-export type UsageSource = "provider" | "pi-sessions";
-
-export function useUsage(source: UsageSource) {
+export function useUsage() {
   const [stats, setStats] = useState<UsageStats | null>(() =>
-    readPageCache<UsageStats>(`usage:stats:${source}`),
+    readPageCache<UsageStats>("usage:stats:provider"),
   );
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -22,23 +20,21 @@ export function useUsage(source: UsageSource) {
     try {
       setLoading(true);
       setError(null);
-      const response =
-        source === "pi-sessions" ? api.getPiSessionsUsageStats() : api.getUsageStats();
-      const normalized = normalizeUsageStats(await response);
+      const normalized = normalizeUsageStats(await api.getUsageStats());
       if (requestId !== requestSequence.current) return;
-      writePageCache(`usage:stats:${source}`, normalized);
+      writePageCache("usage:stats:provider", normalized);
       setStats(normalized);
     } catch (cause) {
       if (requestId === requestSequence.current) setError((cause as Error).message);
     } finally {
       if (requestId === requestSequence.current) setLoading(false);
     }
-  }, [source]);
+  }, []);
 
   useMountSubscription(() => {
-    setStats(readPageCache<UsageStats>(`usage:stats:${source}`));
+    setStats(readPageCache<UsageStats>("usage:stats:provider"));
     void loadStats();
-  }, [loadStats, source]);
+  }, [loadStats]);
 
   return { stats, loading, error, loadStats };
 }
