@@ -542,7 +542,7 @@ export const LitterBridgeAgentTurnRequestSchema = Schema.Struct({
   expectedRevision: LitterBridgeRevisionSchema,
   messageId: IdentifierSchema,
   modelId: Schema.NullOr(IdentifierSchema),
-  content: Schema.NonEmptyString.pipe(Schema.check(Schema.isMaxLength(4_000_000))),
+  content: Schema.NonEmptyString.pipe(Schema.check(Schema.isMaxLength(100_000))),
   contentHash: Sha256Schema,
 }).pipe(strict);
 
