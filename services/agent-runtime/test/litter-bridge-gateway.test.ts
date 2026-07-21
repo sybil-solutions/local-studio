@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { generateKeyPairSync, sign, type KeyObject } from "node:crypto";
 import {
+  appendFileSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -326,7 +327,16 @@ const agentTurnRequest = (
   );
 };
 
-const createTurnRuntime = (options: { active?: boolean; preflight?: boolean } = {}) => {
+const createTurnRuntime = (options: {
+  active?: boolean;
+  preflight?: boolean;
+  sessionFile: string;
+  durableError?: boolean;
+  boundaryPiSessionId?: string;
+  statusPiSessionId?: string | null;
+  statusCwd?: string;
+  statusModelId?: string;
+}) => {
   const prompts: Array<{
     content: string;
     options: {
@@ -353,13 +363,17 @@ const createTurnRuntime = (options: { active?: boolean; preflight?: boolean } = 
       status,
       ensureStarted: async (modelId: string, cwd?: string, piSessionId?: string | null) => {
         status.running = true;
-        status.modelId = modelId;
-        status.cwd = cwd ?? "";
-        status.piSessionId = piSessionId ?? null;
+        status.modelId = options.statusModelId ?? modelId;
+        status.cwd = options.statusCwd ?? cwd ?? "";
+        status.piSessionId =
+          "statusPiSessionId" in options
+            ? (options.statusPiSessionId ?? null)
+            : (piSessionId ?? null);
       },
-      prompt: async (
+      promptDurably: async (
         content: string,
         _onEvent: (event: Record<string, unknown>, seq: number) => void,
+        marker: { dispatchId: string; messageId: string; contentHash: string },
         promptOptions: {
           expandPromptTemplates?: boolean;
           source?: "interactive" | "rpc" | "extension";
@@ -370,6 +384,36 @@ const createTurnRuntime = (options: { active?: boolean; preflight?: boolean } = 
         prompts.push({ content, options: promptOptions });
         promptOptions.preflightResult?.(options.preflight !== false);
         if (options.preflight === false) throw new Error("preflight rejected");
+        const userEntryId = `user-${marker.dispatchId}`;
+        const markerEntryId = `marker-${marker.dispatchId}`;
+        appendFileSync(
+          options.sessionFile,
+          `${JSON.stringify({
+            type: "message",
+            id: userEntryId,
+            parentId: null,
+            timestamp: NOW.toISOString(),
+            message: { role: "user", content: [{ type: "text", text: content }] },
+          })}\n${JSON.stringify({
+            type: "custom",
+            customType: "local_studio_litter_turn_v1",
+            data: { version: 1, ...marker, userEntryId },
+            id: markerEntryId,
+            parentId: userEntryId,
+            timestamp: NOW.toISOString(),
+          })}\n`,
+        );
+        if (options.durableError) throw new Error("simulated crash after transcript persistence");
+        return {
+          dispatchId: marker.dispatchId,
+          markerEntryId,
+          userEntryId,
+          piSessionId: options.boundaryPiSessionId ?? status.piSessionId ?? "",
+          sessionFile: options.sessionFile,
+          cwd: status.cwd,
+          modelId: status.modelId,
+          acceptedAt: NOW.toISOString(),
+        };
       },
     },
   };
@@ -742,7 +786,7 @@ test("tool references, results, and descriptor hashes retain Pi order", async ()
 test("signed agent.turn accepts one prompt and replays a stable acknowledgement", async () => {
   const fixture = createSessionFixture();
   const keys = keyMaterial();
-  const turnRuntime = createTurnRuntime();
+  const turnRuntime = createTurnRuntime({ sessionFile: fixture.filepath });
   const gateway = fixtureGateway(fixture, { turnRuntime: turnRuntime.runtime });
   const listResponse = await gateway.handle(
     gatewayRequest(sessionListRequest(keys.privateKey, keys.publicHex, { request: "turn-list" })),
@@ -760,7 +804,7 @@ test("signed agent.turn accepts one prompt and replays a stable acknowledgement"
   assert.equal(first.type, "agent_turn_ack");
   assert.equal(first.baseRevision, revision);
   assert.equal(first.piSessionId, fixture.sessionId);
-  assert.equal(first.modelId, "model-a");
+  assert.equal(first.modelId, "provider-a/model-a");
   assert.equal(turnRuntime.prompts.length, 1);
   assert.equal(turnRuntime.prompts[0].content, "Continue from the phone");
   assert.equal(turnRuntime.prompts[0].options.expandPromptTemplates, false);
@@ -781,12 +825,32 @@ test("signed agent.turn accepts one prompt and replays a stable acknowledgement"
   assert.equal(replayed.requestId, "turn-request-2");
   assert.equal(replayed.dispatchId, first.dispatchId);
   assert.equal(turnRuntime.prompts.length, 1);
+
+  const transcript = await gateway.handle(
+    gatewayRequest(
+      sessionReadRequest(keys.privateKey, keys.publicHex, {
+        sessionId: fixture.sessionId,
+        request: "turn-transcript",
+      }),
+    ),
+  );
+  assert.equal(transcript.status, 200);
+  const transcriptPage = (await transcript.json()) as Record<string, any>;
+  assert.equal(transcriptPage.messages.length, 3);
+  assert.equal(
+    transcriptPage.messages.some(
+      (message: Record<string, unknown>) =>
+        message.role === "user" &&
+        JSON.stringify(message.parts).includes("local_studio_litter_turn_v1"),
+    ),
+    false,
+  );
 });
 
 test("signed agent.turn rejects revision, integrity, and principal target failures", async () => {
   const fixture = createSessionFixture();
   const keys = keyMaterial();
-  const turnRuntime = createTurnRuntime();
+  const turnRuntime = createTurnRuntime({ sessionFile: fixture.filepath });
   const gateway = fixtureGateway(fixture, { turnRuntime: turnRuntime.runtime });
   const listResponse = await gateway.handle(
     gatewayRequest(sessionListRequest(keys.privateKey, keys.publicHex, { request: "guard-list" })),
@@ -806,6 +870,18 @@ test("signed agent.turn rejects revision, integrity, and principal target failur
   );
   assert.equal(conflict.status, 409);
   assert.equal(((await conflict.json()) as Record<string, any>).type, "conflict");
+  const conflictRetry = await gateway.handle(
+    gatewayRequest(
+      agentTurnRequest(keys.privateKey, keys.publicHex, {
+        sessionId: fixture.sessionId,
+        revision: revision + 1,
+        idempotencyKey: "turn-conflict",
+        request: "conflict-retry",
+      }),
+    ),
+  );
+  assert.equal(conflictRetry.status, 409);
+  assert.equal(((await conflictRetry.json()) as Record<string, any>).type, "conflict");
 
   const badHash = await gateway.handle(
     gatewayRequest(
@@ -839,7 +915,7 @@ test("signed agent.turn rejects revision, integrity, and principal target failur
 test("signed agent.turn binds idempotency to the complete signed body", async () => {
   const fixture = createSessionFixture();
   const keys = keyMaterial();
-  const turnRuntime = createTurnRuntime();
+  const turnRuntime = createTurnRuntime({ sessionFile: fixture.filepath });
   const gateway = fixtureGateway(fixture, { turnRuntime: turnRuntime.runtime });
   const listResponse = await gateway.handle(
     gatewayRequest(sessionListRequest(keys.privateKey, keys.publicHex, { request: "body-list" })),
@@ -874,10 +950,10 @@ test("signed agent.turn binds idempotency to the complete signed body", async ()
   assert.equal(turnRuntime.prompts.length, 1);
 });
 
-test("signed agent.turn stores prompt preflight rejection without redispatch", async () => {
+test("signed agent.turn permits same-key retry after prompt preflight rejection", async () => {
   const fixture = createSessionFixture();
   const keys = keyMaterial();
-  const turnRuntime = createTurnRuntime({ preflight: false });
+  const turnRuntime = createTurnRuntime({ preflight: false, sessionFile: fixture.filepath });
   const gateway = fixtureGateway(fixture, { turnRuntime: turnRuntime.runtime });
   const listResponse = await gateway.handle(
     gatewayRequest(sessionListRequest(keys.privateKey, keys.publicHex, { request: "reject-list" })),
@@ -903,13 +979,90 @@ test("signed agent.turn stores prompt preflight rejection without redispatch", a
     ),
   );
   assert.equal(retry.status, 503);
-  assert.equal(turnRuntime.prompts.length, 1);
+  assert.equal(turnRuntime.prompts.length, 2);
+});
+
+test("signed agent.turn reconciles a crash after the durable transcript boundary", async () => {
+  const fixture = createSessionFixture();
+  const keys = keyMaterial();
+  const crashingRuntime = createTurnRuntime({
+    durableError: true,
+    sessionFile: fixture.filepath,
+  });
+  const gateway = fixtureGateway(fixture, { turnRuntime: crashingRuntime.runtime });
+  const listResponse = await gateway.handle(
+    gatewayRequest(sessionListRequest(keys.privateKey, keys.publicHex, { request: "crash-list" })),
+  );
+  const listed = (await listResponse.json()) as Record<string, any>;
+  const revision = listed.sessions[0].revision as number;
+  const first = await gateway.handle(
+    gatewayRequest(
+      agentTurnRequest(keys.privateKey, keys.publicHex, {
+        sessionId: fixture.sessionId,
+        revision,
+        idempotencyKey: "turn-crash-boundary",
+        request: "crash-1",
+      }),
+    ),
+  );
+  assert.equal(first.status, 500);
+  assert.equal(crashingRuntime.prompts.length, 1);
+
+  const retryRuntime = createTurnRuntime({ sessionFile: fixture.filepath });
+  const restarted = fixtureGateway(fixture, { turnRuntime: retryRuntime.runtime });
+  const reconciled = await restarted.handle(
+    gatewayRequest(
+      agentTurnRequest(keys.privateKey, keys.publicHex, {
+        sessionId: fixture.sessionId,
+        revision,
+        idempotencyKey: "turn-crash-boundary",
+        request: "crash-2",
+      }),
+    ),
+  );
+  assert.equal(reconciled.status, 200);
+  const acknowledgement = (await reconciled.json()) as Record<string, any>;
+  assert.equal(acknowledgement.type, "agent_turn_ack");
+  assert.equal(acknowledgement.modelId, "provider-a/model-a");
+  assert.equal(retryRuntime.prompts.length, 0);
+});
+
+test("signed agent.turn fails closed before prompt on null or wrong runtime identity", async () => {
+  for (const [name, runtimeOptions] of [
+    ["null-pi", { statusPiSessionId: null }],
+    ["wrong-pi", { statusPiSessionId: "another-session" }],
+    ["wrong-cwd", { statusCwd: "/tmp/not-the-session-project" }],
+    ["wrong-model", { statusModelId: "provider-b/model-b" }],
+  ] as const) {
+    const fixture = createSessionFixture();
+    const keys = keyMaterial();
+    const turnRuntime = createTurnRuntime({ sessionFile: fixture.filepath, ...runtimeOptions });
+    const gateway = fixtureGateway(fixture, { turnRuntime: turnRuntime.runtime });
+    const listResponse = await gateway.handle(
+      gatewayRequest(
+        sessionListRequest(keys.privateKey, keys.publicHex, { request: `${name}-list` }),
+      ),
+    );
+    const listed = (await listResponse.json()) as Record<string, any>;
+    const response = await gateway.handle(
+      gatewayRequest(
+        agentTurnRequest(keys.privateKey, keys.publicHex, {
+          sessionId: fixture.sessionId,
+          revision: listed.sessions[0].revision,
+          idempotencyKey: `turn-${name}`,
+          request: name,
+        }),
+      ),
+    );
+    assert.equal(response.status, 409);
+    assert.equal(turnRuntime.prompts.length, 0);
+  }
 });
 
 test("signed agent.turn never converts a prompt into steering for an active session", async () => {
   const fixture = createSessionFixture();
   const keys = keyMaterial();
-  const turnRuntime = createTurnRuntime({ active: true });
+  const turnRuntime = createTurnRuntime({ active: true, sessionFile: fixture.filepath });
   const gateway = fixtureGateway(fixture, { turnRuntime: turnRuntime.runtime });
   const listResponse = await gateway.handle(
     gatewayRequest(sessionListRequest(keys.privateKey, keys.publicHex, { request: "active-list" })),
@@ -928,6 +1081,18 @@ test("signed agent.turn never converts a prompt into steering for an active sess
   assert.equal(response.status, 409);
   assert.equal(((await response.json()) as Record<string, any>).error.code, "rate_limited");
   assert.equal(turnRuntime.prompts.length, 0);
+  turnRuntime.status.active = false;
+  const retry = await gateway.handle(
+    gatewayRequest(
+      agentTurnRequest(keys.privateKey, keys.publicHex, {
+        sessionId: fixture.sessionId,
+        revision: listed.sessions[0].revision,
+        request: "active-turn-retry",
+      }),
+    ),
+  );
+  assert.equal(retry.status, 200);
+  assert.equal(turnRuntime.prompts.length, 1);
 });
 
 test("valid signed read returns a strict complete snapshot and replay is rejected", async () => {

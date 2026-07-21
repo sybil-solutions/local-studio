@@ -67,9 +67,13 @@ import { cleanSessionTitle } from "../../../shared/agent/session-title";
 import { resolveDataDir } from "./data-dir";
 import { listProjectsFromStore, type ProjectEntry } from "./projects-store";
 import { getApiSettings } from "./settings-service";
-import { createLitterMutationLedger } from "./litter-bridge-mutation-ledger";
+import {
+  createLitterMutationLedger,
+  type MutationCorrelation,
+  type MutationIdentity,
+} from "./litter-bridge-mutation-ledger";
 import { piRuntimeManager } from "./pi-runtime";
-import type { PiAgentSession } from "./pi-runtime-types";
+import type { PiAgentSession, PiDurablePromptBoundary } from "./pi-runtime-types";
 import { listArchivedSessionMetadata } from "./session-metadata-store";
 
 const BODY_LIMIT_BYTES = 1_000_000;
@@ -122,6 +126,8 @@ type GatewayOptions = {
   activeSessionIds?: () => ReadonlySet<string>;
   archivedSessionIds?: () => ReadonlySet<string>;
   turnRuntime?: TurnRuntimeManager;
+  mutationLeaseMs?: number;
+  mutationRetentionMs?: number;
 };
 type GatewayMetadata = {
   protocolVersion: 1;
@@ -144,7 +150,7 @@ type SignedGatewayRequest =
   | LitterBridgeAgentTurnRequest;
 type TurnRuntimeEntry = {
   sessionId: string;
-  session: Pick<PiAgentSession, "ensureStarted" | "prompt" | "status">;
+  session: Pick<PiAgentSession, "ensureStarted" | "promptDurably" | "status">;
 };
 type TurnRuntimeManager = {
   findSessionForLookup(sessionId: string, piSessionId?: string | null): TurnRuntimeEntry | null;
@@ -473,73 +479,103 @@ const materializeAgentTurnResult = (
   });
 };
 
-const agentTurnResultStatus = (result: LitterBridgeAgentTurnResult): number => {
-  if (result.type === "agent_turn_ack") return 200;
-  if (result.type === "conflict") return 409;
-  switch (result.error.code) {
-    case "not_found":
-      return 404;
-    case "integrity_failed":
-      return 409;
-    case "rate_limited":
-    case "revision_conflict":
-    case "replay_detected":
-      return 409;
-    case "payload_too_large":
-      return 413;
-    case "controller_unavailable":
-    case "agent_runtime_unavailable":
-      return 503;
-    default:
-      return 500;
-  }
-};
-
 class AgentTurnPreflightRejected extends Error {}
 class AgentTurnDispatchIndeterminate extends Error {}
 
-const acceptAgentTurnPrompt = (
-  session: Pick<PiAgentSession, "prompt">,
+const acceptAgentTurnPrompt = async (
+  session: Pick<PiAgentSession, "promptDurably">,
   content: string,
-): Promise<void> =>
-  new Promise((resolve, reject) => {
-    let settled = false;
-    let rejectedByPreflight = false;
-    const prompt = session.prompt(content, () => undefined, {
+  marker: { dispatchId: string; messageId: string; contentHash: string },
+): Promise<PiDurablePromptBoundary> => {
+  let preflightAccepted = false;
+  let preflightRejected = false;
+  try {
+    return await session.promptDurably(content, () => undefined, marker, {
       expandPromptTemplates: false,
       source: "rpc",
       restartOnContinuationError: false,
       preflightResult: (success) => {
-        if (settled) return;
-        if (success) {
-          settled = true;
-          resolve();
-        } else {
-          rejectedByPreflight = true;
-        }
+        preflightAccepted = success;
+        preflightRejected = !success;
       },
     });
-    void prompt.then(
-      () => {
-        if (settled) return;
-        settled = true;
-        reject(new AgentTurnDispatchIndeterminate("Prompt completed without a preflight result"));
-      },
-      (error) => {
-        if (settled) return;
-        settled = true;
-        reject(
-          rejectedByPreflight
-            ? new AgentTurnPreflightRejected(
-                error instanceof Error ? error.message : "Prompt preflight was rejected",
-              )
-            : new AgentTurnDispatchIndeterminate(
-                error instanceof Error ? error.message : "Prompt dispatch outcome is unknown",
-              ),
-        );
-      },
+  } catch (error) {
+    if (preflightRejected && !preflightAccepted) {
+      throw new AgentTurnPreflightRejected(
+        error instanceof Error ? error.message : "Prompt preflight was rejected",
+      );
+    }
+    throw new AgentTurnDispatchIndeterminate(
+      error instanceof Error ? error.message : "Prompt dispatch outcome is unknown",
     );
-  });
+  }
+};
+
+const qualifiedSessionModel = (metadata: LitterBridgeSessionMetadata): string | null => {
+  if (!metadata.modelId) return null;
+  if (!metadata.providerId || metadata.modelId.startsWith(`${metadata.providerId}/`)) {
+    return metadata.modelId;
+  }
+  return `${metadata.providerId}/${metadata.modelId}`;
+};
+
+const transcriptMessageText = (message: JsonRecord): string | null => {
+  if (message.role !== "user") return null;
+  if (typeof message.content === "string") return message.content;
+  if (!Array.isArray(message.content)) return null;
+  let output = "";
+  for (const part of message.content) {
+    if (isRecord(part) && part.type === "text" && typeof part.text === "string") {
+      output += part.text;
+    }
+  }
+  return output;
+};
+
+const reconcileAgentTurnTranscript = (
+  correlation: MutationCorrelation,
+  request: LitterBridgeAgentTurnRequest,
+): { acceptedAt: string } | null => {
+  const metadata = sessionFileFingerprint(correlation.sessionFile);
+  if (metadata.size < correlation.baseOffset) return null;
+  const descriptor = openSync(correlation.sessionFile, "r");
+  let offset = correlation.baseOffset;
+  let scannedLines = 0;
+  let scannedBytes = 0;
+  try {
+    while (offset < metadata.size && scannedLines < 4_096 && scannedBytes <= 32 * 1024 * 1024) {
+      const line = readSessionLine(descriptor, metadata.size, offset);
+      if (!line) break;
+      offset = line.end;
+      scannedLines += 1;
+      scannedBytes += line.end - line.start;
+      const event = parseSessionLine(line);
+      if (!event) continue;
+      if (
+        event.type === "custom" &&
+        event.customType === "local_studio_litter_turn_v1" &&
+        isRecord(event.data) &&
+        event.data.dispatchId === correlation.dispatchId &&
+        event.data.messageId === correlation.messageId &&
+        event.data.contentHash === correlation.contentHash
+      ) {
+        return { acceptedAt: strictTimestamp(event.timestamp) ?? correlation.dispatchedAt };
+      }
+      if (
+        event.type === "message" &&
+        isRecord(event.message) &&
+        transcriptMessageText(event.message) !== null &&
+        litterBridgeSha256Utf8(transcriptMessageText(event.message) as string) ===
+          request.contentHash
+      ) {
+        return { acceptedAt: strictTimestamp(event.timestamp) ?? correlation.dispatchedAt };
+      }
+    }
+  } finally {
+    closeSync(descriptor);
+  }
+  return null;
+};
 
 const unsignedRequest = (request: LitterBridgeRequest): JsonRecord => {
   const { auth: _auth, ...unsigned } = request;
@@ -2017,7 +2053,14 @@ export function createLitterBridgeGateway(options: GatewayOptions = {}) {
   const implementation = options.fetch ?? globalThis.fetch;
   const turnRuntime = options.turnRuntime ?? piRuntimeManager;
   let mutationLedger: ReturnType<typeof createLitterMutationLedger> | null = null;
-  const getMutationLedger = () => (mutationLedger ??= createLitterMutationLedger(dataDir, now));
+  const getMutationLedger = () =>
+    (mutationLedger ??= createLitterMutationLedger(dataDir, now, {
+      ...(options.mutationLeaseMs === undefined ? {} : { leaseMs: options.mutationLeaseMs }),
+      ...(options.mutationRetentionMs === undefined
+        ? {}
+        : { retentionMs: options.mutationRetentionMs }),
+    }));
+  const mutationOwnerId = `${process.pid}-${randomUUID()}`;
   const runtimeStats = options.runtimeStats ?? defaultRuntimeStats;
   const projects = options.projects ?? listProjectsFromStore;
   const roots = sessionRootPaths(dataDir, options.sessionRoots);
@@ -2433,194 +2476,322 @@ export function createLitterBridgeGateway(options: GatewayOptions = {}) {
     ) {
       return jsonError("not_found", "Session identity was not found", requestId, 404);
     }
+    const identity: MutationIdentity = {
+      controllerId,
+      deviceId: request.auth.device.deviceId,
+      idempotencyKey: request.auth.idempotencyKey,
+    };
+    const ledger = getMutationLedger();
+    let stopLeaseRenewal: (() => void) | null = null;
     try {
-      return await getMutationLedger().withMutation(
-        {
-          controllerId,
-          deviceId: request.auth.device.deviceId,
-          idempotencyKey: request.auth.idempotencyKey,
-        },
-        async (transaction) => {
-          const reservation = transaction.reserve(request.auth.bodyHash);
-          if (reservation.kind === "cached") {
-            const result = materializeAgentTurnResult(reservation.result, requestId);
-            return Response.json(result, { status: agentTurnResultStatus(result) });
-          }
-          if (reservation.kind === "mismatch") {
-            return jsonError(
-              "integrity_failed",
-              "Idempotency key was already used for another signed prompt",
-              requestId,
-              409,
-            );
-          }
-          if (reservation.kind === "indeterminate") {
-            return jsonError(
-              "internal",
-              "Prompt dispatch outcome is indeterminate and requires transcript reconciliation",
-              requestId,
-              409,
-            );
-          }
-
-          const reject = (
-            result: Exclude<LitterBridgeAgentTurnResult, { type: "agent_turn_ack" }>,
-            status: number,
-          ): Response => {
-            transaction.settle(request.auth.bodyHash, "rejected", result);
-            return Response.json(result, { status });
-          };
-
-          let resolved: ResolvedSessionFile;
-          try {
-            resolved = resolveSessionFile(request.session.sessionId, projects(), roots);
-          } catch (error) {
-            if (error instanceof SessionReadError) {
-              return reject(
-                errorResult(error.code, error.message, requestId, error.retriable),
-                error.status,
-              );
-            }
-            return reject(errorResult("internal", "Session lookup failed", requestId), 500);
-          }
-          if (resolved.revision !== request.expectedRevision) {
-            return reject(agentTurnConflict(request, resolved.revision), 409);
-          }
-
-          let metadata: LitterBridgeSessionMetadata;
-          try {
-            metadata = readSessionMetadata(resolved);
-          } catch {
-            return reject(
-              errorResult("section_unavailable", "Session metadata is unavailable", requestId),
-              422,
-            );
-          }
-          const runtimeAffinity = `litter-${litterBridgeSha256Utf8(
-            canonicalLitterBridgeJson([
-              "litter-turn-runtime-v1",
-              controllerId,
-              request.auth.device.deviceId,
-              request.session.sessionId,
-            ]),
-          )}`;
-          const existing = turnRuntime.findSessionForLookup(
-            runtimeAffinity,
-            request.session.sessionId,
-          );
-          if (existing?.session.status.active) {
-            return reject(
-              errorResult(
-                "rate_limited",
-                "Session already has an active turn; prompt-only access cannot steer it",
-                requestId,
-                true,
-              ),
-              409,
-            );
-          }
-          const modelId =
-            request.modelId ?? boundedString(existing?.session.status.modelId) ?? metadata.modelId;
-          if (!modelId) {
-            return reject(
-              errorResult(
-                "agent_runtime_unavailable",
-                "Session model could not be resolved",
-                requestId,
-                true,
-              ),
-              503,
-            );
-          }
-          const target =
-            existing ?? turnRuntime.getSessionForLookup(runtimeAffinity, request.session.sessionId);
-          try {
-            await target.session.ensureStarted(
-              modelId,
-              resolved.cwd,
-              request.session.sessionId,
-              {},
-            );
-          } catch {
-            return reject(
-              errorResult(
-                "agent_runtime_unavailable",
-                "Session runtime could not accept the selected model",
-                requestId,
-                true,
-              ),
-              503,
-            );
-          }
-          if (target.session.status.active) {
-            return reject(
-              errorResult(
-                "rate_limited",
-                "Session became active before prompt dispatch",
-                requestId,
-                true,
-              ),
-              409,
-            );
-          }
-          if (
-            target.session.status.piSessionId &&
-            target.session.status.piSessionId !== request.session.sessionId
-          ) {
-            return reject(
-              errorResult("integrity_failed", "Runtime session identity changed", requestId),
-              409,
-            );
-          }
-          const current = sessionFileFingerprint(resolved.filepath);
-          if (current.value !== resolved.value || current.revision !== request.expectedRevision) {
-            return reject(agentTurnConflict(request, current.revision), 409);
-          }
-
-          transaction.markDispatching(request.auth.bodyHash);
-          try {
-            await acceptAgentTurnPrompt(target.session, request.content);
-          } catch (error) {
-            if (error instanceof AgentTurnPreflightRejected) {
-              return reject(
-                errorResult(
-                  "agent_runtime_unavailable",
-                  "Prompt preflight was rejected by the session runtime",
-                  requestId,
-                  true,
-                ),
-                503,
-              );
-            }
-            throw error;
-          }
-
-          const acknowledgement = Schema.decodeUnknownSync(LitterBridgeAgentTurnAckSchema)({
-            type: "agent_turn_ack",
-            protocolVersion: LITTER_BRIDGE_PROTOCOL_VERSION,
+      const reservation = ledger.reserve(identity, request.auth.bodyHash, mutationOwnerId);
+      if (reservation.kind === "cached") {
+        const result = materializeAgentTurnResult(reservation.stored.result, requestId);
+        return Response.json(result, { status: reservation.stored.status });
+      }
+      if (reservation.kind === "mismatch") {
+        return jsonError(
+          "integrity_failed",
+          "Idempotency key was already used for another signed prompt",
+          requestId,
+          409,
+        );
+      }
+      if (reservation.kind === "busy") {
+        return jsonError(
+          "rate_limited",
+          "Prompt preparation is already in progress",
+          requestId,
+          409,
+          true,
+        );
+      }
+      if (reservation.kind === "reconcile") {
+        const correlation = reservation.correlation;
+        if (
+          correlation.sessionId !== request.session.sessionId ||
+          correlation.messageId !== request.messageId ||
+          correlation.contentHash !== request.contentHash ||
+          correlation.baseRevision !== request.expectedRevision
+        ) {
+          return jsonError("integrity_failed", "Dispatch correlation is invalid", requestId, 409);
+        }
+        let resolved: ResolvedSessionFile;
+        try {
+          resolved = resolveSessionFile(request.session.sessionId, projects(), roots);
+        } catch {
+          return jsonError(
+            "internal",
+            "Prompt dispatch outcome is indeterminate and the transcript is unavailable",
             requestId,
-            idempotencyKey: request.auth.idempotencyKey,
-            dispatchId: randomUUID(),
-            canonicalSession: request.session,
-            messageId: request.messageId,
-            contentHash: request.contentHash,
-            baseRevision: request.expectedRevision,
-            runtimeSessionId: target.sessionId,
-            piSessionId: request.session.sessionId,
-            modelId: boundedString(target.session.status.modelId) ?? modelId,
-            outcome: "accepted",
-            acceptedAt: now().toISOString(),
-          });
-          transaction.settle(request.auth.bodyHash, "accepted", acknowledgement);
-          return Response.json(acknowledgement);
+            409,
+            true,
+          );
+        }
+        if (realpathSync.native(correlation.sessionFile) !== resolved.filepath) {
+          return jsonError(
+            "integrity_failed",
+            "Dispatch transcript identity changed",
+            requestId,
+            409,
+          );
+        }
+        const evidence = reconcileAgentTurnTranscript(correlation, request);
+        if (!evidence) {
+          return jsonError(
+            "internal",
+            "Prompt dispatch outcome is indeterminate and requires transcript reconciliation",
+            requestId,
+            409,
+            true,
+          );
+        }
+        const acknowledgement = Schema.decodeUnknownSync(LitterBridgeAgentTurnAckSchema)({
+          type: "agent_turn_ack",
+          protocolVersion: LITTER_BRIDGE_PROTOCOL_VERSION,
+          requestId,
+          idempotencyKey: request.auth.idempotencyKey,
+          dispatchId: correlation.dispatchId,
+          canonicalSession: request.session,
+          messageId: request.messageId,
+          contentHash: request.contentHash,
+          baseRevision: request.expectedRevision,
+          piSessionId: request.session.sessionId,
+          modelId: correlation.modelId,
+          outcome: "accepted",
+          acceptedAt: evidence.acceptedAt,
+        });
+        ledger.settleDispatched(
+          identity,
+          request.auth.bodyHash,
+          correlation.dispatchId,
+          "accepted",
+          {
+            status: 200,
+            result: acknowledgement,
+          },
+        );
+        return Response.json(acknowledgement);
+      }
+
+      const lease = reservation.lease;
+      let leaseLost = false;
+      const renewal = setInterval(
+        () => {
+          try {
+            if (!ledger.renew(identity, request.auth.bodyHash, lease)) leaseLost = true;
+          } catch {
+            leaseLost = true;
+          }
         },
+        Math.max(1_000, Math.floor(ledger.leaseMs / 3)),
       );
+      renewal.unref?.();
+      const stopRenewal = (): void => clearInterval(renewal);
+      stopLeaseRenewal = stopRenewal;
+      const rejectPermanent = (
+        result: Exclude<LitterBridgeAgentTurnResult, { type: "agent_turn_ack" }>,
+        status: number,
+      ): Response => {
+        stopRenewal();
+        ledger.settleReservedRejected(identity, request.auth.bodyHash, lease, { status, result });
+        return Response.json(result, { status });
+      };
+      const rejectRetryable = (
+        result: Exclude<LitterBridgeAgentTurnResult, { type: "agent_turn_ack" }>,
+        status: number,
+      ): Response => {
+        stopRenewal();
+        ledger.releaseRetryable(identity, request.auth.bodyHash, lease);
+        return Response.json(result, { status });
+      };
+
+      let resolved: ResolvedSessionFile;
+      try {
+        resolved = resolveSessionFile(request.session.sessionId, projects(), roots);
+      } catch (error) {
+        if (error instanceof SessionReadError) {
+          return rejectPermanent(
+            errorResult(error.code, error.message, requestId, error.retriable),
+            error.status,
+          );
+        }
+        return rejectPermanent(errorResult("internal", "Session lookup failed", requestId), 500);
+      }
+      if (resolved.revision !== request.expectedRevision) {
+        return rejectPermanent(agentTurnConflict(request, resolved.revision), 409);
+      }
+
+      let metadata: LitterBridgeSessionMetadata;
+      try {
+        metadata = readSessionMetadata(resolved);
+      } catch {
+        return rejectRetryable(
+          errorResult("section_unavailable", "Session metadata is unavailable", requestId, true),
+          503,
+        );
+      }
+      const runtimeAffinity = `litter-${litterBridgeSha256Utf8(
+        canonicalLitterBridgeJson([
+          "litter-turn-runtime-v1",
+          controllerId,
+          request.auth.device.deviceId,
+          request.session.sessionId,
+        ]),
+      )}`;
+      const existing = turnRuntime.findSessionForLookup(runtimeAffinity, request.session.sessionId);
+      if (existing?.session.status.active) {
+        return rejectRetryable(
+          errorResult(
+            "rate_limited",
+            "Session already has an active turn; prompt-only access cannot steer it",
+            requestId,
+            true,
+          ),
+          409,
+        );
+      }
+      const modelId =
+        request.modelId ??
+        qualifiedSessionModel(metadata) ??
+        boundedString(existing?.session.status.modelId);
+      if (!modelId) {
+        return rejectRetryable(
+          errorResult(
+            "agent_runtime_unavailable",
+            "Session model could not be resolved",
+            requestId,
+            true,
+          ),
+          503,
+        );
+      }
+      const target =
+        existing ?? turnRuntime.getSessionForLookup(runtimeAffinity, request.session.sessionId);
+      try {
+        await target.session.ensureStarted(modelId, resolved.cwd, request.session.sessionId);
+      } catch {
+        return rejectRetryable(
+          errorResult(
+            "agent_runtime_unavailable",
+            "Session runtime could not accept the selected model",
+            requestId,
+            true,
+          ),
+          503,
+        );
+      }
+      const runtimeStatus = target.session.status;
+      if (leaseLost) {
+        stopRenewal();
+        return jsonError(
+          "rate_limited",
+          "Prompt preparation lease was lost before dispatch",
+          requestId,
+          409,
+          true,
+        );
+      }
+      if (runtimeStatus.active) {
+        return rejectRetryable(
+          errorResult(
+            "rate_limited",
+            "Session became active before prompt dispatch",
+            requestId,
+            true,
+          ),
+          409,
+        );
+      }
+      if (
+        !runtimeStatus.running ||
+        runtimeStatus.piSessionId !== request.session.sessionId ||
+        runtimeStatus.cwd !== resolved.cwd ||
+        runtimeStatus.modelId !== modelId
+      ) {
+        return rejectRetryable(
+          errorResult("integrity_failed", "Runtime session identity changed", requestId, true),
+          409,
+        );
+      }
+      const current = sessionFileFingerprint(resolved.filepath);
+      if (current.value !== resolved.value || current.revision !== request.expectedRevision) {
+        return rejectPermanent(agentTurnConflict(request, current.revision), 409);
+      }
+
+      const dispatchId = randomUUID();
+      const correlation: MutationCorrelation = {
+        dispatchId,
+        sessionId: request.session.sessionId,
+        sessionFile: resolved.filepath,
+        messageId: request.messageId,
+        contentHash: request.contentHash,
+        baseRevision: request.expectedRevision,
+        baseOffset: current.size,
+        modelId,
+        dispatchedAt: now().toISOString(),
+      };
+      stopRenewal();
+      ledger.markDispatching(identity, request.auth.bodyHash, lease, correlation);
+      let boundary: PiDurablePromptBoundary;
+      try {
+        boundary = await acceptAgentTurnPrompt(target.session, request.content, {
+          dispatchId,
+          messageId: request.messageId,
+          contentHash: request.contentHash,
+        });
+      } catch (error) {
+        if (error instanceof AgentTurnPreflightRejected) {
+          ledger.releaseDispatchRetryable(identity, request.auth.bodyHash, dispatchId);
+          return jsonError(
+            "agent_runtime_unavailable",
+            "Prompt preflight was rejected by the session runtime",
+            requestId,
+            503,
+            true,
+          );
+        }
+        ledger.markIndeterminate(identity, request.auth.bodyHash, dispatchId);
+        throw error;
+      }
+      if (
+        boundary.dispatchId !== dispatchId ||
+        boundary.piSessionId !== request.session.sessionId ||
+        realpathSync.native(boundary.sessionFile) !== resolved.filepath ||
+        boundary.cwd !== resolved.cwd ||
+        boundary.modelId !== modelId
+      ) {
+        ledger.markIndeterminate(identity, request.auth.bodyHash, dispatchId);
+        throw new AgentTurnDispatchIndeterminate("Durable prompt boundary identity changed");
+      }
+      const acknowledgement = Schema.decodeUnknownSync(LitterBridgeAgentTurnAckSchema)({
+        type: "agent_turn_ack",
+        protocolVersion: LITTER_BRIDGE_PROTOCOL_VERSION,
+        requestId,
+        idempotencyKey: request.auth.idempotencyKey,
+        dispatchId,
+        canonicalSession: request.session,
+        messageId: request.messageId,
+        contentHash: request.contentHash,
+        baseRevision: request.expectedRevision,
+        piSessionId: request.session.sessionId,
+        modelId,
+        outcome: "accepted",
+        acceptedAt: boundary.acceptedAt,
+      });
+      ledger.settleDispatched(identity, request.auth.bodyHash, dispatchId, "accepted", {
+        status: 200,
+        result: acknowledgement,
+      });
+      return Response.json(acknowledgement);
     } catch (error) {
       const message =
         error instanceof AgentTurnDispatchIndeterminate
           ? "Prompt dispatch outcome is indeterminate and requires transcript reconciliation"
           : "Prompt dispatch failed closed";
       return jsonError("internal", message, requestId, 500);
+    } finally {
+      stopLeaseRenewal?.();
     }
   };
 
@@ -2729,15 +2900,18 @@ export function createLitterBridgeGateway(options: GatewayOptions = {}) {
   };
 
   const dispose = (): void => {
-    if (!published) return;
-    const filepath = metadataFile(dataDir);
-    try {
-      const current = JSON.parse(readFileSync(filepath, "utf8")) as Partial<GatewayMetadata>;
-      if (current.pid === published.pid && current.secret === published.secret) {
-        rmSync(filepath);
-      }
-    } catch {}
-    published = null;
+    if (published) {
+      const filepath = metadataFile(dataDir);
+      try {
+        const current = JSON.parse(readFileSync(filepath, "utf8")) as Partial<GatewayMetadata>;
+        if (current.pid === published.pid && current.secret === published.secret) {
+          rmSync(filepath);
+        }
+      } catch {}
+      published = null;
+    }
+    mutationLedger?.close();
+    mutationLedger = null;
   };
 
   return { handle, publishMetadata, dispose, controllerId, secret };

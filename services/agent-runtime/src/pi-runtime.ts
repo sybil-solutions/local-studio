@@ -1,4 +1,5 @@
 import { EventEmitter } from "node:events";
+import { closeSync, constants, fsyncSync, openSync, readSync, statSync } from "node:fs";
 import {
   createAgentSessionFromServices,
   createAgentSessionRuntime,
@@ -29,10 +30,137 @@ import type {
   PiAgentSession,
   PiAgentStatus,
   PiContextUsage,
+  PiDurablePromptBoundary,
+  PiDurablePromptMarker,
   PiPromptOptions,
 } from "./pi-runtime-types";
 
 type PiEvent = LoggedPiEvent["event"];
+
+type DurableSessionManager = Pick<
+  SessionManager,
+  "appendCustomEntry" | "getCwd" | "getEntries" | "getSessionFile" | "getSessionId"
+>;
+
+const messageText = (message: unknown): string | null => {
+  if (!message || typeof message !== "object" || Array.isArray(message)) return null;
+  const record = message as Record<string, unknown>;
+  if (record.role !== "user") return null;
+  if (typeof record.content === "string") return record.content;
+  if (!Array.isArray(record.content)) return null;
+  let text = "";
+  for (const part of record.content) {
+    if (!part || typeof part !== "object" || Array.isArray(part)) continue;
+    const item = part as Record<string, unknown>;
+    if (item.type === "text" && typeof item.text === "string") text += item.text;
+  }
+  return text;
+};
+
+export function persistLitterPromptBoundary(input: {
+  sessionManager: DurableSessionManager;
+  startEntryCount: number;
+  message: string;
+  marker: PiDurablePromptMarker;
+  modelId: string;
+}): PiDurablePromptBoundary {
+  const beforeMarker = input.sessionManager.getEntries();
+  const matches = beforeMarker.slice(input.startEntryCount).filter((entry) => {
+    if (!entry || typeof entry !== "object" || !("message" in entry)) return false;
+    return messageText(entry.message) === input.message;
+  });
+  if (matches.length !== 1) throw new Error("Prompt transcript boundary is ambiguous");
+  const userEntryId = matches[0]?.id;
+  const piSessionId = input.sessionManager.getSessionId();
+  const sessionFile = input.sessionManager.getSessionFile();
+  const cwd = input.sessionManager.getCwd();
+  if (!userEntryId || !piSessionId || !sessionFile || !cwd || !input.modelId) {
+    throw new Error("Prompt transcript boundary identity is incomplete");
+  }
+  const markerEntryId = input.sessionManager.appendCustomEntry("local_studio_litter_turn_v1", {
+    version: 1,
+    dispatchId: input.marker.dispatchId,
+    messageId: input.marker.messageId,
+    contentHash: input.marker.contentHash,
+    userEntryId,
+  });
+  const markerEntry = input.sessionManager.getEntries().find((entry) => entry.id === markerEntryId);
+  if (!markerEntry || typeof markerEntry.timestamp !== "string") {
+    throw new Error("Prompt transcript marker was not persisted");
+  }
+  const descriptor = openSync(sessionFile, constants.O_RDONLY);
+  try {
+    fsyncSync(descriptor);
+  } finally {
+    closeSync(descriptor);
+  }
+  const size = statSync(sessionFile).size;
+  const length = Math.min(size, 256 * 1024);
+  const buffer = Buffer.allocUnsafe(length);
+  const reader = openSync(sessionFile, constants.O_RDONLY);
+  let bytesRead = 0;
+  try {
+    bytesRead = readSync(reader, buffer, 0, length, size - length);
+  } finally {
+    closeSync(reader);
+  }
+  const encodedMarker = buffer
+    .subarray(0, bytesRead)
+    .toString("utf8")
+    .split("\n")
+    .filter(Boolean)
+    .find((line) => {
+      try {
+        const entry = JSON.parse(line) as Record<string, unknown>;
+        return entry.id === markerEntryId && entry.customType === "local_studio_litter_turn_v1";
+      } catch {
+        return false;
+      }
+    });
+  if (!encodedMarker) throw new Error("Prompt transcript marker durability check failed");
+  return {
+    dispatchId: input.marker.dispatchId,
+    markerEntryId,
+    userEntryId,
+    piSessionId,
+    sessionFile,
+    cwd,
+    modelId: input.modelId,
+    acceptedAt: markerEntry.timestamp,
+  };
+}
+
+export function selectPiRuntimeModel(
+  models: Awaited<ReturnType<typeof refreshPiModels>>["models"],
+  requestedModelId: string,
+) {
+  const exact = models.find((model) => model.id === requestedModelId);
+  if (exact) return exact;
+  const separator = requestedModelId.indexOf("/");
+  if (separator > 0) {
+    const providerId = requestedModelId.slice(0, separator);
+    const rawId = requestedModelId.slice(separator + 1);
+    const qualified = models.filter(
+      (model) => model.providerId === providerId && (model.rawId === rawId || model.id === rawId),
+    );
+    if (qualified.length === 1) return qualified[0];
+    if (qualified.length > 1) throw new Error(`Model '${requestedModelId}' is ambiguous.`);
+  }
+  const unqualified = models.filter(
+    (model) => model.rawId === requestedModelId || model.name === requestedModelId,
+  );
+  if (unqualified.length === 1) return unqualified[0];
+  if (unqualified.length > 1) throw new Error(`Model '${requestedModelId}' is ambiguous.`);
+  return null;
+}
+
+export function resolvePiRuntimeStartOptions(
+  current: RuntimeStartOptions,
+  running: boolean,
+  requested?: RuntimeStartOptions,
+): RuntimeStartOptions {
+  return structuredClone(requested ?? (running ? current : {}));
+}
 
 function runtimeFingerprint(
   modelId: string,
@@ -92,9 +220,14 @@ class PiSdkSession extends EventEmitter implements PiAgentSession {
     modelId: string,
     cwd?: string,
     piSessionId?: string | null,
-    options: RuntimeStartOptions = {},
+    options?: RuntimeStartOptions,
   ): Promise<void> {
-    return Effect.runPromise(this.ensureStartedEffect(modelId, cwd, piSessionId, options));
+    const effectiveOptions = resolvePiRuntimeStartOptions(
+      this.currentStartOptions,
+      Boolean(this.runtime),
+      options,
+    );
+    return Effect.runPromise(this.ensureStartedEffect(modelId, cwd, piSessionId, effectiveOptions));
   }
 
   private ensureStartedEffect(
@@ -120,9 +253,7 @@ class PiSdkSession extends EventEmitter implements PiAgentSession {
           try: () => refreshPiModels(),
           catch: (error) => error,
         });
-        const selectedModel = models.find(
-          (model) => model.id === modelId || model.rawId === modelId || model.name === modelId,
-        );
+        const selectedModel = selectPiRuntimeModel(models, modelId);
         if (!selectedModel) {
           return yield* Effect.fail(
             new Error(`Model '${modelId}' is not available from /v1/models.`),
@@ -242,6 +373,24 @@ class PiSdkSession extends EventEmitter implements PiAgentSession {
     options: PiPromptOptions = {},
   ): Promise<void> {
     return Effect.runPromise(this.promptEffect(message, onEvent, options));
+  }
+
+  async promptDurably(
+    message: string,
+    onEvent: (event: PiEvent, seq: number) => void,
+    marker: PiDurablePromptMarker,
+    options: PiPromptOptions = {},
+  ): Promise<PiDurablePromptBoundary> {
+    const runtimeSession = this.requireSession();
+    const startEntryCount = runtimeSession.sessionManager.getEntries().length;
+    await this.prompt(message, onEvent, options);
+    return persistLitterPromptBoundary({
+      sessionManager: runtimeSession.sessionManager,
+      startEntryCount,
+      message,
+      marker,
+      modelId: this.currentModelId,
+    });
   }
 
   private promptEffect(

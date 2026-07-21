@@ -510,7 +510,6 @@ describe("Litter bridge contracts", () => {
       messageId: "message-turn-1",
       contentHash: hash,
       baseRevision: 4,
-      runtimeSessionId: "runtime-turn-1",
       piSessionId: "session-1",
       modelId: "GLM-5.2",
       outcome: "accepted",

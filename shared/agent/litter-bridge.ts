@@ -556,7 +556,6 @@ export const LitterBridgeAgentTurnAckSchema = Schema.Struct({
   messageId: IdentifierSchema,
   contentHash: Sha256Schema,
   baseRevision: LitterBridgeRevisionSchema,
-  runtimeSessionId: IdentifierSchema,
   piSessionId: IdentifierSchema,
   modelId: IdentifierSchema,
   outcome: Schema.Literal("accepted"),
