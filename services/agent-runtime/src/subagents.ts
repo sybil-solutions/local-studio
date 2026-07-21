@@ -10,6 +10,32 @@ import { randomUUID } from "node:crypto";
 import { getGlobalSingleton } from "./instances";
 import { piRuntimeManager } from "./pi-runtime";
 import { lastAssistantText } from "./session-text";
+import { sessionSubagentLink, setSubagentLink } from "./session-metadata-store";
+
+// Codex-style nickname roster: children get a memorable identity in chips and
+// sidebar rows when the model doesn't name them.
+const NICKNAMES = [
+  "Euclid",
+  "Archimedes",
+  "Hypatia",
+  "Ptolemy",
+  "Leibniz",
+  "Lovelace",
+  "Boole",
+  "Turing",
+  "Hopper",
+  "Noether",
+  "Curie",
+  "Gauss",
+  "Euler",
+  "Ramanujan",
+  "Erdos",
+  "Franklin",
+  "Kepler",
+  "Darwin",
+  "Fermi",
+  "Bohr",
+];
 
 const MAX_CONCURRENT_PER_PARENT = 4;
 const MAX_RESULT_CHARS = 8000;
@@ -70,7 +96,11 @@ export async function runSubagent(input: {
   const registry = state();
   const { parentPiSessionId } = input;
 
-  if (registry.childPiSessionIds.has(parentPiSessionId)) {
+  // The persisted spawn edge backs the in-memory set across runtime restarts.
+  if (
+    registry.childPiSessionIds.has(parentPiSessionId) ||
+    sessionSubagentLink(parentPiSessionId) !== null
+  ) {
     throw new Error("Subagents cannot spawn their own subagents.");
   }
   const parent = findParentRuntime(parentPiSessionId);
@@ -87,10 +117,11 @@ export async function runSubagent(input: {
     );
   }
 
+  const siblingCount = listSubagents(parentPiSessionId).length;
   const run: SubagentRun = {
     id: randomUUID().slice(0, 8),
     parentPiSessionId,
-    name: input.name.trim() || "Subagent",
+    name: input.name.trim() || NICKNAMES[siblingCount % NICKNAMES.length],
     task: input.task,
     piSessionId: null,
     status: "running",
@@ -111,7 +142,12 @@ export async function runSubagent(input: {
     await session.prompt(taskPrompt(run.name, input.task), () => {});
     const status = session.status;
     run.piSessionId = status.piSessionId;
-    if (status.piSessionId) registry.childPiSessionIds.add(status.piSessionId);
+    if (status.piSessionId) {
+      registry.childPiSessionIds.add(status.piSessionId);
+      // Persist the spawn edge so the child renders as a nested thread in the
+      // sidebar and the link survives runtime restarts.
+      await setSubagentLink(status.piSessionId, parentPiSessionId, run.name).catch(() => undefined);
+    }
     const text = status.piSessionId ? lastAssistantText(status.cwd, status.piSessionId) : "";
     void session.stop().catch(() => undefined);
     if (status.lastError) {

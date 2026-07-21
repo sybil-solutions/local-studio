@@ -23,9 +23,9 @@ export const DEFAULT_BROWSER_URL = "about:blank";
 export const DEFAULT_BROWSER_BACKEND: BrowserBackend = "embedded";
 export const DEFAULT_COMPUTER_WIDTH = 440;
 export const MIN_COMPUTER_WIDTH = 280;
-export const MAX_COMPUTER_WIDTH = 560;
+export const MAX_COMPUTER_WIDTH = 1200;
 export const MIN_CHAT_WIDTH_WHEN_COMPUTER_OPEN = 360;
-export const COMPUTER_SNAP_WIDTHS = [360, 440, 520] as const;
+export const COMPUTER_SNAP_WIDTHS = [360, 440, 520, 720, 960] as const;
 
 const COMPUTER_TABS: readonly ComputerTab[] = COMPUTER_TAB_IDS;
 
@@ -41,7 +41,9 @@ export function computerWidthBounds(containerWidth = viewportWidth()): {
     return { min: MIN_COMPUTER_WIDTH, max: MAX_COMPUTER_WIDTH };
   }
   const minimum = Math.min(MIN_COMPUTER_WIDTH, containerWidth);
-  const roomyMaximum = Math.round(containerWidth * 0.42);
+  // The chat-safety cap below is the real guard; the ratio just keeps the
+  // panel from swallowing the whole window on huge displays.
+  const roomyMaximum = Math.round(containerWidth * 0.7);
   const chatSafeMaximum = containerWidth - MIN_CHAT_WIDTH_WHEN_COMPUTER_OPEN;
   return {
     min: minimum,

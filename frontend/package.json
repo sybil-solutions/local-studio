@@ -98,5 +98,14 @@
   "overrides": {
     "postcss": "^8.5.10"
   },
-  "main": "desktop/dist/main.js"
+  "main": "desktop/dist/main.js",
+  "allowScripts": {
+    "electron-winstaller@5.4.0": true,
+    "msgpackr-extract@3.0.4": true,
+    "protobufjs@7.6.5": true,
+    "protobufjs@7.6.4": true,
+    "sharp@0.34.5": true,
+    "unrs-resolver@1.11.1": true,
+    "@google/genai@1.52.0": true
+  }
 }

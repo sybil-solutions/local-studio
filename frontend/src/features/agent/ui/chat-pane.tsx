@@ -10,6 +10,7 @@ import { type FileMentionRow, type MentionRow } from "@/features/agent/ui/agent-
 import { builtinCommandProvider } from "@/features/agent/composer/builtin-commands";
 import { SessionGoalBar } from "@/features/agent/ui/session-goal-bar";
 import { SubagentChips } from "@/features/agent/ui/subagent-chips";
+import { GitDiffDrawer } from "@/features/agent/ui/git-diff-drawer";
 import {
   promptTemplateCommandProvider,
   skillCommandProvider,
@@ -22,22 +23,17 @@ import {
 import { deriveComposerVisual } from "@/features/agent/composer/composer-visual-state";
 import { ADD_PROJECT_EVENT } from "@/lib/workspace-events";
 
-function diffStatPill(gitSummary: GitSummary | null | undefined, onOpenStatus: () => void) {
-  if (!gitSummary?.isRepo || gitSummary.statusCount <= 0) return null;
-  return (
-    <div className="mx-auto mb-1 flex w-full max-w-[var(--composer-w)] justify-start">
-      <button
-        type="button"
-        onClick={onOpenStatus}
-        className="flex items-center gap-1.5 rounded-lg px-2 py-1 text-[length:var(--fs-xs)] tabular-nums text-(--fg)/50 transition-colors hover:bg-(--fg)/[0.05] hover:text-(--fg)/80"
-        title="Open status"
-      >
-        {gitSummary.statusCount} file{gitSummary.statusCount === 1 ? "" : "s"} changed
-        <span className="text-(--ok,#40c977)">+{gitSummary.additions}</span>
-        <span className="text-(--err)">−{gitSummary.deletions}</span>
-      </button>
-    </div>
-  );
+function diffDrawerFor(
+  open: boolean,
+  props: {
+    cwd: string | null;
+    gitBranch?: string | null;
+    gitSummary?: GitSummary | null;
+    onClose: () => void;
+  },
+) {
+  if (!open) return null;
+  return <GitDiffDrawer {...props} />;
 }
 
 function goalBarFor(piSessionId: string | null | undefined, revision: number) {
@@ -431,6 +427,9 @@ export function ChatPane({
     tools.setComputerTab("status");
     tools.setComputerOpen(true);
   }, [tools]);
+  const [diffDrawerOpen, setDiffDrawerOpen] = useState(false);
+  const openDiffDrawer = useCallback(() => setDiffDrawerOpen(true), []);
+  const closeDiffDrawer = useCallback(() => setDiffDrawerOpen(false), []);
   const exportSession = useCallback(() => {
     if (!activeTab) return;
     const markdown = sessionToMarkdown(activeTab.messages, displayedSessionTitle);
@@ -678,7 +677,12 @@ export function ChatPane({
         loadEarlierHistory={loadEarlierHistory}
       />
       <div className={terminalView ? "hidden" : "contents"}>
-        {diffStatPill(gitSummary, openComputerStatus)}
+        {diffDrawerFor(diffDrawerOpen, {
+          cwd: cwd || null,
+          gitBranch,
+          gitSummary,
+          onClose: closeDiffDrawer,
+        })}
         {subagentChipsFor(activePiSessionId)}
         {goalBarFor(activePiSessionId, goalRevision)}
         <AgentComposerFrame
@@ -719,6 +723,7 @@ export function ChatPane({
           onEditQueued={editQueued}
           onInitGit={onInitGit}
           onOpenStatus={openComputerStatus}
+          onOpenDiff={openDiffDrawer}
           onQueueExpandedChange={setQueueExpanded}
           onRemoveAttachment={removeAttachment}
           onRemoveLoadedContext={removeLoadedContext}

@@ -30,6 +30,9 @@ type StoredSessionMetadata = {
   projectId?: string;
   projectName?: string;
   sessionUpdatedAt?: string;
+  /** Present when this session is a subagent spawned by another session. */
+  parentSessionId?: string;
+  subagentName?: string;
 };
 
 type SessionMetadataStore = {
@@ -78,6 +81,9 @@ function normalizeStore(value: unknown): SessionMetadataStore {
       projectName: typeof metadata.projectName === "string" ? metadata.projectName : undefined,
       sessionUpdatedAt:
         typeof metadata.sessionUpdatedAt === "string" ? metadata.sessionUpdatedAt : undefined,
+      parentSessionId:
+        typeof metadata.parentSessionId === "string" ? metadata.parentSessionId : undefined,
+      subagentName: typeof metadata.subagentName === "string" ? metadata.subagentName : undefined,
     };
   }
   return { version: 1, sessions };
@@ -162,12 +168,59 @@ function applyMetadataInput(
   return next;
 }
 
-export function sessionArchiveState(sessionId: string): SessionArchiveState {
-  const metadata = readStore().sessions[sessionId];
-  return {
-    archived: metadata?.archived === true,
-    archivedAt: metadata?.archived === true ? (metadata.archivedAt ?? null) : null,
+export type SessionSubagentLink = {
+  parentSessionId: string;
+  subagentName: string | null;
+};
+
+export type SessionListMetadata = SessionArchiveState & {
+  parentSessionId: string | null;
+  subagentName: string | null;
+};
+
+/** One read of the store for decorating a whole session listing. */
+export function readSessionListMetadata(): (sessionId: string) => SessionListMetadata {
+  const sessions = readStore().sessions;
+  return (sessionId) => {
+    const metadata = sessions[sessionId];
+    return {
+      archived: metadata?.archived === true,
+      archivedAt: metadata?.archived === true ? (metadata.archivedAt ?? null) : null,
+      parentSessionId: metadata?.parentSessionId ?? null,
+      subagentName: metadata?.subagentName ?? null,
+    };
   };
+}
+
+export function sessionSubagentLink(sessionId: string): SessionSubagentLink | null {
+  const metadata = readStore().sessions[sessionId];
+  if (!metadata?.parentSessionId) return null;
+  return {
+    parentSessionId: metadata.parentSessionId,
+    subagentName: metadata.subagentName ?? null,
+  };
+}
+
+/** Persist the parent→child spawn edge so subagent threads survive restarts. */
+export async function setSubagentLink(
+  childSessionId: string,
+  parentSessionId: string,
+  subagentName: string | null,
+): Promise<void> {
+  const childId = childSessionId.trim();
+  const parentId = parentSessionId.trim();
+  if (!childId || !parentId || childId === parentId) return;
+  await withStoreLock(() => {
+    const store = readStore();
+    const current = store.sessions[childId] ?? {};
+    store.sessions[childId] = {
+      ...current,
+      parentSessionId: parentId,
+      ...(subagentName?.trim() ? { subagentName: subagentName.trim() } : {}),
+      updatedAt: new Date().toISOString(),
+    };
+    writeStore(store);
+  });
 }
 
 export function listArchivedSessionMetadata(): ArchivedSessionMetadata[] {
@@ -213,8 +266,27 @@ export async function setSessionArchived(
         },
         metadata,
       );
+    } else if (current.parentSessionId) {
+      // Keep the spawn edge; only drop the archive flags.
+      store.sessions[id] = {
+        ...current,
+        archived: false,
+        archivedAt: null,
+        updatedAt: now.toISOString(),
+      };
     } else {
       delete store.sessions[id];
+    }
+    // Archiving cascades to subagent children, Codex-style (and unarchiving
+    // brings them back), so a parent thread never leaves orphaned children.
+    for (const [childId, child] of Object.entries(store.sessions)) {
+      if (child.parentSessionId !== id || childId === id) continue;
+      store.sessions[childId] = {
+        ...child,
+        archived,
+        archivedAt: archived ? (child.archivedAt ?? now.toISOString()) : null,
+        updatedAt: now.toISOString(),
+      };
     }
     writeStore(store);
     return { archived, archivedAt };

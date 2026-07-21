@@ -13,7 +13,7 @@ import path from "node:path";
 import readline from "node:readline";
 import { resolveDataDir } from "./data-dir";
 import { cleanSessionTitle } from "../../../shared/agent/session-title";
-import { sessionArchiveState } from "./session-metadata-store";
+import { readSessionListMetadata } from "./session-metadata-store";
 import type { SessionSummary } from "../../../shared/agent/session-summary";
 export type { SessionSummary } from "../../../shared/agent/session-summary";
 
@@ -121,14 +121,24 @@ const SUMMARY_SCAN_LINE_CAP = 2000;
 type SummaryCacheEntry = {
   mtimeMs: number;
   complete: boolean;
-  core: Omit<SessionSummary, "updatedAt" | "archived" | "archivedAt"> | null;
+  core: Omit<
+    SessionSummary,
+    "updatedAt" | "archived" | "archivedAt" | "parentSessionId" | "subagentName"
+  > | null;
 };
 const summaryCache = new Map<string, SummaryCacheEntry>();
 const SUMMARY_CACHE_MAX_ENTRIES = 8192;
 
 function summaryFromCore(core: SummaryCacheEntry["core"], mtime: Date): SessionSummary | null {
   if (!core) return null;
-  return { ...core, updatedAt: mtime.toISOString(), archived: false, archivedAt: null };
+  return {
+    ...core,
+    updatedAt: mtime.toISOString(),
+    archived: false,
+    archivedAt: null,
+    parentSessionId: null,
+    subagentName: null,
+  };
 }
 
 function rememberSummary(filepath: string, entry: SummaryCacheEntry): void {
@@ -200,9 +210,13 @@ async function readSessionSummary(
   return summaryFromCore(core, stats.mtime);
 }
 
-function applySessionMetadata(summary: SessionSummary): SessionSummary {
-  const archiveState = sessionArchiveState(summary.id);
-  return { ...summary, ...archiveState };
+type SessionMetadataLookup = ReturnType<typeof readSessionListMetadata>;
+
+function applySessionMetadata(
+  summary: SessionSummary,
+  metadataFor: SessionMetadataLookup,
+): SessionSummary {
+  return { ...summary, ...metadataFor(summary.id) };
 }
 
 function summaryRelevantTime(summary: SessionSummary, archivedOnly: boolean): number {
@@ -242,6 +256,7 @@ async function readListCandidate(
   dir: string,
   filename: string,
   options: NormalizedListSessionsOptions,
+  metadataFor: SessionMetadataLookup,
 ): Promise<SessionSummary | null> {
   try {
     if (!filename.endsWith(".jsonl")) return null;
@@ -263,7 +278,7 @@ async function readListCandidate(
     const summary = await readSessionSummary(filepath, filename);
     if (!summary?.id) return null;
     if (options.wantedIds.size > 0 && !options.wantedIds.has(summary.id)) return null;
-    const decorated = applySessionMetadata(summary);
+    const decorated = applySessionMetadata(summary, metadataFor);
     return summaryMatchesListOptions(decorated, options) ? decorated : null;
   } catch {
     return null;
@@ -304,9 +319,15 @@ export async function listSessions(
 ): Promise<SessionSummary[]> {
   const summariesById = new Map<string, SessionSummary>();
   const normalizedOptions = normalizeListOptions(options);
+  const metadataFor = readSessionListMetadata();
   for (const candidate of listCandidateFiles(cwd)) {
     if (limitSatisfied(summariesById, options.limit, candidate.mtimeMs)) break;
-    const summary = await readListCandidate(candidate.dir, candidate.filename, normalizedOptions);
+    const summary = await readListCandidate(
+      candidate.dir,
+      candidate.filename,
+      normalizedOptions,
+      metadataFor,
+    );
     const existing = summary ? summariesById.get(summary.id) : null;
     if (summary && (!existing || summary.updatedAt > existing.updatedAt)) {
       summariesById.set(summary.id, summary);

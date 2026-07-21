@@ -273,7 +273,7 @@ function SessionOpenTarget({
           navigateToSessionHref(router, targetHref);
         }}
         onDragStart={onDragStart}
-        className="flex min-w-0 flex-1 items-center gap-1 pr-14"
+        className="flex min-w-0 flex-1 items-center gap-1 pr-2 group-focus-within:pr-14 group-hover:pr-14"
         {...openProps}
       >
         {content}
@@ -291,7 +291,7 @@ function SessionOpenTarget({
         onOpen?.("");
       }}
       aria-label={label}
-      className="flex min-w-0 flex-1 items-center gap-1 pr-14 text-left"
+      className="flex min-w-0 flex-1 items-center gap-1 pr-2 text-left group-focus-within:pr-14 group-hover:pr-14"
       {...openProps}
     >
       {content}
@@ -326,6 +326,11 @@ function SessionRowContent({
           aria-label="Unseen activity"
           title="Unseen activity"
         />
+      ) : null}
+      {age ? (
+        <span className="shrink-0 pl-1.5 text-[length:var(--fs-sm)] text-(--hl2) transition-opacity group-hover:opacity-0">
+          {age}
+        </span>
       ) : null}
     </>
   );

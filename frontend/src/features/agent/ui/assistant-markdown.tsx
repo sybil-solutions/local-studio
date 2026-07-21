@@ -138,62 +138,9 @@ const FencedCodeBlock = memo(function FencedCodeBlock({
 });
 FencedCodeBlock.displayName = "FencedCodeBlock";
 
-/* Codex prose scale: 14px body at 1.625 leading, headings 18/16/14/13
-   semibold, 12px between blocks. */
+/* All typography lives in `.chat-markdown` (chat.css) — the single Codex
+   ladder. Component overrides here are structural only. */
 const components: Components = {
-  h1: ({ node: _n, ...props }) => (
-    <h1
-      className="mb-2 mt-5 text-[18px] font-semibold leading-tight tracking-[-0.01em] text-(--fg) first:mt-0"
-      {...props}
-    />
-  ),
-  h2: ({ node: _n, ...props }) => (
-    <h2
-      className="mb-1.5 mt-4 text-[16px] font-semibold leading-snug tracking-[-0.01em] text-(--fg) first:mt-0"
-      {...props}
-    />
-  ),
-  h3: ({ node: _n, ...props }) => (
-    <h3
-      className="mb-1.5 mt-3.5 text-[14px] font-semibold leading-snug tracking-[-0.01em] text-(--fg) first:mt-0"
-      {...props}
-    />
-  ),
-  h4: ({ node: _n, ...props }) => (
-    <h4 className="mb-1 mt-3 text-[13px] font-semibold leading-snug text-(--fg)" {...props} />
-  ),
-  p: ({ node: _n, ...props }) => (
-    <p
-      className="my-3 max-w-full break-words text-[length:var(--codex-chat-font-size)] leading-[1.5] tracking-normal first:mt-0 last:mb-0 [overflow-wrap:anywhere]"
-      {...props}
-    />
-  ),
-  ul: ({ node: _n, ...props }) => <ul className="my-2 list-disc pl-4" {...props} />,
-  ol: ({ node: _n, ...props }) => <ol className="my-2 list-decimal pl-4" {...props} />,
-  li: ({ node: _n, ...props }) => (
-    <li
-      className="text-[length:var(--codex-chat-font-size)] leading-[1.5] tracking-normal"
-      {...props}
-    />
-  ),
-  code: ({ node: _n, className, children, ...props }) => {
-    const isBlock = typeof className === "string" && /\blanguage-/.test(className);
-    if (isBlock) {
-      return (
-        <code className={`${className ?? ""} font-mono`} {...props}>
-          {children}
-        </code>
-      );
-    }
-    return (
-      <code
-        className="rounded-[var(--rad-sm)] bg-(--fg)/10 px-1.5 py-0.5 font-mono text-[length:var(--codex-chat-code-font-size)] leading-[1.4] text-(--fg)/88 [overflow-wrap:anywhere]"
-        {...props}
-      >
-        {children}
-      </code>
-    );
-  },
   pre: ({ node: _n, children }) => {
     const code = nodeToPlainText(
       Children.toArray(children).find(
@@ -204,18 +151,8 @@ const components: Components = {
     return <FencedCodeBlock code={code} language={language} />;
   },
   a: ({ node: _n, href, ...props }) => (
-    <a
-      {...props}
-      href={href}
-      target="_blank"
-      rel="noreferrer noopener"
-      className="text-(--link) underline underline-offset-2 hover:opacity-80"
-    />
+    <a {...props} href={href} target="_blank" rel="noreferrer noopener" />
   ),
-  blockquote: ({ node: _n, ...props }) => (
-    <blockquote className="my-3 border-l-2 border-(--separator) pl-4 text-(--fg)/65" {...props} />
-  ),
-  hr: ({ node: _n, ...props }) => <hr className="my-3 border-(--border)" {...props} />,
   // Cells/rows are styled entirely via `.chat-markdown` in chat.css; only the
   // scroll wrapper needs a component override.
   table: ({ node: _n, ...props }) => (
@@ -340,10 +277,10 @@ function AssistantMarkdownInner({ text }: { text: string }) {
     [tools.setComputerOpen, tools.setComputerTab, tools.setBrowserUrl],
   );
   return (
-    <div className="chat-markdown min-w-0 max-w-full overflow-x-hidden text-[length:var(--fs-md)] leading-[18px] tracking-normal [overflow-wrap:anywhere]">
+    <div className="chat-markdown min-w-0 max-w-full overflow-x-hidden [overflow-wrap:anywhere]">
       <MarkdownErrorBoundary
         fallback={
-          <pre className="max-w-full whitespace-pre-wrap break-words text-[length:var(--fs-md)] leading-[19.2px] tracking-normal [font-family:var(--codex-chat-font-family)] [font-weight:var(--codex-chat-font-weight)] [overflow-wrap:anywhere]">
+          <pre className="max-w-full whitespace-pre-wrap break-words font-[inherit] [overflow-wrap:anywhere]">
             {normalizedText}
           </pre>
         }

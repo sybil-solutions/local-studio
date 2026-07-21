@@ -1,0 +1,291 @@
+{
+  "version": 1,
+  "updated": "2026-07-21",
+  "tiers": [
+    {
+      "id": "nano",
+      "label": "Nano",
+      "blurb": "Single consumer GPU / laptop",
+      "models": [
+        {
+          "id": "qwen3.5-9b",
+          "name": "Qwen3.5-9B",
+          "role": null,
+          "description": "Dense 9B with vision encoder, hybrid Gated DeltaNet/attention, 262K context",
+          "params": "9B dense, hybrid Gated DeltaNet/attention",
+          "active_params_b": null,
+          "context_tokens": 262144,
+          "license": "Apache-2.0",
+          "multimodal": true,
+          "notes": [
+            "Listed as \"qwen3.6-9b\" in some sources — no 3.6 9B exists; the 9B dense is Qwen3.5",
+            "Thinks by default — serve with --reasoning-parser qwen3",
+            "Needs bleeding-edge runtimes (vLLM nightly)",
+            "Text-only serving: --language-model-only frees vision memory",
+            "GGUF needs mmproj-*.gguf for vision",
+            "No official FP8 or NVFP4 — RedHatAI (FP8) and community (NVFP4) only"
+          ],
+          "variants": [
+            { "format": "bf16", "repo": "Qwen/Qwen3.5-9B", "official": true, "size_gb": 19.3, "caveat": null },
+            { "format": "fp8", "repo": "RedHatAI/Qwen3.5-9B-FP8-dynamic", "official": false, "source": "RedHatAI", "size_gb": null, "caveat": null },
+            { "format": "nvfp4", "repo": "kaitchup/Qwen3.5-9B-autoround-NVFP4", "official": false, "source": "kaitchup", "size_gb": null, "caveat": "community quant" },
+            { "format": "q4", "repo": "unsloth/Qwen3.5-9B-GGUF", "official": false, "source": "unsloth", "allow_patterns": ["*Q4_K_M*.gguf"], "size_gb": null, "caveat": null }
+          ]
+        },
+        {
+          "id": "gemma-4-e2b",
+          "name": "Gemma 4 E2B",
+          "role": null,
+          "description": "2.3B effective multimodal (text+image+audio in) with 128K context",
+          "params": "5.1B total w/ Per-Layer Embeddings (2.3B effective)",
+          "active_params_b": null,
+          "context_tokens": 131072,
+          "license": "Apache-2.0",
+          "multimodal": true,
+          "notes": [
+            "NVFP4 needs vLLM ≥ 0.25 + flashinfer — let vLLM auto-select the kernel (not Marlin)",
+            "Google also ships official QAT 4-bit GGUFs (google/gemma-4-E2B-it-qat-q4_0-gguf) as a creator-official alternative",
+            "No official FP8 — community FP8-dynamic only; official 4-bit path is Google's own QAT GGUFs"
+          ],
+          "variants": [
+            { "format": "bf16", "repo": "google/gemma-4-E2B-it", "official": true, "size_gb": null, "caveat": null },
+            { "format": "fp8", "repo": "leon-se/gemma-4-E2B-it-FP8-Dynamic", "official": false, "source": "leon-se", "size_gb": null, "caveat": "community quant" },
+            { "format": "nvfp4", "repo": "unsloth/gemma-4-E2B-it-NVFP4", "official": false, "source": "unsloth", "size_gb": null, "caveat": null },
+            { "format": "q4", "repo": "unsloth/gemma-4-E2B-it-GGUF", "official": false, "source": "unsloth", "allow_patterns": ["*Q4_K_M*.gguf"], "size_gb": null, "caveat": null },
+            { "format": "q4", "repo": "google/gemma-4-E2B-it-qat-q4_0-gguf", "official": true, "size_gb": null, "caveat": null }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "mini",
+      "label": "Mini",
+      "blurb": "Single 24–48 GB GPU",
+      "models": [
+        {
+          "id": "gemma-4-26b-a4b",
+          "name": "Gemma 4 26B A4B",
+          "role": "fast",
+          "description": "Multimodal MoE with only 3.8B active params — 3–5× faster decode than dense picks",
+          "params": "25.2B total MoE",
+          "active_params_b": 3.8,
+          "context_tokens": 262144,
+          "license": "Gemma",
+          "multimodal": true,
+          "notes": [
+            "MoE ≠ small download — all weights must still fit in memory",
+            "Do NOT use vLLM --quantization fp8 on-the-fly with the BF16 repo (broken output — use the RedHatAI checkpoint)",
+            "NVFP4 on non-Blackwell falls back to Marlin and is slower than FP8",
+            "GGUF has a known ROCm infinite-loop bug; bartowski publishes alternative imatrix GGUFs"
+          ],
+          "variants": [
+            { "format": "bf16", "repo": "google/gemma-4-26B-A4B-it", "official": true, "size_gb": 52, "caveat": null },
+            { "format": "fp8", "repo": "RedHatAI/gemma-4-26B-A4B-it-FP8-Dynamic", "official": false, "source": "RedHatAI", "size_gb": null, "caveat": null },
+            { "format": "nvfp4", "repo": "nvidia/Gemma-4-26B-A4B-NVFP4", "official": false, "source": "nvidia", "size_gb": null, "caveat": null },
+            { "format": "q4", "repo": "unsloth/gemma-4-26B-A4B-it-GGUF", "official": false, "source": "unsloth", "allow_patterns": ["*UD-Q4_K_M*.gguf"], "size_gb": null, "caveat": null }
+          ]
+        },
+        {
+          "id": "gemma-4-31b",
+          "name": "Gemma 4 31B",
+          "role": "smart",
+          "description": "Dense 31B with 262K context — the higher-quality dense pick in this tier",
+          "params": "31B dense",
+          "active_params_b": null,
+          "context_tokens": 262144,
+          "license": "Gemma",
+          "multimodal": false,
+          "notes": [
+            "FP8-block (W8A8, better accuracy) or FP8-dynamic, both need sm_89+",
+            "NVFP4 is Blackwell-only",
+            "Unsloth repo includes MTP draft GGUFs for speculative decoding"
+          ],
+          "variants": [
+            { "format": "bf16", "repo": "google/gemma-4-31B-it", "official": true, "size_gb": 62, "caveat": null },
+            { "format": "fp8", "repo": "RedHatAI/gemma-4-31B-it-FP8-block", "official": false, "source": "RedHatAI", "size_gb": null, "caveat": null },
+            { "format": "nvfp4", "repo": "nvidia/Gemma-4-31B-IT-NVFP4", "official": false, "source": "nvidia", "size_gb": null, "caveat": null },
+            { "format": "q4", "repo": "unsloth/gemma-4-31B-it-GGUF", "official": false, "source": "unsloth", "allow_patterns": ["*Q4_K_M*.gguf"], "size_gb": null, "caveat": null }
+          ]
+        },
+        {
+          "id": "qwen3.6-35b-a3b",
+          "name": "Qwen3.6-35B-A3B",
+          "role": "fast",
+          "description": "256-expert MoE with only 3B active params and MTP speculative decoding built in",
+          "params": "35B MoE, 256 experts",
+          "active_params_b": 3,
+          "context_tokens": 262144,
+          "license": "Apache-2.0",
+          "multimodal": false,
+          "notes": [
+            "MTP built in (usable as speculative decoding)",
+            "Needs vLLM ≥ 0.19 / SGLang ≥ 0.5.10",
+            "GGUF arch qwen35moe — older llama.cpp won't load it",
+            "Q4_K_M ≈ 20 GB"
+          ],
+          "variants": [
+            { "format": "bf16", "repo": "Qwen/Qwen3.6-35B-A3B", "official": true, "size_gb": null, "caveat": null },
+            { "format": "fp8", "repo": "Qwen/Qwen3.6-35B-A3B-FP8", "official": true, "size_gb": null, "caveat": null },
+            { "format": "nvfp4", "repo": "unsloth/Qwen3.6-35B-A3B-NVFP4", "official": false, "source": "unsloth", "size_gb": null, "caveat": null },
+            { "format": "q4", "repo": "unsloth/Qwen3.6-35B-A3B-GGUF", "official": false, "source": "unsloth", "allow_patterns": ["*UD-Q4_K_M*.gguf"], "size_gb": 20, "caveat": null }
+          ]
+        },
+        {
+          "id": "qwen3.6-27b",
+          "name": "Qwen3.6-27B",
+          "role": "smart",
+          "description": "Dense hybrid-arch 27B with 262K context — fits a 24 GB GPU at Q4_K_M",
+          "params": "27B dense, hybrid arch",
+          "active_params_b": null,
+          "context_tokens": 262144,
+          "license": "Apache-2.0",
+          "multimodal": false,
+          "notes": [
+            "Thinking is on by default; disable via chat_template_kwargs: {enable_thinking: false} (the /think soft-switch does not work on 3.6)",
+            "Avoid CUDA 13.2 (gibberish reports); use 13.1/12.x",
+            "~17 GB at Q4_K_M (24 GB GPU floor)"
+          ],
+          "variants": [
+            { "format": "bf16", "repo": "Qwen/Qwen3.6-27B", "official": true, "size_gb": null, "caveat": null },
+            { "format": "fp8", "repo": "Qwen/Qwen3.6-27B-FP8", "official": true, "size_gb": null, "caveat": null },
+            { "format": "nvfp4", "repo": "nvidia/Qwen3.6-27B-NVFP4", "official": false, "source": "nvidia", "size_gb": null, "caveat": null },
+            { "format": "q4", "repo": "unsloth/Qwen3.6-27B-GGUF", "official": false, "source": "unsloth", "allow_patterns": ["*Q4_K_M*.gguf"], "size_gb": 17, "caveat": null }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "medium",
+      "label": "Medium",
+      "blurb": "Large unified memory / multi-GPU — 200B+ MoEs",
+      "models": [
+        {
+          "id": "step-3.7-flash",
+          "name": "Step 3.7 Flash",
+          "role": null,
+          "description": "198B MoE with 11B active — runs on a 128 GB Mac Studio or DGX Spark at Q4",
+          "params": "198B MoE",
+          "active_params_b": 11,
+          "context_tokens": 262144,
+          "license": "Apache-2.0",
+          "multimodal": false,
+          "notes": [
+            "Even Q4 needs ≥120 GB unified memory (Mac Studio 128 GB, DGX Spark)",
+            "llama.cpp requires StepFun's fork (branch step3.7)",
+            "vLLM needs the dedicated vllm/vllm-openai:stepfun37 image + --trust-remote-code --disable-cascade-attn --reasoning-parser step3p5",
+            "Rare: StepFun ships its own NVFP4"
+          ],
+          "variants": [
+            { "format": "bf16", "repo": "stepfun-ai/Step-3.7-Flash", "official": true, "size_gb": null, "caveat": null },
+            { "format": "fp8", "repo": "stepfun-ai/Step-3.7-Flash-FP8", "official": true, "size_gb": null, "caveat": null },
+            { "format": "nvfp4", "repo": "stepfun-ai/Step-3.7-Flash-NVFP4", "official": true, "size_gb": null, "caveat": null },
+            { "format": "q4", "repo": "unsloth/Step-3.7-Flash-GGUF", "official": false, "source": "unsloth", "allow_patterns": ["*UD-Q4_K_XL*.gguf"], "size_gb": null, "caveat": null },
+            { "format": "q4", "repo": "stepfun-ai/Step-3.7-Flash-GGUF", "official": true, "allow_patterns": ["*Q4_K_S*.gguf"], "size_gb": null, "caveat": null }
+          ]
+        },
+        {
+          "id": "deepseek-v4-flash",
+          "name": "DeepSeek V4 Flash",
+          "role": null,
+          "description": "284B MoE with 13B active and 1M context — natively FP4+FP8, no BF16 by design",
+          "params": "284B MoE",
+          "active_params_b": 13,
+          "context_tokens": 1000000,
+          "license": "MIT",
+          "multimodal": false,
+          "notes": [
+            "No BF16 checkpoint exists — natively FP4-experts + FP8 mixed by design",
+            "FP8 (sgl-project) is the only Hopper path; NVFP4 is true-NVFP4 for Blackwell",
+            "GGUF needs latest llama.cpp + Unsloth's corrected chat template (official repo ships none)",
+            "MLX support still experimental",
+            "GGUF ships as 5 shards, ~155 GB total"
+          ],
+          "variants": [
+            { "format": "fp8", "repo": "deepseek-ai/DeepSeek-V4-Flash", "official": true, "size_gb": 160, "caveat": "native FP4-experts + FP8 mixed checkpoint" },
+            { "format": "fp8", "repo": "sgl-project/DeepSeek-V4-Flash-FP8", "official": false, "source": "sgl-project", "size_gb": null, "caveat": "SGLang team repack" },
+            { "format": "nvfp4", "repo": "nvidia/DeepSeek-V4-Flash-NVFP4", "official": false, "source": "nvidia", "size_gb": null, "caveat": null },
+            { "format": "q4", "repo": "unsloth/DeepSeek-V4-Flash-GGUF", "official": false, "source": "unsloth", "allow_patterns": ["*UD-Q4_K_XL*.gguf"], "size_gb": 155, "caveat": null }
+          ]
+        },
+        {
+          "id": "hy3",
+          "name": "Hy3",
+          "role": null,
+          "description": "Tencent Hunyuan 3 — 295B MoE with 21B active, MTP layer, and switchable reasoning effort",
+          "params": "295B MoE + MTP layer",
+          "active_params_b": 21,
+          "context_tokens": 262144,
+          "license": "Apache-2.0",
+          "multimodal": false,
+          "notes": [
+            "BF16 ≈ 598 GB, FP8 ≈ 300 GB — Tencent's recipe targets 8× H20 TP=8",
+            "Custom arch hy_v3 needs source-built vLLM; TP must divide 8 KV heads",
+            "Reasoning effort switchable (reasoning_effort: no_think/low/high)",
+            "Full release 2026-07-06",
+            "No official NVFP4 and no Unsloth GGUF — community/Tencent-toolkit alternatives only"
+          ],
+          "variants": [
+            { "format": "bf16", "repo": "tencent/Hy3", "official": true, "size_gb": 598, "caveat": null },
+            { "format": "fp8", "repo": "tencent/Hy3-FP8", "official": true, "size_gb": 300, "caveat": null },
+            { "format": "nvfp4", "repo": "LibertAIDAI/Hy3-NVFP4", "official": false, "source": "LibertAIDAI", "size_gb": null, "caveat": "community quant" },
+            { "format": "q4", "repo": "AngelSlim/Hy3-GGUF", "official": false, "source": "AngelSlim", "allow_patterns": ["*Q4_K_M*.gguf"], "size_gb": null, "caveat": null },
+            { "format": "q4", "repo": "bartowski/Hy3-GGUF", "official": false, "source": "bartowski", "size_gb": null, "caveat": "community quant" }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "large",
+      "label": "Large",
+      "blurb": "Datacenter-class only",
+      "models": [
+        {
+          "id": "minimax-m3",
+          "name": "MiniMax M3",
+          "role": null,
+          "description": "~428B MoE with 23B active and 1M context — needs dedicated vLLM image",
+          "params": "~428B MoE",
+          "active_params_b": 23,
+          "context_tokens": 1000000,
+          "license": "MiniMax",
+          "multimodal": false,
+          "notes": [
+            "Only official FP8 is MXFP8 microscaling (needs framework support)",
+            "vLLM serving needs the vllm/vllm-openai:minimax-m3 image, --trust-remote-code, minimax_m3 parsers",
+            "NVFP4 requires --block-size 128",
+            "GGUF ships as 7 shards, ~240 GB total"
+          ],
+          "variants": [
+            { "format": "bf16", "repo": "MiniMaxAI/MiniMax-M3", "official": true, "size_gb": null, "caveat": null },
+            { "format": "fp8", "repo": "MiniMaxAI/MiniMax-M3-MXFP8", "official": true, "size_gb": null, "caveat": "MXFP8 microscaling, not W8A8" },
+            { "format": "nvfp4", "repo": "nvidia/MiniMax-M3-NVFP4", "official": false, "source": "nvidia", "size_gb": null, "caveat": null },
+            { "format": "q4", "repo": "unsloth/MiniMax-M3-GGUF", "official": false, "source": "unsloth", "allow_patterns": ["*UD-Q4_K_M*.gguf"], "size_gb": 240, "caveat": null }
+          ]
+        },
+        {
+          "id": "glm-5.2",
+          "name": "GLM 5.2",
+          "role": null,
+          "description": "753B MoE with ~40B active and 1M context — NVIDIA evals show NVFP4 ≈ FP8 parity",
+          "params": "753B MoE",
+          "active_params_b": 40,
+          "context_tokens": 1000000,
+          "license": "MIT",
+          "multimodal": false,
+          "notes": [
+            "BF16 ≈ 1.5 TB",
+            "NVIDIA's evals show NVFP4 ≈ FP8 parity (GPQA 89.39 vs 89.52)",
+            "NVFP4 needs vLLM ≥ 0.23 / --quantization modelopt_fp4, --trust-remote-code, transformers ≥ 5.3",
+            "Base repo is the chat model (no -Instruct suffix)"
+          ],
+          "variants": [
+            { "format": "bf16", "repo": "zai-org/GLM-5.2", "official": true, "size_gb": 1500, "caveat": null },
+            { "format": "fp8", "repo": "zai-org/GLM-5.2-FP8", "official": true, "size_gb": null, "caveat": null },
+            { "format": "nvfp4", "repo": "nvidia/GLM-5.2-NVFP4", "official": false, "source": "nvidia", "size_gb": null, "caveat": null },
+            { "format": "q4", "repo": "unsloth/GLM-5.2-GGUF", "official": false, "source": "unsloth", "allow_patterns": ["*UD-Q4_K_M*.gguf"], "size_gb": null, "caveat": null }
+          ]
+        }
+      ]
+    }
+  ]
+}

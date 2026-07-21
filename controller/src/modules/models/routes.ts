@@ -39,6 +39,7 @@ const decodeResponse = <S extends Schema.Constraint>(
     Effect.flatMap(Schema.decodeUnknownEffect(schema)),
   );
 import { buildModelInfo, discoverModelDirectories } from "./model-browser";
+import { isRecipeRunning } from "./recipes/recipe-matching";
 import { notFound } from "../../core/errors";
 import { findObservedInferenceProcess } from "../../core/function-observability";
 import { parseBooleanFlag } from "../../core/validation";
@@ -98,21 +99,7 @@ export const registerModelsRoutes = defineRoutes((app, context) => {
             let isActive = false;
             let maxModelLength = recipe.max_model_len;
             if (current) {
-              if (
-                current.served_model_name &&
-                recipe.served_model_name === current.served_model_name
-              ) {
-                isActive = true;
-              } else if (current.model_path) {
-                if (
-                  recipe.model_path.includes(current.model_path) ||
-                  current.model_path.includes(recipe.model_path)
-                ) {
-                  isActive = true;
-                } else if (basename(current.model_path) === basename(recipe.model_path)) {
-                  isActive = true;
-                }
-              }
+              isActive = isRecipeRunning(recipe, current, { allowEitherPathContains: true });
               if (isActive && activeModelData?.data?.[0]?.max_model_len) {
                 maxModelLength = activeModelData.data[0].max_model_len;
               }
@@ -178,12 +165,7 @@ export const registerModelsRoutes = defineRoutes((app, context) => {
           const current = yield* findObservedInferenceProcess(context, "models.detail");
           let isActive = false;
           let maxModelLength = recipe.max_model_len;
-          if (
-            current &&
-            current.model_path &&
-            recipe.model_path &&
-            current.model_path.includes(recipe.model_path)
-          ) {
+          if (current && isRecipeRunning(recipe, current, { allowEitherPathContains: true })) {
             isActive = true;
             const data = yield* fetchInference(context, "/v1/models", { timeoutMs: 5000 }).pipe(
               Effect.flatMap((response) =>

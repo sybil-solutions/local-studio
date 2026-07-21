@@ -43,6 +43,45 @@ export interface RuntimeJobResponse {
   job: EngineJob;
 }
 
+export type ModelIndexVariantFormat = "bf16" | "fp8" | "nvfp4" | "q4";
+
+export interface ModelIndexVariant {
+  format: ModelIndexVariantFormat;
+  repo: string;
+  official: boolean;
+  source?: string;
+  allow_patterns?: string[];
+  size_gb: number | null;
+  caveat: string | null;
+}
+
+export interface ModelIndexModel {
+  id: string;
+  name: string;
+  role: "fast" | "smart" | null;
+  description: string;
+  params: string;
+  active_params_b: number | null;
+  context_tokens: number;
+  license: string;
+  multimodal: boolean;
+  notes: string[];
+  variants: ModelIndexVariant[];
+}
+
+export interface ModelIndexTier {
+  id: string;
+  label: string;
+  blurb: string;
+  models: ModelIndexModel[];
+}
+
+export interface ModelIndexResponse {
+  version: number;
+  updated: string;
+  tiers: ModelIndexTier[];
+}
+
 export function createStudioApi(core: ApiCore) {
   return {
     getModels: (): Promise<{
@@ -71,6 +110,9 @@ export function createStudioApi(core: ApiCore) {
       recommendations: ModelRecommendation[];
       max_vram_gb: number;
     }> => core.request("/studio/recommendations"),
+
+    getModelIndex: (options?: RequestOptions): Promise<ModelIndexResponse> =>
+      core.request("/studio/model-index", options),
 
     getStarterPresets: (): Promise<{
       presets: StarterPreset[];

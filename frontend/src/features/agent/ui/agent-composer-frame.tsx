@@ -64,6 +64,7 @@ export type AgentComposerFrameProps = {
   onEditQueued: (queueId: string, text: string) => void;
   onInitGit?: () => void;
   onOpenStatus: () => void;
+  onOpenDiff: () => void;
   onQueueExpandedChange: (expanded: boolean) => void;
   onRemoveAttachment: (id: string) => void;
   onRemoveLoadedContext: (kind: LoadedContextKind, id: string) => void;
@@ -120,6 +121,7 @@ export function AgentComposerFrame({
   onEditQueued,
   onInitGit,
   onOpenStatus,
+  onOpenDiff,
   onQueueExpandedChange,
   onRemoveAttachment,
   onRemoveLoadedContext,
@@ -254,6 +256,7 @@ export function AgentComposerFrame({
           currentContextTokens={currentContextTokens}
           contextWindow={contextWindow}
           onOpenStatus={onOpenStatus}
+          onOpenDiff={onOpenDiff}
         />
       )}
     </form>

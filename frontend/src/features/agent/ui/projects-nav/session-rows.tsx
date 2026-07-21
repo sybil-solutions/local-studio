@@ -184,8 +184,10 @@ export function ProjectSessions({
   const reload = useCallback(async () => {
     setLoading(true);
     try {
+      // Overfetch a little: subagent children nest under their parent row
+      // instead of consuming top-level slots.
       const response = await fetch(
-        `/api/agent/sessions?cwd=${encodeURIComponent(project.path)}&since=7d&limit=${visibleLimit + 1}`,
+        `/api/agent/sessions?cwd=${encodeURIComponent(project.path)}&since=7d&limit=${visibleLimit + 9}`,
         { cache: "no-store" },
       );
       const payload = await safeJson<{ sessions?: SessionSummary[] }>(response);
@@ -212,9 +214,22 @@ export function ProjectSessions({
   const recent = useMemo(() => {
     return (sessions ?? []).filter(
       (session) =>
-        !excludedIds.has(session.id) && !prefs[session.id]?.pinned && !prefs[session.id]?.hidden,
+        !session.parentSessionId &&
+        !excludedIds.has(session.id) &&
+        !prefs[session.id]?.pinned &&
+        !prefs[session.id]?.hidden,
     );
   }, [sessions, excludedIds, prefs]);
+  const childrenByParent = useMemo(() => {
+    const map = new Map<string, SessionSummary[]>();
+    for (const session of sessions ?? []) {
+      if (!session.parentSessionId || prefs[session.id]?.hidden) continue;
+      const list = map.get(session.parentSessionId) ?? [];
+      list.push(session);
+      map.set(session.parentSessionId, list);
+    }
+    return map;
+  }, [sessions, prefs]);
   const orderedRows = useMemo(
     () => sessionRows(visibleActiveSessions, recent, activity),
     [visibleActiveSessions, recent, activity],
@@ -229,26 +244,33 @@ export function ProjectSessions({
       ) : orderedRows.length === 0 ? (
         <div className="pl-2 pr-2 py-0.5 text-[length:var(--fs-sm)] text-(--dim)">No chats</div>
       ) : (
-        visibleRows.map((row) =>
-          row.kind === "open" ? (
-            <ActiveSessionRow
-              key={row.key}
-              project={project}
-              session={row.session}
-              pref={mergeActiveSessionPref(row.session, prefs)}
-              activity={row.activity}
-            />
-          ) : (
-            <SessionRow
-              key={row.key}
-              project={project}
-              session={row.session}
-              pref={prefs[row.session.id] ?? {}}
-              isRunning={row.activity === "running"}
-              unseen={row.activity === "unseen"}
-            />
-          ),
-        )
+        visibleRows.map((row) => {
+          const parentId = row.kind === "open" ? row.session.threadId : row.session.id;
+          const subagents = parentId ? childrenByParent.get(parentId) : undefined;
+          return (
+            <div key={row.key} className="flex flex-col">
+              {row.kind === "open" ? (
+                <ActiveSessionRow
+                  project={project}
+                  session={row.session}
+                  pref={mergeActiveSessionPref(row.session, prefs)}
+                  activity={row.activity}
+                />
+              ) : (
+                <SessionRow
+                  project={project}
+                  session={row.session}
+                  pref={prefs[row.session.id] ?? {}}
+                  isRunning={row.activity === "running"}
+                  unseen={row.activity === "unseen"}
+                />
+              )}
+              {subagents?.length ? (
+                <SubagentSessionRows project={project} sessions={subagents} prefs={prefs} />
+              ) : null}
+            </div>
+          );
+        })
       )}
       {hasMore ? (
         <button
@@ -259,6 +281,51 @@ export function ProjectSessions({
           Show more
         </button>
       ) : null}
+    </div>
+  );
+}
+
+// Subagent child sessions, nested under their parent row Codex-style:
+// collapsed to a count by default, expandable to full openable session rows.
+function SubagentSessionRows({
+  project,
+  sessions,
+  prefs,
+}: {
+  project: ProjectEntry;
+  sessions: SessionSummary[];
+  prefs: SessionPrefs;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="ml-[14px] flex flex-col border-l border-(--border) pl-1">
+      <button
+        type="button"
+        onClick={() => setOpen((value) => !value)}
+        className="flex h-[var(--sidebar-row-height)] items-center gap-1.5 rounded-[var(--sidebar-row-radius)] pl-2 pr-2 text-left text-[length:var(--fs-sm)] text-(--dim) transition-colors hover:bg-(--hover) hover:text-(--fg)"
+        aria-expanded={open}
+      >
+        <span
+          className={`inline-block transition-transform ${open ? "rotate-90" : ""}`}
+          aria-hidden
+        >
+          ›
+        </span>
+        {sessions.length} subagent{sessions.length === 1 ? "" : "s"}
+      </button>
+      {open
+        ? sessions.map((session) => (
+            <SessionRow
+              key={session.id}
+              project={project}
+              session={session}
+              pref={{
+                ...(prefs[session.id] ?? {}),
+                title: prefs[session.id]?.title ?? session.subagentName ?? undefined,
+              }}
+            />
+          ))
+        : null}
     </div>
   );
 }

@@ -6,12 +6,13 @@ import { badRequest, notFound } from "../../core/errors";
 import { decodeJsonBody } from "../../core/validation";
 import { effectHandler } from "../../http/effect-handler";
 import { documentRoute, defineRoutes, mergeRoutes } from "../../http/route-registrar";
+import { registerStudioModelIndexRoutes } from "./model-index";
 import { registerStudioProviderRoutes } from "./provider-routes";
 import { registerStudioRigRoutes } from "./rig-routes";
 import { getGpuInfo } from "../system/platform/gpu";
 import type { GpuInfo } from "../models/types";
 import { discoverModelDirectories, estimateWeightsSizeBytes } from "../models/model-browser";
-import { STUDIO_MODEL_RECOMMENDATIONS, STUDIO_STARTER_PRESETS } from "./configs";
+import { STUDIO_STARTER_PRESETS } from "./configs";
 import {
   getPersistedConfigPath,
   loadPersistedConfig,
@@ -235,29 +236,6 @@ export const registerStudioRoutes = defineRoutes((app, context) => {
     ),
 
     app.get(
-      "/studio/recommendations",
-      documentRoute,
-      effectHandler((ctx) =>
-        getGpuInfo().pipe(
-          Effect.map((gpus) => {
-            const maxVramGb = deriveRecommendationVramGb(gpus);
-            const appleSilicon = platform() === "darwin" && arch() === "arm64";
-            const recommendations = appleSilicon
-              ? []
-              : STUDIO_MODEL_RECOMMENDATIONS.filter(
-                  (model) =>
-                    !model.min_vram_gb ||
-                    (maxVramGb === 0
-                      ? model.min_vram_gb <= 8
-                      : model.min_vram_gb <= maxVramGb),
-                );
-            return ctx.json({ recommendations, max_vram_gb: maxVramGb });
-          }),
-        ),
-      ),
-    ),
-
-    app.get(
       "/studio/presets",
       documentRoute,
       effectHandler((ctx) =>
@@ -374,6 +352,7 @@ export const registerStudioRoutes = defineRoutes((app, context) => {
       ),
     ),
 
+    registerStudioModelIndexRoutes(app, context),
     registerStudioProviderRoutes(app, context),
     registerStudioRigRoutes(app, context),
   );

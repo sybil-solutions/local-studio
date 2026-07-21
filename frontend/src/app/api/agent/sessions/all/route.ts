@@ -58,6 +58,8 @@ export async function GET(request: NextRequest) {
         firstUserMessage: metadata.title,
         archived: true,
         archivedAt: metadata.archivedAt,
+        parentSessionId: null,
+        subagentName: null,
         projectId: metadata.projectId ?? "",
         projectName: metadata.projectName ?? "Unknown project",
         projectPath: metadata.cwd ?? "",

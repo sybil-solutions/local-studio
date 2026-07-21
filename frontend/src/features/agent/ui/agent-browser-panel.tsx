@@ -26,6 +26,7 @@ import {
   type TerminalOwnersSnapshot,
 } from "@/features/agent/ui/use-persistent-terminal-owners";
 import { normalizeBrowserInput } from "@/features/agent/tools/browser-url";
+import { MAX_COMPUTER_WIDTH, MIN_COMPUTER_WIDTH } from "@/features/agent/tools/persistence";
 import {
   sanitizeBrowserPaneUrl,
   sanitizeLocalFileUrl,
@@ -258,7 +259,11 @@ export function AgentBrowserPanel({
       ref={registerComputerAside}
       tabIndex={-1}
       onKeyDown={handleComputerKeyDown}
-      style={{ width: `${tools.computer.width}px`, minWidth: 280, maxWidth: 560 }}
+      style={{
+        width: `${tools.computer.width}px`,
+        minWidth: MIN_COMPUTER_WIDTH,
+        maxWidth: MAX_COMPUTER_WIDTH,
+      }}
     >
       <div
         role="separator"

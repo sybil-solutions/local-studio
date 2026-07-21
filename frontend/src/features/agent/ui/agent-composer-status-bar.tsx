@@ -12,6 +12,7 @@ export function AgentComposerStatusBar({
   currentContextTokens,
   contextWindow,
   onOpenStatus,
+  onOpenDiff,
 }: {
   cwd: string;
   gitBranch?: string | null;
@@ -20,6 +21,7 @@ export function AgentComposerStatusBar({
   currentContextTokens: number;
   contextWindow: number;
   onOpenStatus: () => void;
+  onOpenDiff: () => void;
 }) {
   const displayCwd = formatHomeRelativePath(cwd);
 
@@ -34,7 +36,7 @@ export function AgentComposerStatusBar({
           ) : null}
         </div>
         <GitBranchState gitBranch={gitBranch} gitSummary={gitSummary} onInitGit={onInitGit} />
-        <GitSummaryState gitSummary={gitSummary} />
+        <GitSummaryState gitSummary={gitSummary} onOpenDiff={onOpenDiff} />
       </div>
       <ContextReadout
         current={currentContextTokens}
@@ -80,17 +82,30 @@ function GitBranchState({
   return null;
 }
 
-function GitSummaryState({ gitSummary }: { gitSummary?: GitSummary | null }) {
+function GitSummaryState({
+  gitSummary,
+  onOpenDiff,
+}: {
+  gitSummary?: GitSummary | null;
+  onOpenDiff: () => void;
+}) {
   if (!gitSummary?.isRepo) return null;
 
+  // The single diff-stat surface: the old pill above the composer duplicated
+  // this. Clicking opens the working-tree diff in a drawer.
   return (
-    <span className="inline-flex shrink-0 items-center gap-1">
+    <button
+      type="button"
+      onClick={onOpenDiff}
+      className="inline-flex shrink-0 items-center gap-1 rounded-sm px-1 transition-colors hover:bg-(--fg)/[0.05]"
+      title="View changes"
+    >
       <span className="text-(--ok)">+{gitSummary.additions}</span>
       <span className="text-(--err)">-{gitSummary.deletions}</span>
       {gitSummary.statusCount > 0 ? (
         <span className="text-(--dim)">· {gitSummary.statusCount} files</span>
       ) : null}
-    </span>
+    </button>
   );
 }
 
