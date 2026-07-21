@@ -548,11 +548,15 @@ const fetchControllerJson = async (
   return readBoundedResponse(response);
 };
 
-const freshness = (observedAt: string | null, maxAgeMs: number): LitterBridgeFreshness => ({
+const freshness = (
+  observedAt: string | null,
+  maxAgeMs: number,
+  stale = observedAt === null,
+): LitterBridgeFreshness => ({
   observedAt,
   ageMs: observedAt ? 0 : null,
   maxAgeMs,
-  stale: false,
+  stale,
   sourceRevision: null,
 });
 

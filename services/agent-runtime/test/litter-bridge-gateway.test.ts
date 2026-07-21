@@ -910,6 +910,7 @@ test("independent controller failures produce an explicit degraded partial snaps
   assert.equal(snapshot.sections.health.value.reachable, true);
   assert.equal(snapshot.sections.metrics.value, null);
   assert.equal(snapshot.sections.metrics.error.code, "section_unavailable");
+  assert.equal(snapshot.sections.metrics.freshness.stale, true);
 });
 
 test("published handoff metadata is private and removed only by its owner", () => {
