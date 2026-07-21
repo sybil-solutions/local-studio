@@ -102,6 +102,7 @@ type GatewayOptions = {
   dataDir?: string;
   displayName?: string;
   controllerUrl?: string;
+  controllerApiKey?: string;
   now?: () => Date;
   fetch?: FetchImplementation;
   runtimeStats?: () => RuntimeStats;
@@ -530,10 +531,13 @@ const fetchControllerJson = async (
   base: URL,
   route: string,
   timeoutMs: number,
+  apiKey: string,
 ): Promise<unknown> => {
+  const headers = new Headers({ Accept: "application/json" });
+  if (apiKey) headers.set("Authorization", `Bearer ${apiKey}`);
   const response = await implementation(new URL(route, base), {
     method: "GET",
-    headers: { Accept: "application/json" },
+    headers,
     redirect: "manual",
     signal: AbortSignal.timeout(timeoutMs),
   });
@@ -1954,13 +1958,16 @@ export function createLitterBridgeGateway(options: GatewayOptions = {}) {
   const buildSnapshot = async (
     request: LitterBridgeControllerSnapshotRequest,
   ): Promise<LitterBridgeControllerSnapshot> => {
-    const backendUrl = options.controllerUrl ?? (await getApiSettings()).backendUrl;
+    const settings = options.controllerUrl === undefined ? await getApiSettings() : null;
+    const backendUrl = options.controllerUrl ?? settings?.backendUrl;
+    if (!backendUrl) throw new Error("Controller settings are unavailable");
+    const apiKey = options.controllerApiKey ?? settings?.apiKey ?? "";
     const base = resolveControllerBase(backendUrl);
     const requestId = request.auth.requestId;
     const healthPromise = (async () => {
       const startedAt = performance.now();
       try {
-        const result = await fetchControllerJson(implementation, base, "/health", 1_500);
+        const result = await fetchControllerJson(implementation, base, "/health", 1_500, apiKey);
         if (!isRecord(result) || result.status !== "ok") {
           throw new Error("Controller health shape is invalid");
         }
@@ -1988,7 +1995,7 @@ export function createLitterBridgeGateway(options: GatewayOptions = {}) {
     const statusPromise = (async () => {
       try {
         const value = normalizeStatus(
-          await fetchControllerJson(implementation, base, "/status", 2_000),
+          await fetchControllerJson(implementation, base, "/status", 2_000, apiKey),
         );
         const observedAt = now().toISOString();
         return fulfilledSection(value, observedAt, 5_000);
@@ -2004,7 +2011,7 @@ export function createLitterBridgeGateway(options: GatewayOptions = {}) {
     const gpusPromise = (async () => {
       try {
         const value = normalizeGpus(
-          await fetchControllerJson(implementation, base, "/gpus", 2_500),
+          await fetchControllerJson(implementation, base, "/gpus", 2_500, apiKey),
         );
         const observedAt = now().toISOString();
         return fulfilledSection(value, observedAt, 10_000);
@@ -2020,7 +2027,13 @@ export function createLitterBridgeGateway(options: GatewayOptions = {}) {
     const metricsPromise = (async () => {
       try {
         const value = normalizeMetrics(
-          await fetchControllerJson(implementation, base, "/v1/metrics/vllm", 2_500),
+          await fetchControllerJson(
+            implementation,
+            base,
+            "/v1/metrics/vllm",
+            2_500,
+            apiKey,
+          ),
         );
         const observedAt = now().toISOString();
         return fulfilledSection(value, observedAt, 5_000);

@@ -82,12 +82,12 @@ const signedRequest = (
 };
 
 const controllerFetch =
-  (failedRoute?: string) =>
+  (failedRoute?: string, expectedAuthorization: string | null = null) =>
   async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
     const url = new URL(input instanceof Request ? input.url : input.toString());
     assert.equal(init?.method, "GET");
     assert.equal(init?.redirect, "manual");
-    assert.equal(new Headers(init?.headers).has("authorization"), false);
+    assert.equal(new Headers(init?.headers).get("authorization"), expectedAuthorization);
     if (url.pathname === failedRoute) return Response.json({ error: "down" }, { status: 503 });
     if (url.pathname === "/health") return Response.json({ status: "ok" });
     if (url.pathname === "/status") {
@@ -646,8 +646,9 @@ test("valid signed read returns a strict complete snapshot and replay is rejecte
     controllerId: CONTROLLER_ID,
     displayName: "Test Studio",
     controllerUrl: "http://127.0.0.1:8080",
+    controllerApiKey: "controller-secret",
     now: () => new Date(NOW),
-    fetch: controllerFetch(),
+    fetch: controllerFetch(undefined, "Bearer controller-secret"),
     runtimeStats: () => ({
       runningSessionCount: 3,
       activeTurnCount: 1,
