@@ -5,6 +5,7 @@ import { parseBooleanFlag } from "./core/validation";
 import { createApp } from "./http/app";
 import { startMetricsCollector } from "./modules/system/metrics-collector";
 import { detectGpuMonitoringTool } from "./modules/system/platform/gpu";
+import { isProxyModeEnabled, startProxyMode } from "./proxy-mode";
 
 class ControllerStartupError extends Schema.TaggedErrorClass<ControllerStartupError>()(
   "ControllerStartupError",
@@ -57,49 +58,69 @@ const serve = (
     catch: (source) => startupError("server.start", source),
   });
 
-const runtime = createControllerRuntime();
-const program = Effect.scoped(
-  Effect.gen(function* () {
-    const context = yield* AppContextService;
-    if (metricsDisabled()) {
-      context.logger.warn("Metrics collector disabled by LOCAL_STUDIO_DISABLE_METRICS");
-    } else {
-      yield* Effect.forkScoped(startMetricsCollector(context));
-    }
-    const server = yield* Effect.acquireRelease(serve(context, runtime), (resource) =>
-      Effect.tryPromise({
-        try: () => resource.stop(),
-        catch: (source) => startupError("server.stop", source),
-      }).pipe(
-        Effect.catch((error) =>
-          Effect.sync(() =>
-            context.logger.error("Server failed to stop", { error: String(error) }),
+const startFullController = (): void => {
+  const runtime = createControllerRuntime();
+  const program = Effect.scoped(
+    Effect.gen(function* () {
+      const context = yield* AppContextService;
+      if (metricsDisabled()) {
+        context.logger.warn("Metrics collector disabled by LOCAL_STUDIO_DISABLE_METRICS");
+      } else {
+        yield* Effect.forkScoped(startMetricsCollector(context));
+      }
+      const server = yield* Effect.acquireRelease(serve(context, runtime), (resource) =>
+        Effect.tryPromise({
+          try: () => resource.stop(),
+          catch: (source) => startupError("server.stop", source),
+        }).pipe(
+          Effect.catch((error) =>
+            Effect.sync(() =>
+              context.logger.error("Server failed to stop", { error: String(error) }),
+            ),
           ),
         ),
-      ),
-    );
-    context.logger.info(`Controller listening on ${context.config.host}:${server.port}`);
-    yield* logBootSummary(context, server.port ?? context.config.port);
-    return yield* Effect.never;
-  }),
-);
-const fiber = runtime.runFork(program);
-let shuttingDown = false;
+      );
+      context.logger.info(`Controller listening on ${context.config.host}:${server.port}`);
+      yield* logBootSummary(context, server.port ?? context.config.port);
+      return yield* Effect.never;
+    }),
+  );
+  const fiber = runtime.runFork(program);
+  let shuttingDown = false;
 
-fiber.addObserver((exit) => {
-  if (shuttingDown || Exit.isSuccess(exit)) return;
-  shuttingDown = true;
-  console.error(Cause.pretty(exit.cause));
-  void runtime.dispose().finally(() => process.exit(1));
-});
+  fiber.addObserver((exit) => {
+    if (shuttingDown || Exit.isSuccess(exit)) return;
+    shuttingDown = true;
+    console.error(Cause.pretty(exit.cause));
+    void runtime.dispose().finally(() => process.exit(1));
+  });
 
-const shutdown = (): void => {
-  if (shuttingDown) return;
-  shuttingDown = true;
-  void Effect.runPromise(
-    Fiber.interrupt(fiber).pipe(Effect.andThen(runtime.disposeEffect)),
-  ).finally(() => process.exit(0));
+  const shutdown = (): void => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    void Effect.runPromise(
+      Fiber.interrupt(fiber).pipe(Effect.andThen(runtime.disposeEffect)),
+    ).finally(() => process.exit(0));
+  };
+
+  process.on("SIGINT", shutdown);
+  process.on("SIGTERM", shutdown);
 };
 
-process.on("SIGINT", shutdown);
-process.on("SIGTERM", shutdown);
+const startProxyController = (): void => {
+  const server = startProxyMode();
+  let shuttingDown = false;
+  const shutdown = (): void => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    void Promise.resolve(server.stop()).finally(() => process.exit(0));
+  };
+  process.on("SIGINT", shutdown);
+  process.on("SIGTERM", shutdown);
+};
+
+if (isProxyModeEnabled()) {
+  startProxyController();
+} else {
+  startFullController();
+}
