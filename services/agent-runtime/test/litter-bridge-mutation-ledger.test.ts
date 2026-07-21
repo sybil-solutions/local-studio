@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, statSync } from "node:fs";
+import { chmodSync, mkdtempSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -81,4 +81,24 @@ test("mutation ledger serializes concurrent retries", async () => {
   const [first, second] = await Promise.all([run(), run()]);
   assert.deepEqual(first, second);
   assert.equal(dispatches, 1);
+});
+
+test("mutation ledger fails closed on corruption and unsafe permissions", async () => {
+  const dataDir = directory();
+  const ledger = createLitterMutationLedger(dataDir, () => new Date(NOW));
+  writeFileSync(ledger.filepath, "{}\n", { mode: 0o600 });
+  await assert.rejects(
+    ledger.withMutation(identity, async (transaction) => transaction.reserve(BODY_HASH)),
+    /ledger is invalid/i,
+  );
+
+  const permissionDir = directory();
+  const permissionLedger = createLitterMutationLedger(permissionDir, () => new Date(NOW));
+  chmodSync(permissionLedger.filepath, 0o644);
+  await assert.rejects(
+    permissionLedger.withMutation(identity, async (transaction) =>
+      transaction.reserve(BODY_HASH),
+    ),
+    /permissions are unsafe/i,
+  );
 });
