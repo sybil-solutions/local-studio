@@ -1,10 +1,7 @@
 "use client";
 
-// Codex-style "Pursuing goal" bar above the composer: objective, elapsed
-// time, and pause/resume/clear controls, backed by the runtime goal store.
-
 import { useCallback, useState } from "react";
-import { Pause, Play, X } from "@/ui/icon-registry";
+import { ChevronDown, CircleDot, Pause, Play, Trash2 } from "@/ui/icon-registry";
 import { useMountSubscription } from "@/hooks/use-mount-subscription";
 
 type GoalStatus = "active" | "paused" | "blocked" | "complete" | "budget_limited";
@@ -53,6 +50,7 @@ export function SessionGoalBar({
   revision: number;
 }) {
   const [goal, setGoal] = useState<SessionGoal | null>(null);
+  const [expanded, setExpanded] = useState(false);
 
   useMountSubscription(() => {
     let cancelled = false;
@@ -60,9 +58,7 @@ export function SessionGoalBar({
       try {
         const next = await fetchGoal(piSessionId);
         if (!cancelled) setGoal(next);
-      } catch {
-        // Transient; next poll retries.
-      }
+      } catch {}
     };
     void load();
     const timer = window.setInterval(() => void load(), 5000);
@@ -93,49 +89,81 @@ export function SessionGoalBar({
   if (!goal) return null;
   const paused = goal.status === "paused";
   const terminal = goal.status === "complete" || goal.status === "blocked";
+  const detailId = `session-goal-detail-${piSessionId}`;
 
   return (
-    <div
+    <section
       data-testid="session-goal-bar"
-      className="mx-auto mb-1.5 flex w-full max-w-[var(--composer-w)] items-center gap-2 rounded-xl border border-(--border) bg-(--fg)/[0.02] px-3 py-1.5 text-[length:var(--fs-sm)]"
+      className="mx-auto mb-2 w-full max-w-[var(--composer-w)] overflow-hidden rounded-[24px] border border-(--border) bg-(--fg)/[0.025] text-[length:var(--fs-sm)] shadow-[0_8px_24px_rgba(0,0,0,0.08)]"
     >
-      <span
-        className={`h-2 w-2 shrink-0 rounded-full ${
-          goal.status === "active"
-            ? "bg-(--ok,--accent)"
-            : goal.status === "blocked"
-              ? "bg-(--err)"
-              : "bg-(--hl3)"
-        }`}
-      />
-      <span className="shrink-0 font-medium text-(--fg)/80">{STATUS_LABEL[goal.status]}</span>
-      <span className="min-w-0 flex-1 truncate text-(--fg)/45" title={goal.objective}>
-        {goal.objective}
-      </span>
-      <span className="shrink-0 font-mono text-[length:var(--fs-sm)] tabular-nums text-(--fg)/45">
-        {formatElapsed(goal.createdAt)}
-        {goal.turnBudget ? ` · ${goal.turnsUsed}/${goal.turnBudget} turns` : ""}
-      </span>
-      {!terminal ? (
+      <div className="flex min-h-12 items-center gap-2 px-3.5 py-2">
+        <CircleDot
+          className={`h-4 w-4 shrink-0 ${
+            goal.status === "active"
+              ? "text-(--ok,--accent)"
+              : goal.status === "blocked"
+                ? "text-(--err)"
+                : "text-(--hl3)"
+          }`}
+        />
         <button
           type="button"
-          onClick={() => void mutate({ status: paused ? "active" : "paused" })}
-          className="shrink-0 rounded-full p-1 text-(--fg)/60 transition-colors hover:bg-(--hover) hover:text-(--fg)"
-          aria-label={paused ? "Resume goal" : "Pause goal"}
-          title={paused ? "Resume goal" : "Pause goal"}
+          onClick={() => setExpanded((value) => !value)}
+          className="flex min-w-0 flex-1 items-center gap-2 text-left"
+          aria-expanded={expanded}
+          aria-controls={detailId}
         >
-          {paused ? <Play className="h-3.5 w-3.5" /> : <Pause className="h-3.5 w-3.5" />}
+          <span className="shrink-0 font-medium text-(--fg)/88">{STATUS_LABEL[goal.status]}</span>
+          {!expanded ? (
+            <span className="min-w-0 truncate text-(--fg)/48" title={goal.objective}>
+              {goal.objective}
+            </span>
+          ) : null}
         </button>
+        <span className="shrink-0 font-mono text-[length:var(--fs-sm)] tabular-nums text-(--fg)/48">
+          {formatElapsed(goal.createdAt)}
+          {goal.turnBudget ? ` · ${goal.turnsUsed}/${goal.turnBudget}` : ""}
+        </span>
+        {!terminal ? (
+          <button
+            type="button"
+            onClick={() => void mutate({ status: paused ? "active" : "paused" })}
+            className="shrink-0 rounded-full p-1.5 text-(--fg)/55 transition-colors hover:bg-(--hover) hover:text-(--fg)"
+            aria-label={paused ? "Resume goal" : "Pause goal"}
+            title={paused ? "Resume goal" : "Pause goal"}
+          >
+            {paused ? <Play className="h-3.5 w-3.5" /> : <Pause className="h-3.5 w-3.5" />}
+          </button>
+        ) : null}
+        <button
+          type="button"
+          onClick={() => void mutate(null)}
+          className="shrink-0 rounded-full p-1.5 text-(--fg)/55 transition-colors hover:bg-(--hover) hover:text-(--fg)"
+          aria-label="Clear goal"
+          title="Clear goal"
+        >
+          <Trash2 className="h-3.5 w-3.5" />
+        </button>
+        <button
+          type="button"
+          onClick={() => setExpanded((value) => !value)}
+          className="shrink-0 rounded-full p-1.5 text-(--fg)/55 transition-colors hover:bg-(--hover) hover:text-(--fg)"
+          aria-label={expanded ? "Collapse goal" : "Expand goal"}
+          title={expanded ? "Collapse goal" : "Expand goal"}
+        >
+          <ChevronDown
+            className={`h-3.5 w-3.5 transition-transform ${expanded ? "rotate-180" : ""}`}
+          />
+        </button>
+      </div>
+      {expanded ? (
+        <p
+          id={detailId}
+          className="border-t border-(--border)/75 px-4 py-3 text-[length:var(--fs-base)] leading-relaxed text-(--fg)/62"
+        >
+          {goal.objective}
+        </p>
       ) : null}
-      <button
-        type="button"
-        onClick={() => void mutate(null)}
-        className="shrink-0 rounded-full p-1 text-(--fg)/60 transition-colors hover:bg-(--hover) hover:text-(--fg)"
-        aria-label="Clear goal"
-        title="Clear goal"
-      >
-        <X className="h-3.5 w-3.5" />
-      </button>
-    </div>
+    </section>
   );
 }

@@ -178,7 +178,7 @@ export function AgentComposerFrame({
         <button
           type="button"
           onClick={projectRow.onPick}
-          className="mx-auto flex h-10 w-full max-w-[var(--composer-w)] items-center gap-2.5 rounded-t-[18px] rounded-b-none border border-b-0 border-(--border) bg-(--fg)/[0.03] px-4 text-left text-[length:var(--codex-chat-font-size)] text-(--fg)/85 transition-colors hover:bg-(--fg)/[0.05]"
+          className="mx-auto flex h-11 w-full max-w-[var(--composer-w)] items-center gap-2.5 rounded-t-[26px] rounded-b-none border border-b-0 border-(--border) bg-(--fg)/[0.03] px-5 text-left text-[length:var(--codex-chat-font-size)] text-(--fg)/85 transition-colors hover:bg-(--fg)/[0.05]"
         >
           <Folder className="h-4 w-4 shrink-0 text-(--fg)/60" strokeWidth={1.75} />
           <span className="truncate">{projectRow.label}</span>
@@ -190,7 +190,7 @@ export function AgentComposerFrame({
         onDrop={onComposerDrop}
         className={cx(
           "relative mx-auto w-full max-w-[var(--composer-w)] overflow-visible border border-(--border) bg-(--composer) shadow-[var(--composer-shadow)] transition-colors",
-          projectRow ? "rounded-b-[20px] rounded-t-none" : "rounded-[20px]",
+          projectRow ? "rounded-b-[26px] rounded-t-none" : "rounded-[26px]",
           composerDragActive && "outline outline-1 outline-(--link)/50",
         )}
       >

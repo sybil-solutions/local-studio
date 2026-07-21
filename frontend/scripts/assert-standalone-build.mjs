@@ -10,6 +10,7 @@ import {
 import { isAbsolute, relative, resolve, sep } from "node:path";
 import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
+import { pathToFileURL } from "node:url";
 
 const projectRoot = resolve(import.meta.dirname, "..");
 const standaloneBase = resolve(projectRoot, ".next", "standalone");
@@ -76,7 +77,6 @@ const unsafeRuntimeLinks = runtimeRoot
 if (unsafeRuntimeLinks.length > 0) {
   throw new Error(`Unsafe standalone runtime links: ${unsafeRuntimeLinks.join(", ")}`);
 }
-const serverFiles = runtimeRoot ? filesUnder(resolve(runtimeRoot, ".next/server")) : [];
 const tracedPackageDirectory = runtimeRoot
   ? resolve(runtimeRoot, ".next/node_modules/@earendil-works")
   : undefined;
@@ -90,42 +90,33 @@ const danglingTracedPackages = tracedPackageDirectory
 if (danglingTracedPackages.length > 0) {
   throw new Error(`Dangling traced runtime packages: ${danglingTracedPackages.join(", ")}`);
 }
-const tracedPiPackages = new Set(
-  serverFiles.flatMap((file) => {
-    if (!file.endsWith(".js")) return [];
-    return (
-      readFileSync(file, "utf8").match(/@earendil-works\/(?:pi-ai|pi-coding-agent)-[a-z0-9_-]+/g) ??
-      []
-    );
-  }),
-);
-if (
-  !runtimeRoot ||
-  !["pi-ai-", "pi-coding-agent-"].every((prefix) =>
-    [...tracedPiPackages].some((entry) => entry.includes(`/${prefix}`)),
-  )
-) {
-  throw new Error("Missing traced Pi runtime externals");
+const piCodingAgentRoot = runtimeRoot
+  ? resolve(runtimeRoot, "node_modules/@earendil-works/pi-coding-agent")
+  : null;
+const piAiRoot = piCodingAgentRoot
+  ? resolve(piCodingAgentRoot, "node_modules/@earendil-works/pi-ai")
+  : null;
+const piRuntimeEntries =
+  piCodingAgentRoot && piAiRoot
+    ? [resolve(piCodingAgentRoot, "dist/index.js"), resolve(piAiRoot, "dist/index.js")]
+    : [];
+if (piRuntimeEntries.length !== 2 || piRuntimeEntries.some((entry) => !existsSync(entry))) {
+  throw new Error("Missing packaged Pi runtime entrypoints");
 }
-for (const tracedPiPackage of tracedPiPackages) {
+for (const entry of piRuntimeEntries) {
   const importCheck = spawnSync(
     process.execPath,
-    ["--input-type=module", "--eval", `import(${JSON.stringify(tracedPiPackage)})`],
-    { cwd: resolve(runtimeRoot, ".next"), encoding: "utf8" },
+    ["--input-type=module", "--eval", `import(${JSON.stringify(pathToFileURL(entry).href)})`],
+    { cwd: runtimeRoot, encoding: "utf8" },
   );
   if (importCheck.status !== 0) {
     throw new Error(
-      `Standalone Pi runtime external is not importable: ${importCheck.stderr || importCheck.stdout}`,
+      `Standalone Pi runtime entrypoint is not importable: ${importCheck.stderr || importCheck.stdout}`,
     );
   }
 }
 
-const tracedPiAi = [...tracedPiPackages].find((entry) => entry.includes("/pi-ai-"));
-if (!runtimeRoot || !tracedPiAi) {
-  throw new Error("Missing traced Pi AI runtime external");
-}
-const piAiRoot = realpathSync(resolve(runtimeRoot, ".next/node_modules", tracedPiAi));
-const piAiManifestPath = resolve(piAiRoot, "package.json");
+const piAiManifestPath = resolve(realpathSync(piAiRoot), "package.json");
 const piAiManifest = JSON.parse(readFileSync(piAiManifestPath, "utf8"));
 const requireFromPiAi = createRequire(piAiManifestPath);
 for (const dependency of Object.keys(piAiManifest.dependencies ?? {})) {
