@@ -3,6 +3,7 @@ import { describe, test } from "node:test";
 import { Schema } from "effect";
 import {
   LITTER_BRIDGE_CAPABILITIES,
+  LitterBridgeAgentTurnResultSchema,
   LitterBridgeCapabilitiesManifestSchema,
   LitterBridgeControllerActionRequestSchema,
   LitterBridgeControllerActionSchema,
@@ -496,5 +497,31 @@ describe("Litter bridge contracts", () => {
     assert.equal(ack.type, "ack");
     assert.equal(conflict.type, "conflict");
     assert.equal(fork.type, "fork");
+  });
+
+  test("keeps prompt dispatch acknowledgements explicit and strict", () => {
+    const acknowledgement = Schema.decodeUnknownSync(LitterBridgeAgentTurnResultSchema)({
+      type: "agent_turn_ack",
+      protocolVersion: 1,
+      requestId: "request-turn-1",
+      idempotencyKey: "idempotency-turn-1",
+      dispatchId: "dispatch-turn-1",
+      canonicalSession: { ...session, authority: "local-studio" },
+      messageId: "message-turn-1",
+      contentHash: hash,
+      baseRevision: 4,
+      runtimeSessionId: "runtime-turn-1",
+      piSessionId: "session-1",
+      modelId: "GLM-5.2",
+      outcome: "accepted",
+      acceptedAt: timestamp,
+    });
+    assert.equal(acknowledgement.type, "agent_turn_ack");
+    assert.throws(() =>
+      Schema.decodeUnknownSync(LitterBridgeAgentTurnResultSchema)({
+        ...acknowledgement,
+        durable: true,
+      }),
+    );
   });
 });

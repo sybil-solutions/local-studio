@@ -546,6 +546,23 @@ export const LitterBridgeAgentTurnRequestSchema = Schema.Struct({
   contentHash: Sha256Schema,
 }).pipe(strict);
 
+export const LitterBridgeAgentTurnAckSchema = Schema.Struct({
+  type: Schema.Literal("agent_turn_ack"),
+  protocolVersion: LitterBridgeProtocolVersionSchema,
+  requestId: IdentifierSchema,
+  idempotencyKey: IdentifierSchema,
+  dispatchId: IdentifierSchema,
+  canonicalSession: LitterBridgeExternalSessionIdentitySchema,
+  messageId: IdentifierSchema,
+  contentHash: Sha256Schema,
+  baseRevision: LitterBridgeRevisionSchema,
+  runtimeSessionId: IdentifierSchema,
+  piSessionId: IdentifierSchema,
+  modelId: IdentifierSchema,
+  outcome: Schema.Literal("accepted"),
+  acceptedAt: TimestampSchema,
+}).pipe(strict);
+
 export const LitterBridgeTransferAckSchema = Schema.Struct({
   type: Schema.Literal("ack"),
   protocolVersion: LitterBridgeProtocolVersionSchema,
@@ -595,6 +612,12 @@ export const LitterBridgeSessionTransferResultSchema = Schema.Union([
   LitterBridgeErrorResultSchema,
 ]).pipe(strict);
 
+export const LitterBridgeAgentTurnResultSchema = Schema.Union([
+  LitterBridgeAgentTurnAckSchema,
+  LitterBridgeConflictResultSchema,
+  LitterBridgeErrorResultSchema,
+]).pipe(strict);
+
 export const LitterBridgeControllerActionResultSchema = Schema.Union([
   LitterBridgeControllerActionAckSchema,
   LitterBridgeConflictResultSchema,
@@ -617,6 +640,7 @@ export const LitterBridgeResponseSchema = Schema.Union([
   LitterBridgeSessionListPageSchema,
   LitterBridgeSessionPageSchema,
   LitterBridgeSessionTransferResultSchema,
+  LitterBridgeAgentTurnResultSchema,
   LitterBridgeErrorResultSchema,
 ]).pipe(strict);
 
@@ -669,10 +693,12 @@ export type LitterBridgeSessionListRequest = typeof LitterBridgeSessionListReque
 export type LitterBridgeSessionListPage = typeof LitterBridgeSessionListPageSchema.Type;
 export type LitterBridgeSessionPage = typeof LitterBridgeSessionPageSchema.Type;
 export type LitterBridgeAgentTurnRequest = typeof LitterBridgeAgentTurnRequestSchema.Type;
+export type LitterBridgeAgentTurnAck = typeof LitterBridgeAgentTurnAckSchema.Type;
 export type LitterBridgeTransferAck = typeof LitterBridgeTransferAckSchema.Type;
 export type LitterBridgeConflictResult = typeof LitterBridgeConflictResultSchema.Type;
 export type LitterBridgeForkResult = typeof LitterBridgeForkResultSchema.Type;
 export type LitterBridgeSessionTransferResult = typeof LitterBridgeSessionTransferResultSchema.Type;
+export type LitterBridgeAgentTurnResult = typeof LitterBridgeAgentTurnResultSchema.Type;
 export type LitterBridgeControllerActionResult =
   typeof LitterBridgeControllerActionResultSchema.Type;
 export type LitterBridgeRequest = typeof LitterBridgeRequestSchema.Type;
