@@ -26,6 +26,10 @@ import path from "node:path";
 import { Schema } from "effect";
 import {
   LITTER_BRIDGE_PROTOCOL_VERSION,
+  LitterBridgeAgentTurnAckSchema,
+  LitterBridgeAgentTurnRequestSchema,
+  LitterBridgeAgentTurnResultSchema,
+  LitterBridgeConflictResultSchema,
   LitterBridgeControllerSnapshotRequestSchema,
   LitterBridgeControllerSnapshotSchema,
   LitterBridgeErrorResultSchema,
@@ -34,6 +38,9 @@ import {
   LitterBridgeSessionPageSchema,
   LitterBridgeSessionReadRequestSchema,
   type LitterBridgeAttachmentDescriptor,
+  type LitterBridgeAgentTurnRequest,
+  type LitterBridgeAgentTurnResult,
+  type LitterBridgeConflictResult,
   type LitterBridgeControllerSnapshot,
   type LitterBridgeControllerSnapshotRequest,
   type LitterBridgeError,
@@ -60,7 +67,9 @@ import { cleanSessionTitle } from "../../../shared/agent/session-title";
 import { resolveDataDir } from "./data-dir";
 import { listProjectsFromStore, type ProjectEntry } from "./projects-store";
 import { getApiSettings } from "./settings-service";
+import { createLitterMutationLedger } from "./litter-bridge-mutation-ledger";
 import { piRuntimeManager } from "./pi-runtime";
+import type { PiAgentSession } from "./pi-runtime-types";
 import { listArchivedSessionMetadata } from "./session-metadata-store";
 
 const BODY_LIMIT_BYTES = 1_000_000;
@@ -112,6 +121,7 @@ type GatewayOptions = {
   sessionInventoryLimit?: number;
   activeSessionIds?: () => ReadonlySet<string>;
   archivedSessionIds?: () => ReadonlySet<string>;
+  turnRuntime?: TurnRuntimeManager;
 };
 type GatewayMetadata = {
   protocolVersion: 1;
@@ -130,7 +140,16 @@ type Section<T> = {
 type SignedGatewayRequest =
   | LitterBridgeControllerSnapshotRequest
   | LitterBridgeSessionListRequest
-  | LitterBridgeSessionReadRequest;
+  | LitterBridgeSessionReadRequest
+  | LitterBridgeAgentTurnRequest;
+type TurnRuntimeEntry = {
+  sessionId: string;
+  session: Pick<PiAgentSession, "ensureStarted" | "prompt" | "status">;
+};
+type TurnRuntimeManager = {
+  findSessionForLookup(sessionId: string, piSessionId?: string | null): TurnRuntimeEntry | null;
+  getSessionForLookup(sessionId: string, piSessionId?: string | null): TurnRuntimeEntry;
+};
 type SessionFileFingerprint = {
   value: string;
   revision: number;
@@ -405,6 +424,122 @@ const jsonError = (
   status: number,
   retriable = false,
 ): Response => Response.json(errorResult(code, message, requestId, retriable), { status });
+
+const agentTurnConflict = (
+  request: LitterBridgeAgentTurnRequest,
+  currentRevision: number,
+): LitterBridgeConflictResult =>
+  Schema.decodeUnknownSync(LitterBridgeConflictResultSchema)({
+    type: "conflict",
+    protocolVersion: LITTER_BRIDGE_PROTOCOL_VERSION,
+    requestId: request.auth.requestId,
+    operation: "agent_turn",
+    expectedRevision: request.expectedRevision,
+    currentRevision,
+    resolution: "retry",
+    canonicalSession: request.session,
+    cursor: null,
+    error: {
+      code: "revision_conflict",
+      message: "Session changed before the prompt was accepted",
+      retriable: true,
+      requestId: request.auth.requestId,
+      details: {
+        field: null,
+        section: null,
+        expectedRevision: request.expectedRevision,
+        currentRevision,
+        retryAfterMs: null,
+        limitBytes: null,
+      },
+    },
+  });
+
+const materializeAgentTurnResult = (
+  stored: unknown,
+  requestId: string,
+): LitterBridgeAgentTurnResult => {
+  const decoded = Schema.decodeUnknownSync(LitterBridgeAgentTurnResultSchema)(stored);
+  if (decoded.type === "agent_turn_ack") {
+    return Schema.decodeUnknownSync(LitterBridgeAgentTurnResultSchema)({
+      ...decoded,
+      requestId,
+    });
+  }
+  return Schema.decodeUnknownSync(LitterBridgeAgentTurnResultSchema)({
+    ...decoded,
+    requestId,
+    error: { ...decoded.error, requestId },
+  });
+};
+
+const agentTurnResultStatus = (result: LitterBridgeAgentTurnResult): number => {
+  if (result.type === "agent_turn_ack") return 200;
+  if (result.type === "conflict") return 409;
+  switch (result.error.code) {
+    case "not_found":
+      return 404;
+    case "integrity_failed":
+      return 409;
+    case "rate_limited":
+    case "revision_conflict":
+    case "replay_detected":
+      return 409;
+    case "payload_too_large":
+      return 413;
+    case "controller_unavailable":
+    case "agent_runtime_unavailable":
+      return 503;
+    default:
+      return 500;
+  }
+};
+
+class AgentTurnPreflightRejected extends Error {}
+class AgentTurnDispatchIndeterminate extends Error {}
+
+const acceptAgentTurnPrompt = (
+  session: Pick<PiAgentSession, "prompt">,
+  content: string,
+): Promise<void> =>
+  new Promise((resolve, reject) => {
+    let settled = false;
+    let rejectedByPreflight = false;
+    const prompt = session.prompt(content, () => undefined, {
+      expandPromptTemplates: false,
+      source: "rpc",
+      restartOnContinuationError: false,
+      preflightResult: (success) => {
+        if (settled) return;
+        if (success) {
+          settled = true;
+          resolve();
+        } else {
+          rejectedByPreflight = true;
+        }
+      },
+    });
+    void prompt.then(
+      () => {
+        if (settled) return;
+        settled = true;
+        reject(new AgentTurnDispatchIndeterminate("Prompt completed without a preflight result"));
+      },
+      (error) => {
+        if (settled) return;
+        settled = true;
+        reject(
+          rejectedByPreflight
+            ? new AgentTurnPreflightRejected(
+                error instanceof Error ? error.message : "Prompt preflight was rejected",
+              )
+            : new AgentTurnDispatchIndeterminate(
+                error instanceof Error ? error.message : "Prompt dispatch outcome is unknown",
+              ),
+        );
+      },
+    );
+  });
 
 const unsignedRequest = (request: LitterBridgeRequest): JsonRecord => {
   const { auth: _auth, ...unsigned } = request;
@@ -1880,6 +2015,9 @@ export function createLitterBridgeGateway(options: GatewayOptions = {}) {
   const displayName = options.displayName ?? `Local Studio on ${hostname()}`;
   const now = options.now ?? (() => new Date());
   const implementation = options.fetch ?? globalThis.fetch;
+  const turnRuntime = options.turnRuntime ?? piRuntimeManager;
+  let mutationLedger: ReturnType<typeof createLitterMutationLedger> | null = null;
+  const getMutationLedger = () => (mutationLedger ??= createLitterMutationLedger(dataDir, now));
   const runtimeStats = options.runtimeStats ?? defaultRuntimeStats;
   const projects = options.projects ?? listProjectsFromStore;
   const roots = sessionRootPaths(dataDir, options.sessionRoots);
@@ -2031,13 +2169,7 @@ export function createLitterBridgeGateway(options: GatewayOptions = {}) {
     const metricsPromise = (async () => {
       try {
         const value = normalizeMetrics(
-          await fetchControllerJson(
-            implementation,
-            base,
-            "/v1/metrics/vllm",
-            2_500,
-            apiKey,
-          ),
+          await fetchControllerJson(implementation, base, "/v1/metrics/vllm", 2_500, apiKey),
         );
         const observedAt = now().toISOString();
         return fulfilledSection(value, observedAt, 5_000);
@@ -2285,6 +2417,213 @@ export function createLitterBridgeGateway(options: GatewayOptions = {}) {
     });
   };
 
+  const handleAgentTurn = async (request: LitterBridgeAgentTurnRequest): Promise<Response> => {
+    const requestId = request.auth.requestId;
+    if (litterBridgeSha256Utf8(request.content) !== request.contentHash) {
+      return jsonError(
+        "integrity_failed",
+        "Prompt content hash does not match the signed request",
+        requestId,
+        422,
+      );
+    }
+    if (
+      request.session.authority !== "local-studio" ||
+      request.session.installationId !== controllerId
+    ) {
+      return jsonError("not_found", "Session identity was not found", requestId, 404);
+    }
+    try {
+      return await getMutationLedger().withMutation(
+        {
+          controllerId,
+          deviceId: request.auth.device.deviceId,
+          idempotencyKey: request.auth.idempotencyKey,
+        },
+        async (transaction) => {
+          const reservation = transaction.reserve(request.auth.bodyHash);
+          if (reservation.kind === "cached") {
+            const result = materializeAgentTurnResult(reservation.result, requestId);
+            return Response.json(result, { status: agentTurnResultStatus(result) });
+          }
+          if (reservation.kind === "mismatch") {
+            return jsonError(
+              "integrity_failed",
+              "Idempotency key was already used for another signed prompt",
+              requestId,
+              409,
+            );
+          }
+          if (reservation.kind === "indeterminate") {
+            return jsonError(
+              "internal",
+              "Prompt dispatch outcome is indeterminate and requires transcript reconciliation",
+              requestId,
+              409,
+            );
+          }
+
+          const reject = (
+            result: Exclude<LitterBridgeAgentTurnResult, { type: "agent_turn_ack" }>,
+            status: number,
+          ): Response => {
+            transaction.settle(request.auth.bodyHash, "rejected", result);
+            return Response.json(result, { status });
+          };
+
+          let resolved: ResolvedSessionFile;
+          try {
+            resolved = resolveSessionFile(request.session.sessionId, projects(), roots);
+          } catch (error) {
+            if (error instanceof SessionReadError) {
+              return reject(
+                errorResult(error.code, error.message, requestId, error.retriable),
+                error.status,
+              );
+            }
+            return reject(errorResult("internal", "Session lookup failed", requestId), 500);
+          }
+          if (resolved.revision !== request.expectedRevision) {
+            return reject(agentTurnConflict(request, resolved.revision), 409);
+          }
+
+          let metadata: LitterBridgeSessionMetadata;
+          try {
+            metadata = readSessionMetadata(resolved);
+          } catch {
+            return reject(
+              errorResult("section_unavailable", "Session metadata is unavailable", requestId),
+              422,
+            );
+          }
+          const runtimeAffinity = `litter-${litterBridgeSha256Utf8(
+            canonicalLitterBridgeJson([
+              "litter-turn-runtime-v1",
+              controllerId,
+              request.auth.device.deviceId,
+              request.session.sessionId,
+            ]),
+          )}`;
+          const existing = turnRuntime.findSessionForLookup(
+            runtimeAffinity,
+            request.session.sessionId,
+          );
+          if (existing?.session.status.active) {
+            return reject(
+              errorResult(
+                "rate_limited",
+                "Session already has an active turn; prompt-only access cannot steer it",
+                requestId,
+                true,
+              ),
+              409,
+            );
+          }
+          const modelId =
+            request.modelId ?? boundedString(existing?.session.status.modelId) ?? metadata.modelId;
+          if (!modelId) {
+            return reject(
+              errorResult(
+                "agent_runtime_unavailable",
+                "Session model could not be resolved",
+                requestId,
+                true,
+              ),
+              503,
+            );
+          }
+          const target =
+            existing ?? turnRuntime.getSessionForLookup(runtimeAffinity, request.session.sessionId);
+          try {
+            await target.session.ensureStarted(
+              modelId,
+              resolved.cwd,
+              request.session.sessionId,
+              {},
+            );
+          } catch {
+            return reject(
+              errorResult(
+                "agent_runtime_unavailable",
+                "Session runtime could not accept the selected model",
+                requestId,
+                true,
+              ),
+              503,
+            );
+          }
+          if (target.session.status.active) {
+            return reject(
+              errorResult(
+                "rate_limited",
+                "Session became active before prompt dispatch",
+                requestId,
+                true,
+              ),
+              409,
+            );
+          }
+          if (
+            target.session.status.piSessionId &&
+            target.session.status.piSessionId !== request.session.sessionId
+          ) {
+            return reject(
+              errorResult("integrity_failed", "Runtime session identity changed", requestId),
+              409,
+            );
+          }
+          const current = sessionFileFingerprint(resolved.filepath);
+          if (current.value !== resolved.value || current.revision !== request.expectedRevision) {
+            return reject(agentTurnConflict(request, current.revision), 409);
+          }
+
+          transaction.markDispatching(request.auth.bodyHash);
+          try {
+            await acceptAgentTurnPrompt(target.session, request.content);
+          } catch (error) {
+            if (error instanceof AgentTurnPreflightRejected) {
+              return reject(
+                errorResult(
+                  "agent_runtime_unavailable",
+                  "Prompt preflight was rejected by the session runtime",
+                  requestId,
+                  true,
+                ),
+                503,
+              );
+            }
+            throw error;
+          }
+
+          const acknowledgement = Schema.decodeUnknownSync(LitterBridgeAgentTurnAckSchema)({
+            type: "agent_turn_ack",
+            protocolVersion: LITTER_BRIDGE_PROTOCOL_VERSION,
+            requestId,
+            idempotencyKey: request.auth.idempotencyKey,
+            dispatchId: randomUUID(),
+            canonicalSession: request.session,
+            messageId: request.messageId,
+            contentHash: request.contentHash,
+            baseRevision: request.expectedRevision,
+            runtimeSessionId: target.sessionId,
+            piSessionId: request.session.sessionId,
+            modelId: boundedString(target.session.status.modelId) ?? modelId,
+            outcome: "accepted",
+            acceptedAt: now().toISOString(),
+          });
+          transaction.settle(request.auth.bodyHash, "accepted", acknowledgement);
+          return Response.json(acknowledgement);
+        },
+      );
+    } catch (error) {
+      const message =
+        error instanceof AgentTurnDispatchIndeterminate
+          ? "Prompt dispatch outcome is indeterminate and requires transcript reconciliation"
+          : "Prompt dispatch failed closed";
+      return jsonError("internal", message, requestId, 500);
+    }
+  };
+
   const handle = async (request: Request): Promise<Response> => {
     const providedSecret = request.headers.get(SECRET_HEADER) ?? "";
     if (!safeSecretEqual(secret, providedSecret)) {
@@ -2304,6 +2643,8 @@ export function createLitterBridgeGateway(options: GatewayOptions = {}) {
         parsed = Schema.decodeUnknownSync(LitterBridgeSessionListRequestSchema)(body.value);
       } else if (isRecord(body.value) && body.value.type === "session_read_request") {
         parsed = Schema.decodeUnknownSync(LitterBridgeSessionReadRequestSchema)(body.value);
+      } else if (isRecord(body.value) && body.value.type === "agent_turn_request") {
+        parsed = Schema.decodeUnknownSync(LitterBridgeAgentTurnRequestSchema)(body.value);
       } else {
         throw new Error("Unsupported request");
       }
@@ -2322,12 +2663,15 @@ export function createLitterBridgeGateway(options: GatewayOptions = {}) {
       return jsonError("not_found", "Controller identity was not found", requestId, 404);
     }
     if (
-      parsed.type === "session_read_request" &&
+      (parsed.type === "session_read_request" || parsed.type === "agent_turn_request") &&
       parsed.session &&
       (parsed.session.authority !== "local-studio" ||
         parsed.session.installationId !== controllerId)
     ) {
       return jsonError("not_found", "Controller identity was not found", requestId, 404);
+    }
+    if (parsed.type === "agent_turn_request") {
+      return handleAgentTurn(parsed);
     }
     const nowMs = requestNow.getTime();
     pruneReplay(nowMs);

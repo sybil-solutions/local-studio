@@ -58,7 +58,9 @@ const signedRequest = (
     capability:
       unsigned.type === "session_read_request" || unsigned.type === "session_list_request"
         ? "sessions.read"
-        : "stats.read",
+        : unsigned.type === "agent_turn_request"
+          ? "agent.turn"
+          : "stats.read",
     ...authOverrides,
   };
   auth.signature = sign(
@@ -71,9 +73,7 @@ const signedRequest = (
       expiresAt: auth.expiresAt,
       nonce: auth.nonce,
       capability: auth.capability,
-      ...(typeof auth.idempotencyKey === "string"
-        ? { idempotencyKey: auth.idempotencyKey }
-        : {}),
+      ...(typeof auth.idempotencyKey === "string" ? { idempotencyKey: auth.idempotencyKey } : {}),
       bodyHash,
     }),
     privateKey,
@@ -281,6 +281,106 @@ const sessionListRequest = (
       ...input.authOverrides,
     },
   );
+};
+
+const agentTurnRequest = (
+  privateKey: KeyObject,
+  publicHex: string,
+  input: {
+    sessionId: string;
+    revision: number;
+    content?: string;
+    contentHash?: string;
+    authority?: "local-studio" | "litter";
+    installationId?: string;
+    modelId?: string | null;
+    idempotencyKey?: string;
+    request?: string;
+  },
+) => {
+  const suffix = input.request ?? "1";
+  const content = input.content ?? "Continue from the phone";
+  return signedRequest(
+    privateKey,
+    publicHex,
+    {
+      type: "agent_turn_request",
+      protocolVersion: 1,
+      session: {
+        kind: "external_session",
+        authority: input.authority ?? "local-studio",
+        installationId: input.installationId ?? CONTROLLER_ID,
+        sessionId: input.sessionId,
+      },
+      expectedRevision: input.revision,
+      messageId: "mobile-message-1",
+      modelId: input.modelId ?? null,
+      content,
+      contentHash: input.contentHash ?? litterBridgeSha256Utf8(content),
+    },
+    {
+      requestId: `turn-request-${suffix}`,
+      nonce: `turn-request-nonce-${suffix.padStart(16, "0")}`,
+      idempotencyKey: input.idempotencyKey ?? "turn-idempotency-1",
+    },
+  );
+};
+
+const createTurnRuntime = (options: { active?: boolean; preflight?: boolean } = {}) => {
+  const prompts: Array<{
+    content: string;
+    options: {
+      expandPromptTemplates?: boolean;
+      source?: "interactive" | "rpc" | "extension";
+      restartOnContinuationError?: boolean;
+    };
+  }> = [];
+  const status = {
+    running: false,
+    active: options.active === true,
+    modelId: "",
+    cwd: "",
+    piSessionId: null as string | null,
+    agentDir: "",
+    eventSeq: 0,
+    lastError: null,
+    contextUsage: null,
+  };
+  let created = false;
+  const entry = {
+    sessionId: "runtime-litter-test",
+    session: {
+      status,
+      ensureStarted: async (modelId: string, cwd?: string, piSessionId?: string | null) => {
+        status.running = true;
+        status.modelId = modelId;
+        status.cwd = cwd ?? "";
+        status.piSessionId = piSessionId ?? null;
+      },
+      prompt: async (
+        content: string,
+        _onEvent: (event: Record<string, unknown>, seq: number) => void,
+        promptOptions: {
+          expandPromptTemplates?: boolean;
+          source?: "interactive" | "rpc" | "extension";
+          restartOnContinuationError?: boolean;
+          preflightResult?: (success: boolean) => void;
+        } = {},
+      ) => {
+        prompts.push({ content, options: promptOptions });
+        promptOptions.preflightResult?.(options.preflight !== false);
+        if (options.preflight === false) throw new Error("preflight rejected");
+      },
+    },
+  };
+  const runtime = {
+    findSessionForLookup: () => (created ? entry : null),
+    getSessionForLookup: () => {
+      created = true;
+      return entry;
+    },
+  };
+  return { runtime, prompts, status };
 };
 
 const writeListedSession = (
@@ -639,6 +739,197 @@ test("tool references, results, and descriptor hashes retain Pi order", async ()
   });
 });
 
+test("signed agent.turn accepts one prompt and replays a stable acknowledgement", async () => {
+  const fixture = createSessionFixture();
+  const keys = keyMaterial();
+  const turnRuntime = createTurnRuntime();
+  const gateway = fixtureGateway(fixture, { turnRuntime: turnRuntime.runtime });
+  const listResponse = await gateway.handle(
+    gatewayRequest(sessionListRequest(keys.privateKey, keys.publicHex, { request: "turn-list" })),
+  );
+  const listed = (await listResponse.json()) as Record<string, any>;
+  const revision = listed.sessions[0].revision as number;
+  const turn = agentTurnRequest(keys.privateKey, keys.publicHex, {
+    sessionId: fixture.sessionId,
+    revision,
+  });
+
+  const firstResponse = await gateway.handle(gatewayRequest(turn));
+  assert.equal(firstResponse.status, 200);
+  const first = (await firstResponse.json()) as Record<string, any>;
+  assert.equal(first.type, "agent_turn_ack");
+  assert.equal(first.baseRevision, revision);
+  assert.equal(first.piSessionId, fixture.sessionId);
+  assert.equal(first.modelId, "model-a");
+  assert.equal(turnRuntime.prompts.length, 1);
+  assert.equal(turnRuntime.prompts[0].content, "Continue from the phone");
+  assert.equal(turnRuntime.prompts[0].options.expandPromptTemplates, false);
+  assert.equal(turnRuntime.prompts[0].options.source, "rpc");
+  assert.equal(turnRuntime.prompts[0].options.restartOnContinuationError, false);
+
+  const exactRetry = await gateway.handle(gatewayRequest(turn));
+  assert.equal(exactRetry.status, 200);
+  assert.deepEqual(await exactRetry.json(), first);
+  const freshRetryRequest = agentTurnRequest(keys.privateKey, keys.publicHex, {
+    sessionId: fixture.sessionId,
+    revision,
+    request: "2",
+  });
+  const freshRetry = await gateway.handle(gatewayRequest(freshRetryRequest));
+  assert.equal(freshRetry.status, 200);
+  const replayed = (await freshRetry.json()) as Record<string, any>;
+  assert.equal(replayed.requestId, "turn-request-2");
+  assert.equal(replayed.dispatchId, first.dispatchId);
+  assert.equal(turnRuntime.prompts.length, 1);
+});
+
+test("signed agent.turn rejects revision, integrity, and principal target failures", async () => {
+  const fixture = createSessionFixture();
+  const keys = keyMaterial();
+  const turnRuntime = createTurnRuntime();
+  const gateway = fixtureGateway(fixture, { turnRuntime: turnRuntime.runtime });
+  const listResponse = await gateway.handle(
+    gatewayRequest(sessionListRequest(keys.privateKey, keys.publicHex, { request: "guard-list" })),
+  );
+  const listed = (await listResponse.json()) as Record<string, any>;
+  const revision = listed.sessions[0].revision as number;
+
+  const conflict = await gateway.handle(
+    gatewayRequest(
+      agentTurnRequest(keys.privateKey, keys.publicHex, {
+        sessionId: fixture.sessionId,
+        revision: revision + 1,
+        idempotencyKey: "turn-conflict",
+        request: "conflict",
+      }),
+    ),
+  );
+  assert.equal(conflict.status, 409);
+  assert.equal(((await conflict.json()) as Record<string, any>).type, "conflict");
+
+  const badHash = await gateway.handle(
+    gatewayRequest(
+      agentTurnRequest(keys.privateKey, keys.publicHex, {
+        sessionId: fixture.sessionId,
+        revision,
+        contentHash: "f".repeat(64),
+        idempotencyKey: "turn-bad-hash",
+        request: "bad-hash",
+      }),
+    ),
+  );
+  assert.equal(badHash.status, 422);
+  assert.equal(((await badHash.json()) as Record<string, any>).error.code, "integrity_failed");
+
+  const wrongAuthority = await gateway.handle(
+    gatewayRequest(
+      agentTurnRequest(keys.privateKey, keys.publicHex, {
+        sessionId: fixture.sessionId,
+        revision,
+        authority: "litter",
+        idempotencyKey: "turn-wrong-authority",
+        request: "wrong-authority",
+      }),
+    ),
+  );
+  assert.equal(wrongAuthority.status, 404);
+  assert.equal(turnRuntime.prompts.length, 0);
+});
+
+test("signed agent.turn binds idempotency to the complete signed body", async () => {
+  const fixture = createSessionFixture();
+  const keys = keyMaterial();
+  const turnRuntime = createTurnRuntime();
+  const gateway = fixtureGateway(fixture, { turnRuntime: turnRuntime.runtime });
+  const listResponse = await gateway.handle(
+    gatewayRequest(sessionListRequest(keys.privateKey, keys.publicHex, { request: "body-list" })),
+  );
+  const listed = (await listResponse.json()) as Record<string, any>;
+  const revision = listed.sessions[0].revision as number;
+  const first = await gateway.handle(
+    gatewayRequest(
+      agentTurnRequest(keys.privateKey, keys.publicHex, {
+        sessionId: fixture.sessionId,
+        revision,
+        content: "First command",
+        idempotencyKey: "turn-body-bound",
+        request: "body-1",
+      }),
+    ),
+  );
+  assert.equal(first.status, 200);
+  const changed = await gateway.handle(
+    gatewayRequest(
+      agentTurnRequest(keys.privateKey, keys.publicHex, {
+        sessionId: fixture.sessionId,
+        revision,
+        content: "Different command",
+        idempotencyKey: "turn-body-bound",
+        request: "body-2",
+      }),
+    ),
+  );
+  assert.equal(changed.status, 409);
+  assert.equal(((await changed.json()) as Record<string, any>).error.code, "integrity_failed");
+  assert.equal(turnRuntime.prompts.length, 1);
+});
+
+test("signed agent.turn stores prompt preflight rejection without redispatch", async () => {
+  const fixture = createSessionFixture();
+  const keys = keyMaterial();
+  const turnRuntime = createTurnRuntime({ preflight: false });
+  const gateway = fixtureGateway(fixture, { turnRuntime: turnRuntime.runtime });
+  const listResponse = await gateway.handle(
+    gatewayRequest(sessionListRequest(keys.privateKey, keys.publicHex, { request: "reject-list" })),
+  );
+  const listed = (await listResponse.json()) as Record<string, any>;
+  const revision = listed.sessions[0].revision as number;
+  const firstTurn = agentTurnRequest(keys.privateKey, keys.publicHex, {
+    sessionId: fixture.sessionId,
+    revision,
+    idempotencyKey: "turn-preflight-rejected",
+    request: "reject-1",
+  });
+  const first = await gateway.handle(gatewayRequest(firstTurn));
+  assert.equal(first.status, 503);
+  const retry = await gateway.handle(
+    gatewayRequest(
+      agentTurnRequest(keys.privateKey, keys.publicHex, {
+        sessionId: fixture.sessionId,
+        revision,
+        idempotencyKey: "turn-preflight-rejected",
+        request: "reject-2",
+      }),
+    ),
+  );
+  assert.equal(retry.status, 503);
+  assert.equal(turnRuntime.prompts.length, 1);
+});
+
+test("signed agent.turn never converts a prompt into steering for an active session", async () => {
+  const fixture = createSessionFixture();
+  const keys = keyMaterial();
+  const turnRuntime = createTurnRuntime({ active: true });
+  const gateway = fixtureGateway(fixture, { turnRuntime: turnRuntime.runtime });
+  const listResponse = await gateway.handle(
+    gatewayRequest(sessionListRequest(keys.privateKey, keys.publicHex, { request: "active-list" })),
+  );
+  const listed = (await listResponse.json()) as Record<string, any>;
+  const response = await gateway.handle(
+    gatewayRequest(
+      agentTurnRequest(keys.privateKey, keys.publicHex, {
+        sessionId: fixture.sessionId,
+        revision: listed.sessions[0].revision,
+        idempotencyKey: "turn-active-session",
+        request: "active-turn",
+      }),
+    ),
+  );
+  assert.equal(response.status, 409);
+  assert.equal(((await response.json()) as Record<string, any>).error.code, "rate_limited");
+  assert.equal(turnRuntime.prompts.length, 0);
+});
+
 test("valid signed read returns a strict complete snapshot and replay is rejected", async () => {
   const keys = keyMaterial();
   const gateway = createLitterBridgeGateway({
@@ -690,7 +981,7 @@ test("gateway secret and signed body integrity fail closed", async () => {
   assert.equal(((await integrity.json()) as Record<string, any>).error.code, "integrity_failed");
 });
 
-test("mutation signature verification binds idempotency without enabling dispatch", async () => {
+test("mutation signature verification binds idempotency before dispatch", async () => {
   const keys = keyMaterial();
   const body = signedRequest(
     keys.privateKey,
