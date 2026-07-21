@@ -29,6 +29,7 @@ import type {
   PiAgentSession,
   PiAgentStatus,
   PiContextUsage,
+  PiPromptOptions,
 } from "./pi-runtime-types";
 
 type PiEvent = LoggedPiEvent["event"];
@@ -238,7 +239,7 @@ class PiSdkSession extends EventEmitter implements PiAgentSession {
   prompt(
     message: string,
     onEvent: (event: PiEvent, seq: number) => void,
-    options: { streamingBehavior?: "steer" | "followUp"; images?: AgentImageInput[] } = {},
+    options: PiPromptOptions = {},
   ): Promise<void> {
     return Effect.runPromise(this.promptEffect(message, onEvent, options));
   }
@@ -246,7 +247,7 @@ class PiSdkSession extends EventEmitter implements PiAgentSession {
   private promptEffect(
     message: string,
     onEvent: (event: PiEvent, seq: number) => void,
-    options: { streamingBehavior?: "steer" | "followUp"; images?: AgentImageInput[] },
+    options: PiPromptOptions,
   ): Effect.Effect<void, unknown> {
     const listener = (logged: LoggedPiEvent) => onEvent(logged.event, logged.seq);
     this.on("loggedEvent", listener);
@@ -257,7 +258,7 @@ class PiSdkSession extends EventEmitter implements PiAgentSession {
       catch: (error) => error,
     }).pipe(
       Effect.catch((error) =>
-        shouldRestartAfterPromptError(error)
+        options.restartOnContinuationError !== false && shouldRestartAfterPromptError(error)
           ? this.restartPromptEffect(message, options)
           : Effect.fail(error),
       ),
@@ -275,19 +276,19 @@ class PiSdkSession extends EventEmitter implements PiAgentSession {
     );
   }
 
-  private promptSession(
-    message: string,
-    options: { streamingBehavior?: "steer" | "followUp"; images?: AgentImageInput[] },
-  ): Promise<void> {
+  private promptSession(message: string, options: PiPromptOptions): Promise<void> {
     return this.requireSession().prompt(message, {
       streamingBehavior: options.streamingBehavior,
       images: options.images,
+      expandPromptTemplates: options.expandPromptTemplates,
+      source: options.source,
+      preflightResult: options.preflightResult,
     });
   }
 
   private restartPromptEffect(
     message: string,
-    options: { streamingBehavior?: "steer" | "followUp"; images?: AgentImageInput[] },
+    options: PiPromptOptions,
   ): Effect.Effect<void, unknown> {
     return this.ensureStartedEffect(
       this.currentModelId,

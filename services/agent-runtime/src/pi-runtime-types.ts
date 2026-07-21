@@ -17,6 +17,15 @@ export type LoggedPiEvent = {
   timestamp: string;
 };
 
+export type PiPromptOptions = {
+  streamingBehavior?: "steer" | "followUp";
+  images?: AgentImageInput[];
+  expandPromptTemplates?: boolean;
+  source?: "interactive" | "rpc" | "extension";
+  preflightResult?: (success: boolean) => void;
+  restartOnContinuationError?: boolean;
+};
+
 // Re-exported from the canonical Effect-schema-derived type in runtime-schema.ts
 // so all context-usage shapes resolve to one source of truth.
 export type { RuntimeContextUsage as PiContextUsage } from "../../../shared/agent/context-usage";
@@ -43,7 +52,7 @@ export interface PiAgentSession {
   prompt(
     message: string,
     onEvent: (event: PiEvent, seq: number) => void,
-    options?: { streamingBehavior?: "steer" | "followUp"; images?: AgentImageInput[] },
+    options?: PiPromptOptions,
   ): Promise<void>;
   steer(message: string, images?: AgentImageInput[]): Promise<void>;
   followUp(message: string, images?: AgentImageInput[]): Promise<void>;
