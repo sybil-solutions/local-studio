@@ -31,7 +31,7 @@ import { AgentComposerStatusBar } from "./agent-composer-status-bar";
 import { AgentComposerTextArea } from "./agent-composer-textarea";
 import { AgentQueuePanel } from "./agent-queue-panel";
 import { cx } from "@/ui/utils";
-import { Folder } from "@/ui/icon-registry";
+import { ChevronDown, FolderOpen } from "@/ui/icon-registry";
 
 export type AgentComposerFrameProps = {
   attachments: AgentComposerAttachment[];
@@ -168,8 +168,7 @@ export function AgentComposerFrame({
         onSteer={onSteerQueued}
       />
       {banner ? (
-        // Codex compacting banner: flat, chat-size text at ~35% white, no pill.
-        <div className="mx-auto flex w-full max-w-[var(--composer-w)] items-center gap-2 pb-3 pl-1 text-[length:var(--codex-chat-font-size)] text-(--fg)/35">
+        <div className="mx-auto flex w-[90%] max-w-[calc(var(--composer-w)*0.9)] items-center gap-2 pb-3 pl-1 text-[length:var(--codex-chat-font-size)] text-(--fg)/35">
           <Spinner size="xs" />
           {banner.label}
         </div>
@@ -178,10 +177,11 @@ export function AgentComposerFrame({
         <button
           type="button"
           onClick={projectRow.onPick}
-          className="mx-auto flex h-11 w-full max-w-[var(--composer-w)] items-center gap-2.5 rounded-t-[26px] rounded-b-none border border-b-0 border-(--border) bg-(--fg)/[0.03] px-5 text-left text-[length:var(--codex-chat-font-size)] text-(--fg)/85 transition-colors hover:bg-(--fg)/[0.05]"
+          className="relative z-0 mx-auto -mb-3 flex h-11 w-[calc(90%_-_26px)] max-w-[calc(var(--composer-w)*0.9_-_26px)] items-start gap-2.5 rounded-[20px] border border-(--border)/80 bg-(--fg)/[0.022] px-3 pt-3 text-left text-[length:var(--fs-sm)] text-(--fg)/78 shadow-[0_8px_24px_rgba(0,0,0,0.08)] backdrop-blur-sm transition-colors [corner-shape:superellipse(1.5)] hover:bg-(--fg)/[0.04]"
         >
-          <Folder className="h-4 w-4 shrink-0 text-(--fg)/60" strokeWidth={1.75} />
-          <span className="truncate">{projectRow.label}</span>
+          <FolderOpen className="h-4 w-4 shrink-0 text-(--fg)/56" strokeWidth={1.7} />
+          <span className="min-w-0 flex-1 truncate">{projectRow.label}</span>
+          <ChevronDown className="h-3.5 w-3.5 shrink-0 text-(--fg)/36" strokeWidth={1.75} />
         </button>
       ) : null}
       <div
@@ -189,8 +189,7 @@ export function AgentComposerFrame({
         onDragLeave={onComposerDragLeave}
         onDrop={onComposerDrop}
         className={cx(
-          "relative mx-auto w-full max-w-[var(--composer-w)] overflow-visible border border-(--border) bg-(--composer) shadow-[var(--composer-shadow)] transition-colors",
-          projectRow ? "rounded-b-[26px] rounded-t-none" : "rounded-[26px]",
+          "relative z-10 mx-auto w-[90%] max-w-[calc(var(--composer-w)*0.9)] overflow-visible rounded-[25px] border border-(--border) bg-(--composer)/90 shadow-[0_8px_24px_rgba(0,0,0,0.11)] backdrop-blur-lg transition-colors [corner-shape:superellipse(1.5)]",
           composerDragActive && "outline outline-1 outline-(--link)/50",
         )}
       >
@@ -247,7 +246,12 @@ export function AgentComposerFrame({
           modelSelector={modelSelector}
         />
       </div>
-      {projectRow ? null : (
+      {projectRow ? (
+        <div
+          aria-hidden="true"
+          className="mx-auto mt-2.5 h-4 w-[90%] max-w-[calc(var(--composer-w)*0.9)]"
+        />
+      ) : (
         <AgentComposerStatusBar
           cwd={cwd}
           gitBranch={gitBranch}

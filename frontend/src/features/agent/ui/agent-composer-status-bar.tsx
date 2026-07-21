@@ -26,7 +26,7 @@ export function AgentComposerStatusBar({
   const displayCwd = formatHomeRelativePath(cwd);
 
   return (
-    <div className="relative z-20 mx-auto mt-2.5 flex w-full max-w-[var(--composer-w)] items-center gap-2 overflow-visible font-mono text-[length:var(--fs-xs)] text-(--dim)">
+    <div className="relative z-20 mx-auto mt-2.5 flex w-[90%] max-w-[calc(var(--composer-w)*0.9)] items-center gap-2 overflow-visible font-mono text-[length:var(--fs-xs)] text-(--dim)">
       <div className="flex min-w-0 flex-1 items-center gap-2 overflow-visible">
         <div className="min-w-0 max-w-[42%] shrink overflow-visible">
           {displayCwd ? (

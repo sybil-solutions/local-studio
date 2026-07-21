@@ -6,7 +6,6 @@ import type { ManagedRuntimeInstallBackend } from "@/features/settings/runtime-t
 import type {
   EngineJob,
   ModelDownload,
-  ModelRecommendation,
   RuntimeTarget,
   StarterPreset,
   StudioDiagnostics,
@@ -38,7 +37,6 @@ interface SetupViewProps {
   modelsDir: string;
   setModelsDir: (value: string) => void;
   diagnostics: StudioDiagnostics | null;
-  recommendations: ModelRecommendation[];
   presets: StarterPreset[];
   selectedPreset: StarterPreset | null;
   beginPresetSetup: (preset: StarterPreset) => void;
@@ -69,7 +67,7 @@ interface SetupViewProps {
   saveSettings: () => void;
   installRuntime: (backend: ManagedRuntimeInstallBackend) => void;
   updateRuntimeTarget: (target: RuntimeTarget) => void;
-  beginDownload: (modelId: string) => void;
+  beginVariantDownload: (modelId: string, allowPatterns?: string[]) => void;
   submitManualModel: () => void;
   continueFromHardware: () => void;
   configuringRecipe: boolean;
@@ -95,7 +93,6 @@ export function SetupView({
   modelsDir,
   setModelsDir,
   diagnostics,
-  recommendations,
   presets,
   selectedPreset,
   beginPresetSetup,
@@ -126,7 +123,7 @@ export function SetupView({
   saveSettings,
   installRuntime,
   updateRuntimeTarget,
-  beginDownload,
+  beginVariantDownload,
   submitManualModel,
   continueFromHardware,
   configuringRecipe,
@@ -207,7 +204,6 @@ export function SetupView({
 
             {!loading && step === 2 ? (
               <StepModel
-                recommendations={recommendations}
                 presets={presets}
                 beginPresetSetup={beginPresetSetup}
                 remoteApiKey={remoteApiKey}
@@ -222,7 +218,7 @@ export function SetupView({
                 manualGgufFile={manualGgufFile}
                 setManualGgufFile={setManualGgufFile}
                 resolvingManualModel={resolvingManualModel}
-                beginDownload={beginDownload}
+                beginVariantDownload={beginVariantDownload}
                 submitManualModel={submitManualModel}
                 setStep={setStep}
               />

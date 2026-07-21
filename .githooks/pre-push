@@ -25,4 +25,4 @@ do
 done
 
 echo "pre-push: frontend quality gate"
-npm --prefix frontend run check:quality
+(cd frontend && npm run check:static && npm run check:cleanup && node scripts/assert-standalone-build.mjs)

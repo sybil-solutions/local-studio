@@ -31,7 +31,7 @@ export function AgentComposerTextArea({
       onChange={onChange}
       onKeyDown={onKeyDown}
       placeholder={placeholder}
-      className="min-h-16 max-h-[42vh] w-full resize-none overflow-y-auto bg-transparent px-5 pb-2 pt-4 text-[length:var(--codex-chat-font-size)] leading-[1.5] tracking-normal text-(--fg)/85 outline-none placeholder:text-(--composer-placeholder)"
+      className="min-h-11 max-h-[36vh] w-full resize-none overflow-y-auto bg-transparent px-4 pb-0 pt-3.5 text-[length:var(--codex-chat-font-size)] leading-[1.5] tracking-normal text-(--fg)/82 outline-none placeholder:text-(--composer-placeholder)"
     />
   );
 }

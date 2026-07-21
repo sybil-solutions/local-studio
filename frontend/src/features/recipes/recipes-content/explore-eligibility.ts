@@ -1,5 +1,7 @@
-import type { GPU, HuggingFaceModel, ModelRecommendation } from "@/lib/types";
+import type { GPU, HuggingFaceModel } from "@/lib/types";
+import type { ModelIndexModel } from "@/lib/api/studio";
 import { toGB, toGBFromMB } from "@/lib/formatters";
+import { catalogNeedGb } from "./explore-model-stats";
 
 /** Sum total VRAM across connected GPUs (one card = one capacity; eight cards = eight capacities). */
 export function sumGpuMemoryPoolGb(gpus: GPU[]): number {
@@ -37,13 +39,16 @@ export function hasHfEngagementStats(model: HuggingFaceModel): boolean {
   return model.downloads > 0 || model.likes > 0;
 }
 
-/** Recommendations that can plausibly run on this pool (excludes explicit min VRAM above pool). */
-export function filterRecommendationsWithinPool(
-  recs: ModelRecommendation[],
+/** Catalog models that can plausibly run on this pool (entries with unknown sizes stay). */
+export function filterIndexModelsWithinPool(
+  models: ModelIndexModel[],
   poolGb: number,
-): ModelRecommendation[] {
-  if (poolGb <= 0) return recs;
-  return recs.filter((rec) => rec.min_vram_gb == null || rec.min_vram_gb <= poolGb);
+): ModelIndexModel[] {
+  if (poolGb <= 0) return models;
+  return models.filter((model) => {
+    const needGb = catalogNeedGb(model);
+    return needGb == null || needGb <= poolGb;
+  });
 }
 
 export type ExploreVramTierItem = { needGb: number | null };

@@ -1,4 +1,5 @@
-import type { HuggingFaceModel, ModelRecommendation } from "@/lib/types";
+import type { HuggingFaceModel } from "@/lib/types";
+import type { ModelIndexModel } from "@/lib/api/studio";
 import { estimateModelSizeMb, type QuantFormat } from "@/features/recipes/vram-estimator";
 
 const QUANT_TAG_MATCHERS: Array<{ quant: QuantFormat; tags: string[] }> = [
@@ -62,8 +63,8 @@ export function parseParamsBillions(modelId: string): number | null {
  *
  * Note on MoE: `parseParamsBillions` reads total params from the repo name, so
  * MoE models (e.g. DeepSeek-R1 671B) are overestimated on this path. Known
- * limitation; curated recommendations in `STUDIO_MODEL_RECOMMENDATIONS` bypass
- * this estimate and use hand-tuned `min_vram_gb` instead.
+ * limitation; curated models from the controller's model index bypass this
+ * estimate and use the catalog's published variant sizes instead.
  */
 export function estimateRoughWeightsGb(model: HuggingFaceModel): number | null {
   // HF's list endpoint returns siblings (file names) but NOT file sizes, so we
@@ -85,21 +86,36 @@ export function estimateRoughWeightsGb(model: HuggingFaceModel): number | null {
   return weightsGb * 1.25;
 }
 
-export function recommendedNeedGb(rec: ModelRecommendation): number | null {
-  if (rec.min_vram_gb != null && rec.min_vram_gb > 0) return rec.min_vram_gb;
-  if (rec.size_gb != null && rec.size_gb > 0) return rec.size_gb;
-  return null;
+/**
+ * VRAM estimate for a curated catalog (model-index) entry.
+ *
+ * Choice: prefer the bf16 variant's published `size_gb` — bf16 repo ids are
+ * the canonical HF ids Explore groups resolve to, so the group's needGb
+ * should reflect the full-precision weights a user gets by default. When no
+ * bf16 size is published, fall back to the smallest published variant size so
+ * quant-only entries still count as "fits" against the pool instead of
+ * dropping to the rough name-based estimate.
+ */
+export function catalogNeedGb(model: ModelIndexModel): number | null {
+  const bf16 = model.variants.find(
+    (variant) => variant.format === "bf16" && variant.size_gb != null && variant.size_gb > 0,
+  );
+  if (bf16?.size_gb != null) return bf16.size_gb;
+  const sizes = model.variants
+    .map((variant) => variant.size_gb)
+    .filter((size): size is number => size != null && size > 0);
+  return sizes.length > 0 ? Math.min(...sizes) : null;
 }
 
 export function resolveGroupNeedGb(
   key: string,
-  recByKey: Map<string, ModelRecommendation>,
+  catalogByKey: Map<string, ModelIndexModel>,
   lead: HuggingFaceModel,
 ): number | null {
-  const rec = recByKey.get(key);
-  if (rec) {
-    const fromRec = recommendedNeedGb(rec);
-    if (fromRec != null) return fromRec;
+  const catalogModel = catalogByKey.get(key);
+  if (catalogModel) {
+    const fromCatalog = catalogNeedGb(catalogModel);
+    if (fromCatalog != null) return fromCatalog;
   }
   return estimateRoughWeightsGb(lead);
 }

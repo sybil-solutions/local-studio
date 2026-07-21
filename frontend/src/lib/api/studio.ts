@@ -2,7 +2,6 @@ import type {
   ModelDownload,
   EngineJob,
   ModelInfo,
-  ModelRecommendation,
   StarterPreset,
   StorageInfo,
   StudioDiagnostics,
@@ -105,11 +104,6 @@ export function createStudioApi(core: ApiCore) {
     getStudioDiagnostics: (): Promise<StudioDiagnostics> => core.request("/studio/diagnostics"),
 
     getStudioStorage: (): Promise<StorageInfo> => core.request("/studio/storage"),
-
-    getModelRecommendations: (): Promise<{
-      recommendations: ModelRecommendation[];
-      max_vram_gb: number;
-    }> => core.request("/studio/recommendations"),
 
     getModelIndex: (options?: RequestOptions): Promise<ModelIndexResponse> =>
       core.request("/studio/model-index", options),

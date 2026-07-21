@@ -2,7 +2,8 @@
 
 import { useCallback, useMemo, useState } from "react";
 import api from "@/lib/api/client";
-import type { GPU, HuggingFaceModel, ModelRecommendation } from "@/lib/types";
+import type { GPU, HuggingFaceModel } from "@/lib/types";
+import type { ModelIndexModel } from "@/lib/api/studio";
 import { useHuggingFaceModelSearch } from "@/features/recipes/use-huggingface-model-search";
 import { useMountSubscription } from "@/hooks/use-mount-subscription";
 import {
@@ -14,7 +15,7 @@ import {
   RECENT_HF_MODEL_SORT,
 } from "@/lib/huggingface";
 import {
-  filterRecommendationsWithinPool,
+  filterIndexModelsWithinPool,
   hasHfEngagementStats,
   interleaveExploreGroupsByVramTier,
   isRecentlyCreatedOnHf,
@@ -75,7 +76,7 @@ export function useExplore() {
   const [library, setLibrary] = useState("");
   const [sort, setSort] = useState("");
   const [poolOverrideGb, setPoolOverrideGbState] = useState<number | null>(null);
-  const [recommendations, setRecommendations] = useState<ModelRecommendation[]>([]);
+  const [catalogModels, setCatalogModels] = useState<ModelIndexModel[]>([]);
 
   const configureExploreParams = useCallback(
     (params: URLSearchParams, isBrowsing: boolean) => {
@@ -118,43 +119,65 @@ export function useExplore() {
     [gpus, poolGb, detectedPoolGb, poolOverrideGb],
   );
 
-  const spotlightRecommendations = useMemo(() => {
-    return filterRecommendationsWithinPool(recommendations, poolGb);
-  }, [recommendations, poolGb]);
+  const spotlightCatalog = useMemo(() => {
+    return filterIndexModelsWithinPool(catalogModels, poolGb);
+  }, [catalogModels, poolGb]);
 
-  const loadRecommendationsAndGpus = useCallback(async () => {
+  const loadCatalogAndGpus = useCallback(async () => {
     try {
-      const [recData, gpuData] = await Promise.all([
-        api.getModelRecommendations(),
+      const [indexData, presetsData, gpuData] = await Promise.all([
+        api.getModelIndex(),
+        // Starter presets carry the controller's max_vram_gb fallback now that
+        // the old recommendations endpoint is gone.
+        api.getStarterPresets().catch(() => null),
         api.getGPUs().catch(() => ({ gpus: [] as GPU[] })),
       ]);
-      setRecommendations(recData.recommendations ?? []);
-      const vram = typeof recData.max_vram_gb === "number" ? recData.max_vram_gb : 0;
+      setCatalogModels(indexData.tiers?.flatMap((tier) => tier.models) ?? []);
+      const vram = typeof presetsData?.max_vram_gb === "number" ? presetsData.max_vram_gb : 0;
       setApiMaxVramGb(vram);
       setGpus(gpuData.gpus ?? []);
     } catch {
-      setRecommendations([]);
+      setCatalogModels([]);
       setApiMaxVramGb(0);
       setGpus([]);
     }
   }, []);
 
   useMountSubscription(() => {
-    void loadRecommendationsAndGpus();
-  }, [loadRecommendationsAndGpus]);
+    void loadCatalogAndGpus();
+  }, [loadCatalogAndGpus]);
 
-  const recByKey = useMemo(() => {
-    const m = new Map<string, ModelRecommendation>();
-    for (const r of recommendations) {
-      const k = exploreGroupKey(r.id);
-      m.set(k, r);
+  // Spotlight pins come from the model index: bf16 variant repos are the
+  // canonical HF ids Explore groups resolve to, so they win key collisions;
+  // quant/other variant repos are matched too so a quant-only HF result still
+  // pins its catalog entry.
+  const catalogByKey = useMemo(() => {
+    const m = new Map<string, ModelIndexModel>();
+    const add = (repo: string | null | undefined, model: ModelIndexModel, override: boolean) => {
+      if (!repo) return;
+      const k = exploreGroupKey(repo);
+      if (override || !m.has(k)) m.set(k, model);
+    };
+    for (const model of catalogModels) {
+      add(model.id, model, false);
+      for (const variant of model.variants) {
+        if (variant.format !== "bf16") add(variant.repo, model, false);
+      }
+      for (const variant of model.variants) {
+        if (variant.format === "bf16") add(variant.repo, model, true);
+      }
     }
     return m;
-  }, [recommendations]);
+  }, [catalogModels]);
 
-  const spotlightRecKeys = useMemo(() => {
-    return new Set(spotlightRecommendations.map((r) => exploreGroupKey(r.id)));
-  }, [spotlightRecommendations]);
+  const spotlightKeys = useMemo(() => {
+    const keys = new Set<string>();
+    for (const model of spotlightCatalog) {
+      keys.add(exploreGroupKey(model.id));
+      for (const variant of model.variants) keys.add(exploreGroupKey(variant.repo));
+    }
+    return keys;
+  }, [spotlightCatalog]);
 
   const groupedModels = useMemo((): ModelGroup[] => {
     const groups = new Map<string, HuggingFaceModel[]>();
@@ -187,7 +210,7 @@ export function useExplore() {
       const maxDownloads = sorted.reduce((m, v) => Math.max(m, v.downloads), 0);
       const maxLikes = sorted.reduce((m, v) => Math.max(m, v.likes), 0);
       const lastModifiedMs = sorted.reduce((m, v) => Math.max(m, modelRecencyMs(v)), 0);
-      const needGb = resolveGroupNeedGb(key, recByKey, lead);
+      const needGb = resolveGroupNeedGb(key, catalogByKey, lead);
       const tier = engagementTier(maxLikes, maxDownloads);
       const fit = scoreModelFit({
         model: lead,
@@ -210,14 +233,14 @@ export function useExplore() {
         fit,
       };
     });
-  }, [models, recByKey, search, hardwareProfile]);
+  }, [models, catalogByKey, search, hardwareProfile]);
 
   const sortedGroups = useMemo(() => {
     const isSearching = search.trim().length > 0;
     return [...groupedModels].sort((a, b) => {
-      // Spotlight recommendations always float to the top in both modes.
-      const aSpot = spotlightRecKeys.has(a.key);
-      const bSpot = spotlightRecKeys.has(b.key);
+      // Spotlight catalog pins always float to the top in both modes.
+      const aSpot = spotlightKeys.has(a.key);
+      const bSpot = spotlightKeys.has(b.key);
       if (aSpot && !bSpot) return -1;
       if (!aSpot && bSpot) return 1;
 
@@ -254,7 +277,7 @@ export function useExplore() {
       }
       return 0;
     });
-  }, [groupedModels, spotlightRecKeys, poolGb, search]);
+  }, [groupedModels, spotlightKeys, poolGb, search]);
 
   // VRAM-tier interleaving only makes sense when browsing — when the user has
   // searched for something specific, scrambling the relevance order to mix
@@ -273,10 +296,10 @@ export function useExplore() {
 
   const refresh = useCallback(() => {
     void (async () => {
-      await loadRecommendationsAndGpus();
+      await loadCatalogAndGpus();
       await fetchModels(false, 0);
     })();
-  }, [loadRecommendationsAndGpus, fetchModels]);
+  }, [loadCatalogAndGpus, fetchModels]);
 
   return {
     groups: visibleGroups,
@@ -292,7 +315,7 @@ export function useExplore() {
     library,
     sort,
     hasMore,
-    recommendations,
+    catalogModels,
     setSearch,
     setLibrary,
     setSort,
