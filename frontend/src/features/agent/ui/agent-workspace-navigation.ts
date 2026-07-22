@@ -73,18 +73,6 @@ export function workspaceNavigationAction(
   };
 }
 
-export function workspaceNavigationActionForHref(
-  href: string,
-  project: Project,
-  sessionTitle?: string,
-): Extract<WorkspaceAction, { type: "urlNavRequested" }> | null {
-  return workspaceNavigationAction(
-    new URL(href, "http://local.studio").searchParams,
-    project,
-    sessionTitle,
-  );
-}
-
 export function sessionIdForNavigation(
   sessionId: string | null,
   newParam: string | null,

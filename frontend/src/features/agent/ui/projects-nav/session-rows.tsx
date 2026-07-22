@@ -18,7 +18,6 @@ import {
 import { useMountSubscription } from "@/hooks/use-mount-subscription";
 import { useProjectSessionsReloadEffect } from "@/features/agent/ui/projects-nav/use-projects-nav-effects";
 import { workspaceCommands } from "@/features/agent/workspace/commands";
-import { workspaceNavigationActionForHref } from "@/features/agent/ui/agent-workspace-navigation";
 import type { Project as ProjectEntry } from "@/features/agent/projects/types";
 import { ChatIcon, Folder, FolderOpen, PlusIcon, TrashIcon } from "@/ui/icons";
 import {
@@ -363,7 +362,7 @@ export function ActiveSessionRow({
         session.threadId ? `&session=${encodeURIComponent(session.threadId)}&replace=1` : ""
       }`}
       onOpen={() => {
-        if (session.paneId) {
+        if (session.paneId && !session.threadId) {
           workspaceCommands().focusSession(session.paneId, session.id, {
             replaceWorkspace: true,
           });
@@ -442,10 +441,6 @@ export function SessionRow({
       rowClass={`group relative flex h-[var(--sidebar-row-height)] items-center rounded-[var(--sidebar-row-radius)] pl-3 pr-0 text-(--fg)/85 transition-[color,background-color,opacity] hover:bg-(--hover) hover:text-(--fg) ${dragging ? "opacity-45" : ""}`}
       renameRowClass="flex h-[var(--sidebar-row-height)] items-center rounded-[var(--sidebar-row-radius)] bg-(--surface)/40 pl-3 pr-1"
       href={`/agent?project=${encodeURIComponent(project.id)}&session=${encodeURIComponent(session.id)}&replace=1`}
-      onOpen={(href) => {
-        const action = workspaceNavigationActionForHref(href, project, label);
-        if (action) workspaceCommands().navigate(action);
-      }}
       onPatchPref={(patch) => patchSessionPref(session.id, patch)}
       onArchive={() => {
         void setSessionArchive(session.id, project, label, true)
@@ -493,8 +488,6 @@ export function NewChatPlusButton({
     const href = hrefWithOpenNonce(
       `/agent?project=${encodeURIComponent(project.id)}&new=1&replace=1`,
     );
-    const action = workspaceNavigationActionForHref(href, project);
-    if (action) workspaceCommands().navigate(action);
     router.push(href);
   };
 
