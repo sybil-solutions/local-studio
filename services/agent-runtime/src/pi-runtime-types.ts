@@ -86,6 +86,10 @@ export interface PiAgentSession {
   getEventsAfter(seq: number): LoggedPiEvent[];
   onLoggedEvent(listener: (event: LoggedPiEvent) => void): () => void;
   adoptPiSessionId(piSessionId: string | null | undefined): void;
+  respondExtensionUi(
+    requestId: string,
+    response: { value?: string; confirmed?: boolean; cancelled?: boolean },
+  ): boolean;
 }
 
 export type { RuntimeStartOptions };

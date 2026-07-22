@@ -16,6 +16,7 @@ import type {
 } from "@/features/agent/composer-context";
 import type { QueuedMessage } from "@/features/agent/messages";
 import type { BrowserBackend } from "@/features/agent/tools/types";
+import type { AgentToolAccess } from "@/features/agent/contracts";
 import type { ComposerBanner } from "@/features/agent/composer/composer-visual-state";
 import { Spinner } from "@/ui";
 import type { GitSummary } from "@/features/agent/projects/types";
@@ -39,6 +40,7 @@ export type AgentComposerFrameProps = {
   browserToolEnabled: boolean;
   browserBackend: BrowserBackend;
   canvasEnabled: boolean;
+  toolAccess: AgentToolAccess;
   composerDragActive: boolean;
   contextWindow: number;
   currentContextTokens: number;
@@ -75,6 +77,7 @@ export type AgentComposerFrameProps = {
   onToggleBrowserBackend: () => void;
   onToggleBrowserTool: () => void;
   onToggleCanvas: () => void;
+  onToggleToolAccess: () => void;
   placeholder: string;
   projectRow?: { label: string; onPick: () => void } | null;
   promptTemplates: ComposerPromptTemplateRef[];
@@ -95,6 +98,7 @@ export function AgentComposerFrame({
   browserToolEnabled,
   browserBackend,
   canvasEnabled,
+  toolAccess,
   composerDragActive,
   contextWindow,
   currentContextTokens,
@@ -131,6 +135,7 @@ export function AgentComposerFrame({
   onToggleBrowserBackend,
   onToggleBrowserTool,
   onToggleCanvas,
+  onToggleToolAccess,
   placeholder,
   projectRow,
   promptTemplates,
@@ -232,6 +237,8 @@ export function AgentComposerFrame({
           status={status}
           input={input}
           attachmentsCount={attachments.length}
+          toolAccess={toolAccess}
+          onToggleToolAccess={onToggleToolAccess}
           browserToolEnabled={browserToolEnabled}
           browserBackend={browserBackend}
           onToggleBrowserBackend={onToggleBrowserBackend}

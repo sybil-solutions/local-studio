@@ -94,4 +94,4 @@ export function piStatusFromEvents(input: {
 // isAgentEndEvent lives in shared/agent/pi-events.ts because the frontend's
 // client-side event pipeline needs it too; re-exported here so runtime
 // callers keep their import surface.
-export { isAgentEndEvent } from "../../../shared/agent/pi-events";
+export { isAgentEndEvent, isAgentSettledEvent } from "../../../shared/agent/pi-events";

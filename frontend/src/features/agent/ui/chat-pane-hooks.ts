@@ -25,7 +25,10 @@ export function useChatPaneDerivedState({
     () => tabs.find((tab) => tab.id === activeTabId) ?? tabs[0] ?? null,
     [tabs, activeTabId],
   );
-  const running = activeTab?.status === "running" || activeTab?.status === "starting";
+  const running =
+    activeTab?.status === "running" ||
+    activeTab?.status === "starting" ||
+    activeTab?.status === "stopping";
   const showEmptyPrompt = activeTab && activeTab.messages.length === 0 && !running;
   const queue = activeTab?.queue ?? [];
   const sdkContextUsage = activeTab?.contextUsage ?? null;

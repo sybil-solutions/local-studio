@@ -27,7 +27,7 @@ afterEach(() => {
   for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 
-describe("kittylitter pairing retry", () => {
+describe.serial("kittylitter pairing retry", () => {
   test("recovers when the binary fails before the daemon is ready", async () => {
     const { bin, counter } = fakeBinary(2);
     process.env.KITTYLITTER_BIN = bin;

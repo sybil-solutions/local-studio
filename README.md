@@ -111,8 +111,24 @@ launching it, and benchmarking. Engine installs (vLLM/SGLang/MLX) land in
 The agent surface lives at `/agent` in the frontend. It uses
 `@earendil-works/pi-coding-agent` through the frontend runtime rather than
 shelling out to a separate agent process for normal turns. Agent skills and
-extensions are loaded by the frontend runtime and surfaced in the session UI.
-Agent file operations are local-only, stored under `data/agentfs`.
+extensions are discovered through Pi and surfaced in the session UI. Pi remains
+the source of truth for authentication, settings, resources, tools, and native
+JSONL sessions. The runtime respects `PI_CODING_AGENT_DIR`,
+`PI_CODING_AGENT_SESSION_DIR`, and Pi's `sessionDir` setting in the same
+precedence order as the CLI. Existing Local Studio session storage remains a
+read-compatible legacy source, while new sessions use Pi's resolved directory.
+Workbench sends only the active controller to Pi and writes only that
+controller's advertised models into Local Studio's generated Pi model config;
+saved controllers and the user's global Pi model catalog are not merged into a
+controller session. Providers connected explicitly in Configure remain a
+separate opt-in model source.
+
+New Workbench chats start with Pi's `read`, `grep`, `find`, and `ls` tools. Full
+access enables every tool registered in that Pi session, including extension
+tools. Read only is a model-tool allowlist, not an operating-system sandbox,
+and loaded extensions may still have their own behavior. Pi runs with the full
+permissions of the host user. Tailscale limits who can reach the dashboard; it
+does not sandbox Pi.
 
 ## Runtime backends
 
@@ -137,6 +153,34 @@ cd frontend && npm run build && npm run start
 `npm run start` launches the standalone server (`scripts/start-standalone.mjs`).
 Never use plain `next start` — it breaks SSE streaming. The controller runs the
 same way in production as in development: `bun src/main.ts`.
+
+The production frontend binds only to `127.0.0.1` and defaults to port `4783`.
+`PORT` may be set to an integer from 1024 through 65535. Workspace paths are
+canonicalized and must be under `WORKSPACE_ROOTS`, a platform-path-delimited
+list that defaults to the current user's home directory. Add mounted locations
+explicitly, for example `WORKSPACE_ROOTS="$HOME:/Volumes/Projects"` on macOS.
+
+For private mobile access, first configure the exact Serve hostname:
+
+```bash
+cd frontend
+ALLOWED_TAILSCALE_HOSTS=studio.example.ts.net npm start
+tailscale serve --bg http://127.0.0.1:4783
+tailscale serve status
+```
+
+Serve supplies a private HTTPS tailnet URL. Both devices must be in the intended
+tailnet, and ACLs or grants should restrict the URL to its owner. Do not use
+Tailscale Funnel. `tailscale serve --bg` persists the proxy configuration across
+Tailscale restarts and reboots; it does not start Local Studio. Optionally set
+`ALLOWED_TAILSCALE_USERS` to a comma-separated login allowlist. The
+`Tailscale-User-Login` header is trusted only because the backend remains bound
+to loopback behind Serve.
+
+Manual availability requires `npm start` to remain active. An OS-native user
+service can start the compiled app after login and restart it after a crash, but
+it is intentionally not installed automatically. The host must still be on,
+awake, online, and connected to Tailscale.
 
 ## Remote / LAN deployment
 

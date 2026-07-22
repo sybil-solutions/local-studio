@@ -3,9 +3,9 @@ import { realpath, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
 import { Effect } from "effect";
-import { listProjectsFromStore } from "./projects-store";
+import { listProjectsFromStore, resolveAllowedWorkspace } from "./projects-store";
 import { hasEnabledConnectorsSync } from "./connectors-service";
-import type { AgentThinkingLevel } from "../../../shared/agent/agent-turn";
+import type { AgentThinkingLevel, AgentToolAccess } from "../../../shared/agent/agent-turn";
 
 export type RuntimeSkillRef = {
   id?: string;
@@ -21,6 +21,7 @@ export type RuntimePromptTemplateRef = {
 
 export type RuntimeStartOptions = {
   thinkingLevel?: AgentThinkingLevel;
+  toolAccess?: AgentToolAccess;
   browserToolEnabled?: boolean;
   browserSessionId?: string;
   browserBackend?: "embedded" | "sitegeist";
@@ -91,7 +92,7 @@ export function resolveAgentCwdEffect(input?: string): Effect.Effect<string, unk
     if (!info.isDirectory()) {
       return yield* Effect.fail(new Error(`Agent cwd is not a directory: ${resolved}`));
     }
-    return resolved;
+    return resolveAllowedWorkspace(resolved);
   });
 }
 
@@ -238,6 +239,7 @@ export function runtimeOptionsFingerprint(options: RuntimeStartOptions): string 
     .sort();
   return JSON.stringify({
     thinkingLevel: options.thinkingLevel ?? "high",
+    toolAccess: options.toolAccess ?? "full",
     browser: options.browserToolEnabled === true,
     browserBackend: browserBackend(options),
     browserSessionId: options.browserSessionId ?? "",

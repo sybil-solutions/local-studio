@@ -1,13 +1,16 @@
 import { EventEmitter } from "node:events";
+import { randomUUID } from "node:crypto";
 import { closeSync, constants, fsyncSync, openSync, readSync, statSync } from "node:fs";
 import {
   createAgentSessionFromServices,
   createAgentSessionRuntime,
   createAgentSessionServices,
+  getAgentDir,
   SessionManager,
   shouldCompact,
   type AgentSessionEvent,
   type AgentSessionRuntime,
+  type ExtensionUIContext,
 } from "@earendil-works/pi-coding-agent";
 import { Effect } from "effect";
 import type { AgentImageInput } from "../../../shared/agent/agent-image-input";
@@ -22,7 +25,7 @@ import { refreshPiModels, resolvePiModelSelection } from "./pi-runtime-models";
 import { getProviderHub } from "./provider-hub";
 import { attachGoalDriver } from "./goal-driver";
 import { findRuntimeSessionForLookup, piStatusFromEvents } from "./pi-runtime-state";
-import { findSessionFile } from "./sessions-store";
+import { configuredPiSessionDir, findSessionFile } from "./sessions-store";
 import { getGlobalSingleton } from "./instances";
 import { connectorsRevisionSync } from "./connectors-service";
 import type {
@@ -215,6 +218,10 @@ class PiSdkSession extends EventEmitter implements PiAgentSession {
   private currentModelId = "";
   private currentStartOptions: RuntimeStartOptions = {};
   private agentDir = "";
+  private extensionUiPending = new Map<
+    string,
+    { method: "select" | "confirm" | "input" | "editor"; resolve: (value: unknown) => void }
+  >();
 
   ensureStarted(
     modelId: string,
@@ -249,7 +256,7 @@ class PiSdkSession extends EventEmitter implements PiAgentSession {
         this.activePromptCount = 0;
         this.lastError = null;
 
-        const { models, agentDir } = yield* Effect.tryPromise({
+        const { models } = yield* Effect.tryPromise({
           try: () => refreshPiModels(),
           catch: (error) => error,
         });
@@ -273,10 +280,15 @@ class PiSdkSession extends EventEmitter implements PiAgentSession {
 
         const sessionOptions = buildAgentSessionOptionsSync({ options });
         applyRuntimeEnvInjections(sessionOptions.envInjections);
-        const sessionManager = SessionManager.create(resolvedCwd);
+        const sessionDir = configuredPiSessionDir(resolvedCwd);
         const resumeFile = desiredSessionId ? findSessionFile(resolvedCwd, desiredSessionId) : null;
-        if (resumeFile) sessionManager.setSessionFile(resumeFile);
+        const sessionManager = resumeFile
+          ? SessionManager.open(resumeFile, sessionDir, resolvedCwd)
+          : SessionManager.create(resolvedCwd, sessionDir);
         const resuming = Boolean(resumeFile);
+        const agentDir = getAgentDir();
+        const extensionUiContext = this.extensionUiContext();
+        const recordExtensionEvent = (event: PiEvent) => this.recordEvent(event);
         const runtime = yield* Effect.tryPromise({
           try: () =>
             createAgentSessionRuntime(
@@ -290,7 +302,6 @@ class PiSdkSession extends EventEmitter implements PiAgentSession {
                           agentDir,
                           modelRuntime: sharedModelRuntime,
                           resourceLoaderOptions: {
-                            noExtensions: true,
                             additionalSkillPaths: sessionOptions.skills,
                             additionalExtensionPaths: sessionOptions.extensionPaths,
                             additionalPromptTemplatePaths: sessionOptions.promptTemplatePaths,
@@ -316,6 +327,27 @@ class PiSdkSession extends EventEmitter implements PiAgentSession {
                           thinkingLevel: selectedModel.reasoning
                             ? (options.thinkingLevel ?? "high")
                             : undefined,
+                        }),
+                      catch: (error) => error,
+                    });
+                    const activeToolNames =
+                      options.toolAccess === "read_only"
+                        ? ["read", "grep", "find", "ls"]
+                        : created.session.getAllTools().map((tool) => tool.name);
+                    created.session.setActiveToolsByName(activeToolNames);
+                    yield* Effect.tryPromise({
+                      try: () =>
+                        created.session.bindExtensions({
+                          mode: "rpc",
+                          uiContext: extensionUiContext,
+                          onError: (error) => {
+                            recordExtensionEvent({
+                              type: "extension_error",
+                              error: error.error,
+                              extensionPath: error.extensionPath,
+                              event: error.event,
+                            });
+                          },
                         }),
                       catch: (error) => error,
                     });
@@ -494,10 +526,31 @@ class PiSdkSession extends EventEmitter implements PiAgentSession {
   abort(): Promise<void> {
     return Effect.runPromise(
       Effect.tryPromise({
-        try: () => this.runtime?.session.abort() ?? Promise.resolve(),
+        try: async () => {
+          const session = this.runtime?.session;
+          if (!session) return;
+          session.clearQueue();
+          await session.abort();
+          await session.waitForIdle();
+        },
         catch: () => undefined,
       }).pipe(Effect.catch(() => Effect.void)),
     );
+  }
+
+  respondExtensionUi(
+    requestId: string,
+    response: { value?: string; confirmed?: boolean; cancelled?: boolean },
+  ): boolean {
+    const pending = this.extensionUiPending.get(requestId);
+    if (!pending) return false;
+    this.extensionUiPending.delete(requestId);
+    if (response.cancelled) {
+      pending.resolve(pending.method === "confirm" ? false : undefined);
+      return true;
+    }
+    pending.resolve(pending.method === "confirm" ? response.confirmed === true : response.value);
+    return true;
   }
 
   stop(): Promise<void> {
@@ -509,6 +562,10 @@ class PiSdkSession extends EventEmitter implements PiAgentSession {
     this.unsubscribe = null;
     const runtime = this.runtime;
     this.runtime = null;
+    for (const pending of this.extensionUiPending.values()) {
+      pending.resolve(pending.method === "confirm" ? false : undefined);
+    }
+    this.extensionUiPending.clear();
     if (!runtime) return Effect.void;
     return Effect.tryPromise({
       try: () => runtime.dispose(),
@@ -569,7 +626,73 @@ class PiSdkSession extends EventEmitter implements PiAgentSession {
     return session;
   }
 
-  private recordEvent(event: AgentSessionEvent) {
+  private extensionUiContext(): ExtensionUIContext {
+    const request = (
+      method: "select" | "confirm" | "input" | "editor",
+      payload: Record<string, unknown>,
+      timeout?: number,
+      signal?: AbortSignal,
+    ) => {
+      const requestId = randomUUID();
+      return new Promise<unknown>((resolve) => {
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const finish = (value: unknown) => {
+          if (timer) clearTimeout(timer);
+          signal?.removeEventListener("abort", cancel);
+          this.extensionUiPending.delete(requestId);
+          resolve(value);
+        };
+        const cancel = () => finish(method === "confirm" ? false : undefined);
+        this.extensionUiPending.set(requestId, { method, resolve: finish });
+        this.recordEvent({ type: "extension_ui_request", requestId, method, ...payload });
+        if (timeout && timeout > 0) timer = setTimeout(cancel, timeout);
+        signal?.addEventListener("abort", cancel, { once: true });
+        if (signal?.aborted) cancel();
+      });
+    };
+    return {
+      select: (title, options, opts) =>
+        request("select", { title, options }, opts?.timeout, opts?.signal) as Promise<
+          string | undefined
+        >,
+      confirm: (title, message, opts) =>
+        request("confirm", { title, message }, opts?.timeout, opts?.signal) as Promise<boolean>,
+      input: (title, placeholder, opts) =>
+        request("input", { title, placeholder }, opts?.timeout, opts?.signal) as Promise<
+          string | undefined
+        >,
+      editor: (title, prefill) =>
+        request("editor", { title, prefill }) as Promise<string | undefined>,
+      notify: (message, level = "info") =>
+        this.recordEvent({ type: "notice", level, message }),
+      setStatus: (key, text) =>
+        this.recordEvent({ type: "extension_status", key, text: text ?? null }),
+      setTitle: (title) => this.recordEvent({ type: "extension_title", title }),
+      onTerminalInput: () => () => undefined,
+      setWorkingMessage: () => undefined,
+      setWorkingVisible: () => undefined,
+      setWorkingIndicator: () => undefined,
+      setHiddenThinkingLabel: () => undefined,
+      setWidget: () => undefined,
+      setFooter: () => undefined,
+      setHeader: () => undefined,
+      custom: async () => undefined as never,
+      pasteToEditor: () => undefined,
+      setEditorText: () => undefined,
+      getEditorText: () => "",
+      addAutocompleteProvider: () => undefined,
+      setEditorComponent: () => undefined,
+      getEditorComponent: () => undefined,
+      theme: undefined as never,
+      getAllThemes: () => [],
+      getTheme: () => undefined,
+      setTheme: () => ({ success: false, error: "Theme changes require the Pi TUI" }),
+      getToolsExpanded: () => false,
+      setToolsExpanded: () => undefined,
+    };
+  }
+
+  private recordEvent(event: PiEvent) {
     if (event.type === "session_info_changed" && this.runtime?.session.sessionId) {
       this.currentPiSessionId = this.runtime.session.sessionId;
     }
@@ -617,7 +740,9 @@ class PiRuntimeManager {
       target && exactPiSessionId && exactPiSessionId !== target
         ? `${sessionId}:${target}`
         : sessionId;
-    return { sessionId: runtimeSessionId, session: this.getSession(runtimeSessionId) };
+    const session = this.getSession(runtimeSessionId);
+    session.adoptPiSessionId(target);
+    return { sessionId: runtimeSessionId, session };
   }
 
   findSessionForLookup(

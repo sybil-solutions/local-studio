@@ -4,6 +4,7 @@ import {
   handleAgentAbort,
   handleAgentCompact,
   handleAgentTurn,
+  handleExtensionUiResponse,
   handleRuntimeEvents,
   handleRuntimeSessions,
   handleRuntimeStatus,
@@ -41,6 +42,14 @@ import {
 } from "./http/automation-handlers";
 import { handleSubagentRun, handleSubagentsList } from "./http/subagent-handlers";
 import { createLitterBridgeGateway } from "./litter-bridge-gateway";
+import { handleAgentModels } from "./http/model-handlers";
+import {
+  handleAllSessions,
+  handleSessionGet,
+  handleSessionPatch,
+  handleSessionsDelete,
+  handleSessionsList,
+} from "./http/session-handlers";
 
 markAgentRuntimeProcess();
 startAutomationScheduler();
@@ -56,10 +65,18 @@ app.post("/api/litter-bridge/v1", (c) => litterBridgeGateway.handle(c.req.raw));
 app.post("/api/agent/turn", (c) => handleAgentTurn(c.req.raw));
 app.post("/api/agent/abort", (c) => handleAgentAbort(c.req.raw));
 app.post("/api/agent/compact", (c) => handleAgentCompact(c.req.raw));
+app.post("/api/agent/runtime/extension-ui", (c) => handleExtensionUiResponse(c.req.raw));
 app.get("/api/agent/runtime/sessions", () => handleRuntimeSessions());
 app.get("/api/agent/runtime/status", (c) => handleRuntimeStatus(c.req.raw));
 app.get("/api/agent/runtime/events", (c) => handleRuntimeEvents(c.req.raw));
 app.get("/api/agent/setup-checks", () => handleSetupChecks());
+app.get("/api/agent/models", () => handleAgentModels());
+app.post("/api/agent/models", (c) => handleAgentModels(c.req.raw));
+app.get("/api/agent/sessions", (c) => handleSessionsList(c.req.raw));
+app.delete("/api/agent/sessions", () => handleSessionsDelete());
+app.get("/api/agent/sessions/all", (c) => handleAllSessions(c.req.raw));
+app.get("/api/agent/sessions/:id", (c) => handleSessionGet(c.req.raw, c.req.param("id")));
+app.patch("/api/agent/sessions/:id", (c) => handleSessionPatch(c.req.raw, c.req.param("id")));
 
 app.get("/api/agent/automations", () => handleAutomationsList());
 app.post("/api/agent/automations", (c) => handleAutomationCreate(c.req.raw));

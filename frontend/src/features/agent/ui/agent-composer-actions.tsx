@@ -2,8 +2,9 @@
 
 import type { ReactNode, RefObject } from "react";
 import { Spinner } from "@/ui";
-import { ArrowUp, Code2, Plus } from "@/ui/icon-registry";
+import { ArrowUp, Code2, Plus, ShieldCheck, Wrench } from "@/ui/icon-registry";
 import type { BrowserBackend } from "@/features/agent/tools/types";
+import type { AgentToolAccess } from "@/features/agent/contracts";
 import { GlobeIcon, PanelIcon, SitegeistIcon, StopIcon } from "@/ui/icons";
 import { ComposerDictationButton } from "./composer-dictation-button";
 
@@ -15,6 +16,8 @@ export function AgentComposerActions({
   status,
   input,
   attachmentsCount,
+  toolAccess,
+  onToggleToolAccess,
   browserToolEnabled,
   browserBackend,
   onToggleBrowserBackend,
@@ -32,6 +35,8 @@ export function AgentComposerActions({
   status?: string;
   input: string;
   attachmentsCount: number;
+  toolAccess: AgentToolAccess;
+  onToggleToolAccess: () => void;
   browserToolEnabled: boolean;
   browserBackend: BrowserBackend;
   onToggleBrowserBackend: () => void;
@@ -44,6 +49,7 @@ export function AgentComposerActions({
 }) {
   const inputHasText = Boolean(input.trim());
   const starting = status === "starting";
+  const stopping = status === "stopping";
   const usingSitegeist = browserBackend === "sitegeist";
   const browserBackendLabel = usingSitegeist ? "Sitegeist relay" : "embedded panel";
   const browserBackendTarget = usingSitegeist ? "embedded panel" : "Sitegeist relay";
@@ -59,6 +65,27 @@ export function AgentComposerActions({
         className="hidden"
         onChange={(event) => onAttachFiles(event.currentTarget.files)}
       />
+      <button
+        type="button"
+        onClick={onToggleToolAccess}
+        disabled={running}
+        aria-label={`Pi tools: ${toolAccess === "full" ? "full access" : "read only"}`}
+        title={
+          toolAccess === "full"
+            ? "Pi tools: Full access. Click to use read, grep, find, and ls only."
+            : "Pi tools: Read only. This is a model tool allowlist, not an OS sandbox."
+        }
+        className={`inline-flex !h-7 !min-h-7 shrink-0 items-center gap-1 rounded-full px-2 text-[length:var(--fs-xs)] disabled:opacity-30 ${toolAccess === "full" ? activeIconClass : inactiveIconClass}`}
+      >
+        {toolAccess === "full" ? (
+          <Wrench className="h-3.5 w-3.5" strokeWidth={1.7} />
+        ) : (
+          <ShieldCheck className="h-3.5 w-3.5" strokeWidth={1.7} />
+        )}
+        <span className="hidden min-[390px]:inline">
+          {toolAccess === "full" ? "Full" : "Read only"}
+        </span>
+      </button>
       <button
         type="button"
         onClick={() => fileInputRef.current?.click()}
@@ -123,13 +150,13 @@ export function AgentComposerActions({
         />
         {running ? (
           <>
-            {starting ? (
+            {starting || stopping ? (
               <span
                 className="inline-flex !h-7 !min-h-7 shrink-0 items-center gap-1.5 px-2 text-[length:var(--fs-sm)] text-(--dim)"
-                title="Waiting for the model to start"
+                title={stopping ? "Waiting for Pi to stop" : "Waiting for the model to start"}
               >
                 <Spinner size="xs" />
-                Starting…
+                {stopping ? "Stopping…" : "Starting…"}
               </span>
             ) : inputHasText ? (
               <button
@@ -144,7 +171,7 @@ export function AgentComposerActions({
             <button
               type="button"
               onClick={onAbortTurn}
-              disabled={starting}
+              disabled={starting || stopping}
               className={`inline-flex shrink-0 items-center justify-center rounded-full bg-(--fg) text-(--bg) transition-opacity hover:opacity-85 disabled:opacity-30 ${inputHasText ? "!h-6 !min-h-6 !w-6 !min-w-6" : "!h-[30px] !min-h-[30px] !w-[30px] !min-w-[30px]"}`}
               aria-label="Stop"
               title="Stop (Esc)"

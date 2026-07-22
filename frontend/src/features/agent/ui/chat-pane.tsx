@@ -97,7 +97,7 @@ import type { UpdateSession } from "@/features/agent/runtime/types";
 import { useTools } from "@/features/agent/tools/context";
 import type { GitSummary } from "@/features/agent/projects/types";
 import type { BrowserBackend } from "@/features/agent/tools/types";
-import type { AgentThinkingLevel } from "@/features/agent/contracts";
+import type { AgentThinkingLevel, AgentToolAccess } from "@/features/agent/contracts";
 import {
   exportFilenameFromTitle,
   sessionToMarkdown,
@@ -114,6 +114,8 @@ import {
 } from "@/features/agent/ui/use-persistent-terminal-owners";
 import { PersistentTerminals } from "@/features/agent/ui/persistent-terminals";
 import { cx } from "@/ui/utils";
+import { ExtensionUiDialog } from "@/features/agent/ui/extension-ui-dialog";
+import { respondExtensionUi } from "@/features/agent/runtime/api";
 export type { ChatPaneHandle, SessionTab };
 
 const Timeline = dynamic(
@@ -406,6 +408,8 @@ export function ChatPane({
     { activeTab, tools },
   );
   const thinkingLevel = effectiveThinkingLevel(modelThinkingLevels, activeTab?.thinkingLevel);
+  const toolAccess: AgentToolAccess =
+    activeTab?.toolAccess ?? (activeTab?.piSessionId ? "full" : "read_only");
   const selectThinkingLevel = useCallback(
     (level: AgentThinkingLevel) => {
       if (!activeTab || running) return;
@@ -419,12 +423,20 @@ export function ChatPane({
     reasoningDisabled: Boolean(running),
     onSelectReasoning: selectThinkingLevel,
   });
+  const toggleToolAccess = useCallback(() => {
+    if (!activeTab || running) return;
+    updateTab(activeTab.id, (session) => ({
+      ...session,
+      toolAccess: toolAccess === "full" ? "read_only" : "full",
+    }));
+  }, [activeTab, running, toolAccess, updateTab]);
 
   const engine = useSessionEngine({
     tabs,
     activeTabId,
     modelId,
     thinkingLevel,
+    toolAccess,
     cwd,
     browserToolEnabled,
     browserBackend,
@@ -649,6 +661,20 @@ export function ChatPane({
     () => (activeTabId ? engine.loadEarlier(activeTabId) : Promise.resolve()),
     [activeTabId, engine],
   );
+  const handleExtensionUiResponse = useCallback(
+    (response: { value?: string; confirmed?: boolean; cancelled?: boolean }) => {
+      const request = activeTab?.extensionUiRequest;
+      if (!activeTab || !request) return;
+      updateTab(activeTab.id, (session) => ({ ...session, extensionUiRequest: undefined }));
+      void respondExtensionUi(activeTab.id, request.requestId, response).catch((error) => {
+        updateTab(activeTab.id, (session) => ({
+          ...session,
+          error: error instanceof Error ? error.message : "Extension response failed",
+        }));
+      });
+    },
+    [activeTab, updateTab],
+  );
   const composerVisual = deriveComposerVisual({
     compacting,
     hasMessages: (activeTab?.messages.length ?? 0) > 0,
@@ -659,6 +685,12 @@ export function ChatPane({
       data-pane-id={paneId}
       className={chatPaneClassName(composerOnly)}
     >
+      {activeTab?.extensionUiRequest ? (
+        <ExtensionUiDialog
+          request={activeTab.extensionUiRequest}
+          onRespond={handleExtensionUiResponse}
+        />
+      ) : null}
       {showHeader ? (
         <AgentChatPaneHeader
           title={displayedSessionTitle}
@@ -710,6 +742,7 @@ export function ChatPane({
           browserToolEnabled={browserToolEnabled}
           browserBackend={browserBackend}
           canvasEnabled={canvasEnabled}
+          toolAccess={toolAccess}
           composerDragActive={composerDragActive}
           contextWindow={effectiveContextWindow}
           currentContextTokens={currentContextTokens}
@@ -746,6 +779,7 @@ export function ChatPane({
           onToggleBrowserBackend={onToggleBrowserBackend}
           onToggleBrowserTool={onToggleBrowserTool}
           onToggleCanvas={onToggleCanvas}
+          onToggleToolAccess={toggleToolAccess}
           placeholder={composerVisual.placeholder}
           projectRow={composerProjectRow(composerVisual.showProjectRow, projectName)}
           promptTemplates={selectedPromptTemplates}

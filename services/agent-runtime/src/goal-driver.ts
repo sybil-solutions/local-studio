@@ -6,7 +6,7 @@
 // suppresses further auto-continues until the user speaks) and a turn budget.
 //
 
-import { isAgentEndEvent } from "../../../shared/agent/pi-events";
+import { isAgentSettledEvent } from "../../../shared/agent/pi-events";
 import type { LoggedPiEvent, PiAgentSession } from "./pi-runtime-types";
 import { readGoal, writeGoal } from "./goals-store";
 import { lastAssistantText } from "./session-text";
@@ -121,7 +121,7 @@ export function attachGoalDriver(session: PiAgentSession): void {
       state.sawToolThisTurn = true;
       return;
     }
-    if (isAgentEndEvent(logged.event)) {
+    if (isAgentSettledEvent(logged.event)) {
       void settleGoalAfterTurn(session, state);
     }
   });

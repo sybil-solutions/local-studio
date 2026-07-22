@@ -1,24 +1,10 @@
 "use client";
 
-import React, {
-  Children,
-  isValidElement,
-  memo,
-  useCallback,
-  useMemo,
-  useState,
-  type ReactNode,
-} from "react";
-import { useMountSubscription } from "@/hooks/use-mount-subscription";
+import React, { Children, isValidElement, memo, useCallback, useMemo, type ReactNode } from "react";
 import { useCopiedFlag } from "@/features/agent/ui/use-copied-flag";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { ExternalLink } from "@/ui/icon-registry";
-import {
-  escapeHighlightHtml,
-  highlightFenced,
-  peekHighlightFenced,
-} from "@/features/agent/highlight-cache";
 import { normalizeBrowserInput } from "@/features/agent/tools/browser-url";
 import { useToolsActions } from "@/features/agent/tools/context";
 import { CopyablePathChip } from "@/features/agent/ui/copyable-path-chip";
@@ -88,8 +74,6 @@ function codeLanguage(children: ReactNode): string | null {
   return match ? match[1] : null;
 }
 
-const HIGHLIGHT_SETTLE_MS = 150;
-
 const FencedCodeBlock = memo(function FencedCodeBlock({
   code,
   language,
@@ -97,28 +81,7 @@ const FencedCodeBlock = memo(function FencedCodeBlock({
   code: string;
   language: string | null;
 }) {
-  // A block that was highlighted before renders its cached HTML immediately.
-  // A new (usually still-streaming) block renders escaped plaintext and only
-  // runs hljs once its text stops changing for a beat — per-frame cost stays
-  // O(escape) instead of O(tokenize whole block), and the highlight LRU never
-  // fills up with partial snapshots.
-  const cached = peekHighlightFenced(language, code);
-  const [settled, setSettled] = useState<{ code: string; html: string } | null>(null);
-  useMountSubscription(() => {
-    if (cached !== undefined) return;
-    const timer = window.setTimeout(() => {
-      setSettled({ code, html: highlightFenced(language, code) });
-    }, HIGHLIGHT_SETTLE_MS);
-    return () => window.clearTimeout(timer);
-  }, [cached === undefined, code, language]);
-  const highlightedHtml =
-    cached ?? (settled && settled.code === code ? settled.html : escapeHighlightHtml(code));
-  const codeClassName = [
-    "syntax-highlight",
-    "hljs",
-    language ? `language-${language}` : "",
-    "font-mono",
-  ]
+  const codeClassName = [language ? `language-${language}` : "", "font-mono"]
     .filter(Boolean)
     .join(" ");
 
@@ -131,7 +94,7 @@ const FencedCodeBlock = memo(function FencedCodeBlock({
         {code ? <CodeBlockCopyButton code={code} /> : null}
       </div>
       <pre className="m-0 max-w-full overflow-x-auto bg-transparent px-4 py-3 text-[length:var(--codex-chat-code-font-size)] leading-[1.5]">
-        <code className={codeClassName} dangerouslySetInnerHTML={{ __html: highlightedHtml }} />
+        <code className={codeClassName}>{code}</code>
       </pre>
     </div>
   );
@@ -148,9 +111,15 @@ const components: Components = {
     const language = codeLanguage(children);
     return <FencedCodeBlock code={code} language={language} />;
   },
-  a: ({ node: _n, href, ...props }) => (
-    <a {...props} href={href} target="_blank" rel="noreferrer noopener" />
-  ),
+  a: ({ node: _n, href, children, ...props }) =>
+    safeExternalHref(href) ? (
+      <a {...props} href={href} target="_blank" rel="noreferrer noopener">
+        {children}
+      </a>
+    ) : (
+      <span>{children}</span>
+    ),
+  img: ({ alt }) => <span>{alt ? `[Image: ${alt}]` : "[Remote image hidden]"}</span>,
   // Cells/rows are styled entirely via `.chat-markdown` in chat.css; only the
   // scroll wrapper needs a component override.
   table: ({ node: _n, ...props }) => (
@@ -159,6 +128,15 @@ const components: Components = {
     </div>
   ),
 };
+
+function safeExternalHref(value: string | undefined): boolean {
+  if (!value) return false;
+  try {
+    return ["http:", "https:", "mailto:"].includes(new URL(value).protocol);
+  } catch {
+    return false;
+  }
+}
 
 // The remark/rehype plugin lists are constant. Hoisted out of render so the
 // `ReactMarkdown` reconciler sees the same array identity each commit.
@@ -232,6 +210,7 @@ function buildComponentsWithAppLinks(tools: ToolHandlers): Components {
           </CopyablePathChip>
         );
       }
+      if (!safeExternalHref(href)) return <span>{children}</span>;
       return (
         <a
           {...props}

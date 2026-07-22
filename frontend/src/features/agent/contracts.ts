@@ -22,6 +22,7 @@ export type {
   AgentTurnRuntimeStatus,
   AgentTurnCommandResult,
   AgentThinkingLevel,
+  AgentToolAccess,
 } from "@shared/agent/agent-turn";
 import {
   objectRecord,

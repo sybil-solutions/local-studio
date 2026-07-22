@@ -1,6 +1,5 @@
 import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
-import { homedir } from "node:os";
 import path from "node:path";
 import { getApiSettings, type ApiSettings } from "./settings-service";
 import { resolveDataDir } from "./data-dir";
@@ -8,104 +7,11 @@ import { isAgentRuntimeProcess, listProviderAgentModels, reloadProviderHub } fro
 import type { OpenAICompletionsCompat } from "@earendil-works/pi-ai";
 import {
   normalizeOpenAIModels,
-  inferReasoningSupport,
   type AgentModel,
 } from "../../../shared/agent/models";
 import { AGENT_THINKING_LEVELS, type AgentThinkingLevel } from "../../../shared/agent/agent-turn";
-import { resolveModelVision } from "../../../controller/contracts/model-capabilities";
 
 const PROVIDER_ID = "local-studio";
-const USER_PI_PREFIX = "user-pi-";
-
-function userPiAgentDir(): string {
-  // Prefer $HOME over os.homedir(): Node keeps them in sync but Bun's
-  // homedir() ignores the env var, which breaks HOME-based test isolation.
-  return path.join(process.env["HOME"] ?? homedir(), ".pi", "agent");
-}
-
-function userPiModelsPath(): string {
-  return path.join(userPiAgentDir(), "models.json");
-}
-
-type PiProviderModel = {
-  id: string;
-  name?: string;
-  reasoning?: boolean;
-  input?: string[];
-  contextWindow?: number;
-  maxTokens?: number;
-  cost?: Record<string, number>;
-  compat?: Record<string, unknown>;
-  thinkingLevelMap?: Partial<Record<AgentThinkingLevel, string | null>>;
-};
-
-type PiProviderConfig = {
-  baseUrl: string;
-  apiKey?: string;
-  api?: string;
-  authHeader?: boolean;
-  models?: PiProviderModel[];
-  compat?: Record<string, unknown>;
-};
-
-type UserPiProviders = Record<string, PiProviderConfig>;
-
-async function loadUserPiProviders(): Promise<UserPiProviders> {
-  const modelsPath = userPiModelsPath();
-  if (!existsSync(modelsPath)) return {};
-  try {
-    const parsed = JSON.parse(await readFile(modelsPath, "utf-8")) as unknown;
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
-    const providers = (parsed as { providers?: unknown }).providers;
-    if (!providers || typeof providers !== "object" || Array.isArray(providers)) return {};
-    return providers as UserPiProviders;
-  } catch {
-    return {};
-  }
-}
-
-function userPiModelToAgentModel(
-  providerName: string,
-  qualifiedProviderId: string,
-  model: PiProviderModel,
-  providerCompat?: Record<string, unknown>,
-): AgentModel {
-  const rawId = model.id;
-  const name = model.name ?? rawId;
-  const inputs = model.input ?? ["text"];
-  const reasoning = model.reasoning ?? inferReasoningSupport(rawId);
-  return {
-    id: `${qualifiedProviderId}/${rawId}`,
-    rawId,
-    name: `${name} · ${providerName}`,
-    provider: "local-studio",
-    providerId: qualifiedProviderId,
-    controllerName: providerName,
-    contextWindow: model.contextWindow ?? 128_000,
-    maxTokens: model.maxTokens ?? 65_536,
-    reasoning,
-    thinkingLevels: supportedPiThinkingLevels(model, reasoning, providerCompat),
-    vision: resolveModelVision({ identifiers: [rawId], modalities: [inputs] }),
-    active: false,
-  };
-}
-
-function supportedPiThinkingLevels(
-  model: PiProviderModel,
-  reasoning: boolean,
-  providerCompat?: Record<string, unknown>,
-): AgentThinkingLevel[] {
-  if (!reasoning) return ["off"];
-  const supportsReasoningEffort =
-    model.compat?.supportsReasoningEffort ?? providerCompat?.supportsReasoningEffort;
-  if (supportsReasoningEffort !== true) return ["high"];
-  return AGENT_THINKING_LEVELS.filter((level) => {
-    const mapped = model.thinkingLevelMap?.[level];
-    if (mapped === null) return false;
-    if (level === "xhigh" || level === "max") return mapped !== undefined;
-    return true;
-  });
-}
 
 export function controllerModelThinkingLevels(reasoning: boolean): AgentThinkingLevel[] {
   return AGENT_THINKING_LEVELS.filter((level) =>
@@ -178,24 +84,16 @@ function mergeControllers(
   settings: ApiSettings,
   requested: PiControllerModelsRequest[] = [],
 ): PiControllerConfig[] {
-  const byUrl = new Map<string, PiControllerConfig>();
+  const requestedController = requested
+    .map(normalizeControllerInput)
+    .find((controller): controller is PiControllerConfig => controller !== null);
+  if (requestedController) return [requestedController];
   const primary = normalizeControllerInput({
     url: settings.backendUrl,
     apiKey: settings.apiKey,
     name: "primary",
   });
-  if (primary) byUrl.set(primary.url, primary);
-  for (const entry of requested) {
-    const controller = normalizeControllerInput(entry);
-    if (!controller) continue;
-    const existing = byUrl.get(controller.url);
-    byUrl.set(controller.url, {
-      ...existing,
-      ...controller,
-      apiKey: controller.apiKey || existing?.apiKey || "",
-    });
-  }
-  return [...byUrl.values()];
+  return primary ? [primary] : [];
 }
 
 async function loadPersistedControllers(agentDir: string): Promise<PiControllerModelsRequest[]> {
@@ -297,10 +195,7 @@ async function fetchModelsFromControllers(controllers: PiControllerConfig[]): Pr
   return { models: models.sort((a, b) => a.name.localeCompare(b.name)), controllerModels };
 }
 
-async function writePiModelsConfig(
-  controllerModels: ControllerModels[],
-  userPiProviders: UserPiProviders,
-): Promise<string> {
+async function writePiModelsConfig(controllerModels: ControllerModels[]): Promise<string> {
   const dataDir = resolveDataDir();
   const agentDir = path.join(dataDir, "pi-agent");
   await mkdir(agentDir, { recursive: true });
@@ -323,22 +218,7 @@ async function writePiModelsConfig(
     ]),
   );
 
-  // Merge user-pi providers so the SDK runtime can route to them.
-  // Each provider ID is prefixed to avoid colliding with Local Studio's own.
-  const mergedProviders: Record<string, unknown> = { ...vllmProviders };
-  for (const [name, config] of Object.entries(userPiProviders)) {
-    const qualifiedId = `${USER_PI_PREFIX}${name}`;
-    mergedProviders[qualifiedId] = {
-      baseUrl: config.baseUrl,
-      ...(config.apiKey ? { apiKey: config.apiKey } : {}),
-      ...(config.api ? { api: config.api } : {}),
-      ...(config.authHeader !== undefined ? { authHeader: config.authHeader } : {}),
-      ...(config.compat ? { compat: config.compat } : {}),
-      models: config.models ?? [],
-    };
-  }
-
-  const config = { providers: mergedProviders };
+  const config = { providers: vllmProviders };
 
   const modelsPath = path.join(agentDir, "models.json");
   await writeFile(modelsPath, JSON.stringify(config, null, 2), "utf-8");
@@ -350,7 +230,7 @@ export function resolvePiModelSelection(modelId: string): { providerId: string; 
   const separator = modelId.indexOf("/");
   if (separator > 0) {
     const maybeProvider = modelId.slice(0, separator);
-    if (maybeProvider.startsWith(USER_PI_PREFIX) || maybeProvider.startsWith(`${PROVIDER_ID}-`)) {
+    if (maybeProvider.startsWith(`${PROVIDER_ID}-`)) {
       return { providerId: maybeProvider, modelId: modelId.slice(separator + 1) };
     }
   }
@@ -382,24 +262,10 @@ export async function refreshPiModels(
     controllerError = error;
   }
 
-  // Load providers from ~/.pi/agent/models.json so models configured in the
-  // user's standalone Pi install (kimi, openrouter, cerebras, etc.) are
-  // available in the agent model picker alongside Local Studio's own backend.
-  const userPiProviders = await loadUserPiProviders();
-  const userPiModels: AgentModel[] = [];
-  for (const [providerName, config] of Object.entries(userPiProviders)) {
-    const qualifiedProviderId = `${USER_PI_PREFIX}${providerName}`;
-    for (const model of config.models ?? []) {
-      userPiModels.push(
-        userPiModelToAgentModel(providerName, qualifiedProviderId, model, config.compat),
-      );
-    }
-  }
-
-  const writtenAgentDir = await writePiModelsConfig(controllerModels, userPiProviders);
+  const writtenAgentDir = await writePiModelsConfig(controllerModels);
   const providerModels = await collectProviderAgentModels();
 
-  const allModels = [...models, ...userPiModels, ...providerModels];
+  const allModels = [...models, ...providerModels];
   if (allModels.length === 0 && controllerError) {
     throw controllerError instanceof Error
       ? controllerError

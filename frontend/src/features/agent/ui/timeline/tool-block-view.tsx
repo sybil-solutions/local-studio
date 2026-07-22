@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import {
   FilePenLine,
   FileText,
@@ -8,7 +8,6 @@ import {
   Wrench,
   type LucideIcon,
 } from "@/ui/icon-registry";
-import { highlightFenced } from "@/features/agent/highlight-cache";
 import type { ToolBlock } from "@/features/agent/messages";
 import {
   FILE_WRITE_TOOL_NAMES,
@@ -212,20 +211,12 @@ function ToolOutput({ children }: { children: ReactNode }) {
 }
 
 function HighlightedToolSource({ body, lang }: { body: string; lang: string }) {
-  const highlighted = useMemo(
-    () => (body ? highlightFenced(lang || null, body) : ""),
-    [body, lang],
-  );
-
   const className =
     "max-h-[420px] max-w-full overflow-auto px-3 py-2 font-mono text-[length:var(--codex-chat-code-font-size)] leading-relaxed text-(--fg)";
 
   return (
     <pre className={className}>
-      <code
-        className={`syntax-highlight${lang ? ` language-${lang}` : ""}`}
-        dangerouslySetInnerHTML={{ __html: highlighted || "&nbsp;" }}
-      />
+      <code className={lang ? `language-${lang}` : undefined}>{body || "\u00a0"}</code>
     </pre>
   );
 }

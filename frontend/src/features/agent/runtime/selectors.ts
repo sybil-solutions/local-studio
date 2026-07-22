@@ -41,8 +41,12 @@ export function findWorkspaceSessionByPiSessionId(
 }
 
 function sessionOutranks(candidate: Session, current: Session): boolean {
-  const candidateWorking = candidate.status === "running" || candidate.status === "starting";
-  const currentWorking = current.status === "running" || current.status === "starting";
+  const candidateWorking =
+    candidate.status === "running" ||
+    candidate.status === "starting" ||
+    candidate.status === "stopping";
+  const currentWorking =
+    current.status === "running" || current.status === "starting" || current.status === "stopping";
   if (candidateWorking !== currentWorking) return candidateWorking;
   if (candidate.messages.length !== current.messages.length) {
     return candidate.messages.length > current.messages.length;

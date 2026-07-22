@@ -4,7 +4,7 @@ import {
   parseAgentTurnCommandResult,
   type AgentTurnCommandResult,
 } from "@/features/agent/messages";
-import type { AgentImageInput } from "@/features/agent/contracts";
+import type { AgentImageInput, AgentToolAccess } from "@/features/agent/contracts";
 import type { BrowserBackend } from "@/features/agent/tools/types";
 import type {
   ComposerPromptTemplateRef,
@@ -87,6 +87,23 @@ export function abortSession(sessionId: string): Promise<void> {
   );
 }
 
+export function respondExtensionUi(
+  sessionId: string,
+  requestId: string,
+  response: { value?: string; confirmed?: boolean; cancelled?: boolean },
+): Promise<void> {
+  return Effect.runPromise(
+    Effect.gen(function* () {
+      const result = yield* fetchEffect("/api/agent/runtime/extension-ui", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionId, requestId, ...response }),
+      });
+      if (!result.ok) return yield* Effect.fail(new Error("Extension response was rejected"));
+    }),
+  );
+}
+
 export type CanonicalSessionMeta = {
   title: string | null;
   modelId: string | null;
@@ -146,6 +163,7 @@ export type CompactSessionArgs = {
   sessionId: string;
   modelId: string;
   thinkingLevel?: import("@/features/agent/contracts").AgentThinkingLevel;
+  toolAccess?: AgentToolAccess;
   cwd?: string;
   piSessionId?: string | null;
   browserToolEnabled: boolean;
@@ -182,6 +200,7 @@ export type SubmitTurnArgs = {
   sessionId: string;
   modelId: string;
   thinkingLevel?: import("@/features/agent/contracts").AgentThinkingLevel;
+  toolAccess: AgentToolAccess;
   message: string;
   images?: AgentImageInput[];
   cwd?: string;

@@ -2,7 +2,8 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { findSessionFile } from "../src/sessions-store";
+import { SessionManager } from "@earendil-works/pi-coding-agent";
+import { findSessionFile, loadSession } from "../src/sessions-store";
 
 const originalPiCodingAgentDir = process.env.PI_CODING_AGENT_DIR;
 const temporaryRoots: string[] = [];
@@ -34,6 +35,7 @@ function createFixture(): { cwd: string; sessionDir: string } {
 }
 
 function writeSession(
+  cwd: string,
   sessionDir: string,
   timestamp: string,
   filenameId: string,
@@ -47,7 +49,7 @@ function writeSession(
       version: 3,
       id: headerId,
       timestamp: "2026-07-20T12:00:00.000Z",
-      cwd: path.dirname(sessionDir),
+      cwd,
     })}\n`,
   );
   return filepath;
@@ -57,7 +59,7 @@ describe("findSessionFile", () => {
   test("resolves an exact Pi session identity from a canonical filename", () => {
     const { cwd, sessionDir } = createFixture();
     const sessionId = "019ee398-14e2-7ad1-af6c-f79b45dabacd";
-    const filepath = writeSession(sessionDir, "2026-07-20T12-00-00-000Z", sessionId);
+    const filepath = writeSession(cwd, sessionDir, "2026-07-20T12-00-00-000Z", sessionId);
 
     expect(findSessionFile(cwd, sessionId)).toBe(filepath);
   });
@@ -65,7 +67,7 @@ describe("findSessionFile", () => {
   test("does not resolve a short ID contained inside a longer session filename", () => {
     const { cwd, sessionDir } = createFixture();
     const sessionId = "019ee398-14e2-7ad1-af6c-f79b45dabacd";
-    writeSession(sessionDir, "2026-07-20T12-00-00-000Z", sessionId);
+    writeSession(cwd, sessionDir, "2026-07-20T12-00-00-000Z", sessionId);
 
     expect(findSessionFile(cwd, "019ee398")).toBeNull();
   });
@@ -73,8 +75,8 @@ describe("findSessionFile", () => {
   test("rejects an identity that maps to multiple session files", () => {
     const { cwd, sessionDir } = createFixture();
     const sessionId = "019ee398-14e2-7ad1-af6c-f79b45dabacd";
-    writeSession(sessionDir, "2026-07-20T12-00-00-000Z", sessionId);
-    writeSession(sessionDir, "2026-07-20T13-00-00-000Z", sessionId);
+    writeSession(cwd, sessionDir, "2026-07-20T12-00-00-000Z", sessionId);
+    writeSession(cwd, sessionDir, "2026-07-20T13-00-00-000Z", sessionId);
 
     expect(findSessionFile(cwd, sessionId)).toBeNull();
   });
@@ -108,6 +110,7 @@ describe("findSessionFile", () => {
     const { cwd, sessionDir } = createFixture();
     const requestedId = "019ee398-14e2-7ad1-af6c-f79b45dabacd";
     writeSession(
+      cwd,
       sessionDir,
       "2026-07-20T12-00-00-000Z",
       requestedId,
@@ -116,4 +119,52 @@ describe("findSessionFile", () => {
 
     expect(findSessionFile(cwd, requestedId)).toBeNull();
   });
+});
+
+test("session replay follows Pi's active branch", async () => {
+  const { cwd, sessionDir } = createFixture();
+  const manager = SessionManager.create(cwd, sessionDir, { id: "active-branch-session" });
+  const rootId = manager.appendMessage({
+    role: "user",
+    content: [{ type: "text", text: "root prompt" }],
+    timestamp: Date.now(),
+  });
+  manager.appendMessage({
+    role: "assistant",
+    content: [{ type: "text", text: "abandoned answer" }],
+    provider: "fake",
+    model: "fake",
+    usage: {
+      input: 0,
+      output: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+      totalTokens: 0,
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+    },
+    stopReason: "stop",
+    timestamp: Date.now(),
+  });
+  manager.branch(rootId);
+  manager.appendMessage({
+    role: "assistant",
+    content: [{ type: "text", text: "active answer" }],
+    provider: "fake",
+    model: "fake",
+    usage: {
+      input: 0,
+      output: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+      totalTokens: 0,
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+    },
+    stopReason: "stop",
+    timestamp: Date.now(),
+  });
+
+  const replay = await loadSession(cwd, manager.getSessionId(), { tail: 100 });
+  const serialized = JSON.stringify(replay.events);
+  expect(serialized).toContain("active answer");
+  expect(serialized).not.toContain("abandoned answer");
 });

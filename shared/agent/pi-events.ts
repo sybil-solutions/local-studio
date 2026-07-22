@@ -6,6 +6,10 @@ export function isAgentEndEvent(event: { type?: unknown } | null | undefined): b
   return event?.type === "agent_end";
 }
 
+export function isAgentSettledEvent(event: { type?: unknown } | null | undefined): boolean {
+  return event?.type === "agent_settled";
+}
+
 export function piEventIsSuccessfulCompaction(event: Record<string, unknown>): boolean {
   const type = typeof event.type === "string" ? event.type.toLowerCase() : "";
   if (!type.includes("compact") && !type.includes("compaction")) return false;

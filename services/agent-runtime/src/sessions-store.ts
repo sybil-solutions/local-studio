@@ -11,6 +11,11 @@ import {
 import { homedir } from "node:os";
 import path from "node:path";
 import readline from "node:readline";
+import {
+  getAgentDir,
+  SessionManager,
+  SettingsManager,
+} from "@earendil-works/pi-coding-agent";
 import { resolveDataDir } from "./data-dir";
 import { cleanSessionTitle } from "../../../shared/agent/session-title";
 import { readSessionListMetadata } from "./session-metadata-store";
@@ -53,13 +58,17 @@ export function encodeCwdForPi(cwd: string): string {
   return `--${collapsed}--`;
 }
 
-function piSessionRoots(): string[] {
-  const roots = [
-    process.env.PI_CODING_AGENT_DIR ? path.join(process.env.PI_CODING_AGENT_DIR, "sessions") : null,
-    path.join(resolveDataDir(), "pi-agent", "sessions"),
-    path.join(homedir(), ".pi", "agent", "sessions"),
-  ].filter((value): value is string => Boolean(value));
-  return [...new Set(roots.map((root) => path.resolve(root)))];
+export function configuredPiSessionDir(cwd: string): string | undefined {
+  const envSessionDir = process.env.PI_CODING_AGENT_SESSION_DIR?.trim();
+  if (envSessionDir) {
+    const expanded = envSessionDir === "~"
+      ? homedir()
+      : envSessionDir.startsWith(`~${path.sep}`)
+        ? path.join(homedir(), envSessionDir.slice(2))
+        : envSessionDir;
+    return path.resolve(expanded);
+  }
+  return SettingsManager.create(cwd, getAgentDir()).getSessionDir();
 }
 
 function cwdVariants(cwd: string): string[] {
@@ -79,7 +88,18 @@ function cwdVariants(cwd: string): string[] {
 
 function sessionsDirsForCwd(cwd: string): string[] {
   const encodedCwds = [...new Set(cwdVariants(cwd).map(encodeCwdForPi))];
-  return piSessionRoots().flatMap((root) => encodedCwds.map((encoded) => path.join(root, encoded)));
+  const nativeDir = configuredPiSessionDir(cwd) ?? SessionManager.create(cwd).getSessionDir();
+  const legacyRoot = path.join(resolveDataDir(), "pi-agent", "sessions");
+  return [
+    path.resolve(nativeDir),
+    ...encodedCwds.map((encoded) => path.join(legacyRoot, encoded)),
+  ].filter((value, index, values) => values.indexOf(value) === index);
+}
+
+function sessionCwdMatches(summaryCwd: string, cwd: string): boolean {
+  if (!summaryCwd) return false;
+  const expected = new Set(cwdVariants(cwd));
+  return cwdVariants(summaryCwd).some((candidate) => expected.has(candidate));
 }
 
 function piTextContent(content: PiMessageContent | undefined): string | null {
@@ -250,6 +270,7 @@ function summaryMatchesListOptions(
 }
 
 async function readListCandidate(
+  cwd: string,
   dir: string,
   filename: string,
   options: NormalizedListSessionsOptions,
@@ -274,6 +295,7 @@ async function readListCandidate(
     }
     const summary = await readSessionSummary(filepath, filename);
     if (!summary?.id) return null;
+    if (!sessionCwdMatches(summary.cwd, cwd)) return null;
     if (options.wantedIds.size > 0 && !options.wantedIds.has(summary.id)) return null;
     const decorated = applySessionMetadata(summary, metadataFor);
     return summaryMatchesListOptions(decorated, options) ? decorated : null;
@@ -320,6 +342,7 @@ export async function listSessions(
   for (const candidate of listCandidateFiles(cwd)) {
     if (limitSatisfied(summariesById, options.limit, candidate.mtimeMs)) break;
     const summary = await readListCandidate(
+      cwd,
       candidate.dir,
       candidate.filename,
       normalizedOptions,
@@ -338,7 +361,7 @@ export async function listSessions(
 const PI_SESSION_ID_PATTERN = /^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$/;
 const PI_SESSION_HEADER_BYTE_CAP = 64 * 1024;
 
-function readPiSessionHeaderId(filepath: string): string | null {
+function readPiSessionHeader(filepath: string): { id: string; cwd: string } | null {
   let fd: number | null = null;
   try {
     const size = statSync(filepath).size;
@@ -350,7 +373,9 @@ function readPiSessionHeaderId(filepath: string): string | null {
     if (newline < 0 && size > PI_SESSION_HEADER_BYTE_CAP) return null;
     const lineEnd = newline >= 0 ? newline : bytesRead;
     const header = JSON.parse(buffer.toString("utf8", 0, lineEnd)) as Record<string, unknown>;
-    return header.type === "session" && typeof header.id === "string" ? header.id : null;
+    return header.type === "session" && typeof header.id === "string"
+      ? { id: header.id, cwd: typeof header.cwd === "string" ? header.cwd : "" }
+      : null;
   } catch {
     return null;
   } finally {
@@ -369,7 +394,8 @@ export function findSessionFile(cwd: string, sessionId: string): string | null {
       for (const entry of readdirSync(dir, { withFileTypes: true })) {
         if (!entry.isFile() || !entry.name.endsWith(filenameSuffix)) continue;
         const filepath = path.join(dir, entry.name);
-        if (readPiSessionHeaderId(filepath) !== sessionId) continue;
+        const header = readPiSessionHeader(filepath);
+        if (header?.id !== sessionId || !sessionCwdMatches(header.cwd, cwd)) continue;
         matches.add(filepath);
         if (matches.size > 1) return null;
       }
@@ -421,6 +447,19 @@ function parseEvent(line: string): SessionEvent | null {
     return JSON.parse(trimmed) as SessionEvent;
   } catch {
     return null;
+  }
+}
+
+function activeBranchEvents(filepath: string, events: SessionEvent[]): SessionEvent[] {
+  try {
+    const activeIds = new Set(
+      SessionManager.open(filepath).buildContextEntries().map((entry) => entry.id),
+    );
+    return events.filter(
+      (event) => event.type === "session" || (typeof event.id === "string" && activeIds.has(event.id)),
+    );
+  } catch {
+    return events;
   }
 }
 
@@ -661,7 +700,7 @@ export async function loadSession(
         const event = parseEvent(line);
         if (event) events.push(event);
       }
-      return { events, cursor: null, meta: null };
+      return { events: activeBranchEvents(filepath, events), cursor: null, meta: null };
     }
     return loadSession(cwd, sessionId, { tail: 2000 });
   }
@@ -676,10 +715,10 @@ export async function loadSession(
     const { headerEvents, meta } = await readSessionHead(filepath);
     const hasHeader = events.some((event) => event.type === "session");
     return {
-      events: hasHeader ? events : [...headerEvents, ...events],
+      events: activeBranchEvents(filepath, hasHeader ? events : [...headerEvents, ...events]),
       cursor,
       meta,
     };
   }
-  return { events, cursor, meta: null };
+  return { events: activeBranchEvents(filepath, events), cursor, meta: null };
 }
