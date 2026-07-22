@@ -1,6 +1,6 @@
 services:
   glm52-vision:
-    image: local/glm52-nf3-vision:v4-nvfp4
+    image: local/glm52-nf3-vision:v5-nvfp4
     container_name: glm52-vision-candidate
     network_mode: host
     ipc: host
