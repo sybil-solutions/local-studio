@@ -36,7 +36,7 @@ Available KV memory: `4.56 GiB`
 
 GPU KV capacity: `445041` tokens
 
-Maximum 400000-token concurrency: `1.11x`
+Maximum 400000-token concurrency: `1.11x`; normal prompt scheduling permits four concurrent sequences
 
 CUDA graphs: PIECEWISE, FULL, prefill, and decode capture passed
 
@@ -46,7 +46,7 @@ Text validation: passed with `TEXT_OK`
 
 Image validation: passed with the attached Local Studio screenshot, returned a bounded description, and stopped at EOS token `154827`
 
-MMMU-Pro: the official `vision/direct` split is running sequentially with durable JSONL checkpoints at `/home/ser/bench/MMMU/mmmu-pro/output/GLM-5.2-Vision_vision_direct.jsonl`
+MMMU-Pro: the official `vision/direct` split is running with four concurrent requests and durable JSONL checkpoints at `/home/ser/bench/MMMU/mmmu-pro/output/GLM-5.2-Vision_vision_direct.jsonl`
 
 Post-start error scan: clean
 
