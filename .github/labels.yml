@@ -51,10 +51,6 @@
   color: "#5319e7"
   description: "Related to frontend/Next.js"
 
-- name: "Area: CLI"
-  color: "#238636"
-  description: "Related to CLI tool"
-
 - name: "Area: Infrastructure"
   color: "#1d76db"
   description: "Related to CI/CD, Docker, infrastructure"
