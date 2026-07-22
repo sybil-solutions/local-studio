@@ -536,10 +536,8 @@
   --separator: var(--color-border-light);
   --hover: var(--color-hover);
   --active: var(--color-selected);
-  /* Codex composer surface, exact: gray-750 #282828 over the #181818 page,
-     flat (no outline, no ring). User bubbles share the same elevated tone. */
-  --composer: var(--gray-750);
-  --composer-footer: var(--gray-750);
+  --composer: var(--color-sidebar);
+  --composer-footer: var(--color-sidebar);
   --composer-border: transparent;
   --composer-placeholder: color-mix(in srgb, var(--fg) 32%, transparent);
   --bubble: var(--gray-750);
@@ -573,8 +571,8 @@
   --separator: var(--color-border-light);
   --hover: var(--color-hover);
   --active: var(--color-selected);
-  --composer: var(--gray-75);
-  --composer-footer: var(--gray-75);
+  --composer: var(--color-sidebar);
+  --composer-footer: var(--color-sidebar);
   /* Light composer: Codex uses the same flat elevated-gray treatment. */
   --composer-border: transparent;
   --composer-placeholder: color-mix(in srgb, var(--fg) 40%, transparent);

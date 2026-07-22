@@ -69,7 +69,8 @@
 }
 
 .agent-thread-shell {
-  width: min(100%, var(--composer-w));
+  width: 90%;
+  max-width: calc(var(--composer-w) * 0.9);
 }
 
 @media (max-width: 768px) {
@@ -161,7 +162,12 @@
 
 .chat-markdown strong {
   font-weight: 600;
-  color: color-mix(in srgb, var(--fg) 88%, transparent);
+  color: color-mix(in srgb, var(--fg) 96%, transparent);
+}
+
+.chat-markdown ::selection {
+  background: color-mix(in srgb, var(--accent) 42%, transparent);
+  color: var(--fg);
 }
 
 /* Codex links: near-foreground, underlined — not saturated blue. */
@@ -304,8 +310,10 @@
 .chat-markdown :not(pre) > code {
   padding: 2px 6px;
   border-radius: var(--rad-sm);
-  background: color-mix(in srgb, var(--fg) 10%, transparent);
-  color: color-mix(in srgb, var(--fg) 88%, transparent);
+  background: color-mix(in srgb, var(--fg) 14%, transparent);
+  color: color-mix(in srgb, var(--fg) 94%, transparent);
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
   font-family:
     var(--codex-chat-mono-font-family), ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
     "Liberation Mono", "Courier New", monospace;

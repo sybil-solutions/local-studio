@@ -23,7 +23,6 @@ export function AgentComposerActions({
   onToggleCanvas,
   onAbortTurn,
   onTranscript,
-  thinkingSelector,
   modelSelector,
 }: {
   fileInputRef: RefObject<HTMLInputElement | null>;
@@ -41,7 +40,6 @@ export function AgentComposerActions({
   onToggleCanvas: () => void;
   onAbortTurn: () => void;
   onTranscript: (text: string) => void;
-  thinkingSelector?: ReactNode;
   modelSelector?: ReactNode;
 }) {
   const inputHasText = Boolean(input.trim());
@@ -117,7 +115,6 @@ export function AgentComposerActions({
         <Code2 className="h-4 w-4" strokeWidth={1.5} />
       </button>
       <div className="ml-auto flex min-w-0 shrink items-center gap-0.5">
-        {thinkingSelector}
         {modelSelector}
         <ComposerDictationButton
           disabled={running}

@@ -52,11 +52,8 @@ function deriveThemeUiTokens(tokens: ThemeTokens): Record<string, string> {
     separator: `rgba(${ink}, 0.05)`,
     hover: `rgba(${ink}, 0.05)`,
     active: `rgba(${ink}, 0.08)`,
-    // Codex composer, exact: a flat elevated tone step (#282828 over the
-    // #181818 canvas in dark; the mirrored light gray in light) with no
-    // drop shadow and no ring.
-    composer: isLight ? "#f3f3f3" : "#282828",
-    "composer-footer": isLight ? "#f3f3f3" : "#282828",
+    composer: "var(--sidebar-bg)",
+    "composer-footer": "var(--sidebar-bg)",
     "composer-shadow": "none",
   };
 }
@@ -143,6 +140,7 @@ export function applyStoredUiControls(): void {
     if (!raw) return;
     const stored = JSON.parse(raw) as Record<string, string>;
     for (const [name, value] of Object.entries(stored)) {
+      if (name === "--composer" || name === "--composer-footer") continue;
       if (typeof value === "string") document.documentElement.style.setProperty(name, value);
     }
   } catch {

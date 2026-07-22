@@ -167,7 +167,7 @@ function SideChatTab({
         contextWindow={selectedModel?.contextWindow ?? 0}
         cwd={cwd}
         projectName={activeProject?.name ?? null}
-        modelSelector={
+        modelSelector={(reasoning) => (
           <AgentModelPicker
             models={models}
             selectedModel={modelId}
@@ -175,8 +175,9 @@ function SideChatTab({
               onUpdateSideChatTabs((tabs) => tabs.map((tab) => ({ ...tab, modelId: nextModelId })))
             }
             loading={modelsLoading}
+            {...reasoning}
           />
-        }
+        )}
         browserToolEnabled={false}
         browserBackend={tools.browser.backend}
         onToggleBrowserBackend={tools.toggleBrowserBackend}

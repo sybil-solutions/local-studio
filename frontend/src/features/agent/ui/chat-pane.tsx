@@ -5,7 +5,6 @@ import { useCallback, useMemo, useRef, useState, type FormEvent, type ReactNode 
 import { useMountSubscription } from "@/hooks/use-mount-subscription";
 import { AgentChatPaneHeader } from "@/features/agent/ui/agent-chat-pane-header";
 import { AgentComposerFrame } from "@/features/agent/ui/agent-composer-frame";
-import { AgentThinkingLevelPicker } from "@/features/agent/ui/agent-thinking-level-picker";
 import { type FileMentionRow, type MentionRow } from "@/features/agent/ui/agent-composer-context";
 import { builtinCommandProvider } from "@/features/agent/composer/builtin-commands";
 import { SessionGoalBar } from "@/features/agent/ui/session-goal-bar";
@@ -219,7 +218,7 @@ type Props = {
   contextWindow: number;
   cwd: string;
   projectName: string | null;
-  modelSelector?: ReactNode;
+  modelSelector?: (props: ComposerModelSelectorProps) => ReactNode;
   gitBranch?: string | null;
   gitSummary?: GitSummary | null;
   onInitGit?: () => void;
@@ -246,6 +245,20 @@ type Props = {
   showHeader?: boolean;
   composerOnly?: boolean;
 };
+
+export type ComposerModelSelectorProps = {
+  reasoningLevel: AgentThinkingLevel;
+  reasoningLevels: readonly AgentThinkingLevel[];
+  reasoningDisabled: boolean;
+  onSelectReasoning: (level: AgentThinkingLevel) => void;
+};
+
+function renderComposerModelSelector(
+  renderer: Props["modelSelector"],
+  props: ComposerModelSelectorProps,
+): ReactNode {
+  return renderer ? renderer(props) : null;
+}
 export function ChatPane({
   paneId,
   modelId,
@@ -400,6 +413,12 @@ export function ChatPane({
     },
     [activeTab, running, updateTab],
   );
+  const composerModelSelector = renderComposerModelSelector(modelSelector, {
+    reasoningLevel: thinkingLevel,
+    reasoningLevels: modelThinkingLevels,
+    reasoningDisabled: Boolean(running),
+    onSelectReasoning: selectThinkingLevel,
+  });
 
   const engine = useSessionEngine({
     tabs,
@@ -651,7 +670,7 @@ export function ChatPane({
           onTogglePinned={togglePinnedSession}
           onRename={renameActiveSession}
           onFork={onForkSession}
-          onOpenTerminal={terminalOwner ? toggleTerminalView : onOpenTerminal}
+          onOpenTerminal={openTerminalAction}
           terminalOpen={terminalView}
           onExport={exportSession}
           onClose={onClose}
@@ -703,15 +722,7 @@ export function ChatPane({
           mentionIndex={mentionIndex}
           mentionRows={mentionRows}
           modelSupportsVision={modelSupportsVision}
-          modelSelector={modelSelector}
-          thinkingSelector={
-            <AgentThinkingLevelPicker
-              value={thinkingLevel}
-              levels={modelThinkingLevels}
-              disabled={Boolean(running)}
-              onSelect={selectThinkingLevel}
-            />
-          }
+          modelSelector={composerModelSelector}
           onAbortTurn={() => void abortTurn()}
           onAttachFiles={(files) => void attachFiles(files)}
           onComposerChange={handleComposerChange}

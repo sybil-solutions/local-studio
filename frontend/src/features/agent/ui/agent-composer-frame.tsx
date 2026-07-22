@@ -52,7 +52,6 @@ export type AgentComposerFrameProps = {
   mentionRows: MentionRow[];
   modelSupportsVision: boolean;
   modelSelector?: ReactNode;
-  thinkingSelector?: ReactNode;
   onAbortTurn: () => void;
   onAttachFiles: (files: FileList | null) => void;
   onComposerChange: ChangeEventHandler<HTMLTextAreaElement>;
@@ -109,7 +108,6 @@ export function AgentComposerFrame({
   mentionRows,
   modelSupportsVision,
   modelSelector,
-  thinkingSelector,
   onAbortTurn,
   onAttachFiles,
   onComposerChange,
@@ -189,7 +187,7 @@ export function AgentComposerFrame({
         onDragLeave={onComposerDragLeave}
         onDrop={onComposerDrop}
         className={cx(
-          "relative z-10 mx-auto w-[90%] max-w-[calc(var(--composer-w)*0.9)] overflow-visible rounded-[25px] border border-(--border) bg-(--composer)/90 shadow-[0_8px_24px_rgba(0,0,0,0.11)] backdrop-blur-lg transition-colors [corner-shape:superellipse(1.5)]",
+          "relative z-10 mx-auto w-[90%] max-w-[calc(var(--composer-w)*0.9)] overflow-visible rounded-[25px] border border-(--border) bg-(--composer) shadow-[0_8px_24px_rgba(0,0,0,0.11)] backdrop-blur-lg transition-colors [corner-shape:superellipse(1.5)]",
           composerDragActive && "outline outline-1 outline-(--link)/50",
         )}
       >
@@ -242,7 +240,6 @@ export function AgentComposerFrame({
           onToggleCanvas={onToggleCanvas}
           onAbortTurn={onAbortTurn}
           onTranscript={onTranscript}
-          thinkingSelector={thinkingSelector}
           modelSelector={modelSelector}
         />
       </div>

@@ -1,3 +1,6 @@
+import { Schema } from "effect";
+import { ModelIndexSchema, type ModelIndexResponse } from "@local-studio/contracts/model-index";
+import bundledModelIndexSource from "../../../../controller/src/modules/studio/model-index.json";
 import type {
   ModelDownload,
   EngineJob,
@@ -12,6 +15,14 @@ import type {
   RuntimeTarget,
 } from "../types";
 import { encodePathSegments, type ApiCore, type RequestOptions } from "./core";
+
+export type {
+  ModelIndexModel,
+  ModelIndexResponse,
+  ModelIndexTier,
+  ModelIndexVariant,
+  ModelIndexVariantFormat,
+} from "@local-studio/contracts/model-index";
 
 export interface StudioModelsRoot {
   path: string;
@@ -42,44 +53,10 @@ export interface RuntimeJobResponse {
   job: EngineJob;
 }
 
-export type ModelIndexVariantFormat = "bf16" | "fp8" | "nvfp4" | "q4";
+const bundledModelIndex = Schema.decodeUnknownSync(ModelIndexSchema)(bundledModelIndexSource);
 
-export interface ModelIndexVariant {
-  format: ModelIndexVariantFormat;
-  repo: string;
-  official: boolean;
-  source?: string;
-  allow_patterns?: string[];
-  size_gb: number | null;
-  caveat: string | null;
-}
-
-export interface ModelIndexModel {
-  id: string;
-  name: string;
-  role: "fast" | "smart" | null;
-  description: string;
-  params: string;
-  active_params_b: number | null;
-  context_tokens: number;
-  license: string;
-  multimodal: boolean;
-  notes: string[];
-  variants: ModelIndexVariant[];
-}
-
-export interface ModelIndexTier {
-  id: string;
-  label: string;
-  blurb: string;
-  models: ModelIndexModel[];
-}
-
-export interface ModelIndexResponse {
-  version: number;
-  updated: string;
-  tiers: ModelIndexTier[];
-}
+const hasStatus = (error: unknown, status: number): boolean =>
+  error instanceof Error && (error as Error & { status?: number }).status === status;
 
 export function createStudioApi(core: ApiCore) {
   return {
@@ -105,8 +82,14 @@ export function createStudioApi(core: ApiCore) {
 
     getStudioStorage: (): Promise<StorageInfo> => core.request("/studio/storage"),
 
-    getModelIndex: (options?: RequestOptions): Promise<ModelIndexResponse> =>
-      core.request("/studio/model-index", options),
+    getModelIndex: async (options?: RequestOptions): Promise<ModelIndexResponse> => {
+      try {
+        return await core.request("/studio/model-index", options);
+      } catch (error) {
+        if (!hasStatus(error, 404)) throw error;
+        return bundledModelIndex;
+      }
+    },
 
     getStarterPresets: (): Promise<{
       presets: StarterPreset[];

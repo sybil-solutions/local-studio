@@ -3,49 +3,11 @@ import { readFile, stat } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Effect, Schema } from "effect";
+import { ModelIndexSchema, type ModelIndexResponse } from "../../../contracts/model-index";
 import { HttpStatus } from "../../core/errors";
 import { effectHandler } from "../../http/effect-handler";
 import { defineRoutes, documentRoute } from "../../http/route-registrar";
 import type { AppContext } from "../../app-context";
-
-const VariantSchema = Schema.Struct({
-  format: Schema.Literals(["bf16", "fp8", "nvfp4", "q4"]),
-  repo: Schema.String,
-  official: Schema.Boolean,
-  source: Schema.optional(Schema.String),
-  allow_patterns: Schema.optional(Schema.Array(Schema.String)),
-  size_gb: Schema.NullOr(Schema.Number),
-  caveat: Schema.NullOr(Schema.String),
-});
-
-const ModelSchema = Schema.Struct({
-  id: Schema.String,
-  name: Schema.String,
-  role: Schema.NullOr(Schema.Literals(["fast", "smart"])),
-  description: Schema.String,
-  params: Schema.String,
-  active_params_b: Schema.NullOr(Schema.Number),
-  context_tokens: Schema.Number,
-  license: Schema.String,
-  multimodal: Schema.Boolean,
-  notes: Schema.Array(Schema.String),
-  variants: Schema.Array(VariantSchema),
-});
-
-const TierSchema = Schema.Struct({
-  id: Schema.String,
-  label: Schema.String,
-  blurb: Schema.String,
-  models: Schema.Array(ModelSchema),
-});
-
-export const ModelIndexSchema = Schema.Struct({
-  version: Schema.Number,
-  updated: Schema.String,
-  tiers: Schema.Array(TierSchema),
-});
-
-export type ModelIndex = Schema.Schema.Type<typeof ModelIndexSchema>;
 
 class ModelIndexError extends Schema.TaggedErrorClass<ModelIndexError>()("ModelIndexError", {
   message: Schema.String,
@@ -57,7 +19,7 @@ const BUNDLED_INDEX_PATH = resolve(dirname(fileURLToPath(import.meta.url)), "mod
 interface ModelIndexCacheEntry {
   path: string;
   mtimeMs: number;
-  index: ModelIndex;
+  index: ModelIndexResponse;
 }
 
 let cache: ModelIndexCacheEntry | null = null;
@@ -67,7 +29,7 @@ const resolveIndexPath = (dataDirectory: string): string => {
   return existsSync(overridePath) ? overridePath : BUNDLED_INDEX_PATH;
 };
 
-const readAndValidate = (path: string): Effect.Effect<ModelIndex, ModelIndexError> =>
+const readAndValidate = (path: string): Effect.Effect<ModelIndexResponse, ModelIndexError> =>
   Effect.tryPromise({
     try: () => readFile(path, "utf8"),
     catch: (source) =>
@@ -92,7 +54,7 @@ const readAndValidate = (path: string): Effect.Effect<ModelIndex, ModelIndexErro
 
 export const loadModelIndex = (
   context: Pick<AppContext, "config" | "logger">,
-): Effect.Effect<ModelIndex, ModelIndexError> =>
+): Effect.Effect<ModelIndexResponse, ModelIndexError> =>
   Effect.gen(function* () {
     const path = resolveIndexPath(context.config.data_dir);
     const fileStat = yield* Effect.tryPromise({
@@ -116,9 +78,7 @@ export const registerStudioModelIndexRoutes = defineRoutes((app, context) =>
     effectHandler((ctx) =>
       loadModelIndex(context).pipe(
         Effect.map((index) => ctx.json(index)),
-        Effect.mapError(
-          (error) => new HttpStatus({ status: 500, detail: error.message }),
-        ),
+        Effect.mapError((error) => new HttpStatus({ status: 500, detail: error.message })),
       ),
     ),
   ),
