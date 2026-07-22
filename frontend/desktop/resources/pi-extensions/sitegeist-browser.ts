@@ -4,7 +4,6 @@
 // the local sitegeist relay (`${SITEGEIST_RELAY_URL}/rpc`), which forwards to the
 // sitegeist Chrome extension over WebSocket. Enable through
 // LOCAL_STUDIO_BROWSER_BACKEND=sitegeist while the browser tool toggle is on.
-// Protocol: docs/sitegeist-relay-protocol.md.
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type, type Static, type TSchema } from "typebox";

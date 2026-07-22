@@ -132,7 +132,6 @@ sync_frontend() {
     frontend/package-lock.json
     frontend/tsconfig.json
     frontend/next.config.ts
-    frontend/tailwind.config.ts
     frontend/postcss.config.mjs
   )
   local existing_frontend_files=()
