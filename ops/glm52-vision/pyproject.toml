@@ -1,0 +1,15 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "glm52-vision-vllm"
+version = "0.1.0"
+requires-python = ">=3.12"
+
+[project.entry-points."vllm.general_plugins"]
+glm52_vision = "glm52_vision.plugin:register"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+

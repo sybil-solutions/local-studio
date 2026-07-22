@@ -1,0 +1,33 @@
+{
+  "revision": "f6eab6117386a0c69152fdf272dc65bfd0254f9f",
+  "repository": "baseten/GLM-5.2-Vision-NVFP4",
+  "files": {
+    "chat_template.jinja": {
+      "sha256": "6d172cae09cb494bd825a6b14d07e7b32a2c26988afe43d8bc2bbda91aab99c8"
+    },
+    "config.json": {
+      "sha256": "5a4c1c2e388e28373dcdd9d38c968246a23a261f7ad49908d94823f3a4616f65"
+    },
+    "kimi_k25_processor.py": {
+      "sha256": "cbfe0d8ca280568605011927fc80a515451ec6d1c01519ff89bd6c09dec702c4"
+    },
+    "kimi_k25_vision_processing.py": {
+      "sha256": "498e20753c9aa6b6224ddbcd05b04deb7e987b76595bf5c28ee8583f33ebc375"
+    },
+    "media_utils.py": {
+      "sha256": "77a6b1fed3580b0562443092928a0240c2989e3950377e93893952123ae48e3d"
+    },
+    "mm_projector.safetensors": {
+      "sha256": "e7c6ce8c27424f292e708e7bbb48ade57ea9f1aaddd28bd6a1020a860d9db80c",
+      "size": 99117136
+    },
+    "preprocessor_config.json": {
+      "sha256": "b938c8d816d50579bd8d9bba2ff0ffb738c528b9b05c6966c186d30a1a065041"
+    },
+    "vision_tower.safetensors": {
+      "sha256": "af1c927919bd073c2ab893bf2c6d9826100a06828c3b40f0128fabb4660a610d",
+      "size": 833769904
+    }
+  }
+}
+
