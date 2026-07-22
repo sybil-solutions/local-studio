@@ -137,8 +137,12 @@ function PhonePairingSettings() {
   const copy = async () => {
     try {
       const value = pairingJson || (await loadPairingJson());
-      await navigator.clipboard.writeText(value);
+      const result = await window.localStudioDesktop?.copyKittylitterPairingJson?.(value);
+      if (!result?.ok) {
+        throw new Error(result?.error || "Connection JSON is available in the desktop app.");
+      }
       setCopied(true);
+      setPairingError("");
       window.setTimeout(() => setCopied(false), 1500);
     } catch (error) {
       setPairingError(error instanceof Error ? error.message : "Connection JSON is unavailable.");

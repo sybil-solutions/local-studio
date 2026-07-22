@@ -85,6 +85,11 @@ export interface KittylitterPairingResult {
   error?: string;
 }
 
+export interface KittylitterCopyResult {
+  ok: boolean;
+  error?: string;
+}
+
 export interface DesktopBridge {
   getRuntime(): Promise<{
     platform: NodeJS.Platform;
@@ -107,6 +112,7 @@ export interface DesktopBridge {
   loadUiPreferences(): Promise<UiPreferencesPayload>;
   saveUiPreferences(prefs: UiPreferencesPayload): Promise<void>;
   getKittylitterPairingJson(): Promise<KittylitterPairingResult>;
+  copyKittylitterPairingJson(pairingJson: string): Promise<KittylitterCopyResult>;
   terminal: PtyBridge;
   quickPanel: QuickPanelBridge;
   controllerDeploy: ControllerDeployBridge;

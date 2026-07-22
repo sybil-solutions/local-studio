@@ -6,5 +6,9 @@ interface Window {
       pairingJson?: string;
       error?: string;
     }>;
+    copyKittylitterPairingJson?(pairingJson: string): Promise<{
+      ok: boolean;
+      error?: string;
+    }>;
   };
 }
