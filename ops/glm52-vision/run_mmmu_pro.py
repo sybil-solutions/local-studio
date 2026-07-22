@@ -5,6 +5,8 @@ import json
 from concurrent.futures import ThreadPoolExecutor
 from io import BytesIO
 from pathlib import Path
+from time import sleep
+from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from datasets import load_dataset
@@ -43,8 +45,14 @@ def ask(endpoint, model, image):
         data=json.dumps(payload).encode("utf-8"),
         headers={"Content-Type": "application/json"},
     )
-    with urlopen(request, timeout=300) as response:
-        return json.loads(response.read())["choices"][0]["message"]["content"]
+    for attempt in range(4):
+        try:
+            with urlopen(request, timeout=600) as response:
+                return json.loads(response.read())["choices"][0]["message"]["content"]
+        except (HTTPError, TimeoutError, URLError, OSError):
+            if attempt == 3:
+                raise
+            sleep(2**attempt)
 
 
 def saved_ids(path):
