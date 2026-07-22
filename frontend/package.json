@@ -63,6 +63,7 @@
     "next": "16.2.7",
     "playwright-core": "1.61.1",
     "proper-lockfile": "4.1.2",
+    "qrcode.react": "4.2.0",
     "react": "19.2.1",
     "react-dom": "19.2.1",
     "react-markdown": "10.1.0",
