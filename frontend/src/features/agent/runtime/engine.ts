@@ -399,7 +399,7 @@ export function useSessionEngine(deps: UseSessionEngineDeps): SessionEngine {
                 sessionId: session.id,
                 modelId,
                 thinkingLevel,
-                toolAccess: session.toolAccess ?? toolAccess,
+                toolAccess,
                 cwd: cwd.trim() || undefined,
                 piSessionId: session.piSessionId,
                 browserToolEnabled,

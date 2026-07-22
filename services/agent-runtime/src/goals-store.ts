@@ -5,21 +5,14 @@
 //
 
 import { isRecord } from "../../../shared/agent/guards";
+import {
+  GOAL_STATUSES,
+  type GoalStatus,
+  type SessionGoal,
+} from "../../../shared/agent/session-goal";
 import { createSessionScopedJsonStore } from "./session-json-store";
 
-export type GoalStatus = "active" | "paused" | "blocked" | "complete" | "budget_limited";
-
-export type SessionGoal = {
-  version: 1;
-  objective: string;
-  status: GoalStatus;
-  turnBudget: number | null;
-  turnsUsed: number;
-  createdAt: string;
-  updatedAt: string;
-};
-
-const GOAL_STATUSES: GoalStatus[] = ["active", "paused", "blocked", "complete", "budget_limited"];
+export type { GoalStatus, SessionGoal };
 
 function normalizeGoal(value: unknown): SessionGoal {
   const record = isRecord(value) ? value : {};

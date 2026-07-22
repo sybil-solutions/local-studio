@@ -1,4 +1,9 @@
-import { Effect } from "effect";
+import { Effect, Schema } from "effect";
+import {
+  SessionGoalResponseSchema,
+  type SessionGoal,
+  type SessionGoalPatch,
+} from "@shared/agent/session-goal";
 import { safeJson } from "@/features/agent/safe-json";
 import {
   parseAgentTurnCommandResult,
@@ -271,4 +276,55 @@ export function subscribeRuntimeEvents(
       source.close();
     },
   };
+}
+
+const decodeSessionGoalResponseOption = Schema.decodeUnknownOption(SessionGoalResponseSchema, {
+  onExcessProperty: "preserve",
+});
+
+function decodeSessionGoal(raw: unknown): SessionGoal | null {
+  if (!raw || typeof raw !== "object") return null;
+  const option = decodeSessionGoalResponseOption(raw);
+  return option._tag === "Some" ? option.value.goal : null;
+}
+
+const sessionGoalUrl = (piSessionId: string) =>
+  `/api/agent/goal?piSessionId=${encodeURIComponent(piSessionId)}`;
+
+export function loadSessionGoal(piSessionId: string): Promise<SessionGoal | null> {
+  return Effect.runPromise(
+    Effect.gen(function* () {
+      const response = yield* fetchEffect(sessionGoalUrl(piSessionId), { cache: "no-store" });
+      if (!response.ok) return null;
+      const payload = yield* safeJsonEffect<unknown>(response);
+      return decodeSessionGoal(payload);
+    }).pipe(Effect.catch(() => Effect.succeed(null))),
+  );
+}
+
+export function updateSessionGoal(
+  piSessionId: string,
+  patch: SessionGoalPatch,
+): Promise<SessionGoal | null> {
+  return Effect.runPromise(
+    Effect.gen(function* () {
+      const response = yield* fetchEffect(sessionGoalUrl(piSessionId), {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(patch),
+      });
+      if (!response.ok) return yield* Effect.fail(new Error("Failed to update the goal."));
+      const payload = yield* safeJsonEffect<unknown>(response);
+      return decodeSessionGoal(payload);
+    }),
+  );
+}
+
+export function clearSessionGoal(piSessionId: string): Promise<void> {
+  return Effect.runPromise(
+    Effect.gen(function* () {
+      const response = yield* fetchEffect(sessionGoalUrl(piSessionId), { method: "DELETE" });
+      if (!response.ok) return yield* Effect.fail(new Error("Failed to clear the goal."));
+    }),
+  );
 }

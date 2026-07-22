@@ -7,7 +7,7 @@ import { AgentChatPaneHeader } from "@/features/agent/ui/agent-chat-pane-header"
 import { AgentComposerFrame } from "@/features/agent/ui/agent-composer-frame";
 import { type FileMentionRow, type MentionRow } from "@/features/agent/ui/agent-composer-context";
 import { builtinCommandProvider } from "@/features/agent/composer/builtin-commands";
-import { SessionGoalBar } from "@/features/agent/ui/session-goal-bar";
+import { ComposerProjectDrawer } from "@/features/agent/ui/composer-project-drawer";
 import { SubagentChips } from "@/features/agent/ui/subagent-chips";
 import { GitDiffDrawer } from "@/features/agent/ui/git-diff-drawer";
 import {
@@ -20,7 +20,6 @@ import {
   type SlashInvocation,
 } from "@/features/agent/composer/command-registry";
 import { deriveComposerVisual } from "@/features/agent/composer/composer-visual-state";
-import { ADD_PROJECT_EVENT } from "@/lib/workspace-events";
 
 function diffDrawerFor(
   open: boolean,
@@ -35,11 +34,6 @@ function diffDrawerFor(
   return <GitDiffDrawer {...props} />;
 }
 
-function goalBarFor(piSessionId: string | null | undefined, revision: number) {
-  if (!piSessionId) return null;
-  return <SessionGoalBar piSessionId={piSessionId} revision={revision} />;
-}
-
 function piSessionIdOf(tab: { piSessionId?: string | null } | null | undefined): string | null {
   return tab?.piSessionId ?? null;
 }
@@ -47,14 +41,6 @@ function piSessionIdOf(tab: { piSessionId?: string | null } | null | undefined):
 function subagentChipsFor(piSessionId: string | null | undefined) {
   if (!piSessionId) return null;
   return <SubagentChips piSessionId={piSessionId} />;
-}
-
-function composerProjectRow(show: boolean, projectName: string | null) {
-  if (!show) return null;
-  return {
-    label: projectName ?? "Choose project",
-    onPick: () => window.dispatchEvent(new Event(ADD_PROJECT_EVENT)),
-  };
 }
 
 function effectiveThinkingLevel(
@@ -95,9 +81,9 @@ import { ChatPaneHandle, SessionTab } from "@/features/agent/messages";
 import { useSessionEngine } from "@/features/agent/runtime/engine";
 import type { UpdateSession } from "@/features/agent/runtime/types";
 import { useTools } from "@/features/agent/tools/context";
-import type { GitSummary } from "@/features/agent/projects/types";
+import type { GitSummary, Project } from "@/features/agent/projects/types";
 import type { BrowserBackend } from "@/features/agent/tools/types";
-import type { AgentThinkingLevel, AgentToolAccess } from "@/features/agent/contracts";
+import type { AgentThinkingLevel } from "@/features/agent/contracts";
 import {
   exportFilenameFromTitle,
   sessionToMarkdown,
@@ -115,7 +101,11 @@ import {
 import { PersistentTerminals } from "@/features/agent/ui/persistent-terminals";
 import { cx } from "@/ui/utils";
 import { ExtensionUiDialog } from "@/features/agent/ui/extension-ui-dialog";
-import { respondExtensionUi } from "@/features/agent/runtime/api";
+import {
+  clearSessionGoal,
+  respondExtensionUi,
+  updateSessionGoal,
+} from "@/features/agent/runtime/api";
 export type { ChatPaneHandle, SessionTab };
 
 const Timeline = dynamic(
@@ -408,8 +398,6 @@ export function ChatPane({
     { activeTab, tools },
   );
   const thinkingLevel = effectiveThinkingLevel(modelThinkingLevels, activeTab?.thinkingLevel);
-  const toolAccess: AgentToolAccess =
-    activeTab?.toolAccess ?? (activeTab?.piSessionId ? "full" : "read_only");
   const selectThinkingLevel = useCallback(
     (level: AgentThinkingLevel) => {
       if (!activeTab || running) return;
@@ -423,20 +411,13 @@ export function ChatPane({
     reasoningDisabled: Boolean(running),
     onSelectReasoning: selectThinkingLevel,
   });
-  const toggleToolAccess = useCallback(() => {
-    if (!activeTab || running) return;
-    updateTab(activeTab.id, (session) => ({
-      ...session,
-      toolAccess: toolAccess === "full" ? "read_only" : "full",
-    }));
-  }, [activeTab, running, toolAccess, updateTab]);
 
   const engine = useSessionEngine({
     tabs,
     activeTabId,
     modelId,
     thinkingLevel,
-    toolAccess,
+    toolAccess: "full",
     cwd,
     browserToolEnabled,
     browserBackend,
@@ -487,22 +468,17 @@ export function ChatPane({
       const piSessionId = activePiSessionId;
       if (!piSessionId) return "Send a first message, then set a goal for this session.";
       if (!args) return "Usage: /goal <objective> — or /goal pause · resume · clear";
-      const url = `/api/agent/goal?piSessionId=${encodeURIComponent(piSessionId)}`;
       const verb = args.split(/\s+/)[0]?.toLowerCase() ?? "";
       try {
         if (verb === "clear") {
-          await fetch(url, { method: "DELETE" });
+          await clearSessionGoal(piSessionId);
         } else if (verb === "pause" || verb === "resume") {
-          await fetch(url, {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ status: verb === "pause" ? "paused" : "active" }),
-          });
+          await updateSessionGoal(piSessionId, { status: verb === "pause" ? "paused" : "active" });
         } else {
-          await fetch(url, {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ objective: args, status: "active", resetTurns: true }),
+          await updateSessionGoal(piSessionId, {
+            objective: args,
+            status: "active",
+            resetTurns: true,
           });
         }
         setGoalRevision((value) => value + 1);
@@ -512,6 +488,17 @@ export function ChatPane({
       }
     },
     [activePiSessionId],
+  );
+  const handleProjectPicked = useCallback(
+    (project: Project) => {
+      if (!activeTab || activeTab.messages.length > 0) return;
+      updateTab(activeTab.id, (session) => ({
+        ...session,
+        projectId: project.id,
+        cwd: project.path,
+      }));
+    },
+    [activeTab, updateTab],
   );
   const commandRegistry = useMemo(
     () =>
@@ -735,14 +722,12 @@ export function ChatPane({
           onClose: closeDiffDrawer,
         })}
         {subagentChipsFor(activePiSessionId)}
-        {goalBarFor(activePiSessionId, goalRevision)}
         <AgentComposerFrame
           attachments={attachments}
           banner={composerVisual.banner}
           browserToolEnabled={browserToolEnabled}
           browserBackend={browserBackend}
           canvasEnabled={canvasEnabled}
-          toolAccess={toolAccess}
           composerDragActive={composerDragActive}
           contextWindow={effectiveContextWindow}
           currentContextTokens={currentContextTokens}
@@ -779,9 +764,22 @@ export function ChatPane({
           onToggleBrowserBackend={onToggleBrowserBackend}
           onToggleBrowserTool={onToggleBrowserTool}
           onToggleCanvas={onToggleCanvas}
-          onToggleToolAccess={toggleToolAccess}
           placeholder={composerVisual.placeholder}
-          projectRow={composerProjectRow(composerVisual.showProjectRow, projectName)}
+          drawer={
+            <ComposerProjectDrawer
+              piSessionId={activePiSessionId}
+              revision={goalRevision}
+              projectName={projectName}
+              cwd={cwd}
+              gitBranch={gitBranch}
+              gitSummary={gitSummary}
+              onInitGit={onInitGit}
+              onOpenDiff={openDiffDrawer}
+              canPickProject={composerVisual.showProjectRow && !running}
+              onProjectPicked={handleProjectPicked}
+            />
+          }
+          showStatusBar={!composerVisual.showProjectRow}
           promptTemplates={selectedPromptTemplates}
           queueExpanded={queueExpanded}
           queueItems={visibleQueueItems}

@@ -16,7 +16,6 @@ import type {
 } from "@/features/agent/composer-context";
 import type { QueuedMessage } from "@/features/agent/messages";
 import type { BrowserBackend } from "@/features/agent/tools/types";
-import type { AgentToolAccess } from "@/features/agent/contracts";
 import type { ComposerBanner } from "@/features/agent/composer/composer-visual-state";
 import { Spinner } from "@/ui";
 import type { GitSummary } from "@/features/agent/projects/types";
@@ -32,7 +31,6 @@ import { AgentComposerStatusBar } from "./agent-composer-status-bar";
 import { AgentComposerTextArea } from "./agent-composer-textarea";
 import { AgentQueuePanel } from "./agent-queue-panel";
 import { cx } from "@/ui/utils";
-import { ChevronDown, FolderOpen } from "@/ui/icon-registry";
 
 export type AgentComposerFrameProps = {
   attachments: AgentComposerAttachment[];
@@ -40,7 +38,6 @@ export type AgentComposerFrameProps = {
   browserToolEnabled: boolean;
   browserBackend: BrowserBackend;
   canvasEnabled: boolean;
-  toolAccess: AgentToolAccess;
   composerDragActive: boolean;
   contextWindow: number;
   currentContextTokens: number;
@@ -77,9 +74,9 @@ export type AgentComposerFrameProps = {
   onToggleBrowserBackend: () => void;
   onToggleBrowserTool: () => void;
   onToggleCanvas: () => void;
-  onToggleToolAccess: () => void;
   placeholder: string;
-  projectRow?: { label: string; onPick: () => void } | null;
+  drawer?: ReactNode;
+  showStatusBar: boolean;
   promptTemplates: ComposerPromptTemplateRef[];
   queueExpanded: boolean;
   queueItems: QueuedMessage[];
@@ -98,7 +95,6 @@ export function AgentComposerFrame({
   browserToolEnabled,
   browserBackend,
   canvasEnabled,
-  toolAccess,
   composerDragActive,
   contextWindow,
   currentContextTokens,
@@ -135,9 +131,9 @@ export function AgentComposerFrame({
   onToggleBrowserBackend,
   onToggleBrowserTool,
   onToggleCanvas,
-  onToggleToolAccess,
   placeholder,
-  projectRow,
+  drawer,
+  showStatusBar,
   promptTemplates,
   queueExpanded,
   queueItems,
@@ -176,23 +172,13 @@ export function AgentComposerFrame({
           {banner.label}
         </div>
       ) : null}
-      {projectRow ? (
-        <button
-          type="button"
-          onClick={projectRow.onPick}
-          className="relative z-0 mx-auto -mb-3 flex h-11 w-[calc(90%_-_26px)] max-w-[calc(var(--composer-w)*0.9_-_26px)] items-start gap-2.5 rounded-[var(--composer-radius-inner)] border border-(--border)/80 bg-(--fg)/[0.022] px-3 pt-3 text-left text-[length:var(--fs-sm)] text-(--fg)/78 shadow-[var(--composer-elevation-inner)] backdrop-blur-sm transition-colors [corner-shape:superellipse(1.5)] hover:bg-(--fg)/[0.04]"
-        >
-          <FolderOpen className="h-4 w-4 shrink-0 text-(--fg)/56" strokeWidth={1.7} />
-          <span className="min-w-0 flex-1 truncate">{projectRow.label}</span>
-          <ChevronDown className="h-3.5 w-3.5 shrink-0 text-(--fg)/36" strokeWidth={1.75} />
-        </button>
-      ) : null}
+      {drawer}
       <div
         onDragOver={onComposerDragOver}
         onDragLeave={onComposerDragLeave}
         onDrop={onComposerDrop}
         className={cx(
-          "relative z-10 mx-auto w-[90%] max-w-[calc(var(--composer-w)*0.9)] overflow-visible rounded-[var(--composer-radius)] border border-(--border) bg-(--composer) shadow-[var(--composer-elevation)] backdrop-blur-lg transition-colors [corner-shape:superellipse(1.5)]",
+          "agent-composer-box relative z-10 mx-auto w-[90%] max-w-[calc(var(--composer-w)*0.9)] overflow-visible rounded-[var(--composer-radius)] border border-(--border) bg-(--composer) shadow-[var(--composer-elevation)] backdrop-blur-lg transition-colors [corner-shape:superellipse(1.5)]",
           composerDragActive && "outline outline-1 outline-(--link)/50",
         )}
       >
@@ -237,8 +223,6 @@ export function AgentComposerFrame({
           status={status}
           input={input}
           attachmentsCount={attachments.length}
-          toolAccess={toolAccess}
-          onToggleToolAccess={onToggleToolAccess}
           browserToolEnabled={browserToolEnabled}
           browserBackend={browserBackend}
           onToggleBrowserBackend={onToggleBrowserBackend}
@@ -250,12 +234,7 @@ export function AgentComposerFrame({
           modelSelector={modelSelector}
         />
       </div>
-      {projectRow ? (
-        <div
-          aria-hidden="true"
-          className="mx-auto mt-2.5 h-4 w-[90%] max-w-[calc(var(--composer-w)*0.9)]"
-        />
-      ) : (
+      {showStatusBar ? (
         <AgentComposerStatusBar
           cwd={cwd}
           gitBranch={gitBranch}
@@ -265,6 +244,11 @@ export function AgentComposerFrame({
           contextWindow={contextWindow}
           onOpenStatus={onOpenStatus}
           onOpenDiff={onOpenDiff}
+        />
+      ) : (
+        <div
+          aria-hidden="true"
+          className="mx-auto mt-2.5 h-4 w-[90%] max-w-[calc(var(--composer-w)*0.9)]"
         />
       )}
     </form>

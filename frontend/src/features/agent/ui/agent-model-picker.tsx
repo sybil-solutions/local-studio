@@ -93,7 +93,7 @@ export function AgentModelPicker({
 
   return (
     <div
-      className="relative shrink-0"
+      className="relative min-w-0 shrink"
       onBlur={(event) => {
         const nextTarget = event.relatedTarget;
         if (nextTarget instanceof Node && event.currentTarget.contains(nextTarget)) return;
@@ -401,7 +401,7 @@ function ModelPickerTrigger({
       className={cx(
         // Codex: the model control sits at the shared chat size (16px) with
         // primary-strength text; only the chevron reads dim.
-        "group/model inline-flex !h-[30px] !min-h-[30px] !min-w-0 items-center justify-between gap-1 rounded-lg bg-transparent pl-2 pr-1.5 text-[length:var(--fs-base)] whitespace-nowrap text-(--fg)/85 transition-colors hover:bg-(--hover) hover:text-(--fg) active:translate-y-px disabled:opacity-60",
+        "group/model inline-flex !h-[30px] !min-h-[30px] !min-w-0 max-w-full items-center justify-between gap-1 rounded-lg bg-transparent pl-2 pr-1.5 text-[length:var(--fs-base)] whitespace-nowrap text-(--fg)/85 transition-colors hover:bg-(--hover) hover:text-(--fg) active:translate-y-px disabled:opacity-60",
         open && "bg-(--hover) text-(--fg)",
       )}
       title={notRunning ? `${title} is not running — launch it or pick a running model` : title}
@@ -409,7 +409,7 @@ function ModelPickerTrigger({
       aria-expanded={open}
       aria-haspopup="menu"
     >
-      <span className="max-w-[180px] truncate text-left">{label}</span>
+      <span className="min-w-0 max-w-[180px] truncate text-left">{label}</span>
       {notRunning ? <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-(--warn)" /> : null}
       <ChevronDown className="pointer-events-none h-3.5 w-3.5 shrink-0 text-(--dim)" />
     </button>

@@ -560,58 +560,13 @@
   font-weight: 600;
 }
 
-.agent-composer-shell {
+.agent-composer-box {
   container-type: inline-size;
-  width: min(100%, var(--composer-w));
 }
 
-.agent-composer-meta {
-  container-type: inline-size;
-  width: min(100%, var(--composer-w));
-}
-
-.agent-composer-project {
-  max-width: min(42%, 18rem);
-}
-
-.agent-composer-branch {
-  max-width: 12rem;
-}
-
-.agent-composer-git-summary {
-  max-width: 13rem;
-}
-
-.agent-composer-tokens {
-  white-space: nowrap;
-}
-
-@container (max-width: 560px) {
-  .agent-composer-actions-row {
-    flex-wrap: wrap;
-  }
-}
-
-@container (max-width: 520px) {
-  .agent-composer-meta-main {
-    flex-basis: 100%;
-  }
-
-  .agent-composer-project {
-    max-width: 38%;
-  }
-
-  .agent-composer-branch {
-    max-width: 9rem;
-  }
-
-  .agent-composer-git-summary {
-    max-width: 9rem;
-  }
-
-  .agent-composer-tokens {
-    margin-left: auto;
-    max-width: 100%;
+@container (max-width: 27rem) {
+  .composer-action-optional {
+    display: none;
   }
 }
 

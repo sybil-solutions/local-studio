@@ -235,7 +235,7 @@ function promptTurnRequest(
     sessionId: context.runtime,
     modelId: deps.modelId,
     thinkingLevel: deps.thinkingLevel,
-    toolAccess: context.selected.toolAccess ?? deps.toolAccess,
+    toolAccess: deps.toolAccess,
     message: args.prompt,
     images: args.images,
     cwd: deps.cwd.trim() || undefined,

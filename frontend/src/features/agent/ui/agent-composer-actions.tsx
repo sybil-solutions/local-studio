@@ -2,9 +2,8 @@
 
 import type { ReactNode, RefObject } from "react";
 import { Spinner } from "@/ui";
-import { ArrowUp, Code2, Plus, ShieldCheck, Wrench } from "@/ui/icon-registry";
+import { ArrowUp, Code2, Plus } from "@/ui/icon-registry";
 import type { BrowserBackend } from "@/features/agent/tools/types";
-import type { AgentToolAccess } from "@/features/agent/contracts";
 import { GlobeIcon, PanelIcon, SitegeistIcon, StopIcon } from "@/ui/icons";
 import { ComposerDictationButton } from "./composer-dictation-button";
 
@@ -16,8 +15,6 @@ export function AgentComposerActions({
   status,
   input,
   attachmentsCount,
-  toolAccess,
-  onToggleToolAccess,
   browserToolEnabled,
   browserBackend,
   onToggleBrowserBackend,
@@ -35,8 +32,6 @@ export function AgentComposerActions({
   status?: string;
   input: string;
   attachmentsCount: number;
-  toolAccess: AgentToolAccess;
-  onToggleToolAccess: () => void;
   browserToolEnabled: boolean;
   browserBackend: BrowserBackend;
   onToggleBrowserBackend: () => void;
@@ -57,7 +52,7 @@ export function AgentComposerActions({
   const activeIconClass = "bg-(--active) text-(--fg)";
 
   return (
-    <div className="agent-composer-actions-row flex min-h-9 items-center gap-0.5 bg-transparent px-2 pb-2.5 pt-0 text-xs">
+    <div className="agent-composer-actions-row flex min-h-9 items-center gap-0.5 bg-transparent px-2 pb-2 pt-0 text-xs">
       <input
         ref={fileInputRef}
         type="file"
@@ -65,27 +60,6 @@ export function AgentComposerActions({
         className="hidden"
         onChange={(event) => onAttachFiles(event.currentTarget.files)}
       />
-      <button
-        type="button"
-        onClick={onToggleToolAccess}
-        disabled={running}
-        aria-label={`Pi tools: ${toolAccess === "full" ? "full access" : "read only"}`}
-        title={
-          toolAccess === "full"
-            ? "Pi tools: Full access. Click to use read, grep, find, and ls only."
-            : "Pi tools: Read only. This is a model tool allowlist, not an OS sandbox."
-        }
-        className={`inline-flex !h-7 !min-h-7 shrink-0 items-center gap-1 rounded-full px-2 text-[length:var(--fs-xs)] disabled:opacity-30 ${toolAccess === "full" ? activeIconClass : inactiveIconClass}`}
-      >
-        {toolAccess === "full" ? (
-          <Wrench className="h-3.5 w-3.5" strokeWidth={1.7} />
-        ) : (
-          <ShieldCheck className="h-3.5 w-3.5" strokeWidth={1.7} />
-        )}
-        <span className="hidden min-[390px]:inline">
-          {toolAccess === "full" ? "Full" : "Read only"}
-        </span>
-      </button>
       <button
         type="button"
         onClick={() => fileInputRef.current?.click()}
@@ -106,7 +80,7 @@ export function AgentComposerActions({
             ? "Browser tool: ON — agent can drive the browser"
             : "Browser tool: OFF — click to let the agent navigate, click, fill, and read pages"
         }
-        className={`inline-flex !h-7 !min-h-7 !w-7 !min-w-7 shrink-0 items-center justify-center rounded-full ${browserToolEnabled ? activeIconClass : inactiveIconClass}`}
+        className={`composer-action-optional inline-flex !h-7 !min-h-7 !w-7 !min-w-7 shrink-0 items-center justify-center rounded-full ${browserToolEnabled ? activeIconClass : inactiveIconClass}`}
       >
         <span className="relative inline-flex">
           <GlobeIcon className="h-4 w-4" />
@@ -117,7 +91,7 @@ export function AgentComposerActions({
           type="button"
           onClick={onToggleBrowserBackend}
           aria-label={`Browser backend: ${browserBackendLabel}. Switch to ${browserBackendTarget}.`}
-          className={`inline-flex !h-7 !min-h-7 !w-7 !min-w-7 shrink-0 items-center justify-center rounded-full ${usingSitegeist ? activeIconClass : inactiveIconClass}`}
+          className={`composer-action-optional inline-flex !h-7 !min-h-7 !w-7 !min-w-7 shrink-0 items-center justify-center rounded-full ${usingSitegeist ? activeIconClass : inactiveIconClass}`}
           title={`Browser: ${browserBackendLabel}. Click to use ${browserBackendTarget}.`}
         >
           {usingSitegeist ? (
@@ -137,7 +111,7 @@ export function AgentComposerActions({
             ? "Canvas: ON — shared scratchboard tools loaded; model reads/writes the canvas"
             : "Canvas: OFF — click to share a scratchboard with the model (notes, plans, links, state)"
         }
-        className={`inline-flex !h-7 !min-h-7 !w-7 !min-w-7 shrink-0 items-center justify-center rounded-full ${canvasEnabled ? activeIconClass : inactiveIconClass}`}
+        className={`composer-action-optional inline-flex !h-7 !min-h-7 !w-7 !min-w-7 shrink-0 items-center justify-center rounded-full ${canvasEnabled ? activeIconClass : inactiveIconClass}`}
       >
         <Code2 className="h-4 w-4" strokeWidth={1.5} />
       </button>
@@ -146,6 +120,7 @@ export function AgentComposerActions({
         <ComposerDictationButton
           disabled={running}
           inactiveClassName={inactiveIconClass}
+          idleClassName="composer-action-optional"
           onTranscript={onTranscript}
         />
         {running ? (

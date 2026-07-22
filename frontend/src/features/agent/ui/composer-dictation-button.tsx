@@ -6,10 +6,12 @@ import { useComposerDictation } from "./use-composer-dictation";
 export function ComposerDictationButton({
   disabled,
   inactiveClassName,
+  idleClassName = "",
   onTranscript,
 }: {
   disabled: boolean;
   inactiveClassName: string;
+  idleClassName?: string;
   onTranscript: (text: string) => void;
 }) {
   const dictation = useComposerDictation(onTranscript);
@@ -30,7 +32,7 @@ export function ComposerDictationButton({
         aria-pressed={dictation.recording}
         aria-label={dictation.recording ? "Stop dictation" : "Start dictation"}
         title={title}
-        className={`inline-flex !h-7 !min-h-7 !w-7 !min-w-7 shrink-0 items-center justify-center rounded-full transition-colors disabled:opacity-40 ${dictation.recording ? "bg-red-500/15 text-red-400" : inactiveClassName}`}
+        className={`inline-flex !h-7 !min-h-7 !w-7 !min-w-7 shrink-0 items-center justify-center rounded-full transition-colors disabled:opacity-40 ${dictation.recording ? "bg-red-500/15 text-red-400" : `${dictation.busy ? "" : idleClassName} ${inactiveClassName}`}`}
       >
         {dictation.recording ? (
           <Square className="h-3 w-3 fill-current" strokeWidth={1.5} />
