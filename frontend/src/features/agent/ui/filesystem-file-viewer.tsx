@@ -3,10 +3,66 @@
 import { useCallback, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from "react";
 import { Virtuoso } from "react-virtuoso";
 import { MessageSquarePlus, Minus } from "@/ui/icon-registry";
+import { highlightLines } from "@/features/agent/highlight-cache";
 import type { FileComment } from "@/features/agent/filesystem-types";
 
+const EXTENSION_LANGUAGES: Record<string, string> = {
+  js: "javascript",
+  jsx: "javascript",
+  ts: "typescript",
+  tsx: "typescript",
+  py: "python",
+  rb: "ruby",
+  rs: "rust",
+  go: "go",
+  java: "java",
+  c: "c",
+  cpp: "cpp",
+  h: "c",
+  hpp: "cpp",
+  cs: "csharp",
+  swift: "swift",
+  kt: "kotlin",
+  kts: "kotlin",
+  html: "xml",
+  htm: "xml",
+  svg: "xml",
+  xml: "xml",
+  xsl: "xml",
+  css: "css",
+  scss: "scss",
+  sass: "scss",
+  less: "css",
+  json: "json",
+  yaml: "yaml",
+  yml: "yaml",
+  toml: "ini",
+  sh: "bash",
+  bash: "bash",
+  zsh: "bash",
+  fish: "bash",
+  sql: "sql",
+  graphql: "graphql",
+  gql: "graphql",
+  md: "markdown",
+  mdx: "markdown",
+  lua: "lua",
+  r: "r",
+  dart: "dart",
+  vue: "xml",
+  svelte: "xml",
+};
+
+export function languageForPath(path: string): string | null {
+  const name = path.split("/").pop()?.toLowerCase() ?? "";
+  if (name === "dockerfile" || name.startsWith("dockerfile.")) return "dockerfile";
+  if (name === "makefile" || name.startsWith("makefile.")) return "makefile";
+  const extension = name.includes(".") ? (name.split(".").pop() ?? "") : "";
+  return EXTENSION_LANGUAGES[extension] ?? null;
+}
+
 export function FileViewer({
-  filePath: _filePath,
+  filePath,
   lines,
   fontSize,
   comments,
@@ -25,6 +81,10 @@ export function FileViewer({
   const [composingLine, setComposingLine] = useState<number | null>(null);
   const [draft, setDraft] = useState("");
   const lastLineRef = useRef<number | null>(null);
+  const highlightedLines = useMemo(() => {
+    const language = languageForPath(filePath);
+    return language ? highlightLines(language, lines) : null;
+  }, [filePath, lines]);
   const commentsByLine = useMemo(() => {
     const map = new Map<number, FileComment[]>();
     for (const comment of comments) {
@@ -65,6 +125,7 @@ export function FileViewer({
     (index: number) => {
       const lineNumber = index + 1;
       const text = lines[index] ?? "";
+      const html = highlightedLines?.[index];
       const lineComments = commentsByLine.get(lineNumber);
       const composing = composingLine === lineNumber;
       return (
@@ -81,12 +142,20 @@ export function FileViewer({
             >
               {lineNumber}
             </span>
-            <pre
-              className="min-w-0 flex-1 whitespace-pre font-mono text-(--fg)"
-              style={{ fontSize, lineHeight: `${lineHeight}px` }}
-            >
-              {text || "\u00a0"}
-            </pre>
+            {html === undefined ? (
+              <pre
+                className="min-w-0 flex-1 whitespace-pre font-mono text-(--fg)"
+                style={{ fontSize, lineHeight: `${lineHeight}px` }}
+              >
+                {text || "\u00a0"}
+              </pre>
+            ) : (
+              <pre
+                className="syntax-highlight min-w-0 flex-1 whitespace-pre font-mono text-(--fg)"
+                style={{ fontSize, lineHeight: `${lineHeight}px` }}
+                dangerouslySetInnerHTML={{ __html: html || "&nbsp;" }}
+              />
+            )}
             <button
               type="button"
               onClick={() => {
@@ -164,6 +233,7 @@ export function FileViewer({
     },
     [
       lines,
+      highlightedLines,
       fontSize,
       lineHeight,
       commentsByLine,
