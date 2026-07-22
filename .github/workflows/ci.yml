@@ -50,8 +50,9 @@ jobs:
       - name: Install dependencies
         working-directory: ./services/agent-runtime
         run: bun install --frozen-lockfile
-      - name: Link shared module resolution
-        run: ln -sfn services/agent-runtime/node_modules node_modules
+      - name: Install shared contract dependencies
+        working-directory: ./shared
+        run: bun install --frozen-lockfile
       - name: Tests
         working-directory: ./services/agent-runtime
         run: bun run test
@@ -67,6 +68,9 @@ jobs:
           bun-version: latest
       - name: Install controller contract dependencies
         working-directory: ./controller
+        run: bun install --frozen-lockfile
+      - name: Install shared contract dependencies
+        working-directory: ./shared
         run: bun install --frozen-lockfile
       - name: Install dependencies
         working-directory: ./frontend
