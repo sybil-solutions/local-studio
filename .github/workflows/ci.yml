@@ -50,6 +50,8 @@ jobs:
       - name: Install dependencies
         working-directory: ./services/agent-runtime
         run: bun install --frozen-lockfile
+      - name: Link shared module resolution
+        run: ln -sfn services/agent-runtime/node_modules node_modules
       - name: Tests
         working-directory: ./services/agent-runtime
         run: bun run test
