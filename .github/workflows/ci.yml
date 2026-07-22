@@ -49,7 +49,7 @@ jobs:
           bun-version: latest
       - name: Install dependencies
         working-directory: ./services/agent-runtime
-        run: bun install
+        run: bun install --frozen-lockfile
       - name: Tests
         working-directory: ./services/agent-runtime
         run: bun run test

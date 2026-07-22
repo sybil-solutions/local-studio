@@ -161,7 +161,7 @@ function PhonePairingSettings() {
             {pairingJson ? (
               <QrCode value={pairingJson} label="KittyLitter controller connection QR code" />
             ) : (
-              <span className="px-4 text-center text-[length:var(--fs-sm)] text-black/55">
+              <span className="px-4 text-center text-[length:var(--fs-sm)] text-(--qr-placeholder)">
                 {pairingError ? "Controller unavailable" : "Preparing connection"}
               </span>
             )}

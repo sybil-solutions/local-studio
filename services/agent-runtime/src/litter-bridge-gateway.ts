@@ -2506,8 +2506,7 @@ export function createLitterBridgeGateway(options: GatewayOptions = {}) {
         if (
           correlation.sessionId !== request.session.sessionId ||
           correlation.messageId !== request.messageId ||
-          correlation.contentHash !== request.contentHash ||
-          correlation.baseRevision !== request.expectedRevision
+          correlation.contentHash !== request.contentHash
         ) {
           return jsonError("integrity_failed", "Dispatch correlation is invalid", requestId, 409);
         }
@@ -2530,6 +2529,9 @@ export function createLitterBridgeGateway(options: GatewayOptions = {}) {
             requestId,
             409,
           );
+        }
+        if (correlation.baseRevision !== request.expectedRevision) {
+          return Response.json(agentTurnConflict(request, resolved.revision), { status: 409 });
         }
         let evidence: { acceptedAt: string } | null;
         try {

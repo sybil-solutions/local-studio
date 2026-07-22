@@ -1535,3 +1535,47 @@ test("signed agent.turn maps a torn reconciliation transcript to a retriable con
   assert.equal(body.error.retriable, true);
   assert.equal(retryRuntime.prompts.length, 0);
 });
+
+test("signed agent.turn refuses idempotency-key reuse with a changed revision", async () => {
+  const fixture = createSessionFixture();
+  const keys = keyMaterial();
+  const crashingRuntime = createTurnRuntime({
+    durableError: true,
+    omitMarker: true,
+    sessionFile: fixture.filepath,
+  });
+  const gateway = fixtureGateway(fixture, { turnRuntime: crashingRuntime.runtime });
+  const listResponse = await gateway.handle(
+    gatewayRequest(sessionListRequest(keys.privateKey, keys.publicHex, { request: "stale-list" })),
+  );
+  const listed = (await listResponse.json()) as Record<string, any>;
+  const revision = listed.sessions[0].revision as number;
+  const first = await gateway.handle(
+    gatewayRequest(
+      agentTurnRequest(keys.privateKey, keys.publicHex, {
+        sessionId: fixture.sessionId,
+        revision,
+        idempotencyKey: "turn-stale",
+        request: "stale-1",
+      }),
+    ),
+  );
+  assert.equal(first.status, 500);
+
+  const retryRuntime = createTurnRuntime({ sessionFile: fixture.filepath });
+  const restarted = fixtureGateway(fixture, { turnRuntime: retryRuntime.runtime });
+  const conflict = await restarted.handle(
+    gatewayRequest(
+      agentTurnRequest(keys.privateKey, keys.publicHex, {
+        sessionId: fixture.sessionId,
+        revision: revision + 1,
+        idempotencyKey: "turn-stale",
+        request: "stale-2",
+      }),
+    ),
+  );
+  assert.equal(conflict.status, 409);
+  const body = (await conflict.json()) as Record<string, any>;
+  assert.equal(body.error.code, "integrity_failed");
+  assert.equal(retryRuntime.prompts.length, 0);
+});

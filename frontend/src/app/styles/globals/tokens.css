@@ -618,6 +618,7 @@
   --composer-elevation-inner: 0 8px 24px rgba(0, 0, 0, 0.08);
   --qr-surface: #ffffff;
   --qr-shadow: 0 16px 45px -28px rgba(0, 0, 0, 0.8);
+  --qr-placeholder: rgba(0, 0, 0, 0.55);
 
   /* Typography */
   --text-nav: var(--fs-base);
