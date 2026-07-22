@@ -24,6 +24,7 @@ export type ThinkRewriter = {
   inThink: () => boolean;
   drainCarry: () => string;
   drainPendingContent: () => string;
+  resolveImplicitPrefixAsContent: () => string;
   rewrite: (
     deltaText: string,
     defaultToReasoning?: boolean,
@@ -91,6 +92,12 @@ export const createThinkRewriter = (
       return tail;
     },
     drainPendingContent(): string {
+      const pending = pendingImplicitContent;
+      pendingImplicitContent = "";
+      return pending;
+    },
+    resolveImplicitPrefixAsContent(): string {
+      resolvedImplicitPrefix = true;
       const pending = pendingImplicitContent;
       pendingImplicitContent = "";
       return pending;

@@ -80,6 +80,10 @@ const responseBodyStream = (
       : matchedRecipe
         ? getDefaultReasoningParser(matchedRecipe)
         : null;
+  const upstreamParsesReasoning =
+    providerRouting !== null ||
+    ((matchedRecipe?.backend === "vllm" || matchedRecipe?.backend === "sglang") &&
+      Boolean(reasoningParser));
   const transformed = createToolCallStream(
     source,
     (usage) => {
@@ -89,10 +93,9 @@ const responseBodyStream = (
       ttftMs ??= Math.max(0, Math.round(performance.now() - requestStart));
     },
     {
-      bufferImplicitReasoningContent: shouldBufferImplicitReasoningContent(
-        recordedModel,
-        reasoningParser,
-      ),
+      bufferImplicitReasoningContent:
+        !upstreamParsesReasoning &&
+        shouldBufferImplicitReasoningContent(recordedModel, reasoningParser),
     },
   );
   return Stream.fromReadableStream({
