@@ -767,6 +767,7 @@ export function ChatPane({
           placeholder={composerVisual.placeholder}
           drawer={
             <ComposerProjectDrawer
+              key={`${activeTabId}:${activePiSessionId ?? "new"}`}
               piSessionId={activePiSessionId}
               revision={goalRevision}
               projectName={projectName}
