@@ -68,6 +68,7 @@ def build_config(source: Path, assets: Path) -> dict:
     config["model_type"] = "glm5v"
     config["text_config"] = source_config
     config["quantization_config"] = source_config["quantization_config"]
+    config["eos_token_id"] = source_config["eos_token_id"]
     config["vision_config"] = dict(baseten_config["vision_config"])
     config["vision_config"]["mm_hidden_size"] = source_config["hidden_size"]
     config["vision_config"]["text_hidden_size"] = source_config["hidden_size"]
