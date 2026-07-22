@@ -1,10 +1,15 @@
-import { Effect } from "effect";
+import { Effect, Schema } from "effect";
+import {
+  SessionGoalResponseSchema,
+  type SessionGoal,
+  type SessionGoalPatch,
+} from "@shared/agent/session-goal";
 import { safeJson } from "@/features/agent/safe-json";
 import {
   parseAgentTurnCommandResult,
   type AgentTurnCommandResult,
 } from "@/features/agent/messages";
-import type { AgentImageInput } from "@/features/agent/contracts";
+import type { AgentImageInput, AgentToolAccess } from "@/features/agent/contracts";
 import type { BrowserBackend } from "@/features/agent/tools/types";
 import type {
   ComposerPromptTemplateRef,
@@ -87,6 +92,23 @@ export function abortSession(sessionId: string): Promise<void> {
   );
 }
 
+export function respondExtensionUi(
+  sessionId: string,
+  requestId: string,
+  response: { value?: string; confirmed?: boolean; cancelled?: boolean },
+): Promise<void> {
+  return Effect.runPromise(
+    Effect.gen(function* () {
+      const result = yield* fetchEffect("/api/agent/runtime/extension-ui", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionId, requestId, ...response }),
+      });
+      if (!result.ok) return yield* Effect.fail(new Error("Extension response was rejected"));
+    }),
+  );
+}
+
 export type CanonicalSessionMeta = {
   title: string | null;
   modelId: string | null;
@@ -117,7 +139,8 @@ export function loadCanonicalSession(
   return Effect.runPromise(
     Effect.gen(function* () {
       const params = new URLSearchParams({ cwd });
-      const tail = options.before === undefined ? (options.tail ?? DEFAULT_SESSION_TAIL) : undefined;
+      const tail =
+        options.before === undefined ? (options.tail ?? DEFAULT_SESSION_TAIL) : undefined;
       if (tail !== undefined) params.set("tail", String(tail));
       if (options.before !== undefined) params.set("before", String(options.before));
       const response = yield* fetchEffect(
@@ -144,6 +167,8 @@ export function loadCanonicalSession(
 export type CompactSessionArgs = {
   sessionId: string;
   modelId: string;
+  thinkingLevel?: import("@/features/agent/contracts").AgentThinkingLevel;
+  toolAccess?: AgentToolAccess;
   cwd?: string;
   piSessionId?: string | null;
   browserToolEnabled: boolean;
@@ -179,6 +204,8 @@ export function compactSession(args: CompactSessionArgs): Promise<CompactSession
 export type SubmitTurnArgs = {
   sessionId: string;
   modelId: string;
+  thinkingLevel?: import("@/features/agent/contracts").AgentThinkingLevel;
+  toolAccess: AgentToolAccess;
   message: string;
   images?: AgentImageInput[];
   cwd?: string;
@@ -249,4 +276,55 @@ export function subscribeRuntimeEvents(
       source.close();
     },
   };
+}
+
+const decodeSessionGoalResponseOption = Schema.decodeUnknownOption(SessionGoalResponseSchema, {
+  onExcessProperty: "preserve",
+});
+
+function decodeSessionGoal(raw: unknown): SessionGoal | null {
+  if (!raw || typeof raw !== "object") return null;
+  const option = decodeSessionGoalResponseOption(raw);
+  return option._tag === "Some" ? option.value.goal : null;
+}
+
+const sessionGoalUrl = (piSessionId: string) =>
+  `/api/agent/goal?piSessionId=${encodeURIComponent(piSessionId)}`;
+
+export function loadSessionGoal(piSessionId: string): Promise<SessionGoal | null> {
+  return Effect.runPromise(
+    Effect.gen(function* () {
+      const response = yield* fetchEffect(sessionGoalUrl(piSessionId), { cache: "no-store" });
+      if (!response.ok) return null;
+      const payload = yield* safeJsonEffect<unknown>(response);
+      return decodeSessionGoal(payload);
+    }).pipe(Effect.catch(() => Effect.succeed(null))),
+  );
+}
+
+export function updateSessionGoal(
+  piSessionId: string,
+  patch: SessionGoalPatch,
+): Promise<SessionGoal | null> {
+  return Effect.runPromise(
+    Effect.gen(function* () {
+      const response = yield* fetchEffect(sessionGoalUrl(piSessionId), {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(patch),
+      });
+      if (!response.ok) return yield* Effect.fail(new Error("Failed to update the goal."));
+      const payload = yield* safeJsonEffect<unknown>(response);
+      return decodeSessionGoal(payload);
+    }),
+  );
+}
+
+export function clearSessionGoal(piSessionId: string): Promise<void> {
+  return Effect.runPromise(
+    Effect.gen(function* () {
+      const response = yield* fetchEffect(sessionGoalUrl(piSessionId), { method: "DELETE" });
+      if (!response.ok) return yield* Effect.fail(new Error("Failed to clear the goal."));
+    }),
+  );
 }

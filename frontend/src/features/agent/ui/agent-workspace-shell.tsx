@@ -21,6 +21,7 @@ import { renderWorkspacePane } from "@/features/agent/ui/render-workspace-pane";
 import { useAgentWorkspaceNavigationEffects } from "@/features/agent/ui/agent-workspace-navigation";
 import { useMountSubscription } from "@/hooks/use-mount-subscription";
 import { cx } from "@/ui/utils";
+import { collectLeaves } from "@/features/agent/workspace/layout";
 
 const LazyAgentBrowserPanel = lazy(() =>
   import("@/features/agent/ui/agent-browser-panel").then(({ AgentBrowserPanel }) => ({
@@ -110,7 +111,10 @@ export function AgentWorkspaceShell({
   useQuickPanelExpandEffect(compact, panelMode === "thread");
   return (
     <div data-quick-panel-state={panelMode} className={workspaceClassName(panelMode)}>
-      <div className="flex min-h-0 flex-1">
+      <div
+        className="agent-workspace-panel-row relative flex min-h-0 flex-1"
+        data-multi-pane={collectLeaves(state.layout).length > 1 ? "true" : undefined}
+      >
         <section className="relative flex min-w-0 flex-1 flex-col">
           <WorkspaceTopBar
             error={state.error}

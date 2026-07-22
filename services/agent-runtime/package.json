@@ -12,7 +12,8 @@
     "bundle": "bun build src/server.ts --target=node --external fsevents --outfile=dist/standalone.mjs",
     "build": "tsc -p tsconfig.build.json && node scripts/postbuild.mjs",
     "dev": "bun --watch src/server.ts",
-    "start": "node dist/server.js"
+    "start": "node dist/server.js",
+    "test": "bun test"
   },
   "dependencies": {
     "@earendil-works/pi-ai": "0.80.8",

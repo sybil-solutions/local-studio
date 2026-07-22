@@ -31,7 +31,6 @@ import { AgentComposerStatusBar } from "./agent-composer-status-bar";
 import { AgentComposerTextArea } from "./agent-composer-textarea";
 import { AgentQueuePanel } from "./agent-queue-panel";
 import { cx } from "@/ui/utils";
-import { Folder } from "@/ui/icon-registry";
 
 export type AgentComposerFrameProps = {
   attachments: AgentComposerAttachment[];
@@ -63,6 +62,7 @@ export type AgentComposerFrameProps = {
   onEditQueued: (queueId: string, text: string) => void;
   onInitGit?: () => void;
   onOpenStatus: () => void;
+  onOpenDiff: () => void;
   onQueueExpandedChange: (expanded: boolean) => void;
   onRemoveAttachment: (id: string) => void;
   onRemoveLoadedContext: (kind: LoadedContextKind, id: string) => void;
@@ -75,7 +75,8 @@ export type AgentComposerFrameProps = {
   onToggleBrowserTool: () => void;
   onToggleCanvas: () => void;
   placeholder: string;
-  projectRow?: { label: string; onPick: () => void } | null;
+  drawer?: ReactNode;
+  showStatusBar: boolean;
   promptTemplates: ComposerPromptTemplateRef[];
   queueExpanded: boolean;
   queueItems: QueuedMessage[];
@@ -118,6 +119,7 @@ export function AgentComposerFrame({
   onEditQueued,
   onInitGit,
   onOpenStatus,
+  onOpenDiff,
   onQueueExpandedChange,
   onRemoveAttachment,
   onRemoveLoadedContext,
@@ -130,7 +132,8 @@ export function AgentComposerFrame({
   onToggleBrowserTool,
   onToggleCanvas,
   placeholder,
-  projectRow,
+  drawer,
+  showStatusBar,
   promptTemplates,
   queueExpanded,
   queueItems,
@@ -151,7 +154,7 @@ export function AgentComposerFrame({
           ? "bg-transparent p-[calc(var(--space-base)*2)]"
           : dense
             ? "bg-(--agent-bg) px-3 pb-1 pt-1.5"
-            : "bg-(--agent-bg) px-6 pb-2 pt-2.5",
+            : "bg-(--agent-bg) px-5 pb-2 pt-2",
       )}
     >
       <AgentQueuePanel
@@ -164,30 +167,18 @@ export function AgentComposerFrame({
         onSteer={onSteerQueued}
       />
       {banner ? (
-        // Codex compacting banner: flat, chat-size text at ~35% white, no pill.
-        <div className="mx-auto flex w-full max-w-[var(--composer-w)] items-center gap-2 pb-3 pl-1 text-[length:var(--codex-chat-font-size)] text-(--fg)/35">
+        <div className="mx-auto flex w-[90%] max-w-[calc(var(--composer-w)*0.9)] items-center gap-2 pb-3 pl-1 text-[length:var(--codex-chat-font-size)] text-(--fg)/35">
           <Spinner size="xs" />
           {banner.label}
         </div>
       ) : null}
-      {projectRow ? (
-        // Codex fresh-thread "Choose project" row: a quiet tone step between
-        // page and composer, chat-size text, folder glyph.
-        <button
-          type="button"
-          onClick={projectRow.onPick}
-          className="mx-auto -mb-4 flex w-full max-w-[var(--composer-w)] items-center gap-2.5 rounded-2xl bg-(--fg)/[0.03] px-4 pb-7 pt-3 text-left text-[length:var(--codex-chat-font-size)] text-(--fg)/85 transition-colors hover:bg-(--fg)/[0.05]"
-        >
-          <Folder className="h-4 w-4 shrink-0 text-(--fg)/60" strokeWidth={1.75} />
-          <span className="truncate">{projectRow.label}</span>
-        </button>
-      ) : null}
+      {drawer}
       <div
         onDragOver={onComposerDragOver}
         onDragLeave={onComposerDragLeave}
         onDrop={onComposerDrop}
         className={cx(
-          "relative mx-auto w-full max-w-[var(--composer-w)] overflow-visible rounded-[var(--composer-radius)] border border-(--composer-border) bg-(--composer) shadow-[var(--composer-shadow)] transition-colors",
+          "agent-composer-box relative z-10 mx-auto w-[90%] max-w-[calc(var(--composer-w)*0.9)] overflow-visible rounded-[var(--composer-radius)] border border-(--border) bg-(--composer) shadow-[var(--composer-elevation)] backdrop-blur-lg transition-colors [corner-shape:superellipse(1.5)]",
           composerDragActive && "outline outline-1 outline-(--link)/50",
         )}
       >
@@ -202,8 +193,6 @@ export function AgentComposerFrame({
           onRemove={onRemoveLoadedContext}
         />
         {mention ? (
-          // Codex: the mention/command menu floats as its own elevated panel
-          // above the composer card, not inside it.
           <div className="absolute inset-x-0 bottom-full z-20 mb-2 overflow-hidden rounded-[20px] bg-(--composer) py-1.5 shadow-[0_8px_32px_rgba(0,0,0,0.35)]">
             <AgentMentionPicker
               mention={mention}
@@ -242,11 +231,10 @@ export function AgentComposerFrame({
           onToggleCanvas={onToggleCanvas}
           onAbortTurn={onAbortTurn}
           onTranscript={onTranscript}
-          onOpenStatus={onOpenStatus}
           modelSelector={modelSelector}
         />
       </div>
-      {projectRow ? null : (
+      {showStatusBar ? (
         <AgentComposerStatusBar
           cwd={cwd}
           gitBranch={gitBranch}
@@ -255,6 +243,12 @@ export function AgentComposerFrame({
           currentContextTokens={currentContextTokens}
           contextWindow={contextWindow}
           onOpenStatus={onOpenStatus}
+          onOpenDiff={onOpenDiff}
+        />
+      ) : (
+        <div
+          aria-hidden="true"
+          className="mx-auto mt-2.5 h-4 w-[90%] max-w-[calc(var(--composer-w)*0.9)]"
         />
       )}
     </form>

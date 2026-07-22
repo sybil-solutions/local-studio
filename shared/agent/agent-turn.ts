@@ -11,6 +11,7 @@ import {
   type AgentImageInput,
 } from "./agent-image-input";
 import { sanitizeComposerPromptTemplates, sanitizeComposerSkills } from "./composer-refs";
+import { Schema } from "effect";
 
 export type ParseResult<T> = { ok: true; value: T } | { ok: false; error: string };
 
@@ -46,17 +47,32 @@ export function boolField(record: Record<string, unknown>, key: string): boolean
 }
 
 export type AgentBrowserBackend = "embedded" | "sitegeist";
+export type AgentToolAccess = "read_only" | "full";
 
 export type AgentTurnMode = "prompt" | "steer" | "follow_up";
 export type AgentStreamingBehavior = "steer" | "followUp";
+export const AGENT_THINKING_LEVELS = [
+  "off",
+  "minimal",
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+  "max",
+] as const;
+export const AgentThinkingLevelSchema = Schema.Literals(AGENT_THINKING_LEVELS);
+export type AgentThinkingLevel = (typeof AGENT_THINKING_LEVELS)[number];
+export const isAgentThinkingLevel = Schema.is(AgentThinkingLevelSchema);
 
 export type AgentTurnRequest = {
   sessionId: string;
   modelId: string;
+  thinkingLevel?: AgentThinkingLevel;
   message: string;
   images: AgentImageInput[];
   cwd?: string;
   piSessionId: string | null;
+  toolAccess: AgentToolAccess;
   browserToolEnabled: boolean;
   browserSessionId?: string;
   browserBackend?: AgentBrowserBackend;
@@ -101,6 +117,10 @@ export function parseAgentTurnRequest(input: unknown): ParseResult<AgentTurnRequ
   if (!message.ok) return message;
   const modelId = stringField(body, "modelId", true);
   if (!modelId.ok) return modelId;
+  const thinkingLevel = body.thinkingLevel;
+  if (thinkingLevel != null && !isAgentThinkingLevel(thinkingLevel)) {
+    return { ok: false, error: "thinkingLevel must be a supported reasoning level" };
+  }
   const sessionId = stringField(body, "sessionId");
   if (!sessionId.ok) return sessionId;
   const cwd = stringField(body, "cwd");
@@ -122,10 +142,12 @@ export function parseAgentTurnRequest(input: unknown): ParseResult<AgentTurnRequ
     value: {
       sessionId: sessionId.value ?? "default",
       modelId: modelId.value!,
+      ...(thinkingLevel ? { thinkingLevel } : {}),
       message: message.value!,
       images: images.value,
       cwd: cwd.value,
       piSessionId: piSessionId.value ?? null,
+      toolAccess: body.toolAccess === "full" ? "full" : "read_only",
       browserToolEnabled: boolField(body, "browserToolEnabled"),
       browserSessionId: browserSessionId.value,
       browserBackend,

@@ -12,6 +12,7 @@ import {
 } from "../automations-store";
 import { runAutomationNow } from "../automation-scheduler";
 import { clearGoal, readGoal, writeGoal, type GoalStatus } from "../goals-store";
+import { GOAL_STATUSES } from "../../../../shared/agent/session-goal";
 import { errorMessage, jsonError } from "./helpers";
 
 async function readJsonBody(request: Request): Promise<Record<string, unknown> | null> {
@@ -105,14 +106,6 @@ export async function handleGoalGet(request: Request): Promise<Response> {
   }
 }
 
-const GOAL_STATUS_VALUES: GoalStatus[] = [
-  "active",
-  "paused",
-  "blocked",
-  "complete",
-  "budget_limited",
-];
-
 export async function handleGoalPut(request: Request): Promise<Response> {
   const piSessionId = goalSessionId(request);
   if (!piSessionId) return jsonError("piSessionId is required.");
@@ -121,7 +114,7 @@ export async function handleGoalPut(request: Request): Promise<Response> {
   try {
     const goal = await writeGoal(piSessionId, {
       ...(typeof body.objective === "string" ? { objective: body.objective } : {}),
-      ...(GOAL_STATUS_VALUES.includes(body.status as GoalStatus)
+      ...(GOAL_STATUSES.includes(body.status as GoalStatus)
         ? { status: body.status as GoalStatus }
         : {}),
       ...(typeof body.turnBudget === "number" || body.turnBudget === null

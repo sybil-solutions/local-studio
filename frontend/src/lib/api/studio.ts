@@ -1,8 +1,13 @@
+import { Schema } from "effect";
+import {
+  ModelIndexSchema,
+  bundledModelIndexSource,
+  type ModelIndexResponse,
+} from "@local-studio/contracts/model-index";
 import type {
   ModelDownload,
   EngineJob,
   ModelInfo,
-  ModelRecommendation,
   StarterPreset,
   StorageInfo,
   StudioDiagnostics,
@@ -13,6 +18,14 @@ import type {
   RuntimeTarget,
 } from "../types";
 import { encodePathSegments, type ApiCore, type RequestOptions } from "./core";
+
+export type {
+  ModelIndexModel,
+  ModelIndexResponse,
+  ModelIndexTier,
+  ModelIndexVariant,
+  ModelIndexVariantFormat,
+} from "@local-studio/contracts/model-index";
 
 export interface StudioModelsRoot {
   path: string;
@@ -43,6 +56,11 @@ export interface RuntimeJobResponse {
   job: EngineJob;
 }
 
+const bundledModelIndex = Schema.decodeUnknownSync(ModelIndexSchema)(bundledModelIndexSource);
+
+const hasStatus = (error: unknown, status: number): boolean =>
+  error instanceof Error && (error as Error & { status?: number }).status === status;
+
 export function createStudioApi(core: ApiCore) {
   return {
     getModels: (): Promise<{
@@ -67,10 +85,14 @@ export function createStudioApi(core: ApiCore) {
 
     getStudioStorage: (): Promise<StorageInfo> => core.request("/studio/storage"),
 
-    getModelRecommendations: (): Promise<{
-      recommendations: ModelRecommendation[];
-      max_vram_gb: number;
-    }> => core.request("/studio/recommendations"),
+    getModelIndex: async (options?: RequestOptions): Promise<ModelIndexResponse> => {
+      try {
+        return await core.request("/studio/model-index", options);
+      } catch (error) {
+        if (!hasStatus(error, 404)) throw error;
+        return bundledModelIndex;
+      }
+    },
 
     getStarterPresets: (): Promise<{
       presets: StarterPreset[];

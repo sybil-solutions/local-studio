@@ -16,6 +16,7 @@ import {
 } from "@/features/agent/composer-context";
 import type { Session, SessionId, UpdateSession } from "@/features/agent/runtime/types";
 import type { BrowserBackend, ToolSelection } from "@/features/agent/tools/types";
+import type { AgentThinkingLevel, AgentToolAccess } from "@/features/agent/contracts";
 import * as api from "@/features/agent/runtime/api";
 import {
   runtimeCanHydrateCanonicalSession,
@@ -35,6 +36,8 @@ export type UseSessionEngineDeps = {
   tabs: Session[];
   activeTabId: SessionId;
   modelId: string;
+  thinkingLevel: AgentThinkingLevel;
+  toolAccess: AgentToolAccess;
   cwd: string;
   browserToolEnabled: boolean;
   browserBackend: BrowserBackend;
@@ -81,6 +84,8 @@ export function useSessionEngine(deps: UseSessionEngineDeps): SessionEngine {
     tabs,
     activeTabId,
     modelId,
+    thinkingLevel,
+    toolAccess,
     cwd,
     browserToolEnabled,
     browserBackend,
@@ -121,6 +126,8 @@ export function useSessionEngine(deps: UseSessionEngineDeps): SessionEngine {
               api.submitTurnCommand({
                 sessionId: runtime,
                 modelId,
+                thinkingLevel,
+                toolAccess,
                 message,
                 cwd: cwd.trim() || undefined,
                 piSessionId,
@@ -158,6 +165,8 @@ export function useSessionEngine(deps: UseSessionEngineDeps): SessionEngine {
       canvasEnabled,
       cwd,
       modelId,
+      thinkingLevel,
+      toolAccess,
       onPiSessionIdChange,
       updateSession,
     ],
@@ -173,6 +182,8 @@ export function useSessionEngine(deps: UseSessionEngineDeps): SessionEngine {
           canvasEnabled,
           cwd,
           modelId,
+          thinkingLevel,
+          toolAccess,
           onPiSessionIdChange,
           selectionFor: selectionForRef.current,
           tabsRef,
@@ -183,6 +194,8 @@ export function useSessionEngine(deps: UseSessionEngineDeps): SessionEngine {
     [
       activeTabId,
       modelId,
+      thinkingLevel,
+      toolAccess,
       cwd,
       browserToolEnabled,
       browserBackend,
@@ -200,6 +213,7 @@ export function useSessionEngine(deps: UseSessionEngineDeps): SessionEngine {
           // restart the session's runtime lives under a different server key,
           // and /abort has no piSessionId fallback lookup.
           const runtime = sessionRuntimeController().connectionKey(sessionId);
+          updateSession(sessionId, (session) => ({ ...session, status: "stopping" }));
           yield* Effect.tryPromise({
             try: () => api.abortSession(runtime),
             catch: (error) => error,
@@ -384,6 +398,8 @@ export function useSessionEngine(deps: UseSessionEngineDeps): SessionEngine {
               api.compactSession({
                 sessionId: session.id,
                 modelId,
+                thinkingLevel,
+                toolAccess,
                 cwd: cwd.trim() || undefined,
                 piSessionId: session.piSessionId,
                 browserToolEnabled,
@@ -419,7 +435,16 @@ export function useSessionEngine(deps: UseSessionEngineDeps): SessionEngine {
           ),
         ),
       ),
-    [browserToolEnabled, browserBackend, canvasEnabled, cwd, loadAndReplay, modelId, updateSession],
+    [
+      browserToolEnabled,
+      browserBackend,
+      canvasEnabled,
+      cwd,
+      loadAndReplay,
+      modelId,
+      thinkingLevel,
+      updateSession,
+    ],
   );
 
   const acceptsControl = useCallback(

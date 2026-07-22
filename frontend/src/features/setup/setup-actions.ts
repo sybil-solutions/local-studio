@@ -104,6 +104,7 @@ export function runRuntimeJobEffect(
 export function beginDownloadEffect(
   modelId: string,
   preset: StarterPreset | undefined,
+  allowPatterns: string[] | undefined,
   {
     startDownload,
     setStep,
@@ -117,10 +118,11 @@ export function beginDownloadEffect(
     setError: Dispatch<SetStateAction<string | null>>;
   },
 ) {
+  const patterns = preset?.allow_patterns?.length ? preset.allow_patterns : allowPatterns;
   return requestEffect(() =>
     startDownload({
       model_id: modelId,
-      ...(preset?.allow_patterns?.length ? { allow_patterns: preset.allow_patterns } : {}),
+      ...(patterns?.length ? { allow_patterns: patterns } : {}),
     }),
   ).pipe(
     Effect.map(() => setStep(3)),

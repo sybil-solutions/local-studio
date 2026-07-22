@@ -1,5 +1,13 @@
 import "./app-identity";
-import { app, dialog, globalShortcut, ipcMain, shell, type BrowserWindow } from "electron";
+import {
+  app,
+  clipboard,
+  dialog,
+  globalShortcut,
+  ipcMain,
+  shell,
+  type BrowserWindow,
+} from "electron";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import type { DesktopAppState } from "./types";
@@ -13,6 +21,10 @@ import { startFrontendServer, stopFrontendServer, type ServerHandle } from "./lo
 import { checkForUpdates, getUpdateState, initializeAutoUpdates } from "./logic/update-manager";
 import { addProject, listProjectsWithMeta, removeProject } from "./logic/projects-store";
 import { deployController } from "./logic/controller-deploy";
+import {
+  getKittylitterPairingJson,
+  normalizeKittylitterPairingJson,
+} from "./logic/kittylitter-pairing";
 import {
   hideQuickPanel,
   resetQuickPanel,
@@ -218,6 +230,16 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle("desktop:get-update-status", async () => getUpdateState());
   ipcMain.handle("desktop:check-for-updates", async () => checkForUpdates(true));
+  ipcMain.handle("desktop:get-kittylitter-pairing-json", async () => getKittylitterPairingJson());
+  ipcMain.handle("desktop:copy-kittylitter-pairing-json", async (_, pairingJson: unknown) => {
+    try {
+      if (typeof pairingJson !== "string") throw new Error("invalid pairing payload");
+      clipboard.writeText(normalizeKittylitterPairingJson(pairingJson));
+      return { ok: true };
+    } catch {
+      return { ok: false, error: "Connection JSON could not be copied." };
+    }
+  });
 
   ipcMain.handle("desktop:open-directory", async () => {
     const owner = mainWindow ?? undefined;

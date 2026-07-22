@@ -536,10 +536,8 @@
   --separator: var(--color-border-light);
   --hover: var(--color-hover);
   --active: var(--color-selected);
-  /* Codex composer surface, exact: gray-750 #282828 over the #181818 page,
-     flat (no outline, no ring). User bubbles share the same elevated tone. */
-  --composer: var(--gray-750);
-  --composer-footer: var(--gray-750);
+  --composer: var(--color-sidebar);
+  --composer-footer: var(--color-sidebar);
   --composer-border: transparent;
   --composer-placeholder: color-mix(in srgb, var(--fg) 32%, transparent);
   --bubble: var(--gray-750);
@@ -573,8 +571,8 @@
   --separator: var(--color-border-light);
   --hover: var(--color-hover);
   --active: var(--color-selected);
-  --composer: var(--gray-75);
-  --composer-footer: var(--gray-75);
+  --composer: var(--color-sidebar);
+  --composer-footer: var(--color-sidebar);
   /* Light composer: Codex uses the same flat elevated-gray treatment. */
   --composer-border: transparent;
   --composer-placeholder: color-mix(in srgb, var(--fg) 40%, transparent);
@@ -588,21 +586,11 @@
   --ok: var(--color-success);
   --warn: var(--color-warning);
   --link: var(--blue-400);
-
-  --composer-shadow: 0 12px 36px rgba(0, 0, 0, 0.06);
-}
-
-.theme-zai-dark,
-.dark,
-:root[data-theme="zai-dark"],
-:root[data-theme="omlx-dark"] {
-  /* Codex dark composer is a flat tone step — no ring, no drop shadow. */
-  --composer-shadow: none;
 }
 
 @media (min-width: 1024px) {
   :root {
-    --composer-w: clamp(25vw, 48rem, 52vw);
+    --composer-w: clamp(28rem, 42rem, 48vw);
     --thread-w: 900px;
   }
 }
@@ -621,12 +609,16 @@
   --h-toolbar: 46px;
   --h-toolbar-sm: 36px;
   --h-toolbar-pane: 40px;
-  --composer-w: clamp(25vw, 48rem, 52vw);
+  --composer-w: clamp(28rem, 42rem, 48vw);
   --thread-w: 900px;
-  /* Codex: --radius-4xl (24px) × corner-radius-scale 1.25 ≈ 28px superellipse. */
-  --composer-radius: 28px;
+  --composer-radius: 25px;
+  --composer-radius-inner: 20px;
   --composer-radius-single: 28px;
-  --composer-shadow: 0 12px 36px rgba(0, 0, 0, 0.06);
+  --composer-elevation: 0 8px 24px rgba(0, 0, 0, 0.11);
+  --composer-elevation-inner: 0 8px 24px rgba(0, 0, 0, 0.08);
+  --qr-surface: #ffffff;
+  --qr-shadow: 0 16px 45px -28px rgba(0, 0, 0, 0.8);
+  --qr-placeholder: rgba(0, 0, 0, 0.55);
 
   /* Typography */
   --text-nav: var(--fs-base);

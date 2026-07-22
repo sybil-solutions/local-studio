@@ -17,6 +17,32 @@ export type LoggedPiEvent = {
   timestamp: string;
 };
 
+export type PiPromptOptions = {
+  streamingBehavior?: "steer" | "followUp";
+  images?: AgentImageInput[];
+  expandPromptTemplates?: boolean;
+  source?: "interactive" | "rpc" | "extension";
+  preflightResult?: (success: boolean) => void;
+  restartOnContinuationError?: boolean;
+};
+
+export type PiDurablePromptMarker = {
+  dispatchId: string;
+  messageId: string;
+  contentHash: string;
+};
+
+export type PiDurablePromptBoundary = {
+  dispatchId: string;
+  markerEntryId: string;
+  userEntryId: string;
+  piSessionId: string;
+  sessionFile: string;
+  cwd: string;
+  modelId: string;
+  acceptedAt: string;
+};
+
 // Re-exported from the canonical Effect-schema-derived type in runtime-schema.ts
 // so all context-usage shapes resolve to one source of truth.
 export type { RuntimeContextUsage as PiContextUsage } from "../../../shared/agent/context-usage";
@@ -43,8 +69,14 @@ export interface PiAgentSession {
   prompt(
     message: string,
     onEvent: (event: PiEvent, seq: number) => void,
-    options?: { streamingBehavior?: "steer" | "followUp"; images?: AgentImageInput[] },
+    options?: PiPromptOptions,
   ): Promise<void>;
+  promptDurably(
+    message: string,
+    onEvent: (event: PiEvent, seq: number) => void,
+    marker: PiDurablePromptMarker,
+    options?: PiPromptOptions,
+  ): Promise<PiDurablePromptBoundary>;
   steer(message: string, images?: AgentImageInput[]): Promise<void>;
   followUp(message: string, images?: AgentImageInput[]): Promise<void>;
   abort(): Promise<void>;
@@ -54,6 +86,10 @@ export interface PiAgentSession {
   getEventsAfter(seq: number): LoggedPiEvent[];
   onLoggedEvent(listener: (event: LoggedPiEvent) => void): () => void;
   adoptPiSessionId(piSessionId: string | null | undefined): void;
+  respondExtensionUi(
+    requestId: string,
+    response: { value?: string; confirmed?: boolean; cancelled?: boolean },
+  ): boolean;
 }
 
 export type { RuntimeStartOptions };

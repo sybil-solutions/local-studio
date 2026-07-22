@@ -1,0 +1,8 @@
+{
+  "name": "@local-studio/shared",
+  "version": "0.0.0",
+  "private": true,
+  "dependencies": {
+    "effect": "4.0.0-beta.90"
+  }
+}

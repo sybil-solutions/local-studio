@@ -14,10 +14,10 @@ import { DEFAULT_RECIPE } from "./default-recipe";
 import type { RecipesTableProps } from "./types";
 import { useRecipesDerived } from "./use-recipes-derived";
 
-export type RecipesContentTab = "get" | "serves" | "downloads";
+export type RecipesContentTab = "picks" | "get" | "serves" | "downloads";
 
 const requestedTab = (value: string | null): RecipesContentTab =>
-  value === "serves" || value === "downloads" ? value : "get";
+  value === "get" || value === "serves" || value === "downloads" ? value : "picks";
 
 export function useRecipesContentModel() {
   const searchParams = useSearchParams();

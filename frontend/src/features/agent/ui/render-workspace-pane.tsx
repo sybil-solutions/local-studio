@@ -177,6 +177,7 @@ const WorkspacePane = memo(function WorkspacePane({
       modelId={view.modelId}
       modelName={view.model?.name ?? view.modelId ?? null}
       modelSupportsVision={view.model?.vision ?? false}
+      modelThinkingLevels={view.model?.thinkingLevels ?? ["off"]}
       modelsLoading={modelsLoading}
       contextWindow={view.model?.contextWindow ?? 0}
       cwd={view.cwd}
@@ -184,7 +185,7 @@ const WorkspacePane = memo(function WorkspacePane({
       gitBranch={view.gitBranch}
       gitSummary={view.gitSummary}
       onInitGit={handles.initGitForActiveProject}
-      modelSelector={
+      modelSelector={(reasoning) => (
         <AgentModelPicker
           models={models}
           selectedModel={view.modelId}
@@ -192,8 +193,9 @@ const WorkspacePane = memo(function WorkspacePane({
           onSelect={(modelId) => handles.selectPaneModel(view.paneId, modelId)}
           onSetDefault={handles.setDefaultModel}
           loading={modelsLoading}
+          {...reasoning}
         />
-      }
+      )}
       browserToolEnabled={tools.browser.enabled}
       browserBackend={tools.browser.backend}
       onToggleBrowserBackend={tools.toggleBrowserBackend}

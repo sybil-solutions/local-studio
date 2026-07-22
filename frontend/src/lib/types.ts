@@ -115,17 +115,6 @@ export interface LaunchProgressData extends LaunchProgress {
   message: string;
 }
 
-// --- Model discovery + recommendation ---
-
-export interface ModelRecommendation {
-  id: string;
-  name: string;
-  size_gb: number | null;
-  min_vram_gb: number | null;
-  description: string;
-  tags: string[];
-}
-
 export interface StarterPreset {
   id: string;
   name: string;

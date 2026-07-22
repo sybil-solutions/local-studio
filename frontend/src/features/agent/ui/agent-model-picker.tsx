@@ -8,9 +8,12 @@ import {
   type MouseEvent,
   type PointerEvent,
 } from "react";
-import { Check, ChevronDown, Pin } from "@/ui/icon-registry";
+import Link from "next/link";
+import { Check, ChevronDown, ChevronLeft, ChevronRight, Pin } from "@/ui/icon-registry";
+import { AGENT_THINKING_LEVELS, type AgentThinkingLevel } from "@/features/agent/contracts";
 import type { AgentModel } from "@/features/agent/workspace/types";
 import { cx } from "@/ui/utils";
+import { splitVisibleAgentModels } from "./model-visibility";
 
 type AgentModelPickerProps = {
   models: AgentModel[];
@@ -19,9 +22,24 @@ type AgentModelPickerProps = {
   onSelect: (id: string) => void;
   onSetDefault?: (id: string) => void;
   loading: boolean;
+  reasoningLevel?: AgentThinkingLevel;
+  reasoningLevels?: readonly AgentThinkingLevel[];
+  reasoningDisabled?: boolean;
+  onSelectReasoning?: (level: AgentThinkingLevel) => void;
 };
 
 type ModelGroup = { key: string; name: string; models: AgentModel[] };
+type PickerView = "root" | "models" | "reasoning";
+
+const REASONING_LABELS: Record<AgentThinkingLevel, string> = {
+  off: "Off",
+  minimal: "Minimal",
+  low: "Low",
+  medium: "Medium",
+  high: "High",
+  xhigh: "XHigh",
+  max: "Max",
+};
 
 export function AgentModelPicker({
   models,
@@ -30,19 +48,40 @@ export function AgentModelPicker({
   onSelect,
   onSetDefault,
   loading,
+  reasoningLevel,
+  reasoningLevels = [],
+  reasoningDisabled = false,
+  onSelectReasoning,
 }: AgentModelPickerProps) {
   const [open, setOpen] = useState(false);
-  const [activeGroupKey, setActiveGroupKey] = useState<string | null>(null);
+  const [view, setView] = useState<PickerView>("root");
+  const [showOtherModels, setShowOtherModels] = useState(false);
   const active = models.find((model) => model.id === selectedModel) ?? null;
-  const groups = useMemo(() => groupModelsByController(models), [models]);
-  const selectedGroupKey = active ? controllerGroupKey(active) : groups[0]?.key;
-  const activeGroup = groups.find((group) => group.key === activeGroupKey) ?? null;
-  const disabled = loading || models.length === 0;
-  const triggerLabel = modelTriggerLabel(active, selectedModel, loading, models.length);
+  const visible = useMemo(
+    () => splitVisibleAgentModels(models, showOtherModels),
+    [models, showOtherModels],
+  );
+  const groups = useMemo(
+    () => groupModelsByController(visible.visibleModels),
+    [visible.visibleModels],
+  );
+  const disabled = loading;
+  const modelLabel = modelTriggerLabel(
+    active,
+    selectedModel,
+    loading,
+    visible.controllerModels.length,
+  );
+  const supportsReasoning = Boolean(reasoningLevel && onSelectReasoning);
+  const effectiveReasoning = reasoningLevels.includes(reasoningLevel ?? "off")
+    ? (reasoningLevel ?? "off")
+    : (reasoningLevels.at(-1) ?? "off");
+  const reasoningLabel = REASONING_LABELS[effectiveReasoning];
+  const triggerLabel = supportsReasoning ? `${modelLabel} ${reasoningLabel}` : modelLabel;
   const selectedModelNotRunning = !loading && Boolean(active && active.active === false);
   const close = useCallback(() => {
     setOpen(false);
-    setActiveGroupKey(null);
+    setView("root");
   }, []);
   const select = useCallback(
     (modelId: string) => {
@@ -54,7 +93,7 @@ export function AgentModelPicker({
 
   return (
     <div
-      className="relative shrink-0"
+      className="relative min-w-0 shrink"
       onBlur={(event) => {
         const nextTarget = event.relatedTarget;
         if (nextTarget instanceof Node && event.currentTarget.contains(nextTarget)) return;
@@ -72,53 +111,267 @@ export function AgentModelPicker({
         onToggle={() => {
           if (disabled) return;
           if (open) close();
-          else setOpen(true);
+          else {
+            setView(supportsReasoning ? "root" : "models");
+            setOpen(true);
+          }
         }}
       />
       {open ? (
         <div
-          className="absolute bottom-full right-0 z-10 mb-1.5 min-w-48 rounded-2xl border border-(--color-popover-border) bg-(--color-popover) p-1.5 shadow-[0px_16px_32px_-8px_rgba(0,0,0,0.3),0px_0px_0px_0.5px_rgba(0,0,0,0.1)]"
+          className="absolute bottom-full right-0 z-[300] mb-1.5 w-80 max-w-[calc(100vw-2rem)] overflow-hidden rounded-2xl border border-(--color-popover-border) bg-(--color-popover) p-1.5 shadow-[0px_16px_32px_-8px_rgba(0,0,0,0.3),0px_0px_0px_0.5px_rgba(0,0,0,0.1)]"
           role="menu"
-          aria-label="Models"
-          onKeyDown={(event) => handleMenuKeyDown(event, close)}
+          aria-label="Model and reasoning"
+          onKeyDown={(event) => handleMenuKeyDown(event, view, setView, close)}
         >
-          {groups.length > 1 ? (
-            groups.map((group) => (
-              <ModelGroupOption
-                key={group.key}
-                group={group}
-                active={group.key === activeGroupKey}
-                selected={group.key === selectedGroupKey}
-                onActivate={() => setActiveGroupKey(group.key)}
-              />
-            ))
-          ) : (
-            <ModelOptions
-              models={groups[0]?.models ?? []}
+          {view === "root" ? (
+            <PickerRoot
+              modelLabel={modelLabel}
+              reasoningLabel={reasoningLabel}
+              reasoningFixed={reasoningLevels.length <= 1}
+              onOpenModels={() => setView("models")}
+              onOpenReasoning={() => setView("reasoning")}
+            />
+          ) : null}
+          {view === "models" ? (
+            <ModelList
+              groups={groups}
               selectedModel={selectedModel}
               defaultModel={defaultModel}
+              showOtherModels={showOtherModels}
+              otherModelCount={visible.otherModels.length}
+              onBack={supportsReasoning ? () => setView("root") : undefined}
               onSelect={select}
               onSetDefault={onSetDefault}
+              onToggleOtherModels={() => setShowOtherModels((current) => !current)}
+              onClose={close}
             />
-          )}
-          {groups.length > 1 && activeGroup ? (
-            <div
-              className="absolute bottom-0 right-[calc(100%+4px)] max-h-72 w-max min-w-52 max-w-80 overflow-y-auto rounded-2xl border border-(--color-popover-border) bg-(--color-popover) p-1.5 shadow-[0px_16px_32px_-8px_rgba(0,0,0,0.3),0px_0px_0px_0.5px_rgba(0,0,0,0.1)]"
-              role="menu"
-              aria-label={activeGroup.name}
-              onMouseEnter={() => setActiveGroupKey(activeGroup.key)}
-            >
-              <ModelOptions
-                models={activeGroup.models}
-                selectedModel={selectedModel}
-                defaultModel={defaultModel}
-                onSelect={select}
-                onSetDefault={onSetDefault}
-              />
-            </div>
+          ) : null}
+          {view === "reasoning" && onSelectReasoning ? (
+            <ReasoningList
+              value={effectiveReasoning}
+              levels={reasoningLevels}
+              disabled={reasoningDisabled}
+              onBack={() => setView("root")}
+              onSelect={(level) => {
+                onSelectReasoning(level);
+                close();
+              }}
+            />
           ) : null}
         </div>
       ) : null}
+    </div>
+  );
+}
+
+function PickerRoot({
+  modelLabel,
+  reasoningLabel,
+  reasoningFixed,
+  onOpenModels,
+  onOpenReasoning,
+}: {
+  modelLabel: string;
+  reasoningLabel: string;
+  reasoningFixed: boolean;
+  onOpenModels: () => void;
+  onOpenReasoning: () => void;
+}) {
+  return (
+    <div className="grid gap-0.5">
+      <PickerRootRow label="Model" value={modelLabel} onClick={onOpenModels} />
+      <PickerRootRow
+        label="Reasoning"
+        value={reasoningLabel}
+        disabled={reasoningFixed}
+        onClick={onOpenReasoning}
+      />
+    </div>
+  );
+}
+
+function PickerRootRow({
+  label,
+  value,
+  disabled = false,
+  onClick,
+}: {
+  label: string;
+  value: string;
+  disabled?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      role="menuitem"
+      disabled={disabled}
+      onClick={onClick}
+      className="flex h-10 min-w-0 items-center gap-3 rounded-[10px] px-2.5 text-[length:var(--fs-base)] text-(--fg) transition-colors hover:bg-(--hover) disabled:cursor-default disabled:opacity-55"
+    >
+      <span className="w-20 shrink-0 text-left font-medium">{label}</span>
+      <span className="min-w-0 flex-1 truncate text-right text-(--fg)/60">{value}</span>
+      {disabled ? (
+        <span className="w-3.5" />
+      ) : (
+        <ChevronRight className="h-3.5 w-3.5 text-(--dim)" />
+      )}
+    </button>
+  );
+}
+
+function PickerHeader({ title, onBack }: { title: string; onBack?: () => void }) {
+  return (
+    <div className="flex h-9 items-center gap-1 border-b border-(--border) px-1 pb-1">
+      {onBack ? (
+        <button
+          type="button"
+          onClick={onBack}
+          className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-(--dim) hover:bg-(--hover) hover:text-(--fg)"
+          aria-label="Back"
+        >
+          <ChevronLeft className="h-4 w-4" />
+        </button>
+      ) : null}
+      <span className="px-1 text-[length:var(--fs-sm)] font-medium text-(--dim)">{title}</span>
+    </div>
+  );
+}
+
+function ModelList({
+  groups,
+  selectedModel,
+  defaultModel,
+  showOtherModels,
+  otherModelCount,
+  onBack,
+  onSelect,
+  onSetDefault,
+  onToggleOtherModels,
+  onClose,
+}: {
+  groups: ModelGroup[];
+  selectedModel: string;
+  defaultModel?: string;
+  showOtherModels: boolean;
+  otherModelCount: number;
+  onBack?: () => void;
+  onSelect: (modelId: string) => void;
+  onSetDefault?: (modelId: string) => void;
+  onToggleOtherModels: () => void;
+  onClose: () => void;
+}) {
+  return (
+    <div>
+      <PickerHeader title="Model" onBack={onBack} />
+      {otherModelCount > 0 ? (
+        <button
+          type="button"
+          role="menuitemcheckbox"
+          aria-checked={showOtherModels}
+          onClick={onToggleOtherModels}
+          className="mt-1 flex min-h-10 w-full items-center gap-3 rounded-[10px] px-2.5 text-left text-[length:var(--fs-base)] text-(--fg) transition-colors hover:bg-(--hover)"
+        >
+          <span className="min-w-0 flex-1">
+            <span className="block font-medium">Other models</span>
+            <span className="block truncate text-[length:var(--fs-xs)] text-(--dim)">
+              Pi and connected providers · {otherModelCount}
+            </span>
+          </span>
+          <span
+            aria-hidden="true"
+            className={cx(
+              "relative h-5 w-9 shrink-0 rounded-full border border-(--border) bg-(--color-input) transition-colors",
+              showOtherModels && "border-(--accent) bg-(--accent)",
+            )}
+          >
+            <span
+              className={cx(
+                "absolute left-0.5 top-0.5 h-3.5 w-3.5 rounded-full bg-(--fg) transition-transform",
+                showOtherModels && "translate-x-4",
+              )}
+            />
+          </span>
+        </button>
+      ) : null}
+      <div className="max-h-[min(24rem,55vh)] overflow-y-auto pt-1">
+        {groups.length === 0 ? (
+          <div className="w-64 px-2.5 py-2 text-[length:var(--fs-sm)] text-(--dim)">
+            <p>
+              {otherModelCount > 0
+                ? "No controller models are available."
+                : "No chat models are available."}
+            </p>
+            <Link
+              href="/models"
+              onClick={onClose}
+              className="mt-2 inline-flex h-7 items-center rounded-lg bg-(--active) px-2.5 text-(--fg) hover:bg-(--hover)"
+            >
+              Open Models
+            </Link>
+          </div>
+        ) : (
+          groups.map((group) => (
+            <div key={group.key} className="not-first:mt-1.5">
+              {groups.length > 1 ? (
+                <div className="flex h-7 items-center justify-between px-2.5 text-[length:var(--fs-xs)] font-medium text-(--dim)">
+                  <span className="truncate">{group.name}</span>
+                  <span className="font-mono text-[length:var(--fs-2xs)]">
+                    {group.models.length}
+                  </span>
+                </div>
+              ) : null}
+              <ModelOptions
+                models={group.models}
+                selectedModel={selectedModel}
+                defaultModel={defaultModel}
+                onSelect={onSelect}
+                onSetDefault={onSetDefault}
+              />
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ReasoningList({
+  value,
+  levels,
+  disabled,
+  onBack,
+  onSelect,
+}: {
+  value: AgentThinkingLevel;
+  levels: readonly AgentThinkingLevel[];
+  disabled: boolean;
+  onBack: () => void;
+  onSelect: (level: AgentThinkingLevel) => void;
+}) {
+  return (
+    <div>
+      <PickerHeader title="Reasoning" onBack={onBack} />
+      <div className="grid gap-0.5 pt-1">
+        {AGENT_THINKING_LEVELS.filter((level) => levels.includes(level)).map((level) => (
+          <button
+            key={level}
+            type="button"
+            role="menuitemradio"
+            aria-checked={level === value}
+            disabled={disabled}
+            onClick={() => onSelect(level)}
+            className={cx(
+              "flex h-9 w-full items-center gap-2 rounded-[10px] px-2.5 text-left text-[length:var(--fs-base)] text-(--fg) transition-colors hover:bg-(--hover) disabled:opacity-45",
+              level === value && "bg-(--color-input)",
+            )}
+          >
+            <span className="flex-1">{REASONING_LABELS[level]}</span>
+            {level === value ? <Check className="h-3.5 w-3.5" /> : null}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }
@@ -148,7 +401,7 @@ function ModelPickerTrigger({
       className={cx(
         // Codex: the model control sits at the shared chat size (16px) with
         // primary-strength text; only the chevron reads dim.
-        "group/model inline-flex !h-[30px] !min-h-[30px] !min-w-0 items-center justify-between gap-1 rounded-lg bg-transparent pl-2 pr-1.5 text-[length:var(--codex-chat-font-size)] whitespace-nowrap text-(--fg)/85 transition-colors hover:bg-(--hover) hover:text-(--fg) active:translate-y-px disabled:opacity-60",
+        "group/model inline-flex !h-[30px] !min-h-[30px] !min-w-0 max-w-full items-center justify-between gap-1 rounded-lg bg-transparent pl-2 pr-1.5 text-[length:var(--fs-base)] whitespace-nowrap text-(--fg)/85 transition-colors hover:bg-(--hover) hover:text-(--fg) active:translate-y-px disabled:opacity-60",
         open && "bg-(--hover) text-(--fg)",
       )}
       title={notRunning ? `${title} is not running — launch it or pick a running model` : title}
@@ -156,41 +409,9 @@ function ModelPickerTrigger({
       aria-expanded={open}
       aria-haspopup="menu"
     >
-      <span className="max-w-[180px] truncate text-left">{label}</span>
+      <span className="min-w-0 max-w-[180px] truncate text-left">{label}</span>
       {notRunning ? <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-(--warn)" /> : null}
       <ChevronDown className="pointer-events-none h-3.5 w-3.5 shrink-0 text-(--dim)" />
-    </button>
-  );
-}
-
-function ModelGroupOption({
-  group,
-  active,
-  selected,
-  onActivate,
-}: {
-  group: ModelGroup;
-  active: boolean;
-  selected: boolean;
-  onActivate: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      role="menuitem"
-      className={cx(
-        "flex min-h-8 w-full min-w-0 items-center gap-2 rounded-[10px] px-2.5 text-left text-[length:var(--fs-base)] text-(--fg) transition-colors hover:bg-(--hover) focus-visible:bg-(--hover) focus-visible:outline-none active:translate-y-px",
-        active && "bg-(--hover)",
-      )}
-      onFocus={onActivate}
-      onClick={onActivate}
-    >
-      <span className="min-w-0 flex-1 truncate">{group.name}</span>
-      <span className="font-mono text-[length:var(--fs-2xs)] text-(--dim)">
-        {group.models.length}
-      </span>
-      {selected ? <Check className="h-3.5 w-3.5 shrink-0 text-(--dim)" /> : null}
-      <ChevronDown className="h-3.5 w-3.5 shrink-0 -rotate-90 text-(--dim)" />
     </button>
   );
 }
@@ -271,10 +492,16 @@ function ModelOption({
   );
 }
 
-function handleMenuKeyDown(event: ReactKeyboardEvent<HTMLDivElement>, close: () => void) {
+function handleMenuKeyDown(
+  event: ReactKeyboardEvent<HTMLDivElement>,
+  view: PickerView,
+  setView: (view: PickerView) => void,
+  close: () => void,
+) {
   if (event.key !== "Escape") return;
   event.preventDefault();
-  close();
+  if (view === "root" || view === "models") close();
+  else setView("root");
 }
 
 function modelTriggerLabel(

@@ -1,7 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { Compass, Download, HardDrive } from "@/ui/icon-registry";
+import { Compass, Download, HardDrive, Sparkles } from "@/ui/icon-registry";
 import type { ModelDownload, ModelInfo, RecipeWithStatus, RuntimeTarget } from "@/lib/types";
 import type { RecipeEditor } from "@/features/recipes/recipe-editor";
 import { RefreshButton, TabbedPage, Tabs } from "@/ui";
@@ -12,6 +12,7 @@ import { RecipesTab } from "./recipes-tab";
 import { RecipeModal } from "../recipe-modal/recipe-modal";
 import { ExploreTab } from "./explore-tab";
 import { DownloadsTab } from "./downloads-tab";
+import { PicksTab } from "./picks-tab";
 
 type Props = {
   embedded?: boolean;
@@ -46,12 +47,17 @@ type Props = {
 };
 
 const MODEL_TABS: Array<{ id: RecipesContentTab; label: string; icon: ReactNode }> = [
+  { id: "picks", label: "Picks", icon: <Sparkles className="h-3.5 w-3.5" /> },
   { id: "get", label: "Get", icon: <Compass className="h-3.5 w-3.5" /> },
   { id: "serves", label: "Serves", icon: <HardDrive className="h-3.5 w-3.5" /> },
   { id: "downloads", label: "Downloads", icon: <Download className="h-3.5 w-3.5" /> },
 ];
 
 const TAB_HEADINGS: Record<RecipesContentTab, { title: string; description: string }> = {
+  picks: {
+    title: "Picks",
+    description: "Curated model catalog grouped by hardware tier, with per-variant downloads.",
+  },
   get: {
     title: "Get",
     description: "Find the right model, check hardware fit, and download its weights.",
@@ -120,6 +126,8 @@ export function RecipesContentView(props: Props) {
             onNewRecipe={onNewRecipe}
             table={table}
           />
+        ) : tab === "picks" ? (
+          <PicksTab />
         ) : tab === "get" ? (
           <ExploreTab />
         ) : (

@@ -5,7 +5,9 @@ import { Effect } from "effect";
 import { createAgentSessionRuntime } from "@earendil-works/pi-coding-agent";
 import {
   controlTargetHasActiveTurn,
+  isAgentThinkingLevel,
   parseAgentTurnRequest,
+  type AgentThinkingLevel,
   type AgentTurnCommandResult,
   type AgentTurnRequest,
 } from "../../../../shared/agent/agent-turn";
@@ -22,7 +24,7 @@ import {
   type ComposerSkillRef,
 } from "../../../../shared/agent/composer-refs";
 import { piResourceDiagnostics, piRuntimeManager } from "../pi-runtime";
-import { isAgentEndEvent } from "../pi-runtime-state";
+import { isAgentSettledEvent } from "../pi-runtime-state";
 import type { LoggedPiEvent, PiAgentSession, PiAgentStatus } from "../pi-runtime-types";
 import { listSessions } from "../sessions-store";
 import { errorMessage, jsonError } from "./helpers";
@@ -94,6 +96,8 @@ function ensurePromptRuntimeEffect(
   return Effect.tryPromise({
     try: () =>
       resolved.session.ensureStarted(turn.modelId, turn.cwd, resolved.effectivePiSessionId, {
+        thinkingLevel: turn.thinkingLevel,
+        toolAccess: turn.toolAccess,
         browserToolEnabled: turn.browserToolEnabled,
         browserSessionId: turn.browserSessionId,
         browserBackend: turn.browserBackend,
@@ -258,11 +262,36 @@ export async function handleAgentAbort(request: Request): Promise<Response> {
   return Response.json({ ok: true });
 }
 
+export async function handleExtensionUiResponse(request: Request): Promise<Response> {
+  const body = (await request.json().catch(() => null)) as
+    | {
+        sessionId?: unknown;
+        requestId?: unknown;
+        value?: unknown;
+        confirmed?: unknown;
+        cancelled?: unknown;
+      }
+    | null;
+  const sessionId = typeof body?.sessionId === "string" ? body.sessionId.trim() : "";
+  const requestId = typeof body?.requestId === "string" ? body.requestId.trim() : "";
+  if (!sessionId || !requestId) return jsonError("sessionId and requestId are required");
+  const resolved = piRuntimeManager.findSessionForLookup(sessionId);
+  if (!resolved) return jsonError("Runtime session not found", 404);
+  const accepted = resolved.session.respondExtensionUi(requestId, {
+    ...(typeof body?.value === "string" ? { value: body.value.slice(0, 32_000) } : {}),
+    ...(typeof body?.confirmed === "boolean" ? { confirmed: body.confirmed } : {}),
+    cancelled: body?.cancelled === true,
+  });
+  return accepted ? Response.json({ ok: true }) : jsonError("Extension request is no longer active", 409);
+}
+
 // ─── POST /api/agent/compact ──────────────────────────────────────────────
 
 type CompactRequest = {
   sessionId?: string;
   modelId?: string;
+  thinkingLevel?: AgentThinkingLevel;
+  toolAccess?: "read_only" | "full";
   cwd?: string;
   piSessionId?: string | null;
   customInstructions?: string;
@@ -302,6 +331,9 @@ function compactRouteEffect(request: Request): Effect.Effect<Response, unknown> 
     const cwd = body.cwd?.trim() || undefined;
     const piSessionId = body.piSessionId?.trim() || null;
     if (!modelId) return jsonError("modelId is required");
+    if (body.thinkingLevel != null && !isAgentThinkingLevel(body.thinkingLevel)) {
+      return jsonError("thinkingLevel must be a supported reasoning level");
+    }
 
     return yield* Effect.gen(function* () {
       const session = piRuntimeManager.getSession(sessionId);
@@ -310,6 +342,8 @@ function compactRouteEffect(request: Request): Effect.Effect<Response, unknown> 
       yield* Effect.tryPromise({
         try: () =>
           session.ensureStarted(modelId, cwd, piSessionId, {
+            thinkingLevel: body.thinkingLevel,
+            toolAccess: body.toolAccess === "full" ? "full" : "read_only",
             browserToolEnabled: body.browserToolEnabled === true,
             browserSessionId:
               typeof body.browserSessionId === "string" ? body.browserSessionId.trim() : undefined,
@@ -372,15 +406,19 @@ function parseSeq(value: string | null): number {
   return Number.isFinite(parsed) && parsed > 0 ? Math.trunc(parsed) : 0;
 }
 
-function encode(payload: unknown): Uint8Array {
-  return new TextEncoder().encode(`data: ${JSON.stringify(payload)}\n\n`);
+function encode(payload: unknown, id?: number): Uint8Array {
+  const prefix = id === undefined ? "" : `id: ${id}\n`;
+  return new TextEncoder().encode(`${prefix}data: ${JSON.stringify(payload)}\n\n`);
 }
 
 export function handleRuntimeEvents(request: Request): Response {
   const searchParams = new URL(request.url).searchParams;
   const sessionId = searchParams.get("sessionId")?.trim() || "default";
   const piSessionId = searchParams.get("piSessionId")?.trim() || null;
-  const requestedAfter = parseSeq(searchParams.get("after"));
+  const requestedAfter = Math.max(
+    parseSeq(searchParams.get("after")),
+    parseSeq(request.headers.get("last-event-id")),
+  );
   const resolved = piRuntimeManager.findSessionForLookup(sessionId, piSessionId);
   if (!resolved) {
     return Response.json({ error: "Runtime session not found" }, { status: 404 });
@@ -396,10 +434,10 @@ export function handleRuntimeEvents(request: Request): Response {
       const replayQueue: LoggedPiEvent[] = [];
       const sentSeqs = new Set<number>();
       let after = replayAfterCursor(requestedAfter, session.status.eventSeq);
-      const safeSend = (payload: unknown) => {
+      const safeSend = (payload: unknown, id?: number) => {
         if (closed) return;
         try {
-          controller.enqueue(encode(payload));
+          controller.enqueue(encode(payload, id));
         } catch {
           close();
         }
@@ -420,8 +458,8 @@ export function handleRuntimeEvents(request: Request): Response {
         after = replayAfterCursor(after, session.status.eventSeq);
         if (logged.seq <= after || sentSeqs.has(logged.seq)) return;
         sentSeqs.add(logged.seq);
-        safeSend({ type: "pi", seq: logged.seq, event: logged.event });
-        if (isAgentEndEvent(logged.event)) {
+        safeSend({ type: "pi", seq: logged.seq, event: logged.event }, logged.seq);
+        if (isAgentSettledEvent(logged.event)) {
           safeSend({ type: "status", phase: "done", session: session.status });
           setTimeout(close, 25);
         }
@@ -447,12 +485,12 @@ export function handleRuntimeEvents(request: Request): Response {
       let sentTerminalStatus = false;
       for (const logged of backlog) {
         sendLogged(logged);
-        if (isAgentEndEvent(logged.event)) sentTerminalStatus = true;
+        if (isAgentSettledEvent(logged.event)) sentTerminalStatus = true;
       }
       replaying = false;
       for (const logged of replayQueue) {
         sendLogged(logged);
-        if (isAgentEndEvent(logged.event)) sentTerminalStatus = true;
+        if (isAgentSettledEvent(logged.event)) sentTerminalStatus = true;
       }
       if (
         shouldSendTrailingIdleStatus({
@@ -471,7 +509,7 @@ export function handleRuntimeEvents(request: Request): Response {
           return;
         }
         safeSend({ type: "status", phase: "running", session: session.status });
-      }, 5_000);
+      }, 20_000);
 
       request.signal.addEventListener("abort", close);
       if (!session.status.active) {
@@ -485,6 +523,7 @@ export function handleRuntimeEvents(request: Request): Response {
       "Content-Type": "text/event-stream; charset=utf-8",
       "Cache-Control": "no-cache, no-transform",
       Connection: "keep-alive",
+      "X-Accel-Buffering": "no",
     },
   });
 }

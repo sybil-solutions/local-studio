@@ -131,7 +131,6 @@ export function AppearanceSettings() {
     readVar("--codex-chat-line-height", 1.5),
   );
   const [chatWidth, setChatWidth] = useState(() => readVar("--composer-w", 48));
-  const [composerTone, setComposerTone] = useState(() => readVarString("--composer", "#282828"));
   const [bubbleTone, setBubbleTone] = useState(() => readVarString("--bubble", "#282828"));
   const setChatFont = (value: number) => {
     setChatFontSize(value);
@@ -144,11 +143,6 @@ export function AppearanceSettings() {
   const setChatColumn = (value: number) => {
     setChatWidth(value);
     applyUiControl("--composer-w", `${value}rem`);
-  };
-  const setComposer = (value: string) => {
-    setComposerTone(value);
-    applyUiControl("--composer", value);
-    applyUiControl("--composer-footer", value);
   };
   const setBubble = (value: string) => {
     setBubbleTone(value);
@@ -460,11 +454,6 @@ export function AppearanceSettings() {
               </span>
             </div>
           }
-        />
-        <SettingsRow
-          label="Composer tone"
-          description="Surface color of the input card"
-          control={<ColorField value={composerTone} label="Composer tone" onChange={setComposer} />}
         />
         <SettingsRow
           label="Bubble tone"

@@ -3,7 +3,6 @@ import type { Dispatch, SetStateAction } from "react";
 import api from "@/lib/api/client";
 import type {
   EngineJob,
-  ModelRecommendation,
   RuntimeTarget,
   StarterPreset,
   StudioDiagnostics,
@@ -29,7 +28,6 @@ export type SetupLoadSetters = RuntimeStateSetters & {
   setSettings: Dispatch<SetStateAction<StudioSettings | null>>;
   setModelsDir: Dispatch<SetStateAction<string>>;
   setDiagnostics: Dispatch<SetStateAction<StudioDiagnostics | null>>;
-  setRecommendations: Dispatch<SetStateAction<ModelRecommendation[]>>;
   setMaxVram: Dispatch<SetStateAction<number>>;
   setPresets: Dispatch<SetStateAction<StarterPreset[]>>;
 };
@@ -54,19 +52,11 @@ export function refreshRuntimeStateEffect({
 
 export function loadSecondarySetupDataEffect(
   initialWarnings: string[],
-  {
-    setPresets,
-    setRecommendations,
-    setMaxVram,
-    setRuntimeTargets,
-    setRuntimeJobs,
-    setLoadWarning,
-  }: SetupLoadSetters,
+  { setPresets, setMaxVram, setRuntimeTargets, setRuntimeJobs, setLoadWarning }: SetupLoadSetters,
 ) {
   return Effect.gen(function* () {
     const warnings = [...initialWarnings];
-    const [recommendationsResult, presetsResult, targetResult, jobResult] = yield* Effect.all([
-      Effect.result(withSetupTimeoutEffect(api.getModelRecommendations(), "model recommendations")),
+    const [presetsResult, targetResult, jobResult] = yield* Effect.all([
       Effect.result(withSetupTimeoutEffect(api.getStarterPresets(), "starter presets")),
       Effect.result(withSetupTimeoutEffect(api.getRuntimeTargets(), "runtime targets")),
       Effect.result(withSetupTimeoutEffect(api.getRuntimeJobs(), "runtime jobs")),
@@ -74,15 +64,11 @@ export function loadSecondarySetupDataEffect(
 
     if (Result.isSuccess(presetsResult)) {
       setPresets(presetsResult.success.presets || []);
-    } else setPresets([]);
-
-    if (Result.isSuccess(recommendationsResult)) {
-      setRecommendations(recommendationsResult.success.recommendations || []);
-      setMaxVram(recommendationsResult.success.max_vram_gb ?? 0);
+      setMaxVram(presetsResult.success.max_vram_gb ?? 0);
     } else {
-      setRecommendations([]);
+      setPresets([]);
       setMaxVram(0);
-      warnings.push(`model recommendations: ${setupErrorMessage(recommendationsResult.failure)}`);
+      warnings.push(`starter presets: ${setupErrorMessage(presetsResult.failure)}`);
     }
 
     if (Result.isSuccess(targetResult)) {
@@ -111,7 +97,6 @@ export function loadSetupDataEffect(
     setSettings,
     setModelsDir,
     setDiagnostics,
-    setRecommendations,
     setMaxVram,
     setRuntimeTargets,
     setRuntimeJobs,
@@ -151,7 +136,6 @@ export function loadSetupDataEffect(
       return;
     }
 
-    setRecommendations([]);
     setMaxVram(0);
     setRuntimeTargets([]);
     setRuntimeJobs([]);

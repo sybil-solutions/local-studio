@@ -51,6 +51,41 @@ export function reduceSessionEvent(
   ctx: SessionStreamContext,
   event: Record<string, unknown>,
 ): Session {
+  if (event.type === "extension_ui_request") {
+    const method = event.method;
+    if (
+      typeof event.requestId === "string" &&
+      typeof event.title === "string" &&
+      (method === "select" || method === "confirm" || method === "input" || method === "editor")
+    ) {
+      return {
+        ...session,
+        extensionUiRequest: {
+          requestId: event.requestId,
+          method,
+          title: event.title.slice(0, 500),
+          ...(typeof event.message === "string" ? { message: event.message.slice(0, 4_000) } : {}),
+          ...(typeof event.placeholder === "string"
+            ? { placeholder: event.placeholder.slice(0, 500) }
+            : {}),
+          ...(typeof event.prefill === "string" ? { prefill: event.prefill.slice(0, 32_000) } : {}),
+          ...(Array.isArray(event.options)
+            ? {
+                options: event.options
+                  .filter((option): option is string => typeof option === "string")
+                  .slice(0, 100)
+                  .map((option) => option.slice(0, 1_000)),
+              }
+            : {}),
+        },
+      };
+    }
+  }
+
+  if (event.type === "notice" && event.level === "error" && typeof event.message === "string") {
+    return { ...session, error: event.message.slice(0, 4_000) };
+  }
+
   if (event.type === "queue_update") {
     return { ...session, queue: reconcileQueueWithPiEvent(session.queue ?? [], event) };
   }

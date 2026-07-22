@@ -14,7 +14,7 @@ import { formatBytes, formatNumber } from "@/lib/formatters";
 import { useModelCardPayload } from "@/hooks/use-model-card-payload";
 import { Button } from "./button";
 import { MarkdownContent } from "./markdown-content";
-import { RightDetailPanel } from "./right-detail-panel";
+import { Drawer, DrawerBody, DrawerHeader, DrawerOverlay } from "./drawer";
 import { StatusPill } from "./status";
 import { ModelLogo } from "./model-logo";
 
@@ -49,73 +49,77 @@ export function HuggingFaceModelCardPanel({
   const { error, loading, payload } = useModelCardPayload(modelId, open);
   const stats = modelCardStats(model, payload);
 
-  if (!model) return null;
+  if (!model || !open) return null;
 
   const badges = modelCardBadges(model, payload);
   const readme = readmeContent({ error, loading, markdown: readmeMarkdown(payload?.readme) });
 
   return (
-    <RightDetailPanel
-      open={open}
-      onClose={onClose}
-      widthClassName="w-full sm:w-[min(620px,calc(100vw-72px))]"
-      className="bg-(--bg)"
-      title={modelDisplayName(model.modelId)}
-      icon={<ModelLogo modelId={model.modelId} author={payload?.author ?? model.author} />}
-      actions={
-        <>
-          <StatusPill tone={engagementTone(stats.tier)} variant="badge">
-            {engagementLabel(stats.tier)}
-          </StatusPill>
-          <a href={hfModelUrl(model.modelId)} target="_blank" rel="noopener noreferrer">
-            <Button variant="icon" size="sm" title="Open on Hugging Face">
-              <ExternalLink className="h-3.5 w-3.5" />
-            </Button>
-          </a>
-        </>
-      }
-    >
-      <div className="p-4">
-        <div className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-[length:var(--fs-sm)] text-(--ui-muted)">
-          <span className="inline-flex items-center gap-1.5">
-            <Download className="h-3.5 w-3.5" />
-            {formatNumber(stats.downloads)} downloads
-          </span>
-          <span className="inline-flex items-center gap-1.5">
-            <Heart className="h-3.5 w-3.5" />
-            {formatNumber(stats.likes)} likes
-          </span>
-          {badges.map((badge) => (
-            <StatusPill key={`${badge.kind}:${badge.label}`} variant="badge">
-              {badge.label}
-            </StatusPill>
-          ))}
-        </div>
+    <DrawerOverlay onClose={onClose}>
+      <Drawer
+        width={620}
+        className="h-full bg-(--bg)"
+        style={{ maxWidth: "min(620px, calc(100vw - 72px))" }}
+      >
+        <DrawerHeader
+          title={modelDisplayName(model.modelId)}
+          icon={<ModelLogo modelId={model.modelId} author={payload?.author ?? model.author} />}
+          actions={
+            <>
+              <StatusPill tone={engagementTone(stats.tier)} variant="badge">
+                {engagementLabel(stats.tier)}
+              </StatusPill>
+              <a href={hfModelUrl(model.modelId)} target="_blank" rel="noopener noreferrer">
+                <Button variant="icon" size="sm" title="Open on Hugging Face">
+                  <ExternalLink className="h-3.5 w-3.5" />
+                </Button>
+              </a>
+            </>
+          }
+          onClose={onClose}
+        />
+        <DrawerBody className="p-4">
+          <div className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-[length:var(--fs-sm)] text-(--ui-muted)">
+            <span className="inline-flex items-center gap-1.5">
+              <Download className="h-3.5 w-3.5" />
+              {formatNumber(stats.downloads)} downloads
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <Heart className="h-3.5 w-3.5" />
+              {formatNumber(stats.likes)} likes
+            </span>
+            {badges.map((badge) => (
+              <StatusPill key={`${badge.kind}:${badge.label}`} variant="badge">
+                {badge.label}
+              </StatusPill>
+            ))}
+          </div>
 
-        <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_240px]">
-          <section className="min-w-0">
-            <div className="rounded-md border border-(--ui-border) bg-(--ui-surface)">
-              <div className="flex h-9 items-center justify-between border-b border-(--ui-border) px-3">
-                <div className="flex min-w-0 items-center gap-2 text-[length:var(--fs-sm)] font-medium text-(--ui-fg)">
-                  <Sparkles className="h-3.5 w-3.5 text-(--ui-info)" />
-                  Model card
+          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_240px]">
+            <section className="min-w-0">
+              <div className="rounded-md border border-(--ui-border) bg-(--ui-surface)">
+                <div className="flex h-9 items-center justify-between border-b border-(--ui-border) px-3">
+                  <div className="flex min-w-0 items-center gap-2 text-[length:var(--fs-sm)] font-medium text-(--ui-fg)">
+                    <Sparkles className="h-3.5 w-3.5 text-(--ui-info)" />
+                    Model card
+                  </div>
+                  {loading ? (
+                    <RefreshCw className="h-3.5 w-3.5 animate-spin text-(--ui-muted)" />
+                  ) : null}
                 </div>
-                {loading ? (
-                  <RefreshCw className="h-3.5 w-3.5 animate-spin text-(--ui-muted)" />
-                ) : null}
+                <div className="p-3">{readme}</div>
               </div>
-              <div className="p-3">{readme}</div>
-            </div>
-          </section>
-          <aside className="space-y-3">
-            <HardwareFitPanel fit={fit} />
-            <MetadataPanel payload={payload} model={model} />
-            <QuantPanel variants={variants} />
-            <FilesPanel payload={payload} />
-          </aside>
-        </div>
-      </div>
-    </RightDetailPanel>
+            </section>
+            <aside className="space-y-3">
+              <HardwareFitPanel fit={fit} />
+              <MetadataPanel payload={payload} model={model} />
+              <QuantPanel variants={variants} />
+              <FilesPanel payload={payload} />
+            </aside>
+          </div>
+        </DrawerBody>
+      </Drawer>
+    </DrawerOverlay>
   );
 }
 

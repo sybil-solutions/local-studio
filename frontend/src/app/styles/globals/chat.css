@@ -69,34 +69,13 @@
 }
 
 .agent-thread-shell {
-  width: min(100%, var(--composer-w));
+  width: 90%;
+  max-width: calc(var(--composer-w) * 0.9);
 }
 
 @media (max-width: 768px) {
   .chat-scroll-pad {
     padding-bottom: calc(var(--chat-composer-height, 128px) + env(safe-area-inset-bottom, 0px));
-  }
-
-  .chat-markdown {
-    font-size: var(--codex-chat-font-size);
-    line-height: var(--codex-chat-line-height);
-  }
-
-  .chat-markdown p {
-    margin-bottom: 0.7rem;
-  }
-  .chat-markdown ul,
-  .chat-markdown ol {
-    margin-bottom: 0.7rem;
-    padding-left: 0.9rem;
-  }
-  .chat-markdown h1 {
-    font-size: 1.15rem;
-    margin: 0.8rem 0 0.5rem;
-  }
-  .chat-markdown h2 {
-    font-size: 1.05rem;
-    margin: 0.7rem 0 0.4rem;
   }
 }
 
@@ -111,8 +90,23 @@
 
 .chat-markdown ul,
 .chat-markdown ol {
-  margin-bottom: 12px;
+  margin: 8px 0 12px;
   padding-left: 16px;
+}
+
+.chat-markdown ul {
+  list-style: disc;
+}
+
+.chat-markdown ol {
+  list-style: decimal;
+}
+
+.chat-markdown blockquote {
+  margin: 12px 0;
+  border-left: 2px solid var(--separator);
+  padding-left: 16px;
+  color: color-mix(in srgb, var(--fg) 65%, transparent);
 }
 
 .chat-markdown li {
@@ -168,12 +162,19 @@
 
 .chat-markdown strong {
   font-weight: 600;
-  color: color-mix(in srgb, var(--fg) 88%, transparent);
+  color: color-mix(in srgb, var(--fg) 96%, transparent);
+}
+
+.chat-markdown ::selection {
+  background: color-mix(in srgb, var(--accent) 42%, transparent);
+  color: var(--fg);
 }
 
 .chat-markdown a {
-  color: var(--link, #6ea8fe);
-  text-decoration: none;
+  color: color-mix(in srgb, var(--fg) 90%, transparent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  text-decoration-color: color-mix(in srgb, var(--fg) 35%, transparent);
 }
 
 .chat-markdown .chat-ref-chip {
@@ -188,7 +189,7 @@
   font-size: inherit;
   line-height: inherit;
   font-weight: 500;
-  color: var(--link, #6ea8fe);
+  color: color-mix(in srgb, var(--fg) 90%, transparent);
   background: transparent;
   text-decoration: none;
   cursor: pointer;
@@ -244,9 +245,7 @@
 
 .chat-markdown .chat-ref-chip-label {
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
   user-select: text;
 }
 
@@ -309,8 +308,10 @@
 .chat-markdown :not(pre) > code {
   padding: 2px 6px;
   border-radius: var(--rad-sm);
-  background: color-mix(in srgb, var(--fg) 10%, transparent);
-  color: color-mix(in srgb, var(--fg) 88%, transparent);
+  background: color-mix(in srgb, var(--fg) 14%, transparent);
+  color: color-mix(in srgb, var(--fg) 94%, transparent);
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
   font-family:
     var(--codex-chat-mono-font-family), ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
     "Liberation Mono", "Courier New", monospace;
@@ -559,58 +560,13 @@
   font-weight: 600;
 }
 
-.agent-composer-shell {
+.agent-composer-box {
   container-type: inline-size;
-  width: min(100%, var(--composer-w));
 }
 
-.agent-composer-meta {
-  container-type: inline-size;
-  width: min(100%, var(--composer-w));
-}
-
-.agent-composer-project {
-  max-width: min(42%, 18rem);
-}
-
-.agent-composer-branch {
-  max-width: 12rem;
-}
-
-.agent-composer-git-summary {
-  max-width: 13rem;
-}
-
-.agent-composer-tokens {
-  white-space: nowrap;
-}
-
-@container (max-width: 560px) {
-  .agent-composer-actions-row {
-    flex-wrap: wrap;
-  }
-}
-
-@container (max-width: 520px) {
-  .agent-composer-meta-main {
-    flex-basis: 100%;
-  }
-
-  .agent-composer-project {
-    max-width: 38%;
-  }
-
-  .agent-composer-branch {
-    max-width: 9rem;
-  }
-
-  .agent-composer-git-summary {
-    max-width: 9rem;
-  }
-
-  .agent-composer-tokens {
-    margin-left: auto;
-    max-width: 100%;
+@container (max-width: 27rem) {
+  .composer-action-optional {
+    display: none;
   }
 }
 
@@ -694,4 +650,9 @@
     transform: scale(1);
     opacity: 0.85;
   }
+}
+
+.agent-computer-panel {
+  height: 100%;
+  min-height: 0;
 }

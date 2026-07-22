@@ -42,7 +42,12 @@ export function pruneSessions(
     // controller stay subscribed and lets the sidebar surface it as a
     // background session. It is pruned on a later pass once it settles (status
     // leaves running/starting).
-    if (session.status === "running" || session.status === "starting") continue;
+    if (
+      session.status === "running" ||
+      session.status === "starting" ||
+      session.status === "stopping"
+    )
+      continue;
     next.delete(id);
     changed = true;
   }
@@ -52,7 +57,10 @@ export function pruneSessions(
 export function isEmptyStarterSession(session: Session): boolean {
   const hasQueuedWork = (session.queue?.length ?? 0) > 0;
   const isLiveStatus =
-    session.status === "starting" || session.status === "running" || session.status === "loading";
+    session.status === "starting" ||
+    session.status === "running" ||
+    session.status === "stopping" ||
+    session.status === "loading";
   return (
     !session.piSessionId &&
     session.messages.length === 0 &&

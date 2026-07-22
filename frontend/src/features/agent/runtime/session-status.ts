@@ -1,7 +1,7 @@
 import { finalizeRunningToolBlocks } from "@/features/agent/messages/block-event";
 import type { Session } from "./types";
 
-const WORKING_SESSION_STATUSES: readonly string[] = ["starting", "running", "loading"];
+const WORKING_SESSION_STATUSES: readonly string[] = ["starting", "running", "stopping", "loading"];
 
 export function isWorkingStatus(status: string): boolean {
   return WORKING_SESSION_STATUSES.includes(status);

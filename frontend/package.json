@@ -9,7 +9,7 @@
   "scripts": {
     "predev": "node scripts/link-services-node-modules.mjs",
     "dev": "concurrently -k -n NEXT,AGENT -c cyan,green \"next dev\" \"npm --prefix ../services/agent-runtime run dev\"",
-    "build": "npm --prefix ../services/agent-runtime run bundle && next build && node scripts/complete-standalone-build.mjs && node scripts/assert-standalone-build.mjs",
+    "build": "node scripts/prepare-next-build.mjs && npm --prefix ../services/agent-runtime run bundle && next build --webpack && node scripts/complete-standalone-build.mjs && node scripts/assert-standalone-build.mjs",
     "start": "node scripts/start-standalone.mjs",
     "perf:audit": "node scripts/perf-audit.mjs",
     "perf:browser": "node scripts/browser-perf-audit.mjs",
@@ -39,7 +39,9 @@
     "typecheck:desktop": "tsc -p desktop/tsconfig.json",
     "check:cycles": "madge --extensions ts,tsx --circular src",
     "check:static": "npm run lint && npm run typecheck && npm run typecheck:desktop && npm run check:cycles && npm run check:ui-structure",
-    "check:quality": "node scripts/validate-package-json.mjs && npm run check:static && npm run check:cleanup && npm run build",
+    "test": "bun test src desktop",
+    "test:e2e": "playwright test --config e2e/controller-agent.config.ts",
+    "check:quality": "node scripts/validate-package-json.mjs && npm run check:static && npm run test && npm run check:cleanup && npm run build",
     "precommit": "lint-staged --config .lintstagedrc.json && npm run typecheck"
   },
   "dependencies": {
@@ -63,6 +65,7 @@
     "next": "16.2.7",
     "playwright-core": "1.61.1",
     "proper-lockfile": "4.1.2",
+    "qrcode.react": "4.2.0",
     "react": "19.2.1",
     "react-dom": "19.2.1",
     "react-markdown": "10.1.0",
@@ -98,5 +101,14 @@
   "overrides": {
     "postcss": "^8.5.10"
   },
-  "main": "desktop/dist/main.js"
+  "main": "desktop/dist/main.js",
+  "allowScripts": {
+    "electron-winstaller@5.4.0": true,
+    "msgpackr-extract@3.0.4": true,
+    "protobufjs@7.6.5": true,
+    "protobufjs@7.6.4": true,
+    "sharp@0.34.5": true,
+    "unrs-resolver@1.11.1": true,
+    "@google/genai@1.52.0": true
+  }
 }

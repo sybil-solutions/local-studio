@@ -40,14 +40,35 @@ export function Drawer({
   );
 }
 
+export function DrawerOverlay({ children, onClose }: { children: ReactNode; onClose: () => void }) {
+  return (
+    <div
+      className="fixed inset-0 z-50 flex justify-end bg-black/30"
+      onClick={onClose}
+      onKeyDown={(event) => {
+        if (event.key === "Escape") onClose();
+      }}
+      role="presentation"
+    >
+      <div className="flex h-full" onClick={(event) => event.stopPropagation()} role="dialog">
+        {children}
+      </div>
+    </div>
+  );
+}
+
 export function DrawerHeader({
   title,
+  icon,
   badge,
+  actions,
   onClose,
   className,
 }: {
   title: ReactNode;
+  icon?: ReactNode;
   badge?: ReactNode;
+  actions?: ReactNode;
   onClose?: () => void;
   className?: string;
 }) {
@@ -59,9 +80,11 @@ export function DrawerHeader({
       )}
     >
       <div className="flex min-w-0 flex-1 items-center gap-2">
+        {icon}
         <span className="truncate font-medium text-(--ui-fg)/85">{title}</span>
         {badge}
       </div>
+      {actions ? <div className="flex shrink-0 items-center gap-1.5">{actions}</div> : null}
       {onClose ? (
         <Button variant="icon" size="sm" onClick={onClose} aria-label="Close" title="Close">
           <X className="h-3 w-3" />

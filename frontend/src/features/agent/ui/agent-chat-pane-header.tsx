@@ -5,7 +5,6 @@ import { PanelRightClose, PanelRightOpen, TerminalSquare } from "@/ui/icon-regis
 import { useClickOutside } from "@/features/agent/hooks/use-click-outside";
 import { setReasoningVisible } from "@/features/agent/messages/reasoning-pref";
 import { useReasoningVisible } from "@/features/agent/messages/use-reasoning-visible";
-import { useAppStore } from "@/store";
 import { CloseIcon, MoreIcon } from "@/ui/icons";
 import { preloadTerminalPanel } from "@/features/agent/ui/terminal-panel";
 
@@ -49,7 +48,6 @@ export function AgentChatPaneHeader({
   const ref = useRef<HTMLDivElement>(null);
   useClickOutside(ref, open, () => setOpen(false));
   const reasoningVisible = useReasoningVisible();
-  const sidebarCollapsed = useAppStore((s) => !s.desktopSidebarPinnedOpen);
   const RightPanelIcon = rightPanelOpen ? PanelRightClose : PanelRightOpen;
   const startRename = () => {
     setDraftTitle(title);
@@ -62,11 +60,7 @@ export function AgentChatPaneHeader({
     setRenaming(false);
   };
   return (
-    <div
-      className={`grid h-[var(--h-toolbar-pane)] shrink-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-2 border-b border-(--border) bg-(--color-header) py-0 pr-2 text-xs ${
-        sidebarCollapsed ? "pl-12" : "pl-5"
-      }`}
-    >
+    <div className="grid h-[var(--h-toolbar-pane)] shrink-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-2 border-b border-(--border) bg-(--color-header) py-0 pl-4 pr-2 text-xs">
       <div ref={ref} className="relative flex min-w-0 items-center gap-1.5">
         {renaming ? (
           <input

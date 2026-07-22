@@ -221,6 +221,7 @@ export async function startFrontendServer(
       NEXT_TELEMETRY_DISABLED: "1",
       LOCAL_STUDIO_DESKTOP: "1",
       LOCAL_STUDIO_DATA_DIR: DESKTOP_CONFIG.userDataDir,
+      LOCAL_STUDIO_PROJECTS_FILE: path.join(DESKTOP_CONFIG.userDataDir, "projects.json"),
       LOCAL_STUDIO_RESOURCES_PATH: process.resourcesPath,
       LOCAL_STUDIO_AGENT_CWD: process.env.LOCAL_STUDIO_AGENT_CWD || app.getPath("home"),
       LOCAL_STUDIO_AGENT_RUNTIME_URL: agentRuntime.url,

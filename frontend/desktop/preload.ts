@@ -15,6 +15,9 @@ const bridge: DesktopBridge = {
   saveSessionPrefs: (prefs) => ipcRenderer.invoke("desktop:save-session-prefs", prefs),
   loadUiPreferences: () => ipcRenderer.invoke("desktop:load-ui-preferences"),
   saveUiPreferences: (prefs) => ipcRenderer.invoke("desktop:save-ui-preferences", prefs),
+  getKittylitterPairingJson: () => ipcRenderer.invoke("desktop:get-kittylitter-pairing-json"),
+  copyKittylitterPairingJson: (pairingJson) =>
+    ipcRenderer.invoke("desktop:copy-kittylitter-pairing-json", pairingJson),
   terminal: {
     status: () => ipcRenderer.invoke("desktop:pty-status"),
     open: (opts) => ipcRenderer.invoke("desktop:pty-open", opts),

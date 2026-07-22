@@ -1,9 +1,71 @@
 "use client";
 
+import { useCallback } from "react";
 import { ChevronLeft, DownloadCloud, Zap } from "@/ui/icon-registry";
 import { Button, Card, Input, Select } from "@/ui";
-import type { ModelRecommendation, StarterPreset } from "@/lib/types";
+import type { ModelDownload, StarterPreset } from "@/lib/types";
+import type { ModelIndexVariant } from "@/lib/api/studio";
+import { TierSection, useModelIndex } from "@/features/recipes/recipes-content/picks-shared";
 import type { GgufFileOption } from "../setup-model-files";
+
+const NO_DOWNLOADS: Map<string, ModelDownload> = new Map();
+const NO_STARTING: Set<string> = new Set();
+
+function ModelIndexCatalog({
+  presetsCount,
+  maxVram,
+  beginVariantDownload,
+}: {
+  presetsCount: number;
+  maxVram: number;
+  beginVariantDownload: (modelId: string, allowPatterns?: string[]) => void;
+}) {
+  const { data } = useModelIndex();
+  const tiers = data?.tiers ?? [];
+
+  const handleDownload = useCallback(
+    (variant: ModelIndexVariant) =>
+      beginVariantDownload(
+        variant.repo,
+        variant.allow_patterns?.length ? variant.allow_patterns : undefined,
+      ),
+    [beginVariantDownload],
+  );
+
+  if (tiers.length === 0) return null;
+
+  const modelCount = tiers.reduce((count, tier) => count + tier.models.length, 0);
+
+  return (
+    <details className="group" open={presetsCount === 0}>
+      <summary className="flex cursor-pointer items-center justify-between list-none">
+        <div className="flex items-baseline gap-2">
+          <span className="text-sm text-(--dim) uppercase tracking-wider">
+            {presetsCount > 0 ? "More models" : "Curated catalog"}
+          </span>
+          <span className="text-xs text-(--dim)">
+            {modelCount} models in {tiers.length} {tiers.length === 1 ? "tier" : "tiers"}
+          </span>
+        </div>
+        <span className="text-xs text-(--dim)">
+          Detected VRAM: {maxVram ? `${maxVram.toFixed(1)} GB` : "CPU"}
+        </span>
+      </summary>
+      <div className="mt-4 space-y-5">
+        {tiers.map((tier) => (
+          <TierSection
+            key={tier.id}
+            tier={tier}
+            poolGb={maxVram}
+            downloadsByModel={NO_DOWNLOADS}
+            startingModelIds={NO_STARTING}
+            onDownload={handleDownload}
+          />
+        ))}
+      </div>
+    </details>
+  );
+}
 
 function PresetCard({
   preset,
@@ -86,7 +148,6 @@ function PresetCard({
 }
 
 export function StepModel({
-  recommendations,
   presets,
   beginPresetSetup,
   remoteApiKey,
@@ -101,11 +162,10 @@ export function StepModel({
   manualGgufFile,
   setManualGgufFile,
   resolvingManualModel,
-  beginDownload,
+  beginVariantDownload,
   submitManualModel,
   setStep,
 }: {
-  recommendations: ModelRecommendation[];
   presets: StarterPreset[];
   beginPresetSetup: (preset: StarterPreset) => void;
   remoteApiKey: string;
@@ -120,7 +180,7 @@ export function StepModel({
   manualGgufFile: string;
   setManualGgufFile: (value: string) => void;
   resolvingManualModel: boolean;
-  beginDownload: (modelId: string) => void;
+  beginVariantDownload: (modelId: string, allowPatterns?: string[]) => void;
   submitManualModel: () => void;
   setStep: (step: number) => void;
 }) {
@@ -147,45 +207,11 @@ export function StepModel({
         </Card>
       )}
 
-      {recommendations.length > 0 && (
-        <details className="group" open={presets.length === 0}>
-          <summary className="flex cursor-pointer items-center justify-between list-none">
-            <div className="flex items-baseline gap-2">
-              <span className="text-sm text-(--dim) uppercase tracking-wider">
-                {presets.length > 0 ? "More models" : "Recommended"}
-              </span>
-              <span className="text-xs text-(--dim)">
-                {recommendations.length} for your hardware
-              </span>
-            </div>
-            <span className="text-xs text-(--dim)">
-              Detected VRAM: {maxVram ? `${maxVram.toFixed(1)} GB` : "CPU"}
-            </span>
-          </summary>
-          <div className="grid md:grid-cols-2 gap-4 mt-4">
-            {recommendations.map((model) => (
-              <Card key={model.id} padding="md">
-                <div className="text-sm font-medium">{model.name}</div>
-                <div className="text-xs text-(--dim)">{model.id}</div>
-                <p className="text-xs text-(--dim) mt-2">{model.description}</p>
-                <div className="flex items-center gap-2 text-xs text-(--dim) mt-3">
-                  <span>{model.size_gb ?? "-"} GB</span>
-                  <span>·</span>
-                  <span>{model.min_vram_gb ?? "-"} GB VRAM</span>
-                </div>
-                <Button
-                  size="sm"
-                  onClick={() => beginDownload(model.id)}
-                  className="mt-3"
-                  icon={<DownloadCloud className="h-3.5 w-3.5" />}
-                >
-                  Download
-                </Button>
-              </Card>
-            ))}
-          </div>
-        </details>
-      )}
+      <ModelIndexCatalog
+        presetsCount={presets.length}
+        maxVram={maxVram}
+        beginVariantDownload={beginVariantDownload}
+      />
 
       <Card padding="lg">
         <div className="text-sm text-(--dim) uppercase tracking-wider">Hugging Face</div>

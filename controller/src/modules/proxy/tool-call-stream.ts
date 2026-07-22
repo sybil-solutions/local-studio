@@ -278,6 +278,9 @@ export const createToolCallStream = (
               !hasDelta,
             )
           : "";
+        if (rawReasoning) {
+          emitVisibleContent(controller, contentThink.resolveImplicitPrefixAsContent());
+        }
         if (content || reasoningRaw) trackFirstToken();
         let reasoning = "";
         let reasoningFromContent = "";

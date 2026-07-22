@@ -15,6 +15,7 @@
 
 import { randomUUID } from "node:crypto";
 import { chmod, mkdir } from "node:fs/promises";
+import { homedir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { ModelRuntime } from "@earendil-works/pi-coding-agent";
@@ -26,6 +27,7 @@ import type {
   Model,
   Api,
 } from "@earendil-works/pi-ai";
+import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
 import { inferReasoningSupport, type AgentModel } from "../../../shared/agent/models";
 import { resolveDataDir } from "./data-dir";
 import { getGlobalSingleton } from "./instances";
@@ -112,12 +114,15 @@ function agentDirPath(): string {
 }
 
 async function createHubRuntime(): Promise<ModelRuntime> {
-  const agentDir = agentDirPath();
-  await mkdir(agentDir, { recursive: true });
-  await chmod(agentDir, 0o700).catch(() => undefined);
+  const modelsDir = agentDirPath();
+  const nativeAgentDir = process.env.PI_CODING_AGENT_DIR?.trim() || path.join(homedir(), ".pi", "agent");
+  await mkdir(modelsDir, { recursive: true });
+  await mkdir(nativeAgentDir, { recursive: true });
+  await chmod(modelsDir, 0o700).catch(() => undefined);
+  await chmod(nativeAgentDir, 0o700).catch(() => undefined);
   const runtime = await ModelRuntime.create({
-    authPath: path.join(agentDir, "auth.json"),
-    modelsPath: path.join(agentDir, "models.json"),
+    authPath: path.join(nativeAgentDir, "auth.json"),
+    modelsPath: path.join(modelsDir, "models.json"),
   });
   await registerE2EProviders(runtime);
   return runtime;
@@ -170,6 +175,7 @@ export function getProviderHub(): Promise<ModelRuntime> {
 export async function reloadProviderHub(): Promise<void> {
   const runtime = await hubPromise();
   await runtime.reloadConfig();
+  await registerE2EProviders(runtime);
 }
 
 export async function listProviders(): Promise<ProviderView[]> {
@@ -366,6 +372,13 @@ function providerModelToAgentModel(
   providerName: string,
   model: Model<Api>,
 ): AgentModel {
+  const reasoning = model.reasoning || inferReasoningSupport(model.id);
+  const compat = model.compat as { supportsReasoningEffort?: boolean } | undefined;
+  const thinkingLevels = !reasoning
+    ? ["off" as const]
+    : compat?.supportsReasoningEffort === false
+      ? ["high" as const]
+      : getSupportedThinkingLevels({ ...model, reasoning });
   return {
     id: `${providerId}/${model.id}`,
     rawId: model.id,
@@ -375,7 +388,8 @@ function providerModelToAgentModel(
     controllerName: providerName,
     contextWindow: model.contextWindow,
     maxTokens: model.maxTokens,
-    reasoning: model.reasoning || inferReasoningSupport(model.id),
+    reasoning,
+    thinkingLevels,
     vision: model.input.includes("image"),
     active: false,
   };

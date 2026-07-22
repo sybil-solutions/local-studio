@@ -9,6 +9,8 @@ export type SessionSummary = {
   firstUserMessage: string | null;
   archived: boolean;
   archivedAt: string | null;
+  parentSessionId: string | null;
+  subagentName: string | null;
 };
 
 export type AggregatedSession = SessionSummary & {

@@ -4,11 +4,7 @@ import { useMemo, useState, type ReactNode } from "react";
 import { Spinner } from "@/ui";
 import { Code2 } from "@/ui/icon-registry";
 import { formatTokenCount } from "@/features/agent/messages";
-import {
-  useBrowserTools,
-  useComputerTools,
-  useToolsActions,
-} from "@/features/agent/tools/context";
+import { useBrowserTools, useComputerTools, useToolsActions } from "@/features/agent/tools/context";
 import type { ComposerSkillRef } from "@/features/agent/composer-context";
 import type { GitSummary, Project } from "@/features/agent/projects/types";
 import type { Session } from "@/features/agent/runtime/types";
@@ -200,7 +196,11 @@ function compactTitle(highlighted: boolean): string {
 }
 
 function isSessionRunning(session: Session | null): boolean {
-  return session?.status === "running" || session?.status === "starting";
+  return (
+    session?.status === "running" ||
+    session?.status === "starting" ||
+    session?.status === "stopping"
+  );
 }
 
 function StatusRows({ rows }: { rows: StatusRowData[] }) {

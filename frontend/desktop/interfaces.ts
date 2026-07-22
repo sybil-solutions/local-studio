@@ -79,6 +79,17 @@ export interface ControllerDeployBridge {
   onLog(listener: (line: string) => void): () => void;
 }
 
+export interface KittylitterPairingResult {
+  ok: boolean;
+  pairingJson?: string;
+  error?: string;
+}
+
+export interface KittylitterCopyResult {
+  ok: boolean;
+  error?: string;
+}
+
 export interface DesktopBridge {
   getRuntime(): Promise<{
     platform: NodeJS.Platform;
@@ -100,6 +111,8 @@ export interface DesktopBridge {
   /** Durable backup for renderer localStorage UI prefs (theme, font, layout). */
   loadUiPreferences(): Promise<UiPreferencesPayload>;
   saveUiPreferences(prefs: UiPreferencesPayload): Promise<void>;
+  getKittylitterPairingJson(): Promise<KittylitterPairingResult>;
+  copyKittylitterPairingJson(pairingJson: string): Promise<KittylitterCopyResult>;
   terminal: PtyBridge;
   quickPanel: QuickPanelBridge;
   controllerDeploy: ControllerDeployBridge;

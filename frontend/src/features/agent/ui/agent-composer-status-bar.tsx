@@ -12,6 +12,7 @@ export function AgentComposerStatusBar({
   currentContextTokens,
   contextWindow,
   onOpenStatus,
+  onOpenDiff,
 }: {
   cwd: string;
   gitBranch?: string | null;
@@ -20,11 +21,12 @@ export function AgentComposerStatusBar({
   currentContextTokens: number;
   contextWindow: number;
   onOpenStatus: () => void;
+  onOpenDiff: () => void;
 }) {
   const displayCwd = formatHomeRelativePath(cwd);
 
   return (
-    <div className="relative z-20 mx-auto mt-2.5 flex w-full max-w-[var(--composer-w)] items-center gap-2 overflow-visible font-mono text-[length:var(--fs-xs)] text-(--dim)">
+    <div className="relative z-20 mx-auto mt-2.5 flex w-[90%] max-w-[calc(var(--composer-w)*0.9)] items-center gap-2 overflow-visible font-mono text-[length:var(--fs-xs)] text-(--dim)">
       <div className="flex min-w-0 flex-1 items-center gap-2 overflow-visible">
         <div className="min-w-0 max-w-[42%] shrink overflow-visible">
           {displayCwd ? (
@@ -34,7 +36,7 @@ export function AgentComposerStatusBar({
           ) : null}
         </div>
         <GitBranchState gitBranch={gitBranch} gitSummary={gitSummary} onInitGit={onInitGit} />
-        <GitSummaryState gitSummary={gitSummary} />
+        <GitSummaryState gitSummary={gitSummary} onOpenDiff={onOpenDiff} />
       </div>
       <ContextReadout
         current={currentContextTokens}
@@ -80,17 +82,28 @@ function GitBranchState({
   return null;
 }
 
-function GitSummaryState({ gitSummary }: { gitSummary?: GitSummary | null }) {
+function GitSummaryState({
+  gitSummary,
+  onOpenDiff,
+}: {
+  gitSummary?: GitSummary | null;
+  onOpenDiff: () => void;
+}) {
   if (!gitSummary?.isRepo) return null;
 
   return (
-    <span className="inline-flex shrink-0 items-center gap-1">
+    <button
+      type="button"
+      onClick={onOpenDiff}
+      className="inline-flex shrink-0 items-center gap-1 rounded-sm px-1 transition-colors hover:bg-(--fg)/[0.05]"
+      title="View changes"
+    >
       <span className="text-(--ok)">+{gitSummary.additions}</span>
       <span className="text-(--err)">-{gitSummary.deletions}</span>
       {gitSummary.statusCount > 0 ? (
         <span className="text-(--dim)">· {gitSummary.statusCount} files</span>
       ) : null}
-    </span>
+    </button>
   );
 }
 

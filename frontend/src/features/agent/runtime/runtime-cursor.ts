@@ -59,5 +59,5 @@ export function reconnectAfter(cursor: RuntimeCursor): number {
 // the runtime can still be idle from the previous turn, and subscribing too
 // early can receive a final idle status before `/turn` has restarted Pi.
 export function shouldSubscribeRuntimeEvents(status: string): boolean {
-  return status === "running";
+  return status === "running" || status === "stopping";
 }

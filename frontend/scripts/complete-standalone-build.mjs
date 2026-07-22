@@ -14,8 +14,19 @@
 //    runs with its cwd inside this directory) can never be destroyed.
 //
 // assert-standalone-build.mjs then independently verifies the result.
-import { cpSync, existsSync, readdirSync, readFileSync, rmdirSync, statSync, unlinkSync } from "node:fs";
-import { relative, resolve } from "node:path";
+import {
+  cpSync,
+  existsSync,
+  lstatSync,
+  readdirSync,
+  readFileSync,
+  rmdirSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+  unlinkSync,
+} from "node:fs";
+import { dirname, relative, resolve } from "node:path";
 
 const projectRoot = resolve(import.meta.dirname, "..");
 const repoRoot = resolve(projectRoot, "..");
@@ -29,9 +40,7 @@ if (!standaloneRoot) {
 
 const runtimeDependencyPaths = [
   "node_modules/typebox",
-  "node_modules/@earendil-works/pi-ai/dist",
-  "node_modules/@earendil-works/pi-coding-agent/node_modules/typebox",
-  "node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai/dist",
+  "node_modules/@earendil-works/pi-coding-agent",
 ];
 
 for (const dependencyPath of runtimeDependencyPaths) {
@@ -39,7 +48,41 @@ for (const dependencyPath of runtimeDependencyPaths) {
   if (!existsSync(source)) {
     throw new Error(`Missing runtime dependency source: ${dependencyPath}`);
   }
-  cpSync(source, resolve(standaloneRoot, dependencyPath), { recursive: true });
+  const destination = resolve(standaloneRoot, dependencyPath);
+  cpSync(source, destination, { recursive: true });
+  const executableShimDirectories = readdirSync(destination, {
+    recursive: true,
+    withFileTypes: true,
+  })
+    .filter((entry) => entry.isDirectory() && entry.name === ".bin")
+    .map((entry) => resolve(entry.parentPath, entry.name));
+  for (const directory of executableShimDirectories) {
+    rmSync(directory, { recursive: true, force: true });
+  }
+}
+
+const tracedPiPackageDirectory = resolve(standaloneRoot, ".next/node_modules/@earendil-works");
+if (existsSync(tracedPiPackageDirectory)) {
+  const packageTargets = new Map([
+    [
+      "pi-ai-",
+      resolve(
+        standaloneRoot,
+        "node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai",
+      ),
+    ],
+    ["pi-coding-agent-", resolve(standaloneRoot, "node_modules/@earendil-works/pi-coding-agent")],
+  ]);
+  for (const entry of readdirSync(tracedPiPackageDirectory)) {
+    const target = [...packageTargets].find(([prefix]) => entry.startsWith(prefix))?.[1];
+    if (!target) continue;
+    const link = resolve(tracedPiPackageDirectory, entry);
+    if (!lstatSync(link).isSymbolicLink()) {
+      throw new Error(`Expected traced Pi package alias to be a symlink: ${link}`);
+    }
+    unlinkSync(link);
+    symlinkSync(relative(dirname(link), target), link, "dir");
+  }
 }
 
 function isRuntimeFile(file) {

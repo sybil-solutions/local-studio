@@ -1,24 +1,10 @@
 "use client";
 
-import React, {
-  Children,
-  isValidElement,
-  memo,
-  useCallback,
-  useMemo,
-  useState,
-  type ReactNode,
-} from "react";
-import { useMountSubscription } from "@/hooks/use-mount-subscription";
+import React, { Children, isValidElement, memo, useCallback, useMemo, type ReactNode } from "react";
 import { useCopiedFlag } from "@/features/agent/ui/use-copied-flag";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { ExternalLink } from "@/ui/icon-registry";
-import {
-  escapeHighlightHtml,
-  highlightFenced,
-  peekHighlightFenced,
-} from "@/features/agent/highlight-cache";
 import { normalizeBrowserInput } from "@/features/agent/tools/browser-url";
 import { useToolsActions } from "@/features/agent/tools/context";
 import { CopyablePathChip } from "@/features/agent/ui/copyable-path-chip";
@@ -88,8 +74,6 @@ function codeLanguage(children: ReactNode): string | null {
   return match ? match[1] : null;
 }
 
-const HIGHLIGHT_SETTLE_MS = 150;
-
 const FencedCodeBlock = memo(function FencedCodeBlock({
   code,
   language,
@@ -97,28 +81,7 @@ const FencedCodeBlock = memo(function FencedCodeBlock({
   code: string;
   language: string | null;
 }) {
-  // A block that was highlighted before renders its cached HTML immediately.
-  // A new (usually still-streaming) block renders escaped plaintext and only
-  // runs hljs once its text stops changing for a beat — per-frame cost stays
-  // O(escape) instead of O(tokenize whole block), and the highlight LRU never
-  // fills up with partial snapshots.
-  const cached = peekHighlightFenced(language, code);
-  const [settled, setSettled] = useState<{ code: string; html: string } | null>(null);
-  useMountSubscription(() => {
-    if (cached !== undefined) return;
-    const timer = window.setTimeout(() => {
-      setSettled({ code, html: highlightFenced(language, code) });
-    }, HIGHLIGHT_SETTLE_MS);
-    return () => window.clearTimeout(timer);
-  }, [cached === undefined, code, language]);
-  const highlightedHtml =
-    cached ?? (settled && settled.code === code ? settled.html : escapeHighlightHtml(code));
-  const codeClassName = [
-    "syntax-highlight",
-    "hljs",
-    language ? `language-${language}` : "",
-    "font-mono",
-  ]
+  const codeClassName = [language ? `language-${language}` : "", "font-mono"]
     .filter(Boolean)
     .join(" ");
 
@@ -131,69 +94,14 @@ const FencedCodeBlock = memo(function FencedCodeBlock({
         {code ? <CodeBlockCopyButton code={code} /> : null}
       </div>
       <pre className="m-0 max-w-full overflow-x-auto bg-transparent px-4 py-3 text-[length:var(--codex-chat-code-font-size)] leading-[1.5]">
-        <code className={codeClassName} dangerouslySetInnerHTML={{ __html: highlightedHtml }} />
+        <code className={codeClassName}>{code}</code>
       </pre>
     </div>
   );
 });
 FencedCodeBlock.displayName = "FencedCodeBlock";
 
-/* Codex prose scale: 14px body at 1.625 leading, headings 18/16/14/13
-   semibold, 12px between blocks. */
 const components: Components = {
-  h1: ({ node: _n, ...props }) => (
-    <h1
-      className="mb-2 mt-5 text-[18px] font-semibold leading-tight tracking-[-0.01em] text-(--fg) first:mt-0"
-      {...props}
-    />
-  ),
-  h2: ({ node: _n, ...props }) => (
-    <h2
-      className="mb-1.5 mt-4 text-[16px] font-semibold leading-snug tracking-[-0.01em] text-(--fg) first:mt-0"
-      {...props}
-    />
-  ),
-  h3: ({ node: _n, ...props }) => (
-    <h3
-      className="mb-1.5 mt-3.5 text-[14px] font-semibold leading-snug tracking-[-0.01em] text-(--fg) first:mt-0"
-      {...props}
-    />
-  ),
-  h4: ({ node: _n, ...props }) => (
-    <h4 className="mb-1 mt-3 text-[13px] font-semibold leading-snug text-(--fg)" {...props} />
-  ),
-  p: ({ node: _n, ...props }) => (
-    <p
-      className="my-3 max-w-full break-words text-[length:var(--codex-chat-font-size)] leading-[1.5] tracking-normal first:mt-0 last:mb-0 [overflow-wrap:anywhere]"
-      {...props}
-    />
-  ),
-  ul: ({ node: _n, ...props }) => <ul className="my-2 list-disc pl-4" {...props} />,
-  ol: ({ node: _n, ...props }) => <ol className="my-2 list-decimal pl-4" {...props} />,
-  li: ({ node: _n, ...props }) => (
-    <li
-      className="text-[length:var(--codex-chat-font-size)] leading-[1.5] tracking-normal"
-      {...props}
-    />
-  ),
-  code: ({ node: _n, className, children, ...props }) => {
-    const isBlock = typeof className === "string" && /\blanguage-/.test(className);
-    if (isBlock) {
-      return (
-        <code className={`${className ?? ""} font-mono`} {...props}>
-          {children}
-        </code>
-      );
-    }
-    return (
-      <code
-        className="rounded-[var(--rad-sm)] bg-(--fg)/10 px-1.5 py-0.5 font-mono text-[length:var(--codex-chat-code-font-size)] leading-[1.4] text-(--fg)/88 [overflow-wrap:anywhere]"
-        {...props}
-      >
-        {children}
-      </code>
-    );
-  },
   pre: ({ node: _n, children }) => {
     const code = nodeToPlainText(
       Children.toArray(children).find(
@@ -203,19 +111,15 @@ const components: Components = {
     const language = codeLanguage(children);
     return <FencedCodeBlock code={code} language={language} />;
   },
-  a: ({ node: _n, href, ...props }) => (
-    <a
-      {...props}
-      href={href}
-      target="_blank"
-      rel="noreferrer noopener"
-      className="text-(--link) underline underline-offset-2 hover:opacity-80"
-    />
-  ),
-  blockquote: ({ node: _n, ...props }) => (
-    <blockquote className="my-3 border-l-2 border-(--separator) pl-4 text-(--fg)/65" {...props} />
-  ),
-  hr: ({ node: _n, ...props }) => <hr className="my-3 border-(--border)" {...props} />,
+  a: ({ node: _n, href, children, ...props }) =>
+    safeExternalHref(href) ? (
+      <a {...props} href={href} target="_blank" rel="noreferrer noopener">
+        {children}
+      </a>
+    ) : (
+      <span>{children}</span>
+    ),
+  img: ({ alt }) => <span>{alt ? `[Image: ${alt}]` : "[Remote image hidden]"}</span>,
   // Cells/rows are styled entirely via `.chat-markdown` in chat.css; only the
   // scroll wrapper needs a component override.
   table: ({ node: _n, ...props }) => (
@@ -224,6 +128,15 @@ const components: Components = {
     </div>
   ),
 };
+
+function safeExternalHref(value: string | undefined): boolean {
+  if (!value) return false;
+  try {
+    return ["http:", "https:", "mailto:"].includes(new URL(value).protocol);
+  } catch {
+    return false;
+  }
+}
 
 // The remark/rehype plugin lists are constant. Hoisted out of render so the
 // `ReactMarkdown` reconciler sees the same array identity each commit.
@@ -297,6 +210,7 @@ function buildComponentsWithAppLinks(tools: ToolHandlers): Components {
           </CopyablePathChip>
         );
       }
+      if (!safeExternalHref(href)) return <span>{children}</span>;
       return (
         <a
           {...props}
@@ -340,10 +254,10 @@ function AssistantMarkdownInner({ text }: { text: string }) {
     [tools.setComputerOpen, tools.setComputerTab, tools.setBrowserUrl],
   );
   return (
-    <div className="chat-markdown min-w-0 max-w-full overflow-x-hidden text-[length:var(--fs-md)] leading-[18px] tracking-normal [overflow-wrap:anywhere]">
+    <div className="chat-markdown min-w-0 max-w-full overflow-x-hidden [overflow-wrap:anywhere]">
       <MarkdownErrorBoundary
         fallback={
-          <pre className="max-w-full whitespace-pre-wrap break-words text-[length:var(--fs-md)] leading-[19.2px] tracking-normal [font-family:var(--codex-chat-font-family)] [font-weight:var(--codex-chat-font-weight)] [overflow-wrap:anywhere]">
+          <pre className="max-w-full whitespace-pre-wrap break-words font-[inherit] [overflow-wrap:anywhere]">
             {normalizedText}
           </pre>
         }

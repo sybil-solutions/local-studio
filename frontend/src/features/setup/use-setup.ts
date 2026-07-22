@@ -7,7 +7,6 @@ import { useRouter } from "next/navigation";
 import type {
   EngineBackend,
   EngineJob,
-  ModelRecommendation,
   RuntimeTarget,
   StarterPreset,
   StudioDiagnostics,
@@ -47,7 +46,6 @@ export function useSetup() {
   const [settings, setSettings] = useState<StudioSettings | null>(null);
   const [modelsDir, setModelsDir] = useState("");
   const [diagnostics, setDiagnostics] = useState<StudioDiagnostics | null>(null);
-  const [recommendations, setRecommendations] = useState<ModelRecommendation[]>([]);
   const [presets, setPresets] = useState<StarterPreset[]>([]);
   const [selectedPreset, setSelectedPreset] = useState<StarterPreset | null>(
     initialProgress.selectedPreset,
@@ -131,7 +129,6 @@ export function useSetup() {
       setSettings,
       setModelsDir,
       setDiagnostics,
-      setRecommendations,
       setMaxVram,
       setRuntimeTargets,
       setRuntimeJobs,
@@ -198,7 +195,7 @@ export function useSetup() {
   );
 
   const beginDownload = useCallback(
-    (modelId: string, preset?: StarterPreset) => {
+    (modelId: string, preset?: StarterPreset, allowPatterns?: string[]) => {
       if (!modelId) return Promise.resolve();
       setSelectedModel(modelId);
       setSelectedPreset(preset ?? null);
@@ -220,7 +217,7 @@ export function useSetup() {
         return Promise.resolve();
       }
       return Effect.runPromise(
-        beginDownloadEffect(modelId, preset, {
+        beginDownloadEffect(modelId, preset, allowPatterns, {
           startDownload: downloadsState.startDownload,
           setStep,
           setError,
@@ -228,6 +225,11 @@ export function useSetup() {
       );
     },
     [downloadsState, resetBenchmark, setCreatedRecipeId, setStep],
+  );
+
+  const beginVariantDownload = useCallback(
+    (modelId: string, allowPatterns?: string[]) => beginDownload(modelId, undefined, allowPatterns),
+    [beginDownload],
   );
 
   const beginPresetSetup = useCallback(
@@ -337,7 +339,6 @@ export function useSetup() {
     modelsDir,
     setModelsDir,
     diagnostics,
-    recommendations,
     presets,
     selectedPreset,
     beginPresetSetup,
@@ -369,6 +370,7 @@ export function useSetup() {
     installRuntime,
     updateRuntimeTarget,
     beginDownload,
+    beginVariantDownload,
     submitManualModel,
     continueFromHardware,
     configuringRecipe,

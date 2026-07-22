@@ -2,7 +2,7 @@
 
 import type { ReactNode, RefObject } from "react";
 import { Spinner } from "@/ui";
-import { ArrowUp, CircleAlert, Code2, Plus } from "@/ui/icon-registry";
+import { ArrowUp, Code2, Plus } from "@/ui/icon-registry";
 import type { BrowserBackend } from "@/features/agent/tools/types";
 import { GlobeIcon, PanelIcon, SitegeistIcon, StopIcon } from "@/ui/icons";
 import { ComposerDictationButton } from "./composer-dictation-button";
@@ -23,7 +23,6 @@ export function AgentComposerActions({
   onToggleCanvas,
   onAbortTurn,
   onTranscript,
-  onOpenStatus,
   modelSelector,
 }: {
   fileInputRef: RefObject<HTMLInputElement | null>;
@@ -41,11 +40,11 @@ export function AgentComposerActions({
   onToggleCanvas: () => void;
   onAbortTurn: () => void;
   onTranscript: (text: string) => void;
-  onOpenStatus?: () => void;
   modelSelector?: ReactNode;
 }) {
   const inputHasText = Boolean(input.trim());
   const starting = status === "starting";
+  const stopping = status === "stopping";
   const usingSitegeist = browserBackend === "sitegeist";
   const browserBackendLabel = usingSitegeist ? "Sitegeist relay" : "embedded panel";
   const browserBackendTarget = usingSitegeist ? "embedded panel" : "Sitegeist relay";
@@ -53,7 +52,7 @@ export function AgentComposerActions({
   const activeIconClass = "bg-(--active) text-(--fg)";
 
   return (
-    <div className="agent-composer-actions-row flex min-h-9 items-center gap-1 bg-transparent px-3 pb-2.5 pt-0.5 text-xs">
+    <div className="agent-composer-actions-row flex min-h-9 items-center gap-0.5 bg-transparent px-2 pb-2 pt-0 text-xs">
       <input
         ref={fileInputRef}
         type="file"
@@ -71,19 +70,6 @@ export function AgentComposerActions({
       >
         <Plus className="h-4 w-4" strokeWidth={1.75} />
       </button>
-      {onOpenStatus ? (
-        // Codex access chip: the agent runs with full access; the chip opens
-        // the status panel. Orange-200 from the Codex ramp.
-        <button
-          type="button"
-          onClick={onOpenStatus}
-          className="inline-flex !h-[30px] !min-h-[30px] shrink-0 items-center gap-1.5 rounded-full px-2 text-[length:var(--codex-chat-font-size)] text-(--orange-200) transition-colors hover:bg-(--hover)"
-          title="Full access — the agent can read, write, and run commands. Opens status."
-        >
-          <CircleAlert className="h-4 w-4" strokeWidth={1.75} />
-          Full access
-        </button>
-      ) : null}
       <button
         type="button"
         onClick={onToggleBrowserTool}
@@ -94,7 +80,7 @@ export function AgentComposerActions({
             ? "Browser tool: ON — agent can drive the browser"
             : "Browser tool: OFF — click to let the agent navigate, click, fill, and read pages"
         }
-        className={`inline-flex !h-7 !min-h-7 !w-7 !min-w-7 shrink-0 items-center justify-center rounded-full ${browserToolEnabled ? activeIconClass : inactiveIconClass}`}
+        className={`composer-action-optional inline-flex !h-7 !min-h-7 !w-7 !min-w-7 shrink-0 items-center justify-center rounded-full ${browserToolEnabled ? activeIconClass : inactiveIconClass}`}
       >
         <span className="relative inline-flex">
           <GlobeIcon className="h-4 w-4" />
@@ -105,7 +91,7 @@ export function AgentComposerActions({
           type="button"
           onClick={onToggleBrowserBackend}
           aria-label={`Browser backend: ${browserBackendLabel}. Switch to ${browserBackendTarget}.`}
-          className={`inline-flex !h-7 !min-h-7 !w-7 !min-w-7 shrink-0 items-center justify-center rounded-full ${usingSitegeist ? activeIconClass : inactiveIconClass}`}
+          className={`composer-action-optional inline-flex !h-7 !min-h-7 !w-7 !min-w-7 shrink-0 items-center justify-center rounded-full ${usingSitegeist ? activeIconClass : inactiveIconClass}`}
           title={`Browser: ${browserBackendLabel}. Click to use ${browserBackendTarget}.`}
         >
           {usingSitegeist ? (
@@ -125,26 +111,27 @@ export function AgentComposerActions({
             ? "Canvas: ON — shared scratchboard tools loaded; model reads/writes the canvas"
             : "Canvas: OFF — click to share a scratchboard with the model (notes, plans, links, state)"
         }
-        className={`inline-flex !h-7 !min-h-7 !w-7 !min-w-7 shrink-0 items-center justify-center rounded-full ${canvasEnabled ? activeIconClass : inactiveIconClass}`}
+        className={`composer-action-optional inline-flex !h-7 !min-h-7 !w-7 !min-w-7 shrink-0 items-center justify-center rounded-full ${canvasEnabled ? activeIconClass : inactiveIconClass}`}
       >
         <Code2 className="h-4 w-4" strokeWidth={1.5} />
       </button>
-      <div className="ml-auto flex shrink-0 items-center gap-1">
+      <div className="ml-auto flex min-w-0 shrink items-center gap-0.5">
         {modelSelector}
         <ComposerDictationButton
           disabled={running}
           inactiveClassName={inactiveIconClass}
+          idleClassName="composer-action-optional"
           onTranscript={onTranscript}
         />
         {running ? (
           <>
-            {starting ? (
+            {starting || stopping ? (
               <span
                 className="inline-flex !h-7 !min-h-7 shrink-0 items-center gap-1.5 px-2 text-[length:var(--fs-sm)] text-(--dim)"
-                title="Waiting for the model to start"
+                title={stopping ? "Waiting for Pi to stop" : "Waiting for the model to start"}
               >
                 <Spinner size="xs" />
-                Starting…
+                {stopping ? "Stopping…" : "Starting…"}
               </span>
             ) : inputHasText ? (
               <button
@@ -159,7 +146,7 @@ export function AgentComposerActions({
             <button
               type="button"
               onClick={onAbortTurn}
-              disabled={starting}
+              disabled={starting || stopping}
               className={`inline-flex shrink-0 items-center justify-center rounded-full bg-(--fg) text-(--bg) transition-opacity hover:opacity-85 disabled:opacity-30 ${inputHasText ? "!h-6 !min-h-6 !w-6 !min-w-6" : "!h-[30px] !min-h-[30px] !w-[30px] !min-w-[30px]"}`}
               aria-label="Stop"
               title="Stop (Esc)"

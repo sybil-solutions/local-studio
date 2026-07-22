@@ -89,6 +89,7 @@ export type SessionTab = {
   projectId?: string;
   cwd?: string;
   modelId?: string;
+  thinkingLevel?: import("@/features/agent/contracts").AgentThinkingLevel;
   title: string;
   messages: ChatMessage[];
   status: import("@/features/agent/runtime/types").SessionStatus;
@@ -107,6 +108,7 @@ export type SessionTab = {
   // Pi `queue_update` reconciles the canonical queue. Steering messages are
   // sent as immediate control messages and are not surfaced in this queue UI.
   queue?: QueuedMessage[];
+  extensionUiRequest?: import("@/features/agent/runtime/types").ExtensionUiRequest;
 };
 
 export type RuntimeLoggedEvent = {

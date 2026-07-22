@@ -1,12 +1,3 @@
-export interface StudioModelRecommendation {
-  id: string;
-  name: string;
-  size_gb: number;
-  min_vram_gb: number;
-  description: string;
-  tags: string[];
-}
-
 /**
  * A curated first-run preset. `download` presets pull weights from Hugging Face
  * and become a local recipe; `remote` presets register an external

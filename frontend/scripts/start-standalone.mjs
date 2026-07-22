@@ -7,6 +7,11 @@ const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const standaloneRoot = resolve(projectRoot, ".next", "standalone");
 const nestedRoot = resolve(standaloneRoot, "frontend");
 const serverRoot = existsSync(nestedRoot) ? nestedRoot : standaloneRoot;
+const rawPort = process.env.PORT || "4783";
+const port = Number(rawPort);
+if (!Number.isInteger(port) || port < 1024 || port > 65535) {
+  throw new Error("PORT must be an integer from 1024 through 65535");
+}
 const runtimeUrl = (
   process.env.LOCAL_STUDIO_AGENT_RUNTIME_URL || "http://127.0.0.1:8081"
 ).replace(/\/+$/, "");
@@ -49,7 +54,7 @@ async function startRuntime() {
     env: {
       ...process.env,
       PORT: url.port || "8081",
-      LOCAL_STUDIO_FRONTEND_BASE: `http://127.0.0.1:${process.env.PORT || "3000"}`,
+      LOCAL_STUDIO_FRONTEND_BASE: `http://127.0.0.1:${port}`,
     },
   });
   try {
@@ -74,10 +79,13 @@ const server = spawn(process.execPath, ["server.js"], {
   stdio: "inherit",
   env: {
     ...process.env,
+    HOSTNAME: "127.0.0.1",
+    PORT: String(port),
     LOCAL_STUDIO_AGENT_CWD: process.env.LOCAL_STUDIO_AGENT_CWD || resolve(projectRoot, ".."),
     LOCAL_STUDIO_AGENT_RUNTIME_URL: runtimeUrl,
   },
 });
+console.log(`Local Studio: http://127.0.0.1:${port}`);
 
 function stopOwnedRuntime() {
   if (agentRuntime?.exitCode === null) agentRuntime.kill("SIGTERM");

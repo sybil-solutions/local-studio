@@ -1,4 +1,8 @@
-import { inferModelVision, resolveModelVision } from "../../controller/contracts/model-capabilities";
+import {
+  inferModelVision,
+  resolveModelVision,
+} from "../../controller/contracts/model-capabilities";
+import type { AgentThinkingLevel } from "./agent-turn";
 
 export interface OpenAIModelListItem {
   id: string;
@@ -32,6 +36,7 @@ export interface AgentModel {
   contextWindow: number;
   maxTokens: number;
   reasoning: boolean;
+  thinkingLevels?: AgentThinkingLevel[];
   vision: boolean;
   active: boolean;
 }

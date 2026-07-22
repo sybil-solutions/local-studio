@@ -8,6 +8,7 @@ import {
   type PersistedToolSelectionFields,
 } from "@/features/agent/tools/selection-persistence";
 import type { ComposerSkillRef } from "@/features/agent/composer-context";
+import { isAgentThinkingLevel } from "@/features/agent/contracts";
 import type {
   PaneId,
   PaneState,
@@ -91,6 +92,7 @@ export function normalizePersistedTab(value: unknown): Session | null {
     status: "idle",
     error: "",
     startedAt: typeof tab.startedAt === "string" ? tab.startedAt : undefined,
+    thinkingLevel: isAgentThinkingLevel(tab.thinkingLevel) ? tab.thinkingLevel : undefined,
     input: typeof tab.input === "string" ? tab.input : "",
     queue: Array.isArray(tab.queue) ? tab.queue : undefined,
     activeAssistantId: undefined,
@@ -226,6 +228,7 @@ export function sessionMetaForPersistence(
     projectId: tab.projectId,
     cwd: tab.cwd,
     modelId: tab.modelId,
+    thinkingLevel: tab.thinkingLevel,
     title: cleanSessionTitle(tab.title) || "New session",
     startedAt: tab.startedAt,
     tokenStats: tab.tokenStats,

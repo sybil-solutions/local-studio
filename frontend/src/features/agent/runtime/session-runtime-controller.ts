@@ -8,7 +8,7 @@
 // runtime status. (Turn-intent status — "starting", accept, abort — stays
 // with prompt-stream/engine; hydration status with loadAndReplay.)
 
-import { isAgentEndEvent } from "@shared/agent/pi-events";
+import { isAgentSettledEvent } from "@shared/agent/pi-events";
 import { drainQueueAfterAgentEnd, piSessionIdFromEvent } from "@/features/agent/messages";
 import {
   listRuntimeSessions,
@@ -157,7 +157,7 @@ export function createSessionRuntimeController(
   let pollTimer: ReturnType<typeof setInterval> | null = null;
   let pollEpoch = 0;
   const turnAcceptedAt = new Map<SessionId, number>();
-  // When the SSE delivered an authoritative `agent_end` for a session. The
+  // When the SSE delivered an authoritative `agent_settled` for a session. The
   // server's runtime list drops the just-finished runtime lazily, so for a few
   // seconds after the turn ends the poll can still see it as active. Without a
   // guard the poll's active branch re-promotes the session to "running",
@@ -267,7 +267,7 @@ export function createSessionRuntimeController(
       ...session,
       piSessionId: payload.session?.piSessionId || session.piSessionId,
       contextUsage: runtimeContextUsage(payload.session, session.contextUsage),
-      status: idle ? "idle" : "running",
+      status: idle ? "idle" : session.status === "stopping" ? "stopping" : "running",
       activeAssistantId: idle ? undefined : session.activeAssistantId,
     }));
   };
@@ -279,7 +279,7 @@ export function createSessionRuntimeController(
     const eventId = piSessionIdFromEvent(payload.event);
     if (!acceptSeq(sessionId, payload.seq)) return;
 
-    if (isAgentEndEvent(payload.event)) {
+    if (isAgentSettledEvent(payload.event)) {
       // Record the authoritative end-of-turn so the runtime poll won't
       // resurrect "running" off a stale still-active list snapshot.
       turnFinishedAt.set(sessionId, Date.now());
@@ -313,18 +313,19 @@ export function createSessionRuntimeController(
     // event's effects commit (targeting lives in the reducer now), so this
     // leaves activeAssistantId to the reducer.
     commit(sessionId, (session) =>
-      session.status === "running" && (!eventId || session.piSessionId === eventId)
+      (session.status === "running" || session.status === "stopping") &&
+      (!eventId || session.piSessionId === eventId)
         ? session
         : {
             ...session,
             piSessionId: eventId || session.piSessionId,
-            status: "running",
+            status: session.status === "stopping" ? "stopping" : "running",
           },
     );
     enqueueEvent(sessionId, payload.event, payload.seq);
   };
 
-  // True while a session sits in its post-`agent_end` grace: the SSE already
+  // True while a session sits in its post-`agent_settled` grace: the SSE already
   // settled the turn to idle, but the server's runtime list can still report
   // the finished runtime as active for a beat. A newer accepted turn supersedes
   // the finish (genuine restart) and ends the grace early.
@@ -409,7 +410,7 @@ export function createSessionRuntimeController(
       if (!status) continue;
       if (status.active === true) {
         // Post-finish grace (symmetric to the idle branch's accept grace): the
-        // SSE's `agent_end` is the authoritative end of a turn. For a few
+        // SSE's `agent_settled` is the authoritative end of a turn. For a few
         // seconds after it, the server's runtime list can still report the
         // just-finished runtime as active. Re-promoting to "running" off that
         // stale snapshot fights the SSE's idle and oscillates status —
@@ -427,14 +428,15 @@ export function createSessionRuntimeController(
           );
         }
         commit(session.id, (current) => {
-          if (sameRuntimePatch(current, patch, "running")) return current;
+          const nextStatus = current.status === "stopping" ? "stopping" : "running";
+          if (sameRuntimePatch(current, patch, nextStatus)) return current;
           return {
             ...current,
             ...patch,
-            status: "running",
+            status: nextStatus,
           };
         });
-      } else if (session.status === "running") {
+      } else if (session.status === "running" || session.status === "stopping") {
         idleFromRuntimeList(session, status, fetchStartedAt);
       }
     }
@@ -456,7 +458,7 @@ export function createSessionRuntimeController(
     if (acceptedAt !== undefined && fetchStartedAt - acceptedAt < pollIdleGraceMs) return;
     const patch = patchRuntimeStatus(status);
     commit(session.id, (current) => {
-      if (current.status !== "running") return current;
+      if (current.status !== "running" && current.status !== "stopping") return current;
       if (sameRuntimePatch(current, patch, "idle") && !current.activeAssistantId) {
         return current;
       }
@@ -539,7 +541,7 @@ export function createSessionRuntimeController(
               ...session,
               piSessionId: status.piSessionId || session.piSessionId,
               contextUsage: runtimeContextUsage(status, session.contextUsage),
-              status: "running",
+              status: session.status === "stopping" ? "stopping" : "running",
             }));
             reconnect();
             return;
@@ -551,7 +553,9 @@ export function createSessionRuntimeController(
           sub?.close();
           coalescer.flushNow(sessionId);
           commit(sessionId, (session) =>
-            session.status === "running" || session.status === "starting"
+            session.status === "running" ||
+            session.status === "starting" ||
+            session.status === "stopping"
               ? {
                   ...settleTurn(session),
                   contextUsage: runtimeContextUsage(status, session.contextUsage),
@@ -629,7 +633,7 @@ export function createSessionRuntimeController(
       }
       // A new turn's authoritative bubble is its optimistic activeAssistantId;
       // discard any stale mid-stream redirect left over from a prior turn that
-      // settled without an agent_end (e.g. idled by the runtime poll).
+      // settled without an agent_settled (e.g. idled by the runtime poll).
       if (assistantId) streamContext.liveAssistantIds.set(sessionId, assistantId);
       else streamContext.liveAssistantIds.delete(sessionId);
     },

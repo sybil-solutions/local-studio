@@ -37,6 +37,25 @@ jobs:
       - name: Cleanup checks
         working-directory: ./controller
         run: bun run check
+      - name: Tests
+        working-directory: ./controller
+        run: bun run test
+  agent-runtime:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - name: Install dependencies
+        working-directory: ./services/agent-runtime
+        run: bun install --frozen-lockfile
+      - name: Install shared contract dependencies
+        working-directory: ./shared
+        run: bun install --frozen-lockfile
+      - name: Tests
+        working-directory: ./services/agent-runtime
+        run: bun run test
   frontend:
     runs-on: ubuntu-latest
     steps:
@@ -49,6 +68,9 @@ jobs:
           bun-version: latest
       - name: Install controller contract dependencies
         working-directory: ./controller
+        run: bun install --frozen-lockfile
+      - name: Install shared contract dependencies
+        working-directory: ./shared
         run: bun install --frozen-lockfile
       - name: Install dependencies
         working-directory: ./frontend

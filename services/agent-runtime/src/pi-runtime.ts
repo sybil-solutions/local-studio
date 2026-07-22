@@ -1,12 +1,16 @@
 import { EventEmitter } from "node:events";
+import { randomUUID } from "node:crypto";
+import { closeSync, constants, fsyncSync, openSync, readSync, statSync } from "node:fs";
 import {
   createAgentSessionFromServices,
   createAgentSessionRuntime,
   createAgentSessionServices,
+  getAgentDir,
   SessionManager,
   shouldCompact,
   type AgentSessionEvent,
   type AgentSessionRuntime,
+  type ExtensionUIContext,
 } from "@earendil-works/pi-coding-agent";
 import { Effect } from "effect";
 import type { AgentImageInput } from "../../../shared/agent/agent-image-input";
@@ -21,7 +25,7 @@ import { refreshPiModels, resolvePiModelSelection } from "./pi-runtime-models";
 import { getProviderHub } from "./provider-hub";
 import { attachGoalDriver } from "./goal-driver";
 import { findRuntimeSessionForLookup, piStatusFromEvents } from "./pi-runtime-state";
-import { findSessionFile } from "./sessions-store";
+import { configuredPiSessionDir, findSessionFile } from "./sessions-store";
 import { getGlobalSingleton } from "./instances";
 import { connectorsRevisionSync } from "./connectors-service";
 import type {
@@ -29,9 +33,137 @@ import type {
   PiAgentSession,
   PiAgentStatus,
   PiContextUsage,
+  PiDurablePromptBoundary,
+  PiDurablePromptMarker,
+  PiPromptOptions,
 } from "./pi-runtime-types";
 
 type PiEvent = LoggedPiEvent["event"];
+
+type DurableSessionManager = Pick<
+  SessionManager,
+  "appendCustomEntry" | "getCwd" | "getEntries" | "getSessionFile" | "getSessionId"
+>;
+
+const messageText = (message: unknown): string | null => {
+  if (!message || typeof message !== "object" || Array.isArray(message)) return null;
+  const record = message as Record<string, unknown>;
+  if (record.role !== "user") return null;
+  if (typeof record.content === "string") return record.content;
+  if (!Array.isArray(record.content)) return null;
+  let text = "";
+  for (const part of record.content) {
+    if (!part || typeof part !== "object" || Array.isArray(part)) continue;
+    const item = part as Record<string, unknown>;
+    if (item.type === "text" && typeof item.text === "string") text += item.text;
+  }
+  return text;
+};
+
+export function persistLitterPromptBoundary(input: {
+  sessionManager: DurableSessionManager;
+  startEntryCount: number;
+  message: string;
+  marker: PiDurablePromptMarker;
+  modelId: string;
+}): PiDurablePromptBoundary {
+  const beforeMarker = input.sessionManager.getEntries();
+  const matches = beforeMarker.slice(input.startEntryCount).filter((entry) => {
+    if (!entry || typeof entry !== "object" || !("message" in entry)) return false;
+    return messageText(entry.message) === input.message;
+  });
+  if (matches.length !== 1) throw new Error("Prompt transcript boundary is ambiguous");
+  const userEntryId = matches[0]?.id;
+  const piSessionId = input.sessionManager.getSessionId();
+  const sessionFile = input.sessionManager.getSessionFile();
+  const cwd = input.sessionManager.getCwd();
+  if (!userEntryId || !piSessionId || !sessionFile || !cwd || !input.modelId) {
+    throw new Error("Prompt transcript boundary identity is incomplete");
+  }
+  const markerEntryId = input.sessionManager.appendCustomEntry("local_studio_litter_turn_v1", {
+    version: 1,
+    dispatchId: input.marker.dispatchId,
+    messageId: input.marker.messageId,
+    contentHash: input.marker.contentHash,
+    userEntryId,
+  });
+  const markerEntry = input.sessionManager.getEntries().find((entry) => entry.id === markerEntryId);
+  if (!markerEntry || typeof markerEntry.timestamp !== "string") {
+    throw new Error("Prompt transcript marker was not persisted");
+  }
+  const descriptor = openSync(sessionFile, constants.O_RDONLY);
+  try {
+    fsyncSync(descriptor);
+  } finally {
+    closeSync(descriptor);
+  }
+  const size = statSync(sessionFile).size;
+  const length = Math.min(size, 256 * 1024);
+  const buffer = Buffer.allocUnsafe(length);
+  const reader = openSync(sessionFile, constants.O_RDONLY);
+  let bytesRead = 0;
+  try {
+    bytesRead = readSync(reader, buffer, 0, length, size - length);
+  } finally {
+    closeSync(reader);
+  }
+  const encodedMarker = buffer
+    .subarray(0, bytesRead)
+    .toString("utf8")
+    .split("\n")
+    .filter(Boolean)
+    .find((line) => {
+      try {
+        const entry = JSON.parse(line) as Record<string, unknown>;
+        return entry.id === markerEntryId && entry.customType === "local_studio_litter_turn_v1";
+      } catch {
+        return false;
+      }
+    });
+  if (!encodedMarker) throw new Error("Prompt transcript marker durability check failed");
+  return {
+    dispatchId: input.marker.dispatchId,
+    markerEntryId,
+    userEntryId,
+    piSessionId,
+    sessionFile,
+    cwd,
+    modelId: input.modelId,
+    acceptedAt: markerEntry.timestamp,
+  };
+}
+
+export function selectPiRuntimeModel(
+  models: Awaited<ReturnType<typeof refreshPiModels>>["models"],
+  requestedModelId: string,
+) {
+  const exact = models.find((model) => model.id === requestedModelId);
+  if (exact) return exact;
+  const separator = requestedModelId.indexOf("/");
+  if (separator > 0) {
+    const providerId = requestedModelId.slice(0, separator);
+    const rawId = requestedModelId.slice(separator + 1);
+    const qualified = models.filter(
+      (model) => model.providerId === providerId && (model.rawId === rawId || model.id === rawId),
+    );
+    if (qualified.length === 1) return qualified[0];
+    if (qualified.length > 1) throw new Error(`Model '${requestedModelId}' is ambiguous.`);
+  }
+  const unqualified = models.filter(
+    (model) => model.rawId === requestedModelId || model.name === requestedModelId,
+  );
+  if (unqualified.length === 1) return unqualified[0];
+  if (unqualified.length > 1) throw new Error(`Model '${requestedModelId}' is ambiguous.`);
+  return null;
+}
+
+export function resolvePiRuntimeStartOptions(
+  current: RuntimeStartOptions,
+  running: boolean,
+  requested?: RuntimeStartOptions,
+): RuntimeStartOptions {
+  return structuredClone(requested ?? (running ? current : {}));
+}
 
 function runtimeFingerprint(
   modelId: string,
@@ -86,14 +218,23 @@ class PiSdkSession extends EventEmitter implements PiAgentSession {
   private currentModelId = "";
   private currentStartOptions: RuntimeStartOptions = {};
   private agentDir = "";
+  private extensionUiPending = new Map<
+    string,
+    { method: "select" | "confirm" | "input" | "editor"; resolve: (value: unknown) => void }
+  >();
 
   ensureStarted(
     modelId: string,
     cwd?: string,
     piSessionId?: string | null,
-    options: RuntimeStartOptions = {},
+    options?: RuntimeStartOptions,
   ): Promise<void> {
-    return Effect.runPromise(this.ensureStartedEffect(modelId, cwd, piSessionId, options));
+    const effectiveOptions = resolvePiRuntimeStartOptions(
+      this.currentStartOptions,
+      Boolean(this.runtime),
+      options,
+    );
+    return Effect.runPromise(this.ensureStartedEffect(modelId, cwd, piSessionId, effectiveOptions));
   }
 
   private ensureStartedEffect(
@@ -115,13 +256,11 @@ class PiSdkSession extends EventEmitter implements PiAgentSession {
         this.activePromptCount = 0;
         this.lastError = null;
 
-        const { models, agentDir } = yield* Effect.tryPromise({
+        const { models } = yield* Effect.tryPromise({
           try: () => refreshPiModels(),
           catch: (error) => error,
         });
-        const selectedModel = models.find(
-          (model) => model.id === modelId || model.rawId === modelId || model.name === modelId,
-        );
+        const selectedModel = selectPiRuntimeModel(models, modelId);
         if (!selectedModel) {
           return yield* Effect.fail(
             new Error(`Model '${modelId}' is not available from /v1/models.`),
@@ -141,10 +280,15 @@ class PiSdkSession extends EventEmitter implements PiAgentSession {
 
         const sessionOptions = buildAgentSessionOptionsSync({ options });
         applyRuntimeEnvInjections(sessionOptions.envInjections);
-        const sessionManager = SessionManager.create(resolvedCwd);
+        const sessionDir = configuredPiSessionDir(resolvedCwd);
         const resumeFile = desiredSessionId ? findSessionFile(resolvedCwd, desiredSessionId) : null;
-        if (resumeFile) sessionManager.setSessionFile(resumeFile);
+        const sessionManager = resumeFile
+          ? SessionManager.open(resumeFile, sessionDir, resolvedCwd)
+          : SessionManager.create(resolvedCwd, sessionDir);
         const resuming = Boolean(resumeFile);
+        const agentDir = getAgentDir();
+        const extensionUiContext = this.extensionUiContext();
+        const recordExtensionEvent = (event: PiEvent) => this.recordEvent(event);
         const runtime = yield* Effect.tryPromise({
           try: () =>
             createAgentSessionRuntime(
@@ -158,7 +302,6 @@ class PiSdkSession extends EventEmitter implements PiAgentSession {
                           agentDir,
                           modelRuntime: sharedModelRuntime,
                           resourceLoaderOptions: {
-                            noExtensions: true,
                             additionalSkillPaths: sessionOptions.skills,
                             additionalExtensionPaths: sessionOptions.extensionPaths,
                             additionalPromptTemplatePaths: sessionOptions.promptTemplatePaths,
@@ -181,7 +324,30 @@ class PiSdkSession extends EventEmitter implements PiAgentSession {
                           sessionManager,
                           sessionStartEvent,
                           model,
-                          thinkingLevel: selectedModel.reasoning ? "high" : undefined,
+                          thinkingLevel: selectedModel.reasoning
+                            ? (options.thinkingLevel ?? "high")
+                            : undefined,
+                        }),
+                      catch: (error) => error,
+                    });
+                    const activeToolNames =
+                      options.toolAccess === "read_only"
+                        ? ["read", "grep", "find", "ls"]
+                        : created.session.getAllTools().map((tool) => tool.name);
+                    created.session.setActiveToolsByName(activeToolNames);
+                    yield* Effect.tryPromise({
+                      try: () =>
+                        created.session.bindExtensions({
+                          mode: "rpc",
+                          uiContext: extensionUiContext,
+                          onError: (error) => {
+                            recordExtensionEvent({
+                              type: "extension_error",
+                              error: error.error,
+                              extensionPath: error.extensionPath,
+                              event: error.event,
+                            });
+                          },
                         }),
                       catch: (error) => error,
                     });
@@ -236,15 +402,33 @@ class PiSdkSession extends EventEmitter implements PiAgentSession {
   prompt(
     message: string,
     onEvent: (event: PiEvent, seq: number) => void,
-    options: { streamingBehavior?: "steer" | "followUp"; images?: AgentImageInput[] } = {},
+    options: PiPromptOptions = {},
   ): Promise<void> {
     return Effect.runPromise(this.promptEffect(message, onEvent, options));
+  }
+
+  async promptDurably(
+    message: string,
+    onEvent: (event: PiEvent, seq: number) => void,
+    marker: PiDurablePromptMarker,
+    options: PiPromptOptions = {},
+  ): Promise<PiDurablePromptBoundary> {
+    const runtimeSession = this.requireSession();
+    const startEntryCount = runtimeSession.sessionManager.getEntries().length;
+    await this.prompt(message, onEvent, options);
+    return persistLitterPromptBoundary({
+      sessionManager: runtimeSession.sessionManager,
+      startEntryCount,
+      message,
+      marker,
+      modelId: this.currentModelId,
+    });
   }
 
   private promptEffect(
     message: string,
     onEvent: (event: PiEvent, seq: number) => void,
-    options: { streamingBehavior?: "steer" | "followUp"; images?: AgentImageInput[] },
+    options: PiPromptOptions,
   ): Effect.Effect<void, unknown> {
     const listener = (logged: LoggedPiEvent) => onEvent(logged.event, logged.seq);
     this.on("loggedEvent", listener);
@@ -255,7 +439,7 @@ class PiSdkSession extends EventEmitter implements PiAgentSession {
       catch: (error) => error,
     }).pipe(
       Effect.catch((error) =>
-        shouldRestartAfterPromptError(error)
+        options.restartOnContinuationError !== false && shouldRestartAfterPromptError(error)
           ? this.restartPromptEffect(message, options)
           : Effect.fail(error),
       ),
@@ -273,19 +457,19 @@ class PiSdkSession extends EventEmitter implements PiAgentSession {
     );
   }
 
-  private promptSession(
-    message: string,
-    options: { streamingBehavior?: "steer" | "followUp"; images?: AgentImageInput[] },
-  ): Promise<void> {
+  private promptSession(message: string, options: PiPromptOptions): Promise<void> {
     return this.requireSession().prompt(message, {
       streamingBehavior: options.streamingBehavior,
       images: options.images,
+      expandPromptTemplates: options.expandPromptTemplates,
+      source: options.source,
+      preflightResult: options.preflightResult,
     });
   }
 
   private restartPromptEffect(
     message: string,
-    options: { streamingBehavior?: "steer" | "followUp"; images?: AgentImageInput[] },
+    options: PiPromptOptions,
   ): Effect.Effect<void, unknown> {
     return this.ensureStartedEffect(
       this.currentModelId,
@@ -342,10 +526,31 @@ class PiSdkSession extends EventEmitter implements PiAgentSession {
   abort(): Promise<void> {
     return Effect.runPromise(
       Effect.tryPromise({
-        try: () => this.runtime?.session.abort() ?? Promise.resolve(),
+        try: async () => {
+          const session = this.runtime?.session;
+          if (!session) return;
+          session.clearQueue();
+          await session.abort();
+          await session.waitForIdle();
+        },
         catch: () => undefined,
       }).pipe(Effect.catch(() => Effect.void)),
     );
+  }
+
+  respondExtensionUi(
+    requestId: string,
+    response: { value?: string; confirmed?: boolean; cancelled?: boolean },
+  ): boolean {
+    const pending = this.extensionUiPending.get(requestId);
+    if (!pending) return false;
+    this.extensionUiPending.delete(requestId);
+    if (response.cancelled) {
+      pending.resolve(pending.method === "confirm" ? false : undefined);
+      return true;
+    }
+    pending.resolve(pending.method === "confirm" ? response.confirmed === true : response.value);
+    return true;
   }
 
   stop(): Promise<void> {
@@ -357,6 +562,10 @@ class PiSdkSession extends EventEmitter implements PiAgentSession {
     this.unsubscribe = null;
     const runtime = this.runtime;
     this.runtime = null;
+    for (const pending of this.extensionUiPending.values()) {
+      pending.resolve(pending.method === "confirm" ? false : undefined);
+    }
+    this.extensionUiPending.clear();
     if (!runtime) return Effect.void;
     return Effect.tryPromise({
       try: () => runtime.dispose(),
@@ -417,7 +626,73 @@ class PiSdkSession extends EventEmitter implements PiAgentSession {
     return session;
   }
 
-  private recordEvent(event: AgentSessionEvent) {
+  private extensionUiContext(): ExtensionUIContext {
+    const request = (
+      method: "select" | "confirm" | "input" | "editor",
+      payload: Record<string, unknown>,
+      timeout?: number,
+      signal?: AbortSignal,
+    ) => {
+      const requestId = randomUUID();
+      return new Promise<unknown>((resolve) => {
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const finish = (value: unknown) => {
+          if (timer) clearTimeout(timer);
+          signal?.removeEventListener("abort", cancel);
+          this.extensionUiPending.delete(requestId);
+          resolve(value);
+        };
+        const cancel = () => finish(method === "confirm" ? false : undefined);
+        this.extensionUiPending.set(requestId, { method, resolve: finish });
+        this.recordEvent({ type: "extension_ui_request", requestId, method, ...payload });
+        if (timeout && timeout > 0) timer = setTimeout(cancel, timeout);
+        signal?.addEventListener("abort", cancel, { once: true });
+        if (signal?.aborted) cancel();
+      });
+    };
+    return {
+      select: (title, options, opts) =>
+        request("select", { title, options }, opts?.timeout, opts?.signal) as Promise<
+          string | undefined
+        >,
+      confirm: (title, message, opts) =>
+        request("confirm", { title, message }, opts?.timeout, opts?.signal) as Promise<boolean>,
+      input: (title, placeholder, opts) =>
+        request("input", { title, placeholder }, opts?.timeout, opts?.signal) as Promise<
+          string | undefined
+        >,
+      editor: (title, prefill) =>
+        request("editor", { title, prefill }) as Promise<string | undefined>,
+      notify: (message, level = "info") =>
+        this.recordEvent({ type: "notice", level, message }),
+      setStatus: (key, text) =>
+        this.recordEvent({ type: "extension_status", key, text: text ?? null }),
+      setTitle: (title) => this.recordEvent({ type: "extension_title", title }),
+      onTerminalInput: () => () => undefined,
+      setWorkingMessage: () => undefined,
+      setWorkingVisible: () => undefined,
+      setWorkingIndicator: () => undefined,
+      setHiddenThinkingLabel: () => undefined,
+      setWidget: () => undefined,
+      setFooter: () => undefined,
+      setHeader: () => undefined,
+      custom: async () => undefined as never,
+      pasteToEditor: () => undefined,
+      setEditorText: () => undefined,
+      getEditorText: () => "",
+      addAutocompleteProvider: () => undefined,
+      setEditorComponent: () => undefined,
+      getEditorComponent: () => undefined,
+      theme: undefined as never,
+      getAllThemes: () => [],
+      getTheme: () => undefined,
+      setTheme: () => ({ success: false, error: "Theme changes require the Pi TUI" }),
+      getToolsExpanded: () => false,
+      setToolsExpanded: () => undefined,
+    };
+  }
+
+  private recordEvent(event: PiEvent) {
     if (event.type === "session_info_changed" && this.runtime?.session.sessionId) {
       this.currentPiSessionId = this.runtime.session.sessionId;
     }
@@ -465,7 +740,9 @@ class PiRuntimeManager {
       target && exactPiSessionId && exactPiSessionId !== target
         ? `${sessionId}:${target}`
         : sessionId;
-    return { sessionId: runtimeSessionId, session: this.getSession(runtimeSessionId) };
+    const session = this.getSession(runtimeSessionId);
+    session.adoptPiSessionId(target);
+    return { sessionId: runtimeSessionId, session };
   }
 
   findSessionForLookup(

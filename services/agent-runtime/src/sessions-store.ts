@@ -11,9 +11,14 @@ import {
 import { homedir } from "node:os";
 import path from "node:path";
 import readline from "node:readline";
+import {
+  getAgentDir,
+  SessionManager,
+  SettingsManager,
+} from "@earendil-works/pi-coding-agent";
 import { resolveDataDir } from "./data-dir";
 import { cleanSessionTitle } from "../../../shared/agent/session-title";
-import { sessionArchiveState } from "./session-metadata-store";
+import { readSessionListMetadata } from "./session-metadata-store";
 import type { SessionSummary } from "../../../shared/agent/session-summary";
 export type { SessionSummary } from "../../../shared/agent/session-summary";
 
@@ -47,22 +52,23 @@ function summaryStartTime(session: Pick<SessionSummary, "startedAt" | "updatedAt
   return Number.isFinite(value) ? value : 0;
 }
 
-// Pi encodes the cwd by stripping the leading '/' and replacing remaining '/'
-// with '-', then wrapping with '--' on both sides. Example:
-//   /Users/sero/projects/local-studio  →  --Users-sero-projects-local-studio--
-function encodeCwdForPi(cwd: string): string {
+export function encodeCwdForPi(cwd: string): string {
   const normalized = path.resolve(cwd).replace(/\\+/g, "/");
   const collapsed = normalized.replace(/^\//, "").replace(/\/+/g, "-");
   return `--${collapsed}--`;
 }
 
-function piSessionRoots(): string[] {
-  const roots = [
-    process.env.PI_CODING_AGENT_DIR ? path.join(process.env.PI_CODING_AGENT_DIR, "sessions") : null,
-    path.join(resolveDataDir(), "pi-agent", "sessions"),
-    path.join(homedir(), ".pi", "agent", "sessions"),
-  ].filter((value): value is string => Boolean(value));
-  return [...new Set(roots.map((root) => path.resolve(root)))];
+export function configuredPiSessionDir(cwd: string): string | undefined {
+  const envSessionDir = process.env.PI_CODING_AGENT_SESSION_DIR?.trim();
+  if (envSessionDir) {
+    const expanded = envSessionDir === "~"
+      ? homedir()
+      : envSessionDir.startsWith(`~${path.sep}`)
+        ? path.join(homedir(), envSessionDir.slice(2))
+        : envSessionDir;
+    return path.resolve(expanded);
+  }
+  return SettingsManager.create(cwd, getAgentDir()).getSessionDir();
 }
 
 function cwdVariants(cwd: string): string[] {
@@ -82,7 +88,18 @@ function cwdVariants(cwd: string): string[] {
 
 function sessionsDirsForCwd(cwd: string): string[] {
   const encodedCwds = [...new Set(cwdVariants(cwd).map(encodeCwdForPi))];
-  return piSessionRoots().flatMap((root) => encodedCwds.map((encoded) => path.join(root, encoded)));
+  const nativeDir = configuredPiSessionDir(cwd) ?? SessionManager.create(cwd).getSessionDir();
+  const legacyRoot = path.join(resolveDataDir(), "pi-agent", "sessions");
+  return [
+    path.resolve(nativeDir),
+    ...encodedCwds.map((encoded) => path.join(legacyRoot, encoded)),
+  ].filter((value, index, values) => values.indexOf(value) === index);
+}
+
+function sessionCwdMatches(summaryCwd: string, cwd: string): boolean {
+  if (!summaryCwd) return false;
+  const expected = new Set(cwdVariants(cwd));
+  return cwdVariants(summaryCwd).some((candidate) => expected.has(candidate));
 }
 
 function piTextContent(content: PiMessageContent | undefined): string | null {
@@ -121,17 +138,24 @@ const SUMMARY_SCAN_LINE_CAP = 2000;
 type SummaryCacheEntry = {
   mtimeMs: number;
   complete: boolean;
-  core: Omit<SessionSummary, "updatedAt" | "archived" | "archivedAt"> | null;
+  core: Omit<
+    SessionSummary,
+    "updatedAt" | "archived" | "archivedAt" | "parentSessionId" | "subagentName"
+  > | null;
 };
 const summaryCache = new Map<string, SummaryCacheEntry>();
 const SUMMARY_CACHE_MAX_ENTRIES = 8192;
 
-function summaryFromCore(
-  core: SummaryCacheEntry["core"],
-  mtime: Date,
-): SessionSummary | null {
+function summaryFromCore(core: SummaryCacheEntry["core"], mtime: Date): SessionSummary | null {
   if (!core) return null;
-  return { ...core, updatedAt: mtime.toISOString(), archived: false, archivedAt: null };
+  return {
+    ...core,
+    updatedAt: mtime.toISOString(),
+    archived: false,
+    archivedAt: null,
+    parentSessionId: null,
+    subagentName: null,
+  };
 }
 
 function rememberSummary(filepath: string, entry: SummaryCacheEntry): void {
@@ -203,9 +227,13 @@ async function readSessionSummary(
   return summaryFromCore(core, stats.mtime);
 }
 
-function applySessionMetadata(summary: SessionSummary): SessionSummary {
-  const archiveState = sessionArchiveState(summary.id);
-  return { ...summary, ...archiveState };
+type SessionMetadataLookup = ReturnType<typeof readSessionListMetadata>;
+
+function applySessionMetadata(
+  summary: SessionSummary,
+  metadataFor: SessionMetadataLookup,
+): SessionSummary {
+  return { ...summary, ...metadataFor(summary.id) };
 }
 
 function summaryRelevantTime(summary: SessionSummary, archivedOnly: boolean): number {
@@ -242,9 +270,11 @@ function summaryMatchesListOptions(
 }
 
 async function readListCandidate(
+  cwd: string,
   dir: string,
   filename: string,
   options: NormalizedListSessionsOptions,
+  metadataFor: SessionMetadataLookup,
 ): Promise<SessionSummary | null> {
   try {
     if (!filename.endsWith(".jsonl")) return null;
@@ -265,15 +295,18 @@ async function readListCandidate(
     }
     const summary = await readSessionSummary(filepath, filename);
     if (!summary?.id) return null;
+    if (!sessionCwdMatches(summary.cwd, cwd)) return null;
     if (options.wantedIds.size > 0 && !options.wantedIds.has(summary.id)) return null;
-    const decorated = applySessionMetadata(summary);
+    const decorated = applySessionMetadata(summary, metadataFor);
     return summaryMatchesListOptions(decorated, options) ? decorated : null;
   } catch {
     return null;
   }
 }
 
-function listCandidateFiles(cwd: string): Array<{ dir: string; filename: string; mtimeMs: number }> {
+function listCandidateFiles(
+  cwd: string,
+): Array<{ dir: string; filename: string; mtimeMs: number }> {
   const candidates: Array<{ dir: string; filename: string; mtimeMs: number }> = [];
   for (const dir of sessionsDirsForCwd(cwd)) {
     if (!existsSync(dir)) continue;
@@ -295,9 +328,7 @@ function limitSatisfied(
   nextMtimeMs: number,
 ): boolean {
   if (!limit || summariesById.size < limit) return false;
-  const startTimes = [...summariesById.values()]
-    .map(summaryStartTime)
-    .sort((a, b) => b - a);
+  const startTimes = [...summariesById.values()].map(summaryStartTime).sort((a, b) => b - a);
   return nextMtimeMs < startTimes[limit - 1];
 }
 
@@ -307,9 +338,16 @@ export async function listSessions(
 ): Promise<SessionSummary[]> {
   const summariesById = new Map<string, SessionSummary>();
   const normalizedOptions = normalizeListOptions(options);
+  const metadataFor = readSessionListMetadata();
   for (const candidate of listCandidateFiles(cwd)) {
     if (limitSatisfied(summariesById, options.limit, candidate.mtimeMs)) break;
-    const summary = await readListCandidate(candidate.dir, candidate.filename, normalizedOptions);
+    const summary = await readListCandidate(
+      cwd,
+      candidate.dir,
+      candidate.filename,
+      normalizedOptions,
+      metadataFor,
+    );
     const existing = summary ? summariesById.get(summary.id) : null;
     if (summary && (!existing || summary.updatedAt > existing.updatedAt)) {
       summariesById.set(summary.id, summary);
@@ -320,19 +358,52 @@ export async function listSessions(
   return options.limit && options.limit > 0 ? summaries.slice(0, options.limit) : summaries;
 }
 
+const PI_SESSION_ID_PATTERN = /^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$/;
+const PI_SESSION_HEADER_BYTE_CAP = 64 * 1024;
+
+function readPiSessionHeader(filepath: string): { id: string; cwd: string } | null {
+  let fd: number | null = null;
+  try {
+    const size = statSync(filepath).size;
+    const bytesToRead = Math.min(size, PI_SESSION_HEADER_BYTE_CAP);
+    const buffer = Buffer.alloc(bytesToRead);
+    fd = openSync(filepath, "r");
+    const bytesRead = readSync(fd, buffer, 0, bytesToRead, 0);
+    const newline = buffer.indexOf(0x0a, 0);
+    if (newline < 0 && size > PI_SESSION_HEADER_BYTE_CAP) return null;
+    const lineEnd = newline >= 0 ? newline : bytesRead;
+    const header = JSON.parse(buffer.toString("utf8", 0, lineEnd)) as Record<string, unknown>;
+    return header.type === "session" && typeof header.id === "string"
+      ? { id: header.id, cwd: typeof header.cwd === "string" ? header.cwd : "" }
+      : null;
+  } catch {
+    return null;
+  } finally {
+    if (fd !== null) closeSync(fd);
+  }
+}
+
 export function findSessionFile(cwd: string, sessionId: string): string | null {
-  const matches: Array<{ filepath: string; mtime: number }> = [];
+  if (!PI_SESSION_ID_PATTERN.test(sessionId)) return null;
+
+  const filenameSuffix = `_${sessionId}.jsonl`;
+  const matches = new Set<string>();
   for (const dir of sessionsDirsForCwd(cwd)) {
     if (!existsSync(dir)) continue;
-    for (const name of readdirSync(dir)) {
-      if (!name.endsWith(".jsonl") || (!name.includes(sessionId) && !name.startsWith(sessionId))) {
-        continue;
+    try {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        if (!entry.isFile() || !entry.name.endsWith(filenameSuffix)) continue;
+        const filepath = path.join(dir, entry.name);
+        const header = readPiSessionHeader(filepath);
+        if (header?.id !== sessionId || !sessionCwdMatches(header.cwd, cwd)) continue;
+        matches.add(filepath);
+        if (matches.size > 1) return null;
       }
-      const filepath = path.join(dir, name);
-      matches.push({ filepath, mtime: statSync(filepath).mtimeMs });
+    } catch {
+      continue;
     }
   }
-  return matches.sort((a, b) => b.mtime - a.mtime)[0]?.filepath ?? null;
+  return matches.values().next().value ?? null;
 }
 
 export type LoadSessionOptions = {
@@ -376,6 +447,19 @@ function parseEvent(line: string): SessionEvent | null {
     return JSON.parse(trimmed) as SessionEvent;
   } catch {
     return null;
+  }
+}
+
+function activeBranchEvents(filepath: string, events: SessionEvent[]): SessionEvent[] {
+  try {
+    const activeIds = new Set(
+      SessionManager.open(filepath).buildContextEntries().map((entry) => entry.id),
+    );
+    return events.filter(
+      (event) => event.type === "session" || (typeof event.id === "string" && activeIds.has(event.id)),
+    );
+  } catch {
+    return events;
   }
 }
 
@@ -616,7 +700,7 @@ export async function loadSession(
         const event = parseEvent(line);
         if (event) events.push(event);
       }
-      return { events, cursor: null, meta: null };
+      return { events: activeBranchEvents(filepath, events), cursor: null, meta: null };
     }
     return loadSession(cwd, sessionId, { tail: 2000 });
   }
@@ -631,10 +715,10 @@ export async function loadSession(
     const { headerEvents, meta } = await readSessionHead(filepath);
     const hasHeader = events.some((event) => event.type === "session");
     return {
-      events: hasHeader ? events : [...headerEvents, ...events],
+      events: activeBranchEvents(filepath, hasHeader ? events : [...headerEvents, ...events]),
       cursor,
       meta,
     };
   }
-  return { events, cursor, meta: null };
+  return { events: activeBranchEvents(filepath, events), cursor, meta: null };
 }

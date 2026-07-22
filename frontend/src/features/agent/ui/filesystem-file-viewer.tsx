@@ -6,7 +6,7 @@ import { MessageSquarePlus, Minus } from "@/ui/icon-registry";
 import { highlightLines } from "@/features/agent/highlight-cache";
 import type { FileComment } from "@/features/agent/filesystem-types";
 
-const EXT_TO_LANG: Record<string, string> = {
+const EXTENSION_LANGUAGES: Record<string, string> = {
   js: "javascript",
   jsx: "javascript",
   ts: "typescript",
@@ -40,29 +40,25 @@ const EXT_TO_LANG: Record<string, string> = {
   sh: "bash",
   bash: "bash",
   zsh: "bash",
-  fish: "shell",
+  fish: "bash",
   sql: "sql",
   graphql: "graphql",
   gql: "graphql",
   md: "markdown",
   mdx: "markdown",
-  dockerfile: "dockerfile",
-  makefile: "makefile",
   lua: "lua",
   r: "r",
   dart: "dart",
-  zig: "zig",
-  vue: "html",
-  svelte: "html",
+  vue: "xml",
+  svelte: "xml",
 };
 
-function languageForPath(path: string): string | undefined {
-  const name = path.split("/").pop() ?? "";
-  const lower = name.toLowerCase();
-  if (lower === "dockerfile" || lower.startsWith("dockerfile.")) return "dockerfile";
-  if (lower === "makefile" || lower.startsWith("makefile.")) return "makefile";
-  const ext = name.includes(".") ? name.split(".").pop()!.toLowerCase() : "";
-  return EXT_TO_LANG[ext];
+export function languageForPath(path: string): string | null {
+  const name = path.split("/").pop()?.toLowerCase() ?? "";
+  if (name === "dockerfile" || name.startsWith("dockerfile.")) return "dockerfile";
+  if (name === "makefile" || name.startsWith("makefile.")) return "makefile";
+  const extension = name.includes(".") ? (name.split(".").pop() ?? "") : "";
+  return EXTENSION_LANGUAGES[extension] ?? null;
 }
 
 export function FileViewer({
@@ -86,9 +82,8 @@ export function FileViewer({
   const [draft, setDraft] = useState("");
   const lastLineRef = useRef<number | null>(null);
   const highlightedLines = useMemo(() => {
-    const lang = languageForPath(filePath);
-    if (!lang) return null;
-    return highlightLines(lang, lines);
+    const language = languageForPath(filePath);
+    return language ? highlightLines(language, lines) : null;
   }, [filePath, lines]);
   const commentsByLine = useMemo(() => {
     const map = new Map<number, FileComment[]>();
@@ -147,19 +142,19 @@ export function FileViewer({
             >
               {lineNumber}
             </span>
-            {html ? (
-              <pre
-                className="syntax-highlight min-w-0 flex-1 whitespace-pre font-mono text-(--fg)"
-                style={{ fontSize, lineHeight: `${lineHeight}px` }}
-                dangerouslySetInnerHTML={{ __html: html || "&nbsp;" }}
-              />
-            ) : (
+            {html === undefined ? (
               <pre
                 className="min-w-0 flex-1 whitespace-pre font-mono text-(--fg)"
                 style={{ fontSize, lineHeight: `${lineHeight}px` }}
               >
                 {text || "\u00a0"}
               </pre>
+            ) : (
+              <pre
+                className="syntax-highlight min-w-0 flex-1 whitespace-pre font-mono text-(--fg)"
+                style={{ fontSize, lineHeight: `${lineHeight}px` }}
+                dangerouslySetInnerHTML={{ __html: html || "&nbsp;" }}
+              />
             )}
             <button
               type="button"

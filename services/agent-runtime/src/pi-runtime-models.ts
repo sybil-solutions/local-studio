@@ -4,30 +4,25 @@ import { homedir } from "node:os";
 import path from "node:path";
 import { getApiSettings, type ApiSettings } from "./settings-service";
 import { resolveDataDir } from "./data-dir";
-import {
-  isAgentRuntimeProcess,
-  listProviderAgentModels,
-  reloadProviderHub,
-} from "./provider-hub";
+import { isAgentRuntimeProcess, listProviderAgentModels, reloadProviderHub } from "./provider-hub";
 import type { OpenAICompletionsCompat } from "@earendil-works/pi-ai";
 import {
   normalizeOpenAIModels,
   inferReasoningSupport,
   type AgentModel,
 } from "../../../shared/agent/models";
+import { AGENT_THINKING_LEVELS, type AgentThinkingLevel } from "../../../shared/agent/agent-turn";
 import { resolveModelVision } from "../../../controller/contracts/model-capabilities";
 
 const PROVIDER_ID = "local-studio";
 const USER_PI_PREFIX = "user-pi-";
 
-function userPiAgentDir(): string {
-  // Prefer $HOME over os.homedir(): Node keeps them in sync but Bun's
-  // homedir() ignores the env var, which breaks HOME-based test isolation.
-  return path.join(process.env["HOME"] ?? homedir(), ".pi", "agent");
-}
-
 function userPiModelsPath(): string {
-  return path.join(userPiAgentDir(), "models.json");
+  const agentDir = process.env["PI_CODING_AGENT_DIR"]?.trim();
+  return path.join(
+    agentDir || path.join(process.env["HOME"] ?? homedir(), ".pi", "agent"),
+    "models.json",
+  );
 }
 
 type PiProviderModel = {
@@ -39,6 +34,7 @@ type PiProviderModel = {
   maxTokens?: number;
   cost?: Record<string, number>;
   compat?: Record<string, unknown>;
+  thinkingLevelMap?: Partial<Record<AgentThinkingLevel, string | null>>;
 };
 
 type PiProviderConfig = {
@@ -70,10 +66,12 @@ function userPiModelToAgentModel(
   providerName: string,
   qualifiedProviderId: string,
   model: PiProviderModel,
+  providerCompat?: Record<string, unknown>,
 ): AgentModel {
   const rawId = model.id;
   const name = model.name ?? rawId;
   const inputs = model.input ?? ["text"];
+  const reasoning = model.reasoning ?? inferReasoningSupport(rawId);
   return {
     id: `${qualifiedProviderId}/${rawId}`,
     rawId,
@@ -83,10 +81,34 @@ function userPiModelToAgentModel(
     controllerName: providerName,
     contextWindow: model.contextWindow ?? 128_000,
     maxTokens: model.maxTokens ?? 65_536,
-    reasoning: model.reasoning ?? inferReasoningSupport(rawId),
+    reasoning,
+    thinkingLevels: supportedPiThinkingLevels(model, reasoning, providerCompat),
     vision: resolveModelVision({ identifiers: [rawId], modalities: [inputs] }),
     active: false,
   };
+}
+
+function supportedPiThinkingLevels(
+  model: PiProviderModel,
+  reasoning: boolean,
+  providerCompat?: Record<string, unknown>,
+): AgentThinkingLevel[] {
+  if (!reasoning) return ["off"];
+  const supportsReasoningEffort =
+    model.compat?.supportsReasoningEffort ?? providerCompat?.supportsReasoningEffort;
+  if (supportsReasoningEffort !== true) return ["high"];
+  return AGENT_THINKING_LEVELS.filter((level) => {
+    const mapped = model.thinkingLevelMap?.[level];
+    if (mapped === null) return false;
+    if (level === "xhigh" || level === "max") return mapped !== undefined;
+    return true;
+  });
+}
+
+export function controllerModelThinkingLevels(reasoning: boolean): AgentThinkingLevel[] {
+  return AGENT_THINKING_LEVELS.filter((level) =>
+    reasoning ? level === "high" || level === "max" : level === "off",
+  );
 }
 
 export type PiControllerModelsRequest = {
@@ -154,24 +176,16 @@ function mergeControllers(
   settings: ApiSettings,
   requested: PiControllerModelsRequest[] = [],
 ): PiControllerConfig[] {
-  const byUrl = new Map<string, PiControllerConfig>();
+  const requestedController = requested
+    .map(normalizeControllerInput)
+    .find((controller): controller is PiControllerConfig => controller !== null);
+  if (requestedController) return [requestedController];
   const primary = normalizeControllerInput({
     url: settings.backendUrl,
     apiKey: settings.apiKey,
     name: "primary",
   });
-  if (primary) byUrl.set(primary.url, primary);
-  for (const entry of requested) {
-    const controller = normalizeControllerInput(entry);
-    if (!controller) continue;
-    const existing = byUrl.get(controller.url);
-    byUrl.set(controller.url, {
-      ...existing,
-      ...controller,
-      apiKey: controller.apiKey || existing?.apiKey || "",
-    });
-  }
-  return [...byUrl.values()];
+  return primary ? [primary] : [];
 }
 
 async function loadPersistedControllers(agentDir: string): Promise<PiControllerModelsRequest[]> {
@@ -232,6 +246,7 @@ async function fetchModelsFromController(
       providerId,
       controllerUrl: backendUrl,
       controllerName: label,
+      thinkingLevels: controllerModelThinkingLevels(model.reasoning),
       name: multipleControllers ? `${model.name} · ${label}` : model.name,
     }),
   );
@@ -291,19 +306,16 @@ async function writePiModelsConfig(
         authHeader: Boolean(controller.apiKey),
         compat: {
           supportsDeveloperRole: false,
-          supportsReasoningEffort: false,
+          supportsReasoningEffort: true,
         },
         models: modelsToPiModels(models),
       },
     ]),
   );
 
-  // Merge user-pi providers so the SDK runtime can route to them.
-  // Each provider ID is prefixed to avoid colliding with Local Studio's own.
-  const mergedProviders: Record<string, unknown> = { ...vllmProviders };
+  const providers: Record<string, unknown> = { ...vllmProviders };
   for (const [name, config] of Object.entries(userPiProviders)) {
-    const qualifiedId = `${USER_PI_PREFIX}${name}`;
-    mergedProviders[qualifiedId] = {
+    providers[`${USER_PI_PREFIX}${name}`] = {
       baseUrl: config.baseUrl,
       ...(config.apiKey ? { apiKey: config.apiKey } : {}),
       ...(config.api ? { api: config.api } : {}),
@@ -313,10 +325,8 @@ async function writePiModelsConfig(
     };
   }
 
-  const config = { providers: mergedProviders };
-
   const modelsPath = path.join(agentDir, "models.json");
-  await writeFile(modelsPath, JSON.stringify(config, null, 2), "utf-8");
+  await writeFile(modelsPath, JSON.stringify({ providers }, null, 2), "utf-8");
   await chmod(modelsPath, 0o600).catch(() => undefined);
   return agentDir;
 }
@@ -357,18 +367,13 @@ export async function refreshPiModels(
     controllerError = error;
   }
 
-  // Load providers from ~/.pi/agent/models.json so models configured in the
-  // user's standalone Pi install (kimi, openrouter, cerebras, etc.) are
-  // available in the agent model picker alongside Local Studio's own backend.
   const userPiProviders = await loadUserPiProviders();
-  const userPiModels: AgentModel[] = [];
-  for (const [providerName, config] of Object.entries(userPiProviders)) {
+  const userPiModels = Object.entries(userPiProviders).flatMap(([providerName, config]) => {
     const qualifiedProviderId = `${USER_PI_PREFIX}${providerName}`;
-    for (const model of config.models ?? []) {
-      userPiModels.push(userPiModelToAgentModel(providerName, qualifiedProviderId, model));
-    }
-  }
-
+    return (config.models ?? []).map((model) =>
+      userPiModelToAgentModel(providerName, qualifiedProviderId, model, config.compat),
+    );
+  });
   const writtenAgentDir = await writePiModelsConfig(controllerModels, userPiProviders);
   const providerModels = await collectProviderAgentModels();
 
@@ -419,7 +424,7 @@ function isDeepSeekReasoningModel(model: AgentModel): boolean {
 const VLLM_OPENAI_COMPAT: OpenAICompletionsCompat = {
   supportsStore: false,
   supportsDeveloperRole: false,
-  supportsReasoningEffort: false,
+  supportsReasoningEffort: true,
   supportsStrictMode: false,
   supportsUsageInStreaming: true,
   maxTokensField: "max_tokens",
@@ -445,6 +450,7 @@ export function modelsToPiModels(models: AgentModel[]) {
               medium: "medium",
               high: "high",
               xhigh: "max",
+              max: "max",
             },
           }
         : {}),

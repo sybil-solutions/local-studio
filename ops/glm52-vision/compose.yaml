@@ -1,0 +1,110 @@
+services:
+  glm52-vision:
+    image: local/glm52-nf3-vision:v1
+    container_name: glm52-vision-candidate
+    network_mode: host
+    ipc: host
+    shm_size: 32gb
+    init: true
+    ulimits:
+      memlock: -1
+      stack: 67108864
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    volumes:
+      - ${MODEL_DIR:?set MODEL_DIR}:/model:ro
+      - ${MODEL_DIR}/mxfp8_tier_nokvb.json:/opt/venv/lib/python3.12/site-packages/mxfp8_tier.json:ro
+      - local-studio-jit:/cache
+    environment:
+      CUDA_VISIBLE_DEVICES: "0,1,2,3"
+      CUDA_DEVICE_ORDER: PCI_BUS_ID
+      CUDA_DEVICE_MAX_CONNECTIONS: "32"
+      CUTE_DSL_ARCH: sm_120a
+      OMP_NUM_THREADS: "16"
+      PYTORCH_CUDA_ALLOC_CONF: expandable_segments:True
+      SAFETENSORS_FAST_GPU: "1"
+      NCCL_IB_DISABLE: "1"
+      NCCL_P2P_LEVEL: SYS
+      NCCL_PROTO: LL,LL128,Simple
+      VLLM_USE_B12X_FP8_GEMM: "1"
+      VLLM_USE_B12X_MOE: "1"
+      VLLM_USE_B12X_SPARSE_INDEXER: "1"
+      VLLM_USE_V2_MODEL_RUNNER: "1"
+      B12X_W4A16_TC_DECODE: "1"
+      B12X_MOE_FORCE_A16: "1"
+      VLLM_DCP_GLOBAL_TOPK: "1"
+      VLLM_DCP_SHARD_DRAFT: "1"
+      VLLM_ENABLE_PCIE_ALLREDUCE: "1"
+      VLLM_PCIE_ALLREDUCE_BACKEND: b12x
+      VLLM_PCIE_ONESHOT_ALLREDUCE_MAX_SIZE: 64KB
+      VLLM_PCIE_ONESHOT_MAX_BYTES: "65536"
+      B12X_DENSE_SPLITK_TURBO: "1"
+      XDG_CACHE_HOME: /cache/jit
+      TRITON_CACHE_DIR: /cache/jit/triton
+      HYBRID_TIER: both
+      HYBRID_KEPT: b12x_nf3
+      HYBRID_NF3: b12x_nf3
+      HYBRID_B12X_MAX_TOKENS: "2048"
+      HYBRID_MXFP8_NATIVE: "1"
+    command:
+      - vllm
+      - serve
+      - /model
+      - --served-model-name
+      - GLM-5.2-Vision
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+      - --trust-remote-code
+      - --tensor-parallel-size
+      - "4"
+      - --decode-context-parallel-size
+      - "4"
+      - --dcp-comm-backend
+      - ag_rs
+      - --dcp-kv-cache-interleave-size
+      - "1"
+      - --kv-cache-dtype
+      - fp8
+      - --attention-backend
+      - B12X_MLA_SPARSE
+      - --moe-backend
+      - b12x
+      - --load-format
+      - fastsafetensors
+      - -cc.pass_config.fuse_allreduce_rms=True
+      - --gpu-memory-utilization
+      - "0.968"
+      - --max-model-len
+      - "300000"
+      - --max-num-seqs
+      - "8"
+      - --max-num-batched-tokens
+      - "2048"
+      - --max-cudagraph-capture-size
+      - "64"
+      - --async-scheduling
+      - --enable-chunked-prefill
+      - --enable-prefix-caching
+      - --enable-auto-tool-choice
+      - --tool-call-parser
+      - glm47
+      - --reasoning-parser
+      - glm45
+      - --default-chat-template-kwargs
+      - '{"reasoning_effort":"high"}'
+      - --hf-overrides
+      - '{"use_index_cache":true,"index_topk_pattern":"FFFSSSFSSSFSSSFSSSFSSSFSSSFSSSFSSSFSSSFSSSFSSSFSSSFSSSFSSSFSSSFSSSFSSSFSSSFSSS"}'
+      - --speculative-config
+      - '{"method":"mtp","num_speculative_tokens":5,"moe_backend":"b12x","draft_sample_method":"probabilistic"}'
+volumes:
+  local-studio-jit:
+    external: true
+    name: local-studio-jit-glm-5.2-nf3-hybrid
+

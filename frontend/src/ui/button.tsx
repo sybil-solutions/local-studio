@@ -35,6 +35,14 @@ const iconSizeClasses: Record<ButtonSize, string> = {
   lg: "h-9 w-9",
 };
 
+const baseClasses =
+  "inline-flex items-center justify-center gap-1.5 rounded-full font-medium transition-[transform,color,background-color,border-color,opacity] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--ring) active:scale-[0.98]";
+
+function buttonClasses(variant: ButtonVariant, size: ButtonSize): string {
+  const sClass = variant === "icon" ? iconSizeClasses[size] : sizeClasses[size];
+  return `${baseClasses} ${variantClasses[variant]} ${sClass}`;
+}
+
 const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
   {
     variant = "primary",
@@ -49,18 +57,14 @@ const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
   },
   ref,
 ) {
-  const isIcon = variant === "icon";
-  const base =
-    "inline-flex items-center justify-center gap-1.5 rounded-full font-medium transition-[transform,color,background-color,border-color,opacity] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--ring) active:scale-[0.98]";
-  const vClass = variantClasses[variant];
-  const sClass = isIcon ? iconSizeClasses[size] : sizeClasses[size];
+  const cls = buttonClasses(variant, size);
 
   return (
     <button
       ref={ref}
       type={type}
       disabled={disabled || loading}
-      className={`${base} ${vClass} ${sClass} ${className}`}
+      className={`${cls} ${className}`}
       {...props}
     >
       {loading ? (
@@ -87,5 +91,5 @@ const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
   );
 });
 
-export { Button };
+export { Button, buttonClasses };
 export type { ButtonProps, ButtonVariant, ButtonSize };

@@ -34,6 +34,19 @@ export const metadata: Metadata = {
 };
 
 const bootScript = `${getThemeBootstrapScript()}
+  const originalFetch = window.fetch.bind(window);
+  window.fetch = (input, init = {}) => {
+    const requestMethod = String(init.method || (input instanceof Request ? input.method : 'GET')).toUpperCase();
+    const requestUrl = new URL(input instanceof Request ? input.url : String(input), window.location.href);
+    if (requestUrl.origin === window.location.origin && ['POST', 'PUT', 'PATCH', 'DELETE'].includes(requestMethod)) {
+      const match = document.cookie.match(/(?:^|; )local_studio_csrf=([^;]+)/);
+      const headers = new Headers(input instanceof Request ? input.headers : undefined);
+      new Headers(init.headers).forEach((value, key) => headers.set(key, value));
+      if (match) headers.set('x-local-studio-csrf', decodeURIComponent(match[1]));
+      init = { ...init, headers };
+    }
+    return originalFetch(input, init);
+  };
   const enableServiceWorker = ${process.env.LOCAL_STUDIO_ENABLE_SERVICE_WORKER === "true" ? "true" : "false"};
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {

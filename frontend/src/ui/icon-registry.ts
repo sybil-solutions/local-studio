@@ -132,6 +132,7 @@ export {
   SquarePen,
   Sun,
   Tags,
+  Target,
   Terminal,
   TerminalSquare,
   TrendingUp,
