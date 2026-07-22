@@ -1,6 +1,6 @@
 services:
   glm52-vision:
-    image: local/glm52-nf3-vision:v3
+    image: local/glm52-nf3-vision:v4-nvfp4
     container_name: glm52-vision-candidate
     network_mode: host
     ipc: host
@@ -71,7 +71,7 @@ services:
       - --dcp-kv-cache-interleave-size
       - "1"
       - --kv-cache-dtype
-      - fp8
+      - nvfp4_ds_mla
       - --attention-backend
       - B12X_MLA_SPARSE
       - --moe-backend
@@ -82,14 +82,13 @@ services:
       - --gpu-memory-utilization
       - "0.968"
       - --max-model-len
-      - "200000"
+      - "400000"
       - --max-num-seqs
-      - "8"
+      - "1"
       - --max-num-batched-tokens
       - "2048"
       - --max-cudagraph-capture-size
       - "64"
-      - --async-scheduling
       - --enable-chunked-prefill
       - --enable-prefix-caching
       - --enable-auto-tool-choice
@@ -101,8 +100,6 @@ services:
       - '{"reasoning_effort":"high"}'
       - --hf-overrides
       - '{"use_index_cache":true,"index_topk_pattern":"FFFSSSFSSSFSSSFSSSFSSSFSSSFSSSFSSSFSSSFSSSFSSSFSSSFSSSFSSSFSSSFSSSFSSSFSSSFSSS"}'
-      - --speculative-config
-      - '{"method":"mtp","num_speculative_tokens":5,"moe_backend":"b12x","draft_sample_method":"probabilistic"}'
 volumes:
   local-studio-jit:
     external: true

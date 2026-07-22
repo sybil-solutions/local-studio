@@ -1,0 +1,6 @@
+FROM verdictai/glm52-nvfp4-kv:v2
+
+COPY --from=local/glm52-nf3-vision:v3 /opt/venv/lib/python3.12/site-packages/glm52_vision /opt/venv/lib/python3.12/site-packages/glm52_vision
+COPY --from=local/glm52-nf3-vision:v3 /opt/venv/lib/python3.12/site-packages/glm52_vision_vllm-0.1.0.dist-info /opt/venv/lib/python3.12/site-packages/glm52_vision_vllm-0.1.0.dist-info
+COPY --from=local/glm52-nf3-vision:v3 /opt/venv/lib/python3.12/site-packages/hybrid_loader.py /opt/venv/lib/python3.12/site-packages/hybrid_loader.py
+COPY --from=local/glm52-nf3-vision:v3 /opt/venv/lib/python3.12/site-packages/hybrid.pth /opt/venv/lib/python3.12/site-packages/hybrid.pth
