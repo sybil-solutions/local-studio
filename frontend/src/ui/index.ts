@@ -70,3 +70,6 @@ export { StatusDot, StatusPill } from "./status";
 export type { UiTone, StatusPillVariant } from "./status";
 
 export { SitegeistIcon, PanelIcon } from "./icons";
+
+export { MenuItem } from "./menu";
+export type { MenuItemProps } from "./menu";

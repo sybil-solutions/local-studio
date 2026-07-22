@@ -1,16 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { Spinner } from "@/ui";
+import { MenuItem, Spinner } from "@/ui";
 import { useRouter } from "next/navigation";
-import {
-  useRef,
-  useState,
-  type ComponentType,
-  type DragEvent,
-  type MouseEvent,
-  type ReactNode,
-} from "react";
+import { useRef, useState, type DragEvent, type MouseEvent } from "react";
 import { useClickOutside } from "@/features/agent/hooks/use-click-outside";
 import { Archive, MoreIcon, Pin, PinOff, SquarePen, X } from "@/ui/icon-registry";
 import type { SessionPref } from "@/features/agent/messages/prefs";
@@ -361,51 +354,25 @@ function SessionOptionsMenu({
 
   return (
     <div className={SESSION_MENU_CLASS} role="menu">
-      <SessionMenuItem Icon={pref.pinned ? PinOff : Pin} onClick={run(onPin)}>
+      <MenuItem Icon={pref.pinned ? PinOff : Pin} onClick={run(onPin)}>
         {pref.pinned ? "Unpin" : "Pin"}
-      </SessionMenuItem>
-      <SessionMenuItem Icon={SquarePen} onClick={run(onRename)}>
+      </MenuItem>
+      <MenuItem Icon={SquarePen} onClick={run(onRename)}>
         Rename
-      </SessionMenuItem>
+      </MenuItem>
       {onArchive ? (
-        <SessionMenuItem Icon={Archive} onClick={run(onArchive)}>
+        <MenuItem Icon={Archive} onClick={run(onArchive)}>
           Archive
-        </SessionMenuItem>
+        </MenuItem>
       ) : null}
       {showClear ? (
         <>
           <div className="mx-1 my-1 h-px bg-(--border)" />
-          <SessionMenuItem Icon={X} danger onClick={run(onClear)}>
+          <MenuItem Icon={X} danger onClick={run(onClear)}>
             Clear
-          </SessionMenuItem>
+          </MenuItem>
         </>
       ) : null}
     </div>
-  );
-}
-
-function SessionMenuItem({
-  Icon,
-  danger = false,
-  onClick,
-  children,
-}: {
-  Icon: ComponentType<{ className?: string; strokeWidth?: number }>;
-  danger?: boolean;
-  onClick: () => void;
-  children: ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      role="menuitem"
-      onClick={onClick}
-      className={`flex w-full items-center gap-2.5 rounded-[10px] px-2.5 py-2 text-left text-[length:var(--fs-base)] transition-colors ${
-        danger ? "text-(--err) hover:bg-(--err)/10" : "text-(--fg) hover:bg-(--color-menu-hover)"
-      }`}
-    >
-      <Icon className={`h-4 w-4 shrink-0 ${danger ? "" : "opacity-70"}`} strokeWidth={1.5} />
-      <span className="truncate">{children}</span>
-    </button>
   );
 }

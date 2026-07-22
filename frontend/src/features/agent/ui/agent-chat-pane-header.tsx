@@ -1,7 +1,8 @@
 "use client";
 
-import { useRef, useState, type ReactNode } from "react";
+import { useRef, useState } from "react";
 import { PanelRightClose, PanelRightOpen, TerminalSquare } from "@/ui/icon-registry";
+import { MenuItem } from "@/ui";
 import { useClickOutside } from "@/features/agent/hooks/use-click-outside";
 import { setReasoningVisible } from "@/features/agent/messages/reasoning-pref";
 import { useReasoningVisible } from "@/features/agent/messages/use-reasoning-visible";
@@ -105,16 +106,16 @@ export function AgentChatPaneHeader({
         </button>
         {open ? (
           <div className={CHAT_HEADER_MENU_CLASS} role="menu">
-            <HeaderMenuItem onClick={startRename}>Rename</HeaderMenuItem>
-            <HeaderMenuItem
+            <MenuItem onClick={startRename}>Rename</MenuItem>
+            <MenuItem
               onClick={() => {
                 onTogglePinned();
                 setOpen(false);
               }}
             >
               {pinned ? "Unpin" : "Pin"}
-            </HeaderMenuItem>
-            <HeaderMenuItem
+            </MenuItem>
+            <MenuItem
               disabled={!canFork}
               onClick={() => {
                 onFork?.();
@@ -122,8 +123,8 @@ export function AgentChatPaneHeader({
               }}
             >
               Fork
-            </HeaderMenuItem>
-            <HeaderMenuItem
+            </MenuItem>
+            <MenuItem
               disabled={!canExport || !onExport}
               onClick={() => {
                 onExport?.();
@@ -131,15 +132,15 @@ export function AgentChatPaneHeader({
               }}
             >
               Export as Markdown
-            </HeaderMenuItem>
-            <HeaderMenuItem
+            </MenuItem>
+            <MenuItem
               onClick={() => {
                 setReasoningVisible(!reasoningVisible);
                 setOpen(false);
               }}
             >
               {reasoningVisible ? "Hide reasoning" : "Show reasoning"}
-            </HeaderMenuItem>
+            </MenuItem>
           </div>
         ) : null}
       </div>
@@ -198,27 +199,5 @@ export function AgentChatPaneHeader({
         </button>
       </div>
     </div>
-  );
-}
-
-function HeaderMenuItem({
-  onClick,
-  children,
-  disabled = false,
-}: {
-  onClick: () => void;
-  children: ReactNode;
-  disabled?: boolean;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      className="block w-full rounded-[10px] px-2.5 py-2 text-left text-[length:var(--fs-base)] text-(--fg) hover:bg-(--color-menu-hover) disabled:cursor-default disabled:opacity-40 disabled:hover:bg-transparent"
-      role="menuitem"
-    >
-      {children}
-    </button>
   );
 }
