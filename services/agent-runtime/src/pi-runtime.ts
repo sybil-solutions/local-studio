@@ -305,6 +305,12 @@ class PiSdkSession extends EventEmitter implements PiAgentSession {
                             additionalSkillPaths: sessionOptions.skills,
                             additionalExtensionPaths: sessionOptions.extensionPaths,
                             additionalPromptTemplatePaths: sessionOptions.promptTemplatePaths,
+                            ...(selectedModel.vision
+                              ? {
+                                  systemPromptOverride: () => "You are a helpful assistant.",
+                                  agentsFilesOverride: () => ({ agentsFiles: [] }),
+                                }
+                              : {}),
                           },
                         }),
                       catch: (error) => error,
