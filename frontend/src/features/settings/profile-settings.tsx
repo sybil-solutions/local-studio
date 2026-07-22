@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
+import { Effect } from "effect";
 import { Check, Copy, ExternalLink, Smartphone, Upload } from "@/ui/icon-registry";
 import { Input } from "@/ui";
 import {
@@ -121,6 +122,7 @@ function PhonePairingSettings() {
   const [pairingJson, setPairingJson] = useState("");
   const [copied, setCopied] = useState(false);
   const [pairingError, setPairingError] = useState("");
+  const [pairingBusy, setPairingBusy] = useState(true);
   const loadPairingJson = async (): Promise<string> => {
     const result = await window.localStudioDesktop?.getKittylitterPairingJson?.();
     if (!result?.ok || !result.pairingJson) {
@@ -130,10 +132,26 @@ function PhonePairingSettings() {
     setPairingError("");
     return result.pairingJson;
   };
+  const refreshPairing = (): Promise<void> =>
+    Effect.runPromise(
+      Effect.sync(() => {
+        setPairingBusy(true);
+        setPairingError("");
+      }).pipe(
+        Effect.andThen(Effect.tryPromise({ try: loadPairingJson, catch: (error) => error })),
+        Effect.asVoid,
+        Effect.catch((error) =>
+          Effect.sync(() =>
+            setPairingError(
+              error instanceof Error ? error.message : "Connection JSON is unavailable.",
+            ),
+          ),
+        ),
+        Effect.ensuring(Effect.sync(() => setPairingBusy(false))),
+      ),
+    );
   useMountSubscription(() => {
-    void loadPairingJson().catch((error: unknown) => {
-      setPairingError(error instanceof Error ? error.message : "Connection JSON is unavailable.");
-    });
+    void refreshPairing();
   }, []);
   const copy = async () => {
     try {
@@ -162,7 +180,7 @@ function PhonePairingSettings() {
               <QrCode value={pairingJson} label="KittyLitter controller connection QR code" />
             ) : (
               <span className="px-4 text-center text-[length:var(--fs-sm)] text-(--qr-placeholder)">
-                {pairingError ? "Controller unavailable" : "Preparing connection"}
+                {pairingError && !pairingBusy ? "Controller unavailable" : "Preparing connection"}
               </span>
             )}
           </div>
@@ -190,14 +208,24 @@ function PhonePairingSettings() {
             </SettingsLink>
             <SettingsButton
               onClick={() => void copy()}
+              disabled={pairingBusy}
               aria-label="Copy KittyLitter connection JSON"
             >
               {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
               {copied ? "Copied" : "Copy connection JSON"}
             </SettingsButton>
           </div>
-          {pairingError ? (
-            <p className="mt-3 text-[length:var(--fs-sm)] text-(--err)">{pairingError}</p>
+          {pairingError && !pairingBusy ? (
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <p className="text-[length:var(--fs-sm)] text-(--err)">{pairingError}</p>
+              <SettingsButton
+                onClick={() => void refreshPairing()}
+                disabled={pairingBusy}
+                aria-label="Retry KittyLitter pairing"
+              >
+                Try again
+              </SettingsButton>
+            </div>
           ) : null}
         </div>
       </div>
