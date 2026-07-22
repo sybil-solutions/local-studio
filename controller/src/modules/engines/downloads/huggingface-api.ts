@@ -1,6 +1,7 @@
 import { Effect, Schema } from "effect";
 import type { DownloadFileInfo } from "../types";
-import { EngineOperationError } from "../engine-spec";
+import { type EngineOperationError } from "../engine-spec";
+import { operationError } from "../engine-operation";
 
 const escapeRegex = (value: string): string => value.replace(/[.+^${}()|[\]\\]/g, "\\$&");
 
@@ -21,12 +22,6 @@ export type FetchEffect = (
   url: string,
   init?: RequestInit,
 ) => Effect.Effect<Response, EngineOperationError>;
-
-const operationError = (operation: string, cause: unknown): EngineOperationError =>
-  new EngineOperationError({
-    operation,
-    message: cause instanceof Error ? cause.message : String(cause),
-  });
 
 export const fetchEffect: FetchEffect = (url, init) =>
   Effect.tryPromise({

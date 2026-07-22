@@ -1,8 +1,8 @@
 import { Effect, Option, Schema } from "effect";
 import { openSqliteDatabase } from "../../../stores/sqlite";
 import type { EngineOperationError } from "../engine-spec";
+import { attempt, operationError } from "../engine-operation";
 import type { ModelDownload } from "../types";
-import { attempt, operationError } from "./download-operation";
 
 const DownloadFileSchema = Schema.Struct({
   path: Schema.String,

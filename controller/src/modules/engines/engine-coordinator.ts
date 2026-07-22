@@ -13,7 +13,8 @@ import {
 } from "../system/gpu-leases";
 import { resolveNvidiaSmiBinary } from "../system/platform/smi-tools";
 import { LIFECYCLE_READY_TIMEOUT_MS } from "./configs";
-import { EngineOperationError, getEngineSpec } from "./engine-spec";
+import { type EngineOperationError, getEngineSpec } from "./engine-spec";
+import { operationError } from "./engine-operation";
 import {
   formatLaunchFailureBudgetMessage,
   type LaunchFailureBudget,
@@ -46,12 +47,6 @@ type RecipeGpuLeaseResult =
   | { readonly ok: false; readonly error: string };
 
 type ReadyResult = { ready: true } | { ready: false; message: string };
-
-const operationError = (operation: string, cause: unknown): EngineOperationError =>
-  new EngineOperationError({
-    operation,
-    message: cause instanceof Error ? cause.message : String(cause),
-  });
 
 const lifecycleSuccess = (): SetActiveRecipeResult => ({ ok: true });
 const lifecycleFailure = (error: string): SetActiveRecipeResult => ({ ok: false, error });

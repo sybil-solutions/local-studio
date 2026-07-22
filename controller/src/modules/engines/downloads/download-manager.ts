@@ -15,10 +15,10 @@ import type { Config } from "../../../config/env";
 import type { Logger } from "../../../core/logger";
 import { Event, type EventManager } from "../../system/event-manager";
 import { DOWNLOAD_DEFAULT_IGNORE_FILENAMES, DOWNLOAD_PROGRESS_THROTTLE_MS } from "../configs";
-import { EngineOperationError } from "../engine-spec";
+import { type EngineOperationError } from "../engine-spec";
+import { attempt, operationError } from "../engine-operation";
 import type { DownloadFileInfo, DownloadStatus, ModelDownload } from "../types";
 import type { DownloadStore } from "./download-store";
-import { attempt, operationError } from "./download-operation";
 import {
   buildHuggingFaceFileList,
   fetchEffect,
@@ -249,14 +249,12 @@ export class DownloadManager {
       mkdirSync(this.config.models_dir, { recursive: true });
       accessSync(this.config.models_dir, constants.W_OK);
     }).pipe(
-      Effect.mapError(
-        (error) =>
-          new EngineOperationError({
-            operation: error.operation,
-            message:
-              `Models directory is not writable by the controller: ${this.config.models_dir}. ` +
-              `Update Settings → Models directory to a writable server path. ${error.message}`,
-          }),
+      Effect.mapError((error) =>
+        operationError(
+          error.operation,
+          `Models directory is not writable by the controller: ${this.config.models_dir}. ` +
+            `Update Settings → Models directory to a writable server path. ${error.message}`,
+        ),
       ),
     );
   }
