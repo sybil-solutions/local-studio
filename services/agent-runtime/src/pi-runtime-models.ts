@@ -1,5 +1,6 @@
 import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
+import { homedir } from "node:os";
 import path from "node:path";
 import { getApiSettings, type ApiSettings } from "./settings-service";
 import { resolveDataDir } from "./data-dir";
@@ -7,11 +8,102 @@ import { isAgentRuntimeProcess, listProviderAgentModels, reloadProviderHub } fro
 import type { OpenAICompletionsCompat } from "@earendil-works/pi-ai";
 import {
   normalizeOpenAIModels,
+  inferReasoningSupport,
   type AgentModel,
 } from "../../../shared/agent/models";
 import { AGENT_THINKING_LEVELS, type AgentThinkingLevel } from "../../../shared/agent/agent-turn";
+import { resolveModelVision } from "../../../controller/contracts/model-capabilities";
 
 const PROVIDER_ID = "local-studio";
+const USER_PI_PREFIX = "user-pi-";
+
+function userPiModelsPath(): string {
+  const agentDir = process.env["PI_CODING_AGENT_DIR"]?.trim();
+  return path.join(
+    agentDir || path.join(process.env["HOME"] ?? homedir(), ".pi", "agent"),
+    "models.json",
+  );
+}
+
+type PiProviderModel = {
+  id: string;
+  name?: string;
+  reasoning?: boolean;
+  input?: string[];
+  contextWindow?: number;
+  maxTokens?: number;
+  cost?: Record<string, number>;
+  compat?: Record<string, unknown>;
+  thinkingLevelMap?: Partial<Record<AgentThinkingLevel, string | null>>;
+};
+
+type PiProviderConfig = {
+  baseUrl: string;
+  apiKey?: string;
+  api?: string;
+  authHeader?: boolean;
+  models?: PiProviderModel[];
+  compat?: Record<string, unknown>;
+};
+
+type UserPiProviders = Record<string, PiProviderConfig>;
+
+async function loadUserPiProviders(): Promise<UserPiProviders> {
+  const modelsPath = userPiModelsPath();
+  if (!existsSync(modelsPath)) return {};
+  try {
+    const parsed = JSON.parse(await readFile(modelsPath, "utf-8")) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    const providers = (parsed as { providers?: unknown }).providers;
+    if (!providers || typeof providers !== "object" || Array.isArray(providers)) return {};
+    return providers as UserPiProviders;
+  } catch {
+    return {};
+  }
+}
+
+function userPiModelToAgentModel(
+  providerName: string,
+  qualifiedProviderId: string,
+  model: PiProviderModel,
+  providerCompat?: Record<string, unknown>,
+): AgentModel {
+  const rawId = model.id;
+  const name = model.name ?? rawId;
+  const inputs = model.input ?? ["text"];
+  const reasoning = model.reasoning ?? inferReasoningSupport(rawId);
+  return {
+    id: `${qualifiedProviderId}/${rawId}`,
+    rawId,
+    name: `${name} · ${providerName}`,
+    provider: "local-studio",
+    providerId: qualifiedProviderId,
+    controllerName: providerName,
+    contextWindow: model.contextWindow ?? 128_000,
+    maxTokens: model.maxTokens ?? 65_536,
+    reasoning,
+    thinkingLevels: supportedPiThinkingLevels(model, reasoning, providerCompat),
+    vision: resolveModelVision({ identifiers: [rawId], modalities: [inputs] }),
+    active: false,
+  };
+}
+
+function supportedPiThinkingLevels(
+  model: PiProviderModel,
+  reasoning: boolean,
+  providerCompat?: Record<string, unknown>,
+): AgentThinkingLevel[] {
+  if (!reasoning) return ["off"];
+  const supportsReasoningEffort =
+    model.compat?.supportsReasoningEffort ?? providerCompat?.supportsReasoningEffort;
+  if (supportsReasoningEffort !== true) return ["high"];
+  return AGENT_THINKING_LEVELS.filter((level) => {
+    const mapped = model.thinkingLevelMap?.[level];
+    if (mapped === null) return false;
+    if (level === "xhigh" || level === "max") return mapped !== undefined;
+    return true;
+  });
+}
 
 export function controllerModelThinkingLevels(reasoning: boolean): AgentThinkingLevel[] {
   return AGENT_THINKING_LEVELS.filter((level) =>
@@ -195,7 +287,10 @@ async function fetchModelsFromControllers(controllers: PiControllerConfig[]): Pr
   return { models: models.sort((a, b) => a.name.localeCompare(b.name)), controllerModels };
 }
 
-async function writePiModelsConfig(controllerModels: ControllerModels[]): Promise<string> {
+async function writePiModelsConfig(
+  controllerModels: ControllerModels[],
+  userPiProviders: UserPiProviders,
+): Promise<string> {
   const dataDir = resolveDataDir();
   const agentDir = path.join(dataDir, "pi-agent");
   await mkdir(agentDir, { recursive: true });
@@ -218,10 +313,20 @@ async function writePiModelsConfig(controllerModels: ControllerModels[]): Promis
     ]),
   );
 
-  const config = { providers: vllmProviders };
+  const providers: Record<string, unknown> = { ...vllmProviders };
+  for (const [name, config] of Object.entries(userPiProviders)) {
+    providers[`${USER_PI_PREFIX}${name}`] = {
+      baseUrl: config.baseUrl,
+      ...(config.apiKey ? { apiKey: config.apiKey } : {}),
+      ...(config.api ? { api: config.api } : {}),
+      ...(config.authHeader !== undefined ? { authHeader: config.authHeader } : {}),
+      ...(config.compat ? { compat: config.compat } : {}),
+      models: config.models ?? [],
+    };
+  }
 
   const modelsPath = path.join(agentDir, "models.json");
-  await writeFile(modelsPath, JSON.stringify(config, null, 2), "utf-8");
+  await writeFile(modelsPath, JSON.stringify({ providers }, null, 2), "utf-8");
   await chmod(modelsPath, 0o600).catch(() => undefined);
   return agentDir;
 }
@@ -230,7 +335,7 @@ export function resolvePiModelSelection(modelId: string): { providerId: string; 
   const separator = modelId.indexOf("/");
   if (separator > 0) {
     const maybeProvider = modelId.slice(0, separator);
-    if (maybeProvider.startsWith(`${PROVIDER_ID}-`)) {
+    if (maybeProvider.startsWith(USER_PI_PREFIX) || maybeProvider.startsWith(`${PROVIDER_ID}-`)) {
       return { providerId: maybeProvider, modelId: modelId.slice(separator + 1) };
     }
   }
@@ -262,10 +367,17 @@ export async function refreshPiModels(
     controllerError = error;
   }
 
-  const writtenAgentDir = await writePiModelsConfig(controllerModels);
+  const userPiProviders = await loadUserPiProviders();
+  const userPiModels = Object.entries(userPiProviders).flatMap(([providerName, config]) => {
+    const qualifiedProviderId = `${USER_PI_PREFIX}${providerName}`;
+    return (config.models ?? []).map((model) =>
+      userPiModelToAgentModel(providerName, qualifiedProviderId, model, config.compat),
+    );
+  });
+  const writtenAgentDir = await writePiModelsConfig(controllerModels, userPiProviders);
   const providerModels = await collectProviderAgentModels();
 
-  const allModels = [...models, ...providerModels];
+  const allModels = [...models, ...userPiModels, ...providerModels];
   if (allModels.length === 0 && controllerError) {
     throw controllerError instanceof Error
       ? controllerError

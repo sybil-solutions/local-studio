@@ -117,11 +117,11 @@ JSONL sessions. The runtime respects `PI_CODING_AGENT_DIR`,
 `PI_CODING_AGENT_SESSION_DIR`, and Pi's `sessionDir` setting in the same
 precedence order as the CLI. Existing Local Studio session storage remains a
 read-compatible legacy source, while new sessions use Pi's resolved directory.
-Workbench sends only the active controller to Pi and writes only that
-controller's advertised models into Local Studio's generated Pi model config;
-saved controllers and the user's global Pi model catalog are not merged into a
-controller session. Providers connected explicitly in Configure remain a
-separate opt-in model source.
+Workbench sends only the active controller to Pi and shows that controller's
+advertised models by default. The model picker has an explicit Other models
+switch for models from the user's Pi catalog and providers connected in
+Configure. Those opt-in models use Pi's native provider routing without adding
+saved inactive controllers to the session.
 
 New Workbench chats start with Pi's `read`, `grep`, `find`, and `ls` tools. Full
 access enables every tool registered in that Pi session, including extension

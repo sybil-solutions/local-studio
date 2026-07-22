@@ -1,4 +1,4 @@
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { defineConfig } from "@playwright/test";
@@ -12,6 +12,29 @@ const homeDir = mkdtempSync(path.join(os.tmpdir(), "local-studio-controller-e2e-
 writeFileSync(
   path.join(dataDir, "api-settings.json"),
   JSON.stringify({ backendUrl: `http://127.0.0.1:${controllerPort}`, apiKey: "" }),
+);
+const piAgentDir = path.join(homeDir, ".pi", "agent");
+mkdirSync(piAgentDir, { recursive: true });
+writeFileSync(
+  path.join(piAgentDir, "models.json"),
+  JSON.stringify({
+    providers: {
+      personal: {
+        baseUrl: `http://127.0.0.1:${controllerPort}/v1`,
+        api: "openai-completions",
+        models: [
+          {
+            id: "other-model",
+            name: "Other model",
+            reasoning: false,
+            input: ["text"],
+            contextWindow: 32_000,
+            maxTokens: 8_000,
+          },
+        ],
+      },
+    },
+  }),
 );
 const controllerScript = path.resolve(__dirname, "fixtures", "fake-controller.mjs");
 const startScript = path.resolve(__dirname, "..", "scripts", "start-standalone.mjs");

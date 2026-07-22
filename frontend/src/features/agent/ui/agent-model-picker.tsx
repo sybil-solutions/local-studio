@@ -13,6 +13,7 @@ import { Check, ChevronDown, ChevronLeft, ChevronRight, Pin } from "@/ui/icon-re
 import { AGENT_THINKING_LEVELS, type AgentThinkingLevel } from "@/features/agent/contracts";
 import type { AgentModel } from "@/features/agent/workspace/types";
 import { cx } from "@/ui/utils";
+import { splitVisibleAgentModels } from "./model-visibility";
 
 type AgentModelPickerProps = {
   models: AgentModel[];
@@ -54,10 +55,23 @@ export function AgentModelPicker({
 }: AgentModelPickerProps) {
   const [open, setOpen] = useState(false);
   const [view, setView] = useState<PickerView>("root");
+  const [showOtherModels, setShowOtherModels] = useState(false);
   const active = models.find((model) => model.id === selectedModel) ?? null;
-  const groups = useMemo(() => groupModelsByController(models), [models]);
+  const visible = useMemo(
+    () => splitVisibleAgentModels(models, showOtherModels),
+    [models, showOtherModels],
+  );
+  const groups = useMemo(
+    () => groupModelsByController(visible.visibleModels),
+    [visible.visibleModels],
+  );
   const disabled = loading;
-  const modelLabel = modelTriggerLabel(active, selectedModel, loading, models.length);
+  const modelLabel = modelTriggerLabel(
+    active,
+    selectedModel,
+    loading,
+    visible.controllerModels.length,
+  );
   const supportsReasoning = Boolean(reasoningLevel && onSelectReasoning);
   const effectiveReasoning = reasoningLevels.includes(reasoningLevel ?? "off")
     ? (reasoningLevel ?? "off")
@@ -124,9 +138,12 @@ export function AgentModelPicker({
               groups={groups}
               selectedModel={selectedModel}
               defaultModel={defaultModel}
+              showOtherModels={showOtherModels}
+              otherModelCount={visible.otherModels.length}
               onBack={supportsReasoning ? () => setView("root") : undefined}
               onSelect={select}
               onSetDefault={onSetDefault}
+              onToggleOtherModels={() => setShowOtherModels((current) => !current)}
               onClose={close}
             />
           ) : null}
@@ -226,26 +243,66 @@ function ModelList({
   groups,
   selectedModel,
   defaultModel,
+  showOtherModels,
+  otherModelCount,
   onBack,
   onSelect,
   onSetDefault,
+  onToggleOtherModels,
   onClose,
 }: {
   groups: ModelGroup[];
   selectedModel: string;
   defaultModel?: string;
+  showOtherModels: boolean;
+  otherModelCount: number;
   onBack?: () => void;
   onSelect: (modelId: string) => void;
   onSetDefault?: (modelId: string) => void;
+  onToggleOtherModels: () => void;
   onClose: () => void;
 }) {
   return (
     <div>
       <PickerHeader title="Model" onBack={onBack} />
+      {otherModelCount > 0 ? (
+        <button
+          type="button"
+          role="menuitemcheckbox"
+          aria-checked={showOtherModels}
+          onClick={onToggleOtherModels}
+          className="mt-1 flex min-h-10 w-full items-center gap-3 rounded-[10px] px-2.5 text-left text-[length:var(--fs-base)] text-(--fg) transition-colors hover:bg-(--hover)"
+        >
+          <span className="min-w-0 flex-1">
+            <span className="block font-medium">Other models</span>
+            <span className="block truncate text-[length:var(--fs-xs)] text-(--dim)">
+              Pi and connected providers · {otherModelCount}
+            </span>
+          </span>
+          <span
+            aria-hidden="true"
+            className={cx(
+              "relative h-5 w-9 shrink-0 rounded-full border border-(--border) bg-(--color-input) transition-colors",
+              showOtherModels && "border-(--accent) bg-(--accent)",
+            )}
+          >
+            <span
+              className={cx(
+                "absolute left-0.5 top-0.5 h-3.5 w-3.5 rounded-full bg-(--fg) transition-transform",
+                showOtherModels && "translate-x-4",
+              )}
+            />
+          </span>
+        </button>
+      ) : null}
       <div className="max-h-[min(24rem,55vh)] overflow-y-auto pt-1">
         {groups.length === 0 ? (
           <div className="w-64 px-2.5 py-2 text-[length:var(--fs-sm)] text-(--dim)">
-            <p>No chat models are available.</p>
+            <p>
+              {otherModelCount > 0
+                ? "No controller models are available."
+                : "No chat models are available."}
+            </p>
             <Link
               href="/models"
               onClick={onClose}
