@@ -59,16 +59,18 @@ export const getKittylitterPairingJson = async (): Promise<KittylitterPairingRes
     const { stdout } = await execFileAsync(executablePath(), ["pair"], {
       encoding: "utf8",
       maxBuffer: 64 * 1024,
-      timeout: 8_000,
+      timeout: 30_000,
     });
     return {
       ok: true,
       pairingJson: normalizeKittylitterPairingJson(String(stdout).trim()),
     };
-  } catch {
+  } catch (error) {
+    const code =
+      error && typeof error === "object" && "code" in error ? String(error.code) : "unknown";
     return {
       ok: false,
-      error: "KittyLitter is unavailable. Start the controller and try again.",
+      error: `KittyLitter is unavailable (${code}). Start the controller and try again.`,
     };
   }
 };
