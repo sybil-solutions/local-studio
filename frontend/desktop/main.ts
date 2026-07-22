@@ -13,6 +13,7 @@ import { startFrontendServer, stopFrontendServer, type ServerHandle } from "./lo
 import { checkForUpdates, getUpdateState, initializeAutoUpdates } from "./logic/update-manager";
 import { addProject, listProjectsWithMeta, removeProject } from "./logic/projects-store";
 import { deployController } from "./logic/controller-deploy";
+import { getKittylitterPairingJson } from "./logic/kittylitter-pairing";
 import {
   hideQuickPanel,
   resetQuickPanel,
@@ -218,6 +219,7 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle("desktop:get-update-status", async () => getUpdateState());
   ipcMain.handle("desktop:check-for-updates", async () => checkForUpdates(true));
+  ipcMain.handle("desktop:get-kittylitter-pairing-json", async () => getKittylitterPairingJson());
 
   ipcMain.handle("desktop:open-directory", async () => {
     const owner = mainWindow ?? undefined;

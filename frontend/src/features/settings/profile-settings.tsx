@@ -117,32 +117,47 @@ export function ProfileSettings() {
 }
 
 function PhonePairingSettings() {
-  const [url, setUrl] = useState("");
+  const [pairingJson, setPairingJson] = useState("");
   const [copied, setCopied] = useState(false);
-  useMountSubscription(() => setUrl(window.location.origin), []);
-  const urlTooLong = new TextEncoder().encode(url).length > 78;
-  const loopback = /^https?:\/\/(127\.0\.0\.1|localhost)(:|\/|$)/i.test(url);
+  const [pairingError, setPairingError] = useState("");
+  const loadPairingJson = async (): Promise<string> => {
+    const result = await window.localStudioDesktop?.getKittylitterPairingJson?.();
+    if (!result?.ok || !result.pairingJson) {
+      throw new Error(result?.error || "Connection JSON is available in the desktop app.");
+    }
+    setPairingJson(result.pairingJson);
+    setPairingError("");
+    return result.pairingJson;
+  };
+  useMountSubscription(() => {
+    void loadPairingJson().catch((error: unknown) => {
+      setPairingError(error instanceof Error ? error.message : "Connection JSON is unavailable.");
+    });
+  }, []);
   const copy = async () => {
     try {
-      await navigator.clipboard.writeText(url);
+      const value = pairingJson || (await loadPairingJson());
+      await navigator.clipboard.writeText(value);
       setCopied(true);
       window.setTimeout(() => setCopied(false), 1500);
-    } catch {}
+    } catch (error) {
+      setPairingError(error instanceof Error ? error.message : "Connection JSON is unavailable.");
+    }
   };
 
   return (
     <SettingsGroup
       title="Connect your phone"
-      description="Open this Studio from your phone camera without typing the address."
+      description="Connect KittyLitter to this controller by QR code or connection JSON."
     >
       <div className="grid overflow-hidden sm:grid-cols-[240px_minmax(0,1fr)]">
         <div className="flex items-center justify-center bg-(--ui-surface)/55 px-5 py-7 sm:min-h-[284px]">
           <div className="flex h-48 w-48 items-center justify-center rounded-2xl bg-white p-2.5 shadow-[0_16px_45px_-28px_rgba(0,0,0,0.8)]">
-            {url && !urlTooLong ? (
-              <QrCode value={url} label={`QR code for ${url}`} />
+            {pairingJson ? (
+              <QrCode value={pairingJson} label="KittyLitter controller connection QR code" />
             ) : (
               <span className="px-4 text-center text-[length:var(--fs-sm)] text-black/55">
-                {urlTooLong ? "Use a shorter URL" : "Enter a Studio URL"}
+                {pairingError ? "Controller unavailable" : "Preparing connection"}
               </span>
             )}
           </div>
@@ -152,39 +167,24 @@ function PhonePairingSettings() {
             <Smartphone className="h-4.5 w-4.5" />
           </div>
           <h4 className="text-[length:var(--fs-lg)] font-medium tracking-[-0.01em] text-(--ui-fg)">
-            Scan to open Studio
+            Scan with KittyLitter
           </h4>
           <p className="mt-1.5 max-w-md text-[length:var(--fs-sm)] leading-relaxed text-(--ui-muted)">
-            {loopback
-              ? "This local address only works on this Mac. Replace it with your LAN or Tailscale address before scanning."
-              : urlTooLong
-                ? "The QR code supports Studio URLs up to 78 bytes."
-                : "The code updates as you edit the address below."}
+            The QR code and copied JSON contain the same private controller connection. Share them
+            only with devices you trust.
           </p>
-          <label
-            htmlFor="phone-studio-url"
-            className="mb-1.5 mt-5 block text-[length:var(--fs-xs)] font-medium uppercase tracking-[0.08em] text-(--ui-muted)"
-          >
-            Studio address
-          </label>
-          <div className="flex min-w-0 items-center gap-2">
-            <Input
-              id="phone-studio-url"
-              value={url}
-              maxLength={72}
-              onChange={(event) => setUrl(event.target.value.trim())}
-              className="h-9 min-w-0 flex-1 font-mono text-[length:var(--fs-sm)]"
-              aria-label="Studio URL encoded in QR code"
-            />
+          <div className="mt-5 flex min-w-0 items-center gap-2">
             <SettingsButton
               onClick={() => void copy()}
-              disabled={!url}
-              aria-label="Copy Studio address"
+              aria-label="Copy KittyLitter connection JSON"
             >
               {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-              {copied ? "Copied" : "Copy"}
+              {copied ? "Copied" : "Copy connection JSON"}
             </SettingsButton>
           </div>
+          {pairingError ? (
+            <p className="mt-3 text-[length:var(--fs-sm)] text-(--err)">{pairingError}</p>
+          ) : null}
         </div>
       </div>
     </SettingsGroup>
