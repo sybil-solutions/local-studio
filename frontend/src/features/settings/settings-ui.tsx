@@ -304,6 +304,13 @@ export function SettingsLink({
       target="_blank"
       rel="noopener noreferrer"
       aria-label={ariaLabel}
+      style={
+        tone === "primary"
+          ? { color: "var(--color-primary-foreground)" }
+          : tone === "danger"
+            ? { color: "var(--destructive-foreground)" }
+            : undefined
+      }
       className={buttonClasses(
         tone === "primary" ? "primary" : tone === "danger" ? "danger" : "ghost",
         "sm",
