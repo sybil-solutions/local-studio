@@ -302,13 +302,18 @@ class PiSdkSession extends EventEmitter implements PiAgentSession {
                           agentDir,
                           modelRuntime: sharedModelRuntime,
                           resourceLoaderOptions: {
-                            additionalSkillPaths: sessionOptions.skills,
-                            additionalExtensionPaths: sessionOptions.extensionPaths,
+                            additionalSkillPaths: selectedModel.vision ? [] : sessionOptions.skills,
+                            additionalExtensionPaths: selectedModel.vision
+                              ? []
+                              : sessionOptions.extensionPaths,
                             additionalPromptTemplatePaths: sessionOptions.promptTemplatePaths,
                             ...(selectedModel.vision
                               ? {
+                                  noExtensions: true,
+                                  noSkills: true,
+                                  noContextFiles: true,
                                   systemPromptOverride: () => "You are a helpful assistant.",
-                                  agentsFilesOverride: () => ({ agentsFiles: [] }),
+                                  appendSystemPromptOverride: () => [],
                                 }
                               : {}),
                           },
