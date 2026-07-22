@@ -14,18 +14,7 @@ import {
   respondProviderLogin,
   startProviderLogin,
 } from "../provider-hub";
-import { errorMessage, jsonError } from "./helpers";
-
-async function readJsonBody(request: Request): Promise<Record<string, unknown> | null> {
-  try {
-    const parsed = (await request.json()) as unknown;
-    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
-      ? (parsed as Record<string, unknown>)
-      : null;
-  } catch {
-    return null;
-  }
-}
+import { errorMessage, jsonError, readJsonBody } from "./helpers";
 
 export async function handleProvidersList(): Promise<Response> {
   try {

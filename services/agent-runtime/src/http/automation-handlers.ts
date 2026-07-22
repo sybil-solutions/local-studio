@@ -13,18 +13,7 @@ import {
 import { runAutomationNow } from "../automation-scheduler";
 import { clearGoal, readGoal, writeGoal, type GoalStatus } from "../goals-store";
 import { GOAL_STATUSES } from "../../../../shared/agent/session-goal";
-import { errorMessage, jsonError } from "./helpers";
-
-async function readJsonBody(request: Request): Promise<Record<string, unknown> | null> {
-  try {
-    const parsed = (await request.json()) as unknown;
-    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
-      ? (parsed as Record<string, unknown>)
-      : null;
-  } catch {
-    return null;
-  }
-}
+import { errorMessage, jsonError, readJsonBody } from "./helpers";
 
 export async function handleAutomationsList(): Promise<Response> {
   try {

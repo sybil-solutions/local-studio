@@ -3,6 +3,7 @@ import {
   resolveModelVision,
 } from "../../controller/contracts/model-capabilities";
 import type { AgentThinkingLevel } from "./agent-turn";
+import { isRecord } from "./guards";
 
 export interface OpenAIModelListItem {
   id: string;
@@ -65,10 +66,6 @@ function numberFromUnknown(value: unknown): number | undefined {
     if (Number.isFinite(parsed) && parsed > 0) return parsed;
   }
   return undefined;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
 function recordFromUnknown(value: unknown): Record<string, unknown> {

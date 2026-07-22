@@ -63,6 +63,7 @@ import {
   type LitterBridgeTransferCursor,
 } from "../../../shared/agent/litter-bridge";
 import { readJsonRequestWithinLimit } from "../../../shared/agent/agent-turn-body";
+import { isRecord } from "../../../shared/agent/guards";
 import { cleanSessionTitle } from "../../../shared/agent/session-title";
 import { resolveDataDir } from "./data-dir";
 import { listProjectsFromStore, type ProjectEntry } from "./projects-store";
@@ -246,9 +247,6 @@ class SessionReadError extends Error {
     super(message);
   }
 }
-
-const isRecord = (value: unknown): value is JsonRecord =>
-  typeof value === "object" && value !== null && !Array.isArray(value);
 
 const safeInteger = (value: unknown): number | null =>
   typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : null;

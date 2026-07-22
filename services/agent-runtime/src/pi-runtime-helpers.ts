@@ -372,12 +372,6 @@ export function applyRuntimeEnvInjections(
   for (const [key, value] of Object.entries(envInjections)) env[key] = value;
 }
 
-export function buildAgentSessionOptions(
-  input: AgentSessionOptionsInput,
-): Promise<AgentSessionOptions> {
-  return Promise.resolve(buildAgentSessionOptionsSync(input));
-}
-
 export function buildAgentSessionOptionsSync(input: AgentSessionOptionsInput): AgentSessionOptions {
   const options = input.options;
   return {
