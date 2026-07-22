@@ -1,7 +1,7 @@
 import * as electron from "electron";
 import { isHttpUrl } from "../helpers/url";
 
-export type MicrophonePermissionInput = {
+export type PermissionPolicyInput = {
   appOrigin: string;
   isMainFrame: boolean;
   mainWebContents: object;
@@ -12,24 +12,28 @@ export type MicrophonePermissionInput = {
   requestingWebContents: object | null;
 };
 
-export function allowsMicrophonePermission(input: MicrophonePermissionInput): boolean {
+function isTrustedMainFrameRequest(input: PermissionPolicyInput): boolean {
   const appOrigin = safeOrigin(input.appOrigin);
   return (
     appOrigin !== null &&
-    input.permission === "media" &&
     input.requestingWebContents === input.mainWebContents &&
     input.isMainFrame &&
     safeOrigin(input.requestingOrigin) === appOrigin &&
-    safeOrigin(input.requestingUrl) === appOrigin &&
+    safeOrigin(input.requestingUrl) === appOrigin
+  );
+}
+
+export function allowsPermission(input: PermissionPolicyInput): boolean {
+  if (!isTrustedMainFrameRequest(input)) return false;
+  if (input.permission === "clipboard-sanitized-write") return true;
+  return (
+    input.permission === "media" &&
     input.mediaTypes?.length === 1 &&
     input.mediaTypes[0] === "audio"
   );
 }
 
-export function registerMicrophonePermissionPolicy(
-  window: electron.BrowserWindow,
-  appOrigin: string,
-): void {
+export function registerPermissionPolicy(window: electron.BrowserWindow, appOrigin: string): void {
   const mainWebContents = window.webContents;
   const session = mainWebContents.session;
 
@@ -38,7 +42,7 @@ export function registerMicrophonePermissionPolicy(
       "securityOrigin" in details ? details.securityOrigin : details.requestingUrl;
     const mediaTypes = "mediaTypes" in details ? details.mediaTypes : undefined;
     callback(
-      allowsMicrophonePermission({
+      allowsPermission({
         appOrigin,
         isMainFrame: details.isMainFrame,
         mainWebContents,
@@ -53,7 +57,7 @@ export function registerMicrophonePermissionPolicy(
 
   session.setPermissionCheckHandler(
     (requestingWebContents, permission, requestingOrigin, details) =>
-      allowsMicrophonePermission({
+      allowsPermission({
         appOrigin,
         isMainFrame: details.isMainFrame,
         mainWebContents,

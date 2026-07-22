@@ -13,5 +13,5 @@
     "types": ["node", "electron"]
   },
   "include": ["./**/*.ts"],
-  "exclude": ["dist", "resources"]
+  "exclude": ["dist", "resources", "**/*.test.ts"]
 }
