@@ -41,8 +41,6 @@ export function computerWidthBounds(containerWidth = viewportWidth()): {
     return { min: MIN_COMPUTER_WIDTH, max: MAX_COMPUTER_WIDTH };
   }
   const minimum = Math.min(MIN_COMPUTER_WIDTH, containerWidth);
-  // The chat-safety cap below is the real guard; the ratio just keeps the
-  // panel from swallowing the whole window on huge displays.
   const roomyMaximum = Math.round(containerWidth * 0.7);
   const chatSafeMaximum = containerWidth - MIN_CHAT_WIDTH_WHEN_COMPUTER_OPEN;
   return {

@@ -142,33 +142,53 @@ test("mutation ledger prunes terminal rows only after the idempotency horizon", 
 test("mutation ledger serializes two-process cold start", async () => {
   const dataDir = directory();
   const moduleUrl = pathToFileURL(
-    path.resolve("services/agent-runtime/src/litter-bridge-mutation-ledger.ts"),
+    path.resolve(import.meta.dirname, "../src/litter-bridge-mutation-ledger.ts"),
   ).href;
   const source = `
     import { createLitterMutationLedger } from ${JSON.stringify(moduleUrl)};
     const ledger = createLitterMutationLedger(${JSON.stringify(dataDir)}, () => new Date(${JSON.stringify(NOW.toISOString())}));
-    const result = ledger.reserve(${JSON.stringify(identity)}, ${JSON.stringify(BODY_HASH)}, process.argv[1]);
+    const result = ledger.reserve(${JSON.stringify(identity)}, ${JSON.stringify(BODY_HASH)}, process.env.LEDGER_TEST_OWNER ?? "owner");
     process.stdout.write(result.kind);
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    const { promise, resolve } = Promise.withResolvers();
+    process.stdin.resume();
+    process.stdin.once("end", resolve);
+    await promise;
     ledger.close();
   `;
-  const run = (owner: string) =>
-    new Promise<string>((resolve, reject) => {
-      const child = spawn(
-        process.execPath,
-        ["--experimental-strip-types", "--input-type=module", "-e", source, owner],
-        { stdio: ["ignore", "pipe", "pipe"] },
-      );
-      let stdout = "";
-      let stderr = "";
-      child.stdout.on("data", (chunk) => (stdout += String(chunk)));
-      child.stderr.on("data", (chunk) => (stderr += String(chunk)));
-      child.once("error", reject);
-      child.once("exit", (code) =>
-        code === 0 ? resolve(stdout) : reject(new Error(stderr || `child exited ${code}`)),
-      );
+  const childArgs = process.versions.bun
+    ? ["-e", source]
+    : ["--experimental-strip-types", "--input-type=module", "-e", source];
+  const spawnChild = (owner: string) => {
+    const child = spawn(process.execPath, childArgs, {
+      stdio: ["pipe", "pipe", "pipe"],
+      env: { ...process.env, LEDGER_TEST_OWNER: owner },
     });
-  const results = await Promise.all([run("owner-a"), run("owner-b")]);
+    const result = Promise.withResolvers<string>();
+    const exit = Promise.withResolvers<void>();
+    let stderr = "";
+    child.stdout.once("data", (chunk) => result.resolve(String(chunk)));
+    child.stderr.on("data", (chunk) => (stderr += String(chunk)));
+    child.once("error", (error) => {
+      result.reject(error);
+      exit.reject(error);
+    });
+    child.once("exit", (code) => {
+      if (code === 0) {
+        exit.resolve();
+        return;
+      }
+      const failure = new Error(stderr || `child exited ${code}`);
+      result.reject(failure);
+      exit.reject(failure);
+    });
+    return { child, result: result.promise, exit: exit.promise };
+  };
+  const first = spawnChild("owner-a");
+  const second = spawnChild("owner-b");
+  const results = await Promise.all([first.result, second.result]);
+  first.child.stdin.end();
+  second.child.stdin.end();
+  await Promise.all([first.exit, second.exit]);
   assert.deepEqual(results.sort(), ["busy", "reserved"]);
 });
 
@@ -189,4 +209,21 @@ test("mutation ledger fails closed on corruption and unsafe permissions", () => 
     () => createLitterMutationLedger(permissionDir, () => new Date(NOW)),
     /permissions are unsafe/i,
   );
+});
+
+test("mutation ledger releases a poisoned dispatch after the reconciliation window", () => {
+  let observedAt = NOW.getTime();
+  const ledger = createLitterMutationLedger(directory(), () => new Date(observedAt), {
+    reconcileWindowMs: 1_000,
+  });
+  const first = ledger.reserve(identity, BODY_HASH, "owner-1");
+  assert.equal(first.kind, "reserved");
+  if (first.kind !== "reserved") return;
+  ledger.markDispatching(identity, BODY_HASH, first.lease, correlation());
+  assert.equal(ledger.reserve(identity, BODY_HASH, "owner-2").kind, "reconcile");
+  observedAt += 1_001;
+  const recovered = ledger.reserve(identity, BODY_HASH, "owner-2");
+  assert.equal(recovered.kind, "reserved");
+  assert.notEqual(recovered.kind === "reserved" ? recovered.lease.token : null, first.lease.token);
+  ledger.close();
 });

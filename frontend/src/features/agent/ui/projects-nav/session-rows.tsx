@@ -184,8 +184,6 @@ export function ProjectSessions({
   const reload = useCallback(async () => {
     setLoading(true);
     try {
-      // Overfetch a little: subagent children nest under their parent row
-      // instead of consuming top-level slots.
       const response = await fetch(
         `/api/agent/sessions?cwd=${encodeURIComponent(project.path)}&since=7d&limit=${visibleLimit + 9}`,
         { cache: "no-store" },
@@ -285,8 +283,6 @@ export function ProjectSessions({
   );
 }
 
-// Subagent child sessions, nested under their parent row Codex-style:
-// collapsed to a count by default, expandable to full openable session rows.
 function SubagentSessionRows({
   project,
   sessions,

@@ -118,8 +118,6 @@ export function beginDownloadEffect(
     setError: Dispatch<SetStateAction<string | null>>;
   },
 ) {
-  // Preset allow_patterns win when present; otherwise fall back to the
-  // explicit list (model-index variant downloads pass theirs this way).
   const patterns = preset?.allow_patterns?.length ? preset.allow_patterns : allowPatterns;
   return requestEffect(() =>
     startDownload({

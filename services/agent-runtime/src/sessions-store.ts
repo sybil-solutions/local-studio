@@ -47,10 +47,7 @@ function summaryStartTime(session: Pick<SessionSummary, "startedAt" | "updatedAt
   return Number.isFinite(value) ? value : 0;
 }
 
-// Pi encodes the cwd by stripping the leading '/' and replacing remaining '/'
-// with '-', then wrapping with '--' on both sides. Example:
-//   /Users/sero/projects/local-studio  →  --Users-sero-projects-local-studio--
-function encodeCwdForPi(cwd: string): string {
+export function encodeCwdForPi(cwd: string): string {
   const normalized = path.resolve(cwd).replace(/\\+/g, "/");
   const collapsed = normalized.replace(/^\//, "").replace(/\/+/g, "-");
   return `--${collapsed}--`;

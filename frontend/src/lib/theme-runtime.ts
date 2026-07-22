@@ -54,7 +54,6 @@ function deriveThemeUiTokens(tokens: ThemeTokens): Record<string, string> {
     active: `rgba(${ink}, 0.08)`,
     composer: "var(--sidebar-bg)",
     "composer-footer": "var(--sidebar-bg)",
-    "composer-shadow": "none",
   };
 }
 

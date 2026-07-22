@@ -40,11 +40,6 @@ export function Drawer({
   );
 }
 
-/**
- * DrawerOverlay — the one way to float a Drawer over the app: right-anchored,
- * scrimmed, closed by backdrop click or Escape. Docked drawers (inside a modal
- * or a layout row) mount Drawer directly and skip this.
- */
 export function DrawerOverlay({ children, onClose }: { children: ReactNode; onClose: () => void }) {
   return (
     <div

@@ -295,32 +295,6 @@ export const LitterBridgeControllerActionRequestSchema = Schema.Struct({
   action: LitterBridgeControllerActionSchema,
 }).pipe(strict);
 
-export const LitterBridgeControllerResourceSchema = Schema.Union([
-  Schema.Struct({
-    type: Schema.Literal("recipe_launch"),
-    recipeId: IdentifierSchema,
-    launchId: IdentifierSchema,
-  }).pipe(strict),
-  Schema.Struct({
-    type: Schema.Literal("launch"),
-    launchId: IdentifierSchema,
-  }).pipe(strict),
-  Schema.Struct({
-    type: Schema.Literal("model"),
-    modelId: IdentifierSchema,
-  }).pipe(strict),
-]).pipe(strict);
-
-export const LitterBridgeControllerActionAckSchema = Schema.Struct({
-  type: Schema.Literal("controller_action_ack"),
-  protocolVersion: LitterBridgeProtocolVersionSchema,
-  requestId: IdentifierSchema,
-  idempotencyKey: IdentifierSchema,
-  revision: LitterBridgeRevisionSchema,
-  acceptedAt: TimestampSchema,
-  resource: LitterBridgeControllerResourceSchema,
-}).pipe(strict);
-
 export const LitterBridgeSessionAuthoritySchema = Schema.Literals(["local-studio", "litter"]);
 
 export const LitterBridgeExternalSessionIdentitySchema = Schema.Struct({
@@ -617,12 +591,6 @@ export const LitterBridgeAgentTurnResultSchema = Schema.Union([
   LitterBridgeErrorResultSchema,
 ]).pipe(strict);
 
-export const LitterBridgeControllerActionResultSchema = Schema.Union([
-  LitterBridgeControllerActionAckSchema,
-  LitterBridgeConflictResultSchema,
-  LitterBridgeErrorResultSchema,
-]).pipe(strict);
-
 export const LitterBridgeRequestSchema = Schema.Union([
   LitterBridgeControllerSnapshotRequestSchema,
   LitterBridgeControllerActionRequestSchema,
@@ -630,17 +598,6 @@ export const LitterBridgeRequestSchema = Schema.Union([
   LitterBridgeSessionReadRequestSchema,
   LitterBridgeSessionTransferEnvelopeSchema,
   LitterBridgeAgentTurnRequestSchema,
-]).pipe(strict);
-
-export const LitterBridgeResponseSchema = Schema.Union([
-  LitterBridgeCapabilitiesManifestSchema,
-  LitterBridgeControllerSnapshotSchema,
-  LitterBridgeControllerActionResultSchema,
-  LitterBridgeSessionListPageSchema,
-  LitterBridgeSessionPageSchema,
-  LitterBridgeSessionTransferResultSchema,
-  LitterBridgeAgentTurnResultSchema,
-  LitterBridgeErrorResultSchema,
 ]).pipe(strict);
 
 export type LitterBridgeProtocolVersion = typeof LitterBridgeProtocolVersionSchema.Type;
@@ -668,8 +625,6 @@ export type LitterBridgeControllerSnapshotRequest =
 export type LitterBridgeControllerAction = typeof LitterBridgeControllerActionSchema.Type;
 export type LitterBridgeControllerActionRequest =
   typeof LitterBridgeControllerActionRequestSchema.Type;
-export type LitterBridgeControllerResource = typeof LitterBridgeControllerResourceSchema.Type;
-export type LitterBridgeControllerActionAck = typeof LitterBridgeControllerActionAckSchema.Type;
 export type LitterBridgeSessionAuthority = typeof LitterBridgeSessionAuthoritySchema.Type;
 export type LitterBridgeExternalSessionIdentity =
   typeof LitterBridgeExternalSessionIdentitySchema.Type;
@@ -698,7 +653,4 @@ export type LitterBridgeConflictResult = typeof LitterBridgeConflictResultSchema
 export type LitterBridgeForkResult = typeof LitterBridgeForkResultSchema.Type;
 export type LitterBridgeSessionTransferResult = typeof LitterBridgeSessionTransferResultSchema.Type;
 export type LitterBridgeAgentTurnResult = typeof LitterBridgeAgentTurnResultSchema.Type;
-export type LitterBridgeControllerActionResult =
-  typeof LitterBridgeControllerActionResultSchema.Type;
 export type LitterBridgeRequest = typeof LitterBridgeRequestSchema.Type;
-export type LitterBridgeResponse = typeof LitterBridgeResponseSchema.Type;

@@ -138,8 +138,6 @@ const FencedCodeBlock = memo(function FencedCodeBlock({
 });
 FencedCodeBlock.displayName = "FencedCodeBlock";
 
-/* All typography lives in `.chat-markdown` (chat.css) — the single Codex
-   ladder. Component overrides here are structural only. */
 const components: Components = {
   pre: ({ node: _n, children }) => {
     const code = nodeToPlainText(

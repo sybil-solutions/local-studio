@@ -39,7 +39,6 @@ export function hasHfEngagementStats(model: HuggingFaceModel): boolean {
   return model.downloads > 0 || model.likes > 0;
 }
 
-/** Catalog models that can plausibly run on this pool (entries with unknown sizes stay). */
 export function filterIndexModelsWithinPool(
   models: ModelIndexModel[],
   poolGb: number,

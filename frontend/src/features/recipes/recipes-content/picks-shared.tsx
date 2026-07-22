@@ -57,12 +57,6 @@ export function useModelIndex() {
   return { data, loading, error, refresh };
 }
 
-/**
- * Same VRAM-pool source as the Explore tab (see use-explore.ts): connected GPUs
- * via api.getGPUs(), the controller's max_vram_gb from the starter-presets
- * endpoint as fallback, and the user's manual pool override from
- * explore-pool-storage when set.
- */
 export function useHardwareProfile() {
   const [gpus, setGpus] = useState<GPU[]>([]);
   const [apiMaxVramGb, setApiMaxVramGb] = useState(0);
@@ -339,12 +333,6 @@ function VariantButton({
   );
 }
 
-/**
- * Explore-tab idiom (see ExploreVramCell in explore-model-row.tsx): green
- * "fits" with pool share when within the VRAM pool, red "needs ~N GB" when
- * over. Catalog sizes are approximate, so this stays a binary fits/over badge.
- * Renders nothing when the size or the pool is unknown.
- */
 function VariantFitBadge({ sizeGb, poolGb }: { sizeGb: number | null; poolGb: number }) {
   if (sizeGb == null || !Number.isFinite(sizeGb) || poolGb <= 0) return null;
   const over = sizeGb > poolGb;

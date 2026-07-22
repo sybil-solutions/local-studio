@@ -45,7 +45,7 @@ const session = {
 
 const metadata = {
   title: "Controller session",
-  cwd: "/Users/sero/projects/vllm-studio",
+  cwd: "/tmp/project",
   createdAt: timestamp,
   updatedAt: timestamp,
   modelId: "GLM-5.2",

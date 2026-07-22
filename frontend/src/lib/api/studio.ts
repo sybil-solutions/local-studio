@@ -1,6 +1,9 @@
 import { Schema } from "effect";
-import { ModelIndexSchema, type ModelIndexResponse } from "@local-studio/contracts/model-index";
-import bundledModelIndexSource from "../../../../controller/src/modules/studio/model-index.json";
+import {
+  ModelIndexSchema,
+  bundledModelIndexSource,
+  type ModelIndexResponse,
+} from "@local-studio/contracts/model-index";
 import type {
   ModelDownload,
   EngineJob,

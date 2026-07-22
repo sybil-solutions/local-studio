@@ -4,6 +4,7 @@ import { useState, type ReactNode } from "react";
 import {
   AppPage,
   Button,
+  buttonClasses,
   Input,
   RefreshIconButton,
   SectionNav,
@@ -283,6 +284,33 @@ export function SettingsButton({
     >
       {children}
     </Button>
+  );
+}
+
+export function SettingsLink({
+  href,
+  children,
+  tone = "default",
+  "aria-label": ariaLabel,
+}: {
+  href: string;
+  children: ReactNode;
+  tone?: "default" | "primary" | "danger";
+  "aria-label"?: string;
+}) {
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      aria-label={ariaLabel}
+      className={buttonClasses(
+        tone === "primary" ? "primary" : tone === "danger" ? "danger" : "ghost",
+        "sm",
+      )}
+    >
+      {children}
+    </a>
   );
 }
 

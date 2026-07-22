@@ -115,8 +115,6 @@ export interface LaunchProgressData extends LaunchProgress {
   message: string;
 }
 
-// --- Model discovery + starter presets ---
-
 export interface StarterPreset {
   id: string;
   name: string;

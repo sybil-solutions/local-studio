@@ -227,8 +227,6 @@ export function useSetup() {
     [downloadsState, resetBenchmark, setCreatedRecipeId, setStep],
   );
 
-  // Model-index variant downloads: repo id + optional allow_patterns from the
-  // catalog entry, no preset attached.
   const beginVariantDownload = useCallback(
     (modelId: string, allowPatterns?: string[]) => beginDownload(modelId, undefined, allowPatterns),
     [beginDownload],

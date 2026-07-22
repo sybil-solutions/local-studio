@@ -91,8 +91,6 @@ function GitSummaryState({
 }) {
   if (!gitSummary?.isRepo) return null;
 
-  // The single diff-stat surface: the old pill above the composer duplicated
-  // this. Clicking opens the working-tree diff in a drawer.
   return (
     <button
       type="button"

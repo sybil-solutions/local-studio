@@ -37,6 +37,22 @@ jobs:
       - name: Cleanup checks
         working-directory: ./controller
         run: bun run check
+      - name: Tests
+        working-directory: ./controller
+        run: bun run test
+  agent-runtime:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - name: Install dependencies
+        working-directory: ./services/agent-runtime
+        run: bun install
+      - name: Tests
+        working-directory: ./services/agent-runtime
+        run: bun run test
   frontend:
     runs-on: ubuntu-latest
     steps:

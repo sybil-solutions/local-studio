@@ -10,9 +10,6 @@ const LazyGitDiffPanel = lazy(() =>
   })),
 );
 
-// Right-anchored overlay drawer showing the working-tree diff. The single
-// entry point is the composer status bar's diff stat — the pill that used to
-// duplicate it above the composer is gone.
 export function GitDiffDrawer({
   cwd,
   gitBranch,

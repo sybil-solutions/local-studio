@@ -332,10 +332,15 @@ const createTurnRuntime = (options: {
   preflight?: boolean;
   sessionFile: string;
   durableError?: boolean;
+  omitMarker?: boolean;
   boundaryPiSessionId?: string;
   statusPiSessionId?: string | null;
   statusCwd?: string;
   statusModelId?: string;
+  ensureStartedGate?: {
+    reached: { resolve: () => void };
+    release: { promise: Promise<void> };
+  };
 }) => {
   const prompts: Array<{
     content: string;
@@ -369,6 +374,10 @@ const createTurnRuntime = (options: {
           "statusPiSessionId" in options
             ? (options.statusPiSessionId ?? null)
             : (piSessionId ?? null);
+        if (options.ensureStartedGate) {
+          options.ensureStartedGate.reached.resolve();
+          await options.ensureStartedGate.release.promise;
+        }
       },
       promptDurably: async (
         content: string,
@@ -386,22 +395,24 @@ const createTurnRuntime = (options: {
         if (options.preflight === false) throw new Error("preflight rejected");
         const userEntryId = `user-${marker.dispatchId}`;
         const markerEntryId = `marker-${marker.dispatchId}`;
+        const userLine = JSON.stringify({
+          type: "message",
+          id: userEntryId,
+          parentId: null,
+          timestamp: NOW.toISOString(),
+          message: { role: "user", content: [{ type: "text", text: content }] },
+        });
+        const markerLine = JSON.stringify({
+          type: "custom",
+          customType: "local_studio_litter_turn_v1",
+          data: { version: 1, ...marker, userEntryId },
+          id: markerEntryId,
+          parentId: userEntryId,
+          timestamp: NOW.toISOString(),
+        });
         appendFileSync(
           options.sessionFile,
-          `${JSON.stringify({
-            type: "message",
-            id: userEntryId,
-            parentId: null,
-            timestamp: NOW.toISOString(),
-            message: { role: "user", content: [{ type: "text", text: content }] },
-          })}\n${JSON.stringify({
-            type: "custom",
-            customType: "local_studio_litter_turn_v1",
-            data: { version: 1, ...marker, userEntryId },
-            id: markerEntryId,
-            parentId: userEntryId,
-            timestamp: NOW.toISOString(),
-          })}\n`,
+          options.omitMarker ? `${userLine}\n` : `${userLine}\n${markerLine}\n`,
         );
         if (options.durableError) throw new Error("simulated crash after transcript persistence");
         return {
@@ -1384,4 +1395,143 @@ test("published handoff metadata is private and removed only by its owner", () =
   assert.equal(statSync(filepath).mode & 0o777, 0o600);
   gateway.dispose();
   assert.throws(() => statSync(filepath));
+});
+
+test("signed agent.turn reports retryAfterMs when a concurrent reservation is in flight", async () => {
+  const fixture = createSessionFixture();
+  const keys = keyMaterial();
+  const reached = Promise.withResolvers<void>();
+  const release = Promise.withResolvers<void>();
+  const turnRuntime = createTurnRuntime({
+    sessionFile: fixture.filepath,
+    ensureStartedGate: { reached, release },
+  });
+  const gateway = fixtureGateway(fixture, { turnRuntime: turnRuntime.runtime });
+  const listResponse = await gateway.handle(
+    gatewayRequest(sessionListRequest(keys.privateKey, keys.publicHex, { request: "busy-list" })),
+  );
+  const listed = (await listResponse.json()) as Record<string, any>;
+  const revision = listed.sessions[0].revision as number;
+  const inFlight = gateway.handle(
+    gatewayRequest(
+      agentTurnRequest(keys.privateKey, keys.publicHex, {
+        sessionId: fixture.sessionId,
+        revision,
+        idempotencyKey: "turn-busy",
+        request: "busy-1",
+      }),
+    ),
+  );
+  await reached.promise;
+  const busyResponse = await gateway.handle(
+    gatewayRequest(
+      agentTurnRequest(keys.privateKey, keys.publicHex, {
+        sessionId: fixture.sessionId,
+        revision,
+        idempotencyKey: "turn-busy",
+        request: "busy-2",
+      }),
+    ),
+  );
+  assert.equal(busyResponse.status, 409);
+  const busy = (await busyResponse.json()) as Record<string, any>;
+  assert.equal(busy.error.code, "rate_limited");
+  assert.equal(busy.error.retriable, true);
+  assert.equal(Number.isInteger(busy.error.details.retryAfterMs), true);
+  assert.equal(busy.error.details.retryAfterMs > 0, true);
+  release.resolve();
+  const settled = await inFlight;
+  assert.equal(settled.status, 200);
+});
+
+test("signed agent.turn refuses a content-hash lookalike without the durable marker", async () => {
+  const fixture = createSessionFixture();
+  const keys = keyMaterial();
+  const crashingRuntime = createTurnRuntime({
+    durableError: true,
+    omitMarker: true,
+    sessionFile: fixture.filepath,
+  });
+  const gateway = fixtureGateway(fixture, { turnRuntime: crashingRuntime.runtime });
+  const listResponse = await gateway.handle(
+    gatewayRequest(
+      sessionListRequest(keys.privateKey, keys.publicHex, { request: "lookalike-list" }),
+    ),
+  );
+  const listed = (await listResponse.json()) as Record<string, any>;
+  const revision = listed.sessions[0].revision as number;
+  const first = await gateway.handle(
+    gatewayRequest(
+      agentTurnRequest(keys.privateKey, keys.publicHex, {
+        sessionId: fixture.sessionId,
+        revision,
+        idempotencyKey: "turn-lookalike",
+        request: "lookalike-1",
+      }),
+    ),
+  );
+  assert.equal(first.status, 500);
+  assert.equal(crashingRuntime.prompts.length, 1);
+
+  const retryRuntime = createTurnRuntime({ sessionFile: fixture.filepath });
+  const restarted = fixtureGateway(fixture, { turnRuntime: retryRuntime.runtime });
+  const reconciled = await restarted.handle(
+    gatewayRequest(
+      agentTurnRequest(keys.privateKey, keys.publicHex, {
+        sessionId: fixture.sessionId,
+        revision,
+        idempotencyKey: "turn-lookalike",
+        request: "lookalike-2",
+      }),
+    ),
+  );
+  assert.equal(reconciled.status, 409);
+  const body = (await reconciled.json()) as Record<string, any>;
+  assert.equal(body.error.retriable, true);
+  assert.equal(retryRuntime.prompts.length, 0);
+});
+
+test("signed agent.turn maps a torn reconciliation transcript to a retriable conflict", async () => {
+  const fixture = createSessionFixture();
+  const keys = keyMaterial();
+  const crashingRuntime = createTurnRuntime({
+    durableError: true,
+    omitMarker: true,
+    sessionFile: fixture.filepath,
+  });
+  const gateway = fixtureGateway(fixture, { turnRuntime: crashingRuntime.runtime });
+  const listResponse = await gateway.handle(
+    gatewayRequest(sessionListRequest(keys.privateKey, keys.publicHex, { request: "torn-list" })),
+  );
+  const listed = (await listResponse.json()) as Record<string, any>;
+  const revision = listed.sessions[0].revision as number;
+  const first = await gateway.handle(
+    gatewayRequest(
+      agentTurnRequest(keys.privateKey, keys.publicHex, {
+        sessionId: fixture.sessionId,
+        revision,
+        idempotencyKey: "turn-torn",
+        request: "torn-1",
+      }),
+    ),
+  );
+  assert.equal(first.status, 500);
+  appendFileSync(fixture.filepath, "{ this is not valid json\n");
+
+  const retryRuntime = createTurnRuntime({ sessionFile: fixture.filepath });
+  const restarted = fixtureGateway(fixture, { turnRuntime: retryRuntime.runtime });
+  const conflict = await restarted.handle(
+    gatewayRequest(
+      agentTurnRequest(keys.privateKey, keys.publicHex, {
+        sessionId: fixture.sessionId,
+        revision,
+        idempotencyKey: "turn-torn",
+        request: "torn-2",
+      }),
+    ),
+  );
+  assert.equal(conflict.status, 409);
+  const body = (await conflict.json()) as Record<string, any>;
+  assert.equal(body.error.retriable, true);
+  assert.equal(retryRuntime.prompts.length, 0);
 });

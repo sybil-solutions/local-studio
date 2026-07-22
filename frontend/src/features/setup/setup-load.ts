@@ -62,8 +62,6 @@ export function loadSecondarySetupDataEffect(
       Effect.result(withSetupTimeoutEffect(api.getRuntimeJobs(), "runtime jobs")),
     ] as const);
 
-    // The presets payload also carries the controller's detected max_vram_gb,
-    // which the model-catalog section uses for per-variant fit badges.
     if (Result.isSuccess(presetsResult)) {
       setPresets(presetsResult.success.presets || []);
       setMaxVram(presetsResult.success.max_vram_gb ?? 0);

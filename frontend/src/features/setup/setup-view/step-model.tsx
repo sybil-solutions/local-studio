@@ -8,18 +8,9 @@ import type { ModelIndexVariant } from "@/lib/api/studio";
 import { TierSection, useModelIndex } from "@/features/recipes/recipes-content/picks-shared";
 import type { GgufFileOption } from "../setup-model-files";
 
-// The wizard tracks download progress on its own step (step 3), so the catalog
-// cards render without live download state.
 const NO_DOWNLOADS: Map<string, ModelDownload> = new Map();
 const NO_STARTING: Set<string> = new Set();
 
-/**
- * Curated model catalog (controller model index), reusing the Picks tab's
- * tier/card/variant UI. Variant buttons start the same wizard download flow
- * as presets and the manual HF-ID path: beginVariantDownload → beginDownload
- * → step 3. Missing/failed catalog data hides the section — the presets and
- * manual flows below must never be blocked by it.
- */
 function ModelIndexCatalog({
   presetsCount,
   maxVram,

@@ -3,14 +3,9 @@ import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
+import type { KittylitterPairingResult } from "../interfaces";
 
 const execFileAsync = promisify(execFile);
-
-export interface KittylitterPairingResult {
-  ok: boolean;
-  pairingJson?: string;
-  error?: string;
-}
 
 const executablePath = (): string => {
   const configured = process.env.KITTYLITTER_BIN?.trim();

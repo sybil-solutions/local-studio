@@ -5,13 +5,14 @@ import { Check, Copy, ExternalLink, Smartphone, Upload } from "@/ui/icon-registr
 import { Input } from "@/ui";
 import {
   PROFILE_HUES,
+  profileAvatarColor,
   ProfileAvatar,
   profileImageFromFile,
   useLocalProfile,
 } from "@/features/shell/local-profile";
 import { QrCode } from "@/features/shell/qr-code";
 import { useMountSubscription } from "@/hooks/use-mount-subscription";
-import { SettingsButton, SettingsGroup } from "./settings-ui";
+import { SettingsButton, SettingsGroup, SettingsLink } from "./settings-ui";
 
 export function ProfileSettings() {
   const [profile, updateProfile] = useLocalProfile();
@@ -91,7 +92,7 @@ export function ProfileSettings() {
                     type="button"
                     onClick={() => updateProfile({ hue })}
                     className="flex h-8 w-8 items-center justify-center rounded-full transition-transform hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--ui-fg)/50"
-                    style={{ background: `oklch(0.55 0.13 ${hue})` }}
+                    style={{ background: profileAvatarColor(hue) }}
                     aria-label={`Avatar color ${hue}`}
                     aria-pressed={profile.hue === hue}
                   >
@@ -156,7 +157,7 @@ function PhonePairingSettings() {
     >
       <div className="grid overflow-hidden sm:grid-cols-[240px_minmax(0,1fr)]">
         <div className="flex items-center justify-center bg-(--ui-surface)/55 px-5 py-7 sm:min-h-[284px]">
-          <div className="flex h-48 w-48 items-center justify-center rounded-2xl bg-white p-2.5 shadow-[0_16px_45px_-28px_rgba(0,0,0,0.8)]">
+          <div className="flex h-48 w-48 items-center justify-center rounded-2xl bg-(--qr-surface) p-2.5 shadow-[var(--qr-shadow)]">
             {pairingJson ? (
               <QrCode value={pairingJson} label="KittyLitter controller connection QR code" />
             ) : (
@@ -179,15 +180,14 @@ function PhonePairingSettings() {
             only with devices you trust.
           </p>
           <div className="mt-5 flex min-w-0 flex-wrap items-center gap-2">
-            <a
+            <SettingsLink
               href="https://kittylitter.app/"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-(--ui-fg) px-3 text-[length:var(--fs-sm)] font-medium text-(--ui-bg) transition-opacity hover:opacity-85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--ui-fg)/50 focus-visible:ring-offset-2 focus-visible:ring-offset-(--ui-bg)"
+              tone="primary"
+              aria-label="Download the KittyLitter beta"
             >
               Download KittyLitter beta
               <ExternalLink className="h-3.5 w-3.5" aria-hidden />
-            </a>
+            </SettingsLink>
             <SettingsButton
               onClick={() => void copy()}
               aria-label="Copy KittyLitter connection JSON"

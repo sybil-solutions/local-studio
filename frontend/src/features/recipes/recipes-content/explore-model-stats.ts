@@ -63,8 +63,6 @@ export function parseParamsBillions(modelId: string): number | null {
  *
  * Note on MoE: `parseParamsBillions` reads total params from the repo name, so
  * MoE models (e.g. DeepSeek-R1 671B) are overestimated on this path. Known
- * limitation; curated models from the controller's model index bypass this
- * estimate and use the catalog's published variant sizes instead.
  */
 export function estimateRoughWeightsGb(model: HuggingFaceModel): number | null {
   // HF's list endpoint returns siblings (file names) but NOT file sizes, so we
@@ -86,16 +84,6 @@ export function estimateRoughWeightsGb(model: HuggingFaceModel): number | null {
   return weightsGb * 1.25;
 }
 
-/**
- * VRAM estimate for a curated catalog (model-index) entry.
- *
- * Choice: prefer the bf16 variant's published `size_gb` — bf16 repo ids are
- * the canonical HF ids Explore groups resolve to, so the group's needGb
- * should reflect the full-precision weights a user gets by default. When no
- * bf16 size is published, fall back to the smallest published variant size so
- * quant-only entries still count as "fits" against the pool instead of
- * dropping to the rough name-based estimate.
- */
 export function catalogNeedGb(model: ModelIndexModel): number | null {
   const bf16 = model.variants.find(
     (variant) => variant.format === "bf16" && variant.size_gb != null && variant.size_gb > 0,

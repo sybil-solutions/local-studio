@@ -92,6 +92,7 @@ export type MutationReservation =
 type LedgerOptions = {
   leaseMs?: number;
   retentionMs?: number;
+  reconcileWindowMs?: number;
 };
 
 const validHash = (value: unknown): value is string =>
@@ -203,11 +204,19 @@ export function createLitterMutationLedger(
 ) {
   const leaseMs = options.leaseMs ?? DEFAULT_LEASE_MS;
   const retentionMs = options.retentionMs ?? LITTER_MUTATION_IDEMPOTENCY_HORIZON_MS;
+  const reconcileWindowMs = options.reconcileWindowMs ?? leaseMs;
   if (!Number.isSafeInteger(leaseMs) || leaseMs < 1_000 || leaseMs > 3_600_000) {
     throw new Error("Invalid Litter mutation lease lifetime");
   }
   if (!Number.isSafeInteger(retentionMs) || retentionMs < 60_000) {
     throw new Error("Invalid Litter mutation retention lifetime");
+  }
+  if (
+    !Number.isSafeInteger(reconcileWindowMs) ||
+    reconcileWindowMs < 1_000 ||
+    reconcileWindowMs > 3_600_000
+  ) {
+    throw new Error("Invalid Litter mutation reconciliation window");
   }
   mkdirSync(dataDir, { recursive: true, mode: 0o700 });
   chmodSync(dataDir, 0o700);
@@ -298,7 +307,7 @@ export function createLitterMutationLedger(
       const observedAt = now().getTime();
       database
         .prepare(
-          "DELETE FROM mutations WHERE expires_at_ms IS NOT NULL AND expires_at_ms <= ? AND state IN ('accepted', 'rejected', 'retryable')",
+          "DELETE FROM mutations WHERE expires_at_ms IS NOT NULL AND expires_at_ms <= ? AND state IN ('accepted', 'rejected', 'retryable', 'dispatching', 'indeterminate')",
         )
         .run(observedAt);
       const existing = getRow(key);
@@ -400,11 +409,12 @@ export function createLitterMutationLedger(
       ) {
         throw new Error("Litter mutation lease was lost before dispatch");
       }
+      const observedAt = now().getTime();
       const result = database
         .prepare(
-          "UPDATE mutations SET state = 'dispatching', updated_at_ms = ?, lease_owner = NULL, lease_token = NULL, lease_expires_at_ms = NULL, correlation_json = ? WHERE entry_key = ? AND state = 'reserved' AND lease_owner = ? AND lease_token = ?",
+          "UPDATE mutations SET state = 'dispatching', updated_at_ms = ?, expires_at_ms = ?, lease_owner = NULL, lease_token = NULL, lease_expires_at_ms = NULL, correlation_json = ? WHERE entry_key = ? AND state = 'reserved' AND lease_owner = ? AND lease_token = ?",
         )
-        .run(now().getTime(), JSON.stringify(normalized), key, lease.ownerId, lease.token);
+        .run(observedAt, observedAt + reconcileWindowMs, JSON.stringify(normalized), key, lease.ownerId, lease.token);
       if (result.changes !== 1) throw new Error("Litter mutation lease was lost before dispatch");
     });
   };
@@ -532,11 +542,12 @@ export function createLitterMutationLedger(
       if (correlation.dispatchId !== dispatchId) {
         throw new Error("Litter mutation dispatch is invalid");
       }
+      const observedAt = now().getTime();
       database
         .prepare(
-          "UPDATE mutations SET state = 'indeterminate', updated_at_ms = ? WHERE entry_key = ?",
+          "UPDATE mutations SET state = 'indeterminate', updated_at_ms = ?, expires_at_ms = ? WHERE entry_key = ?",
         )
-        .run(now().getTime(), key);
+        .run(observedAt, observedAt + reconcileWindowMs, key);
     });
   };
 
@@ -555,5 +566,6 @@ export function createLitterMutationLedger(
     filepath,
     leaseMs,
     retentionMs,
+    reconcileWindowMs,
   };
 }

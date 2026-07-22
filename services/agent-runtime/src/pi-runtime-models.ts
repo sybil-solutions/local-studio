@@ -107,6 +107,12 @@ function supportedPiThinkingLevels(
   });
 }
 
+export function controllerModelThinkingLevels(reasoning: boolean): AgentThinkingLevel[] {
+  return AGENT_THINKING_LEVELS.filter((level) =>
+    reasoning ? level === "high" || level === "max" : level === "off",
+  );
+}
+
 export type PiControllerModelsRequest = {
   url: string;
   apiKey?: string;
@@ -250,9 +256,7 @@ async function fetchModelsFromController(
       providerId,
       controllerUrl: backendUrl,
       controllerName: label,
-      thinkingLevels: model.reasoning
-        ? (["high", "max"] as AgentThinkingLevel[])
-        : ["off" as AgentThinkingLevel],
+      thinkingLevels: controllerModelThinkingLevels(model.reasoning),
       name: multipleControllers ? `${model.name} · ${label}` : model.name,
     }),
   );

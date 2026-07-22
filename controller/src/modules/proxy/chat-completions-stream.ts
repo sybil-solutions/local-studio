@@ -47,6 +47,26 @@ const responseErrorFrame = (status: number, body: string): Uint8Array =>
     `data: ${body || JSON.stringify({ error: { message: `Upstream returned ${status}`, type: "upstream_error" } })}\n\n`,
   );
 
+export const shouldBufferImplicitReasoning = (input: {
+  matchedRecipe: Recipe | null;
+  recordedModel: string;
+}): boolean => {
+  const { matchedRecipe } = input;
+  const reasoningParser =
+    matchedRecipe && matchedRecipe.reasoning_parser !== null
+      ? matchedRecipe.reasoning_parser
+      : matchedRecipe
+        ? (getDefaultReasoningParser(matchedRecipe) ?? null)
+        : null;
+  const upstreamParsesReasoning =
+    (matchedRecipe?.backend === "vllm" || matchedRecipe?.backend === "sglang") &&
+    Boolean(reasoningParser);
+  return (
+    !upstreamParsesReasoning &&
+    shouldBufferImplicitReasoningContent(input.recordedModel, reasoningParser)
+  );
+};
+
 const responseBodyStream = (
   upstreamResponse: Response,
   parameters: ChatCompletionsStreamParameters,
@@ -74,16 +94,6 @@ const responseBodyStream = (
   }
   let ttftMs: number | null = null;
   let observedUsage: StreamUsage | null = null;
-  const reasoningParser =
-    matchedRecipe && matchedRecipe.reasoning_parser !== null
-      ? matchedRecipe.reasoning_parser
-      : matchedRecipe
-        ? getDefaultReasoningParser(matchedRecipe)
-        : null;
-  const upstreamParsesReasoning =
-    providerRouting !== null ||
-    ((matchedRecipe?.backend === "vllm" || matchedRecipe?.backend === "sglang") &&
-      Boolean(reasoningParser));
   const transformed = createToolCallStream(
     source,
     (usage) => {
@@ -93,9 +103,10 @@ const responseBodyStream = (
       ttftMs ??= Math.max(0, Math.round(performance.now() - requestStart));
     },
     {
-      bufferImplicitReasoningContent:
-        !upstreamParsesReasoning &&
-        shouldBufferImplicitReasoningContent(recordedModel, reasoningParser),
+      bufferImplicitReasoningContent: shouldBufferImplicitReasoning({
+        matchedRecipe,
+        recordedModel,
+      }),
     },
   );
   return Stream.fromReadableStream({

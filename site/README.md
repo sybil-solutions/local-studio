@@ -5,7 +5,8 @@ external runtime dependencies.
 
 Run `python3 -m http.server --directory site 8000` for a local preview.
 
-Pushes to `main` deploy `site/` to GitHub Pages. The macOS button is pinned to
-the signed `Local-Studio-arm64.dmg` asset on the v2.0.0 release so a later
-release without desktop assets cannot break the public download. Windows and
-Linux link to the releases page until installers ship.
+Pushes to `main` deploy `site/` to GitHub Pages. The macOS button links to
+`https://localstudio.ai/download/macos`, which resolves to the newest GitHub
+release that actually carries the signed `Local-Studio-arm64.dmg`, so releases
+without desktop assets cannot break the public download. Windows and Linux
+link to the releases page until installers ship.

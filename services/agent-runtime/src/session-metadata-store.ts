@@ -30,7 +30,6 @@ type StoredSessionMetadata = {
   projectId?: string;
   projectName?: string;
   sessionUpdatedAt?: string;
-  /** Present when this session is a subagent spawned by another session. */
   parentSessionId?: string;
   subagentName?: string;
 };
@@ -178,7 +177,6 @@ export type SessionListMetadata = SessionArchiveState & {
   subagentName: string | null;
 };
 
-/** One read of the store for decorating a whole session listing. */
 export function readSessionListMetadata(): (sessionId: string) => SessionListMetadata {
   const sessions = readStore().sessions;
   return (sessionId) => {
@@ -201,7 +199,6 @@ export function sessionSubagentLink(sessionId: string): SessionSubagentLink | nu
   };
 }
 
-/** Persist the parent→child spawn edge so subagent threads survive restarts. */
 export async function setSubagentLink(
   childSessionId: string,
   parentSessionId: string,
@@ -267,7 +264,6 @@ export async function setSessionArchived(
         metadata,
       );
     } else if (current.parentSessionId) {
-      // Keep the spawn edge; only drop the archive flags.
       store.sessions[id] = {
         ...current,
         archived: false,
@@ -277,8 +273,6 @@ export async function setSessionArchived(
     } else {
       delete store.sessions[id];
     }
-    // Archiving cascades to subagent children, Codex-style (and unarchiving
-    // brings them back), so a parent thread never leaves orphaned children.
     for (const [childId, child] of Object.entries(store.sessions)) {
       if (child.parentSessionId !== id || childId === id) continue;
       store.sessions[childId] = {

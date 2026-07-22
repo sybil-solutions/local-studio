@@ -12,8 +12,6 @@ import { piRuntimeManager } from "./pi-runtime";
 import { lastAssistantText } from "./session-text";
 import { sessionSubagentLink, setSubagentLink } from "./session-metadata-store";
 
-// Codex-style nickname roster: children get a memorable identity in chips and
-// sidebar rows when the model doesn't name them.
 const NICKNAMES = [
   "Euclid",
   "Archimedes",
@@ -96,7 +94,6 @@ export async function runSubagent(input: {
   const registry = state();
   const { parentPiSessionId } = input;
 
-  // The persisted spawn edge backs the in-memory set across runtime restarts.
   if (
     registry.childPiSessionIds.has(parentPiSessionId) ||
     sessionSubagentLink(parentPiSessionId) !== null
@@ -144,8 +141,6 @@ export async function runSubagent(input: {
     run.piSessionId = status.piSessionId;
     if (status.piSessionId) {
       registry.childPiSessionIds.add(status.piSessionId);
-      // Persist the spawn edge so the child renders as a nested thread in the
-      // sidebar and the link survives runtime restarts.
       await setSubagentLink(status.piSessionId, parentPiSessionId, run.name).catch(() => undefined);
     }
     const text = status.piSessionId ? lastAssistantText(status.cwd, status.piSessionId) : "";

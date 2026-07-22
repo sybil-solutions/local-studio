@@ -127,8 +127,6 @@ export function useExplore() {
     try {
       const [indexData, presetsData, gpuData] = await Promise.all([
         api.getModelIndex(),
-        // Starter presets carry the controller's max_vram_gb fallback now that
-        // the old recommendations endpoint is gone.
         api.getStarterPresets().catch(() => null),
         api.getGPUs().catch(() => ({ gpus: [] as GPU[] })),
       ]);
@@ -147,10 +145,6 @@ export function useExplore() {
     void loadCatalogAndGpus();
   }, [loadCatalogAndGpus]);
 
-  // Spotlight pins come from the model index: bf16 variant repos are the
-  // canonical HF ids Explore groups resolve to, so they win key collisions;
-  // quant/other variant repos are matched too so a quant-only HF result still
-  // pins its catalog entry.
   const catalogByKey = useMemo(() => {
     const m = new Map<string, ModelIndexModel>();
     const add = (repo: string | null | undefined, model: ModelIndexModel, override: boolean) => {
@@ -238,7 +232,6 @@ export function useExplore() {
   const sortedGroups = useMemo(() => {
     const isSearching = search.trim().length > 0;
     return [...groupedModels].sort((a, b) => {
-      // Spotlight catalog pins always float to the top in both modes.
       const aSpot = spotlightKeys.has(a.key);
       const bSpot = spotlightKeys.has(b.key);
       if (aSpot && !bSpot) return -1;

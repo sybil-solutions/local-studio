@@ -170,7 +170,6 @@
   color: var(--fg);
 }
 
-/* Codex links: near-foreground, underlined — not saturated blue. */
 .chat-markdown a {
   color: color-mix(in srgb, var(--fg) 90%, transparent);
   text-decoration: underline;
@@ -244,7 +243,6 @@
   opacity: 0.85;
 }
 
-/* Long paths wrap like Codex instead of clipping to an ellipsis. */
 .chat-markdown .chat-ref-chip-label {
   min-width: 0;
   overflow-wrap: anywhere;

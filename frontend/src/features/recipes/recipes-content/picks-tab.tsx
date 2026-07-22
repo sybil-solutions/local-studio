@@ -24,9 +24,7 @@ export function PicksTab() {
       void startDownload({
         model_id: variant.repo,
         ...(variant.allow_patterns?.length ? { allow_patterns: variant.allow_patterns } : {}),
-      }).catch(() => {
-        // startDownload already surfaces the message through useDownloads' error state.
-      });
+      }).catch(() => {});
     },
     [startDownload],
   );

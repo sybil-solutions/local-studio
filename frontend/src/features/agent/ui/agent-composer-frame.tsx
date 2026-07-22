@@ -175,7 +175,7 @@ export function AgentComposerFrame({
         <button
           type="button"
           onClick={projectRow.onPick}
-          className="relative z-0 mx-auto -mb-3 flex h-11 w-[calc(90%_-_26px)] max-w-[calc(var(--composer-w)*0.9_-_26px)] items-start gap-2.5 rounded-[20px] border border-(--border)/80 bg-(--fg)/[0.022] px-3 pt-3 text-left text-[length:var(--fs-sm)] text-(--fg)/78 shadow-[0_8px_24px_rgba(0,0,0,0.08)] backdrop-blur-sm transition-colors [corner-shape:superellipse(1.5)] hover:bg-(--fg)/[0.04]"
+          className="relative z-0 mx-auto -mb-3 flex h-11 w-[calc(90%_-_26px)] max-w-[calc(var(--composer-w)*0.9_-_26px)] items-start gap-2.5 rounded-[var(--composer-radius-inner)] border border-(--border)/80 bg-(--fg)/[0.022] px-3 pt-3 text-left text-[length:var(--fs-sm)] text-(--fg)/78 shadow-[var(--composer-elevation-inner)] backdrop-blur-sm transition-colors [corner-shape:superellipse(1.5)] hover:bg-(--fg)/[0.04]"
         >
           <FolderOpen className="h-4 w-4 shrink-0 text-(--fg)/56" strokeWidth={1.7} />
           <span className="min-w-0 flex-1 truncate">{projectRow.label}</span>
@@ -187,7 +187,7 @@ export function AgentComposerFrame({
         onDragLeave={onComposerDragLeave}
         onDrop={onComposerDrop}
         className={cx(
-          "relative z-10 mx-auto w-[90%] max-w-[calc(var(--composer-w)*0.9)] overflow-visible rounded-[25px] border border-(--border) bg-(--composer) shadow-[0_8px_24px_rgba(0,0,0,0.11)] backdrop-blur-lg transition-colors [corner-shape:superellipse(1.5)]",
+          "relative z-10 mx-auto w-[90%] max-w-[calc(var(--composer-w)*0.9)] overflow-visible rounded-[var(--composer-radius)] border border-(--border) bg-(--composer) shadow-[var(--composer-elevation)] backdrop-blur-lg transition-colors [corner-shape:superellipse(1.5)]",
           composerDragActive && "outline outline-1 outline-(--link)/50",
         )}
       >

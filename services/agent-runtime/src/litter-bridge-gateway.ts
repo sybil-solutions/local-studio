@@ -66,6 +66,7 @@ import { readJsonRequestWithinLimit } from "../../../shared/agent/agent-turn-bod
 import { cleanSessionTitle } from "../../../shared/agent/session-title";
 import { resolveDataDir } from "./data-dir";
 import { listProjectsFromStore, type ProjectEntry } from "./projects-store";
+import { encodeCwdForPi } from "./sessions-store";
 import { getApiSettings } from "./settings-service";
 import {
   createLitterMutationLedger,
@@ -431,6 +432,30 @@ const jsonError = (
   retriable = false,
 ): Response => Response.json(errorResult(code, message, requestId, retriable), { status });
 
+const jsonRateLimited = (message: string, requestId: string, retryAfterMs: number): Response =>
+  Response.json(
+    Schema.decodeUnknownSync(LitterBridgeErrorResultSchema)({
+      type: "error",
+      protocolVersion: LITTER_BRIDGE_PROTOCOL_VERSION,
+      requestId,
+      error: {
+        code: "rate_limited",
+        message,
+        retriable: true,
+        requestId,
+        details: {
+          field: null,
+          section: null,
+          expectedRevision: null,
+          currentRevision: null,
+          retryAfterMs,
+          limitBytes: null,
+        },
+      },
+    }),
+    { status: 409 },
+  );
+
 const agentTurnConflict = (
   request: LitterBridgeAgentTurnRequest,
   currentRevision: number,
@@ -519,22 +544,8 @@ const qualifiedSessionModel = (metadata: LitterBridgeSessionMetadata): string | 
   return `${metadata.providerId}/${metadata.modelId}`;
 };
 
-const transcriptMessageText = (message: JsonRecord): string | null => {
-  if (message.role !== "user") return null;
-  if (typeof message.content === "string") return message.content;
-  if (!Array.isArray(message.content)) return null;
-  let output = "";
-  for (const part of message.content) {
-    if (isRecord(part) && part.type === "text" && typeof part.text === "string") {
-      output += part.text;
-    }
-  }
-  return output;
-};
-
 const reconcileAgentTurnTranscript = (
   correlation: MutationCorrelation,
-  request: LitterBridgeAgentTurnRequest,
 ): { acceptedAt: string } | null => {
   const metadata = sessionFileFingerprint(correlation.sessionFile);
   if (metadata.size < correlation.baseOffset) return null;
@@ -558,15 +569,6 @@ const reconcileAgentTurnTranscript = (
         event.data.dispatchId === correlation.dispatchId &&
         event.data.messageId === correlation.messageId &&
         event.data.contentHash === correlation.contentHash
-      ) {
-        return { acceptedAt: strictTimestamp(event.timestamp) ?? correlation.dispatchedAt };
-      }
-      if (
-        event.type === "message" &&
-        isRecord(event.message) &&
-        transcriptMessageText(event.message) !== null &&
-        litterBridgeSha256Utf8(transcriptMessageText(event.message) as string) ===
-          request.contentHash
       ) {
         return { acceptedAt: strictTimestamp(event.timestamp) ?? correlation.dispatchedAt };
       }
@@ -914,11 +916,6 @@ const sessionFileFingerprint = (filepath: string): SessionFileFingerprint => {
     createdAt: new Date(Number(stats.birthtimeMs)).toISOString(),
     updatedAt: new Date(Number(stats.mtimeMs)).toISOString(),
   };
-};
-
-const encodeCwdForPi = (cwd: string): string => {
-  const normalized = path.resolve(cwd).replace(/\\+/g, "/");
-  return `--${normalized.replace(/^\//, "").replace(/\/+/g, "-")}--`;
 };
 
 const liveProjects = (projects: TrustedProject[]): LiveProject[] => {
@@ -2481,9 +2478,9 @@ export function createLitterBridgeGateway(options: GatewayOptions = {}) {
       deviceId: request.auth.device.deviceId,
       idempotencyKey: request.auth.idempotencyKey,
     };
-    const ledger = getMutationLedger();
     let stopLeaseRenewal: (() => void) | null = null;
     try {
+      const ledger = getMutationLedger();
       const reservation = ledger.reserve(identity, request.auth.bodyHash, mutationOwnerId);
       if (reservation.kind === "cached") {
         const result = materializeAgentTurnResult(reservation.stored.result, requestId);
@@ -2498,12 +2495,10 @@ export function createLitterBridgeGateway(options: GatewayOptions = {}) {
         );
       }
       if (reservation.kind === "busy") {
-        return jsonError(
-          "rate_limited",
+        return jsonRateLimited(
           "Prompt preparation is already in progress",
           requestId,
-          409,
-          true,
+          reservation.retryAfterMs,
         );
       }
       if (reservation.kind === "reconcile") {
@@ -2536,7 +2531,15 @@ export function createLitterBridgeGateway(options: GatewayOptions = {}) {
             409,
           );
         }
-        const evidence = reconcileAgentTurnTranscript(correlation, request);
+        let evidence: { acceptedAt: string } | null;
+        try {
+          evidence = reconcileAgentTurnTranscript(correlation);
+        } catch (error) {
+          if (error instanceof SessionReadError) {
+            return jsonError(error.code, error.message, requestId, 409, true);
+          }
+          throw error;
+        }
         if (!evidence) {
           return jsonError(
             "internal",
@@ -2785,11 +2788,16 @@ export function createLitterBridgeGateway(options: GatewayOptions = {}) {
       });
       return Response.json(acknowledgement);
     } catch (error) {
-      const message =
-        error instanceof AgentTurnDispatchIndeterminate
-          ? "Prompt dispatch outcome is indeterminate and requires transcript reconciliation"
-          : "Prompt dispatch failed closed";
-      return jsonError("internal", message, requestId, 500);
+      if (error instanceof AgentTurnDispatchIndeterminate) {
+        return jsonError(
+          "internal",
+          "Prompt dispatch outcome is indeterminate and requires transcript reconciliation",
+          requestId,
+          500,
+          true,
+        );
+      }
+      return jsonError("internal", "Prompt dispatch failed closed", requestId, 500);
     } finally {
       stopLeaseRenewal?.();
     }

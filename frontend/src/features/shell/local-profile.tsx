@@ -21,6 +21,10 @@ export type LocalProfile = typeof LocalProfileSchema.Type;
 export const DEFAULT_PROFILE: LocalProfile = { name: "Studio", hue: 214 };
 export const PROFILE_HUES = [214, 262, 152, 24, 340, 46] as const;
 
+export function profileAvatarColor(hue: number): string {
+  return `oklch(0.55 0.13 ${hue})`;
+}
+
 export function readLocalProfile(): LocalProfile {
   if (typeof window === "undefined") return DEFAULT_PROFILE;
   try {
@@ -80,7 +84,7 @@ export function ProfileAvatar({ profile, size = 22 }: { profile: LocalProfile; s
         width: size,
         height: size,
         fontSize: Math.round(size * 0.42),
-        backgroundColor: `oklch(0.55 0.13 ${profile.hue})`,
+        backgroundColor: profileAvatarColor(profile.hue),
         ...(profile.imageUrl
           ? { backgroundImage: `url(${JSON.stringify(profile.imageUrl).slice(1, -1)})` }
           : {}),

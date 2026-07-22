@@ -9,7 +9,6 @@ export type SessionSummary = {
   firstUserMessage: string | null;
   archived: boolean;
   archivedAt: string | null;
-  /** Set when this session is a subagent spawned by another session. */
   parentSessionId: string | null;
   subagentName: string | null;
 };

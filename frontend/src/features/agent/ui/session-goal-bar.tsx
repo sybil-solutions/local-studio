@@ -113,7 +113,7 @@ export function SessionGoalBar({
   return (
     <section
       data-testid="session-goal-bar"
-      className="relative z-[90] mx-auto -mb-4 w-[calc(90%_-_26px)] max-w-[calc(var(--composer-w)*0.9_-_26px)] overflow-hidden rounded-[20px] border border-(--border)/80 bg-(--composer)/70 pb-4 text-[length:var(--fs-sm)] shadow-[0_8px_24px_rgba(0,0,0,0.08)] backdrop-blur-sm [corner-shape:superellipse(1.5)]"
+      className="relative z-[90] mx-auto -mb-4 w-[calc(90%_-_26px)] max-w-[calc(var(--composer-w)*0.9_-_26px)] overflow-hidden rounded-[var(--composer-radius-inner)] border border-(--border)/80 bg-(--composer)/70 pb-4 text-[length:var(--fs-sm)] shadow-[var(--composer-elevation-inner)] backdrop-blur-sm [corner-shape:superellipse(1.5)]"
     >
       <div className="flex h-11 items-center gap-2 px-3">
         <Target
