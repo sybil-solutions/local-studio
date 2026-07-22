@@ -22,7 +22,7 @@ import {
   restoreSessionDrafts,
   sessionDraftsWithSessions,
 } from "@/features/agent/workspace/session-drafts";
-import { readTranscriptSnapshot } from "@/features/agent/workspace/transcript-cache";
+import { readTranscriptSnapshotEntry } from "@/features/agent/workspace/transcript-cache";
 
 const SESSIONS_COLLAPSED_KEY = "local-studio.agent.sessionsCollapsed";
 const SESSIONS_COLLAPSED_CLEANED_KEY = "local-studio.agent.sessionsCollapsedCleaned";
@@ -139,10 +139,14 @@ function seedCachedTranscripts(
   let next: Map<SessionId, Session> | null = null;
   for (const [id, session] of sessions) {
     if (!session.piSessionId) continue;
-    const cached = readTranscriptSnapshot(session.piSessionId, storage);
-    if (!cached || cached.length === 0) continue;
+    const cached = readTranscriptSnapshotEntry(session.piSessionId, storage);
+    if (!cached || cached.messages.length === 0) continue;
     next ??= new Map(sessions);
-    next.set(id, { ...session, messages: cached });
+    next.set(id, {
+      ...session,
+      ...(cached.title ? { title: cached.title } : {}),
+      messages: cached.messages,
+    });
   }
   return next ?? sessions;
 }

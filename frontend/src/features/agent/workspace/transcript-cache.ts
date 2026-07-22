@@ -128,10 +128,17 @@ export function readTranscriptSnapshot(
   piSessionId: string | null | undefined,
   storage: TranscriptStorage | null = defaultStorage(),
 ): ChatMessage[] | null {
+  const entry = readTranscriptSnapshotEntry(piSessionId, storage);
+  return entry && entry.messages.length > 0 ? entry.messages : null;
+}
+
+export function readTranscriptSnapshotEntry(
+  piSessionId: string | null | undefined,
+  storage: TranscriptStorage | null = defaultStorage(),
+): CachedTranscript | null {
   if (!storage || !piSessionId) return null;
   try {
-    const entry = parseCachedTranscript(storage.getItem(sessionKey(piSessionId)));
-    return entry && entry.messages.length > 0 ? entry.messages : null;
+    return parseCachedTranscript(storage.getItem(sessionKey(piSessionId)));
   } catch {
     return null;
   }
