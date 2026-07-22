@@ -1,6 +1,6 @@
 services:
   glm52-vision:
-    image: local/glm52-nf3-vision:v1
+    image: local/glm52-nf3-vision:v3
     container_name: glm52-vision-candidate
     network_mode: host
     ipc: host
@@ -82,7 +82,7 @@ services:
       - --gpu-memory-utilization
       - "0.968"
       - --max-model-len
-      - "300000"
+      - "200000"
       - --max-num-seqs
       - "8"
       - --max-num-batched-tokens
@@ -107,4 +107,3 @@ volumes:
   local-studio-jit:
     external: true
     name: local-studio-jit-glm-5.2-nf3-hybrid
-

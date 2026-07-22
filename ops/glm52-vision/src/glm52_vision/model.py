@@ -14,6 +14,7 @@ from vllm.model_executor.models.kimi_k25_vit import (
 from vllm.model_executor.models.utils import (
     WeightsMapper,
     init_vllm_registered_model,
+    maybe_prefix,
 )
 from vllm.multimodal import MULTIMODAL_REGISTRY
 from vllm.multimodal.processing import BaseProcessingInfo, InputProcessingContext
@@ -115,11 +116,10 @@ class Glm5vForConditionalGeneration(KimiK25ForConditionalGeneration):
             self.language_model = init_vllm_registered_model(
                 vllm_config=vllm_config,
                 hf_config=config.text_config,
-                prefix="",
+                prefix=maybe_prefix(prefix, "language_model"),
                 architectures=["GlmMoeDsaForCausalLM"],
             )
         self.make_empty_intermediate_tensors = (
             self.language_model.make_empty_intermediate_tensors
         )
         self.media_placeholder = config.media_placeholder_token_id
-

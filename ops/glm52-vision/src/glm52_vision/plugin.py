@@ -14,9 +14,12 @@ def _patch_speculative_config() -> None:
             quantization_config = copy.deepcopy(
                 getattr(hf_config, "quantization_config", None)
             )
+            model_path = getattr(hf_config, "_name_or_path", None)
             hf_config = copy.deepcopy(hf_config.text_config)
             if quantization_config is not None:
                 hf_config.quantization_config = quantization_config
+            if model_path:
+                hf_config._name_or_path = model_path
         return current(hf_config)
 
     override._glm52_vision = True
@@ -31,4 +34,3 @@ def register() -> None:
         "glm52_vision.model:Glm5vForConditionalGeneration",
     )
     _patch_speculative_config()
-

@@ -11,7 +11,7 @@ MODEL_DIR="${MODEL_DIR:-/mnt/llm_models/GLM-5.2-MXFP8-NVFP4-NF3-Hybrid-Vision}"
 export MODEL_DIR
 
 test -f "$MODEL_DIR/VISION_PROVENANCE.json"
-docker image inspect local/glm52-nf3-vision:v1 >/dev/null
+docker image inspect local/glm52-nf3-vision:v3 >/dev/null
 docker stop glm52-v3
 if ! docker compose -f "$BUNDLE_DIR/compose.yaml" up -d; then
   docker start glm52-v3
@@ -27,6 +27,8 @@ for _ in $(seq 1 120); do
   fi
   sleep 5
 done
+docker inspect glm52-vision-candidate >"$BUNDLE_DIR/cutover-failure-inspect.json" 2>&1 || true
+docker logs glm52-vision-candidate >"$BUNDLE_DIR/cutover-failure.log" 2>&1 || true
 docker compose -f "$BUNDLE_DIR/compose.yaml" down
 docker start glm52-v3
 exit 1

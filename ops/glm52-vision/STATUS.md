@@ -1,43 +1,55 @@
-# GLM-5.2 NF3 Vision Preparation
+# GLM-5.2 NF3 Vision Cutover
 
-Status: ready for controlled GPU cutover
+Status: live and verified
 
-Live service: `glm52-v3`
+Cutover completed: `2026-07-23T00:31:08+02:00`
 
-Live image: `madeby561/vllm-glm52-nvfp4-nf3-hybrid:v3`
+Live service: `glm52-vision-candidate`
 
-Live image digest: `sha256:abc45785d6412ba2acf1edf59ccfa7d657ec60961c3d462f9af62a7158f38dea`
+Served model: `GLM-5.2-Vision`
+
+Live image: `local/glm52-nf3-vision:v3`
+
+Live image digest: `sha256:be699e81f9b44e8cf293594ee5e1e92355d5f54ce0b408d5a29274b908df61d5`
 
 Base checkpoint: `/mnt/llm_models/GLM-5.2-MXFP8-NVFP4-NF3-Hybrid`
 
-Candidate checkpoint: `/mnt/llm_models/GLM-5.2-MXFP8-NVFP4-NF3-Hybrid-Vision`
-
-Candidate image: `local/glm52-nf3-vision:v1@sha256:0af5f297813e8eafd5dee3a29c4377d09f52781fee321a45fe1e20c72c052f37`
+Live checkpoint: `/mnt/llm_models/GLM-5.2-MXFP8-NVFP4-NF3-Hybrid-Vision`
 
 Vision source: `baseten/GLM-5.2-Vision-NVFP4@f6eab6117386a0c69152fdf272dc65bfd0254f9f`
 
-Candidate logical size: `366955274989` bytes
+Checkpoint logical size: `366955275044` bytes
 
 Added vision payload: `932887040` bytes
 
-Static validation: passed
+Context length: `200000`
 
-Validated architecture: `Glm5vForConditionalGeneration`
+Weight formats: `NVFP4`, `NF3`, and `MXFP8`
 
-Validated MTP architecture: `DeepSeekMTPModel`
+KV cache format: packed MLA `FP8`
 
-Validated image token: `154854`
+NVFP4 KV cache: unsupported by the MLA backend and unavailable for SM120 in this runtime
 
-Validated vision tensors: `329`
+Model memory: `87.61 GiB` per GPU
 
-Validated projector tensors: `6`
+Available KV memory: `3.15 GiB`
 
-Validated synthetic image patch grid: `[1, 2, 2]`
+GPU KV capacity: `216879` tokens
 
-Cutover authorization: not granted
+Maximum 200000-token concurrency: `1.08x`
 
-Cutover command: `cd /home/ser/glm52-vision-prep && CONFIRM_CUTOVER=glm52-vision MODEL_DIR=/mnt/llm_models/GLM-5.2-MXFP8-NVFP4-NF3-Hybrid-Vision ./cutover.sh`
+CUDA graphs: PIECEWISE, FULL, prefill, and decode capture passed
+
+MTP: five-token draft generation active; draft counters increase, accepted-token counter remains zero
+
+Text validation: passed with `TEXT_OK`
+
+Image validation: passed with `bus` for `https://ultralytics.com/images/bus.jpg`
+
+Post-start error scan: clean
+
+Controller health: `http://100.90.62.80:8080/health` returned `200`
+
+Rollback service: `glm52-v3`, stopped and recoverable
 
 Rollback command: `cd /home/ser/glm52-vision-prep && MODEL_DIR=/mnt/llm_models/GLM-5.2-MXFP8-NVFP4-NF3-Hybrid-Vision ./rollback.sh`
-
-Next action: receive explicit cutover approval, start the candidate at 300000 context, then verify text, image, MTP, CUDA graphs, controller routing, and GPU headroom.

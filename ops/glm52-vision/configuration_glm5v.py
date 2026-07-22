@@ -118,3 +118,6 @@ class Glm5vConfig(PretrainedConfig):
     def vocab_size(self) -> int:
         return self.text_config.vocab_size
 
+    @property
+    def index_topk(self) -> int:
+        return self.text_config.index_topk
