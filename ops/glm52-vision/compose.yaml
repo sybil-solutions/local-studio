@@ -84,7 +84,7 @@ services:
       - --max-model-len
       - "400000"
       - --max-num-seqs
-      - "1"
+      - "4"
       - --max-num-batched-tokens
       - "2048"
       - --max-cudagraph-capture-size

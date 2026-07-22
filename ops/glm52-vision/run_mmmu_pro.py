@@ -2,6 +2,7 @@
 import argparse
 import base64
 import json
+from concurrent.futures import ThreadPoolExecutor
 from io import BytesIO
 from pathlib import Path
 from urllib.request import Request, urlopen
@@ -53,6 +54,13 @@ def saved_ids(path):
         return {json.loads(line)["id"] for line in results if line.strip()}
 
 
+def evaluate_sample(endpoint, model, sample):
+    response = ask(endpoint, model, sample["image"])
+    record = {key: sample[key] for key in ("id", "options", "answer", "subject")}
+    record["response"] = response
+    return record
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--endpoint", default="http://127.0.0.1:8000")
@@ -62,6 +70,7 @@ def main():
         default="output/GLM-5.2-Vision_vision_direct.jsonl",
     )
     parser.add_argument("--limit", type=int)
+    parser.add_argument("--workers", type=int, default=4)
     args = parser.parse_args()
 
     output = Path(args.output)
@@ -69,19 +78,18 @@ def main():
     completed = saved_ids(output)
     dataset = load_dataset("MMMU/MMMU_Pro", "vision", split="test")
     written = 0
+    samples = [sample for sample in dataset if sample["id"] not in completed]
+    if args.limit is not None:
+        samples = samples[: args.limit]
     with output.open("a", encoding="utf-8") as results:
-        for sample in dataset:
-            if sample["id"] in completed:
-                continue
-            response = ask(args.endpoint, args.model, sample["image"])
-            record = {key: sample[key] for key in ("id", "options", "answer", "subject")}
-            record["response"] = response
-            results.write(json.dumps(record, ensure_ascii=False) + "\n")
-            results.flush()
-            written += 1
-            print(f"completed={len(completed) + written} id={sample['id']}", flush=True)
-            if args.limit is not None and written >= args.limit:
-                break
+        with ThreadPoolExecutor(max_workers=args.workers) as executor:
+            for record in executor.map(
+                lambda sample: evaluate_sample(args.endpoint, args.model, sample), samples
+            ):
+                results.write(json.dumps(record, ensure_ascii=False) + "\n")
+                results.flush()
+                written += 1
+                print(f"completed={len(completed) + written} id={record['id']}", flush=True)
 
 
 if __name__ == "__main__":
