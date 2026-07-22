@@ -1,7 +1,8 @@
 import { Effect, Option, Schema } from "effect";
 import { openSqliteDatabase } from "../../../stores/sqlite";
-import { EngineOperationError } from "../engine-spec";
+import type { EngineOperationError } from "../engine-spec";
 import type { ModelDownload } from "../types";
+import { attempt, operationError } from "./download-operation";
 
 const DownloadFileSchema = Schema.Struct({
   path: Schema.String,
@@ -26,18 +27,6 @@ const ModelDownloadSchema = Schema.Struct({
   files: Schema.Array(DownloadFileSchema),
   error: Schema.NullOr(Schema.String),
 });
-
-const operationError = (operation: string, cause: unknown): EngineOperationError =>
-  new EngineOperationError({
-    operation,
-    message: cause instanceof Error ? cause.message : String(cause),
-  });
-
-const attempt = <A>(operation: string, evaluate: () => A): Effect.Effect<A, EngineOperationError> =>
-  Effect.try({
-    try: evaluate,
-    catch: (cause) => operationError(operation, cause),
-  });
 
 const decodeDownload = (value: unknown): Effect.Effect<ModelDownload, EngineOperationError> =>
   attempt("parse-download-record", () =>

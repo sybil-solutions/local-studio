@@ -18,6 +18,7 @@ import { DOWNLOAD_DEFAULT_IGNORE_FILENAMES, DOWNLOAD_PROGRESS_THROTTLE_MS } from
 import { EngineOperationError } from "../engine-spec";
 import type { DownloadFileInfo, DownloadStatus, ModelDownload } from "../types";
 import type { DownloadStore } from "./download-store";
+import { attempt, operationError } from "./download-operation";
 import {
   buildHuggingFaceFileList,
   fetchEffect,
@@ -107,18 +108,6 @@ type ActiveDownload = {
 };
 
 const toTimestamp = (): string => new Date().toISOString();
-
-const operationError = (operation: string, cause: unknown): EngineOperationError =>
-  new EngineOperationError({
-    operation,
-    message: cause instanceof Error ? cause.message : String(cause),
-  });
-
-const attempt = <A>(operation: string, evaluate: () => A): Effect.Effect<A, EngineOperationError> =>
-  Effect.try({
-    try: evaluate,
-    catch: (cause) => operationError(operation, cause),
-  });
 
 const closeWriter = (
   writer: ReturnType<typeof createWriteStream>,
