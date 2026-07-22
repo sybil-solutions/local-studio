@@ -2,15 +2,15 @@
 
 Status: live and verified
 
-Cutover completed: `2026-07-23T00:31:08+02:00`
+Cutover completed: `2026-07-23T01:21:10+02:00`
 
 Live service: `glm52-vision-candidate`
 
 Served model: `GLM-5.2-Vision`
 
-Live image: `local/glm52-nf3-vision:v3`
+Live image: `local/glm52-nf3-vision:v5-nvfp4`
 
-Live image digest: `sha256:be699e81f9b44e8cf293594ee5e1e92355d5f54ce0b408d5a29274b908df61d5`
+Live image digest: `sha256:fef40a6469a68d9e614ca91b658b56f4e5c02a988cc86f2d4f3a664c63bac75b`
 
 Base checkpoint: `/mnt/llm_models/GLM-5.2-MXFP8-NVFP4-NF3-Hybrid`
 
@@ -22,29 +22,31 @@ Checkpoint logical size: `366955275044` bytes
 
 Added vision payload: `932887040` bytes
 
-Context length: `200000`
+Context length: `400000`
 
 Weight formats: `NVFP4`, `NF3`, and `MXFP8`
 
-KV cache format: packed MLA `FP8`
+KV cache format: packed MLA `NVFP4`
 
-NVFP4 KV cache: unsupported by the MLA backend and unavailable for SM120 in this runtime
+NVFP4 KV cache: `nvfp4_ds_mla` from the SM120 packed-MLA runtime
 
-Model memory: `87.61 GiB` per GPU
+Model memory: `85.93 GiB` per GPU
 
-Available KV memory: `3.15 GiB`
+Available KV memory: `4.56 GiB`
 
-GPU KV capacity: `216879` tokens
+GPU KV capacity: `445041` tokens
 
-Maximum 200000-token concurrency: `1.08x`
+Maximum 400000-token concurrency: `1.11x`
 
 CUDA graphs: PIECEWISE, FULL, prefill, and decode capture passed
 
-MTP: five-token draft generation active; draft counters increase, accepted-token counter remains zero
+MTP: not enabled for the NVFP4-KV candidate
 
 Text validation: passed with `TEXT_OK`
 
-Image validation: passed with `bus` for `https://ultralytics.com/images/bus.jpg`
+Image validation: passed with the attached Local Studio screenshot, returned a bounded description, and stopped at EOS token `154827`
+
+MMMU-Pro: the official `vision/direct` split is running sequentially with durable JSONL checkpoints at `/home/ser/bench/MMMU/mmmu-pro/output/GLM-5.2-Vision_vision_direct.jsonl`
 
 Post-start error scan: clean
 
