@@ -338,6 +338,7 @@ class PiSdkSession extends EventEmitter implements PiAgentSession {
                           thinkingLevel: selectedModel.reasoning
                             ? (options.thinkingLevel ?? "high")
                             : undefined,
+                          ...(selectedModel.vision ? { noTools: "all" as const } : {}),
                         }),
                       catch: (error) => error,
                     });
