@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { Check, Copy, Smartphone, Upload } from "@/ui/icon-registry";
+import { Check, Copy, ExternalLink, Smartphone, Upload } from "@/ui/icon-registry";
 import { Input } from "@/ui";
 import {
   PROFILE_HUES,
@@ -152,7 +152,7 @@ function PhonePairingSettings() {
   return (
     <SettingsGroup
       title="Connect your phone"
-      description="Connect KittyLitter to this controller by QR code or connection JSON."
+      description="Download the KittyLitter beta, then scan this code to connect it to your controller."
     >
       <div className="grid overflow-hidden sm:grid-cols-[240px_minmax(0,1fr)]">
         <div className="flex items-center justify-center bg-(--ui-surface)/55 px-5 py-7 sm:min-h-[284px]">
@@ -171,13 +171,23 @@ function PhonePairingSettings() {
             <Smartphone className="h-4.5 w-4.5" />
           </div>
           <h4 className="text-[length:var(--fs-lg)] font-medium tracking-[-0.01em] text-(--ui-fg)">
-            Scan with KittyLitter
+            Get the KittyLitter beta
           </h4>
           <p className="mt-1.5 max-w-md text-[length:var(--fs-sm)] leading-relaxed text-(--ui-muted)">
-            The QR code and copied JSON contain the same private controller connection. Share them
+            Download and open KittyLitter on your phone, then use its scanner on this QR code. The
+            QR code and copied JSON contain the same private controller connection, so share them
             only with devices you trust.
           </p>
-          <div className="mt-5 flex min-w-0 items-center gap-2">
+          <div className="mt-5 flex min-w-0 flex-wrap items-center gap-2">
+            <a
+              href="https://kittylitter.app/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-(--ui-fg) px-3 text-[length:var(--fs-sm)] font-medium text-(--ui-bg) transition-opacity hover:opacity-85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--ui-fg)/50 focus-visible:ring-offset-2 focus-visible:ring-offset-(--ui-bg)"
+            >
+              Download KittyLitter beta
+              <ExternalLink className="h-3.5 w-3.5" aria-hidden />
+            </a>
             <SettingsButton
               onClick={() => void copy()}
               aria-label="Copy KittyLitter connection JSON"
