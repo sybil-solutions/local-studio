@@ -241,6 +241,7 @@ async function fetchModelsFromController(
   const models = normalizeOpenAIModels(payload && typeof payload === "object" ? payload : {}).map(
     (model) => ({
       ...model,
+      reasoning: model.vision ? false : model.reasoning,
       id: qualifyModelId(providerId, model.id),
       rawId: model.id,
       providerId,
