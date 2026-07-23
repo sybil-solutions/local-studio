@@ -2,8 +2,9 @@
 
 import { useState } from "react";
 import { Plus } from "@/ui/icon-registry";
+import { ModelButton } from "@/ui";
 import type { RecipeWithStatus } from "@/lib/types";
-import { ModelButton, ModelRow, ModelSection, ModelStatus, ModelValue } from "./model-page";
+import { ModelRow, ModelSection, ModelStatus, ModelValue } from "./model-page";
 import { AttachLocalAgentsDialog } from "@/features/settings/attach-local-agents-dialog";
 import { RecipeRow } from "./recipe-row";
 

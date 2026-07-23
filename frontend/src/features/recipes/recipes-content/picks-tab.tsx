@@ -2,11 +2,11 @@
 
 import { useCallback } from "react";
 import { RefreshCw } from "@/ui/icon-registry";
-import { Card } from "@/ui";
+import { Card, ModelButton } from "@/ui";
 import { cx } from "@/ui/utils";
 import type { ModelIndexVariant } from "@/lib/api/studio";
 import { useDownloads } from "@/hooks/use-downloads";
-import { ModelButton, ModelStatus } from "./model-page";
+import { ModelStatus } from "./model-page";
 import { TierSection, useHardwareProfile, useModelIndex } from "./picks-shared";
 
 export function PicksTab() {

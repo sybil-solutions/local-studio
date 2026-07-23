@@ -1,6 +1,7 @@
 "use client";
 
 import { forwardRef, type ButtonHTMLAttributes, type ReactNode } from "react";
+import { cx } from "./utils";
 
 type ButtonVariant = "primary" | "secondary" | "danger" | "ghost" | "icon";
 type ButtonSize = "sm" | "md" | "lg";
@@ -37,6 +38,36 @@ const iconSizeClasses: Record<ButtonSize, string> = {
 
 const baseClasses =
   "inline-flex items-center justify-center gap-1.5 rounded-full font-medium transition-[transform,color,background-color,border-color,opacity] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--ring) active:scale-[0.98]";
+
+const modelButtonToneClasses = {
+  default: "text-(--ui-muted) hover:bg-(--ui-hover) hover:text-(--ui-fg)",
+  primary: "text-(--ui-fg) hover:bg-(--ui-hover)",
+  danger: "text-(--ui-danger) hover:bg-(--ui-danger)/10",
+} as const;
+const modelButtonBaseClasses =
+  "inline-flex h-6 items-center justify-center gap-1.5 rounded-md px-1.5 text-[length:var(--fs-sm)] font-medium transition-[background-color,color,transform] active:translate-y-px disabled:pointer-events-none disabled:opacity-45";
+
+export type ModelButtonProps = Omit<ButtonHTMLAttributes<HTMLButtonElement>, "type"> & {
+  tone?: "default" | "primary" | "danger";
+  type?: "button" | "submit";
+};
+
+export function ModelButton({
+  children,
+  tone = "default",
+  type = "button",
+  ...props
+}: ModelButtonProps) {
+  return (
+    <button
+      type={type}
+      {...props}
+      className={cx(modelButtonBaseClasses, modelButtonToneClasses[tone])}
+    >
+      {children}
+    </button>
+  );
+}
 
 function buttonClasses(variant: ButtonVariant, size: ButtonSize): string {
   const sClass = variant === "icon" ? iconSizeClasses[size] : sizeClasses[size];

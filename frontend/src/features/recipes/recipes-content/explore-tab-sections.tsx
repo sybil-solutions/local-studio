@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from "react";
 import { ArrowDownUp, Check, Filter, Gauge, RefreshCw } from "@/ui/icon-registry";
-import { SearchInput } from "@/ui";
-import { ModelButton, ModelSection, ModelRow, ModelValue, ModelStatus } from "./model-page";
+import { ModelButton, SearchInput } from "@/ui";
+import { ModelSection, ModelRow, ModelValue, ModelStatus } from "./model-page";
 import type { HuggingFaceModel } from "@/lib/types";
 import { ExploreModelRow } from "./explore-model-row";
 import { estimateRoughWeightsGb } from "./explore-model-stats";
