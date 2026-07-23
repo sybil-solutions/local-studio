@@ -18,6 +18,7 @@ const base = (overrides: Partial<RequestBoundaryInput> = {}): RequestBoundaryInp
   requestProtocol: "http:",
   allowedTailscaleHosts: ["studio.tail.example.ts.net"],
   allowedTailscaleUsers: [],
+  csrfExempt: false,
   csrfToken: "token",
   ...overrides,
 });
@@ -50,6 +51,35 @@ describe("request boundary", () => {
     assert.equal(evaluateRequestBoundary(base({ fetchSite: "cross-site" })).ok, false);
     assert.equal(evaluateRequestBoundary(base({ origin: "https://evil.example" })).ok, false);
     assert.equal(evaluateRequestBoundary(base({ csrfHeader: null })).ok, false);
+  });
+
+  test("applies CSRF exemptions only after host and origin validation", () => {
+    assert.deepEqual(
+      evaluateRequestBoundary(base({ csrfCookie: null, csrfExempt: true, csrfHeader: null })),
+      { ok: true, remote: false },
+    );
+    assert.equal(
+      evaluateRequestBoundary(
+        base({
+          csrfCookie: null,
+          csrfExempt: true,
+          csrfHeader: null,
+          fetchSite: "cross-site",
+        }),
+      ).ok,
+      false,
+    );
+    assert.equal(
+      evaluateRequestBoundary(
+        base({
+          csrfCookie: null,
+          csrfExempt: true,
+          csrfHeader: null,
+          origin: "https://evil.example",
+        }),
+      ).ok,
+      false,
+    );
   });
 
   test("enforces an optional Tailscale user allowlist", () => {

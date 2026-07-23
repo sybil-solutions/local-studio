@@ -42,6 +42,16 @@ shapes come from `shared/agent/`.
 Node.js 22.19+, npm, and a reachable controller are required for the full
 surface. The default controller URL is `http://localhost:8080`.
 
+> **Security boundary:** Frontend access grants the coding agent permission to
+> execute shell commands and read or write files as the Local Studio host user.
+
+Before production `npm run start`, copy `.env.example` to `.env.local` and set
+`LOCAL_STUDIO_FRONTEND_TOKEN`. Use
+`LOCAL_STUDIO_FRONTEND_ALLOW_UNAUTHENTICATED=true` only as an explicit opt-out
+on an isolated, trusted network. Production startup fails without one of these
+settings. Development and the loopback-only desktop app use separate trust
+boundaries.
+
 ```bash
 npm ci
 npm run build
@@ -54,6 +64,17 @@ npm run check:quality
 
 `npm run start` uses `scripts/start-standalone.mjs`; plain `next start` does not
 preserve the streaming runtime contract.
+
+## Remote / LAN
+
+Create `frontend/.env.local` on the remote host from this directory's
+`.env.example` before starting or deploying the frontend. The deployment script
+does not transfer this secret file. Configure the controller URL separately
+with `BACKEND_URL` or `NEXT_PUBLIC_API_URL`.
+
+Treat every user who can reach and authenticate to the remote frontend as a
+host shell and filesystem user. A controller API key protects the controller;
+it does not reduce frontend agent privileges.
 
 ## Desktop
 

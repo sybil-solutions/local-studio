@@ -7,7 +7,7 @@ import {
 } from "@local-studio/agent-runtime/connector-pool";
 import { enabledConnectors } from "@local-studio/agent-runtime/connectors-service";
 import { refreshEnabledPluginConnectors } from "@local-studio/agent-runtime/plugin-runtime";
-import { requireApiAccess } from "@/lib/auth/guard";
+import { requireCallbackOrApiAccess } from "@/lib/auth/guard";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -19,7 +19,7 @@ const ConnectorToolCallSchema = Schema.Struct({
 });
 
 export async function GET(request: NextRequest) {
-  const denied = requireApiAccess(request);
+  const denied = requireCallbackOrApiAccess(request);
   if (denied) return denied;
   await Effect.runPromise(refreshEnabledPluginConnectors());
   const connectors = await enabledConnectors();
@@ -42,7 +42,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const denied = requireApiAccess(request);
+  const denied = requireCallbackOrApiAccess(request);
   if (denied) return denied;
   let body: typeof ConnectorToolCallSchema.Type;
   try {

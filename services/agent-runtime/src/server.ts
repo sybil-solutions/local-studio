@@ -50,7 +50,13 @@ import {
   handleSessionsDelete,
   handleSessionsList,
 } from "./http/session-handlers";
+import {
+  captureRuntimeCallbackCredential,
+  createFrontendCallbackFetch,
+} from "./frontend-callback-auth";
 
+const callbackCredential = captureRuntimeCallbackCredential();
+globalThis.fetch = createFrontendCallbackFetch(callbackCredential);
 markAgentRuntimeProcess();
 startAutomationScheduler();
 

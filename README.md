@@ -144,6 +144,15 @@ surfaced in Configure; selections persist in the controller data directory.
 
 ## Production
 
+> **Security boundary:** Anyone who can access the frontend can use its coding
+> agent to read and write files and execute shell commands as the Local Studio
+> host user. Do not expose it beyond users who should have that capability.
+
+Before `npm run start`, create `frontend/.env.local` from
+`frontend/.env.example` and set `LOCAL_STUDIO_FRONTEND_TOKEN`. On an isolated,
+trusted network, `LOCAL_STUDIO_FRONTEND_ALLOW_UNAUTHENTICATED=true` is the
+explicit opt-out. Production startup fails when neither setting is present.
+
 Build the frontend, then serve it with the standalone server:
 
 ```bash
@@ -192,8 +201,8 @@ without it. On a trusted LAN you may instead set
 Point the frontend at a remote controller with `BACKEND_URL` or
 `NEXT_PUBLIC_API_URL` (default `http://localhost:8080`).
 
-Remote deployment is handled by `scripts/deploy-remote.sh`. Configure
-`.env.local` first (see `.env.example`):
+Remote deployment is handled by `scripts/deploy-remote.sh`. Configure the root
+`.env.local` used by the deploy transport:
 
 ```bash
 REMOTE_HOST=192.168.x.x
@@ -201,6 +210,15 @@ REMOTE_USER=username
 REMOTE_PATH=/home/user/project
 # Optional: REMOTE_SSH_KEY (defaults to ~/.ssh/id_ed25519)
 ```
+
+Separately, create `$REMOTE_PATH/frontend/.env.local` on the remote host from
+`frontend/.env.example` and configure either `LOCAL_STUDIO_FRONTEND_TOKEN` or
+the explicit unauthenticated override before deploying the frontend. The deploy
+script preserves this secret file and does not copy it from the local checkout.
+
+Remote frontend access grants shell execution and filesystem access as the
+remote Local Studio user; controller authentication does not replace this
+frontend boundary.
 
 ```bash
 ./scripts/deploy-remote.sh controller   # sync + build + restart controller

@@ -1,12 +1,13 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
+import { runtimeFrontendOrigin } from "./frontend-callback-origin";
 
 type ToolResult = {
   content: Array<{ type: "text"; text: string }>;
   details: Record<string, unknown>;
 };
 
-const FRONTEND_BASE = process.env.LOCAL_STUDIO_FRONTEND_BASE ?? "http://127.0.0.1:3000";
+const FRONTEND_BASE = runtimeFrontendOrigin();
 const BROWSER_SESSION_ID = process.env.LOCAL_STUDIO_BROWSER_SESSION_ID ?? "";
 const DEFAULT_BROWSER_TOOL_TIMEOUT_MS = 60_000;
 

@@ -1,27 +1,40 @@
 import { readRequestBytesWithinLimit } from "@shared/agent/agent-turn-body";
+import type { NextRequest } from "next/server";
+import { requireCallbackOrApiAccess } from "@/lib/auth/guard";
+import { AGENT_RUNTIME_URL_ERROR, resolveAgentRuntimeUrl } from "@/lib/agent-runtime-url.mjs";
 
-const HOP_BY_HOP_REQUEST_HEADERS = ["host", "connection", "content-length", "accept-encoding"];
-const DEFAULT_AGENT_RUNTIME_URL = "http://127.0.0.1:8081";
+const RUNTIME_REQUEST_HEADERS = ["accept", "content-type", "last-event-id"];
 
 type AgentRuntimeProxyOptions = {
   bodyLimitBytes?: number;
 };
 
-export function agentRuntimeBaseUrl(): string {
-  const raw = process.env.LOCAL_STUDIO_AGENT_RUNTIME_URL?.trim();
-  return (raw || DEFAULT_AGENT_RUNTIME_URL).replace(/\/+$/, "");
+export function agentRuntimeBaseUrl(): string | null {
+  const decision = resolveAgentRuntimeUrl(process.env.LOCAL_STUDIO_AGENT_RUNTIME_URL);
+  return decision.ok ? decision.url : null;
+}
+
+function runtimeRequestHeaders(request: NextRequest): Headers {
+  const headers = new Headers();
+  for (const name of RUNTIME_REQUEST_HEADERS) {
+    const value = request.headers.get(name);
+    if (value !== null) headers.set(name, value);
+  }
+  return headers;
 }
 
 export async function proxyToAgentRuntime(
-  request: Request,
+  request: NextRequest,
   options: AgentRuntimeProxyOptions = {},
 ): Promise<Response> {
+  const denied = requireCallbackOrApiAccess(request);
+  if (denied) return denied;
   const base = agentRuntimeBaseUrl();
+  if (!base) return Response.json({ error: AGENT_RUNTIME_URL_ERROR }, { status: 503 });
   const url = new URL(request.url);
   const target = `${base}${url.pathname}${url.search}`;
 
-  const headers = new Headers(request.headers);
-  for (const name of HOP_BY_HOP_REQUEST_HEADERS) headers.delete(name);
+  const headers = runtimeRequestHeaders(request);
 
   let body: ArrayBuffer | undefined;
   if (request.method !== "GET" && request.method !== "HEAD") {
@@ -46,14 +59,7 @@ export async function proxyToAgentRuntime(
     });
   } catch (error) {
     if (request.signal.aborted) throw error;
-    return Response.json(
-      {
-        error: `agent runtime unreachable at ${base}: ${
-          error instanceof Error ? error.message : "fetch failed"
-        }`,
-      },
-      { status: 502 },
-    );
+    return Response.json({ error: "Agent runtime is unavailable." }, { status: 502 });
   }
 
   const responseHeaders = new Headers(upstream.headers);

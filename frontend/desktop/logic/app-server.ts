@@ -1,4 +1,5 @@
 import { app } from "electron";
+import { randomBytes } from "node:crypto";
 import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fork, type ChildProcess } from "node:child_process";
@@ -195,7 +196,8 @@ export async function startFrontendServer(
   const port = await resolveStablePort(options.port ?? readPersistedPort());
   persistPort(port);
   const url = `http://127.0.0.1:${port}`;
-  const agentRuntime = await startAgentRuntime({ frontendUrl: url });
+  const callbackToken = randomBytes(32).toString("base64url");
+  const agentRuntime = await startAgentRuntime({ callbackToken, frontendUrl: url });
 
   log.info(`Starting embedded frontend server from ${serverScript} on ${url}`);
 
@@ -226,6 +228,7 @@ export async function startFrontendServer(
       LOCAL_STUDIO_AGENT_CWD: process.env.LOCAL_STUDIO_AGENT_CWD || app.getPath("home"),
       LOCAL_STUDIO_AGENT_RUNTIME_URL: agentRuntime.url,
       LOCAL_STUDIO_FRONTEND_BASE: url,
+      LOCAL_STUDIO_FRONTEND_CALLBACK_TOKEN: callbackToken,
     },
   });
 

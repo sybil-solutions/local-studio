@@ -15,6 +15,7 @@ export type RequestBoundaryInput = {
   requestProtocol: string;
   allowedTailscaleHosts: string[];
   allowedTailscaleUsers: string[];
+  csrfExempt: boolean;
   csrfToken: string;
 };
 
@@ -90,6 +91,7 @@ export function evaluateRequestBoundary(input: RequestBoundaryInput): RequestBou
       return { ok: false, status: 403, error: "Origin is invalid" };
     }
   }
+  if (input.csrfExempt) return { ok: true, remote };
   if (input.csrfCookie !== input.csrfToken || input.csrfHeader !== input.csrfToken) {
     return { ok: false, status: 403, error: "CSRF validation failed" };
   }

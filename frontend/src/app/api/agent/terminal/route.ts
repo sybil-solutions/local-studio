@@ -4,6 +4,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { NextRequest } from "next/server";
 import { parseTerminalRunRequest } from "@/features/agent/contracts";
+import { environmentWithoutFrontendCredentials } from "@/lib/auth/child-environment";
 import { requireApiAccess } from "@/lib/auth/guard";
 import { assertWorkspaceRoot } from "@/features/agent/fs-store";
 import { errorMessage, jsonError, requireAbsoluteCwd } from "@/app/api/_lib/route-helpers";
@@ -50,6 +51,7 @@ export async function POST(request: NextRequest) {
   try {
     const { stdout, stderr } = await execAsync(parsed.value.command, {
       cwd,
+      env: environmentWithoutFrontendCredentials(),
       maxBuffer: 2 * 1024 * 1024,
       timeout: 60_000,
     });

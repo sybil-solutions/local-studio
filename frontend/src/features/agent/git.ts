@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import type { GitAction, GitRef, GitState, GitStatusEntry } from "@/features/agent/contracts";
+import { environmentWithoutFrontendCredentials } from "@/lib/auth/child-environment";
 
 const execFileAsync = promisify(execFile);
 
@@ -51,7 +52,7 @@ async function git(cwd: string, args: string[]): Promise<string> {
 }
 
 function cleanGitEnv(): NodeJS.ProcessEnv {
-  const env = { ...process.env };
+  const env = environmentWithoutFrontendCredentials();
   delete env.GIT_DIR;
   delete env.GIT_WORK_TREE;
   delete env.GIT_INDEX_FILE;
