@@ -91,12 +91,15 @@ test("pre-push commit validation excludes commits already on the default branch"
   const fixture = mkdtempSync(resolve(tmpdir(), "local-studio-pre-push-"));
   const hooks = resolve(fixture, "hooks");
   mkdirSync(hooks);
+  const gitEnvironment = Object.fromEntries(
+    Object.entries(process.env).filter(([key]) => !key.startsWith("GIT_")),
+  );
   const runGit = (...args) =>
     execFileSync("git", ["-c", "commit.gpgsign=false", "-c", `core.hooksPath=${hooks}`, ...args], {
       cwd: fixture,
       encoding: "utf8",
       env: {
-        ...process.env,
+        ...gitEnvironment,
         GIT_AUTHOR_NAME: "Local Studio",
         GIT_AUTHOR_EMAIL: "local-studio@example.invalid",
         GIT_COMMITTER_NAME: "Local Studio",
@@ -127,6 +130,7 @@ test("pre-push commit validation excludes commits already on the default branch"
     const withoutExclusion = spawnSync(process.execPath, [checker, "--range", range], {
       cwd: fixture,
       encoding: "utf8",
+      env: gitEnvironment,
     });
     assert.notEqual(withoutExclusion.status, 0);
     const staleForkExclusion = spawnSync(
@@ -135,6 +139,7 @@ test("pre-push commit validation excludes commits already on the default branch"
       {
         cwd: fixture,
         encoding: "utf8",
+        env: gitEnvironment,
       },
     );
     assert.notEqual(staleForkExclusion.status, 0);
@@ -148,7 +153,7 @@ test("pre-push commit validation excludes commits already on the default branch"
         "refs/remotes/fork/main",
         "--exclude-remote-heads",
       ],
-      { cwd: fixture },
+      { cwd: fixture, env: gitEnvironment },
     );
 
     writeFileSync(resolve(fixture, "fixture.txt"), "invalid topic\n");
@@ -167,6 +172,7 @@ test("pre-push commit validation excludes commits already on the default branch"
       {
         cwd: fixture,
         encoding: "utf8",
+        env: gitEnvironment,
       },
     );
     assert.notEqual(unrelatedTopicExclusion.status, 0);
