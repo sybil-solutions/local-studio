@@ -1,30 +1,30 @@
 # GLM-5.2 Hybrid and Vision Status
 
-Status: original FP8 hybrid live; NVFP4-KV test and vision candidate stopped
+Status: GLM-5.2 Vision live with FP8 KV cache; text hybrid and NVFP4-KV vision candidate stopped
 
-FP8 restoration: `2026-07-23T10:00:00Z`
+Vision FP8 launch: `2026-07-23T13:00:44Z`
 
-Live service: `glm52-v3`
+Live service: `glm52-vision-fp8`
 
-Served model: `GLM-5.2`
+Served model: `GLM-5.2-Vision`
 
-Live image: `madeby561/vllm-glm52-nvfp4-nf3-hybrid:v3`
+Live image: `local/glm52-nf3-vision:v5-nvfp4`
 
-Live checkpoint: `/mnt/llm_models/GLM-5.2-MXFP8-NVFP4-NF3-Hybrid`
+Live checkpoint: `/mnt/llm_models/GLM-5.2-MXFP8-NVFP4-NF3-Hybrid-Vision`
 
-Hybrid recipe: FP8 KV cache, `B12X_MLA_SPARSE`, DCP 4, MTP 5, async scheduling, and the 78-layer index-cache pattern.
+Vision recipe: FP8 KV cache, `B12X_MLA_SPARSE`, DCP 4, async scheduling, and the 78-layer index-cache pattern.
 
-Configured context length: `342528`
+Configured context length: `262144`
 
-GPU KV capacity: `344831` tokens
+GPU KV capacity: `338176` tokens
 
-Maximum 342528-token concurrency: `1.01x`
+Maximum 262144-token concurrency: `1.29x`
 
-Post-restart validation: passed. `/health` and `/v1/models` report `GLM-5.2`; CUDA-graph capture completed normally.
+Post-launch validation: passed. `/health` and `/v1/models` report `GLM-5.2-Vision`; CUDA-graph capture completed normally; a multimodal request returned `IMAGE_OK`.
 
 NVFP4-KV test result: 1k and 4k control prompts returned `OK`; failure begins by 8k and is worse at 16k. The native NVFP4 KV cache did not resolve the long-context inference-quality concern.
 
-NVFP4-KV service: `glm52-nvfp4-hybrid` is stopped and recoverable. Vision service: `glm52-vision-candidate` is stopped and recoverable.
+Text hybrid: `glm52-v3` is stopped and recoverable. NVFP4-KV vision candidate: `glm52-vision-candidate` is stopped and recoverable.
 
 Previous vision cutover: `2026-07-23T01:21:10+02:00`
 
