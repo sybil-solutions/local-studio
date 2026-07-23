@@ -16,7 +16,17 @@ files:
 
 extraResources:
   - from: ../services/agent-runtime/dist/standalone.mjs
-    to: app/agent-runtime/server.mjs
+    to: app/agent-runtime/standalone.mjs
+  - from: ../services/agent-runtime/dist/node_modules/playwright-core
+    to: app/agent-runtime/node_modules/playwright-core
+  - from: ../services/agent-runtime/dist/node_modules/chromium-bidi
+    to: app/agent-runtime/node_modules/chromium-bidi
+  - from: ../services/agent-runtime/dist/node_modules/chromium-bidi/node_modules/zod
+    to: app/agent-runtime/node_modules/chromium-bidi/node_modules/zod
+  - from: ../services/agent-runtime/dist/node_modules/mitt
+    to: app/agent-runtime/node_modules/mitt
+  - from: ../services/agent-runtime/dist/node_modules/devtools-protocol
+    to: app/agent-runtime/node_modules/devtools-protocol
   - from: .next/standalone
     to: app/frontend/.next/standalone
     filter:

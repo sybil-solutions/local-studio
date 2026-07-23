@@ -28,7 +28,7 @@ process.once("exit", () => {
 
 function agentRuntimeEntry(): string {
   return app.isPackaged
-    ? path.join(process.resourcesPath, "app", "agent-runtime", "server.mjs")
+    ? path.join(process.resourcesPath, "app", "agent-runtime", "standalone.mjs")
     : path.resolve(
         __dirname,
         "..",

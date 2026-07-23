@@ -1,4 +1,4 @@
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 
 function resolveResourcesDir(appOutDir, productFilename, electronPlatformName) {
@@ -58,9 +58,33 @@ export default async function afterPack(context) {
     throw new Error(`Packaged app is missing a Pi runtime dependency: ${missingRuntimeFile}`);
   }
 
-  const agentRuntime = path.join(resourcesDir, "app", "agent-runtime", "server.mjs");
-  if (!existsSync(agentRuntime)) {
-    throw new Error(`Packaged app is missing the agent runtime: ${agentRuntime}`);
+  const agentRuntimeRoot = path.join(resourcesDir, "app", "agent-runtime");
+  const agentRuntime = path.join(agentRuntimeRoot, "standalone.mjs");
+  const requiredAgentRuntimeFiles = [
+    agentRuntime,
+    path.join(agentRuntimeRoot, "node_modules", "playwright-core", "package.json"),
+    path.join(agentRuntimeRoot, "node_modules", "chromium-bidi", "package.json"),
+    path.join(
+      agentRuntimeRoot,
+      "node_modules",
+      "chromium-bidi",
+      "node_modules",
+      "zod",
+      "package.json",
+    ),
+    path.join(agentRuntimeRoot, "node_modules", "mitt", "package.json"),
+    path.join(agentRuntimeRoot, "node_modules", "devtools-protocol", "package.json"),
+  ];
+  const missingAgentRuntimeFile = requiredAgentRuntimeFiles.find((file) => !existsSync(file));
+  if (missingAgentRuntimeFile) {
+    throw new Error(`Packaged app is missing an agent runtime dependency: ${missingAgentRuntimeFile}`);
+  }
+
+  const agentRuntimeSource = readFileSync(agentRuntime, "utf8");
+  const absolutePlaywrightPath =
+    /["'](?:[A-Za-z]:\\|\/)[^"'\n]*node_modules[\\/]playwright-core[\\/]/;
+  if (absolutePlaywrightPath.test(agentRuntimeSource)) {
+    throw new Error("Packaged agent runtime contains a build-machine Playwright path");
   }
 
   console.log(`  afterPack: embedded frontend and agent runtime present (${electronPlatformName})`);
