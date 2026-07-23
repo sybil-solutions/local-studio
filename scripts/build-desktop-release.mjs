@@ -35,6 +35,36 @@ function hasNotarizationCredentials() {
   return keychain || apiKey || appleId;
 }
 
+function notarytoolCredentials() {
+  if (process.env.APPLE_KEYCHAIN_PROFILE) {
+    const args = ["--keychain-profile", process.env.APPLE_KEYCHAIN_PROFILE];
+    if (process.env.APPLE_KEYCHAIN) args.push("--keychain", process.env.APPLE_KEYCHAIN);
+    return args;
+  }
+  if (
+    process.env.APPLE_API_KEY &&
+    process.env.APPLE_API_KEY_ID &&
+    process.env.APPLE_API_ISSUER
+  ) {
+    return [
+      "--key",
+      process.env.APPLE_API_KEY,
+      "--key-id",
+      process.env.APPLE_API_KEY_ID,
+      "--issuer",
+      process.env.APPLE_API_ISSUER,
+    ];
+  }
+  return [
+    "--apple-id",
+    process.env.APPLE_ID,
+    "--password",
+    process.env.APPLE_APP_SPECIFIC_PASSWORD,
+    "--team-id",
+    process.env.APPLE_TEAM_ID,
+  ];
+}
+
 export function buildDesktopRelease(args = process.argv.slice(2)) {
   const version = valueAfter(args, "--version")?.trim();
   const commit = valueAfter(args, "--commit")?.trim().toLowerCase();
@@ -82,6 +112,28 @@ export function buildDesktopRelease(args = process.argv.slice(2)) {
     `--config.extraMetadata.version=${version}`,
     `--config.extraMetadata.localStudioCommit=${commit}`,
   ], { cwd: frontend });
+  const dmg = path.join(output, `Local Studio-${version}-arm64.dmg`);
+  run("xcrun", [
+    "notarytool",
+    "submit",
+    dmg,
+    ...notarytoolCredentials(),
+    "--wait",
+    "--output-format",
+    "json",
+  ]);
+  run("xcrun", ["stapler", "staple", dmg]);
+  run("xcrun", ["stapler", "validate", dmg]);
+  run("codesign", ["--verify", "--verbose=4", dmg]);
+  run("spctl", [
+    "--assess",
+    "--type",
+    "open",
+    "--context",
+    "context:primary-signature",
+    "--verbose=4",
+    dmg,
+  ]);
   run("node", [
     "scripts/stage-desktop-release.mjs",
     "--version",

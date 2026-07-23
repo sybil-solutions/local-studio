@@ -95,6 +95,9 @@ mac:
   extendInfo:
     NSMicrophoneUsageDescription: Record your own voice to create a private, local voice profile.
 
+dmg:
+  sign: true
+
 win:
   target:
     - target: nsis
