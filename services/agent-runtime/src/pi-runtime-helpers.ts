@@ -2,7 +2,8 @@ import { existsSync, readFileSync } from "node:fs";
 import { realpath, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
-import { Effect } from "effect";
+import { Effect, Semaphore } from "effect";
+import { BROWSER_SESSION_HEADER, decodeBrowserSessionKey } from "./browser-session-contract";
 import { listProjectsFromStore, resolveAllowedWorkspace } from "./projects-store";
 import { hasEnabledConnectorsSync } from "./connectors-service";
 import type { AgentThinkingLevel, AgentToolAccess } from "../../../shared/agent/agent-turn";
@@ -327,13 +328,20 @@ function runtimeEnvInjections(
 ): Record<string, string> {
   const frontendBase = env.LOCAL_STUDIO_FRONTEND_BASE ?? deriveFrontendBase(env);
   const relay = readSitegeistRelayEnv(env);
+  const browserSessionId = options.browserSessionId
+    ? decodeBrowserSessionKey(options.browserSessionId)
+    : "";
+  if (options.browserToolEnabled === true && !browserSessionId) {
+    throw new Error("A valid browser session id is required when the browser tool is enabled");
+  }
   return {
-    LOCAL_STUDIO_BROWSER_SESSION_ID: options.browserSessionId ?? "",
+    LOCAL_STUDIO_BROWSER_SESSION_HEADER: BROWSER_SESSION_HEADER,
+    LOCAL_STUDIO_BROWSER_SESSION_ID: browserSessionId,
     LOCAL_STUDIO_PLAN_SESSION_ID: options.planSessionId ?? "",
     LOCAL_STUDIO_FRONTEND_BASE: frontendBase,
     SITEGEIST_RELAY_URL: env.SITEGEIST_RELAY_URL ?? relay.SITEGEIST_RELAY_URL ?? "",
     SITEGEIST_RELAY_TOKEN: env.SITEGEIST_RELAY_TOKEN ?? relay.SITEGEIST_RELAY_TOKEN ?? "",
-    SITEGEIST_RELAY_SESSION_ID: options.browserSessionId ?? "",
+    SITEGEIST_RELAY_SESSION_ID: browserSessionId,
   };
 }
 
@@ -370,6 +378,50 @@ export function applyRuntimeEnvInjections(
   env: NodeJS.ProcessEnv = process.env,
 ): void {
   for (const [key, value] of Object.entries(envInjections)) env[key] = value;
+}
+
+const runtimeEnvLock = Semaphore.makeUnsafe(1);
+
+type EnvironmentSnapshot = Record<
+  string,
+  { present: true; value: string | undefined } | { present: false }
+>;
+
+function environmentSnapshot(
+  envInjections: Record<string, string>,
+  env: NodeJS.ProcessEnv,
+): EnvironmentSnapshot {
+  return Object.fromEntries(
+    Object.keys(envInjections).map((key) => [
+      key,
+      Object.hasOwn(env, key) ? { present: true, value: env[key] } : { present: false },
+    ]),
+  );
+}
+
+function restoreEnvironment(snapshot: EnvironmentSnapshot, env: NodeJS.ProcessEnv): void {
+  for (const [key, entry] of Object.entries(snapshot)) {
+    if (entry.present) env[key] = entry.value;
+    else delete env[key];
+  }
+}
+
+export function withRuntimeEnvInjections<A, E, R>(
+  envInjections: Record<string, string>,
+  effect: Effect.Effect<A, E, R>,
+  env: NodeJS.ProcessEnv = process.env,
+): Effect.Effect<A, E, R> {
+  return runtimeEnvLock.withPermit(
+    Effect.acquireUseRelease(
+      Effect.sync(() => {
+        const snapshot = environmentSnapshot(envInjections, env);
+        applyRuntimeEnvInjections(envInjections, env);
+        return snapshot;
+      }),
+      () => effect,
+      (snapshot) => Effect.sync(() => restoreEnvironment(snapshot, env)),
+    ),
+  );
 }
 
 export function buildAgentSessionOptions(

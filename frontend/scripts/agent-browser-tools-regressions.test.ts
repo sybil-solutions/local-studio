@@ -64,12 +64,14 @@ test("visible navigation, state, history, viewport, and input use browser-host r
     assert.equal(liveStore.includes(`/api/agent/browser/${route}`), true, route);
   }
   for (const route of ["input", "viewport"]) {
-    assert.equal(surface.includes(`postBrowser("${route}"`), true, route);
+    assert.equal(surface.includes(`"${route}"`), true, route);
   }
   assert.equal(extension.includes("/api/agent/browser/${verb}"), true);
   assert.equal(panel.includes('fetch("/api/agent/browser/navigate"'), false);
   assert.equal(surface.includes("/api/agent/browser/navigate"), false);
   assert.equal(panel.includes("navigateBrowserHost(result.url)"), true);
+  assert.equal(extension.includes("LOCAL_STUDIO_BROWSER_SESSION_HEADER"), true);
+  assert.equal(extension.includes("sessionId: BROWSER_SESSION_ID"), false);
 });
 
 test("browser navigation rejects files and protected destinations", () => {

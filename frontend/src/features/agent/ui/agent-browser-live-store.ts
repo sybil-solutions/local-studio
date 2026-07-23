@@ -2,6 +2,11 @@
 
 import { useSyncExternalStore } from "react";
 import { Effect, Fiber, Schedule, Schema, Semaphore } from "effect";
+import {
+  browserSessionHeaders,
+  decodeBrowserSessionKey,
+  type BrowserSessionKey,
+} from "@local-studio/agent-runtime/browser-session-contract";
 import { browserLocationUpdate } from "@/features/agent/ui/agent-browser-location";
 
 export type BrowserPaneState = {
@@ -29,13 +34,18 @@ type BrowserTransportResponse = {
 };
 
 export type BrowserLiveTransport = {
-  frame: () => Promise<BrowserTransportResponse>;
-  navigate: (url: string) => Promise<BrowserTransportResponse>;
+  frame: (sessionKey: BrowserSessionKey, signal: AbortSignal) => Promise<BrowserTransportResponse>;
+  navigate: (
+    sessionKey: BrowserSessionKey,
+    url: string,
+    signal: AbortSignal,
+  ) => Promise<BrowserTransportResponse>;
 };
 
 export type BrowserLiveStore = {
   getFrameSnapshot: () => BrowserLiveFrameSnapshot;
   getStateSnapshot: () => BrowserLiveStateSnapshot;
+  focus: (sessionKey: string | null) => void;
   navigate: (url: string) => Promise<void>;
   subscribeFrame: (listener: () => void) => () => void;
   subscribeState: (listener: () => void) => () => void;
@@ -83,12 +93,18 @@ async function request(path: string, init?: RequestInit): Promise<BrowserTranspo
 }
 
 const defaultTransport: BrowserLiveTransport = {
-  frame: () => request("/api/agent/browser/frame", { cache: "no-store" }),
-  navigate: (url) =>
+  frame: (sessionKey, signal) =>
+    request("/api/agent/browser/frame", {
+      cache: "no-store",
+      headers: browserSessionHeaders(sessionKey),
+      signal,
+    }),
+  navigate: (sessionKey, url, signal) =>
     request("/api/agent/browser/navigate", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...browserSessionHeaders(sessionKey) },
       body: JSON.stringify({ url }),
+      signal,
     }),
 };
 
@@ -119,6 +135,8 @@ export function createBrowserLiveStore({
   let locationPollBarrier: number | null = null;
   let locationRevision = 0;
   let emittedUrl = "";
+  let sessionKey: BrowserSessionKey | null = null;
+  let sessionAbort: AbortController | null = null;
   const navigationLock = Semaphore.makeUnsafe(1);
   const stateListeners = new Set<() => void>();
   const frameListeners = new Set<() => void>();
@@ -173,10 +191,14 @@ export function createBrowserLiveStore({
     if (frame) emitFrame(frame);
   };
 
-  const pollOnce = async (activeGeneration: number) => {
+  const pollOnce = async (
+    activeGeneration: number,
+    activeSession: BrowserSessionKey,
+    signal: AbortSignal,
+  ) => {
     const pollRequestSequence = (pollSequence += 1);
-    const response = await transport.frame();
-    if (activeGeneration !== generation) return;
+    const response = await transport.frame(activeSession, signal);
+    if (activeGeneration !== generation || sessionKey !== activeSession) return;
     const payload = Schema.decodeUnknownSync(BrowserFrameResponseSchema)(response.body);
     if (response.status === 503) {
       const unavailable = payload.error ?? "Browser unavailable";
@@ -207,24 +229,35 @@ export function createBrowserLiveStore({
     return true;
   };
 
-  const stop = () => {
-    generation += 1;
-    const fiber = pollFiber;
-    pollFiber = null;
-    if (fiber) void Effect.runPromise(Fiber.interrupt(fiber));
+  const reset = () => {
+    const notifyState = stateSnapshot !== EMPTY_STATE;
+    const notifyFrame = frameSnapshot !== EMPTY_FRAME;
     stateSnapshot = EMPTY_STATE;
     frameSnapshot = EMPTY_FRAME;
     locationRevision = 0;
     emittedUrl = "";
     locationPollBarrier = null;
+    if (notifyState) for (const listener of stateListeners) listener();
+    if (notifyFrame) for (const listener of frameListeners) listener();
+  };
+
+  const stop = (clear = true) => {
+    generation += 1;
+    const fiber = pollFiber;
+    pollFiber = null;
+    if (fiber) void Effect.runPromise(Fiber.interrupt(fiber));
+    if (clear) reset();
   };
 
   const start = () => {
-    if (pollFiber || stateListeners.size + frameListeners.size === 0) return;
+    if (pollFiber || !sessionKey || stateListeners.size + frameListeners.size === 0) return;
     const activeGeneration = (generation += 1);
+    const activeSession = sessionKey;
+    const signal = sessionAbort?.signal;
+    if (!signal) return;
     pollFiber = Effect.runFork(
       Effect.tryPromise({
-        try: () => pollOnce(activeGeneration),
+        try: () => pollOnce(activeGeneration, activeSession, signal),
         catch: (error) => error,
       }).pipe(
         Effect.catch(() => Effect.void),
@@ -247,14 +280,17 @@ export function createBrowserLiveStore({
 
   const navigate = (url: string) => {
     const target = url.trim();
-    if (!target) return Promise.resolve();
+    const activeSession = sessionKey;
+    const signal = sessionAbort?.signal;
+    if (!target || !activeSession || !signal) return Promise.resolve();
     const navigationRequestSequence = (navigationSequence += 1);
     if (stateSnapshot.navigationError) {
       emitState({ ...stateSnapshot, navigationError: null });
     }
     const program = Effect.gen(function* () {
+      if (sessionKey !== activeSession || signal.aborted) return;
       const response = yield* Effect.tryPromise({
-        try: () => transport.navigate(target),
+        try: () => transport.navigate(activeSession, target, signal),
         catch: (error) => error,
       });
       const payload = yield* Schema.decodeUnknownEffect(BrowserActionResponseSchema)(response.body);
@@ -263,10 +299,13 @@ export function createBrowserLiveStore({
           new Error(payload.error ?? `Browser navigation failed with HTTP ${response.status}`),
         );
       }
-      settleNavigation(navigationRequestSequence);
+      if (sessionKey === activeSession && !signal.aborted) {
+        settleNavigation(navigationRequestSequence);
+      }
     }).pipe(
       Effect.catch((error) =>
         Effect.sync(() => {
+          if (sessionKey !== activeSession || signal.aborted) return;
           if (!settleNavigation(navigationRequestSequence)) return;
           emitState({ ...stateSnapshot, navigationError: errorMessage(error) });
         }),
@@ -275,9 +314,30 @@ export function createBrowserLiveStore({
     return Effect.runPromise(navigationLock.withPermit(program));
   };
 
+  const focus = (nextSessionKey: string | null) => {
+    let next: BrowserSessionKey | null = null;
+    if (nextSessionKey !== null) {
+      try {
+        next = decodeBrowserSessionKey(nextSessionKey);
+      } catch {
+        next = null;
+      }
+    }
+    if (next === sessionKey) return;
+    sessionAbort?.abort();
+    sessionAbort = next ? new AbortController() : null;
+    sessionKey = next;
+    stop();
+    navigationSequence = 0;
+    settledNavigationSequence = 0;
+    pollSequence = 0;
+    start();
+  };
+
   return {
     getFrameSnapshot: () => frameSnapshot,
     getStateSnapshot: () => stateSnapshot,
+    focus,
     navigate,
     subscribeFrame: (listener) => subscribe(frameListeners, listener),
     subscribeState: (listener) => subscribe(stateListeners, listener),
@@ -285,6 +345,10 @@ export function createBrowserLiveStore({
 }
 
 const browserLiveStore = createBrowserLiveStore();
+
+export function focusBrowserLiveSession(sessionKey: string | null): void {
+  browserLiveStore.focus(sessionKey);
+}
 
 export function navigateBrowserHost(url: string): Promise<void> {
   return browserLiveStore.navigate(url);

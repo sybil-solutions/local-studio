@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useRef, useState, type FormEvent } from "react";
+import { Schema } from "effect";
 import { ArrowLeftIcon, ArrowRightIcon, CloseIcon, ReloadIcon } from "@/ui/icons";
 import { Alert } from "@/ui";
 import { DEFAULT_BROWSER_URL } from "@/features/agent/tools/persistence";
@@ -9,13 +10,25 @@ import { useBrowserLiveState } from "@/features/agent/ui/agent-browser-live-stor
 import {
   useAgentBrowserEffects,
   useLocalhostSitesEffects,
+  decodeLocalhostSitesResponse,
   type LocalhostSite,
 } from "@/features/agent/ui/agent-browser-effects";
 import { LocalhostStartPage } from "@/features/agent/ui/agent-browser-start-page";
 import { ReadingView, type ReadablePage } from "@/features/agent/ui/agent-browser-reading-view";
 import { useMountSubscription } from "@/hooks/use-mount-subscription";
+import { browserSessionHeadersOption } from "@local-studio/agent-runtime/browser-session-contract";
+
+const ReadablePageResponseSchema = Schema.Struct({
+  url: Schema.String,
+  title: Schema.String,
+  text: Schema.String,
+  markdown: Schema.optional(Schema.String),
+  contentType: Schema.optional(Schema.String),
+  error: Schema.optional(Schema.String),
+});
 
 type Props = {
+  sessionId: string | null;
   url: string;
   inputValue: string;
   onInputChange: (value: string) => void;
@@ -26,6 +39,7 @@ type Props = {
 };
 
 export function AgentBrowser({
+  sessionId,
   url,
   inputValue,
   onInputChange,
@@ -46,6 +60,7 @@ export function AgentBrowser({
   const [localSitesLoading, setLocalSitesLoading] = useState(false);
   const [localSitesError, setLocalSitesError] = useState<string | null>(null);
   const live = useBrowserLiveState();
+  const sessionHeaders = browserSessionHeadersOption(sessionId);
   const onLocationChangeRef = useRef(onLocationChange);
   const navState = live.state;
   const showStartPage = !hasOpenedUrl && url === DEFAULT_BROWSER_URL;
@@ -58,7 +73,7 @@ export function AgentBrowser({
       const response = await fetch(`/api/agent/browser/fetch?url=${encodeURIComponent(target)}`, {
         cache: "no-store",
       });
-      const payload = (await response.json()) as ReadablePage & { error?: string };
+      const payload = Schema.decodeUnknownSync(ReadablePageResponseSchema)(await response.json());
       if (!response.ok || payload.error) {
         throw new Error(payload.error || `HTTP ${response.status}`);
       }
@@ -94,9 +109,16 @@ export function AgentBrowser({
     if (live.unavailable) setReadingMode(true);
   }, [live.unavailable]);
 
-  const postLiveVerb = useCallback((verb: "back" | "forward" | "reload") => {
-    void fetch(`/api/agent/browser/${verb}`, { method: "POST" }).catch(() => undefined);
-  }, []);
+  const postLiveVerb = useCallback(
+    (verb: "back" | "forward" | "reload") => {
+      if (!sessionHeaders) return;
+      void fetch(`/api/agent/browser/${verb}`, {
+        method: "POST",
+        headers: sessionHeaders,
+      }).catch(() => undefined);
+    },
+    [sessionHeaders],
+  );
   const handleBack = () => {
     if (readingMode) return;
     postLiveVerb("back");
@@ -112,9 +134,9 @@ export function AgentBrowser({
       setLocalSitesLoading(true);
       void fetch("/api/agent/browser/localhosts", { cache: "no-store" })
         .then(async (response) => {
-          const payload = (await response.json()) as { sites?: LocalhostSite[]; error?: string };
+          const payload = decodeLocalhostSitesResponse(await response.json());
           if (!response.ok || payload.error) throw new Error(payload.error || "Failed to scan");
-          setLocalSites(payload.sites ?? []);
+          setLocalSites([...(payload.sites ?? [])]);
         })
         .catch((error) =>
           setLocalSitesError(error instanceof Error ? error.message : "Failed to scan localhost"),
@@ -245,8 +267,12 @@ export function AgentBrowser({
             loading={readingLoading}
             onLinkClick={onNavigate}
           />
+        ) : sessionHeaders ? (
+          <ScreencastSurface sessionId={sessionId} navigationError={live.navigationError} />
         ) : (
-          <ScreencastSurface navigationError={live.navigationError} />
+          <div className="flex size-full items-center justify-center text-xs text-(--dim)">
+            Select an agent session to enable the live browser.
+          </div>
         )}
       </div>
     </section>

@@ -1,9 +1,6 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import { connect as netConnect } from "node:net";
-import os from "node:os";
-import path from "node:path";
 import test from "node:test";
 import { Schema } from "effect";
 import { BrowserHost, type ScreencastFrame } from "./browser-host";
@@ -21,6 +18,7 @@ import {
 } from "./playwright";
 
 const PUBLIC_ADDRESS = "8.8.8.8";
+const SESSION = "session-a";
 const FrameColorSchema = Schema.Union([
   Schema.Literal("red"),
   Schema.Literal("green"),
@@ -111,24 +109,25 @@ function fixtureServer(blockedBase: string, loopbackBase: string, hosts: string[
   });
 }
 
-function screencastServer(): Server {
+function colorServer(): Server {
   return createServer((request, response) => {
-    const agentPage = request.url === "/b";
-    const marker = agentPage ? "AGENT_B_SENTINEL" : "VISIBLE_A_SENTINEL";
-    const background = agentPage ? "#00ff00" : "#ff0000";
+    const green = request.url?.includes("owner=B") ?? false;
+    const marker = green ? "SESSION_B_SENTINEL" : "SESSION_A_SENTINEL";
+    const background = green ? "#00ff00" : "#ff0000";
     response.setHeader("content-type", "text/html");
     response.end(
-      `<!doctype html><title>${marker}</title><style>html,body{height:100%;margin:0;background:${background}}</style><h1>${marker}</h1>`,
+      `<!doctype html><title>${marker}</title><style>html,body{height:100%;margin:0;background:${background}}</style><input id="input"><h1>${marker}</h1>`,
     );
   });
 }
 
-async function classifyFrameColor<RawPage>(
-  host: BrowserHost<RawPage>,
+async function classifyFrameColor(
+  host: BrowserHost,
+  session: string,
   frame: ScreencastFrame,
 ): Promise<FrameColor> {
   const source = JSON.stringify(`data:image/jpeg;base64,${frame.data}`);
-  const result = await host.evaluate(`new Promise((resolve, reject) => {
+  const result = await host.evaluate(session, `new Promise((resolve, reject) => {
     const image = new Image();
     image.onload = () => {
       const canvas = document.createElement("canvas");
@@ -193,30 +192,94 @@ function attemptedWebSocket(attempts: string[], port: number): boolean {
   });
 }
 
-test("static navigation refreshes the visible screencast frame", { timeout: 20_000 }, async () => {
-  const fixture = screencastServer();
+test("static navigation refreshes the visible session frame", { timeout: 20_000 }, async () => {
+  const fixture = colorServer();
   const fixturePort = await listen(fixture);
-  const profile = await mkdtemp(path.join(os.tmpdir(), "local-studio-browser-frame-"));
   const policy = createBrowserNetworkPolicy();
   const manager = new PlaywrightManager({
-    launch: createPlaywrightSessionLauncher((mode) => path.join(profile, mode)),
+    launch: createPlaywrightSessionLauncher(),
     policy,
     resolveBinary: findBrowserBinary,
   });
   const host = new BrowserHost(manager, { attachPage: HostedPage.attach });
   try {
-    await host.navigate(`http://127.0.0.1:${fixturePort}/a`);
-    const first = (await host.pollFrame()).frame;
+    await host.navigate(SESSION, `http://127.0.0.1:${fixturePort}/?owner=A`);
+    const first = (await host.pollFrame(SESSION)).frame;
     assert.ok(first);
-    assert.equal(await classifyFrameColor(host, first), "red");
-    await host.navigate(`http://127.0.0.1:${fixturePort}/b`);
-    const second = (await host.pollFrame()).frame;
+    assert.equal(await classifyFrameColor(host, SESSION, first), "red");
+    await host.navigate(SESSION, `http://127.0.0.1:${fixturePort}/?owner=B`);
+    const second = (await host.pollFrame(SESSION)).frame;
     assert.ok(second);
-    assert.equal(await classifyFrameColor(host, second), "green");
-    assert.equal(await host.getText(), "AGENT_B_SENTINEL");
+    assert.equal(await classifyFrameColor(host, SESSION, second), "green");
+    assert.equal(await host.getText(SESSION), "SESSION_B_SENTINEL");
   } finally {
     await host.stop().catch(() => undefined);
-    await Promise.allSettled([close(fixture), rm(profile, { force: true, recursive: true })]);
+    await close(fixture);
+  }
+});
+
+test("two sessions isolate context state while sharing one Chromium process", { timeout: 20_000 }, async () => {
+  const fixture = colorServer();
+  const fixturePort = await listen(fixture);
+  const manager = new PlaywrightManager({
+    launch: createPlaywrightSessionLauncher(),
+    policy: createBrowserNetworkPolicy(),
+    resolveBinary: findBrowserBinary,
+  });
+  const host = new BrowserHost(manager, { attachPage: HostedPage.attach });
+  const sessionA = "session-a";
+  const sessionB = "session-b";
+  try {
+    await Promise.all([
+      host.navigate(sessionA, `http://127.0.0.1:${fixturePort}/?owner=A`),
+      host.navigate(sessionB, `http://127.0.0.1:${fixturePort}/?owner=B`),
+    ]);
+    await host.evaluate(
+      sessionA,
+      `localStorage.setItem("owner", "A"); document.cookie = "owner=A"; document.querySelector("#input").value = "alpha"`,
+    );
+    await host.evaluate(
+      sessionB,
+      `localStorage.setItem("owner", "B"); document.cookie = "owner=B"; document.querySelector("#input").value = ""`,
+    );
+    await host.setViewport(sessionA, 640, 480);
+    await host.setViewport(sessionB, 900, 700);
+    assert.deepEqual(
+      await host.click(sessionA, { selector: "#input" }),
+      { found: true },
+    );
+    await host.dispatchKey(sessionA, {
+      type: "char",
+      key: "X",
+      code: "KeyX",
+      text: "X",
+    });
+    const stateA = await host.evaluate(
+      sessionA,
+      `({ cookie: document.cookie, input: document.querySelector("#input").value, owner: localStorage.getItem("owner"), width: innerWidth })`,
+    );
+    const stateB = await host.evaluate(
+      sessionB,
+      `({ cookie: document.cookie, input: document.querySelector("#input").value, owner: localStorage.getItem("owner"), width: innerWidth })`,
+    );
+    assert.deepEqual(stateA, { cookie: "owner=A", input: "alphaX", owner: "A", width: 640 });
+    assert.deepEqual(stateB, { cookie: "owner=B", input: "", owner: "B", width: 900 });
+    const frameA = (await host.pollFrame(sessionA)).frame;
+    const frameB = (await host.pollFrame(sessionB)).frame;
+    assert.ok(frameA);
+    assert.ok(frameB);
+    assert.equal(await classifyFrameColor(host, sessionA, frameA), "red");
+    assert.equal(await classifyFrameColor(host, sessionB, frameB), "green");
+    assert.notEqual(await host.screenshot(sessionA), await host.screenshot(sessionB));
+    const contextA = manager.current(sessionA)?.context;
+    const contextB = manager.current(sessionB)?.context;
+    assert.ok(contextA);
+    assert.ok(contextB);
+    assert.notEqual(contextA, contextB);
+    assert.equal(contextA.browser(), contextB.browser());
+  } finally {
+    await host.stop().catch(() => undefined);
+    await close(fixture);
   }
 });
 
@@ -261,30 +324,33 @@ test(
       ),
     );
     const proxies = { loopback: pinnedProxies[1], public: pinnedProxies[0] };
-    const profile = await mkdtemp(path.join(os.tmpdir(), "local-studio-browser-policy-"));
     const manager = new PlaywrightManager({
       createProxies: async () => proxies,
-      launch: createPlaywrightSessionLauncher((mode) => `${profile}-${mode}`),
+      launch: createPlaywrightSessionLauncher(),
       policy,
       resolveBinary: findBrowserBinary,
     });
     const host = new BrowserHost(manager, { attachPage: HostedPage.attach });
     try {
       assert.equal(manager.isAvailable(), true);
-      await host.navigate(`http://page.test:${fixturePort}/matrix`);
-      const publicGeneration = manager.current()?.generation;
+      await host.navigate(SESSION, `http://page.test:${fixturePort}/matrix`);
+      const publicGeneration = manager.current(SESSION)?.generation;
       assert.ok(publicGeneration);
       await host.evaluate(
+        SESSION,
         "new Promise((resolve, reject) => { const started = Date.now(); const poll = () => { if (window.workerStarted) resolve(true); else if (window.workerError || Date.now() - started > 5000) reject(new Error(window.workerError || 'worker timed out')); else setTimeout(poll, 50); }; poll(); })",
       );
-      await host.evaluate("window.startDownload()");
+      await host.evaluate(SESSION, "window.startDownload()");
       await new Promise<void>((resolve) => setTimeout(resolve, 500));
-      await host.navigate(`http://page.test:${fixturePort}/redirect`).catch(() => undefined);
-      await host.navigate(`http://localhost:${fixturePort}/service-worker`);
-      const loopbackGeneration = manager.current()?.generation;
+      await host
+        .navigate(SESSION, `http://page.test:${fixturePort}/redirect`)
+        .catch(() => undefined);
+      await host.navigate(SESSION, `http://localhost:${fixturePort}/service-worker`);
+      const loopbackGeneration = manager.current(SESSION)?.generation;
       assert.ok(loopbackGeneration);
       assert.notEqual(loopbackGeneration, publicGeneration);
       const serviceWorkerState = await host.evaluate(
+        SESSION,
         "new Promise((resolve) => setTimeout(() => resolve({ ready: Boolean(window.serviceWorkerReady) }), 500))",
       );
       assert.ok(serviceWorkerState && typeof serviceWorkerState === "object");
@@ -315,13 +381,15 @@ test(
       assert.ok(
         dials.some(
           (destination) =>
-            destination.hostname === "page.test" && destination.address.address === PUBLIC_ADDRESS,
+            destination.hostname === "page.test" &&
+            destination.address.address === PUBLIC_ADDRESS,
         ),
       );
       assert.ok(
         dials.some(
           (destination) =>
-            destination.hostname === "localhost" && destination.address.address === "127.0.0.1",
+            destination.hostname === "localhost" &&
+            destination.address.address === "127.0.0.1",
         ),
       );
       assert.ok(hosts.includes(`page.test:${fixturePort}`));
@@ -330,7 +398,6 @@ test(
       await host.stop().catch(() => undefined);
       await Promise.allSettled([proxies.public.close(), proxies.loopback.close()]);
       await Promise.allSettled([close(fixture), close(blocked)]);
-      await rm(profile, { force: true, recursive: true });
     }
   },
 );

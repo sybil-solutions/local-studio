@@ -15,29 +15,47 @@ import {
   browserViewportPoint,
 } from "@/features/agent/ui/agent-browser-input";
 import { useBrowserLiveFrame } from "@/features/agent/ui/agent-browser-live-store";
+import { browserSessionHeadersOption } from "@local-studio/agent-runtime/browser-session-contract";
 
 type Props = {
   navigationError: string | null;
+  sessionId: string | null;
 };
 
 const VIEWPORT_MIN = { width: 320, height: 240 };
 const VIEWPORT_MAX = { width: 1920, height: 1200 };
 const MOVE_THROTTLE_MS = 33;
 
-function postBrowser(path: string, body: unknown): void {
+function postBrowser(
+  sessionId: string | null,
+  path: string,
+  body: unknown,
+  signal: AbortSignal,
+): void {
+  const headers = browserSessionHeadersOption(sessionId);
+  if (!headers) return;
   void fetch(`/api/agent/browser/${path}`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...headers },
     body: JSON.stringify(body),
+    signal,
   }).catch(() => undefined);
 }
 
-export function ScreencastSurface({ navigationError }: Props) {
+export function ScreencastSurface({ navigationError, sessionId }: Props) {
   const [container, setContainer] = useState<HTMLDivElement | null>(null);
   const { frame } = useBrowserLiveFrame();
   const viewportRef = useRef({ width: 1280, height: 800 });
   const lastMoveAtRef = useRef(0);
-  // ── Viewport sync: match the headless viewport to the pane size ────────
+  const requestAbortRef = useRef(new AbortController());
+
+  useMountSubscription(() => {
+    const controller = new AbortController();
+    requestAbortRef.current.abort();
+    requestAbortRef.current = controller;
+    return () => controller.abort();
+  }, [sessionId]);
+
   useMountSubscription(() => {
     if (!container) return;
     let timer: EffectTimer | null = null;
@@ -51,7 +69,7 @@ export function ScreencastSurface({ navigationError }: Props) {
       );
       if (width === viewportRef.current.width && height === viewportRef.current.height) return;
       viewportRef.current = { width, height };
-      postBrowser("viewport", { width, height });
+      postBrowser(sessionId, "viewport", { width, height }, requestAbortRef.current.signal);
     };
     const observer = new ResizeObserver(() => {
       if (timer) timer.cancel();
@@ -63,9 +81,8 @@ export function ScreencastSurface({ navigationError }: Props) {
       if (timer) timer.cancel();
       observer.disconnect();
     };
-  }, [container]);
+  }, [container, sessionId]);
 
-  // ── Input forwarding ────────────────────────────────────────────────────
   const toViewport = (event: { clientX: number; clientY: number }) => {
     const rect = container?.getBoundingClientRect();
     return browserViewportPoint(rect ?? null, viewportRef.current, event);
@@ -75,26 +92,36 @@ export function ScreencastSurface({ navigationError }: Props) {
     container?.focus();
     event.currentTarget.setPointerCapture(event.pointerId);
     const { x, y } = toViewport(event);
-    postBrowser("input", {
-      kind: "mouse",
-      type: "down",
-      x,
-      y,
-      button: browserMouseButton(event.button),
-      clickCount: Math.max(1, event.detail),
-    });
+    postBrowser(
+      sessionId,
+      "input",
+      {
+        kind: "mouse",
+        type: "down",
+        x,
+        y,
+        button: browserMouseButton(event.button),
+        clickCount: Math.max(1, event.detail),
+      },
+      requestAbortRef.current.signal,
+    );
   };
 
   const handlePointerUp = (event: ReactPointerEvent<HTMLDivElement>) => {
     const { x, y } = toViewport(event);
-    postBrowser("input", {
-      kind: "mouse",
-      type: "up",
-      x,
-      y,
-      button: browserMouseButton(event.button),
-      clickCount: Math.max(1, event.detail),
-    });
+    postBrowser(
+      sessionId,
+      "input",
+      {
+        kind: "mouse",
+        type: "up",
+        x,
+        y,
+        button: browserMouseButton(event.button),
+        clickCount: Math.max(1, event.detail),
+      },
+      requestAbortRef.current.signal,
+    );
   };
 
   const handlePointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -102,19 +129,31 @@ export function ScreencastSurface({ navigationError }: Props) {
     if (now - lastMoveAtRef.current < MOVE_THROTTLE_MS) return;
     lastMoveAtRef.current = now;
     const { x, y } = toViewport(event);
-    postBrowser("input", { kind: "mouse", type: "move", x, y });
+    postBrowser(
+      sessionId,
+      "input",
+      { kind: "mouse", type: "move", x, y },
+      requestAbortRef.current.signal,
+    );
   };
 
   const handleWheel = (event: ReactWheelEvent<HTMLDivElement>) => {
     const { x, y } = toViewport(event);
-    postBrowser("input", { kind: "wheel", x, y, deltaX: event.deltaX, deltaY: event.deltaY });
+    postBrowser(
+      sessionId,
+      "input",
+      { kind: "wheel", x, y, deltaX: event.deltaX, deltaY: event.deltaY },
+      requestAbortRef.current.signal,
+    );
   };
 
   const handleKey = (type: "down" | "up") => (event: ReactKeyboardEvent<HTMLDivElement>) => {
     const inputs = browserKeyInputs(type, event);
     if (inputs.length === 0) return;
     event.preventDefault();
-    for (const input of inputs) postBrowser("input", input);
+    for (const input of inputs) {
+      postBrowser(sessionId, "input", input, requestAbortRef.current.signal);
+    }
   };
 
   return (

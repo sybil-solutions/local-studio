@@ -9,7 +9,7 @@ import {
 } from "../../../../shared/agent/sanitize-embedded-browser-url";
 import { createBrowserNetworkPolicy, type BrowserHostResolver } from "./network-policy";
 import { createPinningProxy, type PinnedDial } from "./pinning-proxy";
-import { playwrightArguments } from "./playwright";
+import { playwrightArguments, playwrightProxySettings } from "./playwright";
 
 const addressCases: ReadonlyArray<readonly [string, BrowserAddressClass]> = [
   ["8.8.8.8", "public"],
@@ -100,8 +100,8 @@ test("derives public and explicit loopback navigation modes", () => {
 
 test("Playwright launch policy removes implicit bypasses and non-proxied transports", () => {
   const proxy = "http://127.0.0.1:4567";
-  const args = playwrightArguments(proxy);
-  assert.ok(args.includes(`--proxy-server=${proxy}`));
+  const args = playwrightArguments();
+  assert.deepEqual(playwrightProxySettings(proxy), { bypass: "<-loopback>", server: proxy });
   assert.ok(args.includes("--proxy-bypass-list=<-loopback>"));
   assert.ok(args.includes("--disable-quic"));
   assert.ok(args.includes("--force-webrtc-ip-handling-policy=disable_non_proxied_udp"));

@@ -27,7 +27,11 @@ import {
 } from "@/features/agent/ui/use-persistent-terminal-owners";
 import { resolveBrowserInput } from "@/features/agent/tools/browser-url";
 import { MAX_COMPUTER_WIDTH, MIN_COMPUTER_WIDTH } from "@/features/agent/tools/persistence";
-import { navigateBrowserHost } from "@/features/agent/ui/agent-browser-live-store";
+import {
+  focusBrowserLiveSession,
+  navigateBrowserHost,
+} from "@/features/agent/ui/agent-browser-live-store";
+import { useMountSubscription } from "@/hooks/use-mount-subscription";
 import { useTools } from "@/features/agent/tools/context";
 import type { ComputerTab } from "@/features/agent/tools/types";
 import type { GitSummary, Project } from "@/features/agent/projects/types";
@@ -114,6 +118,7 @@ export function AgentBrowserPanel({
   gitSummary,
 }: AgentBrowserPanelProps) {
   const tools = useTools();
+  const browserSessionId = focusedSession?.id ?? null;
   const [sideChatSeed, setSideChatSeed] = useState<Session>(() =>
     createSideChatSession(null, null, ""),
   );
@@ -129,6 +134,10 @@ export function AgentBrowserPanel({
     tools.computer.open && tools.computer.tab === "terminal",
     terminalOwner,
   );
+  useMountSubscription(() => {
+    focusBrowserLiveSession(browserSessionId);
+    return () => focusBrowserLiveSession(null);
+  }, [browserSessionId]);
   const visibleTerminalState = useMemo<TerminalOwnersSnapshot>(() => {
     const owners = terminalState.owners;
     const activeOwnerKey = owners.some((owner) => owner.mountKey === terminalState.activeOwnerKey)
@@ -178,7 +187,7 @@ export function AgentBrowserPanel({
       return true;
     }
     tools.setBrowserUrl(result.url, result.url);
-    void navigateBrowserHost(result.url);
+    if (browserSessionId) void navigateBrowserHost(result.url);
     return true;
   };
   const syncBrowserLocation = (value: string) => {

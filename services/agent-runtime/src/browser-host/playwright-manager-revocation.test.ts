@@ -177,6 +177,23 @@ test("unexpected context closure permits a clean same-mode relaunch", async () =
   await manager.stop();
 });
 
+test("scoped contexts coexist and release independently", async () => {
+  const fixture = new ManagerFixture();
+  const manager = fixture.manager();
+  const sessionA = await manager.ensure("public", "session-a");
+  const sessionB = await manager.ensure("public", "session-b");
+  assert.notEqual(sessionA.context, sessionB.context);
+  assert.equal(manager.current("session-a"), sessionA);
+  assert.equal(manager.current("session-b"), sessionB);
+  await manager.release("session-a");
+  assert.equal(sessionA.closed(), true);
+  assert.equal(sessionB.closed(), false);
+  assert.equal(manager.current("session-a"), null);
+  assert.equal(manager.current("session-b"), sessionB);
+  await manager.stop();
+  assert.equal(sessionB.closed(), true);
+});
+
 test("stop closes the active context and both pinning proxies exactly once", async () => {
   const fixture = new ManagerFixture();
   const manager = fixture.manager();

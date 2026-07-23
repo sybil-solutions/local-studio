@@ -1,9 +1,14 @@
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { Effect, Semaphore } from "effect";
-import { chromium, type BrowserContext, type Route, type WebSocketRoute } from "playwright-core";
+import {
+  chromium,
+  type Browser,
+  type BrowserContext,
+  type Route,
+  type WebSocketRoute,
+} from "playwright-core";
 import type { BrowserNetworkMode } from "../../../../shared/agent/sanitize-embedded-browser-url";
 import { getGlobalSingleton } from "../instances";
 import { browserNetworkPolicy, type BrowserNetworkPolicy } from "./network-policy";
@@ -12,6 +17,7 @@ import { createBrowserPinningProxies, type PinningProxy } from "./pinning-proxy"
 const LAUNCH_TIMEOUT_MS = 15_000;
 const REVOCATION_TIMEOUT_MS = 5_000;
 const PROXY_BYPASS_LIST = "<-loopback>";
+const DEFAULT_SCOPE = "default";
 
 type BrowserPinningProxies = Record<BrowserNetworkMode, PinningProxy>;
 
@@ -38,9 +44,6 @@ export type PlaywrightManagerOptions<Context> = {
   policy?: BrowserNetworkPolicy;
   resolveBinary?: () => string | null;
 };
-
-const browserDataDirectory = (mode: BrowserNetworkMode): string =>
-  path.join(os.tmpdir(), `local-studio-browser-profile-${mode}`);
 
 const resolveOnPath = (binary: string): string | null => {
   try {
@@ -102,7 +105,7 @@ export const findBrowserBinary = (): string | null => {
   return platformBrowserCandidates().find((candidate) => existsSync(candidate)) ?? null;
 };
 
-export const playwrightArguments = (proxyUrl: string): string[] => [
+export const playwrightArguments = (): string[] => [
   "--no-first-run",
   "--no-default-browser-check",
   "--disable-dev-shm-usage",
@@ -113,9 +116,13 @@ export const playwrightArguments = (proxyUrl: string): string[] => [
   "--disable-sync",
   "--no-pings",
   "--force-webrtc-ip-handling-policy=disable_non_proxied_udp",
-  `--proxy-server=${proxyUrl}`,
   `--proxy-bypass-list=${PROXY_BYPASS_LIST}`,
 ];
+
+export const playwrightProxySettings = (server: string): { bypass: string; server: string } => ({
+  bypass: PROXY_BYPASS_LIST,
+  server,
+});
 
 const guardRoute = async (
   route: Route,
@@ -164,25 +171,36 @@ const closeBrowserContext = async (context: BrowserContext): Promise<void> => {
   }
 };
 
-export const createPlaywrightSessionLauncher =
-  (
-    dataDirectoryForMode: (mode: BrowserNetworkMode) => string = browserDataDirectory,
-  ): LaunchPlaywrightSession<BrowserContext> =>
-  async (executablePath, mode, proxy, policy) => {
-    const launch = (userDataDir: string): Promise<BrowserContext> =>
-      chromium.launchPersistentContext(userDataDir, {
-        args: playwrightArguments(proxy.url),
+export const createPlaywrightSessionLauncher = (): LaunchPlaywrightSession<BrowserContext> => {
+  let browser: Browser | null = null;
+  let launching: Promise<Browser> | null = null;
+  const contexts = new Set<BrowserContext>();
+
+  const ensureBrowser = (executablePath: string): Promise<Browser> => {
+    if (browser?.isConnected()) return Promise.resolve(browser);
+    launching ??= chromium
+      .launch({
+        args: playwrightArguments(),
         executablePath,
         headless: true,
-        proxy: { server: proxy.url },
-        serviceWorkers: "block",
         timeout: LAUNCH_TIMEOUT_MS,
-        viewport: { width: 1280, height: 800 },
+      })
+      .then((launched) => {
+        browser = launched;
+        return launched;
+      })
+      .finally(() => {
+        launching = null;
       });
-    const dataDirectory = dataDirectoryForMode(mode);
-    const context = await launch(dataDirectory).catch((error: unknown) => {
-      if (!String(error).includes("ProcessSingleton")) throw error;
-      return launch(`${dataDirectory}-${process.pid}`);
+    return launching;
+  };
+
+  return async (executablePath, mode, proxy, policy) => {
+    const activeBrowser = await ensureBrowser(executablePath);
+    const context = await activeBrowser.newContext({
+      proxy: playwrightProxySettings(proxy.url),
+      serviceWorkers: "block",
+      viewport: { width: 1280, height: 800 },
     });
     try {
       await installNetworkGuards(context, mode, policy);
@@ -190,12 +208,18 @@ export const createPlaywrightSessionLauncher =
       await closeBrowserContext(context).catch(() => undefined);
       throw error;
     }
+    contexts.add(context);
     let isClosed = false;
     const listeners = new Set<() => void>();
     context.once("close", () => {
       isClosed = true;
+      contexts.delete(context);
       for (const listener of listeners) listener();
       listeners.clear();
+      if (contexts.size === 0 && browser === activeBrowser) {
+        browser = null;
+        void activeBrowser.close().catch(() => undefined);
+      }
     });
     return {
       close: () => closeBrowserContext(context),
@@ -205,6 +229,7 @@ export const createPlaywrightSessionLauncher =
       onClose: (listener) => listeners.add(listener),
     };
   };
+};
 
 const launchPlaywrightSession = createPlaywrightSessionLauncher();
 
@@ -217,7 +242,7 @@ const closeProxies = async (proxies: BrowserPinningProxies): Promise<void> => {
 };
 
 export class PlaywrightManager<Context = BrowserContext> {
-  private active: ManagedPlaywrightSession<Context> | null = null;
+  private readonly active = new Map<string, ManagedPlaywrightSession<Context>>();
   private generation = 0;
   private poisoned: unknown = null;
   private proxies: BrowserPinningProxies | null = null;
@@ -247,12 +272,19 @@ export class PlaywrightManager<Context = BrowserContext> {
     return !this.stopped && this.poisoned === null && this.resolveBinary() !== null;
   }
 
-  ensure(mode: BrowserNetworkMode = "public"): Promise<ManagedPlaywrightSession<Context>> {
-    return this.withPermit(() => this.ensureUnlocked(mode));
+  ensure(
+    mode: BrowserNetworkMode = "public",
+    scope: string = DEFAULT_SCOPE,
+  ): Promise<ManagedPlaywrightSession<Context>> {
+    return this.withPermit(() => this.ensureUnlocked(mode, scope));
   }
 
-  current(): ManagedPlaywrightSession<Context> | null {
-    return this.active;
+  current(scope: string = DEFAULT_SCOPE): ManagedPlaywrightSession<Context> | null {
+    return this.active.get(scope) ?? null;
+  }
+
+  release(scope: string = DEFAULT_SCOPE): Promise<void> {
+    return this.withPermit(() => this.revokeActive(scope));
   }
 
   stop(): Promise<void> {
@@ -261,11 +293,14 @@ export class PlaywrightManager<Context = BrowserContext> {
 
   private async ensureUnlocked(
     mode: BrowserNetworkMode,
+    scope: string,
   ): Promise<ManagedPlaywrightSession<Context>> {
     this.assertUsable();
-    if (this.active?.closed()) this.active = null;
-    if (this.active?.mode === mode) return this.active;
-    if (this.active) await this.revokeActive();
+    const active = this.active.get(scope);
+    if (active?.closed()) this.active.delete(scope);
+    const current = this.active.get(scope);
+    if (current?.mode === mode) return current;
+    if (current) await this.revokeActive(scope);
     const executablePath = this.resolveBinary();
     if (!executablePath) {
       throw new Error("Browser unavailable: no Chromium found — set LOCAL_STUDIO_CHROME_PATH");
@@ -281,9 +316,9 @@ export class PlaywrightManager<Context = BrowserContext> {
       onClose: (listener) => launched.onClose(listener),
     };
     session.onClose(() => {
-      if (this.active === session) this.active = null;
+      if (this.active.get(scope) === session) this.active.delete(scope);
     });
-    this.active = session;
+    this.active.set(scope, session);
     return session;
   }
 
@@ -292,8 +327,8 @@ export class PlaywrightManager<Context = BrowserContext> {
     return this.proxies;
   }
 
-  private async revokeActive(): Promise<void> {
-    const session = this.active;
+  private async revokeActive(scope: string): Promise<void> {
+    const session = this.active.get(scope);
     if (!session) return;
     try {
       await Effect.runPromise(
@@ -305,7 +340,7 @@ export class PlaywrightManager<Context = BrowserContext> {
         ),
       );
       if (!session.closed()) throw new Error("Chromium termination was not confirmed");
-      if (this.active === session) this.active = null;
+      if (this.active.get(scope) === session) this.active.delete(scope);
     } catch (error) {
       this.poisoned = error;
       throw error;
@@ -316,10 +351,12 @@ export class PlaywrightManager<Context = BrowserContext> {
     if (this.stopped) return;
     this.stopped = true;
     let failure: unknown = null;
-    try {
-      await this.revokeActive();
-    } catch (error) {
-      failure = error;
+    for (const scope of [...this.active.keys()]) {
+      try {
+        await this.revokeActive(scope);
+      } catch (error) {
+        failure ??= error;
+      }
     }
     const proxies = this.proxies;
     this.proxies = null;
