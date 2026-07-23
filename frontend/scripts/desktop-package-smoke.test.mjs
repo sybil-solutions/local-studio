@@ -25,6 +25,7 @@ import {
   validatePtyEvaluation,
   waitForDesktopHealth,
   waitForEmbeddedPort,
+  waitForNativeBridge,
   waitForPageTarget,
 } from "./desktop-package-smoke.mjs";
 import { electronBuilderArguments, smokeBuildEnvironment } from "./desktop-package-smoke-pack.mjs";
@@ -214,6 +215,27 @@ test("requires the preload terminal bridge and native PTY availability", () => {
     () => validatePtyEvaluation({ exceptionDetails: { text: "evaluation failed" } }),
     /terminal bridge evaluation failed/,
   );
+});
+
+test("waits for the preload bridge before validating the native PTY", async () => {
+  let evaluations = 0;
+  const status = await waitForNativeBridge({
+    childStatus: () => null,
+    evaluate: async () => {
+      evaluations += 1;
+      return evaluations === 1
+        ? { result: { value: { bridgeAvailable: false } } }
+        : {
+            result: {
+              value: { bridgeAvailable: true, status: { available: true } },
+            },
+          };
+    },
+    timeoutMs: 100,
+    ...fakeClock(),
+  });
+  assert.equal(evaluations, 2);
+  assert.deepEqual(status, { available: true });
 });
 
 test("bounds and fail-closed redacts packaged child diagnostics", () => {

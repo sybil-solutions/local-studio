@@ -256,6 +256,35 @@ export function validatePtyEvaluation(evaluation) {
   return status;
 }
 
+export async function waitForNativeBridge({
+  childStatus,
+  evaluate,
+  timeoutMs = cdpTimeoutMs,
+  now = Date.now,
+  delay = sleep,
+  intervalMs = pollIntervalMs,
+  signal,
+}) {
+  const startedAt = now();
+  while (true) {
+    signal?.throwIfAborted();
+    const stopped = childStoppedError(childStatus(), "preload bridge");
+    if (stopped) throw stopped;
+    const evaluation = await evaluate();
+    if (
+      evaluation?.exceptionDetails ||
+      evaluation?.result?.value?.bridgeAvailable === true
+    ) {
+      return validatePtyEvaluation(evaluation);
+    }
+    const elapsed = now() - startedAt;
+    if (elapsed >= timeoutMs) {
+      throw new Error(timeoutMessage("Packaged desktop preload bridge", timeoutMs));
+    }
+    await delay(Math.min(intervalMs, timeoutMs - elapsed), signal);
+  }
+}
+
 function childStoppedError(status, stage) {
   if (!status) return null;
   if (status.error) {
@@ -1233,12 +1262,20 @@ async function verifyNativeBridge({ deadline, launched, port, scope }) {
     timeoutMs: Math.min(requestTimeoutMs, deadline.remaining("CDP session", cleanupReserveMs)),
   });
   try {
-    const evaluation = await session.send("Runtime.evaluate", {
-      awaitPromise: true,
-      expression: terminalStatusExpression,
-      returnByValue: true,
+    return await waitForNativeBridge({
+      childStatus: () => launchStatus(launched),
+      evaluate: () =>
+        session.send("Runtime.evaluate", {
+          awaitPromise: true,
+          expression: terminalStatusExpression,
+          returnByValue: true,
+        }),
+      signal: deadline.signal,
+      timeoutMs: Math.min(
+        cdpTimeoutMs,
+        deadline.remaining("CDP bridge readiness", cleanupReserveMs),
+      ),
     });
-    return validatePtyEvaluation(evaluation);
   } finally {
     await session.close();
   }
