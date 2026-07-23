@@ -247,7 +247,7 @@ async function fetchModelsFromController(
       providerId,
       controllerUrl: backendUrl,
       controllerName: label,
-      thinkingLevels: controllerModelThinkingLevels(model.reasoning),
+      thinkingLevels: model.vision ? ["off" as const] : controllerModelThinkingLevels(model.reasoning),
       name: multipleControllers ? `${model.name} · ${label}` : model.name,
     }),
   );
