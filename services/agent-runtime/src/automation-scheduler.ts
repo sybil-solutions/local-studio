@@ -7,7 +7,8 @@ import {
 } from "./automations-store";
 import { getGlobalSingleton } from "./instances";
 import { piRuntimeManager } from "./pi-runtime";
-import { lastAssistantText } from "./session-text";
+import { lastAssistantResult } from "./session-text";
+import { listProjectsFromStore } from "./projects-store";
 
 const TICK_MS = 30_000;
 
@@ -47,16 +48,22 @@ export async function runAutomationNow(id: string): Promise<Automation | null> {
     await session.prompt(runPrompt(automation), () => {});
     const status = session.status;
     const piSessionId = status.piSessionId;
-    const summary = piSessionId ? lastAssistantText(status.cwd, piSessionId) : "";
-    const error = automationRunError(status.lastError, summary);
+    const result = piSessionId
+      ? lastAssistantResult(status.cwd, piSessionId)
+      : { text: "", error: null };
+    const error = automationRunError(status.lastError ?? result.error, result.text);
+    const projectId =
+      listProjectsFromStore().find((project) => project.path === status.cwd)?.id ?? null;
     void session.stop().catch(() => undefined);
     return await patchAutomation(id, {
       unread: true,
       lastRun: {
         at: new Date().toISOString(),
         piSessionId,
+        cwd: status.cwd,
+        projectId,
         outcome: error ? "error" : "ok",
-        summary,
+        summary: result.text,
         ...(error ? { error } : {}),
       },
       nextRunAt: nextRunAt(automation.schedule, new Date()).toISOString(),
@@ -67,6 +74,8 @@ export async function runAutomationNow(id: string): Promise<Automation | null> {
       lastRun: {
         at: new Date().toISOString(),
         piSessionId: null,
+        cwd: automation.cwd,
+        projectId: null,
         outcome: "error",
         summary: "",
         error: error instanceof Error ? error.message : "Automation run failed",

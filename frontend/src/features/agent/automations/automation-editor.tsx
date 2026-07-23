@@ -312,9 +312,9 @@ function PreviousRun({ automation }: { automation: Automation }) {
             {run.outcome === "error" ? "Failed" : "Completed"} {relativeTime(run.at)}
           </p>
         </div>
-        {run.piSessionId ? (
+        {run.piSessionId && run.projectId ? (
           <Link
-            href={`/agent?session=${encodeURIComponent(run.piSessionId)}`}
+            href={`/agent?project=${encodeURIComponent(run.projectId)}&session=${encodeURIComponent(run.piSessionId)}&replace=1`}
             className="text-[length:var(--fs-sm)] text-(--link) hover:underline"
           >
             Open run

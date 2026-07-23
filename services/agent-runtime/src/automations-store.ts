@@ -51,6 +51,8 @@ function normalizeRun(value: unknown): AutomationRun | null {
   return {
     at: value.at,
     piSessionId: typeof value.piSessionId === "string" ? value.piSessionId : null,
+    cwd: typeof value.cwd === "string" ? value.cwd : "",
+    projectId: typeof value.projectId === "string" ? value.projectId : null,
     outcome: value.outcome === "error" ? "error" : "ok",
     summary: typeof value.summary === "string" ? value.summary.slice(0, MAX_SUMMARY_CHARS) : "",
     ...(typeof value.error === "string" ? { error: value.error } : {}),

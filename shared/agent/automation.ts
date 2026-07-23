@@ -20,6 +20,8 @@ export const AutomationScheduleSchema = Schema.Union([
 export const AutomationRunSchema = Schema.Struct({
   at: Schema.String,
   piSessionId: Schema.NullOr(Schema.String),
+  cwd: Schema.String,
+  projectId: Schema.NullOr(Schema.String),
   outcome: Schema.Literals(["ok", "error"]),
   summary: Schema.String,
   error: Schema.optional(Schema.String),
