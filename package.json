@@ -6,6 +6,7 @@
     "doctor": "bash scripts/doctor.sh",
     "release:notes": "node scripts/release-statement.mjs",
     "release:check-commits": "node scripts/check-conventional-commits.mjs --range origin/main..HEAD",
+    "release:semantic": "semantic-release",
     "release:stage-desktop": "node scripts/stage-desktop-release.mjs",
     "setup:git-hooks": "node scripts/setup-git-hooks.mjs",
     "dev": "npm --prefix frontend run dev",
@@ -13,16 +14,26 @@
     "start": "npm --prefix frontend start",
     "test": "npm --prefix frontend test && npm --prefix services/agent-runtime test",
     "test:e2e": "npm --prefix frontend run test:e2e",
-    "check": "npm run check:contracts && npm run check:structure && npm run check:frontend && npm run check:controller && npm run check:agent-runtime",
+    "check": "npm run check:workflow-pins && npm run check:contracts && npm run check:structure && npm run check:frontend && npm run check:controller && npm run check:agent-runtime",
+    "check:workflow-pins": "npm run test:workflow-pins && node scripts/validate-workflow-pins.mjs",
     "check:contracts": "node scripts/validate-shared-contracts.mjs",
     "check:structure": "node scripts/validate-barrel-dir-siblings.mjs",
     "check:frontend": "npm --prefix frontend run check:quality",
     "check:controller": "cd controller && bun run typecheck && bun run lint && bun run check && bun run test",
     "check:agent-runtime": "cd services/agent-runtime && bun run test",
     "test:integration": "npm --prefix services/agent-runtime test",
+    "test:workflow-pins": "node --experimental-test-coverage --test --test-coverage-branches=90 --test-coverage-functions=90 --test-coverage-lines=90 scripts/validate-workflow-pins.test.mjs",
     "dev:agent-runtime": "npm --prefix services/agent-runtime run build && node services/agent-runtime/dist/server.js",
     "desktop:build": "cd frontend && npm run desktop:build",
     "desktop:dist": "cd frontend && npm run desktop:dist",
     "desktop:pack": "cd frontend && npm run desktop:pack"
+  },
+  "devDependencies": {
+    "@semantic-release/commit-analyzer": "13.0.1",
+    "@semantic-release/github": "12.0.9",
+    "@semantic-release/release-notes-generator": "14.1.1",
+    "conventional-changelog-conventionalcommits": "8.0.0",
+    "semantic-release": "25.0.7",
+    "yaml": "2.9.0"
   }
 }

@@ -10,22 +10,32 @@ on:
 
 permissions:
   contents: read
-  security-events: write
-  actions: read
 
 jobs:
+  gates:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22.19.0
+          cache: npm
+      - name: Install root dependencies
+        run: npm ci --ignore-scripts
+      - name: Workflow immutability gate
+        run: npm run check:workflow-pins
+
   trufflehog:
     name: Secret Scanning (TruffleHog)
-    runs-on: ubuntu-latest
+    needs: gates
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
         with:
           fetch-depth: 0
 
       - name: Run TruffleHog
-        # Pin to a release tag, not the moving `main` branch — a compromised
-        # upstream main would otherwise run in CI on every push/PR/schedule.
-        uses: trufflesecurity/trufflehog@v3.95.5
+        uses: trufflesecurity/trufflehog@d411fff7b8879a62509f3fa98c07f247ac089a51
         with:
           path: ./
           base: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
@@ -34,29 +44,35 @@ jobs:
 
   codeql:
     name: CodeQL Analysis
-    runs-on: ubuntu-latest
+    needs: gates
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
 
-      - uses: github/codeql-action/init@v3
+      - uses: github/codeql-action/init@b7351df727350dca84cb9d725d57dcf5bc82ba26
         with:
           languages: javascript, typescript
 
-      - uses: github/codeql-action/autobuild@v3
+      - uses: github/codeql-action/autobuild@b7351df727350dca84cb9d725d57dcf5bc82ba26
 
-      - uses: github/codeql-action/analyze@v3
+      - uses: github/codeql-action/analyze@b7351df727350dca84cb9d725d57dcf5bc82ba26
         with:
           category: "/language:javascript-typescript"
 
   dependency-review:
     name: Dependency Review
-    runs-on: ubuntu-latest
+    needs: gates
+    runs-on: ubuntu-24.04
     if: github.event_name == 'pull_request'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
 
-      - uses: actions/dependency-review-action@v4
+      - uses: actions/dependency-review-action@2031cfc080254a8a887f58cffee85186f0e49e48
         with:
           fail-on-severity: moderate
           deny-licenses: GPL-3.0, AGPL-3.0
