@@ -6,5 +6,6 @@ interface Window {
       ok: boolean;
       error?: string;
     }>;
+    openDirectory?(): Promise<string | null>;
   };
 }
