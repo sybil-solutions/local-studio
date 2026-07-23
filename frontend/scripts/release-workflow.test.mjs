@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { test } from "node:test";
 import { resolve } from "node:path";
@@ -89,8 +89,10 @@ test("binds release publication and write permissions to the tested revision", (
 
 test("pre-push commit validation excludes commits already on the default branch", () => {
   const fixture = mkdtempSync(resolve(tmpdir(), "local-studio-pre-push-"));
+  const hooks = resolve(fixture, "hooks");
+  mkdirSync(hooks);
   const runGit = (...args) =>
-    execFileSync("git", args, {
+    execFileSync("git", ["-c", "commit.gpgsign=false", "-c", `core.hooksPath=${hooks}`, ...args], {
       cwd: fixture,
       encoding: "utf8",
       env: {
