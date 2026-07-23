@@ -46,7 +46,7 @@ Text validation: passed with `TEXT_OK`
 
 Image validation: passed with the attached Local Studio screenshot, returned a bounded description, and stopped at EOS token `154827`
 
-MMMU-Pro: the official `vision/direct` split reached 101 durable records with four concurrent requests, then stopped on one HTTP 400 response. The runner now records failed samples separately and resumes the remaining work with four concurrent requests; failed samples are excluded from scoring.
+MMMU-Pro: paused at user request on 2026-07-23 after 102 durable records from four concurrent workers. There are 101 responses, one recorded HTTP 400 for `test_Math_11` because its 4,235 image embeddings exceed the configured 4,225 encoder cache, and 93 parseable answers with 25 correct. Failed and unparseable records are excluded from the provisional score.
 
 Post-start error scan: clean
 
