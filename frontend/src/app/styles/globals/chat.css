@@ -70,7 +70,7 @@
 
 .agent-thread-shell {
   width: 90%;
-  max-width: var(--thread-w);
+  max-width: calc(var(--composer-w) * 0.9);
 }
 
 @media (max-width: 768px) {

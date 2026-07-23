@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from "react";
 import {
+  ChevronRight,
   FilePenLine,
   FileText,
   Globe2,
@@ -23,6 +24,10 @@ import {
   toolVerb,
   type ToolKind,
 } from "@/features/agent/ui/timeline/tool-metadata";
+import {
+  parseDiffPreview,
+  type DiffPreviewLine,
+} from "@/features/agent/ui/timeline/diff-preview-model";
 
 const TOOL_ICONS: Record<ToolKind, LucideIcon> = {
   edit: FilePenLine,
@@ -157,6 +162,10 @@ function ToolSummary({
         {block.status === "error" ? (
           <span className="shrink-0 text-[length:var(--fs-sm)] text-(--err)">failed</span>
         ) : null}
+        <ChevronRight
+          className="h-3.5 w-3.5 shrink-0 text-(--dim)/55 transition-transform group-open:rotate-90"
+          strokeWidth={1.7}
+        />
       </summary>
       {expanded && children ? <div className="mb-1.5 ml-1.5 mt-1 min-w-0">{children}</div> : null}
     </details>
@@ -218,6 +227,54 @@ function HighlightedToolSource({ body, lang }: { body: string; lang: string }) {
     <pre className={className}>
       <code className={lang ? `language-${lang}` : undefined}>{body || "\u00a0"}</code>
     </pre>
+  );
+}
+
+const DIFF_ROW_STYLES: Record<DiffPreviewLine["kind"], string> = {
+  addition: "bg-(--ok)/[0.07]",
+  context: "bg-transparent",
+  deletion: "bg-(--err)/[0.065]",
+  hunk: "border-y border-(--separator)/70 bg-(--fg)/[0.035] text-(--dim)",
+  meta: "bg-(--fg)/[0.025] text-(--dim)/80",
+};
+
+const DIFF_MARKER_STYLES: Record<DiffPreviewLine["kind"], string> = {
+  addition: "bg-(--ok)/[0.055] text-(--ok)",
+  context: "text-(--dim)/35",
+  deletion: "bg-(--err)/[0.05] text-(--err)",
+  hunk: "text-(--dim)/45",
+  meta: "text-(--dim)/45",
+};
+
+function DiffPreviewSource({ body }: { body: string }) {
+  const preview = parseDiffPreview(body);
+  return (
+    <div className="overflow-hidden rounded-lg border border-(--border) bg-(--color-input)">
+      <div className="flex h-8 items-center justify-between border-b border-(--separator) px-3 text-[length:var(--fs-sm)]">
+        <span className="text-(--dim)">Changes</span>
+        <span className="flex items-center gap-2 font-mono">
+          <span className="text-(--ok)">+{preview.additions}</span>
+          <span className="text-(--err)">−{preview.deletions}</span>
+        </span>
+      </div>
+      <div className="max-h-[360px] overflow-y-auto overscroll-contain">
+        {preview.lines.map((line, index) => (
+          <div
+            key={`${index}:${line.kind}`}
+            className={`grid min-w-0 grid-cols-[2rem_minmax(0,1fr)] font-mono text-[length:var(--codex-chat-code-font-size)] leading-5 ${DIFF_ROW_STYLES[line.kind]} ${line.content ? "min-h-5" : "h-3"}`}
+          >
+            <span
+              className={`flex select-none items-start justify-center border-r border-(--separator)/45 ${DIFF_MARKER_STYLES[line.kind]}`}
+            >
+              {line.marker}
+            </span>
+            <span className="min-w-0 whitespace-pre-wrap break-words px-3 text-(--fg)/82">
+              {line.content || "\u00a0"}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -326,41 +383,45 @@ function FileWritePreview({
 
   return (
     <ToolSummary block={block} filePath={filePath} open>
-      <div className="overflow-hidden rounded-lg border border-(--border) bg-(--color-input)">
-        <div className="flex items-center justify-between gap-2 border-b border-(--separator) px-3 py-1.5 text-[length:var(--fs-sm)] text-(--dim)">
-          <span className="truncate font-mono">
-            {fileBasename(filePath) ?? sourceLang ?? "source"}
-          </span>
-          {canPreview ? (
-            <button
-              type="button"
-              onClick={() => setShowPreview((value) => !value)}
-              className="rounded-md px-1.5 py-0.5 text-[length:var(--fs-sm)] text-(--dim) hover:bg-(--hover) hover:text-(--fg)"
-            >
-              {showPreview ? "Source" : "Preview"}
-            </button>
-          ) : null}
-        </div>
-        {isSvg && showPreview ? (
-          <div className="flex max-h-80 min-h-40 items-center justify-center overflow-auto bg-white p-4">
-            <img
-              src={`data:image/svg+xml;utf8,${encodeURIComponent(body)}`}
-              alt={fileBasename(filePath) ?? "svg preview"}
-              className="max-h-72 max-w-full object-contain"
-            />
+      {patchContent ? (
+        <DiffPreviewSource body={patchContent} />
+      ) : (
+        <div className="overflow-hidden rounded-lg border border-(--border) bg-(--color-input)">
+          <div className="flex items-center justify-between gap-2 border-b border-(--separator) px-3 py-1.5 text-[length:var(--fs-sm)] text-(--dim)">
+            <span className="truncate font-mono">
+              {fileBasename(filePath) ?? sourceLang ?? "source"}
+            </span>
+            {canPreview ? (
+              <button
+                type="button"
+                onClick={() => setShowPreview((value) => !value)}
+                className="rounded-md px-1.5 py-0.5 text-[length:var(--fs-sm)] text-(--dim) hover:bg-(--hover) hover:text-(--fg)"
+              >
+                {showPreview ? "Source" : "Preview"}
+              </button>
+            ) : null}
           </div>
-        ) : isHtml && showPreview ? (
-          <iframe
-            sandbox="allow-scripts"
-            referrerPolicy="no-referrer"
-            srcDoc={previewHtmlDocument(body)}
-            className="m-0 h-72 w-full border-0 bg-white p-0"
-            title={filePath ?? "preview"}
-          />
-        ) : (
-          <HighlightedToolSource body={body} lang={sourceLang} />
-        )}
-      </div>
+          {isSvg && showPreview ? (
+            <div className="flex max-h-80 min-h-40 items-center justify-center overflow-auto bg-white p-4">
+              <img
+                src={`data:image/svg+xml;utf8,${encodeURIComponent(body)}`}
+                alt={fileBasename(filePath) ?? "svg preview"}
+                className="max-h-72 max-w-full object-contain"
+              />
+            </div>
+          ) : isHtml && showPreview ? (
+            <iframe
+              sandbox="allow-scripts"
+              referrerPolicy="no-referrer"
+              srcDoc={previewHtmlDocument(body)}
+              className="m-0 h-72 w-full border-0 bg-white p-0"
+              title={filePath ?? "preview"}
+            />
+          ) : (
+            <HighlightedToolSource body={body} lang={sourceLang} />
+          )}
+        </div>
+      )}
       {block.resultText ? (
         <div className="mt-1.5">
           <ToolOutput>{block.resultText}</ToolOutput>
@@ -383,9 +444,7 @@ function DiffPreview({ block, diffText }: { block: ToolBlock; diffText: string }
   const filePath = toolArg(block, ["path", "file_path", "filePath", "file", "filename"]);
   return (
     <ToolSummary block={block} filePath={filePath} open>
-      <div className="overflow-hidden rounded-lg border border-(--border) bg-(--color-input)">
-        <HighlightedToolSource body={diffText} lang="diff" />
-      </div>
+      <DiffPreviewSource body={diffText} />
     </ToolSummary>
   );
 }

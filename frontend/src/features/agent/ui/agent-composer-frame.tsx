@@ -154,7 +154,7 @@ export function AgentComposerFrame({
           ? "bg-transparent p-[calc(var(--space-base)*2)]"
           : dense
             ? "bg-(--agent-bg) px-3 pb-1 pt-1.5"
-            : "bg-(--agent-bg) px-5 pb-2 pt-2",
+            : "bg-transparent px-5 pb-2 pt-0",
       )}
     >
       <AgentQueuePanel

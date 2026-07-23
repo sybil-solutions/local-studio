@@ -19,6 +19,9 @@ import {
   tabs,
 } from "@/features/shell/left-sidebar-nav";
 
+const HISTORY_STEPPER_CLASS =
+  "flex h-6 w-6 items-center justify-center rounded-md text-(--hl2) transition-colors hover:bg-(--hover) hover:text-(--fg)";
+
 export function DesktopSidebar({
   pathname,
   isExpanded,
@@ -95,19 +98,19 @@ export function DesktopSidebar({
               </button>
               <button
                 onClick={() => window.history.back()}
-                className="flex h-7 w-7 items-center justify-center rounded-lg text-(--hl2) transition-colors hover:bg-(--hover) hover:text-(--fg)"
+                className={HISTORY_STEPPER_CLASS}
                 title="Go back"
                 aria-label="Go back"
               >
-                <ChevronLeft className="h-3.5 w-3.5" strokeWidth={1.75} />
+                <ChevronLeft className="h-3 w-3" strokeWidth={1.75} />
               </button>
               <button
                 onClick={() => window.history.forward()}
-                className="flex h-7 w-7 items-center justify-center rounded-lg text-(--hl2) transition-colors hover:bg-(--hover) hover:text-(--fg)"
+                className={HISTORY_STEPPER_CLASS}
                 title="Go forward"
                 aria-label="Go forward"
               >
-                <ChevronRight className="h-3.5 w-3.5" strokeWidth={1.75} />
+                <ChevronRight className="h-3 w-3" strokeWidth={1.75} />
               </button>
             </div>
 
