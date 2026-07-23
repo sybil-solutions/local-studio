@@ -1,25 +1,11 @@
 "use client";
 
-/**
- * Embedded browser pane for the agent surface.
- *
- * Two surfaces, switched by a toggle on the toolbar:
- *
- * 1. Live mode (default in Electron) — renders the page through `<webview>`.
- *    Auto-detects "blank" (empty body / failed navigation) and falls back to
- *    Reading mode without user intervention.
- * 2. Reading mode (default in dev) — pulls the page through
- *    `/api/agent/browser/fetch`, strips scripts/styles, and renders clean
- *    text with markdown links. Always works because we're not relying on the
- *    upstream's CSP/X-Frame-Options.
- */
 import { useCallback, useRef, useState, type FormEvent } from "react";
 import { ArrowLeftIcon, ArrowRightIcon, CloseIcon, ReloadIcon } from "@/ui/icons";
+import { Alert } from "@/ui";
 import { DEFAULT_BROWSER_URL } from "@/features/agent/tools/persistence";
-import {
-  ScreencastSurface,
-  type BrowserPaneState,
-} from "@/features/agent/ui/agent-browser-screencast";
+import { ScreencastSurface } from "@/features/agent/ui/agent-browser-screencast";
+import { useBrowserLiveState } from "@/features/agent/ui/agent-browser-live-store";
 import {
   useAgentBrowserEffects,
   useLocalhostSitesEffects,
@@ -27,33 +13,16 @@ import {
 } from "@/features/agent/ui/agent-browser-effects";
 import { LocalhostStartPage } from "@/features/agent/ui/agent-browser-start-page";
 import { ReadingView, type ReadablePage } from "@/features/agent/ui/agent-browser-reading-view";
-
-type WebviewElement = HTMLElement & {
-  goBack: () => void;
-  goForward: () => void;
-  reload: () => void;
-  canGoBack: () => boolean;
-  canGoForward: () => boolean;
-  src: string;
-  loadURL: (url: string) => Promise<void>;
-  getURL: () => string;
-  getTitle: () => string;
-  executeJavaScript: (script: string, userGesture?: boolean) => Promise<unknown>;
-  capturePage: () => Promise<{ toDataURL: () => string }>;
-  addEventListener: HTMLElement["addEventListener"];
-  removeEventListener: HTMLElement["removeEventListener"];
-};
+import { useMountSubscription } from "@/hooks/use-mount-subscription";
 
 type Props = {
   url: string;
   inputValue: string;
   onInputChange: (value: string) => void;
-  onNavigate: (value: string) => void;
+  onNavigate: (value: string) => boolean;
   onLocationChange: (value: string) => void;
   onClose: () => void;
-  isElectron: boolean;
-  /** Screencast polling pauses while the hosting panel is hidden. */
-  visible?: boolean;
+  navigationError: string | null;
 };
 
 export function AgentBrowser({
@@ -63,16 +32,10 @@ export function AgentBrowser({
   onNavigate,
   onLocationChange,
   onClose,
-  isElectron,
-  visible = true,
+  navigationError,
 }: Props) {
-  const webviewRef = useRef<WebviewElement | null>(null);
-  const [initialWebviewUrl] = useState(url);
-  // Live mode is the server-side screencast; it is the default everywhere and
-  // falls back to reading mode only when the host has no Chromium.
   const [readingMode, setReadingMode] = useState(false);
   const [liveUnavailable, setLiveUnavailable] = useState<string | null>(null);
-  const [navState, setNavState] = useState<BrowserPaneState | null>(null);
   const [readable, setReadable] = useState<ReadablePage | null>(null);
   const [readingError, setReadingError] = useState<string | null>(null);
   const [readingLoading, setReadingLoading] = useState(false);
@@ -82,6 +45,9 @@ export function AgentBrowser({
   const [localSites, setLocalSites] = useState<LocalhostSite[]>([]);
   const [localSitesLoading, setLocalSitesLoading] = useState(false);
   const [localSitesError, setLocalSitesError] = useState<string | null>(null);
+  const live = useBrowserLiveState();
+  const onLocationChangeRef = useRef(onLocationChange);
+  const navState = live.state;
   const showStartPage = !hasOpenedUrl && url === DEFAULT_BROWSER_URL;
   const addressValue = showStartPage && inputValue === DEFAULT_BROWSER_URL ? "" : inputValue;
 
@@ -108,11 +74,7 @@ export function AgentBrowser({
   useAgentBrowserEffects({
     url,
     readingMode,
-    isElectron,
-    webviewRef,
     fetchReadable,
-    onLocationChange,
-    onNavState: setNavState,
     enabled: !showStartPage,
   });
   useLocalhostSitesEffects({
@@ -121,24 +83,26 @@ export function AgentBrowser({
     onSitesChange: setLocalSites,
     onErrorChange: setLocalSitesError,
   });
+  useMountSubscription(() => {
+    onLocationChangeRef.current = onLocationChange;
+  }, [onLocationChange]);
+  useMountSubscription(() => {
+    if (live.location) onLocationChangeRef.current(live.location.url);
+  }, [live.location?.revision]);
+  useMountSubscription(() => {
+    setLiveUnavailable(live.unavailable);
+    if (live.unavailable) setReadingMode(true);
+  }, [live.unavailable]);
 
   const postLiveVerb = useCallback((verb: "back" | "forward" | "reload") => {
     void fetch(`/api/agent/browser/${verb}`, { method: "POST" }).catch(() => undefined);
   }, []);
   const handleBack = () => {
     if (readingMode) return;
-    if (isElectron) {
-      webviewRef.current?.goBack();
-      return;
-    }
     postLiveVerb("back");
   };
   const handleForward = () => {
     if (readingMode) return;
-    if (isElectron) {
-      webviewRef.current?.goForward();
-      return;
-    }
     postLiveVerb("forward");
   };
   const handleReload = () => {
@@ -162,17 +126,12 @@ export function AgentBrowser({
       void fetchReadable(url);
       return;
     }
-    if (isElectron) {
-      webviewRef.current?.reload();
-      return;
-    }
     postLiveVerb("reload");
   };
   const navigateFromBrowser = (value: string) => {
     const clean = value.trim();
     if (!clean) return;
-    setHasOpenedUrl(true);
-    onNavigate(clean);
+    if (onNavigate(clean)) setHasOpenedUrl(true);
   };
   const handleSubmit = (event: FormEvent) => {
     event.preventDefault();
@@ -256,6 +215,11 @@ export function AgentBrowser({
           <CloseIcon className="h-3.5 w-3.5 pointer-events-none" />
         </button>
       </form>
+      {navigationError ? (
+        <Alert variant="error" className="m-2 shrink-0">
+          {navigationError}
+        </Alert>
+      ) : null}
       {liveUnavailable ? (
         <div className="shrink-0 border-b border-(--err)/40 bg-(--err)/10 px-3 py-2 text-[length:var(--fs-xs)] text-(--err)">
           {liveUnavailable}. Set LOCAL_STUDIO_CHROME_PATH to a Chromium-based browser binary to
@@ -281,38 +245,8 @@ export function AgentBrowser({
             loading={readingLoading}
             onLinkClick={onNavigate}
           />
-        ) : isElectron ? (
-          // Desktop: a real embedded Chromium webview. Loads file://, localhost,
-          // and the public web directly — the same surface the agent drives.
-          (() => {
-            type AnyTag = "webview";
-            const Tag = "webview" as AnyTag;
-            return (
-              <Tag
-                ref={(node: WebviewElement | null) => {
-                  webviewRef.current = node;
-                }}
-                src={initialWebviewUrl}
-                // @ts-expect-error — Electron-specific attribute.
-                allowpopups="true"
-                className="size-full"
-                style={{ width: "100%", height: "100%", display: "flex" }}
-              />
-            );
-          })()
         ) : (
-          <ScreencastSurface
-            url={url}
-            visible={visible}
-            onState={(state) => {
-              setNavState(state);
-              if (state.url && state.url !== url) onLocationChange(state.url);
-            }}
-            onUnavailable={(error) => {
-              setLiveUnavailable(error);
-              setReadingMode(true);
-            }}
-          />
+          <ScreencastSurface navigationError={live.navigationError} />
         )}
       </div>
     </section>

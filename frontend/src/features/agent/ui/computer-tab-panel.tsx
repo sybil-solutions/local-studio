@@ -69,10 +69,11 @@ type ComputerTabPanelProps = {
   gitSummary?: GitSummary | null;
   models: AgentModel[];
   modelsLoading: boolean;
-  isElectron: boolean;
+  browserNavigationError: string | null;
   onCloseSideChat: () => void;
   onCompactSession?: () => Promise<void>;
-  onNavigateBrowser: (value: string) => void;
+  onBrowserLocationChange: (value: string) => void;
+  onNavigateBrowser: (value: string) => boolean;
   onOpenSideChat: (draft?: SideChatDraft) => void;
   onOpenTerminal: () => void;
   onRenameSideChat: (tabId: string, title: string) => void;
@@ -199,17 +200,21 @@ function SideChatTab({
   );
 }
 
-function BrowserTab({ isElectron, onNavigateBrowser, tools }: ComputerTabPanelProps) {
+function BrowserTab({
+  browserNavigationError,
+  onBrowserLocationChange,
+  onNavigateBrowser,
+  tools,
+}: ComputerTabPanelProps) {
   return (
     <LazyAgentBrowser
       url={tools.browser.url}
       inputValue={tools.browser.input}
       onInputChange={tools.setBrowserInput}
       onNavigate={onNavigateBrowser}
-      onLocationChange={(next) => tools.setBrowserUrl(next, next)}
+      onLocationChange={onBrowserLocationChange}
       onClose={() => tools.setComputerOpen(false)}
-      isElectron={isElectron}
-      visible={tools.computer.open}
+      navigationError={browserNavigationError}
     />
   );
 }

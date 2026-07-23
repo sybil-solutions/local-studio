@@ -16,7 +16,6 @@ import { writeJsonAtomic } from "./helpers/fs-json";
 import { log } from "./helpers/logger";
 import { isHttpUrl } from "./helpers/url";
 import { createMainWindow } from "./logic/window-manager";
-import { registerNavigationPolicy } from "./logic/security";
 import { startFrontendServer, stopFrontendServer, type ServerHandle } from "./logic/app-server";
 import { checkForUpdates, getUpdateState, initializeAutoUpdates } from "./logic/update-manager";
 import { addProject, listProjectsWithMeta, removeProject } from "./logic/projects-store";
@@ -83,7 +82,6 @@ async function processMemorySummary(): Promise<string> {
 async function bootstrap(): Promise<void> {
   if (!frontendServer) {
     frontendServer = await startFrontendServer({ onExit: handleFrontendServerExit });
-    registerNavigationPolicy(new URL(frontendServer.runtime.url).origin);
     startFrontendHealthMonitor();
   }
   if (!mainWindow) {

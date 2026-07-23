@@ -6,6 +6,7 @@ import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { ExternalLink } from "@/ui/icon-registry";
 import { normalizeBrowserInput } from "@/features/agent/tools/browser-url";
+import { navigateBrowserHost } from "@/features/agent/ui/agent-browser-live-store";
 import { useToolsActions } from "@/features/agent/tools/context";
 import { CopyablePathChip } from "@/features/agent/ui/copyable-path-chip";
 
@@ -160,25 +161,19 @@ function normalizeLooseMarkdownEmphasis(text: string): string {
 }
 
 type ToolHandlers = {
+  requestFileOpen: (path: string) => void;
   setComputerOpen: (open: boolean) => void;
   setComputerTab: (tab: "browser" | "files" | "status" | "canvas") => void;
   setBrowserUrl: (url: string, input?: string) => void;
 };
 
 function buildComponentsWithAppLinks(tools: ToolHandlers): Components {
-  // Open a referenced file or URL in the in-app sidepanel browser. Local paths
-  // resolve to a file:// URL the browser renders directly; the chip's copy
-  // button stays independent (it only copies the raw path/link).
-  const openInBrowser = (raw: string) => {
+  const openFile = (raw: string) => {
     const cleaned = raw
       .trim()
       .replace(/^`+|`+$/g, "")
       .replace(/:\d+(?::\d+)?$/, "");
-    const next = normalizeBrowserInput(cleaned, "");
-    if (!next) return;
-    tools.setComputerOpen(true);
-    tools.setComputerTab("browser");
-    tools.setBrowserUrl(next, next);
+    if (cleaned) tools.requestFileOpen(cleaned);
   };
   return {
     ...components,
@@ -194,7 +189,7 @@ function buildComponentsWithAppLinks(tools: ToolHandlers): Components {
       const value = nodeToPlainText(children).trim();
       if (isFileReference(value)) {
         return (
-          <CopyablePathChip value={value} onOpen={openInBrowser}>
+          <CopyablePathChip value={value} onOpen={openFile}>
             {children}
           </CopyablePathChip>
         );
@@ -205,7 +200,7 @@ function buildComponentsWithAppLinks(tools: ToolHandlers): Components {
       const fileHref = typeof href === "string" && isFileReference(href);
       if (fileHref) {
         return (
-          <CopyablePathChip value={href} onOpen={openInBrowser}>
+          <CopyablePathChip value={href} onOpen={openFile}>
             {children}
           </CopyablePathChip>
         );
@@ -225,6 +220,7 @@ function buildComponentsWithAppLinks(tools: ToolHandlers): Components {
             tools.setComputerOpen(true);
             tools.setComputerTab("browser");
             tools.setBrowserUrl(next, next);
+            void navigateBrowserHost(next);
           }}
           className="chat-ref-chip"
           title={href}
@@ -247,11 +243,12 @@ function AssistantMarkdownInner({ text }: { text: string }) {
   const componentsWithAppLinks = useMemo<Components>(
     () =>
       buildComponentsWithAppLinks({
+        requestFileOpen: tools.requestFileOpen,
         setComputerOpen: tools.setComputerOpen,
         setComputerTab: tools.setComputerTab,
         setBrowserUrl: tools.setBrowserUrl,
       }),
-    [tools.setComputerOpen, tools.setComputerTab, tools.setBrowserUrl],
+    [tools.requestFileOpen, tools.setComputerOpen, tools.setComputerTab, tools.setBrowserUrl],
   );
   return (
     <div className="chat-markdown min-w-0 max-w-full overflow-x-hidden [overflow-wrap:anywhere]">

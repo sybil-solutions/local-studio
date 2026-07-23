@@ -13,6 +13,7 @@
     "start": "npm --prefix frontend start",
     "test": "npm --prefix frontend test && npm --prefix services/agent-runtime test",
     "test:e2e": "npm --prefix frontend run test:e2e",
+    "test:frontend:regression": "npm --prefix frontend run test:regression --",
     "check": "npm run check:contracts && npm run check:structure && npm run check:frontend && npm run check:controller && npm run check:agent-runtime",
     "check:contracts": "node scripts/validate-shared-contracts.mjs",
     "check:structure": "node scripts/validate-barrel-dir-siblings.mjs",
