@@ -70,7 +70,7 @@
 
 .agent-thread-shell {
   width: 90%;
-  max-width: calc(var(--composer-w) * 0.9);
+  max-width: var(--thread-w);
 }
 
 @media (max-width: 768px) {
@@ -91,15 +91,16 @@
 .chat-markdown ul,
 .chat-markdown ol {
   margin: 8px 0 12px;
-  padding-left: 16px;
 }
 
 .chat-markdown ul {
   list-style: disc;
+  padding-left: 1.5em;
 }
 
 .chat-markdown ol {
   list-style: decimal;
+  padding-left: 2em;
 }
 
 .chat-markdown blockquote {
@@ -124,27 +125,27 @@
 }
 
 .chat-markdown h1 {
-  font-size: 20px;
-  margin: 1.1rem 0 0.5rem;
+  font-size: 24px;
+  margin: 1.35rem 0 0.65rem;
   padding-bottom: 0;
   border-bottom: 0;
 }
 
 .chat-markdown h2 {
-  font-size: 18px;
-  margin: 1rem 0 0.45rem;
+  font-size: 21px;
+  margin: 1.2rem 0 0.55rem;
   padding-bottom: 0;
   border-bottom: 0;
 }
 
 .chat-markdown h3 {
-  font-size: 16px;
-  margin: 0.85rem 0 0.35rem;
+  font-size: 18px;
+  margin: 1rem 0 0.45rem;
 }
 
 .chat-markdown h4 {
-  font-size: 14px;
-  margin: 0.7rem 0 0.3rem;
+  font-size: 16px;
+  margin: 0.85rem 0 0.35rem;
   color: var(--fg);
 }
 
@@ -171,10 +172,10 @@
 }
 
 .chat-markdown a {
-  color: color-mix(in srgb, var(--fg) 90%, transparent);
+  color: var(--link);
   text-decoration: underline;
   text-underline-offset: 2px;
-  text-decoration-color: color-mix(in srgb, var(--fg) 35%, transparent);
+  text-decoration-color: color-mix(in srgb, var(--link) 55%, transparent);
 }
 
 .chat-markdown .chat-ref-chip {
@@ -189,7 +190,7 @@
   font-size: inherit;
   line-height: inherit;
   font-weight: 500;
-  color: color-mix(in srgb, var(--fg) 90%, transparent);
+  color: var(--link);
   background: transparent;
   text-decoration: none;
   cursor: pointer;
@@ -249,52 +250,49 @@
   user-select: text;
 }
 
-/* Tables — rounded, rule-separated (no grid lines), zebra-striped body.
-   `separate` borders + spacing:0 so the border-radius actually clips. The
-   wrapper handles horizontal scroll for wide tables. */
 .chat-markdown table {
   width: 100%;
-  border-collapse: separate;
-  border-spacing: 0;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  overflow: hidden;
-  margin: 0.5rem 0;
-  font-size: 12.5px;
-  line-height: 1.45;
-  background: color-mix(in srgb, var(--surface) 35%, transparent);
+  border-collapse: collapse;
+  border: 0;
+  border-radius: 0;
+  overflow: visible;
+  margin: 0;
+  font-size: inherit;
+  line-height: inherit;
+  background: transparent;
 }
 
 .chat-markdown thead th {
-  background: color-mix(in srgb, var(--fg) 5%, transparent);
+  background: transparent;
   border-bottom: 1px solid var(--separator);
 }
 
 .chat-markdown th {
   text-align: left;
-  font-size: 10.5px;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  padding: 0.42rem 0.72rem;
-  color: color-mix(in srgb, var(--fg) 55%, transparent);
+  font-size: inherit;
+  text-transform: none;
+  letter-spacing: 0;
+  padding: 0.7rem 1rem 0.7rem 0;
+  color: color-mix(in srgb, var(--fg) 92%, transparent);
   font-weight: 600;
-  white-space: nowrap;
+  white-space: normal;
 }
 
 .chat-markdown td {
-  padding: 0.4rem 0.72rem;
+  padding: 0.7rem 1rem 0.7rem 0;
   color: color-mix(in srgb, var(--fg) 84%, transparent);
   vertical-align: top;
   overflow-wrap: anywhere;
-  border-top: 1px solid var(--separator);
+  border-bottom: 1px solid var(--separator);
 }
 
-.chat-markdown tbody tr:first-child td {
-  border-top: 0;
+.chat-markdown th:last-child,
+.chat-markdown td:last-child {
+  padding-right: 0;
 }
 
-.chat-markdown tbody tr:nth-child(even) {
-  background: color-mix(in srgb, var(--fg) 3%, transparent);
+.chat-markdown tbody tr:last-child td {
+  border-bottom: 0;
 }
 
 .chat-markdown img {
