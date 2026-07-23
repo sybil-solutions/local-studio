@@ -7,16 +7,18 @@ import {
   type PluginRuntimeView,
 } from "@local-studio/agent-runtime/plugin-runtime-contract";
 import { ApiErrorResponseSchema } from "@local-studio/agent-runtime/api-contract";
-import { Alert, Button, SearchInput, StatusPill, UiModal, UiModalHeader } from "@/ui";
+import { Alert, Button, ModelButton, SearchInput, UiModal, UiModalHeader } from "@/ui";
 import { Eye, X } from "@/ui/icon-registry";
+import { ResourceDrawer, ResourceDrawerSection, ResourceFact } from "@/ui/resource-drawer";
+import { ResourceLogo } from "@/ui/resource-logo";
 import { useMountSubscription } from "@/hooks/use-mount-subscription";
+import { SettingsButton, SettingsGroup, type StatusTone } from "@/features/settings/settings-ui";
 import {
-  SettingsButton,
-  SettingsGroup,
-  SettingsRow,
-  SettingsValue,
-  type StatusTone,
-} from "@/features/settings/settings-ui";
+  ModelRow,
+  ModelSection,
+  ModelStatus,
+  ModelValue,
+} from "@/features/recipes/recipes-content/model-page";
 import { GoogleAccountModal } from "./google-account-modal";
 import { ChatterboxVoiceModal } from "./chatterbox-voice-modal";
 import { speechStatusLabel, speechStatusTone } from "./chatterbox-voice-model";
@@ -148,31 +150,31 @@ function PluginRowActions({
   return (
     <>
       {plugin.hostCapability ? (
-        <SettingsButton
+        <ModelButton
           onClick={onHostCapability}
           disabled={busy}
           aria-label={`${hostActionLabel} ${plugin.displayName}`}
         >
           {hostActionLabel}
-        </SettingsButton>
+        </ModelButton>
       ) : null}
       {plugin.account?.connected ? (
-        <SettingsButton
+        <ModelButton
           onClick={onAccount}
           disabled={busy}
           aria-label={`Manage ${plugin.displayName}`}
         >
           Manage
-        </SettingsButton>
+        </ModelButton>
       ) : null}
       {action ? (
-        <SettingsButton
+        <ModelButton
           onClick={handleAction}
           disabled={busy}
           aria-label={`${actionLabel} ${plugin.displayName}`}
         >
           {busy ? "Working" : actionLabel}
-        </SettingsButton>
+        </ModelButton>
       ) : null}
     </>
   );
@@ -182,6 +184,7 @@ function PluginRow({
   plugin,
   speech,
   busy,
+  onOpen,
   onConnect,
   onDisconnect,
   onAccount,
@@ -190,6 +193,7 @@ function PluginRow({
   plugin: PluginRuntimeView;
   speech: SpeechSnapshot;
   busy: boolean;
+  onOpen: () => void;
   onConnect: () => void;
   onDisconnect: () => void;
   onAccount: () => void;
@@ -199,11 +203,18 @@ function PluginRow({
   const action = activationAction(plugin);
   const hostActionLabel = speech.status?.install.phase === "ready" ? "Manage" : "Configure";
   return (
-    <SettingsRow
+    <ModelRow
       label={plugin.displayName}
       description={plugin.description || plugin.category}
-      value={<SettingsValue dim>{capabilitySummary(plugin)}</SettingsValue>}
-      status={<StatusPill tone={status.tone}>{status.label}</StatusPill>}
+      leading={
+        <ResourceLogo
+          identity={plugin.id}
+          label={plugin.displayName}
+          brandColor={plugin.brandColor}
+        />
+      }
+      value={<ModelValue mono>{`${plugin.source} · ${capabilitySummary(plugin)}`}</ModelValue>}
+      status={<ModelStatus tone={status.tone}>{status.label}</ModelStatus>}
       actions={
         action || plugin.account?.connected || plugin.hostCapability ? (
           <PluginRowActions
@@ -218,6 +229,7 @@ function PluginRow({
           />
         ) : undefined
       }
+      onClick={onOpen}
     >
       {plugin.tools.reason ? (
         <div className="text-[length:var(--fs-sm)] text-(--ui-muted)">{plugin.tools.reason}</div>
@@ -225,7 +237,94 @@ function PluginRow({
       {plugin.account?.email ? (
         <div className="text-[length:var(--fs-sm)] text-(--ui-muted)">{plugin.account.email}</div>
       ) : null}
-    </SettingsRow>
+    </ModelRow>
+  );
+}
+
+function PluginDrawer({
+  plugin,
+  speech,
+  busy,
+  onClose,
+  onConnect,
+  onDisconnect,
+  onAccount,
+  onHostCapability,
+}: {
+  plugin: PluginRuntimeView;
+  speech: SpeechSnapshot;
+  busy: boolean;
+  onClose: () => void;
+  onConnect: () => void;
+  onDisconnect: () => void;
+  onAccount: () => void;
+  onHostCapability: () => void;
+}) {
+  const status = pluginStatus(plugin, speech);
+  const action = activationAction(plugin);
+  const hostActionLabel = speech.status?.install.phase === "ready" ? "Manage" : "Configure";
+  const capabilities = [
+    ...plugin.capabilities,
+    plugin.provides.skills ? "Skills" : null,
+    plugin.provides.mcpServers ? "MCP tools" : null,
+    plugin.provides.apps ? "App integration" : null,
+  ].filter((value): value is string => Boolean(value));
+  return (
+    <ResourceDrawer
+      title={plugin.displayName}
+      icon={
+        <ResourceLogo
+          identity={plugin.id}
+          label={plugin.displayName}
+          brandColor={plugin.brandColor}
+        />
+      }
+      badge={<ModelStatus tone={status.tone}>{status.label}</ModelStatus>}
+      status={`${plugin.source} · ${plugin.category} · v${plugin.version}`}
+      footer={
+        action || plugin.account?.connected || plugin.hostCapability ? (
+          <PluginRowActions
+            plugin={plugin}
+            action={action}
+            busy={busy}
+            hostActionLabel={hostActionLabel}
+            onConnect={onConnect}
+            onDisconnect={onDisconnect}
+            onAccount={onAccount}
+            onHostCapability={onHostCapability}
+          />
+        ) : null
+      }
+      onClose={onClose}
+    >
+      <p className="mb-6 text-[length:var(--fs-base)] leading-relaxed text-(--ui-muted)">
+        {plugin.description || "No plugin description was provided."}
+      </p>
+      <ResourceDrawerSection title="Identity">
+        <ResourceFact label="Company or source" value={plugin.source} />
+        <ResourceFact label="Category" value={plugin.category} />
+        <ResourceFact label="Plugin ID" value={plugin.id} mono />
+        <ResourceFact label="Version" value={plugin.version} mono />
+      </ResourceDrawerSection>
+      <ResourceDrawerSection title="Capabilities">
+        <ResourceFact label="Provides" value={capabilities.join(" · ") || "Skill bundle"} />
+        <ResourceFact label="Tool servers" value={String(plugin.tools.serverCount)} mono />
+        <ResourceFact label="Allowed tools" value={String(plugin.tools.allowedToolCount)} mono />
+        <ResourceFact label="Mode" value={plugin.tools.mode ?? "not connected"} mono />
+      </ResourceDrawerSection>
+      {plugin.account ? (
+        <ResourceDrawerSection title="Account">
+          <ResourceFact label="Provider" value={plugin.account.provider} />
+          <ResourceFact
+            label="Connection"
+            value={plugin.account.connected ? "Connected" : "Not connected"}
+          />
+          {plugin.account.email ? (
+            <ResourceFact label="Account" value={plugin.account.email} />
+          ) : null}
+        </ResourceDrawerSection>
+      ) : null}
+    </ResourceDrawer>
   );
 }
 
@@ -237,6 +336,7 @@ export function PluginsSection() {
   const [query, setQuery] = useState("");
   const [busyId, setBusyId] = useState<string | null>(null);
   const [pending, setPending] = useState<PluginRuntimeView | null>(null);
+  const [selectedPlugin, setSelectedPlugin] = useState<PluginRuntimeView | null>(null);
   const [accountPlugin, setAccountPlugin] = useState<PluginRuntimeView | null>(null);
   const [speechPlugin, setSpeechPlugin] = useState<PluginRuntimeView | null>(null);
   const requestGeneration = useRef(0);
@@ -303,31 +403,33 @@ export function PluginsSection() {
 
   return (
     <>
-      <div className="mb-4 space-y-3 px-4">
-        <p className="max-w-3xl text-[length:var(--fs-sm)] leading-relaxed text-(--ui-muted)">
-          Codex-compatible bundles discovered locally. Add skills from the chat @ menu for one
-          message. Connect MCP tools here to make them available in chat.
-        </p>
-        <SearchInput
-          value={query}
-          onChange={setQuery}
-          placeholder="Search plugins"
-          className="max-w-md"
-        />
-      </div>
       {error ? (
-        <div className="mb-4 px-4">
+        <div className="mb-4">
           <Alert variant="error">{error}</Alert>
         </div>
       ) : null}
-      <SettingsGroup
+      <ModelSection
         title="Plugins"
+        description="Capability bundles from Local Studio and Codex, with their company, tools, accounts, and skills."
         actions={
-          <StatusPill tone={error ? "warning" : loaded ? "good" : "default"}>
+          <ModelStatus tone={error ? "warning" : loaded ? "good" : "default"}>
             {loaded ? `${visiblePlugins.length} of ${plugins.length}` : "discovering"}
-          </StatusPill>
+          </ModelStatus>
         }
       >
+        <ModelRow
+          label="Search plugins"
+          description="Name, company, category, capability, or version."
+          control={
+            <SearchInput
+              value={query}
+              onChange={setQuery}
+              placeholder="Search plugins"
+              className="w-full"
+            />
+          }
+          status={<ModelStatus>{visiblePlugins.length}</ModelStatus>}
+        />
         {!loaded ? (
           <PluginRowsSkeleton />
         ) : visiblePlugins.length ? (
@@ -337,10 +439,23 @@ export function PluginsSection() {
               plugin={plugin}
               speech={speech}
               busy={busyId === plugin.id}
-              onConnect={() => setPending(plugin)}
-              onDisconnect={() => void setEnabled(plugin, false)}
-              onAccount={() => setAccountPlugin(plugin)}
-              onHostCapability={() => setSpeechPlugin(plugin)}
+              onOpen={() => setSelectedPlugin(plugin)}
+              onConnect={() => {
+                setSelectedPlugin(null);
+                setPending(plugin);
+              }}
+              onDisconnect={() => {
+                setSelectedPlugin(null);
+                void setEnabled(plugin, false);
+              }}
+              onAccount={() => {
+                setSelectedPlugin(null);
+                setAccountPlugin(plugin);
+              }}
+              onHostCapability={() => {
+                setSelectedPlugin(null);
+                setSpeechPlugin(plugin);
+              }}
             />
           ))
         ) : (
@@ -348,7 +463,31 @@ export function PluginsSection() {
             {plugins.length ? `No plugins match “${query}”.` : "No plugin manifests found."}
           </div>
         )}
-      </SettingsGroup>
+      </ModelSection>
+      {selectedPlugin ? (
+        <PluginDrawer
+          plugin={selectedPlugin}
+          speech={speech}
+          busy={busyId === selectedPlugin.id}
+          onClose={() => setSelectedPlugin(null)}
+          onConnect={() => {
+            setSelectedPlugin(null);
+            setPending(selectedPlugin);
+          }}
+          onDisconnect={() => {
+            setSelectedPlugin(null);
+            void setEnabled(selectedPlugin, false);
+          }}
+          onAccount={() => {
+            setSelectedPlugin(null);
+            setAccountPlugin(selectedPlugin);
+          }}
+          onHostCapability={() => {
+            setSelectedPlugin(null);
+            setSpeechPlugin(selectedPlugin);
+          }}
+        />
+      ) : null}
       <UiModal
         isOpen={pending !== null}
         onClose={() => !busyId && setPending(null)}

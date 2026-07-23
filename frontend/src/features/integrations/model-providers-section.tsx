@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import type {
   ProviderLoginEvent,
   ProviderLoginEventPayload,
@@ -10,10 +10,18 @@ import type {
   ProvidersResponse,
   ProviderLoginStartResponse,
 } from "@local-studio/agent-runtime/provider-hub-contract";
-import { Input, SearchInput, Spinner } from "@/ui";
-import { Brain, ExternalLink, LogOut } from "@/ui/icon-registry";
+import { Input, ModelButton, SearchInput, Spinner } from "@/ui";
+import { ExternalLink, LogOut } from "@/ui/icon-registry";
+import { ResourceDrawer, ResourceDrawerSection, ResourceFact } from "@/ui/resource-drawer";
+import { ResourceLogo } from "@/ui/resource-logo";
 import { useMountSubscription } from "@/hooks/use-mount-subscription";
-import { SettingsButton, SettingsGroup } from "@/features/settings/settings-ui";
+import { SettingsButton } from "@/features/settings/settings-ui";
+import {
+  ModelRow,
+  ModelSection,
+  ModelStatus,
+  ModelValue,
+} from "@/features/recipes/recipes-content/model-page";
 import { openExternal, requestJson } from "./google-account-model";
 
 function decodeProviders(input: unknown): ProvidersResponse {
@@ -186,8 +194,6 @@ function LoginFlowPanel({
   onClose: () => void;
 }) {
   const [job, setJob] = useState<ProviderLoginJobView | null>(null);
-  // Accumulates polled events across ticks; created once per mounted job
-  // (the panel is keyed by jobId).
   const [cursor] = useState(() => ({ after: 0, events: [] as ProviderLoginEvent[], done: false }));
 
   useMountSubscription(() => {
@@ -207,9 +213,7 @@ function LoginFlowPanel({
         if (view.status !== "running") cursor.done = true;
         setJob({ ...view, events: cursor.events });
         if (view.status === "success") onFinished();
-      } catch {
-        // Transient poll failure; next tick retries.
-      }
+      } catch {}
     };
     void tick();
     const timer = window.setInterval(() => void tick(), 700);
@@ -277,72 +281,94 @@ function LoginFlowPanel({
   );
 }
 
-function ConnectedRow({
+function ProviderDrawer({
   provider,
+  active,
+  onConnect,
   onSignOut,
+  onFinished,
+  onClose,
 }: {
   provider: ProviderView;
+  active: ActiveLogin | null;
+  onConnect: (provider: ProviderView, type: "oauth" | "api_key") => void;
   onSignOut: (providerId: string) => Promise<void>;
+  onFinished: () => void;
+  onClose: () => void;
 }) {
   const [busy, setBusy] = useState(false);
   const badge = credentialBadge(provider);
+  const activeForProvider = active?.providerId === provider.id ? active : null;
   return (
-    <div
-      data-testid={`provider-row-${provider.id}`}
-      className="flex flex-wrap items-center gap-3 px-4 py-3 border-b border-(--border) last:border-b-0"
+    <ResourceDrawer
+      title={provider.name}
+      icon={<ResourceLogo identity={provider.id} label={provider.name} />}
+      badge={
+        <ModelStatus tone={provider.configured ? "good" : "default"}>
+          {provider.configured ? "connected" : "available"}
+        </ModelStatus>
+      }
+      status={`${provider.modelCount} models${badge ? ` · ${badge}` : ""}`}
+      footer={
+        <>
+          {provider.oauth ? (
+            <ModelButton onClick={() => onConnect(provider, "oauth")}>
+              {provider.configured ? "Reconnect account" : "Sign in"}
+            </ModelButton>
+          ) : null}
+          {provider.apiKey ? (
+            <ModelButton onClick={() => onConnect(provider, "api_key")}>
+              {provider.configured ? "Replace API key" : "API key"}
+            </ModelButton>
+          ) : null}
+          {provider.configured && provider.credentialType ? (
+            <ModelButton
+              tone="danger"
+              disabled={busy}
+              onClick={() => {
+                setBusy(true);
+                void onSignOut(provider.id).finally(() => {
+                  setBusy(false);
+                  onClose();
+                });
+              }}
+            >
+              {busy ? <Spinner size="xs" /> : <LogOut className="h-3 w-3" />}
+              Sign out
+            </ModelButton>
+          ) : null}
+        </>
+      }
+      onClose={onClose}
     >
-      <Brain className="h-3.5 w-3.5 text-(--accent)" />
-      <div className="min-w-40">
-        <div className="text-[length:var(--fs-md)]">{provider.name}</div>
-        <div className="text-[11px] font-mono text-(--dim)">
-          {provider.modelCount} models{badge ? ` · ${badge}` : ""}
-        </div>
-      </div>
-      <div className="ml-auto flex items-center gap-2">
-        {provider.credentialType && (
-          <SettingsButton
-            disabled={busy}
-            onClick={() => {
-              setBusy(true);
-              void onSignOut(provider.id).finally(() => setBusy(false));
-            }}
-          >
-            {busy ? <Spinner size="xs" /> : <LogOut className="h-3 w-3" />}
-            Sign out
-          </SettingsButton>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function AddProviderRow({
-  provider,
-  onConnect,
-}: {
-  provider: ProviderView;
-  onConnect: (provider: ProviderView, type: "oauth" | "api_key") => void;
-}) {
-  return (
-    <div
-      data-testid={`provider-add-${provider.id}`}
-      className="flex flex-wrap items-center gap-3 px-4 py-2.5 border-b border-(--border) last:border-b-0"
-    >
-      <div className="min-w-40">
-        <div className="text-[length:var(--fs-md)]">{provider.name}</div>
-        <div className="text-[11px] font-mono text-(--dim)">
-          {provider.oauth?.label ?? provider.apiKey?.label ?? provider.id}
-        </div>
-      </div>
-      <div className="ml-auto flex items-center gap-2">
-        {provider.oauth && (
-          <SettingsButton onClick={() => onConnect(provider, "oauth")}>Sign in</SettingsButton>
-        )}
-        {provider.apiKey && (
-          <SettingsButton onClick={() => onConnect(provider, "api_key")}>API key</SettingsButton>
-        )}
-      </div>
-    </div>
+      <ResourceDrawerSection title="Provider">
+        <ResourceFact label="Company" value={provider.name} />
+        <ResourceFact label="Provider ID" value={provider.id} mono />
+        <ResourceFact label="Models" value={String(provider.modelCount)} mono />
+        <ResourceFact
+          label="Authentication"
+          value={
+            [provider.oauth ? "OAuth" : null, provider.apiKey ? "API key" : null]
+              .filter(Boolean)
+              .join(" · ") || "No sign-in method"
+          }
+        />
+        <ResourceFact label="Credential" value={badge ?? "Not configured"} />
+      </ResourceDrawerSection>
+      <p className="mb-5 text-[length:var(--fs-base)] leading-relaxed text-(--ui-muted)">
+        Models from {provider.name} appear beside controller models in Workbench after this provider
+        is connected.
+      </p>
+      {activeForProvider ? (
+        <LoginFlowPanel
+          key={activeForProvider.jobId}
+          jobId={activeForProvider.jobId}
+          providerName={activeForProvider.providerName}
+          onFinished={onFinished}
+          onClose={onClose}
+        />
+      ) : null}
+    </ResourceDrawer>
   );
 }
 
@@ -352,11 +378,17 @@ export function ModelProvidersSection() {
   const [providers, setProviders] = useState<ProviderView[] | null>(null);
   const [query, setQuery] = useState("");
   const [active, setActive] = useState<ActiveLogin | null>(null);
+  const [selectedProvider, setSelectedProvider] = useState<ProviderView | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(() => {
     void requestJson("/api/agent/providers", decodeProviders)
-      .then(({ providers: list }) => setProviders(list))
+      .then(({ providers: list }) => {
+        setProviders(list);
+        setSelectedProvider((current) =>
+          current ? (list.find((provider) => provider.id === current.id) ?? current) : null,
+        );
+      })
       .catch((err: unknown) => {
         setProviders([]);
         setError(err instanceof Error ? err.message : "Failed to load providers");
@@ -401,68 +433,111 @@ export function ModelProvidersSection() {
     refresh();
   }, [refresh]);
 
-  const connected = (providers ?? []).filter((provider) => provider.configured);
-  const available = (providers ?? []).filter(
-    (provider) =>
-      !provider.configured &&
-      (provider.oauth || provider.apiKey) &&
-      (query.trim() === "" ||
-        `${provider.name} ${provider.id}`.toLowerCase().includes(query.trim().toLowerCase())),
-  );
+  const visibleProviders = useMemo(() => {
+    const normalized = query.trim().toLowerCase();
+    return (providers ?? [])
+      .filter(
+        (provider) =>
+          (provider.oauth || provider.apiKey || provider.configured) &&
+          (!normalized ||
+            `${provider.name} ${provider.id} ${credentialBadge(provider) ?? ""}`
+              .toLowerCase()
+              .includes(normalized)),
+      )
+      .sort(
+        (left, right) =>
+          Number(right.configured) - Number(left.configured) || left.name.localeCompare(right.name),
+      );
+  }, [providers, query]);
+  const connectedCount = (providers ?? []).filter((provider) => provider.configured).length;
 
   return (
-    <div className="space-y-6">
-      <SettingsGroup
-        title="Connected providers"
-        description="Cloud model providers signed in through pi. Their models appear in the model picker beside your controller models."
+    <>
+      <ModelSection
+        title="Cloud models"
+        description="Model companies available through account sign-in or API credentials."
+        actions={
+          <ModelStatus tone={connectedCount ? "good" : providers ? "default" : "info"}>
+            {providers
+              ? `${connectedCount} connected · ${visibleProviders.length} shown`
+              : "loading"}
+          </ModelStatus>
+        }
       >
+        <ModelRow
+          label="Search model companies"
+          description="Company, provider ID, credential type, or model count."
+          control={
+            <SearchInput
+              value={query}
+              onChange={setQuery}
+              placeholder="Search model companies"
+              className="w-full"
+            />
+          }
+          status={<ModelStatus>{visibleProviders.length}</ModelStatus>}
+        />
         {providers === null ? (
-          <div className="px-4 py-3.5">
+          <div className="px-4 py-5">
             <Spinner size="xs" />
           </div>
-        ) : connected.length === 0 ? (
-          <div className="px-4 py-3.5 text-[length:var(--fs-md)] text-(--dim)">
-            No providers connected. Sign in below to use cloud models alongside your controller.
-          </div>
         ) : (
-          connected.map((provider) => (
-            <ConnectedRow key={provider.id} provider={provider} onSignOut={signOut} />
+          visibleProviders.map((provider) => (
+            <ModelRow
+              key={provider.id}
+              label={provider.name}
+              description={
+                provider.configured
+                  ? credentialBadge(provider) || "Connected provider"
+                  : provider.oauth?.label || provider.apiKey?.label || provider.id
+              }
+              leading={<ResourceLogo identity={provider.id} label={provider.name} />}
+              value={
+                <ModelValue mono>
+                  {`${provider.modelCount} models · ${[
+                    provider.oauth ? "OAuth" : null,
+                    provider.apiKey ? "API key" : null,
+                  ]
+                    .filter(Boolean)
+                    .join(" / ")}`}
+                </ModelValue>
+              }
+              status={
+                <ModelStatus tone={provider.configured ? "good" : "default"}>
+                  {provider.configured ? "connected" : "available"}
+                </ModelStatus>
+              }
+              actions={
+                <ModelButton onClick={() => setSelectedProvider(provider)}>
+                  {provider.configured ? "Manage" : "Connect"}
+                </ModelButton>
+              }
+              onClick={() => setSelectedProvider(provider)}
+            />
           ))
         )}
-      </SettingsGroup>
-
-      {active && (
-        <LoginFlowPanel
-          key={active.jobId}
-          jobId={active.jobId}
-          providerName={active.providerName}
-          onFinished={finished}
-          onClose={() => setActive(null)}
-        />
-      )}
-      {error && <div className="text-[11px] text-(--err)">{error}</div>}
-
-      <SettingsGroup
-        title="Add a provider"
-        description="Sign in with an account (OAuth) or an API key. Credentials are stored in pi's auth.json."
-      >
-        <div className="px-4 py-2.5 border-b border-(--border)">
-          <SearchInput
-            value={query}
-            onChange={setQuery}
-            placeholder="Search providers…"
-            className="max-w-72"
-          />
-        </div>
-        {available.map((provider) => (
-          <AddProviderRow key={provider.id} provider={provider} onConnect={connect} />
-        ))}
-        {providers !== null && available.length === 0 && (
-          <div className="px-4 py-3.5 text-[length:var(--fs-md)] text-(--dim)">
-            No matching providers.
+        {providers !== null && visibleProviders.length === 0 ? (
+          <div className="px-4 py-7 text-center text-[length:var(--fs-md)] text-(--ui-muted)">
+            No model companies match this search.
           </div>
-        )}
-      </SettingsGroup>
-    </div>
+        ) : null}
+      </ModelSection>
+      {error ? (
+        <div className="mt-4 text-[length:var(--fs-sm)] text-(--ui-danger)">{error}</div>
+      ) : null}
+      {selectedProvider ? (
+        <ProviderDrawer
+          provider={selectedProvider}
+          active={active}
+          onConnect={(provider, type) => void connect(provider, type)}
+          onSignOut={signOut}
+          onFinished={finished}
+          onClose={() => {
+            setActive(null);
+            setSelectedProvider(null);
+          }}
+        />
+      ) : null}
+    </>
   );
 }

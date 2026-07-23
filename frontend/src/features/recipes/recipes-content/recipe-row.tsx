@@ -179,6 +179,7 @@ export const RecipeRow = memo(function RecipeRow({
           </div>
         </>
       }
+      onClick={handleEdit}
     />
   );
 });

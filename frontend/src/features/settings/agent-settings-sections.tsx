@@ -124,49 +124,6 @@ export function ArchivedChatsSettings() {
     </SettingsGroup>
   );
 }
-export function SkillsSettings() {
-  type Skill = { id: string; name: string; source: string; path: string };
-  const [skills, setSkills] = useState<Skill[]>([]);
-
-  useMountSubscription(() => {
-    void fetch("/api/agent/skills", { cache: "no-store" })
-      .then((res) => res.json() as Promise<{ skills?: Skill[] }>)
-      .then((payload) => setSkills(payload.skills ?? []))
-      .catch(() => setSkills([]));
-  }, []);
-  const skillRows: SettingsFactRow[] =
-    skills.length === 0
-      ? [
-          {
-            key: "skill-discovery-empty",
-            label: "Skill discovery",
-            description: "No SKILL.md entries were found in the configured roots.",
-            value: "Empty discovery result",
-            dim: true,
-            status: { label: "empty", tone: "warning" },
-          },
-        ]
-      : skills.slice(0, 80).map((skill) => ({
-          key: skill.id,
-          label: skill.name,
-          description: "Available in the composer with $.",
-          value: `${skill.source} · ${skill.path}`,
-          mono: true,
-          truncate: true,
-          status: { label: "discovered", tone: "info" },
-        }));
-  return (
-    <SettingsGroup
-      title="Skills"
-      description="Normalized, deduplicated skills discovered from ~/.claude, ~/.pi, ~/.codex, ~/.factory, and ~/.opencode."
-      actions={
-        <StatusPill tone={skills.length ? "good" : "warning"}>{skills.length} skills</StatusPill>
-      }
-    >
-      <SettingsFactRows rows={skillRows} />
-    </SettingsGroup>
-  );
-}
 export function SetupChecksSettings() {
   type Check = { id: string; label: string; ok: boolean; value: string; guidance: string };
   const [checks, setChecks] = useState<Check[]>([]);

@@ -3,10 +3,10 @@
 import { useState, type ReactNode } from "react";
 import { RefreshButton, Tabs } from "@/ui";
 import { Boxes, Brain, GraduationCap, Plug } from "@/ui/icon-registry";
-import { SkillsSettings } from "@/features/settings/agent-settings-sections";
 import { ConnectorsSection } from "@/features/settings/connectors-section";
 import { PluginsSection } from "./plugins-section";
 import { ModelProvidersSection } from "./model-providers-section";
+import { SkillsSection } from "./skills-section";
 import { integrationSectionFromHash, type IntegrationSectionId } from "./integration-navigation";
 
 const INTEGRATION_TABS = [
@@ -53,7 +53,7 @@ export function IntegrationsContent() {
         {activeSection === "plugins" ? <PluginsSection /> : null}
         {activeSection === "connectors" ? <ConnectorsSection /> : null}
         {activeSection === "models" ? <ModelProvidersSection /> : null}
-        {activeSection === "skills" ? <SkillsSettings /> : null}
+        {activeSection === "skills" ? <SkillsSection /> : null}
       </div>
     </div>
   );

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { Schema } from "effect";
 import {
   ConnectorSshPathResponseSchema,
@@ -9,14 +9,22 @@ import {
   type ConnectorView,
 } from "@local-studio/agent-runtime/connector-contract";
 import { ApiErrorResponseSchema } from "@local-studio/agent-runtime/api-contract";
-import { Plug, Plus, Trash2 } from "@/ui/icon-registry";
-import { Input, Spinner } from "@/ui";
-import { SettingsButton, SettingsGroup } from "./settings-ui";
+import { Button, Checkbox, FormField, Input, ModelButton, SearchInput, Spinner } from "@/ui";
+import { Plus, Trash2 } from "@/ui/icon-registry";
+import { ResourceDrawer, ResourceDrawerSection, ResourceFact } from "@/ui/resource-drawer";
+import { ResourceLogo } from "@/ui/resource-logo";
+import {
+  ModelRow,
+  ModelSection,
+  ModelStatus,
+  ModelValue,
+} from "@/features/recipes/recipes-content/model-page";
 import { useMountSubscription } from "@/hooks/use-mount-subscription";
 
 interface CatalogEntry {
   id: string;
   name: string;
+  company: string;
   description: string;
   transport: "stdio";
   command: string;
@@ -28,7 +36,8 @@ const CATALOG: CatalogEntry[] = [
   {
     id: "github",
     name: "GitHub",
-    description: "Repos, issues, PRs, code search.",
+    company: "GitHub",
+    description: "Repos, issues, pull requests, and code search.",
     transport: "stdio",
     command: "npx",
     args: ["-y", "@modelcontextprotocol/server-github"],
@@ -37,6 +46,7 @@ const CATALOG: CatalogEntry[] = [
   {
     id: "x",
     name: "X / Twitter",
+    company: "X",
     description: "Read and post with X API credentials.",
     transport: "stdio",
     command: "npx",
@@ -50,12 +60,13 @@ const CATALOG: CatalogEntry[] = [
   },
   {
     id: "computer",
-    name: "Remote computer (ssh)",
-    description: "Run commands and read/write files on one of your machines.",
+    name: "Remote computer",
+    company: "Local Studio",
+    description: "Run commands and work with files over SSH on another machine.",
     transport: "stdio",
     command: "node",
     args: ["{{SSH_REMOTE_SERVER}}"],
-    envFields: [{ key: "SSH_HOST", label: "user@host", placeholder: "ser@pop-os" }],
+    envFields: [{ key: "SSH_HOST", label: "SSH host", placeholder: "user@machine" }],
   },
 ];
 
@@ -74,34 +85,293 @@ async function requestJson<T>(
 ): Promise<T> {
   const response = await fetch(url, init);
   const body: unknown = await response.json().catch(() => null);
-  if (!response.ok) {
-    throw new Error(responseError(body, `HTTP ${response.status}`));
-  }
+  if (!response.ok) throw new Error(responseError(body, `HTTP ${response.status}`));
   return decode(body);
+}
+
+const connectorCommand = (connector: ConnectorView): string =>
+  connector.transport === "stdio"
+    ? [connector.command, ...(connector.args ?? [])].filter(Boolean).join(" ")
+    : (connector.url ?? "HTTP endpoint not set");
+
+function ConnectorDrawer({
+  connector,
+  onClose,
+  onChanged,
+}: {
+  connector: ConnectorView;
+  onClose: () => void;
+  onChanged: (connectors: readonly ConnectorView[]) => void;
+}) {
+  const [name, setName] = useState(connector.name);
+  const [command, setCommand] = useState(connector.command ?? "");
+  const [args, setArgs] = useState((connector.args ?? []).join("\n"));
+  const [url, setUrl] = useState(connector.url ?? "");
+  const [enabled, setEnabled] = useState(connector.enabled);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const managed = Boolean(connector.origin);
+
+  const save = async () => {
+    setSaving(true);
+    setError("");
+    try {
+      const { connectors } = await requestJson(
+        "/api/agent/connectors",
+        Schema.decodeUnknownSync(ConnectorsResponseSchema),
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            id: connector.id,
+            name: name.trim() || connector.name,
+            transport: connector.transport,
+            command: command.trim() || undefined,
+            args: args
+              .split("\n")
+              .map((value) => value.trim())
+              .filter(Boolean),
+            url: url.trim() || undefined,
+            env: connector.env,
+            cwd: connector.cwd,
+            headers: connector.headers,
+            allowTools: connector.allowTools,
+            enabled,
+          }),
+        },
+      );
+      onChanged(connectors);
+      onClose();
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : "Connector save failed");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <ResourceDrawer
+      title={connector.name}
+      icon={<ResourceLogo identity={connector.id} label={connector.name} />}
+      badge={
+        <ModelStatus tone={connector.enabled ? "good" : "default"}>
+          {connector.enabled ? "enabled" : "disabled"}
+        </ModelStatus>
+      }
+      status={
+        connector.origin
+          ? `${connector.origin.kind} · ${connector.origin.id}`
+          : `${connector.transport} · connectors.json`
+      }
+      footer={
+        managed ? (
+          <Button onClick={onClose}>Done</Button>
+        ) : (
+          <>
+            <Button variant="secondary" onClick={onClose}>
+              Cancel
+            </Button>
+            <Button loading={saving} onClick={() => void save()}>
+              Save connector
+            </Button>
+          </>
+        )
+      }
+      onClose={onClose}
+      width={680}
+    >
+      <ResourceDrawerSection title="Identity">
+        <ResourceFact label="Connector ID" value={connector.id} mono />
+        <ResourceFact label="Transport" value={connector.transport} mono />
+        <ResourceFact
+          label="Managed by"
+          value={connector.origin ? `${connector.origin.kind} · ${connector.origin.id}` : "You"}
+        />
+        <ResourceFact
+          label="Secrets"
+          value={
+            connector.secret_keys.length ? connector.secret_keys.join(" · ") : "No stored secrets"
+          }
+          mono
+        />
+      </ResourceDrawerSection>
+      {managed ? (
+        <ResourceDrawerSection title="Launch configuration">
+          <ResourceFact label="Command" value={connectorCommand(connector)} mono />
+          <ResourceFact
+            label="Allowed tools"
+            value={connector.allowTools?.join(" · ") || "All declared tools"}
+            mono
+          />
+        </ResourceDrawerSection>
+      ) : (
+        <div className="space-y-4">
+          <FormField label="Name">
+            <Input value={name} onChange={(event) => setName(event.target.value)} />
+          </FormField>
+          {connector.transport === "stdio" ? (
+            <>
+              <FormField label="Command">
+                <Input
+                  value={command}
+                  onChange={(event) => setCommand(event.target.value)}
+                  className="font-mono"
+                />
+              </FormField>
+              <FormField label="Arguments" description="One argument per line.">
+                <textarea
+                  value={args}
+                  onChange={(event) => setArgs(event.target.value)}
+                  rows={7}
+                  className="w-full rounded-[var(--ui-radius)] border border-(--ui-separator) bg-(--ui-surface) px-3 py-2 font-mono text-[length:var(--fs-sm)] text-(--ui-fg) focus:border-(--ui-accent)/60 focus:outline-none"
+                />
+              </FormField>
+            </>
+          ) : (
+            <FormField label="URL">
+              <Input
+                value={url}
+                onChange={(event) => setUrl(event.target.value)}
+                className="font-mono"
+              />
+            </FormField>
+          )}
+          <Checkbox checked={enabled} onChange={setEnabled} label="Enabled in Workbench" />
+        </div>
+      )}
+      {error ? <p className="mt-4 text-[length:var(--fs-sm)] text-(--ui-danger)">{error}</p> : null}
+    </ResourceDrawer>
+  );
+}
+
+function CatalogDrawer({
+  entry,
+  onClose,
+  onChanged,
+}: {
+  entry: CatalogEntry;
+  onClose: () => void;
+  onChanged: (connectors: readonly ConnectorView[]) => void;
+}) {
+  const [fields, setFields] = useState<Record<string, string>>({});
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  const add = async () => {
+    setBusy(true);
+    setError("");
+    try {
+      let args = entry.args;
+      if (entry.args.includes("{{SSH_REMOTE_SERVER}}")) {
+        const { path } = await requestJson(
+          "/api/agent/connectors/ssh-server-path",
+          Schema.decodeUnknownSync(ConnectorSshPathResponseSchema),
+        );
+        if (!path) throw new Error("Bundled SSH server not found");
+        args = entry.args.map((value) => (value === "{{SSH_REMOTE_SERVER}}" ? path : value));
+      }
+      const host = fields.SSH_HOST?.trim();
+      const id = entry.id === "computer" && host ? `computer-${host.split("@").pop()}` : entry.id;
+      const name = entry.id === "computer" && host ? `Computer: ${host}` : entry.name;
+      const { connectors } = await requestJson(
+        "/api/agent/connectors",
+        Schema.decodeUnknownSync(ConnectorsResponseSchema),
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            id: id.toLowerCase().replace(/[^a-z0-9-_]+/g, "-"),
+            name,
+            transport: entry.transport,
+            command: entry.command,
+            args,
+            env: fields,
+            enabled: true,
+          }),
+        },
+      );
+      onChanged(connectors);
+      onClose();
+    } catch (addError) {
+      setError(addError instanceof Error ? addError.message : "Connector setup failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <ResourceDrawer
+      title={`Connect ${entry.name}`}
+      icon={<ResourceLogo identity={entry.id} label={entry.name} />}
+      badge={<ModelStatus>catalog</ModelStatus>}
+      status={`${entry.company} · ${entry.transport}`}
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button loading={busy} onClick={() => void add()}>
+            Connect
+          </Button>
+        </>
+      }
+      onClose={onClose}
+    >
+      <p className="mb-6 text-[length:var(--fs-base)] leading-relaxed text-(--ui-muted)">
+        {entry.description}
+      </p>
+      <ResourceDrawerSection title="Provider">
+        <ResourceFact label="Company" value={entry.company} />
+        <ResourceFact label="Transport" value={entry.transport} mono />
+        <ResourceFact label="Command" value={[entry.command, ...entry.args].join(" ")} mono />
+      </ResourceDrawerSection>
+      <div className="space-y-4">
+        {entry.envFields.map((field) => (
+          <FormField key={field.key} label={field.label}>
+            <Input
+              value={fields[field.key] ?? ""}
+              onChange={(event) =>
+                setFields((current) => ({ ...current, [field.key]: event.target.value }))
+              }
+              placeholder={field.placeholder}
+              type={/token|secret|key/i.test(field.key) ? "password" : "text"}
+              className="font-mono"
+            />
+          </FormField>
+        ))}
+      </div>
+      {error ? <p className="mt-4 text-[length:var(--fs-sm)] text-(--ui-danger)">{error}</p> : null}
+    </ResourceDrawer>
+  );
 }
 
 function ConnectorRow({
   connector,
+  onOpen,
   onChanged,
 }: {
   connector: ConnectorView;
+  onOpen: () => void;
   onChanged: (connectors: readonly ConnectorView[]) => void;
 }) {
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<string | null>(null);
 
-  const toggle = async () => {
+  const update = async (init: RequestInit) => {
     const { connectors } = await requestJson(
       "/api/agent/connectors",
       Schema.decodeUnknownSync(ConnectorsResponseSchema),
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...connector, enabled: !connector.enabled }),
-      },
+      init,
     );
     onChanged(connectors);
   };
+
+  const toggle = () =>
+    update({
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...connector, enabled: !connector.enabled }),
+    });
 
   const remove = async () => {
     const { connectors } = await requestJson(
@@ -126,145 +396,54 @@ function ConnectorRow({
         },
       );
       setTestResult(result.ok ? `${result.tool_count} tools` : (result.error ?? "failed"));
-    } catch (error) {
-      setTestResult(error instanceof Error ? error.message : "failed");
+    } catch (testError) {
+      setTestResult(testError instanceof Error ? testError.message : "failed");
     } finally {
       setTesting(false);
     }
   };
 
   return (
-    <div className="flex flex-wrap items-center gap-3 px-4 py-3 border-b border-(--border) last:border-b-0">
-      <Plug className={`h-3.5 w-3.5 ${connector.enabled ? "text-(--accent)" : "text-(--dim)"}`} />
-      <div className="min-w-40">
-        <div className="text-[length:var(--fs-md)]">{connector.name}</div>
-        <div className="text-[11px] font-mono text-(--dim)">
-          {connector.transport === "stdio"
-            ? [connector.command, ...(connector.args ?? [])].join(" ")
-            : connector.url}
-        </div>
-      </div>
-      <div className="ml-auto flex items-center gap-2">
-        {testResult && <span className="text-[11px] font-mono text-(--dim)">{testResult}</span>}
-        <SettingsButton onClick={test} disabled={testing}>
-          {testing ? <Spinner size="xs" /> : "Test"}
-        </SettingsButton>
-        <SettingsButton onClick={toggle}>{connector.enabled ? "Disable" : "Enable"}</SettingsButton>
-        <SettingsButton onClick={remove} title="Remove connector">
-          <Trash2 className="h-3 w-3" />
-        </SettingsButton>
-      </div>
-    </div>
-  );
-}
-
-function CatalogCard({
-  entry,
-  installed,
-  onChanged,
-}: {
-  entry: CatalogEntry;
-  installed: boolean;
-  onChanged: (connectors: readonly ConnectorView[]) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const [fields, setFields] = useState<Record<string, string>>({});
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const add = async () => {
-    setBusy(true);
-    setError(null);
-    try {
-      const sshServerPath = "/api/agent/connectors/ssh-server-path";
-      let args = entry.args;
-      if (entry.args.includes("{{SSH_REMOTE_SERVER}}")) {
-        const { path } = await requestJson(
-          sshServerPath,
-          Schema.decodeUnknownSync(ConnectorSshPathResponseSchema),
-        );
-        if (!path) throw new Error("Bundled ssh server not found");
-        args = entry.args.map((value) => (value === "{{SSH_REMOTE_SERVER}}" ? path : value));
+    <ModelRow
+      label={connector.name}
+      description={
+        connector.origin
+          ? `${connector.origin.kind} · ${connector.origin.id}`
+          : `${connector.transport} connector`
       }
-      const host = fields.SSH_HOST?.trim();
-      const id = entry.id === "computer" && host ? `computer-${host.split("@").pop()}` : entry.id;
-      const name = entry.id === "computer" && host ? `Computer: ${host}` : entry.name;
-      const { connectors } = await requestJson(
-        "/api/agent/connectors",
-        Schema.decodeUnknownSync(ConnectorsResponseSchema),
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            id: id.toLowerCase().replace(/[^a-z0-9-_]+/g, "-"),
-            name,
-            transport: entry.transport,
-            command: entry.command,
-            args,
-            env: fields,
-            enabled: true,
-          }),
-        },
-      );
-      onChanged(connectors);
-      setOpen(false);
-      setFields({});
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to add connector");
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <div className="border border-(--border) px-3 py-2.5">
-      <div className="flex items-center justify-between gap-2">
-        <div>
-          <div className="text-[length:var(--fs-md)]">{entry.name}</div>
-          <div className="text-[11px] text-(--dim)">{entry.description}</div>
-        </div>
-        <SettingsButton
-          onClick={() => setOpen((value) => !value)}
-          disabled={installed && entry.id !== "computer"}
-        >
-          {installed && entry.id !== "computer" ? (
-            "Added"
-          ) : (
-            <>
-              <Plus className="h-3 w-3" />
-              Add
-            </>
-          )}
-        </SettingsButton>
-      </div>
-      {open && (
-        <div className="mt-2 space-y-2">
-          {entry.envFields.map((field) => (
-            <Input
-              key={field.key}
-              value={fields[field.key] ?? ""}
-              onChange={(event) =>
-                setFields((current) => ({ ...current, [field.key]: event.target.value }))
-              }
-              placeholder={field.placeholder ?? field.label}
-              spellCheck={false}
-              type={/token|secret|key/i.test(field.key) ? "password" : "text"}
-              className="font-mono"
-            />
-          ))}
-          {error && <div className="text-[11px] text-(--err)">{error}</div>}
-          <SettingsButton onClick={add} disabled={busy}>
-            {busy ? <Spinner size="xs" /> : "Connect"}
-          </SettingsButton>
-        </div>
-      )}
-    </div>
+      leading={<ResourceLogo identity={connector.id} label={connector.name} />}
+      value={<ModelValue mono>{connectorCommand(connector)}</ModelValue>}
+      status={
+        <ModelStatus tone={connector.enabled ? "good" : "default"}>
+          {testResult || (connector.enabled ? "enabled" : "disabled")}
+        </ModelStatus>
+      }
+      actions={
+        <>
+          <ModelButton onClick={() => void test()} disabled={testing}>
+            {testing ? <Spinner size="xs" /> : "Test"}
+          </ModelButton>
+          <ModelButton onClick={() => void toggle()}>
+            {connector.enabled ? "Disable" : "Enable"}
+          </ModelButton>
+          {!connector.origin ? (
+            <ModelButton onClick={() => void remove()} tone="danger" title="Remove connector">
+              <Trash2 className="h-3 w-3" />
+            </ModelButton>
+          ) : null}
+        </>
+      }
+      onClick={onOpen}
+    />
   );
 }
 
 export function ConnectorsSection() {
   const [connectors, setConnectors] = useState<readonly ConnectorView[]>([]);
   const [loaded, setLoaded] = useState(false);
+  const [query, setQuery] = useState("");
+  const [selectedConnector, setSelectedConnector] = useState<ConnectorView | null>(null);
+  const [selectedCatalog, setSelectedCatalog] = useState<CatalogEntry | null>(null);
 
   const refresh = useCallback(() => {
     void requestJson("/api/agent/connectors", Schema.decodeUnknownSync(ConnectorsResponseSchema))
@@ -277,47 +456,113 @@ export function ConnectorsSection() {
     refresh();
   }, [refresh]);
 
-  const installedIds = new Set(connectors.map((connector) => connector.id));
-  const visibleConnectors = connectors.filter(
-    (connector) => connector.origin?.kind !== "account-adapter",
+  const normalized = query.trim().toLowerCase();
+  const visibleConnectors = useMemo(
+    () =>
+      connectors.filter(
+        (connector) =>
+          connector.origin?.kind !== "account-adapter" &&
+          (!normalized ||
+            `${connector.name} ${connector.id} ${connectorCommand(connector)}`
+              .toLowerCase()
+              .includes(normalized)),
+      ),
+    [connectors, normalized],
+  );
+  const visibleCatalog = CATALOG.filter(
+    (entry) =>
+      !normalized ||
+      `${entry.name} ${entry.company} ${entry.description}`.toLowerCase().includes(normalized),
   );
 
   return (
-    <div>
-      <SettingsGroup
+    <div className="space-y-7">
+      <ModelSection
         title="Connectors"
-        description="MCP servers the agent can use — accounts, services, and your other machines. Stored in connectors.json (mcp.json-compatible)."
+        description="MCP servers, accounts, services, and machines available to Workbench."
+        actions={
+          <ModelStatus tone={loaded ? "good" : "default"}>
+            {loaded ? `${visibleConnectors.length} connected` : "discovering"}
+          </ModelStatus>
+        }
       >
-        {!loaded ? (
-          <div className="px-4 py-3.5">
-            <Spinner size="xs" />
-          </div>
-        ) : visibleConnectors.length === 0 ? (
-          <div className="px-4 py-3.5 text-[length:var(--fs-md)] text-(--dim)">
-            No connectors yet. Add one from the catalog below.
-          </div>
-        ) : (
-          visibleConnectors.map((connector) => (
-            <ConnectorRow key={connector.id} connector={connector} onChanged={setConnectors} />
-          ))
-        )}
-      </SettingsGroup>
-
-      <SettingsGroup
-        title="Catalog"
-        description="Published MCP servers, preconfigured. Anything from the MCP ecosystem also works via connectors.json."
-      >
-        <div className="grid gap-2 px-4 py-3.5 md:grid-cols-2">
-          {CATALOG.map((entry) => (
-            <CatalogCard
-              key={entry.id}
-              entry={entry}
-              installed={installedIds.has(entry.id)}
-              onChanged={setConnectors}
+        <ModelRow
+          label="Search connectors"
+          description="Name, company, transport, command, or endpoint."
+          control={
+            <SearchInput
+              value={query}
+              onChange={setQuery}
+              placeholder="Search connectors"
+              className="w-full"
             />
-          ))}
-        </div>
-      </SettingsGroup>
+          }
+          status={<ModelStatus>{visibleConnectors.length + visibleCatalog.length}</ModelStatus>}
+        />
+        {visibleConnectors.map((connector) => (
+          <ConnectorRow
+            key={connector.id}
+            connector={connector}
+            onOpen={() => setSelectedConnector(connector)}
+            onChanged={setConnectors}
+          />
+        ))}
+        {loaded && visibleConnectors.length === 0 ? (
+          <div className="px-4 py-7 text-center text-[length:var(--fs-md)] text-(--ui-muted)">
+            No connected MCP servers match this search.
+          </div>
+        ) : null}
+      </ModelSection>
+
+      <ModelSection
+        title="Catalog"
+        description="Known integrations with their provider and launch configuration."
+        actions={<ModelStatus>{visibleCatalog.length} integrations</ModelStatus>}
+      >
+        {visibleCatalog.map((entry) => {
+          const installedConnector = connectors.find((connector) => connector.id === entry.id);
+          const installed = Boolean(installedConnector);
+          const openEntry = () =>
+            installedConnector
+              ? setSelectedConnector(installedConnector)
+              : setSelectedCatalog(entry);
+          return (
+            <ModelRow
+              key={entry.id}
+              label={entry.name}
+              description={`${entry.company} · ${entry.description}`}
+              leading={<ResourceLogo identity={entry.id} label={entry.name} />}
+              value={<ModelValue mono>{[entry.command, ...entry.args].join(" ")}</ModelValue>}
+              status={
+                <ModelStatus tone={installed ? "good" : "default"}>
+                  {installed ? "connected" : "available"}
+                </ModelStatus>
+              }
+              actions={
+                <ModelButton onClick={openEntry} tone={installed ? "default" : "primary"}>
+                  {installed && entry.id !== "computer" ? "Open" : <Plus className="h-3 w-3" />}
+                </ModelButton>
+              }
+              onClick={openEntry}
+            />
+          );
+        })}
+      </ModelSection>
+
+      {selectedConnector ? (
+        <ConnectorDrawer
+          connector={selectedConnector}
+          onClose={() => setSelectedConnector(null)}
+          onChanged={setConnectors}
+        />
+      ) : null}
+      {selectedCatalog ? (
+        <CatalogDrawer
+          entry={selectedCatalog}
+          onClose={() => setSelectedCatalog(null)}
+          onChanged={setConnectors}
+        />
+      ) : null}
     </div>
   );
 }

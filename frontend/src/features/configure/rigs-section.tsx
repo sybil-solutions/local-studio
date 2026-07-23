@@ -1,13 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { Button, EmptySafeNotice, UiModal, UiModalHeader } from "@/ui";
-import { Plus } from "@/ui/icon-registry";
-import { cx } from "@/ui/utils";
+import { Button, EmptySafeNotice, ModelButton, UiModal, UiModalHeader } from "@/ui";
+import { Plus, Trash2 } from "@/ui/icon-registry";
 import type { Rig, RigNode } from "@/lib/types";
 import type { RigNodePayload } from "@/lib/api/rigs";
+import { ModelSection, ModelStatus } from "@/features/recipes/recipes-content/model-page";
 import type { ConfigureState } from "./use-configure";
-import { InlineRename } from "./inline-rename";
 import { RigNodeCard } from "./rig-node-card";
 import { NodeFormModal, nodeToForm } from "./node-form-modal";
 
@@ -23,60 +22,7 @@ const nodeAcceleratorGb = (node: RigNode): number =>
 const sortHeadFirst = (nodes: RigNode[]): RigNode[] =>
   [...nodes].sort((a, b) => Number(b.role === "head") - Number(a.role === "head"));
 
-function RigStat({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="text-right">
-      <div className="font-mono text-[length:var(--fs-xl)] font-semibold tabular-nums text-(--ui-fg)">
-        {value}
-      </div>
-      <div className="text-[length:var(--fs-2xs)] uppercase tracking-[0.14em] text-(--ui-muted)">
-        {label}
-      </div>
-    </div>
-  );
-}
-
-function PooledMemoryBar({ nodes, totalGb }: { nodes: RigNode[]; totalGb: number }) {
-  if (totalGb <= 0 || nodes.length < 2) return null;
-  const segments = nodes
-    .map((node) => ({ node, gb: nodeAcceleratorGb(node) }))
-    .filter((segment) => segment.gb > 0);
-  if (segments.length < 2) return null;
-  return (
-    <div className="space-y-1.5">
-      <div className="flex h-2 gap-0.5 overflow-hidden rounded-full">
-        {segments.map(({ node, gb }) => (
-          <div
-            key={node.id}
-            title={`${node.name} · ${gb} GB`}
-            style={{ width: `${(gb / totalGb) * 100}%` }}
-            className={cx(
-              "h-full transition-[width] duration-300",
-              node.role === "head" ? "bg-(--ui-accent)/80" : "bg-(--ui-fg)/30",
-            )}
-          />
-        ))}
-      </div>
-      <div className="flex flex-wrap gap-x-4 gap-y-1 text-[length:var(--fs-xs)] text-(--ui-muted)">
-        {segments.map(({ node, gb }) => (
-          <span key={node.id} className="inline-flex items-center gap-1.5">
-            <span
-              className={cx(
-                "h-1.5 w-1.5 rounded-full",
-                node.role === "head" ? "bg-(--ui-accent)/80" : "bg-(--ui-fg)/30",
-              )}
-            />
-            <span className="font-mono">{node.name}</span>
-            <span className="tabular-nums">{gb} GB</span>
-          </span>
-        ))}
-        <span className="ml-auto">combined accelerator memory across devices</span>
-      </div>
-    </div>
-  );
-}
-
-function RigCard({
+function MachineGroup({
   rig,
   state,
   onAddNode,
@@ -92,91 +38,49 @@ function RigCard({
   onDeleteRig: () => void;
 }) {
   const nodes = sortHeadFirst(rig.nodes);
-  const head = nodes.find((node) => node.role === "head");
-  const workers = nodes.filter((node) => node !== head);
   const totalGb = nodes.reduce((sum, node) => sum + nodeAcceleratorGb(node), 0);
-  const containsLocal = rig.nodes.some((node) => node.id === state.localNodeId);
-  const displayName = rig.name === "My Rig" ? "Your machines" : rig.name;
-
-  const renderNode = (node: RigNode) => (
-    <RigNodeCard
-      key={node.id}
-      node={node}
-      isLocal={node.id === state.localNodeId}
-      onRename={(name) => state.updateNode(rig.id, node.id, { name })}
-      onEdit={() => onEditNode(node)}
-      onDelete={node.id === state.localNodeId ? undefined : () => onDeleteNode(node)}
-    />
-  );
-
+  const containsLocal = nodes.some((node) => node.id === state.localNodeId);
+  const title = rig.name === "My Rig" ? "Your machines" : rig.name;
   return (
-    <section className="overflow-hidden rounded-xl border border-(--ui-border) bg-(--ui-surface)">
-      <header className="space-y-4 border-b border-(--ui-separator) px-5 py-4">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div className="min-w-0">
-            <InlineRename
-              value={displayName}
-              label={`machine group ${displayName}`}
-              onRename={(name) => state.renameRig(rig.id, name)}
-              textClassName="text-[length:var(--fs-xl)] font-medium tracking-[-0.01em] text-(--ui-fg)"
-            />
-            {rig.description ? (
-              <p className="mt-0.5 text-[length:var(--fs-sm)] text-(--ui-muted)">
-                {rig.description}
-              </p>
-            ) : null}
-          </div>
-          <div className="flex items-start gap-6">
-            <RigStat
-              label={rig.nodes.length === 1 ? "machine" : "machines"}
-              value={String(rig.nodes.length)}
-            />
-            {totalGb > 0 ? <RigStat label="GPU memory" value={`${totalGb} GB`} /> : null}
-          </div>
+    <ModelSection
+      title={title}
+      description={
+        rig.description || "Hardware available to this controller for local and distributed serves."
+      }
+      actions={
+        <div className="flex items-center gap-2">
+          <ModelStatus tone={nodes.length ? "good" : "default"}>
+            {nodes.length} {nodes.length === 1 ? "machine" : "machines"}
+            {totalGb ? ` · ${totalGb} GB GPU` : ""}
+          </ModelStatus>
+          <ModelButton onClick={onAddNode} tone="primary">
+            <Plus className="h-3 w-3" />
+            Add
+          </ModelButton>
+          {!containsLocal ? (
+            <ModelButton onClick={onDeleteRig} tone="danger" title={`Delete ${title}`}>
+              <Trash2 className="h-3 w-3" />
+            </ModelButton>
+          ) : null}
         </div>
-        <PooledMemoryBar nodes={nodes} totalGb={totalGb} />
-      </header>
-
-      <div className="divide-y divide-(--ui-separator)">
-        {head ? renderNode(head) : null}
-        {head && workers.length > 0 ? (
-          <div className="flex items-center gap-3 px-5 py-2 text-[length:var(--fs-xs)] text-(--ui-muted)/80">
-            <span className="ml-6 h-3 w-px bg-(--ui-separator)" />
-            {workers.length === 1 ? "1 worker joins" : `${workers.length} workers join`} the head
-            over the local network
-          </div>
-        ) : null}
-        {workers.length > 0 ? (
-          <div className="divide-y divide-(--ui-separator)">{workers.map(renderNode)}</div>
-        ) : null}
-        {rig.nodes.length === 0 ? (
-          <EmptySafeNotice>
-            No devices yet. Add each machine that belongs to this rig — they show up here with
-            live-detected hardware where possible.
-          </EmptySafeNotice>
-        ) : null}
-      </div>
-
-      <footer className="flex items-center justify-between border-t border-(--ui-separator) px-5 py-3">
-        <Button
-          variant="secondary"
-          size="sm"
-          icon={<Plus className="h-3.5 w-3.5" />}
-          onClick={onAddNode}
-        >
-          Add another machine
-        </Button>
-        {containsLocal ? (
-          <span className="text-[length:var(--fs-xs)] text-(--ui-muted)/70">
-            Hardware for this machine updates automatically
-          </span>
-        ) : (
-          <Button variant="danger" size="sm" onClick={onDeleteRig}>
-            Delete rig
-          </Button>
-        )}
-      </footer>
-    </section>
+      }
+    >
+      {nodes.length ? (
+        nodes.map((node) => (
+          <RigNodeCard
+            key={node.id}
+            node={node}
+            isLocal={node.id === state.localNodeId}
+            onEdit={() => onEditNode(node)}
+            onDelete={node.id === state.localNodeId ? undefined : () => onDeleteNode(node)}
+          />
+        ))
+      ) : (
+        <EmptySafeNotice>
+          No machines yet. Add each computer that contributes CPU, memory, or GPUs to this group.
+        </EmptySafeNotice>
+      )}
+    </ModelSection>
   );
 }
 
@@ -232,9 +136,9 @@ export function RigsSection({ state }: { state: ConfigureState }) {
   };
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-7">
       {state.rigs.map((rig) => (
-        <RigCard
+        <MachineGroup
           key={rig.id}
           rig={rig}
           state={state}

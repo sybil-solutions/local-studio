@@ -6,8 +6,9 @@ import {
   RIG_HARDWARE_TYPES,
   RIG_NODE_ROLES,
 } from "@local-studio/contracts/rigs";
-import { Button, Checkbox, FormField, Input, Select, Textarea, UiModal, UiModalHeader } from "@/ui";
+import { Button, Checkbox, FormField, Input, Select, Textarea } from "@/ui";
 import { cx } from "@/ui/utils";
+import { ResourceDrawer } from "@/ui/resource-drawer";
 import type { RigHardwareType, RigNode, RigNodeRole } from "@/lib/types";
 import type { RigNodePayload } from "@/lib/api/rigs";
 import { HardwareArt } from "./hardware-art";
@@ -129,9 +130,23 @@ export function NodeFormModal({
   };
 
   return (
-    <UiModal isOpen onClose={onClose} maxWidth="max-w-2xl">
-      <UiModalHeader title={title} onClose={onClose} />
-      <div className="max-h-[78dvh] space-y-4 overflow-y-auto p-4">
+    <ResourceDrawer
+      title={title}
+      onClose={onClose}
+      status={detected ? "Hardware details synchronize automatically" : "Manual machine profile"}
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button variant="primary" loading={saving} onClick={() => void submit()}>
+            Save device
+          </Button>
+        </>
+      }
+      width={680}
+    >
+      <div className="space-y-4">
         <div className="rounded-[var(--rad-lg)] bg-(--surface-3) px-3 py-2.5 text-[length:var(--fs-sm)] leading-relaxed text-(--ui-muted)">
           Only the name and how this machine is used are required.
           {detected
@@ -263,16 +278,7 @@ export function NodeFormModal({
         </FormField>
 
         {error ? <p className="text-[length:var(--fs-sm)] text-(--ui-danger)">{error}</p> : null}
-
-        <div className="flex justify-end gap-2">
-          <Button variant="secondary" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button variant="primary" loading={saving} onClick={() => void submit()}>
-            Save device
-          </Button>
-        </div>
       </div>
-    </UiModal>
+    </ResourceDrawer>
   );
 }
