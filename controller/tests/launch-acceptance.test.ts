@@ -114,7 +114,7 @@ test("admits one launch before process discovery can race", async () => {
     });
   context.engineService.setActiveRecipe = (target, options) =>
     Effect.sync(() => {
-      if (!target || !options.attemptId) throw new Error("Expected an attempt-owned launch");
+      if (!target || !options?.attemptId) throw new Error("Expected an attempt-owned launch");
       coordinatorAttempts.push(options.attemptId);
       return { ok: true } as const;
     });
@@ -162,7 +162,7 @@ test("cancels the exact attempt and rejects its token after a successor starts",
   let successorSignal: AbortSignal | undefined;
   context.engineService.setActiveRecipe = (target, options) =>
     Effect.promise(async () => {
-      if (!target || !options.attemptId || !options.signal) {
+      if (!target || !options?.attemptId || !options.signal) {
         throw new Error("Expected an attempt-owned cancellable launch");
       }
       launchCalls += 1;
