@@ -1,6 +1,15 @@
 import copy
 
 
+def text_config_with_attention_overrides(hf_config):
+    text_config = copy.deepcopy(hf_config.text_config)
+    for field in ("use_index_cache", "index_topk_pattern"):
+        value = getattr(hf_config, field, None)
+        if value is not None:
+            setattr(text_config, field, value)
+    return text_config
+
+
 def _patch_speculative_config() -> None:
     from vllm.config.speculative import SpeculativeConfig
 
@@ -15,7 +24,7 @@ def _patch_speculative_config() -> None:
                 getattr(hf_config, "quantization_config", None)
             )
             model_path = getattr(hf_config, "_name_or_path", None)
-            hf_config = copy.deepcopy(hf_config.text_config)
+            hf_config = text_config_with_attention_overrides(hf_config)
             if quantization_config is not None:
                 hf_config.quantization_config = quantization_config
             if model_path:

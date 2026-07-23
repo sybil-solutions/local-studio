@@ -11,6 +11,8 @@ from vllm.multimodal.inputs import VisionChunkImage
 from vllm.plugins import load_general_plugins
 from vllm.transformers_utils.processors.kimi_k25 import KimiK25Processor
 
+from glm52_vision.plugin import text_config_with_attention_overrides
+
 
 def main() -> None:
     model_path = Path(sys.argv[1]).resolve()
@@ -22,6 +24,13 @@ def main() -> None:
         raise ValueError(config.text_config.hidden_size)
     if config.vision_config.mm_hidden_size != 6144:
         raise ValueError(config.vision_config.mm_hidden_size)
+    config.use_index_cache = True
+    config.index_topk_pattern = "FFFSSS"
+    text_config = text_config_with_attention_overrides(config)
+    if text_config.use_index_cache is not True:
+        raise ValueError(text_config.use_index_cache)
+    if text_config.index_topk_pattern != "FFFSSS":
+        raise ValueError(text_config.index_topk_pattern)
     if "Glm5vForConditionalGeneration" not in ModelRegistry.get_supported_archs():
         raise ValueError("GLM vision model registration failed")
     tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
@@ -62,6 +71,8 @@ def main() -> None:
                 "image_token_id": media_token_id,
                 "pixel_values_shape": list(processed["pixel_values"].shape),
                 "grid_thws": processed["grid_thws"].tolist(),
+                "index_topk_pattern": text_config.index_topk_pattern,
+                "use_index_cache": text_config.use_index_cache,
                 "vision_entries": vision_entries,
                 "projector_entries": projector_entries,
             },
@@ -72,4 +83,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

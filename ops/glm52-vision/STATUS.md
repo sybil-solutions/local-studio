@@ -1,81 +1,56 @@
-# GLM-5.2 Hybrid and Vision Status
+# GLM-5.2 Hybrid Vision Status
 
-Status: GLM-5.2 Vision live with FP8 KV cache; text hybrid and NVFP4-KV vision candidate stopped
+Status: live on the original GLM-5.2 v3 runtime with the Vision adapter and corrected sparse-attention propagation
 
-Vision FP8 launch: `2026-07-23T13:00:44Z`
+Cutover: `2026-07-23T15:19:22Z`
 
-Live service: `glm52-vision-fp8`
+Live service: `glm52-vision-v3`
 
 Served model: `GLM-5.2-Vision`
 
-Live image: `local/glm52-nf3-vision:v5-nvfp4`
+Live image: `local/glm52-nf3-vision:v3-attn`
+
+Base image: `madeby561/vllm-glm52-nvfp4-nf3-hybrid:v3`
 
 Live checkpoint: `/mnt/llm_models/GLM-5.2-MXFP8-NVFP4-NF3-Hybrid-Vision`
 
-Vision recipe: FP8 KV cache, `B12X_MLA_SPARSE`, DCP 4, async scheduling, and the 78-layer index-cache pattern.
-
-Configured context length: `262144`
-
-GPU KV capacity: `338176` tokens
-
-Maximum 262144-token concurrency: `1.29x`
-
-Post-launch validation: passed. `/health` and `/v1/models` report `GLM-5.2-Vision`; CUDA-graph capture completed normally; a multimodal request returned `IMAGE_OK`.
-
-Live quality checks: a 1k text control returned its exact sentinel; an 8k control returned its sentinel before the bounded completion cut off a repeated continuation. A real screenshot request correctly identified the visible `SQLiteError: database or disk is full` controller-log error.
-
-Conduit tailnet registration: passed through live backend discovery. The tailnet-backed service now reports `GLM-5.2-Vision` from its active OpenAI-compatible backend; no separate static model record is required.
-
-NVFP4-KV test result: 1k and 4k control prompts returned `OK`; failure begins by 8k and is worse at 16k. The native NVFP4 KV cache did not resolve the long-context inference-quality concern.
-
-Text hybrid: `glm52-v3` is stopped and recoverable. NVFP4-KV vision candidate: `glm52-vision-candidate` is stopped and recoverable.
-
-Previous vision cutover: `2026-07-23T01:21:10+02:00`
-
-Base checkpoint: `/mnt/llm_models/GLM-5.2-MXFP8-NVFP4-NF3-Hybrid`
-
-Vision candidate checkpoint: `/mnt/llm_models/GLM-5.2-MXFP8-NVFP4-NF3-Hybrid-Vision`
-
 Vision source: `baseten/GLM-5.2-Vision-NVFP4@f6eab6117386a0c69152fdf272dc65bfd0254f9f`
 
-Checkpoint logical size: `366955275044` bytes
+Runtime recipe: FP8 KV cache, `B12X_MLA_SPARSE`, TP 4, DCP 4 with `ag_rs`, async scheduling, chunked prefill, prefix caching, B12X MoE, and CUDA graphs.
 
-Added vision payload: `932887040` bytes
+Sparse-attention configuration: `use_index_cache=true` with `FFFSSSFSSSFSSSFSSSFSSSFSSSFSSSFSSSFSSSFSSSFSSSFSSSFSSSFSSSFSSSFSSSFSSSFSSSFSSS`.
 
-Context length: `400000`
+Attention fix: the Vision wrapper now copies the outer recipe overrides into the nested `text_config` used to instantiate both the decoder and speculative draft. Before this fix the live decoder saw neither field, despite the launch command containing them.
 
-Weight formats: `NVFP4`, `NF3`, and `MXFP8`
+Configured context length: `250000`
 
-KV cache format: packed MLA `NVFP4`
+GPU KV capacity: `509467` tokens
 
-NVFP4 KV cache: `nvfp4_ds_mla` from the SM120 packed-MLA runtime
+Maximum 250000-token concurrency: `2.04x`
 
-Model memory: `85.93 GiB` per GPU
+Model memory: `84.93 GiB` per GPU
 
-Available KV memory: `4.56 GiB`
+CUDA graphs: PIECEWISE and FULL capture passed; graph capture used `0.54 GiB` per GPU.
 
-GPU KV capacity: `444529` tokens
+MTP: disabled. The Vision-wrapped MTP5 path had a `0.0%` draft acceptance rate and caused non-greedy text decoding to collapse into repeated punctuation. Removing MTP restored coherent sampling while retaining the original decoder, attention, MoE, DCP, and graph paths.
 
-Maximum 400000-token concurrency: `1.11x`; normal prompt scheduling permits four concurrent sequences
+Live validation:
 
-CUDA graphs: PIECEWISE, FULL, prefill, and decode capture passed
+- Direct `/health` returned `200`, and `/v1/models` reported `GLM-5.2-Vision` with `max_model_len=250000`.
+- A non-greedy three-sentence science request completed coherently with the correct explanation.
+- A two-turn arithmetic request returned the correct `27 cents` result.
+- A real 4,175-token screenshot request identified the repeated SQLite disk-full failure and completed without repetition or OOM.
+- A 28,587-token retrieval request recovered `CEDAR-17`, `ORBIT-42`, and `HARBOR-93` exactly and in order.
+- The tailnet controller health endpoint at `http://100.90.62.80:8080/health` returned `200`.
 
-MTP: not enabled for the NVFP4-KV candidate
+Known limitation: the screenshot description captured the correct SQLite disk-full meaning but did not reproduce the visible punctuation exactly, so this is a semantic vision pass rather than an exact OCR pass.
 
-Text validation: passed with `TEXT_OK`
+Runtime error scan: no engine OOM or request error after the final no-MTP launch. One non-fatal vLLM usage-telemetry thread raised a CPU-info JSON decode error during startup; serving continued normally.
 
-Image transport validation: passed with the attached Local Studio screenshot and a normal EOS stop.
+Retired runtime: `glm52-vision-fp8` using `local/glm52-nf3-vision:v5-nvfp4` is stopped. It used different vLLM, B12X, FlashInfer, and DeepGEMM commits and failed coherence validation.
 
-Image quality validation: failed for high-reasoning screenshot analysis on 2026-07-23. The model received the 4,235-token image input but produced a long fabricated description after initially recognizing a software interface. Do not treat this hybrid as quality-validated vision serving.
+Recoverable text rollback: `glm52-v3`, stopped.
 
-Vision reasoning: enabled in the installed Local Studio runtime with `high` and `max` thinking levels. Pi Bash and filesystem tools are restored; extensions, skills, and injected project context remain isolated from vision sessions.
+Historical NVFP4-KV result: the native NVFP4-KV candidate passed short transport checks but did not fix the 8K/16K quality failure. The production Vision service therefore uses FP8 KV.
 
-MMMU-Pro: paused at user request on 2026-07-23 after 102 durable records from four concurrent workers. There are 101 responses, one recorded HTTP 400 for `test_Math_11` because its 4,235 image embeddings exceed the configured 4,225 encoder cache, and 93 parseable answers with 25 correct. Failed and unparseable records are excluded from the provisional score.
-
-Post-start error scan: clean
-
-Controller health: `http://100.90.62.80:8080/health` returned `200`
-
-Rollback service: `glm52-v3`, stopped and recoverable
-
-Rollback command: `cd /home/ser/glm52-vision-prep && MODEL_DIR=/mnt/llm_models/GLM-5.2-MXFP8-NVFP4-NF3-Hybrid-Vision ./rollback.sh`
+MMMU-Pro: paused at user request with 102 durable records. Those partial records remain provisional and are not published as a benchmark score.

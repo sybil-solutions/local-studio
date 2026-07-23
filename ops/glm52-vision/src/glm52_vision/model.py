@@ -1,6 +1,7 @@
 from collections.abc import Mapping
 
 from torch import nn
+from glm52_vision.plugin import text_config_with_attention_overrides
 from vllm.model_executor.models.kimi_k25 import (
     KimiK25DummyInputsBuilder,
     KimiK25ForConditionalGeneration,
@@ -100,6 +101,7 @@ class Glm5vForConditionalGeneration(KimiK25ForConditionalGeneration):
         self.device = current_platform.current_device()
         config.vision_config.mm_hidden_size = self.hidden_size
         config.vision_config.text_hidden_size = self.hidden_size
+        text_config = text_config_with_attention_overrides(config)
         with self._mark_tower_model(vllm_config, "vision_chunk"):
             self.vision_tower = MoonViT3dPretrainedModel(
                 config.vision_config,
@@ -115,7 +117,7 @@ class Glm5vForConditionalGeneration(KimiK25ForConditionalGeneration):
         with self._mark_language_model(vllm_config):
             self.language_model = init_vllm_registered_model(
                 vllm_config=vllm_config,
-                hf_config=config.text_config,
+                hf_config=text_config,
                 prefix=maybe_prefix(prefix, "language_model"),
                 architectures=["GlmMoeDsaForCausalLM"],
             )
