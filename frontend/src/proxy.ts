@@ -31,15 +31,18 @@ function denyResponse(isApi: boolean, status: number, message: string): NextResp
   return new NextResponse(message, { status });
 }
 
+function permitsCsrfExemption(request: NextRequest): boolean {
+  const path = request.nextUrl.pathname;
+  return (
+    (path === "/api/auth/session" && request.method === "POST") ||
+    (isFrontendCallbackRoute(request.method, path) &&
+      Boolean(request.headers.get(FRONTEND_CALLBACK_TOKEN_HEADER)))
+  );
+}
+
 function permitsAccessEntry(request: NextRequest): boolean {
   const path = request.nextUrl.pathname;
-  if (path === "/access" || (path === "/api/auth/session" && request.method === "POST")) {
-    return true;
-  }
-  return (
-    isFrontendCallbackRoute(request.method, path) &&
-    Boolean(request.headers.get(FRONTEND_CALLBACK_TOKEN_HEADER))
-  );
+  return path === "/access" || permitsCsrfExemption(request);
 }
 
 function credentialQueryResponse(request: NextRequest): NextResponse | null {
@@ -90,6 +93,7 @@ export function proxy(request: NextRequest) {
     requestProtocol: request.nextUrl.protocol,
     allowedTailscaleHosts: splitAllowedValues(process.env.ALLOWED_TAILSCALE_HOSTS),
     allowedTailscaleUsers: splitAllowedValues(process.env.ALLOWED_TAILSCALE_USERS),
+    csrfExempt: permitsCsrfExemption(request),
     csrfToken: PROCESS_CSRF_TOKEN,
   });
   if (!boundary.ok) {
