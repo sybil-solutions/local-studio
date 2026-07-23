@@ -22,9 +22,9 @@ do
 
   echo "Checking conventional commits for $local_ref -> $remote/$remote_ref ($url)"
   if git rev-parse --verify --quiet "$default_ref^{commit}" >/dev/null; then
-    node scripts/check-conventional-commits.mjs --range "$range" --exclude-ref "$default_ref" || exit 1
+    node scripts/check-conventional-commits.mjs --range "$range" --exclude-ref "$default_ref" --exclude-remotes || exit 1
   else
-    node scripts/check-conventional-commits.mjs --range "$range" || exit 1
+    node scripts/check-conventional-commits.mjs --range "$range" --exclude-remotes || exit 1
   fi
 done
 

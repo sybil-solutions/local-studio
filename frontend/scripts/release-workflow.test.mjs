@@ -115,6 +115,8 @@ test("pre-push commit validation excludes commits already on the default branch"
     runGit("checkout", "main");
     writeFileSync(resolve(fixture, "fixture.txt"), "upstream\n");
     runGit("commit", "-am", "feat: Upstream maintainer subject");
+    runGit("update-ref", "refs/remotes/origin/main", "main");
+    runGit("update-ref", "refs/remotes/fork/main", "remote-head");
     runGit("checkout", "-b", "refreshed");
     writeFileSync(resolve(fixture, "fixture.txt"), "refreshed\n");
     runGit("commit", "-am", "fix: preserve refreshed branch state");
@@ -126,9 +128,25 @@ test("pre-push commit validation excludes commits already on the default branch"
       encoding: "utf8",
     });
     assert.notEqual(withoutExclusion.status, 0);
+    const staleForkExclusion = spawnSync(
+      process.execPath,
+      [checker, "--range", range, "--exclude-ref", "refs/remotes/fork/main"],
+      {
+        cwd: fixture,
+        encoding: "utf8",
+      },
+    );
+    assert.notEqual(staleForkExclusion.status, 0);
     execFileSync(
       process.execPath,
-      [checker, "--range", range, "--exclude-ref", "main"],
+      [
+        checker,
+        "--range",
+        range,
+        "--exclude-ref",
+        "refs/remotes/fork/main",
+        "--exclude-remotes",
+      ],
       { cwd: fixture },
     );
   } finally {

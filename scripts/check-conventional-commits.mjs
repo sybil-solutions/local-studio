@@ -29,6 +29,7 @@ const args = process.argv.slice(2);
 const messageFileIndex = args.indexOf("--message-file");
 const rangeIndex = args.indexOf("--range");
 const excludeRefIndex = args.indexOf("--exclude-ref");
+const excludeRemotes = args.includes("--exclude-remotes");
 
 const fail = (message) => {
   console.error(message);
@@ -79,11 +80,12 @@ if (messageFileIndex !== -1) {
   const excludeRef = excludeRefIndex === -1 ? undefined : args[excludeRefIndex + 1];
   if (!range) {
     fail(
-      "Usage: check-conventional-commits.mjs --message-file <path> | --range <base..head> [--exclude-ref <ref>]",
+      "Usage: check-conventional-commits.mjs --message-file <path> | --range <base..head> [--exclude-ref <ref>] [--exclude-remotes]",
     );
   } else {
     const gitArgs = ["log", "--format=%s", range];
-    if (excludeRef) gitArgs.push("--not", excludeRef);
+    if (excludeRef) gitArgs.push(`^${excludeRef}`);
+    if (excludeRemotes) gitArgs.push("--not", "--remotes");
     const output = execFileSync("git", gitArgs, { encoding: "utf8" }).trim();
     const subjects = output ? output.split(/\r?\n/) : [];
     subjects.forEach((subject, index) => validateSubject(subject, `commit ${index + 1}`));
