@@ -2,7 +2,7 @@
 
 Status: original FP8 hybrid live; NVFP4-KV test and vision candidate stopped
 
-FP8 restoration: `2026-07-23T09:31:46Z`
+FP8 restoration: `2026-07-23T10:00:00Z`
 
 Live service: `glm52-v3`
 
@@ -20,7 +20,7 @@ GPU KV capacity: `344831` tokens
 
 Maximum 342528-token concurrency: `1.01x`
 
-Post-restore smoke test: passed. `GLM-5.2` returned `OK` with thinking disabled.
+Post-restart validation: passed. `/health` and `/v1/models` report `GLM-5.2`; CUDA-graph capture completed normally.
 
 NVFP4-KV test result: 1k and 4k control prompts returned `OK`; failure begins by 8k and is worse at 16k. The native NVFP4 KV cache did not resolve the long-context inference-quality concern.
 
