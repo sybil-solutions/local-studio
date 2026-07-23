@@ -38,6 +38,7 @@ export const AutomationSchema = Schema.Struct({
   status: Schema.Literals(["active", "paused"]),
   nextRunAt: Schema.NullOr(Schema.String),
   lastRun: Schema.NullOr(AutomationRunSchema),
+  runs: Schema.Array(AutomationRunSchema),
   unread: Schema.Boolean,
   createdAt: Schema.String,
   updatedAt: Schema.String,

@@ -19,6 +19,7 @@ const automation = (patch: Partial<Automation> = {}): Automation => ({
   status: "active",
   nextRunAt: "2026-07-24T12:00:00.000Z",
   lastRun: null,
+  runs: [],
   unread: false,
   createdAt: "2026-07-23T12:00:00.000Z",
   updatedAt: "2026-07-23T12:00:00.000Z",

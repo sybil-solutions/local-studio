@@ -183,7 +183,7 @@ export function AutomationEditor({
             </FormField>
           </div>
 
-          {!creating && automation?.lastRun ? <PreviousRun automation={automation} /> : null}
+          {!creating && automation?.runs.length ? <RunHistory automation={automation} /> : null}
 
           {error ? <EditorError error={error} /> : null}
 
@@ -300,36 +300,64 @@ function ExamplePicker({
   );
 }
 
-function PreviousRun({ automation }: { automation: Automation }) {
-  const run = automation.lastRun;
-  if (!run) return null;
+function RunHistory({ automation }: { automation: Automation }) {
   return (
     <div className="border-t border-(--ui-border) pt-6">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <h3 className="text-[length:var(--fs-base)] font-medium text-(--ui-fg)">Previous run</h3>
-          <p className="text-[length:var(--fs-xs)] text-(--ui-muted)">
-            {run.outcome === "error" ? "Failed" : "Completed"} {relativeTime(run.at)}
-          </p>
-        </div>
-        {run.piSessionId && run.projectId ? (
-          <Link
-            href={`/agent?project=${encodeURIComponent(run.projectId)}&session=${encodeURIComponent(run.piSessionId)}&replace=1`}
-            className="text-[length:var(--fs-sm)] text-(--link) hover:underline"
-          >
-            Open run
-          </Link>
-        ) : null}
+      <div className="mb-3 flex items-baseline justify-between gap-3">
+        <h3 className="text-[length:var(--fs-base)] font-medium text-(--ui-fg)">Run history</h3>
+        <span className="text-[length:var(--fs-xs)] text-(--ui-muted)">
+          {automation.runs.length} {automation.runs.length === 1 ? "run" : "runs"}
+        </span>
       </div>
-      {run.error ? (
-        <p className="mt-3 rounded-[10px] bg-(--ui-danger)/10 p-3 text-[length:var(--fs-sm)] text-(--ui-danger)">
-          {run.error}
-        </p>
-      ) : run.summary ? (
-        <p className="mt-3 whitespace-pre-wrap rounded-[10px] bg-(--ui-surface) p-3 text-[length:var(--fs-sm)] leading-5 text-(--ui-muted)">
-          {run.summary}
-        </p>
-      ) : null}
+      <div className="divide-y divide-(--ui-border) overflow-hidden rounded-[10px] border border-(--ui-border)">
+        {automation.runs.map((run, index) => {
+          const transcriptHref =
+            run.piSessionId && run.projectId
+              ? `/agent?project=${encodeURIComponent(run.projectId)}&session=${encodeURIComponent(run.piSessionId)}&replace=1`
+              : null;
+          return (
+            <div key={`${run.at}-${run.piSessionId ?? index}`} className="bg-(--ui-surface) p-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p
+                    className={
+                      run.outcome === "error"
+                        ? "text-[length:var(--fs-sm)] font-medium text-(--ui-danger)"
+                        : "text-[length:var(--fs-sm)] font-medium text-(--ui-fg)"
+                    }
+                  >
+                    {run.outcome === "error" ? "Failed" : "Completed"} {relativeTime(run.at)}
+                  </p>
+                  <p className="mt-0.5 text-[length:var(--fs-xs)] text-(--ui-muted)">
+                    {new Date(run.at).toLocaleString()}
+                  </p>
+                </div>
+                {transcriptHref ? (
+                  <Link
+                    href={transcriptHref}
+                    className="shrink-0 text-[length:var(--fs-sm)] text-(--link) hover:underline"
+                  >
+                    Open run
+                  </Link>
+                ) : (
+                  <span className="shrink-0 text-[length:var(--fs-xs)] text-(--ui-muted)">
+                    Transcript unavailable
+                  </span>
+                )}
+              </div>
+              {run.error ? (
+                <p className="mt-2 whitespace-pre-wrap text-[length:var(--fs-sm)] leading-5 text-(--ui-danger)">
+                  {run.error}
+                </p>
+              ) : run.summary ? (
+                <p className="mt-2 line-clamp-3 whitespace-pre-wrap text-[length:var(--fs-sm)] leading-5 text-(--ui-muted)">
+                  {run.summary}
+                </p>
+              ) : null}
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }

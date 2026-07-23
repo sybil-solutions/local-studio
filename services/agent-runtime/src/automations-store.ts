@@ -18,6 +18,14 @@ export type {
 
 const AUTOMATIONS_SUBDIR = "automations";
 const MAX_SUMMARY_CHARS = 2000;
+export const automationRunHistoryLimit = 20;
+
+export function prependAutomationRun(
+  runs: readonly AutomationRun[],
+  run: AutomationRun,
+): readonly AutomationRun[] {
+  return [run, ...runs].slice(0, automationRunHistoryLimit);
+}
 
 function normalizeSchedule(value: unknown): AutomationSchedule {
   if (isRecord(value)) {
@@ -62,6 +70,15 @@ function normalizeRun(value: unknown): AutomationRun | null {
 function normalizeAutomation(value: unknown): Automation {
   const record = isRecord(value) ? value : {};
   const now = new Date().toISOString();
+  const lastRun = normalizeRun(record.lastRun);
+  const runs = Array.isArray(record.runs)
+    ? record.runs
+        .map(normalizeRun)
+        .filter((run): run is AutomationRun => run !== null)
+        .slice(0, automationRunHistoryLimit)
+    : lastRun
+      ? [lastRun]
+      : [];
   return {
     version: 1,
     id: typeof record.id === "string" ? record.id : "",
@@ -72,7 +89,8 @@ function normalizeAutomation(value: unknown): Automation {
     schedule: normalizeSchedule(record.schedule),
     status: record.status === "paused" ? "paused" : "active",
     nextRunAt: typeof record.nextRunAt === "string" ? record.nextRunAt : null,
-    lastRun: normalizeRun(record.lastRun),
+    lastRun: runs[0] ?? lastRun,
+    runs,
     unread: record.unread === true,
     createdAt: typeof record.createdAt === "string" ? record.createdAt : now,
     updatedAt: typeof record.updatedAt === "string" ? record.updatedAt : now,
@@ -160,6 +178,7 @@ export async function createAutomation(input: {
       status: "active",
       nextRunAt: nextRunAt(schedule, new Date()).toISOString(),
       lastRun: null,
+      runs: [],
       unread: false,
       createdAt: new Date().toISOString(),
     },
@@ -173,6 +192,7 @@ export async function patchAutomation(
     schedule?: unknown;
     nextRunAt?: string | null;
     lastRun?: AutomationRun | null;
+    runs?: readonly AutomationRun[];
   },
 ): Promise<Automation | null> {
   const existing = await getAutomation(id);
@@ -190,6 +210,21 @@ export async function patchAutomation(
     id,
   );
   return next;
+}
+
+export async function recordAutomationRun(
+  id: string,
+  run: AutomationRun,
+  nextRunAtValue: string,
+): Promise<Automation | null> {
+  const automation = await getAutomation(id);
+  if (!automation) return null;
+  return patchAutomation(id, {
+    unread: true,
+    lastRun: run,
+    runs: prependAutomationRun(automation.runs, run),
+    nextRunAt: nextRunAtValue,
+  });
 }
 
 export async function deleteAutomation(id: string): Promise<boolean> {

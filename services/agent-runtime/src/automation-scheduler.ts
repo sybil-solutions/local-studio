@@ -3,6 +3,7 @@ import {
   listAutomations,
   nextRunAt,
   patchAutomation,
+  recordAutomationRun,
   type Automation,
 } from "./automations-store";
 import { getGlobalSingleton } from "./instances";
@@ -55,9 +56,9 @@ export async function runAutomationNow(id: string): Promise<Automation | null> {
     const projectId =
       listProjectsFromStore().find((project) => project.path === status.cwd)?.id ?? null;
     void session.stop().catch(() => undefined);
-    return await patchAutomation(id, {
-      unread: true,
-      lastRun: {
+    return await recordAutomationRun(
+      id,
+      {
         at: new Date().toISOString(),
         piSessionId,
         cwd: status.cwd,
@@ -66,12 +67,12 @@ export async function runAutomationNow(id: string): Promise<Automation | null> {
         summary: result.text,
         ...(error ? { error } : {}),
       },
-      nextRunAt: nextRunAt(automation.schedule, new Date()).toISOString(),
-    });
+      nextRunAt(automation.schedule, new Date()).toISOString(),
+    );
   } catch (error) {
-    return await patchAutomation(id, {
-      unread: true,
-      lastRun: {
+    return await recordAutomationRun(
+      id,
+      {
         at: new Date().toISOString(),
         piSessionId: null,
         cwd: automation.cwd,
@@ -80,8 +81,8 @@ export async function runAutomationNow(id: string): Promise<Automation | null> {
         summary: "",
         error: error instanceof Error ? error.message : "Automation run failed",
       },
-      nextRunAt: nextRunAt(automation.schedule, new Date()).toISOString(),
-    });
+      nextRunAt(automation.schedule, new Date()).toISOString(),
+    );
   } finally {
     scheduler.running.delete(id);
   }

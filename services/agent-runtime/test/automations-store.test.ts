@@ -1,5 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { nextRunAt } from "../src/automations-store";
+import {
+  automationRunHistoryLimit,
+  nextRunAt,
+  prependAutomationRun,
+} from "../src/automations-store";
+import type { AutomationRun } from "../../../shared/agent/automation";
 
 describe("automation scheduling", () => {
   test("advances interval schedules from the current time", () => {
@@ -25,5 +30,21 @@ describe("automation scheduling", () => {
     expect(next.getDay()).toBe(1);
     expect(next.getDate()).toBe(27);
     expect(next.getHours()).toBe(8);
+  });
+
+  test("prepends new results and keeps a bounded automation run history", () => {
+    const run = (index: number): AutomationRun => ({
+      at: `2026-07-23T12:${String(index).padStart(2, "0")}:00.000Z`,
+      piSessionId: `session-${index}`,
+      cwd: "/workspace",
+      projectId: "project-1",
+      outcome: "ok",
+      summary: `result-${index}`,
+    });
+    const existing = Array.from({ length: automationRunHistoryLimit }, (_, index) => run(index));
+    const next = prependAutomationRun(existing, run(21));
+    expect(next).toHaveLength(automationRunHistoryLimit);
+    expect(next[0]?.summary).toBe("result-21");
+    expect(next.at(-1)?.summary).toBe("result-18");
   });
 });
