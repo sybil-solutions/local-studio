@@ -5,7 +5,8 @@ import { connect as netConnect } from "node:net";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { BrowserHost } from "./browser-host";
+import { Schema } from "effect";
+import { BrowserHost, type ScreencastFrame } from "./browser-host";
 import { HostedPage } from "./hosted-page";
 import {
   createBrowserNetworkPolicy,
@@ -20,6 +21,12 @@ import {
 } from "./playwright";
 
 const PUBLIC_ADDRESS = "8.8.8.8";
+const FrameColorSchema = Schema.Union([
+  Schema.Literal("red"),
+  Schema.Literal("green"),
+  Schema.Literal("other"),
+]);
+type FrameColor = typeof FrameColorSchema.Type;
 
 function listen(server: Server): Promise<number> {
   return new Promise((resolveListen, reject) => {
@@ -104,7 +111,54 @@ function fixtureServer(blockedBase: string, loopbackBase: string, hosts: string[
   });
 }
 
-function instrumentPolicy(policy: BrowserNetworkPolicy, attempts: string[]): BrowserNetworkPolicy {
+function screencastServer(): Server {
+  return createServer((request, response) => {
+    const agentPage = request.url === "/b";
+    const marker = agentPage ? "AGENT_B_SENTINEL" : "VISIBLE_A_SENTINEL";
+    const background = agentPage ? "#00ff00" : "#ff0000";
+    response.setHeader("content-type", "text/html");
+    response.end(
+      `<!doctype html><title>${marker}</title><style>html,body{height:100%;margin:0;background:${background}}</style><h1>${marker}</h1>`,
+    );
+  });
+}
+
+async function classifyFrameColor<RawPage>(
+  host: BrowserHost<RawPage>,
+  frame: ScreencastFrame,
+): Promise<FrameColor> {
+  const source = JSON.stringify(`data:image/jpeg;base64,${frame.data}`);
+  const result = await host.evaluate(`new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => {
+      const canvas = document.createElement("canvas");
+      canvas.width = image.naturalWidth;
+      canvas.height = image.naturalHeight;
+      const context = canvas.getContext("2d");
+      if (!context) { reject(new Error("Missing canvas context")); return; }
+      context.drawImage(image, 0, 0);
+      const positions = [0.25, 0.5, 0.75];
+      const pixels = positions.flatMap((x) => positions.map((y) =>
+        context.getImageData(Math.floor(canvas.width * x), Math.floor(canvas.height * y), 1, 1).data
+      ));
+      const channels = pixels.reduce(
+        (totals, pixel) => totals.map((total, index) => total + pixel[index]),
+        [0, 0, 0]
+      ).map((total) => total / pixels.length);
+      if (channels[0] > 200 && channels[1] < 70 && channels[2] < 70) { resolve("red"); return; }
+      if (channels[1] > 200 && channels[0] < 70 && channels[2] < 70) { resolve("green"); return; }
+      resolve("other");
+    };
+    image.onerror = () => reject(new Error("Frame decode failed"));
+    image.src = ${source};
+  })`);
+  return Schema.decodeUnknownSync(FrameColorSchema)(result);
+}
+
+function instrumentPolicy(
+  policy: BrowserNetworkPolicy,
+  attempts: string[],
+): BrowserNetworkPolicy {
   return {
     allows: policy.allows,
     resolve: async (raw, mode) => {
@@ -138,6 +192,33 @@ function attemptedWebSocket(attempts: string[], port: number): boolean {
     }
   });
 }
+
+test("static navigation refreshes the visible screencast frame", { timeout: 20_000 }, async () => {
+  const fixture = screencastServer();
+  const fixturePort = await listen(fixture);
+  const profile = await mkdtemp(path.join(os.tmpdir(), "local-studio-browser-frame-"));
+  const policy = createBrowserNetworkPolicy();
+  const manager = new PlaywrightManager({
+    launch: createPlaywrightSessionLauncher((mode) => path.join(profile, mode)),
+    policy,
+    resolveBinary: findBrowserBinary,
+  });
+  const host = new BrowserHost(manager, { attachPage: HostedPage.attach });
+  try {
+    await host.navigate(`http://127.0.0.1:${fixturePort}/a`);
+    const first = (await host.pollFrame()).frame;
+    assert.ok(first);
+    assert.equal(await classifyFrameColor(host, first), "red");
+    await host.navigate(`http://127.0.0.1:${fixturePort}/b`);
+    const second = (await host.pollFrame()).frame;
+    assert.ok(second);
+    assert.equal(await classifyFrameColor(host, second), "green");
+    assert.equal(await host.getText(), "AGENT_B_SENTINEL");
+  } finally {
+    await host.stop().catch(() => undefined);
+    await Promise.allSettled([close(fixture), rm(profile, { force: true, recursive: true })]);
+  }
+});
 
 test(
   "Playwright blocks redirects and every browser request class before denied sockets accept",
