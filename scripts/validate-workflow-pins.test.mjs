@@ -676,7 +676,7 @@ test("keeps executable workflow graphs and sensitive permissions least-privilege
   const ci = parsed("ci.yml");
   assert.equal(ci.jobs.controller.needs, "gates");
   assert.equal(ci.jobs.frontend.needs, "gates");
-  assert.deepEqual(ci.jobs.release.needs, ["gates", "controller", "frontend"]);
+  assert.deepEqual(ci.jobs.release.needs, ["gates", "controller", "frontend", "agent-runtime"]);
   const security = parsed("security.yml");
   assert.deepEqual(security.permissions, { contents: "read" });
   assert.deepEqual(security.jobs.codeql.permissions, {
