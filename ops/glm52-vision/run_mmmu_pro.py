@@ -50,7 +50,12 @@ def ask(endpoint, model, image):
         try:
             with urlopen(request, timeout=600) as response:
                 return json.loads(response.read())["choices"][0]["message"]["content"]
-        except (HTTPError, TimeoutError, URLError, OSError):
+        except HTTPError as error:
+            body = error.read().decode("utf-8", "replace")[:1000]
+            if 400 <= error.code < 500 or attempt == 3:
+                raise RuntimeError(f"HTTP {error.code}: {body}") from error
+            sleep(2**attempt)
+        except (TimeoutError, URLError, OSError):
             if attempt == 3:
                 raise
             sleep(2**attempt)
@@ -64,9 +69,11 @@ def saved_ids(path):
 
 
 def evaluate_sample(endpoint, model, sample):
-    response = ask(endpoint, model, sample["image"])
     record = {key: sample[key] for key in ("id", "options", "answer", "subject")}
-    record["response"] = response
+    try:
+        record["response"] = ask(endpoint, model, sample["image"])
+    except Exception as error:
+        record["error"] = f"{type(error).__name__}: {error}"
     return record
 
 
@@ -98,7 +105,8 @@ def main():
                 results.write(json.dumps(record, ensure_ascii=False) + "\n")
                 results.flush()
                 written += 1
-                print(f"completed={len(completed) + written} id={record['id']}", flush=True)
+                state = "failed" if "error" in record else "completed"
+                print(f"{state}={len(completed) + written} id={record['id']}", flush=True)
 
 
 if __name__ == "__main__":

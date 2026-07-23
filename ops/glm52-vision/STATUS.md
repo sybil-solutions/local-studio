@@ -46,7 +46,7 @@ Text validation: passed with `TEXT_OK`
 
 Image validation: passed with the attached Local Studio screenshot, returned a bounded description, and stopped at EOS token `154827`
 
-MMMU-Pro: the official `vision/direct` split is running with four concurrent requests and durable JSONL checkpoints at `/home/ser/bench/MMMU/mmmu-pro/output/GLM-5.2-Vision_vision_direct.jsonl`
+MMMU-Pro: the official `vision/direct` split reached 101 durable records with four concurrent requests, then stopped on one HTTP 400 response. The runner now records failed samples separately and resumes the remaining work with four concurrent requests; failed samples are excluded from scoring.
 
 Post-start error scan: clean
 
