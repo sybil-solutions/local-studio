@@ -117,6 +117,7 @@ test("pre-push commit validation excludes commits already on the default branch"
     runGit("commit", "-am", "feat: Upstream maintainer subject");
     runGit("update-ref", "refs/remotes/origin/main", "main");
     runGit("update-ref", "refs/remotes/fork/main", "remote-head");
+    runGit("symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main");
     runGit("checkout", "-b", "refreshed");
     writeFileSync(resolve(fixture, "fixture.txt"), "refreshed\n");
     runGit("commit", "-am", "fix: preserve refreshed branch state");
@@ -145,10 +146,30 @@ test("pre-push commit validation excludes commits already on the default branch"
         range,
         "--exclude-ref",
         "refs/remotes/fork/main",
-        "--exclude-remotes",
+        "--exclude-remote-heads",
       ],
       { cwd: fixture },
     );
+
+    writeFileSync(resolve(fixture, "fixture.txt"), "invalid topic\n");
+    runGit("commit", "-am", "fix: Bad newly pushed subject");
+    runGit("update-ref", "refs/remotes/untrusted/topic", "refreshed");
+    const unrelatedTopicExclusion = spawnSync(
+      process.execPath,
+      [
+        checker,
+        "--range",
+        range,
+        "--exclude-ref",
+        "refs/remotes/fork/main",
+        "--exclude-remote-heads",
+      ],
+      {
+        cwd: fixture,
+        encoding: "utf8",
+      },
+    );
+    assert.notEqual(unrelatedTopicExclusion.status, 0);
   } finally {
     rmSync(fixture, { recursive: true, force: true });
   }
