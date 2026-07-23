@@ -6,7 +6,14 @@ import { fileURLToPath } from "node:url";
 const packageDir = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const distDir = path.join(packageDir, "dist");
 const bundlePath = path.join(distDir, "standalone.mjs");
-const runtimePackages = ["playwright-core", "chromium-bidi", "mitt", "devtools-protocol"];
+const runtimePackages = [
+  "playwright-core",
+  "chromium-bidi",
+  "mitt",
+  "devtools-protocol",
+  "@silvia-odwyer/photon-node",
+  "undici",
+];
 
 rmSync(distDir, { recursive: true, force: true });
 mkdirSync(distDir, { recursive: true });
@@ -21,6 +28,10 @@ const build = spawnSync(
     "fsevents",
     "--external",
     "playwright-core",
+    "--external",
+    "@silvia-odwyer/photon-node",
+    "--external",
+    "undici",
     "--outfile=dist/standalone.mjs",
   ],
   { cwd: packageDir, stdio: "inherit" },
@@ -42,11 +53,9 @@ for (const packageName of runtimePackages) {
 }
 
 const bundle = readFileSync(bundlePath, "utf8");
-for (const packageName of runtimePackages) {
-  const source = realpathSync(path.join(packageDir, "node_modules", ...packageName.split("/")));
-  if (bundle.includes(source)) {
-    throw new Error(`Agent runtime bundle contains a build-machine path: ${source}`);
-  }
+const sourceRoot = realpathSync(path.join(packageDir, "..", ".."));
+if (bundle.includes(sourceRoot)) {
+  throw new Error(`Agent runtime bundle contains the build-machine root: ${sourceRoot}`);
 }
 
 console.log(`Packaged portable browser runtime: ${runtimePackages.join(", ")}`);

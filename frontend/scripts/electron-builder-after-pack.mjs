@@ -74,6 +74,14 @@ export default async function afterPack(context) {
     ),
     path.join(agentRuntimeRoot, "node_modules", "mitt", "package.json"),
     path.join(agentRuntimeRoot, "node_modules", "devtools-protocol", "package.json"),
+    path.join(
+      agentRuntimeRoot,
+      "node_modules",
+      "@silvia-odwyer",
+      "photon-node",
+      "package.json",
+    ),
+    path.join(agentRuntimeRoot, "node_modules", "undici", "package.json"),
   ];
   const missingAgentRuntimeFile = requiredAgentRuntimeFiles.find((file) => !existsSync(file));
   if (missingAgentRuntimeFile) {
@@ -81,10 +89,10 @@ export default async function afterPack(context) {
   }
 
   const agentRuntimeSource = readFileSync(agentRuntime, "utf8");
-  const absolutePlaywrightPath =
-    /["'](?:[A-Za-z]:\\|\/)[^"'\n]*node_modules[\\/]playwright-core[\\/]/;
-  if (absolutePlaywrightPath.test(agentRuntimeSource)) {
-    throw new Error("Packaged agent runtime contains a build-machine Playwright path");
+  const absoluteDependencyPath =
+    /["'](?:[A-Za-z]:\\|\/(?:Users|home|root)\/)[^"'\n]*node_modules[\\/]/;
+  if (absoluteDependencyPath.test(agentRuntimeSource)) {
+    throw new Error("Packaged agent runtime contains a build-machine dependency path");
   }
 
   console.log(`  afterPack: embedded frontend and agent runtime present (${electronPlatformName})`);

@@ -27,6 +27,10 @@ extraResources:
     to: app/agent-runtime/node_modules/mitt
   - from: ../services/agent-runtime/dist/node_modules/devtools-protocol
     to: app/agent-runtime/node_modules/devtools-protocol
+  - from: ../services/agent-runtime/dist/node_modules/@silvia-odwyer/photon-node
+    to: app/agent-runtime/node_modules/@silvia-odwyer/photon-node
+  - from: ../services/agent-runtime/dist/node_modules/undici
+    to: app/agent-runtime/node_modules/undici
   - from: .next/standalone
     to: app/frontend/.next/standalone
     filter:

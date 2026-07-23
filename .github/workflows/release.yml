@@ -6,6 +6,10 @@ on:
     types: [completed]
     branches: [main]
 
+concurrency:
+  group: release-main
+  cancel-in-progress: false
+
 permissions:
   contents: write
   issues: write
@@ -14,7 +18,9 @@ permissions:
 jobs:
   release:
     if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push'
-    runs-on: ubuntu-latest
+    runs-on: macos-15
+    env:
+      RELEASE_SHA: ${{ github.event.workflow_run.head_sha }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -24,9 +30,50 @@ jobs:
       - name: Select tested main revision
         run: git checkout -B main "${{ github.event.workflow_run.head_sha }}"
 
+      - name: Reject stale release revision
+        run: node scripts/assert-release-main.mjs --commit "$RELEASE_SHA"
+
       - uses: actions/setup-node@v4
         with:
           node-version: 22.19.0
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install controller contract dependencies
+        working-directory: ./controller
+        run: bun install --frozen-lockfile
+
+      - name: Install shared contract dependencies
+        working-directory: ./shared
+        run: bun install --frozen-lockfile
+
+      - name: Install agent runtime dependencies
+        working-directory: ./services/agent-runtime
+        run: bun install --frozen-lockfile
+
+      - name: Install frontend dependencies
+        working-directory: ./frontend
+        run: npm ci --legacy-peer-deps
+
+      - name: Configure Apple notarization
+        env:
+          APPLE_API_KEY_BASE64: ${{ secrets.APPLE_API_KEY_BASE64 }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          CSC_LINK: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+          CSC_KEY_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+        run: |
+          test -n "$APPLE_API_KEY_BASE64"
+          test -n "$APPLE_API_KEY_ID"
+          test -n "$APPLE_API_ISSUER"
+          test -n "$CSC_LINK"
+          test -n "$CSC_KEY_PASSWORD"
+          key_path="$RUNNER_TEMP/AuthKey_${APPLE_API_KEY_ID}.p8"
+          printf '%s' "$APPLE_API_KEY_BASE64" | base64 --decode > "$key_path"
+          chmod 600 "$key_path"
+          echo "APPLE_API_KEY=$key_path" >> "$GITHUB_ENV"
 
       - name: Configure git author
         run: |
@@ -35,11 +82,16 @@ jobs:
 
       - name: Release
         env:
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          CSC_LINK: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+          CSC_KEY_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           npx -y \
             -p semantic-release@24 \
             -p @semantic-release/commit-analyzer \
+            -p @semantic-release/exec \
             -p @semantic-release/release-notes-generator \
             -p @semantic-release/github \
             -p conventional-changelog-conventionalcommits@8 \

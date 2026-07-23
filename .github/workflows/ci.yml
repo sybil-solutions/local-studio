@@ -10,9 +10,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: 22.19.0
+      - name: Conventional commit gate
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
+        run: node scripts/check-conventional-commits.mjs --range "$BASE_SHA..$HEAD_SHA"
       - name: Shared-contract duplication gate
         run: node scripts/validate-shared-contracts.mjs
       - name: Barrel/dir sibling structure gate
@@ -78,3 +85,50 @@ jobs:
       - name: Production quality gate
         working-directory: ./frontend
         run: npm run check:quality
+
+  desktop-package:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.19.0
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - name: Install controller contract dependencies
+        working-directory: ./controller
+        run: bun install --frozen-lockfile
+      - name: Install shared contract dependencies
+        working-directory: ./shared
+        run: bun install --frozen-lockfile
+      - name: Install agent runtime dependencies
+        working-directory: ./services/agent-runtime
+        run: bun install --frozen-lockfile
+      - name: Install frontend dependencies
+        working-directory: ./frontend
+        run: npm ci --legacy-peer-deps
+      - name: Build unsigned test package
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        run: >-
+          npm --prefix frontend run desktop:pack --
+          --config.mac.identity=null
+          --config.mac.hardenedRuntime=false
+          --config.extraMetadata.localStudioCommit=${{ github.sha }}
+      - name: Smoke packaged desktop
+        run: >-
+          npm --prefix frontend run desktop:smoke --
+          --app "${{ github.workspace }}/frontend/dist-desktop/mac-arm64/Local Studio.app"
+          --expected-version "$(node -p 'require("./frontend/package.json").version')"
+      - name: Archive exact-main test package
+        run: >-
+          ditto -c -k --keepParent
+          "frontend/dist-desktop/mac-arm64/Local Studio.app"
+          "local-studio-${{ github.sha }}-arm64.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: local-studio-${{ github.sha }}-arm64
+          path: local-studio-${{ github.sha }}-arm64.zip
+          if-no-files-found: error
+          retention-days: 7

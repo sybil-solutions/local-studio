@@ -35,6 +35,7 @@
     "desktop:dist": "npm run desktop:build && electron-builder --config desktop/electron-builder.yml",
     "desktop:dist:notarized": "npm run desktop:build && electron-builder --config desktop/electron-builder.yml --config.mac.notarize=true",
     "desktop:pack": "npm run desktop:build && electron-builder --dir --config desktop/electron-builder.yml",
+    "desktop:smoke": "node scripts/desktop-package-smoke.mjs",
     "typecheck": "tsc --noEmit",
     "typecheck:desktop": "tsc -p desktop/tsconfig.json",
     "check:cycles": "madge --extensions ts,tsx --circular src",

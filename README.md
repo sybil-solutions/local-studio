@@ -223,25 +223,25 @@ before pushing.
 
 ## Releases
 
-Pushing conventional commits to `main` triggers `release.yml`. Semantic Release
-analyzes commits since the last tag, cuts the next tag (`feat` → minor, other
-release types → patch, breaking → major), and publishes generated notes. There
-is no npm publish and tags are never created by hand.
+Every successful `main` CI run builds and boots an isolated unsigned macOS app,
+checks the embedded frontend, agent runtime, native desktop bridge, and PTY, and
+keeps the exact-SHA package as a GitHub Actions artifact. Conventional commits
+then trigger `release.yml`. Semantic Release chooses the next version (`feat` →
+minor, breaking → major, all other allowed commit types → patch).
 
-The public macOS build is produced on a Developer ID-equipped Mac. Stage the
-signed DMG, updater ZIP, blockmaps, metadata, and stable website alias after the
-build completes:
+The release job runs on an arm64 macOS host, rebuilds the exact CI-tested
+revision, signs it with Developer ID, notarizes and staples it, rechecks that the
+revision is still `origin/main`, and only then creates the GitHub release with
+the DMG, updater files, stable website alias, checksums, and source manifest.
+There is no npm publish and tags are never created by hand.
+
+To reproduce the notarized release locally with the keychain profile:
 
 ```bash
-npm --prefix frontend run desktop:dist
-npm run release:stage-desktop
-gh release upload "v$(node -p 'require("./frontend/package.json").version')" release-staging/*
+APPLE_KEYCHAIN_PROFILE=vllm-studio-notarize npm run release:build-desktop -- \
+  --version 2.2.2 \
+  --commit "$(git rev-parse HEAD)"
 ```
-
-Run `APPLE_KEYCHAIN_PROFILE=vllm-studio-notarize npm --prefix frontend run
-desktop:dist:notarized` when the Apple developer team has an active distribution
-agreement. Electron Builder then submits and staples the notarization ticket
-before creating the archives.
 
 Remove `frontend/dist-desktop/` and `release-staging/` after installation and
 upload; neither directory belongs in git.

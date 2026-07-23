@@ -6,6 +6,7 @@
     "doctor": "bash scripts/doctor.sh",
     "release:notes": "node scripts/release-statement.mjs",
     "release:check-commits": "node scripts/check-conventional-commits.mjs --range origin/main..HEAD",
+    "release:build-desktop": "node scripts/build-desktop-release.mjs",
     "release:stage-desktop": "node scripts/stage-desktop-release.mjs",
     "setup:git-hooks": "node scripts/setup-git-hooks.mjs",
     "dev": "npm --prefix frontend run dev",

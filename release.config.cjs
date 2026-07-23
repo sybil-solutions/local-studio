@@ -18,6 +18,11 @@ module.exports = {
           { type: "micro", release: "patch" },
           { type: "release", release: "patch" },
           { type: "test", release: "patch" },
+          { type: "build", release: "patch" },
+          { type: "ci", release: "patch" },
+          { type: "docs", release: "patch" },
+          { type: "chore", release: "patch" },
+          { type: "style", release: "patch" },
           { breaking: true, release: "major" },
         ],
       },
@@ -44,6 +49,20 @@ module.exports = {
         },
       },
     ],
-    "@semantic-release/github",
+    [
+      "@semantic-release/exec",
+      {
+        prepareCmd:
+          "node scripts/build-desktop-release.mjs --version ${nextRelease.version} --commit ${env.RELEASE_SHA}",
+        publishCmd:
+          "node scripts/assert-release-main.mjs --commit ${env.RELEASE_SHA}",
+      },
+    ],
+    [
+      "@semantic-release/github",
+      {
+        assets: [{ path: "release-staging/*" }],
+      },
+    ],
   ],
 };
