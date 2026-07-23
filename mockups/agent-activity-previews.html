@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Agent activity &amp; previews — redesign mockups</title>
+<title>Agent activity &amp; previews — unified disclosure (Direction B, pass 2)</title>
 <style>
   :root {
     --gray-1000: #0d0d0d;
@@ -23,8 +23,6 @@
     --blue-soft: #7cbfff;
     --green: #40c977;
     --red: #ff6764;
-    --orange: #ff8549;
-    --purple: #c5a1fb;
     --cyan: #9adcf7;
     --radius: 10px;
     --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, monospace;
@@ -39,18 +37,18 @@
     line-height: 1.5;
     padding: 40px 32px 80px;
   }
-  .page-head { max-width: 1440px; margin: 0 auto 36px; }
+  .page-head { max-width: 1000px; margin: 0 auto 36px; }
   .page-head h1 { font-size: 20px; font-weight: 600; letter-spacing: -0.01em; }
-  .page-head p { color: var(--dimmer); max-width: 720px; margin-top: 6px; font-size: 13px; }
+  .page-head p { color: var(--dimmer); max-width: 760px; margin-top: 6px; font-size: 13px; }
   .lanes {
     display: grid;
-    grid-template-columns: repeat(3, minmax(380px, 460px));
+    grid-template-columns: repeat(2, minmax(400px, 480px));
     gap: 28px;
-    max-width: 1440px;
+    max-width: 1000px;
     margin: 0 auto;
     justify-content: center;
   }
-  @media (max-width: 1280px) { .lanes { grid-template-columns: minmax(380px, 460px); } }
+  @media (max-width: 960px) { .lanes { grid-template-columns: minmax(380px, 480px); } }
   .lane-head { margin-bottom: 12px; }
   .lane-head .kicker {
     font-family: var(--mono);
@@ -66,8 +64,8 @@
     background: var(--gray-900);
     border: 1px solid var(--border);
     border-radius: 18px;
-    height: 78vh;
-    min-height: 640px;
+    height: 80vh;
+    min-height: 660px;
     display: flex;
     flex-direction: column;
     overflow: hidden;
@@ -91,7 +89,6 @@
     border-bottom-right-radius: 6px;
     padding: 8px 14px;
     font-size: 13.5px;
-    color: var(--fg);
   }
   .answer { font-size: 13.5px; color: #ffffffe0; display: flex; flex-direction: column; gap: 10px; }
   .answer h3 { font-size: 14px; font-weight: 600; color: var(--fg); margin-top: 2px; }
@@ -110,13 +107,7 @@
   .composer-box .ph { color: #ffffff52; font-size: 13.5px; }
   .composer-row { display: flex; align-items: center; justify-content: space-between; }
   .composer-row .left { display: flex; gap: 12px; color: var(--faint); }
-  .composer-row .model {
-    font-size: 12px;
-    color: var(--dimmer);
-    display: flex;
-    align-items: center;
-    gap: 4px;
-  }
+  .composer-row .model { font-size: 12px; color: var(--dimmer); display: flex; align-items: center; gap: 4px; }
   .icon { width: 14px; height: 14px; flex-shrink: 0; stroke: currentColor; fill: none; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
   .icon-xs { width: 12px; height: 12px; }
   .shimmer {
@@ -131,133 +122,72 @@
   @keyframes shimmer-sweep { from { background-position: 100% 0; } to { background-position: 0% 0; } }
   .dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
   .dot.ok { background: var(--green); }
-  .dot.err { background: var(--red); }
   .dot.run { background: var(--blue); animation: pulse 1.2s ease-in-out infinite; }
   @keyframes pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.35; transform: scale(0.8); } }
-  .caret { display: inline-block; width: 7px; height: 13px; background: #ffffff8c; vertical-align: -2px; animation: blink 1s steps(1) infinite; }
-  @keyframes blink { 50% { opacity: 0; } }
   .fadeswap { transition: opacity 0.35s ease; }
   .fadeswap.out { opacity: 0; }
-  .divider {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    font-size: 12px;
-    color: var(--faint);
-  }
-  .divider::after { content: ""; flex: 1; height: 1px; background: var(--separator); }
+  .chev { transition: transform 0.15s; }
 
-  .card-a {
-    border: 1px solid var(--separator);
-    border-radius: 14px;
-    background: #ffffff04;
-    overflow: hidden;
-  }
-  .card-a .head {
+  .group-b { display: flex; flex-direction: column; min-width: 0; }
+  .group-b .gtoggle {
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 9px 12px;
-    cursor: pointer;
+    gap: 7px;
     font-size: 12.5px;
-    color: var(--dimmer);
-  }
-  .card-a .head:hover { background: var(--hover); }
-  .card-a .head .title { font-weight: 500; color: var(--dim); white-space: nowrap; }
-  .card-a .head .meta { color: var(--faint); min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .card-a .head .chev { margin-left: auto; color: var(--faint); transition: transform 0.15s; }
-  .card-a.open .head .chev { transform: rotate(90deg); }
-  .card-a .body { display: none; border-top: 1px solid var(--separator); padding: 12px 14px 14px; }
-  .card-a.open .body { display: block; }
-  .steps { display: flex; flex-direction: column; }
-  .step { display: grid; grid-template-columns: 22px 1fr; gap: 10px; }
-  .step .node { display: flex; flex-direction: column; align-items: center; }
-  .step .bead {
-    width: 22px; height: 22px;
-    border-radius: 50%;
-    background: var(--input);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: var(--dimmer);
-    flex-shrink: 0;
-  }
-  .step .bead.live { color: var(--blue-soft); box-shadow: 0 0 0 1px #339cff3d; }
-  .step .stem { width: 1px; flex: 1; background: var(--separator); margin: 3px 0; }
-  .step:last-child .stem { display: none; }
-  .step .content { padding: 2px 0 14px; min-width: 0; }
-  .step:last-child .content { padding-bottom: 0; }
-  .step .label { display: flex; align-items: baseline; gap: 7px; font-size: 12.5px; min-width: 0; }
-  .step .verb { color: var(--dim); font-weight: 500; flex-shrink: 0; }
-  .step .detail { font-family: var(--mono); font-size: 11.5px; color: var(--dimmer); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
-  .step .thought-text { font-size: 12.5px; color: var(--dimmer); font-style: italic; }
-  .step .status { margin-left: auto; display: flex; align-items: center; gap: 5px; font-size: 11px; color: var(--faint); flex-shrink: 0; }
-  .outprev {
-    margin-top: 8px;
-    position: relative;
-    border: 1px solid var(--separator);
-    border-radius: 8px;
-    background: #00000038;
-    overflow: hidden;
-  }
-  .outprev pre {
-    font-family: var(--mono);
-    font-size: 11px;
-    line-height: 1.55;
-    color: #ffffff70;
-    padding: 8px 10px;
-    max-height: 92px;
-    overflow: hidden;
-    white-space: pre-wrap;
-    word-break: break-word;
-  }
-  .outprev .fade {
-    position: absolute; left: 0; right: 0; bottom: 0; height: 34px;
-    background: linear-gradient(to bottom, transparent, var(--gray-900) 92%);
-    pointer-events: none;
-  }
-  .outprev .more {
-    position: absolute; right: 8px; bottom: 5px;
-    font-size: 10.5px; color: var(--faint);
-    background: var(--gray-750);
-    border: 1px solid var(--border);
-    border-radius: 99px;
-    padding: 1px 8px;
+    color: var(--faint);
     cursor: pointer;
+    border-radius: 8px;
+    padding: 3px 6px;
+    margin-left: -6px;
+    min-width: 0;
   }
-  .outprev .more:hover { color: var(--dim); }
-  .headline { display: flex; align-items: center; gap: 8px; padding: 9px 12px; font-size: 12.5px; }
+  .group-b .gtoggle:hover { background: var(--hover); color: var(--dimmer); }
+  .group-b .gtoggle .glabel { color: var(--dimmer); font-weight: 500; white-space: nowrap; }
+  .group-b .gtoggle .gmeta { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+  .group-b .gtoggle .gpreview {
+    font-family: var(--mono);
+    font-size: 11.5px;
+    color: var(--faint);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+  }
+  .group-b .gtoggle .gtime { margin-left: auto; white-space: nowrap; flex-shrink: 0; }
+  .group-b.open .gtoggle .chev { transform: rotate(90deg); }
+  .group-b .gbody {
+    display: none;
+    margin: 8px 0 2px 5px;
+    padding-left: 14px;
+    border-left: 2px solid var(--border);
+    flex-direction: column;
+    gap: 8px;
+    min-width: 0;
+  }
+  .group-b.open .gbody { display: flex; }
 
-  .row-b { display: flex; flex-direction: column; gap: 6px; }
-  .thought-b { font-size: 12.5px; }
+  .thought-b { font-size: 12.5px; min-width: 0; }
   .thought-b .toggle {
     display: inline-flex; align-items: center; gap: 5px;
-    color: var(--faint); cursor: pointer; border-radius: 6px; padding: 2px 4px;
+    color: var(--faint); cursor: pointer; border-radius: 6px; padding: 2px 4px; margin-left: -4px;
   }
   .thought-b .toggle:hover { background: var(--hover); color: var(--dimmer); }
-  .thought-b .body {
-    display: none;
-    margin: 6px 0 4px 5px;
-    padding-left: 12px;
-    border-left: 2px solid var(--border);
-    color: var(--dimmer);
-    font-size: 12.5px;
-  }
+  .thought-b .body { display: none; margin: 4px 0 2px 1px; color: var(--dimmer); font-size: 12.5px; }
   .thought-b.open .body { display: block; }
   .thought-b.open .toggle .chev { transform: rotate(90deg); }
-  .chev { transition: transform 0.15s; }
+
   .toolrow-b {
     display: flex; align-items: center; gap: 8px;
-    font-size: 12.5px; padding: 3px 4px; border-radius: 8px; cursor: pointer;
+    font-size: 12.5px; padding: 3px 4px; margin-left: -4px; border-radius: 8px; cursor: pointer;
     min-width: 0;
   }
   .toolrow-b:hover { background: var(--hover); }
   .toolrow-b .verb { font-weight: 500; flex-shrink: 0; }
   .toolrow-b .verb.file { color: var(--blue-soft); }
   .toolrow-b .verb.web { color: var(--cyan); }
-  .toolrow-b .verb.shell { color: var(--dim); }
   .toolrow-b .detail { font-family: var(--mono); font-size: 11.5px; color: var(--dimmer); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .toolrow-b .icon { color: var(--faint); }
+
   .shell-b { border: 1px solid var(--separator); border-radius: var(--radius); overflow: hidden; background: #00000030; }
   .shell-b .bar {
     display: flex; align-items: center; gap: 8px;
@@ -274,7 +204,6 @@
     font-family: var(--mono); font-size: 11px; line-height: 1.55;
     color: #ffffff70; padding: 8px 10px;
     max-height: 110px; overflow: hidden; white-space: pre-wrap; word-break: break-word;
-    position: relative;
   }
   .shell-b .prewrap { position: relative; }
   .shell-b .prewrap .fade {
@@ -282,153 +211,88 @@
     background: linear-gradient(to bottom, transparent, #111111f0);
     pointer-events: none;
   }
-  .shell-b .prewrap.live .fade { display: none; }
-  .shell-b .prewrap.live pre { color: #ffffff8c; }
-
-  .thought-c { font-size: 12.5px; }
-  .thought-c .toggle {
-    display: inline-flex; align-items: center; gap: 6px;
-    color: var(--faint); cursor: pointer; border-radius: 6px; padding: 2px 4px;
-    font-size: 12.5px;
-  }
-  .thought-c .toggle:hover { background: var(--hover); color: var(--dimmer); }
-  .thought-c .body {
-    display: none;
-    margin: 8px 0 4px 6px;
-    padding-left: 14px;
-    border-left: 2px solid var(--border);
-    color: #ffffff8c;
-    font-size: 12.5px;
-    line-height: 1.6;
-  }
-  .thought-c.open .body { display: flex; flex-direction: column; gap: 10px; }
-  .thought-c.open .toggle .chev { transform: rotate(90deg); }
-  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
-  .chip {
-    display: inline-flex; align-items: center; gap: 6px;
-    font-family: var(--mono);
-    font-size: 11px;
-    color: var(--dimmer);
-    background: var(--input);
-    border: 1px solid var(--separator);
+  .shell-b .prewrap .more {
+    position: absolute; right: 8px; bottom: 5px;
+    font-size: 10.5px; color: var(--faint);
+    background: var(--gray-750);
+    border: 1px solid var(--border);
     border-radius: 99px;
-    padding: 3px 10px 3px 8px;
-    max-width: 100%;
+    padding: 1px 8px;
     cursor: pointer;
   }
-  .chip:hover { border-color: var(--border); color: var(--dim); }
-  .chip .icon { color: var(--faint); }
-  .chip .trunc { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 240px; }
-  .chip.run { border-color: #339cff3d; color: var(--blue-soft); }
-  .chip.run .icon { color: var(--blue-soft); }
-  .live-line-c { display: flex; align-items: center; gap: 8px; font-size: 12.5px; }
+  .shell-b .prewrap .more:hover { color: var(--dim); }
+  .shell-b .prewrap.live .fade, .shell-b .prewrap.live .more { display: none; }
+  .shell-b .prewrap.live pre { color: #ffffff8c; }
 </style>
 </head>
 <body>
   <header class="page-head">
-    <h1>Agent activity &amp; previews — three directions</h1>
-    <p>Same mocked conversation in each frame: user ask → reasoning → three tool calls with output previews → answer → follow-up → a live streaming turn. All values come from tokens.css (gray ramp, hairlines, blue accent). The shared thesis, borrowed from the ChatGPT app: while streaming, show one narrated headline instead of raw scroll; when settled, collapse work to a single quiet row; never show tool output at full brightness or unbounded height.</p>
+    <h1>Direction B, pass 2 — ledger rows inside the existing disclosure</h1>
+    <p>Same structure the app has today: everything between two content blocks collapses into ONE activity group (AssistantActivityGroup), with reasoning as a nested disclosure inside it (ReasoningDisclosure). What changes is the skin and the summary row: the "Worked for 58s" divider merges into the group toggle, shell blocks get a header bar with a status dot instead of the Success footer, output dims and fades, verbs take taxonomy colors. Click any row — the toggles work.</p>
   </header>
 
   <div class="lanes">
 
     <section>
       <div class="lane-head">
-        <div class="kicker">Direction A</div>
-        <h2>Activity card — agent-mode timeline</h2>
+        <div class="kicker">State 1</div>
+        <h2>Collapsed — the default, including while streaming</h2>
         <ul>
-          <li>One bordered card per work burst; a step rail with icon beads replaces scattered rows</li>
-          <li>Output previews capped at 4 lines, dimmed, bottom fade + "Show all" pill — no Success footer, just a status dot</li>
-          <li>Live card header narrates the current step with the shimmer</li>
+          <li>Completed group = one quiet row: chevron · "Worked for 58s" · activity summary</li>
+          <li>Live group = pulsing dot · shimmer narration · mono preview of the running command · ticking timer</li>
+          <li>The separate "Worked for…" divider is gone — the group toggle carries the duration</li>
         </ul>
       </div>
       <div class="frame">
         <div class="transcript">
           <div class="user">Find my recent blog posts and put together a $100 ad plan for the London tech meetup.</div>
 
-          <div class="card-a open" data-toggle>
-            <div class="head">
-              <svg class="icon icon-xs" viewBox="0 0 24 24"><path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M18.4 5.6L17 7M7 17l-1.4 1.4"/></svg>
-              <span class="title">Worked for 58s</span>
-              <span class="meta">· ran 2 commands · read 1 file · fetched 1 page</span>
+          <div class="group-b" data-group>
+            <div class="gtoggle">
               <svg class="icon icon-xs chev" viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg>
+              <span class="glabel">Worked for 58s</span>
+              <span class="gmeta">· ran 2 commands · read 1 file · fetched 1 page</span>
             </div>
-            <div class="body">
-              <div class="steps">
-                <div class="step">
-                  <div class="node">
-                    <div class="bead"><svg class="icon icon-xs" viewBox="0 0 24 24"><path d="M12 2a7 7 0 0 1 7 7c0 2.4-1.2 4-2.5 5.5-.8 1-1.5 1.7-1.5 3.5h-6c0-1.8-.7-2.5-1.5-3.5C6.2 13 5 11.4 5 9a7 7 0 0 1 7-7zM9.5 21h5"/></svg></div>
-                    <div class="stem"></div>
-                  </div>
-                  <div class="content">
-                    <div class="thought-text">The posts live under ~/work/x — list them first, then pull the meetup page so the copy matches the real event details.</div>
-                  </div>
+            <div class="gbody">
+              <div class="thought-b open" data-toggle>
+                <span class="toggle">Thought for 12s <svg class="icon icon-xs chev" viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg></span>
+                <div class="body">The posts live under ~/work/x — list them first, then pull the meetup page so the copy matches the real event details. Budget likely splits by intent: search captures demand, LinkedIn creates it.</div>
+              </div>
+              <div class="shell-b">
+                <div class="bar">
+                  <span class="lang">zsh</span>
+                  <span class="cmd">ls -la ~/work/x/blog_posts</span>
+                  <span class="copy"><svg class="icon icon-xs" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg></span>
+                  <span class="dot ok"></span>
                 </div>
-                <div class="step">
-                  <div class="node">
-                    <div class="bead"><svg class="icon icon-xs" viewBox="0 0 24 24"><path d="M4 17l6-5-6-5M12 19h8"/></svg></div>
-                    <div class="stem"></div>
-                  </div>
-                  <div class="content">
-                    <div class="label">
-                      <span class="verb">Ran</span>
-                      <span class="detail">ls -la ~/work/x/blog_posts</span>
-                      <span class="status"><span class="dot ok"></span>0.4s</span>
-                    </div>
-                    <div class="outprev">
-                      <pre>ai-coding-assistants.md      4.2K  Jul 18
+                <div class="prewrap">
+                  <pre>ai-coding-assistants.md      4.2K  Jul 18
 scaling-vllm-on-spark.md     7.9K  Jul 11
 meetup-recap-june.md         3.1K  Jun 29
 distributed-kv-cache.md      6.4K  Jun 14
 local-first-agents.md        5.8K  Jun 02</pre>
-                      <div class="fade"></div>
-                      <div class="more">Show all 12 lines</div>
-                    </div>
-                  </div>
+                  <div class="fade"></div>
+                  <div class="more">Show all 12 lines</div>
                 </div>
-                <div class="step">
-                  <div class="node">
-                    <div class="bead"><svg class="icon icon-xs" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6"/></svg></div>
-                    <div class="stem"></div>
-                  </div>
-                  <div class="content">
-                    <div class="label">
-                      <span class="verb">Read</span>
-                      <span class="detail">meetup-recap-june.md</span>
-                      <span class="status"><span class="dot ok"></span></span>
-                    </div>
-                  </div>
+              </div>
+              <div class="toolrow-b">
+                <svg class="icon icon-xs" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6"/></svg>
+                <span class="verb file">Read</span>
+                <span class="detail">meetup-recap-june.md</span>
+              </div>
+              <div class="toolrow-b">
+                <svg class="icon icon-xs" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.6 3.8 5.7 3.8 9s-1.3 6.4-3.8 9c-2.5-2.6-3.8-5.7-3.8-9S9.5 5.6 12 3z"/></svg>
+                <span class="verb web">Fetched</span>
+                <span class="detail">sybilsolutions.io — "Sybil Solutions — London Tech Meetup"</span>
+              </div>
+              <div class="shell-b">
+                <div class="bar">
+                  <span class="lang">zsh</span>
+                  <span class="cmd">grep -c "attendees" meetup-recap-june.md</span>
+                  <span class="copy"><svg class="icon icon-xs" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg></span>
+                  <span class="dot ok"></span>
                 </div>
-                <div class="step">
-                  <div class="node">
-                    <div class="bead"><svg class="icon icon-xs" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.6 3.8 5.7 3.8 9S14.5 18.4 12 21c-2.5-2.6-3.8-5.7-3.8-9S9.5 5.6 12 3z"/></svg></div>
-                    <div class="stem"></div>
-                  </div>
-                  <div class="content">
-                    <div class="label">
-                      <span class="verb">Fetched</span>
-                      <span class="detail">sybilsolutions.io</span>
-                      <span class="status"><span class="dot ok"></span>1.2s</span>
-                    </div>
-                    <div class="outprev">
-                      <pre>&lt;title&gt;Sybil Solutions — London Tech Meetup&lt;/title&gt;
-&lt;meta name="description" content="Monthly meetup for senior engineers…"&gt;</pre>
-                      <div class="fade"></div>
-                    </div>
-                  </div>
-                </div>
-                <div class="step">
-                  <div class="node">
-                    <div class="bead"><svg class="icon icon-xs" viewBox="0 0 24 24"><path d="M4 17l6-5-6-5M12 19h8"/></svg></div>
-                  </div>
-                  <div class="content">
-                    <div class="label">
-                      <span class="verb">Ran</span>
-                      <span class="detail">grep -c "attendees" meetup-recap-june.md</span>
-                      <span class="status"><span class="dot ok"></span>0.1s</span>
-                    </div>
-                  </div>
-                </div>
+                <div class="prewrap"><pre>3</pre></div>
               </div>
             </div>
           </div>
@@ -445,37 +309,27 @@ local-first-agents.md        5.8K  Jun 02</pre>
 
           <div class="user">Make the LinkedIn section more specific — targeting and creative.</div>
 
-          <div class="card-a open">
-            <div class="headline">
+          <div class="group-b" data-group>
+            <div class="gtoggle">
               <span class="dot run"></span>
-              <span class="shimmer fadeswap" data-live-headline>Checking recent gists for shareable posts</span>
-              <span style="margin-left:auto;color:var(--faint);font-size:11.5px" data-timer>Working · 8s</span>
+              <span class="glabel shimmer fadeswap" data-live-headline>Checking recent gists for shareable posts</span>
+              <span class="gpreview">gh api users/0xSero/gists | python3 -c "import sys,json; …"</span>
+              <span class="gtime" data-timer>12s</span>
+              <svg class="icon icon-xs chev" viewBox="0 0 24 24" style="flex-shrink:0"><path d="M9 18l6-6-6-6"/></svg>
             </div>
-            <div class="body" style="display:block;border-top:1px solid var(--separator)">
-              <div class="steps">
-                <div class="step">
-                  <div class="node">
-                    <div class="bead"><svg class="icon icon-xs" viewBox="0 0 24 24"><path d="M12 2a7 7 0 0 1 7 7c0 2.4-1.2 4-2.5 5.5-.8 1-1.5 1.7-1.5 3.5h-6c0-1.8-.7-2.5-1.5-3.5C6.2 13 5 11.4 5 9a7 7 0 0 1 7-7zM9.5 21h5"/></svg></div>
-                    <div class="stem"></div>
-                  </div>
-                  <div class="content">
-                    <div class="thought-text">LinkedIn creative lands better with a proof point — pull follower counts and the last recap's quotes.</div>
-                  </div>
+            <div class="gbody">
+              <div class="thought-b" data-toggle>
+                <span class="toggle">Thinking <svg class="icon icon-xs chev" viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg></span>
+                <div class="body">LinkedIn creative lands better with a proof point — pull follower counts and the last recap's quotes to anchor the targeting spec.</div>
+              </div>
+              <div class="shell-b">
+                <div class="bar">
+                  <span class="lang">zsh</span>
+                  <span class="cmd">gh api users/0xSero/gists | python3 -c "import sys,json; …"</span>
+                  <span class="dot run"></span>
                 </div>
-                <div class="step">
-                  <div class="node">
-                    <div class="bead live"><svg class="icon icon-xs" viewBox="0 0 24 24"><path d="M4 17l6-5-6-5M12 19h8"/></svg></div>
-                  </div>
-                  <div class="content">
-                    <div class="label">
-                      <span class="verb shimmer">Running</span>
-                      <span class="detail">gh api users/0xSero/gists | python3 -c "import sys,json; …"</span>
-                    </div>
-                    <div class="outprev">
-                      <pre data-live-output>=== GH pinned/gists ===</pre>
-                      <div class="fade"></div>
-                    </div>
-                  </div>
+                <div class="prewrap live">
+                  <pre data-live-output>=== GH pinned/gists ===</pre>
                 </div>
               </div>
             </div>
@@ -498,135 +352,65 @@ local-first-agents.md        5.8K  Jun 02</pre>
 
     <section>
       <div class="lane-head">
-        <div class="kicker">Direction B</div>
-        <h2>Inline ledger — refined flat rows</h2>
+        <div class="kicker">State 2</div>
+        <h2>Expanded — same groups, opened</h2>
         <ul>
-          <li>Keeps today's flat structure; shell block gains a header bar (shell tag · command · copy · status dot) and loses the Success footer</li>
-          <li>Output dims to 45% white, capped with a fade; verbs take the node-taxonomy colors</li>
-          <li>"Thought for 12s" is one quiet toggle; live turn narrates under the shimmer</li>
+          <li>Group body sits on the 2px left rail; reasoning keeps its own nested "Thought for 12s" toggle, exactly like ReasoningDisclosure today</li>
+          <li>Shell blocks and Read/Fetched rows are the group's children — code and reasoning share the one disclosure</li>
+          <li>Live group expanded: nested Thinking toggle + streaming shell block with pulsing dot</li>
         </ul>
       </div>
       <div class="frame">
         <div class="transcript">
           <div class="user">Find my recent blog posts and put together a $100 ad plan for the London tech meetup.</div>
 
-          <div class="row-b">
-            <div class="thought-b open" data-toggle>
-              <span class="toggle">
-                Thought for 12s
-                <svg class="icon icon-xs chev" viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg>
-              </span>
-              <div class="body">The posts live under ~/work/x — list them first, then pull the meetup page so the copy matches the real event details. Budget likely splits by intent: search captures demand, LinkedIn creates it.</div>
+          <div class="group-b open" data-group>
+            <div class="gtoggle">
+              <svg class="icon icon-xs chev" viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg>
+              <span class="glabel">Worked for 58s</span>
+              <span class="gmeta">· ran 2 commands · read 1 file · fetched 1 page</span>
             </div>
-
-            <div class="shell-b">
-              <div class="bar">
-                <span class="lang">zsh</span>
-                <span class="cmd">ls -la ~/work/x/blog_posts</span>
-                <span class="copy"><svg class="icon icon-xs" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg></span>
-                <span class="dot ok"></span>
+            <div class="gbody">
+              <div class="thought-b open" data-toggle>
+                <span class="toggle">Thought for 12s <svg class="icon icon-xs chev" viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg></span>
+                <div class="body">The posts live under ~/work/x — list them first, then pull the meetup page so the copy matches the real event details. Budget likely splits by intent: search captures demand, LinkedIn creates it.</div>
               </div>
-              <div class="prewrap">
-                <pre>ai-coding-assistants.md      4.2K  Jul 18
+              <div class="shell-b">
+                <div class="bar">
+                  <span class="lang">zsh</span>
+                  <span class="cmd">ls -la ~/work/x/blog_posts</span>
+                  <span class="copy"><svg class="icon icon-xs" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg></span>
+                  <span class="dot ok"></span>
+                </div>
+                <div class="prewrap">
+                  <pre>ai-coding-assistants.md      4.2K  Jul 18
 scaling-vllm-on-spark.md     7.9K  Jul 11
 meetup-recap-june.md         3.1K  Jun 29
 distributed-kv-cache.md      6.4K  Jun 14
 local-first-agents.md        5.8K  Jun 02</pre>
-                <div class="fade"></div>
+                  <div class="fade"></div>
+                  <div class="more">Show all 12 lines</div>
+                </div>
               </div>
-            </div>
-
-            <div class="toolrow-b">
-              <svg class="icon icon-xs" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6"/></svg>
-              <span class="verb file">Read</span>
-              <span class="detail">meetup-recap-june.md</span>
-            </div>
-            <div class="toolrow-b">
-              <svg class="icon icon-xs" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.6 3.8 5.7 3.8 9s-1.3 6.4-3.8 9c-2.5-2.6-3.8-5.7-3.8-9S9.5 5.6 12 3z"/></svg>
-              <span class="verb web">Fetched</span>
-              <span class="detail">sybilsolutions.io — "Sybil Solutions — London Tech Meetup"</span>
-            </div>
-
-            <div class="divider">Worked for 58s</div>
-          </div>
-
-          <div class="answer">
-            <h3>The short version</h3>
-            <p>Split $100 across Google Search and LinkedIn. Run ads 3 days before the event.</p>
-            <ul>
-              <li><strong>Google Search: $70</strong> — catches people already looking for events</li>
-              <li><strong>LinkedIn: $30</strong> — puts it in front of senior engineers who weren't looking</li>
-            </ul>
-            <p>June's recap shows 43 attendees with zero paid reach, so search intent alone should clear 60 this time. Keywords to use (phrase match): <code>"tech meetup london"</code>.</p>
-          </div>
-
-          <div class="user">Make the LinkedIn section more specific — targeting and creative.</div>
-
-          <div class="row-b">
-            <div class="thought-b">
-              <span class="toggle">
-                <span class="shimmer fadeswap" data-live-headline>Checking recent gists for shareable posts</span>
-                <svg class="icon icon-xs chev" viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg>
-              </span>
-            </div>
-            <div class="shell-b">
-              <div class="bar">
-                <span class="lang">zsh</span>
-                <span class="cmd">gh api users/0xSero/gists | python3 -c "import sys,json; …"</span>
-                <span class="dot run"></span>
+              <div class="toolrow-b">
+                <svg class="icon icon-xs" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6"/></svg>
+                <span class="verb file">Read</span>
+                <span class="detail">meetup-recap-june.md</span>
               </div>
-              <div class="prewrap live">
-                <pre data-live-output>=== GH pinned/gists ===</pre>
+              <div class="toolrow-b">
+                <svg class="icon icon-xs" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.6 3.8 5.7 3.8 9s-1.3 6.4-3.8 9c-2.5-2.6-3.8-5.7-3.8-9S9.5 5.6 12 3z"/></svg>
+                <span class="verb web">Fetched</span>
+                <span class="detail">sybilsolutions.io — "Sybil Solutions — London Tech Meetup"</span>
               </div>
-            </div>
-            <div class="divider"><span class="shimmer" data-timer>Working · 8s</span></div>
-          </div>
-        </div>
-        <div class="composer">
-          <div class="composer-box">
-            <div class="ph">Ask for follow-up changes</div>
-            <div class="composer-row">
-              <div class="left">
-                <svg class="icon" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
-                <svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.6 3.8 5.7 3.8 9s-1.3 6.4-3.8 9c-2.5-2.6-3.8-5.7-3.8-9S9.5 5.6 12 3z"/></svg>
+              <div class="shell-b">
+                <div class="bar">
+                  <span class="lang">zsh</span>
+                  <span class="cmd">grep -c "attendees" meetup-recap-june.md</span>
+                  <span class="copy"><svg class="icon icon-xs" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg></span>
+                  <span class="dot ok"></span>
+                </div>
+                <div class="prewrap"><pre>3</pre></div>
               </div>
-              <div class="model">GLM-5.2 High <svg class="icon icon-xs" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <section>
-      <div class="lane-head">
-        <div class="kicker">Direction C</div>
-        <h2>Thread rail — ChatGPT "Thoughts" flow</h2>
-        <ul>
-          <li>Whole burst collapses to one "Thought for 58s" row, exactly like the ChatGPT app</li>
-          <li>Expanded: reasoning prose on a left rail with tool calls as inline pill chips between paragraphs</li>
-          <li>Live turn is a single shimmering narration line with the running chip pulsing</li>
-        </ul>
-      </div>
-      <div class="frame">
-        <div class="transcript">
-          <div class="user">Find my recent blog posts and put together a $100 ad plan for the London tech meetup.</div>
-
-          <div class="thought-c open" data-toggle>
-            <span class="toggle">
-              Thought for 58s
-              <svg class="icon icon-xs chev" viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg>
-            </span>
-            <div class="body">
-              <p>The posts live under ~/work/x — listing them first, then pulling the meetup page so the copy matches the real event details.</p>
-              <div class="chips">
-                <span class="chip"><svg class="icon icon-xs" viewBox="0 0 24 24"><path d="M4 17l6-5-6-5M12 19h8"/></svg><span class="trunc">ls -la ~/work/x/blog_posts</span></span>
-                <span class="chip"><svg class="icon icon-xs" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6"/></svg><span class="trunc">meetup-recap-june.md</span></span>
-              </div>
-              <p>Five posts, three from the last six weeks. The June recap counts 43 attendees with zero paid reach — that's the baseline. Fetching the site to confirm the event framing before writing keywords.</p>
-              <div class="chips">
-                <span class="chip"><svg class="icon icon-xs" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.6 3.8 5.7 3.8 9s-1.3 6.4-3.8 9c-2.5-2.6-3.8-5.7-3.8-9S9.5 5.6 12 3z"/></svg><span class="trunc">sybilsolutions.io</span></span>
-              </div>
-              <p>Site title confirms "London Tech Meetup" targeting senior engineers. Splitting spend by intent: search captures demand that already exists; LinkedIn creates it in the exact audience.</p>
             </div>
           </div>
 
@@ -642,17 +426,28 @@ local-first-agents.md        5.8K  Jun 02</pre>
 
           <div class="user">Make the LinkedIn section more specific — targeting and creative.</div>
 
-          <div class="thought-c open">
-            <span class="toggle">
-              <span class="shimmer fadeswap" data-live-headline>Checking recent gists for shareable posts</span>
-              <svg class="icon icon-xs chev" viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg>
-            </span>
-            <div class="body">
-              <p>LinkedIn creative lands better with a proof point — pulling follower counts and the last recap's quotes to anchor the targeting spec.</p>
-              <div class="chips">
-                <span class="chip run"><span class="dot run"></span><span class="trunc">gh api users/0xSero/gists</span></span>
+          <div class="group-b open" data-group>
+            <div class="gtoggle">
+              <span class="dot run"></span>
+              <span class="glabel shimmer fadeswap" data-live-headline>Checking recent gists for shareable posts</span>
+              <span class="gtime" data-timer>12s</span>
+              <svg class="icon icon-xs chev" viewBox="0 0 24 24" style="flex-shrink:0"><path d="M9 18l6-6-6-6"/></svg>
+            </div>
+            <div class="gbody">
+              <div class="thought-b open" data-toggle>
+                <span class="toggle">Thinking <svg class="icon icon-xs chev" viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg></span>
+                <div class="body">LinkedIn creative lands better with a proof point — pull follower counts and the last recap's quotes to anchor the targeting spec.</div>
               </div>
-              <p><span data-live-text>Reading gist descriptions for a quotable line</span><span class="caret"></span></p>
+              <div class="shell-b">
+                <div class="bar">
+                  <span class="lang">zsh</span>
+                  <span class="cmd">gh api users/0xSero/gists | python3 -c "import sys,json; …"</span>
+                  <span class="dot run"></span>
+                </div>
+                <div class="prewrap live">
+                  <pre data-live-output>=== GH pinned/gists ===</pre>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -674,9 +469,14 @@ local-first-agents.md        5.8K  Jun 02</pre>
   </div>
 
 <script>
-  document.querySelectorAll("[data-toggle]").forEach((el) => {
-    const head = el.querySelector(".head") || el.querySelector(".toggle");
-    if (head) head.addEventListener("click", () => el.classList.toggle("open"));
+  document.querySelectorAll("[data-group] > .gtoggle").forEach((toggle) => {
+    toggle.addEventListener("click", () => toggle.parentElement.classList.toggle("open"));
+  });
+  document.querySelectorAll("[data-toggle] > .toggle").forEach((toggle) => {
+    toggle.addEventListener("click", (event) => {
+      event.stopPropagation();
+      toggle.parentElement.classList.toggle("open");
+    });
   });
 
   const headlines = [
@@ -715,25 +515,12 @@ local-first-agents.md        5.8K  Jun 02</pre>
     oi += 1;
   }, 1100);
 
-  const liveTexts = [
-    "Reading gist descriptions for a quotable line",
-    "Cross-checking follower overlap with the meetup audience",
-    "Sketching the first creative variant",
-  ];
-  let li = 0;
-  setInterval(() => {
-    li = (li + 1) % liveTexts.length;
-    document.querySelectorAll("[data-live-text]").forEach((el) => {
-      el.textContent = liveTexts[li];
-    });
-  }, 3400);
-
-  let seconds = 8;
+  let seconds = 12;
   setInterval(() => {
     seconds += 1;
     const label = seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
     document.querySelectorAll("[data-timer]").forEach((el) => {
-      el.textContent = `Working · ${label}`;
+      el.textContent = label;
     });
   }, 1000);
 </script>
