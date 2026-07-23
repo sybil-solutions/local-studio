@@ -22,6 +22,10 @@ Maximum 262144-token concurrency: `1.29x`
 
 Post-launch validation: passed. `/health` and `/v1/models` report `GLM-5.2-Vision`; CUDA-graph capture completed normally; a multimodal request returned `IMAGE_OK`.
 
+Live quality checks: a 1k text control returned its exact sentinel; an 8k control returned its sentinel before the bounded completion cut off a repeated continuation. A real screenshot request correctly identified the visible `SQLiteError: database or disk is full` controller-log error.
+
+Conduit tailnet registration: passed through live backend discovery. The tailnet-backed service now reports `GLM-5.2-Vision` from its active OpenAI-compatible backend; no separate static model record is required.
+
 NVFP4-KV test result: 1k and 4k control prompts returned `OK`; failure begins by 8k and is worse at 16k. The native NVFP4 KV cache did not resolve the long-context inference-quality concern.
 
 Text hybrid: `glm52-v3` is stopped and recoverable. NVFP4-KV vision candidate: `glm52-vision-candidate` is stopped and recoverable.
