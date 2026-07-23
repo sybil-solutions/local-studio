@@ -30,6 +30,7 @@ import {
   resolveAccessPostureFromEnvironment,
   type AccessEnvironment,
 } from "@/lib/auth/access";
+import { CSRF_COOKIE, CSRF_HEADER } from "@/lib/security/request-boundary";
 import {
   captureFrontendCallbackCredential,
   matchesFrontendCallbackCredential,
@@ -59,6 +60,8 @@ const accessVariables = [
   "LOCAL_STUDIO_FRONTEND_BASE",
   "LOCAL_STUDIO_AGENT_RUNTIME_URL",
   "LOCAL_STUDIO_ACCESS_LOGS",
+  "ALLOWED_TAILSCALE_HOSTS",
+  "ALLOWED_TAILSCALE_USERS",
   FRONTEND_CALLBACK_TOKEN_ENV,
 ] as const;
 const originalEnvironment = Object.fromEntries(
@@ -70,7 +73,12 @@ function accessRequest(
   input: ConstructorParameters<typeof NextRequest>[0],
   init?: ConstructorParameters<typeof NextRequest>[1],
 ): NextRequest {
-  return new NextRequest(input, init);
+  const headers = new Headers(init?.headers);
+  if (!headers.has("host")) {
+    const requestUrl = typeof input === "string" || input instanceof URL ? input : input.url;
+    headers.set("host", new URL(requestUrl).host);
+  }
+  return new NextRequest(input, { ...init, headers });
 }
 
 function streamedAccessRequest(body: string, headers: HeadersInit): NextRequest {
@@ -101,7 +109,22 @@ function clearAccessEnvironment(): void {
 
 function productionEnvironment(values: AccessEnvironment = {}): void {
   clearAccessEnvironment();
-  Object.assign(process.env, { NODE_ENV: "production" }, values);
+  Object.assign(
+    process.env,
+    { ALLOWED_TAILSCALE_HOSTS: "studio.example", NODE_ENV: "production" },
+    values,
+  );
+}
+
+function csrfHeaders(headers: HeadersInit = {}): Headers {
+  const bootstrap = proxy(accessRequest("https://studio.example/access"));
+  const csrfToken = bootstrap.cookies.get(CSRF_COOKIE)?.value;
+  assert(csrfToken);
+  const result = new Headers(headers);
+  const cookie = result.get("cookie");
+  result.set("cookie", [cookie, `${CSRF_COOKIE}=${csrfToken}`].filter(Boolean).join("; "));
+  result.set(CSRF_HEADER, csrfToken);
+  return result;
 }
 
 function restoreEnvironment(): void {
@@ -501,7 +524,7 @@ test("middleware rejects query tokens and routes browser authentication through 
   const rejectedPostQuery = proxy(
     accessRequest("https://studio.example/api/agent/turn?token=discarded", {
       method: "POST",
-      headers: { [STUDIO_TOKEN_HEADER]: "secret" },
+      headers: csrfHeaders({ [STUDIO_TOKEN_HEADER]: "secret" }),
     }),
   );
   assert.equal(rejectedPostQuery.status, 400);
@@ -801,7 +824,7 @@ test("internal callback credential is accepted only by exact callback routes", a
     proxy(
       accessRequest("https://studio.example/api/agent/terminal", {
         method: "POST",
-        headers: callbackHeaders,
+        headers: csrfHeaders(callbackHeaders),
       }),
     ).status,
     401,
