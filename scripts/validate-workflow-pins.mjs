@@ -304,7 +304,7 @@ const validateNpm = (arguments_, path, context) => {
   if (parsed.errors.length > 0) return parsed.errors;
   const [command, ...tail] = parsed.arguments;
   if (command === "ci") {
-    const allowed = new Set(["--ignore-scripts", "--legacy-peer-deps"]);
+    const allowed = new Set(["--ignore-scripts", "--install-links", "--legacy-peer-deps"]);
     if (!tail.every((option) => allowed.has(option))) {
       return [`${location(path)} npm ci options are not allowlisted`];
     }

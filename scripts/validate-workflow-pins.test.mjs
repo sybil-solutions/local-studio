@@ -27,6 +27,7 @@ const validCases = [
     "frozen package installs",
     `      - run: npm ci
       - run: npm --silent ci
+      - run: npm ci --legacy-peer-deps --install-links
       - run: bun install --frozen-lockfile
       - run: bun i --frozen-lockfile
       - run: bun install --frozen-lockfile --ignore-scripts
@@ -810,7 +811,7 @@ test("keeps executable workflow graphs and sensitive permissions least-privilege
   }
   assert.equal(
     ci.jobs["desktop-smoke"].steps.find((step) => step.name === "Install dependencies").run,
-    "npm --prefix frontend ci --legacy-peer-deps",
+    "npm --prefix frontend ci --legacy-peer-deps --install-links",
   );
   assert.equal(
     ci.jobs["desktop-smoke"].steps.find(
