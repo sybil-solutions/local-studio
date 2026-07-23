@@ -28,7 +28,6 @@ import {
 import { isLocalSessionPrefKey } from "@/features/agent/messages/prefs";
 import { useProjects } from "@/features/agent/projects/context";
 import { addProjectFromPath, openProjectDirectory } from "@/features/agent/projects/api";
-import { ScheduledSection } from "@/features/agent/ui/scheduled-section";
 import { isChatsProject, type Project as ProjectEntry } from "@/features/agent/projects/types";
 import { ProjectDirectoryPickerModal } from "./projects-nav/directory-picker-modal";
 import {
@@ -470,7 +469,6 @@ export function ProjectsNavSection({ expanded }: { expanded: boolean }) {
   };
   return (
     <div className="flex shrink-0 flex-col">
-      <ScheduledSection />
       <ProjectDirectoryPickerModal
         open={directoryModalOpen}
         error={addError}

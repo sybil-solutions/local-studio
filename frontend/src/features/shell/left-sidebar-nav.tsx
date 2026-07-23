@@ -2,13 +2,14 @@
 
 import Link from "next/link";
 import { type ComponentType } from "react";
-import { Gauge, Microchip, Wrench, MessageSquare } from "@/ui/icon-registry";
+import { Clock, Gauge, Microchip, Wrench, MessageSquare } from "@/ui/icon-registry";
 
 export type IconComponent = ComponentType<{ className?: string; strokeWidth?: number }>;
 
 export const tabs = [
   { href: "/", label: "Status", icon: Gauge },
   { href: "/agent", label: "Workbench", icon: MessageSquare },
+  { href: "/agent/automations", label: "Automations", icon: Clock },
   { href: "/configure", label: "Configure", icon: Wrench },
   { href: "/usage", label: "Usage", icon: Microchip },
 ];
@@ -25,6 +26,9 @@ export function mobilePageTitle(pathname: string): string {
 export function isRouteActive(pathname: string, href: string): boolean {
   if (href === "/") {
     return pathname === "/";
+  }
+  if (href === "/agent") {
+    return pathname.startsWith("/agent") && !pathname.startsWith("/agent/automations");
   }
   if (href === "/settings") {
     return pathname.startsWith("/settings");
