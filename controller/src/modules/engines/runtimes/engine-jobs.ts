@@ -5,6 +5,7 @@ import type { Config } from "../../../config/env";
 import type {
   EngineBackend,
   EngineJob,
+  RuntimeJobType,
   RuntimeTarget,
   RuntimeUpgradeResult,
 } from "@local-studio/contracts/system";
@@ -31,7 +32,7 @@ type RuntimeJobBackend = EngineBackend | "cuda" | "rocm";
 
 type CreateEngineJobOptions = {
   backend: RuntimeJobBackend;
-  type: EngineJob["type"];
+  type: RuntimeJobType;
   targetId?: string;
   version?: string;
   preferBundled?: boolean;
@@ -151,6 +152,33 @@ const runEngineInstall = (
     );
   });
 
+const unsupportedPlatformInstall = (backend: "cuda" | "rocm"): RuntimeUpgradeResult => ({
+  success: false,
+  version: null,
+  output: null,
+  error: `${backend.toUpperCase()} supports update jobs only.`,
+  used_command: null,
+});
+
+const runJobOperation = (
+  config: Config,
+  job: EngineJob,
+  options: CreateEngineJobOptions,
+  target: RuntimeTarget | null,
+): Effect.Effect<RuntimeUpgradeResult, EngineOperationError> => {
+  switch (options.type) {
+    case "install":
+      if (isPlatformBackend(options.backend)) {
+        return Effect.succeed(unsupportedPlatformInstall(options.backend));
+      }
+      return runEngineInstall(config, job, options, options.backend, target);
+    case "update":
+      return isPlatformBackend(options.backend)
+        ? runPlatformUpgrade(options.backend, {})
+        : runEngineInstall(config, job, options, options.backend, target);
+  }
+};
+
 const runJob = (
   config: Config,
   job: EngineJob,
@@ -175,7 +203,7 @@ const runJob = (
           }),
         );
       }
-      if (options.type !== "inspect" && !target.capabilities.canUpdate) {
+      if (!target.capabilities.canUpdate) {
         return yield* Effect.fail(
           new EngineOperationError({
             operation: "validate-runtime-target",
@@ -188,13 +216,9 @@ const runJob = (
       target = yield* getDefaultRuntimeTarget(config, "vllm", options.runningProcess);
     }
 
-    const result = isPlatformBackend(options.backend)
-      ? yield* runPlatformUpgrade(options.backend, {})
-      : yield* runEngineInstall(config, job, options, options.backend, target);
+    const result = yield* runJobOperation(config, job, options, target);
 
-    if (options.type === "install" || options.type === "update") {
-      clearRuntimeTargetsCache();
-    }
+    clearRuntimeTargetsCache();
     const outputTail = tailOutput(result.output ?? result.error);
     const command = result.used_command ?? job.command;
     if (!result.success) {

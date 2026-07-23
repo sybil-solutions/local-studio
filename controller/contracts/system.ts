@@ -38,6 +38,10 @@ export type EngineBackend = "vllm" | "sglang" | "llamacpp" | "mlx";
 
 export type RuntimeKind = "venv" | "docker" | "binary" | "system";
 
+export const RUNTIME_JOB_TYPES = ["install", "update"] as const;
+
+export type RuntimeJobType = (typeof RUNTIME_JOB_TYPES)[number];
+
 export interface RuntimeTarget {
   id: string;
   backend: EngineBackend;
@@ -74,7 +78,7 @@ export interface EngineJob {
   id: string;
   backend: EngineBackend;
   targetId?: string;
-  type: "install" | "update" | "download" | "inspect";
+  type: RuntimeJobType;
   status: "queued" | "running" | "success" | "error" | "cancelled";
   progress?: number;
   message: string;
