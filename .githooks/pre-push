@@ -8,8 +8,8 @@ do
     continue
   fi
 
+  default_ref="$(git symbolic-ref --quiet --short "refs/remotes/$remote/HEAD" 2>/dev/null || printf '%s/main' "$remote")"
   if [ "$remote_sha" = "0000000000000000000000000000000000000000" ]; then
-    default_ref="$(git symbolic-ref --quiet --short "refs/remotes/$remote/HEAD" 2>/dev/null || printf '%s/main' "$remote")"
     base_sha="$(git merge-base "$default_ref" "$local_sha" 2>/dev/null || true)"
     if [ -n "$base_sha" ]; then
       range="$base_sha..$local_sha"
@@ -21,7 +21,11 @@ do
   fi
 
   echo "Checking conventional commits for $local_ref -> $remote/$remote_ref ($url)"
-  node scripts/check-conventional-commits.mjs --range "$range" || exit 1
+  if git rev-parse --verify --quiet "$default_ref^{commit}" >/dev/null; then
+    node scripts/check-conventional-commits.mjs --range "$range" --exclude-ref "$default_ref" --exclude-remote-heads || exit 1
+  else
+    node scripts/check-conventional-commits.mjs --range "$range" --exclude-remote-heads || exit 1
+  fi
 done
 
 echo "pre-push: frontend quality gate"
