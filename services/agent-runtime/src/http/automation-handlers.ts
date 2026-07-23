@@ -73,9 +73,8 @@ export async function handleAutomationDelete(id: string): Promise<Response> {
 export async function handleAutomationRun(id: string): Promise<Response> {
   const automation = await getAutomation(id);
   if (!automation) return jsonError(`Unknown automation '${id}'.`, 404);
-  // Fire-and-forget: the run lands on the automation record when it settles.
-  void runAutomationNow(id);
-  return Response.json({ ok: true, started: true });
+  const completed = await runAutomationNow(id);
+  return Response.json({ ok: true, started: completed !== null });
 }
 
 // ─── Goals ────────────────────────────────────────────────────────────────

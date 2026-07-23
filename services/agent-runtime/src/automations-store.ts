@@ -1,45 +1,20 @@
-//
-// Automations: scheduled prompts that run headless in the agent runtime and
-// land as ordinary sessions (the Codex "Scheduled" model). One JSON file per
-// automation under <dataDir>/automations/, written through the same atomic
-// per-file lock the session stores use.
-//
-
 import { readdir, rm } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { resolveDataDir } from "./data-dir";
 import { createSessionScopedJsonStore } from "./session-json-store";
 import { isRecord } from "../../../shared/agent/guards";
+import type {
+  Automation,
+  AutomationRun,
+  AutomationSchedule,
+} from "../../../shared/agent/automation";
 
-export type AutomationSchedule =
-  | { kind: "interval"; minutes: number }
-  | { kind: "daily"; time: string; weekdaysOnly?: boolean }
-  | { kind: "weekly"; day: number; time: string };
-
-export type AutomationRun = {
-  at: string;
-  piSessionId: string | null;
-  outcome: "ok" | "error";
-  summary: string;
-  error?: string;
-};
-
-export type Automation = {
-  version: 1;
-  id: string;
-  name: string;
-  prompt: string;
-  modelId: string;
-  cwd: string;
-  schedule: AutomationSchedule;
-  status: "active" | "paused";
-  nextRunAt: string | null;
-  lastRun: AutomationRun | null;
-  unread: boolean;
-  createdAt: string;
-  updatedAt: string;
-};
+export type {
+  Automation,
+  AutomationRun,
+  AutomationSchedule,
+} from "../../../shared/agent/automation";
 
 const AUTOMATIONS_SUBDIR = "automations";
 const MAX_SUMMARY_CHARS = 2000;
@@ -61,7 +36,11 @@ function normalizeSchedule(value: unknown): AutomationSchedule {
       typeof value.day === "number" &&
       typeof value.time === "string"
     ) {
-      return { kind: "weekly", day: Math.min(6, Math.max(0, Math.round(value.day))), time: value.time };
+      return {
+        kind: "weekly",
+        day: Math.min(6, Math.max(0, Math.round(value.day))),
+        time: value.time,
+      };
     }
   }
   return { kind: "daily", time: "08:00" };
@@ -111,7 +90,6 @@ function parseTime(time: string): { hours: number; minutes: number } {
   return { hours, minutes };
 }
 
-/** Next occurrence strictly after `from`. Pure so the schedule math is testable. */
 export function nextRunAt(schedule: AutomationSchedule, from: Date): Date {
   if (schedule.kind === "interval") {
     return new Date(from.getTime() + schedule.minutes * 60_000);
@@ -203,7 +181,6 @@ export async function patchAutomation(
     {
       ...rest,
       ...(schedule ? { schedule } : {}),
-      // Schedule or status changes recompute the next occurrence.
       ...(schedule || patch.status === "active"
         ? { nextRunAt: nextRunAt(schedule ?? existing.schedule, new Date()).toISOString() }
         : {}),

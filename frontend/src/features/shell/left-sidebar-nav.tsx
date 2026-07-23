@@ -14,6 +14,7 @@ export const tabs = [
 ];
 
 export function mobilePageTitle(pathname: string): string {
+  if (pathname.startsWith("/agent/automations")) return "Automations";
   if (pathname.startsWith("/agent")) return "Workbench";
   if (pathname.startsWith("/settings")) return "Settings";
   if (pathname.startsWith("/logs")) return "Logs";

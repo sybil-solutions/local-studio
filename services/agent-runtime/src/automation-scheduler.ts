@@ -1,9 +1,3 @@
-//
-// Automation scheduler: a 30s tick in the agent-runtime process that fires
-// due automations as headless turns. Runs are ordinary pi sessions; results
-// persist on the automation record (last run + unread) for the Scheduled UI.
-//
-
 import {
   getAutomation,
   listAutomations,
@@ -36,10 +30,15 @@ function runPrompt(automation: Automation): string {
   return `${preamble}${automation.prompt}`;
 }
 
+export function automationRunError(lastError: string | null, summary: string): string | null {
+  if (lastError) return lastError;
+  return summary.trim() ? null : "Automation completed without an assistant response.";
+}
+
 export async function runAutomationNow(id: string): Promise<Automation | null> {
   const scheduler = state();
   const automation = await getAutomation(id);
-  if (!automation || scheduler.running.has(id)) return automation;
+  if (!automation || scheduler.running.has(id)) return null;
   scheduler.running.add(id);
   const runtimeSessionId = `automation:${id}:${Date.now()}`;
   try {
@@ -49,15 +48,16 @@ export async function runAutomationNow(id: string): Promise<Automation | null> {
     const status = session.status;
     const piSessionId = status.piSessionId;
     const summary = piSessionId ? lastAssistantText(status.cwd, piSessionId) : "";
+    const error = automationRunError(status.lastError, summary);
     void session.stop().catch(() => undefined);
     return await patchAutomation(id, {
       unread: true,
       lastRun: {
         at: new Date().toISOString(),
         piSessionId,
-        outcome: status.lastError ? "error" : "ok",
+        outcome: error ? "error" : "ok",
         summary,
-        ...(status.lastError ? { error: status.lastError } : {}),
+        ...(error ? { error } : {}),
       },
       nextRunAt: nextRunAt(automation.schedule, new Date()).toISOString(),
     });
@@ -94,15 +94,12 @@ async function tick(): Promise<void> {
       }).catch(() => undefined);
       continue;
     }
-    // Missed occurrences (machine asleep) are skipped, Codex-style: one run
-    // fires now and the schedule advances from the present.
     if (new Date(automation.nextRunAt) <= now) {
       void runAutomationNow(automation.id);
     }
   }
 }
 
-/** Start the tick loop. Idempotent; called from the runtime server boot. */
 export function startAutomationScheduler(): void {
   const scheduler = state();
   if (scheduler.timer) return;
