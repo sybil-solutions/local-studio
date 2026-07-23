@@ -112,7 +112,7 @@ jobs:
       - name: Build unpacked desktop app
         env:
           LOCAL_STUDIO_DESKTOP_SMOKE_ARCH: ${{ runner.arch }}
-        run: npm --prefix frontend run desktop:pack
+        run: npm --prefix frontend run desktop:smoke:pack
       - name: Smoke-test packaged desktop app
         env:
           LOCAL_STUDIO_DESKTOP_SMOKE_ARCH: ${{ runner.arch }}

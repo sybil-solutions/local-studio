@@ -821,7 +821,15 @@ test("keeps executable workflow graphs and sensitive permissions least-privilege
   const frontendPackage = JSON.parse(readFileSync(join(process.cwd(), "frontend", "package.json")));
   assert.equal(
     frontendPackage.scripts["desktop:pack"],
+    "npm run desktop:build && electron-builder --dir --config desktop/electron-builder.yml",
+  );
+  assert.equal(
+    frontendPackage.scripts["desktop:smoke:pack"],
     "node scripts/desktop-package-smoke-pack.mjs",
+  );
+  assert.equal(
+    ci.jobs["desktop-smoke"].steps.find((step) => step.name === "Build unpacked desktop app").run,
+    "npm --prefix frontend run desktop:smoke:pack",
   );
   assert.deepEqual(ci.jobs.release.needs, [
     "gates",
