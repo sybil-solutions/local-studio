@@ -67,7 +67,6 @@ export function ProjectsNavSection({ expanded }: { expanded: boolean }) {
   const upsertProject = projectsContext.upsertProject;
   const moveProjectBefore = projectsContext.moveProjectBefore;
   const removeProject = projectsContext.removeProject;
-  const refreshProjects = projectsContext.refresh;
   const [openIds, setOpenIds] = useState<Set<string>>(new Set());
   const activeSessions = useOpenSessions();
   const activity = useSessionActivity();
@@ -160,26 +159,33 @@ export function ProjectsNavSection({ expanded }: { expanded: boolean }) {
     },
     [removeProject],
   );
+  const persistProjectPath = useCallback(
+    async (directoryPath: string) => {
+      const project = await addProjectFromPath(directoryPath);
+      upsertProject(project);
+      return project;
+    },
+    [upsertProject],
+  );
   const handleAddProject = useCallback(async () => {
     setAddError("");
     try {
-      const result = await openProjectDirectory();
-      if (result.source === "fallback") {
-        setDirectoryModalOpen(true);
+      const directoryPath = await openProjectDirectory();
+      if (directoryPath) {
+        await persistProjectPath(directoryPath);
         return;
       }
-      if (result.project) upsertProject(result.project);
     } catch (error) {
       setAddError(error instanceof Error ? error.message : "Failed to add project");
+      return;
     }
-  }, [upsertProject]);
+    setDirectoryModalOpen(true);
+  }, [persistProjectPath]);
   const handleDirectoryPicked = async (directoryPath: string) => {
     setAddError("");
     try {
-      const project = await addProjectFromPath(directoryPath);
-      upsertProject(project);
+      await persistProjectPath(directoryPath);
       setDirectoryModalOpen(false);
-      void refreshProjects();
     } catch (error) {
       setAddError(error instanceof Error ? error.message : "Failed to add project");
     }

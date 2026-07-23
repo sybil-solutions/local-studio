@@ -10,11 +10,13 @@
 // the first existing legacy file we can find. After this runs once, the
 // resolver never looks at legacy paths again.
 
-import { copyFileSync, existsSync, mkdirSync, chmodSync } from "node:fs";
+import { chmodSync, copyFileSync, existsSync, mkdirSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import path from "node:path";
+import { ensureOwnerDirectory } from "./owner-files";
 
 const SETTINGS_FILENAME = "api-settings.json";
+const PROJECTS_FILENAME = "projects.json";
 const LEGACY_DOT_DIR = [".v", "llm-studio"].join("");
 const LEGACY_APP_DATA_DIR = ["v", "LLM Studio"].join("");
 const LEGACY_APP_DATA_SLUG = ["v", "llm-studio-app"].join("");
@@ -24,7 +26,17 @@ let cachedDataDir: string | null = null;
 // changes mid-process in production, but single-process test runners flip it
 // between files — a blind cache would pin every file to the first dir.
 let cachedDataDirEnv: string | undefined;
+let preparedDataDir: string | null = null;
 let migrated = false;
+
+function resolvedDataDirPath(): string {
+  const envDir = process.env.LOCAL_STUDIO_DATA_DIR?.trim();
+  if (cachedDataDir && cachedDataDirEnv === envDir) return cachedDataDir;
+  cachedDataDir =
+    envDir && envDir.length > 0 ? path.resolve(envDir) : path.join(homedir(), ".local-studio");
+  cachedDataDirEnv = envDir;
+  return cachedDataDir;
+}
 
 function legacyDataDirCandidates(): string[] {
   return [
@@ -44,26 +56,26 @@ function legacyDataDirCandidates(): string[] {
 }
 
 export function resolveDataDir(): string {
-  const envDir = process.env.LOCAL_STUDIO_DATA_DIR?.trim();
-  if (cachedDataDir && cachedDataDirEnv === envDir) return cachedDataDir;
-
-  const dir = envDir && envDir.length > 0 ? envDir : path.join(homedir(), ".local-studio");
+  const dir = resolvedDataDirPath();
+  if (preparedDataDir === dir) return dir;
 
   mkdirSync(dir, { recursive: true });
   try {
     chmodSync(dir, 0o700);
-  } catch {
-    // best-effort
-  }
+  } catch {}
 
-  cachedDataDir = dir;
-  cachedDataDirEnv = envDir;
   migrateLegacySettings(dir);
+  preparedDataDir = dir;
   return dir;
 }
 
 export function resolveSettingsFilePath(): string {
   return path.join(resolveDataDir(), SETTINGS_FILENAME);
+}
+
+export function resolveProjectsFilePath(): string {
+  ensureOwnerDirectory(resolvedDataDirPath());
+  return path.join(resolveDataDir(), PROJECTS_FILENAME);
 }
 
 function migrateLegacySettings(targetDir: string): void {

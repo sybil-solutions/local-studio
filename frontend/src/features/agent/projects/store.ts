@@ -49,6 +49,7 @@ export function createProjectsStore(dependencies: ProjectsStoreDependencies = {}
   const getWindow = dependencies.getWindow ?? getBrowserWindow;
   const listeners = new Set<() => void>();
   let started = false;
+  let refreshGeneration = 0;
   let lastGitFetch: string | null = null;
   let snapshot: ProjectsSnapshot = {
     projects: applyProjectOrder(readCachedProjects()),
@@ -72,6 +73,7 @@ export function createProjectsStore(dependencies: ProjectsStoreDependencies = {}
   };
 
   const replaceProjects = (projects: Project[]): void => {
+    writeCachedProjects(projects);
     update({ ...snapshot, projects });
   };
 
@@ -100,13 +102,15 @@ export function createProjectsStore(dependencies: ProjectsStoreDependencies = {}
   };
 
   const refresh = async (): Promise<void> => {
+    const generation = ++refreshGeneration;
     let projects: Project[] = [];
     try {
       projects = applyProjectOrder(await api.loadProjects());
-      writeCachedProjects(projects);
     } catch {
       projects = snapshot.projects;
     }
+    if (generation !== refreshGeneration) return;
+    writeCachedProjects(projects);
     const previousSelectedId = snapshot.selectedId;
     const selectedId = resolveSelectedProjectId(previousSelectedId, projects);
     update({ ...snapshot, projects, loaded: true, selectedId });
@@ -149,6 +153,7 @@ export function createProjectsStore(dependencies: ProjectsStoreDependencies = {}
       const previousSelectedId = snapshot.selectedId;
       const projects = snapshot.projects.filter((entry) => entry.id !== id);
       const selectedId = previousSelectedId === id ? null : previousSelectedId;
+      writeCachedProjects(projects);
       update({ ...snapshot, projects, selectedId });
       if (selectedId !== previousSelectedId) writeSelection(selectedId);
       void refresh();
@@ -163,7 +168,6 @@ export function createProjectsStore(dependencies: ProjectsStoreDependencies = {}
       if (toIndex === -1) projects.push(moved);
       else projects.splice(toIndex, 0, moved);
       writeProjectOrder(projects.map((entry) => entry.id));
-      writeCachedProjects(projects);
       replaceProjects(projects);
     },
     loadGitSummary,

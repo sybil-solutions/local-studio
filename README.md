@@ -130,6 +130,16 @@ and loaded extensions may still have their own behavior. Pi runs with the full
 permissions of the host user. Tailscale limits who can reach the dashboard; it
 does not sandbox Pi.
 
+Saved projects use `<LOCAL_STUDIO_DATA_DIR>/projects.json`; the packaged desktop
+sets that directory to Electron's user-data location. On first access, Local
+Studio merges every still-accessible legacy runtime registry, including a
+`LOCAL_STUDIO_PROJECTS_FILE` override and the former cwd-relative registry,
+into this file and retains protected backups. An updater that already replaced
+an application bundle may also have removed a registry that was incorrectly
+written inside that bundle. Local Studio cannot recover a source that no longer
+exists, so restore such a file from a system backup before starting the upgraded
+app if those projects are missing.
+
 ## Runtime backends
 
 Recipes launch through the controller runtime layer. Wired backend families:

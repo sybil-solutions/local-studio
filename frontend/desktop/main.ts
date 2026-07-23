@@ -19,7 +19,7 @@ import { createMainWindow } from "./logic/window-manager";
 import { registerNavigationPolicy } from "./logic/security";
 import { startFrontendServer, stopFrontendServer, type ServerHandle } from "./logic/app-server";
 import { checkForUpdates, getUpdateState, initializeAutoUpdates } from "./logic/update-manager";
-import { addProject, listProjectsWithMeta, removeProject } from "./logic/projects-store";
+import { selectedDirectoryPath } from "./logic/project-directory";
 import { deployController } from "./logic/controller-deploy";
 import {
   getKittylitterPairingJson,
@@ -246,15 +246,7 @@ function registerIpcHandlers(): void {
     const result = owner
       ? await dialog.showOpenDialog(owner, { properties: ["openDirectory", "createDirectory"] })
       : await dialog.showOpenDialog({ properties: ["openDirectory", "createDirectory"] });
-    if (result.canceled) return null;
-    const selected = result.filePaths[0];
-    if (!selected) return null;
-    try {
-      return addProject(selected);
-    } catch (error) {
-      log.error(`Failed to add project from dialog: ${String(error)}`);
-      throw error;
-    }
+    return selectedDirectoryPath(result);
   });
 
   ipcMain.handle(
@@ -270,23 +262,6 @@ function registerIpcHandlers(): void {
       });
     },
   );
-
-  ipcMain.handle("desktop:list-projects", async () => listProjectsWithMeta());
-
-  ipcMain.handle("desktop:add-project", async (_, directoryPath: string) => {
-    if (typeof directoryPath !== "string") {
-      throw new Error("directoryPath must be a string");
-    }
-    return addProject(directoryPath);
-  });
-
-  ipcMain.handle("desktop:remove-project", async (_, id: string) => {
-    if (typeof id !== "string") {
-      throw new Error("id must be a string");
-    }
-    removeProject(id);
-    return { ok: true } as const;
-  });
 
   ipcMain.handle("desktop:load-session-prefs", async () => {
     return readSessionPrefsFile();
