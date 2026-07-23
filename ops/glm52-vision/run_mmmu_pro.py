@@ -30,6 +30,7 @@ def ask(endpoint, model, image):
     payload = {
         "model": model,
         "temperature": 0,
+        "chat_template_kwargs": {"enable_thinking": False},
         "messages": [
             {
                 "role": "user",
