@@ -1,36 +1,36 @@
 # GLM-5.2 Hybrid and Vision Status
 
-Status: hybrid live; vision candidate staged and stopped
+Status: NVFP4-KV hybrid test live; FP8 hybrid and vision candidate stopped
 
-Hybrid restoration: `2026-07-23T08:49:47Z`
+NVFP4-KV test started: `2026-07-23T09:16:12Z`
 
-Live service: `glm52-v3`
+Live service: `glm52-nvfp4-hybrid`
 
 Served model: `GLM-5.2`
 
-Live image: `madeby561/vllm-glm52-nvfp4-nf3-hybrid:v3`
+Live image: `local/glm52-nf3-vision:v5-nvfp4`
 
 Live checkpoint: `/mnt/llm_models/GLM-5.2-MXFP8-NVFP4-NF3-Hybrid`
 
-Hybrid recipe: FP8 KV cache, `B12X_MLA_SPARSE`, DCP 4, MTP 5, async scheduling, and the 78-layer index-cache pattern.
+Hybrid recipe: `nvfp4_ds_mla` KV cache, `B12X_MLA_SPARSE`, DCP 4, MTP 3, async scheduling, and the 78-layer index-cache pattern.
 
-Configured context length: `342528`
+Configured context length: `196608`
 
-GPU KV capacity: `344831` tokens
+GPU KV capacity: `320000` tokens
 
-Maximum 342528-token concurrency: `1.01x`
+Maximum 196608-token concurrency: `1.63x`
 
-Cold-prefix single-request measurements with thinking disabled: 1,065 input tokens at 782.2 tok/s and 46.2 decode tok/s; 4,139 at 1,117.0 tok/s and 46.7 decode tok/s; 16,427 at 1,196.3 tok/s and 58.2 decode tok/s.
+Cold-prefix single-request measurements with thinking disabled: 1,066 input tokens at 984.0 tok/s and 28.2 decode tok/s returned `OK`; 4,140 at 1,054.5 tok/s and 30.8 decode tok/s returned `OK`; 8,232 at 1,118.5 tok/s and 54.8 decode tok/s echoed the filler; 16,427 generated 32 tokens with no visible response.
 
-Coherence gate: 1k and 4k control prompts returned `OK`; the 16k control prompt produced punctuation instead. The restored hybrid is operational but does not clear the long-context inference-quality concern.
+Coherence gate: 1k and 4k control prompts returned `OK`; failure begins by 8k and is worse at 16k. NVFP4 KV does not resolve the long-context inference-quality concern.
 
-Vision service: `glm52-vision-candidate` is stopped and recoverable.
+FP8 hybrid service: `glm52-v3` is stopped and recoverable. Vision service: `glm52-vision-candidate` is stopped and recoverable.
 
 Previous vision cutover: `2026-07-23T01:21:10+02:00`
 
 Base checkpoint: `/mnt/llm_models/GLM-5.2-MXFP8-NVFP4-NF3-Hybrid`
 
-Live checkpoint: `/mnt/llm_models/GLM-5.2-MXFP8-NVFP4-NF3-Hybrid-Vision`
+Vision candidate checkpoint: `/mnt/llm_models/GLM-5.2-MXFP8-NVFP4-NF3-Hybrid-Vision`
 
 Vision source: `baseten/GLM-5.2-Vision-NVFP4@f6eab6117386a0c69152fdf272dc65bfd0254f9f`
 
