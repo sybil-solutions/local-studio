@@ -140,13 +140,19 @@ async function smokeTerminal(page) {
 }
 
 async function terminate(child) {
-  if (!child || child.exitCode !== null || child.signalCode !== null) return;
-  child.kill("SIGTERM");
+  if (!child?.pid) return;
+  try {
+    process.kill(-child.pid, "SIGTERM");
+  } catch {}
   await Promise.race([
-    new Promise((resolve) => child.once("exit", resolve)),
+    child.exitCode === null && child.signalCode === null
+      ? new Promise((resolve) => child.once("exit", resolve))
+      : Promise.resolve(),
     delay(5_000),
   ]);
-  if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
+  try {
+    process.kill(-child.pid, "SIGKILL");
+  } catch {}
 }
 
 export async function runDesktopPackageSmoke(args = process.argv.slice(2)) {
@@ -191,6 +197,7 @@ export async function runDesktopPackageSmoke(args = process.argv.slice(2)) {
   try {
     child = spawn(executable, [`--remote-debugging-port=${debugPort}`], {
       cwd: temp,
+      detached: true,
       env,
       stdio: ["ignore", "pipe", "pipe"],
     });
