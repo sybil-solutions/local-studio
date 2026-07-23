@@ -90,11 +90,13 @@ export const registerSystemRoutes = defineRoutes((app, context) => {
       effectHandler((ctx) =>
         Effect.gen(function* () {
           const current = yield* findObservedInferenceProcess(context, "status");
+          const launchAttempt = context.launchState.getActiveAttempt();
           return ctx.json({
             running: Boolean(current),
             process: current,
             inference_port: context.config.inference_port,
-            launching: context.launchState.getLaunchingRecipeId(),
+            launching: launchAttempt?.recipeId ?? null,
+            launch_attempt_id: launchAttempt?.attemptId ?? null,
             launch_failures: context.launchFailureBudget.listActive(),
           });
         }),

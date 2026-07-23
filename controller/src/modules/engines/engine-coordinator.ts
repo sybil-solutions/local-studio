@@ -24,8 +24,13 @@ import { pidExists } from "./process/process-utilities";
 export type SetActiveRecipeResult = { ok: true } | { ok: false; error: string };
 
 export interface SetActiveRecipeOptions {
-  signal?: AbortSignal;
+  readonly attemptId?: string;
+  readonly signal?: AbortSignal;
 }
+
+export type CancelLaunchResult =
+  | { readonly ok: true; readonly matched: boolean }
+  | { readonly ok: false; readonly matched: true; readonly error: string };
 
 interface CoordinatorDeps {
   config: Config;
@@ -59,6 +64,7 @@ const lifecycleFailure = (error: string): SetActiveRecipeResult => ({ ok: false,
 export class EngineCoordinator {
   private readonly switchLock = Semaphore.makeUnsafe(1);
   private activeLifecycleAbort: AbortController | null = null;
+  private activeLaunchAttemptId: string | null = null;
   private activeLaunchPid: number | null = null;
   private lifecycleIntentSerial = 0;
   private livenessFiber: Fiber.Fiber<void, never> | null = null;
@@ -72,6 +78,16 @@ export class EngineCoordinator {
     options: SetActiveRecipeOptions = {},
   ): Effect.Effect<SetActiveRecipeResult, EngineOperationError> {
     return Effect.suspend(() => {
+      const attemptId = recipe ? options.attemptId : undefined;
+      if (!recipe && this.activeLaunchAttemptId) {
+        return Effect.succeed(
+          lifecycleFailure("Active launch must be cancelled by its attempt token"),
+        );
+      }
+      if (recipe && this.activeLaunchAttemptId && this.activeLaunchAttemptId !== attemptId) {
+        return Effect.succeed(lifecycleFailure("Previous launch cleanup is still pending"));
+      }
+      if (attemptId) this.activeLaunchAttemptId = attemptId;
       const intentSerial = ++this.lifecycleIntentSerial;
       this.activeLifecycleAbort?.abort();
       const preempt =
@@ -80,11 +96,20 @@ export class EngineCoordinator {
               .killOwnedProcess(this.activeLaunchPid, true)
               .pipe(Effect.asVoid)
           : Effect.void;
-      return preempt.pipe(
+      const lifecycle = preempt.pipe(
         Effect.flatMap(() =>
           this.switchLock.withPermit(this.runLifecycle(recipe, options, intentSerial)),
         ),
       );
+      return attemptId
+        ? lifecycle.pipe(
+            Effect.ensuring(
+              Effect.sync(() => {
+                if (this.activeLaunchAttemptId === attemptId) this.activeLaunchAttemptId = null;
+              }),
+            ),
+          )
+        : lifecycle;
     });
   }
 
@@ -225,6 +250,8 @@ export class EngineCoordinator {
       if (ready.ready) {
         coordinator.deps.launchFailureBudget.reset(recipe.id);
         yield* coordinator.publishLaunchProgress(recipe.id, "ready", "Model is ready!", 1);
+        const readyAbort = yield* abortIfNeeded(recipe);
+        if (readyAbort) return readyAbort;
         if (launch.pid) yield* coordinator.startLivenessMonitor(launch.pid, "owned");
         retainLease = true;
         return lifecycleSuccess();
@@ -361,15 +388,21 @@ export class EngineCoordinator {
     this.deps.launchFailureBudget.reset(recipeId);
   }
 
-  cancelActiveLaunch(): Effect.Effect<void, EngineOperationError> {
-    return Effect.suspend(() => {
+  cancelLaunch(attemptId: string): Effect.Effect<CancelLaunchResult, EngineOperationError> {
+    return Effect.suspend((): Effect.Effect<CancelLaunchResult, EngineOperationError> => {
+      if (this.activeLaunchAttemptId !== attemptId) {
+        return Effect.succeed({ ok: true, matched: false } as const);
+      }
       this.lifecycleIntentSerial += 1;
       this.activeLifecycleAbort?.abort();
       const launchPid = this.activeLaunchPid;
       const preempt = launchPid
         ? this.deps.processManager.killOwnedProcess(launchPid, true).pipe(Effect.asVoid)
         : Effect.void;
-      return preempt.pipe(Effect.flatMap(() => this.switchLock.withPermit(Effect.void)));
+      return preempt.pipe(
+        Effect.flatMap(() => this.switchLock.withPermit(Effect.void)),
+        Effect.as({ ok: true, matched: true } as const),
+      );
     });
   }
 
