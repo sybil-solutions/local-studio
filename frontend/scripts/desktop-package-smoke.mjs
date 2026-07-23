@@ -64,6 +64,20 @@ async function waitForJson(url, timeoutMs) {
   throw new Error(`Timed out waiting for ${url}: ${String(lastError)}`);
 }
 
+async function postJson(url, body) {
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(30_000),
+  });
+  const payload = await response.json();
+  if (!response.ok || payload.ok !== true) {
+    throw new Error(`${url} failed: ${response.status} ${JSON.stringify(payload)}`);
+  }
+  return payload;
+}
+
 async function waitForAgentRuntime(logFile, timeoutMs) {
   const started = Date.now();
   while (Date.now() - started < timeoutMs) {
@@ -211,6 +225,13 @@ export async function runDesktopPackageSmoke(args = process.argv.slice(2)) {
     const origin = `http://127.0.0.1:${frontendPort}`;
     const desktopHealth = await waitForJson(`${origin}/api/desktop-health`, 30_000);
     const agentRuntime = await waitForAgentRuntime(logFile, 30_000);
+    const embeddedBrowser = await postJson(
+      `${agentRuntime.url}/api/agent/browser/navigate`,
+      { url: `${origin}/agent` },
+    );
+    if (!String(embeddedBrowser.data?.url ?? "").startsWith(origin)) {
+      throw new Error(`Packaged browser navigated to an unexpected URL: ${JSON.stringify(embeddedBrowser)}`);
+    }
 
     browser = await chromium.connectOverCDP(`http://127.0.0.1:${debugPort}`);
     const page = await waitForPage(browser, origin, 30_000);
@@ -239,6 +260,7 @@ export async function runDesktopPackageSmoke(args = process.argv.slice(2)) {
       agentStatus: agentResponse.status(),
       desktopHealth,
       agentRuntime: agentRuntime.payload,
+      embeddedBrowser: embeddedBrowser.data,
       runtime,
       terminal,
     };
