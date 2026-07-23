@@ -1,16 +1,32 @@
-# GLM-5.2 NF3 Vision Cutover
+# GLM-5.2 Hybrid and Vision Status
 
-Status: live and verified
+Status: hybrid live; vision candidate staged and stopped
 
-Cutover completed: `2026-07-23T01:21:10+02:00`
+Hybrid restoration: `2026-07-23T08:49:47Z`
 
-Live service: `glm52-vision-candidate`
+Live service: `glm52-v3`
 
-Served model: `GLM-5.2-Vision`
+Served model: `GLM-5.2`
 
-Live image: `local/glm52-nf3-vision:v5-nvfp4`
+Live image: `madeby561/vllm-glm52-nvfp4-nf3-hybrid:v3`
 
-Live image digest: `sha256:fef40a6469a68d9e614ca91b658b56f4e5c02a988cc86f2d4f3a664c63bac75b`
+Live checkpoint: `/mnt/llm_models/GLM-5.2-MXFP8-NVFP4-NF3-Hybrid`
+
+Hybrid recipe: FP8 KV cache, `B12X_MLA_SPARSE`, DCP 4, MTP 5, async scheduling, and the 78-layer index-cache pattern.
+
+Configured context length: `342528`
+
+GPU KV capacity: `344831` tokens
+
+Maximum 342528-token concurrency: `1.01x`
+
+Cold-prefix single-request measurements with thinking disabled: 1,065 input tokens at 782.2 tok/s and 46.2 decode tok/s; 4,139 at 1,117.0 tok/s and 46.7 decode tok/s; 16,427 at 1,196.3 tok/s and 58.2 decode tok/s.
+
+Coherence gate: 1k and 4k control prompts returned `OK`; the 16k control prompt produced punctuation instead. The restored hybrid is operational but does not clear the long-context inference-quality concern.
+
+Vision service: `glm52-vision-candidate` is stopped and recoverable.
+
+Previous vision cutover: `2026-07-23T01:21:10+02:00`
 
 Base checkpoint: `/mnt/llm_models/GLM-5.2-MXFP8-NVFP4-NF3-Hybrid`
 
