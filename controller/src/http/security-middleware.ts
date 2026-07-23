@@ -2,6 +2,7 @@ import { timingSafeEqual } from "node:crypto";
 import { Effect } from "effect";
 import type { MiddlewareHandler, Next } from "hono";
 import type { AppContext } from "../app-context";
+import { isWildcardHost, normalizeControllerHost, normalizeHttpOrigin } from "../config/env";
 import { effectMiddleware } from "./effect-handler";
 
 const MUTATING_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
@@ -85,6 +86,66 @@ const rateLimitKey = (path: string, method: string, clientIp: string): string =>
 
 const nextEffect = (next: Next): Effect.Effect<void, unknown> =>
   Effect.tryPromise({ try: next, catch: (error) => error });
+
+const authorityParts = (value: string): readonly [string, string | undefined] | null => {
+  const candidate = value.trim().toLowerCase();
+  if (!candidate || /[\s/@?#]/.test(candidate)) return null;
+  if (candidate.startsWith("[")) {
+    const match = candidate.match(/^\[([^\]]+)](?::([0-9]+))?$/);
+    return match?.[1] ? [match[1], match[2]] : null;
+  }
+  const firstColon = candidate.indexOf(":");
+  if (firstColon < 0) return [candidate, undefined];
+  if (firstColon !== candidate.lastIndexOf(":")) return null;
+  const host = candidate.slice(0, firstColon);
+  const port = candidate.slice(firstColon + 1);
+  return host && port ? [host, port] : null;
+};
+
+export const normalizeRequestAuthority = (value: string, expectedPort: number): string | null => {
+  const parts = authorityParts(value);
+  if (!parts) return null;
+  const [host, suppliedPort] = parts;
+  const normalized = normalizeControllerHost(host);
+  if (!normalized || isWildcardHost(normalized)) return null;
+  if (suppliedPort !== undefined) {
+    const port = Number(suppliedPort);
+    if (!Number.isSafeInteger(port) || port < 1 || port > 65_535 || port !== expectedPort) {
+      return null;
+    }
+  }
+  return normalized;
+};
+
+const requestAuthority = (url: string, hostHeader: string | undefined): string | null => {
+  if (hostHeader !== undefined) return hostHeader;
+  try {
+    return new URL(url).host;
+  } catch {
+    return null;
+  }
+};
+
+export function createKeylessRequestGuardMiddleware(context: AppContext): MiddlewareHandler {
+  return effectMiddleware((ctx, next) =>
+    Effect.suspend(() => {
+      if (context.config.api_key?.trim()) return nextEffect(next);
+      const authority = requestAuthority(ctx.req.url, ctx.req.header("host"));
+      const host = authority ? normalizeRequestAuthority(authority, context.config.port) : null;
+      const originHeader = ctx.req.header("origin");
+      const origin = originHeader === undefined ? undefined : normalizeHttpOrigin(originHeader);
+      if (
+        !host ||
+        !(context.config.allowed_hosts ?? []).includes(host) ||
+        origin === null ||
+        (origin !== undefined && !(context.config.cors_origins ?? []).includes(origin))
+      ) {
+        return Effect.succeed(ctx.json({ detail: "Forbidden request origin" }, { status: 403 }));
+      }
+      return nextEffect(next);
+    }),
+  );
+}
 
 export function createMutatingAuthMiddleware(context: AppContext): MiddlewareHandler {
   return effectMiddleware((ctx, next) =>

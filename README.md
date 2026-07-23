@@ -187,7 +187,10 @@ awake, online, and connected to Tailscale.
 The controller binds `127.0.0.1` by default. Binding a non-loopback host (e.g.
 `LOCAL_STUDIO_HOST=0.0.0.0`) requires `LOCAL_STUDIO_API_KEY` — startup throws
 without it. On a trusted LAN you may instead set
-`LOCAL_STUDIO_ALLOW_UNAUTHENTICATED=true` to opt out of authentication.
+`LOCAL_STUDIO_ALLOW_UNAUTHENTICATED=true` to opt out of authentication. Keyless
+wildcard binds also require `LOCAL_STUDIO_ALLOWED_HOSTS` with the exact hostnames
+or IP addresses clients use. Set `LOCAL_STUDIO_CORS_ORIGINS` to the exact HTTP(S)
+frontend origins allowed to call the controller from a browser.
 
 Point the frontend at a remote controller with `BACKEND_URL` or
 `NEXT_PUBLIC_API_URL` (default `http://localhost:8080`).
