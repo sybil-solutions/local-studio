@@ -34,7 +34,7 @@ Model memory: `85.93 GiB` per GPU
 
 Available KV memory: `4.56 GiB`
 
-GPU KV capacity: `445041` tokens
+GPU KV capacity: `444529` tokens
 
 Maximum 400000-token concurrency: `1.11x`; normal prompt scheduling permits four concurrent sequences
 
@@ -44,9 +44,11 @@ MTP: not enabled for the NVFP4-KV candidate
 
 Text validation: passed with `TEXT_OK`
 
-Image validation: passed with the attached Local Studio screenshot, returned a bounded description, and stopped at EOS token `154827`
+Image transport validation: passed with the attached Local Studio screenshot and a normal EOS stop.
 
-Vision reasoning: enabled in the installed Local Studio runtime with `high` and `max` thinking levels; vision prompt and tool isolation remain enabled independently.
+Image quality validation: failed for high-reasoning screenshot analysis on 2026-07-23. The model received the 4,235-token image input but produced a long fabricated description after initially recognizing a software interface. Do not treat this hybrid as quality-validated vision serving.
+
+Vision reasoning: enabled in the installed Local Studio runtime with `high` and `max` thinking levels. Pi Bash and filesystem tools are restored; extensions, skills, and injected project context remain isolated from vision sessions.
 
 MMMU-Pro: paused at user request on 2026-07-23 after 102 durable records from four concurrent workers. There are 101 responses, one recorded HTTP 400 for `test_Math_11` because its 4,235 image embeddings exceed the configured 4,225 encoder cache, and 93 parseable answers with 25 correct. Failed and unparseable records are excluded from the provisional score.
 
