@@ -18,6 +18,7 @@ const LOCAL_COMMANDS = new Set([
   "knip",
   "madge --extensions ts,tsx --circular src",
   "next build",
+  "next build --webpack",
   "semantic-release",
   "tsc --noEmit",
   "tsc -p desktop/tsconfig.json",
