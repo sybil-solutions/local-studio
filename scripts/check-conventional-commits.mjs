@@ -28,6 +28,7 @@ const ignoredSubjects = [
 const args = process.argv.slice(2);
 const messageFileIndex = args.indexOf("--message-file");
 const rangeIndex = args.indexOf("--range");
+const excludeRefIndex = args.indexOf("--exclude-ref");
 
 const fail = (message) => {
   console.error(message);
@@ -75,10 +76,15 @@ if (messageFileIndex !== -1) {
   validateSubject(subject, "commit message");
 } else {
   const range = rangeIndex === -1 ? args[0] : args[rangeIndex + 1];
+  const excludeRef = excludeRefIndex === -1 ? undefined : args[excludeRefIndex + 1];
   if (!range) {
-    fail("Usage: check-conventional-commits.mjs --message-file <path> | --range <base..head>");
+    fail(
+      "Usage: check-conventional-commits.mjs --message-file <path> | --range <base..head> [--exclude-ref <ref>]",
+    );
   } else {
-    const output = execFileSync("git", ["log", "--format=%s", range], { encoding: "utf8" }).trim();
+    const gitArgs = ["log", "--format=%s", range];
+    if (excludeRef) gitArgs.push("--not", excludeRef);
+    const output = execFileSync("git", gitArgs, { encoding: "utf8" }).trim();
     const subjects = output ? output.split(/\r?\n/) : [];
     subjects.forEach((subject, index) => validateSubject(subject, `commit ${index + 1}`));
   }
