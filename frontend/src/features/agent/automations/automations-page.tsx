@@ -165,8 +165,8 @@ export default function AutomationsPage() {
       <div
         className={
           editorOpen
-            ? "hidden min-h-0 shrink-0 md:flex md:w-[min(420px,42%)]"
-            : "flex min-h-0 w-full shrink-0 md:w-[min(420px,42%)]"
+            ? "hidden min-h-0 shrink-0 md:flex md:w-[min(380px,38%)]"
+            : "flex min-h-0 w-full shrink-0 md:w-[min(380px,38%)]"
         }
       >
         <AutomationList
@@ -208,14 +208,14 @@ export default function AutomationsPage() {
 
 function AutomationWelcome({ onCreate }: { onCreate: () => void }) {
   return (
-    <section className="hidden min-h-0 flex-1 items-center justify-center px-8 text-center md:flex">
-      <div className="max-w-sm">
-        <span className="mx-auto flex h-10 w-10 items-center justify-center rounded-full bg-(--ui-fg)/5 text-(--ui-muted)">
+    <section className="hidden min-h-0 flex-1 items-center justify-center px-8 md:flex">
+      <div className="max-w-sm text-left">
+        <span className="flex h-9 w-9 items-center justify-center rounded-[var(--ui-radius)] border border-(--ui-separator) bg-(--ui-surface) text-(--ui-muted)">
           <Clock className="h-4 w-4" />
         </span>
-        <h2 className="mt-4 text-[length:var(--fs-lg)] font-medium">Select a scheduled task</h2>
-        <p className="mt-2 text-[length:var(--fs-sm)] leading-5 text-(--ui-muted)">
-          Review its prompt and schedule, run it now, pause it, or change what it does.
+        <h2 className="mt-4 text-[length:var(--fs-lg)] font-medium">Select an automation</h2>
+        <p className="mt-1.5 text-[length:var(--fs-sm)] leading-5 text-(--ui-muted)">
+          Review its task and schedule, run it now, pause it, or change its configuration.
         </p>
         <Button
           size="sm"

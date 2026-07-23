@@ -6,12 +6,13 @@ import { isRouteActive, mobilePageTitle, tabs } from "./left-sidebar-nav";
 const desktopSidebar = readFileSync(new URL("./left-sidebar-desktop.tsx", import.meta.url), "utf8");
 
 describe("left sidebar navigation", () => {
-  test("keeps automations in the primary workspace navigation", () => {
+  test("keeps sessions and automations in the primary workspace navigation", () => {
     assert.deepEqual(
       tabs.map((tab) => [tab.href, tab.label]),
       [
         ["/", "Status"],
         ["/agent", "Workbench"],
+        ["/agent/sessions", "Sessions"],
         ["/agent/automations", "Automations"],
         ["/configure", "Configure"],
         ["/usage", "Usage"],
@@ -19,15 +20,18 @@ describe("left sidebar navigation", () => {
     );
   });
 
-  test("activates automations without also activating workbench", () => {
+  test("activates agent destinations independently", () => {
     assert.equal(isRouteActive("/agent/automations", "/agent/automations"), true);
     assert.equal(isRouteActive("/agent/automations?new=1", "/agent/automations"), true);
+    assert.equal(isRouteActive("/agent/sessions", "/agent/sessions"), true);
     assert.equal(isRouteActive("/agent/automations", "/agent"), false);
+    assert.equal(isRouteActive("/agent/sessions", "/agent"), false);
     assert.equal(isRouteActive("/agent/session-1", "/agent"), true);
   });
 
-  test("uses the automations title on mobile", () => {
+  test("uses destination titles on mobile", () => {
     assert.equal(mobilePageTitle("/agent/automations"), "Automations");
+    assert.equal(mobilePageTitle("/agent/sessions"), "Sessions");
   });
 
   test("keeps session history steppers compact", () => {

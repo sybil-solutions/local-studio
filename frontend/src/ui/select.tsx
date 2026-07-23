@@ -54,7 +54,7 @@ const Select = forwardRef<HTMLSelectElement, SelectProps>(function Select(
         required={field.required}
         aria-describedby={field.describedBy}
         aria-invalid={field.invalid}
-        className={`h-9 w-full rounded-[10px] border border-(--ui-separator) bg-(--surface-3) px-3 text-[length:var(--fs-base)] text-(--ui-fg) transition-all focus:border-(--link)/70 focus:outline-none focus:ring-1 focus:ring-(--link)/25 ${className}`}
+        className={`h-9 w-full rounded-[var(--ui-radius)] border border-(--ui-separator) bg-(--ui-surface) px-3 text-[length:var(--fs-base)] text-(--ui-fg) transition-colors focus:border-(--ui-accent)/60 focus:outline-none focus:ring-1 focus:ring-(--ui-accent)/20 ${className}`}
         {...props}
       >
         {placeholder && <option value="">{placeholder}</option>}

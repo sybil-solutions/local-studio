@@ -27,13 +27,13 @@ function SearchInput({
 
   return (
     <div className={`relative ${className}`}>
-      <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-(--ui-muted)" />
+      <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-(--ui-muted)" />
       <input
         type="text"
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
-        className="w-full rounded-full border border-(--ui-border) bg-(--surface-3) py-2 pl-10 pr-8 text-[length:var(--fs-base)] text-(--ui-fg) transition-all placeholder:text-(--hl2) focus:border-(--link)/70 focus:outline-none focus:ring-1 focus:ring-(--link)/25"
+        className="h-9 w-full rounded-[var(--ui-radius)] border border-(--ui-separator) bg-(--ui-surface) pl-9 pr-8 text-[length:var(--fs-base)] text-(--ui-fg) transition-colors placeholder:text-(--ui-muted)/70 focus:border-(--ui-accent)/60 focus:outline-none focus:ring-1 focus:ring-(--ui-accent)/20"
       />
       {value && (
         <button

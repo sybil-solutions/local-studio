@@ -1,7 +1,7 @@
 "use client";
 
-import { Button } from "@/ui";
-import { Clock, Plus, Search } from "@/ui/icon-registry";
+import { Button, SearchInput, SegmentedControl } from "@/ui";
+import { Clock, Plus } from "@/ui/icon-registry";
 import type { Automation } from "@shared/agent/automation";
 import {
   filterAutomations,
@@ -49,37 +49,21 @@ export function AutomationList({
         </Button>
       </header>
 
-      <div className="shrink-0 space-y-3 border-b border-(--ui-border) p-3">
-        <label className="flex h-9 items-center gap-2 rounded-[10px] border border-(--ui-separator) bg-(--surface-3) px-3 focus-within:border-(--link)/70 focus-within:ring-1 focus-within:ring-(--link)/25">
-          <Search className="h-3.5 w-3.5 shrink-0 text-(--ui-muted)" />
-          <input
-            value={query}
-            onChange={(event) => onQueryChange(event.target.value)}
-            placeholder="Search automations"
-            aria-label="Search automations"
-            className="min-w-0 flex-1 bg-transparent text-[length:var(--fs-base)] text-(--ui-fg) outline-none placeholder:text-(--hl2)"
-          />
-        </label>
-        <div className="flex items-center gap-1" role="group" aria-label="Filter automations">
-          {(["all", "active", "paused"] as const).map((option) => (
-            <button
-              key={option}
-              type="button"
-              onClick={() => onFilterChange(option)}
-              aria-pressed={filter === option}
-              className={`h-7 rounded-md px-2.5 text-[length:var(--fs-sm)] capitalize transition-colors ${
-                filter === option
-                  ? "bg-(--ui-active) text-(--ui-fg)"
-                  : "text-(--ui-muted) hover:bg-(--ui-hover) hover:text-(--ui-fg)"
-              }`}
-            >
-              {option}
-            </button>
-          ))}
-        </div>
+      <div className="shrink-0 space-y-2 border-b border-(--ui-separator) p-3">
+        <SearchInput value={query} onChange={onQueryChange} placeholder="Search automations" />
+        <SegmentedControl
+          value={filter}
+          onChange={onFilterChange}
+          size="sm"
+          items={[
+            { id: "all", label: "All" },
+            { id: "active", label: "Active" },
+            { id: "paused", label: "Paused" },
+          ]}
+        />
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto p-2">
+      <div className="min-h-0 flex-1 overflow-y-auto p-1.5">
         {loading ? (
           <ListMessage>Loading scheduled tasks…</ListMessage>
         ) : visible.length === 0 ? (
@@ -89,7 +73,7 @@ export function AutomationList({
               : "No automations match these filters."}
           </ListMessage>
         ) : (
-          <div role="list" className="space-y-1">
+          <div role="list" className="divide-y divide-(--ui-separator)/70">
             {visible.map((automation) => {
               const selected = automation.id === selectedId;
               const paused = automation.status === "paused";
@@ -99,20 +83,20 @@ export function AutomationList({
                   type="button"
                   role="listitem"
                   onClick={() => onSelect(automation)}
-                  className={`group w-full rounded-[10px] px-3 py-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--ui-accent)/35 ${
+                  className={`group w-full rounded-[var(--ui-radius)] px-3 py-2.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--ui-accent)/35 ${
                     selected
                       ? "bg-(--ui-active) text-(--ui-fg)"
-                      : "text-(--ui-fg) hover:bg-(--ui-hover)"
+                      : "text-(--ui-fg) hover:bg-(--ui-hover)/60"
                   }`}
                 >
                   <div className="flex items-start gap-3">
                     <span
-                      className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${
+                      className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${
                         paused
                           ? "bg-(--ui-muted)/45"
                           : automation.lastRun?.outcome === "error"
                             ? "bg-(--ui-danger)"
-                            : "bg-(--link)"
+                            : "bg-(--ui-accent)"
                       }`}
                     />
                     <span className="min-w-0 flex-1">
@@ -122,7 +106,7 @@ export function AutomationList({
                         </span>
                         {automation.unread ? (
                           <span
-                            className="h-1.5 w-1.5 shrink-0 rounded-full bg-(--link)"
+                            className="h-1.5 w-1.5 shrink-0 rounded-full bg-(--ui-accent)"
                             aria-label="Unread run"
                           />
                         ) : null}

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useMemo, useState } from "react";
-import { ChevronDown, Folder, Search as SearchIcon } from "@/ui/icon-registry";
+import { ChevronDown, Folder } from "@/ui/icon-registry";
 import {
   AppPage,
   PageContainer,
@@ -14,6 +14,9 @@ import {
   TRow,
   TH,
   TCell,
+  SearchInput,
+  SegmentedControl,
+  Select,
 } from "@/ui";
 import { cleanSessionTitle } from "@/features/agent/messages/helpers";
 import { useOpenSessions } from "@/features/agent/ui/use-open-sessions";
@@ -142,46 +145,40 @@ export default function AgentSessionsPage() {
           }
         />
 
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="flex h-9 min-w-[280px] flex-1 items-center gap-2 rounded-md bg-(--surface) px-3">
-            <SearchIcon className="h-3.5 w-3.5 text-(--dim)" />
-            <input
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search by prompt, project, model…"
-              className="flex-1 bg-transparent text-[length:var(--fs-base)] outline-none placeholder:text-(--dim)"
-            />
-            <kbd className="rounded bg-(--surface-2) px-1.5 py-0.5 text-[length:var(--fs-xs)] text-(--dim)">
-              ⌘K
-            </kbd>
-          </div>
-          <FilterPills
+        <div className="grid gap-2 sm:grid-cols-[minmax(240px,1fr)_auto] lg:grid-cols-[minmax(280px,1fr)_auto_180px]">
+          <SearchInput
+            value={query}
+            onChange={setQuery}
+            placeholder="Search prompts, projects, or models"
+          />
+          <SegmentedControl
             value={statusFilter}
             onChange={setStatusFilter}
-            options={[
+            size="sm"
+            items={[
               { id: "all", label: "All" },
               { id: "running", label: "Running" },
               { id: "idle", label: "Idle" },
             ]}
           />
-          <ProjectSelect
-            value={projectFilter}
-            onChange={setProjectFilter}
-            options={[
-              { id: "all", name: "All projects" },
-              ...projects.map(([id, name]) => ({ id, name })),
-            ]}
-          />
+          <div className="sm:col-span-2 lg:col-span-1">
+            <Select
+              value={projectFilter}
+              onChange={(event) => setProjectFilter(event.target.value)}
+              aria-label="Filter sessions by project"
+              options={[
+                { value: "all", label: "All projects" },
+                ...projects.map(([id, name]) => ({ value: id, label: name })),
+              ]}
+            />
+          </div>
         </div>
 
-        <Table
-          className="mt-4 rounded-lg bg-(--surface)"
-          tableClassName="text-[length:var(--fs-base)]"
-        >
-          <THead className="bg-(--surface-2) text-[length:var(--fs-xs)] uppercase tracking-[0.14em] text-(--dim)">
-            <TRow className="border-none hover:bg-transparent">
-              <TH className="w-10 px-3 py-2"></TH>
-              <TH className="px-3 py-2">Title</TH>
+        <Table className="mt-3">
+          <THead>
+            <TRow className="hover:bg-transparent">
+              <TH className="w-9"></TH>
+              <TH>Title</TH>
               <SortHeader
                 label="Project"
                 field="projectName"
@@ -189,7 +186,7 @@ export default function AgentSessionsPage() {
                 sortDir={sortDir}
                 onClick={toggleSort}
               />
-              <TH className="px-3 py-2">Model</TH>
+              <TH>Model</TH>
               <SortHeader
                 label="Updated"
                 field="updatedAt"
@@ -200,22 +197,16 @@ export default function AgentSessionsPage() {
               />
             </TRow>
           </THead>
-          <TBody className="[&>tr]:border-[--separator]">
+          <TBody>
             {sessions === null ? (
               <TRow>
-                <TCell
-                  colSpan={5}
-                  className="px-3 py-8 text-center text-[length:var(--fs-md)] text-(--dim)"
-                >
-                  Loading…
+                <TCell colSpan={5} className="py-8 text-center text-(--ui-muted)">
+                  Loading sessions…
                 </TCell>
               </TRow>
             ) : rows.length === 0 ? (
               <TRow>
-                <TCell
-                  colSpan={5}
-                  className="px-3 py-10 text-center text-[length:var(--fs-md)] text-(--dim)"
-                >
+                <TCell colSpan={5} className="py-10 text-center text-(--ui-muted)">
                   No sessions match these filters.
                 </TCell>
               </TRow>
@@ -227,43 +218,40 @@ export default function AgentSessionsPage() {
                   cleanSessionTitle(session.firstUserMessage) ||
                   `Session ${session.id.slice(0, 8)}`;
                 return (
-                  <TRow
-                    key={session.id}
-                    className="border-t border-(--separator) hover:bg-(--surface-2)"
-                  >
-                    <TCell className="px-3 py-2">
+                  <TRow key={session.id}>
+                    <TCell>
                       <span
                         className={`inline-block h-1.5 w-1.5 rounded-full ${
-                          running ? "bg-(--hl2) animate-pulse" : "bg-(--dim)"
+                          running ? "animate-pulse bg-(--ui-success)" : "bg-(--ui-muted)/45"
                         }`}
                         title={running ? `Running: ${status}` : "Idle"}
                         aria-hidden
                       />
                     </TCell>
-                    <TCell className="px-3 py-2 text-(--fg)">
+                    <TCell className="text-(--ui-fg)">
                       <Link
                         href={`/agent?project=${encodeURIComponent(session.projectId)}&session=${encodeURIComponent(session.id)}&replace=1`}
-                        className="line-clamp-1 hover:underline"
+                        className="line-clamp-1 font-medium hover:underline"
                         title={label}
                       >
                         {label}
                       </Link>
                       {running ? (
-                        <span className="ml-2 text-[length:var(--fs-xs)] text-(--dim)">
+                        <span className="ml-2 text-[length:var(--fs-xs)] text-(--ui-muted)">
                           {status}
                         </span>
                       ) : null}
                     </TCell>
-                    <TCell className="px-3 py-2 text-(--dim)">
+                    <TCell className="text-(--ui-muted)">
                       <span className="inline-flex items-center gap-1.5">
                         <Folder className="h-3 w-3" />
                         {session.projectName}
                       </span>
                     </TCell>
-                    <TCell className="px-3 py-2 font-mono text-[length:var(--fs-sm)] text-(--dim)">
+                    <TCell className="font-mono text-[length:var(--fs-sm)] text-(--ui-muted)">
                       {session.modelId ?? "—"}
                     </TCell>
-                    <TCell className="px-3 py-2 text-right text-(--dim)">
+                    <TCell className="text-right text-(--ui-muted)">
                       {formatRelative(session.updatedAt)}
                     </TCell>
                   </TRow>
@@ -288,72 +276,13 @@ function SummaryChip({
 }) {
   return (
     <div
-      className={`flex h-9 items-center gap-2 rounded-md px-3 text-[length:var(--fs-md)] ${
-        accent ? "bg-(--hl2)/15 text-(--fg)" : "bg-(--surface) text-(--dim)"
+      className={`flex h-8 items-center gap-1.5 rounded-[var(--ui-radius)] border border-(--ui-separator) px-2.5 text-[length:var(--fs-sm)] ${
+        accent ? "bg-(--ui-success)/10 text-(--ui-fg)" : "bg-(--ui-surface) text-(--ui-muted)"
       }`}
     >
-      <span className="uppercase tracking-[var(--section-tracking)] text-[length:var(--fs-xs)]">
-        {label}
-      </span>
-      <span className="font-mono tabular-nums text-(--fg)">{value}</span>
+      <span>{label}</span>
+      <span className="font-mono tabular-nums text-(--ui-fg)">{value}</span>
     </div>
-  );
-}
-
-function FilterPills<T extends string>({
-  value,
-  onChange,
-  options,
-}: {
-  value: T;
-  onChange: (next: T) => void;
-  options: Array<{ id: T; label: string }>;
-}) {
-  return (
-    <div className="flex h-9 items-center gap-1 rounded-md bg-(--surface) p-1">
-      {options.map((option) => {
-        const active = option.id === value;
-        return (
-          <button
-            key={option.id}
-            type="button"
-            onClick={() => onChange(option.id)}
-            className={`h-7 rounded px-3 text-[length:var(--fs-md)] transition-colors ${
-              active ? "bg-(--bg) text-(--fg) shadow-sm" : "text-(--dim) hover:text-(--fg)"
-            }`}
-          >
-            {option.label}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
-function ProjectSelect({
-  value,
-  onChange,
-  options,
-}: {
-  value: string;
-  onChange: (next: string) => void;
-  options: Array<{ id: string; name: string }>;
-}) {
-  return (
-    <label className="flex h-9 items-center gap-2 rounded-md bg-(--surface) px-3 text-[length:var(--fs-md)] text-(--dim)">
-      <Folder className="h-3.5 w-3.5" />
-      <select
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        className="bg-transparent text-[length:var(--fs-md)] text-(--fg) outline-none"
-      >
-        {options.map((option) => (
-          <option key={option.id} value={option.id}>
-            {option.name}
-          </option>
-        ))}
-      </select>
-    </label>
   );
 }
 
@@ -374,11 +303,13 @@ function SortHeader({
 }) {
   const active = field === sortField;
   return (
-    <TH className={`px-3 py-2 ${align === "right" ? "text-right" : "text-left"}`}>
+    <TH align={align}>
       <button
         type="button"
         onClick={() => onClick(field)}
-        className={`inline-flex items-center gap-1 ${active ? "text-(--fg)" : ""}`}
+        className={`inline-flex items-center gap-1 transition-colors hover:text-(--ui-fg) ${
+          active ? "text-(--ui-fg)" : ""
+        }`}
       >
         {label}
         <ChevronDown

@@ -28,8 +28,8 @@ export function ListRow({
 
   if (variant === "resource") {
     return (
-      <div className={cx("px-4 py-3.5 transition-colors hover:bg-(--ui-hover)/35", className)}>
-        <div className="grid min-w-0 grid-cols-1 gap-2.5 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start">
+      <div className={cx("px-3 py-3 transition-colors hover:bg-(--ui-hover)/30", className)}>
+        <div className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start">
           <div className="min-w-0 space-y-1">
             <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
               <div
@@ -63,8 +63,10 @@ export function ListRow({
   }
 
   return (
-    <div className={cx("px-4 py-3 transition-colors hover:bg-(--ui-hover)/35", className)}>
-      <div className="grid min-h-7 grid-cols-1 gap-1.5 md:grid-cols-[minmax(180px,0.32fr)_minmax(0,1fr)] md:items-center md:gap-5">
+    <div
+      className={cx("rounded-md px-2 py-2.5 transition-colors hover:bg-(--ui-hover)/30", className)}
+    >
+      <div className="grid min-h-7 grid-cols-1 gap-1.5 md:grid-cols-[minmax(168px,0.3fr)_minmax(0,1fr)] md:items-center md:gap-4">
         <div className="min-w-0">
           <div
             className="truncate text-[length:var(--fs-base)] font-medium text-(--ui-fg)"
@@ -85,7 +87,7 @@ export function ListRow({
         </div>
       </div>
       {children ? (
-        <div className="mt-2 grid grid-cols-1 gap-1.5 md:grid-cols-[minmax(180px,0.32fr)_minmax(0,1fr)] md:gap-5">
+        <div className="mt-2 grid grid-cols-1 gap-1.5 md:grid-cols-[minmax(168px,0.3fr)_minmax(0,1fr)] md:gap-4">
           <div className="hidden md:block" />
           <div className="min-w-0">{children}</div>
         </div>

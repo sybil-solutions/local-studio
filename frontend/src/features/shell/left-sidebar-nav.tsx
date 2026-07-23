@@ -2,22 +2,23 @@
 
 import Link from "next/link";
 import { type ComponentType } from "react";
-import { Clock, Gauge, Microchip, Wrench, MessageSquare } from "@/ui/icon-registry";
+import { Activity, Clock, MessageSquare, Rows2, ServerCog, TrendingUp } from "@/ui/icon-registry";
 
 export type IconComponent = ComponentType<{ className?: string; strokeWidth?: number }>;
 
 export const tabs = [
-  { href: "/", label: "Status", icon: Gauge },
+  { href: "/", label: "Status", icon: Activity },
   { href: "/agent", label: "Workbench", icon: MessageSquare },
+  { href: "/agent/sessions", label: "Sessions", icon: Rows2 },
   { href: "/agent/automations", label: "Automations", icon: Clock },
-  { href: "/configure", label: "Configure", icon: Wrench },
-  { href: "/usage", label: "Usage", icon: Microchip },
+  { href: "/configure", label: "Configure", icon: ServerCog },
+  { href: "/usage", label: "Usage", icon: TrendingUp },
 ];
 
 export function mobilePageTitle(pathname: string): string {
   if (pathname.startsWith("/agent/automations")) return "Automations";
+  if (pathname.startsWith("/agent/sessions")) return "Sessions";
   if (pathname.startsWith("/agent")) return "Workbench";
-  if (pathname.startsWith("/settings")) return "Settings";
   if (pathname.startsWith("/logs")) return "Logs";
   const tab = tabs.find((entry) => isRouteActive(pathname, entry.href));
   return tab?.label ?? "Local Studio";
@@ -28,7 +29,11 @@ export function isRouteActive(pathname: string, href: string): boolean {
     return pathname === "/";
   }
   if (href === "/agent") {
-    return pathname.startsWith("/agent") && !pathname.startsWith("/agent/automations");
+    return (
+      pathname.startsWith("/agent") &&
+      !pathname.startsWith("/agent/automations") &&
+      !pathname.startsWith("/agent/sessions")
+    );
   }
   if (href === "/settings") {
     return pathname.startsWith("/settings");

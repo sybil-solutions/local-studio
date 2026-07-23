@@ -105,7 +105,7 @@ export function AutomationEditor({
           if (draftIsValid(draft) && !busy) onSave(draft);
         }}
       >
-        <div className="mx-auto w-full max-w-3xl space-y-6 px-5 py-6 sm:px-8">
+        <div className="mx-auto w-full max-w-2xl space-y-5 px-5 py-5 sm:px-7">
           {creating ? (
             <ExamplePicker onSelect={(example) => setDraft(example)} draft={draft} />
           ) : null}
@@ -138,8 +138,8 @@ export function AutomationEditor({
             </FormField>
           </div>
 
-          <div className="border-t border-(--ui-border) pt-6">
-            <div className="mb-4 flex items-center gap-2">
+          <div className="border-t border-(--ui-separator) pt-5">
+            <div className="mb-3 flex items-center gap-2">
               <Clock className="h-4 w-4 text-(--ui-muted)" />
               <div>
                 <h3 className="text-[length:var(--fs-base)] font-medium text-(--ui-fg)">
@@ -153,7 +153,7 @@ export function AutomationEditor({
             <ScheduleEditor schedule={draft.schedule} onChange={updateSchedule} />
           </div>
 
-          <div className="grid gap-4 border-t border-(--ui-border) pt-6 sm:grid-cols-2">
+          <div className="grid gap-4 border-t border-(--ui-separator) pt-5 sm:grid-cols-2">
             <FormField label="Model" required>
               <Select
                 value={draft.modelId}
@@ -302,21 +302,24 @@ function ExamplePicker({
 
 function RunHistory({ automation }: { automation: Automation }) {
   return (
-    <div className="border-t border-(--ui-border) pt-6">
-      <div className="mb-3 flex items-baseline justify-between gap-3">
+    <div className="border-t border-(--ui-separator) pt-5">
+      <div className="mb-2 flex items-baseline justify-between gap-3">
         <h3 className="text-[length:var(--fs-base)] font-medium text-(--ui-fg)">Run history</h3>
         <span className="text-[length:var(--fs-xs)] text-(--ui-muted)">
           {automation.runs.length} {automation.runs.length === 1 ? "run" : "runs"}
         </span>
       </div>
-      <div className="divide-y divide-(--ui-border) overflow-hidden rounded-[10px] border border-(--ui-border)">
+      <div className="divide-y divide-(--ui-separator) border-y border-(--ui-separator)">
         {automation.runs.map((run, index) => {
           const transcriptHref =
             run.piSessionId && run.projectId
               ? `/agent?project=${encodeURIComponent(run.projectId)}&session=${encodeURIComponent(run.piSessionId)}&replace=1`
               : null;
           return (
-            <div key={`${run.at}-${run.piSessionId ?? index}`} className="bg-(--ui-surface) p-3">
+            <div
+              key={`${run.at}-${run.piSessionId ?? index}`}
+              className="px-1 py-3 transition-colors hover:bg-(--ui-hover)/25"
+            >
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <p

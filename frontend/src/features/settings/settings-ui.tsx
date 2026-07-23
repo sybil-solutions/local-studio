@@ -66,20 +66,20 @@ export function SettingsLayout<Id extends SettingsSectionId = SettingsSectionId>
   const active = sections.find((section) => section.id === activeSection);
   const layoutWidth =
     width === "wide"
-      ? "max-w-[96rem] lg:grid-cols-[176px_minmax(0,70rem)]"
-      : "max-w-[72rem] lg:grid-cols-[176px_minmax(0,48rem)]";
+      ? "max-w-[92rem] lg:grid-cols-[168px_minmax(0,68rem)]"
+      : "max-w-[68rem] lg:grid-cols-[168px_minmax(0,46rem)]";
 
   return (
     <AppPage>
       <div
         className={cx(
-          "mx-auto grid w-full grid-cols-1 gap-6 px-4 py-5 sm:px-6 lg:justify-center lg:gap-10 lg:py-8",
+          "mx-auto grid w-full grid-cols-1 gap-4 px-4 py-4 sm:px-6 lg:justify-center lg:gap-8 lg:py-6",
           layoutWidth,
         )}
       >
         <aside className="min-w-0 lg:sticky lg:top-8 lg:self-start">
-          <div className="mb-5 hidden items-center justify-between gap-3 px-2 lg:flex">
-            <h1 className="text-[length:var(--fs-xl)] font-medium tracking-[-0.01em] text-(--ui-fg)">
+          <div className="mb-4 hidden items-center justify-between gap-3 px-1 lg:flex">
+            <h1 className="text-[length:var(--fs-lg)] font-medium tracking-[-0.01em] text-(--ui-fg)">
               {title}
             </h1>
             {showRefresh ? (
@@ -94,18 +94,18 @@ export function SettingsLayout<Id extends SettingsSectionId = SettingsSectionId>
           />
         </aside>
         <section className="min-w-0 pb-12">
-          <header className="mb-8 flex min-h-8 items-start justify-between gap-4">
+          <header className="mb-6 flex min-h-8 items-start justify-between gap-4">
             <div className="min-w-0">
               {eyebrow ? (
-                <div className="mb-1 text-[length:var(--fs-xs)] uppercase tracking-[0.14em] text-(--ui-muted)">
+                <div className="mb-1 text-[length:var(--fs-xs)] uppercase tracking-[0.12em] text-(--ui-muted)">
                   {eyebrow}
                 </div>
               ) : null}
-              <h2 className="text-[length:var(--fs-2xl)] font-normal tracking-[-0.015em] text-(--ui-fg)">
+              <h2 className="text-[length:var(--fs-xl)] font-medium tracking-[-0.015em] text-(--ui-fg)">
                 {active?.label ?? title}
               </h2>
               {active?.description ? (
-                <p className="mt-1 max-w-[42rem] text-[length:var(--fs-base)] leading-relaxed text-(--ui-muted)">
+                <p className="mt-1 max-w-[38rem] text-[length:var(--fs-base)] leading-relaxed text-(--ui-muted)">
                   {active.description}
                 </p>
               ) : null}
@@ -147,8 +147,8 @@ export function SettingsGroup({
   const showBody = collapsible ? open : true;
 
   return (
-    <section className="mb-10 last:mb-0">
-      <div className="mb-3 flex items-start justify-between gap-4 px-1">
+    <section className="mb-8 last:mb-0">
+      <div className="mb-2 flex items-start justify-between gap-4 px-1">
         <div className="min-w-0">
           {collapsible ? (
             <button
@@ -164,10 +164,12 @@ export function SettingsGroup({
                 )}
                 aria-hidden
               />
-              <h3 className="text-[length:var(--fs-lg)] font-medium tracking-[-0.01em]">{title}</h3>
+              <h3 className="text-[length:var(--fs-base)] font-medium tracking-[-0.01em]">
+                {title}
+              </h3>
             </button>
           ) : (
-            <h3 className="text-[length:var(--fs-lg)] font-medium tracking-[-0.01em] text-(--ui-fg)">
+            <h3 className="text-[length:var(--fs-base)] font-medium tracking-[-0.01em] text-(--ui-fg)">
               {title}
             </h3>
           )}
@@ -180,7 +182,7 @@ export function SettingsGroup({
         {actions ? <div className="shrink-0">{actions}</div> : null}
       </div>
       {showBody ? (
-        <div className="border-y border-(--ui-separator) [&>*+*]:border-t [&>*+*]:border-(--ui-separator)">
+        <div className="border-y border-(--ui-separator) [&>*+*]:border-t [&>*+*]:border-(--ui-separator)/80">
           {children}
         </div>
       ) : null}

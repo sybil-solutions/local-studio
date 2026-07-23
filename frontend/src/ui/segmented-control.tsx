@@ -9,7 +9,6 @@ export interface SegmentedItem<T extends string = string> {
   icon?: ReactNode;
 }
 
-/** A standardized segmented control (pill-in-a-track) for small mode choices. */
 export function SegmentedControl<T extends string = string>({
   items,
   value,
@@ -29,7 +28,7 @@ export function SegmentedControl<T extends string = string>({
     <div
       role="tablist"
       className={cx(
-        "inline-flex items-center gap-0.5 rounded-full border border-(--ui-border) bg-(--surface-3) p-0.5",
+        "inline-flex items-center gap-0.5 rounded-[var(--ui-radius)] border border-(--ui-separator) bg-(--ui-surface) p-0.5",
         className,
       )}
     >
@@ -44,13 +43,13 @@ export function SegmentedControl<T extends string = string>({
             disabled={disabled}
             onClick={() => onChange(item.id)}
             className={cx(
-              "inline-flex items-center gap-1.5 rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-50",
+              "inline-flex items-center gap-1.5 rounded-[calc(var(--ui-radius)-2px)] transition-colors disabled:cursor-not-allowed disabled:opacity-50",
               size === "sm"
                 ? "px-2 py-0.5 text-[length:var(--fs-sm)]"
                 : "px-2.5 py-1 text-[length:var(--fs-md)]",
               active
-                ? "bg-(--ui-surface) text-(--ui-fg) shadow-sm"
-                : "text-(--ui-muted) hover:text-(--ui-fg)",
+                ? "bg-(--ui-active) text-(--ui-fg)"
+                : "text-(--ui-muted) hover:bg-(--ui-hover)/50 hover:text-(--ui-fg)",
             )}
           >
             {item.icon}

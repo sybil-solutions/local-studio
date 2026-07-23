@@ -2,7 +2,7 @@
 
 import { useCallback, useMemo, useState } from "react";
 import { Brain, ChevronRight, DownloadCloud, Eye, Zap } from "@/ui/icon-registry";
-import { Card } from "@/ui";
+import { ModelRow, ModelSection, ModelValue } from "./model-page";
 import { cx } from "@/ui/utils";
 import api from "@/lib/api/client";
 import type {
@@ -104,32 +104,26 @@ export function TierSection({
   onDownload: (variant: ModelIndexVariant) => void;
 }) {
   return (
-    <details className="group" open>
-      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 border-b border-(--ui-border)/75 pb-2">
-        <div className="flex min-w-0 items-baseline gap-2.5">
-          <ChevronRight className="h-3.5 w-3.5 shrink-0 self-center text-(--ui-muted) transition-transform group-open:rotate-90" />
-          <h3 className="text-[length:var(--fs-md)] font-medium text-(--ui-fg)">{tier.label}</h3>
-          <span className="truncate text-[length:var(--fs-sm)] text-(--ui-muted)">
-            {tier.blurb}
-          </span>
-        </div>
-        <span className="shrink-0 text-[length:var(--fs-xs)] text-(--ui-muted)">
+    <ModelSection
+      title={tier.label}
+      description={tier.blurb}
+      actions={
+        <span className="text-[length:var(--fs-xs)] text-(--ui-muted)">
           {tier.models.length} {tier.models.length === 1 ? "model" : "models"}
         </span>
-      </summary>
-      <div className="mt-4 grid gap-4 md:grid-cols-2">
-        {tier.models.map((model) => (
-          <PickCard
-            key={model.id}
-            model={model}
-            poolGb={poolGb}
-            downloadsByModel={downloadsByModel}
-            startingModelIds={startingModelIds}
-            onDownload={onDownload}
-          />
-        ))}
-      </div>
-    </details>
+      }
+    >
+      {tier.models.map((model) => (
+        <PickCard
+          key={model.id}
+          model={model}
+          poolGb={poolGb}
+          downloadsByModel={downloadsByModel}
+          startingModelIds={startingModelIds}
+          onDownload={onDownload}
+        />
+      ))}
+    </ModelSection>
   );
 }
 
@@ -151,12 +145,9 @@ export function PickCard({
     entries: model.variants.filter((variant) => variant.format === format),
   })).filter((group) => group.entries.length > 0);
 
-  return (
-    <Card padding="md" className="flex flex-col">
-      <div className="flex min-w-0 items-center gap-2">
-        <span className="min-w-0 truncate text-[length:var(--fs-md)] font-medium text-(--ui-fg)">
-          {model.name}
-        </span>
+  const badges =
+    model.role || model.multimodal ? (
+      <div className="flex items-center gap-1">
         {model.role ? (
           <span
             className="inline-flex shrink-0 items-center gap-1 rounded-md bg-(--ui-hover)/60 px-1.5 py-0.5 text-[length:var(--fs-xs)] font-medium text-(--ui-muted)"
@@ -176,10 +167,35 @@ export function PickCard({
           </span>
         ) : null}
       </div>
+    ) : undefined;
 
-      <p className="mt-1 text-[length:var(--fs-sm)] text-(--ui-muted)">{model.description}</p>
-
-      <div className="mt-2 flex flex-wrap gap-x-3 gap-y-0.5 font-mono text-[length:var(--fs-xs)] text-(--ui-muted)">
+  return (
+    <ModelRow
+      label={model.name}
+      description={model.description}
+      variant="catalog"
+      status={badges}
+      value={
+        variantGroups.length > 0 ? (
+          <div className="flex flex-wrap items-start gap-2">
+            {variantGroups.map((group) => (
+              <VariantGroup
+                key={group.format}
+                format={group.format}
+                entries={group.entries}
+                poolGb={poolGb}
+                downloadsByModel={downloadsByModel}
+                startingModelIds={startingModelIds}
+                onDownload={onDownload}
+              />
+            ))}
+          </div>
+        ) : (
+          <ModelValue dim>No downloadable variants published yet.</ModelValue>
+        )
+      }
+    >
+      <div className="flex flex-wrap gap-x-3 gap-y-0.5 font-mono text-[length:var(--fs-xs)] text-(--ui-muted)">
         <span title={model.params}>
           {model.params}
           {model.active_params_b != null ? ` · ${model.active_params_b} B active` : ""}
@@ -187,29 +203,8 @@ export function PickCard({
         <span className="shrink-0">{formatContextTokens(model.context_tokens)} ctx</span>
         <span className="shrink-0">{model.license}</span>
       </div>
-
-      {variantGroups.length > 0 ? (
-        <div className="mt-3 flex flex-wrap items-start gap-2">
-          {variantGroups.map((group) => (
-            <VariantGroup
-              key={group.format}
-              format={group.format}
-              entries={group.entries}
-              poolGb={poolGb}
-              downloadsByModel={downloadsByModel}
-              startingModelIds={startingModelIds}
-              onDownload={onDownload}
-            />
-          ))}
-        </div>
-      ) : (
-        <div className="mt-3 text-[length:var(--fs-sm)] text-(--ui-muted)">
-          No downloadable variants published yet.
-        </div>
-      )}
-
       {model.notes.length > 0 ? (
-        <details className="group/notes mt-3 border-t border-(--ui-border)/55 pt-2">
+        <details className="group/notes mt-2">
           <summary className="flex cursor-pointer list-none items-center gap-1.5 text-[length:var(--fs-xs)] font-medium text-(--ui-muted) transition-colors hover:text-(--ui-fg)">
             <ChevronRight className="h-3 w-3 transition-transform group-open/notes:rotate-90" />
             Serving notes ({model.notes.length})
@@ -221,7 +216,7 @@ export function PickCard({
           </ul>
         </details>
       ) : null}
-    </Card>
+    </ModelRow>
   );
 }
 

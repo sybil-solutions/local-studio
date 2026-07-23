@@ -42,25 +42,29 @@ function Table({ children, className = "", tableClassName = "", bordered = true 
     <div
       className={cx(
         "overflow-x-auto",
-        bordered ? "overflow-hidden rounded-[var(--ui-radius)] border border-(--ui-border)" : "",
+        bordered
+          ? "rounded-[var(--ui-radius)] border border-(--ui-separator) bg-(--ui-surface)"
+          : "",
         className,
       )}
     >
-      <table className={cx("w-full text-left", tableClassName)}>{children}</table>
+      <table className={cx("w-full text-left text-[length:var(--fs-base)]", tableClassName)}>
+        {children}
+      </table>
     </div>
   );
 }
 
 function THead({ children, className = "" }: THeadProps) {
   return (
-    <thead className={cx("border-b border-(--ui-border) bg-(--ui-surface)", className)}>
+    <thead className={cx("border-b border-(--ui-separator) bg-(--ui-hover)/30", className)}>
       {children}
     </thead>
   );
 }
 
 function TBody({ children, className = "" }: TBodyProps) {
-  return <tbody className={cx("divide-y divide-(--ui-border)", className)}>{children}</tbody>;
+  return <tbody className={cx("divide-y divide-(--ui-separator)", className)}>{children}</tbody>;
 }
 
 function TRow({ children, className = "", onClick, interactive }: TRowProps) {
@@ -69,8 +73,8 @@ function TRow({ children, className = "", onClick, interactive }: TRowProps) {
       className={cx(
         "transition-colors",
         interactive || onClick
-          ? "cursor-pointer hover:bg-(--ui-hover)"
-          : "hover:bg-(--ui-surface)/50",
+          ? "cursor-pointer hover:bg-(--ui-hover)/60"
+          : "hover:bg-(--ui-hover)/25",
         className,
       )}
       onClick={onClick}
@@ -86,7 +90,7 @@ function TH({ children, align = "left", className = "", ...props }: THProps) {
   return (
     <th
       className={cx(
-        "px-4 py-3 text-xs font-medium uppercase tracking-wider text-(--ui-muted)",
+        "px-3 py-2.5 text-[length:var(--fs-xs)] font-medium uppercase tracking-[0.08em] text-(--ui-muted)",
         alignClass,
         className,
       )}
@@ -101,7 +105,10 @@ function TCell({ children, align = "left", className = "", ...props }: TCellProp
   const alignClass =
     align === "right" ? "text-right" : align === "center" ? "text-center" : "text-left";
   return (
-    <td className={cx("px-4 py-3", alignClass, className)} {...props}>
+    <td
+      className={cx("px-3 py-2.5 text-[length:var(--fs-base)]", alignClass, className)}
+      {...props}
+    >
       {children}
     </td>
   );
