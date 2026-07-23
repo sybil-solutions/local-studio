@@ -1,9 +1,21 @@
 import { Effect } from "effect";
-import { notFound } from "../../core/errors";
+import { HttpStatus, notFound } from "../../core/errors";
 import { decodeJsonBody } from "../../core/validation";
 import { effectHandler } from "../../http/effect-handler";
 import { documentRoute, defineRoutes, mergeRoutes } from "../../http/route-registrar";
 import { DownloadRequestSchema, DownloadTokenSchema } from "./downloads/download-manager";
+import { DownloadTargetConflict } from "./downloads/download-target-reservations";
+
+const withDownloadTargetConflict = <A, E>(
+  operation: Effect.Effect<A, E | DownloadTargetConflict>,
+): Effect.Effect<A, E | HttpStatus> =>
+  operation.pipe(
+    Effect.mapError((error) =>
+      error instanceof DownloadTargetConflict
+        ? new HttpStatus({ status: 409, detail: error.message })
+        : error,
+    ),
+  );
 
 const resolveHfToken = (
   ctx: { req: { header: (name: string) => string | undefined } },
@@ -50,10 +62,12 @@ export const registerDownloadRoutes = defineRoutes((app, context) => {
       effectHandler((ctx) =>
         Effect.gen(function* () {
           const body = yield* decodeJsonBody(ctx, DownloadRequestSchema);
-          const download = yield* context.downloadManager.start({
-            ...body,
-            hf_token: resolveHfToken(ctx, body.hf_token),
-          });
+          const download = yield* withDownloadTargetConflict(
+            context.downloadManager.start({
+              ...body,
+              hf_token: resolveHfToken(ctx, body.hf_token),
+            }),
+          );
           return ctx.json({ download });
         }),
       ),
@@ -75,9 +89,11 @@ export const registerDownloadRoutes = defineRoutes((app, context) => {
       effectHandler((ctx) =>
         Effect.gen(function* () {
           const body = yield* decodeJsonBody(ctx, DownloadTokenSchema);
-          const download = yield* context.downloadManager.resume(
-            ctx.req.param("downloadId") ?? "",
-            resolveHfToken(ctx, body.hf_token),
+          const download = yield* withDownloadTargetConflict(
+            context.downloadManager.resume(
+              ctx.req.param("downloadId") ?? "",
+              resolveHfToken(ctx, body.hf_token),
+            ),
           );
           return ctx.json({ download });
         }),
