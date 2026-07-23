@@ -84,7 +84,7 @@ jobs:
 
   release:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: [gates, controller, frontend]
+    needs: [gates, controller, frontend, agent-runtime]
     permissions:
       contents: write
       issues: write

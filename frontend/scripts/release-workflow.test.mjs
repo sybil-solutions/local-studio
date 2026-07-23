@@ -61,7 +61,7 @@ test("binds release publication and write permissions to the tested revision", (
     String(step.run ?? "").includes("semantic-release"),
   );
   assert.deepEqual(ci.permissions, { contents: "read" });
-  assert.deepEqual(ci.jobs.release.needs, ["gates", "controller", "frontend"]);
+  assert.deepEqual(ci.jobs.release.needs, ["gates", "controller", "frontend", "agent-runtime"]);
   assert.deepEqual(ci.jobs.release.permissions, {
     contents: "write",
     issues: "write",
