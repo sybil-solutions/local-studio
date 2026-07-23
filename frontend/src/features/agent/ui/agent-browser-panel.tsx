@@ -25,12 +25,13 @@ import {
   usePersistentTerminalOwners,
   type TerminalOwnersSnapshot,
 } from "@/features/agent/ui/use-persistent-terminal-owners";
-import { normalizeBrowserInput } from "@/features/agent/tools/browser-url";
+import { resolveBrowserInput } from "@/features/agent/tools/browser-url";
 import { MAX_COMPUTER_WIDTH, MIN_COMPUTER_WIDTH } from "@/features/agent/tools/persistence";
 import {
-  sanitizeBrowserPaneUrl,
-  sanitizeLocalFileUrl,
-} from "@/features/agent/sanitize-embedded-browser-url";
+  focusBrowserLiveSession,
+  navigateBrowserHost,
+} from "@/features/agent/ui/agent-browser-live-store";
+import { useMountSubscription } from "@/hooks/use-mount-subscription";
 import { useTools } from "@/features/agent/tools/context";
 import type { ComputerTab } from "@/features/agent/tools/types";
 import type { GitSummary, Project } from "@/features/agent/projects/types";
@@ -105,10 +106,6 @@ function closePersistedTerminalOwner(ownerKey: string) {
   if (owner) void terminalBridge()?.closeOwner?.(owner.mountKey);
 }
 
-function acceptedBrowserUrl(url: string): string | null {
-  return /^file:\/\//i.test(url) ? sanitizeLocalFileUrl(url) : sanitizeBrowserPaneUrl(url);
-}
-
 export function AgentBrowserPanel({
   handles,
   activeProject,
@@ -121,13 +118,14 @@ export function AgentBrowserPanel({
   gitSummary,
 }: AgentBrowserPanelProps) {
   const tools = useTools();
+  const browserSessionId = focusedSession?.id ?? null;
   const [sideChatSeed, setSideChatSeed] = useState<Session>(() =>
     createSideChatSession(null, null, ""),
   );
+  const [browserNavigationError, setBrowserNavigationError] = useState<string | null>(null);
   const sideChatSession =
     sessions.find((session) => session.id === sideChatSeed.id) ?? sideChatSeed;
   const { registerComputerAside, startComputerResize } = handles;
-  const isElectron = typeof navigator !== "undefined" && /electron/i.test(navigator.userAgent);
   const terminalOwner = useMemo(
     () => terminalOwnerFor(activeProject, focusedSession),
     [activeProject, focusedSession],
@@ -136,6 +134,10 @@ export function AgentBrowserPanel({
     tools.computer.open && tools.computer.tab === "terminal",
     terminalOwner,
   );
+  useMountSubscription(() => {
+    focusBrowserLiveSession(browserSessionId);
+    return () => focusBrowserLiveSession(null);
+  }, [browserSessionId]);
   const visibleTerminalState = useMemo<TerminalOwnersSnapshot>(() => {
     const owners = terminalState.owners;
     const activeOwnerKey = owners.some((owner) => owner.mountKey === terminalState.activeOwnerKey)
@@ -174,17 +176,23 @@ export function AgentBrowserPanel({
     [selectTerminalOwner, visibleTerminalState.owners],
   );
   const navigateBrowser = (value: string) => {
-    const next = normalizeBrowserInput(value, focusedSession?.cwd ?? activeProject?.path ?? "");
-    if (!next) return;
-    const accepted = acceptedBrowserUrl(next);
-    if (!accepted) return;
-    tools.setBrowserUrl(accepted, accepted);
-    if (/^file:\/\//i.test(accepted)) return;
-    void fetch("/api/agent/browser/navigate", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ url: accepted }),
-    }).catch(() => undefined);
+    const result = resolveBrowserInput(value, focusedSession?.cwd ?? activeProject?.path ?? "");
+    if (result.kind === "unsupported") {
+      setBrowserNavigationError(result.message);
+      return false;
+    }
+    setBrowserNavigationError(null);
+    if (result.kind === "file") {
+      tools.requestFileOpen(result.path);
+      return true;
+    }
+    tools.setBrowserUrl(result.url, result.url);
+    if (browserSessionId) void navigateBrowserHost(result.url);
+    return true;
+  };
+  const syncBrowserLocation = (value: string) => {
+    setBrowserNavigationError(null);
+    tools.setBrowserUrl(value, value);
   };
   const openSideChat = useCallback(
     (draft?: SideChatDraft) => {
@@ -293,10 +301,11 @@ export function AgentBrowserPanel({
         gitSummary={gitSummary}
         models={models}
         modelsLoading={modelsLoading}
-        isElectron={isElectron}
+        browserNavigationError={browserNavigationError}
         onCloseSideChat={closeSideChat}
         onCompactSession={handles.compactFocusedSession}
         onNavigateBrowser={navigateBrowser}
+        onBrowserLocationChange={syncBrowserLocation}
         onOpenSideChat={openSideChat}
         onOpenTerminal={openTerminalForFocusedSession}
         onRenameSideChat={renameSideChat}
@@ -355,7 +364,7 @@ const TAB_OPTIONS: Array<{
   {
     tab: "browser",
     label: "Browser",
-    description: "Web, localhost, and file previews",
+    description: "Web and localhost previews",
     icon: Globe2,
   },
   { tab: "diff", label: "Git", description: "Diffs, branch, commit, and push", icon: GitBranch },

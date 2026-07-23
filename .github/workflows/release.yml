@@ -1,39 +1,47 @@
 name: Release
 
 on:
-  workflow_run:
-    workflows: [CI]
-    types: [completed]
-    branches: [main]
+  workflow_call:
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+  queue: max
 
 permissions:
-  contents: write
-  issues: write
-  pull-requests: write
+  contents: read
 
 jobs:
   release:
-    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push'
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          ref: ${{ github.event.workflow_run.head_sha }}
-
-      - name: Select tested main revision
-        run: git checkout -B main "${{ github.event.workflow_run.head_sha }}"
+          ref: ${{ github.sha }}
 
       - uses: actions/setup-node@v4
         with:
           node-version: 22.19.0
 
+      - name: Verify tested main revision
+        id: revision
+        env:
+          TESTED_SHA: ${{ github.sha }}
+        run: node scripts/release-revision.mjs
+
       - name: Configure git author
+        if: steps.revision.outputs.current == 'true'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
       - name: Release
+        if: steps.revision.outputs.current == 'true'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |

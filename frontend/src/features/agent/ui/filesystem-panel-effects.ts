@@ -2,6 +2,7 @@ import { useRef, type Dispatch, type MutableRefObject, type SetStateAction } fro
 import type { FileOpenRequest } from "@/features/agent/tools/types";
 import type { FileComment, FsEntry } from "@/features/agent/filesystem-types";
 import { useMountSubscription } from "@/hooks/use-mount-subscription";
+import { workspaceFilePath } from "@/features/agent/workspace-file-link";
 
 type UseFilesystemPanelEffectsParams = {
   cwd: string | null;
@@ -119,11 +120,20 @@ export function useFilesystemPanelEffects({
       return;
     }
     handledFileOpenRequest.current = fileOpenRequest.id;
-    const rel = relativePathForRequest(fileOpenRequest.path, cwd);
-    if (!rel) return;
+    const rel = cwd ? workspaceFilePath(fileOpenRequest.path, cwd) : null;
+    if (!rel) {
+      setOpenFile(null);
+      setSaveError(
+        cwd
+          ? "Only files inside the active workspace can be opened."
+          : "Select a project to open local files.",
+      );
+      return;
+    }
+    setSaveError(null);
     setOpenFile(rel);
     if (cwd) setLastOpenFileByProject(cwd, rel);
-  }, [cwd, fileOpenRequest, setLastOpenFileByProject, setOpenFile]);
+  }, [cwd, fileOpenRequest, setLastOpenFileByProject, setOpenFile, setSaveError]);
 
   useMountSubscription(() => {
     if (!cwd || !openFile) {
@@ -131,7 +141,7 @@ export function useFilesystemPanelEffects({
       setDraftContent("");
       setFileTruncated(false);
       setFileSize(0);
-      setSaveError(null);
+      if (!cwd) setSaveError(null);
       setComments([]);
       return;
     }
@@ -158,17 +168,21 @@ export function useFilesystemPanelEffects({
         };
         const commentsBody = (await commentsResponse.json()) as { comments?: FileComment[] };
         if (cancelled) return;
+        if (!fileResponse.ok || fileBody.error) {
+          throw new Error(fileBody.error || `File read failed with HTTP ${fileResponse.status}`);
+        }
         const nextContent = fileBody.content ?? "";
         setFileContent(nextContent);
         setDraftContent(nextContent);
         setFileTruncated(fileBody.truncated ?? false);
         setFileSize(fileBody.size ?? 0);
         setComments(commentsBody.comments ?? []);
-      } catch {
+      } catch (error) {
         if (!cancelled) {
           setFileContent("");
           setDraftContent("");
           setComments([]);
+          setSaveError(error instanceof Error ? error.message : "File read failed.");
         }
       } finally {
         if (!cancelled) setLoadingFile(false);
@@ -188,24 +202,4 @@ export function useFilesystemPanelEffects({
     setLoadingFile,
     setSaveError,
   ]);
-}
-
-function relativePathForRequest(path: string, cwd: string | null): string | null {
-  let raw = path.trim();
-  if (!raw) return null;
-  if (/^file:\/\//i.test(raw)) {
-    try {
-      raw = decodeURIComponent(new URL(raw).pathname);
-    } catch {
-      return null;
-    }
-  }
-  raw = raw.replace(/^`|`$/g, "").replace(/:\d+(?::\d+)?$/, "");
-  if (!raw || raw.includes("\0")) return null;
-  if (cwd && raw.startsWith(`${cwd.replace(/\/+$/, "")}/`)) {
-    return raw.slice(cwd.replace(/\/+$/, "").length + 1);
-  }
-  if (raw.startsWith("./")) return raw.slice(2);
-  if (!raw.startsWith("/") && !raw.startsWith("../")) return raw;
-  return null;
 }

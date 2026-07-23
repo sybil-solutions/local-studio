@@ -1,63 +1,47 @@
-// Browser URL normalization for the embedded browser tool. Handles file://,
-// relative paths under the project cwd, http(s), localhost, and a search-engine
-// fallback for free-text input. Keep the fallback away from Google because the
-// embedded WebKit view can get trapped on Google bot-protection refresh loops.
-
-import { sanitizeLocalFileUrl } from "@/features/agent/sanitize-embedded-browser-url";
+import { sanitizeBrowserPaneUrl } from "@/features/agent/sanitize-embedded-browser-url";
 import { DEFAULT_BROWSER_URL } from "@/features/agent/tools/persistence";
+import { workspaceFilePath } from "@/features/agent/workspace-file-link";
 
-function encodeFilePath(pathValue: string): string {
-  const normalized = pathValue.replace(/\\/g, "/");
-  const withLeadingSlash = normalized.startsWith("/") ? normalized : `/${normalized}`;
-  return `file://${withLeadingSlash.split("/").map(encodeURIComponent).join("/")}`;
+export type BrowserInputResolution =
+  | { kind: "file"; path: string }
+  | { kind: "navigate"; url: string }
+  | { kind: "unsupported"; message: string };
+
+const FILE_INPUT = /^(?:file:\/\/|~\/|\.{1,2}[\\/]|\/|[A-Za-z]:[\\/])/iu;
+const URI_SCHEME = /^[A-Za-z][A-Za-z0-9+.-]*:/u;
+const UNSUPPORTED_FILE = "Local files can only be opened from the active workspace.";
+const UNSUPPORTED_URL = "Only public or localhost HTTP(S) URLs are supported.";
+
+function navigation(url: string): BrowserInputResolution {
+  const accepted = sanitizeBrowserPaneUrl(url);
+  return accepted
+    ? { kind: "navigate", url: accepted }
+    : { kind: "unsupported", message: UNSUPPORTED_URL };
 }
 
-function resolveRelativeFilePath(cwd: string, value: string): string {
-  const segments = `${cwd.replace(/\/+$/, "")}/${value}`.split("/");
-  const resolved: string[] = [];
-  for (const segment of segments) {
-    if (!segment || segment === ".") continue;
-    if (segment === "..") {
-      resolved.pop();
-      continue;
-    }
-    resolved.push(segment);
+function fileResolution(value: string, cwd: string): BrowserInputResolution {
+  const path = workspaceFilePath(value, cwd);
+  return path ? { kind: "file", path } : { kind: "unsupported", message: UNSUPPORTED_FILE };
+}
+
+export function resolveBrowserInput(raw: string, cwd: string): BrowserInputResolution {
+  const value = raw.trim();
+  if (!value) return { kind: "navigate", url: DEFAULT_BROWSER_URL };
+  if (FILE_INPUT.test(value)) return fileResolution(value, cwd);
+  if (/^https?:\/\//iu.test(value)) return navigation(value);
+  if (URI_SCHEME.test(value)) return { kind: "unsupported", message: UNSUPPORTED_URL };
+  if (/^(localhost|127\.0\.0\.1|\[::1\])(:\d+)?([/?#].*)?$/iu.test(value)) {
+    return navigation(`http://${value}`);
   }
-  return `/${resolved.join("/")}`;
-}
-
-function expandHomeFilePath(cwd: string, value: string): string | null {
-  const homeMatch = cwd.match(/^(\/Users\/[^/]+|\/home\/[^/]+)(?:\/|$)/);
-  if (!homeMatch) return null;
-  return `${homeMatch[1]}${value.slice(1)}`;
+  if (/^[\w.-]+:\d+([/?#].*)?$/u.test(value)) return navigation(`http://${value}`);
+  if (/^[\w-]+(\.[\w-]+)+([/:?#].*)?$/u.test(value)) {
+    return navigation(`https://${value}`);
+  }
+  if (value.includes("/") || value.includes("\\")) return fileResolution(value, cwd);
+  return navigation(`https://duckduckgo.com/?q=${encodeURIComponent(value)}`);
 }
 
 export function normalizeBrowserInput(raw: string, cwd: string): string {
-  const value = raw.trim();
-  if (!value) return DEFAULT_BROWSER_URL;
-  if (/^file:\/\//i.test(value)) {
-    return sanitizeLocalFileUrl(value) ?? "";
-  }
-  if (value.startsWith("~/") && cwd) {
-    const expanded = expandHomeFilePath(cwd, value);
-    if (expanded) return encodeFilePath(expanded);
-  }
-  if (value.startsWith("/")) return encodeFilePath(value);
-  if ((value.startsWith("./") || value.startsWith("../")) && cwd) {
-    return encodeFilePath(resolveRelativeFilePath(cwd, value));
-  }
-  if (/^https?:\/\//i.test(value)) return value;
-  if (/^(localhost|127\.0\.0\.1|\[::1\])(:\d+)?([/?#].*)?$/i.test(value)) {
-    return `http://${value}`;
-  }
-  if (/^[\w.-]+:\d+([/?#].*)?$/.test(value)) {
-    return `http://${value}`;
-  }
-  if (/^[\w-]+(\.[\w-]+)+([/:?#].*)?$/.test(value)) {
-    return `https://${value}`;
-  }
-  if (value.includes("/") && cwd) {
-    return encodeFilePath(resolveRelativeFilePath(cwd, value));
-  }
-  return `https://duckduckgo.com/?q=${encodeURIComponent(value)}`;
+  const result = resolveBrowserInput(raw, cwd);
+  return result.kind === "navigate" ? result.url : "";
 }

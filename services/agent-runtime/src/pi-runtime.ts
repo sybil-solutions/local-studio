@@ -15,10 +15,10 @@ import {
 import { Effect } from "effect";
 import type { AgentImageInput } from "../../../shared/agent/agent-image-input";
 import {
-  applyRuntimeEnvInjections,
   buildAgentSessionOptionsSync,
   runtimeOptionsFingerprint,
   resolveAgentCwdEffect,
+  withRuntimeEnvInjections,
   type RuntimeStartOptions,
 } from "./pi-runtime-helpers";
 import { refreshPiModels, resolvePiModelSelection } from "./pi-runtime-models";
@@ -279,7 +279,6 @@ class PiSdkSession extends EventEmitter implements PiAgentSession {
         });
 
         const sessionOptions = buildAgentSessionOptionsSync({ options });
-        applyRuntimeEnvInjections(sessionOptions.envInjections);
         const sessionDir = configuredPiSessionDir(resolvedCwd);
         const resumeFile = desiredSessionId ? findSessionFile(resolvedCwd, desiredSessionId) : null;
         const sessionManager = resumeFile
@@ -289,12 +288,14 @@ class PiSdkSession extends EventEmitter implements PiAgentSession {
         const agentDir = getAgentDir();
         const extensionUiContext = this.extensionUiContext();
         const recordExtensionEvent = (event: PiEvent) => this.recordEvent(event);
-        const runtime = yield* Effect.tryPromise({
-          try: () =>
-            createAgentSessionRuntime(
-              ({ cwd, agentDir, sessionManager, sessionStartEvent }) =>
-                Effect.runPromise(
-                  Effect.gen(function* () {
+        const runtime = yield* withRuntimeEnvInjections(
+          sessionOptions.envInjections,
+          Effect.tryPromise({
+            try: () =>
+              createAgentSessionRuntime(
+                ({ cwd, agentDir, sessionManager, sessionStartEvent }) =>
+                  Effect.runPromise(
+                    Effect.gen(function* () {
                     const services = yield* Effect.tryPromise({
                       try: () =>
                         createAgentSessionServices({
@@ -372,20 +373,21 @@ class PiSdkSession extends EventEmitter implements PiAgentSession {
                       services,
                       diagnostics,
                     };
-                  }),
-                ),
-              {
-                cwd: resolvedCwd,
-                agentDir,
-                sessionManager,
-                sessionStartEvent: {
-                  type: "session_start",
-                  reason: resuming ? "resume" : "startup",
+                    }),
+                  ),
+                {
+                  cwd: resolvedCwd,
+                  agentDir,
+                  sessionManager,
+                  sessionStartEvent: {
+                    type: "session_start",
+                    reason: resuming ? "resume" : "startup",
+                  },
                 },
-              },
-            ),
-          catch: (error) => error,
-        });
+              ),
+            catch: (error) => error,
+          }),
+        );
 
         this.runtime = runtime;
         this.agentDir = agentDir;

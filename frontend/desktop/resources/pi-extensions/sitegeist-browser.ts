@@ -7,6 +7,7 @@
 // Protocol: docs/sitegeist-relay-protocol.md.
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { Schema } from "effect";
 import { Type, type Static, type TSchema } from "typebox";
 
 type ToolResult = {
@@ -14,40 +15,60 @@ type ToolResult = {
   details: Record<string, unknown>;
 };
 
-type RelayResponse = { result?: unknown; error?: { code?: number; message?: string } };
-
 const DEFAULT_RELAY_URL = "http://127.0.0.1:7717";
 const DEFAULT_TIMEOUT_MS = 120_000;
+const RelayResponseSchema = Schema.Struct({
+  result: Schema.optional(Schema.Unknown),
+  error: Schema.optional(
+    Schema.Struct({
+      code: Schema.optional(Schema.Number),
+      message: Schema.optional(Schema.String),
+    }),
+  ),
+});
+const RelayCapabilitiesSchema = Schema.Struct({
+  methods: Schema.optional(Schema.Array(Schema.String)),
+});
 
-const RELAY_URL = (process.env.SITEGEIST_RELAY_URL || DEFAULT_RELAY_URL).replace(/\/+$/, "");
-const RELAY_TOKEN = process.env.SITEGEIST_RELAY_TOKEN ?? "";
-const RELAY_SESSION_ID =
-  process.env.SITEGEIST_RELAY_SESSION_ID ||
-  process.env.LOCAL_STUDIO_BROWSER_SESSION_ID ||
-  "default";
-const TIMEOUT_MS = (() => {
+type RelayConfig = {
+  relayUrl: string;
+  sessionId: string;
+  timeoutMs: number;
+  token: string;
+};
+
+function relayConfig(): RelayConfig {
+  const sessionId =
+    process.env.SITEGEIST_RELAY_SESSION_ID || process.env.LOCAL_STUDIO_BROWSER_SESSION_ID || "";
+  if (!sessionId) throw new Error("Sitegeist browser session configuration is missing");
   const value = Number(process.env.SITEGEIST_RELAY_TOOL_TIMEOUT_MS);
-  return Number.isFinite(value) && value > 0 ? Math.trunc(value) : DEFAULT_TIMEOUT_MS;
-})();
+  return {
+    relayUrl: (process.env.SITEGEIST_RELAY_URL || DEFAULT_RELAY_URL).replace(/\/+$/, ""),
+    sessionId,
+    timeoutMs: Number.isFinite(value) && value > 0 ? Math.trunc(value) : DEFAULT_TIMEOUT_MS,
+    token: process.env.SITEGEIST_RELAY_TOKEN ?? "",
+  };
+}
 
 async function callRelay(
+  config: RelayConfig,
   method: string,
   params: Record<string, unknown>,
   signal?: AbortSignal,
 ): Promise<unknown> {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  const timeout = setTimeout(() => controller.abort(), config.timeoutMs);
   const abort = () => controller.abort();
   signal?.addEventListener("abort", abort, { once: true });
   if (signal?.aborted) controller.abort();
 
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
-    "X-Sitegeist-Session": RELAY_SESSION_ID,
+    "X-Sitegeist-Session": config.sessionId,
   };
-  if (RELAY_TOKEN) headers.Authorization = `Bearer ${RELAY_TOKEN}`;
+  if (config.token) headers.Authorization = `Bearer ${config.token}`;
 
-  const response = await fetch(`${RELAY_URL}/rpc`, {
+  const response = await fetch(`${config.relayUrl}/rpc`, {
     method: "POST",
     headers,
     body: JSON.stringify({ jsonrpc: "2.0", id: Date.now(), method, params }),
@@ -57,7 +78,9 @@ async function callRelay(
     signal?.removeEventListener("abort", abort);
   });
 
-  const body = (await response.json().catch(() => ({}))) as RelayResponse;
+  const body = Schema.decodeUnknownSync(RelayResponseSchema)(
+    await response.json().catch(() => ({})),
+  );
   if (!response.ok || body.error) {
     throw new Error(body.error?.message || `sitegeist relay HTTP ${response.status}`);
   }
@@ -212,19 +235,25 @@ const TOOLS = [
   }),
 ] as const;
 
+type RunToolInput = {
+  name: string;
+  method: string;
+  params: Record<string, unknown>;
+  rpcParams: Record<string, unknown>;
+};
+
 async function runTool(
-  name: string,
-  method: string,
-  params: Record<string, unknown>,
-  rpcParams: Record<string, unknown>,
+  config: RelayConfig,
+  input: RunToolInput,
   signal?: AbortSignal,
 ): Promise<ToolResult> {
+  const { method, name, params, rpcParams } = input;
   try {
-    const result = await callRelay(method, rpcParams, signal);
+    const result = await callRelay(config, method, rpcParams, signal);
     const text = typeof result === "string" ? result : JSON.stringify(result, null, 2);
     return {
       content: [{ type: "text", text }],
-      details: { method, params, data: result, relaySessionId: RELAY_SESSION_ID },
+      details: { method, params, data: result, relaySessionId: config.sessionId },
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -235,14 +264,13 @@ async function runTool(
   }
 }
 
-async function relayCapabilities(): Promise<Set<string> | null> {
+async function relayCapabilities(config: RelayConfig): Promise<Set<string> | null> {
   try {
     const controller = new AbortController();
-    const result = await callRelay("relay.capabilities", {}, controller.signal);
-    const methods = (result as { methods?: unknown })?.methods;
-    return Array.isArray(methods)
-      ? new Set(methods.filter((m): m is string => typeof m === "string"))
-      : null;
+    const result = Schema.decodeUnknownSync(RelayCapabilitiesSchema)(
+      await callRelay(config, "relay.capabilities", {}, controller.signal),
+    );
+    return result.methods ? new Set(result.methods) : null;
   } catch {
     return null;
   }
@@ -252,7 +280,8 @@ export default async function registerSitegeistBrowserExtension(pi: ExtensionAPI
   // Capability discovery: register only the tools the connected extension
   // implements. If discovery fails (relay down), register everything and let
   // each call surface the relay error.
-  const supported = await relayCapabilities();
+  const config = relayConfig();
+  const supported = await relayCapabilities(config);
 
   for (const tool of TOOLS) {
     if (supported && !supported.has(tool.method)) continue;
@@ -263,7 +292,16 @@ export default async function registerSitegeistBrowserExtension(pi: ExtensionAPI
       parameters: tool.parameters,
       execute(_id, params, signal) {
         const args = params as Record<string, unknown>;
-        return runTool(tool.name, tool.method, args, tool.pick(params as never), signal);
+        return runTool(
+          config,
+          {
+            name: tool.name,
+            method: tool.method,
+            params: args,
+            rpcParams: tool.pick(params as never),
+          },
+          signal,
+        );
       },
     });
   }

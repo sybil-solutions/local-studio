@@ -7,10 +7,15 @@
 // route; it is shared so the embedded [verb] path can fall back without an HTTP
 // self-call.
 
-import { lookup } from "node:dns/promises";
 import { request as httpRequest, type RequestOptions } from "node:http";
 import { request as httpsRequest } from "node:https";
-import { sanitizePublicBrowserUrl } from "../../../../shared/agent/sanitize-embedded-browser-url";
+import type { LookupFunction } from "node:net";
+import type { BrowserNetworkMode } from "../../../../shared/agent/sanitize-embedded-browser-url";
+import {
+  browserNetworkPolicy,
+  type BrowserNetworkPolicy,
+  type PinnedBrowserDestination,
+} from "./network-policy";
 
 const MAX_BYTES = 512 * 1024;
 const FETCH_TIMEOUT_MS = 12_000;
@@ -27,11 +32,7 @@ export type ReaderResult = {
   contentType: string;
 };
 
-type ResolvedHostAddress = { address: string; family: 4 | 6 };
-type ResolvedHostInput = string | ResolvedHostAddress;
-type ReaderHostResolver = (hostname: string) => Promise<ResolvedHostInput[]>;
-
-type BoundedResponse = {
+export type ReaderResponse = {
   status: number;
   ok: boolean;
   url: string;
@@ -40,23 +41,16 @@ type BoundedResponse = {
   location?: string;
 };
 
-declare global {
-  // Test-only hooks for simulating DNS answers / responses without real network.
-  var __LOCAL_STUDIO_BROWSER_READER_HOST_RESOLVER_FOR_TEST: ReaderHostResolver | undefined;
-  var __LOCAL_STUDIO_BROWSER_READER_REQUEST_FOR_TEST:
-    | ((url: string, address: ResolvedHostAddress) => Promise<BoundedResponse>)
-    | undefined;
-}
+export type ReaderTransport = (destination: PinnedBrowserDestination) => Promise<ReaderResponse>;
+export type ReaderDependencies = {
+  policy?: BrowserNetworkPolicy;
+  transport?: ReaderTransport;
+};
 
-async function resolveReaderHost(hostname: string): Promise<ResolvedHostAddress[]> {
-  const testResolver = globalThis.__LOCAL_STUDIO_BROWSER_READER_HOST_RESOLVER_FOR_TEST;
-  if (testResolver) return (await testResolver(hostname)).map(normalizeResolvedAddress);
-  const results = await lookup(hostname, { all: true, verbatim: true });
-  return results.map((result) => ({
-    address: result.address,
-    family: result.family === 6 ? 6 : 4,
-  }));
-}
+type ReaderRuntime = {
+  policy: BrowserNetworkPolicy;
+  transport: ReaderTransport;
+};
 
 function decodeEntities(value: string): string {
   return value
@@ -127,16 +121,19 @@ function cleanMarkdown(markdown: string): string {
     .trim();
 }
 
-async function fetchBoundedUrl(url: string, redirects = 0): Promise<BoundedResponse> {
-  const addresses = await publicResolvedAddresses(url);
-  const response = await requestBoundedUrl(url, addresses[0]);
+async function fetchBoundedUrl(
+  url: string,
+  mode: BrowserNetworkMode,
+  runtime: ReaderRuntime,
+  redirects = 0,
+): Promise<ReaderResponse> {
+  const destination = await runtime.policy.resolve(url, mode);
+  const response = await runtime.transport(destination);
   if (isRedirectStatus(response.status)) {
     if (redirects >= MAX_REDIRECTS) throw new Error("Too many redirects");
     if (!response.location) throw new Error("Redirect missing Location header");
     const nextUrl = new URL(response.location, url).toString();
-    const safeRedirect = sanitizePublicBrowserUrl(nextUrl);
-    if (!safeRedirect) throw new Error("Redirect rejected (must stay public http/https)");
-    return fetchBoundedUrl(safeRedirect, redirects + 1);
+    return fetchBoundedUrl(nextUrl, mode, runtime, redirects + 1);
   }
   return response;
 }
@@ -145,43 +142,16 @@ function isRedirectStatus(status: number): boolean {
   return status >= 300 && status < 400;
 }
 
-async function publicResolvedAddresses(raw: string): Promise<ResolvedHostAddress[]> {
-  const url = new URL(raw);
-  const addresses = await resolveReaderHost(url.hostname);
-  if (!addresses.length) throw new Error("Host resolved to no addresses");
-  for (const address of addresses) {
-    if (!sanitizePublicBrowserUrl(`${url.protocol}//${hostForAddress(address.address)}/`)) {
-      throw new Error("Resolved host rejected (must stay public http/https)");
-    }
-  }
-  return addresses;
-}
-
-function hostForAddress(address: string): string {
-  return address.includes(":") ? `[${address}]` : address;
-}
-
-function normalizeResolvedAddress(input: ResolvedHostInput): ResolvedHostAddress {
-  if (typeof input !== "string") return input;
-  return { address: input, family: input.includes(":") ? 6 : 4 };
-}
-
-function requestBoundedUrl(url: string, address: ResolvedHostAddress): Promise<BoundedResponse> {
-  const testRequest = globalThis.__LOCAL_STUDIO_BROWSER_READER_REQUEST_FOR_TEST;
-  if (testRequest) return testRequest(url, address);
-  const parsed = new URL(url);
+function requestBoundedUrl(destination: PinnedBrowserDestination): Promise<ReaderResponse> {
+  const parsed = destination.url;
+  const address = destination.address;
   const request = parsed.protocol === "https:" ? httpsRequest : httpRequest;
   const options: RequestOptions = {
     headers: { Accept: ACCEPT, "User-Agent": USER_AGENT },
-    lookup: ((
-      _hostname: string,
-      lookupOptions: unknown,
-      callback: (...args: unknown[]) => void,
-    ) => {
-      const wantsAll = Boolean((lookupOptions as { all?: boolean } | undefined)?.all);
-      if (wantsAll) callback(null, [address]);
+    lookup: ((_hostname, lookupOptions, callback) => {
+      if (lookupOptions.all) callback(null, [address]);
       else callback(null, address.address, address.family);
-    }) as RequestOptions["lookup"],
+    }) satisfies LookupFunction,
   };
 
   return new Promise((resolve, reject) => {
@@ -212,7 +182,7 @@ function requestBoundedUrl(url: string, address: ResolvedHostAddress): Promise<B
         resolve({
           status,
           ok: status >= 200 && status < 300,
-          url,
+          url: destination.url.toString(),
           contentType,
           body,
           ...(location ? { location } : {}),
@@ -242,7 +212,7 @@ function concatBytes(chunks: Uint8Array[], total: number): Uint8Array {
   return output;
 }
 
-function renderReadable(response: BoundedResponse, fallbackUrl: string): ReaderResult {
+function renderReadable(response: ReaderResponse, fallbackUrl: string): ReaderResult {
   const contentType = response.contentType;
   const finalUrl = response.url || fallbackUrl;
   if (contentType.startsWith("text/html") || contentType.includes("xhtml")) {
@@ -273,10 +243,19 @@ function renderReadable(response: BoundedResponse, fallbackUrl: string): ReaderR
 
 // Fetch a public URL and return reading-mode text. Throws on rejected/invalid
 // URLs or upstream failures; callers map errors to their own response shape.
-export async function fetchReadable(rawUrl: string): Promise<ReaderResult> {
-  const safe = sanitizePublicBrowserUrl(rawUrl);
-  if (!safe) throw new Error("url rejected (must be public http/https)");
-  const response = await fetchBoundedUrl(safe);
+export async function fetchReadable(
+  rawUrl: string,
+  mode: BrowserNetworkMode = "public",
+  dependencies: ReaderDependencies = {},
+): Promise<ReaderResult> {
+  const runtime = {
+    policy: dependencies.policy ?? browserNetworkPolicy,
+    transport: dependencies.transport ?? requestBoundedUrl,
+  };
+  if (!runtime.policy.allows(rawUrl, mode))
+    throw new Error("url rejected by browser network policy");
+  const safe = new URL(rawUrl.trim()).toString();
+  const response = await fetchBoundedUrl(safe, mode, runtime);
   if (!response.ok) throw new Error(`Upstream returned HTTP ${response.status}`);
   return renderReadable(response, safe);
 }
