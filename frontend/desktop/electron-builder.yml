@@ -17,6 +17,12 @@ files:
 extraResources:
   - from: ../services/agent-runtime/dist/standalone.mjs
     to: app/agent-runtime/server.mjs
+  - from: node_modules/playwright-core
+    to: app/agent-runtime/node_modules/playwright-core
+  - from: node_modules/@earendil-works/pi-coding-agent
+    to: app/agent-runtime/node_modules/@earendil-works/pi-coding-agent
+  - from: node_modules/@earendil-works/pi-coding-agent/node_modules
+    to: app/agent-runtime/node_modules/@earendil-works/pi-coding-agent/node_modules
   - from: .next/standalone
     to: app/frontend/.next/standalone
     filter:
