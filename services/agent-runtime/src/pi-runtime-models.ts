@@ -241,13 +241,13 @@ async function fetchModelsFromController(
   const models = normalizeOpenAIModels(payload && typeof payload === "object" ? payload : {}).map(
     (model) => ({
       ...model,
-      reasoning: model.vision ? false : model.reasoning,
+      reasoning: model.reasoning,
       id: qualifyModelId(providerId, model.id),
       rawId: model.id,
       providerId,
       controllerUrl: backendUrl,
       controllerName: label,
-      thinkingLevels: model.vision ? ["off" as const] : controllerModelThinkingLevels(model.reasoning),
+      thinkingLevels: controllerModelThinkingLevels(model.reasoning),
       name: multipleControllers ? `${model.name} · ${label}` : model.name,
     }),
   );
