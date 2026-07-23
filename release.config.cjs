@@ -53,9 +53,9 @@ module.exports = {
       "@semantic-release/exec",
       {
         prepareCmd:
-          "node scripts/build-desktop-release.mjs --version ${nextRelease.version} --commit ${env.RELEASE_SHA}",
+          "node scripts/build-desktop-release.mjs --version ${nextRelease.version} --commit \"$RELEASE_SHA\"",
         publishCmd:
-          "node scripts/assert-release-main.mjs --commit ${env.RELEASE_SHA}",
+          "node scripts/assert-release-main.mjs --commit \"$RELEASE_SHA\"",
       },
     ],
     [
