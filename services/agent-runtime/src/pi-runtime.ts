@@ -312,7 +312,8 @@ class PiSdkSession extends EventEmitter implements PiAgentSession {
                                   noExtensions: true,
                                   noSkills: true,
                                   noContextFiles: true,
-                                  systemPromptOverride: () => "You are a helpful assistant.",
+                                  systemPromptOverride: () =>
+                                    "You are a precise visual reasoning assistant. When an image is attached, inspect it carefully before answering. State only details visible in the image. Never invent labels, UI elements, text, or facts. Say when details are too small or uncertain. Give a concise answer. Use available tools to inspect supplied files when helpful.",
                                   appendSystemPromptOverride: () => [],
                                 }
                               : {}),
