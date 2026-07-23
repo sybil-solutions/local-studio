@@ -210,6 +210,7 @@ function PluginRow({
         <ResourceLogo
           identity={plugin.id}
           label={plugin.displayName}
+          company={plugin.source}
           brandColor={plugin.brandColor}
         />
       }
@@ -276,6 +277,7 @@ function PluginDrawer({
         <ResourceLogo
           identity={plugin.id}
           label={plugin.displayName}
+          company={plugin.source}
           brandColor={plugin.brandColor}
         />
       }

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { hfAvatarUrl } from "@/lib/huggingface";
 import { cx } from "./utils";
 
 const FALLBACK_COLORS = ["#3B82F6", "#14B8A6", "#8B5CF6", "#F59E0B", "#EF4444", "#64748B"] as const;
@@ -29,6 +30,31 @@ const PROVIDER_COLORS: Record<string, string> = {
   zai: "#111827",
 };
 
+const LOGO_OWNERS: ReadonlyArray<readonly [RegExp, string]> = [
+  [/anthropic|claude/i, "anthropic"],
+  [/amazon|bedrock|\baws\b/i, "amazon"],
+  [/azure|microsoft/i, "microsoft"],
+  [/browser|codex|computer use|openai/i, "openai"],
+  [/chrome|google|gmail|calendar|drive|gemini|vertex/i, "google"],
+  [/cerebras/i, "cerebras"],
+  [/cloudflare/i, "Cloudflare"],
+  [/deepseek/i, "deepseek-ai"],
+  [/figma/i, "figma"],
+  [/fireworks/i, "fireworks-ai"],
+  [/github/i, "github"],
+  [/groq/i, "groq"],
+  [/hugging ?face/i, "huggingface"],
+  [/kimi|moonshot/i, "moonshotai"],
+  [/minimax/i, "MiniMaxAI"],
+  [/mistral/i, "mistralai"],
+  [/nvidia/i, "nvidia"],
+  [/openrouter/i, "OpenRouter"],
+  [/together/i, "togethercomputer"],
+  [/xai/i, "xai-org"],
+  [/xiaomi|mimo/i, "XiaomiMiMo"],
+  [/z\.?ai|\bglm/i, "zai-org"],
+];
+
 const hash = (value: string): number =>
   Array.from(value).reduce((current, character) => current * 31 + character.charCodeAt(0), 0);
 
@@ -51,9 +77,21 @@ const normalizedColor = (identity: string, brandColor?: string | null): string =
   return known?.[1] ?? FALLBACK_COLORS[Math.abs(hash(lower)) % FALLBACK_COLORS.length];
 };
 
+const inferredImageUrl = (
+  identity: string,
+  label: string,
+  company?: string | null,
+): string | null => {
+  const source = `${identity} ${label} ${company ?? ""}`;
+  if (/local studio/i.test(source)) return "/icons/icon-192.png";
+  const owner = LOGO_OWNERS.find(([pattern]) => pattern.test(source))?.[1];
+  return owner ? hfAvatarUrl(identity, owner) : null;
+};
+
 export function ResourceLogo({
   identity,
   label,
+  company,
   brandColor,
   imageUrl,
   size = "sm",
@@ -61,15 +99,22 @@ export function ResourceLogo({
 }: {
   identity: string;
   label: string;
+  company?: string | null;
   brandColor?: string | null;
   imageUrl?: string | null;
   size?: "sm" | "md";
   className?: string;
 }) {
-  const [imageFailed, setImageFailed] = useState(false);
-  const color = normalizedColor(`${identity} ${label}`, brandColor);
+  const resolvedImageUrl = imageUrl || inferredImageUrl(identity, label, company);
+  const imageKey = resolvedImageUrl ?? "";
+  const [imageState, setImageState] = useState({ imageKey, failed: false, loaded: false });
+  if (imageState.imageKey !== imageKey) {
+    setImageState({ imageKey, failed: false, loaded: false });
+  }
+  const color = normalizedColor(`${identity} ${label} ${company ?? ""}`, brandColor);
   const dimensions = size === "md" ? "h-9 w-9" : "h-7 w-7";
-  const imageVisible = Boolean(imageUrl) && !imageFailed;
+  const requestImage = Boolean(resolvedImageUrl) && !imageState.failed;
+  const showImage = requestImage && imageState.loaded;
   return (
     <span
       className={cx(
@@ -85,16 +130,28 @@ export function ResourceLogo({
       title={label}
       aria-label={`${label} logo`}
     >
-      {imageVisible ? (
+      {requestImage ? (
         <img
-          src={imageUrl ?? undefined}
+          src={resolvedImageUrl ?? undefined}
           alt=""
-          className="absolute inset-0 h-full w-full object-cover"
-          onError={() => setImageFailed(true)}
+          className={cx(
+            "absolute inset-0 h-full w-full object-cover",
+            showImage ? "" : "opacity-0",
+          )}
+          loading="lazy"
+          onLoad={() =>
+            setImageState((state) =>
+              state.imageKey === imageKey ? { ...state, loaded: true } : state,
+            )
+          }
+          onError={() =>
+            setImageState((state) =>
+              state.imageKey === imageKey ? { ...state, failed: true, loaded: false } : state,
+            )
+          }
         />
-      ) : (
-        initials(label)
-      )}
+      ) : null}
+      {showImage ? null : initials(label)}
     </span>
   );
 }

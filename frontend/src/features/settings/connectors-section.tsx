@@ -302,7 +302,7 @@ function CatalogDrawer({
   return (
     <ResourceDrawer
       title={`Connect ${entry.name}`}
-      icon={<ResourceLogo identity={entry.id} label={entry.name} />}
+      icon={<ResourceLogo identity={entry.id} label={entry.name} company={entry.company} />}
       badge={<ModelStatus>catalog</ModelStatus>}
       status={`${entry.company} · ${entry.transport}`}
       footer={
@@ -531,7 +531,9 @@ export function ConnectorsSection() {
               key={entry.id}
               label={entry.name}
               description={`${entry.company} · ${entry.description}`}
-              leading={<ResourceLogo identity={entry.id} label={entry.name} />}
+              leading={
+                <ResourceLogo identity={entry.id} label={entry.name} company={entry.company} />
+              }
               value={<ModelValue mono>{[entry.command, ...entry.args].join(" ")}</ModelValue>}
               status={
                 <ModelStatus tone={installed ? "good" : "default"}>
