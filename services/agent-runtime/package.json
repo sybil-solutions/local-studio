@@ -13,7 +13,7 @@
     "build": "tsc -p tsconfig.build.json && node scripts/postbuild.mjs",
     "dev": "bun --watch src/server.ts",
     "start": "node dist/server.js",
-    "test": "bun test"
+    "test": "node scripts/test.mjs"
   },
   "dependencies": {
     "@earendil-works/pi-ai": "0.80.8",

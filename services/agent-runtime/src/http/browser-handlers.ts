@@ -1,6 +1,9 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { sanitizeBrowserPaneUrl } from "../../../../shared/agent/sanitize-embedded-browser-url";
+import {
+  browserNavigation,
+  type BrowserNavigation,
+} from "../../../../shared/agent/sanitize-embedded-browser-url";
 import { browserHost, type KeyInput, type MouseInput } from "../browser-host/browser-host";
 import { fetchReadable } from "../browser-host/reader";
 
@@ -20,7 +23,7 @@ const ALLOWED_VERBS = new Set([
 
 const UNAVAILABLE_ERROR = "Browser unavailable: no Chromium found — set LOCAL_STUDIO_CHROME_PATH";
 
-let lastFallbackUrl = "";
+let lastFallback: BrowserNavigation | null = null;
 
 type VerbResult = { ok: boolean; data?: unknown; error?: string };
 
@@ -106,9 +109,9 @@ async function runHostVerb(verb: string, payload: Record<string, unknown>): Prom
 async function navigateVerb(payload: Record<string, unknown>): Promise<VerbResult> {
   // Pane rules: public web plus loopback (previewing local dev servers is the
   // pane's main job); other private ranges stay blocked.
-  const url = sanitizeBrowserPaneUrl(String(payload.url ?? ""));
-  if (!url) return { ok: false, error: "valid public or localhost http(s) url required" };
-  const result = await browserHost.navigate(url);
+  const navigation = browserNavigation(String(payload.url ?? ""));
+  if (!navigation) return { ok: false, error: "valid public or localhost http(s) url required" };
+  const result = await browserHost.navigate(navigation.url);
   return { ok: true, data: result };
 }
 
@@ -139,20 +142,21 @@ function requireSelector(payload: Record<string, unknown>): string {
 // previewable even when there's no headless Chromium to drive a full surface.
 async function fallbackVerb(verb: string, payload: Record<string, unknown>): Promise<VerbResult> {
   if (verb === "navigate") {
-    const url = sanitizeBrowserPaneUrl(String(payload.url ?? ""));
-    if (!url) return { ok: false, error: "valid public or localhost http(s) url required" };
-    const reader = await fetchReadable(url);
-    lastFallbackUrl = reader.url;
+    const navigation = browserNavigation(String(payload.url ?? ""));
+    if (!navigation) return { ok: false, error: "valid public or localhost http(s) url required" };
+    const reader = await fetchReadable(navigation.url, navigation.mode);
+    lastFallback = { mode: navigation.mode, url: reader.url };
     return { ok: true, data: { url: reader.url, title: reader.title, readingMode: true } };
   }
   if (verb === "get-url") {
-    return { ok: true, data: { url: lastFallbackUrl, title: "" } };
+    return { ok: true, data: { url: lastFallback?.url ?? "", title: "" } };
   }
   if (verb === "get-text" || verb === "get-html") {
-    const url = sanitizeBrowserPaneUrl(String(payload.url ?? "")) || lastFallbackUrl;
-    if (!url) return { ok: false, error: UNAVAILABLE_ERROR };
-    const reader = await fetchReadable(url);
-    lastFallbackUrl = reader.url;
+    const requested = browserNavigation(String(payload.url ?? ""));
+    const navigation = requested ?? lastFallback;
+    if (!navigation) return { ok: false, error: UNAVAILABLE_ERROR };
+    const reader = await fetchReadable(navigation.url, navigation.mode);
+    lastFallback = { mode: navigation.mode, url: reader.url };
     return verb === "get-text"
       ? { ok: true, data: { text: reader.text, readingMode: true } }
       : { ok: true, data: { html: reader.markdown ?? reader.text, readingMode: true } };

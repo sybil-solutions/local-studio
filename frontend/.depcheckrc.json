@@ -21,7 +21,8 @@
     "lint-staged",
     "concurrently",
     "electron-builder",
-    "madge"
+    "madge",
+    "playwright"
   ],
   "ignore-patterns": ["*.d.ts", ".next/**", "dist-desktop/**", "desktop/dist/**"],
   "specials": ["next", "webpack", "babel"],
