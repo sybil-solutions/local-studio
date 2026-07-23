@@ -42,10 +42,16 @@ else
   fail "node not found — install Node.js 20+"
 fi
 
-if command -v python3 >/dev/null 2>&1; then
+python_runs() { command -v "$1" >/dev/null 2>&1 && "$1" --version >/dev/null 2>&1; }
+
+if python_runs python3; then
   pass "python3 $(python3 --version 2>&1 | awk '{print $2}') found"
+elif python_runs python; then
+  pass "python $(python --version 2>&1 | awk '{print $2}') found"
+elif python_runs py; then
+  pass "py launcher $(py -3 --version 2>&1 | awk '{print $2}') found"
 else
-  fail "python3 not found — engine installs need Python 3.10+ on PATH"
+  fail "python3/python not found — engine installs need Python 3.10+ on PATH"
 fi
 
 if command -v uv >/dev/null 2>&1; then
@@ -55,8 +61,17 @@ else
 fi
 
 # --- GPU stack (informational) ---
+case "$(uname -s)" in
+  MINGW* | MSYS* | CYGWIN*) IS_WINDOWS=1 ;;
+  *) IS_WINDOWS=0 ;;
+esac
+
 if command -v nvidia-smi >/dev/null 2>&1; then
-  info "nvidia-smi found — CUDA backends (vllm/sglang) available"
+  if [ "$IS_WINDOWS" = "1" ]; then
+    info "nvidia-smi found — CUDA llama.cpp serving available (vLLM/SGLang require Linux)"
+  else
+    info "nvidia-smi found — CUDA backends (vllm/sglang) available"
+  fi
 elif command -v rocm-smi >/dev/null 2>&1; then
   info "rocm-smi found — ROCm stack detected"
 elif [ "$(uname -s)" = "Darwin" ]; then
@@ -78,7 +93,12 @@ port_status 8080 "controller"
 port_status 3000 "frontend"
 
 # --- Directories ---
-MODELS_DIR="${LOCAL_STUDIO_MODELS_DIR:-/models}"
+if [ "$IS_WINDOWS" = "1" ]; then
+  DEFAULT_MODELS_DIR="${USERPROFILE:-$HOME}/models"
+else
+  DEFAULT_MODELS_DIR="/models"
+fi
+MODELS_DIR="${LOCAL_STUDIO_MODELS_DIR:-$DEFAULT_MODELS_DIR}"
 if [ -d "$MODELS_DIR" ] && [ -w "$MODELS_DIR" ]; then
   pass "models dir $MODELS_DIR exists and is writable"
 elif [ -d "$MODELS_DIR" ]; then
