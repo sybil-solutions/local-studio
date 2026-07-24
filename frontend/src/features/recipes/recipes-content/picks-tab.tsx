@@ -91,22 +91,32 @@ export function PicksTab() {
 
 function PicksLoadingGrid() {
   return (
-    <ModelSection title="Curated catalog" description="Matching the catalog to this machine.">
-      {Array.from({ length: 4 }, (_, index) => (
-        <ModelRow
-          key={index}
-          label="Loading model"
-          description="Checking hardware fit and available formats"
-          variant="catalog"
-          value={
-            <div className="flex gap-2">
-              <div className="h-7 w-16 animate-pulse rounded-md bg-(--ui-hover)" />
-              <div className="h-7 w-20 animate-pulse rounded-md bg-(--ui-hover)/70" />
+    <section>
+      <div className="border-b border-(--ui-border)/75 pb-2">
+        <h3 className="text-[length:var(--fs-md)] font-medium text-(--ui-fg)">Curated catalog</h3>
+        <p className="mt-0.5 text-[length:var(--fs-sm)] text-(--ui-muted)">
+          Matching the catalog to this machine.
+        </p>
+      </div>
+      <div className="grid grid-cols-1 gap-3 pt-3 lg:grid-cols-2">
+        {Array.from({ length: 4 }, (_, index) => (
+          <div
+            key={index}
+            className="min-h-40 animate-pulse rounded-xl border border-(--ui-border) bg-(--ui-surface)/60 p-4"
+          >
+            <div className="flex items-center gap-3">
+              <div className="h-11 w-11 rounded-lg bg-(--ui-hover)" />
+              <div className="space-y-2">
+                <div className="h-2.5 w-16 rounded bg-(--ui-hover)" />
+                <div className="h-4 w-36 rounded bg-(--ui-hover)" />
+              </div>
             </div>
-          }
-        />
-      ))}
-    </ModelSection>
+            <div className="mt-4 h-3 w-full rounded bg-(--ui-hover)/80" />
+            <div className="mt-2 h-3 w-2/3 rounded bg-(--ui-hover)/60" />
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }
 

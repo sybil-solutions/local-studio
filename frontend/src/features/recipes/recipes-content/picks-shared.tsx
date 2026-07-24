@@ -2,7 +2,10 @@
 
 import { useCallback, useMemo, useState } from "react";
 import { Brain, ChevronRight, DownloadCloud, Eye, Zap } from "@/ui/icon-registry";
-import { ModelRow, ModelSection, ModelValue } from "./model-page";
+import { ModelButton } from "@/ui";
+import { ModelLogo } from "@/ui/model-logo";
+import { ResourceDrawer, ResourceDrawerSection, ResourceFact } from "@/ui/resource-drawer";
+import { ModelStatus } from "./model-page";
 import { cx } from "@/ui/utils";
 import api from "@/lib/api/client";
 import type {
@@ -26,6 +29,23 @@ const FORMAT_LABELS: Record<ModelIndexVariantFormat, string> = {
   fp8: "FP8",
   nvfp4: "NVFP4",
   q4: "Q4",
+};
+
+const MODEL_BRANDS: Record<string, { label: string; color: string }> = {
+  qwen: { label: "Qwen", color: "#5B7CFA" },
+  google: { label: "Google", color: "#4285F4" },
+  "stepfun-ai": { label: "StepFun", color: "#4E9C81" },
+  "deepseek-ai": { label: "DeepSeek", color: "#4D6BFE" },
+  tencent: { label: "Tencent", color: "#2A7DE1" },
+  minimaxai: { label: "MiniMax", color: "#D36E4D" },
+  "zai-org": { label: "Z.ai", color: "#68728A" },
+};
+
+type ModelBrand = {
+  owner: string;
+  label: string;
+  color: string;
+  repo: string;
 };
 
 function formatContextTokens(tokens: number): string {
@@ -103,227 +123,237 @@ export function TierSection({
   startingModelIds: Set<string>;
   onDownload: (variant: ModelIndexVariant) => void;
 }) {
+  const [selectedModel, setSelectedModel] = useState<ModelIndexModel | null>(null);
   return (
-    <ModelSection
-      title={tier.label}
-      description={tier.blurb}
-      actions={
-        <span className="text-[length:var(--fs-xs)] text-(--ui-muted)">
-          {tier.models.length} {tier.models.length === 1 ? "model" : "models"}
-        </span>
-      }
-    >
-      {tier.models.map((model) => (
-        <PickCard
-          key={model.id}
-          model={model}
+    <>
+      <section className="min-w-0">
+        <div className="flex min-h-9 items-end justify-between gap-4 border-b border-(--ui-border)/75 pb-2">
+          <div className="min-w-0">
+            <h3 className="text-[length:var(--fs-md)] font-medium text-(--ui-fg)">{tier.label}</h3>
+            <p className="mt-0.5 text-[length:var(--fs-sm)] text-(--ui-muted)">{tier.blurb}</p>
+          </div>
+          <span className="shrink-0 text-[length:var(--fs-xs)] text-(--ui-muted)">
+            {tier.models.length} {tier.models.length === 1 ? "model" : "models"}
+          </span>
+        </div>
+        <div className="grid grid-cols-1 gap-3 pt-3 lg:grid-cols-2">
+          {tier.models.map((model) => (
+            <PickCard key={model.id} model={model} onOpen={() => setSelectedModel(model)} />
+          ))}
+        </div>
+      </section>
+      {selectedModel ? (
+        <PickDrawer
+          model={selectedModel}
           poolGb={poolGb}
           downloadsByModel={downloadsByModel}
           startingModelIds={startingModelIds}
           onDownload={onDownload}
+          onClose={() => setSelectedModel(null)}
         />
-      ))}
-    </ModelSection>
+      ) : null}
+    </>
   );
 }
 
-export function PickCard({
+function modelBrand(model: ModelIndexModel): ModelBrand {
+  const variant = model.variants.find((candidate) => candidate.official) ?? model.variants[0];
+  const repo = variant?.repo ?? model.id;
+  const owner = repo.split("/")[0]?.trim() || model.id;
+  const brand = MODEL_BRANDS[owner.toLowerCase()];
+  return {
+    owner,
+    label: brand?.label ?? owner,
+    color: brand?.color ?? "#64748B",
+    repo,
+  };
+}
+
+function modelFormatCount(model: ModelIndexModel): number {
+  return new Set(model.variants.map((variant) => variant.format)).size;
+}
+
+export function PickCard({ model, onOpen }: { model: ModelIndexModel; onOpen: () => void }) {
+  const brand = modelBrand(model);
+  const formatCount = modelFormatCount(model);
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      aria-label={`Open ${model.name} details`}
+      className="group relative min-h-40 w-full overflow-hidden rounded-xl border p-4 text-left transition-[background-color,border-color,transform] hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--ring) active:translate-y-px"
+      style={{
+        backgroundColor: `${brand.color}0D`,
+        borderColor: `${brand.color}38`,
+      }}
+    >
+      <span
+        className="absolute inset-y-0 left-0 w-0.5 opacity-80"
+        style={{ backgroundColor: brand.color }}
+      />
+      <div className="flex h-full min-h-32 flex-col">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-3">
+            <ModelLogo
+              modelId={brand.repo}
+              author={brand.owner}
+              label={model.name}
+              size="lg"
+              className="rounded-lg"
+            />
+            <div className="min-w-0">
+              <div className="text-[length:var(--fs-xs)] font-medium uppercase tracking-[0.12em] text-(--ui-muted)">
+                {brand.label}
+              </div>
+              <h4 className="mt-0.5 truncate text-[length:var(--fs-lg)] font-medium tracking-tight text-(--ui-fg)">
+                {model.name}
+              </h4>
+            </div>
+          </div>
+          <ChevronRight className="mt-1 h-4 w-4 shrink-0 text-(--ui-muted) transition-transform group-hover:translate-x-0.5" />
+        </div>
+        <p className="mt-3 line-clamp-2 text-[length:var(--fs-sm)] leading-5 text-(--ui-muted)">
+          {model.description}
+        </p>
+        <div className="mt-auto flex flex-wrap items-center gap-x-3 gap-y-1 pt-3 font-mono text-[length:var(--fs-xs)] text-(--ui-muted)">
+          <span>{model.params}</span>
+          <span>{formatContextTokens(model.context_tokens)} ctx</span>
+          <span>
+            {formatCount} {formatCount === 1 ? "format" : "formats"}
+          </span>
+          {model.role ? (
+            <span className="ml-auto inline-flex items-center gap-1 font-sans font-medium">
+              {model.role === "fast" ? <Zap className="h-3 w-3" /> : <Brain className="h-3 w-3" />}
+              {model.role}
+            </span>
+          ) : model.multimodal ? (
+            <span className="ml-auto inline-flex items-center gap-1 font-sans font-medium">
+              <Eye className="h-3 w-3" />
+              multimodal
+            </span>
+          ) : null}
+        </div>
+      </div>
+    </button>
+  );
+}
+
+function PickDrawer({
   model,
   poolGb,
   downloadsByModel,
   startingModelIds,
   onDownload,
+  onClose,
 }: {
   model: ModelIndexModel;
   poolGb: number;
   downloadsByModel: Map<string, ModelDownload>;
   startingModelIds: Set<string>;
   onDownload: (variant: ModelIndexVariant) => void;
+  onClose: () => void;
 }) {
-  const variantGroups = FORMAT_ORDER.map((format) => ({
-    format,
-    entries: model.variants.filter((variant) => variant.format === format),
-  })).filter((group) => group.entries.length > 0);
-
-  const badges =
-    model.role || model.multimodal ? (
-      <div className="flex items-center gap-1">
-        {model.role ? (
-          <span
-            className="inline-flex shrink-0 items-center gap-1 rounded-md bg-(--ui-hover)/60 px-1.5 py-0.5 text-[length:var(--fs-xs)] font-medium text-(--ui-muted)"
-            title={model.role === "fast" ? "Tuned for speed" : "Tuned for quality"}
-          >
-            {model.role === "fast" ? <Zap className="h-3 w-3" /> : <Brain className="h-3 w-3" />}
-            {model.role}
-          </span>
-        ) : null}
-        {model.multimodal ? (
-          <span
-            className="inline-flex shrink-0 items-center gap-1 rounded-md bg-(--ui-hover)/60 px-1.5 py-0.5 text-[length:var(--fs-xs)] font-medium text-(--ui-muted)"
-            title="Accepts image input"
-          >
-            <Eye className="h-3 w-3" />
-            multimodal
-          </span>
-        ) : null}
-      </div>
-    ) : undefined;
-
+  const brand = modelBrand(model);
+  const variants = FORMAT_ORDER.flatMap((format) =>
+    model.variants.filter((variant) => variant.format === format),
+  );
   return (
-    <ModelRow
-      label={model.name}
-      description={model.description}
-      variant="catalog"
-      status={badges}
-      value={
-        variantGroups.length > 0 ? (
-          <div className="flex flex-wrap items-start gap-2">
-            {variantGroups.map((group) => (
-              <VariantGroup
-                key={group.format}
-                format={group.format}
-                entries={group.entries}
-                poolGb={poolGb}
-                downloadsByModel={downloadsByModel}
-                startingModelIds={startingModelIds}
-                onDownload={onDownload}
-              />
-            ))}
-          </div>
-        ) : (
-          <ModelValue dim>No downloadable variants published yet.</ModelValue>
-        )
-      }
+    <ResourceDrawer
+      title={model.name}
+      icon={<ModelLogo modelId={brand.repo} author={brand.owner} label={model.name} size="sm" />}
+      badge={model.multimodal ? <ModelStatus tone="info">multimodal</ModelStatus> : undefined}
+      status={`${brand.label} · ${model.params}`}
+      footer={<ModelButton onClick={onClose}>Done</ModelButton>}
+      onClose={onClose}
     >
-      <div className="flex flex-wrap gap-x-3 gap-y-0.5 font-mono text-[length:var(--fs-xs)] text-(--ui-muted)">
-        <span title={model.params}>
-          {model.params}
-          {model.active_params_b != null ? ` · ${model.active_params_b} B active` : ""}
-        </span>
-        <span className="shrink-0">{formatContextTokens(model.context_tokens)} ctx</span>
-        <span className="shrink-0">{model.license}</span>
-      </div>
-      {model.notes.length > 0 ? (
-        <details className="group/notes mt-2">
-          <summary className="flex cursor-pointer list-none items-center gap-1.5 text-[length:var(--fs-xs)] font-medium text-(--ui-muted) transition-colors hover:text-(--ui-fg)">
-            <ChevronRight className="h-3 w-3 transition-transform group-open/notes:rotate-90" />
-            Serving notes ({model.notes.length})
-          </summary>
-          <ul className="mt-1.5 list-disc space-y-1 pl-5 text-[length:var(--fs-xs)] leading-relaxed text-(--ui-muted)">
-            {model.notes.map((note, index) => (
-              <li key={index}>{note}</li>
+      <p className="mb-5 text-[length:var(--fs-md)] leading-6 text-(--ui-muted)">
+        {model.description}
+      </p>
+      <ResourceDrawerSection title="Model">
+        <ResourceFact label="Company" value={brand.label} />
+        <ResourceFact label="Architecture" value={model.params} />
+        <ResourceFact
+          label="Context"
+          value={`${formatContextTokens(model.context_tokens)} tokens`}
+        />
+        <ResourceFact label="License" value={model.license} />
+        <ResourceFact label="Input" value={model.multimodal ? "Text and media" : "Text"} />
+      </ResourceDrawerSection>
+      <ResourceDrawerSection
+        title="Available weights"
+        description="Choose a format to start the download. Alternate publishers stay visible here."
+      >
+        {variants.map((variant) => (
+          <PickVariantRow
+            key={variant.repo}
+            variant={variant}
+            poolGb={poolGb}
+            download={downloadsByModel.get(variant.repo) ?? null}
+            isStarting={startingModelIds.has(variant.repo)}
+            onDownload={onDownload}
+          />
+        ))}
+      </ResourceDrawerSection>
+      {model.notes.length ? (
+        <section>
+          <h3 className="text-[length:var(--fs-base)] font-medium text-(--ui-fg)">Serving notes</h3>
+          <ul className="mt-2 space-y-2 border-t border-(--ui-separator) pt-3 text-[length:var(--fs-sm)] leading-5 text-(--ui-muted)">
+            {model.notes.map((note) => (
+              <li key={note}>{note}</li>
             ))}
           </ul>
-        </details>
+        </section>
       ) : null}
-    </ModelRow>
+    </ResourceDrawer>
   );
 }
 
-export function VariantGroup({
-  format,
-  entries,
-  poolGb,
-  downloadsByModel,
-  startingModelIds,
-  onDownload,
-}: {
-  format: ModelIndexVariantFormat;
-  entries: ModelIndexVariant[];
-  poolGb: number;
-  downloadsByModel: Map<string, ModelDownload>;
-  startingModelIds: Set<string>;
-  onDownload: (variant: ModelIndexVariant) => void;
-}) {
-  const [main, ...alts] = entries;
-  return (
-    <div className="flex flex-col gap-1">
-      <VariantButton
-        format={format}
-        variant={main}
-        poolGb={poolGb}
-        download={downloadsByModel.get(main.repo) ?? null}
-        isStarting={startingModelIds.has(main.repo)}
-        onDownload={onDownload}
-      />
-      {alts.map((alt) => (
-        <VariantButton
-          key={alt.repo}
-          format={format}
-          variant={alt}
-          alt
-          poolGb={poolGb}
-          download={downloadsByModel.get(alt.repo) ?? null}
-          isStarting={startingModelIds.has(alt.repo)}
-          onDownload={onDownload}
-        />
-      ))}
-    </div>
-  );
-}
-
-function VariantButton({
-  format,
+function PickVariantRow({
   variant,
-  alt = false,
   poolGb,
   download,
   isStarting,
   onDownload,
 }: {
-  format: ModelIndexVariantFormat;
   variant: ModelIndexVariant;
-  alt?: boolean;
   poolGb: number;
   download: ModelDownload | null;
   isStarting: boolean;
   onDownload: (variant: ModelIndexVariant) => void;
 }) {
   const busy = isStarting || download?.status === "downloading" || download?.status === "paused";
-  const titleLines = [
-    variant.repo,
-    variant.caveat ? `Caveat: ${variant.caveat}` : null,
-    download ? `Status: ${download.status}` : null,
-  ].filter(Boolean);
-  const sourceLabel = !variant.official
-    ? (variant.source ?? variant.repo.split("/")[0] ?? null)
-    : null;
-
+  const source = variant.official
+    ? "Official"
+    : (variant.source ?? variant.repo.split("/")[0] ?? "Community");
   return (
-    <div className="flex flex-col gap-0.5">
-      <button
-        type="button"
-        disabled={busy}
-        onClick={() => onDownload(variant)}
-        title={titleLines.join("\n")}
-        className={cx(
-          "inline-flex items-center gap-1.5 rounded-md border border-(--ui-border) font-medium transition-[background-color,color,transform] active:translate-y-px disabled:pointer-events-none disabled:opacity-45",
-          alt
-            ? "px-1.5 py-0.5 text-[length:var(--fs-xs)] text-(--ui-muted) hover:bg-(--ui-hover) hover:text-(--ui-fg)"
-            : "bg-(--ui-surface) px-2 py-1 text-[length:var(--fs-sm)] text-(--ui-fg) hover:bg-(--ui-hover)",
-        )}
-      >
+    <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 py-3">
+      <div className="min-w-0">
+        <div className="flex items-center gap-2">
+          <span className="font-medium text-(--ui-fg)">{FORMAT_LABELS[variant.format]}</span>
+          <span className="text-[length:var(--fs-xs)] text-(--ui-muted)">{source}</span>
+        </div>
+        <div className="mt-0.5 truncate font-mono text-[length:var(--fs-xs)] text-(--ui-muted)">
+          {variant.repo}
+        </div>
+        <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
+          {variant.size_gb != null ? (
+            <span className="font-mono text-[length:var(--fs-xs)] text-(--ui-muted)">
+              {variant.size_gb} GB
+            </span>
+          ) : null}
+          <VariantFitBadge sizeGb={variant.size_gb} poolGb={poolGb} />
+          <VariantDownloadState download={download} isStarting={isStarting} />
+        </div>
+        {variant.caveat ? (
+          <div className="mt-1 text-[length:var(--fs-xs)] leading-4 text-(--ui-muted)">
+            {variant.caveat}
+          </div>
+        ) : null}
+      </div>
+      <ModelButton tone="primary" disabled={busy} onClick={() => onDownload(variant)}>
         <DownloadCloud className="h-3 w-3" />
-        {alt
-          ? `${FORMAT_LABELS[format]} alt${sourceLabel ? ` · ${sourceLabel}` : ""}`
-          : FORMAT_LABELS[format]}
-      </button>
-      {!alt && (variant.size_gb != null || sourceLabel) ? (
-        <span className="px-0.5 font-mono text-[length:var(--fs-xs)] text-(--ui-muted)">
-          {variant.size_gb != null ? `${variant.size_gb} GB` : "size n/a"}
-          {sourceLabel ? ` · ${sourceLabel}` : ""}
-        </span>
-      ) : null}
-      <VariantFitBadge sizeGb={variant.size_gb} poolGb={poolGb} />
-      {variant.caveat ? (
-        <span
-          className="px-0.5 text-[length:var(--fs-xs)] text-(--ui-muted)/80"
-          title={variant.caveat}
-        >
-          {variant.caveat}
-        </span>
-      ) : null}
-      <VariantDownloadState download={download} isStarting={isStarting} />
+        {busy ? "Working" : "Download"}
+      </ModelButton>
     </div>
   );
 }

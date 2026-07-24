@@ -81,14 +81,8 @@ function SkillDrawer({
         </>
       }
       onClose={onClose}
-      width={720}
     >
-      <ResourceDrawerSection title="Identity">
-        <ResourceFact label="Source" value={skill.source} />
-        <ResourceFact label="Skill ID" value={skill.id} mono />
-        <ResourceFact label="Directory" value={skill.path} mono />
-      </ResourceDrawerSection>
-      <section>
+      <section className="mb-6">
         <div className="mb-2">
           <h3 className="text-[length:var(--fs-base)] font-medium text-(--ui-fg)">Instructions</h3>
           <p className="mt-0.5 text-[length:var(--fs-sm)] text-(--ui-muted)">
@@ -103,6 +97,11 @@ function SkillDrawer({
           </pre>
         </div>
       </section>
+      <ResourceDrawerSection title="Identity">
+        <ResourceFact label="Source" value={skill.source} />
+        <ResourceFact label="Skill ID" value={skill.id} mono />
+        <ResourceFact label="Directory" value={skill.path} mono />
+      </ResourceDrawerSection>
     </ResourceDrawer>
   );
 }

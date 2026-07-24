@@ -1,16 +1,11 @@
 "use client";
 
 import type { CSSProperties, ReactNode } from "react";
+import { useMountSubscription } from "@/hooks/use-mount-subscription";
 import { X } from "@/ui/icon-registry";
 import { Button } from "./button";
 import { cx } from "./utils";
 
-/**
- * Drawer — a right-anchored side panel (the recipe editor, detail editors, etc.).
- * Composable: Drawer > DrawerHeader / [tab bar] / DrawerBody / DrawerFooter.
- * Chrome (borders, heights, tokens) lives here so every drawer matches; callers
- * only supply content and actions.
- */
 export function Drawer({
   children,
   width = 720,
@@ -41,16 +36,26 @@ export function Drawer({
 }
 
 export function DrawerOverlay({ children, onClose }: { children: ReactNode; onClose: () => void }) {
+  useMountSubscription(() => {
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [onClose]);
+
   return (
     <div
       className="fixed inset-0 z-50 flex justify-end bg-black/30"
       onClick={onClose}
-      onKeyDown={(event) => {
-        if (event.key === "Escape") onClose();
-      }}
       role="presentation"
     >
-      <div className="flex h-full" onClick={(event) => event.stopPropagation()} role="dialog">
+      <div
+        aria-modal="true"
+        className="flex h-full"
+        onClick={(event) => event.stopPropagation()}
+        role="dialog"
+      >
         {children}
       </div>
     </div>

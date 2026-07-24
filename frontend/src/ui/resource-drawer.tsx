@@ -8,26 +8,34 @@ export function ResourceDrawer({
   title,
   icon,
   badge,
+  actions,
   status,
   footer,
   onClose,
   children,
   width = 620,
+  bodyClassName,
 }: {
   title: ReactNode;
   icon?: ReactNode;
   badge?: ReactNode;
+  actions?: ReactNode;
   status?: ReactNode;
   footer?: ReactNode;
   onClose: () => void;
   children: ReactNode;
   width?: number;
+  bodyClassName?: string;
 }) {
   return (
     <DrawerOverlay onClose={onClose}>
-      <Drawer width={width}>
-        <DrawerHeader title={title} icon={icon} badge={badge} onClose={onClose} />
-        <DrawerBody>{children}</DrawerBody>
+      <Drawer
+        width={width}
+        className="h-full bg-(--bg)"
+        style={{ maxWidth: `min(${width}px, calc(100vw - 72px))` }}
+      >
+        <DrawerHeader title={title} icon={icon} badge={badge} actions={actions} onClose={onClose} />
+        <DrawerBody className={bodyClassName}>{children}</DrawerBody>
         {status || footer ? <DrawerFooter status={status}>{footer}</DrawerFooter> : null}
       </Drawer>
     </DrawerOverlay>
