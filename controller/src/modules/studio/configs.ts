@@ -45,6 +45,20 @@ export const STUDIO_STARTER_PRESETS: StudioStarterPreset[] = [
     },
   },
   {
+    id: "atlascloud-qwen35-flash",
+    name: "Atlas Cloud Qwen3.5 Flash",
+    description:
+      "Connect Atlas Cloud's OpenAI-compatible endpoint with one API key for hosted Qwen and DeepSeek chat models.",
+    kind: "remote",
+    tags: ["remote", "instant", "openai-compatible"],
+    size_gb: null,
+    min_vram_gb: null,
+    remote: {
+      base_url: "https://api.atlascloud.ai/v1",
+      model: "qwen/qwen3.5-flash",
+    },
+  },
+  {
     id: "deepseek-v4-flash",
     name: "DeepSeek V4 Flash",
     description:
