@@ -291,7 +291,10 @@ function WorkspaceTopBar({
 }) {
   if (!error && !setupWarning) return null;
   return (
-    <div className="pointer-events-none absolute bottom-3 right-3 z-30 flex max-w-[26rem] flex-col items-end gap-2">
+    <div
+      data-workspace-notices
+      className="pointer-events-none absolute right-3 top-[calc(var(--h-toolbar-pane)+0.75rem)] z-[110] flex max-w-[26rem] flex-col items-end gap-2"
+    >
       {error ? (
         <WorkspaceBanner tone="error" onDismiss={onClearError}>
           {humanizeWorkspaceNotice(error)}

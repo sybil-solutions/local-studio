@@ -138,6 +138,31 @@ test("mobile navigation and composer remain usable at 390px", async ({ page }) =
   ).toBeVisible();
 });
 
+test("workspace notices stay below the toolbar and clear of the composer", async ({ page }) => {
+  await page.route("**/api/agent/models", (route) => route.abort("connectionrefused"));
+  await page.goto(`/agent?new=${encodeURIComponent("Notice layout")}`);
+
+  const notice = page.locator("[data-workspace-notices]");
+  const toolbar = page.getByRole("button", { name: "Session settings" }).first();
+  const composer = page.locator(".agent-composer-box").first();
+
+  await expect(notice).toBeVisible();
+  await expect(toolbar).toBeVisible();
+  await expect(composer).toBeVisible();
+
+  const [noticeBox, toolbarBox, composerBox] = await Promise.all([
+    notice.boundingBox(),
+    toolbar.boundingBox(),
+    composer.boundingBox(),
+  ]);
+
+  expect(noticeBox).not.toBeNull();
+  expect(toolbarBox).not.toBeNull();
+  expect(composerBox).not.toBeNull();
+  expect(noticeBox!.y).toBeGreaterThanOrEqual(toolbarBox!.y + toolbarBox!.height);
+  expect(noticeBox!.y + noticeBox!.height).toBeLessThanOrEqual(composerBox!.y);
+});
+
 test("pairing JSON is copyable from laptop and phone web layouts", async ({ context, page }) => {
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
   await page.goto("/settings#profile");
