@@ -189,6 +189,22 @@ function normalizeBackendUrl(value: string): string {
   return value.trim().replace(/\/+$/, "");
 }
 
+function controllerUrlIdentity(value: string): string {
+  const normalized = normalizeBackendUrl(value);
+  try {
+    const parsed = new URL(normalized);
+    const hostname = ["localhost", "127.0.0.1", "[::1]"].includes(parsed.hostname.toLowerCase())
+      ? "loopback"
+      : parsed.hostname.toLowerCase();
+    const port =
+      parsed.port || (parsed.protocol === "https:" ? "443" : parsed.protocol === "http:" ? "80" : "");
+    const pathname = parsed.pathname.replace(/\/+$/, "");
+    return `${parsed.protocol}//${hostname}:${port}${pathname}`;
+  } catch {
+    return normalized;
+  }
+}
+
 function normalizeControllerInput(input: PiControllerModelsRequest): PiControllerConfig | null {
   const url = normalizeBackendUrl(input.url || "");
   if (!url) return null;
@@ -201,19 +217,28 @@ function normalizeControllerInput(input: PiControllerModelsRequest): PiControlle
   };
 }
 
-function mergeControllers(
+export function mergeControllers(
   settings: ApiSettings,
   requested: PiControllerModelsRequest[] = [],
 ): PiControllerConfig[] {
   const requestedController = requested
     .map(normalizeControllerInput)
     .find((controller): controller is PiControllerConfig => controller !== null);
-  if (requestedController) return [requestedController];
   const primary = normalizeControllerInput({
     url: settings.backendUrl,
     apiKey: settings.apiKey,
     name: "primary",
   });
+  if (requestedController) {
+    if (
+      !requestedController.apiKey &&
+      primary?.apiKey &&
+      controllerUrlIdentity(requestedController.url) === controllerUrlIdentity(primary.url)
+    ) {
+      return [{ ...requestedController, apiKey: primary.apiKey }];
+    }
+    return [requestedController];
+  }
   return primary ? [primary] : [];
 }
 
