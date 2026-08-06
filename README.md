@@ -177,6 +177,12 @@ npm run start
 Never use plain `next start` — it breaks SSE streaming. The controller runs the
 same way in production as in development: `bun src/main.ts`.
 
+Production web startup fails unless `LOCAL_STUDIO_FRONTEND_TOKEN` is set or
+`LOCAL_STUDIO_FRONTEND_ALLOW_UNAUTHENTICATED=true` explicitly acknowledges
+unauthenticated host access. Enter a configured token at `/access`; it is sent
+only in a POST body and stored in an HttpOnly cookie. Frontend access grants the
+permissions of the host user, including the agent's shell and filesystem tools.
+
 The production frontend binds only to `127.0.0.1` and defaults to port `4783`.
 `PORT` may be set to an integer from 1024 through 65535. Workspace paths are
 canonicalized and must be under `WORKSPACE_ROOTS`, a platform-path-delimited

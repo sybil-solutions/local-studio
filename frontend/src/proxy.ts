@@ -14,7 +14,6 @@ import {
   splitAllowedValues,
 } from "@/lib/security/request-boundary";
 
-const TOKEN_MAX_AGE_SECONDS = 60 * 60 * 24 * 30;
 const PROCESS_CSRF_TOKEN = crypto.randomUUID();
 
 function denyResponse(isApi: boolean, status: number, message: string): NextResponse {
@@ -27,38 +26,48 @@ function denyResponse(isApi: boolean, status: number, message: string): NextResp
   return new NextResponse(message, { status });
 }
 
+function isAccessExchange(request: NextRequest): boolean {
+  return request.nextUrl.pathname === "/api/auth/session" && request.method === "POST";
+}
+
+function permitsAccessEntry(request: NextRequest): boolean {
+  const method = request.method.toUpperCase();
+  return (
+    (request.nextUrl.pathname === "/access" && (method === "GET" || method === "HEAD")) ||
+    isAccessExchange(request)
+  );
+}
+
+function queryTokenResponse(request: NextRequest): NextResponse | null {
+  const clean = request.nextUrl.clone();
+  const tokenKeys = [...clean.searchParams.keys()].filter((key) => key.toLowerCase() === "token");
+  if (tokenKeys.length === 0) return null;
+  for (const key of tokenKeys) clean.searchParams.delete(key);
+  const isApi = request.nextUrl.pathname.startsWith("/api/");
+  if (!isApi && (request.method === "GET" || request.method === "HEAD")) {
+    return NextResponse.redirect(clean, 303);
+  }
+  return denyResponse(isApi, 400, "Query-string access tokens are not accepted.");
+}
+
 function enforceAccess(request: NextRequest): NextResponse | null {
   const posture = resolveAccessPosture();
-  if (posture.kind === "allow") return null;
-
-  const url = request.nextUrl;
-  const isApi = url.pathname.startsWith("/api/");
-
-  const queryToken = url.searchParams.get("token");
-  if (queryToken && timingSafeStringEqual(queryToken.trim(), posture.token)) {
-    const clean = url.clone();
-    clean.searchParams.delete("token");
-    const redirect = NextResponse.redirect(clean);
-    redirect.cookies.set(STUDIO_TOKEN_COOKIE, posture.token, {
-      httpOnly: true,
-      sameSite: "lax",
-      secure: url.protocol === "https:",
-      path: "/",
-      maxAge: TOKEN_MAX_AGE_SECONDS,
-    });
-    return redirect;
+  const isApi = request.nextUrl.pathname.startsWith("/api/");
+  if (posture.kind === "configuration-error") {
+    return denyResponse(isApi, 503, posture.message);
   }
-
+  if (posture.kind === "allow" || permitsAccessEntry(request)) return null;
   const presented = presentedToken(
     request.headers.get(STUDIO_TOKEN_HEADER),
     request.cookies.get(STUDIO_TOKEN_COOKIE)?.value,
   );
   if (presented && timingSafeStringEqual(presented, posture.token)) return null;
-
-  return denyResponse(isApi, 401, "Unauthorized");
+  if (!isApi) return NextResponse.redirect(new URL("/access", request.url), 303);
+  return denyResponse(true, 401, "Unauthorized");
 }
 
 export function proxy(request: NextRequest) {
+  const csrfExempt = isAccessExchange(request);
   const boundary = evaluateRequestBoundary({
     method: request.method,
     host: request.headers.get("host"),
@@ -66,8 +75,8 @@ export function proxy(request: NextRequest) {
     forwardedProto: request.headers.get("x-forwarded-proto"),
     origin: request.headers.get("origin"),
     fetchSite: request.headers.get("sec-fetch-site"),
-    csrfCookie: request.cookies.get(CSRF_COOKIE)?.value ?? null,
-    csrfHeader: request.headers.get(CSRF_HEADER),
+    csrfCookie: csrfExempt ? PROCESS_CSRF_TOKEN : (request.cookies.get(CSRF_COOKIE)?.value ?? null),
+    csrfHeader: csrfExempt ? PROCESS_CSRF_TOKEN : request.headers.get(CSRF_HEADER),
     tailscaleUser: request.headers.get("tailscale-user-login"),
     requestProtocol: request.nextUrl.protocol,
     allowedTailscaleHosts: splitAllowedValues(process.env.ALLOWED_TAILSCALE_HOSTS),
@@ -81,20 +90,19 @@ export function proxy(request: NextRequest) {
       boundary.error,
     );
   }
+  const queryResponse = queryTokenResponse(request);
+  if (queryResponse) return queryResponse;
   const denied = enforceAccess(request);
   if (denied) return denied;
-
-  const start = Date.now();
+  const startedAt = Date.now();
   const forwardedHeaders = new Headers(request.headers);
   forwardedHeaders.set(CSRF_BOOTSTRAP_HEADER, PROCESS_CSRF_TOKEN);
   const response = NextResponse.next({ request: { headers: forwardedHeaders } });
-
-  writeAccessLog(request, Date.now() - start);
+  writeAccessLog(request, Date.now() - startedAt);
   applySecurityHeaders(request, response);
   return response;
 }
 
-/** Client IP as seen through Cloudflare, a reverse proxy, or neither. */
 function clientIpOf(request: NextRequest): string {
   return (
     request.headers.get("CF-Connecting-IP") ||
@@ -104,7 +112,6 @@ function clientIpOf(request: NextRequest): string {
   );
 }
 
-/** Credentials routinely arrive as query parameters; they must never be logged. */
 function redactedQuery(request: NextRequest): string {
   const sanitizedUrl = request.nextUrl.clone();
   for (const sensitiveKey of ["api_key", "key", "token", "access_token"]) {
@@ -115,7 +122,6 @@ function redactedQuery(request: NextRequest): string {
   return sanitizedUrl.search || "";
 }
 
-/** Origin + path only: a full referer can carry query secrets of its own. */
 function safeReferer(request: NextRequest): string {
   const raw = request.headers.get("Referer") || "-";
   if (raw === "-") return "-";
@@ -148,9 +154,6 @@ function applySecurityHeaders(request: NextRequest, response: NextResponse): voi
   response.headers.set("X-Frame-Options", "DENY");
   response.headers.set("X-XSS-Protection", "1; mode=block");
   response.headers.set("Referrer-Policy", "no-referrer");
-  // `secure` must follow the scheme the browser actually sees (cloudflared
-  // forwards https as x-forwarded-proto) — a Secure cookie over plain-http
-  // Tailscale access is silently dropped and every mutation then fails CSRF.
   const effectiveProto =
     request.headers.get("x-forwarded-proto")?.split(",")[0]?.trim().toLowerCase() ||
     request.nextUrl.protocol.replace(/:$/, "");
@@ -164,22 +167,9 @@ function applySecurityHeaders(request: NextRequest, response: NextResponse): voi
 
 export default proxy;
 
-// Configure which paths the middleware runs on
 export const config = {
   matcher: [
-    // Every /api/* request, unconditionally. This MUST come first and carry no
-    // extension exclusion: the privileged API routes are the token gate's whole
-    // point, and dynamic segments (/api/proxy/[...path], /api/agent/sessions/[id])
-    // let a caller append a `.png`-style suffix. If the static-asset exclusion
-    // below also covered /api, that suffix would skip the gate entirely.
     "/api/:path*",
-    /*
-     * All non-API paths except:
-     * - _next/static (static files)
-     * - _next/image (image optimization files)
-     * - favicon.ico (favicon file)
-     * - public folder files (icons/, image extensions)
-     */
     "/((?!api/|_next/static|_next/image|favicon.ico|icons/|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
   ],
 };

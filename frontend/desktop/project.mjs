@@ -1717,6 +1717,7 @@ import { cpSync as cpSync3, existsSync as existsSync12, mkdirSync as mkdirSync7 
 import { spawn as spawn3 } from "node:child_process";
 import { dirname as dirname3, resolve as resolve4 } from "node:path";
 import { fileURLToPath as fileURLToPath10 } from "node:url";
+import { resolveAccessPostureFromEnvironment } from "../src/lib/auth/access-posture.mjs";
 function copyDirectory(from, to) {
   mkdirSync7(to, { recursive: !0 }), cpSync3(from, to, { recursive: !0 });
 }
@@ -1769,12 +1770,20 @@ function stopOwnedRuntime() {
   if (agentRuntime?.exitCode === null)
     agentRuntime.kill("SIGTERM");
 }
-var projectRoot3, standaloneRoot2, nestedRoot, serverRoot, rawPort, port, runtimeUrl, agentRuntime, server, runtimeExitCode = 0;
+var projectRoot3, standaloneRoot2, nestedRoot, serverRoot, rawPort, port, serverEnvironment, accessPosture, runtimeUrl, agentRuntime, server, runtimeExitCode = 0;
 var init_start_standalone = __esm(async () => {
   projectRoot3 = resolve4(dirname3(fileURLToPath10(import.meta.url)), ".."), standaloneRoot2 = resolve4(projectRoot3, ".next", "standalone"), nestedRoot = resolve4(standaloneRoot2, "frontend"), serverRoot = existsSync12(nestedRoot) ? nestedRoot : standaloneRoot2, rawPort = process.env.PORT || "4783", port = Number(rawPort);
   if (!Number.isInteger(port) || port < 1024 || port > 65535)
     throw Error("PORT must be an integer from 1024 through 65535");
-  runtimeUrl = (process.env.LOCAL_STUDIO_AGENT_RUNTIME_URL || "http://127.0.0.1:8081").replace(/\/+$/, "");
+  serverEnvironment = {
+    ...process.env,
+    NODE_ENV: "production",
+    HOSTNAME: process.env.HOSTNAME || "127.0.0.1",
+    PORT: String(port)
+  }, accessPosture = resolveAccessPostureFromEnvironment(serverEnvironment);
+  if (accessPosture.kind === "configuration-error")
+    throw Error(accessPosture.message);
+  runtimeUrl = (serverEnvironment.LOCAL_STUDIO_AGENT_RUNTIME_URL || "http://127.0.0.1:8081").replace(/\/+$/, "");
   if (!existsSync12(standaloneRoot2))
     throw Error('Missing ".next/standalone". Run "npm run build" first.');
   copyDirectory(resolve4(projectRoot3, "public"), resolve4(serverRoot, "public"));
@@ -1783,9 +1792,7 @@ var init_start_standalone = __esm(async () => {
     cwd: serverRoot,
     stdio: "inherit",
     env: {
-      ...process.env,
-      HOSTNAME: process.env.HOSTNAME || "127.0.0.1",
-      PORT: String(port),
+      ...serverEnvironment,
       LOCAL_STUDIO_AGENT_CWD: process.env.LOCAL_STUDIO_AGENT_CWD || resolve4(projectRoot3, ".."),
       LOCAL_STUDIO_AGENT_RUNTIME_URL: runtimeUrl
     }
