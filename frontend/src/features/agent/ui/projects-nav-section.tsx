@@ -50,7 +50,7 @@ export function ProjectsNavSection({ expanded }: { expanded: boolean }) {
         setDirectoryModalOpen(true);
         return;
       }
-      if (result.project) upsertProject(result.project);
+      if (result.path) upsertProject(await addProjectFromPath(result.path));
     } catch (error) {
       setAddError(error instanceof Error ? error.message : "Failed to add project");
     }

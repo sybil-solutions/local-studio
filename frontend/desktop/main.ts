@@ -19,7 +19,6 @@ import { createMainWindow } from "./logic/window-manager";
 import { registerNavigationPolicy } from "./logic/security";
 import { startFrontendServer, stopFrontendServer, type ServerHandle } from "./logic/app-server";
 import { getUpdateState, initializeAutoUpdates, startUpdate } from "./logic/update-manager";
-import { addProject, listProjectsWithMeta, removeProject } from "./logic/projects-store";
 import { deployController } from "./logic/controller-deploy";
 import {
   getKittylitterPairingJson,
@@ -214,35 +213,17 @@ async function restartFrontendServer(port?: number): Promise<void> {
   }
 }
 
-// Resolve a renderer-supplied file reference to a real path inside the user's
-// home tree, or null. Assistant output cites files the way people write them —
-// repo-relative, "services/agent-runtime/src/foo.ts". Passing that straight to
-// realpath resolves it against the MAIN PROCESS cwd, which is the app bundle,
-// so it throws; try it as given, then against each known project root.
 function resolveHomeConfinedPath(target: unknown): string | null {
   if (typeof target !== "string" || !target.trim()) return null;
-  const raw = target.trim();
-  const candidates = [raw];
-  if (!path.isAbsolute(raw) && !raw.startsWith("~")) {
-    for (const project of listProjectsWithMeta()) {
-      if (project.path) candidates.push(path.join(project.path, raw));
-    }
+  let resolved: string;
+  try {
+    resolved = realpathSync.native(target.trim());
+  } catch {
+    return null;
   }
   const home = realpathSync.native(app.getPath("home"));
-  for (const candidate of candidates) {
-    let resolved: string;
-    try {
-      resolved = realpathSync.native(candidate);
-    } catch {
-      continue;
-    }
-    // Confined to the user's home tree, so a crafted markdown link cannot point
-    // the renderer at /etc or a mounted disk.
-    const relative = path.relative(home, resolved);
-    if (relative.startsWith("..") || path.isAbsolute(relative)) continue;
-    return resolved;
-  }
-  return null;
+  const relative = path.relative(home, resolved);
+  return relative.startsWith("..") || path.isAbsolute(relative) ? null : resolved;
 }
 
 function registerIpcHandlers(): void {
@@ -299,14 +280,7 @@ function registerIpcHandlers(): void {
       ? await dialog.showOpenDialog(owner, { properties: ["openDirectory", "createDirectory"] })
       : await dialog.showOpenDialog({ properties: ["openDirectory", "createDirectory"] });
     if (result.canceled) return null;
-    const selected = result.filePaths[0];
-    if (!selected) return null;
-    try {
-      return addProject(selected);
-    } catch (error) {
-      log.error(`Failed to add project from dialog: ${String(error)}`);
-      throw error;
-    }
+    return result.filePaths[0] ?? null;
   });
 
   ipcMain.handle(
@@ -322,23 +296,6 @@ function registerIpcHandlers(): void {
       });
     },
   );
-
-  ipcMain.handle("desktop:list-projects", async () => listProjectsWithMeta());
-
-  ipcMain.handle("desktop:add-project", async (_, directoryPath: string) => {
-    if (typeof directoryPath !== "string") {
-      throw new Error("directoryPath must be a string");
-    }
-    return addProject(directoryPath);
-  });
-
-  ipcMain.handle("desktop:remove-project", async (_, id: string) => {
-    if (typeof id !== "string") {
-      throw new Error("id must be a string");
-    }
-    removeProject(id);
-    return { ok: true } as const;
-  });
 
   ipcMain.handle("desktop:load-session-prefs", async () => {
     return readSessionPrefsFile();
