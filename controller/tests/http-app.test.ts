@@ -2,10 +2,12 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
+import { Effect } from "effect";
 import { type AppContext, AppContextService } from "../src/app-context";
 import { createControllerRuntime, type ControllerRuntime } from "../src/core/effect-runtime";
 import { primaryLogPathFor } from "../src/core/log-files";
 import { createApp } from "../src/http/app";
+import { DownloadTargetConflict } from "../src/modules/engines/downloads/download-target-reservations";
 import { parseRecipe } from "../src/modules/models/recipes/recipe-serializer";
 
 const apiKey = "controller-contract-key";
@@ -43,7 +45,10 @@ beforeAll(async () => {
   const binaryDirectory = join(temporaryDirectory, "bin");
   const dockerPath = join(binaryDirectory, "docker");
   mkdirSync(binaryDirectory, { recursive: true });
-  writeFileSync(dockerPath, "#!/bin/sh\nprintf 'Error response from daemon: No such container\\n' >&2\nexit 1\n");
+  writeFileSync(
+    dockerPath,
+    "#!/bin/sh\nprintf 'Error response from daemon: No such container\\n' >&2\nexit 1\n",
+  );
   chmodSync(dockerPath, 0o755);
   process.env["PATH"] = `${binaryDirectory}${delimiter}${process.env["PATH"] ?? ""}`;
   runtime = createControllerRuntime();
@@ -96,6 +101,25 @@ describe("controller HTTP application", () => {
     expect(await missing.json()).toEqual({ detail: "Not Found" });
   });
 
+  test("maps download target ownership conflicts to HTTP 409", async () => {
+    const originalStart = context.downloadManager.start.bind(context.downloadManager);
+    context.downloadManager.start = () =>
+      Effect.fail(new DownloadTargetConflict("active-download", "/models/shared"));
+    try {
+      const response = await app.request("/studio/downloads", {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-api-key": apiKey },
+        body: JSON.stringify({ model_id: "org/model", hf_token: "secret-token" }),
+      });
+      expect(response.status).toBe(409);
+      expect(await response.json()).toEqual({
+        detail: 'Download target "/models/shared" is reserved by active download active-download',
+      });
+    } finally {
+      context.downloadManager.start = originalStart;
+    }
+  });
+
   test("documents every registered product operation exactly once", async () => {
     const response = await app.request("/api/spec", { headers: { "x-api-key": apiKey } });
     expect(response.status).toBe(200);
@@ -103,12 +127,10 @@ describe("controller HTTP application", () => {
     const registeredOperations = new Set(
       app.routes
         .filter(
-          ({ method, path }) =>
-            method !== "ALL" && path !== "/api/spec" && path !== "/api/docs",
+          ({ method, path }) => method !== "ALL" && path !== "/api/spec" && path !== "/api/docs",
         )
         .map(
-          ({ method, path }) =>
-            `${method.toLowerCase()} ${path.replaceAll(/:([^/]+)/g, "{$1}")}`,
+          ({ method, path }) => `${method.toLowerCase()} ${path.replaceAll(/:([^/]+)/g, "{$1}")}`,
         ),
     );
     const documentedOperations = new Set(

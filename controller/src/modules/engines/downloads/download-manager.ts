@@ -20,6 +20,11 @@ import { attempt, operationError } from "../engine-operation";
 import type { DownloadFileInfo, DownloadStatus, ModelDownload } from "../types";
 import type { DownloadStore } from "./download-store";
 import {
+  DownloadTargetConflict,
+  DownloadTargetReservations,
+  type DownloadTargetReservation,
+} from "./download-target-reservations";
+import {
   buildHuggingFaceFileList,
   fetchEffect,
   fetchHuggingFaceModelInfo,
@@ -115,6 +120,12 @@ export type DownloadRequest = Schema.Schema.Type<typeof DownloadRequestSchema>;
 type ActiveDownload = {
   controller: AbortController;
   fiber: Fiber.Fiber<void, never> | null;
+  reservation: DownloadTargetReservation;
+};
+
+type DownloadTargetLease = {
+  readonly reservation: DownloadTargetReservation;
+  transferred: boolean;
 };
 
 const toTimestamp = (): string => new Date().toISOString();
@@ -151,6 +162,7 @@ const closeWriter = (
 
 export class DownloadManager {
   private readonly active = new Map<string, ActiveDownload>();
+  private readonly targetReservations = new DownloadTargetReservations();
 
   private constructor(
     private readonly config: Config,
@@ -199,7 +211,9 @@ export class DownloadManager {
       .pipe(Effect.map((download) => (download ? normalizeDownload(download) : null)));
   }
 
-  public start(request: DownloadRequest): Effect.Effect<ModelDownload, EngineOperationError> {
+  public start(
+    request: DownloadRequest,
+  ): Effect.Effect<ModelDownload, EngineOperationError | DownloadTargetConflict> {
     const manager = this;
     return Effect.gen(function* () {
       const modelId = request.model_id?.trim();
@@ -213,46 +227,56 @@ export class DownloadManager {
       const targetDirectory = yield* attempt("resolve-download-root", () =>
         resolveDownloadRoot(manager.config, modelId, request.destination_dir),
       );
-      yield* manager.ensureModelsDirectoryWritable();
+      const id = randomUUID();
+      const lease = yield* manager.reserveTarget(targetDirectory, id);
       const hfToken = request.hf_token ?? null;
-      const info = yield* fetchHuggingFaceModelInfo(
-        modelId,
-        request.revision,
-        hfToken,
-        manager.fetchImpl,
-      );
-      const files = yield* attempt("select-download-files", () =>
-        buildHuggingFaceFileList(info, allowPatterns, ignorePatterns),
-      );
-      if (files.length === 0) {
-        return yield* Effect.fail(
-          operationError("start-download", "No downloadable files found for this model"),
+      return yield* Effect.gen(function* () {
+        yield* manager.ensureModelsDirectoryWritable();
+        const info = yield* fetchHuggingFaceModelInfo(
+          modelId,
+          request.revision,
+          hfToken,
+          manager.fetchImpl,
         );
-      }
-      const existing = findReusableDownload(
-        yield* manager.store.list(),
-        modelId,
-        targetDirectory,
-        files,
+        const files = yield* attempt("select-download-files", () =>
+          buildHuggingFaceFileList(info, allowPatterns, ignorePatterns),
+        );
+        if (files.length === 0) {
+          return yield* Effect.fail(
+            operationError("start-download", "No downloadable files found for this model"),
+          );
+        }
+        const existing = findReusableDownload(
+          yield* manager.store.list(),
+          modelId,
+          targetDirectory,
+          files,
+        );
+        if (existing) return existing;
+        const now = toTimestamp();
+        const download: ModelDownload = {
+          id,
+          model_id: modelId,
+          revision: info.sha ?? request.revision ?? null,
+          status: "queued",
+          created_at: now,
+          updated_at: now,
+          target_dir: targetDirectory,
+          total_bytes: sumTotalBytes(files),
+          downloaded_bytes: 0,
+          files,
+          error: null,
+        };
+        yield* manager.store.save(download);
+        yield* manager.launchRun(download.id, hfToken, lease);
+        return download;
+      }).pipe(
+        Effect.ensuring(
+          Effect.sync(() => {
+            if (!lease.transferred) manager.targetReservations.release(lease.reservation);
+          }),
+        ),
       );
-      if (existing) return existing;
-      const now = toTimestamp();
-      const download: ModelDownload = {
-        id: randomUUID(),
-        model_id: modelId,
-        revision: info.sha ?? request.revision ?? null,
-        status: "queued",
-        created_at: now,
-        updated_at: now,
-        target_dir: targetDirectory,
-        total_bytes: sumTotalBytes(files),
-        downloaded_bytes: 0,
-        files,
-        error: null,
-      };
-      yield* manager.store.save(download);
-      yield* manager.launchRun(download.id, hfToken);
-      return download;
     });
   }
 
@@ -287,18 +311,27 @@ export class DownloadManager {
   public resume(
     id: string,
     hfToken: string | null = null,
-  ): Effect.Effect<ModelDownload, EngineOperationError> {
+  ): Effect.Effect<ModelDownload, EngineOperationError | DownloadTargetConflict> {
     const manager = this;
     return Effect.gen(function* () {
       const download = yield* manager.requireDownload(id);
       if (download.status === "completed") return download;
-      download.status = "queued";
-      download.updated_at = toTimestamp();
-      download.error = null;
-      yield* manager.store.save(download);
-      yield* manager.launchRun(download.id, hfToken);
-      yield* manager.publishState(download, "queued");
-      return download;
+      const lease = yield* manager.reserveTarget(download.target_dir, download.id);
+      return yield* Effect.gen(function* () {
+        download.status = "queued";
+        download.updated_at = toTimestamp();
+        download.error = null;
+        yield* manager.store.save(download);
+        yield* manager.publishState(download, "queued");
+        yield* manager.launchRun(download.id, hfToken, lease);
+        return download;
+      }).pipe(
+        Effect.ensuring(
+          Effect.sync(() => {
+            if (!lease.transferred) manager.targetReservations.release(lease.reservation);
+          }),
+        ),
+      );
     });
   }
 
@@ -318,15 +351,31 @@ export class DownloadManager {
   public shutdown(): Effect.Effect<void> {
     const manager = this;
     return Effect.gen(function* () {
-      const active = [...manager.active.values()];
-      for (const download of active) download.controller.abort();
+      const active = [...manager.active.entries()];
+      for (const [, download] of active) download.controller.abort();
       yield* Effect.forEach(
         active,
-        (download) =>
+        ([, download]) =>
           download.fiber ? Fiber.interrupt(download.fiber).pipe(Effect.asVoid) : Effect.void,
         { discard: true },
       );
-      manager.active.clear();
+      for (const [id, download] of active) manager.releaseActive(id, download);
+    });
+  }
+
+  private reserveTarget(
+    target: string,
+    downloadId: string,
+  ): Effect.Effect<DownloadTargetLease, EngineOperationError | DownloadTargetConflict> {
+    return Effect.try({
+      try: () => ({
+        reservation: this.targetReservations.acquire(target, downloadId),
+        transferred: false,
+      }),
+      catch: (cause) =>
+        cause instanceof DownloadTargetConflict
+          ? cause
+          : operationError("reserve-download-target", cause),
     });
   }
 
@@ -342,14 +391,33 @@ export class DownloadManager {
       );
   }
 
-  private launchRun(id: string, hfToken: string | null): Effect.Effect<void> {
+  private launchRun(
+    id: string,
+    hfToken: string | null,
+    lease: DownloadTargetLease,
+  ): Effect.Effect<void, EngineOperationError> {
     const manager = this;
+    let owner: ActiveDownload | null = null;
     return Effect.gen(function* () {
-      if (manager.active.has(id)) return;
-      const owner: ActiveDownload = { controller: new AbortController(), fiber: null };
+      if (manager.active.has(id)) {
+        return yield* Effect.fail(operationError("launch-download", "Download already active"));
+      }
+      owner = {
+        controller: new AbortController(),
+        fiber: null,
+        reservation: lease.reservation,
+      };
       manager.active.set(id, owner);
       owner.fiber = yield* Effect.forkDetach(manager.runDownload(id, hfToken, owner));
-    });
+      lease.transferred = true;
+    }).pipe(
+      Effect.ensuring(
+        Effect.sync(() => {
+          if (owner && !lease.transferred) manager.releaseActive(id, owner);
+        }),
+      ),
+      Effect.uninterruptible,
+    );
   }
 
   private abortActive(id: string): Effect.Effect<void> {
@@ -358,7 +426,12 @@ export class DownloadManager {
     active.controller.abort();
     return active.fiber
       ? Fiber.interrupt(active.fiber).pipe(Effect.asVoid)
-      : Effect.sync(() => this.active.delete(id)).pipe(Effect.asVoid);
+      : Effect.sync(() => this.releaseActive(id, active));
+  }
+
+  private releaseActive(id: string, owner: ActiveDownload): void {
+    if (this.active.get(id) === owner) this.active.delete(id);
+    this.targetReservations.release(owner.reservation);
   }
 
   private runDownload(
@@ -422,22 +495,13 @@ export class DownloadManager {
             }
           }).pipe(Effect.catch(() => Effect.void));
         }),
-        Effect.ensuring(
-          Effect.sync(() => {
-            if (stillOwner()) manager.active.delete(id);
-          }),
-        ),
       );
       yield* operation;
     }).pipe(
       Effect.catch((error) =>
         Effect.sync(() => manager.logger.error("Download failed", { error: error.message, id })),
       ),
-      Effect.ensuring(
-        Effect.sync(() => {
-          if (manager.active.get(id) === owner) manager.active.delete(id);
-        }),
-      ),
+      Effect.ensuring(Effect.sync(() => manager.releaseActive(id, owner))),
     );
   }
 
