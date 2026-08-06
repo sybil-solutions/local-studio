@@ -5,6 +5,7 @@ import { useCopiedFlag } from "@/features/agent/ui/use-copied-flag";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { normalizeBrowserInput } from "@/features/agent/tools/browser-url";
+import { mutateBrowserHost } from "@/features/agent/ui/agent-browser-effects";
 import { useToolsActions } from "@/features/agent/tools/context";
 import type { ComputerTab } from "@/features/agent/tools/types";
 import { writeClipboardText } from "@/lib/clipboard";
@@ -232,12 +233,13 @@ function buildComponentsWithAppLinks(tools: ToolHandlers): Components {
           rel="noreferrer noopener"
           onClick={(event) => {
             if (!href) return;
-            const next = normalizeBrowserInput(href, "");
+            const next = normalizeBrowserInput(href);
             if (!next) return;
             event.preventDefault();
             tools.setComputerOpen(true);
             tools.setComputerTab("browser");
             tools.setBrowserUrl(next, next);
+            void mutateBrowserHost("navigate", { url: next });
           }}
           title={href}
         >

@@ -18,6 +18,7 @@ import type { Session, UpdateSession } from "@/features/agent/runtime/types";
 import type { AgentModel } from "@/features/agent/workspace/types";
 import { AgentModelPicker } from "@/features/agent/ui/agent-model-picker";
 import { ChatPane } from "@/features/agent/ui/chat-pane";
+import type { BrowserMutationResult } from "@/features/agent/ui/agent-browser-effects";
 
 const LazyAgentBrowser = lazy(() =>
   import("@/features/agent/ui/agent-browser").then(({ AgentBrowser }) => ({
@@ -70,10 +71,9 @@ type ComputerTabPanelProps = {
   gitSummary?: GitSummary | null;
   models: AgentModel[];
   modelsLoading: boolean;
-  isElectron: boolean;
   onCloseSideChat: () => void;
   onCompactSession?: () => Promise<void>;
-  onNavigateBrowser: (value: string) => void;
+  onNavigateBrowser: (value: string) => Promise<BrowserMutationResult>;
   onOpenSideChat: (draft?: SideChatDraft) => void;
   onOpenTerminal: () => void;
   onRenameSideChat: (tabId: string, title: string) => void;
@@ -198,7 +198,7 @@ function SideChatTab({
   );
 }
 
-function BrowserTab({ isElectron, onNavigateBrowser, tools }: ComputerTabPanelProps) {
+function BrowserTab({ onNavigateBrowser, tools }: ComputerTabPanelProps) {
   return (
     <LazyAgentBrowser
       url={tools.browser.url}
@@ -207,7 +207,6 @@ function BrowserTab({ isElectron, onNavigateBrowser, tools }: ComputerTabPanelPr
       onNavigate={onNavigateBrowser}
       onLocationChange={(next) => tools.setBrowserUrl(next, next)}
       onClose={() => tools.setComputerOpen(false)}
-      isElectron={isElectron}
       visible={tools.computer.open}
     />
   );

@@ -3,6 +3,11 @@ import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createAgentRuntimeApp } from "../src/http/app";
+import {
+  createBrowserOperationQueue,
+  handleBrowserFrame,
+  handleBrowserVerb,
+} from "../src/http/browser-handlers";
 
 const expectedOperations = [
   "GET /health",
@@ -61,10 +66,7 @@ const routePath = (root: string, directory: string): string =>
     .join("/")}`;
 
 const collectFrontendOperations = (): Set<string> => {
-  const root = join(
-    dirname(fileURLToPath(import.meta.url)),
-    "../../../frontend/src/app/api/agent",
-  );
+  const root = join(dirname(fileURLToPath(import.meta.url)), "../../../frontend/src/app/api/agent");
   const operations = new Set<string>();
   const visit = (directory: string): void => {
     for (const entry of readdirSync(directory, { withFileTypes: true })) {
@@ -93,6 +95,57 @@ describe("agent runtime HTTP application", () => {
       );
     } finally {
       litterBridgeGateway.dispose();
+    }
+  });
+
+  test("serializes browser callers and exposes fallback location to frames", async () => {
+    const run = createBrowserOperationQueue();
+    const gate = Promise.withResolvers<void>();
+    const calls: string[] = [];
+    const first = run(async () => {
+      calls.push("frame");
+      await gate.promise;
+    });
+    const second = run(async () => {
+      calls.push("navigate");
+    });
+    await Bun.sleep(0);
+    expect(calls).toEqual(["frame"]);
+    gate.resolve();
+    await Promise.all([first, second]);
+    expect(calls).toEqual(["frame", "navigate"]);
+
+    const previousChrome = process.env["LOCAL_STUDIO_CHROME_PATH"];
+    process.env["LOCAL_STUDIO_CHROME_PATH"] = "/missing/local-studio-chromium";
+    globalThis.__LOCAL_STUDIO_BROWSER_READER_HOST_RESOLVER_FOR_TEST = async () => ["93.184.216.34"];
+    globalThis.__LOCAL_STUDIO_BROWSER_READER_REQUEST_FOR_TEST = async (url) => ({
+      status: 200,
+      ok: true,
+      url,
+      contentType: "text/html",
+      body: "<title>Fallback</title><body>ready</body>",
+    });
+    try {
+      const url = "https://fallback.test/page";
+      const navigate = await handleBrowserVerb(
+        new Request("http://runtime/api/agent/browser/navigate", {
+          method: "POST",
+          body: JSON.stringify({ url }),
+        }),
+        "navigate",
+      );
+      expect(await navigate.json()).toEqual({
+        ok: true,
+        data: { url, title: "Fallback", readingMode: true },
+      });
+      const frame = await handleBrowserFrame();
+      expect(frame.status).toBe(503);
+      expect((await frame.json()).data.url).toBe(url);
+    } finally {
+      if (previousChrome === undefined) delete process.env["LOCAL_STUDIO_CHROME_PATH"];
+      else process.env["LOCAL_STUDIO_CHROME_PATH"] = previousChrome;
+      globalThis.__LOCAL_STUDIO_BROWSER_READER_HOST_RESOLVER_FOR_TEST = undefined;
+      globalThis.__LOCAL_STUDIO_BROWSER_READER_REQUEST_FOR_TEST = undefined;
     }
   });
 

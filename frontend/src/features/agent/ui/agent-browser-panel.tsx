@@ -1,12 +1,6 @@
 "use client";
 
-import {
-  useCallback,
-  useMemo,
-  useState,
-  type ComponentType,
-  type KeyboardEvent,
-} from "react";
+import { useCallback, useMemo, useState, type ComponentType, type KeyboardEvent } from "react";
 import {
   Activity,
   FolderTree,
@@ -34,10 +28,7 @@ import {
 } from "@/features/agent/ui/use-persistent-terminal-owners";
 import { normalizeBrowserInput } from "@/features/agent/tools/browser-url";
 import { MAX_COMPUTER_WIDTH, MIN_COMPUTER_WIDTH } from "@/features/agent/tools/persistence";
-import {
-  sanitizeBrowserPaneUrl,
-  sanitizeLocalFileUrl,
-} from "@/features/agent/sanitize-embedded-browser-url";
+import { sanitizeBrowserPaneUrl } from "@/features/agent/sanitize-embedded-browser-url";
 import { useTools } from "@/features/agent/tools/context";
 import type { ComputerTab } from "@/features/agent/tools/types";
 import type { GitSummary, Project } from "@/features/agent/projects/types";
@@ -55,6 +46,7 @@ import {
   type SideChatTabsUpdater,
 } from "@/features/agent/ui/computer-tab-panel";
 import { PersistentTerminals } from "@/features/agent/ui/persistent-terminals";
+import { mutateBrowserHost } from "@/features/agent/ui/agent-browser-effects";
 import type { WorkspaceHandles } from "@/features/agent/ui/use-workspace";
 
 type AgentBrowserPanelHandles = Pick<
@@ -112,10 +104,6 @@ function closePersistedTerminalOwner(ownerKey: string) {
   if (owner) void terminalBridge()?.closeOwner?.(owner.mountKey);
 }
 
-function acceptedBrowserUrl(url: string): string | null {
-  return /^file:\/\//i.test(url) ? sanitizeLocalFileUrl(url) : sanitizeBrowserPaneUrl(url);
-}
-
 export function AgentBrowserPanel({
   handles,
   activeProject,
@@ -134,7 +122,6 @@ export function AgentBrowserPanel({
   const sideChatSession =
     sessions.find((session) => session.id === sideChatSeed.id) ?? sideChatSeed;
   const { registerComputerAside, startComputerResize } = handles;
-  const isElectron = typeof navigator !== "undefined" && /electron/i.test(navigator.userAgent);
   const terminalOwner = useMemo(
     () => terminalOwnerFor(activeProject, focusedSession),
     [activeProject, focusedSession],
@@ -180,18 +167,13 @@ export function AgentBrowserPanel({
     },
     [selectTerminalOwner, visibleTerminalState.owners],
   );
-  const navigateBrowser = (value: string) => {
-    const next = normalizeBrowserInput(value, focusedSession?.cwd ?? activeProject?.path ?? "");
-    if (!next) return;
-    const accepted = acceptedBrowserUrl(next);
-    if (!accepted) return;
-    tools.setBrowserUrl(accepted, accepted);
-    if (/^file:\/\//i.test(accepted)) return;
-    void fetch("/api/agent/browser/navigate", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ url: accepted }),
-    }).catch(() => undefined);
+  const navigateBrowser = async (value: string) => {
+    const next = normalizeBrowserInput(value);
+    if (!next) return { error: "Project files open in Files, not Browser." };
+    const accepted = sanitizeBrowserPaneUrl(next);
+    if (!accepted) return { error: "Browser navigation supports HTTP(S) URLs only." };
+    tools.setBrowserInput(accepted);
+    return mutateBrowserHost("navigate", { url: accepted });
   };
   const openSideChat = useCallback(
     (draft?: SideChatDraft) => {
@@ -301,7 +283,6 @@ export function AgentBrowserPanel({
         gitSummary={gitSummary}
         models={models}
         modelsLoading={modelsLoading}
-        isElectron={isElectron}
         onCloseSideChat={closeSideChat}
         onCompactSession={handles.compactFocusedSession}
         onNavigateBrowser={navigateBrowser}

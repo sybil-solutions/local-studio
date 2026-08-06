@@ -28,7 +28,6 @@ export function createMainWindow(appUrl: string): BrowserWindow {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
-      webviewTag: true,
       webSecurity: true,
       devTools: !process.env.LOCAL_STUDIO_DESKTOP_DISABLE_DEVTOOLS,
       allowRunningInsecureContent: false,

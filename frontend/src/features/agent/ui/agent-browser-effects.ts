@@ -1,5 +1,5 @@
-import { useRef, type Dispatch, type RefObject, type SetStateAction } from "react";
-import type { BrowserPaneState } from "@/features/agent/ui/agent-browser-screencast";
+import { type Dispatch, type SetStateAction } from "react";
+import { Effect, Schema, Semaphore } from "effect";
 import { useMountSubscription } from "@/hooks/use-mount-subscription";
 
 export type LocalhostSite = {
@@ -52,107 +52,110 @@ export function useLocalhostSitesEffects({
   }, [enabled, onErrorChange, onLoadingChange, onSitesChange]);
 }
 
-type BrowserWebview = HTMLElement & {
-  executeJavaScript: (script: string, userGesture?: boolean) => Promise<unknown>;
-  getURL: () => string;
-  loadURL: (url: string) => Promise<void>;
-  getTitle?: () => string;
-  canGoBack?: () => boolean;
-  canGoForward?: () => boolean;
+export type BrowserPaneState = {
+  url: string;
+  title: string;
+  canGoBack: boolean;
+  canGoForward: boolean;
 };
 
 type UseAgentBrowserEffectsParams = {
   url: string;
   readingMode: boolean;
-  isElectron: boolean;
-  webviewRef: RefObject<BrowserWebview | null>;
   fetchReadable: (target: string) => Promise<void>;
-  onLocationChange?: (value: string) => void;
-  onNavState?: (state: BrowserPaneState) => void;
   enabled?: boolean;
 };
-
-export const shouldLoadBrowserUrl = (desired: string, current: string, observed: string): boolean =>
-  Boolean(desired && desired !== observed && desired !== current);
-
-export const shouldSyncBrowserLocation = (
-  desired: string,
-  observed: string,
-  current: string,
-): boolean => desired === observed || current === desired;
 
 export function useAgentBrowserEffects({
   url,
   readingMode,
-  isElectron,
-  webviewRef,
   fetchReadable,
-  onLocationChange,
-  onNavState,
   enabled = true,
 }: UseAgentBrowserEffectsParams): void {
-  const observedUrl = useRef(url);
-
   useMountSubscription(() => {
     if (enabled && url && readingMode) {
       void fetchReadable(url);
     }
   }, [enabled, fetchReadable, readingMode, url]);
-
-  useMountSubscription(() => {
-    if (!enabled || !isElectron || readingMode) return;
-    const webview = webviewRef.current;
-    if (!webview) return;
-    const navigate = () => {
-      if (typeof webview.getURL !== "function" || typeof webview.loadURL !== "function") return;
-      try {
-        const current = webview.getURL();
-        if (shouldLoadBrowserUrl(url, current, observedUrl.current)) {
-          void webview
-            .loadURL(url)
-            .then(() => {
-              const loaded = webview.getURL();
-              observedUrl.current = loaded;
-              if (loaded) onLocationChange?.(loaded);
-            })
-            .catch(() => undefined);
-        }
-      } catch {
-        return;
-      }
-    };
-    navigate();
-    webview.addEventListener("dom-ready", navigate as EventListener);
-    return () => webview.removeEventListener("dom-ready", navigate as EventListener);
-  }, [enabled, isElectron, onLocationChange, readingMode, url, webviewRef]);
-
-  useMountSubscription(() => {
-    if (!enabled || !isElectron || readingMode) return;
-    const webview = webviewRef.current;
-    if (!webview) return;
-    const sync = () => {
-      try {
-        const current = webview.getURL();
-        if (!shouldSyncBrowserLocation(url, observedUrl.current, current)) return;
-        observedUrl.current = current;
-        if (current) onLocationChange?.(current);
-        onNavState?.({
-          url: current || url,
-          title: typeof webview.getTitle === "function" ? webview.getTitle() : "",
-          canGoBack: typeof webview.canGoBack === "function" ? webview.canGoBack() : false,
-          canGoForward: typeof webview.canGoForward === "function" ? webview.canGoForward() : false,
-        });
-      } catch {
-        // Ignore transient webview state while navigating.
-      }
-    };
-    webview.addEventListener("did-navigate", sync as EventListener);
-    webview.addEventListener("did-navigate-in-page", sync as EventListener);
-    webview.addEventListener("did-stop-loading", sync as EventListener);
-    return () => {
-      webview.removeEventListener("did-navigate", sync as EventListener);
-      webview.removeEventListener("did-navigate-in-page", sync as EventListener);
-      webview.removeEventListener("did-stop-loading", sync as EventListener);
-    };
-  }, [enabled, isElectron, onLocationChange, onNavState, readingMode, url, webviewRef]);
 }
+
+type BrowserHostResponse = { status: number; body: unknown };
+export type BrowserHostTransport = (path: string, body?: unknown) => Promise<BrowserHostResponse>;
+export type BrowserMutationResult = { error: string | null; url?: string; readingMode?: boolean };
+
+const BrowserActionResponseSchema = Schema.Struct({
+  ok: Schema.Boolean,
+  error: Schema.optional(Schema.String),
+  data: Schema.optional(
+    Schema.Struct({
+      url: Schema.optional(Schema.String),
+      readingMode: Schema.optional(Schema.Boolean),
+    }),
+  ),
+});
+
+const requestBrowserHost: BrowserHostTransport = async (path, body) => {
+  const response = await fetch(`/api/agent/browser/${path}`, {
+    method: "POST",
+    ...(body === undefined
+      ? {}
+      : { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }),
+  });
+  return { status: response.status, body: await response.json() };
+};
+
+const messageFor = (error: unknown): string =>
+  error instanceof Error ? error.message : "Browser command failed";
+
+export function createBrowserHostCoordinator(transport: BrowserHostTransport) {
+  let pollSequence = 0;
+  let mutationSequence = 0;
+  let settledMutation = 0;
+  let locationBarrier = 0;
+  const lock = Semaphore.makeUnsafe(1);
+
+  const mutate = (path: string, body?: unknown): Promise<BrowserMutationResult> => {
+    const sequence = (mutationSequence += 1);
+    const program = Effect.gen(function* () {
+      const response = yield* Effect.tryPromise({
+        try: () => transport(path, body),
+        catch: (error) => error,
+      });
+      const payload = yield* Schema.decodeUnknownEffect(BrowserActionResponseSchema)(response.body);
+      if (response.status < 200 || response.status >= 300 || !payload.ok) {
+        return yield* Effect.fail(
+          new Error(payload.error ?? `Browser command failed with HTTP ${response.status}`),
+        );
+      }
+      return { error: null, ...payload.data };
+    }).pipe(
+      Effect.match({
+        onFailure: (error) => ({ error: messageFor(error) }),
+        onSuccess: (result) => result,
+      }),
+      Effect.ensuring(
+        Effect.sync(() => {
+          if (sequence !== mutationSequence) return;
+          settledMutation = sequence;
+          locationBarrier = pollSequence;
+        }),
+      ),
+    );
+    return Effect.runPromise(lock.withPermit(program));
+  };
+
+  return {
+    beginFrame: () => (pollSequence += 1),
+    locationIsAuthoritative: (sequence: number) =>
+      settledMutation === mutationSequence && sequence > locationBarrier,
+    mutate,
+  };
+}
+
+const browserHostCoordinator = createBrowserHostCoordinator(requestBrowserHost);
+
+export const beginBrowserFrame = (): number => browserHostCoordinator.beginFrame();
+export const browserFrameLocationIsAuthoritative = (sequence: number): boolean =>
+  browserHostCoordinator.locationIsAuthoritative(sequence);
+export const mutateBrowserHost = (path: string, body?: unknown): Promise<BrowserMutationResult> =>
+  browserHostCoordinator.mutate(path, body);
