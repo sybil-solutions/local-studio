@@ -1,3 +1,4 @@
+import { RUNTIME_JOB_TYPES } from "@local-studio/contracts/system";
 import { Effect, Schema } from "effect";
 import { badRequest, notFound } from "../../core/errors";
 import { decodeJsonBody } from "../../core/validation";
@@ -22,7 +23,6 @@ import {
 import { getVllmConfigHelp, getVllmRuntimeInfo } from "./runtimes/vllm-runtime";
 
 const RUNTIME_JOB_BACKENDS = ["vllm", "sglang", "llamacpp", "mlx", "cuda", "rocm"] as const;
-const RUNTIME_JOB_TYPES = ["install", "update", "download", "inspect"] as const;
 
 type RuntimeJobBody = {
   backend?: (typeof RUNTIME_JOB_BACKENDS)[number];
