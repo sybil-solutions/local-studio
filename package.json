@@ -20,8 +20,9 @@
     "start": "npm --prefix frontend start",
     "test": "npm --prefix frontend test && npm --prefix services/agent-runtime test",
     "test:e2e": "npm --prefix frontend run test:e2e",
-    "check": "npm run check:automation && npm run check:contracts && npm run check:structure && npm run check:release && npm run check:frontend && npm run check:controller && npm run check:agent-runtime",
+    "check": "npm run check:automation && npm run check:workflow-pins && npm run check:contracts && npm run check:structure && npm run check:release && npm run check:frontend && npm run check:controller && npm run check:agent-runtime",
     "check:automation": "node scripts/project.mjs audit-layout",
+    "check:workflow-pins": "node --test .github/workflow-policy.test.mjs && node .github/workflow-policy.mjs",
     "check:contracts": "node scripts/project.mjs validate-contracts",
     "check:structure": "node scripts/project.mjs validate-structure",
     "check:release": "node scripts/project.mjs self-test",
@@ -33,5 +34,12 @@
     "desktop:build": "cd frontend && npm run desktop:build",
     "desktop:dist": "cd frontend && npm run desktop:dist",
     "desktop:pack": "cd frontend && npm run desktop:pack"
+  },
+  "devDependencies": {
+    "@semantic-release/commit-analyzer": "13.0.1",
+    "@semantic-release/github": "12.0.9",
+    "@semantic-release/release-notes-generator": "14.1.1",
+    "conventional-changelog-conventionalcommits": "10.2.1",
+    "semantic-release": "25.0.9"
   }
 }
