@@ -6,6 +6,13 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadPersistedConfig, type ProviderConfig } from "./persisted-config";
 import { parseBooleanFlag } from "../core/validation";
+import {
+  decodeAllowedHosts,
+  defaultAllowedHosts,
+  isLoopbackHost,
+  isWildcardHost,
+  normalizeHttpOrigin,
+} from "./request-authority";
 
 const positiveIntegerSchema = Schema.Number.check(Schema.isInt(), Schema.isGreaterThan(0));
 
@@ -13,6 +20,7 @@ export interface Config {
   host: string;
   port: number;
   api_key?: string;
+  allowed_hosts?: string[];
   cors_origins?: string[];
   inference_host: string;
   inference_port: number;
@@ -52,26 +60,14 @@ export const createConfig = (): Config => {
   const controllerRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
   const defaultDataDirectory = resolve(controllerRoot, "..", "data");
 
-  const isLoopbackHost = (value: string): boolean => {
-    const normalized = value.trim().toLowerCase();
-    return normalized === "127.0.0.1" || normalized === "localhost" || normalized === "::1";
-  };
-
-  const normalizeOrigin = (value: string): string | null => {
-    try {
-      const origin = new URL(value.trim()).origin;
-      return origin === "null" ? null : origin;
-    } catch {
-      return null;
-    }
-  };
-
   const parseCorsOrigins = (value: string | undefined): string[] => {
     const defaults = [
       "http://localhost:3000",
       "http://127.0.0.1:3000",
+      "http://[::1]:3000",
       "http://localhost:3001",
       "http://127.0.0.1:3001",
+      "http://[::1]:3001",
       "http://host.docker.internal:3000",
       "http://host.docker.internal:3001",
     ];
@@ -80,7 +76,7 @@ export const createConfig = (): Config => {
     return [
       ...new Set(
         candidates
-          .map((entry) => normalizeOrigin(entry))
+          .map((entry) => normalizeHttpOrigin(entry))
           .filter((entry): entry is string => Boolean(entry)),
       ),
     ];
@@ -91,6 +87,7 @@ export const createConfig = (): Config => {
     LOCAL_STUDIO_PORT: positiveIntegerSchema,
     LOCAL_STUDIO_API_KEY: Schema.optional(Schema.String),
     LOCAL_STUDIO_ALLOW_UNAUTHENTICATED: Schema.optional(Schema.String),
+    LOCAL_STUDIO_ALLOWED_HOSTS: Schema.optional(Schema.String),
     LOCAL_STUDIO_CORS_ORIGINS: Schema.optional(Schema.String),
     LOCAL_STUDIO_INFERENCE_HOST: Schema.String,
     LOCAL_STUDIO_INFERENCE_PORT: positiveIntegerSchema,
@@ -133,6 +130,12 @@ export const createConfig = (): Config => {
   const databasePath = resolve(
     parsed.LOCAL_STUDIO_DB_PATH ?? resolve(dataDirectory, "controller.db"),
   );
+  const apiKey = parsed.LOCAL_STUDIO_API_KEY?.trim();
+  const allowedHosts = apiKey
+    ? undefined
+    : parsed.LOCAL_STUDIO_ALLOWED_HOSTS?.trim()
+      ? decodeAllowedHosts(parsed.LOCAL_STUDIO_ALLOWED_HOSTS)
+      : defaultAllowedHosts(host);
 
   const config: Config = {
     host,
@@ -144,18 +147,24 @@ export const createConfig = (): Config => {
     db_path: databasePath,
     models_dir: resolve(parsed.LOCAL_STUDIO_MODELS_DIR),
     strict_openai_models: strictOpenAIModelsEnabled,
+    ...(allowedHosts ? { allowed_hosts: allowedHosts } : {}),
     cors_origins: parseCorsOrigins(parsed.LOCAL_STUDIO_CORS_ORIGINS),
     providers: [],
   };
 
-  if (parsed.LOCAL_STUDIO_API_KEY) {
-    config.api_key = parsed.LOCAL_STUDIO_API_KEY;
+  if (apiKey) {
+    config.api_key = apiKey;
   }
 
   const allowUnauthenticated = parseBooleanFlag(parsed.LOCAL_STUDIO_ALLOW_UNAUTHENTICATED);
   if (!config.api_key && !allowUnauthenticated && !isLoopbackHost(host)) {
     throw new Error(
       "LOCAL_STUDIO_API_KEY is required when binding the controller to a non-loopback host. Set LOCAL_STUDIO_ALLOW_UNAUTHENTICATED=true only for trusted local environments.",
+    );
+  }
+  if (!config.api_key && isWildcardHost(host) && allowedHosts?.length === 0) {
+    throw new Error(
+      "LOCAL_STUDIO_ALLOWED_HOSTS is required for a keyless wildcard controller bind",
     );
   }
 

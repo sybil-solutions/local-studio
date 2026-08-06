@@ -85,6 +85,17 @@ describe("controller HTTP application", () => {
     expect(rejected.headers.get("access-control-allow-origin")).toBeNull();
   });
 
+  test("leaves API-key authority handling unchanged", async () => {
+    const response = await app.request("/api/spec", {
+      headers: {
+        host: "attacker.example",
+        origin: "https://attacker.example",
+        "x-api-key": apiKey,
+      },
+    });
+    expect(response.status).toBe(200);
+  });
+
   test("serves API documentation and a stable JSON 404", async () => {
     const headers = { "x-api-key": apiKey };
     const docs = await app.request("/api/docs", { headers });

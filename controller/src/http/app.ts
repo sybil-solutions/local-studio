@@ -18,6 +18,7 @@ import { registerSpeechRoutes } from "../modules/speech/routes";
 import { documentRoute, mergeRoutes, type ControllerRouteApp } from "./route-registrar";
 import {
   createAuthMiddleware,
+  createKeylessRequestGuardMiddleware,
   createMutatingRateLimitMiddleware,
   createReadRateLimitMiddleware,
 } from "./security-middleware";
@@ -49,6 +50,7 @@ export const createApp = (
   const allowedCorsOrigins = context.config.cors_origins ?? [];
 
   app.use("*", controllerRuntimeMiddleware(runtime));
+  app.use("*", createKeylessRequestGuardMiddleware(context));
 
   app.use(
     "*",

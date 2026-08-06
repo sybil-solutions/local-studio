@@ -2,6 +2,7 @@ import { timingSafeEqual } from "node:crypto";
 import { Effect } from "effect";
 import type { MiddlewareHandler, Next } from "hono";
 import type { AppContext } from "../app-context";
+import { normalizeHttpOrigin, normalizeRequestAuthority } from "../config/request-authority";
 import { effectMiddleware } from "./effect-handler";
 
 const MUTATING_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
@@ -85,6 +86,36 @@ const rateLimitKey = (path: string, method: string, clientIp: string): string =>
 
 const nextEffect = (next: Next): Effect.Effect<void, unknown> =>
   Effect.tryPromise({ try: next, catch: (error) => error });
+
+const requestAuthority = (url: string, hostHeader: string | undefined): string | null => {
+  if (hostHeader !== undefined) return hostHeader;
+  try {
+    return new URL(url).host;
+  } catch {
+    return null;
+  }
+};
+
+export function createKeylessRequestGuardMiddleware(context: AppContext): MiddlewareHandler {
+  return effectMiddleware((ctx, next) =>
+    Effect.suspend(() => {
+      if (context.config.api_key?.trim()) return nextEffect(next);
+      const authority = requestAuthority(ctx.req.url, ctx.req.header("host"));
+      const host = authority ? normalizeRequestAuthority(authority, context.config.port) : null;
+      const originHeader = ctx.req.header("origin");
+      const origin = originHeader === undefined ? undefined : normalizeHttpOrigin(originHeader);
+      if (
+        !host ||
+        !(context.config.allowed_hosts ?? []).includes(host) ||
+        origin === null ||
+        (origin !== undefined && !(context.config.cors_origins ?? []).includes(origin))
+      ) {
+        return Effect.succeed(ctx.json({ detail: "Forbidden request origin" }, { status: 403 }));
+      }
+      return nextEffect(next);
+    }),
+  );
+}
 
 export function createAuthMiddleware(context: AppContext): MiddlewareHandler {
   return effectMiddleware((ctx, next) =>
