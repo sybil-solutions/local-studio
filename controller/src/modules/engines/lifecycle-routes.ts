@@ -38,12 +38,15 @@ export const registerLifecycleRoutes = defineRoutes((app, context) =>
     ),
 
     app.post(
-      "/launch/:recipeId/cancel",
+      "/launch/:recipeId/cancel/:attemptNonce",
       documentRoute,
       effectHandler((ctx) =>
         Effect.gen(function* () {
           const recipeId = ctx.req.param("recipeId") ?? "";
-          const cancelled = yield* context.bridge.cancelLaunch();
+          const cancelled = yield* context.bridge.cancelLaunch(
+            recipeId,
+            ctx.req.param("attemptNonce") ?? "",
+          );
           if (!cancelled) {
             return yield* Effect.fail(notFound(`No launch in progress for ${recipeId}`));
           }

@@ -135,11 +135,11 @@ export const registerComputeRoutes = defineRoutes((app, context) =>
     ),
 
     app.post(
-      "/compute/instances/:name/cancel",
+      "/compute/instances/:name/cancel/:attemptNonce",
       documentRoute,
       effectHandler((ctx) =>
         context.compute.service
-          .cancel(ctx.req.param("name") ?? "")
+          .cancel(ctx.req.param("name") ?? "", ctx.req.param("attemptNonce") ?? "")
           .pipe(Effect.map((cancelled) => ctx.json({ cancelled }))),
       ),
     ),

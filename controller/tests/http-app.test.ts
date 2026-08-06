@@ -2,10 +2,12 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
+import { Deferred, Effect } from "effect";
 import { type AppContext, AppContextService } from "../src/app-context";
 import { createControllerRuntime, type ControllerRuntime } from "../src/core/effect-runtime";
 import { primaryLogPathFor } from "../src/core/log-files";
 import { createApp } from "../src/http/app";
+import { LLM_INSTANCE } from "../src/modules/compute/bridge";
 import { parseRecipe } from "../src/modules/models/recipes/recipe-serializer";
 
 const apiKey = "controller-contract-key";
@@ -117,6 +119,51 @@ describe("controller HTTP application", () => {
       ),
     );
     expect([...documentedOperations].sort()).toEqual([...registeredOperations].sort());
+  });
+
+  test("a delayed cancel token cannot target a replacement attempt", async () => {
+    const seed = {
+      name: LLM_INSTANCE,
+      nodeId: "self",
+      engine: "llamacpp",
+      recipeId: "replacement",
+      runtime: "process",
+      ref: null,
+      port: 49_321,
+      devices: [],
+      startedAt: new Date().toISOString(),
+      readyDeadlineAt: new Date(Date.now() + 60_000).toISOString(),
+    } as const;
+    const first = context.compute.store.acquire(seed);
+    if (!first) throw new Error("first attempt was not acquired");
+    const gate = Deferred.makeUnsafe<void>();
+    const headers = { "x-api-key": apiKey };
+    const delayed = runtime.runPromise(
+      Effect.andThen(
+        Deferred.await(gate),
+        Effect.sync(() =>
+          app.request(`/launch/replacement/cancel/${first.nonce}`, { method: "POST", headers }),
+        ),
+      ),
+    );
+    context.compute.store.release(LLM_INSTANCE, first.nonce);
+    const replacement = context.compute.store.acquire(seed);
+    if (!replacement) throw new Error("replacement attempt was not acquired");
+    try {
+      await runtime.runPromise(Deferred.succeed(gate, undefined));
+      const lifecycle = await delayed;
+      expect(lifecycle.status).toBe(404);
+      const compute = await app.request(
+        `/compute/instances/${LLM_INSTANCE}/cancel/${first.nonce}`,
+        {
+          method: "POST",
+          headers,
+        },
+      );
+      expect(await compute.json()).toEqual({ cancelled: false });
+    } finally {
+      context.compute.store.release(LLM_INSTANCE, replacement.nonce);
+    }
   });
 
   test("falls back to persisted logs when a Docker container no longer exists", async () => {

@@ -37,7 +37,7 @@ export interface ComputeBridge {
   readonly launchingRecipeId: () => string | null;
   readonly launchRecipe: (recipe: Recipe) => Effect.Effect<InstanceRecord, LaunchFailure>;
   readonly evict: () => Effect.Effect<boolean>;
-  readonly cancelLaunch: () => Effect.Effect<boolean>;
+  readonly cancelLaunch: (recipeId: string, attemptNonce: string) => Effect.Effect<boolean>;
   readonly waitForHealthy: (timeoutMs: number) => Effect.Effect<boolean>;
 }
 
@@ -278,20 +278,28 @@ export const createComputeBridge = (deps: ComputeBridgeDependencies): ComputeBri
     return record.ref === null ? record.recipeId : null;
   };
 
-  const launchRecipe = (recipe: Recipe): Effect.Effect<InstanceRecord, LaunchFailure> =>
-    Effect.gen(function* () {
-      const gpus = yield* getGpuInfo().pipe(Effect.catch(() => Effect.succeed([] as GpuInfo[])));
-      const resolution = resolveRecipeGpuUuids(recipe, gpus);
-      if (resolution.unresolvedTokens.length > 0) {
-        return yield* Effect.fail<LaunchFailure>({
-          kind: "spawn-failed",
-          detail: `GPU selectors could not be resolved: ${resolution.unresolvedTokens.join(", ")}`,
-        });
-      }
-      return yield* deps.compute.launch(
-        recipeToLaunchInput(recipe, deps.config, resolution.uuids),
-      );
-    });
+  const launchRecipe = (recipe: Recipe): Effect.Effect<InstanceRecord, LaunchFailure> => {
+    const identity = recipeToLaunchInput(recipe, deps.config, []);
+    return deps.compute.launchPrepared(identity, () =>
+      Effect.gen(function* () {
+        const gpus = yield* getGpuInfo().pipe(Effect.catch(() => Effect.succeed([] as GpuInfo[])));
+        const resolution = resolveRecipeGpuUuids(recipe, gpus);
+        if (resolution.unresolvedTokens.length > 0) {
+          return yield* Effect.fail<LaunchFailure>({
+            kind: "spawn-failed",
+            detail: `GPU selectors could not be resolved: ${resolution.unresolvedTokens.join(", ")}`,
+          });
+        }
+        return recipeToLaunchInput(recipe, deps.config, resolution.uuids);
+      }),
+    );
+  };
+
+  const cancelLaunch = (recipeId: string, attemptNonce: string): Effect.Effect<boolean> => {
+    const record = llmRecord();
+    if (!record || record.recipeId !== recipeId) return Effect.succeed(false);
+    return deps.compute.cancel(record.name, attemptNonce);
+  };
 
   const waitForHealthy = (timeoutMs: number): Effect.Effect<boolean> =>
     Effect.gen(function* () {
@@ -310,7 +318,7 @@ export const createComputeBridge = (deps: ComputeBridgeDependencies): ComputeBri
     launchingRecipeId,
     launchRecipe,
     evict: () => deps.compute.stop(LLM_INSTANCE),
-    cancelLaunch: () => deps.compute.cancel(LLM_INSTANCE),
+    cancelLaunch,
     waitForHealthy,
   };
 };

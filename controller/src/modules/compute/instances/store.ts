@@ -1,4 +1,6 @@
 import {
+  chmodSync,
+  existsSync,
   mkdirSync,
   readFileSync,
   readdirSync,
@@ -8,6 +10,7 @@ import {
 } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
+import { Database } from "bun:sqlite";
 import { Effect } from "effect";
 import type {
   DeviceId,
@@ -35,6 +38,9 @@ export interface InstanceStore {
   readonly all: () => readonly InstanceRecord[];
   readonly write: (record: InstanceRecord) => void;
   readonly drop: (name: string) => void;
+  readonly acquire: (record: Omit<InstanceRecord, "nonce">) => InstanceRecord | null;
+  readonly replace: (record: InstanceRecord, attemptNonce: string) => boolean;
+  readonly release: (name: string, attemptNonce: string) => boolean;
   readonly logPath: (name: string) => string;
   readonly reserve: (
     reservation: Reservation,
@@ -43,7 +49,7 @@ export interface InstanceStore {
   readonly heldDevices: (
     alive: (record: InstanceRecord) => Effect.Effect<boolean>,
   ) => Effect.Effect<ReadonlySet<DeviceId>>;
-  readonly allocatePort: (basePort: number) => number;
+  readonly allocatePort: (basePort: number, attemptNonce?: string) => number;
 }
 
 export interface Reservation {
@@ -52,6 +58,7 @@ export interface Reservation {
   readonly engine: EngineId;
   readonly recipeId: string;
   readonly runtime: EngineRuntimeKind;
+  readonly attemptNonce: string;
   readonly candidates: readonly DeviceId[];
   readonly need: number;
   /** Unified-memory accelerators (Apple Silicon, DGX Spark) are shared by design: the
@@ -146,9 +153,40 @@ const acquirePlacementLock = (lockPath: string): Effect.Effect<void, LaunchFailu
 export const makeInstanceStore = (dataDirectory: string): InstanceStore => {
   const directory = join(dataDirectory, "instances");
   const logsDirectory = join(directory, "logs");
-  mkdirSync(logsDirectory, { recursive: true });
+  mkdirSync(logsDirectory, { recursive: true, mode: 0o700 });
+  chmodSync(directory, 0o700);
   const lockPath = join(directory, "placement.lock");
+  const mutationPath = join(directory, "mutations.sqlite");
   const recordPath = (name: string): string => join(directory, `${safeName(name)}.json`);
+
+  const openMutationDatabase = (): Database => {
+    const database = new Database(mutationPath, { create: true });
+    database.run("PRAGMA busy_timeout = 5000");
+    return database;
+  };
+  const initialize = openMutationDatabase();
+  initialize.run("CREATE TABLE IF NOT EXISTS instance_store_mutex (id INTEGER PRIMARY KEY, generation INTEGER NOT NULL)");
+  initialize.run("INSERT OR IGNORE INTO instance_store_mutex (id, generation) VALUES (1, 0)");
+  initialize.close();
+  chmodSync(mutationPath, 0o600);
+
+  const mutate = <A>(operation: () => A): A => {
+    const database = openMutationDatabase();
+    try {
+      database.run("BEGIN IMMEDIATE");
+      database.run("UPDATE instance_store_mutex SET generation = generation + 1 WHERE id = 1");
+      const result = operation();
+      database.run("COMMIT");
+      return result;
+    } catch (error) {
+      try {
+        database.run("ROLLBACK");
+      } catch {}
+      throw error;
+    } finally {
+      database.close();
+    }
+  };
 
   const read = (name: string): InstanceRecord | null => {
     try {
@@ -170,19 +208,38 @@ export const makeInstanceStore = (dataDirectory: string): InstanceStore => {
     }
   };
 
-  const write = (record: InstanceRecord): void => {
+  const writeRecord = (record: InstanceRecord): void => {
     const path = recordPath(record.name);
     writeFileSync(`${path}.tmp`, JSON.stringify(record, null, 2));
     renameSync(`${path}.tmp`, path);
   };
 
-  const drop = (name: string): void => {
-    try {
-      rmSync(recordPath(name));
-    } catch {
-      /* already gone */
-    }
+  const dropRecord = (name: string): void => rmSync(recordPath(name), { force: true });
+
+  const write = (record: InstanceRecord): void => mutate(() => writeRecord(record));
+  const drop = (name: string): void => mutate(() => dropRecord(name));
+  const acquire = (seed: Omit<InstanceRecord, "nonce">): InstanceRecord | null => {
+    const record = { ...seed, nonce: randomUUID() };
+    return mutate(() => {
+      if (existsSync(recordPath(record.name))) return null;
+      writeRecord(record);
+      return record;
+    });
   };
+
+  const replace = (record: InstanceRecord, attemptNonce: string): boolean =>
+    mutate(() => {
+      if (record.nonce !== attemptNonce || read(record.name)?.nonce !== attemptNonce) return false;
+      writeRecord(record);
+      return true;
+    });
+
+  const release = (name: string, attemptNonce: string): boolean =>
+    mutate(() => {
+      if (read(name)?.nonce !== attemptNonce) return false;
+      dropRecord(name);
+      return true;
+    });
 
   const heldDevices = (
     alive: (record: InstanceRecord) => Effect.Effect<boolean>,
@@ -217,8 +274,12 @@ export const makeInstanceStore = (dataDirectory: string): InstanceStore => {
     return true;
   };
 
-  const allocatePort = (basePort: number): number => {
-    const used = new Set(all().map((record) => record.port));
+  const allocatePort = (basePort: number, attemptNonce?: string): number => {
+    const used = new Set(
+      all()
+        .filter((record) => record.nonce !== attemptNonce)
+        .map((record) => record.port),
+    );
     let port = basePort;
     while (used.has(port) || !portIsBindable(port)) port += 1;
     return port;
@@ -231,6 +292,13 @@ export const makeInstanceStore = (dataDirectory: string): InstanceStore => {
     Effect.gen(function* () {
       yield* acquirePlacementLock(lockPath);
       const record = yield* Effect.gen(function* () {
+        const attempt = read(reservation.name);
+        if (attempt?.nonce !== reservation.attemptNonce) {
+          return yield* Effect.fail<LaunchFailure>({
+            kind: "already-running",
+            name: reservation.name,
+          });
+        }
         const held = reservation.shareable ? new Set<DeviceId>() : yield* heldDevices(alive);
         const free = reservation.candidates.filter((device) => !held.has(device));
         if (free.length < reservation.need) {
@@ -242,7 +310,10 @@ export const makeInstanceStore = (dataDirectory: string): InstanceStore => {
         }
         let port: number;
         if (reservation.exactPort !== undefined) {
-          const takenByRecord = all().some((record) => record.port === reservation.exactPort);
+          const takenByRecord = all().some(
+            (record) =>
+              record.nonce !== reservation.attemptNonce && record.port === reservation.exactPort,
+          );
           if (takenByRecord || !portIsBindable(reservation.exactPort)) {
             return yield* Effect.fail<LaunchFailure>({
               kind: "spawn-failed",
@@ -251,7 +322,7 @@ export const makeInstanceStore = (dataDirectory: string): InstanceStore => {
           }
           port = reservation.exactPort;
         } else {
-          port = allocatePort(reservation.basePort);
+          port = allocatePort(reservation.basePort, reservation.attemptNonce);
         }
         const now = Date.now();
         const reserved: InstanceRecord = {
@@ -263,11 +334,16 @@ export const makeInstanceStore = (dataDirectory: string): InstanceStore => {
           ref: null,
           port,
           devices: free.slice(0, reservation.need),
-          nonce: randomUUID(),
-          startedAt: new Date(now).toISOString(),
+          nonce: reservation.attemptNonce,
+          startedAt: attempt.startedAt,
           readyDeadlineAt: new Date(now + reservation.readyDeadlineMs).toISOString(),
         };
-        write(reserved);
+        if (!replace(reserved, reservation.attemptNonce)) {
+          return yield* Effect.fail<LaunchFailure>({
+            kind: "already-running",
+            name: reservation.name,
+          });
+        }
         return reserved;
       }).pipe(Effect.ensuring(Effect.sync(() => releaseLock(lockPath))));
       return record;
@@ -279,6 +355,9 @@ export const makeInstanceStore = (dataDirectory: string): InstanceStore => {
     all,
     write,
     drop,
+    acquire,
+    replace,
+    release,
     logPath: (name: string) => join(logsDirectory, `${safeName(name)}.log`),
     reserve,
     heldDevices,
