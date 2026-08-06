@@ -166,10 +166,17 @@ export type HandleReference =
   | {
       readonly kind: "process";
       readonly pid: number;
-      /** Linux /proc/<pid>/stat field 22. Closes pid reuse across reboots. */
+      readonly processGroupId: number | null;
+      readonly sessionId: number | null;
       readonly startToken: string | null;
     }
-  | { readonly kind: "docker"; readonly container: string }
+  | {
+      readonly kind: "docker";
+      readonly containerId: string;
+      readonly daemonId: string;
+      readonly executablePath: string;
+      readonly executableToken: string;
+    }
   | { readonly kind: "remote"; readonly nodeId: NodeId; readonly name: string }
   /** A device hold with no supervised process — e.g. the speech worker claims its GPU
    *  through the lease shim. Always "alive"; freed only by explicit release. */

@@ -15,10 +15,14 @@ export interface Launcher {
     plan: LaunchPlan,
     record: InstanceRecord,
   ) => Effect.Effect<HandleReference, LaunchFailure>;
-  readonly alive: (reference: HandleReference) => Effect.Effect<boolean>;
+  readonly alive: (reference: HandleReference, record: InstanceRecord) => Effect.Effect<boolean>;
   readonly owns: (reference: HandleReference, record: InstanceRecord) => Effect.Effect<boolean>;
   /** TERM, wait up to graceMs, then KILL. Idempotent; a dead handle is a success. */
-  readonly stop: (reference: HandleReference, graceMs: number) => Effect.Effect<void>;
+  readonly stop: (
+    reference: HandleReference,
+    record: InstanceRecord,
+    graceMs: number,
+  ) => Effect.Effect<void>;
   readonly logTail: (reference: HandleReference, record: InstanceRecord) => Effect.Effect<string>;
 }
 

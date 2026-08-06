@@ -86,7 +86,7 @@ export const makeComputeService = (deps: ComputeDeps): ComputeService => {
     if (record.ref === null) return Effect.succeed(false);
     // Pinned holds have no supervised process; they live until explicitly released.
     if (record.ref.kind === "pinned") return Effect.succeed(true);
-    return launcherOf(record).alive(record.ref);
+    return launcherOf(record).alive(record.ref, record);
   };
 
   const healthy = (record: InstanceRecord): Effect.Effect<boolean> =>
@@ -107,15 +107,14 @@ export const makeComputeService = (deps: ComputeDeps): ComputeService => {
       return Date.now() < Date.parse(record.readyDeadlineAt) ? "starting" : "unhealthy";
     });
 
-  const stopRecord = (record: InstanceRecord): Effect.Effect<void> =>
+  const stopRecord = (record: InstanceRecord): Effect.Effect<boolean> =>
     Effect.gen(function* () {
-      if (record.ref === null) return;
+      if (record.ref === null) return true;
       const launcher = launcherOf(record);
-      // Never signal what we cannot prove is ours — a recycled pid or a hand-recreated
-      // container just gets its record dropped.
       if (yield* launcher.owns(record.ref, record)) {
-        yield* launcher.stop(record.ref, STOP_GRACE_MS);
+        yield* launcher.stop(record.ref, record, STOP_GRACE_MS);
       }
+      return !(yield* launcher.owns(record.ref, record)) && !(yield* launcher.alive(record.ref, record));
     });
 
   const failCleanup = (
@@ -123,8 +122,7 @@ export const makeComputeService = (deps: ComputeDeps): ComputeService => {
     failure: LaunchFailure,
   ): Effect.Effect<never, LaunchFailure> =>
     Effect.gen(function* () {
-      yield* stopRecord(record);
-      deps.store.drop(record.name);
+      if (yield* stopRecord(record)) deps.store.drop(record.name);
       cancelRequested.delete(record.name);
       const event = toEvent(failure);
       yield* deps.onEvent(record.name, event.stage, event.message);
@@ -190,7 +188,9 @@ export const makeComputeService = (deps: ComputeDeps): ComputeService => {
           return yield* Effect.fail<LaunchFailure>({ kind: "already-running", name: input.name });
         }
         // exited / unhealthy: reclaim the name.
-        yield* stopRecord(existing);
+        if (!(yield* stopRecord(existing))) {
+          return yield* Effect.fail<LaunchFailure>({ kind: "already-running", name: input.name });
+        }
         deps.store.drop(existing.name);
       }
 
@@ -266,7 +266,7 @@ export const makeComputeService = (deps: ComputeDeps): ComputeService => {
     Effect.gen(function* () {
       const record = deps.store.read(name);
       if (!record) return false;
-      yield* stopRecord(record);
+      if (!(yield* stopRecord(record))) return false;
       deps.store.drop(name);
       yield* deps.onEvent(name, "stopped", `freed :${record.port}`);
       return true;
@@ -303,7 +303,7 @@ export const makeComputeService = (deps: ComputeDeps): ComputeService => {
           }
           continue;
         }
-        if (!(yield* recordAlive(record))) {
+        if (!(yield* recordAlive(record)) && (yield* stopRecord(record))) {
           // Dropping the record frees its devices by construction — there is no release
           // call to forget and no cache to invalidate.
           deps.store.drop(record.name);
