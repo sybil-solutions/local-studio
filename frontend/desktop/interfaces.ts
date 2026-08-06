@@ -1,15 +1,5 @@
 import type { DesktopUpdateSnapshot } from "./types";
 
-export interface ProjectEntry {
-  id: string;
-  name: string;
-  path: string;
-  addedAt: string;
-  exists: boolean;
-  hasGit: boolean;
-  branch: string | null;
-}
-
 export type SessionPrefsPayload = Record<
   string,
   { title?: string; pinned?: boolean; hidden?: boolean }
@@ -106,11 +96,8 @@ export interface DesktopBridge {
   openPath(target: string): Promise<boolean>;
   getUpdateStatus(): Promise<DesktopUpdateSnapshot>;
   startUpdate(): Promise<DesktopUpdateSnapshot>;
-  openDirectory(): Promise<ProjectEntry | null>;
+  openDirectory(): Promise<string | null>;
   getPathForFile(file: File): string;
-  listProjects(): Promise<ProjectEntry[]>;
-  addProject(directoryPath: string): Promise<ProjectEntry>;
-  removeProject(id: string): Promise<{ ok: true }>;
   /** Durable file-backed session prefs that survive process kill. */
   loadSessionPrefs(): Promise<SessionPrefsPayload>;
   saveSessionPrefs(prefs: SessionPrefsPayload): Promise<void>;
