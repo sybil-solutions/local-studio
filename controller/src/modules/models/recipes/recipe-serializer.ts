@@ -65,8 +65,19 @@ const clampFraction = (value: unknown, fallback: number): number => {
 const coerceNullableNumber = (value: unknown): number | null =>
   value === undefined || value === null ? null : Number(value);
 
-const coerceBoolean = (value: unknown, fallback: boolean): boolean =>
-  value === undefined ? fallback : Boolean(value);
+const decodeOptionalFlag = Schema.decodeUnknownSync(Schema.optional(Schema.Boolean));
+
+const booleanSetting = (
+  field: "trust_remote_code" | "enable_auto_tool_choice",
+  value: unknown,
+  fallback: boolean,
+): boolean => {
+  try {
+    return decodeOptionalFlag(value) ?? fallback;
+  } catch {
+    throw new Error(`Invalid ${field}`);
+  }
+};
 
 /**
  * Normalize raw recipe input before validation.
@@ -231,13 +242,18 @@ export const parseRecipe = (raw: unknown): Recipe => {
     gpu_memory_utilization: clampFraction(normalized["gpu_memory_utilization"], 0.9),
     kv_cache_dtype: normalized["kv_cache_dtype"] ?? "auto",
     max_num_seqs: coercePositiveInt(normalized["max_num_seqs"], 256),
-    trust_remote_code: coerceBoolean(
+    trust_remote_code: booleanSetting(
+      "trust_remote_code",
       normalized["trust_remote_code"],
       process.env["LOCAL_STUDIO_DEFAULT_TRUST_REMOTE_CODE"] !== "false",
     ),
     tool_call_parser: normalized["tool_call_parser"] ?? null,
     reasoning_parser: normalized["reasoning_parser"] ?? null,
-    enable_auto_tool_choice: coerceBoolean(normalized["enable_auto_tool_choice"], false),
+    enable_auto_tool_choice: booleanSetting(
+      "enable_auto_tool_choice",
+      normalized["enable_auto_tool_choice"],
+      false,
+    ),
     quantization: normalized["quantization"] ?? null,
     dtype: normalized["dtype"] ?? null,
     host: normalized["host"] ?? "0.0.0.0",

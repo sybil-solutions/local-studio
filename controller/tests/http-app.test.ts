@@ -119,6 +119,65 @@ describe("controller HTTP application", () => {
     expect([...documentedOperations].sort()).toEqual([...registeredOperations].sort());
   });
 
+  test("rejects misleading recipe booleans without persistence and round-trips false", async () => {
+    const fields = ["trust_remote_code", "enable_auto_tool_choice"] as const;
+    const invalidValues: ReadonlyArray<unknown> = [null, "true", "false", 0, 1, [], {}];
+    const rejectedIds: string[] = [];
+
+    for (const field of fields) {
+      for (const [index, value] of invalidValues.entries()) {
+        const id = `invalid-${field}-${index}`;
+        rejectedIds.push(id);
+        const response = await app.request("/recipes", {
+          method: "POST",
+          headers: { "content-type": "application/json", "x-api-key": apiKey },
+          body: JSON.stringify({
+            id,
+            name: "Invalid Boolean Recipe",
+            model_path: join(temporaryDirectory, "models", id),
+            [field]: value,
+          }),
+        });
+
+        expect(response.status).toBe(400);
+        expect(await response.json()).toEqual({ detail: `Error: Invalid ${field}` });
+
+        const persisted = await app.request(`/recipes/${id}`, {
+          headers: { "x-api-key": apiKey },
+        });
+        expect(persisted.status).toBe(404);
+      }
+    }
+
+    const createResponse = await app.request("/recipes", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-api-key": apiKey },
+      body: JSON.stringify({
+        id: "explicit-false-recipe",
+        name: "Explicit False Recipe",
+        model_path: join(temporaryDirectory, "models", "explicit-false-recipe"),
+        trust_remote_code: false,
+        enable_auto_tool_choice: false,
+      }),
+    });
+
+    expect(createResponse.status).toBe(200);
+    const getResponse = await app.request("/recipes/explicit-false-recipe", {
+      headers: { "x-api-key": apiKey },
+    });
+    expect(getResponse.status).toBe(200);
+    expect(await getResponse.json()).toMatchObject({
+      trust_remote_code: false,
+      enable_auto_tool_choice: false,
+    });
+
+    const listResponse = await app.request("/recipes", {
+      headers: { "x-api-key": apiKey },
+    });
+    const recipes = (await listResponse.json()) as Array<{ id: string }>;
+    expect(recipes.some((recipe) => rejectedIds.includes(recipe.id))).toBe(false);
+  });
+
   test("falls back to persisted logs when a Docker container no longer exists", async () => {
     const sessionId = "stale-docker-session";
     await runtime.runPromise(
