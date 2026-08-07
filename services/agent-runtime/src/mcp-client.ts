@@ -1,7 +1,10 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import type { Tool, ToolAnnotations } from "@modelcontextprotocol/sdk/types.js";
+import { BoundedStdioClientTransport } from "./mcp-stdio-transport";
+
+export { McpProtocolError } from "./mcp-stdio-transport";
 
 export type McpToolAnnotations = ToolAnnotations;
 export type McpToolInfo = Tool;
@@ -34,7 +37,9 @@ const CLIENT_INFO = { name: "local-studio", version: "2.0.0" };
 
 const processEnvironment = (): Record<string, string> =>
   Object.fromEntries(
-    Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined),
+    Object.entries(process.env).filter(
+      (entry): entry is [string, string] => entry[1] !== undefined,
+    ),
   );
 
 const combinedSignal = (
@@ -45,7 +50,8 @@ const combinedSignal = (
   return requestSignal ?? targetSignal ?? undefined;
 };
 
-const authorizedFetch = (target: HttpTarget): typeof fetch =>
+const authorizedFetch =
+  (target: HttpTarget): typeof fetch =>
   async (input, init) => {
     const send = async (forceRefresh: boolean): Promise<Response> => {
       const headers = new Headers(init?.headers);
@@ -62,49 +68,119 @@ const authorizedFetch = (target: HttpTarget): typeof fetch =>
     return response.status === 401 && target.authorize ? send(true) : response;
   };
 
-const transportFor = (target: McpTarget) => {
-  if (target.transport === "stdio") {
-    return new StdioClientTransport({
-      command: target.command,
-      args: target.args ?? [],
-      env: { ...processEnvironment(), ...(target.env ?? {}) },
-      ...(target.cwd ? { cwd: target.cwd } : {}),
-      stderr: "pipe",
+const errorFrom = (error: unknown): Error =>
+  error instanceof Error ? error : new Error(String(error));
+
+class TerminalFailure {
+  private error: Error | null = null;
+  private readonly rejectors = new Set<(error: Error) => void>();
+
+  run<T>(operation: () => Promise<T>): Promise<T> {
+    if (this.error) return Promise.reject(this.error);
+    return new Promise<T>((resolve, reject) => {
+      const rejectTerminal = (error: Error): void => {
+        this.rejectors.delete(rejectTerminal);
+        reject(error);
+      };
+      this.rejectors.add(rejectTerminal);
+      let pending: Promise<T>;
+      try {
+        pending = operation();
+      } catch (error) {
+        this.rejectors.delete(rejectTerminal);
+        reject(errorFrom(error));
+        return;
+      }
+      void pending.then(
+        (value) => {
+          this.rejectors.delete(rejectTerminal);
+          resolve(value);
+        },
+        (error: unknown) => {
+          this.rejectors.delete(rejectTerminal);
+          reject(error);
+        },
+      );
     });
   }
-  return new StreamableHTTPClientTransport(new URL(target.url), {
-    requestInit: { headers: target.headers ?? {} },
-    fetch: authorizedFetch(target),
-  });
+
+  fail(error: Error): Error {
+    if (this.error) return this.error;
+    this.error = error;
+    for (const reject of this.rejectors) reject(error);
+    this.rejectors.clear();
+    return error;
+  }
+}
+
+const transportFor = (
+  target: McpTarget,
+): { transport: Transport; terminal: TerminalFailure | null } => {
+  if (target.transport === "stdio") {
+    const terminal = new TerminalFailure();
+    return {
+      transport: new BoundedStdioClientTransport(
+        {
+          command: target.command,
+          args: target.args ?? [],
+          env: { ...processEnvironment(), ...(target.env ?? {}) },
+          ...(target.cwd ? { cwd: target.cwd } : {}),
+          stderr: "pipe",
+        },
+        (error) => terminal.fail(error),
+      ),
+      terminal,
+    };
+  }
+  return {
+    transport: new StreamableHTTPClientTransport(new URL(target.url), {
+      requestInit: { headers: target.headers ?? {} },
+      fetch: authorizedFetch(target),
+    }),
+    terminal: null,
+  };
 };
 
 class SdkMcpConnection implements McpConnection {
   private readonly client = new Client(CLIENT_INFO, { capabilities: {} });
   private readonly connected: Promise<void>;
   private readonly signal: AbortSignal | undefined;
+  private readonly terminal: TerminalFailure | null;
+  private closed = false;
 
   constructor(target: McpTarget) {
+    const connection = transportFor(target);
     this.signal = target.transport === "http" ? target.signal : undefined;
-    this.connected = this.client.connect(transportFor(target), { signal: this.signal });
-  }
-
-  async listTools(): Promise<McpToolInfo[]> {
-    await this.connected;
-    const result = await this.client.listTools({}, { signal: this.signal });
-    return result.tools;
-  }
-
-  async callTool(name: string, args: Record<string, unknown>): Promise<unknown> {
-    await this.connected;
-    return this.client.callTool(
-      { name, arguments: args },
-      undefined,
-      { signal: this.signal },
+    this.terminal = connection.terminal;
+    this.connected = this.run(() =>
+      this.client.connect(connection.transport, { signal: this.signal }),
     );
   }
 
+  listTools(): Promise<McpToolInfo[]> {
+    return this.run(async () => {
+      await this.connected;
+      const result = await this.client.listTools({}, { signal: this.signal });
+      return result.tools;
+    });
+  }
+
+  callTool(name: string, args: Record<string, unknown>): Promise<unknown> {
+    return this.run(async () => {
+      await this.connected;
+      return this.client.callTool({ name, arguments: args }, undefined, { signal: this.signal });
+    });
+  }
+
   close(): void {
+    if (this.closed) return;
+    this.closed = true;
+    this.terminal?.fail(new Error("MCP connection is closed"));
     void this.client.close().catch(() => undefined);
+  }
+
+  private run<T>(operation: () => Promise<T>): Promise<T> {
+    return this.terminal ? this.terminal.run(operation) : operation();
   }
 }
 
