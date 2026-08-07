@@ -1,6 +1,15 @@
+import { Deferred, Effect, Fiber, Schedule, Semaphore } from "effect";
+import type { Page } from "playwright-core";
+import { type BrowserSessionKey } from "../../../../shared/agent/browser-session";
+import { sanitizeBrowserPaneUrl } from "../../../../shared/agent/sanitize-embedded-browser-url";
 import { getGlobalSingleton } from "../instances";
 import { HostedPage, type PageState, type ScreencastFrame } from "./hosted-page";
-import { playwrightManager } from "./playwright";
+import {
+  browserSessionConfig,
+  decodeBrowserSessionKey,
+  type BrowserSessionConfig,
+} from "./browser-session";
+import { playwrightManager, type ManagedPlaywrightSession } from "./playwright";
 
 export type { PageState, ScreencastFrame };
 
@@ -14,46 +23,116 @@ const normalizeUrl = (value: string): string =>
 const capString = (value: string, maximum: number): string =>
   value.length > maximum ? value.slice(0, maximum) : value;
 
-class BrowserHost {
-  private pages = new Map<string, HostedPage>();
-  private activeId: string | null = null;
+export type BrowserContextSurface<RawPage> = {
+  newPage: () => Promise<RawPage>;
+  pages: () => RawPage[];
+};
 
-  isAvailable(): boolean {
-    return playwrightManager.isAvailable();
+export type BrowserPage<RawPage> = {
+  captureFrame: () => Promise<ScreencastFrame | null>;
+  click: (selector: string) => Promise<boolean>;
+  close: () => void;
+  readonly closed: boolean;
+  dispatchKey: (input: KeyInput) => Promise<void>;
+  dispatchMouse: (input: MouseInput) => Promise<void>;
+  evaluate: (expression: string) => Promise<unknown>;
+  fill: (selector: string, value: string) => Promise<boolean>;
+  goBack: (timeout: number) => Promise<void>;
+  goForward: (timeout: number) => Promise<void>;
+  html: () => Promise<string>;
+  readonly id: string;
+  matches: (page: RawPage) => boolean;
+  navigate: (url: string, timeout: number) => Promise<void>;
+  readState: () => Promise<PageState>;
+  reload: (timeout: number) => Promise<void>;
+  screenshot: (type: "png" | "jpeg", quality?: number) => Promise<string>;
+  scroll: (deltaX: number, deltaY: number) => Promise<number>;
+  setViewport: (width: number, height: number) => Promise<void>;
+  text: () => Promise<string>;
+};
+
+export type BrowserHostManager<RawPage = Page> = {
+  ensure: (scope: string) => Promise<ManagedPlaywrightSession<BrowserContextSurface<RawPage>>>;
+  isAvailable: () => boolean;
+  release: (scope: string) => Promise<void>;
+  stop: () => Promise<void>;
+};
+
+type BrowserSessionHostOptions<RawPage> = {
+  attachPage?: (page: RawPage) => BrowserPage<RawPage>;
+};
+
+export type BrowserHostOptions<RawPage> = BrowserSessionHostOptions<RawPage> & {
+  cleanupIntervalMs?: number;
+  config?: BrowserSessionConfig;
+  now?: () => number;
+};
+
+class BrowserSessionHost<RawPage> {
+  private readonly pages = new Map<string, BrowserPage<RawPage>>();
+  private activeId: string | null = null;
+  private activeGeneration = 0;
+  private stopped = false;
+  private stopping: Promise<void> | null = null;
+  private readonly navigationLock = Semaphore.makeUnsafe(1);
+  private readonly transitionLock = Semaphore.makeUnsafe(1);
+
+  constructor(
+    private readonly manager: BrowserHostManager<RawPage>,
+    private readonly scope: BrowserSessionKey,
+    private readonly options: BrowserSessionHostOptions<RawPage>,
+  ) {}
+
+  page(pageId?: string): Promise<BrowserPage<RawPage>> {
+    return this.withPermit(this.transitionLock, () => this.pageUnlocked(pageId));
   }
 
-  async page(pageId?: string): Promise<HostedPage> {
+  private async pageUnlocked(pageId?: string): Promise<BrowserPage<RawPage>> {
+    this.assertRunning();
+    const attachPage = this.options.attachPage;
+    if (!attachPage) throw new Error("Browser page adapter unavailable");
+    const session = await this.manager.ensure(this.scope);
+    this.assertRunning();
+    if (session.generation !== this.activeGeneration) {
+      this.pages.clear();
+      this.activeId = null;
+      this.activeGeneration = session.generation;
+    }
     const targetId = pageId ?? this.activeId;
     const cached = targetId ? this.pages.get(targetId) : undefined;
+    if (pageId && !cached) throw new Error("Browser page does not belong to session");
     if (cached && !cached.closed) {
       this.activeId = cached.id;
       return cached;
     }
     if (cached) this.pages.delete(cached.id);
-
-    const context = await playwrightManager.ensure();
-    const rawPage =
-      context
-        .pages()
-        .find((candidate) =>
-          Array.from(this.pages.values()).every((hosted) => !hosted.matches(candidate)),
-        ) ?? (await context.newPage());
-    const hosted = HostedPage.attach(rawPage);
+    const existing = session.context
+      .pages()
+      .find((candidate) =>
+        Array.from(this.pages.values()).every((hosted) => !hosted.matches(candidate)),
+      );
+    const rawPage = existing ?? (await session.context.newPage());
+    this.assertRunning();
+    const hosted = attachPage(rawPage);
     this.pages.set(hosted.id, hosted);
     this.activeId = hosted.id;
     return hosted;
   }
 
-  async navigate(url: string, pageId?: string): Promise<{ url: string; title: string }> {
-    const page = await this.page(pageId);
-    await page.navigate(normalizeUrl(url), NAVIGATION_TIMEOUT_MS);
-    const state = await page.readState();
-    return { url: state.url, title: state.title };
+  navigate(url: string, pageId?: string): Promise<{ url: string; title: string }> {
+    const navigation = sanitizeBrowserPaneUrl(normalizeUrl(url));
+    if (!navigation) return Promise.reject(new Error("Browser navigation URL is not allowed"));
+    return this.withPermit(this.navigationLock, async () => {
+      const page = await this.page(pageId);
+      await page.navigate(navigation, NAVIGATION_TIMEOUT_MS);
+      const state = await page.readState();
+      return { title: state.title, url: state.url };
+    });
   }
 
   async getUrl(pageId?: string): Promise<{ url: string; title: string }> {
     const state = await (await this.page(pageId)).readState();
-    return { url: state.url, title: state.title };
+    return { title: state.title, url: state.url };
   }
 
   async getState(pageId?: string): Promise<PageState> {
@@ -80,17 +159,19 @@ class BrowserHost {
     return capString(await (await this.page(pageId)).html(), HTML_CAP_BYTES);
   }
 
+  async evaluate(expression: string, pageId?: string): Promise<unknown> {
+    return (await this.page(pageId)).evaluate(expression);
+  }
+
   async click(args: { selector: string }, pageId?: string): Promise<{ found: boolean }> {
-    const page = await this.page(pageId);
-    return { found: await page.click(args.selector) };
+    return { found: await (await this.page(pageId)).click(args.selector) };
   }
 
   async fill(
     args: { selector: string; value: string },
     pageId?: string,
   ): Promise<{ found: boolean }> {
-    const page = await this.page(pageId);
-    return { found: await page.fill(args.selector, args.value) };
+    return { found: await (await this.page(pageId)).fill(args.selector, args.value) };
   }
 
   async scroll(
@@ -126,11 +207,467 @@ class BrowserHost {
     await (await this.page(pageId)).dispatchKey(args);
   }
 
-  stop(): void {
-    for (const page of this.pages.values()) page.close();
+  release(): Promise<void> {
+    if (this.stopping) return this.stopping;
+    this.stopped = true;
     this.pages.clear();
     this.activeId = null;
-    playwrightManager.stop();
+    this.stopping = this.manager.release(this.scope);
+    return this.stopping;
+  }
+
+  private assertRunning(): void {
+    if (this.stopped) throw new Error("Browser host stopped");
+  }
+
+  private withPermit<A>(semaphore: Semaphore.Semaphore, task: () => Promise<A>): Promise<A> {
+    return Effect.runPromise(
+      semaphore.withPermit(Effect.tryPromise({ try: task, catch: (error) => error })),
+    );
+  }
+}
+
+type SessionRecord<RawPage> = {
+  closing: Promise<void> | null;
+  fallbackUrl: string | null;
+  fallbackLock: Semaphore.Semaphore;
+  generation: symbol;
+  host: BrowserSessionHost<RawPage>;
+  inFlight: number;
+  key: BrowserSessionKey;
+  lastAccess: number;
+  releaseRequested: boolean;
+  releaseStarted: boolean;
+  released: Deferred.Deferred<void>;
+};
+
+export type BrowserFallbackResult<A> = {
+  url?: string;
+  result: A;
+};
+
+type AcquireDecision<RawPage> =
+  | { type: "acquired"; record: SessionRecord<RawPage> }
+  | { type: "evict"; record: SessionRecord<RawPage> }
+  | { type: "wait"; record: SessionRecord<RawPage> };
+
+type PendingAcquisition = {
+  count: number;
+  generation: symbol;
+  resolve: () => void;
+  settlement: Promise<void>;
+};
+
+type ReleaseSettlement = {
+  generation: symbol | null;
+  settlement: Promise<void>;
+};
+
+export class BrowserHost<RawPage = Page> {
+  private readonly sessions = new Map<BrowserSessionKey, SessionRecord<RawPage>>();
+  private readonly pendingAcquisitions = new Map<BrowserSessionKey, PendingAcquisition>();
+  private readonly releaseSettlements = new Map<BrowserSessionKey, ReleaseSettlement>();
+  private readonly registryLock = Semaphore.makeUnsafe(1);
+  private readonly config: BrowserSessionConfig;
+  private readonly now: () => number;
+  private readonly cleanupIntervalMs: number;
+  private cleanupFiber: ReturnType<typeof Effect.runFork> | null = null;
+  private stopping: Promise<void> | null = null;
+  private stopped = false;
+
+  constructor(
+    private readonly manager: BrowserHostManager<RawPage>,
+    private readonly options: BrowserHostOptions<RawPage> = {},
+  ) {
+    this.config = options.config ?? browserSessionConfig();
+    this.now = options.now ?? Date.now;
+    this.cleanupIntervalMs =
+      options.cleanupIntervalMs ??
+      Math.min(60_000, Math.max(1_000, Math.floor(this.config.idleMs / 2)));
+  }
+
+  isAvailable(): boolean {
+    return this.manager.isAvailable();
+  }
+
+  private assertRunning(): void {
+    if (this.stopped) throw new Error("Browser host stopped");
+  }
+
+  private withPermit<A>(task: () => Promise<A>): Promise<A> {
+    return Effect.runPromise(
+      this.registryLock.withPermit(Effect.tryPromise({ try: task, catch: (error) => error })),
+    );
+  }
+
+  private startCleanup(): void {
+    if (this.cleanupFiber || this.stopped) return;
+    this.cleanupFiber = Effect.runFork(
+      Effect.tryPromise({
+        try: () => this.cleanupIdleSessions(),
+        catch: (error) => error,
+      }).pipe(
+        Effect.catch(() => Effect.void),
+        Effect.repeat(Schedule.spaced(this.cleanupIntervalMs)),
+        Effect.asVoid,
+      ),
+    );
+  }
+
+  private record(key: BrowserSessionKey, generation: symbol): SessionRecord<RawPage> {
+    return {
+      closing: null,
+      fallbackUrl: null,
+      fallbackLock: Semaphore.makeUnsafe(1),
+      generation,
+      host: new BrowserSessionHost(this.manager, key, this.options),
+      inFlight: 0,
+      key,
+      lastAccess: this.now(),
+      releaseRequested: false,
+      releaseStarted: false,
+      released: Deferred.makeUnsafe<void>(),
+    };
+  }
+
+  private lruIdleRecord(): SessionRecord<RawPage> | null {
+    return (
+      [...this.sessions.values()]
+        .filter((record) => record.inFlight === 0 && !record.releaseRequested)
+        .sort((left, right) =>
+          left.lastAccess === right.lastAccess
+            ? left.key.localeCompare(right.key)
+            : left.lastAccess - right.lastAccess,
+        )[0] ?? null
+    );
+  }
+
+  private acquireDecision(key: BrowserSessionKey, generation: symbol): AcquireDecision<RawPage> {
+    this.assertRunning();
+    const existing = this.sessions.get(key);
+    if (existing) {
+      if (existing.releaseRequested) throw new Error("Browser session is releasing");
+      existing.inFlight += 1;
+      existing.lastAccess = this.now();
+      return { type: "acquired", record: existing };
+    }
+    if (this.sessions.size >= this.config.maxSessions) {
+      const idle = this.lruIdleRecord();
+      if (idle) {
+        idle.releaseRequested = true;
+        idle.releaseStarted = true;
+        return { type: "evict", record: idle };
+      }
+      const releasing = [...this.sessions.values()].find((record) => record.releaseRequested);
+      if (releasing) return { type: "wait", record: releasing };
+      throw new Error("Browser session capacity reached while all sessions are active");
+    }
+    const created = this.record(key, generation);
+    created.inFlight = 1;
+    this.sessions.set(key, created);
+    return { type: "acquired", record: created };
+  }
+
+  private async acquire(key: BrowserSessionKey): Promise<SessionRecord<RawPage>> {
+    this.startCleanup();
+    const acquisition = this.startAcquisition(key);
+    try {
+      for (;;) {
+        const decision = await this.withPermit(async () =>
+          this.acquireDecision(key, acquisition.generation),
+        );
+        if (decision.type === "acquired") return decision.record;
+        if (decision.type === "evict") await this.closeRecord(decision.record);
+        else await Effect.runPromise(Deferred.await(decision.record.released));
+      }
+    } finally {
+      this.finishAcquisition(key, acquisition);
+    }
+  }
+
+  private startAcquisition(key: BrowserSessionKey): PendingAcquisition {
+    const pending = this.pendingAcquisitions.get(key);
+    if (pending) {
+      pending.count += 1;
+      return pending;
+    }
+    const completion = Promise.withResolvers<void>();
+    const created = {
+      count: 1,
+      generation: Symbol(),
+      resolve: completion.resolve,
+      settlement: completion.promise,
+    };
+    this.pendingAcquisitions.set(key, created);
+    return created;
+  }
+
+  private finishAcquisition(key: BrowserSessionKey, acquisition: PendingAcquisition): void {
+    acquisition.count -= 1;
+    if (acquisition.count > 0) return;
+    if (this.pendingAcquisitions.get(key) === acquisition) {
+      this.pendingAcquisitions.delete(key);
+    }
+    acquisition.resolve();
+  }
+
+  private closeRecord(record: SessionRecord<RawPage>): Promise<void> {
+    record.closing ??= this.closeRecordOnce(record);
+    return record.closing;
+  }
+
+  private async closeRecordOnce(record: SessionRecord<RawPage>): Promise<void> {
+    let failure: unknown;
+    try {
+      await record.host.release();
+    } catch (error) {
+      failure = error;
+      await this.manager.stop().catch(() => undefined);
+    } finally {
+      await this.withPermit(async () => {
+        if (this.sessions.get(record.key) === record) this.sessions.delete(record.key);
+        Deferred.doneUnsafe(record.released, Effect.void);
+      });
+    }
+    if (failure) throw failure;
+  }
+
+  private async finish(record: SessionRecord<RawPage>): Promise<void> {
+    const close = await this.withPermit(async () => {
+      record.inFlight = Math.max(0, record.inFlight - 1);
+      record.lastAccess = this.now();
+      if (!record.releaseRequested || record.inFlight > 0 || record.releaseStarted) return false;
+      record.releaseStarted = true;
+      return true;
+    });
+    if (close) await this.closeRecord(record);
+  }
+
+  private async withSession<A>(
+    sessionKey: BrowserSessionKey,
+    task: (session: BrowserSessionHost<RawPage>, record: SessionRecord<RawPage>) => Promise<A>,
+  ): Promise<A> {
+    const key = decodeBrowserSessionKey(sessionKey);
+    const record = await this.acquire(key);
+    try {
+      return await task(record.host, record);
+    } finally {
+      await this.finish(record);
+    }
+  }
+
+  private withFallbackPermit<A>(
+    record: SessionRecord<RawPage>,
+    task: () => Promise<A>,
+  ): Promise<A> {
+    return Effect.runPromise(
+      record.fallbackLock.withPermit(Effect.tryPromise({ try: task, catch: (error) => error })),
+    );
+  }
+
+  navigate(
+    sessionKey: BrowserSessionKey,
+    url: string,
+    pageId?: string,
+  ): Promise<{ url: string; title: string }> {
+    return this.withSession(sessionKey, (session) => session.navigate(url, pageId));
+  }
+
+  getUrl(sessionKey: BrowserSessionKey, pageId?: string): Promise<{ url: string; title: string }> {
+    return this.withSession(sessionKey, (session) => session.getUrl(pageId));
+  }
+
+  getState(sessionKey: BrowserSessionKey, pageId?: string): Promise<PageState> {
+    return this.withSession(sessionKey, (session) => session.getState(pageId));
+  }
+
+  goBack(sessionKey: BrowserSessionKey, pageId?: string): Promise<void> {
+    return this.withSession(sessionKey, (session) => session.goBack(pageId));
+  }
+
+  goForward(sessionKey: BrowserSessionKey, pageId?: string): Promise<void> {
+    return this.withSession(sessionKey, (session) => session.goForward(pageId));
+  }
+
+  reload(sessionKey: BrowserSessionKey, pageId?: string): Promise<void> {
+    return this.withSession(sessionKey, (session) => session.reload(pageId));
+  }
+
+  getText(sessionKey: BrowserSessionKey, pageId?: string): Promise<string> {
+    return this.withSession(sessionKey, (session) => session.getText(pageId));
+  }
+
+  getHtml(sessionKey: BrowserSessionKey, pageId?: string): Promise<string> {
+    return this.withSession(sessionKey, (session) => session.getHtml(pageId));
+  }
+
+  evaluate(sessionKey: BrowserSessionKey, expression: string, pageId?: string): Promise<unknown> {
+    return this.withSession(sessionKey, (session) => session.evaluate(expression, pageId));
+  }
+
+  click(
+    sessionKey: BrowserSessionKey,
+    args: { selector: string },
+    pageId?: string,
+  ): Promise<{ found: boolean }> {
+    return this.withSession(sessionKey, (session) => session.click(args, pageId));
+  }
+
+  fill(
+    sessionKey: BrowserSessionKey,
+    args: { selector: string; value: string },
+    pageId?: string,
+  ): Promise<{ found: boolean }> {
+    return this.withSession(sessionKey, (session) => session.fill(args, pageId));
+  }
+
+  scroll(
+    sessionKey: BrowserSessionKey,
+    args: { deltaY: number; deltaX?: number },
+    pageId?: string,
+  ): Promise<{ deltaX: number; deltaY: number; scrollY: number }> {
+    return this.withSession(sessionKey, (session) => session.scroll(args, pageId));
+  }
+
+  screenshot(sessionKey: BrowserSessionKey, pageId?: string): Promise<string> {
+    return this.withSession(sessionKey, (session) => session.screenshot(pageId));
+  }
+
+  setViewport(
+    sessionKey: BrowserSessionKey,
+    width: number,
+    height: number,
+    pageId?: string,
+  ): Promise<void> {
+    return this.withSession(sessionKey, (session) => session.setViewport(width, height, pageId));
+  }
+
+  pollFrame(
+    sessionKey: BrowserSessionKey,
+    pageId?: string,
+  ): Promise<{ frame: ScreencastFrame | null; state: PageState }> {
+    return this.withSession(sessionKey, (session) => session.pollFrame(pageId));
+  }
+
+  dispatchMouse(sessionKey: BrowserSessionKey, args: MouseInput, pageId?: string): Promise<void> {
+    return this.withSession(sessionKey, (session) => session.dispatchMouse(args, pageId));
+  }
+
+  dispatchKey(sessionKey: BrowserSessionKey, args: KeyInput, pageId?: string): Promise<void> {
+    return this.withSession(sessionKey, (session) => session.dispatchKey(args, pageId));
+  }
+
+  withFallbackSession<A>(
+    sessionKey: BrowserSessionKey,
+    task: (url: string | null) => Promise<BrowserFallbackResult<A>>,
+  ): Promise<A> {
+    return this.withSession(sessionKey, async (_session, record) =>
+      this.withFallbackPermit(record, async () => {
+        const transition = await task(record.fallbackUrl);
+        if (transition.url) record.fallbackUrl = transition.url;
+        return transition.result;
+      }),
+    );
+  }
+
+  releaseSession(sessionKey: BrowserSessionKey): Promise<void> {
+    let key: BrowserSessionKey;
+    try {
+      key = decodeBrowserSessionKey(sessionKey);
+    } catch (error) {
+      return Promise.reject(error);
+    }
+    const generation =
+      this.sessions.get(key)?.generation ?? this.pendingAcquisitions.get(key)?.generation ?? null;
+    const cached = this.releaseSettlements.get(key);
+    if (cached?.generation === generation) return cached.settlement;
+    const completion = Promise.withResolvers<void>();
+    const release: ReleaseSettlement = {
+      generation,
+      settlement: completion.promise,
+    };
+    this.releaseSettlements.set(key, release);
+    void this.releaseSessionOnce(key, release).then(completion.resolve, completion.reject);
+    void release.settlement.then(
+      () => {
+        if (this.releaseSettlements.get(key) === release) {
+          this.releaseSettlements.delete(key);
+        }
+      },
+      () => undefined,
+    );
+    return release.settlement;
+  }
+
+  private async releaseSessionOnce(
+    key: BrowserSessionKey,
+    release: ReleaseSettlement,
+  ): Promise<void> {
+    for (;;) {
+      const decision = await this.withPermit(async () => {
+        const record = this.sessions.get(key) ?? null;
+        if (record?.generation === release.generation) {
+          record.releaseRequested = true;
+          record.releaseStarted = true;
+          return { record, settlement: null };
+        }
+        const pending = this.pendingAcquisitions.get(key);
+        if (!record && pending?.generation === release.generation) {
+          return { record: null, settlement: pending.settlement };
+        }
+        return { record: null, settlement: null };
+      });
+      if (decision.settlement) {
+        await decision.settlement;
+        continue;
+      }
+      if (!decision.record) {
+        release.generation = null;
+        return;
+      }
+      try {
+        await this.closeRecord(decision.record);
+      } finally {
+        release.generation = null;
+      }
+      return;
+    }
+  }
+
+  async cleanupIdleSessions(): Promise<void> {
+    const expired = await this.withPermit(async () => {
+      const threshold = this.now() - this.config.idleMs;
+      return [...this.sessions.values()].filter((record) => {
+        if (record.inFlight > 0 || record.releaseRequested || record.lastAccess > threshold) {
+          return false;
+        }
+        record.releaseRequested = true;
+        record.releaseStarted = true;
+        return true;
+      });
+    });
+    await Promise.all(expired.map((record) => this.closeRecord(record)));
+  }
+
+  stop(): Promise<void> {
+    this.stopping ??= this.stopOnce();
+    return this.stopping;
+  }
+
+  private async stopOnce(): Promise<void> {
+    this.stopped = true;
+    const cleanup = this.cleanupFiber;
+    this.cleanupFiber = null;
+    if (cleanup) await Effect.runPromise(Fiber.interrupt(cleanup));
+    const records = await this.withPermit(async () =>
+      [...this.sessions.values()].map((record) => {
+        record.releaseRequested = true;
+        record.releaseStarted = true;
+        return record;
+      }),
+    );
+    await Promise.all(records.map((record) => this.closeRecord(record)));
+    await this.manager.stop();
   }
 }
 
@@ -144,11 +681,19 @@ export type MouseInput = {
   deltaY?: number;
 };
 
-export type KeyInput = { type: "down" | "up" | "char"; key: string; code: string; text?: string };
+export type KeyInput = {
+  type: "down" | "up" | "char";
+  key: string;
+  code: string;
+  text?: string;
+};
 
 const clampDelta = (value: number): number => {
   if (!Number.isFinite(value)) return 0;
   return Math.max(-10_000, Math.min(10_000, Math.trunc(value)));
 };
 
-export const browserHost = getGlobalSingleton("browserHost", () => new BrowserHost());
+export const browserHost = getGlobalSingleton(
+  "browserHost",
+  () => new BrowserHost(playwrightManager, { attachPage: HostedPage.attach }),
+);

@@ -788,10 +788,10 @@ async function waitForJson(url, timeoutMs) {
   }
   throw Error(`Timed out waiting for ${url}: ${String(lastError)}`);
 }
-async function postJson(url, body2) {
+async function postJson(url, body2, headers2 = {}) {
   let response = await fetch(url, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", ...headers2 },
     body: JSON.stringify(body2),
     signal: AbortSignal.timeout(30000)
   }), payload = await response.json();
@@ -904,7 +904,7 @@ async function runDesktopPackageSmoke(args2 = process2.argv.slice(2)) {
     let frontendPort = Number(await waitForFile(frontendPortFile, 60000));
     if (!Number.isInteger(frontendPort) || frontendPort <= 0)
       throw Error(`Invalid embedded frontend port: ${frontendPort}`);
-    let origin = `http://127.0.0.1:${frontendPort}`, desktopHealth = await waitForJson(`${origin}/api/desktop-health`, 30000), agentRuntime = await waitForAgentRuntime(logFile, 30000), embeddedBrowser = await postJson(`${agentRuntime.url}/api/agent/browser/navigate`, { url: `${origin}/agent` });
+    let origin = `http://127.0.0.1:${frontendPort}`, desktopHealth = await waitForJson(`${origin}/api/desktop-health`, 30000), agentRuntime = await waitForAgentRuntime(logFile, 30000), embeddedBrowser = await postJson(`${agentRuntime.url}/api/agent/browser/navigate`, { url: `${origin}/agent` }, { "x-local-studio-browser-session": "desktop-package-smoke" });
     if (!String(embeddedBrowser.data?.url ?? "").startsWith(origin))
       throw Error(`Packaged browser navigated to an unexpected URL: ${JSON.stringify(embeddedBrowser)}`);
     browser = await chromium.connectOverCDP(`http://127.0.0.1:${debugPort}`);

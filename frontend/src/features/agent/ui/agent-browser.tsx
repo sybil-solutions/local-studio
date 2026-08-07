@@ -15,6 +15,7 @@
  */
 import { useCallback, useRef, useState, type FormEvent } from "react";
 import { ArrowLeftIcon, ArrowRightIcon, CloseIcon, ReloadIcon } from "@/ui/icons";
+import { browserSessionRequest } from "@/features/agent/browser/session-request";
 import { DEFAULT_BROWSER_URL } from "@/features/agent/tools/persistence";
 import {
   ScreencastSurface,
@@ -45,6 +46,7 @@ type WebviewElement = HTMLElement & {
 };
 
 type Props = {
+  sessionId: string | null;
   url: string;
   inputValue: string;
   onInputChange: (value: string) => void;
@@ -57,6 +59,7 @@ type Props = {
 };
 
 export function AgentBrowser({
+  sessionId,
   url,
   inputValue,
   onInputChange,
@@ -122,9 +125,16 @@ export function AgentBrowser({
     onErrorChange: setLocalSitesError,
   });
 
-  const postLiveVerb = useCallback((verb: "back" | "forward" | "reload") => {
-    void fetch(`/api/agent/browser/${verb}`, { method: "POST" }).catch(() => undefined);
-  }, []);
+  const postLiveVerb = useCallback(
+    (verb: "back" | "forward" | "reload") => {
+      const request = browserSessionRequest(sessionId, verb, {
+        method: "POST",
+      });
+      if (!request) return;
+      void fetch(request.input, request.init).catch(() => undefined);
+    },
+    [sessionId],
+  );
   const handleBack = () => {
     if (readingMode) return;
     if (isElectron) {
@@ -302,6 +312,7 @@ export function AgentBrowser({
           })()
         ) : (
           <ScreencastSurface
+            sessionId={sessionId}
             url={url}
             visible={visible}
             onState={(state) => {

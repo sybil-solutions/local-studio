@@ -1,12 +1,6 @@
 "use client";
 
-import {
-  useCallback,
-  useMemo,
-  useState,
-  type ComponentType,
-  type KeyboardEvent,
-} from "react";
+import { useCallback, useMemo, useState, type ComponentType, type KeyboardEvent } from "react";
 import {
   Activity,
   FolderTree,
@@ -38,6 +32,7 @@ import {
   sanitizeBrowserPaneUrl,
   sanitizeLocalFileUrl,
 } from "@/features/agent/sanitize-embedded-browser-url";
+import { browserSessionRequest } from "@/features/agent/browser/session-request";
 import { useTools } from "@/features/agent/tools/context";
 import type { ComputerTab } from "@/features/agent/tools/types";
 import type { GitSummary, Project } from "@/features/agent/projects/types";
@@ -187,11 +182,13 @@ export function AgentBrowserPanel({
     if (!accepted) return;
     tools.setBrowserUrl(accepted, accepted);
     if (/^file:\/\//i.test(accepted)) return;
-    void fetch("/api/agent/browser/navigate", {
+    const request = browserSessionRequest(focusedSession?.id ?? null, "navigate", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ url: accepted }),
-    }).catch(() => undefined);
+    });
+    if (!request) return;
+    void fetch(request.input, request.init).catch(() => undefined);
   };
   const openSideChat = useCallback(
     (draft?: SideChatDraft) => {
