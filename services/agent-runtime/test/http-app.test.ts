@@ -102,11 +102,11 @@ describe("agent runtime HTTP application", () => {
     const run = createBrowserOperationQueue();
     const gate = Promise.withResolvers<void>();
     const calls: string[] = [];
-    const first = run(async () => {
+    const first = run({ kind: "frame" }, async () => {
       calls.push("frame");
       await gate.promise;
     });
-    const second = run(async () => {
+    const second = run({ kind: "verb" }, async () => {
       calls.push("navigate");
     });
     await Bun.sleep(0);
@@ -138,7 +138,7 @@ describe("agent runtime HTTP application", () => {
         ok: true,
         data: { url, title: "Fallback", readingMode: true },
       });
-      const frame = await handleBrowserFrame();
+      const frame = await handleBrowserFrame(new Request("http://runtime/api/agent/browser/frame"));
       expect(frame.status).toBe(503);
       expect((await frame.json()).data.url).toBe(url);
     } finally {

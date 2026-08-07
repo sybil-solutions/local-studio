@@ -116,10 +116,10 @@ export function createAgentRuntimeApp() {
   app.post("/api/agent/terminal/pty/resize", (c) => handlePtyResize(c.req.raw));
   app.post("/api/agent/terminal/pty/close", (c) => handlePtyClose(c.req.raw));
   app.get("/api/agent/browser/fetch", (c) => handleBrowserFetch(c.req.raw));
-  app.get("/api/agent/browser/frame", () => handleBrowserFrame());
+  app.get("/api/agent/browser/frame", (c) => handleBrowserFrame(c.req.raw));
   app.post("/api/agent/browser/input", (c) => handleBrowserInput(c.req.raw));
   app.get("/api/agent/browser/localhosts", (c) => handleBrowserLocalhosts(c.req.raw));
-  app.get("/api/agent/browser/state", () => handleBrowserState());
+  app.get("/api/agent/browser/state", (c) => handleBrowserState(c.req.raw));
   app.post("/api/agent/browser/viewport", (c) => handleBrowserViewport(c.req.raw));
   app.post("/api/agent/browser/:verb", (c) => handleBrowserVerb(c.req.raw, c.req.param("verb")));
 
