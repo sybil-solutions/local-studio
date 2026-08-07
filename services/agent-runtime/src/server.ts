@@ -1,6 +1,8 @@
 import { serve } from "@hono/node-server";
 import { startAutomationScheduler } from "./automation-scheduler";
+import { browserHost } from "./browser-host/browser-host";
 import { createAgentRuntimeApp } from "./http/app";
+import { installRuntimeSignalShutdown } from "./runtime-shutdown";
 
 startAutomationScheduler();
 
@@ -14,6 +16,17 @@ serve({ fetch: app.fetch, port, hostname: "127.0.0.1" }, (info) => {
   );
 });
 
-process.once("exit", () => litterBridgeGateway.dispose());
-process.once("SIGINT", () => process.exit(0));
-process.once("SIGTERM", () => process.exit(0));
+let gatewayDisposed = false;
+const disposeGateway = () => {
+  if (gatewayDisposed) return;
+  gatewayDisposed = true;
+  litterBridgeGateway.dispose();
+};
+
+process.once("exit", disposeGateway);
+installRuntimeSignalShutdown({
+  dispose: disposeGateway,
+  process,
+  reportError: (error) => console.error("[agent-runtime] shutdown failed", error),
+  stop: () => browserHost.stop(),
+});
