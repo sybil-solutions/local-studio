@@ -1396,15 +1396,37 @@ var releasePackageArguments = ({ app, version, commit }) => [
 
 var exports_release_package_arguments_test = {};
 import assert3 from "node:assert/strict";
+import { readFileSync as readFileSyncReleasePolicy } from "node:fs";
 import test3 from "node:test";
+function workflowStepSource(workflow, name) {
+  let marker = `      - name: ${name}`, start = workflow.indexOf(marker);
+  if (start === -1)
+    throw Error(`Missing release workflow step: ${name}`);
+  let next = workflow.indexOf("\n      - ", start + marker.length);
+  return workflow.slice(start, next === -1 ? workflow.length : next);
+}
 var init_release_package_arguments_test = __esm(() => {
   test3("release signing packaging never publishes implicitly", () => {
-    let args3 = releasePackageArguments({
+    let version = "2.9.0", commit = "0123456789abcdef0123456789abcdef01234567", args3 = releasePackageArguments({
       app: "/tmp/Local Studio.app",
-      version: "2.9.0",
-      commit: "0123456789abcdef"
+      version,
+      commit
     });
-    assert3.deepEqual(args3.slice(-2), ["--publish", "never"]), assert3.deepEqual(args3.slice(0, 2), ["--prepackaged", "/tmp/Local Studio.app"]);
+    assert3.deepEqual(args3.slice(-2), ["--publish", "never"]), assert3.deepEqual(args3.slice(0, 2), ["--prepackaged", "/tmp/Local Studio.app"]), assert3.ok(args3.includes(`--config.extraMetadata.version=${version}`)), assert3.ok(args3.includes(`--config.extraMetadata.localStudioCommit=${commit}`));
+  });
+  test3("stable release version authority stays explicit and wired end to end", () => {
+    let instructions = readFileSyncReleasePolicy(new URL("../../AGENTS.md", import.meta.url), "utf8"), workflow = readFileSyncReleasePolicy(new URL("../../.github/workflows/release.yml", import.meta.url), "utf8"), fallbackPaths = ["../../package.json", "../package.json", "../../controller/package.json", "../../controller/contracts/package.json", "../../services/agent-runtime/package.json"], fallbacks = fallbackPaths.map((manifest) => JSON.parse(readFileSyncReleasePolicy(new URL(manifest, import.meta.url), "utf8"))), shared = JSON.parse(readFileSyncReleasePolicy(new URL("../../shared/package.json", import.meta.url), "utf8")), unsigned = workflowStepSource(workflow, "Build unsigned release app"), signing = workflowStepSource(workflow, "Sign and notarize release assets"), staging = workflowStepSource(workflow, "Stage signed release assets"), computedVersion = "${{ steps.next-release.outputs.version }}", propagatedVersion = "${{ needs.build.outputs.release_version }}", sourceCommit = "${{ github.event.workflow_run.head_sha }}";
+    assert3.match(instructions, /semantic-release's computed version is the authority for stable desktop releases/u), assert3.match(instructions, /root app, frontend, controller, controller contracts, and agent runtime are synchronized development fallbacks/u), assert3.match(instructions, /`shared\/package\.json` intentionally remains independently versioned at `0\.0\.0`/u), assert3.ok(workflow.includes(`release_version: ${computedVersion}`)), assert3.ok(unsigned.includes(`--config.extraMetadata.version=${computedVersion}`)), assert3.ok(unsigned.includes(`--config.extraMetadata.localStudioCommit=${sourceCommit}`)), assert3.ok(signing.includes(`--version ${propagatedVersion}`)), assert3.ok(signing.includes('--commit "$RELEASE_SHA"')), assert3.ok(staging.includes(`--version ${propagatedVersion}`)), assert3.ok(staging.includes('--commit "$RELEASE_SHA"')), assert3.deepEqual(fallbacks.map((manifest) => manifest.name), ["local-studio", "frontend", "local-studio-controller", "@local-studio/contracts", "@local-studio/agent-runtime"]), assert3.equal(new Set(fallbacks.map((manifest) => manifest.version)).size, 1), assert3.equal(shared.name, "@local-studio/shared"), assert3.equal(shared.version, "0.0.0");
+  });
+  test3("release staging validates and stamps version and source commit", () => {
+    let version = "2.9.0", commit = "0123456789abcdef0123456789abcdef01234567", names = [...releaseAssetNames(version).map(releaseAssetName), "Local-Studio-arm64.dmg"];
+    assert3.doesNotThrow(() => assertPackagedReleaseMetadata({ version, localStudioCommit: commit }, version, commit)), assert3.throws(() => assertPackagedReleaseMetadata({ version: "2.8.0", localStudioCommit: commit }, version, commit), /Packaged version 2\.8\.0 does not match release 2\.9\.0/u), assert3.throws(() => assertPackagedReleaseMetadata({ version, localStudioCommit: "fedcba9876543210fedcba9876543210fedcba98" }, version, commit), /Packaged commit .* does not match release/u);
+    let manifest = releaseStagingManifest(version, commit, names, (name) => `sha256:${name}`);
+    assert3.equal(manifest.version, version), assert3.equal(manifest.commit, commit), assert3.deepEqual(Object.keys(manifest.assets), names), assert3.deepEqual(manifest.assets[names[0]], { sha256: `sha256:${names[0]}` });
+  });
+  test3("release updater metadata and asset names derive from the computed version", () => {
+    let version = "2.9.0", releaseDate = "2026-08-07T00:00:00.000Z", names = releaseAssetNames(version), metadata = releaseUpdaterMetadata(version, releaseDate, { sha512: "zip", size: 12 }, { sha512: "dmg", size: 34 });
+    assert3.deepEqual(names, [`Local Studio-${version}-arm64.dmg`, `Local Studio-${version}-arm64.dmg.blockmap`, `Local Studio-${version}-arm64-mac.zip`, `Local Studio-${version}-arm64-mac.zip.blockmap`, "latest-mac.yml"]), assert3.equal(metadata.version, version), assert3.equal(metadata.path, `Local-Studio-${version}-arm64-mac.zip`), assert3.equal(metadata.releaseDate, releaseDate), assert3.deepEqual(metadata.files, [{ url: `Local-Studio-${version}-arm64-mac.zip`, sha512: "zip", size: 12 }, { url: `Local-Studio-${version}-arm64.dmg`, sha512: "dmg", size: 34 }]);
   });
   test3("release signing notarizes and staples the app before packaging", () => {
     let calls = [];
@@ -1490,9 +1512,9 @@ function notarizeApplication(app, archive, credentials, execute = run2) {
     app
   ]);
 }
-async function refreshUpdateMetadata(output3, version) {
-  let { buildBlockMap } = require4(path9.join(frontend, "node_modules", "app-builder-lib", "out", "targets", "blockmap", "blockmap.js")), YAML = require4(path9.join(frontend, "node_modules", "yaml")), zipName = `Local Studio-${version}-arm64-mac.zip`, dmgName = `Local Studio-${version}-arm64.dmg`, zipInfo = await buildBlockMap(path9.join(output3, zipName), "gzip", path9.join(output3, `${zipName}.blockmap`)), dmgInfo = await buildBlockMap(path9.join(output3, dmgName), "gzip", path9.join(output3, `${dmgName}.blockmap`)), updatePath = path9.join(output3, "latest-mac.yml"), current = YAML.parse(readFileSync12(updatePath, "utf8"));
-  writeFileSync6(updatePath, YAML.stringify({
+function releaseUpdaterMetadata(version, releaseDate, zipInfo, dmgInfo) {
+  let [dmgName, , zipName] = releaseAssetNames(version);
+  return {
     version,
     files: [
       {
@@ -1508,8 +1530,12 @@ async function refreshUpdateMetadata(output3, version) {
     ],
     path: zipName.replaceAll(" ", "-"),
     sha512: zipInfo.sha512,
-    releaseDate: current.releaseDate
-  }));
+    releaseDate
+  };
+}
+async function refreshUpdateMetadata(output3, version) {
+  let { buildBlockMap } = require4(path9.join(frontend, "node_modules", "app-builder-lib", "out", "targets", "blockmap", "blockmap.js")), YAML = require4(path9.join(frontend, "node_modules", "yaml")), [dmgName, , zipName] = releaseAssetNames(version), zipInfo = await buildBlockMap(path9.join(output3, zipName), "gzip", path9.join(output3, `${zipName}.blockmap`)), dmgInfo = await buildBlockMap(path9.join(output3, dmgName), "gzip", path9.join(output3, `${dmgName}.blockmap`)), updatePath = path9.join(output3, "latest-mac.yml"), current = YAML.parse(readFileSync12(updatePath, "utf8"));
+  writeFileSync6(updatePath, YAML.stringify(releaseUpdaterMetadata(version, current.releaseDate, zipInfo, dmgInfo)));
 }
 async function signDesktopRelease(args3 = process.argv.slice(2)) {
   let version = valueAfter3(args3, "--version")?.trim(), commit = valueAfter3(args3, "--commit")?.trim().toLowerCase(), prepackaged = valueAfter3(args3, "--prepackaged")?.trim();
@@ -1672,6 +1698,23 @@ function packagedMetadata() {
   let asar = require5(path10.join(frontend2, "node_modules", "@electron", "asar"));
   return JSON.parse(asar.extractFile(archive, "package.json").toString("utf8"));
 }
+function assertPackagedReleaseMetadata(metadata, version, commit) {
+  if (metadata.version !== version)
+    throw Error(`Packaged version ${metadata.version} does not match release ${version}`);
+  if (metadata.localStudioCommit !== commit)
+    throw Error(`Packaged commit ${String(metadata.localStudioCommit)} does not match release ${commit}`);
+}
+function releaseStagingManifest(version, commit, names, digest) {
+  return {
+    schemaVersion: 1,
+    version,
+    commit,
+    assets: Object.fromEntries(names.map((name) => [
+      name,
+      { sha256: digest(name) }
+    ]))
+  };
+}
 function stageDesktopRelease(args3 = process.argv.slice(2)) {
   let version = valueAfter4(args3, "--version")?.trim() || frontendVersion(), commit = valueAfter4(args3, "--commit")?.trim().toLowerCase();
   if (!/^\d+\.\d+\.\d+$/.test(version))
@@ -1679,10 +1722,7 @@ function stageDesktopRelease(args3 = process.argv.slice(2)) {
   if (!commit || !/^[0-9a-f]{40}$/.test(commit))
     throw Error("--commit must be a full Git commit SHA");
   let metadata = packagedMetadata();
-  if (metadata.version !== version)
-    throw Error(`Packaged version ${metadata.version} does not match release ${version}`);
-  if (metadata.localStudioCommit !== commit)
-    throw Error(`Packaged commit ${String(metadata.localStudioCommit)} does not match release ${commit}`);
+  assertPackagedReleaseMetadata(metadata, version, commit);
   let names = releaseAssetNames(version), assets = names.map((name) => [
     requireAsset(name),
     path10.join(staging, releaseAssetName(name))
@@ -1694,15 +1734,7 @@ function stageDesktopRelease(args3 = process.argv.slice(2)) {
   let stagedNames = [
     ...names.map(releaseAssetName),
     "Local-Studio-arm64.dmg"
-  ], manifest = {
-    schemaVersion: 1,
-    version,
-    commit,
-    assets: Object.fromEntries(stagedNames.map((name) => [
-      name,
-      { sha256: sha256(path10.join(staging, name)) }
-    ]))
-  };
+  ], manifest = releaseStagingManifest(version, commit, stagedNames, (name) => sha256(path10.join(staging, name)));
   return writeFileSync7(path10.join(staging, "Local-Studio-release.json"), `${JSON.stringify(manifest, null, 2)}
 `), console.log(`Staged ${stagedNames.length + 1} Local Studio ${version} assets in ${staging}`), manifest;
 }

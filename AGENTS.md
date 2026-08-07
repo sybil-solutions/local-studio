@@ -4,7 +4,9 @@ Local Studio is a local-first workstation whose Bun/Hono controller and Next.js/
 Work decisively without asking questions during execution, preserve user changes, never expose credentials, never use `disable cuda graphs`, `enforce eager`, or `max_tokens` with vLLM or SGLang, and leave no code comments in touched code.
 Keep code composable and typed, use Effect for async and streaming, use the shared UI kit and design tokens, validate boundary data with Effect Schema, and keep contracts defined once in `controller/contracts/` or `shared/agent/` as appropriate.
 
-`docs/workflow.md` is the single source of truth for branches, gates and releases. In short: branch from `dev`, one branch per agent so two of you never share one, open a PR into `dev`, and never push directly to `dev` or `main`.
+Branch from the current `origin/dev`, keep one owner and one scoped pull request per branch, target `dev`, and never push directly to `dev` or `main`.
+
+semantic-release's computed version is the authority for stable desktop releases. The release workflow injects that exact version into Electron package metadata, signing, staging, updater metadata, and versioned asset names before publishing the tag and GitHub release. Checked-in versions for the root app, frontend, controller, controller contracts, and agent runtime are synchronized development fallbacks for local and dev builds; they do not predict or define the next stable release. `shared/package.json` intentionally remains independently versioned at `0.0.0` and is not a desktop release version source.
 
 Run `npm run check` before handoff — it already runs the frontend quality gate and the unit tests, so do not run them separately. Add `npm run test:integration` when the change touches the controller or the runtime. Never bypass git hooks.
 Commit conventionally as you go. CI builds, packages and smoke-tests the desktop app on every run, so rebuild and reinstall locally only when you need to verify something by hand — use `scripts/install-desktop-app.sh [stable|dev]`, never a hand-rolled backup copy.
