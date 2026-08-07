@@ -231,6 +231,7 @@ type SessionRecord<RawPage> = {
   closing: Promise<void> | null;
   fallbackUrl: string | null;
   fallbackLock: Semaphore.Semaphore;
+  generation: symbol;
   host: BrowserSessionHost<RawPage>;
   inFlight: number;
   key: BrowserSessionKey;
@@ -250,9 +251,22 @@ type AcquireDecision<RawPage> =
   | { type: "evict"; record: SessionRecord<RawPage> }
   | { type: "wait"; record: SessionRecord<RawPage> };
 
+type PendingAcquisition = {
+  count: number;
+  generation: symbol;
+  resolve: () => void;
+  settlement: Promise<void>;
+};
+
+type ReleaseSettlement = {
+  generation: symbol | null;
+  settlement: Promise<void>;
+};
+
 export class BrowserHost<RawPage = Page> {
   private readonly sessions = new Map<BrowserSessionKey, SessionRecord<RawPage>>();
-  private readonly releaseSettlements = new Map<BrowserSessionKey, Promise<void>>();
+  private readonly pendingAcquisitions = new Map<BrowserSessionKey, PendingAcquisition>();
+  private readonly releaseSettlements = new Map<BrowserSessionKey, ReleaseSettlement>();
   private readonly registryLock = Semaphore.makeUnsafe(1);
   private readonly config: BrowserSessionConfig;
   private readonly now: () => number;
@@ -300,11 +314,12 @@ export class BrowserHost<RawPage = Page> {
     );
   }
 
-  private record(key: BrowserSessionKey): SessionRecord<RawPage> {
+  private record(key: BrowserSessionKey, generation: symbol): SessionRecord<RawPage> {
     return {
       closing: null,
       fallbackUrl: null,
       fallbackLock: Semaphore.makeUnsafe(1),
+      generation,
       host: new BrowserSessionHost(this.manager, key, this.options),
       inFlight: 0,
       key,
@@ -327,7 +342,7 @@ export class BrowserHost<RawPage = Page> {
     );
   }
 
-  private acquireDecision(key: BrowserSessionKey): AcquireDecision<RawPage> {
+  private acquireDecision(key: BrowserSessionKey, generation: symbol): AcquireDecision<RawPage> {
     this.assertRunning();
     const existing = this.sessions.get(key);
     if (existing) {
@@ -347,7 +362,7 @@ export class BrowserHost<RawPage = Page> {
       if (releasing) return { type: "wait", record: releasing };
       throw new Error("Browser session capacity reached while all sessions are active");
     }
-    const created = this.record(key);
+    const created = this.record(key, generation);
     created.inFlight = 1;
     this.sessions.set(key, created);
     return { type: "acquired", record: created };
@@ -355,12 +370,45 @@ export class BrowserHost<RawPage = Page> {
 
   private async acquire(key: BrowserSessionKey): Promise<SessionRecord<RawPage>> {
     this.startCleanup();
-    for (;;) {
-      const decision = await this.withPermit(async () => this.acquireDecision(key));
-      if (decision.type === "acquired") return decision.record;
-      if (decision.type === "evict") await this.closeRecord(decision.record);
-      else await Effect.runPromise(Deferred.await(decision.record.released));
+    const acquisition = this.startAcquisition(key);
+    try {
+      for (;;) {
+        const decision = await this.withPermit(async () =>
+          this.acquireDecision(key, acquisition.generation),
+        );
+        if (decision.type === "acquired") return decision.record;
+        if (decision.type === "evict") await this.closeRecord(decision.record);
+        else await Effect.runPromise(Deferred.await(decision.record.released));
+      }
+    } finally {
+      this.finishAcquisition(key, acquisition);
     }
+  }
+
+  private startAcquisition(key: BrowserSessionKey): PendingAcquisition {
+    const pending = this.pendingAcquisitions.get(key);
+    if (pending) {
+      pending.count += 1;
+      return pending;
+    }
+    const completion = Promise.withResolvers<void>();
+    const created = {
+      count: 1,
+      generation: Symbol(),
+      resolve: completion.resolve,
+      settlement: completion.promise,
+    };
+    this.pendingAcquisitions.set(key, created);
+    return created;
+  }
+
+  private finishAcquisition(key: BrowserSessionKey, acquisition: PendingAcquisition): void {
+    acquisition.count -= 1;
+    if (acquisition.count > 0) return;
+    if (this.pendingAcquisitions.get(key) === acquisition) {
+      this.pendingAcquisitions.delete(key);
+    }
+    acquisition.resolve();
   }
 
   private closeRecord(record: SessionRecord<RawPage>): Promise<void> {
@@ -529,30 +577,61 @@ export class BrowserHost<RawPage = Page> {
     } catch (error) {
       return Promise.reject(error);
     }
+    const generation =
+      this.sessions.get(key)?.generation ?? this.pendingAcquisitions.get(key)?.generation ?? null;
     const cached = this.releaseSettlements.get(key);
-    if (cached) return cached;
-    const settlement = this.releaseSessionOnce(key);
-    this.releaseSettlements.set(key, settlement);
-    void settlement.then(
+    if (cached?.generation === generation) return cached.settlement;
+    const completion = Promise.withResolvers<void>();
+    const release: ReleaseSettlement = {
+      generation,
+      settlement: completion.promise,
+    };
+    this.releaseSettlements.set(key, release);
+    void this.releaseSessionOnce(key, release).then(completion.resolve, completion.reject);
+    void release.settlement.then(
       () => {
-        if (this.releaseSettlements.get(key) === settlement) {
+        if (this.releaseSettlements.get(key) === release) {
           this.releaseSettlements.delete(key);
         }
       },
       () => undefined,
     );
-    return settlement;
+    return release.settlement;
   }
 
-  private async releaseSessionOnce(key: BrowserSessionKey): Promise<void> {
-    const record = await this.withPermit(async () => {
-      const record = this.sessions.get(key);
-      if (!record) return null;
-      record.releaseRequested = true;
-      record.releaseStarted = true;
-      return record;
-    });
-    if (record) await this.closeRecord(record);
+  private async releaseSessionOnce(
+    key: BrowserSessionKey,
+    release: ReleaseSettlement,
+  ): Promise<void> {
+    for (;;) {
+      const decision = await this.withPermit(async () => {
+        const record = this.sessions.get(key) ?? null;
+        if (record?.generation === release.generation) {
+          record.releaseRequested = true;
+          record.releaseStarted = true;
+          return { record, settlement: null };
+        }
+        const pending = this.pendingAcquisitions.get(key);
+        if (!record && pending?.generation === release.generation) {
+          return { record: null, settlement: pending.settlement };
+        }
+        return { record: null, settlement: null };
+      });
+      if (decision.settlement) {
+        await decision.settlement;
+        continue;
+      }
+      if (!decision.record) {
+        release.generation = null;
+        return;
+      }
+      try {
+        await this.closeRecord(decision.record);
+      } finally {
+        release.generation = null;
+      }
+      return;
+    }
   }
 
   async cleanupIdleSessions(): Promise<void> {

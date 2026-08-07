@@ -418,11 +418,17 @@ test("concurrent release callers share one failing close settlement", async () =
   const failure = new Error("release failed");
   manager.failNextRelease(failure);
   const releases = Array.from({ length: 20 }, () => host.releaseSession(SESSION));
-  assert.equal(releases.every((release) => release === releases[0]), true);
+  assert.equal(
+    releases.every((release) => release === releases[0]),
+    true,
+  );
   await pending.started.promise;
   pending.release.resolve();
   const results = await Promise.allSettled(releases);
-  assert.deepEqual(results.map((result) => result.status), Array(20).fill("rejected"));
+  assert.deepEqual(
+    results.map((result) => result.status),
+    Array(20).fill("rejected"),
+  );
   assert.equal(
     results.every((result) => result.status === "rejected" && result.reason === failure),
     true,
@@ -431,6 +437,45 @@ test("concurrent release callers share one failing close settlement", async () =
   assert.equal(repeatedRelease, releases[0]);
   await assert.rejects(repeatedRelease, (error) => error === failure);
   assert.equal(manager.releaseCalls, 1);
+  await host.stop();
+});
+
+test("a recreated same-key record owns its release settlement", async () => {
+  const manager = new FakeManager();
+  const host = hostFor(manager);
+  await host.withFallbackSession(SESSION, async () => ({ result: undefined }));
+  const records = Reflect.get(host, "sessions") as Map<string, unknown>;
+  const pending = Reflect.get(host, "pendingAcquisitions") as Map<string, unknown>;
+  const settlements = Reflect.get(host, "releaseSettlements") as Map<string, unknown>;
+  const firstRelease = host.releaseSession(SESSION);
+  let recreation: Promise<void> | null = null;
+  let secondRelease: Promise<void> | null = null;
+  await new Promise<void>((resolve, reject) => {
+    let turns = 0;
+    const observeRemoval = (): void => {
+      if (!records.has(SESSION)) {
+        recreation = host.withFallbackSession(SESSION, async () => ({ result: undefined }));
+        secondRelease = host.releaseSession(SESSION);
+        resolve();
+        return;
+      }
+      turns += 1;
+      if (turns > 100) {
+        reject(new Error("Old browser session record was not removed"));
+        return;
+      }
+      queueMicrotask(observeRemoval);
+    };
+    queueMicrotask(observeRemoval);
+  });
+  assert.ok(recreation);
+  assert.ok(secondRelease);
+  assert.notEqual(secondRelease, firstRelease);
+  await Promise.all([firstRelease, recreation, secondRelease]);
+  assert.equal(manager.releaseCalls, 2);
+  assert.equal(records.has(SESSION), false);
+  assert.equal(pending.size, 0);
+  assert.equal(settlements.size, 0);
   await host.stop();
 });
 
