@@ -1,6 +1,7 @@
 "use client";
 
 import { effectTimeout, type EffectTimer } from "@/lib/effect-timers";
+import { browserSessionRequest } from "@/features/agent/browser/session-request";
 
 /**
  * Live surface for the agent browser pane: renders the server-side headless
@@ -37,6 +38,7 @@ type FramePayload = {
 };
 
 type Props = {
+  sessionId: string | null;
   /** Desired URL from the address bar; navigated server-side when it diverges. */
   url: string;
   onState: (state: BrowserPaneState) => void;
@@ -51,15 +53,23 @@ const VIEWPORT_MAX = { width: 1920, height: 1200 };
 const POLL_INTERVAL_MS = 110; // ~9fps
 const MOVE_THROTTLE_MS = 33;
 
-function postBrowser(path: string, body: unknown): void {
-  void fetch(`/api/agent/browser/${path}`, {
+function postBrowser(sessionId: string | null, path: string, body: unknown): void {
+  const request = browserSessionRequest(sessionId, path, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
-  }).catch(() => undefined);
+  });
+  if (!request) return;
+  void fetch(request.input, request.init).catch(() => undefined);
 }
 
-export function ScreencastSurface({ url, onState, onUnavailable, visible = true }: Props) {
+export function ScreencastSurface({
+  sessionId,
+  url,
+  onState,
+  onUnavailable,
+  visible = true,
+}: Props) {
   const [container, setContainer] = useState<HTMLDivElement | null>(null);
   const [frameSrc, setFrameSrc] = useState<string | null>(null);
   const [navError, setNavError] = useState<string | null>(null);
@@ -82,9 +92,13 @@ export function ScreencastSurface({ url, onState, onUnavailable, visible = true 
   // collapsed) and idles at 1s while the document itself is hidden, so a
   // background browser tab doesn't burn ~9 fetches+JPEG decodes per second. ──
   useMountSubscription(() => {
-    if (!visible) return;
+    serverUrlRef.current = "";
+    setFrameSrc(null);
+    setNavError(null);
+    if (!visible || !sessionId) return;
     let disposed = false;
     let timer: EffectTimer | null = null;
+    let requestController: AbortController | null = null;
 
     const tick = async () => {
       if (disposed) return;
@@ -93,7 +107,13 @@ export function ScreencastSurface({ url, onState, onUnavailable, visible = true 
         return;
       }
       try {
-        const response = await fetch("/api/agent/browser/frame", { cache: "no-store" });
+        requestController = new AbortController();
+        const request = browserSessionRequest(sessionId, "frame", {
+          cache: "no-store",
+          signal: requestController.signal,
+        });
+        if (!request) return;
+        const response = await fetch(request.input, request.init);
         if (response.status === 503) {
           const payload = (await response.json().catch(() => null)) as FramePayload | null;
           onUnavailableRef.current(payload?.error || "Browser unavailable");
@@ -112,6 +132,8 @@ export function ScreencastSurface({ url, onState, onUnavailable, visible = true 
         }
       } catch {
         // transient — keep polling
+      } finally {
+        requestController = null;
       }
       if (!disposed) timer = effectTimeout(() => void tick(), POLL_INTERVAL_MS);
     };
@@ -120,20 +142,25 @@ export function ScreencastSurface({ url, onState, onUnavailable, visible = true 
     return () => {
       disposed = true;
       if (timer) timer.cancel();
+      requestController?.abort();
     };
-  }, [visible]);
+  }, [sessionId, visible]);
 
   // ── Address-bar navigation: navigate server-side when the desired URL
   // diverges from what the host last reported ────────────────────────────
   useMountSubscription(() => {
     const target = url.trim();
-    if (!target || target === serverUrlRef.current) return;
+    if (!sessionId || !target || target === serverUrlRef.current) return;
     let cancelled = false;
-    void fetch("/api/agent/browser/navigate", {
+    const controller = new AbortController();
+    const request = browserSessionRequest(sessionId, "navigate", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ url: target }),
-    })
+      signal: controller.signal,
+    });
+    if (!request) return;
+    void fetch(request.input, request.init)
       .then(async (response) => {
         const payload = (await response.json()) as { ok: boolean; error?: string };
         if (cancelled) return;
@@ -146,12 +173,13 @@ export function ScreencastSurface({ url, onState, onUnavailable, visible = true 
       });
     return () => {
       cancelled = true;
+      controller.abort();
     };
-  }, [url]);
+  }, [sessionId, url]);
 
   // ── Viewport sync: match the headless viewport to the pane size ────────
   useMountSubscription(() => {
-    if (!container) return;
+    if (!container || !sessionId) return;
     let timer: EffectTimer | null = null;
     const sync = () => {
       const rect = container.getBoundingClientRect();
@@ -163,7 +191,7 @@ export function ScreencastSurface({ url, onState, onUnavailable, visible = true 
       );
       if (width === viewportRef.current.width && height === viewportRef.current.height) return;
       viewportRef.current = { width, height };
-      postBrowser("viewport", { width, height });
+      postBrowser(sessionId, "viewport", { width, height });
     };
     const observer = new ResizeObserver(() => {
       if (timer) timer.cancel();
@@ -175,7 +203,7 @@ export function ScreencastSurface({ url, onState, onUnavailable, visible = true 
       if (timer) timer.cancel();
       observer.disconnect();
     };
-  }, [container]);
+  }, [container, sessionId]);
 
   // ── Input forwarding ────────────────────────────────────────────────────
   const toViewport = (event: { clientX: number; clientY: number }) => {
@@ -194,7 +222,7 @@ export function ScreencastSurface({ url, onState, onUnavailable, visible = true 
     container?.focus();
     event.currentTarget.setPointerCapture(event.pointerId);
     const { x, y } = toViewport(event);
-    postBrowser("input", {
+    postBrowser(sessionId, "input", {
       kind: "mouse",
       type: "down",
       x,
@@ -206,7 +234,7 @@ export function ScreencastSurface({ url, onState, onUnavailable, visible = true 
 
   const handlePointerUp = (event: ReactPointerEvent<HTMLDivElement>) => {
     const { x, y } = toViewport(event);
-    postBrowser("input", {
+    postBrowser(sessionId, "input", {
       kind: "mouse",
       type: "up",
       x,
@@ -221,21 +249,32 @@ export function ScreencastSurface({ url, onState, onUnavailable, visible = true 
     if (now - lastMoveAtRef.current < MOVE_THROTTLE_MS) return;
     lastMoveAtRef.current = now;
     const { x, y } = toViewport(event);
-    postBrowser("input", { kind: "mouse", type: "move", x, y });
+    postBrowser(sessionId, "input", { kind: "mouse", type: "move", x, y });
   };
 
   const handleWheel = (event: ReactWheelEvent<HTMLDivElement>) => {
     const { x, y } = toViewport(event);
-    postBrowser("input", { kind: "wheel", x, y, deltaX: event.deltaX, deltaY: event.deltaY });
+    postBrowser(sessionId, "input", {
+      kind: "wheel",
+      x,
+      y,
+      deltaX: event.deltaX,
+      deltaY: event.deltaY,
+    });
   };
 
   const handleKey = (type: "down" | "up") => (event: ReactKeyboardEvent<HTMLDivElement>) => {
     // Leave app-level shortcuts (⌘K etc.) alone; forward everything else.
     if (event.metaKey) return;
     event.preventDefault();
-    postBrowser("input", { kind: "key", type, key: event.key, code: event.code });
+    postBrowser(sessionId, "input", {
+      kind: "key",
+      type,
+      key: event.key,
+      code: event.code,
+    });
     if (type === "down" && event.key.length === 1 && !event.ctrlKey && !event.altKey) {
-      postBrowser("input", {
+      postBrowser(sessionId, "input", {
         kind: "key",
         type: "char",
         key: event.key,
@@ -244,9 +283,23 @@ export function ScreencastSurface({ url, onState, onUnavailable, visible = true 
       });
     }
     if (type === "down" && event.key === "Enter") {
-      postBrowser("input", { kind: "key", type: "char", key: "Enter", code: "Enter", text: "\r" });
+      postBrowser(sessionId, "input", {
+        kind: "key",
+        type: "char",
+        key: "Enter",
+        code: "Enter",
+        text: "\r",
+      });
     }
   };
+
+  if (!sessionId) {
+    return (
+      <div className="flex size-full items-center justify-center bg-(--bg) px-6 text-center text-xs text-(--dim)">
+        Select an agent session to use the live browser.
+      </div>
+    );
+  }
 
   return (
     <div

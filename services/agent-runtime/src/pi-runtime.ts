@@ -16,10 +16,10 @@ import { Effect } from "effect";
 import type { AgentImageInput } from "../../../shared/agent/agent-image-input";
 import type { AgentQueueAction } from "../../../shared/agent/agent-turn";
 import {
-  applyRuntimeEnvInjections,
   buildAgentSessionOptionsSync,
   runtimeOptionsFingerprint,
   resolveAgentCwdEffect,
+  withRuntimeEnvInjections,
   type RuntimeStartOptions,
 } from "./pi-runtime-helpers";
 import { refreshPiModels, resolvePiModelSelection } from "./pi-runtime-models";
@@ -348,10 +348,6 @@ class PiSdkSession extends EventEmitter implements PiAgentSession {
         });
 
         const sessionOptions = buildAgentSessionOptionsSync({ options });
-        applyRuntimeEnvInjections(sessionOptions.envInjections);
-        // Expose the current session's model so the automations extension can
-        // default a scheduled run to the same model the user is talking to.
-        applyRuntimeEnvInjections({ LOCAL_STUDIO_MODEL_ID: modelId });
         const sessionDir = configuredPiSessionDir(resolvedCwd);
         const resumeFile = desiredSessionId ? findSessionFile(resolvedCwd, desiredSessionId) : null;
         const sessionManager = resumeFile
@@ -361,7 +357,7 @@ class PiSdkSession extends EventEmitter implements PiAgentSession {
         const agentDir = getAgentDir();
         const extensionUiContext = this.extensionUiContext();
         const recordExtensionEvent = (event: PiEvent) => this.recordEvent(event);
-        const runtime = yield* Effect.tryPromise({
+        const runtimeEffect = Effect.tryPromise({
           try: () =>
             createAgentSessionRuntime(
               ({ cwd, agentDir, sessionManager, sessionStartEvent }) =>
@@ -484,6 +480,10 @@ class PiSdkSession extends EventEmitter implements PiAgentSession {
             ),
           catch: (error) => error,
         });
+        const runtime = yield* withRuntimeEnvInjections(
+          { ...sessionOptions.envInjections, LOCAL_STUDIO_MODEL_ID: modelId },
+          runtimeEffect,
+        );
 
         this.runtime = runtime;
         this.agentDir = agentDir;
