@@ -3,6 +3,7 @@ import { Schema } from "effect";
 import { ConnectorTestInputSchema } from "@local-studio/agent-runtime/connector-contract";
 import { listConnectors } from "@local-studio/agent-runtime/connectors-service";
 import { probeConnector } from "@local-studio/agent-runtime/connector-pool";
+import { connectorToolPermissions } from "@local-studio/agent-runtime/connector-policy";
 import { requireApiAccess } from "@/lib/auth/guard";
 
 export const runtime = "nodejs";
@@ -24,6 +25,7 @@ export async function POST(request: NextRequest) {
     ok: result.ok,
     tool_count: result.tools.length,
     tool_names: result.tools.map((tool) => tool.name).slice(0, 40),
+    tools: connectorToolPermissions(connector, result.tools),
     ...(result.error ? { error: result.error } : {}),
   });
 }

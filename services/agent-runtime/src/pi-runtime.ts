@@ -30,6 +30,7 @@ import { findRuntimeSessionForLookup, piStatusFromEvents } from "./pi-runtime-st
 import { configuredPiSessionDir, findSessionFile } from "./sessions-store";
 import { getGlobalSingleton } from "./instances";
 import { connectorsRevisionSync } from "./connectors-service";
+import "./connector-approval";
 import type {
   LoggedPiEvent,
   PiAgentSession,

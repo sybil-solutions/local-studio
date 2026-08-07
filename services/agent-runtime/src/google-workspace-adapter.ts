@@ -61,6 +61,7 @@ export function googleWorkspaceConnector(
     url: binding.endpoint,
     auth: { type: "oauth", provider: "google-workspace", account: id },
     allowTools: [...binding.observeTools],
+    permissionReviewed: true,
     origin: { kind: "account-adapter", id, binding: "google-workspace" },
     enabled,
   };
@@ -75,13 +76,9 @@ export function enableGoogleWorkspaceAdapter(
       const connector = googleWorkspaceConnector(id, false);
       const probe = await probeConnector(connector, signal);
       if (!probe.ok) throw new Error(probe.error ?? "Remote MCP probe failed");
-      const declaredReadOnly = new Set(
-        probe.tools
-          .filter((tool) => tool.annotations?.readOnlyHint === true)
-          .map((tool) => tool.name),
-      );
+      const declaredTools = new Set(probe.tools.map((tool) => tool.name));
       const allowTools = GOOGLE_WORKSPACE_BINDINGS[id].observeTools.filter((tool) =>
-        declaredReadOnly.has(tool),
+        declaredTools.has(tool),
       );
       if (allowTools.length !== GOOGLE_WORKSPACE_BINDINGS[id].observeTools.length) {
         throw new Error("Remote MCP read-only contract changed");

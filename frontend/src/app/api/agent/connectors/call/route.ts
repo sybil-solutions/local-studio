@@ -1,22 +1,20 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { Effect, Schema } from "effect";
+import { ConnectorToolCallSchema } from "@local-studio/agent-runtime/connector-contract";
 import {
-  callConnectorTool,
   ConnectorToolDeniedError,
   listConnectorTools,
 } from "@local-studio/agent-runtime/connector-pool";
+import {
+  ConnectorApprovalError,
+  executeConnectorTool,
+} from "@local-studio/agent-runtime/connector-approval";
 import { enabledConnectors } from "@local-studio/agent-runtime/connectors-service";
 import { refreshEnabledPluginConnectors } from "@local-studio/agent-runtime/plugin-runtime";
 import { requireApiAccess } from "@/lib/auth/guard";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-const ConnectorToolCallSchema = Schema.Struct({
-  connector_id: Schema.String,
-  tool: Schema.String,
-  args: Schema.optional(Schema.Record(Schema.String, Schema.Unknown)),
-});
 
 export async function GET(request: NextRequest) {
   const denied = requireApiAccess(request);
@@ -48,16 +46,31 @@ export async function POST(request: NextRequest) {
   try {
     body = Schema.decodeUnknownSync(ConnectorToolCallSchema)(await request.json());
   } catch {
-    return NextResponse.json({ error: "connector_id and tool are required" }, { status: 400 });
+    return NextResponse.json(
+      { error: "session_id, connector_id, tool, and JSON arguments are required" },
+      { status: 400 },
+    );
   }
-  if (!body.connector_id.trim() || !body.tool.trim()) {
-    return NextResponse.json({ error: "connector_id and tool are required" }, { status: 400 });
+  if (!body.session_id.trim() || !body.connector_id.trim() || !body.tool.trim()) {
+    return NextResponse.json(
+      { error: "session_id, connector_id, and tool are required" },
+      { status: 400 },
+    );
   }
   try {
-    const result = await callConnectorTool(body.connector_id, body.tool, body.args ?? {});
+    const result = await executeConnectorTool({
+      sessionId: body.session_id,
+      connectorId: body.connector_id,
+      tool: body.tool,
+      args: body.args ?? {},
+      signal: request.signal,
+    });
     return NextResponse.json({ ok: true, result });
   } catch (error) {
-    const status = error instanceof ConnectorToolDeniedError ? 403 : 500;
+    const status =
+      error instanceof ConnectorToolDeniedError || error instanceof ConnectorApprovalError
+        ? 403
+        : 500;
     return NextResponse.json(
       { ok: false, error: error instanceof Error ? error.message : String(error) },
       { status },

@@ -10,6 +10,7 @@ import {
   type ConnectorConfig,
 } from "@local-studio/agent-runtime/connectors-service";
 import { closePooledConnection } from "@local-studio/agent-runtime/connector-pool";
+import { catalogConnectorConfiguration } from "@local-studio/agent-runtime/connector-policy";
 import { requireApiAccess } from "@/lib/auth/guard";
 
 export const runtime = "nodejs";
@@ -40,7 +41,8 @@ export async function POST(request: NextRequest) {
   if (body.transport === "http" && !body.url) {
     return NextResponse.json({ error: "url is required for http" }, { status: 400 });
   }
-  const connector: ConnectorConfig = {
+  const existing = (await listConnectors()).find((entry) => entry.id === body.id);
+  const supplied: ConnectorConfig = {
     id: body.id,
     name: body.name?.trim() || body.id,
     transport: body.transport,
@@ -51,8 +53,19 @@ export async function POST(request: NextRequest) {
     ...(body.url ? { url: body.url } : {}),
     ...(body.headers ? { headers: body.headers } : {}),
     ...(body.allowTools ? { allowTools: body.allowTools } : {}),
+    permissionReviewed: body.permissionReviewed ?? false,
     enabled: body.enabled ?? true,
   };
+  const connector = body.catalogId
+    ? catalogConnectorConfiguration(supplied, body.catalogId)
+    : existing?.origin
+      ? {
+          ...existing,
+          allowTools: body.allowTools ?? existing.allowTools ?? [],
+          permissionReviewed: body.permissionReviewed ?? existing.permissionReviewed ?? false,
+          enabled: body.enabled ?? existing.enabled,
+        }
+      : supplied;
   try {
     const connectors = await upsertConnector(connector);
     closePooledConnection(connector.id);

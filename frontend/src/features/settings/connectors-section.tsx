@@ -6,6 +6,7 @@ import {
   ConnectorSshPathResponseSchema,
   ConnectorTestResponseSchema,
   ConnectorsResponseSchema,
+  type ConnectorToolPermission,
   type ConnectorView,
 } from "@local-studio/agent-runtime/connector-contract";
 import { ApiErrorResponseSchema } from "@local-studio/agent-runtime/api-contract";
@@ -89,10 +90,51 @@ async function requestJson<T>(
   return decode(body);
 }
 
+const probeConnector = (id: string) =>
+  requestJson("/api/agent/connectors/test", Schema.decodeUnknownSync(ConnectorTestResponseSchema), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ id }),
+  });
+
+const updateGrant = (
+  current: ReadonlySet<string>,
+  tool: string,
+  selected: boolean,
+): Set<string> => {
+  const next = new Set(current);
+  if (selected) next.add(tool);
+  else next.delete(tool);
+  return next;
+};
+
 const connectorCommand = (connector: ConnectorView): string =>
   connector.transport === "stdio"
     ? [connector.command, ...(connector.args ?? [])].filter(Boolean).join(" ")
     : (connector.url ?? "HTTP endpoint not set");
+
+function ToolReview({
+  tools,
+  granted,
+  onChange,
+}: {
+  tools: readonly ConnectorToolPermission[];
+  granted: ReadonlySet<string>;
+  onChange: (tool: string, enabled: boolean) => void;
+}) {
+  return (
+    <div className="space-y-2">
+      {tools.map((tool) => (
+        <Checkbox
+          key={tool.name}
+          checked={granted.has(tool.name)}
+          onChange={(enabled) => onChange(tool.name, enabled)}
+          label={`${tool.name} · ${tool.risk}`}
+        />
+      ))}
+    </div>
+  );
+}
 
 function ConnectorDrawer({
   connector,
@@ -108,9 +150,24 @@ function ConnectorDrawer({
   const [args, setArgs] = useState((connector.args ?? []).join("\n"));
   const [url, setUrl] = useState(connector.url ?? "");
   const [enabled, setEnabled] = useState(connector.enabled);
+  const [tools, setTools] = useState<readonly ConnectorToolPermission[] | null>(null);
+  const [granted, setGranted] = useState(() => new Set(connector.allowTools));
+  const [reviewed, setReviewed] = useState(connector.permissionReviewed);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const managed = Boolean(connector.origin);
+
+  const review = async () => {
+    setError("");
+    try {
+      const permissions = (await probeConnector(connector.id)).tools;
+      setTools(permissions);
+      setGranted(new Set(permissions.flatMap((tool) => (tool.granted ? [tool.name] : []))));
+      setReviewed(true);
+    } catch (reviewError) {
+      setError(reviewError instanceof Error ? reviewError.message : "Tool discovery failed");
+    }
+  };
 
   const save = async () => {
     setSaving(true);
@@ -135,7 +192,8 @@ function ConnectorDrawer({
             env: connector.env,
             cwd: connector.cwd,
             headers: connector.headers,
-            allowTools: connector.allowTools,
+            allowTools: [...granted],
+            permissionReviewed: reviewed,
             enabled,
           }),
         },
@@ -164,14 +222,14 @@ function ConnectorDrawer({
           : `${connector.transport} · connectors.json`
       }
       footer={
-        managed ? (
+        managed && connector.permissionReviewed && !tools ? (
           <Button onClick={onClose}>Done</Button>
         ) : (
           <>
             <Button variant="secondary" onClick={onClose}>
               Cancel
             </Button>
-            <Button loading={saving} onClick={() => void save()}>
+            <Button loading={saving} disabled={enabled && !reviewed} onClick={() => void save()}>
               Save connector
             </Button>
           </>
@@ -200,7 +258,7 @@ function ConnectorDrawer({
           <ResourceFact label="Command" value={connectorCommand(connector)} mono />
           <ResourceFact
             label="Allowed tools"
-            value={connector.allowTools?.join(" · ") || "All declared tools"}
+            value={connector.allowTools.join(" · ") || "None"}
             mono
           />
         </ResourceDrawerSection>
@@ -239,6 +297,20 @@ function ConnectorDrawer({
           <Checkbox checked={enabled} onChange={setEnabled} label="Enabled in Workbench" />
         </div>
       )}
+      <ResourceDrawerSection title="Tool permissions">
+        <Button variant="secondary" onClick={() => void review()}>
+          Discover and review tools
+        </Button>
+        {tools ? (
+          <ToolReview
+            tools={tools}
+            granted={granted}
+            onChange={(tool, selected) =>
+              setGranted((current) => updateGrant(current, tool, selected))
+            }
+          />
+        ) : null}
+      </ResourceDrawerSection>
       {error ? <p className="mt-4 text-[length:var(--fs-sm)] text-(--ui-danger)">{error}</p> : null}
     </ResourceDrawer>
   );
@@ -256,6 +328,8 @@ function CatalogDrawer({
   const [fields, setFields] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [tools, setTools] = useState<readonly ConnectorToolPermission[] | null>(null);
+  const [granted, setGranted] = useState<Set<string>>(new Set());
 
   const add = async () => {
     setBusy(true);
@@ -273,6 +347,7 @@ function CatalogDrawer({
       const host = fields.SSH_HOST?.trim();
       const id = entry.id === "computer" && host ? `computer-${host.split("@").pop()}` : entry.id;
       const name = entry.id === "computer" && host ? `Computer: ${host}` : entry.name;
+      const connectorId = id.toLowerCase().replace(/[^a-z0-9-_]+/g, "-");
       const { connectors } = await requestJson(
         "/api/agent/connectors",
         Schema.decodeUnknownSync(ConnectorsResponseSchema),
@@ -280,18 +355,28 @@ function CatalogDrawer({
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            id: id.toLowerCase().replace(/[^a-z0-9-_]+/g, "-"),
+            id: connectorId,
             name,
             transport: entry.transport,
             command: entry.command,
             args,
             env: fields,
-            enabled: true,
+            allowTools: [...granted],
+            permissionReviewed: tools !== null,
+            enabled: tools !== null,
+            catalogId: entry.id,
           }),
         },
       );
       onChanged(connectors);
-      onClose();
+      if (tools) onClose();
+      else {
+        const permissions = (await probeConnector(connectorId)).tools;
+        setTools(permissions);
+        setGranted(
+          new Set(permissions.flatMap((tool) => (tool.default_granted ? [tool.name] : []))),
+        );
+      }
     } catch (addError) {
       setError(addError instanceof Error ? addError.message : "Connector setup failed");
     } finally {
@@ -311,7 +396,7 @@ function CatalogDrawer({
             Cancel
           </Button>
           <Button loading={busy} onClick={() => void add()}>
-            Connect
+            {tools ? "Connect" : "Discover permissions"}
           </Button>
         </>
       }
@@ -340,6 +425,17 @@ function CatalogDrawer({
           </FormField>
         ))}
       </div>
+      {tools ? (
+        <ResourceDrawerSection title="Tool permissions">
+          <ToolReview
+            tools={tools}
+            granted={granted}
+            onChange={(tool, selected) =>
+              setGranted((current) => updateGrant(current, tool, selected))
+            }
+          />
+        </ResourceDrawerSection>
+      ) : null}
       {error ? <p className="mt-4 text-[length:var(--fs-sm)] text-(--ui-danger)">{error}</p> : null}
     </ResourceDrawer>
   );
@@ -423,8 +519,8 @@ function ConnectorRow({
           <ModelButton onClick={() => void test()} disabled={testing}>
             {testing ? <Spinner size="xs" /> : "Test"}
           </ModelButton>
-          <ModelButton onClick={() => void toggle()}>
-            {connector.enabled ? "Disable" : "Enable"}
+          <ModelButton onClick={() => (connector.permissionReviewed ? void toggle() : onOpen())}>
+            {connector.enabled ? "Disable" : connector.permissionReviewed ? "Enable" : "Review"}
           </ModelButton>
           {!connector.origin ? (
             <ModelButton onClick={() => void remove()} tone="danger" title="Remove connector">

@@ -11,6 +11,7 @@ import {
   type GoogleWorkspacePluginId,
 } from "./google-workspace-adapter";
 import { discoverPluginBundles, type PluginBundle, type PluginSource } from "./plugin-discovery";
+import type { McpToolInfo } from "./mcp-client";
 import {
   type PluginActivationResult,
   type PluginRuntimeView,
@@ -447,7 +448,12 @@ async function reconcileEnabledPluginConnectors(
         if (!replacement || !connector.allowTools?.length) {
           throw new PluginRuntimeError(409, "Reconnect to approve the updated plugin");
         }
-        return { ...replacement, allowTools: connector.allowTools, enabled: true };
+        return {
+          ...replacement,
+          allowTools: connector.allowTools,
+          permissionReviewed: connector.permissionReviewed === true,
+          enabled: connector.permissionReviewed === true,
+        };
       });
       const updated = await Effect.runPromise(enabledObserveConnectors(replacements));
       connectors = await upsertConnectors(updated);
@@ -537,23 +543,7 @@ function enabledObserveConnectors(
             `${connector.name} failed to start: ${probe.error ?? "MCP probe failed"}`,
           );
         }
-        const requested = connector.allowTools ? new Set(connector.allowTools) : null;
-        const allowTools = probe.tools
-          .filter(
-            (tool) =>
-              tool.annotations?.readOnlyHint === true && (!requested || requested.has(tool.name)),
-          )
-          .map((tool) => tool.name);
-        if (allowTools.length === 0) {
-          throw new PluginRuntimeError(
-            409,
-            `${connector.name} does not declare any read-only tools`,
-          );
-        }
-        if (requested && allowTools.length !== requested.size) {
-          throw new PluginRuntimeError(409, `${connector.name} read-only contract changed`);
-        }
-        return { ...connector, allowTools, enabled: true };
+        return applyReviewedConnectorInventory(connector, probe.tools);
       });
     },
     catch: (error) =>
@@ -561,6 +551,20 @@ function enabledObserveConnectors(
         ? error
         : new PluginRuntimeError(502, `Plugin probe failed: ${error}`),
   });
+}
+
+export function applyReviewedConnectorInventory(
+  connector: ConnectorConfig,
+  tools: readonly McpToolInfo[],
+): ConnectorConfig {
+  if (connector.permissionReviewed !== true || connector.allowTools === undefined) {
+    return { ...connector, allowTools: [], permissionReviewed: false, enabled: false };
+  }
+  const available = new Set(tools.map((tool) => tool.name));
+  if (connector.allowTools.some((tool) => !available.has(tool))) {
+    throw new PluginRuntimeError(409, `${connector.name} approved tool inventory changed`);
+  }
+  return { ...connector, allowTools: [...connector.allowTools], enabled: true };
 }
 
 export function setPluginEnabled(
@@ -622,7 +626,21 @@ export function setPluginEnabled(
         );
       }
       changed = yield* enabledObserveConnectors(
-        servers.flatMap((server) => (server.connector ? [server.connector] : [])),
+        servers.flatMap((server) => {
+          if (!server.connector) return [];
+          const reviewed = owned.find(
+            (connector) => connector.origin?.binding === server.connector?.origin?.binding,
+          );
+          return reviewed?.permissionReviewed === true
+            ? [
+                {
+                  ...server.connector,
+                  allowTools: reviewed.allowTools ?? [],
+                  permissionReviewed: true,
+                },
+              ]
+            : [server.connector];
+        }),
       );
     } else {
       if (owned.length === 0) {
