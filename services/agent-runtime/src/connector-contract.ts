@@ -1,6 +1,39 @@
 import { Schema } from "effect";
 
-const StringRecordSchema = Schema.Record(Schema.String, Schema.String);
+export const CONNECTOR_MASK_TOKEN = "••••••••";
+
+const MaskableStringRecordSchema = Schema.Record(Schema.String, Schema.String);
+const ConnectorSecretSchema = Schema.String.check(
+  Schema.makeFilter((value) => value !== CONNECTOR_MASK_TOKEN, {
+    expected: "a raw connector secret",
+  }),
+);
+const RawSecretRecordSchema = Schema.Record(Schema.String, ConnectorSecretSchema);
+
+function connectorUrlAuthority(value: string): string | null {
+  return /^[A-Za-z][A-Za-z\d+.-]*:\/\/([^/?#]*)/.exec(value)?.[1] ?? null;
+}
+
+function isConnectorHttpUrl(value: string): boolean {
+  const authority = connectorUrlAuthority(value);
+  if (!authority || authority.includes("@")) return false;
+  try {
+    const url = new URL(value);
+    return (
+      (url.protocol === "http:" || url.protocol === "https:") &&
+      url.username.length === 0 &&
+      url.password.length === 0
+    );
+  } catch {
+    return false;
+  }
+}
+
+export const ConnectorHttpUrlSchema = Schema.String.check(
+  Schema.makeFilter(isConnectorHttpUrl, {
+    expected: "an HTTP(S) connector URL without credentials",
+  }),
+);
 
 const ConnectorOriginSchema = Schema.Struct({
   kind: Schema.String,
@@ -21,20 +54,25 @@ const ConnectorFields = {
   transport: Schema.Union([Schema.Literal("stdio"), Schema.Literal("http")]),
   command: Schema.optional(Schema.String),
   args: Schema.optional(Schema.Array(Schema.String)),
-  env: Schema.optional(StringRecordSchema),
+  env: Schema.optional(RawSecretRecordSchema),
   cwd: Schema.optional(Schema.String),
-  url: Schema.optional(Schema.String),
-  headers: Schema.optional(StringRecordSchema),
+  url: Schema.optional(ConnectorHttpUrlSchema),
+  headers: Schema.optional(RawSecretRecordSchema),
   auth: Schema.optional(ConnectorAuthReferenceSchema),
   allowTools: Schema.optional(Schema.Array(Schema.String)),
   origin: Schema.optional(ConnectorOriginSchema),
   enabled: Schema.Boolean,
 };
 
-const ConnectorConfigSchema = Schema.Struct(ConnectorFields);
+export const ConnectorConfigSchema = Schema.Struct(ConnectorFields);
 export const ConnectorViewSchema = Schema.Struct({
   ...ConnectorFields,
-  secret_keys: Schema.Array(Schema.String),
+  env: Schema.optional(MaskableStringRecordSchema),
+  headers: Schema.optional(MaskableStringRecordSchema),
+  secret_keys: Schema.Struct({
+    env: Schema.Array(Schema.String),
+    headers: Schema.Array(Schema.String),
+  }),
 });
 export const ConnectorsFileSchema = Schema.Struct({
   connectors: Schema.optional(Schema.Array(ConnectorConfigSchema)),
@@ -48,10 +86,10 @@ export const ConnectorUpsertInputSchema = Schema.Struct({
   transport: Schema.Union([Schema.Literal("stdio"), Schema.Literal("http")]),
   command: Schema.optional(Schema.String),
   args: Schema.optional(Schema.Array(Schema.String)),
-  env: Schema.optional(StringRecordSchema),
+  env: Schema.optional(MaskableStringRecordSchema),
   cwd: Schema.optional(Schema.String),
-  url: Schema.optional(Schema.String),
-  headers: Schema.optional(StringRecordSchema),
+  url: Schema.optional(ConnectorHttpUrlSchema),
+  headers: Schema.optional(MaskableStringRecordSchema),
   allowTools: Schema.optional(Schema.Array(Schema.String)),
   enabled: Schema.optional(Schema.Boolean),
 });
@@ -69,4 +107,5 @@ export const ConnectorSshPathResponseSchema = Schema.Struct({
 export type ConnectorOrigin = typeof ConnectorOriginSchema.Type;
 export type ConnectorAuthReference = typeof ConnectorAuthReferenceSchema.Type;
 export type ConnectorConfig = typeof ConnectorConfigSchema.Type;
+export type ConnectorUpsertInput = typeof ConnectorUpsertInputSchema.Type;
 export type ConnectorView = typeof ConnectorViewSchema.Type;

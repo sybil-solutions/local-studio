@@ -94,6 +94,11 @@ const connectorCommand = (connector: ConnectorView): string =>
     ? [connector.command, ...(connector.args ?? [])].filter(Boolean).join(" ")
     : (connector.url ?? "HTTP endpoint not set");
 
+const connectorSecretLabels = (connector: ConnectorView): string[] => [
+  ...connector.secret_keys.env.map((key) => `env:${key}`),
+  ...connector.secret_keys.headers.map((key) => `header:${key}`),
+];
+
 function ConnectorDrawer({
   connector,
   onClose,
@@ -103,6 +108,7 @@ function ConnectorDrawer({
   onClose: () => void;
   onChanged: (connectors: readonly ConnectorView[]) => void;
 }) {
+  const secretLabels = connectorSecretLabels(connector);
   const [name, setName] = useState(connector.name);
   const [command, setCommand] = useState(connector.command ?? "");
   const [args, setArgs] = useState((connector.args ?? []).join("\n"));
@@ -189,9 +195,7 @@ function ConnectorDrawer({
         />
         <ResourceFact
           label="Secrets"
-          value={
-            connector.secret_keys.length ? connector.secret_keys.join(" · ") : "No stored secrets"
-          }
+          value={secretLabels.length ? secretLabels.join(" · ") : "No stored secrets"}
           mono
         />
       </ResourceDrawerSection>

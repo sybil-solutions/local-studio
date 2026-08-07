@@ -2,12 +2,12 @@ import { NextResponse, type NextRequest } from "next/server";
 import { Schema } from "effect";
 import { ConnectorUpsertInputSchema } from "@local-studio/agent-runtime/connector-contract";
 import {
+  ConnectorConfigurationError,
   isValidConnectorId,
   listConnectors,
   removeConnector,
   toConnectorView,
-  upsertConnector,
-  type ConnectorConfig,
+  upsertConnectorInput,
 } from "@local-studio/agent-runtime/connectors-service";
 import { closePooledConnection } from "@local-studio/agent-runtime/connector-pool";
 import { requireApiAccess } from "@/lib/auth/guard";
@@ -15,11 +15,22 @@ import { requireApiAccess } from "@/lib/auth/guard";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+function connectorFailure(error: unknown, fallback: string): NextResponse {
+  if (error instanceof ConnectorConfigurationError) {
+    return NextResponse.json({ error: error.message }, { status: error.status });
+  }
+  return NextResponse.json({ error: fallback }, { status: 409 });
+}
+
 export async function GET(request: NextRequest) {
   const denied = requireApiAccess(request);
   if (denied) return denied;
-  const connectors = await listConnectors();
-  return NextResponse.json({ connectors: connectors.map(toConnectorView) });
+  try {
+    const connectors = await listConnectors();
+    return NextResponse.json({ connectors: connectors.map(toConnectorView) });
+  } catch (error) {
+    return connectorFailure(error, "Connector discovery failed");
+  }
 }
 
 export async function POST(request: NextRequest) {
@@ -40,28 +51,12 @@ export async function POST(request: NextRequest) {
   if (body.transport === "http" && !body.url) {
     return NextResponse.json({ error: "url is required for http" }, { status: 400 });
   }
-  const connector: ConnectorConfig = {
-    id: body.id,
-    name: body.name?.trim() || body.id,
-    transport: body.transport,
-    ...(body.command ? { command: body.command } : {}),
-    ...(body.args ? { args: body.args } : {}),
-    ...(body.env ? { env: body.env } : {}),
-    ...(body.cwd ? { cwd: body.cwd } : {}),
-    ...(body.url ? { url: body.url } : {}),
-    ...(body.headers ? { headers: body.headers } : {}),
-    ...(body.allowTools ? { allowTools: body.allowTools } : {}),
-    enabled: body.enabled ?? true,
-  };
   try {
-    const connectors = await upsertConnector(connector);
-    closePooledConnection(connector.id);
+    const connectors = await upsertConnectorInput(body);
+    closePooledConnection(body.id);
     return NextResponse.json({ connectors: connectors.map(toConnectorView) });
   } catch (error) {
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Connector could not be saved" },
-      { status: 409 },
-    );
+    return connectorFailure(error, "Connector could not be saved");
   }
 }
 
@@ -75,9 +70,6 @@ export async function DELETE(request: NextRequest) {
     closePooledConnection(id);
     return NextResponse.json({ connectors: connectors.map(toConnectorView) });
   } catch (error) {
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Connector could not be removed" },
-      { status: 409 },
-    );
+    return connectorFailure(error, "Connector could not be removed");
   }
 }

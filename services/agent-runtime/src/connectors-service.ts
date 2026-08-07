@@ -1,18 +1,25 @@
-import { randomUUID } from "node:crypto";
-import { chmod, readFile, rename, writeFile } from "fs/promises";
-import { existsSync, readFileSync, statSync } from "fs";
-import { join } from "path";
+import { existsSync, readFileSync, statSync } from "node:fs";
+import { join } from "node:path";
 import { resolveDataDir } from "./data-dir";
 import { Schema } from "effect";
 import {
+  CONNECTOR_MASK_TOKEN,
+  ConnectorConfigSchema,
+  ConnectorUpsertInputSchema,
   ConnectorsFileSchema,
   type ConnectorConfig,
+  type ConnectorUpsertInput,
   type ConnectorView,
 } from "./connector-contract";
 import {
   GOOGLE_WORKSPACE_BINDINGS,
   googleWorkspaceConnectorAccount,
 } from "./google-workspace-binding";
+import {
+  readConnectorPrivateFile,
+  replaceConnectorPrivateFile,
+  type ConnectorPersistenceOptions,
+} from "./connector-private-file";
 
 export {
   type ConnectorAuthReference,
@@ -20,10 +27,41 @@ export {
   type ConnectorOrigin,
   type ConnectorView,
 } from "./connector-contract";
+export type {
+  ConnectorDarwinSecurity,
+  ConnectorFileHandle,
+  ConnectorFileSystem,
+  ConnectorPersistenceIdentity,
+  ConnectorPersistenceOptions,
+  ConnectorWindowsSecurity,
+} from "./connector-private-file";
 
-const MASK = "••••••••";
-const SECRET_KEY_PATTERN = /token|key|secret|password|auth/i;
+const CONNECTOR_CONFIGURATION_ERROR = "Connector configuration is invalid";
+const exact = { onExcessProperty: "error" } as const;
+const decodeRawConnector = Schema.decodeUnknownSync(ConnectorConfigSchema, exact);
+const decodeUpsertInput = Schema.decodeUnknownSync(ConnectorUpsertInputSchema, exact);
 let connectorAccess = Promise.resolve();
+
+export class ConnectorConfigurationError extends Error {
+  readonly status = 409;
+
+  constructor() {
+    super(CONNECTOR_CONFIGURATION_ERROR);
+    this.name = "ConnectorConfigurationError";
+  }
+}
+
+function configurationError(): ConnectorConfigurationError {
+  return new ConnectorConfigurationError();
+}
+
+function validatedRawConnectors(incoming: readonly ConnectorConfig[]): ConnectorConfig[] {
+  try {
+    return incoming.map((connector) => decodeRawConnector(connector));
+  } catch {
+    throw configurationError();
+  }
+}
 
 function withConnectorAccess<A>(operation: () => Promise<A>): Promise<A> {
   const result = connectorAccess.then(operation);
@@ -87,31 +125,45 @@ const CONNECTOR_ID_PATTERN = /^[a-z0-9][a-z0-9-_]{0,63}$/;
 
 export const isValidConnectorId = (id: string): boolean => CONNECTOR_ID_PATTERN.test(id);
 
-export async function listConnectors(): Promise<ConnectorConfig[]> {
-  const file = resolveConnectorsFilePath();
-  if (!existsSync(file)) return [];
+export function listConnectors(): Promise<ConnectorConfig[]>;
+export function listConnectors(options: ConnectorPersistenceOptions): Promise<ConnectorConfig[]>;
+export async function listConnectors(
+  options: ConnectorPersistenceOptions = {},
+): Promise<ConnectorConfig[]> {
+  const payload = await readConnectorPrivateFile(resolveConnectorsFilePath(), options);
+  if (payload === null) return [];
   try {
-    const parsed = Schema.decodeUnknownSync(ConnectorsFileSchema)(
-      JSON.parse(await readFile(file, "utf-8")),
-    );
+    const parsed = Schema.decodeUnknownSync(ConnectorsFileSchema, exact)(JSON.parse(payload));
     return (parsed.connectors ?? []).map(protectManagedConnector);
   } catch {
-    throw new Error("Connector configuration is invalid");
+    throw configurationError();
   }
 }
 
-async function writeConnectors(connectors: ConnectorConfig[]): Promise<void> {
-  resolveDataDir();
-  const file = resolveConnectorsFilePath();
-  const payload = JSON.stringify({ connectors: connectors.map(protectManagedConnector) }, null, 2);
-  const tempFile = `${file}.tmp-${process.pid}-${randomUUID()}`;
-  await writeFile(tempFile, payload, "utf-8");
-  await chmod(tempFile, 0o600).catch(() => undefined);
-  await rename(tempFile, file);
+function writeConnectors(
+  connectors: ConnectorConfig[],
+  options: ConnectorPersistenceOptions = {},
+): Promise<void> {
+  let configuration: typeof ConnectorsFileSchema.Type;
+  try {
+    configuration = Schema.decodeUnknownSync(
+      ConnectorsFileSchema,
+      exact,
+    )({
+      connectors: connectors.map(protectManagedConnector),
+    });
+  } catch {
+    throw configurationError();
+  }
+  const payload = JSON.stringify(configuration, null, 2);
+  return replaceConnectorPrivateFile(resolveConnectorsFilePath(), payload, options);
 }
 
-export function saveConnectors(connectors: ConnectorConfig[]): Promise<void> {
-  return withConnectorAccess(() => writeConnectors(connectors));
+export function saveConnectors(
+  connectors: ConnectorConfig[],
+  options: ConnectorPersistenceOptions = {},
+): Promise<void> {
+  return withConnectorAccess(() => writeConnectors(connectors, options));
 }
 
 export async function upsertConnector(connector: ConnectorConfig): Promise<ConnectorConfig[]> {
@@ -119,23 +171,63 @@ export async function upsertConnector(connector: ConnectorConfig): Promise<Conne
 }
 
 export function upsertConnectors(incoming: ConnectorConfig[]): Promise<ConnectorConfig[]> {
+  return persistIncomingConnectors(incoming, false);
+}
+
+export function upsertConnectorInput(input: ConnectorUpsertInput): Promise<ConnectorConfig[]> {
+  let body: ConnectorUpsertInput;
+  try {
+    body = decodeUpsertInput(input);
+  } catch {
+    return Promise.reject(configurationError());
+  }
+  const connector: ConnectorConfig = {
+    id: body.id,
+    name: body.name?.trim() || body.id,
+    transport: body.transport,
+    ...(body.command ? { command: body.command } : {}),
+    ...(body.args ? { args: body.args } : {}),
+    ...(body.env ? { env: body.env } : {}),
+    ...(body.cwd ? { cwd: body.cwd } : {}),
+    ...(body.url ? { url: body.url } : {}),
+    ...(body.headers ? { headers: body.headers } : {}),
+    ...(body.allowTools ? { allowTools: body.allowTools } : {}),
+    enabled: body.enabled ?? true,
+  };
+  return persistIncomingConnectors([connector], true);
+}
+
+function persistIncomingConnectors(
+  incoming: ConnectorConfig[],
+  preserveMaskedSecrets: boolean,
+): Promise<ConnectorConfig[]> {
   return withConnectorAccess(async () => {
+    const candidates = preserveMaskedSecrets ? incoming : validatedRawConnectors(incoming);
     const connectors = await listConnectors();
-    for (const candidate of incoming) {
-      const connector = protectManagedConnector(candidate);
-      const index = connectors.findIndex((entry) => entry.id === connector.id);
+    for (const candidate of candidates) {
+      const index = connectors.findIndex((entry) => entry.id === candidate.id);
       const existing = index === -1 ? null : connectors[index];
-      const merged: ConnectorConfig = {
-        ...connector,
-        env: mergeSecrets(connector.env, existing?.env),
-        headers: mergeSecrets(connector.headers, existing?.headers),
-        cwd: connector.cwd ?? existing?.cwd,
-        allowTools: connector.allowTools ?? existing?.allowTools,
-        origin: connector.origin ?? existing?.origin,
-        auth: connector.auth ?? existing?.auth,
-      };
-      if (index === -1) connectors.push(merged);
-      else connectors[index] = merged;
+      let connector: ConnectorConfig;
+      try {
+        connector = protectManagedConnector(
+          decodeRawConnector({
+            ...candidate,
+            env: preserveMaskedSecrets ? mergeSecrets(candidate.env, existing?.env) : candidate.env,
+            headers: preserveMaskedSecrets
+              ? mergeSecrets(candidate.headers, existing?.headers)
+              : candidate.headers,
+            cwd: candidate.cwd ?? existing?.cwd,
+            allowTools: candidate.allowTools ?? existing?.allowTools,
+            origin: candidate.origin ?? existing?.origin,
+            auth: candidate.auth ?? existing?.auth,
+          }),
+        );
+      } catch (error) {
+        if (error instanceof ConnectorConfigurationError) throw error;
+        throw configurationError();
+      }
+      if (index === -1) connectors.push(connector);
+      else connectors[index] = connector;
     }
     await writeConnectors(connectors);
     return connectors;
@@ -160,9 +252,16 @@ function mergeSecrets(
   stored: Record<string, string> | undefined,
 ): Record<string, string> | undefined {
   if (!incoming) return incoming;
-  const result: Record<string, string> = {};
+  const result: Record<string, string> = Object.create(null);
   for (const [key, value] of Object.entries(incoming)) {
-    result[key] = value === MASK && stored?.[key] ? stored[key] : value;
+    if (value !== CONNECTOR_MASK_TOKEN) {
+      result[key] = value;
+      continue;
+    }
+    if (!stored || !Object.hasOwn(stored, key)) throw configurationError();
+    const storedValue = stored[key];
+    if (storedValue === undefined) throw configurationError();
+    result[key] = storedValue;
   }
   return result;
 }
@@ -171,12 +270,7 @@ const maskRecord = (
   record: Record<string, string> | undefined,
 ): Record<string, string> | undefined => {
   if (!record) return record;
-  return Object.fromEntries(
-    Object.entries(record).map(([key, value]) => [
-      key,
-      SECRET_KEY_PATTERN.test(key) && value ? MASK : value,
-    ]),
-  );
+  return Object.fromEntries(Object.keys(record).map((key) => [key, CONNECTOR_MASK_TOKEN]));
 };
 
 export function toConnectorView(connector: ConnectorConfig): ConnectorView {
@@ -184,10 +278,10 @@ export function toConnectorView(connector: ConnectorConfig): ConnectorView {
     ...connector,
     env: maskRecord(connector.env),
     headers: maskRecord(connector.headers),
-    secret_keys: [
-      ...Object.keys(connector.env ?? {}),
-      ...Object.keys(connector.headers ?? {}),
-    ].filter((key) => SECRET_KEY_PATTERN.test(key)),
+    secret_keys: {
+      env: Object.keys(connector.env ?? {}).sort(),
+      headers: Object.keys(connector.headers ?? {}).sort(),
+    },
   };
 }
 
@@ -199,9 +293,10 @@ export function hasEnabledConnectorsSync(): boolean {
   const file = resolveConnectorsFilePath();
   if (!existsSync(file)) return false;
   try {
-    const parsed = Schema.decodeUnknownSync(ConnectorsFileSchema)(
-      JSON.parse(readFileSync(file, "utf-8")),
-    );
+    const parsed = Schema.decodeUnknownSync(
+      ConnectorsFileSchema,
+      exact,
+    )(JSON.parse(readFileSync(file, "utf-8")));
     return Boolean(parsed.connectors?.some((connector) => connector.enabled));
   } catch {
     return false;
