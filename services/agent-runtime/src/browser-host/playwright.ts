@@ -2,12 +2,21 @@ import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { Effect, Semaphore } from "effect";
 import { chromium, type BrowserContext } from "playwright-core";
 import { getGlobalSingleton } from "../instances";
+import {
+  browserNetworkPolicy,
+  type BrowserNetworkMode,
+  type BrowserNetworkPolicy,
+} from "./network-policy";
+import { createBrowserProxy, type BrowserProxy } from "./pinning-proxy";
 
 const LAUNCH_TIMEOUT_MS = 15_000;
+const launchPersistentBrowser = chromium.launchPersistentContext.bind(chromium);
 
-const browserDataDirectory = (): string => path.join(os.tmpdir(), "local-studio-browser-profile");
+const browserDataDirectory = (mode: BrowserNetworkMode): string =>
+  path.join(os.tmpdir(), `local-studio-browser-profile-${mode}`);
 
 const resolveOnPath = (binary: string): string | null => {
   try {
@@ -69,52 +78,140 @@ export const findBrowserBinary = (): string | null => {
   return platformBrowserCandidates().find((candidate) => existsSync(candidate)) ?? null;
 };
 
-class PlaywrightManager {
+export class PlaywrightManager {
   private context: BrowserContext | null = null;
-  private launching: Promise<BrowserContext> | null = null;
+  private mode: BrowserNetworkMode | null = null;
+  private proxies: Record<BrowserNetworkMode, BrowserProxy> | null = null;
+  private pendingProxy: BrowserProxy | null = null;
+  private failure: unknown = null;
+  private stopped = false;
+  private readonly lock = Semaphore.makeUnsafe(1);
+
+  constructor(
+    private readonly launchBrowser = launchPersistentBrowser,
+    private readonly resolveBinary = findBrowserBinary,
+    private readonly proxyFactory = createBrowserProxy,
+    private readonly networkPolicy: BrowserNetworkPolicy = browserNetworkPolicy,
+  ) {}
 
   isAvailable(): boolean {
-    return findBrowserBinary() !== null;
+    return !this.stopped && this.failure === null && this.resolveBinary() !== null;
   }
 
-  async ensure(): Promise<BrowserContext> {
-    if (this.context) return this.context;
-    if (this.launching) return this.launching;
-    const executablePath = findBrowserBinary();
+  ensure(mode: BrowserNetworkMode = "public"): Promise<BrowserContext> {
+    return this.serial(() => this.ensureUnlocked(mode));
+  }
+
+  private async ensureUnlocked(mode: BrowserNetworkMode): Promise<BrowserContext> {
+    if (this.failure) throw this.failure;
+    if (this.stopped) throw new Error("Browser manager stopped");
+    if (this.context && this.mode === mode) return this.context;
+    if (this.context) {
+      try {
+        await this.context.close();
+      } catch (error) {
+        this.failure = error;
+        throw error;
+      }
+      this.context = null;
+    }
+    const executablePath = this.resolveBinary();
     if (!executablePath) {
       throw new Error("Browser unavailable: no Chromium found — set LOCAL_STUDIO_CHROME_PATH");
     }
+    this.proxies ??= await this.createProxies();
+    const proxy = this.proxies[mode];
     const launch = (userDataDir: string): Promise<BrowserContext> =>
-      chromium.launchPersistentContext(userDataDir, {
+      this.launchBrowser(userDataDir, {
         executablePath,
         headless: true,
+        proxy: { server: proxy.url },
+        serviceWorkers: "block",
         viewport: { width: 1280, height: 800 },
         timeout: LAUNCH_TIMEOUT_MS,
-        args: ["--no-first-run", "--no-default-browser-check", "--disable-dev-shm-usage"],
+        args: [
+          "--no-first-run",
+          "--no-default-browser-check",
+          "--disable-dev-shm-usage",
+          "--disable-quic",
+          "--force-webrtc-ip-handling-policy=disable_non_proxied_udp",
+          "--proxy-bypass-list=<-loopback>",
+        ],
       });
-    const dataDirectory = browserDataDirectory();
-    this.launching = launch(dataDirectory)
-      .catch((error: unknown) => {
+    const dataDirectory = browserDataDirectory(mode);
+    let context: BrowserContext;
+    try {
+      context = await launch(dataDirectory).catch((error: unknown) => {
         if (!String(error).includes("ProcessSingleton")) throw error;
         return launch(`${dataDirectory}-${process.pid}`);
-      })
-      .then((context) => {
-        this.context = context;
-        context.once("close", () => {
-          if (this.context === context) this.context = null;
-        });
-        return context;
-      })
-      .finally(() => {
-        this.launching = null;
       });
-    return this.launching;
+      this.context = context;
+      await context.route(/^https?:\/\//u, async (route) => {
+        try {
+          await this.networkPolicy.resolve(route.request().url(), mode);
+          await route.continue();
+        } catch {
+          await route.abort("blockedbyclient");
+        }
+      });
+      await context.routeWebSocket(/^wss?:\/\//u, async (route) => {
+        try {
+          await this.networkPolicy.resolve(route.url(), mode);
+          route.connectToServer();
+        } catch {
+          await route.close({ code: 1008, reason: "Browser network policy blocked destination" });
+        }
+      });
+    } catch (error) {
+      return this.abort(error);
+    }
+    this.context = context;
+    this.mode = mode;
+    context.once("close", () => {
+      if (this.context === context) this.context = null;
+    });
+    return context;
   }
 
-  stop(): void {
-    const context = this.context;
-    this.context = null;
-    if (context) void context.close().catch(() => undefined);
+  stop(): Promise<void> {
+    return this.serial(async () => {
+      this.stopped = true;
+      await Promise.all(this.resources().map((resource) => resource.close()));
+      this.context = this.proxies = this.pendingProxy = null;
+    });
+  }
+
+  private async createProxies(): Promise<Record<BrowserNetworkMode, BrowserProxy>> {
+    try {
+      const publicProxy = await this.proxyFactory("public");
+      this.pendingProxy = publicProxy;
+      const loopbackProxy = await this.proxyFactory("loopback");
+      this.pendingProxy = null;
+      return { loopback: loopbackProxy, public: publicProxy };
+    } catch (error) {
+      return this.abort(error);
+    }
+  }
+
+  private resources(): Array<BrowserProxy | BrowserContext> {
+    return [this.context, this.pendingProxy, this.proxies?.public, this.proxies?.loopback].filter(
+      (resource): resource is BrowserProxy | BrowserContext => resource != null,
+    );
+  }
+
+  private async abort(error: unknown): Promise<never> {
+    const results = await Promise.allSettled(
+      this.resources().map((resource) => Promise.resolve().then(() => resource.close())),
+    );
+    const failed = results.find((result) => result.status === "rejected");
+    this.failure = failed?.status === "rejected" ? failed.reason : error;
+    throw this.failure;
+  }
+
+  private serial<A>(task: () => Promise<A>): Promise<A> {
+    return Effect.runPromise(
+      this.lock.withPermit(Effect.tryPromise({ try: task, catch: (error) => error })),
+    );
   }
 }
 
@@ -125,7 +222,7 @@ export const playwrightManager = getGlobalSingleton(
 
 getGlobalSingleton("playwrightExitHook", () => {
   if (typeof process !== "undefined") {
-    process.on("exit", () => playwrightManager.stop());
+    process.on("exit", () => void playwrightManager.stop());
   }
   return true;
 });

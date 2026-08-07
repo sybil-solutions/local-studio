@@ -10,7 +10,11 @@
 import { lookup } from "node:dns/promises";
 import { request as httpRequest, type RequestOptions } from "node:http";
 import { request as httpsRequest } from "node:https";
-import { sanitizePublicBrowserUrl } from "../../../../shared/agent/sanitize-embedded-browser-url";
+import {
+  createBrowserNetworkPolicy,
+  type BrowserAddress,
+  type BrowserNetworkMode,
+} from "./network-policy";
 
 const MAX_BYTES = 512 * 1024;
 const FETCH_TIMEOUT_MS = 12_000;
@@ -27,7 +31,7 @@ export type ReaderResult = {
   contentType: string;
 };
 
-type ResolvedHostAddress = { address: string; family: 4 | 6 };
+type ResolvedHostAddress = BrowserAddress;
 type ResolvedHostInput = string | ResolvedHostAddress;
 type ReaderHostResolver = (hostname: string) => Promise<ResolvedHostInput[]>;
 
@@ -57,6 +61,8 @@ async function resolveReaderHost(hostname: string): Promise<ResolvedHostAddress[
     family: result.family === 6 ? 6 : 4,
   }));
 }
+
+const readerNetworkPolicy = createBrowserNetworkPolicy(resolveReaderHost);
 
 function decodeEntities(value: string): string {
   return value
@@ -127,16 +133,18 @@ function cleanMarkdown(markdown: string): string {
     .trim();
 }
 
-async function fetchBoundedUrl(url: string, redirects = 0): Promise<BoundedResponse> {
-  const addresses = await publicResolvedAddresses(url);
+async function fetchBoundedUrl(
+  url: string,
+  mode: BrowserNetworkMode,
+  redirects = 0,
+): Promise<BoundedResponse> {
+  const addresses = await publicResolvedAddresses(url, mode);
   const response = await requestBoundedUrl(url, addresses[0]);
   if (isRedirectStatus(response.status)) {
     if (redirects >= MAX_REDIRECTS) throw new Error("Too many redirects");
     if (!response.location) throw new Error("Redirect missing Location header");
     const nextUrl = new URL(response.location, url).toString();
-    const safeRedirect = sanitizePublicBrowserUrl(nextUrl);
-    if (!safeRedirect) throw new Error("Redirect rejected (must stay public http/https)");
-    return fetchBoundedUrl(safeRedirect, redirects + 1);
+    return fetchBoundedUrl(nextUrl, mode, redirects + 1);
   }
   return response;
 }
@@ -145,20 +153,12 @@ function isRedirectStatus(status: number): boolean {
   return status >= 300 && status < 400;
 }
 
-async function publicResolvedAddresses(raw: string): Promise<ResolvedHostAddress[]> {
-  const url = new URL(raw);
-  const addresses = await resolveReaderHost(url.hostname);
-  if (!addresses.length) throw new Error("Host resolved to no addresses");
-  for (const address of addresses) {
-    if (!sanitizePublicBrowserUrl(`${url.protocol}//${hostForAddress(address.address)}/`)) {
-      throw new Error("Resolved host rejected (must stay public http/https)");
-    }
-  }
-  return addresses;
-}
-
-function hostForAddress(address: string): string {
-  return address.includes(":") ? `[${address}]` : address;
+async function publicResolvedAddresses(
+  raw: string,
+  mode: BrowserNetworkMode,
+): Promise<ResolvedHostAddress[]> {
+  const destination = await readerNetworkPolicy.resolve(raw, mode);
+  return [destination.address];
 }
 
 function normalizeResolvedAddress(input: ResolvedHostInput): ResolvedHostAddress {
@@ -273,10 +273,15 @@ function renderReadable(response: BoundedResponse, fallbackUrl: string): ReaderR
 
 // Fetch a public URL and return reading-mode text. Throws on rejected/invalid
 // URLs or upstream failures; callers map errors to their own response shape.
-export async function fetchReadable(rawUrl: string): Promise<ReaderResult> {
-  const safe = sanitizePublicBrowserUrl(rawUrl);
-  if (!safe) throw new Error("url rejected (must be public http/https)");
-  const response = await fetchBoundedUrl(safe);
+export async function fetchReadable(
+  rawUrl: string,
+  mode: BrowserNetworkMode = "public",
+): Promise<ReaderResult> {
+  const navigation = readerNetworkPolicy.navigation(rawUrl);
+  const safe =
+    navigation && (mode === "loopback" || navigation.mode === "public") ? navigation.url : null;
+  if (!safe) throw new Error("url rejected by browser network policy");
+  const response = await fetchBoundedUrl(safe, mode);
   if (!response.ok) throw new Error(`Upstream returned HTTP ${response.status}`);
   return renderReadable(response, safe);
 }

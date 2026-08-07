@@ -1,5 +1,6 @@
 import { getGlobalSingleton } from "../instances";
 import { HostedPage, type PageState, type ScreencastFrame } from "./hosted-page";
+import { browserNetworkPolicy, type BrowserNetworkMode } from "./network-policy";
 import { playwrightManager } from "./playwright";
 
 export type { PageState, ScreencastFrame };
@@ -17,12 +18,21 @@ const capString = (value: string, maximum: number): string =>
 class BrowserHost {
   private pages = new Map<string, HostedPage>();
   private activeId: string | null = null;
+  private activeMode: BrowserNetworkMode | null = null;
 
   isAvailable(): boolean {
     return playwrightManager.isAvailable();
   }
 
-  async page(pageId?: string): Promise<HostedPage> {
+  async page(
+    pageId?: string,
+    mode: BrowserNetworkMode = this.activeMode ?? "public",
+  ): Promise<HostedPage> {
+    if (this.activeMode !== mode) {
+      this.pages.clear();
+      this.activeId = null;
+      this.activeMode = mode;
+    }
     const targetId = pageId ?? this.activeId;
     const cached = targetId ? this.pages.get(targetId) : undefined;
     if (cached && !cached.closed) {
@@ -31,7 +41,7 @@ class BrowserHost {
     }
     if (cached) this.pages.delete(cached.id);
 
-    const context = await playwrightManager.ensure();
+    const context = await playwrightManager.ensure(mode);
     const rawPage =
       context
         .pages()
@@ -45,8 +55,10 @@ class BrowserHost {
   }
 
   async navigate(url: string, pageId?: string): Promise<{ url: string; title: string }> {
-    const page = await this.page(pageId);
-    await page.navigate(normalizeUrl(url), NAVIGATION_TIMEOUT_MS);
+    const navigation = browserNetworkPolicy.navigation(normalizeUrl(url));
+    if (!navigation) throw new Error("Browser network policy blocked navigation URL");
+    const page = await this.page(pageId, navigation.mode);
+    await page.navigate(navigation.url, NAVIGATION_TIMEOUT_MS);
     const state = await page.readState();
     return { url: state.url, title: state.title };
   }
@@ -130,7 +142,8 @@ class BrowserHost {
     for (const page of this.pages.values()) page.close();
     this.pages.clear();
     this.activeId = null;
-    playwrightManager.stop();
+    this.activeMode = null;
+    void playwrightManager.stop();
   }
 }
 
