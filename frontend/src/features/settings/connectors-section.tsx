@@ -6,7 +6,10 @@ import {
   ConnectorSshPathResponseSchema,
   ConnectorTestResponseSchema,
   ConnectorsResponseSchema,
+  GITHUB_CONNECTOR_TOKEN_KEY,
+  GitHubConnectorArtifactStatusSchema,
   type ConnectorView,
+  type GitHubConnectorArtifactStatus,
 } from "@local-studio/agent-runtime/connector-contract";
 import { ApiErrorResponseSchema } from "@local-studio/agent-runtime/api-contract";
 import { Button, Checkbox, FormField, Input, ModelButton, SearchInput, Spinner } from "@/ui";
@@ -20,6 +23,7 @@ import {
   ModelValue,
 } from "@/features/recipes/recipes-content/model-page";
 import { useMountSubscription } from "@/hooks/use-mount-subscription";
+import { githubCredentialUpdate, hasStoredGitHubCredential } from "./github-connector-credentials";
 
 interface CatalogEntry {
   id: string;
@@ -39,9 +43,9 @@ const CATALOG: CatalogEntry[] = [
     company: "GitHub",
     description: "Repos, issues, pull requests, and code search.",
     transport: "stdio",
-    command: "npx",
-    args: ["-y", "@modelcontextprotocol/server-github"],
-    envFields: [{ key: "GITHUB_PERSONAL_ACCESS_TOKEN", label: "Personal access token" }],
+    command: "github-mcp-server",
+    args: ["stdio", "--read-only", "--toolsets=repos,issues,pull_requests"],
+    envFields: [{ key: GITHUB_CONNECTOR_TOKEN_KEY, label: "Personal access token" }],
   },
   {
     id: "x",
@@ -94,6 +98,52 @@ const connectorCommand = (connector: ConnectorView): string =>
     ? [connector.command, ...(connector.args ?? [])].filter(Boolean).join(" ")
     : (connector.url ?? "HTTP endpoint not set");
 
+function GitHubRecoveryFooter({
+  token,
+  saving,
+  confirmingRemoval,
+  onClose,
+  onCancelRemoval,
+  onConfirmRemoval,
+  onRemove,
+  onUpdate,
+}: {
+  token: string;
+  saving: boolean;
+  confirmingRemoval: boolean;
+  onClose: () => void;
+  onCancelRemoval: () => void;
+  onConfirmRemoval: () => void;
+  onRemove: () => void;
+  onUpdate: () => void;
+}) {
+  if (confirmingRemoval) {
+    return (
+      <>
+        <Button variant="secondary" disabled={saving} onClick={onCancelRemoval}>
+          Keep connector
+        </Button>
+        <Button variant="danger" loading={saving} onClick={onConfirmRemoval}>
+          Confirm removal
+        </Button>
+      </>
+    );
+  }
+  return (
+    <>
+      <Button variant="secondary" onClick={onClose} disabled={saving}>
+        Cancel
+      </Button>
+      <Button variant="danger" onClick={onRemove} disabled={saving}>
+        Remove connector
+      </Button>
+      <Button loading={saving} disabled={!token.trim() || saving} onClick={onUpdate}>
+        Update credential and enable
+      </Button>
+    </>
+  );
+}
+
 function ConnectorDrawer({
   connector,
   onClose,
@@ -108,9 +158,12 @@ function ConnectorDrawer({
   const [args, setArgs] = useState((connector.args ?? []).join("\n"));
   const [url, setUrl] = useState(connector.url ?? "");
   const [enabled, setEnabled] = useState(connector.enabled);
+  const [githubToken, setGitHubToken] = useState("");
+  const [confirmingRemoval, setConfirmingRemoval] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const managed = Boolean(connector.origin);
+  const managedGitHub = connector.origin?.kind === "catalog" && connector.origin.id === "github";
 
   const save = async () => {
     setSaving(true);
@@ -149,6 +202,47 @@ function ConnectorDrawer({
     }
   };
 
+  const updateGitHubCredential = async () => {
+    setSaving(true);
+    setError("");
+    try {
+      const { connectors } = await requestJson(
+        "/api/agent/connectors",
+        Schema.decodeUnknownSync(ConnectorsResponseSchema),
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(githubCredentialUpdate(githubToken)),
+        },
+      );
+      setGitHubToken("");
+      onChanged(connectors);
+      onClose();
+    } catch (updateError) {
+      setError(updateError instanceof Error ? updateError.message : "Credential update failed");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const removeManagedGitHub = async () => {
+    setSaving(true);
+    setError("");
+    try {
+      const { connectors } = await requestJson(
+        `/api/agent/connectors?id=${encodeURIComponent(connector.id)}`,
+        Schema.decodeUnknownSync(ConnectorsResponseSchema),
+        { method: "DELETE" },
+      );
+      onChanged(connectors);
+      onClose();
+    } catch (removeError) {
+      setError(removeError instanceof Error ? removeError.message : "Connector removal failed");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
     <ResourceDrawer
       title={connector.name}
@@ -164,7 +258,18 @@ function ConnectorDrawer({
           : `${connector.transport} · connectors.json`
       }
       footer={
-        managed ? (
+        managedGitHub ? (
+          <GitHubRecoveryFooter
+            token={githubToken}
+            saving={saving}
+            confirmingRemoval={confirmingRemoval}
+            onClose={onClose}
+            onCancelRemoval={() => setConfirmingRemoval(false)}
+            onConfirmRemoval={() => void removeManagedGitHub()}
+            onRemove={() => setConfirmingRemoval(true)}
+            onUpdate={() => void updateGitHubCredential()}
+          />
+        ) : managed ? (
           <Button onClick={onClose}>Done</Button>
         ) : (
           <>
@@ -239,6 +344,26 @@ function ConnectorDrawer({
           <Checkbox checked={enabled} onChange={setEnabled} label="Enabled in Workbench" />
         </div>
       )}
+      {managedGitHub ? (
+        <ResourceDrawerSection title="Credential recovery">
+          <p className="mb-4 text-[length:var(--fs-sm)] leading-relaxed text-(--ui-muted)">
+            Stored credentials are never displayed. Enter a replacement token to repair access, or
+            remove the connector and reconnect it later.
+          </p>
+          <FormField
+            label="New personal access token"
+            description="The replacement is stored locally and enables the connector after saving."
+          >
+            <Input
+              type="password"
+              value={githubToken}
+              onChange={(event) => setGitHubToken(event.target.value)}
+              autoComplete="off"
+              className="font-mono"
+            />
+          </FormField>
+        </ResourceDrawerSection>
+      ) : null}
       {error ? <p className="mt-4 text-[length:var(--fs-sm)] text-(--ui-danger)">{error}</p> : null}
     </ResourceDrawer>
   );
@@ -246,12 +371,16 @@ function ConnectorDrawer({
 
 function CatalogDrawer({
   entry,
+  existing,
   onClose,
   onChanged,
+  onGitHubArtifactChanged,
 }: {
   entry: CatalogEntry;
+  existing: ConnectorView | null;
   onClose: () => void;
   onChanged: (connectors: readonly ConnectorView[]) => void;
+  onGitHubArtifactChanged: (status: GitHubConnectorArtifactStatus) => void;
 }) {
   const [fields, setFields] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
@@ -261,6 +390,27 @@ function CatalogDrawer({
     setBusy(true);
     setError("");
     try {
+      const enteredGitHubToken = fields[GITHUB_CONNECTOR_TOKEN_KEY] ?? "";
+      const githubUpdate =
+        entry.id === "github" && enteredGitHubToken.trim()
+          ? githubCredentialUpdate(enteredGitHubToken)
+          : null;
+      if (entry.id === "github" && !githubUpdate && !hasStoredGitHubCredential(existing)) {
+        throw new Error("Enter a personal access token");
+      }
+      if (entry.id === "github") {
+        onGitHubArtifactChanged(
+          await requestJson(
+            "/api/agent/connectors/github",
+            Schema.decodeUnknownSync(GitHubConnectorArtifactStatusSchema),
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ action: "install" }),
+            },
+          ),
+        );
+      }
       let args = entry.args;
       if (entry.args.includes("{{SSH_REMOTE_SERVER}}")) {
         const { path } = await requestJson(
@@ -273,21 +423,31 @@ function CatalogDrawer({
       const host = fields.SSH_HOST?.trim();
       const id = entry.id === "computer" && host ? `computer-${host.split("@").pop()}` : entry.id;
       const name = entry.id === "computer" && host ? `Computer: ${host}` : entry.name;
+      const github = entry.id === "github";
       const { connectors } = await requestJson(
         "/api/agent/connectors",
         Schema.decodeUnknownSync(ConnectorsResponseSchema),
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            id: id.toLowerCase().replace(/[^a-z0-9-_]+/g, "-"),
-            name,
-            transport: entry.transport,
-            command: entry.command,
-            args,
-            env: fields,
-            enabled: true,
-          }),
+          body: JSON.stringify(
+            github
+              ? (githubUpdate ?? {
+                  id: "github",
+                  catalogId: "github",
+                  env: existing?.env,
+                  enabled: true,
+                })
+              : {
+                  id: id.toLowerCase().replace(/[^a-z0-9-_]+/g, "-"),
+                  name,
+                  transport: entry.transport,
+                  command: entry.command,
+                  args,
+                  env: fields,
+                  enabled: true,
+                },
+          ),
         },
       );
       onChanged(connectors);
@@ -366,12 +526,22 @@ function ConnectorRow({
     onChanged(connectors);
   };
 
-  const toggle = () =>
-    update({
+  const toggle = () => {
+    const managedGitHub = connector.origin?.kind === "catalog" && connector.origin.id === "github";
+    const body = managedGitHub
+      ? {
+          id: "github",
+          catalogId: "github",
+          env: connector.env,
+          enabled: !connector.enabled,
+        }
+      : { ...connector, enabled: !connector.enabled };
+    return update({
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...connector, enabled: !connector.enabled }),
+      body: JSON.stringify(body),
     });
+  };
 
   const remove = async () => {
     const { connectors } = await requestJson(
@@ -440,16 +610,26 @@ function ConnectorRow({
 
 export function ConnectorsSection() {
   const [connectors, setConnectors] = useState<readonly ConnectorView[]>([]);
+  const [githubArtifact, setGitHubArtifact] = useState<GitHubConnectorArtifactStatus | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [query, setQuery] = useState("");
   const [selectedConnector, setSelectedConnector] = useState<ConnectorView | null>(null);
   const [selectedCatalog, setSelectedCatalog] = useState<CatalogEntry | null>(null);
 
   const refresh = useCallback(() => {
-    void requestJson("/api/agent/connectors", Schema.decodeUnknownSync(ConnectorsResponseSchema))
+    const connectorsRequest = requestJson(
+      "/api/agent/connectors",
+      Schema.decodeUnknownSync(ConnectorsResponseSchema),
+    )
       .then(({ connectors: list }) => setConnectors(list))
-      .catch(() => setConnectors([]))
-      .finally(() => setLoaded(true));
+      .catch(() => setConnectors([]));
+    const artifactRequest = requestJson(
+      "/api/agent/connectors/github",
+      Schema.decodeUnknownSync(GitHubConnectorArtifactStatusSchema),
+    )
+      .then(setGitHubArtifact)
+      .catch(() => setGitHubArtifact(null));
+    void Promise.allSettled([connectorsRequest, artifactRequest]).then(() => setLoaded(true));
   }, []);
 
   useMountSubscription(() => {
@@ -522,8 +702,14 @@ export function ConnectorsSection() {
         {visibleCatalog.map((entry) => {
           const installedConnector = connectors.find((connector) => connector.id === entry.id);
           const installed = Boolean(installedConnector);
+          const managedGitHub =
+            entry.id === "github" &&
+            installedConnector?.origin?.kind === "catalog" &&
+            installedConnector.origin.id === "github";
+          const artifactReady = !managedGitHub || githubArtifact?.state === "installed";
+          const ready = installed && artifactReady;
           const openEntry = () =>
-            installedConnector
+            installedConnector && artifactReady
               ? setSelectedConnector(installedConnector)
               : setSelectedCatalog(entry);
           return (
@@ -536,13 +722,13 @@ export function ConnectorsSection() {
               }
               value={<ModelValue mono>{[entry.command, ...entry.args].join(" ")}</ModelValue>}
               status={
-                <ModelStatus tone={installed ? "good" : "default"}>
-                  {installed ? "connected" : "available"}
+                <ModelStatus tone={ready ? "good" : "default"}>
+                  {ready ? "connected" : installed ? "install required" : "available"}
                 </ModelStatus>
               }
               actions={
-                <ModelButton onClick={openEntry} tone={installed ? "default" : "primary"}>
-                  {installed && entry.id !== "computer" ? "Open" : <Plus className="h-3 w-3" />}
+                <ModelButton onClick={openEntry} tone={ready ? "default" : "primary"}>
+                  {ready && entry.id !== "computer" ? "Open" : <Plus className="h-3 w-3" />}
                 </ModelButton>
               }
               onClick={openEntry}
@@ -561,8 +747,10 @@ export function ConnectorsSection() {
       {selectedCatalog ? (
         <CatalogDrawer
           entry={selectedCatalog}
+          existing={connectors.find((connector) => connector.id === selectedCatalog.id) ?? null}
           onClose={() => setSelectedCatalog(null)}
           onChanged={setConnectors}
+          onGitHubArtifactChanged={setGitHubArtifact}
         />
       ) : null}
     </div>

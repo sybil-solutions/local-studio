@@ -54,6 +54,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "connector_id and tool are required" }, { status: 400 });
   }
   try {
+    await Effect.runPromise(refreshEnabledPluginConnectors());
     const result = await callConnectorTool(body.connector_id, body.tool, body.args ?? {});
     return NextResponse.json({ ok: true, result });
   } catch (error) {

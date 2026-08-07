@@ -10,6 +10,11 @@ import {
   type ConnectorView,
 } from "./connector-contract";
 import {
+  isManagedGitHubConnector,
+  managedGitHubConnectorMatches,
+  migrateLegacyGitHubConnector,
+} from "./connector-artifacts";
+import {
   GOOGLE_WORKSPACE_BINDINGS,
   googleWorkspaceConnectorAccount,
 } from "./google-workspace-binding";
@@ -43,6 +48,9 @@ function claimsGoogleWorkspace(connector: ConnectorConfig): boolean {
 }
 
 export function protectManagedConnector(connector: ConnectorConfig): ConnectorConfig {
+  if (isManagedGitHubConnector(connector) && !managedGitHubConnectorMatches(connector)) {
+    throw new Error('Managed GitHub connector "github" is immutable');
+  }
   if (!claimsGoogleWorkspace(connector)) return connector;
   const account = googleWorkspaceConnectorAccount(connector.id);
   const binding = account ? GOOGLE_WORKSPACE_BINDINGS[account] : null;
@@ -87,14 +95,20 @@ const CONNECTOR_ID_PATTERN = /^[a-z0-9][a-z0-9-_]{0,63}$/;
 
 export const isValidConnectorId = (id: string): boolean => CONNECTOR_ID_PATTERN.test(id);
 
-export async function listConnectors(): Promise<ConnectorConfig[]> {
+async function readConnectorState(): Promise<{ connectors: ConnectorConfig[]; migrated: boolean }> {
   const file = resolveConnectorsFilePath();
-  if (!existsSync(file)) return [];
+  if (!existsSync(file)) return { connectors: [], migrated: false };
   try {
     const parsed = Schema.decodeUnknownSync(ConnectorsFileSchema)(
       JSON.parse(await readFile(file, "utf-8")),
     );
-    return (parsed.connectors ?? []).map(protectManagedConnector);
+    const normalized = (parsed.connectors ?? []).map((connector) =>
+      migrateLegacyGitHubConnector(connector),
+    );
+    return {
+      connectors: normalized.map(({ connector }) => protectManagedConnector(connector)),
+      migrated: normalized.some(({ migrated }) => migrated),
+    };
   } catch {
     throw new Error("Connector configuration is invalid");
   }
@@ -110,6 +124,16 @@ async function writeConnectors(connectors: ConnectorConfig[]): Promise<void> {
   await rename(tempFile, file);
 }
 
+async function readAndMigrateConnectors(): Promise<ConnectorConfig[]> {
+  const state = await readConnectorState();
+  if (state.migrated) await writeConnectors(state.connectors);
+  return state.connectors;
+}
+
+export function listConnectors(): Promise<ConnectorConfig[]> {
+  return withConnectorAccess(readAndMigrateConnectors);
+}
+
 export function saveConnectors(connectors: ConnectorConfig[]): Promise<void> {
   return withConnectorAccess(() => writeConnectors(connectors));
 }
@@ -120,11 +144,14 @@ export async function upsertConnector(connector: ConnectorConfig): Promise<Conne
 
 export function upsertConnectors(incoming: ConnectorConfig[]): Promise<ConnectorConfig[]> {
   return withConnectorAccess(async () => {
-    const connectors = await listConnectors();
+    const connectors = await readAndMigrateConnectors();
     for (const candidate of incoming) {
       const connector = protectManagedConnector(candidate);
       const index = connectors.findIndex((entry) => entry.id === connector.id);
       const existing = index === -1 ? null : connectors[index];
+      if (isManagedGitHubConnector(existing ?? connector) && !isManagedGitHubConnector(connector)) {
+        throw new Error('Managed GitHub connector "github" is immutable');
+      }
       const merged: ConnectorConfig = {
         ...connector,
         env: mergeSecrets(connector.env, existing?.env),
@@ -134,9 +161,40 @@ export function upsertConnectors(incoming: ConnectorConfig[]): Promise<Connector
         origin: connector.origin ?? existing?.origin,
         auth: connector.auth ?? existing?.auth,
       };
-      if (index === -1) connectors.push(merged);
-      else connectors[index] = merged;
+      const protectedConnector = protectManagedConnector(merged);
+      if (index === -1) connectors.push(protectedConnector);
+      else connectors[index] = protectedConnector;
     }
+    await writeConnectors(connectors);
+    return connectors;
+  });
+}
+
+export function replaceConnectors(incoming: ConnectorConfig[]): Promise<ConnectorConfig[]> {
+  return replaceConnectorIdentities(
+    incoming.map((connector) => ({ existingId: connector.id, connector })),
+  );
+}
+
+export function replaceConnectorIdentities(
+  incoming: { existingId: string; connector: ConnectorConfig }[],
+): Promise<ConnectorConfig[]> {
+  return withConnectorAccess(async () => {
+    const replacements = incoming.map(({ existingId, connector }) => ({
+      existingId,
+      connector: protectManagedConnector(connector),
+    }));
+    const targetIds = new Set(replacements.map(({ connector }) => connector.id));
+    if (targetIds.size !== replacements.length) {
+      throw new Error("Connector replacement identities conflict");
+    }
+    const removedIds = new Set(
+      replacements.flatMap(({ existingId, connector }) => [existingId, connector.id]),
+    );
+    const connectors = (await readAndMigrateConnectors()).filter(
+      (entry) => !removedIds.has(entry.id),
+    );
+    connectors.push(...replacements.map(({ connector }) => connector));
     await writeConnectors(connectors);
     return connectors;
   });
@@ -149,7 +207,7 @@ export function removeConnector(id: string): Promise<ConnectorConfig[]> {
     );
   }
   return withConnectorAccess(async () => {
-    const connectors = (await listConnectors()).filter((entry) => entry.id !== id);
+    const connectors = (await readAndMigrateConnectors()).filter((entry) => entry.id !== id);
     await writeConnectors(connectors);
     return connectors;
   });
@@ -180,8 +238,17 @@ const maskRecord = (
 };
 
 export function toConnectorView(connector: ConnectorConfig): ConnectorView {
+  const origin = connector.origin
+    ? {
+        kind: connector.origin.kind,
+        id: connector.origin.id,
+        ...(connector.origin.version ? { version: connector.origin.version } : {}),
+        ...(connector.origin.binding ? { binding: connector.origin.binding } : {}),
+      }
+    : undefined;
   return {
     ...connector,
+    ...(origin ? { origin } : { origin: undefined }),
     env: maskRecord(connector.env),
     headers: maskRecord(connector.headers),
     secret_keys: [

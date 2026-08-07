@@ -21,6 +21,13 @@ test(
 
     const bundle = readFileSync(bundlePath, "utf8");
     expect(bundle).not.toContain(realpathSync(path.join(packageDir, "..", "..")));
+    expect(bundle).toContain(
+      "cdce71ef6f893d463910678ec298bba76610ca4591bf35263f0ff0ec35928f9e",
+    );
+    expect(bundle).toContain(
+      "https://github.com/github/github-mcp-server/releases/download/v1.6.0/github-mcp-server_Darwin_arm64.tar.gz",
+    );
+    expect(bundle).not.toContain("@modelcontextprotocol/server-github");
     for (const packageName of runtimePackages) {
       expect(
         existsSync(
