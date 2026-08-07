@@ -77,9 +77,18 @@ export class BrowserOperationCoordinator {
     if (options.signal?.aborted) {
       return Promise.reject(operationError(options.kind, "aborted", options.signal.reason));
     }
-    const active = Effect.suspend(() =>
-      this.poisoned ? Effect.fail(this.poisoned) : this.operationEffect(options, operation),
-    );
+    const generation = this.generation;
+    const deadline = Date.now() + this.policy.timeouts[options.kind];
+    const active = Effect.suspend(() => {
+      if (this.poisoned) return Effect.fail(this.poisoned);
+      if (generation !== this.generation) {
+        return Effect.fail(operationError(options.kind, "aborted"));
+      }
+      if (Date.now() >= deadline) {
+        return Effect.fail(operationError(options.kind, "timed-out"));
+      }
+      return this.operationEffect(options, operation, generation, deadline);
+    });
     return Effect.runPromise(this.lock.withPermit(Effect.uninterruptible(active)), {
       signal: options.signal,
     }).catch((error: unknown) => {
@@ -94,9 +103,12 @@ export class BrowserOperationCoordinator {
   private operationEffect<A>(
     options: BrowserOperationRunOptions,
     operation: (context: BrowserOperationContext) => Promise<A>,
+    generation: number,
+    deadline: number,
   ): Effect.Effect<A, Error> {
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) return Effect.fail(operationError(options.kind, "timed-out"));
     return Effect.callback<A, Error>((resume) => {
-      const generation = this.generation;
       const controller = new AbortController();
       let settled = false;
       const cleanup = (): void => {
@@ -129,7 +141,7 @@ export class BrowserOperationCoordinator {
         invalidate(operationError(options.kind, "aborted", options.signal?.reason));
       const timeout = setTimeout(
         () => invalidate(operationError(options.kind, "timed-out")),
-        this.policy.timeouts[options.kind],
+        remaining,
       );
       const context: BrowserOperationContext = {
         assertActive: () => {

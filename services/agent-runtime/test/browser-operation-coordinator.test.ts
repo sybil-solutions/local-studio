@@ -40,16 +40,20 @@ test("a stalled frame is recovered before later browser work starts", async () =
   });
   await started.promise;
   let laterStarted = false;
-  const later = coordinator.run({ kind: "verb" }, async () => {
+  const stale = coordinator.run({ kind: "verb" }, async () => {
     laterStarted = true;
+  });
+  const staleRejected = assert.rejects(stale, (error) => errorReason(error) === "aborted");
+  await assert.rejects(frame, (error) => errorReason(error) === "timed-out");
+  await staleRejected;
+  const later = coordinator.run({ kind: "verb" }, async () => {
     state = "current";
     return "ready";
   });
-  await assert.rejects(frame, (error) => errorReason(error) === "timed-out");
   assert.equal(await later, "ready");
   late.resolve();
   await Bun.sleep(0);
-  assert.equal(laterStarted, true);
+  assert.equal(laterStarted, false);
   assert.equal(state, "current");
   assert.deepEqual(recoveries, ["frame:timed-out"]);
 });
@@ -91,6 +95,65 @@ test("an active abort recovers before the next operation starts", async () => {
   const later = coordinator.run({ kind: "state" }, async () => recovered);
   await assert.rejects(active, (error) => errorReason(error) === "aborted");
   assert.equal(await later, true);
+});
+
+test("queued input and verb cannot mutate the replacement browser generation", async () => {
+  const activeStarted = Promise.withResolvers<void>();
+  const cancellation = new AbortController();
+  const sideEffects: string[] = [];
+  let page = "initial";
+  const coordinator = makeCoordinator(async () => {
+    page = "replacement";
+  });
+  const active = coordinator.run({ kind: "frame", signal: cancellation.signal }, async () => {
+    activeStarted.resolve();
+    return new Promise<never>(() => undefined);
+  });
+  await activeStarted.promise;
+  const input = coordinator.run({ kind: "input" }, async () => {
+    sideEffects.push(`${page}:input`);
+  });
+  const verb = coordinator.run({ kind: "verb" }, async () => {
+    sideEffects.push(`${page}:verb`);
+  });
+  cancellation.abort();
+  await assert.rejects(active, (error) => errorReason(error) === "aborted");
+  await assert.rejects(input, (error) => errorReason(error) === "aborted");
+  await assert.rejects(verb, (error) => errorReason(error) === "aborted");
+  assert.equal(page, "replacement");
+  assert.deepEqual(sideEffects, []);
+});
+
+test("queued work expires from its enqueue deadline without side effects", async () => {
+  const activeStarted = Promise.withResolvers<void>();
+  const releaseActive = Promise.withResolvers<void>();
+  let recoveries = 0;
+  let sideEffects = 0;
+  const coordinator = new BrowserOperationCoordinator({
+    policy: {
+      ...policy,
+      timeouts: { ...policy.timeouts, input: 1, state: 1_000 },
+    },
+    recover: async () => {
+      recoveries += 1;
+    },
+  });
+  const active = coordinator.run({ kind: "state" }, async () => {
+    activeStarted.resolve();
+    await releaseActive.promise;
+  });
+  await activeStarted.promise;
+  const queued = coordinator.run({ kind: "input" }, async () => {
+    sideEffects += 1;
+  });
+  const queuedRejected = assert.rejects(queued, (error) => errorReason(error) === "timed-out");
+  const waitUntil = Date.now() + 10;
+  while (Date.now() < waitUntil) await Promise.resolve();
+  releaseActive.resolve();
+  await active;
+  await queuedRejected;
+  assert.equal(sideEffects, 0);
+  assert.equal(recoveries, 0);
 });
 
 test("reader fallback is bounded and a later fallback can proceed", async () => {
