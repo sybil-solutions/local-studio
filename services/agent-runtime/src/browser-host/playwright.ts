@@ -164,13 +164,8 @@ export class PlaywrightManager<Context = BrowserContext> {
     return !this.stopped && this.poisoned === null && this.resolveBinary() !== null;
   }
 
-  ensure(): Promise<Context>;
-  ensure(scope: string): Promise<ManagedPlaywrightSession<Context>>;
-  ensure(scope?: string): Promise<Context | ManagedPlaywrightSession<Context>> {
-    return this.withPermit(async () => {
-      const session = await this.ensureUnlocked(scope ?? "legacy");
-      return scope === undefined ? session.context : session;
-    });
+  ensure(scope: string): Promise<ManagedPlaywrightSession<Context>> {
+    return this.withPermit(() => this.ensureUnlocked(scope));
   }
 
   current(scope: string): ManagedPlaywrightSession<Context> | null {
