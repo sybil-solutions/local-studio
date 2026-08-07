@@ -4,6 +4,7 @@ import path from "node:path";
 import { Effect, Schema } from "effect";
 import { coerce, compare } from "semver";
 import { resolveDataDir } from "./data-dir";
+import { PluginArtifactDigestError, pluginArtifactDigest } from "./plugin-artifact-digest";
 import { resolveBundledPluginDirectory } from "./plugin-resources";
 
 const PluginInterfaceSchema = Schema.Struct({
@@ -53,6 +54,8 @@ export type PluginBundle = {
   plugin: PluginView;
   manifest: PluginManifest;
   rootDir: string;
+  artifactDigest: string;
+  sourceDigest: string;
   trusted: boolean;
 };
 
@@ -61,7 +64,39 @@ type DiscoveredPlugin = {
   priority: number;
 };
 
-export class PluginDiscoveryError extends Error {}
+async function settledPlugins(
+  operations: Promise<DiscoveredPlugin[]>[],
+): Promise<DiscoveredPlugin[]> {
+  const scanned = await Promise.allSettled(operations);
+  const failures = scanned.flatMap((result) =>
+    result.status === "rejected" && result.reason instanceof PluginDiscoveryError
+      ? [result.reason]
+      : [],
+  );
+  if (failures.length > 0) {
+    throw new PluginDiscoveryError(
+      failures[0]?.message ?? "Plugin discovery failed",
+      undefined,
+      [...new Set(failures.flatMap((failure) => failure.sourceDigests))],
+    );
+  }
+  return scanned.flatMap((result) =>
+    result.status === "fulfilled" ? result.value : [],
+  );
+}
+
+export class PluginDiscoveryError extends Error {
+  constructor(
+    message: string,
+    readonly sourceDigest?: string,
+    readonly sourceDigests: readonly string[] = sourceDigest ? [sourceDigest] : [],
+  ) {
+    super(message);
+  }
+}
+
+const pluginSourceDigest = (canonicalDirectory: string): string =>
+  `sha256:${createHash("sha256").update(canonicalDirectory).digest("hex")}`;
 
 export function defaultPluginSources(): PluginSource[] {
   const home = homedir();
@@ -109,19 +144,35 @@ async function manifestInDirectory(
   dir: string,
   source: PluginSource,
 ): Promise<DiscoveredPlugin | null> {
+  let sourceDigest: string | undefined;
   try {
+    sourceDigest = pluginSourceDigest(await realpath(dir));
     const raw = await readFile(path.join(dir, ".codex-plugin", "plugin.json"), "utf8");
     const manifest = Schema.decodeUnknownSync(PluginManifestSchema)(JSON.parse(raw));
     const bundled = resolveBundledPluginDirectory();
     const trusted = bundled
       ? path.dirname(await realpath(dir)) === (await realpath(bundled))
       : false;
+    const artifactDigest = await Effect.runPromise(pluginArtifactDigest(dir));
     return {
-      bundle: { plugin: pluginView(manifest, source.label), manifest, rootDir: dir, trusted },
+      bundle: {
+        plugin: pluginView(manifest, source.label),
+        manifest,
+        rootDir: dir,
+        artifactDigest,
+        sourceDigest,
+        trusted,
+      },
       priority: source.priority,
     };
-  } catch {
-    return null;
+  } catch (error) {
+    if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") {
+      return null;
+    }
+    if (error instanceof PluginArtifactDigestError) {
+      throw new PluginDiscoveryError(error.message, sourceDigest);
+    }
+    throw new PluginDiscoveryError(`Invalid plugin artifact in ${source.label}`, sourceDigest);
   }
 }
 
@@ -140,14 +191,13 @@ async function scanDirectory(
       (entry) =>
         entry.isDirectory() && !entry.name.startsWith(".") && entry.name !== "node_modules",
     );
-    return (
-      await Promise.all(
-        childDirectories.map((entry) =>
-          scanDirectory(path.join(dir, entry.name), source, depth + 1, maxDepth),
-        ),
-      )
-    ).flat();
-  } catch {
+    return settledPlugins(
+      childDirectories.map((entry) =>
+        scanDirectory(path.join(dir, entry.name), source, depth + 1, maxDepth),
+      ),
+    );
+  } catch (error) {
+    if (error instanceof PluginDiscoveryError) throw error;
     return [];
   }
 }
@@ -173,9 +223,9 @@ export function discoverPluginBundles(
 ): Effect.Effect<PluginBundle[], PluginDiscoveryError> {
   return Effect.tryPromise({
     try: async () => {
-      const discovered = (
-        await Promise.all(sources.map((source) => scanDirectory(source.dir, source, 0, maxDepth)))
-      ).flat();
+      const discovered = await settledPlugins(
+        sources.map((source) => scanDirectory(source.dir, source, 0, maxDepth)),
+      );
       const plugins = new Map<string, DiscoveredPlugin>();
       for (const candidate of discovered) {
         plugins.set(
@@ -187,7 +237,10 @@ export function discoverPluginBundles(
         .map(({ bundle }) => bundle)
         .sort((left, right) => left.plugin.displayName.localeCompare(right.plugin.displayName));
     },
-    catch: (error) => new PluginDiscoveryError(String(error)),
+    catch: (error) =>
+      error instanceof PluginDiscoveryError
+        ? error
+        : new PluginDiscoveryError(String(error)),
   });
 }
 
@@ -199,3 +252,4 @@ export function discoverPlugins(
     Effect.map((bundles) => bundles.map(({ plugin }) => plugin)),
   );
 }
+import { createHash } from "node:crypto";

@@ -34,9 +34,11 @@ function failure(error: unknown) {
   );
 }
 
-function closeGoogleConnections(): void {
-  GOOGLE_WORKSPACE_PLUGIN_IDS.forEach((id) =>
-    closePooledConnection(GOOGLE_WORKSPACE_BINDINGS[id].connectorId),
+async function closeGoogleConnections(): Promise<void> {
+  await Promise.all(
+    GOOGLE_WORKSPACE_PLUGIN_IDS.map((id) =>
+      closePooledConnection(GOOGLE_WORKSPACE_BINDINGS[id].connectorId),
+    ),
   );
 }
 
@@ -65,7 +67,7 @@ export async function PUT(request: NextRequest) {
   } catch (error) {
     return failure(error);
   } finally {
-    closeGoogleConnections();
+    await closeGoogleConnections();
   }
 }
 
@@ -92,6 +94,6 @@ export async function DELETE(request: NextRequest) {
   } catch (error) {
     return failure(error);
   } finally {
-    closeGoogleConnections();
+    await closeGoogleConnections();
   }
 }

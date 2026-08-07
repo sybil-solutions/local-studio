@@ -1,6 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { Effect, Schema } from "effect";
-import { closePooledConnection } from "@local-studio/agent-runtime/connector-pool";
 import { PluginRuntimeError, setPluginEnabled } from "@local-studio/agent-runtime/plugin-runtime";
 import { requireApiAccess } from "@/lib/auth/guard";
 
@@ -21,7 +20,6 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
   const { id } = await context.params;
   try {
     const result = await Effect.runPromise(setPluginEnabled(id, body.enabled));
-    result.connectorIds.forEach(closePooledConnection);
     return NextResponse.json({ plugins: result.plugins });
   } catch (error) {
     const status = error instanceof PluginRuntimeError ? error.status : 500;

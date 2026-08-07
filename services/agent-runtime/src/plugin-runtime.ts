@@ -2,14 +2,29 @@ import { createHash } from "node:crypto";
 import { readFile, realpath } from "node:fs/promises";
 import path from "node:path";
 import { Effect, Schema } from "effect";
-import { closePooledConnection, probeConnector } from "./connector-pool";
-import { listConnectors, upsertConnectors, type ConnectorConfig } from "./connectors-service";
+import { probeConnector } from "./connector-pool";
+import {
+  listConnectors,
+  replaceConnectorIdentitiesEffect,
+  upsertConnectorsEffect,
+  type ConnectorConfig,
+} from "./connectors-service";
 import { getGoogleAccount, type GoogleAccountView } from "./google-account";
 import {
   googleWorkspaceConnector,
   trustedGoogleWorkspacePlugin,
   type GoogleWorkspacePluginId,
 } from "./google-workspace-adapter";
+import { pluginArtifactDigest } from "./plugin-artifact-digest";
+import { pluginConnectorConfigurationDigest } from "./plugin-connector-identity";
+import {
+  expectedPluginExecutionSnapshot,
+  garbageCollectPluginExecutionSnapshots,
+  preparePluginExecutionSnapshot,
+  type PluginExecutionSnapshotLease,
+  verifyPluginExecutionSnapshot,
+  withPluginExecutionSnapshotLifecycle,
+} from "./plugin-execution-snapshot";
 import { discoverPluginBundles, type PluginBundle, type PluginSource } from "./plugin-discovery";
 import {
   type PluginActivationResult,
@@ -60,6 +75,35 @@ const AppManifestSchema = Schema.Struct({
   apps: Schema.Record(Schema.String, Schema.Unknown),
 });
 
+const EXECUTABLE_ENVIRONMENT_KEYS = new Set([
+  "BUN_OPTIONS",
+  "DYLD_FALLBACK_LIBRARY_PATH",
+  "DYLD_FRAMEWORK_PATH",
+  "DYLD_INSERT_LIBRARIES",
+  "DYLD_LIBRARY_PATH",
+  "LD_LIBRARY_PATH",
+  "LD_PRELOAD",
+  "NODE_PATH",
+  "NODE_OPTIONS",
+]);
+
+function pluginEnvironment(input: Record<string, string>): Record<string, string> {
+  for (const key of Object.keys(input)) {
+    const normalized = key.toUpperCase();
+    if (
+      EXECUTABLE_ENVIRONMENT_KEYS.has(normalized) ||
+      normalized.startsWith("LD_") ||
+      normalized.startsWith("DYLD_")
+    ) {
+      throw new PluginRuntimeError(422, "Plugin environment may not load external code");
+    }
+  }
+  return {
+    ...input,
+    ...(process.versions.electron ? { ELECTRON_RUN_AS_NODE: "1" } : {}),
+  };
+}
+
 type ResolvedServer = {
   connector: ConnectorConfig | null;
   blocker?: string;
@@ -74,6 +118,17 @@ export class PluginRuntimeError extends Error {
   }
 }
 
+function verifyBundleArtifact(bundle: PluginBundle): Effect.Effect<void, PluginRuntimeError> {
+  return pluginArtifactDigest(bundle.rootDir).pipe(
+    Effect.mapError(() => new PluginRuntimeError(409, "Plugin artifact could not be verified")),
+    Effect.flatMap((digest) =>
+      digest === bundle.artifactDigest
+        ? Effect.void
+        : Effect.fail(new PluginRuntimeError(409, "Plugin artifact changed during validation")),
+    ),
+  );
+}
+
 function isContained(root: string, candidate: string): boolean {
   const relative = path.relative(root, candidate);
   return (
@@ -86,21 +141,29 @@ async function containedRealPath(root: string, value: string): Promise<string> {
   const canonicalRoot = await realpath(root);
   const canonicalCandidate = await realpath(path.resolve(canonicalRoot, value));
   if (!isContained(canonicalRoot, canonicalCandidate)) {
-    throw new PluginRuntimeError(422, `Plugin path escapes its bundle: ${value}`);
+    throw new PluginRuntimeError(422, "Plugin path escapes its bundle");
   }
   return canonicalCandidate;
 }
 
 async function resolvedCommand(root: string, command: string): Promise<string> {
-  if (path.isAbsolute(command)) return command;
+  if (["node", "nodejs"].includes(command) || command === path.basename(process.execPath)) return process.execPath;
+  if (path.isAbsolute(command)) {
+    const canonical = await realpath(command);
+    if (canonical === await realpath(process.execPath)) return process.execPath;
+    if (!isContained(await realpath(root), canonical)) throw new PluginRuntimeError(422, "Plugin executable path escapes its bundle");
+    return canonical;
+  }
   if (command.startsWith(".") || command.includes(path.sep)) {
     return containedRealPath(root, command);
   }
-  return command;
+  throw new PluginRuntimeError(422, "Plugin executable must be bundled");
 }
 
 async function resolvedArg(root: string, value: string): Promise<string> {
-  return value.startsWith(".") ? containedRealPath(root, value) : value;
+  return path.isAbsolute(value) || value.startsWith(".") || value.includes(path.sep)
+    ? containedRealPath(root, value)
+    : value;
 }
 
 function connectorId(pluginId: string, serverId: string): string {
@@ -110,18 +173,31 @@ function connectorId(pluginId: string, serverId: string): string {
   return `${base.slice(0, 55)}-${digest}`;
 }
 
+function withPluginOrigin(
+  bundle: PluginBundle,
+  serverId: string,
+  connector: ConnectorConfig,
+): ConnectorConfig {
+  return {
+    ...connector,
+    origin: {
+      kind: "plugin",
+      id: bundle.plugin.id,
+      version: bundle.plugin.version,
+      binding: serverId,
+      artifactDigest: bundle.artifactDigest,
+      sourceDigest: bundle.sourceDigest,
+      configurationDigest: pluginConnectorConfigurationDigest(connector),
+    },
+  };
+}
+
 async function resolvedServer(
   bundle: PluginBundle,
   serverId: string,
   input: unknown,
 ): Promise<ResolvedServer> {
   const server = Schema.decodeUnknownSync(McpServerSchema)(input);
-  const origin = {
-    kind: "plugin",
-    id: bundle.plugin.id,
-    version: bundle.plugin.version,
-    binding: serverId,
-  };
   const id = connectorId(bundle.plugin.id, serverId);
   const name =
     serverId === bundle.plugin.id
@@ -130,19 +206,22 @@ async function resolvedServer(
 
   if ("command" in server) {
     const root = await realpath(bundle.rootDir);
-    const args = await Promise.all((server.args ?? []).map((value) => resolvedArg(root, value)));
+    const command = await resolvedCommand(root, server.command);
+    const values = server.args ?? [];
+    const entryIndex = command === process.execPath ? values.findIndex((value) => !value.startsWith("-")) : -1;
+    if (command === process.execPath && entryIndex === -1) throw new PluginRuntimeError(422, "Plugin runtime entry point is missing");
+    const args = await Promise.all(values.map((value, index) => index === entryIndex ? containedRealPath(root, value) : resolvedArg(root, value)));
     return {
-      connector: {
+      connector: withPluginOrigin(bundle, serverId, {
         id,
         name,
         transport: "stdio",
-        command: await resolvedCommand(root, server.command),
+        command,
         args,
-        env: { ...(server.env ?? {}) },
+        env: pluginEnvironment({ ...(server.env ?? {}) }),
         cwd: await containedRealPath(root, server.cwd ?? "."),
-        origin,
         enabled: false,
-      },
+      }),
     };
   }
 
@@ -151,7 +230,7 @@ async function resolvedServer(
   const bearerToken = bearerEnv ? process.env[bearerEnv]?.trim() : undefined;
   if (bearerEnv && !bearerToken) return { connector: null, blocker: `Set ${bearerEnv}` };
   return {
-    connector: {
+    connector: withPluginOrigin(bundle, serverId, {
       id,
       name,
       transport: "http",
@@ -160,9 +239,8 @@ async function resolvedServer(
         ...(server.headers ?? {}),
         ...(bearerToken ? { Authorization: `Bearer ${bearerToken}` } : {}),
       },
-      origin,
       enabled: false,
-    },
+    }),
   };
 }
 
@@ -179,19 +257,18 @@ function loadPluginServers(
       const manifest = Schema.decodeUnknownSync(McpManifestSchema)(
         JSON.parse(await readFile(manifestPath, "utf8")),
       );
-      return Promise.all(
+      const servers = await Promise.all(
         Object.entries(manifest.mcpServers).map(([serverId, server]) =>
           resolvedServer(bundle, serverId, server),
         ),
       );
+      await Effect.runPromise(verifyBundleArtifact(bundle));
+      return servers;
     },
     catch: (error) =>
       error instanceof PluginRuntimeError
         ? error
-        : new PluginRuntimeError(
-            422,
-            `Invalid MCP manifest for ${bundle.plugin.displayName}: ${error}`,
-          ),
+        : new PluginRuntimeError(422, `Invalid MCP manifest for ${bundle.plugin.displayName}`),
   });
 }
 
@@ -218,7 +295,7 @@ function loadHostCapability(
     catch: (error) =>
       error instanceof PluginRuntimeError
         ? error
-        : new PluginRuntimeError(422, `Invalid Chatterbox Voice manifest: ${error}`),
+        : new PluginRuntimeError(422, "Invalid Chatterbox Voice manifest"),
   });
 }
 
@@ -226,6 +303,7 @@ function pluginToolsView(
   bundle: PluginBundle,
   connectors: ConnectorConfig[],
   servers: ResolvedServer[],
+  reapprovalRequired: boolean,
   reconciliationError?: string,
 ): PluginToolsView {
   if (!bundle.manifest.mcpServers) {
@@ -263,12 +341,13 @@ function pluginToolsView(
       reason: reconciliationError,
     };
   }
-  if (current.length > 0) {
+  if (reapprovalRequired || current.length > 0) {
     return {
       state: "disabled",
       serverCount: servers.length,
       allowedToolCount: 0,
       mode: "observe",
+      ...(reapprovalRequired ? { reason: "Plugin identity changed; reconnect to approve it" } : {}),
     };
   }
   if (installable.length > 0) {
@@ -343,6 +422,7 @@ function runtimeView(
   bundle: PluginBundle,
   connectors: ConnectorConfig[],
   account: GoogleAccountView,
+  reapprovalRequired: boolean,
   reconciliationError?: string,
 ): Effect.Effect<PluginRuntimeView, PluginRuntimeError> {
   return Effect.gen(function* () {
@@ -387,7 +467,13 @@ function runtimeView(
         return runtimeHealthView(
           {
             ...bundle.plugin,
-            tools: pluginToolsView(bundle, connectors, servers, reconciliationError),
+            tools: pluginToolsView(
+              bundle,
+              connectors,
+              servers,
+              reapprovalRequired,
+              reconciliationError,
+            ),
           },
           current,
         );
@@ -401,12 +487,14 @@ function runtimeHealthView(
   connectors: ConnectorConfig[],
 ): Effect.Effect<PluginRuntimeView> {
   if (view.tools.state !== "enabled") return Effect.succeed(view);
-  return Effect.promise(() =>
-    Promise.all(connectors.map((connector) => probeConnector(connector))),
-  ).pipe(
+  return Effect.tryPromise({
+    try: (signal) =>
+      Promise.all(connectors.map((connector) => probeConnector(connector, signal, true))),
+    catch: () => undefined,
+  }).pipe(
     Effect.map((probes) => {
       const failures = probes.flatMap((probe, index) =>
-        probe.ok ? [] : [`${connectors[index]?.name}: ${probe.error ?? "MCP probe failed"}`],
+        probe.ok ? [] : [`${connectors[index]?.name}: MCP probe failed`],
       );
       return failures.length
         ? {
@@ -415,77 +503,234 @@ function runtimeHealthView(
           }
         : view;
     }),
+    Effect.catch(() =>
+      Effect.succeed({
+        ...view,
+        tools: { ...view.tools, state: "invalid" as const, reason: "MCP probe failed" },
+      }),
+    ),
   );
 }
 
 type ConnectorReconciliation = {
   connectors: ConnectorConfig[];
   errors: Map<string, string>;
+  reapprovalRequired: Set<string>;
 };
 
-async function reconcileEnabledPluginConnectors(
+function hasPluginGrant(connector: ConnectorConfig): boolean {
+  return connector.enabled || Boolean(connector.allowTools?.length);
+}
+
+function samePluginIdentity(
+  existing: ConnectorConfig,
+  replacement: ConnectorConfig,
+): Effect.Effect<boolean> {
+  const current = existing.origin;
+  const expected = replacement.origin;
+  if (!current?.artifactDigest || !current.configurationDigest || !current.sourceDigest || !expected) {
+    return Effect.succeed(false);
+  }
+  return Effect.gen(function* () {
+    if (existing.transport === "stdio") {
+      const valid = yield* verifyPluginExecutionSnapshot(existing).pipe(
+        Effect.match({ onFailure: () => false, onSuccess: () => true }),
+      );
+      if (!valid) return false;
+    }
+    return (
+      current.kind === "plugin" &&
+      expected.kind === "plugin" &&
+      current.id === expected.id &&
+      current.version === expected.version &&
+      current.binding === expected.binding &&
+      current.artifactDigest === expected.artifactDigest &&
+      current.sourceDigest === expected.sourceDigest &&
+      current.configurationDigest === expected.configurationDigest &&
+      current.configurationDigest === pluginConnectorConfigurationDigest(existing) &&
+      expected.configurationDigest === pluginConnectorConfigurationDigest(replacement)
+    );
+  });
+}
+
+const revokedConnector = (
+  existing: ConnectorConfig,
+  replacement?: ConnectorConfig,
+): ConnectorConfig => ({
+  ...(replacement ?? existing),
+  allowTools: [],
+  enabled: false,
+});
+
+function reconcileEnabledPluginConnectors(
   bundles: PluginBundle[],
   initial: ConnectorConfig[],
-): Promise<ConnectorReconciliation> {
-  let connectors = initial;
-  const errors = new Map<string, string>();
-  for (const bundle of bundles) {
-    const stale = connectors.filter(
+  lifecycle: PluginExecutionSnapshotLease,
+): Effect.Effect<ConnectorReconciliation, PluginRuntimeError> {
+  return Effect.gen(function* () {
+    let connectors = initial;
+    const errors = new Map<string, string>();
+    const reapprovalRequired = new Set<string>();
+    const discovered = new Set(bundles.map((bundle) => bundle.plugin.id));
+    const unavailable = connectors.filter(
       (connector) =>
-        connector.enabled &&
         connector.origin?.kind === "plugin" &&
-        connector.origin.id === bundle.plugin.id &&
-        connector.origin.version !== bundle.plugin.version,
+        !discovered.has(connector.origin.id) &&
+        hasPluginGrant(connector),
     );
-    if (stale.length === 0) continue;
-    try {
-      const servers = await Effect.runPromise(loadPluginServers(bundle));
-      const replacements = stale.map((connector) => {
+    if (unavailable.length > 0) {
+      connectors = yield* replaceConnectorIdentitiesEffect(
+        unavailable.map((connector) => ({
+          existingId: connector.id,
+          connector: revokedConnector(connector),
+        })),
+        lifecycle,
+      ).pipe(
+        Effect.mapError(() => new PluginRuntimeError(500, "Plugin reconciliation failed")),
+      );
+    }
+    for (const bundle of bundles) {
+      const approved = connectors.filter(
+        (connector) =>
+          connector.origin?.kind === "plugin" &&
+          connector.origin.id === bundle.plugin.id &&
+          hasPluginGrant(connector),
+      );
+      if (approved.length === 0) continue;
+      const servers = yield* loadPluginServers(bundle).pipe(
+        Effect.matchEffect({
+          onFailure: () =>
+            replaceConnectorIdentitiesEffect(
+              approved.map((connector) => ({
+                existingId: connector.id,
+                connector: revokedConnector(connector),
+              })),
+              lifecycle,
+            ).pipe(
+              Effect.map((next) => {
+                connectors = next;
+                errors.set(bundle.plugin.id, "Plugin identity could not be verified");
+                return undefined;
+              }),
+              Effect.mapError(
+                () => new PluginRuntimeError(500, "Plugin reconciliation failed"),
+              ),
+            ),
+          onSuccess: (resolved) => Effect.succeed(resolved),
+        }),
+      );
+      if (!servers) continue;
+      const changed: { existingId: string; connector: ConnectorConfig }[] = [];
+      for (const connector of approved) {
         const replacement = servers.find(
           (server) => server.connector?.origin?.binding === connector.origin?.binding,
         )?.connector;
-        if (!replacement || !connector.allowTools?.length) {
-          throw new PluginRuntimeError(409, "Reconnect to approve the updated plugin");
+        const expected: ConnectorConfig | undefined =
+          replacement?.transport === "stdio" && connector.origin?.snapshotDigest
+            ? yield* expectedPluginExecutionSnapshot(bundle, replacement, connector).pipe(
+                Effect.mapError(
+                  () => new PluginRuntimeError(500, "Plugin reconciliation failed"),
+                ),
+              )
+            : replacement ?? undefined;
+        if (!expected || !(yield* samePluginIdentity(connector, expected))) {
+          changed.push({
+            existingId: connector.id,
+            connector: revokedConnector(connector, expected),
+          });
         }
-        return { ...replacement, allowTools: connector.allowTools, enabled: true };
-      });
-      const updated = await Effect.runPromise(enabledObserveConnectors(replacements));
-      connectors = await upsertConnectors(updated);
-      updated.forEach((connector) => closePooledConnection(connector.id));
-    } catch (error) {
-      errors.set(bundle.plugin.id, error instanceof Error ? error.message : "Plugin update failed");
+      }
+      if (changed.length === 0) continue;
+      connectors = yield* replaceConnectorIdentitiesEffect(changed, lifecycle).pipe(
+        Effect.mapError(() => new PluginRuntimeError(500, "Plugin reconciliation failed")),
+      );
+      reapprovalRequired.add(bundle.plugin.id);
     }
-  }
-  return { connectors, errors };
+    return { connectors, errors, reapprovalRequired };
+  });
 }
 
 function connectorReconciliationEffect(
   bundles: PluginBundle[],
+  lifecycle: PluginExecutionSnapshotLease,
 ): Effect.Effect<ConnectorReconciliation, PluginRuntimeError> {
   return Effect.gen(function* () {
     const initial = yield* connectorsEffect();
-    return yield* Effect.tryPromise({
-      try: () => reconcileEnabledPluginConnectors(bundles, initial),
-      catch: (error) => new PluginRuntimeError(500, `Plugin reconciliation failed: ${error}`),
-    });
+    return yield* reconcileEnabledPluginConnectors(bundles, initial, lifecycle);
   });
 }
 
 export function refreshEnabledPluginConnectors(
   sources?: PluginSource[],
 ): Effect.Effect<void, PluginRuntimeError> {
-  return Effect.gen(function* () {
-    const bundles = yield* discoverPluginBundles(sources).pipe(
-      Effect.mapError((error) => new PluginRuntimeError(500, error.message)),
-    );
-    yield* connectorReconciliationEffect(bundles);
-  });
+  return pluginSnapshotOperation((lifecycle) => Effect.gen(function* () {
+  const bundles = yield* discoveredBundlesEffect(lifecycle, sources);
+  yield* connectorReconciliationEffect(bundles, lifecycle);
+  }));
 }
 
 function connectorsEffect(): Effect.Effect<ConnectorConfig[], PluginRuntimeError> {
   return Effect.tryPromise({
     try: listConnectors,
-    catch: (error) => new PluginRuntimeError(500, `Failed to read connector state: ${error}`),
+    catch: () => new PluginRuntimeError(500, "Failed to read connector state"),
+  });
+}
+
+function collectPluginExecutionSnapshots(
+  lifecycle: PluginExecutionSnapshotLease,
+): Effect.Effect<void, PluginRuntimeError> {
+  return connectorsEffect().pipe(
+    Effect.flatMap((connectors) =>
+      garbageCollectPluginExecutionSnapshots(connectors, lifecycle).pipe(
+        Effect.mapError(
+          () => new PluginRuntimeError(500, "Plugin execution snapshot cleanup failed"),
+        ),
+      ),
+    ),
+  );
+}
+
+function pluginSnapshotOperation<A>(
+  use: (lifecycle: PluginExecutionSnapshotLease) => Effect.Effect<A, PluginRuntimeError>,
+): Effect.Effect<A, PluginRuntimeError> {
+  return withPluginExecutionSnapshotLifecycle((lifecycle) =>
+    use(lifecycle).pipe(Effect.onExit(() => collectPluginExecutionSnapshots(lifecycle))),
+  );
+}
+
+function discoveredBundlesEffect(
+  lifecycle: PluginExecutionSnapshotLease,
+  sources?: PluginSource[],
+): Effect.Effect<PluginBundle[], PluginRuntimeError> {
+  return Effect.matchEffect(discoverPluginBundles(sources), {
+    onFailure: (error) => Effect.gen(function* () {
+      const sourceDigests = new Set(error.sourceDigests);
+      if (sourceDigests.size > 0) {
+        const connectors = yield* connectorsEffect();
+        const affected = connectors.filter(
+          (connector) =>
+            connector.origin?.kind === "plugin" &&
+            connector.origin.sourceDigest !== undefined &&
+            sourceDigests.has(connector.origin.sourceDigest) &&
+            hasPluginGrant(connector),
+        );
+        if (affected.length > 0) {
+          yield* replaceConnectorIdentitiesEffect(
+            affected.map((connector) => ({
+              existingId: connector.id,
+              connector: revokedConnector(connector),
+            })),
+            lifecycle,
+          ).pipe(
+            Effect.mapError(
+              () => new PluginRuntimeError(500, "Plugin discovery revocation failed"),
+            ),
+          );
+        }
+      }
+      return yield* Effect.fail(new PluginRuntimeError(500, error.message));
+    }),
+    onSuccess: Effect.succeed,
   });
 }
 
@@ -497,14 +742,13 @@ function googleAccountEffect(): Effect.Effect<GoogleAccountView, PluginRuntimeEr
   );
 }
 
-export function listPluginRuntimeViews(
+function listPluginRuntimeViewsUnlocked(
+  lifecycle: PluginExecutionSnapshotLease,
   sources?: PluginSource[],
 ): Effect.Effect<PluginRuntimeView[], PluginRuntimeError> {
   return Effect.gen(function* () {
-    const bundles = yield* discoverPluginBundles(sources).pipe(
-      Effect.mapError((error) => new PluginRuntimeError(500, error.message)),
-    );
-    const reconciliation = yield* connectorReconciliationEffect(bundles);
+    const bundles = yield* discoveredBundlesEffect(lifecycle, sources);
+    const reconciliation = yield* connectorReconciliationEffect(bundles, lifecycle);
     const account = yield* googleAccountEffect();
     return yield* Effect.all(
       bundles.map((bundle) =>
@@ -512,6 +756,7 @@ export function listPluginRuntimeViews(
           bundle,
           reconciliation.connectors,
           account,
+          reconciliation.reapprovalRequired.has(bundle.plugin.id),
           reconciliation.errors.get(bundle.plugin.id),
         ),
       ),
@@ -519,23 +764,28 @@ export function listPluginRuntimeViews(
   });
 }
 
+export function listPluginRuntimeViews(
+  sources?: PluginSource[],
+): Effect.Effect<PluginRuntimeView[], PluginRuntimeError> {
+  return pluginSnapshotOperation((lifecycle) =>
+    listPluginRuntimeViewsUnlocked(lifecycle, sources),
+  );
+}
+
 function enabledObserveConnectors(
   connectors: ConnectorConfig[],
 ): Effect.Effect<ConnectorConfig[], PluginRuntimeError> {
   return Effect.tryPromise({
-    try: async () => {
+    try: async (signal) => {
       const probed = await Promise.all(
         connectors.map(async (connector) => ({
           connector,
-          probe: await probeConnector(connector),
+          probe: await probeConnector(connector, signal, true),
         })),
       );
       return probed.map(({ connector, probe }) => {
         if (!probe.ok) {
-          throw new PluginRuntimeError(
-            502,
-            `${connector.name} failed to start: ${probe.error ?? "MCP probe failed"}`,
-          );
+          throw new PluginRuntimeError(502, `${connector.name} failed to start`);
         }
         const requested = connector.allowTools ? new Set(connector.allowTools) : null;
         const allowTools = probe.tools
@@ -559,8 +809,39 @@ function enabledObserveConnectors(
     catch: (error) =>
       error instanceof PluginRuntimeError
         ? error
-        : new PluginRuntimeError(502, `Plugin probe failed: ${error}`),
+        : new PluginRuntimeError(502, "Plugin probe failed"),
   });
+}
+
+function pluginIdentityReplacements(
+  owned: ConnectorConfig[],
+  changed: ConnectorConfig[],
+  enabling: boolean,
+): { existingId: string; connector: ConnectorConfig }[] {
+  if (!enabling) {
+    return owned.map((connector, index) => ({
+      existingId: connector.id,
+      connector: changed[index] ?? { ...connector, enabled: false },
+    }));
+  }
+  const remaining = [...changed];
+  const replacements = owned.map((connector) => {
+    const index = remaining.findIndex(
+      (candidate) => candidate.origin?.binding === connector.origin?.binding,
+    );
+    if (index === -1) {
+      return { existingId: connector.id, connector: revokedConnector(connector) };
+    }
+    const replacement = remaining.splice(index, 1)[0];
+    return {
+      existingId: connector.id,
+      connector: replacement ?? revokedConnector(connector),
+    };
+  });
+  replacements.push(
+    ...remaining.map((connector) => ({ existingId: connector.id, connector })),
+  );
+  return replacements;
 }
 
 export function setPluginEnabled(
@@ -568,10 +849,8 @@ export function setPluginEnabled(
   enabled: boolean,
   sources?: PluginSource[],
 ): Effect.Effect<PluginActivationResult, PluginRuntimeError> {
-  return Effect.gen(function* () {
-    const bundles = yield* discoverPluginBundles(sources).pipe(
-      Effect.mapError((error) => new PluginRuntimeError(500, error.message)),
-    );
+  return pluginSnapshotOperation((lifecycle) => Effect.gen(function* () {
+    const bundles = yield* discoveredBundlesEffect(lifecycle, sources);
     const bundle = bundles.find((candidate) => candidate.plugin.id === pluginId);
     if (!bundle) return yield* Effect.fail(new PluginRuntimeError(404, "Plugin not found"));
     const current = yield* connectorsEffect();
@@ -591,20 +870,21 @@ export function setPluginEnabled(
         ? yield* enabledObserveConnectors([googleWorkspaceConnector(googleWorkspace, false)])
         : owned.map((connector) => ({ ...connector, enabled: false }));
       if (changed.length) {
-        yield* Effect.tryPromise({
-          try: () => upsertConnectors(changed),
-          catch: (error) =>
-            new PluginRuntimeError(500, `Failed to save account adapter state: ${error}`),
-        });
+        yield* upsertConnectorsEffect(changed, lifecycle).pipe(
+          Effect.mapError(
+            (error) =>
+              new PluginRuntimeError(500, `Failed to save account adapter state: ${error}`),
+          ),
+        );
       }
       return {
-        plugins: yield* listPluginRuntimeViews(sources),
+        plugins: yield* listPluginRuntimeViewsUnlocked(lifecycle, sources),
         connectorIds: changed.map((connector) => connector.id),
       };
     }
     if (yield* loadHostCapability(bundle)) {
       return {
-        plugins: yield* listPluginRuntimeViews(sources),
+        plugins: yield* listPluginRuntimeViewsUnlocked(lifecycle, sources),
         connectorIds: [],
       };
     }
@@ -621,25 +901,40 @@ export function setPluginEnabled(
           new PluginRuntimeError(409, reason ?? "Plugin has no executable MCP server"),
         );
       }
-      changed = yield* enabledObserveConnectors(
-        servers.flatMap((server) => (server.connector ? [server.connector] : [])),
+      const prepared = yield* Effect.all(
+        servers.flatMap((server) =>
+          server.connector
+            ? [
+                preparePluginExecutionSnapshot(bundle, server.connector, lifecycle).pipe(
+                  Effect.mapError(
+                    () => new PluginRuntimeError(409, "Plugin execution snapshot failed"),
+                  ),
+                ),
+              ]
+            : [],
+        ),
+        { concurrency: 1 },
       );
+      changed = yield* enabledObserveConnectors(prepared);
+      yield* verifyBundleArtifact(bundle);
     } else {
       if (owned.length === 0) {
         return {
-          plugins: yield* listPluginRuntimeViews(sources),
+          plugins: yield* listPluginRuntimeViewsUnlocked(lifecycle, sources),
           connectorIds: [],
         };
       }
       changed = owned.map((connector) => ({ ...connector, enabled: false }));
     }
-    yield* Effect.tryPromise({
-      try: () => upsertConnectors(changed),
-      catch: (error) => new PluginRuntimeError(500, `Failed to save plugin state: ${error}`),
-    });
+    const replacements = pluginIdentityReplacements(owned, changed, enabled);
+    yield* replaceConnectorIdentitiesEffect(replacements, lifecycle).pipe(
+      Effect.mapError(
+        (error) => new PluginRuntimeError(500, `Failed to save plugin state: ${error}`),
+      ),
+    );
     return {
-      plugins: yield* listPluginRuntimeViews(sources),
+      plugins: yield* listPluginRuntimeViewsUnlocked(lifecycle, sources),
       connectorIds: changed.map((connector) => connector.id),
     };
-  });
+  }));
 }

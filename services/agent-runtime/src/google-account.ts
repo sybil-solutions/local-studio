@@ -265,55 +265,57 @@ export function saveGoogleClient(
   dependencies: GoogleOAuthDependencies = defaultDependencies,
 ): Effect.Effect<GoogleAccountView, GoogleAccountError> {
   return authorizationLifecycle.withPermit(
-    accountMutation.withPermit(
-      Effect.gen(function* () {
-        const clientId = input.clientId.trim();
-        const incomingSecret = input.clientSecret?.trim();
-        if (!clientId)
-          return yield* Effect.fail(new GoogleAccountError(400, "Client ID is required"));
-        yield* retryPendingGoogleRevocations(vault, dependencies);
-        const current = yield* metadataEffect();
-        const currentSecrets =
-          (yield* readVaultJson(vault, secretsKey, Schema.decodeUnknownSync(SecretsSchema))) ??
-          emptySecrets();
-        const sameClient = current?.clientId === clientId;
-        const revokeToken = GOOGLE_WORKSPACE_PLUGIN_IDS.flatMap((id) =>
-          currentSecrets.refreshTokens[id] ? [currentSecrets.refreshTokens[id]] : [],
-        )[0];
-        if (!sameClient && revokeToken) {
-          yield* promiseEffect(() => revokeGoogleGrant(revokeToken, dependencies));
-          invalidateGoogleWorkspaceAuthorizations();
+    Effect.gen(function* () {
+      const result = yield* accountMutation.withPermit(
+        Effect.gen(function* () {
+          const clientId = input.clientId.trim();
+          const incomingSecret = input.clientSecret?.trim();
+          if (!clientId)
+            return yield* Effect.fail(new GoogleAccountError(400, "Client ID is required"));
+          yield* retryPendingGoogleRevocations(vault, dependencies);
+          const current = yield* metadataEffect();
+          const currentSecrets =
+            (yield* readVaultJson(vault, secretsKey, Schema.decodeUnknownSync(SecretsSchema))) ??
+            emptySecrets();
+          const sameClient = current?.clientId === clientId;
+          const revokeToken = GOOGLE_WORKSPACE_PLUGIN_IDS.flatMap((id) =>
+            currentSecrets.refreshTokens[id] ? [currentSecrets.refreshTokens[id]] : [],
+          )[0];
+          if (!sameClient && revokeToken) {
+            yield* promiseEffect(() => revokeGoogleGrant(revokeToken, dependencies));
+            invalidateGoogleWorkspaceAuthorizations();
+            accessTokens.clear();
+            if (current) yield* writeMetadataEffect({ ...current, connections: {} });
+          }
+          const secrets: Secrets = {
+            ...(incomingSecret
+              ? { clientSecret: incomingSecret }
+              : sameClient && currentSecrets.clientSecret
+                ? { clientSecret: currentSecrets.clientSecret }
+                : {}),
+            refreshTokens: sameClient ? currentSecrets.refreshTokens : {},
+            pendingRevocations: pendingRevocations(currentSecrets),
+          };
+          const metadata: Metadata = {
+            clientId,
+            hasClientSecret: Boolean(secrets.clientSecret),
+            connections: sameClient ? (current?.connections ?? {}) : {},
+          };
+          if (!sameClient) {
+            invalidateGoogleWorkspaceAuthorizations();
+            yield* Effect.forEach(GOOGLE_WORKSPACE_PLUGIN_IDS, (id) =>
+              removeVaultValue(vault, pendingKey(id)),
+            );
+          }
+          yield* writeVaultJson(vault, secretsKey, secrets);
+          yield* writeMetadataEffect(metadata);
           accessTokens.clear();
-          yield* disableGoogleWorkspaceConnectors();
-          if (current) yield* writeMetadataEffect({ ...current, connections: {} });
-        }
-        const secrets: Secrets = {
-          ...(incomingSecret
-            ? { clientSecret: incomingSecret }
-            : sameClient && currentSecrets.clientSecret
-              ? { clientSecret: currentSecrets.clientSecret }
-              : {}),
-          refreshTokens: sameClient ? currentSecrets.refreshTokens : {},
-          pendingRevocations: pendingRevocations(currentSecrets),
-        };
-        const metadata: Metadata = {
-          clientId,
-          hasClientSecret: Boolean(secrets.clientSecret),
-          connections: sameClient ? (current?.connections ?? {}) : {},
-        };
-        if (!sameClient) {
-          invalidateGoogleWorkspaceAuthorizations();
-          yield* Effect.forEach(GOOGLE_WORKSPACE_PLUGIN_IDS, (id) =>
-            removeVaultValue(vault, pendingKey(id)),
-          );
-        }
-        yield* writeVaultJson(vault, secretsKey, secrets);
-        yield* writeMetadataEffect(metadata);
-        accessTokens.clear();
-        if (!sameClient) yield* disableGoogleWorkspaceConnectors();
-        return accountView(metadata);
-      }),
-    ),
+          return { account: accountView(metadata), disableConnectors: !sameClient };
+        }),
+      );
+      if (result.disableConnectors) yield* disableGoogleWorkspaceConnectors();
+      return result.account;
+    }),
   );
 }
 
@@ -482,7 +484,7 @@ async function verifyGoogleWorkspaceAccess(
       throw new GoogleAccountError(502, "Google read-only access could not be verified");
     }
   } finally {
-    connection.close();
+    await connection.close();
   }
 }
 
@@ -902,14 +904,14 @@ export function disconnectGoogleAccount(
             if (metadata) yield* writeVaultJson(vault, secretsKey, updatedSecrets);
             else yield* removeVaultValue(vault, secretsKey);
             return accountView(updatedMetadata);
-          }).pipe(
-            Effect.ensuring(
-              Effect.sync(() => accessTokens.clear()).pipe(
-                Effect.andThen(disableGoogleWorkspaceConnectors()),
-              ),
-            ),
-          );
+          });
         }),
+      ).pipe(
+        Effect.ensuring(
+          Effect.sync(() => accessTokens.clear()).pipe(
+            Effect.andThen(disableGoogleWorkspaceConnectors()),
+          ),
+        ),
       ),
     );
   });

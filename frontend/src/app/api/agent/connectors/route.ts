@@ -9,7 +9,6 @@ import {
   upsertConnector,
   type ConnectorConfig,
 } from "@local-studio/agent-runtime/connectors-service";
-import { closePooledConnection } from "@local-studio/agent-runtime/connector-pool";
 import { requireApiAccess } from "@/lib/auth/guard";
 
 export const runtime = "nodejs";
@@ -55,7 +54,6 @@ export async function POST(request: NextRequest) {
   };
   try {
     const connectors = await upsertConnector(connector);
-    closePooledConnection(connector.id);
     return NextResponse.json({ connectors: connectors.map(toConnectorView) });
   } catch (error) {
     return NextResponse.json(
@@ -72,7 +70,6 @@ export async function DELETE(request: NextRequest) {
   if (!id) return NextResponse.json({ error: "id is required" }, { status: 400 });
   try {
     const connectors = await removeConnector(id);
-    closePooledConnection(id);
     return NextResponse.json({ connectors: connectors.map(toConnectorView) });
   } catch (error) {
     return NextResponse.json(
