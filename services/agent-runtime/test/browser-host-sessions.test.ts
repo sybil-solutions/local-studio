@@ -208,6 +208,7 @@ class FakeSession implements ManagedPlaywrightSession<BrowserContextSurface<RawP
 class FakeManager implements BrowserHostManager<RawPage> {
   readonly launches: string[] = [];
   readonly sessions: FakeSession[] = [];
+  releaseCalls = 0;
   stops = 0;
   private readonly active = new Map<string, FakeSession>();
   private generation = 0;
@@ -217,6 +218,7 @@ class FakeManager implements BrowserHostManager<RawPage> {
   private readonly navigationBarriers: Barrier[] = [];
   private readonly pageCreationBarriers: Barrier[] = [];
   private readonly releaseBarriers: Barrier[] = [];
+  private releaseFailure: Error | null = null;
 
   blockNextEnsure(): Barrier {
     const next = barrier();
@@ -240,6 +242,10 @@ class FakeManager implements BrowserHostManager<RawPage> {
     const next = barrier();
     this.releaseBarriers.push(next);
     return next;
+  }
+
+  failNextRelease(error: Error): void {
+    this.releaseFailure = error;
   }
 
   async ensure(scope: string): Promise<FakeSession> {
@@ -271,11 +277,15 @@ class FakeManager implements BrowserHostManager<RawPage> {
   }
 
   async release(scope: string): Promise<void> {
+    this.releaseCalls += 1;
     const active = this.active.get(scope);
     await active?.close();
     const pending = this.releaseBarriers.shift();
     pending?.started.resolve();
     await pending?.release.promise;
+    const failure = this.releaseFailure;
+    this.releaseFailure = null;
+    if (failure) throw failure;
     if (this.active.get(scope) === active) this.active.delete(scope);
   }
 
@@ -397,6 +407,30 @@ test("release rejects work that arrives while context closure is pending", async
   await Promise.allSettled([request]);
   assert.equal(settlement.status, "rejected");
   assert.match(String(settlement.status === "rejected" ? settlement.error : ""), /releasing/u);
+  await host.stop();
+});
+
+test("concurrent release callers share one failing close settlement", async () => {
+  const manager = new FakeManager();
+  const host = hostFor(manager);
+  await host.navigate(SESSION, "https://public.test/page");
+  const pending = manager.blockNextRelease();
+  const failure = new Error("release failed");
+  manager.failNextRelease(failure);
+  const releases = Array.from({ length: 20 }, () => host.releaseSession(SESSION));
+  assert.equal(releases.every((release) => release === releases[0]), true);
+  await pending.started.promise;
+  pending.release.resolve();
+  const results = await Promise.allSettled(releases);
+  assert.deepEqual(results.map((result) => result.status), Array(20).fill("rejected"));
+  assert.equal(
+    results.every((result) => result.status === "rejected" && result.reason === failure),
+    true,
+  );
+  const repeatedRelease = host.releaseSession(SESSION);
+  assert.equal(repeatedRelease, releases[0]);
+  await assert.rejects(repeatedRelease, (error) => error === failure);
+  assert.equal(manager.releaseCalls, 1);
   await host.stop();
 });
 
@@ -533,6 +567,7 @@ test("release is idempotent and permits later same-key recreation", async () => 
   await host.navigate(SESSION, "https://public.test/a");
   const firstRelease = host.releaseSession(SESSION);
   const secondRelease = host.releaseSession(SESSION);
+  assert.equal(firstRelease, secondRelease);
   await Promise.all([firstRelease, secondRelease]);
   assert.deepEqual(await host.navigate(SESSION, "https://public.test/recreated"), {
     title: "https://public.test/recreated",

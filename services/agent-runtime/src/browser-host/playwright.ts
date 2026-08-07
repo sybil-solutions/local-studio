@@ -86,6 +86,11 @@ export type PlaywrightManagerOptions<Context> = {
   resolveBinary?: () => string | null;
 };
 
+type SessionRevocation<Context> = {
+  session: ManagedPlaywrightSession<Context>;
+  settlement: Promise<void>;
+};
+
 export const createPlaywrightSessionLauncher = (): LaunchPlaywrightSession<BrowserContext> => {
   let browser: Browser | null = null;
   let launching: Promise<Browser> | null = null;
@@ -142,8 +147,10 @@ const launchPlaywrightSession = createPlaywrightSessionLauncher();
 
 export class PlaywrightManager<Context = BrowserContext> {
   private readonly active = new Map<string, ManagedPlaywrightSession<Context>>();
+  private readonly revocations = new Map<string, SessionRevocation<Context>>();
   private generation = 0;
-  private poisoned: unknown = null;
+  private poison: { error: unknown } | null = null;
+  private stopping: Promise<void> | null = null;
   private stopped = false;
   private readonly transitionLock = Semaphore.makeUnsafe(1);
   private readonly closeTimeoutMs: number;
@@ -161,7 +168,7 @@ export class PlaywrightManager<Context = BrowserContext> {
   }
 
   isAvailable(): boolean {
-    return !this.stopped && this.poisoned === null && this.resolveBinary() !== null;
+    return !this.stopped && this.poison === null && this.resolveBinary() !== null;
   }
 
   ensure(scope: string): Promise<ManagedPlaywrightSession<Context>> {
@@ -177,7 +184,8 @@ export class PlaywrightManager<Context = BrowserContext> {
   }
 
   stop(): Promise<void> {
-    return this.withPermit(() => this.stopUnlocked());
+    this.stopping ??= this.withPermit(() => this.stopUnlocked());
+    return this.stopping;
   }
 
   private async ensureUnlocked(scope: string): Promise<ManagedPlaywrightSession<Context>> {
@@ -186,6 +194,7 @@ export class PlaywrightManager<Context = BrowserContext> {
     if (active?.closed()) this.active.delete(scope);
     const current = this.active.get(scope);
     if (current) return current;
+    this.revocations.delete(scope);
     const executablePath = this.resolveBinary();
     if (!executablePath) {
       throw new Error("Browser unavailable: no Chromium found — set LOCAL_STUDIO_CHROME_PATH");
@@ -207,7 +216,25 @@ export class PlaywrightManager<Context = BrowserContext> {
 
   private async revokeActive(scope: string): Promise<void> {
     const session = this.active.get(scope);
+    const cached = this.revocations.get(scope);
+    if (cached && (!session || cached.session === session)) return cached.settlement;
     if (!session) return;
+    const settlement = this.revokeSession(scope, session);
+    const revocation = { session, settlement };
+    this.revocations.set(scope, revocation);
+    void settlement.then(
+      () => {
+        if (this.revocations.get(scope) === revocation) this.revocations.delete(scope);
+      },
+      () => undefined,
+    );
+    return settlement;
+  }
+
+  private async revokeSession(
+    scope: string,
+    session: ManagedPlaywrightSession<Context>,
+  ): Promise<void> {
     try {
       await Effect.runPromise(
         Effect.tryPromise({ try: session.close, catch: (error) => error }).pipe(
@@ -220,27 +247,26 @@ export class PlaywrightManager<Context = BrowserContext> {
       if (!session.closed()) throw new Error("Chromium termination was not confirmed");
       if (this.active.get(scope) === session) this.active.delete(scope);
     } catch (error) {
-      this.poisoned = error;
+      this.poison = { error };
       throw error;
     }
   }
 
   private async stopUnlocked(): Promise<void> {
-    if (this.stopped) return;
     this.stopped = true;
-    let failure: unknown = null;
+    let failure = this.poison;
     for (const scope of [...this.active.keys()]) {
       try {
         await this.revokeActive(scope);
       } catch (error) {
-        failure ??= error;
+        failure ??= { error };
       }
     }
-    if (failure) throw failure;
+    if (failure) throw failure.error;
   }
 
   private assertUsable(): void {
-    if (this.poisoned) throw this.poisoned;
+    if (this.poison) throw this.poison.error;
     if (this.stopped) throw new Error("Browser manager stopped");
   }
 

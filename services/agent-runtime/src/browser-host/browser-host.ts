@@ -252,6 +252,7 @@ type AcquireDecision<RawPage> =
 
 export class BrowserHost<RawPage = Page> {
   private readonly sessions = new Map<BrowserSessionKey, SessionRecord<RawPage>>();
+  private readonly releaseSettlements = new Map<BrowserSessionKey, Promise<void>>();
   private readonly registryLock = Semaphore.makeUnsafe(1);
   private readonly config: BrowserSessionConfig;
   private readonly now: () => number;
@@ -362,9 +363,9 @@ export class BrowserHost<RawPage = Page> {
     }
   }
 
-  private async closeRecord(record: SessionRecord<RawPage>): Promise<void> {
+  private closeRecord(record: SessionRecord<RawPage>): Promise<void> {
     record.closing ??= this.closeRecordOnce(record);
-    await record.closing;
+    return record.closing;
   }
 
   private async closeRecordOnce(record: SessionRecord<RawPage>): Promise<void> {
@@ -521,19 +522,37 @@ export class BrowserHost<RawPage = Page> {
     );
   }
 
-  async releaseSession(sessionKey: BrowserSessionKey): Promise<void> {
-    const key = decodeBrowserSessionKey(sessionKey);
-    const decision = await this.withPermit(async () => {
+  releaseSession(sessionKey: BrowserSessionKey): Promise<void> {
+    let key: BrowserSessionKey;
+    try {
+      key = decodeBrowserSessionKey(sessionKey);
+    } catch (error) {
+      return Promise.reject(error);
+    }
+    const cached = this.releaseSettlements.get(key);
+    if (cached) return cached;
+    const settlement = this.releaseSessionOnce(key);
+    this.releaseSettlements.set(key, settlement);
+    void settlement.then(
+      () => {
+        if (this.releaseSettlements.get(key) === settlement) {
+          this.releaseSettlements.delete(key);
+        }
+      },
+      () => undefined,
+    );
+    return settlement;
+  }
+
+  private async releaseSessionOnce(key: BrowserSessionKey): Promise<void> {
+    const record = await this.withPermit(async () => {
       const record = this.sessions.get(key);
       if (!record) return null;
       record.releaseRequested = true;
-      if (record.releaseStarted) return { close: false, record };
       record.releaseStarted = true;
-      return { close: true, record };
+      return record;
     });
-    if (!decision) return;
-    if (decision.close) await this.closeRecord(decision.record);
-    await Effect.runPromise(Deferred.await(decision.record.released));
+    if (record) await this.closeRecord(record);
   }
 
   async cleanupIdleSessions(): Promise<void> {

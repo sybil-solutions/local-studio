@@ -22,6 +22,7 @@ class FakeSession implements Omit<ManagedPlaywrightSession<FakeContext>, "genera
   private isClosed = false;
   private readonly listeners = new Set<() => void>();
   private nextClose: ClosePlan | null = null;
+  closeCalls = 0;
   readonly context: FakeContext;
 
   constructor(id: number) {
@@ -35,6 +36,7 @@ class FakeSession implements Omit<ManagedPlaywrightSession<FakeContext>, "genera
   }
 
   async close(): Promise<void> {
+    this.closeCalls += 1;
     const plan = this.nextClose;
     this.nextClose = null;
     plan?.started.resolve();
@@ -119,6 +121,49 @@ test("release waits for confirmed context closure", async () => {
   await release;
   assert.equal(session.closed(), true);
   await manager.stop();
+});
+
+test("timeout revocation is single-flight and stop preserves its failure", async () => {
+  const fixture = new ManagerFixture();
+  const manager = fixture.manager(10);
+  const session = await manager.ensure("session-a");
+  const pending = fixture.sessions[0]?.blockNextClose();
+  assert.ok(pending);
+  const firstRelease = manager.release("session-a");
+  await pending.started.promise;
+  const secondRelease = manager.release("session-a");
+  const releases = await Promise.allSettled([firstRelease, secondRelease]);
+  assert.deepEqual(
+    releases.map((result) => result.status),
+    ["rejected", "rejected"],
+  );
+  assert.equal(
+    releases[0]?.status === "rejected" ? releases[0].reason : null,
+    releases[1]?.status === "rejected" ? releases[1].reason : null,
+  );
+  const repeatedRelease = await Promise.allSettled([manager.release("session-a")]);
+  assert.equal(repeatedRelease[0]?.status, "rejected");
+  assert.equal(
+    repeatedRelease[0]?.status === "rejected" ? repeatedRelease[0].reason : null,
+    releases[0]?.status === "rejected" ? releases[0].reason : null,
+  );
+  assert.equal(fixture.sessions[0]?.closeCalls, 1);
+  const firstStop = manager.stop();
+  const secondStop = manager.stop();
+  assert.equal(firstStop, secondStop);
+  const stops = await Promise.allSettled([firstStop, secondStop]);
+  assert.deepEqual(
+    stops.map((result) => result.status),
+    ["rejected", "rejected"],
+  );
+  assert.equal(
+    stops[0]?.status === "rejected" ? stops[0].reason : null,
+    releases[0]?.status === "rejected" ? releases[0].reason : null,
+  );
+  assert.equal(fixture.sessions[0]?.closeCalls, 1);
+  pending.release.resolve();
+  await Bun.sleep(0);
+  assert.equal(session.closed(), true);
 });
 
 test("unexpected closure permits a clean scoped relaunch", async () => {
