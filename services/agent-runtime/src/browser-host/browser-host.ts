@@ -210,11 +210,9 @@ class BrowserSessionHost<RawPage> {
   release(): Promise<void> {
     if (this.stopping) return this.stopping;
     this.stopped = true;
-    this.stopping = this.withPermit(this.transitionLock, async () => {
-      this.pages.clear();
-      this.activeId = null;
-      await this.manager.release(this.scope);
-    });
+    this.pages.clear();
+    this.activeId = null;
+    this.stopping = this.manager.release(this.scope);
     return this.stopping;
   }
 
@@ -332,7 +330,7 @@ export class BrowserHost<RawPage = Page> {
     this.assertRunning();
     const existing = this.sessions.get(key);
     if (existing) {
-      if (existing.releaseRequested) return { type: "wait", record: existing };
+      if (existing.releaseRequested) throw new Error("Browser session is releasing");
       existing.inFlight += 1;
       existing.lastAccess = this.now();
       return { type: "acquired", record: existing };
@@ -529,7 +527,7 @@ export class BrowserHost<RawPage = Page> {
       const record = this.sessions.get(key);
       if (!record) return null;
       record.releaseRequested = true;
-      if (record.inFlight > 0 || record.releaseStarted) return { close: false, record };
+      if (record.releaseStarted) return { close: false, record };
       record.releaseStarted = true;
       return { close: true, record };
     });
@@ -566,14 +564,11 @@ export class BrowserHost<RawPage = Page> {
     const records = await this.withPermit(async () =>
       [...this.sessions.values()].map((record) => {
         record.releaseRequested = true;
-        if (record.inFlight === 0) record.releaseStarted = true;
+        record.releaseStarted = true;
         return record;
       }),
     );
-    await Promise.all(
-      records.filter((record) => record.releaseStarted).map((record) => this.closeRecord(record)),
-    );
-    await Promise.all(records.map((record) => Effect.runPromise(Deferred.await(record.released))));
+    await Promise.all(records.map((record) => this.closeRecord(record)));
     await this.manager.stop();
   }
 }

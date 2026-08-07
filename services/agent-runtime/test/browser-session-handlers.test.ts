@@ -238,7 +238,7 @@ test("deferred fallback reads retain their session through idle cleanup", async 
   assert.deepEqual(body, { ok: true, data: { title: "", url: initialUrl } });
 });
 
-test("release waits for a deferred fallback fetch", async () => {
+test("release does not wait forever for a deferred fallback fetch", async () => {
   const manager = new CountingManager();
   const host = new BrowserHost(manager);
   const reader = deferredReadable();
@@ -258,7 +258,7 @@ test("release waits for a deferred fallback fetch", async () => {
   reader.resolve("https://public.test/pending");
   await Promise.all([pending, releasing]);
   await host.stop();
-  assert.equal(releasedWhilePending, false);
+  assert.equal(releasedWhilePending, true);
 });
 
 test("a deferred fallback fetch holds its session capacity", async () => {

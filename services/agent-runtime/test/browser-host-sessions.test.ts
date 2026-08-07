@@ -30,6 +30,20 @@ const barrier = (): Barrier => ({
   started: new Deferred<void>(),
 });
 
+type Settlement<A> =
+  | { status: "fulfilled"; value: A }
+  | { error: unknown; status: "rejected" }
+  | { status: "timed-out" };
+
+const settleWithin = <A>(promise: Promise<A>, timeoutMs = 250): Promise<Settlement<A>> =>
+  Promise.race([
+    promise.then<Settlement<A>>(
+      (value) => ({ status: "fulfilled", value }),
+      (error: unknown) => ({ error, status: "rejected" }),
+    ),
+    Bun.sleep(timeoutMs).then<Settlement<A>>(() => ({ status: "timed-out" })),
+  ]);
+
 const state = (url: string): PageState => ({
   canGoBack: false,
   canGoForward: false,
@@ -135,6 +149,7 @@ class FakePage implements BrowserPage<RawPage> {
 
 class FakeContext implements BrowserContextSurface<RawPage> {
   readonly rawPages: RawPage[] = [];
+  private isClosed = false;
 
   constructor(
     private readonly createRawPage: () => RawPage,
@@ -144,6 +159,7 @@ class FakeContext implements BrowserContextSurface<RawPage> {
   async newPage(): Promise<RawPage> {
     this.pageCreationBarrier?.started.resolve();
     await this.pageCreationBarrier?.release.promise;
+    if (this.isClosed) throw new Error("Target closed");
     const page = this.createRawPage();
     this.rawPages.push(page);
     return page;
@@ -154,6 +170,7 @@ class FakeContext implements BrowserContextSurface<RawPage> {
   }
 
   close(): void {
+    this.isClosed = true;
     for (const page of this.rawPages) page.closed = true;
   }
 }
@@ -161,6 +178,7 @@ class FakeContext implements BrowserContextSurface<RawPage> {
 class FakeSession implements ManagedPlaywrightSession<BrowserContextSurface<RawPage>> {
   private isClosed = false;
   private readonly listeners = new Set<() => void>();
+  closeCalls = 0;
 
   constructor(
     readonly context: FakeContext,
@@ -169,6 +187,7 @@ class FakeSession implements ManagedPlaywrightSession<BrowserContextSurface<RawP
   ) {}
 
   close(): Promise<void> {
+    this.closeCalls += 1;
     if (this.isClosed) return Promise.resolve();
     this.isClosed = true;
     this.context.close();
@@ -197,6 +216,7 @@ class FakeManager implements BrowserHostManager<RawPage> {
   private readonly ensureBarriers: Barrier[] = [];
   private readonly navigationBarriers: Barrier[] = [];
   private readonly pageCreationBarriers: Barrier[] = [];
+  private readonly releaseBarriers: Barrier[] = [];
 
   blockNextEnsure(): Barrier {
     const next = barrier();
@@ -213,6 +233,12 @@ class FakeManager implements BrowserHostManager<RawPage> {
   blockNextPageCreation(): Barrier {
     const next = barrier();
     this.pageCreationBarriers.push(next);
+    return next;
+  }
+
+  blockNextRelease(): Barrier {
+    const next = barrier();
+    this.releaseBarriers.push(next);
     return next;
   }
 
@@ -247,6 +273,9 @@ class FakeManager implements BrowserHostManager<RawPage> {
   async release(scope: string): Promise<void> {
     const active = this.active.get(scope);
     await active?.close();
+    const pending = this.releaseBarriers.shift();
+    pending?.started.resolve();
+    await pending?.release.promise;
     if (this.active.get(scope) === active) this.active.delete(scope);
   }
 
@@ -322,31 +351,56 @@ test("navigation preserves order inside one session context", async () => {
   await host.stop();
 });
 
-test("shutdown waits for in-flight navigation and closes every context once", async () => {
+test("shutdown closes a context without waiting forever for hung navigation", async () => {
   const manager = new FakeManager();
   const host = hostFor(manager);
   const pending = manager.blockNextNavigation();
   const navigation = host.navigate(SESSION, "https://public.test/page");
   await pending.started.promise;
-  let stopped = false;
-  const stopping = host.stop().then(() => {
-    stopped = true;
-  });
+  const stopping = host.stop();
   assert.equal(host.stop(), host.stop());
-  await Promise.resolve();
-  assert.equal(stopped, false);
+  const settlement = await settleWithin(stopping);
   pending.release.resolve();
-  assert.deepEqual(await navigation, {
-    title: "https://public.test/page",
-    url: "https://public.test/page",
-  });
-  await stopping;
+  await Promise.allSettled([navigation, stopping]);
+  assert.equal(settlement.status, "fulfilled");
   assert.equal(manager.stops, 1);
   assert.equal(activeRawPages(manager).length, 0);
   await assert.rejects(host.getState(SESSION), /Browser host stopped/u);
 });
 
-test("shutdown protects active manager and page creation", async () => {
+test("release closes a context without waiting forever for hung page creation", async () => {
+  const manager = new FakeManager();
+  const host = hostFor(manager);
+  const pending = manager.blockNextPageCreation();
+  const navigation = host.navigate(SESSION, "https://public.test/page");
+  await pending.started.promise;
+  const releasing = host.releaseSession(SESSION);
+  const settlement = await settleWithin(releasing);
+  pending.release.resolve();
+  await Promise.allSettled([navigation, releasing]);
+  assert.equal(settlement.status, "fulfilled");
+  assert.equal(manager.sessions[0]?.closed(), true);
+  await host.stop();
+});
+
+test("release rejects work that arrives while context closure is pending", async () => {
+  const manager = new FakeManager();
+  const host = hostFor(manager);
+  await host.navigate(SESSION, "https://public.test/page");
+  const pending = manager.blockNextRelease();
+  const releasing = host.releaseSession(SESSION);
+  await pending.started.promise;
+  const request = host.navigate(SESSION, "https://public.test/recreated");
+  const settlement = await settleWithin(request);
+  pending.release.resolve();
+  await releasing;
+  await Promise.allSettled([request]);
+  assert.equal(settlement.status, "rejected");
+  assert.match(String(settlement.status === "rejected" ? settlement.error : ""), /releasing/u);
+  await host.stop();
+});
+
+test("shutdown rejects work blocked in manager and page creation", async () => {
   for (const pending of ["ensure", "page"] as const) {
     const manager = new FakeManager();
     const blocked =
@@ -356,10 +410,7 @@ test("shutdown protects active manager and page creation", async () => {
     await blocked.started.promise;
     const stopping = host.stop();
     blocked.release.resolve();
-    assert.deepEqual(await navigation, {
-      title: "https://public.test/page",
-      url: "https://public.test/page",
-    });
+    await assert.rejects(navigation, /stopped|closed/u);
     await stopping;
     assert.equal(activeRawPages(manager).length, 0);
   }
@@ -476,31 +527,43 @@ test("capacity fails closed while every session has in-flight work", async () =>
   await host.stop();
 });
 
-test("release waits for work, is idempotent, and serializes same-key recreation", async () => {
+test("release is idempotent and permits later same-key recreation", async () => {
   const manager = new FakeManager();
-  const navigation = manager.blockNextNavigation();
   const host = hostFor(manager);
-  const active = host.navigate(SESSION, "https://public.test/a");
-  await navigation.started.promise;
-  let released = false;
-  const firstRelease = host.releaseSession(SESSION).then(() => {
-    released = true;
-  });
+  await host.navigate(SESSION, "https://public.test/a");
+  const firstRelease = host.releaseSession(SESSION);
   const secondRelease = host.releaseSession(SESSION);
-  const recreated = host.navigate(SESSION, "https://public.test/recreated");
-  await Promise.resolve();
-  assert.equal(released, false);
-  assert.equal(manager.sessions.filter((session) => session.scope === SESSION).length, 1);
-  navigation.release.resolve();
-  await active;
   await Promise.all([firstRelease, secondRelease]);
-  assert.deepEqual(await recreated, {
+  assert.deepEqual(await host.navigate(SESSION, "https://public.test/recreated"), {
     title: "https://public.test/recreated",
     url: "https://public.test/recreated",
   });
   const scoped = manager.sessions.filter((session) => session.scope === SESSION);
   assert.equal(scoped.length, 2);
   assert.equal(scoped[0]?.closed(), true);
+  assert.equal(scoped[0]?.closeCalls, 1);
+  assert.equal(scoped[1]?.closed(), false);
+  await host.stop();
+  assert.equal(scoped[1]?.closeCalls, 1);
+});
+
+test("late work completion cannot remove or close a recreated same-key session", async () => {
+  const manager = new FakeManager();
+  const pending = manager.blockNextNavigation();
+  const host = hostFor(manager);
+  const oldNavigation = host.navigate(SESSION, "https://public.test/old");
+  await pending.started.promise;
+  await host.releaseSession(SESSION);
+  await host.navigate(SESSION, "https://public.test/recreated");
+  pending.release.resolve();
+  await assert.rejects(oldNavigation, /closed/u);
+  assert.deepEqual(await host.getUrl(SESSION), {
+    title: "https://public.test/recreated",
+    url: "https://public.test/recreated",
+  });
+  const scoped = manager.sessions.filter((session) => session.scope === SESSION);
+  assert.equal(scoped.length, 2);
+  assert.equal(scoped[0]?.closeCalls, 1);
   assert.equal(scoped[1]?.closed(), false);
   await host.stop();
 });
