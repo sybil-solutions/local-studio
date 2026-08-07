@@ -1,5 +1,5 @@
 import {
-  mkdirSync,
+  chmodSync,
   readFileSync,
   readdirSync,
   renameSync,
@@ -9,6 +9,7 @@ import {
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { Effect } from "effect";
+import { ensurePrivateLogDirectory } from "../../../core/log-files";
 import type {
   DeviceId,
   EngineId,
@@ -17,6 +18,7 @@ import type {
   NodeId,
   EngineRuntimeKind,
 } from "../contracts";
+import { decodeInstanceRecord } from "./record-schema";
 
 /**
  * The instance store: one JSON file per running deployment, written write-then-rename so
@@ -67,14 +69,6 @@ export interface Reservation {
 
 /** Names come from recipes but stop/drop accept user input — keep them inside the dir. */
 const safeName = (name: string): string => name.replace(/[/\\]/g, "_");
-
-const isRecord = (value: unknown): value is InstanceRecord =>
-  typeof value === "object" &&
-  value !== null &&
-  typeof (value as InstanceRecord).name === "string" &&
-  typeof (value as InstanceRecord).engine === "string" &&
-  typeof (value as InstanceRecord).port === "number" &&
-  Array.isArray((value as InstanceRecord).devices);
 
 const pidAlive = (pid: number): boolean => {
   if (!Number.isInteger(pid) || pid <= 0) return false;
@@ -146,16 +140,19 @@ const acquirePlacementLock = (lockPath: string): Effect.Effect<void, LaunchFailu
 export const makeInstanceStore = (dataDirectory: string): InstanceStore => {
   const directory = join(dataDirectory, "instances");
   const logsDirectory = join(directory, "logs");
-  mkdirSync(logsDirectory, { recursive: true });
+  ensurePrivateLogDirectory(directory);
+  ensurePrivateLogDirectory(logsDirectory);
   const lockPath = join(directory, "placement.lock");
   const recordPath = (name: string): string => join(directory, `${safeName(name)}.json`);
 
   const read = (name: string): InstanceRecord | null => {
     try {
-      const parsed: unknown = JSON.parse(readFileSync(recordPath(name), "utf8"));
-      return isRecord(parsed) ? parsed : null;
-    } catch {
-      return null;
+      const path = recordPath(name);
+      chmodSync(path, 0o600);
+      return decodeInstanceRecord(JSON.parse(readFileSync(path, "utf8")) as unknown);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+      throw error;
     }
   };
 
@@ -165,15 +162,20 @@ export const makeInstanceStore = (dataDirectory: string): InstanceStore => {
         .filter((file) => file.endsWith(".json"))
         .map((file) => read(file.slice(0, -".json".length)))
         .filter((record): record is InstanceRecord => record !== null);
-    } catch {
-      return [];
+    } catch (error) {
+      throw error;
     }
   };
 
   const write = (record: InstanceRecord): void => {
     const path = recordPath(record.name);
-    writeFileSync(`${path}.tmp`, JSON.stringify(record, null, 2));
-    renameSync(`${path}.tmp`, path);
+    const temporaryPath = `${path}.${randomUUID()}.tmp`;
+    try {
+      writeFileSync(temporaryPath, JSON.stringify(record, null, 2), { flag: "wx", mode: 0o600 });
+      renameSync(temporaryPath, path);
+    } finally {
+      rmSync(temporaryPath, { force: true });
+    }
   };
 
   const drop = (name: string): void => {

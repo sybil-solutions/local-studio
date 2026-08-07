@@ -1,15 +1,21 @@
 import {
+  chmodSync,
+  constants,
   existsSync,
+  fchmodSync,
+  fstatSync,
+  ftruncateSync,
   mkdirSync,
   readdirSync,
-  statSync,
   unlinkSync,
   openSync,
   closeSync,
+  lstatSync,
   readSync,
 } from "node:fs";
+import type { Stats } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 
 const LOG_PREFIX = "vllm_";
 const LOG_SUFFIX = ".log";
@@ -62,9 +68,187 @@ export const sanitizeLogSessionId = (sessionId: string): string => {
   return safe;
 };
 
+type FileStat = Stats;
+
+const sameFile = (left: FileStat, right: FileStat): boolean =>
+  left.dev === right.dev && left.ino === right.ino;
+
+const noFollow = typeof constants.O_NOFOLLOW === "number" ? constants.O_NOFOLLOW : 0;
+const directoryOnly = typeof constants.O_DIRECTORY === "number" ? constants.O_DIRECTORY : 0;
+
+const assertManagedDirectory = (stat: FileStat, directory: string): void => {
+  if (
+    !stat.isDirectory() ||
+    stat.isSymbolicLink() ||
+    (typeof process.getuid === "function" && stat.uid !== process.getuid())
+  ) {
+    throw new Error(`Unsafe log directory: ${directory}`);
+  }
+};
+
+const ensurePrivateDirectory = (directory: string): void => {
+  mkdirSync(directory, { recursive: true, mode: 0o700 });
+  const before = lstatSync(directory);
+  assertManagedDirectory(before, directory);
+  if (process.platform === "win32") {
+    chmodSync(directory, 0o700);
+    const after = lstatSync(directory);
+    assertManagedDirectory(after, directory);
+    if (!sameFile(before, after)) throw new Error(`Replaced log directory: ${directory}`);
+    return;
+  }
+  const descriptor = openSync(directory, constants.O_RDONLY | noFollow | directoryOnly);
+  try {
+    const opened = fstatSync(descriptor);
+    const after = lstatSync(directory);
+    assertManagedDirectory(opened, directory);
+    assertManagedDirectory(after, directory);
+    if (!sameFile(before, opened) || !sameFile(opened, after)) {
+      throw new Error(`Replaced log directory: ${directory}`);
+    }
+    fchmodSync(descriptor, 0o700);
+  } finally {
+    closeSync(descriptor);
+  }
+};
+
+const assertManagedFile = (stat: FileStat, path: string): void => {
+  if (
+    !stat.isFile() ||
+    stat.isSymbolicLink() ||
+    stat.nlink !== 1 ||
+    (typeof process.getuid === "function" && stat.uid !== process.getuid())
+  ) {
+    throw new Error(`Unsafe log file: ${path}`);
+  }
+};
+
+const existingFile = (path: string): FileStat | null => {
+  try {
+    return lstatSync(path);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw error;
+  }
+};
+
+const validateDescriptor = (
+  path: string,
+  descriptor: number,
+  before: FileStat | null,
+  parent: FileStat,
+): void => {
+  const opened = fstatSync(descriptor);
+  const after = lstatSync(path);
+  assertManagedFile(opened, path);
+  assertManagedFile(after, path);
+  if ((before && !sameFile(before, opened)) || !sameFile(opened, after)) {
+    throw new Error(`Replaced log file: ${path}`);
+  }
+  const currentParent = lstatSync(dirname(path));
+  if (
+    !currentParent.isDirectory() ||
+    currentParent.isSymbolicLink() ||
+    !sameFile(parent, currentParent)
+  )
+    throw new Error(`Replaced log directory: ${dirname(path)}`);
+  fchmodSync(descriptor, 0o600);
+};
+
+export const openPrivateLogFile = (path: string, truncate = false): number => {
+  const parentPath = dirname(path);
+  ensurePrivateDirectory(parentPath);
+  const parent = lstatSync(parentPath);
+  const before = existingFile(path);
+  if (before) assertManagedFile(before, path);
+  const descriptor = openSync(
+    path,
+    constants.O_APPEND |
+      constants.O_WRONLY |
+      noFollow |
+      (before ? 0 : constants.O_CREAT | constants.O_EXCL),
+    0o600,
+  );
+  try {
+    validateDescriptor(path, descriptor, before, parent);
+    if (truncate) ftruncateSync(descriptor, 0);
+    return descriptor;
+  } catch (error) {
+    closeSync(descriptor);
+    throw error;
+  }
+};
+
+export const openPrivateLogFileForRead = (path: string): number => {
+  const before = lstatSync(path);
+  const parent = lstatSync(dirname(path));
+  assertManagedFile(before, path);
+  const descriptor = openSync(path, constants.O_RDONLY | noFollow);
+  try {
+    validateDescriptor(path, descriptor, before, parent);
+    return descriptor;
+  } catch (error) {
+    closeSync(descriptor);
+    throw error;
+  }
+};
+
+export const readPrivateLogTail = (path: string, bytes: number): string => {
+  try {
+    const descriptor = openPrivateLogFileForRead(path);
+    try {
+      const size = fstatSync(descriptor).size;
+      const start = Math.max(0, size - bytes);
+      const length = size - start;
+      if (length <= 0) return "";
+      const buffer = Buffer.alloc(length);
+      readSync(descriptor, buffer, 0, length, start);
+      return buffer.toString("utf8");
+    } finally {
+      closeSync(descriptor);
+    }
+  } catch {
+    return "";
+  }
+};
+
+const isReadableLogFile = (path: string): boolean => {
+  try {
+    closeSync(openPrivateLogFileForRead(path));
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+const repairExistingLogModes = (directory: string, prefix: string, failClosed: boolean): void => {
+  try {
+    for (const name of readdirSync(directory)) {
+      if (
+        name.startsWith(prefix) &&
+        name.endsWith(LOG_SUFFIX) &&
+        !isReadableLogFile(join(directory, name)) &&
+        failClosed
+      ) {
+        throw new Error(`Unsafe log file: ${join(directory, name)}`);
+      }
+    }
+  } catch (error) {
+    if (failClosed) throw error;
+  }
+};
+
+export const ensurePrivateLogDirectory = (directory: string, prefix = ""): string => {
+  ensurePrivateDirectory(directory);
+  repairExistingLogModes(directory, prefix, true);
+  return directory;
+};
+
 export const ensureLogsDirectory = (dataDirectory: string): string => {
   const directory = resolve(dataDirectory, "logs");
-  mkdirSync(directory, { recursive: true });
+  ensurePrivateDirectory(resolve(dataDirectory));
+  ensurePrivateLogDirectory(directory, LOG_PREFIX);
+  repairExistingLogModes(FALLBACK_LOG_DIR, LOG_PREFIX, false);
   return directory;
 };
 
@@ -80,9 +264,9 @@ export const fallbackLogPathFor = (sessionId: string): string => {
 
 export const resolveExistingLogPath = (dataDirectory: string, sessionId: string): string | null => {
   const primary = primaryLogPathFor(dataDirectory, sessionId);
-  if (existsSync(primary)) return primary;
+  if (isReadableLogFile(primary)) return primary;
   const fallback = fallbackLogPathFor(sessionId);
-  if (existsSync(fallback)) return fallback;
+  if (isReadableLogFile(fallback)) return fallback;
   return null;
 };
 
@@ -93,7 +277,9 @@ const scanLogDirectory = (directory: string, source: LogFileEntry["source"]): Lo
       .filter((name) => name.startsWith(LOG_PREFIX) && name.endsWith(LOG_SUFFIX))
       .map((name) => {
         const path = join(directory, name);
-        const stat = statSync(path);
+        if (!isReadableLogFile(path)) return null;
+        const stat = lstatSync(path);
+        if (!stat.isFile() || stat.isSymbolicLink()) return null;
         const sessionId = name
           .replace(new RegExp(`^${LOG_PREFIX}`), "")
           .replace(new RegExp(`${LOG_SUFFIX}$`), "");
@@ -104,7 +290,8 @@ const scanLogDirectory = (directory: string, source: LogFileEntry["source"]): Lo
           sizeBytes: stat.size,
           source,
         } satisfies LogFileEntry;
-      });
+      })
+      .filter((entry): entry is LogFileEntry => entry !== null);
   } catch {
     return [];
   }
@@ -183,19 +370,20 @@ export const cleanupLogFiles = (
   return { deleted: deletedPaths.length };
 };
 
-
 export const tailFileLines = (
   path: string,
   limit: number,
   maxBytes = 10 * 1024 * 1024,
 ): string[] => {
   if (limit <= 0) return [];
-  if (!existsSync(path)) return [];
-
-  // Read from the end until we have enough newlines or hit maxBytes.
-  const fd = openSync(path, "r");
+  let fd: number;
   try {
-    const stat = statSync(path);
+    fd = openPrivateLogFileForRead(path);
+  } catch {
+    return [];
+  }
+  try {
+    const stat = fstatSync(fd);
     let pos = stat.size;
     if (pos <= 0) return [];
 

@@ -77,7 +77,7 @@ export const makeCompute = (config: Config, eventManager: EventManager): Compute
   const processLauncher = makeProcessLauncher(store.logPath);
   const launcherFor = (runtime: EngineRuntimeKind): Launcher =>
     runtime === "docker"
-      ? makeDockerLauncher(lastProfile?.accelerator ?? "cuda")
+      ? makeDockerLauncher(lastProfile?.accelerator ?? "cuda", store.logPath)
       : processLauncher;
 
   const freeDevices = (): Effect.Effect<readonly DeviceId[]> =>
@@ -90,8 +90,7 @@ export const makeCompute = (config: Config, eventManager: EventManager): Compute
     launcherFor,
     host,
     freeDevices,
-    onEvent: (name, stage, message) =>
-      eventManager.publishLaunchProgress(name, stage, message),
+    onEvent: (name, stage, message) => eventManager.publishLaunchProgress(name, stage, message),
   });
 
   return { service, telemetry, store, host };

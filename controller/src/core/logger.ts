@@ -1,7 +1,8 @@
-import { createWriteStream, mkdirSync } from "node:fs";
+import { closeSync, createWriteStream } from "node:fs";
 import type { WriteStream } from "node:fs";
-import { dirname } from "node:path";
 import { Effect } from "effect";
+import { openPrivateLogFile } from "./log-files";
+import { redactLogLine } from "./log-redaction";
 
 export type LogLevel = "debug" | "info" | "warn" | "error";
 
@@ -21,12 +22,18 @@ export interface Logger {
 export const createLogger = (level: LogLevel, options: LoggerOptions = {}): Logger => {
   const stream = ((): WriteStream | null => {
     if (!options.filePath) return null;
+    let descriptor: number | null = null;
     try {
-      mkdirSync(dirname(options.filePath), { recursive: true });
-      const output = createWriteStream(options.filePath, { flags: "a" });
+      descriptor = openPrivateLogFile(options.filePath);
+      const output = createWriteStream(options.filePath, {
+        fd: descriptor,
+        autoClose: true,
+      });
+      descriptor = null;
       output.on("error", () => {});
       return output;
     } catch {
+      if (descriptor !== null) closeSync(descriptor);
       return null;
     }
   })();
@@ -57,8 +64,13 @@ export const createLogger = (level: LogLevel, options: LoggerOptions = {}): Logg
     return `${ts} ${target.toUpperCase()} ${base}\n`;
   };
 
-  const tryWrite = (target: LogLevel, message: string, details?: Record<string, unknown>): void => {
-    const line = toFileLine(target, message, details);
+  const write = (target: LogLevel, message: string, details?: Record<string, unknown>): void => {
+    const line = redactLogLine(toFileLine(target, message, details));
+    const rendered = line.trimEnd();
+
+    try {
+      console[target](rendered);
+    } catch {}
 
     if (stream) {
       try {
@@ -68,7 +80,7 @@ export const createLogger = (level: LogLevel, options: LoggerOptions = {}): Logg
 
     if (options.onLine) {
       try {
-        options.onLine(line.trimEnd(), { level: target });
+        options.onLine(rendered, { level: target });
       } catch {}
     }
   };
@@ -104,28 +116,16 @@ export const createLogger = (level: LogLevel, options: LoggerOptions = {}): Logg
 
   return {
     debug: (message, details): void => {
-      if (shouldLog("debug")) {
-        console.debug(format(message, details));
-        tryWrite("debug", message, details);
-      }
+      if (shouldLog("debug")) write("debug", message, details);
     },
     info: (message, details): void => {
-      if (shouldLog("info")) {
-        console.info(format(message, details));
-        tryWrite("info", message, details);
-      }
+      if (shouldLog("info")) write("info", message, details);
     },
     warn: (message, details): void => {
-      if (shouldLog("warn")) {
-        console.warn(format(message, details));
-        tryWrite("warn", message, details);
-      }
+      if (shouldLog("warn")) write("warn", message, details);
     },
     error: (message, details): void => {
-      if (shouldLog("error")) {
-        console.error(format(message, details));
-        tryWrite("error", message, details);
-      }
+      if (shouldLog("error")) write("error", message, details);
     },
     shutdown,
   };

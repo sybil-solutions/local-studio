@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Cause, Effect } from "effect";
@@ -90,7 +90,13 @@ const fakeLauncher = (world: FakeWorld): Launcher => ({
     const pid = world.nextPid++;
     world.alivePids.add(pid);
     world.started.push(record);
-    return Effect.succeed({ kind: "process", pid, startToken: null });
+    return Effect.succeed({
+      kind: "process",
+      pid,
+      processGroupId: null,
+      sessionId: null,
+      startToken: null,
+    });
   },
   alive: (ref) => Effect.succeed(ref.kind === "process" && world.alivePids.has(ref.pid)),
   owns: (ref) => Effect.succeed(ref.kind === "process" && world.alivePids.has(ref.pid)),
@@ -221,7 +227,10 @@ describe("reserve is the lease", () => {
     const record = store.read("a");
     expect(record).not.toBeNull();
     if (!record) return;
-    store.write({ ...record, ref: { kind: "process", pid: 999999, startToken: null } });
+    store.write({
+      ...record,
+      ref: { kind: "process", pid: 999999, processGroupId: null, sessionId: null, startToken: null },
+    });
     const held = await run(store.heldDevices(dead));
     expect(held.size).toBe(0);
   });
@@ -299,6 +308,14 @@ describe("reserve is the lease", () => {
 });
 
 describe("launch failure paths", () => {
+  test("invalid durable ownership blocks replacement without actions", async () => {
+    const world = makeWorld(); const { compute, store } = makeService(world);
+    const path = join(store.directory, "test-model.json"); writeFileSync(path, "{}");
+    const exit = await runExit(compute.launch(input()));
+    expect(exit._tag).toBe("Failure");
+    expect([readFileSync(path, "utf8"), world.started.length, world.stopped.length]).toEqual(["{}", 0, 0]);
+  });
+
   test("unsupported engine/host fails before touching devices", async () => {
     const world = makeWorld();
     const { compute, store } = makeService(world);
@@ -414,7 +431,13 @@ describe("supervisor", () => {
   test("reaps records whose handle is gone; leaves live ones alone", async () => {
     const world = makeWorld();
     const { compute, store } = makeService(world);
-    const liveRef: HandleReference = { kind: "process", pid: 2000, startToken: null };
+    const liveRef: HandleReference = {
+      kind: "process",
+      pid: 2000,
+      processGroupId: null,
+      sessionId: null,
+      startToken: null,
+    };
     world.alivePids.add(2000);
     const base: InstanceRecord = {
       name: "live",
@@ -433,7 +456,7 @@ describe("supervisor", () => {
     store.write({
       ...base,
       name: "dead",
-      ref: { kind: "process", pid: 3000, startToken: null },
+      ref: { kind: "process", pid: 3000, processGroupId: null, sessionId: null, startToken: null },
       port: 8082,
       devices: ["GPU-b"],
     });

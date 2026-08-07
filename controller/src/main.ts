@@ -1,3 +1,4 @@
+import "./core/process-boundary";
 import { Cause, Effect, Exit, Fiber, Schema } from "effect";
 import { startComputeSupervisor } from "./modules/compute/supervisor";
 import { AppContextService, getModelsDirectoryState, type AppContext } from "./app-context";
