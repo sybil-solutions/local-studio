@@ -7,6 +7,10 @@ import { getGlobalSingleton } from "../instances";
 
 const LAUNCH_TIMEOUT_MS = 15_000;
 
+class BrowserContextRecoveryError extends Error {
+  readonly name = "BrowserContextRecoveryError";
+}
+
 const browserDataDirectory = (): string => path.join(os.tmpdir(), "local-studio-browser-profile");
 
 const resolveOnPath = (binary: string): string | null => {
@@ -71,15 +75,22 @@ export const findBrowserBinary = (): string | null => {
 
 class PlaywrightManager {
   private context: BrowserContext | null = null;
-  private launching: Promise<BrowserContext> | null = null;
+  private contextGeneration = 0;
+  private generation = 0;
+  private launching: { generation: number; promise: Promise<BrowserContext> } | null = null;
 
   isAvailable(): boolean {
     return findBrowserBinary() !== null;
   }
 
   async ensure(): Promise<BrowserContext> {
-    if (this.context) return this.context;
-    if (this.launching) return this.launching;
+    const generation = this.generation;
+    if (this.context && this.contextGeneration === generation) return this.context;
+    if (this.launching?.generation === generation) return this.launching.promise;
+    if (this.launching) {
+      await this.launching.promise.catch(() => undefined);
+      return this.ensure();
+    }
     const executablePath = findBrowserBinary();
     if (!executablePath) {
       throw new Error("Browser unavailable: no Chromium found — set LOCAL_STUDIO_CHROME_PATH");
@@ -93,28 +104,57 @@ class PlaywrightManager {
         args: ["--no-first-run", "--no-default-browser-check", "--disable-dev-shm-usage"],
       });
     const dataDirectory = browserDataDirectory();
-    this.launching = launch(dataDirectory)
+    const promise = launch(dataDirectory)
       .catch((error: unknown) => {
         if (!String(error).includes("ProcessSingleton")) throw error;
         return launch(`${dataDirectory}-${process.pid}`);
       })
-      .then((context) => {
+      .then(async (context) => {
+        if (generation !== this.generation) {
+          try {
+            await context.close();
+          } catch (error) {
+            throw new BrowserContextRecoveryError("Failed to close invalidated browser context", {
+              cause: error,
+            });
+          }
+          throw new Error("Browser context invalidated during launch");
+        }
         this.context = context;
+        this.contextGeneration = generation;
         context.once("close", () => {
           if (this.context === context) this.context = null;
         });
         return context;
-      })
-      .finally(() => {
-        this.launching = null;
       });
-    return this.launching;
+    const launching = { generation, promise };
+    this.launching = launching;
+    try {
+      return await promise;
+    } finally {
+      if (this.launching === launching) this.launching = null;
+    }
+  }
+
+  async invalidate(): Promise<void> {
+    this.generation += 1;
+    const context = this.context;
+    this.context = null;
+    const launching = this.launching?.promise;
+    const closures: Promise<unknown>[] = [];
+    if (context) closures.push(context.close());
+    if (launching) {
+      closures.push(
+        launching.catch((error: unknown) => {
+          if (error instanceof BrowserContextRecoveryError) throw error;
+        }),
+      );
+    }
+    await Promise.all(closures);
   }
 
   stop(): void {
-    const context = this.context;
-    this.context = null;
-    if (context) void context.close().catch(() => undefined);
+    void this.invalidate().catch(() => undefined);
   }
 }
 

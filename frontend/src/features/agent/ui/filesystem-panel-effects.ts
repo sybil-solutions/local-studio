@@ -142,8 +142,12 @@ export function useFilesystemPanelEffects({
       return;
     }
     handledFileOpenRequest.current = fileOpenRequest.id;
-    const target = resolveFileOpenTarget(fileOpenRequest.path, cwd);
-    if (!target) return;
+    const target = resolveWorkspaceFileOpenTarget(fileOpenRequest.path, cwd);
+    if (!target) {
+      setSaveError("Only files inside the active project can be opened.");
+      return;
+    }
+    setSaveError(null);
     // Returning to the session project clears the override rather than pinning
     // an identical root, so the "external root" bar stays off.
     const nextOverride = target.root === cwd ? null : target.root;
@@ -171,6 +175,7 @@ export function useFilesystemPanelEffects({
     setOpenFile,
     setRelPath,
     setRootOverride,
+    setSaveError,
   ]);
 
   useMountSubscription(() => {
@@ -282,6 +287,15 @@ export function resolveFileOpenTarget(
   const rel = clean.startsWith("./") ? clean.slice(2) : clean;
   if (!rel || rel.startsWith("../")) return null;
   return { root: projectRoot, rel, kind: isDirectory ? "directory" : "file" };
+}
+
+export function resolveWorkspaceFileOpenTarget(
+  requestPath: string,
+  cwd: string | null,
+): FileOpenTarget | null {
+  const projectRoot = cwd?.replace(/\/+$/, "") ?? null;
+  const target = resolveFileOpenTarget(requestPath, projectRoot);
+  return projectRoot && target?.root === projectRoot ? target : null;
 }
 
 // Strip the decorations references arrive with (backticks, a `file://` scheme,

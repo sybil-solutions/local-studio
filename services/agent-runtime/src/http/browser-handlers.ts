@@ -2,6 +2,12 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { sanitizeBrowserPaneUrl } from "../../../../shared/agent/sanitize-embedded-browser-url";
 import { browserHost, type KeyInput, type MouseInput } from "../browser-host/browser-host";
+import {
+  BrowserOperationCoordinator,
+  type BrowserOperationContext,
+  type BrowserOperationCoordinatorOptions,
+  type BrowserOperationRunOptions,
+} from "../browser-host/browser-operation-coordinator";
 import { fetchReadable } from "../browser-host/reader";
 
 const ALLOWED_VERBS = new Set([
@@ -22,6 +28,20 @@ const UNAVAILABLE_ERROR = "Browser unavailable: no Chromium found — set LOCAL_
 
 let lastFallbackUrl = "";
 
+export function createBrowserOperationQueue(
+  options: BrowserOperationCoordinatorOptions = {
+    recover: () => browserHost.invalidate(),
+  },
+) {
+  const coordinator = new BrowserOperationCoordinator(options);
+  return <A>(
+    runOptions: BrowserOperationRunOptions,
+    operation: (context: BrowserOperationContext) => Promise<A>,
+  ): Promise<A> => coordinator.run(runOptions, operation);
+}
+
+const runBrowserOperation = createBrowserOperationQueue();
+
 type VerbResult = { ok: boolean; data?: unknown; error?: string };
 
 export async function handleBrowserVerb(request: Request, verb: string): Promise<Response> {
@@ -30,7 +50,9 @@ export async function handleBrowserVerb(request: Request, verb: string): Promise
   }
   const payload = await readPayload(request);
   try {
-    const result = await dispatchVerb(verb, payload);
+    const result = await runBrowserOperation({ kind: "verb", signal: request.signal }, (context) =>
+      dispatchVerb(verb, payload, context),
+    );
     return Response.json(result);
   } catch (error) {
     return Response.json({
@@ -54,22 +76,32 @@ async function readPayload(request: Request): Promise<Record<string, unknown>> {
   return {};
 }
 
-async function dispatchVerb(verb: string, payload: Record<string, unknown>): Promise<VerbResult> {
-  if (!browserHost.isAvailable()) return fallbackVerb(verb, payload);
+async function dispatchVerb(
+  verb: string,
+  payload: Record<string, unknown>,
+  context: BrowserOperationContext,
+): Promise<VerbResult> {
+  if (!browserHost.isAvailable()) return fallbackVerb(verb, payload, context);
   try {
-    return await runHostVerb(verb, payload);
+    return await runHostVerb(verb, payload, context);
   } catch (error) {
     // A launch/connection failure for the reading verbs still degrades to
     // reading mode rather than failing the tool call outright.
-    if (verb === "navigate" || verb === "get-text") return fallbackVerb(verb, payload);
+    if (["navigate", "get-url", "get-text", "get-html"].includes(verb)) {
+      return fallbackVerb(verb, payload, context);
+    }
     throw error;
   }
 }
 
-async function runHostVerb(verb: string, payload: Record<string, unknown>): Promise<VerbResult> {
+async function runHostVerb(
+  verb: string,
+  payload: Record<string, unknown>,
+  context: BrowserOperationContext,
+): Promise<VerbResult> {
   switch (verb) {
     case "navigate":
-      return navigateVerb(payload);
+      return navigateVerb(payload, context);
     case "get-url":
       return { ok: true, data: await browserHost.getUrl() };
     case "get-text":
@@ -103,12 +135,17 @@ async function runHostVerb(verb: string, payload: Record<string, unknown>): Prom
   }
 }
 
-async function navigateVerb(payload: Record<string, unknown>): Promise<VerbResult> {
+async function navigateVerb(
+  payload: Record<string, unknown>,
+  context: BrowserOperationContext,
+): Promise<VerbResult> {
   // Pane rules: public web plus loopback (previewing local dev servers is the
   // pane's main job); other private ranges stay blocked.
   const url = sanitizeBrowserPaneUrl(String(payload.url ?? ""));
   if (!url) return { ok: false, error: "valid public or localhost http(s) url required" };
   const result = await browserHost.navigate(url);
+  context.assertActive();
+  lastFallbackUrl = result.url;
   return { ok: true, data: result };
 }
 
@@ -137,11 +174,16 @@ function requireSelector(payload: Record<string, unknown>): string {
 // without a url arg); every other verb returns the clear unavailable error. The
 // fallback honors pane rules (public + loopback) so local dev servers stay
 // previewable even when there's no headless Chromium to drive a full surface.
-async function fallbackVerb(verb: string, payload: Record<string, unknown>): Promise<VerbResult> {
+async function fallbackVerb(
+  verb: string,
+  payload: Record<string, unknown>,
+  context: BrowserOperationContext,
+): Promise<VerbResult> {
   if (verb === "navigate") {
     const url = sanitizeBrowserPaneUrl(String(payload.url ?? ""));
     if (!url) return { ok: false, error: "valid public or localhost http(s) url required" };
-    const reader = await fetchReadable(url);
+    const reader = await fetchReadable(url, context.signal);
+    context.assertActive();
     lastFallbackUrl = reader.url;
     return { ok: true, data: { url: reader.url, title: reader.title, readingMode: true } };
   }
@@ -151,7 +193,8 @@ async function fallbackVerb(verb: string, payload: Record<string, unknown>): Pro
   if (verb === "get-text" || verb === "get-html") {
     const url = sanitizeBrowserPaneUrl(String(payload.url ?? "")) || lastFallbackUrl;
     if (!url) return { ok: false, error: UNAVAILABLE_ERROR };
-    const reader = await fetchReadable(url);
+    const reader = await fetchReadable(url, context.signal);
+    context.assertActive();
     lastFallbackUrl = reader.url;
     return verb === "get-text"
       ? { ok: true, data: { text: reader.text, readingMode: true } }
@@ -164,7 +207,7 @@ export async function handleBrowserFetch(request: Request): Promise<Response> {
   const raw = new URL(request.url).searchParams.get("url");
   if (!raw) return Response.json({ error: "url is required" }, { status: 400 });
   try {
-    const result = await fetchReadable(raw);
+    const result = await fetchReadable(raw, request.signal);
     return Response.json(result);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Fetch failed";
@@ -181,28 +224,48 @@ export async function handleBrowserFetch(request: Request): Promise<Response> {
 // Next's standalone server buffers locally-built event streams, and polling
 // survives buffering proxies for remote deploys).
 
-export async function handleBrowserFrame(): Promise<Response> {
-  if (!browserHost.isAvailable()) {
-    return Response.json({ ok: false, error: UNAVAILABLE_ERROR }, { status: 503 });
-  }
+export async function handleBrowserFrame(request: Request): Promise<Response> {
   try {
-    const { frame, state } = await browserHost.pollFrame();
-    return Response.json({
-      ok: true,
-      data: {
-        frame: frame?.data ?? null,
-        url: state.url,
-        title: state.title,
-        canGoBack: state.canGoBack,
-        canGoForward: state.canGoForward,
-      },
+    return await runBrowserOperation({ kind: "frame", signal: request.signal }, async (context) => {
+      if (!browserHost.isAvailable()) return fallbackFrame(UNAVAILABLE_ERROR);
+      try {
+        const { frame, state } = await browserHost.pollFrame();
+        context.assertActive();
+        lastFallbackUrl = state.url;
+        return Response.json({
+          ok: true,
+          data: {
+            frame: frame?.data ?? null,
+            url: state.url,
+            title: state.title,
+            canGoBack: state.canGoBack,
+            canGoForward: state.canGoForward,
+          },
+        });
+      } catch (error) {
+        return fallbackFrame(error instanceof Error ? error.message : "frame poll failed");
+      }
     });
   } catch (error) {
-    return Response.json({
-      ok: false,
-      error: error instanceof Error ? error.message : "frame poll failed",
-    });
+    return fallbackFrame(error instanceof Error ? error.message : "frame poll failed");
   }
+}
+
+function fallbackFrame(error: string): Response {
+  return Response.json(
+    {
+      ok: false,
+      error,
+      data: {
+        frame: null,
+        url: lastFallbackUrl,
+        title: "",
+        canGoBack: false,
+        canGoForward: false,
+      },
+    },
+    { status: 503 },
+  );
 }
 
 type InputBody =
@@ -221,7 +284,7 @@ export async function handleBrowserInput(request: Request): Promise<Response> {
     return Response.json({ ok: false, error: "Invalid JSON" }, { status: 400 });
   }
   try {
-    await dispatchInput(body);
+    await runBrowserOperation({ kind: "input", signal: request.signal }, () => dispatchInput(body));
     return Response.json({ ok: true });
   } catch (error) {
     return Response.json({
@@ -382,12 +445,17 @@ export async function handleBrowserLocalhosts(request: Request): Promise<Respons
 
 // ─── GET /api/agent/browser/state ─────────────────────────────────────────
 
-export async function handleBrowserState(): Promise<Response> {
+export async function handleBrowserState(request: Request): Promise<Response> {
   if (!browserHost.isAvailable()) {
     return Response.json({ ok: false, error: "Browser unavailable" }, { status: 503 });
   }
   try {
-    return Response.json({ ok: true, data: await browserHost.getState() });
+    return Response.json({
+      ok: true,
+      data: await runBrowserOperation({ kind: "state", signal: request.signal }, () =>
+        browserHost.getState(),
+      ),
+    });
   } catch (error) {
     return Response.json({
       ok: false,
@@ -417,7 +485,9 @@ export async function handleBrowserViewport(request: Request): Promise<Response>
     return Response.json({ ok: false, error: "width and height are required" }, { status: 400 });
   }
   try {
-    await browserHost.setViewport(width, height);
+    await runBrowserOperation({ kind: "viewport", signal: request.signal }, () =>
+      browserHost.setViewport(width, height),
+    );
     return Response.json({
       ok: true,
       data: { width: Math.round(width), height: Math.round(height) },

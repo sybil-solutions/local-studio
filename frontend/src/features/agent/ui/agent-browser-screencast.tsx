@@ -21,14 +21,12 @@ import {
   type PointerEvent as ReactPointerEvent,
   type WheelEvent as ReactWheelEvent,
 } from "react";
+import {
+  beginBrowserFrame,
+  browserFrameLocationIsAuthoritative,
+  type BrowserPaneState,
+} from "@/features/agent/ui/agent-browser-effects";
 import { useMountSubscription } from "@/hooks/use-mount-subscription";
-
-export type BrowserPaneState = {
-  url: string;
-  title: string;
-  canGoBack: boolean;
-  canGoForward: boolean;
-};
 
 type FramePayload = {
   ok: boolean;
@@ -37,9 +35,7 @@ type FramePayload = {
 };
 
 type Props = {
-  /** Desired URL from the address bar; navigated server-side when it diverges. */
-  url: string;
-  onState: (state: BrowserPaneState) => void;
+  onState: (state: BrowserPaneState, locationIsAuthoritative: boolean) => void;
   /** Called once when the host reports no Chromium — the pane should fall back to reading mode. */
   onUnavailable: (error: string) => void;
   /** Frame polling pauses entirely while the surface is hidden. */
@@ -59,11 +55,9 @@ function postBrowser(path: string, body: unknown): void {
   }).catch(() => undefined);
 }
 
-export function ScreencastSurface({ url, onState, onUnavailable, visible = true }: Props) {
+export function ScreencastSurface({ onState, onUnavailable, visible = true }: Props) {
   const [container, setContainer] = useState<HTMLDivElement | null>(null);
   const [frameSrc, setFrameSrc] = useState<string | null>(null);
-  const [navError, setNavError] = useState<string | null>(null);
-  const serverUrlRef = useRef<string>("");
   const viewportRef = useRef({ width: 1280, height: 800 });
   const lastMoveAtRef = useRef(0);
   const onStateRef = useRef(onState);
@@ -93,22 +87,37 @@ export function ScreencastSurface({ url, onState, onUnavailable, visible = true 
         return;
       }
       try {
+        const frameSequence = beginBrowserFrame();
         const response = await fetch("/api/agent/browser/frame", { cache: "no-store" });
         if (response.status === 503) {
           const payload = (await response.json().catch(() => null)) as FramePayload | null;
+          if (!disposed && payload?.data) {
+            onStateRef.current(
+              {
+                url: payload.data.url,
+                title: payload.data.title,
+                canGoBack: false,
+                canGoForward: false,
+              },
+              browserFrameLocationIsAuthoritative(frameSequence),
+            );
+          }
           onUnavailableRef.current(payload?.error || "Browser unavailable");
-          return; // stop polling; pane switches to reading mode
+          if (!disposed) timer = effectTimeout(() => void tick(), 1_000);
+          return;
         }
         const payload = (await response.json()) as FramePayload;
         if (!disposed && payload.ok && payload.data) {
           if (payload.data.frame) setFrameSrc(`data:image/jpeg;base64,${payload.data.frame}`);
-          serverUrlRef.current = payload.data.url;
-          onStateRef.current({
-            url: payload.data.url,
-            title: payload.data.title,
-            canGoBack: payload.data.canGoBack,
-            canGoForward: payload.data.canGoForward,
-          });
+          onStateRef.current(
+            {
+              url: payload.data.url,
+              title: payload.data.title,
+              canGoBack: payload.data.canGoBack,
+              canGoForward: payload.data.canGoForward,
+            },
+            browserFrameLocationIsAuthoritative(frameSequence),
+          );
         }
       } catch {
         // transient — keep polling
@@ -122,32 +131,6 @@ export function ScreencastSurface({ url, onState, onUnavailable, visible = true 
       if (timer) timer.cancel();
     };
   }, [visible]);
-
-  // ── Address-bar navigation: navigate server-side when the desired URL
-  // diverges from what the host last reported ────────────────────────────
-  useMountSubscription(() => {
-    const target = url.trim();
-    if (!target || target === serverUrlRef.current) return;
-    let cancelled = false;
-    void fetch("/api/agent/browser/navigate", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ url: target }),
-    })
-      .then(async (response) => {
-        const payload = (await response.json()) as { ok: boolean; error?: string };
-        if (cancelled) return;
-        setNavError(payload.ok ? null : (payload.error ?? "Navigation failed"));
-      })
-      .catch((error) => {
-        if (!cancelled) {
-          setNavError(error instanceof Error ? error.message : "Navigation failed");
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [url]);
 
   // ── Viewport sync: match the headless viewport to the pane size ────────
   useMountSubscription(() => {
@@ -275,11 +258,6 @@ export function ScreencastSurface({ url, onState, onUnavailable, visible = true 
           Connecting to browser…
         </div>
       )}
-      {navError ? (
-        <div className="absolute left-2 top-2 max-w-[80%] truncate rounded-md border border-(--err)/40 bg-(--bg)/95 px-2 py-1 text-xs text-(--err)">
-          {navError}
-        </div>
-      ) : null}
     </div>
   );
 }

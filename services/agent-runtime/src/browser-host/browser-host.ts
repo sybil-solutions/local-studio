@@ -17,12 +17,14 @@ const capString = (value: string, maximum: number): string =>
 class BrowserHost {
   private pages = new Map<string, HostedPage>();
   private activeId: string | null = null;
+  private generation = 0;
 
   isAvailable(): boolean {
     return playwrightManager.isAvailable();
   }
 
   async page(pageId?: string): Promise<HostedPage> {
+    const generation = this.generation;
     const targetId = pageId ?? this.activeId;
     const cached = targetId ? this.pages.get(targetId) : undefined;
     if (cached && !cached.closed) {
@@ -32,12 +34,17 @@ class BrowserHost {
     if (cached) this.pages.delete(cached.id);
 
     const context = await playwrightManager.ensure();
+    this.assertGeneration(generation);
     const rawPage =
       context
         .pages()
         .find((candidate) =>
           Array.from(this.pages.values()).every((hosted) => !hosted.matches(candidate)),
         ) ?? (await context.newPage());
+    if (generation !== this.generation) {
+      await rawPage.close().catch(() => undefined);
+      this.assertGeneration(generation);
+    }
     const hosted = HostedPage.attach(rawPage);
     this.pages.set(hosted.id, hosted);
     this.activeId = hosted.id;
@@ -126,11 +133,22 @@ class BrowserHost {
     await (await this.page(pageId)).dispatchKey(args);
   }
 
+  async invalidate(): Promise<void> {
+    this.generation += 1;
+    this.pages.clear();
+    this.activeId = null;
+    await playwrightManager.invalidate();
+  }
+
   stop(): void {
     for (const page of this.pages.values()) page.close();
     this.pages.clear();
     this.activeId = null;
     playwrightManager.stop();
+  }
+
+  private assertGeneration(generation: number): void {
+    if (generation !== this.generation) throw new Error("Browser context invalidated");
   }
 }
 

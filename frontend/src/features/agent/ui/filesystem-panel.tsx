@@ -328,7 +328,9 @@ export function FilesystemPanel({ cwd }: Props) {
         <div className="flex min-w-0 flex-1 flex-col">
           {!openFile ? (
             <div className="flex h-full flex-col items-center justify-center gap-3 text-[length:var(--fs-sm)] text-(--dim)">
-              <span>Select a file to view.</span>
+              <span className={saveError ? "text-(--err)" : undefined}>
+                {saveError ?? "Select a file to view."}
+              </span>
               {!fileListOpen ? (
                 <button
                   type="button"

@@ -10,6 +10,7 @@
 import { lookup } from "node:dns/promises";
 import { request as httpRequest, type RequestOptions } from "node:http";
 import { request as httpsRequest } from "node:https";
+import { Effect } from "effect";
 import { sanitizePublicBrowserUrl } from "../../../../shared/agent/sanitize-embedded-browser-url";
 
 const MAX_BYTES = 512 * 1024;
@@ -48,10 +49,41 @@ declare global {
     | undefined;
 }
 
-async function resolveReaderHost(hostname: string): Promise<ResolvedHostAddress[]> {
+const abortError = (signal: AbortSignal): Error =>
+  new Error("Browser fetch aborted", { cause: signal.reason });
+
+const assertNotAborted = (signal?: AbortSignal): void => {
+  if (signal?.aborted) throw abortError(signal);
+};
+
+const awaitWithSignal = <A>(promise: Promise<A>, signal?: AbortSignal): Promise<A> => {
+  if (!signal) return promise;
+  if (signal.aborted) return Promise.reject(abortError(signal));
+  return Effect.runPromise(
+    Effect.tryPromise({
+      try: () => promise,
+      catch: (error) => (signal.aborted ? abortError(signal) : error),
+    }),
+    { signal },
+  ).catch((error: unknown) => {
+    if (signal.aborted) throw abortError(signal);
+    throw error;
+  });
+};
+
+async function resolveReaderHost(
+  hostname: string,
+  signal?: AbortSignal,
+): Promise<ResolvedHostAddress[]> {
+  assertNotAborted(signal);
   const testResolver = globalThis.__LOCAL_STUDIO_BROWSER_READER_HOST_RESOLVER_FOR_TEST;
-  if (testResolver) return (await testResolver(hostname)).map(normalizeResolvedAddress);
-  const results = await lookup(hostname, { all: true, verbatim: true });
+  if (testResolver) {
+    const inputs = await awaitWithSignal(testResolver(hostname), signal);
+    assertNotAborted(signal);
+    return inputs.map(normalizeResolvedAddress);
+  }
+  const results = await awaitWithSignal(lookup(hostname, { all: true, verbatim: true }), signal);
+  assertNotAborted(signal);
   return results.map((result) => ({
     address: result.address,
     family: result.family === 6 ? 6 : 4,
@@ -127,16 +159,21 @@ function cleanMarkdown(markdown: string): string {
     .trim();
 }
 
-async function fetchBoundedUrl(url: string, redirects = 0): Promise<BoundedResponse> {
-  const addresses = await publicResolvedAddresses(url);
-  const response = await requestBoundedUrl(url, addresses[0]);
+async function fetchBoundedUrl(
+  url: string,
+  redirects = 0,
+  signal?: AbortSignal,
+): Promise<BoundedResponse> {
+  const addresses = await publicResolvedAddresses(url, signal);
+  const response = await requestBoundedUrl(url, addresses[0], signal);
+  assertNotAborted(signal);
   if (isRedirectStatus(response.status)) {
     if (redirects >= MAX_REDIRECTS) throw new Error("Too many redirects");
     if (!response.location) throw new Error("Redirect missing Location header");
     const nextUrl = new URL(response.location, url).toString();
     const safeRedirect = sanitizePublicBrowserUrl(nextUrl);
     if (!safeRedirect) throw new Error("Redirect rejected (must stay public http/https)");
-    return fetchBoundedUrl(safeRedirect, redirects + 1);
+    return fetchBoundedUrl(safeRedirect, redirects + 1, signal);
   }
   return response;
 }
@@ -145,9 +182,12 @@ function isRedirectStatus(status: number): boolean {
   return status >= 300 && status < 400;
 }
 
-async function publicResolvedAddresses(raw: string): Promise<ResolvedHostAddress[]> {
+async function publicResolvedAddresses(
+  raw: string,
+  signal?: AbortSignal,
+): Promise<ResolvedHostAddress[]> {
   const url = new URL(raw);
-  const addresses = await resolveReaderHost(url.hostname);
+  const addresses = await resolveReaderHost(url.hostname, signal);
   if (!addresses.length) throw new Error("Host resolved to no addresses");
   for (const address of addresses) {
     if (!sanitizePublicBrowserUrl(`${url.protocol}//${hostForAddress(address.address)}/`)) {
@@ -166,13 +206,18 @@ function normalizeResolvedAddress(input: ResolvedHostInput): ResolvedHostAddress
   return { address: input, family: input.includes(":") ? 6 : 4 };
 }
 
-function requestBoundedUrl(url: string, address: ResolvedHostAddress): Promise<BoundedResponse> {
+function requestBoundedUrl(
+  url: string,
+  address: ResolvedHostAddress,
+  signal?: AbortSignal,
+): Promise<BoundedResponse> {
   const testRequest = globalThis.__LOCAL_STUDIO_BROWSER_READER_REQUEST_FOR_TEST;
-  if (testRequest) return testRequest(url, address);
+  if (testRequest) return awaitWithSignal(testRequest(url, address), signal);
   const parsed = new URL(url);
   const request = parsed.protocol === "https:" ? httpsRequest : httpRequest;
   const options: RequestOptions = {
     headers: { Accept: ACCEPT, "User-Agent": USER_AGENT },
+    signal,
     lookup: ((
       _hostname: string,
       lookupOptions: unknown,
@@ -273,10 +318,12 @@ function renderReadable(response: BoundedResponse, fallbackUrl: string): ReaderR
 
 // Fetch a public URL and return reading-mode text. Throws on rejected/invalid
 // URLs or upstream failures; callers map errors to their own response shape.
-export async function fetchReadable(rawUrl: string): Promise<ReaderResult> {
+export async function fetchReadable(rawUrl: string, signal?: AbortSignal): Promise<ReaderResult> {
+  assertNotAborted(signal);
   const safe = sanitizePublicBrowserUrl(rawUrl);
   if (!safe) throw new Error("url rejected (must be public http/https)");
-  const response = await fetchBoundedUrl(safe);
+  const response = await fetchBoundedUrl(safe, 0, signal);
+  assertNotAborted(signal);
   if (!response.ok) throw new Error(`Upstream returned HTTP ${response.status}`);
   return renderReadable(response, safe);
 }
