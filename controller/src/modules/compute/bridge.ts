@@ -188,6 +188,7 @@ const resolveEngineBinary = (recipe: Recipe, config: Config): string | null => {
 };
 
 const resolveRecipeBinary = (recipe: Recipe, config: Config): string | null => {
+  if (recipe.runtime.kind === "wsl2") return recipe.runtime.binary ?? null;
   if (recipe.runtime.kind === "binary" || recipe.runtime.kind === "system") {
     return recipe.runtime.ref;
   }
@@ -206,11 +207,12 @@ export const recipeToLaunchInput = (
   const toolCallParser = recipe.tool_call_parser ?? getDefaultToolCallParser(recipe) ?? null;
   const reasoningParser = recipe.reasoning_parser ?? getDefaultReasoningParser(recipe) ?? null;
   const dockerImage = recipe.runtime.kind === "docker" ? recipe.runtime.ref : null;
+  const wslDistribution = recipe.runtime.kind === "wsl2" ? recipe.runtime.ref : null;
   return {
     name: LLM_INSTANCE,
     engine: recipe.backend as EngineId,
     recipeId: recipe.id,
-    runtime: dockerImage ? "docker" : "process",
+    runtime: dockerImage ? "docker" : wslDistribution ? "wsl2" : "process",
     deviceCount: devices.length,
     ...(devices.length > 0 ? { devices } : {}),
     portOverride: recipe.port || config.inference_port,
@@ -232,6 +234,7 @@ export const recipeToLaunchInput = (
     extraArgs: serializeRecipeExtraArguments(recipe),
     env: recipe.env_vars ?? {},
     dockerImage,
+    wslDistribution,
     binary: resolveRecipeBinary(recipe, config),
     ...(override ? { commandOverride: override } : {}),
   };

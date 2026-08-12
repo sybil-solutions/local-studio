@@ -53,4 +53,17 @@ describe("recipe runtime launch mapping", () => {
     expect(input.dockerImage).toBe(image);
     expect(input.binary).toBeNull();
   });
+
+  test("WSL2 runtime preserves the selected distribution and Linux binary", () => {
+    const input = recipeToLaunchInput(
+      recipe({ kind: "wsl2", ref: "Ubuntu", binary: "/opt/sglang/bin/sglang" }),
+      config,
+      [],
+    );
+
+    expect(input.runtime).toBe("wsl2");
+    expect(input.wslDistribution).toBe("Ubuntu");
+    expect(input.binary).toBe("/opt/sglang/bin/sglang");
+    expect(input.dockerImage).toBeNull();
+  });
 });

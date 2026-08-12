@@ -7,7 +7,7 @@ import { modelIdFromPath } from "@/lib/huggingface";
 import type { ModelInfo, RuntimeTarget } from "@/lib/types";
 import type { RecipeEditor } from "@/features/recipes/recipe-editor";
 import {
-  defaultRuntimeForBackend,
+  preferredRuntimeForBackend,
   runtimeId,
   runtimeOptionFor,
   runtimeOptionsFor,
@@ -67,11 +67,11 @@ export function RecipeModalTabGeneral({
   runtimeTargets: RuntimeTarget[];
   installingRuntime: boolean;
   runtimeInstallMessage: string | null;
-  onInstallRuntime: () => void;
+  onInstallRuntime: (targetId?: string) => void;
 }) {
   const backend = recipe.backend ?? "vllm";
   const options = runtimeOptionsFor(backend, runtimeTargets);
-  const runtime = recipe.runtime ?? defaultRuntimeForBackend(backend);
+  const runtime = recipe.runtime ?? preferredRuntimeForBackend(backend, runtimeTargets);
   const selected = runtimeOptionFor(runtime, options);
   const allOptions = options.some((option) => option.id === selected.id)
     ? options
@@ -124,7 +124,7 @@ export function RecipeModalTabGeneral({
               <Button
                 size="sm"
                 variant="secondary"
-                onClick={onInstallRuntime}
+                onClick={() => onInstallRuntime(selected.targetId)}
                 disabled={installingRuntime}
               >
                 {installingRuntime ? "Starting…" : "Install here"}

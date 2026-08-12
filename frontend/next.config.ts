@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import os from "node:os";
 import path from "path";
 
 const nextConfig: NextConfig = {
@@ -93,6 +94,16 @@ const nextConfig: NextConfig = {
       ...(config.resolve.modules ?? ["node_modules"]),
       path.join(__dirname, "node_modules"),
     ];
+    if (process.platform === "win32") {
+      const tracePlugin = config.plugins?.find(
+        (plugin: unknown) =>
+          (plugin as { constructor?: { name?: string } } | null)?.constructor?.name ===
+          "TraceEntryPointsPlugin",
+      ) as { traceIgnores?: string[] } | undefined;
+      const homeParent = path.basename(path.dirname(os.homedir()));
+      const homeName = path.basename(os.homedir());
+      tracePlugin?.traceIgnores?.push(`**/${homeParent}/${homeName}/**`);
+    }
     // instrumentation.ts is compiled for the edge runtime too. Its node-only
     // half (instrumentation-node.ts, node:net) is behind a NEXT_RUNTIME gate,
     // but dev builds don't dead-code-eliminate the gated dynamic import, so

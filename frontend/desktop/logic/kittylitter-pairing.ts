@@ -64,16 +64,21 @@ const errorCode = (error: unknown): string =>
 export const getKittylitterPairingJson = async (options?: {
   retries?: number;
   retryDelayMs?: number;
+  execute?: () => Promise<string>;
 }): Promise<KittylitterPairingResult> => {
   const retries = options?.retries ?? PAIR_RETRIES;
   const retryDelayMs = options?.retryDelayMs ?? PAIR_RETRY_DELAY_MS;
   const pairAttempt = Effect.tryPromise({
     try: async () => {
-      const { stdout } = await execFileAsync(executablePath(), ["pair"], {
-        encoding: "utf8",
-        maxBuffer: 64 * 1024,
-        timeout: 30_000,
-      });
+      const stdout = options?.execute
+        ? await options.execute()
+        : (
+            await execFileAsync(executablePath(), ["pair"], {
+              encoding: "utf8",
+              maxBuffer: 64 * 1024,
+              timeout: 30_000,
+            })
+          ).stdout;
       return normalizeKittylitterPairingJson(String(stdout).trim());
     },
     catch: errorCode,

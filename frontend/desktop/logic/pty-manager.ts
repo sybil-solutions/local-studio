@@ -3,6 +3,7 @@ import os from "node:os";
 import { existsSync, statSync } from "node:fs";
 import type { WebContents } from "electron";
 import { log } from "../helpers/logger";
+import { resolveInteractiveShell } from "./platform-shell";
 
 type PtyHandle = {
   pid: number;
@@ -65,14 +66,6 @@ function loadFactory(): PtyFactory | null {
     log.error(`pty-manager: failed to load @lydell/node-pty: ${factoryError.message}`);
     return null;
   }
-}
-
-function resolveShell(): { shell: string; args: string[] } {
-  if (process.platform === "win32") {
-    return { shell: process.env.COMSPEC || "cmd.exe", args: [] };
-  }
-  const shell = process.env.SHELL || "/bin/zsh";
-  return { shell, args: [] };
 }
 
 function safeCwd(input: string | undefined | null): string {
@@ -171,7 +164,7 @@ export function openPty(
     throw new Error(`PTY limit reached (${MAX_PTY_SESSIONS} active terminals)`);
   }
 
-  const { shell, args } = resolveShell();
+  const { shell, args } = resolveInteractiveShell();
   const pty = make({ cwd, cols, rows, shell, args, env: buildEnv() });
   const id = randomUUID();
   const session: Session = {

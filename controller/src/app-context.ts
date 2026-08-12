@@ -14,7 +14,7 @@ import {
 import { createComputeBridge, type ComputeBridge } from "./modules/compute/bridge";
 import { makeCompute, type Compute } from "./modules/compute/service";
 import { shutdownEngineJobs } from "./modules/engines/runtimes/engine-jobs";
-import { shutdownRuntimeInfo } from "./modules/engines/runtimes/runtime-info";
+import { clearRuntimeInfoCache } from "./modules/engines/runtimes/runtime-info";
 import { RecipeStore } from "./modules/models/recipes/recipe-store";
 import { SpeechService } from "./modules/speech/service";
 import { EventManager } from "./modules/system/event-manager";
@@ -186,7 +186,7 @@ export const makeAppContext = Effect.gen(function* () {
     DownloadManager.make(config, downloadStore, eventManager, logger),
   );
   yield* Effect.acquireRelease(Effect.void, () =>
-    releaseSafely("runtime-info.shutdown", logger, shutdownRuntimeInfo()),
+    releaseSafely("runtime-info.shutdown", logger, clearRuntimeInfoCache()),
   );
   yield* Effect.acquireRelease(Effect.void, () =>
     releaseSafely("engine-jobs.shutdown", logger, shutdownEngineJobs()),

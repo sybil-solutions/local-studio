@@ -60,6 +60,7 @@ export interface ComputeLaunchInput {
   readonly env: Readonly<Record<string, string>>;
   readonly dockerImage: string | null;
   readonly binary: string | null;
+  readonly wslDistribution?: string | null;
 }
 
 export interface InstanceView {
@@ -230,6 +231,7 @@ export const makeComputeService = (deps: ComputeDeps): ComputeService => {
               devices: record.devices,
               health: spec.health,
               ...(input.dockerImage ? { image: input.dockerImage } : {}),
+              ...(input.wslDistribution ? { wslDistribution: input.wslDistribution } : {}),
             },
             host.accelerator,
           )
@@ -246,6 +248,7 @@ export const makeComputeService = (deps: ComputeDeps): ComputeService => {
             env: input.env,
             dockerImage: input.dockerImage,
             binary: input.binary ?? spec.defaultBinary,
+            wslDistribution: input.wslDistribution ?? null,
           });
 
       const reference = yield* deps
@@ -304,6 +307,7 @@ export const makeComputeService = (deps: ComputeDeps): ComputeService => {
           continue;
         }
         if (!(yield* recordAlive(record))) {
+          yield* stopRecord(record);
           // Dropping the record frees its devices by construction — there is no release
           // call to forget and no cache to invalidate.
           deps.store.drop(record.name);

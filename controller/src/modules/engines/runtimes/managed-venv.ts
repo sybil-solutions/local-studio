@@ -7,6 +7,7 @@ import { resolveBinary, runCommandAsyncEffect } from "../../../core/command";
 import type { RuntimeUpgradeResult, EngineBackend } from "@local-studio/contracts/system";
 import { ENGINE_INSTALL_TIMEOUT_MS, RUNTIME_UPGRADE_TIMEOUT_MS } from "../configs";
 import { probePythonRuntime } from "./runtime-target-probes";
+import { pythonPathInVenv } from "./python-venv-path";
 
 export type ManagedPythonBackend = Extract<EngineBackend, "vllm" | "sglang" | "mlx">;
 
@@ -25,7 +26,7 @@ export const managedVenvPath = (
 export const managedVenvPython = (
   config: Pick<Config, "data_dir">,
   backend: ManagedPythonBackend,
-): string => join(managedVenvPath(config, backend), "bin", "python");
+): string => pythonPathInVenv(managedVenvPath(config, backend));
 
 export interface InstallProgressUpdate {
   progress?: number;
@@ -60,7 +61,7 @@ const createVenvEffect = (
   options: ManagedInstallOptions,
 ): Effect.Effect<RuntimeUpgradeResult | null> =>
   Effect.gen(function* () {
-    const venvPython = join(venvDirectory, "bin", "python");
+    const venvPython = pythonPathInVenv(venvDirectory);
     if (existsSync(venvPython)) return null;
     mkdirSync(dirname(venvDirectory), { recursive: true });
     options.onProgress?.({ message: `Creating ${options.backend} virtual environment...` });
@@ -128,7 +129,7 @@ const installIntoManagedVenvEffect = (
     }
 
     const venvDirectory = managedVenvPath(options.config, options.backend);
-    const venvPython = join(venvDirectory, "bin", "python");
+    const venvPython = pythonPathInVenv(venvDirectory);
     const targetPython = options.pythonPath ?? venvPython;
 
     if (options.createManagedVenv !== false && !options.pythonPath) {

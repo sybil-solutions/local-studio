@@ -145,7 +145,8 @@ const acquirePlacementLock = (lockPath: string): Effect.Effect<void, LaunchFailu
 
 export const makeInstanceStore = (dataDirectory: string): InstanceStore => {
   const directory = join(dataDirectory, "instances");
-  const logsDirectory = join(directory, "logs");
+  const logsDirectory = join(dataDirectory, "logs");
+  mkdirSync(directory, { recursive: true });
   mkdirSync(logsDirectory, { recursive: true });
   const lockPath = join(directory, "placement.lock");
   const recordPath = (name: string): string => join(directory, `${safeName(name)}.json`);
@@ -279,7 +280,7 @@ export const makeInstanceStore = (dataDirectory: string): InstanceStore => {
     all,
     write,
     drop,
-    logPath: (name: string) => join(logsDirectory, `${safeName(name)}.log`),
+    logPath: (name: string) => join(logsDirectory, `vllm_${safeName(name)}.log`),
     reserve,
     heldDevices,
     allocatePort,

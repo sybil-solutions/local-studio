@@ -15,6 +15,7 @@ import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
 import { existsSync, realpathSync, statSync } from "node:fs";
+import { resolveInteractiveShell } from "../../../frontend/desktop/logic/platform-shell";
 
 // The runtime ships as ESM; node-pty is a CJS native addon, so load it with a
 // scoped require rather than a static import (which would break the bun-run
@@ -91,13 +92,6 @@ function loadFactory(): PtyFactory | null {
     console.error(`[agent-runtime] pty: failed to load @lydell/node-pty: ${factoryError.message}`);
     return null;
   }
-}
-
-function resolveShell(): { shell: string; args: string[] } {
-  if (process.platform === "win32") {
-    return { shell: process.env.COMSPEC || "cmd.exe", args: [] };
-  }
-  return { shell: process.env.SHELL || "/bin/zsh", args: [] };
 }
 
 // Never spawn a shell rooted at / or a bare system directory, and fall back to
@@ -192,7 +186,7 @@ export function openPtySession(opts: {
   }
 
   const cwd = safeCwd(opts.cwd);
-  const { shell, args } = resolveShell();
+  const { shell, args } = resolveInteractiveShell();
   const pty = make({ cwd, cols, rows, shell, args, env: buildEnv() });
   const id = randomUUID();
   const session: Session = {

@@ -1,10 +1,11 @@
 export type Backend = "vllm" | "sglang" | "llamacpp" | "mlx";
 
-export type ServeRuntimeKind = "managed_venv" | "system" | "docker" | "binary";
+export type ServeRuntimeKind = "managed_venv" | "system" | "docker" | "binary" | "wsl2";
 
 export interface ServeRuntime {
   kind: ServeRuntimeKind;
   ref: string;
+  binary?: string | undefined;
   label?: string | undefined;
 }
 

@@ -14,6 +14,7 @@ import {
   type ChatterboxRuntimePaths,
 } from "./runtime";
 import { prepareChatterboxStorage } from "./storage";
+import { terminateChildProcess } from "../../core/process-platform";
 
 const MAX_TEXT_CHARACTERS = 4096;
 const MAX_PROTOCOL_LINE_BYTES = 64 * 1024;
@@ -235,7 +236,7 @@ export const spawnNodeSpeechWorker: SpeechWorkerSpawner = ({ command, args, env 
     if (terminalError) return;
     terminalError = error;
     errors.forEach((listener) => listener(error));
-    child.kill("SIGKILL");
+    terminateChildProcess(child, true);
   };
   child.stdout.on(
     "data",
@@ -260,7 +261,7 @@ export const spawnNodeSpeechWorker: SpeechWorkerSpawner = ({ command, args, env 
       child.stdin.end();
     },
     kill: (): void => {
-      child.kill("SIGKILL");
+      terminateChildProcess(child, true);
     },
     onLine: (listener): (() => void) => {
       lines.add(listener);

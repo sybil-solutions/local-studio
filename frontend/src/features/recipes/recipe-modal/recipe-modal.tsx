@@ -5,7 +5,7 @@ import type { ModelInfo, RecipeWithStatus, RuntimeTarget } from "@/lib/types";
 import type { RecipeEditor } from "@/features/recipes/recipe-editor";
 import { ENGINE_LABEL } from "@/features/recipes/engine-capabilities";
 import { engineNodeStyle } from "@/features/recipes/recipe-labels";
-import { defaultRuntimeForBackend } from "@/features/recipes/serve-runtime-options";
+import { preferredRuntimeForBackend } from "@/features/recipes/serve-runtime-options";
 import { RecipeModalTabBar } from "./recipe-modal-tab-bar";
 import { RecipeModalTabContent } from "./tabs/tab-content";
 import { useRecipeModalModel } from "./recipe-modal-model";
@@ -65,7 +65,7 @@ export function RecipeModal({
               applyRecipeChange({
                 ...recipe,
                 backend: next,
-                runtime: defaultRuntimeForBackend(next),
+                runtime: preferredRuntimeForBackend(next, runtimeTargets),
                 python_path: null,
               })
             }

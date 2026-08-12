@@ -214,7 +214,7 @@ export function createStudioApi(core: ApiCore) {
     createRuntimeJob: (payload: {
       backend: "vllm" | "sglang" | "llamacpp" | "mlx";
       targetId?: string;
-      type?: "install" | "update" | "download" | "inspect";
+      type?: "install" | "update" | "uninstall" | "download" | "inspect";
       command?: string;
       args?: string[];
       version?: string;

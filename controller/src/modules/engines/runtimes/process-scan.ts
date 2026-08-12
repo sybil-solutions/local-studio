@@ -1,5 +1,9 @@
 import type { Backend } from "@local-studio/contracts/recipes";
-import { realProcessRunner } from "../../../core/command";
+import {
+  realProcessPlatform,
+  splitProcessCommandLine,
+  type ProcessPlatform,
+} from "../../../core/process-platform";
 import { hasCliServeInvocation, hasModuleInvocation } from "../argument-utilities";
 
 /**
@@ -13,25 +17,14 @@ export interface ScannedProcess {
   readonly args: string[];
 }
 
-const splitCommand = (command: string): string[] => {
-  const matches = command.match(/(?:[^\s"]+|"[^"]*")+/g) ?? [];
-  return matches.map((token) => token.replace(/^"|"$/g, ""));
-};
-
-export const listProcesses = (): ScannedProcess[] => {
+export const listProcesses = (
+  processPlatform: ProcessPlatform = realProcessPlatform,
+): ScannedProcess[] => {
   try {
-    const result = realProcessRunner.runSync("ps", ["-eo", "pid=,args="]);
-    if (result.status !== 0) return [];
-    return result.stdout
-      .trim()
-      .split("\n")
-      .flatMap((line) => {
-        const match = line.trim().match(/^(\d+)\s+(.*)$/);
-        if (!match) return [];
-        const args = splitCommand(match[2] ?? "");
-        return args.length > 0 ? [{ pid: Number(match[1]), args }] : [];
-      })
-      .filter((entry) => entry.pid > 0);
+    return processPlatform.list().flatMap((entry) => {
+      const args = splitProcessCommandLine(entry.commandLine);
+      return args.length > 0 ? [{ pid: entry.pid, args }] : [];
+    });
   } catch {
     return [];
   }

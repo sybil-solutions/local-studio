@@ -34,3 +34,12 @@ test("model visibility includes Pi and provider models after opt in", () => {
 
   assert.deepEqual(result.visibleModels, [controller, other]);
 });
+
+test("model visibility shows provider models when no controller model is available", () => {
+  const provider = model("openrouter/model");
+  const result = splitVisibleAgentModels([provider], false);
+
+  assert.deepEqual(result.controllerModels, []);
+  assert.deepEqual(result.otherModels, [provider]);
+  assert.deepEqual(result.visibleModels, [provider]);
+});

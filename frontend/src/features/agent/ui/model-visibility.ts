@@ -18,6 +18,9 @@ export function splitVisibleAgentModels(
   return {
     controllerModels,
     otherModels,
-    visibleModels: showOtherModels ? [...controllerModels, ...otherModels] : controllerModels,
+    visibleModels:
+      showOtherModels || controllerModels.length === 0
+        ? [...controllerModels, ...otherModels]
+        : controllerModels,
   };
 }

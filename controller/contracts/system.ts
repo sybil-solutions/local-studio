@@ -36,7 +36,7 @@ export interface RuntimeBackendInfo {
 
 export type EngineBackend = "vllm" | "sglang" | "llamacpp" | "mlx";
 
-export type RuntimeKind = "venv" | "docker" | "binary" | "system";
+export type RuntimeKind = "venv" | "docker" | "binary" | "system" | "wsl2";
 
 export interface RuntimeTarget {
   id: string;
@@ -49,10 +49,14 @@ export interface RuntimeTarget {
   pythonPath?: string | null;
   binaryPath?: string | null;
   dockerImage?: string | null;
+  wslDistribution?: string | null;
+  wslDefault?: boolean;
   source: "configured" | "discovered" | "running" | "bundled";
   capabilities: {
     canLaunch: boolean;
+    canInstall: boolean;
     canUpdate: boolean;
+    canUninstall: boolean;
     canInspectOptions: boolean;
     supportsDocker: boolean;
   };
@@ -74,7 +78,7 @@ export interface EngineJob {
   id: string;
   backend: EngineBackend;
   targetId?: string;
-  type: "install" | "update" | "download" | "inspect";
+  type: "install" | "update" | "uninstall" | "download" | "inspect";
   status: "queued" | "running" | "success" | "error" | "cancelled";
   progress?: number;
   message: string;

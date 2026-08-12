@@ -28,7 +28,7 @@ const LaunchRequestSchema = Schema.Struct({
   engine: Schema.Literals(ENGINE_IDS as unknown as [EngineId, ...EngineId[]]),
   modelPath: Schema.String,
   recipeId: Schema.optional(Schema.String),
-  runtime: Schema.optional(Schema.Literals(["process", "docker"])),
+  runtime: Schema.optional(Schema.Literals(["process", "docker", "wsl2"])),
   deviceCount: Schema.optional(Schema.Number),
   servedModelName: Schema.optional(Schema.String),
   options: Schema.optional(OptionsSchema),
@@ -36,6 +36,7 @@ const LaunchRequestSchema = Schema.Struct({
   env: Schema.optional(Schema.Record(Schema.String, Schema.String)),
   dockerImage: Schema.optional(Schema.String),
   binary: Schema.optional(Schema.String),
+  wslDistribution: Schema.optional(Schema.String),
 });
 
 /** Optional-schema fields decode as `key: undefined`; spreading those over the defaults
@@ -117,6 +118,7 @@ export const registerComputeRoutes = defineRoutes((app, context) =>
               env: parsed.env ?? {},
               dockerImage: parsed.dockerImage ?? null,
               binary: parsed.binary ?? null,
+              wslDistribution: parsed.wslDistribution ?? null,
             })
             .pipe(Effect.mapError(toHttp));
           return ctx.json({ instance: record });

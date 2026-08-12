@@ -19,6 +19,9 @@ const spelling: Spelling = {
 
 const supports = (host: HostProfile): EngineSupport => {
   if (host.platform === "darwin") return unsupported("exllamav3 requires CUDA; macOS has none");
+  if (host.platform === "win32") {
+    return unsupported("exllamav3 native Windows support has not been experimentally validated");
+  }
   if (host.accelerator !== "cuda") {
     return unsupported(`exllamav3 needs a CUDA device; this host reports ${host.accelerator}`);
   }

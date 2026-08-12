@@ -1,4 +1,5 @@
 import { Effect } from "effect";
+import { closeSync, openSync, readSync, statSync } from "node:fs";
 import type { HandleReference, InstanceRecord, LaunchFailure, LaunchPlan } from "../contracts";
 
 /**
@@ -25,6 +26,25 @@ export interface Launcher {
 /** Uniform tail length for every failure path — the old code truncated the same crash to
  *  200 chars on one path and 20 lines on another. */
 export const LOG_TAIL_BYTES = 4_096;
+
+export const readLogTail = (path: string, bytes = LOG_TAIL_BYTES): string => {
+  try {
+    const size = statSync(path).size;
+    const start = Math.max(0, size - bytes);
+    const length = size - start;
+    if (length <= 0) return "";
+    const buffer = Buffer.alloc(length);
+    const descriptor = openSync(path, "r");
+    try {
+      readSync(descriptor, buffer, 0, length, start);
+    } finally {
+      closeSync(descriptor);
+    }
+    return buffer.toString("utf8");
+  } catch {
+    return "";
+  }
+};
 
 export const spawnFailed = (detail: string): Effect.Effect<never, LaunchFailure> =>
   Effect.fail<LaunchFailure>({ kind: "spawn-failed", detail });

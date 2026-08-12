@@ -18,11 +18,11 @@ import {
 } from "./settings-ui";
 import {
   ENGINE_META,
-  MANAGED_RUNTIME_BACKENDS,
   ManagedRuntimeInstallRows,
   RuntimeTargetRows,
   RuntimeTargetStatus,
   isManagedRuntimeTarget,
+  managedRuntimeBackendsFor,
   isRunningEngineJob,
   type ManagedRuntimeInstallBackend,
 } from "./runtime-targets";
@@ -167,7 +167,7 @@ function EngineRows({
     async (payload: {
       backend: EngineJob["backend"];
       targetId?: string;
-      type: "install" | "update";
+      type: "install" | "update" | "uninstall";
     }) => {
       setActionError(null);
       try {
@@ -189,6 +189,15 @@ function EngineRows({
       }),
     [runJob],
   );
+  const handleTargetUninstall = useCallback(
+    (target: RuntimeTarget) =>
+      runJob({
+        backend: target.backend,
+        targetId: target.id,
+        type: "uninstall",
+      }),
+    [runJob],
+  );
   const handleManagedInstall = useCallback(
     (backend: ManagedRuntimeInstallBackend) => runJob({ backend, type: "install" }),
     [runJob],
@@ -206,7 +215,7 @@ function EngineRows({
       <>
         {errorNotice}
         <ManagedRuntimeInstallRows
-          backends={MANAGED_RUNTIME_BACKENDS}
+          backends={managedRuntimeBackendsFor(view.targets)}
           targets={view.targets}
           jobs={jobs}
           onInstall={handleManagedInstall}
@@ -217,6 +226,7 @@ function EngineRows({
             targets={discoveredTargets}
             jobs={jobs}
             onAction={handleTargetAction}
+            onUninstall={handleTargetUninstall}
           />
         ) : null}
       </>

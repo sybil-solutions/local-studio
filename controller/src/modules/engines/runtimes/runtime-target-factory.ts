@@ -26,7 +26,9 @@ const createCapabilities = (target: {
   pythonPath?: string | null;
 }): RuntimeTarget["capabilities"] => ({
   canLaunch: target.installed || target.source === "running",
+  canInstall: target.kind === "wsl2" && !target.installed,
   canUpdate:
+    (target.kind === "wsl2" && target.installed) ||
     (target.backend === "vllm" &&
       target.installed &&
       target.kind === "venv") ||
@@ -36,7 +38,9 @@ const createCapabilities = (target: {
         isUpgradeCommandConfigured(SGLANG_UPGRADE_ENV))) ||
     (target.backend === "mlx" && target.installed && target.kind === "venv") ||
     (target.backend === "llamacpp" && isUpgradeCommandConfigured(LLAMACPP_UPGRADE_ENV)),
+  canUninstall: target.kind === "wsl2" && target.installed,
   canInspectOptions:
+    target.kind !== "wsl2" &&
     target.backend !== "sglang" &&
     target.backend !== "mlx" &&
     (target.installed || target.source === "running"),
@@ -47,8 +51,9 @@ const createHealth = (
   installed: boolean,
   source: RuntimeTargetSource,
   message?: string,
+  requestedStatus?: RuntimeHealthStatus,
 ): RuntimeTarget["health"] => {
-  let status: RuntimeHealthStatus = installed ? "ok" : "warning";
+  let status: RuntimeHealthStatus = requestedStatus ?? (installed ? "ok" : "warning");
   if (source === "running") status = "ok";
   if (message && !installed && source !== "running") status = "warning";
   return message ? { status, message } : { status };
@@ -110,7 +115,10 @@ export const makeRuntimeTarget = (args: {
   pythonPath?: string | null;
   binaryPath?: string | null;
   dockerImage?: string | null;
+  wslDistribution?: string | null;
+  wslDefault?: boolean;
   healthMessage?: string | undefined;
+  healthStatus?: RuntimeHealthStatus | undefined;
 }): RuntimeTarget => {
   const base = {
     backend: args.backend,
@@ -136,9 +144,11 @@ export const makeRuntimeTarget = (args: {
     pythonPath: args.pythonPath ?? null,
     binaryPath: args.binaryPath ?? null,
     dockerImage: args.dockerImage ?? null,
+    wslDistribution: args.wslDistribution ?? null,
+    wslDefault: args.wslDefault ?? false,
     source: args.source,
     capabilities,
-    health: createHealth(args.installed, args.source, args.healthMessage),
+    health: createHealth(args.installed, args.source, args.healthMessage, args.healthStatus),
     ...(update ? { update } : {}),
   };
 };

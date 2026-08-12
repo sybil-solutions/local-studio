@@ -28,6 +28,7 @@ import {
   resolvePackagedPiCli,
   verifyLitterBridgeRequest,
 } from "../src/litter-bridge-gateway";
+import { encodeCwdForPi } from "../src/sessions-store";
 
 const NOW = new Date("2026-07-20T18:30:00.000Z");
 const SECRET = "test-secret-that-is-at-least-thirty-two-bytes-long";
@@ -56,7 +57,10 @@ test("macOS Electron Pi launches use the background helper executable", () => {
     resolveElectronNodeExecutable(executable, (candidate) => candidate === helper),
     helper,
   );
-  assert.equal(resolveElectronNodeExecutable(executable, () => false), executable);
+  assert.equal(
+    resolveElectronNodeExecutable(executable, () => false),
+    executable,
+  );
 });
 
 test("packaged Pi runtime resolves the embedded frontend CLI", () => {
@@ -74,8 +78,14 @@ test("packaged Pi runtime resolves the embedded frontend CLI", () => {
     "dist",
     "cli.js",
   );
-  assert.equal(resolvePackagedPiCli(resources, (candidate) => candidate === cli), cli);
-  assert.equal(resolvePackagedPiCli(resources, () => false), null);
+  assert.equal(
+    resolvePackagedPiCli(resources, (candidate) => candidate === cli),
+    cli,
+  );
+  assert.equal(
+    resolvePackagedPiCli(resources, () => false),
+    null,
+  );
 });
 
 const keyMaterial = (): { privateKey: KeyObject; publicHex: string } => {
@@ -186,9 +196,6 @@ const gatewayRequest = (body: unknown, secret = SECRET): Request =>
     },
     body: JSON.stringify(body),
   });
-
-const encodeCwdForPi = (cwd: string): string =>
-  `--${path.resolve(cwd).replace(/^\//, "").replace(/\/+/g, "-")}--`;
 
 const createSessionFixture = (
   sessionId = "019f7ca0-1f06-78a3-b4f2-58b6672994af",
@@ -1432,34 +1439,34 @@ test("published handoff metadata is private and removed only by its owner", () =
   const savedPiCodingAgentDir = process.env.PI_CODING_AGENT_DIR;
   delete process.env.PI_CODING_AGENT_DIR;
   try {
-  const gateway = createLitterBridgeGateway({
-    secret: SECRET,
-    controllerId: CONTROLLER_ID,
-    dataDir: directory,
-    now: () => new Date(NOW),
-  });
-  gateway.publishMetadata(54321);
-  const filepath = path.join(directory, "litter-bridge.json");
-  const metadata = JSON.parse(readFileSync(filepath, "utf8")) as Record<string, unknown>;
-  assert.equal(metadata.url, "http://127.0.0.1:54321/api/litter-bridge/v1");
-  assert.equal(statSync(filepath).mode & 0o777, 0o600);
+    const gateway = createLitterBridgeGateway({
+      secret: SECRET,
+      controllerId: CONTROLLER_ID,
+      dataDir: directory,
+      now: () => new Date(NOW),
+    });
+    gateway.publishMetadata(54321);
+    const filepath = path.join(directory, "litter-bridge.json");
+    const metadata = JSON.parse(readFileSync(filepath, "utf8")) as Record<string, unknown>;
+    assert.equal(metadata.url, "http://127.0.0.1:54321/api/litter-bridge/v1");
+    if (process.platform !== "win32") assert.equal(statSync(filepath).mode & 0o777, 0o600);
 
-  // The descriptor publishes this instance's own pi runtime so external
-  // consumers launch the matching binary + data dir instead of guessing.
-  assert.equal(metadata.piAgentDir, path.resolve(path.join(directory, "pi-agent")));
-  const piRuntime = metadata.piRuntime as
-    | { program: string; args: string[]; env: Record<string, string> }
-    | undefined;
-  assert.ok(piRuntime, "descriptor should publish piRuntime");
-  assert.equal(piRuntime.program, process.execPath);
-  assert.equal(piRuntime.args.length, 1);
-  assert.ok(
-    piRuntime.args[0].endsWith(path.join("dist", "cli.js")),
-    `piRuntime.args should point at the pi CLI, got ${piRuntime.args[0]}`,
-  );
+    // The descriptor publishes this instance's own pi runtime so external
+    // consumers launch the matching binary + data dir instead of guessing.
+    assert.equal(metadata.piAgentDir, path.resolve(path.join(directory, "pi-agent")));
+    const piRuntime = metadata.piRuntime as
+      | { program: string; args: string[]; env: Record<string, string> }
+      | undefined;
+    assert.ok(piRuntime, "descriptor should publish piRuntime");
+    assert.equal(piRuntime.program, process.execPath);
+    assert.equal(piRuntime.args.length, 1);
+    assert.ok(
+      piRuntime.args[0].endsWith(path.join("dist", "cli.js")),
+      `piRuntime.args should point at the pi CLI, got ${piRuntime.args[0]}`,
+    );
 
-  gateway.dispose();
-  assert.throws(() => statSync(filepath));
+    gateway.dispose();
+    assert.throws(() => statSync(filepath));
   } finally {
     if (savedPiCodingAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
     else process.env.PI_CODING_AGENT_DIR = savedPiCodingAgentDir;

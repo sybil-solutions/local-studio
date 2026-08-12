@@ -84,6 +84,8 @@ extraResources:
       - "**/*"
   - from: ../scripts/install-controller.sh
     to: app/scripts/install-controller.sh
+  - from: ../scripts/install-controller.ps1
+    to: app/scripts/install-controller.ps1
   - from: desktop/resources/pi-extensions
     to: desktop/resources/pi-extensions
     filter:
@@ -127,6 +129,7 @@ dmg:
   sign: true
 
 win:
+  icon: desktop/resources/icon.ico
   target:
     - target: nsis
       arch:

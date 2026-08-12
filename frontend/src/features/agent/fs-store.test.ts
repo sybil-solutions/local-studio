@@ -18,6 +18,7 @@ describe("assertWorkspaceRoot", () => {
   // literal system-root list and let the fs routes serve /etc/passwd. The
   // /private/* spellings only exist on darwin, so only assert them there.
   test("rejects system directories through their symlinked real paths", () => {
+    if (process.platform === "win32") return;
     const roots = ["/etc", "/var", "/usr", "/bin"];
     if (process.platform === "darwin") roots.push("/private/etc", "/private/var");
     for (const root of roots) {

@@ -4,6 +4,7 @@ import { useCallback, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import api from "@/lib/api/client";
 import type { ModelDownload, ModelInfo, RecipeWithStatus, RuntimeTarget } from "@/lib/types";
+import { preferredRuntimeForBackend } from "@/features/recipes/serve-runtime-options";
 import type { RecipeEditor } from "@/features/recipes/recipe-editor";
 import { useRealtimeStatusStore } from "@/hooks/realtime-status-store";
 import { readPageCache, writePageCache } from "@/lib/page-data-cache";
@@ -106,9 +107,14 @@ export function useRecipesContentModel() {
   }, [loadRecipes]);
 
   const handleNewRecipe = useCallback(() => {
-    setModalRecipe(normalizeRecipeForEditor({ ...DEFAULT_RECIPE }));
+    setModalRecipe(
+      normalizeRecipeForEditor({
+        ...DEFAULT_RECIPE,
+        runtime: preferredRuntimeForBackend("vllm", runtimeTargets),
+      }),
+    );
     setModalOpen(true);
-  }, []);
+  }, [runtimeTargets]);
 
   useMountSubscription(() => {
     if (searchParams.get("new") !== "1") return;
@@ -116,18 +122,22 @@ export function useRecipesContentModel() {
     handleNewRecipe();
   }, [handleNewRecipe, searchParams]);
 
-  const handleCreateServeFromDownload = useCallback((download: ModelDownload) => {
-    const modelName = download.model_id.split("/").filter(Boolean).at(-1) ?? download.model_id;
-    setModalRecipe(
-      normalizeRecipeForEditor({
-        ...DEFAULT_RECIPE,
-        name: modelName,
-        model_path: download.target_dir,
-        served_model_name: modelName,
-      }),
-    );
-    setModalOpen(true);
-  }, []);
+  const handleCreateServeFromDownload = useCallback(
+    (download: ModelDownload) => {
+      const modelName = download.model_id.split("/").filter(Boolean).at(-1) ?? download.model_id;
+      setModalRecipe(
+        normalizeRecipeForEditor({
+          ...DEFAULT_RECIPE,
+          runtime: preferredRuntimeForBackend("vllm", runtimeTargets),
+          name: modelName,
+          model_path: download.target_dir,
+          served_model_name: modelName,
+        }),
+      );
+      setModalOpen(true);
+    },
+    [runtimeTargets],
+  );
 
   const handleEditRecipe = useCallback((recipe: RecipeWithStatus) => {
     setModalRecipe(normalizeRecipeForEditor(recipe));

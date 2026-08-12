@@ -8,7 +8,12 @@ import type {
 } from "../src/modules/compute/contracts";
 import { ENGINE_IDS } from "../src/modules/compute/contracts";
 import { deviceEnvironment, dockerFlagsFor } from "../src/modules/compute/engines/devices";
-import { engineSpec, planLaunch, supportsRuntime } from "../src/modules/compute/engines/registry";
+import {
+  availableEngines,
+  engineSpec,
+  planLaunch,
+  supportsRuntime,
+} from "../src/modules/compute/engines/registry";
 import { mergeArguments } from "../src/modules/compute/engines/shared";
 
 const host = (overrides: Partial<HostProfile> = {}): HostProfile => ({
@@ -52,6 +57,7 @@ const request = (overrides: Partial<LaunchRequest> = {}): LaunchRequest => ({
   env: {},
   dockerImage: null,
   binary: "/venv/bin/vllm",
+  wslDistribution: null,
   ...overrides,
 });
 
@@ -190,6 +196,24 @@ describe("docker vs process", () => {
 
     expect(asDocker.image).toBe(customImage);
   });
+
+  test("vLLM uses the WSL2-compatible runner unless the recipe overrides it", () => {
+    const defaultPlan = engineSpec("vllm").plan(
+      request({ runtime: "wsl2", wslDistribution: "Ubuntu" }),
+    );
+    const overriddenPlan = engineSpec("vllm").plan(
+      request({
+        runtime: "wsl2",
+        wslDistribution: "Ubuntu",
+        env: { VLLM_USE_V2_MODEL_RUNNER: "1" },
+      }),
+    );
+    const nativePlan = engineSpec("vllm").plan(request({ runtime: "process" }));
+
+    expect(defaultPlan.env["VLLM_USE_V2_MODEL_RUNNER"]).toBe("0");
+    expect(overriddenPlan.env["VLLM_USE_V2_MODEL_RUNNER"]).toBe("1");
+    expect(nativePlan.env["VLLM_USE_V2_MODEL_RUNNER"]).toBeUndefined();
+  });
 });
 
 describe("device translation", () => {
@@ -242,15 +266,27 @@ describe("supports() gates by host", () => {
     { engine: "vllm", host: host({ accelerator: "cuda" }), ok: true, runtime: "process" },
     { engine: "vllm", host: host({ platform: "darwin", accelerator: "metal" }), ok: false },
     { engine: "vllm", host: host({ platform: "win32", accelerator: "cuda", wsl: false }), ok: false },
-    { engine: "vllm", host: host({ platform: "win32", accelerator: "cuda", wsl: true }), ok: true },
+    {
+      engine: "vllm",
+      host: host({ platform: "win32", accelerator: "cuda", wsl: true }),
+      ok: true,
+      runtime: "wsl2",
+    },
     { engine: "vllm", host: host({ accelerator: "rocm" }), ok: true, runtime: "docker" },
     { engine: "sglang", host: host({ accelerator: "rocm" }), ok: false },
+    {
+      engine: "sglang",
+      host: host({ platform: "win32", accelerator: "cuda", wsl: true }),
+      ok: true,
+      runtime: "wsl2",
+    },
     { engine: "mlx", host: host({ platform: "darwin", arch: "arm64", accelerator: "metal" }), ok: true, runtime: "process" },
     { engine: "mlx", host: host({ platform: "linux" }), ok: false },
     { engine: "mlx", host: host({ platform: "darwin", arch: "x64", accelerator: "metal" }), ok: false },
     { engine: "llamacpp", host: host({ platform: "darwin", accelerator: "metal" }), ok: true, runtime: "process" },
-    { engine: "llamacpp", host: host({ platform: "win32", accelerator: "rocm" }), ok: true, runtime: "process" },
+    { engine: "llamacpp", host: host({ platform: "win32", accelerator: "cuda", dockerGpu: true }), ok: true, runtime: "process" },
     { engine: "exllamav3", host: host({ accelerator: "cuda" }), ok: true, runtime: "process" },
+    { engine: "exllamav3", host: host({ platform: "win32", accelerator: "cuda" }), ok: false },
     { engine: "exllamav3", host: host({ accelerator: "rocm" }), ok: false },
   ];
 
@@ -280,6 +316,18 @@ describe("supports() gates by host", () => {
       host({ platform: "darwin", arch: "arm64", accelerator: "metal", dockerGpu: true }),
     );
     expect(support.ok && support.runtimes).toEqual(["process"]);
+  });
+
+  test("Windows keeps llama.cpp native and offers vLLM and SGLang only through WSL2", () => {
+    const windows = host({ platform: "win32", accelerator: "cuda", dockerGpu: true, wsl: true });
+    expect(availableEngines(windows).filter((entry) => entry.support.ok).map((entry) => entry.id)).toEqual([
+      "vllm",
+      "sglang",
+      "llamacpp",
+    ]);
+    expect(engineSpec("llamacpp").supports(windows)).toEqual({ ok: true, runtimes: ["process"] });
+    expect(engineSpec("vllm").supports(windows)).toEqual({ ok: true, runtimes: ["wsl2"] });
+    expect(engineSpec("sglang").supports(windows)).toEqual({ ok: true, runtimes: ["wsl2"] });
   });
 });
 

@@ -17,7 +17,7 @@ export type RecipeModalGeneralProps = {
   runtimeTargets: RuntimeTarget[];
   installingRuntime: boolean;
   runtimeInstallMessage: string | null;
-  onInstallRuntime: () => void;
+  onInstallRuntime: (targetId?: string) => void;
 };
 
 export type RecipeModalEnvironmentProps = {

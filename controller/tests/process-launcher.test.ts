@@ -27,7 +27,7 @@ const record: InstanceRecord = {
 
 const plan: LaunchPlan = {
   kind: "process",
-  argv: ["/bin/sh", "-c", "printf fresh"],
+  argv: [process.execPath, "-e", "process.stdout.write('fresh')"],
   env: {},
   ports: [],
   mounts: [],
@@ -47,5 +47,17 @@ describe("process launcher logs", () => {
     const tail = await Effect.runPromise(launcher.logTail(reference, record));
     expect(tail).toBe("fresh");
     expect(readFileSync(logPath, "utf8")).toBe("fresh");
+  });
+
+  test("owns and stops a real detached process tree", async () => {
+    const launcher = makeProcessLauncher(() => logPath);
+    const longRunning: LaunchPlan = {
+      ...plan,
+      argv: [process.execPath, "-e", "setInterval(() => {}, 1000)", "--", "--port", "8000"],
+    };
+    const reference = await Effect.runPromise(launcher.start(longRunning, record));
+    expect(await Effect.runPromise(launcher.owns(reference, record))).toBe(true);
+    await Effect.runPromise(launcher.stop(reference, 2_000));
+    expect(await Effect.runPromise(launcher.alive(reference))).toBe(false);
   });
 });

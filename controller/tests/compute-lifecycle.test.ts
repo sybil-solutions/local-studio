@@ -71,6 +71,7 @@ const input = (overrides: Partial<ComputeLaunchInput> = {}): ComputeLaunchInput 
   env: {},
   dockerImage: null,
   binary: "llama-server",
+  wslDistribution: null,
   ...overrides,
 });
 
@@ -129,6 +130,12 @@ const makeService = (
 
 // The fake never serves HTTP, so "healthy" can only come from a real server. For the
 // ready-path test we stand up a real Bun server on the allocated port instead.
+
+test("instance logs use the controller log surface and recipe id", () => {
+  const root = freshRoot();
+  const store = makeInstanceStore(root);
+  expect(store.logPath("recipe/windows")).toBe(join(root, "logs", "vllm_recipe_windows.log"));
+});
 
 describe("reserve is the lease", () => {
   test("devices of a live record are held; dropping the record frees them", async () => {

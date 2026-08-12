@@ -54,7 +54,7 @@ export const STUDIO_STARTER_PRESETS: StudioStarterPreset[] = [
     size_gb: null,
     min_vram_gb: null,
     remote: {
-      base_url: "http://pop-os-1.tailadb2c1.ts.net:8080/v1",
+      base_url: "https://api.deepseek.com",
       model: "deepseek-v4-flash",
     },
   },

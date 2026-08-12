@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowUpCircle, DownloadCloud } from "@/ui/icon-registry";
+import { ArrowUpCircle, DownloadCloud, Trash2 } from "@/ui/icon-registry";
 import type { EngineBackend, EngineJob, RuntimeTarget } from "@/lib/types";
 import { RowDetailLine, RowFacts, StatusPill, type RowFact, type UiTone, Spinner } from "@/ui";
 import { SettingsButton, SettingsRow, SettingsValue } from "./settings-ui";
@@ -25,6 +25,11 @@ export const MANAGED_RUNTIME_BACKENDS: readonly ManagedRuntimeInstallBackend[] =
   "sglang",
   "mlx",
 ] as const;
+
+export const managedRuntimeBackendsFor = (
+  targets: RuntimeTarget[],
+): readonly ManagedRuntimeInstallBackend[] =>
+  targets.some((target) => target.kind === "wsl2") ? [] : MANAGED_RUNTIME_BACKENDS;
 
 export const isRunningEngineJob = (job: EngineJob | undefined): boolean =>
   job?.status === "queued" || job?.status === "running";
@@ -78,7 +83,11 @@ export const isManagedRuntimeTarget = (target: RuntimeTarget): boolean => {
     return false;
   }
   const normalizedPythonPath = target.pythonPath?.replace(/\\/g, "/") ?? "";
-  return normalizedPythonPath.endsWith(`/runtime/venvs/${target.backend}-latest/bin/python`);
+  const managedRoot = `/runtime/venvs/${target.backend}-latest`;
+  return (
+    normalizedPythonPath.endsWith(`${managedRoot}/bin/python`) ||
+    normalizedPythonPath.endsWith(`${managedRoot}/Scripts/python.exe`)
+  );
 };
 
 const managedTargetForBackend = (
@@ -161,10 +170,12 @@ export function RuntimeTargetRows({
   targets,
   jobs = [],
   onAction,
+  onUninstall,
 }: {
   targets: RuntimeTarget[];
   jobs?: EngineJob[];
   onAction?: (target: RuntimeTarget) => void | Promise<void>;
+  onUninstall?: (target: RuntimeTarget) => void | Promise<void>;
 }) {
   return targets.map((target) => (
     <RuntimeTargetRow
@@ -172,6 +183,7 @@ export function RuntimeTargetRows({
       target={target}
       job={jobForRuntimeTarget(jobs, target)}
       onAction={onAction}
+      onUninstall={onUninstall}
     />
   ));
 }
@@ -180,10 +192,12 @@ function RuntimeTargetRow({
   target,
   job,
   onAction,
+  onUninstall,
 }: {
   target: RuntimeTarget;
   job?: EngineJob;
   onAction?: (target: RuntimeTarget) => void | Promise<void>;
+  onUninstall?: (target: RuntimeTarget) => void | Promise<void>;
 }) {
   const meta = ENGINE_META[target.backend];
   const unsupportedReason = target.health.message ?? "Updates are unsupported for this target.";
@@ -207,6 +221,7 @@ function RuntimeTargetRow({
           target={target}
           job={job}
           onAction={onAction}
+          onUninstall={onUninstall}
           unsupportedReason={unsupportedReason}
         />
       }
@@ -225,33 +240,58 @@ function RuntimeTargetAction({
   target,
   job,
   onAction,
+  onUninstall,
   unsupportedReason,
 }: {
   target: RuntimeTarget;
   job?: EngineJob;
   onAction?: (target: RuntimeTarget) => void | Promise<void>;
+  onUninstall?: (target: RuntimeTarget) => void | Promise<void>;
   unsupportedReason: string;
 }) {
   const running = isRunningEngineJob(job);
+  const canInstall = target.capabilities.canInstall;
   const canUpdate = target.capabilities.canUpdate;
-  const disabled = running || !canUpdate || !onAction;
-  if (!running && (!canUpdate || !onAction)) {
+  const canUninstall = target.capabilities.canUninstall;
+  const canPrimaryAction = canInstall || canUpdate;
+  if (!running && !canPrimaryAction && !canUninstall) {
     return null;
   }
   return (
-    <SettingsButton
-      onClick={() => void onAction?.(target)}
-      disabled={disabled}
-      title={canUpdate ? undefined : unsupportedReason}
-    >
-      {running ? <Spinner size="xs" /> : <ArrowUpCircle className="h-3 w-3" />}
-      {running ? job?.status : canUpdate ? (target.installed ? "Update" : "Install") : "Managed"}
-    </SettingsButton>
+    <div className="flex items-center gap-1.5">
+      {canPrimaryAction || running ? (
+        <SettingsButton
+          onClick={() => void onAction?.(target)}
+          disabled={running || !canPrimaryAction || !onAction}
+          title={canPrimaryAction ? undefined : unsupportedReason}
+        >
+          {running ? (
+            <Spinner size="xs" />
+          ) : canInstall ? (
+            <DownloadCloud className="h-3 w-3" />
+          ) : (
+            <ArrowUpCircle className="h-3 w-3" />
+          )}
+          {running ? job?.status : canInstall ? "Install" : "Update"}
+        </SettingsButton>
+      ) : null}
+      {canUninstall ? (
+        <SettingsButton
+          tone="danger"
+          onClick={() => void onUninstall?.(target)}
+          disabled={running || !onUninstall}
+          title={`Remove managed ${target.backend} from ${target.wslDistribution ?? "WSL2"}`}
+        >
+          <Trash2 className="h-3 w-3" />
+          Remove
+        </SettingsButton>
+      ) : null}
+    </div>
   );
 }
 
 function runtimeTargetHealthMessage(target: RuntimeTarget): string | undefined {
-  if (!target.capabilities.canUpdate) return undefined;
+  if (!target.capabilities.canInstall && !target.capabilities.canUpdate) return undefined;
   if (target.health.status !== "warning" && target.health.status !== "error") return undefined;
   return target.health.message;
 }
@@ -397,5 +437,7 @@ function RuntimeUpdateDetails({ update }: { update: NonNullable<RuntimeTarget["u
 }
 
 function pathForTarget(target: RuntimeTarget) {
-  return target.pythonPath ?? target.binaryPath ?? target.dockerImage ?? "";
+  return (
+    target.wslDistribution ?? target.pythonPath ?? target.binaryPath ?? target.dockerImage ?? ""
+  );
 }

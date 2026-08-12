@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { Effect, Schema } from "effect";
 import { resolveBinary } from "../../core/command";
+import { terminateChildProcess } from "../../core/process-platform";
 import { secureSpeechDirectory } from "./storage";
 
 export const MAX_VOICE_UPLOAD_BYTES = 20 * 1024 * 1024;
@@ -122,7 +123,7 @@ const transcode = (
       if (settled) return;
       settled = true;
       child.stdin.destroy();
-      child.kill("SIGKILL");
+      terminateChildProcess(child, true);
     });
   }).pipe(
     Effect.timeoutOrElse({

@@ -44,6 +44,7 @@ import { notFound } from "../../core/errors";
 import { findObservedInferenceProcess } from "../../core/function-observability";
 import { parseBooleanFlag } from "../../core/validation";
 import { fetchInference } from "../../http/local-fetch";
+import { fetchConfiguredProviderModels } from "../../services/provider-models";
 
 function isMockInferenceEnabled(): boolean {
   return parseBooleanFlag(process.env["LOCAL_STUDIO_MOCK_INFERENCE"]);
@@ -114,6 +115,24 @@ export const registerModelsRoutes = defineRoutes((app, context) => {
               max_model_len: maxModelLength,
               metadata: resolvedRecipeMetadata(recipe, modelId),
             });
+          }
+
+          const providerCatalogs = yield* fetchConfiguredProviderModels(context.config.providers);
+          const seenModelIds = new Set(models.map((model) => model.id));
+          for (const catalog of providerCatalogs) {
+            for (const providerModel of catalog.models) {
+              const modelId = `${catalog.provider}/${providerModel.id}`;
+              if (seenModelIds.has(modelId)) continue;
+              seenModelIds.add(modelId);
+              models.push({
+                id: modelId,
+                object: "model",
+                created: now,
+                owned_by: catalog.name,
+                active: true,
+                metadata: { remote: true, provider_id: catalog.provider },
+              });
+            }
           }
 
           if (models.length === 0 && (isMockInferenceEnabled() || current)) {

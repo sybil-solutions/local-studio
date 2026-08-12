@@ -27,7 +27,7 @@ export type Accelerator = "cuda" | "rocm" | "metal" | "xpu" | "cpu";
 /** Where an engine runs. Distinct from the installer-facing `RuntimeKind` in
  *  controller/contracts/system.ts ("venv" | "docker" | "binary" | "system"),
  *  which describes how a runtime was installed, not how a job is launched. */
-export type EngineRuntimeKind = "process" | "docker";
+export type EngineRuntimeKind = "process" | "docker" | "wsl2";
 export type HostPlatform = "linux" | "darwin" | "win32";
 export type HostArch = "x64" | "arm64";
 
@@ -103,6 +103,7 @@ export interface LaunchPlan {
   readonly mounts: readonly Mount[];
   readonly devices: readonly DeviceId[];
   readonly workdir?: string;
+  readonly wslDistribution?: string;
   readonly health: HealthCheck;
 }
 
@@ -143,6 +144,7 @@ export interface LaunchRequest {
   readonly dockerImage: string | null;
   /** Resolved executable for process launches; ignored for docker. */
   readonly binary: string;
+  readonly wslDistribution: string | null;
 }
 
 /** An engine as the compute layer sees it: what it supports, how to plan a
@@ -170,6 +172,14 @@ export type HandleReference =
       readonly startToken: string | null;
     }
   | { readonly kind: "docker"; readonly container: string }
+  | {
+      readonly kind: "wsl2";
+      readonly distribution: string;
+      readonly pid: number;
+      readonly startToken: string;
+      readonly pidFile: string;
+      readonly nonce: string;
+    }
   | { readonly kind: "remote"; readonly nodeId: NodeId; readonly name: string }
   /** A device hold with no supervised process — e.g. the speech worker claims its GPU
    *  through the lease shim. Always "alive"; freed only by explicit release. */

@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
-import { findSessionFile, listSessions, loadSession } from "../src/sessions-store";
+import { encodeCwdForPi, findSessionFile, listSessions, loadSession } from "../src/sessions-store";
 
 const originalPiCodingAgentDir = process.env.PI_CODING_AGENT_DIR;
 const temporaryRoots: string[] = [];
@@ -15,12 +15,6 @@ afterEach(() => {
     rmSync(root, { recursive: true, force: true });
   }
 });
-
-function encodeCwdForPi(cwd: string): string {
-  const normalized = path.resolve(cwd).replace(/\\+/g, "/");
-  const collapsed = normalized.replace(/^\//, "").replace(/\/+/g, "-");
-  return `--${collapsed}--`;
-}
 
 function createFixture(): { cwd: string; sessionDir: string } {
   const root = mkdtempSync(path.join(tmpdir(), "local-studio-session-lookup-"));
@@ -56,6 +50,10 @@ function writeSession(
 }
 
 describe("findSessionFile", () => {
+  test("uses Pi's drive-safe session directory encoding", () => {
+    expect(encodeCwdForPi(String.raw`C:\Users\example\workspace`)).not.toContain(":");
+  });
+
   test("resolves an exact Pi session identity from a canonical filename", () => {
     const { cwd, sessionDir } = createFixture();
     const sessionId = "019ee398-14e2-7ad1-af6c-f79b45dabacd";

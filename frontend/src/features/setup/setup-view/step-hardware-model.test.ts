@@ -20,4 +20,24 @@ describe("hardware setup copy", () => {
     assert.match(summary.runtime, /MLX or llama\.cpp/);
     assert.doesNotMatch(summary.runtime, /vLLM/);
   });
+
+  test("reports the complete VRAM pool for multiple discrete GPUs", () => {
+    const diagnostics = {
+      platform: "win32",
+      arch: "x64",
+      cpu_model: "AMD Ryzen",
+      cpu_cores: 16,
+      memory_total: 68_719_476_736,
+      gpus: [
+        { name: "NVIDIA GeForce RTX 3090", memory_total_mb: 24_576 },
+        { name: "NVIDIA GeForce RTX 3080 Ti", memory_total_mb: 12_288 },
+      ],
+      runtime: { vllm_installed: false, vllm_version: null },
+    } as StudioDiagnostics;
+
+    const summary = buildHardwareSummary(diagnostics);
+
+    assert.match(summary.gpu, /RTX 3090, NVIDIA GeForce RTX 3080 Ti/);
+    assert.equal(summary.vram, "36 GB");
+  });
 });

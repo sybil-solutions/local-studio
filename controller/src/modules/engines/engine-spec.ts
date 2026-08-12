@@ -62,13 +62,17 @@ export interface EngineSpec {
   getConfigHelp?: (config: Config) => Effect.Effect<ConfigHelpResult, EngineOperationError>;
 }
 
-const SPECS: Record<EngineBackend, EngineSpec> = {
-  vllm: vllmSpec,
-  sglang: sglangSpec,
-  llamacpp: llamacppSpec,
-  mlx: mlxSpec,
+export const getEngineSpec = (backend: EngineBackend): EngineSpec => {
+  switch (backend) {
+    case "vllm":
+      return vllmSpec;
+    case "sglang":
+      return sglangSpec;
+    case "llamacpp":
+      return llamacppSpec;
+    case "mlx":
+      return mlxSpec;
+  }
 };
-
-export const getEngineSpec = (backend: EngineBackend): EngineSpec => SPECS[backend];
 
 export { vllmSpec, sglangSpec, llamacppSpec, mlxSpec };

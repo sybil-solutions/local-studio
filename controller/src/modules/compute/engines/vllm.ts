@@ -37,7 +37,13 @@ const supports = (host: HostProfile): EngineSupport => {
   if (host.platform === "darwin") {
     return unsupported("vLLM has no Metal backend — use llamacpp or mlx on Apple Silicon");
   }
-  if (host.platform === "win32" && !host.wsl) return unsupported("vLLM on Windows requires WSL2");
+  if (host.platform === "win32") {
+    if (!host.wsl) return unsupported("vLLM requires an explicit WSL2 or remote Linux runtime");
+    if (host.accelerator !== "cuda") {
+      return unsupported(`vLLM in WSL2 needs a CUDA device; this host reports ${host.accelerator}`);
+    }
+    return supported("wsl2");
+  }
   if (host.accelerator === "rocm") {
     // Upstream publishes ROCm images; the PyPI wheels are CUDA-only.
     return host.dockerGpu
@@ -74,5 +80,12 @@ export const vllm: ComputeEngineSpec = {
       health: health("/health", READY_DEADLINE_MS),
       listenPort: request.port,
       image: image(request.host),
+      ...(request.runtime === "wsl2"
+        ? {
+            env: {
+              VLLM_USE_V2_MODEL_RUNNER: request.env["VLLM_USE_V2_MODEL_RUNNER"] ?? "0",
+            },
+          }
+        : {}),
     }),
 };

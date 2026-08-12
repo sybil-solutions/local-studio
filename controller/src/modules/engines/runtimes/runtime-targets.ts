@@ -1,5 +1,5 @@
 import { existsSync, readdirSync, statSync } from "node:fs";
-import { basename, dirname, join, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { Effect } from "effect";
 import type { Config } from "../../../config/env";
 import { loadPersistedConfig, savePersistedConfig } from "../../../config/persisted-config";
@@ -12,6 +12,7 @@ import type {
 } from "@local-studio/contracts/system";
 import { detectBackend, listProcesses } from "./process-scan";
 import { makeRuntimeTarget } from "./runtime-target-factory";
+import { readWslManagedRuntimeReceipt } from "../wsl-managed-runtime";
 import { managedLlamaServerPath } from "./managed-llamacpp";
 import {
   compareVersions,
@@ -23,6 +24,11 @@ import {
   type PythonProbeBackend,
 } from "./runtime-target-probes";
 import { type EngineOperationError, getEngineSpec } from "../engine-spec";
+import { pythonPathInVenv } from "./python-venv-path";
+import {
+  listWslDistributions,
+  type WslDistribution,
+} from "../../compute/wsl-platform";
 
 /**
  * Runtime-target discovery: every way an engine can exist on this box (running process,
@@ -113,9 +119,10 @@ const configuredPythons = (backend: PythonProbeBackend, config: Config): string[
           config.sglang_python,
           ...splitEnvironmentList(process.env["LOCAL_STUDIO_SGLANG_PYTHONS"]),
         ].filter((value): value is string => Boolean(value))
-      : [config.mlx_python, ...splitEnvironmentList(process.env["LOCAL_STUDIO_MLX_PYTHONS"])].filter(
-          (value): value is string => Boolean(value),
-        );
+      : [
+          config.mlx_python,
+          ...splitEnvironmentList(process.env["LOCAL_STUDIO_MLX_PYTHONS"]),
+        ].filter((value): value is string => Boolean(value));
 
 const venvPythonsOnDisk = (config: Config): string[] => {
   const roots = unique([
@@ -132,10 +139,11 @@ const venvPythonsOnDisk = (config: Config): string[] => {
     if (!existsSync(root)) continue;
     try {
       if (!statSync(root).isDirectory()) continue;
-      if (existsSync(join(root, "bin", "python"))) pythons.push(join(root, "bin", "python"));
+      const rootPython = pythonPathInVenv(root);
+      if (existsSync(rootPython)) pythons.push(rootPython);
       for (const entry of readdirSync(root, { withFileTypes: true })) {
         if (!entry.isDirectory()) continue;
-        const python = join(root, entry.name, "bin", "python");
+        const python = pythonPathInVenv(join(root, entry.name));
         if (existsSync(python)) pythons.push(python);
       }
     } catch {
@@ -209,7 +217,7 @@ const llamacppCandidates = (config: Config): Candidate[] => {
     existsSync(managedBinary) ? managedBinary : undefined,
   ]).map((candidate) => ({
     backend: "llamacpp",
-    kind: candidate.includes("/") ? "binary" : "system",
+    kind: isAbsolute(candidate) ? "binary" : "system",
     source: "configured",
     probe: "binary",
     candidate,
@@ -305,11 +313,37 @@ const bundledCandidates = (): Candidate[] => {
   }
 };
 
+export const runtimeTargetsForWslDistributions = (
+  config: Pick<Config, "data_dir">,
+  distributions: readonly WslDistribution[],
+): RuntimeTarget[] =>
+  distributions.flatMap((distribution) =>
+    (["vllm", "sglang"] as const).map((backend) => {
+      const receipt = readWslManagedRuntimeReceipt(config, distribution.name, backend);
+      const plannedBinary = `~/.local/share/local-studio/runtime/venvs/${backend}-latest/bin/${backend}`;
+      return makeRuntimeTarget({
+        backend,
+        kind: "wsl2",
+        source: "discovered",
+        key: distribution.name,
+        label: `${ENGINE_LABEL[backend]} via WSL2 (${distribution.name})`,
+        installed: Boolean(receipt),
+        version: receipt?.version ?? null,
+        pythonPath: receipt?.pythonPath ?? null,
+        binaryPath: receipt?.binaryPath ?? plannedBinary,
+        wslDistribution: distribution.name,
+        wslDefault: distribution.default,
+        healthStatus: receipt ? "ok" : "warning",
+        healthMessage: receipt
+          ? "Managed WSL2 runtime is recorded and checked again at launch."
+          : "Install this engine in the selected WSL2 distribution before launch.",
+      });
+    }),
+  );
+
 /* ── materialize + merge ─────────────────────────────────────────────────── */
 
-const materialize = (
-  candidate: Candidate,
-): Effect.Effect<RuntimeTarget, EngineOperationError> =>
+const materialize = (candidate: Candidate): Effect.Effect<RuntimeTarget, EngineOperationError> =>
   Effect.gen(function* () {
     if (candidate.probe === "none") {
       return makeRuntimeTarget({
@@ -433,6 +467,7 @@ const sortTargets = (targets: RuntimeTarget[]): RuntimeTarget[] =>
       BACKEND_ORDER[first.backend] - BACKEND_ORDER[second.backend] ||
       Number(second.active) - Number(first.active) ||
       Number(second.installed) - Number(first.installed) ||
+      Number(second.wslDefault) - Number(first.wslDefault) ||
       compareVersions(second.version, first.version) ||
       first.label.localeCompare(second.label),
   );
@@ -457,6 +492,8 @@ export const getRuntimeTargets = (
         Effect.sync(() =>
           backend === "llamacpp"
             ? [...runningCandidates(backend, runningProcess), ...llamacppCandidates(config)]
+            : process.platform === "win32"
+              ? runningCandidates(backend, runningProcess)
             : [
                 ...runningCandidates(backend, runningProcess),
                 ...pythonCandidates(backend as PythonProbeBackend, config),
@@ -465,11 +502,13 @@ export const getRuntimeTargets = (
       { concurrency: "unbounded" },
     );
     const docker = yield* dockerCandidates();
+    const wsl = yield* listWslDistributions();
     const all = [...candidateGroups.flat(), ...docker, ...bundledCandidates()];
 
     const materialized = yield* Effect.forEach(all, materialize, { concurrency: "unbounded" });
     const targets: RuntimeTarget[] = [];
     for (const target of materialized) addTarget(targets, target);
+    for (const target of runtimeTargetsForWslDistributions(config, wsl)) addTarget(targets, target);
 
     const selectedTargets = sortTargets(withSelection(targets, config));
     targetsCache = {

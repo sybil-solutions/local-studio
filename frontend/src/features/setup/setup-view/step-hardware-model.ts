@@ -34,15 +34,17 @@ export function buildHardwareSummary(diagnostics: StudioDiagnostics | null): Har
   const gpuNames =
     diagnostics?.gpus.map((gpu) => gpu.name).join(", ") ||
     (appleSilicon ? "Apple Silicon GPU · Metal" : "No accelerator detected");
-  const firstGpuVramMb = diagnostics?.gpus[0]?.memory_total_mb ?? 0;
+  const totalGpuVramMb = appleSilicon
+    ? (diagnostics?.gpus[0]?.memory_total_mb ?? 0)
+    : (diagnostics?.gpus.reduce((sum, gpu) => sum + gpu.memory_total_mb, 0) ?? 0);
 
   return {
     cpu: `${diagnostics?.cpu_model ?? "Unknown"} · ${diagnostics?.cpu_cores ?? 0} cores`,
     gpu: gpuNames,
     memory: `${formatBytes(diagnostics?.memory_total ?? null)} total`,
     runtime: runtimeDescription(diagnostics, appleSilicon),
-    vram: firstGpuVramMb
-      ? `${Math.round(firstGpuVramMb / 1024)} GB${appleSilicon ? " unified" : ""}`
+    vram: totalGpuVramMb
+      ? `${Math.round(totalGpuVramMb / 1024)} GB${appleSilicon ? " unified" : ""}`
       : "Not reported",
   };
 }

@@ -24,18 +24,21 @@ import {
 function useRuntimeInstallation(backend: Backend) {
   const [installing, setInstalling] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
-  const install = useCallback(async () => {
-    setInstalling(true);
-    setMessage(null);
-    try {
-      const result = await api.createRuntimeJob({ backend, type: "install" });
-      setMessage(result.job.message || `${ENGINE_LABEL[backend]} installation started`);
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Runtime installation failed");
-    } finally {
-      setInstalling(false);
-    }
-  }, [backend]);
+  const install = useCallback(
+    async (targetId?: string) => {
+      setInstalling(true);
+      setMessage(null);
+      try {
+        const result = await api.createRuntimeJob({ backend, type: "install", targetId });
+        setMessage(result.job.message || `${ENGINE_LABEL[backend]} installation started`);
+      } catch (error) {
+        setMessage(error instanceof Error ? error.message : "Runtime installation failed");
+      } finally {
+        setInstalling(false);
+      }
+    },
+    [backend],
+  );
   return { installing, message, install };
 }
 

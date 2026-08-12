@@ -23,6 +23,7 @@ import {
 } from "../../core/log-files";
 import { redactLogLine } from "../../core/log-redaction";
 import { runCommandAsyncEffect } from "../../core/command";
+import { terminateChildProcess } from "../../core/process-platform";
 
 const LogLimitQuerySchema = Schema.Struct({
   limit: Schema.optionalKey(
@@ -65,7 +66,7 @@ const terminateChild = (child: ReturnType<typeof spawn>): Effect.Effect<void> =>
   Effect.gen(function* () {
     if (child.exitCode !== null || child.signalCode !== null) return;
     yield* Effect.try({
-      try: () => child.kill("SIGTERM"),
+      try: () => terminateChildProcess(child, false),
       catch: (error) => error,
     }).pipe(Effect.catch(() => Effect.void));
     const exited = yield* Effect.raceFirst(
@@ -74,7 +75,7 @@ const terminateChild = (child: ReturnType<typeof spawn>): Effect.Effect<void> =>
     );
     if (exited || child.exitCode !== null || child.signalCode !== null) return;
     yield* Effect.try({
-      try: () => child.kill("SIGKILL"),
+      try: () => terminateChildProcess(child, true),
       catch: (error) => error,
     }).pipe(Effect.catch(() => Effect.void));
     yield* Effect.raceFirst(waitForChildExit(child), Effect.sleep(1_000));

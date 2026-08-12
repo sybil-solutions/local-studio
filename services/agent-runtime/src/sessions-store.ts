@@ -11,23 +11,12 @@ import {
 import { homedir } from "node:os";
 import path from "node:path";
 import readline from "node:readline";
-import {
-  getAgentDir,
-  SessionManager,
-  SettingsManager,
-} from "@earendil-works/pi-coding-agent";
+import { getAgentDir, SessionManager, SettingsManager } from "@earendil-works/pi-coding-agent";
 import { resolveDataDir } from "./data-dir";
-import {
-  cleanSessionTitle,
-  sessionTitleFromUserPrompt,
-} from "../../../shared/agent/session-title";
+import { cleanSessionTitle, sessionTitleFromUserPrompt } from "../../../shared/agent/session-title";
 import { readSessionListMetadata } from "./session-metadata-store";
 import type { SessionSummary } from "../../../shared/agent/session-summary";
-import {
-  emptyUsageTotals,
-  readSessionUsageTotals,
-  type SessionUsageTotals,
-} from "./session-usage";
+import { emptyUsageTotals, readSessionUsageTotals, type SessionUsageTotals } from "./session-usage";
 export type { SessionSummary } from "../../../shared/agent/session-summary";
 
 export type SessionEvent = Record<string, unknown> & { type?: string };
@@ -61,19 +50,19 @@ function summaryStartTime(session: Pick<SessionSummary, "startedAt" | "updatedAt
 }
 
 export function encodeCwdForPi(cwd: string): string {
-  const normalized = path.resolve(cwd).replace(/\\+/g, "/");
-  const collapsed = normalized.replace(/^\//, "").replace(/\/+/g, "-");
-  return `--${collapsed}--`;
+  const normalized = path.resolve(cwd);
+  return `--${normalized.replace(/^[/\\]/, "").replace(/[/\\:]/g, "-")}--`;
 }
 
 export function configuredPiSessionDir(cwd: string): string | undefined {
   const envSessionDir = process.env.PI_CODING_AGENT_SESSION_DIR?.trim();
   if (envSessionDir) {
-    const expanded = envSessionDir === "~"
-      ? homedir()
-      : envSessionDir.startsWith(`~${path.sep}`)
-        ? path.join(homedir(), envSessionDir.slice(2))
-        : envSessionDir;
+    const expanded =
+      envSessionDir === "~"
+        ? homedir()
+        : envSessionDir.startsWith(`~${path.sep}`)
+          ? path.join(homedir(), envSessionDir.slice(2))
+          : envSessionDir;
     return path.resolve(expanded);
   }
   return SettingsManager.create(cwd, getAgentDir()).getSessionDir();
@@ -466,10 +455,13 @@ function parseEvent(line: string): SessionEvent | null {
 function activeBranchEvents(filepath: string, events: SessionEvent[]): SessionEvent[] {
   try {
     const activeIds = new Set(
-      SessionManager.open(filepath).buildContextEntries().map((entry) => entry.id),
+      SessionManager.open(filepath)
+        .buildContextEntries()
+        .map((entry) => entry.id),
     );
     return events.filter(
-      (event) => event.type === "session" || (typeof event.id === "string" && activeIds.has(event.id)),
+      (event) =>
+        event.type === "session" || (typeof event.id === "string" && activeIds.has(event.id)),
     );
   } catch {
     return events;

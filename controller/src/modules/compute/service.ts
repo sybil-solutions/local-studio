@@ -7,8 +7,10 @@ import { makeTelemetry, profileFrom, type Telemetry } from "./devices/snapshot";
 import { makeInstanceStore, type InstanceStore } from "./instances/store";
 import { makeDockerLauncher } from "./launchers/docker";
 import { makeProcessLauncher } from "./launchers/process";
+import { makeWsl2Launcher } from "./launchers/wsl2";
 import type { Launcher } from "./launchers/launcher";
 import { makeComputeService, type ComputeService } from "./lifecycle";
+import { listWslDistributions } from "./wsl-platform";
 
 /**
  * Assembly point: telemetry + store + launchers wired into one ComputeService. This is
@@ -30,6 +32,8 @@ interface DockerStatus {
   readonly docker: boolean;
   readonly dockerGpu: boolean;
 }
+
+const WSL_PROBE_TTL_MS = 60_000;
 
 const probeDocker = (): Effect.Effect<DockerStatus> =>
   Effect.gen(function* () {
@@ -61,24 +65,39 @@ export const makeCompute = (config: Config, eventManager: EventManager): Compute
     });
 
   let lastProfile: HostProfile | null = null;
+  let wslCache: { readonly at: number; readonly available: boolean } | null = null;
+  const wslAvailable = (): Effect.Effect<boolean> =>
+    Effect.gen(function* () {
+      if (process.platform !== "win32") return false;
+      if (wslCache && Date.now() - wslCache.at < WSL_PROBE_TTL_MS) return wslCache.available;
+      const available = (yield* listWslDistributions()).length > 0;
+      wslCache = { at: Date.now(), available };
+      return available;
+    });
   const host = (): Effect.Effect<HostProfile> =>
     Effect.gen(function* () {
       const snapshot = yield* telemetry.snapshot();
       const docker = yield* dockerStatus();
-      const profile = profileFrom(snapshot, {
+      const detected = profileFrom(snapshot, {
         nodeId: "self",
         docker: docker.docker,
         dockerGpu: docker.dockerGpu,
       });
+      const profile = process.platform === "win32"
+        ? { ...detected, wsl: yield* wslAvailable() }
+        : detected;
       lastProfile = profile;
       return profile;
     });
 
-  const processLauncher = makeProcessLauncher(store.logPath);
+  const processLauncher = makeProcessLauncher((record) => store.logPath(record.recipeId));
+  const wsl2Launcher = makeWsl2Launcher((record) => store.logPath(record.recipeId));
   const launcherFor = (runtime: EngineRuntimeKind): Launcher =>
     runtime === "docker"
       ? makeDockerLauncher(lastProfile?.accelerator ?? "cuda")
-      : processLauncher;
+      : runtime === "wsl2"
+        ? wsl2Launcher
+        : processLauncher;
 
   const freeDevices = (): Effect.Effect<readonly DeviceId[]> =>
     telemetry

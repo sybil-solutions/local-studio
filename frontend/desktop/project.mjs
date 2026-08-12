@@ -378,7 +378,7 @@ import {
 import path2 from "node:path";
 import { spawnSync as spawnSync2 } from "node:child_process";
 import { fileURLToPath as fileURLToPath2 } from "node:url";
-var packageDir, distDir, bundlePath, runtimePackages, build, lydellDir, bundle, sourceRoot;
+var packageDir, distDir, bundlePath, runtimePackages, buildInvocation, build, lydellDir, bundle, sourceRoot;
 var init_bundle = __esm(() => {
   packageDir = path2.resolve(path2.dirname(fileURLToPath2(import.meta.url)), "../../services/agent-runtime"), distDir = path2.join(packageDir, "dist"), bundlePath = path2.join(distDir, "standalone.mjs"), runtimePackages = [
     "playwright-core",
@@ -391,7 +391,7 @@ var init_bundle = __esm(() => {
   ];
   rmSync2(distDir, { recursive: !0, force: !0 });
   mkdirSync(distDir, { recursive: !0 });
-  build = spawnSync2("bun", [
+  buildInvocation = platformInvocation("bun", [
     "build",
     "src/server.ts",
     "--target=node",
@@ -404,7 +404,7 @@ var init_bundle = __esm(() => {
     "--external",
     "undici",
     "--outfile=dist/standalone.mjs"
-  ], { cwd: packageDir, stdio: "inherit" });
+  ]), build = spawnSync2(buildInvocation[0], buildInvocation[1], { cwd: packageDir, stdio: "inherit" });
   if (build.status !== 0)
     throw Error(`Agent runtime bundle failed with status ${build.status ?? "unknown"}`);
   lydellDir = path2.join(packageDir, "node_modules", "@lydell");
@@ -631,7 +631,7 @@ function isInsideEffectTryPromise(node) {
 function scanEffectStandards(filePath) {
   if (!filePath.endsWith(".ts") || filePath.endsWith(".d.ts"))
     return;
-  let source = fs.readFileSync(filePath, "utf8"), sourceFile = ts.createSourceFile(filePath, source, ts.ScriptTarget.Latest, !0), relativePath = path3.relative(SRC_DIR, filePath), isRuntimeBoundary = runtimeBoundaryFiles.has(relativePath), visit = (node) => {
+  let source = fs.readFileSync(filePath, "utf8"), sourceFile = ts.createSourceFile(filePath, source, ts.ScriptTarget.Latest, !0), relativePath = path3.relative(SRC_DIR, filePath).replaceAll("\\", "/"), isRuntimeBoundary = runtimeBoundaryFiles.has(relativePath), visit = (node) => {
     if (ts.canHaveModifiers(node)) {
       if (ts.getModifiers(node)?.some((modifier) => modifier.kind === ts.SyntaxKind.AsyncKeyword) && !isInsideEffectTryPromise(node))
         addSourceFinding("effect-async-boundary", filePath, node, "Use Effect for controller async work");
@@ -826,8 +826,8 @@ async function waitForPage(browser, origin, timeoutMs) {
   }
   throw Error(`Timed out waiting for Electron page at ${origin}`);
 }
-async function smokeTerminal(page) {
-  return page.evaluate(async () => {
+async function smokeTerminal(page, cwd) {
+  return page.evaluate(async ({ cwd: terminalCwd, command }) => {
     let bridge = globalThis.localStudioDesktop;
     if (!bridge)
       throw Error("Desktop bridge is unavailable");
@@ -835,7 +835,7 @@ async function smokeTerminal(page) {
     if (!status.available)
       throw Error(status.reason || "PTY is unavailable");
     let session = await bridge.terminal.open({
-      cwd: "/tmp",
+      cwd: terminalCwd,
       cols: 80,
       rows: 24,
       ownerKey: "desktop-package-smoke"
@@ -856,13 +856,22 @@ async function smokeTerminal(page) {
           return;
         finish();
       });
-      bridge.terminal.write(session.id, "printf 'LOCAL_STUDIO_PTY_OK\\n'; exit\\n"), finish();
+      bridge.terminal.write(session.id, command), finish();
     });
+  }, { cwd, command: process2.platform === "win32" ? "Write-Output 'LOCAL_STUDIO_PTY_OK'; exit\r\n" : "printf 'LOCAL_STUDIO_PTY_OK\\n'; exit\n" });
+}
+async function taskkill(pid, force) {
+  await new Promise((resolve3) => {
+    let killer = spawn2("taskkill.exe", ["/PID", String(pid), "/T", ...force ? ["/F"] : []], { windowsHide: !0, stdio: "ignore" });
+    killer.once("error", () => resolve3()), killer.once("exit", () => resolve3());
   });
 }
 async function terminate(child) {
   if (!child?.pid)
     return;
+  if (process2.platform === "win32")
+    await taskkill(child.pid, !1);
+  else
   try {
     process2.kill(-child.pid, "SIGTERM");
   } catch {}
@@ -870,12 +879,27 @@ async function terminate(child) {
     child.exitCode === null && child.signalCode === null ? new Promise((resolve3) => child.once("exit", resolve3)) : Promise.resolve(),
     delay(5000)
   ]);
-  try {
-    process2.kill(-child.pid, "SIGKILL");
-  } catch {}
+  if (process2.platform === "win32")
+    await taskkill(child.pid, !0);
+  else
+    try {
+      process2.kill(-child.pid, "SIGKILL");
+    } catch {}
+}
+async function removeSmokeDirectory(directory) {
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    try {
+      rmSync4(directory, { recursive: !0, force: !0 });
+      return;
+    } catch (error) {
+      if (attempt === 19 || !["EBUSY", "EPERM", "ENOTEMPTY"].includes(error?.code))
+        throw error;
+      await delay(250);
+    }
+  }
 }
 async function runDesktopPackageSmoke(args2 = process2.argv.slice(2)) {
-  let frontend = path4.resolve(path4.dirname(fileURLToPath3(import.meta.url)), ".."), requestedApp = valueAfter2(args2, "--app"), appPath = requestedApp ? path4.resolve(requestedApp) : path4.join(frontend, "dist-desktop", "mac-arm64", "Local Studio.app"), expectedVersion = valueAfter2(args2, "--expected-version"), executable = path4.join(appPath, "Contents", "MacOS", "Local Studio");
+  let frontend = path4.resolve(path4.dirname(fileURLToPath3(import.meta.url)), ".."), requestedApp = valueAfter2(args2, "--app"), defaultApp = process2.platform === "win32" ? path4.join(frontend, "dist-desktop", "win-unpacked", "Local Studio.exe") : path4.join(frontend, "dist-desktop", "mac-arm64", "Local Studio.app"), appPath = requestedApp ? path4.resolve(requestedApp) : defaultApp, expectedVersion = valueAfter2(args2, "--expected-version"), executable = process2.platform === "win32" ? appPath.toLowerCase().endsWith(".exe") ? appPath : path4.join(appPath, "Local Studio.exe") : path4.join(appPath, "Contents", "MacOS", "Local Studio");
   if (!existsSync6(executable))
     throw Error(`Missing packaged executable: ${executable}`);
   let temp = mkdtempSync2(path4.join(os.tmpdir(), "local-studio-package-smoke-")), userData = path4.join(temp, "user-data"), logFile = path4.join(userData, "logs", "desktop.log"), frontendPortFile = path4.join(userData, "embedded-frontend.port"), debugPort = await reservePort(), stdout = [], stderr = [];
@@ -923,7 +947,7 @@ async function runDesktopPackageSmoke(args2 = process2.argv.slice(2)) {
     });
     if (expectedVersion && runtime.appVersion !== expectedVersion)
       throw Error(`Packaged app version ${runtime.appVersion} does not match ${expectedVersion}`);
-    let terminal = await smokeTerminal(page), result = {
+    let terminal = await smokeTerminal(page, temp), result = {
       appPath,
       agentStatus: agentResponse.status(),
       desktopHealth,
@@ -947,7 +971,7 @@ ${diagnostics}`);
       await browser.close().catch(() => {
         return;
       });
-    await terminate(child), rmSync4(temp, { recursive: !0, force: !0 });
+    await terminate(child), await removeSmokeDirectory(temp);
   }
 }
 var require3, chromium;
@@ -2208,9 +2232,8 @@ async function afterPack(context) {
   let missingPiLauncherMarker = [
     "resolveElectronNodeExecutable",
     "resolvePackagedPiCli",
-    "Frameworks",
-    "Helper.app",
-    "ELECTRON_RUN_AS_NODE"
+    "ELECTRON_RUN_AS_NODE",
+    ...electronPlatformName === "darwin" ? ["Frameworks", "Helper.app"] : []
   ].find((marker) => !agentRuntimeSource.includes(marker));
   if (missingPiLauncherMarker)
     throw Error(`Packaged agent runtime is missing Pi helper launcher: ${missingPiLauncherMarker}`);
@@ -2219,6 +2242,14 @@ async function afterPack(context) {
     if (!existsSync(helperExecutable))
       throw Error(`Packaged app is missing its Pi helper executable: ${helperExecutable}`);
   }
+  if (electronPlatformName === "win32") {
+    let executable = path.join(appOutDir, `${productFilename}.exe`);
+    if (!existsSync(executable))
+      throw Error(`Packaged app is missing its Windows executable: ${executable}`);
+  }
+  let controllerInstaller = path.join(resourcesDir, "app", "scripts", electronPlatformName === "win32" ? "install-controller.ps1" : "install-controller.sh");
+  if (!existsSync(controllerInstaller))
+    throw Error(`Packaged app is missing its controller installer: ${controllerInstaller}`);
   let packagedPiCli = path.join(resourcesDir, "app", "frontend", ".next", "standalone", "frontend", "node_modules", "@earendil-works", "pi-coding-agent", "dist", "cli.js");
   if (!existsSync(packagedPiCli))
     throw Error(`Packaged app is missing its Pi CLI: ${packagedPiCli}`);
@@ -2242,7 +2273,9 @@ var project_entry_default = afterPack, root5 = path11.resolve(path11.dirname(fil
   ["prepare-next", () => Promise.resolve().then(() => (init_prepare_next_build(), exports_prepare_next_build))],
   ["release-notes", () => Promise.resolve().then(() => (init_release_statement(), exports_release_statement))],
   ["self-test", async () => {
-    await Promise.resolve().then(() => (init_install_desktop_app_test(), exports_install_desktop_app_test)), await Promise.resolve().then(() => (init_release_notary_credentials_test(), exports_release_notary_credentials_test)), await Promise.resolve().then(() => (init_release_package_arguments_test(), exports_release_package_arguments_test));
+    if (process.platform !== "win32")
+      await Promise.resolve().then(() => (init_install_desktop_app_test(), exports_install_desktop_app_test));
+    await Promise.resolve().then(() => (init_release_notary_credentials_test(), exports_release_notary_credentials_test)), await Promise.resolve().then(() => (init_release_package_arguments_test(), exports_release_package_arguments_test));
   }],
   ["setup", async () => setupRepository()],
   ["sign-release", () => init_sign_desktop_release().then(() => exports_sign_desktop_release)],
@@ -2267,8 +2300,25 @@ function versionMeetsMinimum(actual, minimum) {
   }
   return true;
 }
+function platformInvocation(command, args3) {
+  if (process.platform !== "win32")
+    return [command, args3];
+  if (command === "bun") {
+    let candidates2 = [
+      path11.join(path11.dirname(process.execPath), "node_modules", "bun", "bin", "bun.exe"),
+      process.env["BUN_INSTALL"] ? path11.join(process.env["BUN_INSTALL"], "bin", "bun.exe") : null
+    ], executable = candidates2.find((candidate) => candidate && existsSync(candidate));
+    if (executable)
+      return [executable, args3];
+    return [command, args3];
+  }
+  if (command !== "npm" && command !== "npx")
+    return [command, args3];
+  let npmCli = process.env["npm_execpath"]?.trim(), cli = command === "npm" ? npmCli : npmCli ? path11.join(path11.dirname(npmCli), "npx-cli.js") : null, fallback = path11.join(path11.dirname(process.execPath), "node_modules", "npm", "bin", `${command}-cli.js`), script = cli && existsSync(cli) ? cli : fallback;
+  return [process.execPath, [script, ...args3]];
+}
 function requireTool(label, command, args3, minimum) {
-  let result = spawnSync4(command, args3, { cwd: root5, encoding: "utf8" });
+  let [resolvedCommand, resolvedArgs] = platformInvocation(command, args3), result = spawnSync4(resolvedCommand, resolvedArgs, { cwd: root5, encoding: "utf8" });
   if (result.error || result.status !== 0)
     throw Error(`${label} is required but unavailable`);
   let output4 = `${result.stdout ?? ""}${result.stderr ?? ""}`.trim(), actual = parsedVersion(output4);
@@ -2276,11 +2326,31 @@ function requireTool(label, command, args3, minimum) {
     throw Error(`${label} ${minimum.join(".")} or newer is required; found ${output4 || "unknown"}`);
   console.log(`${label}: ${actual.join(".")}`);
 }
+function requireToolCandidate(label, candidates2, minimum) {
+  let found = [];
+  for (let [command, args3] of candidates2) {
+    let [resolvedCommand, resolvedArgs] = platformInvocation(command, args3), result = spawnSync4(resolvedCommand, resolvedArgs, { cwd: root5, encoding: "utf8" });
+    if (result.error || result.status !== 0)
+      continue;
+    let output4 = `${result.stdout ?? ""}${result.stderr ?? ""}`.trim(), actual = parsedVersion(output4);
+    if (actual && versionMeetsMinimum(actual, minimum)) {
+      console.log(`${label}: ${actual.join(".")}`);
+      return;
+    }
+    if (output4)
+      found.push(output4);
+  }
+  throw Error(`${label} ${minimum.join(".")} or newer is required${found.length > 0 ? `; found ${found.join(", ")}` : " but unavailable"}`);
+}
 function doctor() {
   requireTool("Node.js", process.execPath, ["--version"], [22, 19, 0]);
   requireTool("npm", "npm", ["--version"], [10, 0, 0]);
   requireTool("Bun", "bun", ["--version"], [1, 3, 14]);
-  requireTool("Python", "python3", ["--version"], [3, 10, 0]);
+  requireToolCandidate("Python", [
+    ["python3", ["--version"]],
+    ["python", ["--version"]],
+    ["py", ["-3", "--version"]]
+  ], [3, 10, 0]);
   requireTool("Git", "git", ["--version"], [2, 0, 0]);
   console.log("Toolchain check passed");
 }
@@ -2292,16 +2362,16 @@ function setupRepository() {
   console.log("Repository setup complete");
 }
 function auditLayout() {
-  let expected = ["frontend/desktop/project.mjs", "scripts/install-controller.sh", "scripts/install-desktop-app.sh"], actual = readdirSync10(path11.join(root5, "scripts"), { withFileTypes: !0 }).filter((entry) => entry.isFile()).map((entry) => `scripts/${entry.name}`).sort(), executable = git(["ls-files", "-s"]).split("\n").filter((line) => line.startsWith("100755 ")).map((line) => line.split("\t")[1]).sort(), stale = ["frontend/scripts", "controller/scripts", "services/agent-runtime/scripts"].filter((directory) => existsSync(path11.join(root5, directory)));
-  if (JSON.stringify(actual) !== JSON.stringify(expected.slice(1)) || JSON.stringify(executable) !== JSON.stringify(expected) || stale.length > 0)
+  let expectedScripts = ["scripts/install-controller.ps1", "scripts/install-controller.sh", "scripts/install-desktop-app.sh", "scripts/project.mjs"], expectedExecutable = [".githooks/commit-msg", ".githooks/pre-commit", ".githooks/pre-push", "frontend/desktop/project.mjs", "scripts/install-controller.sh", "scripts/install-desktop-app.sh", "scripts/project.mjs"], actual = readdirSync10(path11.join(root5, "scripts"), { withFileTypes: !0 }).filter((entry) => entry.isFile()).map((entry) => `scripts/${entry.name}`).sort(), executable = git(["ls-files", "-s"]).split("\n").filter((line) => line.startsWith("100755 ")).map((line) => line.split("\t")[1]).sort(), stale = ["frontend/scripts", "controller/scripts", "services/agent-runtime/scripts"].filter((directory) => existsSync(path11.join(root5, directory)));
+  if (JSON.stringify(actual) !== JSON.stringify(expectedScripts) || JSON.stringify(executable) !== JSON.stringify(expectedExecutable) || stale.length > 0)
     throw Error(`Automation layout drifted: scripts=${actual.join(",")}; executable=${executable.join(",")}; stale=${stale.join(",")}`);
-  console.log("Automation layout passed: exactly three scripts");
+  console.log("Automation layout passed: exactly four scripts");
 }
 function git(args3, options = {}) {
   return execFileSync6("git", args3, { cwd: root5, encoding: "utf8", ...options }).trim();
 }
 function run3(command, args3, cwd = root5) {
-  let result = spawnSync4(command, args3, { cwd, stdio: "inherit" });
+  let [resolvedCommand, resolvedArgs] = platformInvocation(command, args3), result = spawnSync4(resolvedCommand, resolvedArgs, { cwd, stdio: "inherit" });
   if (result.error)
     throw result.error;
   if (result.status !== 0)
@@ -2365,8 +2435,9 @@ function setupHooks() {
   if (worktree.status !== 0 || worktree.stdout.trim() !== "true")
     return console.log("Skipping Git hook setup outside a worktree");
   git(["rev-parse", "--git-dir"]), git(["config", "core.hooksPath", ".githooks"]);
-  for (let name of readdirSync10(path11.join(root5, ".githooks")))
-    chmodSync2(path11.join(root5, ".githooks", name), 493);
+  if (process.platform !== "win32")
+    for (let name of readdirSync10(path11.join(root5, ".githooks")))
+      chmodSync2(path11.join(root5, ".githooks", name), 493);
 }
 var invoked = path11.basename(process.argv[1] ?? "");
 if (invoked === "commit-msg")

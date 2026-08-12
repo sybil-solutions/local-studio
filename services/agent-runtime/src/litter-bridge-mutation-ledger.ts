@@ -157,7 +157,8 @@ const entryKey = (identity: MutationIdentity): string =>
 const verifyOwnerOnly = (filepath: string, kind: "file" | "directory"): void => {
   const metadata = lstatSync(filepath);
   const validKind = kind === "file" ? metadata.isFile() : metadata.isDirectory();
-  if (!validKind || metadata.isSymbolicLink() || (metadata.mode & 0o077) !== 0) {
+  const unsafeMode = process.platform !== "win32" && (metadata.mode & 0o077) !== 0;
+  if (!validKind || metadata.isSymbolicLink() || unsafeMode) {
     throw new Error(`Litter mutation ledger ${kind} permissions are unsafe`);
   }
   const uid = process.getuid?.();
@@ -414,7 +415,14 @@ export function createLitterMutationLedger(
         .prepare(
           "UPDATE mutations SET state = 'dispatching', updated_at_ms = ?, expires_at_ms = ?, lease_owner = NULL, lease_token = NULL, lease_expires_at_ms = NULL, correlation_json = ? WHERE entry_key = ? AND state = 'reserved' AND lease_owner = ? AND lease_token = ?",
         )
-        .run(observedAt, observedAt + reconcileWindowMs, JSON.stringify(normalized), key, lease.ownerId, lease.token);
+        .run(
+          observedAt,
+          observedAt + reconcileWindowMs,
+          JSON.stringify(normalized),
+          key,
+          lease.ownerId,
+          lease.token,
+        );
       if (result.changes !== 1) throw new Error("Litter mutation lease was lost before dispatch");
     });
   };

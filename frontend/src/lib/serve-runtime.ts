@@ -21,4 +21,4 @@ export const defaultRuntimeForBackend = (backend: Backend): ServeRuntime =>
 export const isManagedServeRuntimeTarget = (backend: Backend, target: RuntimeTarget): boolean =>
   target.backend === backend &&
   target.kind === "venv" &&
-  Boolean(target.pythonPath?.includes(`/runtime/venvs/${backend}-latest/`));
+  Boolean(target.pythonPath?.replace(/\\/g, "/").includes(`/runtime/venvs/${backend}-latest/`));

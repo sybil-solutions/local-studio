@@ -1,5 +1,5 @@
 import { connect } from "node:net";
-import { hostname } from "node:os";
+import { hostname, platform } from "node:os";
 import { access, readFile } from "node:fs/promises";
 import { join, resolve, sep } from "node:path";
 import { Effect, Schema } from "effect";
@@ -19,6 +19,18 @@ import { registerUsageRoutes } from "./usage-routes";
 const SYSTEM_SERVICE_CHECK_HOST = "127.0.0.1";
 const SYSTEM_COMPAT_SERVICE_CHECK_TIMEOUT_MS = 500;
 const SYSTEM_DEFAULT_SERVICE_CHECK_TIMEOUT_MS = 1_000;
+
+export const resolveSystemEnvironmentHost = (
+  configuredHost: string,
+  runtimePlatform = platform(),
+  machineHostname = hostname(),
+): string => {
+  const normalizedHost = configuredHost.trim().toLowerCase();
+  const windowsLoopback =
+    runtimePlatform === "win32" &&
+    (normalizedHost === "127.0.0.1" || normalizedHost === "localhost");
+  return windowsLoopback ? configuredHost : machineHostname;
+};
 const PositiveNumberSchema = Schema.Number.pipe(
   Schema.check(Schema.isFinite(), Schema.isGreaterThan(0)),
 );
@@ -279,6 +291,7 @@ export const registerSystemRoutes = defineRoutes((app, context) => {
           });
 
           const runtime = yield* getSystemRuntimeInfo(context.config, current);
+          const environmentHost = resolveSystemEnvironmentHost(context.config.host);
 
           const payload: SystemConfigResponse = {
             config: {
@@ -295,9 +308,9 @@ export const registerSystemRoutes = defineRoutes((app, context) => {
             },
             services,
             environment: {
-              controller_url: `http://${hostname()}:${context.config.port}`,
-              inference_url: `http://${hostname()}:${context.config.inference_port}`,
-              frontend_url: `http://${hostname()}:3000`,
+              controller_url: `http://${environmentHost}:${context.config.port}`,
+              inference_url: `http://${environmentHost}:${context.config.inference_port}`,
+              frontend_url: `http://${environmentHost}:3000`,
             },
             runtime,
           };

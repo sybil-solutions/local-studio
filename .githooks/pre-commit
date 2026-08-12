@@ -1,1 +1,5 @@
-../scripts/project.mjs
+#!/usr/bin/env node
+import("../scripts/project.mjs").catch((error) => {
+  console.error(error);
+  process.exit(1);
+});

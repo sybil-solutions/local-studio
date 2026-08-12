@@ -137,6 +137,44 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  windows:
+    if: github.event_name != 'schedule'
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22.19.0
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      - name: Install repository dependencies
+        run: npm run setup
+      - name: Repository automation gate
+        run: npm run check:automation
+      - name: Controller checks and tests
+        working-directory: ./controller
+        run: bun run typecheck && bun run lint && bun run check && bun run test
+      - name: Agent runtime checks and tests
+        working-directory: ./services/agent-runtime
+        run: bun run check
+      - name: Frontend and desktop checks and tests
+        working-directory: ./frontend
+        run: npm run lint && npm run typecheck && npm run typecheck:desktop && npm run typecheck:extensions && npm run test
+      - name: Build frontend and desktop
+        working-directory: ./frontend
+        run: npm run desktop:build
+      - name: Build unsigned Windows package
+        working-directory: ./frontend
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        run: npx electron-builder --dir --win --x64 --config desktop/electron-builder.yml
+      - name: Smoke packaged Windows desktop
+        working-directory: ./frontend
+        run: |
+          $version = node -p "require('./package.json').version"
+          npm run desktop:smoke -- --app "${{ github.workspace }}\frontend\dist-desktop\win-unpacked\Local Studio.exe" --expected-version $version
+
   trufflehog:
     name: Secret Scanning (TruffleHog)
     runs-on: ubuntu-latest

@@ -138,7 +138,7 @@ export const modelMounts = (request: LaunchRequest): LaunchPlan["mounts"] =>
  *  loopback, because the controller proxies them and nothing else should connect. */
 export const serveAddress = (request: LaunchRequest, listenPort: number): string[] => [
   "--host",
-  request.runtime === "docker" ? "0.0.0.0" : "127.0.0.1",
+  request.runtime === "process" ? "127.0.0.1" : "0.0.0.0",
   "--port",
   String(listenPort),
 ];
@@ -192,5 +192,6 @@ export const plan = (
     mounts: modelMounts(request),
     devices: request.devices,
     health: parts.health,
+    ...(request.wslDistribution ? { wslDistribution: request.wslDistribution } : {}),
   };
 };

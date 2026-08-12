@@ -160,7 +160,18 @@ export function persistLitterPromptBoundary(input: {
   }
   const descriptor = openSync(sessionFile, constants.O_RDONLY);
   try {
-    fsyncSync(descriptor);
+    try {
+      fsyncSync(descriptor);
+    } catch (error) {
+      if (
+        process.platform !== "win32" ||
+        !(error instanceof Error) ||
+        !("code" in error) ||
+        error.code !== "EPERM"
+      ) {
+        throw error;
+      }
+    }
   } finally {
     closeSync(descriptor);
   }

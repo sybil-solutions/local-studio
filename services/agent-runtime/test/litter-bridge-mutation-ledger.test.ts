@@ -23,7 +23,7 @@ const directory = () => mkdtempSync(path.join(tmpdir(), "local-studio-litter-led
 const correlation = (dispatchId = "dispatch-1"): MutationCorrelation => ({
   dispatchId,
   sessionId: "session-1",
-  sessionFile: "/tmp/session-1.jsonl",
+  sessionFile: path.resolve(tmpdir(), "session-1.jsonl"),
   messageId: "message-1",
   contentHash: "b".repeat(64),
   baseRevision: 7,
@@ -57,7 +57,7 @@ test("mutation ledger persists principal-bound accepted results and exact status
     "owner-2",
   );
   assert.equal(otherPrincipal.kind, "reserved");
-  assert.equal(statSync(restarted.filepath).mode & 0o777, 0o600);
+  if (process.platform !== "win32") assert.equal(statSync(restarted.filepath).mode & 0o777, 0o600);
   restarted.close();
 });
 
@@ -200,15 +200,17 @@ test("mutation ledger fails closed on corruption and unsafe permissions", () => 
   writeFileSync(filepath, "{}\n", { mode: 0o600 });
   assert.throws(() => createLitterMutationLedger(dataDir, () => new Date(NOW)));
 
-  const permissionDir = directory();
-  const permissionLedger = createLitterMutationLedger(permissionDir, () => new Date(NOW));
-  const permissionFile = permissionLedger.filepath;
-  permissionLedger.close();
-  chmodSync(permissionFile, 0o644);
-  assert.throws(
-    () => createLitterMutationLedger(permissionDir, () => new Date(NOW)),
-    /permissions are unsafe/i,
-  );
+  if (process.platform !== "win32") {
+    const permissionDir = directory();
+    const permissionLedger = createLitterMutationLedger(permissionDir, () => new Date(NOW));
+    const permissionFile = permissionLedger.filepath;
+    permissionLedger.close();
+    chmodSync(permissionFile, 0o644);
+    assert.throws(
+      () => createLitterMutationLedger(permissionDir, () => new Date(NOW)),
+      /permissions are unsafe/i,
+    );
+  }
 });
 
 test("mutation ledger releases a poisoned dispatch after the reconciliation window", () => {

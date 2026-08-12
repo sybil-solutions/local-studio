@@ -7,8 +7,9 @@ const integerSchema = Schema.Number.check(Schema.isInt());
 const nullableStringSchema = Schema.Union([Schema.Null, Schema.String]);
 
 const serveRuntimeSchema = Schema.Struct({
-  kind: Schema.Literals(["managed_venv", "system", "docker", "binary"]),
+  kind: Schema.Literals(["managed_venv", "system", "docker", "binary", "wsl2"]),
   ref: Schema.String.check(Schema.isNonEmpty()),
+  binary: Schema.optional(Schema.String),
   label: Schema.optional(Schema.String),
 });
 

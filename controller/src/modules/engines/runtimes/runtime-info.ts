@@ -27,6 +27,7 @@ import {
   CUDA_UPGRADE_ENV,
   LLAMACPP_UPGRADE_ENV,
 } from "./upgrade-config";
+import { managedLlamaServerPath } from "./managed-llamacpp";
 
 const SYSTEM_RUNTIME_CACHE_TTL_MS = 30_000;
 let systemRuntimeCache: { expiresAt: number; value: SystemRuntimeInfo } | null = null;
@@ -68,7 +69,7 @@ export const getSystemRuntimeInfo = (
     return yield* Fiber.join(fiber);
   });
 
-export const shutdownRuntimeInfo = (): Effect.Effect<void> =>
+export const clearRuntimeInfoCache = (): Effect.Effect<void> =>
   Effect.suspend(() => {
     const fiber = systemRuntimeInFlight;
     systemRuntimeInFlight = null;
@@ -190,10 +191,14 @@ const parseLlamaVersion = (output: string): string | null => {
 
 export const getLlamacppRuntimeInfo = (config: Config): Effect.Effect<RuntimeBackendInfo> =>
   Effect.gen(function* () {
-    const configured = config.llama_bin || "llama-server";
+    const configured = config.llama_bin?.trim() || null;
+    const managed = managedLlamaServerPath(config);
+    const candidate = configured ?? "llama-server";
     const resolved =
-      resolveBinary(configured) ?? (existsSync(configured) ? resolve(configured) : null);
-    const binary = resolved ?? configured;
+      resolveBinary(candidate) ??
+      (existsSync(candidate) ? resolve(candidate) : null) ??
+      (!configured && existsSync(managed) ? managed : null);
+    const binary = resolved ?? candidate;
     const versionResult = yield* runCommandEffect(binary, ["--version"]);
     if (versionResult.status !== 0) {
       const helpResult = yield* runCommandEffect(binary, ["--help"]);

@@ -2,6 +2,7 @@ import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { delimiter, join, resolve } from "node:path";
 import type { Readable } from "node:stream";
 import { Effect } from "effect";
+import { terminateChildProcess } from "./process-platform";
 
 export type CommandResult = {
   status: number | null;
@@ -142,10 +143,10 @@ export const runCommandAsyncEffect = (
     };
     const terminate = (): void => {
       if (closed) return;
-      child.kill("SIGTERM");
+      terminateChildProcess(child, false);
       if (!forceKillTimer) {
         forceKillTimer = setTimeout(() => {
-          child.kill("SIGKILL");
+          terminateChildProcess(child, true);
           confirmKillTimer = setTimeout(
             () =>
               complete({

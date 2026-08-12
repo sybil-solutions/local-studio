@@ -3,10 +3,10 @@
 import { Button, Checkbox } from "@/ui";
 import { SettingsGroup, SettingsNotice } from "@/features/settings/settings-ui";
 import {
-  MANAGED_RUNTIME_BACKENDS,
   ManagedRuntimeInstallRows,
   RuntimeTargetRows,
   isManagedRuntimeTarget,
+  managedRuntimeBackendsFor,
   type ManagedRuntimeInstallBackend,
 } from "@/features/settings/runtime-targets";
 import type { EngineJob, RuntimeTarget, StudioDiagnostics } from "@/lib/types";
@@ -37,7 +37,7 @@ export function StepHardware({
   const managedBackends =
     diagnostics?.platform === "darwin" && diagnostics.arch === "arm64"
       ? (["mlx"] as const)
-      : MANAGED_RUNTIME_BACKENDS;
+      : managedRuntimeBackendsFor(runtimeTargets);
   const visibleTargets = runtimeTargets
     .filter(
       (target) =>

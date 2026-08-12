@@ -90,10 +90,10 @@ const splitSmiLines = (stdout: string): string[] =>
     .map((line) => line.trim())
     .filter(Boolean);
 
-const parseNvidiaSmiGpuOutput = (stdout: string): GpuInfo[] =>
+export const parseNvidiaSmiGpuOutput = (stdout: string): GpuInfo[] =>
   splitSmiLines(stdout).map(parseNvidiaSmiGpuLine);
 
-const parseNvidiaSmiDriverVersion = (stdout: string): string | null => {
+export const parseNvidiaSmiDriverVersion = (stdout: string): string | null => {
   const firstLine = splitSmiLines(stdout)[0];
   if (!firstLine) return null;
   const driver = firstLine.split(",")[NVIDIA_SMI_GPU_FIELDS.length]?.trim();

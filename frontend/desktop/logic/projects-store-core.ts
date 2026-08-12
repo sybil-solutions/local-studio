@@ -73,10 +73,21 @@ function isExistingDirectory(candidate: string): boolean {
   }
 }
 
-function basenameOf(candidate: string): string {
-  const trimmed = candidate.replace(/\/+$/, "");
-  const segments = trimmed.split("/").filter(Boolean);
-  return segments[segments.length - 1] || trimmed || candidate;
+type PathApi = Pick<typeof path, "basename" | "normalize" | "parse" | "sep">;
+
+export function projectPathParts(
+  candidate: string,
+  pathApi: PathApi = path,
+): {
+  normalizedPath: string;
+  name: string;
+} {
+  let normalizedPath = pathApi.normalize(candidate.trim());
+  const root = pathApi.parse(normalizedPath).root;
+  while (normalizedPath !== root && normalizedPath.endsWith(pathApi.sep)) {
+    normalizedPath = normalizedPath.slice(0, -1);
+  }
+  return { normalizedPath, name: pathApi.basename(normalizedPath) || normalizedPath };
 }
 
 function gitBranchFor(projectPath: string): string | null {
@@ -134,19 +145,21 @@ export function createProjectsStore(options: ProjectsStoreOptions): ProjectsStor
   }
 
   function addProject(rawPath: string): ProjectEntry {
-    const trimmed = rawPath.trim().replace(/\/+$/, "") || rawPath.trim();
-    if (!trimmed) throw new Error(emptyPathMessage);
-    if (!isExistingDirectory(trimmed)) {
-      throw new Error(`Path is not a directory: ${trimmed}`);
+    if (!rawPath.trim()) throw new Error(emptyPathMessage);
+    const { normalizedPath, name } = projectPathParts(rawPath);
+    if (!isExistingDirectory(normalizedPath)) {
+      throw new Error(`Path is not a directory: ${normalizedPath}`);
     }
     const filePath = projectsFilePath();
     const document = readDocument(filePath);
-    const existing = document.projects.find((entry) => entry.path === trimmed);
+    const existing = document.projects.find(
+      (entry) => projectPathParts(entry.path).normalizedPath === normalizedPath,
+    );
     if (existing) return withMeta(existing);
     const record: ProjectRecord = {
       id: newProjectId(),
-      name: basenameOf(trimmed),
-      path: trimmed,
+      name,
+      path: normalizedPath,
       addedAt: new Date().toISOString(),
     };
     writeDocument(filePath, { projects: [record, ...document.projects] });

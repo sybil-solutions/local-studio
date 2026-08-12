@@ -34,7 +34,9 @@ const image = (host: HostProfile): string | null => {
 /** The universal fallback: the only engine that runs natively on every OS and every
  *  accelerator we support, which is why it is the migration's pilot. */
 const supports = (host: HostProfile): EngineSupport =>
-  host.dockerGpu && host.platform !== "darwin" ? supported("process", "docker") : supported("process");
+  host.dockerGpu && host.platform !== "darwin" && host.platform !== "win32"
+    ? supported("process", "docker")
+    : supported("process");
 
 export const llamacpp: ComputeEngineSpec = {
   id: "llamacpp",
