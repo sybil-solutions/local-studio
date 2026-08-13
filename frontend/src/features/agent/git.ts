@@ -122,8 +122,6 @@ export async function runGitAction(cwd: string, action: GitAction): Promise<GitS
   if (action.action === "init") await git(cwd, ["init"]);
   if (action.action === "checkout")
     await git(cwd, ["switch", "--", assertNotOption(action.ref, "ref")]);
-  if (action.action === "createBranch")
-    await git(cwd, ["switch", "-c", assertNotOption(action.branch, "branch")]);
   if (action.action === "commit") {
     await git(cwd, ["add", "--", ...(action.paths.length ? action.paths : ["."])]);
     await git(cwd, ["commit", "-m", action.message]);

@@ -60,6 +60,12 @@ class BrowserHost {
     return (await this.page(pageId)).readState();
   }
 
+  async peekState(): Promise<PageState | null> {
+    const page = this.activeId ? this.pages.get(this.activeId) : undefined;
+    if (!page || page.closed) return null;
+    return page.readState();
+  }
+
   async goBack(pageId?: string): Promise<void> {
     await (await this.page(pageId)).goBack(NAVIGATION_TIMEOUT_MS);
   }
@@ -144,7 +150,7 @@ export type MouseInput = {
   deltaY?: number;
 };
 
-export type KeyInput = { type: "down" | "up" | "char"; key: string; code: string; text?: string };
+export type KeyInput = { type: "down" | "up"; key: string; code: string };
 
 const clampDelta = (value: number): number => {
   if (!Number.isFinite(value)) return 0;

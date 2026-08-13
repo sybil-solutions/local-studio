@@ -53,7 +53,7 @@ describe("request boundary", () => {
   });
 
   test("allows a non-browser server-to-server mutation with no CSRF proof", () => {
-    // The pi tool extensions (browser_*, plan_*) POST from Node: no cookie jar,
+    // The pi tool extensions (browser_*) POST from Node: no cookie jar,
     // no Origin, no Sec-Fetch-Site. They must not be treated as forgeable.
     assert.deepEqual(
       evaluateRequestBoundary(

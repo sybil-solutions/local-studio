@@ -112,7 +112,7 @@ function rejectedOrigin(
 
 /** CSRF only defends against a *browser* replaying ambient credentials from
  *  another origin. Our own server-to-server callers (the pi tool extensions:
- *  browser_*, plan_*) POST from Node with no cookie jar and no origin, so they
+ *  browser_*) POST from Node with no cookie jar and no origin, so they
  *  could never satisfy a double-submit token — and every browser attaches at
  *  least one of Origin/Sec-Fetch-Site to a cross-origin mutation, so the
  *  absence of both is proof this is not a browser. Skipping the token check

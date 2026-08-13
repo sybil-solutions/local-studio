@@ -10,26 +10,42 @@ import {
   type DiffFile,
   type DiffViewMode,
 } from "@/features/agent/ui/git-diff-panel-model";
-import { GitPanelHeader, GitWorkflowBar } from "@/features/agent/ui/git-diff-panel-workflow";
+import {
+  GitPanelHeader,
+  GitWorkflowBar,
+  PrSection,
+  loadPr,
+  mergePr,
+  type MergeMethod,
+  type PrPayload,
+} from "@/features/agent/ui/git-diff-panel-workflow";
 import { DiffFileList } from "@/features/agent/ui/git-diff-panel-diff-view";
 
 export function GitDiffPanel({ cwd }: { cwd: string | null }) {
   const [payload, setPayload] = useState<(Partial<GitState> & { error?: string }) | null>(null);
+  const [prPayload, setPrPayload] = useState<PrPayload | null>(null);
   const [loading, setLoading] = useState(false);
-  const [draftBranch, setDraftBranch] = useState("");
+  const [merging, setMerging] = useState(false);
+  const [mergeError, setMergeError] = useState<string | null>(null);
   const [commitMessage, setCommitMessage] = useState("");
   const [viewMode, setViewMode] = useState<DiffViewMode>("unified");
 
   const load = useCallback(async () => {
-    if (!cwd) return setPayload(null);
-    setLoading(true);
-    try {
-      setPayload(await loadGitState(cwd));
-    } catch (error) {
-      setPayload({ error: error instanceof Error ? error.message : "Failed to load git state" });
-    } finally {
-      setLoading(false);
+    if (!cwd) {
+      setPayload(null);
+      setPrPayload(null);
+      return;
     }
+    setLoading(true);
+    setMergeError(null);
+    const [git, pr] = await Promise.allSettled([loadGitState(cwd), loadPr(cwd)]);
+    setPayload(
+      git.status === "fulfilled"
+        ? git.value
+        : { error: git.reason instanceof Error ? git.reason.message : "Failed to load git state" },
+    );
+    setPrPayload(pr.status === "fulfilled" ? pr.value : null);
+    setLoading(false);
   }, [cwd]);
 
   const run = useCallback(
@@ -38,7 +54,6 @@ export function GitDiffPanel({ cwd }: { cwd: string | null }) {
       setLoading(true);
       try {
         setPayload(await runGitAction(cwd, action));
-        if (action.action === "createBranch") setDraftBranch("");
         if (action.action === "commit") setCommitMessage("");
       } catch (error) {
         setPayload((current) => ({
@@ -52,7 +67,26 @@ export function GitDiffPanel({ cwd }: { cwd: string | null }) {
     [cwd],
   );
 
-  useGitDiffPanelEffects(load);
+  const merge = useCallback(
+    async (method: MergeMethod) => {
+      if (!cwd || !prPayload?.pr) return;
+      setMerging(true);
+      setMergeError(null);
+      try {
+        await mergePr(cwd, prPayload.pr.number, method);
+        await load();
+      } catch (error) {
+        setMergeError(error instanceof Error ? error.message : "Merge failed");
+      } finally {
+        setMerging(false);
+      }
+    },
+    [cwd, prPayload?.pr, load],
+  );
+
+  useMountSubscription(() => {
+    void load();
+  }, [load]);
   const files = useMemo(() => parseUnifiedDiff(payload?.diff ?? ""), [payload?.diff]);
 
   return (
@@ -61,11 +95,15 @@ export function GitDiffPanel({ cwd }: { cwd: string | null }) {
       <GitWorkflowBar
         payload={payload}
         loading={loading}
-        draftBranch={draftBranch}
         commitMessage={commitMessage}
-        onDraftBranch={setDraftBranch}
         onCommitMessage={setCommitMessage}
         onRun={run}
+      />
+      <PrSection
+        pr={prPayload?.pr ?? null}
+        merging={merging}
+        mergeError={mergeError}
+        onMerge={merge}
       />
       <GitDiffPanelBody
         cwd={cwd}
@@ -144,12 +182,6 @@ function EmptyDiffPanel({ loading, status }: { loading: boolean; status: string[
       ) : null}
     </div>
   );
-}
-
-function useGitDiffPanelEffects(load: () => Promise<void>): void {
-  useMountSubscription(() => {
-    void load();
-  }, [load]);
 }
 
 async function loadGitState(cwd: string): Promise<GitState> {

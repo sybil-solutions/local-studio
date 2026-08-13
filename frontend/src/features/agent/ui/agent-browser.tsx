@@ -1,19 +1,6 @@
 "use client";
 
-/**
- * Embedded browser pane for the agent surface.
- *
- * Two surfaces, switched by a toggle on the toolbar:
- *
- * 1. Live mode (default in Electron) — renders the page through `<webview>`.
- *    Auto-detects "blank" (empty body / failed navigation) and falls back to
- *    Reading mode without user intervention.
- * 2. Reading mode (default in dev) — pulls the page through
- *    `/api/agent/browser/fetch`, strips scripts/styles, and renders clean
- *    text with markdown links. Always works because we're not relying on the
- *    upstream's CSP/X-Frame-Options.
- */
-import { useCallback, useRef, useState, type FormEvent } from "react";
+import { useCallback, useState, type FormEvent } from "react";
 import { ArrowLeftIcon, ArrowRightIcon, CloseIcon, ReloadIcon } from "@/ui/icons";
 import { DEFAULT_BROWSER_URL } from "@/features/agent/tools/persistence";
 import {
@@ -22,27 +9,12 @@ import {
 } from "@/features/agent/ui/agent-browser-screencast";
 import {
   useAgentBrowserEffects,
+  useBrowserLiveStateSync,
   useLocalhostSitesEffects,
   type LocalhostSite,
 } from "@/features/agent/ui/agent-browser-effects";
 import { LocalhostStartPage } from "@/features/agent/ui/agent-browser-start-page";
 import { ReadingView, type ReadablePage } from "@/features/agent/ui/agent-browser-reading-view";
-
-type WebviewElement = HTMLElement & {
-  goBack: () => void;
-  goForward: () => void;
-  reload: () => void;
-  canGoBack: () => boolean;
-  canGoForward: () => boolean;
-  src: string;
-  loadURL: (url: string) => Promise<void>;
-  getURL: () => string;
-  getTitle: () => string;
-  executeJavaScript: (script: string, userGesture?: boolean) => Promise<unknown>;
-  capturePage: () => Promise<{ toDataURL: () => string }>;
-  addEventListener: HTMLElement["addEventListener"];
-  removeEventListener: HTMLElement["removeEventListener"];
-};
 
 type Props = {
   url: string;
@@ -51,7 +23,6 @@ type Props = {
   onNavigate: (value: string) => void;
   onLocationChange: (value: string) => void;
   onClose: () => void;
-  isElectron: boolean;
   /** Screencast polling pauses while the hosting panel is hidden. */
   visible?: boolean;
 };
@@ -63,13 +34,8 @@ export function AgentBrowser({
   onNavigate,
   onLocationChange,
   onClose,
-  isElectron,
   visible = true,
 }: Props) {
-  const webviewRef = useRef<WebviewElement | null>(null);
-  const [initialWebviewUrl] = useState(url);
-  // Live mode is the server-side screencast; it is the default everywhere and
-  // falls back to reading mode only when the host has no Chromium.
   const [readingMode, setReadingMode] = useState(false);
   const [liveUnavailable, setLiveUnavailable] = useState<string | null>(null);
   const [navState, setNavState] = useState<BrowserPaneState | null>(null);
@@ -108,11 +74,7 @@ export function AgentBrowser({
   useAgentBrowserEffects({
     url,
     readingMode,
-    isElectron,
-    webviewRef,
     fetchReadable,
-    onLocationChange,
-    onNavState: setNavState,
     enabled: !showStartPage,
   });
   useLocalhostSitesEffects({
@@ -121,26 +83,21 @@ export function AgentBrowser({
     onSitesChange: setLocalSites,
     onErrorChange: setLocalSitesError,
   });
+  const adoptLiveUrl = useCallback(
+    (liveUrl: string) => {
+      setHasOpenedUrl(true);
+      onLocationChange(liveUrl);
+    },
+    [onLocationChange],
+  );
+  useBrowserLiveStateSync({
+    enabled: showStartPage && visible,
+    onLiveUrl: adoptLiveUrl,
+  });
 
   const postLiveVerb = useCallback((verb: "back" | "forward" | "reload") => {
     void fetch(`/api/agent/browser/${verb}`, { method: "POST" }).catch(() => undefined);
   }, []);
-  const handleBack = () => {
-    if (readingMode) return;
-    if (isElectron) {
-      webviewRef.current?.goBack();
-      return;
-    }
-    postLiveVerb("back");
-  };
-  const handleForward = () => {
-    if (readingMode) return;
-    if (isElectron) {
-      webviewRef.current?.goForward();
-      return;
-    }
-    postLiveVerb("forward");
-  };
   const handleReload = () => {
     if (showStartPage) {
       setLocalSites([]);
@@ -160,10 +117,6 @@ export function AgentBrowser({
     }
     if (readingMode) {
       void fetchReadable(url);
-      return;
-    }
-    if (isElectron) {
-      webviewRef.current?.reload();
       return;
     }
     postLiveVerb("reload");
@@ -187,7 +140,7 @@ export function AgentBrowser({
       >
         <button
           type="button"
-          onClick={handleBack}
+          onClick={() => !readingMode && postLiveVerb("back")}
           disabled={readingMode || navState?.canGoBack === false}
           className="rounded p-1 text-(--dim) hover:bg-(--hover) hover:text-(--fg) disabled:opacity-30"
           title="Back"
@@ -197,7 +150,7 @@ export function AgentBrowser({
         </button>
         <button
           type="button"
-          onClick={handleForward}
+          onClick={() => !readingMode && postLiveVerb("forward")}
           disabled={readingMode || navState?.canGoForward === false}
           className="rounded p-1 text-(--dim) hover:bg-(--hover) hover:text-(--fg) disabled:opacity-30"
           title="Forward"
@@ -281,25 +234,6 @@ export function AgentBrowser({
             loading={readingLoading}
             onLinkClick={onNavigate}
           />
-        ) : isElectron ? (
-          // Desktop: a real embedded Chromium webview. Loads file://, localhost,
-          // and the public web directly — the same surface the agent drives.
-          (() => {
-            type AnyTag = "webview";
-            const Tag = "webview" as AnyTag;
-            return (
-              <Tag
-                ref={(node: WebviewElement | null) => {
-                  webviewRef.current = node;
-                }}
-                src={initialWebviewUrl}
-                // @ts-expect-error — Electron-specific attribute.
-                allowpopups="true"
-                className="size-full"
-                style={{ width: "100%", height: "100%", display: "flex" }}
-              />
-            );
-          })()
         ) : (
           <ScreencastSurface
             url={url}

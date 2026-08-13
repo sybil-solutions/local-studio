@@ -1,24 +1,15 @@
 "use client";
 
-import {
-  useCallback,
-  useMemo,
-  useState,
-  type ComponentType,
-  type KeyboardEvent,
-} from "react";
+import { useCallback, useMemo, useState, type ComponentType, type KeyboardEvent } from "react";
 import {
   Activity,
   FolderTree,
   GitBranch,
-  GitPullRequest,
   Globe2,
-  ListChecks,
   MessageSquarePlus,
   PanelRight,
   PanelRightFilled,
   Plus,
-  ScanSearch,
   TerminalSquare,
   type LucideIcon,
 } from "@/ui/icon-registry";
@@ -49,11 +40,7 @@ import {
   terminalOwnerLabel,
   type TerminalOwner,
 } from "@/features/agent/terminal-owners";
-import {
-  ComputerTabPanel,
-  type SideChatDraft,
-  type SideChatTabsUpdater,
-} from "@/features/agent/ui/computer-tab-panel";
+import { ComputerTabPanel, type SideChatTabsUpdater } from "@/features/agent/ui/computer-tab-panel";
 import { PersistentTerminals } from "@/features/agent/ui/persistent-terminals";
 import type { WorkspaceHandles } from "@/features/agent/ui/use-workspace";
 
@@ -134,7 +121,6 @@ export function AgentBrowserPanel({
   const sideChatSession =
     sessions.find((session) => session.id === sideChatSeed.id) ?? sideChatSeed;
   const { registerComputerAside, startComputerResize } = handles;
-  const isElectron = typeof navigator !== "undefined" && /electron/i.test(navigator.userAgent);
   const terminalOwner = useMemo(
     () => terminalOwnerFor(activeProject, focusedSession),
     [activeProject, focusedSession],
@@ -193,35 +179,20 @@ export function AgentBrowserPanel({
       body: JSON.stringify({ url: accepted }),
     }).catch(() => undefined);
   };
-  const openSideChat = useCallback(
-    (draft?: SideChatDraft) => {
-      if (draft) {
-        const next = createSideChatSession(activeProject ?? null, focusedSession, activeModelId);
-        const drafted = {
-          ...next,
-          title: draft.title.trim().slice(0, 80) || "Plan task",
-          input: draft.input,
-        };
-        setSideChatSeed(drafted);
-        handles.updateDetachedSession(drafted, () => drafted);
-        tools.setComputerTab("side-chat");
-        return;
-      }
-      handles.updateDetachedSession(sideChatSeed, (current) =>
-        current.messages.length
-          ? current
-          : {
-              ...current,
-              status: current.status === "loading" ? "idle" : current.status,
-              cwd: focusedSession?.cwd ?? activeProject?.path,
-              projectId: focusedSession?.projectId ?? activeProject?.id,
-              modelId: current.modelId || focusedSession?.modelId || activeModelId,
-            },
-      );
-      tools.setComputerTab("side-chat");
-    },
-    [activeModelId, activeProject, focusedSession, handles, sideChatSeed, tools],
-  );
+  const openSideChat = useCallback(() => {
+    handles.updateDetachedSession(sideChatSeed, (current) =>
+      current.messages.length
+        ? current
+        : {
+            ...current,
+            status: current.status === "loading" ? "idle" : current.status,
+            cwd: focusedSession?.cwd ?? activeProject?.path,
+            projectId: focusedSession?.projectId ?? activeProject?.id,
+            modelId: current.modelId || focusedSession?.modelId || activeModelId,
+          },
+    );
+    tools.setComputerTab("side-chat");
+  }, [activeModelId, activeProject, focusedSession, handles, sideChatSeed, tools]);
   const updateSideChatTabs = useCallback(
     (nextTabsOrUpdater: SideChatTabsUpdater) => {
       handles.updateDetachedSession(sideChatSeed, (current) => {
@@ -301,7 +272,6 @@ export function AgentBrowserPanel({
         gitSummary={gitSummary}
         models={models}
         modelsLoading={modelsLoading}
-        isElectron={isElectron}
         onCloseSideChat={closeSideChat}
         onCompactSession={handles.compactFocusedSession}
         onNavigateBrowser={navigateBrowser}
@@ -329,10 +299,7 @@ const TAB_LABELS: Record<ComputerTab, string> = {
   "side-chat": "Side chat",
   browser: "Browser",
   files: "Filesystem",
-  diff: "Git",
-  pr: "PR",
-  plan: "Plan",
-  inspector: "Inspector",
+  diff: "Review",
   terminal: "Terminal",
 };
 
@@ -349,35 +316,22 @@ const TAB_OPTIONS: Array<{
     icon: MessageSquarePlus,
   },
   {
-    tab: "plan",
-    label: "Plan",
-    description: "Plan and to-do checklist",
-    icon: ListChecks,
-  },
-  {
     tab: "browser",
     label: "Browser",
     description: "Web, localhost, and file previews",
     icon: Globe2,
   },
-  { tab: "diff", label: "Git", description: "Diffs, branch, commit, and push", icon: GitBranch },
   {
-    tab: "pr",
-    label: "PR",
-    description: "Pull request status and merge",
-    icon: GitPullRequest,
+    tab: "diff",
+    label: "Review",
+    description: "Diff, commit, push, and PR",
+    icon: GitBranch,
   },
   {
     tab: "files",
     label: "Filesystem",
     description: "Project files and rendered previews",
     icon: FolderTree,
-  },
-  {
-    tab: "inspector",
-    label: "Inspector",
-    description: "Per-turn tools, files, and context",
-    icon: ScanSearch,
   },
   { tab: "terminal", label: "Terminal", description: "Project shell", icon: TerminalSquare },
 ];

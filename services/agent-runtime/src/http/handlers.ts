@@ -101,7 +101,6 @@ function ensurePromptRuntimeEffect(
         browserToolEnabled: turn.browserToolEnabled,
         browserSessionId: turn.browserSessionId,
         browserBackend: turn.browserBackend,
-        planSessionId: resolved.sessionId,
         skills: turn.skills,
         promptTemplates: turn.promptTemplates,
       }),

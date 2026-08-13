@@ -12,7 +12,6 @@ import path from "node:path";
 // omitted (they are large and rebuild themselves).
 const MIRRORED_ENTRIES = [
   "pi-agent",
-  "agent-plan",
   "agent-session-metadata.json",
   "automations",
   "goals",

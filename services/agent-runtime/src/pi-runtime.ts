@@ -393,7 +393,7 @@ class PiSdkSession extends EventEmitter implements PiAgentSession {
                             // Vision guidance is APPENDED, not substituted. This branch used to
                             // set noExtensions/noSkills/noContextFiles and replace the whole
                             // system prompt, which silently disabled every first-party extension
-                            // (session goal, artifact policy, plan, subagents) on any
+                            // (session goal, artifact policy, subagents) on any
                             // vision-capable model — i.e. on the primary model.
                             ...(selectedModel.vision
                               ? {

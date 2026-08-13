@@ -22,10 +22,7 @@ export const COMPUTER_TAB_IDS = [
   "browser",
   "files",
   "diff",
-  "pr",
   "terminal",
-  "plan",
-  "inspector",
 ] as const;
 
 export type ComputerTab = (typeof COMPUTER_TAB_IDS)[number];

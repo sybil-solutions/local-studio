@@ -136,10 +136,10 @@ async function runStream(
   let attempts = 0;
   while (!state.closed && attempts < MAX_RECONNECT_ATTEMPTS) {
     try {
-      const response = await fetch(
-        `/api/agent/terminal/pty/stream?id=${encodeURIComponent(id)}`,
-        { signal: state.abort.signal, cache: "no-store" },
-      );
+      const response = await fetch(`/api/agent/terminal/pty/stream?id=${encodeURIComponent(id)}`, {
+        signal: state.abort.signal,
+        cache: "no-store",
+      });
       if (!response.ok || !response.body) throw new Error(`stream ${response.status}`);
       attempts = 0;
       const reader = response.body.getReader();

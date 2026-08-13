@@ -1,5 +1,3 @@
-import { useRef, type Dispatch, type RefObject, type SetStateAction } from "react";
-import type { BrowserPaneState } from "@/features/agent/ui/agent-browser-screencast";
 import { useMountSubscription } from "@/hooks/use-mount-subscription";
 
 export type LocalhostSite = {
@@ -13,9 +11,9 @@ export type LocalhostSite = {
 
 type UseLocalhostSitesEffectsParams = {
   enabled: boolean;
-  onLoadingChange: Dispatch<SetStateAction<boolean>>;
-  onSitesChange: Dispatch<SetStateAction<LocalhostSite[]>>;
-  onErrorChange: Dispatch<SetStateAction<string | null>>;
+  onLoadingChange: (loading: boolean) => void;
+  onSitesChange: (sites: LocalhostSite[]) => void;
+  onErrorChange: (error: string | null) => void;
 };
 
 export function useLocalhostSitesEffects({
@@ -42,9 +40,7 @@ export function useLocalhostSitesEffects({
         }
       })
       .finally(() => {
-        if (!cancelled) {
-          onLoadingChange(false);
-        }
+        if (!cancelled) onLoadingChange(false);
       });
     return () => {
       cancelled = true;
@@ -52,107 +48,53 @@ export function useLocalhostSitesEffects({
   }, [enabled, onErrorChange, onLoadingChange, onSitesChange]);
 }
 
-type BrowserWebview = HTMLElement & {
-  executeJavaScript: (script: string, userGesture?: boolean) => Promise<unknown>;
-  getURL: () => string;
-  loadURL: (url: string) => Promise<void>;
-  getTitle?: () => string;
-  canGoBack?: () => boolean;
-  canGoForward?: () => boolean;
-};
-
 type UseAgentBrowserEffectsParams = {
   url: string;
   readingMode: boolean;
-  isElectron: boolean;
-  webviewRef: RefObject<BrowserWebview | null>;
   fetchReadable: (target: string) => Promise<void>;
-  onLocationChange?: (value: string) => void;
-  onNavState?: (state: BrowserPaneState) => void;
   enabled?: boolean;
 };
-
-export const shouldLoadBrowserUrl = (desired: string, current: string, observed: string): boolean =>
-  Boolean(desired && desired !== observed && desired !== current);
-
-export const shouldSyncBrowserLocation = (
-  desired: string,
-  observed: string,
-  current: string,
-): boolean => desired === observed || current === desired;
 
 export function useAgentBrowserEffects({
   url,
   readingMode,
-  isElectron,
-  webviewRef,
   fetchReadable,
-  onLocationChange,
-  onNavState,
   enabled = true,
 }: UseAgentBrowserEffectsParams): void {
-  const observedUrl = useRef(url);
-
   useMountSubscription(() => {
     if (enabled && url && readingMode) {
       void fetchReadable(url);
     }
   }, [enabled, fetchReadable, readingMode, url]);
+}
 
+const LIVE_STATE_POLL_MS = 2_000;
+
+export function useBrowserLiveStateSync({
+  enabled,
+  onLiveUrl,
+}: {
+  enabled: boolean;
+  onLiveUrl: (url: string) => void;
+}): void {
   useMountSubscription(() => {
-    if (!enabled || !isElectron || readingMode) return;
-    const webview = webviewRef.current;
-    if (!webview) return;
-    const navigate = () => {
-      if (typeof webview.getURL !== "function" || typeof webview.loadURL !== "function") return;
+    if (!enabled) return;
+    let cancelled = false;
+    const poll = async () => {
       try {
-        const current = webview.getURL();
-        if (shouldLoadBrowserUrl(url, current, observedUrl.current)) {
-          void webview
-            .loadURL(url)
-            .then(() => {
-              const loaded = webview.getURL();
-              observedUrl.current = loaded;
-              if (loaded) onLocationChange?.(loaded);
-            })
-            .catch(() => undefined);
-        }
+        const response = await fetch("/api/agent/browser/state", { cache: "no-store" });
+        const payload = (await response.json()) as { ok?: boolean; data?: { url?: string } };
+        const liveUrl = payload.ok ? (payload.data?.url ?? "") : "";
+        if (!cancelled && liveUrl && liveUrl !== "about:blank") onLiveUrl(liveUrl);
       } catch {
         return;
       }
     };
-    navigate();
-    webview.addEventListener("dom-ready", navigate as EventListener);
-    return () => webview.removeEventListener("dom-ready", navigate as EventListener);
-  }, [enabled, isElectron, onLocationChange, readingMode, url, webviewRef]);
-
-  useMountSubscription(() => {
-    if (!enabled || !isElectron || readingMode) return;
-    const webview = webviewRef.current;
-    if (!webview) return;
-    const sync = () => {
-      try {
-        const current = webview.getURL();
-        if (!shouldSyncBrowserLocation(url, observedUrl.current, current)) return;
-        observedUrl.current = current;
-        if (current) onLocationChange?.(current);
-        onNavState?.({
-          url: current || url,
-          title: typeof webview.getTitle === "function" ? webview.getTitle() : "",
-          canGoBack: typeof webview.canGoBack === "function" ? webview.canGoBack() : false,
-          canGoForward: typeof webview.canGoForward === "function" ? webview.canGoForward() : false,
-        });
-      } catch {
-        // Ignore transient webview state while navigating.
-      }
-    };
-    webview.addEventListener("did-navigate", sync as EventListener);
-    webview.addEventListener("did-navigate-in-page", sync as EventListener);
-    webview.addEventListener("did-stop-loading", sync as EventListener);
+    void poll();
+    const timer = setInterval(() => void poll(), LIVE_STATE_POLL_MS);
     return () => {
-      webview.removeEventListener("did-navigate", sync as EventListener);
-      webview.removeEventListener("did-navigate-in-page", sync as EventListener);
-      webview.removeEventListener("did-stop-loading", sync as EventListener);
+      cancelled = true;
+      clearInterval(timer);
     };
-  }, [enabled, isElectron, onLocationChange, onNavState, readingMode, url, webviewRef]);
+  }, [enabled, onLiveUrl]);
 }

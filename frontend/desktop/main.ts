@@ -18,6 +18,10 @@ import { isHttpUrl } from "./helpers/url";
 import { createMainWindow } from "./logic/window-manager";
 import { registerNavigationPolicy } from "./logic/security";
 import { startFrontendServer, stopFrontendServer, type ServerHandle } from "./logic/app-server";
+import {
+  resolveFrontendRestartUrl,
+  shouldReloadAfterFrontendRestart,
+} from "./logic/frontend-restart";
 import { getUpdateState, initializeAutoUpdates, startUpdate } from "./logic/update-manager";
 import { deployController } from "./logic/controller-deploy";
 import {
@@ -105,6 +109,11 @@ function stopFrontendHealthMonitor(): void {
   frontendHealthFailures = 0;
 }
 
+function currentRendererUrl(): string | undefined {
+  if (!mainWindow || mainWindow.isDestroyed()) return undefined;
+  return mainWindow.webContents.getURL() || undefined;
+}
+
 function startFrontendHealthMonitor(): void {
   stopFrontendHealthMonitor();
   frontendHealthTimer = setInterval(() => {
@@ -136,6 +145,7 @@ async function checkFrontendHealth(): Promise<void> {
 
   if (frontendHealthFailures < HEALTH_FAILURE_THRESHOLD || !frontendServer) return;
   const stalledServer = frontendServer;
+  const rendererUrl = currentRendererUrl();
   frontendHealthFailures = 0;
   log.error(`Embedded frontend health check failed; restarting ${stalledServer.runtime.url}`);
   const pid = stalledServer.process?.pid;
@@ -143,9 +153,9 @@ async function checkFrontendHealth(): Promise<void> {
     expectedFrontendStopPids.add(pid);
     setTimeout(() => expectedFrontendStopPids.delete(pid), 30_000);
   }
-  await stopFrontendServer(stalledServer);
+  await stopFrontendServer(stalledServer, { stopAgentRuntime: false });
   if (frontendServer === stalledServer) frontendServer = undefined;
-  await restartFrontendServer(stalledServer.runtime.port);
+  await restartFrontendServer(stalledServer.runtime.port, stalledServer.agentRuntime, rendererUrl);
 }
 
 function handleFrontendServerExit(details: {
@@ -157,15 +167,24 @@ function handleFrontendServerExit(details: {
   if (details.pid && expectedFrontendStopPids.delete(details.pid)) return;
   if (frontendServer?.process && frontendServer.process.pid !== details.pid) return;
 
-  const previousRuntime = frontendServer?.runtime;
+  const previousServer = frontendServer;
+  const rendererUrl = currentRendererUrl();
   frontendServer = undefined;
   log.error(
     `Embedded frontend stopped unexpectedly code=${details.code ?? "null"} signal=${details.signal ?? "null"}`,
   );
-  void restartFrontendServer(previousRuntime?.port);
+  void restartFrontendServer(
+    previousServer?.runtime.port,
+    previousServer?.agentRuntime,
+    rendererUrl,
+  );
 }
 
-async function restartFrontendServer(port?: number): Promise<void> {
+async function restartFrontendServer(
+  port?: number,
+  agentRuntime?: ServerHandle["agentRuntime"],
+  rendererUrl?: string,
+): Promise<void> {
   if (restartingFrontend || appState === "stopping") return;
   restartingFrontend = true;
   appState = "starting";
@@ -182,7 +201,11 @@ async function restartFrontendServer(port?: number): Promise<void> {
       await delay(backoffMs);
       if (isAppStopping()) return;
     }
-    const started = await startFrontendServer({ port, onExit: handleFrontendServerExit });
+    const started = await startFrontendServer({
+      agentRuntime,
+      port,
+      onExit: handleFrontendServerExit,
+    });
     // Shutdown may have begun during the fork. If so, shutdown() already cleared
     // the health monitor and no-op'd the (mid-restart undefined) server stop —
     // so tear this just-started server down instead of re-arming the monitor and
@@ -195,7 +218,10 @@ async function restartFrontendServer(port?: number): Promise<void> {
     startFrontendHealthMonitor();
     const nextUrl = frontendServer.runtime.url;
     if (mainWindow && !mainWindow.isDestroyed()) {
-      await mainWindow.loadURL(nextUrl);
+      const liveUrl = mainWindow.webContents.getURL() || rendererUrl;
+      if (shouldReloadAfterFrontendRestart(nextUrl, liveUrl)) {
+        await mainWindow.loadURL(resolveFrontendRestartUrl(nextUrl, rendererUrl));
+      }
     } else {
       mainWindow = createMainWindow(nextUrl);
       mainWindow.on("closed", () => {

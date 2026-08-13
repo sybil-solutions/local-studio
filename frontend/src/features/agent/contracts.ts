@@ -55,7 +55,6 @@ export type GitState = {
 export type GitAction =
   | { action: "init" }
   | { action: "checkout"; ref: string }
-  | { action: "createBranch"; branch: string }
   | { action: "commit"; message: string; paths: string[] }
   | { action: "push" };
 
@@ -69,12 +68,6 @@ export function parseGitAction(input: unknown): ParseResult<GitAction> {
   if (body.action === "checkout") {
     const ref = stringField(body, "ref", true);
     return ref.ok ? { ok: true, value: { action: "checkout", ref: ref.value! } } : ref;
-  }
-  if (body.action === "createBranch") {
-    const branch = stringField(body, "branch", true);
-    return branch.ok
-      ? { ok: true, value: { action: "createBranch", branch: branch.value! } }
-      : branch;
   }
   if (body.action === "commit") {
     const message = stringField(body, "message", true);

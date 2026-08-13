@@ -255,14 +255,9 @@ export class HostedPage {
     }
   }
 
-  async dispatchKey(input: {
-    type: "down" | "up" | "char";
-    key: string;
-    text?: string;
-  }): Promise<void> {
+  async dispatchKey(input: { type: "down" | "up"; key: string }): Promise<void> {
     if (input.type === "down") await this.playwrightPage.keyboard.down(input.key);
-    else if (input.type === "up") await this.playwrightPage.keyboard.up(input.key);
-    else await this.playwrightPage.keyboard.insertText(input.text ?? input.key);
+    else await this.playwrightPage.keyboard.up(input.key);
   }
 
   async captureFrame(): Promise<ScreencastFrame | null> {

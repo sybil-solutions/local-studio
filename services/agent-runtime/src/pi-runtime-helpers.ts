@@ -25,9 +25,6 @@ export type RuntimeStartOptions = {
   browserToolEnabled?: boolean;
   browserSessionId?: string;
   browserBackend?: "embedded" | "sitegeist";
-  // Runtime (focused) session id, so the plan extension writes the plan the
-  // Plan panel reads for the same session.
-  planSessionId?: string;
   skills?: RuntimeSkillRef[];
   promptTemplates?: RuntimePromptTemplateRef[];
 };
@@ -106,7 +103,7 @@ function resolveBundledResourcePath(kind: string, name: string, override?: strin
   // The desktop shell forks this runtime as a plain Node child, where
   // Electron's `process.resourcesPath` does NOT exist — it forwards the same
   // path via env instead. Missing this meant every bundled extension
-  // (subagent, plan, automations, browser) silently vanished in packaged
+  // (subagent, automations, browser) silently vanished in packaged
   // builds while working in dev, where the cwd walk below finds the repo.
   const resourcesRoot = process.env.LOCAL_STUDIO_RESOURCES_PATH?.trim() || process.resourcesPath;
   if (resourcesRoot) {
@@ -148,10 +145,6 @@ export function resolveSitegeistBrowserExtensionPath(): string | null {
     "sitegeist-browser.ts",
     process.env.LOCAL_STUDIO_SITEGEIST_BROWSER_EXTENSION_PATH,
   );
-}
-
-export function resolvePlanExtensionPath(): string | null {
-  return resolveBundledPiExtensionPath("plan.ts", process.env.LOCAL_STUDIO_PLAN_EXTENSION_PATH);
 }
 
 /** Bundled stdio MCP servers (desktop/resources/mcp) — same ladder as extensions. */
@@ -210,10 +203,6 @@ export function resolveSitegeistBrowserSkillPath(): string | null {
     "sitegeist-browser",
     process.env.LOCAL_STUDIO_SITEGEIST_BROWSER_SKILL_PATH,
   );
-}
-
-export function resolvePlanSkillPath(): string | null {
-  return resolveBundledSkillPath("plan", process.env.LOCAL_STUDIO_PLAN_SKILL_PATH);
 }
 
 export function runtimeOptionsFingerprint(options: RuntimeStartOptions): string {
@@ -287,7 +276,6 @@ function runtimeExtensionPaths(options: RuntimeStartOptions): string[] {
   return uniqueExistingPaths([
     timeoutExtensionPath,
     agentPolicyExtensionPath,
-    resolvePlanExtensionPath(),
     browserExtensionPath,
     hasEnabledConnectorsSync() ? resolveConnectorsExtensionPath() : null,
     resolveSubagentsExtensionPath(),
@@ -305,7 +293,6 @@ function runtimeSkillPaths(options: RuntimeStartOptions): string[] {
   return uniqueExistingPaths([
     ...selectedSkillPaths(options.skills ?? []),
     loadBrowser ? browserSkillPathFor(backend) : null,
-    resolvePlanSkillPath(),
   ]);
 }
 
@@ -317,7 +304,6 @@ function runtimeEnvInjections(
   const relay = readSitegeistRelayEnv(env);
   return {
     LOCAL_STUDIO_BROWSER_SESSION_ID: options.browserSessionId ?? "",
-    LOCAL_STUDIO_PLAN_SESSION_ID: options.planSessionId ?? "",
     LOCAL_STUDIO_FRONTEND_BASE: frontendBase,
     SITEGEIST_RELAY_URL: env.SITEGEIST_RELAY_URL ?? relay.SITEGEIST_RELAY_URL ?? "",
     SITEGEIST_RELAY_TOKEN: env.SITEGEIST_RELAY_TOKEN ?? relay.SITEGEIST_RELAY_TOKEN ?? "",

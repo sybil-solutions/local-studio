@@ -9,6 +9,7 @@ import { resolveStablePort } from "../helpers/ports";
 import { resolveAugmentedPath } from "../helpers/resolve-path";
 
 export type AgentRuntimeHandle = {
+  frontendUrl: string;
   process?: ChildProcess;
   url: string;
 };
@@ -95,7 +96,7 @@ export async function startAgentRuntime(
   const preferredUrl = options.preferredPort ? `http://127.0.0.1:${options.preferredPort}` : null;
   if (preferredUrl && (await isAgentRuntimeHealthy(preferredUrl))) {
     log.info(`Using agent runtime at ${preferredUrl}`);
-    return { url: preferredUrl };
+    return { frontendUrl: options.frontendUrl, url: preferredUrl };
   }
 
   const entry = agentRuntimeEntry();
@@ -135,11 +136,26 @@ export async function startAgentRuntime(
   currentAgentRuntime = child;
   try {
     await waitForAgentRuntime(child, url, DESKTOP_CONFIG.startupTimeoutMs);
-    return { process: child, url };
+    return { frontendUrl: options.frontendUrl, process: child, url };
   } catch (error) {
     await stopChild(child);
     throw error;
   }
+}
+
+export async function startOrReuseAgentRuntime(
+  options: StartAgentRuntimeOptions,
+  existing?: AgentRuntimeHandle,
+): Promise<AgentRuntimeHandle> {
+  if (
+    existing?.frontendUrl === options.frontendUrl &&
+    (await isAgentRuntimeHealthy(existing.url))
+  ) {
+    log.info(`Reusing agent runtime at ${existing.url}`);
+    return existing;
+  }
+  if (existing) await stopAgentRuntime(existing);
+  return startAgentRuntime(options);
 }
 
 export async function stopAgentRuntime(handle?: AgentRuntimeHandle): Promise<void> {

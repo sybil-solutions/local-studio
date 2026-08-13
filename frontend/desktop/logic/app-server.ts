@@ -9,7 +9,7 @@ import { registerOAuthVault } from "./oauth-vault";
 import { resolveStablePort } from "../helpers/ports";
 import { resolveAugmentedPath } from "../helpers/resolve-path";
 import {
-  startAgentRuntime,
+  startOrReuseAgentRuntime,
   stopAgentRuntime,
   type AgentRuntimeHandle,
 } from "./agent-runtime-server";
@@ -25,6 +25,7 @@ process.once("exit", () => {
 });
 
 interface ServerHandle {
+  agentRuntimeExitListener?: () => void;
   agentRuntime: AgentRuntimeHandle;
   runtime: DesktopServerRuntime;
   process?: ChildProcess;
@@ -37,8 +38,13 @@ type ServerExitDetails = {
 };
 
 type StartFrontendServerOptions = {
+  agentRuntime?: AgentRuntimeHandle;
   port?: number;
   onExit?: (details: ServerExitDetails) => void;
+};
+
+type StopFrontendServerOptions = {
+  stopAgentRuntime?: boolean;
 };
 
 function embeddedServerPidPath(): string {
@@ -163,7 +169,10 @@ export async function startFrontendServer(
       port: Number(new URL(DESKTOP_CONFIG.devServerUrl).port || "3000"),
       url: DESKTOP_CONFIG.devServerUrl,
     };
-    const agentRuntime = await startAgentRuntime({ frontendUrl: runtime.url, preferredPort: 8081 });
+    const agentRuntime = await startOrReuseAgentRuntime(
+      { frontendUrl: runtime.url, preferredPort: 8081 },
+      options.agentRuntime,
+    );
     return { agentRuntime, runtime };
   }
 
@@ -195,7 +204,7 @@ export async function startFrontendServer(
   const port = await resolveStablePort(options.port ?? readPersistedPort());
   persistPort(port);
   const url = `http://127.0.0.1:${port}`;
-  const agentRuntime = await startAgentRuntime({ frontendUrl: url });
+  const agentRuntime = await startOrReuseAgentRuntime({ frontendUrl: url }, options.agentRuntime);
 
   log.info(`Starting embedded frontend server from ${serverScript} on ${url}`);
 
@@ -252,25 +261,31 @@ export async function startFrontendServer(
     options.onExit?.({ code, signal, pid: child.pid });
   });
 
-  agentRuntime.process?.once("exit", () => {
+  const agentRuntimeExitListener = () => {
     if (currentEmbeddedServer === child && !child.killed) child.kill("SIGTERM");
-  });
+  };
+  agentRuntime.process?.once("exit", agentRuntimeExitListener);
 
   currentEmbeddedServer = child;
 
   try {
     await waitForServer(url, DESKTOP_CONFIG.startupTimeoutMs);
   } catch (error) {
-    await stopFrontendServer({
-      agentRuntime,
-      process: child,
-      runtime: { mode: "embedded-standalone", port, url },
-    });
+    await stopFrontendServer(
+      {
+        agentRuntime,
+        agentRuntimeExitListener,
+        process: child,
+        runtime: { mode: "embedded-standalone", port, url },
+      },
+      { stopAgentRuntime: agentRuntime !== options.agentRuntime },
+    );
     throw error;
   }
 
   return {
     agentRuntime,
+    agentRuntimeExitListener,
     runtime: {
       mode: "embedded-standalone",
       port,
@@ -280,8 +295,14 @@ export async function startFrontendServer(
   };
 }
 
-export async function stopFrontendServer(handle?: ServerHandle): Promise<void> {
+export async function stopFrontendServer(
+  handle?: ServerHandle,
+  options: StopFrontendServerOptions = {},
+): Promise<void> {
   if (!handle) return;
+  if (handle.agentRuntimeExitListener) {
+    handle.agentRuntime.process?.off("exit", handle.agentRuntimeExitListener);
+  }
   if (handle.process) {
     const child = handle.process;
     const pid = child.pid;
@@ -308,7 +329,7 @@ export async function stopFrontendServer(handle?: ServerHandle): Promise<void> {
       });
     });
   }
-  await stopAgentRuntime(handle.agentRuntime);
+  if (options.stopAgentRuntime !== false) await stopAgentRuntime(handle.agentRuntime);
 }
 
 export type { ServerHandle };

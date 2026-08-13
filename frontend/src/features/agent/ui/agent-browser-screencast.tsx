@@ -230,22 +230,9 @@ export function ScreencastSurface({ url, onState, onUnavailable, visible = true 
   };
 
   const handleKey = (type: "down" | "up") => (event: ReactKeyboardEvent<HTMLDivElement>) => {
-    // Leave app-level shortcuts (⌘K etc.) alone; forward everything else.
     if (event.metaKey) return;
     event.preventDefault();
     postBrowser("input", { kind: "key", type, key: event.key, code: event.code });
-    if (type === "down" && event.key.length === 1 && !event.ctrlKey && !event.altKey) {
-      postBrowser("input", {
-        kind: "key",
-        type: "char",
-        key: event.key,
-        code: event.code,
-        text: event.key,
-      });
-    }
-    if (type === "down" && event.key === "Enter") {
-      postBrowser("input", { kind: "key", type: "char", key: "Enter", code: "Enter", text: "\r" });
-    }
   };
 
   return (

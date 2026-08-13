@@ -263,12 +263,13 @@ export function ToolsProvider({ children }: { children: ReactNode }) {
           : { ...current, open: true, tab, tabs };
       });
       writeComputerTab(tab);
-      setBrowser((current) => {
-        const enabled = tab === "browser";
-        if (current.enabled === enabled) return current;
-        writeBrowserEnabled(enabled);
-        return { ...current, enabled };
-      });
+      if (tab === "browser") {
+        setBrowser((current) => {
+          if (current.enabled) return current;
+          writeBrowserEnabled(true);
+          return { ...current, enabled: true };
+        });
+      }
     },
     [updateComputer],
   );
