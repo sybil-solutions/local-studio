@@ -23,13 +23,7 @@ import { RecentSessionsSection } from "./projects-nav/recent-sessions-section";
 import { NewChatPlusButton, ProjectRow, ProjectSessions } from "./projects-nav/session-rows";
 import { TerminalRow } from "./projects-nav/terminal-rows";
 
-export function ProjectsNavSection({
-  expanded,
-  view,
-}: {
-  expanded: boolean;
-  view: NavView;
-}) {
+export function ProjectsNavSection({ expanded, view }: { expanded: boolean; view: NavView }) {
   const projectsContext = useProjects();
   const projects = projectsContext.projects;
   const { moveProjectBefore, refresh: refreshProjects, upsertProject } = projectsContext;
@@ -53,16 +47,17 @@ export function ProjectsNavSection({
   const handleAddProject = useCallback(async () => {
     setAddError("");
     try {
-      const result = await openProjectDirectory();
-      if (result.source === "fallback") {
+      const directoryPath = await openProjectDirectory();
+      if (!directoryPath) {
         setDirectoryModalOpen(true);
         return;
       }
-      if (result.project) upsertProject(result.project);
+      upsertProject(await addProjectFromPath(directoryPath));
+      void refreshProjects();
     } catch (error) {
       setAddError(error instanceof Error ? error.message : "Failed to add project");
     }
-  }, [upsertProject]);
+  }, [refreshProjects, upsertProject]);
   useProjectsNavAddProjectEffect(handleAddProject);
 
   const handleDirectoryPicked = async (directoryPath: string) => {

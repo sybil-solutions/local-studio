@@ -1,6 +1,7 @@
 interface Window {
   localStudioDesktop?: {
     openExternal?(url: string): Promise<boolean>;
+    openDirectory?(): Promise<string | null>;
     revealPath?(target: string): Promise<boolean>;
     openPath?(target: string): Promise<boolean>;
     getRuntime?(): Promise<{

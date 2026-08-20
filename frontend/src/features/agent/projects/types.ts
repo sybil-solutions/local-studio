@@ -1,20 +1,21 @@
-export type ProjectId = string;
-
-// CHATS_PROJECT_ID lives in shared/agent/project-ids.ts so the agent runtime
-// package's projects store can share it; re-exported here for frontend callers.
+import { Schema } from "effect";
 import { CHATS_PROJECT_ID } from "@shared/agent/project-ids";
 
 export { CHATS_PROJECT_ID };
 
-export type Project = {
-  id: ProjectId;
-  name: string;
-  path: string;
-  addedAt: string;
-  exists: boolean;
-  hasGit: boolean;
-  branch: string | null;
-};
+export type ProjectId = string;
+
+export const ProjectSchema = Schema.Struct({
+  id: Schema.String,
+  name: Schema.String,
+  path: Schema.String,
+  addedAt: Schema.String,
+  exists: Schema.Boolean,
+  hasGit: Schema.Boolean,
+  branch: Schema.NullOr(Schema.String),
+});
+
+export type Project = typeof ProjectSchema.Type;
 
 export type GitSummary = {
   isRepo: boolean;
