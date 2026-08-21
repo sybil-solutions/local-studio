@@ -42,18 +42,17 @@ export function isGoalContinuationPrompt(text: string): boolean {
 
 export type GoalOutcome = { kind: "complete" } | { kind: "blocked"; reason: string };
 
-// A sentinel owns the rest of its line: GOAL_BLOCKED carries its reason there,
-// and a GOAL_COMPLETE is normally alone on the last line anyway.
-const SENTINEL_RE = /[ \t]*\b(?:GOAL_COMPLETE|GOAL_BLOCKED)\b[ \t]*[:\-–—]?[ \t]*[^\n]*/g;
-const COMPLETE_RE = /\bGOAL_COMPLETE\b/;
-const BLOCKED_RE = /\bGOAL_BLOCKED\b[ \t]*[:\-–—]?[ \t]*([^\n]*)/;
+const COMPLETE_SENTINEL_LINE_RE = /(?:^|\n)[ \t]*GOAL_COMPLETE[ \t]*$/;
+const BLOCKED_SENTINEL_LINE_RE =
+  /(?:^|\n)[ \t]*GOAL_BLOCKED(?:[ \t]*[:\-–—]?[ \t]*([^\n]*))?[ \t]*$/;
+const SENTINEL_LINE_RE =
+  /(?:^|\n)[ \t]*(?:GOAL_COMPLETE|GOAL_BLOCKED(?:[ \t]*[:\-–—]?[ \t]*[^\n]*)?)[ \t]*$/;
 
-/** The outcome a settled turn declared, or null when it declared none.
- *  Completion wins over a blocked marker in the pathological both-present case:
- *  a turn that reached the objective has nothing left to be blocked on. */
+/** The outcome a settled turn declared, or null when it declared none. */
 export function goalOutcomeFromText(text: string): GoalOutcome | null {
-  if (COMPLETE_RE.test(text)) return { kind: "complete" };
-  const blocked = BLOCKED_RE.exec(text);
+  const finalText = text.trimEnd();
+  if (COMPLETE_SENTINEL_LINE_RE.test(finalText)) return { kind: "complete" };
+  const blocked = BLOCKED_SENTINEL_LINE_RE.exec(finalText);
   return blocked ? { kind: "blocked", reason: (blocked[1] ?? "").trim() } : null;
 }
 
@@ -63,7 +62,7 @@ export function goalOutcomeFromText(text: string): GoalOutcome | null {
 // at a time. Six characters is the shortest prefix that commits to a sentinel
 // ("GOAL_C" / "GOAL_B"), which leaves the ordinary words "goal" and "GOAL_"
 // alone.
-const PARTIAL_TAIL_RE = /(?:^|\s)(GOAL_[A-Z]*)$/;
+const PARTIAL_TAIL_RE = /(?:^|\n)[ \t]*(GOAL_[A-Z]*)$/;
 
 function stripPartialSentinelTail(text: string): string {
   const match = PARTIAL_TAIL_RE.exec(text);
@@ -82,6 +81,6 @@ function stripPartialSentinelTail(text: string): string {
  *  Returns the input unchanged (same value) when there was nothing to strip, so
  *  callers can use the result to decide whether anything moved. */
 export function stripGoalSentinels(text: string): string {
-  const stripped = stripPartialSentinelTail(text.replace(SENTINEL_RE, ""));
+  const stripped = stripPartialSentinelTail(text.replace(SENTINEL_LINE_RE, ""));
   return stripped === text ? text : stripped.trimEnd();
 }

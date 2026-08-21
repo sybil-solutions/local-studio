@@ -11,7 +11,7 @@
   "scripts": {
     "bundle": "node ../../scripts/project.mjs bundle-agent-runtime",
     "build": "node ../../scripts/project.mjs prepare-agent-runtime && tsc -p tsconfig.build.json && node ../../scripts/project.mjs postbuild-agent-runtime",
-    "check": "bun run build",
+    "check": "bun run build && bun test",
     "dev": "bun --watch src/server.ts",
     "start": "node dist/server.js"
   },
@@ -29,7 +29,8 @@
   },
   "devDependencies": {
     "@types/node": "24.6.0",
-    "@types/proper-lockfile": "4.1.4"
+    "@types/proper-lockfile": "4.1.4",
+    "typescript": "5.9.3"
   },
   "overrides": {
     "brace-expansion": "5.0.9"
