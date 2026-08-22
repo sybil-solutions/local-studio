@@ -16,6 +16,14 @@ export interface ControllerProviderRoutingConfig {
   providers?: ProviderConfig[];
 }
 
+export const buildProviderApiUrl = (baseUrl: string, pathname: string): string => {
+  const normalizedBase = baseUrl.trim().replace(/\/+$/, "");
+  const normalizedPath = pathname.startsWith("/") ? pathname : `/${pathname}`;
+  return /\/v1$/i.test(normalizedBase)
+    ? `${normalizedBase}${normalizedPath}`
+    : `${normalizedBase}/v1${normalizedPath}`;
+};
+
 export const parseProviderModel = (rawModel: string): ParsedProviderModel => {
   const trimmed = rawModel.trim();
   if (!trimmed) {

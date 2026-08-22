@@ -7,6 +7,7 @@ import { documentRoute, defineRoutes, mergeRoutes } from "../../http/route-regis
 import type { Recipe } from "../models/types";
 import { buildInferenceUrl } from "../../http/local-fetch";
 import {
+  buildProviderApiUrl,
   DEFAULT_CHAT_PROVIDER,
   parseProviderModel,
   resolveProviderConfig,
@@ -186,7 +187,7 @@ export const registerOpenAIRoutes = defineRoutes((app, context) => {
     }
     const upstreamUrl =
       providerRouting && requestedModel
-        ? `${providerRouting.baseUrl.replace(/\/+$/, "")}/v1/chat/completions`
+        ? buildProviderApiUrl(providerRouting.baseUrl, "/chat/completions")
         : buildInferenceUrl(context, "/v1/chat/completions");
     const inferenceKey = process.env["INFERENCE_API_KEY"] ?? "";
     const headers: Record<string, string> = {
