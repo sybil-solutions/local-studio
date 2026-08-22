@@ -1,9 +1,8 @@
-import { randomUUID } from "node:crypto";
-import { chmod, readFile, rename, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { Schema } from "effect";
-import { resolveDataDir } from "./data-dir";
+import { atomicWriteJson, resolveDataDir } from "./data-dir";
 import { enabledConnectors } from "./connectors-service";
 import {
   ConnectorGrantsFileSchema,
@@ -64,13 +63,8 @@ async function readGrantsFile(): Promise<GrantsFile> {
   }
 }
 
-async function writeGrantsFile(grants: GrantsFile): Promise<void> {
-  resolveDataDir();
-  const file = resolveConnectorGrantsFilePath();
-  const temporary = `${file}.tmp-${process.pid}-${randomUUID()}`;
-  await writeFile(temporary, JSON.stringify(grants, null, 2), "utf-8");
-  await chmod(temporary, 0o600).catch(() => undefined);
-  await rename(temporary, file);
+function writeGrantsFile(grants: GrantsFile): Promise<void> {
+  return atomicWriteJson(resolveConnectorGrantsFilePath(), grants, { mode: 0o600 });
 }
 
 /**

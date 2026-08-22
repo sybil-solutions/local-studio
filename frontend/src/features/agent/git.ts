@@ -7,7 +7,6 @@ import { promisify } from "node:util";
 import type {
   GitAction,
   GitBranch,
-  GitRef,
   GitState,
   GitStatusEntry,
   GitWorktree,
@@ -78,19 +77,15 @@ export async function loadGitState(cwd: string): Promise<GitState> {
   const numstatArgs = hasHead
     ? ["diff", "--numstat", "HEAD", "--"]
     : ["diff", "--numstat", "--cached", "--"];
-  const [branch, statusRaw, diff, numstat, untrackedRaw, refsRaw, upstream, remoteUrl] =
-    await Promise.all([
-      git(cwd, ["branch", "--show-current"]).catch(() => ""),
-      git(cwd, ["status", "--short"]),
-      git(cwd, diffArgs),
-      git(cwd, numstatArgs).catch(() => ""),
-      git(cwd, ["ls-files", "--others", "--exclude-standard", "-z"]).catch(() => ""),
-      git(cwd, ["for-each-ref", "--format=%(refname:short)", "refs/heads", "refs/remotes"]).catch(
-        () => "",
-      ),
-      git(cwd, ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"]).catch(() => ""),
-      git(cwd, ["remote", "get-url", "origin"]).catch(() => ""),
-    ]);
+  const [branch, statusRaw, diff, numstat, untrackedRaw, upstream, remoteUrl] = await Promise.all([
+    git(cwd, ["branch", "--show-current"]).catch(() => ""),
+    git(cwd, ["status", "--short"]),
+    git(cwd, diffArgs),
+    git(cwd, numstatArgs).catch(() => ""),
+    git(cwd, ["ls-files", "--others", "--exclude-standard", "-z"]).catch(() => ""),
+    git(cwd, ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"]).catch(() => ""),
+    git(cwd, ["remote", "get-url", "origin"]).catch(() => ""),
+  ]);
   const current = branch.trim() || null;
   const trackedStats = numstatStats(numstat);
   const untracked = await untrackedFileDiffs(cwd, untrackedRaw);
@@ -110,7 +105,6 @@ export async function loadGitState(cwd: string): Promise<GitState> {
       : diff,
     additions,
     deletions,
-    refs: parseRefs(refsRaw, current),
     hasUpstream: Boolean(upstream.trim()),
     remoteUrl: remoteUrl.trim() || null,
     prUrl: pullRequestUrl(remoteUrl.trim(), current),
@@ -127,8 +121,6 @@ function assertNotOption(value: string, label: string): string {
 
 export async function runGitAction(cwd: string, action: GitAction): Promise<GitState> {
   if (action.action === "init") await git(cwd, ["init"]);
-  if (action.action === "checkout")
-    await git(cwd, ["switch", "--", assertNotOption(action.ref, "ref")]);
   if (action.action === "switch_branch")
     await git(cwd, ["switch", assertNotOption(action.branch, "branch")]);
   if (action.action === "create_branch")
@@ -244,7 +236,6 @@ function emptyGitState(isRepo: boolean): GitState {
     diff: "",
     additions: 0,
     deletions: 0,
-    refs: [],
     hasUpstream: false,
     remoteUrl: null,
     prUrl: null,
@@ -263,20 +254,6 @@ function statusEntries(raw: string): GitStatusEntry[] {
     code: line.slice(0, 2).trim() || "?",
     path: line.slice(3),
   }));
-}
-
-function parseRefs(raw: string, current: string | null): GitRef[] {
-  const seen = new Set<string>();
-  return raw
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .filter((name) => {
-      if (name.endsWith("/HEAD") || seen.has(name)) return false;
-      seen.add(name);
-      return true;
-    })
-    .map((name) => ({ name, current: name === current, remote: name.includes("/") }));
 }
 
 export function numstatStats(numstat: string): { additions: number; deletions: number } {

@@ -1,9 +1,10 @@
-import { Effect, Schema } from "effect";
+import { Schema } from "effect";
 import {
   SessionGoalResponseSchema,
   type SessionGoal,
   type SessionGoalPatch,
 } from "@shared/agent/session-goal";
+import type { SessionUsageTotals } from "@shared/agent/session-usage";
 import { safeJson } from "@/features/agent/safe-json";
 import {
   parseAgentTurnCommandResult,
@@ -39,21 +40,6 @@ export function runtimeContextUsage(
   return fallback ?? null;
 }
 
-const fetchEffect = (
-  input: RequestInfo | URL,
-  init?: RequestInit,
-): Effect.Effect<Response, unknown> =>
-  Effect.tryPromise({
-    try: () => fetch(input, init),
-    catch: (error) => error,
-  });
-
-const safeJsonEffect = <T>(response: Response): Effect.Effect<T, unknown> =>
-  Effect.tryPromise({
-    try: () => safeJson<T>(response),
-    catch: (error) => error,
-  });
-
 const AbortSessionResponseSchema = Schema.Struct({
   ok: Schema.Boolean,
   cleared: Schema.Struct({
@@ -81,79 +67,60 @@ export function parseAbortSessionResult(input: unknown): AbortSessionResult {
     : { steering: [], followUp: [] };
 }
 
-export function listRuntimeSessions(): Promise<RuntimeSessionSummary[]> {
-  return Effect.runPromise(
-    Effect.gen(function* () {
-      const response = yield* fetchEffect("/api/agent/runtime/sessions", { cache: "no-store" });
-      const payload = yield* safeJsonEffect<unknown>(response);
-      return decodeRuntimeSessions(payload);
-    }).pipe(Effect.catch(() => Effect.succeed([]))),
-  );
+export async function listRuntimeSessions(): Promise<RuntimeSessionSummary[]> {
+  try {
+    const response = await fetch("/api/agent/runtime/sessions", { cache: "no-store" });
+    return decodeRuntimeSessions(await safeJson<unknown>(response));
+  } catch {
+    return [];
+  }
 }
 
-export function loadRuntimeStatus(
+export async function loadRuntimeStatus(
   sessionId: string,
   piSessionId?: string | null,
 ): Promise<RuntimeStatus | null> {
-  return Effect.runPromise(
-    Effect.gen(function* () {
-      const params = new URLSearchParams({ sessionId });
-      if (piSessionId) params.set("piSessionId", piSessionId);
-      const response = yield* fetchEffect(`/api/agent/runtime/status?${params.toString()}`, {
-        cache: "no-store",
-      });
-      const payload = yield* safeJsonEffect<unknown>(response);
-      const decoded = decodeRuntimeStatusResponse(payload);
-      if (!decoded) return null;
-      return { ...decoded.status, events: decoded.events ?? [] };
-    }).pipe(Effect.catch(() => Effect.succeed(null))),
-  );
+  try {
+    const params = new URLSearchParams({ sessionId });
+    if (piSessionId) params.set("piSessionId", piSessionId);
+    const response = await fetch(`/api/agent/runtime/status?${params.toString()}`, {
+      cache: "no-store",
+    });
+    const decoded = decodeRuntimeStatusResponse(await safeJson<unknown>(response));
+    if (!decoded) return null;
+    return { ...decoded.status, events: decoded.events ?? [] };
+  } catch {
+    return null;
+  }
 }
 
-export function abortSession(sessionId: string): Promise<AbortSessionResult> {
-  return Effect.runPromise(
-    Effect.gen(function* () {
-      const response = yield* fetchEffect("/api/agent/abort", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sessionId }),
-      });
-      const payload = yield* safeJsonEffect<unknown>(response);
-      return parseAbortSessionResult(payload);
-    }).pipe(Effect.catch(() => Effect.succeed({ steering: [], followUp: [] }))),
-  );
+export async function abortSession(sessionId: string): Promise<AbortSessionResult> {
+  try {
+    const response = await fetch("/api/agent/abort", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sessionId }),
+    });
+    return parseAbortSessionResult(await safeJson<unknown>(response));
+  } catch {
+    return { steering: [], followUp: [] };
+  }
 }
 
-export function respondExtensionUi(
+export async function respondExtensionUi(
   sessionId: string,
   requestId: string,
   response: { value?: string; confirmed?: boolean; cancelled?: boolean },
 ): Promise<void> {
-  return Effect.runPromise(
-    Effect.gen(function* () {
-      const result = yield* fetchEffect("/api/agent/runtime/extension-ui", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sessionId, requestId, ...response }),
-      });
-      if (!result.ok) return yield* Effect.fail(new Error("Extension response was rejected"));
-    }),
-  );
+  const result = await fetch("/api/agent/runtime/extension-ui", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ sessionId, requestId, ...response }),
+  });
+  if (!result.ok) throw new Error("Extension response was rejected");
 }
 
-/** What the session has spent over its whole life. Distinct from the context
- *  window, which compaction resets — this does not. */
-export type SessionUsageTotals = {
-  input: number;
-  output: number;
-  cacheRead: number;
-  cacheWrite: number;
-  reasoning: number;
-  total: number;
-  cost: number;
-  calls: number;
-  compactions: number;
-};
+export type { SessionUsageTotals } from "@shared/agent/session-usage";
 
 export type CanonicalSessionMeta = {
   title: string | null;
@@ -178,37 +145,31 @@ export const DEFAULT_SESSION_TAIL = 500;
 
 export type LoadCanonicalSessionOptions = { tail?: number; before?: number };
 
-export function loadCanonicalSession(
+export async function loadCanonicalSession(
   piSessionId: string,
   cwd: string,
   options: LoadCanonicalSessionOptions = {},
 ): Promise<CanonicalSessionResult> {
-  return Effect.runPromise(
-    Effect.gen(function* () {
-      const params = new URLSearchParams({ cwd });
-      const tail =
-        options.before === undefined ? (options.tail ?? DEFAULT_SESSION_TAIL) : undefined;
-      if (tail !== undefined) params.set("tail", String(tail));
-      if (options.before !== undefined) params.set("before", String(options.before));
-      const response = yield* fetchEffect(
-        `/api/agent/sessions/${encodeURIComponent(piSessionId)}?${params.toString()}`,
-        { cache: "no-store" },
-      );
-      const payload = yield* safeJsonEffect<{
-        events?: Record<string, unknown>[];
-        cursor?: number | null;
-        meta?: CanonicalSessionMeta | null;
-        error?: string;
-      }>(response);
-      if (!response.ok)
-        return yield* Effect.fail(new Error(payload.error || "Failed to load session"));
-      return {
-        events: payload.events ?? [],
-        cursor: payload.cursor ?? null,
-        meta: payload.meta ?? null,
-      };
-    }),
+  const params = new URLSearchParams({ cwd });
+  const tail = options.before === undefined ? (options.tail ?? DEFAULT_SESSION_TAIL) : undefined;
+  if (tail !== undefined) params.set("tail", String(tail));
+  if (options.before !== undefined) params.set("before", String(options.before));
+  const response = await fetch(
+    `/api/agent/sessions/${encodeURIComponent(piSessionId)}?${params.toString()}`,
+    { cache: "no-store" },
   );
+  const payload = await safeJson<{
+    events?: Record<string, unknown>[];
+    cursor?: number | null;
+    meta?: CanonicalSessionMeta | null;
+    error?: string;
+  }>(response);
+  if (!response.ok) throw new Error(payload.error || "Failed to load session");
+  return {
+    events: payload.events ?? [],
+    cursor: payload.cursor ?? null,
+    meta: payload.meta ?? null,
+  };
 }
 
 export type CompactSessionArgs = {
@@ -229,22 +190,15 @@ export type CompactSessionResult = {
   status?: RuntimeStatus;
 };
 
-export function compactSession(args: CompactSessionArgs): Promise<CompactSessionResult> {
-  return Effect.runPromise(
-    Effect.gen(function* () {
-      const response = yield* fetchEffect("/api/agent/compact", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(args),
-      });
-      const payload = yield* safeJsonEffect<{
-        error?: string;
-        status?: RuntimeStatus;
-      }>(response);
-      if (!response.ok) return yield* Effect.fail(new Error(payload.error || "Compaction failed"));
-      return payload;
-    }),
-  );
+export async function compactSession(args: CompactSessionArgs): Promise<CompactSessionResult> {
+  const response = await fetch("/api/agent/compact", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(args),
+  });
+  const payload = await safeJson<{ error?: string; status?: RuntimeStatus }>(response);
+  if (!response.ok) throw new Error(payload.error || "Compaction failed");
+  return payload;
 }
 
 export type SubmitTurnArgs = {
@@ -267,29 +221,21 @@ export type SubmitTurnArgs = {
   promptTemplates?: ComposerPromptTemplateRef[];
 };
 
-export function submitTurnCommand(args: SubmitTurnArgs): Promise<AgentTurnCommandResult> {
-  return Effect.runPromise(
-    Effect.gen(function* () {
-      const response = yield* fetchEffect("/api/agent/turn", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(args),
-      });
-      const payload = yield* safeJsonEffect<{ error?: string } & Partial<AgentTurnCommandResult>>(
-        response,
-      );
-      const parsed = parseAgentTurnCommandResult(payload);
-      if (!response.ok || !parsed) {
-        return yield* Effect.fail(
-          new Error(payload.error || `Agent request failed: ${response.status}`),
-        );
-      }
-      if (parsed.outcome === "rejected") {
-        return yield* Effect.fail(new Error(parsed.error || "Agent request was rejected"));
-      }
-      return parsed;
-    }),
-  );
+export async function submitTurnCommand(args: SubmitTurnArgs): Promise<AgentTurnCommandResult> {
+  const response = await fetch("/api/agent/turn", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(args),
+  });
+  const payload = await safeJson<{ error?: string } & Partial<AgentTurnCommandResult>>(response);
+  const parsed = parseAgentTurnCommandResult(payload);
+  if (!response.ok || !parsed) {
+    throw new Error(payload.error || `Agent request failed: ${response.status}`);
+  }
+  if (parsed.outcome === "rejected") {
+    throw new Error(parsed.error || "Agent request was rejected");
+  }
+  return parsed;
 }
 
 export type RuntimeEventSubscription = { close: () => void };
@@ -338,40 +284,30 @@ function decodeSessionGoal(raw: unknown): SessionGoal | null {
 const sessionGoalUrl = (piSessionId: string) =>
   `/api/agent/goal?piSessionId=${encodeURIComponent(piSessionId)}`;
 
-export function loadSessionGoal(piSessionId: string): Promise<SessionGoal | null> {
-  return Effect.runPromise(
-    Effect.gen(function* () {
-      const response = yield* fetchEffect(sessionGoalUrl(piSessionId), { cache: "no-store" });
-      if (!response.ok) return null;
-      const payload = yield* safeJsonEffect<unknown>(response);
-      return decodeSessionGoal(payload);
-    }).pipe(Effect.catch(() => Effect.succeed(null))),
-  );
+export async function loadSessionGoal(piSessionId: string): Promise<SessionGoal | null> {
+  try {
+    const response = await fetch(sessionGoalUrl(piSessionId), { cache: "no-store" });
+    if (!response.ok) return null;
+    return decodeSessionGoal(await safeJson<unknown>(response));
+  } catch {
+    return null;
+  }
 }
 
-export function updateSessionGoal(
+export async function updateSessionGoal(
   piSessionId: string,
   patch: SessionGoalPatch,
 ): Promise<SessionGoal | null> {
-  return Effect.runPromise(
-    Effect.gen(function* () {
-      const response = yield* fetchEffect(sessionGoalUrl(piSessionId), {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(patch),
-      });
-      if (!response.ok) return yield* Effect.fail(new Error("Failed to update the goal."));
-      const payload = yield* safeJsonEffect<unknown>(response);
-      return decodeSessionGoal(payload);
-    }),
-  );
+  const response = await fetch(sessionGoalUrl(piSessionId), {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(patch),
+  });
+  if (!response.ok) throw new Error("Failed to update the goal.");
+  return decodeSessionGoal(await safeJson<unknown>(response));
 }
 
-export function clearSessionGoal(piSessionId: string): Promise<void> {
-  return Effect.runPromise(
-    Effect.gen(function* () {
-      const response = yield* fetchEffect(sessionGoalUrl(piSessionId), { method: "DELETE" });
-      if (!response.ok) return yield* Effect.fail(new Error("Failed to clear the goal."));
-    }),
-  );
+export async function clearSessionGoal(piSessionId: string): Promise<void> {
+  const response = await fetch(sessionGoalUrl(piSessionId), { method: "DELETE" });
+  if (!response.ok) throw new Error("Failed to clear the goal.");
 }

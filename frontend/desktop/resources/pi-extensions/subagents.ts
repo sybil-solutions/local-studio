@@ -16,18 +16,14 @@
 // stays a plain pi extension with no runtime imports.
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { failure, frontendBase, textResult, withTimeout } from "./bridge.ts";
 import { Type } from "./schema.ts";
 
-const FRONTEND_BASE = process.env.LOCAL_STUDIO_FRONTEND_BASE ?? "http://127.0.0.1:3000";
+const FRONTEND_BASE = frontendBase();
 const RUN_TIMEOUT_MS = 15 * 60_000;
 const MANAGE_TIMEOUT_MS = 30_000;
 const SAFETY_NOTE =
   "At most 4 subagents run at once per session, and subagents cannot spawn their own subagents.";
-
-type ToolResult = {
-  content: Array<{ type: "text"; text: string }>;
-  details: Record<string, unknown>;
-};
 
 type SubagentSummary = {
   id?: string;
@@ -41,14 +37,6 @@ type SubagentSummary = {
   report?: string;
 };
 
-const textResult = (text: string, details: Record<string, unknown>): ToolResult => ({
-  content: [{ type: "text", text }],
-  details,
-});
-
-const failure = (text: string, details: Record<string, unknown> = {}): ToolResult =>
-  textResult(text, { ...details, failed: true });
-
 /** One fetch shape for every route: abort on the turn's signal, always time
  *  out, always come back with parsed JSON or a message — never a throw. */
 async function callRuntime(
@@ -57,18 +45,14 @@ async function callRuntime(
   signal: AbortSignal | undefined,
   timeoutMs: number,
 ): Promise<{ ok: true; payload: Record<string, unknown> } | { ok: false; error: string }> {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), timeoutMs);
-  const abort = () => controller.abort();
-  signal?.addEventListener("abort", abort, { once: true });
-  if (signal?.aborted) controller.abort();
+  const bounded = withTimeout(signal, timeoutMs);
   try {
     const response = await fetch(`${FRONTEND_BASE}${path}`, {
       method: init.method,
       ...(init.body === undefined
         ? {}
         : { headers: { "Content-Type": "application/json" }, body: JSON.stringify(init.body) }),
-      signal: controller.signal,
+      signal: bounded.signal,
     });
     const payload = (await response.json()) as Record<string, unknown>;
     if (!response.ok || payload.ok === false) {
@@ -78,8 +62,7 @@ async function callRuntime(
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : String(error) };
   } finally {
-    clearTimeout(timeout);
-    signal?.removeEventListener("abort", abort);
+    bounded.done();
   }
 }
 

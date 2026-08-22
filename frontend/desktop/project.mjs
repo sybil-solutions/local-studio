@@ -197,13 +197,11 @@ var init_perf_routes = __esm(() => {
     "/usage",
     "/configure",
     "/discover",
-    "/quick",
     "/setup"
   ], httpBudgetOverrides = new Map([
     ["/", { assetKiB: 1050 }],
     ["/agent", { assetKiB: 1250 }],
     ["/agent/sessions", { assetKiB: 1250 }],
-    ["/quick", { assetKiB: 1250 }],
     ["/logs", { assetKiB: 1000 }],
     ["/server", { assetKiB: 1000 }],
     ["/usage", { assetKiB: 1025 }],
@@ -1481,7 +1479,7 @@ var init_validate_shared_contracts = __esm(() => {
     "controller/src/modules/shared/system-types.ts",
     "frontend/src/lib/types.ts",
     "frontend/src/lib/controller-events-contract.ts"
-  ]), scanRoots = ["shared", "controller/contracts", "controller/src", "frontend/src"], findings2 = [], exportedDeclarations = new Map;
+  ]), scanRoots = ["shared", "controller/contracts", "controller/src", "frontend/src", "services/agent-runtime/src"], findings2 = [], exportedDeclarations = new Map;
   for (let scanRoot of scanRoots)
     walk(join4(root3, scanRoot));
   if (findings2.length > 0) {
@@ -1779,12 +1777,6 @@ async function afterPack(context) {
   ].find((file) => !existsSync(file));
   if (missingAgentRuntimeFile)
     throw Error(`Packaged app is missing an agent runtime dependency: ${missingAgentRuntimeFile}`);
-  let desktopRuntimeRoot = path.join(resourcesDir, "desktop-runtime", "node_modules", "@lydell"), missingDesktopRuntimeFile = [
-    path.join(desktopRuntimeRoot, "node-pty", "package.json"),
-    path.join(desktopRuntimeRoot, `node-pty-${process.platform}-${process.arch}`, "package.json")
-  ].find((file) => !existsSync(file));
-  if (missingDesktopRuntimeFile)
-    throw Error(`Packaged app is missing a desktop runtime dependency: ${missingDesktopRuntimeFile}`);
   let unwantedRuntimeFile = [standaloneBase, agentRuntimeRoot].flatMap((directory) => readdirSync10(directory, { recursive: !0, withFileTypes: !0 }).filter((entry) => entry.isFile() && /\.(?:map|[cm]?ts)$/.test(entry.name)).map((entry) => path.join(entry.parentPath, entry.name)))[0];
   if (unwantedRuntimeFile)
     throw Error(`Packaged app contains a non-runtime source artifact: ${unwantedRuntimeFile}`);

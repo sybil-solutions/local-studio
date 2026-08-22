@@ -1,18 +1,16 @@
 import { Cause, Effect, Exit } from "effect";
 import type { AppContext } from "../app-context";
 
-function elapsedMs(start: number): number {
-  return Math.round(performance.now() - start);
-}
+/** Whole milliseconds since a `performance.now()` mark. */
+export const elapsedMs = (start: number): number => Math.round(performance.now() - start);
 
-function errorClass(error: unknown): string {
-  return (error as { name?: string } | null)?.name || "Error";
-}
+/** The telemetry label for a thrown value: its constructor name, or "Error". */
+export const errorClass = (error: unknown): string =>
+  (error as { name?: string } | null)?.name || "Error";
 
-function errorMessage(error: unknown): string {
-  if (error instanceof Error) return error.message;
-  return String(error);
-}
+/** The telemetry detail for a thrown value. */
+export const errorMessage = (error: unknown): string =>
+  error instanceof Error ? error.message : String(error);
 
 export const observeControllerFunction = <A, E, R>(
   context: AppContext,

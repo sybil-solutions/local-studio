@@ -17,9 +17,10 @@
 // status, nextRunAt, lastRun and runs[].
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { failure, frontendBase, textResult, withTimeout, type ToolResult } from "./bridge.ts";
 import { Type } from "./schema.ts";
 
-const FRONTEND_BASE = process.env.LOCAL_STUDIO_FRONTEND_BASE ?? "http://127.0.0.1:3000";
+const FRONTEND_BASE = frontendBase();
 const CALL_TIMEOUT_MS = 30_000;
 // "Run now" is not a store write: the endpoint runs the whole automation turn
 // in a fresh session and only answers once the result has been recorded. On the
@@ -28,18 +29,6 @@ const CALL_TIMEOUT_MS = 30_000;
 const RUN_TIMEOUT_MS = 15 * 60_000;
 const LAST_RUN_SUMMARY_CHARS = 1200;
 const HISTORY_SUMMARY_CHARS = 240;
-
-type ToolResult = {
-  content: Array<{ type: "text"; text: string }>;
-  details: Record<string, unknown>;
-};
-
-const textResult = (text: string, details: Record<string, unknown>): ToolResult => ({
-  content: [{ type: "text", text }],
-  details,
-});
-
-const failure = (text: string): ToolResult => textResult(text, { failed: true });
 
 // ─── Schedule shapes (mirror shared/agent/automation.ts) ────────────────────
 
@@ -157,15 +146,11 @@ async function httpJson(
   signal: AbortSignal | undefined,
   timeoutMs: number = CALL_TIMEOUT_MS,
 ): Promise<HttpReply> {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), timeoutMs);
-  const abort = () => controller.abort();
-  signal?.addEventListener("abort", abort, { once: true });
-  if (signal?.aborted) controller.abort();
+  const bounded = withTimeout(signal, timeoutMs);
   try {
     const response = await fetch(`${FRONTEND_BASE}${path}`, {
       ...init,
-      signal: controller.signal,
+      signal: bounded.signal,
     });
     let body: unknown = null;
     try {
@@ -175,8 +160,7 @@ async function httpJson(
     }
     return { ok: response.ok, status: response.status, body };
   } finally {
-    clearTimeout(timeout);
-    signal?.removeEventListener("abort", abort);
+    bounded.done();
   }
 }
 

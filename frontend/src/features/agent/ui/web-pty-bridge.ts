@@ -1,14 +1,13 @@
-// Browser implementation of the desktop PTY bridge: real server-side shells in
-// the agent runtime, reached through /api/agent/terminal/pty/*. Output arrives
-// over an SSE stream (base64 frames); input/resize are plain POSTs — the
-// layout's global fetch patch attaches the CSRF header to every mutation.
+// The one PTY bridge for every terminal, desktop and browser alike: real
+// server-side shells in the agent runtime, reached through
+// /api/agent/terminal/pty/*. Output arrives over an SSE stream (base64
+// frames); input/resize/close are plain POSTs — the layout's global fetch
+// patch attaches the CSRF header to every mutation.
 //
-// The bridge mirrors window.localStudioDesktop.terminal's shape so
-// terminal-panel.tsx treats both identically: open() resolves once the
-// snapshot (replay) frame lands, then data/exit listeners fire globally with
-// the session id. The stream auto-reconnects; each reconnect re-delivers a
-// snapshot which the panel applies with a terminal reset, so no output is
-// duplicated or lost across network blips.
+// open() resolves once the snapshot (replay) frame lands, then data/exit
+// listeners fire globally with the session id. The stream auto-reconnects;
+// each reconnect re-delivers a snapshot which the panel applies with a
+// terminal reset, so no output is duplicated or lost across network blips.
 
 type DataListener = (id: string, chunk: string) => void;
 type ExitListener = (id: string, info: { exitCode: number; signal: number | null }) => void;
@@ -23,6 +22,7 @@ export type WebPtyBridge = {
   }): Promise<{ id: string; replay?: string; reused?: boolean }>;
   write(id: string, data: string): Promise<void>;
   resize(id: string, cols: number, rows: number): Promise<void>;
+  closeOwner(ownerKey: string): Promise<void>;
   onData(listener: DataListener): () => void;
   onExit(listener: ExitListener): () => void;
   onSnapshot(listener: SnapshotListener): () => void;
@@ -210,6 +210,12 @@ export const webPtyBridge: WebPtyBridge = {
 
   async resize(id, cols, rows) {
     await postJson("/api/agent/terminal/pty/resize", { id, cols, rows });
+  },
+
+  // Kill the shell behind an ownerKey (the persistent-terminal tab is gone for
+  // good) rather than leaving it running for a reattach.
+  async closeOwner(ownerKey) {
+    await postJson("/api/agent/terminal/pty/close", { ownerKey });
   },
 
   onData(listener) {

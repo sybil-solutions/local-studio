@@ -3,7 +3,7 @@ import { cpus, freemem, totalmem, platform, arch, release } from "node:os";
 import { basename, resolve, sep } from "node:path";
 import { Effect, Schema } from "effect";
 import { badRequest, notFound } from "../../core/errors";
-import { decodeJsonBody } from "../../core/validation";
+import { decodeJsonBody, optionalTrimmed } from "../../core/validation";
 import { effectRoute, defineRoutes, mergeRoutes } from "../../http/route-registrar";
 import { registerStudioModelIndexRoutes } from "./model-index";
 import { registerStudioProviderRoutes } from "./provider-routes";
@@ -81,12 +81,6 @@ const pathExists = (path: string): Effect.Effect<boolean> =>
     Effect.catch(() => Effect.succeed(false)),
   );
 
-const normalizedOptionalString = (value: string | null | undefined): string | null | undefined => {
-  if (value === undefined || value === null) return value;
-  const trimmed = value.trim();
-  return trimmed ? trimmed : null;
-};
-
 export const deriveRecommendationVramGb = (gpus: GpuInfo[]): number =>
   gpus.reduce((sum, gpu) => sum + gpu.memory_total_mb / 1024, 0);
 
@@ -129,7 +123,7 @@ export const registerStudioRoutes = defineRoutes((app, context) => {
     effectRoute(app.post, "/studio/settings", (ctx) =>
       Effect.gen(function* () {
         const body = yield* decodeJsonBody(ctx, SettingsUpdateSchema);
-        const modelsDirectory = normalizedOptionalString(body.models_dir);
+        const modelsDirectory = optionalTrimmed(body.models_dir, undefined);
         const uiPreferences = body.ui_preferences;
         if (modelsDirectory === undefined && uiPreferences === undefined) {
           return yield* Effect.fail(badRequest("No supported settings provided"));

@@ -7,7 +7,7 @@ import {
   isLocalSessionPrefKey,
   patchSessionPref,
   type SessionPrefs,
-} from "@/features/agent/messages/prefs";
+} from "@/features/agent/messages/session-prefs";
 import { uniqueOpenSessions, type OpenAgentSession } from "@/features/agent/session-index";
 import { isChatsProject, type Project as ProjectEntry } from "@/features/agent/projects/types";
 import { useMountSubscription } from "@/hooks/use-mount-subscription";

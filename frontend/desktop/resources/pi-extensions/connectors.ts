@@ -9,14 +9,10 @@
 // Loaded by pi-runtime only when at least one connector is enabled.
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { frontendBase, textResult, withTimeout, type ToolResult } from "./bridge.ts";
 import { Type } from "./schema.ts";
 
-type ToolResult = {
-  content: Array<{ type: "text"; text: string }>;
-  details: Record<string, unknown>;
-};
-
-const FRONTEND_BASE = process.env.LOCAL_STUDIO_FRONTEND_BASE ?? "http://127.0.0.1:3000";
+const FRONTEND_BASE = frontendBase();
 const CALL_TIMEOUT_MS = 120_000;
 // The model this session runs on. Connector access is granted per model, so the
 // frontend both filters the inventory by it and re-checks it on every call.
@@ -43,11 +39,6 @@ interface InventoryConnector {
   error?: string;
 }
 
-const textResult = (text: string, details: Record<string, unknown>): ToolResult => ({
-  content: [{ type: "text", text }],
-  details,
-});
-
 /** Render an MCP tools/call result (content blocks) as plain text. */
 const renderMcpResult = (result: unknown): string => {
   if (
@@ -70,17 +61,13 @@ async function callConnectorTool(
   args: Record<string, unknown>,
   signal: AbortSignal | undefined,
 ): Promise<ToolResult> {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), CALL_TIMEOUT_MS);
-  const abort = () => controller.abort();
-  signal?.addEventListener("abort", abort, { once: true });
-  if (signal?.aborted) controller.abort();
+  const bounded = withTimeout(signal, CALL_TIMEOUT_MS);
   try {
     const response = await fetch(`${FRONTEND_BASE}/api/agent/connectors/call`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ connector_id: connectorId, tool, args, model_id: modelId() }),
-      signal: controller.signal,
+      signal: bounded.signal,
     });
     const payload = (await response.json()) as { ok?: boolean; result?: unknown; error?: string };
     if (!response.ok || !payload.ok) {
@@ -100,8 +87,7 @@ async function callConnectorTool(
       failed: true,
     });
   } finally {
-    clearTimeout(timeout);
-    signal?.removeEventListener("abort", abort);
+    bounded.done();
   }
 }
 

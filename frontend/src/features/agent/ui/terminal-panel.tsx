@@ -50,34 +50,6 @@ export function TerminalPanel({ cwd, ownerKey }: { cwd: string | null; ownerKey:
   );
 }
 
-type PtyBridge = {
-  open(opts: {
-    cwd?: string;
-    cols?: number;
-    rows?: number;
-    ownerKey?: string;
-  }): Promise<{ id: string; replay?: string; reused?: boolean }>;
-  write(id: string, data: string): Promise<void>;
-  resize(id: string, cols: number, rows: number): Promise<void>;
-  onData(listener: (id: string, chunk: string) => void): () => void;
-  onExit(
-    listener: (id: string, info: { exitCode: number; signal: number | null }) => void,
-  ): () => void;
-  /** Web bridge only: replay re-delivered on stream reconnect. */
-  onSnapshot?(listener: (id: string, replay: string) => void): () => void;
-  /** Web bridge only: stop streaming (the shell keeps running server-side). */
-  detach?(id: string): void;
-};
-
-function getPtyBridge(): PtyBridge | null {
-  if (typeof window === "undefined") return null;
-  const bridge = (window as unknown as { localStudioDesktop?: { terminal?: PtyBridge } })
-    .localStudioDesktop?.terminal;
-  // Prefer the Electron bridge (local PTY); otherwise the web bridge reaches
-  // the agent runtime's server-side PTY over the authenticated proxy.
-  return bridge ?? webPtyBridge;
-}
-
 type TerminalRefs = {
   term: XTerm | null;
   fit: FitAddon | null;
@@ -120,7 +92,7 @@ function disposeCached(entry: CachedTerminal): void {
   entry.refs.term = null;
   entry.refs.fit = null;
   entry.refs.applyResize = null;
-  if (entry.sessionId) getPtyBridge()?.detach?.(entry.sessionId);
+  if (entry.sessionId) webPtyBridge.detach(entry.sessionId);
   entry.holder.remove();
 }
 
@@ -182,7 +154,6 @@ type FallbackSession = {
 };
 
 type PtyBootOptions = {
-  pty: PtyBridge;
   term: XTerm;
   fit: FitAddon;
   refs: TerminalRefs;
@@ -379,18 +350,12 @@ async function bootTerminal(
   refs.term = term;
   refs.fit = fit;
 
-  const pty = getPtyBridge();
-  if (pty) {
-    try {
-      entry.cleanup = await bootPty({ pty, term, fit, refs, element, cwd, ownerKey, entry });
-    } catch (error) {
-      const reason = error instanceof Error ? error.message : "unknown";
-      term.writeln(`\x1b[33mPTY unavailable: ${reason}\x1b[0m`);
-      term.writeln("\x1b[33mFalling back to non-interactive shell.\x1b[0m");
-      entry.cleanup = bootFallback(term, fit, refs, element, cwd);
-    }
-  } else {
-    term.writeln("\x1b[33mNo PTY bridge available.\x1b[0m");
+  try {
+    entry.cleanup = await bootPty({ term, fit, refs, element, cwd, ownerKey, entry });
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : "unknown";
+    term.writeln(`\x1b[33mPTY unavailable: ${reason}\x1b[0m`);
+    term.writeln("\x1b[33mFalling back to non-interactive shell.\x1b[0m");
     entry.cleanup = bootFallback(term, fit, refs, element, cwd);
   }
 
@@ -400,7 +365,6 @@ async function bootTerminal(
 }
 
 async function bootPty({
-  pty,
   term,
   fit,
   refs,
@@ -416,7 +380,7 @@ async function bootPty({
     sessionId: string;
     info: { exitCode: number; signal: number | null };
   }> = [];
-  const dataDisposer = pty.onData((sessionId, chunk) => {
+  const dataDisposer = webPtyBridge.onData((sessionId, chunk) => {
     if (!currentId) {
       queuedData.push({ sessionId, chunk });
       return;
@@ -429,7 +393,7 @@ async function bootPty({
     );
     entry.dead = true;
   };
-  const exitDisposer = pty.onExit((sessionId, info) => {
+  const exitDisposer = webPtyBridge.onExit((sessionId, info) => {
     if (!currentId) {
       queuedExits.push({ sessionId, info });
       return;
@@ -437,20 +401,19 @@ async function bootPty({
     if (sessionId !== currentId || refs.disposed) return;
     writeExit(info);
   });
-  // Web bridge: a stream reconnect re-delivers the full replay — reset the
-  // terminal first so nothing duplicates.
-  const snapshotDisposer =
-    pty.onSnapshot?.((sessionId, replay) => {
-      if (!currentId || sessionId !== currentId || refs.disposed) return;
-      term.reset();
-      if (replay) term.write(replay);
-    }) ?? null;
+  // A stream reconnect re-delivers the full replay — reset the terminal first
+  // so nothing duplicates.
+  const snapshotDisposer = webPtyBridge.onSnapshot((sessionId, replay) => {
+    if (!currentId || sessionId !== currentId || refs.disposed) return;
+    term.reset();
+    if (replay) term.write(replay);
+  });
 
-  const { id, replay } = await pty.open({ cwd: cwd ?? undefined, cols, rows, ownerKey });
+  const { id, replay } = await webPtyBridge.open({ cwd: cwd ?? undefined, cols, rows, ownerKey });
   if (refs.disposed) {
     dataDisposer();
     exitDisposer();
-    snapshotDisposer?.();
+    snapshotDisposer();
     return () => {};
   }
   currentId = id;
@@ -464,13 +427,13 @@ async function bootPty({
     writeExit(item.info);
   }
   const dataSub = term.onData((data) => {
-    void pty.write(id, data);
+    void webPtyBridge.write(id, data);
   });
   refs.applyResize = () => {
     if (refs.disposed || !element.isConnected) return;
     try {
       fit.fit();
-      void pty.resize(id, term.cols, term.rows);
+      void webPtyBridge.resize(id, term.cols, term.rows);
     } catch {}
   };
   const resizeObserver = new ResizeObserver(() => refs.applyResize?.());
@@ -478,7 +441,7 @@ async function bootPty({
   return () => {
     dataDisposer();
     exitDisposer();
-    snapshotDisposer?.();
+    snapshotDisposer();
     dataSub.dispose();
     resizeObserver.disconnect();
   };

@@ -1,16 +1,7 @@
 {
   "ignores": [
-    "@hono/node-server",
     "@lydell/node-pty",
-    "@modelcontextprotocol/sdk",
     "brace-expansion",
-    "chromium-bidi",
-    "fast-check",
-    "playwright-core",
-    "proper-lockfile",
-    "semver",
-    "@types/proper-lockfile",
-    "@types/semver",
     "@types/react",
     "@types/react-dom",
     "@types/node",

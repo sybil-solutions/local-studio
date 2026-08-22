@@ -1,10 +1,10 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback } from "react";
 import api from "@/lib/api/client";
 import type { RigNodePayload } from "@/lib/api/rigs";
-import { readPageCache, writePageCache } from "@/lib/page-data-cache";
-import { useMountSubscription } from "@/hooks/use-mount-subscription";
+import { writePageCache } from "@/lib/page-data-cache";
+import { usePageResource } from "@/hooks/use-page-resource";
 import type { Rig, RigsPayload } from "@/lib/types";
 
 const RIGS_CACHE_KEY = "configure:rigs";
@@ -15,7 +15,7 @@ export interface ConfigureState {
   loading: boolean;
   refreshing: boolean;
   error: string | null;
-  reload: () => Promise<void>;
+  reload: () => Promise<RigsPayload | null>;
   createRig: (name: string) => Promise<Rig>;
   deleteRig: (rigId: string) => Promise<void>;
   addNode: (rigId: string, payload: RigNodePayload & { name: string }) => Promise<void>;
@@ -24,31 +24,15 @@ export interface ConfigureState {
 }
 
 export function useConfigure(): ConfigureState {
-  const [rigsPayload, setRigsPayload] = useState<RigsPayload | null>(() =>
-    readPageCache<RigsPayload>(RIGS_CACHE_KEY),
-  );
-  const [loading, setLoading] = useState(rigsPayload === null);
-  const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const reload = useCallback(async () => {
-    setRefreshing(true);
-    setError(null);
-    try {
-      const rigs = await api.getRigs();
-      writePageCache(RIGS_CACHE_KEY, rigs);
-      setRigsPayload(rigs);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, []);
-
-  useMountSubscription(() => {
-    void reload();
-  }, [reload]);
+  const load = useCallback(() => api.getRigs(), []);
+  const {
+    data: rigsPayload,
+    setData: setRigsPayload,
+    loading,
+    refreshing,
+    error,
+    reload,
+  } = usePageResource<RigsPayload>(RIGS_CACHE_KEY, load);
 
   const applyRig = useCallback((rig: Rig) => {
     setRigsPayload((current) => {
@@ -60,7 +44,7 @@ export function useConfigure(): ConfigureState {
       writePageCache(RIGS_CACHE_KEY, next);
       return next;
     });
-  }, []);
+  }, [setRigsPayload]);
 
   const createRig = useCallback(
     async (name: string) => {

@@ -5,7 +5,7 @@ import { buildSseHeaders } from "../../http/sse";
 import type { ProviderRouteConfig } from "../../services/provider-routing";
 import type { Recipe } from "../models/types";
 import { getDefaultReasoningParser } from "../compute/recipe-defaults";
-import { recordStreamingInferenceUsage, type InferenceUsageInput } from "./inference-accounting";
+import { recordInferenceUsage, type InferenceUsageInput } from "./inference-accounting";
 import { createToolCallStream } from "./tool-call-stream";
 
 const KEEPALIVE_INTERVAL_MS = 15_000;
@@ -133,10 +133,11 @@ const responseBodyStream = (
     Stream.ensuring(
       Effect.suspend(() =>
         observedUsage
-          ? recordStreamingInferenceUsage(
+          ? recordInferenceUsage(
               { logger: context.logger, stores: context.stores },
               {
                 usage: observedUsage,
+                streamed: true,
                 record: {
                   model: recordedModel,
                   source: sourceHeader,

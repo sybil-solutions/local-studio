@@ -10,7 +10,9 @@
 // the first existing legacy file we can find. After this runs once, the
 // resolver never looks at legacy paths again.
 
-import { copyFileSync, existsSync, mkdirSync, chmodSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, chmodSync, renameSync, writeFileSync } from "node:fs";
+import { chmod, rename, writeFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
 import { homedir, tmpdir } from "node:os";
 import path from "node:path";
 
@@ -81,6 +83,41 @@ export function resolveDataDir(): string {
 
 export function resolveSettingsFilePath(): string {
   return path.join(resolveDataDir(), SETTINGS_FILENAME);
+}
+
+/** `mode` is applied to the temp file at creation and re-applied after the rename; `compact` skips pretty-printing for large entries. */
+type AtomicWriteJsonOptions = { mode?: number; compact?: boolean };
+
+const atomicJsonParts = (file: string, value: unknown, compact?: boolean) =>
+  [
+    `${file}.tmp-${process.pid}-${randomUUID()}`,
+    compact ? JSON.stringify(value) : JSON.stringify(value, null, 2),
+  ] as const;
+
+/** Write-then-rename, so a crash mid-write can never leave a torn or truncated file. */
+export async function atomicWriteJson(
+  file: string,
+  value: unknown,
+  { mode, compact }: AtomicWriteJsonOptions = {},
+): Promise<void> {
+  const [temporary, payload] = atomicJsonParts(file, value, compact);
+  await writeFile(temporary, payload, { encoding: "utf-8", ...(mode === undefined ? {} : { mode }) });
+  if (mode !== undefined) await chmod(temporary, mode);
+  await rename(temporary, file);
+  if (mode !== undefined) await chmod(file, mode);
+}
+
+/** Synchronous twin of {@link atomicWriteJson}. */
+export function atomicWriteJsonSync(
+  file: string,
+  value: unknown,
+  { mode, compact }: AtomicWriteJsonOptions = {},
+): void {
+  const [temporary, payload] = atomicJsonParts(file, value, compact);
+  writeFileSync(temporary, payload, { encoding: "utf-8", ...(mode === undefined ? {} : { mode }) });
+  if (mode !== undefined) chmodSync(temporary, mode);
+  renameSync(temporary, file);
+  if (mode !== undefined) chmodSync(file, mode);
 }
 
 function migrateLegacySettings(targetDir: string): void {

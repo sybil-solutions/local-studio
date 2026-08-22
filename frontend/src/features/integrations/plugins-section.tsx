@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useState } from "react";
 import { Schema } from "effect";
 import {
   PLUGIN_TEMPLATE,
@@ -9,7 +9,7 @@ import {
   isValidPluginId,
   type PluginRow,
 } from "@local-studio/agent-runtime/plugin-contract";
-import { Alert, Button, FormField, Input, RefreshIconButton, SearchInput, StatusPill } from "@/ui";
+import { Alert, Button, FormField, Input, StatusPill } from "@/ui";
 import { Plus, Trash2 } from "@/ui/icon-registry";
 import { ResourceDrawer, ResourceDrawerSection, ResourceFact } from "@/ui/resource-drawer";
 import { ResourceLogo } from "@/ui/resource-logo";
@@ -25,7 +25,10 @@ import {
   TableSection,
   TextCell,
 } from "@/features/recipes/recipes-content/catalog-table-shell";
-import { useMountSubscription } from "@/hooks/use-mount-subscription";
+import {
+  CatalogSectionHeader,
+  useCatalogSection,
+} from "@/features/recipes/recipes-content/catalog-section";
 import { jsonBody, requestAgentJson } from "./agent-json";
 
 /**
@@ -151,9 +154,9 @@ function PluginEditorDrawer({
       width={860}
     >
       <Alert variant="warning" className="mb-6">
-        A plugin runs inside the agent process with your user account — the same reach as the
-        agent itself, with no sandbox between them. Saving writes the file and nothing more; the
-        code first runs when your next message rebuilds the session.
+        A plugin runs inside the agent process with your user account — the same reach as the agent
+        itself, with no sandbox between them. Saving writes the file and nothing more; the code
+        first runs when your next message rebuilds the session.
       </Alert>
 
       {creating ? (
@@ -177,8 +180,8 @@ function PluginEditorDrawer({
         <div className="mb-2">
           <h3 className="text-[length:var(--fs-base)] font-medium text-(--ui-fg)">Source</h3>
           <p className="mt-0.5 text-[length:var(--fs-sm)] text-(--ui-muted)">
-            TypeScript, compiled by the agent on load. Imports resolve against the agent&rsquo;s
-            own dependencies.
+            TypeScript, compiled by the agent on load. Imports resolve against the agent&rsquo;s own
+            dependencies.
           </p>
         </div>
         <textarea
@@ -288,38 +291,25 @@ function PluginRowView({
 }
 
 export function PluginsSection() {
-  const [plugins, setPlugins] = useState<readonly PluginRow[]>([]);
   const [directory, setDirectory] = useState("");
-  const [loaded, setLoaded] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
-  const [query, setQuery] = useState("");
-  const [error, setError] = useState("");
   const [editing, setEditing] = useState<PluginRow | null>(null);
   const [composing, setComposing] = useState(false);
   const [source, setSource] = useState("");
   const [loadingSource, setLoadingSource] = useState(false);
 
-  const refresh = useCallback(() => {
-    setRefreshing(true);
-    void requestAgentJson("/api/agent/plugins", decodePlugins)
-      .then((payload) => {
-        setPlugins(payload.plugins);
+  const load = useCallback(
+    () =>
+      requestAgentJson("/api/agent/plugins", decodePlugins).then((payload) => {
         setDirectory(payload.directory);
-        setError("");
-      })
-      .catch((loadError: unknown) => {
-        setPlugins([]);
-        setError(loadError instanceof Error ? loadError.message : "Plugin discovery failed");
-      })
-      .finally(() => {
-        setLoaded(true);
-        setRefreshing(false);
-      });
-  }, []);
-
-  useMountSubscription(() => {
-    refresh();
-  }, [refresh]);
+        return payload.plugins;
+      }),
+    [],
+  );
+  const section = useCatalogSection({
+    load,
+    searchText: (plugin: PluginRow) => `${plugin.id} ${plugin.file}`,
+  });
+  const { items: plugins, setItems: setPlugins, visible, loaded, error, query } = section;
 
   const openPlugin = (plugin: PluginRow) => {
     setEditing(plugin);
@@ -337,14 +327,6 @@ export function PluginsSection() {
       .finally(() => setLoadingSource(false));
   };
 
-  const visible = useMemo(() => {
-    const normalized = query.trim().toLowerCase();
-    if (!normalized) return plugins;
-    return plugins.filter((plugin) =>
-      `${plugin.id} ${plugin.file}`.toLowerCase().includes(normalized),
-    );
-  }, [plugins, query]);
-
   const closeDrawer = () => {
     setEditing(null);
     setComposing(false);
@@ -361,17 +343,13 @@ export function PluginsSection() {
             : "TypeScript modules that add tools to every session."
         }
         actions={
-          <div className="flex items-center gap-2">
-            <SearchInput
-              value={query}
-              onChange={setQuery}
-              placeholder="Search plugins"
-              className="w-56"
-            />
-            <StatusText tone={error ? "warn" : loaded ? "ok" : "dim"}>
-              {loaded ? `${visible.length} of ${plugins.length}` : "reading"}
-            </StatusText>
-            <RefreshIconButton onClick={refresh} loading={refreshing} label="Reload plugins" />
+          <CatalogSectionHeader
+            section={section}
+            searchPlaceholder="Search plugins"
+            statusTone={error ? "warn" : loaded ? "ok" : "dim"}
+            statusText={loaded ? `${visible.length} of ${plugins.length}` : "reading"}
+            refreshLabel="Reload plugins"
+          >
             <Button
               size="sm"
               onClick={() => {
@@ -384,7 +362,7 @@ export function PluginsSection() {
               <Plus className="h-3.5 w-3.5" />
               New plugin
             </Button>
-          </div>
+          </CatalogSectionHeader>
         }
       >
         {loaded && visible.length === 0 ? (

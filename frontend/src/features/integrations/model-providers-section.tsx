@@ -10,7 +10,7 @@ import type {
   ProvidersResponse,
   ProviderLoginStartResponse,
 } from "@local-studio/agent-runtime/provider-hub-contract";
-import { Input, ModelButton, RefreshIconButton, SearchInput, Spinner, StatusPill } from "@/ui";
+import { Input, ModelButton, Spinner, StatusPill } from "@/ui";
 import { ExternalLink, LogOut } from "@/ui/icon-registry";
 import { ResourceDrawer, ResourceDrawerSection, ResourceFact } from "@/ui/resource-drawer";
 import { ResourceLogo } from "@/ui/resource-logo";
@@ -29,7 +29,12 @@ import {
   TableSection,
   TextCell,
 } from "@/features/recipes/recipes-content/catalog-table-shell";
-import { openExternal, requestJson } from "./google-account-model";
+import {
+  CatalogSectionHeader,
+  useCatalogSection,
+} from "@/features/recipes/recipes-content/catalog-section";
+import { jsonBody, requestAgentJson } from "./agent-json";
+import { openExternal } from "./google-account-model";
 
 function decodeProviders(input: unknown): ProvidersResponse {
   const providers = (input as { providers?: unknown })?.providers;
@@ -208,7 +213,7 @@ function LoginFlowPanel({
     const tick = async () => {
       if (cursor.done || cancelled) return;
       try {
-        const view = await requestJson(
+        const view = await requestAgentJson(
           `/api/agent/providers/login/${encodeURIComponent(jobId)}?after=${cursor.after}`,
           decodeLoginJob,
         );
@@ -232,21 +237,17 @@ function LoginFlowPanel({
 
   const respond = useCallback(
     async (promptId: number, value: string) => {
-      await requestJson(
+      await requestAgentJson(
         `/api/agent/providers/login/${encodeURIComponent(jobId)}/respond`,
         () => ({ ok: true }),
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ promptId, value }),
-        },
+        jsonBody({ promptId, value }),
       );
     },
     [jobId],
   );
 
   const cancel = async () => {
-    await requestJson(
+    await requestAgentJson(
       `/api/agent/providers/login/${encodeURIComponent(jobId)}/cancel`,
       () => ({ ok: true }),
       { method: "POST" },
@@ -382,44 +383,33 @@ function ProviderDrawer({
 type ActiveLogin = { jobId: string; providerId: string; providerName: string };
 
 export function ModelProvidersSection() {
-  const [providers, setProviders] = useState<ProviderView[] | null>(null);
-  const [query, setQuery] = useState("");
   const [active, setActive] = useState<ActiveLogin | null>(null);
   const [selectedProvider, setSelectedProvider] = useState<ProviderView | null>(null);
-  const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
-  const refresh = useCallback(() => {
-    setRefreshing(true);
-    void requestJson("/api/agent/providers", decodeProviders)
-      .then(({ providers: list }) => {
-        setProviders(list);
+  const load = useCallback(
+    () =>
+      requestAgentJson("/api/agent/providers", decodeProviders).then(({ providers: list }) => {
         setSelectedProvider((current) =>
           current ? (list.find((provider) => provider.id === current.id) ?? current) : null,
         );
-      })
-      .catch((err: unknown) => {
-        setProviders([]);
-        setError(err instanceof Error ? err.message : "Failed to load providers");
-      })
-      .finally(() => setRefreshing(false));
-  }, []);
-
-  useMountSubscription(() => {
-    refresh();
-  }, [refresh]);
+        return list;
+      }),
+    [],
+  );
+  const section = useCatalogSection({
+    load,
+    searchText: (provider: ProviderView) =>
+      `${provider.name} ${provider.id} ${credentialBadge(provider) ?? ""}`,
+  });
+  const { items: providers, visible, loaded, error, setError, refresh } = section;
 
   const connect = async (provider: ProviderView, type: "oauth" | "api_key") => {
-    setError(null);
+    setError("");
     try {
-      const { jobId } = await requestJson(
+      const { jobId } = await requestAgentJson(
         `/api/agent/providers/${encodeURIComponent(provider.id)}/login`,
         decodeLoginStart,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ type }),
-        },
+        jsonBody({ type }),
       );
       setActive({ jobId, providerId: provider.id, providerName: provider.name });
     } catch (err) {
@@ -429,7 +419,7 @@ export function ModelProvidersSection() {
 
   const signOut = useCallback(
     async (providerId: string) => {
-      await requestJson(
+      await requestAgentJson(
         `/api/agent/providers/${encodeURIComponent(providerId)}/logout`,
         () => ({ ok: true }),
         { method: "POST" },
@@ -443,23 +433,18 @@ export function ModelProvidersSection() {
     refresh();
   }, [refresh]);
 
-  const visibleProviders = useMemo(() => {
-    const normalized = query.trim().toLowerCase();
-    return (providers ?? [])
-      .filter(
-        (provider) =>
-          (provider.oauth || provider.apiKey || provider.configured) &&
-          (!normalized ||
-            `${provider.name} ${provider.id} ${credentialBadge(provider) ?? ""}`
-              .toLowerCase()
-              .includes(normalized)),
-      )
-      .sort(
-        (left, right) =>
-          Number(right.configured) - Number(left.configured) || left.name.localeCompare(right.name),
-      );
-  }, [providers, query]);
-  const connectedCount = (providers ?? []).filter((provider) => provider.configured).length;
+  const visibleProviders = useMemo(
+    () =>
+      visible
+        .filter((provider) => provider.oauth || provider.apiKey || provider.configured)
+        .sort(
+          (left, right) =>
+            Number(right.configured) - Number(left.configured) ||
+            left.name.localeCompare(right.name),
+        ),
+    [visible],
+  );
+  const connectedCount = providers.filter((provider) => provider.configured).length;
 
   return (
     <>
@@ -467,27 +452,18 @@ export function ModelProvidersSection() {
         title="Cloud models"
         description="Model companies available through account sign-in or API credentials."
         actions={
-          <div className="flex items-center gap-2">
-            <SearchInput
-              value={query}
-              onChange={setQuery}
-              placeholder="Search model companies"
-              className="w-56"
-            />
-            <StatusText tone={connectedCount ? "ok" : providers ? "dim" : "info"}>
-              {providers
-                ? `${connectedCount} connected · ${visibleProviders.length} shown`
-                : "loading"}
-            </StatusText>
-            <RefreshIconButton
-              onClick={refresh}
-              loading={refreshing}
-              label="Refresh model accounts"
-            />
-          </div>
+          <CatalogSectionHeader
+            section={section}
+            searchPlaceholder="Search model companies"
+            statusTone={connectedCount ? "ok" : loaded ? "dim" : "info"}
+            statusText={
+              loaded ? `${connectedCount} connected · ${visibleProviders.length} shown` : "loading"
+            }
+            refreshLabel="Refresh model accounts"
+          />
         }
       >
-        {providers === null ? (
+        {!loaded ? (
           <div className="px-3 py-5">
             <Spinner size="xs" />
           </div>

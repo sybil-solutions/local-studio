@@ -26,8 +26,6 @@ export type WorkspacePaneRenderContext = {
   tools: ReturnType<typeof useTools>;
   dispatch: WorkspaceDispatch;
   handles: WorkspaceHandles;
-  compact?: boolean;
-  composerOnly?: boolean;
 };
 
 export type WorkspacePaneView = {
@@ -134,8 +132,6 @@ type WorkspacePaneProps = {
   tools: ReturnType<typeof useTools>;
   dispatch: WorkspaceDispatch;
   handles: WorkspaceHandles;
-  compact: boolean;
-  composerOnly: boolean;
 };
 
 function sameWorkspacePaneProps(previous: WorkspacePaneProps, next: WorkspacePaneProps): boolean {
@@ -154,9 +150,7 @@ function sameWorkspacePaneProps(previous: WorkspacePaneProps, next: WorkspacePan
     previous.tools.setComputerTab === next.tools.setComputerTab &&
     previous.tools.toggleComputerOpen === next.tools.toggleComputerOpen &&
     previous.dispatch === next.dispatch &&
-    previous.handles === next.handles &&
-    previous.compact === next.compact &&
-    previous.composerOnly === next.composerOnly
+    previous.handles === next.handles
   );
 }
 
@@ -169,8 +163,6 @@ const WorkspacePane = memo(function WorkspacePane({
   tools,
   dispatch,
   handles,
-  compact,
-  composerOnly,
 }: WorkspacePaneProps) {
   const sessions = view.session ? [view.session] : [];
   const composerFocus = useMemo(
@@ -229,8 +221,6 @@ const WorkspacePane = memo(function WorkspacePane({
         rightPanelOpen={tools.computer.open}
         onToggleRightPanel={tools.toggleComputerOpen}
         onRegisterHandle={(handle) => handles.registerPaneHandle(view.paneId, handle)}
-        showHeader={!compact}
-        composerOnly={composerOnly}
       />
     </ComposerFocusContext.Provider>
   );
@@ -243,8 +233,6 @@ export function renderWorkspacePane({
   tools,
   dispatch,
   handles,
-  compact = false,
-  composerOnly = false,
 }: WorkspacePaneRenderContext) {
   const view = selectWorkspacePaneView(paneId, state, projects);
   if (!view) return null;
@@ -260,8 +248,6 @@ export function renderWorkspacePane({
       tools={tools}
       dispatch={dispatch}
       handles={handles}
-      compact={compact}
-      composerOnly={composerOnly}
     />
   );
 }

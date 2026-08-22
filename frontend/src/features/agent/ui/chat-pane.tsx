@@ -54,8 +54,7 @@ import {
   useChatPaneRuntimeHandle,
 } from "@/features/agent/ui/chat-pane-hooks";
 import { useChatPaneSessionTitle } from "@/features/agent/ui/chat-pane-session-title";
-import { useGoalCommand } from "@/features/agent/ui/use-goal-command";
-import { useGoalMode } from "@/features/agent/ui/use-goal-mode";
+import { useGoal } from "@/features/agent/ui/use-goal";
 import { useComposerCommandHandlers } from "@/features/agent/ui/use-composer-command-handlers";
 import { useChatPaneSendFlow } from "@/features/agent/ui/chat-pane-send-flow";
 import { ChatPaneHandle } from "@/features/agent/messages";
@@ -70,7 +69,7 @@ import {
   loadThinkingLevelDefault,
   pickThinkingLevel,
   setThinkingLevelDefault,
-} from "@/features/agent/messages/thinking-level-pref";
+} from "@/features/agent/messages/session-prefs";
 import {
   exportFilenameFromTitle,
   sessionToMarkdown,
@@ -87,7 +86,6 @@ import {
   type TerminalOwnersSnapshot,
 } from "@/features/agent/ui/use-persistent-terminal-owners";
 import { PersistentTerminals } from "@/features/agent/ui/persistent-terminals";
-import { cx } from "@/ui/utils";
 import { ExtensionUiDialog } from "@/features/agent/ui/extension-ui-dialog";
 export type { ChatPaneHandle };
 
@@ -128,17 +126,7 @@ function TimelineFallback() {
   return <div className="flex min-h-0 flex-1 bg-(--agent-bg)" />;
 }
 
-function chatPaneClassName(composerOnly: boolean): string {
-  return cx(
-    "relative flex min-h-0 min-w-0 flex-1 flex-col",
-    composerOnly
-      ? "bg-transparent"
-      : "bg-(--agent-bg) shadow-[inset_1px_0_rgba(255,255,255,0.015)]",
-  );
-}
-
 function ChatTranscript({
-  composerOnly,
   terminalView,
   showEmptyPrompt,
   activeTab,
@@ -149,7 +137,6 @@ function ChatTranscript({
   onForkSession,
   loadEarlierHistory,
 }: {
-  composerOnly: boolean;
   terminalView: boolean;
   showEmptyPrompt: boolean;
   activeTab: Session | undefined;
@@ -162,7 +149,6 @@ function ChatTranscript({
 }) {
   const viewKey = activeTab?.piSessionId ?? activeTab?.id ?? null;
   const viewAlias = activeTab?.piSessionId ? activeTab.id : null;
-  if (composerOnly) return null;
   return (
     <div className={terminalView ? "hidden" : "flex min-h-0 min-w-0 flex-1"}>
       {showEmptyPrompt ? (
@@ -219,7 +205,6 @@ type Props = {
   onToggleRightPanel: () => void;
   onRegisterHandle?: (handle: ChatPaneHandle | null) => void;
   showHeader?: boolean;
-  composerOnly?: boolean;
 };
 
 export type ComposerModelSelectorProps = {
@@ -268,7 +253,6 @@ export function ChatPane({
   onToggleRightPanel,
   onRegisterHandle,
   showHeader = true,
-  composerOnly = false,
 }: Props) {
   const router = useRouter();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -393,10 +377,18 @@ export function ChatPane({
   });
 
   const activePiSessionId = activeTab?.piSessionId ?? null;
-  const { goalRevision, goalAction, flushPendingGoal } = useGoalCommand(
-    activePiSessionId,
-    activeTabId,
+  const reportGoalError = useCallback(
+    (message: string) => {
+      if (activeTab) updateTab(activeTab.id, (tab) => ({ ...tab, error: message }));
+    },
+    [activeTab, updateTab],
   );
+  const goalApi = useGoal({
+    piSessionId: activePiSessionId,
+    tabId: activeTabId,
+    reportError: reportGoalError,
+  });
+  const { goalRevision, goalAction, flushPendingGoal } = goalApi;
   const handlePiSessionIdAssigned = useCallback(
     (piSessionId: string) => {
       handlePiSessionIdChange(piSessionId);
@@ -456,7 +448,6 @@ export function ChatPane({
       activeTab ? applyContextRow(activeTab.id, "skill", row, tools) : Promise.resolve(),
     [activeTab, tools],
   );
-  const [goalModeOn, setGoalModeOn] = useState(false);
   const [automationDrawerOpen, setAutomationDrawerOpen] = useState(false);
   // Seed the automation with the last thing the user asked for: the common case
   // is "keep doing what I just asked, on a schedule".
@@ -491,7 +482,7 @@ export function ChatPane({
           ...(onForkSession ? { forkSession: onForkSession } : {}),
           ...(canExport ? { exportSession } : {}),
           goal: goalAction,
-          enterGoalMode: () => setGoalModeOn(true),
+          enterGoalMode: goalApi.enterGoalMode,
           openAutomation: () => setAutomationDrawerOpen(true),
         }),
         promptTemplateCommandProvider({
@@ -506,6 +497,7 @@ export function ChatPane({
       canExport,
       compactSession,
       goalAction,
+      goalApi.enterGoalMode,
       exportSession,
       onForkSession,
       onToggleBrowserTool,
@@ -553,7 +545,6 @@ export function ChatPane({
       modelSupportsVision,
       readingAttachments,
       resetComposerHeight: composerAutosize.reset,
-      running: Boolean(running),
       setMention,
       setStickToBottom,
       tools,
@@ -575,22 +566,9 @@ export function ChatPane({
       abortTurn,
       attachFiles,
     });
-  const reportGoalError = useCallback(
-    (message: string) => {
-      if (activeTab) updateTab(activeTab.id, (tab) => ({ ...tab, error: message }));
-    },
-    [activeTab, updateTab],
-  );
-  const goalModeApi = useGoalMode({
-    goalAction,
-    reportError: reportGoalError,
-    sendMessage,
-    goalMode: goalModeOn,
-    setGoalMode: setGoalModeOn,
-  });
   const handleComposerSubmit = useCallback(
     (event: FormEvent) => {
-      if (goalModeApi.submitAsGoal(event, activeTab?.input ?? "")) return;
+      if (goalApi.submitAsGoal(event, activeTab?.input ?? "", sendMessage)) return;
       const invocation = parseSlashInvocation(activeTab?.input ?? "");
       if (invocation && commandRegistry.find(invocation.name, commandContext)) {
         event.preventDefault();
@@ -599,7 +577,7 @@ export function ChatPane({
       }
       void sendMessage(event);
     },
-    [activeTab, commandContext, commandRegistry, goalModeApi, runCommandInvocation, sendMessage],
+    [activeTab, commandContext, commandRegistry, goalApi, runCommandInvocation, sendMessage],
   );
   const loadEarlierHistory = useCallback(
     () => (activeTabId ? engine.loadEarlier(activeTabId) : Promise.resolve()),
@@ -629,7 +607,7 @@ export function ChatPane({
     <section
       onMouseDownCapture={onFocus}
       data-pane-id={paneId}
-      className={chatPaneClassName(composerOnly)}
+      className="relative flex min-h-0 min-w-0 flex-1 flex-col bg-(--agent-bg) shadow-[inset_1px_0_rgba(255,255,255,0.015)]"
     >
       <ChatPaneChrome
         extensionUiRequest={activeTab?.extensionUiRequest}
@@ -655,7 +633,6 @@ export function ChatPane({
         }}
       />
       <ChatTranscript
-        composerOnly={composerOnly}
         terminalView={terminalView}
         showEmptyPrompt={showEmptyPrompt}
         activeTab={activeTab}
@@ -709,7 +686,7 @@ export function ChatPane({
           onComposerDragOver={handleComposerDragOver}
           onComposerDrop={handleComposerDrop}
           onComposerKeyDown={(event) => {
-            if (goalModeApi.interceptKeyDown(event)) return;
+            if (goalApi.interceptKeyDown(event)) return;
             handleComposerKeyDown(event);
           }}
           onComposerPaste={handleComposerPaste}
@@ -722,7 +699,7 @@ export function ChatPane({
           onSubmit={handleComposerSubmit}
           onToggleBrowserBackend={onToggleBrowserBackend}
           onToggleBrowserTool={onToggleBrowserTool}
-          placeholder={goalModeApi.goalPlaceholder ?? composerVisual.placeholder}
+          placeholder={goalApi.goalPlaceholder ?? composerVisual.placeholder}
           drawer={
             <SessionProjectDrawer
               tabId={activeTabId}
@@ -750,10 +727,9 @@ export function ChatPane({
           selectedSkills={selectedSkills}
           status={activeTab?.status}
           textareaRef={textareaRef}
-          goalMode={goalModeApi.goalMode}
-          onExitGoalMode={goalModeApi.exitGoalMode}
-          floating={composerOnly}
-          dense={!showHeader && !composerOnly}
+          goalMode={goalApi.goalMode}
+          onExitGoalMode={goalApi.exitGoalMode}
+          dense={!showHeader}
         />
       </div>
     </section>

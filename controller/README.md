@@ -40,6 +40,18 @@ flowchart TB
     System --> Stores["src/stores SQLite helpers"]
 ```
 
+## Design Invariants
+
+- Engines are pure: `ComputeEngineSpec.plan()` is a total function of its `LaunchRequest` — no clock/env/fs — keeping the launch path golden-testable.
+- The instance record is the lease: a GPU is held iff a live `InstanceRecord` claims it, and deleting the record is the release. No registry can drift.
+- Status is derived, never stored: `stateOf()` reads liveness, health, and deadline each time; there is no stale status field.
+- Ownership checks before signaling: launchers verify the pid nonce or container name before stop/logTail, never acting on a process that is not provably ours (pid-recycle safety).
+- One active model: the bridge pins the active model to instance `"llm"` on the legacy inference port, preserving the proxy/metrics/speech contract.
+- Boundary validation everywhere: config, request bodies, and persisted JSON are all validated with Effect Schema; tagged error unions avoid substring-matching error messages.
+- Secret discipline: logs are redacted before reaching HTTP/SSE clients, raw files stay on disk, and the API key is required for non-loopback binds.
+- Crash-loop protection: `launch-failure-budget` (3 fails / 10 min) gates recipe launches with 429s.
+- Obsolete-state cleanup: `stores/sqlite.ts` drops known-obsolete tables on open; instance JSON uses write-then-rename.
+
 ## Prerequisites
 
 - Bun 1.x.

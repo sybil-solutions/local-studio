@@ -14,7 +14,12 @@ import {
   bumpPeak,
   emptyPeaks,
   firstMetric,
+  gpuFields,
+  lifetimeFields,
+  peakFields,
   positiveOrUndefined,
+  rollupGpus,
+  tokenTotalFields,
   type SessionPeaks,
 } from "./metrics-peaks";
 
@@ -46,7 +51,8 @@ export const startMetricsCollector = (context: AppContext): Effect.Effect<never>
     const gpuList = yield* getGpuInfo();
 
     const lifetimeStore = context.stores.lifetimeMetricsStore;
-    const totalPowerWatts = gpuList.reduce((sum, gpu) => sum + gpu.power_draw, 0);
+    const gpuTotals = rollupGpus(gpuList);
+    const totalPowerWatts = gpuTotals.powerWatts;
     const energyWh = totalPowerWatts * (5 / 3600);
     yield* lifetimeStore.incrementEffect("energy_wh", energyWh);
     yield* lifetimeStore.incrementEffect(
@@ -93,12 +99,7 @@ export const startMetricsCollector = (context: AppContext): Effect.Effect<never>
 
     const lifetimeData = yield* lifetimeStore.getAllEffect();
     const baseMetrics = {
-      lifetime_prompt_tokens: lifetimeData["prompt_tokens_total"] ?? 0,
-      lifetime_completion_tokens: lifetimeData["completion_tokens_total"] ?? 0,
-      lifetime_requests: lifetimeData["requests_total"] ?? 0,
-      lifetime_energy_kwh: (lifetimeData["energy_wh"] ?? 0) / 1000,
-      lifetime_uptime_hours: (lifetimeData["uptime_seconds"] ?? 0) / 3600,
-      current_power_watts: totalPowerWatts,
+      ...lifetimeFields(lifetimeData, totalPowerWatts),
       kwh_per_million_input: lifetimeData["prompt_tokens_total"]
         ? (lifetimeData["energy_wh"] ?? 0) /
           1000 /
@@ -110,10 +111,6 @@ export const startMetricsCollector = (context: AppContext): Effect.Effect<never>
           ((lifetimeData["completion_tokens_total"] ?? 1) / 1_000_000)
         : null,
     };
-
-    const totalVramUsedGb = gpuList.reduce((sum, gpu) => sum + gpu.memory_used_mb / 1024, 0);
-    const totalVramCapacityGb = gpuList.reduce((sum, gpu) => sum + gpu.memory_total_mb / 1024, 0);
-    const totalPowerLimitWatts = gpuList.reduce((sum, gpu) => sum + gpu.power_limit, 0);
 
     if (current) {
       const modelId =
@@ -208,7 +205,7 @@ export const startMetricsCollector = (context: AppContext): Effect.Effect<never>
       bumpPeak(sessionPeaks, "kv_cache_usage", kvCacheUsage);
       bumpPeak(sessionPeaks, "running_requests", runningRequests);
       bumpPeak(sessionPeaks, "power_watts", totalPowerWatts);
-      bumpPeak(sessionPeaks, "vram_used_gb", totalVramUsedGb);
+      bumpPeak(sessionPeaks, "vram_used_gb", gpuTotals.vramUsedGb);
 
       if (sessionPeakId) {
         yield* context.stores.peakMetricsStore.updateSessionPeakEffect(
@@ -231,11 +228,6 @@ export const startMetricsCollector = (context: AppContext): Effect.Effect<never>
       const usageTotals = usageAggregate?.totals;
       const usageLatencyAvg = positiveOrUndefined(usageAggregate?.latency?.avg_ms);
       const usageTtftAvg = positiveOrUndefined(usageAggregate?.ttft?.avg_ms);
-      const promptTokensDisplay =
-        positiveOrUndefined(promptTokensTotal) ?? positiveOrUndefined(usageTotals?.prompt_tokens);
-      const generationTokensDisplay =
-        positiveOrUndefined(generationTokensTotal) ??
-        positiveOrUndefined(usageTotals?.completion_tokens);
       const avgTtftDisplay = avgTtftMs > 0 ? Math.round(avgTtftMs * 10) / 10 : (usageTtftAvg ?? 0);
 
       yield* context.eventManager.publishMetrics({
@@ -246,17 +238,12 @@ export const startMetricsCollector = (context: AppContext): Effect.Effect<never>
         running_requests: runningRequests,
         pending_requests: pendingRequests,
         kv_cache_usage: kvCacheUsage,
-        prompt_tokens_total: promptTokensDisplay,
-        generation_tokens_total: generationTokensDisplay,
-        total_tokens: positiveOrUndefined(usageTotals?.total_tokens),
-        total_requests: positiveOrUndefined(usageTotals?.total_requests),
+        ...tokenTotalFields(usageTotals, promptTokensTotal, generationTokensTotal),
         prompt_throughput: Math.round(promptThroughput * 10) / 10,
         generation_throughput: Math.round(generationThroughput * 10) / 10,
         avg_ttft_ms: avgTtftDisplay,
         latency_avg: usageLatencyAvg,
-        vram_used_gb: Math.round(totalVramUsedGb * 10) / 10,
-        vram_capacity_gb: Math.round(totalVramCapacityGb * 10) / 10,
-        power_limit_watts: Math.round(totalPowerLimitWatts),
+        ...gpuFields(gpuTotals),
         session_peak_prompt_throughput: Math.round(sessionPeaks.prompt_throughput * 10) / 10,
         session_peak_generation_throughput:
           Math.round(sessionPeaks.generation_throughput * 10) / 10,
@@ -269,28 +256,20 @@ export const startMetricsCollector = (context: AppContext): Effect.Effect<never>
         session_peak_prefill_tps: sessionPeakData?.["peak_prefill_tps"] ?? null,
         session_peak_generation_tps: sessionPeakData?.["peak_generation_tps"] ?? null,
         session_peak_best_ttft_ms: sessionPeakData?.["best_ttft_ms"] ?? null,
-        best_session_peak_id: bestSessionPeakData?.["session_id"] ?? null,
-        best_session_prefill_tps: bestSessionPeakData?.["peak_prefill_tps"] ?? null,
-        best_session_generation_tps: bestSessionPeakData?.["peak_generation_tps"] ?? null,
-        best_session_ttft_ms: bestSessionPeakData?.["best_ttft_ms"] ?? null,
-        peak_prefill_tps: peakData?.["prefill_tps"] ?? null,
-        peak_generation_tps: peakData?.["generation_tps"] ?? null,
-        peak_ttft_ms: peakData?.["ttft_ms"] ?? null,
+        ...peakFields(peakData, bestSessionPeakData),
       });
     } else {
       sessionModelId = null;
       sessionPeakId = null;
       sessionPeaks = emptyPeaks();
       bumpPeak(sessionPeaks, "power_watts", totalPowerWatts);
-      bumpPeak(sessionPeaks, "vram_used_gb", totalVramUsedGb);
+      bumpPeak(sessionPeaks, "vram_used_gb", gpuTotals.vramUsedGb);
       yield* context.eventManager.publishMetrics({
         ...baseMetrics,
         model_id: null,
         model_path: null,
         served_model_name: null,
-        vram_used_gb: Math.round(totalVramUsedGb * 10) / 10,
-        vram_capacity_gb: Math.round(totalVramCapacityGb * 10) / 10,
-        power_limit_watts: Math.round(totalPowerLimitWatts),
+        ...gpuFields(gpuTotals),
         session_peak_power_watts: Math.round(sessionPeaks.power_watts),
         session_peak_vram_used_gb: Math.round(sessionPeaks.vram_used_gb * 10) / 10,
       });

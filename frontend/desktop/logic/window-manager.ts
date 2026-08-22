@@ -1,16 +1,33 @@
-import { app, BrowserWindow } from "electron";
+import { app, BrowserWindow, type RenderProcessGoneDetails } from "electron";
 import path from "node:path";
 import { DESKTOP_CONFIG } from "../configs";
 import { log } from "../helpers/logger";
 import { hardenWebContents, registerPermissionPolicy } from "./security";
 
-async function memorySummary(): Promise<string> {
+/**
+ * One crash line for both the per-window and the app-wide `render-process-gone`
+ * events: `source` names which fired, and the memory figures say whether the
+ * renderer died of OOM.
+ */
+export async function logRenderProcessGone(
+  source: string,
+  details: RenderProcessGoneDetails,
+  url: string,
+): Promise<void> {
+  let memory = "memory=unavailable";
   try {
-    const memory = await process.getProcessMemoryInfo();
-    return `memory=${JSON.stringify(memory)}`;
-  } catch {
-    return "memory=unavailable";
-  }
+    memory = `memory=${JSON.stringify(await process.getProcessMemoryInfo())}`;
+  } catch {}
+  log.error(
+    [
+      source,
+      `reason=${details.reason}`,
+      `exitCode=${details.exitCode}`,
+      `url=${url}`,
+      `appVersion=${app.getVersion()}`,
+      memory,
+    ].join(" "),
+  );
 }
 
 export function createMainWindow(appUrl: string): BrowserWindow {
@@ -42,18 +59,11 @@ export function createMainWindow(appUrl: string): BrowserWindow {
 
   let lastRendererReloadAt = 0;
   window.webContents.on("render-process-gone", (_event, details) => {
-    void memorySummary().then((memory) => {
-      log.error(
-        [
-          "Renderer process gone",
-          `reason=${details.reason}`,
-          `exitCode=${details.exitCode}`,
-          `url=${window.webContents.getURL() || appUrl}`,
-          `appVersion=${app.getVersion()}`,
-          memory,
-        ].join(" "),
-      );
-    });
+    void logRenderProcessGone(
+      "Renderer process gone",
+      details,
+      window.webContents.getURL() || appUrl,
+    );
     // Recover from a renderer crash (OOM/GPU/abnormal) by reloading, so the user
     // isn't left with a permanent blank window. Rate-limited so a hard crash-loop
     // doesn't spin — after that the window stays blank rather than thrashing.

@@ -1,15 +1,13 @@
 import {
-  chmodSync,
   existsSync,
   mkdirSync,
   readFileSync,
   renameSync,
-  writeFileSync,
 } from "node:fs";
 import path from "node:path";
 import { notifySessionListChanged } from "./session-list-changed";
 import lockfile from "proper-lockfile";
-import { resolveDataDir } from "./data-dir";
+import { atomicWriteJsonSync, resolveDataDir } from "./data-dir";
 import { isRecord } from "../../../shared/agent/guards";
 
 const SESSION_METADATA_FILENAME = "agent-session-metadata.json";
@@ -115,12 +113,7 @@ function readStore(): SessionMetadataStore {
 function writeStore(store: SessionMetadataStore): void {
   const filepath = storePath();
   mkdirSync(path.dirname(filepath), { recursive: true });
-  const tempPath = `${filepath}.${process.pid}.tmp`;
-  writeFileSync(tempPath, `${JSON.stringify(store, null, 2)}\n`, "utf-8");
-  try {
-    chmodSync(tempPath, 0o600);
-  } catch {}
-  renameSync(tempPath, filepath);
+  atomicWriteJsonSync(filepath, store, { mode: 0o600 });
   // Archive/rename/pin live in this overlay, not in the session .jsonl the
   // list watcher sees — without this, archiving a session never told any
   // surface the list changed (verified empirically against the deployed app).

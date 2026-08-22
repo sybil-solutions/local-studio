@@ -1,6 +1,6 @@
 import { useCallback, useMemo } from "react";
 import { cleanSessionTitle, type SessionTab } from "@/features/agent/messages";
-import { patchCanonicalSessionPref } from "@/features/agent/messages/prefs";
+import { patchCanonicalSessionPref } from "@/features/agent/messages/session-prefs";
 import { useProjectsNavSessionPrefs } from "@/features/agent/ui/projects-nav/use-projects-nav-effects";
 
 export function useChatPaneSessionTitle({

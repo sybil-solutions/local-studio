@@ -1,11 +1,11 @@
 import { app } from "electron";
 import { existsSync } from "node:fs";
 import path from "node:path";
-import { fork, type ChildProcess } from "node:child_process";
+import type { ChildProcess } from "node:child_process";
 import { DESKTOP_CONFIG } from "../configs";
 import { log } from "../helpers/logger";
 import { resolveStablePort } from "../helpers/ports";
-import { resolveAugmentedPath } from "../helpers/resolve-path";
+import { forkChild, stopChild, waitUntilReady } from "./child-supervisor";
 
 export type AgentRuntimeHandle = {
   frontendUrl: string;
@@ -17,14 +17,6 @@ type StartAgentRuntimeOptions = {
   frontendUrl: string;
   preferredPort?: number;
 };
-
-let currentAgentRuntime: ChildProcess | null = null;
-
-process.once("exit", () => {
-  if (currentAgentRuntime && !currentAgentRuntime.killed) {
-    currentAgentRuntime.kill("SIGTERM");
-  }
-});
 
 function agentRuntimeEntry(): string {
   return app.isPackaged
@@ -43,42 +35,6 @@ async function isAgentRuntimeHealthy(url: string): Promise<boolean> {
   }
 }
 
-async function waitForAgentRuntime(
-  child: ChildProcess,
-  url: string,
-  timeoutMs: number,
-): Promise<void> {
-  const startedAt = Date.now();
-  while (Date.now() - startedAt < timeoutMs) {
-    if (child.exitCode !== null) {
-      throw new Error(`Agent runtime exited with code ${child.exitCode}`);
-    }
-    if (await isAgentRuntimeHealthy(url)) return;
-    await new Promise((resolve) => setTimeout(resolve, 200));
-  }
-  throw new Error(`Timed out waiting for agent runtime: ${url}`);
-}
-
-async function stopChild(child: ChildProcess): Promise<void> {
-  if (child.exitCode !== null) return;
-  const pid = child.pid;
-  child.kill("SIGTERM");
-  await new Promise<void>((resolve) => {
-    const timer = setTimeout(() => {
-      if (pid) {
-        try {
-          process.kill(pid, "SIGKILL");
-        } catch {}
-      }
-      resolve();
-    }, 5_000);
-    child.once("exit", () => {
-      clearTimeout(timer);
-      resolve();
-    });
-  });
-}
-
 export async function startAgentRuntime(
   options: StartAgentRuntimeOptions,
 ): Promise<AgentRuntimeHandle> {
@@ -95,12 +51,10 @@ export async function startAgentRuntime(
 
   const port = await resolveStablePort(options.preferredPort);
   const url = `http://127.0.0.1:${port}`;
-  const child = fork(entry, {
-    stdio: "pipe",
-    detached: false,
+  const child = forkChild({
+    label: "agent-runtime",
+    entry,
     env: {
-      ...process.env,
-      PATH: resolveAugmentedPath(),
       PORT: String(port),
       LOCAL_STUDIO_DATA_DIR: DESKTOP_CONFIG.userDataDir,
       PI_CODING_AGENT_DIR: path.join(DESKTOP_CONFIG.userDataDir, "pi-agent"),
@@ -111,19 +65,18 @@ export async function startAgentRuntime(
     },
   });
 
-  child.stdout?.on("data", (chunk: Buffer | string) => {
-    log.info(`agent-runtime: ${String(chunk).trim()}`);
-  });
-  child.stderr?.on("data", (chunk: Buffer | string) => {
-    log.warn(`agent-runtime: ${String(chunk).trim()}`);
-  });
   child.once("exit", (code, signal) => {
     log.warn(`Agent runtime exited code=${code ?? "null"} signal=${signal ?? "null"}`);
   });
 
-  currentAgentRuntime = child;
   try {
-    await waitForAgentRuntime(child, url, DESKTOP_CONFIG.startupTimeoutMs);
+    await waitUntilReady({
+      child,
+      isReady: () => isAgentRuntimeHealthy(url),
+      timeoutMs: DESKTOP_CONFIG.startupTimeoutMs,
+      intervalMs: 200,
+      label: `agent runtime: ${url}`,
+    });
     return { frontendUrl: options.frontendUrl, process: child, url };
   } catch (error) {
     await stopChild(child);
@@ -147,7 +100,5 @@ export async function startOrReuseAgentRuntime(
 }
 
 export async function stopAgentRuntime(handle?: AgentRuntimeHandle): Promise<void> {
-  if (!handle?.process) return;
-  await stopChild(handle.process);
-  if (currentAgentRuntime === handle.process) currentAgentRuntime = null;
+  if (handle?.process) await stopChild(handle.process);
 }

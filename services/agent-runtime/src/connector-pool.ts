@@ -2,7 +2,6 @@ import { connectMcp, type McpConnection, type McpTarget, type McpToolInfo } from
 import { connectorAuthorizationHeaders, googleWorkspaceConnectorAuth } from "./connector-auth";
 import { listConnectors, type ConnectorConfig } from "./connectors-service";
 import { googleWorkspaceConnection } from "./google-account";
-import { googleWorkspaceEndpointTransport } from "./google-workspace-binding";
 import { oauthConnectorSpawnEnv, type OAuthConnectorDependencies } from "./oauth-connectors";
 
 export class ConnectorToolDeniedError extends Error {}
@@ -49,7 +48,6 @@ export class ConnectorPool {
     if (identity) {
       return googleWorkspaceConnection({
         service: identity.service,
-        transport: googleWorkspaceEndpointTransport(identity.service, connector.url ?? ""),
         authorize: (forceRefresh: boolean) => connectorAuthorizationHeaders(connector, forceRefresh),
         ...(signal ? { signal } : {}),
       });

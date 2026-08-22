@@ -180,7 +180,7 @@ describe("google accounts are keyed by mailbox", () => {
           gmail: {
             email: "Legacy@Example.com",
             scopes: [...GOOGLE_WORKSPACE_BINDINGS.gmail.scopes],
-            resource: GOOGLE_WORKSPACE_BINDINGS.gmail.mcpResource,
+            resource: "https://gmailmcp.googleapis.com/mcp",
             connectedAt: "2026-01-01T00:00:00.000Z",
           },
         },

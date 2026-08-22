@@ -53,14 +53,6 @@ export const TOOL_ICONS: Record<ToolKind, LucideIcon> = {
 
 type ToolMeta = { verb: string; detail: string | null };
 
-function previewHtmlDocument(source: string): string {
-  const resetStyle = "<style>html,body{margin:0;padding:0}</style>";
-  if (/<head[\s>]/i.test(source)) return source.replace(/<head([^>]*)>/i, `<head$1>${resetStyle}`);
-  if (/<html[\s>]/i.test(source))
-    return source.replace(/<html([^>]*)>/i, `<html$1><head>${resetStyle}</head>`);
-  return `<!doctype html><html><head><meta charset="utf-8">${resetStyle}</head><body>${source}</body></html>`;
-}
-
 function toolMeta(block: ToolBlock, filePath?: string | null): ToolMeta {
   const path = toolArg(block, [
     "path",
@@ -437,10 +429,8 @@ function FileWritePreview({
   const height = useToolPreviewHeight();
   const previewHeightPx = PREVIEW_HEIGHT_PX[height];
   const lang = detectLang(filePath);
-  const isHtml = lang === "html";
   const body = fileContent ?? patchContent ?? "";
   const isSvg = /\.svg$/i.test(filePath ?? "") || /^\s*<svg[\s>]/i.test(body);
-  const canPreview = isHtml || isSvg;
   const [showPreview, setShowPreview] = useState(isSvg);
   const sourceLang = fileContent === null && patchContent !== null ? "diff" : lang;
 
@@ -454,7 +444,7 @@ function FileWritePreview({
             <span className="truncate font-mono">
               {fileBasename(filePath) ?? sourceLang ?? "source"}
             </span>
-            {canPreview ? (
+            {isSvg ? (
               <button
                 type="button"
                 onClick={() => setShowPreview((value) => !value)}
@@ -475,15 +465,6 @@ function FileWritePreview({
                 className="max-h-full max-w-full object-contain"
               />
             </div>
-          ) : isHtml && showPreview ? (
-            <iframe
-              sandbox="allow-scripts"
-              referrerPolicy="no-referrer"
-              srcDoc={previewHtmlDocument(body)}
-              className="m-0 w-full border-0 bg-white p-0"
-              style={{ height: previewHeightPx }}
-              title={filePath ?? "preview"}
-            />
           ) : (
             <HighlightedToolSource body={body} lang={sourceLang} />
           )}

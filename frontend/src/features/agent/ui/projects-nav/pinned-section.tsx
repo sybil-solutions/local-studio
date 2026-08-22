@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { sessionActivity, useSessionActivity } from "@/features/agent/session-index";
-import type { SessionPrefs } from "@/features/agent/messages/prefs";
+import type { SessionPrefs } from "@/features/agent/messages/session-prefs";
 import type { Project as ProjectEntry } from "@/features/agent/projects/types";
 import { mergeActiveSessionPref } from "./helpers";
 import { SidebarRail, SidebarSectionHeader } from "./nav-chrome";

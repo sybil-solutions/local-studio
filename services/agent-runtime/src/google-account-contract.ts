@@ -22,7 +22,6 @@ export const GoogleAccountViewSchema = Schema.Struct({
   configured: Schema.Boolean,
   clientId: Schema.NullOr(Schema.String),
   hasClientSecret: Schema.Boolean,
-  transport: Schema.Union([Schema.Literal("rest"), Schema.Literal("remote-mcp")]),
   accounts: Schema.Array(GoogleAccountEntryViewSchema),
 });
 

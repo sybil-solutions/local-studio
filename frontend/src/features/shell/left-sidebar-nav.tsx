@@ -50,7 +50,7 @@ export function isRouteActive(pathname: string, href: string): boolean {
 }
 
 export function routeHidesAppSidebar(pathname: string): boolean {
-  return pathname.startsWith("/setup") || pathname.startsWith("/quick");
+  return pathname.startsWith("/setup");
 }
 
 // Exactly one thing may name the current surface on a phone. Agent routes draw

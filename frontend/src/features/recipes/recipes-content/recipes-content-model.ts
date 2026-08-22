@@ -8,6 +8,7 @@ import type { RecipeEditor } from "@/features/recipes/recipe-editor";
 import { useRealtimeStatusStore } from "@/hooks/realtime-status-store";
 import { readPageCache, writePageCache } from "@/lib/page-data-cache";
 import { useMountSubscription } from "@/hooks/use-mount-subscription";
+import { usePageResource } from "@/hooks/use-page-resource";
 import { normalizeRecipeForEditor } from "@/features/recipes/normalize-recipe";
 import { prepareRecipeForSave } from "@/features/recipes/prepare-recipe";
 import { DEFAULT_RECIPE } from "./default-recipe";
@@ -16,6 +17,8 @@ import { useRecipesDerived } from "./use-recipes-derived";
 import { isRecipeActive } from "./launch-reconciliation";
 
 export type RecipesContentTab = "picks" | "get" | "serves" | "downloads";
+
+const NO_RECIPES: RecipeWithStatus[] = [];
 
 const requestedTab = (value: string | null): RecipesContentTab =>
   value === "get" || value === "serves" || value === "downloads" ? value : "picks";
@@ -27,10 +30,6 @@ export function useRecipesContentModel() {
   const newRecipeHandled = useRef(false);
   const observedUrlTab = useRef(urlTab);
   const [tab, setTab] = useState<RecipesContentTab>(urlTab);
-  const cachedRecipes = readPageCache<RecipeWithStatus[]>("recipes:list");
-  const [loading, setLoading] = useState(cachedRecipes === null);
-  const [refreshing, setRefreshing] = useState(false);
-  const [recipes, setRecipes] = useState<RecipeWithStatus[]>(() => cachedRecipes ?? []);
   const [filter, setFilter] = useState("");
   const [pinnedRecipes, setPinnedRecipes] = useState<Set<string>>(new Set());
   const [recipeMenuOpen, setRecipeMenuOpen] = useState<string | null>(null);
@@ -77,9 +76,7 @@ export function useRecipesContentModel() {
         api.getRuntimeTargets().catch(() => ({ targets: [] as RuntimeTarget[] })),
       ]);
       const recipesList = recipesData.recipes || [];
-      writePageCache("recipes:list", recipesList);
       writePageCache("recipes:models", modelsData.models || []);
-      setRecipes(recipesList);
       const running = recipesList.find((r) => r.status === "running")?.id || null;
       setRunningRecipeId(running);
       setAvailableModels(modelsData.models || []);
@@ -91,21 +88,13 @@ export function useRecipesContentModel() {
     }
   }, []);
 
-  useMountSubscription(() => {
-    void (async () => {
-      try {
-        await loadRecipes();
-      } finally {
-        setLoading(false);
-      }
-    })();
-  }, [loadRecipes]);
-
-  const handleRefresh = useCallback(async () => {
-    setRefreshing(true);
-    await loadRecipes();
-    setRefreshing(false);
-  }, [loadRecipes]);
+  const {
+    data: loadedRecipes,
+    loading,
+    refreshing,
+    reload: handleRefresh,
+  } = usePageResource<RecipeWithStatus[]>("recipes:list", loadRecipes);
+  const recipes = loadedRecipes ?? NO_RECIPES;
 
   const handleNewRecipe = useCallback(() => {
     setModalRecipe(normalizeRecipeForEditor({ ...DEFAULT_RECIPE }));
@@ -165,7 +154,7 @@ export function useRecipesContentModel() {
         const id = slug || `recipe-${Date.now()}`;
         await api.createRecipe({ ...recipeToSave, id });
       }
-      await loadRecipes();
+      await handleRefresh();
       setModalOpen(false);
       setModalRecipe(null);
     } catch (e) {
@@ -173,20 +162,20 @@ export function useRecipesContentModel() {
     } finally {
       setSaving(false);
     }
-  }, [loadRecipes, modalRecipe]);
+  }, [handleRefresh, modalRecipe]);
 
   const handleDeleteRecipe = useCallback(
     async (recipeId: string) => {
       try {
         await api.deleteRecipe(recipeId);
-        await loadRecipes();
+        await handleRefresh();
         setDeleteConfirm(null);
         setRecipeMenuOpen(null);
       } catch (e) {
         alert("Failed to delete: " + (e as Error).message);
       }
     },
-    [loadRecipes],
+    [handleRefresh],
   );
 
   const handleLaunchRecipe = useCallback(
@@ -194,9 +183,9 @@ export function useRecipesContentModel() {
       setLaunching(true);
       try {
         await api.launchRecipe(recipeId);
-        await loadRecipes();
+        await handleRefresh();
       } catch (e) {
-        const reconciled = await loadRecipes();
+        const reconciled = (await handleRefresh()) ?? NO_RECIPES;
         if (!isRecipeActive(reconciled, recipeId)) {
           alert("Failed to launch: " + (e as Error).message);
         }
@@ -204,17 +193,17 @@ export function useRecipesContentModel() {
         setLaunching(false);
       }
     },
-    [loadRecipes],
+    [handleRefresh],
   );
 
   const handleEvictModel = useCallback(async () => {
     try {
       await api.evict();
-      await loadRecipes();
+      await handleRefresh();
     } catch (e) {
       alert("Failed to evict: " + (e as Error).message);
     }
-  }, [loadRecipes]);
+  }, [handleRefresh]);
 
   const handleToggleRecipeMenu = useCallback((recipeId: string) => {
     setRecipeMenuOpen((current) => (current === recipeId ? null : recipeId));

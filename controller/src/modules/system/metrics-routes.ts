@@ -12,7 +12,15 @@ import {
   VLLM_METRIC_NAMES,
   scrapeEngineMetrics,
 } from "./engine-metrics-scrape";
-import { firstMetric, positiveOrUndefined } from "./metrics-peaks";
+import {
+  firstMetric,
+  gpuFields,
+  lifetimeFields,
+  peakFields,
+  positiveOrUndefined,
+  rollupGpus,
+  tokenTotalFields,
+} from "./metrics-peaks";
 
 const throughputSamples = new Map<
   string,
@@ -51,20 +59,10 @@ const buildCurrentMetrics = (
     const current = yield* findObservedInferenceProcess(context, "metrics.current");
     const gpus = yield* getGpuInfo();
     const lifetimeData = yield* context.stores.lifetimeMetricsStore.getAllEffect();
-    const currentPowerWatts = gpus.reduce((sum, gpu) => sum + gpu.power_draw, 0);
-    const vramUsedGb = gpus.reduce((sum, gpu) => sum + gpu.memory_used_mb / 1024, 0);
-    const vramCapacityGb = gpus.reduce((sum, gpu) => sum + gpu.memory_total_mb / 1024, 0);
-    const powerLimitWatts = gpus.reduce((sum, gpu) => sum + gpu.power_limit, 0);
+    const gpuTotals = rollupGpus(gpus);
     const baseMetrics: Record<string, unknown> = {
-      lifetime_prompt_tokens: lifetimeData["prompt_tokens_total"] ?? 0,
-      lifetime_completion_tokens: lifetimeData["completion_tokens_total"] ?? 0,
-      lifetime_requests: lifetimeData["requests_total"] ?? 0,
-      lifetime_energy_kwh: (lifetimeData["energy_wh"] ?? 0) / 1000,
-      lifetime_uptime_hours: (lifetimeData["uptime_seconds"] ?? 0) / 3600,
-      current_power_watts: currentPowerWatts,
-      vram_used_gb: Math.round(vramUsedGb * 10) / 10,
-      vram_capacity_gb: Math.round(vramCapacityGb * 10) / 10,
-      power_limit_watts: Math.round(powerLimitWatts),
+      ...lifetimeFields(lifetimeData, gpuTotals.powerWatts),
+      ...gpuFields(gpuTotals),
     };
 
     const scrape = yield* scrapeEngineMetrics(context.config.inference_port, 1500);
@@ -144,24 +142,12 @@ const buildCurrentMetrics = (
       running_requests: firstMetric(prometheus, names.runningRequests),
       pending_requests: firstMetric(prometheus, names.pendingRequests),
       kv_cache_usage: firstMetric(prometheus, names.kvCacheUsage),
-      prompt_tokens_total:
-        positiveOrUndefined(promptTokensTotal) ?? positiveOrUndefined(usageTotals?.prompt_tokens),
-      generation_tokens_total:
-        positiveOrUndefined(generationTokensTotal) ??
-        positiveOrUndefined(usageTotals?.completion_tokens),
-      total_tokens: positiveOrUndefined(usageTotals?.total_tokens),
-      total_requests: positiveOrUndefined(usageTotals?.total_requests),
+      ...tokenTotalFields(usageTotals, promptTokensTotal, generationTokensTotal),
       prompt_throughput: promptThroughput,
       generation_throughput: generationThroughput,
       avg_ttft_ms: avgTtftMs > 0 ? Math.round(avgTtftMs * 10) / 10 : usageAggregate?.ttft?.avg_ms,
       latency_avg: positiveOrUndefined(usageAggregate?.latency?.avg_ms),
-      best_session_peak_id: bestSessionPeakData?.["session_id"] ?? null,
-      best_session_prefill_tps: bestSessionPeakData?.["peak_prefill_tps"] ?? null,
-      best_session_generation_tps: bestSessionPeakData?.["peak_generation_tps"] ?? null,
-      best_session_ttft_ms: bestSessionPeakData?.["best_ttft_ms"] ?? null,
-      peak_prefill_tps: peakData?.["prefill_tps"] ?? null,
-      peak_generation_tps: peakData?.["generation_tps"] ?? null,
-      peak_ttft_ms: peakData?.["ttft_ms"] ?? null,
+      ...peakFields(peakData, bestSessionPeakData),
     };
   });
 

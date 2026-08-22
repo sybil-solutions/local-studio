@@ -155,6 +155,31 @@ function appendOptimisticPrompt(
   }));
 }
 
+/**
+ * Acceptance bookkeeping shared by every accepted turn: commit the runtime ids
+ * and context usage onto the session, give the controller its accept-grace (so
+ * a stale runtime-list snapshot cannot idle the session and tear down its
+ * stream mid-turn) plus a cursor rewind if the runtime's seq restarted, and
+ * surface a newly minted pi session id. Callers own their own assistant id —
+ * the prompt path pins its optimistic bubble, the control path has none.
+ */
+export function applyTurnAccepted(
+  deps: Pick<PromptStreamDeps, "updateSession" | "onPiSessionIdChange">,
+  sessionId: SessionId,
+  accepted: { piSessionId?: string | null; status?: api.RuntimeStatus | null },
+  assistantId?: string,
+): void {
+  deps.updateSession(sessionId, (session) => ({
+    ...session,
+    piSessionId: accepted.piSessionId || session.piSessionId,
+    contextUsage: api.runtimeContextUsage(accepted.status, session.contextUsage),
+    status: "running",
+    ...(assistantId ? { activeAssistantId: session.activeAssistantId ?? assistantId } : {}),
+  }));
+  sessionRuntimeController().noteTurnAccepted(sessionId, assistantId, accepted.status?.eventSeq);
+  if (accepted.piSessionId) deps.onPiSessionIdChange?.(accepted.piSessionId);
+}
+
 function startPromptCommand(
   deps: PromptStreamDeps,
   context: PromptTurnContext,
@@ -165,19 +190,7 @@ function startPromptCommand(
       try: () => api.submitTurnCommand(promptTurnRequest(deps, context, args)),
       catch: (error) => ({ _tag: "SubmitFailed" as const, error }),
     });
-    deps.updateSession(context.sessionId, (session) => ({
-      ...session,
-      piSessionId: result.piSessionId || session.piSessionId,
-      contextUsage: api.runtimeContextUsage(result.status, session.contextUsage),
-      status: "running",
-      activeAssistantId: session.activeAssistantId ?? context.assistantId,
-    }));
-    sessionRuntimeController().noteTurnAccepted(
-      context.sessionId,
-      context.assistantId,
-      result.status?.eventSeq,
-    );
-    if (result.piSessionId) deps.onPiSessionIdChange?.(result.piSessionId);
+    applyTurnAccepted(deps, context.sessionId, result, context.assistantId);
   }).pipe(
     Effect.catch(({ error }) =>
       Effect.gen(function* () {
@@ -187,19 +200,12 @@ function startPromptCommand(
           catch: () => null,
         });
         if (runtimeCanHydrateCanonicalSession(status, currentPiSessionId)) {
-          deps.updateSession(context.sessionId, (session) => ({
-            ...session,
-            piSessionId: status?.piSessionId || session.piSessionId,
-            contextUsage: api.runtimeContextUsage(status, session.contextUsage),
-            status: "running",
-            activeAssistantId: session.activeAssistantId ?? context.assistantId,
-          }));
-          sessionRuntimeController().noteTurnAccepted(
+          applyTurnAccepted(
+            deps,
             context.sessionId,
+            { piSessionId: status?.piSessionId, status },
             context.assistantId,
-            status?.eventSeq,
           );
-          if (status?.piSessionId) deps.onPiSessionIdChange?.(status?.piSessionId);
           return;
         }
         const message = error instanceof Error ? error.message : "Agent request failed";

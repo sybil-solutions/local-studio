@@ -8,7 +8,7 @@ import { useRef, useState, type DragEvent, type MouseEvent } from "react";
 import { useClickOutside } from "@/features/agent/hooks/use-click-outside";
 import { Archive, MoreIcon, PinIcon, PinOffIcon, SquarePen, X } from "@/ui/icon-registry";
 import type { SessionActivity } from "@/features/agent/session-index";
-import type { SessionPref } from "@/features/agent/messages/prefs";
+import type { SessionPref } from "@/features/agent/messages/session-prefs";
 import { hrefWithOpenNonce, visibleSessionAge } from "./helpers";
 import { PinButton, SessionStatusMark } from "./nav-chrome";
 

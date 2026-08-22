@@ -27,6 +27,63 @@ import typescript from "highlight.js/lib/languages/typescript";
 import xml from "highlight.js/lib/languages/xml";
 import yaml from "highlight.js/lib/languages/yaml";
 
+const EXTENSION_LANGUAGES: Record<string, string> = {
+  js: "javascript",
+  jsx: "javascript",
+  ts: "typescript",
+  tsx: "typescript",
+  py: "python",
+  rb: "ruby",
+  rs: "rust",
+  go: "go",
+  java: "java",
+  c: "c",
+  cpp: "cpp",
+  h: "c",
+  hpp: "cpp",
+  cs: "csharp",
+  swift: "swift",
+  kt: "kotlin",
+  kts: "kotlin",
+  html: "xml",
+  htm: "xml",
+  svg: "xml",
+  xml: "xml",
+  xsl: "xml",
+  css: "css",
+  scss: "scss",
+  sass: "scss",
+  less: "css",
+  json: "json",
+  yaml: "yaml",
+  yml: "yaml",
+  toml: "ini",
+  sh: "bash",
+  bash: "bash",
+  zsh: "bash",
+  fish: "bash",
+  sql: "sql",
+  graphql: "graphql",
+  gql: "graphql",
+  md: "markdown",
+  mdx: "markdown",
+  lua: "lua",
+  r: "r",
+  dart: "dart",
+  vue: "xml",
+  svelte: "xml",
+};
+
+/** Maps a file path to the highlight.js language name, or null when the
+ * extension is unknown to the registered grammars. */
+export function languageForPath(path: string): string | null {
+  const name = path.split("/").pop()?.toLowerCase() ?? "";
+  if (name === "dockerfile" || name.startsWith("dockerfile.")) return "dockerfile";
+  if (name === "makefile" || name.startsWith("makefile.")) return "makefile";
+  const extension = name.includes(".") ? (name.split(".").pop() ?? "") : "";
+  return EXTENSION_LANGUAGES[extension] ?? null;
+}
+
 const MAX_CACHE_ENTRIES = 64;
 const cache = new Map<string, string[]>();
 let registered = false;

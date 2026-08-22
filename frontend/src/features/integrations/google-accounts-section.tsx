@@ -11,9 +11,8 @@ import {
   GOOGLE_WORKSPACE_PLUGIN_IDS,
   type GoogleWorkspacePluginId,
 } from "@local-studio/agent-runtime/google-workspace-binding";
-import { Alert, RefreshIconButton } from "@/ui";
+import { Alert } from "@/ui";
 import { ResourceLogo } from "@/ui/resource-logo";
-import { useMountSubscription } from "@/hooks/use-mount-subscription";
 import {
   DataRow,
   EndCell,
@@ -27,8 +26,13 @@ import {
   TextCell,
   type StatusTone,
 } from "@/features/recipes/recipes-content/catalog-table-shell";
+import {
+  CatalogSectionHeader,
+  useCatalogSection,
+} from "@/features/recipes/recipes-content/catalog-section";
+import { requestAgentJson } from "./agent-json";
 import { GoogleAccountModal } from "./google-account-modal";
-import { connectedGoogleAccounts, requestJson } from "./google-account-model";
+import { connectedGoogleAccounts } from "./google-account-model";
 
 /**
  * Accounts a session signs into, rather than servers it launches.
@@ -62,35 +66,20 @@ function accountSummary(account: GoogleAccountView | null, id: GoogleWorkspacePl
 }
 
 export function GoogleAccountsSection() {
-  const [account, setAccount] = useState<GoogleAccountView | null>(null);
-  const [loaded, setLoaded] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState("");
   const [openAccount, setOpenAccount] = useState<GoogleWorkspacePluginId | null>(null);
 
-  const refresh = useCallback(() => {
-    setRefreshing(true);
-    void requestJson<{ account: GoogleAccountView }>(
-      "/api/agent/accounts/google",
-      Schema.decodeUnknownSync(GoogleAccountResponseSchema),
-      { cache: "no-store" },
-    )
-      .then((result) => {
-        setAccount(result.account);
-        setError("");
-      })
-      .catch((loadError: unknown) => {
-        setError(loadError instanceof Error ? loadError.message : "Google account failed");
-      })
-      .finally(() => {
-        setLoaded(true);
-        setRefreshing(false);
-      });
-  }, []);
-
-  useMountSubscription(() => {
-    refresh();
-  }, [refresh]);
+  // The single configured account rides through the hook as a one-item list.
+  const load = useCallback(
+    () =>
+      requestAgentJson<{ account: GoogleAccountView }>(
+        "/api/agent/accounts/google",
+        Schema.decodeUnknownSync(GoogleAccountResponseSchema),
+      ).then((result) => [result.account]),
+    [],
+  );
+  const section = useCatalogSection({ load });
+  const { items, loaded, error } = section;
+  const account = items[0] ?? null;
 
   return (
     <>
@@ -103,12 +92,12 @@ export function GoogleAccountsSection() {
         title="Accounts"
         description="Google services a session can read from. Each one can hold several signed-in mailboxes."
         actions={
-          <div className="flex items-center gap-2">
-            <StatusText tone={error ? "warn" : loaded ? "ok" : "dim"}>
-              {loaded ? `${GOOGLE_WORKSPACE_PLUGIN_IDS.length} services` : "loading"}
-            </StatusText>
-            <RefreshIconButton onClick={refresh} loading={refreshing} label="Refresh accounts" />
-          </div>
+          <CatalogSectionHeader
+            section={section}
+            statusTone={error ? "warn" : loaded ? "ok" : "dim"}
+            statusText={loaded ? `${GOOGLE_WORKSPACE_PLUGIN_IDS.length} services` : "loading"}
+            refreshLabel="Refresh accounts"
+          />
         }
       >
         {!loaded ? (
@@ -164,7 +153,7 @@ export function GoogleAccountsSection() {
           accountId={openAccount}
           displayName={GOOGLE_WORKSPACE_BINDINGS[openAccount].name}
           onClose={() => setOpenAccount(null)}
-          onChanged={refresh}
+          onChanged={section.refresh}
         />
       ) : null}
     </>

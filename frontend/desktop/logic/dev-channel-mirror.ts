@@ -21,7 +21,6 @@ const MIRRORED_ENTRIES = [
   "projects.json",
   "session-prefs.json",
   "ui-preferences.json",
-  "desktop-settings.json",
   "api-settings.json",
   "Local Storage",
 ] as const;

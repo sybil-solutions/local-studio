@@ -1,6 +1,7 @@
 import { Cause, Effect, Exit } from "effect";
 import type { MiddlewareHandler } from "hono";
 import { isHttpStatus } from "../core/errors";
+import { elapsedMs, errorClass, errorMessage } from "../core/function-observability";
 import type { AppContext } from "../app-context";
 import { effectMiddleware, type ControllerEnvironment } from "./effect-handler";
 
@@ -9,24 +10,14 @@ const TELEMETRY_SKIP_PATHS = new Set([
   "/metrics",
   "/events",
   "/status",
-  "/api/docs",
   "/api/spec",
 ]);
 
-function elapsedMs(start: number): number {
-  return Math.round(performance.now() - start);
-}
+const httpErrorClass = (error: unknown): string =>
+  isHttpStatus(error) ? `Http${error.status}` : errorClass(error);
 
-function errorClass(error: unknown): string {
-  if (isHttpStatus(error)) return `Http${error.status}`;
-  return (error as { name?: string } | null)?.name || "Error";
-}
-
-function errorMessage(error: unknown): string {
-  if (isHttpStatus(error)) return error.detail;
-  if (error instanceof Error) return error.message;
-  return String(error);
-}
+const httpErrorMessage = (error: unknown): string =>
+  isHttpStatus(error) ? error.detail : errorMessage(error);
 
 export function createControllerRequestObservabilityMiddleware(
   context: AppContext,
@@ -64,8 +55,8 @@ export function createControllerRequestObservabilityMiddleware(
             status: isHttpStatus(error) ? error.status : 500,
             duration_ms: elapsedMs(start),
             success: false,
-            error_class: errorClass(error),
-            error_message: errorMessage(error),
+            error_class: httpErrorClass(error),
+            error_message: httpErrorMessage(error),
             user_agent: userAgent,
           })
           .pipe(Effect.ignore);

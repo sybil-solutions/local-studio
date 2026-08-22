@@ -1,5 +1,4 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { createHash, randomBytes } from "node:crypto";
 import { mkdtempSync, rmSync, statSync, readFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -36,7 +35,6 @@ type MockState = {
   allowDeviceGrant: boolean;
   denyDeviceGrant: boolean;
   refreshCalls: Array<Record<string, string>>;
-  pkceChallenge: string | null;
   issuedTokens: string[];
 };
 
@@ -45,7 +43,6 @@ const state: MockState = {
   allowDeviceGrant: false,
   denyDeviceGrant: false,
   refreshCalls: [],
-  pkceChallenge: null,
   issuedTokens: [],
 };
 
@@ -100,21 +97,6 @@ const mock = Bun.serve({
           refresh_token: "ghr_refresh_2",
         });
       }
-      if (grant === "authorization_code") {
-        // Prove the PKCE binding: the verifier the engine sends must hash to
-        // the challenge it published in the authorize URL.
-        const verifier = body.get("code_verifier") ?? "";
-        const hashed = createHash("sha256").update(verifier).digest("base64url");
-        if (body.get("code") !== "pkce-code-1" || hashed !== state.pkceChallenge) {
-          return json({ error: "invalid_grant" });
-        }
-        state.issuedTokens.push("gho_pkce_access_1");
-        return json({
-          access_token: "gho_pkce_access_1",
-          token_type: "bearer",
-          scope: "repo read:org",
-        });
-      }
       return json({ error: "unsupported_grant_type" });
     }
     if (url.pathname === "/user") {
@@ -129,11 +111,10 @@ const mock = Bun.serve({
 
 const base = `http://127.0.0.1:${mock.port}`;
 
-const mockDefinition = (kind: "oauth-device" | "oauth-pkce"): OAuthConnectorAuthDefinition => ({
-  kind,
+const mockDefinition: OAuthConnectorAuthDefinition = {
+  kind: "oauth-device",
   clientIdEnv: "LOCAL_STUDIO_TEST_GITHUB_CLIENT_ID",
-  ...(kind === "oauth-device" ? { deviceUrl: `${base}/login/device/code` } : {}),
-  ...(kind === "oauth-pkce" ? { authorizeUrl: `${base}/authorize` } : {}),
+  deviceUrl: `${base}/login/device/code`,
   tokenUrl: `${base}/login/oauth/access_token`,
   scopes: ["repo", "read:org"],
   tokenEnv: "GITHUB_PERSONAL_ACCESS_TOKEN",
@@ -141,13 +122,12 @@ const mockDefinition = (kind: "oauth-device" | "oauth-pkce"): OAuthConnectorAuth
   identityField: "login",
   createClientUrl: `${base}/settings/applications/new`,
   setupHint: "test",
-});
+};
 
-const depsAt = (now: number, kind: "oauth-device" | "oauth-pkce"): OAuthConnectorDependencies => ({
+const depsAt = (now: number): OAuthConnectorDependencies => ({
   fetch,
   now: () => now,
-  random: randomBytes,
-  definitions: { github: mockDefinition(kind) },
+  definitions: { github: mockDefinition },
 });
 
 afterAll(() => mock.stop(true));
@@ -156,21 +136,21 @@ describe("oauth connector engine", () => {
   test("device flow: code shown, poll loop, persisted grant, connector row", async () => {
     await saveOAuthConnectorClient("github", "test-client-id");
 
-    const begun = await beginOAuthConnectorAuthorization("github", depsAt(T0, "oauth-device"));
+    const begun = await beginOAuthConnectorAuthorization("github", depsAt(T0));
     if (begun.flow !== "device") throw new Error("expected a device flow");
     expect(begun.userCode).toBe("ABCD-1234");
     expect(begun.verificationUri).toBe(`${base}/activate`);
     const settled = oauthConnectorFlowSettled("github");
 
     // While the user has not typed the code, status shows the pending flow.
-    const pendingStatus = await getOAuthConnectorStatus("github", depsAt(T0, "oauth-device"));
+    const pendingStatus = await getOAuthConnectorStatus("github", depsAt(T0));
     expect(pendingStatus.connected).toBe(false);
     expect(pendingStatus.pending?.userCode).toBe("ABCD-1234");
 
     state.allowDeviceGrant = true;
     await settled;
 
-    const status = await getOAuthConnectorStatus("github", depsAt(T0, "oauth-device"));
+    const status = await getOAuthConnectorStatus("github", depsAt(T0));
     expect(status.connected).toBe(true);
     expect(status.account).toBe("octocat");
     expect(status.scopes).toEqual(["repo", "read:org"]);
@@ -186,7 +166,7 @@ describe("oauth connector engine", () => {
     const raw = readFileSync(file, "utf8");
     expect(raw).toContain("gho_device_access_1");
     expect(raw).toContain("ghr_refresh_1");
-    const status = await getOAuthConnectorStatus("github", depsAt(T0, "oauth-device"));
+    const status = await getOAuthConnectorStatus("github", depsAt(T0));
     expect(JSON.stringify(status)).not.toContain("gho_device_access_1");
     expect(JSON.stringify(status)).not.toContain("ghr_refresh_1");
   });
@@ -204,7 +184,7 @@ describe("oauth connector engine", () => {
   test("spawn env injection at the pool: access token in, refresh token out", async () => {
     const row = (await listConnectors()).find((entry) => entry.id === "github");
     if (!row) throw new Error("github row missing");
-    const target = await resolveConnectorTarget(row, undefined, depsAt(T0, "oauth-device"));
+    const target = await resolveConnectorTarget(row, undefined, depsAt(T0));
     if (target.transport !== "stdio") throw new Error("expected a stdio target");
     expect(target.env?.GITHUB_PERSONAL_ACCESS_TOKEN).toBe("gho_device_access_1");
     expect(JSON.stringify(target)).not.toContain("ghr_refresh_1");
@@ -219,13 +199,13 @@ describe("oauth connector engine", () => {
       auth: { type: "oauth", provider: "github", account: "octocat" },
       enabled: true,
     };
-    expect(await oauthConnectorSpawnEnv(impostor, depsAt(T0, "oauth-device"))).toEqual({});
+    expect(await oauthConnectorSpawnEnv(impostor, depsAt(T0))).toEqual({});
   });
 
   test("silent refresh: an expiring token is exchanged and the rotation is stored", async () => {
     // 30 seconds before expiry — inside the 60-second refresh window.
     const nearExpiry = T0 + HOUR - 30_000;
-    const token = await freshOAuthConnectorAccessToken("github", depsAt(nearExpiry, "oauth-device"));
+    const token = await freshOAuthConnectorAccessToken("github", depsAt(nearExpiry));
     expect(token).toBe("gho_refreshed_access_2");
     expect(state.refreshCalls).toHaveLength(1);
     expect(state.refreshCalls[0]?.refresh_token).toBe("ghr_refresh_1");
@@ -235,7 +215,7 @@ describe("oauth connector engine", () => {
     // The next spawn inside the new token's lifetime injects it unchanged.
     const row = (await listConnectors()).find((entry) => entry.id === "github");
     if (!row) throw new Error("github row missing");
-    const target = await resolveConnectorTarget(row, undefined, depsAt(nearExpiry, "oauth-device"));
+    const target = await resolveConnectorTarget(row, undefined, depsAt(nearExpiry));
     if (target.transport !== "stdio") throw new Error("expected a stdio target");
     expect(target.env?.GITHUB_PERSONAL_ACCESS_TOKEN).toBe("gho_refreshed_access_2");
     expect(state.refreshCalls).toHaveLength(1);
@@ -243,12 +223,19 @@ describe("oauth connector engine", () => {
 
   test("a declined device flow reports its failure and leaves the old grant alone", async () => {
     state.denyDeviceGrant = true;
-    await beginOAuthConnectorAuthorization("github", depsAt(T0, "oauth-device"));
+    await beginOAuthConnectorAuthorization("github", depsAt(T0));
     await oauthConnectorFlowSettled("github");
     state.denyDeviceGrant = false;
-    const status = await getOAuthConnectorStatus("github", depsAt(T0, "oauth-device"));
+    const status = await getOAuthConnectorStatus("github", depsAt(T0));
     expect(status.error).toContain("declined");
     expect(status.connected).toBe(true);
+  });
+
+  test("replacing the client id drops the grant it cannot outlive", async () => {
+    await saveOAuthConnectorClient("github", "another-client-id");
+    const status = await getOAuthConnectorStatus("github", depsAt(T0));
+    expect(status.configured).toBe(true);
+    expect(status.connected).toBe(false);
   });
 
   test("disconnect destroys the grant and strips the row's oauth reference", async () => {
@@ -262,49 +249,8 @@ describe("oauth connector engine", () => {
     expect(row?.auth).toBeUndefined();
     expect(row?.enabled).toBe(false);
     await expect(
-      freshOAuthConnectorAccessToken("github", depsAt(T0, "oauth-device")),
+      freshOAuthConnectorAccessToken("github", depsAt(T0)),
     ).rejects.toThrow("not connected");
-  });
-
-  test("pkce loopback: authorize URL carries S256, the callback exchange verifies it", async () => {
-    const begun = await beginOAuthConnectorAuthorization("github", depsAt(T0, "oauth-pkce"));
-    if (begun.flow !== "pkce") throw new Error("expected a pkce flow");
-    const authorize = new URL(begun.authorizeUrl);
-    expect(authorize.origin).toBe(base);
-    expect(authorize.searchParams.get("code_challenge_method")).toBe("S256");
-    expect(authorize.searchParams.get("client_id")).toBe("test-client-id");
-    const redirectUri = authorize.searchParams.get("redirect_uri") ?? "";
-    expect(redirectUri).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/callback$/);
-    state.pkceChallenge = authorize.searchParams.get("code_challenge");
-
-    // Play the provider's part: redirect the "browser" to the loopback with a
-    // wrong state first (rejected), then the real one (exchanged).
-    const forged = await fetch(`${redirectUri}?state=wrong&code=pkce-code-1`);
-    expect(forged.status).toBe(400);
-
-    const begunAgain = await beginOAuthConnectorAuthorization("github", depsAt(T0, "oauth-pkce"));
-    if (begunAgain.flow !== "pkce") throw new Error("expected a pkce flow");
-    const authorizeAgain = new URL(begunAgain.authorizeUrl);
-    state.pkceChallenge = authorizeAgain.searchParams.get("code_challenge");
-    const redirectAgain = authorizeAgain.searchParams.get("redirect_uri") ?? "";
-    const callback = await fetch(
-      `${redirectAgain}?state=${encodeURIComponent(
-        authorizeAgain.searchParams.get("state") ?? "",
-      )}&code=pkce-code-1`,
-    );
-    expect(callback.status).toBe(200);
-    expect(await callback.text()).toContain("connected");
-
-    const status = await getOAuthConnectorStatus("github", depsAt(T0, "oauth-pkce"));
-    expect(status.connected).toBe(true);
-    expect(status.account).toBe("octocat");
-  });
-
-  test("replacing the client id drops the grant it cannot outlive", async () => {
-    await saveOAuthConnectorClient("github", "another-client-id");
-    const status = await getOAuthConnectorStatus("github", depsAt(T0, "oauth-device"));
-    expect(status.configured).toBe(true);
-    expect(status.connected).toBe(false);
   });
 
   test("unknown connectors are refused", async () => {

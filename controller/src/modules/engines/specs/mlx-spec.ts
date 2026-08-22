@@ -59,7 +59,6 @@ const installMlx = (options: InstallOptions): Effect.Effect<RuntimeUpgradeResult
 
 export const mlxSpec: EngineSpec = {
   id: "mlx",
-  healthPath: "/v1/models",
   cliBinary: null,
   managedPackageSpec,
   install: installMlx,

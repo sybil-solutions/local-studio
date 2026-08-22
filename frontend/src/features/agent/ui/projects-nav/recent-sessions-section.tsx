@@ -15,7 +15,7 @@ import { orderByRecency, recentsTimestamp } from "@/features/agent/ui/session-re
 import { useProjectsNavSessionPrefs } from "@/features/agent/ui/projects-nav/use-projects-nav-effects";
 import { useMountSubscription } from "@/hooks/use-mount-subscription";
 import { Folder } from "@/ui/icons";
-import type { SessionPrefs } from "@/features/agent/messages/prefs";
+import type { SessionPrefs } from "@/features/agent/messages/session-prefs";
 import type { AggregatedSession } from "@shared/agent/session-summary";
 
 /** The nav lists the 20 most recently prompted sessions, newest first. */

@@ -15,7 +15,6 @@ const READ_RATE_LIMIT_EXEMPT_PATHS = new Set<string>([
   "/status",
   "/metrics",
   "/events",
-  "/api/docs",
   "/api/spec",
 ]);
 const RATE_LIMIT_STORE_CAP = 10_000;

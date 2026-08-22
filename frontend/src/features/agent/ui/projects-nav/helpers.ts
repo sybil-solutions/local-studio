@@ -5,7 +5,7 @@ import {
   patchCanonicalSessionPref,
   type SessionPref,
   type SessionPrefs,
-} from "@/features/agent/messages/prefs";
+} from "@/features/agent/messages/session-prefs";
 import { ADD_PROJECT_EVENT, SESSIONS_CHANGED_EVENT } from "@/lib/workspace-events";
 import type { Project as ProjectEntry } from "@/features/agent/projects/types";
 import type { ActiveAgentSession } from "./types";

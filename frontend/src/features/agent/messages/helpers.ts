@@ -124,7 +124,7 @@ export function visibleUserTextFromPi(text: string): string {
 }
 
 // The Browser panel prepends a <browser_context>…</browser_context> block to
-// the prompt (browser/context.ts). It is machine context, never the user's
+// the prompt (tools/browser-context.ts). It is machine context, never the user's
 // words — drop a leading block so echoed/replayed user turns show only what was
 // typed, and so the echoed text still matches the optimistic user bubble.
 function stripBrowserContextText(text: string): string {

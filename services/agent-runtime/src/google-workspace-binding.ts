@@ -2,31 +2,12 @@ export const GOOGLE_WORKSPACE_PLUGIN_IDS = ["gmail", "google-calendar"] as const
 export type GoogleWorkspacePluginId = (typeof GOOGLE_WORKSPACE_PLUGIN_IDS)[number];
 
 /**
- * How a signed-in account's read-only tools are actually reached.
- *
- * `rest` calls the long-lived public Google REST APIs (gmail.googleapis.com,
- * calendar.googleapis.com) through an in-process adapter that speaks the same
- * tool names as the remote server. `remote-mcp` calls Google's first-party
- * Workspace MCP servers, which are a developer preview: we have never been able
- * to confirm that a self-registered Desktop OAuth client is accepted there, so
- * it stays opt-in behind an environment flag rather than being a silent
- * fallback. Switching the flag changes the OAuth audience, so an account has to
- * be re-authorized after flipping it.
+ * A signed-in account's read-only tools are reached over the long-lived public
+ * Google REST APIs (gmail.googleapis.com, calendar.googleapis.com) through an
+ * in-process adapter that speaks the same tool names as the remote server.
  */
-export type GoogleWorkspaceTransport = "rest" | "remote-mcp";
-
-export const GOOGLE_MCP_PREVIEW_ENV = "LOCAL_STUDIO_GOOGLE_MCP_PREVIEW";
-
-export function googleWorkspaceTransport(flag: string | undefined): GoogleWorkspaceTransport {
-  return flag === "1" ? "remote-mcp" : "rest";
-}
-
 type GoogleWorkspaceBinding = {
   name: string;
-  /** Google's first-party MCP preview endpoint for this service. */
-  mcpEndpoint: string;
-  /** RFC 8707 audience the preview endpoint expects. Never sent on the REST path. */
-  mcpResource: string;
   /** Public REST base the in-process adapter calls. */
   restEndpoint: string;
   scopes: readonly string[];
@@ -37,8 +18,6 @@ type GoogleWorkspaceBinding = {
 export const GOOGLE_WORKSPACE_BINDINGS: Record<GoogleWorkspacePluginId, GoogleWorkspaceBinding> = {
   gmail: {
     name: "Gmail",
-    mcpEndpoint: "https://gmailmcp.googleapis.com/mcp/v1",
-    mcpResource: "https://gmailmcp.googleapis.com/mcp",
     restEndpoint: "https://gmail.googleapis.com/gmail/v1",
     scopes: ["https://www.googleapis.com/auth/gmail.readonly"],
     observeTools: ["list_drafts", "get_thread", "get_message", "search_threads", "list_labels"],
@@ -46,8 +25,6 @@ export const GOOGLE_WORKSPACE_BINDINGS: Record<GoogleWorkspacePluginId, GoogleWo
   },
   "google-calendar": {
     name: "Google Calendar",
-    mcpEndpoint: "https://calendarmcp.googleapis.com/mcp/v1",
-    mcpResource: "https://calendarmcp.googleapis.com/mcp/v1",
     restEndpoint: "https://www.googleapis.com/calendar/v3",
     scopes: [
       "https://www.googleapis.com/auth/calendar.calendarlist.readonly",
@@ -59,25 +36,15 @@ export const GOOGLE_WORKSPACE_BINDINGS: Record<GoogleWorkspacePluginId, GoogleWo
   },
 };
 
-export function googleWorkspaceEndpoint(
-  service: GoogleWorkspacePluginId,
-  transport: GoogleWorkspaceTransport,
-): string {
-  const binding = GOOGLE_WORKSPACE_BINDINGS[service];
-  return transport === "remote-mcp" ? binding.mcpEndpoint : binding.restEndpoint;
-}
+/** Retired MCP-preview endpoints a stored row may still point at; tolerated on read. */
+const LEGACY_MCP_ENDPOINTS: Record<GoogleWorkspacePluginId, string> = {
+  gmail: "https://gmailmcp.googleapis.com/mcp/v1",
+  "google-calendar": "https://calendarmcp.googleapis.com/mcp/v1",
+};
 
 export function isGoogleWorkspaceEndpoint(service: GoogleWorkspacePluginId, url: string): boolean {
-  const binding = GOOGLE_WORKSPACE_BINDINGS[service];
-  return url === binding.mcpEndpoint || url === binding.restEndpoint;
-}
-
-/** The transport a stored connector row is already pointed at. */
-export function googleWorkspaceEndpointTransport(
-  service: GoogleWorkspacePluginId,
-  url: string,
-): GoogleWorkspaceTransport {
-  return url === GOOGLE_WORKSPACE_BINDINGS[service].mcpEndpoint ? "remote-mcp" : "rest";
+  return url === GOOGLE_WORKSPACE_BINDINGS[service].restEndpoint ||
+    url === LEGACY_MCP_ENDPOINTS[service];
 }
 
 function isGoogleWorkspacePlugin(id: string): id is GoogleWorkspacePluginId {

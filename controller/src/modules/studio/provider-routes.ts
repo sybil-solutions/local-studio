@@ -1,6 +1,6 @@
 import { Effect, Schema } from "effect";
 import { badRequest, notFound } from "../../core/errors";
-import { decodeJsonBody } from "../../core/validation";
+import { decodeJsonBody, requiredTrimmed } from "../../core/validation";
 import { effectRoute, defineRoutes, mergeRoutes } from "../../http/route-registrar";
 import { savePersistedConfig, type ProviderConfig } from "../../config/persisted-config";
 import {
@@ -57,14 +57,6 @@ const saveProviders = (
       new ProviderPersistenceError({ message: "Could not save providers", source }),
   });
 
-const required = (
-  value: string,
-  label: string,
-): Effect.Effect<string, ReturnType<typeof badRequest>> => {
-  const trimmed = value.trim();
-  return trimmed ? Effect.succeed(trimmed) : Effect.fail(badRequest(`${label} is required`));
-};
-
 export const registerStudioProviderRoutes = defineRoutes((app, context) => {
   return mergeRoutes(
     effectRoute(app.get, "/studio/providers", (ctx) =>
@@ -74,9 +66,9 @@ export const registerStudioProviderRoutes = defineRoutes((app, context) => {
     effectRoute(app.post, "/studio/providers", (ctx) =>
       Effect.gen(function* () {
         const body = yield* decodeJsonBody(ctx, ProviderCreateSchema);
-        const id = (yield* required(body.id, "id")).toLowerCase();
-        const name = yield* required(body.name, "name");
-        const baseUrl = yield* required(body.base_url, "base_url");
+        const id = (yield* requiredTrimmed(body.id, "id")).toLowerCase();
+        const name = yield* requiredTrimmed(body.name, "name");
+        const baseUrl = yield* requiredTrimmed(body.base_url, "base_url");
         if (context.config.providers.some((provider) => provider.id === id)) {
           return yield* Effect.fail(badRequest(`Provider "${id}" already exists`));
         }
@@ -99,11 +91,12 @@ export const registerStudioProviderRoutes = defineRoutes((app, context) => {
         const index = context.config.providers.findIndex((provider) => provider.id === providerId);
         const current = index >= 0 ? context.config.providers[index] : undefined;
         if (!current) return yield* Effect.fail(notFound(`Provider "${providerId}" not found`));
-        const name = body.name === undefined ? current.name : yield* required(body.name, "name");
+        const name =
+          body.name === undefined ? current.name : yield* requiredTrimmed(body.name, "name");
         const baseUrl =
           body.base_url === undefined
             ? current.base_url
-            : yield* required(body.base_url, "base_url");
+            : yield* requiredTrimmed(body.base_url, "base_url");
         const updated: ProviderConfig = {
           id: providerId,
           name,

@@ -13,7 +13,7 @@ import {
 import { Effect } from "effect";
 import type { Schema } from "effect";
 import { badRequest, notFound } from "../../core/errors";
-import { decodeJsonBody } from "../../core/validation";
+import { decodeJsonBody, optionalTrimmed, requiredTrimmed } from "../../core/validation";
 import { effectRoute, defineRoutes, mergeRoutes } from "../../http/route-registrar";
 import { Event } from "../system/event-manager";
 import {
@@ -22,21 +22,6 @@ import {
   seedDefaultRig,
   LOCAL_RIG_NODE_ID,
 } from "./rig-detection";
-
-const requiredName = (value: string): Effect.Effect<string, ReturnType<typeof badRequest>> => {
-  const name = value.trim();
-  return name ? Effect.succeed(name) : Effect.fail(badRequest("name is required"));
-};
-
-const optionalString = (
-  value: string | null | undefined,
-  current: string | null,
-): string | null => {
-  if (value === undefined) return current;
-  if (value === null) return null;
-  const trimmed = value.trim();
-  return trimmed ? trimmed : null;
-};
 
 const positiveOrNull = (
   value: number | null | undefined,
@@ -63,7 +48,7 @@ const accelerators = (
     ? Effect.succeed(current)
     : Effect.forEach(value, (entry) =>
         Effect.gen(function* () {
-          const name = yield* requiredName(entry.name);
+          const name = yield* requiredTrimmed(entry.name, "name");
           const count = entry.count ?? 1;
           if (!Number.isInteger(count) || count < 1) {
             return yield* Effect.fail(badRequest("accelerator count must be a positive integer"));
@@ -78,7 +63,7 @@ const accelerators = (
             name,
             count,
             memory_gb: memoryGb,
-            memory_type: optionalString(entry.memory_type, null),
+            memory_type: optionalTrimmed(entry.memory_type, null),
             memory_bandwidth_gbs: bandwidth,
             unified_memory: entry.unified_memory ?? false,
           };
@@ -133,8 +118,8 @@ export const registerStudioRigRoutes = defineRoutes((app, context) => {
         const now = new Date().toISOString();
         const rig: Rig = {
           id: randomUUID(),
-          name: yield* requiredName(body.name),
-          description: optionalString(body.description, null),
+          name: yield* requiredTrimmed(body.name, "name"),
+          description: optionalTrimmed(body.description, null),
           nodes: [],
           created_at: now,
           updated_at: now,
@@ -151,8 +136,8 @@ export const registerStudioRigRoutes = defineRoutes((app, context) => {
         const body = yield* decodeJsonBody(ctx, RigUpdateSchema);
         const updated = yield* saveRigTouched({
           ...rig,
-          name: body.name === undefined ? rig.name : yield* requiredName(body.name),
-          description: optionalString(body.description, rig.description),
+          name: body.name === undefined ? rig.name : yield* requiredTrimmed(body.name, "name"),
+          description: optionalTrimmed(body.description, rig.description),
         });
         yield* publishRigUpdate();
         return ctx.json({ success: true, rig: updated });
@@ -176,18 +161,18 @@ export const registerStudioRigRoutes = defineRoutes((app, context) => {
         const body = yield* decodeJsonBody(ctx, RigNodeCreateSchema);
         const node: RigNode = {
           id: randomUUID(),
-          name: yield* requiredName(body.name),
+          name: yield* requiredTrimmed(body.name, "name"),
           hardware_type: body.hardware_type ?? "custom",
           role: body.role ?? "standalone",
           source: "manual",
-          hostname: optionalString(body.hostname, null),
-          address: optionalString(body.address, null),
-          os: optionalString(body.os, null),
-          cpu_model: optionalString(body.cpu_model, null),
+          hostname: optionalTrimmed(body.hostname, null),
+          address: optionalTrimmed(body.address, null),
+          os: optionalTrimmed(body.os, null),
+          cpu_model: optionalTrimmed(body.cpu_model, null),
           cpu_cores: null,
           memory_gb: yield* positiveOrNull(body.memory_gb, null, "memory_gb"),
           accelerators: yield* accelerators(body.accelerators, []),
-          notes: optionalString(body.notes, null),
+          notes: optionalTrimmed(body.notes, null),
         };
         const updated = yield* saveRigTouched({ ...rig, nodes: [...rig.nodes, node] });
         yield* publishRigUpdate();
@@ -205,16 +190,16 @@ export const registerStudioRigRoutes = defineRoutes((app, context) => {
         const body = yield* decodeJsonBody(ctx, RigNodeUpdateSchema);
         const updatedNode: RigNode = {
           ...current,
-          name: body.name === undefined ? current.name : yield* requiredName(body.name),
+          name: body.name === undefined ? current.name : yield* requiredTrimmed(body.name, "name"),
           hardware_type: body.hardware_type ?? current.hardware_type,
           role: body.role ?? current.role,
-          hostname: optionalString(body.hostname, current.hostname),
-          address: optionalString(body.address, current.address),
-          os: optionalString(body.os, current.os),
-          cpu_model: optionalString(body.cpu_model, current.cpu_model),
+          hostname: optionalTrimmed(body.hostname, current.hostname),
+          address: optionalTrimmed(body.address, current.address),
+          os: optionalTrimmed(body.os, current.os),
+          cpu_model: optionalTrimmed(body.cpu_model, current.cpu_model),
           memory_gb: yield* positiveOrNull(body.memory_gb, current.memory_gb, "memory_gb"),
           accelerators: yield* accelerators(body.accelerators, current.accelerators),
-          notes: optionalString(body.notes, current.notes),
+          notes: optionalTrimmed(body.notes, current.notes),
         };
         const nodes = [...rig.nodes];
         nodes[index] = updatedNode;

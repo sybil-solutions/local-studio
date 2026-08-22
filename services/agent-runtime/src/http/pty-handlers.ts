@@ -11,6 +11,7 @@ import {
   isPtyAvailable,
   ptyUnavailableReason,
   closePtySession,
+  closePtySessionByOwner,
   openPtySession,
   resizePtySession,
   subscribePtySession,
@@ -94,7 +95,9 @@ export async function handlePtyResize(request: Request): Promise<Response> {
 export async function handlePtyClose(request: Request): Promise<Response> {
   const body = await readJsonBody(request, { maxChars: MAX_BODY_CHARS });
   const id = asString(body?.id)?.trim();
-  if (!body || !id) return jsonError("id is required");
-  closePtySession(id);
+  const ownerKey = asString(body?.ownerKey)?.trim();
+  if (!body || (!id && !ownerKey)) return jsonError("id or ownerKey is required");
+  if (id) closePtySession(id);
+  else if (ownerKey) closePtySessionByOwner(ownerKey);
   return Response.json({ ok: true });
 }

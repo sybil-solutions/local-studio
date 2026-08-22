@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useState } from "react";
 import { Effect, Schema } from "effect";
 import { RefreshCw } from "@/ui/icon-registry";
 import { Button, StatusPill } from "@/ui";
@@ -14,74 +14,35 @@ import {
 } from "@/features/recipes/recipes-content/catalog-table-shell";
 import { useMountSubscription } from "@/hooks/use-mount-subscription";
 
-const OpenApiSpecSchema = Schema.Struct({
-  openapi: Schema.String,
-  info: Schema.Struct({
-    title: Schema.String,
-    version: Schema.String,
-    description: Schema.optional(Schema.String),
-  }),
-  paths: Schema.Record(Schema.String, Schema.Unknown),
+const ApiReferenceSchema = Schema.Struct({
+  title: Schema.String,
+  version: Schema.String,
+  description: Schema.optional(Schema.String),
+  operations: Schema.Array(
+    Schema.Struct({ method: Schema.String, path: Schema.String, summary: Schema.String }),
+  ),
 });
 
-type OpenApiSpec = typeof OpenApiSpecSchema.Type;
+type ApiReference = typeof ApiReferenceSchema.Type;
 
-type OpenApiOperation = {
-  method: string;
-  path: string;
-  summary: string;
-  description: string | null;
-};
-
-const HTTP_METHODS = new Set(["get", "post", "put", "patch", "delete", "options", "head"]);
-
-function asRecord(value: unknown): Record<string, unknown> | null {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
-  return value as Record<string, unknown>;
-}
-
-function operationText(value: unknown, key: "summary" | "description"): string | null {
-  const record = asRecord(value);
-  return record && typeof record[key] === "string" ? record[key] : null;
-}
-
-function operationsFromSpec(spec: OpenApiSpec | null): OpenApiOperation[] {
-  if (!spec) return [];
-  return Object.entries(spec.paths).flatMap(([path, pathValue]) => {
-    const pathRecord = asRecord(pathValue);
-    if (!pathRecord) return [];
-    return Object.entries(pathRecord).flatMap(([method, operation]) => {
-      if (!HTTP_METHODS.has(method.toLowerCase())) return [];
-      return [
-        {
-          method: method.toUpperCase(),
-          path,
-          summary: operationText(operation, "summary") ?? `${method.toUpperCase()} ${path}`,
-          description: operationText(operation, "description"),
-        },
-      ];
-    });
-  });
-}
-
-const loadOpenApiSpec = Effect.tryPromise({
+const loadApiReference = Effect.tryPromise({
   try: async () => {
     const response = await fetch("/api/proxy/api/spec", { cache: "no-store" });
     if (!response.ok) throw new Error(`Controller returned HTTP ${response.status}`);
-    return Schema.decodeUnknownSync(OpenApiSpecSchema)(await response.json());
+    return Schema.decodeUnknownSync(ApiReferenceSchema)(await response.json());
   },
   catch: (error) => (error instanceof Error ? error : new Error("API reference unavailable")),
 });
 
-function useOpenApiSpec() {
-  const [spec, setSpec] = useState<OpenApiSpec | null>(null);
+function useApiReference() {
+  const [spec, setSpec] = useState<ApiReference | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(() => {
     setLoading(true);
     setError(null);
-    return Effect.runPromise(loadOpenApiSpec)
+    return Effect.runPromise(loadApiReference)
       .then(setSpec)
       .catch((reason: unknown) => {
         setSpec(null);
@@ -98,8 +59,8 @@ function useOpenApiSpec() {
 }
 
 export function OpenApiPanel() {
-  const { spec, loading, error, load } = useOpenApiSpec();
-  const operations = useMemo(() => operationsFromSpec(spec), [spec]);
+  const { spec, loading, error, load } = useApiReference();
+  const operations = spec?.operations ?? [];
 
   return (
     <div className="min-h-0 flex-1 overflow-y-auto bg-(--color-panel)">
@@ -107,19 +68,19 @@ export function OpenApiPanel() {
         <div className="flex flex-wrap items-start justify-between gap-4 border-b border-(--border) pb-5">
           <div>
             <div className="text-[length:var(--fs-sm)] text-(--color-foreground-subtlest)">
-              OpenAPI {spec?.openapi ?? "reference"}
+              Controller reference
             </div>
             <h2 className="mt-1 text-[length:var(--fs-2xl)] font-semibold tracking-tight text-(--fg)">
-              {spec?.info.title ?? (loading ? "Loading controller API…" : "Controller API")}
+              {spec?.title ?? (loading ? "Loading controller API…" : "Controller API")}
             </h2>
-            {spec?.info.description ? (
+            {spec?.description ? (
               <p className="mt-2 max-w-2xl text-[length:var(--fs-sm)] leading-5 text-(--color-foreground-subtle)">
-                {spec.info.description}
+                {spec.description}
               </p>
             ) : null}
           </div>
           <div className="flex items-center gap-2">
-            {spec ? <StatusPill tone="good">v{spec.info.version}</StatusPill> : null}
+            {spec ? <StatusPill tone="good">v{spec.version}</StatusPill> : null}
             <Button
               type="button"
               variant="ghost"
@@ -167,11 +128,7 @@ export function OpenApiPanel() {
                     <TextCell mono>
                       <span className="text-(--link)">{operation.path}</span>
                     </TextCell>
-                    <TextCell
-                      sub={operation.description ?? undefined}
-                      widthClass="max-w-[28rem]"
-                      title={operation.summary}
-                    >
+                    <TextCell widthClass="max-w-[28rem]" title={operation.summary}>
                       {operation.summary}
                     </TextCell>
                   </DataRow>

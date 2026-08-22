@@ -73,23 +73,6 @@ export type UseWorkspaceResult = {
   handles: WorkspaceHandles;
 };
 
-export type UseWorkspaceOptions = {
-  ephemeral?: boolean;
-};
-
-function createMemoryStorage(): Pick<Storage, "getItem" | "setItem" | "removeItem"> {
-  const entries = new Map<string, string>();
-  return {
-    getItem: (key) => entries.get(key) ?? null,
-    setItem: (key, value) => {
-      entries.set(key, value);
-    },
-    removeItem: (key) => {
-      entries.delete(key);
-    },
-  };
-}
-
 function createWorkspaceWindow(source: Window): WorkspaceWindow {
   return {
     Event,
@@ -146,7 +129,7 @@ function api(): WorkspaceEffectDeps["api"] {
   };
 }
 
-export function useWorkspace({ ephemeral = false }: UseWorkspaceOptions = {}): UseWorkspaceResult {
+export function useWorkspace(): UseWorkspaceResult {
   const projects = useProjects();
   const projectsRef = useRef(projects);
   const toolsRef = useToolsRef();
@@ -173,11 +156,10 @@ export function useWorkspace({ ephemeral = false }: UseWorkspaceOptions = {}): U
   );
 
   const controller = useMemo(() => {
-    const ephemeralStorage = ephemeral ? createMemoryStorage() : null;
     const makeDeps = (workspaceDispatch: WorkspaceDispatch): WorkspaceEffectDeps | null => {
       if (typeof window === "undefined") return null;
       return {
-        storage: ephemeralStorage ?? window.localStorage,
+        storage: window.localStorage,
         window: createWorkspaceWindow(window),
         api: api(),
         dispatch: workspaceDispatch,
@@ -196,7 +178,7 @@ export function useWorkspace({ ephemeral = false }: UseWorkspaceOptions = {}): U
     };
 
     return { dispatch: workspaceDispatch };
-  }, [queueSessionReplay, ephemeral]);
+  }, [queueSessionReplay]);
 
   const { dispatch } = controller;
 
@@ -296,7 +278,7 @@ export function useWorkspace({ ephemeral = false }: UseWorkspaceOptions = {}): U
       selectPaneModel: (paneId: PaneId, modelId: string) =>
         dispatch({ type: "patchActiveTab", paneId, patch: { modelId } }),
       setDefaultModel: (modelId: string) => {
-        writeDefaultAgentModel(ephemeral ? createMemoryStorage() : window.localStorage, modelId);
+        writeDefaultAgentModel(window.localStorage, modelId);
         dispatch({ type: "setSelectedModel", modelId });
       },
       notifySessionsChanged: () => dispatch({ type: "notifySessionsChanged" }),
@@ -349,10 +331,10 @@ export function useWorkspace({ ephemeral = false }: UseWorkspaceOptions = {}): U
         }
       },
     }),
-    [dispatch, ephemeral, getReplayQueue],
+    [dispatch, getReplayQueue],
   );
 
-  useWorkspaceHydrationEffects({ dispatch, toolsRef, skipRestore: ephemeral });
+  useWorkspaceHydrationEffects({ dispatch, toolsRef });
   useWorkspaceRuntimeSync({ dispatch, sessions: [...state.sessions.values()] });
 
   return { state, dispatch, handles };

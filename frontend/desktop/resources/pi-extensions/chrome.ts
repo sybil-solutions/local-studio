@@ -25,12 +25,8 @@
 // session id change between sessions.
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { withTimeout, type ToolResult } from "./bridge.ts";
 import { Type, type Static, type TSchema } from "./schema.ts";
-
-type ToolResult = {
-  content: Array<{ type: "text"; text: string }>;
-  details: Record<string, unknown>;
-};
 
 type ChromeEnv = {
   relayUrl: string;
@@ -65,11 +61,7 @@ async function callRelay(
   signal: AbortSignal | undefined,
   timeoutMs = env.timeoutMs,
 ): Promise<unknown> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  const abort = () => controller.abort();
-  signal?.addEventListener("abort", abort, { once: true });
-  if (signal?.aborted) controller.abort();
+  const bounded = withTimeout(signal, timeoutMs);
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
     "X-Sitegeist-Session": env.sessionId,
@@ -80,7 +72,7 @@ async function callRelay(
       method: "POST",
       headers,
       body: JSON.stringify({ jsonrpc: "2.0", id: Date.now(), method, params }),
-      signal: controller.signal,
+      signal: bounded.signal,
     });
     const body = (await response.json().catch(() => ({}))) as {
       result?: unknown;
@@ -91,8 +83,7 @@ async function callRelay(
     }
     return body.result;
   } finally {
-    clearTimeout(timer);
-    signal?.removeEventListener("abort", abort);
+    bounded.done();
   }
 }
 

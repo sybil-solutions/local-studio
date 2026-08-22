@@ -3,10 +3,6 @@
 import { Suspense, lazy, type ReactNode } from "react";
 import { useSearchParams } from "next/navigation";
 import { triggerAddProjectFlow } from "@/features/agent/ui/projects-nav/helpers";
-import {
-  QuickPanelTopBar,
-  useQuickPanelExpandEffect,
-} from "@/features/agent/ui/quick-panel/quick-panel-top-bar";
 import { CloseIcon, PlusIcon } from "@/ui/icons";
 import type { WorkspaceDispatch } from "@/features/agent/workspace/effects";
 import type { AgentModel, WorkspaceState } from "@/features/agent/workspace/types";
@@ -20,7 +16,6 @@ import { renderWorkspacePane } from "@/features/agent/ui/render-workspace-pane";
 import { useAgentWorkspaceNavigationEffects } from "@/features/agent/ui/agent-workspace-navigation";
 import { useMountSubscription } from "@/hooks/use-mount-subscription";
 import { POPOVER_SURFACE_CLASS } from "@/ui/popover";
-import { cx } from "@/ui/utils";
 import { collectLeaves } from "@/features/agent/workspace/layout";
 
 const LazyAgentBrowserPanel = lazy(() =>
@@ -33,27 +28,7 @@ type AgentWorkspaceShellProps = {
   state: WorkspaceState;
   dispatch: WorkspaceDispatch;
   handles: WorkspaceHandles;
-  compact?: boolean;
 };
-
-type QuickPanelMode = "composer" | "thread" | undefined;
-
-function quickPanelMode(
-  compact: boolean,
-  showProjectEmptyState: boolean,
-  focusedMessageCount: number,
-): QuickPanelMode {
-  if (!compact) return undefined;
-  return showProjectEmptyState || focusedMessageCount > 0 ? "thread" : "composer";
-}
-
-function workspaceClassName(mode: QuickPanelMode): string {
-  return cx(
-    "agent-workspace flex h-full min-h-0 w-full flex-col text-(--fg) md:h-[100dvh]",
-    mode === "composer" ? "bg-transparent" : "bg-(--agent-bg)",
-    mode === "thread" && "overflow-hidden rounded-[var(--rad-xl)] shadow-[var(--shadow-2xl)]",
-  );
-}
 
 function workspaceSessionIdentity(session: ReturnType<typeof focusedSession>) {
   if (!session) return { viewKey: null, viewAlias: null };
@@ -75,12 +50,7 @@ export function shouldShowProjectEmptyState(
   );
 }
 
-export function AgentWorkspaceShell({
-  state,
-  dispatch,
-  handles,
-  compact = false,
-}: AgentWorkspaceShellProps) {
+export function AgentWorkspaceShell({ state, dispatch, handles }: AgentWorkspaceShellProps) {
   const projects = useProjects();
   const tools = useTools();
   const searchParams = useSearchParams();
@@ -104,12 +74,8 @@ export function AgentWorkspaceShell({
     state.models.find((model) => model.id === (focusedTab?.modelId ?? state.selectedModel)) ?? null;
   const focusedGitSummary = projects.gitSummary(activeProject?.path ?? focusedTab?.cwd);
   const showProjectEmptyState = shouldShowProjectEmptyState(projects, projectParam);
-  const focusedMessageCount = focusedTab?.messages.length ?? 0;
-  const panelMode = quickPanelMode(compact, showProjectEmptyState, focusedMessageCount);
-  const composerOnly = panelMode === "composer";
-  useQuickPanelExpandEffect(compact, panelMode === "thread");
   return (
-    <div data-quick-panel-state={panelMode} className={workspaceClassName(panelMode)}>
+    <div className="agent-workspace flex h-full min-h-0 w-full flex-col bg-(--agent-bg) text-(--fg) md:h-[100dvh]">
       <div
         className="agent-workspace-panel-row relative flex min-h-0 flex-1"
         data-multi-pane={collectLeaves(state.layout).length > 1 ? "true" : undefined}
@@ -120,14 +86,6 @@ export function AgentWorkspaceShell({
             setupWarning={state.setupWarning}
             onClearError={() => dispatch({ type: "setError", error: "" })}
           />
-          {compact ? (
-            <QuickPanelTopBar
-              projects={projects}
-              projectId={activeProject?.id ?? null}
-              sessionId={focusedTab?.piSessionId ?? null}
-              hasThread={focusedMessageCount > 0}
-            />
-          ) : null}
           <WorkspacePaneContent
             showEmptyState={showProjectEmptyState}
             state={state}
@@ -135,24 +93,20 @@ export function AgentWorkspaceShell({
             tools={tools}
             dispatch={dispatch}
             handles={handles}
-            compact={compact}
-            composerOnly={composerOnly}
           />
         </section>
-        {!compact ? (
-          <WorkspaceComputerPanel
-            open={tools.computer.open}
-            handles={handles}
-            activeProject={activeProject}
-            focusedTab={focusedTab}
-            sessions={state.sessions}
-            selectedModel={state.selectedModel}
-            models={state.models}
-            modelsLoading={state.modelsLoading}
-            focusedModel={focusedModel}
-            focusedGitSummary={focusedGitSummary}
-          />
-        ) : null}
+        <WorkspaceComputerPanel
+          open={tools.computer.open}
+          handles={handles}
+          activeProject={activeProject}
+          focusedTab={focusedTab}
+          sessions={state.sessions}
+          selectedModel={state.selectedModel}
+          models={state.models}
+          modelsLoading={state.modelsLoading}
+          focusedModel={focusedModel}
+          focusedGitSummary={focusedGitSummary}
+        />
       </div>
     </div>
   );
@@ -205,8 +159,6 @@ function WorkspacePaneContent({
   tools,
   dispatch,
   handles,
-  compact,
-  composerOnly,
 }: {
   showEmptyState: boolean;
   state: WorkspaceState;
@@ -214,32 +166,14 @@ function WorkspacePaneContent({
   tools: ReturnType<typeof useTools>;
   dispatch: WorkspaceDispatch;
   handles: WorkspaceHandles;
-  compact?: boolean;
-  composerOnly: boolean;
 }) {
   if (showEmptyState) return <ProjectEmptyState />;
-  if (compact) {
-    return (
-      <div className="flex min-h-0 flex-1">
-        {renderWorkspacePane({
-          paneId: state.focusedPaneId,
-          state,
-          projects,
-          tools,
-          dispatch,
-          handles,
-          compact,
-          composerOnly,
-        })}
-      </div>
-    );
-  }
   return (
     <div className="min-h-0 flex-1">
       <PaneGrid
         layout={state.layout}
         renderPane={(paneId) =>
-          renderWorkspacePane({ paneId, state, projects, tools, dispatch, handles, compact })
+          renderWorkspacePane({ paneId, state, projects, tools, dispatch, handles })
         }
         onSplit={handles.splitPaneWithPayload}
         onOpenTab={handles.openSessionPayloadInPane}
@@ -371,9 +305,7 @@ function useActiveSessionEffects({
   }, [viewKey, viewAlias, setActiveComputerSession]);
 }
 
-export function AgentWorkspace({ compact }: { compact?: boolean } = {}) {
-  const { state, dispatch, handles } = useWorkspace({ ephemeral: Boolean(compact) });
-  return (
-    <AgentWorkspaceShell state={state} dispatch={dispatch} handles={handles} compact={compact} />
-  );
+export function AgentWorkspace() {
+  const { state, dispatch, handles } = useWorkspace();
+  return <AgentWorkspaceShell state={state} dispatch={dispatch} handles={handles} />;
 }

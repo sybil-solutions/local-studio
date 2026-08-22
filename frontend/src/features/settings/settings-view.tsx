@@ -46,7 +46,7 @@ const SECTIONS: SettingsSectionDef[] = [
   ["connection", "General", "Controller connections and API access.", Cable],
   ["system", "System", "Engines, services, storage, and hardware.", Cpu],
   ["appearance", "Appearance", "Theme, typography, and interface scale.", Paintbrush],
-  ["terminal", "Shortcuts", "Quick panel and terminal key bindings.", Keyboard],
+  ["terminal", "Shortcuts", "Terminal key bindings.", Keyboard],
   ["archive", "Archived chats", "Sessions hidden from the task list.", Archive],
   ["setup", "Setup", "Local prerequisites and first-run checks.", ServerCog],
 ].map(([id, label, description, Icon]) => ({

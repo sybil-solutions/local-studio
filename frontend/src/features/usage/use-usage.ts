@@ -1,40 +1,17 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
-import { useMountSubscription } from "@/hooks/use-mount-subscription";
+import { useCallback } from "react";
 import { normalizeUsageStats } from "@local-studio/contracts/usage";
 import api from "@/lib/api/client";
-import { readPageCache, writePageCache } from "@/lib/page-data-cache";
+import { usePageResource } from "@/hooks/use-page-resource";
 import type { UsageStats } from "@/lib/types";
 
 export function useUsage() {
-  const [stats, setStats] = useState<UsageStats | null>(() =>
-    readPageCache<UsageStats>("usage:stats:provider"),
+  const load = useCallback(async () => normalizeUsageStats(await api.getUsageStats()), []);
+  const { data, loading, refreshing, error, reload } = usePageResource<UsageStats>(
+    "usage:stats:provider",
+    load,
   );
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const requestSequence = useRef(0);
 
-  const loadStats = useCallback(async () => {
-    const requestId = ++requestSequence.current;
-    try {
-      setLoading(true);
-      setError(null);
-      const normalized = normalizeUsageStats(await api.getUsageStats());
-      if (requestId !== requestSequence.current) return;
-      writePageCache("usage:stats:provider", normalized);
-      setStats(normalized);
-    } catch (cause) {
-      if (requestId === requestSequence.current) setError((cause as Error).message);
-    } finally {
-      if (requestId === requestSequence.current) setLoading(false);
-    }
-  }, []);
-
-  useMountSubscription(() => {
-    setStats(readPageCache<UsageStats>("usage:stats:provider"));
-    void loadStats();
-  }, [loadStats]);
-
-  return { stats, loading, error, loadStats };
+  return { stats: data, loading: loading || refreshing, error, loadStats: reload };
 }

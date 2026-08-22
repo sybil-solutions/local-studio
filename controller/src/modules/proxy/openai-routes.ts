@@ -13,7 +13,7 @@ import {
   stripDeepSeekControlTokens,
 } from "./reasoning";
 import {
-  recordNonStreamingInferenceUsage,
+  recordInferenceUsage,
   type InferenceUsageInput,
 } from "./inference-accounting";
 import {
@@ -92,6 +92,17 @@ export const sanitizeDeepSeekV4ControllerRequest = (
   }
   return changed;
 };
+
+const abortAware = <A, E>(
+  effect: Effect.Effect<A, E>,
+  signal: AbortSignal,
+): Effect.Effect<{ aborted: true } | { aborted: false; value: A }, E> =>
+  effect.pipe(
+    Effect.map((value) => ({ aborted: false as const, value })),
+    Effect.catch((error) =>
+      signal.aborted ? Effect.succeed({ aborted: true as const }) : Effect.fail(error),
+    ),
+  );
 
 export const registerOpenAIRoutes = defineRoutes((app, context) => {
   const warnNonRunningModel = createNonRunningModelWarner(context.logger);
@@ -201,20 +212,14 @@ export const registerOpenAIRoutes = defineRoutes((app, context) => {
   return mergeRoutes(
     effectRoute(app.post, "/v1/chat/completions", (ctx) =>
       Effect.gen(function* () {
-        const bodyRead = yield* Effect.tryPromise({
-          try: () => ctx.req.arrayBuffer(),
-          catch: () => new HttpStatus({ status: 400, detail: "Invalid request body" }),
-        }).pipe(
-          Effect.match({
-            onFailure: (error) => ({ ok: false as const, error }),
-            onSuccess: (value) => ({ ok: true as const, value }),
+        const bodyRead = yield* abortAware(
+          Effect.tryPromise({
+            try: () => ctx.req.arrayBuffer(),
+            catch: () => new HttpStatus({ status: 400, detail: "Invalid request body" }),
           }),
+          ctx.req.raw.signal,
         );
-        if (!bodyRead.ok) {
-          return ctx.req.raw.signal.aborted
-            ? new Response(null, { status: 499 })
-            : yield* Effect.fail(bodyRead.error);
-        }
+        if (bodyRead.aborted) return new Response(null, { status: 499 });
         const bodyBuffer = bodyRead.value;
         const { parsed, requestedModel, matchedRecipe, isStreaming, bodyChanged, sessionId } =
           yield* parseChatBody(bodyBuffer, (name) => ctx.req.header(name));
@@ -256,48 +261,37 @@ export const registerOpenAIRoutes = defineRoutes((app, context) => {
         const recordedProvider = providerRouting ? requestProvider : "local";
 
         if (!isStreaming) {
-          const fetched = yield* Effect.tryPromise({
-            try: (signal) =>
-              fetch(upstreamUrl, {
-                method: "POST",
-                headers,
-                body: finalBody,
-                signal: AbortSignal.any([clientSignal, signal]),
-              }),
-            catch: (source) => source,
-          }).pipe(
-            Effect.match({
-              onFailure: (error) => ({ ok: false as const, error }),
-              onSuccess: (value) => ({ ok: true as const, value }),
+          const fetched = yield* abortAware(
+            Effect.tryPromise({
+              try: (signal) =>
+                fetch(upstreamUrl, {
+                  method: "POST",
+                  headers,
+                  body: finalBody,
+                  signal: AbortSignal.any([clientSignal, signal]),
+                }),
+              catch: (source) => source,
             }),
+            clientSignal,
           );
-          if (!fetched.ok) {
-            return clientSignal.aborted
-              ? new Response(null, { status: 499 })
-              : yield* Effect.fail(fetched.error);
-          }
+          if (fetched.aborted) return new Response(null, { status: 499 });
           const response = fetched.value;
-          const decoded = yield* Effect.tryPromise({
-            try: () => response.json(),
-            catch: (source) => source,
-          }).pipe(
-            Effect.flatMap(Schema.decodeUnknownEffect(ChatRequestSchema)),
-            Effect.match({
-              onFailure: (error) => ({ ok: false as const, error }),
-              onSuccess: (value) => ({ ok: true as const, value }),
-            }),
-          );
-          if (!decoded.ok) {
-            if (clientSignal.aborted) return new Response(null, { status: 499 });
-            return new Response(null, { status: response.status });
-          }
+          const decoded = yield* abortAware(
+            Effect.tryPromise({ try: () => response.json(), catch: (source) => source }).pipe(
+              Effect.flatMap(Schema.decodeUnknownEffect(ChatRequestSchema)),
+            ),
+            clientSignal,
+          ).pipe(Effect.catch(() => Effect.succeed(null)));
+          if (!decoded) return new Response(null, { status: response.status });
+          if (decoded.aborted) return new Response(null, { status: 499 });
           const result = { ...decoded.value };
 
           const usage = result["usage"] as InferenceUsageInput | undefined;
-          const usageTotals = yield* recordNonStreamingInferenceUsage(
+          const usageTotals = yield* recordInferenceUsage(
             { logger: context.logger, stores: context.stores },
             {
               usage,
+              streamed: false,
               record: {
                 model: recordedModel,
                 source: sourceHeader,

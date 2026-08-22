@@ -1,6 +1,6 @@
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
-import { resolveDataDir } from "./data-dir";
+import { atomicWriteJson, resolveDataDir } from "./data-dir";
 
 // Serialize read-modify-write cycles per file so concurrent POSTs (e.g. an
 // agent plan autosave overlapping a user edit) can't both read v1 and drop one
@@ -58,11 +58,9 @@ export function createSessionScopedJsonStore<T extends { updatedAt: string }>(co
         updatedAt: new Date().toISOString(),
       });
       await mkdir(path.dirname(file), { recursive: true });
-      // Write-then-rename so a crash mid-write can't truncate the document
+      // Atomic replace so a crash mid-write can't truncate the document
       // (read() swallows parse errors and would silently return an empty doc).
-      const tempFile = `${file}.tmp-${process.pid}`;
-      await writeFile(tempFile, `${JSON.stringify(next, null, 2)}\n`, "utf8");
-      await rename(tempFile, file);
+      await atomicWriteJson(file, next);
       return next;
     });
   };

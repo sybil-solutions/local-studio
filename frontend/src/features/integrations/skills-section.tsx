@@ -1,8 +1,8 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
-import { Effect, Schema } from "effect";
-import { Button, RefreshIconButton, SearchInput, StatusPill } from "@/ui";
+import { useCallback, useState } from "react";
+import { Schema } from "effect";
+import { Button, StatusPill } from "@/ui";
 import { ResourceDrawer, ResourceDrawerSection, ResourceFact } from "@/ui/resource-drawer";
 import { ResourceLogo } from "@/ui/resource-logo";
 import {
@@ -16,8 +16,12 @@ import {
   TableSection,
   TextCell,
 } from "@/features/recipes/recipes-content/catalog-table-shell";
-import { useMountSubscription } from "@/hooks/use-mount-subscription";
+import {
+  CatalogSectionHeader,
+  useCatalogSection,
+} from "@/features/recipes/recipes-content/catalog-section";
 import { writeClipboardText } from "@/lib/clipboard";
+import { requestAgentJson } from "./agent-json";
 
 const SkillSchema = Schema.Struct({
   id: Schema.String,
@@ -37,16 +41,8 @@ const SkillResponseSchema = Schema.Struct({
 
 type Skill = Schema.Schema.Type<typeof SkillSchema>;
 
-const requestSkills = <T,>(url: string, schema: Schema.ConstraintDecoder<T>) =>
-  Effect.tryPromise({
-    try: async () => {
-      const response = await fetch(url, { cache: "no-store" });
-      const body: unknown = await response.json();
-      if (!response.ok) throw new Error("Skill discovery failed");
-      return Schema.decodeUnknownSync(schema)(body);
-    },
-    catch: (error) => (error instanceof Error ? error : new Error(String(error))),
-  });
+const decodeSkills = Schema.decodeUnknownSync(SkillsResponseSchema);
+const decodeSkill = Schema.decodeUnknownSync(SkillResponseSchema);
 
 function SkillDrawer({
   skill,
@@ -114,54 +110,28 @@ function SkillDrawer({
 }
 
 export function SkillsSection() {
-  const [skills, setSkills] = useState<readonly Skill[]>([]);
-  const [loaded, setLoaded] = useState(false);
-  const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<Skill | null>(null);
   const [selectedSkill, setSelectedSkill] = useState<Skill | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState("");
 
-  const loadSkills = useCallback(() => {
-    setRefreshing(true);
-    void Effect.runPromise(requestSkills("/api/agent/skills", SkillsResponseSchema))
-      .then((payload) => {
-        setSkills(payload.skills);
-        setError("");
-      })
-      .catch((loadError: unknown) => {
-        setSkills([]);
-        setError(loadError instanceof Error ? loadError.message : "Skill discovery failed");
-      })
-      .finally(() => {
-        setLoaded(true);
-        setRefreshing(false);
-      });
-  }, []);
-
-  useMountSubscription(() => {
-    loadSkills();
-  }, [loadSkills]);
-
-  const visibleSkills = useMemo(() => {
-    const normalized = query.trim().toLowerCase();
-    if (!normalized) return skills;
-    return skills.filter((skill) =>
-      `${skill.name} ${skill.source} ${skill.path}`.toLowerCase().includes(normalized),
-    );
-  }, [query, skills]);
+  const load = useCallback(
+    () => requestAgentJson("/api/agent/skills", decodeSkills).then((payload) => payload.skills),
+    [],
+  );
+  const section = useCatalogSection({
+    load,
+    searchText: (skill: Skill) => `${skill.name} ${skill.source} ${skill.path}`,
+  });
+  const { items: skills, visible: visibleSkills, loaded, error, setError, query } = section;
 
   const openSkill = (skill: Skill) => {
     setSelected(skill);
     setSelectedSkill(null);
     setDetailLoading(true);
     setError("");
-    void Effect.runPromise(
-      requestSkills(
-        `/api/agent/skills/load?path=${encodeURIComponent(skill.path)}`,
-        SkillResponseSchema,
-      ),
+    void requestAgentJson(
+      `/api/agent/skills/load?path=${encodeURIComponent(skill.path)}`,
+      decodeSkill,
     )
       .then((payload) => setSelectedSkill(payload.skill))
       .catch((loadError: unknown) =>
@@ -176,22 +146,13 @@ export function SkillsSection() {
         title="Skills"
         description="Reusable instruction sets discovered across Local Studio, Codex, Claude, Pi, Factory, and OpenCode."
         actions={
-          <div className="flex items-center gap-2">
-            <SearchInput
-              value={query}
-              onChange={setQuery}
-              placeholder="Search skills"
-              className="w-56"
-            />
-            <StatusText tone={error ? "warn" : loaded ? "ok" : "dim"}>
-              {loaded ? `${visibleSkills.length} of ${skills.length}` : "discovering"}
-            </StatusText>
-            <RefreshIconButton
-              onClick={loadSkills}
-              loading={refreshing}
-              label="Rediscover skills"
-            />
-          </div>
+          <CatalogSectionHeader
+            section={section}
+            searchPlaceholder="Search skills"
+            statusTone={error ? "warn" : loaded ? "ok" : "dim"}
+            statusText={loaded ? `${visibleSkills.length} of ${skills.length}` : "discovering"}
+            refreshLabel="Rediscover skills"
+          />
         }
       >
         {loaded && visibleSkills.length === 0 ? (

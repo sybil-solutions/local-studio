@@ -1,15 +1,10 @@
 import type { Context, Hono, Schema, ToSchema, TypedResponse } from "hono";
 import type { HonoBase } from "hono/hono-base";
 import type { HandlerInterface } from "hono/types";
-import { describeRoute } from "hono-openapi";
 import type { AppContext } from "../app-context";
 import { effectHandler, type ControllerEffect, type ControllerEnvironment } from "./effect-handler";
 
 export type ControllerRouteApp = Hono<ControllerEnvironment, Schema, string>;
-
-const documentRoute = describeRoute({
-  responses: { 200: { description: "Successful response" } },
-});
 
 type EffectRouteHandler = (context: Context<ControllerEnvironment>) => unknown;
 
@@ -43,7 +38,6 @@ type EffectRouteRegistrar<
   Result extends Response | TypedResponse<unknown>,
 > = (
   path: Path,
-  document: typeof documentRoute,
   handler: ReturnType<typeof effectHandler<Result>>,
 ) => RegisteredEffectRoute<Method, Path, Result>;
 
@@ -57,7 +51,7 @@ export const effectRoute = <
   path: Path,
   handler: CheckedEffectRouteHandler<Handler>,
 ): RegisteredEffectRoute<Method, Path, EffectRouteHandlerResult<Handler>> =>
-  method(path, documentRoute, effectHandler(handler));
+  method(path, effectHandler(handler));
 
 type UnionToIntersection<Union> = (Union extends unknown ? (value: Union) => void : never) extends (
   value: infer Intersection,

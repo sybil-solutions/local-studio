@@ -6,7 +6,12 @@ import { Effect, Schema, Stream } from "effect";
 import { defineRoutes, effectRoute, mergeRoutes } from "../../http/route-registrar";
 import { badRequest, notFound } from "../../core/errors";
 import { findObservedInferenceProcess } from "../../core/function-observability";
-import { buildSseHeaders, toReadableByteStream, withSseHeartbeat } from "../../http/sse";
+import {
+  abortEffect,
+  buildSseHeaders,
+  toReadableByteStream,
+  withSseHeartbeat,
+} from "../../http/sse";
 import { CONTROLLER_EVENTS } from "@local-studio/contracts/controller-events";
 import { Event } from "./event-manager";
 import { isRecipeRunning } from "../models/recipes/recipe-matching";
@@ -37,17 +42,6 @@ const LogTailQuerySchema = Schema.Struct({
     ),
   ),
 });
-
-const abortEffect = (signal: AbortSignal): Effect.Effect<void> =>
-  Effect.callback<void>((resume) => {
-    if (signal.aborted) {
-      resume(Effect.void);
-      return;
-    }
-    const abort = (): void => resume(Effect.void);
-    signal.addEventListener("abort", abort, { once: true });
-    return Effect.sync(() => signal.removeEventListener("abort", abort));
-  });
 
 const waitForChildExit = (child: ReturnType<typeof spawn>): Effect.Effect<void> =>
   Effect.callback<void>((resume) => {

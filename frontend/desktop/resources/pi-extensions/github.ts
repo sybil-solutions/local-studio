@@ -22,12 +22,8 @@
 
 import { execFile } from "node:child_process";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { ToolResult } from "./bridge.ts";
 import { Type, type Static, type TSchema } from "./schema.ts";
-
-type ToolResult = {
-  content: Array<{ type: "text"; text: string }>;
-  details: Record<string, unknown>;
-};
 
 const DEFAULT_TIMEOUT_MS = 60_000;
 const SLOW_TIMEOUT_MS = 180_000;

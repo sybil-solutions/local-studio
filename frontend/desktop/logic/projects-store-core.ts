@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
-import { writeJsonAtomic } from "../helpers/fs-json";
+import { readJsonObject, writeJsonAtomic } from "../helpers/fs-json";
 
 export interface ProjectRecord {
   id: string;
@@ -36,29 +36,18 @@ export interface ProjectsStore {
 }
 
 function readDocument(filePath: string): ProjectsDocument {
-  try {
-    if (!existsSync(filePath)) return { projects: [] };
-    const parsed = JSON.parse(readFileSync(filePath, "utf8")) as unknown;
-    if (
-      !parsed ||
-      typeof parsed !== "object" ||
-      !Array.isArray((parsed as { projects?: unknown }).projects)
-    ) {
-      return { projects: [] };
-    }
-    const projects = (parsed as { projects: unknown[] }).projects.filter(
-      (entry): entry is ProjectRecord =>
-        !!entry &&
-        typeof entry === "object" &&
-        typeof (entry as ProjectRecord).id === "string" &&
-        typeof (entry as ProjectRecord).path === "string" &&
-        typeof (entry as ProjectRecord).name === "string" &&
-        typeof (entry as ProjectRecord).addedAt === "string",
-    );
-    return { projects };
-  } catch {
-    return { projects: [] };
-  }
+  const stored = readJsonObject(filePath).projects;
+  if (!Array.isArray(stored)) return { projects: [] };
+  const projects = stored.filter(
+    (entry): entry is ProjectRecord =>
+      !!entry &&
+      typeof entry === "object" &&
+      typeof (entry as ProjectRecord).id === "string" &&
+      typeof (entry as ProjectRecord).path === "string" &&
+      typeof (entry as ProjectRecord).name === "string" &&
+      typeof (entry as ProjectRecord).addedAt === "string",
+  );
+  return { projects };
 }
 
 function writeDocument(filePath: string, document: ProjectsDocument): void {

@@ -3,7 +3,8 @@ import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { Effect, Schema } from "effect";
 import { effectRoute, defineRoutes, mergeRoutes } from "../../http/route-registrar";
-import type { Recipe } from "../models/types";
+import type { AppContext } from "../../app-context";
+import type { ProcessInfo, Recipe } from "../models/types";
 import { resolveModelVision } from "@local-studio/contracts/model-capabilities";
 
 interface OpenAIModelInfo {
@@ -65,51 +66,66 @@ function resolvedRecipeMetadata(recipe: Recipe, modelId: string): Record<string,
   };
 }
 
+const fetchActiveModelLength = (context: AppContext): Effect.Effect<number | undefined> =>
+  fetchInference(context, "/v1/models", { timeoutMs: 5000 }).pipe(
+    Effect.flatMap((response) =>
+      response.ok ? decodeResponse(response, ActiveModelsSchema) : Effect.succeed(null),
+    ),
+    Effect.catch(() => Effect.succeed(null)),
+    Effect.map((active) => active?.data?.[0]?.max_model_len),
+  );
+
+const resolveActiveRecipe = (
+  context: AppContext,
+  recipes: readonly Recipe[],
+  label: string,
+): Effect.Effect<{ current: ProcessInfo | null; activeRecipe: Recipe | null }> =>
+  Effect.gen(function* () {
+    const current = yield* findObservedInferenceProcess(context, label);
+    // Several recipes can share one model path, and each would match the
+    // single running process — pick the best match once so exactly one
+    // entry is reported active (the rest stay listed, just inactive).
+    return {
+      current,
+      activeRecipe: current
+        ? selectRunningRecipe(recipes, current, { allowEitherPathContains: true })
+        : null,
+    };
+  });
+
+const toOpenAIModelInfo = (
+  recipe: Recipe,
+  active: boolean,
+  activeMaxModelLength: number | undefined,
+  now: number,
+): OpenAIModelInfo => {
+  const modelId = recipe.served_model_name ?? recipe.id;
+  return {
+    id: modelId,
+    object: "model",
+    created: now,
+    owned_by: "local-studio",
+    active,
+    max_model_len: (active ? activeMaxModelLength : undefined) ?? recipe.max_model_len,
+    metadata: resolvedRecipeMetadata(recipe, modelId),
+  };
+};
+
 export const registerModelsRoutes = defineRoutes((app, context) => {
   return mergeRoutes(
     effectRoute(app.get, "/v1/models", (ctx) =>
       Effect.gen(function* () {
         const recipes = yield* context.stores.recipeStore.list();
-        const current = yield* findObservedInferenceProcess(context, "models.list");
-        let activeModelData: {
-          readonly data?: readonly { readonly max_model_len?: number | undefined }[] | undefined;
-        } | null = null;
-        if (current) {
-          activeModelData = yield* fetchInference(context, "/v1/models", {
-            timeoutMs: 5000,
-          }).pipe(
-            Effect.flatMap((response) =>
-              response.ok ? decodeResponse(response, ActiveModelsSchema) : Effect.succeed(null),
-            ),
-            Effect.catch(() => Effect.succeed(null)),
-          );
-        }
-
-        const models: OpenAIModelInfo[] = [];
+        const { current, activeRecipe } = yield* resolveActiveRecipe(
+          context,
+          recipes,
+          "models.list",
+        );
+        const activeMaxModelLength = current ? yield* fetchActiveModelLength(context) : undefined;
         const now = Math.floor(Date.now() / 1000);
-        // Several recipes can share one model path, and each would match the
-        // single running process — pick the best match once so exactly one
-        // entry is reported active (the rest stay listed, just inactive).
-        const activeRecipe = current
-          ? selectRunningRecipe(recipes, current, { allowEitherPathContains: true })
-          : null;
-        for (const recipe of recipes) {
-          const isActive = recipe === activeRecipe;
-          let maxModelLength = recipe.max_model_len;
-          if (isActive && activeModelData?.data?.[0]?.max_model_len) {
-            maxModelLength = activeModelData.data[0].max_model_len;
-          }
-          const modelId = recipe.served_model_name ?? recipe.id;
-          models.push({
-            id: modelId,
-            object: "model",
-            created: now,
-            owned_by: "local-studio",
-            active: isActive,
-            max_model_len: maxModelLength,
-            metadata: resolvedRecipeMetadata(recipe, modelId),
-          });
-        }
+        const models: OpenAIModelInfo[] = recipes.map((recipe) =>
+          toOpenAIModelInfo(recipe, recipe === activeRecipe, activeMaxModelLength, now),
+        );
 
         if (models.length === 0 && current) {
           const inferredId =
@@ -122,7 +138,7 @@ export const registerModelsRoutes = defineRoutes((app, context) => {
             created: now,
             owned_by: "local-studio",
             active: true,
-            max_model_len: activeModelData?.data?.[0]?.max_model_len ?? 32768,
+            max_model_len: activeMaxModelLength ?? 32768,
             metadata: {
               vision: resolveModelVision({ identifiers: [inferredId] }),
             },
@@ -158,51 +174,23 @@ export const registerModelsRoutes = defineRoutes((app, context) => {
       Effect.gen(function* () {
         const modelId = ctx.req.param("modelId");
         const recipes = yield* context.stores.recipeStore.list();
-        let recipe: Recipe | null = null;
-        for (const entry of recipes) {
-          if (
-            (entry.served_model_name && entry.served_model_name === modelId) ||
-            entry.id === modelId
-          ) {
-            recipe = entry;
-            break;
-          }
-        }
+        const recipe =
+          recipes.find((entry) => entry.served_model_name === modelId || entry.id === modelId) ??
+          null;
         if (!recipe) {
           return yield* Effect.fail(notFound("Model not found"));
         }
 
-        const current = yield* findObservedInferenceProcess(context, "models.detail");
-        let isActive = false;
-        let maxModelLength = recipe.max_model_len;
         // Same exclusive selection as the list route: a recipe is active
         // only when it is THE best match for the running process, so the
         // detail view can never contradict the list.
-        if (
-          current &&
-          selectRunningRecipe(recipes, current, { allowEitherPathContains: true }) === recipe
-        ) {
-          isActive = true;
-          const data = yield* fetchInference(context, "/v1/models", { timeoutMs: 5000 }).pipe(
-            Effect.flatMap((response) =>
-              response.ok ? decodeResponse(response, ActiveModelsSchema) : Effect.succeed(null),
-            ),
-            Effect.catch(() => Effect.succeed(null)),
-          );
-          maxModelLength = data?.data?.[0]?.max_model_len ?? recipe.max_model_len;
-        }
+        const { activeRecipe } = yield* resolveActiveRecipe(context, recipes, "models.detail");
+        const isActive = activeRecipe === recipe;
+        const activeMaxModelLength = isActive ? yield* fetchActiveModelLength(context) : undefined;
 
-        const payload: OpenAIModelInfo = {
-          id: recipe.served_model_name ?? recipe.id,
-          object: "model",
-          created: Math.floor(Date.now() / 1000),
-          owned_by: "local-studio",
-          active: isActive,
-          max_model_len: maxModelLength,
-          metadata: resolvedRecipeMetadata(recipe, recipe.served_model_name ?? recipe.id),
-        };
-
-        return ctx.json(payload);
+        return ctx.json(
+          toOpenAIModelInfo(recipe, isActive, activeMaxModelLength, Math.floor(Date.now() / 1000)),
+        );
       }),
     ),
 

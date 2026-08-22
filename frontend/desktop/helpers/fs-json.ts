@@ -1,5 +1,22 @@
-import { mkdirSync, renameSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import path from "node:path";
+
+/**
+ * Read a JSON object from disk, falling back to `{}` whenever the file is
+ * missing, unreadable, malformed, or holds anything but a plain object. Every
+ * main-process store treats a corrupt file as "start over" rather than a crash.
+ */
+export function readJsonObject(filePath: string): Record<string, unknown> {
+  try {
+    if (!existsSync(filePath)) return {};
+    const parsed = JSON.parse(readFileSync(filePath, "utf8")) as unknown;
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : {};
+  } catch {
+    return {};
+  }
+}
 
 /**
  * Write JSON to disk atomically: ensure the parent directory exists, write to

@@ -22,15 +22,12 @@ function shouldRestoreWorkspace(params: URLSearchParams): boolean {
 export function useWorkspaceHydrationEffects({
   dispatch,
   toolsRef,
-  skipRestore = false,
 }: {
   dispatch: WorkspaceDispatch;
   toolsRef: RefObject<ToolsContextValue>;
-  skipRestore?: boolean;
 }): void {
   useMountSubscription(() => {
-    const params = currentSearchParams();
-    const restoreWorkspace = !skipRestore && shouldRestoreWorkspace(params);
+    const restoreWorkspace = shouldRestoreWorkspace(currentSearchParams());
     const { workspace, selections, legacyRuntimeKeys } = restoreWorkspace
       ? loadInitialFromStorage(window.localStorage)
       : { workspace: {}, selections: new Map(), legacyRuntimeKeys: new Map() };
@@ -44,7 +41,7 @@ export function useWorkspaceHydrationEffects({
     return () => {
       workspaceCommands().unbind();
     };
-  }, [dispatch, toolsRef, skipRestore]);
+  }, [dispatch, toolsRef]);
 }
 
 type UseWorkspaceRuntimeSyncDeps = {
@@ -77,7 +74,6 @@ export function useWorkspaceRuntimeSync({ dispatch, sessions }: UseWorkspaceRunt
       commit: (sessionId: SessionId, patch: (session: Session) => Session) => {
         dispatch({ type: "patchSession", sessionId, patch });
       },
-      getSession: (sessionId) => sessionsRef.current.find((session) => session.id === sessionId),
       getSessions: () => sessionsRef.current,
     });
     return openSessionListChangedSubscription(() => {

@@ -33,7 +33,7 @@ import {
   shouldSubscribeRuntimeEvents,
   type RuntimeCursor,
 } from "@/features/agent/runtime/runtime-cursor";
-import { createEffectTextDeltaCoalescer } from "@/features/agent/runtime/effect-coalescer";
+import { createTextDeltaCoalescer } from "@/features/agent/runtime/text-delta-coalescer";
 import { Effect, Fiber, Schedule } from "effect";
 import type { Session, SessionId } from "@/features/agent/runtime/types";
 import { publishRuntimeActivity } from "@/features/agent/session-index";
@@ -47,8 +47,6 @@ const RUNTIME_POLL_IDLE_GRACE_MS = 10_000;
 export type SessionRuntimeBinding = {
   /** Single state commit boundary — one patchSession dispatch per call. */
   commit: (sessionId: SessionId, patch: (session: Session) => Session) => void;
-  /** Read the current session snapshot (never cached by the controller). */
-  getSession: (sessionId: SessionId) => Session | undefined;
   /** Read all current workspace sessions (the binding's live ref). */
   getSessions: () => readonly Session[];
 };
@@ -173,7 +171,6 @@ export function createSessionRuntimeController(): SessionRuntimeController {
   const commit = (sessionId: SessionId, patch: (session: Session) => Session) => {
     binding?.commit(sessionId, patch);
   };
-  const getSession = (sessionId: SessionId) => binding?.getSession(sessionId);
 
   // Stamp the committed cursor onto the session in the SAME commit that
   // applies the event's effects — content and cursor land atomically, so a
@@ -199,10 +196,9 @@ export function createSessionRuntimeController(): SessionRuntimeController {
     );
   };
 
-  // Text-delta coalescer is now an Effect program (effect-coalescer.ts): a
-  // per-session pending snapshot drained on the animation-frame clock. The
-  // imperative facade is unchanged so the controller's contract holds.
-  const coalescer = createEffectTextDeltaCoalescer({
+  // Text-delta coalescer (text-delta-coalescer.ts): a per-session pending
+  // snapshot drained on the animation-frame clock.
+  const coalescer = createTextDeltaCoalescer({
     applyPiEvent: applyEvent,
   });
 

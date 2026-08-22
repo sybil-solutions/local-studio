@@ -24,3 +24,20 @@ export const parseBooleanFlag = (raw: unknown): boolean => {
   const normalized = String(raw).trim().toLowerCase();
   return ["1", "true", "yes", "on"].includes(normalized);
 };
+
+export const requiredTrimmed = (
+  value: string,
+  label: string,
+): Effect.Effect<string, ReturnType<typeof badRequest>> => {
+  const trimmed = value.trim();
+  return trimmed ? Effect.succeed(trimmed) : Effect.fail(badRequest(`${label} is required`));
+};
+
+export const optionalTrimmed = <Current extends string | null | undefined>(
+  value: string | null | undefined,
+  current: Current,
+): string | null | Current => {
+  if (value === undefined) return current;
+  if (value === null) return null;
+  return value.trim() || null;
+};

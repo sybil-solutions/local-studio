@@ -34,7 +34,6 @@ import {
   type AgentTurnCommandResult,
 } from "@shared/agent/agent-turn";
 
-export type GitRef = { name: string; current: boolean; remote: boolean };
 export type GitBranch = { name: string; current: boolean; remote: boolean };
 export type GitWorktree = { path: string; branch: string | null; current: boolean };
 export type GitStatusEntry = { code: string; path: string };
@@ -47,7 +46,6 @@ export type GitState = {
   diff: string;
   additions: number;
   deletions: number;
-  refs: GitRef[];
   hasUpstream: boolean;
   remoteUrl: string | null;
   prUrl: string | null;
@@ -56,7 +54,6 @@ export type GitState = {
 
 export type GitAction =
   | { action: "init" }
-  | { action: "checkout"; ref: string }
   | { action: "commit"; message: string; paths: string[] }
   | { action: "push" }
   | { action: "switch_branch"; branch: string }
@@ -71,10 +68,6 @@ export function parseGitAction(input: unknown): ParseResult<GitAction> {
   }
   if (body.action === "init") return { ok: true, value: { action: "init" } };
   if (body.action === "push") return { ok: true, value: { action: "push" } };
-  if (body.action === "checkout") {
-    const ref = stringField(body, "ref", true);
-    return ref.ok ? { ok: true, value: { action: "checkout", ref: ref.value! } } : ref;
-  }
   if (body.action === "switch_branch" || body.action === "create_branch") {
     const branch = stringField(body, "branch", true);
     if (!branch.ok) return branch;

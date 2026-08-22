@@ -17,7 +17,7 @@ import { Event, type EventManager } from "../../system/event-manager";
 import { DOWNLOAD_DEFAULT_IGNORE_FILENAMES, DOWNLOAD_PROGRESS_THROTTLE_MS } from "../configs";
 import { type EngineOperationError } from "../engine-spec";
 import { attempt, operationError } from "../engine-operation";
-import type { DownloadFileInfo, DownloadStatus, ModelDownload } from "../types";
+import type { DownloadFileInfo, DownloadStatus, ModelDownload } from "@local-studio/contracts/recipes";
 import type { DownloadStore } from "./download-store";
 import {
   DownloadTargetConflict,

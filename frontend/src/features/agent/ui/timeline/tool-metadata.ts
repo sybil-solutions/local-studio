@@ -1,3 +1,4 @@
+import { languageForPath } from "@/features/agent/highlight-cache";
 import type { ToolBlock } from "@/features/agent/messages";
 import type { PreviewHeight } from "@/ui/preview-scroll";
 
@@ -23,33 +24,8 @@ export const FILE_WRITE_TOOL_NAMES = new Set([
   "obsidian_append",
 ]);
 
-const LANG_BY_EXT: Record<string, string> = {
-  ts: "typescript",
-  tsx: "typescript",
-  js: "javascript",
-  jsx: "javascript",
-  json: "json",
-  md: "markdown",
-  html: "xml",
-  htm: "xml",
-  css: "css",
-  scss: "scss",
-  py: "python",
-  rs: "rust",
-  go: "go",
-  sh: "bash",
-  yml: "yaml",
-  yaml: "yaml",
-  toml: "ini",
-  sql: "sql",
-};
-
 export function detectLang(filePath: string | null | undefined): string {
-  if (!filePath) return "";
-  const dot = filePath.lastIndexOf(".");
-  if (dot === -1) return "";
-  const ext = filePath.slice(dot + 1).toLowerCase();
-  return LANG_BY_EXT[ext] ?? "";
+  return languageForPath(filePath ?? "") ?? "";
 }
 
 // Try to extract a streaming-friendly preview of "what file is being written"

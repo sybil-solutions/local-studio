@@ -82,16 +82,6 @@ extraResources:
     filter:
       - "**/*"
       - "!**/*.{map,ts,mts,cts}"
-  - from: node_modules/@lydell/node-pty
-    to: desktop-runtime/node_modules/@lydell/node-pty
-    filter:
-      - "**/*"
-      - "!**/*.{map,ts,mts,cts}"
-  - from: node_modules/@lydell/node-pty-${platform}-${arch}
-    to: desktop-runtime/node_modules/@lydell/node-pty-${platform}-${arch}
-    filter:
-      - "**/*"
-      - "!**/*.{map,ts,mts,cts}"
   - from: .next/standalone
     to: app/frontend/.next/standalone
     filter:

@@ -119,14 +119,6 @@ const nextConfig: NextConfig = {
   turbopack: {
     root: path.join(__dirname, ".."),
   },
-  async rewrites() {
-    return [
-      {
-        source: "/api/chat-v2",
-        destination: "/api/chat",
-      },
-    ];
-  },
   async headers() {
     // Baseline security headers. The CSP is intentionally permissive on inline
     // scripts/styles (Next's hydration + theme bootstrap script, Tailwind, xterm,

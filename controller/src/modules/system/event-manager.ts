@@ -1,5 +1,6 @@
 import { Effect, PubSub, Semaphore, Stream } from "effect";
 import { CONTROLLER_EVENTS } from "@local-studio/contracts/controller-events";
+import { abortEffect } from "../../http/sse";
 
 export class Event {
   public readonly type: string;
@@ -19,19 +20,6 @@ export class Event {
     return `id: ${this.id}\nevent: ${this.type}\ndata: ${JSON.stringify(payload)}\n\n`;
   }
 }
-
-const abortEffect = (signal?: AbortSignal): Effect.Effect<void> =>
-  signal
-    ? Effect.callback<void>((resume) => {
-        if (signal.aborted) {
-          resume(Effect.void);
-          return;
-        }
-        const abort = (): void => resume(Effect.void);
-        signal.addEventListener("abort", abort, { once: true });
-        return Effect.sync(() => signal.removeEventListener("abort", abort));
-      })
-    : Effect.never;
 
 export class EventManager {
   private readonly channels = new Map<

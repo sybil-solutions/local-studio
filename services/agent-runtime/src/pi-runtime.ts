@@ -473,55 +473,33 @@ class PiSdkSession extends EventEmitter implements PiAgentSession {
     );
   }
 
-  steer(message: string, images: AgentImageInput[] = []): Promise<void> {
-    return Effect.runPromise(
-      Effect.tryPromise({
-        try: () => this.requireSession().steer(message, images),
-        catch: (error) => error,
-      }),
-    );
+  async steer(message: string, images: AgentImageInput[] = []): Promise<void> {
+    return this.requireSession().steer(message, images);
   }
 
-  mutateQueuedFollowUp(
+  async mutateQueuedFollowUp(
     message: string,
     action: AgentQueueAction,
     replacement?: string,
     images: AgentImageInput[] = [],
   ): Promise<void> {
-    return Effect.runPromise(
-      Effect.tryPromise({
-        try: async () => {
-          const session = this.requireSession();
-          this.queueEventBufferDepth += 1;
-          try {
-            const cleared = session.clearQueue();
-            const mutation = planQueuedFollowUpMutation(
-              cleared.followUp,
-              message,
-              action,
-              replacement,
-            );
-            if (!mutation) {
-              await restoreQueuedMessages(session, cleared, null);
-              throw new Error("Queued follow-up is no longer pending.");
-            }
-            await restoreQueuedMessages(session, cleared, mutation, images);
-          } finally {
-            this.flushBufferedQueueEvent();
-          }
-        },
-        catch: (error) => error,
-      }),
-    );
+    const session = this.requireSession();
+    this.queueEventBufferDepth += 1;
+    try {
+      const cleared = session.clearQueue();
+      const mutation = planQueuedFollowUpMutation(cleared.followUp, message, action, replacement);
+      if (!mutation) {
+        await restoreQueuedMessages(session, cleared, null);
+        throw new Error("Queued follow-up is no longer pending.");
+      }
+      await restoreQueuedMessages(session, cleared, mutation, images);
+    } finally {
+      this.flushBufferedQueueEvent();
+    }
   }
 
-  followUp(message: string, images: AgentImageInput[] = []): Promise<void> {
-    return Effect.runPromise(
-      Effect.tryPromise({
-        try: () => this.requireSession().followUp(message, images),
-        catch: (error) => error,
-      }),
-    );
+  async followUp(message: string, images: AgentImageInput[] = []): Promise<void> {
+    return this.requireSession().followUp(message, images);
   }
 
   adoptPiSessionId(piSessionId: string | null | undefined): void {
@@ -529,18 +507,11 @@ class PiSdkSession extends EventEmitter implements PiAgentSession {
     if (next && !this.currentPiSessionId) this.currentPiSessionId = next;
   }
 
-  compact(customInstructions?: string): Promise<unknown> {
-    return Effect.runPromise(this.compactEffect(customInstructions));
-  }
-
-  private compactEffect(customInstructions?: string): Effect.Effect<unknown, unknown> {
+  async compact(customInstructions?: string): Promise<unknown> {
     if (this.activePromptCount > 0) {
-      return Effect.fail(new Error("Cannot compact while the agent is running."));
+      throw new Error("Cannot compact while the agent is running.");
     }
-    return Effect.tryPromise({
-      try: () => this.requireSession().compact(customInstructions),
-      catch: (error) => error,
-    });
+    return this.requireSession().compact(customInstructions);
   }
 
   /** Stop the current run and hand back whatever was still queued.
@@ -548,23 +519,20 @@ class PiSdkSession extends EventEmitter implements PiAgentSession {
    *  clearQueue() returns the texts precisely so they are not lost — pi's own
    *  TUI puts them back in the editor. Discarding them meant a stop silently
    *  destroyed every message the user had lined up. */
-  abort(): Promise<{ steering: string[]; followUp: string[] }> {
-    return Effect.runPromise(
-      Effect.tryPromise({
-        try: async () => {
-          const session = this.runtime?.session;
-          if (!session) return { steering: [], followUp: [] };
-          const cleared = session.clearQueue();
-          await session.abort();
-          await session.waitForIdle();
-          return {
-            steering: [...(cleared?.steering ?? [])],
-            followUp: [...(cleared?.followUp ?? [])],
-          };
-        },
-        catch: () => undefined,
-      }).pipe(Effect.catch(() => Effect.succeed({ steering: [], followUp: [] }))),
-    );
+  async abort(): Promise<{ steering: string[]; followUp: string[] }> {
+    try {
+      const session = this.runtime?.session;
+      if (!session) return { steering: [], followUp: [] };
+      const cleared = session.clearQueue();
+      await session.abort();
+      await session.waitForIdle();
+      return {
+        steering: [...(cleared?.steering ?? [])],
+        followUp: [...(cleared?.followUp ?? [])],
+      };
+    } catch {
+      return { steering: [], followUp: [] };
+    }
   }
 
   respondExtensionUi(

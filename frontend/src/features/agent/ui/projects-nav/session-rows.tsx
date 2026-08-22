@@ -14,7 +14,7 @@ import {
   patchSessionPref,
   type SessionPref,
   type SessionPrefs,
-} from "@/features/agent/messages/prefs";
+} from "@/features/agent/messages/session-prefs";
 import { useMountSubscription } from "@/hooks/use-mount-subscription";
 import { useProjectSessionsReloadEffect } from "@/features/agent/ui/projects-nav/use-projects-nav-effects";
 import { workspaceCommands } from "@/features/agent/workspace/commands";

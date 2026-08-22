@@ -14,39 +14,13 @@ import {
 import { toProxyNextResponse } from "./proxy-response";
 import { resolveProxyTarget } from "./proxy-target";
 
-export async function GET(
-  request: NextRequest,
-  { params }: { params: Promise<{ path: string[] }> },
-) {
+/**
+ * One handler under every method name the controller speaks. The verb was the
+ * only thing the four wrappers differed by, and the request already carries it.
+ */
+async function proxy(request: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {
   const { path } = await params;
-  return handleRequest(request, "GET", path);
-}
-
-export async function POST(
-  request: NextRequest,
-  { params }: { params: Promise<{ path: string[] }> },
-) {
-  const { path } = await params;
-  return handleRequest(request, "POST", path);
-}
-
-export async function PUT(
-  request: NextRequest,
-  { params }: { params: Promise<{ path: string[] }> },
-) {
-  const { path } = await params;
-  return handleRequest(request, "PUT", path);
-}
-
-export async function DELETE(
-  request: NextRequest,
-  { params }: { params: Promise<{ path: string[] }> },
-) {
-  const { path } = await params;
-  return handleRequest(request, "DELETE", path);
-}
-
-async function handleRequest(request: NextRequest, method: string, path: string[]) {
+  const { method } = request;
   const startTime = Date.now();
   const client = getClientInfo(request);
 
@@ -109,3 +83,5 @@ async function handleRequest(request: NextRequest, method: string, path: string[
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }
+
+export { proxy as GET, proxy as POST, proxy as PUT, proxy as DELETE };

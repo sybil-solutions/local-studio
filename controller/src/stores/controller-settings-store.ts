@@ -34,47 +34,39 @@ export class ControllerSettingsStore {
     `);
   }
 
-  public getUiPreferences(): Record<string, string> {
-    const row = this.db
-      .query("SELECT value FROM controller_settings WHERE key = ?")
-      .get(UI_PREFERENCES_KEY) as SettingRow | null;
-    if (!row) return {};
-    try {
-      return Schema.decodeUnknownSync(UiPreferencesSchema)(JSON.parse(row.value) as unknown);
-    } catch {
-      return {};
-    }
-  }
-
   public getUiPreferencesEffect(): Effect.Effect<Record<string, string>, RepositoryError> {
-    return repositoryEffect("controller-settings.get-ui-preferences", () =>
-      this.getUiPreferences(),
-    );
-  }
-
-  public saveUiPreferences(preferences: Record<string, string>): Record<string, string> {
-    const clean = Object.fromEntries(
-      Object.entries(preferences).filter(
-        (entry): entry is [string, string] =>
-          typeof entry[0] === "string" && entry[0].length > 0 && typeof entry[1] === "string",
-      ),
-    );
-    this.db
-      .query(
-        `INSERT INTO controller_settings (key, value, updated_at)
-         VALUES (?, ?, CURRENT_TIMESTAMP)
-         ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP`,
-      )
-      .run(UI_PREFERENCES_KEY, JSON.stringify(clean));
-    return clean;
+    return repositoryEffect("controller-settings.get-ui-preferences", () => {
+      const row = this.db
+        .query("SELECT value FROM controller_settings WHERE key = ?")
+        .get(UI_PREFERENCES_KEY) as SettingRow | null;
+      if (!row) return {};
+      try {
+        return Schema.decodeUnknownSync(UiPreferencesSchema)(JSON.parse(row.value) as unknown);
+      } catch {
+        return {};
+      }
+    });
   }
 
   public saveUiPreferencesEffect(
     preferences: Record<string, string>,
   ): Effect.Effect<Record<string, string>, RepositoryError> {
-    return repositoryEffect("controller-settings.save-ui-preferences", () =>
-      this.saveUiPreferences(preferences),
-    );
+    return repositoryEffect("controller-settings.save-ui-preferences", () => {
+      const clean = Object.fromEntries(
+        Object.entries(preferences).filter(
+          (entry): entry is [string, string] =>
+            typeof entry[0] === "string" && entry[0].length > 0 && typeof entry[1] === "string",
+        ),
+      );
+      this.db
+        .query(
+          `INSERT INTO controller_settings (key, value, updated_at)
+           VALUES (?, ?, CURRENT_TIMESTAMP)
+           ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP`,
+        )
+        .run(UI_PREFERENCES_KEY, JSON.stringify(clean));
+      return clean;
+    });
   }
 
   public close(): Effect.Effect<void, RepositoryError> {

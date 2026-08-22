@@ -1,5 +1,5 @@
 import { Effect, Schema } from "effect";
-import type { DownloadFileInfo } from "../types";
+import type { DownloadFileInfo } from "@local-studio/contracts/recipes";
 import { type EngineOperationError } from "../engine-spec";
 import { operationError } from "../engine-operation";
 

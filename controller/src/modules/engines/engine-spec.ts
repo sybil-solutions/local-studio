@@ -49,7 +49,6 @@ export class EngineOperationError extends Schema.TaggedErrorClass<EngineOperatio
 export interface EngineSpec {
   readonly id: EngineBackend;
 
-  readonly healthPath: string;
   readonly cliBinary: string | null;
   managedPackageSpec: (version?: string | null) => string;
   install: (options: InstallOptions) => Effect.Effect<RuntimeUpgradeResult, EngineOperationError>;

@@ -1,7 +1,6 @@
 import { useCallback, useRef, type FormEvent } from "react";
-import { Effect } from "effect";
 import { type UpdateTab } from "@/features/agent/ui/chat-pane-composer";
-import { browserContextPrompt } from "@/features/agent/browser/context";
+import { browserContextPrompt } from "@/features/agent/tools/browser-context";
 import { selectedContextPrompt, type ComposerMention } from "@/features/agent/composer-context";
 import { isPlaceholderSessionTitle, newId, nowLabel } from "@/features/agent/messages";
 import { type SessionEngine } from "@/features/agent/runtime/engine";
@@ -33,7 +32,6 @@ type UseChatPaneSendFlowOptions = {
   modelSupportsVision: boolean;
   readingAttachments: boolean;
   resetComposerHeight: () => void;
-  running: boolean;
   setMention: (mention: ComposerMention | null) => void;
   setStickToBottom: (stickToBottom: boolean) => void;
   tools: ToolsContextValue;
@@ -51,7 +49,6 @@ export function useChatPaneSendFlow({
   modelSupportsVision,
   readingAttachments,
   resetComposerHeight,
-  running,
   setMention,
   setStickToBottom,
   tools,
@@ -185,19 +182,15 @@ export function useChatPaneSendFlow({
           : t.messages,
       }));
       resetComposerHeight();
-      return Effect.runPromise(
-        Effect.gen(function* () {
-          const result = yield* Effect.tryPromise({
-            try: () =>
-              engine.sendControl({
-                mode,
-                text,
-                runtime,
-                sessionId: tab.id,
-                piSessionId: tab.piSessionId,
-              }),
-            catch: (error) => error,
-          });
+      return engine
+        .sendControl({
+          mode,
+          text,
+          runtime,
+          sessionId: tab.id,
+          piSessionId: tab.piSessionId,
+        })
+        .then((result) => {
           updateTab(tab.id, (t) => ({
             ...t,
             queue: result.ok ? t.queue : (t.queue ?? []).filter((item) => item.id !== queuedId),
@@ -207,8 +200,7 @@ export function useChatPaneSendFlow({
                 : t.messages,
             ...(result.ok ? {} : { input: text, error: result.error || "Message failed" }),
           }));
-        }),
-      );
+        });
     },
     [engine, resetComposerHeight, updateTab],
   );
@@ -217,16 +209,38 @@ export function useChatPaneSendFlow({
   // session already has a submit pending, clear any open @mention, then run and
   // always release the guard. Shared by composer send, queue, and retry.
   const runGuardedSubmit = useCallback(
-    (guard: SessionSubmitGuard, sessionId: string, run: () => Promise<void>) => {
-      if (!beginSessionSubmit(guard, sessionId)) return Promise.resolve();
+    async (guard: SessionSubmitGuard, sessionId: string, run: () => Promise<void>) => {
+      if (!beginSessionSubmit(guard, sessionId)) return;
       setMention(null);
-      return Effect.runPromise(
-        Effect.tryPromise({ try: run, catch: (error) => error }).pipe(
-          Effect.ensuring(Effect.sync(() => endSessionSubmit(guard, sessionId))),
-        ),
-      );
+      try {
+        await run();
+      } finally {
+        endSessionSubmit(guard, sessionId);
+      }
     },
     [setMention],
+  );
+
+  // Composer send and queue share one tail: probe whether the runtime still
+  // accepts control messages, then either steer/queue into the running turn or
+  // start a fresh prompt, each behind its own single-flight guard.
+  const dispatchComposerText = useCallback(
+    async (mode: "steer" | "follow_up", text: string, tab: Session, cwdHint?: string) => {
+      // The session id is the opaque runtime key.
+      const runtime = tab.id;
+      const acceptsControl = await engine.acceptsControl(tab, runtime);
+      if (acceptsControl) {
+        if (!text) return;
+        await runGuardedSubmit(controlSubmitInFlightRef.current, tab.id, () =>
+          queueAndSendControl(mode, text, tab, runtime, cwdHint),
+        );
+        return;
+      }
+      await runGuardedSubmit(composerSubmitInFlightRef.current, tab.id, () =>
+        submitPrompt(text, tab.id),
+      );
+    },
+    [engine, queueAndSendControl, runGuardedSubmit, submitPrompt],
   );
 
   const sendMessage = useCallback(
@@ -234,8 +248,6 @@ export function useChatPaneSendFlow({
       event.preventDefault();
       if (!activeTab) return Promise.resolve();
       const text = activeTab.input.trim();
-      // The session id is the opaque runtime key.
-      const runtime = activeTab.id;
       if (
         ((!text || isPlaceholderSessionTitle(text)) && attachments.length === 0) ||
         readingAttachments
@@ -246,47 +258,9 @@ export function useChatPaneSendFlow({
         updateTab(activeTab.id, (t) => ({ ...t, error: "Select a model to send." }));
         return Promise.resolve();
       }
-      return Effect.runPromise(
-        Effect.gen(function* () {
-          // Fail open, same reasoning as runtimeStatusAcceptsControl: a probe
-          // that throws tells us nothing, and guessing "not running" mid-turn
-          // silently reroutes the message into a fresh prompt.
-          const acceptsControl = yield* Effect.tryPromise({
-            try: () => engine.acceptsControl(activeTab, runtime),
-            catch: () => running,
-          });
-          if (acceptsControl) {
-            if (!text) return;
-            yield* Effect.tryPromise({
-              try: () =>
-                runGuardedSubmit(controlSubmitInFlightRef.current, activeTab.id, () =>
-                  queueAndSendControl("steer", text, activeTab, runtime),
-                ),
-              catch: (error) => error,
-            });
-            return;
-          }
-          yield* Effect.tryPromise({
-            try: () =>
-              runGuardedSubmit(composerSubmitInFlightRef.current, activeTab.id, () =>
-                submitPrompt(text, activeTab.id),
-              ),
-            catch: (error) => error,
-          });
-        }),
-      );
+      return dispatchComposerText("steer", text, activeTab);
     },
-    [
-      activeTab,
-      attachments.length,
-      engine,
-      modelId,
-      queueAndSendControl,
-      readingAttachments,
-      runGuardedSubmit,
-      submitPrompt,
-      updateTab,
-    ],
+    [activeTab, attachments.length, dispatchComposerText, modelId, readingAttachments, updateTab],
   );
 
   const queueMessage = useCallback(() => {
@@ -297,45 +271,18 @@ export function useChatPaneSendFlow({
       updateTab(activeTab.id, (t) => ({ ...t, error: "Select a model to send." }));
       return Promise.resolve();
     }
-    const runtime = activeTab.id;
-    return Effect.runPromise(
-      Effect.gen(function* () {
-        const acceptsControl = yield* Effect.tryPromise({
-          try: () => engine.acceptsControl(activeTab, runtime),
-          catch: () => running,
-        });
-        if (acceptsControl) {
-          yield* Effect.tryPromise({
-            try: () =>
-              runGuardedSubmit(controlSubmitInFlightRef.current, activeTab.id, () =>
-                queueAndSendControl("follow_up", text, activeTab, runtime, cwd),
-              ),
-            catch: (error) => error,
-          });
-          return;
-        }
-        yield* Effect.tryPromise({
-          try: () =>
-            runGuardedSubmit(composerSubmitInFlightRef.current, activeTab.id, () =>
-              submitPrompt(text, activeTab.id),
-            ),
-          catch: (error) => error,
-        });
-      }),
-    );
-  }, [
-    activeTab,
-    cwd,
-    engine,
-    modelId,
-    queueAndSendControl,
-    runGuardedSubmit,
-    submitPrompt,
-    updateTab,
-  ]);
+    return dispatchComposerText("follow_up", text, activeTab, cwd);
+  }, [activeTab, cwd, dispatchComposerText, modelId, updateTab]);
 
-  const removeQueued = useCallback(
-    (queueId: string) => {
+  // Queue edits are the same round-trip with a different `queueAction`: resolve
+  // the queued item, ask the runtime to apply the action, surface a failure.
+  const sendQueueAction = useCallback(
+    (
+      queueId: string,
+      queueAction: "remove" | "replace",
+      failureMessage: string,
+      queueReplacement?: string,
+    ) => {
       if (!activeTab) return Promise.resolve();
       const item = (activeTab.queue ?? []).find((entry) => entry.id === queueId);
       if (!item) return Promise.resolve();
@@ -346,43 +293,28 @@ export function useChatPaneSendFlow({
           runtime: activeTab.id,
           sessionId: activeTab.id,
           piSessionId: activeTab.piSessionId,
-          queueAction: "remove",
+          queueAction,
+          ...(queueReplacement === undefined ? {} : { queueReplacement }),
         })
         .then((result) => {
           if (result.ok) return;
           updateTab(activeTab.id, (tab) => ({
             ...tab,
-            error: result.error || "Remove failed",
+            error: result.error || failureMessage,
           }));
         });
     },
     [activeTab, engine, updateTab],
   );
 
+  const removeQueued = useCallback(
+    (queueId: string) => sendQueueAction(queueId, "remove", "Remove failed"),
+    [sendQueueAction],
+  );
+
   const editQueued = useCallback(
-    (queueId: string, text: string) => {
-      if (!activeTab) return Promise.resolve();
-      const item = (activeTab.queue ?? []).find((entry) => entry.id === queueId);
-      if (!item) return Promise.resolve();
-      return engine
-        .sendControl({
-          mode: "follow_up",
-          text: item.text,
-          runtime: activeTab.id,
-          sessionId: activeTab.id,
-          piSessionId: activeTab.piSessionId,
-          queueAction: "replace",
-          queueReplacement: text,
-        })
-        .then((result) => {
-          if (result.ok) return;
-          updateTab(activeTab.id, (tab) => ({
-            ...tab,
-            error: result.error || "Edit failed",
-          }));
-        });
-    },
-    [activeTab, engine, updateTab],
+    (queueId: string, text: string) => sendQueueAction(queueId, "replace", "Edit failed", text),
+    [sendQueueAction],
   );
 
   const steerQueued = useCallback(
@@ -409,29 +341,23 @@ export function useChatPaneSendFlow({
           },
         ],
       }));
-      return Effect.runPromise(
-        Effect.gen(function* () {
-          const result = yield* Effect.tryPromise({
-            try: () =>
-              engine.sendControl({
-                mode: "steer",
-                text: item.text,
-                runtime,
-                sessionId: activeTab.id,
-                piSessionId: activeTab.piSessionId,
-                queueAction: "promote",
-              }),
-            catch: (error) => error,
-          });
-          if (!result.ok) {
-            updateTab(activeTab.id, (t) => ({
-              ...t,
-              messages: t.messages.filter((message) => message.id !== pendingSteerId),
-              error: result.error || "Steer failed",
-            }));
-          }
-        }),
-      );
+      return engine
+        .sendControl({
+          mode: "steer",
+          text: item.text,
+          runtime,
+          sessionId: activeTab.id,
+          piSessionId: activeTab.piSessionId,
+          queueAction: "promote",
+        })
+        .then((result) => {
+          if (result.ok) return;
+          updateTab(activeTab.id, (t) => ({
+            ...t,
+            messages: t.messages.filter((message) => message.id !== pendingSteerId),
+            error: result.error || "Steer failed",
+          }));
+        });
     },
     [activeTab, engine, updateTab],
   );

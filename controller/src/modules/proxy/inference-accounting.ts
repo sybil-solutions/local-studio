@@ -37,7 +37,7 @@ export interface InferenceUsageTotals {
   cacheWriteTokens: number;
 }
 
-interface NonStreamingInferenceRecordInput {
+interface InferenceRecordInput {
   usage: InferenceUsageInput | undefined;
   record: Omit<
     InferenceRequestRecord,
@@ -48,19 +48,7 @@ interface NonStreamingInferenceRecordInput {
     | "reasoning_tokens"
     | "streamed"
   >;
-}
-
-interface StreamingInferenceRecordInput {
-  usage: InferenceUsageInput;
-  record: Omit<
-    InferenceRequestRecord,
-    | "cache_read_tokens"
-    | "cache_write_tokens"
-    | "completion_tokens"
-    | "prompt_tokens"
-    | "reasoning_tokens"
-    | "streamed"
-  >;
+  streamed: boolean;
 }
 
 const hasBillableTokens = (totals: InferenceUsageTotals): boolean =>
@@ -115,9 +103,9 @@ const tryRecordInference = (
       ),
     );
 
-export const recordNonStreamingInferenceUsage = (
+export const recordInferenceUsage = (
   options: InferenceAccountingOptions,
-  input: NonStreamingInferenceRecordInput,
+  input: InferenceRecordInput,
 ): Effect.Effect<InferenceUsageTotals | null, unknown> => {
   if (!input.usage) return Effect.succeed(null);
   const totals = readUsageTotals(input.usage);
@@ -129,26 +117,7 @@ export const recordNonStreamingInferenceUsage = (
         reasoning_tokens: totals.reasoningTokens,
         cache_read_tokens: totals.cacheReadTokens,
         cache_write_tokens: totals.cacheWriteTokens,
-        streamed: false,
-      })
-    : Effect.void;
-  return addLifetimeUsage(options.stores, totals).pipe(Effect.andThen(record), Effect.as(totals));
-};
-
-export const recordStreamingInferenceUsage = (
-  options: InferenceAccountingOptions,
-  input: StreamingInferenceRecordInput,
-): Effect.Effect<InferenceUsageTotals, unknown> => {
-  const totals = readUsageTotals(input.usage);
-  const record = hasBillableTokens(totals)
-    ? tryRecordInference(options, {
-        ...input.record,
-        prompt_tokens: totals.promptTokens,
-        completion_tokens: totals.completionTokens,
-        reasoning_tokens: totals.reasoningTokens,
-        cache_read_tokens: totals.cacheReadTokens,
-        cache_write_tokens: totals.cacheWriteTokens,
-        streamed: true,
+        streamed: input.streamed,
       })
     : Effect.void;
   return addLifetimeUsage(options.stores, totals).pipe(Effect.andThen(record), Effect.as(totals));

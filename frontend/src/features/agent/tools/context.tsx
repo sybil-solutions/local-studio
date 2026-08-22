@@ -163,7 +163,7 @@ function buildInitialComputer(): ComputerState {
 
 export function ToolsProvider({ children }: { children: ReactNode }) {
   const pathname = usePathname();
-  const catalogueEnabled = pathname === "/agent" || pathname === "/quick";
+  const catalogueEnabled = pathname === "/agent";
   const [browser, setBrowser] = useState<BrowserState>(() => buildInitialBrowser());
   const [computer, setComputer] = useState<ComputerState>(() => buildInitialComputer());
   const activeComputerSessionRef = useRef<SessionViewIdentity | null>(null);

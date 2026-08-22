@@ -6,7 +6,7 @@ import {
   ConnectorsResponseSchema,
   type ConnectorView,
 } from "@local-studio/agent-runtime/connector-contract";
-import { Button, RefreshIconButton, SearchInput, Spinner, StatusPill } from "@/ui";
+import { Button, Spinner, StatusPill } from "@/ui";
 import { Plus, Trash2 } from "@/ui/icon-registry";
 import { ResourceDrawer, ResourceDrawerSection, ResourceFact } from "@/ui/resource-drawer";
 import { ResourceLogo } from "@/ui/resource-logo";
@@ -22,7 +22,11 @@ import {
   TableSection,
   TextCell,
 } from "@/features/recipes/recipes-content/catalog-table-shell";
-import { useMountSubscription } from "@/hooks/use-mount-subscription";
+import {
+  CatalogSectionHeader,
+  filterByQuery,
+  useCatalogSection,
+} from "@/features/recipes/recipes-content/catalog-section";
 import { jsonBody, requestAgentJson } from "./agent-json";
 import { CONNECTOR_CATALOG, renderCommandLine, type CatalogEntry } from "./connector-catalog";
 import {
@@ -210,28 +214,17 @@ function ConnectorRow({
 type Editing = { draft: ConnectorDraft; mode: "create" | "edit"; secretKeys: readonly string[] };
 
 export function ConnectorsSection() {
-  const [connectors, setConnectors] = useState<readonly ConnectorView[]>([]);
-  const [loaded, setLoaded] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
-  const [query, setQuery] = useState("");
   const [editing, setEditing] = useState<Editing | null>(null);
   const [managed, setManaged] = useState<ConnectorView | null>(null);
   const [oauthEntry, setOauthEntry] = useState<CatalogEntry | null>(null);
 
-  const refresh = useCallback(() => {
-    setRefreshing(true);
-    void listConnectors()
-      .then(({ connectors: list }) => setConnectors(list))
-      .catch(() => setConnectors([]))
-      .finally(() => {
-        setLoaded(true);
-        setRefreshing(false);
-      });
-  }, []);
-
-  useMountSubscription(() => {
-    refresh();
-  }, [refresh]);
+  const load = useCallback(() => listConnectors().then(({ connectors }) => connectors), []);
+  const section = useCatalogSection({
+    load,
+    searchText: (connector: ConnectorView) =>
+      `${connector.name} ${connector.id} ${connectorCommand(connector)}`,
+  });
+  const { items: connectors, setItems: setConnectors, visible, loaded, query } = section;
 
   const open = (connector: ConnectorView) => {
     if (connector.origin) {
@@ -242,9 +235,7 @@ export function ConnectorsSection() {
     // a row already exists: the row is an artifact of connecting, and the only
     // credential decision it holds — the grant — is managed there, never in
     // the env-field editor.
-    const oauthCatalog = CONNECTOR_CATALOG.find(
-      (entry) => entry.auth && entry.id === connector.id,
-    );
+    const oauthCatalog = CONNECTOR_CATALOG.find((entry) => entry.auth && entry.id === connector.id);
     if (oauthCatalog) {
       setOauthEntry(oauthCatalog);
       return;
@@ -277,23 +268,14 @@ export function ConnectorsSection() {
       );
   };
 
-  const normalized = query.trim().toLowerCase();
   const visibleConnectors = useMemo(
-    () =>
-      connectors.filter(
-        (connector) =>
-          connector.origin?.kind !== "account-adapter" &&
-          (!normalized ||
-            `${connector.name} ${connector.id} ${connectorCommand(connector)}`
-              .toLowerCase()
-              .includes(normalized)),
-      ),
-    [connectors, normalized],
+    () => visible.filter((connector) => connector.origin?.kind !== "account-adapter"),
+    [visible],
   );
-  const visibleCatalog = CONNECTOR_CATALOG.filter(
-    (entry) =>
-      !normalized ||
-      `${entry.name} ${entry.company} ${entry.description}`.toLowerCase().includes(normalized),
+  const visibleCatalog = filterByQuery(
+    CONNECTOR_CATALOG,
+    query,
+    (entry) => `${entry.name} ${entry.company} ${entry.description}`,
   );
 
   return (
@@ -302,17 +284,13 @@ export function ConnectorsSection() {
         title="MCP servers"
         description="Programs and endpoints that hand the model extra tools. Each one runs on this machine."
         actions={
-          <div className="flex items-center gap-2">
-            <SearchInput
-              value={query}
-              onChange={setQuery}
-              placeholder="Search servers"
-              className="w-56"
-            />
-            <StatusText tone={loaded ? "ok" : "dim"}>
-              {loaded ? `${visibleConnectors.length} registered` : "reading"}
-            </StatusText>
-            <RefreshIconButton onClick={refresh} loading={refreshing} label="Reload MCP servers" />
+          <CatalogSectionHeader
+            section={section}
+            searchPlaceholder="Search servers"
+            statusTone={loaded ? "ok" : "dim"}
+            statusText={loaded ? `${visibleConnectors.length} registered` : "reading"}
+            refreshLabel="Reload MCP servers"
+          >
             <Button
               size="sm"
               onClick={() => setEditing({ draft: emptyDraft(), mode: "create", secretKeys: [] })}
@@ -320,7 +298,7 @@ export function ConnectorsSection() {
               <Plus className="h-3.5 w-3.5" />
               Add server
             </Button>
-          </div>
+          </CatalogSectionHeader>
         }
       >
         {loaded && visibleConnectors.length === 0 ? (
@@ -413,7 +391,11 @@ export function ConnectorsSection() {
                           }
                         >
                           {entry.auth ? (
-                            installed ? "Open" : "Connect"
+                            installed ? (
+                              "Open"
+                            ) : (
+                              "Connect"
+                            )
                           ) : installed ? (
                             "Open"
                           ) : (

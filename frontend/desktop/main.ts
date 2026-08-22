@@ -3,19 +3,18 @@ import {
   app,
   clipboard,
   dialog,
-  globalShortcut,
   ipcMain,
   shell,
   type BrowserWindow,
 } from "electron";
-import { existsSync, readFileSync, realpathSync } from "node:fs";
+import { realpathSync } from "node:fs";
 import path from "node:path";
 import type { DesktopAppState } from "./types";
 import { DESKTOP_CONFIG } from "./configs";
-import { writeJsonAtomic } from "./helpers/fs-json";
+import { readJsonObject, writeJsonAtomic } from "./helpers/fs-json";
 import { log } from "./helpers/logger";
 import { isHttpUrl } from "./helpers/url";
-import { createMainWindow } from "./logic/window-manager";
+import { createMainWindow, logRenderProcessGone } from "./logic/window-manager";
 import { registerNavigationPolicy } from "./logic/security";
 import { startFrontendServer, stopFrontendServer, type ServerHandle } from "./logic/app-server";
 import {
@@ -29,24 +28,6 @@ import {
   getKittylitterPairingJson,
   normalizeKittylitterPairingJson,
 } from "./logic/kittylitter-pairing";
-import {
-  hideQuickPanel,
-  resetQuickPanel,
-  resizeQuickPanelToHome,
-  resizeQuickPanelToThread,
-  toggleQuickPanel,
-} from "./logic/quick-panel-window";
-import { getStoredQuickPanelHotkey, setStoredQuickPanelHotkey } from "./logic/desktop-settings";
-import {
-  closePty,
-  closePtyByOwner,
-  isPtyAvailable,
-  killAllPtys,
-  openPty,
-  ptyUnavailableReason,
-  resizePty,
-  writePty,
-} from "./logic/pty-manager";
 
 let appState: DesktopAppState = "starting";
 let mainWindow: BrowserWindow | null = null;
@@ -76,12 +57,13 @@ function isAppStopping(): boolean {
   return appState === "stopping";
 }
 
-async function processMemorySummary(): Promise<string> {
-  try {
-    return `memory=${JSON.stringify(await process.getProcessMemoryInfo())}`;
-  } catch {
-    return "memory=unavailable";
-  }
+// Open the app window and keep `mainWindow` honest: the reference must drop on
+// close so `activate` and the restart path know to build a fresh one.
+function openMainWindow(url: string): void {
+  mainWindow = createMainWindow(url);
+  mainWindow.on("closed", () => {
+    mainWindow = null;
+  });
 }
 
 async function bootstrap(): Promise<void> {
@@ -90,12 +72,7 @@ async function bootstrap(): Promise<void> {
     registerNavigationPolicy(new URL(frontendServer.runtime.url).origin);
     startFrontendHealthMonitor();
   }
-  if (!mainWindow) {
-    mainWindow = createMainWindow(frontendServer.runtime.url);
-    mainWindow.on("closed", () => {
-      mainWindow = null;
-    });
-  }
+  if (!mainWindow) openMainWindow(frontendServer.runtime.url);
 
   appState = "ready";
   log.info(
@@ -224,10 +201,7 @@ async function restartFrontendServer(
         await mainWindow.loadURL(resolveFrontendRestartUrl(nextUrl, rendererUrl));
       }
     } else {
-      mainWindow = createMainWindow(nextUrl);
-      mainWindow.on("closed", () => {
-        mainWindow = null;
-      });
+      openMainWindow(nextUrl);
     }
     appState = "ready";
     log.info(`Embedded frontend restarted (mode=${frontendServer.runtime.mode}, url=${nextUrl})`);
@@ -351,13 +325,6 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle("desktop:list-projects", async () => listProjectsWithMeta());
 
-  ipcMain.handle("desktop:add-project", async (_, directoryPath: string) => {
-    if (typeof directoryPath !== "string") {
-      throw new Error("directoryPath must be a string");
-    }
-    return addProject(directoryPath);
-  });
-
   ipcMain.handle("desktop:remove-project", async (_, id: string) => {
     if (typeof id !== "string") {
       throw new Error("id must be a string");
@@ -385,152 +352,8 @@ function registerIpcHandlers(): void {
     if (!prefs || typeof prefs !== "object" || Array.isArray(prefs)) {
       throw new Error("prefs must be a plain object");
     }
-    const stringPrefs = Object.fromEntries(
-      Object.entries(prefs as Record<string, unknown>).filter(
-        (entry): entry is [string, string] =>
-          typeof entry[0] === "string" && typeof entry[1] === "string",
-      ),
-    );
-    writeUiPreferencesFile(stringPrefs);
+    writeUiPreferencesFile(onlyStringValues(prefs as Record<string, unknown>));
   });
-
-  ipcMain.handle("desktop:pty-status", async () => ({
-    available: isPtyAvailable(),
-    reason: ptyUnavailableReason(),
-  }));
-
-  ipcMain.handle(
-    "desktop:pty-open",
-    async (event, opts: { cwd?: string; cols?: number; rows?: number; ownerKey?: string }) => {
-      return openPty(event.sender, opts ?? {});
-    },
-  );
-
-  ipcMain.handle("desktop:pty-write", async (_, id: string, data: string) => {
-    if (typeof id !== "string" || typeof data !== "string") return;
-    writePty(id, data);
-  });
-
-  ipcMain.handle("desktop:pty-resize", async (_, id: string, cols: number, rows: number) => {
-    if (typeof id !== "string") return;
-    resizePty(id, Number(cols), Number(rows));
-  });
-
-  ipcMain.handle("desktop:pty-close", async (_, id: string) => {
-    if (typeof id !== "string") return;
-    closePty(id);
-  });
-
-  ipcMain.handle("desktop:pty-close-owner", async (_, ownerKey: string) => {
-    if (typeof ownerKey !== "string") return;
-    closePtyByOwner(ownerKey);
-  });
-
-  ipcMain.handle("desktop:quick-panel-expand", async () => {
-    resizeQuickPanelToThread();
-  });
-
-  ipcMain.handle("desktop:quick-panel-dismiss", async () => {
-    hideQuickPanel();
-    resizeQuickPanelToHome();
-    resetQuickPanel();
-  });
-
-  ipcMain.handle("desktop:quick-panel-get-hotkey", async () => ({
-    hotkey: quickPanelHotkey ?? getStoredQuickPanelHotkey() ?? DESKTOP_CONFIG.quickPanel.hotkey,
-    defaultHotkey: DESKTOP_CONFIG.quickPanel.hotkey,
-  }));
-
-  ipcMain.handle("desktop:quick-panel-set-hotkey", async (_, hotkey: unknown) =>
-    setQuickPanelHotkey(hotkey),
-  );
-
-  ipcMain.handle(
-    "desktop:focus-main-and-navigate",
-    async (_, projectId: string, sessionId?: string) => {
-      if (typeof projectId !== "string" || !frontendServer) return;
-      const query =
-        typeof sessionId === "string" && sessionId
-          ? `?project=${encodeURIComponent(projectId)}&session=${encodeURIComponent(sessionId)}`
-          : `?project=${encodeURIComponent(projectId)}&new=1`;
-      const targetUrl = `${frontendServer.runtime.url}/agent${query}`;
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        await mainWindow.loadURL(targetUrl);
-      } else {
-        mainWindow = createMainWindow(targetUrl);
-        mainWindow.on("closed", () => {
-          mainWindow = null;
-        });
-      }
-      if (mainWindow.isMinimized()) mainWindow.restore();
-      mainWindow.focus();
-      hideQuickPanel();
-      resizeQuickPanelToHome();
-      // The thread now lives in the main window; next quick-panel open starts fresh.
-      resetQuickPanel();
-    },
-  );
-}
-
-let quickPanelHotkey: string | null = null;
-
-function onQuickPanelHotkey(): void {
-  if (!frontendServer) return;
-  toggleQuickPanel(frontendServer.runtime.url);
-}
-
-function registerQuickPanelHotkey(): void {
-  const accelerator = getStoredQuickPanelHotkey() ?? DESKTOP_CONFIG.quickPanel.hotkey;
-  if (globalShortcut.register(accelerator, onQuickPanelHotkey)) {
-    quickPanelHotkey = accelerator;
-    return;
-  }
-  log.warn(`Failed to register quick panel hotkey: ${accelerator}`);
-  // A stored hotkey can become unregisterable (claimed by another app, or a
-  // stale/invalid accelerator). Fall back to the default so the panel keeps
-  // a working hotkey instead of silently having none.
-  const fallback = DESKTOP_CONFIG.quickPanel.hotkey;
-  if (accelerator !== fallback && globalShortcut.register(fallback, onQuickPanelHotkey)) {
-    quickPanelHotkey = fallback;
-  }
-}
-
-function setQuickPanelHotkey(hotkey: unknown): { ok: boolean; hotkey: string; error?: string } {
-  const current = quickPanelHotkey ?? DESKTOP_CONFIG.quickPanel.hotkey;
-  if (typeof hotkey !== "string" || !hotkey.trim()) {
-    return { ok: false, hotkey: current, error: "Hotkey must be a non-empty string" };
-  }
-  const next = hotkey.trim();
-  if (next === quickPanelHotkey) {
-    setStoredQuickPanelHotkey(next);
-    return { ok: true, hotkey: next };
-  }
-
-  let registered = false;
-  try {
-    registered = globalShortcut.register(next, onQuickPanelHotkey);
-  } catch {
-    registered = false; // invalid accelerator strings throw
-  }
-  if (!registered) {
-    return {
-      ok: false,
-      hotkey: current,
-      error: `Could not register "${next}" — it may be invalid or already in use by another app`,
-    };
-  }
-
-  if (quickPanelHotkey && quickPanelHotkey !== next) {
-    try {
-      globalShortcut.unregister(quickPanelHotkey);
-    } catch {
-      // best effort; unregisterAll on quit still cleans up
-    }
-  }
-  quickPanelHotkey = next;
-  setStoredQuickPanelHotkey(next);
-  log.info(`Quick panel hotkey set to ${next}`);
-  return { ok: true, hotkey: next };
 }
 
 async function shutdown(): Promise<void> {
@@ -538,8 +361,6 @@ async function shutdown(): Promise<void> {
   shutdownPromise = (async () => {
     appState = "stopping";
     stopFrontendHealthMonitor();
-    globalShortcut.unregisterAll();
-    killAllPtys();
     await stopFrontendServer(frontendServer);
     frontendServer = undefined;
   })();
@@ -590,18 +411,7 @@ async function run(): Promise<void> {
   });
 
   app.on("render-process-gone", (_event, webContents, details) => {
-    void processMemorySummary().then((memory) => {
-      log.error(
-        [
-          "App render-process-gone",
-          `reason=${details.reason}`,
-          `exitCode=${details.exitCode}`,
-          `url=${webContents.getURL()}`,
-          `appVersion=${app.getVersion()}`,
-          memory,
-        ].join(" "),
-      );
-    });
+    void logRenderProcessGone("App render-process-gone", details, webContents.getURL());
   });
 
   process.on("uncaughtException", (error) => {
@@ -620,7 +430,6 @@ async function run(): Promise<void> {
 
   try {
     await bootstrap();
-    registerQuickPanelHotkey();
   } catch (error) {
     log.error(`Failed to bootstrap desktop app: ${String(error)}`);
     // Surface the failure instead of vanishing from the dock with no feedback
@@ -648,17 +457,7 @@ function uiPreferencesFilePath(): string {
 }
 
 function readSessionPrefsFile(): Record<string, unknown> {
-  const filePath = sessionPrefsFilePath();
-  try {
-    if (!existsSync(filePath)) return {};
-    const raw = readFileSync(filePath, "utf8");
-    const parsed = JSON.parse(raw) as unknown;
-    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
-      ? (parsed as Record<string, unknown>)
-      : {};
-  } catch {
-    return {};
-  }
+  return readJsonObject(sessionPrefsFilePath());
 }
 
 function writeSessionPrefsFile(prefs: Record<string, unknown>): void {
@@ -666,21 +465,17 @@ function writeSessionPrefsFile(prefs: Record<string, unknown>): void {
 }
 
 function readUiPreferencesFile(): Record<string, string> {
-  const filePath = uiPreferencesFilePath();
-  try {
-    if (!existsSync(filePath)) return {};
-    const raw = readFileSync(filePath, "utf8");
-    const parsed = JSON.parse(raw) as unknown;
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
-    return Object.fromEntries(
-      Object.entries(parsed as Record<string, unknown>).filter(
-        (entry): entry is [string, string] =>
-          typeof entry[0] === "string" && typeof entry[1] === "string",
-      ),
-    );
-  } catch {
-    return {};
-  }
+  return onlyStringValues(readJsonObject(uiPreferencesFilePath()));
+}
+
+/** UI prefs are a flat string map; drop anything the renderer sent that isn't. */
+function onlyStringValues(prefs: Record<string, unknown>): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(prefs).filter(
+      (entry): entry is [string, string] =>
+        typeof entry[0] === "string" && typeof entry[1] === "string",
+    ),
+  );
 }
 
 function writeUiPreferencesFile(prefs: Record<string, string>): void {

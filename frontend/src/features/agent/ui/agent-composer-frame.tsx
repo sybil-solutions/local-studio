@@ -79,7 +79,6 @@ export type AgentComposerFrameProps = {
   selectedSkills: ComposerSkillRef[];
   status?: string;
   textareaRef: RefObject<HTMLTextAreaElement | null>;
-  floating?: boolean;
   dense?: boolean;
 };
 
@@ -129,7 +128,6 @@ export function AgentComposerFrame({
   selectedSkills,
   status,
   textareaRef,
-  floating = false,
   dense = false,
 }: AgentComposerFrameProps) {
   return (
@@ -137,11 +135,7 @@ export function AgentComposerFrame({
       onSubmit={onSubmit}
       className={cx(
         "relative z-[100] shrink-0",
-        floating
-          ? "bg-transparent p-[calc(var(--space-base)*2)]"
-          : dense
-            ? "bg-(--agent-bg) px-3 pb-1 pt-1.5"
-            : "bg-transparent px-3 pb-2 pt-0 sm:px-5",
+        dense ? "bg-(--agent-bg) px-3 pb-1 pt-1.5" : "bg-transparent px-3 pb-2 pt-0 sm:px-5",
       )}
     >
       {banner ? (

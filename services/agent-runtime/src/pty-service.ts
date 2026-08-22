@@ -1,5 +1,5 @@
-// Server-side PTY sessions for the web app — the browser-parity twin of the
-// desktop pty-manager (desktop/logic/pty-manager.ts). Shells are keyed by
+// Server-side PTY sessions — the single shell backend for every terminal, in
+// the browser and in the packaged desktop app alike. Shells are keyed by
 // ownerKey and outlive any UI attachment: closing the tab, navigating away, or
 // dropping the SSE stream leaves the shell running; reattaching replays the
 // bounded scrollback and resumes live output.

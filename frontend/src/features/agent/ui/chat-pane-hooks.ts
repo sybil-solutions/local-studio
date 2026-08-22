@@ -1,5 +1,4 @@
 import { useCallback, useMemo, useRef, useState, type Dispatch, type SetStateAction } from "react";
-import { Effect } from "effect";
 import type { ComposerMention } from "@/features/agent/composer-context";
 import { newId, type ChatPaneHandle } from "@/features/agent/messages";
 import type { SessionEngine } from "@/features/agent/runtime/engine";
@@ -88,14 +87,14 @@ export function useChatPaneRuntimeHandle({
       activeTabId ? engine.loadAndReplay(piSessionId, activeTabId) : Promise.resolve(),
     [activeTabId, engine],
   );
-  const compactSession = useCallback(() => {
-    if (!activeTab || running || compacting || !modelId) return Promise.resolve();
+  const compactSession = useCallback(async () => {
+    if (!activeTab || running || compacting || !modelId) return;
     setCompacting(true);
-    return Effect.runPromise(
-      Effect.tryPromise({ try: () => engine.compact(activeTab.id), catch: (error) => error }).pipe(
-        Effect.ensuring(Effect.sync(() => setCompacting(false))),
-      ),
-    );
+    try {
+      await engine.compact(activeTab.id);
+    } finally {
+      setCompacting(false);
+    }
   }, [activeTab, compacting, engine, modelId, running]);
   const handle = useMemo<ChatPaneHandle>(
     () => ({ sessionId: activeTabId, loadAndReplay, compact: compactSession }),
@@ -144,20 +143,13 @@ export function useChatPaneMentionEffects({
     }
     let cancelled = false;
     const timer = setTimeout(() => {
-      void Effect.runPromise(
-        Effect.gen(function* () {
+      void (async () => {
+        try {
           const url = `/api/agent/fs/search?cwd=${encodeURIComponent(cwd)}&q=${encodeURIComponent(mentionQuery)}`;
-          const response = yield* Effect.tryPromise({
-            try: () => fetch(url, { cache: "no-store" }),
-            catch: (error) => error,
-          });
+          const response = await fetch(url, { cache: "no-store" });
           const payload = response.ok
-            ? yield* Effect.tryPromise({
-                try: () =>
-                  response.json() as Promise<{
-                    entries?: Array<{ name: string; rel: string; path: string; kind: string }>;
-                  }>,
-                catch: (error) => error,
+            ? ((await response.json()) as {
+                entries?: Array<{ name: string; rel: string; path: string; kind: string }>;
               })
             : null;
           if (cancelled) return;
@@ -172,14 +164,10 @@ export function useChatPaneMentionEffects({
               source: "project",
             }));
           setFileMentionRows(rows);
-        }).pipe(
-          Effect.catch(() =>
-            Effect.sync(() => {
-              if (!cancelled) setFileMentionRows([]);
-            }),
-          ),
-        ),
-      );
+        } catch {
+          if (!cancelled) setFileMentionRows([]);
+        }
+      })();
     }, 120);
     return () => {
       cancelled = true;

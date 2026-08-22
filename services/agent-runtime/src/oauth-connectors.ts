@@ -1,10 +1,9 @@
-import { randomBytes, createHash, randomUUID } from "node:crypto";
-import { chmod, readFile, rename, writeFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { readFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
-import { createServer, type Server, type ServerResponse } from "node:http";
 import path from "node:path";
 import { Schema } from "effect";
-import { resolveDataDir } from "./data-dir";
+import { atomicWriteJson, resolveDataDir } from "./data-dir";
 import {
   listConnectors,
   saveConnectors,
@@ -23,14 +22,9 @@ import {
 /**
  * The generic OAuth engine behind click-to-connect catalog connectors.
  *
- * Two flows, both ending in the same place:
- *
- *  - device code: the provider hands back a short code the user types into the
- *    provider's own site; this process polls the token endpoint until the
- *    provider says yes. No secret, no redirect, works for public clients.
- *  - loopback + PKCE (S256): an authorization-code flow whose redirect is an
- *    ephemeral 127.0.0.1 listener owned by this process — the same shape the
- *    Google account flow uses, generalized to any provider definition.
+ * One flow — device code: the provider hands back a short code the user types
+ * into the provider's own site; this process polls the token endpoint until
+ * the provider says yes. No secret, no redirect, works for public clients.
  *
  * Tokens land in `<dataDir>/oauth-tokens.json` (0600, atomic replace), keyed
  * by connector id. The refresh token never leaves this file: what a spawned
@@ -50,7 +44,6 @@ export class OAuthConnectorError extends Error {
 export type OAuthConnectorDependencies = {
   fetch: typeof fetch;
   now: () => number;
-  random: (size: number) => Buffer;
   requestTimeoutMs?: number;
   /** Test seam: endpoint overrides per provider, so no flow touches the real host. */
   definitions?: Partial<Record<OAuthConnectorProviderId, OAuthConnectorAuthDefinition>>;
@@ -59,21 +52,7 @@ export type OAuthConnectorDependencies = {
 const defaultDependencies: OAuthConnectorDependencies = {
   fetch,
   now: Date.now,
-  random: randomBytes,
 };
-
-let activeDefaults: OAuthConnectorDependencies = defaultDependencies;
-
-/**
- * Replaces the defaults used when a caller passes no dependencies — the HTTP
- * handlers, notably. Exists so a harness can drive the real routes against a
- * fake provider; nothing in production calls it.
- */
-export function setDefaultOAuthConnectorDependencies(
-  overrides: Partial<OAuthConnectorDependencies> | null,
-): void {
-  activeDefaults = overrides ? { ...defaultDependencies, ...overrides } : defaultDependencies;
-}
 
 const TokenRecordSchema = Schema.Struct({
   accessToken: Schema.String,
@@ -110,13 +89,8 @@ async function readStore(): Promise<Store> {
   }
 }
 
-async function writeStore(store: Store): Promise<void> {
-  const file = resolveOAuthTokensFilePath();
-  const temporary = `${file}.tmp-${process.pid}-${randomUUID()}`;
-  await writeFile(temporary, JSON.stringify(store, null, 2), { mode: 0o600 });
-  await chmod(temporary, 0o600);
-  await rename(temporary, file);
-  await chmod(file, 0o600);
+function writeStore(store: Store): Promise<void> {
+  return atomicWriteJson(resolveOAuthTokensFilePath(), store, { mode: 0o600 });
 }
 
 // One writer at a time. A device poll finishing while a disconnect runs must
@@ -306,14 +280,12 @@ async function commitConnection(
 
 type ActiveFlow = {
   id: string;
-  kind: "device" | "pkce";
-  userCode?: string;
-  verificationUri?: string;
+  userCode: string;
+  verificationUri: string;
   expiresAt: number;
   controller: AbortController;
   /** Resolves when the background half of the flow stops, however it stops. */
   settled: Promise<void>;
-  server?: Server;
 };
 
 const activeFlows = new Map<string, ActiveFlow>();
@@ -324,8 +296,6 @@ function closeFlow(connectorId: string, expectedId?: string): void {
   if (!flow || (expectedId && flow.id !== expectedId)) return;
   activeFlows.delete(connectorId);
   flow.controller.abort();
-  flow.server?.closeAllConnections();
-  flow.server?.close();
 }
 
 function sleep(ms: number, signal: AbortSignal): Promise<void> {
@@ -422,7 +392,6 @@ async function beginDeviceAuthorization(
   const controller = new AbortController();
   const flow: ActiveFlow = {
     id: randomUUID(),
-    kind: "device",
     userCode,
     verificationUri,
     expiresAt,
@@ -451,130 +420,9 @@ async function beginDeviceAuthorization(
   return { flow: "device", userCode, verificationUri, expiresAt };
 }
 
-const callbackPage = (success: boolean, providerName: string): string => {
-  const title = success ? `${providerName} connected` : `${providerName} sign-in failed`;
-  const message = success
-    ? "You can close this tab and return to Local Studio."
-    : "Return to Local Studio and start the connection again.";
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>${title}</title><style>:root{color-scheme:light dark;font-family:ui-sans-serif,-apple-system,sans-serif}body{min-height:100vh;margin:0;display:grid;place-items:center;background:Canvas;color:CanvasText}main{padding:2rem;text-align:center}</style></head><body><main><h1>${title}</h1><p>${message}</p></main></body></html>`;
-};
-
-function respondHtml(response: ServerResponse, success: boolean, providerName: string): void {
-  response.writeHead(success ? 200 : 400, {
-    "content-type": "text/html; charset=utf-8",
-    "cache-control": "no-store",
-    connection: "close",
-  });
-  response.end(callbackPage(success, providerName));
-}
-
-function listen(server: Server): Promise<number> {
-  return new Promise((resolve, reject) => {
-    server.once("error", reject);
-    server.listen(0, "127.0.0.1", () => {
-      server.removeListener("error", reject);
-      const address = server.address();
-      if (!address || typeof address === "string") {
-        reject(new Error("Loopback listener failed"));
-        return;
-      }
-      resolve(address.port);
-    });
-  });
-}
-
-async function beginPkceAuthorization(
-  provider: OAuthConnectorProvider,
-  definition: OAuthConnectorAuthDefinition,
-  clientId: string,
-  dependencies: OAuthConnectorDependencies,
-): Promise<OAuthAuthorizeResponse> {
-  if (!definition.authorizeUrl) {
-    throw new OAuthConnectorError(500, `${provider.name} has no authorization endpoint`);
-  }
-  const verifier = dependencies.random(64).toString("base64url");
-  const state = dependencies.random(32).toString("base64url");
-  const flowId = randomUUID();
-  const controller = new AbortController();
-  // Assigned once the listener has a port; the handler only runs after that.
-  let redirectUri = "";
-  const server = createServer((request, response) => {
-    void (async () => {
-      const url = new URL(request.url ?? "/", "http://127.0.0.1");
-      if (url.pathname !== "/callback") {
-        response.writeHead(404).end();
-        return;
-      }
-      const code = url.searchParams.get("code");
-      if (url.searchParams.get("state") !== state || !code || controller.signal.aborted) {
-        respondHtml(response, false, provider.name);
-        closeFlow(provider.id, flowId);
-        return;
-      }
-      try {
-        const body = await postForm(
-          definition.tokenUrl,
-          {
-            client_id: clientId,
-            code,
-            code_verifier: verifier,
-            grant_type: "authorization_code",
-            redirect_uri: redirectUri,
-          },
-          dependencies,
-        );
-        const accessToken = readString(body, "access_token");
-        if (!accessToken) {
-          throw new OAuthConnectorError(502, "The OAuth provider returned no access token");
-        }
-        const account = await fetchAccountName(definition, accessToken, dependencies);
-        await commitConnection(provider, tokenRecordFrom(body, definition, account, dependencies));
-        respondHtml(response, true, provider.name);
-      } catch (error) {
-        lastFlowErrors.set(
-          provider.id,
-          error instanceof Error ? error.message : "The sign-in failed",
-        );
-        respondHtml(response, false, provider.name);
-      } finally {
-        closeFlow(provider.id, flowId);
-      }
-    })();
-  });
-  const port = await listen(server).catch(() => {
-    throw new OAuthConnectorError(500, "Could not start the private OAuth callback");
-  });
-  redirectUri = `http://127.0.0.1:${port}/callback`;
-  const expiresAt = dependencies.now() + 10 * 60 * 1000;
-  const flow: ActiveFlow = {
-    id: flowId,
-    kind: "pkce",
-    expiresAt,
-    controller,
-    settled: Promise.resolve(),
-    server,
-  };
-  // The listener cannot wait forever on a consent tab nobody finishes.
-  flow.settled = sleep(10 * 60 * 1000, controller.signal).then(() =>
-    closeFlow(provider.id, flowId),
-  );
-  activeFlows.set(provider.id, flow);
-  const url = new URL(definition.authorizeUrl);
-  url.search = new URLSearchParams({
-    client_id: clientId,
-    redirect_uri: redirectUri,
-    response_type: "code",
-    scope: definition.scopes.join(" "),
-    state,
-    code_challenge: createHash("sha256").update(verifier).digest("base64url"),
-    code_challenge_method: "S256",
-  }).toString();
-  return { flow: "pkce", authorizeUrl: url.toString() };
-}
-
 export async function beginOAuthConnectorAuthorization(
   connectorId: string,
-  dependencies: OAuthConnectorDependencies = activeDefaults,
+  dependencies: OAuthConnectorDependencies = defaultDependencies,
 ): Promise<OAuthAuthorizeResponse> {
   const provider = requireProvider(connectorId);
   const definition = definitionFor(provider, dependencies);
@@ -584,9 +432,7 @@ export async function beginOAuthConnectorAuthorization(
   }
   closeFlow(provider.id);
   lastFlowErrors.delete(provider.id);
-  return definition.kind === "oauth-device"
-    ? beginDeviceAuthorization(provider, definition, clientId, dependencies)
-    : beginPkceAuthorization(provider, definition, clientId, dependencies);
+  return beginDeviceAuthorization(provider, definition, clientId, dependencies);
 }
 
 export function cancelOAuthConnectorAuthorization(connectorId: string): void {
@@ -624,21 +470,20 @@ export async function saveOAuthConnectorClient(
 
 export async function getOAuthConnectorStatus(
   connectorId: string,
-  dependencies: OAuthConnectorDependencies = activeDefaults,
+  dependencies: OAuthConnectorDependencies = defaultDependencies,
 ): Promise<OAuthStatusResponse> {
   const provider = requireProvider(connectorId);
   const definition = definitionFor(provider, dependencies);
   const clientId = await resolveClientId(provider, definition);
   const record = (await readStore()).tokens[provider.id] ?? null;
   const flow = activeFlows.get(provider.id);
-  const pending =
-    flow?.kind === "device" && flow.userCode && flow.verificationUri
-      ? {
-          userCode: flow.userCode,
-          verificationUri: flow.verificationUri,
-          expiresAt: flow.expiresAt,
-        }
-      : null;
+  const pending = flow
+    ? {
+        userCode: flow.userCode,
+        verificationUri: flow.verificationUri,
+        expiresAt: flow.expiresAt,
+      }
+    : null;
   return {
     connectorId: provider.id,
     configured: Boolean(clientId),
@@ -687,7 +532,7 @@ export async function disconnectOAuthConnector(
  */
 export function freshOAuthConnectorAccessToken(
   connectorId: string,
-  dependencies: OAuthConnectorDependencies = activeDefaults,
+  dependencies: OAuthConnectorDependencies = defaultDependencies,
 ): Promise<string> {
   const provider = requireProvider(connectorId);
   const definition = definitionFor(provider, dependencies);
@@ -747,7 +592,7 @@ export function freshOAuthConnectorAccessToken(
  */
 export async function oauthConnectorSpawnEnv(
   connector: ConnectorConfig,
-  dependencies: OAuthConnectorDependencies = activeDefaults,
+  dependencies: OAuthConnectorDependencies = defaultDependencies,
 ): Promise<Record<string, string>> {
   const provider = oauthConnectorProvider(connector.id);
   if (!provider) return {};

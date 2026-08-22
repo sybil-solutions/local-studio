@@ -1,34 +1,29 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
-import { chmod, readFile, rename, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { Effect, Schema, Semaphore } from "effect";
-import { connectMcp, type McpConnection } from "./mcp-client";
+import type { McpConnection } from "./mcp-client";
 import { listConnectors, upsertConnectors } from "./connectors-service";
-import { resolveDataDir } from "./data-dir";
+import { atomicWriteJson, resolveDataDir } from "./data-dir";
 import { createGoogleRestConnection } from "./google-rest-adapter";
 import {
-  GOOGLE_MCP_PREVIEW_ENV,
   GOOGLE_WORKSPACE_BINDINGS,
   GOOGLE_WORKSPACE_PLUGIN_IDS,
   googleWorkspaceConnectorIdentity,
-  googleWorkspaceEndpoint,
-  googleWorkspaceTransport,
   type GoogleWorkspaceIdentity,
   type GoogleWorkspacePluginId,
-  type GoogleWorkspaceTransport,
 } from "./google-workspace-binding";
 import { desktopOAuthVault, type OAuthVault } from "./oauth-vault";
 import type { GoogleAccountView, GoogleConnectionView } from "./google-account-contract";
 
 export type { GoogleAccountView, GoogleConnectionView } from "./google-account-contract";
 
-const TransportSchema = Schema.Union([Schema.Literal("rest"), Schema.Literal("remote-mcp")]);
-
 const ConnectionSchema = Schema.Struct({
   scopes: Schema.Array(Schema.String),
   endpoint: Schema.String,
-  transport: TransportSchema,
+  /** Written by retired builds that had a second transport; decoded and ignored. */
+  transport: Schema.optional(Schema.String),
   connectedAt: Schema.String,
   revision: Schema.optional(Schema.String),
 });
@@ -96,7 +91,8 @@ const PendingSchema = Schema.Struct({
   state: Schema.String,
   verifier: Schema.String,
   redirectUri: Schema.String,
-  transport: TransportSchema,
+  /** Written by retired builds that had a second transport; decoded and ignored. */
+  transport: Schema.optional(Schema.String),
   expiresAt: Schema.Number,
 });
 
@@ -124,7 +120,6 @@ export type GoogleOAuthDependencies = {
   requestTimeoutMs?: number;
   verifyAccess: (
     service: GoogleWorkspacePluginId,
-    transport: GoogleWorkspaceTransport,
     accessToken: string,
     signal: AbortSignal,
   ) => Promise<void>;
@@ -162,10 +157,6 @@ const authorizationLifecycle = Semaphore.makeUnsafe(1);
  */
 export function googleAccountKey(email: string): string {
   return createHash("sha256").update(email.trim().toLowerCase()).digest("hex").slice(0, 10);
-}
-
-function activeGoogleWorkspaceTransport(): GoogleWorkspaceTransport {
-  return googleWorkspaceTransport(process.env[GOOGLE_MCP_PREVIEW_ENV]);
 }
 
 function tokenCacheKey(identity: GoogleWorkspaceIdentity): string {
@@ -238,7 +229,6 @@ function normalizeMetadata(stored: typeof StoredMetadataSchema.Type): Metadata {
         [service]: {
           scopes: legacy.scopes,
           endpoint: legacy.resource,
-          transport: "remote-mcp" as const,
           connectedAt: legacy.connectedAt,
         },
       },
@@ -291,13 +281,8 @@ async function readMetadata(): Promise<Metadata | null> {
   }
 }
 
-async function writeMetadata(metadata: Metadata): Promise<void> {
-  const file = resolveGoogleAccountFilePath();
-  const temporary = `${file}.tmp-${process.pid}-${randomUUID()}`;
-  await writeFile(temporary, JSON.stringify(metadata, null, 2), { mode: 0o600 });
-  await chmod(temporary, 0o600);
-  await rename(temporary, file);
-  await chmod(file, 0o600);
+function writeMetadata(metadata: Metadata): Promise<void> {
+  return atomicWriteJson(resolveGoogleAccountFilePath(), metadata, { mode: 0o600 });
 }
 
 function metadataEffect(): Effect.Effect<Metadata | null, GoogleAccountError> {
@@ -387,7 +372,6 @@ function accountView(metadata: Metadata | null): GoogleAccountView {
     configured: Boolean(metadata?.clientId),
     clientId: metadata?.clientId ?? null,
     hasClientSecret: metadata?.hasClientSecret ?? false,
-    transport: activeGoogleWorkspaceTransport(),
     accounts,
   };
 }
@@ -479,21 +463,6 @@ function codeChallenge(verifier: string): string {
   return createHash("sha256").update(verifier).digest("base64url");
 }
 
-/**
- * RFC 8707 audience binding, and only on the MCP preview path. A token minted
- * for `gmailmcp.googleapis.com` is not accepted by `gmail.googleapis.com`, so
- * sending `resource` while the REST adapter is the transport would produce a
- * token that authenticates and then fails on every call.
- */
-function audienceParameters(
-  service: GoogleWorkspacePluginId,
-  transport: GoogleWorkspaceTransport,
-): Record<string, string> {
-  return transport === "remote-mcp"
-    ? { resource: GOOGLE_WORKSPACE_BINDINGS[service].mcpResource }
-    : {};
-}
-
 export function beginGoogleAuthorization(
   service: GoogleWorkspacePluginId,
   redirectUri: string,
@@ -515,7 +484,6 @@ export function beginGoogleAuthorization(
           );
         }
         const binding = GOOGLE_WORKSPACE_BINDINGS[service];
-        const transport = activeGoogleWorkspaceTransport();
         const verifier = dependencies.random(64).toString("base64url");
         const pending: Pending = {
           service,
@@ -524,7 +492,6 @@ export function beginGoogleAuthorization(
           state: dependencies.random(32).toString("base64url"),
           verifier,
           redirectUri: loopbackRedirect(redirectUri),
-          transport,
           expiresAt: dependencies.now() + 10 * 60 * 1000,
         };
         yield* writeVaultJson(vault, pendingKey(service), pending);
@@ -546,7 +513,6 @@ export function beginGoogleAuthorization(
           // browser already has, so a second mailbox can never be added.
           prompt: "select_account consent",
           include_granted_scopes: "true",
-          ...audienceParameters(service, transport),
         }).toString();
         return { authorizationUrl: url.toString() };
       }),
@@ -592,7 +558,6 @@ async function exchangeAuthorizationCode(
     code_verifier: pending.verifier,
     grant_type: "authorization_code",
     redirect_uri: pending.redirectUri,
-    ...audienceParameters(pending.service, pending.transport),
     ...(secrets.clientSecret ? { client_secret: secrets.clientSecret } : {}),
   });
   const response = await dependencies.fetch("https://oauth2.googleapis.com/token", {
@@ -626,23 +591,13 @@ async function verifiedEmail(
   }
 }
 
-/** One tool surface per transport, so callers never branch on which one is live. */
 export function googleWorkspaceConnection(input: {
   service: GoogleWorkspacePluginId;
-  transport: GoogleWorkspaceTransport;
   authorize: (forceRefresh: boolean) => Promise<Record<string, string>>;
   signal?: AbortSignal;
 }): McpConnection {
-  if (input.transport === "rest") {
-    return createGoogleRestConnection({
-      service: input.service,
-      authorize: input.authorize,
-      ...(input.signal ? { signal: input.signal } : {}),
-    });
-  }
-  return connectMcp({
-    transport: "http",
-    url: GOOGLE_WORKSPACE_BINDINGS[input.service].mcpEndpoint,
+  return createGoogleRestConnection({
+    service: input.service,
     authorize: input.authorize,
     ...(input.signal ? { signal: input.signal } : {}),
   });
@@ -650,14 +605,12 @@ export function googleWorkspaceConnection(input: {
 
 async function verifyGoogleWorkspaceAccess(
   service: GoogleWorkspacePluginId,
-  transport: GoogleWorkspaceTransport,
   accessToken: string,
   signal: AbortSignal,
 ): Promise<void> {
   const binding = GOOGLE_WORKSPACE_BINDINGS[service];
   const connection = googleWorkspaceConnection({
     service,
-    transport,
     authorize: () => Promise.resolve({ Authorization: `Bearer ${accessToken}` }),
     signal,
   });
@@ -993,7 +946,7 @@ function completeGoogleAuthorizationUnlocked(
       Effect.catch(rollbackFailure),
     );
     yield* authorizationRequestEffect(service, pending.flowId, () =>
-      dependencies.verifyAccess(service, pending.transport, token.access_token, cancellation),
+      dependencies.verifyAccess(service, token.access_token, cancellation),
     ).pipe(Effect.catch(rollbackFailure));
     yield* requireGoogleAuthorizationFlow(service, pending.flowId).pipe(
       Effect.catch(rollbackFailure),
@@ -1001,8 +954,7 @@ function completeGoogleAuthorizationUnlocked(
     const connectionRevision = randomUUID();
     const connection: Connection = {
       scopes,
-      endpoint: googleWorkspaceEndpoint(service, pending.transport),
-      transport: pending.transport,
+      endpoint: GOOGLE_WORKSPACE_BINDINGS[service].restEndpoint,
       connectedAt: new Date(dependencies.now()).toISOString(),
       revision: connectionRevision,
     };
@@ -1155,7 +1107,6 @@ async function refreshAccessToken(
   identity: GoogleWorkspaceIdentity,
   metadata: Metadata,
   secrets: Secrets,
-  transport: GoogleWorkspaceTransport,
   dependencies: GoogleOAuthDependencies,
 ): Promise<TokenResponse> {
   const refreshToken = secrets.refreshTokens[identity.accountKey]?.[identity.service];
@@ -1164,7 +1115,6 @@ async function refreshAccessToken(
     client_id: metadata.clientId,
     refresh_token: refreshToken,
     grant_type: "refresh_token",
-    ...audienceParameters(identity.service, transport),
     ...(secrets.clientSecret ? { client_secret: secrets.clientSecret } : {}),
   });
   const response = await dependencies.fetch("https://oauth2.googleapis.com/token", {
@@ -1202,7 +1152,7 @@ export function googleAuthorizationHeaders(
       }
       const secrets = yield* secretsEffect(vault, metadata);
       const token = yield* promiseEffect(() =>
-        refreshAccessToken(identity, metadata, secrets, connection.transport, dependencies),
+        refreshAccessToken(identity, metadata, secrets, dependencies),
       );
       if (token.refresh_token) {
         yield* writeVaultJson(vault, secretsKey, {

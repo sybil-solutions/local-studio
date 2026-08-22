@@ -1,7 +1,6 @@
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
-import { Effect } from "effect";
 import { createAgentSessionRuntime } from "@earendil-works/pi-coding-agent";
 import {
   controlTargetHasActiveTurn,
@@ -36,20 +35,6 @@ import { errorMessage, jsonError } from "./helpers";
 import { sseResponse } from "./sse";
 
 // ─── POST /api/agent/turn ─────────────────────────────────────────────────
-
-function adoptRuntimePiSessionId(session: unknown, piSessionId: string | null | undefined) {
-  const next = piSessionId?.trim();
-  if (!next || !session || typeof session !== "object") return;
-  const runtime = session as {
-    adoptPiSessionId?: (value: string) => void;
-    currentPiSessionId?: string | null;
-  };
-  if (typeof runtime.adoptPiSessionId === "function") {
-    runtime.adoptPiSessionId(next);
-  } else if (!runtime.currentPiSessionId) {
-    runtime.currentPiSessionId = next;
-  }
-}
 
 type ResolvedTurnSession = {
   effectivePiSessionId: string | null;
@@ -90,22 +75,15 @@ function effectiveStreamingBehavior(turn: AgentTurnRequest, status: PiAgentStatu
   return turn.streamingBehavior;
 }
 
-function ensurePromptRuntimeEffect(
-  turn: AgentTurnRequest,
-  resolved: ResolvedTurnSession,
-): Effect.Effect<void, unknown> {
-  return Effect.tryPromise({
-    try: () =>
-      resolved.session.ensureStarted(turn.modelId, turn.cwd, resolved.effectivePiSessionId, {
-        thinkingLevel: turn.thinkingLevel,
-        toolAccess: turn.toolAccess,
-        browserToolEnabled: turn.browserToolEnabled,
-        browserSessionId: turn.browserSessionId,
-        browserBackend: turn.browserBackend,
-        skills: turn.skills,
-        promptTemplates: turn.promptTemplates,
-      }),
-    catch: (error) => error,
+function ensurePromptRuntime(turn: AgentTurnRequest, resolved: ResolvedTurnSession): Promise<void> {
+  return resolved.session.ensureStarted(turn.modelId, turn.cwd, resolved.effectivePiSessionId, {
+    thinkingLevel: turn.thinkingLevel,
+    toolAccess: turn.toolAccess,
+    browserToolEnabled: turn.browserToolEnabled,
+    browserSessionId: turn.browserSessionId,
+    browserBackend: turn.browserBackend,
+    skills: turn.skills,
+    promptTemplates: turn.promptTemplates,
   });
 }
 
@@ -114,61 +92,45 @@ function launchPrompt(
   resolved: ResolvedTurnSession,
   commandImages: AgentImageInput[] | undefined,
 ) {
-  void Effect.runPromise(
-    Effect.tryPromise({
-      try: () =>
-        resolved.session.prompt(turn.message, () => undefined, {
-          streamingBehavior: resolved.effectiveStreamingBehavior,
-          ...(commandImages ? { images: commandImages } : {}),
-        }),
-      catch: (error) => error,
-    }).pipe(Effect.catch(() => Effect.void)),
-  );
+  void resolved.session
+    .prompt(turn.message, () => undefined, {
+      streamingBehavior: resolved.effectiveStreamingBehavior,
+      ...(commandImages ? { images: commandImages } : {}),
+    })
+    .catch(() => undefined);
 }
 
-function dispatchControlEffect(
+async function dispatchControl(
   turn: AgentTurnRequest,
   resolved: ResolvedTurnSession,
   commandImages: AgentImageInput[] | undefined,
-): Effect.Effect<"queued" | "rejected", unknown> {
-  if (!resolved.controlTargetActive) return Effect.succeed("rejected");
+): Promise<"queued" | "rejected"> {
+  if (!resolved.controlTargetActive) return "rejected";
   if (turn.queueAction) {
-    return Effect.tryPromise({
-      try: () =>
-        resolved.session.mutateQueuedFollowUp(
-          turn.message,
-          turn.queueAction!,
-          turn.queueReplacement,
-          commandImages,
-        ),
-      catch: (error) => error,
-    }).pipe(Effect.map(() => "queued" as const));
+    await resolved.session.mutateQueuedFollowUp(
+      turn.message,
+      turn.queueAction,
+      turn.queueReplacement,
+      commandImages,
+    );
+    return "queued";
   }
   if (turn.mode === "steer") {
-    return Effect.tryPromise({
-      try: () => resolved.session.steer(turn.message, commandImages),
-      catch: (error) => error,
-    }).pipe(Effect.map(() => "queued" as const));
+    await resolved.session.steer(turn.message, commandImages);
+    return "queued";
   }
   if (turn.mode === "follow_up") {
-    return Effect.tryPromise({
-      try: () => resolved.session.followUp(turn.message, commandImages),
-      catch: (error) => error,
-    }).pipe(Effect.map(() => "queued" as const));
+    await resolved.session.followUp(turn.message, commandImages);
+    return "queued";
   }
-  return Effect.succeed("rejected");
+  return "rejected";
 }
 
-function resolvePiSessionIdEffect(
-  session: PiAgentSession,
-  since: Date,
-): Effect.Effect<string | null, unknown> {
+async function resolvePiSessionId(session: PiAgentSession, since: Date): Promise<string | null> {
   const status = session.status;
-  if (status.piSessionId || !status.cwd) return Effect.succeed(status.piSessionId);
-  return Effect.tryPromise({
-    try: () => listSessions(status.cwd, { since }),
-    catch: (error) => error,
-  }).pipe(Effect.map((recent) => recent[0]?.id ?? null));
+  if (status.piSessionId || !status.cwd) return status.piSessionId;
+  const recent = await listSessions(status.cwd, { since });
+  return recent[0]?.id ?? null;
 }
 
 function commandResult(
@@ -188,79 +150,64 @@ function commandResult(
   };
 }
 
-export function handleAgentTurn(request: Request): Promise<Response> {
-  return Effect.runPromise(turnRouteEffect(request));
-}
+export async function handleAgentTurn(request: Request): Promise<Response> {
+  const body = await readJsonRequestWithinLimit(request, AGENT_TURN_BODY_LIMIT_BYTES);
+  if (!body.ok) return jsonError(body.error, body.status);
+  const parsed = parseAgentTurnRequest(body.value);
+  if (!parsed.ok) return jsonError(parsed.error);
+  const turn = parsed.value;
+  const commandImages = turn.images.length ? turn.images : undefined;
 
-function turnRouteEffect(request: Request): Effect.Effect<Response, unknown> {
-  return Effect.gen(function* () {
-    const body = yield* Effect.promise(() =>
-      readJsonRequestWithinLimit(request, AGENT_TURN_BODY_LIMIT_BYTES),
-    );
-    if (!body.ok) return jsonError(body.error, body.status);
-    const parsed = parseAgentTurnRequest(body.value);
-    if (!parsed.ok) return jsonError(parsed.error);
-    const turn = parsed.value;
-    const commandImages = turn.images.length ? turn.images : undefined;
+  try {
+    const turnStartedAt = new Date(Date.now() - 2_000);
+    const resolved = resolveTurnSession(turn);
+    if (!resolved) {
+      const result: AgentTurnCommandResult = {
+        type: "command",
+        outcome: "rejected",
+        runtimeSessionId: turn.sessionId,
+        piSessionId: turn.piSessionId,
+        active: false,
+        error: "Runtime session is no longer active.",
+      };
+      return Response.json(result, { status: 409 });
+    }
 
-    return yield* Effect.gen(function* () {
-      const turnStartedAt = new Date(Date.now() - 2_000);
-      const resolved = resolveTurnSession(turn);
-      if (!resolved) {
-        const result: AgentTurnCommandResult = {
-          type: "command",
-          outcome: "rejected",
-          runtimeSessionId: turn.sessionId,
-          piSessionId: turn.piSessionId,
-          active: false,
+    if (turn.mode === "prompt") {
+      await ensurePromptRuntime(turn, resolved);
+      launchPrompt(turn, resolved, commandImages);
+      const resolvedPiSessionId = await resolvePiSessionId(resolved.session, turnStartedAt);
+      resolved.session.adoptPiSessionId(resolvedPiSessionId);
+      return Response.json(
+        commandResult(resolved.effectiveStreamingBehavior ? "queued" : "accepted", resolved, {
+          piSessionId: resolvedPiSessionId,
+        }),
+      );
+    }
+
+    const controlOutcome = await dispatchControl(turn, resolved, commandImages);
+    if (controlOutcome === "rejected") {
+      return Response.json(
+        commandResult("rejected", resolved, {
           error: "Runtime session is no longer active.",
-        };
-        return Response.json(result, { status: 409 });
-      }
-
-      if (turn.mode === "prompt") {
-        yield* ensurePromptRuntimeEffect(turn, resolved);
-        launchPrompt(turn, resolved, commandImages);
-        const resolvedPiSessionId = yield* resolvePiSessionIdEffect(
-          resolved.session,
-          turnStartedAt,
-        );
-        adoptRuntimePiSessionId(resolved.session, resolvedPiSessionId);
-        return Response.json(
-          commandResult(resolved.effectiveStreamingBehavior ? "queued" : "accepted", resolved, {
-            piSessionId: resolvedPiSessionId,
-          }),
-        );
-      }
-
-      const controlOutcome = yield* dispatchControlEffect(turn, resolved, commandImages);
-      if (controlOutcome === "rejected") {
-        return Response.json(
-          commandResult("rejected", resolved, {
-            error: "Runtime session is no longer active.",
-          }),
-          { status: 409 },
-        );
-      }
-      return Response.json(commandResult("queued", resolved));
-    }).pipe(
-      Effect.catch((error) =>
-        Effect.succeed(
-          Response.json(
-            {
-              type: "command",
-              outcome: "rejected",
-              runtimeSessionId: turn.sessionId,
-              piSessionId: turn.piSessionId,
-              active: false,
-              error: errorMessage(error, "Pi agent turn failed"),
-            } satisfies AgentTurnCommandResult,
-            { status: 500 },
-          ),
-        ),
-      ),
+        }),
+        { status: 409 },
+      );
+    }
+    return Response.json(commandResult("queued", resolved));
+  } catch (error) {
+    return Response.json(
+      {
+        type: "command",
+        outcome: "rejected",
+        runtimeSessionId: turn.sessionId,
+        piSessionId: turn.piSessionId,
+        active: false,
+        error: errorMessage(error, "Pi agent turn failed"),
+      } satisfies AgentTurnCommandResult,
+      { status: 500 },
     );
-  });
+  }
 }
 
 // ─── POST /api/agent/abort ────────────────────────────────────────────────
@@ -333,56 +280,38 @@ function compactInstructions(skills: ComposerSkillRef[], custom?: string): strin
   return [selected, additional].filter((value): value is string => Boolean(value)).join("\n\n");
 }
 
-export function handleAgentCompact(request: Request): Promise<Response> {
-  return Effect.runPromise(compactRouteEffect(request));
-}
+export async function handleAgentCompact(request: Request): Promise<Response> {
+  const body = (await request.json().catch(() => null)) as CompactRequest | null;
+  if (!body) return jsonError("Invalid JSON body");
 
-function compactRouteEffect(request: Request): Effect.Effect<Response, unknown> {
-  return Effect.gen(function* () {
-    const body = (yield* Effect.tryPromise({
-      try: () => request.json(),
-      catch: () => null,
-    })) as CompactRequest | null;
-    if (!body) return jsonError("Invalid JSON body");
+  const sessionId = body.sessionId?.trim() || "default";
+  const modelId = body.modelId?.trim();
+  const cwd = body.cwd?.trim() || undefined;
+  const piSessionId = body.piSessionId?.trim() || null;
+  if (!modelId) return jsonError("modelId is required");
+  if (body.thinkingLevel != null && !isAgentThinkingLevel(body.thinkingLevel)) {
+    return jsonError("thinkingLevel must be a supported reasoning level");
+  }
 
-    const sessionId = body.sessionId?.trim() || "default";
-    const modelId = body.modelId?.trim();
-    const cwd = body.cwd?.trim() || undefined;
-    const piSessionId = body.piSessionId?.trim() || null;
-    if (!modelId) return jsonError("modelId is required");
-    if (body.thinkingLevel != null && !isAgentThinkingLevel(body.thinkingLevel)) {
-      return jsonError("thinkingLevel must be a supported reasoning level");
-    }
-
-    return yield* Effect.gen(function* () {
-      const session = piRuntimeManager.getSession(sessionId);
-      const skills = sanitizeComposerSkills(body.skills);
-      const promptTemplates = sanitizeComposerPromptTemplates(body.promptTemplates);
-      yield* Effect.tryPromise({
-        try: () =>
-          session.ensureStarted(modelId, cwd, piSessionId, {
-            thinkingLevel: body.thinkingLevel,
-            toolAccess: body.toolAccess === "full" ? "full" : "read_only",
-            browserToolEnabled: body.browserToolEnabled === true,
-            browserSessionId:
-              typeof body.browserSessionId === "string" ? body.browserSessionId.trim() : undefined,
-            browserBackend: body.browserBackend === "chrome" ? "chrome" : "embedded",
-            skills,
-            promptTemplates,
-          }),
-        catch: (error) => error,
-      });
-      const result = yield* Effect.tryPromise({
-        try: () => session.compact(compactInstructions(skills, body.customInstructions)),
-        catch: (error) => error,
-      });
-      return Response.json({ ok: true, result, status: session.status });
-    }).pipe(
-      Effect.catch((error) =>
-        Effect.succeed(jsonError(errorMessage(error, "Compaction failed"), 409)),
-      ),
-    );
-  });
+  try {
+    const session = piRuntimeManager.getSession(sessionId);
+    const skills = sanitizeComposerSkills(body.skills);
+    const promptTemplates = sanitizeComposerPromptTemplates(body.promptTemplates);
+    await session.ensureStarted(modelId, cwd, piSessionId, {
+      thinkingLevel: body.thinkingLevel,
+      toolAccess: body.toolAccess === "full" ? "full" : "read_only",
+      browserToolEnabled: body.browserToolEnabled === true,
+      browserSessionId:
+        typeof body.browserSessionId === "string" ? body.browserSessionId.trim() : undefined,
+      browserBackend: body.browserBackend === "chrome" ? "chrome" : "embedded",
+      skills,
+      promptTemplates,
+    });
+    const result = await session.compact(compactInstructions(skills, body.customInstructions));
+    return Response.json({ ok: true, result, status: session.status });
+  } catch (error) {
+    return jsonError(errorMessage(error, "Compaction failed"), 409);
+  }
 }
 
 // ─── GET /api/agent/runtime/sessions ──────────────────────────────────────

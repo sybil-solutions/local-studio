@@ -1,8 +1,7 @@
-import { randomUUID } from "node:crypto";
-import { chmod, readFile, rename, writeFile } from "fs/promises";
+import { readFile } from "fs/promises";
 import { existsSync, readFileSync, statSync } from "fs";
 import { join } from "path";
-import { resolveDataDir } from "./data-dir";
+import { atomicWriteJson, resolveDataDir } from "./data-dir";
 import { Schema } from "effect";
 import {
   ConnectorsFileSchema,
@@ -10,13 +9,10 @@ import {
   type ConnectorView,
 } from "./connector-contract";
 import {
-  GOOGLE_MCP_PREVIEW_ENV,
   GOOGLE_WORKSPACE_BINDINGS,
   googleWorkspaceAuthAccount,
   googleWorkspaceConnectorId,
   googleWorkspaceConnectorIdentity,
-  googleWorkspaceEndpoint,
-  googleWorkspaceTransport,
   isGoogleWorkspaceEndpoint,
   legacyGoogleWorkspaceService,
   type GoogleWorkspaceIdentity,
@@ -71,12 +67,11 @@ export function googleWorkspaceConnector(
   enabled: boolean,
 ): ConnectorConfig {
   const binding = GOOGLE_WORKSPACE_BINDINGS[identity.service];
-  const transport = googleWorkspaceTransport(process.env[GOOGLE_MCP_PREVIEW_ENV]);
   return {
     id: googleWorkspaceConnectorId(identity.service, identity.accountKey),
     name: email ? `${binding.name} · ${email}` : binding.name,
     transport: "http",
-    url: googleWorkspaceEndpoint(identity.service, transport),
+    url: binding.restEndpoint,
     auth: {
       type: "oauth",
       provider: "google-workspace",
@@ -112,7 +107,7 @@ export function protectManagedConnector(connector: ConnectorConfig): ConnectorCo
       id: connector.id,
       name: `${GOOGLE_WORKSPACE_BINDINGS[legacyService].name} (sign in again)`,
       transport: "http",
-      url: GOOGLE_WORKSPACE_BINDINGS[legacyService].mcpEndpoint,
+      url: GOOGLE_WORKSPACE_BINDINGS[legacyService].restEndpoint,
       allowTools: [],
       origin: { kind: "account-adapter", id: legacyService, binding: "google-workspace" },
       enabled: false,
@@ -181,14 +176,12 @@ export async function listConnectors(): Promise<ConnectorConfig[]> {
   }
 }
 
-async function writeConnectors(connectors: ConnectorConfig[]): Promise<void> {
-  resolveDataDir();
-  const file = resolveConnectorsFilePath();
-  const payload = JSON.stringify({ connectors: connectors.map(protectManagedConnector) }, null, 2);
-  const tempFile = `${file}.tmp-${process.pid}-${randomUUID()}`;
-  await writeFile(tempFile, payload, "utf-8");
-  await chmod(tempFile, 0o600).catch(() => undefined);
-  await rename(tempFile, file);
+function writeConnectors(connectors: ConnectorConfig[]): Promise<void> {
+  return atomicWriteJson(
+    resolveConnectorsFilePath(),
+    { connectors: connectors.map(protectManagedConnector) },
+    { mode: 0o600 },
+  );
 }
 
 export function saveConnectors(connectors: ConnectorConfig[]): Promise<void> {

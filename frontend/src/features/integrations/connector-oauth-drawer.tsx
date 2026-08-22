@@ -27,8 +27,7 @@ import { renderCommandLine, type CatalogEntry } from "./connector-catalog";
  *
  * There is no token field here, deliberately and permanently: the runtime owns
  * the grant. What this drawer does is narrate the flow — Connect, type the
- * shown code on the provider's site (device flow) or finish consent in the
- * opened tab (PKCE), watch the status flip to connected. The one text input
+ * shown code on the provider's site, watch the status flip to connected. The one text input
  * that can appear is the provider's PUBLIC client id, asked for once when the
  * provider ships no baked-in client, with a deep link that pre-fills the
  * provider's registration form so getting one is a click.
@@ -279,12 +278,11 @@ async function connectAction(context: ActionContext): Promise<void> {
         return;
       }
     }
-    const begun = await requestAgentJson(
+    await requestAgentJson(
       "/api/agent/oauth/authorize",
       decodeAuthorize,
       jsonBody({ connectorId: context.entryId }),
     );
-    if (begun.flow === "pkce") await openExternal(begun.authorizeUrl);
     context.setWaiting(true);
     await context.refreshStatus();
   } catch (connectError) {

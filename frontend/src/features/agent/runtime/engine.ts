@@ -26,7 +26,11 @@ import type {
   AgentToolAccess,
 } from "@/features/agent/contracts";
 import * as api from "@/features/agent/runtime/api";
-import { submitPromptTurn, type SubmitArgs } from "@/features/agent/runtime/prompt-stream";
+import {
+  applyTurnAccepted,
+  submitPromptTurn,
+  type SubmitArgs,
+} from "@/features/agent/runtime/prompt-stream";
 import { readTranscriptSnapshot } from "@/features/agent/workspace/transcript-cache";
 
 import { sessionRuntimeController } from "@/features/agent/runtime/session-runtime-controller";
@@ -147,22 +151,7 @@ export function useSessionEngine(deps: UseSessionEngineDeps): SessionEngine {
               }),
             catch: (error) => error,
           });
-          updateSession(sessionId, (session) => ({
-            ...session,
-            piSessionId: result.piSessionId || session.piSessionId,
-            contextUsage: api.runtimeContextUsage(result.status, session.contextUsage),
-            status: "running",
-          }));
-          // Same acceptance bookkeeping the prompt path does. Without it a
-          // steer/follow-up got no accept-grace (so a stale runtime-list
-          // snapshot could idle the session and tear down its stream
-          // mid-turn) and no cursor rewind if the runtime's seq had restarted.
-          sessionRuntimeController().noteTurnAccepted(
-            sessionId,
-            undefined,
-            result.status?.eventSeq,
-          );
-          if (result.piSessionId) onPiSessionIdChange?.(result.piSessionId);
+          applyTurnAccepted({ updateSession, onPiSessionIdChange }, sessionId, result);
           return { ok: true };
         }).pipe(
           Effect.catch((error) =>

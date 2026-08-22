@@ -2,7 +2,7 @@ import { Effect, Option, Schema } from "effect";
 import { openSqliteDatabase } from "../../../stores/sqlite";
 import type { EngineOperationError } from "../engine-spec";
 import { attempt, operationError } from "../engine-operation";
-import type { ModelDownload } from "../types";
+import type { ModelDownload } from "@local-studio/contracts/recipes";
 
 const DownloadFileSchema = Schema.Struct({
   path: Schema.String,

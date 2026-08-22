@@ -17,12 +17,16 @@
 // the session grows, and a cursor handed out for an earlier page stays valid.
 //
 
-import { appendFileSync, createReadStream, mkdirSync, statSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import {
+  canResumeFrom,
   evictIfCrowded,
+  readRolloutHead,
+  type ResumePoint,
   rolloutCache,
   rolloutCacheFilePath,
+  scanRolloutFrom,
   statRollout,
 } from "./rollout-cache";
 
@@ -48,62 +52,38 @@ function lineIsInert(line: string): boolean {
   }
 }
 
-type SidecarState = {
+type SidecarState = ResumePoint & {
   /** Source size when the sidecar was last extended. */
   sourceSize: number;
   sourceMtimeMs: number;
-  /** Offset in the SOURCE just past the last complete line copied. */
-  scannedBytes: number;
-  /** Opening bytes of the source, to notice a rewrite rather than an append. */
-  head: string;
 };
 
 const state = rolloutCache<SidecarState>("transcript-state");
 
-const HEAD_FINGERPRINT_BYTES = 512;
-
-async function readHead(filepath: string): Promise<string> {
-  const chunks: Buffer[] = [];
-  const stream = createReadStream(filepath, { start: 0, end: HEAD_FINGERPRINT_BYTES - 1 });
-  for await (const chunk of stream) chunks.push(chunk as Buffer);
-  return Buffer.concat(chunks).toString("utf-8");
-}
-
 /**
- * Copy every complete non-inert line from `start` onward onto the sidecar.
- * Returns the source offset just past the last complete line consumed — a
- * partial trailing line is left for the next call, exactly as the usage scan
- * does, because a rollout is appended to while it is being read.
+ * Copy every complete non-inert line from `start` onward onto the sidecar, and
+ * return the source offset just past the last one consumed.
  */
 async function appendFrom(source: string, sidecar: string, start: number): Promise<number> {
-  let consumedBytes = start;
-  let pending = "";
-  let batch: string[] = [];
-
-  const flush = () => {
+  const flush = (batch: string[]) => {
     if (batch.length === 0) return;
     appendFileSync(sidecar, `${batch.join("\n")}\n`, "utf-8");
-    batch = [];
+    batch.length = 0;
   };
 
-  const stream = createReadStream(source, { start, encoding: "utf-8" });
-  for await (const chunk of stream) {
-    pending += chunk as string;
-    let lineStart = 0;
-    let newline = pending.indexOf("\n", lineStart);
-    while (newline !== -1) {
-      const line = pending.slice(lineStart, newline);
-      consumedBytes += Buffer.byteLength(line, "utf-8") + 1;
-      if (line && !lineIsInert(line)) batch.push(line);
-      lineStart = newline + 1;
-      newline = pending.indexOf("\n", lineStart);
-    }
-    pending = pending.slice(lineStart);
-    // Bounded so a multi-GB rollout never buffers its whole transcript.
-    if (batch.length >= 2048) flush();
-  }
-  flush();
-  return consumedBytes;
+  const { value: tail, scannedBytes } = await scanRolloutFrom<string[]>(
+    source,
+    start,
+    [],
+    (batch, line) => {
+      if (!lineIsInert(line)) batch.push(line);
+      // Bounded so a multi-GB rollout never buffers its whole transcript.
+      if (batch.length >= 2048) flush(batch);
+      return batch;
+    },
+  );
+  flush(tail);
+  return scannedBytes;
 }
 
 export type TranscriptSource = { filepath: string; size: number };
@@ -126,7 +106,7 @@ export async function transcriptSource(filepath: string): Promise<TranscriptSour
 
   try {
     const sidecar = rolloutCacheFilePath(SIDECAR_KIND, filepath, ".jsonl");
-    const head = await readHead(filepath);
+    const head = await readRolloutHead(filepath);
     const previous = state.readStale(filepath);
 
     const sidecarSize = (() => {
@@ -137,14 +117,8 @@ export async function transcriptSource(filepath: string): Promise<TranscriptSour
       }
     })();
 
-    // Extend only when this is the same file, grown, and the sidecar we built
-    // for it is still there. Anything else means starting over.
-    const resumable =
-      previous !== undefined &&
-      previous.head === head &&
-      stat.size >= previous.scannedBytes &&
-      previous.scannedBytes > 0 &&
-      sidecarSize >= 0;
+    // Extend only when the sidecar we built for this file is still there.
+    const resumable = canResumeFrom(previous, head, stat.size) && sidecarSize >= 0;
 
     if (resumable && previous.sourceSize === stat.size && previous.sourceMtimeMs === stat.mtimeMs) {
       return { filepath: sidecar, size: sidecarSize };

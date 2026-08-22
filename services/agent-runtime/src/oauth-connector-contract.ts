@@ -17,7 +17,7 @@ import { Schema } from "effect";
 export const OAUTH_CONNECTOR_PROVIDER_IDS = ["github"] as const;
 export type OAuthConnectorProviderId = (typeof OAUTH_CONNECTOR_PROVIDER_IDS)[number];
 
-export type OAuthConnectorFlowKind = "oauth-device" | "oauth-pkce";
+export type OAuthConnectorFlowKind = "oauth-device";
 
 export type OAuthConnectorAuthDefinition = {
   kind: OAuthConnectorFlowKind;
@@ -30,9 +30,7 @@ export type OAuthConnectorAuthDefinition = {
   clientId?: string;
   /** Env var that overrides the stored client id, for packaged deployments. */
   clientIdEnv: string;
-  /** Authorization endpoint — PKCE flows only. */
-  authorizeUrl?: string;
-  /** Device-code endpoint — device flows only. */
+  /** Device-code endpoint. */
   deviceUrl?: string;
   tokenUrl: string;
   scopes: readonly string[];
@@ -109,18 +107,12 @@ const PendingDeviceSchema = Schema.Struct({
   expiresAt: Schema.Number,
 });
 
-export const OAuthAuthorizeResponseSchema = Schema.Union([
-  Schema.Struct({
-    flow: Schema.Literal("device"),
-    userCode: Schema.String,
-    verificationUri: Schema.String,
-    expiresAt: Schema.Number,
-  }),
-  Schema.Struct({
-    flow: Schema.Literal("pkce"),
-    authorizeUrl: Schema.String,
-  }),
-]);
+export const OAuthAuthorizeResponseSchema = Schema.Struct({
+  flow: Schema.Literal("device"),
+  userCode: Schema.String,
+  verificationUri: Schema.String,
+  expiresAt: Schema.Number,
+});
 
 export const OAuthStatusResponseSchema = Schema.Struct({
   connectorId: Schema.String,

@@ -19,12 +19,8 @@
 // scope caching would pin the first session's answers onto every later one.
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { frontendBase, withTimeout, type ToolResult } from "./bridge.ts";
 import { Type, type Static, type TSchema } from "./schema.ts";
-
-type ToolResult = {
-  content: Array<{ type: "text"; text: string }>;
-  details: Record<string, unknown>;
-};
 
 type CuaEnv = {
   frontendBase: string;
@@ -35,24 +31,9 @@ type CuaEnv = {
 function readEnv(): CuaEnv {
   const timeout = Number(process.env.LOCAL_STUDIO_BROWSER_TOOL_TIMEOUT_MS);
   return {
-    frontendBase: process.env.LOCAL_STUDIO_FRONTEND_BASE ?? "http://127.0.0.1:3000",
+    frontendBase: frontendBase(),
     browserSessionId: process.env.LOCAL_STUDIO_BROWSER_SESSION_ID ?? "",
     timeoutMs: Number.isFinite(timeout) && timeout > 0 ? Math.trunc(timeout) : 60_000,
-  };
-}
-
-function withTimeout(signal: AbortSignal | undefined, timeoutMs: number) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  const abort = () => controller.abort();
-  signal?.addEventListener("abort", abort, { once: true });
-  if (signal?.aborted) controller.abort();
-  return {
-    signal: controller.signal,
-    done: () => {
-      clearTimeout(timer);
-      signal?.removeEventListener("abort", abort);
-    },
   };
 }
 

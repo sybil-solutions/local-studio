@@ -1,28 +1,25 @@
 import { app } from "electron";
 import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { fork, type ChildProcess } from "node:child_process";
+import type { ChildProcess } from "node:child_process";
 import { DESKTOP_CONFIG, resolveStandaloneBaseDir, resolveStaticAssetsSource } from "../configs";
 import type { DesktopServerRuntime } from "../types";
 import { log } from "../helpers/logger";
 import { registerOAuthVault } from "./oauth-vault";
 import { resolveStablePort } from "../helpers/ports";
-import { resolveAugmentedPath } from "../helpers/resolve-path";
+import {
+  delay,
+  forkChild,
+  isProcessAlive,
+  isSupervised,
+  stopChild,
+  waitUntilReady,
+} from "./child-supervisor";
 import {
   startOrReuseAgentRuntime,
   stopAgentRuntime,
   type AgentRuntimeHandle,
 } from "./agent-runtime-server";
-
-// The most recently forked embedded server. A single process-exit hook kills
-// whichever child is current — registering a fresh once("exit") per (re)start
-// leaked listeners on every frontend restart.
-let currentEmbeddedServer: ChildProcess | null = null;
-process.once("exit", () => {
-  if (currentEmbeddedServer && !currentEmbeddedServer.killed) {
-    currentEmbeddedServer.kill("SIGTERM");
-  }
-});
 
 interface ServerHandle {
   agentRuntimeExitListener?: () => void;
@@ -89,21 +86,6 @@ function writeEmbeddedServerPid(pid: number | undefined): void {
   }
 }
 
-function isProcessAlive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => {
-    setTimeout(resolve, ms);
-  });
-}
-
 async function killStaleEmbeddedServer(): Promise<void> {
   const pidFile = embeddedServerPidPath();
   if (!existsSync(pidFile)) return;
@@ -145,19 +127,13 @@ function copyDirectory(source: string, target: string): void {
   cpSync(source, target, { recursive: true, force: true });
 }
 
-async function waitForServer(url: string, timeoutMs: number): Promise<void> {
-  const startedAt = Date.now();
-  while (Date.now() - startedAt < timeoutMs) {
-    try {
-      const response = await fetch(url, { redirect: "manual" });
-      if (response.ok || response.status === 307 || response.status === 308) {
-        return;
-      }
-    } catch {}
-    await delay(300);
+async function isFrontendServing(url: string): Promise<boolean> {
+  try {
+    const response = await fetch(url, { redirect: "manual" });
+    return response.ok || response.status === 307 || response.status === 308;
+  } catch {
+    return false;
   }
-
-  throw new Error(`Timed out waiting for embedded frontend server: ${url}`);
 }
 
 export async function startFrontendServer(
@@ -208,22 +184,17 @@ export async function startFrontendServer(
 
   log.info(`Starting embedded frontend server from ${serverScript} on ${url}`);
 
-  const child = fork(serverScript, {
+  const child = forkChild({
+    label: "frontend",
+    entry: serverScript,
     cwd: serverRoot,
-    stdio: "pipe",
     // Electron's bundled Node/undici races IPv4/IPv6 with a 250ms per-attempt
     // connect timeout. On hosts with broken IPv6 (or slow Cloudflare-fronted
     // backends that need ~1s to connect), every outbound fetch from the embedded
     // server aborts with ETIMEDOUT, surfacing as 500/502 from the proxy. Give the
     // family-autoselection enough time to fall back to a working address.
     execArgv: ["--network-family-autoselection-attempt-timeout=2000"],
-    // Keep the embedded Next server attached to Electron. A detached child can
-    // survive a main-process exit with closed stdio pipes and spin while the
-    // desktop app itself is gone.
-    detached: false,
     env: {
-      ...process.env,
-      PATH: resolveAugmentedPath(),
       NODE_ENV: "production",
       PORT: String(port),
       HOSTNAME: "127.0.0.1",
@@ -240,14 +211,6 @@ export async function startFrontendServer(
 
   registerOAuthVault(child, DESKTOP_CONFIG.userDataDir);
 
-  child.stdout?.on("data", (chunk: Buffer | string) => {
-    log.info(`frontend: ${String(chunk).trim()}`);
-  });
-
-  child.stderr?.on("data", (chunk: Buffer | string) => {
-    log.warn(`frontend: ${String(chunk).trim()}`);
-  });
-
   writeEmbeddedServerPid(child.pid);
 
   child.once("exit", (code, signal) => {
@@ -263,14 +226,18 @@ export async function startFrontendServer(
   });
 
   const agentRuntimeExitListener = () => {
-    if (currentEmbeddedServer === child && !child.killed) child.kill("SIGTERM");
+    if (isSupervised(child) && !child.killed) child.kill("SIGTERM");
   };
   agentRuntime.process?.once("exit", agentRuntimeExitListener);
 
-  currentEmbeddedServer = child;
-
   try {
-    await waitForServer(url, DESKTOP_CONFIG.startupTimeoutMs);
+    await waitUntilReady({
+      child,
+      isReady: () => isFrontendServing(url),
+      timeoutMs: DESKTOP_CONFIG.startupTimeoutMs,
+      intervalMs: 300,
+      label: `embedded frontend server: ${url}`,
+    });
   } catch (error) {
     await stopFrontendServer(
       {
@@ -306,29 +273,12 @@ export async function stopFrontendServer(
   }
   if (handle.process) {
     const child = handle.process;
-    const pid = child.pid;
     try {
       if (readFileSync(embeddedServerPidPath(), "utf8") === String(child.pid ?? "")) {
         rmSync(embeddedServerPidPath(), { force: true });
       }
     } catch {}
-    child.kill("SIGTERM");
-
-    await new Promise<void>((resolve) => {
-      const timer = setTimeout(() => {
-        if (pid && isProcessAlive(pid)) {
-          try {
-            process.kill(pid, "SIGKILL");
-          } catch {}
-        }
-        resolve();
-      }, 5_000);
-
-      child.once("exit", () => {
-        clearTimeout(timer);
-        resolve();
-      });
-    });
+    await stopChild(child);
   }
   if (options.stopAgentRuntime !== false) await stopAgentRuntime(handle.agentRuntime);
 }

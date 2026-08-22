@@ -1,7 +1,5 @@
 import { Hono } from "hono";
-import { swaggerUI } from "@hono/swagger-ui";
 import { cors } from "hono/cors";
-import { openAPIRouteHandler } from "hono-openapi";
 import { Effect } from "effect";
 import type { AppContext } from "../app-context";
 import type { ControllerRuntime } from "../core/effect-runtime";
@@ -29,6 +27,23 @@ type ControllerApplication = ReturnType<typeof registerComputeRoutes> &
   ReturnType<typeof registerModelsRoutes> &
   ReturnType<typeof registerStudioRoutes> &
   ReturnType<typeof registerAllProxyRoutes>;
+
+const HTTP_METHODS = new Set(["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"]);
+
+/** Flattens Hono's route table into the method/path list the API reference panel renders. */
+const listOperations = (app: ControllerRouteApp) => {
+  const seen = new Set<string>();
+  return app.routes.flatMap((route) => {
+    if (!HTTP_METHODS.has(route.method) || route.path === "/*" || route.path === "/api/spec") {
+      return [];
+    }
+    const path = route.path.replaceAll(/:(\w+)/g, "{$1}");
+    const summary = `${route.method} ${path}`;
+    if (seen.has(summary)) return [];
+    seen.add(summary);
+    return [{ method: route.method, path, summary }];
+  });
+};
 
 export const createApp = (
   context: AppContext,
@@ -81,27 +96,14 @@ export const createApp = (
 
   const documentedRoutes = mergeRoutes(
     routes,
-    app.get(
-      "/api/spec",
-      openAPIRouteHandler(routes as ControllerRouteApp, {
-        includeEmptyPaths: true,
-        exclude: ["/*", "/api/spec", "/api/docs"],
-        documentation: {
-          info: {
-            title: "Local Studio API",
-            version: "2.0.0",
-            description: "Model lifecycle management for local and remote inference runtimes",
-          },
-          servers: [
-            {
-              url: `http://localhost:${context.config.port}`,
-              description: "Local Studio controller",
-            },
-          ],
-        },
+    app.get("/api/spec", (ctx) =>
+      ctx.json({
+        title: "Local Studio API",
+        version: "2.0.0",
+        description: "Model lifecycle management for local and remote inference runtimes",
+        operations: listOperations(routes as ControllerRouteApp),
       }),
     ),
-    app.get("/api/docs", swaggerUI({ url: "/api/spec" })),
   );
 
   documentedRoutes.notFound((ctx) => ctx.json({ detail: "Not Found" }, { status: 404 }));

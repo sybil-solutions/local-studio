@@ -42,6 +42,7 @@ import {
 } from "@/features/agent/terminal-owners";
 import { ComputerTabPanel, type SideChatTabsUpdater } from "@/features/agent/ui/computer-tab-panel";
 import { PersistentTerminals } from "@/features/agent/ui/persistent-terminals";
+import { webPtyBridge } from "@/features/agent/ui/web-pty-bridge";
 import type { WorkspaceHandles } from "@/features/agent/ui/use-workspace";
 
 type AgentBrowserPanelHandles = Pick<
@@ -80,23 +81,14 @@ function createSideChatSession(
   };
 }
 
-function terminalBridge() {
-  return (
-    window as unknown as {
-      localStudioDesktop?: { terminal?: { closeOwner?: (ownerKey: string) => Promise<void> } };
-    }
-  ).localStudioDesktop?.terminal;
-}
-
 function closePersistedTerminalOwners(owners: readonly TerminalOwner[]) {
   const closedOwners = removePersistentTerminalOwners(owners.map((owner) => owner.mountKey));
-  const bridge = terminalBridge();
-  for (const owner of closedOwners) void bridge?.closeOwner?.(owner.mountKey);
+  for (const owner of closedOwners) void webPtyBridge.closeOwner(owner.mountKey);
 }
 
 function closePersistedTerminalOwner(ownerKey: string) {
   const owner = removePersistentTerminalOwner(ownerKey);
-  if (owner) void terminalBridge()?.closeOwner?.(owner.mountKey);
+  if (owner) void webPtyBridge.closeOwner(owner.mountKey);
 }
 
 function acceptedBrowserUrl(url: string): string | null {

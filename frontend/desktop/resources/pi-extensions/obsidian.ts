@@ -27,24 +27,18 @@
 // against the vault root and re-checked after symlinks, so no argument can
 // reach a file outside the vault.
 //
-// Vault discovery is Obsidian's own obsidian.json. The runtime resolves it and
-// injects the result, so this extension and the gate that decided to load it
-// agree; the config read below is the fallback for a bare pi with no runtime
-// around it. Both run at REGISTRATION, not import: pi caches the module per
-// project directory and registers it per session, and a vault list pinned at
-// import would survive the user switching vaults.
+// Vault discovery is the runtime's job: it reads Obsidian's own obsidian.json
+// and injects the result as LOCAL_STUDIO_OBSIDIAN_VAULTS, so this extension and
+// the gate that decided to load it always agree on the same list. The env var
+// is read at REGISTRATION, not import: pi caches the module per project
+// directory and registers it per session, and a vault list pinned at import
+// would survive the user switching vaults.
 
-import { readFileSync } from "node:fs";
 import { appendFile, mkdir, readFile, readdir, realpath, stat, writeFile } from "node:fs/promises";
-import { homedir } from "node:os";
 import path from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { ToolResult } from "./bridge.ts";
 import { Type, type Static, type TSchema } from "./schema.ts";
-
-type ToolResult = {
-  content: Array<{ type: "text"; text: string }>;
-  details: Record<string, unknown>;
-};
 
 type Vault = {
   path: string;
@@ -66,64 +60,19 @@ const EXCERPT_RADIUS = 70;
 
 // ─── vault discovery ──────────────────────────────────────────────────────
 
-function configPath(): string | null {
-  const override = process.env.LOCAL_STUDIO_OBSIDIAN_CONFIG?.trim();
-  if (override) return override;
-  const home = homedir();
-  if (process.platform === "darwin") {
-    return path.join(home, "Library", "Application Support", "obsidian", "obsidian.json");
-  }
-  if (process.platform === "win32") {
-    const appData = process.env.APPDATA || path.join(home, "AppData", "Roaming");
-    return path.join(appData, "obsidian", "obsidian.json");
-  }
-  const configHome = process.env.XDG_CONFIG_HOME || path.join(home, ".config");
-  return path.join(configHome, "obsidian", "obsidian.json");
-}
-
-/** Parse obsidian.json ourselves — the fallback when no runtime injected a list. */
-function vaultsFromConfig(): Vault[] {
-  const file = configPath();
-  if (!file) return [];
+function readVaults(): Vault[] {
+  const injected = process.env.LOCAL_STUDIO_OBSIDIAN_VAULTS?.trim();
+  if (!injected) return [];
   try {
-    const parsed = JSON.parse(readFileSync(file, "utf8")) as { vaults?: Record<string, unknown> };
-    return Object.values(parsed.vaults ?? {})
-      .map((entry) => entry as { path?: unknown; ts?: unknown; open?: unknown })
-      .flatMap((entry): Vault[] => {
-        if (typeof entry.path !== "string" || !entry.path.trim()) return [];
-        const ts = typeof entry.ts === "number" && Number.isFinite(entry.ts) ? entry.ts : null;
-        return [
-          {
-            path: entry.path,
-            name: path.basename(entry.path),
-            open: entry.open === true,
-            lastOpened: ts === null ? null : new Date(ts).toISOString(),
-          },
-        ];
-      });
+    const parsed = JSON.parse(injected) as Vault[];
+    return Array.isArray(parsed) ? parsed : [];
   } catch {
-    // Missing file, or Obsidian mid-write. Either way: no vaults, not an error.
     return [];
   }
 }
 
-function readVaults(): Vault[] {
-  const injected = process.env.LOCAL_STUDIO_OBSIDIAN_VAULTS?.trim();
-  if (injected) {
-    try {
-      const parsed = JSON.parse(injected) as Vault[];
-      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-    } catch {
-      // Fall through to reading the config ourselves.
-    }
-  }
-  return vaultsFromConfig().sort((a, b) => {
-    if (a.open !== b.open) return a.open ? -1 : 1;
-    return (b.lastOpened ?? "").localeCompare(a.lastOpened ?? "");
-  });
-}
-
-const NO_VAULT = `No Obsidian vault found on this machine. Obsidian records its vaults in ${configPath() ?? "its config directory"}, and that file is missing, unreadable, or lists no folder that still exists. Obsidian is probably not installed, or has never opened a vault. Say that plainly — do not guess at a notes folder and do not create one.`;
+const NO_VAULT =
+  "No Obsidian vault found on this machine. Obsidian is probably not installed, or has never opened a vault. Say that plainly — do not guess at a notes folder and do not create one.";
 
 /** A refusal is an answer, not a failure: a message the model can act on. */
 class Refusal extends Error {}
@@ -526,7 +475,7 @@ const TOOLS = [
           };
         }),
       );
-      return { vaults: listed, config: configPath() };
+      return { vaults: listed };
     },
   }),
   define({
@@ -858,8 +807,8 @@ const TOOLS = [
 export default async function registerObsidianExtension(pi: ExtensionAPI) {
   // Resolved once per session. The runtime already refuses to load this
   // extension on a machine with no vault, so an empty list here means the
-  // config went away mid-session — every tool then answers with NO_VAULT, which
-  // is a clear report rather than an ENOENT the model has to interpret.
+  // injected vault list is missing — every tool then answers with NO_VAULT,
+  // which is a clear report rather than an ENOENT the model has to interpret.
   const vaults = readVaults();
 
   for (const tool of TOOLS) {

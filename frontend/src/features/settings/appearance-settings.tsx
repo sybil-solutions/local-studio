@@ -102,6 +102,47 @@ function readVar(name: string, fallback: number): number {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+type SliderRowProps = {
+  label: string;
+  description?: string;
+  value: number;
+  min: number;
+  max: number;
+  step?: number;
+  format: (value: number) => string;
+  width: string;
+  onChange: (value: number) => void;
+};
+
+function SliderRow({
+  label,
+  description,
+  value,
+  min,
+  max,
+  step,
+  format,
+  width,
+  onChange,
+}: SliderRowProps) {
+  return (
+    <SettingsRow
+      label={label}
+      description={description}
+      control={
+        <div className="flex w-full items-center gap-3">
+          <Slider value={value} min={min} max={max} step={step} onChange={onChange} aria-label={label} />
+          <span
+            className={`${width} shrink-0 text-right font-mono text-[length:var(--fs-md)] tabular-nums text-(--ui-muted)`}
+          >
+            {format(value)}
+          </span>
+        </div>
+      }
+    />
+  );
+}
+
 function ThemeSwatches({ theme }: { theme: ThemeMeta }) {
   return (
     <div className="flex items-center gap-0.5">
@@ -257,6 +298,27 @@ export function AppearanceSettings() {
   ];
 
   const advancedTokens: Array<keyof ThemeTokens> = ["dim", "border", "hl1", "hl2", "hl3", "err"];
+
+  const sliderRows: Record<"typography" | "sizing" | "chat", SliderRowProps[]> = {
+    typography: [
+      // prettier-ignore
+      { label: "UI font size", description: "Base size for the Local Studio UI", value: uiFontSize, min: 12, max: 20, format: (v) => `${v}px`, width: "w-9", onChange: handleFontSizeChange },
+    ],
+    sizing: [
+      // prettier-ignore
+      { label: "UI scale", description: "Scales every text size at once", value: uiScale, min: 0.8, max: 1.3, step: 0.05, format: (v) => `${Math.round(v * 100)}%`, width: "w-10", onChange: setScale },
+      // prettier-ignore
+      { label: "Corner radius", description: "Roundness of cards, buttons, inputs", value: radiusBase, min: 0, max: 16, step: 1, format: (v) => `${v}px`, width: "w-10", onChange: setRadius },
+    ],
+    chat: [
+      // prettier-ignore
+      { label: "Chat text size", description: "Message and composer text", value: chatFontSize, min: 13, max: 18, step: 1, format: (v) => `${v}px`, width: "w-9", onChange: setChatFont },
+      // prettier-ignore
+      { label: "Chat line height", value: chatLineHeight, min: 1.3, max: 1.8, step: 0.05, format: (v) => v.toFixed(2), width: "w-10", onChange: setChatLeading },
+      // prettier-ignore
+      { label: "Chat column width", description: "Maximum width of the thread and composer", value: chatWidth, min: 40, max: 64, step: 1, format: (v) => `${v}rem`, width: "w-12", onChange: setChatColumn },
+    ],
+  };
 
   const themeLibrary = (
     <SettingsGroup
@@ -447,130 +509,27 @@ export function AppearanceSettings() {
             </div>
           }
         />
-        <SettingsRow
-          label="UI font size"
-          description="Base size for the Local Studio UI"
-          control={
-            <div className="flex w-full items-center gap-3">
-              <Slider
-                value={uiFontSize}
-                min={12}
-                max={20}
-                onChange={handleFontSizeChange}
-                aria-label="UI font size"
-              />
-              <span className="w-9 shrink-0 text-right font-mono text-[length:var(--fs-md)] tabular-nums text-(--ui-muted)">
-                {uiFontSize}px
-              </span>
-            </div>
-          }
-        />
+        {sliderRows.typography.map((row) => (
+          <SliderRow key={row.label} {...row} />
+        ))}
       </SettingsGroup>
 
       <SettingsGroup
         title="Sizing & shape"
         description="Scale the interface and adjust its corner treatment."
       >
-        <SettingsRow
-          label="UI scale"
-          description="Scales every text size at once"
-          control={
-            <div className="flex w-full items-center gap-3">
-              <Slider
-                value={uiScale}
-                min={0.8}
-                max={1.3}
-                step={0.05}
-                onChange={setScale}
-                aria-label="UI scale"
-              />
-              <span className="w-10 shrink-0 text-right font-mono text-[length:var(--fs-md)] tabular-nums text-(--ui-muted)">
-                {Math.round(uiScale * 100)}%
-              </span>
-            </div>
-          }
-        />
-        <SettingsRow
-          label="Corner radius"
-          description="Roundness of cards, buttons, inputs"
-          control={
-            <div className="flex w-full items-center gap-3">
-              <Slider
-                value={radiusBase}
-                min={0}
-                max={16}
-                step={1}
-                onChange={setRadius}
-                aria-label="Corner radius"
-              />
-              <span className="w-10 shrink-0 text-right font-mono text-[length:var(--fs-md)] tabular-nums text-(--ui-muted)">
-                {radiusBase}px
-              </span>
-            </div>
-          }
-        />
+        {sliderRows.sizing.map((row) => (
+          <SliderRow key={row.label} {...row} />
+        ))}
       </SettingsGroup>
 
       <SettingsGroup
         title="Chat & composer"
         description="Tune the conversation surface independently of the UI chrome."
       >
-        <SettingsRow
-          label="Chat text size"
-          description="Message and composer text"
-          control={
-            <div className="flex w-full items-center gap-3">
-              <Slider
-                value={chatFontSize}
-                min={13}
-                max={18}
-                step={1}
-                onChange={setChatFont}
-                aria-label="Chat text size"
-              />
-              <span className="w-9 shrink-0 text-right font-mono text-[length:var(--fs-md)] tabular-nums text-(--ui-muted)">
-                {chatFontSize}px
-              </span>
-            </div>
-          }
-        />
-        <SettingsRow
-          label="Chat line height"
-          control={
-            <div className="flex w-full items-center gap-3">
-              <Slider
-                value={chatLineHeight}
-                min={1.3}
-                max={1.8}
-                step={0.05}
-                onChange={setChatLeading}
-                aria-label="Chat line height"
-              />
-              <span className="w-10 shrink-0 text-right font-mono text-[length:var(--fs-md)] tabular-nums text-(--ui-muted)">
-                {chatLineHeight.toFixed(2)}
-              </span>
-            </div>
-          }
-        />
-        <SettingsRow
-          label="Chat column width"
-          description="Maximum width of the thread and composer"
-          control={
-            <div className="flex w-full items-center gap-3">
-              <Slider
-                value={chatWidth}
-                min={40}
-                max={64}
-                step={1}
-                onChange={setChatColumn}
-                aria-label="Chat column width"
-              />
-              <span className="w-12 shrink-0 text-right font-mono text-[length:var(--fs-md)] tabular-nums text-(--ui-muted)">
-                {chatWidth}rem
-              </span>
-            </div>
-          }
-        />
+        {sliderRows.chat.map((row) => (
+          <SliderRow key={row.label} {...row} />
+        ))}
         <SettingsRow
           label="Bubble tone"
           description="Surface color of your messages"

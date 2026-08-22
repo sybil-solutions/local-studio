@@ -1,6 +1,6 @@
 "use client";
 
-import { memo, useCallback, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { AssistantBlock, ChatMessage } from "@/features/agent/messages";
 import { SessionPaneBlockRouter } from "@/features/agent/ui/timeline/session-pane-block-router";
 import { ChevronDownIcon } from "@/ui/icons";
@@ -18,7 +18,6 @@ type TimelineProps = {
   running: boolean;
   cwd: string | null;
   onForkSession?: () => void;
-  emptyPrompt?: boolean;
   stickToBottom?: boolean;
   onStickToBottomChange?: (value: boolean) => void;
   viewKey: string | null;
@@ -28,44 +27,11 @@ type TimelineProps = {
   onLoadEarlier?: () => Promise<void> | void;
 };
 
-const MemoMessage = memo(
-  function MemoMessage({
-    message,
-    live,
-    running,
-    cwd,
-    onForkSession,
-  }: {
-    message: ChatMessage;
-    live: boolean;
-    running: boolean;
-    cwd: string | null;
-    onForkSession?: () => void;
-  }) {
-    return (
-      <MessageView
-        message={message}
-        live={live}
-        running={running}
-        cwd={cwd}
-        onForkSession={onForkSession}
-      />
-    );
-  },
-  (prev, next) =>
-    prev.message === next.message &&
-    prev.live === next.live &&
-    prev.running === next.running &&
-    prev.cwd === next.cwd &&
-    prev.onForkSession === next.onForkSession,
-);
-
 export function Timeline({
   messages,
   running,
   cwd,
   onForkSession,
-  emptyPrompt = false,
   stickToBottom = true,
   onStickToBottomChange,
   viewKey,
@@ -91,21 +57,6 @@ export function Timeline({
     viewAlias,
   });
 
-  if (emptyPrompt) {
-    return (
-      <div className="flex min-h-0 flex-1 overflow-y-auto bg-(--agent-bg) px-6 pb-10 pt-2">
-        <div className="agent-thread-shell mx-auto flex flex-1">
-          <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center">
-            <p className="max-w-[24ch] text-[clamp(1.45rem,2.6vw,2.1rem)] font-semibold leading-[1.22] tracking-[-0.02em] text-(--fg)/90">
-              A dream is something you build for yourself.
-            </p>
-            <p className="text-[length:var(--fs-xl)] text-(--dim)">Just talk to it.</p>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="agent-timeline-frame relative flex min-h-0 min-w-0 flex-1">
       <PromptMarkers scroller={scroller} messages={visibleMessages} />
@@ -129,7 +80,7 @@ export function Timeline({
                   data-timeline-message-id={message.id}
                   className={`${isGrouped ? "pt-2" : "pt-4 sm:pt-6"} ${isLast ? "pb-4" : ""}`}
                 >
-                  <MemoMessage
+                  <SessionPaneBlockRouter
                     message={message}
                     live={isLast && running}
                     running={running}
@@ -599,28 +550,4 @@ function useTimelineScrollEffects({
       scroller.scrollTop = scroller.scrollHeight;
     }
   }, [stickToBottom, scroller]);
-}
-
-function MessageView({
-  message,
-  live = false,
-  running = false,
-  cwd = null,
-  onForkSession,
-}: {
-  message: ChatMessage;
-  live?: boolean;
-  running?: boolean;
-  cwd?: string | null;
-  onForkSession?: () => void;
-}) {
-  return (
-    <SessionPaneBlockRouter
-      message={message}
-      live={live}
-      running={running}
-      cwd={cwd}
-      onForkSession={onForkSession}
-    />
-  );
 }

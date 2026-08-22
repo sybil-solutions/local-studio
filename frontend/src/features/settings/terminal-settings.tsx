@@ -21,7 +21,6 @@ import {
   type TerminalAction,
   type TerminalKeybinds,
 } from "@/lib/terminal-keybinds";
-import { QuickPanelSettings } from "./quick-panel-settings";
 import { SettingsButton, SettingsGroup, SettingsNotice, SettingsRow } from "./settings-ui";
 
 function Keycaps({ binding }: { binding: string }) {
@@ -47,15 +46,6 @@ function conflictCounts(keybinds: TerminalKeybinds): Record<string, number> {
 }
 
 export function ShortcutsSettings() {
-  return (
-    <div>
-      <QuickPanelSettings />
-      <TerminalSettings />
-    </div>
-  );
-}
-
-function TerminalSettings() {
   const keybinds = useTerminalKeybinds();
   const fontSize = useTerminalFontSize();
   const [capturing, setCapturing] = useState<TerminalAction | null>(null);

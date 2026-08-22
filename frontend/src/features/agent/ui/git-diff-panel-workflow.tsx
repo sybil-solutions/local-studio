@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { GitBranchIcon, ReloadIcon } from "@/ui/icons";
 import { Input, Button } from "@/ui";
-import type { GitAction, GitRef, GitState } from "@/features/agent/contracts";
+import type { GitAction, GitState } from "@/features/agent/contracts";
 import { safeJson } from "@/features/agent/safe-json";
 import { gitDiffHeaderTitle } from "@/features/agent/ui/git-diff-panel-model";
 
@@ -55,12 +55,11 @@ export function GitWorkflowBar({
   return (
     <div className="grid gap-2 border-b border-(--border)/80 bg-(--color-panel) p-2 text-[length:var(--fs-sm)] text-(--dim)">
       <div className="flex items-center gap-2">
-        <RefSelect
-          refs={payload.refs ?? []}
-          branch={payload.branch}
-          loading={loading}
-          onRun={onRun}
-        />
+        {/* Read-only on purpose: the composer drawer's git section is the
+            single switch/create surface. */}
+        <span className="shrink-0 font-mono text-(--fg)" title="Current branch">
+          {payload.branch ?? "detached"}
+        </span>
         <span className="min-w-0 flex-1 truncate font-mono">
           <span className="text-(--color-diff-added)">+{payload.additions ?? 0}</span>{" "}
           <span className="text-(--color-diff-removed)">-{payload.deletions ?? 0}</span>{" "}
@@ -97,39 +96,6 @@ export function GitWorkflowBar({
         </div>
       ) : null}
     </div>
-  );
-}
-
-function RefSelect({
-  refs,
-  branch,
-  loading,
-  onRun,
-}: {
-  refs: GitRef[];
-  branch?: string | null;
-  loading: boolean;
-  onRun: (action: GitAction) => Promise<void>;
-}) {
-  return (
-    <select
-      value={branch ?? ""}
-      disabled={loading || refs.length === 0}
-      onChange={(event) =>
-        event.currentTarget.value &&
-        void onRun({ action: "checkout", ref: event.currentTarget.value })
-      }
-      className="h-7 min-w-[9rem] rounded-md border border-(--border)/80 bg-(--color-input) px-2 text-(--fg)"
-      title="Switch branch"
-    >
-      <option value="">{branch ?? "detached"}</option>
-      {refs.map((ref) => (
-        <option key={ref.name} value={ref.name}>
-          {ref.remote ? "remote/" : ""}
-          {ref.name}
-        </option>
-      ))}
-    </select>
   );
 }
 

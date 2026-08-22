@@ -44,7 +44,6 @@ const getConfigHelp = (_config: Config): Effect.Effect<ConfigHelpResult> => getV
 
 export const vllmSpec: EngineSpec = {
   id: "vllm",
-  healthPath: "/health",
   cliBinary: "vllm",
   managedPackageSpec,
   install: installVllmRuntime,

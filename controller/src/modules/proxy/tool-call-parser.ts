@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { parseJsonWithRepair } from "@earendil-works/pi-ai";
+import { parseJsonWithRepair } from "./json-repair";
 
 export interface ToolCall {
   index: number;

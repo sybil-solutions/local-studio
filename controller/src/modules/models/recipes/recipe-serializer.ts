@@ -80,6 +80,46 @@ const booleanSetting = (
 };
 
 /**
+ * Effect v4 schema for validated recipe input.
+ */
+export const recipeSchema = Schema.Struct({
+  // An empty id would create a ghost recipe that can't be fetched, updated,
+  // deleted, or launched (routes address recipes by /recipes/:recipeId).
+  id: Schema.String.check(Schema.isNonEmpty()),
+  name: Schema.String,
+  model_path: Schema.String,
+  vision: Schema.Union([Schema.Null, Schema.Boolean]),
+  backend: Schema.Literals(["vllm", "sglang", "llamacpp", "mlx"]),
+  runtime: serveRuntimeSchema,
+  env_vars: Schema.Union([Schema.Null, Schema.Record(Schema.String, Schema.String)]),
+  tensor_parallel_size: integerSchema,
+  pipeline_parallel_size: integerSchema,
+  max_model_len: integerSchema,
+  gpu_memory_utilization: Schema.Number,
+  kv_cache_dtype: Schema.String,
+  max_num_seqs: integerSchema,
+  // Defaults to true (unchanged from before) so launching models that need
+  // custom modeling code keeps working out of the box. Security-conscious
+  // operators can flip the default off with
+  // LOCAL_STUDIO_DEFAULT_TRUST_REMOTE_CODE=false.
+  trust_remote_code: Schema.Boolean,
+  tool_call_parser: nullableStringSchema,
+  reasoning_parser: nullableStringSchema,
+  enable_auto_tool_choice: Schema.Boolean,
+  quantization: nullableStringSchema,
+  dtype: nullableStringSchema,
+  host: Schema.String,
+  port: integerSchema,
+  served_model_name: nullableStringSchema,
+  python_path: nullableStringSchema,
+  extra_args: Schema.Record(Schema.String, Schema.Unknown),
+  max_thinking_tokens: Schema.Union([Schema.Null, integerSchema]),
+  thinking_mode: Schema.String,
+});
+
+const knownRecipeKeys = new Set([...Object.keys(recipeSchema.fields), "tp", "pp"]);
+
+/**
  * Normalize raw recipe input before validation.
  * @param raw - Unknown recipe payload.
  * @returns Normalized record.
@@ -142,39 +182,8 @@ export const normalizeRecipeInput = (raw: unknown): Record<string, unknown> => {
     delete data["envVars"];
   }
 
-  const knownKeys = new Set([
-    "id",
-    "name",
-    "model_path",
-    "vision",
-    "backend",
-    "runtime",
-    "env_vars",
-    "tensor_parallel_size",
-    "pipeline_parallel_size",
-    "max_model_len",
-    "gpu_memory_utilization",
-    "kv_cache_dtype",
-    "max_num_seqs",
-    "trust_remote_code",
-    "tool_call_parser",
-    "reasoning_parser",
-    "enable_auto_tool_choice",
-    "quantization",
-    "dtype",
-    "host",
-    "port",
-    "served_model_name",
-    "python_path",
-    "extra_args",
-    "max_thinking_tokens",
-    "thinking_mode",
-    "tp",
-    "pp",
-  ]);
-
   for (const key of Object.keys(data)) {
-    if (!knownKeys.has(key)) {
+    if (!knownRecipeKeys.has(key)) {
       extraArguments[key] = data[key];
       delete data[key];
     }
@@ -183,44 +192,6 @@ export const normalizeRecipeInput = (raw: unknown): Record<string, unknown> => {
   data["extra_args"] = extraArguments;
   return data;
 };
-
-/**
- * Effect v4 schema for validated recipe input.
- */
-export const recipeSchema = Schema.Struct({
-  // An empty id would create a ghost recipe that can't be fetched, updated,
-  // deleted, or launched (routes address recipes by /recipes/:recipeId).
-  id: Schema.String.check(Schema.isNonEmpty()),
-  name: Schema.String,
-  model_path: Schema.String,
-  vision: Schema.Union([Schema.Null, Schema.Boolean]),
-  backend: Schema.Literals(["vllm", "sglang", "llamacpp", "mlx"]),
-  runtime: serveRuntimeSchema,
-  env_vars: Schema.Union([Schema.Null, Schema.Record(Schema.String, Schema.String)]),
-  tensor_parallel_size: integerSchema,
-  pipeline_parallel_size: integerSchema,
-  max_model_len: integerSchema,
-  gpu_memory_utilization: Schema.Number,
-  kv_cache_dtype: Schema.String,
-  max_num_seqs: integerSchema,
-  // Defaults to true (unchanged from before) so launching models that need
-  // custom modeling code keeps working out of the box. Security-conscious
-  // operators can flip the default off with
-  // LOCAL_STUDIO_DEFAULT_TRUST_REMOTE_CODE=false.
-  trust_remote_code: Schema.Boolean,
-  tool_call_parser: nullableStringSchema,
-  reasoning_parser: nullableStringSchema,
-  enable_auto_tool_choice: Schema.Boolean,
-  quantization: nullableStringSchema,
-  dtype: nullableStringSchema,
-  host: Schema.String,
-  port: integerSchema,
-  served_model_name: nullableStringSchema,
-  python_path: nullableStringSchema,
-  extra_args: Schema.Record(Schema.String, Schema.Unknown),
-  max_thinking_tokens: Schema.Union([Schema.Null, integerSchema]),
-  thinking_mode: Schema.String,
-});
 
 /**
  * Parse and normalize a recipe payload.

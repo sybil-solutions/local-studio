@@ -80,7 +80,6 @@ const managedPackageSpec = (_version?: string | null): string => "llama.cpp";
 
 export const llamacppSpec: EngineSpec = {
   id: "llamacpp",
-  healthPath: "/health",
   cliBinary: "llama-server",
   managedPackageSpec,
   install: installLlamacpp,

@@ -112,19 +112,13 @@ const getConfigHelp = (config: Config): Effect.Effect<ConfigHelpResult> =>
     return { config: result.stdout || null, error: null };
   });
 
-export const getSglangRuntimePython = (
-  config: Config,
-  options: { pythonPath?: string | null } = {},
-): string => {
-  return options.pythonPath?.trim() || config.sglang_python || resolveVllmPythonPath() || "python3";
-};
-
 const installSglang = (options: InstallOptions): Effect.Effect<RuntimeUpgradeResult> => {
   const envCommand = getUpgradeCommandFromEnvironment(SGLANG_UPGRADE_ENV);
   if (envCommand) return runEnvironmentUpgradeCommand(envCommand, options.onSpawn);
 
   const packageSpec = managedPackageSpec(options.version);
-  const pythonPath = options.pythonPath ?? getSglangRuntimePython(options.config);
+  const pythonPath =
+    options.pythonPath ?? (options.config.sglang_python || resolveVllmPythonPath() || "python3");
   return installIntoManagedVenv({
     config: options.config,
     backend: "sglang",
@@ -138,7 +132,6 @@ const installSglang = (options: InstallOptions): Effect.Effect<RuntimeUpgradeRes
 
 export const sglangSpec: EngineSpec = {
   id: "sglang",
-  healthPath: "/health",
   cliBinary: "sglang",
   managedPackageSpec,
   install: installSglang,
