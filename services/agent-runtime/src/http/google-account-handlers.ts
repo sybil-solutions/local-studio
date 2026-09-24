@@ -22,7 +22,27 @@ import {
 import {
   beginGoogleLoopbackAuthorization,
   cancelGoogleLoopbackAuthorization,
+  completeGoogleAuthorizationFromRedirect,
 } from "../google-oauth-loopback";
+
+const GoogleAuthorizeCompleteInputSchema = Schema.Struct({
+  account: Schema.Union([Schema.Literal("gmail"), Schema.Literal("google-calendar")]),
+  url: Schema.String,
+});
+
+export async function handleGoogleAuthorizeComplete(request: Request): Promise<Response> {
+  let input: typeof GoogleAuthorizeCompleteInputSchema.Type;
+  try {
+    input = Schema.decodeUnknownSync(GoogleAuthorizeCompleteInputSchema)(await request.json());
+  } catch {
+    return Response.json({ error: "account and url are required" }, { status: 400 });
+  }
+  try {
+    return Response.json(await completeGoogleAuthorizationFromRedirect(input.account, input.url));
+  } catch (error) {
+    return failure(error, "Google sign-in failed");
+  }
+}
 
 const GoogleClientInputSchema = Schema.Struct({
   clientId: Schema.String,

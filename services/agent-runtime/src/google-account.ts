@@ -1,6 +1,6 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { chmod, readFile, rename, writeFile } from "node:fs/promises";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { Effect, Schema, Semaphore } from "effect";
 import { connectMcp, type McpConnection } from "./mcp-client";
@@ -18,7 +18,7 @@ import {
   type GoogleWorkspacePluginId,
   type GoogleWorkspaceTransport,
 } from "./google-workspace-binding";
-import { desktopOAuthVault, type OAuthVault } from "./oauth-vault";
+import { defaultOAuthVault, type OAuthVault } from "./oauth-vault";
 import type { GoogleAccountView, GoogleConnectionView } from "./google-account-contract";
 
 export type { GoogleAccountView, GoogleConnectionView } from "./google-account-contract";
@@ -148,6 +148,7 @@ const defaultDependencies: GoogleOAuthDependencies = {
 
 const secretsKey = "google-workspace";
 const accessTokens = new Map<string, { value: string; expiresAt: number }>();
+const authorizationErrors = new Map<GoogleWorkspacePluginId, string>();
 const authorizationFlows = new Map<
   GoogleWorkspacePluginId,
   { id: string; controller: AbortController }
@@ -279,27 +280,48 @@ function normalizeSecrets(
   };
 }
 
+const BuiltInClientSchema = Schema.Struct({
+  clientId: Schema.String,
+  clientSecret: Schema.String,
+});
+
+type BuiltInClient = typeof BuiltInClientSchema.Type;
+
 /**
- * A public OAuth client id shipped with the build or set by the deployment.
+ * Local Studio's own Desktop-app OAuth client, supplied at build or deploy time
+ * and never committed: `LOCAL_STUDIO_GOOGLE_CLIENT_ID` + `_SECRET` (server
+ * installs), else `google/google-oauth-client.json` in the packaged resources
+ * (written by the release workflow). Google does not treat a Desktop client's
+ * secret as confidential, but the repository is public and Google scans it.
  *
- * Desktop-app clients are public by design (PKCE carries the proof, not a
- * secret), so an id provided here spares the user the whole Google Cloud
- * console detour: with it set, the account is "configured" out of the box and
- * Connect goes straight to the consent screen. A client the user saves in the
- * UI still wins — it is stored metadata, and this fallback only fills the
- * never-configured case.
+ * With it present Connect goes straight to consent. A client the user saves in
+ * the UI still wins — it is stored metadata; this only fills the gap, and it
+ * also supplies the secret to installs that saved this same id without one.
  */
-function envGoogleClientId(): string | null {
-  const value = process.env.LOCAL_STUDIO_GOOGLE_CLIENT_ID?.trim();
-  return value || null;
+function builtInGoogleClient(): BuiltInClient | null {
+  const clientId = process.env.LOCAL_STUDIO_GOOGLE_CLIENT_ID?.trim();
+  const clientSecret = process.env.LOCAL_STUDIO_GOOGLE_CLIENT_SECRET?.trim();
+  if (clientId && clientSecret) return { clientId, clientSecret };
+  const resources = process.env.LOCAL_STUDIO_RESOURCES_PATH?.trim() || process.resourcesPath;
+  if (!resources) return null;
+  const file = path.join(resources, "google", "google-oauth-client.json");
+  if (!existsSync(file)) return null;
+  try {
+    const client = Schema.decodeUnknownSync(BuiltInClientSchema)(
+      JSON.parse(readFileSync(file, "utf8")),
+    );
+    return client.clientId.trim() && client.clientSecret.trim() ? client : null;
+  } catch {
+    return null;
+  }
 }
 
 async function readMetadata(): Promise<Metadata | null> {
   const file = resolveGoogleAccountFilePath();
   if (!existsSync(file)) {
-    const clientId = envGoogleClientId();
-    return clientId
-      ? { version: 2, clientId, hasClientSecret: false, accounts: {} }
+    const builtIn = builtInGoogleClient();
+    return builtIn
+      ? { version: 2, clientId: builtIn.clientId, hasClientSecret: true, accounts: {} }
       : null;
   }
   try {
@@ -379,8 +401,22 @@ function secretsEffect(
   metadata: Metadata | null,
 ): Effect.Effect<Secrets, GoogleAccountError> {
   return readVaultJson(vault, secretsKey, Schema.decodeUnknownSync(StoredSecretsSchema)).pipe(
-    Effect.map((stored) => (stored ? normalizeSecrets(stored, metadata) : emptySecrets())),
+    Effect.map((stored) => withBuiltInSecret(
+      stored ? normalizeSecrets(stored, metadata) : emptySecrets(),
+      metadata,
+    )),
   );
+}
+
+function withBuiltInSecret(secrets: Secrets, metadata: Metadata | null): Secrets {
+  if (secrets.clientSecret) return secrets;
+  const builtIn = builtInGoogleClient();
+  if (!builtIn || builtIn.clientId !== metadata?.clientId) return secrets;
+  return { ...secrets, clientSecret: builtIn.clientSecret };
+}
+
+function usesBuiltInClient(metadata: Metadata | null): boolean {
+  return Boolean(metadata?.clientId) && builtInGoogleClient()?.clientId === metadata?.clientId;
 }
 
 function connectionView(connection?: Connection): GoogleConnectionView {
@@ -406,9 +442,11 @@ function accountView(metadata: Metadata | null): GoogleAccountView {
   return {
     configured: Boolean(metadata?.clientId),
     clientId: metadata?.clientId ?? null,
-    hasClientSecret: metadata?.hasClientSecret ?? false,
+    hasClientSecret: (metadata?.hasClientSecret ?? false) || usesBuiltInClient(metadata),
+    builtInClient: usesBuiltInClient(metadata),
     transport: activeGoogleWorkspaceTransport(),
     accounts,
+    authorizationErrors: Object.fromEntries(authorizationErrors),
   };
 }
 
@@ -429,7 +467,7 @@ function storedRefreshTokens(secrets: Secrets): string[] {
 
 export function saveGoogleClient(
   input: { clientId: string; clientSecret?: string },
-  vault: OAuthVault = desktopOAuthVault,
+  vault: OAuthVault = defaultOAuthVault,
   dependencies: GoogleOAuthDependencies = defaultDependencies,
 ): Effect.Effect<GoogleAccountView, GoogleAccountError> {
   return authorizationLifecycle.withPermit(
@@ -443,6 +481,14 @@ export function saveGoogleClient(
         const current = yield* metadataEffect();
         const currentSecrets = yield* secretsEffect(vault, current);
         const sameClient = current?.clientId === clientId;
+        // PKCE does not make Google's Desktop-app clients public: the token
+        // endpoint answers `client_secret is missing` without one, so a client
+        // saved bare reaches the consent screen and then can never connect.
+        if (!incomingSecret && !(sameClient && currentSecrets.clientSecret)) {
+          return yield* Effect.fail(
+            new GoogleAccountError(400, "Client secret is required: Google rejects sign-in without it"),
+          );
+        }
         if (!sameClient) {
           // Every account was granted to the outgoing client, so every grant has
           // to be handed back — revoking only the first one (the previous
@@ -518,7 +564,7 @@ export function beginGoogleAuthorization(
   service: GoogleWorkspacePluginId,
   redirectUri: string,
   dependencies: GoogleOAuthDependencies = defaultDependencies,
-  vault: OAuthVault = desktopOAuthVault,
+  vault: OAuthVault = defaultOAuthVault,
   requestedFlowId?: string,
 ): Effect.Effect<{ authorizationUrl: string }, GoogleAccountError> {
   return Effect.suspend(() => {
@@ -576,7 +622,7 @@ export function beginGoogleAuthorization(
 
 export function cancelGoogleAuthorization(
   service: GoogleWorkspacePluginId,
-  vault: OAuthVault = desktopOAuthVault,
+  vault: OAuthVault = defaultOAuthVault,
 ): Effect.Effect<void, GoogleAccountError> {
   return Effect.suspend(() => {
     const cancellationId = createGoogleAuthorizationFlow(service);
@@ -588,6 +634,29 @@ export function cancelGoogleAuthorization(
       ),
     );
   });
+}
+
+/** Google's own reason (`client_secret is missing.`), which is the only actionable part. */
+async function googleErrorDetail(response: Response): Promise<string> {
+  const body: unknown = await response.json().catch(() => null);
+  if (!body || typeof body !== "object") return "";
+  const description = Reflect.get(body, "error_description") ?? Reflect.get(body, "error");
+  return typeof description === "string" && description ? `: ${description}` : "";
+}
+
+/**
+ * The last sign-in failure per service. The callback lands in a browser tab,
+ * so without this the dialog could only wait out its timeout.
+ */
+export function recordGoogleAuthorizationError(
+  service: GoogleWorkspacePluginId,
+  message: string,
+): void {
+  authorizationErrors.set(service, message);
+}
+
+export function clearGoogleAuthorizationError(service: GoogleWorkspacePluginId): void {
+  authorizationErrors.delete(service);
 }
 
 function googleRequestSignal(
@@ -621,7 +690,12 @@ async function exchangeAuthorizationCode(
     body,
     signal: googleRequestSignal(dependencies, cancellation),
   });
-  if (!response.ok) throw new GoogleAccountError(502, "Google rejected the authorization code");
+  if (!response.ok) {
+    throw new GoogleAccountError(
+      502,
+      `Google rejected the authorization code${await googleErrorDetail(response)}`,
+    );
+  }
   try {
     return Schema.decodeUnknownSync(TokenResponseSchema)(await response.json());
   } catch {
@@ -1086,7 +1160,7 @@ export function completeGoogleAuthorizationWithActivation<A>(
   activation: (signal: AbortSignal, identity: GoogleWorkspaceIdentity) => Effect.Effect<A, Error>,
   rollback: (identity: GoogleWorkspaceIdentity, activated: A) => Effect.Effect<unknown, Error>,
   dependencies: GoogleOAuthDependencies = defaultDependencies,
-  vault: OAuthVault = desktopOAuthVault,
+  vault: OAuthVault = defaultOAuthVault,
 ): Effect.Effect<
   { account: GoogleAccountView; identity: GoogleWorkspaceIdentity; activation: A },
   Error | GoogleAccountError
@@ -1120,7 +1194,7 @@ export function completeGoogleAuthorizationWithActivation<A>(
 
 export function disconnectGoogleAccount(
   identity: GoogleWorkspaceIdentity,
-  vault: OAuthVault = desktopOAuthVault,
+  vault: OAuthVault = defaultOAuthVault,
   dependencies: GoogleOAuthDependencies = defaultDependencies,
 ): Effect.Effect<GoogleAccountView, GoogleAccountError> {
   return Effect.suspend(() => {
@@ -1193,7 +1267,12 @@ async function refreshAccessToken(
     body,
     signal: googleRequestSignal(dependencies),
   });
-  if (!response.ok) throw new GoogleAccountError(401, "Google account authorization expired");
+  if (!response.ok) {
+    throw new GoogleAccountError(
+      401,
+      `Google account authorization expired${await googleErrorDetail(response)}`,
+    );
+  }
   try {
     return Schema.decodeUnknownSync(TokenResponseSchema)(await response.json());
   } catch {
@@ -1205,7 +1284,7 @@ export function googleAuthorizationHeaders(
   identity: GoogleWorkspaceIdentity,
   forceRefresh = false,
   dependencies: GoogleOAuthDependencies = defaultDependencies,
-  vault: OAuthVault = desktopOAuthVault,
+  vault: OAuthVault = defaultOAuthVault,
 ): Effect.Effect<Record<string, string>, GoogleAccountError> {
   return accountMutation.withPermit(
     Effect.gen(function* () {

@@ -4,6 +4,7 @@ import { useCallback, useState } from "react";
 import { Effect, Fiber, Schema } from "effect";
 import {
   GoogleAccountResponseSchema,
+  GoogleAuthorizationCompleteResponseSchema,
   GoogleAuthorizationResponseSchema,
   type GoogleAccountView,
 } from "@local-studio/agent-runtime/google-account-contract";
@@ -14,6 +15,7 @@ import { useMountSubscription } from "@/hooks/use-mount-subscription";
 import {
   GoogleCancellationResponseSchema,
   clientReplacementWarning,
+  clientSecretMissing,
   connectedGoogleAccounts,
   connectionSignature,
   openExternal,
@@ -23,9 +25,11 @@ import {
 import { GoogleAccountLoadState } from "./google-account-load-state";
 import { ConnectedGoogleAccounts } from "./google-account-connected";
 import { GoogleAccountSetup } from "./google-account-setup";
+import { GoogleRedirectPaste } from "./google-account-redirect";
 
 const ACCOUNT_URL = "/api/agent/accounts/google";
 const AUTHORIZE_URL = "/api/agent/accounts/google/authorize";
+const COMPLETE_URL = "/api/agent/accounts/google/authorize/complete";
 const decodeAccount = Schema.decodeUnknownSync(GoogleAccountResponseSchema);
 
 export function GoogleAccountModal({
@@ -45,6 +49,7 @@ export function GoogleAccountModal({
   const [editing, setEditing] = useState(false);
   const [awaiting, setAwaiting] = useState(false);
   const [confirmingKey, setConfirmingKey] = useState<string | null>(null);
+  const [redirectUrl, setRedirectUrl] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [lifecycle] = useState(() => ({
@@ -64,7 +69,16 @@ export function GoogleAccountModal({
       setAccount(result.account);
       setError("");
       setClientId((current) => current || result.account.clientId || "");
-      if (!result.account.configured) setEditing(true);
+      // A client saved without its secret can never finish sign-in, so it is
+      // reopened for the secret instead of being shown as ready.
+      if (!result.account.configured || !result.account.hasClientSecret) setEditing(true);
+      const failed = lifecycle.active ? result.account.authorizationErrors?.[accountId] : undefined;
+      if (failed) {
+        lifecycle.active = false;
+        setAwaiting(false);
+        setError(failed);
+        return true;
+      }
       const settled =
         lifecycle.active && connectionSignature(result.account, accountId) !== lifecycle.baseline;
       if (settled) {
@@ -126,9 +140,38 @@ export function GoogleAccountModal({
     return () => void Effect.runPromise(Fiber.interrupt(fiber));
   }, [awaiting, cancelAuthorization, refresh]);
 
+  const finishFromRedirect = async () => {
+    setBusy(true);
+    setError("");
+    try {
+      const result = await requestJson(
+        COMPLETE_URL,
+        Schema.decodeUnknownSync(GoogleAuthorizationCompleteResponseSchema),
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ account: accountId, url: redirectUrl }),
+        },
+      );
+      lifecycle.active = false;
+      setAwaiting(false);
+      setRedirectUrl("");
+      setAccount(result.account);
+      onChanged();
+      if (!result.activated) {
+        setError("The account is connected, but its read-only tools could not be enabled.");
+      }
+    } catch (finishError) {
+      setError(finishError instanceof Error ? finishError.message : "Google sign-in failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const connect = async () => {
     setBusy(true);
     setError("");
+    setRedirectUrl("");
     try {
       if (!account?.configured || editing) {
         const saved = await requestJson<{ account: GoogleAccountView }>(
@@ -201,6 +244,7 @@ export function GoogleAccountModal({
   const connected = connectedGoogleAccounts(account, accountId);
   const replacement = clientReplacementWarning(account, editing, clientId);
   const needsClient = !account?.configured || editing;
+  const needsSecret = clientSecretMissing(account, clientId, clientSecret);
   const dismiss = () => {
     if (!busy && !awaiting) onClose();
   };
@@ -244,9 +288,12 @@ export function GoogleAccountModal({
               onDisconnect={(key) => void disconnect(key)}
             />
             {awaiting ? (
-              <Alert variant="success">
-                Finish consent in your browser. Local Studio is checking for the connection.
-              </Alert>
+              <GoogleRedirectPaste
+                value={redirectUrl}
+                busy={busy}
+                onChange={setRedirectUrl}
+                onFinish={() => void finishFromRedirect()}
+              />
             ) : null}
             <div className="flex flex-wrap items-center justify-end gap-2">
               <Button
@@ -260,7 +307,7 @@ export function GoogleAccountModal({
               <Button
                 onClick={() => void connect()}
                 loading={busy && !awaiting}
-                disabled={awaiting || (needsClient && !clientId.trim())}
+                disabled={awaiting || (needsClient && (!clientId.trim() || needsSecret))}
               >
                 {awaiting
                   ? "Waiting for Google"

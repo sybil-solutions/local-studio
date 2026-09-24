@@ -129,6 +129,11 @@ extraResources:
     to: desktop/resources/skills
     filter:
       - "**/*"
+  # Local Studio's Google OAuth client, written by the release workflow.
+  - from: desktop/resources/google
+    to: google
+    filter:
+      - google-oauth-client.json
 
 directories:
   output: dist-desktop

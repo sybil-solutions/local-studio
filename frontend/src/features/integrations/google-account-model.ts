@@ -67,6 +67,16 @@ export function clientReplacementWarning(
   return `Replacing this client revokes Google access for all ${connected} connected ${plural}, across Gmail and Calendar. Each one has to sign in again.`;
 }
 
+/** The stored secret only carries over while the client id is unchanged. */
+export function clientSecretMissing(
+  account: GoogleAccountView | null,
+  clientId: string,
+  clientSecret: string,
+): boolean {
+  if (clientSecret.trim()) return false;
+  return !(account?.hasClientSecret && clientId.trim() === account.clientId);
+}
+
 export function transportNotice(account: GoogleAccountView | null): string {
   return account?.transport === "remote-mcp"
     ? "Tools are served by Google's Workspace MCP preview. That preview may not accept a self-registered Desktop client; unset LOCAL_STUDIO_GOOGLE_MCP_PREVIEW to use the REST adapter instead."

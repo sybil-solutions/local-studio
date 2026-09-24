@@ -111,7 +111,11 @@ describe("google accounts are keyed by mailbox", () => {
     rmSync(resolveGoogleAccountFilePath(), { force: true });
     clearGoogleAuthorizationCache();
     await Effect.runPromise(
-      saveGoogleClient({ clientId: "client-1" }, fakeVault(store), fakeDependencies([], recorded)),
+      saveGoogleClient(
+        { clientId: "client-1", clientSecret: "secret-1" },
+        fakeVault(store),
+        fakeDependencies([], recorded),
+      ),
     );
   });
 
@@ -163,7 +167,7 @@ describe("google accounts are keyed by mailbox", () => {
     await connect("gmail", store, dependencies);
     await connect("gmail", store, dependencies);
     await Effect.runPromise(
-      saveGoogleClient({ clientId: "client-2" }, fakeVault(store), dependencies),
+      saveGoogleClient({ clientId: "client-2", clientSecret: "secret-2" }, fakeVault(store), dependencies),
     );
     expect(recorded.revoked.sort()).toEqual(["refresh-1", "refresh-2"]);
     const view = await Effect.runPromise(getGoogleAccount());

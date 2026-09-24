@@ -72,6 +72,7 @@ import {
   handleGoogleAccountGet,
   handleGoogleAuthorizeBegin,
   handleGoogleAuthorizeCancel,
+  handleGoogleAuthorizeComplete,
   handleGoogleClientPut,
 } from "./google-account-handlers";
 import {
@@ -184,6 +185,9 @@ export function createAgentRuntimeApp() {
   app.delete("/api/agent/accounts/google", (c) => handleGoogleAccountDisconnect(c.req.raw));
   app.post("/api/agent/accounts/google/authorize", (c) => handleGoogleAuthorizeBegin(c.req.raw));
   app.delete("/api/agent/accounts/google/authorize", (c) => handleGoogleAuthorizeCancel(c.req.raw));
+  app.post("/api/agent/accounts/google/authorize/complete", (c) =>
+    handleGoogleAuthorizeComplete(c.req.raw),
+  );
   app.get("/api/agent/projects", () => handleProjectsList());
   app.post("/api/agent/projects", (c) => handleProjectAdd(c.req.raw));
   app.delete("/api/agent/projects", (c) => handleProjectRemove(c.req.raw));

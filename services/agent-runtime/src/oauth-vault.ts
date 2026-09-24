@@ -1,5 +1,9 @@
 import { randomUUID } from "node:crypto";
+import { existsSync } from "node:fs";
+import { chmod, readFile, rename, writeFile } from "node:fs/promises";
+import path from "node:path";
 import { Effect } from "effect";
+import { resolveDataDir } from "./data-dir";
 
 type VaultResponse = {
   channel: "local-studio:oauth-vault:response";
@@ -107,4 +111,71 @@ export const desktopOAuthVault: OAuthVault = {
   read: (key) => vaultEffect(() => request("read", key)),
   write: (key, value) => vaultEffect(async () => void (await request("write", key, value))),
   remove: (key) => vaultEffect(async () => void (await request("delete", key))),
+};
+
+/**
+ * Headless runtimes (a server install, `npm run start`) have no Electron parent
+ * to encrypt with, so secrets fall back to an owner-only file in the data dir.
+ * It is deliberately not the desktop's `oauth-vault.json`: that file holds
+ * safeStorage ciphertext this process could not read anyway.
+ */
+const fileVaultKeyPattern = /^[a-z0-9][a-z0-9:_-]{0,127}$/;
+let fileVaultAccess: Promise<unknown> = Promise.resolve();
+
+export function resolveFileOAuthVaultPath(): string {
+  return path.join(resolveDataDir(), "oauth-vault.local.json");
+}
+
+async function readFileVault(file: string): Promise<Record<string, string>> {
+  if (!existsSync(file)) return {};
+  const parsed: unknown = JSON.parse(await readFile(file, "utf8"));
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new OAuthVaultError("OAuth vault is invalid");
+  }
+  return Object.fromEntries(
+    Object.entries(parsed).filter(
+      (entry): entry is [string, string] =>
+        fileVaultKeyPattern.test(entry[0]) && typeof entry[1] === "string",
+    ),
+  );
+}
+
+function fileVaultOperation(
+  operation: "read" | "write" | "delete",
+  key: string,
+  value?: string,
+): Promise<string | undefined> {
+  const run = fileVaultAccess.then(async () => {
+    if (!fileVaultKeyPattern.test(key)) throw new OAuthVaultError("OAuth vault key is invalid");
+    const file = resolveFileOAuthVaultPath();
+    const vault = await readFileVault(file);
+    if (operation === "read") return vault[key];
+    if (operation === "write") vault[key] = value ?? "";
+    else delete vault[key];
+    const temporary = `${file}.tmp-${process.pid}-${randomUUID()}`;
+    await writeFile(temporary, JSON.stringify(vault, null, 2), { mode: 0o600 });
+    await chmod(temporary, 0o600);
+    await rename(temporary, file);
+    await chmod(file, 0o600);
+    return undefined;
+  });
+  fileVaultAccess = run.catch(() => undefined);
+  return run;
+}
+
+export const fileOAuthVault: OAuthVault = {
+  read: (key) => vaultEffect(() => fileVaultOperation("read", key)),
+  write: (key, value) => vaultEffect(async () => void (await fileVaultOperation("write", key, value))),
+  remove: (key) => vaultEffect(async () => void (await fileVaultOperation("delete", key))),
+};
+
+/** The desktop app's encrypted vault when this runtime is its child, the file otherwise. */
+function activeOAuthVault(): OAuthVault {
+  return process.send && process.connected ? desktopOAuthVault : fileOAuthVault;
+}
+
+export const defaultOAuthVault: OAuthVault = {
+  read: (key) => activeOAuthVault().read(key),
+  write: (key, value) => activeOAuthVault().write(key, value),
+  remove: (key) => activeOAuthVault().remove(key),
 };

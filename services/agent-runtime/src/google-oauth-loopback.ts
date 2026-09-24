@@ -3,9 +3,12 @@ import { Effect, Fiber } from "effect";
 import {
   beginGoogleAuthorization,
   cancelGoogleAuthorization,
+  clearGoogleAuthorizationError,
   completeGoogleAuthorizationWithActivation,
   createGoogleAuthorizationFlow,
   GoogleAccountError,
+  recordGoogleAuthorizationError,
+  type GoogleAccountView,
 } from "./google-account";
 import {
   enableGoogleWorkspaceAdapter,
@@ -21,17 +24,28 @@ type ActiveFlow = {
   timeout: Fiber.Fiber<void, unknown>;
 };
 
+type Outcome = { account: GoogleAccountView; activated: boolean };
+
 const activeFlows = new Map<GoogleWorkspacePluginId, ActiveFlow>();
 const loopbackLifecycles = {
   gmail: createOAuthLoopbackLifecycle(),
   "google-calendar": createOAuthLoopbackLifecycle(),
 };
 
-function page(response: ServerResponse, success: boolean, activated: boolean): Promise<void> {
+function escapeHtml(value: string): string {
+  return value.replace(/[&<>"']/g, (character) => `&#${character.charCodeAt(0)};`);
+}
+
+function page(
+  response: ServerResponse,
+  success: boolean,
+  activated: boolean,
+  detail = "",
+): Promise<void> {
   const title = success ? "Google Workspace connected" : "Google sign-in failed";
   const status = success ? "Connection complete" : "Action needed";
   const message = !success
-    ? "Return to Local Studio and start Google sign-in again."
+    ? `${detail ? `${escapeHtml(detail)}. ` : ""}Return to Local Studio and start Google sign-in again.`
     : activated
       ? "The read-only tools are ready in Local Studio. You can close this tab."
       : "The account is connected. Return to Local Studio to finish enabling its tools.";
@@ -69,25 +83,31 @@ function closeFlow(
   if (interruptTimeout) void Effect.runPromise(Fiber.interrupt(flow.timeout));
 }
 
-async function handleCallback(
+function failureMessage(error: unknown): string {
+  return error instanceof Error ? error.message : "Google sign-in failed";
+}
+
+/** A stray or replayed callback must not end a flow the real one can still finish. */
+function isStaleState(error: unknown): boolean {
+  return error instanceof GoogleAccountError && error.message.includes("state is invalid");
+}
+
+async function settle(
   account: GoogleWorkspacePluginId,
   flowId: string,
-  requestUrl: string,
-  response: ServerResponse,
-): Promise<void> {
-  const url = new URL(requestUrl, "http://127.0.0.1");
-  if (url.pathname !== "/callback") {
-    response.writeHead(404).end();
-    return;
-  }
-  const state = url.searchParams.get("state");
-  const code = url.searchParams.get("code");
-  if (url.searchParams.has("error") || !state || !code) {
-    await page(response, false, false);
-    closeFlow(account, flowId);
-    return;
-  }
+  params: URLSearchParams,
+): Promise<Outcome> {
   try {
+    const state = params.get("state");
+    const code = params.get("code");
+    if (params.has("error") || !state || !code) {
+      throw new GoogleAccountError(
+        400,
+        params.get("error") === "access_denied"
+          ? "Google sign-in was denied"
+          : "Google did not return an authorization code",
+      );
+    }
     const result = await Effect.runPromise(
       completeGoogleAuthorizationWithActivation(
         account,
@@ -108,13 +128,31 @@ async function handleCallback(
         (identity, activation) => restoreGoogleWorkspaceAdapter(identity, activation.wasEnabled),
       ),
     );
-    await page(response, true, result.activation.activated);
+    return { account: result.account, activated: result.activation.activated };
+  } catch (error) {
+    if (!isStaleState(error)) recordGoogleAuthorizationError(account, failureMessage(error));
+    throw error;
+  }
+}
+
+async function handleCallback(
+  account: GoogleWorkspacePluginId,
+  flowId: string,
+  requestUrl: string,
+  response: ServerResponse,
+): Promise<void> {
+  const url = new URL(requestUrl, "http://127.0.0.1");
+  if (url.pathname !== "/callback") {
+    response.writeHead(404).end();
+    return;
+  }
+  try {
+    const outcome = await settle(account, flowId, url.searchParams);
+    await page(response, true, outcome.activated);
     closeFlow(account, flowId);
   } catch (error) {
-    await page(response, false, false);
-    if (!(error instanceof GoogleAccountError && error.message.includes("state is invalid"))) {
-      closeFlow(account, flowId);
-    }
+    await page(response, false, false, failureMessage(error));
+    if (!isStaleState(error)) closeFlow(account, flowId);
   }
 }
 
@@ -139,6 +177,7 @@ export function beginGoogleLoopbackAuthorization(
   return loopbackLifecycles[account].start(
     Effect.gen(function* () {
       closeFlow(account);
+      clearGoogleAuthorizationError(account);
       const flowId = createGoogleAuthorizationFlow(account);
       const server = createServer((request, response) => {
         void handleCallback(account, flowId, request.url ?? "/", response);
@@ -164,6 +203,37 @@ export function beginGoogleLoopbackAuthorization(
       ).pipe(Effect.tapError(() => Effect.sync(() => closeFlow(account, flowId))));
     }),
   );
+}
+
+/**
+ * Finishes a sign-in from the address the browser was redirected to. Google
+ * always sends the browser to 127.0.0.1, which is the user's own computer; when
+ * the runtime lives on another host its listener never sees that request, so
+ * the user pastes the address back instead.
+ */
+export async function completeGoogleAuthorizationFromRedirect(
+  account: GoogleWorkspacePluginId,
+  redirected: string,
+): Promise<Outcome> {
+  const flow = activeFlows.get(account);
+  if (!flow) throw new GoogleAccountError(409, "No Google sign-in is in progress; start again");
+  let url: URL;
+  try {
+    url = new URL(redirected.trim());
+  } catch {
+    throw new GoogleAccountError(400, "Paste the full address from the browser's address bar");
+  }
+  if (url.pathname !== "/callback") {
+    throw new GoogleAccountError(400, "That address is not a Google sign-in callback");
+  }
+  try {
+    const outcome = await settle(account, flow.id, url.searchParams);
+    closeFlow(account, flow.id);
+    return outcome;
+  } catch (error) {
+    if (!isStaleState(error)) closeFlow(account, flow.id);
+    throw error;
+  }
 }
 
 export function cancelGoogleLoopbackAuthorization(

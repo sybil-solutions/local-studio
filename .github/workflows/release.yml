@@ -61,6 +61,19 @@ jobs:
             echo "version=$version" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Bundle Google OAuth client
+        if: steps.next-release.outputs.version != ''
+        env:
+          GOOGLE_CLIENT_ID: ${{ secrets.LOCAL_STUDIO_GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.LOCAL_STUDIO_GOOGLE_CLIENT_SECRET }}
+        run: |
+          if [ -z "$GOOGLE_CLIENT_ID" ] || [ -z "$GOOGLE_CLIENT_SECRET" ]; then
+            echo "::warning::Google OAuth client secrets are not set; users will need their own client"
+            exit 0
+          fi
+          node -e 'require("fs").writeFileSync(process.argv[1], JSON.stringify({clientId: process.env.GOOGLE_CLIENT_ID, clientSecret: process.env.GOOGLE_CLIENT_SECRET}))' \
+            frontend/desktop/resources/google/google-oauth-client.json
+
       - name: Build unsigned release app
         if: steps.next-release.outputs.version != ''
         env:
