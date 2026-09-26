@@ -12,7 +12,7 @@ import { prepareClaudeDesktop, prepareCodexDesktop } from "./desktop";
 import { ensureClientKey, forgetKeyId } from "./keys";
 import { SAFE_FLAG, clientOf, isTerminal } from "./launch-table";
 import { hasGui, openTerminal, resolveTerminal } from "./terminals";
-import { agentRunCommand, attachCommand, sessionName, startSession, tmuxBin } from "./tmux";
+import { TMUX_SOCKET, agentRunCommand, attachCommand, sessionName, startSession, tmuxBin } from "./tmux";
 import type { WorkspaceStore } from "./workspaces";
 
 const BIN_DIRS = [join(homedir(), ".local", "bin"), join(homedir(), ".bun", "bin"), "/opt/homebrew/bin", "/usr/local/bin"];
@@ -152,7 +152,7 @@ export const createAgentRoutes = (
       const tmux = await tmuxBin();
       if (!tmux) return bad("tmux is not installed; terminal agents run inside tmux", 500, "NO_TMUX");
       const name = sessionName(ws.id);
-      const resume = b.resume ?? (wasOpened && (b.harness !== "claude" || claudeHasHistory(ws.dir)));
+      const resume = b.resume ?? (wasOpened && (b.harness !== "claude" || claudeHasHistory(ctx.config.home, ws.id, ws.dir)));
       const cmd = agentRunCommand(ctx.config.home, ws.id, resume);
       const started = await startSession(ctx, tmux, name, ws.dir, cmd);
       if (started.error) return bad(`tmux: ${started.error}`, 500, "TMUX");
@@ -168,7 +168,8 @@ export const createAgentRoutes = (
         }
       }
       ctx.log.info(`agent ${b.harness} ${ws.id}: ${detail}${warn}`);
-      const attach = hasGui() ? `tmux attach -t ${name}` : `ssh -t ${ctx.identity.hostname} tmux attach -t ${name}`;
+      const tmuxAttach = `tmux ${TMUX_SOCKET.join(" ")} attach -t ${name}`;
+      const attach = hasGui() ? tmuxAttach : `ssh -t ${ctx.identity.hostname} ${tmuxAttach}`;
       const res: AgentLaunchResult = { workspaceId: ws.id, harness: b.harness, how, command: cmd, url: null, tmuxSession: name, attach };
       return c.json({ ...res, created: started.created, resume, note: `${detail}${warn}` });
     }

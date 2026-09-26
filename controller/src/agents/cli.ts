@@ -6,13 +6,13 @@ import { openDb } from "../core/db";
 import { which } from "../core/exec";
 import { createKeyStore } from "../core/keys";
 import { ensureClientKey } from "./keys";
-import { ENV_UNSET, SAFE_FLAG, buildLaunch, clientOf, isTerminal } from "./launch-table";
+import { ENV_UNSET, SAFE_FLAG, agentDir, buildLaunch, clientOf, isTerminal } from "./launch-table";
 import { createWorkspaceStore } from "./workspaces";
 
 const USAGE = "local-studio agent run <workspaceId> [--print] [--resume] [--home DIR]";
 const BIN_DIRS = [join(homedir(), ".local", "bin"), join(homedir(), ".bun", "bin"), "/opt/homebrew/bin", "/usr/local/bin"];
 
-export const claudeHasHistory = (dir: string) => existsSync(join(homedir(), ".claude", "projects", dir.replace(/[^A-Za-z0-9]/g, "-")));
+export const claudeHasHistory = (home: string, wsId: string, dir: string) => existsSync(join(agentDir(home, "claude", wsId), "projects", dir.replace(/[^A-Za-z0-9]/g, "-")));
 
 export const runAgentCli = async (argv: string[]): Promise<number> => {
   const [sub, wsId] = argv;
@@ -41,7 +41,7 @@ export const runAgentCli = async (argv: string[]): Promise<number> => {
     const { keyFile } = ensureClientKey(db, keys, config.home, client);
     const gatewayUrl = rt.gatewayUrl ?? `http://127.0.0.1:${config.port}`;
     let resume = argv.includes("--resume");
-    if (resume && ws.harness === "claude" && !claudeHasHistory(ws.dir)) resume = false;
+    if (resume && ws.harness === "claude" && !claudeHasHistory(config.home, ws.id, ws.dir)) resume = false;
     const built = buildLaunch({
       harness,
       home: config.home,
@@ -66,6 +66,7 @@ export const runAgentCli = async (argv: string[]): Promise<number> => {
       return 0;
     }
     for (const f of built.files) {
+      if (f.keep && existsSync(f.path)) continue;
       mkdirSync(dirname(f.path), { recursive: true, mode: 0o700 });
       writeFileSync(f.path, f.content, { mode: f.mode });
       chmodSync(f.path, f.mode);

@@ -54,7 +54,7 @@ export interface AgentLaunchResult {
 export interface BuiltLaunch {
   argv: string[];
   env: Record<string, string>;
-  files: { path: string; content: string; mode: number }[];
+  files: { path: string; content: string; mode: number; keep?: boolean }[];
   cwd: string;
 }
 
