@@ -9,7 +9,7 @@ export const ConnectPeerBody = z.object({
 export type ConnectPeerBody = z.infer<typeof ConnectPeerBody>;
 
 export const LaunchRecipeBody = z.object({
-  gpuKeys: z.array(z.string().regex(/^(nvidia|apple):[0-9]{1,2}$/)).min(1).max(8).optional(),
+  gpuKeys: z.array(z.string().regex(/^(nvidia|apple|intel):[0-9]{1,2}$/)).min(1).max(8).optional(),
 });
 export type LaunchRecipeBody = z.infer<typeof LaunchRecipeBody>;
 
