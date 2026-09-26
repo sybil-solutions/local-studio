@@ -37,6 +37,7 @@ export const dockerArgv = (plan: LaunchPlan, machineId: string): string[] => {
   for (const [k, v] of Object.entries(plan.labels ?? {}).sort()) if (!own.has(k)) argv.push("--label", `${k}=${v}`);
   if (plan.gpuUuids.length) argv.push("--gpus", `"device=${plan.gpuUuids.join(",")}"`);
   if (plan.shm) argv.push("--shm-size", plan.shm);
+  argv.push(...(plan.dockerOpts ?? []));
   if (plan.entrypoint) argv.push("--entrypoint", plan.entrypoint);
   argv.push("-p", `127.0.0.1:${plan.hostPort}:${plan.containerPort}`);
   for (const m of plan.mounts) argv.push("-v", `${m.source}:${m.target}${m.readOnly ? ":ro" : ""}`);

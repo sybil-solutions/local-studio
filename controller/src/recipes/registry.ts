@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { Engine, Recipe, RecipeCatalog } from "@local-studio/contracts";
 import type { Ctx } from "../context";
@@ -12,6 +12,13 @@ export interface V2Weights {
   mountPath: string;
   dir: string;
   files: string;
+  hostPath?: string;
+}
+
+export interface V2Mount {
+  source: string;
+  target: string;
+  readOnly: boolean;
 }
 
 export interface V2Recipe {
@@ -28,9 +35,11 @@ export interface V2Recipe {
   weights: V2Weights[];
   asset: { name: string; mountPath: string; text: string } | null;
   scratch: string | null;
-  launch: { entrypoint: string | null; arguments: string[]; environment: Record<string, string>; port: number; shm: string | null };
+  launch: { entrypoint: string | null; arguments: string[]; environment: Record<string, string>; port: number; shm: string | null; docker?: string[]; mounts?: V2Mount[] };
   serving: { ctxTokens: number; kvTokens: number };
   capabilities: Record<string, boolean | undefined>;
+  hardwareId?: string;
+  local?: boolean;
 }
 
 interface V2Doc {
@@ -60,6 +69,32 @@ const ENGINE: Record<string, Engine> = { vllm: "vllm", sglang: "sglang", "llama-
 
 export const normEngine = (e: string): Engine | string => ENGINE[e.toLowerCase()] ?? e;
 
+const toRecipe = (r: V2Recipe, hardwareId: string, recommended: boolean): Recipe => {
+  const caps = r.capabilities ?? {};
+  return {
+    id: r.id,
+    name: r.name,
+    family: r.family || null,
+    hardwareId,
+    cards: r.cards || 1,
+    engine: normEngine(r.engine),
+    format: r.format,
+    servedName: r.servedName,
+    sizeGb: r.sizeGb || null,
+    image: r.image,
+    minDriver: r.minDriver || null,
+    weights: r.weights.map((w) => ({ repository: w.repository, revision: w.revision, sizeGb: w.sizeGb || null, layout: w.layout, mountPath: w.mountPath, hostPath: w.hostPath ?? null })),
+    asset: r.asset ?? null,
+    scratch: r.scratch ?? null,
+    launch: { entrypoint: r.launch.entrypoint, arguments: r.launch.arguments ?? [], environment: r.launch.environment ?? {}, port: r.launch.port, shm: r.launch.shm },
+    ctxTokens: r.serving?.ctxTokens || null,
+    kvTokens: r.serving?.kvTokens || null,
+    caps: { chat: caps.chat, reasoning: caps.reasoning, tools: caps.tools, vision: caps.vision, video: caps.video },
+    recommended,
+    ...(r.local ? { source: "local" as const } : {}),
+  };
+};
+
 const flatten = (doc: V2Doc, source: string, commit: string | null, fetchedAt: number): LoadedCatalog => {
   if (doc.schemaVersion !== SCHEMA) throw new HttpError(502, "REGISTRY_SCHEMA", `registry catalog schema is ${doc.schemaVersion}, expected ${SCHEMA}`);
   const recipes: Recipe[] = [];
@@ -70,34 +105,54 @@ const flatten = (doc: V2Doc, source: string, commit: string | null, fetchedAt: n
     hw.recipes.forEach((r, i) => {
       if (!RECIPE_ID.test(r.id) || raw.has(r.id)) return;
       raw.set(r.id, r);
-      const caps = r.capabilities ?? {};
-      recipes.push({
-        id: r.id,
-        name: r.name,
-        family: r.family || null,
-        hardwareId,
-        cards: r.cards || 1,
-        engine: normEngine(r.engine),
-        format: r.format,
-        servedName: r.servedName,
-        sizeGb: r.sizeGb || null,
-        image: r.image,
-        minDriver: r.minDriver || null,
-        weights: r.weights.map((w) => ({ repository: w.repository, revision: w.revision, sizeGb: w.sizeGb || null, layout: w.layout, mountPath: w.mountPath })),
-        asset: r.asset,
-        scratch: r.scratch,
-        launch: { entrypoint: r.launch.entrypoint, arguments: r.launch.arguments ?? [], environment: r.launch.environment ?? {}, port: r.launch.port, shm: r.launch.shm },
-        ctxTokens: r.serving?.ctxTokens || null,
-        kvTokens: r.serving?.kvTokens || null,
-        caps: { chat: caps.chat, reasoning: caps.reasoning, tools: caps.tools, vision: caps.vision, video: caps.video },
-        recommended: i === 0 && (r.cards || 1) === 1,
-      });
+      recipes.push(toRecipe(r, hardwareId, i === 0 && (r.cards || 1) === 1));
     });
   }
   return {
     catalog: { source, registryCommit: commit ?? doc.registryCommit ?? null, generatedAt: doc.generatedAt ?? null, fetchedAt, hardware, recipes },
     raw,
   };
+};
+
+const readLocal = (ctx: Ctx, dir: string): V2Recipe[] => {
+  let names: string[];
+  try {
+    names = readdirSync(dir).filter((n) => n.endsWith(".json")).sort();
+  } catch {
+    return [];
+  }
+  const out: V2Recipe[] = [];
+  for (const n of names) {
+    try {
+      const doc = JSON.parse(readFileSync(join(dir, n), "utf8")) as V2Recipe | V2Recipe[];
+      for (const r of Array.isArray(doc) ? doc : [doc]) {
+        if (r && typeof r === "object" && RECIPE_ID.test(r.id) && r.hardwareId && typeof r.image === "string" && Array.isArray(r.launch?.arguments) && Array.isArray(r.weights)) out.push({ ...r, local: true });
+        else ctx.log.warn(`recipes: skipped an invalid local recipe in ${n}`);
+      }
+    } catch (e) {
+      ctx.log.warn(`recipes: cannot read ${n}: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+  return out;
+};
+
+const withLocal = (base: LoadedCatalog, local: V2Recipe[]): LoadedCatalog => {
+  if (!local.length) return base;
+  const raw = new Map<string, V2Recipe>();
+  const recipes: Recipe[] = [];
+  for (const r of local) {
+    if (raw.has(r.id)) continue;
+    raw.set(r.id, r);
+    recipes.push(toRecipe(r, r.hardwareId ?? "", false));
+  }
+  for (const r of base.catalog.recipes) {
+    const v = base.raw.get(r.id);
+    if (v && !raw.has(r.id)) {
+      raw.set(r.id, v);
+      recipes.push(r);
+    }
+  }
+  return { catalog: { ...base.catalog, recipes }, raw };
 };
 
 export interface Registry {
@@ -196,7 +251,25 @@ export const createRegistry = (ctx: Ctx): Registry => {
     throw new HttpError(503, "REGISTRY_UNAVAILABLE", "registry unavailable: git clone/fetch and raw.githubusercontent.com both failed, and no cache exists");
   };
 
-  const load = (opts?: { sync?: boolean }): Promise<LoadedCatalog> => {
+  const localDir = join(ctx.config.home, "recipes");
+  let localSig = "";
+  let localCache: V2Recipe[] = [];
+  const local = (): V2Recipe[] => {
+    let sig = "";
+    try {
+      sig = readdirSync(localDir)
+        .filter((n) => n.endsWith(".json"))
+        .map((n) => `${n}:${statSync(join(localDir, n)).mtimeMs}`)
+        .join("|");
+    } catch {}
+    if (sig !== localSig) {
+      localSig = sig;
+      localCache = sig ? readLocal(ctx, localDir) : [];
+    }
+    return localCache;
+  };
+
+  const loadRegistry = (opts?: { sync?: boolean }): Promise<LoadedCatalog> => {
     const sync = !!opts?.sync;
     if (current && !sync) {
       if (Date.now() - current.catalog.fetchedAt > STALE_MS && !inflight) {
@@ -213,6 +286,16 @@ export const createRegistry = (ctx: Ctx): Registry => {
       if (inflight === p) inflight = null;
     });
     return p;
+  };
+
+  const load = async (opts?: { sync?: boolean }): Promise<LoadedCatalog> => {
+    const extra = local();
+    try {
+      return withLocal(await loadRegistry(opts), extra);
+    } catch (e) {
+      if (!extra.length) throw e;
+      return withLocal({ catalog: { source: localDir, registryCommit: null, generatedAt: null, fetchedAt: Date.now(), hardware: [], recipes: [] }, raw: new Map() }, extra);
+    }
   };
 
   const modelInstanceIds = async (): Promise<string[]> => {

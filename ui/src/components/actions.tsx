@@ -214,6 +214,7 @@ export const RecipeDialog = ({ v, onClose }: { v: RecipeView; onClose: () => voi
             <KV
               rows={[
                 ["id", r.id],
+                ["source", r.source ?? "registry"],
                 ["engine", r.engine],
                 ["format", fmtFormat(r.format)],
                 ["served as", r.servedName],
@@ -223,7 +224,7 @@ export const RecipeDialog = ({ v, onClose }: { v: RecipeView; onClose: () => voi
                 ["size", r.sizeGb ? `${Math.round(r.sizeGb)} GB` : "–"],
                 ["caps", caps.join(" · ") || "–"],
                 ["image", r.image],
-                ...r.weights.map((w): [string, string] => ["weights", `${w.repository}@${w.revision.slice(0, 12)}`]),
+                ...r.weights.map((w): [string, string] => ["weights", w.hostPath ?? `${w.repository}@${w.revision.slice(0, 12)}`]),
                 ["port", String(r.launch.port)],
                 ["shm", r.launch.shm ?? "–"],
                 ["entrypoint", r.launch.entrypoint ?? "–"],
@@ -247,7 +248,7 @@ export const RecipeDialog = ({ v, onClose }: { v: RecipeView; onClose: () => voi
             { h: "machine", c: (p: RecipeView["per"][number]) => <span className={target?.id === p.m.id ? "ink" : ""}>{p.m.name}</span> },
             { h: "fit", c: (p) => (p.row.runningModelId ? "running" : FIT[p.row.fit]) },
             { h: "free", c: (p) => p.row.freeGroups.map((g) => g.join(",")).join("  ") || "–" },
-            { h: "weights", c: (p) => (p.row.weightsPresent === null ? "–" : p.row.weightsPresent ? "here" : "download") },
+            { h: "weights", c: (p) => (p.row.weightsPresent === null ? "–" : p.row.weightsPresent ? "here" : r.source ? "missing" : "download") },
             { h: "req", n: true, c: (p) => fmt.k(slice(p.m)?.requests) },
             { h: "decode", n: true, c: (p) => fmt.tps(slice(p.m)?.decodeTps) },
             { h: "prefill", n: true, c: (p) => fmt.tps(slice(p.m)?.prefillTps) },

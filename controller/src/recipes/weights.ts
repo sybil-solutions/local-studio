@@ -4,7 +4,7 @@ import { join } from "node:path";
 import type { Ctx } from "../context";
 import type { V2Weights } from "./registry";
 
-export type WeightSource = "map" | "models-dir" | "hf-metadata" | "canonical" | "hf-cache" | "missing";
+export type WeightSource = "local" | "map" | "models-dir" | "hf-metadata" | "canonical" | "hf-cache" | "missing";
 
 export interface ResolvedWeight {
   repository: string;
@@ -94,6 +94,10 @@ export const createWeightIndex = (ctx: Ctx): WeightIndex => {
 
   const resolve = (w: V2Weights): ResolvedWeight => {
     const base = { repository: w.repository, revision: w.revision, layout: w.layout, mountPath: w.mountPath };
+    if (w.hostPath) {
+      const present = existsSync(w.hostPath);
+      return { ...base, hostPath: w.hostPath, present, source: present ? "local" : "missing", hint: present ? null : `${w.hostPath} is missing` };
+    }
     if (w.layout === "hub") {
       const snap = hfSnapshot(w);
       const present = isDir(snap) && (w.files ? existsSync(join(snap, w.files)) : true);

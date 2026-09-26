@@ -16,6 +16,7 @@ export interface RecipeWeights {
   mountPath: string;
   dir?: string | null;
   files?: string[] | null;
+  hostPath?: string | null;
 }
 
 export interface RecipeLaunchV2 {
@@ -46,6 +47,7 @@ export interface Recipe {
   kvTokens: number | null;
   caps: RecipeCaps;
   recommended: boolean;
+  source?: "local";
 }
 
 export interface RecipeCatalog {
@@ -86,6 +88,7 @@ export interface LaunchPlan {
   hostPort: number;
   containerPort: number;
   shm: string | null;
+  dockerOpts?: string[];
   labels: Record<string, string>;
   servedName: string;
   injected: string[];

@@ -3,7 +3,7 @@ import type { LaunchMount, LaunchPlan } from "@local-studio/contracts";
 import type { Ctx, RuntimeView } from "../context";
 import { availableKeys, fitFor, hardwareOf } from "./fit";
 import { type LoadedCatalog, normEngine, type V2Recipe } from "./registry";
-import { DEVICE_ENV, DIGEST_PINNED, ENV_KEY, FORBIDDEN_ARG, HttpError, REVISION_40 } from "./util";
+import { DEVICE_ENV, DIGEST_PINNED, DOCKER_OPT, ENV_KEY, FORBIDDEN_ARG, HttpError, REVISION_40 } from "./util";
 import type { ResolvedWeight, WeightIndex } from "./weights";
 
 export interface PlanResult {
@@ -18,13 +18,20 @@ const gate = (r: V2Recipe): void => {
   const bad = (msg: string) => {
     throw new HttpError(422, "RECIPE_GATE", `${r.id}: ${msg}`);
   };
-  if (!DIGEST_PINNED.test(r.image)) bad("image is not pinned by digest");
+  if (!r.local && !DIGEST_PINNED.test(r.image)) bad("image is not pinned by digest");
+  if (!/^[\w./:@-]+$/.test(r.image)) bad(`image ${r.image} is invalid`);
   if (!(r.cards >= 1 && r.cards <= 8)) bad(`cards ${r.cards} out of range`);
   for (const w of r.weights) {
-    if (!/^[\w.-]+\/[\w.-]+$/.test(w.repository)) bad(`weights repository ${w.repository} is not owner/name`);
-    if (!REVISION_40.test(w.revision)) bad(`weights ${w.repository} revision is not a 40-hex commit`);
+    if (w.hostPath !== undefined) {
+      if (!r.local || !w.hostPath.startsWith("/")) bad(`weights host path ${w.hostPath} is not allowed`);
+    } else {
+      if (!/^[\w.-]+\/[\w.-]+$/.test(w.repository)) bad(`weights repository ${w.repository} is not owner/name`);
+      if (!REVISION_40.test(w.revision)) bad(`weights ${w.repository} revision is not a 40-hex commit`);
+    }
     if (!w.mountPath.startsWith("/")) bad(`weights mount path ${w.mountPath} is not absolute`);
   }
+  for (const o of r.launch.docker ?? []) if (!DOCKER_OPT.test(o)) bad(`docker option ${o} is not allowed`);
+  for (const m of r.launch.mounts ?? []) if (!r.local || !m.source.startsWith("/") || !m.target.startsWith("/") || /[:,]/.test(m.source + m.target)) bad(`mount ${m.source}:${m.target} is not allowed`);
   if (!r.launch.arguments.every((a) => typeof a === "string")) bad("arguments must all be strings");
   const hay = [r.launch.entrypoint ?? "", ...r.launch.arguments, ...Object.values(r.launch.environment ?? {})].join(" ");
   if (FORBIDDEN_ARG.test(hay)) bad("enforce-eager / disabled CUDA graphs are not allowed");
@@ -101,12 +108,14 @@ export const buildPlan = (
   };
   for (const w of weights) {
     if (!w.present) {
-      const msg = `weights ${w.repository}@${w.revision.slice(0, 12)} are not on this machine; run: ${w.hint}`;
+      const msg = w.source === "missing" && w.hint?.startsWith("/") ? w.hint : `weights ${w.repository}@${w.revision.slice(0, 12)} are not on this machine; run: ${w.hint}`;
       if (opts.strict) throw new HttpError(409, "WEIGHTS_MISSING", msg);
       warnings.push(msg);
     }
     addMount({ source: w.hostPath, target: w.mountPath, readOnly: w.layout === "dir" });
   }
+  for (const m of raw.launch.mounts ?? []) addMount({ source: m.source, target: m.target, readOnly: m.readOnly !== false });
+  if (raw.local && !DIGEST_PINNED.test(raw.image)) warnings.push(`image ${raw.image} is not pinned by digest`);
   let asset: PlanResult["asset"] = null;
   if (raw.asset) {
     if (!/^[\w.-]+$/.test(raw.asset.name)) throw new HttpError(422, "RECIPE_GATE", `asset name ${raw.asset.name} is invalid`);
@@ -143,6 +152,7 @@ export const buildPlan = (
     hostPort: hostPortFor(ctx, view),
     containerPort: raw.launch.port,
     shm: raw.launch.shm ?? null,
+    dockerOpts: raw.launch.docker ?? [],
     labels: { "local-studio.managed": "1", "local-studio.recipe": recipeId, "local-studio.machine": ctx.identity.machineId },
     servedName: raw.servedName,
     injected,

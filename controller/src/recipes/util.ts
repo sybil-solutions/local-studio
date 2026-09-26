@@ -12,6 +12,7 @@ export const RECIPE_ID = /^[a-z0-9][a-z0-9._-]{0,127}$/;
 export const DIGEST_PINNED = /@sha256:[0-9a-f]{64}$/;
 export const REVISION_40 = /^[0-9a-f]{40}$/;
 export const FORBIDDEN_ARG = /enforce.eager|disable.?cuda.?graph/i;
+export const DOCKER_OPT = /^--(init|ipc=host|oom-score-adj=-?\d{1,4}|ulimit=(memlock|stack)=-?\d{1,12}(:-?\d{1,12})?|security-opt=seccomp=(unconfined|\/[\w./-]+\.json))$/;
 export const ENV_KEY = /^[A-Z_][A-Z0-9_]*$/;
 export const DEVICE_ENV = new Set(["NVIDIA_VISIBLE_DEVICES", "CUDA_VISIBLE_DEVICES"]);
 export const SECRET_ENV = /(_KEY|_TOKEN|_SECRET|_SECRETS)$|^HF_TOKEN$|PASSWORD|PASSWD|CREDENTIAL|^AWS_SECRET|API_?KEY/i;

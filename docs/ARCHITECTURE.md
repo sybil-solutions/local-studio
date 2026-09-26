@@ -343,6 +343,8 @@ Usage without an engine usage block (a rare engine, or a truncated stream) is `u
 
 The registry is the only recipe store, read-only here. `<registryDir>` is a clone of `github.com/0xSero/local-ai-registry`: cloned on first use (`git clone --filter=blob:none`, 120 s timeout) and refreshed with `git fetch origin` on `POST /api/recipes/sync` or when older than 6 h. The launchable catalog is `git show origin/main:plugin/v2/recipes.json` (schema `omarchy-local-ai/recipes/2`, the field notes). The full record, for detail views and export templates, is `git show origin/main:registry/recipe/<id>.json`. If git is unavailable, `https://raw.githubusercontent.com/0xSero/local-ai-registry/main/plugin/v2/recipes.json` is fetched and cached. The registry working tree is never modified; PRs use a separate worktree.
 
+Local recipes are read from `<home>/recipes/*.json` (one record or an array per file, re-read when a file changes) and listed ahead of the registry. A local record has the v2 recipe shape plus `hardwareId`; its weights may name a `hostPath` instead of a pinned revision, its image may be a tag (the plan warns), and `launch.mounts` and `launch.docker` add extra bind mounts and allow-listed docker flags (`--init`, `--ipc=host`, `--oom-score-adj=N`, `--ulimit=memlock|stack=…`, `--security-opt=seccomp=<file>.json`). They are data on the machine that runs them, never in the repository. A bad file is logged and skipped.
+
 ### 9.2 Rows and fit
 
 The catalog is flattened into `Recipe[]` (hardware id and `recommended` added). `RecipeRow.fit` is computed against this machine's GPUs: `no-hardware` (no GPU of that hardware id), `too-few-gpus` (fewer than `cards`), `busy` (enough GPUs, not enough `available`), or `fits` with `freeGroups` (lowest-index sets of `cards` available GPUs of that hardware). `runningModelId` is set when a running model serves `servedName`.
@@ -428,7 +430,7 @@ The UI is a Vite + React 19 SPA with no router library (hash views) and no state
 ## 14. Left out, on purpose
 
 - Load balancing, cross-machine retries, failover, request queues.
-- A recipe editing UI, recipe CRUD, and a local recipe store (the registry is the store).
+- A recipe editing UI and recipe CRUD (the registry plus `<home>/recipes/*.json` are the stores).
 - Our own chat UI (dsh is the agent UI) and agent-session storage.
 - Weight downloads (the launch fails with the exact `hf download` command), HF search, and model deletion.
 - Native (non-docker) launches, compose launches, and launches on macOS/MLX (MLX servers are still discovered and adopted).
