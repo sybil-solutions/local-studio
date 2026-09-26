@@ -28,7 +28,7 @@ const physicalCores = async (ctx: Ctx): Promise<number | null> => {
 
 const cpuModel = async (ctx: Ctx): Promise<string> => {
   const m = cpus()[0]?.model?.trim();
-  if (m) return m;
+  if (m && m !== "unknown") return m;
   if (ctx.config.platform !== "linux") return "";
   const r = await ctx.exec(["lscpu"], { timeoutMs: 3000, env: { LC_ALL: "C" } });
   const names = [...r.stdout.matchAll(/^Model name:\s*(.+)$/gm)].map((x) => (x[1] ?? "").trim());
