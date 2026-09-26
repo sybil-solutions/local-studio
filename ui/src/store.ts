@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from "react";
-import type { ControllerEvent, ControllerHealth, EngineRates, FleetSnapshot, HourlyRow, TtftHour, LaunchProgress, MetricsSummary, RecipeRow, RequestRecord, Snapshot } from "@local-studio/contracts/client";
+import type { ControllerEvent, ControllerHealth, EngineRates, FleetSnapshot, GpuSample, HourlyRow, TtftHour, LaunchProgress, MetricsSummary, RecipeRow, RequestRecord, Snapshot } from "@local-studio/contracts/client";
 import { normalizeSnapshot } from "@local-studio/contracts/client";
 import { type ConnState, events, get, setUnauthorizedHandler, via } from "./api";
 
@@ -8,12 +8,15 @@ export interface MachineStats {
   health: ControllerHealth | null;
   hourly: HourlyRow[];
   ttft: TtftHour[];
+  gpus: GpuSample[];
+  gpusAt: number;
   reqs: RequestRecord[];
 }
 
 export interface State {
   fleet: FleetSnapshot | null;
   requests: RequestRecord[];
+  fresh: Set<string>;
   launches: Record<string, LaunchProgress>;
   engines: Record<string, EngineRates>;
   recipes: Record<string, RecipeRow[] | null>;
@@ -22,12 +25,14 @@ export interface State {
   retryMs: number | null;
   needKey: boolean;
   error: string | null;
+  hist: Record<string, number[]>;
   now: number;
 }
 
 let state: State = {
   fleet: null,
   requests: [],
+  fresh: new Set(),
   launches: {},
   engines: {},
   recipes: {},
@@ -36,6 +41,7 @@ let state: State = {
   retryMs: null,
   needKey: false,
   error: null,
+  hist: {},
   now: Date.now(),
 };
 const subs = new Set<() => void>();
@@ -61,8 +67,17 @@ const fleetFromSnapshot = (s: Snapshot): FleetSnapshot => ({
   sessions: [],
 });
 
+const HIST = 90;
+
 const list = <T>(x: T[] | null | undefined): T[] => (Array.isArray(x) ? x : []);
 const safe = normalizeSnapshot;
+
+const track = (hist: Record<string, number[]>, f: FleetSnapshot): Record<string, number[]> => {
+  const next = { ...hist };
+  for (const m of f.machines)
+    for (const g of m.snapshot?.gpus ?? []) if (g.utilPct !== null) next[`${m.machineId}/${g.key}`] = [...(next[`${m.machineId}/${g.key}`] ?? []), g.utilPct].slice(-HIST);
+  return next;
+};
 
 export const applySnapshot = (raw: Snapshot): void =>
   setState((st) => {
@@ -75,7 +90,7 @@ export const applySnapshot = (raw: Snapshot): void =>
     const entry = { machineId: self, peerId: null, online: true, error: null, snapshot: s };
     const machines = has ? f.machines.map((m) => (m.machineId === self ? { ...m, ...entry } : m)) : [entry, ...f.machines];
     const fleet = { ...f, self, machines, at: Math.max(f.at, s.at) };
-    return { fleet };
+    return { fleet, hist: track(st.hist, { ...fleet, machines: [entry] }) };
   });
 
 export const applyFleet = (raw: FleetSnapshot): void =>
@@ -84,7 +99,7 @@ export const applyFleet = (raw: FleetSnapshot): void =>
     const prevSelf = st.fleet?.machines.find((m) => m.machineId === f.self && m.peerId === null);
     const has = f.machines.some((m) => m.machineId === f.self);
     const machines = has || !prevSelf ? f.machines : [prevSelf, ...f.machines];
-    return { fleet: { ...f, machines } };
+    return { fleet: { ...f, machines }, hist: track(st.hist, { ...f, machines: f.machines.filter((m) => m.peerId !== null) }) };
   });
 
 const onEvent = (e: ControllerEvent): void => {
@@ -95,9 +110,23 @@ const onEvent = (e: ControllerEvent): void => {
     case "fleet":
       applyFleet(e.data);
       break;
-    case "request":
-      setState((s) => ({ requests: [e.data, ...s.requests.filter((r) => r.id !== e.data.id)].slice(0, 500) }));
+    case "request": {
+      const id = e.data.id;
+      setState((s) => {
+        const fresh = new Set(s.fresh);
+        fresh.add(id);
+        return { requests: [e.data, ...s.requests.filter((r) => r.id !== id)].slice(0, 500), fresh };
+      });
+      setTimeout(() => {
+        setState((s) => {
+          if (!s.fresh.has(id)) return {};
+          const fresh = new Set(s.fresh);
+          fresh.delete(id);
+          return { fresh };
+        });
+      }, 1500);
       break;
+    }
     case "launch":
       setState((s) => ({ launches: { ...s.launches, [e.data.launchId]: e.data } }));
       break;
@@ -125,19 +154,24 @@ export const loadStats = async (): Promise<void> => {
       .filter((m) => m.online)
       .map(async (m) => {
         const p = m.peerId;
+        const prev = getState().stats[m.machineId];
+        const gpuDue = !prev || Date.now() - prev.gpusAt > 55_000;
         const none = Promise.resolve({ ok: false as const });
-        const [sum, health, hourly, ttft, reqs] = await Promise.all([
+        const [sum, health, hourly, ttft, gpus, reqs] = await Promise.all([
           get<MetricsSummary>(via(p, "/api/metrics/summary?window=24h")),
           get<ControllerHealth>(via(p, "/api/health/detail")),
           get<HourlyRow[]>(via(p, `/api/usage/hourly?from=${hourFrom}`)),
           get<TtftHour[]>(via(p, `/api/metrics/ttft?from=${hourFrom}`)),
-          p ? get<RequestRecord[]>(via(p, "/api/metrics/requests?limit=200")) : none,
+          gpuDue ? get<GpuSample[]>(via(p, `/api/metrics/gpus?from=${Date.now() - 86_400_000}`)) : none,
+          p ? get<RequestRecord[]>(via(p, "/api/metrics/requests?limit=50")) : none,
         ]);
         const st: MachineStats = {
           sum: sum.ok && typeof sum.data?.requests === "number" ? sum.data : null,
           health: health.ok && health.data?.memory ? health.data : null,
           hourly: arr<HourlyRow>(hourly),
           ttft: arr<TtftHour>(ttft),
+          gpus: gpuDue ? arr<GpuSample>(gpus) : (prev?.gpus ?? []),
+          gpusAt: gpuDue ? Date.now() : (prev?.gpusAt ?? 0),
           reqs: arr<RequestRecord>(reqs),
         };
         setState((s) => ({ stats: { ...s.stats, [m.machineId]: st } }));
