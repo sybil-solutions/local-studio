@@ -327,7 +327,7 @@ export const fullScan = async (ctx: Ctx, st: ScanState, hw: HardwareList | null,
       fp = await fingerprint(ctx, base, c.argv.join(" "));
       if (fp.kind === "model" || fp.kind === "openai") st.probes.setPos(posKey, fp);
     }
-    const isModel = c.gpu || c.engineHint !== null || fp?.kind === "model";
+    const isModel = c.engineHint !== null || fp?.kind === "model" || (c.gpu && (c.runtime.kind !== "native" || health.ok));
     if (!isModel) {
       if (fp?.kind === "openai")
         endpoints.push({ port: c.port, bind: c.bind, kind: "openai-proxy", pid: null, process: `container ${c.id}`, note: "OpenAI-shaped, no engine, no GPU" });
