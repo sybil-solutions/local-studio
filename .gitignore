@@ -8,3 +8,5 @@ data/
 .env
 .env.local
 desktop/release/
+release-staging/
+.release-version

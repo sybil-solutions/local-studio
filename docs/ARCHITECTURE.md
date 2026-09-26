@@ -417,7 +417,7 @@ As in the field notes-5 and the field notes-6. Agents **always** use the local g
   6. Poll `/health` over ssh for 30 × 1 s.
   7. With `--connect`, read the admin key with `ssh <host> '<dir>/local-studio key --home <dir>/home'` into memory and `POST` it to the local controller's `/api/machines`. It is never printed.
   - `local-studio deploy stop <ssh-host> [--port]` kills only `tmux -L local-studio kill-session -t local-studio-<port>` (or `systemctl --user stop` for `--service`).
-- **Desktop (`desktop/`, Electron):** `main.cjs` checks `GET http://127.0.0.1:8080/health` (1 s timeout). If it is not `service:"local-studio"`, it spawns `<resources>/local-studio serve --port 8080` (the same binary and ui) and waits for health, then opens a `BrowserWindow` on `http://127.0.0.1:8080/`. It kills the child on quit only if it started it. electron-builder produces a macOS arm64 dmg and a Linux x64 AppImage, with `extraResources` = the binary and ui. There is no preload API, no IPC and no tray.
+- **Desktop (`desktop/`, Electron):** `main.cjs` checks `GET http://127.0.0.1:8080/health` (1 s timeout). If it is not `service:"local-studio"`, it spawns `<resources>/local-studio serve --port 8080` (the same binary and ui) and waits for health, then opens a `BrowserWindow` on `http://127.0.0.1:8080/`. It kills the child on quit only if it started it. electron-builder produces a macOS arm64 dmg and zip and a Linux x64 AppImage, plus electron-updater metadata, with `extraResources` = the binary and ui. There is no preload API, no IPC and no tray.
 
 ## 13. UI (slice 6)
 

@@ -8,8 +8,8 @@
   "scripts": {
     "typecheck": "true",
     "release": "bash ../scripts/release.sh",
-    "dist:mac": "bash ../scripts/release.sh && electron-builder --mac dmg --arm64",
-    "dist:linux": "bash ../scripts/release.sh && electron-builder --linux AppImage --x64"
+    "dist:mac": "bash ../scripts/release.sh && electron-builder --mac --arm64 --publish never",
+    "dist:linux": "bash ../scripts/release.sh && electron-builder --linux --x64 --publish never"
   },
   "devDependencies": {
     "electron": "^38.1.0",

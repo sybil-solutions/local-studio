@@ -4,7 +4,7 @@ set -euo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$root"
 
-version="$(bun -e 'console.log(require("./controller/package.json").version)')"
+version="${LOCAL_STUDIO_VERSION:-$(bun -e 'console.log(require("./controller/package.json").version)')}"
 targets="${LOCAL_STUDIO_TARGETS:-bun-linux-x64 bun-darwin-arm64}"
 
 mkdir -p dist

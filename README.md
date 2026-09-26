@@ -33,6 +33,10 @@ bun run build:bin                 # dist/local-studio single binary
 
 Configuration comes from flags or `LOCAL_STUDIO_*` env (`HOME`, `DATA_DIR`, `HOST`, `PORT`, `MODELS_DIR`, `REGISTRY_DIR`, `READ_ONLY`, `NAME`, `SCAN_PORTS`, `WATCHDOGS`, `API_KEY`, `PUBLIC_URL`, `UI_DIR`). The default home is `~/.local-studio`.
 
+## Releases
+
+Every push to `main` that passes CI runs `.github/workflows/release.yml`. semantic-release (`release.config.cjs`) reads the conventional commits since the last tag and computes the next version (`feat` minor, breaking major, other types patch); that version is the only release version. It is injected into the controller binaries (`LOCAL_STUDIO_VERSION`), the Electron app (`extraMetadata.version`, so `Info.plist`, updater metadata and asset names) and the tag. The macOS job runs in the `release-signing` environment and signs and notarizes when the Apple secrets are present. The final job rechecks that the commit is still `origin/main`, then semantic-release tags it and publishes the GitHub release with the controller tarballs, `Local-Studio-<ver>-mac-arm64.{dmg,zip}`, the stable `Local-Studio-arm64.dmg` alias, `Local-Studio-<ver>-linux-x86_64.AppImage`, `latest-mac.yml`, `latest-linux.yml`, blockmaps, `SHA256SUMS` and `Local-Studio-release.json`. Nothing is deployed elsewhere: the controller serves the UI.
+
 ## Rules
 
 No `max_tokens` or thinking caps anywhere, no `--enforce-eager`, no disabled CUDA graphs. Every ssh, docker and network call carries a hard timeout (`core/exec.ts`). Never stop or restart models on a live machine without the owner. No automated test suites: verify against the live system (`docs/ARCHITECTURE.md` §15).

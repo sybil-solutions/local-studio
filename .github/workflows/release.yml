@@ -1,0 +1,279 @@
+name: Release
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+
+concurrency:
+  group: release-main
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  RELEASE_SHA: ${{ github.event.workflow_run.head_sha }}
+  BUN_VERSION: 1.3.14
+  NODE_VERSION: 22.19.0
+  ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+
+jobs:
+  version:
+    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    outputs:
+      version: ${{ steps.next.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          ref: ${{ env.RELEASE_SHA }}
+      - name: Select tested main revision
+        run: git checkout -B main "$RELEASE_SHA"
+      - name: Reject stale release revision
+        run: |
+          current=$(timeout 30 git ls-remote origin refs/heads/main | cut -f1)
+          [ "$current" = "$RELEASE_SHA" ] || { echo "::error::origin/main is $current, CI ran on $RELEASE_SHA"; exit 1; }
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - id: next
+        name: Compute next version
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          timeout 300 npx --yes \
+            --package semantic-release@24.2.7 \
+            --package @semantic-release/commit-analyzer@13.0.1 \
+            --package @semantic-release/release-notes-generator@14.1.0 \
+            --package @semantic-release/exec@7.1.0 \
+            --package @semantic-release/github@11.0.6 \
+            --package conventional-changelog-conventionalcommits@8.0.0 \
+            semantic-release --dry-run
+          if [ -s .release-version ]; then
+            echo "version=$(cat .release-version)" >> "$GITHUB_OUTPUT"
+            echo "Next release: $(cat .release-version)"
+          else
+            echo "No release-worthy commits since the last tag"
+          fi
+
+  controller:
+    needs: version
+    if: needs.version.outputs.version != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      LOCAL_STUDIO_VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ env.RELEASE_SHA }}
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - name: Install
+        run: timeout 300 bun install --frozen-lockfile
+      - name: Build controller binaries and UI
+        run: LOCAL_STUDIO_TARGETS="bun-linux-x64 bun-darwin-arm64" timeout 900 bash scripts/release.sh
+      - name: Verify injected version
+        run: |
+          reported=$(timeout 30 dist/linux-x64/local-studio version)
+          [ "$reported" = "$LOCAL_STUDIO_VERSION" ] || { echo "::error::binary reports $reported, expected $LOCAL_STUDIO_VERSION"; exit 1; }
+          for pair in linux-x64 darwin-arm64; do
+            test -s "dist/local-studio-$LOCAL_STUDIO_VERSION-$pair.tar.gz"
+          done
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: controller
+          path: dist/local-studio-*.tar.gz
+          if-no-files-found: error
+          retention-days: 7
+
+  desktop-mac:
+    needs: [version, controller]
+    runs-on: macos-15
+    timeout-minutes: 60
+    environment: release-signing
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ env.RELEASE_SHA }}
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - name: Install
+        timeout-minutes: 5
+        run: bun install --frozen-lockfile
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: controller
+          path: dist
+      - name: Unpack bundled controller
+        run: mkdir -p dist/darwin-arm64 && tar -xzf "dist/local-studio-$VERSION-darwin-arm64.tar.gz" -C dist/darwin-arm64
+      - id: build
+        name: Build, sign and notarize
+        working-directory: desktop
+        timeout-minutes: 50
+        env:
+          CSC_LINK: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+          CSC_KEY_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          APPLE_API_KEY_BASE64: ${{ secrets.APPLE_API_KEY_BASE64 }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          args=(--mac --arm64 --publish never "-c.extraMetadata.version=$VERSION" "-c.extraMetadata.localStudioCommit=$RELEASE_SHA")
+          if [ -n "$CSC_LINK" ]; then
+            echo "signed=true" >> "$GITHUB_OUTPUT"
+            if [ -n "$APPLE_API_KEY_BASE64" ]; then
+              key="$RUNNER_TEMP/AuthKey_notary.p8"
+              (umask 077 && printf '%s' "$APPLE_API_KEY_BASE64" | base64 --decode > "$key")
+              export APPLE_API_KEY="$key"
+              unset APPLE_ID APPLE_APP_SPECIFIC_PASSWORD
+            fi
+          else
+            echo "::warning::MACOS_CERTIFICATE_P12 is not set; the macOS app is unsigned and not notarized"
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+            export CSC_IDENTITY_AUTO_DISCOVERY=false
+            unset CSC_LINK CSC_KEY_PASSWORD APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_API_KEY_ID APPLE_API_ISSUER
+            args+=(-c.mac.identity=null -c.mac.notarize=false)
+          fi
+          ./node_modules/.bin/electron-builder "${args[@]}"
+          rm -f "$RUNNER_TEMP/AuthKey_notary.p8"
+      - name: Verify app
+        timeout-minutes: 5
+        env:
+          SIGNED: ${{ steps.build.outputs.signed }}
+        run: |
+          set -euo pipefail
+          app="dist/desktop/mac-arm64/Local Studio.app"
+          plist=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$app/Contents/Info.plist")
+          [ "$plist" = "$VERSION" ] || { echo "::error::Info.plist has $plist, expected $VERSION"; exit 1; }
+          [ "$("$app/Contents/Resources/local-studio/local-studio" version)" = "$VERSION" ]
+          grep -Fx "provider: github" "$app/Contents/Resources/app-update.yml"
+          grep -Fx "version: $VERSION" dist/desktop/latest-mac.yml
+          test -s "dist/desktop/Local-Studio-$VERSION-mac-arm64.dmg"
+          test -s "dist/desktop/Local-Studio-$VERSION-mac-arm64.zip"
+          if [ "$SIGNED" = "true" ]; then
+            codesign --verify --deep --strict --verbose=2 "$app"
+            xcrun stapler validate "$app"
+            spctl --assess --type execute --verbose=4 "$app"
+          fi
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: desktop-mac
+          path: |
+            dist/desktop/*.dmg
+            dist/desktop/*.zip
+            dist/desktop/*.blockmap
+            dist/desktop/latest-mac.yml
+          if-no-files-found: error
+          retention-days: 7
+
+  desktop-linux:
+    needs: [version, controller]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ env.RELEASE_SHA }}
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - name: Install
+        run: timeout 300 bun install --frozen-lockfile
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: controller
+          path: dist
+      - name: Unpack bundled controller
+        run: mkdir -p dist/linux-x64 && tar -xzf "dist/local-studio-$VERSION-linux-x64.tar.gz" -C dist/linux-x64
+      - name: Build AppImage
+        working-directory: desktop
+        run: timeout 1200 ./node_modules/.bin/electron-builder --linux --x64 --publish never "-c.extraMetadata.version=$VERSION" "-c.extraMetadata.localStudioCommit=$RELEASE_SHA"
+      - name: Verify AppImage
+        run: |
+          set -euo pipefail
+          grep -Fx "version: $VERSION" dist/desktop/latest-linux.yml
+          ls dist/desktop/Local-Studio-"$VERSION"-linux-*.AppImage
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: desktop-linux
+          path: |
+            dist/desktop/*.AppImage
+            dist/desktop/latest-linux.yml
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    needs: [version, controller, desktop-mac, desktop-linux]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    env:
+      RELEASE_VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          ref: ${{ env.RELEASE_SHA }}
+      - name: Select tested main revision
+        run: git checkout -B main "$RELEASE_SHA"
+      - name: Reject stale release revision
+        run: |
+          current=$(timeout 30 git ls-remote origin refs/heads/main | cut -f1)
+          [ "$current" = "$RELEASE_SHA" ] || { echo "::error::origin/main is $current, built $RELEASE_SHA"; exit 1; }
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          path: release-staging
+          merge-multiple: true
+      - name: Stage assets, alias and checksums
+        working-directory: release-staging
+        run: |
+          set -euo pipefail
+          cp "Local-Studio-$RELEASE_VERSION-mac-arm64.dmg" Local-Studio-arm64.dmg
+          sha256sum -- * > SHA256SUMS
+          node -e '
+            const fs = require("node:fs");
+            const [version, commit] = process.argv.slice(1);
+            const assets = Object.fromEntries(fs.readFileSync("SHA256SUMS", "utf8").trim().split("\n").map((line) => {
+              const [sha256, name] = line.split(/\s+\*?/);
+              return [name, { sha256 }];
+            }));
+            fs.writeFileSync("Local-Studio-release.json", JSON.stringify({ schemaVersion: 1, version, commit, assets }, null, 2) + "\n");
+          ' "$RELEASE_VERSION" "$RELEASE_SHA"
+          ls -la
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - name: Configure git author
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+      - name: Tag and publish the GitHub release
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          timeout 900 npx --yes \
+            --package semantic-release@24.2.7 \
+            --package @semantic-release/commit-analyzer@13.0.1 \
+            --package @semantic-release/release-notes-generator@14.1.0 \
+            --package @semantic-release/exec@7.1.0 \
+            --package @semantic-release/github@11.0.6 \
+            --package conventional-changelog-conventionalcommits@8.0.0 \
+            semantic-release

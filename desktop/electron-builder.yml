@@ -1,5 +1,6 @@
 appId: org.localstudio.desktop
 productName: Local Studio
+artifactName: Local-Studio-${version}-${os}-${arch}.${ext}
 directories:
   output: ../dist/desktop
   buildResources: build
@@ -8,12 +9,18 @@ files:
   - package.json
 asar: true
 npmRebuild: false
+publish:
+  provider: github
+  owner: sybil-solutions
+  repo: local-studio
 mac:
   target:
     - target: dmg
       arch: arm64
+    - target: zip
+      arch: arm64
   category: public.app-category.developer-tools
-  identity: null
+  hardenedRuntime: true
   extraResources:
     - from: ../dist/darwin-arm64/
       to: local-studio/
