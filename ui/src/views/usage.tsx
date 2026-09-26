@@ -121,7 +121,8 @@ export const UsagePage = ({ machineId }: { machineId: string | null }) => {
   const act = machineId ? (pick[0]?.snap?.activity ?? null) : sumActivity(fleet);
   const sums = data.map((d) => d.sum).filter((s): s is MetricsSummary => !!s);
   const tot = fold(sums.map((s) => ({ ...s, ttftSumMs: 0, ttftN: 0 })), () => "all")[0];
-  const one = sums.length === 1 ? sums[0]! : null;
+  const active = sums.filter((s) => s.requests > 0);
+  const one = active.length === 1 ? active[0]! : null;
   const days = fold(data.flatMap((d) => d.daily), (r) => r.day).sort((a, b) => b.key.localeCompare(a.key));
   const codes = ERROR_CODES.map((c) => ({ c, n: sums.reduce((t, s) => t + (s.errorsByCode[c] ?? 0), 0) })).filter((x) => x.n > 0);
   const prompt = tot ? tot.inputUncached + tot.cacheRead + tot.cacheWrite + tot.cacheUnknownPrompt : 0;
