@@ -8,7 +8,7 @@ on:
 
 concurrency:
   group: release-main
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 permissions:
   contents: read
@@ -80,12 +80,12 @@ jobs:
       - name: Install
         run: timeout 300 bun install --frozen-lockfile
       - name: Build controller binaries and UI
-        run: LOCAL_STUDIO_TARGETS="bun-linux-x64 bun-darwin-arm64" timeout 900 bash scripts/release.sh
+        run: LOCAL_STUDIO_TARGETS="bun-linux-x64 bun-linux-arm64 bun-darwin-arm64" timeout 900 bash scripts/release.sh
       - name: Verify injected version
         run: |
           reported=$(timeout 30 dist/linux-x64/local-studio version)
           [ "$reported" = "$LOCAL_STUDIO_VERSION" ] || { echo "::error::binary reports $reported, expected $LOCAL_STUDIO_VERSION"; exit 1; }
-          for pair in linux-x64 darwin-arm64; do
+          for pair in linux-x64 linux-arm64 darwin-arm64; do
             test -s "dist/local-studio-$LOCAL_STUDIO_VERSION-$pair.tar.gz"
           done
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
