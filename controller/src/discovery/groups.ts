@@ -34,7 +34,9 @@ export const computeGroups = (gpus: Gpu[], models: RunningModel[]): GpuGroup[] =
   for (const g of groups) g.gpuKeys.sort((a, b) => (index.get(a) ?? 0) - (index.get(b) ?? 0));
   for (const gpu of gpus) {
     if (claimed.has(gpu.key)) continue;
-    const foreign = gpu.backend !== "apple" && gpu.memUsedMiB !== null && gpu.memUsedMiB > FOREIGN_USED_MIB;
+    const foreign =
+      gpu.processes.some((p) => !p.modelId && (p.usedMiB === null || p.usedMiB > FOREIGN_USED_MIB / 2)) ||
+      (!gpu.unified && gpu.memUsedMiB !== null && gpu.memUsedMiB > FOREIGN_USED_MIB);
     groups.push({
       id: `gpu:${gpu.key}`,
       gpuKeys: [gpu.key],

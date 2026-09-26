@@ -35,7 +35,15 @@ export const matchHardware = (hw: HardwareList | null, backend: string, product:
       (h.match.names.includes(n) || normProduct(h.match.name) === n) &&
       Math.abs(h.match.vramGb * 1024 - totalMiB) <= 1024,
   );
-  return hit?.hardwareId ?? null;
+  return hit?.hardwareId ?? `${backend}-${normProduct(product)}`;
+};
+
+const systemMem = async (): Promise<{ total: number; used: number } | null> => {
+  const t = (await readFile("/proc/meminfo", "utf8").catch(() => "")) as string;
+  const kib = (k: string) => Number(new RegExp(`^${k}:\\s+(\\d+)`, "m").exec(t)?.[1] ?? Number.NaN);
+  const total = kib("MemTotal");
+  const avail = kib("MemAvailable");
+  return Number.isFinite(total) && Number.isFinite(avail) ? { total: Math.round(total / 1024), used: Math.round((total - avail) / 1024) } : null;
 };
 
 const cell = (s: string | undefined): number | null => {
@@ -66,13 +74,16 @@ const scanNvidia = async (ctx: Ctx, hw: HardwareList | null): Promise<GpuScan> =
     }
   }
   const gpus: Gpu[] = [];
+  let sys: { total: number; used: number } | null | undefined;
   for (const line of q.stdout.split("\n")) {
     const f = line.split(",").map((s) => s.trim());
     if (f.length < 10 || f[0] === "") continue;
     const index = Number(f[0]);
     const product = f[1] as string;
     const uuid = f[2] as string;
-    const total = cell(f[5]) ?? 0;
+    const unified = cell(f[5]) === null;
+    if (unified && sys === undefined) sys = await systemMem();
+    const total = cell(f[5]) ?? sys?.total ?? 0;
     gpus.push({
       key: `nvidia:${index}`,
       backend: "nvidia",
@@ -83,7 +94,8 @@ const scanNvidia = async (ctx: Ctx, hw: HardwareList | null): Promise<GpuScan> =
       name: displayName(product),
       hardwareId: matchHardware(hw, "nvidia", product, total),
       memTotalMiB: total,
-      memUsedMiB: cell(f[4]),
+      memUsedMiB: unified ? (sys?.used ?? null) : cell(f[4]),
+      unified: unified || undefined,
       utilPct: cell(f[6]),
       tempC: cell(f[7]),
       powerW: cell(f[8]),
@@ -242,6 +254,7 @@ const scanApple = async (ctx: Ctx, hw: HardwareList | null): Promise<GpuScan> =>
         hardwareId: matchHardware(hw, "apple", product, totalMiB),
         memTotalMiB: totalMiB,
         memUsedMiB,
+        unified: true,
         utilPct: null,
         tempC: null,
         powerW: null,

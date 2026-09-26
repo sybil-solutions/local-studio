@@ -20,6 +20,7 @@ export interface Gpu {
   hardwareId: string | null;
   memTotalMiB: number;
   memUsedMiB: number | null;
+  unified?: boolean;
   utilPct: number | null;
   tempC: number | null;
   powerW: number | null;

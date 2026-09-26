@@ -416,10 +416,12 @@ export const fullScan = async (ctx: Ctx, st: ScanState, hw: HardwareList | null,
 
   const served = new Set(models.flatMap((m) => m.servedModels.map((x) => x.toLowerCase())));
   const extCandidates: Candidate[] = [];
+  const unownedGpuWork = gs.apps.some((a) => !appOwner.has(a.pid)) || gs.gpus.every((g) => g.backend === "apple");
   for (const { l, fp } of externals) {
     const dup = fp.models.find((e) => served.has(e.id.toLowerCase()));
-    if (dup) {
-      endpoints.push({ port: l.port, bind: l.bind, kind: "openai-proxy", pid: null, process: l.process, note: `proxy for ${dup.id}` });
+    if (dup || !unownedGpuWork) {
+      const id = dup?.id ?? fp.models[0]?.id ?? fp.engine;
+      endpoints.push({ port: l.port, bind: l.bind, kind: "openai-proxy", pid: null, process: l.process, note: dup ? `proxy for ${id}` : `forward of ${id}; no GPU process here` });
       continue;
     }
     const posKey = `${l.port}:external:${l.port}`;
