@@ -2,7 +2,7 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, unlinkSync,
 import { join } from "node:path";
 import { randomBytes } from "node:crypto";
 import type { Health, Peer, Snapshot } from "@local-studio/contracts";
-import { SERVICE } from "@local-studio/contracts";
+import { SERVICE, normalizeSnapshot } from "@local-studio/contracts";
 import type { Ctx } from "../context";
 import { migrate } from "../core/db";
 import { HttpError } from "../recipes/util";
@@ -113,8 +113,8 @@ export const createPeerStore = (ctx: Ctx): PeerStore => {
           await res.body?.cancel();
           throw new HttpError(401, "PEER_AUTH", `peer ${health.name} rejected the key (HTTP ${res.status}); nothing was stored`);
         }
-        const body = (await readJson(res)) as Snapshot | null;
-        if (!res.ok || !body?.machine) throw new HttpError(502, "PEER_SNAPSHOT", `peer snapshot answered ${res.status}`);
+        const body = normalizeSnapshot((await readJson(res)) as Snapshot | null);
+        if (!res.ok || !body) throw new HttpError(502, "PEER_SNAPSHOT", `peer snapshot answered ${res.status}`);
         snapshot = body;
       } catch (e) {
         if (e instanceof HttpError) throw e;

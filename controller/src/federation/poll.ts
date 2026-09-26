@@ -1,4 +1,4 @@
-import type { Snapshot } from "@local-studio/contracts";
+import { type Snapshot, normalizeSnapshot } from "@local-studio/contracts";
 import type { Ctx } from "../context";
 import { snapshotKey } from "../core/snapshot";
 import type { PeerState, PeerStore } from "./peers";
@@ -69,7 +69,8 @@ export const createPoller = (ctx: Ctx, store: PeerStore): Poller => {
         await res.body?.cancel();
         throw new Error(res.status === 401 || res.status === 403 ? `peer rejected the stored key (HTTP ${res.status})` : `HTTP ${res.status}`);
       }
-      const snap = (await res.json()) as Snapshot;
+      const snap = normalizeSnapshot((await res.json()) as Snapshot);
+      if (!snap) throw new Error("peer snapshot is malformed");
       if (!states.has(id)) return;
       const now = Date.now();
       s.misses = 0;

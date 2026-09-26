@@ -1,9 +1,8 @@
 import { Hono } from "hono";
 import type { Activity, FleetSnapshot, GatewayModel, Snapshot } from "@local-studio/contracts";
-import { ConnectPeerBody } from "@local-studio/contracts";
+import { ConnectPeerBody, emptyActivity } from "@local-studio/contracts";
 import type { Ctx, Env, Module, PeerService, Services } from "../context";
 import { buildSnapshot } from "../core/snapshot";
-import { emptyActivity } from "../metrics";
 import { createPeerStore, toPeer } from "./peers";
 import { createPoller } from "./poll";
 import { cleanRequestHeaders, proxyToPeer, upstreamFetch } from "./proxy";
@@ -58,16 +57,23 @@ export const createFederation = (ctx: Ctx, svc: Services): Module<PeerService> =
         { machineId: ctx.identity.machineId, peerId: null, online: true, error: self ? null : "local snapshot unavailable", snapshot: self },
         ...states.map((s) => ({ machineId: s.row.machine_id, peerId: s.row.id, online: s.online, error: s.error, snapshot: s.snapshot })),
       ],
-      peers: states.map(toPeer),
-      activity: sumActivity(activities),
+      peers: safe(() => states.map(toPeer), []),
+      activity: safe(() => sumActivity(activities), emptyActivity()),
       harnesses: safe(() => svc.agents.harnesses(), []),
       workspaces: safe(() => svc.agents.workspaces(), []),
     };
   };
 
-  poller.onChange(() => ctx.bus.emit({ type: "fleet", data: fleet() }));
+  poller.onChange(() => {
+    try {
+      ctx.bus.emit({ type: "fleet", data: fleet() });
+    } catch (e) {
+      ctx.log.warn(`fleet event: ${String(e)}`, "federation.fleet");
+    }
+  });
 
-  const models = (): GatewayModel[] => {
+  const models = (): GatewayModel[] => safe(peerModels, []);
+  const peerModels = (): GatewayModel[] => {
     const local = new Set<string>();
     for (const m of safe(() => svc.runtime.models(), [])) for (const n of m.servedModels) local.add(n.toLowerCase());
     const taken = new Set(local);

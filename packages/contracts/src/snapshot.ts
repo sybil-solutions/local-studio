@@ -51,3 +51,29 @@ export interface ControllerHealth {
 }
 
 export type ControllerEventType = ControllerEvent["type"];
+
+export const emptyActivity = (): Activity => ({ start: "", today: 0, days: [], requests: 0, total: 0, week: 0, since: null, last: null });
+
+const list = <T>(x: T[] | null | undefined): T[] => (Array.isArray(x) ? x : []);
+const num = (x: unknown): number => (typeof x === "number" && Number.isFinite(x) ? x : 0);
+
+export const normalizeSnapshot = (s: Snapshot | null | undefined): Snapshot | null => {
+  if (!s || typeof s !== "object" || !s.machine || typeof s.machine.machineId !== "string") return null;
+  const a: Partial<Activity> = s.activity && typeof s.activity === "object" ? s.activity : {};
+  return {
+    ...s,
+    at: num(s.at) || Date.now(),
+    gpus: list(s.gpus).filter((g) => g && typeof g.key === "string").map((g) => ({ ...g, processes: list(g.processes) })),
+    models: list(s.models)
+      .filter((m) => m && typeof m.id === "string" && typeof m.primaryModel === "string")
+      .map((m) => ({ ...m, gpuKeys: list(m.gpuKeys), servedModels: list(m.servedModels).filter((x) => typeof x === "string") })),
+    groups: list(s.groups).filter(Boolean).map((g) => ({ ...g, gpuKeys: list(g.gpuKeys), modelIds: list(g.modelIds) })),
+    engines: list(s.engines).filter(Boolean),
+    launches: list(s.launches).filter(Boolean),
+    cards: list(s.cards).filter(Boolean).map((c) => ({ ...c, line: list(c.line) })),
+    endpoints: list(s.endpoints).filter(Boolean),
+    activity: { ...emptyActivity(), ...a, days: list(a.days), today: num(a.today), requests: num(a.requests), total: num(a.total), week: num(a.week) },
+    discovery: { ...({ lastScanAt: null, scanMs: null, docker: "absent" } as const), ...s.discovery, errors: list(s.discovery?.errors) },
+    machine: { ...s.machine, watchdogs: list(s.machine.watchdogs) },
+  };
+};
