@@ -9,10 +9,12 @@ export type Route =
 
 const eq = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
 
-const servedName = (m: RunningModel, name: string): string => m.servedModels.find((s) => eq(s, name)) ?? m.primaryModel;
+const servedName = (m: RunningModel, name: string): string => m.servedModels.find((s) => eq(s, name)) ?? m.servedModels[0] ?? m.primaryModel;
+
+export const listedName = (m: { primaryModel: string }, id: string): string => (id.startsWith("/") ? m.primaryModel : id);
 
 const matchLocal = (models: RunningModel[], name: string): RunningModel | undefined =>
-  models.find((m) => m.servedModels.some((s) => eq(s, name))) ?? models.find((m) => m.recipeId !== null && eq(m.recipeId, name)) ?? models.find((m) => eq(m.id, name));
+  models.find((m) => m.servedModels.some((s) => eq(s, name))) ?? models.find((m) => m.recipeId !== null && eq(m.recipeId, name)) ?? models.find((m) => eq(m.primaryModel, name)) ?? models.find((m) => eq(m.id, name));
 
 export const resolveModel = (svc: Services, name: string): Route => {
   const local = svc.runtime.resolveServed(name) ?? matchLocal(svc.runtime.models(), name);
@@ -51,7 +53,7 @@ export const gatewayModels = (ctx: Ctx, svc: Services): GatewayModel[] => {
     .filter((m) => (m.state === "ready" || m.state === "loading") && !m.embedding)
     .flatMap((m) =>
       m.servedModels.map((id) => ({
-        id,
+        id: listedName(m, id),
         machineId: m.machineId,
         machineName,
         modelId: m.id,

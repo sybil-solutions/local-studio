@@ -8,7 +8,9 @@ import { ancestors, cmdline, descendants, type Listener, listListeners, listProc
 import { ENGINE_RE, embeddingArgv, engineFromArgs, envMap, flag, flagList, hasFlag, num, parseJson, pool, portArg, promLabels } from "./util";
 import { findWatchdogs } from "./watchdogs";
 
-export const LOADING_LIMIT_MS = 30 * 60 * 1000;
+export const shortName = (s: string): string => (s.startsWith("/") ? (s.split("/").filter(Boolean).pop() ?? s).replace(/\.(gguf|safetensors|bin)$/i, "") : s);
+
+const LOADING_LIMIT_MS = 30 * 60 * 1000;
 const RESERVED_PORTS = new Set([22, 53, 631]);
 
 export interface Track {
@@ -339,7 +341,7 @@ export const fullScan = async (ctx: Ctx, st: ScanState, hw: HardwareList | null,
     const argvServed = flagList(c.argv, "served");
     const servedModels = entries?.length ? entries.map((e) => e.id) : argvServed.length ? argvServed : c.env.SERVED_MODEL_NAME ? [c.env.SERVED_MODEL_NAME] : [];
     const modelPath = c.argv[c.argv.findIndex((a) => a === "serve") + 1];
-    const primaryModel = servedModels[0] ?? (modelPath && !modelPath.startsWith("-") ? modelPath.split("/").filter(Boolean).pop() ?? c.id : c.id);
+    const primaryModel = (servedModels[0] && shortName(servedModels[0])) ?? (modelPath && !modelPath.startsWith("-") ? modelPath.split("/").filter(Boolean).pop() ?? c.id : c.id);
     const contextWindow =
       entries?.find((e) => e.maxModelLen)?.maxModelLen ?? (fp?.kind === "model" ? fp.propsCtx : null) ?? num(flag(c.argv, "ctx")) ?? num(c.env.MAX_MODEL_LEN);
     if (!st.cacheInfo.has(c.lifeKey) || (st.cacheInfo.get(c.lifeKey) === null && track.state === "ready")) {

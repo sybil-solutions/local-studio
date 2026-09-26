@@ -76,7 +76,7 @@ export const createFederation = (ctx: Ctx, svc: Services): Module<PeerService> =
       if (!s.online || !s.snapshot) continue;
       for (const m of s.snapshot.models ?? []) {
         if (m.state !== "ready") continue;
-        const names = m.servedModels.length > 0 ? m.servedModels : [m.primaryModel];
+        const names = m.servedModels.length > 0 ? m.servedModels.map((s) => (s.startsWith("/") ? m.primaryModel : s)) : [m.primaryModel];
         for (const served of names) {
           const clash = taken.has(served.toLowerCase());
           taken.add(served.toLowerCase());
