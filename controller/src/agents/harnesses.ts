@@ -196,6 +196,9 @@ export const createHarnessManager = (ctx: Ctx): HarnessManager => {
       else if (bun) {
         argv = [bun, "add", "--global", `${pkg}@latest`];
         env.BUN_INSTALL = prefix(h);
+        const g = join(prefix(h), "install", "global");
+        mkdirSync(g, { recursive: true, mode: 0o700 });
+        if (!existsSync(join(g, "package.json"))) writeFileSync(join(g, "package.json"), `${JSON.stringify({ name: "local-studio-harness", private: true })}\n`);
       } else return finish("failed", runtime === "node" ? "npm not found on the login shell PATH; install Node.js" : "bun not found");
       job.detail = `${basename(argv[0]!)} ${argv.slice(1).join(" ")}`;
       ctx.log.info(`agents: ${job.action} ${h}: ${job.detail}`);
