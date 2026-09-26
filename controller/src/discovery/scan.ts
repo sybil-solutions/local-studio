@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
-import type { CacheInfo, Dialect, Endpoint, Engine, Gpu, ModelState, RunningModel, RuntimeRef, SpecDecodeInfo, Watchdog } from "@local-studio/contracts";
+import type { CacheInfo, Dialect, Endpoint, Engine, Gpu, ModelState, QuantFrom, RunningModel, RuntimeRef, SpecDecodeInfo, Watchdog } from "@local-studio/contracts";
+import { modelPathArg, quantFromConfig, quantFromFlag, quantFromName, quantNames } from "@local-studio/contracts";
 import type { Ctx, RuntimeView } from "../context";
 import { containerName, digestOf, dockerScan, imageInfo, type Inspect, publishedPorts, wantsGpu } from "./docker";
 import { computeGroups } from "./groups";
@@ -143,6 +144,35 @@ const vllmCache = async (ctx: Ctx, base: string, argv: string[]): Promise<CacheI
     kvCacheDtype: l.cache_dtype && l.cache_dtype !== "auto" ? l.cache_dtype : fromArgv.kvCacheDtype,
     maxConcurrency: num(l.kv_cache_max_concurrency) ?? fromArgv.maxConcurrency,
   };
+};
+
+const quants = new Map<string, { label: string | null; from: QuantFrom | null }>();
+
+const hostModelDir = (argv: string[], runtime: RuntimeRef): string | null => {
+  const p = modelPathArg(argv);
+  if (!p?.startsWith("/")) return null;
+  if (runtime.kind === "native") return p;
+  if (runtime.kind !== "docker") return null;
+  const m = runtime.mounts.filter((x) => p === x.target || p.startsWith(`${x.target}/`)).sort((a, b) => b.target.length - a.target.length)[0];
+  return m ? m.source + p.slice(m.target.length) : null;
+};
+
+const quantFor = async (lifeKey: string, argv: string[], runtime: RuntimeRef, primaryModel: string, servedModels: string[]) => {
+  const hit = quants.get(lifeKey);
+  if (hit) return hit;
+  const f = quantFromFlag(argv);
+  let q: { label: string | null; from: QuantFrom | null } = f ? { label: f, from: "flag" } : { label: null, from: null };
+  const dir = f ? null : hostModelDir(argv, runtime);
+  if (dir) {
+    const cfg = await Promise.race([readFile(`${dir.replace(/\/+$/, "")}/config.json`, "utf8").then((t) => quantFromConfig(JSON.parse(t)), () => null), Bun.sleep(2000).then(() => null)]);
+    if (cfg) q = { label: cfg, from: "config" };
+  }
+  if (!q.label) {
+    const n = quantFromName(quantNames({ argv, primaryModel, servedModels, runtime }));
+    if (n) q = { label: n, from: "name" };
+  }
+  quants.set(lifeKey, q);
+  return q;
 };
 
 const engineRoot = (t: ProcTable, pid: number): number | null => {
@@ -363,6 +393,7 @@ export const fullScan = async (ctx: Ctx, st: ScanState, hw: HardwareList | null,
       else if (engine !== "vllm") st.cacheInfo.set(c.lifeKey, argvCache(c.argv));
     }
     const managed = c.labels["local-studio.managed"] === "1" && c.labels["local-studio.machine"] === ctx.identity.machineId;
+    const q = await quantFor(c.lifeKey, c.argv, c.runtime, primaryModel, servedModels);
     models.push({
       id: c.id,
       machineId: ctx.identity.machineId,
@@ -391,6 +422,8 @@ export const fullScan = async (ctx: Ctx, st: ScanState, hw: HardwareList | null,
       error: track.state === "unhealthy" ? track.note || "unhealthy" : null,
       stopBlocked: c.stopBlocked,
       embedding: embeddingArgv(c.argv),
+      quant: q.label,
+      quantFrom: q.from,
     });
   };
   await pool(candidates, PROBE_CONCURRENCY, adopt);
@@ -479,6 +512,7 @@ export const fullScan = async (ctx: Ctx, st: ScanState, hw: HardwareList | null,
     }
   }
   for (const k of [...st.cacheInfo.keys()]) if (!candidates.some((c) => c.lifeKey === k)) st.cacheInfo.delete(k);
+  for (const k of [...quants.keys()]) if (!candidates.some((c) => c.lifeKey === k)) quants.delete(k);
 
   const watchdogs = findWatchdogs(procs, ctx.config.watchdogPatterns);
   const wd = watchdogs.length ? [...new Set(watchdogs.map((w) => w.name))].join(", ") : null;
