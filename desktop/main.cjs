@@ -12,6 +12,7 @@ const BASE = `http://127.0.0.1:${PORT}`;
 let child = null;
 let win = null;
 let quitting = false;
+let backoff = 1000;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -42,8 +43,20 @@ function spawnController() {
     env: { ...process.env, LOCAL_STUDIO_UI_DIR: process.env.LOCAL_STUDIO_UI_DIR || path.join(path.dirname(bin), "ui") },
   });
   fs.closeSync(fd);
+  const born = Date.now();
   proc.on("exit", () => {
-    if (child === proc) child = null;
+    if (child !== proc) return;
+    child = null;
+    if (quitting) return;
+    if (Date.now() - born > 60_000) backoff = 1000;
+    const wait = backoff;
+    backoff = Math.min(backoff * 2, 30_000);
+    setTimeout(async () => {
+      if (quitting || child || (await isLocalStudio())) return;
+      try {
+        child = spawnController();
+      } catch {}
+    }, wait);
   });
   return proc;
 }
@@ -57,6 +70,12 @@ async function ensureController() {
     if (!child) break;
   }
   throw new Error(`controller did not answer ${BASE}/health; see ${path.join(app.getPath("userData"), "controller.log")}`);
+}
+
+function openOutside(url) {
+  try {
+    if (["http:", "https:"].includes(new URL(url).protocol)) shell.openExternal(url);
+  } catch {}
 }
 
 function isInternal(url) {
@@ -79,16 +98,26 @@ function openWindow(url) {
     webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
   });
   win.webContents.setWindowOpenHandler(({ url: target }) => {
-    if (!isInternal(target)) shell.openExternal(target);
+    if (!isInternal(target)) openOutside(target);
     return { action: "deny" };
   });
   win.webContents.on("will-navigate", (event, target) => {
     if (!isInternal(target)) {
       event.preventDefault();
-      shell.openExternal(target);
+      openOutside(target);
     }
   });
+  let hung = null;
+  win.on("unresponsive", () => {
+    clearTimeout(hung);
+    hung = setTimeout(() => win && win.webContents.forcefullyCrashRenderer(), 10_000);
+  });
+  win.on("responsive", () => clearTimeout(hung));
+  win.webContents.on("render-process-gone", (_e, d) => {
+    if (d.reason !== "clean-exit") setTimeout(() => win && !win.isDestroyed() && win.reload(), 500);
+  });
   win.on("closed", () => {
+    clearTimeout(hung);
     win = null;
   });
   win.loadURL(url);
@@ -153,9 +182,10 @@ if (!app.requestSingleInstanceLock()) {
   });
 
   app.on("before-quit", (event) => {
-    if (quitting || !child) return;
-    event.preventDefault();
+    const was = quitting;
     quitting = true;
+    if (was || !child) return;
+    event.preventDefault();
     stopChild(() => app.quit());
   });
 
