@@ -5,7 +5,7 @@ root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$root"
 
 version="${LOCAL_STUDIO_VERSION:-$(bun -e 'console.log(require("./controller/package.json").version)')}"
-targets="${LOCAL_STUDIO_TARGETS:-bun-linux-x64 bun-darwin-arm64}"
+targets="${LOCAL_STUDIO_TARGETS:-bun-linux-x64 bun-linux-arm64 bun-darwin-arm64}"
 
 mkdir -p dist
 bun run --cwd ui build >dist/build-ui.log 2>&1 || { cat dist/build-ui.log >&2; exit 1; }

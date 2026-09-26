@@ -36,7 +36,7 @@ export const artifactFor = async (target: Probe, log: (s: string) => void): Prom
   const root = repoRoot();
   const version = sourceVersion(root);
   const pair = `${target.os}-${target.arch}`;
-  if (pair !== "linux-x64" && pair !== "darwin-arm64") throw new DeployError(`no release target for ${pair}`);
+  if (pair !== "linux-x64" && pair !== "linux-arm64" && pair !== "darwin-arm64") throw new DeployError(`no release target for ${pair}`);
   const tarball = join(root, "dist", `local-studio-${version}-${pair}.tar.gz`);
   const srcTime = Math.max(...SOURCES.map((s) => newest(join(root, s))));
   if (existsSync(tarball) && statSync(tarball).mtimeMs >= srcTime) return { version, pair, tarball, built: false };
