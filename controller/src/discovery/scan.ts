@@ -29,6 +29,7 @@ export interface ScanState {
   cacheInfo: Map<string, CacheInfo | null>;
   stopping: Set<string>;
   probes: ProbeCache;
+  last?: Map<string, { m: RunningModel; misses: number }>;
 }
 
 export interface ScanResult {
@@ -459,6 +460,16 @@ export const fullScan = async (ctx: Ctx, st: ScanState, hw: HardwareList | null,
   await pool(extCandidates, PROBE_CONCURRENCY, adopt);
   st.probes.prune(liveKeys);
 
+  const last = (st.last ??= new Map());
+  for (const [id, e] of [...last]) {
+    if (models.some((m) => m.id === id)) continue;
+    if (e.misses < 2 && listeners.some((l) => l.port === e.m.port) && !st.stopping.has(id)) {
+      e.misses += 1;
+      models.push(e.m);
+      errors.push(`kept ${id}: not matched this scan while its port still listens`);
+    } else last.delete(id);
+  }
+  for (const m of models) if (!last.get(m.id) || last.get(m.id)!.m !== m) last.set(m.id, { m, misses: 0 });
   for (const id of [...st.tracks.keys()]) {
     if (!models.some((m) => m.id === id)) {
       st.tracks.delete(id);
