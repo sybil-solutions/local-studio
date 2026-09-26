@@ -1,8 +1,8 @@
 import type { Database } from "bun:sqlite";
 import type { Hono } from "hono";
 import type {
+  AgentSession,
   Activity,
-  DshStatus,
   EngineRates,
   FleetSnapshot,
   GatewayModel,
@@ -23,7 +23,6 @@ import type {
   RunningModel,
   Snapshot,
   Window,
-  Workspace,
   Endpoint,
 } from "@local-studio/contracts";
 import type { AuthVars } from "./core/auth";
@@ -138,8 +137,7 @@ export interface RecipeService {
 
 export interface AgentService {
   harnesses(): HarnessInfo[];
-  workspaces(): Workspace[];
-  dsh(): DshStatus;
+  sessions(): AgentSession[];
 }
 
 export interface Services {

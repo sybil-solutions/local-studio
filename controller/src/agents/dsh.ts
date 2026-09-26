@@ -1,17 +1,11 @@
-import { appendFileSync, chmodSync, existsSync, mkdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
+import { appendFileSync, chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import YAML from "yaml";
-import type { DshStatus } from "@local-studio/contracts";
 import type { Ctx } from "../context";
-import { which } from "../core/exec";
 import { redact } from "../core/log";
 import { readKey } from "./launch-table";
 
 export const DSH_PROVIDER = "localstudio-gateway";
-const PKG = "@deepseek-ai/dsh";
-const ONLY_BUILT = ["@deepseek-ai/dsh-subprocess-local", "@google/genai", "koffi", "node-pty", "protobufjs"];
-const BIN_DIRS = ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", join(homedir(), ".local", "bin"), join(homedir(), ".bun", "bin")];
 const LOGIN_RE = /^dsh web: (http:\/\/\S+)/;
 
 export interface DshModel {
@@ -20,28 +14,22 @@ export interface DshModel {
   vision: boolean | null;
 }
 
+export interface DshStatus {
+  running: boolean;
+  port: number;
+  url: string | null;
+  home: string;
+  cwd: string | null;
+  startedAt: number | null;
+}
+
 export interface DshManager {
   status(): DshStatus;
   takeLoginUrl(): string | null;
-  ensure(opts: { models: DshModel[]; defaultModel: string; cwd: string; keyFile: string; gatewayUrl: string }): Promise<{ ok: boolean; detail: string }>;
+  ensure(opts: { bin: string; path: string; models: DshModel[]; defaultModel: string; cwd: string; keyFile: string; gatewayUrl: string }): Promise<{ ok: boolean; detail: string }>;
   refresh(): Promise<void>;
   stop(): void;
 }
-
-const findPkgVersion = (bin: string): string | null => {
-  try {
-    let d = dirname(realpathSync(bin));
-    for (let i = 0; i < 6; i++) {
-      const p = join(d, "package.json");
-      if (existsSync(p)) {
-        const j = JSON.parse(readFileSync(p, "utf8")) as { name?: string; version?: string };
-        if (j.name === PKG) return j.version ?? null;
-      }
-      d = dirname(d);
-    }
-  } catch {}
-  return null;
-};
 
 export const writeDshSettings = (path: string, gatewayUrl: string, models: DshModel[], defaultModel: string): { firstWrite: boolean } => {
   const exists = existsSync(path);
@@ -74,19 +62,16 @@ export const writeDshSettings = (path: string, gatewayUrl: string, models: DshMo
 
 export const createDsh = (ctx: Ctx): DshManager => {
   const home = join(ctx.config.home, "dsh");
-  const runtimeDir = join(ctx.config.home, "dsh-runtime");
   const port = Number(process.env.LOCAL_STUDIO_DSH_PORT ?? 3090);
   const logFile = join(home, "web.log");
   let child: ReturnType<typeof Bun.spawn> | null = null;
   let loginUrl: string | null = null;
   let running = false;
-  let installing: Promise<string | null> | null = null;
+  let startedAt: number | null = null;
   let stopping = false;
   let restarts: number[] = [];
   let lastLaunch: Parameters<DshManager["ensure"]>[0] | null = null;
 
-  const binPath = (): string => process.env.LOCAL_STUDIO_DSH_BIN || join(runtimeDir, "node_modules", ".bin", "dsh");
-  const installed = () => existsSync(binPath());
   const log = (line: string) => {
     try {
       mkdirSync(home, { recursive: true, mode: 0o700 });
@@ -102,27 +87,6 @@ export const createDsh = (ctx: Ctx): DshManager => {
     } catch {
       return false;
     }
-  };
-
-  const install = async (): Promise<string | null> => {
-    if (process.env.LOCAL_STUDIO_DSH_BIN) return existsSync(binPath()) ? null : `LOCAL_STUDIO_DSH_BIN=${binPath()} does not exist`;
-    if (installed()) return null;
-    const npm = await which("npm", BIN_DIRS);
-    if (!npm) return "npm not found; install Node.js or set LOCAL_STUDIO_DSH_BIN";
-    mkdirSync(runtimeDir, { recursive: true, mode: 0o700 });
-    const pkg = join(runtimeDir, "package.json");
-    if (!existsSync(pkg))
-      writeFileSync(pkg, `${JSON.stringify({ name: "local-studio-dsh-runtime", private: true, pnpm: { onlyBuiltDependencies: ONLY_BUILT } }, null, 2)}\n`);
-    ctx.log.info(`dsh: installing ${PKG}@latest into ${runtimeDir}`);
-    const r = await ctx.exec([npm, "i", `${PKG}@latest`, "--no-audit", "--no-fund"], {
-      timeoutMs: 300_000,
-      cwd: runtimeDir,
-      env: { PATH: [...BIN_DIRS, process.env.PATH ?? ""].join(":") },
-    });
-    if (r.timedOut) return "npm install timed out after 300 s";
-    if (r.code !== 0 || !installed()) return `npm install failed: ${redact(r.stderr.trim().split("\n").slice(-3).join(" ")).slice(0, 300)}`;
-    ctx.log.info(`dsh: installed ${findPkgVersion(binPath()) ?? "?"}`);
-    return null;
   };
 
   const pipe = async (s: ReadableStream<Uint8Array>) => {
@@ -151,11 +115,12 @@ export const createDsh = (ctx: Ctx): DshManager => {
       DSH_HOME: home,
       LOCAL_STUDIO_API_KEY: key,
       DSH_TELEMETRY_DISABLED: "1",
-      PATH: [process.env.PATH ?? "", ...BIN_DIRS].join(":"),
+      PATH: opts.path,
     });
     mkdirSync(opts.cwd, { recursive: true });
-    const p = Bun.spawn([binPath(), "web", "--port", String(port), "--no-open"], { cwd: opts.cwd, env, stdin: "ignore", stdout: "pipe", stderr: "pipe" });
+    const p = Bun.spawn([opts.bin, "web", "--port", String(port), "--no-open"], { cwd: opts.cwd, env, stdin: "ignore", stdout: "pipe", stderr: "pipe" });
     child = p;
+    startedAt = Date.now();
     void pipe(p.stdout as ReadableStream<Uint8Array>);
     void pipe(p.stderr as ReadableStream<Uint8Array>);
     ctx.log.info(`dsh: started dsh web on 127.0.0.1:${port} (pid ${p.pid}, DSH_HOME=${home})`);
@@ -175,15 +140,7 @@ export const createDsh = (ctx: Ctx): DshManager => {
     });
   };
 
-  const status = (): DshStatus => ({
-    installed: installed(),
-    version: installed() ? findPkgVersion(binPath()) : null,
-    running,
-    port: running ? port : null,
-    url: running ? `http://127.0.0.1:${port}/` : null,
-    providerId: DSH_PROVIDER,
-    home,
-  });
+  const status = (): DshStatus => ({ running, port, url: running ? `http://127.0.0.1:${port}/` : null, home, cwd: lastLaunch?.cwd ?? null, startedAt });
 
   return {
     status,
@@ -196,11 +153,6 @@ export const createDsh = (ctx: Ctx): DshManager => {
       running = await probe();
     },
     async ensure(opts) {
-      installing ??= install().finally(() => {
-        installing = null;
-      });
-      const err = await installing;
-      if (err) return { ok: false, detail: err };
       mkdirSync(home, { recursive: true, mode: 0o700 });
       const { firstWrite } = writeDshSettings(join(home, "settings.yaml"), opts.gatewayUrl, opts.models, opts.defaultModel);
       if (firstWrite) ctx.log.info(`dsh: wrote ${join(home, "settings.yaml")} with default model ${opts.defaultModel}`);
@@ -232,6 +184,7 @@ export const createDsh = (ctx: Ctx): DshManager => {
       }
       child = null;
       running = false;
+      startedAt = null;
     },
   };
 };

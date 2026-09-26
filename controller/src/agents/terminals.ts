@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Ctx } from "../context";
@@ -23,7 +23,6 @@ const slug = (name: string) =>
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-|-$/g, "");
-const warpDir = () => join(homedir(), ".warp", "tab_configs");
 const commandFile = (s: Session) => join(tmpdir(), `local-studio-${slug(s.name)}.command`);
 const writeCommand = (s: Session) => writeFileSync(commandFile(s), `#!/bin/bash\ncd '${s.dir.replace(/'/g, `'\\''`)}' && exec ${s.command}\n`, { mode: 0o700 });
 
@@ -41,19 +40,6 @@ const macOS: Terminal[] = [
     probe: "/Applications/iTerm.app",
     prepare: writeCommand,
     command: (s) => ["open", "-a", "iTerm", commandFile(s)],
-  },
-  {
-    id: "warp",
-    label: "Warp",
-    probe: "/Applications/Warp.app",
-    prepare: ({ command, dir, name }) => {
-      mkdirSync(warpDir(), { recursive: true });
-      writeFileSync(
-        join(warpDir(), `${slug(name)}.toml`),
-        `name = ${JSON.stringify(name)}\ntitle = ${JSON.stringify(name)}\n\n[[panes]]\nid = "main"\ntype = "terminal"\ndirectory = ${JSON.stringify(dir || homedir())}\ncommands = [${JSON.stringify(command)}]\nis_focused = true\n`,
-      );
-    },
-    command: (s) => ["open", `warp://tab_config/${slug(s.name)}`],
   },
   {
     id: "ghostty",
@@ -84,16 +70,6 @@ const linux: Terminal[] = [
   { id: "xterm", label: "xterm", probe: "xterm", command: (s) => ["xterm", "-e", "bash", "-lc", s.command] },
 ];
 
-const BY_TERM_PROGRAM: Record<string, string> = {
-  WarpTerminal: "warp",
-  "iTerm.app": "iterm",
-  Apple_Terminal: "terminal",
-  ghostty: "ghostty",
-  WezTerm: "wezterm",
-  kitty: "kitty",
-  Alacritty: "alacritty",
-};
-
 const EXTRA_BIN = ["/usr/local/bin", "/opt/homebrew/bin", "/usr/bin", join(homedir(), ".local", "bin")];
 
 const installed = async (t: Terminal): Promise<boolean> => (t.probe.startsWith("/") ? existsSync(t.probe) : (await which(t.probe, EXTRA_BIN)) !== null);
@@ -106,7 +82,7 @@ export const hasGui = (): boolean => {
 export const resolveTerminal = async (preferred?: string | null): Promise<Terminal | null> => {
   if (!hasGui()) return null;
   const table = process.platform === "darwin" ? macOS : linux;
-  const want = preferred && preferred !== "auto" ? preferred : process.env.TERM_PROGRAM ? BY_TERM_PROGRAM[process.env.TERM_PROGRAM] : undefined;
+  const want = preferred && preferred !== "auto" ? preferred : undefined;
   if (want) {
     const t = table.find((x) => x.id === want);
     if (t && (await installed(t))) return t;

@@ -60,7 +60,7 @@ export const createFederation = (ctx: Ctx, svc: Services): Module<PeerService> =
       peers: safe(() => states.map(toPeer), []),
       activity: safe(() => sumActivity(activities), emptyActivity()),
       harnesses: safe(() => svc.agents.harnesses(), []),
-      workspaces: safe(() => svc.agents.workspaces(), []),
+      sessions: safe(() => svc.agents.sessions(), []),
     };
   };
 

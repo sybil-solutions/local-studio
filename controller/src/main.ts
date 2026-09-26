@@ -12,7 +12,7 @@ const USAGE = `local-studio <command>
   serve   [--host 127.0.0.1] [--port 8080] [--home ~/.local-studio] [--data-dir DIR] [--models-dir DIR] [--name NAME] [--read-only] [--tailnet]
   deploy  <ssh-host> [--port 8080] [--dir ~/local-studio] [--host <bind>] [--name NAME] [--read-only] [--service] [--no-start] [--replace] [--connect [--allow-actions]] [--local-url URL]
   deploy  stop <ssh-host> [--port 8080] [--dir ~/local-studio]
-  agent   run <workspaceId> [--print] [--resume] [--home DIR]
+  agent   run <sessionId> [--print] [--home DIR]
   key     [--home DIR]                       print the admin key
   key     --federation [--actions] [--home DIR]  issue a scoped key for a hub (read + /v1; --actions adds launch/stop/cancel/export)
   version`;

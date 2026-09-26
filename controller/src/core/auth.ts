@@ -16,7 +16,7 @@ const READ_ONLY_DENY: RegExp[] = [
   /^\/api\/recipes\/[^/]+\/launch$/,
   /^\/api\/models\/[^/]+\/stop$/,
   /^\/api\/launches\/[^/]+\/cancel$/,
-  /^\/api\/agents\/launch$/,
+  /^\/api\/agents\/(launch|[^/]+\/install|sessions\/[^/]+)$/,
   /^\/api\/models\/[^/]+\/export\/pr$/,
   /^\/api\/peers\/[^/]+\/api\//,
 ];
@@ -24,7 +24,7 @@ const READ_ONLY_DENY: RegExp[] = [
 const SAFE = new Set(["GET", "HEAD", "OPTIONS"]);
 const PROXY_HEADERS = ["forwarded", "x-forwarded-for", "x-forwarded-host", "x-real-ip", "tailscale-user-login", "cf-connecting-ip"];
 
-const FEDERATION_DENY = /^\/api\/(keys|peers|agents|workspaces|machines)(\/|$)/;
+const FEDERATION_DENY = /^\/api\/(keys|peers|agents|machines)(\/|$)/;
 const FEDERATION_ACTIONS: RegExp[] = [
   /^\/api\/recipes\/[^/]+\/launch$/,
   /^\/api\/models\/[^/]+\/stop$/,

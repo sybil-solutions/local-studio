@@ -1,4 +1,4 @@
-import type { HarnessInfo, Workspace } from "./agent";
+import type { AgentSession, HarnessInfo } from "./agent";
 import type { Gpu, GpuGroup } from "./gpu";
 import type { Machine, Peer } from "./machine";
 import type { Activity, EngineRates, ModelCardStats, Percentiles, RequestRecord } from "./metrics";
@@ -26,7 +26,7 @@ export interface FleetSnapshot {
   peers: Peer[];
   activity: Activity;
   harnesses: HarnessInfo[];
-  workspaces: Workspace[];
+  sessions: AgentSession[];
 }
 
 export type ControllerEvent =

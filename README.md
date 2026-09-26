@@ -13,7 +13,7 @@ A small controller that finds, launches and stops local models, serves one gatew
 | `controller/src/discovery` | discovery | GPUs, docker, processes, ports, probe, groups, launch/stop/logs |
 | `controller/src/gateway`, `controller/src/metrics` | gateway-metrics | `/v1/*` dialects, request store, engine scraper, rollups |
 | `controller/src/recipes` | recipes | registry catalog, fit, LaunchPlan, export, registry PR |
-| `controller/src/agents`, `controller/src/federation` | agents-federation | workspaces, harness launch, dsh; peers, passthrough, fleet |
+| `controller/src/agents`, `controller/src/federation` | agents-federation | harness manager, sessions, launch, dsh; peers, passthrough, fleet |
 | `controller/src/deploy`, `desktop`, `scripts` | deploy-desktop | `local-studio deploy`, release build, Electron shell |
 | `ui` | ui | Vite + React SPA |
 

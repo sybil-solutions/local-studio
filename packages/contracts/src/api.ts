@@ -26,13 +26,10 @@ export const ExportPrBody = z.object({
 export type ExportPrBody = z.infer<typeof ExportPrBody>;
 
 export const AgentLaunchBody = z.object({
-  workspaceId: z.string().regex(/^ws_[0-9a-f]{8}$/).optional(),
-  name: z.string().min(1).max(64).optional(),
-  dir: z.string().min(1).optional(),
   harness: z.enum(HARNESSES),
   model: z.string().min(1).max(200),
+  dir: z.string().min(1).max(1024).optional(),
   safe: z.boolean().optional(),
-  resume: z.boolean().optional(),
 });
 export type AgentLaunchBody = z.infer<typeof AgentLaunchBody>;
 

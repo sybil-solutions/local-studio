@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { BuiltLaunch, Client, Harness } from "@local-studio/contracts";
 import { HARNESS_CLIENT } from "@local-studio/contracts";
@@ -16,13 +17,9 @@ export interface LaunchInput {
   dir: string;
   keyFile: string;
   gatewayUrl: string;
-  workspaceId: string;
-  resume: boolean;
+  sessionId: string;
   safe: boolean;
-  extraArgs?: string[];
 }
-
-export const SAFE_FLAG = "--safe";
 
 export const YOLO: Partial<Record<Harness, string>> = {
   claude: "--dangerously-skip-permissions",
@@ -36,11 +33,11 @@ export const ENV_UNSET: Partial<Record<Harness, string[]>> = {
 
 const tomlString = (s: string) => JSON.stringify(s);
 
-export const agentDir = (home: string, harness: Harness, workspaceId: string) => join(home, "agents", harness, workspaceId);
+export const agentDir = (home: string, harness: Harness) => join(home, "agents", harness);
 
 export const readKey = (keyFile: string): string => {
   const k = readSecret(keyFile);
-  if (!k) throw new Error(`key file ${keyFile} is missing or empty; launch the workspace from the controller once`);
+  if (!k) throw new Error(`key file ${keyFile} is missing or empty; launch the agent from the controller once`);
   return k;
 };
 
@@ -48,10 +45,9 @@ export const buildLaunch = (i: LaunchInput): BuiltLaunch => {
   const G = i.gatewayUrl.replace(/\/+$/, "");
   const M = i.model;
   const client = clientOf(i.harness);
-  const extra = (i.extraArgs ?? []).filter((a) => a !== SAFE_FLAG);
   switch (i.harness) {
     case "claude": {
-      const configDir = agentDir(i.home, "claude", i.workspaceId);
+      const configDir = agentDir(i.home, "claude");
       const env: Record<string, string> = {
         CLAUDE_CONFIG_DIR: configDir,
         ANTHROPIC_BASE_URL: G,
@@ -64,18 +60,22 @@ export const buildLaunch = (i: LaunchInput): BuiltLaunch => {
         CLAUDE_CODE_DISABLE_UNKNOWN_MODEL_WINDOW_ENFORCEMENT: "1",
         CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
         DISABLE_AUTOUPDATER: "1",
-        ANTHROPIC_CUSTOM_HEADERS: `X-Local-Studio-Client: ${client}\nX-Local-Studio-Workspace: ${i.workspaceId}`,
+        ANTHROPIC_CUSTOM_HEADERS: `X-Local-Studio-Client: ${client}\nX-Local-Studio-Workspace: ${i.sessionId}`,
       };
       if (i.contextWindow) env.CLAUDE_CODE_MAX_CONTEXT_TOKENS = String(i.contextWindow);
-      const state = { hasCompletedOnboarding: true, bypassPermissionsModeAccepted: !i.safe, projects: { [i.dir]: { hasTrustDialogAccepted: true } } };
-      const argv = ["claude", "--model", M];
-      if (!i.safe) argv.push(YOLO.claude!);
-      if (i.resume) argv.push("--continue");
-      argv.push(...extra);
-      return { argv, env, files: [{ path: join(configDir, ".claude.json"), content: `${JSON.stringify(state, null, 2)}\n`, mode: 0o600, keep: true }], cwd: i.dir };
+      const statePath = join(configDir, ".claude.json");
+      let state: { projects?: Record<string, Record<string, unknown>> } & Record<string, unknown> = {};
+      try {
+        state = JSON.parse(readFileSync(statePath, "utf8")) as typeof state;
+      } catch {}
+      state.hasCompletedOnboarding = true;
+      if (!i.safe) state.bypassPermissionsModeAccepted = true;
+      state.projects = { ...state.projects, [i.dir]: { ...state.projects?.[i.dir], hasTrustDialogAccepted: true } };
+      const argv = ["claude", "--model", M, ...(i.safe ? [] : [YOLO.claude!])];
+      return { argv, env, files: [{ path: statePath, content: `${JSON.stringify(state, null, 2)}\n`, mode: 0o600 }], cwd: i.dir };
     }
     case "codex": {
-      const codexHome = agentDir(i.home, "codex", i.workspaceId);
+      const codexHome = agentDir(i.home, "codex");
       const t = tomlString;
       const config = [
         `model = ${t(M)}`,
@@ -87,23 +87,22 @@ export const buildLaunch = (i: LaunchInput): BuiltLaunch => {
         `base_url = ${t(`${G}/v1`)}`,
         `wire_api = "responses"`,
         `env_key = "LOCAL_STUDIO_API_KEY"`,
-        `http_headers = { "X-Local-Studio-Client" = ${t(client)}, "X-Local-Studio-Workspace" = ${t(i.workspaceId)} }`,
+        `http_headers = { "X-Local-Studio-Client" = ${t(client)}, "X-Local-Studio-Workspace" = ${t(i.sessionId)} }`,
         "",
         `[projects.${t(i.dir)}]`,
         `trust_level = "trusted"`,
         "",
       ].join("\n");
-      const opts = ["-C", i.dir, ...(i.safe ? [] : [YOLO.codex!])];
-      const argv = i.resume ? ["codex", "resume", "--last", ...opts, ...extra] : ["codex", ...opts, ...extra];
+      const argv = ["codex", "-C", i.dir, ...(i.safe ? [] : [YOLO.codex!])];
       return { argv, env: { CODEX_HOME: codexHome, LOCAL_STUDIO_API_KEY: readKey(i.keyFile) }, files: [{ path: join(codexHome, "config.toml"), content: config, mode: 0o600 }], cwd: i.dir };
     }
     case "pi":
     case "omp": {
-      const dir = agentDir(i.home, i.harness, i.workspaceId);
+      const dir = agentDir(i.home, i.harness);
       const model = { id: M, name: M, reasoning: true, input: i.vision ? ["text", "image"] : ["text"], ...(i.contextWindow ? { contextWindow: i.contextWindow } : {}), ...(i.harness === "omp" ? { omitMaxOutputTokens: true } : {}) };
       const provider = { baseUrl: `${G}/v1`, api: "openai-completions", apiKey: `!cat '${i.keyFile.replace(/'/g, `'\\''`)}'`, models: [model] };
       const file = { path: join(dir, i.harness === "pi" ? "models.json" : "models.yml"), content: `${JSON.stringify({ providers: { localstudio: provider } }, null, 2)}\n`, mode: 0o600 };
-      const argv = [i.harness, "--model", `localstudio/${M}`, ...(i.resume ? ["--continue"] : []), ...extra];
+      const argv = [i.harness, "--model", `localstudio/${M}`];
       return { argv, env: { PI_CODING_AGENT_DIR: dir, ...(i.harness === "omp" ? { OMP_SKIP_SETUP: "1" } : {}) }, files: [file], cwd: i.dir };
     }
     default:

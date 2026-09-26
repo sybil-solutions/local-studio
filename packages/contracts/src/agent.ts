@@ -16,36 +16,52 @@ export const HARNESS_CLIENT: Record<Harness, Client> = {
   "claude-desktop": "claude-desktop",
 };
 
+export interface HarnessJob {
+  action: "install" | "update";
+  state: "running" | "done" | "failed";
+  startedAt: number;
+  endedAt: number | null;
+  detail: string;
+  log: string[];
+}
+
 export interface HarnessInfo {
   harness: Harness;
   installed: boolean;
   path: string | null;
   version: string | null;
+  managed: boolean;
+  package: string | null;
+  latest: string | null;
+  job: HarnessJob | null;
   tier: 1 | 2;
   note: string;
 }
 
-export interface Workspace {
+export interface AgentSession {
   id: string;
-  name: string;
-  dir: string;
   harness: Harness;
   model: string;
-  flags: string[];
-  createdAt: number;
-  lastOpenAt: number | null;
+  dir: string;
+  bin: string | null;
+  startedAt: number;
+  tmuxSession: string | null;
+  attach: string | null;
+  url: string | null;
 }
 
 export interface AgentLaunchResult {
-  workspaceId: string;
+  sessionId: string;
   harness: Harness;
   how: "tmux" | "terminal" | "app" | "web";
+  bin: string | null;
+  version: string | null;
+  dir: string;
   command: string;
   url: string | null;
   tmuxSession: string | null;
   attach: string | null;
-  created?: boolean;
-  resume?: boolean;
+  running?: string | null;
   note?: string;
   files?: string[];
   verify?: "by hand";
@@ -56,16 +72,6 @@ export interface BuiltLaunch {
   env: Record<string, string>;
   files: { path: string; content: string; mode: number; keep?: boolean }[];
   cwd: string;
-}
-
-export interface DshStatus {
-  installed: boolean;
-  version: string | null;
-  running: boolean;
-  port: number | null;
-  url: string | null;
-  providerId: string;
-  home: string;
 }
 
 export interface ApiKeyInfo {

@@ -13,7 +13,7 @@ export interface DesktopInput {
   contextWindow: number | null;
   keyFile: string;
   gatewayUrl: string;
-  workspaceId: string;
+  sessionId: string;
 }
 
 export interface DesktopPrepared {
@@ -44,7 +44,7 @@ export const prepareCodexDesktop = (i: DesktopInput): DesktopPrepared => {
     `base_url = ${q(`${G}/v1`)}`,
     `wire_api = "responses"`,
     `experimental_bearer_token = ${q(readKey(i.keyFile))}`,
-    `http_headers = { "X-Local-Studio-Client" = ${q(HARNESS_CLIENT["codex-desktop"])}, "X-Local-Studio-Workspace" = ${q(i.workspaceId)} }`,
+    `http_headers = { "X-Local-Studio-Client" = ${q(HARNESS_CLIENT["codex-desktop"])}, "X-Local-Studio-Workspace" = ${q(i.sessionId)} }`,
     "",
     `[projects.${q(i.dir)}]`,
     `trust_level = "trusted"`,
@@ -76,7 +76,7 @@ export const prepareClaudeDesktop = (i: DesktopInput): DesktopPrepared => {
     inferenceGatewayAuthScheme: "bearer",
     modelDiscoveryEnabled: true,
     inferenceModels: [i.model],
-    inferenceCustomHeaders: { "X-Local-Studio-Client": HARNESS_CLIENT["claude-desktop"], "X-Local-Studio-Workspace": i.workspaceId },
+    inferenceCustomHeaders: { "X-Local-Studio-Client": HARNESS_CLIENT["claude-desktop"], "X-Local-Studio-Workspace": i.sessionId },
   };
   const entryPath = join(lib, `${id}.json`);
   put(entryPath, `${JSON.stringify(entry, null, 2)}\n`);

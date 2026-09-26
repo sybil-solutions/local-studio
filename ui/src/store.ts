@@ -64,7 +64,7 @@ const fleetFromSnapshot = (s: Snapshot): FleetSnapshot => ({
   peers: [],
   activity: s.activity,
   harnesses: [],
-  workspaces: [],
+  sessions: [],
 });
 
 const HIST = 90;
