@@ -2,7 +2,7 @@ import type { CacheInfo, Dialect, Endpoint, Engine, Gpu, ModelState, RunningMode
 import type { Ctx, RuntimeView } from "../context";
 import { containerName, digestOf, dockerScan, imageInfo, type Inspect, publishedPorts, wantsGpu } from "./docker";
 import { computeGroups } from "./groups";
-import { type ComputeApp, type HardwareList, resolveGpuRefs, scanGpus } from "./gpus";
+import { type ComputeApp, type HardwareList, intelClients, resolveGpuRefs, scanGpus, setIntelApps } from "./gpus";
 import { type Fingerprint, fingerprint, get, type Health, healthCheck, type ModelEntry, PROBE_CONCURRENCY, PROBE_MAX, type ProbeCache } from "./probe";
 import { ancestors, cmdline, descendants, type Listener, listListeners, listProcs, type ProcTable, probeHost } from "./procs";
 import { ENGINE_RE, embeddingArgv, engineFromArgs, envMap, flag, flagList, hasFlag, num, parseJson, pool, portArg, promLabels } from "./util";
@@ -177,6 +177,17 @@ export const fullScan = async (ctx: Ctx, st: ScanState, hw: HardwareList | null,
   const errors: string[] = [];
   const [gs, procs, listeners, { docker, containers }] = await Promise.all([scanGpus(ctx, hw), listProcs(ctx), listListeners(ctx), dockerScan(ctx)]);
   if (gs.error) errors.push(gs.error);
+  if (gs.nodes.size) {
+    const engines = [...procs.byPid.values()].filter((p) => ENGINE_RE.test(p.args));
+    const names = new Map(engines.map((p) => [p.pid, p.args.split(" ")[0]?.split("/").pop() ?? ""]));
+    const apps = await intelClients(engines.map((p) => p.pid), gs.nodes, names);
+    for (const c of containers) {
+      const uuids = [...new Set((c.HostConfig.Devices ?? []).map((d) => gs.nodes.get(d.PathOnHost)).filter((u): u is string => !!u))];
+      const pid = findEnginePid(procs, c.State.Pid, []) ?? c.State.Pid;
+      for (const uuid of uuids) if (!apps.some((a) => a.uuid === uuid && ancestors(procs, a.pid).includes(c.State.Pid))) apps.push({ uuid, pid, processName: containerName(c), usedMiB: null });
+    }
+    setIntelApps(gs, apps);
+  }
   const statePids = new Map<number, Inspect>(containers.filter((c) => c.State.Pid > 0).map((c) => [c.State.Pid, c]));
   const gpuByUuid = new Map(gs.gpus.map((g) => [g.uuid, g]));
 
@@ -193,7 +204,7 @@ export const fullScan = async (ctx: Ctx, st: ScanState, hw: HardwareList | null,
   const appsOf = (owner: (app: ComputeApp) => boolean) => {
     const apps = gs.apps.filter(owner);
     const gpus = [...new Set(apps.map((a) => gpuByUuid.get(a.uuid)).filter((g): g is Gpu => !!g))];
-    return { gpus, vram: apps.length ? apps.reduce((s, a) => s + a.usedMiB, 0) : null };
+    return { gpus, vram: apps.length && apps.every((a) => a.usedMiB !== null) ? apps.reduce((s, a) => s + (a.usedMiB ?? 0), 0) : null };
   };
 
   const containerPids = new Set<number>();

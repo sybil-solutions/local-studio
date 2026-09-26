@@ -69,6 +69,7 @@ export interface DockerInspect {
     NetworkMode?: string;
     PortBindings?: Record<string, { HostIp: string; HostPort: string }[]> | null;
     DeviceRequests?: { Driver: string; Count: number; DeviceIDs: string[] | null; Capabilities: string[][] }[] | null;
+    Devices?: { PathOnHost: string }[] | null;
   };
   Mounts: { Type: string; Source: string; Destination: string; RW: boolean }[];
   State: { Status: string; Running: boolean; Pid: number; StartedAt: string; Health?: { Status: string } };

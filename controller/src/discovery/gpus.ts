@@ -1,3 +1,4 @@
+import { readdir, readFile, readlink } from "node:fs/promises";
 import type { Gpu, RecipeCatalog } from "@local-studio/contracts";
 import type { Ctx } from "../context";
 
@@ -5,13 +6,14 @@ export interface ComputeApp {
   uuid: string;
   pid: number;
   processName: string;
-  usedMiB: number;
+  usedMiB: number | null;
 }
 
 export interface GpuScan {
   gpus: Gpu[];
   apps: ComputeApp[];
   error: string | null;
+  nodes: Map<string, string>;
 }
 
 export type HardwareList = RecipeCatalog["hardware"];
@@ -53,7 +55,7 @@ const scanNvidia = async (ctx: Ctx, hw: HardwareList | null): Promise<GpuScan> =
     ],
     { timeoutMs: 5000 },
   );
-  if (q.code !== 0) return { gpus: [], apps: [], error: q.timedOut ? "nvidia-smi timed out" : q.stderr.includes("ENOENT") || q.code === null ? null : `nvidia-smi: ${q.stderr.trim().slice(0, 200)}` };
+  if (q.code !== 0) return { nodes: new Map(), gpus: [], apps: [], error: q.timedOut ? "nvidia-smi timed out" : q.stderr.includes("ENOENT") || q.code === null ? null : `nvidia-smi: ${q.stderr.trim().slice(0, 200)}` };
   const a = await ctx.exec(["nvidia-smi", "--query-compute-apps=gpu_uuid,pid,process_name,used_memory", "--format=csv,noheader,nounits"], { timeoutMs: 5000 });
   const apps: ComputeApp[] = [];
   if (a.code === 0) {
@@ -89,7 +91,121 @@ const scanNvidia = async (ctx: Ctx, hw: HardwareList | null): Promise<GpuScan> =
       processes: apps.filter((p) => p.uuid === uuid).map((p) => ({ pid: p.pid, processName: p.processName, usedMiB: p.usedMiB, modelId: null })),
     });
   }
-  return { gpus, apps, error: null };
+  return { gpus, apps, error: null, nodes: new Map() };
+};
+
+const rd = (p: string): Promise<string | null> => readFile(p, "utf8").then((s) => s.trim(), () => null);
+const lsdir = (p: string): Promise<string[]> => readdir(p).catch(() => []);
+const intelNames = new Map<string, string>();
+const intelPrev = new Map<string, { t: number; idle: number | null; energy: number | null }>();
+let intelApps: ComputeApp[] = [];
+
+const intelName = async (ctx: Ctx, bus: string, dev: string): Promise<string> => {
+  const hit = intelNames.get(bus);
+  if (hit) return hit;
+  const r = await ctx.exec(["lspci", "-mm", "-s", bus], { timeoutMs: 3000 });
+  const name = /\[([^\]]+)\]"/.exec(r.stdout)?.[1];
+  const product = name ? `Intel ${name}` : `Intel GPU 8086:${dev.replace(/^0x/, "")}`;
+  if (r.code === 0) intelNames.set(bus, product);
+  return product;
+};
+
+const scanIntel = async (ctx: Ctx, hw: HardwareList | null): Promise<GpuScan> => {
+  const cards = (await lsdir("/sys/class/drm")).filter((c) => /^card\d+$/.test(c));
+  const found: { dev: string; bus: string; card: string; render: string | null }[] = [];
+  for (const card of cards) {
+    const dev = `/sys/class/drm/${card}/device`;
+    if ((await rd(`${dev}/vendor`)) !== "0x8086") continue;
+    const driver = await readlink(`${dev}/driver`).catch(() => "");
+    if (!driver.endsWith("/xe")) continue;
+    const bus = (await readlink(dev).catch(() => "")).split("/").pop() ?? "";
+    const render = (await lsdir(`${dev}/drm`)).find((x) => x.startsWith("renderD")) ?? null;
+    found.push({ dev, bus, card, render });
+  }
+  found.sort((a, b) => a.bus.localeCompare(b.bus));
+  const nodes = new Map<string, string>();
+  const gpus: Gpu[] = [];
+  for (const [index, f] of found.entries()) {
+    const uuid = `intel:${f.bus}`;
+    nodes.set(`/dev/dri/${f.card}`, uuid);
+    if (f.render) nodes.set(`/dev/dri/${f.render}`, uuid);
+    const product = await intelName(ctx, f.bus, (await rd(`${f.dev}/device`)) ?? "");
+    const bars = ((await rd(`${f.dev}/resource`)) ?? "").split("\n").map((l) => {
+      const [a, b] = l.trim().split(/\s+/).map((x) => Number.parseInt(x ?? "", 16));
+      return a && b ? (b - a + 1) / 1048576 : 0;
+    });
+    const bar = Math.max(0, ...bars);
+    const total = bar >= 1024 ? Math.round(bar) : 0;
+    const hwmon = (await lsdir(`${f.dev}/hwmon`))[0];
+    const hm = hwmon ? `${f.dev}/hwmon/${hwmon}` : null;
+    const hmFiles = hm ? await lsdir(hm) : [];
+    const labelled = async (kind: string, label: string): Promise<number | null> => {
+      for (const x of hmFiles.filter((n) => n.startsWith(kind) && n.endsWith("_label")))
+        if ((await rd(`${hm}/${x}`)) === label) return Number(await rd(`${hm}/${x.replace("_label", "_input")}`));
+      return null;
+    };
+    const temp = await labelled("temp", "pkg");
+    const energy = (await labelled("energy", "card")) ?? (await labelled("energy", "pkg"));
+    const cap = hm ? Number(await rd(`${hm}/power1_cap`)) : Number.NaN;
+    let idle: number | null = null;
+    for (const tile of (await lsdir(f.dev)).filter((x) => /^tile\d+$/.test(x)))
+      for (const gt of await lsdir(`${f.dev}/${tile}`)) {
+        const base = `${f.dev}/${tile}/${gt}/gtidle`;
+        if (!((await rd(`${base}/name`)) ?? "").includes("-rc")) continue;
+        const v = Number(await rd(`${base}/idle_residency_ms`));
+        if (Number.isFinite(v)) idle = (idle ?? 0) + v;
+      }
+    const now = Date.now();
+    const prev = intelPrev.get(uuid);
+    intelPrev.set(uuid, { t: now, idle, energy });
+    const dt = prev ? now - prev.t : 0;
+    const util = prev && dt > 200 && idle !== null && prev.idle !== null ? Math.round(Math.min(100, Math.max(0, 100 * (1 - (idle - prev.idle) / dt)))) : null;
+    const power = prev && dt > 200 && energy !== null && prev.energy !== null && energy >= prev.energy ? Math.round((energy - prev.energy) / dt / 1000) : null;
+    gpus.push({
+      key: `intel:${index}`,
+      backend: "intel-xpu",
+      index,
+      uuid,
+      busId: f.bus,
+      product,
+      name: displayName(product),
+      hardwareId: matchHardware(hw, "intel-xpu", product, total),
+      memTotalMiB: total,
+      memUsedMiB: null,
+      utilPct: util,
+      tempC: temp !== null && Number.isFinite(temp) ? Math.round(temp / 1000) : null,
+      powerW: power,
+      powerLimitW: Number.isFinite(cap) && cap > 0 ? Math.round(cap / 1e6) : null,
+      processes: intelApps.filter((a) => a.uuid === uuid).map((a) => ({ pid: a.pid, processName: a.processName, usedMiB: a.usedMiB, modelId: null })),
+    });
+  }
+  return { gpus, apps: intelApps.filter((a) => gpus.some((g) => g.uuid === a.uuid)), error: null, nodes };
+};
+
+export const intelClients = async (pids: number[], nodes: Map<string, string>, names: Map<number, string>): Promise<ComputeApp[]> => {
+  const out: ComputeApp[] = [];
+  for (const pid of pids) {
+    const per = new Map<string, Map<string, number>>();
+    for (const fd of await lsdir(`/proc/${pid}/fd`)) {
+      const uuid = nodes.get(await readlink(`/proc/${pid}/fd/${fd}`).catch(() => ""));
+      if (!uuid) continue;
+      const info = (await rd(`/proc/${pid}/fdinfo/${fd}`)) ?? "";
+      const client = /drm-client-id:\s*(\d+)/.exec(info)?.[1] ?? fd;
+      const kib = Number(/drm-total-vram0:\s*(\d+)\s*KiB/.exec(info)?.[1] ?? 0);
+      const m = per.get(uuid) ?? new Map<string, number>();
+      m.set(client, Math.max(m.get(client) ?? 0, kib));
+      per.set(uuid, m);
+    }
+    for (const [uuid, m] of per) out.push({ uuid, pid, processName: names.get(pid) ?? String(pid), usedMiB: Math.round([...m.values()].reduce((s, v) => s + v, 0) / 1024) });
+  }
+  return out;
+};
+
+export const setIntelApps = (gs: GpuScan, apps: ComputeApp[]): void => {
+  intelApps = apps;
+  gs.apps = [...gs.apps.filter((a) => !a.uuid.startsWith("intel:")), ...apps];
+  for (const g of gs.gpus)
+    if (g.backend === "intel-xpu") g.processes = apps.filter((a) => a.uuid === g.uuid).map((a) => ({ pid: a.pid, processName: a.processName, usedMiB: a.usedMiB, modelId: null }));
 };
 
 let appleCache: { product: string; totalMiB: number } | null = null;
@@ -101,7 +217,7 @@ const scanApple = async (ctx: Ctx, hw: HardwareList | null): Promise<GpuScan> =>
       ctx.exec(["sysctl", "-n", "machdep.cpu.brand_string"], { timeoutMs: 3000 }),
     ]);
     const bytes = Number(m.stdout.trim());
-    if (m.code !== 0 || !Number.isFinite(bytes)) return { gpus: [], apps: [], error: "sysctl hw.memsize failed" };
+    if (m.code !== 0 || !Number.isFinite(bytes)) return { gpus: [], apps: [], error: "sysctl hw.memsize failed", nodes: new Map() };
     appleCache = { product: c.stdout.trim() || "Apple Silicon", totalMiB: Math.round(bytes / 1048576) };
   }
   const { product, totalMiB } = appleCache;
@@ -135,11 +251,15 @@ const scanApple = async (ctx: Ctx, hw: HardwareList | null): Promise<GpuScan> =>
     ],
     apps: [],
     error: null,
+    nodes: new Map(),
   };
 };
 
-export const scanGpus = (ctx: Ctx, hw: HardwareList | null): Promise<GpuScan> =>
-  ctx.config.platform === "darwin" ? scanApple(ctx, hw) : scanNvidia(ctx, hw);
+export const scanGpus = async (ctx: Ctx, hw: HardwareList | null): Promise<GpuScan> => {
+  if (ctx.config.platform === "darwin") return scanApple(ctx, hw);
+  const [nv, intel] = await Promise.all([scanNvidia(ctx, hw), scanIntel(ctx, hw).catch((e) => ({ gpus: [], apps: [], nodes: new Map(), error: `intel gpu scan: ${String(e)}` }))]);
+  return { gpus: [...nv.gpus, ...intel.gpus], apps: [...nv.apps, ...intel.apps], error: nv.error ?? intel.error, nodes: intel.nodes };
+};
 
 export const resolveGpuRefs = (refs: string[], gpus: Gpu[]): Gpu[] => {
   if (refs.some((r) => r.trim().toLowerCase() === "all")) return gpus;

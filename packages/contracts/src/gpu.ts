@@ -1,11 +1,11 @@
-export type GpuBackend = "nvidia" | "apple";
+export type GpuBackend = "nvidia" | "apple" | "intel-xpu";
 
 export type GpuKey = string;
 
 export interface GpuProcess {
   pid: number;
   processName: string;
-  usedMiB: number;
+  usedMiB: number | null;
   modelId: string | null;
 }
 

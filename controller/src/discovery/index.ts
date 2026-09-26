@@ -113,7 +113,7 @@ export const createDiscovery = (ctx: Ctx, svc: Services): Module<{ runtime: Runt
           state: t.state,
           stateSince: t.since,
           servedModels: h.models?.length ? h.models.map((x) => x.id) : m.servedModels,
-          vramUsedMiB: owned.length ? owned.reduce((s, a) => s + a.usedMiB, 0) : m.vramUsedMiB,
+          vramUsedMiB: owned.length && owned.every((a) => a.usedMiB !== null) ? owned.reduce((s, a) => s + (a.usedMiB ?? 0), 0) : m.vramUsedMiB,
           error: t.state === "unhealthy" ? t.note || "unhealthy" : null,
         };
       }), 20_000, "health checks");
