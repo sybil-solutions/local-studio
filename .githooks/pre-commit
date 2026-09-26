@@ -1,0 +1,4 @@
+#!/bin/sh
+[ -f package.json ] || exit 0
+command -v bun >/dev/null 2>&1 || { echo "pre-commit: bun is required" >&2; exit 1; }
+bun run typecheck

@@ -1,0 +1,19 @@
+{
+  "name": "@local-studio/controller",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": { "local-studio": "src/main.ts" },
+  "scripts": {
+    "typecheck": "tsc -p .",
+    "serve": "bun src/main.ts serve",
+    "build": "bun build src/main.ts --compile --outfile ../dist/local-studio"
+  },
+  "dependencies": {
+    "@local-studio/contracts": "workspace:*",
+    "hono": "^4.9.0",
+    "yaml": "^2.8.0",
+    "zod": "^4.1.0"
+  },
+  "devDependencies": { "typescript": "^5.9.0", "bun-types": "^1.3.0" }
+}

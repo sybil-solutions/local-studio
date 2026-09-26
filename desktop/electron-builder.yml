@@ -1,0 +1,28 @@
+appId: org.localstudio.desktop
+productName: Local Studio
+directories:
+  output: ../dist/desktop
+  buildResources: build
+files:
+  - main.cjs
+  - package.json
+asar: true
+npmRebuild: false
+mac:
+  target:
+    - target: dmg
+      arch: arm64
+  category: public.app-category.developer-tools
+  identity: null
+  extraResources:
+    - from: ../dist/darwin-arm64/
+      to: local-studio/
+linux:
+  executableName: local-studio
+  target:
+    - target: AppImage
+      arch: x64
+  category: Development
+  extraResources:
+    - from: ../dist/linux-x64/
+      to: local-studio/

@@ -1,0 +1,4 @@
+#!/bin/sh
+head -n1 "$1" | grep -qE '^(Merge |Revert |(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\([a-z0-9._/-]+\))?!?: .+)' && exit 0
+echo "commit-msg: subject must be a conventional commit, e.g. 'fix(gateway): ...'" >&2
+exit 1
