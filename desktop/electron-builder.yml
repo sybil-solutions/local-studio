@@ -6,6 +6,7 @@ directories:
   buildResources: build
 files:
   - main.cjs
+  - preload.cjs
   - package.json
 asar: true
 npmRebuild: false

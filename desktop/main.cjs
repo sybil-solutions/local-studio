@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Menu, MenuItem, screen, shell } = require("electron");
+const { app, BrowserWindow, dialog, ipcMain, Menu, MenuItem, screen, shell } = require("electron");
 const { spawn } = require("node:child_process");
 const fs = require("node:fs");
 const path = require("node:path");
@@ -95,7 +95,7 @@ function openWindow(url) {
     fullscreenable: true,
     backgroundColor: "#000000",
     title: "Local Studio",
-    webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
+    webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true, preload: path.join(__dirname, "preload.cjs") },
   });
   win.webContents.setWindowOpenHandler(({ url: target }) => {
     if (!isInternal(target)) openOutside(target);
@@ -157,6 +157,12 @@ if (!app.requestSingleInstanceLock()) {
     if (!win) return;
     if (win.isMinimized()) win.restore();
     win.focus();
+  });
+
+  ipcMain.handle("pick-folder", async (e) => {
+    if (!isInternal(e.senderFrame.url)) return null;
+    const r = await dialog.showOpenDialog(BrowserWindow.fromWebContents(e.sender), { properties: ["openDirectory", "createDirectory"] });
+    return r.canceled ? null : r.filePaths[0] || null;
   });
 
   app.whenReady().then(async () => {
