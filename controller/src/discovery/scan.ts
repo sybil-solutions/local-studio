@@ -1,3 +1,4 @@
+import { readFile } from "node:fs/promises";
 import type { CacheInfo, Dialect, Endpoint, Engine, Gpu, ModelState, RunningModel, RuntimeRef, SpecDecodeInfo, Watchdog } from "@local-studio/contracts";
 import type { Ctx, RuntimeView } from "../context";
 import { containerName, digestOf, dockerScan, imageInfo, type Inspect, publishedPorts, wantsGpu } from "./docker";
@@ -416,30 +417,41 @@ export const fullScan = async (ctx: Ctx, st: ScanState, hw: HardwareList | null,
 
   const served = new Set(models.flatMap((m) => m.servedModels.map((x) => x.toLowerCase())));
   const extCandidates: Candidate[] = [];
-  const argPorts = new Set([...procs.byPid.values()].map((p) => portArg(p.args)));
+  const portProc = new Map<number, number>();
+  for (const p of procs.byPid.values()) {
+    const n = portArg(p.args);
+    if (n !== null && !portProc.has(n)) portProc.set(n, p.pid);
+  }
+  const extOwner = new Map<string, string>();
   for (const { l, fp } of externals) {
     const dup = fp.models.find((e) => served.has(e.id.toLowerCase()));
-    if (dup || !argPorts.has(l.port)) {
+    const pid = portProc.get(l.port);
+    if (dup || pid === undefined) {
       const id = dup?.id ?? fp.models[0]?.id ?? fp.engine;
       endpoints.push({ port: l.port, bind: l.bind, kind: "openai-proxy", pid: null, process: l.process, note: dup ? `proxy for ${id}` : `forward of ${id}; no local process serves this port` });
       continue;
     }
     const posKey = `${l.port}:external:${l.port}`;
     st.probes.setPos(posKey, fp);
+    const cid = /[0-9a-f]{64}/.exec(await readFile(`/proc/${pid}/cgroup`, "utf8").catch(() => ""))?.[0];
+    const box = cid ? containers.find((x) => x.Id === cid) : undefined;
+    const own = box ? appsOf((a) => appOwner.get(a.pid) === `docker:${box.Id}`) : { gpus: [], vram: null };
+    if (box) extOwner.set(`docker:${box.Id}`, `external-${l.port}`);
+    const start = procs.byPid.get(pid)?.start;
     extCandidates.push({
       id: `external-${l.port}`,
       port: l.port,
       bind: l.bind,
       lifeKey: `external:${l.port}`,
-      gpu: false,
+      gpu: own.gpus.length > 0,
       engineHint: fp.engine,
-      argv: [],
+      argv: cmdline(procs, pid),
       env: {},
       labels: {},
-      runtime: { kind: "external", note: "listener has no visible owner process (another user or namespace)" },
-      gpus: [],
-      vram: null,
-      startedAt: null,
+      runtime: { kind: "external", note: box ? `exec in container ${containerName(box)}` : "listener has no visible owner process (another user or namespace)" },
+      gpus: own.gpus,
+      vram: own.vram,
+      startedAt: start ? Date.parse(start) || null : null,
       stopBlocked: "no owner process visible for this port; stop it where it was started",
     });
   }
@@ -466,6 +478,8 @@ export const fullScan = async (ctx: Ctx, st: ScanState, hw: HardwareList | null,
   for (const [pid, owner] of appOwner) {
     const c = candidates.find((x) => (owner.startsWith("docker:") ? x.lifeKey === owner.slice(7) : x.runtime.kind === "native" && `native:${x.runtime.pid}` === owner));
     if (c && models.some((m) => m.id === c.id)) pidOwner.set(pid, c.id);
+    const ext = extOwner.get(owner);
+    if (!c && ext && models.some((m) => m.id === ext)) pidOwner.set(pid, ext);
   }
   attachOwners(gs.gpus, pidOwner);
   return {
