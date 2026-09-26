@@ -22,9 +22,18 @@ const blockParts = (c: unknown): CPart[] => {
   return out;
 };
 
+const BILLING = /^\s*x-anthropic-billing-header:/i;
+
+const systemText = (s: unknown): string => {
+  if (typeof s === "string") return BILLING.test(s) ? s.replace(/^\s*x-anthropic-billing-header:[^\n]*\n?/i, "") : s;
+  return blockParts(s)
+    .flatMap((p) => (p.type === "text" && !BILLING.test(p.text) ? [p.text] : []))
+    .join("\n");
+};
+
 export const decodeMessagesRequest = (body: Json): CRequest => {
   const messages: CMessage[] = [];
-  const sys = typeof body.system === "string" ? body.system : blockParts(body.system).map((p) => (p.type === "text" ? p.text : "")).join("\n");
+  const sys = systemText(body.system);
   if (sys) messages.push({ role: "system", text: sys });
   for (const m of arr(body.messages)) {
     if (!isObj(m)) continue;

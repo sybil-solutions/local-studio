@@ -2,7 +2,7 @@ export const HARNESSES = ["dsh", "claude", "codex", "codex-desktop", "claude-des
 
 export type Harness = (typeof HARNESSES)[number];
 
-export const CLIENTS = ["dsh", "claude-code", "codex-cli", "codex-desktop", "claude-desktop", "ui", "peer", "api"] as const;
+export const CLIENTS = ["dsh", "claude-code", "codex-cli", "codex-desktop", "claude-desktop", "pi", "omp", "ui", "peer", "api"] as const;
 
 export type Client = (typeof CLIENTS)[number];
 

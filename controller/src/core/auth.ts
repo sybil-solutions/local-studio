@@ -62,6 +62,7 @@ const clientFromUa = (ua: string | undefined): string => {
   if (v.includes("codex")) return "codex-cli";
   if (v.includes("dsh") || v.includes("pi-ai")) return "dsh";
   if (v.startsWith("omp/")) return "omp";
+  if (/^pi(\/| \(|$)/.test(v)) return "pi";
   if (v.includes("zcode")) return "zcode";
   return "api";
 };
