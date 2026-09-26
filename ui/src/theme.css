@@ -197,3 +197,8 @@ table.tbl { border-collapse: collapse; width: 100%; }
 .chart .legend i.s1 { background: var(--lvl2); }
 .chart .legend i.s2 { background: var(--lvl1); }
 .chart .legend i.s3 { background: var(--rule); }
+.tiles { display: grid; grid-template-columns: repeat(var(--cols), minmax(0, 1fr)); gap: calc(2 * var(--edge)); margin: var(--block) var(--edge) 0; }
+.tiles > .surface { margin: 0; }
+.tiles > .surface > :last-child { margin-top: auto; }
+.tiles .name .badge { font-size: var(--text); }
+.harness-row { display: flex; flex-wrap: wrap; gap: var(--block) var(--gutter); margin-top: var(--top); }

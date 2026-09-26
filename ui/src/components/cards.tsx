@@ -1,8 +1,8 @@
 import { type ReactNode, useState } from "react";
 import type { Gpu, GpuSample, HourlyRow, TtftHour } from "@local-studio/contracts/client";
 import { fmt, histPercentile } from "@local-studio/contracts/client";
-import type { Agg, BreakBy, CardView, LifeView, MachineView } from "../model/view";
-import { gpuRow, hourBuckets } from "../model/view";
+import type { Agg, BreakBy, CardView, LifeView, MachineRes, MachineView } from "../model/view";
+import { gpuRow, hourBuckets, resText } from "../model/view";
 import type { MachineStats } from "../store";
 import { BarMark, Btn, Chips, Logo, Table } from "./basics";
 
@@ -71,6 +71,11 @@ export const ModelCard = ({ c, onStop, onCancel, onExport }: { c: CardView; onSt
       <span className="label ellipsis">{c.gpu}</span>
       {c.mem && <span className="label">{c.mem}</span>}
     </div>
+    {c.stack && (
+      <span title={c.stackFrom ?? undefined}>
+        {c.stack}
+      </span>
+    )}
     <Chips chips={c.chips} className="label" />
     {!c.ready && (
       <div>
@@ -84,7 +89,7 @@ export const ModelCard = ({ c, onStop, onCancel, onExport }: { c: CardView; onSt
     )}
     <div className="foot btns">
       {c.ready && !c.embedding && (
-        <Btn kind="primary" href={`#/agents?model=${encodeURIComponent(c.servedModel ?? c.name)}`}>
+        <Btn kind="primary" href={`#/control?model=${encodeURIComponent(c.servedModel ?? c.name)}`}>
           Agent ›
         </Btn>
       )}
@@ -102,11 +107,10 @@ export const ModelCard = ({ c, onStop, onCancel, onExport }: { c: CardView; onSt
   </div>
 );
 
-export const vram = (a: Agg) => (a.memTotal <= 0 ? "–" : `${a.memUsed !== null ? `${Math.round(a.memUsed / 1024)}/` : ""}${Math.round(a.memTotal / 1024)}G`);
 
 const tokensOf = (s: MachineStats["sum"]) => (s ? s.inputUncached + s.cacheRead + s.cacheWrite + s.output : null);
 
-export const MachineTile = ({ m, a, st, on }: { m: MachineView; a: Agg; st: MachineStats | undefined; on: boolean }) => (
+export const MachineTile = ({ m, a, st, on, res }: { m: MachineView; a: Agg; st: MachineStats | undefined; on: boolean; res: MachineRes }) => (
   <a className={`cell surface${on ? " on" : ""}`} href={`#/control/${encodeURIComponent(m.id)}`}>
     <span className="name">
       <BarMark mark={m.online ? m.mark : "failed"} />
@@ -116,8 +120,8 @@ export const MachineTile = ({ m, a, st, on }: { m: MachineView; a: Agg; st: Mach
     </span>
     <span className="label ellipsis">{m.online ? m.gpuSummary : (m.error ?? "–")}</span>
     <dl className="kv two">
-      <dt>vram</dt>
-      <dd>{vram(a)}</dd>
+      <dt>gpus</dt>
+      <dd>{a.gpus}</dd>
       <dt>util</dt>
       <dd>{a.util === null ? "–" : `${Math.round(a.util)}%`}</dd>
       <dt>power</dt>
@@ -132,6 +136,14 @@ export const MachineTile = ({ m, a, st, on }: { m: MachineView; a: Agg; st: Mach
       <dd className={st?.sum?.errors ? "alert" : ""}>{fmt.k(st?.sum?.errors)}</dd>
       <dt>ttft</dt>
       <dd>{fmt.ms(st?.sum?.ttftMs.p50)}</dd>
+    </dl>
+    <dl className="kv">
+      <dt>vram free</dt>
+      <dd>{resText(res.vram)}</dd>
+      <dt>ram free</dt>
+      <dd>{resText(res.ram)}</dd>
+      <dt>disk free</dt>
+      <dd>{resText(res.disk)}</dd>
     </dl>
     <span className="ellipsis">{a.models.join(", ") || "–"}</span>
   </a>

@@ -1,5 +1,5 @@
 import type { Activity, ControllerHealth, EngineRates, FleetSnapshot, Gpu, HourlyRow, TtftHour, LaunchProgress, ModelCardStats, RecipeRow, RequestRecord, RunningModel, Snapshot } from "@local-studio/contracts/client";
-import { fmt } from "@local-studio/contracts/client";
+import { fmt, kvDtypeOf, quantOf } from "@local-studio/contracts/client";
 
 export type Mark = "" | "ready" | "busy" | "failed";
 export type Family = "qwen" | "lfm" | "hf" | null;
@@ -45,6 +45,8 @@ export interface CardView {
   readOnly: boolean;
   watchdog: string | null;
   servedModel: string | null;
+  stack: string;
+  stackFrom: string | null;
 }
 
 export interface LifeView {
@@ -199,6 +201,58 @@ const speedChip = (st: ModelCardStats | null, engine: EngineRates | null): Chip[
   return [];
 };
 
+export const stackOf = (m: RunningModel): string => {
+  const q = quantOf(m);
+  const kv = kvDtypeOf(m);
+  return [`${m.engine}${m.engineVersion ? ` ${m.engineVersion.split("+")[0]}` : ""}`, q.label ?? "quant –", `kv ${kv ?? "–"}`].join(" · ");
+};
+
+export const stackSource = (m: RunningModel): string | null => {
+  const q = quantOf(m);
+  return q.from ? `quant from ${q.from === "flag" ? "--quantization" : q.from === "config" ? "config.json" : "the model name"}` : null;
+};
+
+export interface Res {
+  free: number | null;
+  total: number | null;
+}
+
+export interface MachineRes {
+  vram: Res;
+  ram: Res;
+  disk: Res;
+}
+
+const gpuUsed = (g: Gpu): number | null => g.memUsedMiB ?? (g.backend === "intel-xpu" && g.processes.length === 0 ? 0 : null);
+
+export const resOf = (m: MachineView): MachineRes => {
+  const s = m.snap;
+  const gs = s?.gpus ?? [];
+  const used = gs.map(gpuUsed);
+  const vt = gs.reduce((t, g) => t + g.memTotalMiB, 0);
+  const h = s?.host ?? null;
+  const on = m.online;
+  return {
+    vram: { total: gs.length ? vt : null, free: on && gs.length && used.every((u) => u !== null) ? vt - used.reduce<number>((t, u) => t + (u ?? 0), 0) : null },
+    ram: { total: h?.mem.totalMiB ?? null, free: on && h && h.mem.usedMiB !== null ? h.mem.totalMiB - h.mem.usedMiB : null },
+    disk: { total: h?.storage?.totalMiB ?? null, free: on && h?.storage ? h.storage.totalMiB - h.storage.usedMiB : null },
+  };
+};
+
+export const sumRes = (rs: Res[]): Res & { known: number; of: number } => {
+  const k = rs.filter((r) => r.free !== null && r.total !== null);
+  const of = rs.filter((r) => r.total !== null || r.free !== null).length || rs.length;
+  return { free: k.length ? k.reduce((t, r) => t + r.free!, 0) : null, total: k.length ? k.reduce((t, r) => t + r.total!, 0) : null, known: k.length, of };
+};
+
+export const resText = (r: Res): string => {
+  if (r.total === null || r.total <= 0) return "–";
+  const tb = r.total >= 1024 * 1024;
+  const u = (x: number) => (tb ? x / 1024 / 1024 : x / 1024);
+  const n = (x: number) => (tb || u(x) < 10 ? u(x).toFixed(1) : String(Math.round(u(x))));
+  return `${r.free === null ? "–" : n(r.free)} / ${n(r.total)} ${tb ? "TB" : "GB"}`;
+};
+
 export const cardOf = (mv: MachineView, s: Snapshot, m: RunningModel, launch: LaunchProgress | null, engine: EngineRates | null = null): CardView => {
   const cards = s.gpus.filter((g) => m.gpuKeys.includes(g.key));
   const st = statsFor(s, m.id);
@@ -236,6 +290,8 @@ export const cardOf = (mv: MachineView, s: Snapshot, m: RunningModel, launch: La
     readOnly: mv.readOnly,
     watchdog: m.watchdog,
     servedModel: m.servedModels[0] ?? m.primaryModel,
+    stack: stackOf(m),
+    stackFrom: stackSource(m),
   };
 };
 
@@ -263,6 +319,8 @@ const launchCard = (mv: MachineView, s: Snapshot, l: LaunchProgress, recipes: Re
     readOnly: mv.readOnly,
     watchdog: null,
     servedModel: r?.servedName ?? null,
+    stack: "",
+    stackFrom: null,
   };
 };
 

@@ -1,45 +1,73 @@
-import { useEffect, useState } from "react";
-import type { AgentLaunchResult, AgentSession, HarnessInfo, HarnessJob } from "@local-studio/contracts/client";
+import { useEffect, useRef, useState } from "react";
+import type { AgentLaunchResult, AgentSession, Harness, HarnessInfo, HarnessJob } from "@local-studio/contracts/client";
 import { fmt } from "@local-studio/contracts/client";
 import { call, get, post } from "../api";
 import { Btn, Copy, Err, SectionHeading, Table } from "../components/basics";
 import { homeDir } from "../model/view";
 import { useStore } from "../store";
 
-const AGENTS = [
-  ["dsh", "DeepSeek Harness"],
-  ["claude", "Claude Code"],
-  ["codex", "Codex"],
+const AGENTS: [Harness, string][] = [
+  ["dsh", "dsh"],
   ["pi", "pi"],
   ["omp", "omp"],
-] as const;
+  ["amp", "amp"],
+  ["hermes", "hermes"],
+  ["droid", "droid"],
+  ["codex", "Codex CLI"],
+  ["codex-desktop", "Codex desktop"],
+  ["claude", "Claude Code CLI"],
+  ["claude-desktop", "Claude Code desktop"],
+];
 
-type Agent = (typeof AGENTS)[number][0];
+type GwModel = { id: string; owned_by?: string; context_length?: number | null; local_studio?: { state?: string } };
+type Bridge = { pickFolder?: () => Promise<string | null> };
+
 const DESKTOP = /Electron/.test(navigator.userAgent);
+const bridge = (): Bridge | undefined => (window as unknown as { localStudio?: Bridge }).localStudio;
+const RECENT = "ls.recentDirs";
 const label = (h: string) => AGENTS.find(([k]) => k === h)?.[1] ?? h;
 const jobText = (j: HarnessJob | null) => (!j ? "" : j.state === "running" ? `${j.action}ing` : j.state === "failed" ? `${j.action} failed: ${j.detail}` : "");
 
-export const AgentsPage = ({ model }: { model: string | null }) => {
+const newer = (a: string | null, b: string | null): boolean => {
+  if (!a || !b || a === b) return false;
+  const [x, y] = [a, b].map((v) => /^\d+\.\d+\.\d+/.exec(v)?.[0].split(".").map(Number) ?? []);
+  for (let i = 0; i < 3; i++) if ((x![i] ?? 0) !== (y![i] ?? 0)) return (x![i] ?? 0) > (y![i] ?? 0);
+  return a.localeCompare(b, undefined, { numeric: true }) > 0 && !(b.includes("-") === false && a.includes("-"));
+};
+
+const recent = (): string[] => {
+  try {
+    const v = JSON.parse(localStorage.getItem(RECENT) ?? "[]") as unknown;
+    return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string").slice(0, 8) : [];
+  } catch {
+    return [];
+  }
+};
+
+const remember = (d: string) => {
+  try {
+    localStorage.setItem(RECENT, JSON.stringify([d, ...recent().filter((x) => x !== d)].slice(0, 8)));
+  } catch {}
+};
+
+export const AgentsSection = ({ model }: { model: string | null }) => {
   const now = useStore((s) => s.now);
   const readOnly = useStore((s) => s.fleet?.machines.find((m) => m.peerId === null)?.snapshot?.machine.readOnly ?? false);
   const [infos, setInfos] = useState<HarnessInfo[]>([]);
   const [sessions, setSessions] = useState<AgentSession[]>([]);
-  const [models, setModels] = useState<{ id: string; context_length?: number }[]>([]);
-  const [agent, setAgent] = useState<Agent>("claude");
+  const [models, setModels] = useState<GwModel[]>([]);
+  const [agent, setAgent] = useState<Harness | null>(null);
   const [pick, setPick] = useState(model ?? "");
   const [dir, setDir] = useState("");
+  const [dirs, setDirs] = useState(recent);
   const [res, setRes] = useState<AgentLaunchResult | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const top = useRef<HTMLDivElement>(null);
 
   const loadInfos = () => void call<HarnessInfo[]>("GET", "/api/agents", undefined, 60_000).then((r) => r.ok && Array.isArray(r.data) && setInfos(r.data));
   const loadSessions = () => void get<AgentSession[]>("/api/agents/sessions").then((r) => r.ok && Array.isArray(r.data) && setSessions(r.data));
-  const loadModels = () =>
-    void get<{ data?: { id: string; context_length?: number }[] }>("/v1/models").then((r) => {
-      const list = r.ok && Array.isArray(r.data?.data) ? r.data.data : [];
-      setModels(list);
-      if (list[0]) setPick((p) => p || list[0]!.id);
-    });
+  const loadModels = () => void get<{ data?: GwModel[] }>("/v1/models").then((r) => r.ok && Array.isArray(r.data?.data) && setModels(r.data.data.filter((m) => (m.local_studio?.state ?? "ready") === "ready")));
   const installing = infos.some((i) => i.job?.state === "running");
   useEffect(() => {
     loadInfos();
@@ -53,6 +81,11 @@ export const AgentsPage = ({ model }: { model: string | null }) => {
     const t = setInterval(loadInfos, 2000);
     return () => clearInterval(t);
   }, [installing]);
+  useEffect(() => {
+    if (!model) return;
+    setPick(model);
+    top.current?.scrollIntoView({ block: "start" });
+  }, [model]);
 
   const install = async (h: string) => {
     setErr(null);
@@ -61,15 +94,22 @@ export const AgentsPage = ({ model }: { model: string | null }) => {
     setInfos((xs) => xs.map((x) => (x.harness === h ? { ...x, job: r.data } : x)));
   };
   const launch = async () => {
+    if (!agent || !pick) return;
     setBusy(true);
     setErr(null);
     setRes(null);
-    const r = await call<AgentLaunchResult>("POST", `/api/agents/launch?terminal=${DESKTOP ? "auto" : "none"}`, { harness: agent, model: pick, ...(dir.trim() ? { dir: dir.trim() } : {}) }, 90_000);
+    const d = dir.trim();
+    const r = await call<AgentLaunchResult>("POST", `/api/agents/launch?terminal=${DESKTOP ? "auto" : "none"}`, { harness: agent, model: pick, ...(d ? { dir: d } : {}) }, 90_000);
     setBusy(false);
     if (!r.ok) return setErr(r.error);
+    if (d) (remember(d), setDirs(recent()));
     setRes(r.data);
     loadSessions();
     if (DESKTOP && r.data.url) window.open(r.data.url);
+  };
+  const choose = async () => {
+    const d = await bridge()?.pickFolder?.();
+    if (d) setDir(d);
   };
   const stop = async (id: string) => {
     const r = await call<{ ok: boolean }>("DELETE", `/api/agents/sessions/${encodeURIComponent(id)}`);
@@ -82,67 +122,75 @@ export const AgentsPage = ({ model }: { model: string | null }) => {
     if (!r.ok) setErr(r.error);
   };
   const info = (h: string) => infos.find((x) => x.harness === h);
-  const sel = info(agent);
+  const sel = agent ? info(agent) : undefined;
+  const blocked = sel ? (sel.blocked ?? (sel.installed ? null : `${label(sel.harness)} is not installed`)) : null;
+  const machines = [...new Set(models.map((m) => m.owned_by ?? ""))];
+  const ready = !!agent && !!pick && models.some((m) => m.id === pick);
 
   return (
-    <div className="page">
-      <div className="half">
-        <SectionHeading>harness</SectionHeading>
-        <Table<(typeof AGENTS)[number]>
-          cols={[
-            { h: "", c: ([h]) => (agent === h ? "✓" : "") },
-            { h: "harness", c: ([h, l]) => <span className={agent === h ? "ink" : ""}>{l}</span> },
-            { h: "installed", c: ([h]) => info(h)?.version ?? (info(h) ? (info(h)!.installed ? "?" : "–") : "") },
-            { h: "latest", c: ([h]) => info(h)?.latest ?? "–" },
-            {
-              h: " ",
-              c: ([h]) => {
-                const i = info(h);
-                if (!i) return null;
-                if (i.job?.state === "running") return <span className="label">{jobText(i.job)}</span>;
-                const update = i.installed && i.latest && i.version !== i.latest;
-                if (i.installed && !update) return i.managed ? <span className="label">managed</span> : null;
-                return <Btn onClick={() => void install(h)} disabled={readOnly}>{i.installed ? "Update" : "Install"}</Btn>;
-              },
-            },
-          ]}
-          rows={[...AGENTS]}
-          keyOf={([h]) => h}
-          onRow={([h]) => (setAgent(h), setRes(null))}
-        />
-        {infos.filter((i) => i.job?.state === "failed").map((i) => (
-          <Err key={i.harness}>{`${label(i.harness)}: ${jobText(i.job)}`}</Err>
-        ))}
+    <>
+      <div ref={top} className="half">
+        <SectionHeading aside={<span className="label">{`${sessions.length} running`}</span>}>agents</SectionHeading>
         <div className="form">
-          <label htmlFor="m">model</label>
-          <select id="m" className="input" value={pick} onChange={(e) => setPick(e.target.value)}>
-            {pick && !models.some((m) => m.id === pick) && <option value={pick}>{pick}</option>}
-            {models.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.id}
-                {m.context_length ? ` · ${fmt.ctx(m.context_length)}` : ""}
+          <span className="label">harness</span>
+          <span className="tabs">
+            {AGENTS.map(([h, l]) => (
+              <button type="button" key={h} className={agent === h ? "on" : ""} onClick={() => (setAgent(h), setRes(null))}>
+                {l}
+              </button>
+            ))}
+          </span>
+          <label htmlFor="agent-model">model</label>
+          <select id="agent-model" className="input" value={pick} onChange={(e) => setPick(e.target.value)}>
+            <option value="" disabled>
+              {models.length ? "choose a ready model" : "no model is ready in the fleet"}
+            </option>
+            {pick && !models.some((m) => m.id === pick) && (
+              <option value={pick} disabled>
+                {`${pick} · not ready`}
               </option>
+            )}
+            {machines.map((mn) => (
+              <optgroup key={mn} label={mn || "fleet"}>
+                {models
+                  .filter((m) => (m.owned_by ?? "") === mn)
+                  .map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {`${m.id}${m.context_length ? ` · ${fmt.ctx(m.context_length)}` : ""}`}
+                    </option>
+                  ))}
+              </optgroup>
             ))}
           </select>
-          <label htmlFor="d">folder</label>
-          <input id="d" className="input" value={dir} onChange={(e) => setDir(e.target.value)} spellCheck={false} />
+          <label htmlFor="agent-dir">folder</label>
+          <span className="row-flex">
+            <input id="agent-dir" className="input" list="agent-dirs" value={dir} placeholder="~/work/<harness>" onChange={(e) => setDir(e.target.value)} spellCheck={false} />
+            <datalist id="agent-dirs">
+              {dirs.map((d) => (
+                <option key={d} value={d} />
+              ))}
+            </datalist>
+            {bridge()?.pickFolder && <Btn onClick={() => void choose()}>Choose ›</Btn>}
+          </span>
         </div>
-        <div className="btns gut" style={{ marginTop: "var(--group)" }}>
-          <Btn kind="primary" onClick={() => void launch()} disabled={!pick || busy || readOnly || !sel?.installed}>
-            {busy ? "Starting" : `Launch ${label(agent)} ›`}
+        <div className="btns gut" style={{ marginTop: "var(--block)" }}>
+          <Btn kind="primary" onClick={() => void launch()} disabled={!ready || !!blocked || busy || readOnly}>
+            {busy ? "Starting" : `Launch ${agent ? label(agent) : "harness"} on ${pick || "model"} ›`}
           </Btn>
+          {sel && <span className={blocked ? "alert" : "label"}>{blocked ?? sel.note}</span>}
         </div>
         <Err>{err}</Err>
         {res && (
-          <div className="gut" style={{ marginTop: "var(--group)" }}>
+          <div className="gut" style={{ marginTop: "var(--block)" }}>
             <div className="ink">
               {label(res.harness)} {res.version ?? ""} · {res.how} · {homeDir(res.dir)}
             </div>
+            {res.note && <div className="label">{res.note}</div>}
             {res.running && <div className="label cut">{res.running}</div>}
             {res.url && (
               <div className="btns" style={{ marginTop: "var(--block)" }}>
                 <Btn kind="primary" href={res.url}>
-                  Open DeepSeek Harness ›
+                  Open dsh ›
                 </Btn>
               </div>
             )}
@@ -174,6 +222,28 @@ export const AgentsPage = ({ model }: { model: string | null }) => {
           keyOf={(s) => s.id}
         />
       </div>
-    </div>
+      <div className="gut harness-row">
+        {AGENTS.map(([h, l]) => {
+          const i = info(h);
+          const update = !!i?.installed && newer(i.latest, i.version);
+          return (
+            <span key={h} className="row-flex">
+              <span className={i?.installed ? "" : "label"}>{l}</span>
+              <span className="label">{i ? (i.installed ? (i.version ?? "?") : "–") : ""}</span>
+              {i?.job?.state === "running" ? (
+                <span className="label">{jobText(i.job)}</span>
+              ) : i?.package && (!i.installed || update) ? (
+                <Btn onClick={() => void install(h)} disabled={readOnly}>{i.installed ? `Update ${i.latest}` : "Install"}</Btn>
+              ) : null}
+            </span>
+          );
+        })}
+      </div>
+      {infos
+        .filter((i) => i.job?.state === "failed")
+        .map((i) => (
+          <Err key={i.harness}>{`${label(i.harness)}: ${jobText(i.job)}`}</Err>
+        ))}
+    </>
   );
 };

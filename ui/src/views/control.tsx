@@ -3,14 +3,15 @@ import { fmt } from "@local-studio/contracts/client";
 import { post, via } from "../api";
 import { cancelLaunch, ConnectDialog, ExportDialog, RecipeDialog, StopDialog, type Target } from "../components/actions";
 import { Btn, Err, SectionHeading, Table } from "../components/basics";
-import { FigureGrid, HourCharts, vram, GpuTable, MachineTile, ModelCard, sliceHit } from "../components/cards";
-import { aggOf, type CardView, fmtFormat, homeCards, logLines, type MachineView, machines, mergeRecipes, type RecipeView } from "../model/view";
+import { FigureGrid, HourCharts, GpuTable, MachineTile, ModelCard, sliceHit } from "../components/cards";
+import { aggOf, type CardView, fmtFormat, homeCards, logLines, type MachineView, machines, mergeRecipes, type RecipeView, resOf, resText, sumRes } from "../model/view";
 import { loadRecipes, useStore } from "../store";
+import { AgentsSection } from "./agents";
 
 type Show = "assigned" | "fits" | "all";
 const clock = (t: number) => new Date(t).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
 
-export const ControlPage = ({ machineId }: { machineId: string | null }) => {
+export const ControlPage = ({ machineId, model }: { machineId: string | null; model: string | null }) => {
   const fleet = useStore((s) => s.fleet);
   const live = useStore((s) => s.launches);
   const recipes = useStore((s) => s.recipes);
@@ -31,6 +32,11 @@ export const ControlPage = ({ machineId }: { machineId: string | null }) => {
   const tot = (k: "requests" | "errors" | "inputUncached" | "cacheRead" | "cacheWrite" | "output" | "cacheUnknownPrompt") => sums.reduce((t, s) => t + (s[k] ?? 0), 0);
   const prompt = tot("inputUncached") + tot("cacheRead") + tot("cacheWrite");
   const a = aggOf(ms, engines);
+  const res = ms.map(resOf);
+  const fig = (k: "vram" | "ram" | "disk") => {
+    const t = sumRes(res.map((r) => r[k]));
+    return { v: resText(t), k: `${k} free${t.known < t.of ? ` · ${t.known}/${t.of}` : ""}` };
+  };
   const reqs = [...requests.filter((r) => r.via !== "peer"), ...ms.flatMap((m) => (m.peerId ? (stats[m.id]?.reqs ?? []) : []))].filter((r) => ms.some((m) => m.id === r.machineId));
   const log = logLines(ms, Object.fromEntries(ms.map((m) => [m.id, stats[m.id]?.health ?? null])), reqs, live, fleet.self).slice(0, 14);
   const anyAssigned = rvs.some((v) => v.per.some((p) => p.row.assigned));
@@ -53,7 +59,9 @@ export const ControlPage = ({ machineId }: { machineId: string | null }) => {
         cells={[
           { v: String(ms.filter((m) => m.online).length), k: "machines" },
           { v: String(a.gpus), k: "gpus" },
-          { v: vram(a), k: "vram" },
+          fig("vram"),
+          fig("ram"),
+          fig("disk"),
           { v: a.powerW === null ? "–" : `${Math.round(a.powerW)} W`, k: "power" },
           { v: String(cards.length), k: "models" },
           { v: fmt.tps(a.tps), k: "tok/s now" },
@@ -66,9 +74,9 @@ export const ControlPage = ({ machineId }: { machineId: string | null }) => {
       />
       <HourCharts rows={ms.flatMap((m) => stats[m.id]?.hourly ?? [])} ttft={ms.flatMap((m) => stats[m.id]?.ttft ?? [])} now={now} />
       <SectionHeading aside={<Btn onClick={() => setDlg({ k: "connect" })}>Connect ›</Btn>}>machines</SectionHeading>
-      <div className="page">
-        {ms.map((m: MachineView) => (
-          <MachineTile key={m.id} m={m} a={aggOf([m], engines)} st={stats[m.id]} on={m.id === machineId} />
+      <div className="tiles">
+        {ms.map((m: MachineView, i) => (
+          <MachineTile key={m.id} m={m} a={aggOf([m], engines)} st={stats[m.id]} on={m.id === machineId} res={res[i]!} />
         ))}
       </div>
       <SectionHeading>running</SectionHeading>
@@ -135,6 +143,7 @@ export const ControlPage = ({ machineId }: { machineId: string | null }) => {
         keyOf={(v) => v.id}
         onRow={(v) => setDlg({ k: "recipe", id: v.id })}
       />
+      <AgentsSection model={model} />
       {dlg?.k === "stop" && dlg.c.modelId && <StopDialog t={target(dlg.c)} modelId={dlg.c.modelId} name={dlg.c.name} watchdog={dlg.c.watchdog} blocked={dlg.c.stopBlocked} onClose={() => setDlg(null)} />}
       {dlg?.k === "export" && dlg.c.modelId && <ExportDialog t={target(dlg.c)} modelId={dlg.c.modelId} onClose={() => setDlg(null)} />}
       {open && <RecipeDialog v={open} onClose={() => setDlg(null)} />}

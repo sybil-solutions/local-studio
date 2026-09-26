@@ -5,12 +5,11 @@ import { getKey, setKey } from "./api";
 import { KeyPrompt } from "./components/actions";
 import { Boundary } from "./components/basics";
 import { restart, start, useStore } from "./store";
-import { AgentsPage } from "./views/agents";
 import { ControlPage } from "./views/control";
 import { LivePage } from "./views/live";
 import { UsagePage } from "./views/usage";
 
-const TABS = ["control", "live", "usage", "agents"] as const;
+const TABS = ["control", "live", "usage"] as const;
 
 const onHash = (f: () => void) => {
   window.addEventListener("hashchange", f);
@@ -71,16 +70,14 @@ const App = () => {
           )}
         </span>
       </div>
-      {view !== "agents" && <Filter tab={view} on={machine} />}
+      <Filter tab={view} on={machine} />
       <Boundary key={view} name={view}>
         {view === "usage" ? (
           <UsagePage machineId={machine} />
         ) : view === "live" ? (
           <LivePage machineId={machine} />
-        ) : view === "agents" ? (
-          <AgentsPage model={new URLSearchParams(query).get("model")} />
         ) : (
-          <ControlPage machineId={machine} />
+          <ControlPage machineId={tab === "agents" ? null : machine} model={new URLSearchParams(query).get("model")} />
         )}
       </Boundary>
       {needKey && <KeyPrompt />}
