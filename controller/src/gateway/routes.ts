@@ -45,6 +45,7 @@ export const gatewayRoutes = (ctx: Ctx, svc: Services): Hono<Env> => {
     if (svc.runtime.view().discovery.lastScanAt === null) await svc.runtime.rescan();
   };
   let inflight = 0;
+  let lastMissScan = 0;
   ctx.obs.gauge("gateway.inflight", () => inflight);
 
   const draft = (
@@ -131,7 +132,11 @@ export const gatewayRoutes = (ctx: Ctx, svc: Services): Hono<Env> => {
     if (!m.model) return fail(m, 400, "INVALID_REQUEST", "model is required");
     await firstScan();
     let route = resolveModel(svc, m.model);
-    if (route.kind === "missing" && Date.now() - (svc.runtime.view().discovery.lastScanAt ?? 0) > 3000) route = (await svc.runtime.rescan(), resolveModel(svc, m.model));
+    for (let i = 0; i < 2 && route.kind === "missing" && Date.now() - lastMissScan > 1000; i++) {
+      const d = (await svc.runtime.rescan()).discovery;
+      route = resolveModel(svc, m.model);
+      if ((d.lastScanAt ?? 0) - (d.scanMs ?? 0) >= tsStart) lastMissScan = Date.now();
+    }
     if (route.kind === "missing") return fail(m, 404, "MODEL_NOT_FOUND", `model '${m.model}' is not served here or on any connected machine`);
     if (route.kind === "loading") {
       m.model = route.served;
