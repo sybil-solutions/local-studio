@@ -1,4 +1,4 @@
-appId: org.localstudio.desktop
+appId: org.local.studio.desktop
 productName: Local Studio
 artifactName: Local-Studio-${version}-${os}-${arch}.${ext}
 directories:
