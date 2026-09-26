@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
-import type { AgentLaunchResult, HarnessInfo, Workspace } from "@local-studio/contracts/client";
+import type { AgentLaunchResult, AgentSession, HarnessInfo, HarnessJob } from "@local-studio/contracts/client";
 import { fmt } from "@local-studio/contracts/client";
-import { get, post } from "../api";
+import { call, get, post } from "../api";
 import { Btn, Copy, Err, SectionHeading, Table } from "../components/basics";
 import { homeDir } from "../model/view";
 import { useStore } from "../store";
@@ -16,99 +16,129 @@ const AGENTS = [
 
 type Agent = (typeof AGENTS)[number][0];
 const DESKTOP = /Electron/.test(navigator.userAgent);
+const label = (h: string) => AGENTS.find(([k]) => k === h)?.[1] ?? h;
+const jobText = (j: HarnessJob | null) => (!j ? "" : j.state === "running" ? `${j.action}ing` : j.state === "failed" ? `${j.action} failed: ${j.detail}` : "");
 
 export const AgentsPage = ({ model }: { model: string | null }) => {
   const now = useStore((s) => s.now);
   const readOnly = useStore((s) => s.fleet?.machines.find((m) => m.peerId === null)?.snapshot?.machine.readOnly ?? false);
   const [infos, setInfos] = useState<HarnessInfo[]>([]);
-  const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
-  const [models, setModels] = useState<{ id: string; context_length?: number }[] | null>(null);
+  const [sessions, setSessions] = useState<AgentSession[]>([]);
+  const [models, setModels] = useState<{ id: string; context_length?: number }[]>([]);
   const [agent, setAgent] = useState<Agent>("claude");
   const [pick, setPick] = useState(model ?? "");
-  const [ws, setWs] = useState("");
   const [dir, setDir] = useState("");
   const [res, setRes] = useState<AgentLaunchResult | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const loadWs = () => void get<Workspace[]>("/api/workspaces").then((r) => r.ok && Array.isArray(r.data) && setWorkspaces(r.data));
-  useEffect(() => {
-    void get<HarnessInfo[]>("/api/agents").then((r) => r.ok && Array.isArray(r.data) && setInfos(r.data));
-    loadWs();
+  const loadInfos = () => void call<HarnessInfo[]>("GET", "/api/agents", undefined, 60_000).then((r) => r.ok && Array.isArray(r.data) && setInfos(r.data));
+  const loadSessions = () => void get<AgentSession[]>("/api/agents/sessions").then((r) => r.ok && Array.isArray(r.data) && setSessions(r.data));
+  const loadModels = () =>
     void get<{ data?: { id: string; context_length?: number }[] }>("/v1/models").then((r) => {
       const list = r.ok && Array.isArray(r.data?.data) ? r.data.data : [];
       setModels(list);
       if (list[0]) setPick((p) => p || list[0]!.id);
     });
+  const installing = infos.some((i) => i.job?.state === "running");
+  useEffect(() => {
+    loadInfos();
+    loadSessions();
+    loadModels();
+    const t = setInterval(() => (loadSessions(), loadModels()), 5000);
+    return () => clearInterval(t);
   }, []);
+  useEffect(() => {
+    if (!installing) return;
+    const t = setInterval(loadInfos, 2000);
+    return () => clearInterval(t);
+  }, [installing]);
 
-  const launch = async (body: { harness: string; model: string; workspaceId?: string; dir?: string }) => {
+  const install = async (h: string) => {
+    setErr(null);
+    const r = await post<HarnessJob>(`/api/agents/${h}/install`);
+    if (!r.ok) return setErr(r.error);
+    setInfos((xs) => xs.map((x) => (x.harness === h ? { ...x, job: r.data } : x)));
+  };
+  const launch = async () => {
     setBusy(true);
     setErr(null);
     setRes(null);
-    const r = await post<AgentLaunchResult>(`/api/agents/launch?terminal=${DESKTOP ? "auto" : "none"}`, body);
+    const r = await call<AgentLaunchResult>("POST", `/api/agents/launch?terminal=${DESKTOP ? "auto" : "none"}`, { harness: agent, model: pick, ...(dir.trim() ? { dir: dir.trim() } : {}) }, 90_000);
     setBusy(false);
     if (!r.ok) return setErr(r.error);
     setRes(r.data);
-    loadWs();
+    loadSessions();
     if (DESKTOP && r.data.url) window.open(r.data.url);
   };
+  const stop = async (id: string) => {
+    const r = await call<{ ok: boolean }>("DELETE", `/api/agents/sessions/${encodeURIComponent(id)}`);
+    if (!r.ok) setErr(r.error);
+    loadSessions();
+  };
+  const attach = async (s: AgentSession) => {
+    if (!DESKTOP) return void navigator.clipboard?.writeText(s.attach ?? "");
+    const r = await post<{ ok: boolean }>(`/api/agents/sessions/${encodeURIComponent(s.id)}/attach`);
+    if (!r.ok) setErr(r.error);
+  };
   const info = (h: string) => infos.find((x) => x.harness === h);
-  const mine = workspaces.filter((w) => w.harness === agent);
-  const go = () => void launch({ harness: agent, model: pick, ...(ws ? { workspaceId: ws } : dir ? { dir } : {}) });
+  const sel = info(agent);
 
   return (
     <div className="page">
       <div className="half">
-        <SectionHeading>agent</SectionHeading>
-        {AGENTS.map(([h, label]) => {
-          const i = info(h);
-          return (
-            <div key={h} className={`opt${agent === h ? " on" : ""}`} onClick={() => (setAgent(h), setWs(""))}>
-              <span className="ck">{agent === h ? "✓" : ""}</span>
-              <span className="lb">{label}</span>
-              <span className="ellipsis rv">{i ? (i.installed ? i.version ?? "installed" : "not installed") : ""}</span>
-            </div>
-          );
-        })}
+        <SectionHeading>harness</SectionHeading>
+        <Table<(typeof AGENTS)[number]>
+          cols={[
+            { h: "", c: ([h]) => (agent === h ? "✓" : "") },
+            { h: "harness", c: ([h, l]) => <span className={agent === h ? "ink" : ""}>{l}</span> },
+            { h: "installed", c: ([h]) => info(h)?.version ?? (info(h) ? (info(h)!.installed ? "?" : "–") : "") },
+            { h: "latest", c: ([h]) => info(h)?.latest ?? "–" },
+            {
+              h: " ",
+              c: ([h]) => {
+                const i = info(h);
+                if (!i) return null;
+                if (i.job?.state === "running") return <span className="label">{jobText(i.job)}</span>;
+                const update = i.installed && i.latest && i.version !== i.latest;
+                if (i.installed && !update) return i.managed ? <span className="label">managed</span> : null;
+                return <Btn onClick={() => void install(h)} disabled={readOnly}>{i.installed ? "Update" : "Install"}</Btn>;
+              },
+            },
+          ]}
+          rows={[...AGENTS]}
+          keyOf={([h]) => h}
+          onRow={([h]) => (setAgent(h), setRes(null))}
+        />
+        {infos.filter((i) => i.job?.state === "failed").map((i) => (
+          <Err key={i.harness}>{`${label(i.harness)}: ${jobText(i.job)}`}</Err>
+        ))}
         <div className="form">
           <label htmlFor="m">model</label>
           <select id="m" className="input" value={pick} onChange={(e) => setPick(e.target.value)}>
-            {pick && !models?.some((m) => m.id === pick) && <option value={pick}>{pick}</option>}
-            {(models ?? []).map((m) => (
+            {pick && !models.some((m) => m.id === pick) && <option value={pick}>{pick}</option>}
+            {models.map((m) => (
               <option key={m.id} value={m.id}>
                 {m.id}
                 {m.context_length ? ` · ${fmt.ctx(m.context_length)}` : ""}
               </option>
             ))}
           </select>
-          <label htmlFor="w">workspace</label>
-          <select id="w" className="input" value={ws} onChange={(e) => setWs(e.target.value)}>
-            <option value="">new workspace</option>
-            {mine.map((w) => (
-              <option key={w.id} value={w.id}>
-                {w.name} · {homeDir(w.dir)}
-              </option>
-            ))}
-          </select>
-          {!ws && (
-            <>
-              <label htmlFor="d">folder</label>
-              <input id="d" className="input" value={dir} onChange={(e) => setDir(e.target.value)} spellCheck={false} />
-            </>
-          )}
+          <label htmlFor="d">folder</label>
+          <input id="d" className="input" value={dir} onChange={(e) => setDir(e.target.value)} spellCheck={false} />
         </div>
         <div className="btns gut" style={{ marginTop: "var(--group)" }}>
-          <Btn kind="primary" onClick={go} disabled={!pick || busy || readOnly}>
-            {busy ? "Starting" : DESKTOP ? (agent === "dsh" ? "Open ›" : "Open terminal ›") : "Start ›"}
+          <Btn kind="primary" onClick={() => void launch()} disabled={!pick || busy || readOnly || !sel?.installed}>
+            {busy ? "Starting" : `Launch ${label(agent)} ›`}
           </Btn>
         </div>
         <Err>{err}</Err>
         {res && (
           <div className="gut" style={{ marginTop: "var(--group)" }}>
             <div className="ink">
-              {res.how} · {res.workspaceId}
+              {label(res.harness)} {res.version ?? ""} · {res.how} · {homeDir(res.dir)}
             </div>
+            {res.running && <div className="label cut">{res.running}</div>}
             {res.url && (
               <div className="btns" style={{ marginTop: "var(--block)" }}>
                 <Btn kind="primary" href={res.url}>
@@ -121,18 +151,27 @@ export const AgentsPage = ({ model }: { model: string | null }) => {
         )}
       </div>
       <div className="half">
-        <SectionHeading>workspaces</SectionHeading>
-        <Table<Workspace>
+        <SectionHeading>sessions</SectionHeading>
+        <Table<AgentSession>
           cols={[
-            { h: "name", c: (w) => w.name },
-            { h: "agent", c: (w) => w.harness },
-            { h: "model", c: (w) => <span className="cut">{w.model}</span> },
-            { h: "folder", c: (w) => homeDir(w.dir) },
-            { h: "opened", c: (w) => (w.lastOpenAt ? fmt.ago(w.lastOpenAt, now) : "–") },
-            { h: "", c: (w) => <Btn onClick={() => void launch({ harness: w.harness, model: w.model, workspaceId: w.id })} disabled={busy || readOnly}>Open ›</Btn> },
+            { h: "harness", c: (s) => label(s.harness) },
+            { h: "model", c: (s) => <span className="cut">{s.model || "–"}</span> },
+            { h: "folder", c: (s) => <span className="cut">{homeDir(s.dir)}</span> },
+            { h: "started", c: (s) => (s.startedAt ? fmt.ago(s.startedAt, now) : "–") },
+            {
+              h: "",
+              c: (s) => (
+                <span className="btns">
+                  {s.url ? <Btn href={s.url}>Open ›</Btn> : s.attach ? <Btn onClick={() => void attach(s)}>{DESKTOP ? "Attach ›" : "Copy attach"}</Btn> : null}
+                  <Btn kind="danger" onClick={() => void stop(s.id)} disabled={readOnly}>
+                    Stop
+                  </Btn>
+                </span>
+              ),
+            },
           ]}
-          rows={workspaces.filter((w) => AGENTS.some(([h]) => h === w.harness))}
-          keyOf={(w) => w.id}
+          rows={sessions}
+          keyOf={(s) => s.id}
         />
       </div>
     </div>
