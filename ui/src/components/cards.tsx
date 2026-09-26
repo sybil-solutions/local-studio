@@ -1,23 +1,9 @@
 import { type ReactNode, useState } from "react";
 import type { Gpu, GpuSample, HourlyRow, TtftHour } from "@local-studio/contracts/client";
 import { fmt, histPercentile } from "@local-studio/contracts/client";
-import type { Agg, BreakBy, CardView, LifeView, MachineRes, MachineView } from "../model/view";
-import { gpuRow, hourBuckets, resText } from "../model/view";
-import type { MachineStats } from "../store";
-import { BarMark, Btn, Chips, Logo, Table } from "./basics";
-
-export const TokenLine = ({ values, h }: { values: number[]; h: number }) => {
-  const n = values.length;
-  const top = Math.max(1, ...values);
-  if (n < 2 || top <= 1) return null;
-  const pts = values.map((v, i) => `${((i / (n - 1)) * 100).toFixed(2)},${(h - 4 - (v / top) * (h * 0.8)).toFixed(2)}`);
-  return (
-    <svg className="line" viewBox={`0 0 100 ${h}`} preserveAspectRatio="none" aria-hidden="true">
-      <polygon points={`${pts.join(" ")} 100,${h} 0,${h}`} fill="rgba(var(--fg-rgb),0.06)" />
-      <polyline points={pts.join(" ")} fill="none" stroke="rgba(var(--fg-rgb),0.25)" strokeWidth="1.2" vectorEffect="non-scaling-stroke" />
-    </svg>
-  );
-};
+import type { BreakBy, LifeView, MachineView } from "../model/view";
+import { gpuRow, hourBuckets } from "../model/view";
+import { Table } from "./basics";
 
 export const Spark = ({ v }: { v: number[] }) =>
   v.length < 2 ? null : (
@@ -58,100 +44,6 @@ export const ActivityGrid = ({ v }: { v: LifeView }) => {
     </div>
   );
 };
-
-export const ModelCard = ({ c, onStop, onCancel, onExport }: { c: CardView; onStop: (c: CardView) => void; onCancel: (c: CardView) => void; onExport: (c: CardView) => void }) => (
-  <div className="cell surface run glow">
-    <TokenLine values={c.line} h={156} />
-    <div className="name">
-      <Logo family={c.family} />
-      <span className="ellipsis">{c.name}</span>
-    </div>
-    <div className="row-flex">
-      <span className="label ellipsis">{c.machine}</span>
-      <span className="label ellipsis">{c.gpu}</span>
-      {c.mem && <span className="label">{c.mem}</span>}
-    </div>
-    {c.stack && (
-      <span title={c.stackFrom ?? undefined}>
-        {c.stack}
-      </span>
-    )}
-    <Chips chips={c.chips} className="label" />
-    {!c.ready && (
-      <div>
-        <div className={c.subAlert ? "alert" : ""}>{c.sub}</div>
-        {c.progress !== null && (
-          <div className="progress">
-            <div style={{ width: `${Math.max(0, Math.min(100, c.progress))}%` }} />
-          </div>
-        )}
-      </div>
-    )}
-    <div className="foot btns">
-      {c.ready && !c.embedding && (
-        <Btn kind="primary" href={`#/control?model=${encodeURIComponent(c.servedModel ?? c.name)}`}>
-          Agent ›
-        </Btn>
-      )}
-      {c.modelId && <Btn onClick={() => onExport(c)}>Export</Btn>}
-      {c.modelId ? (
-        <Btn kind="danger" onClick={() => onStop(c)} disabled={c.readOnly || !!c.stopBlocked}>
-          Stop
-        </Btn>
-      ) : c.launchId ? (
-        <Btn kind="danger" onClick={() => onCancel(c)} disabled={c.readOnly}>
-          Stop
-        </Btn>
-      ) : null}
-    </div>
-  </div>
-);
-
-
-const tokensOf = (s: MachineStats["sum"]) => (s ? s.inputUncached + s.cacheRead + s.cacheWrite + s.output : null);
-
-export const MachineTile = ({ m, a, st, on, res }: { m: MachineView; a: Agg; st: MachineStats | undefined; on: boolean; res: MachineRes }) => (
-  <a className={`cell surface${on ? " on" : ""}`} href={`#/control/${encodeURIComponent(m.id)}`}>
-    <span className="name">
-      <BarMark mark={m.online ? m.mark : "failed"} />
-      <span className="ellipsis">{m.name}</span>
-      {!m.online && <span className="badge alert">offline</span>}
-      {m.watchdogs.length > 0 && <span className="badge">watchdog</span>}
-    </span>
-    <span className="label ellipsis">{m.online ? m.gpuSummary : (m.error ?? "–")}</span>
-    <dl className="kv two">
-      <dt>gpus</dt>
-      <dd>{a.gpus}</dd>
-      <dt>util</dt>
-      <dd>{a.util === null ? "–" : `${Math.round(a.util)}%`}</dd>
-      <dt>power</dt>
-      <dd>{a.powerW === null ? "–" : `${Math.round(a.powerW)} W`}</dd>
-      <dt>tok/s</dt>
-      <dd>{fmt.tps(a.tps)}</dd>
-      <dt>req</dt>
-      <dd>{fmt.k(st?.sum?.requests)}</dd>
-      <dt>tokens</dt>
-      <dd>{fmt.k(tokensOf(st?.sum ?? null))}</dd>
-      <dt>errors</dt>
-      <dd className={st?.sum?.errors ? "alert" : ""}>{fmt.k(st?.sum?.errors)}</dd>
-      <dt>ttft</dt>
-      <dd>{fmt.ms(st?.sum?.ttftMs.p50)}</dd>
-    </dl>
-    <dl className="kv">
-      {res.vram && (
-        <>
-          <dt>vram free</dt>
-          <dd>{resText(res.vram)}</dd>
-        </>
-      )}
-      <dt>{res.unified ? "mem free" : "ram free"}</dt>
-      <dd>{`${resText(res.ram)}${res.unified ? " unified" : ""}`}</dd>
-      <dt>disk free</dt>
-      <dd>{resText(res.disk)}</dd>
-    </dl>
-    <span className="ellipsis">{a.models.join(", ") || "–"}</span>
-  </a>
-);
 
 export interface Figure {
   v: string;

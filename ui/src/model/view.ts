@@ -1,4 +1,4 @@
-import type { Activity, ControllerHealth, EngineRates, FleetSnapshot, Gpu, HourlyRow, TtftHour, LaunchProgress, ModelCardStats, RecipeRow, RequestRecord, RunningModel, Snapshot } from "@local-studio/contracts/client";
+import type { Activity, EngineRates, FleetSnapshot, Gpu, HourlyRow, TtftHour, LaunchProgress, ModelCardStats, RecipeRow, RunningModel, Snapshot } from "@local-studio/contracts/client";
 import { fmt, kvDtypeOf, quantOf } from "@local-studio/contracts/client";
 
 export type Mark = "" | "ready" | "busy" | "failed";
@@ -478,26 +478,4 @@ export const mergeRecipes = (ms: MachineView[], recipes: Record<string, RecipeRo
       by.set(row.id, v);
     }
   return [...by.values()];
-};
-
-export interface LogLine {
-  at: number;
-  machine: string;
-  src: string;
-  msg: string;
-  alert: boolean;
-}
-
-export const logLines = (ms: MachineView[], health: Record<string, ControllerHealth | null>, reqs: RequestRecord[], live: Record<string, LaunchProgress>, selfId: string | null): LogLine[] => {
-  const out: LogLine[] = [];
-  for (const m of ms) {
-    for (const e of health[m.id]?.lastErrors ?? []) out.push({ at: e.at, machine: m.name, src: e.where, msg: e.message.split("\n")[0] ?? "", alert: true });
-    for (const l of launchesFor(m.snap, live, selfId)) out.push({ at: l.updatedAt, machine: m.name, src: `launch ${l.recipeId}`, msg: l.error ?? `${l.phase}${l.detail ? ` ${l.detail}` : ""}`, alert: l.phase === "failed" });
-    for (const x of m.snap?.models ?? []) if (x.state === "unhealthy") out.push({ at: m.snap!.at, machine: m.name, src: x.primaryModel || x.id, msg: x.error ?? "unhealthy", alert: true });
-    for (const e of m.snap?.discovery.errors ?? []) out.push({ at: m.snap!.discovery.lastScanAt ?? m.snap!.at, machine: m.name, src: "discovery", msg: e, alert: true });
-    if (!m.online) out.push({ at: Date.now(), machine: m.name, src: "peer", msg: m.error ?? "offline", alert: true });
-  }
-  const names = new Map(ms.map((m) => [m.id, m.name]));
-  for (const r of reqs) if (r.errorCode) out.push({ at: r.tsStart, machine: names.get(r.machineId) ?? r.machineId.slice(0, 8), src: `${r.client} ${r.model}`, msg: `${r.status} ${r.errorCode}${r.errorMessage ? ` ${r.errorMessage.split("\n")[0]}` : ""}`, alert: true });
-  return out.sort((a, b) => b.at - a.at);
 };

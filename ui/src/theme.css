@@ -206,3 +206,4 @@ table.tbl { border-collapse: collapse; width: 100%; }
 .ctl .tbl th { font-size: calc(8.5px * var(--s)); color: var(--label); opacity: 0.8; padding-bottom: calc(4px * var(--s)); }
 .ctl .tbl td { padding-top: calc(5px * var(--s)); padding-bottom: calc(5px * var(--s)); }
 .ctl .tbl .btn { height: calc(var(--text) * 1.4); padding: 0 calc(8px * var(--s)); }
+.tbl .btns { flex-wrap: nowrap; }
