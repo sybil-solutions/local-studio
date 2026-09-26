@@ -47,36 +47,37 @@ export const activity = (db: Database, machineId: string, today: string): Activi
 
 const LINE_POINTS = 24;
 
-export const card = (db: Database, m: RunningModel, day: (ts: number) => string): ModelCardStats => {
+export const card = (db: Database, m: RunningModel, machineId: string, day: (ts: number) => string): ModelCardStats => {
   const now = Date.now();
-  const base = "model = ? AND via = 'local'";
-  const sumSince = (from: number) => n(db.query<AggRow, [string, number]>(`SELECT SUM(total) AS t FROM requests WHERE ${base} AND ts_start >= ?`).get(m.primaryModel, from)?.t);
-  const span = db.query<AggRow, [string]>(`SELECT MIN(ts_start) AS a, MAX(ts_end) AS b, SUM(total) AS t FROM requests WHERE ${base}`).get(m.primaryModel) ?? {};
-  const week = sliceOf("7d", db.query<AggRow, [string, number]>(`SELECT ${AGG} FROM requests WHERE ${base} AND ts_start >= ?`).get(m.primaryModel, now - 7 * DAY_MS) ?? {});
-  const day24 = db
-    .query<AggRow, [string, number]>(`SELECT COUNT(*) AS c, SUM(CASE WHEN error_code IS NOT NULL THEN 1 ELSE 0 END) AS e FROM requests WHERE ${base} AND ts_start >= ?`)
-    .get(m.primaryModel, now - DAY_MS) ?? {};
+  const names = [...new Set([m.primaryModel, ...m.servedModels.map((s) => (s.startsWith("/") ? m.primaryModel : s))])];
+  const inList = names.map(() => "?").join(",");
+  const base = `model IN (${inList}) AND via = 'local'`;
+  const q = <P extends (string | number)[]>(sql: string, ...p: P) => db.query<AggRow, (string | number)[]>(sql).get(...names, ...p) ?? {};
+  const session = q(`SELECT SUM(total) AS t FROM requests WHERE ${base} AND ts_start >= ?`, m.startedAt ?? 0);
+  const week = sliceOf("7d", q(`SELECT ${AGG} FROM requests WHERE ${base} AND ts_start >= ?`, now - 7 * DAY_MS));
+  const day24 = q(`SELECT COUNT(*) AS c, SUM(CASE WHEN error_code IS NOT NULL THEN 1 ELSE 0 END) AS e FROM requests WHERE ${base} AND ts_start >= ?`, now - DAY_MS);
+  const last = q(`SELECT ts_end AS b FROM requests WHERE ${base} ORDER BY ts_start DESC LIMIT 1`).b;
+  const days = db
+    .query<AggRow, string[]>(`SELECT day, SUM(input_uncached + cache_read + cache_write + output) AS t FROM usage_daily WHERE model IN (${inList}) AND machine_id = ? GROUP BY day ORDER BY day`)
+    .all(...names, machineId);
+  const first = days[0] ? String(days[0].day) : null;
+  const all = days.reduce((t, r) => t + n(r.t), 0);
+  const hour0 = Math.floor(now / 3_600_000) * 3_600_000 - (LINE_POINTS - 1) * 3_600_000;
+  const hours = db
+    .query<AggRow, (string | number)[]>(`SELECT (ts_start - ?) / 3600000 AS k, SUM(total) AS t FROM requests WHERE ${base} AND ts_start >= ? GROUP BY k`)
+    .all(hour0, ...names, hour0);
   const line = new Array<number>(LINE_POINTS).fill(0);
-  const a = typeof span.a === "number" ? span.a : null;
-  const b = typeof span.b === "number" ? span.b : null;
-  if (a !== null && b !== null) {
-    const width = Math.max(1, b - a + 1);
-    const buckets = db
-      .query<AggRow, [number, number, number, string]>(
-        `SELECT MIN(?, CAST((ts_start - ?) * ${LINE_POINTS} / ? AS INTEGER)) AS k, SUM(total) AS t FROM requests WHERE ${base} GROUP BY k`,
-      )
-      .all(LINE_POINTS - 1, a, width, m.primaryModel);
-    for (const r of buckets) line[Math.max(0, Math.min(LINE_POINTS - 1, n(r.k)))]! += n(r.t);
-    for (let i = 1; i < LINE_POINTS; i++) line[i]! += line[i - 1]!;
-  }
+  for (const r of hours) line[Math.max(0, Math.min(LINE_POINTS - 1, n(r.k)))]! += n(r.t);
+  line[0]! += Math.max(0, all - line.reduce((t, x) => t + x, 0));
+  for (let i = 1; i < LINE_POINTS; i++) line[i]! += line[i - 1]!;
   return {
     modelId: m.id,
     model: m.primaryModel,
-    sessionTokens: sumSince(m.startedAt ?? 0),
-    allTokens: n(span.t),
+    sessionTokens: n(session.t),
+    allTokens: all,
     week: week.inputUncached + week.cacheRead + week.cacheWrite + week.output,
-    since: a === null ? null : day(a),
-    last: b,
+    since: first,
+    last: typeof last === "number" ? last : null,
     decodeTps: week.decodeTps,
     prefillTps: week.prefillTps,
     meanTtftMs: week.meanTtftMs,

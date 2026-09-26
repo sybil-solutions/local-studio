@@ -237,3 +237,17 @@ export interface Price {
 export const PREFILL_MIN_TOKENS = 256;
 export const DECODE_MIN_TOKENS = 2;
 export const ACTIVITY_DAYS = 140;
+
+export interface TtftHour {
+  hour: number;
+  hist: number[];
+}
+
+export interface GpuSample {
+  ts: number;
+  utilPct: number | null;
+  memUsedMiB: number | null;
+  memTotalMiB: number;
+  powerW: number | null;
+  tempC: number | null;
+}

@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import type { EngineRates } from "@local-studio/contracts/client";
 import { fmt } from "@local-studio/contracts/client";
 import { SectionHeading, Table } from "../components/basics";
-import { GpuTable } from "../components/cards";
+import { GpuCharts, GpuTable } from "../components/cards";
 import { RequestsTable } from "../components/requests";
 import { machines } from "../model/view";
 import { useStore } from "../store";
@@ -17,6 +17,7 @@ export const LivePage = ({ machineId }: { machineId: string | null }) => {
   const local = useStore((s) => s.requests);
   const fresh = useStore((s) => s.fresh);
   const stats = useStore((s) => s.stats);
+  const now = useStore((s) => Math.floor(s.now / 60_000) * 60_000);
   const ms = useMemo(() => machines(fleet, live).filter((m) => m.online && m.snap && (!machineId || m.id === machineId)), [fleet, live, machineId]);
   const names = Object.fromEntries(ms.map((m) => [m.id, m.name]));
   const engines = ms.flatMap((m) =>
@@ -53,6 +54,7 @@ export const LivePage = ({ machineId }: { machineId: string | null }) => {
         rows={engines}
         keyOf={(x) => `${x.m.id}/${x.e.modelId}`}
       />
+      <GpuCharts samples={ms.map((m) => stats[m.id]?.gpus ?? [])} now={now} />
       <SectionHeading>gpus</SectionHeading>
       <GpuTable ms={ms} hist={hist} />
       <SectionHeading aside={<span className="label">p50 · p99</span>}>controller</SectionHeading>

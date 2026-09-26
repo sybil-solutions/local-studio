@@ -75,3 +75,20 @@ export const classifyError = (status: number | null, text: string): ErrorCode =>
   if (has("stream ended", "network", "connection", "socket", "fetch", "econn", "other side closed", "terminated", "premature close")) return "TRANSPORT";
   return "UNKNOWN";
 };
+
+export const TTFT_BUCKETS = 48;
+const TTFT_BASE_MS = 10;
+const TTFT_STEP = 1.25;
+
+export const ttftBucket = (ms: number): number => Math.max(0, Math.min(TTFT_BUCKETS - 1, Math.floor(Math.log(Math.max(ms, TTFT_BASE_MS) / TTFT_BASE_MS) / Math.log(TTFT_STEP))));
+
+export const histPercentile = (hist: number[], p: number): number | null => {
+  const total = hist.reduce((t, x) => t + x, 0);
+  if (!total) return null;
+  let seen = 0;
+  for (let i = 0; i < hist.length; i++) {
+    seen += hist[i] ?? 0;
+    if (seen >= total * p) return TTFT_BASE_MS * TTFT_STEP ** (i + 0.5);
+  }
+  return null;
+};

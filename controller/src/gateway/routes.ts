@@ -9,7 +9,7 @@ import { ChatAggregator, ChatUpstreamDecoder, chatErrorBody, chatErrorFrame, dec
 import { MessagesEncoder, decodeMessagesRequest, messagesErrorBody } from "./dialects/messages";
 import { ResponsesEncoder, decodeResponsesRequest, responsesErrorBody } from "./dialects/responses";
 import type { Route } from "./route-model";
-import { gatewayModels, resolveModel } from "./route-model";
+import { gatewayModels, listedName, resolveModel } from "./route-model";
 import { CONNECT_TIMEOUT_MS, openUpstream, toChatBody } from "./upstream";
 
 type C = Context<Env>;
@@ -139,10 +139,10 @@ export const gatewayRoutes = (ctx: Ctx, svc: Services): Hono<Env> => {
     }
     if (route.kind === "missing") return fail(m, 404, "MODEL_NOT_FOUND", `model '${m.model}' is not served here or on any connected machine`);
     if (route.kind === "loading") {
-      m.model = route.served;
+      m.model = listedName(route.model, route.served);
       return fail(m, 503, "SERVER", `model '${route.served}' is ${route.model.state}; retry shortly`, { modelId: route.model.id, engine: route.model.engine }, { "retry-after": "10" });
     }
-    m.model = route.served;
+    m.model = route.kind === "local" ? listedName(route.model, route.served) : route.served;
     if (route.kind === "peer") return forwardPeer(c, m, body, route);
     return runLocal(c, m, body, route.model, route.served, t0);
   };
@@ -233,12 +233,12 @@ export const gatewayRoutes = (ctx: Ctx, svc: Services): Hono<Env> => {
         canonical = d.req;
         upBody = toChatBody(d.req, served);
         m.capsStripped = d.req.capsStripped;
-        encoder = new ResponsesEncoder(served, d.customTools);
+        encoder = new ResponsesEncoder(m.model, d.customTools);
       } else {
         canonical = decodeMessagesRequest(body);
         upBody = toChatBody(canonical, served);
         m.capsStripped = canonical.capsStripped;
-        encoder = new MessagesEncoder(served);
+        encoder = new MessagesEncoder(m.model);
       }
     } catch (e) {
       if (e instanceof DialectError) return fail(m, e.status, e.code, e.message, { modelId: model.id, engine: model.engine });

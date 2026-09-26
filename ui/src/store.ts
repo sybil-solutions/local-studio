@@ -1,11 +1,15 @@
 import { useSyncExternalStore } from "react";
-import type { ControllerEvent, ControllerHealth, EngineRates, FleetSnapshot, HourlyRow, LaunchProgress, MetricsSummary, RecipeRow, RequestRecord, Snapshot } from "@local-studio/contracts/client";
+import type { ControllerEvent, ControllerHealth, EngineRates, FleetSnapshot, GpuSample, HourlyRow, TtftHour, LaunchProgress, MetricsSummary, RecipeRow, RequestRecord, Snapshot } from "@local-studio/contracts/client";
+import { normalizeSnapshot } from "@local-studio/contracts/client";
 import { type ConnState, events, get, setUnauthorizedHandler, via } from "./api";
 
 export interface MachineStats {
   sum: MetricsSummary | null;
   health: ControllerHealth | null;
   hourly: HourlyRow[];
+  ttft: TtftHour[];
+  gpus: GpuSample[];
+  gpusAt: number;
   reqs: RequestRecord[];
 }
 
@@ -66,21 +70,7 @@ const fleetFromSnapshot = (s: Snapshot): FleetSnapshot => ({
 const HIST = 90;
 
 const list = <T>(x: T[] | null | undefined): T[] => (Array.isArray(x) ? x : []);
-const safe = (s: Snapshot | null | undefined): Snapshot | null =>
-  s && s.machine
-    ? {
-        ...s,
-        gpus: list(s.gpus),
-        models: list(s.models).map((m) => ({ ...m, gpuKeys: list(m.gpuKeys), servedModels: list(m.servedModels) })),
-        groups: list(s.groups).map((g) => ({ ...g, gpuKeys: list(g.gpuKeys), modelIds: list(g.modelIds) })),
-        engines: list(s.engines),
-        launches: list(s.launches),
-        cards: list(s.cards),
-        endpoints: list(s.endpoints),
-        discovery: { ...s.discovery, errors: list(s.discovery?.errors) },
-        machine: { ...s.machine, watchdogs: list(s.machine.watchdogs) },
-      }
-    : null;
+const safe = normalizeSnapshot;
 
 const track = (hist: Record<string, number[]>, f: FleetSnapshot): Record<string, number[]> => {
   const next = { ...hist };
@@ -164,16 +154,24 @@ export const loadStats = async (): Promise<void> => {
       .filter((m) => m.online)
       .map(async (m) => {
         const p = m.peerId;
-        const [sum, health, hourly, reqs] = await Promise.all([
+        const prev = getState().stats[m.machineId];
+        const gpuDue = !prev || Date.now() - prev.gpusAt > 55_000;
+        const none = Promise.resolve({ ok: false as const });
+        const [sum, health, hourly, ttft, gpus, reqs] = await Promise.all([
           get<MetricsSummary>(via(p, "/api/metrics/summary?window=24h")),
           get<ControllerHealth>(via(p, "/api/health/detail")),
           get<HourlyRow[]>(via(p, `/api/usage/hourly?from=${hourFrom}`)),
-          p ? get<RequestRecord[]>(via(p, "/api/metrics/requests?limit=50")) : Promise.resolve({ ok: false as const }),
+          get<TtftHour[]>(via(p, `/api/metrics/ttft?from=${hourFrom}`)),
+          gpuDue ? get<GpuSample[]>(via(p, `/api/metrics/gpus?from=${Date.now() - 86_400_000}`)) : none,
+          p ? get<RequestRecord[]>(via(p, "/api/metrics/requests?limit=50")) : none,
         ]);
         const st: MachineStats = {
           sum: sum.ok && typeof sum.data?.requests === "number" ? sum.data : null,
           health: health.ok && health.data?.memory ? health.data : null,
           hourly: arr<HourlyRow>(hourly),
+          ttft: arr<TtftHour>(ttft),
+          gpus: gpuDue ? arr<GpuSample>(gpus) : (prev?.gpus ?? []),
+          gpusAt: gpuDue ? Date.now() : (prev?.gpusAt ?? 0),
           reqs: arr<RequestRecord>(reqs),
         };
         setState((s) => ({ stats: { ...s.stats, [m.machineId]: st } }));

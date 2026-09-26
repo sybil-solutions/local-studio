@@ -1,7 +1,7 @@
 import type { Database } from "bun:sqlite";
 import { Hono } from "hono";
-import type { DailyRow, HourlyRow } from "@local-studio/contracts";
-import { PriceBody, WindowParam } from "@local-studio/contracts";
+import type { DailyRow, GpuSample, HourlyRow, TtftHour } from "@local-studio/contracts";
+import { PriceBody, TTFT_BUCKETS, WindowParam, ttftBucket } from "@local-studio/contracts";
 import type { Env, MetricsService } from "../context";
 import type { Store } from "./store";
 import { AGG, type AggRow, n } from "./summary";
@@ -73,6 +73,29 @@ export const metricsRoutes = (db: Database, svc: MetricsService, store: Store): 
       )
       .all(from, to);
     return c.json(rows.map(hourlyRow));
+  });
+  r.get("/api/metrics/ttft", (c) => {
+    const from = Number(c.req.query("from") ?? Date.now() - 86_400_000);
+    if (!Number.isFinite(from)) return c.json(err("INVALID_REQUEST", "from must be epoch ms"), 400);
+    store.flush();
+    const hours = new Map<number, number[]>();
+    for (const x of db
+      .query<AggRow, [number]>(
+        "SELECT (ts_start / 3600000) * 3600000 AS hour, ttft_ms AS t FROM requests WHERE via = 'local' AND ts_start >= ? AND ttft_ms IS NOT NULL AND usage_source NOT IN ('estimated','none')",
+      )
+      .all(from)) {
+      const h = hours.get(n(x.hour)) ?? new Array<number>(TTFT_BUCKETS).fill(0);
+      h[ttftBucket(n(x.t))]! += 1;
+      hours.set(n(x.hour), h);
+    }
+    return c.json([...hours].sort((a, b) => a[0] - b[0]).map(([hour, hist]): TtftHour => ({ hour, hist })));
+  });
+  r.get("/api/metrics/gpus", (c) => {
+    const from = Number(c.req.query("from") ?? Date.now() - 86_400_000);
+    if (!Number.isFinite(from)) return c.json(err("INVALID_REQUEST", "from must be epoch ms"), 400);
+    const rows = db.query<AggRow, [number]>("SELECT * FROM gpu_samples WHERE ts >= ? ORDER BY ts").all(from);
+    const opt = (v: unknown) => (typeof v === "number" ? v : null);
+    return c.json(rows.map((x): GpuSample => ({ ts: n(x.ts), utilPct: opt(x.util), memUsedMiB: opt(x.mem_used), memTotalMiB: n(x.mem_total), powerW: opt(x.power), tempC: opt(x.temp) })));
   });
   r.get("/api/prices", (c) => c.json(store.prices()));
   r.put("/api/prices", async (c) => {

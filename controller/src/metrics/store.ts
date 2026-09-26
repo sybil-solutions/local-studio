@@ -44,6 +44,8 @@ export const MIGRATIONS = [
   WHERE EXISTS (SELECT 1 FROM requests r WHERE r.day = usage_daily.day AND r.machine_id = usage_daily.machine_id AND r.model = usage_daily.model AND r.client = usage_daily.client);`,
   `DROP TABLE IF EXISTS engine_samples; UPDATE requests SET chunk_dt = NULL, chunk_time0 = NULL; CREATE INDEX IF NOT EXISTS requests_model_ts2 ON requests(model, ts_start);`,
   `DROP TABLE IF EXISTS request_checks;`,
+  `DROP INDEX IF EXISTS requests_model_ts2; CREATE INDEX requests_model_via_ts ON requests(model, via, ts_start);
+  CREATE TABLE gpu_samples (ts INTEGER PRIMARY KEY, util REAL, mem_used INTEGER, mem_total INTEGER NOT NULL, power REAL, temp REAL);`,
 ];
 
 const MAX_ROWS = 200_000;
@@ -205,6 +207,7 @@ export const createStore = (db: Database, tz: string, onError: (e: unknown) => v
     prune: () => {
       flush();
       db.query("DELETE FROM requests WHERE ts_start < ?").run(Date.now() - 90 * DAY_MS);
+      db.query("DELETE FROM gpu_samples WHERE ts < ?").run(Date.now() - 7 * DAY_MS);
       db.query(`DELETE FROM requests WHERE ts_start < (SELECT ts_start FROM requests ORDER BY ts_start DESC LIMIT 1 OFFSET ${MAX_ROWS})`).run();
       checkpoint(db);
     },

@@ -29,7 +29,7 @@ export const ControlPage = ({ machineId }: { machineId: string | null }) => {
   if (!fleet) return <Err>{error ?? "connecting"}</Err>;
   const sums = ms.map((m) => stats[m.id]?.sum).filter((s) => !!s);
   const tot = (k: "requests" | "errors" | "inputUncached" | "cacheRead" | "cacheWrite" | "output" | "cacheUnknownPrompt") => sums.reduce((t, s) => t + (s[k] ?? 0), 0);
-  const prompt = tot("inputUncached") + tot("cacheRead") + tot("cacheWrite") + tot("cacheUnknownPrompt");
+  const prompt = tot("inputUncached") + tot("cacheRead") + tot("cacheWrite");
   const a = aggOf(ms, engines);
   const reqs = [...requests.filter((r) => r.via !== "peer"), ...ms.flatMap((m) => (m.peerId ? (stats[m.id]?.reqs ?? []) : []))].filter((r) => ms.some((m) => m.id === r.machineId));
   const log = logLines(ms, Object.fromEntries(ms.map((m) => [m.id, stats[m.id]?.health ?? null])), reqs, live, fleet.self).slice(0, 14);
@@ -64,7 +64,7 @@ export const ControlPage = ({ machineId }: { machineId: string | null }) => {
           { v: fmt.k(tot("errors")), k: "errors 24h" },
         ]}
       />
-      <HourCharts rows={ms.flatMap((m) => stats[m.id]?.hourly ?? [])} now={now} />
+      <HourCharts rows={ms.flatMap((m) => stats[m.id]?.hourly ?? [])} ttft={ms.flatMap((m) => stats[m.id]?.ttft ?? [])} now={now} />
       <SectionHeading aside={<Btn onClick={() => setDlg({ k: "connect" })}>Connect ›</Btn>}>machines</SectionHeading>
       <div className="page">
         {ms.map((m: MachineView) => (

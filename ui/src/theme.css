@@ -133,9 +133,7 @@ dl.kv.two { grid-template-columns: max-content minmax(0, 1fr) max-content minmax
 
 .chart { padding: 0 var(--gutter); }
 .chart svg { display: block; width: 100%; height: calc(64px * var(--s)); margin-top: var(--block); }
-.chart svg rect { fill: var(--lvl3); }
 .chart svg rect.e { fill: var(--alert-rule); }
-.chart svg rect:hover { fill: var(--ink); }
 .chart svg line { stroke: var(--rule); }
 .chart .axis { display: flex; justify-content: space-between; color: var(--label); }
 
@@ -187,3 +185,15 @@ table.tbl { border-collapse: collapse; width: 100%; }
   .btn, .top a { height: auto; display: inline-flex; align-items: center; }
   .tabs { gap: 0 calc(18px * var(--s)); }
 }
+.chart svg .s0 { fill: var(--lvl4); stroke: var(--lvl4); }
+.chart svg .s1 { fill: var(--lvl2); stroke: var(--lvl2); }
+.chart svg .s2 { fill: var(--lvl1); stroke: var(--lvl1); }
+.chart svg .s3 { fill: var(--rule); stroke: var(--rule); }
+.chart svg polyline[class] { fill: none; stroke-width: 1.5; }
+.chart svg .hit { fill: transparent; }
+.chart svg .hit:hover { fill: var(--lvl0); }
+.chart .legend { display: flex; flex-wrap: wrap; gap: 0 var(--pad); color: var(--label); }
+.chart .legend i { display: inline-block; width: 1ch; height: 1ch; margin-right: 0.5ch; background: var(--lvl4); }
+.chart .legend i.s1 { background: var(--lvl2); }
+.chart .legend i.s2 { background: var(--lvl1); }
+.chart .legend i.s3 { background: var(--rule); }

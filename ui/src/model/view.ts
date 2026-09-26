@@ -1,4 +1,4 @@
-import type { Activity, ControllerHealth, EngineRates, FleetSnapshot, Gpu, HourlyRow, LaunchProgress, ModelCardStats, RecipeRow, RequestRecord, RunningModel, Snapshot } from "@local-studio/contracts/client";
+import type { Activity, ControllerHealth, EngineRates, FleetSnapshot, Gpu, HourlyRow, TtftHour, LaunchProgress, ModelCardStats, RecipeRow, RequestRecord, RunningModel, Snapshot } from "@local-studio/contracts/client";
 import { fmt } from "@local-studio/contracts/client";
 
 export type Mark = "" | "ready" | "busy" | "failed";
@@ -352,26 +352,48 @@ export interface HourBucket {
   at: number;
   requests: number;
   errors: number;
-  tokens: number;
+  fresh: number;
+  cached: number;
+  out: number;
+  known: number;
   decodeTokens: number;
   decodeMs: number;
-  ttftSumMs: number;
-  ttftN: number;
+  prefillTokens: number;
+  prefillMs: number;
+  hist: number[];
+  by: Record<string, { tokens: number; requests: number }>;
 }
 
-export const hourBuckets = (rows: HourlyRow[], now: number): HourBucket[] => {
+export type BreakBy = "model" | "machine" | "client";
+
+export const hourBuckets = (rows: HourlyRow[], ttft: TtftHour[], now: number, by: BreakBy = "model", names: Record<string, string> = {}): HourBucket[] => {
   const start = Math.floor(now / 3_600_000) * 3_600_000 - 23 * 3_600_000;
-  const out: HourBucket[] = Array.from({ length: 24 }, (_, i) => ({ at: start + i * 3_600_000, requests: 0, errors: 0, tokens: 0, decodeTokens: 0, decodeMs: 0, ttftSumMs: 0, ttftN: 0 }));
+  const out: HourBucket[] = Array.from({ length: 24 }, (_, i) => ({
+    at: start + i * 3_600_000, requests: 0, errors: 0, fresh: 0, cached: 0, out: 0, known: 0, decodeTokens: 0, decodeMs: 0, prefillTokens: 0, prefillMs: 0, hist: [], by: {},
+  }));
+  const at = (hour: number) => out[Math.round((hour - start) / 3_600_000)];
   for (const r of rows) {
-    const b = out[Math.round((r.hour - start) / 3_600_000)];
+    const b = at(r.hour);
     if (!b) continue;
+    const prompt = (r.inputUncached ?? 0) + (r.cacheRead ?? 0) + (r.cacheWrite ?? 0);
     b.requests += r.requests ?? 0;
     b.errors += r.errors ?? 0;
-    b.tokens += (r.inputUncached ?? 0) + (r.cacheRead ?? 0) + (r.cacheWrite ?? 0) + (r.cacheUnknownPrompt ?? 0) + (r.output ?? 0);
+    b.fresh += prompt - (r.cacheRead ?? 0);
+    b.cached += r.cacheRead ?? 0;
+    b.out += r.output ?? 0;
+    b.known += prompt - (r.cacheUnknownPrompt ?? 0);
     b.decodeTokens += r.decodeTokens ?? 0;
     b.decodeMs += r.decodeMs ?? 0;
-    b.ttftSumMs += r.ttftSumMs ?? 0;
-    b.ttftN += r.ttftN ?? 0;
+    b.prefillTokens += r.prefillTokens ?? 0;
+    b.prefillMs += r.prefillMs ?? 0;
+    const k = by === "machine" ? (names[r.machineId] ?? r.machineId) : by === "client" ? r.client : r.model;
+    const e = (b.by[k] ??= { tokens: 0, requests: 0 });
+    e.tokens += prompt + (r.output ?? 0);
+    e.requests += r.requests ?? 0;
+  }
+  for (const t of ttft) {
+    const b = at(t.hour);
+    if (b) b.hist = (Array.isArray(t.hist) ? t.hist : []).map((x, i) => x + (b.hist[i] ?? 0));
   }
   return out;
 };

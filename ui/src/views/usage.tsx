@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import type { DailyRow, HourlyRow, MetricsSlice, MetricsSummary, Window } from "@local-studio/contracts/client";
+import type { DailyRow, MetricsSlice, MetricsSummary, Window } from "@local-studio/contracts/client";
 import { ERROR_CODES, fmt } from "@local-studio/contracts/client";
 import { get, via } from "../api";
 import { type Col, SectionHeading, Table } from "../components/basics";
@@ -18,7 +18,6 @@ interface Data {
   m: MachineView;
   sum: MetricsSummary | null;
   daily: DailyRow[];
-  hourly: HourlyRow[];
 }
 
 const fold = <T extends Omit<Agg, "key">>(rows: T[], keyOf: (r: T) => string): Agg[] => {
@@ -80,6 +79,7 @@ const sliceCols = (h: string): Col<MetricsSlice>[] => [
 export const UsagePage = ({ machineId }: { machineId: string | null }) => {
   const fleet = useStore((s) => s.fleet);
   const live = useStore((s) => s.launches);
+  const stats = useStore((s) => s.stats);
   const pick = useMemo(() => machines(fleet, live).filter((m) => m.online && (!machineId || m.id === machineId)), [fleet, live, machineId]);
   const now = useStore((s) => Math.floor(s.now / 60_000) * 60_000);
   const [win, setWin] = useState<Window>("7d");
@@ -95,16 +95,14 @@ export const UsagePage = ({ machineId }: { machineId: string | null }) => {
       to.setDate(to.getDate() + 1);
       const out = await Promise.all(
         pick.map(async (m) => {
-          const [s, d, h] = await Promise.all([
+          const [s, d] = await Promise.all([
             get<MetricsSummary>(via(m.peerId, `/api/metrics/summary?window=${win}`)),
             get<DailyRow[]>(via(m.peerId, `/api/usage/daily?from=${ymd(from)}&to=${ymd(to)}&group=model,client`)),
-            get<HourlyRow[]>(via(m.peerId, `/api/usage/hourly?from=${Date.now() - 86_400_000}`)),
           ]);
           return {
             m,
             sum: s.ok && typeof s.data?.requests === "number" ? s.data : null,
             daily: d.ok && Array.isArray(d.data) ? d.data : [],
-            hourly: h.ok && Array.isArray(h.data) ? h.data : [],
           };
         }),
       );
@@ -125,7 +123,7 @@ export const UsagePage = ({ machineId }: { machineId: string | null }) => {
   const one = active.length === 1 ? active[0]! : null;
   const days = fold(data.flatMap((d) => d.daily), (r) => r.day).sort((a, b) => b.key.localeCompare(a.key));
   const codes = ERROR_CODES.map((c) => ({ c, n: sums.reduce((t, s) => t + (s.errorsByCode[c] ?? 0), 0) })).filter((x) => x.n > 0);
-  const prompt = tot ? tot.inputUncached + tot.cacheRead + tot.cacheWrite + tot.cacheUnknownPrompt : 0;
+  const prompt = tot ? tot.inputUncached + tot.cacheRead + tot.cacheWrite : 0;
 
   return (
     <div className="page">
@@ -150,7 +148,7 @@ export const UsagePage = ({ machineId }: { machineId: string | null }) => {
         <FigureGrid
           cells={[
             { v: tot ? fmt.k(tot.requests) : "–", k: "requests" },
-            { v: tot ? fmt.k(tot.inputUncached + tot.cacheWrite + tot.cacheUnknownPrompt) : "–", k: "tokens in" },
+            { v: tot ? fmt.k(tot.inputUncached + tot.cacheWrite) : "–", k: "tokens in" },
             { v: tot ? fmt.k(tot.cacheRead) : "–", k: "tokens cached" },
             { v: tot ? fmt.k(tot.output) : "–", k: "tokens out" },
             { v: tot ? sliceHit({ cacheRead: tot.cacheRead, promptTotal: prompt, cacheUnknownPrompt: tot.cacheUnknownPrompt }) : "–", k: "cache hit" },
@@ -164,7 +162,7 @@ export const UsagePage = ({ machineId }: { machineId: string | null }) => {
           ]}
         />
       </div>
-      <HourCharts rows={data.flatMap((d) => d.hourly)} now={now} />
+      <HourCharts full rows={pick.flatMap((m) => stats[m.id]?.hourly ?? [])} ttft={pick.flatMap((m) => stats[m.id]?.ttft ?? [])} now={now} names={Object.fromEntries(pick.map((m) => [m.id, m.name]))} />
       <div className="half">
         <SectionHeading>by machine</SectionHeading>
         <Table<Data>
