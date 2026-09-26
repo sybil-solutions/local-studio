@@ -117,7 +117,7 @@ Every route except `/health` needs auth (§4). Errors are `{"error":{"code","mes
 | `GET /api/usage/daily?from=&to=&group=model,client` | metrics | `DailyRow[]` |
 | `GET /api/usage/hourly?from=&to=` (epoch ms, default last 24 h) | metrics | `HourlyRow[]` per hour, machine, model, client |
 | `GET /api/metrics/ttft?from=` (epoch ms, default last 24 h) | metrics | `TtftHour[]`: per-hour TTFT log-bucket histogram, mergeable across machines |
-| `GET /api/metrics/gpus?from=` (epoch ms, default last 24 h) | metrics | `GpuSample[]`: 1-minute machine GPU samples (mean util, VRAM used, power, max temp), kept 7 days |
+| `GET /api/metrics/gpus?from=` (epoch ms, default last 24 h) | metrics | `GpuSample[]`: 1-minute machine GPU samples (mean util, VRAM used and total of the GPUs that report usage, power, max temp), kept 7 days |
 | `GET /api/health/detail`, `GET /metrics` | core | `ControllerHealth` / Prometheus text |
 | `GET/PUT /api/prices` | metrics | `Price[]` (optional "equivalent cloud" USD per 1M tokens) |
 | `GET /api/machines`, `POST /api/machines` `{url,key,name?}`, `DELETE /api/machines/:id` | federation | peers |

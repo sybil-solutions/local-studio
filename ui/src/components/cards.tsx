@@ -196,6 +196,10 @@ export const Chart = ({ title, s, f, labels, err, line, head }: { title: string;
         ))}
         <line x1={0} x2={w} y1={59.5} y2={59.5} vectorEffect="non-scaling-stroke" />
       </svg>
+      <div className="axis">
+        <span>{labels[0]}</span>
+        <span>{labels[labels.length - 1]}</span>
+      </div>
       {s.length > 1 && (
         <div className="legend">
           {s.map((x, k) => (
@@ -206,10 +210,6 @@ export const Chart = ({ title, s, f, labels, err, line, head }: { title: string;
           ))}
         </div>
       )}
-      <div className="axis">
-        <span>{labels[0]}</span>
-        <span>{labels[labels.length - 1]}</span>
-      </div>
     </div>
   );
 };
@@ -275,7 +275,7 @@ export const GpuCharts = ({ samples, now }: { samples: GpuSample[][]; now: numbe
       const xs = per.map((m) => m.get(i)).filter((x): x is GpuSample => !!x);
       return xs.length ? f(xs) : null;
     });
-  const sum = (k: "memUsedMiB" | "powerW") => (xs: GpuSample[]) => (xs.some((x) => x[k] === null) ? null : xs.reduce((t, x) => t + (x[k] ?? 0), 0));
+  const sum = (k: "memUsedMiB" | "powerW") => (xs: GpuSample[]) => (xs.every((x) => x[k] === null) ? null : xs.reduce((t, x) => t + (x[k] ?? 0), 0));
   const labels = idx.map((i) => hm(start + i * STEP, true));
   const known = (xs: GpuSample[], k: "utilPct" | "tempC") => xs.map((x) => x[k]).filter((v): v is number => v !== null);
   return (

@@ -75,6 +75,7 @@ export const createMetrics = (ctx: Ctx, svc: Services): Module<MetricsService> =
       const known = <K extends "utilPct" | "memUsedMiB" | "powerW" | "tempC">(k: K) => gs.map((g) => g[k]).filter((x): x is number => x !== null);
       const util = known("utilPct");
       const mem = known("memUsedMiB");
+      const memTotal = gs.filter((g) => g.memUsedMiB !== null).reduce((t, g) => t + g.memTotalMiB, 0);
       const power = known("powerW");
       const temp = known("tempC");
       ctx.db
@@ -82,8 +83,8 @@ export const createMetrics = (ctx: Ctx, svc: Services): Module<MetricsService> =
         .run(
           Math.floor(Date.now() / 60_000) * 60_000,
           util.length ? util.reduce((t, x) => t + x, 0) / util.length : null,
-          mem.length === gs.length ? mem.reduce((t, x) => t + x, 0) : null,
-          gs.reduce((t, g) => t + g.memTotalMiB, 0),
+          mem.length ? mem.reduce((t, x) => t + x, 0) : null,
+          memTotal,
           power.length ? power.reduce((t, x) => t + x, 0) : null,
           temp.length ? Math.max(...temp) : null,
         );
