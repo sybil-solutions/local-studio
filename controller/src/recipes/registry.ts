@@ -444,6 +444,13 @@ export const createRegistry = (ctx: Ctx): Registry => {
       await fetch();
       rev = await git(["rev-parse", "--verify", "--quiet", target], 10_000);
     }
+    let used = ref;
+    if (rev.code !== 0 && ref !== "main") {
+      ctx.log.warn(`recipes: registry ref ${ref} is gone; reading main`);
+      used = "main";
+      await git(["fetch", "--prune", "origin", "+refs/heads/main:refs/remotes/origin/main"], 90_000);
+      rev = await git(["rev-parse", "--verify", "--quiet", "refs/remotes/origin/main"], 10_000);
+    }
     if (rev.code !== 0) return null;
     const commit = rev.stdout.trim();
     const ls = await git(["ls-tree", "-r", commit, "--", "registry", "dist/catalog.json"], 30_000);
@@ -476,7 +483,7 @@ export const createRegistry = (ctx: Ctx): Registry => {
       const t = byOid.get(e.oid);
       if (t !== undefined) files[e.path] = t;
     }
-    return { source: `git:${ctx.config.registryRepo}@${ref}`, ref, commit, fetchedAt: Date.now(), files };
+    return { source: `git:${ctx.config.registryRepo}@${used}`, ref, commit, fetchedAt: Date.now(), files };
   };
 
   const doLoad = async (sync: boolean): Promise<LoadedCatalog> => {
