@@ -256,7 +256,7 @@ type CEvent =
 ### 7.5 Usage and timing capture in the stream
 
 - `tsStart`: request body parsed. `tsUpstream`: upstream response headers received. `tsFirstToken`: first non-empty `text`, `reasoning` or `tool_start`/`tool_args` event. Role-only chunks and `response.created`/`message_start` do not count (G4). `tsEnd`: upstream `[DONE]`, or stream end.
-- Chunk timing is stored compactly as `chunkTime0 + chunkDt[]` (ms deltas per content event, dsh §7.1). It is kept only for the newest 2000 requests.
+- Per-chunk timing is not stored per request; the controller keeps a ring of gateway per-read processing times (`gateway.chunk_us`) in `GET /api/health/detail`.
 - The usage-bearing final chunk is **held** until `metrics.finish()` resolves (at most about 400 ms, §8.3). The gateway then emits it with `prompt_tokens_details.cached_tokens` filled from the final record, so dsh shows its cache-hit pill even when vLLM lacks `--enable-prompt-tokens-details`, then `[DONE]`.
 
 ## 8. Metrics (slice 2)
