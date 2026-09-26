@@ -53,7 +53,7 @@ const remoteDir = (raw: string, p: Probe): string => {
   else if (d.startsWith("~/")) d = `${p.home}/${d.slice(2)}`;
   if (!d.startsWith("/")) d = `${p.home}/${d}`;
   d = d.replace(/\/+$/, "");
-  if (d === p.home || d === "/" || !/^[A-Za-z0-9_./ -]+$/.test(d)) throw new DeployError(`refusing deploy dir ${d}`);
+  if (d === p.home || d === "/" || !/^[A-Za-z0-9_./-]+$/.test(d)) throw new DeployError(`refusing deploy dir ${d}`);
   return d;
 };
 
@@ -159,7 +159,8 @@ const deploy = async (host: string, a: Args): Promise<number> => {
     return 0;
   }
   const runner: Runner = replacing && owned && (owned.runner === "systemd" || owned.runner === "launchd") ? owned.runner : pickRunner(p, service);
-  await start(r, p, l, runner);
+  const warning = await start(r, p, l, runner);
+  if (warning) note(`WARNING ${warning}`);
   const h = await pollHealth(r, l);
   if (!h) {
     const log = await r.run(`tail -n 15 ${shq(`${l.dir}/controller.log`)} 2>/dev/null`, 15_000);

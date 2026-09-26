@@ -107,7 +107,7 @@ const systemdUnit = (l: Layout) =>
     "After=network-online.target",
     "",
     "[Service]",
-    `ExecStart=${l.dir}/start.sh`,
+    `ExecStart="${l.dir}/start.sh"`,
     "Restart=on-failure",
     "RestartSec=3",
     "",
@@ -138,31 +138,34 @@ export const pickRunner = (p: Probe, service: boolean): Runner => {
   return p.tools.has("tmux") ? "tmux" : "nohup";
 };
 
-export const start = async (r: Remote, p: Probe, l: Layout, runner: Runner): Promise<void> => {
+export const start = async (r: Remote, p: Probe, l: Layout, runner: Runner): Promise<string | null> => {
   const script = shq(`${l.dir}/start.sh`);
   const pidfile = shq(`${l.dir}/controller.pid`);
   switch (runner) {
     case "tmux":
       await r.must(`${TMUX} new-session -d -s ${session(l.port)} ${script}`, "tmux start");
-      return;
+      return null;
     case "nohup": {
       const detach = p.tools.has("setsid") ? "setsid nohup" : "nohup";
       await r.must(`${detach} ${script} </dev/null >/dev/null 2>&1 &\necho $! > ${pidfile}`, "nohup start");
-      return;
+      return null;
     }
-    case "systemd":
-      await r.must(
+    case "systemd": {
+      const out = await r.must(
         [
           "set -e",
           `mkdir -p "$HOME/.config/systemd/user"`,
           heredoc(`$HOME/.config/systemd/user/${unit(l.port)}`.replace("$HOME", p.home), systemdUnit(l), "0644"),
           "systemctl --user daemon-reload",
           `systemctl --user enable --now ${unit(l.port)}`,
+          `u=$(id -un); [ "$(loginctl show-user "$u" -p Linger --value 2>/dev/null)" = yes ] || loginctl enable-linger "$u" 2>/dev/null || true`,
+          `echo "linger=$(loginctl show-user "$u" -p Linger --value 2>/dev/null)"`,
         ].join("\n"),
         "systemd start",
         60_000,
       );
-      return;
+      return /linger=yes/.test(out) ? null : `linger is off for this user, so ${unit(l.port)} stops at logout and does not start after reboot; run: sudo loginctl enable-linger $(id -un)`;
+    }
     case "launchd": {
       const plist = `${p.home}/Library/LaunchAgents/${agent(l.port)}.plist`;
       await r.must(
@@ -170,7 +173,7 @@ export const start = async (r: Remote, p: Probe, l: Layout, runner: Runner): Pro
         "launchd start",
         60_000,
       );
-      return;
+      return null;
     }
   }
 };
