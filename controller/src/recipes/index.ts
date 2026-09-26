@@ -14,20 +14,26 @@ import { createWeightIndex } from "./weights";
 export interface RecipesInternal {
   sync(): Promise<RecipeCatalog>;
   plan(id: string, gpuKeys?: string[]): Promise<LaunchPreview>;
+  assign(id: string, on: boolean): void;
 }
 
 export const createRecipes = (ctx: Ctx, svc: Services): Module<RecipeService> => {
   migrate(ctx.db, "recipes", [
     `CREATE TABLE recipe_exports (at INTEGER NOT NULL, model_id TEXT NOT NULL, recipe_id TEXT NOT NULL, saved_to TEXT NOT NULL, refusals INTEGER NOT NULL, launchable INTEGER NOT NULL)`,
     `CREATE TABLE recipe_prs (at INTEGER NOT NULL, model_id TEXT NOT NULL, recipe_id TEXT NOT NULL, branch TEXT NOT NULL, url TEXT NOT NULL)`,
+    `CREATE TABLE recipe_assigned (recipe_id TEXT PRIMARY KEY, at INTEGER NOT NULL)`,
   ]);
+  const assigned = (): Set<string> => new Set(ctx.db.query<{ recipe_id: string }, []>("SELECT recipe_id FROM recipe_assigned").all().map((r) => r.recipe_id));
   const registry = createRegistry(ctx);
   const exporter = createExporter(ctx, svc, registry);
   const prs = createPrOpener(ctx, svc, registry, exporter);
 
   const service: RecipeService = {
     catalog: async () => (await registry.load()).catalog,
-    rows: async () => buildRows(await registry.load(), svc.runtime.view(), createWeightIndex(ctx)),
+    rows: async () => {
+      const on = assigned();
+      return buildRows(await registry.load(), svc.runtime.view(), createWeightIndex(ctx)).map((r) => ({ ...r, assigned: on.has(r.id) }));
+    },
     launch: async (recipeId, gpuKeys) => {
       const view = svc.runtime.view();
       const res = buildPlan(ctx, view, await registry.load(), createWeightIndex(ctx), recipeId, { gpuKeys, strict: true });
@@ -44,6 +50,10 @@ export const createRecipes = (ctx: Ctx, svc: Services): Module<RecipeService> =>
   };
 
   const internal: RecipesInternal = {
+    assign: (id, on) => {
+      if (on) ctx.db.query("INSERT OR REPLACE INTO recipe_assigned (recipe_id, at) VALUES (?, ?)").run(id, Date.now());
+      else ctx.db.query("DELETE FROM recipe_assigned WHERE recipe_id = ?").run(id);
+    },
     sync: async () => (await registry.load({ sync: true })).catalog,
     plan: async (id, gpuKeys) => {
       const res = buildPlan(ctx, svc.runtime.view(), await registry.load(), createWeightIndex(ctx), id, { gpuKeys, strict: false });

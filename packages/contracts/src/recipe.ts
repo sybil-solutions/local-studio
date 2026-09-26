@@ -64,6 +64,7 @@ export interface RecipeRow extends Recipe {
   freeGroups: string[][];
   runningModelId: string | null;
   weightsPresent: boolean | null;
+  assigned?: boolean;
 }
 
 export interface LaunchMount {

@@ -39,6 +39,12 @@ export const recipeRoutes = (service: RecipeService, internal: RecipesInternal):
     const gpuKeys = keys ? parse(LaunchRecipeBody, { gpuKeys: keys.split(",").map((s) => s.trim()).filter(Boolean) }).gpuKeys : undefined;
     return c.json(await internal.plan(c.req.param("id"), gpuKeys));
   });
+  r.put("/api/recipes/:id/assigned", async (c) => {
+    const b = (await body(c)) as { on?: unknown };
+    if (typeof b.on !== "boolean") throw new HttpError(400, "BAD_REQUEST", "on must be a boolean");
+    internal.assign(c.req.param("id"), b.on);
+    return c.json({ id: c.req.param("id"), assigned: b.on });
+  });
   r.post("/api/recipes/:id/launch", async (c) => c.json(await service.launch(c.req.param("id"), parse(LaunchRecipeBody, await body(c)).gpuKeys), 202));
   r.post("/api/models/:id/export", async (c) => c.json(await service.exportModel(c.req.param("id"))));
   r.post("/api/models/:id/export/pr", async (c) => {
