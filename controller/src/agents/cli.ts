@@ -54,7 +54,7 @@ export const runAgentCli = async (argv: string[]): Promise<number> => {
     console.error(`local-studio agent: ${spec.bin} does not exist any more; install ${spec.harness} again from the agents page`);
     return 127;
   }
-  const env: Record<string, string | undefined> = { ...process.env, PATH: spec.path };
+  const env: Record<string, string | undefined> = { ...process.env, PATH: spec.path, PWD: built.cwd };
   for (const k of ENV_UNSET[spec.harness] ?? []) delete env[k];
   delete env.LOCAL_STUDIO_API_KEY;
   Object.assign(env, built.env);

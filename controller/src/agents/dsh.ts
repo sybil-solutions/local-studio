@@ -116,6 +116,7 @@ export const createDsh = (ctx: Ctx): DshManager => {
       LOCAL_STUDIO_API_KEY: key,
       DSH_TELEMETRY_DISABLED: "1",
       PATH: opts.path,
+      PWD: opts.cwd,
     });
     mkdirSync(opts.cwd, { recursive: true });
     const p = Bun.spawn([opts.bin, "web", "--port", String(port), "--no-open"], { cwd: opts.cwd, env, stdin: "ignore", stdout: "pipe", stderr: "pipe" });

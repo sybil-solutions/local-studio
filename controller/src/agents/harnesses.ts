@@ -191,7 +191,7 @@ export const createHarnessManager = (ctx: Ctx): HarnessManager => {
       const bun = findIn("bun", path);
       mkdirSync(prefix(h), { recursive: true, mode: 0o700 });
       let argv: string[];
-      const env: Record<string, string> = { PATH: path, npm_config_update_notifier: "false", npm_config_fund: "false", npm_config_audit: "false" };
+      const env: Record<string, string> = { PATH: path, PWD: prefix(h), npm_config_update_notifier: "false", npm_config_fund: "false", npm_config_audit: "false" };
       if (runtime === "node" && npm) argv = [npm, "install", "--global", "--prefix", prefix(h), `${pkg}@latest`];
       else if (bun) {
         argv = [bun, "add", "--global", `${pkg}@latest`];
