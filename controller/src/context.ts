@@ -9,6 +9,7 @@ import type {
   Gpu,
   GpuGroup,
   HarnessInfo,
+  HostResources,
   LaunchPlan,
   LaunchProgress,
   Machine,
@@ -79,6 +80,7 @@ export interface DockerInspect {
 export interface RuntimeService {
   view(): RuntimeView;
   machine(): Machine;
+  host(): HostResources | null;
   models(): RunningModel[];
   model(id: string): RunningModel | undefined;
   resolveServed(name: string): RunningModel | undefined;

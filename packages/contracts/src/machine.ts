@@ -56,3 +56,31 @@ export interface TailnetCandidate {
   machineId: MachineId | null;
   alreadyConnected: boolean;
 }
+
+export interface HostCpu {
+  model: string;
+  cores: number | null;
+  threads: number;
+  utilPct: number | null;
+  load1: number | null;
+  load5: number | null;
+  load15: number | null;
+}
+
+export type DiskRole = "root" | "home" | "models" | "hf-cache" | "docker" | "data";
+
+export interface HostDisk {
+  mount: string;
+  device: string;
+  roles: DiskRole[];
+  totalMiB: number;
+  usedMiB: number;
+}
+
+export interface HostResources {
+  at: number;
+  cpu: HostCpu;
+  mem: { totalMiB: number; usedMiB: number | null };
+  disks: HostDisk[];
+  storage: { totalMiB: number; usedMiB: number } | null;
+}

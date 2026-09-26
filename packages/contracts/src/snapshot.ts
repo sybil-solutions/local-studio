@@ -1,6 +1,6 @@
 import type { AgentSession, HarnessInfo } from "./agent";
 import type { Gpu, GpuGroup } from "./gpu";
-import type { Machine, Peer } from "./machine";
+import type { HostResources, Machine, Peer } from "./machine";
 import type { Activity, EngineRates, ModelCardStats, Percentiles, RequestRecord } from "./metrics";
 import type { Endpoint, RunningModel } from "./model";
 import type { LaunchProgress } from "./recipe";
@@ -8,6 +8,7 @@ import type { LaunchProgress } from "./recipe";
 export interface Snapshot {
   at: number;
   machine: Machine;
+  host: HostResources | null;
   gpus: Gpu[];
   groups: GpuGroup[];
   models: RunningModel[];
@@ -27,7 +28,75 @@ export interface FleetSnapshot {
   activity: Activity;
   harnesses: HarnessInfo[];
   sessions: AgentSession[];
+  totals?: FleetTotals;
 }
+
+export interface ResourceTotals {
+  machines: number;
+  online: number;
+  gpus: number;
+  vramTotalMiB: number;
+  vramUsedMiB: number;
+  vramUnmeasured: number;
+  unifiedMiB: number;
+  ramTotalMiB: number;
+  ramUsedMiB: number;
+  storageTotalMiB: number;
+  storageUsedMiB: number;
+  cpuCores: number;
+  cpuThreads: number;
+}
+
+export interface PodTotals {
+  id: string;
+  name: string;
+  machineIds: string[];
+  totals: ResourceTotals;
+}
+
+export interface FleetTotals {
+  all: ResourceTotals;
+  pods: PodTotals[];
+}
+
+export const podOf = (name: string): string | null => /^(.+)-[0-9a-f]{3,4}$/.exec(name)?.[1] ?? null;
+
+export const resourceTotals = (list: { online: boolean; snapshot: Snapshot | null }[]): ResourceTotals => {
+  const t: ResourceTotals = { machines: 0, online: 0, gpus: 0, vramTotalMiB: 0, vramUsedMiB: 0, vramUnmeasured: 0, unifiedMiB: 0, ramTotalMiB: 0, ramUsedMiB: 0, storageTotalMiB: 0, storageUsedMiB: 0, cpuCores: 0, cpuThreads: 0 };
+  for (const { online, snapshot: s } of list) {
+    if (!s) continue;
+    t.machines++;
+    if (online) t.online++;
+    for (const g of s.gpus) {
+      t.gpus++;
+      t.vramTotalMiB += g.memTotalMiB;
+      if (g.unified) t.unifiedMiB += g.memTotalMiB;
+      if (online && g.memUsedMiB !== null) t.vramUsedMiB += g.memUsedMiB;
+      else t.vramUnmeasured++;
+    }
+    const h = s.host;
+    if (!h) continue;
+    t.ramTotalMiB += h.mem.totalMiB;
+    if (online) t.ramUsedMiB += h.mem.usedMiB ?? 0;
+    t.storageTotalMiB += h.storage?.totalMiB ?? 0;
+    if (online) t.storageUsedMiB += h.storage?.usedMiB ?? 0;
+    t.cpuCores += h.cpu.cores ?? h.cpu.threads;
+    t.cpuThreads += h.cpu.threads;
+  }
+  return t;
+};
+
+export const fleetTotals = (machines: FleetSnapshot["machines"]): FleetTotals => {
+  const byPod = new Map<string, FleetSnapshot["machines"]>();
+  for (const m of machines) {
+    const k = m.snapshot ? podOf(m.snapshot.machine.name) : null;
+    if (k) byPod.set(k, [...(byPod.get(k) ?? []), m]);
+  }
+  const pods = [...byPod]
+    .filter(([, ms]) => ms.length > 1)
+    .map(([k, ms]) => ({ id: `pod:${k}`, name: `${k} pod`, machineIds: ms.map((m) => m.machineId), totals: resourceTotals(ms) }));
+  return { all: resourceTotals(machines), pods };
+};
 
 export type ControllerEvent =
   | { type: "snapshot"; data: Snapshot }
@@ -75,5 +144,6 @@ export const normalizeSnapshot = (s: Snapshot | null | undefined): Snapshot | nu
     activity: { ...emptyActivity(), ...a, days: list(a.days), today: num(a.today), requests: num(a.requests), total: num(a.total), week: num(a.week) },
     discovery: { ...({ lastScanAt: null, scanMs: null, docker: "absent" } as const), ...s.discovery, errors: list(s.discovery?.errors) },
     machine: { ...s.machine, watchdogs: list(s.machine.watchdogs) },
+    host: s.host && typeof s.host === "object" && s.host.cpu && s.host.mem ? { ...s.host, disks: list(s.host.disks) } : null,
   };
 };

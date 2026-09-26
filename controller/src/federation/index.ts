@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import type { Activity, FleetSnapshot, GatewayModel, Snapshot } from "@local-studio/contracts";
-import { ConnectPeerBody, emptyActivity } from "@local-studio/contracts";
+import { ConnectPeerBody, emptyActivity, fleetTotals } from "@local-studio/contracts";
 import type { Ctx, Env, Module, PeerService, Services } from "../context";
 import { buildSnapshot } from "../core/snapshot";
 import { createPeerStore, toPeer } from "./peers";
@@ -50,13 +50,15 @@ export const createFederation = (ctx: Ctx, svc: Services): Module<PeerService> =
     const self = safe<Snapshot | null>(() => buildSnapshot(svc), null);
     const states = [...poller.states.values()];
     const activities = [self?.activity ?? emptyActivity(), ...states.filter((s) => s.online && s.snapshot).map((s) => s.snapshot!.activity)];
+    const machines = [
+      { machineId: ctx.identity.machineId, peerId: null, online: true, error: self ? null : "local snapshot unavailable", snapshot: self },
+      ...states.map((s) => ({ machineId: s.row.machine_id, peerId: s.row.id, online: s.online, error: s.error, snapshot: s.snapshot })),
+    ];
     return {
       at: Date.now(),
       self: ctx.identity.machineId,
-      machines: [
-        { machineId: ctx.identity.machineId, peerId: null, online: true, error: self ? null : "local snapshot unavailable", snapshot: self },
-        ...states.map((s) => ({ machineId: s.row.machine_id, peerId: s.row.id, online: s.online, error: s.error, snapshot: s.snapshot })),
-      ],
+      machines,
+      totals: safe(() => fleetTotals(machines), fleetTotals([])),
       peers: safe(() => states.map(toPeer), []),
       activity: safe(() => sumActivity(activities), emptyActivity()),
       harnesses: safe(() => svc.agents.harnesses(), []),

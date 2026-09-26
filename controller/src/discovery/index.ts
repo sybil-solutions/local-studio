@@ -3,6 +3,7 @@ import type { Machine, RunningModel, Watchdog } from "@local-studio/contracts";
 import type { Ctx, LifecycleService, Module, RuntimeService, RuntimeView, Services } from "../context";
 import { computeGroups } from "./groups";
 import { type HardwareList, scanGpus } from "./gpus";
+import { createHostSampler } from "./host";
 import { createLifecycle } from "./lifecycle";
 import { createProbeCache, healthCheck } from "./probe";
 import { discoveryRoutes } from "./routes";
@@ -26,6 +27,7 @@ export const createDiscovery = (ctx: Ctx, svc: Services): Module<{ runtime: Runt
   let scanning: Promise<RuntimeView> | null = null;
   let fastBusy = false;
   let timers: ReturnType<typeof setInterval>[] = [];
+  const host = createHostSampler(ctx);
 
   let hw: HardwareList | null = null;
   let hwAt = 0;
@@ -150,6 +152,7 @@ export const createDiscovery = (ctx: Ctx, svc: Services): Module<{ runtime: Runt
       readOnly: ctx.config.readOnly,
       watchdogs,
     }),
+    host: () => host.get(),
     models: () => view.models,
     model: (id) => view.models.find((m) => m.id === id),
     resolveServed: (name) => {
@@ -166,7 +169,8 @@ export const createDiscovery = (ctx: Ctx, svc: Services): Module<{ runtime: Runt
     routes: discoveryRoutes(runtime, lifecycle),
     start() {
       void rescan();
-      timers = [setInterval(() => void fast(), FAST_MS), setInterval(() => void rescan(), FULL_MS)];
+      void host.sample();
+      timers = [setInterval(() => void fast(), FAST_MS), setInterval(() => void rescan(), FULL_MS), setInterval(() => void host.sample(), FAST_MS)];
     },
     stop() {
       for (const t of timers) clearInterval(t);

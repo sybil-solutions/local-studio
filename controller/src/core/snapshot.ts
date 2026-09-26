@@ -6,6 +6,7 @@ export const buildSnapshot = (svc: Services): Snapshot => {
   return {
     at: Date.now(),
     machine: svc.runtime.machine(),
+    host: svc.runtime.host(),
     gpus: v.gpus,
     groups: v.groups,
     models: v.models,
