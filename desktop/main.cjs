@@ -1,4 +1,4 @@
-const { app, BrowserWindow, shell } = require("electron");
+const { app, BrowserWindow, Menu, MenuItem, shell } = require("electron");
 const { spawn } = require("node:child_process");
 const fs = require("node:fs");
 const path = require("node:path");
@@ -37,7 +37,7 @@ function spawnController() {
   const logPath = path.join(app.getPath("userData"), "controller.log");
   fs.mkdirSync(path.dirname(logPath), { recursive: true });
   const fd = fs.openSync(logPath, "a");
-  const proc = spawn(bin, ["serve", "--host", "127.0.0.1", "--port", String(PORT)], {
+  const proc = spawn(bin, ["serve", "--host", "127.0.0.1", "--port", String(PORT), "--tailnet"], {
     stdio: ["ignore", fd, fd],
     env: { ...process.env, LOCAL_STUDIO_UI_DIR: process.env.LOCAL_STUDIO_UI_DIR || path.join(path.dirname(bin), "ui") },
   });
@@ -91,6 +91,12 @@ function openWindow(url) {
   win.loadURL(url);
 }
 
+function openPairing() {
+  const w = new BrowserWindow({ width: 380, height: 440, backgroundColor: "#000000", title: "Phone", webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true } });
+  w.setMenuBarVisibility(false);
+  w.loadURL(`${BASE}/pair`);
+}
+
 function errorPage(message) {
   const html = `<!doctype html><meta charset="utf-8"><title>Local Studio</title><body style="background:#000;color:#d4d4d4;font:13px ui-monospace,monospace;padding:24px"><p>LOCAL STUDIO</p><p>${message.replace(/[<>&]/g, "")}</p></body>`;
   return `data:text/html;charset=utf-8,${encodeURIComponent(html)}`;
@@ -124,6 +130,11 @@ if (!app.requestSingleInstanceLock()) {
   app.whenReady().then(async () => {
     try {
       await ensureController();
+      const menu = Menu.getApplicationMenu();
+      if (menu) {
+        menu.append(new MenuItem({ label: "Phone", submenu: [{ label: "Sign In on Phone", accelerator: "CmdOrCtrl+Shift+P", click: openPairing }] }));
+        Menu.setApplicationMenu(menu);
+      }
       openWindow(`${BASE}/`);
     } catch (e) {
       openWindow(errorPage(String(e && e.message ? e.message : e)));

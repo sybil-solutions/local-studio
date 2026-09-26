@@ -22,6 +22,7 @@ const READ_ONLY_DENY: RegExp[] = [
 ];
 
 const SAFE = new Set(["GET", "HEAD", "OPTIONS"]);
+const PROXY_HEADERS = ["forwarded", "x-forwarded-for", "x-forwarded-host", "x-real-ip", "tailscale-user-login", "cf-connecting-ip"];
 
 const FEDERATION_DENY = /^\/api\/(keys|peers|agents|workspaces|machines)(\/|$)/;
 const FEDERATION_ACTIONS: RegExp[] = [
@@ -88,7 +89,8 @@ export const authMiddleware = (config: Config, keys: KeyStore): MiddlewareHandle
       if (hasBody && !(c.req.header("content-type") ?? "").toLowerCase().startsWith("application/json"))
         return c.json({ error: { code: "INVALID_REQUEST", message: "content-type must be application/json" } }, 415);
     }
-    const loopbackTrusted = LOOPBACK.has(remote) && LOOPBACK_HOST.test(c.req.header("host") ?? "") && !foreignOrigin;
+    const proxied = PROXY_HEADERS.some((h) => c.req.header(h) !== undefined);
+    const loopbackTrusted = LOOPBACK.has(remote) && LOOPBACK_HOST.test(c.req.header("host") ?? "") && !foreignOrigin && !proxied;
     const isApi = path.startsWith("/api/") || path.startsWith("/v1/");
     if (isApi && !id && !loopbackTrusted) return c.json({ error: { code: "AUTH", message: "missing or invalid API key" } }, 401);
     if (path.startsWith("/api/") && id && id.scope === "client") return c.json({ error: { code: "AUTH", message: "client keys may only call /v1/*" } }, 403);

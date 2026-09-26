@@ -18,7 +18,7 @@ export interface KeyIdentity {
 export interface KeyStore {
   adminKey(): string;
   verify(token: string): KeyIdentity | null;
-  issue(client: string, label?: string, scope?: "client" | "federation", actions?: boolean): { info: ApiKeyInfo; key: string };
+  issue(client: string, label?: string, scope?: KeyScope, actions?: boolean): { info: ApiKeyInfo; key: string };
   list(): ApiKeyInfo[];
   revoke(id: string): boolean;
 }
@@ -70,17 +70,18 @@ export const createKeyStore = (db: Database, dataDir: string, override: string |
       const key = `ls_${randomBytes(24).toString("hex")}`;
       const id = `key_${randomBytes(4).toString("hex")}`;
       const now = Date.now();
-      const act = scope === "federation" && actions;
-      db.query("INSERT INTO api_keys (id, client, label, hash, created_at, admin, scope, actions) VALUES (?, ?, ?, ?, ?, 0, ?, ?)").run(
+      const act = scope === "admin" || (scope === "federation" && actions);
+      db.query("INSERT INTO api_keys (id, client, label, hash, created_at, admin, scope, actions) VALUES (?, ?, ?, ?, ?, ?, ?, ?)").run(
         id,
         client,
         label ?? client,
         sha(key),
         now,
+        scope === "admin" ? 1 : 0,
         scope,
         act ? 1 : 0,
       );
-      return { info: { id, client, label: label ?? client, createdAt: now, lastUsedAt: null, admin: false, scope, actions: act }, key };
+      return { info: { id, client, label: label ?? client, createdAt: now, lastUsedAt: null, admin: scope === "admin", scope, actions: act }, key };
     },
     list: () =>
       db

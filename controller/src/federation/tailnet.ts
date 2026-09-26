@@ -24,7 +24,7 @@ const MAC_APP_CLI = "/Applications/Tailscale.app/Contents/MacOS/Tailscale";
 const PROBE_PORT = 8080;
 const CONCURRENCY = 8;
 
-const tailscaleBin = async (): Promise<string | null> => {
+export const tailscaleBin = async (): Promise<string | null> => {
   const found = await which("tailscale", ["/usr/local/bin", "/opt/homebrew/bin", "/usr/bin"]);
   if (found) return found;
   return existsSync(MAC_APP_CLI) ? MAC_APP_CLI : null;

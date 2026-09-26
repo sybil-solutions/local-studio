@@ -13,6 +13,7 @@ import { loadIdentity } from "./core/identity";
 import { createKeyStore } from "./core/keys";
 import { createLog, errText } from "./core/log";
 import { createObs } from "./core/obs";
+import { mountPairing } from "./core/pair";
 import { buildSnapshot, snapshotKey } from "./core/snapshot";
 import { createSse } from "./core/sse";
 import { createDiscovery } from "./discovery";
@@ -83,6 +84,7 @@ export const createApp = (config: Config): App => {
     return sse.response([{ type: "snapshot", data: buildSnapshot(svc) }], filter, c.req.raw.signal);
   });
   hono.get("/api/keys", (c) => c.json(ctx.keys.list()));
+  mountPairing(hono, ctx.keys);
   for (const m of modules) if (m.routes) hono.route("/", m.routes);
 
   const uiDir = config.uiDir;

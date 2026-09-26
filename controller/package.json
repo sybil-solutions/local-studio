@@ -12,6 +12,7 @@
   "dependencies": {
     "@local-studio/contracts": "workspace:*",
     "hono": "^4.9.0",
+    "uqr": "^0.1.3",
     "yaml": "^2.8.0",
     "zod": "^4.1.0"
   },

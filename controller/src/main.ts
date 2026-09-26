@@ -3,11 +3,13 @@ import { runAgentCli } from "./agents";
 import { createApp } from "./app";
 import { loadConfig } from "./core/config";
 import { errText } from "./core/log";
+import { pairing } from "./core/pair";
 import { runDeployCli } from "./deploy";
+import { tailscaleBin } from "./federation/tailnet";
 
 const USAGE = `local-studio <command>
 
-  serve   [--host 127.0.0.1] [--port 8080] [--home ~/.local-studio] [--data-dir DIR] [--models-dir DIR] [--name NAME] [--read-only]
+  serve   [--host 127.0.0.1] [--port 8080] [--home ~/.local-studio] [--data-dir DIR] [--models-dir DIR] [--name NAME] [--read-only] [--tailnet]
   deploy  <ssh-host> [--port 8080] [--dir ~/local-studio] [--host <bind>] [--name NAME] [--read-only] [--service] [--no-start] [--replace] [--connect [--allow-actions]] [--local-url URL]
   deploy  stop <ssh-host> [--port 8080] [--dir ~/local-studio]
   agent   run <workspaceId> [--print] [--resume] [--home DIR]
@@ -24,18 +26,32 @@ const serve = async (argv: string[]): Promise<number> => {
   const t0 = performance.now();
   await app.start();
   const server = Bun.serve({ hostname: config.host, port: config.port, idleTimeout: 255, fetch: app.hono.fetch, maxRequestBodySize: 64 * 1024 * 1024 });
-  obs.gauge("http.pending_requests", () => server.pendingRequests);
+  const servers = [server];
+  const bin = config.tailnet && config.host !== "0.0.0.0" ? await tailscaleBin() : null;
+  const ts = bin ? await app.ctx.exec([bin, "ip", "-4"], { timeoutMs: 5000 }) : null;
+  const tsIp = ts?.code === 0 ? ts.stdout.trim().split("\n")[0] : null;
+  if (config.tailnet && !tsIp) log.warn("--tailnet: no tailnet IPv4 found; phone access is off");
+  if (tsIp && tsIp !== config.host)
+    try {
+      servers.push(Bun.serve({ hostname: tsIp, port: config.port, idleTimeout: 255, fetch: app.hono.fetch, maxRequestBodySize: 64 * 1024 * 1024 }));
+      pairing.base = `http://${tsIp}:${config.port}`;
+      log.info(`tailnet listener on ${pairing.base}`);
+    } catch (e) {
+      log.warn(`tailnet listener on ${tsIp}:${config.port} failed: ${errText(e)}`);
+    }
+  obs.gauge("http.pending_requests", () => servers.reduce((s, x) => s + x.pendingRequests, 0));
   log.info(`local-studio ${config.version} listening on http://${server.hostname}:${server.port} data=${config.dataDir}${config.readOnly ? " read-only" : ""} startup=${Math.round(performance.now() - t0)}ms`);
   let stopping = false;
   const shutdown = async (sig: string) => {
     if (stopping) process.exit(1);
     stopping = true;
-    log.info(`${sig}: draining ${server.pendingRequests} requests`);
+    const pending = () => servers.reduce((s, x) => s + x.pendingRequests, 0);
+    log.info(`${sig}: draining ${pending()} requests`);
     setTimeout(() => process.exit(1), 10_000).unref();
-    void server.stop(false);
+    for (const s of servers) void s.stop(false);
     app.quiesce();
-    for (let i = 0; i < 50 && server.pendingRequests > 0; i++) await Bun.sleep(100);
-    server.stop(true);
+    for (let i = 0; i < 50 && pending() > 0; i++) await Bun.sleep(100);
+    for (const s of servers) s.stop(true);
     await app.stop();
     process.exit(0);
   };
